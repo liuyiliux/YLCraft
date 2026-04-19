@@ -1,0 +1,19 @@
+{
+  "download_path": "C:\\Users\\zhouxiang\\YLCraft-Downloads",
+  "media_storage_path": "C:\\Users\\zhouxiang\\YLCraft-Media",
+  "ffmpeg_path": null,
+  "storage_type": "local",
+  "s3": {
+    "bucket": "",
+    "region": "us-east-1",
+    "access_key": "",
+    "secret_key": ""
+  },
+  "oss": {
+    "bucket": "",
+    "region": "cn-hangzhou",
+    "access_key": "",
+    "secret_key": "",
+    "endpoint": ""
+  }
+}

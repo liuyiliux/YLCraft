@@ -1,0 +1,44 @@
+# YLCraft Provider 配置
+# LLM / Image / TTS / Video 各类型 Provider 注册表
+
+providers:
+  # ========== LLM ==========
+  doubao-lite:
+    media_type: llm
+    provider: doubao
+    model: doubao-lite-4k
+    api_base: https://ark.cn-beijing.volces.com/api/v3
+    api_key: "${DOUBAO_API_KEY}"
+    default_model: "doubao-lite-4k"
+
+  doubao-pro:
+    media_type: llm
+    provider: doubao
+    model: doubao-pro-4k
+    api_base: https://ark.cn-beijing.volces.com/api/v3
+    api_key: "${DOUBAO_API_KEY}"
+    default_model: ""
+
+  # ========== Image ==========
+  seedance:
+    media_type: image
+    provider: seedance
+    model: seedance-2.0
+    api_base: https://api.minimax.chat/v1
+    api_key: "${MINIMAX_API_KEY}"
+    default_model: "seedance-2.0"
+
+  # ========== TTS ==========
+  doubao-tts:
+    media_type: tts
+    provider: doubao
+    model: "emp-api:search_model_for_short_audio"
+    api_base: https://tts-api.falcery.com/v1
+    api_key: "${DOUBAO_API_KEY}"
+    default_model: "doubao-tts"
+
+# 全局默认值
+defaults:
+  llm: doubao-lite
+  image: seedance
+  tts: doubao-tts
