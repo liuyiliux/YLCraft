@@ -107,10 +107,13 @@ export const testCookie = (platform: string) =>
 export const parseDownloadUrl = (url: string) =>
   request('/download/parse', { method: 'POST', body: JSON.stringify({ url }) })
 
-export const createDownloadTask = (url: string, quality?: string) =>
-  request('/download/tasks', { method: 'POST', body: JSON.stringify({ url, quality }) })
+export const createDownloadTask = (url: string, quality?: string, title?: string, pageUrl?: string) =>
+  request('/download/tasks', { method: 'POST', body: JSON.stringify({ url, quality, title, page_url: pageUrl }) })
 
 export const getDownloadTask = (taskId: string) => request(`/download/tasks/${taskId}`)
+
+export const openFolder = (filePath: string) =>
+  request('/download/open-folder', { method: 'POST', body: JSON.stringify({ file_path: filePath }) })
 
 /**
  * 带下载进度回调的下载函数（使用 XMLHttpRequest，支持 onprogress）

@@ -246,40 +246,32 @@ def _ytdlp_best_url(data: dict) -> str:
 
 
 async def _parse_with_ytdlp(url: str, platform: str = "unknown") -> VideoInfo:
-    """使用 yt-dlp 解析任意支持平台的视频。"""
+    """使用 yt-dlp Python 模块解析任意支持平台的视频（绕过 subprocess）。"""
     info = VideoInfo(original_url=url, platform=platform)
+    logger.info(f"[parser.ytdlp] called with url={url[:80]}")
 
     try:
-        backend_dir = Path(__file__).parent.parent.parent
-        ytdlp_exe = backend_dir / "venv" / "Scripts" / "yt-dlp.exe"
+        import yt_dlp as _yt_dlp
 
-        cmd = [
-            str(ytdlp_exe),
-            "--dump-json",
-            "--no-playlist",
-            "--skip-download",
-            "--quiet",
-        ]
+        ydl_opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "skip_download": True,
+            "noplaylist": True,
+            "http_headers": {"User-Agent": "Mozilla/5.0"},
+        }
 
         cookie_path = get_cookie_manager().get_cookie_path_for_url(url)
         if cookie_path:
-            cmd.extend(["--cookies", str(cookie_path)])
+            ydl_opts["cookiefile"] = str(cookie_path)
             logger.info(f"[parser] 使用 Cookie: {cookie_path}")
 
-        cmd.append(url)
-
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await asyncio.wait_for(
-            proc.communicate(), timeout=60.0
+        loop = asyncio.get_running_loop()
+        data = await loop.run_in_executor(
+            None, lambda: _yt_dlp.YoutubeDL(ydl_opts).extract_info(url, download=False)
         )
 
-        if proc.returncode == 0 and stdout:
-            data = json.loads(stdout.decode("utf-8", errors="replace"))
-            logger.info(f"[parser] yt-dlp raw title={data.get('title', '**EMPTY**')} | uploader={data.get('uploader', '**EMPTY**')}")
+        if data:
             info.title = data.get("title", "") or ""
             info.desc = data.get("description", "") or ""
             info.author_name = data.get("uploader") or data.get("channel") or ""
@@ -288,14 +280,20 @@ async def _parse_with_ytdlp(url: str, platform: str = "unknown") -> VideoInfo:
             info.like_count = int(data.get("like_count") or 0)
             info.comment_count = int(data.get("comment_count") or 0)
             info.play_count = int(data.get("view_count") or 0)
-            info.cover_url = data.get("thumbnail") or ""
+            raw_thumb = data.get("thumbnail") or data.get("thumb") or ""
+            # Bilibili yt-dlp 返回的 thumbnail URL 常缺少扩展名，自动补上 .jpg
+            if raw_thumb and not raw_thumb.rsplit('.', 1)[-1].lower() in ('jpg', 'jpeg', 'png', 'webp'):
+                raw_thumb += '.jpg'
+            info.cover_url = raw_thumb
+            info.cover_url = info.cover_url.replace('http://', 'https://') if info.cover_url else ''
+            logger.info(f"[parser] yt-dlp raw cover={info.cover_url[:80] if info.cover_url else '**EMPTY**'}")
             best_url = _ytdlp_best_url(data)
             info.video_url = best_url
             info.parse_method = "ytdlp" + ("+cookie" if cookie_path else "")
             info.raw = {k: v for k, v in data.items() if k not in ("formats",)}
+            logger.info(f"[parser] yt-dlp raw title={info.title[:30] if info.title else '**EMPTY**'}")
         else:
-            err = stderr.decode("utf-8", errors="replace")
-            info.parse_method = f"ytdlp_error:{err[:100]}"
+            info.parse_method = "ytdlp_no_data"
 
     except asyncio.TimeoutError:
         info.parse_method = "ytdlp_timeout"
@@ -303,6 +301,7 @@ async def _parse_with_ytdlp(url: str, platform: str = "unknown") -> VideoInfo:
         info.parse_method = "ytdlp_not_found"
     except Exception as e:
         info.parse_method = f"ytdlp_exception:{e}"
+        logger.warning(f"[parser.ytdlp] exception: {e}")
 
     return info
 
@@ -376,6 +375,8 @@ async def parse(url_or_text: str) -> VideoInfo:
                 info.qualities = result.get("qualities", [])
                 info.parse_method = result.get("parse_method", "iesdouyin")
                 info.raw = result.get("raw", {})
+                # 覆盖为 iesdouyin 分享页 URL（yt-dlp 下载必须用这个）
+                info.original_url = result.get("original_url") or info.original_url
                 return info
             else:
                 logger.warning("[parser] iesdouyin 解析失败，fallback 到 yt-dlp")

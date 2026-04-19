@@ -239,6 +239,7 @@ export interface DownloadParseResponse {
   video_url: string
   qualities: VideoQuality[]
   audio_url: string
+  page_url: string   // 原始分享页 URL
   error: string
 }
 

@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "vendor"))
 import yt_dlp
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel, Field
-from starlette.responses import JSONResponse, StreamingResponse
+from starlette.responses import JSONResponse, StreamingResponse, Response
 
 from app.services.breaker.service import parse_video_url
 from app.services.video.parser import get_cookie_manager, _detect_platform
@@ -58,6 +58,7 @@ class ParseResponse(BaseModel):
     video_url: str = ""
     qualities: list[VideoQuality] = []
     audio_url: str = ""
+    page_url: str = ""   # 原始分享页 URL（yt-dlp 下载用）
     error: str = ""
 
 
@@ -204,6 +205,9 @@ async def parse_download_url(req: ParseRequest):
     except Exception as e:
         logger.warning(f"[parse] asset tracking failed (non-blocking): {e}")
 
+    # page_url：原始分享页 URL，用于 yt-dlp 下载（不是 CDN 直链）
+    page_url = info.get("original_url", "") or url
+
     return ParseResponse(
         success=True,
         title=title,
@@ -214,6 +218,7 @@ async def parse_download_url(req: ParseRequest):
         duration_str=duration_str,
         video_url=video_url,
         qualities=qualities,
+        page_url=page_url,
     )
 
 
@@ -412,19 +417,74 @@ class DownloadTask:
         self.completed_at: float | None = None
 
 
+def _is_douyin_direct_url(url: str) -> bool:
+    """判断 URL 是否为抖音 direct CDN URL（可直接用 httpx 下载，跳过 yt-dlp）"""
+    return bool(url and ("douyinvod.com" in url or "amemv.com" in url))
+
+
+def _httpx_download(url: str, quality_label: str | None, title: str | None, is_audio: bool = False) -> str:
+    """直接用 httpx 下载抖音 CDN URL，绕过 yt-dlp。返回保存的文件路径。"""
+    import httpx, hashlib, time as _time
+
+    savedir = ensure_download_path()
+    logger.info(f"[httpx_download] start | url={url[:80]} | quality={quality_label} | is_audio={is_audio}")
+
+    # 生成文件名：直接用标题，去掉前缀和 hash
+    ext = "m4a" if is_audio else "mp4"
+    safe_title = _sanitize_filename(title) if title else "video"
+    filename = f"{safe_title}.{ext}"
+    filepath = savedir / filename
+
+    # 发送请求（带重定向跟随）
+    req_headers = {
+        "User-Agent": _BROWSER_UA,
+        "Referer": "https://www.douyin.com/",
+    }
+
+    total_size = 0
+    downloaded_size = 0
+
+    with httpx.stream("GET", url, headers=req_headers, follow_redirects=True, timeout=60.0) as resp:
+        resp.raise_for_status()
+        total_size = int(resp.headers.get("content-length", 0))
+        content_type = resp.headers.get("content-type", "")
+        logger.info(f"[httpx_download] status={resp.status_code} | size={total_size} | ct={content_type}")
+
+        with open(filepath, "wb") as f:
+            for chunk in resp.iter_bytes(chunk_size=65536):
+                if chunk:
+                    f.write(chunk)
+                    downloaded_size += len(chunk)
+                    # 不在这里更新 progress（BackgroundTask 中不方便）
+
+    logger.info(f"[httpx_download] done | path={filepath} | size={downloaded_size}")
+    return str(filepath)
+
+
 async def _run_download_task(task: DownloadTask):
     task.status = "downloading"
     task.started_at = time.time()
     _download_tasks[task.task_id] = task.__dict__
 
     try:
-        loop = asyncio.get_running_loop()
-        filepath = await asyncio.wait_for(
-            loop.run_in_executor(None, _ytdlp_download,
-                task.url, task.quality, task.title, task.page_url, task.is_audio
-            ),
-            timeout=1800,
-        )
+        # 抖音 direct CDN URL → 直接用 httpx 下载，跳过 yt-dlp
+        if _is_douyin_direct_url(task.url):
+            loop = asyncio.get_running_loop()
+            filepath = await asyncio.wait_for(
+                loop.run_in_executor(None, _httpx_download,
+                    task.url, task.quality, task.title, task.is_audio
+                ),
+                timeout=1800,
+            )
+        else:
+            loop = asyncio.get_running_loop()
+            filepath = await asyncio.wait_for(
+                loop.run_in_executor(None, _ytdlp_download,
+                    task.url, task.quality, task.title, task.page_url, task.is_audio
+                ),
+                timeout=1800,
+            )
+
         task.progress = 90
         task.progress_message = "下载完成，准备文件..."
         _download_tasks[task.task_id] = task.__dict__
@@ -540,3 +600,41 @@ async def get_download_task(task_id: str):
         "started_at": task_data.get("started_at"),
         "completed_at": task_data.get("completed_at"),
     })
+
+
+@router.post("/open-folder", summary="打开文件夹并选中文件（Windows）")
+async def open_folder(req: dict):
+    """调用 Windows explorer /select,<path> 打开文件所在目录并选中文件"""
+    import subprocess
+    file_path = req.get("file_path", "")
+    if not file_path or not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="文件不存在")
+    subprocess.Popen(["explorer", "/select,", file_path])
+    return JSONResponse({"success": True})
+
+
+@router.get("/cover-proxy", summary="封面图代理（解决 B站 CDN 防爬虫限制）")
+async def cover_proxy(url: str):
+    """后端代理请求封面图，解决浏览器直接加载 B站 CDN 的跨域限制"""
+    import httpx
+    if not url:
+        raise HTTPException(status_code=400, detail="url 参数不能为空")
+    try:
+        headers = {
+            "Referer": "https://www.bilibili.com",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.0",
+        }
+        async with httpx.AsyncClient(timeout=10.0, verify=False) as client:
+            resp = await client.get(url, headers=headers)
+            resp.raise_for_status()
+            content = resp.content
+        # 推断 Content-Type
+        import mimetypes
+        mime = mimetypes.guess_type(url)[0] or "image/jpeg"
+        return Response(content=content, media_type=mime)
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=e.response.status_code, detail=f"封面图请求失败: {e}")
+    except Exception as e:
+        import traceback
+        logger.error(f"[cover-proxy] 错误: {type(e).__name__}: {e}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=502, detail=f"封面图代理失败: {type(e).__name__}: {e}")

@@ -9,7 +9,6 @@ import {
   message,
   Space,
   Divider,
-  Image,
   Progress,
 } from 'antd'
 import {
@@ -18,8 +17,9 @@ import {
   PlayCircleOutlined,
   LinkOutlined,
   DeleteOutlined,
+  FolderOpenOutlined,
 } from '@ant-design/icons'
-import { parseDownloadUrl, downloadVideoWithProgress } from '../../api'
+import { parseDownloadUrl, createDownloadTask, getDownloadTask, openFolder } from '../../api'
 import type { DownloadParseResponse, VideoQuality } from '../../types/api'
 
 const { Title, Text, Paragraph } = Typography
@@ -89,46 +89,61 @@ export default function DownloadPage() {
     }
   }
 
+  const openSavedFolder = async (filePath: string) => {
+    if (!filePath) return
+    try {
+      await openFolder(filePath)
+    } catch {
+      message.error('无法打开文件夹')
+    }
+  }
+
   const handleDownload = async (quality: VideoQuality | null, isAudio = false) => {
     if (!result) return
-    const targetUrl = isAudio ? result.audio_url : (quality?.url || result.video_url)
-    if (!targetUrl || targetUrl === url) {
-      message.warning('暂无可用下载链接（B站链接有时效限制，建议使用专业下载工具）')
-      return
-    }
 
     setDownloading(true)
     setDlProgress(0)
     setDlError('')
     setSavedFilePath('')
 
-    const updateProgress = (percent: number) => setDlProgress(percent)
-
     try {
-      let result2: { blob: Blob; filePath: string }
-      if (quality && result.qualities.length > 0) {
-        result2 = await downloadVideoWithProgress(targetUrl, quality.quality, result.title, url, updateProgress)
-      } else if (targetUrl.startsWith('http')) {
-        result2 = await downloadVideoWithProgress(targetUrl, undefined, result.title, url, updateProgress)
-      } else {
-        setDownloading(false)
-        return
+      // video_url = direct CDN URL（已重定向，可直接下载）；page_url = 原始分享页（备用）
+      // 抖音：video_url 是 douyinvod.com 直链，后端检测到走 httpx 直连，跳过 yt-dlp
+      // 其他平台：video_url 是 CDN 直链，走 yt-dlp 下载
+      const downloadUrl = result.video_url || result.page_url || url
+      const { task_id } = await createDownloadTask(downloadUrl, quality?.quality, result.title, result.page_url)
+
+      // 2. 轮询任务状态，每 2 秒一次
+      let pollCount = 0
+      const poll = async (): Promise<void> => {
+        const res = await getDownloadTask(task_id)
+        const task = res
+
+        setDlProgress(task.progress || pollCount * 5)
+
+        if (task.status === 'done') {
+          const filePath = task.result?.file_path || ''
+          setSavedFilePath(filePath)
+          setDlProgress(100)
+          message.success('下载完成')
+          setTimeout(() => setDownloading(false), 3000)
+          return
+        }
+
+        if (task.status === 'failed') {
+          throw new Error(task.error || '下载失败')
+        }
+
+        // pending / downloading：继续轮询
+        pollCount++
+        if (pollCount > 300) { // 超时 10 分钟
+          throw new Error('下载超时，请稍后重试')
+        }
+        await new Promise(r => setTimeout(r, 2000))
+        return poll()
       }
 
-      setDlProgress(100)
-      setSavedFilePath(result2.filePath)
-
-      const blobUrl = URL.createObjectURL(result2.blob)
-      const a = document.createElement('a')
-      a.href = blobUrl
-      a.download = `${result.title || 'video'}.mp4`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(blobUrl)
-
-      message.success('下载完成')
-      setTimeout(() => setDownloading(false), 3000)
+      await poll()
     } catch (e: any) {
       setDlError(e?.message || String(e))
       setDownloading(false)
@@ -139,7 +154,7 @@ export default function DownloadPage() {
 
   return (
     <div style={{ maxWidth: 900 }}>
-      <Title level={3} style={{ color: '#fff', marginBottom: 24 }}>
+      <Title level={3} style={{ color: '#1a1a2e', marginBottom: 24 }}>
         <CloudDownloadOutlined style={{ color: '#00d4ff', marginRight: 8 }} />
         短视频去水印解析
         <Text style={{ color: '#8b8ba8', fontSize: 14, marginLeft: 12 }}>
@@ -150,9 +165,9 @@ export default function DownloadPage() {
       {/* Input Card */}
       <Card
         style={{
-          background: '#1a1a2e',
+          background: '#ffffff',
           marginBottom: 24,
-          border: '1px solid rgba(255,255,255,0.08)',
+          border: '1px solid rgba(0,0,0,0.08)',
         }}
       >
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
@@ -162,7 +177,7 @@ export default function DownloadPage() {
             value={url}
             onChange={e => setUrl(e.target.value)}
             onPressEnter={handleParse}
-            style={{ background: '#12122a' }}
+            style={{ background: '#f5f5f5' }}
             prefix={<LinkOutlined style={{ color: '#8b8ba8' }} />}
             suffix={
               url && (
@@ -194,7 +209,7 @@ export default function DownloadPage() {
                 key={key}
                 style={{
                   cursor: 'pointer',
-                  border: url.includes(key) ? '#00d4ff' : '1px solid rgba(255,255,255,0.15)',
+                  border: url.includes(key) ? '#00d4ff' : '1px solid rgba(0,0,0,0.15)',
                   color: url.includes(key) ? '#00d4ff' : '#8b8ba8',
                   background: url.includes(key) ? 'rgba(0,212,255,0.08)' : 'transparent',
                 }}
@@ -220,7 +235,8 @@ export default function DownloadPage() {
       {error && !loading && (
         <Card
           style={{
-            background: '#1a1a2e',
+            background: '#ffffff',
+            marginBottom: 16,
             border: '1px solid rgba(239,68,68,0.3)',
           }}
         >
@@ -243,23 +259,28 @@ export default function DownloadPage() {
               </Space>
             }
             style={{
-              background: '#1a1a2e',
+              background: '#ffffff',
               marginBottom: 16,
-              border: '1px solid rgba(255,255,255,0.08)',
+              border: '1px solid rgba(0,0,0,0.08)',
             }}
           >
             <div style={{ display: 'flex', gap: 20 }}>
               {/* Cover */}
-              {result.cover_url && (
-                <div style={{ flexShrink: 0 }}>
-                  <Image
-                    src={result.cover_url}
+              {result.cover_url ? (
+                <div style={{ flexShrink: 0, width: 180, height: 101, borderRadius: 8, overflow: 'hidden', background: '#f0f0f0' }}>
+                  <img
+                    // B站封面需要通过后端代理（带 Referer），其他平台直接用原 URL
+                    src={result.cover_url.includes('hdslb.com')
+                      ? `/api/v1/download/cover-proxy?url=${encodeURIComponent(result.cover_url)}`
+                      : result.cover_url.replace('http://', 'https://')}
                     alt="cover"
-                    width={180}
-                    height={101}
-                    style={{ borderRadius: 8, objectFit: 'cover', background: '#000' }}
-                    fallback="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
                   />
+                </div>
+              ) : (
+                <div style={{ flexShrink: 0, width: 180, height: 101, borderRadius: 8, background: '#f0f0f0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ color: '#8b8ba8', fontSize: 12 }}>暂无封面</Text>
                 </div>
               )}
 
@@ -267,7 +288,7 @@ export default function DownloadPage() {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <Paragraph
                   strong
-                  style={{ color: '#fff', fontSize: 16, marginBottom: 8 }}
+                  style={{ color: '#1a1a2e', fontSize: 16, marginBottom: 8 }}
                   ellipsis={{ rows: 2 }}
                 >
                   {result.title || '未知标题'}
@@ -325,8 +346,8 @@ export default function DownloadPage() {
                 </Space>
               }
               style={{
-                background: '#1a1a2e',
-                border: '1px solid rgba(255,255,255,0.08)',
+                background: '#ffffff',
+                border: '1px solid rgba(0,0,0,0.08)',
               }}
             >
               {result.qualities.length > 0 ? (
@@ -346,7 +367,7 @@ export default function DownloadPage() {
                           padding: '0 24px',
                           border: `1px solid ${color}44`,
                           color: color,
-                          background: downloading ? 'rgba(255,255,255,0.04)' : `${color}11`,
+                          background: downloading ? 'rgba(0,0,0,0.04)' : `${color}11`,
                         }}
                       >
                         <div style={{ lineHeight: 1.2 }}>
@@ -365,7 +386,7 @@ export default function DownloadPage() {
                   <code
                     style={{
                       display: 'block',
-                      background: '#12122a',
+                      background: '#f5f5f5',
                       padding: '12px 16px',
                       borderRadius: 6,
                       color: '#10b981',
@@ -391,7 +412,7 @@ export default function DownloadPage() {
 
               {result.audio_url && (
                 <>
-                  <Divider style={{ borderColor: 'rgba(255,255,255,0.08)' }} />
+                  <Divider style={{ borderColor: 'rgba(0,0,0,0.08)' }} />
                   <Button
                     icon={<AudioOutlined />}
                     onClick={() => handleDownload(null, true)}
@@ -417,7 +438,7 @@ export default function DownloadPage() {
                 <div style={{ marginTop: 16 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 6 }}>
                     <CloudDownloadOutlined style={{ color: '#00d4ff', fontSize: 16 }} />
-                    <Text style={{ color: '#e0e0e0', fontSize: 13 }}>
+                    <Text style={{ color: '#1a1a2e', fontSize: 13 }}>
                       {dlProgress < 50 ? '正在获取视频信息...' : dlProgress < 100 ? '正在下载视频...' : '正在保存文件...'}
                     </Text>
                     <Text style={{ color: '#00d4ff', fontSize: 13, marginLeft: 'auto' }}>{dlProgress}%</Text>
@@ -437,6 +458,30 @@ export default function DownloadPage() {
                 <Text style={{ color: '#ef4444', fontSize: 12, marginTop: 8, display: 'block' }}>
                   下载失败：{dlError}
                 </Text>
+              )}
+
+              {/* 保存路径 */}
+              {savedFilePath && (
+                <div style={{ marginTop: 16, padding: '12px 16px', background: 'rgba(0,212,255,0.08)', borderRadius: 8, border: '1px solid rgba(0,212,255,0.2)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <FolderOpenOutlined style={{ color: '#00d4ff' }} />
+                    <Text style={{ color: '#1a1a2e', fontSize: 13, fontWeight: 600 }}>保存路径</Text>
+                  </div>
+                  <Paragraph
+                    style={{ color: '#666', fontSize: 12, marginBottom: 8, wordBreak: 'break-all' }}
+                    copyable={{ text: savedFilePath }}
+                  >
+                    {savedFilePath}
+                  </Paragraph>
+                  <Button
+                    size="small"
+                    icon={<FolderOpenOutlined />}
+                    onClick={() => openSavedFolder(savedFilePath)}
+                    style={{ color: '#00d4ff', borderColor: '#00d4ff' }}
+                  >
+                    打开文件夹
+                  </Button>
+                </div>
               )}
             </Card>
           )}

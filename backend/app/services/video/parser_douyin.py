@@ -269,19 +269,39 @@ async def parse_douyin(url: str) -> dict:
         comment_count = int(statistics.get("comment_count", 0) or 0)
         share_count = int(statistics.get("share_count", 0) or 0)
 
-        # 清晰度列表
+        # 清晰度列表：从 bitrate_info 提取真实多清晰度
+        # bitrate_info 中每条记录对应一个清晰度档次，有独立 url_list
         qualities = []
-        if url_list:
-            for i, src_url in enumerate(url_list):
-                clean_url = src_url.replace("playwm", "play")
-                final_url = await _get_video_redirect_url(clean_url)
-                quality_label = "1080P" if i == 0 else ("720P" if i == 1 else f"{i * 360}P")
+        bitrate_list = video_info.get("bitrate_info") if isinstance(video_info, dict) else None
+        if bitrate_list and isinstance(bitrate_list, list):
+            for br in bitrate_list:
+                if not isinstance(br, dict):
+                    continue
+                gear_name = br.get("gear_name") or ""
+                # 清理 gear_name（如 " Adapt" 前缀空格、" UHD" 前缀等）
+                gear_name = gear_name.strip()
+                play_addr_for_br = br.get("play_addr") if isinstance(br, dict) else None
+                url_list_for_br = play_addr_for_br.get("url_list") if isinstance(play_addr_for_br, dict) else None
+                if not isinstance(url_list_for_br, list) or not url_list_for_br:
+                    continue
+                src_url = url_list_for_br[0].replace("playwm", "play")
+                final_url = await _get_video_redirect_url(src_url)
                 qualities.append({
-                    "quality": quality_label,
+                    "quality": gear_name,
                     "url": final_url,
-                    "resolution": "",
+                    "resolution": f"{br.get('width', '')}x{br.get('height', '')}",
                     "filesize": "未知",
                 })
+        # fallback：如果 bitrate_info 为空或无效，用 url_list（单个清晰度）
+        if not qualities and url_list:
+            src_url = url_list[0].replace("playwm", "play")
+            final_url = await _get_video_redirect_url(src_url)
+            qualities.append({
+                "quality": "720P",
+                "url": final_url,
+                "resolution": "",
+                "filesize": "未知",
+            })
 
         logger.info(f"[douyin] 解析成功 | title={desc[:30]} | video_url={bool(video_url)}")
 
@@ -303,6 +323,7 @@ async def parse_douyin(url: str) -> dict:
             "qualities": qualities,
             "parse_method": "iesdouyin",
             "raw": video_data,
+            "original_url": share_url,   # iesdouyin 分享页 URL，yt-dlp 下载用
         }
 
     except asyncio.TimeoutError:
