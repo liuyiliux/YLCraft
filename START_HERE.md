@@ -5,10 +5,10 @@
 GitHub: https://cnb.cool/yiliu/YLCraft
 
 ## 必读文档（优先级顺序）
-1. `DESIGN.md` — 项目设计基准，v0.2.0，超级自媒体平台完整架构
-2. `PROGRESS.md` — 当前开发进度
-3. `.workbuddy/memory/MEMORY.md` — 跨会话长期记忆（重要决策/踩坑记录）
-4. `.workbuddy/memory/YYYY-MM-DD.md` — 每日日志
+1. `START_HERE.md` — 本文件，交接入口
+2. `DESIGN.md` — 项目设计基准，v0.2.0，超级自媒体平台完整架构
+3. `PROGRESS.md` — 当前开发进度
+4. `.memory/MEMORY.md` — 关键踩坑记录和架构决策（其他 AI 可读）
 
 ## 技术栈
 - 后端：FastAPI + Python，路径 `F:\PycharmProjects\YLCraft\backend\`
@@ -47,11 +47,12 @@ GitHub: https://cnb.cool/yiliu/YLCraft
 - 大文件下载：用 task_id 轮询方案，XHR会超时
 
 ## 如何继续开发
-1. 阅读 DESIGN.md 理解架构
-2. 查看 `.workbuddy/memory/` 目录下的记忆文件
-3. 查看当前代码：`backend/app/` 和 `frontend/src/`
-4. 按 Phase 1/2/3 顺序推进
-5. 每次提交写清楚改动，push 到 origin/master
+1. 阅读 START_HERE.md（本文件）
+2. 阅读 DESIGN.md 理解完整架构
+3. 阅读 .memory/MEMORY.md 了解关键踩坑和决策
+4. 查看当前代码：`backend/app/` 和 `frontend/src/`
+5. 按 Phase 1/2/3 顺序推进
+6. 每次提交写清楚改动，push 到 origin/master
 
 ## 项目结构
 ```
