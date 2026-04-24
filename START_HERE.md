@@ -11,8 +11,8 @@ GitHub: https://cnb.cool/yiliu/YLCraft
 4. `.memory/MEMORY.md` — 关键踩坑记录和架构决策（其他 AI 可读）
 
 ## 技术栈
-- 后端：FastAPI + Python，路径 `F:\PycharmProjects\YLCraft\backend\`
-- 前端：React + TypeScript + Vite + AntDesign，路径 `F:\PycharmProjects\YLCraft\frontend\`
+- 后端：FastAPI + Python，路径 `backend/`
+- 前端：React + TypeScript + Vite + AntDesign，路径 `frontend/`
 - 数据库：SQLite（开发）→ PostgreSQL（规划）
 - 启动：`start.bat` 同时启动后端(uvicorn)+前端(npm run dev)
 - 端口：后端 8000，前端 5173
@@ -21,7 +21,7 @@ GitHub: https://cnb.cool/yiliu/YLCraft
 - BackendManager：Provider 注册表模式，litellm 统一调用
 - 三大功能：爆款拆解(Breaker) / Clip Lab / Story Maker
 - 统一素材资产库(Asset Library)：视频/图片/音频/文档统一管理
-- 参考项目（已 clone）：`F:\PycharmProjects\YLCraft-refs\`
+- 参考项目（已 clone）：`refs/`
   - Jellyfish / ArcReel / CutClaw / NarratoAI / montage-ai / MoneyPrinterTurbo
 
 ## 当前进度
