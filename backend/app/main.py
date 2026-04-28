@@ -150,6 +150,13 @@ def _register_routes():
     except Exception as e:
         logger.warning(f"Could not load images router: {e}")
 
+    # 视频生成路由
+    try:
+        from app.api.v1 import videos
+        app.include_router(videos.router, prefix="/api/v1/videos", tags=["Videos"])
+    except Exception as e:
+        logger.warning(f"Could not load videos router: {e}")
+
     try:
         from app.api.v1 import tts
         app.include_router(tts.router, prefix="/api/v1/tts", tags=["TTS"])
@@ -221,5 +228,12 @@ def _register_routes():
         app.include_router(cookies.router, prefix="/api/v1/cookies", tags=["Cookies"])
     except Exception as e:
         logger.warning(f"Could not load cookies router: {e}")
+
+    # 视频剪辑操作路由
+    try:
+        from app.api.v1 import clip_ops
+        app.include_router(clip_ops.router, prefix="/api/v1/clip-ops", tags=["Clip Operations"])
+    except Exception as e:
+        logger.warning(f"Could not load clip_ops router: {e}")
 
 _register_routes()

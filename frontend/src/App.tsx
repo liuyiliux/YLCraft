@@ -11,6 +11,9 @@ import TasksPage from './pages/tasks'
 import SettingsPage from './pages/settings'
 import AssetsPage from './pages/assets'
 import CharactersPage from './pages/characters'
+import ImageGenPage from './pages/image-gen'
+import VideoGenPage from './pages/video-gen'
+import ClipOpsPage from './pages/clip-ops'
 
 const theme = {
   token: {
@@ -69,6 +72,9 @@ export default function App() {
               <Route path="breaker" element={<BreakerPage />} />
               <Route path="clip" element={<ClipLabPage />} />
               <Route path="story" element={<StoryPage />} />
+              <Route path="image-gen" element={<ImageGenPage />} />
+              <Route path="video-gen" element={<VideoGenPage />} />
+              <Route path="clip-ops" element={<ClipOpsPage />} />
               <Route path="tasks" element={<TasksPage />} />
               <Route path="settings" element={<SettingsPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />

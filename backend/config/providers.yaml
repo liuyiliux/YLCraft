@@ -22,7 +22,16 @@ providers:
   # ========== Image ==========
   seedance:
     media_type: image
-    provider: seedance
+    provider: minimax
+    model: seedance-2.0
+    api_base: https://api.minimax.chat/v1
+    api_key: "${MINIMAX_API_KEY}"
+    default_model: "seedance-2.0"
+
+  # ========== Video ==========
+  minimax-video:
+    media_type: video
+    provider: minimax
     model: seedance-2.0
     api_base: https://api.minimax.chat/v1
     api_key: "${MINIMAX_API_KEY}"
@@ -41,4 +50,5 @@ providers:
 defaults:
   llm: doubao-lite
   image: seedance
+  video: minimax-video
   tts: doubao-tts

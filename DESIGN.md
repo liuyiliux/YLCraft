@@ -39,13 +39,14 @@
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 1.2 三大核心功能
+### 1.2 四大核心功能
 
 | 功能 | 说明 | 核心模块 |
 |------|------|---------|
 | **🔍 爆款拆解** | 输入链接→文案结构+脚本分镜+仿写提示词 | Breaker |
 | **✂️ Clip Lab** | AI 视频剪辑，三种模式 | CutClaw Agent / NarratoAI Pipeline / MoE |
 | **🎬 Story Maker** | AI 短剧漫剧生成 | Character / Scene / Script / Render |
+| **🎭 Live 2D 工厂** | Live 2D 全自动生产线（面向 COSER） | Live2D Pipeline |
 
 ### 1.3 目标用户
 
@@ -54,6 +55,7 @@
 | **电商运营** | 商品展示视频批量生成 | 素材库+混剪+多账号发布 |
 | **摄影工作室** | 客片精修+写真MV | 摄影工作流+AI修图+调色 |
 | **短剧创作者** | AI短剧/漫剧生成 | Story Maker+角色资产+分镜 |
+| **COSER** | Live 2D 模型全自动生产（立绘→绑骨→VTS） | Live 2D 工厂 |
 | **MCN/内容团队** | 批量内容生产 | 素材库+爆款拆解+Clip Lab |
 | **AI Agent** | 调用平台能力 | OpenClaw Skill+REST API |
 
@@ -79,6 +81,8 @@ F:\PycharmProjects\YLCraft\
 | **NarratoAI** | `linyqh/NarratoAI` | 8788 | Pipeline 流水线、字幕分析、Provider 双模式调用、FFmpeg 硬件加速 |
 | **montage-ai** | `mfahsold/montage-ai` | — | MoE 多专家协作架构、Control Plane 冲突解决、人工审核分流 |
 | **MoneyPrinterTurbo** | `harry0703/MoneyPrinterTurbo` | — | YAML 配置驱动、Voice 前缀路由模式、g4f 免费兜底 |
+| **ai-fusion-video** | `Stonewuu/ai-fusion-video` | — | Java Agent 全流程分镜视频流水线、`.agents` 目录结构 |
+| **waoowaoo** | `saturndec/waoowaoo` | 7.8k | TypeScript 全栈 Next.js、`features/` 功能分层、Prisma 数据层、工业级 AI 影视生产链路 |
 
 ### 2.2 设计思想提炼
 
@@ -106,6 +110,13 @@ montage-ai ───────→ MoE 多专家 + Control Plane
 MoneyPrinterTurbo → YAML 配置驱动
      └─────────────→ Voice 前缀路由
      └─────────────→ g4f 免费兜底
+
+ai-fusion-video ────→ Agent 流水线串联（剧本→分镜→素材→视频）
+     └─────────────→ 多 Agent 协同分工
+
+waoowaoo ───────────→ features/ 功能模块分层
+     └─────────────→ Prisma ORM 数据层
+     └─────────────→ i18n 多语言提示词工程
 ```
 
 ---
@@ -905,6 +916,176 @@ Phase 3c（短剧，延续当前路线）
 2. **文件存储**：本地 / S3 / OSS？当前是本地目录，建议预留 S3 接口。
 3. **资产唯一性**：去重用 URL 精确匹配，同平台+相似标题模糊匹配作为补充。
 4. **三大垂直关系**：共用 Asset Library，按 `relations` 字段区分归属场景。
+
+---
+
+## 十一、AI 图像/视频生成
+
+### 11.1 架构设计
+
+YLCraft 采用 **Provider 架构**，统一调度多种 AI 生成服务。
+
+```
+┌───────────────────────────────────────────────────────────────┐
+│                     API Layer                                 │
+│   /api/v1/images/generate    /api/v1/videos/generate         │
+└───────────────────────────────┬───────────────────────────────┘
+                                │
+┌───────────────────────────────▼───────────────────────────────┐
+│                    BackendManager                              │
+│   - 从 providers.yaml 加载配置                                 │
+│   - 实例化 ImageBackend / VideoBackend                        │
+│   - 自动降级：默认 Provider → 遍历其他可用 Backend             │
+└───────────────────────────────┬───────────────────────────────┘
+                                │
+          ┌─────────────────────┼─────────────────────┐
+          │                     │                     │
+          ▼                     ▼                     ▼
+   ┌─────────────┐      ┌─────────────┐      ┌─────────────┐
+   │MiniMaxImage │      │MiniMaxVideo │      │  Future...  │
+   │  (Seedance) │      │  (Seedance) │      │  VolcEngine │
+   └─────────────┘      └─────────────┘      └─────────────┘
+```
+
+### 11.2 核心类型
+
+```python
+# app/core/contracts/types.py
+
+@dataclass
+class ImageGenerationRequest:
+    prompt: str
+    output_path: Path | None
+    negative_prompt: str = ""
+    size: str = "1024x1024"
+    aspect_ratio: str = "9:16"
+    seed: int | None = None
+    reference_images: list[str] = field(default_factory=list)
+
+@dataclass
+class ImageGenerationResult:
+    success: bool
+    image_path: Path | None
+    url: str | None
+    provider: str
+    model: str
+    cost: float
+    error: str | None
+
+@dataclass
+class VideoGenerationRequest:
+    prompt: str
+    output_path: Path | None
+    duration: int = 5
+    resolution: str = "720p"
+    aspect_ratio: str = "9:16"
+    start_image: Path | None  # 图生视频首帧
+    generate_audio: bool = True
+
+@dataclass
+class VideoGenerationResult:
+    success: bool
+    video_path: Path | None
+    task_id: str
+    url: str
+    status: str  # pending/processing/done/error
+    progress: int
+```
+
+### 11.3 Backend 接口
+
+```python
+# app/services/image/base.py
+
+class ImageBackend(Protocol):
+    @property
+    def name(self) -> str: ...
+    @property
+    def model(self) -> str: ...
+    @property
+    def capabilities(self) -> set[ImageCapability]: ...
+    async def generate(self, req: ImageGenerationRequest) -> ImageGenerationResult: ...
+    async def health_check(self) -> bool: ...
+
+# app/services/video_gen/base.py
+
+class VideoBackend(Protocol):
+    @property
+    def name(self) -> str: ...
+    @property
+    def model(self) -> str: ...
+    @property
+    def capabilities(self) -> set[VideoCapability]: ...
+    async def generate(self, req: VideoGenerationRequest) -> VideoGenerationResult: ...
+    async def poll(self, task_id: str) -> VideoGenerationResult: ...
+    async def health_check(self) -> bool: ...
+```
+
+### 11.4 已实现 Provider
+
+| Provider | 类型 | 模型 | 能力 |
+|----------|------|------|------|
+| MiniMax Image | Image | seedance-2.0 | T2I, I2I |
+| MiniMax Video | Video | seedance-2.0 | T2V, I2V, Audio |
+
+### 11.5 配置示例
+
+```yaml
+# backend/config/providers.yaml
+providers:
+  seedance:
+    media_type: image
+    provider: minimax
+    model: seedance-2.0
+    api_base: https://api.minimax.chat/v1
+    api_key: "${MINIMAX_API_KEY}"
+
+  minimax-video:
+    media_type: video
+    provider: minimax
+    model: seedance-2.0
+    api_base: https://api.minimax.chat/v1
+    api_key: "${MINIMAX_API_KEY}"
+
+defaults:
+  image: seedance
+  video: minimax-video
+```
+
+### 11.6 参考架构来源
+
+- **ArcReel** `lib/image_backends/` + `lib/video_backends/`
+  - Protocol 接口定义
+  - Request/Result dataclass
+  - Registry 注册工厂
+  - `poll_with_retry()` 异步轮询
+
+---
+
+## 十二、Live 2D 工厂（面向 COSER）
+
+### 12.1 概述
+
+**Live 2D 工厂**是 YLCraft 的第 4 大核心功能模块，目标用户为 **COSER 群体**。
+提供从立绘到可驱动 Live 2D 模型的全自动生产线。
+
+### 12.2 技术方案（Live 2D 全自动生产线 4.0）
+
+| 环节 | 技术方案 | 说明 |
+|------|---------|------|
+| 立绘生成 | image2 | AI 生成立绘素材，效果优化 |
+| 拆分 | seethrough | 改进窗口批量版，自动拆分图层 |
+| 网格加身体绑骨 | stretchystudio（改进版） | 自动左右分割；参数经 py 插件自动转化为 vts 兼容格式 |
+| 五官绑骨 | 基于 stretchystudio 二次开发 | 实现五官运动（**开发中**）|
+| 最终建模 | cmo3 → moc3 转化软件（自研完成）| cmo3 转化为 vts 通用模型格式 |
+
+### 12.3 开发状态
+
+- ✅ 立绘生成（image2）
+- ✅ 图层拆分（seethrough 批量版）
+- ✅ 身体绑骨（stretchystudio 改进版 + py 插件 vts 兼容转化）
+- 🚧 五官绑骨（二次开发中）
+- ✅ 最终建模（cmo3→moc3 自研完成，vts 通用格式输出）
 
 ---
 
