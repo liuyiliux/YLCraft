@@ -56,6 +56,14 @@ class InMemoryTaskQueue:
         task = Task(task_id=task_id, task_type=task_type, payload=payload, max_retries=max_retries)
         async with self._lock:
             self._tasks[task_id] = task
+
+        # WebSocket 实时推送新任务创建
+        try:
+            from app.core.ws_manager import push_task_created
+            await push_task_created(task_id=task_id, task_type=task_type, payload=payload)
+        except Exception:
+            pass
+
         return task
 
     async def get_task(self, task_id: str) -> Task | None:
@@ -72,9 +80,36 @@ class InMemoryTaskQueue:
                     task.status = TaskStatus.RUNNING
                     task.started_at = time.time()
 
+        # WebSocket 实时推送进度
+        try:
+            from app.core.ws_manager import push_task_progress
+            t = self._tasks.get(task_id)
+            await push_task_progress(
+                task_id=task_id,
+                progress=progress,
+                message=message,
+                task_type=t.task_type if t else "",
+                status=t.status.value if t and hasattr(t.status, "value") else "",
+            )
+        except Exception:
+            pass  # WS 推送失败不影响主流程
+
     async def update_task(self, task: Task) -> None:
         async with self._lock:
             self._tasks[task.task_id] = task
+
+        # WebSocket 实时推送任务状态变更
+        try:
+            from app.core.ws_manager import push_task_progress
+            await push_task_progress(
+                task_id=task.task_id,
+                progress=task.progress,
+                message=task.progress_message,
+                task_type=task.task_type,
+                status=task.status.value if hasattr(task.status, "value") else str(task.status),
+            )
+        except Exception:
+            pass
 
 
 # 全局单例

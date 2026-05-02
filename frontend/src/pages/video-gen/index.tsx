@@ -9,7 +9,9 @@
  * - 视频下载 / 入库
  */
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useWebSocket, WSTaskProgress } from '../../hooks/useWebSocket'
 import {
   Card,
   Row,
@@ -65,6 +67,8 @@ interface GeneratedVideo {
   status: 'pending' | 'processing' | 'done' | 'error'
   progress: number
   duration: number
+  aspect_ratio?: string
+  resolution?: string
   seed?: number
   created_at: string
   error?: string
@@ -77,6 +81,7 @@ interface BackendInfo {
 }
 
 export default function VideoGenPage() {
+  const navigate = useNavigate()
   // 生成模式
   const [mode, setMode] = useState<'text2video' | 'img2video'>('text2video')
 
@@ -126,8 +131,60 @@ export default function VideoGenPage() {
       .catch(() => message.error('加载后端列表失败'))
   }, [])
 
-  // 轮询任务状态
+  // WebSocket 实时进度推送
+  const handleWSProgress = useCallback((data: WSTaskProgress) => {
+    setGeneratedVideos(prev =>
+      prev.map(v =>
+        v.task_id === data.task_id
+          ? { ...v, status: data.status as any, progress: data.progress, error: data.status === 'failed' ? data.message : v.error }
+          : v
+      )
+    )
+  }, [])
+
+  const handleWSComplete = useCallback((data: WSTaskProgress) => {
+    setGeneratedVideos(prev =>
+      prev.map(v =>
+        v.task_id === data.task_id
+          ? { ...v, status: 'done', progress: 100 }
+          : v
+      )
+    )
+    message.success(
+      <span>
+        视频生成完成，<a onClick={() => navigate('/assets')}>查看资产库</a>
+      </span>,
+      5
+    )
+  }, [navigate])
+
+  const handleWSFailed = useCallback((data: WSTaskProgress) => {
+    setGeneratedVideos(prev =>
+      prev.map(v =>
+        v.task_id === data.task_id
+          ? { ...v, status: 'error', error: data.message }
+          : v
+      )
+    )
+    message.error(`任务失败: ${data.message}`)
+  }, [])
+
+  // 订阅当前生成中的任务
+  const activeTaskIds = generatedVideos
+    .filter(v => v.status === 'pending' || v.status === 'processing')
+    .map(v => v.task_id)
+    .filter(Boolean)
+
+  const { isConnected } = useWebSocket({
+    taskIds: activeTaskIds,
+    onProgress: handleWSProgress,
+    onComplete: handleWSComplete,
+    onFailed: handleWSFailed,
+  })
+
+  // WebSocket 降级轮询（WS 断开时启用）
   useEffect(() => {
+    if (isConnected) return // WS 正常则不轮询
     const processingTasks = generatedVideos.filter(
       v => v.status === 'pending' || v.status === 'processing'
     )
@@ -138,7 +195,6 @@ export default function VideoGenPage() {
         try {
           const res = await fetch(`/api/v1/videos/tasks/${task.task_id}?provider=${task.provider}`)
           const data = await res.json()
-
           if (data.success) {
             setGeneratedVideos(prev =>
               prev.map(v =>
@@ -152,10 +208,10 @@ export default function VideoGenPage() {
           console.error('Poll task failed:', e)
         }
       }
-    }, 5000) // 每 5 秒轮询
+    }, 5000)
 
     return () => clearInterval(interval)
-  }, [generatedVideos])
+  }, [generatedVideos, isConnected])
 
   // 生成视频
   const handleGenerate = async () => {
@@ -209,7 +265,12 @@ export default function VideoGenPage() {
         setGeneratedVideos(prev => [newVideo, ...prev])
 
         if (newVideo.status === 'done') {
-          message.success('视频生成成功')
+          message.success(
+            <span>
+              视频生成成功，<a onClick={() => navigate('/assets')}>查看资产库</a>
+            </span>,
+            5
+          )
         } else {
           message.info('任务已提交，正在生成中...')
         }

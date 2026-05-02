@@ -3,6 +3,7 @@
  */
 
 import { useState, useCallback, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Card, Row, Col, Input, Select, Button, Tag, Typography, Spin,
   message, Space, Modal, Tooltip, Badge, Avatar, Segmented, Empty,
@@ -12,7 +13,7 @@ import {
 import {
   UserOutlined, StarOutlined, StarFilled, LockOutlined,
   DeleteOutlined, EditOutlined, PlusOutlined, SearchOutlined,
-  HeartOutlined, RobotOutlined, PictureOutlined, TeamOutlined,
+  HeartOutlined, RobotOutlined, PictureOutlined, TeamOutlined, ReadOutlined,
 } from '@ant-design/icons'
 
 const { Title, Text, Paragraph } = Typography
@@ -189,6 +190,7 @@ export function getAllCharacterTags() {
 }
 
 export default function CharactersPage() {
+  const navigate = useNavigate()
   const [characters, setCharacters] = useState<Character[]>([])
   const [loading, setLoading] = useState(false)
   const [total, setTotal] = useState(0)
@@ -503,6 +505,7 @@ export default function CharactersPage() {
               <Divider style={{ borderColor: 'rgba(255,255,255,0.08)' }} />
               <Space wrap>
                 <Button icon={<EditOutlined />} onClick={() => { setEditingCharacter(selectedCharacter); setForm({ name: selectedCharacter.name, role: selectedCharacter.role, source_types: selectedCharacter.source_types, appearance: selectedCharacter.appearance, personality: selectedCharacter.personality, costume_hint: selectedCharacter.costume_hint, background: selectedCharacter.background, age_range: selectedCharacter.age_range, tags: selectedCharacter.tags, portrait_url: selectedCharacter.portrait_url }); setDrawerOpen(false); setFormModalOpen(true) }}>编辑</Button>
+                <Button icon={<ReadOutlined />} onClick={() => navigate(`/story?character_id=${selectedCharacter.id}`)}>在 Story Maker 中使用</Button>
                 <Button icon={selectedCharacter.is_favorite ? <StarFilled style={{ color: '#f59e0b' }} /> : <StarOutlined />} onClick={() => handleFavorite(selectedCharacter)}>{selectedCharacter.is_favorite ? '取消收藏' : '收藏'}</Button>
                 <Popconfirm title="确认删除此角色？" onConfirm={() => handleDelete(selectedCharacter)} okText="删除" cancelText="取消" okButtonProps={{ danger: true }}>
                   <Button danger icon={<DeleteOutlined />}>删除</Button>

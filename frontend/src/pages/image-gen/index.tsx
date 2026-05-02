@@ -10,6 +10,7 @@
  */
 
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Card,
   Row,
@@ -65,6 +66,7 @@ interface BackendInfo {
 }
 
 export default function ImageGenPage() {
+  const navigate = useNavigate()
   // 生成模式
   const [mode, setMode] = useState<'text2img' | 'img2img'>('text2img')
 
@@ -158,7 +160,13 @@ export default function ImageGenPage() {
         })
 
         setGeneratedImages(prev => [...newImages, ...prev])
-        message.success(`成功生成 ${newImages.length} 张图片`)
+        message.success(
+            <span>
+              成功生成 {newImages.length} 张图片，
+              <a onClick={() => navigate('/assets')}>查看资产库</a>
+            </span>,
+            5
+          )
       } else {
         message.error(data.error || '生成失败')
       }

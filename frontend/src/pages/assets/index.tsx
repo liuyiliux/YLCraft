@@ -10,6 +10,7 @@
  */
 
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Card,
   Row,
@@ -33,12 +34,15 @@ import {
   DeleteOutlined,
   DownloadOutlined,
   TagOutlined,
+  ThunderboltOutlined,
+  VideoCameraOutlined,
 } from '@ant-design/icons'
 import { listAssets, deleteAsset, getTags, createTag } from '../../api'
 
 const { Search } = Input
 
 export default function AssetsPage() {
+  const navigate = useNavigate()
   const [assets, setAssets] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [total, setTotal] = useState(0)
@@ -157,6 +161,22 @@ export default function AssetsPage() {
               />
               <Button icon={<ReloadOutlined />} onClick={loadAssets}>
                 刷新
+              </Button>
+              <Button 
+                type="primary" 
+                icon={<ThunderboltOutlined />} 
+                onClick={() => navigate('/image-gen')}
+                style={{ marginLeft: 8 }}
+              >
+                图像生成
+              </Button>
+              <Button 
+                type="primary" 
+                icon={<VideoCameraOutlined />} 
+                onClick={() => navigate('/video-gen')}
+                style={{ marginLeft: 8 }}
+              >
+                视频生成
               </Button>
             </Space>
           </Col>

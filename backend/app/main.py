@@ -236,4 +236,11 @@ def _register_routes():
     except Exception as e:
         logger.warning(f"Could not load clip_ops router: {e}")
 
+    # WebSocket 实时推送路由
+    try:
+        from app.api.v1 import ws
+        app.include_router(ws.router, prefix="/api/v1/ws", tags=["WebSocket"])
+    except Exception as e:
+        logger.warning(f"Could not load ws router: {e}")
+
 _register_routes()
