@@ -52,6 +52,7 @@ import {
   FireOutlined,
 } from '@ant-design/icons'
 import type { UploadFile } from 'antd/es/upload/interface'
+import { useTheme } from '../../constants/theme'
 
 const { TextArea } = Input
 const { Dragger } = Upload
@@ -77,10 +78,12 @@ interface GeneratedVideo {
 interface BackendInfo {
   name: string
   model: string
+  available_models: string[]
   capabilities: string[]
 }
 
 export default function VideoGenPage() {
+  const { theme: THEME } = useTheme()
   const navigate = useNavigate()
   // 生成模式
   const [mode, setMode] = useState<'text2video' | 'img2video'>('text2video')
@@ -92,6 +95,7 @@ export default function VideoGenPage() {
 
   // 参数
   const [provider, setProvider] = useState<string>()
+  const [selectedModel, setSelectedModel] = useState<string>()
   const [duration, setDuration] = useState(5)
   const [aspectRatio, setAspectRatio] = useState('9:16')
   const [resolution, setResolution] = useState('720p')
@@ -126,10 +130,24 @@ export default function VideoGenPage() {
           setBackends(data.backends)
           setDefaultBackend(data.default)
           setProvider(data.default)
+          // 设置默认模型的第一个
+          const defaultBackend = data.backends.find((b: BackendInfo) => b.name === data.default)
+          if (defaultBackend?.available_models?.length > 0) {
+            setSelectedModel(defaultBackend.available_models[0])
+          }
         }
       })
       .catch(() => message.error('加载后端列表失败'))
   }, [])
+
+  // Provider 切换时重置模型选择
+  const handleProviderChange = (newProvider: string) => {
+    setProvider(newProvider)
+    const backend = backends.find(b => b.name === newProvider)
+    if (backend?.available_models?.length > 0) {
+      setSelectedModel(backend.available_models[0])
+    }
+  }
 
   // WebSocket 实时进度推送
   const handleWSProgress = useCallback((data: WSTaskProgress) => {
@@ -229,6 +247,7 @@ export default function VideoGenPage() {
         resolution,
         aspect_ratio: aspectRatio,
         provider,
+        model: selectedModel,  // 动态选择模型
         seed,
         generate_audio: generateAudio,
       }
@@ -381,7 +400,7 @@ export default function VideoGenPage() {
                     <InboxOutlined style={{ color: '#ec4899' }} />
                   </p>
                   <p style={{ color: '#8b8ba8' }}>点击或拖拽上传首帧图片</p>
-                  <p style={{ color: '#666', fontSize: 12 }}>视频将从这张图片开始生成</p>
+                  <p style={{ color: THEME.textSecondary, fontSize: 12 }}>视频将从这张图片开始生成</p>
                 </Dragger>
               </div>
             )}
@@ -408,13 +427,42 @@ export default function VideoGenPage() {
                   </div>
                   <Select
                     value={provider}
-                    onChange={setProvider}
+                    onChange={handleProviderChange}
                     style={{ width: '100%' }}
                     options={backends.map(b => ({
-                      label: `${b.name} (${b.model})`,
+                      label: b.name,
                       value: b.name,
                     }))}
                   />
+                </Col>
+                <Col span={12}>
+                  <div style={{ marginBottom: 4, fontSize: 12, color: '#8b8ba8' }}>
+                    模型
+                  </div>
+                  {(() => {
+                    const currentBackend = backends.find(b => b.name === provider)
+                    const models = currentBackend?.available_models || [currentBackend?.model].filter(Boolean)
+                    if (models.length > 1) {
+                      return (
+                        <Select
+                          value={selectedModel}
+                          onChange={setSelectedModel}
+                          style={{ width: '100%' }}
+                          options={models.map((m: string) => ({
+                            label: m,
+                            value: m,
+                          }))}
+                        />
+                      )
+                    }
+                    return (
+                      <Input
+                        value={selectedModel || currentBackend?.model || ''}
+                        disabled
+                        style={{ background: '#1e1e2e', border: '1px solid #333', color: '#e2e8f0' }}
+                      />
+                    )
+                  })()}
                 </Col>
                 <Col span={12}>
                   <div style={{ marginBottom: 4, fontSize: 12, color: '#8b8ba8' }}>

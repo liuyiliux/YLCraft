@@ -80,6 +80,15 @@ class ImageGenerationRequest:
     model: str = ""
     provider: str = ""
     reference_images: list[str] = field(default_factory=list)
+    # ComfyUI 扩展参数
+    source_image: str = ""  # 图生图的源图片路径
+    steps: int = 20  # 采样步数
+    cfg_scale: float = 7.0  # CFG Scale
+    batch_size: int = 1  # 批量大小
+    sampler: str = "euler"  # 采样器
+    lora: str = ""  # LoRA 模型
+    controlnet: str = ""  # ControlNet 模型
+    prompt_id: str = ""  # 任务 ID（用于 WebSocket 追踪）
 
 
 @dataclass
@@ -89,12 +98,18 @@ class ImageGenerationResult:
     image_path: Path | None = None
     url: str | None = None
     urls: list[str] | None = None
+    local_path: str | None = None  # 本地存储路径
+    all_local_paths: list[str] | None = None  # 所有本地路径（批量）
+    task_id: str = ""  # 任务 ID
+    prompt_id: str = ""  # ComfyUI prompt ID
     cost: float = 0.0
     latency_ms: float = 0.0
     provider: str = ""
     model: str = ""
     seed: int | None = None
     usage_tokens: int | None = None
+    status: str = "pending"  # pending | processing | done | error
+    progress: float = 0.0  # 0.0 - 1.0
     error: str | None = None
 
 

@@ -44,6 +44,7 @@ import {
   InboxOutlined,
 } from '@ant-design/icons'
 import type { UploadFile } from 'antd/es/upload/interface'
+import { useTheme } from '../../constants/theme'
 
 const { TextArea } = Input
 const { Dragger } = Upload
@@ -62,10 +63,12 @@ interface GeneratedImage {
 interface BackendInfo {
   name: string
   model: string
+  available_models: string[]
   capabilities: string[]
 }
 
 export default function ImageGenPage() {
+  const { theme: THEME } = useTheme()
   const navigate = useNavigate()
   // 生成模式
   const [mode, setMode] = useState<'text2img' | 'img2img'>('text2img')
@@ -77,6 +80,7 @@ export default function ImageGenPage() {
 
   // 参数
   const [provider, setProvider] = useState<string>()
+  const [selectedModel, setSelectedModel] = useState<string>()  // 动态模型选择
   const [size, setSize] = useState('1024x1024')
   const [batchCount, setBatchCount] = useState(1)
   const [seed, setSeed] = useState<number>()
@@ -102,10 +106,24 @@ export default function ImageGenPage() {
           setBackends(data.backends)
           setDefaultBackend(data.default)
           setProvider(data.default)
+          // 默认使用后端的默认模型
+          const defaultBackend = data.backends.find((b: BackendInfo) => b.name === data.default)
+          if (defaultBackend) {
+            setSelectedModel(defaultBackend.model)
+          }
         }
       })
       .catch(() => message.error('加载后端列表失败'))
   }, [])
+
+  // Provider 切换时，重置模型选择
+  const handleProviderChange = (newProvider: string) => {
+    setProvider(newProvider)
+    const backend = backends.find(b => b.name === newProvider)
+    if (backend) {
+      setSelectedModel(backend.model)  // 重置为该 Provider 的默认模型
+    }
+  }
 
   // 生成图片
   const handleGenerate = async () => {
@@ -123,6 +141,7 @@ export default function ImageGenPage() {
         negative_prompt: negativePrompt || undefined,
         size,
         provider,
+        model: selectedModel,  // 动态指定模型
         n: batchCount,
         seed,
       }
@@ -272,7 +291,7 @@ export default function ImageGenPage() {
                     <InboxOutlined style={{ color: '#7c3aed' }} />
                   </p>
                   <p style={{ color: '#8b8ba8' }}>点击或拖拽上传参考图片</p>
-                  <p style={{ color: '#666', fontSize: 12 }}>支持 1-3 张参考图</p>
+                  <p style={{ color: '#8b8ba8', fontSize: 12 }}>支持 1-3 张参考图</p>
                 </Dragger>
               </div>
             )}
@@ -299,13 +318,46 @@ export default function ImageGenPage() {
                   </div>
                   <Select
                     value={provider}
-                    onChange={setProvider}
+                    onChange={handleProviderChange}
                     style={{ width: '100%' }}
                     options={backends.map(b => ({
-                      label: `${b.name} (${b.model})`,
+                      label: b.name,
                       value: b.name,
                     }))}
                   />
+                </Col>
+                <Col span={12}>
+                  <div style={{ marginBottom: 4, fontSize: 12, color: '#8b8ba8' }}>
+                    模型{selectedModel && backends.find(b => b.name === provider)?.available_models.length > 0 && '（动态选择控制花费）'}
+                  </div>
+                  {(() => {
+                    const currentBackend = backends.find(b => b.name === provider)
+                    const models = currentBackend?.available_models || []
+                    if (models.length > 1) {
+                      // 有多个模型可用，显示下拉选择
+                      return (
+                        <Select
+                          value={selectedModel}
+                          onChange={setSelectedModel}
+                          style={{ width: '100%' }}
+                          options={models.map(m => ({
+                            label: m,
+                            value: m,
+                          }))}
+                        />
+                      )
+                    } else {
+                      // 只有一个或没有模型，显示输入框
+                      return (
+                        <Input
+                          value={selectedModel}
+                          onChange={e => setSelectedModel(e.target.value)}
+                          placeholder={currentBackend?.model || '输入模型名称'}
+                          style={{ background: '#1e1e2e', border: '1px solid #333', color: '#e2e8f0' }}
+                        />
+                      )
+                    }
+                  })()}
                 </Col>
                 <Col span={12}>
                   <div style={{ marginBottom: 4, fontSize: 12, color: '#8b8ba8' }}>
@@ -470,7 +522,7 @@ export default function ImageGenPage() {
                         description={
                           <Space size={4}>
                             <Tag color="blue">{img.provider}</Tag>
-                            {img.seed && <span style={{ fontSize: 11, color: '#666' }}>seed: {img.seed}</span>}
+                            {img.seed && <span style={{ fontSize: 11, color: THEME.textSecondary }}>seed: {img.seed}</span>}
                           </Space>
                         }
                       />

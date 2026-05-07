@@ -15,6 +15,7 @@ import {
   DeleteOutlined, EditOutlined, PlusOutlined, SearchOutlined,
   HeartOutlined, RobotOutlined, PictureOutlined, TeamOutlined, ReadOutlined,
 } from '@ant-design/icons'
+import { useTheme } from '../../constants/theme'
 
 const { Title, Text, Paragraph } = Typography
 const { TextArea } = Input
@@ -190,6 +191,7 @@ export function getAllCharacterTags() {
 }
 
 export default function CharactersPage() {
+  const { theme: THEME } = useTheme()
   const navigate = useNavigate()
   const [characters, setCharacters] = useState<Character[]>([])
   const [loading, setLoading] = useState(false)
@@ -406,9 +408,9 @@ export default function CharactersPage() {
                     <Avatar size={80} icon={<UserOutlined />} style={{ background: `${SOURCE_TYPE_COLORS[character.source_types[0]] || '#1890ff'}40` }} />
                   )}
                   <div style={{ position: 'absolute', top: 8, right: 8, display: 'flex', gap: 4 }}>
-                    {character.is_frozen && <Tag style={{ background: 'rgba(0,0,0,0.5)', border: 'none', color: '#f59e0b' }}><LockOutlined /> 冻结</Tag>}
+                    {character.is_frozen && <Tag style={{ background: 'rgba(245,158,11,0.15)', border: `1px solid rgba(245,158,11,0.3)`, color: '#f59e0b' }}><LockOutlined /> 冻结</Tag>}
                     <Button type="text" size="small" icon={character.is_favorite ? <StarFilled style={{ color: '#f59e0b' }} /> : <StarOutlined style={{ color: '#8b8ba8' }} />}
-                      onClick={e => { e.stopPropagation(); handleFavorite(character) }} style={{ background: 'rgba(0,0,0,0.4)', color: '#fff' }} />
+                      onClick={e => { e.stopPropagation(); handleFavorite(character) }} style={{ background: 'rgba(255,255,255,0.06)', color: 'inherit' }} />
                   </div>
                   <div style={{ position: 'absolute', bottom: 8, left: 8, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                     {character.source_types.slice(0, 2).map(st => (

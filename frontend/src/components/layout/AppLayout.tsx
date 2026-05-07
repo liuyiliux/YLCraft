@@ -1,49 +1,135 @@
 import { Layout, Menu, Drawer, Button } from 'antd'
+import type { MenuProps } from 'antd'
 import { useNavigate, useLocation, Outlet } from 'react-router-dom'
 import { useState, useEffect } from 'react'
+import { useTheme } from '../../constants/theme'
+import ThemeToggle from '../ThemeToggle'
 import {
   DashboardOutlined,
-  ExperimentOutlined,
   ScissorOutlined,
   BookOutlined,
   ThunderboltOutlined,
   SettingOutlined,
   CloudDownloadOutlined,
   FolderOpenOutlined,
-  TeamOutlined,
   PictureOutlined,
   VideoCameraOutlined,
   FireOutlined,
   MenuOutlined,
+  AppstoreOutlined,
+  FileTextOutlined,
+  CustomerServiceOutlined,
+  RobotOutlined,
+  ExperimentOutlined,
+  SearchOutlined,
+  LinkOutlined,
+  SendOutlined,
+  TeamOutlined,
+  FallOutlined,
 } from '@ant-design/icons'
 
 const { Sider, Content, Header } = Layout
 
-const menuItems = [
+// --- 公共模块（不折叠）---
+const publicItems: MenuProps['items'] = [
   { key: '/', icon: <DashboardOutlined />, label: '概览' },
-  { type: 'divider' as const },
-  { key: '/image-gen', icon: <PictureOutlined />, label: '图像生成' },
-  { key: '/video-gen', icon: <VideoCameraOutlined />, label: '视频生成' },
-  { type: 'divider' as const },
-  { key: '/breaker', icon: <ExperimentOutlined />, label: '爆款拆解' },
-  { key: '/clip-ops', icon: <ScissorOutlined />, label: '视频剪辑' },
-  { key: '/clip', icon: <ScissorOutlined />, label: 'Clip Lab' },
-  { key: '/story', icon: <BookOutlined />, label: '短剧创作' },
-  { type: 'divider' as const },
-  { key: '/download', icon: <CloudDownloadOutlined />, label: '去水印下载' },
   { key: '/assets', icon: <FolderOpenOutlined />, label: '素材库' },
-  { key: '/characters', icon: <TeamOutlined />, label: '角色管理' },
-  { type: 'divider' as const },
   { key: '/tasks', icon: <ThunderboltOutlined />, label: '任务管理' },
   { key: '/settings', icon: <SettingOutlined />, label: '设置' },
+]
+
+// --- 完整菜单（含 SubMenu 分组，可折叠）---
+const menuItems: MenuProps['items'] = [
+  ...publicItems,
+  { type: 'divider' as const },
+  // 爆款拆解（电商 / 摄影）
+  {
+    key: 'g-breaker',
+    icon: <ExperimentOutlined />,
+    label: '爆款拆解',
+    children: [
+      { key: '/breaker', label: '爆款拆解' },
+      { key: '/crawler', label: '素材采集' },
+      { key: '/download', label: '去水印下载' },
+      { key: '/platforms', label: '平台管理' },
+    ],
+  },
+  // 剪辑工具
+  {
+    key: 'g-clip',
+    icon: <ScissorOutlined />,
+    label: '剪辑工具',
+    children: [
+      { key: '/clip-ops', label: '视频剪辑' },
+      { key: '/clip', label: 'AI 剪辑' },
+      { key: '/subtitle', label: '字幕提取' },
+      { key: '/bgm', label: 'BGM 配乐' },
+    ],
+  },
+  // Story Maker（短剧）
+  {
+    key: 'g-story',
+    icon: <BookOutlined />,
+    label: '短剧创作',
+    children: [
+      { key: '/story', label: '短剧创作' },
+      { key: '/characters', label: '角色管理' },
+    ],
+  },
+  // Live 2D 工厂（COSER）
+  {
+    key: 'g-live2d',
+    icon: <AppstoreOutlined />,
+    label: 'Live 2D 工厂',
+    children: [
+      { key: '/live2d', label: 'Live 2D 工厂' },
+      { key: '/publish', label: '一键发布' },
+    ],
+  },
+  { type: 'divider' as const },
+  // AI 生成
+  {
+    key: 'g-ai',
+    icon: <PictureOutlined />,
+    label: 'AI 生成',
+    children: [
+      { key: '/image-gen', label: '图像生成' },
+      { key: '/video-gen', label: '视频生成' },
+      { key: '/comfyui', label: 'ComfyUI' },
+      { key: '/agent', label: '智能体' },
+    ],
+  },
 ]
 
 // Mobile breakpoint: < 768px
 const MOBILE_BREAKPOINT = 768
 
+// 从菜单 items 中递归查找匹配的路径 key
+function findSelectedKey(
+  items: MenuProps['items'],
+  pathname: string
+): string {
+  if (!items) return '/'
+  for (const item of items) {
+    if (!item || !('key' in item)) continue
+    const k = item.key as string
+    // 子菜单（group key 以 g- 开头或无 icon 且有 children）
+    if ('children' in item && item.children) {
+      const found = findSelectedKey(item.children, pathname)
+      if (found !== '/') return found
+    } else if (k.startsWith('/')) {
+      if (k === '/' ? pathname === '/' : pathname.startsWith(k)) {
+        return k
+      }
+    }
+  }
+  return '/'
+}
+
 export default function AppLayout() {
   const navigate = useNavigate()
   const location = useLocation()
+  const { theme: THEME, themeId } = useTheme()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(window.innerWidth < MOBILE_BREAKPOINT)
 
@@ -57,28 +143,25 @@ export default function AppLayout() {
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
-  const selectedKey = menuItems
-    .filter(item => item.key && item.key.startsWith('/'))
-    .find(item =>
-      location.pathname === item.key ||
-      (item.key !== '/' && location.pathname.startsWith(item.key))
-    )?.key || '/'
+  const selectedKey = findSelectedKey(menuItems, location.pathname)
 
-  const handleMenuClick = (key: string) => {
-    navigate(key)
-    setDrawerOpen(false)
+  const handleMenuClick: MenuProps['onClick'] = ({ key }) => {
+    if (key.startsWith('/')) {
+      navigate(key)
+      setDrawerOpen(false)
+    }
   }
 
   return (
-    <Layout style={{ minHeight: '100vh' }}>
+    <Layout style={{ minHeight: '100vh', background: THEME.bgPage }}>
       {/* Header */}
       <Header style={{
-        background: 'linear-gradient(135deg, #1a1a2e 0%, #2d2d4a 100%)',
+        background: THEME.bgCard,
         padding: isMobile ? '0 16px' : '0 24px',
         display: 'flex',
         alignItems: 'center',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-        borderBottom: '1px solid rgba(255,255,255,0.06)',
+        boxShadow: '0 1px 4px rgba(0,0,0,0.4)',
+        borderBottom: `1px solid ${THEME.border}`,
         position: 'sticky',
         top: 0,
         zIndex: 100,
@@ -88,32 +171,33 @@ export default function AppLayout() {
         {isMobile && (
           <Button
             type="text"
-            icon={<MenuOutlined style={{ color: '#fff', fontSize: 18 }} />}
+            icon={<MenuOutlined style={{ color: THEME.textPrimary, fontSize: 18 }} />}
             onClick={() => setDrawerOpen(true)}
             style={{ marginRight: 12, flexShrink: 0 }}
           />
         )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <FireOutlined style={{ fontSize: isMobile ? 20 : 24, color: '#ec4899' }} />
+          <FireOutlined style={{ fontSize: isMobile ? 20 : 24, color: THEME.coser }} />
           <span style={{
             fontSize: isMobile ? 16 : 20,
             fontWeight: 700,
-            color: '#ffffff',
+            color: THEME.textPrimary,
             letterSpacing: 2,
             whiteSpace: 'nowrap',
           }}>
-            YL<span style={{ color: '#00d4ff' }}>Craft</span>
+            YL<span style={{ color: THEME.primary }}>Craft</span>
           </span>
           {!isMobile && (
-            <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, marginLeft: 8 }}>
+            <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, marginLeft: 8 }}>
               AI 视频创作平台
             </span>
           )}
         </div>
         {!isMobile && (
           <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 16 }}>
-            <a href="/docs" style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13 }}>文档</a>
-            <a href="/api" style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13 }}>API</a>
+            <ThemeToggle />
+            <a href="/docs" style={{ color: THEME.textSecondary, fontSize: 13 }}>文档</a>
+            <a href="/api" style={{ color: THEME.textSecondary, fontSize: 13 }}>API</a>
           </div>
         )}
       </Header>
@@ -124,8 +208,8 @@ export default function AppLayout() {
           <Sider
             width={220}
             style={{
-              background: '#1a1a2e',
-              borderRight: '1px solid rgba(255,255,255,0.06)',
+              background: THEME.bgCard,
+              borderRight: `1px solid ${THEME.border}`,
               height: 'calc(100vh - 64px)',
               position: 'sticky',
               top: 64,
@@ -134,21 +218,22 @@ export default function AppLayout() {
           >
             <Menu
               mode="inline"
-              theme="dark"
+              theme={themeId === 'dawn' ? 'light' : 'dark'}
               selectedKeys={[selectedKey]}
               items={menuItems}
-              onClick={({ key }) => navigate(key)}
+              onClick={handleMenuClick}
               style={{
-                background: 'transparent',
+                background: THEME.bgCard,
                 border: 'none',
                 marginTop: 8,
               }}
+              className="app-sider-menu"
             />
           </Sider>
 
           <Content style={{
-            padding: isMobile ? 12 : 24,
-            background: 'linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 100%)',
+            padding: 24,
+            background: THEME.bgPage,
             minHeight: 'calc(100vh - 64px)',
             overflow: 'auto',
           }}>
@@ -161,7 +246,7 @@ export default function AppLayout() {
       {isMobile && (
         <Content style={{
           padding: 12,
-          background: 'linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 100%)',
+          background: THEME.bgPage,
           minHeight: 'calc(100vh - 52px)',
           overflow: 'auto',
         }}>
@@ -173,9 +258,9 @@ export default function AppLayout() {
       <Drawer
         title={
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <FireOutlined style={{ fontSize: 20, color: '#ec4899' }} />
-            <span style={{ fontSize: 18, fontWeight: 700, color: '#fff', letterSpacing: 2 }}>
-              YL<span style={{ color: '#00d4ff' }}>Craft</span>
+            <FireOutlined style={{ fontSize: 20, color: THEME.coser }} />
+            <span style={{ fontSize: 18, fontWeight: 700, color: THEME.textPrimary, letterSpacing: 2 }}>
+              YL<span style={{ color: THEME.primary }}>Craft</span>
             </span>
           </div>
         }
@@ -184,19 +269,19 @@ export default function AppLayout() {
         open={drawerOpen}
         width={260}
         styles={{
-          body: { padding: 0, background: '#1a1a2e' },
+          body: { padding: 0, background: THEME.bgCard },
           header: {
-            background: 'linear-gradient(135deg, #1a1a2e 0%, #2d2d4a 100%)',
-            borderBottom: '1px solid rgba(255,255,255,0.06)',
+            background: THEME.bgCard,
+            borderBottom: `1px solid ${THEME.border}`,
           },
         }}
       >
         <Menu
           mode="inline"
-          theme="dark"
+          theme={themeId === 'dawn' ? 'light' : 'dark'}
           selectedKeys={[selectedKey]}
           items={menuItems}
-          onClick={({ key }) => handleMenuClick(key)}
+          onClick={handleMenuClick}
           style={{
             background: 'transparent',
             border: 'none',

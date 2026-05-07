@@ -9,6 +9,8 @@
  * - 批量操作
  */
 
+import { useTheme } from '../../constants/theme'
+
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -43,6 +45,7 @@ const { Search } = Input
 
 export default function AssetsPage() {
   const navigate = useNavigate()
+  const { theme } = useTheme()
   const [assets, setAssets] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [total, setTotal] = useState(0)
@@ -201,7 +204,7 @@ export default function AssetsPage() {
                         style={{ objectFit: 'cover' }}
                       />
                     ) : (
-                      <div style={{ height: 160, background: '#2a2a4a', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8b8ba8' }}>
+                      <div style={{ height: 160, background: theme.bgElevated, display: 'flex', alignItems: 'center', justifyContent: 'center', color: theme.textSecondary }}>
                         {asset.asset_type === 'video' ? '🎬' : asset.asset_type === 'image' ? '🖼️' : '📄'}
                       </div>
                     )
@@ -217,7 +220,7 @@ export default function AssetsPage() {
                     title={<span style={{ fontSize: 13 }}>{asset.title || '无标题'}</span>}
                     description={
                       <Space direction="vertical" size={2} style={{ width: '100%' }}>
-                        <div style={{ fontSize: 12, color: '#8b8ba8' }}>
+                        <div style={{ fontSize: 12, color: theme.textSecondary }}>
                           {asset.platform} · {asset.author || '未知作者'}
                         </div>
                         <Tag color={asset.status === 'ready' ? 'green' : asset.status === 'error' ? 'red' : 'blue'}>

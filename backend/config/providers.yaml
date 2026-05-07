@@ -1,5 +1,5 @@
 # YLCraft Provider 配置
-# LLM / Image / TTS / Video 各类型 Provider 注册表
+# LLM / Image / TTS / Video / Live2D 各类型 Provider 注册表
 
 providers:
   # ========== LLM ==========
@@ -46,9 +46,54 @@ providers:
     api_key: "${DOUBAO_API_KEY}"
     default_model: "doubao-tts"
 
+  # ========== Live2D - Image Processing ==========
+  # 抠图 - Remove.bg
+  removebg:
+    media_type: image-processing
+    provider: removebg
+    model: "briaai/RMBG-1.4"
+    api_base: https://api.remove.bg/v1.0/removebg
+    api_key: "${REMOVEBG_API_KEY}"
+    default_model: "briaai/RMBG-1.4"
+
+  # 风格转换 - Replicate (SDXL)
+  replicate-sdxl:
+    media_type: image-processing
+    provider: replicate
+    model: "stability-ai/sdxl:7762fd07cf94fe5929fae8bf3b1b78ad6eb85b0b4e3afc9d5ccd6b95a85f6d2"
+    api_base: https://api.replicate.com/v1
+    api_key: "${REPLICATE_API_KEY}"
+    default_model: "stability-ai/sdxl"
+
+  # 图像分割 - Hugging Face Inference
+  huggingface-segmentation:
+    media_type: image-processing
+    provider: huggingface
+    model: "ZigBread/BiRefNet"
+    api_base: https://api-inference.huggingface.co/models
+    api_key: "${HUGGINGFACE_API_KEY}"
+    default_model: "ZigBread/BiRefNet"
+
+  # ========== ComfyUI ==========
+  comfyui-image:
+    media_type: comfyui
+    server_url: http://127.0.0.1:8188
+    workflow_dir: backend/app/services/comfyui/workflows
+    output_dir: storage/comfyui/outputs
+    provides:
+      - image
+    default_model: sd15
+    default_workflow: txt2img
+
 # 全局默认值
 defaults:
   llm: doubao-lite
   image: seedance
   video: minimax-video
   tts: doubao-tts
+  # Live2D 各环节默认 provider
+  live2d_rembg: removebg
+  live2d_style_transfer: replicate-sdxl
+  live2d_segmentation: huggingface-segmentation
+  # ComfyUI 可选为图像生成后端
+  # image: comfyui-image  # 取消注释以使用 ComfyUI 作为默认图像后端

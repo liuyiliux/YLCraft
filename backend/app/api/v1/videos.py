@@ -28,6 +28,7 @@ class VideoGenerateRequest(BaseModel):
     resolution: Optional[str] = "720p"
     aspect_ratio: Optional[str] = "9:16"
     provider: Optional[str] = None
+    model: Optional[str] = None  # 动态选择模型
     seed: Optional[int] = None
     start_image: Optional[str] = None  # 首帧图片路径
     generate_audio: Optional[bool] = True
@@ -49,6 +50,7 @@ class VideoResponse(BaseModel):
 class BackendInfo(BaseModel):
     name: str
     model: str
+    available_models: list[str] = []  # 支持的模型列表
     capabilities: list[str]
 
 
@@ -85,6 +87,7 @@ async def list_backends():
             info_list.append(BackendInfo(
                 name=b.name,
                 model=b.model,
+                available_models=getattr(b, 'available_models', [b.model]),
                 capabilities=list(b.capabilities),
             ))
 
@@ -112,6 +115,7 @@ async def generate_video(req: VideoGenerateRequest):
             resolution=req.resolution or "720p",
             aspect_ratio=req.aspect_ratio or "9:16",
             provider=req.provider or "",
+            model=req.model or "",  # 动态选择模型
             seed=req.seed,
             generate_audio=req.generate_audio or True,
             start_image=Path(req.start_image) if req.start_image else None,

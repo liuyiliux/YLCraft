@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { ConfigProvider, App as AntApp } from 'antd'
 import zhCN from 'antd/locale/zh_CN'
+import { ThemeProvider, useTheme } from './constants/theme'
 import AppLayout from './components/layout/AppLayout'
 import DashboardPage from './pages/dashboard'
 import DownloadPage from './pages/download'
@@ -14,54 +15,36 @@ import CharactersPage from './pages/characters'
 import ImageGenPage from './pages/image-gen'
 import VideoGenPage from './pages/video-gen'
 import ClipOpsPage from './pages/clip-ops'
+import Live2DPage from './pages/live2d'
+import SubtitlePage from './pages/subtitle'
+import BGMPage from './pages/bgm'
+import AgentPage from './pages/agent'
+import PlatformsPage from './pages/platforms'
+import PublishPage from './pages/publish'
+import CrawlerPage from './pages/crawler'
+import ComfyUIPage from './pages/comfyui'
 
-const theme = {
-  token: {
-    colorPrimary: '#00d4ff',
-    colorBgBase: '#f0f2f5',
-    colorBgContainer: '#ffffff',
-    colorText: '#1a1a2e',
-    colorTextSecondary: '#8b8ba8',
-    colorBorder: 'rgba(0,0,0,0.1)',
-    borderRadius: 8,
-    fontFamily: "'Inter', 'PingFang SC', 'Microsoft YaHei', sans-serif",
-  },
-  components: {
-    Layout: {
-      siderBg: '#ffffff',
-      headerBg: '#ffffff',
-      bodyBg: '#f0f2f5',
-    },
-    Menu: {
-      darkItemBg: 'transparent',
-      darkItemSelectedBg: 'rgba(0,212,255,0.12)',
-      darkItemHoverBg: 'rgba(0,0,0,0.04)',
-      darkItemColor: '#666',
-      darkItemSelectedColor: '#00d4ff',
-      itemBg: 'transparent',
-      itemSelectedBg: 'rgba(0,212,255,0.12)',
-      itemHoverBg: 'rgba(0,0,0,0.04)',
-      itemColor: '#666',
-      itemSelectedColor: '#00d4ff',
-    },
-    Card: {
-      colorBgContainer: '#ffffff',
-    },
-    Input: {
-      colorBgContainer: '#ffffff',
-      colorBorder: 'rgba(0,0,0,0.15)',
-    },
-    Button: {
-      colorPrimary: '#00d4ff',
-      colorPrimaryHover: '#00bce6',
-    },
-  },
+/** 包裹层：读取当前主题并传给 Ant Design ConfigProvider */
+function AntdThemeWrapper({ children }: { children: React.ReactNode }) {
+  const { themeDef } = useTheme()
+
+  return (
+    <ConfigProvider
+      theme={{
+        token: themeDef.antdToken,
+        components: themeDef.antdComponents,
+      }}
+      locale={zhCN}
+    >
+      <AntApp>{children}</AntApp>
+    </ConfigProvider>
+  )
 }
 
 export default function App() {
   return (
-    <ConfigProvider theme={theme} locale={zhCN}>
-      <AntApp>
+    <ThemeProvider>
+      <AntdThemeWrapper>
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<AppLayout />}>
@@ -74,14 +57,22 @@ export default function App() {
               <Route path="story" element={<StoryPage />} />
               <Route path="image-gen" element={<ImageGenPage />} />
               <Route path="video-gen" element={<VideoGenPage />} />
+              <Route path="comfyui" element={<ComfyUIPage />} />
               <Route path="clip-ops" element={<ClipOpsPage />} />
+              <Route path="live2d" element={<Live2DPage />} />
+              <Route path="subtitle" element={<SubtitlePage />} />
+              <Route path="bgm" element={<BGMPage />} />
               <Route path="tasks" element={<TasksPage />} />
+              <Route path="agent" element={<AgentPage />} />
+              <Route path="platforms" element={<PlatformsPage />} />
+              <Route path="publish" element={<PublishPage />} />
+              <Route path="crawler" element={<CrawlerPage />} />
               <Route path="settings" element={<SettingsPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>
           </Routes>
         </BrowserRouter>
-      </AntApp>
-    </ConfigProvider>
+      </AntdThemeWrapper>
+    </ThemeProvider>
   )
 }

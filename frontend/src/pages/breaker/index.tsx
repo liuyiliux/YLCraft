@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import {
   Card,
   Input,
@@ -12,6 +12,10 @@ import {
   message,
   Alert,
   Spin,
+  Image,
+  Divider,
+  Space,
+  Badge,
 } from 'antd'
 import {
   ExperimentOutlined,
@@ -19,11 +23,21 @@ import {
   CheckCircleOutlined,
   DownloadOutlined,
   ThunderboltOutlined,
+  EyeOutlined,
+  PictureOutlined,
 } from '@ant-design/icons'
-import { startBreakerTask, getBreakerTask, getBreakerResult } from '../../api'
-import type { BreakerResult, BreakerTask } from '../../types/api'
+import {
+  startBreakerTask,
+  getBreakerTask,
+  getBreakerResult,
+  previewXhsNote,
+} from '../../api'
+import type { BreakerResult, BreakerTask, XhsPreviewResponse } from '../../types/api'
 
 const { Text, Title, Paragraph } = Typography
+
+// 小红书链接检测
+const XHS_PATTERN = /xiaohongshu\.com|xhs\.cn/i
 
 export default function BreakerPage() {
   const [url, setUrl] = useState('')
@@ -33,26 +47,85 @@ export default function BreakerPage() {
   const [_taskId, setTaskId] = useState('')
   const [error, setError] = useState('')
   const [step, setStep] = useState(0)
+  // XHS 预览状态
+  const [xhsPreview, setXhsPreview] = useState<XhsPreviewResponse | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
 
+  const isXhsUrl = XHS_PATTERN.test(url)
+
+  // 预览小红书内容
+  const handlePreview = useCallback(async () => {
+    if (!url.trim()) {
+      message.warning('请输入链接')
+      return
+    }
+    const trimmed = url.trim()
+    if (!/^https?:\/\/.+/.test(trimmed)) {
+      message.warning('请输入有效的 URL 链接')
+      return
+    }
+
+    setLoading(true)
+    setError('')
+    setResult(null)
+    setTask(null)
+    setXhsPreview(null)
+    setStep(1)
+
+    try {
+      const data = await previewXhsNote(trimmed)
+      setXhsPreview(data)
+
+      if (data.success && data.analysis) {
+        // 完整分析结果（预览时已经分析好了）
+        setResult(data.analysis)
+        setStep(4)
+        setLoading(false)
+        return
+      }
+
+      if (data.success && data.parsed && !data.analysis) {
+        // 有解析结果但无 LLM 分析，提示用户
+        setStep(2)
+        setLoading(false)
+        return
+      }
+
+      // 解析失败，尝试走视频分析流程
+      message.warning('预览失败，尝试使用视频分析流程...')
+      const taskData = await startBreakerTask(trimmed)
+      setTaskId(taskData.task_id)
+      pollTask(taskData.task_id)
+    } catch (e: any) {
+      const errorMsg = e?.response?.data?.detail || '发起任务失败'
+      setError(errorMsg)
+      setLoading(false)
+      setStep(0)
+      message.error(errorMsg)
+    }
+  }, [url])
+
+  // 视频异步任务分析
   const analyze = async () => {
     if (!url.trim()) {
       message.warning('请输入链接')
       return
     }
     const trimmed = url.trim()
-    const urlPattern = /^https?:\/\/.+/
-    if (!urlPattern.test(trimmed)) {
-      message.warning('请输入有效的 URL 链接（需包含 http:// 或 https://）')
+    if (!/^https?:\/\/.+/.test(trimmed)) {
+      message.warning('请输入有效的 URL 链接')
       return
     }
+
     setLoading(true)
     setError('')
     setResult(null)
     setTask(null)
+    setXhsPreview(null)
     setStep(1)
 
     try {
-      const data = await startBreakerTask(url)
+      const data = await startBreakerTask(trimmed)
       setTaskId(data.task_id)
       pollTask(data.task_id)
     } catch (e: any) {
@@ -98,8 +171,13 @@ export default function BreakerPage() {
     }
   }
 
+  // 点击开始完整分析
+  const handleFullAnalysis = () => {
+    analyze()
+  }
+
   return (
-    <div style={{ maxWidth: 900 }}>
+    <div style={{ maxWidth: 960 }}>
       <Title level={3} style={{ color: '#fff', marginBottom: 24 }}>
         🔍 爆款拆解
         <Text style={{ color: '#8b8ba8', fontSize: 14, marginLeft: 12 }}>
@@ -114,11 +192,32 @@ export default function BreakerPage() {
             size="large"
             placeholder="粘贴抖音 / 快手 / B站 / 小红书链接..."
             value={url}
-            onChange={e => setUrl(e.target.value)}
-            onPressEnter={analyze}
+            onChange={e => {
+              setUrl(e.target.value)
+              setXhsPreview(null)
+              setStep(0)
+            }}
+            onPressEnter={isXhsUrl ? handlePreview : analyze}
             style={{ flex: 1, background: '#12122a' }}
             prefix={<ExperimentOutlined style={{ color: '#8b8ba8' }} />}
+            suffix={
+              isXhsUrl ? (
+                <Badge dot color="green" title="小红书链接">
+                  <PictureOutlined style={{ color: '#fe2c55', fontSize: 16 }} />
+                </Badge>
+              ) : null
+            }
           />
+          <Button
+            type="primary"
+            size="large"
+            icon={<EyeOutlined />}
+            onClick={handlePreview}
+            loading={loading}
+            style={{ height: 44 }}
+          >
+            预览
+          </Button>
           <Button
             type="primary"
             size="large"
@@ -132,20 +231,23 @@ export default function BreakerPage() {
         </div>
 
         <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {['抖音', '快手', 'B站', '小红书', '微信视频号'].map(p => (
-            <Tag
-              key={p}
-              style={{
-                cursor: 'pointer',
-                border: url.includes(p) ? '#00d4ff' : '1px solid rgba(255,255,255,0.15)',
-                color: url.includes(p) ? '#00d4ff' : '#8b8ba8',
-                background: url.includes(p) ? 'rgba(0,212,255,0.08)' : 'transparent',
-              }}
-              onClick={() => setUrl(`https://example.com/${p.toLowerCase()}`)}
-            >
-              {p}
-            </Tag>
-          ))}
+          {['抖音', '快手', 'B站', '小红书', '微信视频号'].map(p => {
+            const isActive = url.toLowerCase().includes(p.toLowerCase())
+            return (
+              <Tag
+                key={p}
+                style={{
+                  cursor: 'pointer',
+                  border: isActive ? '1px solid #00d4ff' : '1px solid rgba(255,255,255,0.15)',
+                  color: isActive ? '#00d4ff' : '#8b8ba8',
+                  background: isActive ? 'rgba(0,212,255,0.08)' : 'transparent',
+                }}
+                onClick={() => setUrl(`https://www.xiaohongshu.com/explore/${p.toLowerCase()}`)}
+              >
+                {p}
+              </Tag>
+            )
+          })}
         </div>
       </Card>
 
@@ -153,23 +255,20 @@ export default function BreakerPage() {
       <Steps
         current={step}
         items={[
-          { title: '输入', icon: <ExperimentOutlined /> },
-          { title: '解析中', icon: <ThunderboltOutlined /> },
-          { title: '分析文案', icon: <ExperimentOutlined /> },
-          { title: '提取分镜', icon: <ExperimentOutlined /> },
-          { title: '完成', icon: <CheckCircleOutlined /> },
+          { title: '输入' },
+          { title: '解析', description: isXhsUrl ? '解析图文' : '解析视频' },
+          { title: '预览确认' },
+          { title: 'LLM 分析', description: isXhsUrl ? '分析图文' : '分析视频' },
+          { title: '完成' },
         ]}
         style={{ marginBottom: 24 }}
       />
 
-      {/* Progress */}
-      {loading && task && (
-        <Alert
-          type="info"
-          showIcon
-          message={`处理中... ${Math.round((task.progress || 0))}%`}
-          style={{ marginBottom: 24, background: '#1a1a2e', border: '1px solid rgba(0,212,255,0.2)' }}
-        />
+      {/* Loading */}
+      {loading && (
+        <Card style={{ background: '#1a1a2e', marginBottom: 16, textAlign: 'center', border: '1px solid rgba(255,255,255,0.08)' }}>
+          <Spin size="large" tip={isXhsUrl ? '解析小红书笔记...' : '解析视频...'} />
+        </Card>
       )}
 
       {/* Error */}
@@ -180,7 +279,7 @@ export default function BreakerPage() {
           subTitle={error}
           style={{ background: '#1a1a2e', borderRadius: 12 }}
           extra={[
-            <Button type="primary" key="retry" onClick={analyze}>
+            <Button type="primary" key="retry" onClick={isXhsUrl ? handlePreview : analyze}>
               重试
             </Button>,
             <Button key="console" onClick={() => window.open('/tasks', '_blank')}>
@@ -190,9 +289,117 @@ export default function BreakerPage() {
         />
       )}
 
+      {/* XHS 预览结果（解析成功，等待确认） */}
+      {xhsPreview && xhsPreview.success && xhsPreview.parsed && !xhsPreview.analysis && !loading && step === 2 && (
+        <Card
+          title={<Text style={{ color: '#fe2c55' }}>📖 小红书笔记预览</Text>}
+          extra={
+            <Button type="primary" icon={<ThunderboltOutlined />} onClick={handleFullAnalysis}>
+              发起 LLM 分析
+            </Button>
+          }
+          style={{ background: '#1a1a2e', marginBottom: 16, border: '1px solid rgba(255,255,255,0.08)' }}
+        >
+          {/* 基本信息 */}
+          <div style={{ marginBottom: 16 }}>
+            <Title level={5} style={{ color: '#fff', marginBottom: 8 }}>{xhsPreview.parsed.title}</Title>
+            <Space>
+              <Tag color="red">小红书</Tag>
+              {xhsPreview.parsed.author && <Tag>👤 {xhsPreview.parsed.author}</Tag>}
+              {xhsPreview.parsed.likes > 0 && (
+                <Tag color="gold">❤️ {xhsPreview.parsed.likes}</Tag>
+              )}
+            </Space>
+          </div>
+
+          {/* 正文 */}
+          {xhsPreview.parsed.description && (
+            <Paragraph
+              style={{ color: '#c8c8d8', background: '#12122a', padding: 16, borderRadius: 8, marginBottom: 16 }}
+              ellipsis={{ rows: 6, expandable: true, symbol: '展开' }}
+            >
+              {xhsPreview.parsed.description}
+            </Paragraph>
+          )}
+
+          {/* 图片预览 */}
+          {xhsPreview.parsed.images && xhsPreview.parsed.images.length > 0 && (
+            <div>
+              <Text style={{ color: '#8b8ba8', marginBottom: 8, display: 'block' }}>
+                📷 图片 {xhsPreview.parsed.images.length} 张
+              </Text>
+              <Image.PreviewGroup>
+                <Space size={8} wrap>
+                  {xhsPreview.parsed.images.slice(0, 6).map((img, i) => (
+                    <Image
+                      key={i}
+                      src={img}
+                      width={120}
+                      height={120}
+                      style={{ objectFit: 'cover', borderRadius: 8 }}
+                      fallback="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+                    />
+                  ))}
+                  {xhsPreview.parsed.images.length > 6 && (
+                    <div
+                      style={{
+                        width: 120, height: 120, borderRadius: 8, background: '#12122a',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        color: '#8b8ba8', fontSize: 13,
+                      }}
+                    >
+                      +{xhsPreview.parsed.images.length - 6} 张
+                    </div>
+                  )}
+                </Space>
+              </Image.PreviewGroup>
+            </div>
+          )}
+
+          <Alert
+            type="info"
+            showIcon
+            icon={<ThunderboltOutlined />}
+            message="点击「发起 LLM 分析」开始完整拆解，或直接复制内容"
+            style={{ marginTop: 16, background: 'rgba(0,212,255,0.08)', border: '1px solid rgba(0,212,255,0.2)' }}
+          />
+        </Card>
+      )}
+
       {/* Result */}
       {result && step === 4 && (
         <div>
+          {/* XHS 解析信息叠加展示 */}
+          {xhsPreview?.parsed && (
+            <Card
+              title={<Text style={{ color: '#fe2c55' }}>📖 {xhsPreview.parsed.title}</Text>}
+              style={{ background: '#1a1a2e', marginBottom: 16, border: '1px solid rgba(255,255,255,0.08)' }}
+              extra={
+                <Space>
+                  <Tag color="red">小红书</Tag>
+                  {xhsPreview.parsed.author && <Text style={{ color: '#8b8ba8' }}>👤 {xhsPreview.parsed.author}</Text>}
+                </Space>
+              }
+            >
+              {xhsPreview.parsed.images && xhsPreview.parsed.images.length > 0 && (
+                <Image.PreviewGroup>
+                  <Space size={6} wrap>
+                    {xhsPreview.parsed.images.slice(0, 4).map((img, i) => (
+                      <Image
+                        key={i}
+                        src={img}
+                        width={80}
+                        height={80}
+                        style={{ objectFit: 'cover', borderRadius: 6 }}
+                        fallback="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+                      />
+                    ))}
+                  </Space>
+                </Image.PreviewGroup>
+              )}
+            </Card>
+          )}
+
           {/* Report */}
           <Card
             title={<Text style={{ color: '#00d4ff' }}>📊 拆解报告</Text>}
@@ -222,7 +429,7 @@ export default function BreakerPage() {
                   label: '✨ 爆款要素',
                   children: (
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      {result.report.elements.map((el, i) => (
+                      {(result.report.elements || []).map((el, i) => (
                         <Tag key={i} style={{ background: 'rgba(0,212,255,0.1)', border: '1px solid #00d4ff33', color: '#00d4ff' }}>
                           {el}
                         </Tag>
@@ -235,65 +442,69 @@ export default function BreakerPage() {
           </Card>
 
           {/* Script */}
-          <Card
-            title={<Text style={{ color: '#a855f7' }}>🎬 分镜脚本</Text>}
-            style={{ background: '#1a1a2e', marginBottom: 16, border: '1px solid rgba(255,255,255,0.08)' }}
-          >
-            <List
-              size="small"
-              dataSource={result.script}
-              renderItem={shot => (
-                <List.Item style={{ border: 'none', borderBottom: '1px solid rgba(255,255,255,0.06)', padding: '12px 0' }}>
-                  <div style={{ width: '100%' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                      <Tag color="purple">镜头 {shot.shot}</Tag>
-                      <Text style={{ color: '#8b8ba8', fontSize: 12 }}>{shot.duration}s</Text>
-                    </div>
-                    <Text style={{ color: '#e8e8f0' }}>{shot.description}</Text>
-                    {shot.dialogue && (
-                      <div style={{ marginTop: 4, color: '#f59e0b', fontSize: 13, fontStyle: 'italic' }}>
-                        💬 {shot.dialogue}
+          {result.script && result.script.length > 0 && (
+            <Card
+              title={<Text style={{ color: '#a855f7' }}>🎬 分镜脚本</Text>}
+              style={{ background: '#1a1a2e', marginBottom: 16, border: '1px solid rgba(255,255,255,0.08)' }}
+            >
+              <List
+                size="small"
+                dataSource={result.script}
+                renderItem={shot => (
+                  <List.Item style={{ border: 'none', borderBottom: '1px solid rgba(255,255,255,0.06)', padding: '12px 0' }}>
+                    <div style={{ width: '100%' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                        <Tag color="purple">镜头 {shot.shot}</Tag>
+                        <Text style={{ color: '#8b8ba8', fontSize: 12 }}>{shot.duration}s</Text>
                       </div>
-                    )}
-                  </div>
-                </List.Item>
-              )}
-            />
-          </Card>
+                      <Text style={{ color: '#e8e8f0' }}>{shot.description}</Text>
+                      {shot.dialogue && (
+                        <div style={{ marginTop: 4, color: '#f59e0b', fontSize: 13, fontStyle: 'italic' }}>
+                          💬 {shot.dialogue}
+                        </div>
+                      )}
+                    </div>
+                  </List.Item>
+                )}
+              />
+            </Card>
+          )}
 
           {/* Prompts */}
-          <Card
-            title={<Text style={{ color: '#f59e0b' }}>💡 仿写提示词</Text>}
-            style={{ background: '#1a1a2e', border: '1px solid rgba(255,255,255,0.08)' }}
-          >
-            <List
-              size="small"
-              dataSource={result.prompts}
-              renderItem={p => (
-                <List.Item style={{ border: 'none', padding: '8px 0' }}>
-                  <div style={{ width: '100%' }}>
-                    <Tag style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b33', color: '#f59e0b' }}>
-                      {p.type}
-                    </Tag>
-                    <Paragraph
-                      style={{
-                        color: '#c8c8d8',
-                        fontFamily: 'monospace',
-                        fontSize: 12,
-                        marginTop: 8,
-                        background: '#12122a',
-                        padding: 12,
-                        borderRadius: 6,
-                      }}
-                      copyable
-                    >
-                      {p.prompt}
-                    </Paragraph>
-                  </div>
-                </List.Item>
-              )}
-            />
-          </Card>
+          {result.prompts && result.prompts.length > 0 && (
+            <Card
+              title={<Text style={{ color: '#f59e0b' }}>💡 仿写提示词</Text>}
+              style={{ background: '#1a1a2e', border: '1px solid rgba(255,255,255,0.08)' }}
+            >
+              <List
+                size="small"
+                dataSource={result.prompts}
+                renderItem={p => (
+                  <List.Item style={{ border: 'none', padding: '8px 0' }}>
+                    <div style={{ width: '100%' }}>
+                      <Tag style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b33', color: '#f59e0b' }}>
+                        {p.type}
+                      </Tag>
+                      <Paragraph
+                        style={{
+                          color: '#c8c8d8',
+                          fontFamily: 'monospace',
+                          fontSize: 12,
+                          marginTop: 8,
+                          background: '#12122a',
+                          padding: 12,
+                          borderRadius: 6,
+                        }}
+                        copyable
+                      >
+                        {p.prompt}
+                      </Paragraph>
+                    </div>
+                  </List.Item>
+                )}
+              />
+            </Card>
+          )}
 
           {result.video_url && (
             <Button

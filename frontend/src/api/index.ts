@@ -155,12 +155,21 @@ export const downloadVideoWithProgress = (
     xhr.send(jsonBody)
   })
 
-// ===== Providers =====
+// ===== AI Connectors =====
 
-export const listProviders = () => request('/providers')
+export const listConnectors = () => request('/ai/connectors')
 
-export const testProviderConnection = (key: string) =>
-  request(`/providers/${key}/test`, { method: 'POST' })
+export const createConnector = (data: any) =>
+  request('/ai/connectors', { method: 'POST', body: JSON.stringify(data) })
+
+export const updateConnector = (id: string, data: any) =>
+  request(`/ai/connectors/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+
+export const deleteConnector = (id: string) =>
+  request(`/ai/connectors/${id}`, { method: 'DELETE' })
+
+export const testConnector = (id: string) =>
+  request(`/ai/connectors/${id}/test`, { method: 'POST' })
 
 // ===== LLM =====
 
@@ -181,6 +190,12 @@ export const startBreakerTask = (url: string) =>
 export const getBreakerTask = (taskId: string) => request(`/breaker/tasks/${taskId}`)
 
 export const getBreakerResult = (taskId: string) => request(`/breaker/tasks/${taskId}/result`)
+
+export const previewXhsNote = (url: string, skip_llm = false) =>
+  request('/breaker/preview', {
+    method: 'POST',
+    body: JSON.stringify({ url, skip_llm }),
+  })
 
 // ===== Tasks =====
 
@@ -208,3 +223,266 @@ export const updateSystemSettings = (data: any) =>
 
 export const testSystemConnection = (type: string, config: any) =>
   request('/admin/settings/test', { method: 'POST', body: JSON.stringify({ type, config }) })
+
+// ===== Subtitles =====
+
+export const listSubtitleStyles = () => request('/subtitles/styles')
+
+export const extractSubtitles = (data: {
+  video_path: string
+  language?: string
+  model_size?: string
+  output_format?: string
+  word_timestamps?: boolean
+  subtitle_style?: string
+}) => request('/subtitles/extract', { method: 'POST', body: JSON.stringify(data) })
+
+export const getSubtitleTask = (taskId: string) => request(`/subtitles/tasks/${taskId}`)
+
+export const listSubtitleTasks = () => request('/subtitles/tasks')
+
+export const downloadSubtitle = (subtitleId: string) =>
+  `${BASE}/subtitles/${subtitleId}/download`
+
+export const burnSubtitle = (data: {
+  video_path: string
+  subtitle_path: string
+  output_path?: string
+  style?: string
+}) => request('/subtitles/burn', { method: 'POST', body: JSON.stringify(data) })
+
+export const deleteSubtitle = (subtitleId: string) =>
+  request(`/subtitles/${subtitleId}`, { method: 'DELETE' })
+
+// ===== BGM =====
+
+export const listBGMLibrary = (params?: {
+  genre?: string
+  mood?: string
+  search?: string
+  include_unavailable?: boolean
+}) => {
+  const sp = new URLSearchParams()
+  if (params?.genre) sp.set('genre', params.genre)
+  if (params?.mood) sp.set('mood', params.mood)
+  if (params?.search) sp.set('search', params.search)
+  if (params?.include_unavailable !== undefined)
+    sp.set('include_unavailable', String(params.include_unavailable))
+  return request(`/bgm/library?${sp}`)
+}
+
+export const listBGMGenres = () => request('/bgm/genres')
+
+export const listBGMMoods = () => request('/bgm/moods')
+
+export const getBGMTrack = (trackId: string) => request(`/bgm/${trackId}`)
+
+export const getBGMFileUrl = (trackId: string) => `${BASE}/bgm/${trackId}/file`
+
+export const uploadBGM = (file: File, meta: {
+  name: string
+  artist?: string
+  genre?: string
+  mood?: string
+  bpm?: number
+}) => {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('name', meta.name)
+  if (meta.artist) form.append('artist', meta.artist)
+  if (meta.genre) form.append('genre', meta.genre)
+  if (meta.mood) form.append('mood', meta.mood)
+  if (meta.bpm !== undefined) form.append('bpm', String(meta.bpm))
+  return fetch(`${BASE}/bgm/upload`, { method: 'POST', body: form }).then(r => r.json())
+}
+
+export const mixBGM = (data: {
+  video_path: string
+  bgm_track_id: string
+  bgm_volume?: number
+  original_volume?: number
+  fade_in?: number
+  fade_out?: number
+  loop?: boolean
+  output_path?: string
+}) => request('/bgm/mix', { method: 'POST', body: JSON.stringify(data) })
+
+export const getBGMMixTask = (taskId: string) => request(`/bgm/tasks/${taskId}`)
+
+export const toggleBGMFavorite = (trackId: string) =>
+  request(`/bgm/${trackId}/favorite`, { method: 'PATCH' })
+
+export const deleteBGMTrack = (trackId: string) =>
+  request(`/bgm/${trackId}`, { method: 'DELETE' })
+
+// ===== AI 剪辑 =====
+
+/** NarratoAI Pipeline 剪辑 */
+export const startNarratoClip = (data: {
+  video_path: string
+  output_dir?: string
+  target_duration?: number
+  num_clips?: number
+  min_clip_duration?: number
+  max_clip_duration?: number
+}) => request('/clip/narrato', { method: 'POST', body: JSON.stringify(data) })
+
+/** MoE 多专家协作剪辑 */
+export const startMoeClip = (data: {
+  video_path: string
+  output_dir?: string
+  target_duration?: number
+}) => request('/clip/moe', { method: 'POST', body: JSON.stringify(data) })
+
+/** 查询 AI 剪辑任务状态（NarratoAI / MoE） */
+export const getClipTaskStatus = (taskId: string) =>
+  request(`/clip/tasks/${taskId}`)
+
+/** CutClaw Agent 剪辑 */
+export const startCutClawClip = (data: {
+  video_path: string
+  instruction?: string
+  auto_cut?: boolean
+}) => request('/clip/cutclaw', { method: 'POST', body: JSON.stringify(data) })
+
+/** 查询 CutClaw Agent 任务状态 */
+export const getCutClawTaskStatus = (taskId: string) =>
+  request(`/clip/cutclaw/${taskId}`)
+
+// ===== Agent（智能体）=====
+// Re-export from agent.ts for convenience
+export {
+  chatWithAgent,
+  agentChat,
+  listAgentSessions,
+  getAgentSession,
+  deleteAgentSession,
+  listAgentTools,
+  getAgentMemories,
+  saveAgentMemory,
+  deleteAgentMemory,
+  listAgentSkills,
+  sendToAgent,
+} from './agent'
+
+// ===== Crawler（素材采集）=====
+
+export interface CrawlerResult {
+  id: string
+  platform: string
+  title: string
+  desc: string
+  cover: string
+  video_url: string
+  author: string
+  author_id: string
+  likes: number
+  comments: number
+  shares: number
+  url: string
+  create_time: string
+  raw_data?: any
+}
+
+export interface SearchCrawlerRequest {
+  platform: string
+  keyword: string
+  max_results?: number
+}
+
+/** 获取支持的平台列表 */
+export const getCrawlerPlatforms = () => request('/crawler/platforms')
+
+/** 获取采集配置选项 */
+export const getCrawlerOptions = () => request('/crawler/options')
+
+/** 搜索视频/图文素材 */
+export const searchCrawler = (data: SearchCrawlerRequest) =>
+  request('/crawler/search', { method: 'POST', body: JSON.stringify(data) })
+
+/** 将采集结果导入到素材库 */
+export const importCrawler = (data: { results: Partial<CrawlerResult>[] }) =>
+  request('/crawler/import', { method: 'POST', body: JSON.stringify(data) })
+
+/** 查询采集任务状态（异步） */
+export const getCrawlerTask = (taskId: string) => request(`/crawler/tasks/${taskId}`)
+
+// ===== Platform Connections（平台连接器）=====
+
+export interface PlatformConnectionResponse {
+  id: string
+  platform: string
+  name: string
+  auth_type: string
+  status: string
+  description: string
+  last_used: string | null
+  last_tested: string | null
+  created_at: string
+  has_credentials: boolean
+  error_message: string | null
+}
+
+/** 获取支持的平台和认证类型 */
+export const getSupportedPlatforms = () => request('/platforms/supported')
+
+/** 列出所有平台连接 */
+export const listPlatformConnections = () => request('/platforms')
+
+/** 获取单个连接详情 */
+export const getPlatformConnection = (id: string) => request(`/platforms/${id}`)
+
+/** 创建平台连接 */
+export const createPlatformConnection = (data: {
+  platform: string
+  name: string
+  auth_type: string
+  credentials?: { [key: string]: any }
+  description?: string
+}) => request('/platforms', { method: 'POST', body: JSON.stringify(data) })
+
+/** 更新平台连接 */
+export const updatePlatformConnection = (id: string, data: {
+  name?: string
+  auth_type?: string
+  credentials?: { [key: string]: any }
+  description?: string
+  status?: string
+}) => request(`/platforms/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+
+/** 删除平台连接 */
+export const deletePlatformConnection = (id: string) =>
+  request(`/platforms/${id}`, { method: 'DELETE' })
+
+/** 测试连接有效性 */
+export const testPlatformConnection = (id: string) =>
+  request(`/platforms/${id}/test`, { method: 'POST' })
+
+/** 标记为已使用 */
+export const markPlatformConnectionUsed = (id: string) =>
+  request(`/platforms/${id}/use`, { method: 'POST' })
+
+
+/** 使用指定连接发布内容到平台 */
+  export const publishToPlatform = (connId: string, content: {
+    title: string
+    body?: string
+    content_type: 'video' | 'image' | 'text' | 'article'
+    tags?: string[]
+    media?: { file_path: string; media_type: string }[]
+  }) => request(`/platforms/${connId}/publish`, {
+    method: 'POST',
+    body: JSON.stringify(content),
+  })
+
+// ===== Story =====
+export const generateStory = (data: { topic: string; style: string; num_scenes: number }) =>
+  request('/story/generate', { method: 'POST', body: JSON.stringify(data) })
+
+export const saveStoryCharacters = (data: { story_id: string; characters: any[]; save_to_library: boolean }) =>
+  request('/story/characters', { method: 'POST', body: JSON.stringify(data) })
+
+export const generateStoryPortrait = (data: { story_id: string; character_name: string; appearance: string; costume_hint: string; style_hint: string; generate_multi_view: boolean }) =>
+  request('/story/portrait', { method: 'POST', body: JSON.stringify(data) })
+
+export const getStory = (storyId: string) => request(`/story/${storyId}`)

@@ -5,13 +5,65 @@
 // ===== Provider =====
 
 export interface Provider {
-  key: string
+  id: string
+  provider: string
+  provider_label?: string  // 提供商中文名称
   name: string
-  media_type: string
-  enabled: boolean
+  provider_type: string
   base_url?: string
-  capabilities?: string[]
+  default_model?: string
+  max_tokens?: number
+  temperature?: number
+  priority?: number
+  usage_count?: number
+  total_cost?: number
+  last_used?: string
+  is_active: boolean
+  is_default?: boolean
+  description?: string
+  // 扩展字段（用于图像/视频生成）
+  request_template?: string
+  response_config?: string
+  supported_sizes?: string[]
+  default_params?: Record<string, any>
+  support_reference_image?: boolean
+  support_multiple_reference_images?: boolean
+  reference_image_field?: string
+  has_api_key?: boolean
 }
+
+export interface ConnectorTestDebug {
+  request?: {
+    method?: string
+    url?: string
+    headers?: Record<string, string>
+    body?: unknown
+  }
+  response?: {
+    status_code?: number | null
+    headers?: Record<string, string>
+    body?: unknown
+  }
+  latency_ms?: number | null
+  exception?: string
+}
+
+export interface ConnectorTestResult {
+  success: boolean
+  message: string
+  connector_id: string
+  debug?: ConnectorTestDebug
+}
+
+// Provider 枚举值列表（用于下拉选择）
+// 注意：所有类型都使用 OpenAI 兼容 API 格式
+// generic 用于完全自定义配置（自定义 request/response）
+export const PROVIDER_OPTIONS = [
+  { value: 'openai', label: 'OpenAI' },
+  { value: 'siliconflow', label: '硅基流动' },
+  { value: 'gemini', label: 'Google Gemini' },
+  { value: 'generic', label: '通用配置' },
+]
 
 // ===== LLM =====
 
@@ -82,7 +134,31 @@ export interface BreakerShot {
   dialogue: string
 }
 
-// ===== Clip Lab =====
+// ===== XHS 小红书 =====
+
+export interface XhsNote {
+  title: string
+  description: string
+  images: string[]
+  covers: string[]
+  author: string
+  author_id: string
+  likes: number
+  note_id: string
+  source_url: string
+  cover_url: string
+}
+
+export interface XhsPreviewResponse {
+  success: boolean
+  url: string
+  platform: string
+  parsed: XhsNote | null
+  analysis: BreakerResult | null
+  message: string
+}
+
+// ===== AI 剪辑 =====
 
 export interface VideoAnalysis {
   duration_ms: number

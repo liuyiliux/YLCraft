@@ -10,7 +10,6 @@ import {
   Form,
   Select,
   Tag,
-  message,
   Typography,
   Space,
   Popconfirm,
@@ -18,7 +17,10 @@ import {
   Skeleton,
   Steps,
   InputNumber,
+  Badge,
+  ConfigProvider,
 } from 'antd'
+import { App as AntApp } from 'antd'
 import {
   SettingOutlined,
   ApiOutlined,
@@ -31,28 +33,73 @@ import {
   DeleteOutlined,
   PlayCircleOutlined,
   KeyOutlined,
+  EyeOutlined,
+  SearchOutlined,
+  CopyOutlined,
 } from '@ant-design/icons'
-import { listProviders, testProviderConnection, getSettings, updateSettings, listCookies, saveCookie, deleteCookie, testCookie } from '../../api'
-import type { Provider } from '../../types/api'
+import { listConnectors, createConnector, updateConnector, deleteConnector, testConnector, getSettings, updateSettings, listCookies, saveCookie, deleteCookie, testCookie } from '../../api'
+import type { Provider, PROVIDER_OPTIONS, ConnectorTestResult } from '../../types/api'
+import { useTheme } from '../../constants/theme'
 
 const { Title, Text } = Typography
 const { TextArea } = Input
 
+// Provider 下拉选项（简化版：全部使用 OpenAI 兼容 API）
+const PROVIDER_SELECT_OPTIONS = [
+  { value: 'openai', label: 'OpenAI' },
+  { value: 'siliconflow', label: '硅基流动 (SiliconFlow)' },
+  { value: 'gemini', label: 'Google Gemini' },
+  { value: 'generic', label: '通用配置 (Generic)' },
+]
+
+// Provider 颜色映射
+const PROVIDER_COLORS: Record<string, string> = {
+  'openai': '#10a37f',
+  'siliconflow': '#00d4aa',
+  'gemini': '#4285f4',
+  'generic': '#94a3b8',
+}
+
+const TYPE_COLORS: Record<string, string> = {
+  llm: '#00d4ff',
+  image: '#a855f7',
+  audio: '#f59e0b',
+  video: '#ef4444',
+  stt: '#10b981',
+}
+
+const TYPE_LABELS: Record<string, string> = {
+  llm: '文本',
+  image: '图像',
+  audio: '语音',
+  video: '视频',
+  stt: '识别',
+}
+
+// ==================== 组件 ====================
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState('providers')
+  const { theme: THEME } = useTheme()
+  const [activeTab, setActiveTab] = useState('models')
   const [providers, setProviders] = useState<Provider[]>([])
+  const [filteredProviders, setFilteredProviders] = useState<Provider[]>([])
   const [loading, setLoading] = useState(false)
   const [modalVisible, setModalVisible] = useState(false)
   const [editingProvider, setEditingProvider] = useState<Provider | null>(null)
+  const [viewingProvider, setViewingProvider] = useState<Provider | null>(null)
+  const [testResult, setTestResult] = useState<ConnectorTestResult | null>(null)
+  const [searchText, setSearchText] = useState('')
+  const [filterType, setFilterType] = useState<string>('all')
+  const [filterStatus, setFilterStatus] = useState<string>('all')
   const [form] = Form.useForm()
+  const { message } = AntApp.useApp()
 
   const loadProviders = async () => {
     setLoading(true)
     try {
-      const { data } = await listProviders()
-      setProviders(data.providers || [])
+      const result = await listConnectors()
+      setProviders(result.connectors || [])
     } catch {
-      message.error('加载 Provider 失败')
+      message.error('加载 AI 模型配置失败')
     } finally {
       setLoading(false)
     }
@@ -62,12 +109,45 @@ export default function SettingsPage() {
     loadProviders()
   }, [])
 
-  const handleTest = async (key: string) => {
+  // 搜索和筛选逻辑
+  useEffect(() => {
+    let filtered = [...providers]
+    
+    // 按类型筛选
+    if (filterType !== 'all') {
+      filtered = filtered.filter(p => p.provider_type === filterType)
+    }
+    
+    // 按状态筛选
+    if (filterStatus !== 'all') {
+      const isActive = filterStatus === 'active'
+      filtered = filtered.filter(p => p.is_active === isActive)
+    }
+    
+    // 按搜索文本筛选
+    if (searchText) {
+      const keyword = searchText.toLowerCase()
+      filtered = filtered.filter(p => 
+        p.name?.toLowerCase().includes(keyword) ||
+        p.id?.toLowerCase().includes(keyword) ||
+        p.provider?.toLowerCase().includes(keyword)
+      )
+    }
+    
+    setFilteredProviders(filtered)
+  }, [providers, filterType, filterStatus, searchText])
+
+  const handleTest = async (id: string) => {
     const hide = message.loading('正在测试连接...', 0)
     try {
-      await testProviderConnection(key)
+      const result = await testConnector(id) as ConnectorTestResult
       hide()
-      message.success('连接测试成功')
+      setTestResult(result)
+      if (result?.success) {
+        message.success(result.message || '连接测试成功')
+        return
+      }
+      message.error(result?.message || '连接测试失败，请检查 API Key 和网络')
     } catch (e: any) {
       hide()
       const errorMsg = e?.response?.data?.detail || '连接测试失败，请检查 API Key 和网络'
@@ -76,29 +156,127 @@ export default function SettingsPage() {
   }
 
   const handleEdit = (provider: Provider) => {
+    setViewingProvider(null)
     setEditingProvider(provider)
     form.setFieldsValue({
-      key: provider.key,
+      id: provider.id,
       name: provider.name,
-      media_type: provider.media_type,
-      enabled: provider.enabled,
+      provider: provider.provider,
+      provider_type: provider.provider_type,
+      api_key: '',
       base_url: provider.base_url || '',
+      default_model: provider.default_model || '',
+      max_tokens: provider.max_tokens || 4096,
+      temperature: provider.temperature ?? 0.7,
+      is_active: provider.is_active !== false,
+      is_default: provider.is_default || false,
+      priority: provider.priority || 0,
+      description: provider.description || '',
+      // 扩展字段
+      request_template: provider.request_template || '',
+      response_config: provider.response_config || '',
+      supported_sizes: provider.supported_sizes ? provider.supported_sizes.join(', ') : '',
+      default_params: provider.default_params ? JSON.stringify(provider.default_params) : '',
+      support_reference_image: provider.support_reference_image || false,
+      support_multiple_reference_images: provider.support_multiple_reference_images || false,
+      reference_image_field: provider.reference_image_field || 'image',
     })
     setModalVisible(true)
+  }
+
+  const handleView = (provider: Provider) => {
+    setViewingProvider(provider)
   }
 
   const handleAdd = () => {
     setEditingProvider(null)
     form.resetFields()
-    form.setFieldsValue({ enabled: true })
+    form.setFieldsValue({ is_active: true })
     setModalVisible(true)
   }
 
   const handleSave = async (values: any) => {
-    console.log('Save provider:', values)
-    message.success('保存成功')
-    setModalVisible(false)
-    loadProviders()
+    try {
+      // 处理扩展配置字段
+      const processedValues = { ...values }
+      
+      // 处理 supported_sizes（从逗号分隔字符串转为 JSON 数组）
+      if (values.supported_sizes && typeof values.supported_sizes === 'string') {
+        processedValues.supported_sizes = values.supported_sizes
+          .split(',')
+          .map((s: string) => s.trim())
+          .filter((s: string) => s.length > 0)
+      }
+      
+      // 处理 default_params（从 JSON 字符串转为对象）
+      if (values.default_params && typeof values.default_params === 'string') {
+        try {
+          processedValues.default_params = JSON.parse(values.default_params)
+        } catch {
+          // 忽略无效 JSON
+        }
+      }
+
+      if (editingProvider) {
+        // 更新现有连接器
+        await updateConnector(editingProvider.id, processedValues)
+        message.success('AI 模型更新成功')
+      } else {
+        // 创建新连接器
+        await createConnector(processedValues)
+        message.success('AI 模型创建成功')
+      }
+      setModalVisible(false)
+      loadProviders()
+    } catch (e: any) {
+      const errorMsg = e?.response?.data?.detail || e?.message || '保存失败'
+      message.error(errorMsg)
+    }
+  }
+
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteConnector(id)
+      message.success('删除成功')
+      loadProviders()
+    } catch (e: any) {
+      const errorMsg = e?.response?.data?.detail || e?.message || '删除失败'
+      message.error(errorMsg)
+    }
+  }
+
+  // 复制连接器
+  const handleDuplicate = (provider: Provider) => {
+    setEditingProvider(null)
+    form.resetFields()
+    form.setFieldsValue({
+      id: `${provider.id}-copy`,
+      name: `${provider.name} (副本)`,
+      provider: provider.provider,
+      provider_type: provider.provider_type,
+      base_url: provider.base_url || '',
+      default_model: provider.default_model || '',
+      max_tokens: provider.max_tokens || 4096,
+      temperature: provider.temperature || 0.7,
+      is_active: false, // 默认禁用
+      description: `复制自 ${provider.name}`,
+    })
+    setModalVisible(true)
+  }
+
+  // 获取提供商对应的颜色
+  const getProviderColor = (provider: string): string => {
+    return PROVIDER_COLORS[provider] || THEME.textSecondary
+  }
+
+  const stringifyDebugValue = (value: unknown): string => {
+    if (value == null) return ''
+    if (typeof value === 'string') return value
+    try {
+      return JSON.stringify(value, null, 2)
+    } catch {
+      return String(value)
+    }
   }
 
   const providerColumns = [
@@ -106,53 +284,109 @@ export default function SettingsPage() {
       title: '名称',
       dataIndex: 'name',
       key: 'name',
+      width: 280,
       render: (text: string, record: Provider) => (
-        <Space>
-          <Text style={{ color: '#fff' }}>{text}</Text>
-          <Tag style={{ background: 'rgba(255,255,255,0.06)', border: 'none', color: '#8b8ba8' }}>
-            {record.key}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'nowrap' }}>
+          <Text strong style={{ color: THEME.textPrimary, fontSize: 14 }}>{text}</Text>
+          {record.is_default && <Tag color="gold" style={{ fontSize: 10 }}>默认</Tag>}
+          <Tag style={{ background: 'rgba(255,255,255,0.06)', border: 'none', color: THEME.textSecondary, fontSize: 10 }}>
+            {record.id.slice(0, 8)}...
           </Tag>
-        </Space>
+        </div>
       ),
     },
     {
-      title: '类型',
-      dataIndex: 'media_type',
-      key: 'media_type',
-      render: (type: string) => {
-        const colors: Record<string, string> = { text: '#00d4ff', image: '#a855f7', audio: '#f59e0b', video: '#ef4444' }
+      title: '提供商',
+      dataIndex: 'provider',
+      key: 'provider',
+      width: 120,
+      render: (provider: string) => {
+        const color = getProviderColor(provider)
         return (
-          <Tag style={{ background: `${colors[type] || '#8b8ba8'}22`, border: `1px solid ${colors[type] || '#8b8ba8'}44`, color: colors[type] || '#8b8ba8' }}>
-            {type?.toUpperCase()}
+          <Tag style={{ background: `${color}22`, border: `1px solid ${color}44`, color: color }}>
+            {provider}
           </Tag>
         )
       },
     },
     {
-      title: '状态',
-      dataIndex: 'enabled',
-      key: 'enabled',
-      render: (enabled: boolean) => (
-        <Tag color={enabled ? 'success' : 'default'}>
-          {enabled ? '启用' : '禁用'}
+      title: '类型',
+      dataIndex: 'provider_type',
+      key: 'provider_type',
+      width: 100,
+      render: (type: string) => {
+        const color = TYPE_COLORS[type] || THEME.textSecondary
+        const label = TYPE_LABELS[type] || type
+        return (
+          <Tag style={{ background: `${color}22`, border: `1px solid ${color}44`, color: color }}>
+            {label}
+          </Tag>
+        )
+      },
+    },
+    {
+      title: '模型',
+      dataIndex: 'default_model',
+      key: 'default_model',
+      width: 150,
+      render: (model: string) => model ? (
+        <Tag style={{ background: 'rgba(255,255,255,0.06)', border: 'none', color: THEME.textSecondary }}>
+          {model}
         </Tag>
+      ) : <Text type="secondary" style={{ fontSize: 12 }}>未设置</Text>,
+    },
+    {
+      title: '状态',
+      key: 'status',
+      width: 100,
+      render: (_: any, record: Provider) => (
+        <Badge 
+          status={record.is_active ? 'success' : 'default'} 
+          text={<span style={{ color: record.is_active ? THEME.success : THEME.textSecondary }}>{record.is_active ? '启用' : '禁用'}</span>} 
+        />
       ),
+    },
+    {
+      title: '使用统计',
+      key: 'usage',
+      width: 180,
+      render: (_: any, record: Provider) => (
+        <div style={{ display: 'flex', gap: 12 }}>
+          <Text style={{ color: THEME.textSecondary, fontSize: 12, whiteSpace: 'nowrap' }}>使用: {record.usage_count || 0}</Text>
+          <Text style={{ color: THEME.textSecondary, fontSize: 12, whiteSpace: 'nowrap' }}>费用: ${((record.total_cost || 0)).toFixed(4)}</Text>
+        </div>
+      ),
+    },
+    {
+      title: '最后使用',
+      dataIndex: 'last_used',
+      key: 'last_used',
+      width: 140,
+      render: (time: string) => time ? (
+        <Text style={{ color: THEME.textSecondary, fontSize: 12, whiteSpace: 'nowrap' }}>{new Date(time).toLocaleDateString('zh-CN')}</Text>
+      ) : <Text type="secondary" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>从未使用</Text>,
     },
     {
       title: '操作',
       key: 'action',
+      width: 300,
+      fixed: 'right' as const,
       render: (_: any, record: Provider) => (
-        <Space>
-          <Button type="text" icon={<PlayCircleOutlined />} onClick={() => handleTest(record.key)} style={{ color: '#00d4ff' }}>
+        <Space size={0} split={<div style={{ width: 1, height: 14, background: THEME.borderLight }} />}>
+          <Button type="text" size="small" onClick={() => handleView(record)} style={{ color: THEME.textSecondary, padding: '0 8px' }}>
+            详情
+          </Button>
+          <Button type="text" size="small" onClick={() => handleDuplicate(record)} style={{ color: THEME.textSecondary, padding: '0 8px' }}>
+            复制
+          </Button>
+          <Button type="text" size="small" onClick={() => handleTest(record.id)} style={{ color: THEME.primary, padding: '0 8px' }}>
             测试
           </Button>
-          <Button type="text" icon={<EditOutlined />} onClick={() => handleEdit(record)} style={{ color: '#8b8ba8' }}>
+          <Button type="text" size="small" onClick={() => handleEdit(record)} style={{ color: THEME.textSecondary, padding: '0 8px' }}>
             编辑
           </Button>
-          <Popconfirm title="确认删除？" onConfirm={() => message.info('删除功能待实现')}>
-            <Button type="text" icon={<DeleteOutlined />} danger>
-              删除
-            </Button>
+          <Popconfirm title="确认删除？" onConfirm={() => handleDelete(record.id)}>
+            <Button type="text" size="small" danger style={{ padding: '0 8px' }}>删除</Button>
           </Popconfirm>
         </Space>
       ),
@@ -160,8 +394,8 @@ export default function SettingsPage() {
   ]
 
   return (
-    <div style={{ maxWidth: 1200 }}>
-      <Title level={3} style={{ color: '#fff', marginBottom: 24 }}>
+    <div style={{ maxWidth: 1600, margin: '0 auto', padding: '24px' }}>
+      <Title level={3} style={{ color: THEME.textPrimary, marginBottom: 16 }}>
         <SettingOutlined style={{ marginRight: 12 }} />
         系统设置
       </Title>
@@ -170,40 +404,123 @@ export default function SettingsPage() {
         activeKey={activeTab}
         onChange={setActiveTab}
         type="card"
+        size="large"
         items={[
           {
-            key: 'providers',
+            key: 'models',
             label: (
-              <span><ApiOutlined style={{ marginRight: 8 }} />Provider 管理</span>
+              <span><ApiOutlined style={{ marginRight: 8 }} />模型管理</span>
             ),
             children: (
               <Card
                 title={
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Text style={{ color: '#fff' }}>AI Provider 配置</Text>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, padding: '4px 0' }}>
                     <Space>
-                      <Button icon={<ReloadOutlined />} onClick={loadProviders} loading={loading}>刷新</Button>
-                      <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>新增 Provider</Button>
+                      <Text strong style={{ color: THEME.textPrimary }}>AI 模型配置</Text>
+                      <Badge count={filteredProviders.length} showZero={false} style={{ backgroundColor: THEME.primary }} />
+                    </Space>
+                    <Space wrap size={[8, 8]}>
+                      <Input
+                        placeholder="搜索名称、标识符..."
+                        prefix={<SearchOutlined style={{ color: THEME.textSecondary }} />}
+                        value={searchText}
+                        onChange={e => setSearchText(e.target.value)}
+                        style={{ width: 200 }}
+                        allowClear
+                        size="small"
+                      />
+                      <Select
+                        value={filterType}
+                        onChange={setFilterType}
+                        style={{ width: 110 }}
+                        size="small"
+                        options={[
+                          { value: 'all', label: '全部类型' },
+                          { value: 'llm', label: '文本' },
+                          { value: 'image', label: '图像' },
+                          { value: 'video', label: '视频' },
+                          { value: 'tts', label: '语音' },
+                        ]}
+                      />
+                      <Select
+                        value={filterStatus}
+                        onChange={setFilterStatus}
+                        style={{ width: 110 }}
+                        size="small"
+                        options={[
+                          { value: 'all', label: '全部状态' },
+                          { value: 'active', label: '已启用' },
+                          { value: 'inactive', label: '已禁用' },
+                        ]}
+                      />
+                      <Button size="small" icon={<ReloadOutlined />} onClick={loadProviders} loading={loading}>刷新</Button>
+                      <Button type="primary" size="small" icon={<PlusOutlined />} onClick={handleAdd}>新增</Button>
                     </Space>
                   </div>
                 }
-                style={{ background: '#1a1a2e', border: '1px solid rgba(255,255,255,0.08)' }}
+                style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}` }}
+                bodyStyle={{ padding: '12px 16px' }}
               >
                 <Alert
                   type="info"
                   showIcon
-                  message="Provider 是 AI 服务的接入点，支持 LLM、图像生成、TTS 等多种类型"
-                  style={{ marginBottom: 16, background: 'rgba(0,212,255,0.05)', border: '1px solid rgba(0,212,255,0.2)' }}
+                  message="模型是用户实际选择的 AI 配置项，每个模型会绑定到底层连接器、默认模型名和能力类型。"
+                  style={{ marginBottom: 12, background: 'rgba(0,212,255,0.05)', border: `1px solid rgba(0,212,255,0.2)`, fontSize: 13 }}
+                  banner
                 />
                 {loading ? (
-                  <Skeleton active paragraph={{ rows: 5 }} />
-                ) : providers.length === 0 ? (
-                  <Space direction="vertical" style={{ width: '100%', textAlign: 'center', padding: '40px 0' }}>
-                    <Text style={{ color: '#8b8ba8' }}>暂无 Provider 配置</Text>
-                    <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>新增 Provider</Button>
-                  </Space>
+                  <Skeleton active paragraph={{ rows: 3 }} />
+                ) : filteredProviders.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '40px 0' }}>
+                    <Text style={{ color: THEME.textSecondary }}>{searchText || filterType !== 'all' || filterStatus !== 'all' ? '没有匹配的模型' : '暂无 AI 模型配置'}</Text>
+                    <div style={{ marginTop: 12 }}>
+                      {(searchText || filterType !== 'all' || filterStatus !== 'all') ? (
+                        <Button type="link" onClick={() => { setSearchText(''); setFilterType('all'); setFilterStatus('all') }}>清除筛选</Button>
+                      ) : (
+                        <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>新增模型</Button>
+                      )}
+                    </div>
+                  </div>
                 ) : (
-                  <Table dataSource={providers} columns={providerColumns} rowKey="key" pagination={false} style={{ background: 'transparent' }} />
+                  <Table 
+                      dataSource={filteredProviders} 
+                      columns={providerColumns} 
+                      rowKey="id" 
+                      pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (total: number) => (`共 ${total} 个`), size: 'small' }}
+                      style={{ background: THEME.bgCard, borderRadius: 8 }}
+                      scroll={{ x: 1200 }}
+                      size="small"
+                      components={{
+                        header: {
+                          cell: (props: any) => (
+                            <th
+                              {...props}
+                              style={{
+                                background: THEME.bgElevated,
+                                color: THEME.textPrimary,
+                                borderColor: THEME.border,
+                                padding: '8px 12px',
+                                fontWeight: 600,
+                                fontSize: 13,
+                              }}
+                            />
+                          ),
+                        },
+                        body: {
+                          cell: (props: any) => (
+                            <td
+                              {...props}
+                              style={{
+                                background: THEME.bgCard,
+                                color: THEME.textPrimary,
+                                borderColor: THEME.border,
+                                padding: '8px 12px',
+                              }}
+                            />
+                          ),
+                        },
+                      }}
+                    />
                 )}
               </Card>
             ),
@@ -230,47 +547,330 @@ export default function SettingsPage() {
           },
         ]}
       />
-
+      
+      {/* 编辑/新增 Modal */}
       <Modal
-        title={editingProvider ? '编辑 Provider' : '新增 Provider'}
+        title={editingProvider ? '编辑 AI 模型' : '新增 AI 模型'}
         open={modalVisible}
         onCancel={() => setModalVisible(false)}
         onOk={() => form.submit()}
-        width={600}
+        width={760}
+        styles={{ body: { padding: '12px 24px', maxHeight: '60vh', overflowY: 'auto' } }}
       >
-        <Form form={form} layout="vertical" onFinish={handleSave} style={{ marginTop: 16 }}>
-          <Form.Item name="key" label="标识符" rules={[{ required: true, message: '请输入标识符' }]}>
-            <Input placeholder="如：openai-gpt4" disabled={!!editingProvider} />
-          </Form.Item>
-          <Form.Item name="name" label="显示名称" rules={[{ required: true, message: '请输入名称' }]}>
-            <Input placeholder="如：OpenAI GPT-4" />
-          </Form.Item>
-          <Form.Item name="media_type" label="类型" rules={[{ required: true }]}>
-            <Select options={[
-              { value: 'text', label: '文本 (LLM)' },
-              { value: 'image', label: '图像生成' },
-              { value: 'audio', label: '语音 (TTS)' },
-              { value: 'video', label: '视频生成' },
-            ]} />
-          </Form.Item>
-          <Form.Item name="api_key" label="API Key">
+        <Form form={form} layout="vertical" onFinish={handleSave} style={{ marginTop: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16' }}>
+            <Form.Item name="id" label={<span style={{ color: THEME.textPrimary }}>标识符</span>} rules={[{ required: true, message: '请输入标识符' }]}>
+              <Input placeholder="如：openai-gpt4" disabled={!!editingProvider} />
+            </Form.Item>
+            <Form.Item name="provider" label={<span style={{ color: THEME.textPrimary }}>底层服务商</span>} rules={[{ required: true, message: '请选择服务商' }]}>
+              <Select 
+                showSearch
+                optionFilterProp="label"
+                options={PROVIDER_SELECT_OPTIONS} 
+              />
+            </Form.Item>
+            <Form.Item name="name" label={<span style={{ color: THEME.textPrimary }}>显示名称</span>} rules={[{ required: true, message: '请输入名称' }]}>
+              <Input placeholder="如：OpenAI GPT-4" />
+            </Form.Item>
+            <Form.Item name="provider_type" label={<span style={{ color: THEME.textPrimary }}>类型</span>} rules={[{ required: true, message: '请选择类型' }]}>
+              <Select options={[
+                { value: 'llm', label: '文本 (LLM)' },
+                { value: 'image', label: '图像生成' },
+                { value: 'video', label: '视频生成' },
+                { value: 'tts', label: '语音合成 (TTS)' },
+                { value: 'stt', label: '语音识别 (STT)' },
+              ]} />
+            </Form.Item>
+          </div>
+          
+          <Form.Item name="api_key" label={<span style={{ color: THEME.textPrimary }}>API Key</span>}>
             <Input.Password placeholder={editingProvider ? '留空表示不修改' : '请输入 API Key'} />
           </Form.Item>
-          <Form.Item name="base_url" label="Base URL">
+          
+          <Form.Item name="base_url" label={<span style={{ color: THEME.textPrimary }}>Base URL (可选)</span>}>
             <Input placeholder="https://api.openai.com/v1" />
           </Form.Item>
-          <Form.Item name="enabled" label="启用状态" valuePropName="checked">
-            <Switch />
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0 16' }}>
+            <Form.Item name="default_model" label={<span style={{ color: THEME.textPrimary }}>默认模型</span>}>
+              <Input placeholder="gpt-4o" />
+            </Form.Item>
+            <Form.Item name="max_tokens" label={<span style={{ color: THEME.textPrimary }}>最大 Token 数</span>}>
+              <InputNumber min={1} max={200000} style={{ width: '100%' }} placeholder="4096" />
+            </Form.Item>
+            <Form.Item name="temperature" label={<span style={{ color: THEME.textPrimary }}>温度参数</span>}>
+              <InputNumber min={0} max={2} step={0.1} style={{ width: '100%' }} placeholder="0.7" />
+            </Form.Item>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16' }}>
+            <Form.Item name="monthly_budget" label={<span style={{ color: THEME.textPrimary }}>月度预算 (美元，可选)</span>}>
+              <InputNumber min={0} step={10} style={{ width: '100%' }} placeholder="如：100" />
+            </Form.Item>
+            <Form.Item name="daily_limit" label={<span style={{ color: THEME.textPrimary }}>每日请求限制 (可选)</span>}>
+              <InputNumber min={0} style={{ width: '100%' }} placeholder="如：1000" />
+            </Form.Item>
+          </div>
+
+          <Form.Item name="description" label={<span style={{ color: THEME.textPrimary }}>备注说明</span>}>
+            <TextArea rows={2} placeholder="可选：记录此连接的用途、限制等" />
           </Form.Item>
+
+          {/* 扩展配置区域（图像/视频生成专用） */}
+          <div style={{ 
+            marginTop: 16, 
+            padding: 16, 
+            background: 'rgba(168,85,247,0.05)', 
+            border: '1px solid rgba(168,85,247,0.2)', 
+            borderRadius: 8 
+          }}>
+            <Title level={5} style={{ color: '#a855f7', fontSize: 14, marginBottom: 12 }}>
+              扩展配置（图像/视频生成）
+            </Title>
+            
+            <Form.Item name="request_template" label={<span style={{ color: THEME.textPrimary }}>Request 模板 (Jinja2)</span>} style={{ marginBottom: 8 }}>
+              <TextArea 
+                rows={4} 
+                placeholder={`JSON 格式的请求模板，例如：\n{"model": "{{ model }}", "prompt": "{{ prompt }}"}`}
+              />
+            </Form.Item>
+
+            <Form.Item name="response_config" label={<span style={{ color: THEME.textPrimary }}>Response 解析配置</span>} style={{ marginBottom: 8 }}>
+              <TextArea 
+                rows={3} 
+                placeholder={`JSON 格式的响应配置，例如：\n{"images_path": "$.data[*].url", "error_path": "$.error.message"}`}
+              />
+            </Form.Item>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0 16' }}>
+              <Form.Item name="supported_sizes" label={<span style={{ color: THEME.textPrimary }}>支持的尺寸</span>} style={{ marginBottom: 8 }}>
+                <Input placeholder="如: 1024x1024, 1280x720" />
+              </Form.Item>
+              <Form.Item name="reference_image_field" label={<span style={{ color: THEME.textPrimary }}>参考图字段名</span>} style={{ marginBottom: 8 }}>
+                <Input placeholder="如: image, init_images" />
+              </Form.Item>
+              <Form.Item name="support_reference_image" label={<span style={{ color: THEME.textPrimary }}>支持参考图</span>} valuePropName="checked" style={{ marginBottom: 8 }}>
+                <Switch checkedChildren="是" unCheckedChildren="否" />
+              </Form.Item>
+            </div>
+
+            <Form.Item name="default_params" label={<span style={{ color: THEME.textPrimary }}>默认参数 (JSON)</span>} style={{ marginBottom: 0 }}>
+              <TextArea 
+                rows={2} 
+                placeholder={`JSON 格式的默认参数，例如：\n{"n": 1, "quality": "standard"}`}
+              />
+            </Form.Item>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0 16' }}>
+            <Form.Item name="is_active" label={<span style={{ color: THEME.textPrimary }}>启用状态</span>} valuePropName="checked">
+              <Switch checkedChildren="启用" unCheckedChildren="禁用" />
+            </Form.Item>
+            <Form.Item name="is_default" label={<span style={{ color: THEME.textPrimary }}>设为默认</span>} valuePropName="checked">
+              <Switch checkedChildren="是" unCheckedChildren="否" />
+            </Form.Item>
+            <Form.Item name="priority" label={<span style={{ color: THEME.textPrimary }}>优先级</span>}>
+              <InputNumber min={0} max={100} style={{ width: '100%' }} placeholder="0 = 最低优先级" />
+            </Form.Item>
+          </div>
         </Form>
       </Modal>
+
+      {/* 详情查看 Modal */}
+      {viewingProvider && (
+        <Modal
+          title="AI 模型详情"
+          open={!!viewingProvider}
+          onCancel={() => setViewingProvider(null)}
+          footer={[
+            <Button key="close" size="small" onClick={() => setViewingProvider(null)}>关闭</Button>,
+            <Button key="edit" type="primary" size="small" onClick={() => {
+              setViewingProvider(null)
+              handleEdit(viewingProvider)
+            }}>编辑</Button>,
+          ]}
+          width={650}
+        >
+          <div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 24px', marginBottom: 16 }}>
+              <div>
+                <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>标识符</Text>
+                <div style={{ color: THEME.textPrimary, marginTop: 2 }}>{viewingProvider.id}</div>
+              </div>
+              <div>
+                <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>显示名称</Text>
+                <div style={{ color: THEME.textPrimary, marginTop: 2 }}>{viewingProvider.name}</div>
+              </div>
+              <div>
+                <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>底层服务商</Text>
+                <div style={{ marginTop: 2 }}>
+                  <Tag style={{ background: `${getProviderColor(viewingProvider.provider || '')}22`, border: `1px solid ${getProviderColor(viewingProvider.provider || '')}44`, color: getProviderColor(viewingProvider.provider || '') }}>
+                    {viewingProvider.provider}
+                  </Tag>
+                </div>
+              </div>
+              <div>
+                <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>类型</Text>
+                <div style={{ marginTop: 2 }}>
+                  <Tag color={viewingProvider.provider_type === 'llm' ? 'blue' : viewingProvider.provider_type === 'image' ? 'purple' : 'default'}>
+                    {viewingProvider.provider_type}
+                  </Tag>
+                </div>
+              </div>
+            </div>
+
+            <Card size="small" style={{ background: 'rgba(255,255,255,0.03)', border: `1px solid ${THEME.border}`, marginBottom: 12 }}>
+              <Title level={5} style={{ color: THEME.textPrimary, fontSize: 13, marginBottom: 8 }}>连接配置</Title>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px' }}>
+                <div>
+                  <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>Base URL</Text>
+                  <div style={{ color: THEME.textPrimary, marginTop: 2, fontSize: 13 }}>{viewingProvider.base_url || <Text type="secondary" style={{ fontSize: 12 }}>未设置</Text>}</div>
+                </div>
+                <div>
+                  <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>默认模型</Text>
+                  <div style={{ color: THEME.textPrimary, marginTop: 2, fontSize: 13 }}>{viewingProvider.default_model || <Text type="secondary" style={{ fontSize: 12 }}>未设置</Text>}</div>
+                </div>
+                <div>
+                  <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>最大 Token 数</Text>
+                  <div style={{ color: THEME.textPrimary, marginTop: 2, fontSize: 13 }}>{viewingProvider.max_tokens || 4096}</div>
+                </div>
+                <div>
+                  <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>温度参数</Text>
+                  <div style={{ color: THEME.textPrimary, marginTop: 2, fontSize: 13 }}>{viewingProvider.temperature ?? 0.7}</div>
+                </div>
+              </div>
+            </Card>
+
+            <Card size="small" style={{ background: 'rgba(255,255,255,0.03)', border: `1px solid ${THEME.border}`, marginBottom: 12 }}>
+              <Title level={5} style={{ color: THEME.textPrimary, fontSize: 13, marginBottom: 8 }}>状态与统计</Title>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px 16px' }}>
+                <div>
+                  <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>启用状态</Text>
+                  <div style={{ marginTop: 2 }}>
+                    <Badge 
+                      status={viewingProvider.is_active ? 'success' : 'default'} 
+                      text={<span style={{ color: viewingProvider.is_active ? THEME.success : THEME.textSecondary }}>{viewingProvider.is_active ? '启用' : '禁用'}</span>} 
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>默认模型</Text>
+                  <div style={{ marginTop: 2 }}>
+                    <Tag color={viewingProvider.is_default ? 'gold' : 'default'}>{viewingProvider.is_default ? '是' : '否'}</Tag>
+                  </div>
+                </div>
+                <div>
+                  <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>优先级</Text>
+                  <div style={{ color: THEME.textPrimary, marginTop: 2, fontSize: 13 }}>{viewingProvider.priority || 0}</div>
+                </div>
+                <div>
+                  <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>使用次数</Text>
+                  <div style={{ color: THEME.textPrimary, marginTop: 2, fontSize: 13 }}>{viewingProvider.usage_count || 0}</div>
+                </div>
+                <div>
+                  <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>总费用</Text>
+                  <div style={{ color: THEME.textPrimary, marginTop: 2, fontSize: 13 }}>${(viewingProvider.total_cost || 0).toFixed(4)}</div>
+                </div>
+                <div>
+                  <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>最后使用</Text>
+                  <div style={{ color: THEME.textPrimary, marginTop: 2, fontSize: 13 }}>{viewingProvider.last_used ? new Date(viewingProvider.last_used).toLocaleString('zh-CN') : '从未使用'}</div>
+                </div>
+              </div>
+            </Card>
+
+            {viewingProvider.description && (
+              <Card size="small" style={{ background: 'rgba(255,255,255,0.03)', border: `1px solid ${THEME.border}` }}>
+                <Title level={5} style={{ color: THEME.textPrimary, fontSize: 13, marginBottom: 8 }}>备注说明</Title>
+                <Text style={{ color: THEME.textPrimary, fontSize: 13 }}>{viewingProvider.description}</Text>
+              </Card>
+            )}
+          </div>
+        </Modal>
+      )}
+
+      {testResult && (
+        <Modal
+          title="模型测试详情"
+          open={!!testResult}
+          onCancel={() => setTestResult(null)}
+          footer={[
+            <Button key="close" size="small" onClick={() => setTestResult(null)}>关闭</Button>,
+          ]}
+          width={860}
+          styles={{ body: { paddingTop: 12 } }}
+        >
+          <Alert
+            type={testResult.success ? 'success' : 'error'}
+            showIcon
+            message={testResult.success ? '本次测试已真实发出请求' : '本次测试请求已发出，但结果失败'}
+            description={testResult.message}
+            style={{ marginBottom: 16 }}
+          />
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 16 }}>
+            <Card size="small" style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}` }}>
+              <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>方法</Text>
+              <div style={{ color: THEME.textPrimary, marginTop: 4, fontWeight: 600 }}>
+                {testResult.debug?.request?.method || '-'}
+              </div>
+            </Card>
+            <Card size="small" style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}` }}>
+              <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>响应状态</Text>
+              <div style={{ color: THEME.textPrimary, marginTop: 4, fontWeight: 600 }}>
+                {testResult.debug?.response?.status_code ?? '-'}
+              </div>
+            </Card>
+            <Card size="small" style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}` }}>
+              <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>耗时</Text>
+              <div style={{ color: THEME.textPrimary, marginTop: 4, fontWeight: 600 }}>
+                {testResult.debug?.latency_ms != null ? `${testResult.debug.latency_ms} ms` : '-'}
+              </div>
+            </Card>
+          </div>
+
+          <Card size="small" title="请求 URL" style={{ marginBottom: 12, background: THEME.bgCard, border: `1px solid ${THEME.border}` }}>
+            <Text style={{ color: THEME.textPrimary, wordBreak: 'break-all' }}>
+              {testResult.debug?.request?.url || '-'}
+            </Text>
+          </Card>
+
+          <Card size="small" title="请求头" style={{ marginBottom: 12, background: THEME.bgCard, border: `1px solid ${THEME.border}` }}>
+            <TextArea
+              readOnly
+              value={stringifyDebugValue(testResult.debug?.request?.headers)}
+              autoSize={{ minRows: 4, maxRows: 10 }}
+              style={{ fontFamily: 'Consolas, Monaco, monospace' }}
+            />
+          </Card>
+
+          <Card size="small" title="请求体" style={{ marginBottom: 12, background: THEME.bgCard, border: `1px solid ${THEME.border}` }}>
+            <TextArea
+              readOnly
+              value={stringifyDebugValue(testResult.debug?.request?.body)}
+              autoSize={{ minRows: 6, maxRows: 14 }}
+              style={{ fontFamily: 'Consolas, Monaco, monospace' }}
+            />
+          </Card>
+
+          <Card size="small" title="响应体" style={{ marginBottom: 0, background: THEME.bgCard, border: `1px solid ${THEME.border}` }}>
+            <TextArea
+              readOnly
+              value={stringifyDebugValue(testResult.debug?.response?.body || testResult.debug?.exception)}
+              autoSize={{ minRows: 8, maxRows: 18 }}
+              style={{ fontFamily: 'Consolas, Monaco, monospace' }}
+            />
+          </Card>
+        </Modal>
+      )}
     </div>
   )
 }
 
 function VideoSettings() {
+  const { theme: THEME } = useTheme()
   const [form] = Form.useForm()
   const [saving, setSaving] = useState(false)
+  const { message } = AntApp.useApp()
 
   useEffect(() => {
     getSettings().then(({ data }) => {
@@ -291,10 +891,10 @@ function VideoSettings() {
   }
 
   return (
-    <Card style={{ background: '#1a1a2e', border: '1px solid rgba(255,255,255,0.08)' }}>
-      <Title level={5} style={{ color: '#fff' }}>FFmpeg 配置</Title>
+    <Card style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}` }}>
+      <Title level={5} style={{ color: THEME.textPrimary }}>FFmpeg 配置</Title>
       <Form form={form} layout="vertical" onFinish={handleSave} style={{ marginTop: 16 }}>
-        <Form.Item label="FFmpeg 路径" name="ffmpeg_path">
+        <Form.Item label={<span style={{ color: THEME.textPrimary }}>FFmpeg 路径</span>} name="ffmpeg_path">
           <Input placeholder="留空则自动检测" />
         </Form.Item>
         <Form.Item>
@@ -306,17 +906,18 @@ function VideoSettings() {
 }
 
 function TranscribeSettings() {
+  const { theme: THEME } = useTheme()
   return (
-    <Card style={{ background: '#1a1a2e', border: '1px solid rgba(255,255,255,0.08)' }}>
-      <Title level={5} style={{ color: '#fff' }}>Whisper 配置</Title>
+    <Card style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}` }}>
+      <Title level={5} style={{ color: THEME.textPrimary }}>Whisper 配置</Title>
       <Form layout="vertical" style={{ marginTop: 16 }}>
-        <Form.Item label="识别后端">
+        <Form.Item label={<span style={{ color: THEME.textPrimary }}>识别后端</span>}>
           <Select defaultValue="auto" options={[
             { value: 'auto', label: '自动选择' },
             { value: 'siliconflow', label: 'SiliconFlow API (云端)' },
           ]} style={{ width: 300 }} />
         </Form.Item>
-        <Form.Item label="默认语言">
+        <Form.Item label={<span style={{ color: THEME.textPrimary }}>默认语言</span>}>
           <Input defaultValue="zh" placeholder="zh / en / auto" />
         </Form.Item>
         <Form.Item>
@@ -328,9 +929,11 @@ function TranscribeSettings() {
 }
 
 function StorageSettings() {
+  const { theme: THEME } = useTheme()
   const [form] = Form.useForm()
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
+  const { message } = AntApp.useApp()
 
   useEffect(() => {
     getSettings()
@@ -360,20 +963,20 @@ function StorageSettings() {
   if (loading) return <Skeleton active paragraph={{ rows: 6 }} />
 
   return (
-    <Card style={{ background: '#1a1a2e', border: '1px solid rgba(255,255,255,0.08)' }}>
-      <Title level={5} style={{ color: '#fff' }}>存储配置</Title>
+    <Card style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}` }}>
+      <Title level={5} style={{ color: THEME.textPrimary }}>存储配置</Title>
       <Form form={form} layout="vertical" onFinish={handleSave} style={{ marginTop: 16 }}>
-        <Form.Item label="存储类型" name="storage_type">
+        <Form.Item label={<span style={{ color: THEME.textPrimary }}>存储类型</span>} name="storage_type">
           <Select options={[
             { value: 'local', label: '本地存储' },
             { value: 's3', label: 'AWS S3（预留）' },
             { value: 'oss', label: '阿里云 OSS（预留）' },
           ]} style={{ width: 300 }} />
         </Form.Item>
-        <Form.Item label="下载文件保存路径" name="download_path" extra="视频下载后保存的目录">
+        <Form.Item label={<span style={{ color: THEME.textPrimary }}>下载文件保存路径</span>} name="download_path" extra={<span style={{ color: THEME.textSecondary }}>视频下载后保存的目录</span>}>
           <Input placeholder="例如：F:\YLCraft-Downloads" style={{ width: 400 }} />
         </Form.Item>
-        <Form.Item label="素材库存储路径" name="media_storage_path" extra="图片、视频等素材的存储目录">
+        <Form.Item label={<span style={{ color: THEME.textPrimary }}>素材库存储路径</span>} name="media_storage_path" extra={<span style={{ color: THEME.textSecondary }}>图片、视频等素材的存储目录</span>}>
           <Input placeholder="例如：F:\YLCraft-Media" style={{ width: 400 }} />
         </Form.Item>
         <Form.Item>
@@ -385,6 +988,7 @@ function StorageSettings() {
 }
 
 function CookieSettings() {
+  const { theme: THEME } = useTheme()
   const [activePlatform, setActivePlatform] = useState<string>('douyin')
   const [cookieData, setCookieData] = useState<Record<string, any>>({})
   const [rawInput, setRawInput] = useState('')
@@ -393,6 +997,7 @@ function CookieSettings() {
   const [testMsg, setTestMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [loading, setLoading] = useState(true)
   const [deleting, setDeleting] = useState(false)
+  const { message } = AntApp.useApp()
 
   const platforms: Record<string, { name: string; color: string; steps: string[] }> = {
     douyin: {
@@ -504,35 +1109,35 @@ function CookieSettings() {
               style={{
                 cursor: 'pointer',
                 background: activePlatform === key ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.03)',
-                border: activePlatform === key ? `1px solid ${p.color}` : '1px solid rgba(255,255,255,0.08)',
+                border: activePlatform === key ? `1px solid ${p.color}` : `1px solid ${THEME.border}`,
                 minWidth: 90,
                 textAlign: 'center',
               }}
               bodyStyle={{ padding: '10px 14px' }}
             >
-              <Text style={{ color: activePlatform === key ? p.color : '#fff', fontWeight: activePlatform === key ? 600 : 400 }}>{p.name}</Text>
+              <Text style={{ color: activePlatform === key ? p.color : THEME.textPrimary, fontWeight: activePlatform === key ? 600 : 400 }}>{p.name}</Text>
               <div style={{ marginTop: 4 }}>
-                {status?.configured ? <Tag color="success" style={{ fontSize: 11 }}>已配置</Tag> : <Tag style={{ fontSize: 11, background: 'rgba(255,255,255,0.06)', border: 'none', color: '#8b8ba8' }}>未配置</Tag>}
+                {status?.configured ? <Tag color="success" style={{ fontSize: 11 }}>已配置</Tag> : <Tag style={{ fontSize: 11, background: 'rgba(255,255,255,0.06)', border: 'none', color: THEME.textSecondary }}>未配置</Tag>}
               </div>
             </Card>
           )
         })}
       </div>
 
-      <Card style={{ background: '#1a1a2e', border: `1px solid ${platformInfo.color}44` }} bodyStyle={{ padding: 24 }}>
+      <Card style={{ background: THEME.bgCard, border: `1px solid ${platformInfo.color}44` }} bodyStyle={{ padding: 24 }}>
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
           <div style={{ flex: '0 0 320px' }}>
-            <Title level={5} style={{ color: '#fff', marginBottom: 12 }}>如何获取 {platformInfo.name} Cookie</Title>
-            <Steps direction="vertical" size="small" current={-1} items={platformInfo.steps.map((step, i) => ({ title: <Text style={{ color: '#c0c0d0', fontSize: 13 }}>{step}</Text> }))} />
+            <Title level={5} style={{ color: THEME.textPrimary, marginBottom: 12 }}>如何获取 {platformInfo.name} Cookie</Title>
+            <Steps direction="vertical" size="small" current={-1} items={platformInfo.steps.map((step, i) => ({ title: <Text style={{ color: THEME.textPrimary, fontSize: 13 }}>{step}</Text> }))} />
           </div>
           <div style={{ flex: 1, minWidth: 300 }}>
-            <Title level={5} style={{ color: '#fff', marginBottom: 12 }}>配置 {platformInfo.name} Cookie</Title>
+            <Title level={5} style={{ color: THEME.textPrimary, marginBottom: 12 }}>配置 {platformInfo.name} Cookie</Title>
             {currentStatus?.configured ? (
               <Alert type="success" showIcon message={`已配置（${currentStatus.size} bytes）`} style={{ marginBottom: 12, background: 'rgba(82,196,26,0.08)', border: '1px solid rgba(82,196,26,0.2)' }} />
             ) : (
               <Alert type="warning" showIcon message="该平台尚未配置 Cookie，将无法解析需要登录的内容" style={{ marginBottom: 12, background: 'rgba(250,173,20,0.08)', border: '1px solid rgba(250,173,20,0.2)' }} />
             )}
-            <Text style={{ color: '#8b8ba8', fontSize: 13, display: 'block', marginBottom: 10 }}>
+            <Text style={{ color: THEME.textSecondary, fontSize: 13, display: 'block', marginBottom: 10 }}>
               将浏览器中的 Cookie header 内容粘贴到下方（支持原始格式和插件导出格式，自动识别）
             </Text>
             <TextArea value={rawInput} onChange={e => setRawInput(e.target.value)} rows={7} style={{ marginBottom: 12, fontFamily: 'monospace', fontSize: 12 }} placeholder="粘贴 Cookie 内容..." />

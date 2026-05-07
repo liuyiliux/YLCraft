@@ -15,11 +15,13 @@ from app.services.breaker import (
     transcribe_audio,
     extract_key_frames,
     analyze_with_llm,
+    analyze_xhs_content,
     run_analysis,
     result_to_dict,
     _build_prompts,
     AnalysisStatus,
 )
+from app.services.xhs_parser import XhsNote
 
 __all__ = [
     "create_task",
@@ -30,8 +32,10 @@ __all__ = [
     "transcribe_audio",
     "extract_key_frames",
     "analyze_with_llm",
+    "analyze_xhs_content",
     "run_analysis",
     "result_to_dict",
     "_build_prompts",
     "AnalysisStatus",
+    "XhsNote",
 ]

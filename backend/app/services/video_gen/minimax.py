@@ -36,6 +36,7 @@ class MinimaxVideoBackend(BaseVideoBackend):
     """
 
     DEFAULT_MODEL = "seedance-2.0"
+    AVAILABLE_MODELS = ["seedance-2.0", "seedance-1.5-pro"]
 
     def __init__(
         self,
@@ -56,6 +57,12 @@ class MinimaxVideoBackend(BaseVideoBackend):
             VideoCapability.SEED_CONTROL,
             VideoCapability.GENERATE_AUDIO,
         }
+        self._available_models = self.AVAILABLE_MODELS
+
+    @property
+    def available_models(self) -> list[str]:
+        """返回可用的模型列表"""
+        return self._available_models
 
     @property
     def video_capabilities(self) -> VideoCapabilities:

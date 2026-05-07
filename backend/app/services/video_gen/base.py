@@ -66,6 +66,11 @@ class BaseVideoBackend(ABC):
         return self._model
 
     @property
+    def available_models(self) -> list[str]:
+        """返回可用的模型列表（子类可覆盖）"""
+        return [self._model]
+
+    @property
     def capabilities(self) -> set[VideoCapability]:
         return self._capabilities
 
@@ -89,6 +94,8 @@ class BaseVideoBackend(ABC):
         """
         import time
 
+        # 动态模型选择：优先使用请求中的 model
+        effective_model = req.model or self._model
         start = time.perf_counter()
         try:
             # 1. 创建任务
@@ -100,7 +107,7 @@ class BaseVideoBackend(ABC):
 
             result.latency_ms = (time.perf_counter() - start) * 1000
             result.provider = self._name
-            result.model = self._model
+            result.model = effective_model  # 返回实际使用的模型
             result.cost = self._cost_per_second * req.duration
             result.success = True
             return result

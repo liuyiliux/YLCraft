@@ -1,0 +1,18 @@
+{
+  "default_processing_mode": "local",
+  "processing_modes": {
+    "rembg": "local",
+    "style_transfer": "local",
+    "segmentation": "local"
+  },
+  "providers": {
+    "rembg": "removebg",
+    "style_transfer": "replicate-sdxl",
+    "segmentation": "huggingface-segmentation"
+  },
+  "local_models": {
+    "rembg": "briaai/RMBG-1.4",
+    "style_transfer": "runwayml/stable-diffusion-v1-5",
+    "segmentation": "ZigBread/BiRefNet"
+  }
+}

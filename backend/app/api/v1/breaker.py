@@ -12,13 +12,19 @@ import asyncio
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel, Field
 
-from app.services.breaker.service import (
+from app.services.breaker import (
     create_task,
     get_task,
     run_analysis,
     result_to_dict,
     AnalysisStatus,
+    analyze_xhs_content,
 )
+from app.services.xhs_parser import get_xhs_parser, XhsNote
+from app.core.contracts.types import MediaType
+from app.services.llm.manager import get_manager
+from typing import Optional
+import re
 
 router = APIRouter()
 
@@ -100,3 +106,108 @@ async def get_result(task_id: str):
         )
 
     return result_to_dict(task.result)
+
+
+# =============================================================================
+# 小红书图文解析端点
+# =============================================================================
+
+XHS_PATTERN = re.compile(
+    r"xiaohongshu\.com/(explore|discovery/item)|xhs\.cn/t"
+)
+
+
+class XhsPreviewRequest(BaseModel):
+    url: str = Field(..., description="小红书笔记链接")
+    skip_llm: bool = Field(False, description="仅解析图文，不进行 LLM 分析")
+
+
+class XhsPreviewResponse(BaseModel):
+    success: bool
+    url: str
+    platform: str = "xiaohongshu"
+    parsed: Optional[dict] = None  # XhsNote dict
+    analysis: Optional[dict] = None  # LLM 分析结果
+    message: str = ""
+
+
+@router.post("/preview", summary="预览小红书图文笔记", response_model=XhsPreviewResponse)
+async def preview_xhs_note(req: XhsPreviewRequest):
+    """
+    预览小红书图文笔记（先解析，后分析）。
+
+    支持链接类型：
+    - 小红书图文笔记（小红花图标）→ 解析标题/正文/图片
+    - 视频笔记 → 走 /analyze 异步任务
+
+    返回 parsed（解析结果）后，前端可展示预览，用户确认后再触发完整分析。
+    """
+    if not XHS_PATTERN.search(req.url):
+        raise HTTPException(
+            status_code=400,
+            detail="链接不是小红书笔记格式，请使用 /analyze 端点处理视频链接"
+        )
+
+    try:
+        parser = get_xhs_parser()
+        note = parser.parse(req.url)
+
+        if not note:
+            return XhsPreviewResponse(
+                success=False,
+                url=req.url,
+                message="解析失败，请检查链接是否正确或内容是否可见"
+            )
+
+        # 构建 parsed 结果
+        parsed_dict = {
+            "title": note.title,
+            "description": note.description,
+            "images": note.images,
+            "covers": note.covers,
+            "author": note.author,
+            "author_id": note.author_id,
+            "likes": note.likes,
+            "note_id": note.note_id,
+            "source_url": note.source_url,
+            "cover_url": note.cover_url,
+        }
+
+        # LLM 分析（可选）
+        analysis_result = None
+        if not req.skip_llm:
+            manager = get_manager()
+            llm_available = manager.is_loaded() and bool(manager.get_default(MediaType.LLM))
+
+            if llm_available:
+                analysis_result = await analyze_xhs_content(
+                    title=note.title,
+                    description=note.description,
+                    images_count=len(note.images),
+                    author=note.author,
+                )
+            else:
+                return XhsPreviewResponse(
+                    success=True,
+                    url=req.url,
+                    platform="xiaohongshu",
+                    parsed=parsed_dict,
+                    analysis=None,
+                    message="LLM 未配置，已返回解析结果（跳过 LLM 分析）"
+                )
+
+        return XhsPreviewResponse(
+            success=True,
+            url=req.url,
+            platform="xiaohongshu",
+            parsed=parsed_dict,
+            analysis=analysis_result,
+            message="解析成功" if analysis_result else "解析成功，LLM 分析未运行"
+        )
+
+    except Exception as e:
+        return XhsPreviewResponse(
+            success=False,
+            url=req.url,
+            message=f"解析异常: {str(e)}"
+        )

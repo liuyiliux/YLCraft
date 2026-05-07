@@ -25,6 +25,8 @@ import httpx
 from app.core.contracts.types import LLMMessage, MediaType, StrEnum
 from app.services.llm.manager import get_manager
 from app.services.video import parser as video_parser
+from app.services.xhs_parser import get_xhs_parser, XhsNote
+import re
 
 
 class AnalysisStatus(StrEnum):
@@ -397,6 +399,122 @@ BREAKDOWN_PROMPT = """你是一位短视频内容分析专家。请分析以下�
 }}
 """
 
+# 小红书图文分析 Prompt
+XHS_ANALYSIS_PROMPT = """你是一位小红书内容分析专家，擅长拆解图文笔记的爆款逻辑。
+
+## 分析任务
+分析以下小红书图文笔记，识别其爆款结构。
+
+### 1. 钩子分析（Hook）
+分析标题和第一句话如何吸引点击，具体用了什么手法？
+
+### 2. 文案结构（Structure）
+正文分为几个部分？每部分的核心是什么？
+
+### 3. 情绪曲线（Emotion Curve）
+从头到尾情绪如何变化？哪些点触发共鸣/好奇/感动？
+
+### 4. 核心要素（Key Elements）
+识别：核心冲突/共鸣点/记忆点/行动号召
+
+### 5. 风格标签（Style Tags）
+内容类型、目标人群、表现手法、平台调性
+
+### 6. 爆款因子（Viral Factors）
+分析哪些元素让它有传播潜力
+
+### 7. 角色识别（Character Extraction）
+识别笔记中涉及的人物，描述外貌和性格特征
+
+### 8. 仿写提示词（Rewrite Prompts）
+生成可直接用于生成相似内容的提示词
+
+## 输入信息
+
+**标题**: {title}
+**作者**: {author}
+**正文内容**: 
+{content}
+**图片数量**: {images_count} 张
+
+## 输出格式
+
+请严格输出以下 JSON schema（不要添加注释，不要加 ```json 标记）：
+
+{{
+  "hook_analysis": "钩子分析（50字以内）",
+  "structure": {{
+    "segments": ["段落1描述", "段落2描述", "段落3描述"],
+    "pacing": "节奏描述",
+    "word_count_estimate": "预估正文字数"
+  }},
+  "emotion_curve": ["开头情绪", "中段情绪", "结尾情绪"],
+  "key_elements": {{
+    "conflict": "核心冲突或主题",
+    "resonance": "共鸣点",
+    "memorable": "记忆点",
+    "call_to_action": "行动号召"
+  }},
+  "style_tags": ["标签1", "标签2", "标签3", "标签4"],
+  "viral_factors": ["因子1", "因子2"],
+  "characters": [
+    {{
+      "name": "人物称谓（如：博主、闺蜜、男友）",
+      "role": "protagonist/supporting",
+      "appearance": "外貌描述（用于生成角色立绘）",
+      "traits": ["性格特征1", "性格特征2"]
+    }}
+  ],
+  "rewrite_prompts": {{
+    "character_prompt": "角色设定提示词",
+    "content_prompt": "内容风格提示词（用于生成相似风格的图文内容）",
+    "visual_prompt": "视觉风格提示词（用于生成封面图）"
+  }}
+}}
+"""
+
+
+async def analyze_xhs_content(
+    title: str,
+    description: str,
+    images_count: int,
+    author: str = "",
+    provider: str | None = None,
+) -> dict:
+    """使用 LLM 分析小红书图文内容"""
+    manager = get_manager()
+    if not manager.is_loaded() or not manager.get_default(MediaType.LLM):
+        return {}
+
+    prompt = XHS_ANALYSIS_PROMPT.format(
+        title=title,
+        author=author,
+        content=description[:3000] if description else "（无正文）",
+        images_count=images_count,
+    )
+
+    result = await manager.chat(
+        [LLMMessage(role="user", content=prompt)],
+        provider=provider,
+    )
+
+    if not result.success:
+        return {}
+
+    content = result.content.strip()
+    # 提取 JSON
+    if "{" in content and "}" in content:
+        start = content.find("{")
+        end = content.rfind("}") + 1
+        json_str = content[start:end]
+    else:
+        json_str = content
+
+    try:
+        return json.loads(json_str)
+    except json.JSONDecodeError:
+        return {}
+
 
 async def analyze_with_llm(
     title: str,
@@ -469,6 +587,98 @@ async def run_analysis(break_task: BreakTask) -> None:
             await queue.update_progress(break_task.task_id, progress, message)
 
     break_task.status = AnalysisStatus.PARSING
+    await update_progress(5, "检测链接类型...")
+
+    # -------------------------------------------------------------------------
+    # 分支1：小红书图文笔记 → XHS 解析流程
+    # -------------------------------------------------------------------------
+    XHS_PATTERN = re.compile(
+        r"xiaohongshu\.com/(explore|discovery/item)|xhs\.cn/t"
+    )
+
+    if XHS_PATTERN.search(break_task.url):
+        await update_progress(10, "解析小红书笔记...")
+
+        try:
+            xhs_parser = get_xhs_parser()
+            xhs_note = xhs_parser.parse(break_task.url)
+
+            if xhs_note and (xhs_note.title or xhs_note.description or xhs_note.images):
+                await update_progress(30, "小红书笔记解析完成，开始 LLM 分析...")
+
+                # 构建图文分析用的 transcript（description 作为主要内容）
+                text_content = f"""标题：{xhs_note.title}\n\n正文：{xhs_note.description}\n\n图片数量：{len(xhs_note.images)}张"""
+
+                manager = get_manager()
+                llm_available = manager.is_loaded() and bool(manager.get_default(MediaType.LLM))
+
+                if llm_available:
+                    break_task.status = AnalysisStatus.ANALYZING
+                    await update_progress(50, "LLM 分析图文内容...")
+
+                    analysis = await analyze_xhs_content(
+                        title=xhs_note.title,
+                        description=xhs_note.description,
+                        images_count=len(xhs_note.images),
+                        author=xhs_note.author,
+                    )
+
+                    await update_progress(80, "构建拆解结果...")
+
+                    characters = [
+                        CharacterExtract(
+                            name=c.get("name", f"角色{i+1}"),
+                            role=c.get("role", "supporting"),
+                            appearance=c.get("appearance", ""),
+                            traits=c.get("traits", []),
+                        )
+                        for i, c in enumerate(analysis.get("characters", []))
+                    ]
+
+                    break_task.result = BreakdownResult(
+                        title=xhs_note.title,
+                        author=xhs_note.author,
+                        platform="xiaohongshu",
+                        cover_url=xhs_note.cover_url,
+                        hook_analysis=analysis.get("hook_analysis", ""),
+                        structure=analysis.get("structure", {}),
+                        emotion_curve=analysis.get("emotion_curve", []),
+                        key_elements=analysis.get("key_elements", {}),
+                        style_tags=analysis.get("style_tags", []),
+                        viral_factors=analysis.get("viral_factors", []),
+                        characters=characters,
+                        shots=[],
+                        rewrite_prompts=analysis.get("rewrite_prompts", {}),
+                        transcript=text_content,
+                    )
+                else:
+                    await update_progress(80, "构建拆解结果...")
+                    break_task.result = BreakdownResult(
+                        title=xhs_note.title,
+                        author=xhs_note.author,
+                        platform="xiaohongshu",
+                        cover_url=xhs_note.cover_url,
+                        hook_analysis="No LLM configured - XHS note parsed (LLM analysis skipped)",
+                        style_tags=["图文笔记", "小红书"],
+                        viral_factors=[f"获赞 {xhs_note.likes}"],
+                        transcript=text_content,
+                    )
+
+                break_task.status = AnalysisStatus.DONE
+                await update_progress(100, "完成")
+
+                if unified_task:
+                    unified_task.result = result_to_dict(break_task.result)
+                    unified_task.status = TaskStatus.DONE
+                    await queue.update_task(unified_task)
+                return
+
+        except Exception as e:
+            logger.warning(f"[Breaker] XHS 解析失败，回退到视频解析流程: {e}")
+
+    # -------------------------------------------------------------------------
+    # 分支2：视频链接 → 原有视频分析流程
+    # -------------------------------------------------------------------------
     await update_progress(10, "解析视频链接...")
 
     try:

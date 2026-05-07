@@ -54,6 +54,10 @@ class CharacterService:
         return result.first()
 
     async def create(self, **kwargs) -> Character:
+        # Convert list fields to JSON strings
+        for field in ["source_types", "tags", "reference_asset_ids"]:
+            if field in kwargs and kwargs[field] is not None:
+                kwargs[field] = json.dumps(kwargs[field], ensure_ascii=False)
         character = Character(**kwargs)
         self.session.add(character)
         await self.session.flush()
@@ -64,6 +68,10 @@ class CharacterService:
         character = await self.get_by_id(character_id)
         if not character:
             return None
+        # Convert list fields to JSON strings
+        for field in ["source_types", "tags", "reference_asset_ids"]:
+            if field in kwargs and kwargs[field] is not None:
+                kwargs[field] = json.dumps(kwargs[field], ensure_ascii=False)
         for key, value in kwargs.items():
             if value is not None and hasattr(character, key):
                 setattr(character, key, value)
