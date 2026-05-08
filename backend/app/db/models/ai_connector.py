@@ -242,6 +242,7 @@ class AIConnectorResponse(SQLModel):
     name: str
     base_url: Optional[str] = None
     api_endpoint: Optional[str] = None
+    api_key: Optional[str] = None  # 完整的 API Key（仅用于编辑时显示）
     organization_id: Optional[str] = None
     default_model: str
     max_tokens: int
@@ -292,6 +293,7 @@ class AIConnectorResponse(SQLModel):
             name=conn.name,
             base_url=conn.base_url,
             api_endpoint=conn.api_endpoint,
+            api_key=conn.api_key,
             organization_id=conn.organization_id,
             default_model=conn.default_model,
             max_tokens=conn.max_tokens,

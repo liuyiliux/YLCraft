@@ -230,7 +230,7 @@ class AIConnectorService:
     # 测试与验证
     # -------------------------------------------------------------------------
 
-    async def test_connection(self, conn_id: str) -> dict:
+    async def test_connection(self, conn_id: str, custom_body: Optional[dict] = None) -> dict:
         """
         测试连接有效性
         返回 {"success": bool, "message": str}
@@ -255,6 +255,11 @@ class AIConnectorService:
             try:
                 provider_type = conn.provider_type.value if hasattr(conn.provider_type, "value") else str(conn.provider_type or "llm")
                 request = self._build_test_request(conn.base_url, conn.api_endpoint, provider_type, conn.default_model)
+                
+                # 使用自定义请求体（如果提供了）
+                if custom_body:
+                    request["json"] = custom_body
+                
                 headers = {
                     "Authorization": f"Bearer {conn.api_key}",
                     "Content-Type": "application/json",
@@ -319,21 +324,38 @@ class AIConnectorService:
         构造最小测试请求。
 
         参考 yiliu：支持 base_url + api_endpoint 分离配置。
-        如果提供了 api_endpoint，优先使用它；否则使用默认路径。
+        优先级：
+        1. 如果有 api_endpoint，使用 base_url + api_endpoint
+        2. 否则检查 base_url 是否已经包含路径，如果是，直接使用
+        3. 否则使用默认路径
         """
         normalized_base = (base_url or "").rstrip("/")
         provider_type = (provider_type or "llm").lower()
 
-        def build_url(endpoint: str) -> str:
+        # 检查 base_url 是否已经包含路径（超过域名层级）
+        def base_url_has_path() -> bool:
+            # 去掉协议部分
+            url_without_proto = normalized_base
+            if "://" in url_without_proto:
+                url_without_proto = url_without_proto.split("://", 1)[1]
+            # 检查是否有超过一个 "/"
+            return "/" in url_without_proto and url_without_proto.count("/") > 0
+
+        has_path = base_url_has_path()
+
+        def build_url(default_endpoint: str) -> str:
             # 如果有 api_endpoint，优先使用
             if api_endpoint:
                 return f"{normalized_base}{api_endpoint}"
+            # 如果 base_url 已经包含路径，直接使用
+            if has_path:
+                return normalized_base
             # 否则使用默认端点
-            if normalized_base.endswith(endpoint):
+            if normalized_base.endswith(default_endpoint):
                 return normalized_base
             if normalized_base.endswith("/v1"):
-                return f"{normalized_base}{endpoint}"
-            return f"{normalized_base}/{endpoint.lstrip('/')}"
+                return f"{normalized_base}{default_endpoint}"
+            return f"{normalized_base}/{default_endpoint.lstrip('/')}"
 
         if provider_type == "image":
             return {

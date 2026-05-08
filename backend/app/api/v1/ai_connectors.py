@@ -198,13 +198,19 @@ async def delete_connector(
     }
 
 
+class TestRequest(SQLModel):
+    body: Optional[dict] = None
+
+
 @router.post("/{conn_id}/test", summary="测试连接")
 async def test_connector(
     conn_id: str,
+    test_request: Optional[TestRequest] = None,
     service: AIConnectorService = Depends(get_ai_service),
 ):
     """测试 AI 连接有效性"""
-    result = await service.test_connection(conn_id)
+    custom_body = test_request.body if test_request else None
+    result = await service.test_connection(conn_id, custom_body)
     return {
         "success": result["success"],
         "message": result["message"],

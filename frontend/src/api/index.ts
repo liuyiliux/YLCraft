@@ -168,8 +168,11 @@ export const updateConnector = (id: string, data: any) =>
 export const deleteConnector = (id: string) =>
   request(`/ai/connectors/${id}`, { method: 'DELETE' })
 
-export const testConnector = (id: string) =>
-  request(`/ai/connectors/${id}/test`, { method: 'POST' })
+export const testConnector = (id: string, data?: { body?: any }) =>
+  request(`/ai/connectors/${id}/test`, { 
+    method: 'POST',
+    body: data ? JSON.stringify(data) : undefined
+  })
 
 // ===== LLM =====
 

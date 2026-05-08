@@ -87,6 +87,9 @@ export default function SettingsPage() {
   const [editingProvider, setEditingProvider] = useState<Provider | null>(null)
   const [viewingProvider, setViewingProvider] = useState<Provider | null>(null)
   const [testResult, setTestResult] = useState<ConnectorTestResult | null>(null)
+  const [editableRequestBody, setEditableRequestBody] = useState<string>('')
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null)
+  const [testProviderId, setTestProviderId] = useState<string | null>(null)
   const [searchText, setSearchText] = useState('')
   const [filterType, setFilterType] = useState<string>('all')
   const [filterStatus, setFilterStatus] = useState<string>('all')
@@ -137,12 +140,17 @@ export default function SettingsPage() {
     setFilteredProviders(filtered)
   }, [providers, filterType, filterStatus, searchText])
 
-  const handleTest = async (id: string) => {
+  const handleTest = async (id: string, customBody?: any) => {
     const hide = message.loading('正在测试连接...', 0)
     try {
-      const result = await testConnector(id) as ConnectorTestResult
+      const result = await testConnector(id, customBody ? { body: customBody } : undefined) as ConnectorTestResult
       hide()
       setTestResult(result)
+      setTestProviderId(id)
+      // 初始化可编辑的请求体
+      if (result.debug?.request?.body) {
+        setEditableRequestBody(stringifyDebugValue(result.debug.request.body))
+      }
       if (result?.success) {
         message.success(result.message || '连接测试成功')
         return
@@ -163,7 +171,7 @@ export default function SettingsPage() {
       name: provider.name,
       provider: provider.provider,
       provider_type: provider.provider_type,
-      api_key: '',
+      api_key: provider.api_key || '',
       base_url: provider.base_url || '',
       api_endpoint: provider.api_endpoint || '',
       default_model: provider.default_model || '',
@@ -217,6 +225,11 @@ export default function SettingsPage() {
           // 忽略无效 JSON
         }
       }
+      
+      // 如果是掩码格式（包含 "...")，不更新 API Key
+      if (editingProvider && values.api_key && values.api_key.includes('...')) {
+        delete processedValues.api_key
+      }
 
       if (editingProvider) {
         // 更新现有连接器
@@ -243,6 +256,25 @@ export default function SettingsPage() {
     } catch (e: any) {
       const errorMsg = e?.response?.data?.detail || e?.message || '删除失败'
       message.error(errorMsg)
+    }
+  }
+
+  // 使用自定义请求体重新测试
+  const handleRetest = async () => {
+    if (!testProviderId) return
+    
+    try {
+      let customBody
+      try {
+        customBody = JSON.parse(editableRequestBody)
+      } catch (e) {
+        message.error('JSON 格式错误，请检查请求体')
+        return
+      }
+      
+      await handleTest(testProviderId, customBody)
+    } catch (e: any) {
+      // handleTest 内部已经处理错误
     }
   }
 
@@ -279,6 +311,44 @@ export default function SettingsPage() {
     } catch {
       return String(value)
     }
+  }
+
+  // 从响应中提取图片 URL
+  const extractImageUrls = (body: unknown): string[] => {
+    if (!body) return []
+    
+    if (typeof body === 'string') {
+      try {
+        body = JSON.parse(body)
+      } catch {
+        return []
+      }
+    }
+
+    const urls: string[] = []
+    const obj = body as Record<string, any>
+    
+    // 尝试多种常见的响应格式，优先选择 data（OpenAI 标准）
+    if (obj.data && Array.isArray(obj.data)) {
+      obj.data.forEach((item: any) => {
+        if (item.url) urls.push(item.url)
+        if (item.b64_json) urls.push(`data:image/png;base64,${item.b64_json}`)
+      })
+    } 
+    // 如果没有 data，尝试 images
+    else if (obj.images && Array.isArray(obj.images)) {
+      obj.images.forEach((item: any) => {
+        if (item.url) urls.push(item.url)
+        if (item.b64_json) urls.push(`data:image/png;base64,${item.b64_json}`)
+      })
+    }
+    // 最后尝试单个 url
+    else if (obj.url) {
+      urls.push(obj.url)
+    }
+    
+    // 去重
+    return [...new Set(urls)]
   }
 
   const providerColumns = [
@@ -729,6 +799,10 @@ export default function SettingsPage() {
               <Title level={5} style={{ color: THEME.textPrimary, fontSize: 13, marginBottom: 8 }}>连接配置</Title>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px' }}>
                 <div>
+              <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>API Key</Text>
+              <div style={{ color: THEME.textPrimary, marginTop: 2, fontSize: 13 }}>{viewingProvider.api_key || <Text type="secondary" style={{ fontSize: 12 }}>未设置</Text>}</div>
+            </div>
+                <div>
                   <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>Base URL</Text>
                   <div style={{ color: THEME.textPrimary, marginTop: 2, fontSize: 13 }}>{viewingProvider.base_url || <Text type="secondary" style={{ fontSize: 12 }}>未设置</Text>}</div>
                 </div>
@@ -853,15 +927,62 @@ export default function SettingsPage() {
             />
           </Card>
 
-          <Card size="small" title="请求体" style={{ marginBottom: 12, background: THEME.bgCard, border: `1px solid ${THEME.border}` }}>
+          <Card size="small" title="请求体" extra={
+            <Button type="primary" size="small" onClick={handleRetest}>
+              重新测试
+            </Button>
+          } style={{ marginBottom: 12, background: THEME.bgCard, border: `1px solid ${THEME.border}` }}>
             <TextArea
-              readOnly
-              value={stringifyDebugValue(testResult.debug?.request?.body)}
+              value={editableRequestBody}
+              onChange={(e) => setEditableRequestBody(e.target.value)}
               autoSize={{ minRows: 6, maxRows: 14 }}
               style={{ fontFamily: 'Consolas, Monaco, monospace' }}
             />
           </Card>
 
+          {/* 图片预览 */}
+          {testResult.debug?.response?.body && (() => {
+            const imageUrls = extractImageUrls(testResult.debug.response.body)
+            if (imageUrls.length > 0) {
+              return (
+                <Card size="small" title="生成的图片" style={{ marginBottom: 12, background: THEME.bgCard, border: `1px solid ${THEME.border}` }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12 }}>
+                    {imageUrls.map((url, idx) => (
+                      <div 
+                        key={idx} 
+                        style={{ 
+                          textAlign: 'center', 
+                          cursor: 'pointer'
+                        }}
+                        onClick={() => setPreviewImageUrl(url)}
+                      >
+                        <img 
+                          src={url} 
+                          alt={`Generated image ${idx + 1}`}
+                          style={{ 
+                            width: '100%', 
+                            maxHeight: 200, 
+                            objectFit: 'contain',
+                            borderRadius: 8,
+                            border: `1px solid ${THEME.border}`
+                          }} 
+                        />
+                        <div style={{ 
+                          fontSize: 12, 
+                          color: THEME.textSecondary, 
+                          marginTop: 4 
+                        }}>
+                          点击查看大图
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              )
+            }
+            return null
+          })()}
+          
           <Card size="small" title="响应体" style={{ marginBottom: 0, background: THEME.bgCard, border: `1px solid ${THEME.border}` }}>
             <TextArea
               readOnly
@@ -871,6 +992,31 @@ export default function SettingsPage() {
             />
           </Card>
         </Modal>
+        
+        {/* 图片悬浮预览 */}
+        {previewImageUrl && (
+          <Modal
+            open={true}
+            onCancel={() => setPreviewImageUrl(null)}
+            footer={null}
+            width="auto"
+            style={{ maxWidth: '90vw' }}
+            centered
+            closable
+          >
+            <div style={{ textAlign: 'center' }}>
+              <img 
+                src={previewImageUrl} 
+                alt="Preview" 
+                style={{ 
+                  maxWidth: '100%', 
+                  maxHeight: '80vh', 
+                  objectFit: 'contain' 
+                }} 
+              />
+            </div>
+          </Modal>
+        )}
       )}
     </div>
   )

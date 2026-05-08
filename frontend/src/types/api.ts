@@ -11,6 +11,8 @@ export interface Provider {
   name: string
   provider_type: string
   base_url?: string
+  api_endpoint?: string
+  api_key?: string
   default_model?: string
   max_tokens?: number
   temperature?: number
