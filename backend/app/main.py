@@ -118,6 +118,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 
@@ -194,6 +195,13 @@ def _register_routes():
         app.include_router(download.router, prefix="/api/v1/download", tags=["Download"])
     except Exception as e:
         logger.warning(f"Could not load download router: {e}")
+
+    # 图片编辑器路由
+    try:
+        from app.api.v1 import image_editor
+        app.include_router(image_editor.router, prefix="/api/v1/image-editor", tags=["Image Editor"])
+    except Exception as e:
+        logger.warning(f"Could not load image_editor router: {e}")
 
     try:
         from app.api.v1 import cutclaw

@@ -77,10 +77,12 @@ function loadSvgAsImage(svgContent: string): Promise<string> {
   })
 }
 
-function downloadCanvas(canvas: HTMLCanvasElement, filename: string) {
+function downloadCanvas(canvas: HTMLCanvasElement, filename: string, format: string = 'png') {
   const link = document.createElement('a')
   link.download = filename
-  link.href = canvas.toDataURL('image/png')
+  // GIF 使用 PNG 导出（canvas 不支持 GIF 动画），其他格式使用 PNG
+  const mimeType = format === 'png' || format === 'gif' ? 'image/png' : `image/${format}`
+  link.href = canvas.toDataURL(mimeType, 1.0)
   link.click()
 }
 
@@ -132,6 +134,8 @@ export default function ImageEditorPage() {
   // ---- 图片状态 ----
   const [originalSrc, setOriginalSrc] = useState<string>('')
   const [originalSize, setOriginalSize] = useState<{ w: number; h: number; kb: number }>({ w: 0, h: 0, kb: 0 })
+  const [originalFormat, setOriginalFormat] = useState<string>('png') // 保存原始格式
+  const [processedGifUrl, setProcessedGifUrl] = useState<string>('') // 后端处理后的 GIF
 
   // ---- Canvas 引用 ----
   const mainCanvasRef = useRef<HTMLCanvasElement>(null)
@@ -184,6 +188,9 @@ export default function ImageEditorPage() {
   const [wmPosX, setWmPosX] = useState(50)
   const [wmPosY, setWmPosY] = useState(50)
   const [wmDrag, setWmDrag] = useState(false)
+  const [wmDragType, setWmDragType] = useState<'move' | 'resize' | null>(null) // 拖动类型
+  const [wmDragStart, setWmDragStart] = useState<{ x: number; y: number; initX: number; initY: number; initSize: number } | null>(null)
+  const [wmScaleMode, setWmScaleMode] = useState(false) // 是否显示缩放控制
 
   // ---- SVG 水印图片 ----
   const [svgWatermarkUrl, setSvgWatermarkUrl] = useState<string>('')
@@ -202,7 +209,8 @@ export default function ImageEditorPage() {
     cvs.width = img.width
     cvs.height = img.height
     ctx.drawImage(img, 0, 0)
-    const dataUrl = cvs.toDataURL('image/png')
+    // 使用最高质量 PNG (1.0) 保存，避免累积质量损失
+    const dataUrl = cvs.toDataURL('image/png', 1.0)
     syncToPreview()
     if (pushHistory) {
       setHistory(prev => [...prev.slice(0, historyIdx.current + 1), dataUrl])
@@ -225,6 +233,9 @@ export default function ImageEditorPage() {
   const handleUpload = async (file: File) => {
     const url = URL.createObjectURL(file)
     setOriginalSrc(url)
+    // 提取文件扩展名
+    const ext = file.name.split('.').pop()?.toLowerCase() || 'png'
+    setOriginalFormat(ext)
     return false
   }
 
@@ -232,7 +243,8 @@ export default function ImageEditorPage() {
   const snapshotAndPush = () => {
     const cvs = mainCanvasRef.current
     if (!cvs) return
-    const dataUrl = cvs.toDataURL('image/png')
+    // 使用最高质量 PNG (1.0) 保存历史，避免累积质量损失
+    const dataUrl = cvs.toDataURL('image/png', 1.0)
     syncToPreview()
     setHistory(prev => [...prev.slice(0, historyIdx.current + 1), dataUrl])
     historyIdx.current += 1
@@ -413,6 +425,26 @@ export default function ImageEditorPage() {
     return null
   }
 
+  // 获取水印控制框的位置信息
+  const getWatermarkBox = (cvs: HTMLCanvasElement): { boxX: number; boxY: number; boxW: number; boxH: number } | null => {
+    if (!wmText.trim() || useSvgWatermark !== 'text') return null
+    const ctx = cvs.getContext('2d')
+    if (!ctx) return null
+    
+    ctx.font = `${wmFontSize}px "Microsoft YaHei", sans-serif`
+    const textWidth = ctx.measureText(wmText).width
+    const textHeight = wmFontSize
+    const boxPadding = 8
+    
+    const px = wmPosX / 100 * cvs.width
+    const py = wmPosY / 100 * cvs.height
+    
+    let boxX = wmPos === 'custom' ? px : wmPos === 'center' ? px - textWidth / 2 : px - textWidth
+    let boxY = py - 4
+    
+    return { boxX, boxY, boxW: textWidth + boxPadding * 2, boxH: textHeight + boxPadding * 2 }
+  }
+  
   const onCropMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (activeTool !== 'crop') {
       // 文字/水印：点击设置位置
@@ -422,15 +454,45 @@ export default function ImageEditorPage() {
         const x = Math.round((e.clientX - rect.left) * (cvs.width / rect.width))
         const y = Math.round((e.clientY - rect.top) * (cvs.height / rect.height))
         setTextPosX(x); setTextPosY(y)
-      } else if (activeTool === 'watermark') {
+      } else if (activeTool === 'watermark' && useSvgWatermark === 'text') {
         const cvs = drawCanvasRef.current; if (!cvs) return
         const rect = cvs.getBoundingClientRect()
         const mx = (e.clientX - rect.left) * (cvs.width / rect.width)
         const my = (e.clientY - rect.top) * (cvs.height / rect.height)
-        const px = Math.round(mx / cvs.width * 100)
-        const py = Math.round(my / cvs.height * 100)
-        setWmPos('custom'); setWmPosX(Math.max(0, Math.min(100, px))); setWmPosY(Math.max(0, Math.min(100, py)))
+        
+        const box = getWatermarkBox(cvs)
+        
+        if (box && wmScaleMode) {
+          // 检测点击区域
+          const deleteBtnX = box.boxX - box.boxPadding + 8
+          const deleteBtnY = box.boxY - box.boxPadding + 8
+          const resizeBtnX = box.boxX + box.boxW - 8
+          const resizeBtnY = box.boxY + box.boxH - 8
+          
+          // 删除按钮区域（点击左上角按钮）
+          if (Math.abs(mx - deleteBtnX) < 12 && Math.abs(my - deleteBtnY) < 12) {
+            // 删除水印
+            setWmText('')
+            setWmScaleMode(false)
+            message.info('水印已删除')
+            return
+          }
+          
+          // 缩放按钮区域（点击右下角按钮）
+          if (Math.abs(mx - resizeBtnX) < 12 && Math.abs(my - resizeBtnY) < 12) {
+            setWmDragType('resize')
+            setWmDragStart({ x: mx, y: my, initX: wmPosX, initY: wmPosY, initSize: wmFontSize })
+            setWmDrag(true)
+            return
+          }
+        }
+        
+        // 移动水印
+        setWmPos('custom')
+        setWmDragType('move')
+        setWmDragStart({ x: mx, y: my, initX: wmPosX, initY: wmPosY, initSize: wmFontSize })
         setWmDrag(true)
+        setWmScaleMode(true) // 开启缩放模式
       }
       return
     }
@@ -465,39 +527,103 @@ export default function ImageEditorPage() {
         case 'se': nw = Math.max(5, Math.min(100 - nx, initW + dx)); nh = Math.max(5, Math.min(100 - ny, initH + dy)); break
       }
       setCropX(Math.round(nx)); setCropY(Math.round(ny)); setCropW(Math.round(nw)); setCropH(Math.round(nh))
-    } else if (wmDrag && activeTool === 'watermark') {
+    } else if (wmDrag && wmDragType && activeTool === 'watermark' && wmDragStart) {
       const cvs = drawCanvasRef.current; if (!cvs) return
       const rect = cvs.getBoundingClientRect()
       const mx = (e.clientX - rect.left) * (cvs.width / rect.width)
       const my = (e.clientY - rect.top) * (cvs.height / rect.height)
-      const px = Math.round(mx / cvs.width * 100)
-      const py = Math.round(my / cvs.height * 100)
-      setWmPosX(Math.max(0, Math.min(100, px))); setWmPosY(Math.max(0, Math.min(100, py)))
+      
+      if (wmDragType === 'resize') {
+        // 缩放水印（根据拖动距离调整字号）
+        const dy = my - wmDragStart.y
+        const newSize = Math.max(12, Math.min(200, wmDragStart.initSize + dy * 0.5))
+        setWmFontSize(Math.round(newSize))
+      } else {
+        // 移动水印
+        const px = Math.round(mx / cvs.width * 100)
+        const py = Math.round(my / cvs.height * 100)
+        setWmPosX(Math.max(0, Math.min(100, px)))
+        setWmPosY(Math.max(0, Math.min(100, py)))
+      }
     }
   }
-  const onCropMouseUp = () => { setCropDrag(null); setWmDrag(false) }
+  const onCropMouseUp = () => { setCropDrag(null); setWmDrag(false); setWmDragType(null); setWmDragStart(null) }
 
   /** 水印/文字预览：在 draw canvas 上画半透明预览 */
   const updateWmPreview = useCallback(() => {
     const cvs = drawCanvasRef.current; if (!cvs || !originalSrc) return
     const ctx = cvs.getContext('2d'); if (!ctx) return
+    const mc = mainCanvasRef.current; if (!mc) return
     const img = new Image()
     img.onload = () => {
+      // 确保 drawCanvas 尺寸与 mainCanvas 一致
+      if (cvs.width !== mc.width || cvs.height !== mc.height) {
+        cvs.width = mc.width; cvs.height = mc.height
+      }
       ctx.clearRect(0, 0, cvs.width, cvs.height)
       ctx.drawImage(img, 0, 0, cvs.width, cvs.height)
       if (activeTool === 'watermark' && useSvgWatermark === 'text' && wmText.trim()) {
         const px = wmPosX / 100 * cvs.width, py = wmPosY / 100 * cvs.height
+        // 处理颜色透明度（与 handleAddTextWatermark 保持一致）
+        const opHex = Math.round(wmOpacity / 100 * 255).toString(16).padStart(2, '0')
+        const color = wmColor.length === 9 ? wmColor.slice(0, 7) + opHex : wmColor
         ctx.font = `${wmFontSize}px "Microsoft YaHei", sans-serif`
-        ctx.fillStyle = wmColor; ctx.globalAlpha = wmOpacity / 100
+        ctx.fillStyle = color
+        ctx.globalAlpha = wmOpacity / 100
         ctx.textBaseline = 'top'
+        ctx.textAlign = wmPos === 'custom' ? 'left' : wmPos === 'center' ? 'center' : wmPos === 'bottom-right' ? 'right' : 'center'
         ctx.fillText(wmText, px, py)
         ctx.globalAlpha = 1
-        // 位置指示器
-        ctx.fillStyle = '#00d4ff'; ctx.beginPath(); ctx.arc(px, py, 4, 0, Math.PI * 2); ctx.fill()
+        
+        // 显示缩放控制框（当开启缩放模式时）
+        if (wmScaleMode) {
+          const textWidth = ctx.measureText(wmText).width
+          const textHeight = wmFontSize
+          const boxPadding = 8
+          
+          // 文字框边界
+          const boxX = wmPos === 'custom' ? px : wmPos === 'center' ? px - textWidth / 2 : px - textWidth
+          const boxY = py - 4
+          
+          // 画边框
+          ctx.strokeStyle = '#1890ff'
+          ctx.lineWidth = 2
+          ctx.setLineDash([5, 5])
+          ctx.strokeRect(boxX - boxPadding, boxY - boxPadding, textWidth + boxPadding * 2, textHeight + boxPadding * 2)
+          ctx.setLineDash([])
+          
+          // 画缩放手柄（右下角）
+          const handleX = boxX + textWidth + boxPadding
+          const handleY = boxY + textHeight + boxPadding
+          ctx.fillStyle = '#1890ff'
+          ctx.fillRect(handleX - 8, handleY - 8, 16, 16)
+          ctx.strokeStyle = '#fff'
+          ctx.lineWidth = 2
+          ctx.beginPath()
+          ctx.moveTo(handleX - 4, handleY)
+          ctx.lineTo(handleX + 4, handleY)
+          ctx.moveTo(handleX, handleY - 4)
+          ctx.lineTo(handleX, handleY + 4)
+          ctx.stroke()
+          
+          // 删除按钮（左上角）
+          ctx.fillStyle = '#ff4d4f'
+          ctx.beginPath()
+          ctx.arc(boxX - boxPadding + 8, boxY - boxPadding + 8, 8, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.strokeStyle = '#fff'
+          ctx.lineWidth = 2
+          ctx.beginPath()
+          ctx.moveTo(boxX - boxPadding + 4, boxY - boxPadding + 4)
+          ctx.lineTo(boxX - boxPadding + 12, boxY - boxPadding + 12)
+          ctx.moveTo(boxX - boxPadding + 12, boxY - boxPadding + 4)
+          ctx.lineTo(boxX - boxPadding + 4, boxY - boxPadding + 12)
+          ctx.stroke()
+        }
       }
     }
     img.src = history.length > 0 && historyIdx.current >= 0 ? history[historyIdx.current] : originalSrc
-  }, [originalSrc, wmText, wmFontSize, wmColor, wmOpacity, wmPosX, wmPosY, activeTool, useSvgWatermark, history, historyIdx.current])
+  }, [originalSrc, wmText, wmFontSize, wmColor, wmOpacity, wmPosX, wmPosY, activeTool, useSvgWatermark, wmPos, history, historyIdx.current, wmScaleMode])
 
   useEffect(() => {
     if (activeTool === 'watermark') updateWmPreview()
@@ -513,8 +639,57 @@ export default function ImageEditorPage() {
   }
 
   // ======== SVG 水印（文字） ========
-  const handleAddTextWatermark = () => {
+  const handleAddTextWatermark = async () => {
     const cvs = mainCanvasRef.current; if (!cvs) return
+    
+    // GIF 使用后端处理以保留动画
+    if (originalFormat === 'gif') {
+      try {
+        message.loading({ content: '正在处理 GIF...', key: 'gif-watermark' })
+        
+        // 获取原始图片数据
+        const originalData = await fetch(originalSrc)
+        const blob = await originalData.blob()
+        
+        const formData = new FormData()
+        formData.append('file', blob, `image.gif`)
+        formData.append('text', wmText)
+        formData.append('font_size', String(wmFontSize))
+        formData.append('color', wmColor)
+        formData.append('opacity', String(wmOpacity / 100))
+        formData.append('position', wmPos)
+        formData.append('position_x', String(wmPosX))
+        formData.append('position_y', String(wmPosY))
+        
+        const response = await fetch('/api/v1/image-editor/watermark/text', {
+          method: 'POST',
+          body: formData,
+        })
+        
+        if (!response.ok) throw new Error('后端处理失败')
+        
+        const resultBlob = await response.blob()
+        const resultUrl = URL.createObjectURL(resultBlob)
+        
+        // 保存处理后的 GIF URL
+        setProcessedGifUrl(resultUrl)
+        
+        await loadImageToCanvas(resultUrl)
+        message.success({ content: 'GIF 水印已添加（保留动画）', key: 'gif-watermark' })
+      } catch (e) {
+        message.error({ content: 'GIF 处理失败，尝试前端处理', key: 'gif-watermark' })
+        // 失败时回退到前端处理
+        await addTextWatermarkFrontend(cvs)
+      }
+      return
+    }
+    
+    // 非 GIF 使用前端处理
+    await addTextWatermarkFrontend(cvs)
+  }
+  
+  // 前端处理文字水印
+  const addTextWatermarkFrontend = (cvs: HTMLCanvasElement) => {
     const ctx = cvs.getContext('2d')!
     const opHex = Math.round(wmOpacity / 100 * 255).toString(16).padStart(2, '0')
     const color = wmColor.length === 9 ? wmColor.slice(0, 7) + opHex : wmColor
@@ -554,6 +729,61 @@ export default function ImageEditorPage() {
   const handleAddSvgWatermark = async () => {
     const cvs = mainCanvasRef.current; if (!cvs) return
     if (!svgWatermarkUrl) { message.warning('请先上传水印图片'); return }
+    
+    // GIF 使用后端处理以保留动画
+    if (originalFormat === 'gif') {
+      try {
+        message.loading({ content: '正在处理 GIF...', key: 'gif-watermark' })
+        
+        // 获取原始图片数据
+        const originalData = await fetch(originalSrc)
+        const blob = await originalData.blob()
+        
+        // 获取水印图片数据
+        const wmData = await fetch(svgWatermarkUrl)
+        const wmBlob = await wmData.blob()
+        const wmExt = svgWatermarkUrl.includes('.svg') ? 'svg' : 'png'
+        
+        const formData = new FormData()
+        formData.append('file', blob, `image.gif`)
+        formData.append('watermark', wmBlob, `watermark.${wmExt}`)
+        formData.append('scale', String(wmScale))
+        formData.append('opacity', String(wmOpacity / 100))
+        formData.append('position', wmPos)
+        formData.append('position_x', String(wmPosX))
+        formData.append('position_y', String(wmPosY))
+        
+        const response = await fetch('/api/v1/image-editor/watermark/image', {
+          method: 'POST',
+          body: formData,
+        })
+        
+        if (!response.ok) throw new Error('后端处理失败')
+        
+        const resultBlob = await response.blob()
+        const resultUrl = URL.createObjectURL(resultBlob)
+        
+        // 保存处理后的 GIF URL
+        setProcessedGifUrl(resultUrl)
+        
+        await loadImageToCanvas(resultUrl)
+        message.success({ content: 'GIF 水印已添加（保留动画）', key: 'gif-watermark' })
+      } catch (e) {
+        message.error({ content: 'GIF 处理失败，尝试前端处理', key: 'gif-watermark' })
+        // 失败时回退到前端处理
+        await addSvgWatermarkFrontend()
+      }
+      return
+    }
+    
+    // 非 GIF 使用前端处理
+    await addSvgWatermarkFrontend()
+  }
+  
+  // 前端处理图片水印
+  const addSvgWatermarkFrontend = async () => {
+    const cvs = mainCanvasRef.current; if (!cvs) return
+    if (!svgWatermarkUrl) { message.warning('请先上传水印图片'); return }
     try {
       const wmImg = await loadImage(svgWatermarkUrl)
       const ctx = cvs.getContext('2d')!
@@ -585,11 +815,44 @@ export default function ImageEditorPage() {
   // ======== 下载 / 重置 ========
   const handleDownload = () => {
     const c = mainCanvasRef.current; if (!c) return
-    downloadCanvas(c, `ylcraft_edit_${Date.now()}.png`); message.success('图片已下载')
+    // GIF 特殊处理
+    if (originalFormat === 'gif') {
+      if (processedGifUrl) {
+        // 有后端处理过的 GIF，提供下载
+        const link = document.createElement('a')
+        link.href = processedGifUrl
+        link.download = `ylcraft_edit_${Date.now()}.gif`
+        link.click()
+        message.success('GIF 已下载（保留动画）')
+      } else {
+        // 没有后端处理，导出为静态帧
+        message.warning('GIF 将导出为静态帧')
+        downloadCanvas(c, `ylcraft_edit_${Date.now()}.png`, 'png')
+        message.success('图片已下载')
+      }
+    } else {
+      downloadCanvas(c, `ylcraft_edit_${Date.now()}.${originalFormat}`, originalFormat)
+      message.success('图片已下载')
+    }
   }
+  
+  // 下载原始 GIF
+  const handleDownloadOriginal = () => {
+    if (originalFormat !== 'gif') {
+      message.warning('只有 GIF 格式支持此操作')
+      return
+    }
+    const link = document.createElement('a')
+    link.href = originalSrc
+    link.download = `ylcraft_original_${Date.now()}.gif`
+    link.click()
+    message.success('原始 GIF 已下载')
+  }
+  
   const handleResetAll = async () => {
     if (!originalSrc) return
     setRotation(0); setFlipH(false); setFlipV(false); resetFilters()
+    setProcessedGifUrl('') // 清除处理后的 GIF
     await loadImageToCanvas(originalSrc, false)
     message.info('已重置为原图')
   }
@@ -844,7 +1107,30 @@ export default function ImageEditorPage() {
                   </div>
                 )}
               </div>
+                {/* 交互模式开关 */}
+                <div style={{ marginBottom: 12 }}>
+                  <Space>
+                    <Switch size="small" checked={wmScaleMode} onChange={setWmScaleMode} />
+                    <span style={{ fontSize: 12, color: THEME.textSecondary }}>
+                      {wmScaleMode ? '✓ 交互模式已开启' : '交互模式（拖动调整）'}
+                    </span>
+                  </Space>
+                </div>
+                
+                {wmScaleMode && (
+                  <div style={{ fontSize: 11, padding: '6px 8px', background: '#e6f7ff', borderRadius: 4, border: `1px solid #91d5ff`, color: '#1890ff', marginBottom: 12 }}>
+                    ✏️ 拖动水印可移动位置<br/>
+                    📐 拖动右下角按钮可缩放大小<br/>
+                    ❌ 点击左上角按钮可删除水印
+                  </div>
+                )}
+                
                 <Button block icon={<AimOutlined />} onClick={handleAddTextWatermark}>添加文字水印</Button>
+                {wmText && (
+                  <Button block danger style={{ marginTop: 8 }} icon={<ClearOutlined />} onClick={() => { setWmText(''); setWmScaleMode(false) }}>
+                    删除水印
+                  </Button>
+                )}
               </>
             ) : (
               /* SVG/图片水印 */
@@ -944,10 +1230,18 @@ export default function ImageEditorPage() {
                 <Tag style={{ cursor: 'pointer' }} onClick={() => setZoom(100)}>{zoom}%</Tag>
                 <Divider type="vertical" />
                 <Button size="small" icon={<PictureOutlined />}
-                  onClick={() => { setOriginalSrc(''); setHistory([]); historyIdx.current = -1; setAsciiResult(''); setSvgWatermarkUrl('') }}
+                  onClick={() => { setOriginalSrc(''); setHistory([]); historyIdx.current = -1; setAsciiResult(''); setSvgWatermarkUrl(''); setProcessedGifUrl('') }}
                 >更换图片</Button>
                 <Button size="small" danger icon={<ClearOutlined />} onClick={handleResetAll}>重置</Button>
-                <Button size="small" type="primary" icon={<DownloadOutlined />} onClick={handleDownload}>下载图片</Button>
+                {originalFormat === 'gif' && (
+                  <>
+                    <Button size="small" onClick={handleDownloadOriginal}>下载原图</Button>
+                    {processedGifUrl && <Tag color="green">GIF 已处理</Tag>}
+                  </>
+                )}
+                <Button size="small" type="primary" icon={<DownloadOutlined />} onClick={handleDownload}>
+                  {originalFormat === 'gif' ? '下载带水印' : '下载图片'}
+                </Button>
               </Space>
             </div>
           </Card>
