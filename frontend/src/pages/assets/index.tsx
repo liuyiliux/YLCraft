@@ -215,6 +215,7 @@ export default function AssetsPage() {
                 value={filters.asset_type}
                 onChange={v => { setPage(1); setFilters(f => ({ ...f, asset_type: v })) }}
                 options={[
+                  { label: '全部', value: undefined },
                   { label: '视频', value: 'video' },
                   { label: '图片', value: 'image' },
                   { label: '音频', value: 'audio' },
@@ -227,6 +228,7 @@ export default function AssetsPage() {
                 value={filters.platform}
                 onChange={v => { setPage(1); setFilters(f => ({ ...f, platform: v })) }}
                 options={[
+                  { label: '全部', value: undefined },
                   { label: '抖音', value: 'douyin' },
                   { label: '快手', value: 'kuaishou' },
                   { label: 'B站', value: 'bilibili' },
@@ -239,12 +241,28 @@ export default function AssetsPage() {
                 value={filters.status}
                 onChange={v => { setPage(1); setFilters(f => ({ ...f, status: v })) }}
                 options={[
+                  { label: '全部', value: undefined },
                   { label: '已解析', value: 'parsed' },
                   { label: '下载中', value: 'downloading' },
                   { label: '就绪', value: 'ready' },
                   { label: '错误', value: 'error' },
                 ]}
               />
+              <Button 
+                icon={<ReloadOutlined />} 
+                onClick={() => {
+                  setFilters({
+                    asset_type: undefined,
+                    platform: undefined,
+                    status: undefined,
+                    search: '',
+                    tags: undefined,
+                  })
+                  setPage(1)
+                }}
+              >
+                重置
+              </Button>
               <Button icon={<ReloadOutlined />} onClick={loadAssets}>
                 刷新
               </Button>
