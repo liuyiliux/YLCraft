@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime
 from typing import Optional, Any, Dict
 from pathlib import Path
 
@@ -147,11 +148,17 @@ class GenericImageBackend(ImageBackend):
             # 获取实际使用的模型（支持动态模型选择）
             actual_model = params.get("model", self.model)
 
+            # 6. 下载图片到本地
+            local_path = None
+            image_url = result.get("url")
+            if image_url:
+                local_path = await self._download_image(image_url, req.prompt)
+
             return ImageGenerationResult(
                 success=result.get("success", False),
-                url=result.get("url"),
+                url=image_url,
                 urls=result.get("urls", []),
-                local_path=None,
+                local_path=local_path,
                 cost=result.get("cost", 0.0),
                 provider=self.name,
                 model=actual_model,
@@ -349,3 +356,63 @@ class GenericImageBackend(ImageBackend):
             # 不要在 __del__ 中尝试关闭异步客户端
             # 应该显式调用 close() 方法
             pass
+
+    async def _download_image(self, url: str, prompt: str) -> Optional[Path]:
+        """
+        下载图片到本地存储目录
+        
+        Args:
+            url: 图片 URL
+            prompt: 提示词（用于生成文件名）
+            
+        Returns:
+            本地文件路径，如果下载失败返回 None
+        """
+        try:
+            # 获取存储目录（优先从配置文件读取 media_storage_path）
+            from app.api.v1.settings import _load_settings
+            settings = _load_settings()
+            
+            media_storage_path = settings.get("media_storage_path")
+            if media_storage_path and Path(media_storage_path).exists():
+                save_dir = Path(media_storage_path) / "images"
+            else:
+                # 默认路径
+                backend_dir = Path(__file__).parent.parent.parent.parent
+                save_dir = backend_dir / "storage" / "images"
+            
+            save_dir.mkdir(parents=True, exist_ok=True)
+            
+            # 生成文件名（基于时间戳和提示词）
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            # 从提示词提取一部分作为文件名
+            safe_prompt = "".join(c for c in prompt[:20] if c.isalnum() or c in " -_").strip()
+            if not safe_prompt:
+                safe_prompt = "image"
+            
+            # 获取文件扩展名
+            ext = ".png"
+            if url.lower().endswith(".jpg") or url.lower().endswith(".jpeg"):
+                ext = ".jpg"
+            elif url.lower().endswith(".webp"):
+                ext = ".webp"
+            elif url.lower().endswith(".gif"):
+                ext = ".gif"
+            
+            filename = f"{timestamp}_{safe_prompt}{ext}"
+            local_path = save_dir / filename
+            
+            # 下载图片
+            response = await self.client.get(url)
+            response.raise_for_status()
+            
+            # 保存到本地
+            with open(local_path, "wb") as f:
+                f.write(response.content)
+            
+            logger.info(f"图片已保存到本地: {local_path}")
+            return local_path
+            
+        except Exception as e:
+            logger.error(f"下载图片失败: {e}")
+            return None
