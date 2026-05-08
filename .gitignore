@@ -47,3 +47,4 @@ frontend/.env.local
 .env.local
 backend/app/__pycache__/main.cpython-310.pyc
 backend/app/__pycache__/main.cpython-310.pyc
+backend/app/__pycache__/main.cpython-310.pyc
