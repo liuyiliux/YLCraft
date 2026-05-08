@@ -992,31 +992,31 @@ export default function SettingsPage() {
             />
           </Card>
         </Modal>
-        
-        {/* 图片悬浮预览 */}
-        {previewImageUrl && (
-          <Modal
-            open={true}
-            onCancel={() => setPreviewImageUrl(null)}
-            footer={null}
-            width="auto"
-            style={{ maxWidth: '90vw' }}
-            centered
-            closable
-          >
-            <div style={{ textAlign: 'center' }}>
-              <img 
-                src={previewImageUrl} 
-                alt="Preview" 
-                style={{ 
-                  maxWidth: '100%', 
-                  maxHeight: '80vh', 
-                  objectFit: 'contain' 
-                }} 
-              />
-            </div>
-          </Modal>
-        )}
+      )}
+
+      {/* 图片悬浮预览 */}
+      {previewImageUrl && (
+        <Modal
+          open={true}
+          onCancel={() => setPreviewImageUrl(null)}
+          footer={null}
+          width="auto"
+          style={{ maxWidth: '90vw' }}
+          centered
+          closable
+        >
+          <div style={{ textAlign: 'center' }}>
+            <img 
+              src={previewImageUrl} 
+              alt="Preview" 
+              style={{ 
+                maxWidth: '100%', 
+                maxHeight: '80vh', 
+                objectFit: 'contain' 
+              }} 
+            />
+          </div>
+        </Modal>
       )}
     </div>
   )

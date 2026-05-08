@@ -18,7 +18,7 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Depends, Query
-from sqlmodel import Session
+from sqlmodel import Session, SQLModel
 
 from app.db.database import get_session
 from app.db.models.ai_connector import (
