@@ -239,6 +239,7 @@ class AIConnectorUpdate(SQLModel):
     support_reference_image: Optional[bool] = None
     support_multiple_reference_images: Optional[bool] = None
     reference_image_field: Optional[str] = None
+    test_prompt: Optional[str] = None
 
 
 class AIConnectorResponse(SQLModel):
