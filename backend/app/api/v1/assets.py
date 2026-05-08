@@ -8,6 +8,7 @@ DELETE /api/v1/assets/:id           — 删除资产
 POST   /api/v1/assets/:id/tags     — 更新标签
 
 GET    /api/v1/assets/:id/download — 下载资产文件
+GET    /api/v1/assets/:id/thumbnail — 代理加载封面图
 
 GET    /api/v1/assets/tags         — 标签列表
 POST   /api/v1/assets/tags         — 创建标签
@@ -21,6 +22,7 @@ import os
 from datetime import datetime
 from typing import Optional
 
+import httpx
 from fastapi import APIRouter, HTTPException, Depends, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -88,6 +90,7 @@ def _asset_to_dict(asset: Asset) -> dict:
         "author": asset.author,
         "author_url": asset.author_url,
         "thumbnail_path": asset.thumbnail_path,
+        "thumbnail_url": f"/api/v1/assets/{asset.id}/thumbnail" if asset.thumbnail_path else None,
         "status": asset.status,
         "error_message": asset.error_message,
         "created_at": asset.created_at.isoformat() if asset.created_at else None,
@@ -214,10 +217,10 @@ class DeleteRequest(BaseModel):
 @router.delete("/{asset_id}", summary="删除资产")
 async def delete_asset(
     asset_id: str,
-    req: DeleteRequest = DeleteRequest(),
+    hard: bool = Query(False, description="true=同时删除物理文件，false=仅删除记录"),
     service: AssetService = Depends(get_asset_service),
 ):
-    ok = await service.delete(asset_id, hard=req.hard)
+    ok = await service.delete(asset_id, hard=hard)
     if not ok:
         raise HTTPException(status_code=404, detail="资产不存在")
     return {"success": True, "message": "已删除"}
@@ -295,3 +298,51 @@ async def create_tag(
 ):
     tag = await service.get_or_create_tag(req.name, req.color)
     return TagResponse(success=True, data=_tag_to_dict(tag))
+
+
+# ---------------------------------------------------------------------------
+# 图片代理（解决B站等平台跨域问题）
+# ---------------------------------------------------------------------------
+
+@router.get("/{asset_id}/thumbnail", summary="代理加载封面图")
+async def proxy_thumbnail(
+    asset_id: str,
+    service: AssetService = Depends(get_asset_service),
+):
+    """
+    通过后端代理加载封面图，解决跨域/防盗链问题
+    """
+    asset = await service.get_by_id(asset_id)
+    if not asset:
+        raise HTTPException(status_code=404, detail="资产不存在")
+    
+    if not asset.thumbnail_path:
+        raise HTTPException(status_code=404, detail="封面图不存在")
+    
+    try:
+        async with httpx.AsyncClient(
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Referer": f"https://{asset.platform}.com",
+            },
+            follow_redirects=True,
+            timeout=30.0
+        ) as client:
+            resp = await client.get(asset.thumbnail_path)
+            resp.raise_for_status()
+            
+            async def streamer():
+                async for chunk in resp.aiter_bytes(chunk_size=8192):
+                    yield chunk
+            
+            return StreamingResponse(
+                streamer(),
+                media_type=resp.headers.get("content-type", "image/jpeg"),
+                headers={
+                    "Cache-Control": "public, max-age=86400",
+                }
+            )
+    except Exception as e:
+        logger.error(f"代理加载封面图失败: {e}")
+        raise HTTPException(status_code=500, detail="加载封面图失败")
+

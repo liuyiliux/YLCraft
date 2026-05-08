@@ -277,6 +277,8 @@ async def _parse_with_ytdlp(url: str, platform: str = "unknown") -> VideoInfo:
             info.author_name = data.get("uploader") or data.get("channel") or ""
             info.author_uid = data.get("uploader_id") or data.get("channel_id") or ""
             info.duration = int(data.get("duration") or 0)
+            info.width = int(data.get("width") or 0)
+            info.height = int(data.get("height") or 0)
             info.like_count = int(data.get("like_count") or 0)
             info.comment_count = int(data.get("comment_count") or 0)
             info.play_count = int(data.get("view_count") or 0)
@@ -338,6 +340,8 @@ async def parse(url_or_text: str) -> VideoInfo:
                 info.author_uid = result.get("author_uid", "")
                 info.author_avatar = result.get("author_avatar", "")
                 info.duration = result.get("duration", 0)
+                info.width = result.get("width", 0)
+                info.height = result.get("height", 0)
                 info.like_count = result.get("like_count", 0)
                 info.comment_count = result.get("comment_count", 0)
                 info.share_count = result.get("share_count", 0)
@@ -366,6 +370,8 @@ async def parse(url_or_text: str) -> VideoInfo:
                 info.author_uid = result.get("author_uid", "")
                 info.author_avatar = result.get("author_avatar", "")
                 info.duration = result.get("duration", 0)
+                info.width = result.get("width", 0)
+                info.height = result.get("height", 0)
                 info.like_count = result.get("like_count", 0)
                 info.comment_count = result.get("comment_count", 0)
                 info.share_count = result.get("share_count", 0)
@@ -391,6 +397,8 @@ async def parse(url_or_text: str) -> VideoInfo:
         info.author_name = ytdlp_info.author_name or info.author_name
         info.cover_url = ytdlp_info.cover_url or info.cover_url
         info.duration = ytdlp_info.duration or info.duration
+        info.width = ytdlp_info.width or info.width
+        info.height = ytdlp_info.height or info.height
         info.parse_method = ytdlp_info.parse_method
         info.raw = ytdlp_info.raw
 
@@ -484,6 +492,8 @@ def to_breaker_format(info: VideoInfo) -> dict:
         },
         "platform": info.platform,
         "duration": info.duration,
+        "width": info.width,
+        "height": info.height,
         "like_count": info.like_count,
         "comment_count": info.comment_count,
         "share_count": info.share_count,

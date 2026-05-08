@@ -192,6 +192,13 @@ async def parse_download_url(req: ParseRequest):
     from app.db.models.asset import AssetType, AssetStatus
     from app.services.asset.service import AssetService
 
+    # 从 info 中提取 width/height
+    width = 0
+    height = 0
+    if info and isinstance(info, dict):
+        width = int(info.get("width") or 0)
+        height = int(info.get("height") or 0)
+
     try:
         async with get_async_session() as db_session:
             asset_service = AssetService(db_session)
@@ -204,6 +211,17 @@ async def parse_download_url(req: ParseRequest):
                 duration=duration,
                 metadata=info,
             )
+            # 更新 width/height/thumbnail
+            if width and asset.width == 0:
+                asset.width = width
+            if height and asset.height == 0:
+                asset.height = height
+            if cover_url and not asset.thumbnail_path:
+                asset.thumbnail_path = cover_url
+            if asset.duration == 0 and duration:
+                asset.duration = duration
+            await db_session.commit()
+            await db_session.refresh(asset)
             logger.info(f"[parse] asset tracked | id={asset.id} | platform={platform}")
     except Exception as e:
         logger.warning(f"[parse] asset tracking failed (non-blocking): {e}")
@@ -315,6 +333,15 @@ def _ytdlp_download(url: str, quality_label: str | None, title: str | None, page
 async def download_video(req: DownloadRequest):
     """调用 yt-dlp 下载视频，以流式响应返回"""
     loop = asyncio.get_running_loop()
+    
+    # 先解析视频获取 width/height/thumbnail
+    video_info = None
+    try:
+        from app.services.video import parser
+        video_info = await parser.parse(req.url)
+    except Exception:
+        pass
+    
     try:
         filepath = await asyncio.wait_for(
             loop.run_in_executor(
@@ -342,6 +369,11 @@ async def download_video(req: DownloadRequest):
 
     effective_url = req.page_url if req.page_url else req.url
     file_size = os.path.getsize(filepath) if os.path.exists(filepath) else 0
+    
+    width = video_info.width if video_info else 0
+    height = video_info.height if video_info else 0
+    duration = video_info.duration if video_info else 0
+    thumbnail_path = video_info.cover_url if video_info else ""
 
     from app.db.database import get_async_session
     from app.db.models.asset import Asset, AssetType, AssetStatus
@@ -353,6 +385,13 @@ async def download_video(req: DownloadRequest):
         platform = _detect_platform(effective_url)
         if existing:
             await asset_service.mark_ready(existing, file_path=filepath, file_size=file_size, mime_type=media_type)
+            if width: existing.width = width
+            if height: existing.height = height
+            if duration: existing.duration = duration
+            if thumbnail_path and not existing.thumbnail_path:
+                existing.thumbnail_path = thumbnail_path
+            await db_session.commit()
+            await db_session.refresh(existing)
             asset_id = existing.id
         else:
             asset_type = AssetType.AUDIO if req.is_audio else AssetType.VIDEO
@@ -365,6 +404,10 @@ async def download_video(req: DownloadRequest):
                 file_size=file_size,
                 mime_type=media_type,
                 status=AssetStatus.READY,
+                width=width,
+                height=height,
+                duration=duration,
+                thumbnail_path=thumbnail_path,
             )
             asset_id = new_asset.id
 

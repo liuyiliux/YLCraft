@@ -152,11 +152,27 @@ async def parse_bilibili(url: str) -> dict:
 
         qualities = []
         video_url = ""
+        width = 0
+        height = 0
 
         durl_list = play_data.get("durl") or []
         if isinstance(durl_list, list) and durl_list:
             best = durl_list[0]
             video_url = best.get("url", "") or ""
+            # 尝试从 data 里获取 width/height
+            # B站API可能在不同位置返回尺寸，尝试从多个字段获取
+            if isinstance(view_data, dict):
+                # 尝试从 pages 中获取
+                pages = view_data.get("pages", [])
+                if pages and len(pages) > 0:
+                    first_page = pages[0] if isinstance(pages[0], dict) else {}
+                    width = int(first_page.get("width") or 0)
+                    height = int(first_page.get("height") or 0)
+                # 如果没有，尝试从 view 数据里找
+                if not width or not height:
+                    width = int(view_data.get("width") or 0)
+                    height = int(view_data.get("height") or 0)
+
             if len(durl_list) > 1:
                 for i, d in enumerate(durl_list):
                     segment_url = d.get("url", "") if isinstance(d, dict) else ""
@@ -164,14 +180,14 @@ async def parse_bilibili(url: str) -> dict:
                         qualities.append({
                             "quality": f"分段{i+1}",
                             "url": segment_url,
-                            "resolution": "",
+                            "resolution": f"{width}x{height}" if width and height else "",
                             "filesize": str(d.get("size", "")) or "未知",
                         })
             else:
                 qualities.append({
                     "quality": "720P",
                     "url": video_url,
-                    "resolution": "",
+                    "resolution": f"{width}x{height}" if width and height else "",
                     "filesize": str(durl_list[0].get("size", "")) or "未知",
                 })
 
@@ -190,6 +206,8 @@ async def parse_bilibili(url: str) -> dict:
             "author_uid": author_uid,
             "author_avatar": author_avatar,
             "duration": duration,
+            "width": width,
+            "height": height,
             "platform": "bilibili",
             "like_count": like_count,
             "comment_count": comment_count,

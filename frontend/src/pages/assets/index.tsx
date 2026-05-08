@@ -65,6 +65,11 @@ export default function AssetsPage() {
   const [detailAsset, setDetailAsset] = useState<any>(null)
   const [tags, setTags] = useState<any[]>([])
   const [batchMode, setBatchMode] = useState(false)
+  const [deleteModal, setDeleteModal] = useState<{
+    visible: boolean,
+    isBatch: boolean,
+    assets: any[]
+  }>({ visible: false, isBatch: false, assets: [] })
 
   const loadAssets = async () => {
     setLoading(true)
@@ -100,36 +105,44 @@ export default function AssetsPage() {
     loadTags()
   }, [])
 
-  const handleDelete = async (id: string, e?: React.MouseEvent) => {
+  const handleDelete = async (asset: any, e?: React.MouseEvent) => {
     if (e) {
       e.stopPropagation()
     }
-    Modal.confirm({
-      title: '确认删除',
-      content: '删除后可在回收站恢复',
-      async onOk() {
-        await deleteAsset(id)
-        message.success('已删除')
-        loadAssets()
-      },
+    setDeleteModal({
+      visible: true,
+      isBatch: false,
+      assets: [asset]
     })
   }
 
   const handleBatchDelete = async () => {
     if (selectedIds.length === 0) return
-    Modal.confirm({
-      title: '确认批量删除',
-      content: `确定删除选中的 ${selectedIds.length} 个素材吗？`,
-      async onOk() {
-        for (const id of selectedIds) {
-          await deleteAsset(id)
-        }
-        message.success(`已删除 ${selectedIds.length} 个素材`)
-        setSelectedIds([])
-        setBatchMode(false)
-        loadAssets()
-      },
+    const assetsToDelete = assets.filter(a => selectedIds.includes(a.id))
+    setDeleteModal({
+      visible: true,
+      isBatch: true,
+      assets: assetsToDelete
     })
+  }
+
+  const confirmDelete = async (hard: boolean) => {
+    const { assets: assetsToDelete, isBatch } = deleteModal
+    try {
+      for (const asset of assetsToDelete) {
+        await deleteAsset(asset.id, hard)
+      }
+      message.success(hard 
+        ? `已删除 ${assetsToDelete.length} 个素材和文件` 
+        : `已删除 ${assetsToDelete.length} 个素材记录`
+      )
+    } catch (e) {
+      message.error('删除失败')
+    }
+    setDeleteModal({ visible: false, isBatch: false, assets: [] })
+    setSelectedIds([])
+    setBatchMode(false)
+    loadAssets()
   }
 
   const toggleSelectAll = (checked: boolean) => {
@@ -278,9 +291,9 @@ export default function AssetsPage() {
                   cover={
                     batchMode ? (
                       <div style={{ position: 'relative', height: 160 }}>
-                        {asset.thumbnail_path ? (
+                        {asset.thumbnail_url ? (
                           <Image
-                            src={asset.thumbnail_path}
+                            src={asset.thumbnail_url}
                             height={160}
                             style={{ objectFit: 'cover' }}
                             preview={false}
@@ -305,9 +318,9 @@ export default function AssetsPage() {
                         </div>
                       </div>
                     ) : (
-                      asset.thumbnail_path ? (
+                      asset.thumbnail_url ? (
                         <Image
-                          src={asset.thumbnail_path}
+                          src={asset.thumbnail_url}
                           height={160}
                           style={{ objectFit: 'cover' }}
                         />
@@ -319,9 +332,19 @@ export default function AssetsPage() {
                     )
                   }
                   actions={!batchMode ? [
-                    <DownloadOutlined key="download" />,
-                    <TagOutlined key="tag" />,
-                    <DeleteOutlined key="delete" onClick={(e) => handleDelete(asset.id, e)} />,
+                    <DownloadOutlined key="download" onClick={(e) => {
+                      e.stopPropagation()
+                      // 下载文件
+                      const link = document.createElement('a')
+                      link.href = `/api/v1/assets/${asset.id}/download`
+                      link.download = asset.title || 'asset'
+                      link.click()
+                    }} />,
+                    <TagOutlined key="tag" onClick={(e) => {
+                      e.stopPropagation()
+                      message.info('标签功能开发中')
+                    }} />,
+                    <DeleteOutlined key="delete" onClick={(e) => handleDelete(asset, e)} />,
                   ] : []}
                   onClick={() => {
                     if (!batchMode) {
@@ -380,6 +403,17 @@ export default function AssetsPage() {
           footer={null}
           width={640}
         >
+          {/* 预览图 */}
+          {detailAsset.thumbnail_url && (
+            <div style={{ marginBottom: 16, textAlign: 'center' }}>
+              <Image
+                src={detailAsset.thumbnail_url}
+                alt={detailAsset.title}
+                style={{ maxHeight: 300, objectFit: 'contain' }}
+              />
+            </div>
+          )}
+          
           <Descriptions column={2} size="small">
             <Descriptions.Item label="类型">{detailAsset.asset_type}</Descriptions.Item>
             <Descriptions.Item label="平台">{detailAsset.platform}</Descriptions.Item>
@@ -389,6 +423,7 @@ export default function AssetsPage() {
             </Descriptions.Item>
             <Descriptions.Item label="大小">{detailAsset.file_size ? `${(detailAsset.file_size / 1024 / 1024).toFixed(1)} MB` : '-'}</Descriptions.Item>
             <Descriptions.Item label="分辨率">{detailAsset.width && detailAsset.height ? `${detailAsset.width}x${detailAsset.height}` : '-'}</Descriptions.Item>
+            <Descriptions.Item label="时长">{detailAsset.duration ? `${Math.floor(detailAsset.duration / 60)}:${String(Math.floor(detailAsset.duration % 60)).padStart(2, '0')}` : '-'}</Descriptions.Item>
             <Descriptions.Item label="来源URL" span={2}>
               <a href={detailAsset.source_url} target="_blank" rel="noreferrer">{detailAsset.source_url}</a>
             </Descriptions.Item>
@@ -405,6 +440,41 @@ export default function AssetsPage() {
           )}
         </Modal>
       )}
+
+      {/* 删除确认弹窗 */}
+      <Modal
+        open={deleteModal.visible}
+        title={deleteModal.isBatch ? '确认批量删除' : '确认删除'}
+        onCancel={() => setDeleteModal({ visible: false, isBatch: false, assets: [] })}
+        footer={[
+          <Button key="cancel" onClick={() => setDeleteModal({ visible: false, isBatch: false, assets: [] })}>
+            取消
+          </Button>,
+          <Button key="soft" onClick={() => confirmDelete(false)}>
+            仅删除记录
+          </Button>,
+          <Button key="hard" type="primary" danger onClick={() => confirmDelete(true)}>
+            同时删除文件
+          </Button>,
+        ]}
+      >
+        <div>
+          <p>删除后不可恢复</p>
+          {deleteModal.assets.some(a => a.file_path) && (
+            <p>是否同时删除素材文件？</p>
+          )}
+          {deleteModal.isBatch && (
+            <div style={{ marginTop: 12, padding: 12, background: theme.bgElevated, borderRadius: 4 }}>
+              <p><strong>将要删除的素材：</strong></p>
+              <ul style={{ marginTop: 8, marginLeft: 20 }}>
+                {deleteModal.assets.map(a => (
+                  <li key={a.id}>{a.title || '无标题'}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </Modal>
     </div>
   )
 }
