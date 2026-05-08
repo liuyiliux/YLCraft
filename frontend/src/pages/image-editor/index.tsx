@@ -180,7 +180,10 @@ export default function ImageEditorPage() {
   const [wmFontSize, setWmFontSize] = useState(24)
   const [wmColor, setWmColor] = useState('#ffffff88')
   const [wmOpacity, setWmOpacity] = useState(30)
-  const [wmPos, setWmPos] = useState<'center' | 'bottom-right' | 'tile'>('bottom-right')
+  const [wmPos, setWmPos] = useState<'center' | 'bottom-right' | 'tile' | 'custom'>('bottom-right')
+  const [wmPosX, setWmPosX] = useState(50)
+  const [wmPosY, setWmPosY] = useState(50)
+  const [wmDrag, setWmDrag] = useState(false)
 
   // ---- SVG 水印图片 ----
   const [svgWatermarkUrl, setSvgWatermarkUrl] = useState<string>('')
@@ -419,6 +422,15 @@ export default function ImageEditorPage() {
         const x = Math.round((e.clientX - rect.left) * (cvs.width / rect.width))
         const y = Math.round((e.clientY - rect.top) * (cvs.height / rect.height))
         setTextPosX(x); setTextPosY(y)
+      } else if (activeTool === 'watermark') {
+        const cvs = drawCanvasRef.current; if (!cvs) return
+        const rect = cvs.getBoundingClientRect()
+        const mx = (e.clientX - rect.left) * (cvs.width / rect.width)
+        const my = (e.clientY - rect.top) * (cvs.height / rect.height)
+        const px = Math.round(mx / cvs.width * 100)
+        const py = Math.round(my / cvs.height * 100)
+        setWmPos('custom'); setWmPosX(Math.max(0, Math.min(100, px))); setWmPosY(Math.max(0, Math.min(100, py)))
+        setWmDrag(true)
       }
       return
     }
@@ -436,25 +448,60 @@ export default function ImageEditorPage() {
   }
 
   const onCropMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!cropDrag || activeTool !== 'crop') return
-    const cvs = drawCanvasRef.current; if (!cvs) return
-    const rect = cvs.getBoundingClientRect()
-    const mx = (e.clientX - rect.left) * (cvs.width / rect.width)
-    const my = (e.clientY - rect.top) * (cvs.height / rect.height)
-    const dx = ((mx - cropDrag.startX) / cvs.width) * 100
-    const dy = ((my - cropDrag.startY) / cvs.height) * 100
-    const { initX, initY, initW, initH } = cropDrag
-    let nx = initX, ny = initY, nw = initW, nh = initH
-    switch (cropDrag.type) {
-      case 'move': nx = Math.max(0, Math.min(100 - nw, initX + dx)); ny = Math.max(0, Math.min(100 - nh, initY + dy)); break
-      case 'nw': nx = Math.max(0, Math.min(initX + initW - 5, initX + dx)); ny = Math.max(0, Math.min(initY + initH - 5, initY + dy)); nw = initX + initW - nx; nh = initY + initH - ny; break
-      case 'ne': nw = Math.max(5, Math.min(100 - nx, initW + dx)); ny = Math.max(0, Math.min(initY + initH - 5, initY + dy)); nh = initY + initH - ny; break
-      case 'sw': nx = Math.max(0, Math.min(initX + initW - 5, initX + dx)); nw = initX + initW - nx; nh = Math.max(5, Math.min(100 - ny, initH + dy)); break
-      case 'se': nw = Math.max(5, Math.min(100 - nx, initW + dx)); nh = Math.max(5, Math.min(100 - ny, initH + dy)); break
+    if (activeTool === 'crop' && cropDrag) {
+      const cvs = drawCanvasRef.current; if (!cvs) return
+      const rect = cvs.getBoundingClientRect()
+      const mx = (e.clientX - rect.left) * (cvs.width / rect.width)
+      const my = (e.clientY - rect.top) * (cvs.height / rect.height)
+      const dx = ((mx - cropDrag.startX) / cvs.width) * 100
+      const dy = ((my - cropDrag.startY) / cvs.height) * 100
+      const { initX, initY, initW, initH } = cropDrag
+      let nx = initX, ny = initY, nw = initW, nh = initH
+      switch (cropDrag.type) {
+        case 'move': nx = Math.max(0, Math.min(100 - nw, initX + dx)); ny = Math.max(0, Math.min(100 - nh, initY + dy)); break
+        case 'nw': nx = Math.max(0, Math.min(initX + initW - 5, initX + dx)); ny = Math.max(0, Math.min(initY + initH - 5, initY + dy)); nw = initX + initW - nx; nh = initY + initH - ny; break
+        case 'ne': nw = Math.max(5, Math.min(100 - nx, initW + dx)); ny = Math.max(0, Math.min(initY + initH - 5, initY + dy)); nh = initY + initH - ny; break
+        case 'sw': nx = Math.max(0, Math.min(initX + initW - 5, initX + dx)); nw = initX + initW - nx; nh = Math.max(5, Math.min(100 - ny, initH + dy)); break
+        case 'se': nw = Math.max(5, Math.min(100 - nx, initW + dx)); nh = Math.max(5, Math.min(100 - ny, initH + dy)); break
+      }
+      setCropX(Math.round(nx)); setCropY(Math.round(ny)); setCropW(Math.round(nw)); setCropH(Math.round(nh))
+    } else if (wmDrag && activeTool === 'watermark') {
+      const cvs = drawCanvasRef.current; if (!cvs) return
+      const rect = cvs.getBoundingClientRect()
+      const mx = (e.clientX - rect.left) * (cvs.width / rect.width)
+      const my = (e.clientY - rect.top) * (cvs.height / rect.height)
+      const px = Math.round(mx / cvs.width * 100)
+      const py = Math.round(my / cvs.height * 100)
+      setWmPosX(Math.max(0, Math.min(100, px))); setWmPosY(Math.max(0, Math.min(100, py)))
     }
-    setCropX(Math.round(nx)); setCropY(Math.round(ny)); setCropW(Math.round(nw)); setCropH(Math.round(nh))
   }
-  const onCropMouseUp = () => setCropDrag(null)
+  const onCropMouseUp = () => { setCropDrag(null); setWmDrag(false) }
+
+  /** 水印/文字预览：在 draw canvas 上画半透明预览 */
+  const updateWmPreview = useCallback(() => {
+    const cvs = drawCanvasRef.current; if (!cvs || !originalSrc) return
+    const ctx = cvs.getContext('2d'); if (!ctx) return
+    const img = new Image()
+    img.onload = () => {
+      ctx.clearRect(0, 0, cvs.width, cvs.height)
+      ctx.drawImage(img, 0, 0, cvs.width, cvs.height)
+      if (activeTool === 'watermark' && useSvgWatermark === 'text' && wmText.trim()) {
+        const px = wmPosX / 100 * cvs.width, py = wmPosY / 100 * cvs.height
+        ctx.font = `${wmFontSize}px "Microsoft YaHei", sans-serif`
+        ctx.fillStyle = wmColor; ctx.globalAlpha = wmOpacity / 100
+        ctx.textBaseline = 'top'
+        ctx.fillText(wmText, px, py)
+        ctx.globalAlpha = 1
+        // 位置指示器
+        ctx.fillStyle = '#00d4ff'; ctx.beginPath(); ctx.arc(px, py, 4, 0, Math.PI * 2); ctx.fill()
+      }
+    }
+    img.src = history.length > 0 && historyIdx.current >= 0 ? history[historyIdx.current] : originalSrc
+  }, [originalSrc, wmText, wmFontSize, wmColor, wmOpacity, wmPosX, wmPosY, activeTool, useSvgWatermark, history, historyIdx.current])
+
+  useEffect(() => {
+    if (activeTool === 'watermark') updateWmPreview()
+  }, [wmPosX, wmPosY, wmText, wmFontSize, wmColor, wmOpacity, activeTool])
 
   // ======== 文字 ========
   const handleAddText = () => {
@@ -481,6 +528,10 @@ export default function ImageEditorPage() {
         const stepX = ctx.measureText(wmText).width + 60, stepY = wmFontSize + 30
         for (let y = stepY; y < cvs.height; y += stepY) for (let x = stepX; x < cvs.width; x += stepX) ctx.fillText(wmText, x, y)
         break
+      case 'custom':
+        const cx = wmPosX / 100 * cvs.width
+        const cy = wmPosY / 100 * cvs.height
+        ctx.textBaseline = 'top'; ctx.textAlign = 'left'; ctx.fillText(wmText, cx, cy); break
     }
     ctx.globalAlpha = 1
     snapshotAndPush(); message.success('水印已添加')
@@ -521,6 +572,10 @@ export default function ImageEditorPage() {
           const sxStep = dw + 30, syStep = dh + 30
           for (let y = 10; y < cvs.height; y += syStep) for (let x = 10; x < cvs.width; x += sxStep) ctx.drawImage(wmImg, x, y, dw, dh)
           break
+        case 'custom':
+          const cx = (wmPosX / 100) * cvs.width - dw / 2
+          const cy = (wmPosY / 100) * cvs.height - dh / 2
+          ctx.drawImage(wmImg, cx, cy, dw, dh); break
       }
       ctx.globalAlpha = 1
       snapshotAndPush(); message.success('SVG 水印已添加')
@@ -775,14 +830,20 @@ export default function ImageEditorPage() {
                 </Row>
                 <div style={{ marginBottom: 8 }}>
                   <div style={{ fontSize: 12, marginBottom: 4 }}>位置</div>
-                  <Select value={wmPos} onChange={v => setWmPos(v as any)} style={{ width: '100%' }}
-                    options={[
-                      { label: '居中', value: 'center' },
-                      { label: '右下角', value: 'bottom-right' },
-                      { label: '平铺', value: 'tile' },
-                    ]}
-                  />
-                </div>
+                <Select value={wmPos} onChange={v => setWmPos(v as any)} style={{ width: '100%' }}
+                  options={[
+                    { label: '居中', value: 'center' },
+                    { label: '右下角', value: 'bottom-right' },
+                    { label: '平铺', value: 'tile' },
+                    { label: '自定义(拖拽)', value: 'custom' },
+                  ]}
+                />
+                {wmPos === 'custom' && (
+                  <div style={{ marginTop: 6, fontSize: 11, padding: '4px 8px', background: THEME.bgPage, borderRadius: 4, border: `1px solid ${THEME.border}`, color: THEME.textSecondary }}>
+                    &#128161; 在右侧预览图上点击或拖动可调整水印位置（{wmPosX}%, {wmPosY}%）
+                  </div>
+                )}
+              </div>
                 <Button block icon={<AimOutlined />} onClick={handleAddTextWatermark}>添加文字水印</Button>
               </>
             ) : (
@@ -816,13 +877,20 @@ export default function ImageEditorPage() {
                   </Col>
                 </Row>
                 <div style={{ marginBottom: 8 }}>
+                  <div style={{ fontSize: 12, marginBottom: 4 }}>位置</div>
                   <Select value={wmPos} onChange={v => setWmPos(v as any)} style={{ width: '100%' }}
                     options={[
                       { label: '居中', value: 'center' },
                       { label: '右下角', value: 'bottom-right' },
                       { label: '平铺', value: 'tile' },
+                      { label: '自定义(拖拽)', value: 'custom' },
                     ]}
                   />
+                  {wmPos === 'custom' && (
+                    <div style={{ marginTop: 6, fontSize: 11, padding: '4px 8px', background: THEME.bgPage, borderRadius: 4, border: `1px solid ${THEME.border}`, color: THEME.textSecondary }}>
+                      &#128161; 在右侧预览图上点击或拖动可调整水印位置（{wmPosX}%, {wmPosY}%）
+                    </div>
+                  )}
                 </div>
                 <Button block type="primary" icon={<AimOutlined />} onClick={handleAddSvgWatermark}
                   disabled={!svgWatermarkUrl}>
@@ -962,7 +1030,8 @@ export default function ImageEditorPage() {
                         pointerEvents: ['draw', 'crop', 'text', 'watermark'].includes(activeTool) ? 'auto' : 'none',
                         cursor: activeTool === 'draw' ? (drawMode === 'eraser' ? 'cell' : 'crosshair')
                               : activeTool === 'crop' ? (cropDrag ? 'move' : 'crosshair')
-                              : activeTool === 'text' || activeTool === 'watermark' ? 'crosshair'
+                              : activeTool === 'watermark' ? (wmDrag ? 'grabbing' : wmPos === 'custom' ? 'move' : 'crosshair')
+                              : activeTool === 'text' ? 'crosshair'
                               : 'default',
                       }}
                     />
