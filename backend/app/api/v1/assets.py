@@ -25,7 +25,7 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from app.db.database import get_session
+from app.db.database import get_async_session
 from app.db.models.asset import Asset, AssetType, AssetStatus, AssetTag
 from app.services.asset.service import AssetService
 
@@ -39,7 +39,7 @@ logger = logging.getLogger("ylcraft.assets")
 
 async def get_asset_service():
     """获取 AssetService 实例"""
-    async for session in get_session():
+    async with get_async_session() as session:
         yield AssetService(session)
 
 

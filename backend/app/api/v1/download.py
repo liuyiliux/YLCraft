@@ -96,6 +96,7 @@ async def _get_qualities(url: str, title: str, platform: str) -> list[VideoQuali
             if not info:
                 return []
             formats = info.get("formats") or []
+            duration = info.get("duration", 0)
             qualities = []
             seen_resolutions = set()
             for f in formats:
@@ -133,8 +134,10 @@ async def _get_qualities(url: str, title: str, platform: str) -> list[VideoQuali
                 size_str = "未知"
                 if filesize and filesize > 0:
                     size_str = f"{filesize / 1024 / 1024:.1f}MB"
-                elif tbr and tbr > 0:
-                    size_str = f"~{int(tbr * 10 / 8)}MB"
+                elif tbr and tbr > 0 and duration > 0:
+                    # 正确估算：tbr (kbps) * duration (秒) / 8 / 1024 = MB
+                    estimated_size = tbr * duration / 8 / 1024
+                    size_str = f"~{estimated_size:.1f}MB"
 
                 qualities.append(VideoQuality(
                     quality=quality,
@@ -185,12 +188,12 @@ async def parse_download_url(req: ParseRequest):
             video_url = video_url or url
 
     # 解析完成后，在素材库创建一条 PARSED 状态记录
-    from app.db.database import get_session
+    from app.db.database import get_async_session
     from app.db.models.asset import AssetType, AssetStatus
     from app.services.asset.service import AssetService
 
     try:
-        async with get_session() as db_session:
+        async with get_async_session() as db_session:
             asset_service = AssetService(db_session)
             asset = await asset_service.create_from_parse(
                 source_url=url,
@@ -340,11 +343,11 @@ async def download_video(req: DownloadRequest):
     effective_url = req.page_url if req.page_url else req.url
     file_size = os.path.getsize(filepath) if os.path.exists(filepath) else 0
 
-    from app.db.database import get_session
+    from app.db.database import get_async_session
     from app.db.models.asset import Asset, AssetType, AssetStatus
     from app.services.asset.service import AssetService
 
-    async with get_session() as db_session:
+    async with get_async_session() as db_session:
         asset_service = AssetService(db_session)
         existing = await asset_service.get_by_url(effective_url)
         platform = _detect_platform(effective_url)
@@ -503,11 +506,11 @@ async def _run_download_task(task: DownloadTask):
         effective_url = task.page_url if task.page_url else task.url
         file_size = os.path.getsize(filepath) if os.path.exists(filepath) else 0
 
-        from app.db.database import get_session
+        from app.db.database import get_async_session
         from app.db.models.asset import AssetType, AssetStatus
         from app.services.asset.service import AssetService
 
-        async with get_session() as db_session:
+        async with get_async_session() as db_session:
             asset_service = AssetService(db_session)
             existing = await asset_service.get_by_url(effective_url)
             platform = _detect_platform(effective_url)

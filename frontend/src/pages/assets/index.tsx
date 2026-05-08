@@ -29,6 +29,7 @@ import {
   Image,
   Pagination,
   Empty,
+  Checkbox,
 } from 'antd'
 import {
   SearchOutlined,
@@ -38,6 +39,8 @@ import {
   TagOutlined,
   ThunderboltOutlined,
   VideoCameraOutlined,
+  CheckOutlined,
+  CloseOutlined,
 } from '@ant-design/icons'
 import { listAssets, deleteAsset, getTags, createTag } from '../../api'
 
@@ -61,6 +64,7 @@ export default function AssetsPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [detailAsset, setDetailAsset] = useState<any>(null)
   const [tags, setTags] = useState<any[]>([])
+  const [batchMode, setBatchMode] = useState(false)
 
   const loadAssets = async () => {
     setLoading(true)
@@ -96,7 +100,10 @@ export default function AssetsPage() {
     loadTags()
   }, [])
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (id: string, e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation()
+    }
     Modal.confirm({
       title: '确认删除',
       content: '删除后可在回收站恢复',
@@ -108,20 +115,83 @@ export default function AssetsPage() {
     })
   }
 
+  const handleBatchDelete = async () => {
+    if (selectedIds.length === 0) return
+    Modal.confirm({
+      title: '确认批量删除',
+      content: `确定删除选中的 ${selectedIds.length} 个素材吗？`,
+      async onOk() {
+        for (const id of selectedIds) {
+          await deleteAsset(id)
+        }
+        message.success(`已删除 ${selectedIds.length} 个素材`)
+        setSelectedIds([])
+        setBatchMode(false)
+        loadAssets()
+      },
+    })
+  }
+
+  const toggleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedIds(assets.map(a => a.id))
+    } else {
+      setSelectedIds([])
+    }
+  }
+
+  const toggleSelect = (id: string, checked: boolean) => {
+    if (checked) {
+      setSelectedIds([...selectedIds, id])
+    } else {
+      setSelectedIds(selectedIds.filter(i => i !== id))
+    }
+  }
+
   return (
     <div>
       {/* 过滤栏 */}
       <Card style={{ marginBottom: 16 }}>
         <Row gutter={12} align="middle">
           <Col flex="auto">
-            <Search
-              placeholder="搜索标题..."
-              prefix={<SearchOutlined />}
-              value={filters.search}
-              onChange={e => setFilters(f => ({ ...f, search: e.target.value }))}
-              onSearch={val => { setPage(1); setFilters(f => ({ ...f, search: val })) }}
-              style={{ maxWidth: 300 }}
-            />
+            <Space>
+              <Search
+                placeholder="搜索标题..."
+                prefix={<SearchOutlined />}
+                value={filters.search}
+                onChange={e => setFilters(f => ({ ...f, search: e.target.value }))}
+                onSearch={val => { setPage(1); setFilters(f => ({ ...f, search: val })) }}
+                style={{ maxWidth: 300 }}
+              />
+              {batchMode && (
+                <Space>
+                  <Checkbox 
+                    checked={selectedIds.length === assets.length && assets.length > 0}
+                    indeterminate={selectedIds.length > 0 && selectedIds.length < assets.length}
+                    onChange={(e) => toggleSelectAll(e.target.checked)}
+                  >
+                    全选 ({selectedIds.length}/{assets.length})
+                  </Checkbox>
+                  <Button 
+                    danger 
+                    icon={<DeleteOutlined />}
+                    onClick={handleBatchDelete}
+                    disabled={selectedIds.length === 0}
+                  >
+                    批量删除
+                  </Button>
+                  <Button 
+                    icon={<CloseOutlined />}
+                    onClick={() => {
+                      setBatchMode(false)
+                      setSelectedIds([])
+                    }}
+                  >
+                    退出批量
+                  </Button>
+                </Space>
+              )}
+            </Space>
           </Col>
           <Col>
             <Space>
@@ -165,11 +235,18 @@ export default function AssetsPage() {
               <Button icon={<ReloadOutlined />} onClick={loadAssets}>
                 刷新
               </Button>
+              {!batchMode && (
+                <Button 
+                  icon={<CheckOutlined />}
+                  onClick={() => setBatchMode(true)}
+                >
+                  批量管理
+                </Button>
+              )}
               <Button 
                 type="primary" 
                 icon={<ThunderboltOutlined />} 
                 onClick={() => navigate('/image-gen')}
-                style={{ marginLeft: 8 }}
               >
                 图像生成
               </Button>
@@ -177,7 +254,6 @@ export default function AssetsPage() {
                 type="primary" 
                 icon={<VideoCameraOutlined />} 
                 onClick={() => navigate('/video-gen')}
-                style={{ marginLeft: 8 }}
               >
                 视频生成
               </Button>
@@ -195,26 +271,65 @@ export default function AssetsPage() {
             {assets.map(asset => (
               <Col xs={24} sm={12} md={8} lg={6} key={asset.id}>
                 <Card
-                  hoverable
+                  hoverable={!batchMode}
+                  style={{
+                    border: selectedIds.includes(asset.id) ? '2px solid #1890ff' : undefined
+                  }}
                   cover={
-                    asset.thumbnail_path ? (
-                      <Image
-                        src={asset.thumbnail_path}
-                        height={160}
-                        style={{ objectFit: 'cover' }}
-                      />
-                    ) : (
-                      <div style={{ height: 160, background: theme.bgElevated, display: 'flex', alignItems: 'center', justifyContent: 'center', color: theme.textSecondary }}>
-                        {asset.asset_type === 'video' ? '🎬' : asset.asset_type === 'image' ? '🖼️' : '📄'}
+                    batchMode ? (
+                      <div style={{ position: 'relative', height: 160 }}>
+                        {asset.thumbnail_path ? (
+                          <Image
+                            src={asset.thumbnail_path}
+                            height={160}
+                            style={{ objectFit: 'cover' }}
+                            preview={false}
+                          />
+                        ) : (
+                          <div style={{ height: 160, background: theme.bgElevated, display: 'flex', alignItems: 'center', justifyContent: 'center', color: theme.textSecondary }}>
+                            {asset.asset_type === 'video' ? '🎬' : asset.asset_type === 'image' ? '🖼️' : '📄'}
+                          </div>
+                        )}
+                        <div style={{ 
+                          position: 'absolute', 
+                          top: 8, 
+                          left: 8, 
+                          background: 'rgba(255,255,255,0.9)',
+                          borderRadius: 4,
+                          padding: 4
+                        }}>
+                          <Checkbox 
+                            checked={selectedIds.includes(asset.id)}
+                            onChange={(e) => toggleSelect(asset.id, e.target.checked)}
+                          />
+                        </div>
                       </div>
+                    ) : (
+                      asset.thumbnail_path ? (
+                        <Image
+                          src={asset.thumbnail_path}
+                          height={160}
+                          style={{ objectFit: 'cover' }}
+                        />
+                      ) : (
+                        <div style={{ height: 160, background: theme.bgElevated, display: 'flex', alignItems: 'center', justifyContent: 'center', color: theme.textSecondary }}>
+                          {asset.asset_type === 'video' ? '🎬' : asset.asset_type === 'image' ? '🖼️' : '📄'}
+                        </div>
+                      )
                     )
                   }
-                  actions={[
+                  actions={!batchMode ? [
                     <DownloadOutlined key="download" />,
                     <TagOutlined key="tag" />,
-                    <DeleteOutlined key="delete" onClick={() => handleDelete(asset.id)} />,
-                  ]}
-                  onClick={() => setDetailAsset(asset)}
+                    <DeleteOutlined key="delete" onClick={(e) => handleDelete(asset.id, e)} />,
+                  ] : []}
+                  onClick={() => {
+                    if (!batchMode) {
+                      setDetailAsset(asset)
+                    } else {
+                      toggleSelect(asset.id, !selectedIds.includes(asset.id))
+                    }
+                  }}
                 >
                   <Card.Meta
                     title={<span style={{ fontSize: 13 }}>{asset.title || '无标题'}</span>}
