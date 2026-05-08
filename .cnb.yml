@@ -9,6 +9,9 @@ $:
       stages:
         - name: init
           script: |
+            apt-get update && apt-get install -y --no-install-recommends python3-venv curl
+            curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+            apt-get install -y --no-install-recommends nodejs
             python3 --version && node --version
             echo '环境就绪'
 
