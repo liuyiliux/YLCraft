@@ -13,6 +13,7 @@ import {
   CloudDownloadOutlined,
   FolderOpenOutlined,
   PictureOutlined,
+  EditOutlined,
   VideoCameraOutlined,
   FireOutlined,
   MenuOutlined,
@@ -35,6 +36,7 @@ const publicItems: MenuProps['items'] = [
   { key: '/', icon: <DashboardOutlined />, label: '概览' },
   { key: '/assets', icon: <FolderOpenOutlined />, label: '素材库' },
   { key: '/tasks', icon: <ThunderboltOutlined />, label: '任务管理' },
+  { key: '/image-editor', icon: <EditOutlined />, label: '图片编辑' },
   { key: '/settings', icon: <SettingOutlined />, label: '设置' },
 ]
 

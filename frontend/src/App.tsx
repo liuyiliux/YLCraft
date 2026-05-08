@@ -23,6 +23,7 @@ import PlatformsPage from './pages/platforms'
 import PublishPage from './pages/publish'
 import CrawlerPage from './pages/crawler'
 import ComfyUIPage from './pages/comfyui'
+import ImageEditorPage from './pages/image-editor'
 
 /** 包裹层：读取当前主题并传给 Ant Design ConfigProvider */
 function AntdThemeWrapper({ children }: { children: React.ReactNode }) {
@@ -67,6 +68,7 @@ export default function App() {
               <Route path="platforms" element={<PlatformsPage />} />
               <Route path="publish" element={<PublishPage />} />
               <Route path="crawler" element={<CrawlerPage />} />
+              <Route path="image-editor" element={<ImageEditorPage />} />
               <Route path="settings" element={<SettingsPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>

@@ -15,8 +15,13 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine
 from sqlmodel import SQLModel
 
+# 动态数据库路径（兼容 Windows / Linux / macOS）
+_DB_DIR = Path(__file__).resolve().parent.parent.parent / "data"
+_DB_DIR.mkdir(parents=True, exist_ok=True)
+_DB_PATH = _DB_DIR / "ylcraft.db"
+
 # 异步数据库配置
-DATABASE_URL = "sqlite+aiosqlite:///F:/PycharmProjects/YLCraft/backend/data/ylcraft.db"
+DATABASE_URL = f"sqlite+aiosqlite:///{_DB_PATH}"
 
 engine = create_async_engine(
     DATABASE_URL,
@@ -29,7 +34,7 @@ AsyncSessionLocal = sessionmaker(
 )
 
 # 同步数据库配置（用于 init_manager 等同步上下文）
-SYNC_DATABASE_URL = "sqlite:///F:/PycharmProjects/YLCraft/backend/data/ylcraft.db"
+SYNC_DATABASE_URL = f"sqlite:///{_DB_PATH}"
 sync_engine = create_engine(
     SYNC_DATABASE_URL,
     echo=False,
