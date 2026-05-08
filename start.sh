@@ -61,12 +61,23 @@ check_command node
 # ========================================
 echo -e "${CYAN}[后端]${NC} 检查 Python 虚拟环境..."
 
-if [ ! -d "backend/venv" ]; then
-    echo -e "${YELLOW}[后端]${NC} 虚拟环境不存在，正在创建..."
+# 检查 venv 是否存在且完整（有 activate 脚本和 pip）
+VENV_OK=true
+if [ ! -f "backend/venv/bin/activate" ] || [ ! -f "backend/venv/bin/pip" ]; then
+    VENV_OK=false
+fi
+
+if [ "$VENV_OK" = true ]; then
+    echo -e "${GREEN}[后端]${NC} 虚拟环境已存在"
+else
+    if [ -d "backend/venv" ]; then
+        echo -e "${YELLOW}[后端]${NC} 虚拟环境不完整，正在重建..."
+        rm -rf backend/venv
+    else
+        echo -e "${YELLOW}[后端]${NC} 虚拟环境不存在，正在创建..."
+    fi
     python3 -m venv backend/venv
     echo -e "${GREEN}[后端]${NC} 虚拟环境创建完成"
-else
-    echo -e "${GREEN}[后端]${NC} 虚拟环境已存在"
 fi
 
 echo -e "${CYAN}[后端]${NC} 安装依赖..."
