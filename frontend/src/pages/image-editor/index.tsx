@@ -153,6 +153,7 @@ export default function ImageEditorPage() {
   const [keepRatio, setKeepRatio] = useState(true)
   const [cropX, setCropX] = useState(10), [cropY, setCropY] = useState(10)
   const [cropW, setCropW] = useState(80), [cropH, setCropH] = useState(80)
+  const [cropDrag, setCropDrag] = useState<{ type: 'move'|'nw'|'ne'|'sw'|'se'; startX: number; startY: number; initX: number; initY: number; initW: number; initH: number } | null>(null)
   const [rotation, setRotation] = useState(0)
   const [flipH, setFlipH] = useState(false), [flipV, setFlipV] = useState(false)
   const [brightness, setBrightness] = useState(100)
@@ -211,10 +212,16 @@ export default function ImageEditorPage() {
   /** 同步 mainCanvas → previewCanvas */
   const syncToPreview = () => syncCanvas(mainCanvasRef.current, previewCanvasRef.current)
 
+  /** 上传图片后等 canvas 挂载再加载 */
+  useEffect(() => {
+    if (originalSrc && mainCanvasRef.current && previewCanvasRef.current) {
+      loadImageToCanvas(originalSrc)
+    }
+  }, [originalSrc])
+
   const handleUpload = async (file: File) => {
     const url = URL.createObjectURL(file)
     setOriginalSrc(url)
-    await loadImageToCanvas(url)
     return false
   }
 
@@ -392,6 +399,63 @@ export default function ImageEditorPage() {
     message.info('画布已清空')
   }
 
+  // ======== 裁剪鼠标交互 ========
+  const getCropHandle = (px: number, py: number, w: number, h: number): 'move'|'nw'|'ne'|'sw'|'se'|null => {
+    const hs = 10 // handle size
+    if (Math.abs(px) < hs && Math.abs(py) < hs) return 'nw'
+    if (Math.abs(px - w) < hs && Math.abs(py) < hs) return 'ne'
+    if (Math.abs(px) < hs && Math.abs(py - h) < hs) return 'sw'
+    if (Math.abs(px - w) < hs && Math.abs(py - h) < hs) return 'se'
+    if (px >= 0 && px <= w && py >= 0 && py <= h) return 'move'
+    return null
+  }
+
+  const onCropMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (activeTool !== 'crop') {
+      // 文字/水印：点击设置位置
+      if (activeTool === 'text') {
+        const cvs = drawCanvasRef.current; if (!cvs) return
+        const rect = cvs.getBoundingClientRect()
+        const x = Math.round((e.clientX - rect.left) * (cvs.width / rect.width))
+        const y = Math.round((e.clientY - rect.top) * (cvs.height / rect.height))
+        setTextPosX(x); setTextPosY(y)
+      }
+      return
+    }
+    const cvs = drawCanvasRef.current; if (!cvs) return
+    const rect = cvs.getBoundingClientRect()
+    const mx = (e.clientX - rect.left) * (cvs.width / rect.width)
+    const my = (e.clientY - rect.top) * (cvs.height / rect.height)
+    // 把 % 值转为像素
+    const cw = cvs.width, ch = cvs.height
+    const rx = cropX / 100 * cw, ry = cropY / 100 * ch, rw = cropW / 100 * cw, rh = cropH / 100 * ch
+    const handle = getCropHandle(mx - rx, my - ry, rw, rh)
+    if (handle) {
+      setCropDrag({ type: handle, startX: mx, startY: my, initX: cropX, initY: cropY, initW: cropW, initH: cropH })
+    }
+  }
+
+  const onCropMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!cropDrag || activeTool !== 'crop') return
+    const cvs = drawCanvasRef.current; if (!cvs) return
+    const rect = cvs.getBoundingClientRect()
+    const mx = (e.clientX - rect.left) * (cvs.width / rect.width)
+    const my = (e.clientY - rect.top) * (cvs.height / rect.height)
+    const dx = ((mx - cropDrag.startX) / cvs.width) * 100
+    const dy = ((my - cropDrag.startY) / cvs.height) * 100
+    const { initX, initY, initW, initH } = cropDrag
+    let nx = initX, ny = initY, nw = initW, nh = initH
+    switch (cropDrag.type) {
+      case 'move': nx = Math.max(0, Math.min(100 - nw, initX + dx)); ny = Math.max(0, Math.min(100 - nh, initY + dy)); break
+      case 'nw': nx = Math.max(0, Math.min(initX + initW - 5, initX + dx)); ny = Math.max(0, Math.min(initY + initH - 5, initY + dy)); nw = initX + initW - nx; nh = initY + initH - ny; break
+      case 'ne': nw = Math.max(5, Math.min(100 - nx, initW + dx)); ny = Math.max(0, Math.min(initY + initH - 5, initY + dy)); nh = initY + initH - ny; break
+      case 'sw': nx = Math.max(0, Math.min(initX + initW - 5, initX + dx)); nw = initX + initW - nx; nh = Math.max(5, Math.min(100 - ny, initH + dy)); break
+      case 'se': nw = Math.max(5, Math.min(100 - nx, initW + dx)); nh = Math.max(5, Math.min(100 - ny, initH + dy)); break
+    }
+    setCropX(Math.round(nx)); setCropY(Math.round(ny)); setCropW(Math.round(nw)); setCropH(Math.round(nh))
+  }
+  const onCropMouseUp = () => setCropDrag(null)
+
   // ======== 文字 ========
   const handleAddText = () => {
     const cvs = mainCanvasRef.current; if (!cvs || !textContent.trim()) return
@@ -528,7 +592,10 @@ export default function ImageEditorPage() {
         return (
           <>
             <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 12, color: THEME.textPrimary }}>
-              设置裁剪区域（基于图片百分比）
+              <ScissorOutlined style={{ marginRight: 6 }} />裁剪
+            </div>
+            <div style={{ fontSize: 11, padding: '6px 8px', background: THEME.bgPage, borderRadius: 6, border: `1px solid ${THEME.border}`, marginBottom: 12, color: THEME.textSecondary }}>
+              &#128161; 在右侧预览图上拖拽裁剪框边角调整大小，拖拽中间移动位置
             </div>
             <Row gutter={[12, 12]}>
               <Col span={12}><div style={{ fontSize: 12, marginBottom: 4 }}>起始 X: <Tag>{cropX}%</Tag></div><Slider min={0} max={99} value={cropX} onChange={setCropX} /></Col>
@@ -635,7 +702,10 @@ export default function ImageEditorPage() {
         return (
           <>
             <TextArea rows={2} value={textContent} onChange={e => setTextContent(e.target.value)}
-              placeholder="输入要添加的文字..." style={{ marginBottom: 12 }} />
+              placeholder="输入要添加的文字..." style={{ marginBottom: 8 }} />
+            <div style={{ fontSize: 11, padding: '6px 8px', background: THEME.bgPage, borderRadius: 6, border: `1px solid ${THEME.border}`, marginBottom: 12, color: THEME.textSecondary }}>
+              &#128161; 在右侧预览图上点击可设定文字位置（当前 X:{textPosX} Y:{textPosY}）
+            </div>
             <Row gutter={[12, 12]}>
               <Col span={12}>
                 <div style={{ fontSize: 12, marginBottom: 4 }}>字号: <Tag>{textFontSize}px</Tag></div>
@@ -846,7 +916,7 @@ export default function ImageEditorPage() {
                 {/* ASCII 结果特殊处理 */}
                 {activeTool !== 'ascii' && asciiResult && (
                   <div style={{
-                    marginTop: 8, maxHeight: 150, overflow: 'auto', background: '#0d1117',
+                    marginTop: 8, maxHeight: 150, overflow: 'auto', background: THEME.bgElevated,
                     padding: 6, borderRadius: 4, fontFamily: '"Courier New"', fontSize: 4,
                     lineHeight: 1, whiteSpace: 'pre', color: '#c9d1d9', border: `1px solid ${THEME.border}`,
                   }}>{asciiResult}</div>
@@ -871,43 +941,83 @@ export default function ImageEditorPage() {
               >
                 <div style={{
                   overflow: 'auto', maxHeight: '68vh', textAlign: 'center',
-                  background: '#1a1a2e', borderRadius: 6, padding: 12,
+                  background: THEME.bgCard, borderRadius: 6, padding: 12,
                   border: `1px solid ${THEME.border}`,
                 }}>
                   {/* 隐藏的主 canvas */}
                   <canvas ref={mainCanvasRef} style={{ display: 'none' }} />
 
-                  {/* 绘图画布（交互层，覆盖在预览上） */}
-                  <canvas
-                    ref={drawCanvasRef}
-                    onMouseDown={startDrawing}
-                    onMouseMove={onDrawingMove}
-                    onMouseUp={stopDrawing}
-                    onMouseLeave={stopDrawing}
-                    style={{
-                      position: 'absolute',
-                      pointerEvents: activeTool === 'draw' ? 'auto' : 'none',
-                      transform: `scale(${zoom / 100})`,
-                      transformOrigin: 'top center',
-                      cursor: isDrawing ? (drawMode === 'eraser' ? 'cell' : 'crosshair') : 'default',
-                      zIndex: 10,
-                    }}
-                  />
+                  {/* 预览 canvas 容器（用于定位裁剪覆盖层） */}
+                  <div style={{ position: 'relative', display: 'inline-block', transform: `scale(${zoom / 100})`, transformOrigin: 'top center' }}>
+                    {/* 绘图画布（交互层，覆盖在预览上） */}
+                    <canvas
+                      ref={drawCanvasRef}
+                      onMouseDown={isDrawing ? startDrawing : onCropMouseDown}
+                      onMouseMove={isDrawing ? onDrawingMove : onCropMouseMove}
+                      onMouseUp={() => { if (isDrawing) stopDrawing(); onCropMouseUp() }}
+                      onMouseLeave={() => { if (isDrawing) stopDrawing(); onCropMouseUp() }}
+                      style={{
+                        position: 'absolute', inset: 0, zIndex: 10,
+                        width: '100%', height: '100%',
+                        pointerEvents: ['draw', 'crop', 'text', 'watermark'].includes(activeTool) ? 'auto' : 'none',
+                        cursor: activeTool === 'draw' ? (drawMode === 'eraser' ? 'cell' : 'crosshair')
+                              : activeTool === 'crop' ? (cropDrag ? 'move' : 'crosshair')
+                              : activeTool === 'text' || activeTool === 'watermark' ? 'crosshair'
+                              : 'default',
+                      }}
+                    />
+                    <canvas
+                      ref={previewCanvasRef}
+                      style={{
+                        maxWidth: '100%',
+                        display: 'block',
+                        border: `1px solid ${THEME.border}`,
+                        boxShadow: '0 4px 24px rgba(0,0,0,0.35)',
+                        borderRadius: 4,
+                        position: 'relative',
+                        zIndex: 1,
+                      }}
+                    />
 
-                  {/* 预览 canvas */}
-                  <canvas
-                    ref={previewCanvasRef}
-                    style={{
-                      maxWidth: '100%',
-                      transform: `scale(${zoom / 100})`,
-                      transformOrigin: 'top center',
-                      border: `1px solid ${THEME.border}`,
-                      boxShadow: '0 4px 24px rgba(0,0,0,0.35)',
-                      borderRadius: 4,
-                      position: 'relative',
-                      zIndex: 1,
-                    }}
-                  />
+                    {/* 裁剪覆盖层 */}
+                    {activeTool === 'crop' && (
+                      <div style={{
+                        position: 'absolute', inset: 0, zIndex: 20,
+                        pointerEvents: 'none', borderRadius: 4, overflow: 'hidden',
+                      }}>
+                        {/* 暗色蒙层 - 使用 box-shadow 挖空裁剪区域 */}
+                        <div style={{
+                          position: 'absolute', inset: 0,
+                          boxShadow: `0 0 0 9999px rgba(0,0,0,0.45)`,
+                          clipPath: `inset(${cropY}% ${100 - cropX - cropW}% ${100 - cropY - cropH}% ${cropX}%)`,
+                        }} />
+                        {/* 裁剪框 */}
+                        <div style={{
+                          position: 'absolute',
+                          left: `${cropX}%`, top: `${cropY}%`,
+                          width: `${cropW}%`, height: `${cropH}%`,
+                          border: '2px solid #fff',
+                          borderRadius: 2,
+                          pointerEvents: 'none',
+                        }}>
+                          {/* 四个角手柄 */}
+                          {['nw', 'ne', 'sw', 'se'].map(pos => (
+                            <div key={pos} style={{
+                              position: 'absolute',
+                              ...(pos === 'nw' ? { top: -5, left: -5 } : {}),
+                              ...(pos === 'ne' ? { top: -5, right: -5 } : {}),
+                              ...(pos === 'sw' ? { bottom: -5, left: -5 } : {}),
+                              ...(pos === 'se' ? { bottom: -5, right: -5 } : {}),
+                              width: 10, height: 10,
+                              background: '#fff',
+                              borderRadius: 2,
+                              boxShadow: '0 0 4px rgba(0,0,0,0.4)',
+                            }} />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </Card>
             </Col>
