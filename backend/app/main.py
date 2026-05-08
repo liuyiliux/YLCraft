@@ -256,13 +256,6 @@ def _register_routes():
     except Exception as e:
         logger.warning(f"Could not load live2d router: {e}")
 
-    # Live2D 工厂路由
-    try:
-        from app.api.v1 import live2d
-        app.include_router(live2d.router, prefix="/api/v1/live2d", tags=["Live2D Factory"])
-    except Exception as e:
-        logger.warning(f"Could not load live2d router: {e}")
-
     # ComfyUI 管理路由
     try:
         from app.api.v1 import comfyui

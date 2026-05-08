@@ -50,7 +50,7 @@ interface UseWebSocketOptions {
   autoConnect?: boolean
 }
 
-const WS_BASE = `ws://${window.location.hostname}:8000/api/v1/ws`
+const WS_BASE = `wss://${window.location.hostname}:8000/api/v1/ws`
 const MAX_RETRIES = 10
 const RETRY_DELAY = 3000
 

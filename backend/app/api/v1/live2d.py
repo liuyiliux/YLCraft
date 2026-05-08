@@ -570,6 +570,8 @@ async def test_api_key(key_id: str):
 
         else:
             return {"status": "unknown", "message": f"未知的 provider: {api_key.provider}"}
+
+
 async def update_model_processing_config(
     model_id: str,
     body: ModelProcessingConfigUpdateRequest
