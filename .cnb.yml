@@ -1,0 +1,21 @@
+main:
+  push:
+    - name: build-and-check
+      runner: { cpus: 2 }
+      docker:
+        image: python:3.11-slim
+      stages:
+        - name: backend-check
+          script: |
+            apt-get update && apt-get install -y --no-install-recommends > /dev/null 2>&1
+            cd backend
+            pip install -q --upgrade pip
+            pip install -q -r requirements.txt
+            python -c "from app.main import app; print('Backend import OK')"
+        - name: frontend-check
+          image: node:20
+          script: |
+            cd frontend
+            npm ci 2>/dev/null || npm install
+            npm run build
+          ifModify: ["frontend/**"]
