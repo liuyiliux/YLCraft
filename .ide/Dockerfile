@@ -4,12 +4,13 @@
 
 FROM python:3.11-slim
 
-# 安装 Node.js 20
+# 安装 Node.js 20 + 编译工具链（faster-whisper 依赖 C++ 编译）
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     curl \
     git \
     ffmpeg \
+    build-essential \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*

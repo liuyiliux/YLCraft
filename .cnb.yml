@@ -1,3 +1,17 @@
+$:
+  vscode:
+    - docker:
+        build: .ide/Dockerfile
+        image: python:3.11-slim
+      services:
+        - vscode
+        - docker
+      stages:
+        - name: init
+          script: |
+            python3 --version && node --version
+            echo '环境就绪'
+
 main:
   push:
     - name: build-and-check
