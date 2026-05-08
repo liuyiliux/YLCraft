@@ -165,6 +165,7 @@ export default function SettingsPage() {
       provider_type: provider.provider_type,
       api_key: '',
       base_url: provider.base_url || '',
+      api_endpoint: provider.api_endpoint || '',
       default_model: provider.default_model || '',
       max_tokens: provider.max_tokens || 4096,
       temperature: provider.temperature ?? 0.7,
@@ -255,6 +256,7 @@ export default function SettingsPage() {
       provider: provider.provider,
       provider_type: provider.provider_type,
       base_url: provider.base_url || '',
+      api_endpoint: provider.api_endpoint || '',
       default_model: provider.default_model || '',
       max_tokens: provider.max_tokens || 4096,
       temperature: provider.temperature || 0.7,
@@ -590,6 +592,10 @@ export default function SettingsPage() {
           <Form.Item name="base_url" label={<span style={{ color: THEME.textPrimary }}>Base URL (可选)</span>}>
             <Input placeholder="https://api.openai.com/v1" />
           </Form.Item>
+          
+          <Form.Item name="api_endpoint" label={<span style={{ color: THEME.textPrimary }}>API Endpoint (可选)</span>}>
+            <Input placeholder="例如：/images/generations 或 /services/aigc/wanx/v1/image/generation" />
+          </Form.Item>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0 16' }}>
             <Form.Item name="default_model" label={<span style={{ color: THEME.textPrimary }}>默认模型</span>}>
@@ -725,6 +731,10 @@ export default function SettingsPage() {
                 <div>
                   <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>Base URL</Text>
                   <div style={{ color: THEME.textPrimary, marginTop: 2, fontSize: 13 }}>{viewingProvider.base_url || <Text type="secondary" style={{ fontSize: 12 }}>未设置</Text>}</div>
+                </div>
+                <div>
+                  <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>API Endpoint</Text>
+                  <div style={{ color: THEME.textPrimary, marginTop: 2, fontSize: 13 }}>{viewingProvider.api_endpoint || <Text type="secondary" style={{ fontSize: 12 }}>未设置</Text>}</div>
                 </div>
                 <div>
                   <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>默认模型</Text>

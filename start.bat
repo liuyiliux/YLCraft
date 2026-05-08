@@ -3,82 +3,79 @@ chcp 65001 >nul 2>&1
 title YLCraft
 
 echo ========================================
-echo  YLCraft 启动脚本 (Windows)
+echo  YLCraft Start Script (Windows)
 echo ========================================
 echo.
 
-set "BASE_DIR=%~dp0"
-cd /d "%BASE_DIR%"
+cd /d "%~dp0"
 
 set "VENV_DIR=backend\venv_win"
+set "REQUIREMENTS_FILE=backend\requirements.txt"
 
 REM ========================================
-REM 后端初始化
+REM Backend Setup
 REM ========================================
-echo [后端] 检查 Python 虚拟环境...
+echo [Backend] Checking Python virtual environment...
 
 if not exist "%VENV_DIR%\Scripts\activate.bat" (
     if exist "%VENV_DIR%" (
-        echo [后端] 虚拟环境不完整，正在重建...
+        echo [Backend] Virtual environment incompatible, recreating...
         rmdir /s /q "%VENV_DIR%"
     ) else (
-        echo [后端] 虚拟环境不存在，正在创建...
+        echo [Backend] Virtual environment not found, creating...
     )
     python -m venv "%VENV_DIR%"
-    echo [后端] 虚拟环境创建完成
+    echo [Backend] Virtual environment created
+    echo [Backend] Installing dependencies...
+    call "%VENV_DIR%\Scripts\activate.bat"
+    pip install --upgrade pip >nul 2>&1
+    if exist "%REQUIREMENTS_FILE%" (
+        pip install -r "%REQUIREMENTS_FILE%"
+    )
+    echo [Backend] Dependencies installed
 ) else (
-    echo [后端] 虚拟环境已存在
+    echo [Backend] Virtual environment exists
+    echo [Backend] Checking and updating dependencies...
+    call "%VENV_DIR%\Scripts\activate.bat"
+    pip install --upgrade pip >nul 2>&1
+    if exist "%REQUIREMENTS_FILE%" (
+        pip install -r "%REQUIREMENTS_FILE%" >nul 2>&1
+    )
+    echo [Backend] Dependencies ready
 )
 
-echo [后端] 安装依赖...
-cd backend
-call "%VENV_DIR%\Scripts\activate.bat"
-pip install --upgrade pip >nul 2>&1
-if exist "requirements.txt" (
-    pip install -r requirements.txt >nul 2>&1
-)
-echo [后端] 依赖就绪
-cd ..
-
 REM ========================================
-REM 前端初始化
+REM Frontend Setup
 REM ========================================
-echo [前端] 检查依赖...
+echo [Frontend] Checking dependencies...
 if not exist frontend\node_modules (
-    echo [前端] node_modules 不存在，正在安装...
+    echo [Frontend] node_modules not found, installing...
     cd frontend
     call npm install
     cd ..
 ) else (
-    echo [前端] node_modules 已存在
+    echo [Frontend] node_modules exists
 )
 
 REM ========================================
-REM 启动服务
+REM Start Services
 REM ========================================
 echo.
 echo ========================================
-echo  启动服务...
+echo  Starting Services...
 echo ========================================
 
-echo @echo off > "%BASE_DIR%backend\start_backend.bat"
-echo cd /d "%BASE_DIR%backend" >> "%BASE_DIR%backend\start_backend.bat"
-echo call venv_win\Scripts\activate.bat >> "%BASE_DIR%backend\start_backend.bat"
-echo python -m uvicorn app.main:app --reload --port 8000 >> "%BASE_DIR%backend\start_backend.bat"
-
-start "YLCraft-Backend" cmd /k "%BASE_DIR%backend\start_backend.bat"
+start "YLCraft-Backend" cmd /k "cd /d ""%~dp0backend"" && venv_win\Scripts\activate.bat && python -m uvicorn app.main:app --reload --port 8000"
 
 timeout /t 4 /nobreak >nul
 
-start "YLCraft-Frontend" cmd /k "cd /d ""%BASE_DIR%frontend"" && npm run dev"
+start "YLCraft-Frontend" cmd /k "cd /d ""%~dp0frontend"" && npm run dev"
 
 echo.
 echo ========================================
-echo  YLCraft 已启动！
-echo  后端: http://localhost:8000
-echo  前端: http://localhost:5173
-echo  API文档: http://localhost:8000/docs
+echo  YLCraft Started!
+echo  Backend: http://localhost:8000
+echo  Frontend: http://localhost:5173
+echo  API Docs: http://localhost:8000/docs
 echo ========================================
 pause
-
-del "%BASE_DIR%backend\start_backend.bat" >nul 2>&1

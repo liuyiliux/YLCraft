@@ -114,6 +114,7 @@ class AIConnectorService:
             name=data.name,
             api_key=data.api_key,
             base_url=data.base_url,
+            api_endpoint=data.api_endpoint,
             organization_id=data.organization_id,
             project_id=data.project_id,
             default_model=data.default_model,
@@ -160,6 +161,8 @@ class AIConnectorService:
             conn.api_key = data.api_key
         if data.base_url is not None:
             conn.base_url = data.base_url
+        if data.api_endpoint is not None:
+            conn.api_endpoint = data.api_endpoint
         if data.organization_id is not None:
             conn.organization_id = data.organization_id
         if data.project_id is not None:
@@ -251,7 +254,7 @@ class AIConnectorService:
         if conn.base_url:
             try:
                 provider_type = conn.provider_type.value if hasattr(conn.provider_type, "value") else str(conn.provider_type or "llm")
-                request = self._build_test_request(conn.base_url, provider_type, conn.default_model)
+                request = self._build_test_request(conn.base_url, conn.api_endpoint, provider_type, conn.default_model)
                 headers = {
                     "Authorization": f"Bearer {conn.api_key}",
                     "Content-Type": "application/json",
@@ -311,16 +314,21 @@ class AIConnectorService:
 
         return {"success": True, "message": "API Key 格式正确"}
 
-    def _build_test_request(self, base_url: str, provider_type: str, model: str) -> dict:
+    def _build_test_request(self, base_url: str, api_endpoint: Optional[str], provider_type: str, model: str) -> dict:
         """
         构造最小测试请求。
 
-        参考 yiliu：不要盲目拼 /models，而是按连接器类型走真实接口。
+        参考 yiliu：支持 base_url + api_endpoint 分离配置。
+        如果提供了 api_endpoint，优先使用它；否则使用默认路径。
         """
         normalized_base = (base_url or "").rstrip("/")
         provider_type = (provider_type or "llm").lower()
 
-        def ensure_endpoint(endpoint: str) -> str:
+        def build_url(endpoint: str) -> str:
+            # 如果有 api_endpoint，优先使用
+            if api_endpoint:
+                return f"{normalized_base}{api_endpoint}"
+            # 否则使用默认端点
             if normalized_base.endswith(endpoint):
                 return normalized_base
             if normalized_base.endswith("/v1"):
@@ -330,7 +338,7 @@ class AIConnectorService:
         if provider_type == "image":
             return {
                 "method": "POST",
-                "url": ensure_endpoint("/images/generations"),
+                "url": build_url("/images/generations"),
                 "json": {
                     "model": model or "gpt-image-1",
                     "prompt": "连接测试图片",
@@ -342,7 +350,7 @@ class AIConnectorService:
         if provider_type == "llm":
             return {
                 "method": "POST",
-                "url": ensure_endpoint("/chat/completions"),
+                "url": build_url("/chat/completions"),
                 "json": {
                     "model": model or "gpt-4o-mini",
                     "messages": [

@@ -75,6 +75,7 @@ class AIConnectorBase(SQLModel):
 
     # 可选配置
     base_url: Optional[str] = Field(None, description="API 基础 URL（用于代理/自托管）")
+    api_endpoint: Optional[str] = Field(None, description="API 端点路径（如 /images/generations）")
     organization_id: Optional[str] = Field(None, description="组织 ID（OpenAI）")
     project_id: Optional[str] = Field(None, description="项目 ID（部分 API）")
 
@@ -178,6 +179,7 @@ class AIConnectorCreate(SQLModel):
     name: str
     api_key: str = ""
     base_url: Optional[str] = None
+    api_endpoint: Optional[str] = None
     organization_id: Optional[str] = None
     project_id: Optional[str] = None
     default_model: str = "gpt-4o"
@@ -207,6 +209,7 @@ class AIConnectorUpdate(SQLModel):
     name: Optional[str] = None
     api_key: Optional[str] = None
     base_url: Optional[str] = None
+    api_endpoint: Optional[str] = None
     organization_id: Optional[str] = None
     project_id: Optional[str] = None
     default_model: Optional[str] = None
@@ -238,6 +241,7 @@ class AIConnectorResponse(SQLModel):
     provider_label: str = ""  # 提供商中文名称
     name: str
     base_url: Optional[str] = None
+    api_endpoint: Optional[str] = None
     organization_id: Optional[str] = None
     default_model: str
     max_tokens: int
@@ -287,6 +291,7 @@ class AIConnectorResponse(SQLModel):
             provider_label=AIProvider.label(conn.provider),
             name=conn.name,
             base_url=conn.base_url,
+            api_endpoint=conn.api_endpoint,
             organization_id=conn.organization_id,
             default_model=conn.default_model,
             max_tokens=conn.max_tokens,
