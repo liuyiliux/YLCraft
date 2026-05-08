@@ -15,6 +15,9 @@ wheels/
 venv/
 ENV/
 .venv/
+backend/venv/
+backend/venv_win/
+backend/venv_linux/
 *.db
 *.sqlite
 *.sqlite3
@@ -41,4 +44,4 @@ Thumbs.db
 backend/config/local.yaml
 backend/data/ylcraft.db
 frontend/.env.local
-.env.localbackend/venv/
+.env.local

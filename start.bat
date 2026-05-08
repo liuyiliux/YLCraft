@@ -7,7 +7,8 @@ echo  YLCraft 启动脚本 (Windows)
 echo ========================================
 echo.
 
-cd /d "%~dp0"
+set "BASE_DIR=%~dp0"
+cd /d "%BASE_DIR%"
 
 set "VENV_DIR=backend\venv_win"
 
@@ -60,11 +61,16 @@ echo ========================================
 echo  启动服务...
 echo ========================================
 
-start "YLCraft-Backend" cmd /k "cd /d ""%~dp0backend"" && ""%VENV_DIR%\Scripts\activate.bat"" && python -m uvicorn app.main:app --reload --port 8000"
+echo @echo off > "%BASE_DIR%backend\start_backend.bat"
+echo cd /d "%BASE_DIR%backend" >> "%BASE_DIR%backend\start_backend.bat"
+echo call venv_win\Scripts\activate.bat >> "%BASE_DIR%backend\start_backend.bat"
+echo python -m uvicorn app.main:app --reload --port 8000 >> "%BASE_DIR%backend\start_backend.bat"
+
+start "YLCraft-Backend" cmd /k "%BASE_DIR%backend\start_backend.bat"
 
 timeout /t 4 /nobreak >nul
 
-start "YLCraft-Frontend" cmd /k "cd /d ""%~dp0frontend"" && npm run dev"
+start "YLCraft-Frontend" cmd /k "cd /d ""%BASE_DIR%frontend"" && npm run dev"
 
 echo.
 echo ========================================
@@ -74,3 +80,5 @@ echo  前端: http://localhost:5173
 echo  API文档: http://localhost:8000/docs
 echo ========================================
 pause
+
+del "%BASE_DIR%backend\start_backend.bat" >nul 2>&1
