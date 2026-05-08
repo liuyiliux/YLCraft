@@ -41,4 +41,4 @@ Thumbs.db
 backend/config/local.yaml
 backend/data/ylcraft.db
 frontend/.env.local
-.env.local
+.env.localbackend/venv/
