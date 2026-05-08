@@ -215,7 +215,7 @@ export default function AssetsPage() {
                 value={filters.asset_type}
                 onChange={v => { setPage(1); setFilters(f => ({ ...f, asset_type: v })) }}
                 options={[
-                  { label: '全部', value: undefined },
+                  { label: '全部', value: '' },
                   { label: '视频', value: 'video' },
                   { label: '图片', value: 'image' },
                   { label: '音频', value: 'audio' },
@@ -241,7 +241,7 @@ export default function AssetsPage() {
                 value={filters.status}
                 onChange={v => { setPage(1); setFilters(f => ({ ...f, status: v })) }}
                 options={[
-                  { label: '全部', value: undefined },
+                  { label: '全部', value: '' },
                   { label: '已解析', value: 'parsed' },
                   { label: '下载中', value: 'downloading' },
                   { label: '就绪', value: 'ready' },
@@ -252,11 +252,11 @@ export default function AssetsPage() {
                 icon={<ReloadOutlined />} 
                 onClick={() => {
                   setFilters({
-                    asset_type: undefined,
-                    platform: undefined,
-                    status: undefined,
+                    asset_type: '',
+                    platform: '',
+                    status: '',
                     search: '',
-                    tags: undefined,
+                    tags: '',
                   })
                   setPage(1)
                 }}
