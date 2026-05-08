@@ -189,6 +189,7 @@ export default function SettingsPage() {
       support_reference_image: provider.support_reference_image || false,
       support_multiple_reference_images: provider.support_multiple_reference_images || false,
       reference_image_field: provider.reference_image_field || 'image',
+      test_prompt: provider.test_prompt || '',
     })
     setModalVisible(true)
   }
@@ -294,6 +295,7 @@ export default function SettingsPage() {
       temperature: provider.temperature || 0.7,
       is_active: false, // 默认禁用
       description: `复制自 ${provider.name}`,
+      test_prompt: provider.test_prompt || '',
     })
     setModalVisible(true)
   }
@@ -692,6 +694,13 @@ export default function SettingsPage() {
             <TextArea rows={2} placeholder="可选：记录此连接的用途、限制等" />
           </Form.Item>
 
+          <Form.Item name="test_prompt" label={<span style={{ color: THEME.textPrimary }}>测试提示词 (可选)</span>}>
+            <TextArea 
+              rows={2} 
+              placeholder={`LLM 模式：测试使用的提示词（默认："Reply with ok."）\nImage 模式：测试图片生成的提示词（默认："连接测试图片"）`}
+            />
+          </Form.Item>
+
           {/* 扩展配置区域（图像/视频生成专用） */}
           <div style={{ 
             marginTop: 16, 
@@ -821,6 +830,10 @@ export default function SettingsPage() {
                 <div>
                   <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>温度参数</Text>
                   <div style={{ color: THEME.textPrimary, marginTop: 2, fontSize: 13 }}>{viewingProvider.temperature ?? 0.7}</div>
+                </div>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>测试提示词</Text>
+                  <div style={{ color: THEME.textPrimary, marginTop: 2, fontSize: 13 }}>{viewingProvider.test_prompt || <Text type="secondary" style={{ fontSize: 12 }}>未设置（使用默认值）</Text>}</div>
                 </div>
               </div>
             </Card>

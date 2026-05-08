@@ -122,6 +122,12 @@ class AIConnectorBase(SQLModel):
     reference_image_field: str = Field("image", description="参考图字段名")
     # ===== 结束：图像/视频生成专用配置 =====
 
+    # 测试配置
+    test_prompt: Optional[str] = Field(
+        None,
+        description="测试提示词（为空时使用默认值）"
+    )
+
     # 成本控制
     monthly_budget: Optional[float] = Field(None, description="月度预算（美元）")
     daily_limit: Optional[int] = Field(None, description="每日请求限制")
@@ -202,6 +208,7 @@ class AIConnectorCreate(SQLModel):
     support_reference_image: bool = False
     support_multiple_reference_images: bool = False
     reference_image_field: str = "image"
+    test_prompt: Optional[str] = None
 
 
 class AIConnectorUpdate(SQLModel):
@@ -266,6 +273,7 @@ class AIConnectorResponse(SQLModel):
     support_reference_image: bool = False
     support_multiple_reference_images: bool = False
     reference_image_field: str = "image"
+    test_prompt: Optional[str] = None
     has_api_key: bool = False  # 是否配置了 API Key（不返回实际 key）
 
     @classmethod
@@ -317,6 +325,7 @@ class AIConnectorResponse(SQLModel):
             support_reference_image=conn.support_reference_image,
             support_multiple_reference_images=conn.support_multiple_reference_images,
             reference_image_field=conn.reference_image_field,
+            test_prompt=conn.test_prompt,
             has_api_key=bool(conn.api_key),
         )
 

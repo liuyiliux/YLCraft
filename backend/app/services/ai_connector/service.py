@@ -136,6 +136,7 @@ class AIConnectorService:
             support_reference_image=data.support_reference_image,
             support_multiple_reference_images=data.support_multiple_reference_images,
             reference_image_field=data.reference_image_field,
+            test_prompt=data.test_prompt,
         )
         conn.set_available_models(data.available_models)
 
@@ -208,6 +209,8 @@ class AIConnectorService:
             conn.support_multiple_reference_images = data.support_multiple_reference_images
         if data.reference_image_field is not None:
             conn.reference_image_field = data.reference_image_field
+        if data.test_prompt is not None:
+            conn.test_prompt = data.test_prompt
 
         conn.updated_at = datetime.now(timezone.utc)
         self.session.add(conn)
@@ -254,7 +257,7 @@ class AIConnectorService:
         if conn.base_url:
             try:
                 provider_type = conn.provider_type.value if hasattr(conn.provider_type, "value") else str(conn.provider_type or "llm")
-                request = self._build_test_request(conn.base_url, conn.api_endpoint, provider_type, conn.default_model)
+                request = self._build_test_request(conn.base_url, conn.api_endpoint, provider_type, conn.default_model, conn.test_prompt)
                 
                 # 使用自定义请求体（如果提供了）
                 if custom_body:
@@ -319,7 +322,7 @@ class AIConnectorService:
 
         return {"success": True, "message": "API Key 格式正确"}
 
-    def _build_test_request(self, base_url: str, api_endpoint: Optional[str], provider_type: str, model: str) -> dict:
+    def _build_test_request(self, base_url: str, api_endpoint: Optional[str], provider_type: str, model: str, test_prompt: Optional[str] = None) -> dict:
         """
         构造最小测试请求。
 
@@ -358,18 +361,20 @@ class AIConnectorService:
             return f"{normalized_base}/{default_endpoint.lstrip('/')}"
 
         if provider_type == "image":
+            default_prompt = "连接测试图片"
             return {
                 "method": "POST",
                 "url": build_url("/images/generations"),
                 "json": {
                     "model": model or "gpt-image-1",
-                    "prompt": "连接测试图片",
+                    "prompt": test_prompt or default_prompt,
                     "size": "1024x1024",
                     "n": 1,
                 },
             }
 
         if provider_type == "llm":
+            default_prompt = "Reply with ok."
             return {
                 "method": "POST",
                 "url": build_url("/chat/completions"),
@@ -377,7 +382,7 @@ class AIConnectorService:
                     "model": model or "gpt-4o-mini",
                     "messages": [
                         {"role": "system", "content": "You are a helpful assistant."},
-                        {"role": "user", "content": "Reply with ok."},
+                        {"role": "user", "content": test_prompt or default_prompt},
                     ],
                     "max_tokens": 8,
                     "temperature": 0,
