@@ -182,6 +182,8 @@ export const chat = (data: any) =>
 export const generateImage = (data: any) =>
   request('/images/generate', { method: 'POST', body: JSON.stringify(data) })
 
+export const getImageBackends = () => request('/images/backends')
+
 export const ttsSpeak = (data: any) =>
   request('/tts/speak', { method: 'POST', body: JSON.stringify(data) })
 

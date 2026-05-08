@@ -55,7 +55,9 @@ class ImageResponse(BaseModel):
 
 
 class BackendInfo(BaseModel):
-    name: str
+    provider: str  # 纯净厂商名
+    provider_label: str  # 厂商中文标签
+    name: str  # 完整连接名称
     model: str  # 默认模型
     available_models: list[str] = []  # 可用模型列表（支持动态选择控制花费）
     capabilities: list[str]
@@ -70,33 +72,68 @@ class ImageBackendsResponse(BaseModel):
 @router.get("/backends", response_model=ImageBackendsResponse, summary="可用图像后端列表")
 async def list_backends():
     """返回所有已注册的图像生成后端"""
+    from app.db.database import SessionLocal
     manager = get_manager()
-    if not manager.is_loaded():
-        return ImageBackendsResponse(success=False, backends=[], default=None)
-
-    from app.core.contracts.types import MediaType
-    keys = manager.list_backends(MediaType.IMAGE)
-    info_list = []
-    for key in keys:
-        b = manager.get_backend(MediaType.IMAGE, key)
-        if b:
-            # 获取可用模型列表（支持动态模型选择）
-            available_models = []
-            if hasattr(b, 'get_available_models'):
-                available_models = b.get_available_models()
-            
-            info_list.append(BackendInfo(
-                name=b.name,
-                model=b.model,  # 默认模型
-                available_models=available_models,  # 可用模型列表
-                capabilities=list(b.capabilities),
-            ))
-
-    return ImageBackendsResponse(
-        success=True,
-        backends=info_list,
-        default=manager.get_default(MediaType.IMAGE),
-    )
+    
+    with SessionLocal() as db_session:
+        try:
+            if not manager.is_loaded():
+                from app.services.llm.manager import init_manager
+                from pathlib import Path
+                config_path = Path(__file__).parent.parent.parent.parent / "config" / "providers.yaml"
+                init_manager(str(config_path), session=db_session)
+                logger.info("BackendManager reinitialized from /backends endpoint")
+        except Exception as e:
+            logger.warning(f"Reinitializing manager failed: {e}")
+        
+        from app.db.models.ai_connector import AIConnector
+        connectors = db_session.query(AIConnector).filter(
+            AIConnector.is_active == True,
+            AIConnector.provider_type == 'image'
+        ).all()
+        
+        info_list = []
+        for conn in connectors:
+            try:
+                name = conn.name
+                model = conn.default_model or ''
+                capabilities = ['text_to_image']
+                if conn.support_reference_image:
+                    capabilities.append('image_to_image')
+                
+                available_models = []
+                if conn.default_params:
+                    try:
+                        import json
+                        default_params = json.loads(conn.default_params) if isinstance(conn.default_params, str) else conn.default_params
+                        if 'available_models' in default_params and isinstance(default_params['available_models'], list):
+                            available_models = default_params['available_models']
+                    except Exception:
+                        pass
+                if not available_models and model:
+                    available_models = [model]
+                
+                from app.db.models.ai_connector import AIProvider
+                provider_label = AIProvider.label(conn.provider)
+                info_list.append(BackendInfo(
+                    provider=conn.provider,
+                    provider_label=provider_label,
+                    name=name,
+                    model=model,
+                    available_models=available_models,
+                    capabilities=capabilities,
+                ))
+            except Exception as e:
+                logger.warning(f"Failed to get backend info for {conn.name}: {e}")
+                continue
+        
+        default_backend = info_list[0].name if info_list else None
+        
+        return ImageBackendsResponse(
+            success=True,
+            backends=info_list,
+            default=default_backend,
+        )
 
 
 @router.post("/generate", response_model=ImageResponse, summary="生成图片")

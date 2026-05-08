@@ -45,6 +45,7 @@ import {
 } from '@ant-design/icons'
 import type { UploadFile } from 'antd/es/upload/interface'
 import { useTheme } from '../../constants/theme'
+import { getImageBackends, generateImage as generateImageApi } from '../../api'
 
 const { TextArea } = Input
 const { Dragger } = Upload
@@ -61,6 +62,8 @@ interface GeneratedImage {
 }
 
 interface BackendInfo {
+  provider: string
+  provider_label: string
   name: string
   model: string
   available_models: string[]
@@ -96,32 +99,54 @@ export default function ImageGenPage() {
 
   // 预览
   const [previewImage, setPreviewImage] = useState<GeneratedImage | null>(null)
+  const hasFetchedBackends = useRef(false)
+
+  // 按厂商分组后端（使用 useMemo 确保数据变化时重新计算）
+  const { groupedBackends, vendorOptions } = useMemo(() => {
+    const groups = backends.reduce((acc, b) => {
+      const key = b.provider_label || b.provider
+      if (!acc[key]) {
+        acc[key] = {
+          provider: b.provider,
+          provider_label: key,
+          backends: [],
+        }
+      }
+      acc[key].backends.push(b)
+      return acc
+    }, {} as Record<string, { provider: string, provider_label: string, backends: BackendInfo[] }>)
+    
+    const options = Object.values(groups).map(g => ({
+      label: g.provider_label,
+      value: g.provider_label,
+    }))
+    
+    return { groupedBackends: groups, vendorOptions: options }
+  }, [backends])
 
   // 加载后端列表
   useEffect(() => {
-    fetch('/api/v1/images/backends')
-      .then(res => res.json())
+    if (hasFetchedBackends.current) return
+    hasFetchedBackends.current = true
+    getImageBackends()
       .then(data => {
-        if (data.success) {
+        if (data.success && data.backends.length > 0) {
           setBackends(data.backends)
-          setDefaultBackend(data.default)
-          setProvider(data.default)
-          // 默认使用后端的默认模型
-          const defaultBackend = data.backends.find((b: BackendInfo) => b.name === data.default)
-          if (defaultBackend) {
-            setSelectedModel(defaultBackend.model)
-          }
+          const firstBackend = data.backends[0]
+          const firstVendor = firstBackend.provider_label
+          setProvider(firstVendor)
+          setSelectedModel(firstBackend.model)
         }
       })
       .catch(() => message.error('加载后端列表失败'))
   }, [])
 
-  // Provider 切换时，重置模型选择
-  const handleProviderChange = (newProvider: string) => {
-    setProvider(newProvider)
-    const backend = backends.find(b => b.name === newProvider)
-    if (backend) {
-      setSelectedModel(backend.model)  // 重置为该 Provider 的默认模型
+  // 厂商切换时，重置模型选择
+  const handleProviderChange = (newVendor: string) => {
+    setProvider(newVendor)
+    const vendorGroup = Object.values(groupedBackends).find(g => g.provider_label === newVendor)
+    if (vendorGroup && vendorGroup.backends.length > 0) {
+      setSelectedModel(vendorGroup.backends[0].model)
     }
   }
 
@@ -153,14 +178,14 @@ export default function ImageGenPage() {
 
       setProgress(30)
 
-      const res = await fetch('/api/v1/images/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
+      // 找到当前厂商下的第一个后端，把完整的后端 name 传给 API
+      const vendorGroup = Object.values(groupedBackends).find(g => g.provider_label === provider)
+      const actualProviderName = vendorGroup?.backends[0]?.name || ''
+      body.provider = actualProviderName
+
+      const data = await generateImageApi(body)
 
       setProgress(80)
-      const data = await res.json()
 
       if (data.success) {
         const newImages: GeneratedImage[] = []
@@ -314,45 +339,43 @@ export default function ImageGenPage() {
               <Row gutter={[16, 12]}>
                 <Col span={12}>
                   <div style={{ marginBottom: 4, fontSize: 12, color: '#8b8ba8' }}>
-                    Provider
+                    厂商
                   </div>
                   <Select
                     value={provider}
                     onChange={handleProviderChange}
                     style={{ width: '100%' }}
-                    options={backends.map(b => ({
-                      label: b.name,
-                      value: b.name,
-                    }))}
+                    placeholder="选择厂商"
+                    options={vendorOptions}
                   />
                 </Col>
                 <Col span={12}>
                   <div style={{ marginBottom: 4, fontSize: 12, color: '#8b8ba8' }}>
-                    模型{selectedModel && backends.find(b => b.name === provider)?.available_models.length > 0 && '（动态选择控制花费）'}
+                    模型
                   </div>
                   {(() => {
-                    const currentBackend = backends.find(b => b.name === provider)
-                    const models = currentBackend?.available_models || []
-                    if (models.length > 1) {
-                      // 有多个模型可用，显示下拉选择
+                    const vendorGroup = Object.values(groupedBackends).find(g => g.provider_label === provider)
+                    const allModelsFromVendor = vendorGroup?.backends.flatMap(b => b.available_models) || []
+                    const uniqueModels = [...new Set(allModelsFromVendor)]
+                    if (uniqueModels.length > 0) {
                       return (
                         <Select
                           value={selectedModel}
                           onChange={setSelectedModel}
                           style={{ width: '100%' }}
-                          options={models.map(m => ({
+                          placeholder="选择模型"
+                          options={uniqueModels.map(m => ({
                             label: m,
                             value: m,
                           }))}
                         />
                       )
                     } else {
-                      // 只有一个或没有模型，显示输入框
                       return (
                         <Input
                           value={selectedModel}
                           onChange={e => setSelectedModel(e.target.value)}
-                          placeholder={currentBackend?.model || '输入模型名称'}
+                          placeholder="输入模型名称"
                           style={{ background: '#1e1e2e', border: '1px solid #333', color: '#e2e8f0' }}
                         />
                       )
