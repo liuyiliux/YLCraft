@@ -3,32 +3,41 @@ chcp 65001 >nul 2>&1
 title YLCraft
 
 echo ========================================
-echo  YLCraft 启动脚本
+echo  YLCraft 启动脚本 (Windows)
 echo ========================================
 echo.
 
 cd /d "%~dp0"
+
+set "VENV_DIR=backend\venv_win"
 
 REM ========================================
 REM 后端初始化
 REM ========================================
 echo [后端] 检查 Python 虚拟环境...
 
-if not exist backend\venv (
-    echo [后端] 虚拟环境不存在，正在创建...
-    python -m venv backend\venv
+if not exist "%VENV_DIR%\Scripts\activate.bat" (
+    if exist "%VENV_DIR%" (
+        echo [后端] 虚拟环境不完整，正在重建...
+        rmdir /s /q "%VENV_DIR%"
+    ) else (
+        echo [后端] 虚拟环境不存在，正在创建...
+    )
+    python -m venv "%VENV_DIR%"
     echo [后端] 虚拟环境创建完成
 ) else (
     echo [后端] 虚拟环境已存在
 )
 
 echo [后端] 安装依赖...
-call backend\venv\Scripts\activate.bat
+cd backend
+call "%VENV_DIR%\Scripts\activate.bat"
 pip install --upgrade pip >nul 2>&1
-for %%f in (requirements.txt) do (
-    if exist "backend\%%f" pip install -r backend\%%f >nul 2>&1
+if exist "requirements.txt" (
+    pip install -r requirements.txt >nul 2>&1
 )
 echo [后端] 依赖就绪
+cd ..
 
 REM ========================================
 REM 前端初始化
@@ -51,14 +60,11 @@ echo ========================================
 echo  启动服务...
 echo ========================================
 
-REM 启动后端
-start "YLCraft-Backend" cmd /k "cd /d "%~dp0backend" && ..\backend\venv\Scripts\activate.bat && python -m uvicorn app.main:app --reload --port 8000"
+start "YLCraft-Backend" cmd /k "cd /d ""%~dp0backend"" && ""%VENV_DIR%\Scripts\activate.bat"" && python -m uvicorn app.main:app --reload --port 8000"
 
-REM 等待后端启动
 timeout /t 4 /nobreak >nul
 
-REM 启动前端
-start "YLCraft-Frontend" cmd /k "cd /d "%~dp0frontend" && npm run dev"
+start "YLCraft-Frontend" cmd /k "cd /d ""%~dp0frontend"" && npm run dev"
 
 echo.
 echo ========================================
