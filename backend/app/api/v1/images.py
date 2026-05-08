@@ -194,7 +194,7 @@ async def generate_image(req: ImageGenerateRequest):
                 task_id=result.task_id,
                 prompt_id=result.prompt_id,
                 cost=result.cost,
-                provider=result.provider,
+                provider=result.provider or "",
                 status=result.status,
                 progress=result.progress,
             )
@@ -202,9 +202,9 @@ async def generate_image(req: ImageGenerateRequest):
             return ImageResponse(
                 success=False,
                 error=result.error,
-                provider=result.provider,
+                provider=result.provider or "",
                 status=result.status,
             )
     except Exception as e:
         logger.error(f"Image generation failed: {e}")
-        return ImageResponse(success=False, error=str(e))
+        return ImageResponse(success=False, error=str(e), provider="")

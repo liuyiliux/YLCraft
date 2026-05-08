@@ -100,6 +100,7 @@ class GenericImageBackend(ImageBackend):
             base_url=connector.base_url or "",
             headers=headers,
             timeout=120.0,
+            follow_redirects=True,
         )
 
         logger.info(f"✅ 初始化 GenericImageBackend: {self.name} (model={self.model})")
