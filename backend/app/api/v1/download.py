@@ -278,7 +278,7 @@ def _ytdlp_download(url: str, quality_label: str | None, title: str | None, page
 
     ffmpeg_path = get_ffmpeg_path()
     if ffmpeg_path:
-        ydl_opts["ffmpeg_location"] = ffmpeg_path
+        ydl_opts["ffmpeg_location"] = str(ffmpeg_path)
 
     cookie_path = get_cookie_manager().get_cookie_path_for_url(effective_url)
     if cookie_path:

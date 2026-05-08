@@ -76,6 +76,6 @@ async def get_ffmpeg():
     detected = get_ffmpeg_path()
     return FFmpegPathResponse(
         configured=configured,
-        detected=detected,
-        effective=configured or detected,
+        detected=str(detected) if detected else None,
+        effective=configured or (str(detected) if detected else None),
     )
