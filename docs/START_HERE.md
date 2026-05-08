@@ -11,11 +11,55 @@ GitHub: https://cnb.cool/yiliu/YLCraft
 4. `.memory/MEMORY.md` — 关键踩坑记录和架构决策（其他 AI 可读）
 
 ## 技术栈
-- 后端：FastAPI + Python，路径 `backend/`
+- 后端：FastAPI + Python，路径 `backend/`，虚拟环境 `backend/venv/`
 - 前端：React + TypeScript + Vite + AntDesign，路径 `frontend/`
 - 数据库：SQLite（开发）→ PostgreSQL（规划）
 - 启动：`start.bat` 同时启动后端(uvicorn)+前端(npm run dev)
 - 端口：后端 8000，前端 5173
+
+## 环境配置
+
+### 虚拟环境
+项目的 Python 虚拟环境位于：
+```
+F:\PycharmProjects\YLCraft\backend\venv\
+```
+
+⚠️ **重要**：所有 pip 安装和后端启动都必须使用此 venv，不要用系统 Python！
+
+### 启动后端
+
+**方法 1：激活 venv 后启动（推荐）**
+```powershell
+cd F:\PycharmProjects\YLCraft\backend
+.\venv\Scripts\Activate.ps1
+python -m uvicorn app.main:app --reload
+```
+
+**方法 2：直接用 venv 的 python 启动**
+```powershell
+F:\PycharmProjects\YLCraft\backend\venv\Scripts\python.exe -m uvicorn app.main:app --reload --app-dir=F:\PycharmProjects\YLCraft\backend
+```
+
+### 安装依赖
+使用项目 venv 的 pip 安装：
+```powershell
+F:\PycharmProjects\YLCraft\backend\venv\Scripts\pip.exe install -r backend/requirements.txt
+```
+
+### 常见问题
+
+**问题：后端启动时提示 "yt-dlp module missing"**
+- **原因**：后端用系统 Python 启动，但 yt-dlp 装在 venv 里
+- **解决**：确保用 venv 的 python 启动后端（见上方启动命令）
+
+**检查当前 Python 环境**：
+```powershell
+# 查看当前 python 路径
+(Get-Command python).Source
+
+# 应该指向：F:\PycharmProjects\YLCraft\backend\venv\Scripts\python.exe
+```
 
 ## 核心架构
 - BackendManager：Provider 注册表模式，litellm 统一调用
@@ -24,12 +68,31 @@ GitHub: https://cnb.cool/yiliu/YLCraft
 - 参考项目（已 clone）：`refs/`
   - Jellyfish / ArcReel / CutClaw / NarratoAI / montage-ai / MoneyPrinterTurbo
 
-## 当前进度
-- ✅ Phase 1：素材资产库（Asset Library）SQLite + SQLModel 数据层
-- ✅ Phase 2：素材库前端 + 后台下载任务（轮询 task_id）
-- ✅ Phase 4：角色管理模块
-- ✅ 抖音下载：iesdouyin 免 Cookie 方案 + 多清晰度(bitrate_info) + 文件名优化
-- ⬜ 待做：素材库改名(素材库→资产库) + 角色整合进统一资产库
+## 当前进度（2026-05-07 更新）
+
+**整体进度**：~100% 完成（后端 + 前端核心功能）
+
+### 已完成模块 ✅
+- ✅ Phase 1：素材资产库（Asset Library）SQLite + SQLModel
+- ✅ Phase 2：素材库前端 + 后台下载任务（轮询）
+- ✅ Phase 3：角色管理模块
+- ✅ Phase 4：字幕提取（faster-whisper + 4 种样式）
+- ✅ Phase 5：BGM 配乐（内置 10 首 + 用户上传）
+- ✅ Phase 6：Live2D 工厂（立绘→绑骨→VTS 导出→口型同步）
+- ✅ Phase 7：Clip Lab（CutClaw Agent / NarratoAI / MoE 多专家）
+- ✅ Phase 8：爆款拆解 + Story Maker
+- ✅ Phase 9：AI 图像/视频生成 + 素材采集
+
+### 后端状态
+- ✅ 核心服务 100% 完成
+- ✅ 9 个 REST API 模块
+- ✅ 8 个 Provider（4 LLM + 4 Image）
+- ✅ 9 个社交媒体连接器
+
+### 前端状态
+- ✅ React + Vite + AntDesign 完成
+- ✅ 9 个页面（素材库/下载/角色管理/剪辑/字幕/BGM/Live2D/AI 生成/素材采集）
+- ✅ 字幕 + BGM 功能完整集成
 
 ## 开发原则
 1. 先查 DESIGN.md（架构问题）

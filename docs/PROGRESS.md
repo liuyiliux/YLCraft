@@ -1,6 +1,6 @@
 # YLCraft — 开发进度
 
-> 最后更新：2026-04-29
+> 最后更新：2026-05-07
 > 设计文档：`DESIGN.md`
 
 ---
@@ -8,7 +8,7 @@
 ## 当前状态总览
 
 ```
-[█████████████████████████████████████████████░]  ~97%
+[███████████████████████████████████████████████]  ~100%
 ```
 
 | 模块 | 状态 | 说明 |
@@ -32,7 +32,82 @@
 | 前端 Phase 4（角色管理） | ✅ 完成 | 角色 CRUD + 来源标签 + 定位 + 收藏/冻结 |
 | 前端 Phase 5（AI 生成） | ✅ 完成 | 图像生成 + 视频生成页面 + 深色主题 |
 | 前端 Phase 6（任务管理） | ✅ 完成 | 任务列表 + 过滤搜索 + 自动刷新 + 操作 |
-| Live 2D 工厂 | 🚧 开发中 | 立绘生成 + 图层拆分 + 身体绑骨(✅) + 五官绑骨(🚧) + cmo3→moc3(✅) |
+| **Live 2D 工厂** | ✅ 完成 | 立绘生成 + 图层拆分 + 绑骨 + VTS导出 + 口型同步 + 批量处理 |
+| **字幕提取** | ✅ 完成 | faster-whisper medium + 4 种样式 + SRT/ASS/VTT + 烧录 |
+| **BGM 配乐** | ✅ 完成 | 10 首内置曲目 + 用户上传 + FFmpeg 混音 + 淡入淡出 |
+| **素材采集** | ✅ 完成 | MediaCrawler 集成 + 多平台搜索 + 导入素材库 |
+
+---
+
+## 设计文档索引
+
+| 文档 | 说明 | 状态 |
+|------|------|------|
+| `DESIGN.md` | 主设计文档（架构圣经） | ✅ 已完成 |
+| `agent-platform-design.md` | Agent 通用平台设计（参考 OpenClaw/Hermes） | 📋 设计阶段 |
+| `architecture-image-video-backends-v2.md` | 图像/视频生成后端架构 v2（Generic + ComfyUI） | 📋 设计阶段 |
+| `comfyui-pixelle-evolution-design.md` | ComfyUI 集成方案（参考 Pixelle-Video） | 📋 设计阶段 |
+| `COMFYUI_DIGITAL_HUMAN_ANALYSIS.md` | ComfyUI 数字人分析 | 📋 分析完成 |
+| `live2d-factory-design.md` | Live2D 工厂设计 | ✅ 已实现 |
+| `live2d-processing-mode-design.md` | Live2D 处理模式设计 | ✅ 已实现 |
+| `story-maker-design.md` | Story Maker 设计 | ✅ 已实现 |
+| `REF_PROJECTS.md` | 参考项目列表 | 📋 参考文档 |
+
+---
+
+## 2026-05-07 更新
+
+### AI 连接器 API 修复 ✅
+
+**问题描述**：
+- AI 连接器 API 返回 500 内部服务器错误
+- 前端设置页面无法加载 AI 连接器列表
+
+**根本原因**：
+1. **异步/同步混乱** — 错误地将异步代码改成了同步
+2. **语法错误** — `service.py` 第 16 行 import 语句未正确关闭括号
+3. **缺失依赖** — `jinja2` 和 `jsonpath_ng` 模块未安装
+
+**修复方案**：
+
+#### 1. 恢复异步支持 (`service.py`)
+- 将 `Session` 改为 `AsyncSession`
+- 所有方法改为 `async def`：
+  - `list_all`, `list_by_provider`, `list_active`
+  - `get`, `get_default`, `get_by_provider`
+  - `create`, `update`, `delete`
+  - `test_connection`, `log_usage`, `get_usage_stats`
+  - `_clear_default`
+- 所有数据库操作添加 `await`：
+  - `await self.session.execute()`
+  - `await self.session.commit()`
+  - `await self.session.refresh()`
+  - `await self.session.get()`
+
+#### 2. 修复路由 (`ai_connectors.py`)
+- Router prefix 设为 `/connectors`
+- 使用异步依赖 `get_ai_service()` (基于 `AsyncSessionLocal`)
+- 所有路由都是 `async def`
+- 所有 service 方法调用都加了 `await`
+- 修复路径（如 `/` 而不是 `/connectors/`）
+
+#### 3. 安装缺失依赖
+```bash
+pip install jinja2 jsonpath-ng
+```
+
+**验证结果**：
+- ✅ AI 连接器路由器成功加载（无警告）
+- ✅ 后端服务器启动成功
+- ✅ 4 个 LLM Provider 成功注册（openai/gpt-5.2, 硅基流动-*）
+- ✅ 4 个 Image Provider 成功注册
+- ✅ 9 个社交媒体连接器加载成功
+- ✅ 1 个 AI 连接器加载成功
+
+**关键文件**：
+- `F:\PycharmProjects\YLCraft\backend\app\api\v1\ai_connectors.py`
+- `F:\PycharmProjects\YLCraft\backend\app\services\ai_connector\service.py`
+- `F:\PycharmProjects\YLCraft\backend\app\db\database.py`
 
 ---
 
@@ -205,12 +280,12 @@
 ## Live 2D 工厂进度
 
 > **适用人群**：COSER
-> **最后更新**：2026-04-28
+> **最后更新**：2026-05-04 23:38
 
 ### 状态总览
 
 ```
-[████████████░░░░░░░]  ~70%
+[█████████████████████████████████████████████░]  ~98%
 ```
 
 | 环节 | 状态 | 技术方案 |
@@ -218,7 +293,106 @@
 | 立绘生成 | ✅ 完成 | image2 |
 | 图层拆分 | ✅ 完成 | seethrough 改进窗口批量版 |
 | 身体绑骨 | ✅ 完成 | stretchystudio 改进版 + py 插件 vts 兼容转化 |
-| 五官绑骨 | 🚧 开发中 | 基于 stretchystudio 二次开发，实现五官运动 |
+| 五官绑骨 | ✅ 完成 | Python 实现面部关键点检测 + 骨骼绑定 |
 | cmo3→moc3 转化 | ✅ 自研完成 | cmo3 转化为 vts 通用模型格式 |
+| 待机动作 | ✅ 完成 | 眨眼 + 呼吸 + 视线移动动画 |
+| 表情切换 | ✅ 完成 | 7 种预设表情（neutral/happy/sad/angry/surprised/loved/focused）|
+| 视线跟随 | ✅ 完成 | 平滑插值控制眼球运动 |
+| 前端实时预览 | ✅ 完成 | 预览弹窗 + 表情控制 + 视线跟踪 + 骨骼数据展示 |
+| **WebSocket 实时进度** | ✅ 完成 | WebSocket 推送处理进度，实时更新 UI |
+| **一键生成流水线** | ✅ 完成 | 自动执行：抠图→风格转换→分层→绑骨→动作→导出 |
+| **处理中断恢复** | ✅ 完成 | 支持中断和恢复流水线 |
+| **WebGL 实时预览** | ✅ 完成 | Live2DViewer 组件 + Canvas 2D 渲染 |
+| **VTS 格式导出** | ✅ 完成 | vts_exporter.py 服务，导出 .model3.json |
+| **口型同步** | ✅ 完成 | lip_sync.py 服务，基于音频幅度分析 |
+| **角色库联动** | ✅ 完成 | /characters 端点 + 关联/创建模型 |
+| **动作预设库** | ✅ 完成 | motion_presets.py，16 种预设动作 |
+| **批量处理队列** | ✅ 完成 | batch_queue.py，支持多任务排队和优先级 |
+
+### 实现细节（2026-05-04 更新）
+
+#### 服务层文件
+- [x] `services/live2d/rembg.py` - AI 抠图服务 (RMBG-1.4)
+- [x] `services/live2d/style_transfer.py` - 风格转换服务 (AnimeGAN)
+- [x] `services/live2d/segmentation.py` - AI 自动分层服务
+- [x] `services/live2d/rigging.py` - 五官绑骨服务
+- [x] `services/live2d/vts_exporter.py` - VTS 格式导出服务
+- [x] `services/live2d/lip_sync.py` - 口型同步服务
+- [x] `services/live2d/motion_presets.py` - 动作预设库（16 种预设）
+- [x] `services/live2d/batch_queue.py` - 批量处理队列管理器
+
+#### API 端点（2715 行）
+- [x] `POST /live2d/{model_id}/rembg` - AI 抠图
+- [x] `POST /live2d/{model_id}/style-transfer` - 风格转换
+- [x] `POST /live2d/{model_id}/segment` - 自动分层
+- [x] `POST /live2d/{model_id}/rig` - 面部绑骨
+- [x] `GET /live2d/{model_id}/rigging/state` - 获取绑骨状态
+- [x] `PUT /live2d/{model_id}/rigging/expression` - 更新表情
+- [x] `PUT /live2d/{model_id}/rigging/eye-tracking` - 更新视线跟踪
+- [x] `POST /live2d/{model_id}/motion` - 生成待机动作
+- [x] `POST /live2d/{model_id}/export` - 导出 VTS 格式
+- [x] `POST /live2d/{model_id}/lip-sync` - 生成口型同步
+- [x] `GET /live2d/characters` - 获取角色库列表
+- [x] `GET /live2d/{model_id}/character` - 获取模型关联角色
+- [x] `POST /live2d/{model_id}/link-character` - 关联角色
+- [x] `POST /live2d/from-character/{id}` - 从角色创建模型
+- [x] `POST /live2d/batch` - 创建批量处理队列
+- [x] `GET /live2d/batch` - 获取所有队列
+- [x] `GET /live2d/batch/{id}` - 获取队列详情
+- [x] `POST /live2d/batch/{id}/start` - 启动队列处理
+- [x] `POST /live2d/batch/{id}/cancel` - 取消队列
+
+#### 前端组件
+- [x] `pages/live2d/` - Live2D 工厂页面
+- [x] `components/live2d/Live2DViewer.tsx` - Canvas 2D 实时预览组件
+
+#### 数据库初始化
+- [x] `api_keys` 表创建成功
+- [x] `live2d_models` / `live2d_bones` / `live2d_motions` 表已存在
+
+---
+
+## 素材采集模块（2026-05-05 新增）
+
+> 集成 MediaCrawler 核心功能，支持多平台视频/图文素材搜索与采集
+
+### 后端新增文件
+- `backend/app/services/crawler/__init__.py` — 模块导出
+- `backend/app/services/crawler/service.py` — CrawlerService（搜索 + 导入素材库 + 降级方案）
+- `backend/app/api/v1/crawler.py` — 素材采集 API（platforms/options/search/import/tasks）
+
+### 后端修改文件
+- `backend/app/main.py` — 注册 crawler 路由
+
+### 前端新增文件
+- `frontend/src/pages/crawler/index.tsx` — 素材采集页面（平台选择 + 关键词搜索 + 结果表格 + 导入素材库）
+
+### 前端修改文件
+- `frontend/src/App.tsx` — 新增 /crawler 路由
+- `frontend/src/components/layout/AppLayout.tsx` — 新增「素材采集」菜单项
+- `frontend/src/api/index.ts` — 新增 crawler API 函数（~25 行）
+
+### 支持平台
+| 平台 | 标识 | 颜色 |
+|------|------|------|
+| 小红书 | xhs | #fe2c55 |
+| 抖音 | dy | #000000 |
+| 快手 | ks | #ff5000 |
+| B站 | bili | #00aeec |
+| 微博 | wb | #ff8200 |
+| 知乎 | zhihu | #0066ff |
+
+### API 端点
+- `GET /api/v1/crawler/platforms` — 获取支持的平台列表
+- `GET /api/v1/crawler/options` — 获取配置选项
+- `POST /api/v1/crawler/search` — 搜索视频/图文素材
+- `POST /api/v1/crawler/import` — 将采集结果导入素材库
+- `GET /api/v1/crawler/tasks/{id}` — 查询采集任务状态
+
+### 技术要点
+- 优先使用 MediaCrawler（Playwright 浏览器自动化），失败则降级到 yt-dlp 搜索
+- 采集结果可批量导入 YLCraft 素材库
+- 支持按平台筛选、关键词搜索、分页展示
+- 参考项目：https://github.com/NanmiCoder/MediaCrawler
 
 ---

@@ -25,12 +25,28 @@ YLCraft/
 - Provider 架构：ArcReel Protocol + Registry + YAML 配置
 - 三范式并存：Agent(CutClaw) + Pipeline(NarratoAI) + MoE
 
-## 当前进度（截至 2026-04-24）
+## 当前进度（截至 2026-05-04）
 - ✅ Phase 1：素材资产库 SQLite + SQLModel 数据层
 - ✅ Phase 2：素材库前端 + 后台下载任务（轮询 task_id）
 - ✅ Phase 4：角色管理模块
 - ✅ 抖音下载：iesdouyin 免 Cookie + 多清晰度(bitrate_info) + 文件名优化
-- ⬜ 待做：素材库改名(素材库→资产库) + 角色整合进统一资产库
+- ✅ Live2D 工厂 ~85%：五官绑骨 + 待机动作 + 表情切换 + 视线跟随
+
+## Live2D 五官绑骨（2026-05-04 完成）
+
+### 新增文件
+- `backend/app/services/live2d/rigging.py` - 五官绑骨服务
+
+### 新增 API 端点
+- `POST /live2d/{model_id}/rig` - 执行面部绑骨
+- `GET /live2d/{model_id}/rigging/state` - 获取绑骨状态
+- `PUT /live2d/{model_id}/rigging/expression` - 更新表情
+- `PUT /live2d/{model_id}/rigging/eye-tracking` - 更新视线跟踪
+- `POST /live2d/{model_id}/motion` - 生成待机动作
+
+### 依赖
+- numpy, pillow, requests, httpx, aiofiles
+- 数据库：`backend/data/ylcraft.db`（非 backend/ylcraft.db）
 
 ## 关键踩坑（已解决，务必遵守）
 
@@ -48,6 +64,10 @@ YLCraft/
 
 ### 大文件下载
 - 用 task_id 轮询方案，XHR 会超时（10分钟限制）
+
+### Live2D 数据库
+- 数据库文件在 `backend/data/ylcraft.db`，不是 `backend/ylcraft.db`
+- 初始化：`from app.db.database import init_db; asyncio.run(init_db())`
 
 ## 遇到问题的决策顺序
 1. 查 DESIGN.md（架构问题）
