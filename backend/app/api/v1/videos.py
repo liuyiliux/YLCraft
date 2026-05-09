@@ -135,6 +135,12 @@ async def generate_video(req: VideoGenerateRequest):
                         duration=result.duration_seconds,
                         seed=result.seed,
                         url=result.url or "",
+                        negative_prompt="",
+                        resolution=req.resolution or "720p",
+                        aspect_ratio=req.aspect_ratio or "9:16",
+                        generate_audio=req.generate_audio or True,
+                        start_image=str(req.start_image) if req.start_image else "",
+                        reference_images=[str(p) for p in video_req.reference_images] if video_req.reference_images else None,
                     )
                     logger.info(f"Video saved to asset library: {result.video_path}")
                 except Exception as e:

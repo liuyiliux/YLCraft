@@ -379,6 +379,13 @@ async def download_video(req: DownloadRequest):
     from app.db.models.asset import Asset, AssetType, AssetStatus
     from app.services.asset.service import AssetService
 
+    # 构建下载元数据
+    download_metadata = {
+        "quality": req.quality or "best",
+        "is_audio": req.is_audio,
+        "page_url": req.page_url or "",
+    }
+
     async with get_async_session() as db_session:
         asset_service = AssetService(db_session)
         existing = await asset_service.get_by_url(effective_url)
@@ -390,6 +397,17 @@ async def download_video(req: DownloadRequest):
             if duration: existing.duration = duration
             if thumbnail_path and not existing.thumbnail_path:
                 existing.thumbnail_path = thumbnail_path
+            # 合并下载元数据到已有 metadata
+            if existing.metadata_json:
+                try:
+                    import json as _json
+                    existing_meta = _json.loads(existing.metadata_json)
+                    existing_meta.update(download_metadata)
+                    existing.metadata_json = _json.dumps(existing_meta, ensure_ascii=False)
+                except Exception:
+                    existing.metadata_json = json.dumps(download_metadata, ensure_ascii=False)
+            else:
+                existing.metadata_json = json.dumps(download_metadata, ensure_ascii=False)
             await db_session.commit()
             await db_session.refresh(existing)
             asset_id = existing.id
@@ -408,6 +426,7 @@ async def download_video(req: DownloadRequest):
                 height=height,
                 duration=duration,
                 thumbnail_path=thumbnail_path,
+                metadata_json=json.dumps(download_metadata, ensure_ascii=False),
             )
             asset_id = new_asset.id
 
@@ -553,12 +572,30 @@ async def _run_download_task(task: DownloadTask):
         from app.db.models.asset import AssetType, AssetStatus
         from app.services.asset.service import AssetService
 
+        # 构建下载元数据
+        download_metadata = {
+            "quality": task.quality or "best",
+            "is_audio": task.is_audio,
+            "page_url": task.page_url or "",
+        }
+
         async with get_async_session() as db_session:
             asset_service = AssetService(db_session)
             existing = await asset_service.get_by_url(effective_url)
             platform = _detect_platform(effective_url)
             if existing:
                 await asset_service.mark_ready(existing, file_path=filepath, file_size=file_size, mime_type=media_type)
+                # 合并下载元数据到已有 metadata
+                if existing.metadata_json:
+                    try:
+                        import json as _json
+                        existing_meta = _json.loads(existing.metadata_json)
+                        existing_meta.update(download_metadata)
+                        existing.metadata_json = _json.dumps(existing_meta, ensure_ascii=False)
+                    except Exception:
+                        existing.metadata_json = json.dumps(download_metadata, ensure_ascii=False)
+                else:
+                    existing.metadata_json = json.dumps(download_metadata, ensure_ascii=False)
                 task.asset_id = existing.id
             else:
                 asset_type = AssetType.AUDIO if task.is_audio else AssetType.VIDEO
@@ -571,6 +608,7 @@ async def _run_download_task(task: DownloadTask):
                     file_size=file_size,
                     mime_type=media_type,
                     status=AssetStatus.READY,
+                    metadata_json=json.dumps(download_metadata, ensure_ascii=False),
                 )
                 task.asset_id = new_asset.id
 

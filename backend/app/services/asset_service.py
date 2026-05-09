@@ -104,6 +104,15 @@ class AssetService:
         model: str,
         seed: int | None = None,
         url: str = "",
+        negative_prompt: str = "",
+        size: str = "1024x1024",
+        steps: int | None = None,
+        cfg_scale: float | None = None,
+        sampler: str = "",
+        lora: str = "",
+        controlnet: str = "",
+        source_image: str = "",
+        reference_images: list[str] | None = None,
         session: Session | None = None,
     ) -> Asset:
         """
@@ -116,6 +125,15 @@ class AssetService:
             model: 生成模型
             seed: 随机种子
             url: 远程 URL（可选）
+            negative_prompt: 反向提示词
+            size: 图片尺寸（如 "1024x1024"）
+            steps: 采样步数
+            cfg_scale: CFG 引导系数
+            sampler: 采样器名称
+            lora: LoRA 模型
+            controlnet: ControlNet 模型
+            source_image: 图生图源图片路径
+            reference_images: 参考图片路径列表
             session: 数据库会话
 
         Returns:
@@ -142,6 +160,35 @@ class AssetService:
         except Exception:
             pass
 
+        # 构建生成模式标签
+        gen_tags = ["ai-generated", provider, model]
+        if source_image or reference_images:
+            gen_tags.append("image-to-image")
+
+        # 构建完整元数据
+        metadata: dict = {
+            "provider": provider,
+            "model": model,
+            "seed": seed,
+            "prompt": prompt,
+            "negative_prompt": negative_prompt,
+            "size": size,
+        }
+        if steps is not None:
+            metadata["steps"] = steps
+        if cfg_scale is not None:
+            metadata["cfg_scale"] = cfg_scale
+        if sampler:
+            metadata["sampler"] = sampler
+        if lora:
+            metadata["lora"] = lora
+        if controlnet:
+            metadata["controlnet"] = controlnet
+        if source_image:
+            metadata["source_image"] = source_image
+        if reference_images:
+            metadata["reference_images"] = reference_images
+
         return AssetService.create_asset(
             asset_type=AssetType.IMAGE,
             title=prompt[:100] if prompt else "AI Generated Image",
@@ -154,13 +201,9 @@ class AssetService:
             width=width,
             height=height,
             mime_type=mime_type,
-            tags=["ai-generated", provider, model],
-            metadata={
-                "provider": provider,
-                "model": model,
-                "seed": seed,
-                "prompt": prompt,
-            },
+            thumbnail_path=str(path),  # 图片本身就是缩略图
+            tags=gen_tags,
+            metadata=metadata,
             session=session,
         )
 
@@ -173,6 +216,12 @@ class AssetService:
         duration: int,
         seed: int | None = None,
         url: str = "",
+        negative_prompt: str = "",
+        resolution: str = "720p",
+        aspect_ratio: str = "9:16",
+        generate_audio: bool = True,
+        start_image: str = "",
+        reference_images: list[str] | None = None,
         session: Session | None = None,
     ) -> Asset:
         """
@@ -186,6 +235,12 @@ class AssetService:
             duration: 视频时长（秒）
             seed: 随机种子
             url: 远程 URL（可选）
+            negative_prompt: 反向提示词
+            resolution: 分辨率
+            aspect_ratio: 画幅比例
+            generate_audio: 是否生成音频
+            start_image: 图生视频首帧图片路径
+            reference_images: 参考图片路径列表
             session: 数据库会话
 
         Returns:
@@ -218,6 +273,28 @@ class AssetService:
         except Exception:
             pass
 
+        # 构建生成模式标签
+        gen_tags = ["ai-generated", provider, model]
+        if start_image or reference_images:
+            gen_tags.append("image-to-video")
+
+        # 构建完整元数据
+        metadata: dict = {
+            "provider": provider,
+            "model": model,
+            "seed": seed,
+            "prompt": prompt,
+            "negative_prompt": negative_prompt,
+            "duration": duration,
+            "resolution": resolution,
+            "aspect_ratio": aspect_ratio,
+            "generate_audio": generate_audio,
+        }
+        if start_image:
+            metadata["start_image"] = start_image
+        if reference_images:
+            metadata["reference_images"] = reference_images
+
         return AssetService.create_asset(
             asset_type=AssetType.VIDEO,
             title=prompt[:100] if prompt else "AI Generated Video",
@@ -231,14 +308,8 @@ class AssetService:
             width=width,
             height=height,
             mime_type=mime_type,
-            tags=["ai-generated", provider, model],
-            metadata={
-                "provider": provider,
-                "model": model,
-                "seed": seed,
-                "prompt": prompt,
-                "duration": duration,
-            },
+            tags=gen_tags,
+            metadata=metadata,
             session=session,
         )
 

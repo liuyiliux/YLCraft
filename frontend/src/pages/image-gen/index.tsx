@@ -9,7 +9,7 @@
  * - 图片下载 / 入库
  */
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Card,
@@ -499,7 +499,7 @@ export default function ImageGenPage() {
                         <div
                           style={{
                             height: 200,
-                            background: '#1e1e2e',
+                            background: THEME.bgElevated,
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
@@ -516,13 +516,14 @@ export default function ImageGenPage() {
                       }
                       actions={[
                         <Tooltip title="下载" key="download">
-                          <DownloadOutlined onClick={() => handleDownload(img)} />
+                          <DownloadOutlined style={{ color: THEME.textSecondary }} onClick={() => handleDownload(img)} />
                         </Tooltip>,
                         <Tooltip title="复制提示词" key="copy">
-                          <CopyOutlined onClick={() => handleCopyPrompt(img.prompt)} />
+                          <CopyOutlined style={{ color: THEME.textSecondary }} onClick={() => handleCopyPrompt(img.prompt)} />
                         </Tooltip>,
                         <Tooltip title="删除" key="delete">
                           <DeleteOutlined
+                            style={{ color: THEME.textSecondary }}
                             onClick={() => setGeneratedImages(prev => prev.filter(i => i.id !== img.id))}
                           />
                         </Tooltip>,
@@ -543,9 +544,12 @@ export default function ImageGenPage() {
                           </div>
                         }
                         description={
-                          <Space size={4}>
-                            <Tag color="blue">{img.provider}</Tag>
-                            {img.seed && <span style={{ fontSize: 11, color: THEME.textSecondary }}>seed: {img.seed}</span>}
+                          <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                            <Space size={4}>
+                              <Tag color="blue">{img.provider}</Tag>
+                              {img.seed && <span style={{ fontSize: 11, color: THEME.textSecondary }}>seed: {img.seed}</span>}
+                            </Space>
+                            <div style={{ height: 22 }} />
                           </Space>
                         }
                       />

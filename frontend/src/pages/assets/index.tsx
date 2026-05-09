@@ -30,6 +30,7 @@ import {
   Pagination,
   Empty,
   Checkbox,
+  Tooltip,
 } from 'antd'
 import {
   SearchOutlined,
@@ -308,28 +309,28 @@ export default function AssetsPage() {
                   }}
                   cover={
                     batchMode ? (
-                      <div style={{ position: 'relative', height: 160 }}>
+                      <div style={{ position: 'relative', height: 200 }}>
                         {asset.thumbnail_url ? (
                           <Image
                             src={asset.thumbnail_url}
-                            height={160}
+                            height={200}
                             style={{ objectFit: 'cover' }}
                             preview={false}
                           />
                         ) : (
-                          <div style={{ height: 160, background: theme.bgElevated, display: 'flex', alignItems: 'center', justifyContent: 'center', color: theme.textSecondary }}>
+                          <div style={{ height: 200, background: theme.bgElevated, display: 'flex', alignItems: 'center', justifyContent: 'center', color: theme.textSecondary }}>
                             {asset.asset_type === 'video' ? '🎬' : asset.asset_type === 'image' ? '🖼️' : '📄'}
                           </div>
                         )}
-                        <div style={{ 
-                          position: 'absolute', 
-                          top: 8, 
-                          left: 8, 
+                        <div style={{
+                          position: 'absolute',
+                          top: 8,
+                          left: 8,
                           background: 'rgba(255,255,255,0.9)',
                           borderRadius: 4,
                           padding: 4
                         }}>
-                          <Checkbox 
+                          <Checkbox
                             checked={selectedIds.includes(asset.id)}
                             onChange={(e) => toggleSelect(asset.id, e.target.checked)}
                           />
@@ -339,36 +340,43 @@ export default function AssetsPage() {
                       asset.thumbnail_url ? (
                         <Image
                           src={asset.thumbnail_url}
-                          height={160}
+                          height={200}
                           style={{ objectFit: 'cover' }}
+                          preview={false}
                         />
                       ) : (
-                        <div style={{ height: 160, background: theme.bgElevated, display: 'flex', alignItems: 'center', justifyContent: 'center', color: theme.textSecondary }}>
+                        <div style={{ height: 200, background: theme.bgElevated, display: 'flex', alignItems: 'center', justifyContent: 'center', color: theme.textSecondary }}>
                           {asset.asset_type === 'video' ? '🎬' : asset.asset_type === 'image' ? '🖼️' : '📄'}
                         </div>
                       )
                     )
                   }
                   actions={!batchMode ? [
-                    <DownloadOutlined key="download" onClick={(e) => {
-                      e.stopPropagation()
-                      // 下载文件
-                      const link = document.createElement('a')
-                      link.href = `/api/v1/assets/${asset.id}/download`
-                      link.download = asset.title || 'asset'
-                      link.click()
-                    }} />,
-                    <TagOutlined key="tag" onClick={(e) => {
-                      e.stopPropagation()
-                      message.info('标签功能开发中')
-                    }} />,
-                    <DeleteOutlined key="delete" onClick={(e) => handleDelete(asset, e)} />,
+                    <Tooltip title="下载" key="download">
+                      <DownloadOutlined style={{ color: theme.textSecondary }} onClick={(e) => {
+                        e.stopPropagation()
+                        // 下载文件
+                        const link = document.createElement('a')
+                        link.href = `/api/v1/assets/${asset.id}/download`
+                        link.download = asset.title || 'asset'
+                        link.click()
+                      }} />
+                    </Tooltip>,
+                    <Tooltip title="详情" key="detail">
+                      <SearchOutlined style={{ color: theme.textSecondary }} onClick={(e) => {
+                        e.stopPropagation()
+                        setDetailAsset(asset)
+                      }} />
+                    </Tooltip>,
+                    <Tooltip title="删除" key="delete">
+                      <DeleteOutlined style={{ color: theme.textSecondary }} onClick={(e) => handleDelete(asset, e)} />
+                    </Tooltip>,
                   ] : []}
                   onClick={() => {
-                    if (!batchMode) {
-                      setDetailAsset(asset)
-                    } else {
+                    if (batchMode) {
                       toggleSelect(asset.id, !selectedIds.includes(asset.id))
+                    } else {
+                      setDetailAsset(asset)
                     }
                   }}
                 >
@@ -382,12 +390,14 @@ export default function AssetsPage() {
                         <Tag color={asset.status === 'ready' ? 'green' : asset.status === 'error' ? 'red' : 'blue'}>
                           {asset.status}
                         </Tag>
-                        {asset.tags?.length > 0 && (
+                        {asset.tags?.length > 0 ? (
                           <Space size={4} wrap>
                             {(asset.tags as string[]).slice(0, 3).map((t: string) => (
                               <Tag key={t} style={{ fontSize: 11 }}>{t}</Tag>
                             ))}
                           </Space>
+                        ) : (
+                          <div style={{ height: 22 }} />
                         )}
                       </Space>
                     }
@@ -416,7 +426,7 @@ export default function AssetsPage() {
       {detailAsset && (
         <Modal
           open
-          title={detailAsset.title || '资产详情'}
+          title={<span style={{ color: theme.textPrimary }}>{detailAsset.title || '资产详情'}</span>}
           onCancel={() => setDetailAsset(null)}
           footer={null}
           width={640}
@@ -432,7 +442,7 @@ export default function AssetsPage() {
             </div>
           )}
           
-          <Descriptions column={2} size="small">
+          <Descriptions column={2} size="small" labelStyle={{ color: theme.textSecondary }} contentStyle={{ color: theme.textPrimary }}>
             <Descriptions.Item label="类型">{detailAsset.asset_type}</Descriptions.Item>
             <Descriptions.Item label="平台">{detailAsset.platform}</Descriptions.Item>
             <Descriptions.Item label="作者">{detailAsset.author}</Descriptions.Item>
@@ -443,16 +453,121 @@ export default function AssetsPage() {
             <Descriptions.Item label="分辨率">{detailAsset.width && detailAsset.height ? `${detailAsset.width}x${detailAsset.height}` : '-'}</Descriptions.Item>
             <Descriptions.Item label="时长">{detailAsset.duration ? `${Math.floor(detailAsset.duration / 60)}:${String(Math.floor(detailAsset.duration % 60)).padStart(2, '0')}` : '-'}</Descriptions.Item>
             <Descriptions.Item label="来源URL" span={2}>
-              <a href={detailAsset.source_url} target="_blank" rel="noreferrer">{detailAsset.source_url}</a>
+              <Tooltip title={detailAsset.source_url} placement="topLeft">
+                <a href={detailAsset.source_url} target="_blank" rel="noreferrer" style={{
+                  display: 'inline-block',
+                  maxWidth: 400,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  verticalAlign: 'middle',
+                }}>{detailAsset.source_url}</a>
+              </Tooltip>
             </Descriptions.Item>
             <Descriptions.Item label="创建时间">{detailAsset.created_at}</Descriptions.Item>
             <Descriptions.Item label="下载时间">{detailAsset.downloaded_at || '-'}</Descriptions.Item>
           </Descriptions>
+
+          {/* 生成参数（从 metadata 中展示） */}
+          {detailAsset.metadata && Object.keys(detailAsset.metadata).length > 0 && (() => {
+            const meta = detailAsset.metadata
+            // 生成参数字段
+            const genFields: { key: string; label: string; span?: number }[] = [
+              { key: 'prompt', label: '提示词', span: 2 },
+              { key: 'negative_prompt', label: '反向提示词', span: 2 },
+              { key: 'model', label: '模型' },
+              { key: 'provider', label: '提供商' },
+              { key: 'seed', label: '种子' },
+              { key: 'size', label: '尺寸' },
+              { key: 'steps', label: '采样步数' },
+              { key: 'cfg_scale', label: 'CFG Scale' },
+              { key: 'sampler', label: '采样器' },
+              { key: 'lora', label: 'LoRA' },
+              { key: 'controlnet', label: 'ControlNet' },
+              { key: 'resolution', label: '分辨率' },
+              { key: 'aspect_ratio', label: '画幅比例' },
+              { key: 'generate_audio', label: '生成音频' },
+              { key: 'duration', label: '时长(秒)' },
+              { key: 'quality', label: '下载清晰度' },
+              { key: 'is_audio', label: '仅音频' },
+              { key: 'page_url', label: '原始页面', span: 2 },
+            ]
+            const visibleFields = genFields.filter(f => meta[f.key] !== undefined && meta[f.key] !== '' && meta[f.key] !== null)
+            if (visibleFields.length === 0) return null
+            return (
+              <div style={{ marginTop: 16 }}>
+                <div style={{ marginBottom: 8, fontWeight: 600, color: theme.textPrimary }}>
+                  生成参数
+                </div>
+                <Descriptions column={2} size="small" bordered labelStyle={{ color: theme.textSecondary, width: 100 }} contentStyle={{ color: theme.textPrimary }}>
+                  {visibleFields.map(f => (
+                    <Descriptions.Item key={f.key} label={f.label} span={f.span}>
+                      {f.key === 'page_url' ? (
+                        <Tooltip title={meta[f.key]}>
+                          <a href={meta[f.key]} target="_blank" rel="noreferrer" style={{
+                            display: 'inline-block', maxWidth: 380, overflow: 'hidden',
+                            textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'middle',
+                          }}>{meta[f.key]}</a>
+                        </Tooltip>
+                      ) : f.key === 'prompt' || f.key === 'negative_prompt' ? (
+                        <Tooltip title={meta[f.key]}>
+                          <span style={{
+                            display: 'inline-block', maxWidth: 450, overflow: 'hidden',
+                            textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'middle',
+                          }}>{meta[f.key]}</span>
+                        </Tooltip>
+                      ) : typeof meta[f.key] === 'boolean' ? (
+                        meta[f.key] ? '是' : '否'
+                      ) : String(meta[f.key])}
+                    </Descriptions.Item>
+                  ))}
+                </Descriptions>
+
+                {/* 参考图/首帧图展示 */}
+                {(meta.source_image || (meta.reference_images && meta.reference_images.length > 0) || meta.start_image) && (
+                  <div style={{ marginTop: 12 }}>
+                    <div style={{ marginBottom: 4, fontSize: 12, color: theme.textSecondary }}>参考图</div>
+                    <Space wrap>
+                      {meta.source_image && (
+                        <Image
+                          src={meta.source_image.startsWith('/') ? `/api/v1/assets/0/thumbnail?path=${encodeURIComponent(meta.source_image)}` : meta.source_image}
+                          width={80}
+                          height={80}
+                          style={{ objectFit: 'cover', borderRadius: 4 }}
+                          fallback="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iODAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjgwIiBoZWlnaHQ9IjgwIiBmaWxsPSIjMzMzIi8+PHRleHQgeD0iNDAiIHk9IjQ1IiBmb250LXNpemU9IjEyIiBmaWxsPSIjOTk5IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj7ml6DnvKnnlaXlm748L3RleHQ+PC9zdmc+"
+                        />
+                      )}
+                      {meta.start_image && (
+                        <Image
+                          src={meta.start_image.startsWith('/') ? `/api/v1/assets/0/thumbnail?path=${encodeURIComponent(meta.start_image)}` : meta.start_image}
+                          width={80}
+                          height={80}
+                          style={{ objectFit: 'cover', borderRadius: 4 }}
+                          fallback="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iODAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjgwIiBoZWlnaHQ9IjgwIiBmaWxsPSIjMzMzIi8+PHRleHQgeD0iNDAiIHk9IjQ1IiBmb250LXNpemU9IjEyIiBmaWxsPSIjOTk5IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj7ml6DnvKnnlaXlm748L3RleHQ+PC9zdmc+"
+                        />
+                      )}
+                      {meta.reference_images?.map((img: string, idx: number) => (
+                        <Image
+                          key={idx}
+                          src={img.startsWith('/') ? `/api/v1/assets/0/thumbnail?path=${encodeURIComponent(img)}` : img}
+                          width={80}
+                          height={80}
+                          style={{ objectFit: 'cover', borderRadius: 4 }}
+                          fallback="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iODAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjgwIiBoZWlnaHQ9IjgwIiBmaWxsPSIjMzMzIi8+PHRleHQgeD0iNDAiIHk9IjQ1IiBmb250LXNpemU9IjEyIiBmaWxsPSIjOTk5IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj7ml6DnvKnnlaXlm748L3RleHQ+PC9zdmc+"
+                        />
+                      ))}
+                    </Space>
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+
           {detailAsset.tags?.length > 0 && (
-            <div style={{ marginTop: 12 }}>
+            <div style={{ marginTop: 12, color: theme.textSecondary }}>
               <strong>标签：</strong>
               {(detailAsset.tags as string[]).map((t: string) => (
-                <Tag key={t}>{t}</Tag>
+                <Tag key={t} style={{ color: theme.textPrimary }}>{t}</Tag>
               ))}
             </div>
           )}

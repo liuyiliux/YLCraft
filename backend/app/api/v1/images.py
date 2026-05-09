@@ -180,6 +180,15 @@ async def generate_image(req: ImageGenerateRequest):
                         model=result.model,
                         seed=result.seed,
                         url=result.url or "",
+                        negative_prompt=req.negative_prompt or "",
+                        size=req.size or "1024x1024",
+                        steps=req.steps,
+                        cfg_scale=req.cfg_scale,
+                        sampler=req.sampler or "euler",
+                        lora=req.lora or "",
+                        controlnet=req.controlnet or "",
+                        source_image=req.source_image or "",
+                        reference_images=img_req.reference_images if img_req.reference_images else None,
                     )
                     logger.info(f"Image saved to asset library: {result.local_path}")
                 except Exception as e:

@@ -20,11 +20,12 @@ import json
 import logging
 import os
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 import httpx
 from fastapi import APIRouter, HTTPException, Depends, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel, Field
 
 from app.db.database import get_async_session
@@ -310,7 +311,8 @@ async def proxy_thumbnail(
     service: AssetService = Depends(get_asset_service),
 ):
     """
-    通过后端代理加载封面图，解决跨域/防盗链问题
+    通过后端代理加载封面图，解决跨域/防盗链问题。
+    支持本地文件路径和远程 URL。
     """
     asset = await service.get_by_id(asset_id)
     if not asset:
@@ -319,6 +321,14 @@ async def proxy_thumbnail(
     if not asset.thumbnail_path:
         raise HTTPException(status_code=404, detail="封面图不存在")
     
+    # 本地文件
+    thumb_path = Path(asset.thumbnail_path)
+    if thumb_path.exists() and thumb_path.is_file():
+        mime_map = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif"}
+        media_type = mime_map.get(thumb_path.suffix.lower(), "image/png")
+        return FileResponse(thumb_path, media_type=media_type)
+    
+    # 远程 URL
     try:
         async with httpx.AsyncClient(
             headers={
