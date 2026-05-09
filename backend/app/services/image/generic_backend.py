@@ -52,10 +52,13 @@ class GenericImageBackend(ImageBackend):
         self.session = session
         # 不要直接设置 self.model，已经在 super().__init__() 中设置了
 
+        logger.info(f"[GenericImageBackend] 初始化 connector: {connector.name}, request_template: {connector.request_template}")
+
         # 解析配置
         self.request_template = None
-        if connector.request_template:
+        if connector.request_template and connector.request_template.strip():
             self.request_template = Template(connector.request_template)
+            logger.info(f"[GenericImageBackend] 成功加载 request_template: {connector.request_template[:200]}...")
 
         # 解析 response_config
         self.response_config = {}
@@ -94,6 +97,8 @@ class GenericImageBackend(ImageBackend):
         self.support_multiple_reference_images = connector.support_multiple_reference_images
         self.reference_image_field = connector.reference_image_field or "image"
         self.reference_image_array_field = connector.reference_image_array_field  # 数组模式字段名
+        
+        logger.info(f"[GenericImageBackend] 参考图配置: reference_image_field={self.reference_image_field}, reference_image_array_field={self.reference_image_array_field}")
 
         # 创建 HTTP 客户端
         headers = {}
@@ -332,10 +337,15 @@ class GenericImageBackend(ImageBackend):
     def _render_request(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """渲染请求体"""
         if not self.request_template:
-            # 默认 OpenAI 格式
+            # 默认 OpenAI 格式 - 如果是图生图模式，直接把图片放到 image 字段
+            if params.get("reference_images") and len(params.get("reference_images", [])) > 0:
+                # 直接把第一张参考图放到 image 字段
+                params["image"] = params["reference_images"][0]
+            logger.info(f"[GenericImageBackend] 使用默认 OpenAI 格式: {params}")
             return params
 
         rendered = self.request_template.render(**params)
+        logger.info(f"[GenericImageBackend] 模板渲染结果: {rendered[:500]}...")
 
         # 解析为 JSON
         try:
@@ -351,6 +361,8 @@ class GenericImageBackend(ImageBackend):
         reference_images = params.get("reference_images", [])
         
         if reference_images:
+            logger.info(f"[GenericImageBackend] 开始处理 {len(reference_images)} 张参考图，配置: array_field={self.reference_image_array_field}, image_field={self.reference_image_field}")
+            
             # 优先使用数组模式
             if self.reference_image_array_field:
                 # 数组模式：支持嵌套路径，如 "reference.images"
@@ -388,7 +400,13 @@ class GenericImageBackend(ImageBackend):
                     request_body, 
                     image_field_mapping
                 )
+            
+            # 如果以上都没设置成功，尝试直接设置到 image 字段
+            if reference_images and ("image" not in request_body or not request_body["image"]):
+                logger.info(f"[GenericImageBackend] 尝试直接设置到 image 字段")
+                request_body["image"] = reference_images[0]
 
+        logger.info(f"[GenericImageBackend] 最终请求体: {json.dumps(request_body, ensure_ascii=False)[:500]}...")
         return request_body
 
     def _replace_reference_image_placeholders(
@@ -412,18 +430,21 @@ class GenericImageBackend(ImageBackend):
             replaced_by_field = {}
             
         if isinstance(obj, dict):
+            logger.info(f"[GenericImageBackend] 检查 dict 对象，键: {list(obj.keys())}")
             for key, value in obj.items():
                 # 检查是否是参考图字段且值为空字符串
                 for field_name, base64_image in image_field_mapping:
-                    if key == field_name and isinstance(value, str) and value == "":
-                        # 获取该字段已使用的次数
-                        used_count = replaced_by_field.get(field_name, 0)
-                        # 使用对应索引的图片
-                        if used_count < len([f for f, _ in image_field_mapping if f == field_name]):
-                            logger.info(f"[GenericImageBackend] 替换字段 {field_name} 为参考图")
-                            obj[key] = base64_image
-                            replaced_by_field[field_name] = used_count + 1
-                        break
+                    if key == field_name:
+                        logger.info(f"[GenericImageBackend] 找到匹配字段 {key}，值类型: {type(value)}，值: '{value}'")
+                        if isinstance(value, str) and value == "":
+                            # 获取该字段已使用的次数
+                            used_count = replaced_by_field.get(field_name, 0)
+                            # 使用对应索引的图片
+                            if used_count < len([f for f, _ in image_field_mapping if f == field_name]):
+                                logger.info(f"[GenericImageBackend] 替换字段 {field_name} 为参考图")
+                                obj[key] = base64_image
+                                replaced_by_field[field_name] = used_count + 1
+                            break
                 
                 if isinstance(value, (dict, list)):
                     self._replace_reference_image_placeholders(

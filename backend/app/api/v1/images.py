@@ -62,6 +62,8 @@ class BackendInfo(BaseModel):
     model: str  # 默认模型
     available_models: list[str] = []  # 可用模型列表（支持动态选择控制花费）
     capabilities: list[str]
+    support_reference_image: bool = False  # 是否支持图生图
+    reference_image_field: Optional[str] = None  # 参考图字段名
 
 
 class ImageBackendsResponse(BaseModel):
@@ -123,6 +125,8 @@ async def list_backends():
                     model=model,
                     available_models=available_models,
                     capabilities=capabilities,
+                    support_reference_image=bool(conn.support_reference_image),
+                    reference_image_field=conn.reference_image_field
                 ))
             except Exception as e:
                 logger.warning(f"Failed to get backend info for {conn.name}: {e}")

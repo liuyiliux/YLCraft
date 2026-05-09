@@ -68,6 +68,8 @@ interface BackendInfo {
   model: string
   available_models: string[]
   capabilities: string[]
+  support_reference_image: boolean
+  reference_image_field?: string
 }
 
 export default function ImageGenPage() {
@@ -120,6 +122,15 @@ export default function ImageGenPage() {
       acc[key].backends.push(b)
       return acc
     }, {} as Record<string, { provider: string, provider_label: string, backends: BackendInfo[] }>)
+    
+    // 对每个厂商的后端进行排序：有图生图能力的优先
+    Object.values(groups).forEach(group => {
+      group.backends.sort((a, b) => {
+        const aIsImg2Img = a.support_reference_image ? 0 : 1
+        const bIsImg2Img = b.support_reference_image ? 0 : 1
+        return aIsImg2Img - bIsImg2Img
+      })
+    })
     
     const options = Object.values(groups).map(g => ({
       label: g.provider_label,
@@ -225,9 +236,12 @@ export default function ImageGenPage() {
 
       setProgress(30)
 
-      // 找到当前厂商下的第一个后端，把完整的后端 name 传给 API
+      // 找到当前厂商下与 selectedModel 匹配的后端
       const vendorGroup = Object.values(groupedBackends).find(g => g.provider_label === provider)
-      const actualProviderName = vendorGroup?.backends[0]?.name || ''
+      const matchingBackend = vendorGroup?.backends.find(b => 
+        b.model === selectedModel || b.available_models.includes(selectedModel || '')
+      )
+      const actualProviderName = matchingBackend?.name || vendorGroup?.backends[0]?.name || ''
       body.provider = actualProviderName
 
       const data = await generateImageApi(body)
