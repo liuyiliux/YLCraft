@@ -101,7 +101,7 @@ echo "  启动服务..."
 echo -e "========================================${NC}"
 
 cd "$SCRIPT_DIR/backend"
-source "$VENV_DIR/bin/activate"
+source "$SCRIPT_DIR/$VENV_DIR/bin/activate"
 python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 &
 BACKEND_PID=$!
 echo -e "${GREEN}[后端]${NC} 已启动 (PID: $BACKEND_PID)"
