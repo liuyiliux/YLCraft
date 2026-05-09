@@ -119,7 +119,8 @@ class AIConnectorBase(SQLModel):
     # 参考图支持配置
     support_reference_image: bool = Field(False, description="是否支持参考图")
     support_multiple_reference_images: bool = Field(False, description="是否支持多张参考图")
-    reference_image_field: str = Field("image", description="参考图字段名")
+    reference_image_field: str = Field("image", description="参考图字段名（逗号分隔，如 image1,image2,image）")
+    reference_image_array_field: Optional[str] = Field(None, description="参考图数组字段名，如 images（所有图片组成数组）")
     # ===== 结束：图像/视频生成专用配置 =====
 
     # 测试配置
@@ -208,6 +209,7 @@ class AIConnectorCreate(SQLModel):
     support_reference_image: bool = False
     support_multiple_reference_images: bool = False
     reference_image_field: str = "image"
+    reference_image_array_field: Optional[str] = None
     test_prompt: Optional[str] = None
 
 
@@ -239,6 +241,7 @@ class AIConnectorUpdate(SQLModel):
     support_reference_image: Optional[bool] = None
     support_multiple_reference_images: Optional[bool] = None
     reference_image_field: Optional[str] = None
+    reference_image_array_field: Optional[str] = None
     test_prompt: Optional[str] = None
 
 
@@ -274,6 +277,7 @@ class AIConnectorResponse(SQLModel):
     support_reference_image: bool = False
     support_multiple_reference_images: bool = False
     reference_image_field: str = "image"
+    reference_image_array_field: Optional[str] = None
     test_prompt: Optional[str] = None
     has_api_key: bool = False  # 是否配置了 API Key（不返回实际 key）
 
@@ -326,6 +330,7 @@ class AIConnectorResponse(SQLModel):
             support_reference_image=conn.support_reference_image,
             support_multiple_reference_images=conn.support_multiple_reference_images,
             reference_image_field=conn.reference_image_field,
+            reference_image_array_field=conn.reference_image_array_field,
             test_prompt=conn.test_prompt,
             has_api_key=bool(conn.api_key),
         )

@@ -136,6 +136,7 @@ class AIConnectorService:
             support_reference_image=data.support_reference_image,
             support_multiple_reference_images=data.support_multiple_reference_images,
             reference_image_field=data.reference_image_field,
+            reference_image_array_field=data.reference_image_array_field,
             test_prompt=data.test_prompt,
         )
         conn.set_available_models(data.available_models)
@@ -209,6 +210,8 @@ class AIConnectorService:
             conn.support_multiple_reference_images = data.support_multiple_reference_images
         if data.reference_image_field is not None:
             conn.reference_image_field = data.reference_image_field
+        if data.reference_image_array_field is not None:
+            conn.reference_image_array_field = data.reference_image_array_field
         if data.test_prompt is not None:
             conn.test_prompt = data.test_prompt
 

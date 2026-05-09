@@ -19,6 +19,7 @@ import {
   InputNumber,
   Badge,
   ConfigProvider,
+  Tooltip,
 } from 'antd'
 import { App as AntApp } from 'antd'
 import {
@@ -36,6 +37,7 @@ import {
   EyeOutlined,
   SearchOutlined,
   CopyOutlined,
+  QuestionCircleOutlined,
 } from '@ant-design/icons'
 import { listConnectors, createConnector, updateConnector, deleteConnector, testConnector, getSettings, updateSettings, listCookies, saveCookie, deleteCookie, testCookie } from '../../api'
 import type { Provider, PROVIDER_OPTIONS, ConnectorTestResult } from '../../types/api'
@@ -184,11 +186,16 @@ export default function SettingsPage() {
       // 扩展字段
       request_template: provider.request_template || '',
       response_config: provider.response_config || '',
-      supported_sizes: provider.supported_sizes ? provider.supported_sizes.join(', ') : '',
-      default_params: provider.default_params ? JSON.stringify(provider.default_params) : '',
+      supported_sizes: Array.isArray(provider.supported_sizes) 
+        ? provider.supported_sizes.join(', ') 
+        : (provider.supported_sizes || ''),
+      default_params: typeof provider.default_params === 'object' 
+        ? JSON.stringify(provider.default_params) 
+        : (provider.default_params || ''),
       support_reference_image: provider.support_reference_image || false,
       support_multiple_reference_images: provider.support_multiple_reference_images || false,
       reference_image_field: provider.reference_image_field || 'image',
+      reference_image_array_field: provider.reference_image_array_field || '',
       test_prompt: provider.test_prompt || '',
     })
     setModalVisible(true)
@@ -201,31 +208,19 @@ export default function SettingsPage() {
   const handleAdd = () => {
     setEditingProvider(null)
     form.resetFields()
-    form.setFieldsValue({ is_active: true })
+    // 自动生成唯一标识符
+    const generatedId = `connector-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
+    form.setFieldsValue({ 
+      id: generatedId,
+      is_active: true 
+    })
     setModalVisible(true)
   }
 
   const handleSave = async (values: any) => {
     try {
-      // 处理扩展配置字段
+      // 处理扩展配置字段（保持字符串格式，后端会解析 JSON）
       const processedValues = { ...values }
-      
-      // 处理 supported_sizes（从逗号分隔字符串转为 JSON 数组）
-      if (values.supported_sizes && typeof values.supported_sizes === 'string') {
-        processedValues.supported_sizes = values.supported_sizes
-          .split(',')
-          .map((s: string) => s.trim())
-          .filter((s: string) => s.length > 0)
-      }
-      
-      // 处理 default_params（从 JSON 字符串转为对象）
-      if (values.default_params && typeof values.default_params === 'string') {
-        try {
-          processedValues.default_params = JSON.parse(values.default_params)
-        } catch {
-          // 忽略无效 JSON
-        }
-      }
       
       // 如果是掩码格式（包含 "...")，不更新 API Key
       if (editingProvider && values.api_key && values.api_key.includes('...')) {
@@ -283,11 +278,14 @@ export default function SettingsPage() {
   const handleDuplicate = (provider: Provider) => {
     setEditingProvider(null)
     form.resetFields()
+    // 自动生成标识符
+    const generatedId = `connector-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
     form.setFieldsValue({
-      id: `${provider.id}-copy`,
+      id: generatedId,
       name: `${provider.name} (副本)`,
       provider: provider.provider,
       provider_type: provider.provider_type,
+      api_key: provider.api_key || '',
       base_url: provider.base_url || '',
       api_endpoint: provider.api_endpoint || '',
       default_model: provider.default_model || '',
@@ -296,6 +294,19 @@ export default function SettingsPage() {
       is_active: false, // 默认禁用
       description: `复制自 ${provider.name}`,
       test_prompt: provider.test_prompt || '',
+      // 扩展字段（图像/视频生成专用）
+      request_template: provider.request_template || '',
+      response_config: provider.response_config || '',
+      supported_sizes: Array.isArray(provider.supported_sizes) 
+        ? provider.supported_sizes.join(', ') 
+        : (provider.supported_sizes || ''),
+      default_params: typeof provider.default_params === 'object' 
+        ? JSON.stringify(provider.default_params) 
+        : (provider.default_params || ''),
+      support_reference_image: provider.support_reference_image || false,
+      support_multiple_reference_images: provider.support_multiple_reference_images || false,
+      reference_image_field: provider.reference_image_field || 'image',
+      reference_image_array_field: provider.reference_image_array_field || '',
     })
     setModalVisible(true)
   }
@@ -731,13 +742,39 @@ export default function SettingsPage() {
               <Form.Item name="supported_sizes" label={<span style={{ color: THEME.textPrimary }}>支持的尺寸</span>} style={{ marginBottom: 8 }}>
                 <Input placeholder="如: 1024x1024, 1280x720" />
               </Form.Item>
-              <Form.Item name="reference_image_field" label={<span style={{ color: THEME.textPrimary }}>参考图字段名</span>} style={{ marginBottom: 8 }}>
-                <Input placeholder="如: image, init_images" />
+              <Form.Item 
+                name="reference_image_field" 
+                label={
+                  <span style={{ color: THEME.textPrimary }}>
+                    参考图占位符
+                    <Tooltip title="逗号分隔的字段名，如 image1,image2,image。模板中需要有对应空占位符">
+                      <QuestionCircleOutlined style={{ marginLeft: 4, color: THEME.textSecondary }} />
+                    </Tooltip>
+                  </span>
+                } 
+                style={{ marginBottom: 8 }}
+              >
+                <Input placeholder="如: image1,image2,image" />
               </Form.Item>
               <Form.Item name="support_reference_image" label={<span style={{ color: THEME.textPrimary }}>支持参考图</span>} valuePropName="checked" style={{ marginBottom: 8 }}>
                 <Switch checkedChildren="是" unCheckedChildren="否" />
               </Form.Item>
             </div>
+
+            <Form.Item
+              name="reference_image_array_field"
+              label={
+                <span style={{ color: THEME.textPrimary }}>
+                  参考图数组字段
+                  <Tooltip title="所有参考图组成数组放入该字段。支持嵌套路径，如 reference.images。优先级高于占位符模式">
+                    <QuestionCircleOutlined style={{ marginLeft: 4, color: THEME.textSecondary }} />
+                  </Tooltip>
+                </span>
+              }
+              style={{ marginBottom: 8 }}
+            >
+              <Input placeholder="如: images 或 reference.images" />
+            </Form.Item>
 
             <Form.Item name="default_params" label={<span style={{ color: THEME.textPrimary }}>默认参数 (JSON)</span>} style={{ marginBottom: 0 }}>
               <TextArea 

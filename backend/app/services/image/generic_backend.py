@@ -89,6 +89,12 @@ class GenericImageBackend(ImageBackend):
             except Exception as e:
                 logger.error(f"解析 default_params 失败: {e}")
 
+        # 参考图配置
+        self.support_reference_image = connector.support_reference_image
+        self.support_multiple_reference_images = connector.support_multiple_reference_images
+        self.reference_image_field = connector.reference_image_field or "image"
+        self.reference_image_array_field = connector.reference_image_array_field  # 数组模式字段名
+
         # 创建 HTTP 客户端
         headers = {}
         if connector.api_key:
@@ -221,10 +227,95 @@ class GenericImageBackend(ImageBackend):
         if req.seed is not None:
             params["seed"] = req.seed
 
+        # 处理图生图：添加参考图（支持多张）
+        reference_images = []
+        
+        # 收集所有参考图 URL
+        image_urls = []
+        if req.source_image:
+            image_urls.append(req.source_image)
+        if req.reference_images:
+            image_urls.extend(req.reference_images)
+        
+        # 转换所有参考图为 base64
+        for url in image_urls:
+            try:
+                base64_image = self._url_to_base64(url)
+                reference_images.append(base64_image)
+                logger.info(f"[GenericImageBackend] 转换参考图成功: {url[:50]}...")
+            except Exception as e:
+                logger.warning(f"[GenericImageBackend] 转换参考图失败: {e}")
+        
+        if reference_images:
+            params["reference_images"] = reference_images
+            params["reference_image_field"] = self.reference_image_field
+            logger.info(f"[GenericImageBackend] 添加 {len(reference_images)} 张参考图，字段名: {self.reference_image_field}")
+
         # 应用参数转换规则
         params = self._apply_parameter_transforms(params)
 
         return params
+
+    def _url_to_base64(self, url_or_path: str) -> str:
+        """
+        将 URL 或本地路径转换为 base64 数据 URI
+        
+        Args:
+            url_or_path: 图片 URL 或本地路径
+            
+        Returns:
+            base64 数据 URI 字符串
+        """
+        import base64
+        from pathlib import Path
+        
+        # 如果是本地文件路径
+        if url_or_path.startswith('/') or url_or_path.startswith('.'):
+            file_path = Path(url_or_path)
+            if file_path.exists():
+                with open(file_path, 'rb') as f:
+                    data = f.read()
+                ext = file_path.suffix.lower().lstrip('.')
+                mime = {
+                    'jpg': 'image/jpeg',
+                    'jpeg': 'image/jpeg',
+                    'png': 'image/png',
+                    'gif': 'image/gif',
+                    'webp': 'image/webp',
+                }.get(ext, 'image/png')
+                return f"data:{mime};base64,{base64.b64encode(data).decode()}"
+        
+        # 如果是 HTTP URL，下载后转换
+        if url_or_path.startswith('http://') or url_or_path.startswith('https://'):
+            try:
+                import asyncio
+                # 创建临时文件
+                import tempfile
+                import os
+                import httpx
+                
+                with httpx.SyncClient(timeout=30.0) as client:
+                    response = client.get(url_or_path)
+                    response.raise_for_status()
+                    data = response.content
+                
+                # 检测 MIME 类型
+                content_type = response.headers.get('content-type', 'image/png')
+                ext = content_type.split('/')[-1].split(';')[0]
+                if ext == 'jpeg':
+                    ext = 'jpeg'
+                
+                # 返回 base64
+                return f"data:{content_type};base64,{base64.b64encode(data).decode()}"
+            except Exception as e:
+                logger.error(f"下载图片失败: {url_or_path}, 错误: {e}")
+                raise
+        
+        # 如果已经是 base64 数据 URI，直接返回
+        if url_or_path.startswith('data:'):
+            return url_or_path
+        
+        raise ValueError(f"不支持的图片格式: {url_or_path}")
 
     def _apply_parameter_transforms(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """应用参数转换规则"""
@@ -248,11 +339,103 @@ class GenericImageBackend(ImageBackend):
 
         # 解析为 JSON
         try:
-            return json.loads(rendered)
+            request_body = json.loads(rendered)
         except json.JSONDecodeError as e:
             logger.error(f"请求模板渲染失败: {e}")
             logger.error(f"渲染结果: {rendered}")
             raise
+
+        # 处理参考图：支持两种模式
+        # 模式1: 数组模式 - 所有图片放入同一数组字段 (如 {"images": []} 或 {"reference": {"images": []}})
+        # 模式2: 占位符模式 - 替换模板中的空占位符 (如 "image1,image2,image")
+        reference_images = params.get("reference_images", [])
+        
+        if reference_images:
+            # 优先使用数组模式
+            if self.reference_image_array_field:
+                # 数组模式：支持嵌套路径，如 "reference.images"
+                path_parts = self.reference_image_array_field.split(".")
+                
+                if len(path_parts) == 1:
+                    # 扁平结构: images
+                    request_body[self.reference_image_array_field] = reference_images
+                else:
+                    # 嵌套结构: reference.images → request_body["reference"]["images"]
+                    current = request_body
+                    for part in path_parts[:-1]:
+                        if part not in current:
+                            current[part] = {}
+                        elif not isinstance(current[part], dict):
+                            logger.warning(f"[GenericImageBackend] 嵌套路径 {part} 已存在且非 dict，无法设置")
+                            break
+                        current = current[part]
+                    else:
+                        current[path_parts[-1]] = reference_images
+                        
+                logger.info(f"[GenericImageBackend] 使用数组模式，字段: {self.reference_image_array_field}, 图片数: {len(reference_images)}")
+            elif self.reference_image_field:
+                # 占位符模式
+                reference_image_field = params.get("reference_image_field", self.reference_image_field)
+                field_names = [f.strip() for f in reference_image_field.split(",")]
+                
+                image_field_mapping = []
+                for i, img in enumerate(reference_images):
+                    field = field_names[i] if i < len(field_names) else field_names[-1]
+                    image_field_mapping.append((field, img))
+                    logger.info(f"[GenericImageBackend] 参考图 {i + 1} 使用字段: {field}")
+                
+                self._replace_reference_image_placeholders(
+                    request_body, 
+                    image_field_mapping
+                )
+
+        return request_body
+
+    def _replace_reference_image_placeholders(
+        self, 
+        obj: Any, 
+        image_field_mapping: list,
+        replaced_by_field: dict = None
+    ) -> dict:
+        """
+        递归遍历 JSON 对象，替换空的参考图占位符
+        
+        Args:
+            obj: JSON 对象（dict 或 list）
+            image_field_mapping: [(字段名, base64图片), ...] 列表
+            replaced_by_field: 已替换过的字段及使用次数
+            
+        Returns:
+            已替换的字段统计
+        """
+        if replaced_by_field is None:
+            replaced_by_field = {}
+            
+        if isinstance(obj, dict):
+            for key, value in obj.items():
+                # 检查是否是参考图字段且值为空字符串
+                for field_name, base64_image in image_field_mapping:
+                    if key == field_name and isinstance(value, str) and value == "":
+                        # 获取该字段已使用的次数
+                        used_count = replaced_by_field.get(field_name, 0)
+                        # 使用对应索引的图片
+                        if used_count < len([f for f, _ in image_field_mapping if f == field_name]):
+                            logger.info(f"[GenericImageBackend] 替换字段 {field_name} 为参考图")
+                            obj[key] = base64_image
+                            replaced_by_field[field_name] = used_count + 1
+                        break
+                
+                if isinstance(value, (dict, list)):
+                    self._replace_reference_image_placeholders(
+                        value, image_field_mapping, replaced_by_field
+                    )
+        elif isinstance(obj, list):
+            for item in obj:
+                self._replace_reference_image_placeholders(
+                    item, image_field_mapping, replaced_by_field
+                )
+        
+        return replaced_by_field
 
     def _parse_response(self, response: httpx.Response) -> Dict[str, Any]:
         """解析响应"""

@@ -23,6 +23,7 @@ from app.core.contracts.types import (
     ImageGenerationResult,
     VideoGenerationRequest,
     VideoGenerationResult,
+    ImageCapability,
 )
 from app.db.models.ai_connector import AIConnector, AIProviderType
 
@@ -32,15 +33,6 @@ logger = logging.getLogger("ylcraft.llm")
 # =============================================================================
 # Backend 实现映射（YAML key → 实现类）
 # =============================================================================
-
-def _load_image_backends():
-    """按需导入 Image Backend 实现类"""
-    from app.services.image.minimax import MinimaxImageBackend
-    return {
-        "seedance": MinimaxImageBackend,
-        "minimax-image": MinimaxImageBackend,
-    }
-
 
 def _load_llm_backends():
     """按需导入 LLM Backend 实现类"""
@@ -214,25 +206,8 @@ class BackendManager:
                 except ValueError:
                     pass
 
-            # 实例化 image backends
-            image_impls = _load_image_backends()
-            for key, cfg in providers.items():
-                if cfg.get("media_type") == "image":
-                    impl_cls = image_impls.get(key)
-                    if not impl_cls:
-                        logger.warning(f"[Image] 未找到实现类: {key}，跳过")
-                        continue
-                    api_key = self._resolve_env(cfg.get("api_key", ""))
-                    if not api_key:
-                        logger.warning(f"[Image] {key} 缺少 api_key，跳过")
-                        continue
-                    backend = impl_cls(
-                        api_key=api_key,
-                        api_base=cfg.get("api_base", ""),
-                        model=cfg.get("model"),
-                    )
-                    self._backends[MediaType.IMAGE][key] = backend
-                    logger.info(f"[Image] 已注册 Backend: {key}")
+            # 注：Image backends 从数据库加载，YAML 不再支持
+            # （统一使用 GenericImageBackend）
 
             # 实例化 video backends
             video_impls = _load_video_backends()
@@ -369,22 +344,40 @@ class BackendManager:
         if not backends:
             return ImageGenerationResult(success=False, error="没有可用的图像生成后端")
 
+        # 判断是否为图生图请求
+        is_img2img = bool(req.source_image or req.reference_images)
+
         # 优先指定 Provider
         if req.provider:
             backend = backends.get(req.provider)
             if backend:
+                # 检查该后端是否支持图生图
+                if is_img2img and not self._supports_img2img(backend):
+                    return ImageGenerationResult(
+                        success=False,
+                        error=f"指定的 Provider '{req.provider}' 不支持图生图功能"
+                    )
                 return await backend.generate(req)
 
         # 其次默认 Provider
         default_key = self._defaults.get(MediaType.IMAGE)
         if default_key and default_key in backends:
-            result = await backends[default_key].generate(req)
-            if result.success:
-                return result
+            backend = backends[default_key]
+            # 检查该后端是否支持图生图
+            if is_img2img and not self._supports_img2img(backend):
+                pass  # 默认不支持，跳过，使用其他后端
+            else:
+                result = await backend.generate(req)
+                if result.success:
+                    return result
 
         # 最后遍历降级
         for key, backend in backends.items():
             if key == default_key:
+                continue
+            # 检查图生图能力
+            if is_img2img and not self._supports_img2img(backend):
+                logger.debug(f"[Image] Backend '{key}' 不支持图生图，跳过")
                 continue
             try:
                 if await backend.health_check():
@@ -394,7 +387,17 @@ class BackendManager:
             except Exception:
                 continue
 
+        if is_img2img:
+            return ImageGenerationResult(success=False, error="没有支持图生图功能的图像生成后端")
         return ImageGenerationResult(success=False, error="所有图像生成后端均失败")
+
+    def _supports_img2img(self, backend: Any) -> bool:
+        """检查后端是否支持图生图"""
+        try:
+            caps = getattr(backend, 'capabilities', set())
+            return "image_to_image" in caps or ImageCapability.IMAGE_TO_IMAGE in caps
+        except Exception:
+            return False
 
     # -------------------------------------------------------------------------
     # Video

@@ -35,6 +35,7 @@ class ImageGenerateRequest(BaseModel):
     batch_size: Optional[int] = 1
     sampler: Optional[str] = "euler"
     source_image: Optional[str] = None
+    reference_images: Optional[list[str]] = None  # 图生图参考图列表
     lora: Optional[str] = None
     controlnet: Optional[str] = None
 
@@ -163,6 +164,7 @@ async def generate_image(req: ImageGenerateRequest):
             batch_size=req.batch_size or 1,
             sampler=req.sampler or "euler",
             source_image=req.source_image or "",
+            reference_images=req.reference_images or [],
             lora=req.lora or "",
             controlnet=req.controlnet or "",
         )

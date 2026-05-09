@@ -33,6 +33,9 @@ class ComfyUIImageConfig:
     timeout: int = 300
     default_workflow: str = "txt2img"
     default_model: str = "sd15"
+    # 能力开关（ComfyUI 理论上支持所有功能，可按需禁用）
+    support_img2img: bool = True  # 图生图
+    support_style_control: bool = True  # 风格控制
 
 
 @dataclass
@@ -109,11 +112,12 @@ class ComfyUIImageBackend(BaseImageBackend):
 
     @property
     def capabilities(self) -> set:
-        return {
-            ImageCapability.TEXT_TO_IMAGE,
-            ImageCapability.IMAGE_TO_IMAGE,
-            ImageCapability.STYLE_CONTROL,
-        }
+        caps = {ImageCapability.TEXT_TO_IMAGE}
+        if self._config.support_img2img:
+            caps.add(ImageCapability.IMAGE_TO_IMAGE)
+        if self._config.support_style_control:
+            caps.add(ImageCapability.STYLE_CONTROL)
+        return caps
 
     @property
     def image_capabilities(self) -> ComfyUIImageCapabilities:

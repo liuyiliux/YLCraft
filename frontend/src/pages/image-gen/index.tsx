@@ -101,9 +101,14 @@ export default function ImageGenPage() {
   const [previewImage, setPreviewImage] = useState<GeneratedImage | null>(null)
   const hasFetchedBackends = useRef(false)
 
-  // 按厂商分组后端（使用 useMemo 确保数据变化时重新计算）
+  // 按厂商分组后端（根据 mode 过滤不支持的模型）
   const { groupedBackends, vendorOptions } = useMemo(() => {
-    const groups = backends.reduce((acc, b) => {
+    // 图生图模式：只保留支持 image_to_image 的后端
+    const filteredBackends = mode === 'img2img'
+      ? backends.filter(b => b.capabilities?.includes('image_to_image'))
+      : backends
+
+    const groups = filteredBackends.reduce((acc, b) => {
       const key = b.provider_label || b.provider
       if (!acc[key]) {
         acc[key] = {
@@ -122,7 +127,7 @@ export default function ImageGenPage() {
     }))
     
     return { groupedBackends: groups, vendorOptions: options }
-  }, [backends])
+  }, [backends, mode])
 
   // 加载后端列表
   useEffect(() => {
@@ -150,6 +155,35 @@ export default function ImageGenPage() {
     }
   }
 
+  // 模式切换时：如果当前厂商/模型不可用，自动切换
+  useEffect(() => {
+    const availableVendors = Object.values(groupedBackends)
+    if (availableVendors.length === 0) {
+      // 没有可用后端，清空选择
+      setProvider(undefined)
+      setSelectedModel(undefined)
+      return
+    }
+
+    // 检查当前厂商是否还可用
+    const currentVendorAvailable = availableVendors.some(g => g.provider_label === provider)
+    if (!currentVendorAvailable) {
+      // 切换到第一个可用厂商
+      const firstVendor = availableVendors[0]
+      setProvider(firstVendor.provider_label)
+      setSelectedModel(firstVendor.backends[0]?.model)
+    } else {
+      // 检查当前模型是否还可用
+      const vendorGroup = availableVendors.find(g => g.provider_label === provider)
+      const currentModelAvailable = vendorGroup?.backends.some(b => 
+        b.model === selectedModel || b.available_models.includes(selectedModel || '')
+      )
+      if (!currentModelAvailable) {
+        setSelectedModel(vendorGroup?.backends[0]?.model)
+      }
+    }
+  }, [mode])
+
   // 生成图片
   const handleGenerate = async () => {
     if (!prompt.trim()) {
@@ -171,9 +205,22 @@ export default function ImageGenPage() {
         seed,
       }
 
-      // 图生图模式
+      // 图生图模式：将图片转换为 base64 数据 URI
       if (mode === 'img2img' && referenceImages.length > 0) {
-        body.reference_images = referenceImages.map(f => f.originFileObj ? URL.createObjectURL(f.originFileObj) : f.url)
+        body.reference_images = await Promise.all(
+          referenceImages.map(async (f) => {
+            if (f.originFileObj) {
+              // blob -> base64
+              return new Promise<string>((resolve, reject) => {
+                const reader = new FileReader()
+                reader.onload = () => resolve(reader.result as string)
+                reader.onerror = reject
+                reader.readAsDataURL(f.originFileObj)
+              })
+            }
+            return f.url
+          })
+        )
       }
 
       setProgress(30)

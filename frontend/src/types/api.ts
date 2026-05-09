@@ -31,6 +31,7 @@ export interface Provider {
   support_reference_image?: boolean
   support_multiple_reference_images?: boolean
   reference_image_field?: string
+  reference_image_array_field?: string
   test_prompt?: string
   has_api_key?: boolean
 }

@@ -41,7 +41,17 @@ class MinimaxImageBackend(BaseImageBackend):
         api_key: str,
         api_base: str = "https://api.minimax.chat/v1",
         model: str | None = None,
+        support_img2img: bool = True,
     ):
+        """
+        初始化 MiniMax 图像后端
+
+        Args:
+            api_key: API 密钥
+            api_base: API 基础 URL
+            model: 默认模型
+            support_img2img: 是否支持图生图（默认 True，MiniMax 原生支持）
+        """
         super().__init__(
             name="minimax-image",
             model=model or self.DEFAULT_MODEL,
@@ -49,10 +59,9 @@ class MinimaxImageBackend(BaseImageBackend):
             api_base=api_base,
             cost_per_call=0.1,
         )
-        self._capabilities = {
-            ImageCapability.TEXT_TO_IMAGE,
-            ImageCapability.IMAGE_TO_IMAGE,
-        }
+        self._capabilities = {ImageCapability.TEXT_TO_IMAGE}
+        if support_img2img:
+            self._capabilities.add(ImageCapability.IMAGE_TO_IMAGE)
 
     async def health_check(self) -> bool:
         """探测 /v1/models 接口"""
