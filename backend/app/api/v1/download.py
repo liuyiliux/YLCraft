@@ -181,6 +181,18 @@ async def parse_download_url(req: ParseRequest):
     duration = info.get("duration", 0) or 0
     duration_str = _format_duration(duration)
 
+    # 检查解析是否真的成功！
+    is_valid = bool(video_url) or bool(info.get("images"))
+    if not is_valid:
+        logger.warning(f"[parse] 解析结果无效（无 video_url 和 images），返回失败: url={url[:80]}")
+        return ParseResponse(
+            success=False,
+            title=title,
+            author=author_name,
+            platform=platform,
+            error="未找到视频数据，请检查链接是否正确，或尝试使用其他平台的视频链接"
+        )
+
     qualities: list[VideoQuality] = []
     if url:
         qualities = await _get_qualities(url, title, platform)
