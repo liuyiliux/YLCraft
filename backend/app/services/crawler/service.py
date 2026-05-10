@@ -257,7 +257,7 @@ class CrawlerService:
         返回导入的素材 ID 列表
         """
         from app.db.database import get_session
-        from app.db.models.asset import Asset, AssetType, AssetStatus
+        from app.db.models.asset import Asset
         from app.services.asset.service import AssetService
 
         asset_ids = []
@@ -272,7 +272,7 @@ class CrawlerService:
                         continue
 
                     # 创建新素材记录
-                    asset_type = AssetType.VIDEO
+                    asset_type = "video"
                     asset = await asset_service.create(
                         asset_type=asset_type,
                         title=result.title or "未命名素材",
@@ -280,7 +280,7 @@ class CrawlerService:
                         platform=result.platform,
                         author=result.author,
                         cover_url=result.cover,
-                        status=AssetStatus.PARSED,
+                        status="parsed",
                         metadata={
                             "crawler": True,
                             "likes": result.likes,

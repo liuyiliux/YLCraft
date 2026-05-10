@@ -10,7 +10,7 @@
  */
 
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Card,
   Row,
@@ -75,6 +75,8 @@ interface BackendInfo {
 export default function ImageGenPage() {
   const { theme: THEME } = useTheme()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+
   // 生成模式
   const [mode, setMode] = useState<'text2img' | 'img2img'>('text2img')
 
@@ -102,6 +104,7 @@ export default function ImageGenPage() {
   // 预览
   const [previewImage, setPreviewImage] = useState<GeneratedImage | null>(null)
   const hasFetchedBackends = useRef(false)
+  const hasAppliedUrlParams = useRef(false)  // 标记是否已应用 URL 参数
 
   // 按厂商分组后端（根据 mode 过滤不支持的模型）
   const { groupedBackends, vendorOptions } = useMemo(() => {
@@ -140,6 +143,63 @@ export default function ImageGenPage() {
     return { groupedBackends: groups, vendorOptions: options }
   }, [backends, mode])
 
+  // 从 URL 参数自动填充
+  useEffect(() => {
+    // 避免重复应用
+    if (hasAppliedUrlParams.current) return
+    hasAppliedUrlParams.current = true
+
+    const promptParam = searchParams.get('prompt')
+    const negativePromptParam = searchParams.get('negative_prompt')
+    const modelParam = searchParams.get('model')
+    const sizeParam = searchParams.get('size')
+    const referenceImageParam = searchParams.get('reference_image')
+
+    console.log('[ImageGen] URL params:', { promptParam, negativePromptParam, modelParam, sizeParam, referenceImageParam })
+
+    if (promptParam) {
+      console.log('[ImageGen] Setting prompt:', promptParam)
+      setPrompt(promptParam)
+    }
+    if (negativePromptParam) setNegativePrompt(negativePromptParam)
+    if (sizeParam) setSize(sizeParam)
+    if (referenceImageParam) {
+      // 自动切换到图生图模式并设置参考图
+      setMode('img2img')
+      // 创建 UploadFile 格式的参考图
+      const refImage: UploadFile = {
+        uid: '-1',
+        name: 'reference_image.png',
+        status: 'done',
+        url: referenceImageParam,
+      }
+      console.log('[ImageGen] Setting reference image:', referenceImageParam)
+      setReferenceImages([refImage])
+    }
+  }, [searchParams])
+
+  // 当后端加载完成后，根据 URL 参数设置模型
+  useEffect(() => {
+    const modelParam = searchParams.get('model')
+    if (modelParam && backends.length > 0) {
+      console.log('[ImageGen] Trying to set model from URL:', modelParam)
+      console.log('[ImageGen] Available backends:', backends.map(b => ({ provider: b.provider_label, model: b.model, available: b.available_models })))
+      
+      // 查找包含该模型的厂商
+      const targetBackend = backends.find(b => 
+        b.model === modelParam || b.available_models.includes(modelParam)
+      )
+      if (targetBackend) {
+        console.log('[ImageGen] Found matching backend:', targetBackend.provider_label, targetBackend.model)
+        setProvider(targetBackend.provider_label)
+        setSelectedModel(modelParam)
+      } else {
+        console.log('[ImageGen] Model not found in any backend. URL model:', modelParam)
+        console.log('[ImageGen] Will keep existing selection or set default')
+      }
+    }
+  }, [backends, searchParams])
+
   // 加载后端列表
   useEffect(() => {
     if (hasFetchedBackends.current) return
@@ -147,11 +207,19 @@ export default function ImageGenPage() {
     getImageBackends()
       .then(data => {
         if (data.success && data.backends.length > 0) {
+          console.log('[ImageGen] Backends loaded:', data.backends.map(b => ({ name: b.name, model: b.model, available: b.available_models })))
           setBackends(data.backends)
-          const firstBackend = data.backends[0]
-          const firstVendor = firstBackend.provider_label
-          setProvider(firstVendor)
-          setSelectedModel(firstBackend.model)
+          // 只有在没有从 URL 设置模型时，才设置默认模型
+          const modelParam = searchParams.get('model')
+          if (!hasAppliedUrlParams.current || !modelParam) {
+            const firstBackend = data.backends[0]
+            const firstVendor = firstBackend.provider_label
+            console.log('[ImageGen] Setting default provider/model:', firstVendor, firstBackend.model)
+            setProvider(firstVendor)
+            setSelectedModel(firstBackend.model)
+          } else {
+            console.log('[ImageGen] Skipping default model - URL model param:', modelParam)
+          }
         }
       })
       .catch(() => message.error('加载后端列表失败'))

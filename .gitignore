@@ -50,3 +50,5 @@ frontend/.env.local
 backend/downloads/
 backend/storage/
 
+.codebuddy/
+backend/migrate_assets_v2.py

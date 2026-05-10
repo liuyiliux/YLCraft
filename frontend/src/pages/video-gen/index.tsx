@@ -10,7 +10,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useWebSocket, WSTaskProgress } from '../../hooks/useWebSocket'
 import {
   Card,
@@ -85,6 +85,8 @@ interface BackendInfo {
 export default function VideoGenPage() {
   const { theme: THEME } = useTheme()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+
   // 生成模式
   const [mode, setMode] = useState<'text2video' | 'img2video'>('text2video')
 
@@ -120,6 +122,46 @@ export default function VideoGenPage() {
     processing: generatedVideos.filter(v => v.status === 'processing' || v.status === 'pending').length,
     failed: generatedVideos.filter(v => v.status === 'error').length,
   }
+
+  // 从 URL 参数自动填充
+  useEffect(() => {
+    const promptParam = searchParams.get('prompt')
+    const negativePromptParam = searchParams.get('negative_prompt')
+    const modelParam = searchParams.get('model')
+    const durationParam = searchParams.get('duration')
+    const aspectRatioParam = searchParams.get('aspect_ratio')
+    const referenceImageParam = searchParams.get('reference_image')
+
+    if (promptParam) setPrompt(promptParam)
+    if (negativePromptParam) setNegativePrompt(negativePromptParam)
+    if (durationParam) setDuration(Number(durationParam))
+    if (aspectRatioParam) setAspectRatio(aspectRatioParam)
+    if (referenceImageParam) {
+      // 自动切换到图生视频模式并设置起始图
+      setMode('img2video')
+      const refImage: UploadFile = {
+        uid: '-1',
+        name: 'reference_image.png',
+        status: 'done',
+        url: referenceImageParam,
+      }
+      setStartImage(refImage)
+    }
+  }, [searchParams])
+
+  // 当后端加载完成后，根据 URL 参数设置模型
+  useEffect(() => {
+    const modelParam = searchParams.get('model')
+    if (modelParam && backends.length > 0) {
+      const targetBackend = backends.find(b => 
+        b.model === modelParam || b.available_models.includes(modelParam)
+      )
+      if (targetBackend) {
+        setProvider(targetBackend.name)
+        setSelectedModel(modelParam)
+      }
+    }
+  }, [backends, searchParams])
 
   // 加载后端列表
   useEffect(() => {

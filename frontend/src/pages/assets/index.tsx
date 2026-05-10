@@ -42,10 +42,25 @@ import {
   VideoCameraOutlined,
   CheckOutlined,
   CloseOutlined,
+  PlayCircleOutlined,
+  PauseCircleOutlined,
 } from '@ant-design/icons'
 import { listAssets, deleteAsset, getTags, createTag } from '../../api'
 
 const { Search } = Input
+
+// 状态中文映射（键为大写，与数据库一致）
+const STATUS_LABELS: Record<string, string> = {
+  PENDING: '等待中',
+  PARSING: '解析中',
+  PARSED: '已解析',
+  DOWNLOADING: '下载中',
+  DOWNLOADED: '已下载',
+  PROCESSING: '处理中',
+  READY: '完成',
+  ERROR: '错误',
+  FAILED: '失败',
+}
 
 export default function AssetsPage() {
   const navigate = useNavigate()
@@ -56,30 +71,92 @@ export default function AssetsPage() {
   const [page, setPage] = useState(1)
   const [pageSize] = useState(20)
   const [filters, setFilters] = useState({
-    asset_type: undefined as string | undefined,
-    platform: undefined as string | undefined,
-    status: undefined as string | undefined,
+    asset_type: '' as string,
+    platform: '' as string,
+    source_type: '' as string,
+    status: '' as string,
     search: '',
-    tags: undefined as string | undefined,
+    tags: '' as string,
   })
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [detailAsset, setDetailAsset] = useState<any>(null)
   const [tags, setTags] = useState<any[]>([])
   const [batchMode, setBatchMode] = useState(false)
+  const [playingAssetId, setPlayingAssetId] = useState<string | null>(null)
   const [deleteModal, setDeleteModal] = useState<{
     visible: boolean,
     isBatch: boolean,
     assets: any[]
   }>({ visible: false, isBatch: false, assets: [] })
 
+  // 判断素材是否来自AI生成（使用 source_type 字段）
+  const isAIGenerated = (asset: any) => {
+    return asset.source_type?.toLowerCase() === 'ai_generated'
+  }
+
+  // 来源类型中文标签
+  const SOURCE_TYPE_LABELS: Record<string, string> = {
+    'upload': '本地上传',
+    'parse': '视频解析',
+    'ai_generated': 'AI生成',
+    'import': '导入',
+    '': '未知',
+  }
+
+  // 跳转到对应生成页面（根据来源类型判断）
+  const handleJumpToGenerator = (asset: any) => {
+    const metadata = asset.metadata || {}
+    const aiParams = metadata.ai_params || {}
+    const assetType = asset.type?.toUpperCase()
+
+    // AI生成的素材 -> 跳转对应AI生成页面
+    if (isAIGenerated(asset)) {
+      if (assetType === 'VIDEO') {
+        // AI生成的视频 -> 视频生成页面
+        const params = new URLSearchParams()
+        if (metadata.prompt) params.set('prompt', metadata.prompt)
+        if (metadata.negative_prompt) params.set('negative_prompt', metadata.negative_prompt)
+        if (metadata.model) params.set('model', metadata.model)
+        if (aiParams.aspect_ratio) params.set('aspect_ratio', aiParams.aspect_ratio)
+        if (aiParams.duration) params.set('duration', String(aiParams.duration))
+        // 使用 original=true 获取原始参考图
+        if (asset.thumbnail_url) params.set('reference_image', `${asset.thumbnail_url}?original=true`)
+        navigate(`/video-gen?${params.toString()}`)
+      } else if (assetType === 'IMAGE') {
+        // AI生成的图片 -> 图片生成页面
+        const params = new URLSearchParams()
+        if (metadata.prompt) params.set('prompt', metadata.prompt)
+        if (metadata.negative_prompt) params.set('negative_prompt', metadata.negative_prompt)
+        if (metadata.model) params.set('model', metadata.model)
+        if (metadata.size) params.set('size', metadata.size)
+        // 使用 original=true 获取原始参考图
+        if (asset.thumbnail_url) params.set('reference_image', `${asset.thumbnail_url}?original=true`)
+        navigate(`/image-gen?${params.toString()}`)
+      }
+    } else {
+      // 非AI生成（视频解析/导入等） -> 去水印下载
+      const params = new URLSearchParams()
+      if (asset.source_url) params.set('url', asset.source_url)
+      navigate(`/download?${params.toString()}`)
+    }
+  }
+
   const loadAssets = async () => {
     setLoading(true)
     try {
-      const res = await listAssets({
-        ...filters,
+      // 只传递有值的过滤条件
+      const queryParams: Record<string, any> = {
         page,
         page_size: pageSize,
-      })
+      }
+      if (filters.asset_type) queryParams.asset_type = filters.asset_type
+      if (filters.platform) queryParams.platform = filters.platform
+      if (filters.source_type) queryParams.source_type = filters.source_type
+      if (filters.status) queryParams.status = filters.status
+      if (filters.search) queryParams.search = filters.search
+      if (filters.tags) queryParams.tags = filters.tags
+      
+      const res = await listAssets(queryParams)
       if (res.success) {
         setAssets(res.data)
         setTotal(res.total)
@@ -214,12 +291,12 @@ export default function AssetsPage() {
                 allowClear
                 style={{ width: 120 }}
                 value={filters.asset_type}
-                onChange={v => { setPage(1); setFilters(f => ({ ...f, asset_type: v })) }}
+                onChange={v => { setPage(1); setFilters(f => ({ ...f, asset_type: v || undefined })) }}
                 options={[
                   { label: '全部', value: '' },
-                  { label: '视频', value: 'video' },
-                  { label: '图片', value: 'image' },
-                  { label: '音频', value: 'audio' },
+                  { label: '视频', value: 'VIDEO' },
+                  { label: '图片', value: 'IMAGE' },
+                  { label: '音频', value: 'AUDIO' },
                 ]}
               />
               <Select
@@ -227,12 +304,26 @@ export default function AssetsPage() {
                 allowClear
                 style={{ width: 120 }}
                 value={filters.platform}
-                onChange={v => { setPage(1); setFilters(f => ({ ...f, platform: v })) }}
+                onChange={v => { setPage(1); setFilters(f => ({ ...f, platform: v || undefined })) }}
                 options={[
-                  { label: '全部', value: undefined },
+                  { label: '全部', value: '' },
                   { label: '抖音', value: 'douyin' },
                   { label: '快手', value: 'kuaishou' },
                   { label: 'B站', value: 'bilibili' },
+                ]}
+              />
+              <Select
+                placeholder="来源"
+                allowClear
+                style={{ width: 120 }}
+                value={filters.source_type}
+                onChange={v => { setPage(1); setFilters(f => ({ ...f, source_type: v || undefined })) }}
+                options={[
+                  { label: '全部', value: '' },
+                  { label: 'AI生成', value: 'ai_generated' },
+                  { label: '视频解析', value: 'parse' },
+                  { label: '本地上传', value: 'upload' },
+                  { label: '导入', value: 'import' },
                 ]}
               />
               <Select
@@ -240,12 +331,12 @@ export default function AssetsPage() {
                 allowClear
                 style={{ width: 120 }}
                 value={filters.status}
-                onChange={v => { setPage(1); setFilters(f => ({ ...f, status: v })) }}
+                onChange={v => { setPage(1); setFilters(f => ({ ...f, status: v || undefined })) }}
                 options={[
                   { label: '全部', value: '' },
                   { label: '已解析', value: 'parsed' },
                   { label: '下载中', value: 'downloading' },
-                  { label: '就绪', value: 'ready' },
+                  { label: '完成', value: 'READY' },
                   { label: '错误', value: 'error' },
                 ]}
               />
@@ -255,6 +346,7 @@ export default function AssetsPage() {
                   setFilters({
                     asset_type: '',
                     platform: '',
+                    source_type: '',
                     status: '',
                     search: '',
                     tags: '',
@@ -300,7 +392,13 @@ export default function AssetsPage() {
           <Empty description="暂无素材资产" />
         ) : (
           <Row gutter={[16, 16]}>
-            {assets.map(asset => (
+            {assets.map(asset => {
+              const status = (asset.status || '').toUpperCase()
+              const isReady = status === 'READY'
+              const isVideo = (asset.type || '').toUpperCase() === 'VIDEO'
+              const isPlaying = playingAssetId === asset.id
+
+              return (
               <Col xs={24} sm={12} md={8} lg={6} key={asset.id}>
                 <Card
                   hoverable={!batchMode}
@@ -309,17 +407,16 @@ export default function AssetsPage() {
                   }}
                   cover={
                     batchMode ? (
-                      <div style={{ position: 'relative', height: 200 }}>
+                      <div style={{ position: 'relative', height: 200, overflow: 'hidden' }}>
                         {asset.thumbnail_url ? (
-                          <Image
+                          <img
                             src={asset.thumbnail_url}
-                            height={200}
-                            style={{ objectFit: 'cover' }}
-                            preview={false}
+                            style={{ width: '100%', height: 200, objectFit: 'cover', display: 'block' }}
+                            onError={(e) => { e.currentTarget.style.display = 'none' }}
                           />
                         ) : (
                           <div style={{ height: 200, background: theme.bgElevated, display: 'flex', alignItems: 'center', justifyContent: 'center', color: theme.textSecondary }}>
-                            {asset.asset_type === 'video' ? '🎬' : asset.asset_type === 'image' ? '🖼️' : '📄'}
+                            {isVideo ? '🎬' : (asset.type || '').toUpperCase() === 'IMAGE' ? '🖼️' : '📄'}
                           </div>
                         )}
                         <div style={{
@@ -336,22 +433,71 @@ export default function AssetsPage() {
                           />
                         </div>
                       </div>
-                    ) : (
-                      asset.thumbnail_url ? (
-                        <Image
-                          src={asset.thumbnail_url}
-                          height={200}
-                          style={{ objectFit: 'cover' }}
-                          preview={false}
+                    ) : isPlaying && isVideo && isReady ? (
+                      <div style={{ height: 200, position: 'relative', background: '#000' }}>
+                        <video
+                          src={`/api/v1/assets/${asset.id}/download`}
+                          controls
+                          autoPlay
+                          style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                          onEnded={() => setPlayingAssetId(null)}
                         />
-                      ) : (
-                        <div style={{ height: 200, background: theme.bgElevated, display: 'flex', alignItems: 'center', justifyContent: 'center', color: theme.textSecondary }}>
-                          {asset.asset_type === 'video' ? '🎬' : asset.asset_type === 'image' ? '🖼️' : '📄'}
-                        </div>
-                      )
+                        <Button
+                          type="text"
+                          icon={<PauseCircleOutlined />}
+                          onClick={(e) => { e.stopPropagation(); setPlayingAssetId(null) }}
+                          style={{ position: 'absolute', top: 4, right: 4, color: '#fff' }}
+                          size="small"
+                        />
+                      </div>
+                    ) : (
+                      <div style={{ position: 'relative', height: 200, overflow: 'hidden' }}>
+                        {asset.thumbnail_url ? (
+                          <img
+                            src={asset.thumbnail_url}
+                            style={{ width: '100%', height: 200, objectFit: 'cover', display: 'block' }}
+                            onError={(e) => { e.currentTarget.style.display = 'none' }}
+                          />
+                        ) : (
+                          <div style={{ height: 200, background: theme.bgElevated, display: 'flex', alignItems: 'center', justifyContent: 'center', color: theme.textSecondary }}>
+                            {isVideo ? '🎬' : (asset.type || '').toUpperCase() === 'IMAGE' ? '🖼️' : '📄'}
+                          </div>
+                        )}
+                        {/* 播放按钮 */}
+                        {isVideo && isReady && (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              top: 0, left: 0, right: 0, bottom: 0,
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              background: 'rgba(0,0,0,0.3)',
+                              cursor: 'pointer',
+                              zIndex: 10,
+                            }}
+                            onClick={(e) => { e.stopPropagation(); setPlayingAssetId(asset.id) }}
+                          >
+                            <PlayCircleOutlined style={{ fontSize: 48, color: '#fff' }} />
+                          </div>
+                        )}
+                      </div>
                     )
                   }
                   actions={!batchMode ? [
+                    isVideo && isReady && (
+                      <Tooltip title={isPlaying ? "暂停" : "播放"} key="play">
+                        {isPlaying ? (
+                          <PauseCircleOutlined style={{ color: theme.textSecondary }} onClick={(e) => { e.stopPropagation(); setPlayingAssetId(null) }} />
+                        ) : (
+                          <PlayCircleOutlined style={{ color: theme.textSecondary }} onClick={(e) => { e.stopPropagation(); setPlayingAssetId(asset.id) }} />
+                        )}
+                      </Tooltip>
+                    ),
+                    <Tooltip title={isAIGenerated(asset) ? "再次生成" : "跳转解析"} key="jump">
+                      <ThunderboltOutlined style={{ color: theme.textSecondary }} onClick={(e) => {
+                        e.stopPropagation()
+                        handleJumpToGenerator(asset)
+                      }} />
+                    </Tooltip>,
                     <Tooltip title="下载" key="download">
                       <DownloadOutlined style={{ color: theme.textSecondary }} onClick={(e) => {
                         e.stopPropagation()
@@ -371,11 +517,11 @@ export default function AssetsPage() {
                     <Tooltip title="删除" key="delete">
                       <DeleteOutlined style={{ color: theme.textSecondary }} onClick={(e) => handleDelete(asset, e)} />
                     </Tooltip>,
-                  ] : []}
+                  ].filter(Boolean) : []}
                   onClick={() => {
                     if (batchMode) {
                       toggleSelect(asset.id, !selectedIds.includes(asset.id))
-                    } else {
+                    } else if (!isPlaying) {
                       setDetailAsset(asset)
                     }
                   }}
@@ -387,8 +533,8 @@ export default function AssetsPage() {
                         <div style={{ fontSize: 12, color: theme.textSecondary }}>
                           {asset.platform} · {asset.author || '未知作者'}
                         </div>
-                        <Tag color={asset.status === 'ready' ? 'green' : asset.status === 'error' ? 'red' : 'blue'}>
-                          {asset.status}
+                        <Tag color={status === 'READY' ? 'green' : status === 'ERROR' ? 'red' : 'blue'}>
+                          {STATUS_LABELS[status] || asset.status}
                         </Tag>
                         {asset.tags?.length > 0 ? (
                           <Space size={4} wrap>
@@ -404,7 +550,8 @@ export default function AssetsPage() {
                   />
                 </Card>
               </Col>
-            ))}
+              )
+            })}
           </Row>
         )}
       </Spin>
@@ -423,104 +570,160 @@ export default function AssetsPage() {
       )}
 
       {/* 详情抽屉 */}
-      {detailAsset && (
-        <Modal
-          open
-          title={<span style={{ color: theme.textPrimary }}>{detailAsset.title || '资产详情'}</span>}
-          onCancel={() => setDetailAsset(null)}
-          footer={null}
-          width={640}
-        >
-          {/* 预览图 */}
-          {detailAsset.thumbnail_url && (
-            <div style={{ marginBottom: 16, textAlign: 'center' }}>
-              <Image
-                src={detailAsset.thumbnail_url}
-                alt={detailAsset.title}
-                style={{ maxHeight: 300, objectFit: 'contain' }}
-              />
-            </div>
-          )}
-          
-          <Descriptions column={2} size="small" labelStyle={{ color: theme.textSecondary }} contentStyle={{ color: theme.textPrimary }}>
-            <Descriptions.Item label="类型">{detailAsset.asset_type}</Descriptions.Item>
-            <Descriptions.Item label="平台">{detailAsset.platform}</Descriptions.Item>
-            <Descriptions.Item label="作者">{detailAsset.author}</Descriptions.Item>
-            <Descriptions.Item label="状态">
-              <Tag color={detailAsset.status === 'ready' ? 'green' : 'orange'}>{detailAsset.status}</Tag>
-            </Descriptions.Item>
-            <Descriptions.Item label="大小">{detailAsset.file_size ? `${(detailAsset.file_size / 1024 / 1024).toFixed(1)} MB` : '-'}</Descriptions.Item>
-            <Descriptions.Item label="分辨率">{detailAsset.width && detailAsset.height ? `${detailAsset.width}x${detailAsset.height}` : '-'}</Descriptions.Item>
-            <Descriptions.Item label="时长">{detailAsset.duration ? `${Math.floor(detailAsset.duration / 60)}:${String(Math.floor(detailAsset.duration % 60)).padStart(2, '0')}` : '-'}</Descriptions.Item>
-            <Descriptions.Item label="来源URL" span={2}>
-              <Tooltip title={detailAsset.source_url} placement="topLeft">
-                <a href={detailAsset.source_url} target="_blank" rel="noreferrer" style={{
-                  display: 'inline-block',
-                  maxWidth: 400,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  verticalAlign: 'middle',
-                }}>{detailAsset.source_url}</a>
-              </Tooltip>
-            </Descriptions.Item>
-            <Descriptions.Item label="创建时间">{detailAsset.created_at}</Descriptions.Item>
-            <Descriptions.Item label="下载时间">{detailAsset.downloaded_at || '-'}</Descriptions.Item>
-          </Descriptions>
+      {detailAsset && (() => {
+        const detailStatus = (detailAsset.status || '').toUpperCase()
+        const detailType = (detailAsset.type || '').toUpperCase()
+        const isDetailVideo = detailType === 'VIDEO' && detailStatus === 'READY'
+        const meta = detailAsset.metadata || {}
+        const aiParams = meta.ai_params || {}
+        const isAIGen = isAIGenerated(detailAsset)
+        const genFields: { key: string; label: string; span?: number; source?: 'direct' | 'ai_params' | 'meta' }[] = [
+          { key: 'ai_prompt', label: '提示词', span: 2, source: 'direct' },
+          { key: 'ai_negative_prompt', label: '反向提示词', span: 2, source: 'direct' },
+          { key: 'ai_model', label: 'AI模型', source: 'direct' },
+          { key: 'prompt', label: '提示词', span: 2, source: 'meta' },
+          { key: 'negative_prompt', label: '反向提示词', span: 2, source: 'meta' },
+          { key: 'model', label: '模型', source: 'meta' },
+          { key: 'provider', label: '提供商', source: 'meta' },
+          { key: 'seed', label: '种子', source: 'ai_params' },
+          { key: 'size', label: '尺寸', source: 'ai_params' },
+          { key: 'steps', label: '采样步数', source: 'ai_params' },
+          { key: 'cfg_scale', label: 'CFG Scale', source: 'ai_params' },
+          { key: 'sampler', label: '采样器', source: 'ai_params' },
+          { key: 'lora', label: 'LoRA', source: 'ai_params' },
+          { key: 'controlnet', label: 'ControlNet', source: 'ai_params' },
+          { key: 'resolution', label: '分辨率', source: 'ai_params' },
+          { key: 'aspect_ratio', label: '画幅比例', source: 'ai_params' },
+          { key: 'generate_audio', label: '生成音频', source: 'meta' },
+          { key: 'duration', label: '时长(秒)', source: 'ai_params' },
+          { key: 'quality', label: '下载清晰度', source: 'meta' },
+          { key: 'is_audio', label: '仅音频', source: 'meta' },
+          { key: 'page_url', label: '原始页面', span: 2, source: 'meta' },
+        ]
+        const getValue = (field: typeof genFields[0]) => {
+          if (field.source === 'direct') return detailAsset[field.key]
+          if (field.source === 'ai_params') return aiParams[field.key]
+          return meta[field.key]
+        }
+        const visibleFields = genFields.filter(f => {
+          const value = getValue(f)
+          return value !== undefined && value !== '' && value !== null
+        })
+        const hasMetadata = visibleFields.length > 0
 
-          {/* 生成参数（从 metadata 中展示） */}
-          {detailAsset.metadata && Object.keys(detailAsset.metadata).length > 0 && (() => {
-            const meta = detailAsset.metadata
-            // 生成参数字段
-            const genFields: { key: string; label: string; span?: number }[] = [
-              { key: 'prompt', label: '提示词', span: 2 },
-              { key: 'negative_prompt', label: '反向提示词', span: 2 },
-              { key: 'model', label: '模型' },
-              { key: 'provider', label: '提供商' },
-              { key: 'seed', label: '种子' },
-              { key: 'size', label: '尺寸' },
-              { key: 'steps', label: '采样步数' },
-              { key: 'cfg_scale', label: 'CFG Scale' },
-              { key: 'sampler', label: '采样器' },
-              { key: 'lora', label: 'LoRA' },
-              { key: 'controlnet', label: 'ControlNet' },
-              { key: 'resolution', label: '分辨率' },
-              { key: 'aspect_ratio', label: '画幅比例' },
-              { key: 'generate_audio', label: '生成音频' },
-              { key: 'duration', label: '时长(秒)' },
-              { key: 'quality', label: '下载清晰度' },
-              { key: 'is_audio', label: '仅音频' },
-              { key: 'page_url', label: '原始页面', span: 2 },
-            ]
-            const visibleFields = genFields.filter(f => meta[f.key] !== undefined && meta[f.key] !== '' && meta[f.key] !== null)
-            if (visibleFields.length === 0) return null
-            return (
+        return (
+          <Modal
+            open
+            title={<span style={{ color: theme.textPrimary }}>{detailAsset.title || '资产详情'}</span>}
+            onCancel={() => setDetailAsset(null)}
+            footer={null}
+            width={640}
+          >
+            {/* 视频播放或图片预览 */}
+            {isDetailVideo ? (
+              <div style={{ marginBottom: 16, textAlign: 'center', background: '#000', borderRadius: 8, overflow: 'hidden' }}>
+                <video
+                  src={`/api/v1/assets/${detailAsset.id}/download`}
+                  controls
+                  style={{ width: '100%', maxHeight: 400, objectFit: 'contain' }}
+                />
+              </div>
+            ) : detailAsset.thumbnail_url ? (
+              <div style={{ marginBottom: 16, textAlign: 'center' }}>
+                <Image
+                  src={detailAsset.thumbnail_url}
+                  alt={detailAsset.title}
+                  style={{ maxHeight: 300, objectFit: 'contain' }}
+                />
+              </div>
+            ) : null}
+
+            {/* 操作按钮 */}
+            <div style={{ marginBottom: 16 }}>
+              {isDetailVideo && (
+                <Button
+                  type="primary"
+                  icon={<DownloadOutlined />}
+                  onClick={() => {
+                    const link = document.createElement('a')
+                    link.href = `/api/v1/assets/${detailAsset.id}/download`
+                    link.download = detailAsset.title || 'video'
+                    link.click()
+                  }}
+                  style={{ marginRight: 8 }}
+                >
+                  下载视频
+                </Button>
+              )}
+              <Button
+                icon={<ThunderboltOutlined />}
+                onClick={() => handleJumpToGenerator(detailAsset)}
+              >
+                {isAIGenerated(detailAsset) ? '再次生成' : '跳转解析'}
+              </Button>
+            </div>
+
+              <Descriptions column={2} size="small" labelStyle={{ color: theme.textSecondary }} contentStyle={{ color: theme.textPrimary }}>
+              <Descriptions.Item label="类型">{detailAsset.type}</Descriptions.Item>
+              <Descriptions.Item label="来源">
+                <Tag color={isAIGenerated(detailAsset) ? 'purple' : 'blue'}>
+                  {SOURCE_TYPE_LABELS[detailAsset.source_type] || detailAsset.source_type || '未知'}
+                </Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="平台">{detailAsset.platform || '-'}</Descriptions.Item>
+              <Descriptions.Item label="作者">{detailAsset.author || '-'}</Descriptions.Item>
+              <Descriptions.Item label="状态">
+                <Tag color={detailStatus === 'READY' ? 'green' : 'orange'}>{STATUS_LABELS[detailStatus] || detailAsset.status}</Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="大小">{detailAsset.file_size ? `${(detailAsset.file_size / 1024 / 1024).toFixed(1)} MB` : '-'}</Descriptions.Item>
+              <Descriptions.Item label="分辨率">{detailAsset.width && detailAsset.height ? `${detailAsset.width}x${detailAsset.height}` : '-'}</Descriptions.Item>
+              <Descriptions.Item label="时长">{detailAsset.duration ? `${Math.floor(detailAsset.duration / 60)}:${String(Math.floor(detailAsset.duration % 60)).padStart(2, '0')}` : '-'}</Descriptions.Item>
+              <Descriptions.Item label="来源URL" span={2}>
+                <Tooltip title={detailAsset.source_url} placement="topLeft">
+                  <a href={detailAsset.source_url} target="_blank" rel="noreferrer" style={{
+                    display: 'inline-block',
+                    maxWidth: 400,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    verticalAlign: 'middle',
+                  }}>{detailAsset.source_url}</a>
+                </Tooltip>
+              </Descriptions.Item>
+              <Descriptions.Item label="创建时间">{detailAsset.created_at}</Descriptions.Item>
+              <Descriptions.Item label="下载时间">{detailAsset.downloaded_at || '-'}</Descriptions.Item>
+            </Descriptions>
+
+            {/* 生成参数 */}
+            {hasMetadata && (
               <div style={{ marginTop: 16 }}>
                 <div style={{ marginBottom: 8, fontWeight: 600, color: theme.textPrimary }}>
-                  生成参数
+                  生成参数 {isAIGen && <Tag color="purple" style={{ marginLeft: 8 }}>AI生成</Tag>}
                 </div>
                 <Descriptions column={2} size="small" bordered labelStyle={{ color: theme.textSecondary, width: 100 }} contentStyle={{ color: theme.textPrimary }}>
-                  {visibleFields.map(f => (
+                  {visibleFields.map(f => {
+                    const value = getValue(f)
+                    return (
                     <Descriptions.Item key={f.key} label={f.label} span={f.span}>
                       {f.key === 'page_url' ? (
-                        <Tooltip title={meta[f.key]}>
-                          <a href={meta[f.key]} target="_blank" rel="noreferrer" style={{
+                        <Tooltip title={value}>
+                          <a href={value} target="_blank" rel="noreferrer" style={{
                             display: 'inline-block', maxWidth: 380, overflow: 'hidden',
                             textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'middle',
-                          }}>{meta[f.key]}</a>
+                          }}>{value}</a>
                         </Tooltip>
-                      ) : f.key === 'prompt' || f.key === 'negative_prompt' ? (
-                        <Tooltip title={meta[f.key]}>
+                      ) : f.key === 'ai_prompt' || f.key === 'ai_negative_prompt' || f.key === 'prompt' || f.key === 'negative_prompt' ? (
+                        <Tooltip title={value}>
                           <span style={{
                             display: 'inline-block', maxWidth: 450, overflow: 'hidden',
                             textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'middle',
-                          }}>{meta[f.key]}</span>
+                          }}>{value}</span>
                         </Tooltip>
-                      ) : typeof meta[f.key] === 'boolean' ? (
-                        meta[f.key] ? '是' : '否'
-                      ) : String(meta[f.key])}
+                      ) : typeof value === 'boolean' ? (
+                        value ? '是' : '否'
+                      ) : String(value)}
                     </Descriptions.Item>
-                  ))}
+                  )})}
                 </Descriptions>
 
                 {/* 参考图/首帧图展示 */}
@@ -560,19 +763,19 @@ export default function AssetsPage() {
                   </div>
                 )}
               </div>
-            )
-          })()}
+            )}
 
-          {detailAsset.tags?.length > 0 && (
-            <div style={{ marginTop: 12, color: theme.textSecondary }}>
-              <strong>标签：</strong>
-              {(detailAsset.tags as string[]).map((t: string) => (
-                <Tag key={t} style={{ color: theme.textPrimary }}>{t}</Tag>
-              ))}
-            </div>
-          )}
-        </Modal>
-      )}
+            {detailAsset.tags?.length > 0 && (
+              <div style={{ marginTop: 12, color: theme.textSecondary }}>
+                <strong>标签：</strong>
+                {(detailAsset.tags as string[]).map((t: string) => (
+                  <Tag key={t} style={{ color: theme.textPrimary }}>{t}</Tag>
+                ))}
+              </div>
+            )}
+          </Modal>
+        )
+      })()}
 
       {/* 删除确认弹窗 */}
       <Modal

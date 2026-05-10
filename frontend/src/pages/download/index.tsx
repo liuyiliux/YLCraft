@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Card, Input, Button, Typography, Tag, Spin, message, Space, Divider, Progress,
 } from 'antd'
+import { useSearchParams } from 'react-router-dom'
 import {
   CloudDownloadOutlined, AudioOutlined, PlayCircleOutlined, LinkOutlined, DeleteOutlined, FolderOpenOutlined,
   PictureOutlined, DownloadOutlined, SaveOutlined
@@ -25,7 +26,16 @@ const QUALITY_COLORS: Record<string, string> = {
 
 export default function DownloadPage() {
   const { theme: THEME } = useTheme()
+  const [searchParams] = useSearchParams()
   const [url, setUrl] = useState('')
+
+  // 从 URL 参数自动填充
+  useEffect(() => {
+    const urlParam = searchParams.get('url')
+    if (urlParam && !url) {
+      setUrl(urlParam)
+    }
+  }, [searchParams, url])
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<DownloadParseResponse | null>(null)
   const [error, setError] = useState('')

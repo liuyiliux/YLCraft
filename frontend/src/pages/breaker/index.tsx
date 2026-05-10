@@ -1,4 +1,5 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   Card,
   Input,
@@ -40,6 +41,7 @@ const { Text, Title, Paragraph } = Typography
 const XHS_PATTERN = /xiaohongshu\.com|xhs\.cn/i
 
 export default function BreakerPage() {
+  const [searchParams] = useSearchParams()
   const [url, setUrl] = useState('')
   const [loading, setLoading] = useState(false)
   const [task, setTask] = useState<BreakerTask | null>(null)
@@ -50,6 +52,14 @@ export default function BreakerPage() {
   // XHS 预览状态
   const [xhsPreview, setXhsPreview] = useState<XhsPreviewResponse | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
+
+  // 从 URL 参数自动填充链接
+  useEffect(() => {
+    const urlParam = searchParams.get('url')
+    if (urlParam && !url) {
+      setUrl(urlParam)
+    }
+  }, [searchParams, url])
 
   const isXhsUrl = XHS_PATTERN.test(url)
 

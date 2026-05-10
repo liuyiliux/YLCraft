@@ -426,7 +426,7 @@ export default function ImageEditorPage() {
   }
 
   // 获取水印控制框的位置信息
-  const getWatermarkBox = (cvs: HTMLCanvasElement): { boxX: number; boxY: number; boxW: number; boxH: number } | null => {
+  const getWatermarkBox = (cvs: HTMLCanvasElement): { boxX: number; boxY: number; boxW: number; boxH: number; boxPadding: number } | null => {
     if (!wmText.trim() || useSvgWatermark !== 'text') return null
     const ctx = cvs.getContext('2d')
     if (!ctx) return null
@@ -442,7 +442,7 @@ export default function ImageEditorPage() {
     let boxX = wmPos === 'custom' ? px : wmPos === 'center' ? px - textWidth / 2 : px - textWidth
     let boxY = py - 4
     
-    return { boxX, boxY, boxW: textWidth + boxPadding * 2, boxH: textHeight + boxPadding * 2 }
+    return { boxX, boxY, boxW: textWidth + boxPadding * 2, boxH: textHeight + boxPadding * 2, boxPadding }
   }
   
   const onCropMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {

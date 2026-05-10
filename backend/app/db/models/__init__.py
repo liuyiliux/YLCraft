@@ -1,4 +1,4 @@
-from app.db.models.asset import Asset, AssetCollection, AssetTag, AssetType, AssetStatus
+from app.db.models.asset import Asset, AssetCollection, AssetTag
 from app.db.models.character import Character, CharacterStoryLink, CharacterSourceType, CharacterRole
 from app.db.models.story import Story, StoryCharacterPortrait, StoryStatus, StoryStyle
 from app.db.models.live2d import Live2DModel, Live2DBone, Live2DMotion, Live2DModelStatus

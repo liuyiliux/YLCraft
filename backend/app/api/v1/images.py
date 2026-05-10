@@ -178,24 +178,27 @@ async def generate_image(req: ImageGenerateRequest):
             # 自动入库到资产库
             if result.local_path:
                 try:
-                    from app.services.asset_service import AssetService
-                    AssetService.create_from_image_generation(
-                        image_path=str(result.local_path),
-                        prompt=req.prompt,
-                        provider=result.provider,
-                        model=result.model,
-                        seed=result.seed,
-                        url=result.url or "",
-                        negative_prompt=req.negative_prompt or "",
-                        size=req.size or "1024x1024",
-                        steps=req.steps,
-                        cfg_scale=req.cfg_scale,
-                        sampler=req.sampler or "euler",
-                        lora=req.lora or "",
-                        controlnet=req.controlnet or "",
-                        source_image=req.source_image or "",
-                        reference_images=img_req.reference_images if img_req.reference_images else None,
-                    )
+                    from app.db.database import get_async_session
+                    from app.services.asset.service import AssetService
+                    async with get_async_session() as session:
+                        service = AssetService(session)
+                        await service.create_from_image_generation(
+                            image_path=str(result.local_path),
+                            prompt=req.prompt,
+                            provider=result.provider,
+                            model=result.model,
+                            seed=result.seed,
+                            url=result.url or "",
+                            negative_prompt=req.negative_prompt or "",
+                            size=req.size or "1024x1024",
+                            steps=req.steps,
+                            cfg_scale=req.cfg_scale,
+                            sampler=req.sampler or "euler",
+                            lora=req.lora or "",
+                            controlnet=req.controlnet or "",
+                            source_image=req.source_image or "",
+                            reference_images=img_req.reference_images if img_req.reference_images else None,
+                        )
                     logger.info(f"Image saved to asset library: {result.local_path}")
                 except Exception as e:
                     logger.warning(f"Failed to save image to asset library: {e}")

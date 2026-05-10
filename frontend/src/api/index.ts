@@ -56,6 +56,7 @@ export const listAssets = (params?: Record<string, any>) => {
   const sp = new URLSearchParams()
   if (params?.asset_type) sp.set('asset_type', params.asset_type)
   if (params?.platform) sp.set('platform', params.platform)
+  if (params?.source_type) sp.set('source_type', params.source_type)
   if (params?.status) sp.set('status', params.status)
   if (params?.tags) sp.set('tags', params.tags)
   if (params?.search) sp.set('search', params.search)

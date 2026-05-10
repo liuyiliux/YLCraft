@@ -209,9 +209,8 @@ async def parse_download_url(req: ParseRequest):
         if not qualities:
             video_url = video_url or url
 
-    # 解析完成后，在素材库创建一条 PARSED 状态记录
+    # 解析完成后，在素材库创建一条 parsed 状态记录
     from app.db.database import get_async_session
-    from app.db.models.asset import AssetType, AssetStatus
     from app.services.asset.service import AssetService
 
     # 从 info 中提取 width/height
@@ -220,6 +219,19 @@ async def parse_download_url(req: ParseRequest):
     if info and isinstance(info, dict):
         width = int(info.get("width") or 0)
         height = int(info.get("height") or 0)
+
+    # 解析时下载封面到本地
+    thumbnail_local_path = ""
+    if cover_url and cover_url.startswith("http"):
+        try:
+            loop = asyncio.get_running_loop()
+            thumbnail_local_path = await loop.run_in_executor(
+                None, _download_cover_image, cover_url, "", title
+            )
+            if thumbnail_local_path:
+                logger.info(f"[parse] 封面已保存: {thumbnail_local_path}")
+        except Exception as cover_err:
+            logger.warning(f"[parse] 封面下载失败（非阻塞）: {cover_err}")
 
     try:
         async with get_async_session() as db_session:
@@ -233,13 +245,16 @@ async def parse_download_url(req: ParseRequest):
                 duration=duration,
                 metadata=info,
             )
-            # 更新 width/height/thumbnail
+            # 更新 width/height/cover_url
             if width and asset.width == 0:
                 asset.width = width
             if height and asset.height == 0:
                 asset.height = height
-            if cover_url and not asset.thumbnail_path:
-                asset.thumbnail_path = cover_url
+            # 优先使用本地封面路径，其次使用URL
+            if thumbnail_local_path:
+                asset.cover_url = thumbnail_local_path
+            elif cover_url and not asset.cover_url:
+                asset.cover_url = cover_url
             if asset.duration == 0 and duration:
                 asset.duration = duration
             await db_session.commit()
@@ -419,7 +434,6 @@ async def download_video(req: DownloadRequest):
     thumbnail_path = video_info.cover_url if video_info else ""
 
     from app.db.database import get_async_session
-    from app.db.models.asset import Asset, AssetType, AssetStatus
     from app.services.asset.service import AssetService
 
     # 构建下载元数据
@@ -438,8 +452,8 @@ async def download_video(req: DownloadRequest):
             if width: existing.width = width
             if height: existing.height = height
             if duration: existing.duration = duration
-            if thumbnail_path and not existing.thumbnail_path:
-                existing.thumbnail_path = thumbnail_path
+            if thumbnail_path and not existing.cover_url:
+                existing.cover_url = thumbnail_path
             # 合并下载元数据到已有 metadata
             if existing.metadata_json:
                 try:
@@ -455,7 +469,7 @@ async def download_video(req: DownloadRequest):
             await db_session.refresh(existing)
             asset_id = existing.id
         else:
-            asset_type = AssetType.AUDIO if req.is_audio else AssetType.VIDEO
+            asset_type = "audio" if req.is_audio else "video"
             new_asset = await asset_service.create(
                 asset_type=asset_type,
                 title=req.title or filename,
@@ -464,11 +478,11 @@ async def download_video(req: DownloadRequest):
                 file_path=filepath,
                 file_size=file_size,
                 mime_type=media_type,
-                status=AssetStatus.READY,
+                status="ready",
                 width=width,
                 height=height,
                 duration=duration,
-                thumbnail_path=thumbnail_path,
+                cover_url=thumbnail_path,
                 metadata_json=json.dumps(download_metadata, ensure_ascii=False),
             )
             asset_id = new_asset.id
@@ -528,6 +542,44 @@ class DownloadTask:
 def _is_douyin_direct_url(url: str) -> bool:
     """判断 URL 是否为抖音 direct CDN URL（可直接用 httpx 下载，跳过 yt-dlp）"""
     return bool(url and ("douyinvod.com" in url or "amemv.com" in url))
+
+
+def _download_cover_image(cover_url: str, video_path: str, title: str | None) -> str:
+    """下载封面图到本地，与视频同目录"""
+    import httpx
+    import mimetypes
+
+    if not cover_url or not cover_url.startswith("http"):
+        return ""
+
+    try:
+        savedir = ensure_download_path()
+        safe_title = _sanitize_filename(title) if title else "video"
+        ext = "jpg"
+
+        # 根据 URL 或 Content-Type 推断扩展名
+        if ".png" in cover_url.lower():
+            ext = "png"
+        elif ".webp" in cover_url.lower():
+            ext = "webp"
+        elif ".gif" in cover_url.lower():
+            ext = "gif"
+
+        filename = f"{safe_title}_cover.{ext}"
+        filepath = savedir / filename
+
+        # 直接下载覆盖
+        with httpx.stream("GET", cover_url, timeout=30.0, follow_redirects=True) as resp:
+            resp.raise_for_status()
+            with open(filepath, "wb") as f:
+                for chunk in resp.iter_bytes(chunk_size=65536):
+                    if chunk:
+                        f.write(chunk)
+
+        return str(filepath)
+    except Exception as e:
+        logger.warning(f"[_download_cover_image] 封面下载失败: {e}")
+        return ""
 
 
 def _httpx_download(url: str, quality_label: str | None, title: str | None,
@@ -632,8 +684,10 @@ async def _run_download_task(task: DownloadTask):
         effective_url = task.page_url if task.page_url else task.url
         file_size = os.path.getsize(filepath) if os.path.exists(filepath) else 0
 
+        # 初始化封面本地路径变量
+        thumbnail_local_path = ""
+
         from app.db.database import get_async_session
-        from app.db.models.asset import AssetType, AssetStatus
         from app.services.asset.service import AssetService
 
         # 构建下载元数据
@@ -649,6 +703,9 @@ async def _run_download_task(task: DownloadTask):
             platform = _detect_platform(effective_url)
             if existing:
                 await asset_service.mark_ready(existing, file_path=filepath, file_size=file_size, mime_type=media_type)
+                # 保存本地封面路径
+                if thumbnail_local_path and not existing.cover_url.startswith("/"):
+                    existing.cover_url = thumbnail_local_path
                 # 合并下载元数据到已有 metadata
                 if existing.metadata_json:
                     try:
@@ -662,7 +719,7 @@ async def _run_download_task(task: DownloadTask):
                     existing.metadata_json = json.dumps(download_metadata, ensure_ascii=False)
                 task.asset_id = existing.id
             else:
-                asset_type = AssetType.AUDIO if task.is_audio else AssetType.VIDEO
+                asset_type = "audio" if task.is_audio else "video"
                 new_asset = await asset_service.create(
                     asset_type=asset_type,
                     title=task.title or filename,
@@ -671,12 +728,30 @@ async def _run_download_task(task: DownloadTask):
                     file_path=filepath,
                     file_size=file_size,
                     mime_type=media_type,
-                    status=AssetStatus.READY,
+                    status="ready",
                     metadata_json=json.dumps(download_metadata, ensure_ascii=False),
                 )
                 task.asset_id = new_asset.id
 
         task.file_path = filepath
+        task.progress = 90
+        task.progress_message = "下载封面..."
+        _download_tasks[task.task_id] = task.__dict__
+
+        # 下载封面图到本地
+        try:
+            video_info_for_cover = await parser.parse(task.page_url or task.url)
+            cover_url = video_info_for_cover.cover_url if video_info_for_cover else ""
+            if cover_url:
+                loop = asyncio.get_running_loop()
+                thumbnail_local_path = await loop.run_in_executor(
+                    None, _download_cover_image, cover_url, filepath, task.title
+                )
+                if thumbnail_local_path:
+                    logger.info(f"[download] 封面已保存到: {thumbnail_local_path}")
+        except Exception as cover_err:
+            logger.warning(f"[download] 封面下载失败（非阻塞）: {cover_err}")
+
         task.status = "done"
         task.progress = 100
         task.progress_message = "完成"

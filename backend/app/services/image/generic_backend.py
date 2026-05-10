@@ -274,6 +274,35 @@ class GenericImageBackend(ImageBackend):
         import base64
         from pathlib import Path
         
+        # 如果已经是 base64 数据 URI，直接返回
+        if url_or_path.startswith('data:'):
+            return url_or_path
+        
+        # 如果是 API 代理路径（如 /api/v1/assets/xxx/thumbnail），用 httpx 获取
+        if url_or_path.startswith('/api/') or url_or_path.startswith('api/'):
+            try:
+                import httpx
+                import os
+                
+                # 构建完整的 URL
+                base_url = os.environ.get('BASE_URL', 'http://localhost:8000')
+                if not url_or_path.startswith('http'):
+                    full_url = f"{base_url.rstrip('/')}/{url_or_path.lstrip('/')}"
+                else:
+                    full_url = url_or_path
+                
+                logger.info(f"[GenericImageBackend] 通过代理获取图片: {full_url}")
+                with httpx.SyncClient(timeout=30.0, follow_redirects=True) as client:
+                    response = client.get(full_url)
+                    response.raise_for_status()
+                    data = response.content
+                
+                content_type = response.headers.get('content-type', 'image/png')
+                return f"data:{content_type};base64,{base64.b64encode(data).decode()}"
+            except Exception as e:
+                logger.error(f"通过代理下载图片失败: {url_or_path}, 错误: {e}")
+                raise ValueError(f"通过代理下载图片失败: {e}")
+        
         # 如果是本地文件路径
         if url_or_path.startswith('/') or url_or_path.startswith('.'):
             file_path = Path(url_or_path)
@@ -293,32 +322,18 @@ class GenericImageBackend(ImageBackend):
         # 如果是 HTTP URL，下载后转换
         if url_or_path.startswith('http://') or url_or_path.startswith('https://'):
             try:
-                import asyncio
-                # 创建临时文件
-                import tempfile
-                import os
                 import httpx
                 
-                with httpx.SyncClient(timeout=30.0) as client:
+                with httpx.SyncClient(timeout=30.0, follow_redirects=True) as client:
                     response = client.get(url_or_path)
                     response.raise_for_status()
                     data = response.content
                 
-                # 检测 MIME 类型
                 content_type = response.headers.get('content-type', 'image/png')
-                ext = content_type.split('/')[-1].split(';')[0]
-                if ext == 'jpeg':
-                    ext = 'jpeg'
-                
-                # 返回 base64
                 return f"data:{content_type};base64,{base64.b64encode(data).decode()}"
             except Exception as e:
                 logger.error(f"下载图片失败: {url_or_path}, 错误: {e}")
                 raise
-        
-        # 如果已经是 base64 数据 URI，直接返回
-        if url_or_path.startswith('data:'):
-            return url_or_path
         
         raise ValueError(f"不支持的图片格式: {url_or_path}")
 
