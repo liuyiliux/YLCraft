@@ -530,42 +530,56 @@ def _is_douyin_direct_url(url: str) -> bool:
     return bool(url and ("douyinvod.com" in url or "amemv.com" in url))
 
 
-def _httpx_download(url: str, quality_label: str | None, title: str | None, is_audio: bool = False) -> str:
-    """直接用 httpx 下载抖音 CDN URL，绕过 yt-dlp。返回保存的文件路径。"""
-    import httpx, hashlib, time as _time
+def _httpx_download(url: str, quality_label: str | None, title: str | None,
+                     is_audio: bool = False, page_url: str | None = None) -> str:
+    """直接用 httpx 下载 CDN 直链（抖音/Twitter 等），绕过 yt-dlp。返回保存的文件路径。"""
+    import httpx
 
     savedir = ensure_download_path()
-    logger.info(f"[httpx_download] start | url={url[:80]} | quality={quality_label} | is_audio={is_audio}")
+    logger.info(f"[_httpx_download] start | url={url[:80]} | quality={quality_label} | is_audio={is_audio} | page_url={page_url[:60] if page_url else 'NONE'}")
 
-    # 生成文件名：直接用标题，去掉前缀和 hash
+    # 根据平台决定 Referer 和 Cookie 来源
+    # page_url 是原始分享页 URL，用于判断平台和获取对应 Cookie
+    cookie_url = page_url if page_url else url
+    cookie_jar = get_cookie_manager().get_cookiejar_for_url(cookie_url)
+    cookies_dict = {c.name: c.value for c in cookie_jar} if cookie_jar else {}
+
+    # 根据 URL 判断平台，设置正确的 Referer
+    referer = "https://www.douyin.com/"
+    url_lower = (page_url or url).lower()
+    if "x.com" in url_lower or "twitter.com" in url_lower or "t.co" in url_lower:
+        referer = "https://x.com/"
+    elif "bilibili" in url_lower or "b23.tv" in url_lower:
+        referer = "https://www.bilibili.com"
+
+    req_headers = {
+        "User-Agent": _BROWSER_UA,
+        "Referer": referer,
+    }
+
+    # 生成文件名
     ext = "m4a" if is_audio else "mp4"
     safe_title = _sanitize_filename(title) if title else "video"
     filename = f"{safe_title}.{ext}"
     filepath = savedir / filename
 
-    # 发送请求（带重定向跟随）
-    req_headers = {
-        "User-Agent": _BROWSER_UA,
-        "Referer": "https://www.douyin.com/",
-    }
-
     total_size = 0
     downloaded_size = 0
 
-    with httpx.stream("GET", url, headers=req_headers, follow_redirects=True, timeout=60.0) as resp:
+    with httpx.stream("GET", url, headers=req_headers, cookies=cookies_dict,
+                      follow_redirects=True, timeout=300.0) as resp:
         resp.raise_for_status()
         total_size = int(resp.headers.get("content-length", 0))
         content_type = resp.headers.get("content-type", "")
-        logger.info(f"[httpx_download] status={resp.status_code} | size={total_size} | ct={content_type}")
+        logger.info(f"[_httpx_download] status={resp.status_code} | size={total_size} | ct={content_type}")
 
         with open(filepath, "wb") as f:
             for chunk in resp.iter_bytes(chunk_size=65536):
                 if chunk:
                     f.write(chunk)
                     downloaded_size += len(chunk)
-                    # 不在这里更新 progress（BackgroundTask 中不方便）
 
-    logger.info(f"[httpx_download] done | path={filepath} | size={downloaded_size}")
+    logger.info(f"[_httpx_download] done | path={filepath} | size={downloaded_size}")
     return str(filepath)
 
 
@@ -587,7 +601,7 @@ async def _run_download_task(task: DownloadTask):
             loop = asyncio.get_running_loop()
             filepath = await asyncio.wait_for(
                 loop.run_in_executor(None, _httpx_download,
-                    task.url, task.quality, task.title, task.is_audio
+                    task.url, task.quality, task.title, task.is_audio, task.page_url
                 ),
                 timeout=1800,
             )

@@ -318,7 +318,7 @@ export default function DownloadPage() {
               ) : (
                 <div>
                   <Paragraph style={{ color: THEME.textSecondary, marginBottom: 16 }}>
-                    当前链接为直链格式（B站 CDN），建议使用 yt-dlp 等专业工具下载以获得更高画质：
+                    当前链接为直链格式（{platformLabel || '未知平台'} CDN），建议使用 yt-dlp 等专业工具下载以获得更高画质：
                   </Paragraph>
                   <code style={{ display: 'block', background: THEME.bgInput, padding: '12px 16px', borderRadius: 6, color: '#10b981', fontFamily: 'monospace', fontSize: 13 }}>
                     yt-dlp -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" "{result.video_url && result.video_url !== url ? result.video_url : url}"

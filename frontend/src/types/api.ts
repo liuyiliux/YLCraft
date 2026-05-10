@@ -321,6 +321,8 @@ export interface DownloadParseResponse {
   audio_url: string
   page_url: string   // 原始分享页 URL
   error: string
+  images?: string[]   // 图片链接列表（图片内容时返回）
+  content_type?: string  // 'video' | 'image'
 }
 
 // ===== Task Queue =====
