@@ -63,3 +63,10 @@ from app.db.models.comfyui import (
     TaskStatus,
     TaskPriority,
 )
+
+# 平台 Cookie 配置
+from app.db.models.platform_cookie import (
+    PlatformCookie,
+    PlatformCookieCreate,
+    PlatformCookieUpdate,
+)

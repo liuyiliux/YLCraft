@@ -79,6 +79,7 @@ async def _get_qualities(url: str, title: str, platform: str) -> list[VideoQuali
     """用 yt-dlp 获取多清晰度信息"""
 
     def _fetch() -> list[VideoQuality]:
+        cookie_jar = get_cookie_manager().get_cookiejar_for_url(url)
         ydl_opts = {
             "quiet": True,
             "no_warnings": True,
@@ -88,10 +89,9 @@ async def _get_qualities(url: str, title: str, platform: str) -> list[VideoQuali
             "format": "bestvideo+bestaudio/best",
             "http_headers": {"User-Agent": _BROWSER_UA},
         }
-        cookie_path = get_cookie_manager().get_cookie_path_for_url(url)
-        if cookie_path:
-            ydl_opts["cookiefile"] = str(cookie_path)
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            if cookie_jar:
+                ydl.cookiejar = cookie_jar
             info = ydl.extract_info(url, download=False)
             if not info:
                 return []
@@ -185,12 +185,22 @@ async def parse_download_url(req: ParseRequest):
     is_valid = bool(video_url) or bool(info.get("images"))
     if not is_valid:
         logger.warning(f"[parse] 解析结果无效（无 video_url 和 images），返回失败: url={url[:80]}")
+        
+        # 智能错误提示
+        error_msg = "未找到视频或图片数据，请检查链接是否正确，或尝试使用其他平台的链接"
+        url_lower = url.lower()
+        
+        if "twitter.com" in url_lower or "x.com" in url_lower:
+            error_msg = "未能解析 Twitter/X 内容，可能需要登录或内容不公开"
+        elif "telegram.org" in url_lower or "t.me" in url_lower:
+            error_msg = "未能解析 Telegram 内容，可能需要登录或内容不公开"
+        
         return ParseResponse(
             success=False,
             title=title,
             author=author_name,
             platform=platform,
-            error="未找到视频数据，请检查链接是否正确，或尝试使用其他平台的视频链接"
+            error=error_msg
         )
 
     qualities: list[VideoQuality] = []
@@ -272,11 +282,34 @@ def _sanitize_filename(name: str) -> str:
 
 
 def _ytdlp_download(url: str, quality_label: str | None, title: str | None, page_url: str | None = None, is_audio: bool = False) -> str:
-    """用 yt-dlp 下载视频，由 run_in_executor 调用（同步阻塞）"""
+    """用 yt-dlp 下载视频，由 run_in_executor 调用（同步阻塞），完全内存模式 Cookie"""
     savedir = ensure_download_path()
     logger.info(f"[download] start | url={url[:80]} | quality={quality_label} | is_audio={is_audio}")
 
+    # 判断 url 是否已经是 CDN 直链（如 video.twimg.com / pbs.twimg.com）
+    # 如果是直链，直接用 httpx 下载，不要再让 yt-dlp 解析
+    is_direct_url = any(
+        x in url for x in ("video.twimg.com", "pbs.twimg.com", "abs.twimg.com", "amplify_video")
+    )
+
+    if is_direct_url:
+        logger.info(f"[download] 检测到 CDN 直链，直接用 httpx 下载: {url[:80]}")
+        import httpx
+        cookie_jar = get_cookie_manager().get_cookiejar_for_url(url)
+        cookies_dict = {c.name: c.value for c in cookie_jar} if cookie_jar else {}
+        headers = {"User-Agent": _BROWSER_UA, "Referer": "https://x.com/"}
+        out_path = savedir / f"{title or 'video'}.mp4"
+        with httpx.stream("GET", url, headers=headers, cookies=cookies_dict, timeout=300) as resp:
+            resp.raise_for_status()
+            with open(out_path, "wb") as f:
+                for chunk in resp.iter_bytes():
+                    f.write(chunk)
+        logger.info(f"[download] success (direct) | path={out_path}")
+        return str(out_path)
+
+    # 不是直链，走 yt-dlp 正常解析+下载流程
     effective_url = page_url if page_url else url
+    cookie_jar = get_cookie_manager().get_cookiejar_for_url(effective_url)
 
     if is_audio:
         format_str = "bestaudio/best"
@@ -313,11 +346,9 @@ def _ytdlp_download(url: str, quality_label: str | None, title: str | None, page
     if ffmpeg_path:
         ydl_opts["ffmpeg_location"] = str(ffmpeg_path)
 
-    cookie_path = get_cookie_manager().get_cookie_path_for_url(effective_url)
-    if cookie_path:
-        ydl_opts["cookiefile"] = str(cookie_path)
-
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        if cookie_jar:
+            ydl.cookiejar = cookie_jar
         logger.info(f"[download] yt-dlp extracting info for {effective_url[:80]}")
         info = ydl.extract_info(effective_url, download=True)
         if not info:
@@ -544,8 +575,15 @@ async def _run_download_task(task: DownloadTask):
     _download_tasks[task.task_id] = task.__dict__
 
     try:
-        # 抖音 direct CDN URL → 直接用 httpx 下载，跳过 yt-dlp
-        if _is_douyin_direct_url(task.url):
+        # 抖音/Twitter CDN 直链 → 直接用 httpx 下载，跳过 yt-dlp
+        is_direct = _is_douyin_direct_url(task.url)
+        if not is_direct:
+            is_direct = any(
+                x in task.url for x in (
+                    "video.twimg.com", "pbs.twimg.com", "abs.twimg.com", "amplify_video"
+                )
+            )
+        if is_direct:
             loop = asyncio.get_running_loop()
             filepath = await asyncio.wait_for(
                 loop.run_in_executor(None, _httpx_download,

@@ -1,8 +1,9 @@
 """
 YLCraft — 平台 Cookie 管理 API
 
-GET    /api/v1/cookies              — 列出所有已配置的 Cookie 平台
-GET    /api/v1/cookies/{platform}   — 查看指定平台 Cookie 状态（不含内容）
+GET    /api/v1/cookies              — 列出所有已配置的平台
+POST   /api/v1/cookies/platform     — 新增/更新平台配置
+GET    /api/v1/cookies/{platform}   — 查看指定平台 Cookie 状态
 POST   /api/v1/cookies/{platform}   — 上传/保存 Cookie
 DELETE /api/v1/cookies/{platform}   — 删除 Cookie
 POST   /api/v1/cookies/{platform}/test — 测试 Cookie 是否有效
@@ -23,14 +24,13 @@ router = APIRouter(prefix="", tags=["Cookies"])
 
 class CookieStatus(BaseModel):
     platform: str
+    name: str = ""
     configured: bool
-    path: str | None = None
     size: int | None = None
     modified: float | None = None
-    platforms_supported: list[str] = [
-        "douyin", "tiktok", "kuaishou", "bilibili",
-        "xiaohongshu", "weibo", "youtube",
-    ]
+    domains: str | None = None
+    test_url: str | None = None
+    description: str = ""
 
 
 class CookieListResponse(BaseModel):
@@ -45,7 +45,6 @@ class CookieSaveRequest(BaseModel):
 class CookieSaveResponse(BaseModel):
     success: bool = True
     platform: str
-    path: str
     message: str
 
 
@@ -62,61 +61,123 @@ class CookieTestResponse(BaseModel):
     parse_method: str = ""
 
 
-@router.get("", response_model=CookieListResponse, summary="列出所有 Cookie 状态")
+class PlatformSaveRequest(BaseModel):
+    display_name: str
+    domain: str = ""
+    test_url: str = ""
+    description: str = ""
+
+
+class PlatformSaveResponse(BaseModel):
+    success: bool = True
+    platform: str
+    message: str
+
+
+@router.get("", response_model=CookieListResponse, summary="列出所有平台状态")
 async def list_cookies():
     mgr = get_cookie_manager()
-    all_platforms = [
-        "douyin", "tiktok", "kuaishou", "bilibili",
-        "xiaohongshu", "weibo", "youtube",
-    ]
-    existing = mgr.list_cookies()
+    platforms = mgr.list_cookies()
+    
     result = {}
-    for platform in all_platforms:
-        info = existing.get(platform)
+    for platform, info in platforms.items():
         result[platform] = CookieStatus(
             platform=platform,
-            configured=platform in existing,
-            path=info["path"] if info else None,
-            size=info["size"] if info else None,
-            modified=info["modified"] if info else None,
+            name=info.get("display_name", platform),
+            configured=info.get("has_cookie", False),
+            size=info.get("size"),
+            modified=info.get("modified"),
+            domains=info.get("domains", ""),
+            test_url=info.get("test_url"),
+            description=info.get("description", ""),
         )
     return CookieListResponse(success=True, cookies=result)
 
 
+@router.post("/platform", response_model=PlatformSaveResponse, summary="新增/更新平台配置")
+async def save_platform(platform_id: str, req: PlatformSaveRequest):
+    mgr = get_cookie_manager()
+    if not platform_id or len(platform_id.strip()) < 2:
+        raise HTTPException(status_code=400, detail="平台标识太短")
+    
+    success = mgr.save_platform(
+        platform_id=platform_id.strip().lower(),
+        display_name=req.display_name,
+        domains=getattr(req, 'domains', req.domain or ""),  # 向后兼容
+        test_url=req.test_url,
+        description=req.description,
+    )
+    if success:
+        return PlatformSaveResponse(
+            success=True,
+            platform=platform_id,
+            message=f"平台 {req.display_name} 配置已保存，关联域名生效",
+        )
+    raise HTTPException(status_code=500, detail="保存失败")
+
+
 @router.get("/{platform}", response_model=CookieStatus, summary="查看单个平台 Cookie 状态")
 async def get_cookie_status(platform: str):
-    platforms = ["douyin", "tiktok", "kuaishou", "bilibili", "xiaohongshu", "weibo", "youtube"]
-    if platform not in platforms:
-        raise HTTPException(status_code=400, detail=f"不支持的平台: {platform}")
-
     mgr = get_cookie_manager()
-    existing = mgr.list_cookies()
-    info = existing.get(platform)
+    info = mgr.get_platform_info(platform)
+    if not info:
+        raise HTTPException(status_code=404, detail=f"平台 {platform} 不存在")
+    
     return CookieStatus(
-        platform=platform,
-        configured=platform in existing,
-        path=info["path"] if info else None,
-        size=info["size"] if info else None,
-        modified=info["modified"] if info else None,
+        platform=info["id"],
+        name=info["display_name"],
+        configured=info["has_cookie"],
+        domains=info.get("domains", ""),
+        test_url=info["test_url"],
+        description=info["description"],
     )
+
+
+class CookieContentResponse(BaseModel):
+    platform: str
+    content: str = ""
+    configured: bool = False
+    size: int = 0
+
+
+@router.get("/{platform}/content", response_model=CookieContentResponse, summary="获取平台 Cookie 原始内容")
+async def get_cookie_content(platform: str):
+    """返回指定平台保存的 Cookie 原始内容（用于前端展示已配置的值）"""
+    from app.db.database import SessionLocal
+    from app.db.models import PlatformCookie
+    
+    session = SessionLocal()
+    try:
+        plat = session.get(PlatformCookie, platform)
+        if plat and plat.cookie_content:
+            return CookieContentResponse(
+                platform=platform,
+                content=plat.cookie_content,
+                configured=True,
+                size=len(plat.cookie_content),
+            )
+        return CookieContentResponse(
+            platform=platform,
+            configured=False,
+        )
+    finally:
+        session.close()
 
 
 @router.post("/{platform}", response_model=CookieSaveResponse, summary="保存平台 Cookie")
 async def save_cookie(platform: str, req: CookieSaveRequest):
-    platforms = ["douyin", "tiktok", "kuaishou", "bilibili", "xiaohongshu", "weibo", "youtube"]
-    if platform not in platforms:
-        raise HTTPException(status_code=400, detail=f"不支持的平台: {platform}")
+    if not platform or len(platform.strip()) < 2:
+        raise HTTPException(status_code=400, detail="平台名太短")
 
     if not req.content or len(req.content.strip()) < 10:
         raise HTTPException(status_code=400, detail="Cookie 内容太短，请检查是否正确")
 
     try:
-        path = get_cookie_manager().save_cookie(platform, req.content)
+        success = get_cookie_manager().save_cookie(platform, req.content)
         return CookieSaveResponse(
             success=True,
             platform=platform,
-            path=str(path),
-            message=f"Cookie 已保存。下次解析 {platform} 时自动注入。",
+            message=f"Cookie 已保存到数据库。完全内存模式，无需临时文件。",
         )
     except Exception as e:
         logger.error(f"[CookieAPI] 保存 {platform} Cookie 失败: {e}")
@@ -125,10 +186,6 @@ async def save_cookie(platform: str, req: CookieSaveRequest):
 
 @router.delete("/{platform}", response_model=CookieDeleteResponse, summary="删除平台 Cookie")
 async def delete_cookie(platform: str):
-    platforms = ["douyin", "tiktok", "kuaishou", "bilibili", "xiaohongshu", "weibo", "youtube"]
-    if platform not in platforms:
-        raise HTTPException(status_code=400, detail=f"不支持的平台: {platform}")
-
     deleted = get_cookie_manager().delete_cookie(platform)
     if deleted:
         return CookieDeleteResponse(success=True, platform=platform, message="Cookie 已删除")
@@ -141,26 +198,19 @@ async def test_cookie(platform: str):
     import asyncio
     from app.services.video.parser import parse
 
-    platforms = ["douyin", "tiktok", "kuaishou", "bilibili", "xiaohongshu", "weibo", "youtube"]
-    if platform not in platforms:
-        raise HTTPException(status_code=400, detail=f"不支持的平台: {platform}")
-
-    test_urls = {
-        "douyin": "https://www.douyin.com/video/7322548203919920387",
-        "tiktok": "https://www.tiktok.com/@tiktok/video/7043492019477857454",
-        "kuaishou": "https://www.kuaishou.com/short-video/3xpdvbqr5y5g",
-        "bilibili": "https://www.bilibili.com/video/BV1xx411c7XD",
-        "xiaohongshu": "https://www.xiaohongshu.com/explore/6543a0cb000000003d0170f6",
-        "weibo": "https://weibo.com/7741392674/status/5028368969279244",
-        "youtube": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-    }
-
-    url = test_urls.get(platform)
-    if not url:
-        raise HTTPException(status_code=400, detail="该平台暂无测试链接")
+    mgr = get_cookie_manager()
+    info = mgr.get_platform_info(platform)
+    test_url = info.get("test_url") if info else None
+    
+    if not test_url:
+        return CookieTestResponse(
+            success=False,
+            platform=platform,
+            message=f"平台 {platform} 没有配置测试链接，请直接使用真实链接测试"
+        )
 
     try:
-        info = await asyncio.wait_for(parse(url), timeout=60.0)
+        info = await asyncio.wait_for(parse(test_url), timeout=60.0)
         if info.is_valid():
             return CookieTestResponse(
                 success=True,

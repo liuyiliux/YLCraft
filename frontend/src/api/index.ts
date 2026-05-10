@@ -93,6 +93,8 @@ export const listCookies = () => request('/cookies')
 
 export const getCookieStatus = (platform: string) => request(`/cookies/${platform}`)
 
+export const getCookieContent = (platform: string) => request(`/cookies/${platform}/content`)
+
 export const saveCookie = (platform: string, content: string) =>
   request(`/cookies/${platform}`, { method: 'POST', body: JSON.stringify({ content }) })
 

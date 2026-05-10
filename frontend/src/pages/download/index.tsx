@@ -4,6 +4,7 @@ import {
 } from 'antd'
 import {
   CloudDownloadOutlined, AudioOutlined, PlayCircleOutlined, LinkOutlined, DeleteOutlined, FolderOpenOutlined,
+  PictureOutlined, DownloadOutlined, SaveOutlined
 } from '@ant-design/icons'
 import { parseDownloadUrl, createDownloadTask, getDownloadTask, openFolder } from '../../api'
 import type { DownloadParseResponse, VideoQuality } from '../../types/api'
@@ -13,7 +14,8 @@ const { Title, Text, Paragraph } = Typography
 
 const PLATFORM_LABELS: Record<string, string> = {
   bilibili: 'B站', douyin: '抖音', kuaishou: '快手',
-  xiaohongshu: '小红书', weibo: '微博', youtube: 'YouTube', tiktok: 'TikTok', unknown: '未知平台',
+  xiaohongshu: '小红书', weibo: '微博', youtube: 'YouTube', tiktok: 'TikTok',
+  twitter: 'Twitter/X', telegram: 'Telegram', unknown: '未知平台',
 }
 
 const QUALITY_COLORS: Record<string, string> = {
@@ -31,6 +33,37 @@ export default function DownloadPage() {
   const [dlProgress, setDlProgress] = useState(0)
   const [dlError, setDlError] = useState('')
   const [savedFilePath, setSavedFilePath] = useState('')
+
+  // 智能检测 URL 并给出提示
+  const getUrlHint = (inputUrl: string) => {
+    if (!inputUrl) return null
+    const url = inputUrl.toLowerCase()
+
+    if (url.includes('web.telegram.org') && !url.includes('t.me/')) {
+      return {
+        type: 'warning',
+        text: '⚠️ 检测到 Telegram Web 链接，请使用右键消息→「复制链接」获取 https://t.me/ 格式的链接'
+      }
+    }
+
+    if ((url.includes('twitter.com') || url.includes('x.com')) && url.includes('/photo/')) {
+      return {
+        type: 'info',
+        text: 'ℹ️ 检测到这是 Twitter/X 图片链接，我们会尝试解析图片（目前只支持视频）'
+      }
+    }
+
+    if (url.includes('twitter.com') || url.includes('x.com')) {
+      return {
+        type: 'info',
+        text: 'ℹ️ Twitter/X 链接可能需要登录才能解析，请确认内容是公开的'
+      }
+    }
+
+    return null
+  }
+
+  const urlHint = getUrlHint(url)
 
   const handleParse = async () => {
     if (!url.trim()) { message.warning('请输入视频链接'); return }
@@ -82,9 +115,9 @@ export default function DownloadPage() {
     <div style={{ maxWidth: 900 }}>
       <Title level={3} style={{ color: THEME.textPrimary, marginBottom: 24 }}>
         <CloudDownloadOutlined style={{ color: THEME.primary, marginRight: 8 }} />
-        短视频去水印解析
+        内容去水印解析
         <Text style={{ color: THEME.textSecondary, fontSize: 14, marginLeft: 12 }}>
-          支持抖音 · 快手 · B站 · 小红书 · 微博 · YouTube
+          支持视频和图片 · 1000+ 平台（抖音/B站/Twitter 等）
         </Text>
       </Title>
 
@@ -93,7 +126,7 @@ export default function DownloadPage() {
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
           <Input
             size="large"
-            placeholder="粘贴短视频链接（抖音/快手/B站/小红书/微博/YouTube）..."
+            placeholder="粘贴视频或图片链接（支持 1000+ 平台，包括抖音/B站/Twitter 等）..."
             value={url} onChange={e => setUrl(e.target.value)} onPressEnter={handleParse}
             style={{ background: THEME.bgInput, color: THEME.textPrimary }}
             prefix={<LinkOutlined style={{ color: THEME.textSecondary }} />}
@@ -103,6 +136,21 @@ export default function DownloadPage() {
               />
             )}
           />
+
+          {/* URL 智能提示 */}
+          {urlHint && (
+            <div style={{
+              padding: '8px 12px',
+              borderRadius: 6,
+              backgroundColor: urlHint.type === 'warning' ? 'rgba(245,158,11,0.1)' : 'rgba(59,130,246,0.1)',
+              border: `1px solid ${urlHint.type === 'warning' ? '#f59e0b' : '#3b82f6'}33`,
+              color: urlHint.type === 'warning' ? '#f59e0b' : '#3b82f6',
+              fontSize: 13
+            }}>
+              {urlHint.text}
+            </div>
+          )}
+
           <Button type="primary" size="large" icon={<CloudDownloadOutlined />}
             onClick={handleParse} loading={loading} style={{ height: 44, minWidth: 140 }}>
             立即解析
@@ -141,28 +189,58 @@ export default function DownloadPage() {
       {/* Result */}
       {result && result.success && !loading && (
         <div>
-          {/* Video Info Card */}
+          {/* 内容信息卡（视频/图片） */}
           <Card title={
             <Space>
-              <PlayCircleOutlined style={{ color: THEME.primary }} />
-              <Text style={{ color: THEME.primary }}>视频信息</Text>
-              {platformLabel && <Tag color="blue">{platformLabel}</Tag>}
+              {result.images && result.images.length > 0 ? (
+                <PictureOutlined style={{ color: '#00bcd4' }} />
+              ) : (
+                <PlayCircleOutlined style={{ color: THEME.primary }} />
+              )}
+              <Text style={{ color: result.images && result.images.length > 0 ? '#00bcd4' : THEME.primary }}>
+                {result.images && result.images.length > 0 ? '图片信息' : '视频信息'}
+              </Text>
+              {platformLabel && <Tag color={result.images && result.images.length > 0 ? 'cyan' : 'blue'}>{platformLabel}</Tag>}
             </Space>
           } style={{ background: THEME.bgCard, marginBottom: 16, border: `1px solid ${THEME.border}` }}>
             <div style={{ display: 'flex', gap: 20 }}>
-              {result.cover_url ? (
+              {/* 如果有图片，优先显示图片 */}
+              {result.images && result.images.length > 0 ? (
+                <div style={{ flexShrink: 0, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {result.images.slice(0, 4).map((img, idx) => (
+                    <div key={idx} style={{
+                      width: 140, height: 'auto', borderRadius: 8, overflow: 'hidden',
+                      background: THEME.bgInput, aspectRatio: '4/3', display: 'flex',
+                      alignItems: 'center', justifyContent: 'center'
+                    }}>
+                      <img
+                        src={img}
+                        alt={`图片 ${idx + 1}`}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                      />
+                    </div>
+                  ))}
+                  {result.images.length > 4 && (
+                    <div style={{
+                      width: 140, aspectRatio: '4/3', borderRadius: 8,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      background: 'rgba(0,0,0,0.5)', color: 'white'
+                    }}>
+                      +{result.images.length - 4}
+                    </div>
+                  )}
+                </div>
+              ) : (
                 <div style={{ flexShrink: 0, width: 180, height: 101, borderRadius: 8, overflow: 'hidden', background: THEME.bgInput }}>
-                  <img src={result.cover_url.includes('hdslb.com')
+                  <img src={result.cover_url?.includes('hdslb.com')
                     ? `/api/v1/download/cover-proxy?url=${encodeURIComponent(result.cover_url)}`
-                    : result.cover_url.replace('http://', 'https://')
+                    : result.cover_url?.replace('http://', 'https://')
                   } alt="cover" style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
                 </div>
-              ) : (
-                <div style={{ flexShrink: 0, width: 180, height: 101, borderRadius: 8, background: THEME.bgInput, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>暂无封面</Text>
-                </div>
               )}
+              
               <div style={{ flex: 1, minWidth: 0 }}>
                 <Paragraph strong style={{ color: THEME.textPrimary, fontSize: 16, marginBottom: 8 }} ellipsis={{ rows: 2 }}>
                   {result.title || '未知标题'}
@@ -172,26 +250,49 @@ export default function DownloadPage() {
                   {result.duration_str && (
                     <Text style={{ color: THEME.textSecondary, fontSize: 13 }}>时长：{result.duration_str}</Text>
                   )}
+                  {result.images && result.images.length > 0 && (
+                    <Text style={{ color: '#00bcd4', fontSize: 13 }}>图片数量：{result.images.length}</Text>
+                  )}
                 </Space>
-                {result.video_url && result.video_url !== url && (
+                
+                {/* 下载按钮 */}
+                {result.images && result.images.length > 0 ? (
                   <div style={{ marginTop: 12 }}>
-                    <Button type="primary" icon={<CloudDownloadOutlined />} onClick={() => handleDownload(null)} size="small">下载视频</Button>
-                    {result.audio_url && (
-                      <Button icon={<AudioOutlined />} onClick={() => handleDownload(null, true)} size="small" style={{ marginLeft: 8 }}>下载音频</Button>
-                    )}
+                    <Button type="primary" icon={<DownloadOutlined />} onClick={() => {
+                      result.images?.forEach(img => {
+                        window.open(img, '_blank')
+                      })
+                    }} size="small">打开图片</Button>
+                    <Button icon={<SaveOutlined />} onClick={() => {
+                      // 简单的方式：打开新窗口让用户自己保存
+                      result.images?.forEach((img, idx) => {
+                        setTimeout(() => window.open(img, '_blank'), idx * 300)
+                      })
+                    }} size="small" style={{ marginLeft: 8 }}>保存图片</Button>
                   </div>
-                )}
-                {(!result.video_url || result.video_url === url) && (
-                  <Text style={{ color: '#f59e0b', fontSize: 12, display: 'block', marginTop: 8 }}>
-                    ⚠️ B站等平台链接有时效限制，建议使用专业下载工具（如 yt-dlp）
-                  </Text>
+                ) : (
+                  <>
+                    {result.video_url && result.video_url !== url && (
+                      <div style={{ marginTop: 12 }}>
+                        <Button type="primary" icon={<CloudDownloadOutlined />} onClick={() => handleDownload(null)} size="small">下载视频</Button>
+                        {result.audio_url && (
+                          <Button icon={<AudioOutlined />} onClick={() => handleDownload(null, true)} size="small" style={{ marginLeft: 8 }}>下载音频</Button>
+                        )}
+                      </div>
+                    )}
+                    {(!result.video_url || result.video_url === url) && (
+                      <Text style={{ color: '#f59e0b', fontSize: 12, display: 'block', marginTop: 8 }}>
+                        ⚠️ B站等平台链接有时效限制，建议使用专业下载工具（如 yt-dlp）
+                      </Text>
+                    )}
+                  </>
                 )}
               </div>
             </div>
           </Card>
 
-          {/* Multi-quality download */}
-          {(result.qualities.length > 0 || result.video_url) && (
+          {/* 视频下载（仅在有视频时显示） */}
+          {(result.qualities.length > 0 || result.video_url) && !(result.images && result.images.length > 0) && (
             <Card title={
               <Space>
                 <CloudDownloadOutlined style={{ color: '#f59e0b' }} />
