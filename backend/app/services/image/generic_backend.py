@@ -141,8 +141,8 @@ class GenericImageBackend(ImageBackend):
 
     async def generate(self, req: ImageGenerationRequest) -> ImageGenerationResult:
         """
-        生成图像
-
+        生成图像 - 完整记录请求头、请求体、响应体
+        
         Args:
             req: 图像生成请求（支持 req.model 动态指定模型）
 
@@ -156,7 +156,27 @@ class GenericImageBackend(ImageBackend):
             # 2. 渲染请求体
             request_body = self._render_request(params)
 
-            logger.debug(f"请求体: {json.dumps(request_body, ensure_ascii=False)[:200]}...")
+            # 🔴 安全打印请求头和请求体，对 base64 图片进行截断，避免日志过大
+            def truncate_base64(obj, max_len=200):
+                """递归遍历对象，把所有超长 base64 字符串截断"""
+                if isinstance(obj, dict):
+                    return {k: truncate_base64(v, max_len) for k, v in obj.items()}
+                elif isinstance(obj, list):
+                    return [truncate_base64(item, max_len) for item in obj]
+                elif isinstance(obj, str) and len(obj) > max_len and ("data:image" in obj or len(obj) > 500):
+                    return f"{obj[:max_len]}... (base64 已截断，总长度 {len(obj)})"
+                return obj
+
+            safe_request_body = truncate_base64(request_body, 200)
+            full_request_headers = {
+                "Authorization": f"Bearer {self.connector.api_key[:20]}...",  # 隐藏部分 API Key，保护安全
+                "Content-Type": "application/json",
+            }
+            logger.info(f"[GENERIC IMAGE] ==================== 完整请求日志 ====================")
+            logger.info(f"[GENERIC IMAGE] 🔗 请求 URL: {self.connector.base_url}")
+            logger.info(f"[GENERIC IMAGE] 📝 请求头: {json.dumps(full_request_headers, ensure_ascii=False)}")
+            logger.info(f"[GENERIC IMAGE] 📦 请求体: {json.dumps(safe_request_body, ensure_ascii=False)}")
+            logger.info(f"[GENERIC IMAGE] =====================================================")
 
             # 3. 构建最终请求 URL，完全避免末尾斜杠问题
             # 手动拼接，确保 URL 末尾没有斜杠
@@ -183,11 +203,25 @@ class GenericImageBackend(ImageBackend):
                     response = await temp_client.post(final_url, json=request_body)
                     await temp_client.aclose()
                     
-                    logger.info(f"响应状态码: {response.status_code}")
+                    # 🔴 安全打印响应体，对 base64 图片进行截断，避免日志过大
+                    try:
+                        resp_json = response.json()
+                        safe_resp = truncate_base64(resp_json, 200)
+                        logger.info(f"[GENERIC IMAGE] ==================== 完整响应日志 ====================")
+                        logger.info(f"[GENERIC IMAGE] 📊 响应状态码: {response.status_code}")
+                        logger.info(f"[GENERIC IMAGE] 📨 响应头: {dict(response.headers)}")
+                        logger.info(f"[GENERIC IMAGE] 📨 响应内容: {json.dumps(safe_resp, ensure_ascii=False)}")
+                        logger.info(f"[GENERIC IMAGE] =====================================================")
+                    except Exception:
+                        logger.info(f"[GENERIC IMAGE] ==================== 完整响应日志 ====================")
+                        logger.info(f"[GENERIC IMAGE] 📊 响应状态码: {response.status_code}")
+                        logger.info(f"[GENERIC IMAGE] 📨 响应头: {dict(response.headers)}")
+                        logger.info(f"[GENERIC IMAGE] 📨 响应内容: {response.text[:500]}...")  # 纯文本非 JSON 最多 500 字符
+                        logger.info(f"[GENERIC IMAGE] =====================================================")
+
                     if response.status_code in [200, 201]:
                         break  # 成功，退出重试
                     logger.warning(f"请求失败，状态码: {response.status_code}")
-                    logger.warning(f"响应内容: {response.text[:1000]}...")  # 打印响应错误信息
                     
                     # 如果状态码是 400，不要重试，直接抛出
                     if response.status_code == 400:
@@ -199,29 +233,37 @@ class GenericImageBackend(ImageBackend):
                     import asyncio
                     await asyncio.sleep(2 ** attempt)  # 指数退避
 
-            if response:
-                logger.debug(f"响应体: {response.text[:500]}...")
-
-            # 4. 解析响应
+            # 5. 解析响应
             result = self._parse_response(response)
 
-            # 5. 更新使用统计
+            # 6. 更新使用统计
             self._update_usage(result.get("cost", 0.0))
             
             # 获取实际使用的模型（支持动态模型选择）
             actual_model = params.get("model", self.model)
 
-            # 6. 下载图片到本地
+            # 7. 下载图片到本地
             local_path = None
             image_url = result.get("url")
+            all_local_paths = []
             if image_url:
                 local_path = await self._download_image(image_url, req.prompt)
+                if local_path:
+                    all_local_paths.append(str(local_path))
+
+            # 8. 多张图片处理
+            for idx, url in enumerate(result.get("urls", [])):
+                if url != image_url and url:
+                    path = await self._download_image(url, f"{req.prompt}_{idx}", )
+                    if path:
+                        all_local_paths.append(str(path))
 
             return ImageGenerationResult(
                 success=result.get("success", False),
                 url=image_url,
                 urls=result.get("urls", []),
                 local_path=local_path,
+                all_local_paths=all_local_paths,
                 cost=result.get("cost", 0.0),
                 provider=self.name,
                 model=actual_model,
@@ -653,18 +695,9 @@ class GenericImageBackend(ImageBackend):
             本地文件路径，如果下载失败返回 None
         """
         try:
-            # 获取存储目录（优先从配置文件读取 media_storage_path）
-            from app.api.v1.settings import _load_settings
-            settings = _load_settings()
-            
-            media_storage_path = settings.get("media_storage_path")
-            if media_storage_path and Path(media_storage_path).exists():
-                save_dir = Path(media_storage_path) / "images"
-            else:
-                # 默认路径
-                backend_dir = Path(__file__).parent.parent.parent.parent
-                save_dir = backend_dir / "storage" / "images"
-            
+            # 直接使用默认存储路径
+            backend_dir = Path(__file__).parent.parent.parent.parent
+            save_dir = backend_dir / "storage" / "images"
             save_dir.mkdir(parents=True, exist_ok=True)
             
             # 生成文件名（基于时间戳和提示词）
@@ -686,17 +719,20 @@ class GenericImageBackend(ImageBackend):
             filename = f"{timestamp}_{safe_prompt}{ext}"
             local_path = save_dir / filename
             
-            # 下载图片
-            response = await self.client.get(url)
-            response.raise_for_status()
-            
-            # 保存到本地
-            with open(local_path, "wb") as f:
-                f.write(response.content)
+            # 下载图片（新建独立临时客户端）
+            async with httpx.AsyncClient(timeout=300.0, follow_redirects=True) as temp_download_client:
+                response = await temp_download_client.get(url)
+                response.raise_for_status()
+                
+                # 保存到本地
+                with open(local_path, "wb") as f:
+                    f.write(response.content)
             
             logger.info(f"图片已保存到本地: {local_path}")
             return local_path
             
         except Exception as e:
             logger.error(f"下载图片失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return None

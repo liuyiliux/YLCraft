@@ -106,11 +106,11 @@ export default function DownloadPage() {
         const res = await getDownloadTask(task_id)
         const task = res
         setDlProgress(Math.min(task.progress || pollCount * 5, 100))
-        if (task.status === 'done') {
+        if (task.status === 'DONE') {
           setSavedFilePath(task.result?.file_path || ''); setDlProgress(100); message.success('下载完成')
           setTimeout(() => setDownloading(false), 3000); return
         }
-        if (task.status === 'failed') throw new Error(task.error || '下载失败')
+        if (task.status === 'FAILED') throw new Error(task.error || '下载失败')
         pollCount++
         if (pollCount > 300) throw new Error('下载超时，请稍后重试')
         await new Promise(r => setTimeout(r, 2000)); return poll()

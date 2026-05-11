@@ -28,6 +28,7 @@ from app.db.models.ai_connector import (
     AIProvider,
 )
 from app.services.ai_connector.service import AIConnectorService
+from app.services.llm.manager import init_manager as llm_init_manager
 
 logger = logging.getLogger("ylcraft.api.ai")
 
@@ -256,6 +257,25 @@ async def mark_used(
         "success": True,
         "message": "已更新使用时间",
     }
+
+
+@router.post("/reload", summary="重新加载所有 AI 连接器配置，立即生效，无需重启")
+async def reload_connectors():
+    """立即重新加载所有 AI 连接器配置，不用重启后端"""
+    try:
+        from app.db.database import get_session
+        session = next(get_session())
+        llm_init_manager(session=session)
+        logger.info("[AI Connectors] 已成功重新加载所有 AI 连接器配置")
+        return {
+            "success": True,
+            "message": "配置重新加载成功，立即生效",
+        }
+    except Exception as e:
+        logger.error(f"[AI Connectors] 重新加载配置失败: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"重新加载失败: {str(e)}")
 
 
 # =============================================================================

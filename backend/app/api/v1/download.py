@@ -478,7 +478,7 @@ async def download_video(req: DownloadRequest):
                 file_path=filepath,
                 file_size=file_size,
                 mime_type=media_type,
-                status="ready",
+                status="READY",
                 width=width,
                 height=height,
                 duration=duration,
@@ -528,7 +528,7 @@ class DownloadTask:
         self.title = title
         self.page_url = page_url
         self.is_audio = is_audio
-        self.status = "pending"
+        self.status = "PENDING"
         self.progress = 0
         self.progress_message = ""
         self.file_path: str | None = None
@@ -652,7 +652,7 @@ def _httpx_download(url: str, quality_label: str | None, title: str | None,
 
 
 async def _run_download_task(task: DownloadTask):
-    task.status = "downloading"
+    task.status = "DOWNLOADING"
     task.started_at = time.time()
     _download_tasks[task.task_id] = task.__dict__
 
@@ -744,7 +744,7 @@ async def _run_download_task(task: DownloadTask):
                     file_path=filepath,
                     file_size=file_size,
                     mime_type=media_type,
-                    status="ready",
+                    status="READY",
                     metadata_json=json.dumps(download_metadata, ensure_ascii=False),
                 )
                 task.asset_id = new_asset.id
@@ -768,19 +768,19 @@ async def _run_download_task(task: DownloadTask):
         except Exception as cover_err:
             logger.warning(f"[download] 封面下载失败（非阻塞）: {cover_err}")
 
-        task.status = "done"
+        task.status = "DONE"
         task.progress = 100
         task.progress_message = "完成"
         task.completed_at = time.time()
         _download_tasks[task.task_id] = task.__dict__
 
     except asyncio.TimeoutError:
-        task.status = "failed"
+        task.status = "FAILED"
         task.error = "下载超时（30分钟），请尝试更低清晰度"
         task.completed_at = time.time()
         _download_tasks[task.task_id] = task.__dict__
     except Exception as e:
-        task.status = "failed"
+        task.status = "FAILED"
         task.error = str(e)
         task.completed_at = time.time()
         _download_tasks[task.task_id] = task.__dict__
@@ -812,7 +812,7 @@ async def create_download_task(req: TaskCreateRequest, background: BackgroundTas
     return JSONResponse({
         "success": True,
         "task_id": task_id,
-        "status": "pending",
+        "status": "PENDING",
         "message": "下载任务已创建，请在 /downloads/tasks/{task_id} 轮询状态",
     })
 
@@ -833,7 +833,7 @@ async def get_download_task(task_id: str):
         "result": {
             "file_path": task_data.get("file_path"),
             "asset_id": task_data.get("asset_id"),
-        } if task_data["status"] == "done" else None,
+        } if task_data["status"] == "DONE" else None,
         "error": task_data.get("error"),
         "created_at": task_data["created_at"],
         "started_at": task_data.get("started_at"),

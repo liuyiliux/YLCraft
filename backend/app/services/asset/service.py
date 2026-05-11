@@ -307,7 +307,7 @@ class AssetService:
             duration=duration,
             cover_url=thumbnail_path or "",
             source_type="ai_generated",  # 主表字段也要设置
-            status="ready",
+            status="READY",
             metadata_json=json.dumps(metadata, ensure_ascii=False),
             tags="[]",
         )
@@ -425,7 +425,7 @@ class AssetService:
             mime_type=mime_type,
             cover_url=str(path),
             source_type="ai_generated",
-            status="ready",
+            status="READY",
             tags=json.dumps(gen_tags, ensure_ascii=False),
             metadata_json=json.dumps(metadata, ensure_ascii=False),
         )
@@ -538,7 +538,7 @@ class AssetService:
             height=height,
             mime_type=mime_type,
             source_type="ai_generated",
-            status="ready",
+            status="READY",
             tags=json.dumps(gen_tags, ensure_ascii=False),
             metadata_json=json.dumps(metadata, ensure_ascii=False),
         )
