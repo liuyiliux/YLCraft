@@ -108,11 +108,17 @@ class GenericImageBackend(ImageBackend):
             # OpenAI 需要 Content-Type
             headers["Content-Type"] = "application/json"
 
+        # 标准化 base_url，确保没有末尾斜杠，避免 307 重定向
+        base_url = connector.base_url or ""
+        if base_url:
+            base_url = base_url.rstrip("/")
+
         self.client = httpx.AsyncClient(
-            base_url=connector.base_url or "",
+            base_url=base_url,
             headers=headers,
-            timeout=120.0,
+            timeout=300.0,  # 增加超时时间到 5 分钟
             follow_redirects=True,
+            max_redirects=5,
         )
 
         logger.info(f"✅ 初始化 GenericImageBackend: {self.name} (model={self.model})")
@@ -152,11 +158,49 @@ class GenericImageBackend(ImageBackend):
 
             logger.debug(f"请求体: {json.dumps(request_body, ensure_ascii=False)[:200]}...")
 
-            # 3. 发送请求
-            response = await self.client.post("", json=request_body)
+            # 3. 构建最终请求 URL，完全避免末尾斜杠问题
+            # 手动拼接，确保 URL 末尾没有斜杠
+            final_url = self.connector.base_url or ""
+            if final_url:
+                final_url = final_url.rstrip("/")
 
-            logger.info(f"响应状态码: {response.status_code}")
-            logger.debug(f"响应体: {response.text[:500]}...")
+            # 4. 发送请求（带重试）
+            max_retries = 3
+            response = None
+            for attempt in range(max_retries):
+                try:
+                    logger.info(f"[GenericImageBackend] 发送请求到 {final_url} (尝试 {attempt + 1}/{max_retries})")
+                    # 直接发送完整 URL，不依赖 base_url 拼接，避免 307 重定向问题
+                    temp_client = httpx.AsyncClient(
+                        headers={
+                            "Authorization": f"Bearer {self.connector.api_key}",
+                            "Content-Type": "application/json",
+                        },
+                        timeout=300.0,
+                        follow_redirects=True,
+                        max_redirects=5,
+                    )
+                    response = await temp_client.post(final_url, json=request_body)
+                    await temp_client.aclose()
+                    
+                    logger.info(f"响应状态码: {response.status_code}")
+                    if response.status_code in [200, 201]:
+                        break  # 成功，退出重试
+                    logger.warning(f"请求失败，状态码: {response.status_code}")
+                    logger.warning(f"响应内容: {response.text[:1000]}...")  # 打印响应错误信息
+                    
+                    # 如果状态码是 400，不要重试，直接抛出
+                    if response.status_code == 400:
+                        break
+                except Exception as e:
+                    logger.warning(f"请求异常 (尝试 {attempt + 1}/{max_retries}): {e}")
+                    if attempt == max_retries - 1:
+                        raise  # 最后一次尝试失败，重新抛出异常
+                    import asyncio
+                    await asyncio.sleep(2 ** attempt)  # 指数退避
+
+            if response:
+                logger.debug(f"响应体: {response.text[:500]}...")
 
             # 4. 解析响应
             result = self._parse_response(response)
