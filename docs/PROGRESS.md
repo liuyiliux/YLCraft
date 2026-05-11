@@ -396,3 +396,41 @@ pip install jinja2 jsonpath-ng
 - 参考项目：https://github.com/NanmiCoder/MediaCrawler
 
 ---
+
+## AI 生成配置文档（2026-05-08 新增）
+
+> 详细配置指南见 `AI_GENERATION_CONFIG.md`
+
+### 设计文档索引更新
+| 文档 | 说明 | 状态 |
+|------|------|------|
+| `AI_GENERATION_CONFIG.md` | AI 生成配置指南（图像/视频） | ✅ 新增 |
+
+### 架构分析
+
+| 类型 | Backend 类 | 配置方式 | 说明 |
+|------|-----------|---------|------|
+| LLM | `GenericLLMBackend` | 数据库 | ✅ 完全可配置 |
+| 图像 | `GenericImageBackend` | 数据库 | ✅ 完全可配置（支持 request_template + response_config）|
+| 视频 | `MinimaxVideoBackend` | 硬编码 | ⚠️ 需要创建 GenericVideoBackend |
+| TTS | 占位实现 | - | ❌ 未实现 |
+
+### 关键发现
+
+1. **图像生成**：使用 `GenericImageBackend`，配置存储在数据库
+   - 需要在 `ai_connectors` 表插入 `provider_type = 'image'` 的记录
+   - `request_template` 使用 Jinja2 语法
+   - `response_config` 使用 JSONPath 解析响应
+
+2. **视频生成**：使用硬编码的 `MinimaxVideoBackend`
+   - 配置灵活性低，不支持数据库配置模板
+   - 建议后续创建 `GenericVideoBackend`
+
+3. **图生图**：通过 `reference_images` 参数实现
+   - Provider 需要设置 `support_reference_image = True`
+   - `request_template` 需要包含 `{{ reference_images[0] }}` 占位符
+
+### 待改进项
+- [ ] 创建 `GenericVideoBackend`，支持数据库配置模板
+- [ ] 实现 `GenericTTSBackend`
+- [ ] 前端设置页面根据 `provider_type` 显示不同配置表单

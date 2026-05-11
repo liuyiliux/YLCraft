@@ -50,6 +50,66 @@ import { getImageBackends, generateImage as generateImageApi } from '../../api'
 const { TextArea } = Input
 const { Dragger } = Upload
 
+// 常见标准比例
+const STANDARD_RATIOS = [
+  { ratio: '1:1', threshold: 0.05 },
+  { ratio: '16:9', threshold: 0.05 },
+  { ratio: '9:16', threshold: 0.05 },
+  { ratio: '4:3', threshold: 0.05 },
+  { ratio: '3:4', threshold: 0.05 },
+  { ratio: '3:2', threshold: 0.05 },
+  { ratio: '2:3', threshold: 0.05 },
+  { ratio: '21:9', threshold: 0.08 },
+]
+
+  // 计算宽高比例
+function calculateAspectRatio(size: string): string {
+  const match = size.match(/(\d+)\s*[x*]\s*(\d+)/i)
+  if (!match) return ''
+  
+  const width = parseInt(match[1])
+  const height = parseInt(match[2])
+  
+  // 计算实际比例
+  const actualRatio = width / height
+  
+  // 匹配标准比例
+  for (const { ratio, threshold } of STANDARD_RATIOS) {
+    const [rw, rh] = ratio.split(':').map(Number)
+    const expectedRatio = rw / rh
+    if (Math.abs(actualRatio - expectedRatio) < threshold) {
+      // 直接返回匹配到的比例，不需要交换
+      return ratio
+    }
+  }
+  
+  // 如果没有匹配，返回简化比例
+  const gcd = (a: number, b: number): number => b === 0 ? a : gcd(b, a % b)
+  const divisor = gcd(width, height)
+  
+  if (divisor > 1) {
+    const ratioWidth = width / divisor
+    const ratioHeight = height / divisor
+    // 确保是小数在前
+    if (ratioWidth > ratioHeight) {
+      return `${Math.round(ratioWidth)}:${Math.round(ratioHeight)}`
+    } else {
+      return `${Math.round(ratioHeight)}:${Math.round(ratioWidth)}`
+    }
+  }
+  
+  return ''  // 无法简化
+}
+
+// 获取尺寸显示标签
+function getSizeLabel(size: string): string {
+  const ratio = calculateAspectRatio(size)
+  if (ratio) {
+    return `${size} (${ratio})`
+  }
+  return size
+}
+
 interface GeneratedImage {
   id: string
   url: string
@@ -70,6 +130,8 @@ interface BackendInfo {
   capabilities: string[]
   support_reference_image: boolean
   reference_image_field?: string
+  supported_sizes: string[]         // 支持的尺寸列表（如 1024x1024）
+  supported_aspect_ratios: string[]  // 支持的比例列表（如 1:1, 16:9）
 }
 
 export default function ImageGenPage() {
@@ -143,7 +205,49 @@ export default function ImageGenPage() {
     return { groupedBackends: groups, vendorOptions: options }
   }, [backends, mode])
 
-  // 从 URL 参数自动填充
+  // 根据当前模型获取支持的尺寸选项
+  const sizeOptions = useMemo(() => {
+    // 查找当前选中的后端（通过 name 匹配）
+    const vendorGroup = Object.values(groupedBackends).find(g => g.provider_label === provider)
+    const currentBackend = vendorGroup?.backends.find(b => b.name === selectedModel)
+    
+    const options: { label: string, value: string }[] = []
+    
+    // 添加具体尺寸
+    if (currentBackend?.supported_sizes && currentBackend.supported_sizes.length > 0) {
+      currentBackend.supported_sizes.forEach(size => {
+        options.push({
+          label: getSizeLabel(size),
+          value: size,
+        })
+      })
+    }
+    
+    // 添加比例
+    if (currentBackend?.supported_aspect_ratios && currentBackend.supported_aspect_ratios.length > 0) {
+      currentBackend.supported_aspect_ratios.forEach(ratio => {
+        options.push({
+          label: ratio,
+          value: ratio,
+        })
+      })
+    }
+    
+    // 如果后端没有配置，返回默认选项
+    if (options.length === 0) {
+      return [
+        { label: '1024 × 1024 (1:1)', value: '1024x1024' },
+        { label: '1280 × 720 (16:9)', value: '1280x720' },
+        { label: '720 × 1280 (9:16)', value: '720x1280' },
+        { label: '1920 × 1080 (16:9)', value: '1920x1080' },
+        { label: '1080 × 1920 (9:16)', value: '1080x1920' },
+      ]
+    }
+    
+    return options
+  }, [backends, provider, selectedModel, groupedBackends])
+
+  // 尺寸选项
   useEffect(() => {
     // 避免重复应用
     if (hasAppliedUrlParams.current) return
@@ -185,10 +289,8 @@ export default function ImageGenPage() {
       console.log('[ImageGen] Trying to set model from URL:', modelParam)
       console.log('[ImageGen] Available backends:', backends.map(b => ({ provider: b.provider_label, model: b.model, available: b.available_models })))
       
-      // 查找包含该模型的厂商
-      const targetBackend = backends.find(b => 
-        b.model === modelParam || b.available_models.includes(modelParam)
-      )
+      // 查找包含该模型的厂商（通过 name 匹配）
+      const targetBackend = backends.find(b => b.name === modelParam)
       if (targetBackend) {
         console.log('[ImageGen] Found matching backend:', targetBackend.provider_label, targetBackend.model)
         setProvider(targetBackend.provider_label)
@@ -199,6 +301,13 @@ export default function ImageGenPage() {
       }
     }
   }, [backends, searchParams])
+
+  // 切换模型时，如果当前尺寸不在支持列表中，自动切换到第一个可用尺寸
+  useEffect(() => {
+    if (sizeOptions.length > 0 && !sizeOptions.find(o => o.value === size)) {
+      setSize(sizeOptions[0].value)
+    }
+  }, [selectedModel, sizeOptions])
 
   // 加载后端列表
   useEffect(() => {
@@ -214,9 +323,9 @@ export default function ImageGenPage() {
           if (!hasAppliedUrlParams.current || !modelParam) {
             const firstBackend = data.backends[0]
             const firstVendor = firstBackend.provider_label
-            console.log('[ImageGen] Setting default provider/model:', firstVendor, firstBackend.model)
+            console.log('[ImageGen] Setting default provider/model:', firstVendor, firstBackend.name)
             setProvider(firstVendor)
-            setSelectedModel(firstBackend.model)
+            setSelectedModel(firstBackend.name)
           } else {
             console.log('[ImageGen] Skipping default model - URL model param:', modelParam)
           }
@@ -230,7 +339,12 @@ export default function ImageGenPage() {
     setProvider(newVendor)
     const vendorGroup = Object.values(groupedBackends).find(g => g.provider_label === newVendor)
     if (vendorGroup && vendorGroup.backends.length > 0) {
-      setSelectedModel(vendorGroup.backends[0].model)
+      const firstBackend = vendorGroup.backends[0]
+      setSelectedModel(firstBackend.name)
+      // 自动选中第一个尺寸
+      if (firstBackend.supported_sizes?.length > 0) {
+        setSize(firstBackend.supported_sizes[0])
+      }
     }
   }
 
@@ -252,13 +366,14 @@ export default function ImageGenPage() {
       setProvider(firstVendor.provider_label)
       setSelectedModel(firstVendor.backends[0]?.model)
     } else {
-      // 检查当前模型是否还可用
+      // 检查当前模型是否还可用（通过 name 匹配）
       const vendorGroup = availableVendors.find(g => g.provider_label === provider)
-      const currentModelAvailable = vendorGroup?.backends.some(b => 
-        b.model === selectedModel || b.available_models.includes(selectedModel || '')
-      )
-      if (!currentModelAvailable) {
-        setSelectedModel(vendorGroup?.backends[0]?.model)
+      const currentModelAvailable = vendorGroup?.backends.some(b => b.name === selectedModel)
+      if (!currentModelAvailable && vendorGroup?.backends[0]) {
+        setSelectedModel(vendorGroup.backends[0].name)
+        if (vendorGroup.backends[0].supported_sizes?.length > 0) {
+          setSize(vendorGroup.backends[0].supported_sizes[0])
+        }
       }
     }
   }, [mode])
@@ -278,8 +393,7 @@ export default function ImageGenPage() {
         prompt,
         negative_prompt: negativePrompt || undefined,
         size,
-        provider,
-        model: selectedModel,  // 动态指定模型
+        provider: selectedModel,  // provider 传入部署配置名称 (name)
         n: batchCount,
         seed,
       }
@@ -319,14 +433,6 @@ export default function ImageGenPage() {
       }
 
       setProgress(30)
-
-      // 找到当前厂商下与 selectedModel 匹配的后端
-      const vendorGroup = Object.values(groupedBackends).find(g => g.provider_label === provider)
-      const matchingBackend = vendorGroup?.backends.find(b => 
-        b.model === selectedModel || b.available_models.includes(selectedModel || '')
-      )
-      const actualProviderName = matchingBackend?.name || vendorGroup?.backends[0]?.name || ''
-      body.provider = actualProviderName
 
       const data = await generateImageApi(body)
 
@@ -495,53 +601,59 @@ export default function ImageGenPage() {
                   />
                 </Col>
                 <Col span={12}>
-                  <div style={{ marginBottom: 4, fontSize: 12, color: '#8b8ba8' }}>
-                    模型
-                  </div>
                   {(() => {
                     const vendorGroup = Object.values(groupedBackends).find(g => g.provider_label === provider)
-                    const allModelsFromVendor = vendorGroup?.backends.flatMap(b => b.available_models) || []
-                    const uniqueModels = [...new Set(allModelsFromVendor)]
-                    if (uniqueModels.length > 0) {
-                      return (
+                    return (
+                      <>
+                        <div style={{ marginBottom: 4, fontSize: 12, color: '#8b8ba8' }}>
+                          模型（{vendorGroup?.backends.length || 0} 个部署配置）
+                        </div>
                         <Select
                           value={selectedModel}
-                          onChange={setSelectedModel}
+                          onChange={(val) => {
+                            setSelectedModel(val)
+                            // 切换模型后自动选中第一个尺寸
+                            const targetBackend = vendorGroup?.backends.find(b => b.name === val)
+                            if (targetBackend?.supported_sizes?.length > 0) {
+                              setSize(targetBackend.supported_sizes[0])
+                            }
+                          }}
                           style={{ width: '100%' }}
                           placeholder="选择模型"
-                          options={uniqueModels.map(m => ({
-                            label: m,
-                            value: m,
+                          options={vendorGroup?.backends.map(b => ({
+                            label: b.name,
+                            value: b.name,
                           }))}
+                          optionRender={(option) => {
+                            const backend = vendorGroup?.backends.find(b => b.name === option.data.value)
+                            return (
+                              <div>
+                                <div>{option.label}</div>
+                                {backend?.supported_sizes?.length > 0 && (
+                                  <div style={{ fontSize: 11, color: '#888' }}>
+                                    尺寸: {backend.supported_sizes.length} 种
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          }}
                         />
-                      )
-                    } else {
-                      return (
-                        <Input
-                          value={selectedModel}
-                          onChange={e => setSelectedModel(e.target.value)}
-                          placeholder="输入模型名称"
-                          style={{ background: '#1e1e2e', border: '1px solid #333', color: '#e2e8f0' }}
-                        />
-                      )
-                    }
+                      </>
+                    )
                   })()}
                 </Col>
                 <Col span={12}>
                   <div style={{ marginBottom: 4, fontSize: 12, color: '#8b8ba8' }}>
                     尺寸
+                    {sizeOptions.length < 5 && <Tag color="purple" style={{ marginLeft: 8, fontSize: 10 }}>模型限定</Tag>}
                   </div>
                   <Select
                     value={size}
-                    onChange={setSize}
+                    onChange={(val) => {
+                      setSize(val)
+                    }}
                     style={{ width: '100%' }}
-                    options={[
-                      { label: '1024 × 1024（方形）', value: '1024x1024' },
-                      { label: '1280 × 720（横版）', value: '1280x720' },
-                      { label: '720 × 1280（竖版）', value: '720x1280' },
-                      { label: '1920 × 1080（高清横版）', value: '1920x1080' },
-                      { label: '1080 × 1920（高清竖版）', value: '1080x1920' },
-                    ]}
+                    options={sizeOptions}
                   />
                 </Col>
                 <Col span={12}>

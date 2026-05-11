@@ -28,6 +28,61 @@ from app.db.models.ai_connector import (
 logger = logging.getLogger("ylcraft.ai_connector")
 
 
+def normalize_size_string(size_str: str) -> str:
+    """
+    标准化尺寸字符串：
+    - 统一使用 'x' 作为分隔符
+    - 兼容 'x' 和 '*' 分隔符
+    示例: "1024*1024" -> "1024x1024"
+    """
+    if isinstance(size_str, str):
+        return size_str.replace('*', 'x').replace('X', 'x')
+    return size_str
+
+
+def normalize_sizes_value(value) -> str:
+    """
+    标准化 supported_sizes 字段值：
+    - 转换为 JSON 数组格式的字符串
+    - 统一使用 'x' 作为尺寸分隔符
+    输入: "1024x1024, 1024*1792" 或 ["1024x1024", "1024*1792"] 或 None
+    输出: '["1024x1024", "1024x1792"]'
+    """
+    import json
+    
+    if value is None:
+        return None
+    
+    # 如果已经是数组
+    if isinstance(value, list):
+        sizes_list = [normalize_size_string(str(s)) for s in value if s]
+        return json.dumps(sizes_list)
+    
+    # 如果是字符串
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return value
+        
+        # 如果是逗号分隔的字符串
+        if not value.startswith('['):
+            sizes_list = [s.strip() for s in value.split(',') if s.strip()]
+            # 标准化每个尺寸的分隔符
+            sizes_list = [normalize_size_string(s) for s in sizes_list]
+            return json.dumps(sizes_list)
+        
+        # 如果是 JSON 数组字符串
+        try:
+            sizes_list = json.loads(value)
+            if isinstance(sizes_list, list):
+                sizes_list = [normalize_size_string(str(s)) for s in sizes_list]
+                return json.dumps(sizes_list)
+        except json.JSONDecodeError:
+            pass
+    
+    return value
+
+
 class AIConnectorService:
     """AI 连接器服务（异步版本）"""
 
@@ -108,6 +163,9 @@ class AIConnectorService:
 
     async def create(self, data: AIConnectorCreate) -> AIConnector:
         """创建新连接"""
+        # 标准化 supported_sizes（兼容 x/* 分隔符）
+        supported_sizes_value = normalize_sizes_value(data.supported_sizes) if data.supported_sizes else None
+        
         conn = AIConnector(
             id=str(uuid.uuid4()),
             provider=data.provider,
@@ -131,7 +189,7 @@ class AIConnectorService:
             request_template=data.request_template,
             response_config=data.response_config,
             parameter_transforms=data.parameter_transforms,
-            supported_sizes=data.supported_sizes,
+            supported_sizes=supported_sizes_value,
             default_params=data.default_params,
             support_reference_image=data.support_reference_image,
             support_multiple_reference_images=data.support_multiple_reference_images,
@@ -201,7 +259,8 @@ class AIConnectorService:
         if data.parameter_transforms is not None:
             conn.parameter_transforms = data.parameter_transforms
         if data.supported_sizes is not None:
-            conn.supported_sizes = data.supported_sizes
+            # 标准化 supported_sizes（兼容 x/* 分隔符）
+            conn.supported_sizes = normalize_sizes_value(data.supported_sizes)
         if data.default_params is not None:
             conn.default_params = data.default_params
         if data.support_reference_image is not None:

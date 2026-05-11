@@ -283,13 +283,20 @@ class AIConnectorResponse(SQLModel):
 
     @classmethod
     def from_db(cls, conn: AIConnector) -> "AIConnectorResponse":
-        # 解析 supported_sizes
-        supported_sizes = None
+        # 解析 supported_sizes（支持 JSON 数组和逗号分隔字符串）
+        supported_sizes = []
         if conn.supported_sizes:
             try:
-                supported_sizes = json.loads(conn.supported_sizes)
+                sizes = json.loads(conn.supported_sizes)
+                if isinstance(sizes, list):
+                    # 标准化分隔符为 'x'
+                    supported_sizes = [s.replace('*', 'x') if isinstance(s, str) else str(s) for s in sizes]
             except Exception:
-                pass
+                # 兼容逗号分隔的旧格式
+                if isinstance(conn.supported_sizes, str) and ',' in conn.supported_sizes:
+                    supported_sizes = [s.strip().replace('*', 'x') for s in conn.supported_sizes.split(',') if s.strip()]
+                elif isinstance(conn.supported_sizes, str) and conn.supported_sizes:
+                    supported_sizes = [conn.supported_sizes.replace('*', 'x')]
 
         # 解析 default_params
         default_params = None

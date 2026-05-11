@@ -17,16 +17,16 @@ from jinja2 import Template
 from jsonpath_ng import parse as jsonpath_parse
 
 from app.core.contracts.types import (
-    ImageBackend,
     ImageGenerationRequest,
     ImageGenerationResult,
 )
 from app.db.models.ai_connector import AIConnector
+from app.services.image.base import BaseImageBackend
 
 logger = logging.getLogger("ylcraft.generic_image_backend")
 
 
-class GenericImageBackend(ImageBackend):
+class GenericImageBackend(BaseImageBackend):
     """
     通用图像生成后端
 
@@ -45,12 +45,16 @@ class GenericImageBackend(ImageBackend):
             connector: AIConnector 数据库记录
             session: SQLAlchemy session (用于更新使用统计)
         """
-        # 先调用父类初始化，传入 name 和 model
-        super().__init__(name=connector.name, model=connector.default_model)
+        # 调用父类初始化，传入 name、model、api_key、api_base
+        super().__init__(
+            name=connector.name,
+            model=connector.default_model or "",
+            api_key=connector.api_key or "",
+            api_base=connector.base_url or "",
+        )
         
         self.connector = connector
         self.session = session
-        # 不要直接设置 self.model，已经在 super().__init__() 中设置了
 
         logger.info(f"[GenericImageBackend] 初始化 connector: {connector.name}, request_template: {connector.request_template}")
 

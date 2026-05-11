@@ -64,6 +64,8 @@ class BackendInfo(BaseModel):
     capabilities: list[str]
     support_reference_image: bool = False  # 是否支持图生图
     reference_image_field: Optional[str] = None  # 参考图字段名
+    supported_sizes: list[str] = []  # 支持的尺寸列表（如 1024x1024）
+    supported_aspect_ratios: list[str] = []  # 支持的比例列表（如 1:1, 16:9）
 
 
 class ImageBackendsResponse(BaseModel):
@@ -116,6 +118,14 @@ async def list_backends():
                 if not available_models and model:
                     available_models = [model]
                 
+                # 解析 supported_sizes
+                supported_sizes = []
+                if conn.supported_sizes:
+                    try:
+                        supported_sizes = json.loads(conn.supported_sizes) if isinstance(conn.supported_sizes, str) else conn.supported_sizes
+                    except Exception:
+                        supported_sizes = []
+                
                 from app.db.models.ai_connector import AIProvider
                 provider_label = AIProvider.label(conn.provider)
                 info_list.append(BackendInfo(
@@ -126,7 +136,9 @@ async def list_backends():
                     available_models=available_models,
                     capabilities=capabilities,
                     support_reference_image=bool(conn.support_reference_image),
-                    reference_image_field=conn.reference_image_field
+                    reference_image_field=conn.reference_image_field,
+                    supported_sizes=supported_sizes,
+                    supported_aspect_ratios=[],  # TODO: 从 default_params 解析或添加数据库字段
                 ))
             except Exception as e:
                 logger.warning(f"Failed to get backend info for {conn.name}: {e}")

@@ -27,6 +27,8 @@ import {
   SendOutlined,
   TeamOutlined,
   FallOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
 } from '@ant-design/icons'
 
 const { Sider, Content, Header } = Layout
@@ -134,6 +136,7 @@ export default function AppLayout() {
   const { theme: THEME, themeId } = useTheme()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(window.innerWidth < MOBILE_BREAKPOINT)
+  const [collapsed, setCollapsed] = useState(false)
 
   useEffect(() => {
     const handleResize = () => {
@@ -208,26 +211,48 @@ export default function AppLayout() {
       {!isMobile && (
         <Layout>
           <Sider
-            width={220}
+            width={collapsed ? 60 : 220}
+            collapsedWidth={60}
+            collapsible
+            collapsed={collapsed}
+            trigger={null}
             style={{
               background: THEME.bgCard,
               borderRight: `1px solid ${THEME.border}`,
               height: 'calc(100vh - 64px)',
               position: 'sticky',
               top: 64,
-              overflow: 'auto',
+              overflow: 'hidden',
+              transition: 'width 0.2s',
             }}
           >
+            {/* 折叠按钮 */}
+            <div
+              onClick={() => setCollapsed(!collapsed)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: collapsed ? 'center' : 'flex-end',
+                padding: collapsed ? '12px 0' : '12px 16px',
+                cursor: 'pointer',
+                color: THEME.textSecondary,
+                fontSize: 16,
+                borderBottom: `1px solid ${THEME.border}`,
+              }}
+            >
+              {collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+            </div>
             <Menu
               mode="inline"
               theme={themeId === 'dawn' ? 'light' : 'dark'}
               selectedKeys={[selectedKey]}
               items={menuItems}
               onClick={handleMenuClick}
+              inlineCollapsed={collapsed}
               style={{
                 background: THEME.bgCard,
                 border: 'none',
-                marginTop: 8,
+                marginTop: 0,
               }}
               className="app-sider-menu"
             />

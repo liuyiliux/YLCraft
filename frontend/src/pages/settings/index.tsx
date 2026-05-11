@@ -46,6 +46,96 @@ import { useTheme } from '../../constants/theme'
 const { Title, Text } = Typography
 const { TextArea } = Input
 
+// 计算宽高比例
+function calculateAspectRatio(size: string): string {
+  const match = size.match(/(\d+)\s*[x*]\s*(\d+)/i)
+  if (!match) return ''
+  
+  const width = parseInt(match[1])
+  const height = parseInt(match[2])
+  
+  const gcd = (a: number, b: number): number => b === 0 ? a : gcd(b, a % b)
+  const divisor = gcd(width, height)
+  
+  const ratioWidth = width / divisor
+  const ratioHeight = height / divisor
+  
+  if (ratioWidth > ratioHeight && ratioHeight === 1) {
+    return `${ratioWidth}:1`
+  }
+  return `${ratioWidth}:${ratioHeight}`
+}
+
+// 尺寸配置字段组件
+function SizeConfigField({ value = [], onChange }: { value: string[], onChange: (v: string[]) => void }) {
+  const { theme: THEME } = useTheme()
+  
+  const sizes = value || []
+  
+  const handleAdd = (type: 'size' | 'ratio') => {
+    if (type === 'size') {
+      onChange([...sizes, '1024x1024'])
+    } else {
+      onChange([...sizes, '1:1'])
+    }
+  }
+  
+  const handleChange = (index: number, newValue: string) => {
+    const newSizes = [...sizes]
+    newSizes[index] = newValue
+    onChange(newSizes)
+  }
+  
+  const handleDelete = (index: number) => {
+    const newSizes = sizes.filter((_, i) => i !== index)
+    onChange(newSizes)
+  }
+  
+  const getDisplayLabel = (item: string) => {
+    if (item.includes(':') && !item.match(/^\d+x\d+$/i)) {
+      return item // 已经是比例格式
+    }
+    const ratio = calculateAspectRatio(item)
+    return ratio ? `${item} (${ratio})` : item
+  }
+  
+  return (
+    <div style={{ border: '1px solid #333', borderRadius: 6, padding: 12, background: '#1a1a2e' }}>
+      {sizes.length > 0 && (
+        <div style={{ marginBottom: 8 }}>
+          {sizes.map((item, index) => (
+            <div key={index} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <Tag color="purple">{getDisplayLabel(item)}</Tag>
+              <Input
+                size="small"
+                value={item}
+                onChange={e => handleChange(index, e.target.value)}
+                style={{ flex: 1, background: '#1e1e2e', border: '1px solid #333', color: '#e2e8f0' }}
+                placeholder="如: 1024x1024 或 1:1"
+              />
+              <Button
+                type="text"
+                size="small"
+                icon={<DeleteOutlined />}
+                onClick={() => handleDelete(index)}
+                style={{ color: '#ef4444' }}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+      <Space>
+        <Button size="small" icon={<PlusOutlined />} onClick={() => handleAdd('size')}>
+          添加尺寸
+        </Button>
+        <Button size="small" icon={<PlusOutlined />} onClick={() => handleAdd('ratio')}>
+          添加比例
+        </Button>
+      </Space>
+    </div>
+  )
+}
+
 // Provider 下拉选项（简化版：全部使用 OpenAI 兼容 API）
 const PROVIDER_SELECT_OPTIONS = [
   { value: 'openai', label: 'OpenAI' },
@@ -187,8 +277,8 @@ export default function SettingsPage() {
       request_template: provider.request_template || '',
       response_config: provider.response_config || '',
       supported_sizes: Array.isArray(provider.supported_sizes) 
-        ? provider.supported_sizes.join(', ') 
-        : (provider.supported_sizes || ''),
+        ? provider.supported_sizes 
+        : (provider.supported_sizes ? [provider.supported_sizes] : []),
       default_params: typeof provider.default_params === 'object' 
         ? JSON.stringify(provider.default_params) 
         : (provider.default_params || ''),
@@ -225,6 +315,11 @@ export default function SettingsPage() {
       // 如果是掩码格式（包含 "...")，不更新 API Key
       if (editingProvider && values.api_key && values.api_key.includes('...')) {
         delete processedValues.api_key
+      }
+
+      // supported_sizes 需要转换为 JSON 字符串
+      if (processedValues.supported_sizes && Array.isArray(processedValues.supported_sizes)) {
+        processedValues.supported_sizes = JSON.stringify(processedValues.supported_sizes)
       }
 
       if (editingProvider) {
@@ -298,8 +393,8 @@ export default function SettingsPage() {
       request_template: provider.request_template || '',
       response_config: provider.response_config || '',
       supported_sizes: Array.isArray(provider.supported_sizes) 
-        ? provider.supported_sizes.join(', ') 
-        : (provider.supported_sizes || ''),
+        ? provider.supported_sizes 
+        : (provider.supported_sizes ? [provider.supported_sizes] : []),
       default_params: typeof provider.default_params === 'object' 
         ? JSON.stringify(provider.default_params) 
         : (provider.default_params || ''),
@@ -739,8 +834,14 @@ export default function SettingsPage() {
             </Form.Item>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0 16' }}>
-              <Form.Item name="supported_sizes" label={<span style={{ color: THEME.textPrimary }}>支持的尺寸</span>} style={{ marginBottom: 8 }}>
-                <Input placeholder="如: 1024x1024, 1280x720" />
+              <Form.Item 
+                name="supported_sizes" 
+                label={<span style={{ color: THEME.textPrimary }}>支持的尺寸/比例</span>} 
+                style={{ marginBottom: 8, gridColumn: 'span 3' }}
+                getValueFromEvent={(value) => value}
+                getValueProps={(value) => ({ value: value || [] })}
+              >
+                <SizeConfigField />
               </Form.Item>
               <Form.Item 
                 name="reference_image_field" 
