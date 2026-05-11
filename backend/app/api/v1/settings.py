@@ -70,8 +70,6 @@ def _load_settings_from_file() -> dict:
 def _get_default_settings() -> dict:
     """获取默认设置"""
     return {
-        "download_path": str(ensure_download_path()),
-        "media_storage_path": str(ensure_download_path().parent / "media"),
         "ffmpeg_path": None,
         "storage_type": "local",
         "s3": {
@@ -181,7 +179,7 @@ async def get_setting(key: str) -> str | None:
 
 async def get_storage_path(key: str, default_subdir: str = "") -> Path:
     """
-    获取存储路径（数据库优先，回退到配置文件，再回退到默认）
+    获取存储路径（数据库优先，回退到默认）
     
     Args:
         key: 存储路径配置键 (video_download_path, image_gen_path, etc.)
@@ -195,14 +193,6 @@ async def get_storage_path(key: str, default_subdir: str = "") -> Path:
     
     if configured_path and Path(configured_path).exists():
         return Path(configured_path)
-    
-    # 回退到 media_storage_path（兼容旧配置）
-    media_path = await get_setting("media_storage_path")
-    if media_path and Path(media_path).exists():
-        base = Path(media_path)
-        if default_subdir:
-            return base / default_subdir
-        return base
     
     # 最终回退到 storage/ 目录
     backend_dir = Path(__file__).parent.parent.parent.parent
@@ -254,12 +244,6 @@ async def update_all_settings(req: SettingsUpdateRequest):
             # 保存到数据库
             await _save_setting_to_db(key, path or "", f"存储路径: {key}")
     
-    # 处理旧配置键（兼容）
-    if "download_path" in patch:
-        await _save_setting_to_db("download_path", patch["download_path"] or "", "视频下载路径")
-    if "media_storage_path" in patch:
-        await _save_setting_to_db("media_storage_path", patch["media_storage_path"] or "", "素材存储路径")
-    
     return SettingsResponse(success=True, data={"data": patch})
 
 
@@ -282,9 +266,6 @@ async def get_all_storage_paths():
         # 数据库优先
         if key in db_settings and db_settings[key]:
             result[key] = db_settings[key]
-        # 回退到 media_storage_path
-        elif "media_storage_path" in file_settings:
-            result[key] = file_settings["media_storage_path"]
         else:
             # 默认路径
             backend_dir = Path(__file__).parent.parent.parent.parent
@@ -296,10 +277,7 @@ async def get_all_storage_paths():
 @router.get("/download-path", response_model=DownloadPathResponse, summary="获取下载保存路径")
 async def get_download_path():
     """返回当前下载保存路径"""
-    # 优先使用新的 video_download_path
     path = await get_setting("video_download_path")
-    if not path:
-        path = await get_setting("download_path")
     
     if path and Path(path).exists():
         return DownloadPathResponse(path=path)

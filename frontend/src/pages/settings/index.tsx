@@ -1321,22 +1321,7 @@ function StorageSettings() {
             </Form.Item>
           </Col>
         </Row>
-        <Divider style={{ margin: '16px 0' }} />
-        <Paragraph type="secondary" style={{ fontSize: 12 }}>
-          兼容旧配置（可留空）：
-        </Paragraph>
-        <Row gutter={16}>
-          <Col span={12}>
-            <Form.Item label={<span style={{ color: THEME.textPrimary }}>视频下载路径（兼容）</span>} name="download_path">
-              <Input placeholder="兼容旧配置" style={{ width: '100%' }} />
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item label={<span style={{ color: THEME.textPrimary }}>素材存储路径（兼容）</span>} name="media_storage_path">
-              <Input placeholder="兼容旧配置" style={{ width: '100%' }} />
-            </Form.Item>
-          </Col>
-        </Row>
+
         <Form.Item>
           <Button type="primary" htmlType="submit" loading={saving}>保存设置</Button>
         </Form.Item>

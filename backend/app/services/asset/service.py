@@ -29,8 +29,7 @@ def _get_reference_image_path() -> Path:
     
     优先级：
     1. reference_image_path (数据库/配置)
-    2. media_storage_path (旧配置，兼容)
-    3. storage/reference_images (默认)
+    2. storage/reference_images (默认)
     """
     backend_dir = Path(__file__).parent.parent.parent.parent
     
@@ -44,10 +43,6 @@ def _get_reference_image_path() -> Path:
             path = Path(settings["reference_image_path"])
             if path.exists():
                 return path
-        
-        # 兼容旧配置
-        if "media_storage_path" in settings and settings["media_storage_path"]:
-            return Path(settings["media_storage_path"])
     except Exception:
         pass
     
