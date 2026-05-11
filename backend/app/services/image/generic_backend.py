@@ -236,8 +236,9 @@ class GenericImageBackend(ImageBackend):
             # 5. 解析响应
             result = self._parse_response(response)
 
-            # 6. 更新使用统计
-            self._update_usage(result.get("cost", 0.0))
+            # 6. 更新使用统计（优先使用 price_per_call 按次计费，无配置则用 API 返回的 cost）
+            call_cost = self.connector.price_per_call if self.connector.price_per_call is not None else result.get("cost", 0.0)
+            self._update_usage(call_cost)
             
             # 获取实际使用的模型（支持动态模型选择）
             actual_model = params.get("model", self.model)
@@ -664,17 +665,30 @@ class GenericImageBackend(ImageBackend):
             return None
 
     def _update_usage(self, cost: float = 0.0):
-        """更新使用统计"""
+        """更新使用统计（每次重新从数据库读最新数据，避免旧 session 过期）"""
         try:
-            self.connector.last_used = __import__("datetime").datetime.now(
-                __import__("datetime").timezone.utc
-            )
-            self.connector.usage_count += 1
-            self.connector.total_cost += cost
-            self.session.add(self.connector)
-            self.session.commit()
+            from app.db.database import get_session
+            db_session = next(get_session())
+            
+            # 实时从数据库读取最新的连接器记录
+            from app.db.models.ai_connector import AIConnector
+            fresh_conn = db_session.query(AIConnector).filter(
+                AIConnector.id == self.connector.id
+            ).first()
+            
+            if fresh_conn:
+                fresh_conn.last_used = __import__("datetime").datetime.now(
+                    __import__("datetime").timezone.utc
+                )
+                fresh_conn.usage_count += 1
+                fresh_conn.total_cost += cost
+                db_session.add(fresh_conn)
+                db_session.commit()
+                logger.info(f"[GenericImageBackend] 已更新使用统计 | id={fresh_conn.id} | 次数+1 | 本次花费={cost} | 累计总花费={fresh_conn.total_cost}")
         except Exception as e:
             logger.error(f"更新使用统计失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
 
     def __del__(self):
         """清理资源（同步方式）"""

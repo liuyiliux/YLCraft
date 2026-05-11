@@ -70,28 +70,28 @@ function calculateAspectRatio(size: string): string {
 }
 
 // 尺寸配置字段组件
-function SizeConfigField({ value = [], onChange }: { value: string[], onChange: (v: string[]) => void }) {
+function SizeConfigField({ value = [], onChange }: { value?: string[], onChange?: (v: string[]) => void }) {
   const { theme: THEME } = useTheme()
   
   const sizes = value || []
   
   const handleAdd = (type: 'size' | 'ratio') => {
     if (type === 'size') {
-      onChange([...sizes, '1024x1024'])
+      onChange?.([...sizes, '1024x1024'])
     } else {
-      onChange([...sizes, '1:1'])
+      onChange?.([...sizes, '1:1'])
     }
   }
   
   const handleChange = (index: number, newValue: string) => {
     const newSizes = [...sizes]
     newSizes[index] = newValue
-    onChange(newSizes)
+    onChange?.(newSizes)
   }
   
   const handleDelete = (index: number) => {
     const newSizes = sizes.filter((_, i) => i !== index)
-    onChange(newSizes)
+    onChange?.(newSizes)
   }
   
   const getDisplayLabel = (item: string) => {
@@ -190,6 +190,7 @@ export default function SettingsPage() {
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [form] = Form.useForm()
   const { message } = AntApp.useApp()
+  const selectedType = Form.useWatch('provider_type', form)
 
   const loadProviders = async () => {
     setLoading(true)
@@ -285,6 +286,7 @@ export default function SettingsPage() {
       default_params: typeof provider.default_params === 'object' 
         ? JSON.stringify(provider.default_params) 
         : (provider.default_params || ''),
+      price_per_call: provider.price_per_call ?? undefined,
       support_reference_image: provider.support_reference_image || false,
       support_multiple_reference_images: provider.support_multiple_reference_images || false,
       reference_image_field: provider.reference_image_field || 'image',
@@ -401,6 +403,7 @@ export default function SettingsPage() {
       default_params: typeof provider.default_params === 'object' 
         ? JSON.stringify(provider.default_params) 
         : (provider.default_params || ''),
+      price_per_call: provider.price_per_call ?? undefined,
       support_reference_image: provider.support_reference_image || false,
       support_multiple_reference_images: provider.support_multiple_reference_images || false,
       reference_image_field: provider.reference_image_field || 'image',
@@ -778,17 +781,26 @@ export default function SettingsPage() {
             <Input placeholder="例如：/images/generations 或 /services/aigc/wanx/v1/image/generation" />
           </Form.Item>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0 16' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16' }}>
             <Form.Item name="default_model" label={<span style={{ color: THEME.textPrimary }}>默认模型</span>}>
               <Input placeholder="gpt-4o" />
             </Form.Item>
-            <Form.Item name="max_tokens" label={<span style={{ color: THEME.textPrimary }}>最大 Token 数</span>}>
-              <InputNumber min={1} max={200000} style={{ width: '100%' }} placeholder="4096" />
-            </Form.Item>
-            <Form.Item name="temperature" label={<span style={{ color: THEME.textPrimary }}>温度参数</span>}>
-              <InputNumber min={0} max={2} step={0.1} style={{ width: '100%' }} placeholder="0.7" />
-            </Form.Item>
+            {selectedType === 'llm' && (
+              <>
+                <Form.Item name="max_tokens" label={<span style={{ color: THEME.textPrimary }}>最大 Token 数</span>}>
+                  <InputNumber min={1} max={200000} style={{ width: '100%' }} placeholder="4096" />
+                </Form.Item>
+              </>
+            )}
           </div>
+          {selectedType === 'llm' && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16' }}>
+              <Form.Item name="temperature" label={<span style={{ color: THEME.textPrimary }}>温度参数</span>}>
+                <InputNumber min={0} max={2} step={0.1} style={{ width: '100%' }} placeholder="0.7" />
+              </Form.Item>
+              <div></div>
+            </div>
+          )}
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16' }}>
             <Form.Item name="monthly_budget" label={<span style={{ color: THEME.textPrimary }}>月度预算 (美元，可选)</span>}>
@@ -810,87 +822,92 @@ export default function SettingsPage() {
             />
           </Form.Item>
 
-          {/* 扩展配置区域（图像/视频生成专用） */}
-          <div style={{ 
-            marginTop: 16, 
-            padding: 16, 
-            background: 'rgba(168,85,247,0.05)', 
-            border: '1px solid rgba(168,85,247,0.2)', 
-            borderRadius: 8 
-          }}>
-            <Title level={5} style={{ color: '#a855f7', fontSize: 14, marginBottom: 12 }}>
-              扩展配置（图像/视频生成）
-            </Title>
-            
-            <Form.Item name="request_template" label={<span style={{ color: THEME.textPrimary }}>Request 模板 (Jinja2)</span>} style={{ marginBottom: 8 }}>
-              <TextArea 
-                rows={4} 
-                placeholder={`JSON 格式的请求模板，例如：\n{"model": "{{ model }}", "prompt": "{{ prompt }}"}`}
-              />
-            </Form.Item>
-
-            <Form.Item name="response_config" label={<span style={{ color: THEME.textPrimary }}>Response 解析配置</span>} style={{ marginBottom: 8 }}>
-              <TextArea 
-                rows={3} 
-                placeholder={`JSON 格式的响应配置，例如：\n{"images_path": "$.data[*].url", "error_path": "$.error.message"}`}
-              />
-            </Form.Item>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0 16' }}>
-              <Form.Item 
-                name="supported_sizes" 
-                label={<span style={{ color: THEME.textPrimary }}>支持的尺寸/比例</span>} 
-                style={{ marginBottom: 8, gridColumn: 'span 3' }}
-                getValueFromEvent={(value) => value}
-                getValueProps={(value) => ({ value: value || [] })}
-              >
-                <SizeConfigField />
+          {selectedType === 'image' || selectedType === 'video' || selectedType === undefined ? (
+            <div style={{ 
+              marginTop: 16, 
+              padding: 16, 
+              background: 'rgba(168,85,247,0.05)', 
+              border: '1px solid rgba(168,85,247,0.2)', 
+              borderRadius: 8 
+            }}>
+              <Title level={5} style={{ color: '#a855f7', fontSize: 14, marginBottom: 12 }}>
+                生成配置（请求模板/参考图）
+              </Title>
+              
+              <Form.Item name="request_template" label={<span style={{ color: THEME.textPrimary }}>Request 模板 (Jinja2)</span>} style={{ marginBottom: 8 }}>
+                <TextArea 
+                  rows={4} 
+                  placeholder={`JSON 格式的请求模板，例如：\n{"model": "{{ model }}", "prompt": "{{ prompt }}"}`}
+                />
               </Form.Item>
-              <Form.Item 
-                name="reference_image_field" 
+
+              <Form.Item name="response_config" label={<span style={{ color: THEME.textPrimary }}>Response 解析配置</span>} style={{ marginBottom: 8 }}>
+                <TextArea 
+                  rows={3} 
+                  placeholder={`JSON 格式的响应配置，例如：\n{"images_path": "$.data[*].url", "error_path": "$.error.message"}`}
+                />
+              </Form.Item>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0 16' }}>
+                <Form.Item 
+                  name="supported_sizes" 
+                  label={<span style={{ color: THEME.textPrimary }}>支持的尺寸/比例</span>} 
+                  style={{ marginBottom: 8, gridColumn: 'span 3' }}
+                >
+                  <SizeConfigField />
+                </Form.Item>
+                <Form.Item 
+                  name="reference_image_field" 
+                  label={
+                    <span style={{ color: THEME.textPrimary }}>
+                      参考图占位符
+                      <Tooltip title="逗号分隔的字段名，如 image1,image2,image。模板中需要有对应空占位符">
+                        <QuestionCircleOutlined style={{ marginLeft: 4, color: THEME.textSecondary }} />
+                      </Tooltip>
+                    </span>
+                  } 
+                  style={{ marginBottom: 8 }}
+                >
+                  <Input placeholder="如: image1,image2,image" />
+                </Form.Item>
+                <Form.Item name="support_reference_image" label={<span style={{ color: THEME.textPrimary }}>支持参考图</span>} valuePropName="checked" style={{ marginBottom: 8 }}>
+                  <Switch checkedChildren="是" unCheckedChildren="否" />
+                </Form.Item>
+              </div>
+
+              <Form.Item
+                name="reference_image_array_field"
                 label={
                   <span style={{ color: THEME.textPrimary }}>
-                    参考图占位符
-                    <Tooltip title="逗号分隔的字段名，如 image1,image2,image。模板中需要有对应空占位符">
+                    参考图数组字段
+                    <Tooltip title="所有参考图组成数组放入该字段。支持嵌套路径，如 reference.images。优先级高于占位符模式">
                       <QuestionCircleOutlined style={{ marginLeft: 4, color: THEME.textSecondary }} />
                     </Tooltip>
                   </span>
-                } 
+                }
                 style={{ marginBottom: 8 }}
               >
-                <Input placeholder="如: image1,image2,image" />
+                <Input placeholder="如: images 或 reference.images" />
               </Form.Item>
-              <Form.Item name="support_reference_image" label={<span style={{ color: THEME.textPrimary }}>支持参考图</span>} valuePropName="checked" style={{ marginBottom: 8 }}>
-                <Switch checkedChildren="是" unCheckedChildren="否" />
+
+              <Form.Item name="price_per_call" label={<span style={{ color: THEME.textPrimary }}>按次计费 (美元/次)</span>} style={{ marginBottom: 8 }}
+                extra={<span style={{ color: THEME.textSecondary, fontSize: 12 }}>每次调用费用，如 0.002 表示每次 0.002 美元。留空则不计算。</span>}
+              >
+                <InputNumber min={0} step={0.0001} style={{ width: '100%' }} placeholder="如：0.002" />
+              </Form.Item>
+
+              <Form.Item name="default_params" label={<span style={{ color: THEME.textPrimary }}>默认参数 (JSON)</span>} style={{ marginBottom: 0 }}
+                extra={<span style={{ color: THEME.textSecondary, fontSize: 12 }}>
+                  参数名映射：size_param 指定尺寸字段名（如硅基流动用 image_size），seed_param 指定种子字段名
+                </span>}
+              >
+                <TextArea 
+                  rows={2} 
+                  placeholder={`JSON 格式的默认参数，例如：\n{"n": 1, "quality": "standard", "size_param": "image_size", "seed_param": "seed"}`}
+                />
               </Form.Item>
             </div>
-
-            <Form.Item
-              name="reference_image_array_field"
-              label={
-                <span style={{ color: THEME.textPrimary }}>
-                  参考图数组字段
-                  <Tooltip title="所有参考图组成数组放入该字段。支持嵌套路径，如 reference.images。优先级高于占位符模式">
-                    <QuestionCircleOutlined style={{ marginLeft: 4, color: THEME.textSecondary }} />
-                  </Tooltip>
-                </span>
-              }
-              style={{ marginBottom: 8 }}
-            >
-              <Input placeholder="如: images 或 reference.images" />
-            </Form.Item>
-
-            <Form.Item name="default_params" label={<span style={{ color: THEME.textPrimary }}>默认参数 (JSON)</span>} style={{ marginBottom: 0 }}
-              extra={<span style={{ color: THEME.textSecondary, fontSize: 12 }}>
-                参数名映射：size_param 指定尺寸字段名（如硅基流动用 image_size），seed_param 指定种子字段名
-              </span>}
-            >
-              <TextArea 
-                rows={2} 
-                placeholder={`JSON 格式的默认参数，例如：\n{"n": 1, "quality": "standard", "size_param": "image_size", "seed_param": "seed"}`}
-              />
-            </Form.Item>
-          </div>
+          ) : null}
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0 16' }}>
             <Form.Item name="is_active" label={<span style={{ color: THEME.textPrimary }}>启用状态</span>} valuePropName="checked">
@@ -968,20 +985,66 @@ export default function SettingsPage() {
                   <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>默认模型</Text>
                   <div style={{ color: THEME.textPrimary, marginTop: 2, fontSize: 13 }}>{viewingProvider.default_model || <Text type="secondary" style={{ fontSize: 12 }}>未设置</Text>}</div>
                 </div>
+                {viewingProvider.provider_type === 'llm' && (
                 <div>
                   <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>最大 Token 数</Text>
                   <div style={{ color: THEME.textPrimary, marginTop: 2, fontSize: 13 }}>{viewingProvider.max_tokens || 4096}</div>
                 </div>
+                )}
+                {viewingProvider.provider_type === 'llm' && (
                 <div>
                   <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>温度参数</Text>
                   <div style={{ color: THEME.textPrimary, marginTop: 2, fontSize: 13 }}>{viewingProvider.temperature ?? 0.7}</div>
                 </div>
+                )}
                 <div style={{ gridColumn: '1 / -1' }}>
                   <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>测试提示词</Text>
                   <div style={{ color: THEME.textPrimary, marginTop: 2, fontSize: 13 }}>{viewingProvider.test_prompt || <Text type="secondary" style={{ fontSize: 12 }}>未设置（使用默认值）</Text>}</div>
                 </div>
               </div>
             </Card>
+
+            {(viewingProvider.provider_type === 'image' || viewingProvider.provider_type === 'video') && (
+            <Card size="small" style={{ background: 'rgba(168,85,247,0.05)', border: '1px solid rgba(168,85,247,0.2)', marginBottom: 12 }}>
+              <Title level={5} style={{ color: '#a855f7', fontSize: 13, marginBottom: 8 }}>生成配置</Title>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px' }}>
+                {viewingProvider.request_template && (
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>Request 模板</Text>
+                  <div style={{ color: THEME.textPrimary, marginTop: 2, fontSize: 13, whiteSpace: 'pre-wrap', fontFamily: 'monospace', background: 'rgba(0,0,0,0.2)', padding: 8, borderRadius: 4 }}>{viewingProvider.request_template}</div>
+                </div>
+                )}
+                {viewingProvider.response_config && (
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>Response 解析配置</Text>
+                  <div style={{ color: THEME.textPrimary, marginTop: 2, fontSize: 13, whiteSpace: 'pre-wrap', fontFamily: 'monospace', background: 'rgba(0,0,0,0.2)', padding: 8, borderRadius: 4 }}>{viewingProvider.response_config}</div>
+                </div>
+                )}
+                {viewingProvider.supported_sizes && viewingProvider.supported_sizes.length > 0 && (
+                <div>
+                  <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>支持尺寸</Text>
+                  <div style={{ marginTop: 2 }}>{viewingProvider.supported_sizes.map((s: string) => <Tag key={s} style={{ fontSize: 12 }}>{s}</Tag>)}</div>
+                </div>
+                )}
+                {viewingProvider.price_per_call != null && (
+                <div>
+                  <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>按次计费</Text>
+                  <div style={{ color: THEME.textPrimary, marginTop: 2, fontSize: 13 }}>${viewingProvider.price_per_call}/次</div>
+                </div>
+                )}
+                <div>
+                  <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>参考图</Text>
+                  <div style={{ color: THEME.textPrimary, marginTop: 2, fontSize: 13 }}>{viewingProvider.support_reference_image ? '支持' : '不支持'}</div>
+                </div>
+                {viewingProvider.reference_image_field && (
+                <div>
+                  <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>参考图字段</Text>
+                  <div style={{ color: THEME.textPrimary, marginTop: 2, fontSize: 13 }}>{viewingProvider.reference_image_field}</div>
+                </div>
+                )}
+              </div>
+            </Card>
+            )}
 
             <Card size="small" style={{ background: 'rgba(255,255,255,0.03)', border: `1px solid ${THEME.border}`, marginBottom: 12 }}>
               <Title level={5} style={{ color: THEME.textPrimary, fontSize: 13, marginBottom: 8 }}>状态与统计</Title>

@@ -132,6 +132,9 @@ class AIConnectorBase(SQLModel):
     # 成本控制
     monthly_budget: Optional[float] = Field(None, description="月度预算（美元）")
     daily_limit: Optional[int] = Field(None, description="每日请求限制")
+    
+    # 按次计费（图像/视频生成专用）
+    price_per_call: Optional[float] = Field(None, description="每次调用费用（美元），如 0.002 表示每次调用 0.002 美元")
 
     # 状态
     is_active: bool = Field(True, description="是否启用")
@@ -195,6 +198,7 @@ class AIConnectorCreate(SQLModel):
     temperature: float = 0.7
     monthly_budget: Optional[float] = None
     daily_limit: Optional[int] = None
+    price_per_call: Optional[float] = None
     is_active: bool = True
     is_default: bool = False
     priority: int = 0
@@ -227,6 +231,7 @@ class AIConnectorUpdate(SQLModel):
     temperature: Optional[float] = None
     monthly_budget: Optional[float] = None
     daily_limit: Optional[int] = None
+    price_per_call: Optional[float] = None
     is_active: Optional[bool] = None
     is_default: Optional[bool] = None
     priority: Optional[int] = None
@@ -260,6 +265,7 @@ class AIConnectorResponse(SQLModel):
     temperature: float
     monthly_budget: Optional[float] = None
     daily_limit: Optional[int] = None
+    price_per_call: Optional[float] = None
     is_active: bool
     is_default: bool
     priority: int
@@ -320,6 +326,7 @@ class AIConnectorResponse(SQLModel):
             temperature=conn.temperature,
             monthly_budget=conn.monthly_budget,
             daily_limit=conn.daily_limit,
+            price_per_call=conn.price_per_call,
             is_active=conn.is_active,
             is_default=conn.is_default,
             priority=conn.priority,

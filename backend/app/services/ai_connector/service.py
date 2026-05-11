@@ -180,6 +180,7 @@ class AIConnectorService:
             temperature=data.temperature,
             monthly_budget=data.monthly_budget,
             daily_limit=data.daily_limit,
+            price_per_call=data.price_per_call,
             is_active=data.is_active,
             is_default=data.is_default,
             priority=data.priority,
@@ -239,6 +240,8 @@ class AIConnectorService:
             conn.monthly_budget = data.monthly_budget
         if data.daily_limit is not None:
             conn.daily_limit = data.daily_limit
+        if data.price_per_call is not None:
+            conn.price_per_call = data.price_per_call
         if data.is_active is not None:
             conn.is_active = data.is_active
         if data.is_default is not None:

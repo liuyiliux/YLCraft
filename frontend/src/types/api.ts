@@ -34,6 +34,7 @@ export interface Provider {
   reference_image_array_field?: string
   test_prompt?: string
   has_api_key?: boolean
+  price_per_call?: number
 }
 
 export interface ConnectorTestDebug {
