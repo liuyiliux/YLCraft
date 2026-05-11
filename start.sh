@@ -54,6 +54,7 @@ check_command node
 
 # 选择支持 venv 模块的 Python 版本
 PYTHON_CMD="python3"
+VENV_CREATOR="python3 -m venv"
 if ! python3 -m venv --help &>/dev/null; then
     if command -v python3.13 &>/dev/null && python3.13 -m venv --help &>/dev/null; then
         PYTHON_CMD="python3.13"
@@ -61,8 +62,11 @@ if ! python3 -m venv --help &>/dev/null; then
     elif command -v python3.11 &>/dev/null && python3.11 -m venv --help &>/dev/null; then
         PYTHON_CMD="python3.11"
         echo -e "${YELLOW}[后端]${NC} python3 缺少 venv 模块，使用 python3.11 代替"
+    elif command -v virtualenv &>/dev/null; then
+        VENV_CREATOR="virtualenv"
+        echo -e "${YELLOW}[后端]${NC} venv 模块不可用，使用 virtualenv 代替"
     else
-        echo -e "${RED}[错误] 未找到支持 venv 的 Python 版本，请安装 python3-venv 包${NC}"
+        echo -e "${RED}[错误] 未找到支持 venv 的 Python 版本，请安装 python3-venv 包或 virtualenv${NC}"
         exit 1
     fi
 fi
@@ -83,7 +87,7 @@ else
     else
         echo -e "${YELLOW}[后端]${NC} 虚拟环境不存在，正在创建..."
     fi
-    $PYTHON_CMD -m venv "$VENV_DIR"
+    $VENV_CREATOR "$VENV_DIR"
     echo -e "${GREEN}[后端]${NC} 虚拟环境创建完成"
 fi
 
