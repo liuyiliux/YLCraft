@@ -583,9 +583,11 @@ def _download_cover_image(cover_url: str, video_path: str, title: str | None) ->
 
 
 def _httpx_download(url: str, quality_label: str | None, title: str | None,
-                     is_audio: bool = False, page_url: str | None = None) -> str:
+                     is_audio: bool = False, page_url: str | None = None, task_id: str | None = None) -> str:
     """直接用 httpx 下载 CDN 直链（抖音/Twitter 等），绕过 yt-dlp。返回保存的文件路径。"""
     import httpx
+    import threading
+    import time
 
     savedir = ensure_download_path()
     logger.info(f"[_httpx_download] start | url={url[:80]} | quality={quality_label} | is_audio={is_audio} | page_url={page_url[:60] if page_url else 'NONE'}")
@@ -617,6 +619,19 @@ def _httpx_download(url: str, quality_label: str | None, title: str | None,
 
     total_size = 0
     downloaded_size = 0
+    last_update_time = 0
+
+    def update_progress():
+        nonlocal last_update_time
+        if task_id and total_size > 0:
+            current_time = time.time()
+            # 每 200ms 更新一次进度
+            if current_time - last_update_time > 0.2:
+                progress = min(int((downloaded_size / total_size) * 85), 85)  # 留 15% 给保存和封面处理
+                if task_id in _download_tasks:
+                    _download_tasks[task_id]["progress"] = progress
+                    _download_tasks[task_id]["progress_message"] = f"正在下载... {downloaded_size // 1024 // 1024}MB / {total_size // 1024 // 1024}MB"
+                last_update_time = current_time
 
     with httpx.stream("GET", url, headers=req_headers, cookies=cookies_dict,
                       follow_redirects=True, timeout=300.0) as resp:
@@ -630,6 +645,7 @@ def _httpx_download(url: str, quality_label: str | None, title: str | None,
                 if chunk:
                     f.write(chunk)
                     downloaded_size += len(chunk)
+                    update_progress()
 
     logger.info(f"[_httpx_download] done | path={filepath} | size={downloaded_size}")
     return str(filepath)
@@ -653,7 +669,7 @@ async def _run_download_task(task: DownloadTask):
             loop = asyncio.get_running_loop()
             filepath = await asyncio.wait_for(
                 loop.run_in_executor(None, _httpx_download,
-                    task.url, task.quality, task.title, task.is_audio, task.page_url
+                    task.url, task.quality, task.title, task.is_audio, task.page_url, task.task_id
                 ),
                 timeout=1800,
             )

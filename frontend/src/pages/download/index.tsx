@@ -105,7 +105,7 @@ export default function DownloadPage() {
       const poll = async (): Promise<void> => {
         const res = await getDownloadTask(task_id)
         const task = res
-        setDlProgress(task.progress || pollCount * 5)
+        setDlProgress(Math.min(task.progress || pollCount * 5, 100))
         if (task.status === 'done') {
           setSavedFilePath(task.result?.file_path || ''); setDlProgress(100); message.success('下载完成')
           setTimeout(() => setDownloading(false), 3000); return

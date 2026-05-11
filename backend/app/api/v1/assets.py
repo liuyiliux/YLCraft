@@ -97,6 +97,7 @@ def _asset_to_dict(asset: Asset, include_metadata: bool = False) -> dict:
         "author": asset.author,
         "status": asset.status,
         "source_type": asset.source_type,
+        "source_url": asset.source_url,  # 添加 source_url 到列表页
         "tags": json.loads(asset.tags) if asset.tags else [],
         "created_at": asset.created_at.isoformat() if asset.created_at else None,
         "updated_at": asset.updated_at.isoformat() if asset.updated_at else None,
