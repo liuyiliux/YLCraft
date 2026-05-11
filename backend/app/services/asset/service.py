@@ -151,7 +151,8 @@ class AssetService:
         if source_type:
             conditions.append(Asset.source_type == source_type)
         if status:
-            conditions.append(Asset.status == status)
+            # 使用不区分大小写的匹配
+            conditions.append(Asset.status.ilike(status))
         if search:
             conditions.append(Asset.title.contains(search))
 

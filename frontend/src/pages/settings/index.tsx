@@ -1287,7 +1287,7 @@ function StorageSettings() {
     <Card style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}` }}>
       <Title level={5} style={{ color: THEME.textPrimary }}>存储配置</Title>
       <Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 16 }}>
-        配置为空时使用默认路径。存储路径优先级：数据库配置 > 配置文件
+        配置为空时使用默认路径。存储路径优先级：数据库配置 &gt; 配置文件
       </Paragraph>
       <Form form={form} layout="vertical" onFinish={handleSave} style={{ marginTop: 16 }}>
         <Row gutter={16}>

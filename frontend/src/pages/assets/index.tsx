@@ -382,10 +382,10 @@ export default function AssetsPage() {
                 onChange={v => { setPage(1); setFilters(f => ({ ...f, status: v || undefined })) }}
                 options={[
                   { label: '全部', value: '' },
-                  { label: '已解析', value: 'parsed' },
-                  { label: '下载中', value: 'downloading' },
-                  { label: '完成', value: 'READY' },
-                  { label: '错误', value: 'error' },
+                  ...Object.entries(STATUS_LABELS).map(([key, label]) => ({ 
+                    label, 
+                    value: key.toLowerCase() 
+                  })),
                 ]}
               />
               <Button 
