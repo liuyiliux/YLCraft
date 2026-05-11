@@ -802,10 +802,15 @@ export default function SettingsPage() {
             </div>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0 16' }}>
             <Form.Item name="monthly_budget" label={<span style={{ color: THEME.textPrimary }}>月度预算 (美元，可选)</span>}>
               <InputNumber min={0} step={10} style={{ width: '100%' }} placeholder="如：100" />
             </Form.Item>
+            {selectedType === 'image' || selectedType === 'video' || !selectedType ? (
+              <Form.Item name="price_per_call" label={<span style={{ color: THEME.textPrimary }}>按次计费 (美元/次)</span>}>
+                <InputNumber min={0} step={0.0001} style={{ width: '100%' }} placeholder="如：0.002" />
+              </Form.Item>
+            ) : null}
             <Form.Item name="daily_limit" label={<span style={{ color: THEME.textPrimary }}>每日请求限制 (可选)</span>}>
               <InputNumber min={0} style={{ width: '100%' }} placeholder="如：1000" />
             </Form.Item>
