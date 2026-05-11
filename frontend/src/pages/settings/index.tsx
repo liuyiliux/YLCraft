@@ -895,12 +895,6 @@ export default function SettingsPage() {
                 <Input placeholder="如: images 或 reference.images" />
               </Form.Item>
 
-              <Form.Item name="price_per_call" label={<span style={{ color: THEME.textPrimary }}>按次计费 (美元/次)</span>} style={{ marginBottom: 8 }}
-                extra={<span style={{ color: THEME.textSecondary, fontSize: 12 }}>每次调用费用，如 0.002 表示每次 0.002 美元。留空则不计算。</span>}
-              >
-                <InputNumber min={0} step={0.0001} style={{ width: '100%' }} placeholder="如：0.002" />
-              </Form.Item>
-
               <Form.Item name="default_params" label={<span style={{ color: THEME.textPrimary }}>默认参数 (JSON)</span>} style={{ marginBottom: 0 }}
                 extra={<span style={{ color: THEME.textSecondary, fontSize: 12 }}>
                   参数名映射：size_param 指定尺寸字段名（如硅基流动用 image_size），seed_param 指定种子字段名
