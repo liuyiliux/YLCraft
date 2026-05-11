@@ -168,7 +168,9 @@ class BackendManager:
             self._backends[MediaType.IMAGE][conn.name] = backend
             logger.info(f"[Image] 已注册 GenericImageBackend: {conn.name} (from DB)")
         except Exception as e:
+            import traceback
             logger.error(f"[Image] 初始化 GenericImageBackend 失败 {conn.name}: {e}")
+            logger.error(traceback.format_exc())
 
     def _init_video_backend(self, conn: AIConnector, session: Session) -> None:
         """初始化 Video Backend"""
