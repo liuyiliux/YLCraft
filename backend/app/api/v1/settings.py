@@ -5,6 +5,7 @@ GET  /api/v1/settings          — 获取所有设置
 PUT  /api/v1/settings          — 批量更新设置
 GET  /api/v1/settings/download-path — 获取下载路径
 GET  /api/v1/settings/ffmpeg-path  — 获取 FFmpeg 路径
+GET  /api/v1/settings/storage-paths — 获取所有存储路径
 """
 
 from __future__ import annotations
@@ -12,12 +13,17 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.core.config import ensure_download_path, get_ffmpeg_path
 
 router = APIRouter()
+
+# 缓存数据库设置（避免每次都查库）
+_db_settings_cache: dict[str, str] = {}
+_db_settings_loaded = False
 
 
 class SettingsResponse(BaseModel):
@@ -41,40 +47,50 @@ class FFmpegPathResponse(BaseModel):
     effective: str | None
 
 
+class StoragePathsResponse(BaseModel):
+    success: bool = True
+    data: dict  # { key: path }
+
+
 def _get_settings_path() -> Path:
     """获取 settings.json 的路径"""
     backend_dir = Path(__file__).parent.parent.parent
     return backend_dir / "app" / "data" / "settings.json"
 
 
-def _load_settings() -> dict:
-    """从文件加载设置"""
+def _load_settings_from_file() -> dict:
+    """从文件加载基础设置"""
     settings_path = _get_settings_path()
     if not settings_path.exists():
-        return {
-            "download_path": str(ensure_download_path()),
-            "media_storage_path": str(ensure_download_path().parent / "media"),
-            "ffmpeg_path": None,
-            "storage_type": "local",
-            "s3": {
-                "bucket": "",
-                "region": "us-east-1",
-                "access_key": "",
-                "secret_key": ""
-            },
-            "oss": {
-                "bucket": "",
-                "region": "cn-hangzhou",
-                "access_key": "",
-                "secret_key": "",
-                "endpoint": ""
-            }
-        }
+        return _get_default_settings()
     with open(settings_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
-def _save_settings(settings: dict):
+def _get_default_settings() -> dict:
+    """获取默认设置"""
+    return {
+        "download_path": str(ensure_download_path()),
+        "media_storage_path": str(ensure_download_path().parent / "media"),
+        "ffmpeg_path": None,
+        "storage_type": "local",
+        "s3": {
+            "bucket": "",
+            "region": "us-east-1",
+            "access_key": "",
+            "secret_key": ""
+        },
+        "oss": {
+            "bucket": "",
+            "region": "cn-hangzhou",
+            "access_key": "",
+            "secret_key": "",
+            "endpoint": ""
+        }
+    }
+
+
+def _save_settings_to_file(settings: dict):
     """保存设置到文件"""
     settings_path = _get_settings_path()
     settings_path.parent.mkdir(parents=True, exist_ok=True)
@@ -82,60 +98,212 @@ def _save_settings(settings: dict):
         json.dump(settings, f, indent=2, ensure_ascii=False)
 
 
-def _get(key: str, default=None):
-    """获取单个设置"""
-    settings = _load_settings()
-    return settings.get(key, default)
+async def _load_settings_from_db() -> dict[str, str]:
+    """从数据库加载设置"""
+    global _db_settings_cache, _db_settings_loaded
+    
+    if _db_settings_loaded:
+        return _db_settings_cache
+    
+    try:
+        from app.db.database import async_session_maker
+        from sqlalchemy import select
+        from app.db.models.system_setting import SystemSetting
+        
+        async with async_session_maker() as session:
+            result = await session.execute(select(SystemSetting))
+            settings = result.scalars().all()
+            _db_settings_cache = {s.key: s.value for s in settings}
+            _db_settings_loaded = True
+    except Exception as e:
+        # 数据库不存在或表不存在，使用空设置
+        _db_settings_cache = {}
+        _db_settings_loaded = True
+    
+    return _db_settings_cache
 
 
-def _update_settings(patch: dict) -> dict:
-    """批量更新设置"""
-    settings = _load_settings()
-    for key, value in patch.items():
-        if key in ["s3", "oss"]:
-            if isinstance(settings.get(key), dict):
-                settings[key].update(value)
+async def _save_setting_to_db(key: str, value: str, description: str = ""):
+    """保存设置到数据库"""
+    try:
+        from app.db.database import async_session_maker
+        from sqlalchemy import select
+        from app.db.models.system_setting import SystemSetting
+        
+        async with async_session_maker() as session:
+            result = await session.execute(
+                select(SystemSetting).where(SystemSetting.key == key)
+            )
+            setting = result.scalar_one_or_none()
+            
+            if setting:
+                setting.value = value
+                if description:
+                    setting.description = description
             else:
-                settings[key] = value
-        else:
-            settings[key] = value
-    _save_settings(settings)
-    return settings
+                setting = SystemSetting(key=key, value=value, description=description)
+                session.add(setting)
+            
+            await session.commit()
+            
+            # 更新缓存
+            global _db_settings_cache
+            _db_settings_cache[key] = value
+    except Exception as e:
+        # 数据库不可用，静默失败
+        pass
+
+
+def _load_settings() -> dict:
+    """同步版本的设置加载（仅从文件，不查库）"""
+    return _load_settings_from_file()
 
 
 def _get_settings() -> dict:
     """获取所有设置"""
     return {
-        "data": _load_settings()
+        "data": _load_settings_from_file()
     }
 
+
+async def get_setting(key: str) -> str | None:
+    """获取单个设置（数据库优先）"""
+    db_settings = await _load_settings_from_db()
+    
+    # 数据库优先
+    if key in db_settings and db_settings[key]:
+        return db_settings[key]
+    
+    # 回退到配置文件
+    file_settings = _load_settings_from_file()
+    return file_settings.get(key)
+
+
+async def get_storage_path(key: str, default_subdir: str = "") -> Path:
+    """
+    获取存储路径（数据库优先，回退到配置文件，再回退到默认）
+    
+    Args:
+        key: 存储路径配置键 (video_download_path, image_gen_path, etc.)
+        default_subdir: 默认子目录
+    
+    Returns:
+        Path: 有效的存储路径
+    """
+    # 尝试从数据库/配置获取
+    configured_path = await get_setting(key)
+    
+    if configured_path and Path(configured_path).exists():
+        return Path(configured_path)
+    
+    # 回退到 media_storage_path（兼容旧配置）
+    media_path = await get_setting("media_storage_path")
+    if media_path and Path(media_path).exists():
+        base = Path(media_path)
+        if default_subdir:
+            return base / default_subdir
+        return base
+    
+    # 最终回退到 storage/ 目录
+    backend_dir = Path(__file__).parent.parent.parent.parent
+    storage_dir = backend_dir / "storage"
+    if default_subdir:
+        storage_dir = storage_dir / default_subdir
+    storage_dir.mkdir(parents=True, exist_ok=True)
+    return storage_dir
+
+
+# ============================================================================
+# API 路由
+# ============================================================================
 
 @router.get("", response_model=SettingsResponse, summary="获取系统设置")
 async def get_all_settings():
     """返回所有系统设置"""
-    data = _get_settings()
-    return SettingsResponse(success=True, data=data)
+    # 加载数据库设置
+    db_settings = await _load_settings_from_db()
+    file_settings = _load_settings_from_file()
+    
+    # 合并设置（数据库优先）
+    merged = file_settings.copy()
+    for key, value in db_settings.items():
+        if value:  # 只覆盖非空值
+            merged[key] = value
+    
+    return SettingsResponse(success=True, data={"data": merged}})
 
 
-@router.put("", response_model=SettingsResponse, summary="批量更新系统设置")
+@router.put("", response_model=SettingsResponse, summary="批量更新设置")
 async def update_all_settings(req: SettingsUpdateRequest):
     """批量更新设置"""
     patch = req.patch
+    
+    # 处理存储路径
+    storage_keys = [
+        "video_download_path", "image_gen_path", "video_gen_path",
+        "reference_image_path", "upload_path"
+    ]
+    
+    for key in storage_keys:
+        if key in patch:
+            path = patch[key]
+            if isinstance(path, str):
+                path = path.strip()
+                if path:
+                    os.makedirs(path, exist_ok=True)
+            # 保存到数据库
+            await _save_setting_to_db(key, path or "", f"存储路径: {key}")
+    
+    # 处理旧配置键（兼容）
     if "download_path" in patch:
-        path = patch["download_path"].strip()
-        if not path:
-            raise HTTPException(status_code=400, detail="download_path 不能为空")
-        os.makedirs(path, exist_ok=True)
-    data = _update_settings(patch)
-    return SettingsResponse(success=True, data={"data": data})
+        await _save_setting_to_db("download_path", patch["download_path"] or "", "视频下载路径")
+    if "media_storage_path" in patch:
+        await _save_setting_to_db("media_storage_path", patch["media_storage_path"] or "", "素材存储路径")
+    
+    return SettingsResponse(success=True, data={"data": patch})
+
+
+@router.get("/storage-paths", response_model=StoragePathsResponse, summary="获取所有存储路径")
+async def get_all_storage_paths():
+    """返回所有存储路径配置"""
+    db_settings = await _load_settings_from_db()
+    file_settings = _load_settings_from_file()
+    
+    storage_keys = [
+        "video_download_path",
+        "image_gen_path", 
+        "video_gen_path",
+        "reference_image_path",
+        "upload_path",
+    ]
+    
+    result = {}
+    for key in storage_keys:
+        # 数据库优先
+        if key in db_settings and db_settings[key]:
+            result[key] = db_settings[key]
+        # 回退到 media_storage_path
+        elif "media_storage_path" in file_settings:
+            result[key] = file_settings["media_storage_path"]
+        else:
+            # 默认路径
+            backend_dir = Path(__file__).parent.parent.parent.parent
+            result[key] = str(backend_dir / "storage")
+    
+    return StoragePathsResponse(success=True, data=result)
 
 
 @router.get("/download-path", response_model=DownloadPathResponse, summary="获取下载保存路径")
 async def get_download_path():
-    """返回当前下载保存路径（自动确保目录存在）"""
-    custom_path = _get("download_path")
-    if custom_path and Path(custom_path).exists():
-        return DownloadPathResponse(path=custom_path)
+    """返回当前下载保存路径"""
+    # 优先使用新的 video_download_path
+    path = await get_setting("video_download_path")
+    if not path:
+        path = await get_setting("download_path")
+    
+    if path and Path(path).exists():
+        return DownloadPathResponse(path=path)
+    
     p = ensure_download_path()
     return DownloadPathResponse(path=str(p))
 
@@ -146,7 +314,10 @@ async def get_ffmpeg():
     返回 FFmpeg 路径信息。
     effective = configured（用户配置） > detected（系统 PATH 检测） > None
     """
-    configured = _get("ffmpeg_path")
+    configured = await get_setting("ffmpeg_path")
+    if not configured:
+        configured = _load_settings_from_file().get("ffmpeg_path")
+    
     detected = get_ffmpeg_path()
     return FFmpegPathResponse(
         configured=configured,

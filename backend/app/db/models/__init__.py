@@ -70,3 +70,6 @@ from app.db.models.platform_cookie import (
     PlatformCookieCreate,
     PlatformCookieUpdate,
 )
+
+# 系统设置
+from app.db.models.system_setting import SystemSetting, SystemSettingCreate, SystemSettingUpdate, DEFAULT_STORAGE_SETTINGS

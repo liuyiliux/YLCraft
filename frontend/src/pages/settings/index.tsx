@@ -20,6 +20,9 @@ import {
   Badge,
   ConfigProvider,
   Tooltip,
+  Row,
+  Col,
+  Divider,
 } from 'antd'
 import { App as AntApp } from 'antd'
 import {
@@ -43,7 +46,7 @@ import { listConnectors, createConnector, updateConnector, deleteConnector, test
 import type { Provider, PROVIDER_OPTIONS, ConnectorTestResult } from '../../types/api'
 import { useTheme } from '../../constants/theme'
 
-const { Title, Text } = Typography
+const { Title, Text, Paragraph } = Typography
 const { TextArea } = Input
 
 // 计算宽高比例
@@ -1251,6 +1254,13 @@ function StorageSettings() {
       .then(({ data }) => {
         form.setFieldsValue({
           storage_type: data.data.storage_type || 'local',
+          // 新配置（数据库优先）
+          video_download_path: data.data.video_download_path || '',
+          image_gen_path: data.data.image_gen_path || '',
+          video_gen_path: data.data.video_gen_path || '',
+          reference_image_path: data.data.reference_image_path || '',
+          upload_path: data.data.upload_path || '',
+          // 兼容旧配置
           download_path: data.data.download_path || '',
           media_storage_path: data.data.media_storage_path || '',
         })
@@ -1271,25 +1281,62 @@ function StorageSettings() {
     }
   }
 
-  if (loading) return <Skeleton active paragraph={{ rows: 6 }} />
+  if (loading) return <Skeleton active paragraph={{ rows: 8 }} />
 
   return (
     <Card style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}` }}>
       <Title level={5} style={{ color: THEME.textPrimary }}>存储配置</Title>
+      <Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 16 }}>
+        配置为空时使用默认路径。存储路径优先级：数据库配置 > 配置文件
+      </Paragraph>
       <Form form={form} layout="vertical" onFinish={handleSave} style={{ marginTop: 16 }}>
-        <Form.Item label={<span style={{ color: THEME.textPrimary }}>存储类型</span>} name="storage_type">
-          <Select options={[
-            { value: 'local', label: '本地存储' },
-            { value: 's3', label: 'AWS S3（预留）' },
-            { value: 'oss', label: '阿里云 OSS（预留）' },
-          ]} style={{ width: 300 }} />
-        </Form.Item>
-        <Form.Item label={<span style={{ color: THEME.textPrimary }}>下载文件保存路径</span>} name="download_path" extra={<span style={{ color: THEME.textSecondary }}>视频下载后保存的目录</span>}>
-          <Input placeholder="例如：F:\YLCraft-Downloads" style={{ width: 400 }} />
-        </Form.Item>
-        <Form.Item label={<span style={{ color: THEME.textPrimary }}>素材库存储路径</span>} name="media_storage_path" extra={<span style={{ color: THEME.textSecondary }}>图片、视频等素材的存储目录</span>}>
-          <Input placeholder="例如：F:\YLCraft-Media" style={{ width: 400 }} />
-        </Form.Item>
+        <Row gutter={16}>
+          <Col span={12}>
+            <Form.Item label={<span style={{ color: THEME.textPrimary }}>视频解析下载</span>} name="video_download_path" extra={<span style={{ color: THEME.textSecondary, fontSize: 11 }}>抖音、B站等平台视频下载保存路径</span>}>
+              <Input placeholder="/workspace/backend/downloads" style={{ width: '100%' }} />
+            </Form.Item>
+          </Col>
+          <Col span={12}>
+            <Form.Item label={<span style={{ color: THEME.textPrimary }}>AI 图片生成</span>} name="image_gen_path" extra={<span style={{ color: THEME.textSecondary, fontSize: 11 }}>文生图、图生图生成的图片保存路径</span>}>
+              <Input placeholder="/workspace/backend/storage/images" style={{ width: '100%' }} />
+            </Form.Item>
+          </Col>
+        </Row>
+        <Row gutter={16}>
+          <Col span={12}>
+            <Form.Item label={<span style={{ color: THEME.textPrimary }}>AI 视频生成</span>} name="video_gen_path" extra={<span style={{ color: THEME.textSecondary, fontSize: 11 }}>AI视频生成保存路径</span>}>
+              <Input placeholder="/workspace/backend/storage/videos" style={{ width: '100%' }} />
+            </Form.Item>
+          </Col>
+          <Col span={12}>
+            <Form.Item label={<span style={{ color: THEME.textPrimary }}>参考图存储</span>} name="reference_image_path" extra={<span style={{ color: THEME.textSecondary, fontSize: 11 }}>图生图参考图保存路径</span>}>
+              <Input placeholder="/workspace/backend/storage/reference_images" style={{ width: '100%' }} />
+            </Form.Item>
+          </Col>
+        </Row>
+        <Row gutter={16}>
+          <Col span={12}>
+            <Form.Item label={<span style={{ color: THEME.textPrimary }}>本地上传</span>} name="upload_path" extra={<span style={{ color: THEME.textSecondary, fontSize: 11 }}>素材库本地上传文件保存路径</span>}>
+              <Input placeholder="/workspace/backend/storage/uploads" style={{ width: '100%' }} />
+            </Form.Item>
+          </Col>
+        </Row>
+        <Divider style={{ margin: '16px 0' }} />
+        <Paragraph type="secondary" style={{ fontSize: 12 }}>
+          兼容旧配置（可留空）：
+        </Paragraph>
+        <Row gutter={16}>
+          <Col span={12}>
+            <Form.Item label={<span style={{ color: THEME.textPrimary }}>视频下载路径（兼容）</span>} name="download_path">
+              <Input placeholder="兼容旧配置" style={{ width: '100%' }} />
+            </Form.Item>
+          </Col>
+          <Col span={12}>
+            <Form.Item label={<span style={{ color: THEME.textPrimary }}>素材存储路径（兼容）</span>} name="media_storage_path">
+              <Input placeholder="兼容旧配置" style={{ width: '100%' }} />
+            </Form.Item>
+          </Col>
+        </Row>
         <Form.Item>
           <Button type="primary" htmlType="submit" loading={saving}>保存设置</Button>
         </Form.Item>

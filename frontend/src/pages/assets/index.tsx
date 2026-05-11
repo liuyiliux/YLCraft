@@ -45,7 +45,7 @@ import {
   PlayCircleOutlined,
   PauseCircleOutlined,
 } from '@ant-design/icons'
-import { listAssets, deleteAsset, getTags, createTag } from '../../api'
+import { listAssets, deleteAsset, getTags, createTag, getAsset } from '../../api'
 
 const { Search } = Input
 
@@ -104,13 +104,28 @@ export default function AssetsPage() {
   }
 
   // 跳转到对应生成页面（根据来源类型判断）
-  const handleJumpToGenerator = (asset: any) => {
+  const handleJumpToGenerator = async (asset: any, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation()
     const metadata = asset.metadata || {}
     const aiParams = metadata.ai_params || {}
     const assetType = asset.type?.toUpperCase()
 
+    // 判断是否有参考图（图生图才有）- 使用新的布尔字段
+    const hasReferenceImage = !!(metadata.has_reference_images || metadata.has_source_image || aiParams.reference_image)
+
     // AI生成的素材 -> 跳转对应AI生成页面
     if (isAIGenerated(asset)) {
+      // 如果有参考图，需要先获取详情获取完整base64数据
+      let fullMetadata = metadata
+      if (hasReferenceImage && !metadata.reference_images?.length) {
+        try {
+          const res = await getAsset(asset.id)
+          if (res.success) {
+            fullMetadata = res.data.metadata || {}
+          }
+        } catch {}
+      }
+
       if (assetType === 'VIDEO') {
         // AI生成的视频 -> 视频生成页面
         const params = new URLSearchParams()
@@ -119,8 +134,18 @@ export default function AssetsPage() {
         if (metadata.model) params.set('model', metadata.model)
         if (aiParams.aspect_ratio) params.set('aspect_ratio', aiParams.aspect_ratio)
         if (aiParams.duration) params.set('duration', String(aiParams.duration))
-        // 使用 original=true 获取原始参考图
-        if (asset.thumbnail_url) params.set('reference_image', `${asset.thumbnail_url}?original=true`)
+        // 只有图生图模式才传参考图
+        if (hasReferenceImage) {
+          const refImage = fullMetadata.reference_images?.[0] || fullMetadata.source_image || aiParams.reference_image
+          if (refImage) {
+            const refUrl = refImage.startsWith('/') 
+              ? `/api/v1/assets/0/thumbnail?path=${encodeURIComponent(refImage)}`
+              : refImage.startsWith('data:') 
+                ? refImage  // 保持base64原样
+                : `/api/v1/assets/${asset.id}/thumbnail?original=true`
+            params.set('reference_image', refUrl)
+          }
+        }
         navigate(`/video-gen?${params.toString()}`)
       } else if (assetType === 'IMAGE') {
         // AI生成的图片 -> 图片生成页面
@@ -129,8 +154,18 @@ export default function AssetsPage() {
         if (metadata.negative_prompt) params.set('negative_prompt', metadata.negative_prompt)
         if (metadata.model) params.set('model', metadata.model)
         if (metadata.size) params.set('size', metadata.size)
-        // 使用 original=true 获取原始参考图
-        if (asset.thumbnail_url) params.set('reference_image', `${asset.thumbnail_url}?original=true`)
+        // 只有图生图模式才传参考图
+        if (hasReferenceImage) {
+          const refImage = fullMetadata.reference_images?.[0] || fullMetadata.source_image || aiParams.reference_image
+          if (refImage) {
+            const refUrl = refImage.startsWith('/') 
+              ? `/api/v1/assets/0/thumbnail?path=${encodeURIComponent(refImage)}`
+              : refImage.startsWith('data:') 
+                ? refImage  // 保持base64原样
+                : `/api/v1/assets/${asset.id}/thumbnail?original=true`
+            params.set('reference_image', refUrl)
+          }
+        }
         navigate(`/image-gen?${params.toString()}`)
       }
     } else {
@@ -236,6 +271,19 @@ export default function AssetsPage() {
       setSelectedIds([...selectedIds, id])
     } else {
       setSelectedIds(selectedIds.filter(i => i !== id))
+    }
+  }
+
+  // 查看详情（获取完整数据）
+  const handleShowDetail = async (asset: any, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation()
+    try {
+      const res = await getAsset(asset.id)
+      if (res.success) {
+        setDetailAsset(res.data)
+      }
+    } catch (err) {
+      message.error('获取详情失败')
     }
   }
 
@@ -493,10 +541,7 @@ export default function AssetsPage() {
                       </Tooltip>
                     ),
                     <Tooltip title={isAIGenerated(asset) ? "再次生成" : "跳转解析"} key="jump">
-                      <ThunderboltOutlined style={{ color: theme.textSecondary }} onClick={(e) => {
-                        e.stopPropagation()
-                        handleJumpToGenerator(asset)
-                      }} />
+                      <ThunderboltOutlined style={{ color: theme.textSecondary }} onClick={(e) => handleJumpToGenerator(asset, e)} />
                     </Tooltip>,
                     <Tooltip title="下载" key="download">
                       <DownloadOutlined style={{ color: theme.textSecondary }} onClick={(e) => {
@@ -509,10 +554,7 @@ export default function AssetsPage() {
                       }} />
                     </Tooltip>,
                     <Tooltip title="详情" key="detail">
-                      <SearchOutlined style={{ color: theme.textSecondary }} onClick={(e) => {
-                        e.stopPropagation()
-                        setDetailAsset(asset)
-                      }} />
+                      <SearchOutlined style={{ color: theme.textSecondary }} onClick={(e) => handleShowDetail(asset, e)} />
                     </Tooltip>,
                     <Tooltip title="删除" key="delete">
                       <DeleteOutlined style={{ color: theme.textSecondary }} onClick={(e) => handleDelete(asset, e)} />
@@ -522,30 +564,34 @@ export default function AssetsPage() {
                     if (batchMode) {
                       toggleSelect(asset.id, !selectedIds.includes(asset.id))
                     } else if (!isPlaying) {
-                      setDetailAsset(asset)
+                      handleShowDetail(asset)
                     }
                   }}
                 >
                   <Card.Meta
-                    title={<span style={{ fontSize: 13 }}>{asset.title || '无标题'}</span>}
+                    title={
+                      <Tooltip title={asset.title || '无标题'} placement="topLeft">
+                        <span style={{ fontSize: 13, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {asset.title || '无标题'}
+                        </span>
+                      </Tooltip>
+                    }
                     description={
-                      <Space direction="vertical" size={2} style={{ width: '100%' }}>
-                        <div style={{ fontSize: 12, color: theme.textSecondary }}>
+                      <div style={{ height: 52, overflow: 'hidden' }}>
+                        <div style={{ fontSize: 12, color: theme.textSecondary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {asset.platform} · {asset.author || '未知作者'}
                         </div>
-                        <Tag color={status === 'READY' ? 'green' : status === 'ERROR' ? 'red' : 'blue'}>
+                        <Tag color={status === 'READY' ? 'green' : status === 'ERROR' ? 'red' : 'blue'} style={{ marginTop: 2 }}>
                           {STATUS_LABELS[status] || asset.status}
                         </Tag>
                         {asset.tags?.length > 0 ? (
-                          <Space size={4} wrap>
+                          <Space size={4} wrap style={{ marginTop: 4 }}>
                             {(asset.tags as string[]).slice(0, 3).map((t: string) => (
-                              <Tag key={t} style={{ fontSize: 11 }}>{t}</Tag>
+                              <Tag key={t} style={{ fontSize: 11, marginRight: 0 }}>{t}</Tag>
                             ))}
                           </Space>
-                        ) : (
-                          <div style={{ height: 22 }} />
-                        )}
-                      </Space>
+                        ) : null}
+                      </div>
                     }
                   />
                 </Card>

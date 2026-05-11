@@ -287,14 +287,18 @@ export default function ImageGenPage() {
     const modelParam = searchParams.get('model')
     if (modelParam && backends.length > 0) {
       console.log('[ImageGen] Trying to set model from URL:', modelParam)
-      console.log('[ImageGen] Available backends:', backends.map(b => ({ provider: b.provider_label, model: b.model, available: b.available_models })))
+      console.log('[ImageGen] Available backends:', backends.map(b => ({ provider: b.provider_label, name: b.name, model: b.model, available: b.available_models })))
       
-      // 查找包含该模型的厂商（通过 name 匹配）
-      const targetBackend = backends.find(b => b.name === modelParam)
+      // 查找包含该模型的厂商（通过 name、model 或 available_models 匹配）
+      const targetBackend = backends.find(b => 
+        b.name === modelParam || 
+        b.model === modelParam || 
+        b.available_models?.includes(modelParam)
+      )
       if (targetBackend) {
-        console.log('[ImageGen] Found matching backend:', targetBackend.provider_label, targetBackend.model)
+        console.log('[ImageGen] Found matching backend:', targetBackend.provider_label, targetBackend.name, targetBackend.model)
         setProvider(targetBackend.provider_label)
-        setSelectedModel(modelParam)
+        setSelectedModel(targetBackend.name)  // 使用后端的 name 作为选中值
       } else {
         console.log('[ImageGen] Model not found in any backend. URL model:', modelParam)
         console.log('[ImageGen] Will keep existing selection or set default')

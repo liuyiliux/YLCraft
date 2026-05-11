@@ -6,11 +6,13 @@ YLCraft — AssetService CRUD 实现
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import os
 import uuid
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 from sqlalchemy import select, func
@@ -19,6 +21,99 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.asset import Asset, AssetTag
 
 logger = logging.getLogger("ylcraft.asset_service")
+
+
+def _get_reference_image_path() -> Path:
+    """
+    获取参考图存储路径。
+    
+    优先级：
+    1. reference_image_path (数据库/配置)
+    2. media_storage_path (旧配置，兼容)
+    3. storage/reference_images (默认)
+    """
+    backend_dir = Path(__file__).parent.parent.parent.parent
+    
+    # 尝试从配置文件读取
+    try:
+        from app.api.v1.settings import _load_settings
+        settings = _load_settings()
+        
+        # 新配置优先
+        if "reference_image_path" in settings and settings["reference_image_path"]:
+            path = Path(settings["reference_image_path"])
+            if path.exists():
+                return path
+        
+        # 兼容旧配置
+        if "media_storage_path" in settings and settings["media_storage_path"]:
+            return Path(settings["media_storage_path"])
+    except Exception:
+        pass
+    
+    # 默认路径
+    return backend_dir / "storage"
+
+
+def _save_reference_images(base64_images: list[str], asset_id: str | None = None) -> list[str]:
+    """
+    将 base64 图片保存到本地存储目录，返回文件路径列表。
+    
+    Args:
+        base64_images: base64 图片列表（data:image/...;base64,xxx 格式）
+        asset_id: 资产ID，用于创建子目录
+        
+    Returns:
+        保存后的文件路径列表
+    """
+    if not base64_images:
+        return []
+    
+    # 获取存储目录
+    base_dir = _get_reference_image_path()
+    base_dir = base_dir / "reference_images"
+    
+    # 如果有 asset_id，创建子目录
+    if asset_id:
+        save_dir = base_dir / asset_id
+    else:
+        save_dir = base_dir / "temp"
+    
+    save_dir.mkdir(parents=True, exist_ok=True)
+    
+    saved_paths = []
+    for idx, img_data in enumerate(base64_images):
+        try:
+            # 解析 base64
+            if img_data.startswith("data:"):
+                header, data = img_data.split(",", 1)
+                # 提取 MIME 类型
+                mime_type = header.split(";")[0].replace("data:", "") or "image/png"
+                ext = "." + mime_type.split("/")[-1]
+                if ext == ".jpeg":
+                    ext = ".jpg"
+            else:
+                # 没有 data URI 前缀，默认 PNG
+                data = img_data
+                ext = ".png"
+            
+            # 生成文件名
+            filename = f"ref_{idx}_{uuid.uuid4().hex[:8]}{ext}"
+            file_path = save_dir / filename
+            
+            # 解码并保存
+            binary_data = base64.b64decode(data)
+            with open(file_path, "wb") as f:
+                f.write(binary_data)
+            
+            saved_paths.append(str(file_path))
+            logger.info(f"参考图已保存: {file_path}")
+        except Exception as e:
+            logger.warning(f"保存参考图失败: {e}")
+            # 保存失败时保留原 base64
+            saved_paths.append(img_data)
+    
+    return saved_paths
 
 
 class AssetService:
@@ -269,9 +364,31 @@ class AssetService:
         except Exception:
             pass
 
+        # 处理参考图：如果是 base64，保存到文件
+        processed_ref_images = None
+        if reference_images:
+            # 检查是否有 base64 数据
+            has_base64 = any(img.startswith("data:") for img in reference_images if img)
+            if has_base64:
+                processed_ref_images = _save_reference_images(reference_images)
+                logger.info(f"参考图已保存到本地: {processed_ref_images}")
+            else:
+                # 已经是文件路径，直接使用
+                processed_ref_images = reference_images
+
+        # 处理源图：如果是 base64，保存到文件
+        processed_source_image = None
+        if source_image:
+            if source_image.startswith("data:"):
+                saved = _save_reference_images([source_image])
+                processed_source_image = saved[0] if saved else source_image
+                logger.info(f"源图已保存到本地: {processed_source_image}")
+            else:
+                processed_source_image = source_image
+
         # 构建生成模式标签
         gen_tags = ["ai-generated", provider, model]
-        if source_image or reference_images:
+        if processed_source_image or processed_ref_images:
             gen_tags.append("image-to-image")
 
         # 构建完整元数据
@@ -293,10 +410,10 @@ class AssetService:
             metadata["lora"] = lora
         if controlnet:
             metadata["controlnet"] = controlnet
-        if source_image:
-            metadata["source_image"] = source_image
-        if reference_images:
-            metadata["reference_images"] = reference_images
+        if processed_source_image:
+            metadata["source_image"] = processed_source_image
+        if processed_ref_images:
+            metadata["reference_images"] = processed_ref_images
 
         asset = Asset(
             type="image",
@@ -369,9 +486,29 @@ class AssetService:
         except Exception:
             pass
 
+        # 处理参考图：如果是 base64，保存到文件
+        processed_ref_images = None
+        if reference_images:
+            has_base64 = any(img.startswith("data:") for img in reference_images if img)
+            if has_base64:
+                processed_ref_images = _save_reference_images(reference_images)
+                logger.info(f"视频参考图已保存到本地: {processed_ref_images}")
+            else:
+                processed_ref_images = reference_images
+
+        # 处理首帧图：如果是 base64，保存到文件
+        processed_start_image = None
+        if start_image:
+            if start_image.startswith("data:"):
+                saved = _save_reference_images([start_image])
+                processed_start_image = saved[0] if saved else start_image
+                logger.info(f"视频首帧图已保存到本地: {processed_start_image}")
+            else:
+                processed_start_image = start_image
+
         # 构建生成模式标签
         gen_tags = ["ai-generated", provider, model]
-        if start_image or reference_images:
+        if processed_start_image or processed_ref_images:
             gen_tags.append("image-to-video")
 
         # 构建完整元数据
@@ -386,10 +523,10 @@ class AssetService:
             "aspect_ratio": aspect_ratio,
             "generate_audio": generate_audio,
         }
-        if start_image:
-            metadata["start_image"] = start_image
-        if reference_images:
-            metadata["reference_images"] = reference_images
+        if processed_start_image:
+            metadata["start_image"] = processed_start_image
+        if processed_ref_images:
+            metadata["reference_images"] = processed_ref_images
 
         asset = Asset(
             type="video",

@@ -73,8 +73,13 @@ class TagListResponse(BaseModel):
     data: list[dict]
 
 
-def _asset_to_dict(asset: Asset) -> dict:
-    """Asset ORM 对象 → dict（用于 JSON 序列化）"""
+def _asset_to_dict(asset: Asset, include_metadata: bool = False) -> dict:
+    """Asset ORM 对象 → dict（用于 JSON 序列化）
+    
+    Args:
+        asset: Asset ORM 对象
+        include_metadata: 是否包含完整 metadata（详情页需要，列表页不需要）
+    """
     # 解析 metadata_json
     metadata = {}
     if asset.metadata_json:
@@ -83,29 +88,55 @@ def _asset_to_dict(asset: Asset) -> dict:
         except Exception:
             pass
     
-    return {
+    # 基础字段（列表和详情都需要）
+    result = {
         "id": asset.id,
-        "type": asset.type,  # 改为 type（原 asset_type）
+        "type": asset.type,
         "title": asset.title,
-        "description": metadata.get("description", ""),
-        "file_path": asset.file_path,
-        "file_size": asset.file_size,
-        "mime_type": asset.mime_type,
-        "duration": asset.duration,
-        "width": asset.width,
-        "height": asset.height,
-        "source_url": asset.source_url,
         "platform": asset.platform,
         "author": asset.author,
-        "cover_url": asset.cover_url,  # 改为 cover_url（原 thumbnail_path）
-        "status": asset.status,  # 改为字符串
-        "source_type": asset.source_type,  # 恢复来源类型
+        "status": asset.status,
+        "source_type": asset.source_type,
         "tags": json.loads(asset.tags) if asset.tags else [],
-        "metadata": metadata,  # 包含类型特定字段
         "created_at": asset.created_at.isoformat() if asset.created_at else None,
         "updated_at": asset.updated_at.isoformat() if asset.updated_at else None,
         "thumbnail_url": f"/api/v1/assets/{asset.id}/thumbnail" if asset.cover_url else None,
     }
+    
+    # AI 生成需要的最小 metadata（用于列表跳转）
+    # 只返回必要信息，不包含 base64 图片数据
+    if asset.source_type == 'ai_generated':
+        reference_images = metadata.get("reference_images", []) or []
+        source_image = metadata.get("source_image", "")
+        result["metadata"] = {
+            "prompt": metadata.get("prompt", ""),
+            "negative_prompt": metadata.get("negative_prompt", ""),
+            "model": metadata.get("model", ""),
+            "size": metadata.get("size", ""),
+            # 只返回是否有参考图（bool），不返回 base64 数据
+            "has_reference_images": len(reference_images) > 0,
+            "reference_images_count": len(reference_images),
+            # 只返回是否有源图（bool），不返回 base64 数据
+            "has_source_image": bool(source_image),
+            "ai_params": metadata.get("ai_params", {}),
+        }
+    
+    # 详情需要的额外字段
+    if include_metadata:
+        result.update({
+            "description": metadata.get("description", ""),
+            "file_path": asset.file_path,
+            "file_size": asset.file_size,
+            "mime_type": asset.mime_type,
+            "duration": asset.duration,
+            "width": asset.width,
+            "height": asset.height,
+            "source_url": asset.source_url,
+            "cover_url": asset.cover_url,
+            "metadata": metadata,  # 完整 metadata
+        })
+    
+    return result
 
 
 def _tag_to_dict(tag: AssetTag) -> dict:
@@ -157,7 +188,7 @@ async def list_assets(
 
     return AssetListResponse(
         success=True,
-        data=[_asset_to_dict(a) for a in assets],
+        data=[_asset_to_dict(a, include_metadata=False) for a in assets],
         total=total,
         page=page,
         page_size=page_size,
@@ -367,7 +398,7 @@ async def get_asset(
     asset = await service.get_by_id(asset_id)
     if not asset:
         raise HTTPException(status_code=404, detail="资产不存在")
-    return AssetResponse(success=True, data=_asset_to_dict(asset))
+    return AssetResponse(success=True, data=_asset_to_dict(asset, include_metadata=True))
 
 
 # ---------------------------------------------------------------------------
