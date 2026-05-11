@@ -294,10 +294,26 @@ export default function ImageGenPage() {
                 const reader = new FileReader()
                 reader.onload = () => resolve(reader.result as string)
                 reader.onerror = reject
-                reader.readAsDataURL(f.originFileObj)
+                reader.readAsDataURL(f.originFileObj!)
               })
             }
-            return f.url
+            // URL 形式的参考图（如从资产库跳转），需要 fetch 下载后转 base64
+            if (f.url) {
+              try {
+                const resp = await fetch(f.url)
+                const blob = await resp.blob()
+                return new Promise<string>((resolve, reject) => {
+                  const reader = new FileReader()
+                  reader.onload = () => resolve(reader.result as string)
+                  reader.onerror = reject
+                  reader.readAsDataURL(blob)
+                })
+              } catch (e) {
+                console.error('[ImageGen] 下载参考图失败:', e)
+                return f.url
+              }
+            }
+            return ''
           })
         )
       }

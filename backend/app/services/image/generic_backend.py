@@ -210,8 +210,8 @@ class GenericImageBackend(ImageBackend):
         - 优先使用 req.model（调用时指定）
         - 其次使用 self.model（Connector 默认模型）
         """
-        # 支持动态模型选择控制花费
-        model = getattr(req, 'model', None) or self.model
+        # 支持动态模型选择控制花费，避免 None 被渲染为字符串 "None"
+        model = getattr(req, 'model', None) or self.model or ""
         
         params = {
             "model": model,
@@ -369,6 +369,19 @@ class GenericImageBackend(ImageBackend):
             logger.error(f"请求模板渲染失败: {e}")
             logger.error(f"渲染结果: {rendered}")
             raise
+
+        # 模板未包含但 params 中有值的关键参数，自动追加到请求体
+        # 支持参数名映射：通过 default_params 中的 size_param / seed_param 等配置
+        # 将内部参数名映射到 API 实际需要的字段名（如硅基流动用 image_size 而非 size）
+        param_mapping = {
+            "size": self.default_params.get("size_param", "size"),
+            "seed": self.default_params.get("seed_param", "seed"),
+            "n": self.default_params.get("n_param", "n"),
+            "negative_prompt": self.default_params.get("negative_prompt_param", "negative_prompt"),
+        }
+        for internal_key, api_key in param_mapping.items():
+            if internal_key in params and params[internal_key] and api_key not in request_body:
+                request_body[api_key] = params[internal_key]
 
         # 处理参考图：支持两种模式
         # 模式1: 数组模式 - 所有图片放入同一数组字段 (如 {"images": []} 或 {"reference": {"images": []}})

@@ -776,10 +776,14 @@ export default function SettingsPage() {
               <Input placeholder="如: images 或 reference.images" />
             </Form.Item>
 
-            <Form.Item name="default_params" label={<span style={{ color: THEME.textPrimary }}>默认参数 (JSON)</span>} style={{ marginBottom: 0 }}>
+            <Form.Item name="default_params" label={<span style={{ color: THEME.textPrimary }}>默认参数 (JSON)</span>} style={{ marginBottom: 0 }}
+              extra={<span style={{ color: THEME.textSecondary, fontSize: 12 }}>
+                参数名映射：size_param 指定尺寸字段名（如硅基流动用 image_size），seed_param 指定种子字段名
+              </span>}
+            >
               <TextArea 
                 rows={2} 
-                placeholder={`JSON 格式的默认参数，例如：\n{"n": 1, "quality": "standard"}`}
+                placeholder={`JSON 格式的默认参数，例如：\n{"n": 1, "quality": "standard", "size_param": "image_size", "seed_param": "seed"}`}
               />
             </Form.Item>
           </div>

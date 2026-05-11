@@ -295,8 +295,25 @@ export default function VideoGenPage() {
       }
 
       // 图生视频：首帧图片
-      if (mode === 'img2video' && startImage?.originFileObj) {
-        body.start_image = URL.createObjectURL(startImage.originFileObj)
+      if (mode === 'img2video' && startImage) {
+        if (startImage.originFileObj) {
+          body.start_image = URL.createObjectURL(startImage.originFileObj)
+        } else if (startImage.url) {
+          // URL 形式的参考图（如从资产库跳转），fetch 下载后转 base64
+          try {
+            const resp = await fetch(startImage.url)
+            const blob = await resp.blob()
+            body.start_image = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader()
+              reader.onload = () => resolve(reader.result as string)
+              reader.onerror = reject
+              reader.readAsDataURL(blob)
+            })
+          } catch (e) {
+            console.error('[VideoGen] 下载首帧图片失败:', e)
+            body.start_image = startImage.url
+          }
+        }
       }
 
       const res = await fetch('/api/v1/videos/generate', {
