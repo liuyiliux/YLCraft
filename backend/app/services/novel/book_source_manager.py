@@ -176,6 +176,16 @@ def _build_search_url(search_url_template: str, keyword: str, base_url: str, pag
         url = _eval_js_expr(url, ctx)
         result["url"] = url if url.startswith('http') else ''
         result["method"] = extra_config.get("method", "GET")
+        # 如果是 POST 请求，处理 body 变量替换
+        if result["method"].upper() == "POST":
+            body_str = extra_config.get("body", "")
+            body_str = body_str.replace('{{key}}', keyword).replace('{{keyword}}', keyword)
+            body_str = body_str.replace('{{page}}', str(page)).replace('{key}', keyword).replace('{page}', str(page))
+            if '=' in body_str:
+                parsed = parse_qs(body_str)
+                result["data"] = {k: v[0] for k, v in parsed.items()}
+            else:
+                result["data"] = body_str
         return result
     
     # 相对路径：拼接 base_url
@@ -685,6 +695,7 @@ class BookSourceManager:
                     for r in results:
                         r["sourceName"] = source.bookSourceName
                         r["sourceUrl"] = source.bookSourceUrl
+                        r["sourceId"] = source.source_id
                     return results
                 except Exception as e:
                     print(f"在书源 {source.bookSourceName} 搜索失败: {e}")
@@ -706,8 +717,8 @@ class BookSourceManager:
         print(f"搜索完成，耗时 {elapsed:.2f} 秒，找到 {len(all_results)} 条结果")
         
         # 统一字段名以匹配前端期望
-        # 前端期望: title, author, url, cover, source_site
-        # 后端返回: name, author, url, sourceName, sourceUrl
+        # 前端期望: title, author, url, cover, source_site, source_id
+        # 后端返回: name, author, url, sourceName, sourceUrl, sourceId
         normalized_results = []
         for book in all_results:
             normalized_results.append({
@@ -716,6 +727,7 @@ class BookSourceManager:
                 "url": book.get("url", ""),
                 "cover": book.get("cover", ""),
                 "source_site": book.get("sourceName", ""),
+                "source_id": book.get("sourceId", ""),
             })
         
         return normalized_results

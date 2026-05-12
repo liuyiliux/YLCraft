@@ -9,8 +9,9 @@ import json
 import uuid
 from typing import Optional, List, Dict, Any
 from datetime import datetime
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
 from app.db.database import SessionLocal
 from app.db.models.asset import Asset
@@ -20,6 +21,15 @@ from app.services.novel.downloader import NovelDownloader
 from app.services.novel.book_source_manager import BookSourceManager
 
 router = APIRouter(tags=["novels"])
+
+
+def get_db():
+    """获取数据库会话（依赖注入）"""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 
 class DownloadChaptersRequest(BaseModel):
@@ -83,25 +93,59 @@ async def search_novels(
 @router.get("/catalog")
 async def get_catalog(
     url: str,
-    site: str = 'biqigecn',
+    site: str = '',
+    db: Session = Depends(get_db)
 ):
     """
-    获取小说目录
+    获取小说目录（使用书源解析器）
     
     Args:
         url: 小说页面URL
-        site: 站点名称
+        site: 书源ID（可选，为空时自动匹配）
     """
     try:
-        crawler = get_crawler(site)
-        chapters = crawler.get_catalog(url)
+        manager = BookSourceManager(db)
+        
+        # 如果提供了 site（书源ID），直接使用该书源
+        if site:
+            source = manager.get_source(site)
+            if not source:
+                raise HTTPException(status_code=404, detail="书源不存在")
+        else:
+            # 尝试根据 URL 匹配书源
+            source = None
+            for s in manager.sources:
+                if s.bookSourceUrl and url.startswith(s.bookSourceUrl.rstrip('/')):
+                    source = s
+                    break
+            
+            if not source:
+                # 使用第一个启用的书源作为 fallback
+                source = next((s for s in manager.sources if s.enabled_by_user), None)
+        
+        if not source:
+            raise HTTPException(status_code=404, detail="没有可用的书源")
+        
+        chapters = await manager.get_chapter_list(source, url)
+        
+        # 标准化字段名以匹配前端期望
+        normalized_chapters = []
+        for idx, ch in enumerate(chapters, 1):
+            normalized_chapters.append({
+                'index': idx,
+                'title': ch.get('title', ''),
+                'url': ch.get('url', ''),
+            })
         
         return {
             'success': True,
-            'data': chapters,
-            'total': len(chapters),
+            'data': normalized_chapters,
+            'total': len(normalized_chapters),
         }
+    except HTTPException:
+        raise
     except Exception as e:
+        print(f"获取目录失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -192,16 +236,12 @@ async def download_chapters(
 
 
 @router.get("/sources")
-async def get_sources():
+async def get_sources(db: Session = Depends(get_db)):
     """获取可用的书源列表（从数据库读取）"""
-    db = SessionLocal()
-    try:
-        manager = BookSourceManager(db)
-        sources = manager.list_sources(enabled_only=True)
-        data = [
-            {'id': s['id'], 'name': s['book_source_name'] + ('(JS)' if s.get('is_js_source') else ''), 'enabled': s['enabled_by_user']}
-            for s in sources
-        ]
-        return {'success': True, 'data': data}
-    finally:
-        db.close()
+    manager = BookSourceManager(db)
+    sources = manager.list_sources(enabled_only=True)
+    data = [
+        {'id': s['id'], 'name': s['book_source_name'] + ('(JS)' if s.get('is_js_source') else ''), 'enabled': s['enabled_by_user']}
+        for s in sources
+    ]
+    return {'success': True, 'data': data}

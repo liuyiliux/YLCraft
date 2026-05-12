@@ -49,8 +49,15 @@ export default function NovelSearchPage() {
     const loadSources = async () => {
       try {
         const data = await getNovelSources()
+        console.log('[DEBUG] loaded sources:', data)
         setSources(data || [])
-      } catch {}
+        // 如果有书源，默认选择第一个
+        if (data && data.length > 0 && !selectedSource) {
+          setSelectedSource(data[0].id)
+        }
+      } catch (e: any) {
+        console.error('[DEBUG] load sources failed:', e)
+      }
     }
     loadSources()
   }, [])
@@ -88,7 +95,10 @@ export default function NovelSearchPage() {
     setSelectedChapters([])
     
     try {
-      const res = await getNovelCatalog(book.url, selectedSource)
+      // 使用书本自带的书源ID，如果没有则使用选中的书源
+      const sourceId = book.source_id || selectedSource
+      console.log('[DEBUG] get catalog, url:', book.url, 'sourceId:', sourceId)
+      const res = await getNovelCatalog(book.url, sourceId)
       if (res.success) {
         setChapters(res.data)
       }
