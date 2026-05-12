@@ -70,9 +70,8 @@ export async function importBookSourcesJson(json: string): Promise<BookSourceImp
  * 切换书源启用状态
  */
 export async function toggleBookSource(sourceId: string, enabled: boolean): Promise<void> {
-  return request(`/book-sources/${sourceId}/toggle`, {
+  return request(`/book-sources/${sourceId}/toggle?enabled=${enabled}`, {
     method: 'PUT',
-    body: JSON.stringify({ enabled }),
   })
 }
 

@@ -37,17 +37,15 @@ export interface NovelSource {
 
 /**
  * 搜索小说（多书源）
- * 使用新的书源管理API，搜索所有制用书源
  */
 export async function searchNovels(
   keyword: string,
-  site: string = '',  // 保留参数兼容旧代码，实际使用多书源搜索
+  site: string = '',
   page: number = 1,
   limit: number = 20,
 ) {
-  // 使用新的多书源搜索API
   const res = await request(`/book-sources/search?keyword=${encodeURIComponent(keyword)}`)
-  return res.data
+  return res.data || []
 }
 
 /**

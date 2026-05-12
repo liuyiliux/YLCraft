@@ -8,6 +8,9 @@ from __future__ import annotations
 import requests
 from bs4 import BeautifulSoup
 from typing import Optional
+import urllib3
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 class NovelCrawler:
@@ -18,6 +21,7 @@ class NovelCrawler:
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
+        self.verify_ssl = False
     
     def search(self, keyword: str) -> list[dict]:
         """搜索小说 - 子类实现"""
@@ -33,18 +37,18 @@ class NovelCrawler:
 
 
 class BiqigecnCrawler(NovelCrawler):
-    """笔趣阁爬虫（biqigecn.com）"""
+    """笔趣阁爬虫（biquge.cn）"""
     
     def __init__(self, timeout: int = 10):
         super().__init__(timeout)
-        self.base_url = "https://www.biqigecn.com"
+        self.base_url = "https://www.biquge.com.cn"
     
     def search(self, keyword: str) -> list[dict]:
         """搜索小说"""
         try:
             search_url = f"{self.base_url}/search"
             params = {"q": keyword}
-            resp = requests.get(search_url, params=params, headers=self.headers, timeout=self.timeout)
+            resp = requests.get(search_url, params=params, headers=self.headers, timeout=self.timeout, verify=self.verify_ssl)
             resp.encoding = 'utf-8'
             
             soup = BeautifulSoup(resp.text, 'html.parser')
@@ -74,7 +78,7 @@ class BiqigecnCrawler(NovelCrawler):
     def get_catalog(self, book_url: str) -> list[dict]:
         """获取目录"""
         try:
-            resp = requests.get(book_url, headers=self.headers, timeout=self.timeout)
+            resp = requests.get(book_url, headers=self.headers, timeout=self.timeout, verify=self.verify_ssl)
             resp.encoding = 'utf-8'
             
             soup = BeautifulSoup(resp.text, 'html.parser')
@@ -104,7 +108,7 @@ class BiqigecnCrawler(NovelCrawler):
     def download_chapter(self, chapter_url: str) -> str:
         """下载章节内容"""
         try:
-            resp = requests.get(chapter_url, headers=self.headers, timeout=self.timeout)
+            resp = requests.get(chapter_url, headers=self.headers, timeout=self.timeout, verify=self.verify_ssl)
             resp.encoding = 'utf-8'
             
             soup = BeautifulSoup(resp.text, 'html.parser')

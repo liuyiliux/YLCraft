@@ -41,7 +41,7 @@ from app.db.models.live2d import (
 from app.db.models.api_key import ApiKey, ApiKeyStatus, ApiKeyCategory
 from app.core.config import ProcessingMode, get_live2d_config
 
-router = APIRouter(prefix="/live2d", tags=["Live2D 工厂"])
+router = APIRouter(tags=["Live2D 工厂"])
 
 # 上传目录
 UPLOAD_DIR = Path("uploads/live2d")

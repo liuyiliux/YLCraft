@@ -32,7 +32,7 @@ from app.services.social_media_connector.service import SocialMediaConnectorServ
 
 logger = logging.getLogger("ylcraft.api.social")
 
-router = APIRouter(prefix="/social", tags=["Social Media Connectors"])
+router = APIRouter(tags=["Social Media Connectors"])
 
 # =============================================================================
 # 支持的平台列表

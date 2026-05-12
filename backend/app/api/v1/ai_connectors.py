@@ -32,7 +32,7 @@ from app.services.llm.manager import init_manager as llm_init_manager
 
 logger = logging.getLogger("ylcraft.api.ai")
 
-router = APIRouter(prefix="/connectors", tags=["AI Connectors"])
+router = APIRouter(tags=["AI Connectors"])
 
 # =============================================================================
 # 支持的 AI 提供商列表

@@ -17,8 +17,9 @@ from app.db.models.asset import Asset
 from app.db.models.novel import NovelChapter
 from app.services.novel.crawler import get_crawler
 from app.services.novel.downloader import NovelDownloader
+from app.services.novel.book_source_manager import BookSourceManager
 
-router = APIRouter(prefix="/api/v1/novels", tags=["novels"])
+router = APIRouter(tags=["novels"])
 
 
 class DownloadChaptersRequest(BaseModel):
@@ -192,10 +193,15 @@ async def download_chapters(
 
 @router.get("/sources")
 async def get_sources():
-    """获取可用的书源列表"""
-    return {
-        'success': True,
-        'data': [
-            {'id': 'biqigecn', 'name': '笔趣阁', 'enabled': True},
-        ],
-    }
+    """获取可用的书源列表（从数据库读取）"""
+    db = SessionLocal()
+    try:
+        manager = BookSourceManager(db)
+        sources = manager.list_sources(enabled_only=True)
+        data = [
+            {'id': s['id'], 'name': s['book_source_name'] + ('(JS)' if s.get('is_js_source') else ''), 'enabled': s['enabled_by_user']}
+            for s in sources
+        ]
+        return {'success': True, 'data': data}
+    finally:
+        db.close()

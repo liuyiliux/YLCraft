@@ -42,7 +42,7 @@ export default function NovelSearchPage() {
   const [downloading, setDownloading] = useState(false)
   const [downloadProgress, setDownloadProgress] = useState(0)
   const [sources, setSources] = useState<any[]>([])
-  const [selectedSource, setSelectedSource] = useState('biqigecn')
+  const [selectedSource, setSelectedSource] = useState<string>('')
 
   // 加载书源列表
   useEffect(() => {

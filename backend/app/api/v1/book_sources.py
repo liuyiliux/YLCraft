@@ -14,7 +14,7 @@ from app.services.novel.book_source_manager import BookSourceManager
 import json
 
 
-router = APIRouter(prefix="/api/v1/book-sources", tags=["book-sources"])
+router = APIRouter(tags=["book-sources"])
 
 
 class BookSourceResponse(BaseModel):
@@ -26,6 +26,7 @@ class BookSourceResponse(BaseModel):
     enabled: bool = True
     book_source_group: Optional[str] = None
     enabled_by_user: bool = True
+    is_js_source: bool = False
     created_at: Optional[str] = None
 
 

@@ -14,19 +14,21 @@ import { getBookSources, importBookSources, toggleBookSource, deleteBookSource, 
 
 const { Title, Text, Paragraph } = Typography
 
-interface BookSource {
-  id: string
-  book_source_name: string
-  book_source_url: string
-  book_source_type: number
-  enabled: boolean
-  book_source_group?: string
-  enabled_by_user: boolean
-}
+  interface BookSource {
+    id: string
+    book_source_name: string
+    book_source_url: string
+    book_source_type: number
+    enabled: boolean
+    book_source_group?: string
+    enabled_by_user: boolean
+    is_js_source: boolean
+  }
 
 const BookSourcePage: React.FC = () => {
   const [sources, setSources] = useState<BookSource[]>([])
   const [loading, setLoading] = useState(false)
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
 
   const fetchSources = async () => {
     setLoading(true)
@@ -49,10 +51,11 @@ const BookSourcePage: React.FC = () => {
       const result = await importBookSources(file)
       if (result.success) {
         message.success(`导入成功！新增 ${result.added} 个，更新 ${result.updated} 个，共 ${result.total} 个书源`)
-        fetchSources()
       } else {
-        message.error(`导入失败: ${result.error}`)
+        const failedMsg = result.failed > 0 ? `，失败 ${result.failed} 个` : ''
+        message.error(`导入部分失败${failedMsg}: ${result.error}`)
       }
+      fetchSources()
     } catch (err: any) {
       message.error(`导入失败: ${err.message}`)
     }
@@ -76,6 +79,40 @@ const BookSourcePage: React.FC = () => {
       fetchSources()
     } catch (err: any) {
       message.error(`删除失败: ${err.message}`)
+    }
+  }
+
+  const handleBatchDisable = async () => {
+    if (selectedRowKeys.length === 0) {
+      message.warning('请先选择书源')
+      return
+    }
+    try {
+      for (const id of selectedRowKeys) {
+        await toggleBookSource(id as string, false)
+      }
+      message.success(`已禁用 ${selectedRowKeys.length} 个书源`)
+      setSelectedRowKeys([])
+      fetchSources()
+    } catch (err: any) {
+      message.error(`批量禁用失败: ${err.message}`)
+    }
+  }
+
+  const handleBatchDelete = async () => {
+    if (selectedRowKeys.length === 0) {
+      message.warning('请先选择书源')
+      return
+    }
+    try {
+      for (const id of selectedRowKeys) {
+        await deleteBookSource(id as string)
+      }
+      message.success(`已删除 ${selectedRowKeys.length} 个书源`)
+      setSelectedRowKeys([])
+      fetchSources()
+    } catch (err: any) {
+      message.error(`批量删除失败: ${err.message}`)
     }
   }
 
@@ -134,6 +171,15 @@ const BookSourcePage: React.FC = () => {
       ),
     },
     {
+      title: '兼容性',
+      key: 'is_js_source',
+      width: 90,
+      render: (_: any, record: BookSource) =>
+        record.is_js_source
+          ? <Tag color="error">JS源</Tag>
+          : <Tag color="success">可用</Tag>,
+    },
+    {
       title: '操作',
       key: 'action',
       width: 100,
@@ -177,12 +223,14 @@ const BookSourcePage: React.FC = () => {
 
       <Divider />
 
-      <Space style={{ marginBottom: 16 }}>
+      <Space style={{ marginBottom: 16 }} wrap>
         <Upload {...uploadProps}>
           <Button type="primary" icon={<UploadOutlined />}>导入书源JSON</Button>
         </Upload>
         <Button icon={<DownloadOutlined />} onClick={handleExport}>导出书源</Button>
         <Button onClick={fetchSources} loading={loading}>刷新</Button>
+        <Button danger onClick={handleBatchDisable} disabled={selectedRowKeys.length === 0}>批量禁用</Button>
+        <Button type="primary" danger onClick={handleBatchDelete} disabled={selectedRowKeys.length === 0}>批量删除</Button>
       </Space>
 
       <Card>
@@ -193,6 +241,10 @@ const BookSourcePage: React.FC = () => {
           loading={loading}
           pagination={{ pageSize: 20 }}
           scroll={{ x: 800 }}
+          rowSelection={{
+            selectedRowKeys,
+            onChange: setSelectedRowKeys,
+          }}
         />
       </Card>
 

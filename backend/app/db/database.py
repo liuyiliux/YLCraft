@@ -57,6 +57,7 @@ async def init_db():
     from app.db.models.ai_connector import AIConnector, AIUsageLog  # 新版 AI 连接器
     from app.db.models.social_media_connector import SocialMediaConnector  # 新版社交媒体连接器
     from app.db.models.comfyui import WorkflowTemplate, WorkflowPreset, ComfyUITask, ComfyUINode
+    from app.db.models.book_source import BookSource  # 书源表
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
 
