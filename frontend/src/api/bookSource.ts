@@ -76,11 +76,31 @@ export async function toggleBookSource(sourceId: string, enabled: boolean): Prom
 }
 
 /**
+ * 批量切换书源启用状态
+ */
+export async function batchToggleBookSources(sourceIds: string[], enabled: boolean): Promise<any> {
+  return request('/book-sources/batch-toggle', {
+    method: 'POST',
+    body: JSON.stringify({ ids: sourceIds, enabled }),
+  })
+}
+
+/**
  * 删除书源
  */
 export async function deleteBookSource(sourceId: string): Promise<void> {
   return request(`/book-sources/${sourceId}`, {
     method: 'DELETE',
+  })
+}
+
+/**
+ * 批量删除书源
+ */
+export async function batchDeleteBookSources(sourceIds: string[]): Promise<any> {
+  return request('/book-sources/batch-delete', {
+    method: 'POST',
+    body: JSON.stringify({ ids: sourceIds }),
   })
 }
 

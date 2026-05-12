@@ -172,6 +172,49 @@ async def export_book_sources(
     )
 
 
+class BatchIdsRequest(BaseModel):
+    """批量ID请求"""
+    ids: List[str]
+
+
+class BatchToggleRequest(BaseModel):
+    """批量切换状态请求"""
+    ids: List[str]
+    enabled: bool
+
+
+@router.post("/batch-delete")
+async def batch_delete_book_sources(
+    data: BatchIdsRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    批量删除书源
+    
+    Args:
+        data: {"ids": ["id1", "id2", ...]}
+    """
+    manager = BookSourceManager(db)
+    result = manager.batch_delete_sources(data.ids)
+    return result
+
+
+@router.post("/batch-toggle")
+async def batch_toggle_book_sources(
+    data: BatchToggleRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    批量启用/禁用书源
+    
+    Args:
+        data: {"ids": ["id1", "id2", ...], "enabled": true/false}
+    """
+    manager = BookSourceManager(db)
+    result = manager.batch_toggle_sources(data.ids, data.enabled)
+    return result
+
+
 @router.get("/search")
 async def search_books(
     keyword: str,
@@ -186,4 +229,4 @@ async def search_books(
     manager = BookSourceManager(db)
     results = await manager.search_all_sources(keyword)
     
-    return {"data": results, "total": len(results)}
+    return {"success": True, "data": results, "total": len(results)}

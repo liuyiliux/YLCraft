@@ -9,13 +9,17 @@ import re
 import time
 import hashlib
 import base64
+import asyncio
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
+from urllib.parse import parse_qs
+
 from app.db.models.book_source import BookSource as DBBookSource
 from app.services.novel.source_parser import (
-    BookSource, parse_book_source_json,
+    BookSource,
+    parse_book_source_json,
     parse_book_list, parse_chapter_list,
     parse_chapter_content, parse_book_info
 )
@@ -134,45 +138,72 @@ def _eval_js_expr(expr: str, context: dict) -> str:
         return ''
 
 
-def _build_search_url(search_url_template: str, keyword: str, base_url: str, page: int = 1) -> str:
+def _build_search_url(search_url_template: str, keyword: str, base_url: str, page: int = 1) -> dict:
     """
-    根据 Legado 模板构建实际搜索 URL
+    根据 Legado 模板构建实际搜索 URL 和请求参数
     支持:
       - 简单替换: {{key}} {{page}}
       - 相对路径: /search -> base_url + /search
       - @js: 前缀格式
       - java.md5Encode() 等 JS 表达式
+      - POST请求: url,{"method":"POST","body":"..."} 格式
+    
+    返回: {"url": str, "method": "GET"/"POST", "data": dict/none}
     """
+    result = {"url": "", "method": "GET", "data": None}
     url = search_url_template.strip()
-
+    
+    # 解析 Legado 附加参数（逗号后的JSON配置）
+    extra_config = {}
+    if ',' in url and '://' in url:
+        parts = url.split(',', 1)
+        url = parts[0]
+        try:
+            if parts[1].strip().startswith('{'):
+                extra_config = json.loads(parts[1].strip())
+        except Exception as e:
+            pass
+    
     # 去掉 @js: 前缀
     is_js = False
     if url.startswith('@js:'):
         url = url[4:].strip()
         is_js = True
-
+    
     # 处理 JS 表达式
     if is_js:
         ctx = {'key': keyword, 'page': page, 'base_url': base_url}
         url = _eval_js_expr(url, ctx)
-        return url if url.startswith('http') else ''
-
+        result["url"] = url if url.startswith('http') else ''
+        result["method"] = extra_config.get("method", "GET")
+        return result
+    
     # 相对路径：拼接 base_url
     if url and not url.startswith(('http://', 'https://', '@', '{{')):
         if base_url:
             url = base_url.rstrip('/') + '/' + url.lstrip('/')
-
+    
     # 简单替换
     url = url.replace('{{key}}', keyword).replace('{{keyword}}', keyword)
     url = url.replace('{{page}}', str(page)).replace('{key}', keyword).replace('{page}', str(page))
+    
+    result["url"] = url
+    
+    # 处理 POST 请求
+    if extra_config.get("method", "").upper() == "POST":
+        result["method"] = "POST"
+        body_str = extra_config.get("body", "")
+        # 替换 body 中的变量
+        body_str = body_str.replace('{{key}}', keyword).replace('{{keyword}}', keyword)
+        body_str = body_str.replace('{{page}}', str(page)).replace('{key}', keyword).replace('{page}', str(page))
+        # 解析 form body
+        if '=' in body_str:
+            parsed = parse_qs(body_str)
+            result["data"] = {k: v[0] for k, v in parsed.items()}
+        else:
+            result["data"] = body_str
 
-    # 去掉 Legado 附加参数（如 ,{"charset":"gbk"}）
-    if ',' in url and '://' in url:
-        parts = url.split(',', 1)
-        if parts[1].strip().startswith('{'):
-            url = parts[0]
-
-    return url
+    return result
 
 
 class BookSourceManager:
@@ -207,8 +238,20 @@ class BookSourceManager:
                     "ruleBookInfo": json.loads(source_dict["rule_book_info"]) if source_dict.get("rule_book_info") else None,
                     "ruleToc": json.loads(source_dict["rule_toc"]) if source_dict.get("rule_toc") else None,
                     "ruleContent": json.loads(source_dict["rule_content"]) if source_dict.get("rule_content") else None,
+                    "ruleExplore": json.loads(source_dict["rule_explore"]) if source_dict.get("rule_explore") else None,
                     "source_id": source_dict.get("id"),
                     "enabled_by_user": source_dict.get("enabled_by_user", True),
+                    # 新增字段
+                    "cookie": source_dict.get("cookie"),
+                    "header": source_dict.get("header"),
+                    "loginUrl": source_dict.get("login_url"),
+                    "loginUi": source_dict.get("login_ui"),
+                    "loginCheckJs": source_dict.get("login_check_js"),
+                    "coverUrl": source_dict.get("cover_url"),
+                    "bookSourceComment": source_dict.get("book_source_comment"),
+                    "weight": source_dict.get("weight", 0),
+                    "respondTime": source_dict.get("respond_time", 0),
+                    "lastUpdateTime": source_dict.get("last_update_time"),
                 }
                 try:
                     source = BookSource(**mapped)
@@ -292,23 +335,47 @@ class BookSourceManager:
                 self.db.execute(
                     text("""
                         UPDATE book_sources 
-                        SET book_source_name = :name, book_source_type = :type, 
-                            enabled = :enabled, rule_search = :search, 
-                            rule_book_info = :info, rule_toc = :toc, 
-                            rule_content = :content, rule_explore = :rule_explore,
-                            book_source_group = :group
+                        SET book_source_name = :name,
+                            book_source_type = :type,
+                            enabled = :enabled,
+                            rule_search = :search,
+                            rule_book_info = :info,
+                            rule_toc = :toc,
+                            rule_content = :content,
+                            rule_explore = :rule_explore,
+                            book_source_group = :group,
+                            cookie = :cookie,
+                            header = :header,
+                            loginUrl = :loginUrl,
+                            loginUi = :loginUi,
+                            loginCheckJs = :loginCheckJs,
+                            coverUrl = :coverUrl,
+                            bookSourceComment = :comment,
+                            weight = :weight,
+                            respondTime = :respondTime,
+                            lastUpdateTime = :lastUpdateTime
                         WHERE book_source_url = :url
                     """),
                     {
                         "name": source.bookSourceName,
                         "type": source.bookSourceType,
                         "enabled": source.enabled,
-                        "search": json.dumps(source.ruleSearch) if source.ruleSearch else None,
-                        "info": json.dumps(source.ruleBookInfo) if source.ruleBookInfo else None,
-                        "toc": json.dumps(source.ruleToc) if source.ruleToc else None,
-                        "content": json.dumps(source.ruleContent) if source.ruleContent else None,
-                        "rule_explore": json.dumps(source.ruleExplore) if source.ruleExplore else None,
-                        "group": source.bookSourceGroup,
+                        "search": json.dumps(source.ruleSearch) if source.ruleSearch else "",
+                        "info": json.dumps(source.ruleBookInfo) if source.ruleBookInfo else "",
+                        "toc": json.dumps(source.ruleToc) if source.ruleToc else "",
+                        "content": json.dumps(source.ruleContent) if source.ruleContent else "",
+                        "rule_explore": json.dumps(source.ruleExplore) if source.ruleExplore else "",
+                        "group": source.bookSourceGroup or "",
+                        "cookie": source.cookie or "",
+                        "header": source.header or "",
+                        "loginUrl": source.loginUrl or "",
+                        "loginUi": source.loginUi or "",
+                        "loginCheckJs": source.loginCheckJs or "",
+                        "coverUrl": source.coverUrl or "",
+                        "comment": source.bookSourceComment or "",
+                        "weight": source.weight or 0,
+                        "respondTime": source.respondTime or 0,
+                        "lastUpdateTime": str(source.lastUpdateTime) if source.lastUpdateTime else "",
                         "url": source.bookSourceUrl
                     }
                 )
@@ -318,14 +385,19 @@ class BookSourceManager:
                 self.db.execute(
                     text("""
                         INSERT INTO book_sources 
-                        (id, book_source_name, book_source_url, book_source_type, enabled, 
+                        (id, book_source_name, book_source_url, book_source_type, enabled,
                          rule_search, rule_book_info, rule_toc, rule_content, rule_explore,
                          book_source_group, enabled_by_user, custom_order, search_url, explore,
+                         cookie, header, loginUrl, loginUi, loginCheckJs,
+                         coverUrl, bookSourceComment, weight, respondTime, lastUpdateTime,
                          created_at, updated_at)
-                        VALUES (:id, :name, :url, :type, :enabled, 
-                                :search, :info, :toc, :content, :rule_explore,
-                                :group, :enabled_by_user, :custom_order, :search_url, :explore,
-                                :created_at, :updated_at)
+                        VALUES 
+                        (:id, :name, :url, :type, :enabled,
+                         :search, :info, :toc, :content, :rule_explore,
+                         :group, :enabled_by_user, :custom_order, :search_url, :explore,
+                         :cookie, :header, :loginUrl, :loginUi, :loginCheckJs,
+                         :coverUrl, :comment, :weight, :respondTime, :lastUpdateTime,
+                         :created_at, :updated_at)
                     """),
                     {
                         "id": source.source_id,
@@ -333,16 +405,26 @@ class BookSourceManager:
                         "url": source.bookSourceUrl,
                         "type": source.bookSourceType,
                         "enabled": source.enabled,
-                        "search": json.dumps(source.ruleSearch) if source.ruleSearch else None,
-                        "info": json.dumps(source.ruleBookInfo) if source.ruleBookInfo else None,
-                        "toc": json.dumps(source.ruleToc) if source.ruleToc else None,
-                        "content": json.dumps(source.ruleContent) if source.ruleContent else None,
-                        "rule_explore": json.dumps(source.ruleExplore) if source.ruleExplore else None,
-                        "group": source.bookSourceGroup,
+                        "search": json.dumps(source.ruleSearch) if source.ruleSearch else "",
+                        "info": json.dumps(source.ruleBookInfo) if source.ruleBookInfo else "",
+                        "toc": json.dumps(source.ruleToc) if source.ruleToc else "",
+                        "content": json.dumps(source.ruleContent) if source.ruleContent else "",
+                        "rule_explore": json.dumps(source.ruleExplore) if source.ruleExplore else "",
+                        "group": source.bookSourceGroup or "",
                         "enabled_by_user": source.enabled_by_user,
                         "custom_order": source.customOrder or 0,
                         "search_url": source.searchUrl or "",
                         "explore": source.explore or False,
+                        "cookie": source.cookie or "",
+                        "header": source.header or "",
+                        "loginUrl": source.loginUrl or "",
+                        "loginUi": source.loginUi or "",
+                        "loginCheckJs": source.loginCheckJs or "",
+                        "coverUrl": source.coverUrl or "",
+                        "comment": source.bookSourceComment or "",
+                        "weight": source.weight or 0,
+                        "respondTime": source.respondTime or 0,
+                        "lastUpdateTime": str(source.lastUpdateTime) if source.lastUpdateTime else "",
                         "created_at": now,
                         "updated_at": now,
                     }
@@ -411,23 +493,120 @@ class BookSourceManager:
         return False
     
     def delete_source(self, source_id: str) -> bool:
-        """删除书源"""
+        """删除书源（先数据库，再内存，保证一致性）"""
+        if not self.db:
+            # 无数据库时直接操作内存
+            source = self.get_source(source_id)
+            if source:
+                self.sources.remove(source)
+                return True
+            return False
+        
+        # 先操作数据库
+        try:
+            self.db.execute(
+                text("DELETE FROM book_sources WHERE id = :id"),
+                {"id": source_id}
+            )
+            self.db.commit()
+        except Exception as e:
+            print(f"删除书源失败: {e}")
+            if self.db:
+                self.db.rollback()
+            return False
+        
+        # 数据库成功后，再修改内存
         source = self.get_source(source_id)
         if source:
             self.sources.remove(source)
+        return True
+
+    def batch_delete_sources(self, source_ids: List[str]) -> Dict[str, Any]:
+        """批量删除书源（先数据库，再内存，保证一致性）"""
+        if not self.db:
+            # 无数据库时直接操作内存
+            deleted = 0
+            failed = 0
+            for source_id in source_ids:
+                source = self.get_source(source_id)
+                if source:
+                    self.sources.remove(source)
+                    deleted += 1
+                else:
+                    failed += 1
+            return {"success": failed == 0, "deleted": deleted, "failed": failed}
+        
+        # 先操作数据库
+        failed = 0
+        try:
+            # SQLite 不支持 IN :tuple，需要展开参数
+            placeholders = ', '.join(f':id{i}' for i in range(len(source_ids)))
+            params = {f'id{i}': sid for i, sid in enumerate(source_ids)}
+            self.db.execute(
+                text(f"DELETE FROM book_sources WHERE id IN ({placeholders})"),
+                params
+            )
+            self.db.commit()
+        except Exception as e:
+            print(f"批量删除书源失败: {e}")
             if self.db:
-                try:
-                    self.db.execute(
-                        text("DELETE FROM book_sources WHERE id = :id"),
-                        {"id": source_id}
-                    )
-                    self.db.commit()
-                except Exception as e:
-                    print(f"删除书源失败: {e}")
-                    if self.db:
-                        self.db.rollback()
-            return True
-        return False
+                self.db.rollback()
+            return {"success": False, "deleted": 0, "failed": len(source_ids)}
+        
+        # 数据库成功后，再修改内存，并正确计数
+        deleted = 0
+        for source_id in source_ids:
+            source = self.get_source(source_id)
+            if source:
+                self.sources.remove(source)
+                deleted += 1
+        
+        return {"success": True, "deleted": deleted, "failed": 0}
+
+    def batch_toggle_sources(self, source_ids: List[str], enabled: bool) -> Dict[str, Any]:
+        """批量启用/禁用书源（先数据库，再内存，保证一致性）"""
+        if not self.db:
+            # 无数据库时直接操作内存
+            updated = 0
+            failed = 0
+            for source_id in source_ids:
+                source = self.get_source(source_id)
+                if source:
+                    source.enabled_by_user = enabled
+                    updated += 1
+                else:
+                    failed += 1
+            return {"success": failed == 0, "updated": updated, "failed": failed}
+        
+        # 先操作数据库
+        try:
+            # SQLite 不支持 IN :tuple，需要展开参数
+            placeholders = ', '.join(f':id{i}' for i in range(len(source_ids)))
+            params = {f'id{i}': sid for i, sid in enumerate(source_ids)}
+            params['enabled'] = enabled
+            self.db.execute(
+                text(f"UPDATE book_sources SET enabled_by_user = :enabled WHERE id IN ({placeholders})"),
+                params
+            )
+            self.db.commit()
+        except Exception as e:
+            print(f"批量切换书源状态失败: {e}")
+            if self.db:
+                self.db.rollback()
+            return {"success": False, "updated": 0, "failed": len(source_ids)}
+        
+        # 数据库成功后，再修改内存
+        updated = 0
+        failed = 0
+        for source_id in source_ids:
+            source = self.get_source(source_id)
+            if source:
+                source.enabled_by_user = enabled
+                updated += 1
+            else:
+                failed += 1
+        
+        return {"success": failed == 0, "updated": updated, "failed": failed}
     
     def export_sources(self) -> str:
         """导出所有书源为JSON"""
@@ -446,79 +625,198 @@ class BookSourceManager:
             return False
         return True
 
-    async def search_all_sources(self, keyword: str) -> List[Dict[str, Any]]:
-        """在所有启用的书源中搜索"""
-        all_results = []
+    def _build_headers(self, source: BookSource) -> Dict[str, str]:
+        """
+        构建请求头（模拟真实浏览器）
+        参考 Legado AnalyzeUrl.kt 的 headerMap 处理
+        """
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
+        }
         
-        for source in self.sources:
-            if not source.enabled_by_user or not source.ruleSearch:
-                continue
-
-            if not self._is_compatible_source(source):
-                continue
-            
+        # 添加 Referer（参考 Legado 的 baseUrl 处理）
+        if source.bookSourceUrl:
+            headers["Referer"] = source.bookSourceUrl
+        
+        # 添加自定义请求头（如果书源配置了 header 字段）
+        # 参考 Legado 的 source.getHeaderMap()
+        if hasattr(source, 'header') and source.header:
             try:
-                results = await self._search_single_source(source, keyword)
-                for r in results:
-                    r["sourceName"] = source.bookSourceName
-                    r["sourceUrl"] = source.bookSourceUrl
-                all_results.extend(results)
-            except Exception as e:
-                print(f"在书源 {source.bookSourceName} 搜索失败: {e}")
-                continue
+                custom_headers = json.loads(source.header) if isinstance(source.header, str) else source.header
+                if isinstance(custom_headers, dict):
+                    headers.update(custom_headers)
+            except Exception:
+                pass
         
-        return all_results
+        # 添加 Cookie（如果书源配置了 cookie 字段）
+        # 参考 Legado 的 CookieManager
+        if hasattr(source, 'cookie') and source.cookie:
+            headers["Cookie"] = source.cookie
+        
+        return headers
+
+    async def search_all_sources(self, keyword: str, max_concurrent: int = 10) -> List[Dict[str, Any]]:
+        """
+        在所有启用的书源中搜索（并发版本）
+        参考 Legado 的 mapParallelSafe 实现
+        """
+        # 收集所有需要搜索的书源
+        sources_to_search = [
+            source for source in self.sources
+            if source.enabled_by_user and source.ruleSearch and self._is_compatible_source(source)
+        ]
+        
+        if not sources_to_search:
+            return []
+        
+        # 使用信号量限制并发数（参考 Legado 的线程池控制）
+        semaphore = asyncio.Semaphore(max_concurrent)
+        
+        async def search_with_semaphore(source):
+            """带信号量的搜索（限制并发数）"""
+            async with semaphore:
+                try:
+                    results = await self._search_single_source(source, keyword)
+                    for r in results:
+                        r["sourceName"] = source.bookSourceName
+                        r["sourceUrl"] = source.bookSourceUrl
+                    return results
+                except Exception as e:
+                    print(f"在书源 {source.bookSourceName} 搜索失败: {e}")
+                    return []
+        
+        # 并发执行所有搜索任务
+        print(f"开始并发搜索 {len(sources_to_search)} 个书源（并发数={max_concurrent}）...")
+        start_time = time.time()
+        
+        tasks = [search_with_semaphore(source) for source in sources_to_search]
+        all_results_list = await asyncio.gather(*tasks)
+        
+        # 展平结果
+        all_results = []
+        for results in all_results_list:
+            all_results.extend(results)
+        
+        elapsed = time.time() - start_time
+        print(f"搜索完成，耗时 {elapsed:.2f} 秒，找到 {len(all_results)} 条结果")
+        
+        # 统一字段名以匹配前端期望
+        # 前端期望: title, author, url, cover, source_site
+        # 后端返回: name, author, url, sourceName, sourceUrl
+        normalized_results = []
+        for book in all_results:
+            normalized_results.append({
+                "title": book.get("name", ""),
+                "author": book.get("author", ""),
+                "url": book.get("url", ""),
+                "cover": book.get("cover", ""),
+                "source_site": book.get("sourceName", ""),
+            })
+        
+        return normalized_results
     
     async def _search_single_source(self, source: BookSource, keyword: str) -> List[Dict[str, Any]]:
-        """在单个书源中搜索，支持 JS 模板"""
+        """在单个书源中搜索，支持 JS 模板，带重试逻辑"""
         if not source.ruleSearch:
             return []
-
-        # 构建搜索 URL
+        
+        # 构建搜索 URL 和请求参数
         try:
-            search_url = _build_search_url(source.searchUrl or "", keyword, source.bookSourceUrl, page=1)
+            search_config = _build_search_url(source.searchUrl or "", keyword, source.bookSourceUrl, page=1)
+            search_url = search_config["url"]
+            method = search_config.get("method", "GET")
+            data = search_config.get("data")
         except Exception as e:
             print(f"构建URL失败 [{source.bookSourceName}]: {e}")
             return []
-
+        
         if not search_url:
             print(f"[{source.bookSourceName}] URL为空, template={source.searchUrl}")
             return []
-
+        
         if not search_url.startswith(("http://", "https://")):
             print(f"[{source.bookSourceName}] URL不合法: {search_url[:80]}")
             return []
+        
+        # 构建请求头（参考 Legado）
+        headers = self._build_headers(source)
 
-        try:
-            async with httpx.AsyncClient(timeout=10.0, follow_redirects=True, verify=False) as client:
-                response = await client.get(search_url, headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-                })
-                response.raise_for_status()
-                html = response.text
-
-            if not html.strip():
-                print(f"[{source.bookSourceName}] 响应为空")
+        # 调试：打印实际发出的请求信息
+        
+        # 重试逻辑（参考 Legado 的 retry 字段）
+        max_retries = getattr(source, 'retry', 3) or 3  # 默认3次重试
+        timeout = getattr(source, 'timeout', 30) or 30  # 默认30秒超时（参考 Legado）
+        
+        for attempt in range(max_retries):
+            try:
+                async with httpx.AsyncClient(
+                    timeout=httpx.Timeout(timeout, connect=10.0),
+                    follow_redirects=True,
+                    verify=False
+                ) as client:
+                    # 根据 method 选择 GET 或 POST
+                    if method.upper() == "POST" and data:
+                        response = await client.post(search_url, data=data, headers=headers)
+                    else:
+                        response = await client.get(search_url, headers=headers)
+                    
+                    response.raise_for_status()
+                    html = response.text
+                
+                if not html.strip():
+                    print(f"[{source.bookSourceName}] 响应为空")
+                    return []
+                
+                rule = source.ruleSearch
+                if isinstance(rule, dict) and any(str(v).startswith('@js:') for v in rule.values()):
+                    print(f"[{source.bookSourceName}] 含@js:规则，跳过")
+                    return []
+                
+                results = parse_book_list(rule, html, source.bookSourceUrl)
+                print(f"[{source.bookSourceName}] 解析到 {len(results)} 条结果")
+                return results
+                
+            except httpx.TimeoutException:
+                print(f"[{source.bookSourceName}] 请求超时 (尝试 {attempt + 1}/{max_retries})")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(1 * (attempt + 1))  # 指数退避
+                    continue
                 return []
-
-            rule = source.ruleSearch
-            if isinstance(rule, dict) and any(str(v).startswith('@js:') for v in rule.values()):
-                print(f"[{source.bookSourceName}] 含@js:规则，跳过")
+            
+            except httpx.HTTPStatusError as e:
+                status = e.response.status_code
+                
+                if status == 403:
+                    print(f"[{source.bookSourceName}] HTTP 403 被拒绝")
+                    print(f"  可能原因：需要登录/Cookie过期/反爬")
+                    print(f"  请求头: {headers}")
+                    # 403 不重试，直接返回空结果
+                    return []
+                
+                elif status in [429, 503, 504]:  # 限流或临时错误，可以重试
+                    print(f"[{source.bookSourceName}] HTTP {status}，将重试 (尝试 {attempt + 1}/{max_retries})")
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(2 * (attempt + 1))  # 指数退避
+                        continue
+                    return []
+                
+                else:
+                    print(f"[{source.bookSourceName}] HTTP错误 {status}: {e.request.url}")
+                    return []
+            
+            except Exception as e:
+                print(f"[{source.bookSourceName}] 失败: {type(e).__name__}: {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(1)
+                    continue
                 return []
-
-            results = parse_book_list(rule, html, source.bookSourceUrl)
-            print(f"[{source.bookSourceName}] 解析到 {len(results)} 条结果")
-            return results
-
-        except httpx.TimeoutException:
-            print(f"[{source.bookSourceName}] 请求超时")
-            return []
-        except httpx.HTTPStatusError as e:
-            print(f"[{source.bookSourceName}] HTTP错误 {e.response.status_code}: {e.request.url}")
-            return []
-        except Exception as e:
-            print(f"[{source.bookSourceName}] 失败: {type(e).__name__}: {e}")
-            return []
+        
+        return []
     
     async def get_book_info(self, source: BookSource, book_url: str) -> Dict[str, Any]:
         """获取书籍详情"""

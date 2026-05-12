@@ -45,7 +45,8 @@ export async function searchNovels(
   limit: number = 20,
 ) {
   const res = await request(`/book-sources/search?keyword=${encodeURIComponent(keyword)}`)
-  return res.data || []
+  // 返回完整响应对象，包含 success 和 data 字段
+  return res
 }
 
 /**

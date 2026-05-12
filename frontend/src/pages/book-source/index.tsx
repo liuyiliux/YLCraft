@@ -10,7 +10,7 @@ import {
 } from 'antd'
 import { UploadOutlined, DownloadOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons'
 import type { UploadProps } from 'antd'
-import { getBookSources, importBookSources, toggleBookSource, deleteBookSource, exportBookSources } from '../../api/bookSource'
+import { getBookSources, importBookSources, toggleBookSource, deleteBookSource, exportBookSources, batchToggleBookSources, batchDeleteBookSources } from '../../api/bookSource'
 
 const { Title, Text, Paragraph } = Typography
 
@@ -29,6 +29,14 @@ const BookSourcePage: React.FC = () => {
   const [sources, setSources] = useState<BookSource[]>([])
   const [loading, setLoading] = useState(false)
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
+  const [pagination, setPagination] = useState({ pageSize: 20, current: 1 })
+
+  const handleTableChange = (newPagination: any) => {
+    setPagination({
+      pageSize: newPagination.pageSize,
+      current: newPagination.current,
+    })
+  }
 
   const fetchSources = async () => {
     setLoading(true)
@@ -88,10 +96,12 @@ const BookSourcePage: React.FC = () => {
       return
     }
     try {
-      for (const id of selectedRowKeys) {
-        await toggleBookSource(id as string, false)
+      const result = await batchToggleBookSources(selectedRowKeys as string[], false)
+      if (result.failed > 0) {
+        message.warning(`已禁用 ${result.updated} 个，失败 ${result.failed} 个`)
+      } else {
+        message.success(`已禁用 ${result.updated} 个书源`)
       }
-      message.success(`已禁用 ${selectedRowKeys.length} 个书源`)
       setSelectedRowKeys([])
       fetchSources()
     } catch (err: any) {
@@ -105,10 +115,12 @@ const BookSourcePage: React.FC = () => {
       return
     }
     try {
-      for (const id of selectedRowKeys) {
-        await deleteBookSource(id as string)
+      const result = await batchDeleteBookSources(selectedRowKeys as string[])
+      if (result.failed > 0) {
+        message.warning(`已删除 ${result.deleted} 个，失败 ${result.failed} 个`)
+      } else {
+        message.success(`已删除 ${result.deleted} 个书源`)
       }
-      message.success(`已删除 ${selectedRowKeys.length} 个书源`)
       setSelectedRowKeys([])
       fetchSources()
     } catch (err: any) {
@@ -239,7 +251,15 @@ const BookSourcePage: React.FC = () => {
           columns={columns}
           rowKey="id"
           loading={loading}
-          pagination={{ pageSize: 20 }}
+          pagination={{
+            ...pagination,
+            showSizeChanger: true,
+            pageSizeOptions: ['10', '20', '50', '100'],
+            showTotal: (total, range) => `${range[0]}-${range[1]} / 共 ${total} 条`,
+            onChange: (page, pageSize) => {
+              setPagination({ current: page, pageSize: pageSize || 20 })
+            },
+          }}
           scroll={{ x: 800 }}
           rowSelection={{
             selectedRowKeys,
