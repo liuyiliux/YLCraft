@@ -24,6 +24,10 @@ import PublishPage from './pages/publish'
 import CrawlerPage from './pages/crawler'
 import ComfyUIPage from './pages/comfyui'
 import ImageEditorPage from './pages/image-editor'
+import NovelSearchPage from './pages/novel-search'
+import NovelBookshelfPage from './pages/novel-bookshelf'
+import NovelReaderPage from './pages/novel-reader'
+import BookSourcePage from './pages/book-source'
 
 /** 包裹层：读取当前主题并传给 Ant Design ConfigProvider */
 function AntdThemeWrapper({ children }: { children: React.ReactNode }) {
@@ -69,6 +73,10 @@ export default function App() {
               <Route path="publish" element={<PublishPage />} />
               <Route path="crawler" element={<CrawlerPage />} />
               <Route path="image-editor" element={<ImageEditorPage />} />
+              <Route path="novel-search" element={<NovelSearchPage />} />
+              <Route path="novel-bookshelf" element={<NovelBookshelfPage />} />
+              <Route path="novel-reader/:id" element={<NovelReaderPage />} />
+              <Route path="book-source" element={<BookSourcePage />} />
               <Route path="settings" element={<SettingsPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>

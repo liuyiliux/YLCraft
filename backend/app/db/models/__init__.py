@@ -73,3 +73,12 @@ from app.db.models.platform_cookie import (
 
 # 系统设置
 from app.db.models.system_setting import SystemSetting, SystemSettingCreate, SystemSettingUpdate, DEFAULT_STORAGE_SETTINGS
+
+# 小说章节模型
+from app.db.models.novel import NovelChapter
+
+# 书源模型（阅读App兼容）
+from app.db.models.book_source import BookSource
+
+# 向量库模型
+from app.db.models.vector import VectorDocument, VectorIndex

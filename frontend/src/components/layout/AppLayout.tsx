@@ -29,6 +29,7 @@ import {
   FallOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  ReadOutlined,
 } from '@ant-design/icons'
 
 const { Sider, Content, Header } = Layout
@@ -78,6 +79,17 @@ const menuItems: MenuProps['items'] = [
     children: [
       { key: '/story', label: '短剧创作' },
       { key: '/characters', label: '角色管理' },
+    ],
+  },
+  // 小说阅读
+  {
+    key: 'g-novel',
+    icon: <ReadOutlined />,
+    label: '小说阅读',
+    children: [
+      { key: '/novel-search', label: '搜索下载' },
+      { key: '/novel-bookshelf', label: '我的书架' },
+      { key: '/book-source', label: '书源管理' },
     ],
   },
   // Live 2D 工厂（COSER）

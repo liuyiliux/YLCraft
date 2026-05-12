@@ -494,3 +494,7 @@ export const generateStoryPortrait = (data: { story_id: string; character_name: 
   request('/story/portrait', { method: 'POST', body: JSON.stringify(data) })
 
 export const getStory = (storyId: string) => request(`/story/${storyId}`)
+
+// ===== Novel（小说）=====
+export * from './novel'
+export * from './bookSource'

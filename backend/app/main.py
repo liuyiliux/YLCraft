@@ -312,6 +312,20 @@ def _register_routes():
     except Exception as e:
         logger.warning(f"Could not load crawler router: {e}")
 
+    # Novel 小说路由
+    try:
+        from app.api.v1 import novels
+        app.include_router(novels.router, prefix="/api/v1/novels", tags=["Novels"])
+    except Exception as e:
+        logger.warning(f"Could not load novels router: {e}")
+
+    # 书源管理路由（阅读App兼容）
+    try:
+        from app.api.v1 import book_sources
+        app.include_router(book_sources.router, prefix="/api/v1/book-sources", tags=["Book Sources"])
+    except Exception as e:
+        logger.warning(f"Could not load book_sources router: {e}")
+
     # 平台连接器路由（已拆分，保留旧版兼容）
     try:
         from app.api.v1 import platforms
