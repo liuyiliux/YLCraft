@@ -23,6 +23,8 @@ import {
   message,
   Spin,
   Tag,
+  Input,
+  FloatButton,
 } from 'antd'
 import {
   ArrowLeftOutlined,
@@ -31,6 +33,9 @@ import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   CloudServerOutlined,
+  SearchOutlined,
+  VerticalAlignTopOutlined,
+  VerticalAlignBottomOutlined,
 } from '@ant-design/icons'
 import { getAsset, updateAsset, getChapterContent, getBookshelfItem, getNovelSources, fetchSourceCatalog } from '../../api'
 import type { BookshelfItem, Chapter, NovelSource } from '../../api/novel'
@@ -75,6 +80,9 @@ export default function NovelReaderPage() {
   // 换源
   const [sources, setSources] = useState<NovelSource[]>([])
   const [selectedSourceId, setSelectedSourceId] = useState<string>('')
+
+  // 目录搜索
+  const [chapterSearchText, setChapterSearchText] = useState('')
 
   const contentRef = useRef<HTMLDivElement>(null)
 
@@ -326,6 +334,18 @@ export default function NovelReaderPage() {
     const actualBg = bgColor === 'system' ? (isDarkMode ? '#1a1a1a' : '#fff') : bgColor
     return actualBg === '#1a1a1a' ? '#ccc' : '#333'
   }
+  const getToolbarBgColor = () => {
+    const actualBg = getActualBgColor()
+    return actualBg === '#1a1a1a' ? '#1a1a1a' : '#fff'
+  }
+  const getToolbarTextColor = () => {
+    const actualBg = getActualBgColor()
+    return actualBg === '#1a1a1a' ? '#ccc' : '#333'
+  }
+  const getToolbarBorderColor = () => {
+    const actualBg = getActualBgColor()
+    return actualBg === '#1a1a1a' ? '#333' : '#f0f0f0'
+  }
 
   const title = bookItem?.title || asset?.title || '未知书籍'
 
@@ -334,12 +354,12 @@ export default function NovelReaderPage() {
       {/* 顶部工具栏 */}
       <div style={{
         padding: '8px 16px',
-        borderBottom: '1px solid ' + (isDarkMode ? '#333' : '#f0f0f0'),
+        borderBottom: '1px solid ' + getToolbarBorderColor(),
         display: 'flex',
         alignItems: 'center',
         gap: 16,
-        background: isDarkMode ? '#1a1a1a' : '#fff',
-        color: isDarkMode ? '#ccc' : '#333',
+        background: getToolbarBgColor(),
+        color: getToolbarTextColor(),
       }}>
         <Button
           type="text"
@@ -387,7 +407,13 @@ export default function NovelReaderPage() {
                   needFetch = true
                   setLoading(true)
                   try {
-                    const fetched = await fetchSourceCatalog(bookItem?.book_url || asset?.source_url || '', newSourceId)
+                    const bookSourceName = sources.find((s: any) => s.id === newSourceId)?.name || ''
+                    message.info(`正在从「${bookSourceName}」搜索目录...`)
+                    const fetched = await fetchSourceCatalog(
+                      bookItem?.book_url || asset?.source_url || '',
+                      newSourceId,
+                      bookItem?.novel_title || bookItem?.title || ''
+                    )
                     if (fetched.success && fetched.data?.chapters?.length) {
                       newChapters = fetched.data.chapters
                       // 持久化到后端
@@ -452,24 +478,59 @@ export default function NovelReaderPage() {
           <div
             style={{
               width: 280,
-              borderRight: '1px solid ' + (isDarkMode ? '#333' : '#f0f0f0'),
+              borderRight: '1px solid ' + getToolbarBorderColor(),
               overflow: 'auto',
               padding: 8,
-              background: isDarkMode ? '#1a1a1a' : '#fff',
-              color: isDarkMode ? '#ccc' : '#333',
+              background: getToolbarBgColor(),
+              color: getToolbarTextColor(),
             }}
           >
-            <div style={{ fontWeight: 600, marginBottom: 8 }}>目录 · 共 {chapters.length} 章</div>
-            {chapters.map((ch, idx) => {
+            <div style={{ fontWeight: 600, marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>目录 · 共 {chapters.length} 章</span>
+              <Space style={{ gap: 4 }}>
+                <Tooltip title="到顶部">
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<VerticalAlignTopOutlined />}
+                    onClick={() => contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+                    style={{ padding: '0 4px' }}
+                  />
+                </Tooltip>
+                <Tooltip title="到底部">
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<VerticalAlignBottomOutlined />}
+                    onClick={() => contentRef.current?.scrollTo({ top: contentRef.current.scrollHeight, behavior: 'smooth' })}
+                    style={{ padding: '0 4px' }}
+                  />
+                </Tooltip>
+              </Space>
+            </div>
+            
+            <Input.Search
+              placeholder="搜索章节..."
+              allowClear
+              size="small"
+              value={chapterSearchText}
+              onChange={(e) => setChapterSearchText(e.target.value)}
+              onSearch={setChapterSearchText}
+              style={{ marginBottom: 12 }}
+              prefix={<SearchOutlined style={{ fontSize: 12 }} />}
+            />
+            
+            {(chapterSearchText ? chapters.filter((ch) => (ch.title || '').toLowerCase().includes(chapterSearchText.toLowerCase())) : chapters).map((ch, idx) => {
+              const originalIdx = chapters.indexOf(ch)
               const isRead = (bookItem?.downloaded_chapter_indices || []).includes(ch.index)
               return (
                 <div
-                  key={idx}
-                  onClick={() => loadChapter(idx)}
+                  key={`${originalIdx}-${ch.title}`}
+                  onClick={() => loadChapter(originalIdx)}
                   style={{
                     padding: '8px 12px',
                     cursor: 'pointer',
-                    background: idx === currentChapter ? (isDarkMode ? '#334' : '#e6f7ff') : 'transparent',
+                    background: originalIdx === currentChapter ? (getActualBgColor() === '#1a1a1a' ? '#334' : '#e6f7ff') : 'transparent',
                     borderRadius: 4,
                     fontSize: 13,
                     display: 'flex',
@@ -482,11 +543,11 @@ export default function NovelReaderPage() {
                     ellipsis
                     style={{
                       maxWidth: 210,
-                      color: idx <= (bookItem?.last_read_chapter || 0) ? '#999' : undefined,
-                      textDecoration: idx <= (bookItem?.last_read_chapter || 0) ? 'line-through' : undefined,
+                      color: originalIdx <= (bookItem?.last_read_chapter || 0) ? '#999' : undefined,
+                      textDecoration: originalIdx <= (bookItem?.last_read_chapter || 0) ? 'line-through' : undefined,
                     }}
                   >
-                    {ch.title || `第 ${idx + 1} 章`}
+                    {ch.title || `第 ${originalIdx + 1} 章`}
                   </Text>
                   {isRead && (
                     <Tooltip title="已下载">
@@ -496,9 +557,14 @@ export default function NovelReaderPage() {
                 </div>
               )
             })}
+            {chapterSearchText && chapters.filter((ch) => (ch.title || '').toLowerCase().includes(chapterSearchText.toLowerCase())).length === 0 && (
+              <div style={{ padding: 16, color: '#999', fontSize: 12, textAlign: 'center' }}>
+                未找到匹配的章节
+              </div>
+            )}
             {chapters.length === 0 && (
-              <div style={{ padding: 16, color: isDarkMode ? '#666' : '#999' }}>
-                暂无章节信息。请先在搜索页获取目录并加入书架。
+            <div style={{ padding: 16, color: getActualBgColor() === '#1a1a1a' ? '#666' : '#999' }}>
+              暂无章节信息。请先在搜索页获取目录并加入书架。
                 <br /><br />
                 <Button size="small" onClick={() => navigate('/novel-search')}>
                   去搜索
@@ -576,12 +642,12 @@ export default function NovelReaderPage() {
       {/* 底部：阅读设置 */}
       <div style={{
         padding: '8px 16px',
-        borderTop: '1px solid ' + (isDarkMode ? '#333' : '#f0f0f0'),
+        borderTop: '1px solid ' + getToolbarBorderColor(),
         display: 'flex',
         alignItems: 'center',
         gap: 24,
-        background: isDarkMode ? '#1a1a1a' : '#fff',
-        color: isDarkMode ? '#ccc' : '#333',
+        background: getToolbarBgColor(),
+        color: getToolbarTextColor(),
       }}>
         <Space>
           <span>字体大小：</span>
@@ -613,10 +679,26 @@ export default function NovelReaderPage() {
             style={{ width: 120 }}
           />
         </Space>
-        <div style={{ marginLeft: 'auto', color: isDarkMode ? '#666' : '#999', fontSize: 12 }}>
+        <div style={{ marginLeft: 'auto', color: getActualBgColor() === '#1a1a1a' ? '#666' : '#999', fontSize: 12 }}>
           快捷键：← 上一章 → 下一章 T 显示/隐藏目录 Space 翻页
         </div>
       </div>
+      
+      <FloatButton.Group
+        shape="square"
+        style={{ right: 24, bottom: 90 }}
+      >
+        <FloatButton
+          icon={<VerticalAlignTopOutlined />}
+          tooltip="回到顶部"
+          onClick={() => contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+        />
+        <FloatButton
+          icon={<VerticalAlignBottomOutlined />}
+          tooltip="跳到底部"
+          onClick={() => contentRef.current?.scrollTo({ top: contentRef.current.scrollHeight, behavior: 'smooth' })}
+        />
+      </FloatButton.Group>
     </div>
   )
 }

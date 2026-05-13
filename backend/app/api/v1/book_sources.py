@@ -3,6 +3,8 @@
 支持导入/导出/管理阅读App格式的书源
 """
 
+import re
+import json
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from sqlmodel import Session, select
@@ -11,7 +13,6 @@ from pydantic import BaseModel
 from app.db.database import SessionLocal
 from app.db.models.book_source import BookSource
 from app.services.novel.book_source_manager import BookSourceManager
-import json
 
 
 router = APIRouter(tags=["book-sources"])
@@ -270,8 +271,12 @@ async def search_books(
             source_name, results = await coro
             completed_count += 1
 
-            # 标准化 + 去重
+            # 获取当前正在处理的书源信息
+            current_source = next((s for s in sources_to_search if s.bookSourceName == source_name), None)
+            
+            # 只做显示用的简单去重，不影响 all_results（合并阶段会做真正的合并）
             new_items = []
+            display_seen: Set[Tuple[str, str]] = set()  # 仅用于控制单书源内不推送重复
             for book in results:
                 item = {
                     "title": book.get("name", ""),
@@ -279,13 +284,21 @@ async def search_books(
                     "url": book.get("url") or book.get("bookUrl", ""),
                     "cover": book.get("cover") or book.get("coverUrl", ""),
                     "source_site": source_name,
-                    "source_id": book.get("sourceId", ""),
+                    "source_id": book.get("sourceId", "") or (current_source.source_id if current_source else ""),
                 }
-                key = (item["title"].strip().lower(), item["author"].strip().lower())
-                if key not in seen and item["title"]:
-                    seen.add(key)
-                    all_results.append(item)
-                    new_items.append(item)
+                # all_results 保留所有结果，后面合并阶段会做真正的合并
+                all_results.append(item)
+                
+                # 显示去重：避免同一书源有相同书籍时重复推送
+                display_key = (item["title"].strip().lower(), item["author"].strip().lower())
+                if display_key not in display_seen and item["title"]:
+                    display_seen.add(display_key)
+                    
+                    # 跨书源检查：这本书前面的书源已经推送过了吗？（避免相同书名不同源时重复推送给用户）
+                    global_key = display_key
+                    if global_key not in seen:
+                        seen.add(global_key)
+                        new_items.append(item)
 
             if new_items:
                 payload = {
@@ -299,8 +312,47 @@ async def search_books(
                 }
                 yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
-        # 搜索完成事件
-        yield f"data: {json.dumps({'type': 'finish', 'total': len(all_results), 'data': all_results}, ensure_ascii=False)}\n\n"
+        # 搜索完成前，合并所有书源信息
+        merged_results: List[Dict[str, Any]] = []
+        merged_seen: Dict[str, Dict[str, Any]] = {}  # key -> item
+        
+        def get_match_key(title: str) -> str:
+            """生成用于匹配的key，只保留中文字符、英文字母和数字"""
+            key = re.sub(r'[^\u4e00-\u9fa5a-zA-Z0-9]', '', title)
+            return key.lower()
+        
+        for item in all_results:
+            title = item.get("title", "")
+            source_site = item.get("source_site", "")
+            source_id = item.get("source_id", "")
+            match_key = get_match_key(title)
+            
+            if not match_key:
+                continue
+                
+            if match_key not in merged_seen:
+                new_item = item.copy()
+                new_item["sources"] = [{
+                    "id": source_id,
+                    "name": source_site,
+                    "url": "",
+                    "book_url": item.get("url", ""),
+                }]
+                merged_seen[match_key] = new_item
+                merged_results.append(new_item)
+            else:
+                existing = merged_seen[match_key]
+                existing_source_ids = {s.get("id") for s in existing.get("sources", [])}
+                if source_id and source_id not in existing_source_ids:
+                    existing["sources"].append({
+                        "id": source_id,
+                        "name": source_site,
+                        "url": "",
+                        "book_url": item.get("url", ""),
+                    })
+        
+        # 搜索完成事件，返回合并后的结果
+        yield f"data: {json.dumps({'type': 'finish', 'total': len(merged_results), 'data': merged_results}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
         event_generator(),

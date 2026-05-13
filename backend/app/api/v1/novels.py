@@ -5,6 +5,7 @@ YLCraft — 小说 API 路由
 
 from __future__ import annotations
 
+import re
 import json
 import os
 import uuid
@@ -24,6 +25,24 @@ from app.services.novel.downloader import NovelDownloader
 from app.services.novel.book_source_manager import BookSourceManager
 
 router = APIRouter(tags=["novels"])
+
+
+def _populate_source_catalogs(
+    catalogs: Dict[str, Any],
+    sources_list: List[Dict[str, Any]]
+) -> None:
+    """遍历 sources 列表，把每书源占位符存入 catalogs（如果还不存在）"""
+    if sources_list:
+        for s in sources_list:
+            s_id = s.get('id') or s.get('source_id', '')
+            if s_id and s_id not in catalogs:
+                catalogs[s_id] = {
+                    'chapters': [],
+                    'chapter_count': 0,
+                    'source_name': s.get('name') or s.get('source_name', ''),
+                    'source_url': s.get('url') or s.get('source_url') or s.get('book_url', ''),
+                    'toc_url': '',
+                }
 
 
 def get_db():
@@ -57,6 +76,7 @@ class AddToBookshelfRequest(BaseModel):
     source_name: str = ''  # 书源名称
     source_url: str = ''  # 书源 URL
     chapters: List[Dict[str, Any]] = []  # [{'index': 1, 'title': '...', 'url': '...'}]
+    sources: List[Dict[str, Any]] = []  # 多书源信息列表：[{"id": "...", "name": "...", "book_url": "..."}]
 
 
 class SearchResponse(BaseModel):
@@ -189,6 +209,8 @@ async def add_to_bookshelf(req: AddToBookshelfRequest, db: Session = Depends(get
                 'source_url': req.source_url,
                 'toc_url': req.toc_url,
             }
+            # 把其他搜索到的书源也存进去（即使还没有章节，换源时可动态获取）
+            _populate_source_catalogs(catalogs, req.sources)
             meta.update({
                 # 当前阅读使用的目录（兼容旧逻辑）
                 'chapters': req.chapters,
@@ -209,6 +231,20 @@ async def add_to_bookshelf(req: AddToBookshelfRequest, db: Session = Depends(get
         # 创建新 Asset 记录
         asset_id = uuid.uuid4().hex
         
+        # 多源目录：key 为 source_id，value 包含该书源的章节列表和 URL
+        catalogs: Dict[str, Any] = {
+            req.source_id: {
+                'chapters': req.chapters,
+                'chapter_count': len(req.chapters),
+                'source_name': req.source_name,
+                'source_url': req.source_url,
+                'toc_url': req.toc_url,
+            }
+        }
+        
+        # 把其他搜索到的书源也存进去（即使还没有章节，换源时可动态获取）
+        _populate_source_catalogs(catalogs, req.sources)
+        
         metadata = {
             'novel_title': req.book_title,
             'author': req.author,
@@ -222,16 +258,7 @@ async def add_to_bookshelf(req: AddToBookshelfRequest, db: Session = Depends(get
             'source_url': req.source_url,
             'chapters': req.chapters,
             'chapter_count': len(req.chapters),
-            # 多源目录：key 为 source_id，value 包含该书源的章节列表和 URL
-            'catalogs': {
-                req.source_id: {
-                    'chapters': req.chapters,
-                    'chapter_count': len(req.chapters),
-                    'source_name': req.source_name,
-                    'source_url': req.source_url,
-                    'toc_url': req.toc_url,
-                }
-            },
+            'catalogs': catalogs,
             'downloaded_chapter_indices': [],
             'last_read_chapter': 0,
             'last_read_position': 0,
@@ -512,11 +539,12 @@ async def get_sources(db: Session = Depends(get_db)):
 async def get_source_catalog(
     book_url: str = Query(..., description="书籍 URL（原始书源）"),
     source_id: str = Query(..., description="目标书源 ID"),
+    book_title: str = Query('', description="书籍名称（用于换源时在目标书源重新搜索）"),
     db: Session = Depends(get_db),
 ):
     """
     从指定书源获取书籍目录（用于换源时动态加载目录）。
-    根据目标书源的域名，构造对应书源的目录页 URL，再抓取解析。
+    优先用书籍名称在目标书源中搜索，找到后取对应目录；失败时才尝试构造URL。
     """
     try:
         manager = BookSourceManager(db)
@@ -524,36 +552,53 @@ async def get_source_catalog(
         if not source:
             raise HTTPException(status_code=404, detail="书源不存在")
 
-        # 构造目标书源的目录 URL：
-        # 从原始 book_url 提取路径部分，拼接到目标书源的 bookSourceUrl
-        original_url = book_url.rstrip('/')
-        # 提取原始 URL 的路径部分（如 /book/123.html -> /book/）
-        if '/' in original_url:
-            path_part = original_url[original_url.rfind('/'):]
-            # 判断是否是文件页（.html/.php等），如果是则取上级目录
-            if '.' in path_part:
-                base_path = original_url[:original_url.rfind('/')]
-            else:
-                base_path = original_url
-        else:
-            base_path = original_url
-
-        # 尝试用目标书源域名构造目录 URL
-        target_base = source.bookSourceUrl.rstrip('/')
+        catalog_url = ''
+        chapters = []
         
-        # 简化：从目标书源根目录开始尝试
-        # 先用书源配置的 ruleToc 中的 URL 模板，如果没有则直接用 bookSourceUrl
-        catalog_url = target_base
-        if source.ruleToc and isinstance(source.ruleToc, dict):
-            toc_url_template = source.ruleToc.get('bookUrl', '') or source.ruleToc.get('url', '')
-            if toc_url_template and toc_url_template.startswith('http'):
-                catalog_url = toc_url_template
-            elif toc_url_template:
-                catalog_url = target_base + toc_url_template
+        # ============== 策略1：用书籍标题在目标书源中重新搜索 ==============
+        if book_title:
+            print(f"[换源] 目标书源={source.bookSourceName}, 尝试搜索书名: {book_title}")
+            try:
+                # _search_single_source 返回的字段: name, author, url, cover
+                search_results = await manager._search_single_source(source, book_title)
+                
+                if search_results:
+                    def normalize(t):
+                        return re.sub(r'[^\u4e00-\u9fa5a-zA-Z0-9]', '', t).lower()
+                    
+                    target_key = normalize(book_title)
+                    matched_book = None
+                    for book in search_results:
+                        book_name = book.get('name', '')
+                        if normalize(book_name) == target_key:
+                            matched_book = book
+                            break
+                    
+                    if matched_book:
+                        toc_url = matched_book.get('bookUrl', '') or matched_book.get('url', '') or matched_book.get('tocUrl', '')
+                        if toc_url:
+                            chapters = await manager.get_chapter_list(source, toc_url)
+                            catalog_url = toc_url
+            except Exception as search_err:
+                print(f"[换源] 搜索模式出错: {search_err}")
+                import traceback
+                traceback.print_exc()
 
-        print(f"[换源] 目标书源={source.bookSourceName}, 构造目录URL={catalog_url}")
+        # ============== 策略2：URL 构造模式（备用）==============
+        if not chapters:
+            print(f"[换源] 搜索模式未获取到章节，尝试 URL 构造模式")
+            target_base = source.bookSourceUrl.rstrip('/')
+            
+            catalog_url = target_base
+            if source.ruleToc and isinstance(source.ruleToc, dict):
+                toc_url_template = source.ruleToc.get('bookUrl', '') or source.ruleToc.get('url', '')
+                if toc_url_template and toc_url_template.startswith('http'):
+                    catalog_url = toc_url_template
+                elif toc_url_template:
+                    catalog_url = target_base + toc_url_template
 
-        chapters = await manager.get_chapter_list(source, catalog_url)
+            print(f"[换源] 构造目录URL={catalog_url}")
+            chapters = await manager.get_chapter_list(source, catalog_url)
 
         if not chapters:
             raise HTTPException(status_code=404, detail=f"该书源无法获取目录，可能需要手动设置目录页 URL")

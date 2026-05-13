@@ -193,7 +193,7 @@ export async function getNovelSources(): Promise<NovelSource[]> {
 /**
  * 从指定书源获取目录（换源时动态加载）
  */
-export async function fetchSourceCatalog(bookUrl: string, sourceId: string): Promise<{
+export async function fetchSourceCatalog(bookUrl: string, sourceId: string, bookTitle?: string): Promise<{
   success: boolean
   data?: {
     source_id: string
@@ -205,6 +205,9 @@ export async function fetchSourceCatalog(bookUrl: string, sourceId: string): Pro
   const sp = new URLSearchParams()
   sp.set('book_url', bookUrl)
   sp.set('source_id', sourceId)
+  if (bookTitle) {
+    sp.set('book_title', bookTitle)
+  }
   return request(`/novels/source-catalog?${sp}`)
 }
 
@@ -224,6 +227,7 @@ export async function addToBookshelf(data: {
   source_name?: string
   source_url?: string
   chapters?: Chapter[]
+  sources?: Array<{ id?: string; name?: string; url?: string; book_url?: string }>
 }): Promise<{ success: boolean; message: string; asset_id?: string }> {
   return request('/novels/add-to-bookshelf', {
     method: 'POST',

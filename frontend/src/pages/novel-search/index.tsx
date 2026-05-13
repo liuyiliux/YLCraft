@@ -86,6 +86,7 @@ export default function NovelSearchPage() {
     const controller = searchNovelsStream(value, {
       onResults: (data) => {
         setSearchStatus(`已找到 ${data.length} 条结果...`)
+        // 流式阶段暂时没有sources，但onFinish会提供
         setSearchResults([...data])
       },
       onFinish: (_total, data) => {
@@ -167,6 +168,8 @@ export default function NovelSearchPage() {
         source_name: currentSource?.name || '',
         source_url: selectedBook.source_site || '',
         chapters: chapters.map(ch => ({ index: ch.index, title: ch.title, url: ch.url })),
+        // 传递多书源信息
+        sources: selectedBook.sources || [],
       })
 
       if (res.success) {
@@ -201,6 +204,8 @@ export default function NovelSearchPage() {
         source_name: currentSource?.name || '',
         source_url: selectedBook.source_site || '',
         chapters: chapters.map(ch => ({ index: ch.index, title: ch.title, url: ch.url })),
+        // 传递多书源信息
+        sources: selectedBook.sources || [],
       })
 
       if (res.success && res.asset_id) {
