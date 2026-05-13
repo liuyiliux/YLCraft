@@ -387,6 +387,21 @@ body {
   }
 }
 
+/* ===== 小说阅读器正文样式 ===== */
+.novel-chapter-html p {
+  margin: 0.3em 0;
+  text-indent: 2em;
+  line-height: 1.6;
+}
+
+.novel-chapter-html br + br {
+  display: none;
+}
+
+.novel-chapter-html p:empty {
+  display: none;
+}
+
 /* ===== 响应式工具类 ===== */
 @media screen and (max-width: 767px) {
   .hide-mobile {

@@ -143,7 +143,6 @@ class AssetService:
         print(f"[DEBUG list_assets] asset_type={asset_type}, query_asset_type={query_asset_type}")
         
         if asset_type:
-            from sqlalchemy import func
             conditions.append(func.lower(Asset.type) == func.lower(asset_type))
         if platform:
             conditions.append(Asset.platform == platform)

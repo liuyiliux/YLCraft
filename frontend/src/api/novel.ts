@@ -58,6 +58,14 @@ export interface BookshelfItem {
   kind?: string
   content_path?: string
   created_at?: string
+  /** 多源目录：key 为 source_id，value 包含该书源的章节列表 */
+  catalogs?: Record<string, {
+    chapters: Chapter[]
+    chapter_count: number
+    source_name: string
+    source_url: string
+    toc_url: string
+  }>
 }
 
 /**
@@ -180,6 +188,24 @@ export async function getNovelSources(): Promise<NovelSource[]> {
   const res = await request('/novels/sources')
   if (res.success) return res.data || []
   return []
+}
+
+/**
+ * 从指定书源获取目录（换源时动态加载）
+ */
+export async function fetchSourceCatalog(bookUrl: string, sourceId: string): Promise<{
+  success: boolean
+  data?: {
+    source_id: string
+    source_name: string
+    catalog_url: string
+    chapters: Chapter[]
+  }
+}> {
+  const sp = new URLSearchParams()
+  sp.set('book_url', bookUrl)
+  sp.set('source_id', sourceId)
+  return request(`/novels/source-catalog?${sp}`)
 }
 
 /**

@@ -852,32 +852,84 @@ def _parse_chapter_list_json(rule: Dict[str, Any], json_data: Any, base_url: str
 
 # ========== 章节内容解析 ===========
 
+def _parse_content_rule(content_rule: str) -> tuple:
+    """
+    解析 Legado 内容规则中的混合语法。
+    支持格式如: "$..content##filter@js:code"
+    返回: (selector, filter_regex, js_code)
+    """
+    import re
+    
+    filter_regex = None
+    js_code = None
+    selector = content_rule.strip()
+    
+    # 1. 提取 @js: 之后的 JS 代码
+    if '@js:' in selector:
+        parts = selector.split('@js:', 1)
+        selector = parts[0].rstrip('\n')
+        js_code = parts[1].strip()
+    
+    # 2. 提取 ## 之后的过滤正则
+    if '##' in selector:
+        parts = selector.split('##', 1)
+        selector = parts[0].rstrip('\n')
+        filter_regex = parts[1].strip()
+    
+    # 3. 清理 selector：如果包含 JSONPath 符号，尝试提取 CSS 选择器
+    # 常见模式：如 "$..content" 后紧跟实际的 CSS 选择器
+    if selector.startswith('$') or selector.startswith('$.'):
+        # 尝试找实际的 CSS 选择器（通常在换行后）
+        lines = selector.split('\n')
+        css_lines = [l for l in lines if l.strip() and not l.strip().startswith('$')]
+        if css_lines:
+            selector = css_lines[0].strip()
+        else:
+            selector = ''
+    
+    # 4. 如果 selector 仍然包含 $ 或空，尝试常见选择器
+    if not selector or selector.startswith('$'):
+        # 尝试常见的小说正文选择器
+        selector = '#content'
+    
+    return selector.strip(), filter_regex, js_code
+
+
 def parse_chapter_content(rule: Dict[str, Any], html: str) -> Optional[str]:
-    """解析章节内容，支持 HTML 和 JSON"""
+    """解析章节内容，支持 HTML 和 JSON，支持 Legado 混合语法（##过滤、@js:代码）"""
     import json as json_mod
+    import re
     from bs4 import BeautifulSoup, Tag
 
     try:
-        try:
-            data = json_mod.loads(html.strip())
-            content_expr = rule.get("content", "")
-            if _is_jsonpath_rule(content_expr):
-                results = _eval_jsonpath(content_expr, data)
-                return results[0] if results else None
-            if isinstance(data, dict):
-                for key in ["content", "text", "body", "chapter"]:
-                    if key in data:
-                        return str(data[key])
-        except Exception:
-            pass
+        content_rule = rule.get("content", "")
+        
+        # 解析混合规则语法
+        selector, filter_regex, js_code = _parse_content_rule(content_rule)
+        
+        # 1. 尝试 JSON 解析（如果 content_rule 指向 JSON 数据）
+        if content_rule.strip().startswith(('$', '[', '{')):
+            try:
+                data = json_mod.loads(html.strip())
+                if _is_jsonpath_rule(content_rule.split('##')[0].split('@js:')[0].strip()):
+                    expr = content_rule.split('##')[0].split('@js:')[0].strip()
+                    results = _eval_jsonpath(expr, data)
+                    if results:
+                        content = str(results[0])
+                        if filter_regex:
+                            content = re.sub(filter_regex, '', content)
+                        return content
+            except Exception:
+                pass
 
         soup = BeautifulSoup(html, 'html.parser')
-        content_selector = rule.get("content", "")
-        if not content_selector or _is_jsonpath_rule(content_selector):
+        
+        # 2. 使用 CSS 选择器获取内容
+        if not selector:
             return None
-
+        
         # 使用 _select_elements 支持 Legado @ 链语法
-        content_elems = _select_elements(content_selector, soup)
+        content_elems = _select_elements(selector, soup)
         if not content_elems or not isinstance(content_elems[0], Tag):
             return None
         content_elem = content_elems[0]
@@ -891,7 +943,36 @@ def parse_chapter_content(rule: Dict[str, Any], html: str) -> Optional[str]:
                 rm_elem.decompose()
 
         content = str(content_elem)
-        return content
+        
+        # 3. 应用过滤正则（## 语法）
+        if filter_regex:
+            content = re.sub(filter_regex, '', content)
+        
+        # 4. 执行 JS 代码（@js: 语法）- 需要 MiniRacer，这里做简化处理
+        if js_code and HAS_MINIRACER:
+            try:
+                from py_mini_racer import MiniRacer
+                ctx = MiniRacer()
+                escaped_content = content.replace('`', '\\`')
+                ctx.eval(f"var result = `{escaped_content}`")
+                # 添加 decode 函数（如果有）
+                if 'decode(' in js_code:
+                    ctx.eval("""
+                        function decode(s) {
+                            try {
+                                return decodeURIComponent(escape(atob(s)));
+                            } catch(e) {
+                                return s;
+                            }
+                        }
+                    """)
+                result = ctx.eval(js_code.replace('result', 'result'))
+                if result:
+                    content = str(result)
+            except Exception as e:
+                print(f"[WARN] JS 执行失败: {e}")
+        
+        return content if content else None
 
     except Exception as e:
         print(f"解析章节内容失败: {e}")

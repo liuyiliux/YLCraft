@@ -465,10 +465,6 @@ export default function AssetsPage() {
                   style={{
                     border: selectedIds.includes(asset.id) ? '2px solid #1890ff' : undefined
                   }}
-                  onClick={!batchMode ? () => {
-                    if (isNovel) navigate(`/novel-reader/${asset.id}`)
-                    else showDetail(asset)
-                  } : undefined}
                   cover={
                     batchMode ? (
                       <div style={{ position: 'relative', height: 200, overflow: 'hidden' }}>

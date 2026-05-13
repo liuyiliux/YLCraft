@@ -40,10 +40,26 @@ class BookSource(SQLModel, table=True):
     
     # 书源分组
     book_source_group: str = Field(default="")
-    
+
     # 是否支持发现
     explore: bool = Field(default=False)
-    
+
+    # HTTP 相关
+    cookie: str = Field(default="")
+    header: str = Field(default="")
+
+    # 登录相关
+    login_url: str = Field(default="")
+    login_ui: str = Field(default="")
+    login_check_js: str = Field(default="")
+
+    # 书源元数据
+    cover_url: str = Field(default="")
+    book_source_comment: str = Field(default="")
+    weight: int = Field(default=0)
+    respond_time: int = Field(default=0)
+    last_update_time: str = Field(default="")
+
     # 规则JSON（存储为字符串）
     rule_search: str = Field(default="")   # JSON字符串
     rule_book_info: str = Field(default="") # JSON字符串

@@ -232,36 +232,37 @@ class BookSourceManager:
         
         try:
             result = self.db.execute(text("SELECT * FROM book_sources"))
-            rows = result.fetchall()
-            
+            # 使用 mappings() 获取字典列表，避免 SQLAlchemy 配置导致的 tuple 访问问题
+            rows = result.mappings().all()
+
             for row in rows:
-                source_dict = dict(row._mapping)
+                # row 现在是字典，可以直接通过键名访问
                 mapped = {
-                    "bookSourceName": source_dict.get("book_source_name"),
-                    "bookSourceUrl": source_dict.get("book_source_url"),
-                    "bookSourceType": source_dict.get("book_source_type"),
-                    "enabled": source_dict.get("enabled"),
-                    "customOrder": source_dict.get("custom_order"),
-                    "searchUrl": source_dict.get("search_url"),
-                    "bookSourceGroup": source_dict.get("book_source_group"),
-                    "ruleSearch": json.loads(source_dict["rule_search"]) if source_dict.get("rule_search") else None,
-                    "ruleBookInfo": json.loads(source_dict["rule_book_info"]) if source_dict.get("rule_book_info") else None,
-                    "ruleToc": json.loads(source_dict["rule_toc"]) if source_dict.get("rule_toc") else None,
-                    "ruleContent": json.loads(source_dict["rule_content"]) if source_dict.get("rule_content") else None,
-                    "ruleExplore": json.loads(source_dict["rule_explore"]) if source_dict.get("rule_explore") else None,
-                    "source_id": source_dict.get("id"),
-                    "enabled_by_user": source_dict.get("enabled_by_user", True),
+                    "bookSourceName": row.get("book_source_name"),
+                    "bookSourceUrl": row.get("book_source_url"),
+                    "bookSourceType": row.get("book_source_type"),
+                    "enabled": row.get("enabled", True),
+                    "customOrder": row.get("custom_order") or 0,
+                    "searchUrl": row.get("search_url"),
+                    "bookSourceGroup": row.get("book_source_group"),
+                    "ruleSearch": json.loads(row["rule_search"]) if row.get("rule_search") else None,
+                    "ruleBookInfo": json.loads(row["rule_book_info"]) if row.get("rule_book_info") else None,
+                    "ruleToc": json.loads(row["rule_toc"]) if row.get("rule_toc") else None,
+                    "ruleContent": json.loads(row["rule_content"]) if row.get("rule_content") else None,
+                    "ruleExplore": json.loads(row["rule_explore"]) if row.get("rule_explore") else None,
+                    "source_id": row.get("id"),
+                    "enabled_by_user": row.get("enabled_by_user", True),
                     # 新增字段
-                    "cookie": source_dict.get("cookie"),
-                    "header": source_dict.get("header"),
-                    "loginUrl": source_dict.get("login_url"),
-                    "loginUi": source_dict.get("login_ui"),
-                    "loginCheckJs": source_dict.get("login_check_js"),
-                    "coverUrl": source_dict.get("cover_url"),
-                    "bookSourceComment": source_dict.get("book_source_comment"),
-                    "weight": source_dict.get("weight", 0),
-                    "respondTime": source_dict.get("respond_time", 0),
-                    "lastUpdateTime": source_dict.get("last_update_time"),
+                    "cookie": row.get("cookie"),
+                    "header": row.get("header"),
+                    "loginUrl": row.get("login_url"),
+                    "loginUi": row.get("login_ui"),
+                    "loginCheckJs": row.get("login_check_js"),
+                    "coverUrl": row.get("cover_url"),
+                    "bookSourceComment": row.get("book_source_comment"),
+                    "weight": row.get("weight") or 0,
+                    "respondTime": row.get("respond_time") or 0,
+                    "lastUpdateTime": row.get("last_update_time"),
                 }
                 try:
                     source = BookSource(**mapped)
@@ -296,19 +297,22 @@ class BookSourceManager:
         
         for source in new_sources:
             try:
-                existing = next((s for s in self.sources 
+                existing = next((s for s in self.sources
                                if s.bookSourceUrl == source.bookSourceUrl), None)
-                
+
                 if existing:
+                    old_source_id = existing.source_id
                     existing.__dict__.update(source.__dict__)
+                    existing.source_id = old_source_id  # 保留原有 source_id
                     updated += 1
                 else:
                     source.source_id = self._generate_id()
                     self.sources.append(source)
                     added += 1
-                
+
                 if self.db:
-                    if not self._save_source_to_db(source):
+                    target = existing if existing else source
+                    if not self._save_source_to_db(target):
                         failed += 1
                         continue
             except Exception as e:
@@ -344,7 +348,7 @@ class BookSourceManager:
             if existing:
                 self.db.execute(
                     text("""
-                        UPDATE book_sources 
+                        UPDATE book_sources
                         SET book_source_name = :name,
                             book_source_type = :type,
                             enabled = :enabled,
@@ -356,14 +360,14 @@ class BookSourceManager:
                             book_source_group = :group,
                             cookie = :cookie,
                             header = :header,
-                            loginUrl = :loginUrl,
-                            loginUi = :loginUi,
-                            loginCheckJs = :loginCheckJs,
-                            coverUrl = :coverUrl,
-                            bookSourceComment = :comment,
+                            login_url = :login_url,
+                            login_ui = :login_ui,
+                            login_check_js = :login_check_js,
+                            cover_url = :cover_url,
+                            book_source_comment = :book_source_comment,
                             weight = :weight,
-                            respondTime = :respondTime,
-                            lastUpdateTime = :lastUpdateTime
+                            respond_time = :respond_time,
+                            last_update_time = :last_update_time
                         WHERE book_source_url = :url
                     """),
                     {
@@ -378,14 +382,14 @@ class BookSourceManager:
                         "group": source.bookSourceGroup or "",
                         "cookie": source.cookie or "",
                         "header": source.header or "",
-                        "loginUrl": source.loginUrl or "",
-                        "loginUi": source.loginUi or "",
-                        "loginCheckJs": source.loginCheckJs or "",
-                        "coverUrl": source.coverUrl or "",
-                        "comment": source.bookSourceComment or "",
+                        "login_url": source.loginUrl or "",
+                        "login_ui": source.loginUi or "",
+                        "login_check_js": source.loginCheckJs or "",
+                        "cover_url": source.coverUrl or "",
+                        "book_source_comment": source.bookSourceComment or "",
                         "weight": source.weight or 0,
-                        "respondTime": source.respondTime or 0,
-                        "lastUpdateTime": str(source.lastUpdateTime) if source.lastUpdateTime else "",
+                        "respond_time": source.respondTime or 0,
+                        "last_update_time": str(source.lastUpdateTime) if source.lastUpdateTime else "",
                         "url": source.bookSourceUrl
                     }
                 )
@@ -394,19 +398,19 @@ class BookSourceManager:
                 now = datetime.now().isoformat()
                 self.db.execute(
                     text("""
-                        INSERT INTO book_sources 
+                        INSERT INTO book_sources
                         (id, book_source_name, book_source_url, book_source_type, enabled,
                          rule_search, rule_book_info, rule_toc, rule_content, rule_explore,
                          book_source_group, enabled_by_user, custom_order, search_url, explore,
-                         cookie, header, loginUrl, loginUi, loginCheckJs,
-                         coverUrl, bookSourceComment, weight, respondTime, lastUpdateTime,
+                         cookie, header, login_url, login_ui, login_check_js,
+                         cover_url, book_source_comment, weight, respond_time, last_update_time,
                          created_at, updated_at)
-                        VALUES 
+                        VALUES
                         (:id, :name, :url, :type, :enabled,
                          :search, :info, :toc, :content, :rule_explore,
                          :group, :enabled_by_user, :custom_order, :search_url, :explore,
-                         :cookie, :header, :loginUrl, :loginUi, :loginCheckJs,
-                         :coverUrl, :comment, :weight, :respondTime, :lastUpdateTime,
+                         :cookie, :header, :login_url, :login_ui, :login_check_js,
+                         :cover_url, :book_source_comment, :weight, :respond_time, :last_update_time,
                          :created_at, :updated_at)
                     """),
                     {
@@ -427,14 +431,14 @@ class BookSourceManager:
                         "explore": source.explore or False,
                         "cookie": source.cookie or "",
                         "header": source.header or "",
-                        "loginUrl": source.loginUrl or "",
-                        "loginUi": source.loginUi or "",
-                        "loginCheckJs": source.loginCheckJs or "",
-                        "coverUrl": source.coverUrl or "",
-                        "comment": source.bookSourceComment or "",
+                        "login_url": source.loginUrl or "",
+                        "login_ui": source.loginUi or "",
+                        "login_check_js": source.loginCheckJs or "",
+                        "cover_url": source.coverUrl or "",
+                        "book_source_comment": source.bookSourceComment or "",
                         "weight": source.weight or 0,
-                        "respondTime": source.respondTime or 0,
-                        "lastUpdateTime": str(source.lastUpdateTime) if source.lastUpdateTime else "",
+                        "respond_time": source.respondTime or 0,
+                        "last_update_time": str(source.lastUpdateTime) if source.lastUpdateTime else "",
                         "created_at": now,
                         "updated_at": now,
                     }
@@ -1073,9 +1077,6 @@ class BookSourceManager:
     
     async def get_chapter_content(self, source: BookSource, chapter_url: str) -> Optional[str]:
         """获取章节内容"""
-        if not source.ruleContent:
-            return None
-        
         try:
             async with httpx.AsyncClient(timeout=10.0, verify=False) as client:
                 response = await client.get(chapter_url, headers={
@@ -1084,8 +1085,33 @@ class BookSourceManager:
                 response.raise_for_status()
                 html = response.text
             
-            content = parse_chapter_content(source.ruleContent, html)
-            return content
+            # 优先使用书源配置的规则
+            if source.ruleContent:
+                content = parse_chapter_content(source.ruleContent, html)
+                if content:
+                    return content
+            
+            # 兜底：尝试常见正文选择器
+            fallback_selectors = [
+                "#content",
+                ".content",
+                "#nr1",
+                ".nr1",
+                "#txt",
+                ".txt",
+                "#booktext",
+                ".booktext",
+                ".chapter-content",
+                "article",
+            ]
+            for selector in fallback_selectors:
+                content = parse_chapter_content({"content": selector}, html)
+                if content and len(content) > 100:
+                    print(f"[{source.bookSourceName}] 使用兜底选择器: {selector}, 内容长度: {len(content)}")
+                    return content
+            
+            print(f"[{source.bookSourceName}] 所有正文规则均无法匹配: {chapter_url}")
+            return None
             
         except Exception as e:
             print(f"获取章节内容失败: {e}")

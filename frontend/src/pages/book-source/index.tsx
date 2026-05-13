@@ -90,6 +90,25 @@ const BookSourcePage: React.FC = () => {
     }
   }
 
+  const handleBatchEnable = async () => {
+    if (selectedRowKeys.length === 0) {
+      message.warning('请先选择书源')
+      return
+    }
+    try {
+      const result = await batchToggleBookSources(selectedRowKeys as string[], true)
+      if (result.failed > 0) {
+        message.warning(`已启用 ${result.updated} 个，失败 ${result.failed} 个`)
+      } else {
+        message.success(`已启用 ${result.updated} 个书源`)
+      }
+      setSelectedRowKeys([])
+      fetchSources()
+    } catch (err: any) {
+      message.error(`批量启用失败: ${err.message}`)
+    }
+  }
+
   const handleBatchDisable = async () => {
     if (selectedRowKeys.length === 0) {
       message.warning('请先选择书源')
@@ -241,6 +260,7 @@ const BookSourcePage: React.FC = () => {
         </Upload>
         <Button icon={<DownloadOutlined />} onClick={handleExport}>导出书源</Button>
         <Button onClick={fetchSources} loading={loading}>刷新</Button>
+        <Button type="primary" onClick={handleBatchEnable} disabled={selectedRowKeys.length === 0}>批量启用</Button>
         <Button danger onClick={handleBatchDisable} disabled={selectedRowKeys.length === 0}>批量禁用</Button>
         <Button type="primary" danger onClick={handleBatchDelete} disabled={selectedRowKeys.length === 0}>批量删除</Button>
       </Space>

@@ -111,26 +111,32 @@ async def get_catalog(
     """获取小说目录（使用书源解析器）"""
     try:
         manager = BookSourceManager(db)
-        
+
+        source = None
         if site:
             source = manager.get_source(site)
             if not source:
-                raise HTTPException(status_code=404, detail="书源不存在")
+                # 尝试通过 URL 前缀匹配
+                for s in manager.sources:
+                    if s.bookSourceUrl and url.startswith(s.bookSourceUrl.rstrip('/')):
+                        source = s
+                        break
+            if not source and manager.sources:
+                # 使用第一个启用的书源作为 fallback
+                source = next((s for s in manager.sources if s.enabled_by_user), manager.sources[0])
         else:
-            source = None
             for s in manager.sources:
                 if s.bookSourceUrl and url.startswith(s.bookSourceUrl.rstrip('/')):
                     source = s
                     break
-            
             if not source:
                 source = next((s for s in manager.sources if s.enabled_by_user), None)
-        
+
         if not source:
             raise HTTPException(status_code=404, detail="没有可用的书源")
-        
+
         chapters = await manager.get_chapter_list(source, url)
-        
+
         normalized_chapters = []
         for idx, ch in enumerate(chapters, 1):
             normalized_chapters.append({
@@ -138,7 +144,7 @@ async def get_catalog(
                 'title': ch.get('title') or ch.get('name', ''),
                 'url': ch.get('url', ''),
             })
-        
+
         return {
             'success': True,
             'data': normalized_chapters,
@@ -174,12 +180,23 @@ async def add_to_bookshelf(req: AddToBookshelfRequest, db: Session = Depends(get
             asset_id = existing[0]
             # 更新已有记录的章节数据和书源信息
             meta = json.loads(existing[1] or '{}')
+            # 多源目录：以 source_id 为 key 存储各书源的目录
+            catalogs = meta.get('catalogs', {})
+            catalogs[req.source_id] = {
+                'chapters': req.chapters,
+                'chapter_count': len(req.chapters),
+                'source_name': req.source_name,
+                'source_url': req.source_url,
+                'toc_url': req.toc_url,
+            }
             meta.update({
+                # 当前阅读使用的目录（兼容旧逻辑）
                 'chapters': req.chapters,
                 'chapter_count': len(req.chapters),
                 'source_id': req.source_id,
                 'source_name': req.source_name,
                 'toc_url': req.toc_url,
+                'catalogs': catalogs,
                 'last_updated': datetime.now().isoformat(),
             })
             db.execute(
@@ -205,6 +222,16 @@ async def add_to_bookshelf(req: AddToBookshelfRequest, db: Session = Depends(get
             'source_url': req.source_url,
             'chapters': req.chapters,
             'chapter_count': len(req.chapters),
+            # 多源目录：key 为 source_id，value 包含该书源的章节列表和 URL
+            'catalogs': {
+                req.source_id: {
+                    'chapters': req.chapters,
+                    'chapter_count': len(req.chapters),
+                    'source_name': req.source_name,
+                    'source_url': req.source_url,
+                    'toc_url': req.toc_url,
+                }
+            },
             'downloaded_chapter_indices': [],
             'last_read_chapter': 0,
             'last_read_position': 0,
@@ -479,3 +506,74 @@ async def get_sources(db: Session = Depends(get_db)):
         for s in sources
     ]
     return {'success': True, 'data': data}
+
+
+@router.get("/source-catalog")
+async def get_source_catalog(
+    book_url: str = Query(..., description="书籍 URL（原始书源）"),
+    source_id: str = Query(..., description="目标书源 ID"),
+    db: Session = Depends(get_db),
+):
+    """
+    从指定书源获取书籍目录（用于换源时动态加载目录）。
+    根据目标书源的域名，构造对应书源的目录页 URL，再抓取解析。
+    """
+    try:
+        manager = BookSourceManager(db)
+        source = manager.get_source(source_id)
+        if not source:
+            raise HTTPException(status_code=404, detail="书源不存在")
+
+        # 构造目标书源的目录 URL：
+        # 从原始 book_url 提取路径部分，拼接到目标书源的 bookSourceUrl
+        original_url = book_url.rstrip('/')
+        # 提取原始 URL 的路径部分（如 /book/123.html -> /book/）
+        if '/' in original_url:
+            path_part = original_url[original_url.rfind('/'):]
+            # 判断是否是文件页（.html/.php等），如果是则取上级目录
+            if '.' in path_part:
+                base_path = original_url[:original_url.rfind('/')]
+            else:
+                base_path = original_url
+        else:
+            base_path = original_url
+
+        # 尝试用目标书源域名构造目录 URL
+        target_base = source.bookSourceUrl.rstrip('/')
+        
+        # 简化：从目标书源根目录开始尝试
+        # 先用书源配置的 ruleToc 中的 URL 模板，如果没有则直接用 bookSourceUrl
+        catalog_url = target_base
+        if source.ruleToc and isinstance(source.ruleToc, dict):
+            toc_url_template = source.ruleToc.get('bookUrl', '') or source.ruleToc.get('url', '')
+            if toc_url_template and toc_url_template.startswith('http'):
+                catalog_url = toc_url_template
+            elif toc_url_template:
+                catalog_url = target_base + toc_url_template
+
+        print(f"[换源] 目标书源={source.bookSourceName}, 构造目录URL={catalog_url}")
+
+        chapters = await manager.get_chapter_list(source, catalog_url)
+
+        if not chapters:
+            raise HTTPException(status_code=404, detail=f"该书源无法获取目录，可能需要手动设置目录页 URL")
+
+        normalized = [
+            {'index': idx, 'title': ch.get('title') or ch.get('name', ''), 'url': ch.get('url', '')}
+            for idx, ch in enumerate(chapters, 1)
+        ]
+
+        return {
+            'success': True,
+            'data': {
+                'source_id': source_id,
+                'source_name': source.bookSourceName,
+                'catalog_url': catalog_url,
+                'chapters': normalized,
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[换源] 获取目录失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
