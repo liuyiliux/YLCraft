@@ -3,7 +3,7 @@
 支持导入/导出/管理阅读App格式的书源
 """
 
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from sqlmodel import Session, select
 from pydantic import BaseModel
@@ -221,12 +221,93 @@ async def search_books(
     db: Session = Depends(get_db)
 ):
     """
-    在所有启用的书源中搜索小说
+    在所有启用的书源中搜索小说（SSE 流式返回，每个书源完成即推送）
     
     Args:
         keyword: 搜索关键词
     """
+    from fastapi.responses import StreamingResponse
+    import asyncio
+    import json
+
     manager = BookSourceManager(db)
-    results = await manager.search_all_sources(keyword)
-    
-    return {"success": True, "data": results, "total": len(results)}
+
+    async def event_generator():
+        # 发送初始事件（搜索开始）
+        yield f"data: {json.dumps({'type': 'start', 'data': []})}\n\n"
+
+        sources_to_search = [
+            source for source in manager.sources
+            if source.enabled_by_user and source.ruleSearch and manager._is_compatible_source(source)
+        ]
+
+        if not sources_to_search:
+            yield f"data: {json.dumps({'type': 'finish', 'total': 0, 'data': []})}\n\n"
+            return
+
+        semaphore = asyncio.Semaphore(10)
+        all_results: List[Dict[str, Any]] = []
+        seen = set()
+        completed_count = 0
+        total_sources = len(sources_to_search)
+
+        async def search_one(source):
+            try:
+                results = await manager._search_single_source(source, keyword)
+                for r in results:
+                    r["sourceName"] = source.bookSourceName
+                    r["sourceUrl"] = source.bookSourceUrl
+                    r["sourceId"] = source.source_id
+                return (source.bookSourceName, results or [])
+            except Exception as e:
+                print(f"在书源 {source.bookSourceName} 搜索失败: {e}")
+                return (source.bookSourceName, [])
+
+        tasks = [asyncio.create_task(search_one(source)) for source in sources_to_search]
+
+        # 使用 as_completed 实现流式推送：哪个书源先完成就先推送给前端
+        for coro in asyncio.as_completed(tasks):
+            source_name, results = await coro
+            completed_count += 1
+
+            # 标准化 + 去重
+            new_items = []
+            for book in results:
+                item = {
+                    "title": book.get("name", ""),
+                    "author": book.get("author", ""),
+                    "url": book.get("url") or book.get("bookUrl", ""),
+                    "cover": book.get("cover") or book.get("coverUrl", ""),
+                    "source_site": source_name,
+                    "source_id": book.get("sourceId", ""),
+                }
+                key = (item["title"].strip().lower(), item["author"].strip().lower())
+                if key not in seen and item["title"]:
+                    seen.add(key)
+                    all_results.append(item)
+                    new_items.append(item)
+
+            if new_items:
+                payload = {
+                    'type': 'results',
+                    'completed': completed_count,
+                    'total_sources': total_sources,
+                    'current_source': source_name,
+                    'new_count': len(new_items),
+                    'total_so_far': len(all_results),
+                    'data': new_items,
+                }
+                yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+        # 搜索完成事件
+        yield f"data: {json.dumps({'type': 'finish', 'total': len(all_results), 'data': all_results}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

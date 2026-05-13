@@ -345,6 +345,7 @@ export default function AssetsPage() {
                   { label: '视频', value: 'VIDEO' },
                   { label: '图片', value: 'IMAGE' },
                   { label: '音频', value: 'AUDIO' },
+                  { label: '小说', value: 'NOVEL' },
                 ]}
               />
               <Select
@@ -444,7 +445,18 @@ export default function AssetsPage() {
               const status = (asset.status || '').toUpperCase()
               const isReady = status === 'READY'
               const isVideo = (asset.type || '').toUpperCase() === 'VIDEO'
+              const isNovel = (asset.type || '').toLowerCase() === 'novel'
               const isPlaying = playingAssetId === asset.id
+              // 小说元数据
+              const meta = asset.metadata || {}
+              const novelMeta = isNovel ? {
+                title: meta.novel_title || asset.title,
+                author: meta.author || asset.author,
+                chapterCount: meta.chapter_count || 0,
+                lastRead: meta.last_read_chapter || 0,
+                downloaded: (meta.downloaded_chapter_indices || []).length,
+                sourceName: meta.source_name || '',
+              } : null
 
               return (
               <Col xs={24} sm={12} md={8} lg={6} key={asset.id}>
@@ -453,15 +465,34 @@ export default function AssetsPage() {
                   style={{
                     border: selectedIds.includes(asset.id) ? '2px solid #1890ff' : undefined
                   }}
+                  onClick={!batchMode ? () => {
+                    if (isNovel) navigate(`/novel-reader/${asset.id}`)
+                    else showDetail(asset)
+                  } : undefined}
                   cover={
                     batchMode ? (
                       <div style={{ position: 'relative', height: 200, overflow: 'hidden' }}>
-                        {asset.thumbnail_url ? (
+                        {asset.thumbnail_url && !isNovel ? (
                           <img
                             src={asset.thumbnail_url}
                             style={{ width: '100%', height: 200, objectFit: 'cover', display: 'block' }}
                             onError={(e) => { e.currentTarget.style.display = 'none' }}
                           />
+                        ) : isNovel ? (
+                          <div style={{
+                            height: 200,
+                            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: 48,
+                            color: '#fff',
+                            flexDirection: 'column',
+                            gap: 8
+                          }}>
+                            <span>📖</span>
+                            <span style={{ fontSize: 12 }}>小说</span>
+                          </div>
                         ) : (
                           <div style={{ height: 200, background: theme.bgElevated, display: 'flex', alignItems: 'center', justifyContent: 'center', color: theme.textSecondary }}>
                             {isVideo ? '🎬' : (asset.type || '').toUpperCase() === 'IMAGE' ? '🖼️' : '📄'}
@@ -500,7 +531,33 @@ export default function AssetsPage() {
                       </div>
                     ) : (
                       <div style={{ position: 'relative', height: 200, overflow: 'hidden' }}>
-                        {asset.thumbnail_url ? (
+                        {isNovel ? (
+                          <div style={{
+                            height: 200,
+                            background: asset.cover_url ? 'transparent' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}>
+                            {asset.cover_url ? (
+                              <img
+                                src={asset.cover_url}
+                                alt={novelMeta?.title}
+                                style={{ width: '100%', height: 200, objectFit: 'cover' }}
+                              />
+                            ) : (
+                              <span style={{ fontSize: 48 }}>📖</span>
+                            )}
+                            {/* 小说状态角标 */}
+                            <div style={{ position: 'absolute', top: 8, right: 8 }}>
+                              <Tag color={novelMeta && novelMeta.downloaded >= novelMeta.chapterCount ? 'green' : 'blue'}>
+                                {novelMeta && novelMeta.downloaded >= novelMeta.chapterCount
+                                  ? `已下载 ${novelMeta.downloaded}章`
+                                  : `可在线阅读`}
+                              </Tag>
+                            </div>
+                          </div>
+                        ) : asset.thumbnail_url ? (
                           <img
                             src={asset.thumbnail_url}
                             style={{ width: '100%', height: 200, objectFit: 'cover', display: 'block' }}
@@ -531,22 +588,38 @@ export default function AssetsPage() {
                     )
                   }
                   actions={!batchMode ? [
-                    isVideo && isReady && (
-                      <Tooltip title={isPlaying ? "暂停" : "播放"} key="play">
-                        {isPlaying ? (
-                          <PauseCircleOutlined style={{ color: theme.textSecondary }} onClick={(e) => { e.stopPropagation(); setPlayingAssetId(null) }} />
-                        ) : (
-                          <PlayCircleOutlined style={{ color: theme.textSecondary }} onClick={(e) => { e.stopPropagation(); setPlayingAssetId(asset.id) }} />
-                        )}
+                    isNovel ? (
+                      <Tooltip title="开始阅读" key="read" style={{ color: '#1890ff' }}>
+                        <span
+                          style={{ color: '#1890ff' }}
+                          onClick={(e) => { e.stopPropagation(); navigate(`/novel-reader/${asset.id}`) }}
+                        >
+                          📖 阅读
+                        </span>
                       </Tooltip>
+                    ) : (
+                      (isVideo && isReady && (
+                        <Tooltip title={isPlaying ? "暂停" : "播放"} key="play">
+                          {isPlaying ? (
+                            <PauseCircleOutlined style={{ color: theme.textSecondary }} onClick={(e) => { e.stopPropagation(); setPlayingAssetId(null) }} />
+                          ) : (
+                            <PlayCircleOutlined style={{ color: theme.textSecondary }} onClick={(e) => { e.stopPropagation(); setPlayingAssetId(asset.id) }} />
+                          )}
+                        </Tooltip>
+                      ))
                     ),
+                    !isNovel && (
                     <Tooltip title={isAIGenerated(asset) ? "再次生成" : "跳转解析"} key="jump">
                       <ThunderboltOutlined style={{ color: theme.textSecondary }} onClick={(e) => handleJumpToGenerator(asset, e)} />
-                    </Tooltip>,
+                    </Tooltip>
+                    ),
                     <Tooltip title="下载" key="download">
                       <DownloadOutlined style={{ color: theme.textSecondary }} onClick={(e) => {
                         e.stopPropagation()
-                        // 下载文件
+                        if (isNovel) {
+                          navigate(`/novel-bookshelf`)
+                          return
+                        }
                         const link = document.createElement('a')
                         link.href = `/api/v1/assets/${asset.id}/download`
                         link.download = asset.title || 'asset'
@@ -563,6 +636,8 @@ export default function AssetsPage() {
                   onClick={() => {
                     if (batchMode) {
                       toggleSelect(asset.id, !selectedIds.includes(asset.id))
+                    } else if (isNovel) {
+                      navigate(`/novel-reader/${asset.id}`)
                     } else if (!isPlaying) {
                       handleShowDetail(asset)
                     }
@@ -572,11 +647,26 @@ export default function AssetsPage() {
                     title={
                       <Tooltip title={asset.title || '无标题'} placement="topLeft">
                         <span style={{ fontSize: 13, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {asset.title || '无标题'}
+                          {isNovel ? (novelMeta?.title || asset.title) : (asset.title || '无标题')}
                         </span>
                       </Tooltip>
                     }
                     description={
+                      isNovel ? (
+                        <div style={{ height: 52, overflow: 'hidden' }}>
+                          <div style={{ fontSize: 12, color: theme.textSecondary }}>
+                            👤 {novelMeta?.author || '未知作者'}
+                          </div>
+                          <div style={{ fontSize: 11, color: '#999', marginTop: 2 }}>
+                            📚 {novelMeta?.chapterCount || 0} 章 · 已读 {Math.min((novelMeta?.lastRead || 0) + 1, novelMeta?.chapterCount || 0)} 章
+                          </div>
+                          {novelMeta?.sourceName && (
+                            <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>
+                              来源：{novelMeta.sourceName}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
                       <div style={{ height: 52, overflow: 'hidden' }}>
                         <div style={{ fontSize: 12, color: theme.textSecondary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {asset.platform} · {asset.author || '未知作者'}
@@ -592,8 +682,8 @@ export default function AssetsPage() {
                           </Space>
                         ) : null}
                       </div>
-                    }
-                  />
+                      )}
+                    />
                 </Card>
               </Col>
               )

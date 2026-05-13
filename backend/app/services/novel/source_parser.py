@@ -454,7 +454,9 @@ def _parse_selector(rule_part: str) -> tuple:
     elif selector.startswith('class.'):
         selector = '.' + selector[6:]  # 转换为 .classname
     elif selector.startswith('id#'):
-        selector = '#' + selector[3:]  # 转换为 #id
+        selector = '#' + selector[3:]  # 转换为 #id (id#xxx 格式)
+    elif selector.startswith('id.') and not selector.startswith('id#'):
+        selector = '#' + selector[3:]  # 转换为 #xxx (id.xxx 格式，Legado 常见写法)
     # 否则 selector 已经是标准 CSS
     
     return (selector, filter_type, indices)
@@ -756,8 +758,26 @@ def parse_chapter_list(rule: Dict[str, Any], html: str, base_url: str) -> List[D
         
         # 使用 _select_elements 解析 Legado 风格规则
         chapter_elements = _select_elements(chapter_list_selector, soup)
+        print(f"[DEBUG parse_chapter_list] selector='{chapter_list_selector}', found={len(chapter_elements)} elements")
+        if len(chapter_elements) == 0:
+            # 打印关键 DOM 结构帮助调试
+            list_elem = soup.find(id='list')
+            if list_elem:
+                print(f"[DEBUG] 找到 id=list 元素, tag={list_elem.name}, 子元素数={len(list_elem.contents)}, 内HTML前200字: {str(list_elem)[:200]}")
+            else:
+                print(f"[DEBUG] 未找到 id=list 元素. body下直接子元素: {[c.name for c in (soup.body or [])][:20]}")
+                # 查找所有含 dd 的容器
+                for dd in soup.find_all('dd')[:3]:
+                    parent = dd.parent
+                    print(f"[DEBUG] 找到 <dd>, 父元素: {parent.name}, class={parent.get('class')}, id={parent.get('id')}")
+
+            dd_elems = soup.select('dd')
+            print(f"[DEBUG] 全页 <dd> 数量: {len(dd_elems)}")
+            if dd_elems:
+                print(f"[DEBUG] 第一个 <dd> 的HTML: {str(dd_elems[0])[:300]}")
+
         chapters = []
-        
+
         for idx, elem in enumerate(chapter_elements, 1):
             chapter = {}
             elem_html = str(elem)

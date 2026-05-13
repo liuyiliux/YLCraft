@@ -635,6 +635,63 @@ class BookSourceManager:
             return False
         return True
 
+    def _try_mobile_url_fallback(self, url: str) -> List[str]:
+        """
+        将桌面版 URL 转换为移动版候选 URL 列表（通用策略 + 站点特例）
+        
+        通用策略：
+          - www.xxx -> m.xxx（最常见模式）
+          - xxx -> m.xxx（无 www 前缀时直接加 m.）
+        
+        站点特例（路径结构不同时需单独处理）：
+          - zwduxs.com: /168_168684/ -> m.zwduxs.com/info/168684/
+        
+        返回候选列表（按优先级排序），调用方依次尝试。
+        """
+        from urllib.parse import urlparse
+
+        candidates = []
+        parsed = urlparse(url)
+        host = parsed.netloc.lower()
+        scheme = parsed.scheme or 'http'
+        path = parsed.path.rstrip('/') or '/'
+        query = f'?{parsed.query}' if parsed.query else ''
+
+        # ===== 站点特例：路径结构差异大的站点 =====
+        if 'zwduxs.com' in host or '81zw.com' in host:
+            match = re.search(r'/(\d+_\d+)/', path)
+            if match:
+                book_id = match.group(1).split('_')[1]
+                candidates.append(f"http://m.zwduxs.com/info/{book_id}/")
+            match = re.search(r'/info/(\d+)/', path)
+            if match:
+                candidates.append(f"http://m.zwduxs.com/info/{match.group(1)}/")
+
+        # ===== 通用策略 1: www -> m =====
+        if host.startswith('www.'):
+            mobile_host = 'm.' + host[4:]
+            candidates.append(f"{scheme}://{mobile_host}{path}{query}")
+
+        # ===== 通用策略 2: 直接加 m. 前缀（排除已处理的和已是移动版的）=====
+        if not host.startswith(('m.', 'wap.', 'mobile.')):
+            mobile_host = 'm.' + host
+            candidates.append(f"{scheme}://{mobile_host}{path}{query}")
+
+        # ===== 通用策略 3: wap. 前缀（部分站点用 wap 子域名）=====
+        if not host.startswith('wap.'):
+            wap_host = 'wap.' + host.lstrip('www.')
+            candidates.append(f"{scheme}://{wap_host}{path}{query}")
+
+        # 去重并保持顺序
+        seen = set()
+        unique = []
+        for c in candidates:
+            if c not in seen:
+                seen.add(c)
+                unique.append(c)
+
+        return unique
+
     def _build_headers(self, source: BookSource) -> Dict[str, str]:
         """
         构建请求头（模拟真实浏览器）
@@ -721,16 +778,29 @@ class BookSourceManager:
         # 后端返回: name, author, url, sourceName, sourceUrl, sourceId
         normalized_results = []
         for book in all_results:
+            # 兼容 HTML 解析（name/url/cover）和 JSON 解析（name/bookUrl/coverUrl）
             normalized_results.append({
                 "title": book.get("name", ""),
                 "author": book.get("author", ""),
-                "url": book.get("url", ""),
-                "cover": book.get("cover", ""),
+                "url": book.get("url") or book.get("bookUrl", ""),
+                "cover": book.get("cover") or book.get("coverUrl", ""),
                 "source_site": book.get("sourceName", ""),
                 "source_id": book.get("sourceId", ""),
             })
-        
-        return normalized_results
+
+        # 按书名+作者去重（同一本书可能来自多个书源，保留第一个）
+        seen = set()
+        deduped_results = []
+        for book in normalized_results:
+            key = (book["title"].strip().lower(), book["author"].strip().lower())
+            if key not in seen:
+                seen.add(key)
+                deduped_results.append(book)
+
+        if len(normalized_results) != len(deduped_results):
+            print(f"去重: {len(normalized_results)} 条 -> {len(deduped_results)} 条")
+
+        return deduped_results
     
     async def _search_single_source(self, source: BookSource, keyword: str) -> List[Dict[str, Any]]:
         """在单个书源中搜索，支持 JS 模板，带重试逻辑"""
@@ -850,25 +920,156 @@ class BookSourceManager:
             print(f"获取书籍详情失败: {e}")
             return {}
     
-    async def get_chapter_list(self, source: BookSource, toc_url: str) -> List[Dict[str, Any]]:
-        """获取章节列表"""
-        if not source.ruleToc:
-            return []
-        
+    def _is_minimal_html_page(self, html: str) -> bool:
+        """
+        检测是否为"极简壳页面"（仅含 meta 标签、无实际内容的 JS 渲染 SPA 页面）
+        这类页面的特征：
+        - HTML 长度 < 2000 字符
+        - 没有 body 内容（或 body 内只有 script 标签）
+        - 包含 meta refresh / Cache-Control 跳转标记
+        """
+        from bs4 import BeautifulSoup
+
+        stripped = html.strip()
+        if len(stripped) > 2000:
+            return False
+
         try:
-            async with httpx.AsyncClient(timeout=10.0, verify=False) as client:
-                response = await client.get(toc_url, headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-                })
-                response.raise_for_status()
-                html = response.text
-            
-            chapters = parse_chapter_list(source.ruleToc, html, toc_url)
-            return chapters
-            
-        except Exception as e:
-            print(f"获取章节列表失败: {e}")
+            soup = BeautifulSoup(stripped, 'html.parser')
+            body = soup.find('body')
+            if not body:
+                return True
+
+            body_text = body.get_text(strip=True)
+            # body 文本极少（排除纯脚本内容）
+            if len(body_text) < 50:
+                return True
+
+            # 检测是否有典型的 SPA 重定向 meta 标签
+            meta_refresh = soup.find('meta', attrs={'http-equiv': re.compile(r'refresh|cache-control', re.I)})
+            if meta_refresh and len(body_text) < 200:
+                return True
+
+            return False
+        except Exception:
+            return False
+
+    async def get_chapter_list(self, source: BookSource, toc_url: str) -> List[Dict[str, Any]]:
+        """获取章节列表（先获取书籍详情页，再用 ruleToc 解析目录）"""
+        rule = source.ruleToc
+        if not rule:
+            print(f"[{source.bookSourceName}] ruleToc 为空 (ruleToc={rule})")
             return []
+
+        # 构建请求头（与搜索一致，使用 Cookie/Referer 等）
+        headers = self._build_headers(source)
+
+        max_retries = 3
+        timeout = getattr(source, 'timeout', 30) or 30
+
+        for attempt in range(max_retries):
+            try:
+                async with httpx.AsyncClient(
+                    timeout=httpx.Timeout(timeout, connect=10.0),
+                    follow_redirects=True,
+                    verify=False
+                ) as client:
+                    response = await client.get(toc_url, headers=headers)
+                    response.raise_for_status()
+                    html = response.text
+
+                if not html.strip():
+                    print(f"[{source.bookSourceName}] 目录页响应为空: {toc_url}")
+                    return []
+
+                print(f"[DEBUG] url={toc_url}, html_len={len(html)}, is_minimal={self._is_minimal_html_page(html)}")
+
+                # 检测是否为极简壳页面（JS 渲染 SPA），如果是则直接尝试移动版
+                if self._is_minimal_html_page(html):
+                    print(f"[{source.bookSourceName}] 检测到极简壳页面(len={len(html)}), 跳过解析直接尝试移动版")
+                    mobile_candidates = self._try_mobile_url_fallback(toc_url)
+                    for mobile_url in mobile_candidates:
+                        print(f"[{source.bookSourceName}] 尝试移动版 URL: {mobile_url}")
+                        try:
+                            async with httpx.AsyncClient(
+                                timeout=httpx.Timeout(timeout, connect=10.0),
+                                follow_redirects=True,
+                                verify=False
+                            ) as client:
+                                response = await client.get(mobile_url, headers=headers)
+                                response.raise_for_status()
+                                html = response.text
+                                toc_url = mobile_url  # 更新 base_url 用于相对路径拼接
+                            if html.strip():
+                                break
+                        except Exception as e:
+                            print(f"[{source.bookSourceName}] 移动版 {mobile_url} 失败: {e}")
+                    else:
+                        print(f"[{source.bookSourceName}] 所有移动版候选均失败")
+                        return []
+
+                # 跳过纯 @js: 规则（py_mini_racer 可能不支持）
+                if isinstance(rule, dict) and any(str(v).startswith('@js:') for v in rule.values()):
+                    print(f"[{source.bookSourceName}] ruleToc 含 @js: 规则，跳过")
+                    return []
+
+                chapters = parse_chapter_list(rule, html, toc_url)
+                print(f"[{source.bookSourceName}] 解析到 {len(chapters)} 个章节, url={toc_url}, rule={rule}")
+                if len(chapters) == 0:
+                    # 打印更多 HTML 结构信息帮助调试
+                    from bs4 import BeautifulSoup
+                    soup_debug = BeautifulSoup(html, 'html.parser')
+                    body = soup_debug.find('body') if soup_debug else None
+                    if body:
+                        direct_children = [c.name for c in body.children if hasattr(c, 'name')] if body else []
+                        dd_count = len(soup_debug.find_all('dd'))
+                        list_id = soup_debug.find(id='list')
+                        print(f"[DEBUG] 桌面版: body直接子元素={direct_children[:15]}, <dd>数量={dd_count}, id=list存在={list_id is not None}")
+
+                # 如果解析失败且不是从移动版来的，尝试移动版 fallback
+                if len(chapters) == 0 and len(html.strip()) > 0:
+                    preview = html[:500].replace('\n', ' ').strip()
+                    is_json = html.strip().startswith('{') or html.strip().startswith('[')
+                    print(f"[{source.bookSourceName}] 解析失败调试: isJson={is_json}, htmlPreview={preview}")
+
+                    # 尝试移动版 URL fallback（用于需要 JS 渲染的站点）
+                    mobile_candidates = self._try_mobile_url_fallback(toc_url)
+                    for mobile_url in mobile_candidates:
+                        print(f"[{source.bookSourceName}] 尝试移动版 URL: {mobile_url}")
+                        try:
+                            async with httpx.AsyncClient(
+                                timeout=httpx.Timeout(timeout, connect=10.0),
+                                follow_redirects=True,
+                                verify=False
+                            ) as client:
+                                response = await client.get(mobile_url, headers=headers)
+                                response.raise_for_status()
+                                html_mobile = response.text
+
+                            if html_mobile.strip():
+                                print(f"[DEBUG] 移动版 {mobile_url} html_len={len(html_mobile)}, preview={html_mobile[:300]}")
+                                chapters = parse_chapter_list(rule, html_mobile, mobile_url)
+                                print(f"[{source.bookSourceName}] 移动版解析到 {len(chapters)} 个章节, url={mobile_url}")
+                                if chapters:
+                                    break
+                        except Exception as e:
+                            print(f"[{source.bookSourceName}] 移动版 {mobile_url} 失败: {e}")
+
+                return chapters
+
+            except httpx.TimeoutException:
+                print(f"[{source.bookSourceName}] 目录请求超时 (尝试 {attempt + 1}/{max_retries})")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(1 * (attempt + 1))
+                    continue
+                return []
+            except Exception as e:
+                print(f"[{source.bookSourceName}] 获取章节列表失败 (尝试 {attempt + 1}/{max_retries}): {type(e).__name__}: {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(1)
+                    continue
+                return []
+        return []
     
     async def get_chapter_content(self, source: BookSource, chapter_url: str) -> Optional[str]:
         """获取章节内容"""
