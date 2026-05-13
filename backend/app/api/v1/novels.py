@@ -166,7 +166,7 @@ async def add_to_bookshelf(req: AddToBookshelfRequest, db: Session = Depends(get
     try:
         # 检查是否已存在相同 book_url 的记录（同一本书）
         existing = db.execute(
-            text("SELECT id, metadata_json FROM assets WHERE type='novel' AND source_url=:burl"),
+            text("SELECT id, metadata_json FROM assets WHERE type='NOVEL' AND source_url=:burl"),
             {"burl": req.book_url}
         ).fetchone()
 
@@ -213,7 +213,7 @@ async def add_to_bookshelf(req: AddToBookshelfRequest, db: Session = Depends(get
 
         asset = Asset(
             id=asset_id,
-            type='novel',
+            type='NOVEL',
             platform=req.source_name or 'web',
             title=req.book_title,
             author=req.author,
@@ -302,10 +302,13 @@ async def get_bookshelf_item(asset_id: str, db: Session = Depends(get_db)):
     """获取书架中的书籍详情（含章节列表、书源信息等）"""
     try:
         asset = db.get(Asset, asset_id)
-        if not asset or asset.type != 'novel':
+        if not asset or asset.type.lower() != 'novel':
             raise HTTPException(status_code=404, detail="书籍不存在")
 
         meta = json.loads(asset.metadata_json or '{}')
+        
+        chapters_data = meta.get('chapters', [])
+        print(f"[DEBUG get_bookshelf_item] asset_id={asset_id}, chapters_count={len(chapters_data)}, meta_keys={list(meta.keys())}")
         
         return {
             'success': True,

@@ -139,8 +139,12 @@ class AssetService:
         返回 (资产列表, 总数)
         """
         conditions = []
+        query_asset_type = asset_type.upper() if asset_type else None
+        print(f"[DEBUG list_assets] asset_type={asset_type}, query_asset_type={query_asset_type}")
+        
         if asset_type:
-            conditions.append(Asset.type == asset_type)
+            from sqlalchemy import func
+            conditions.append(func.lower(Asset.type) == func.lower(asset_type))
         if platform:
             conditions.append(Asset.platform == platform)
         if source_type:
