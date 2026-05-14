@@ -1,6 +1,6 @@
 # YLCraft — 开发进度
 
-> 最后更新：2026-05-07
+> 最后更新：2026-05-14
 > 设计文档：`DESIGN.md`
 
 ---
@@ -36,6 +36,7 @@
 | **字幕提取** | ✅ 完成 | faster-whisper medium + 4 种样式 + SRT/ASS/VTT + 烧录 |
 | **BGM 配乐** | ✅ 完成 | 10 首内置曲目 + 用户上传 + FFmpeg 混音 + 淡入淡出 |
 | **素材采集** | ✅ 完成 | MediaCrawler 集成 + 多平台搜索 + 导入素材库 |
+| **小说阅读** | ✅ 完成 | 书架 + 阅读器 + 书源管理 + 换源 + SSE 流式搜索 |
 
 ---
 
@@ -44,10 +45,11 @@
 | 文档 | 说明 | 状态 |
 |------|------|------|
 | `DESIGN.md` | 主设计文档（架构圣经） | ✅ 已完成 |
-| `agent-platform-design.md` | Agent 通用平台设计（参考 OpenClaw/Hermes） | 📋 设计阶段 |
+| `agent-platform-design.md` | Agent 通用平台设计（参考 OpenClaw/Hermes） | ✅ 已实现 |
 | `architecture-image-video-backends-v2.md` | 图像/视频生成后端架构 v2（Generic + ComfyUI） | 📋 设计阶段 |
 | `comfyui-pixelle-evolution-design.md` | ComfyUI 集成方案（参考 Pixelle-Video） | 📋 设计阶段 |
 | `COMFYUI_DIGITAL_HUMAN_ANALYSIS.md` | ComfyUI 数字人分析 | 📋 分析完成 |
+| `xhs-parser-design.md` | 小红书图文链接解析器 | ✅ 已实现 |
 | `live2d-factory-design.md` | Live2D 工厂设计 | ✅ 已实现 |
 | `live2d-processing-mode-design.md` | Live2D 处理模式设计 | ✅ 已实现 |
 | `story-maker-design.md` | Story Maker 设计 | ✅ 已实现 |
@@ -434,3 +436,56 @@ pip install jinja2 jsonpath-ng
 - [ ] 创建 `GenericVideoBackend`，支持数据库配置模板
 - [ ] 实现 `GenericTTSBackend`
 - [ ] 前端设置页面根据 `provider_type` 显示不同配置表单
+
+---
+
+## 小说阅读模块（2026-05-14 新增）
+
+> 集成小说阅读功能，支持多书源管理和在线阅读
+
+### 后端服务文件
+- `backend/app/services/novel/book_source_manager.py` — 书源管理器（批量操作 + 搜索并发）
+- `backend/app/services/novel/downloader.py` — 章节下载器
+- `backend/app/services/novel/crawler.py` — 小说爬虫服务
+- `backend/app/api/v1/novels.py` — 小说 API 路由
+
+### 数据模型
+- `backend/app/db/models/novel.py` — `NovelChapter` 章节表
+
+### 前端页面
+- `frontend/src/pages/novel-bookshelf/` — 书架页面
+- `frontend/src/pages/novel-reader/` — 阅读器页面
+- `frontend/src/pages/novel-search/` — 小说搜索页面
+
+### 支持功能
+| 功能 | 说明 |
+|------|------|
+| 多书源管理 | 批量添加/编辑/启用书源，支持 Legado JS 模板 |
+| 书源搜索 | 多源并发搜索，SSE 流式响应 |
+| 章节目录 | 自动获取并缓存章节列表 |
+| 在线阅读 | 支持换源，记住阅读进度 |
+| 本地下载 | 章节内容下载到本地 |
+
+### API 端点
+- `GET /api/v1/novels/sources` — 获取书源列表
+- `POST /api/v1/novels/sources` — 添加书源
+- `PUT /api/v1/novels/sources/{id}` — 更新书源
+- `DELETE /api/v1/novels/sources/{id}` — 删除书源
+- `GET /api/v1/novels/search` — 搜索小说（SSE 流式）
+- `GET /api/v1/novels/{id}/chapters` — 获取章节列表
+- `GET /api/v1/novels/chapters/{id}/content` — 获取章节内容
+
+---
+
+## Agent 平台（2026-05-14 确认）
+
+> Agent 通用平台设计已实现，参考 `agent-platform-design.md`
+
+### 已实现功能
+- `backend/app/services/agent/service.py` — Agent 核心服务
+- `backend/app/services/agent/registry.py` — 工具注册表
+- `backend/app/services/agent/memory/` — 记忆管理器
+- `backend/app/services/agent/session/` — 会话管理器
+- `backend/app/services/agent/tools/` — 工具集
+- `backend/app/api/v1/agent.py` — Agent API 路由
+- `frontend/src/pages/agent/` — Agent 前端页面

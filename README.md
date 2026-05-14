@@ -22,6 +22,7 @@
 | **AI 图像/视频生成** | 多 Provider 统一调度，支持文生图/图生视频 |
 | **AI 智能助手** | Agent 模式，支持会话记忆、工具调用、任务编排 |
 | **素材采集** | 多平台素材抓取（抖音/B站/小红书/微博等） |
+| **小说阅读** | 书架 + 阅读器 + 多书源管理 + 换源 |
 | **ComfyUI 管理** | 工作流模板管理、任务队列、预设参数 |
 
 ## 技术栈
@@ -151,6 +152,7 @@ YLCraft/
 │   │   │   ├── image/         # 图像生成后端
 │   │   │   ├── comfyui/       # ComfyUI 客户端/池/工作流
 │   │   │   ├── crawler/       # 多平台素材采集
+│   │   │   ├── novel/         # 小说阅读（书架/下载/爬虫）
 │   │   │   ├── subtitle/       # 字幕提取（faster-whisper）
 │   │   │   ├── bgm/           # BGM 配乐
 │   │   │   ├── character/     # 角色管理
@@ -174,7 +176,7 @@ YLCraft/
 ├── frontend/                   # 前端应用
 │   ├── src/
 │   │   ├── App.tsx            # 路由入口（21 页面）
-│   │   ├── pages/             # 页面组件（21 页面）
+│   │   ├── pages/             # 页面组件（24 页面）
 │   │   ├── components/        # 通用组件 & Live2D 查看器
 │   │   ├── api/               # API 调用层
 │   │   ├── hooks/             # 自定义 Hooks（WebSocket）
@@ -211,6 +213,7 @@ YLCraft/
 | `/api/v1/bgm` | BGM 配乐 | BGM |
 | `/api/v1/subtitles` | 字幕管理 | Subtitles |
 | `/api/v1/crawler` | 素材采集 | Crawler |
+| `/api/v1/novels` | 小说阅读 | Novels |
 | `/api/v1/providers` | Provider 管理 | Providers |
 | `/api/v1/ai` | AI 连接器管理（新版） | AI Connectors |
 | `/api/v1/social` | 社交媒体连接器（新版） | Social Media Connectors |
@@ -242,6 +245,9 @@ YLCraft/
 | `/platforms` | 平台连接 | 社交媒体绑定 |
 | `/publish` | 内容发布 | 多平台一键发布 |
 | `/crawler` | 素材采集 | 多平台自动抓取 |
+| `/novel-bookshelf` | 书架 | 小说书架管理 |
+| `/novel-search` | 小说搜索 | 多书源搜索 |
+| `/novel-reader` | 阅读器 | 在线阅读 |
 | `/image-editor` | 图片编辑 | 裁剪/滤镜/调色 |
 | `/tasks` | 任务中心 | 异步任务进度 |
 | `/settings` | 系统设置 | 全局配置 |

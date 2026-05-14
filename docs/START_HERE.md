@@ -68,7 +68,7 @@ F:\PycharmProjects\YLCraft\backend\venv\Scripts\pip.exe install -r backend/requi
 - 参考项目（已 clone）：`refs/`
   - Jellyfish / ArcReel / CutClaw / NarratoAI / montage-ai / MoneyPrinterTurbo
 
-## 当前进度（2026-05-07 更新）
+## 当前进度（2026-05-14 更新）
 
 **整体进度**：~100% 完成（后端 + 前端核心功能）
 
@@ -82,6 +82,8 @@ F:\PycharmProjects\YLCraft\backend\venv\Scripts\pip.exe install -r backend/requi
 - ✅ Phase 7：Clip Lab（CutClaw Agent / NarratoAI / MoE 多专家）
 - ✅ Phase 8：爆款拆解 + Story Maker
 - ✅ Phase 9：AI 图像/视频生成 + 素材采集
+- ✅ Phase 10：Agent 智能助手（工具注册 + 会话管理 + 记忆）
+- ✅ Phase 11：小说阅读（书架 + 阅读器 + 多书源 + 换源 + SSE 搜索）
 
 ### 后端状态
 - ✅ 核心服务 100% 完成
@@ -91,7 +93,7 @@ F:\PycharmProjects\YLCraft\backend\venv\Scripts\pip.exe install -r backend/requi
 
 ### 前端状态
 - ✅ React + Vite + AntDesign 完成
-- ✅ 9 个页面（素材库/下载/角色管理/剪辑/字幕/BGM/Live2D/AI 生成/素材采集）
+- ✅ 12 个页面（素材库/下载/角色管理/剪辑/字幕/BGM/Live2D/AI 生成/素材采集/Agent/小说书架/阅读器/小说搜索）
 - ✅ 字幕 + BGM 功能完整集成
 
 ## 开发原则
