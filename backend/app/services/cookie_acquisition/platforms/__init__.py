@@ -8,9 +8,12 @@ from __future__ import annotations
 
 from typing import Optional
 
-from app.services.cookie_acquisition.base import PlatformDetector, QrcodeAdapter
+from app.services.cookie_acquisition.base import PlatformDetector, QrcodeAdapter, get_platform_domains as _get_platform_domains
 
-# 适配器注册表（懒加载）
+
+def get_platform_domains(platform: str) -> str:
+    """获取平台的关联域名列表（委托给 base.py）"""
+    return _get_platform_domains(platform)
 _detector_registry: dict[str, str] = {
     "xhs": "app.services.cookie_acquisition.platforms.xiaohongshu:XhsDetector",
     "douyin": "app.services.cookie_acquisition.platforms.douyin:DouyinDetector",
@@ -89,27 +92,3 @@ def get_supported_playwright_platforms() -> list[str]:
 def get_supported_qrcode_platforms() -> list[str]:
     """获取支持二维码获取的平台列表"""
     return list(_qrcode_registry.keys())
-
-
-# =============================================================================
-# 平台域名映射（用于 Cookie 保存时设置 domains 字段）
-# =============================================================================
-
-PLATFORM_DOMAINS = {
-    "douyin": ".douyin.com,.iesdouyin.com,v.douyin.com",
-    "tiktok": ".tiktok.com",
-    "kuaishou": ".kuaishou.com,.gifshow.com,v.kuaishou.com",
-    "bilibili": ".bilibili.com,b23.tv",
-    "xiaohongshu": ".xiaohongshu.com,xhslink.com",
-    "xhs": ".xiaohongshu.com,xhslink.com",
-    "weibo": ".weibo.com,t.cn",
-    "zhihu": ".zhihu.com",
-    "youtube": ".youtube.com,youtu.be",
-    "twitter": ".twitter.com,.x.com,t.co,pbs.twimg.com,abs.twimg.com",
-    "telegram": ".telegram.org,t.me,web.telegram.org",
-}
-
-
-def get_platform_domains(platform: str) -> str:
-    """获取平台的关联域名列表"""
-    return PLATFORM_DOMAINS.get(platform, "")

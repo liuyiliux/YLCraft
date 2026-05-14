@@ -230,6 +230,23 @@ class PlaywrightAcquisitionManager:
                     )
                     session.connector_id = connector_id
 
+                    # 同步写入 Cookie 文件，确保 CookieManager 立即可用
+                    try:
+                        from pathlib import Path
+                        backend_dir = Path(__file__).resolve().parent.parent.parent.parent
+                        cookie_dir = backend_dir / "data" / "cookies"
+                        cookie_dir.mkdir(parents=True, exist_ok=True)
+                        cookie_path = cookie_dir / f"{platform}.txt"
+                        # 写入清洗后的 Netscape 内容
+                        from app.services.video.parser import get_cookie_manager
+                        mgr = get_cookie_manager()
+                        clean_content = mgr._clean_netscape_content(cookie_content)
+                        cookie_path.write_text(clean_content, encoding="utf-8")
+                        cookie_path.chmod(0o600)
+                        logger.info(f"[PlaywrightManager] Cookie file synced: {cookie_path.name}")
+                    except Exception as sync_err:
+                        logger.warning(f"[PlaywrightManager] Cookie file sync failed (non-critical): {sync_err}")
+
                     session.status = AcquisitionStatus.SUCCESS
                     session.updated_at = __import__('datetime').datetime.now()
                     logger.info(f"[PlaywrightManager] Session {session_id} success, connector_id={connector_id}")
@@ -304,16 +321,24 @@ class PlaywrightAcquisitionManager:
         try:
             # 查找同平台的活跃连接
             from sqlmodel import select
-            stmt = (
-                select(PlatformConnection)
-                .where(
-                    PlatformConnection.platform == platform,
-                    PlatformConnection.auth_type == AuthType.COOKIE,
+            try:
+                plat_enum = PlatformType(platform)
+            except ValueError:
+                plat_enum = None
+
+            if plat_enum:
+                stmt = (
+                    select(PlatformConnection)
+                    .where(
+                        PlatformConnection.platform == plat_enum,
+                        PlatformConnection.auth_type == AuthType.COOKIE,
+                    )
+                    .order_by(PlatformConnection.last_used.desc().nulls_last())
+                    .limit(1)
                 )
-                .order_by(PlatformConnection.last_used.desc().nulls_last())
-                .limit(1)
-            )
-            conn = db.exec(stmt).first()
+                conn = db.exec(stmt).first()
+            else:
+                conn = None
 
             # 组装 credentials JSON
             credentials = {
@@ -340,9 +365,11 @@ class PlaywrightAcquisitionManager:
             else:
                 # 创建新连接
                 import uuid as _uuid
+                if not plat_enum:
+                    raise ValueError(f"Unsupported platform: {platform}")
                 conn = PlatformConnection(
                     id=str(_uuid.uuid4()),
-                    platform=platform,
+                    platform=plat_enum,
                     name=session.connector_name or f"{platform} (Playwright)",
                     auth_type=AuthType.COOKIE,
                     status=ConnectionStatus.ACTIVE,

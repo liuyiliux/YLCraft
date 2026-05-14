@@ -1192,7 +1192,7 @@ pip install playwright && playwright install chromium
 ### 第一期 MVP（核心功能）
 
 ```
-[████████████████████████░░░░░░░░░░░░░░░░░]  ~40%
+[██████████████████████████████░░░░░░░░░░░]  ~55%
 ```
 
 | 任务 | 优先级 | 预估工时 | 状态 |
@@ -1201,14 +1201,20 @@ pip install playwright && playwright install chromium
 | 清理旧 API：删除 cookies.py + social_media.py | P0 | 0.5h | ✅ **已完成** |
 | 清理旧服务：删除 social_media_connector 服务 | P0 | 0.5h | ✅ **已完成** |
 | 新建 Cookie 获取 API 骨架（cookie_acquisition.py） | P0 | 1h | ✅ **已完成** |
-| 新建 cookie_acquisition 服务骨架 + 平台适配器注册 | P0 | 1h | ✅ **已完成**（部分） |
+| 新建 cookie_acquisition 服务骨架 + 平台适配器注册 | P0 | 1h | ✅ **已完成** |
 | 注册新路由到 main.py | P0 | 0.25h | ✅ **已完成** |
-| 数据模型：新增 `acquisition_method` 字段 | P0 | 0.5h | ⏳ 待开始 |
-| 抽象基类：`BaseAcquirer` / `PlatformDetector` / `QrcodeAdapter` | P0 | 1h | ⏳ 待开始 |
-| PlaywrightAcquisitionManager 核心逻辑 | P0 | 3h | ⏳ 待开始 |
-| 平台适配器：小红书 / 抖音 / B站 / 快手 / 微博 / 知乎 | P0 | 3h | ⏳ 待开始 |
-| API 端点：Playwright start / ws / cancel | P0 | 2h | ⏳ 待开始 |
-| WebSocket 状态推送 | P0 | 1.5h | ⏳ 待开始 |
+| 数据模型：新增 `acquisition_method` 字段 | P0 | 0.5h | ✅ **已完成** |
+| 抽象基类：`BaseAcquirer` / `PlatformDetector` / `QrcodeAdapter` | P0 | 1h | ✅ **已完成** |
+| PlaywrightAcquisitionManager 核心逻辑 | P0 | 3h | ✅ **已完成** |
+| QrcodeAcquisitionManager 核心逻辑 | P0 | 2h | ✅ **已完成** |
+| 平台适配器：小红书 / 抖音 / B站 / 快手 / 微博 / 知乎 | P0 | 3h | ✅ **已完成**（骨架） |
+| API 端点：Playwright start / ws / cancel | P0 | 2h | ✅ **已完成** |
+| API 端点：QrCode generate / status / refresh / ws | P0 | 2h | ✅ **已完成** |
+| WebSocket 状态推送 | P0 | 1.5h | ✅ **已完成** |
+| 数据库迁移脚本 | P1 | 1h | ✅ **已完成** |
+| Cookie 文件同步（Playwright/QrCode 保存后自动同步） | P1 | 0.5h | ✅ **已完成** |
+| Bug 修复：PlatformConnection 查询使用枚举而非字符串 | P0 | 0.5h | ✅ **已完成** |
+| 域名映射统一（base.py 单一来源） | P1 | 0.5h | ✅ **已完成** |
 | 前端：账号管理页面（手动 + Playwright Tab） | P0 | 3h | ⏳ 待开始 |
 | 前端：Playwright 交互面板 + WebSocket 状态 | P0 | 2h | ⏳ 待开始 |
 | 集成测试 | P1 | 2h | ⏳ 待开始 |
@@ -1236,29 +1242,29 @@ pip install playwright && playwright install chromium
 
 | 文件 | 说明 | 状态 |
 |------|------|------|
-| `app/db/models/platform_connection.py` | 增强字段：acquisition_method / cookie_content / account_* / domains | ⏳ 待修改 |
+| `app/db/models/platform_connection.py` | 增强字段：acquisition_method / cookie_content / account_* / domains | ✅ **已完成** |
 | `app/db/models/platform_cookie.py` | 废弃，数据迁移到 PlatformConnection | ✅ **已删除** |
 | `app/db/models/social_media_connector.py` | 废弃，数据迁移到 PlatformConnection | ✅ **已删除** |
 | `app/models/__init__.py` | 清理旧模型引用（platform_cookie / social_media_connector） | ✅ **已完成** |
-| `app/migrations/migrate_to_unified_connection.py` | 数据迁移脚本 | ⏳ 待创建 |
-| `app/services/platform_connection/service.py` | 增强：支持 cookie_content / domains / account_* | ⏳ 待修改（进行中） |
+| `app/migrations/migrate_to_unified_connection.py` | 数据迁移脚本 | ✅ **已创建** |
+| `app/services/platform_connection/service.py` | 增强：支持 cookie_content / domains / account_* + Cookie 文件同步 | ✅ **已完成** |
 | `app/services/cookie_acquisition/__init__.py` | 模块导出 | ✅ **已创建** |
-| `app/services/cookie_acquisition/base.py` | 抽象基类 + 数据模型 | ⏳ 待创建 |
-| `app/services/cookie_acquisition/playwright_manager.py` | Playwright 会话管理器 | ⏳ 待创建 |
-| `app/services/cookie_acquisition/qrcode_manager.py` | QrCode 会话管理器 | ⏳ 待创建 |
-| `app/services/cookie_acquisition/platforms/__init__.py` | 平台适配器注册 | ⏳ 待创建 |
-| `app/services/cookie_acquisition/platforms/xiaohongshu.py` | 小红书适配 | ⏳ 待创建 |
-| `app/services/cookie_acquisition/platforms/douyin.py` | 抖音适配 | ⏳ 待创建 |
-| `app/services/cookie_acquisition/platforms/kuaishou.py` | 快手适配 | ⏳ 待创建 |
-| `app/services/cookie_acquisition/platforms/bilibili.py` | B站适配 | ⏳ 待创建 |
-| `app/services/cookie_acquisition/platforms/weibo.py` | 微博适配 | ⏳ 待创建 |
-| `app/services/cookie_acquisition/platforms/zhihu.py` | 知乎适配 | ✅ **已创建（骨架）** |
+| `app/services/cookie_acquisition/base.py` | 抽象基类 + 数据模型 + 平台配置 | ✅ **已创建** |
+| `app/services/cookie_acquisition/playwright_manager.py` | Playwright 会话管理器（含 DB 保存 + Cookie 文件同步） | ✅ **已创建** |
+| `app/services/cookie_acquisition/qrcode_manager.py` | QrCode 会话管理器（含 DB 保存 + Cookie 文件同步） | ✅ **已创建** |
+| `app/services/cookie_acquisition/platforms/__init__.py` | 平台适配器注册（统一域名映射） | ✅ **已创建** |
+| `app/services/cookie_acquisition/platforms/xiaohongshu.py` | 小红书适配 | ✅ **已创建** |
+| `app/services/cookie_acquisition/platforms/douyin.py` | 抖音适配 | ✅ **已创建** |
+| `app/services/cookie_acquisition/platforms/kuaishou.py` | 快手适配 | ✅ **已创建** |
+| `app/services/cookie_acquisition/platforms/bilibili.py` | B站适配 | ✅ **已创建** |
+| `app/services/cookie_acquisition/platforms/weibo.py` | 微博适配 | ✅ **已创建** |
+| `app/services/cookie_acquisition/platforms/zhihu.py` | 知乎适配 | ✅ **已创建** |
 | `app/api/v1/cookie_acquisition.py` | Cookie 获取 API + WebSocket | ✅ **已创建** |
 | `app/api/v1/platforms.py` | 增强：新增 cookie-content 端点，清理旧注释 | ✅ **已完成** |
 | `app/api/v1/cookies.py` | 废弃，合并到 platforms.py | ✅ **已删除** |
 | `app/api/v1/social_media.py` | 废弃，合并到 platforms.py | ✅ **已删除** |
 | `app/connectors/examples.py` | 清理旧模型引用（SocialMediaConnector 等） | ✅ **已完成** |
-| `app/services/video/parser.py` | CookieManager 适配：从 PlatformConnection 读 | ⏳ 待修改（进行中） |
+| `app/services/video/parser.py` | CookieManager 适配：从 PlatformConnection 读 | ✅ **已完成** |
 | `app/main.py` | 注册 cookie_acquisition 路由 | ✅ **已完成** |
 
 ### 前端文件清单

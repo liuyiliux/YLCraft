@@ -186,7 +186,7 @@ PLATFORM_DOMAINS = {
     "zhihu": ".zhihu.com",
     "youtube": ".youtube.com,youtu.be",
     "tiktok": ".tiktok.com",
-    "twitter": ".twitter.com,.x.com,t.co",
+    "twitter": ".twitter.com,.x.com,t.co,pbs.twimg.com,abs.twimg.com",
     "telegram": ".telegram.org,t.me",
 }
 

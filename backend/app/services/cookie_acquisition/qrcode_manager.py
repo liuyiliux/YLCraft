@@ -140,6 +140,22 @@ class QrcodeAcquisitionManager:
                     )
                     session.connector_id = connector_id
 
+                    # 同步写入 Cookie 文件，确保 CookieManager 立即可用
+                    try:
+                        from pathlib import Path
+                        backend_dir = Path(__file__).resolve().parent.parent.parent.parent
+                        cookie_dir = backend_dir / "data" / "cookies"
+                        cookie_dir.mkdir(parents=True, exist_ok=True)
+                        cookie_path = cookie_dir / f"{session.platform}.txt"
+                        from app.services.video.parser import get_cookie_manager
+                        mgr = get_cookie_manager()
+                        clean_content = mgr._clean_netscape_content(cookie_content)
+                        cookie_path.write_text(clean_content, encoding="utf-8")
+                        cookie_path.chmod(0o600)
+                        logger.info(f"[QrcodeManager] Cookie file synced: {cookie_path.name}")
+                    except Exception as sync_err:
+                        logger.warning(f"[QrcodeManager] Cookie file sync failed (non-critical): {sync_err}")
+
                     session.status = AcquisitionStatus.SUCCESS
                     session.updated_at = __import__('datetime').datetime.now()
                     logger.info(f"[QrcodeManager] Session {session_id} success, connector_id={connector_id}")
@@ -207,6 +223,7 @@ class QrcodeAcquisitionManager:
         from app.db.database import SessionLocal
         from app.db.models.platform_connection import (
             PlatformConnection,
+            PlatformType,
             AuthType,
             ConnectionStatus,
             AcquisitionMethod,
@@ -216,16 +233,25 @@ class QrcodeAcquisitionManager:
         db = SessionLocal()
         try:
             from sqlmodel import select
-            stmt = (
-                select(PlatformConnection)
-                .where(
-                    PlatformConnection.platform == platform,
-                    PlatformConnection.auth_type == AuthType.COOKIE,
+            # 枚举转换
+            try:
+                plat_enum = PlatformType(platform)
+            except ValueError:
+                plat_enum = None
+
+            if plat_enum:
+                stmt = (
+                    select(PlatformConnection)
+                    .where(
+                        PlatformConnection.platform == plat_enum,
+                        PlatformConnection.auth_type == AuthType.COOKIE,
+                    )
+                    .order_by(PlatformConnection.last_used.desc().nulls_last())
+                    .limit(1)
                 )
-                .order_by(PlatformConnection.last_used.desc().nulls_last())
-                .limit(1)
-            )
-            conn = db.exec(stmt).first()
+                conn = db.exec(stmt).first()
+            else:
+                conn = None
 
             # 组装 credentials JSON
             credentials = {
@@ -249,9 +275,11 @@ class QrcodeAcquisitionManager:
                 conn.update_timestamp()
             else:
                 import uuid as _uuid
+                if not plat_enum:
+                    raise ValueError(f"Unsupported platform: {platform}")
                 conn = PlatformConnection(
                     id=str(_uuid.uuid4()),
-                    platform=platform,
+                    platform=plat_enum,
                     name=session.connector_name or f"{platform} (扫码)",
                     auth_type=AuthType.COOKIE,
                     status=ConnectionStatus.ACTIVE,

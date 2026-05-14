@@ -180,6 +180,14 @@ class PlatformConnectionService:
         conn.update_timestamp()
         self.session.add(conn)
         self.session.commit()
+
+        # 同步写入 Cookie 文件，确保 CookieManager 立即可用
+        try:
+            platform = conn.platform.value if hasattr(conn.platform, 'value') else str(conn.platform)
+            self._sync_cookie_file(platform, cookie_content)
+        except Exception as e:
+            logger.warning(f"[PlatformConnectionService] Cookie file sync failed (non-critical): {e}")
+
         return True
 
     def test_connection(self, conn_id: str) -> dict:
@@ -319,6 +327,23 @@ class PlatformConnectionService:
             is_dot = "TRUE" if domain.startswith(".") else "FALSE"
             lines.append(f"{domain}\t{is_dot}\t{path}\t{secure}\t{expires}\t{name}\t{value}")
         return "\n".join(lines)
+
+    @staticmethod
+    def _sync_cookie_file(platform: str, cookie_content: str):
+        """同步写入 Cookie 文件（确保 CookieManager 立即可用）"""
+        from pathlib import Path
+        backend_dir = Path(__file__).resolve().parent.parent.parent.parent
+        cookie_dir = backend_dir / "data" / "cookies"
+        cookie_dir.mkdir(parents=True, exist_ok=True)
+        cookie_path = cookie_dir / f"{platform}.txt"
+
+        # 使用 CookieManager 的清洗逻辑
+        from app.services.video.parser import get_cookie_manager
+        mgr = get_cookie_manager()
+        clean_content = mgr._clean_netscape_content(cookie_content)
+        cookie_path.write_text(clean_content, encoding="utf-8")
+        cookie_path.chmod(0o600)
+        logger.info(f"[PlatformConnectionService] Cookie file synced: {cookie_path.name}")
 
     @staticmethod
     def _netscape_to_raw(cookie_content: str) -> str:
