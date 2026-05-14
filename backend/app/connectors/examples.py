@@ -14,7 +14,8 @@ from typing import Optional
 
 # 导入数据库模型
 from app.db.database import AsyncSessionLocal
-from app.db.models import AIConnector as AIConnectorModel, SocialMediaConnector as SocialConnectorModel
+from app.db.models import AIConnector as AIConnectorModel
+from app.db.models.platform_connection import PlatformConnection
 
 # 导入连接器
 from app.connectors.registry import get_social_connector, get_ai_connector

@@ -58,12 +58,14 @@ def _find_ytdlp() -> str:
 class CookieManager:
     """
     Cookie 管理器。
-    Cookie 数据完全存储在数据库中，直接通过内存传递给 yt-dlp，无需任何本地文件！
+    Cookie 数据完全存储在 PlatformConnection 表中，直接通过内存传递给 yt-dlp，无需任何本地文件！
+    
+    统一凭证架构：从 PlatformConnection 唯一存储读取 Cookie
+    - cookie_content (Netscape 格式) → yt-dlp 直接使用
+    - credentials (JSON) → 自动转换为 Netscape 格式
     """
 
     def __init__(self):
-        # 初始化数据库预设平台
-        self._init_default_platforms()
         # 确保持久 Cookie 目录存在
         self._ensure_cookie_dir()
 
@@ -85,41 +87,6 @@ class CookieManager:
         from app.db.database import SessionLocal
         return SessionLocal()
 
-    def _init_default_platforms(self):
-        """初始化数据库预设平台（如果不存在），自动迁移旧数据（domain -> domains）+ 清理旧 test_url 多余字符"""
-        try:
-            session = self._get_db_session()
-            from app.db.models import PlatformCookie
-            from app.db.models.platform_cookie import PLATFORM_COOKIE_PRESETS
-            for plat in PLATFORM_COOKIE_PRESETS:
-                existing = session.get(PlatformCookie, plat["id"])
-                if not existing:
-                    session.add(PlatformCookie(
-                        id=plat["id"],
-                        display_name=plat["display_name"],
-                        domains=plat.get("domains", ""),
-                        test_url=plat.get("test_url"),
-                    ))
-                else:
-                    # 自动迁移：如果旧数据有 domain 字段但新的 domains 是空的，用旧值填充
-                    if not existing.domains and hasattr(existing, 'domain') and getattr(existing, 'domain', None):
-                        existing.domains = getattr(existing, 'domain')
-                    # 自动清理 test_url：去掉多余空格、反引号
-                    if existing.test_url:
-                        cleaned = existing.test_url.strip().strip('`').strip()
-                        if cleaned != existing.test_url:
-                            existing.test_url = cleaned
-                            logger.info(f"[CookieManager] 清理平台 {plat['id']} test_url")
-            session.commit()
-        except Exception as e:
-            logger.warning(f"[CookieManager] 初始化预设平台失败: {e}")
-            try:
-                session.rollback()
-            except Exception:
-                pass
-            finally:
-                session.close()
-
     def _get_domain_from_url(self, url: str) -> str:
         """从 URL 提取纯域名"""
         from urllib.parse import urlparse
@@ -127,38 +94,41 @@ class CookieManager:
         return parsed.netloc.lower()
 
     def _match_platform_for_url(self, url: str):
-        """从所有已配置平台中，通过关联域名列表匹配最合适的平台"""
+        """从 PlatformConnection 统一凭证表中，通过关联域名列表匹配最合适的平台
+        
+        返回一个具有 cookie_content / domains / name 属性的对象。
+        """
         url_domain = self._get_domain_from_url(url)
         if not url_domain:
             return None
         
         session = self._get_db_session()
         try:
-            from app.db.models import PlatformCookie
-            all_platforms = session.query(PlatformCookie).filter(
-                PlatformCookie.is_active == True,
-                PlatformCookie.cookie_content != None,
-                PlatformCookie.cookie_content != ""
+            from app.db.models.platform_connection import (
+                PlatformConnection, AuthType, ConnectionStatus
+            )
+            # 从 PlatformConnection（唯一凭证存储）读取
+            platforms = session.query(PlatformConnection).filter(
+                PlatformConnection.auth_type == AuthType.COOKIE,
+                PlatformConnection.cookie_content != None,
+                PlatformConnection.cookie_content != "",
             ).all()
             
             # 按域名匹配度排序（最长匹配优先）
             matched = []
-            for plat in all_platforms:
-                if not plat.domains:
+            for conn in platforms:
+                if not conn.domains:
                     continue
-                domains_list = [d.strip().lower() for d in plat.domains.split(",") if d.strip()]
+                domains_list = [d.strip().lower() for d in conn.domains.split(",") if d.strip()]
                 for d in domains_list:
                     if d.startswith('.'):
-                        # 泛域名匹配：.x.com 匹配 hello.x.com
                         pure_domain = d[1:]
                         if url_domain == pure_domain or url_domain.endswith('.' + pure_domain):
-                            matched.append((len(d), plat))
+                            matched.append((len(d), conn))
                     else:
-                        # 精确匹配或子串包含匹配
                         if d in url_domain or url_domain.endswith('.' + d):
-                            matched.append((len(d), plat))
+                            matched.append((len(d), conn))
             
-            # 选最长域名匹配的那个
             if matched:
                 matched.sort(key=lambda x: -x[0])
                 return matched[0][1]
@@ -209,23 +179,24 @@ class CookieManager:
         if cookie_content.startswith("# Netscape HTTP Cookie File"):
             return self._clean_netscape_content(cookie_content)
 
-        # 获取平台默认域名
+        # 获取平台默认域名（从 PlatformConnection 的 domains 字段）
         default_domain = ".example.com"
         try:
             session = self._get_db_session()
-            from app.db.models import PlatformCookie
-            from app.db.models.platform_cookie import PLATFORM_COOKIE_PRESETS
-            plat = session.get(PlatformCookie, platform)
-            if plat and plat.domains:
-                d = plat.domains.split(",")[0].strip()
-                if d:
-                    default_domain = d if d.startswith(".") else "." + d
-            else:
-                preset = next((p for p in PLATFORM_COOKIE_PRESETS if p["id"] == platform), None)
-                if preset and preset.get("domains"):
-                    d = preset["domains"].split(",")[0].strip()
+            from app.db.models.platform_connection import PlatformConnection, PlatformType, AuthType
+            # 尝试通过 platform 枚举匹配
+            try:
+                plat_enum = PlatformType(platform)
+                conn = session.query(PlatformConnection).filter(
+                    PlatformConnection.platform == plat_enum,
+                    PlatformConnection.auth_type == AuthType.COOKIE,
+                ).first()
+                if conn and conn.domains:
+                    d = conn.domains.split(",")[0].strip()
                     if d:
                         default_domain = d if d.startswith(".") else "." + d
+            except ValueError:
+                pass
             session.close()
         except Exception:
             pass
@@ -302,50 +273,69 @@ class CookieManager:
         return cookie_content
 
     def save_cookie(self, platform: str, cookie_content: str) -> bool:
-        """保存 Cookie 到数据库 + 同步写入持久 Cookie 文件"""
+        """保存 Cookie 到 PlatformConnection 统一凭证表 + 同步写入持久 Cookie 文件"""
         session = self._get_db_session()
         try:
-            from app.db.models import PlatformCookie
+            from app.db.models.platform_connection import (
+                PlatformConnection, PlatformType, AuthType, AcquisitionMethod, ConnectionStatus
+            )
             netscape_content = self._convert_to_netscape(platform, cookie_content)
-            existing = session.get(PlatformCookie, platform)
+            
+            # 尝试匹配 platform 枚举
+            try:
+                plat_enum = PlatformType(platform)
+            except ValueError:
+                plat_enum = None
+            
+            # 查找该平台是否已有 Cookie 类型连接
+            if plat_enum:
+                existing = session.query(PlatformConnection).filter(
+                    PlatformConnection.platform == plat_enum,
+                    PlatformConnection.auth_type == AuthType.COOKIE,
+                ).first()
+            else:
+                existing = None
+            
             if existing:
                 existing.cookie_content = netscape_content
-                existing.updated_at = datetime.now(timezone.utc)
+                existing.acquisition_method = AcquisitionMethod.MANUAL
+                # 同时更新 credentials
+                creds = existing.get_credentials()
+                creds["raw"] = self._netscape_to_raw(netscape_content)
+                creds["source"] = "manual"
+                existing.set_credentials(creds)
+                existing.update_timestamp()
             else:
-                session.add(PlatformCookie(
-                    id=platform,
-                    display_name=platform,
+                # 创建新的 PlatformConnection
+                if not plat_enum:
+                    logger.warning(f"[CookieManager] 未知平台 {platform}，无法创建 PlatformConnection")
+                    return False
+                conn = PlatformConnection(
+                    id=str(__import__('uuid').uuid4()),
+                    platform=plat_enum,
+                    name=f"{platform} Cookie",
+                    auth_type=AuthType.COOKIE,
+                    status=ConnectionStatus.UNKNOWN,
                     cookie_content=netscape_content,
-                ))
+                    acquisition_method=AcquisitionMethod.MANUAL,
+                )
+                creds = {"raw": self._netscape_to_raw(netscape_content), "source": "manual"}
+                conn.set_credentials(creds)
+                # 设置默认域名
+                from app.services.cookie_acquisition.platforms import get_platform_domains
+                domains = get_platform_domains(platform)
+                if domains:
+                    conn.domains = domains
+                session.add(conn)
+            
             session.commit()
-            # 同步写入持久 Cookie 文件（可读写，yt-dlp 运行后会更新 __cf_bm 等短期 cookie）
+            
+            # 同步写入持久 Cookie 文件
             clean_content = self._clean_netscape_content(netscape_content)
-            # 将 Cookie 复制给所有关联域名（如 .x.com），确保 GraphQL API 调用时携带正确的 __cf_bm
-            from app.db.models.platform_cookie import PLATFORM_COOKIE_PRESETS
-            domains = ""
-            if existing and existing.domains:
-                domains = existing.domains
-            else:
-                preset = next((p for p in PLATFORM_COOKIE_PRESETS if p["id"] == platform), None)
-                if preset:
-                    domains = preset.get("domains", "")
-            domain_list = [d.strip() for d in domains.split(",") if d.strip()]
-            primary_domain = domain_list[0] if domain_list else ""
-            lines = clean_content.split("\n")
-            for d in domain_list[1:]:
-                is_dot = "TRUE" if d.startswith(".") else "FALSE"
-                for line in lines:
-                    parts = line.split("\t")
-                    if len(parts) >= 7 and parts[0] == primary_domain:
-                        parts[0] = d
-                        parts[1] = is_dot
-                        parts[3] = "TRUE"
-                        lines.append("\t".join(parts))
-            final_content = "\n".join(lines)
             cookie_path = self._get_cookie_file_path(platform)
-            cookie_path.write_text(final_content, encoding="utf-8")
+            cookie_path.write_text(clean_content, encoding="utf-8")
             cookie_path.chmod(0o600)
-            logger.info(f"[CookieManager] 保存 {platform} Cookie → 数据库 + 持久文件 {cookie_path} ({len(domain_list)} domains)")
+            logger.info(f"[CookieManager] 保存 {platform} Cookie → PlatformConnection + 持久文件 {cookie_path}")
             return True
         except Exception as e:
             session.rollback()
@@ -353,15 +343,35 @@ class CookieManager:
         finally:
             session.close()
 
+    @staticmethod
+    def _netscape_to_raw(cookie_content: str) -> str:
+        """从 Netscape 格式提取 raw 字符串"""
+        parts = []
+        for line in cookie_content.splitlines():
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            fields = line.split('\t')
+            if len(fields) >= 7:
+                parts.append(f"{fields[5]}={fields[6]}")
+        return "; ".join(parts)
+
     def delete_cookie(self, platform: str) -> bool:
-        """从数据库删除 Cookie + 删除持久文件"""
+        """从 PlatformConnection 清空 Cookie + 删除持久文件"""
         session = self._get_db_session()
         try:
-            from app.db.models import PlatformCookie
-            existing = session.get(PlatformCookie, platform)
+            from app.db.models.platform_connection import PlatformConnection, PlatformType, AuthType
+            try:
+                plat_enum = PlatformType(platform)
+                existing = session.query(PlatformConnection).filter(
+                    PlatformConnection.platform == plat_enum,
+                    PlatformConnection.auth_type == AuthType.COOKIE,
+                ).first()
+            except ValueError:
+                existing = None
             if existing:
                 existing.cookie_content = None
-                existing.updated_at = datetime.now(timezone.utc)
+                existing.update_timestamp()
                 session.commit()
             # 删除持久文件
             cookie_path = self._get_cookie_file_path(platform)
@@ -378,21 +388,24 @@ class CookieManager:
             session.close()
 
     def list_cookies(self) -> dict[str, dict]:
-        """列出所有平台 Cookie 状态"""
+        """列出所有平台 Cookie 状态（从 PlatformConnection 统一凭证表读取）"""
         session = self._get_db_session()
         try:
-            from app.db.models import PlatformCookie
-            platforms = session.query(PlatformCookie).all()
+            from app.db.models.platform_connection import PlatformConnection, AuthType
+            platforms = session.query(PlatformConnection).filter(
+                PlatformConnection.auth_type == AuthType.COOKIE,
+            ).all()
             result = {}
-            for plat in platforms:
-                result[plat.id] = {
-                    "size": len(plat.cookie_content) if plat.cookie_content else 0,
-                    "modified": plat.updated_at.timestamp() if plat.updated_at else 0,
-                    "display_name": plat.display_name,
-                    "has_cookie": bool(plat.cookie_content),
-                    "domains": plat.domains or "",
-                    "test_url": plat.test_url,
-                    "description": plat.description or "",
+            for conn in platforms:
+                plat_id = conn.platform.value if hasattr(conn.platform, 'value') else str(conn.platform)
+                result[plat_id] = {
+                    "size": len(conn.cookie_content) if conn.cookie_content else 0,
+                    "modified": conn.updated_at.timestamp() if conn.updated_at else 0,
+                    "display_name": conn.name,
+                    "has_cookie": bool(conn.cookie_content),
+                    "domains": conn.domains or "",
+                    "test_url": conn.test_url or "",
+                    "description": conn.description or "",
                 }
             return result
         except Exception as e:
@@ -403,13 +416,13 @@ class CookieManager:
 
     def get_cookiejar_for_url(self, url: str):
         """从 URL 智能匹配平台（通过多域名别名），返回 yt-dlp 的 YoutubeDLCookieJar 对象（完全内存操作）"""
-        plat = self._match_platform_for_url(url)
-        if not plat or not plat.cookie_content:
+        conn = self._match_platform_for_url(url)
+        if not conn or not conn.cookie_content:
             return None
         try:
             from io import StringIO
             from yt_dlp.cookies import YoutubeDLCookieJar
-            clean_content = self._clean_netscape_content(plat.cookie_content)
+            clean_content = self._clean_netscape_content(conn.cookie_content)
             # 调试：脱敏打印 Netscape Cookie 内容（只显示 name 和 value 前3字符）
             debug_lines = []
             for line in clean_content.splitlines():
@@ -426,26 +439,34 @@ class CookieManager:
                 logger.info("[CookieManager] Cookie 内容预览（脱敏）: 无有效Cookie行")
             jar = YoutubeDLCookieJar()
             jar.load(StringIO(clean_content))
-            logger.info(f"[CookieManager] 从内存加载了平台 [{plat.display_name}] Cookie 给 yt-dlp，共 {len(jar)} 个 Cookie")
+            display_name = conn.name if hasattr(conn, 'name') else str(conn.platform)
+            logger.info(f"[CookieManager] 从内存加载了平台 [{display_name}] Cookie 给 yt-dlp，共 {len(jar)} 个 Cookie")
             return jar
         except Exception as e:
             logger.warning(f"[CookieManager] 解析 Cookie 失败: {e}")
             return None
 
     def get_platform_info(self, platform: str) -> Optional[dict]:
-        """获取平台配置信息"""
+        """获取平台配置信息（从 PlatformConnection 统一凭证表读取）"""
         session = self._get_db_session()
         try:
-            from app.db.models import PlatformCookie
-            plat = session.get(PlatformCookie, platform)
-            if plat:
+            from app.db.models.platform_connection import PlatformConnection, PlatformType, AuthType
+            try:
+                plat_enum = PlatformType(platform)
+                conn = session.query(PlatformConnection).filter(
+                    PlatformConnection.platform == plat_enum,
+                    PlatformConnection.auth_type == AuthType.COOKIE,
+                ).first()
+            except ValueError:
+                conn = None
+            if conn:
                 return {
-                    "id": plat.id,
-                    "display_name": plat.display_name,
-                    "domains": plat.domains or "",
-                    "test_url": plat.test_url,
-                    "has_cookie": bool(plat.cookie_content),
-                    "description": plat.description or "",
+                    "id": conn.platform.value if hasattr(conn.platform, 'value') else str(conn.platform),
+                    "display_name": conn.name,
+                    "domains": conn.domains or "",
+                    "test_url": conn.test_url or "",
+                    "has_cookie": bool(conn.cookie_content),
+                    "description": conn.description or "",
                 }
             return None
         except Exception:
@@ -455,16 +476,16 @@ class CookieManager:
     
     def get_cookie_path_for_url(self, url: str) -> Optional[str]:
         """返回持久 Cookie 文件路径给 yt-dlp 子进程（固定文件，每次保存时自动更新）"""
-        plat = self._match_platform_for_url(url)
-        if not plat or not plat.cookie_content:
+        conn = self._match_platform_for_url(url)
+        if not conn or not conn.cookie_content:
             return None
         try:
-            cookie_path = self._get_cookie_file_path(plat.id)
-            # 如果文件不存在但 DB 有内容（旧版迁移），写入文件
+            plat_id = conn.platform.value if hasattr(conn.platform, 'value') else str(conn.platform)
+            cookie_path = self._get_cookie_file_path(plat_id)
+            # 如果文件不存在但 DB 有内容，写入文件
             if not cookie_path.exists():
-                clean_content = self._clean_netscape_content(plat.cookie_content)
+                clean_content = self._clean_netscape_content(conn.cookie_content)
                 cookie_path.write_text(clean_content, encoding="utf-8")
-                # 注意：不设置只读，yt-dlp 运行后需要写回更新（如 __cf_bm）
                 cookie_path.chmod(0o600)
                 logger.info(f"[CookieManager] 从数据库同步写入持久Cookie文件: {cookie_path.name}")
             logger.info(f"[CookieManager] 使用持久 Cookie 文件: {cookie_path.name}")
@@ -474,25 +495,41 @@ class CookieManager:
             return None
 
     def save_platform(self, platform_id: str, display_name: str, domains: str = "", test_url: str = "", description: str = "") -> bool:
-        """保存/更新平台配置（支持逗号分隔多域名别名）"""
+        """保存/更新平台配置到 PlatformConnection（支持逗号分隔多域名别名）"""
         session = self._get_db_session()
         try:
-            from app.db.models import PlatformCookie
-            existing = session.get(PlatformCookie, platform_id)
+            from app.db.models.platform_connection import PlatformConnection, PlatformType, AuthType, ConnectionStatus
+            try:
+                plat_enum = PlatformType(platform_id)
+            except ValueError:
+                logger.warning(f"[CookieManager] 未知平台 {platform_id}，无法保存配置")
+                return False
+            
+            existing = session.query(PlatformConnection).filter(
+                PlatformConnection.platform == plat_enum,
+                PlatformConnection.auth_type == AuthType.COOKIE,
+            ).first()
             if existing:
-                existing.display_name = display_name
-                existing.domains = domains or existing.domains
-                existing.test_url = test_url or existing.test_url
-                existing.description = description or existing.description
-                existing.updated_at = datetime.now(timezone.utc)
+                existing.name = display_name
+                if domains:
+                    existing.domains = domains
+                if test_url:
+                    existing.test_url = test_url
+                if description:
+                    existing.description = description
+                existing.update_timestamp()
             else:
-                session.add(PlatformCookie(
-                    id=platform_id,
-                    display_name=display_name,
+                conn = PlatformConnection(
+                    id=str(__import__('uuid').uuid4()),
+                    platform=plat_enum,
+                    name=display_name,
+                    auth_type=AuthType.COOKIE,
+                    status=ConnectionStatus.UNKNOWN,
                     domains=domains,
                     test_url=test_url,
                     description=description,
-                ))
+                )
+                session.add(conn)
             session.commit()
             return True
         except Exception as e:
@@ -506,8 +543,15 @@ class CookieManager:
         """删除平台配置（Cookie 数据 + 平台配置）"""
         session = self._get_db_session()
         try:
-            from app.db.models import PlatformCookie
-            existing = session.get(PlatformCookie, platform)
+            from app.db.models.platform_connection import PlatformConnection, PlatformType, AuthType
+            try:
+                plat_enum = PlatformType(platform)
+                existing = session.query(PlatformConnection).filter(
+                    PlatformConnection.platform == plat_enum,
+                    PlatformConnection.auth_type == AuthType.COOKIE,
+                ).first()
+            except ValueError:
+                existing = None
             if existing:
                 session.delete(existing)
                 session.commit()

@@ -1,14 +1,16 @@
 """
-YLCraft — 平台连接器服务
+YLCraft — 平台连接器服务（统一凭证架构）
 
 管理各平台的凭证（Cookie / API Key / OAuth Token / Password）
-支持状态的检测、自动获取凭证等功能。
+唯一凭证存储：PlatformConnection 表
+核心原则：一份 Cookie，多处使用
 """
 
 from __future__ import annotations
 
 import logging
 import json
+import time
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -22,6 +24,7 @@ from app.db.models.platform_connection import (
     PlatformType,
     AuthType,
     ConnectionStatus,
+    AcquisitionMethod,
 )
 from app.services.video.parser import get_cookie_manager
 
@@ -52,8 +55,15 @@ class PlatformConnectionService:
         """获取单个连接"""
         return self.session.get(PlatformConnection, conn_id)
 
-    def get_active(self, platform: PlatformType) -> Optional[PlatformConnection]:
+    def get_active(self, platform: PlatformType | str) -> Optional[PlatformConnection]:
         """获取指定平台的活跃连接"""
+        # 兼容传入字符串
+        if isinstance(platform, str):
+            try:
+                platform = PlatformType(platform)
+            except ValueError:
+                return None
+
         stmt = (
             select(PlatformConnection)
             .where(
@@ -76,6 +86,14 @@ class PlatformConnectionService:
             auth_type=data.auth_type,
             description=data.description,
             status=ConnectionStatus.UNKNOWN,
+            acquisition_method=data.acquisition_method,
+            account_id=data.account_id,
+            account_name=data.account_name,
+            account_avatar=data.account_avatar,
+            account_url=data.account_url,
+            cookie_content=data.cookie_content,
+            domains=data.domains,
+            test_url=data.test_url,
         )
         conn.set_credentials(data.credentials)
 
@@ -103,6 +121,23 @@ class PlatformConnectionService:
             conn.description = data.description
         if data.status is not None:
             conn.status = data.status
+        # 凭证获取方式 / 账号信息 / Cookie 字段更新
+        if data.acquisition_method is not None:
+            conn.acquisition_method = data.acquisition_method
+        if data.account_id is not None:
+            conn.account_id = data.account_id
+        if data.account_name is not None:
+            conn.account_name = data.account_name
+        if data.account_avatar is not None:
+            conn.account_avatar = data.account_avatar
+        if data.account_url is not None:
+            conn.account_url = data.account_url
+        if data.cookie_content is not None:
+            conn.cookie_content = data.cookie_content
+        if data.domains is not None:
+            conn.domains = data.domains
+        if data.test_url is not None:
+            conn.test_url = data.test_url
 
         conn.update_timestamp()
         self.session.add(conn)
@@ -121,6 +156,32 @@ class PlatformConnectionService:
         logger.info(f"[PlatformConnection] Deleted: {conn_id}")
         return True
 
+    def get_cookie_content(self, conn_id: str) -> Optional[str]:
+        """获取 Netscape 格式 Cookie 内容"""
+        conn = self.get(conn_id)
+        if not conn:
+            return None
+        # 优先读 cookie_content（Netscape 格式），否则从 credentials 转换
+        if conn.cookie_content:
+            return conn.cookie_content
+        return self._credentials_to_netscape(conn)
+
+    def save_cookie_content(self, conn_id: str, cookie_content: str) -> bool:
+        """保存 Netscape 格式 Cookie"""
+        conn = self.get(conn_id)
+        if not conn:
+            return False
+        conn.cookie_content = cookie_content
+        # 同时更新 credentials 的 raw 字段
+        creds = conn.get_credentials()
+        creds["raw"] = self._netscape_to_raw(cookie_content)
+        creds["source"] = "manual"
+        conn.set_credentials(creds)
+        conn.update_timestamp()
+        self.session.add(conn)
+        self.session.commit()
+        return True
+
     def test_connection(self, conn_id: str) -> dict:
         """
         测试连接有效性
@@ -136,7 +197,7 @@ class PlatformConnectionService:
         # 根据平台测试
         try:
             if conn.auth_type == AuthType.COOKIE:
-                result = self._test_cookie(platform, creds)
+                result = self._test_cookie(platform, creds, conn)
             elif conn.auth_type == AuthType.API_KEY:
                 result = self._test_api_key(platform, creds)
             else:
@@ -162,16 +223,20 @@ class PlatformConnectionService:
             self.session.commit()
             return {"success": False, "message": f"测试失败: {str(e)}"}
 
-    def _test_cookie(self, platform: str, creds: dict) -> dict:
+    def _test_cookie(self, platform: str, creds: dict, conn: PlatformConnection = None) -> dict:
         """测试 Cookie 有效性"""
-        cookie_content = creds.get("content", "")
+        # 优先使用 cookie_content (Netscape 格式)
+        cookie_content = ""
+        if conn and conn.cookie_content:
+            cookie_content = conn.cookie_content
+        else:
+            cookie_content = creds.get("content", "") or creds.get("raw", "")
+
         if not cookie_content:
             return {"success": False, "message": "Cookie 内容为空"}
 
         # 使用已有的 Cookie 管理器测试
         try:
-            manager = get_cookie_manager()
-            # 尝试解析 Cookie
             from http.cookiejar import MozillaCookieJar
             import tempfile
             import os
@@ -215,3 +280,81 @@ class PlatformConnectionService:
             conn.last_used = datetime.now(timezone.utc)
             self.session.add(conn)
             self.session.commit()
+
+    def mark_used_with_result(self, conn_id: str, success: bool, error: str = ""):
+        """标记连接使用结果"""
+        conn = self.get(conn_id)
+        if conn:
+            if success:
+                conn.update_success()
+            else:
+                conn.update_failure(error)
+            self.session.add(conn)
+            self.session.commit()
+
+    @staticmethod
+    def _credentials_to_netscape(conn: PlatformConnection) -> str:
+        """从 credentials JSON 转换为 Netscape 格式"""
+        creds = conn.get_credentials()
+        cookies_array = creds.get("cookies_array", [])
+        if not cookies_array:
+            raw = creds.get("raw", "")
+            if raw:
+                # 尝试从 raw 字符串转换
+                return _raw_to_netscape(raw, conn.domains or "")
+            return ""
+
+        lines = ["# Netscape HTTP Cookie File", ""]
+        for c in cookies_array:
+            name = c.get("name", "")
+            value = c.get("value", "")
+            domain = c.get("domain", "")
+            path = c.get("path", "/")
+            secure = "TRUE" if c.get("secure", False) else "FALSE"
+            expires = c.get("expires", -1)
+            if expires == -1:
+                expires = int(time.time()) + 86400 * 365
+            else:
+                expires = int(expires)
+            is_dot = "TRUE" if domain.startswith(".") else "FALSE"
+            lines.append(f"{domain}\t{is_dot}\t{path}\t{secure}\t{expires}\t{name}\t{value}")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _netscape_to_raw(cookie_content: str) -> str:
+        """从 Netscape 格式提取 raw 字符串"""
+        parts = []
+        for line in cookie_content.splitlines():
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            fields = line.split('\t')
+            if len(fields) >= 7:
+                parts.append(f"{fields[5]}={fields[6]}")
+        return "; ".join(parts)
+
+
+def _raw_to_netscape(raw: str, domains: str) -> str:
+    """将 raw Cookie 字符串转为 Netscape 格式"""
+    default_domain = ".example.com"
+    if domains:
+        d = domains.split(",")[0].strip()
+        if d:
+            default_domain = d if d.startswith(".") else "." + d
+
+    lines = ["# Netscape HTTP Cookie File", ""]
+    default_expires = str(int(time.time()) + 86400 * 365)
+    is_dot = "TRUE" if default_domain.startswith(".") else "FALSE"
+
+    import re
+    pair_pattern = re.compile(r'([^=;]+?)\s*=\s*("[^"]*"|[^;]*)')
+    for m in pair_pattern.finditer(raw):
+        name = m.group(1).strip()
+        value = m.group(2).strip()
+        if not name:
+            continue
+        if value.startswith('"') and value.endswith('"') and len(value) >= 2:
+            value = value[1:-1]
+        lines.append(f"{default_domain}\t{is_dot}\t/\tFALSE\t{default_expires}\t{name}\t{value}")
+
+    return "\n".join(lines)

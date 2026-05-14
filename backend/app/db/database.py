@@ -53,9 +53,8 @@ async def init_db():
     from app.db.models.live2d import Live2DModel, Live2DBone, Live2DMotion
     from app.db.models.api_key import ApiKey
     from app.db.models.agent import AgentSession, AgentMemory, AgentSkill, AgentToolCall
-    from app.db.models.platform_connection import PlatformConnection  # 旧版（兼容）
-    from app.db.models.ai_connector import AIConnector, AIUsageLog  # 新版 AI 连接器
-    from app.db.models.social_media_connector import SocialMediaConnector  # 新版社交媒体连接器
+    from app.db.models.platform_connection import PlatformConnection  # 统一凭证模型
+    from app.db.models.ai_connector import AIConnector, AIUsageLog  # AI 连接器
     from app.db.models.comfyui import WorkflowTemplate, WorkflowPreset, ComfyUITask, ComfyUINode
     from app.db.models.book_source import BookSource  # 书源表
     async with engine.begin() as conn:

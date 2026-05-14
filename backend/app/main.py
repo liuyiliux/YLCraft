@@ -263,13 +263,6 @@ def _register_routes():
     except Exception as e:
         logger.warning(f"Could not load comfyui router: {e}")
 
-    # Cookie 管理路由
-    try:
-        from app.api.v1 import cookies
-        app.include_router(cookies.router, prefix="/api/v1/cookies", tags=["Cookies"])
-    except Exception as e:
-        logger.warning(f"Could not load cookies router: {e}")
-
     # 视频剪辑操作路由
     try:
         from app.api.v1 import clip_ops
@@ -326,26 +319,19 @@ def _register_routes():
     except Exception as e:
         logger.warning(f"Could not load book_sources router: {e}")
 
-    # 平台连接器路由（已拆分，保留旧版兼容）
+    # 平台连接器路由（统一凭证架构）
     try:
         from app.api.v1 import platforms
-        app.include_router(platforms.router, prefix="/api/v1/platforms", tags=["Platform Connections (Legacy)"])
+        app.include_router(platforms.router, prefix="/api/v1/platforms", tags=["Platform Connections"])
     except Exception as e:
         logger.warning(f"Could not load platforms router: {e}")
 
-    # AI 连接器路由（新版）
+    # AI 连接器路由
     try:
         from app.api.v1 import ai_connectors
         app.include_router(ai_connectors.router, prefix="/api/v1/ai", tags=["AI Connectors"])
     except Exception as e:
         logger.warning(f"Could not load ai_connectors router: {e}")
-
-    # 社交媒体连接器路由（新版）
-    try:
-        from app.api.v1 import social_media
-        app.include_router(social_media.router, prefix="/api/v1/social", tags=["Social Media Connectors"])
-    except Exception as e:
-        logger.warning(f"Could not load social_media router: {e}")
 
 _register_routes()
 

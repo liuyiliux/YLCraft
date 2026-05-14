@@ -53,6 +53,7 @@
 | `live2d-factory-design.md` | Live2D 工厂设计 | ✅ 已实现 |
 | `live2d-processing-mode-design.md` | Live2D 处理模式设计 | ✅ 已实现 |
 | `story-maker-design.md` | Story Maker 设计 | ✅ 已实现 |
+| `cookie-acquisition-design.md` | Cookie 自动获取设计 v2.0（统一凭证 + Playwright + QrCode） | 📋 设计完成，待实施 |
 | `REF_PROJECTS.md` | 参考项目列表 | 📋 参考文档 |
 
 ---
@@ -489,3 +490,40 @@ pip install jinja2 jsonpath-ng
 - `backend/app/services/agent/tools/` — 工具集
 - `backend/app/api/v1/agent.py` — Agent API 路由
 - `frontend/src/pages/agent/` — Agent 前端页面
+
+---
+
+## Cookie 自动获取模块（2026-05-14 新增）
+
+> 集成 Playwright 浏览器自动化 + 二维码扫码，自动获取自媒体平台 Cookie
+> 详细设计见 `cookie-acquisition-design.md`
+> **v2.0 重构：统一凭证架构，废弃 PlatformCookie + SocialMediaConnector，统一为 PlatformConnection**
+
+### 状态总览
+
+```
+[░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░]  ~0%
+```
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| PlatformConnection 模型增强 | ⏳ 待开始 | 新增 acquisition_method / cookie_content / account_* / domains 字段 |
+| 数据迁移 | ⏳ 待开始 | PlatformCookie + SocialMediaConnector → PlatformConnection |
+| 废弃旧 API/服务 | ⏳ 待开始 | cookies.py + social_media.py + 旧服务 |
+| CookieManager 适配 | ⏳ 待开始 | 从 PlatformConnection 读 Cookie |
+| 抽象基类 | ⏳ 待开始 | `BaseAcquirer` / `PlatformDetector` / `QrcodeAdapter` |
+| Playwright 管理器 | ⏳ 待开始 | 浏览器会话管理 + Cookie 提取 |
+| QrCode 管理器 | ⏳ 待开始 | 二维码生成 + 状态轮询 |
+| 平台适配器（6个） | ⏳ 待开始 | 小红书/抖音/快手/B站/微博/知乎 |
+| API 端点 | ⏳ 待开始 | Playwright start/ws/cancel + QrCode generate/ws/status/refresh |
+| WebSocket 推送 | ⏳ 待开始 | 实时状态推送 |
+| 前端页面 | ⏳ 待开始 | 平台连接器页面增强 + Playwright/QrCode 面板 |
+
+### 设计决策
+
+- ✅ 三种获取方式全部实现（手动 + Playwright + QrCode）
+- ✅ Playwright 默认有头模式，提供切换选项
+- ✅ Playwright 作为可选依赖
+- ✅ 所有支持平台全覆盖（小红书/抖音/快手/B站/微博/知乎）
+- 🔥 **统一凭证存储为 `PlatformConnection`**，废弃 PlatformCookie + SocialMediaConnector
+- ✅ 书源 Cookie（BookSource.cookie）和 AI Provider 不纳入统一
