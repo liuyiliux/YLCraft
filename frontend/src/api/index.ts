@@ -483,6 +483,79 @@ export const markPlatformConnectionUsed = (id: string) =>
     body: JSON.stringify(content),
   })
 
+// ===== Cookie Acquisition（Cookie 自动获取）=====
+
+export interface PlaywrightStartResult {
+  success: boolean
+  session_id: string
+  message: string
+}
+
+export interface QrcodeGenerateResult {
+  success: boolean
+  session_id: string
+  qr_image_base64: string
+  expires_in: number
+  message: string
+}
+
+export interface AcquisitionSessionStatus {
+  session_id: string
+  platform: string
+  method: string
+  status: string
+  message: string
+  page_url?: string
+  created_at?: string
+}
+
+export interface AcquisitionWSMessage {
+  type: 'status_update' | 'completed' | 'error'
+  session_id: string
+  status: string
+  message: string
+  data?: Record<string, any>
+  connector_id?: string
+  error_message?: string
+}
+
+/** 启动 Playwright 浏览器获取 Cookie */
+export const playwrightStart = (data: {
+  platform: string
+  headless?: boolean
+  connector_name?: string
+  stealth?: boolean
+}) => request('/acquire/playwright/start', { method: 'POST', body: JSON.stringify(data) })
+
+/** 列出活跃的 Playwright 会话 */
+export const listPlaywrightSessions = () => request('/acquire/playwright/sessions')
+
+/** 取消 Playwright 会话 */
+export const cancelPlaywrightSession = (sessionId: string) =>
+  request(`/acquire/playwright/${sessionId}/cancel`, { method: 'POST' })
+
+/** 生成登录二维码 */
+export const qrcodeGenerate = (data: {
+  platform: string
+  connector_name?: string
+}) => request('/acquire/qrcode/generate', { method: 'POST', body: JSON.stringify(data) })
+
+/** 轮询扫码状态 */
+export const getQrcodeStatus = (sessionId: string) =>
+  request(`/acquire/qrcode/${sessionId}/status`)
+
+/** 刷新过期二维码 */
+export const refreshQrcode = (sessionId: string) =>
+  request(`/acquire/qrcode/${sessionId}/refresh`, { method: 'POST' })
+
+/** 获取连接的 Cookie 内容 */
+export const getCookieContent = (connId: string) =>
+  request(`/platforms/${connId}/cookie-content`)
+
+/** 保存连接的 Cookie 内容 */
+export const saveCookieContent = (connId: string, content: string) =>
+  request(`/platforms/${connId}/cookie-content`, { method: 'POST', body: JSON.stringify({ content }) })
+
 // ===== Story =====
 export const generateStory = (data: { topic: string; style: string; num_scenes: number }) =>
   request('/story/generate', { method: 'POST', body: JSON.stringify(data) })
