@@ -123,6 +123,44 @@
 
 ---
 
+## XHS_ALL_IN_ONE — 小红书全栈运营工具
+**GitHub**: https://github.com/cv-cat/XHS_ALL_IN_ONE  
+**技术栈**: React + TypeScript + Ant Design + Python + FastAPI
+
+### 核心能力
+- **账号矩阵管理**：多账号绑定、Cookie 管理、健康巡检
+- **多种登录方式**：二维码扫码 + 手机验证码 + Cookie 导入，用 `Segmented` 分段控件切换
+- **Drawer 抽屉式交互**：添加账号用右侧抽屉（`AddAccountDrawer`），比 Modal 更沉浸
+- **账号健康巡检**：每个账号有独立「检查」按钮验证 Cookie 有效性
+- **多平台扩展**：通过 `platform-selector` 支持平台切换
+
+### 前端组件结构
+```
+frontend/src/
+├── pages/platforms/xhs/
+│   └── accounts-page.tsx           # 账号矩阵页面
+├── components/account/
+│   ├── add-account-drawer.tsx      # 添加账号抽屉
+│   ├── qr-login-panel.tsx          # 二维码登录面板
+│   ├── cookie-import-panel.tsx     # Cookie 导入面板
+│   └── phone-login-panel.tsx       # 手机验证码登录面板
+├── components/layout/
+│   └── platform-selector.tsx       # 平台选择器
+└── pages/platform-select/
+    └── platform-select-page.tsx    # 平台选择页面
+```
+
+### YLCraft 已借鉴
+- ✅ **Drawer 抽屉式添加账号** — 替代 3 个独立 Modal，更沉浸
+- ✅ **Segmented 分段控件** — Cookie/扫码/浏览器三种方式切换
+- ✅ **健康检查按钮** — 每个连接卡片独立「检查」按钮
+- ✅ **账号矩阵概念** — 页面标题改为「账号矩阵」
+- ✅ **统计栏** — Row + Col + Statistic 展示账号状态
+- ✅ **QR 登录面板** — 二维码居中 + 状态提示 + WebSocket 自动轮询
+- ✅ **Cookie 导入面板** — Textarea + 校验 + 导入
+
+---
+
 ## 其他参考项目
 
 | 项目 | GitHub | 核心特点 |
@@ -138,18 +176,22 @@
 
 ## 参考项目能力矩阵
 
-| 功能 | ArcReel | CutClaw | LocalMiniDrama | huobao-drama | NarratoAI |
-|------|---------|---------|---------------|--------------|-----------|
-| 小说→短视频 | ✅ | ❌ | ✅ | ❌ | ❌ |
-| 音乐驱动剪辑 | ❌ | ✅ | ❌ | ❌ | ❌ |
-| 角色生成/生图 | ✅ | ❌ | ✅ | ✅ | ❌ |
-| 分镜生成 | ✅ | ❌ | ✅ | ✅ | ❌ |
-| 视频合成 | ✅ | ✅ | ✅ | ✅ | ✅ |
-| 多智能体 | ✅ | ✅ | ❌ | ❌ | ❌ |
-| 多供应商切换 | ✅ | ❌ | ❌ | ❌ | ❌ |
-| TTS | ✅ | ❌ | ❌ | ❌ | ✅ |
-| 剪映导出 | ✅ | ❌ | ❌ | ❌ | ❌ |
-| 本地部署 | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 功能 | ArcReel | CutClaw | LocalMiniDrama | huobao-drama | NarratoAI | XHS_ALL_IN_ONE |
+|------|---------|---------|---------------|--------------|-----------|----------------|
+| 小说→短视频 | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| 音乐驱动剪辑 | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| 角色生成/生图 | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ |
+| 分镜生成 | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ |
+| 视频合成 | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| 多智能体 | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| 多供应商切换 | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| TTS | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| 剪映导出 | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| 本地部署 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 账号矩阵管理 | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| Cookie 自动获取 | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| 二维码登录 | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| 健康巡检 | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
 
 ---
 
@@ -160,4 +202,5 @@
 3. **[高] 多供应商 Backend**：参考 ArcReel 的 Provider 架构，完善 BackendManager
 4. **[中] 角色一致性策略**：参考 ArcReel，锁定角色设计图保证跨镜头一致
 5. **[中] 音乐驱动剪辑**：参考 CutClaw，实现 Beat-based 自动剪辑
-6. **[低] 剪映草稿导出**：参考 ArcReel，按集导出剪映 ZIP
+6. **[中] Cookie 自动获取**：参考 XHS_ALL_IN_ONE 的二维码登录 + 浏览器获取，完善 CookieManager 适配
+7. **[低] 剪映草稿导出**：参考 ArcReel，按集导出剪映 ZIP

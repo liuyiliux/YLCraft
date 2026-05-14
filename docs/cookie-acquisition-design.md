@@ -1,10 +1,11 @@
 # Cookie 自动获取 — 设计与进度
 
 > **版本**：v2.0（统一凭证架构）
-> **状态**：设计中，逐步实施
+> **状态**：前端已实现，后端部分实现
 > **最后更新**：2026-05-14
 > **关联模块**：`PlatformConnection` / `connectors` / `CookieManager`
 > **架构**：`PlatformConnection` 为唯一凭证存储，已删除 `PlatformCookie` + `SocialMediaConnector`
+> **参考项目**：XHS_ALL_IN_ONE（账号矩阵 UI + Drawer 抽屉 + Segmented 方式切换）
 
 ---
 
@@ -46,7 +47,7 @@ YLCraft 统一凭证架构：所有平台的凭证存储在 `PlatformConnection`
 | 项目 | GitHub | 参考内容 |
 |------|--------|---------|
 | **social-auto-upload** | `dreammiao/social-auto-upload` | Playwright 自动化登录 + Cookie 提取 + 多平台发布 |
-| **XHS_ALL_IN_ONE** | `saobujiao/XHS_ALL_IN_ONE` | 小红书二维码登录 + Cookie 管理 |
+| **XHS_ALL_IN_ONE** | `cv-cat/XHS_ALL_IN_ONE` | 账号矩阵管理 + Drawer 抽屉 + Segmented 方式切换 + 二维码登录 + Cookie 管理 + 健康巡检 |
 | **MediaCrawler** | `NanmiCoder/MediaCrawler` | Playwright 登录 + Stealth 注入 + Cookie 持久化（已集成） |
 
 ---
@@ -207,11 +208,11 @@ backend/app/
 
 frontend/src/
 ├── pages/
-│   └── platforms/                  # 增强：统一凭证管理页面
-│       ├── index.tsx               # 主页面（现有，增强）
-│       ├── ManualCookieForm.tsx    # 🆕 手动填写表单（替代原 TextArea）
-│       ├── PlaywrightPanel.tsx     # 🆕 Playwright 获取面板
-│       └── QrcodePanel.tsx        # 🆕 二维码扫码面板
+│   └── platforms/                  # 增强：统一凭证管理页面（参考 XHS_ALL_IN_ONE 重构）
+│       └── index.tsx               # 主页面（1559 行，包含所有面板组件）
+│                                    # 内联组件：StatusTag / ConnectionCard / PlatformGroupCard
+│                                    # CookieImportPanel / QrLoginPanel / BrowserLoginPanel
+│                                    # ApiKeyPanel / AddAccountDrawer
 │
 ├── components/
 │   └── social/
@@ -1271,14 +1272,18 @@ pip install playwright && playwright install chromium
 
 | 文件 | 说明 | 状态 |
 |------|------|------|
-| `src/pages/platforms/index.tsx` | 增强：统一凭证管理 + Playwright/QrCode 面板 | ⏳ 待修改 |
-| `src/pages/platforms/ManualCookieForm.tsx` | 手动填写表单组件 | ⏳ 待创建 |
-| `src/pages/platforms/PlaywrightPanel.tsx` | Playwright 获取面板 | ⏳ 待创建 |
-| `src/pages/platforms/QrcodePanel.tsx` | 二维码扫码面板 | ⏳ 待创建 |
-| `src/components/social/CookieStatusBadge.tsx` | Cookie 状态徽章 | ⏳ 待创建 |
+| `src/pages/platforms/index.tsx` | 账号矩阵页面重构（参考 XHS_ALL_IN_ONE），Drawer + Segmented + 健康检查 | ✅ **已完成**（1559 行） |
+| `src/pages/platforms/ManualCookieForm.tsx` | ~~手动填写表单组件~~ → 合并到 `CookieImportPanel` | ✅ **已合并** |
+| `src/pages/platforms/PlaywrightPanel.tsx` | ~~Playwright 获取面板~~ → 合并到 `BrowserLoginPanel` | ✅ **已合并** |
+| `src/pages/platforms/QrcodePanel.tsx` | ~~二维码扫码面板~~ → 合并到 `QrLoginPanel` | ✅ **已合并** |
+| `src/components/social/CookieStatusBadge.tsx` | ~~Cookie 状态徽章~~ → 合并到 `StatusTag` | ✅ **已合并** |
 | `src/pages/settings/index.tsx` | 移除 Cookie Tab（合并到平台连接器页面） | ⏳ 待修改 |
-| `src/api/index.ts` | 新增 API 函数 | ⏳ 待修改 |
-| `src/App.tsx` | 路由调整 | ⏳ 待修改 |
+| `src/api/index.ts` | 新增 API 函数（playwrightStart/qrcodeGenerate 等） | ✅ **已完成** |
+| `src/App.tsx` | 路由调整 | ✅ **已完成** |
+
+> **注意**：原计划拆分为 4 个独立文件（ManualCookieForm / PlaywrightPanel / QrcodePanel / CookieStatusBadge），
+> 参考 XHS_ALL_IN_ONE 后改为全部内联在 `index.tsx` 中作为独立函数组件，减少文件碎片化。
+> 包含 8 个组件：`StatusTag` / `ConnectionCard` / `PlatformGroupCard` / `CookieImportPanel` / `QrLoginPanel` / `BrowserLoginPanel` / `ApiKeyPanel` / `AddAccountDrawer`
 
 ---
 
@@ -1321,6 +1326,22 @@ pip install playwright && playwright install chromium
 - `PlatformConnection` 已有完整的 CRUD + 测试 API，增强即可
 - `PlatformCookie` 的 Netscape 格式通过 `cookie_content` 字段兼容
 - `SocialMediaConnector` 的账号信息通过 `account_*` 字段兼容
+**日期**：2026-05-14
+
+### 决策 6：参考 XHS_ALL_IN_ONE 重构前端页面（2026-05-14 新增）
+
+**问题**：平台管理页面如何设计多账号管理体验？
+**选择**：参考 XHS_ALL_IN_ONE 项目的设计
+- 页面标题改为「账号矩阵」
+- 从 3 个独立 Modal 改为 1 个 Drawer 抽屉 + Segmented 分段控件
+- 每个连接卡片增加独立「健康检查」按钮
+- Cookie/扫码/浏览器三种方式用分段控件切换
+- 不再拆分为独立文件（ManualCookieForm/PlaywrightPanel/QrcodePanel），改为内联组件
+**原因**：
+- XHS_ALL_IN_ONE 的 Drawer + Segmented 比多 Modal 更沉浸、更直观
+- 账号矩阵概念更契合多账号管理场景
+- 独立健康检查按钮参考了 Cookie 过期巡检的成熟实践
+- 内联组件减少文件碎片化，保持代码紧凑
 **日期**：2026-05-14
 
 ---

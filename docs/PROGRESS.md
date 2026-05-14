@@ -37,6 +37,7 @@
 | **BGM 配乐** | ✅ 完成 | 10 首内置曲目 + 用户上传 + FFmpeg 混音 + 淡入淡出 |
 | **素材采集** | ✅ 完成 | MediaCrawler 集成 + 多平台搜索 + 导入素材库 |
 | **小说阅读** | ✅ 完成 | 书架 + 阅读器 + 书源管理 + 换源 + SSE 流式搜索 |
+| **账号矩阵** | ✅ 完成 | 统一凭证 + Drawer + Segmented + 健康检查（参考 XHS_ALL_IN_ONE）|
 
 ---
 
@@ -53,8 +54,48 @@
 | `live2d-factory-design.md` | Live2D 工厂设计 | ✅ 已实现 |
 | `live2d-processing-mode-design.md` | Live2D 处理模式设计 | ✅ 已实现 |
 | `story-maker-design.md` | Story Maker 设计 | ✅ 已实现 |
-| `cookie-acquisition-design.md` | Cookie 自动获取设计 v2.0（统一凭证 + Playwright + QrCode） | 📋 设计完成，待实施 |
+| `cookie-acquisition-design.md` | Cookie 自动获取设计 v2.0（统一凭证 + Playwright + QrCode） | ✅ 前端已实现，后端部分实现 |
 | `REF_PROJECTS.md` | 参考项目列表 | 📋 参考文档 |
+
+---
+
+## 2026-05-14 更新
+
+### 账号矩阵页面重构（参考 XHS_ALL_IN_ONE）✅
+
+参考 [XHS_ALL_IN_ONE](https://github.com/cv-cat/XHS_ALL_IN_ONE) 项目，对平台管理页面进行了全面重构：
+
+**架构层面改进**：
+
+| 改进点 | 原设计 | 新设计（参考 XHS_ALL_IN_ONE） |
+|--------|--------|------|
+| 页面标题 | 「平台连接器」 | 「账号矩阵」— 体现多账号管理理念 |
+| 添加账号 | 3 个独立 Modal | **1 个 Drawer 抽屉** — 更沉浸，空间更大 |
+| 登录方式切换 | Dropdown | **Segmented 分段控件** — Cookie/扫码/浏览器，更直观 |
+| 健康检查 | 全局测试按钮 | **每个卡片独立「检查」按钮** — 参考账号矩阵巡检 |
+
+**新增组件**：
+
+| 组件 | 说明 |
+|------|------|
+| `AddAccountDrawer` | 添加账号抽屉（Segmented 方式切换） |
+| `CookieImportPanel` | Cookie 手动导入面板 |
+| `QrLoginPanel` | 二维码登录面板（自包含 WebSocket） |
+| `BrowserLoginPanel` | 浏览器登录面板（自包含 WebSocket） |
+| `ApiKeyPanel` | API Key 导入面板 |
+| `ConnectionCard` | 连接卡片（Avatar + 状态 Tag + 健康检查） |
+| `PlatformGroupCard` | 平台分组卡片 |
+| `StatusTag` | 状态标签组件 |
+
+**Cookie 自动获取后端实现**：
+
+| 文件 | 说明 | 大小 |
+|------|------|------|
+| `services/cookie_acquisition/base.py` | 抽象基类 | 8.6KB |
+| `services/cookie_acquisition/playwright_manager.py` | Playwright 会话管理 | 15.9KB |
+| `services/cookie_acquisition/qrcode_manager.py` | QrCode 会话管理 | 12.6KB |
+| `services/cookie_acquisition/platforms/` | 6 个平台适配器 | — |
+| `api/v1/cookie_acquisition.py` | Cookie 获取 API | 11.4KB |
 
 ---
 
@@ -247,6 +288,19 @@ pip install jinja2 jsonpath-ng
   - YAML 配置易于修改，无需改代码
 **日期**：2026-04-29
 
+### 决策 7：账号矩阵 UI 架构（2026-05-14 新增）
+**问题**：平台管理页面如何设计多账号管理体验？
+**选择**：参考 XHS_ALL_IN_ONE 项目的设计
+  - 页面标题改为「账号矩阵」
+  - 从 3 个独立 Modal 改为 1 个 Drawer 抽屉 + Segmented 分段控件
+  - 每个连接卡片增加独立「健康检查」按钮
+  - Cookie/扫码/浏览器三种方式用分段控件切换
+**原因**：
+  - XHS_ALL_IN_ONE 的 Drawer + Segmented 比多 Modal 更沉浸、更直观
+  - 账号矩阵概念更契合多账号管理场景
+  - 独立健康检查按钮参考了 Cookie 过期巡检的成熟实践
+**日期**：2026-05-14
+
 ---
 
 ## 技术债务 🏚️
@@ -261,22 +315,25 @@ pip install jinja2 jsonpath-ng
 - [x] 后台下载任务 ✅ 已实现（BackgroundTasks + 内存任务表 + 轮询）
 - [x] 前端移动端适配 ✅ 完成（Drawer 侧栏 + 响应式栅格 + 移动端工具类）
 - [x] 代码分割优化 ✅ 完成（manualChunks，antd 641KB gzip 177KB）
+- [ ] CookieManager 适配（从 PlatformConnection 读 Cookie）
 
 ---
 
 ## 下一步行动 →
 
-**当前状态**：Phase 1-6 前后端核心功能全部完成，整体进度 ~97%
+**当前状态**：Phase 1-6 前后端核心功能全部完成，整体进度 ~98%
 
 ### 待完成 ⏳
 1. [ ] 测试 AI 生成 API（需要配置 MiniMax API Key）
 2. [x] WebSocket 实时进度推送 ✅ 完成
 3. [ ] Live 2D 工厂五官绑骨完善
+4. [ ] CookieManager 适配（从 PlatformConnection 读 Cookie）
 
 ### 可以开始的工作 ✅
 - 启动后端服务测试所有 API
 - 启动前端开发服务器验证 UI
 - 配置 API Key 测试 AI 生成功能
+- 测试账号矩阵页面（Drawer + 扫码 + 浏览器获取）
 
 ---
 
@@ -493,31 +550,109 @@ pip install jinja2 jsonpath-ng
 
 ---
 
-## Cookie 自动获取模块（2026-05-14 新增）
+## Cookie 自动获取模块（2026-05-14 新增，2026-05-14 更新）
 
 > 集成 Playwright 浏览器自动化 + 二维码扫码，自动获取自媒体平台 Cookie
 > 详细设计见 `cookie-acquisition-design.md`
 > **v2.0 重构：统一凭证架构，废弃 PlatformCookie + SocialMediaConnector，统一为 PlatformConnection**
+> **参考项目：XHS_ALL_IN_ONE（账号矩阵 UI + Drawer 抽屉 + Segmented 方式切换）**
 
 ### 状态总览
 
 ```
-[░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░]  ~0%
+[████████████████████████████████████░░░░░░░░░]  ~75%
 ```
 
 | 功能 | 状态 | 说明 |
 |------|------|------|
-| PlatformConnection 模型增强 | ⏳ 待开始 | 新增 acquisition_method / cookie_content / account_* / domains 字段 |
-| 数据迁移 | ⏳ 待开始 | PlatformCookie + SocialMediaConnector → PlatformConnection |
-| 废弃旧 API/服务 | ⏳ 待开始 | cookies.py + social_media.py + 旧服务 |
+| PlatformConnection 模型增强 | ✅ 完成 | acquisition_method / cookie_content / account_* / domains 字段已定义 |
+| 数据迁移 | ✅ 完成 | PlatformCookie + SocialMediaConnector → PlatformConnection 迁移脚本已创建 |
+| 废弃旧 API/服务 | ✅ 完成 | cookies.py + social_media.py + 旧模型已删除 |
 | CookieManager 适配 | ⏳ 待开始 | 从 PlatformConnection 读 Cookie |
-| 抽象基类 | ⏳ 待开始 | `BaseAcquirer` / `PlatformDetector` / `QrcodeAdapter` |
-| Playwright 管理器 | ⏳ 待开始 | 浏览器会话管理 + Cookie 提取 |
-| QrCode 管理器 | ⏳ 待开始 | 二维码生成 + 状态轮询 |
-| 平台适配器（6个） | ⏳ 待开始 | 小红书/抖音/快手/B站/微博/知乎 |
-| API 端点 | ⏳ 待开始 | Playwright start/ws/cancel + QrCode generate/ws/status/refresh |
-| WebSocket 推送 | ⏳ 待开始 | 实时状态推送 |
-| 前端页面 | ⏳ 待开始 | 平台连接器页面增强 + Playwright/QrCode 面板 |
+| 抽象基类 | ✅ 完成 | `BaseAcquirer` / `AcquisitionResult` / `AcquisitionStatus` |
+| Playwright 管理器 | ✅ 完成 | `PlaywrightAcquisitionManager` — 浏览器会话管理 + Cookie 提取 |
+| QrCode 管理器 | ✅ 完成 | `QrcodeAcquisitionManager` — 二维码生成 + 状态轮询 |
+| 平台适配器（6个） | ✅ 完成 | 小红书/抖音/快手/B站/微博/知乎 6 个平台适配器 |
+| API 端点 | ✅ 完成 | Playwright start/ws/cancel/sessions + QrCode generate/ws/status/refresh |
+| WebSocket 推送 | ✅ 完成 | 实时状态推送（status_update / completed / error） |
+| 前端页面 | ✅ 完成 | 账号矩阵页面重构（Drawer + Segmented + 健康检查） |
+
+### 后端服务文件
+
+- `backend/app/services/cookie_acquisition/__init__.py` — 模块导出
+- `backend/app/services/cookie_acquisition/base.py` — 抽象基类 AcquisitionResult / BaseAcquirer / AcquisitionStatus
+- `backend/app/services/cookie_acquisition/playwright_manager.py` — Playwright 会话管理器（15.9KB）
+- `backend/app/services/cookie_acquisition/qrcode_manager.py` — QrCode 会话管理器（12.6KB）
+- `backend/app/services/cookie_acquisition/platforms/__init__.py` — 平台适配器注册
+- `backend/app/services/cookie_acquisition/platforms/xiaohongshu.py` — 小红书适配
+- `backend/app/services/cookie_acquisition/platforms/douyin.py` — 抖音适配
+- `backend/app/services/cookie_acquisition/platforms/kuaishou.py` — 快手适配
+- `backend/app/services/cookie_acquisition/platforms/bilibili.py` — B站适配
+- `backend/app/services/cookie_acquisition/platforms/weibo.py` — 微博适配
+- `backend/app/services/cookie_acquisition/platforms/zhihu.py` — 知乎适配
+
+### 后端 API 端点
+
+```
+Playwright:
+  POST  /api/v1/acquire/playwright/start          — 启动浏览器会话
+  WS    /api/v1/acquire/playwright/{sid}/ws       — WebSocket 状态推送
+  POST  /api/v1/acquire/playwright/{sid}/cancel   — 取消会话
+  GET   /api/v1/acquire/playwright/sessions        — 列出活跃会话
+
+QrCode:
+  POST  /api/v1/acquire/qrcode/generate           — 生成登录二维码
+  WS    /api/v1/acquire/qrcode/{sid}/ws            — WebSocket 等待扫码结果
+  GET   /api/v1/acquire/qrcode/{sid}/status        — 轮询扫码状态
+  POST  /api/v1/acquire/qrcode/{sid}/refresh       — 刷新过期二维码
+
+Cookie Content:
+  GET   /api/v1/platforms/{id}/cookie-content       — 获取连接的 Cookie 内容
+  POST  /api/v1/platforms/{id}/cookie-content       — 保存连接的 Cookie 内容
+```
+
+### 前端页面（账号矩阵 — 参考 XHS_ALL_IN_ONE）
+
+**`frontend/src/pages/platforms/index.tsx`**（1559 行，参考 XHS_ALL_IN_ONE 重构）
+
+#### 页面结构
+
+| 组件 | 说明 | 参考 XHS_ALL_IN_ONE |
+|------|------|---------------------|
+| `PlatformsPage` | 主页面，按平台分组展示账号矩阵 | `accounts-page.tsx` |
+| `PlatformGroupCard` | 平台分组卡片（图标 + 计数 + 绑定按钮） | 平台卡片布局 |
+| `ConnectionCard` | 连接卡片（Avatar + 状态 Tag + 健康检查） | 账号卡片 + 健康巡检 |
+| `AddAccountDrawer` | 添加账号抽屉（Segmented 方式切换） | `add-account-drawer.tsx` |
+| `CookieImportPanel` | Cookie 手动导入面板 | `cookie-import-panel.tsx` |
+| `QrLoginPanel` | 二维码登录面板（自包含 WebSocket） | `qr-login-panel.tsx` |
+| `BrowserLoginPanel` | 浏览器登录面板（自包含 WebSocket） | Playwright 登录 |
+| `ApiKeyPanel` | API Key 导入面板 | — |
+| `StatusTag` | 状态标签组件（有效/失败/过期） | 状态 Tag |
+
+#### 关键交互改进
+
+- **从 3 个独立 Modal → 1 个 Drawer + Segmented**：Cookie/扫码/浏览器三种方式用分段控件切换
+- **健康检查按钮**：每个连接卡片有独立的「检查」按钮，参考 XHS_ALL_IN_ONE 的 Cookie 过期巡检
+- **账号矩阵概念**：页面标题改为「账号矩阵」，强调多账号管理
+- **统计栏**：Row + Col + Statistic 展示已配置平台/有效连接/失败/过期
+- **未配置平台**：紧凑的按钮网格，点击直接打开添加抽屉
+
+#### 支持平台（12 个）
+
+| 平台 | 标识 | 认证方式 | 支持扫码 |
+|------|------|---------|---------|
+| 小红书 | xhs | Cookie | ✅ |
+| 抖音 | douyin | Cookie | ✅ |
+| 快手 | kuaishou | Cookie | ✅ |
+| B站 | bilibili | Cookie | ✅ |
+| 微博 | weibo | Cookie | ❌ |
+| 知乎 | zhihu | Cookie | ❌ |
+| YouTube | youtube | Cookie | ❌ |
+| TikTok | tiktok | Cookie | ❌ |
+| X | twitter | Cookie | ❌ |
+| OpenAI | openai | API Key | ❌ |
+| Anthropic | anthropic | API Key | ❌ |
+| MiniMax | minimax | API Key | ❌ |
 
 ### 设计决策
 
@@ -527,3 +662,4 @@ pip install jinja2 jsonpath-ng
 - ✅ 所有支持平台全覆盖（小红书/抖音/快手/B站/微博/知乎）
 - 🔥 **统一凭证存储为 `PlatformConnection`**，废弃 PlatformCookie + SocialMediaConnector
 - ✅ 书源 Cookie（BookSource.cookie）和 AI Provider 不纳入统一
+- ✅ 参考 XHS_ALL_IN_ONE 的账号矩阵 UI 设计（Drawer + Segmented + 健康检查）
