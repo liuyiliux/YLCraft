@@ -56,8 +56,8 @@ import {
   qrcodeGenerate,
   getQrcodeStatus,
   refreshQrcode,
-  getCookieContent,
-  saveCookieContent,
+  getConnectionCookieContent,
+  saveConnectionCookieContent,
 } from '../../api'
 import type { PlatformConnectionResponse, AcquisitionWSMessage } from '../../api'
 
@@ -224,7 +224,7 @@ export default function PlatformsPage() {
       const existing = connections.find(c => c.platform === manualPlatform)
       if (existing) {
         // 更新已有连接
-        await saveCookieContent(existing.id, manualContent)
+        await saveConnectionCookieContent(existing.id, manualContent)
         message.success('Cookie 已更新')
       } else {
         // 创建新连接

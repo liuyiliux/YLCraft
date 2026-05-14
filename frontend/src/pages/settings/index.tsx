@@ -15,7 +15,6 @@ import {
   Popconfirm,
   Alert,
   Skeleton,
-  Steps,
   InputNumber,
   Badge,
   ConfigProvider,
@@ -33,16 +32,12 @@ import {
   DatabaseOutlined,
   ReloadOutlined,
   PlusOutlined,
-  EditOutlined,
-  DeleteOutlined,
-  PlayCircleOutlined,
-  KeyOutlined,
   EyeOutlined,
   SearchOutlined,
   CopyOutlined,
   QuestionCircleOutlined,
 } from '@ant-design/icons'
-import { listConnectors, createConnector, updateConnector, deleteConnector, testConnector, getSettings, updateSettings, listCookies, saveCookie, deleteCookie, testCookie, getCookieContent } from '../../api'
+import { listConnectors, createConnector, updateConnector, deleteConnector, testConnector, getSettings, updateSettings } from '../../api'
 import type { Provider, PROVIDER_OPTIONS, ConnectorTestResult } from '../../types/api'
 import { useTheme } from '../../constants/theme'
 
@@ -722,11 +717,6 @@ export default function SettingsPage() {
             children: <TranscribeSettings />,
           },
           {
-            key: 'cookies',
-            label: <span><KeyOutlined style={{ marginRight: 8 }} />Cookie 管理</span>,
-            children: <CookieSettings />,
-          },
-          {
             key: 'storage',
             label: <span><DatabaseOutlined style={{ marginRight: 8 }} />存储设置</span>,
             children: <StorageSettings />,
@@ -1392,258 +1382,3 @@ function StorageSettings() {
   )
 }
 
-function CookieSettings() {
-  const { theme: THEME } = useTheme()
-  const [activePlatform, setActivePlatform] = useState<string>('douyin')
-  const [cookieData, setCookieData] = useState<Record<string, any>>({})
-  const [rawInput, setRawInput] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [testing, setTesting] = useState(false)
-  const [testMsg, setTestMsg] = useState<{ ok: boolean; text: string } | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [deleting, setDeleting] = useState(false)
-  const [addModalVisible, setAddModalVisible] = useState(false)
-  const [newPlatformKey, setNewPlatformKey] = useState('')
-  const [newPlatformName, setNewPlatformName] = useState('')
-  const { message } = AntApp.useApp()
-
-  const defaultPlatforms: Record<string, { name: string; color: string; steps: string[] }> = {
-    douyin: {
-      name: '抖音', color: '#fe2c55',
-      steps: [
-        '1. 打开抖音并登录（https://www.douyin.com）',
-        '2. 按 F12 打开开发者工具，点击 Network 标签',
-        '3. 刷新页面或点击任意视频',
-        '4. 在 Network 列表中找到任意请求',
-        '5. 点击该请求 → Headers 面板',
-        '6. 找到 Request Headers 中的 Cookie 字段',
-        '7. 复制整个 Cookie 值，粘贴到下方文本框',
-      ],
-    },
-    bilibili: {
-      name: '哔哩哔哩', color: '#00a1d6',
-      steps: [
-        '1. 打开 B站并登录（https://www.bilibili.com）',
-        '2. 按 F12 → Network 标签',
-        '3. 刷新页面，找到任意请求',
-        '4. 查看 Headers → Request Headers → Cookie',
-        '5. 复制完整 Cookie 值',
-      ],
-    },
-    kuaishou: { name: '快手', color: '#ff4906', steps: ['同抖音流程，获取 Cookie 字段'] },
-    xiaohongshu: { name: '小红书', color: '#fe2c55', steps: ['同抖音流程，获取 Cookie 字段'] },
-    weibo: { name: '微博', color: '#e61432', steps: ['同抖音流程，获取 Cookie 字段'] },
-    youtube: { name: 'YouTube', color: '#ff0000', steps: ['同抖音流程，获取 Cookie 字段'] },
-  }
-
-  const getPlatformColor = (key: string) => {
-    if (defaultPlatforms[key]) return defaultPlatforms[key].color
-    return '#6366f1' // 默认紫色用于自定义平台
-  }
-
-  const getPlatformName = (key: string) => {
-    if (defaultPlatforms[key]) return defaultPlatforms[key].name
-    if (cookieData[key]?.name) return cookieData[key].name
-    return key
-  }
-
-  const getPlatformSteps = (key: string) => {
-    if (defaultPlatforms[key]) return defaultPlatforms[key].steps
-    return [
-      '1. 打开目标网站并登录',
-      '2. 按 F12 → Network 标签',
-      '3. 刷新页面，找到任意请求',
-      '4. 查看 Headers → Request Headers → Cookie',
-      '5. 复制完整 Cookie 值',
-    ]
-  }
-
-  const isDefaultPlatform = (key: string) => !!defaultPlatforms[key]
-
-  const loadStatus = async () => {
-    setLoading(true)
-    try {
-      const res = await listCookies()
-      setCookieData(res.cookies || {})
-    } catch {
-      message.error('加载 Cookie 状态失败')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => { loadStatus() }, [])
-
-  const handleSave = async () => {
-    if (!rawInput.trim()) { message.warning('请先粘贴 Cookie 内容'); return }
-    setSaving(true)
-    try {
-      await saveCookie(activePlatform, rawInput)
-      message.success('Cookie 保存成功！')
-      setRawInput('')
-      setTestMsg(null)
-      loadStatus()
-    } catch (e: any) {
-      message.error('保存失败：' + (e?.response?.data?.detail || String(e)))
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const handleTest = async () => {
-    setTesting(true)
-    setTestMsg(null)
-    try {
-      const { data } = await testCookie(activePlatform)
-      setTestMsg({ ok: data.success, text: data.message })
-    } catch (e: any) {
-      setTestMsg({ ok: false, text: '测试失败' })
-    } finally {
-      setTesting(false)
-    }
-  }
-
-  const handleDelete = async () => {
-    setDeleting(true)
-    try {
-      await deleteCookie(activePlatform)
-      message.success('Cookie 已删除')
-      setRawInput('')
-      setTestMsg(null)
-      loadStatus()
-    } catch (e: any) {
-      message.error('删除失败')
-    } finally {
-      setDeleting(false)
-    }
-  }
-
-  const handleAddPlatform = async () => {
-    if (!newPlatformKey.trim() || !newPlatformName.trim()) {
-      message.warning('请输入平台标识和名称')
-      return
-    }
-    const key = newPlatformKey.trim().toLowerCase()
-    if (cookieData[key] || defaultPlatforms[key]) {
-      message.warning('该平台已存在')
-      return
-    }
-    setActivePlatform(key)
-    setAddModalVisible(false)
-    setNewPlatformKey('')
-    setNewPlatformName('')
-    setRawInput('')
-    setTestMsg(null)
-    // 更新一下 cookieData，让新平台显示出来
-    setCookieData(prev => ({ ...prev, [key]: { platform: key, name: newPlatformName, configured: false } }))
-  }
-
-  const currentStatus = cookieData[activePlatform]
-
-  return (
-    <div>
-      <Alert
-        type="info"
-        showIcon
-        message="Cookie 为可选配置。公开放送视频无需登录即可下载；配置 Cookie 可解锁高清画质、私密/收藏夹内容。保存后自动注入，无需重启服务。"
-        style={{ marginBottom: 16, background: 'rgba(0,212,255,0.05)', border: '1px solid rgba(0,212,255,0.2)' }}
-      />
-
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20, alignItems: 'center' }}>
-        {Object.entries(cookieData).map(([key, status]) => {
-          const color = getPlatformColor(key)
-          const name = getPlatformName(key)
-          return (
-            <Card
-              key={key}
-              size="small"
-              onClick={async () => {
-                setActivePlatform(key)
-                setRawInput('')
-                setTestMsg(null)
-                // 已配置的平台自动加载已保存的内容
-                if (cookieData[key]?.configured) {
-                  try {
-                    const res = await getCookieContent(key)
-                    if (res?.content) setRawInput(res.content)
-                  } catch { /* ignore */ }
-                }
-              }}
-              style={{
-                cursor: 'pointer',
-                background: activePlatform === key ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.03)',
-                border: activePlatform === key ? `1px solid ${color}` : `1px solid ${THEME.border}`,
-                minWidth: 90,
-                textAlign: 'center',
-              }}
-              bodyStyle={{ padding: '10px 14px' }}
-            >
-              <Text style={{ color: activePlatform === key ? color : THEME.textPrimary, fontWeight: activePlatform === key ? 600 : 400 }}>{name}</Text>
-              <div style={{ marginTop: 4 }}>
-                {status?.configured ? <Tag color="success" style={{ fontSize: 11 }}>已配置</Tag> : <Tag style={{ fontSize: 11, background: 'rgba(255,255,255,0.06)', border: 'none', color: THEME.textSecondary }}>未配置</Tag>}
-              </div>
-            </Card>
-          )
-        })}
-        <Button type="dashed" icon={<PlusOutlined />} onClick={() => setAddModalVisible(true)}>新增平台</Button>
-      </div>
-
-      <Card style={{ background: THEME.bgCard, border: `1px solid ${getPlatformColor(activePlatform)}44` }} bodyStyle={{ padding: 24 }}>
-        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-          <div style={{ flex: '0 0 320px' }}>
-            <Title level={5} style={{ color: THEME.textPrimary, marginBottom: 12 }}>如何获取 {getPlatformName(activePlatform)} Cookie</Title>
-            <Steps direction="vertical" size="small" current={-1} items={getPlatformSteps(activePlatform).map((step, i) => ({ title: <Text style={{ color: THEME.textPrimary, fontSize: 13 }}>{step}</Text> }))} />
-          </div>
-          <div style={{ flex: 1, minWidth: 300 }}>
-            <Title level={5} style={{ color: THEME.textPrimary, marginBottom: 12 }}>配置 {getPlatformName(activePlatform)} Cookie</Title>
-            {currentStatus?.configured ? (
-              <Alert type="success" showIcon message={`已配置（${currentStatus.size} bytes）`} style={{ marginBottom: 12, background: 'rgba(82,196,26,0.08)', border: '1px solid rgba(82,196,26,0.2)' }} />
-            ) : (
-              <Alert type="warning" showIcon message="该平台尚未配置 Cookie，将无法解析需要登录的内容" style={{ marginBottom: 12, background: 'rgba(250,173,20,0.08)', border: '1px solid rgba(250,173,20,0.2)' }} />
-            )}
-            <Text style={{ color: THEME.textSecondary, fontSize: 13, display: 'block', marginBottom: 10 }}>
-              将浏览器中的 Cookie header 内容粘贴到下方（支持原始格式和插件导出格式，自动识别）
-            </Text>
-            <TextArea value={rawInput} onChange={e => setRawInput(e.target.value)} rows={7} style={{ marginBottom: 12, fontFamily: 'monospace', fontSize: 12 }} placeholder="粘贴 Cookie 内容..." />
-            {testMsg && <Alert type={testMsg.ok ? 'success' : 'error'} showIcon message={testMsg.text} style={{ marginBottom: 12 }} />}
-            <Space>
-              <Button type="primary" onClick={handleSave} loading={saving} style={{ background: getPlatformColor(activePlatform), borderColor: getPlatformColor(activePlatform) }}>保存 Cookie</Button>
-              {isDefaultPlatform(activePlatform) && <Button onClick={handleTest} loading={testing} disabled={!currentStatus?.configured}>测试有效性</Button>}
-              {currentStatus?.configured && <Popconfirm title="确认删除该平台的 Cookie？" onConfirm={handleDelete} okText="删除" cancelText="取消">
-                <Button danger loading={deleting}>删除</Button>
-              </Popconfirm>}
-            </Space>
-          </div>
-        </div>
-      </Card>
-
-      {/* 新增平台模态框 */}
-      <Modal
-        title="新增自定义平台"
-        open={addModalVisible}
-        onOk={handleAddPlatform}
-        onCancel={() => setAddModalVisible(false)}
-        okText="新增"
-        cancelText="取消"
-      >
-        <Form layout="vertical" style={{ marginTop: 12 }}>
-          <Form.Item label="平台标识（英文/数字，如：twitter）" required>
-            <Input 
-              value={newPlatformKey} 
-              onChange={e => setNewPlatformKey(e.target.value)} 
-              placeholder="例如：twitter" 
-            />
-          </Form.Item>
-          <Form.Item label="显示名称（如：Twitter）" required>
-            <Input 
-              value={newPlatformName} 
-              onChange={e => setNewPlatformName(e.target.value)} 
-              placeholder="例如：Twitter" 
-            />
-          </Form.Item>
-          <Alert type="info" message="新增平台后，可以粘贴该网站的 Cookie 来解析需要登录的内容" showIcon />
-        </Form>
-      </Modal>
-    </div>
-  )
-}

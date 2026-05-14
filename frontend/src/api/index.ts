@@ -88,23 +88,6 @@ export const createAssetTag = (name: string, color?: string) =>
 
 export const getAssetStats = () => request('/assets/stats')
 
-// ===== Cookies =====
-
-export const listCookies = () => request('/cookies')
-
-export const getCookieStatus = (platform: string) => request(`/cookies/${platform}`)
-
-export const getCookieContent = (platform: string) => request(`/cookies/${platform}/content`)
-
-export const saveCookie = (platform: string, content: string) =>
-  request(`/cookies/${platform}`, { method: 'POST', body: JSON.stringify({ content }) })
-
-export const deleteCookie = (platform: string) =>
-  request(`/cookies/${platform}`, { method: 'DELETE' })
-
-export const testCookie = (platform: string) =>
-  request(`/cookies/${platform}/test`, { method: 'POST' })
-
 // ===== Download =====
 
 export const parseDownloadUrl = (url: string) =>
@@ -548,12 +531,12 @@ export const getQrcodeStatus = (sessionId: string) =>
 export const refreshQrcode = (sessionId: string) =>
   request(`/acquire/qrcode/${sessionId}/refresh`, { method: 'POST' })
 
-/** 获取连接的 Cookie 内容 */
-export const getCookieContent = (connId: string) =>
+/** 获取平台连接的 Cookie 内容 */
+export const getConnectionCookieContent = (connId: string) =>
   request(`/platforms/${connId}/cookie-content`)
 
-/** 保存连接的 Cookie 内容 */
-export const saveCookieContent = (connId: string, content: string) =>
+/** 保存平台连接的 Cookie 内容 */
+export const saveConnectionCookieContent = (connId: string, content: string) =>
   request(`/platforms/${connId}/cookie-content`, { method: 'POST', body: JSON.stringify({ content }) })
 
 // ===== Story =====
