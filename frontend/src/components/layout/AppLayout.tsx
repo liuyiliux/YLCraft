@@ -57,6 +57,7 @@ const menuItems: MenuProps['items'] = [
       { key: '/crawler', label: '素材采集' },
       { key: '/download', label: '去水印下载' },
       { key: '/platforms', label: '平台管理' },
+      { key: '/publish', label: '一键发布' },
     ],
   },
   // 剪辑工具
@@ -99,7 +100,6 @@ const menuItems: MenuProps['items'] = [
     label: 'Live 2D 工厂',
     children: [
       { key: '/live2d', label: 'Live 2D 工厂' },
-      { key: '/publish', label: '一键发布' },
     ],
   },
   { type: 'divider' as const },
