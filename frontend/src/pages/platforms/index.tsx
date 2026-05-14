@@ -14,7 +14,6 @@ import {
   Popconfirm,
   Alert,
   Tooltip,
-  Steps,
   Spin,
   Image,
   Progress,
@@ -23,6 +22,11 @@ import {
   Dropdown,
   Avatar,
   Divider,
+  Drawer,
+  Segmented,
+  Statistic,
+  Row,
+  Col,
 } from 'antd'
 import {
   GlobalOutlined,
@@ -49,6 +53,9 @@ import {
   SafetyCertificateOutlined,
   ClockCircleOutlined,
   ExperimentOutlined,
+  SyncOutlined,
+  ImportOutlined,
+  MessageOutlined,
 } from '@ant-design/icons'
 import {
   listPlatformConnections,
@@ -77,8 +84,8 @@ interface PlatformMeta {
   label: string
   icon: React.ReactNode
   color: string
-  authTypes: string[]     // 支持的认证类型
-  supportQrcode: boolean  // 是否支持扫码
+  authTypes: string[]
+  supportQrcode: boolean
 }
 
 const PLATFORM_METAS: PlatformMeta[] = [
@@ -101,8 +108,23 @@ function getPlatformMeta(value: string): PlatformMeta | undefined {
 }
 
 // ===== 状态辅助函数 =====
+const statusColorMap: Record<string, string> = {
+  active: '#52c41a',
+  healthy: '#52c41a',
+  failed: '#ff4d4f',
+  expired: '#faad14',
+  unknown: '#8c8c8c',
+}
 
-function statusTag(status: string, errorMessage?: string | null) {
+const statusLabelMap: Record<string, string> = {
+  active: '有效',
+  healthy: '正常',
+  failed: '失败',
+  expired: '已过期',
+  unknown: '未测试',
+}
+
+function StatusTag({ status, errorMessage }: { status: string; errorMessage?: string | null }) {
   if (status === 'active') {
     return <Tag icon={<CheckCircleOutlined />} color="success">有效</Tag>
   }
@@ -140,7 +162,7 @@ function authTypeLabel(authType: string) {
   }
 }
 
-// ===== 连接卡片组件 =====
+// ===== 连接卡片组件 — 参考 XHS_ALL_IN_ONE 账号矩阵卡片 =====
 function ConnectionCard({
   conn,
   platformMeta,
@@ -157,6 +179,9 @@ function ConnectionCard({
   onDelete: (id: string) => void
 }) {
   const { theme } = useTheme()
+  const isChecking = testingId === conn.id
+  const statusColor = statusColorMap[conn.status] || theme.textDisabled
+  const isApiPlatform = platformMeta && !platformMeta.authTypes.includes('cookie')
 
   return (
     <div
@@ -165,10 +190,12 @@ function ConnectionCard({
         border: `1px solid ${theme.border}`,
         borderRadius: 10,
         padding: 16,
-        minWidth: 220,
-        flex: '1 1 220px',
-        maxWidth: 300,
+        minWidth: 240,
+        flex: '1 1 240px',
+        maxWidth: 320,
         transition: 'border-color 0.2s, box-shadow 0.2s',
+        display: 'flex',
+        flexDirection: 'column',
       }}
       onMouseEnter={e => {
         e.currentTarget.style.borderColor = platformMeta?.color || theme.primary
@@ -179,10 +206,10 @@ function ConnectionCard({
         e.currentTarget.style.boxShadow = 'none'
       }}
     >
-      {/* 头部：账号名 + 状态 */}
+      {/* 头部：Avatar + 名称 + 状态 */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
         <Avatar
-          size={36}
+          size={40}
           style={{
             backgroundColor: `${platformMeta?.color || theme.primary}22`,
             color: platformMeta?.color || theme.primary,
@@ -200,7 +227,7 @@ function ConnectionCard({
             >
               {conn.name}
             </Text>
-            {statusTag(conn.status, conn.error_message)}
+            <StatusTag status={conn.status} errorMessage={conn.error_message} />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
             {acquisitionMethodTag((conn as any).acquisition_method || 'manual')}
@@ -211,35 +238,47 @@ function ConnectionCard({
         </div>
       </div>
 
-      {/* 账号信息 */}
-      {(conn as any).account_name && (
-        <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 4 }}>
-          <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
-            {String((conn as any).account_name)}
+      {/* 统计行 — 参考 XHS_ALL_IN_ONE 的 Statistic 展示 */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+        <div style={{ flex: 1, background: `${theme.primary}08`, borderRadius: 6, padding: '6px 8px' }}>
+          <Text style={{ color: theme.textSecondary, fontSize: 10 }}>类型</Text>
+          <div style={{ color: theme.textPrimary, fontSize: 13, fontWeight: 500 }}>
+            {isApiPlatform ? 'API' : 'Cookie'}
+          </div>
+        </div>
+        <div style={{ flex: 1, background: `${theme.primary}08`, borderRadius: 6, padding: '6px 8px' }}>
+          <Text style={{ color: theme.textSecondary, fontSize: 10 }}>最后使用</Text>
+          <div style={{ color: theme.textPrimary, fontSize: 13, fontWeight: 500 }}>
+            {conn.last_used ? new Date(conn.last_used).toLocaleDateString() : '-'}
+          </div>
+        </div>
+      </div>
+
+      {/* 状态消息 */}
+      {conn.error_message && (
+        <div style={{ marginBottom: 8 }}>
+          <Text style={{ color: theme.error, fontSize: 12 }} ellipsis>
+            <ExclamationCircleOutlined style={{ marginRight: 4 }} />
+            {conn.error_message}
           </Text>
         </div>
       )}
 
-      {/* 最后使用 */}
-      <div style={{ marginBottom: 12 }}>
-        <Text style={{ color: theme.textDisabled, fontSize: 11 }}>
-          <ClockCircleOutlined style={{ marginRight: 4 }} />
-          {conn.last_used ? new Date(conn.last_used).toLocaleDateString() : '从未使用'}
-        </Text>
-      </div>
-
-      {/* 操作按钮 */}
-      <div style={{ display: 'flex', gap: 6 }}>
-        <Tooltip title="测试连接">
+      {/* 底部操作按钮 — 参考 XHS_ALL_IN_ONE 的检查 + 删除 */}
+      <div style={{ display: 'flex', gap: 6, marginTop: 'auto', borderTop: `1px solid ${theme.border}`, paddingTop: 10 }}>
+        <Tooltip title="健康检查">
           <Button
             type="text"
             size="small"
-            icon={<ExperimentOutlined />}
-            loading={testingId === conn.id}
+            icon={isChecking ? <LoadingOutlined /> : <SafetyCertificateOutlined />}
+            loading={isChecking}
             onClick={() => onTest(conn.id)}
-            style={{ color: theme.textSecondary }}
-          />
+            style={{ color: isChecking ? theme.primary : theme.textSecondary }}
+          >
+            {isChecking ? '检查中' : '检查'}
+          </Button>
         </Tooltip>
+        <div style={{ flex: 1 }} />
         <Tooltip title="编辑">
           <Button
             type="text"
@@ -279,9 +318,7 @@ function PlatformGroupCard({
   onTest,
   onEdit,
   onDelete,
-  onAddManual,
-  onAddPlaywright,
-  onAddQrcode,
+  onOpenAddDrawer,
 }: {
   platformMeta: PlatformMeta
   connections: PlatformConnectionResponse[]
@@ -290,12 +327,12 @@ function PlatformGroupCard({
   onTest: (id: string) => void
   onEdit: (conn: PlatformConnectionResponse) => void
   onDelete: (id: string) => void
-  onAddManual: (platform: string) => void
-  onAddPlaywright: (platform: string) => void
-  onAddQrcode: (platform: string) => void
+  onOpenAddDrawer: (platform: string) => void
 }) {
   const { theme } = useTheme()
   const isApiPlatform = !platformMeta.authTypes.includes('cookie')
+  const activeCount = connections.filter(c => c.status === 'active').length
+  const totalCount = connections.length
 
   return (
     <Card
@@ -310,56 +347,44 @@ function PlatformGroupCard({
       {/* 平台头部 */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {platformMeta.icon}
-          <Text style={{ color: theme.textPrimary, fontSize: 16, fontWeight: 600 }}>
-            {platformMeta.label}
-          </Text>
-          <Badge
-            count={connections.length}
-            style={{ backgroundColor: `${platformMeta.color}33`, color: platformMeta.color }}
-          />
+          <div style={{
+            width: 36,
+            height: 36,
+            borderRadius: 8,
+            background: `${platformMeta.color}18`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}>
+            {platformMeta.icon}
+          </div>
+          <div>
+            <Text style={{ color: theme.textPrimary, fontSize: 16, fontWeight: 600 }}>
+              {platformMeta.label}
+            </Text>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Badge
+                count={totalCount}
+                style={{ backgroundColor: `${platformMeta.color}33`, color: platformMeta.color }}
+              />
+              {activeCount > 0 && (
+                <Text style={{ color: theme.success, fontSize: 12 }}>
+                  {activeCount} 个有效
+                </Text>
+              )}
+            </div>
+          </div>
         </div>
 
-        {/* 添加连接入口 */}
-        {!isApiPlatform ? (
-          <Dropdown
-            menu={{
-              items: [
-                {
-                  key: 'manual',
-                  icon: <KeyOutlined />,
-                  label: '手动粘贴 Cookie',
-                  onClick: () => onAddManual(platformMeta.value),
-                },
-                ...(playwrightAvailable ? [{
-                  key: 'playwright',
-                  icon: <ChromeOutlined />,
-                  label: '浏览器自动获取',
-                  onClick: () => onAddPlaywright(platformMeta.value),
-                }] : []),
-                ...(platformMeta.supportQrcode ? [{
-                  key: 'qrcode',
-                  icon: <QrcodeOutlined />,
-                  label: '扫码登录获取',
-                  onClick: () => onAddQrcode(platformMeta.value),
-                }] : []),
-              ],
-            }}
-          >
-            <Button type="primary" size="small" icon={<PlusOutlined />}>
-              添加连接 <DownOutlined style={{ fontSize: 10 }} />
-            </Button>
-          </Dropdown>
-        ) : (
-          <Button
-            type="primary"
-            size="small"
-            icon={<PlusOutlined />}
-            onClick={() => onAddManual(platformMeta.value)}
-          >
-            添加连接
-          </Button>
-        )}
+        <Button
+          type="primary"
+          size="small"
+          icon={<PlusOutlined />}
+          onClick={() => onOpenAddDrawer(platformMeta.value)}
+          style={{ background: platformMeta.color, borderColor: platformMeta.color }}
+        >
+          绑定账号
+        </Button>
       </div>
 
       {/* 连接卡片网格 */}
@@ -379,7 +404,7 @@ function PlatformGroupCard({
         </div>
       ) : (
         <div style={{
-          padding: '24px 0',
+          padding: '32px 0',
           textAlign: 'center',
           border: `1px dashed ${theme.borderLight}`,
           borderRadius: 8,
@@ -387,14 +412,749 @@ function PlatformGroupCard({
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}
             description={
-              <Text style={{ color: theme.textSecondary, fontSize: 13 }}>
-                还没有{platformMeta.label}的连接，点击上方「添加连接」开始
-              </Text>
+              <div>
+                <Text style={{ color: theme.textSecondary, fontSize: 13, display: 'block', marginBottom: 8 }}>
+                  还没有绑定{platformMeta.label}的账号
+                </Text>
+                <Text style={{ color: theme.textDisabled, fontSize: 12, display: 'block', marginBottom: 12 }}>
+                  {isApiPlatform
+                    ? '添加 API Key 以使用该平台服务'
+                    : '先绑定一个账号，用于数据采集、内容发布等功能'
+                  }
+                </Text>
+                <Button
+                  type="primary"
+                  size="small"
+                  icon={<PlusOutlined />}
+                  onClick={() => onOpenAddDrawer(platformMeta.value)}
+                  style={{ background: platformMeta.color, borderColor: platformMeta.color }}
+                >
+                  添加账号
+                </Button>
+              </div>
             }
           />
         </div>
       )}
     </Card>
+  )
+}
+
+// ===== Cookie 导入面板 — 参考 XHS_ALL_IN_ONE 的 CookieImportPanel =====
+function CookieImportPanel({
+  platform,
+  onImported,
+}: {
+  platform: string
+  onImported: () => void
+}) {
+  const { theme } = useTheme()
+  const [cookieString, setCookieString] = useState('')
+  const [accountName, setAccountName] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const platformInfo = getPlatformMeta(platform)
+
+  const handleImport = async () => {
+    setError(null)
+    if (!cookieString.includes('=')) {
+      setError('请粘贴完整 Cookie 字符串，需包含 key=value 格式')
+      return
+    }
+    setIsSubmitting(true)
+    try {
+      const name = accountName.trim() || `${platformInfo?.label || platform} (Cookie导入)`
+      await createPlatformConnection({
+        platform,
+        name,
+        auth_type: 'cookie',
+        credentials: { content: cookieString.trim() },
+      })
+      message.success(`${name} 已加入账号矩阵`)
+      onImported()
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || 'Cookie 无效或已过期')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div>
+        <Text style={{ color: theme.textPrimary, marginBottom: 6, display: 'block', fontSize: 13 }}>
+          账号名称
+        </Text>
+        <Input
+          placeholder="给这个账号起个名字，如：我的小红书小号"
+          value={accountName}
+          onChange={e => setAccountName(e.target.value)}
+          style={{ background: theme.bgElevated, borderColor: theme.border, color: theme.textPrimary }}
+        />
+        <Text style={{ color: theme.textDisabled, fontSize: 11, marginTop: 4, display: 'block' }}>
+          同一平台可以有多个账号，请用名称区分
+        </Text>
+      </div>
+
+      <div>
+        <Text style={{ color: theme.textPrimary, marginBottom: 6, display: 'block', fontSize: 13 }}>
+          Cookie 字符串
+        </Text>
+        <TextArea
+          rows={6}
+          value={cookieString}
+          onChange={e => setCookieString(e.target.value)}
+          placeholder="a1=...; web_session=...;"
+          style={{
+            background: theme.bgElevated,
+            borderColor: theme.border,
+            color: theme.textPrimary,
+            fontFamily: 'monospace',
+            fontSize: 12,
+          }}
+        />
+      </div>
+
+      {error && <Alert type="error" showIcon message={error} />}
+
+      <Button
+        type="primary"
+        icon={<ImportOutlined />}
+        onClick={handleImport}
+        loading={isSubmitting}
+        block
+      >
+        {isSubmitting ? '校验中...' : '校验并导入'}
+      </Button>
+    </div>
+  )
+}
+
+// ===== 二维码登录面板 — 参考 XHS_ALL_IN_ONE 的 QrLoginPanel =====
+function QrLoginPanel({
+  platform,
+  playwrightAvailable,
+  onConfirmed,
+}: {
+  platform: string
+  playwrightAvailable: boolean
+  onConfirmed: () => void
+}) {
+  const { theme } = useTheme()
+  const [connectorName, setConnectorName] = useState('')
+  const [sessionId, setSessionId] = useState('')
+  const [qrImage, setQrImage] = useState('')
+  const [status, setStatus] = useState<string>('')
+  const [statusText, setStatusText] = useState('点击下方按钮生成二维码')
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const wsRef = useRef<WebSocket | null>(null)
+  const confirmedRef = useRef(false)
+  const platformInfo = getPlatformMeta(platform)
+
+  const isActive = isLoading || (status && !['success', 'failed', 'cancelled', 'expired'].includes(status))
+
+  const statusColor = (s: string): string => {
+    if (s === 'success') return theme.success
+    if (['failed', 'expired', 'cancelled'].includes(s)) return theme.error
+    if (['saving', 'cookies_extracting', 'cookies_extracted'].includes(s)) return theme.primary
+    return theme.warning
+  }
+
+  const connectWebSocket = (sid: string) => {
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const ws = new WebSocket(`${proto}//${window.location.hostname}:${window.location.port || (window.location.protocol === 'https:' ? '443' : '8000')}/api/v1/acquire/qrcode/${sid}/ws`)
+
+    ws.onopen = () => { setIsLoading(true) }
+
+    ws.onmessage = (event) => {
+      try {
+        const msg: AcquisitionWSMessage = JSON.parse(event.data)
+        if (msg.type === 'status_update') {
+          setStatus(msg.status)
+          setStatusText(msg.message)
+          if (msg.data?.qr_image_base64) setQrImage(msg.data.qr_image_base64)
+          if (msg.status === 'qr_scanned') {
+            setStatusText('已扫码，请在手机端确认登录')
+          }
+        } else if (msg.type === 'completed') {
+          setStatus(msg.status)
+          setStatusText(msg.message)
+          setIsLoading(false)
+          if (msg.status === 'success' && !confirmedRef.current) {
+            confirmedRef.current = true
+            setStatusText('账号绑定成功')
+            message.success('扫码登录成功！')
+            onConfirmed()
+          }
+          ws.close()
+        } else if (msg.type === 'error') {
+          setStatus('failed')
+          setStatusText(msg.message || '未知错误')
+          setIsLoading(false)
+          ws.close()
+        }
+      } catch { /* ignore */ }
+    }
+
+    ws.onclose = () => { setIsLoading(false) }
+    ws.onerror = () => {
+      setStatus('failed')
+      setStatusText('WebSocket 连接失败')
+      setIsLoading(false)
+    }
+
+    wsRef.current = ws
+  }
+
+  const startSession = async () => {
+    setIsLoading(true)
+    setError(null)
+    confirmedRef.current = false
+    try {
+      const res = await qrcodeGenerate({
+        platform,
+        connector_name: connectorName || undefined,
+      })
+      if (res.success && res.session_id) {
+        setSessionId(res.session_id)
+        setQrImage(res.qr_image_base64)
+        setStatus('qr_generated')
+        setStatusText(res.message || `请使用${platformInfo?.label || ''} App 扫描二维码`)
+        connectWebSocket(res.session_id)
+      } else {
+        setStatus('failed')
+        setStatusText(res.message || '生成失败')
+        setIsLoading(false)
+      }
+    } catch (e: any) {
+      setError(e?.message || '二维码生成失败，请稍后重试。')
+      setIsLoading(false)
+    }
+  }
+
+  const handleRefresh = async () => {
+    if (!sessionId) return
+    try {
+      const res = await refreshQrcode(sessionId)
+      if (res.success) {
+        setQrImage(res.qr_image_base64 || '')
+        setStatus('qr_generated')
+        setStatusText('二维码已刷新')
+      }
+    } catch { message.error('刷新失败') }
+  }
+
+  const reset = () => {
+    wsRef.current?.close()
+    setSessionId('')
+    setStatus('')
+    setStatusText('点击下方按钮生成二维码')
+    setQrImage('')
+    setIsLoading(false)
+    setError(null)
+    confirmedRef.current = false
+  }
+
+  useEffect(() => {
+    return () => { wsRef.current?.close() }
+  }, [])
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* 二维码展示区 */}
+      <div style={{ textAlign: 'center' }}>
+        {qrImage ? (
+          <div style={{
+            display: 'inline-block',
+            padding: 16,
+            background: '#fff',
+            borderRadius: 12,
+            marginBottom: 8,
+          }}>
+            <Image
+              src={qrImage}
+              alt="登录二维码"
+              width={200}
+              height={200}
+              preview={false}
+              style={{ borderRadius: 4 }}
+            />
+          </div>
+        ) : (
+          <div style={{
+            padding: '48px 0',
+            textAlign: 'center',
+            border: `1px dashed ${theme.borderLight}`,
+            borderRadius: 12,
+            marginBottom: 8,
+          }}>
+            <QrcodeOutlined style={{ fontSize: 48, color: theme.textDisabled }} />
+            <div style={{ marginTop: 8 }}>
+              <Text style={{ color: theme.textSecondary, fontSize: 13 }}>点击下方按钮生成二维码</Text>
+            </div>
+          </div>
+        )}
+
+        {/* 状态提示 */}
+        {status && (
+          <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+            {isActive && <Spin indicator={<LoadingOutlined style={{ fontSize: 14 }} />} />}
+            <Text style={{ color: statusColor(status), fontSize: 13 }}>
+              {statusText}
+            </Text>
+          </div>
+        )}
+
+        {status === 'expired' && (
+          <Button type="link" icon={<ReloadOutlined />} onClick={handleRefresh} style={{ marginBottom: 4 }}>
+            刷新二维码
+          </Button>
+        )}
+      </div>
+
+      {/* 账号名称输入 */}
+      <div>
+        <Text style={{ color: theme.textPrimary, marginBottom: 6, display: 'block', fontSize: 13 }}>账号名称</Text>
+        <Input
+          placeholder="给这个账号起个名字"
+          value={connectorName}
+          onChange={e => setConnectorName(e.target.value)}
+          disabled={!!isActive}
+          style={{ background: theme.bgElevated, borderColor: theme.border, color: theme.textPrimary }}
+        />
+      </div>
+
+      {error && <Alert type="error" showIcon message={error} />}
+
+      {/* 操作按钮 */}
+      <Space style={{ justifyContent: 'center', width: '100%' }}>
+        {!isActive ? (
+          <Button
+            type="primary"
+            icon={<QrcodeOutlined />}
+            onClick={startSession}
+            loading={isLoading}
+          >
+            {status === 'success' ? '重新生成' : '生成二维码'}
+          </Button>
+        ) : (
+          <Button danger icon={<CloseCircleOutlined />} onClick={reset}>
+            取消
+          </Button>
+        )}
+        {status && !isActive && (
+          <Button icon={<ReloadOutlined />} onClick={reset}>
+            重置
+          </Button>
+        )}
+      </Space>
+    </div>
+  )
+}
+
+// ===== 浏览器登录面板 — 参考 XHS_ALL_IN_ONE 的 Playwright 方式 =====
+function BrowserLoginPanel({
+  platform,
+  playwrightAvailable,
+  onConfirmed,
+}: {
+  platform: string
+  playwrightAvailable: boolean
+  onConfirmed: () => void
+}) {
+  const { theme } = useTheme()
+  const [connectorName, setConnectorName] = useState('')
+  const [status, setStatus] = useState<string>('')
+  const [statusText, setStatusText] = useState('')
+  const [sessionId, setSessionId] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const wsRef = useRef<WebSocket | null>(null)
+
+  const isActive = isLoading || (status && !['success', 'failed', 'cancelled', 'expired'].includes(status))
+
+  const statusColor = (s: string): string => {
+    if (s === 'success') return theme.success
+    if (['failed', 'expired', 'cancelled'].includes(s)) return theme.error
+    if (['saving', 'cookies_extracting', 'cookies_extracted'].includes(s)) return theme.primary
+    return theme.warning
+  }
+
+  function statusToStep(s: string): number {
+    switch (s) {
+      case 'initializing': case 'browser_launching': return 0
+      case 'page_loading': return 1
+      case 'waiting_for_login': return 2
+      case 'cookies_extracting': case 'cookies_extracted': return 3
+      case 'saving': case 'success': case 'failed': case 'cancelled': case 'expired': return 4
+      default: return 0
+    }
+  }
+
+  function statusToProgress(s: string): number {
+    switch (s) {
+      case 'initializing': return 5
+      case 'browser_launching': return 15
+      case 'page_loading': return 30
+      case 'waiting_for_login': return 45
+      case 'cookies_extracting': return 70
+      case 'cookies_extracted': return 80
+      case 'saving': return 90
+      case 'success': return 100
+      default: return 0
+    }
+  }
+
+  const connectWebSocket = (sid: string) => {
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const ws = new WebSocket(`${proto}//${window.location.hostname}:${window.location.port || (window.location.protocol === 'https:' ? '443' : '8000')}/api/v1/acquire/playwright/${sid}/ws`)
+
+    ws.onopen = () => { setIsLoading(true) }
+
+    ws.onmessage = (event) => {
+      try {
+        const msg: AcquisitionWSMessage = JSON.parse(event.data)
+        if (msg.type === 'status_update') {
+          setStatus(msg.status)
+          setStatusText(msg.message)
+        } else if (msg.type === 'completed') {
+          setStatus(msg.status)
+          setStatusText(msg.message)
+          setIsLoading(false)
+          if (msg.status === 'success') {
+            message.success('Cookie 获取成功！')
+            onConfirmed()
+          }
+          ws.close()
+        } else if (msg.type === 'error') {
+          setStatus('failed')
+          setStatusText(msg.message || '未知错误')
+          setIsLoading(false)
+          ws.close()
+        }
+      } catch { /* ignore */ }
+    }
+
+    ws.onclose = () => { setIsLoading(false) }
+    ws.onerror = () => {
+      setStatus('failed')
+      setStatusText('WebSocket 连接失败')
+      setIsLoading(false)
+    }
+
+    wsRef.current = ws
+  }
+
+  const handleStart = async () => {
+    if (!platform) return
+    setIsLoading(true)
+    setStatus('initializing')
+    setStatusText('正在初始化...')
+    setError(null)
+    try {
+      const res = await playwrightStart({
+        platform,
+        headless: false,
+        connector_name: connectorName || undefined,
+      })
+      if (res.success && res.session_id) {
+        setSessionId(res.session_id)
+        setStatus('browser_launching')
+        setStatusText(res.message || '浏览器启动中...')
+        connectWebSocket(res.session_id)
+      } else {
+        setStatus('failed')
+        setStatusText(res.message || '启动失败')
+        setIsLoading(false)
+      }
+    } catch (e: any) {
+      setError(e?.message || '启动失败')
+      setIsLoading(false)
+    }
+  }
+
+  const handleCancel = async () => {
+    if (sessionId) {
+      try { await cancelPlaywrightSession(sessionId) } catch { /* ignore */ }
+    }
+    wsRef.current?.close()
+    setIsLoading(false)
+    setStatus('cancelled')
+    setStatusText('已取消')
+  }
+
+  const reset = () => {
+    wsRef.current?.close()
+    setSessionId('')
+    setStatus('')
+    setStatusText('')
+    setIsLoading(false)
+    setError(null)
+  }
+
+  useEffect(() => {
+    return () => { wsRef.current?.close() }
+  }, [])
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {!playwrightAvailable && (
+        <Alert
+          type="warning"
+          showIcon
+          message="Playwright 未安装"
+          description="请在服务器执行: pip install playwright && playwright install chromium"
+        />
+      )}
+
+      {/* 进度展示 */}
+      {status && (
+        <div style={{
+          background: 'rgba(0,0,0,0.2)',
+          border: `1px solid ${statusColor(status)}`,
+          borderRadius: 8,
+          padding: 16,
+        }}>
+          <Progress
+            percent={statusToProgress(status)}
+            status={
+              ['failed', 'cancelled', 'expired'].includes(status) ? 'exception' :
+              status === 'success' ? 'success' : 'active'
+            }
+            strokeColor={statusColor(status)}
+          />
+          <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+            {isActive && <Spin indicator={<LoadingOutlined style={{ fontSize: 14 }} />} />}
+            <Text style={{ color: statusColor(status), fontSize: 13 }}>{statusText}</Text>
+          </div>
+        </div>
+      )}
+
+      {/* 账号名称 */}
+      <div>
+        <Text style={{ color: theme.textPrimary, marginBottom: 6, display: 'block', fontSize: 13 }}>账号名称</Text>
+        <Input
+          placeholder="给这个账号起个名字，如：我的抖音企业号"
+          value={connectorName}
+          onChange={e => setConnectorName(e.target.value)}
+          disabled={!!isActive}
+          style={{ background: theme.bgElevated, borderColor: theme.border, color: theme.textPrimary }}
+        />
+      </div>
+
+      {error && <Alert type="error" showIcon message={error} />}
+
+      {/* 操作按钮 */}
+      <Space>
+        {!isActive ? (
+          <Button
+            type="primary"
+            icon={<DesktopOutlined />}
+            onClick={handleStart}
+            disabled={!playwrightAvailable}
+          >
+            {status === 'success' ? '重新获取' : '启动浏览器'}
+          </Button>
+        ) : (
+          <Button danger icon={<CloseCircleOutlined />} onClick={handleCancel}>
+            取消
+          </Button>
+        )}
+        {status && !isActive && (
+          <Button icon={<ReloadOutlined />} onClick={reset}>
+            重置
+          </Button>
+        )}
+      </Space>
+
+      <Alert
+        type="info"
+        showIcon
+        message="使用说明"
+        description={
+          <ol style={{ color: theme.textSecondary, marginBottom: 0, paddingLeft: 16, fontSize: 12 }}>
+            <li>点击「启动浏览器」，系统会自动打开浏览器窗口</li>
+            <li>在浏览器中完成登录操作</li>
+            <li>登录成功后系统会自动提取 Cookie 并保存</li>
+          </ol>
+        }
+      />
+    </div>
+  )
+}
+
+// ===== API Key 导入面板 =====
+function ApiKeyPanel({
+  platform,
+  onImported,
+}: {
+  platform: string
+  onImported: () => void
+}) {
+  const { theme } = useTheme()
+  const [accountName, setAccountName] = useState('')
+  const [apiKey, setApiKey] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const platformInfo = getPlatformMeta(platform)
+
+  const handleImport = async () => {
+    setError(null)
+    if (!apiKey.trim()) {
+      setError('请输入 API Key')
+      return
+    }
+    setIsSubmitting(true)
+    try {
+      const name = accountName.trim() || `${platformInfo?.label || platform} API`
+      await createPlatformConnection({
+        platform,
+        name,
+        auth_type: 'api_key',
+        credentials: { api_key: apiKey.trim() },
+      })
+      message.success(`${name} 已加入账号矩阵`)
+      onImported()
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || 'API Key 无效')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div>
+        <Text style={{ color: theme.textPrimary, marginBottom: 6, display: 'block', fontSize: 13 }}>
+          账号名称
+        </Text>
+        <Input
+          placeholder={`如：${platformInfo?.label || platform} API`}
+          value={accountName}
+          onChange={e => setAccountName(e.target.value)}
+          style={{ background: theme.bgElevated, borderColor: theme.border, color: theme.textPrimary }}
+        />
+      </div>
+
+      <div>
+        <Text style={{ color: theme.textPrimary, marginBottom: 6, display: 'block', fontSize: 13 }}>
+          API Key
+        </Text>
+        <Input.Password
+          placeholder="输入 API Key..."
+          value={apiKey}
+          onChange={e => setApiKey(e.target.value)}
+          style={{ background: theme.bgElevated, borderColor: theme.border, color: theme.textPrimary }}
+        />
+      </div>
+
+      {error && <Alert type="error" showIcon message={error} />}
+
+      <Button
+        type="primary"
+        icon={<ApiOutlined />}
+        onClick={handleImport}
+        loading={isSubmitting}
+        block
+      >
+        {isSubmitting ? '校验中...' : '保存'}
+      </Button>
+    </div>
+  )
+}
+
+// ===== 添加账号抽屉 — 参考 XHS_ALL_IN_ONE 的 AddAccountDrawer =====
+type AddMethod = 'cookie' | 'qrcode' | 'browser'
+
+function AddAccountDrawer({
+  open,
+  platform,
+  onClose,
+  onBound,
+  playwrightAvailable,
+}: {
+  open: boolean
+  platform: string
+  onClose: () => void
+  onBound: () => void
+  playwrightAvailable: boolean
+}) {
+  const { theme } = useTheme()
+  const platformMeta = getPlatformMeta(platform)
+  const isApiPlatform = platformMeta && !platformMeta.authTypes.includes('cookie')
+
+  // Cookie 平台有三种方式，API 平台只有 API Key
+  const methodOptions = isApiPlatform
+    ? [{ label: 'API Key', value: 'cookie' as AddMethod }]
+    : [
+        { label: 'Cookie', value: 'cookie' as AddMethod, icon: <KeyOutlined /> },
+        ...(platformMeta?.supportQrcode ? [{ label: '扫码登录', value: 'qrcode' as AddMethod, icon: <QrcodeOutlined /> }] : []),
+        ...(playwrightAvailable ? [{ label: '浏览器', value: 'browser' as AddMethod, icon: <ChromeOutlined /> }] : []),
+      ]
+
+  const [method, setMethod] = useState<AddMethod>('cookie')
+
+  // 平台切换时重置方法
+  useEffect(() => {
+    setMethod(isApiPlatform ? 'cookie' : 'cookie')
+  }, [platform, isApiPlatform])
+
+  return (
+    <Drawer
+      title={
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {platformMeta?.icon}
+            <span>绑定 {platformMeta?.label || platform} 账号</span>
+          </div>
+          <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
+            选择认证方式，添加平台账号
+          </Text>
+        </div>
+      }
+      placement="right"
+      width={420}
+      open={open}
+      onClose={onClose}
+      destroyOnClose
+      styles={{
+        header: { background: theme.bgCard, borderBottom: `1px solid ${theme.border}` },
+        body: { background: theme.bg, padding: 24 },
+      }}
+    >
+      {/* 方式选择 — 参考 XHS_ALL_IN_ONE 的 Segmented */}
+      {methodOptions.length > 1 && (
+        <div style={{ marginBottom: 20 }}>
+          <Segmented
+            block
+            value={method}
+            onChange={(val) => setMethod(val as AddMethod)}
+            options={methodOptions.map(opt => ({
+              label: (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '2px 0' }}>
+                  {opt.icon}
+                  <span>{opt.label}</span>
+                </div>
+              ),
+              value: opt.value,
+            }))}
+          />
+        </div>
+      )}
+
+      {/* 面板内容 */}
+      {isApiPlatform ? (
+        <ApiKeyPanel platform={platform} onImported={onBound} />
+      ) : method === 'cookie' ? (
+        <CookieImportPanel platform={platform} onImported={onBound} />
+      ) : method === 'qrcode' ? (
+        <QrLoginPanel platform={platform} playwrightAvailable={playwrightAvailable} onConfirmed={onBound} />
+      ) : (
+        <BrowserLoginPanel platform={platform} playwrightAvailable={playwrightAvailable} onConfirmed={onBound} />
+      )}
+    </Drawer>
   )
 }
 
@@ -408,40 +1168,14 @@ export default function PlatformsPage() {
   const [playwrightAvailable, setPlaywrightAvailable] = useState(false)
   const [testingId, setTestingId] = useState<string | null>(null)
 
-  // ===== 弹窗状态 =====
+  // ===== 抽屉状态 =====
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [drawerPlatform, setDrawerPlatform] = useState('')
+
+  // ===== 编辑弹窗 =====
   const [modalVisible, setModalVisible] = useState(false)
   const [editingConn, setEditingConn] = useState<PlatformConnectionResponse | null>(null)
-  const [modalPlatform, setModalPlatform] = useState<string>('')
   const [form] = Form.useForm()
-
-  // ===== 手动 Cookie 弹窗 =====
-  const [manualModalVisible, setManualModalVisible] = useState(false)
-  const [manualPlatform, setManualPlatform] = useState<string>('')
-  const [manualName, setManualName] = useState('')
-  const [manualContent, setManualContent] = useState('')
-  const [manualSaving, setManualSaving] = useState(false)
-
-  // ===== Playwright 弹窗 =====
-  const [pwModalVisible, setPwModalVisible] = useState(false)
-  const [pwPlatform, setPwPlatform] = useState<string>('')
-  const [pwConnectorName, setPwConnectorName] = useState('')
-  const [pwStatus, setPwStatus] = useState<string>('')
-  const [pwMessage, setPwMessage] = useState('')
-  const [pwSessionId, setPwSessionId] = useState('')
-  const [pwLoading, setPwLoading] = useState(false)
-  const pwWsRef = useRef<WebSocket | null>(null)
-
-  // ===== QrCode 弹窗 =====
-  const [qrModalVisible, setQrModalVisible] = useState(false)
-  const [qrPlatform, setQrPlatform] = useState<string>('')
-  const [qrConnectorName, setQrConnectorName] = useState('')
-  const [qrSessionId, setQrSessionId] = useState('')
-  const [qrImage, setQrImage] = useState('')
-  const [qrStatus, setQrStatus] = useState<string>('')
-  const [qrMessage, setQrMessage] = useState('')
-  const [qrLoading, setQrLoading] = useState(false)
-  const qrWsRef = useRef<WebSocket | null>(null)
-  const qrTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // ===== 加载数据 =====
   const loadData = useCallback(async () => {
@@ -464,18 +1198,9 @@ export default function PlatformsPage() {
 
   useEffect(() => { loadData() }, [loadData])
 
-  useEffect(() => {
-    return () => {
-      pwWsRef.current?.close()
-      qrWsRef.current?.close()
-      if (qrTimerRef.current) clearInterval(qrTimerRef.current)
-    }
-  }, [])
-
   // ===== 按平台分组 =====
   const groupedConnections = useCallback(() => {
     const groups: Record<string, PlatformConnectionResponse[]> = {}
-    // 先按 PLATFORM_METAS 定义的顺序排
     for (const pm of PLATFORM_METAS) {
       groups[pm.value] = []
     }
@@ -488,236 +1213,18 @@ export default function PlatformsPage() {
     return groups
   }, [connections])
 
+  const groups = groupedConnections()
+
   // 有连接的平台
-  const activePlatforms = PLATFORM_METAS.filter(pm => {
-    const groups = groupedConnections()
-    return groups[pm.value] && groups[pm.value].length > 0
-  })
+  const activePlatforms = PLATFORM_METAS.filter(pm => groups[pm.value] && groups[pm.value].length > 0)
 
   // 没有连接的平台
-  const inactivePlatforms = PLATFORM_METAS.filter(pm => {
-    const groups = groupedConnections()
-    return !groups[pm.value] || groups[pm.value].length === 0
-  })
+  const inactivePlatforms = PLATFORM_METAS.filter(pm => !groups[pm.value] || groups[pm.value].length === 0)
 
-  // ===== 手动 Cookie 保存 =====
-  const handleManualSave = async () => {
-    if (!manualPlatform) {
-      message.warning('请确认平台')
-      return
-    }
-    if (!manualContent || manualContent.trim().length < 10) {
-      message.warning('Cookie 内容太短，请检查是否正确')
-      return
-    }
-    setManualSaving(true)
-    try {
-      const platformInfo = getPlatformMeta(manualPlatform)
-      const name = manualName.trim() || `${platformInfo?.label || manualPlatform} (手动)`
-      await createPlatformConnection({
-        platform: manualPlatform,
-        name,
-        auth_type: 'cookie',
-        credentials: { content: manualContent },
-      })
-      message.success('连接已创建')
-      setManualModalVisible(false)
-      setManualContent('')
-      setManualName('')
-      setManualPlatform('')
-      loadData()
-    } catch (e: any) {
-      message.error('保存失败：' + (e?.response?.data?.detail || '未知错误'))
-    } finally {
-      setManualSaving(false)
-    }
-  }
-
-  // ===== Playwright 操作 =====
-  const handlePlaywrightStart = async () => {
-    if (!pwPlatform) return
-    setPwLoading(true)
-    setPwStatus('initializing')
-    setPwMessage('正在初始化...')
-    try {
-      const res = await playwrightStart({
-        platform: pwPlatform,
-        headless: false,
-        connector_name: pwConnectorName || undefined,
-      })
-      if (res.success && res.session_id) {
-        setPwSessionId(res.session_id)
-        setPwStatus('browser_launching')
-        setPwMessage(res.message || '浏览器启动中...')
-        connectPwWebSocket(res.session_id)
-      } else {
-        setPwStatus('failed')
-        setPwMessage(res.message || '启动失败')
-        setPwLoading(false)
-      }
-    } catch (e: any) {
-      setPwStatus('failed')
-      setPwMessage(e?.message || '启动失败')
-      setPwLoading(false)
-    }
-  }
-
-  const connectPwWebSocket = (sid: string) => {
-    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const ws = new WebSocket(`${proto}//${window.location.hostname}:${window.location.port || (window.location.protocol === 'https:' ? '443' : '8000')}/api/v1/acquire/playwright/${sid}/ws`)
-
-    ws.onopen = () => { setPwLoading(true) }
-
-    ws.onmessage = (event) => {
-      try {
-        const msg: AcquisitionWSMessage = JSON.parse(event.data)
-        if (msg.type === 'status_update') {
-          setPwStatus(msg.status)
-          setPwMessage(msg.message)
-        } else if (msg.type === 'completed') {
-          setPwStatus(msg.status)
-          setPwMessage(msg.message)
-          setPwLoading(false)
-          if (msg.status === 'success') {
-            message.success('Cookie 获取成功！')
-            loadData()
-          } else if (msg.error_message) {
-            message.error(msg.error_message)
-          }
-          ws.close()
-        } else if (msg.type === 'error') {
-          setPwStatus('failed')
-          setPwMessage(msg.message || '未知错误')
-          setPwLoading(false)
-          ws.close()
-        }
-      } catch { /* ignore */ }
-    }
-
-    ws.onclose = () => { setPwLoading(false) }
-    ws.onerror = () => {
-      setPwStatus('failed')
-      setPwMessage('WebSocket 连接失败')
-      setPwLoading(false)
-    }
-
-    pwWsRef.current = ws
-  }
-
-  const handlePlaywrightCancel = async () => {
-    if (pwSessionId) {
-      try { await cancelPlaywrightSession(pwSessionId) } catch { /* ignore */ }
-    }
-    pwWsRef.current?.close()
-    setPwLoading(false)
-    setPwStatus('cancelled')
-    setPwMessage('已取消')
-  }
-
-  const resetPlaywright = () => {
-    pwWsRef.current?.close()
-    setPwSessionId('')
-    setPwStatus('')
-    setPwMessage('')
-    setPwLoading(false)
-  }
-
-  // ===== QrCode 操作 =====
-  const handleQrcodeGenerate = async () => {
-    if (!qrPlatform) return
-    setQrLoading(true)
-    setQrStatus('')
-    setQrMessage('')
-    setQrImage('')
-    try {
-      const res = await qrcodeGenerate({
-        platform: qrPlatform,
-        connector_name: qrConnectorName || undefined,
-      })
-      if (res.success && res.session_id) {
-        setQrSessionId(res.session_id)
-        setQrImage(res.qr_image_base64)
-        setQrStatus('qr_generated')
-        setQrMessage(res.message || '请扫描二维码')
-        connectQrWebSocket(res.session_id)
-      } else {
-        setQrStatus('failed')
-        setQrMessage(res.message || '生成失败')
-        setQrLoading(false)
-      }
-    } catch (e: any) {
-      setQrStatus('failed')
-      setQrMessage(e?.message || '生成失败')
-      setQrLoading(false)
-    }
-  }
-
-  const connectQrWebSocket = (sid: string) => {
-    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const ws = new WebSocket(`${proto}//${window.location.hostname}:${window.location.port || (window.location.protocol === 'https:' ? '443' : '8000')}/api/v1/acquire/qrcode/${sid}/ws`)
-
-    ws.onopen = () => { setQrLoading(true) }
-
-    ws.onmessage = (event) => {
-      try {
-        const msg: AcquisitionWSMessage = JSON.parse(event.data)
-        if (msg.type === 'status_update') {
-          setQrStatus(msg.status)
-          setQrMessage(msg.message)
-          if (msg.data?.qr_image_base64) setQrImage(msg.data.qr_image_base64)
-        } else if (msg.type === 'completed') {
-          setQrStatus(msg.status)
-          setQrMessage(msg.message)
-          setQrLoading(false)
-          if (msg.status === 'success') {
-            message.success('扫码登录成功！')
-            loadData()
-          } else if (msg.error_message) {
-            message.error(msg.error_message)
-          }
-          ws.close()
-        } else if (msg.type === 'error') {
-          setQrStatus('failed')
-          setQrMessage(msg.message || '未知错误')
-          setQrLoading(false)
-          ws.close()
-        }
-      } catch { /* ignore */ }
-    }
-
-    ws.onclose = () => { setQrLoading(false) }
-    ws.onerror = () => {
-      setQrStatus('failed')
-      setQrMessage('WebSocket 连接失败')
-      setQrLoading(false)
-    }
-
-    qrWsRef.current = ws
-  }
-
-  const handleQrcodeRefresh = async () => {
-    if (!qrSessionId) return
-    try {
-      const res = await refreshQrcode(qrSessionId)
-      if (res.success) {
-        setQrImage(res.qr_image_base64 || '')
-        setQrStatus('qr_generated')
-        setQrMessage('二维码已刷新')
-      } else {
-        message.error(res.message || '刷新失败')
-      }
-    } catch { message.error('刷新失败') }
-  }
-
-  const resetQrcode = () => {
-    qrWsRef.current?.close()
-    if (qrTimerRef.current) clearInterval(qrTimerRef.current)
-    setQrSessionId('')
-    setQrStatus('')
-    setQrMessage('')
-    setQrImage('')
-    setQrLoading(false)
-  }
+  // ===== 统计 =====
+  const activeCount = connections.filter(c => c.status === 'active').length
+  const failedCount = connections.filter(c => c.status === 'failed').length
+  const expiredCount = connections.filter(c => c.status === 'expired').length
 
   // ===== 连接 CRUD =====
   const handleTest = async (id: string) => {
@@ -725,13 +1232,13 @@ export default function PlatformsPage() {
     try {
       const result = await testPlatformConnection(id)
       if (result.success) {
-        message.success('连接测试成功：' + result.message)
+        message.success('健康检查通过：' + result.message)
       } else {
-        message.error('连接测试失败：' + result.message)
+        message.error('健康检查失败：' + result.message)
       }
       loadData()
     } catch (e: any) {
-      message.error('测试失败：' + (e?.response?.data?.detail || '未知错误'))
+      message.error('检查失败：' + (e?.response?.data?.detail || '未知错误'))
     } finally {
       setTestingId(null)
     }
@@ -795,138 +1302,87 @@ export default function PlatformsPage() {
     }
   }
 
-  // ===== 添加连接入口 =====
-  const onAddManual = (platform: string) => {
-    const meta = getPlatformMeta(platform)
-    setManualPlatform(platform)
-    setManualName(`${meta?.label || platform} 账号`)
-    setManualContent('')
-    setManualModalVisible(true)
+  // ===== 打开添加账号抽屉 =====
+  const onOpenAddDrawer = (platform: string) => {
+    setDrawerPlatform(platform)
+    setDrawerOpen(true)
   }
-
-  const onAddPlaywright = (platform: string) => {
-    const meta = getPlatformMeta(platform)
-    setPwPlatform(platform)
-    setPwConnectorName(`${meta?.label || platform} 账号`)
-    resetPlaywright()
-    setPwModalVisible(true)
-  }
-
-  const onAddQrcode = (platform: string) => {
-    const meta = getPlatformMeta(platform)
-    setQrPlatform(platform)
-    setQrConnectorName(`${meta?.label || platform} 账号`)
-    resetQrcode()
-    setQrModalVisible(true)
-  }
-
-  // ===== 统计 =====
-  const activeCount = connections.filter(c => c.status === 'active').length
-  const failedCount = connections.filter(c => c.status === 'failed').length
-  const expiredCount = connections.filter(c => c.status === 'expired').length
-
-  // ===== 获取状态辅助 =====
-  const pwIsActive = pwLoading || (pwStatus && !['success', 'failed', 'cancelled', 'expired'].includes(pwStatus))
-  const qrIsActive = qrLoading || (qrStatus && !['success', 'failed', 'cancelled', 'expired'].includes(qrStatus))
-
-  function statusToStep(status: string): number {
-    switch (status) {
-      case 'initializing': case 'browser_launching': return 0
-      case 'page_loading': return 1
-      case 'waiting_for_login': case 'qr_generated': return 2
-      case 'qr_scanned': case 'cookies_extracting': case 'cookies_extracted': return 3
-      case 'saving': case 'success': case 'failed': case 'cancelled': case 'expired': return 4
-      default: return 0
-    }
-  }
-
-  function statusToProgress(status: string): number {
-    switch (status) {
-      case 'initializing': return 5
-      case 'browser_launching': return 15
-      case 'page_loading': return 30
-      case 'waiting_for_login': return 45
-      case 'qr_generated': return 40
-      case 'qr_scanned': return 55
-      case 'cookies_extracting': return 70
-      case 'cookies_extracted': return 80
-      case 'saving': return 90
-      case 'success': return 100
-      default: return 0
-    }
-  }
-
-  function statusColor(status: string): string {
-    if (status === 'success') return theme.success
-    if (['failed', 'expired', 'cancelled'].includes(status)) return theme.error
-    if (['saving', 'cookies_extracting', 'cookies_extracted'].includes(status)) return theme.primary
-    return theme.warning
-  }
-
-  const groups = groupedConnections()
 
   return (
     <div style={{ maxWidth: 1200 }}>
-      {/* 页面标题 */}
+      {/* 页面标题 — 参考 XHS_ALL_IN_ONE 的账号矩阵标题 */}
       <div style={{ marginBottom: 24 }}>
         <Title level={3} style={{ color: theme.textPrimary, marginBottom: 4 }}>
           <LinkOutlined style={{ marginRight: 12 }} />
-          平台管理
+          账号矩阵
         </Title>
         <Text style={{ color: theme.textSecondary, fontSize: 14 }}>
-          管理各平台凭证，支持多账号、多种认证方式
+          管理各平台账号与凭证，支持多账号、多种认证方式、健康检查
         </Text>
       </div>
 
-      {/* 统计栏 */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
-        <div style={{
-          background: theme.bgCard,
-          border: `1px solid ${theme.border}`,
-          borderRadius: 10,
-          padding: '12px 20px',
-          flex: 1,
-          minWidth: 140,
-        }}>
-          <Text style={{ color: theme.textSecondary, fontSize: 12 }}>已配置平台</Text>
-          <div style={{ fontSize: 24, fontWeight: 600, color: theme.textPrimary }}>
-            {activePlatforms.length}
+      {/* 统计栏 — 参考 XHS_ALL_IN_ONE 的统计卡片 */}
+      <Row gutter={12} style={{ marginBottom: 24 }}>
+        <Col span={6}>
+          <div style={{
+            background: theme.bgCard,
+            border: `1px solid ${theme.border}`,
+            borderRadius: 10,
+            padding: '14px 20px',
+          }}>
+            <Statistic
+              title={<span style={{ color: theme.textSecondary, fontSize: 12 }}>已配置平台</span>}
+              value={activePlatforms.length}
+              valueStyle={{ color: theme.textPrimary, fontWeight: 600 }}
+            />
           </div>
-        </div>
-        <div style={{
-          background: theme.bgCard,
-          border: `1px solid ${theme.border}`,
-          borderRadius: 10,
-          padding: '12px 20px',
-          flex: 1,
-          minWidth: 140,
-        }}>
-          <Text style={{ color: theme.textSecondary, fontSize: 12 }}>有效连接</Text>
-          <div style={{ fontSize: 24, fontWeight: 600, color: theme.success }}>{activeCount}</div>
-        </div>
-        <div style={{
-          background: theme.bgCard,
-          border: `1px solid ${theme.border}`,
-          borderRadius: 10,
-          padding: '12px 20px',
-          flex: 1,
-          minWidth: 140,
-        }}>
-          <Text style={{ color: theme.textSecondary, fontSize: 12 }}>连接失败</Text>
-          <div style={{ fontSize: 24, fontWeight: 600, color: theme.error }}>{failedCount}</div>
-        </div>
-        <div style={{
-          background: theme.bgCard,
-          border: `1px solid ${theme.border}`,
-          borderRadius: 10,
-          padding: '12px 20px',
-          flex: 1,
-          minWidth: 140,
-        }}>
-          <Text style={{ color: theme.textSecondary, fontSize: 12 }}>已过期</Text>
-          <div style={{ fontSize: 24, fontWeight: 600, color: theme.warning }}>{expiredCount}</div>
-        </div>
-      </div>
+        </Col>
+        <Col span={6}>
+          <div style={{
+            background: theme.bgCard,
+            border: `1px solid ${theme.border}`,
+            borderRadius: 10,
+            padding: '14px 20px',
+          }}>
+            <Statistic
+              title={<span style={{ color: theme.textSecondary, fontSize: 12 }}>有效连接</span>}
+              value={activeCount}
+              valueStyle={{ color: theme.success, fontWeight: 600 }}
+              prefix={<CheckCircleOutlined />}
+            />
+          </div>
+        </Col>
+        <Col span={6}>
+          <div style={{
+            background: theme.bgCard,
+            border: `1px solid ${theme.border}`,
+            borderRadius: 10,
+            padding: '14px 20px',
+          }}>
+            <Statistic
+              title={<span style={{ color: theme.textSecondary, fontSize: 12 }}>连接失败</span>}
+              value={failedCount}
+              valueStyle={{ color: theme.error, fontWeight: 600 }}
+              prefix={failedCount > 0 ? <CloseCircleOutlined /> : undefined}
+            />
+          </div>
+        </Col>
+        <Col span={6}>
+          <div style={{
+            background: theme.bgCard,
+            border: `1px solid ${theme.border}`,
+            borderRadius: 10,
+            padding: '14px 20px',
+          }}>
+            <Statistic
+              title={<span style={{ color: theme.textSecondary, fontSize: 12 }}>已过期</span>}
+              value={expiredCount}
+              valueStyle={{ color: theme.warning, fontWeight: 600 }}
+              prefix={expiredCount > 0 ? <ExclamationCircleOutlined /> : undefined}
+            />
+          </div>
+        </Col>
+      </Row>
 
       {/* 已有连接的平台 */}
       {activePlatforms.map(pm => (
@@ -939,27 +1395,9 @@ export default function PlatformsPage() {
           onTest={handleTest}
           onEdit={handleEdit}
           onDelete={handleDelete}
-          onAddManual={onAddManual}
-          onAddPlaywright={onAddPlaywright}
-          onAddQrcode={onAddQrcode}
+          onOpenAddDrawer={onOpenAddDrawer}
         />
       ))}
-
-      {/* 未配置的平台 — 折叠区 */}
-      {inactivePlatforms.length > 0 && (
-        <PlatformGroupCard
-          platformMeta={inactivePlatforms[0]}
-          connections={[]}
-          testingId={testingId}
-          playwrightAvailable={playwrightAvailable}
-          onTest={handleTest}
-          onEdit={handleEdit}
-          onDelete={handleDelete}
-          onAddManual={onAddManual}
-          onAddPlaywright={onAddPlaywright}
-          onAddQrcode={onAddQrcode}
-        />
-      )}
 
       {/* 未配置的平台 — 紧凑网格 */}
       {inactivePlatforms.length > 0 && (
@@ -971,342 +1409,47 @@ export default function PlatformsPage() {
           }}
           styles={{ body: { padding: 16 } }}
         >
-          <Text style={{ color: theme.textSecondary, fontSize: 13, marginBottom: 12, display: 'block' }}>
-            其他平台 — 点击快速添加
-          </Text>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <Text style={{ color: theme.textSecondary, fontSize: 13 }}>
+              其他平台 — 点击快速添加
+            </Text>
+            <Badge count={inactivePlatforms.length} style={{ backgroundColor: `${theme.textDisabled}22`, color: theme.textDisabled }} />
+          </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {inactivePlatforms.map(pm => {
               const isApiPlatform = !pm.authTypes.includes('cookie')
               return (
-                <Dropdown
+                <Button
                   key={pm.value}
-                  menu={{
-                    items: isApiPlatform
-                      ? [{ key: 'manual', icon: <ApiOutlined />, label: '添加 API Key', onClick: () => onAddManual(pm.value) }]
-                      : [
-                          { key: 'manual', icon: <KeyOutlined />, label: '手动粘贴', onClick: () => onAddManual(pm.value) },
-                          ...(playwrightAvailable ? [{ key: 'playwright', icon: <ChromeOutlined />, label: '浏览器获取', onClick: () => onAddPlaywright(pm.value) }] : []),
-                          ...(pm.supportQrcode ? [{ key: 'qrcode', icon: <QrcodeOutlined />, label: '扫码登录', onClick: () => onAddQrcode(pm.value) }] : []),
-                        ],
+                  type="dashed"
+                  size="small"
+                  style={{
+                    borderColor: `${pm.color}44`,
+                    color: pm.color,
+                    borderRadius: 6,
                   }}
+                  icon={pm.icon}
+                  onClick={() => onOpenAddDrawer(pm.value)}
                 >
-                  <Button
-                    type="dashed"
-                    size="small"
-                    style={{
-                      borderColor: `${pm.color}44`,
-                      color: pm.color,
-                    }}
-                    icon={pm.icon}
-                  >
-                    {pm.label} <PlusOutlined style={{ fontSize: 10 }} />
-                  </Button>
-                </Dropdown>
+                  {pm.label} <PlusOutlined style={{ fontSize: 10 }} />
+                </Button>
               )
             })}
           </div>
         </Card>
       )}
 
-      {/* ===== 手动 Cookie 弹窗 ===== */}
-      <Modal
-        title={
-          <Space>
-            <KeyOutlined />
-            <span>手动添加 {getPlatformMeta(manualPlatform)?.label || ''} 连接</span>
-          </Space>
-        }
-        open={manualModalVisible}
-        onCancel={() => {
-          setManualModalVisible(false)
-          setManualContent('')
-          setManualName('')
+      {/* ===== 添加账号抽屉 — 参考 XHS_ALL_IN_ONE 的 AddAccountDrawer ===== */}
+      <AddAccountDrawer
+        open={drawerOpen}
+        platform={drawerPlatform}
+        onClose={() => setDrawerOpen(false)}
+        onBound={() => {
+          loadData()
+          setDrawerOpen(false)
         }}
-        onOk={handleManualSave}
-        confirmLoading={manualSaving}
-        okText="保存连接"
-        cancelText="取消"
-        width={600}
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 16 }}>
-          <div>
-            <Text style={{ color: theme.textPrimary, marginBottom: 6, display: 'block' }}>
-              连接名称
-            </Text>
-            <Input
-              placeholder="给这个连接起个名字，如：我的小红书小号"
-              value={manualName}
-              onChange={e => setManualName(e.target.value)}
-            />
-            <Text style={{ color: theme.textDisabled, fontSize: 11, marginTop: 4, display: 'block' }}>
-              同一平台可以有多个连接（多角色），请用名称区分
-            </Text>
-          </div>
-
-          <div>
-            <Text style={{ color: theme.textPrimary, marginBottom: 6, display: 'block' }}>
-              Cookie 内容
-            </Text>
-            <TextArea
-              rows={8}
-              value={manualContent}
-              onChange={e => setManualContent(e.target.value)}
-              placeholder={`粘贴 Cookie 内容...\n\nNetscape 格式示例：\n.xiaohongshu.com\tTRUE\t/\tFALSE\t0\tweb_session\tabc123\n\n或 key=value; 格式：\nweb_session=abc123; a1=def456`}
-              style={{ fontFamily: 'monospace' }}
-            />
-          </div>
-
-          <Alert
-            type="info"
-            showIcon
-            message="如何获取 Cookie"
-            description={
-              <ol style={{ color: theme.textSecondary, marginBottom: 0, paddingLeft: 16, fontSize: 12 }}>
-                <li>在浏览器中打开目标平台并登录</li>
-                <li>按 F12 打开开发者工具</li>
-                <li>切换到 Application → Cookies</li>
-                <li>复制所有 Cookie 内容到上方</li>
-              </ol>
-            }
-          />
-        </div>
-      </Modal>
-
-      {/* ===== Playwright 弹窗 ===== */}
-      <Modal
-        title={
-          <Space>
-            <ChromeOutlined />
-            <span>浏览器获取 {getPlatformMeta(pwPlatform)?.label || ''} Cookie</span>
-          </Space>
-        }
-        open={pwModalVisible}
-        onCancel={() => {
-          if (pwIsActive) {
-            handlePlaywrightCancel()
-          }
-          setPwModalVisible(false)
-        }}
-        footer={null}
-        width={560}
-      >
-        <div style={{ marginTop: 16 }}>
-          {!playwrightAvailable && (
-            <Alert
-              type="warning"
-              showIcon
-              style={{ marginBottom: 16 }}
-              message="Playwright 未安装"
-              description="请在服务器执行: pip install playwright && playwright install chromium"
-            />
-          )}
-
-          {/* 进度展示 */}
-          {pwStatus && (
-            <div style={{
-              background: 'rgba(0,0,0,0.2)',
-              border: `1px solid ${statusColor(pwStatus)}`,
-              borderRadius: 8,
-              padding: 16,
-              marginBottom: 16,
-            }}>
-              <Steps
-                size="small"
-                current={statusToStep(pwStatus)}
-                status={
-                  ['failed', 'cancelled', 'expired'].includes(pwStatus) ? 'error' :
-                  pwStatus === 'success' ? 'finish' : 'process'
-                }
-                items={[
-                  { title: '启动' },
-                  { title: '加载' },
-                  { title: '等待登录' },
-                  { title: '提取' },
-                  { title: '完成' },
-                ]}
-              />
-              <Progress
-                percent={statusToProgress(pwStatus)}
-                status={
-                  ['failed', 'cancelled', 'expired'].includes(pwStatus) ? 'exception' :
-                  pwStatus === 'success' ? 'success' : 'active'
-                }
-                strokeColor={statusColor(pwStatus)}
-                style={{ marginTop: 12 }}
-              />
-              <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
-                {pwIsActive && <Spin indicator={<LoadingOutlined style={{ fontSize: 14 }} />} />}
-                <Text style={{ color: statusColor(pwStatus), fontSize: 13 }}>{pwMessage}</Text>
-              </div>
-            </div>
-          )}
-
-          {/* 操作区 */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div>
-              <Text style={{ color: theme.textPrimary, marginBottom: 6, display: 'block' }}>连接名称</Text>
-              <Input
-                placeholder="给这个连接起个名字，如：我的抖音企业号"
-                value={pwConnectorName}
-                onChange={e => setPwConnectorName(e.target.value)}
-                disabled={!!pwIsActive}
-              />
-            </div>
-
-            <Space>
-              {!pwIsActive ? (
-                <Button
-                  type="primary"
-                  icon={<DesktopOutlined />}
-                  onClick={handlePlaywrightStart}
-                  disabled={!playwrightAvailable}
-                >
-                  {pwStatus === 'success' ? '重新获取' : '启动浏览器'}
-                </Button>
-              ) : (
-                <Button danger icon={<CloseCircleOutlined />} onClick={handlePlaywrightCancel}>
-                  取消
-                </Button>
-              )}
-              {pwStatus && !pwIsActive && (
-                <Button icon={<ReloadOutlined />} onClick={resetPlaywright}>
-                  重置
-                </Button>
-              )}
-            </Space>
-          </div>
-
-          <Alert
-            type="info"
-            showIcon
-            style={{ marginTop: 16 }}
-            message="使用说明"
-            description={
-              <ol style={{ color: theme.textSecondary, marginBottom: 0, paddingLeft: 16, fontSize: 12 }}>
-                <li>点击「启动浏览器」，系统会自动打开浏览器窗口</li>
-                <li>在浏览器中完成登录操作</li>
-                <li>登录成功后系统会自动提取 Cookie 并保存</li>
-              </ol>
-            }
-          />
-        </div>
-      </Modal>
-
-      {/* ===== QrCode 弹窗 ===== */}
-      <Modal
-        title={
-          <Space>
-            <QrcodeOutlined />
-            <span>扫码登录 {getPlatformMeta(qrPlatform)?.label || ''}</span>
-          </Space>
-        }
-        open={qrModalVisible}
-        onCancel={() => {
-          if (qrIsActive) resetQrcode()
-          setQrModalVisible(false)
-        }}
-        footer={null}
-        width={460}
-      >
-        <div style={{ marginTop: 16, textAlign: 'center' }}>
-          {/* 二维码展示 */}
-          {qrImage ? (
-            <div style={{
-              display: 'inline-block',
-              padding: 16,
-              background: '#fff',
-              borderRadius: 8,
-              marginBottom: 12,
-            }}>
-              <Image
-                src={qrImage}
-                alt="登录二维码"
-                width={200}
-                height={200}
-                preview={false}
-                style={{ borderRadius: 4 }}
-              />
-            </div>
-          ) : (
-            <div style={{
-              padding: '60px 0',
-              textAlign: 'center',
-              border: `1px dashed ${theme.borderLight}`,
-              borderRadius: 8,
-              marginBottom: 12,
-            }}>
-              <QrcodeOutlined style={{ fontSize: 48, color: theme.textDisabled }} />
-              <div>
-                <Text style={{ color: theme.textSecondary }}>点击下方按钮生成二维码</Text>
-              </div>
-            </div>
-          )}
-
-          {/* 状态提示 */}
-          {qrStatus && (
-            <div style={{ marginBottom: 12 }}>
-              {qrIsActive && (
-                <Space>
-                  <Spin indicator={<LoadingOutlined style={{ fontSize: 14 }} />} />
-                  <Text style={{ color: statusColor(qrStatus), fontSize: 13 }}>
-                    {qrMessage || '等待扫码...'}
-                  </Text>
-                </Space>
-              )}
-              {!qrIsActive && (
-                <Text style={{ color: statusColor(qrStatus), fontSize: 14, fontWeight: 500 }}>
-                  {qrMessage}
-                </Text>
-              )}
-            </div>
-          )}
-
-          {qrStatus === 'expired' && (
-            <Button
-              type="link"
-              icon={<ReloadOutlined />}
-              onClick={handleQrcodeRefresh}
-              style={{ marginBottom: 8 }}
-            >
-              刷新二维码
-            </Button>
-          )}
-
-          {/* 操作区 */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, textAlign: 'left' }}>
-            <div>
-              <Text style={{ color: theme.textPrimary, marginBottom: 6, display: 'block' }}>连接名称</Text>
-              <Input
-                placeholder="给这个连接起个名字"
-                value={qrConnectorName}
-                onChange={e => setQrConnectorName(e.target.value)}
-                disabled={!!qrIsActive}
-              />
-            </div>
-
-            <Space style={{ justifyContent: 'center', width: '100%' }}>
-              {!qrIsActive ? (
-                <Button
-                  type="primary"
-                  icon={<CameraOutlined />}
-                  onClick={handleQrcodeGenerate}
-                >
-                  {qrStatus === 'success' ? '重新生成' : '生成二维码'}
-                </Button>
-              ) : (
-                <Button danger icon={<CloseCircleOutlined />} onClick={resetQrcode}>
-                  取消
-                </Button>
-              )}
-              {qrStatus && !qrIsActive && (
-                <Button icon={<ReloadOutlined />} onClick={resetQrcode}>
-                  重置
-                </Button>
-              )}
-            </Space>
-          </div>
-        </div>
-      </Modal>
+        playwrightAvailable={playwrightAvailable}
+      />
 
       {/* ===== 编辑连接弹窗 ===== */}
       <Modal
