@@ -3,7 +3,7 @@ YLCraft — Cookie 自动获取模块
 
 提供三种凭证获取方式：
 - manual：手动粘贴
-- playwright：Playwright 浏览器自动化
+- patchright：Patchright 浏览器自动化（✅ 替代 Playwright，内置 Stealth）
 - qrcode：二维码扫码
 """
 
@@ -17,7 +17,7 @@ from app.services.cookie_acquisition.base import (
     STATUS_MESSAGES,
     get_status_message,
 )
-from app.services.cookie_acquisition.playwright_manager import PlaywrightAcquisitionManager
+from app.services.cookie_acquisition.patchright_manager import PatchrightAcquisitionManager
 from app.services.cookie_acquisition.qrcode_manager import QrcodeAcquisitionManager
 
 __all__ = [
@@ -29,6 +29,6 @@ __all__ = [
     "QrcodeAdapter",
     "STATUS_MESSAGES",
     "get_status_message",
-    "PlaywrightAcquisitionManager",
+    "PatchrightAcquisitionManager",  # ✅ 改为 Patchright
     "QrcodeAcquisitionManager",
 ]

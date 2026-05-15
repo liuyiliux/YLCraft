@@ -1,0 +1,41 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Python files - always LF
+*.py text eol=lf
+
+# JavaScript/TypeScript files - always LF
+*.js text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+
+# JSON files - always LF
+*.json text eol=lf
+
+# Markdown files - always LF
+*.md text eol=lf
+
+# YAML files - always LF
+*.yaml text eol=lf
+*.yml text eol=lf
+
+# CSS files - always LF
+*.css text eol=lf
+*.scss text eol=lf
+
+# Shell scripts - always LF
+*.sh text eol=lf
+
+# Windows specific files - CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary files - treat as binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.zip binary
+*.tar binary
+*.gz binary

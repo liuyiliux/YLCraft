@@ -20,6 +20,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from app.services.crawler.models import NoteDetail, SearchFilter, SearchEnhancedRequest, NoteDetailResponse, FetchNoWatermarkRequest
+
 logger = logging.getLogger("ylcraft.crawler")
 
 # =============================================================================
@@ -97,6 +99,16 @@ class CrawlerService:
     def __init__(self):
         self.mediacrawler_path = self._find_mediacrawler()
         self.use_mediacrawler = bool(self.mediacrawler_path)
+        self._wrapper = None
+
+        if self.use_mediacrawler:
+            try:
+                from app.services.crawler.mediacrawler_wrapper import get_mediacrawler_wrapper
+                self._wrapper = get_mediacrawler_wrapper()
+                logger.info(f"[CrawlerService] MediaCrawler wrapper initialized")
+            except Exception as e:
+                logger.warning(f"[CrawlerService] Failed to initialize MediaCrawler wrapper: {e}")
+                self.use_mediacrawler = False
 
         if self.use_mediacrawler:
             logger.info(f"[CrawlerService] MediaCrawler found at: {self.mediacrawler_path}")
@@ -250,6 +262,84 @@ class CrawlerService:
 
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, _fetch)
+
+    async def search_notes(
+        self,
+        platform: str,
+        keyword: str,
+        max_results: int = 20,
+        search_type: str = "note",  # "note" or "user"
+        filters: dict = {},
+    ) -> list[CrawlerResult]:
+        """
+        搜索笔记或用户
+        search_type: "note" = 搜索笔记, "user" = 搜索用户
+        filters: 可选筛选条件（排序、时间范围等）
+        """
+        if self._wrapper:
+            try:
+                results = await self._wrapper.search_notes(
+                    platform=platform,
+                    keyword=keyword,
+                    cookie="",  # TODO: 从 PlatformConnection 获取
+                    max_results=max_results,
+                    search_type=search_type,
+                )
+                return self._parse_mediacrawler_results(results, platform)
+            except Exception as e:
+                logger.warning(f"[search_notes] MediaCrawler failed: {e}, falling back to yt-dlp")
+
+        # 降级方案：使用 yt-dlp 搜索
+        return await self._search_via_ytdlp(platform, keyword, max_results)
+
+    async def get_note_detail(
+        self,
+        platform: str,
+        note_id: str,
+        cookie: str = "",
+    ) -> dict:
+        """
+        获取笔记详情（无水印）
+        返回包含无水印图片/视频 URL 的字典
+        """
+        if self._wrapper:
+            try:
+                detail = await self._wrapper.get_note_detail(platform, note_id, cookie)
+                return detail
+            except Exception as e:
+                logger.error(f"[get_note_detail] MediaCrawler failed: {e}")
+                return {}
+
+        logger.warning("[get_note_detail] MediaCrawler not available")
+        return {}
+
+    def _parse_mediacrawler_results(self, results: list[dict], platform: str) -> list[CrawlerResult]:
+        """解析 MediaCrawler 返回的结果"""
+        crawler_results = []
+        for item in results:
+            try:
+                result = CrawlerResult(
+                    id=item.get("note_id", "") or item.get("id", ""),
+                    platform=platform,
+                    title=item.get("title", ""),
+                    desc=item.get("desc", "") or item.get("description", ""),
+                    cover=item.get("cover", "") or item.get("thumbnail", ""),
+                    video_url=item.get("video_url", "") or item.get("url", ""),
+                    author=item.get("nickname", "") or item.get("author", ""),
+                    author_id=item.get("user_id", "") or item.get("author_id", ""),
+                    likes=item.get("liked_count", 0) or item.get("likes", 0),
+                    comments=item.get("comment_count", 0) or item.get("comments", 0),
+                    shares=item.get("share_count", 0) or item.get("shares", 0),
+                    url=item.get("note_url", "") or item.get("url", ""),
+                    create_time=str(item.get("time", "") or item.get("create_time", "")),
+                    raw_data=item,
+                )
+                crawler_results.append(result)
+            except Exception as e:
+                logger.error(f"[_parse_mediacrawler_results] Error parsing item: {e}")
+                continue
+
+        return crawler_results
 
     async def import_to_asset_library(self, results: list[CrawlerResult]) -> list[str]:
         """

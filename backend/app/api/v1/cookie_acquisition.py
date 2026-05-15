@@ -1,7 +1,7 @@
 """
 YLCraft — Cookie 自动获取 API
 
-Playwright 浏览器自动化获取：
+✅ Patchright 浏览器自动化（替代 Playwright，内置 Stealth）
   POST  /api/v1/platforms/acquire/playwright/start          — 启动浏览器会话
   WS    /api/v1/platforms/acquire/playwright/{sid}/ws      — WebSocket 状态推送
   POST  /api/v1/platforms/acquire/playwright/{sid}/cancel  — 取消会话
@@ -27,10 +27,10 @@ from app.services.cookie_acquisition.base import (
     AcquisitionStatus,
     get_status_message,
 )
-from app.services.cookie_acquisition.playwright_manager import get_playwright_manager
+from app.services.cookie_acquisition.patchright_manager import get_patchright_manager  # ✅ 改为 Patchright
 from app.services.cookie_acquisition.qrcode_manager import get_qrcode_manager
 from app.services.cookie_acquisition.platforms import (
-    get_supported_playwright_platforms,
+    get_supported_patchright_platforms,  # ✅ 改为 patchright
     get_supported_qrcode_platforms,
 )
 
@@ -88,31 +88,33 @@ class SessionStatusResponse(BaseModel):
 # Playwright API
 # =============================================================================
 
-@router.post("/playwright/start", summary="启动浏览器获取 Cookie")
+@router.post("/playwright/start", summary="启动浏览器获取 Cookie（使用 Patchright）")
 async def playwright_start(req: PlaywrightStartRequest):
-    """启动 Playwright 浏览器会话，用户在浏览器中登录后自动提取 Cookie"""
-    manager = get_playwright_manager()
+    """启动浏览器会话（✅ 使用 Patchright 替代 Playwright，内置 Stealth）
+
+    Patchright 是 Playwright 的隐身版本，API 完全兼容，但内置反检测能力。
+    """
+    manager = get_patchright_manager()  # ✅ 改为 Patchright
 
     if not manager.is_available():
         return PlaywrightStartResponse(
             success=False,
-            message="Playwright 未安装。请运行: pip install playwright && playwright install chromium",
+            message="Patchright 未安装。请运行: pip install patchright && patchright install chromium",
         )
 
     # 检查平台是否支持
-    supported = get_supported_playwright_platforms()
+    supported = get_supported_patchright_platforms()  # ✅ 改为 patchright
     if req.platform not in supported:
         return PlaywrightStartResponse(
             success=False,
-            message=f"平台 {req.platform} 暂不支持 Playwright 获取，支持: {', '.join(supported)}",
+            message=f"平台 {req.platform} 暂不支持 Patchright 获取，支持: {', '.join(supported)}",
         )
 
     try:
         session_id = await manager.start_session(
             platform=req.platform,
             headless=req.headless,
-            stealth=req.stealth,
-            connector_name=req.connector_name,
+            connector_name=req.connector_name,  # ✅ 移除 stealth 参数（Patchright 内置）
         )
 
         session = manager.get_session(session_id)
@@ -124,17 +126,17 @@ async def playwright_start(req: PlaywrightStartRequest):
             message=status_msg,
         )
     except Exception as e:
-        logger.error(f"[CookieAcquisitionAPI] playwright_start failed: {e}")
+        logger.error(f"[CookieAcquisitionAPI] patchright_start failed: {e}")
         return PlaywrightStartResponse(
             success=False,
             message=str(e),
         )
 
 
-@router.get("/playwright/sessions", summary="列出活跃的 Playwright 会话")
+@router.get("/playwright/sessions", summary="列出活跃的 Patchright 会话")
 async def playwright_list_sessions():
-    """列出所有活跃的 Playwright 会话"""
-    manager = get_playwright_manager()
+    """列出所有活跃的浏览器会话（✅ 使用 Patchright 替代 Playwright）"""
+    manager = get_patchright_manager()  # ✅ 改为 Patchright
     sessions = manager.list_sessions()
     return {
         "success": True,
@@ -153,10 +155,10 @@ async def playwright_list_sessions():
     }
 
 
-@router.post("/playwright/{session_id}/cancel", summary="取消 Playwright 会话")
+@router.post("/playwright/{session_id}/cancel", summary="取消 Patchright 会话")
 async def playwright_cancel(session_id: str):
-    """取消正在进行的 Playwright 会话"""
-    manager = get_playwright_manager()
+    """取消正在进行的浏览器会话（✅ 使用 Patchright 替代 Playwright）"""
+    manager = get_patchright_manager()  # ✅ 改为 Patchright
     ok = await manager.cancel_session(session_id)
     if ok:
         return {"success": True, "message": "会话已取消"}
@@ -165,10 +167,10 @@ async def playwright_cancel(session_id: str):
 
 @router.websocket("/playwright/{session_id}/ws")
 async def playwright_ws(websocket: WebSocket, session_id: str):
-    """Playwright 获取状态 WebSocket 推送"""
+    """Patchright 获取状态 WebSocket 推送（✅ 使用 Patchright 替代 Playwright）"""
     await websocket.accept()
 
-    manager = get_playwright_manager()
+    manager = get_patchright_manager()  # ✅ 改为 Patchright
     session = manager.get_session(session_id)
     if not session:
         await websocket.send_json({

@@ -1,7 +1,7 @@
 """
-YLCraft — Playwright Cookie 获取管理器
+YLCraft — Patchright Cookie 获取管理器
 
-负责启动浏览器会话、检测登录、提取 Cookie、保存到 PlatformConnection
+⚠️ 使用 Patchright 替代 Playwright（内置 Stealth 反检测）
 """
 
 from __future__ import annotations
@@ -15,7 +15,6 @@ from typing import Optional
 from app.services.cookie_acquisition.base import (
     AcquisitionSession,
     AcquisitionStatus,
-    AcquisitionResult,
     get_status_message,
     get_login_url,
     get_user_agent,
@@ -24,49 +23,37 @@ from app.services.cookie_acquisition.base import (
 )
 from app.services.cookie_acquisition.platforms import get_detector
 
-logger = logging.getLogger("ylcraft.cookie_acquisition.playwright")
-
-# Stealth 反检测脚本
-STEALTH_JS = """
-// 1. 修改 navigator.webdriver
-Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-// 2. 修改 navigator.plugins
-Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
-// 3. 修改 navigator.languages
-Object.defineProperty(navigator, 'languages', {get: () => ['zh-CN', 'zh', 'en']});
-// 4. 修改 chrome 对象
-window.chrome = { runtime: {} };
-// 5. 修改 permissions
-const originalQuery = window.navigator.permissions.query;
-window.navigator.permissions.query = (parameters) =>
-    parameters.name === 'notifications'
-    ? Promise.resolve({ state: Notification.permission })
-    : originalQuery(parameters);
-"""
+logger = logging.getLogger("ylcraft.cookie_acquisition.patchright")
 
 # 默认最大等待登录时间（秒）
 DEFAULT_LOGIN_TIMEOUT = 300
 
 
-class PlaywrightAcquisitionManager:
-    """Playwright Cookie 获取管理器"""
+class PatchrightAcquisitionManager:
+    """Patchright Cookie 获取管理器（内置 Stealth 反检测）
+
+    ⚠️ 使用 Patchright 替代 Playwright：
+    - API 完全兼容，只需改 import
+    - 内置 Stealth，无需手动注入 JS 脚本
+    - 更强的反检测能力（修改了 Chromium 源码）
+    """
 
     def __init__(self):
         self._sessions: dict[str, AcquisitionSession] = {}
-        self._playwright = None
+        self._patchright = None
         self._browser = None
-        self._playwright_available: Optional[bool] = None
+        self._patchright_available: Optional[bool] = None
 
     def is_available(self) -> bool:
-        """检查 Playwright 是否可用"""
-        if self._playwright_available is not None:
-            return self._playwright_available
+        """检查 Patchright 是否可用"""
+        if self._patchright_available is not None:
+            return self._patchright_available
         try:
-            import playwright  # noqa: F401
-            self._playwright_available = True
+            import patchright  # noqa: F401
+            self._patchright_available = True
         except ImportError:
-            self._playwright_available = False
-        return self._playwright_available
+            self._patchright_available = False
+        return self._patchright_available
 
     async def ensure_browser(self, headless: bool = False):
         """确保浏览器实例存在（懒加载）"""
@@ -74,14 +61,14 @@ class PlaywrightAcquisitionManager:
             return
 
         try:
-            from playwright.async_api import async_playwright
+            from patchright.async_api import async_playwright
         except ImportError:
             raise RuntimeError(
-                "Playwright 未安装。请运行: pip install playwright && playwright install chromium"
+                "Patchright 未安装。请运行: pip install patchright && patchright install chromium"
             )
 
-        self._playwright = await async_playwright().start()
-        self._browser = await self._playwright.chromium.launch(
+        self._patchright = await async_playwright().start()
+        self._browser = await self._patchright.chromium.launch(
             headless=headless,
             args=[
                 "--disable-blink-features=AutomationControlled",
@@ -89,6 +76,7 @@ class PlaywrightAcquisitionManager:
                 "--disable-dev-shm-usage",
             ],
         )
+        # ✅ 无需注入 Stealth 脚本！Patchright 已内置
 
     def get_session(self, session_id: str) -> Optional[AcquisitionSession]:
         """获取会话"""
@@ -102,7 +90,6 @@ class PlaywrightAcquisitionManager:
         self,
         platform: str,
         headless: bool = False,
-        stealth: bool = True,
         connector_name: str = "",
     ) -> str:
         """
@@ -113,14 +100,14 @@ class PlaywrightAcquisitionManager:
         """
         if not self.is_available():
             raise RuntimeError(
-                "Playwright 未安装。请运行: pip install playwright && playwright install chromium"
+                "Patchright 未安装。请运行: pip install patchright && patchright install chromium"
             )
 
         session_id = str(uuid.uuid4())
         session = AcquisitionSession(
             session_id=session_id,
             platform=platform,
-            method="playwright",
+            method="patchright",  # ✅ 改为 patchright
             connector_name=connector_name,
         )
         self._sessions[session_id] = session
@@ -134,9 +121,7 @@ class PlaywrightAcquisitionManager:
                 user_agent=get_user_agent(platform),
             )
 
-            # 注入 Stealth 脚本
-            if stealth:
-                await context.add_init_script(STEALTH_JS)
+            # ✅ 无需注入 Stealth！Patchright 已内置反检测
 
             page = await context.new_page()
 
@@ -160,7 +145,7 @@ class PlaywrightAcquisitionManager:
             session.status = AcquisitionStatus.FAILED
             session.error_message = str(e)
             session.updated_at = __import__('datetime').datetime.now()
-            logger.error(f"[PlaywrightManager] start_session failed: {e}")
+            logger.error(f"[PatchrightManager] start_session failed: {e}")
 
         return session_id
 
@@ -173,12 +158,12 @@ class PlaywrightAcquisitionManager:
 
         if not detector:
             session.status = AcquisitionStatus.FAILED
-            session.error_message = f"平台 {platform} 暂不支持 Playwright 获取"
+            session.error_message = f"平台 {platform} 暂不支持 Patchright 获取"
             session.updated_at = __import__('datetime').datetime.now()
             return
 
         try:
-            # 轮询检测登录状态
+            # 轮询检测登录状态（最多等待 5 分钟）
             for _ in range(DEFAULT_LOGIN_TIMEOUT):
                 if session.is_terminal:
                     return
@@ -214,7 +199,7 @@ class PlaywrightAcquisitionManager:
                     try:
                         account_info = await detector.extract_account_info(page)
                     except Exception as e:
-                        logger.warning(f"[PlaywrightManager] extract_account_info failed: {e}")
+                        logger.warning(f"[PatchrightManager] extract_account_info failed: {e}")
 
                     # 保存到数据库
                     session.status = AcquisitionStatus.SAVING
@@ -243,13 +228,13 @@ class PlaywrightAcquisitionManager:
                         clean_content = mgr._clean_netscape_content(cookie_content)
                         cookie_path.write_text(clean_content, encoding="utf-8")
                         cookie_path.chmod(0o600)
-                        logger.info(f"[PlaywrightManager] Cookie file synced: {cookie_path.name}")
+                        logger.info(f"[PatchrightManager] Cookie file synced: {cookie_path.name}")
                     except Exception as sync_err:
-                        logger.warning(f"[PlaywrightManager] Cookie file sync failed (non-critical): {sync_err}")
+                        logger.warning(f"[PatchrightManager] Cookie file sync failed (non-critical): {sync_err}")
 
                     session.status = AcquisitionStatus.SUCCESS
                     session.updated_at = __import__('datetime').datetime.now()
-                    logger.info(f"[PlaywrightManager] Session {session_id} success, connector_id={connector_id}")
+                    logger.info(f"[PatchrightManager] Session {session_id} success, connector_id={connector_id}")
 
                     # 关闭浏览器上下文
                     try:
@@ -344,7 +329,7 @@ class PlaywrightAcquisitionManager:
             credentials = {
                 "raw": cookies_raw,
                 "cookies_array": cookies_array,
-                "source": "playwright",
+                "source": "patchright",  # ✅ 改为 patchright
                 "browser_version": "Chromium",
                 "extracted_at": __import__('datetime').datetime.now().isoformat(),
             }
@@ -353,7 +338,7 @@ class PlaywrightAcquisitionManager:
                 # 更新现有连接
                 conn.set_credentials(credentials)
                 conn.cookie_content = cookie_content
-                conn.acquisition_method = AcquisitionMethod.PLAYWRIGHT
+                conn.acquisition_method = AcquisitionMethod.PATCHRIGHT  # ✅ 改为 PATCHRIGHT
                 conn.status = ConnectionStatus.ACTIVE
                 conn.error_message = None
                 if account_info.get("account_name"):
@@ -370,10 +355,10 @@ class PlaywrightAcquisitionManager:
                 conn = PlatformConnection(
                     id=str(_uuid.uuid4()),
                     platform=plat_enum,
-                    name=session.connector_name or f"{platform} (Playwright)",
+                    name=session.connector_name or f"{platform} (Patchright)",  # ✅ 改为 Patchright
                     auth_type=AuthType.COOKIE,
                     status=ConnectionStatus.ACTIVE,
-                    acquisition_method=AcquisitionMethod.PLAYWRIGHT,
+                    acquisition_method=AcquisitionMethod.PATCHRIGHT,  # ✅ 改为 PATCHRIGHT
                     cookie_content=cookie_content,
                     domains=get_platform_domains(platform),
                     test_url=get_platform_test_url(platform),
@@ -387,19 +372,19 @@ class PlaywrightAcquisitionManager:
             db.add(conn)
             db.commit()
             db.refresh(conn)
-            logger.info(f"[PlaywrightManager] Saved PlatformConnection: {conn.id}")
+            logger.info(f"[PatchrightManager] Saved PlatformConnection: {conn.id}")
             return conn.id
 
         except Exception as e:
             db.rollback()
-            logger.error(f"[PlaywrightManager] _save_to_db failed: {e}")
+            logger.error(f"[PatchrightManager] _save_to_db failed: {e}")
             raise
         finally:
             db.close()
 
     @staticmethod
     def _cookies_to_netscape(cookies: list[dict], platform: str) -> str:
-        """将 Playwright cookies 列表转为 Netscape 格式"""
+        """将 Patchright cookies 列表转为 Netscape 格式"""
         lines = ["# Netscape HTTP Cookie File", ""]
         for c in cookies:
             name = c.get("name", "")
@@ -423,22 +408,22 @@ class PlaywrightAcquisitionManager:
                 await self._browser.close()
             except Exception:
                 pass
-        if self._playwright:
+        if self._patchright:
             try:
-                await self._playwright.stop()
+                await self._patchright.stop()
             except Exception:
                 pass
         self._browser = None
-        self._playwright = None
+        self._patchright = None
 
 
 # 全局单例
-_playwright_manager: Optional[PlaywrightAcquisitionManager] = None
+_patchright_manager: Optional[PatchrightAcquisitionManager] = None
 
 
-def get_playwright_manager() -> PlaywrightAcquisitionManager:
-    """获取 Playwright 管理器全局实例"""
-    global _playwright_manager
-    if _playwright_manager is None:
-        _playwright_manager = PlaywrightAcquisitionManager()
-    return _playwright_manager
+def get_patchright_manager() -> PatchrightAcquisitionManager:
+    """获取 Patchright 管理器全局实例"""
+    global _patchright_manager
+    if _patchright_manager is None:
+        _patchright_manager = PatchrightAcquisitionManager()
+    return _patchright_manager

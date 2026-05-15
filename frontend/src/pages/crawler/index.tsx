@@ -16,6 +16,8 @@ import {
   Tooltip,
   Modal,
   Image,
+  Segmented,
+  Drawer,
 } from 'antd'
 import {
   SearchOutlined,
@@ -31,8 +33,9 @@ import {
   TwitterOutlined,
   YoutubeOutlined,
 } from '@ant-design/icons'
-import { searchCrawler, importCrawler, getCrawlerPlatforms, getCrawlerOptions } from '../../api'
+import { searchEnhanced, importCrawler } from '../../api'
 import type { CrawlerResult } from '../../api'
+import NoteDetailPanel from './NoteDetailPanel'
 
 const { Text, Title, Paragraph } = Typography
 
@@ -72,6 +75,7 @@ const PLATFORM_COLORS: Record<string, string> = {
 
 export default function CrawlerPage() {
   const [platform, setPlatform] = useState<string>('bili')
+  const [searchType, setSearchType] = useState<'note' | 'user'>('note')
   const [keyword, setKeyword] = useState('')
   const [loading, setLoading] = useState(false)
   const [results, setResults] = useState<CrawlerResult[]>([])
@@ -84,6 +88,9 @@ export default function CrawlerPage() {
   const [platforms, setPlatforms] = useState<any[]>([])
   const [previewVisible, setPreviewVisible] = useState(false)
   const [previewUrl, setPreviewUrl] = useState('')
+  const [noteDetailVisible, setNoteDetailVisible] = useState(false)
+  const [selectedNotePlatform, setSelectedNotePlatform] = useState('')
+  const [selectedNoteId, setSelectedNoteId] = useState('')
 
   // 加载平台列表
   useEffect(() => {
@@ -125,11 +132,15 @@ export default function CrawlerPage() {
     setResults([])
     setSelectedRowKeys([])
     setSelectedRows([])
+    setNoteDetailVisible(false)
+    setSelectedNoteId('')
+    setSelectedNotePlatform('')
 
     try {
-      const data = await searchCrawler({
+      const data = await searchEnhanced({
         platform,
         keyword: keyword.trim(),
+        search_type: searchType,
         max_results: 20,
       })
       setResults(data.results || [])
@@ -274,7 +285,7 @@ export default function CrawlerPage() {
     {
       title: '操作',
       key: 'actions',
-      width: 100,
+      width: 140,
       render: (_: any, record: CrawlerResult) => (
         <Space>
           {record.cover && (
@@ -298,6 +309,18 @@ export default function CrawlerPage() {
               />
             </Tooltip>
           )}
+          <Tooltip title="查看详情（无水印）">
+            <Button
+              type="text"
+              size="small"
+              icon={<DownloadOutlined />}
+              onClick={() => {
+                setSelectedNotePlatform(record.platform)
+                setSelectedNoteId(record.id)
+                setNoteDetailVisible(true)
+              }}
+            />
+          </Tooltip>
         </Space>
       ),
     },
@@ -359,6 +382,19 @@ export default function CrawlerPage() {
             </Button>
           </Col>
         </Row>
+
+        {/* 搜索类型选择 */}
+        <div style={{ marginTop: 12 }}>
+          <Segmented
+            options={[
+              { label: '搜索笔记', value: 'note' },
+              { label: '搜索用户', value: 'user' },
+            ]}
+            value={searchType}
+            onChange={(val) => setSearchType(val)}
+            size="small"
+          />
+        </div>
 
         {/* 快捷关键词 */}
         <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' as const }}>
@@ -477,6 +513,20 @@ export default function CrawlerPage() {
       >
         <img src={previewUrl} alt="封面预览" style={{ width: '100%' }} />
       </Modal>
+
+      {/* 笔记详情面板（无水印） */}
+      <Drawer
+        title="笔记详情（无水印）"
+        placement="right"
+        width={600}
+        open={noteDetailVisible}
+        onClose={() => setNoteDetailVisible(false)}
+      >
+        <NoteDetailPanel
+          platform={selectedNotePlatform}
+          noteId={selectedNoteId}
+        />
+      </Drawer>
     </div>
   )
 }

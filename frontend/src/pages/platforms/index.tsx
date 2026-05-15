@@ -754,7 +754,8 @@ function QrLoginPanel({
   )
 }
 
-// ===== 浏览器登录面板 — 参考 XHS_ALL_IN_ONE 的 Playwright 方式 =====
+// ===== 浏览器登录面板 — 使用 Patchright（Stealth 版 Playwright）=====
+// Patchright 内置反检测功能，无需手动注入 Stealth JS
 function BrowserLoginPanel({
   platform,
   playwrightAvailable,
@@ -904,8 +905,8 @@ function BrowserLoginPanel({
         <Alert
           type="warning"
           showIcon
-          message="Playwright 未安装"
-          description="请在服务器执行: pip install playwright && playwright install chromium"
+          message="浏览器自动化工具未安装"
+          description="请在服务器执行: pip install patchright && patchright install chromium"
         />
       )}
 

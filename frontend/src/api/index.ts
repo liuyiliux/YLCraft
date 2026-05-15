@@ -398,6 +398,25 @@ export const importCrawler = (data: { results: Partial<CrawlerResult>[] }) =>
 /** 查询采集任务状态（异步） */
 export const getCrawlerTask = (taskId: string) => request(`/crawler/tasks/${taskId}`)
 
+/** 增强搜索（支持笔记/用户） */
+export const searchEnhanced = (params: {
+  platform: string
+  keyword: string
+  search_type?: 'note' | 'user'
+  max_results?: number
+  filters?: Record<string, any>
+}) => request('/crawler/search-enhanced', { method: 'POST', body: JSON.stringify(params) })
+
+/** 获取笔记详情（无水印） */
+export const getNoteDetail = (platform: string, noteId: string, connId?: string) =>
+  request(`/crawler/note-detail?platform=${platform}&note_id=${noteId}${connId ? `&conn_id=${connId}` : ''}`)
+
+/** 批量获取无水印资源 */
+export const fetchNoWatermark = (params: {
+  platform: string
+  note_ids: string[]
+}) => request('/crawler/fetch-no-watermark', { method: 'POST', body: JSON.stringify(params) })
+
 // ===== Platform Connections（平台连接器）=====
 
 export interface PlatformConnectionResponse {

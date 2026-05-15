@@ -5,7 +5,8 @@
 > **最后更新**：2026-05-14
 > **关联模块**：`PlatformConnection` / `connectors` / `CookieManager`
 > **架构**：`PlatformConnection` 为唯一凭证存储，已删除 `PlatformCookie` + `SocialMediaConnector`
-> **参考项目**：XHS_ALL_IN_ONE（账号矩阵 UI + Drawer 抽屉 + Segmented 方式切换）
+> **参考项目**：XHS_ALL_IN_ONE（账号矩阵 UI + Drawer 抽屉 + Segmented 方式切换）<br/>
+> **⚠️ 浏览器自动化方案已升级**：参考 `social-auto-upload`，使用 **Patchright** 替代 Playwright（Patchright 是 Playwright 的隐身版本，内置 Stealth 反检测，无需手动注入）
 
 ---
 
@@ -34,7 +35,7 @@ YLCraft 统一凭证架构：所有平台的凭证存储在 `PlatformConnection`
 ### 1.2 目标
 
 1. **统一凭证存储**：合并为 `PlatformConnection` 一张表，所有模块从此读取
-2. **新增自动获取方式**：在手动粘贴基础上，新增 Playwright + 二维码扫码
+2. **新增自动获取方式**：在手动粘贴基础上，新增 Patchright（Playwright 隐身版）+ 二维码扫码
 
 | 方式 | 原理 | 用户体验 |
 |------|------|---------|
@@ -46,7 +47,7 @@ YLCraft 统一凭证架构：所有平台的凭证存储在 `PlatformConnection`
 
 | 项目 | GitHub | 参考内容 |
 |------|--------|---------|
-| **social-auto-upload** | `dreammiao/social-auto-upload` | Playwright 自动化登录 + Cookie 提取 + 多平台发布 |
+| **social-auto-upload** | `dreammiao/social-auto-upload` | **Patchright** 自动化登录 + Cookie 提取 + 多平台发布（⚠️ 已改用 patchright 替代 playwright） |
 | **XHS_ALL_IN_ONE** | `cv-cat/XHS_ALL_IN_ONE` | 账号矩阵管理 + Drawer 抽屉 + Segmented 方式切换 + 二维码登录 + Cookie 管理 + 健康巡检 |
 | **MediaCrawler** | `NanmiCoder/MediaCrawler` | Playwright 登录 + Stealth 注入 + Cookie 持久化（已集成） |
 
@@ -65,7 +66,7 @@ graph TB
 
     subgraph API["API 层（FastAPI）"]
         CRUD[CRUD API<br/>/api/v1/platforms]
-        PW_API[Playwright API<br/>/api/v1/platforms/acquire/playwright/*]
+        PW_API[Patchright API<br/>/api/v1/platforms/acquire/patchright/*]
         QR_API[QrCode API<br/>/api/v1/platforms/acquire/qrcode/*]
         WS_SERVER[WebSocket Server]
     end
@@ -170,7 +171,7 @@ backend/app/
 │   └── cookie_acquisition/        # 🆕 Cookie 获取服务
 │       ├── __init__.py
 │       ├── base.py                 # 抽象基类 AcquisitionResult / BaseAcquirer
-│       ├── playwright_manager.py   # Playwright 会话管理器
+│       ├── patchright_manager.py   # ✅ Patchright 会话管理器（内置 Stealth）
 │       ├── qrcode_manager.py      # QrCode 会话管理器
 │       └── platforms/             # 各平台特定适配
 │           ├── __init__.py
@@ -643,61 +644,89 @@ sequenceDiagram
 | 微博 | ✅ | 微博开放平台 | 需要申请 App Key |
 | 知乎 | ❌ | — | 仅支持 Playwright |
 
-### 6.3 Stealth 反检测策略
+### 6.3 Patchright 内置 Stealth（无需手动注入）
 
-Playwright 启动时注入以下脚本，避免被平台检测为自动化工具：
+> **⚠️ 重要变更**：原设计使用 Playwright + 手动 Stealth 注入。
+> **新方案**：使用 **Patchright**（Playwright 的隐身版本），内置 Stealth 反检测，**无需手动注入脚本**。
+
+| 方案 | Stealth 实现方式 | 维护成本 | 反检测效果 |
+|------|------------------|---------|------------|
+| Playwright | 手动注入 JS 脚本（易被检测） | 高 | ⭐⭐ |
+| **Patchright（推荐）** | **内置 Chromium 补丁，自动隐藏自动化特征** | **低** | **⭐⭐⭐⭐⭐** |
 
 ```python
-STEALTH_SCRIPTS = [
-    # 1. 修改 navigator.webdriver
-    "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});",
-    # 2. 修改 navigator.plugins
-    "Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});",
-    # 3. 修改 navigator.languages
-    "Object.defineProperty(navigator, 'languages', {get: () => ['zh-CN', 'zh', 'en']});",
-    # 4. 修改 chrome 对象
-    "window.chrome = { runtime: {} };",
-    # 5. 修改 permissions
-    "const originalQuery = window.navigator.permissions.query; "
-    "window.navigator.permissions.query = (parameters) => "
-    "parameters.name === 'notifications' "
-    "? Promise.resolve({ state: Notification.permission }) "
-    ": originalQuery(parameters);",
-]
+# ❌ 旧方案：Playwright + 手动注入（已废弃）
+from playwright.async_api import async_playwright
+
+async def ensure_browser_old():
+    self._playwright = await async_playwright().start()
+    self._browser = await self._playwright.chromium.launch(...)
+    # 需要手动注入 Stealth 脚本（容易被检测）
+    await context.add_init_script(STEALTH_JS)
+
+# ✅ 新方案：Patchright（推荐）
+from patchright.async_api import async_playwright  # 完全兼容 Playwright API
+
+async def ensure_browser():
+    """Patchright 内置 Stealth，无需手动注入"""
+    self._playwright = await async_playwright().start()
+    self._browser = await self._playwright.chromium.launch(
+        headless=headless,
+        args=[
+            "--disable-blink-features=AutomationControlled",
+            "--no-sandbox",
+        ],
+    )
+    # ✅ 无需注入 Stealth 脚本！Patchright 已内置
 ```
 
 ---
 
 ## 七、关键实现细节
 
-### 7.1 PlaywrightAcquisitionManager
+### 7.1 PatchrightAcquisitionManager（原 PlaywrightAcquisitionManager）
+
+> **⚠️ 重要变更**：使用 **Patchright** 替代 Playwright。
+> Patchright 是 Playwright 的隐身版本，**完全兼容 Playwright API**，但内置 Stealth 反检测。
+> **无需手动注入 Stealth 脚本**。
 
 ```python
-class PlaywrightAcquisitionManager:
-    """Playwright Cookie 获取管理器"""
+# backend/app/services/cookie_acquisition/patchright_manager.py
+
+from patchright.async_api import async_playwright  # ✅ Patchright（内置 Stealth）
+from typing import Optional
+import asyncio
+import uuid
+
+from .base import AcquisitionSession, AcquisitionStatus
+
+
+class PatchrightAcquisitionManager:
+    """Patchright Cookie 获取管理器（内置 Stealth 反检测）"""
 
     def __init__(self):
         self._sessions: dict[str, AcquisitionSession] = {}
-        self._playwright: Optional[Playwright] = None
-        self._browser: Optional[Browser] = None
+        self._patchright: Optional[object] = None
+        self._browser: Optional[object] = None
 
     async def ensure_browser(self, headless: bool = False):
         """确保浏览器实例存在（懒加载）"""
         if not self._browser:
-            self._playwright = await async_playwright().start()
-            self._browser = await self._playwright.chromium.launch(
+            # ✅ Patchright 启动（完全兼容 Playwright API）
+            self._patchright = await async_playwright().start()
+            self._browser = await self._patchright.chromium.launch(
                 headless=headless,
                 args=[
                     "--disable-blink-features=AutomationControlled",
                     "--no-sandbox",
                 ],
             )
+            # ✅ 无需注入 Stealth 脚本！Patchright 已内置
 
     async def start_session(
         self,
         platform: str,
         headless: bool = False,
-        stealth: bool = True,
         connector_name: str = "",
     ) -> str:
         """
@@ -710,7 +739,7 @@ class PlaywrightAcquisitionManager:
         session = AcquisitionSession(
             session_id=session_id,
             platform=platform,
-            method="playwright",
+            method="patchright",  # ✅ 改为 patchright
         )
         self._sessions[session_id] = session
 
@@ -721,9 +750,7 @@ class PlaywrightAcquisitionManager:
                 user_agent=get_user_agent(platform),
             )
 
-            # 注入 Stealth 脚本
-            if stealth:
-                await context.add_init_script(STEALTH_JS)
+            # ✅ 无需注入 Stealth！Patchright 已内置反检测
 
             page = await context.new_page()
 
@@ -748,7 +775,7 @@ class PlaywrightAcquisitionManager:
         return session_id
 
     async def _detect_login(
-        self, session_id: str, page: Page, platform: str
+        self, session_id: str, page: "Page", platform: str
     ):
         """后台检测用户是否完成登录"""
         session = self._sessions[session_id]
@@ -795,6 +822,21 @@ class PlaywrightAcquisitionManager:
                 await page.context.close()
             except:
                 pass
+
+    async def _save_to_db(self, session_id: str):
+        """保存 Cookie 到 PlatformConnection"""
+        # ... (实现省略，与原设计相同）
+        pass
+
+    def get_session(self, session_id: str) -> Optional[AcquisitionSession]:
+        """获取会话"""
+        return self._sessions.get(session_id)
+
+    async def cancel_session(self, session_id: str):
+        """取消会话"""
+        session = self._sessions.get(session_id)
+        if session and not session.is_terminal:
+            session.status = AcquisitionStatus.CANCELLED
 ```
 
 ### 7.2 QrcodeAcquisitionManager
@@ -1108,9 +1150,15 @@ class XhsQrcodeAdapter(QrcodeAdapter):
 
 | 依赖 | 用途 | 是否必装 |
 |------|------|---------|
-| `playwright` | 浏览器自动化 | 可选（pip install playwright && playwright install chromium） |
+| `patchright` | 浏览器自动化（Playwright 隐身版，内置 Stealth） | 可选（pip install patchright && patchright install chromium） |
 | `qrcode` | 二维码生成 | 可选 |
 | `Pillow` | 二维码图片处理 | 可选（与 qrcode 配合） |
+
+> **✅ 为什么用 Patchright 替代 Playwright？**
+> 1. **内置 Stealth**：Patchright 修改了 Chromium 源码，隐藏自动化特征，无需手动注入 JS
+> 2. **API 完全兼容**：只需改 import，代码无需修改（`from patchright.async_api import async_playwright`）
+> 3. **反检测更强**：参考 `social-auto-upload` 项目，已从 Playwright 迁移到 Patchright
+> 4. **社区推荐**：MediaCrawler 作者也建议优先使用 Patchright
 
 ### 9.2 配置项
 
@@ -1119,11 +1167,11 @@ class XhsQrcodeAdapter(QrcodeAdapter):
 
 # Cookie 获取配置
 COOKIE_ACQUISITION_ENABLED: bool = True
-PLAYWRIGHT_ENABLED: bool = True        # Playwright 功能开关
+PATCHRIGHT_ENABLED: bool = True        # Patchright 功能开关（替代 Playwright）
 QRCODE_ENABLED: bool = True            # QrCode 功能开关
-PLAYWRIGHT_HEADLESS: bool = False      # 默认有头模式
-PLAYWRIGHT_STEALTH: bool = True        # 默认开启反检测
-PLAYWRIGHT_TIMEOUT: int = 300          # 登录等待超时（秒）
+PATCHRIGHT_HEADLESS: bool = False      # 默认有头模式
+# ✅ 无需 STEALTH 配置！Patchright 内置，无法关闭
+PATCHRIGHT_TIMEOUT: int = 300          # 登录等待超时（秒）
 QRCODE_TIMEOUT: int = 120              # 二维码过期时间（秒）
 QRCODE_POLL_INTERVAL: int = 2          # 二维码轮询间隔（秒）
 ```
@@ -1296,19 +1344,25 @@ pip install playwright && playwright install chromium
 **原因**：覆盖不同技术水平用户需求；Playwright 可视化最好；二维码最便捷
 **日期**：2026-05-14
 
-### 决策 2：Playwright 默认有头模式
+### 决策 2：Patchright 默认有头模式
 
-**问题**：Playwright 浏览器默认有头还是无头？
+**问题**：Patchright 浏览器默认有头还是无头？
 **选择**：默认有头模式（`headless=False`），提供切换选项
-**原因**：用户需要看到浏览器操作过程，有头模式更直观，且不容易被平台检测
-**日期**：2026-05-14
+**原因**：
+- 用户需要看到浏览器操作过程，有头模式更直观
+- ✅ **Patchright 内置 Stealth**，无需手动注入，反检测能力强
+- 参考 `social-auto-upload` 项目，已验证 Patchright 稳定性
+**日期**：2026-05-14（更新于 2026-05-14）
 
-### 决策 3：Playwright 作为可选依赖
+### 决策 3：Patchright 作为可选依赖
 
-**问题**：Playwright 是否作为必装依赖？
-**选择**：可选依赖，通过 `pip install -e ".[playwright]"` 安装
-**原因**：Playwright + Chromium 安装体积大（~400MB），不是所有用户都需要；且服务器部署可能无 GUI
-**日期**：2026-05-14
+**问题**：Patchright 是否作为必装依赖？
+**选择**：可选依赖，通过 `pip install -e ".[patchright]"` 安装
+**原因**：
+- Patchright + Chromium 安装体积大（~400MB），不是所有用户都需要
+- 服务器部署可能无 GUI，Patchright 需要图形支持
+- ✅ 参考 `social-auto-upload` 项目，将 Patchright 作为可选依赖
+**日期**：2026-05-14（更新于 2026-05-14）
 
 ### 决策 4：所有支持平台全覆盖
 
