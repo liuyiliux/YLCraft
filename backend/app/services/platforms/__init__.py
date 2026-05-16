@@ -86,6 +86,7 @@ def create_client(
         **kwargs
     )
     
+    # 让 Factory 使用 config 对象创建
     return PlatformClientFactory.create(platform, config)
 
 
@@ -96,6 +97,8 @@ async def search(
     cookie: str = "",
     max_results: int = 20,
     search_type: str = "note",
+    sort_by: str = "",
+    page: int = 1,
     **kwargs
 ) -> list[SearchResult]:
     """
@@ -107,28 +110,40 @@ async def search(
         mode: "api" 或 "patchright"
         cookie: Cookie 字符串
         max_results: 最大结果数
-        search_type: "note", "user", "article", "series"
-        **kwargs: 平台特定参数
+        search_type: "note", "user", "article", "series", "bangumi", "movie", "live"
+        sort_by: 排序方式（各平台自定义，如 B站：totalrank/click/pubdate/dm/stow）
+        **kwargs: 平台特定参数，可包含 filters 字典
     
     Returns:
         搜索结果列表
     """
-    client = create_client(platform, mode, cookie, **kwargs)
+    # 展开 filters 字典到 kwargs（前端传来的筛选条件）
+    filters = kwargs.pop('filters', None)
+    if filters and isinstance(filters, dict):
+        for key, value in filters.items():
+            if value:  # 只添加非空值
+                kwargs[key] = value
+    
+    # 分离配置参数和搜索参数
+    # ClientConfig 只接受这些配置参数
+    config_keys = {'timeout', 'proxy', 'headless', 'user_agent', 'debug'}
+    config_kwargs = {k: v for k, v in kwargs.items() if k in config_keys}
+    search_kwargs = {k: v for k, v in kwargs.items() if k not in config_keys}
+    
+    client = create_client(platform, mode, cookie, **config_kwargs)
     if not client:
         return []
     
     from .types import SearchParams, SearchType
     
-    try:
-        search_type_enum = SearchType(search_type)
-    except ValueError:
-        search_type_enum = SearchType.NOTE
-    
-    params = SearchParams(
+    # 使用 from_string 支持自定义 search_type（如 bangumi/movie/live）
+    params = SearchParams.from_string(
         keyword=keyword,
         max_results=max_results,
-        search_type=search_type_enum,
-        extra=kwargs,
+        search_type_str=search_type,
+        sort_by=sort_by,
+        page=page,
+        extra=search_kwargs,
     )
     
     async with client:

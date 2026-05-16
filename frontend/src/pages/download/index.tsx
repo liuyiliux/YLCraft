@@ -243,8 +243,8 @@ export default function DownloadPage() {
                 </div>
               ) : (
                 <div style={{ flexShrink: 0, width: 180, height: 101, borderRadius: 8, overflow: 'hidden', background: THEME.bgInput }}>
-                  <img src={result.cover_url?.includes('hdslb.com')
-                    ? `/api/v1/download/cover-proxy?url=${encodeURIComponent(result.cover_url)}`
+                  <img src={result.cover_url?.includes('hdslb.com') || result.cover_url?.includes('xhscdn.com') || result.cover_url?.includes('douyincdn.com')
+                    ? `/api/v1/proxy/image?url=${encodeURIComponent(result.cover_url)}`
                     : result.cover_url?.replace('http://', 'https://')
                   } alt="cover" style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />

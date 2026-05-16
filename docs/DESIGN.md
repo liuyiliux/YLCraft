@@ -5,7 +5,7 @@
 > **最后更新**：2026-04-24
 > **目标**：任何 AI Agent 或开发者加载本文档后，可无缝继续开发
 
----
+***
 
 ## 一、项目概述
 
@@ -41,23 +41,23 @@
 
 ### 1.2 四大核心功能
 
-| 功能 | 说明 | 核心模块 |
-|------|------|---------|
-| **🔍 爆款拆解** | 输入链接→文案结构+脚本分镜+仿写提示词 | Breaker |
-| **✂️ Clip Lab** | AI 视频剪辑，三种模式 | CutClaw Agent / NarratoAI Pipeline / MoE |
-| **🎬 Story Maker** | AI 短剧漫剧生成 | Character / Scene / Script / Render |
-| **🎭 Live 2D 工厂** | Live 2D 全自动生产线（面向 COSER） | Live2D Pipeline |
+| 功能                 | 说明                       | 核心模块                                     |
+| ------------------ | ------------------------ | ---------------------------------------- |
+| **🔍 爆款拆解**        | 输入链接→文案结构+脚本分镜+仿写提示词     | Breaker                                  |
+| **✂️ Clip Lab**    | AI 视频剪辑，三种模式             | CutClaw Agent / NarratoAI Pipeline / MoE |
+| **🎬 Story Maker** | AI 短剧漫剧生成                | Character / Scene / Script / Render      |
+| **🎭 Live 2D 工厂**  | Live 2D 全自动生产线（面向 COSER） | Live2D Pipeline                          |
 
 ### 1.3 目标用户
 
-| 用户类型 | 核心需求 | 代表功能 |
-|----------|----------|---------|
-| **电商运营** | 商品展示视频批量生成 | 素材库+混剪+多账号发布 |
-| **摄影工作室** | 客片精修+写真MV | 摄影工作流+AI修图+调色 |
-| **短剧创作者** | AI短剧/漫剧生成 | Story Maker+角色资产+分镜 |
-| **COSER** | Live 2D 模型全自动生产（立绘→绑骨→VTS） | Live 2D 工厂 |
-| **MCN/内容团队** | 批量内容生产 | 素材库+爆款拆解+Clip Lab |
-| **AI Agent** | 调用平台能力 | OpenClaw Skill+REST API |
+| 用户类型         | 核心需求                       | 代表功能                    |
+| ------------ | -------------------------- | ----------------------- |
+| **电商运营**     | 商品展示视频批量生成                 | 素材库+混剪+多账号发布            |
+| **摄影工作室**    | 客片精修+写真MV                  | 摄影工作流+AI修图+调色           |
+| **短剧创作者**    | AI短剧/漫剧生成                  | Story Maker+角色资产+分镜     |
+| **COSER**    | Live 2D 模型全自动生产（立绘→绑骨→VTS） | Live 2D 工厂              |
+| **MCN/内容团队** | 批量内容生产                     | 素材库+爆款拆解+Clip Lab       |
+| **AI Agent** | 调用平台能力                     | OpenClaw Skill+REST API |
 
 ### 1.4 项目位置
 
@@ -65,7 +65,7 @@
 F:\PycharmProjects\YLCraft\
 ```
 
----
+***
 
 ## 二、参考项目与设计来源
 
@@ -73,16 +73,16 @@ F:\PycharmProjects\YLCraft\
 
 已在 `F:\PycharmProjects\YLCraft-refs\` 完成 clone，路径为 `F:\PycharmProjects\YLCraft-refs\{项目名}`。
 
-| 项目 | GitHub | Stars | 参考内容 |
-|------|--------|-------|---------|
-| **Jellyfish** | `Forget-C/Jellyfish` | — | Provider 注册表模式、LangChain Agent 实现、frozen dataclass |
-| **ArcReel** | `ArcReel/ArcReel` | — | Protocol 接口+Dataclass 请求/响应+Registry 注册表+异步轮询 |
-| **CutClaw** | `GVCLab/CutClaw` | 574 | LLM Agent Tool Calling 驱动视频剪辑、节拍检测、VLM 美学评分 |
-| **NarratoAI** | `linyqh/NarratoAI` | 8788 | Pipeline 流水线、字幕分析、Provider 双模式调用、FFmpeg 硬件加速 |
-| **montage-ai** | `mfahsold/montage-ai` | — | MoE 多专家协作架构、Control Plane 冲突解决、人工审核分流 |
-| **MoneyPrinterTurbo** | `harry0703/MoneyPrinterTurbo` | — | YAML 配置驱动、Voice 前缀路由模式、g4f 免费兜底 |
-| **ai-fusion-video** | `Stonewuu/ai-fusion-video` | — | Java Agent 全流程分镜视频流水线、`.agents` 目录结构 |
-| **waoowaoo** | `saturndec/waoowaoo` | 7.8k | TypeScript 全栈 Next.js、`features/` 功能分层、Prisma 数据层、工业级 AI 影视生产链路 |
+| 项目                    | GitHub                        | Stars | 参考内容                                                            |
+| --------------------- | ----------------------------- | ----- | --------------------------------------------------------------- |
+| **Jellyfish**         | `Forget-C/Jellyfish`          | —     | Provider 注册表模式、LangChain Agent 实现、frozen dataclass              |
+| **ArcReel**           | `ArcReel/ArcReel`             | —     | Protocol 接口+Dataclass 请求/响应+Registry 注册表+异步轮询                   |
+| **CutClaw**           | `GVCLab/CutClaw`              | 574   | LLM Agent Tool Calling 驱动视频剪辑、节拍检测、VLM 美学评分                     |
+| **NarratoAI**         | `linyqh/NarratoAI`            | 8788  | Pipeline 流水线、字幕分析、Provider 双模式调用、FFmpeg 硬件加速                    |
+| **montage-ai**        | `mfahsold/montage-ai`         | —     | MoE 多专家协作架构、Control Plane 冲突解决、人工审核分流                           |
+| **MoneyPrinterTurbo** | `harry0703/MoneyPrinterTurbo` | —     | YAML 配置驱动、Voice 前缀路由模式、g4f 免费兜底                                 |
+| **ai-fusion-video**   | `Stonewuu/ai-fusion-video`    | —     | Java Agent 全流程分镜视频流水线、`.agents` 目录结构                            |
+| **waoowaoo**          | `saturndec/waoowaoo`          | 7.8k  | TypeScript 全栈 Next.js、`features/` 功能分层、Prisma 数据层、工业级 AI 影视生产链路 |
 
 ### 2.2 设计思想提炼
 
@@ -119,7 +119,7 @@ waoowaoo ───────────→ features/ 功能模块分层
      └─────────────→ i18n 多语言提示词工程
 ```
 
----
+***
 
 ## 三、系统架构
 
@@ -286,7 +286,7 @@ frontend/
 │       └── api.ts
 ```
 
----
+***
 
 ## 四、BackendManager — 模型调度核心
 
@@ -491,7 +491,7 @@ class BackendManager:
         return await backend.chat(messages, **kwargs)
 ```
 
----
+***
 
 ## 五、统一素材资产库（Asset Library）
 
@@ -654,7 +654,7 @@ POST   /api/v1/tags               # 创建标签
 └───────────────────┘
 ```
 
----
+***
 
 ## 六、三大垂直场景
 
@@ -685,6 +685,7 @@ POST   /api/v1/tags               # 创建标签
 ```
 
 **数据模型**：
+
 ```python
 class Product(SQLModel, table=True):
     __tablename__ = "products"
@@ -740,6 +741,7 @@ class EcommerceProject(SQLModel, table=True):
 ```
 
 **数据模型**：
+
 ```python
 class ShootSession(SQLModel, table=True):
     __tablename__ = "shoot_sessions"
@@ -834,7 +836,7 @@ class PhotoStylePreset(SQLModel, table=True):
 └─────────────────────────────────────────────────────────────┘
 ```
 
----
+***
 
 ## 七、分阶段落地路径
 
@@ -842,23 +844,23 @@ class PhotoStylePreset(SQLModel, table=True):
 
 **目标**：把下载模块升级为资产库。
 
-| 任务 | 优先级 | 工作内容 |
-|------|--------|---------|
-| 资产数据模型 | 🔴 必须 | Asset / AssetTag / AssetCollection 三个 Model |
-| 下载 → 资产入库 | 🔴 必须 | 下载完成后自动创建 Asset 记录 |
-| 资产列表 API | 🔴 必须 | GET /assets 分页/搜索/过滤 |
-| 资产详情/删除 API | 🔴 必须 | 基础 CRUD |
-| FFmpeg 配置化 | 🔴 必须 | 从数据库读取路径，不再硬编码 |
-| 多清晰度下载支持 | 🔴 必须 | bitrate_info 提取真实清晰度 |
+| 任务          | 优先级   | 工作内容                                        |
+| ----------- | ----- | ------------------------------------------- |
+| 资产数据模型      | 🔴 必须 | Asset / AssetTag / AssetCollection 三个 Model |
+| 下载 → 资产入库   | 🔴 必须 | 下载完成后自动创建 Asset 记录                          |
+| 资产列表 API    | 🔴 必须 | GET /assets 分页/搜索/过滤                        |
+| 资产详情/删除 API | 🔴 必须 | 基础 CRUD                                     |
+| FFmpeg 配置化  | 🔴 必须 | 从数据库读取路径，不再硬编码                              |
+| 多清晰度下载支持    | 🔴 必须 | bitrate\_info 提取真实清晰度                       |
 
 ### Phase 2：下载体验优化（1 周）
 
-| 任务 | 优先级 | 工作内容 |
-|------|--------|---------|
-| 后台下载任务 | 🔴 必须 | 下载任务入队列，API 立即返回 task_id |
-| 轮询进度接口 | 🔴 必须 | GET /download/tasks/{task_id} |
-| 批量下载队列 | 🟡 建议 | 支持传入多个 URL，后台依次执行 |
-| 去重检测 | 🟡 建议 | URL 重复时提示用户 |
+| 任务     | 优先级   | 工作内容                           |
+| ------ | ----- | ------------------------------ |
+| 后台下载任务 | 🔴 必须 | 下载任务入队列，API 立即返回 task\_id      |
+| 轮询进度接口 | 🔴 必须 | GET /download/tasks/{task\_id} |
+| 批量下载队列 | 🟡 建议 | 支持传入多个 URL，后台依次执行              |
+| 去重检测   | 🟡 建议 | URL 重复时提示用户                    |
 
 ### Phase 3：三大垂直场景（持续迭代）
 
@@ -879,36 +881,36 @@ Phase 3c（短剧，延续当前路线）
   → 多集/系列剧集
 ```
 
----
+***
 
 ## 八、技术选型
 
-| 层级 | 技术 | 来源/原因 |
-|------|------|----------|
-| **后端框架** | FastAPI | 参考 NarratoAI / ArcReel |
-| **Agent 框架** | LangChain + litellm | 参考 CutClaw + ArcReel |
-| **任务队列** | FastAPI BackgroundTasks / Redis | 长任务异步 |
-| **数据库** | SQLite（开发）→ PostgreSQL（生产） | 资产库上线前迁移 |
-| **前端** | React + TypeScript + Vite | 业界通用 |
-| **UI 组件** | Ant Design | 业界通用 |
-| **视频处理** | FFmpeg + decord | 参考 CutClaw / NarratoAI |
-| **字幕识别** | Whisper | 参考 NarratoAI |
-| **视频解析** | yt-dlp + iesdouyin 专项 | 抖音无需 Cookie 方案 |
-| **配置管理** | YAML | 参考 MoneyPrinterTurbo |
+| 层级           | 技术                              | 来源/原因                  |
+| ------------ | ------------------------------- | ---------------------- |
+| **后端框架**     | FastAPI                         | 参考 NarratoAI / ArcReel |
+| **Agent 框架** | LangChain + litellm             | 参考 CutClaw + ArcReel   |
+| **任务队列**     | FastAPI BackgroundTasks / Redis | 长任务异步                  |
+| **数据库**      | SQLite（开发）→ PostgreSQL（生产）      | 资产库上线前迁移               |
+| **前端**       | React + TypeScript + Vite       | 业界通用                   |
+| **UI 组件**    | Ant Design                      | 业界通用                   |
+| **视频处理**     | FFmpeg + decord                 | 参考 CutClaw / NarratoAI |
+| **字幕识别**     | Whisper                         | 参考 NarratoAI           |
+| **视频解析**     | yt-dlp + iesdouyin 专项           | 抖音无需 Cookie 方案         |
+| **配置管理**     | YAML                            | 参考 MoneyPrinterTurbo   |
 
----
+***
 
 ## 九、技术债务清理
 
-| 债务项 | 建议方案 | 影响模块 |
-|--------|----------|----------|
-| FFmpeg 路径硬编码 | 写入数据库 `video.ffmpeg_path`，`config.py` 读取 | download / clip |
-| SQLite → PostgreSQL | 资产库上线前完成迁移，数据量大 | asset / ecommerce / photography |
-| Redis 队列 | 接入真实 Redis，支持分布式 | download / 所有长任务 |
-| Madmom Windows 安装 | 改用 `ffmpeg -af astat` 替代节拍检测 | clip |
-| 抖音 Cookie 依赖 | 已改用 iesdouyin 免 Cookie 方案 | download |
+| 债务项                 | 建议方案                                     | 影响模块                            |
+| ------------------- | ---------------------------------------- | ------------------------------- |
+| FFmpeg 路径硬编码        | 写入数据库 `video.ffmpeg_path`，`config.py` 读取 | download / clip                 |
+| SQLite → PostgreSQL | 资产库上线前完成迁移，数据量大                          | asset / ecommerce / photography |
+| Redis 队列            | 接入真实 Redis，支持分布式                         | download / 所有长任务                |
+| Madmom Windows 安装   | 改用 `ffmpeg -af astat` 替代节拍检测             | clip                            |
+| 抖音 Cookie 依赖        | 已改用 iesdouyin 免 Cookie 方案                | download                        |
 
----
+***
 
 ## 十、关键架构决策
 
@@ -917,7 +919,7 @@ Phase 3c（短剧，延续当前路线）
 3. **资产唯一性**：去重用 URL 精确匹配，同平台+相似标题模糊匹配作为补充。
 4. **三大垂直关系**：共用 Asset Library，按 `relations` 字段区分归属场景。
 
----
+***
 
 ## 十一、AI 图像/视频生成
 
@@ -1023,9 +1025,9 @@ class VideoBackend(Protocol):
 
 ### 11.4 已实现 Provider
 
-| Provider | 类型 | 模型 | 能力 |
-|----------|------|------|------|
-| MiniMax Image | Image | seedance-2.0 | T2I, I2I |
+| Provider      | 类型    | 模型           | 能力              |
+| ------------- | ----- | ------------ | --------------- |
+| MiniMax Image | Image | seedance-2.0 | T2I, I2I        |
 | MiniMax Video | Video | seedance-2.0 | T2V, I2V, Audio |
 
 ### 11.5 配置示例
@@ -1060,7 +1062,7 @@ defaults:
   - Registry 注册工厂
   - `poll_with_retry()` 异步轮询
 
----
+***
 
 ## 十二、Live 2D 工厂（面向 COSER）
 
@@ -1071,13 +1073,13 @@ defaults:
 
 ### 12.2 技术方案（Live 2D 全自动生产线 4.0）
 
-| 环节 | 技术方案 | 说明 |
-|------|---------|------|
-| 立绘生成 | image2 | AI 生成立绘素材，效果优化 |
-| 拆分 | seethrough | 改进窗口批量版，自动拆分图层 |
-| 网格加身体绑骨 | stretchystudio（改进版） | 自动左右分割；参数经 py 插件自动转化为 vts 兼容格式 |
-| 五官绑骨 | 基于 stretchystudio 二次开发 | 实现五官运动（**开发中**）|
-| 最终建模 | cmo3 → moc3 转化软件（自研完成）| cmo3 转化为 vts 通用模型格式 |
+| 环节      | 技术方案                   | 说明                             |
+| ------- | ---------------------- | ------------------------------ |
+| 立绘生成    | image2                 | AI 生成立绘素材，效果优化                 |
+| 拆分      | seethrough             | 改进窗口批量版，自动拆分图层                 |
+| 网格加身体绑骨 | stretchystudio（改进版）    | 自动左右分割；参数经 py 插件自动转化为 vts 兼容格式 |
+| 五官绑骨    | 基于 stretchystudio 二次开发 | 实现五官运动（**开发中**）                |
+| 最终建模    | cmo3 → moc3 转化软件（自研完成） | cmo3 转化为 vts 通用模型格式            |
 
 ### 12.3 开发状态
 
@@ -1087,6 +1089,6 @@ defaults:
 - 🚧 五官绑骨（二次开发中）
 - ✅ 最终建模（cmo3→moc3 自研完成，vts 通用格式输出）
 
----
+***
 
 *本文档为 YLCraft v0.2.0 设计文档，确认后可作为开发基准。*

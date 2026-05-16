@@ -852,28 +852,11 @@ async def open_folder(req: dict):
     return JSONResponse({"success": True})
 
 
-@router.get("/cover-proxy", summary="封面图代理（解决 B站 CDN 防爬虫限制）")
+@router.get("/cover-proxy", summary="封面图代理（弃用，请使用 /api/v1/proxy/image）")
 async def cover_proxy(url: str):
-    """后端代理请求封面图，解决浏览器直接加载 B站 CDN 的跨域限制"""
-    import httpx
+    """后端代理请求封面图，解决浏览器直接加载 B站 CDN 的跨域限制。
+    已弃用，重定向到通用代理接口 /api/v1/proxy/image"""
+    from fastapi.responses import RedirectResponse
     if not url:
         raise HTTPException(status_code=400, detail="url 参数不能为空")
-    try:
-        headers = {
-            "Referer": "https://www.bilibili.com",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.0",
-        }
-        async with httpx.AsyncClient(timeout=10.0, verify=False) as client:
-            resp = await client.get(url, headers=headers)
-            resp.raise_for_status()
-            content = resp.content
-        # 推断 Content-Type
-        import mimetypes
-        mime = mimetypes.guess_type(url)[0] or "image/jpeg"
-        return Response(content=content, media_type=mime)
-    except httpx.HTTPStatusError as e:
-        raise HTTPException(status_code=e.response.status_code, detail=f"封面图请求失败: {e}")
-    except Exception as e:
-        import traceback
-        logger.error(f"[cover-proxy] 错误: {type(e).__name__}: {e}\n{traceback.format_exc()}")
-        raise HTTPException(status_code=502, detail=f"封面图代理失败: {type(e).__name__}: {e}")
+    return RedirectResponse(url=f"/api/v1/proxy/image?url={url}")

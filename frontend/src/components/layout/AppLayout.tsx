@@ -1,4 +1,4 @@
-import { Layout, Menu, Drawer, Button } from 'antd'
+import { Layout, Menu, Drawer, Button, Space } from 'antd'
 import type { MenuProps } from 'antd'
 import { useNavigate, useLocation, Outlet } from 'react-router-dom'
 import { useState, useEffect } from 'react'
@@ -26,7 +26,6 @@ import {
   LinkOutlined,
   SendOutlined,
   TeamOutlined,
-  FallOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   ReadOutlined,
@@ -34,20 +33,31 @@ import {
 
 const { Sider, Content, Header } = Layout
 
-// --- 公共模块（不折叠）---
-const publicItems: MenuProps['items'] = [
+const MAIN_NAV: MenuProps['items'] = [
   { key: '/', icon: <DashboardOutlined />, label: '概览' },
   { key: '/assets', icon: <FolderOpenOutlined />, label: '素材库' },
   { key: '/tasks', icon: <ThunderboltOutlined />, label: '任务管理' },
-  { key: '/image-editor', icon: <EditOutlined />, label: '图片编辑' },
+]
+
+const BOTTOM_NAV: MenuProps['items'] = [
   { key: '/settings', icon: <SettingOutlined />, label: '设置' },
 ]
 
-// --- 完整菜单（含 SubMenu 分组，可折叠）---
 const menuItems: MenuProps['items'] = [
-  ...publicItems,
+  ...MAIN_NAV,
   { type: 'divider' as const },
-  // 爆款拆解（电商 / 摄影）
+  {
+    key: 'g-creation',
+    icon: <PictureOutlined />,
+    label: 'AI 创作',
+    children: [
+      { key: '/image-gen', label: '图像生成' },
+      { key: '/video-gen', label: '视频生成' },
+      { key: '/comfyui', label: 'ComfyUI' },
+      { key: '/agent', label: '智能体' },
+      { key: '/image-editor', label: '图片编辑' },
+    ],
+  },
   {
     key: 'g-breaker',
     icon: <ExperimentOutlined />,
@@ -60,7 +70,6 @@ const menuItems: MenuProps['items'] = [
       { key: '/publish', label: '一键发布' },
     ],
   },
-  // 剪辑工具
   {
     key: 'g-clip',
     icon: <ScissorOutlined />,
@@ -72,7 +81,6 @@ const menuItems: MenuProps['items'] = [
       { key: '/bgm', label: 'BGM 配乐' },
     ],
   },
-  // Story Maker（短剧）
   {
     key: 'g-story',
     icon: <BookOutlined />,
@@ -82,7 +90,6 @@ const menuItems: MenuProps['items'] = [
       { key: '/characters', label: '角色管理' },
     ],
   },
-  // 小说阅读
   {
     key: 'g-novel',
     icon: <ReadOutlined />,
@@ -93,50 +100,28 @@ const menuItems: MenuProps['items'] = [
       { key: '/book-source', label: '书源管理' },
     ],
   },
-  // Live 2D 工厂（COSER）
   {
     key: 'g-live2d',
     icon: <AppstoreOutlined />,
-    label: 'Live 2D 工厂',
+    label: 'Live2D 工厂',
     children: [
-      { key: '/live2d', label: 'Live 2D 工厂' },
-    ],
-  },
-  { type: 'divider' as const },
-  // AI 生成
-  {
-    key: 'g-ai',
-    icon: <PictureOutlined />,
-    label: 'AI 生成',
-    children: [
-      { key: '/image-gen', label: '图像生成' },
-      { key: '/video-gen', label: '视频生成' },
-      { key: '/comfyui', label: 'ComfyUI' },
-      { key: '/agent', label: '智能体' },
+      { key: '/live2d', label: 'Live2D 工厂' },
     ],
   },
 ]
 
-// Mobile breakpoint: < 768px
 const MOBILE_BREAKPOINT = 768
 
-// 从菜单 items 中递归查找匹配的路径 key
-function findSelectedKey(
-  items: MenuProps['items'],
-  pathname: string
-): string {
+function findSelectedKey(items: MenuProps['items'], pathname: string): string {
   if (!items) return '/'
   for (const item of items) {
     if (!item || !('key' in item)) continue
     const k = item.key as string
-    // 子菜单（group key 以 g- 开头或无 icon 且有 children）
     if ('children' in item && item.children) {
       const found = findSelectedKey(item.children, pathname)
       if (found !== '/') return found
     } else if (k.startsWith('/')) {
-      if (k === '/' ? pathname === '/' : pathname.startsWith(k)) {
-        return k
-      }
+      if (k === '/' ? pathname === '/' : pathname.startsWith(k)) return k
     }
   }
   return '/'
@@ -169,91 +154,55 @@ export default function AppLayout() {
     }
   }
 
+  const siderWidth = collapsed ? 60 : 220
+
   return (
     <Layout style={{ minHeight: '100vh', background: THEME.bgPage }}>
-      {/* Header */}
-      <Header style={{
-        background: THEME.bgCard,
-        padding: isMobile ? '0 16px' : '0 24px',
-        display: 'flex',
-        alignItems: 'center',
-        boxShadow: '0 1px 4px rgba(0,0,0,0.4)',
-        borderBottom: `1px solid ${THEME.border}`,
-        position: 'sticky',
-        top: 0,
-        zIndex: 100,
-        height: isMobile ? 52 : 64,
-        lineHeight: `${isMobile ? 52 : 64}px`,
-      }}>
-        {isMobile && (
-          <Button
-            type="text"
-            icon={<MenuOutlined style={{ color: THEME.textPrimary, fontSize: 18 }} />}
-            onClick={() => setDrawerOpen(true)}
-            style={{ marginRight: 12, flexShrink: 0 }}
-          />
-        )}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <FireOutlined style={{ fontSize: isMobile ? 20 : 24, color: THEME.coser }} />
-          <span style={{
-            fontSize: isMobile ? 16 : 20,
-            fontWeight: 700,
-            color: THEME.textPrimary,
-            letterSpacing: 2,
-            whiteSpace: 'nowrap',
-          }}>
-            YL<span style={{ color: THEME.primary }}>Craft</span>
-          </span>
-          {!isMobile && (
-            <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, marginLeft: 8 }}>
-              AI 视频创作平台
-            </span>
-          )}
-        </div>
-        {!isMobile && (
-          <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 16 }}>
-            <ThemeToggle />
-            <a href="/docs" style={{ color: THEME.textSecondary, fontSize: 13 }}>文档</a>
-            <a href="/api" style={{ color: THEME.textSecondary, fontSize: 13 }}>API</a>
-          </div>
-        )}
-      </Header>
-
-      {/* Desktop Sider */}
+      {/* ========== Desktop Sidebar ========== */}
       {!isMobile && (
-        <Layout>
-          <Sider
-            width={collapsed ? 60 : 220}
-            collapsedWidth={60}
-            collapsible
-            collapsed={collapsed}
-            trigger={null}
+        <Sider
+          width={siderWidth}
+          collapsedWidth={60}
+          collapsible
+          collapsed={collapsed}
+          trigger={null}
+          theme={themeId === 'dawn' ? 'light' : 'dark'}
+          style={{
+            position: 'fixed',
+            left: 0,
+            top: 0,
+            height: '100vh',
+            background: THEME.bgCard,
+            borderRight: `1px solid ${THEME.border}`,
+            zIndex: 100,
+            overflow: 'hidden',
+            transition: 'width 0.2s',
+          }}
+        >
+          {/* Logo */}
+          <div
+            onClick={() => navigate('/')}
             style={{
-              background: THEME.bgCard,
-              borderRight: `1px solid ${THEME.border}`,
-              height: 'calc(100vh - 64px)',
-              position: 'sticky',
-              top: 64,
-              overflow: 'hidden',
-              transition: 'width 0.2s',
+              height: 64,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: collapsed ? 'center' : 'flex-start',
+              padding: collapsed ? 0 : '0 16px',
+              gap: 8,
+              borderBottom: `1px solid ${THEME.border}`,
+              cursor: 'pointer',
             }}
           >
-            {/* 折叠按钮 */}
-            <div
-              onClick={() => setCollapsed(!collapsed)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: collapsed ? 'center' : 'flex-end',
-                padding: collapsed ? '12px 0' : '12px 16px',
-                cursor: 'pointer',
-                color: THEME.textSecondary,
-                fontSize: 16,
-                borderBottom: `1px solid ${THEME.border}`,
-              }}
-            >
-              {collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-            </div>
+            <FireOutlined style={{ fontSize: 22, color: THEME.coser, flexShrink: 0 }} />
+            {!collapsed && (
+              <span style={{ fontSize: 16, fontWeight: 700, color: THEME.textPrimary, letterSpacing: 1 }}>
+                YL<span style={{ color: THEME.primary }}>Craft</span>
+              </span>
+            )}
+          </div>
+
+          {/* Main menu — scrollable */}
+          <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
             <Menu
               mode="inline"
               theme={themeId === 'dawn' ? 'light' : 'dark'}
@@ -261,39 +210,110 @@ export default function AppLayout() {
               items={menuItems}
               onClick={handleMenuClick}
               inlineCollapsed={collapsed}
-              style={{
-                background: THEME.bgCard,
-                border: 'none',
-                marginTop: 0,
-              }}
-              className="app-sider-menu"
+              style={{ background: 'transparent', border: 'none' }}
             />
-          </Sider>
+          </div>
 
-          <Content style={{
-            padding: 24,
-            background: THEME.bgPage,
-            minHeight: 'calc(100vh - 64px)',
-            overflow: 'auto',
-          }}>
-            <Outlet />
-          </Content>
-        </Layout>
+          {/* Bottom menu */}
+          <div style={{ borderTop: `1px solid ${THEME.border}`, flexShrink: 0 }}>
+            <Menu
+              mode="inline"
+              theme={themeId === 'dawn' ? 'light' : 'dark'}
+              selectedKeys={[selectedKey]}
+              items={BOTTOM_NAV}
+              onClick={handleMenuClick}
+              inlineCollapsed={collapsed}
+              style={{ background: 'transparent', border: 'none' }}
+            />
+            {/* Fold button */}
+            <div
+              onClick={() => setCollapsed(!collapsed)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: collapsed ? 'center' : 'flex-end',
+                padding: collapsed ? '10px 0' : '10px 16px',
+                cursor: 'pointer',
+                color: THEME.textSecondary,
+                borderTop: `1px solid ${THEME.border}`,
+              }}
+            >
+              {collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+            </div>
+          </div>
+        </Sider>
       )}
 
-      {/* Mobile Content */}
-      {isMobile && (
-        <Content style={{
-          padding: 12,
-          background: THEME.bgPage,
-          minHeight: 'calc(100vh - 52px)',
-          overflow: 'auto',
-        }}>
+      {/* ========== Main Content Area ========== */}
+      <Layout style={{ marginLeft: isMobile ? 0 : siderWidth, transition: 'margin-left 0.2s', minHeight: '100vh' }}>
+        {/* Header — minimalist */}
+        {!isMobile && (
+          <Header
+            style={{
+              background: THEME.bgCard,
+              borderBottom: `1px solid ${THEME.border}`,
+              height: 56,
+              lineHeight: '56px',
+              padding: '0 24px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+              gap: 12,
+              position: 'sticky',
+              top: 0,
+              zIndex: 50,
+            }}
+          >
+            <ThemeToggle />
+            <a href="/docs" style={{ color: THEME.textSecondary, fontSize: 13 }}>文档</a>
+            <a href="/api" style={{ color: THEME.textSecondary, fontSize: 13 }}>API</a>
+          </Header>
+        )}
+
+        {/* Mobile Header */}
+        {isMobile && (
+          <Header
+            style={{
+              background: THEME.bgCard,
+              borderBottom: `1px solid ${THEME.border}`,
+              height: 52,
+              lineHeight: '52px',
+              padding: '0 16px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              position: 'sticky',
+              top: 0,
+              zIndex: 50,
+            }}
+          >
+            <Button
+              type="text"
+              icon={<MenuOutlined style={{ color: THEME.textPrimary, fontSize: 18 }} />}
+              onClick={() => setDrawerOpen(true)}
+              style={{ flexShrink: 0 }}
+            />
+            <FireOutlined style={{ fontSize: 18, color: THEME.coser }} />
+            <span style={{ fontSize: 16, fontWeight: 700, color: THEME.textPrimary }}>
+              YL<span style={{ color: THEME.primary }}>Craft</span>
+            </span>
+          </Header>
+        )}
+
+        {/* Page Content */}
+        <Content
+          style={{
+            padding: isMobile ? 12 : 24,
+            background: THEME.bgPage,
+            minHeight: isMobile ? 'calc(100vh - 52px)' : 'calc(100vh - 56px)',
+            overflow: 'auto',
+          }}
+        >
           <Outlet />
         </Content>
-      )}
+      </Layout>
 
-      {/* Mobile Drawer Menu */}
+      {/* ========== Mobile Drawer Menu ========== */}
       <Drawer
         title={
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -321,11 +341,7 @@ export default function AppLayout() {
           selectedKeys={[selectedKey]}
           items={menuItems}
           onClick={handleMenuClick}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            marginTop: 8,
-          }}
+          style={{ background: 'transparent', border: 'none', marginTop: 8 }}
         />
       </Drawer>
     </Layout>

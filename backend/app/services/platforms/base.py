@@ -158,6 +158,10 @@ class BasePlatformClient(abc.ABC):
         统一请求方法
         根据 config.mode 自动选择 API 或 Patchright
         """
+        import logging
+        logger = logging.getLogger("ylcraft.platforms.base")
+        logger.debug(f"request() {method} {url} (mode={self.config.mode})")
+        
         if self.config.mode == ClientMode.API:
             return await self._request_api(method, url, **kwargs)
         elif self.config.mode == ClientMode.PATCHRIGHT:
@@ -166,19 +170,55 @@ class BasePlatformClient(abc.ABC):
             raise ValueError(f"Unknown mode: {self.config.mode}")
     
     async def _request_api(self, method: str, url: str, **kwargs) -> Any:
-        """API 模式请求"""
+        """API 模式请求（带重试和频率控制）"""
         if not self._http_client:
             await self._init_http_client()
-        
-        response = await self._http_client.request(method, url, **kwargs)
-        response.raise_for_status()
-        
-        # 尝试解析 JSON
-        content_type = response.headers.get('content-type', '')
-        if 'application/json' in content_type:
-            return response.json()
-        else:
-            return {'text': response.text, 'status': response.status_code}
+
+        import logging
+        logger = logging.getLogger("ylcraft.platforms.base")
+
+        max_retries = self.config.max_retries
+        retry_delay = self.config.retry_delay
+
+        for attempt in range(max_retries):
+            logger.debug(f"[request_api] {method} {url} (attempt {attempt + 1}/{max_retries})")
+
+            try:
+                response = await self._http_client.request(method, url, **kwargs)
+                response.raise_for_status()
+
+                # httpx 会自动处理 Brotli (br) 解压（需要 brotli 包）
+                try:
+                    return response.json()
+                except (ValueError, UnicodeDecodeError) as e:
+                    logger.warning(f"[request_api] JSON parse failed for {url}: {e}")
+                    content = response.text
+                    try:
+                        import json
+                        return json.loads(content)
+                    except ValueError as e2:
+                        logger.error(f"[request_api] JSON parse failed (fallback): {e2}")
+                        logger.error(f"[request_api] Response preview: {content[:500]}")
+                        return {'text': content, 'status': response.status_code}
+
+            except Exception as e:
+                status = getattr(getattr(e, 'response', None), 'status_code', 0)
+                is_412 = status == 412 or '412' in str(e)
+
+                if is_412 and attempt < max_retries - 1:
+                    wait = retry_delay * (2 ** attempt) + (attempt * 0.5)
+                    logger.warning(f"[request_api] 412 banned, retrying in {wait:.1f}s...")
+                    await asyncio.sleep(wait)
+                    continue
+
+                if attempt < max_retries - 1:
+                    wait = retry_delay * (2 ** attempt)
+                    logger.warning(f"[request_api] Error: {e}, retrying in {wait:.1f}s...")
+                    await asyncio.sleep(wait)
+                    continue
+
+                logger.error(f"[request_api] Failed after {max_retries} attempts: {e}")
+                raise
     
     async def _request_patchright(self, method: str, url: str, **kwargs) -> Any:
         """Patchright 模式请求（通过浏览器）"""
@@ -314,6 +354,10 @@ class PlatformClientFactory:
         client_class = cls._registry.get(platform)
         if not client_class:
             raise ValueError(f"Unsupported platform: {platform}. Available: {list(cls._registry.keys())}")
+        
+        # 支持传入 ClientConfig 对象作为第二个参数
+        if isinstance(mode, ClientConfig):
+            return client_class(mode)
         
         config = ClientConfig(
             platform=platform,

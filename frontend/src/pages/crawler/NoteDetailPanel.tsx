@@ -148,7 +148,7 @@ export default function NoteDetailPanel({ platform, noteId, connId }: NoteDetail
             <Text>👍 {detail.likes || 0}</Text>
             <Text>💬 {detail.comments || 0}</Text>
             <Text>🔗 {detail.shares || 0}</Text>
-            <Text>⭐ {detail.collect_count || 0}</Text>
+            <Text>⭐ {detail.collects || 0}</Text>
           </div>
 
           {/* 标签 */}

@@ -21,9 +21,14 @@ class ClientMode(str, Enum):
 class SearchType(str, Enum):
     """搜索类型"""
     NOTE = "note"         # 笔记/视频
+    VIDEO = "video"       # 视频（B站等平台专用，等同于 NOTE）
     USER = "user"         # 用户
     ARTICLE = "article"   # 文章/专栏
     SERIES = "series"     # 合集/系列
+    BANGUMI = "bangumi"   # 番剧
+    MOVIE = "movie"       # 影视
+    LIVE = "live"         # 直播
+    TOPIC = "topic"       # 话题
 
 
 # =============================================================================
@@ -52,7 +57,10 @@ class SearchResult:
     # 其他
     desc: str = ""
     create_time: str = ""
-    
+    duration: int = 0  # 视频时长（秒）
+    followers: int = 0  # 粉丝数（用户搜索用）
+    videos: int = 0  # 视频数（用户搜索用）
+
     # 原始数据
     raw_data: Dict[str, Any] = field(default_factory=dict)
 
@@ -145,9 +153,28 @@ class SearchParams:
     keyword: str
     max_results: int = 20
     search_type: SearchType = SearchType.NOTE
-    
+    sort_by: str = ""  # 排序方式，各平台自定义
+    page: int = 1  # 页码
+
     # 平台特定参数（用 dict 传递）
     extra: Dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_string(cls, keyword: str, max_results: int = 20, search_type_str: str = "note", sort_by: str = "", page: int = 1, extra: Dict[str, Any] = None):
+        """从字符串创建 SearchParams，支持自定义 search_type"""
+        # 尝试匹配枚举，否则使用 NOTE
+        try:
+            st = SearchType(search_type_str)
+        except ValueError:
+            st = SearchType.NOTE
+        return cls(
+            keyword=keyword,
+            max_results=max_results,
+            search_type=st,
+            sort_by=sort_by,
+            page=page,
+            extra=extra or {},
+        )
 
 
 # =============================================================================

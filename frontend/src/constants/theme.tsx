@@ -1,5 +1,16 @@
+// ==================== 设计系统升级（基于 Open Design 方法论）====================
+// 遵循：Apple HIG + Material Design 3 + WCAG 2.2
+// 参考：platform-design, frontend-design skills
+// ====================================================================================
+
 /**
- * YLCraft — 多主题切换系统
+ * YLCraft — 多主题切换系统（Open Design 升级版）
+ *
+ * 设计原则：
+ * 1. 排版优先 — 建立清晰的字体层次
+ * 2. 布局纪律 — 使用 8px grid system
+ * 3. 层次感 — 使用 elevation 系统
+ * 4. 可访问性 — WCAG 2.2 AA 标准（对比度 ≥ 4.5:1）
  *
  * 用法：
  *   import { useTheme, ThemeProvider } from '../../constants/theme'
@@ -9,7 +20,46 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode, useMemo } from 'react'
 
-// ==================== 主题颜色类型 ====================
+// ==================== 排版系统（遵循 frontend-design 规范）====================
+// 字体家族：系统字体栈（符合 Apple HIG + Material Design）
+export const TYPOGRAPHY = {
+  fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif",
+  
+  // 字号层次（类型：{ fontSize, lineHeight, fontWeight })
+  h1: { fontSize: 32, lineHeight: 40, fontWeight: 700 },  // 1.25
+  h2: { fontSize: 24, lineHeight: 32, fontWeight: 700 },  // 1.33
+  h3: { fontSize: 20, lineHeight: 28, fontWeight: 600 },  // 1.4
+  h4: { fontSize: 18, lineHeight: 26, fontWeight: 600 },
+  body: { fontSize: 16, lineHeight: 24, fontWeight: 400 }, // 1.5
+  bodyStrong: { fontSize: 16, lineHeight: 24, fontWeight: 600 },
+  caption: { fontSize: 14, lineHeight: 20, fontWeight: 400 }, // 1.43
+  small: { fontSize: 12, lineHeight: 16, fontWeight: 400 },  // 1.33
+}
+
+// ==================== 间距系统（8px Grid，遵循 Material Design 3）====================
+export const SPACING = {
+  xs: 4,    // 极小间距
+  sm: 8,    // 小间距
+  md: 16,   // 中等间距（基准）
+  lg: 24,   // 大间距
+  xl: 32,   // 超大间距
+  xxl: 48,  // 2x 超大
+  section: 64, // 区块间距
+}
+
+// ==================== Elevation 系统（Material Design 3）====================
+export const ELEVATION = {
+  level0: 'none',                            // 0dp - 表面
+  level1: '0 1px 2px rgba(0,0,0,0.08)',     // 1dp - 悬浮
+  level2: '0 2px 4px rgba(0,0,0,0.08)',     // 2dp
+  level3: '0 3px 8px rgba(0,0,0,0.10)',     // 3dp - 菜单、卡片悬浮
+  level4: '0 4px 12px rgba(0,0,0,0.12)',    // 4dp
+  level5: '0 6px 16px rgba(0,0,0,0.14)',    // 8dp - 底部抽屉、对话框
+  level6: '0 8px 24px rgba(0,0,0,0.16)',    // 12dp - 弹出菜单
+  level7: '0 12px 32px rgba(0,0,0,0.20)',   // 16dp - 右侧抽屉
+}
+
+// ==================== 主题颜色类型（扩展）====================
 export interface ThemeColors {
   // 背景
   bgPage: string
@@ -17,17 +67,17 @@ export interface ThemeColors {
   bgElevated: string
   bgInput: string
   bgHover: string
-
+  
   // 文字
   textPrimary: string
   textSecondary: string
   textDisabled: string
-
+  
   // 边框
   border: string
   borderLight: string
   borderStrong: string
-
+  
   // 语义色
   primary: string
   primaryHover: string
@@ -35,19 +85,29 @@ export interface ThemeColors {
   warning: string
   error: string
   info: string
-
-  // 场景色
-  ecommerce: string
-  photography: string
-  drama: string
-  coser: string
-
+  
+  // 场景色（YLCraft 专属）
+  ecommerce: string    // 电商 · 红色
+  photography: string  // 摄影 · 黄色/橙色
+  drama: string       // 短剧 · 紫色
+  coser: string       // COSER · 粉色（改为更鲜艳的二次元粉）
+  
   // 渐变
   gradientPrimary: string
   gradientWelcome: string
-
+  
   // alpha 辅助函数
   primaryAlpha: (a: number) => string
+  
+  // === 新增：Open Design 设计系统变量 ===
+  // Elevation（Material Design 3）
+  elevation1: string
+  elevation3: string
+  elevation8: string
+  
+  // 品牌渐变（用于图标、按钮）
+  gradientCreative: string  // 创意渐变（橙→粉）
+  gradientTech: string     // 科技渐变（蓝→紫）
 }
 
 export interface ThemeDefinition {
@@ -59,10 +119,12 @@ export interface ThemeDefinition {
   antdComponents: Record<string, Record<string, any>>
 }
 
-// ==================== 3 套主题定义 ====================
+// ==================== 3 套主题定义（Open Design 升级）====================
+// 遵循：Apple HIG + Material Design 3 + WCAG 2.2
+// ============================================================================
 
 const themes: Record<string, ThemeDefinition> = {
-  // ─── 1. 深海 · Deep Ocean ───
+  // ─── 1. 深海 · Deep Ocean（暗色主题）───
   deep: {
     id: 'deep',
     name: '深海',
@@ -79,19 +141,25 @@ const themes: Record<string, ThemeDefinition> = {
       border: 'rgba(255,255,255,0.08)',
       borderLight: 'rgba(255,255,255,0.12)',
       borderStrong: 'rgba(255,255,255,0.18)',
-      primary: '#00d4ff',
+      primary: '#00d4ff',       // 科技蓝
       primaryHover: '#00bce6',
       success: '#52c41a',
       warning: '#faad14',
       error: '#ff4d4f',
       info: '#1890ff',
-      ecommerce: '#ff4d4f',
-      photography: '#faad14',
-      drama: '#722ed1',
-      coser: '#ec4899',
+      ecommerce: '#ff4d4f',    // 电商红
+      photography: '#faad14',   // 摄影橙
+      drama: '#722ed1',        // 短剧紫
+      coser: '#ff4d6a',       // COSER 粉（更鲜艳）
       gradientPrimary: 'linear-gradient(135deg, #00d4ff 0%, #0077b6 100%)',
       gradientWelcome: 'linear-gradient(135deg, #1a1a2e 0%, #0f0f1a 100%)',
+      gradientCreative: 'linear-gradient(135deg, #FF6B35 0%, #ff4d6a 100%)',  // 创意渐变
+      gradientTech: 'linear-gradient(135deg, #00d4ff 0%, #722ed1 100%)',     // 科技渐变
       primaryAlpha: (a: number) => `rgba(0,212,255,${a})`,
+      // Elevation（Material Design 3）
+      elevation1: '0 1px 2px rgba(0,0,0,0.08)',
+      elevation3: '0 3px 8px rgba(0,0,0,0.10)',
+      elevation8: '0 8px 24px rgba(0,0,0,0.16)',
     },
     antdToken: {
       colorPrimary: '#00d4ff',
@@ -157,10 +225,16 @@ const themes: Record<string, ThemeDefinition> = {
         ecommerce: '#ff4d4f',
         photography: '#faad14',
         drama: '#7c9bff',
-        coser: '#ec4899',
+        coser: '#ff4d6a',       // COSER 粉（更鲜艳）
         gradientPrimary: 'linear-gradient(135deg, #7c9bff 0%, #4a6cf7 100%)',
         gradientWelcome: 'linear-gradient(135deg, #1a1a2e 0%, #0e0e1a 100%)',
+        gradientCreative: 'linear-gradient(135deg, #FF6B35 0%, #ff4d6a 100%)',  // 创意渐变
+        gradientTech: 'linear-gradient(135deg, #7c9bff 0%, #722ed1 100%)',     // 科技渐变
         primaryAlpha: (a: number) => `rgba(124, 155, 255, ${a})`,
+        // Elevation（Material Design 3）
+        elevation1: '0 1px 2px rgba(0,0,0,0.08)',
+        elevation3: '0 3px 8px rgba(0,0,0,0.10)',
+        elevation8: '0 8px 24px rgba(0,0,0,0.16)',
       }
     })(),
     antdToken: {
@@ -227,10 +301,16 @@ const themes: Record<string, ThemeDefinition> = {
         ecommerce: '#ff4d4f',
         photography: '#faad14',
         drama: '#722ed1',
-        coser: '#ec4899',
+        coser: '#ff4d6a',       // COSER 粉（更鲜艳）
         gradientPrimary: 'linear-gradient(135deg, #1677ff 0%, #0958d9 100%)',
         gradientWelcome: 'linear-gradient(135deg, #ffffff 0%, #f0f2f5 100%)',
+        gradientCreative: 'linear-gradient(135deg, #FF6B35 0%, #ff4d6a 100%)',  // 创意渐变
+        gradientTech: 'linear-gradient(135deg, #1677ff 0%, #722ed1 100%)',     // 科技渐变
         primaryAlpha: (a: number) => `rgba(22, 119, 255, ${a})`,
+        // Elevation（Material Design 3）
+        elevation1: '0 1px 2px rgba(0,0,0,0.05)',
+        elevation3: '0 3px 8px rgba(0,0,0,0.08)',
+        elevation8: '0 8px 24px rgba(0,0,0,0.12)',
       }
     })(),
     antdToken: {
@@ -269,7 +349,7 @@ const themes: Record<string, ThemeDefinition> = {
   },
 }
 
-// ==================== CSS 变量映射 ====================
+// ==================== CSS 变量映射（Open Design 升级）====================
 // 每次切换主题时，将这些 CSS 变量设置到 :root 上
 const THEME_CSS_VARS = [
   'bgPage', 'bgCard', 'bgElevated', 'bgInput', 'bgHover',
@@ -277,6 +357,9 @@ const THEME_CSS_VARS = [
   'border', 'borderLight', 'borderStrong',
   'primary', 'primaryHover',
   'success', 'warning', 'error', 'info',
+  // 新增：设计系统变量
+  'gradientCreative', 'gradientTech',
+  'elevation1', 'elevation3', 'elevation8',
 ] as const
 
 // ==================== Context ====================
@@ -310,9 +393,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         root.style.setProperty(`--${key}`, value)
       }
     }
-    // 额外变量
+    // 额外变量（kebab-case）
     root.style.setProperty('--gradient-primary', def.colors.gradientPrimary)
     root.style.setProperty('--gradient-welcome', def.colors.gradientWelcome)
+    root.style.setProperty('--gradient-creative', def.colors.gradientCreative)
+    root.style.setProperty('--gradient-tech', def.colors.gradientTech)
+    root.style.setProperty('--elevation1', def.colors.elevation1)
+    root.style.setProperty('--elevation3', def.colors.elevation3)
+    root.style.setProperty('--elevation8', def.colors.elevation8)
 
     // 标记主题模式
     root.setAttribute('data-theme', id === 'dawn' ? 'light' : 'dark')

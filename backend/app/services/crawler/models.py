@@ -49,10 +49,11 @@ class SearchFilter(BaseModel):
 
 class SearchEnhancedRequest(BaseModel):
     """增强搜索请求"""
-    platform: str = Field(..., description="平台: xhs/dy/ks")
+    platform: str = Field(..., description="平台: xhs/dy/ks/bili")
     keyword: str = Field(..., description="搜索关键词")
-    search_type: str = Field("note", description="搜索类型: note/user")
+    search_type: str = Field("note", description="搜索类型: note/user/article/series")
     max_results: int = Field(20, description="最大结果数", ge=1, le=100)
+    sort_by: str = Field("", description="排序方式（各平台自定义，如B站：totalrank/click/pubdate/dm/stow）")
     filters: dict = Field(default_factory=dict, description="筛选条件")
 
 

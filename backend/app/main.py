@@ -340,6 +340,13 @@ def _register_routes():
     except Exception as e:
         logger.warning(f"Could not load cookie_acquisition router: {e}")
 
+    # 通用代理路由（图片代理等）
+    try:
+        from app.api.v1 import proxy
+        app.include_router(proxy.router, prefix="/api/v1/proxy", tags=["Proxy"])
+    except Exception as e:
+        logger.warning(f"Could not load proxy router: {e}")
+
 _register_routes()
 
 

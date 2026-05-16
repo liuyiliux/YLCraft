@@ -10,10 +10,11 @@ BASE_URL = "https://api.bilibili.com"
 # 搜索 API
 # =============================================================================
 
-SEARCH_VIDEO = "/x/web-interface/search/type"  # 搜索视频
-SEARCH_USER = "/x/web-interface/search/type"   # 搜索用户
-SEARCH_ARTICLE = "/x/web-interface/search/type"  # 搜索专栏
-SEARCH_SERIES = "/x/web-interface/search/type"   # 搜索合集
+SEARCH_ALL = "/x/web-interface/wbi/search/all/v2"     # 综合搜索（全部类型）
+SEARCH_VIDEO = "/x/web-interface/wbi/search/type"     # 搜索视频
+SEARCH_USER = "/x/web-interface/wbi/search/type"      # 搜索用户
+SEARCH_ARTICLE = "/x/web-interface/wbi/search/type"   # 搜索专栏
+SEARCH_SERIES = "/x/web-interface/wbi/search/type"    # 搜索合集
 
 # =============================================================================
 # 视频详情 API
@@ -44,35 +45,35 @@ SERIES_INFO = "/x/series/archives"               # 合集详情 + 视频列表
 COMMENTS = "/x/v2/reply/main"                   # 评论列表
 
 # =============================================================================
-# 搜索类型映射
+# 搜索类型映射（search_type 参数值）
 # =============================================================================
 
 SEARCH_TYPE_MAP = {
     "video": "video",       # 搜索视频
     "user": "bili_user",   # 搜索用户
     "article": "article",   # 搜索专栏
-    "series": "series",    # 搜索合集（实际是 media_bangumi？）
+    "series": "series",    # 搜索合集
 }
 
 # =============================================================================
-# 排序方式
+# 排序方式（order 参数值，直接传字符串）
 # =============================================================================
 
 ORDER_TYPE_MAP = {
-    "totalrank": 0,   # 综合排序
-    "click": 1,        # 最多播放
-    "pubdate": 2,      # 最新发布
-    "dm": 3,           # 最多弹幕
-    "stow": 4,         # 最多收藏
-    "scores": 5,        # 最多评论
+    "totalrank": "totalrank",  # 综合排序
+    "click": "click",          # 最多播放
+    "pubdate": "pubdate",     # 最新发布
+    "dm": "dm",               # 最多弹幕
+    "stow": "stow",          # 最多收藏
+    "scores": "scores",       # 最多评论
 }
 
 # =============================================================================
-# 时长筛选
+# 时长筛选（duration 参数值）
 # =============================================================================
 
 DURATION_MAP = {
-    "all": 0,     # 全部
+    "all": 0,      # 全部
     "short": 1,    # 10分钟以下
     "medium": 2,   # 10-30分钟
     "long": 3,     # 30分钟以上

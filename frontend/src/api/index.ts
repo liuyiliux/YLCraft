@@ -375,6 +375,29 @@ export interface CrawlerResult {
   raw_data?: any
 }
 
+export interface NoteDetail {
+  id: string
+  title: string
+  desc: string
+  author: string
+  author_id: string
+  platform: string
+  type: string
+  images?: string[]
+  video?: string
+  video_cover?: string
+  likes: number
+  comments: number
+  shares: number
+  collects: number
+  views: number
+  tags?: string[]
+  create_time: string
+  location?: string
+  comments_list?: Record<string, any>[]
+  raw_data?: any
+}
+
 export interface SearchCrawlerRequest {
   platform: string
   keyword: string
@@ -402,9 +425,11 @@ export const getCrawlerTask = (taskId: string) => request(`/crawler/tasks/${task
 export const searchEnhanced = (params: {
   platform: string
   keyword: string
-  search_type?: 'note' | 'user'
+  search_type?: string
   max_results?: number
+  sort_by?: string
   filters?: Record<string, any>
+  page?: number
 }) => request('/crawler/search-enhanced', { method: 'POST', body: JSON.stringify(params) })
 
 /** 获取笔记详情（无水印） */

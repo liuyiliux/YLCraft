@@ -91,11 +91,13 @@ class ImportResponse(BaseModel):
 
 class SearchEnhancedRequest(BaseModel):
     """增强搜索请求"""
-    platform: str = Field(..., description="平台: xhs/dy/ks")
+    platform: str = Field(..., description="平台: xhs/dy/ks/bili/wb/zhihu")
     keyword: str = Field(..., description="搜索关键词")
-    search_type: str = Field("note", description="搜索类型: note/user")
-    max_results: int = Field(20, description="最大结果数", ge=1, le=100)
+    search_type: str = Field("note", description="搜索类型: note/user/article/bangumi/movie/live")
+    max_results: int = Field(20, description="每页结果数", ge=1, le=100)
+    sort_by: str = Field("", description="排序方式")
     filters: dict = Field(default_factory=dict, description="筛选条件")
+    page: int = Field(1, description="页码", ge=1)
 
 
 class NoteDetailResponse(BaseModel):
@@ -208,59 +210,39 @@ async def get_task_status(task_id: str):
 async def search_enhanced(req: SearchEnhancedRequest):
     """
     增强搜索：支持搜索笔记和用户
-    - search_type: "note" = 搜索笔记, "user" = 搜索用户
+    - search_type: "note" = 搜索笔记, "user" = 搜索用户, "article" = 搜索专栏
+    - sort_by: 排序方式（各平台自定义）
     - filters: 可选筛选条件
     """
-    logger.info(f"[search_enhanced] platform={req.platform} keyword={req.keyword} type={req.search_type}")
+    logger.info(f"[search_enhanced] platform={req.platform} keyword={req.keyword} type={req.search_type} sort={req.sort_by}")
 
     try:
         service = get_crawler_service()
+        using = "platforms"
         results = await service.search_videos(
             platform=req.platform,
             keyword=req.keyword,
             max_results=req.max_results,
+            search_type=req.search_type,
+            sort_by=req.sort_by,
+            page=req.page,
+            filters=req.filters,
         )
 
-        # 如果使用 MediaCrawler wrapper，可以传递 search_type
-        if service._wrapper and req.search_type in ["note", "user"]:
-            try:
-                wrapper_results = await service._wrapper.search_notes(
-                    platform=req.platform,
-                    keyword=req.keyword,
-                    cookie="",  # TODO: 从 PlatformConnection 获取
-                    max_results=req.max_results,
-                    search_type=req.search_type,
-                )
-                # 转换 wrapper 结果到 CrawlerResult
-                from app.services.crawler.models import NoteDetail
-                results = []
-                for item in wrapper_results:
-                    result = CrawlerResult(
-                        id=item.get("note_id", "") or item.get("id", ""),
-                        platform=req.platform,
-                        title=item.get("title", ""),
-                        desc=item.get("desc", "") or item.get("description", ""),
-                        cover=item.get("cover", "") or item.get("thumbnail", ""),
-                        video_url=item.get("video_url", ""),
-                        author=item.get("nickname", "") or item.get("author", ""),
-                        author_id=item.get("user_id", ""),
-                        likes=item.get("liked_count", 0) or item.get("likes", 0),
-                        comments=item.get("comment_count", 0) or item.get("comments", 0),
-                        shares=item.get("share_count", 0) or item.get("shares", 0),
-                        url=item.get("note_url", "") or item.get("url", ""),
-                        create_time=str(item.get("time", "")),
-                        raw_data=item,
-                    )
-                    results.append(result)
-            except Exception as e:
-                logger.warning(f"[search_enhanced] Wrapper failed, using yt-dlp results: {e}")
+        if not results:
+            logger.warning(f"[search_enhanced] No results via platforms module for {req.platform}")
+
+        # 从第一个结果的 raw_data 中提取平台返回的真实总条数
+        total = len(results)
+        if results and results[0].raw_data.get("_total"):
+            total = results[0].raw_data["_total"]
 
         return SearchResponse(
             success=True,
             results=results,
-            total=len(results),
-            message=f"找到 {len(results)} 条结果",
-            using="MediaCrawler" if service._wrapper else "yt-dlp",
+            total=total,
+            message=f"找到 {total} 条结果",
+            using=using,
         )
     except Exception as e:
         logger.error(f"[search_enhanced] Error: {e}")
