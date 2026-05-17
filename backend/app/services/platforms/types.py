@@ -49,6 +49,7 @@ class SearchResult:
     
     # 统计信息
     likes: int = 0
+    coins: int = 0
     comments: int = 0
     shares: int = 0
     collects: int = 0
@@ -83,6 +84,7 @@ class NoteDetail:
     
     # 统计
     likes: int = 0
+    coins: int = 0        # 投币（B站特有）
     comments: int = 0
     shares: int = 0
     collects: int = 0

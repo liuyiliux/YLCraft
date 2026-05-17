@@ -96,6 +96,7 @@ class SearchEnhancedRequest(BaseModel):
     search_type: str = Field("note", description="搜索类型: note/user/article/bangumi/movie/live")
     max_results: int = Field(20, description="每页结果数", ge=1, le=100)
     sort_by: str = Field("", description="排序方式")
+    order_sort: int = Field(0, description="排序方向：0=高到低，1=低到高（仅bili用户搜索有效）")
     filters: dict = Field(default_factory=dict, description="筛选条件")
     page: int = Field(1, description="页码", ge=1)
 
@@ -216,8 +217,10 @@ async def search_enhanced(req: SearchEnhancedRequest):
     """
     logger.info(f"[search_enhanced] platform={req.platform} keyword={req.keyword} type={req.search_type} sort={req.sort_by}")
 
+    service = get_crawler_service()
+
+    # ===== 普通搜索模式 =====
     try:
-        service = get_crawler_service()
         using = "platforms"
         results = await service.search_videos(
             platform=req.platform,
@@ -225,6 +228,7 @@ async def search_enhanced(req: SearchEnhancedRequest):
             max_results=req.max_results,
             search_type=req.search_type,
             sort_by=req.sort_by,
+            order_sort=req.order_sort,
             page=req.page,
             filters=req.filters,
         )
@@ -330,3 +334,91 @@ async def fetch_no_watermark(req: FetchNoWatermarkRequest):
     except Exception as e:
         logger.error(f"[fetch_no_watermark] Error: {e}")
         raise HTTPException(status_code=500, detail=f"批量获取失败: {str(e)}")
+
+    
+# =========================================================================
+# 字幕下载端点
+# =========================================================================
+
+@router.get("/subtitles", summary="获取字幕列表", response_model=SubtitleListResponse)
+async def get_subtitles(platform: str, item_id: str):
+    """
+    获取视频的字幕列表
+    - platform: 平台（目前仅支持 bili）
+    - item_id: 视频ID（bvid）
+    """
+    logger.info(f"[get_subtitles] platform={platform} item_id={item_id}")
+    
+    if platform != "bili":
+        raise HTTPException(status_code=400, detail="该平台不支持字幕下载")
+    
+    try:
+        from app.services.platforms import create_client
+        async with create_client(platform, mode="api") as client:
+            subtitles = await client.get_subtitles(item_id)
+            return {
+                "success": True,
+                "data": subtitles,
+                "message": f"找到 {len(subtitles)} 个字幕"
+            }
+    except Exception as e:
+        logger.error(f"[get_subtitles] Error: {e}")
+        raise HTTPException(status_code=500, detail=f"获取字幕列表失败: {str(e)}")
+
+
+@router.get("/subtitle/download", summary="下载字幕文件")
+async def download_subtitle(platform: str, item_id: str, lan: str = "zh-CN", format: str = "srt"):
+    """
+    下载字幕文件（SRT/ASS 格式）
+    - platform: 平台（目前仅支持 bili）
+    - item_id: 视频ID（bvid）
+    - lan: 字幕语言（如 zh-CN, en-US）
+    - format: 格式（srt 或 ass）
+    """
+    logger.info(f"[download_subtitle] platform={platform} item_id={item_id} lan={lan} format={format}")
+    
+    if platform != "bili":
+        raise HTTPException(status_code=400, detail="该平台不支持字幕下载")
+    
+    if format not in ["srt", "ass"]:
+        raise HTTPException(status_code=400, detail="格式仅支持 srt 或 ass")
+    
+    try:
+        from app.services.platforms import create_client
+        from fastapi.responses import PlainTextResponse
+        
+        async with create_client(platform, mode="api") as client:
+            # 1. 获取字幕列表
+            subtitles = await client.get_subtitles(item_id)
+            subtitle = next((s for s in subtitles if s.get("lan") == lan), None)
+            
+            if not subtitle:
+                raise HTTPException(status_code=404, detail=f"未找到 {lan} 语言的字幕")
+            
+            # 2. 下载并转换
+            content = await client.download_subtitle(subtitle.get("subtitle_url"), format)
+            
+            if not content:
+                raise HTTPException(status_code=500, detail="字幕内容为空")
+            
+            # 3. 返回文件
+            filename = f"{item_id}_{lan}.{format}"
+            return PlainTextResponse(
+                content=content,
+                headers={
+                    "Content-Disposition": f"attachment; filename={filename}",
+                    "Content-Type": "text/plain; charset=utf-8"
+                }
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[download_subtitle] Error: {e}")
+        raise HTTPException(status_code=500, detail=f"下载字幕失败: {str(e)}")
+
+
+class SubtitleListResponse(BaseModel):
+    """字幕列表响应"""
+    success: bool
+    data: List[Dict] = []
+    message: str = ""

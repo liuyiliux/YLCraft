@@ -53,6 +53,8 @@ class CrawlerResult(BaseModel):
     shares: int = Field(0, description="分享数")
     url: str = Field("", description="原文链接")
     create_time: str = Field("", description="发布时间")
+    followers: int = Field(0, description="粉丝数（用户搜索用）")
+    videos: int = Field(0, description="视频数（用户搜索用）")
     raw_data: dict = Field(default_factory=dict, description="原始数据")
 
 class CrawlerTaskResponse(BaseModel):
@@ -166,6 +168,8 @@ class CrawlerService:
                         shares=item.shares,
                         url=item.url,
                         create_time=item.create_time,
+                        followers=item.followers,
+                        videos=item.videos,
                         raw_data=raw_data,
                     )
                     crawler_results.append(result)

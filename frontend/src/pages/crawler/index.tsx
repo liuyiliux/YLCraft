@@ -8,6 +8,7 @@ import {
   Card, Input, Button, Select, Table, Tag, message, Spin, Space, Row, Col,
   Typography, Alert, Tooltip, Modal, Image, Segmented, Drawer, Descriptions,
   Divider, Empty, Badge, Form, InputNumber, Checkbox, Progress,
+  Dropdown,
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import {
@@ -17,7 +18,8 @@ import {
   LinkOutlined, ReloadOutlined, CloudDownloadOutlined, CheckCircleOutlined,
   CloseCircleOutlined, FileExcelOutlined, LoadingOutlined, DatabaseOutlined,
   HeartOutlined, StarOutlined, CommentOutlined, PictureOutlined,
-  UserOutlined, TeamOutlined, ReadOutlined, ProfileOutlined,
+  UserOutlined, TeamOutlined, ReadOutlined, ProfileOutlined, PayCircleOutlined,
+  FileTextOutlined, DownOutlined,
 } from '@ant-design/icons'
 import { useTheme } from '../../constants/theme'
 import { searchEnhanced, importCrawler, getNoteDetail } from '../../api'
@@ -104,34 +106,22 @@ const PLATFORM_SEARCH_CONFIG: Record<string, PlatformSearchConfig> = {
       },
       {
         value: 'bangumi', label: '番剧', icon: <PlayCircleOutlined />,
-        sortOptions: [
-          { value: 'totalrank', label: '综合排序' },
-          { value: 'click', label: '最多播放' },
-          { value: 'pubdate', label: '最新发布' },
-          { value: 'dm', label: '最多弹幕' },
-          { value: 'stow', label: '最多收藏' },
-        ],
-        defaultSort: 'totalrank',
+        sortOptions: [],
+        defaultSort: '',
       },
       {
         value: 'movie', label: '影视', icon: <ProfileOutlined />,
-        sortOptions: [
-          { value: 'totalrank', label: '综合排序' },
-          { value: 'click', label: '最多播放' },
-          { value: 'pubdate', label: '最新发布' },
-          { value: 'dm', label: '最多弹幕' },
-          { value: 'stow', label: '最多收藏' },
-        ],
-        defaultSort: 'totalrank',
+        sortOptions: [],
+        defaultSort: '',
       },
       {
         value: 'live', label: '直播', icon: <GlobalOutlined />,
         sortOptions: [
-          { value: 'default', label: '全部' },
-          { value: 'anchor', label: '主播' },
-          { value: 'room', label: '直播间' },
+          { value: 'online', label: '人气最高' },
+          { value: 'live_time', label: '最新开播' },
+          { value: 'anchor', label: '搜索主播' },
         ],
-        defaultSort: 'default',
+        defaultSort: 'online',
       },
       {
         value: 'article', label: '专栏', icon: <ReadOutlined />,
@@ -148,10 +138,10 @@ const PLATFORM_SEARCH_CONFIG: Record<string, PlatformSearchConfig> = {
         value: 'user', label: '用户', icon: <UserOutlined />,
         sortOptions: [
           { value: 'default', label: '默认排序' },
-          { value: 'fans_desc', label: '粉丝数由高到低' },
+          { value: 'fans', label: '粉丝数由高到低' },
           { value: 'fans_asc', label: '粉丝数由低到高' },
-          { value: 'lv_desc', label: 'Lv等级由高到低' },
-          { value: 'lv_asc', label: 'Lv等级由低到高' },
+          { value: 'level', label: '等级由高到低' },
+          { value: 'level_asc', label: '等级由低到高' },
         ],
         defaultSort: 'default',
       },
@@ -348,6 +338,7 @@ function stripHtml(str: string): string {
 }
 
 function formatNum(n: number): string {
+  if (n === undefined || n === null || isNaN(n)) return '0'
   if (n >= 10000) return `${(n / 10000).toFixed(n >= 100000 ? 0 : 1)}w`
   return n.toLocaleString()
 }
@@ -385,7 +376,6 @@ export default function CrawlerPage() {
   // 搜索状态
   const [platform, setPlatform] = useState('bili')
   const [keyword, setKeyword] = useState('')
-  const [noteUrl, setNoteUrl] = useState('')
 
   // 平台搜索配置（动态计算）
   const platformConfig = useMemo(() => getPlatformSearchConfig(platform), [platform])
@@ -411,12 +401,16 @@ export default function CrawlerPage() {
     setCurrentPage(1)
   }, [platform])
 
-  // 搜索类型切换时，重置排序和筛选为默认值
+  // 搜索类型切换时，重置排序和筛选为默认值，并自动搜索
   useEffect(() => {
     if (currentTypeConfig) {
       setSortBy(currentTypeConfig.defaultSort)
       setFilters({})
       setCurrentPage(1)
+      // 如果已有搜索词，自动搜索
+      if (keyword.trim()) {
+        handleSearch(1)
+      }
     }
   }, [searchType])
 
@@ -424,6 +418,13 @@ export default function CrawlerPage() {
   useEffect(() => {
     setCurrentPage(1)
   }, [sortBy, filters, maxResults])
+
+  // 切换排序时自动搜索
+  useEffect(() => {
+    if (keyword.trim() && sortBy) {
+      handleSearch(1)
+    }
+  }, [sortBy])
 
   // 结果状态
   const [loading, setLoading] = useState(false)
@@ -444,6 +445,10 @@ export default function CrawlerPage() {
   const [detailMediaIdx, setDetailMediaIdx] = useState(0)
   const [detailError, setDetailError] = useState('')
 
+  // 字幕下载
+  const [subtitleList, setSubtitleList] = useState<Array<{lan: string, lan_doc: string, subtitle_url: string}>>([])
+  const [subtitleLoading, setSubtitleLoading] = useState(false)
+
   const isDark = themeId !== 'dawn'
   const pageBg = THEME.bgPage
   const cardBg = THEME.bgCard
@@ -453,8 +458,8 @@ export default function CrawlerPage() {
 
   // ===== 搜索 =====
   const handleSearch = async (page: number = currentPage) => {
-    if (!keyword.trim() && !noteUrl.trim()) {
-      message.warning('请输入关键词或笔记链接')
+    if (!keyword.trim()) {
+      message.warning('请输入关键词')
       return
     }
     setLoading(true)
@@ -463,49 +468,32 @@ export default function CrawlerPage() {
     setSelectedRowKeys([])
     setDetailVisible(false)
 
+    // 解析 sortBy → order 和 orderSort（仅 bili 用户搜索需要）
+    let orderSort = 0
+    let sortByForApi = sortBy
+    if (platform === 'bili' && searchType === 'user') {
+      if (sortBy === 'fans_asc' || sortBy === 'level_asc') {
+        orderSort = 1
+        sortByForApi = sortBy.replace('_asc', '')
+      }
+    }
+
     try {
       const data = await searchEnhanced({
         platform,
-        keyword: keyword.trim() || noteUrl.trim(),
+        keyword: keyword.trim(),
         search_type: searchType,
         max_results: maxResults,
-        sort_by: sortBy,
+        sort_by: sortByForApi,
+        ...(platform === 'bili' && searchType === 'user' ? { order_sort: orderSort } : {}),
         filters,
         page,
       })
       setResults(data.results || [])
       setTotal(data.total || 0)
-      setSearchedKeyword(keyword.trim() || 'URL直查')
+      setSearchedKeyword(keyword.trim())
     } catch (e: any) {
       const msg = e?.response?.data?.detail || e?.message || '搜索失败'
-      setError(msg)
-      message.error(msg)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // ===== URL 直查 =====
-  const handleUrlFetch = async () => {
-    if (!noteUrl.trim()) { message.warning('请输入笔记 URL'); return }
-    setKeyword('')
-    setLoading(true)
-    setError('')
-    setResults([])
-
-    try {
-      const data = await searchEnhanced({
-        platform,
-        keyword: noteUrl.trim(),
-        search_type: 'note',
-        max_results: 1,
-      })
-      setResults(data.results || [])
-      setTotal(data.results?.length || 0)
-      setSearchedKeyword('URL直查')
-      if (data.results?.length > 0) setDetailNote(data.results[0])
-    } catch (e: any) {
-      const msg = e?.response?.data?.detail || e?.message || 'URL查询失败'
       setError(msg)
       message.error(msg)
     } finally {
@@ -532,6 +520,30 @@ export default function CrawlerPage() {
     } finally {
       setImporting(false)
     }
+  }
+
+  // ===== 字幕下载 =====
+  const fetchSubtitles = async (itemId: string) => {
+    if (!itemId) return
+    setSubtitleLoading(true)
+    try {
+      const data = await getSubtitles({ platform, item_id: itemId })
+      setSubtitleList(data.data || [])
+      
+      // 如果只有 1 种语言，直接下载
+      if (data.data?.length === 1) {
+        downloadSubtitle(itemId, data.data[0].lan, 'srt')
+      }
+    } catch (e: any) {
+      message.error(e?.response?.data?.detail || '获取字幕列表失败')
+    } finally {
+      setSubtitleLoading(false)
+    }
+  }
+
+  const downloadSubtitle = (itemId: string, lan: string, format: string = 'srt') => {
+    if (!itemId) return
+    downloadSubtitleApi(platform, itemId, lan, format)
   }
 
   // ===== 笔记详情 =====
@@ -579,12 +591,49 @@ export default function CrawlerPage() {
       },
     },
     {
-      title: '标题', dataIndex: 'title', key: 'title', ellipsis: true,
-      render: (text: string, r: CrawlerResult) => (
-        <Tooltip title={stripHtml(text)}>
-          <a href={r.url} target="_blank" rel="noreferrer" style={{ color: textPri }}>{stripHtml(text) || '无标题'}</a>
-        </Tooltip>
-      ),
+      title: searchType === 'user' ? '用户名' : (searchType === 'bangumi' || searchType === 'movie' ? '影视信息' : '标题'),
+      dataIndex: 'title', key: 'title',
+      width: searchType === 'user' ? 120 : (searchType === 'bangumi' || searchType === 'movie' ? 300 : undefined),
+      ellipsis: searchType !== 'bangumi' && searchType !== 'movie',
+      render: (text: string, r: CrawlerResult) => {
+        const isMedia = searchType === 'bangumi' || searchType === 'movie'
+        if (isMedia) {
+          const raw = r.raw_data || {}
+          const pubDate = r.create_time ? new Date(parseInt(r.create_time) * 1000).toLocaleDateString('zh-CN') : null
+          const metaParts = [raw.areas, raw.styles, pubDate, raw.index_show || (raw.ep_size ? `全${raw.ep_size}集` : null)].filter(Boolean)
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '4px 0' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                {raw.season_type_name && (
+                  <Tag style={{ fontSize: 11, padding: '0 6px', lineHeight: '18px', margin: 0, borderRadius: 3, background: isDark ? 'rgba(251,114,153,0.15)' : 'rgba(251,114,153,0.08)', color: '#FB7299', borderColor: '#FB7299' }}>
+                    {raw.season_type_name}
+                  </Tag>
+                )}
+                <a href={r.url} target="_blank" rel="noreferrer" style={{ color: textPri, fontWeight: 500, fontSize: 13 }}>{stripHtml(text) || '无标题'}</a>
+              </div>
+              {metaParts.length > 0 && (
+                <Text style={{ fontSize: 11, color: textSec }}>{metaParts.join(' · ')}</Text>
+              )}
+              {r.desc && (
+                <Text style={{ fontSize: 11, color: textSec, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                  {stripHtml(r.desc)}
+                </Text>
+              )}
+              {r.likes > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
+                  <span style={{ color: isDark ? '#f5a623' : '#fa8c16', fontWeight: 600 }}>⭐ {r.likes}分</span>
+                  {r.comments > 0 && <span style={{ color: textSec }}>{formatNum(r.comments)}人评分</span>}
+                </div>
+              )}
+            </div>
+          )
+        }
+        return (
+          <Tooltip title={searchType === 'user' ? (r.desc || '暂无简介') : stripHtml(text)}>
+            <a href={r.url} target="_blank" rel="noreferrer" style={{ color: textPri }}>{stripHtml(text) || '无标题'}</a>
+          </Tooltip>
+        )
+      },
     },
     {
       title: '平台', dataIndex: 'platform', key: 'platform', width: 80,
@@ -606,13 +655,20 @@ export default function CrawlerPage() {
         )
       },
     },
-    { title: '作者', dataIndex: 'author', key: 'author', width: 100, ellipsis: true },
-    {
+    ...(searchType === 'user' || searchType === 'bangumi' || searchType === 'movie'
+      ? []
+      : [{ title: '作者', dataIndex: 'author', key: 'author', width: 100, ellipsis: true }]
+    ),
+    ...(searchType !== 'user' && searchType !== 'live' ? [{
       title: '发布时间', dataIndex: 'create_time', key: 'create_time', width: 120,
       render: (create_time: string) => {
         if (!create_time) return '-'
         try {
           const date = new Date(parseInt(create_time) * 1000)
+          // 影视类型显示具体日期
+          if (searchType === 'bangumi' || searchType === 'movie') {
+            return date.toLocaleDateString('zh-CN')
+          }
           const now = new Date()
           const diff = now.getTime() - date.getTime()
           const days = Math.floor(diff / (1000 * 60 * 60 * 24))
@@ -629,16 +685,60 @@ export default function CrawlerPage() {
           return '-'
         }
       },
-    },
+    }] : []),
     {
-      title: '互动', key: 'stats', width: 160,
-      render: (_: any, r: CrawlerResult) => (
-        <Space size={12}>
-          <Text style={{ color: textSec, fontSize: 12 }}><HeartOutlined /> {formatNum(r.likes)}</Text>
-          <Text style={{ color: textSec, fontSize: 12 }}><StarOutlined /> {formatNum(r.comments)}</Text>
-          <Text style={{ color: textSec, fontSize: 12 }}><CommentOutlined /> {formatNum(r.shares)}</Text>
-        </Space>
-      ),
+      title: searchType === 'user' ? '用户信息' : (searchType === 'bangumi' || searchType === 'movie' ? '评分' : '互动'),
+      key: 'stats',
+      width: searchType === 'user' ? 220 : (searchType === 'bangumi' || searchType === 'movie' ? 120 : 160),
+      render: (_: any, r: CrawlerResult) => {
+        if (searchType === 'user') {
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {r.desc && (
+                <Text style={{ fontSize: 12, color: textSec, lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                  {r.desc}
+                </Text>
+              )}
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                <Text style={{ fontSize: 12, color: textSec }}>👥 {formatNum(r.followers || 0)}</Text>
+                <Text style={{ fontSize: 12, color: textSec }}>🎬 {formatNum(r.videos || 0)}</Text>
+                {r.raw_data?.level && (
+                  <Text style={{ fontSize: 12, color: isDark ? '#f5a623' : '#fa8c16', fontWeight: 600 }}>
+                    Lv.{r.raw_data.level}
+                  </Text>
+                )}
+              </div>
+            </div>
+          )
+        }
+        if (searchType === 'bangumi' || searchType === 'movie') {
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {r.likes > 0 && (
+                <div style={{ fontSize: 12, color: isDark ? '#f5a623' : '#fa8c16', fontWeight: 600 }}>
+                  ⭐ {r.likes}分
+                </div>
+              )}
+              {r.comments > 0 && (
+                <Text style={{ fontSize: 11, color: textSec }}>{formatNum(r.comments)}人评分</Text>
+              )}
+              {r.views > 0 && (
+                <Text style={{ fontSize: 11, color: textSec }}>👁 {formatNum(r.views)}</Text>
+              )}
+            </div>
+          )
+        }
+        return (
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+            <Text style={{ color: textSec, fontSize: 12 }}><HeartOutlined /> {formatNum(r.likes)}</Text>
+            <Text style={{ color: textSec, fontSize: 12 }}><StarOutlined /> {formatNum(r.comments)}</Text>
+            {r.shares > 0 && <Text style={{ color: textSec, fontSize: 12 }}><CommentOutlined /> {formatNum(r.shares)}</Text>}
+            {r.coins > 0 && <Text style={{ color: textSec, fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+              <svg width="12" height="12" viewBox="0 0 28 28" fill="currentColor" style={{ verticalAlign: 'text-bottom' }}><path fillRule="evenodd" clipRule="evenodd" d="M14.045 25.5454C7.69377 25.5454 2.54504 20.3967 2.54504 14.0454C2.54504 7.69413 7.69377 2.54541 14.045 2.54541C20.3963 2.54541 25.545 7.69413 25.545 14.0454C25.545 17.0954 24.3334 20.0205 22.1768 22.1771C20.0201 24.3338 17.095 25.5454 14.045 25.5454ZM9.66202 6.81624H18.2761C18.825 6.81624 19.27 7.22183 19.27 7.72216C19.27 8.22248 18.825 8.62807 18.2761 8.62807H14.95V10.2903C17.989 10.4444 20.3766 12.9487 20.3855 15.9916V17.1995C20.3854 17.6997 19.9799 18.1052 19.4796 18.1052C18.9793 18.1052 18.5738 17.6997 18.5737 17.1995V15.9916C18.5667 13.9478 16.9882 12.2535 14.95 12.1022V20.5574C14.95 21.0577 14.5444 21.4633 14.0441 21.4633C13.5437 21.4633 13.1382 21.0577 13.1382 20.5574V12.1022C11.1 12.2535 9.52148 13.9478 9.51448 15.9916V17.1995C9.5144 17.6997 9.10883 18.1052 8.60856 18.1052C8.1083 18.1052 7.70273 17.6997 7.70265 17.1995V15.9916C7.71158 12.9487 10.0992 10.4444 13.1382 10.2903V8.62807H9.66202C9.11309 8.62807 8.66809 8.22248 8.66809 7.72216C8.66809 7.22183 9.11309 6.81624 9.66202 6.81624Z" /></svg> {formatNum(r.coins)}
+            </Text>}
+          </div>
+        )
+      },
     },
     {
       title: '操作', key: 'actions', width: 160,
@@ -652,9 +752,11 @@ export default function CrawlerPage() {
               <Button type="link" size="small" icon={<LinkOutlined />} href={r.url} target="_blank" style={{ padding: 0 }} />
             </Tooltip>
           )}
-          <Tooltip title="去水印下载">
-            <Button type="link" size="small" icon={<DownloadOutlined />} onClick={() => { window.location.href = `/download?url=${encodeURIComponent(r.url)}` }} style={{ padding: 0 }} />
-          </Tooltip>
+          {searchType !== 'user' && searchType !== 'bangumi' && searchType !== 'movie' && searchType !== 'live' && (
+            <Tooltip title="去水印下载">
+              <Button type="link" size="small" icon={<DownloadOutlined />} onClick={() => { window.location.href = `/download?url=${encodeURIComponent(r.url)}` }} style={{ padding: 0 }} />
+            </Tooltip>
+          )}
         </Space>
       ),
     },
@@ -681,7 +783,7 @@ export default function CrawlerPage() {
       <Card style={{ marginBottom: 20, background: cardBg, border: `1px solid ${borderColor}`, borderRadius: 12 }}
         styles={{ body: { padding: 0 } }}>
 
-        {/* ① 平台 + 搜索框 + URL直查 */}
+        {/* ① 平台 + 搜索框 */}
         <div style={{ padding: '16px 20px 12px' }}>
           <Row gutter={[12, 12]} align="middle">
             <Col xs={24} sm={4} md={3}>
@@ -692,7 +794,7 @@ export default function CrawlerPage() {
                 options={PLATFORMS.map(p => ({ value: p.value, label: <Space size={6}>{p.icon}{p.label}</Space> }))}
               />
             </Col>
-            <Col xs={24} sm={12} md={13}>
+            <Col xs={24} sm={16} md={18}>
               <Input.Search
                 value={keyword}
                 onChange={e => setKeyword(e.target.value)}
@@ -701,23 +803,6 @@ export default function CrawlerPage() {
                 loading={loading}
                 onSearch={() => { setCurrentPage(1); handleSearch(1); }}
               />
-            </Col>
-            <Col xs={24} sm={8} md={8}>
-              <Row gutter={8} align="middle">
-                <Col flex="auto">
-                  <Input
-                    value={noteUrl}
-                    onChange={e => setNoteUrl(e.target.value)}
-                    placeholder="粘贴链接直查"
-                    prefix={<LinkOutlined style={{ color: textSec, fontSize: 12 }} />}
-                  />
-                </Col>
-                <Col flex="72px">
-                  <Button icon={<SearchOutlined />} onClick={handleUrlFetch} block disabled={!noteUrl.trim()} size="middle">
-                    直查
-                  </Button>
-                </Col>
-              </Row>
             </Col>
           </Row>
         </div>
@@ -889,7 +974,7 @@ export default function CrawlerPage() {
       >
         {results.length > 0 ? (
           <Table<CrawlerResult>
-            rowKey="id"
+            rowKey={(record, index) => record.id || `row-${index}`}
             columns={columns}
             dataSource={results}
             loading={loading}
@@ -914,7 +999,7 @@ export default function CrawlerPage() {
           />
         ) : !loading ? (
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description={<span style={{ color: textSec }}>输入关键词搜索，或粘贴笔记链接直查</span>} />
+            description={<span style={{ color: textSec }}>请输入关键词搜索</span>} />
         ) : (
           <div style={{ textAlign: 'center', padding: '40px 0' }}>
             <Spin indicator={<LoadingOutlined style={{ fontSize: 32 }} />} />
@@ -970,7 +1055,7 @@ export default function CrawlerPage() {
                 </Descriptions.Item>
               )}
               <Descriptions.Item label="互动">
-                赞 {formatNum(detailNote.likes)} · 评 {formatNum(detailNote.comments)} · 转 {formatNum(detailNote.shares)}
+                赞 {formatNum(detailNote.likes)} · 评 {formatNum(detailNote.comments)} · 转 {formatNum(detailNote.shares)} · 币 {formatNum(detailNote.coins)}
               </Descriptions.Item>
               {detailNote.url && (
                 <Descriptions.Item label="原文链接">
@@ -991,6 +1076,23 @@ export default function CrawlerPage() {
             <Divider style={{ borderColor }} />
             <Space wrap style={{ width: '100%', justifyContent: 'center' }}>
               {detailNote.url && <Button type="primary" icon={<LinkOutlined />} href={detailNote.url} target="_blank">打开原文</Button>}
+              {detailNote.platform === 'bili' && (
+                <Dropdown
+                  menu={{
+                    items: subtitleList.map(s => ({
+                      key: s.lan,
+                      label: s.lan_doc,
+                      onClick: () => downloadSubtitle(detailNote.id, s.lan, 'srt'),
+                    })),
+                    onClick: ({ key }) => downloadSubtitle(detailNote.id, key, 'srt'),
+                  }}
+                  onOpenChange={(open) => { if (open && subtitleList.length === 0) fetchSubtitles(detailNote.id) }}
+                >
+                  <Button icon={<FileTextOutlined />} loading={subtitleLoading}>
+                    下载字幕 {subtitleList.length > 1 && <DownOutlined />}
+                  </Button>
+                </Dropdown>
+              )}
             </Space>
           </div>
         )}

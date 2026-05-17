@@ -368,10 +368,13 @@ export interface CrawlerResult {
   author: string
   author_id: string
   likes: number
+  coins?: number
   comments: number
   shares: number
   url: string
   create_time: string
+  followers?: number
+  videos?: number
   raw_data?: any
 }
 
@@ -387,6 +390,7 @@ export interface NoteDetail {
   video?: string
   video_cover?: string
   likes: number
+  coins: number
   comments: number
   shares: number
   collects: number
@@ -428,6 +432,7 @@ export const searchEnhanced = (params: {
   search_type?: string
   max_results?: number
   sort_by?: string
+  order_sort?: number
   filters?: Record<string, any>
   page?: number
 }) => request('/crawler/search-enhanced', { method: 'POST', body: JSON.stringify(params) })
@@ -441,6 +446,18 @@ export const fetchNoWatermark = (params: {
   platform: string
   note_ids: string[]
 }) => request('/crawler/fetch-no-watermark', { method: 'POST', body: JSON.stringify(params) })
+
+/** 获取字幕列表 */
+export const getSubtitles = (params: {
+  platform: string
+  item_id: string
+}) => request(`/crawler/subtitles?platform=${params.platform}&item_id=${params.item_id}`)
+
+/** 下载字幕文件 */
+export const downloadSubtitle = (platform: string, itemId: string, lan: string, format: string = 'srt') => {
+  const url = `/api/v1/crawler/subtitle/download?platform=${platform}&item_id=${itemId}&lan=${lan}&format=${format}`
+  window.open(url, '_blank')
+}
 
 // ===== Platform Connections（平台连接器）=====
 

@@ -31,6 +31,7 @@ from .apis import (
     BASE_URL,
     SEARCH_ALL,
     SEARCH_VIDEO,
+    SEARCH_ARTICLE,
     SEARCH_USER,
     SEARCH_TYPE_MAP,
     VIDEO_DETAIL,
@@ -217,15 +218,43 @@ class BilibiliClient(BasePlatformClient):
         search_type_str = params.search_type.value if hasattr(params.search_type, 'value') else str(params.search_type)
         
         if search_type_str == 'user':
-            return await self.search_users(params.keyword, params.max_results, params.sort_by, params.page)
+            # 从 extra 中取 order_sort（前端传来的排序方向）
+            order_sort = params.extra.get('order_sort', 0) if params.extra else 0
+            return await self.search_users(
+                keyword=params.keyword,
+                max_results=params.max_results,
+                sort_by=params.sort_by,
+                order_sort=order_sort,
+                page=params.page,
+            )
         elif search_type_str == 'article':
-            return await self.search_articles(params.keyword, params.max_results, params.sort_by, params.page)
+            return await self.search_articles(
+                keyword=params.keyword,
+                max_results=params.max_results,
+                sort_by=params.sort_by,
+                page=params.page,
+            )
         elif search_type_str == 'bangumi':
-            return await self.search_bangumi(params.keyword, params.max_results, params.sort_by, params.page)
+            return await self.search_bangumi(
+                keyword=params.keyword,
+                max_results=params.max_results,
+                sort_by=params.sort_by,
+                page=params.page,
+            )
         elif search_type_str == 'movie':
-            return await self.search_movie(params.keyword, params.max_results, params.sort_by, params.page)
+            return await self.search_movie(
+                keyword=params.keyword,
+                max_results=params.max_results,
+                sort_by=params.sort_by,
+                page=params.page,
+            )
         elif search_type_str == 'live':
-            return await self.search_live(params.keyword, params.max_results, params.sort_by, params.page)
+            return await self.search_live(
+                keyword=params.keyword,
+                max_results=params.max_results,
+                sort_by=params.sort_by,
+                page=params.page,
+            )
         elif search_type_str == 'video':
             # 视频搜索：统一用 search_videos()，支持排序 + 日期筛选
             return await self.search_videos(
@@ -242,6 +271,7 @@ class BilibiliClient(BasePlatformClient):
                 keyword=params.keyword,
                 max_results=params.max_results,
                 order=params.sort_by or "totalrank",
+                page=params.page,
                 **params.extra,
             )
     
@@ -480,17 +510,37 @@ class BilibiliClient(BasePlatformClient):
         keyword: str,
         max_results: int = 20,
         sort_by: str = 'default',
+        order_sort: int = 0,  # 0=高到低，1=低到高
         page: int = 1,
     ) -> List[SearchResult]:
         """搜索用户"""
-        self._log(f"Searching users: {keyword}, page={page}")
+        self._log(f"Searching users: {keyword}, page={page}, sort_by={sort_by}, order_sort={order_sort}")
+        
+        # 用户搜索排序映射（order 参数）
+        user_order_map = {
+            'default': '',       # 综合排序，不传 order
+            'fans': 'fans',     # 粉丝排序
+            'level': 'level',    # 等级排序
+        }
         
         params = {
             "search_type": "bili_user",
             "keyword": keyword,
             "page": page,
             "page_size": min(max_results, 50),
+            "from_spmid": "333.337",
+            "platform": "pc",
+            "highlight": 1,
+            "single_column": 0,
+            "web_location": 1430654,
+            "source_tag": 3,
         }
+        
+        # 添加 order / order_sort 参数
+        order_value = user_order_map.get(sort_by, '')
+        if order_value:
+            params["order"] = order_value
+            params["order_sort"] = order_sort
         
         query_string = await self._sign_params(params)
         url = f"{BASE_URL}{SEARCH_USER}?{query_string}"
@@ -530,13 +580,16 @@ class BilibiliClient(BasePlatformClient):
         """搜索专栏文章"""
         self._log(f"Searching articles: {keyword}, page={page}")
         
-        # 专栏排序映射
+        # 专栏排序映射（API 用 order 参数，传字符串值）
+        # 注意：B站专栏 API 的 order 值比较特殊
         article_order_map = {
-            'totalrank': 0,  # 综合
-            'pubdate': 1,    # 最新发布
-            'click': 2,      # 最多点击
-            'likes': 3,      # 最多喜欢
-            'reply': 4,      # 最多评论
+            'totalrank': 'totalrank',  # 综合排序
+            'pubdate': 'pubdate',      # 最新发布
+            'click': 'click',          # 最多点击
+            'likes': 'attention',      # 最多喜欢（不是 likes！）
+            'reply': 'scores',         # 最多评论（不是 reply！）
+            'stow': 'stow',           # 最多收藏
+            'share': 'share',          # 最多分享
         }
         
         page_size = min(max_results, 50)
@@ -545,7 +598,14 @@ class BilibiliClient(BasePlatformClient):
             "keyword": keyword,
             "page": page,
             "page_size": page_size,
-            "order_type": article_order_map.get(sort_by, 0),
+            "order": article_order_map.get(sort_by, 'totalrank'),
+            "category_id": 0,
+            "platform": "pc",
+            "highlight": 1,
+            "single_column": 0,
+            "from_spmid": "333.337",
+            "web_location": 1430654,
+            "source_tag": 3,
         }
         
         query_string = await self._sign_params(params)
@@ -592,7 +652,6 @@ class BilibiliClient(BasePlatformClient):
             "keyword": keyword,
             "page": page,
             "page_size": page_size,
-            "order_type": ORDER_TYPE_MAP.get(sort_by, 0),
         }
         
         self._log(f"[bili] Search {params['search_type']}: keyword={keyword}, page={page}, page_size={page_size}")
@@ -657,7 +716,6 @@ class BilibiliClient(BasePlatformClient):
             "keyword": keyword,
             "page": page,
             "page_size": page_size,
-            "order_type": ORDER_TYPE_MAP.get(sort_by, 0),
         }
         
         self._log(f"[bili] Search {params['search_type']}: keyword={keyword}, page={page}, page_size={page_size}")
@@ -694,44 +752,119 @@ class BilibiliClient(BasePlatformClient):
         self,
         keyword: str,
         max_results: int = 20,
-        sort_by: str = 'default',
+        sort_by: str = 'online',
         page: int = 1,
     ) -> List[SearchResult]:
-        """搜索直播"""
-        self._log(f"Searching live: {keyword}, page={page}")
+        """搜索直播
+        
+        sort_by:
+        - 'online': 直播间按人气排序
+        - 'live_time': 直播间按开播时间排序
+        - 'anchor': 搜索主播用户
+        """
+        self._log(f"Searching live: {keyword}, page={page}, sort_by={sort_by}")
         
         page_size = min(max_results, 50)
+        
+        # 主播搜索：使用独立的 API
+        if sort_by == 'anchor':
+            params = {
+                "search_type": "live_user",
+                "keyword": keyword,
+                "page": page,
+                "page_size": page_size,
+            }
+            
+            self._log(f"[bili] Search live_user: keyword={keyword}, page={page}, page_size={page_size}")
+            query_string = await self._sign_params(params)
+            url = f"{BASE_URL}{SEARCH_VIDEO}?{query_string}"
+            
+            try:
+                response = await self.request("GET", url)
+                
+                if isinstance(response, dict) and response.get("code") == 0:
+                    data = response.get("data", {})
+                    result_list = data.get("result", [])
+                    
+                    # search_type=live_user 返回 data.result 是 flat array
+                    if isinstance(result_list, dict):
+                        # 防御性处理：如果返回的是对象格式（旧格式），按原方式解析
+                        result_list = result_list.get("live_user", [])
+                    
+                    total = data.get("numResults", 0) or data.get("numPages", 0) * page_size
+                    self._log(f"Live user search got {len(result_list)} results, total={total}")
+                    
+                    results = []
+                    for item in result_list:
+                        results.append(self._parse_live_user_result(item))
+                    
+                    if results and total:
+                        results[0].raw_data["_total"] = total
+                    
+                    return results
+                else:
+                    msg = response.get("message", "Unknown error") if isinstance(response, dict) else "Request failed"
+                    self._log(f"Search live_user failed: {msg}", "warning")
+                    return []
+                    
+            except Exception as e:
+                self._log(f"Search live_user error: {e}", "error")
+                return []
+        
+        # 直播间搜索：支持 order 参数
+        order_map = {
+            'live_time': 'live_time',
+            'online': 'online',
+        }
+        order = order_map.get(sort_by, 'online')
+        
         params = {
             "search_type": "live",
             "keyword": keyword,
             "page": page,
             "page_size": page_size,
+            "order": order,
         }
         
-        self._log(f"[bili] Search {params['search_type']}: keyword={keyword}, page={page}, page_size={page_size}")
+        self._log(f"[bili] Search live: keyword={keyword}, page={page}, order={order}")
         query_string = await self._sign_params(params)
         url = f"{BASE_URL}{SEARCH_VIDEO}?{query_string}"
-        self._log(f"[bili] Search URL (first 150 chars): {url[:150]}...")
         
         try:
             response = await self.request("GET", url)
             
             if isinstance(response, dict) and response.get("code") == 0:
                 data = response.get("data", {})
-                result_list = data.get("result", [])
-                total = data.get("numResults", 0) or data.get("numPages", 0) * page_size
-                self._log(f"Live search got {len(result_list)} results, total={total}")
+                result_obj = data.get("result", {})
+                
+                # search_type=live 返回 data.result 是对象 {"live_room": [...]}
+                # 防御性处理：如果是 list 则按旧逻辑兼容
+                if isinstance(result_obj, dict):
+                    result_list = result_obj.get("live_room", [])
+                elif isinstance(result_obj, list):
+                    result_list = result_obj
+                else:
+                    result_list = []
+                
+                # 总数：优先从 pageinfo 取，没有则从 data 顶层取
+                pageinfo = data.get("pageinfo", {})
+                total = pageinfo.get("live_room", {}).get("numResults", 0)
+                if not total:
+                    total = data.get("numResults", 0) or data.get("numPages", 0) * page_size
+                
+                self._log(f"Live room search got {len(result_list)} results, total={total}")
                 
                 results = []
                 for item in result_list:
                     results.append(self._parse_live_result(item))
                 
-                # 把总条数存入第一个结果的 raw_data，供上层读取
                 if results and total:
                     results[0].raw_data["_total"] = total
                 
                 return results
             else:
+                msg = response.get("message", "Unknown error") if isinstance(response, dict) else "Request failed"
+                self._log(f"Search live failed: {msg}", "warning")
                 return []
                 
         except Exception as e:
@@ -980,6 +1113,22 @@ class BilibiliClient(BasePlatformClient):
     # 解析方法
     # =========================================================================
     
+    def _fix_bili_url(self, url: str) -> str:
+        """修复 B站图片/封面 URL（处理协议相对和缺失协议头的格式）
+        
+        B站 API 返回的 URL 可能有多种格式：
+        - //i0.hdslb.com/... （协议相对，需补 https:）
+        - /i0.hdslb.com/... （缺失协议头，需补 https://）
+        - https://i0.hdslb.com/... （已是完整 URL，无需处理）
+        """
+        if not url:
+            return url
+        if url.startswith("//"):
+            return "https:" + url
+        if url.startswith("/i") and "hdslb.com" in url:
+            return "https://" + url[1:]
+        return url
+
     def _parse_video_result(self, item: Dict) -> SearchResult:
         """解析视频搜索结果（去除 HTML 标签，修复封面 URL）"""
         import re
@@ -989,12 +1138,7 @@ class BilibiliClient(BasePlatformClient):
         title = re.sub(r'<[^>]+>', '', raw_title)
         desc = re.sub(r'<[^>]+>', '', raw_desc)
 
-        # 修复封面 URL（B站返回协议相对 URL，需要补 https:）
-        pic = item.get("pic", "")
-        if pic.startswith("//"):
-            cover = "https:" + pic
-        else:
-            cover = pic
+        cover = self._fix_bili_url(item.get("pic", ""))
 
         return SearchResult(
             id=item.get("bvid", ""),
@@ -1007,8 +1151,10 @@ class BilibiliClient(BasePlatformClient):
             platform="bili",
             type="video",
             likes=item.get("like", 0),
+            coins=item.get("coin", 0),
             comments=item.get("review", 0),
-            shares=0,
+            shares=item.get("share", 0),
+            collects=item.get("fav", 0),
             views=item.get("play", 0),
             duration=item.get("duration", 0),
             create_time=str(item.get("pubdate", "")),
@@ -1023,7 +1169,7 @@ class BilibiliClient(BasePlatformClient):
             desc=item.get("usign", ""),
             author=item.get("uname", ""),
             author_id=str(item.get("mid", "")),
-            cover=item.get("upic", ""),
+            cover=self._fix_bili_url(item.get("upic", "")),
             url=f"https://space.bilibili.com/{item.get('mid', '')}",
             platform="bili",
             type="user",
@@ -1034,69 +1180,105 @@ class BilibiliClient(BasePlatformClient):
     
     def _parse_article_result(self, item: Dict) -> SearchResult:
         """解析专栏搜索结果"""
+        image_urls = item.get("image_urls", [])
+        cover = self._fix_bili_url(image_urls[0]) if image_urls else ""
+        title = re.sub(r'<[^>]+>', '', item.get("title", ""))
+        article_id = str(item.get("id", ""))
         return SearchResult(
-            id=str(item.get("id", "")),
-            title=item.get("title", ""),
-            desc=item.get("summary", ""),
-            author=item.get("author_name", ""),
+            id=article_id,
+            title=title,
+            desc=item.get("desc", ""),
+            author=item.get("author", ""),
             author_id=str(item.get("mid", "")),
-            cover=item.get("image_urls", [""])[0] if item.get("image_urls") else "",
-            url=item.get("url", ""),
+            cover=cover,
+            url=f"https://www.bilibili.com/read/cv{article_id}",
             platform="bili",
             type="article",
-            views=item.get("stats", {}).get("view", 0),
-            likes=item.get("stats", {}).get("like", 0),
-            comments=item.get("stats", {}).get("reply", 0),
+            views=item.get("view", 0),
+            likes=item.get("like", 0),
+            comments=item.get("reply", 0),
+            create_time=str(item.get("pubdate", 0)),
             raw_data=item,
         )
     
     def _parse_bangumi_result(self, item: Dict) -> SearchResult:
         """解析番剧搜索结果"""
+        media_score = item.get("media_score", {})
+        rating = item.get("rating", {})
+        score = media_score.get("score") or rating.get("score") or 0
+        score_count = media_score.get("user_count") or rating.get("count") or 0
         return SearchResult(
             id=str(item.get("season_id", "")),
             title=item.get("title", ""),
-            desc=item.get("styles", ""),
+            desc=item.get("desc", ""),
             author="",
             author_id="",
-            cover=item.get("cover", ""),
+            cover=self._fix_bili_url(item.get("cover", "")),
             url=item.get("url", ""),
             platform="bili",
             type="bangumi",
-            likes=item.get("rating", {}).get("score", 0),
+            likes=score,
+            comments=score_count,
             views=item.get("view", 0),
+            create_time=str(item.get("pubtime", "")),
             raw_data=item,
         )
-    
+
     def _parse_movie_result(self, item: Dict) -> SearchResult:
         """解析影视搜索结果"""
+        media_score = item.get("media_score", {})
+        rating = item.get("rating", {})
+        score = media_score.get("score") or rating.get("score") or 0
+        score_count = media_score.get("user_count") or rating.get("count") or 0
         return SearchResult(
             id=str(item.get("season_id", "")),
             title=item.get("title", ""),
-            desc=item.get("styles", ""),
+            desc=item.get("desc", ""),
             author="",
             author_id="",
-            cover=item.get("cover", ""),
+            cover=self._fix_bili_url(item.get("cover", "")),
             url=item.get("url", ""),
             platform="bili",
             type="movie",
-            likes=item.get("rating", {}).get("score", 0),
+            likes=score,
+            comments=score_count,
             views=item.get("view", 0),
+            create_time=str(item.get("pubtime", "")),
             raw_data=item,
         )
     
     def _parse_live_result(self, item: Dict) -> SearchResult:
-        """解析直播搜索结果"""
+        """解析直播搜索结果（live_room）"""
+        title = re.sub(r'<[^>]+>', '', item.get("title", ""))
         return SearchResult(
             id=str(item.get("roomid", "")),
-            title=item.get("title", ""),
-            desc=item.get("area", ""),
+            title=title,
+            desc=item.get("cate_name", ""),
             author=item.get("uname", ""),
             author_id=str(item.get("uid", "")),
-            cover=item.get("cover", ""),
+            cover=self._fix_bili_url(item.get("cover", "")),
             url=f"https://live.bilibili.com/{item.get('roomid', '')}",
             platform="bili",
             type="live",
             views=item.get("online", 0),
+            raw_data=item,
+        )
+
+    def _parse_live_user_result(self, item: Dict) -> SearchResult:
+        """解析直播主播搜索结果（live_user）"""
+        uid = str(item.get("uid", ""))
+        uname = re.sub(r'<[^>]+>', '', item.get("uname", ""))
+        return SearchResult(
+            id=uid,
+            title=uname,
+            desc=item.get("cate_name", ""),
+            author=uname,
+            author_id=uid,
+            cover=self._fix_bili_url(item.get("uface", "")),
+            url=f"https://space.bilibili.com/{uid}",
+            platform="bili",
+            type="user",
+            followers=item.get("attentions", 0),
             raw_data=item,
         )
     
@@ -1115,9 +1297,10 @@ class BilibiliClient(BasePlatformClient):
             platform="bili",
             type="video",
             video=video_url,  # 需要单独调用 get_video_url_no_watermark()
-            video_cover=data.get("pic", ""),
+            video_cover=self._fix_bili_url(data.get("pic", "")),
             duration=data.get("duration", 0),
             likes=data.get("stat", {}).get("like", 0),
+            coins=data.get("stat", {}).get("coin", 0),
             comments=data.get("stat", {}).get("reply", 0),
             shares=data.get("stat", {}).get("share", 0),
             collects=data.get("stat", {}).get("favorite", 0),
@@ -1135,12 +1318,15 @@ class BilibiliClient(BasePlatformClient):
             desc=item.get("description", ""),
             author=item.get("author", ""),
             author_id=user_id,
-            cover=item.get("pic", ""),
+            cover=self._fix_bili_url(item.get("pic", "")),
             url=f"https://www.bilibili.com/video/{item.get('bvid', '')}",
             platform="bili",
             type="video",
             likes=item.get("like", 0),
+            coins=item.get("coin", 0),
             comments=item.get("review", 0),
+            shares=item.get("share", 0),
+            collects=item.get("fav", 0),
             views=item.get("play", 0),
             create_time=str(item.get("created", "")),
             raw_data=item,
@@ -1157,6 +1343,114 @@ class BilibiliClient(BasePlatformClient):
             platform="bili",
             type="video",
         )
+    
+    # =========================================================================
+    # 字幕相关
+    # =========================================================================
+    
+    async def get_subtitles(self, bvid: str) -> List[Dict]:
+        """获取视频字幕列表"""
+        self._log(f"Getting subtitles for: {bvid}")
+        
+        params = {"bvid": bvid}
+        query_string = await self._sign_params(params)
+        url = f"{BASE_URL}/x/player/v2?{query_string}"
+        
+        try:
+            response = await self.request("GET", url)
+            
+            if isinstance(response, dict) and response.get("code") == 0:
+                subtitles = response.get("data", {}).get("subtitle", {}).get("subtitles", [])
+                self._log(f"Got {len(subtitles)} subtitle(s)")
+                return subtitles
+            else:
+                msg = response.get("message", "Unknown error") if isinstance(response, dict) else "Request failed"
+                self._log(f"Get subtitles failed: {msg}", "warning")
+                return []
+                
+        except Exception as e:
+            self._log(f"Get subtitles error: {e}", "error")
+            return []
+    
+    async def download_subtitle(self, subtitle_url: str, format: str = "srt") -> str:
+        """下载字幕并转换为指定格式"""
+        self._log(f"Downloading subtitle: {subtitle_url}")
+        
+        try:
+            # 修复 URL（可能需要补协议头）
+            if subtitle_url.startswith("//"):
+                subtitle_url = "https:" + subtitle_url
+            
+            response = await self.request("GET", subtitle_url)
+            
+            if isinstance(response, list):
+                # B站字幕格式：[{ "from": 0.0, "to": 5.2, "content": "..." }]
+                if format == "srt":
+                    return self._convert_to_srt(response)
+                elif format == "ass":
+                    return self._convert_to_ass(response)
+                else:
+                    return json.dumps(response, ensure_ascii=False, indent=2)
+            
+            return ""
+                
+        except Exception as e:
+            self._log(f"Download subtitle error: {e}", "error")
+            return ""
+    
+    def _convert_to_srt(self, data: List[Dict]) -> str:
+        """B站字幕 JSON → SRT 格式"""
+        srt_lines = []
+        
+        for i, item in enumerate(data, 1):
+            start = self._format_time(item.get("from", 0.0))
+            end = self._format_time(item.get("to", 0.0))
+            content = item.get("content", "")
+            
+            srt_lines.append(f"{i}\n{start} --> {end}\n{content}\n")
+        
+        return "\n".join(srt_lines)
+    
+    def _convert_to_ass(self, data: List[Dict]) -> str:
+        """B站字幕 JSON → ASS 格式（简化版）"""
+        ass_lines = [
+            "[Script Info]",
+            "ScriptType: v4.00+",
+            "PlayResX: 1920",
+            "PlayResY: 1080",
+            "",
+            "[V4+ Styles]",
+            "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+            "Style: Default,SimHei,48,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,2,1,2,10,10,30,1",
+            "",
+            "[Events]",
+            "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
+        ]
+        
+        for item in data:
+            start = self._format_time_ass(item.get("from", 0.0))
+            end = self._format_time_ass(item.get("to", 0.0))
+            content = item.get("content", "").replace("\n", "\\N")
+            
+            ass_lines.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{content}")
+        
+        return "\n".join(ass_lines)
+    
+    def _format_time(self, seconds: float) -> str:
+        """秒数 → SRT 时间格式 (HH:MM:SS,mmm)"""
+        h = int(seconds // 3600)
+        m = int((seconds % 3600) // 60)
+        s = int(seconds % 60)
+        ms = int((seconds - int(seconds)) * 1000)
+        return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+    
+    def _format_time_ass(self, seconds: float) -> str:
+        """秒数 → ASS 时间格式 (H:MM:SS.cc)"""
+        h = int(seconds // 3600)
+        m = int((seconds % 3600) // 60)
+        s = int(seconds % 60)
+        cs = int((seconds - int(seconds)) * 100)
+        return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
     
     # =========================================================================
     # WBI 签名（需要 Patchright 模式获取 localStorage）
