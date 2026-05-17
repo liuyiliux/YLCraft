@@ -81,6 +81,7 @@ class NoteDetail:
     images: List[str] = field(default_factory=list)
     video: str = ""  # 无水印视频 URL
     video_cover: str = ""
+    duration: int = 0  # 视频时长（秒）
     
     # 统计
     likes: int = 0
