@@ -189,6 +189,9 @@ class BilibiliClient(BasePlatformClient):
 
         if self.config.cookie:
             headers["Cookie"] = self.config.cookie
+            self._log(f"_build_headers: Cookie set, len={len(self.config.cookie)}, preview={self.config.cookie[:80]!r}", "debug")
+        else:
+            self._log(f"_build_headers: No cookie available!", "warning")
 
         return headers
     
@@ -1396,7 +1399,10 @@ class BilibiliClient(BasePlatformClient):
             if isinstance(player_resp, dict) and player_resp.get("code") == 0:
                 subtitle_info = player_resp.get("data", {}).get("subtitle", {})
                 subtitles = subtitle_info.get("subtitles", [])
-                self._log(f"Got {len(subtitles)} subtitle(s)")
+                # 调试：打印关键字段
+                need_login = player_resp.get("data", {}).get("need_login_subtitle", False)
+                self._log(f"Got {len(subtitles)} subtitle(s), need_login_subtitle={need_login}", "debug")
+                self._log(f"Player response (first 800 chars): {str(player_resp)[:800]}", "debug")
                 return subtitles
             else:
                 msg = player_resp.get("message", "Unknown error") if isinstance(player_resp, dict) else "Request failed"
@@ -1417,17 +1423,34 @@ class BilibiliClient(BasePlatformClient):
             
             response = await self.request("GET", subtitle_url)
             
-            if isinstance(response, list):
-                # B站字幕格式：[{ "from": 0.0, "to": 5.2, "content": "..." }]
-                if format == "srt":
-                    return self._convert_to_srt(response)
-                elif format == "ass":
-                    return self._convert_to_ass(response)
-                else:
-                    return json.dumps(response, ensure_ascii=False, indent=2)
+            self._log(f"Subtitle response type={type(response).__name__}, preview={str(response)[:200]}", "debug")
             
-            return ""
-                
+            # 兼容多种响应格式
+            data = None
+            if isinstance(response, list):
+                data = response
+            elif isinstance(response, dict):
+                # { "code": 0, "data": [...] }
+                if "data" in response and isinstance(response["data"], list):
+                    data = response["data"]
+                # { "body": [...] }
+                elif "body" in response and isinstance(response["body"], list):
+                    data = response["body"]
+                else:
+                    self._log(f"Subtitle dict keys: {list(response.keys())[:10]}", "warning")
+            
+            if not data:
+                self._log(f"Subtitle content empty or unknown format: {type(response).__name__}", "warning")
+                return ""
+            
+            if format == "srt":
+                return self._convert_to_srt(data)
+            elif format == "ass":
+                return self._convert_to_ass(data)
+            else:
+                import json
+                return json.dumps(data, ensure_ascii=False, indent=2)
+            
         except Exception as e:
             self._log(f"Download subtitle error: {e}", "error")
             return ""

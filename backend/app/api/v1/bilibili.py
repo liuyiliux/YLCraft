@@ -42,7 +42,9 @@ async def get_subtitles(
             conn = service.get(conn_id)
             if conn and conn.cookie_content:
                 cookie = conn.cookie_content
-                logger.info(f"[get_subtitles] Using cookie from conn_id={conn_id}")
+                logger.info(f"[get_subtitles] Using cookie from conn_id={conn_id}, len={len(cookie)}")
+            elif conn:
+                logger.warning(f"[get_subtitles] conn_id={conn_id} has empty cookie_content")
         except Exception as e:
             logger.warning(f"[get_subtitles] Failed to get cookie from connection: {e}")
 
@@ -83,7 +85,9 @@ async def download_subtitle(
             conn = service.get(conn_id)
             if conn and conn.cookie_content:
                 cookie = conn.cookie_content
-                logger.info(f"[download_subtitle] Using cookie from conn_id={conn_id}")
+                logger.info(f"[download_subtitle] Using cookie from conn_id={conn_id}, len={len(cookie)}")
+            elif conn:
+                logger.warning(f"[download_subtitle] conn_id={conn_id} has empty cookie_content")
         except Exception as e:
             logger.warning(f"[download_subtitle] Failed to get cookie from connection: {e}")
 

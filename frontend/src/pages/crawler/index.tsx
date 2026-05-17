@@ -1117,6 +1117,7 @@ export default function CrawlerPage() {
                     </Text>
                   )}
                   <Dropdown
+                    trigger={['click']}
                     menu={{
                       items: subtitleList.map(s => ({
                         key: s.lan,
