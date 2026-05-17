@@ -3,10 +3,13 @@ B站专属接口（字幕、弹幕等 B站特有功能）
 """
 from typing import List, Dict
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
+from sqlmodel import Session
 
+from app.db.database import get_session
+from app.services.platform_connection import PlatformConnectionService
 from app.services.platforms import create_client
 
 router = APIRouter()
@@ -24,6 +27,7 @@ class SubtitleListResponse(BaseModel):
 async def get_subtitles(
     bvid: str = Query(..., description="B站视频 BV 号"),
     conn_id: str = Query("", description="平台连接 ID（用于获取登录 Cookie）"),
+    session: Session = Depends(get_session),
 ):
     """获取视频的字幕列表（AI 生成字幕）
 
@@ -34,9 +38,8 @@ async def get_subtitles(
     cookie = ""
     if conn_id:
         try:
-            from app.services.platform_connection import get_platform_connection_service
-            service = get_platform_connection_service()
-            conn = await service.get_by_id(conn_id)
+            service = PlatformConnectionService(session)
+            conn = service.get(conn_id)
             if conn and conn.cookie_content:
                 cookie = conn.cookie_content
                 logger.info(f"[get_subtitles] Using cookie from conn_id={conn_id}")
@@ -62,6 +65,7 @@ async def download_subtitle(
     lan: str = Query("ai-zh", description="字幕语言"),
     format: str = Query("srt", description="格式: srt / ass"),
     conn_id: str = Query("", description="平台连接 ID（用于获取登录 Cookie）"),
+    session: Session = Depends(get_session),
 ):
     """下载字幕文件（SRT / ASS 格式）
 
@@ -75,9 +79,8 @@ async def download_subtitle(
     cookie = ""
     if conn_id:
         try:
-            from app.services.platform_connection import get_platform_connection_service
-            service = get_platform_connection_service()
-            conn = await service.get_by_id(conn_id)
+            service = PlatformConnectionService(session)
+            conn = service.get(conn_id)
             if conn and conn.cookie_content:
                 cookie = conn.cookie_content
                 logger.info(f"[download_subtitle] Using cookie from conn_id={conn_id}")
