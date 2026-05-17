@@ -220,7 +220,7 @@ async def get_all_settings():
         if value:  # 只覆盖非空值
             merged[key] = value
     
-    return SettingsResponse(success=True, data={"data": merged}})
+    return SettingsResponse(success=True, data={"data": merged})
 
 
 @router.put("", response_model=SettingsResponse, summary="批量更新设置")

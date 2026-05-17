@@ -38,7 +38,7 @@ async def example_ai_chat():
             AIConnectorModel.provider == AIProvider.OPENAI,
             AIConnectorModel.is_active == True,
         )
-        model = await session.exec(stmt)
+        model = await session.execute(stmt).scalars()
         connector_model = model.first()
 
         if not connector_model:
@@ -96,7 +96,7 @@ async def example_social_publish():
         stmt = select(SocialConnectorModel).where(
             SocialConnectorModel.platform == SocialMediaPlatform.XHS,
         )
-        model = await session.exec(stmt)
+        model = await session.execute(stmt).scalars()
         connector_model = model.first()
 
         if not connector_model:
@@ -167,7 +167,7 @@ async def example_multi_platform():
                 stmt = select(SocialConnectorModel).where(
                     SocialConnectorModel.platform == platform,
                 )
-                model = await session.exec(stmt)
+                model = await session.execute(stmt).scalars()
                 connector_model = model.first()
 
                 if not connector_model:

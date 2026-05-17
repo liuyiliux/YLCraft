@@ -447,15 +447,25 @@ export const fetchNoWatermark = (params: {
   note_ids: string[]
 }) => request('/crawler/fetch-no-watermark', { method: 'POST', body: JSON.stringify(params) })
 
-/** 获取字幕列表 */
+/** 获取 B站字幕列表 */
 export const getSubtitles = (params: {
-  platform: string
   item_id: string
-}) => request(`/crawler/subtitles?platform=${params.platform}&item_id=${params.item_id}`)
+  conn_id?: string
+}) => {
+  const qs = new URLSearchParams()
+  qs.set('bvid', params.item_id)
+  if (params.conn_id) qs.set('conn_id', params.conn_id)
+  return request(`/bilibili/subtitles?${qs}`)
+}
 
-/** 下载字幕文件 */
-export const downloadSubtitle = (platform: string, itemId: string, lan: string, format: string = 'srt') => {
-  const url = `/api/v1/crawler/subtitle/download?platform=${platform}&item_id=${itemId}&lan=${lan}&format=${format}`
+/** 下载 B站字幕文件 */
+export const downloadCrawlerSubtitle = (itemId: string, lan: string, format: string = 'srt', connId?: string) => {
+  const qs = new URLSearchParams()
+  qs.set('bvid', itemId)
+  qs.set('lan', lan)
+  qs.set('format', format)
+  if (connId) qs.set('conn_id', connId)
+  const url = `/api/v1/bilibili/subtitle/download?${qs}`
   window.open(url, '_blank')
 }
 

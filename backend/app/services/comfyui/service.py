@@ -107,10 +107,10 @@ class WorkflowService:
             query = query.order_by(WorkflowTemplate.use_count.desc(), WorkflowTemplate.updated_at.desc())
             query = query.offset(offset).limit(limit)
 
-            result = await session.exec(query)
+            result = await session.execute(query).scalars()
             templates = result.all()
 
-            count_result = await session.exec(count_query)
+            count_result = await session.execute(count_query).scalars()
             total = count_result.one()
 
             # detach
@@ -281,7 +281,7 @@ class PresetService:
 
             query = query.order_by(WorkflowPreset.use_count.desc())
 
-            result = await session.exec(query)
+            result = await session.execute(query).scalars()
             presets = result.all()
 
             for p in presets:
@@ -381,10 +381,10 @@ class TaskService:
             query = query.order_by(ComfyUITask.priority.desc(), ComfyUITask.created_at.desc())
             query = query.offset(offset).limit(limit)
 
-            result = await session.exec(query)
+            result = await session.execute(query).scalars()
             tasks = result.all()
 
-            count_result = await session.exec(count_query)
+            count_result = await session.execute(count_query).scalars()
             total = count_result.one()
 
             for t in tasks:
@@ -493,7 +493,7 @@ class TaskService:
                 stats[status.value] = result.one()
 
             # 总计
-            result = await session.exec(select(func.count(ComfyUITask.id)))
+            result = await session.execute(select(func.count(ComfyUITask.id).scalars()))
             stats["total"] = result.one()
 
             return stats
@@ -571,7 +571,7 @@ class NodeService:
 
             query = query.order_by(ComfyUINode.priority.desc(), ComfyUINode.current_load.asc())
 
-            result = await session.exec(query)
+            result = await session.execute(query).scalars()
             nodes = result.all()
 
             for n in nodes:

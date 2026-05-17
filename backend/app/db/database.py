@@ -13,7 +13,7 @@ from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine
-from sqlmodel import SQLModel
+from sqlmodel import SQLModel, Session as SQLModelSession
 
 # 动态数据库路径（兼容 Windows / Linux / macOS）
 _DB_DIR = Path(__file__).resolve().parent.parent.parent / "data"
@@ -42,6 +42,7 @@ sync_engine = create_engine(
 )
 
 SessionLocal = sessionmaker(
+    class_=SQLModelSession,
     autocommit=False, autoflush=False, bind=sync_engine
 )
 

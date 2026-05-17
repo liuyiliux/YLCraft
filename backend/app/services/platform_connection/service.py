@@ -233,7 +233,7 @@ class PlatformConnectionService:
 
     def _test_cookie(self, platform: str, creds: dict, conn: PlatformConnection = None) -> dict:
         """测试 Cookie 有效性"""
-        # 优先使用 cookie_content (Netscape 格式)
+        # 优先使用 cookie_content
         cookie_content = ""
         if conn and conn.cookie_content:
             cookie_content = conn.cookie_content
@@ -243,27 +243,51 @@ class PlatformConnectionService:
         if not cookie_content:
             return {"success": False, "message": "Cookie 内容为空"}
 
-        # 使用已有的 Cookie 管理器测试
+        # 尝试多种格式验证
+        # 1. 尝试 Netscape 格式
         try:
             from http.cookiejar import MozillaCookieJar
             import tempfile
             import os
 
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, encoding='utf-8') as f:
                 f.write(cookie_content)
                 tmp_path = f.name
 
             try:
                 jar = MozillaCookieJar(tmp_path)
                 jar.load()
-                # 检查是否有有效 Cookie
                 if len(jar) > 0:
-                    return {"success": True, "message": f"Cookie 有效，共 {len(jar)} 条"}
-                return {"success": False, "message": "Cookie 文件为空或无效"}
+                    return {"success": True, "message": f"Netscape Cookie 有效，共 {len(jar)} 条"}
             finally:
                 os.unlink(tmp_path)
-        except Exception as e:
-            return {"success": False, "message": f"Cookie 格式错误: {str(e)}"}
+        except Exception:
+            pass  # 不是 Netscape 格式，继续尝试其他格式
+
+        # 2. 尝试 JSON 格式 (cookies_array)
+        try:
+            data = json.loads(cookie_content)
+            if isinstance(data, list) and len(data) > 0:
+                return {"success": True, "message": f"JSON Cookie 有效，共 {len(data)} 条"}
+            elif isinstance(data, dict) and data:
+                return {"success": True, "message": f"JSON Cookie 有效，共 {len(data)} 个键"}
+        except Exception:
+            pass
+
+        # 3. 尝试普通 Cookie 字符串 (key=value; ...)
+        # 检查是否包含常见的 Cookie 键值对格式
+        stripped = cookie_content.strip()
+        if '=' in stripped and (';' in stripped or '&' in stripped or len(stripped) > 20):
+            # 粗略统计键值对数量
+            pairs = [p.strip() for p in stripped.split(';') if '=' in p]
+            if len(pairs) > 0:
+                return {"success": True, "message": f"Cookie 字符串有效，约 {len(pairs)} 个键值对"}
+
+        # 4. 单条长 Cookie 也视为有效（如只有 SESSDATA=xxx）
+        if '=' in stripped and len(stripped) > 10:
+            return {"success": True, "message": "Cookie 字符串格式有效"}
+
+        return {"success": False, "message": "Cookie 内容无法识别为有效格式"}
 
     def _test_api_key(self, platform: str, creds: dict) -> dict:
         """测试 API Key 有效性"""

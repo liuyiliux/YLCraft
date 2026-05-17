@@ -1349,27 +1349,61 @@ class BilibiliClient(BasePlatformClient):
     # =========================================================================
     
     async def get_subtitles(self, bvid: str) -> List[Dict]:
-        """获取视频字幕列表"""
+        """获取视频字幕列表（先拿 aid/cid，再调 /x/player/wbi/v2）"""
         self._log(f"Getting subtitles for: {bvid}")
-        
-        params = {"bvid": bvid}
-        query_string = await self._sign_params(params)
-        url = f"{BASE_URL}/x/player/v2?{query_string}"
-        
+
+        # 第 1 步：用 bvid 拿 aid + cid
+        view_url = f"{BASE_URL}/x/web-interface/view?bvid={bvid}"
         try:
-            response = await self.request("GET", url)
-            
-            if isinstance(response, dict) and response.get("code") == 0:
-                subtitles = response.get("data", {}).get("subtitle", {}).get("subtitles", [])
+            view_resp = await self.request("GET", view_url)
+            if not (isinstance(view_resp, dict) and view_resp.get("code") == 0):
+                msg = view_resp.get("message", "view api failed") if isinstance(view_resp, dict) else "view request failed"
+                self._log(f"Get subtitles failed (view): {msg}", "warning")
+                return []
+            aid = view_resp["data"]["aid"]
+            pages = view_resp["data"].get("pages", [])
+            if pages:
+                cid = pages[0]["cid"]
+            else:
+                cid = view_resp["data"].get("cid", 0)
+            self._log(f"Got aid={aid}, cid={cid}")
+        except Exception as e:
+            self._log(f"Get subtitles error (view step): {e}", "error")
+            return []
+
+        # 第 2 步：用 aid + cid 调 /x/player/wbi/v2（需要 WBI 签名）
+        # 参照真实浏览器请求，加上 dm_* 反爬参数
+        params = {
+            "aid": aid,
+            "cid": cid,
+            "isGaiaAvoided": "false",
+            "web_location": "1315873",
+            "dm_img_list": "[]",
+            "dm_img_str": "V2ViR0wgMS4wIChPcGVuR0wgRVMgMi4wIENocm9taXVtKQ==",  # Base64("WebGL 1.0 (OpenGLES 2.0 Chromium)")
+            "dm_cover_img_str": "QU5HTEUgKE5WSURJQSk=",
+            "dm_img_inter": '{"ds":[],"wh":[1920,1080,24],"of":[0,0,0]}',
+        }
+        query_string = await self._sign_params(params)
+        player_url = f"{BASE_URL}/x/player/wbi/v2?{query_string}"
+
+        try:
+            player_resp = await self.request("GET", player_url)
+
+            # Debug: 打印完整响应，确认字幕数据
+            import json as _json
+            self._log(f"Player response (first 800 chars): {_json.dumps(player_resp, ensure_ascii=False)[:800]}", "debug")
+
+            if isinstance(player_resp, dict) and player_resp.get("code") == 0:
+                subtitle_info = player_resp.get("data", {}).get("subtitle", {})
+                subtitles = subtitle_info.get("subtitles", [])
                 self._log(f"Got {len(subtitles)} subtitle(s)")
                 return subtitles
             else:
-                msg = response.get("message", "Unknown error") if isinstance(response, dict) else "Request failed"
-                self._log(f"Get subtitles failed: {msg}", "warning")
+                msg = player_resp.get("message", "Unknown error") if isinstance(player_resp, dict) else "Request failed"
+                self._log(f"Get subtitles failed (player): {msg}", "warning")
                 return []
-                
         except Exception as e:
-            self._log(f"Get subtitles error: {e}", "error")
+            self._log(f"Get subtitles error (player step): {e}", "error")
             return []
     
     async def download_subtitle(self, subtitle_url: str, format: str = "srt") -> str:

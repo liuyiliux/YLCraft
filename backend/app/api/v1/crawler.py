@@ -21,7 +21,7 @@ import uuid
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 from app.services.crawler import (
     CrawlerService,
@@ -34,6 +34,10 @@ from app.services.crawler.models import NoteDetail, SearchFilter, SearchEnhanced
 
 router = APIRouter()
 logger = logging.getLogger("ylcraft.api.crawler")
+
+# =============================================================================
+# Response Models
+# =============================================================================
 
 # 内存任务存储（生产环境应使用 Redis）
 _crawler_tasks: dict[str, dict] = {}
@@ -334,91 +338,3 @@ async def fetch_no_watermark(req: FetchNoWatermarkRequest):
     except Exception as e:
         logger.error(f"[fetch_no_watermark] Error: {e}")
         raise HTTPException(status_code=500, detail=f"批量获取失败: {str(e)}")
-
-    
-# =========================================================================
-# 字幕下载端点
-# =========================================================================
-
-@router.get("/subtitles", summary="获取字幕列表", response_model=SubtitleListResponse)
-async def get_subtitles(platform: str, item_id: str):
-    """
-    获取视频的字幕列表
-    - platform: 平台（目前仅支持 bili）
-    - item_id: 视频ID（bvid）
-    """
-    logger.info(f"[get_subtitles] platform={platform} item_id={item_id}")
-    
-    if platform != "bili":
-        raise HTTPException(status_code=400, detail="该平台不支持字幕下载")
-    
-    try:
-        from app.services.platforms import create_client
-        async with create_client(platform, mode="api") as client:
-            subtitles = await client.get_subtitles(item_id)
-            return {
-                "success": True,
-                "data": subtitles,
-                "message": f"找到 {len(subtitles)} 个字幕"
-            }
-    except Exception as e:
-        logger.error(f"[get_subtitles] Error: {e}")
-        raise HTTPException(status_code=500, detail=f"获取字幕列表失败: {str(e)}")
-
-
-@router.get("/subtitle/download", summary="下载字幕文件")
-async def download_subtitle(platform: str, item_id: str, lan: str = "zh-CN", format: str = "srt"):
-    """
-    下载字幕文件（SRT/ASS 格式）
-    - platform: 平台（目前仅支持 bili）
-    - item_id: 视频ID（bvid）
-    - lan: 字幕语言（如 zh-CN, en-US）
-    - format: 格式（srt 或 ass）
-    """
-    logger.info(f"[download_subtitle] platform={platform} item_id={item_id} lan={lan} format={format}")
-    
-    if platform != "bili":
-        raise HTTPException(status_code=400, detail="该平台不支持字幕下载")
-    
-    if format not in ["srt", "ass"]:
-        raise HTTPException(status_code=400, detail="格式仅支持 srt 或 ass")
-    
-    try:
-        from app.services.platforms import create_client
-        from fastapi.responses import PlainTextResponse
-        
-        async with create_client(platform, mode="api") as client:
-            # 1. 获取字幕列表
-            subtitles = await client.get_subtitles(item_id)
-            subtitle = next((s for s in subtitles if s.get("lan") == lan), None)
-            
-            if not subtitle:
-                raise HTTPException(status_code=404, detail=f"未找到 {lan} 语言的字幕")
-            
-            # 2. 下载并转换
-            content = await client.download_subtitle(subtitle.get("subtitle_url"), format)
-            
-            if not content:
-                raise HTTPException(status_code=500, detail="字幕内容为空")
-            
-            # 3. 返回文件
-            filename = f"{item_id}_{lan}.{format}"
-            return PlainTextResponse(
-                content=content,
-                headers={
-                    "Content-Disposition": f"attachment; filename={filename}",
-                    "Content-Type": "text/plain; charset=utf-8"
-                }
-            )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"[download_subtitle] Error: {e}")
-        raise HTTPException(status_code=500, detail=f"下载字幕失败: {str(e)}")
-
-
-class SubtitleListResponse(BaseModel):
-    """字幕列表响应"""
-    success: bool
-    data: List[Dict] = []
-    message: str = ""

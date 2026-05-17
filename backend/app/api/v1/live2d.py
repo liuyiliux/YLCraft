@@ -725,8 +725,8 @@ async def list_models(
         offset = (page - 1) * page_size
         query = query.offset(offset).limit(page_size)
 
-        models = await session.exec(query)
-        models = models.all()
+        result = await session.exec(query)
+        models = result.all()
 
         # 计算总页数
         total_pages = (total + page_size - 1) // page_size if total > 0 else 1

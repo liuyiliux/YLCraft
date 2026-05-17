@@ -22,8 +22,8 @@ import {
   FileTextOutlined, DownOutlined,
 } from '@ant-design/icons'
 import { useTheme } from '../../constants/theme'
-import { searchEnhanced, importCrawler, getNoteDetail } from '../../api'
-import type { CrawlerResult } from '../../api'
+import { searchEnhanced, importCrawler, getNoteDetail, getSubtitles, downloadCrawlerSubtitle, listPlatformConnections } from '../../api'
+import type { CrawlerResult, PlatformConnectionResponse } from '../../api'
 
 const { Text, Title } = Typography
 
@@ -449,6 +449,25 @@ export default function CrawlerPage() {
   const [subtitleList, setSubtitleList] = useState<Array<{lan: string, lan_doc: string, subtitle_url: string}>>([])
   const [subtitleLoading, setSubtitleLoading] = useState(false)
 
+  // B站平台连接（字幕需要登录态）
+  const [biliConnections, setBiliConnections] = useState<PlatformConnectionResponse[]>([])
+  const [selectedBiliConn, setSelectedBiliConn] = useState<string>('')
+
+  // 加载平台连接
+  useEffect(() => {
+    listPlatformConnections().then((res: any) => {
+      const conns = (res.connections || []).filter(
+        (c: PlatformConnectionResponse) => c.platform === 'bilibili' && c.status === 'active'
+      )
+      setBiliConnections(conns)
+      if (conns.length > 0 && !selectedBiliConn) {
+        setSelectedBiliConn(conns[0].id)
+      }
+    }).catch(() => {
+      // 静默失败，不影响主功能
+    })
+  }, [])
+
   const isDark = themeId !== 'dawn'
   const pageBg = THEME.bgPage
   const cardBg = THEME.bgCard
@@ -527,12 +546,12 @@ export default function CrawlerPage() {
     if (!itemId) return
     setSubtitleLoading(true)
     try {
-      const data = await getSubtitles({ platform, item_id: itemId })
+      const data = await getSubtitles({ item_id: itemId, conn_id: selectedBiliConn })
       setSubtitleList(data.data || [])
-      
+
       // 如果只有 1 种语言，直接下载
       if (data.data?.length === 1) {
-        downloadSubtitle(itemId, data.data[0].lan, 'srt')
+        downloadCrawlerSubtitle(itemId, data.data[0].lan, 'srt', selectedBiliConn)
       }
     } catch (e: any) {
       message.error(e?.response?.data?.detail || '获取字幕列表失败')
@@ -541,9 +560,9 @@ export default function CrawlerPage() {
     }
   }
 
-  const downloadSubtitle = (itemId: string, lan: string, format: string = 'srt') => {
+  const handleDownloadSubtitle = (itemId: string, lan: string, format: string = 'srt') => {
     if (!itemId) return
-    downloadSubtitleApi(platform, itemId, lan, format)
+    downloadCrawlerSubtitle(itemId, lan, format, selectedBiliConn)
   }
 
   // ===== 笔记详情 =====
@@ -783,7 +802,7 @@ export default function CrawlerPage() {
       <Card style={{ marginBottom: 20, background: cardBg, border: `1px solid ${borderColor}`, borderRadius: 12 }}
         styles={{ body: { padding: 0 } }}>
 
-        {/* ① 平台 + 搜索框 */}
+        {/* ① 平台 + 搜索框 + B站连接选择 */}
         <div style={{ padding: '16px 20px 12px' }}>
           <Row gutter={[12, 12]} align="middle">
             <Col xs={24} sm={4} md={3}>
@@ -794,7 +813,7 @@ export default function CrawlerPage() {
                 options={PLATFORMS.map(p => ({ value: p.value, label: <Space size={6}>{p.icon}{p.label}</Space> }))}
               />
             </Col>
-            <Col xs={24} sm={16} md={18}>
+            <Col xs={24} sm={platform === 'bili' ? 12 : 20} md={platform === 'bili' ? 14 : 21}>
               <Input.Search
                 value={keyword}
                 onChange={e => setKeyword(e.target.value)}
@@ -804,6 +823,20 @@ export default function CrawlerPage() {
                 onSearch={() => { setCurrentPage(1); handleSearch(1); }}
               />
             </Col>
+            {platform === 'bili' && (
+              <Col xs={24} sm={8} md={7}>
+                <Select
+                  value={selectedBiliConn || undefined}
+                  onChange={setSelectedBiliConn}
+                  placeholder="选择 B站连接（字幕需登录）"
+                  style={{ width: '100%' }}
+                  options={biliConnections.map(c => ({
+                    value: c.id,
+                    label: `${c.name}${c.status === 'active' ? ' ✓' : ''}`,
+                  }))}
+                />
+              </Col>
+            )}
           </Row>
         </div>
 
@@ -1077,21 +1110,28 @@ export default function CrawlerPage() {
             <Space wrap style={{ width: '100%', justifyContent: 'center' }}>
               {detailNote.url && <Button type="primary" icon={<LinkOutlined />} href={detailNote.url} target="_blank">打开原文</Button>}
               {detailNote.platform === 'bili' && (
-                <Dropdown
-                  menu={{
-                    items: subtitleList.map(s => ({
-                      key: s.lan,
-                      label: s.lan_doc,
-                      onClick: () => downloadSubtitle(detailNote.id, s.lan, 'srt'),
-                    })),
-                    onClick: ({ key }) => downloadSubtitle(detailNote.id, key, 'srt'),
-                  }}
-                  onOpenChange={(open) => { if (open && subtitleList.length === 0) fetchSubtitles(detailNote.id) }}
-                >
-                  <Button icon={<FileTextOutlined />} loading={subtitleLoading}>
-                    下载字幕 {subtitleList.length > 1 && <DownOutlined />}
-                  </Button>
-                </Dropdown>
+                <>
+                  {biliConnections.length === 0 && (
+                    <Text style={{ color: '#faad14', fontSize: 12 }}>
+                      字幕需登录：请先在「平台管理」添加 B站 Cookie 连接
+                    </Text>
+                  )}
+                  <Dropdown
+                    menu={{
+                      items: subtitleList.map(s => ({
+                        key: s.lan,
+                        label: s.lan_doc,
+                        onClick: () => handleDownloadSubtitle(detailNote.id, s.lan, 'srt'),
+                      })),
+                      onClick: ({ key }) => handleDownloadSubtitle(detailNote.id, key, 'srt'),
+                    }}
+                    onOpenChange={(open) => { if (open && subtitleList.length === 0) fetchSubtitles(detailNote.id) }}
+                  >
+                    <Button icon={<FileTextOutlined />} loading={subtitleLoading} disabled={biliConnections.length === 0}>
+                      下载字幕 {subtitleList.length > 1 && <DownOutlined />}
+                    </Button>
+                  </Dropdown>
+                </>
               )}
             </Space>
           </div>
