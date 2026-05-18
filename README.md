@@ -185,7 +185,7 @@ YLCraft/
 │   │   └── types/             # TypeScript 类型
 │   ├── package.json
 │   └── vite.config.ts
-├── docs/                       # 项目文档（13 篇设计文档）
+├── docs/                       # 项目文档（3 篇主要 + 13 篇归档）
 ├── .cnb.yml                    # CI/CD 流水线
 └── start.sh / start.bat        # 启动脚本
 ```
@@ -306,21 +306,31 @@ Live2D 工厂各环节支持本地模型和云端 API 双模式，可通过配�
 
 ## 更多文档
 
+### 主要文档
+
 | 文档 | 说明 |
 |------|------|
-| [START_HERE](docs/START_HERE.md) | 项目交接入口 & 踩坑记录 |
 | [DESIGN](docs/DESIGN.md) | 完整架构设计 v0.2.0 |
 | [PROGRESS](docs/PROGRESS.md) | 开发进度追踪 |
 | [FRONTEND_STYLE_GUIDE](docs/FRONTEND_STYLE_GUIDE.md) | 前端开发规范 |
-| [REF_PROJECTS](docs/REF_PROJECTS.md) | 参考项目索引 |
-| [agent-platform-design](docs/agent-platform-design.md) | Agent 平台设计 |
-| [architecture-image-video-backends-v2](docs/architecture-image-video-backends-v2.md) | 图像/视频后端架构 |
-| [comfyui-pixelle-evolution-design](docs/comfyui-pixelle-evolution-design.md) | ComfyUI + Pixelle 进化设计 |
-| [live2d-factory-design](docs/live2d-factory-design.md) | Live2D 工厂设计 |
-| [live2d-processing-mode-design](docs/live2d-processing-mode-design.md) | Live2D 处理模式设计 |
-| [story-maker-design](docs/story-maker-design.md) | Story Maker 设计 |
-| [xhs-parser-design](docs/xhs-parser-design.md) | 小红书解析器设计 |
-| [COMFYUI_DIGITAL_HUMAN_ANALYSIS](docs/COMFYUI_DIGITAL_HUMAN_ANALYSIS.md) | ComfyUI 数字人分析 |
+
+### 归档文档 (docs/archive/)
+
+| 文档 | 说明 |
+|------|------|
+| [START_HERE](docs/archive/START_HERE.md) | 项目交接入口 & 踩坑记录 |
+| [REF_PROJECTS](docs/archive/REF_PROJECTS.md) | 参考项目索引 |
+| [agent-platform-design](docs/archive/agent-platform-design.md) | Agent 平台设计 |
+| [architecture-image-video-backends-v2](docs/archive/architecture-image-video-backends-v2.md) | 图像/视频后端架构 |
+| [AI_GENERATION_CONFIG](docs/archive/AI_GENERATION_CONFIG.md) | AI 生成配置 |
+| [COMFYUI_DIGITAL_HUMAN_ANALYSIS](docs/archive/COMFYUI_DIGITAL_HUMAN_ANALYSIS.md) | ComfyUI 数字人分析 |
+| [comfyui-pixelle-evolution-design](docs/archive/comfyui-pixelle-evolution-design.md) | ComfyUI + Pixelle 进化设计 |
+| [cookie-acquisition-design](docs/archive/cookie-acquisition-design.md) | Cookie 获取设计 |
+| [live2d-factory-design](docs/archive/live2d-factory-design.md) | Live2D 工厂设计 |
+| [live2d-processing-mode-design](docs/archive/live2d-processing-mode-design.md) | Live2D 处理模式设计 |
+| [platforms-module-design](docs/archive/platforms-module-design.md) | 平台模块设计 |
+| [story-maker-design](docs/archive/story-maker-design.md) | Story Maker 设计 |
+| [xhs-parser-design](docs/archive/xhs-parser-design.md) | 小红书解析器设计 |
 
 ## License
 
