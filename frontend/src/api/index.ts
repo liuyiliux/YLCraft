@@ -519,12 +519,13 @@ export const searchBiliVideos = (params: {
 }
 
 /** 获取评论列表 */
-export const getBiliComments = (bvid: string, options?: { page?: number; page_size?: number; sort?: number; conn_id?: string }) => {
+export const getBiliComments = (bvid: string, options?: { page?: number; page_size?: number; sort?: number; offset?: string; conn_id?: string }) => {
   const qs = new URLSearchParams()
   qs.set('bvid', bvid)
   if (options?.page) qs.set('page', String(options.page))
   if (options?.page_size) qs.set('page_size', String(options.page_size))
   if (options?.sort !== undefined) qs.set('sort', String(options.sort))
+  if (options?.offset) qs.set('offset', options.offset)
   if (options?.conn_id) qs.set('conn_id', options.conn_id)
   return request(`/bilibili/comments?${qs}`)
 }

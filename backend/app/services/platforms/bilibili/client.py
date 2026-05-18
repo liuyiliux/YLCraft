@@ -1732,19 +1732,22 @@ class BilibiliClient(BasePlatformClient):
         page: int = 1,
         page_size: int = 20,
         sort: int = 0,
+        offset: str = "",
     ) -> Dict:
-        """获取评论列表（分页版）
+        """获取评论列表（游标分页版）
 
         Args:
             bvid: BV 号
-            page: 页码（1 开始）
+            page: 页码（1 开始，保留兼容性）
             page_size: 每页条数
             sort: 排序 0=最热 1=最新 2=最早
+            offset: 游标偏移值（用于加载更多，从响应的 next_offset 中获取）
 
         Returns:
-            {"total": int, "page": int, "page_size": int, "comments": [...]}
+            {"total": int, "page": int, "page_size": int, "comments": [...], 
+             "cursor": {...}, "next_offset": str, "has_more": bool}
         """
-        self._log(f"Getting comments for: {bvid}, page={page}, sort={sort}")
+        self._log(f"Getting comments for: {bvid}, page={page}, sort={sort}, offset={offset[:50] if offset else 'empty'}")
 
         try:
             # 先获取视频信息，拿到 aid（avid）
@@ -1752,23 +1755,30 @@ class BilibiliClient(BasePlatformClient):
             view_resp = await self.request("GET", view_url)
             if not (isinstance(view_resp, dict) and view_resp.get("code") == 0):
                 self._log(f"Get comments failed (view): {view_resp}", "warning")
-                return {"total": 0, "page": page, "page_size": page_size, "comments": []}
+                return {"total": 0, "page": page, "page_size": page_size, "comments": [], "cursor": {}, "next_offset": "", "has_more": False}
 
             # 评论API的 oid 参数需要使用 aid（avid），不是 cid！
             # 参考: https://github.com/SocialSisterYi/bilibili-API-collect/blob/master/docs/reply/reply_list.md
             target_aid = view_resp["data"].get("aid")
             if not target_aid:
                 self._log(f"Get comments failed: no aid in view response", "warning")
-                return {"total": 0, "page": page, "page_size": page_size, "comments": []}
+                return {"total": 0, "page": page, "page_size": page_size, "comments": [], "cursor": {}, "next_offset": "", "has_more": False}
             self._log(f"[DEBUG] Using aid={target_aid} for comment API")
 
+            # 将 sort 参数映射到正确的 mode 值：0=最热(mode=3), 1=最新(mode=2), 2=最早(mode=1)
+            mode_map = {0: 3, 1: 2, 2: 1}
+            
+            # 构建 pagination_str
+            pagination_str = '{"offset":""}'
+            if offset:
+                pagination_str = f'{{"offset":"{offset}"}}'
+            
             params = {
                 "type": 1,
                 "oid": target_aid,
-                "mode": 3,
-                "pagination_str": '{"offset":""}',
+                "mode": mode_map.get(sort, 3),
+                "pagination_str": pagination_str,
                 "ps": page_size,
-                "sort": sort,
             }
             # 评论 API 需要 WBI 签名
             query_string = await self._sign_params(params)
@@ -1785,6 +1795,7 @@ class BilibiliClient(BasePlatformClient):
                 self._log(f"[DEBUG] Comment API error: {resp}", "warning")
                 import json
                 self._log(f"[DEBUG] Full resp JSON: {json.dumps(resp, ensure_ascii=False)[:500]}", "warning")
+                return {"total": 0, "page": page, "page_size": page_size, "comments": [], "cursor": {}, "next_offset": "", "has_more": False}
 
             if isinstance(resp, dict) and resp.get("code") == 0:
                 replies = resp.get("data", {})
@@ -1793,8 +1804,10 @@ class BilibiliClient(BasePlatformClient):
 
                 # B站 WBI 评论 API 的 total 在 cursor.all_count 中
                 cursor = replies.get("cursor", {})
+                import json
+                self._log(f"[DEBUG] Full cursor: {json.dumps(cursor, ensure_ascii=False)[:500]}")
                 comment_total = cursor.get("all_count") or cursor.get("all_total") or replies.get("all_total") or replies.get("total") or len(replies.get("replies") or [])
-                self._log(f"[DEBUG] Comment cursor: all_count={cursor.get('all_count', 'N/A')}, Final comment_total: {comment_total}")
+                self._log(f"[DEBUG] Comment cursor: all_count={cursor.get('all_count', 'N/A')}, is_end={cursor.get('is_end', 'N/A')}, next_offset={cursor.get('next_offset', 'N/A')}, Final comment_total: {comment_total}")
                 self._log(f"[DEBUG] Comment replies count: {len(replies.get('replies') or [])}")
                 comments = []
                 for r in replies.get("replies", []) or []:
@@ -1811,21 +1824,29 @@ class BilibiliClient(BasePlatformClient):
                         "replies_count": r.get("rcount", 0),
                     })
                 self._log(f"[DEBUG] Parsed {len(comments)} comments")
+                
+                # 提取下一页的 offset
+                next_offset = cursor.get("next_offset", "")
+                has_more = not bool(cursor.get("is_end", True))
+                
                 return {
                     "total": comment_total,
                     "page": page,
                     "page_size": page_size,
                     "comments": comments,
+                    "cursor": cursor,
+                    "next_offset": next_offset,
+                    "has_more": has_more,
                 }
             else:
                 # 打印错误信息
                 err_msg = resp.get("message", "") if isinstance(resp, dict) else ""
                 self._log(f"[DEBUG] Comment API failed: code={resp.get('code') if isinstance(resp, dict) else 'N/A'}, msg={err_msg}", "warning")
-                return {"total": 0, "page": page, "page_size": page_size, "comments": []}
+                return {"total": 0, "page": page, "page_size": page_size, "comments": [], "cursor": {}, "next_offset": "", "has_more": False}
 
         except Exception as e:
             self._log(f"Get comments error: {e}", "error")
-            return {"total": 0, "page": page, "page_size": page_size, "comments": []}
+            return {"total": 0, "page": page, "page_size": page_size, "comments": [], "cursor": {}, "next_offset": "", "has_more": False}
 
     async def send_comment(
         self,
@@ -1849,24 +1870,36 @@ class BilibiliClient(BasePlatformClient):
         """
         self._log(f"Sending comment for: {bvid}, message={message[:50]}...")
 
+        if not csrf and self.config.cookie:
+            # 尝试从 cookie 中提取 bili_jct
+            import re
+            match = re.search(r'bili_jct=([^;]+)', self.config.cookie)
+            if match:
+                csrf = match.group(1)
+                self._log(f"[DEBUG] Auto-extracted csrf from cookie")
+
         if not csrf:
             self._log("CSRF token required for sending comment", "error")
             return {"success": False, "message": "缺少 CSRF token"}
 
         try:
-            # 拿 cid
+            # 拿 aid（评论 API 需要的是 aid，不是 cid）
             view_url = f"{BASE_URL}/x/web-interface/view?bvid={bvid}"
             view_resp = await self.request("GET", view_url)
             if not (isinstance(view_resp, dict) and view_resp.get("code") == 0):
                 self._log(f"Send comment failed (view): {view_resp}", "warning")
                 return {"success": False, "message": "视频不存在"}
 
-            pages = view_resp["data"].get("pages", [])
-            oid = pages[0]["cid"] if pages else 0
+            target_aid = view_resp["data"].get("aid")
+            if not target_aid:
+                self._log(f"Send comment failed: no aid in view response", "warning")
+                return {"success": False, "message": "无法获取视频信息"}
+
+            self._log(f"[DEBUG] Using aid={target_aid} for send comment API")
 
             payload = {
                 "type": 1,
-                "oid": oid,
+                "oid": target_aid,
                 "message": message,
                 "csrf_token": csrf,
                 "csrf": csrf,
@@ -1876,7 +1909,7 @@ class BilibiliClient(BasePlatformClient):
             if root > 0:
                 payload["root"] = root
 
-            url = f"{BASE_URL}/x/v2/reply-add"
+            url = f"{BASE_URL}/x/v2/reply/add"
             headers = {
                 "Content-Type": "application/x-www-form-urlencoded",
             }

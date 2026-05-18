@@ -482,6 +482,8 @@ export default function CrawlerPage() {
   const [commentLoading, setCommentLoading] = useState(false)
   const [commentInput, setCommentInput] = useState('')
   const [sendingComment, setSendingComment] = useState(false)
+  const [commentNextOffset, setCommentNextOffset] = useState('')
+  const [commentHasMore, setCommentHasMore] = useState(true)
 
   const [biliStats, setBiliStats] = useState<any>(null)
   const [biliVideoInfo, setBiliVideoInfo] = useState<any>(null)
@@ -618,22 +620,40 @@ export default function CrawlerPage() {
   }
 
   // ===== B站专属：评论 =====
-  const fetchComments = async (bvid: string, page = 1, sort?: number) => {
+  const fetchComments = async (bvid: string, page = 1, sort?: number, offset?: string) => {
     setCommentLoading(true)
     setCommentPage(page)
     const useSort = sort !== undefined ? sort : commentSort
+    const useOffset = offset !== undefined ? offset : ''
+    console.log(`[Comments] Fetching: page=${page}, sort=${useSort}, offset=${useOffset}`)
     try {
-      const res: any = await getBiliComments(bvid, { page, sort: useSort, conn_id: selectedBiliConn })
+      const res: any = await getBiliComments(bvid, { page, sort: useSort, offset: useOffset, conn_id: selectedBiliConn })
+      console.log(`[Comments] Response:`, res)
       if (res?.success) {
-        setComments(res.data?.comments || [])
+        const newComments = res.data?.comments || []
+        console.log(`[Comments] New comments: ${newComments.length}, next_offset: ${res.data?.next_offset}, has_more: ${res.data?.has_more}`)
+        if (page === 1 && !offset) {
+          // 首次加载或切换排序，清空列表
+          setComments(newComments)
+        } else {
+          // 加载更多，追加到现有列表
+          setComments(prev => [...prev, ...newComments])
+        }
         setCommentTotal(res.data?.total || 0)
+        setCommentNextOffset(res.data?.next_offset || '')
+        setCommentHasMore(res.data?.has_more || false)
       } else {
         message.error(res?.message || '获取评论失败')
+        if (page === 1) {
+          setComments([])
+        }
+      }
+    } catch (err) {
+      message.error('获取评论失败')
+      console.error(`[Comments] Error:`, err)
+      if (page === 1) {
         setComments([])
       }
-    } catch {
-      message.error('获取评论失败')
-      setComments([])
     } finally {
       setCommentLoading(false)
     }
@@ -1236,12 +1256,16 @@ export default function CrawlerPage() {
                   <button
                     key={tab.key}
                     onClick={() => {
-                      setDetailDrawerTab(tab.key)
-                      // 懒加载各Tab数据
-                      if (tab.key === 'danmaku' && danmakuList.length === 0) fetchDanmaku(detailNote.id)
-                      if (tab.key === 'subtitle' && subtitleList.length === 0) fetchSubtitles(detailNote.id)
-                      if (tab.key === 'comments' && comments.length === 0) fetchComments(detailNote.id)
-                    }}
+                    setDetailDrawerTab(tab.key)
+                    // 懒加载各Tab数据
+                    if (tab.key === 'danmaku' && danmakuList.length === 0) fetchDanmaku(detailNote.id)
+                    if (tab.key === 'subtitle' && subtitleList.length === 0) fetchSubtitles(detailNote.id)
+                    if (tab.key === 'comments') {
+                      setCommentNextOffset('')
+                      setCommentHasMore(true)
+                      if (comments.length === 0) fetchComments(detailNote.id)
+                    }
+                  }}
                     style={{
                       padding: '12px 16px',
                       border: 'none',
@@ -1517,9 +1541,14 @@ export default function CrawlerPage() {
                     <Space>
                       <Segmented
                         size="small"
-                        options={[{ label: '最热', value: 0 }, { label: '最新', value: 1 }]}
+                        options={[{ label: '最热', value: 0 }, { label: '最新', value: 1 }, { label: '最早', value: 2 }]}
                         value={commentSort}
-                        onChange={v => { setCommentSort(v as number); fetchComments(detailNote.id, 1, v as number) }}
+                        onChange={v => { 
+                          setCommentSort(v as number)
+                          setCommentNextOffset('')
+                          setCommentHasMore(true)
+                          fetchComments(detailNote.id, 1, v as number, '')
+                        }}
                       />
                       <Button size="small" icon={<ReloadOutlined />} loading={commentLoading} onClick={() => fetchComments(detailNote.id)}>
                         刷新
@@ -1535,33 +1564,55 @@ export default function CrawlerPage() {
                       <div style={{ marginTop: 8 }}>暂无评论</div>
                     </div>
                   ) : (
-                    <div style={{ maxHeight: 600, overflowY: 'auto', paddingRight: 4 }}>
-                      {comments.map((c: any) => (
-                        <div key={c.rpid} style={{
-                          padding: '10px 0', borderBottom: `1px solid ${borderColor}`,
-                        }}>
-                          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                            <div style={{
-                              width: 32, height: 32, borderRadius: '50%',
-                              background: BILI_COLORS.primary, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              color: '#fff', fontSize: 12, flexShrink: 0,
-                            }}>
-                              {c.user_name?.[0] || '?'}
-                            </div>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                                <Text style={{ color: textPri, fontSize: 13, fontWeight: 600 }}>{c.user_name}</Text>
-                                {c.rcount > 0 && <Tag size="small" style={{ fontSize: 11 }}>{c.rcount} 回复</Tag>}
+                    <>
+                      <div style={{ maxHeight: 600, overflowY: 'auto', paddingRight: 4 }}>
+                        {comments.map((c: any) => (
+                          <div key={c.rpid} style={{
+                            padding: '10px 0', borderBottom: `1px solid ${borderColor}`,
+                          }}>
+                            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                              <div style={{
+                                width: 32, height: 32, borderRadius: '50%',
+                                background: BILI_COLORS.primary, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                color: '#fff', fontSize: 12, flexShrink: 0,
+                              }}>
+                                {c.user_name?.[0] || '?'}
                               </div>
-                              <Text style={{ color: textPri, fontSize: 13 }}>{c.message}</Text>
-                              <div style={{ marginTop: 4, fontSize: 11, color: textSec }}>
-                                {new Date(c.ctime * 1000).toLocaleString('zh-CN')} · {c.like_count} 赞
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                                  <Text style={{ color: textPri, fontSize: 13, fontWeight: 600 }}>{c.user_name}</Text>
+                                  {c.rcount > 0 && <Tag size="small" style={{ fontSize: 11 }}>{c.rcount} 回复</Tag>}
+                                </div>
+                                <Text style={{ color: textPri, fontSize: 13 }}>{c.message}</Text>
+                                <div style={{ marginTop: 4, fontSize: 11, color: textSec }}>
+                                  {new Date(c.ctime * 1000).toLocaleString('zh-CN')} · {c.like_count} 赞
+                                </div>
                               </div>
                             </div>
                           </div>
+                        ))}
+                      </div>
+                      {commentHasMore && (
+                        <div style={{ textAlign: 'center', padding: '16px 0', marginTop: 8 }}>
+                          <Button 
+                            type="primary" 
+                            ghost
+                            loading={commentLoading}
+                            onClick={() => {
+                              console.log(`[Comments] Load more clicked: next_offset=${commentNextOffset}, currentPage=${commentPage}`)
+                              fetchComments(detailNote.id, commentPage + 1, commentSort, commentNextOffset)
+                            }}
+                          >
+                            加载更多评论 ({commentTotal - comments.length} 条剩余)
+                          </Button>
                         </div>
-                      ))}
-                    </div>
+                      )}
+                      {!commentHasMore && comments.length > 0 && (
+                        <div style={{ textAlign: 'center', padding: '16px 0', color: textSec, fontSize: 13 }}>
+                          — 已加载全部评论 ({comments.length} 条) —
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               )}
