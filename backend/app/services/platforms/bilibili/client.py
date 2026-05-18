@@ -1762,13 +1762,14 @@ class BilibiliClient(BasePlatformClient):
                 return {"total": 0, "page": page, "page_size": page_size, "comments": []}
             self._log(f"[DEBUG] Using aid={target_aid} for comment API")
 
+            # 将 sort 参数映射到正确的 mode 值：0=最热(mode=3), 1=最新(mode=2), 2=最早(mode=1)
+            mode_map = {0: 3, 1: 2, 2: 1}
             params = {
                 "type": 1,
                 "oid": target_aid,
-                "mode": 3,
+                "mode": mode_map.get(sort, 3),
                 "pagination_str": '{"offset":""}',
                 "ps": page_size,
-                "sort": sort,
             }
             # 评论 API 需要 WBI 签名
             query_string = await self._sign_params(params)
