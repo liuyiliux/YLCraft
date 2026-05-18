@@ -1,12 +1,12 @@
 # YLCraft 项目交接
 
 ## 项目定位
-**YLCraft** — 超级自媒体平台，支持电商/摄影/短剧三大垂直场景的内容创作。
+**YLCraft** — 逸流创作平台，支持电商/摄影/短剧三大垂直场景的内容创作。
 GitHub: https://cnb.cool/yiliu/YLCraft
 
 ## 必读文档（优先级顺序）
 1. `START_HERE.md` — 本文件，交接入口
-2. `DESIGN.md` — 项目设计基准，v0.2.0，超级自媒体平台完整架构
+2. `DESIGN.md` — 项目设计基准，v0.2.0，逸流创作平台完整架构
 3. `PROGRESS.md` — 当前开发进度
 4. `.memory/MEMORY.md` — 关键踩坑记录和架构决策（其他 AI 可读）
 

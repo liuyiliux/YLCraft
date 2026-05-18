@@ -2,6 +2,7 @@
   "name": "ylcraft-frontend",
   "version": "0.1.0",
   "private": true,
+  "author": "怪盗LYL",
   "type": "module",
   "scripts": {
     "dev": "vite",
