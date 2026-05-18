@@ -64,6 +64,28 @@ def get_raw_cookie(conn_id: str) -> str:
     return ""
 
 
+def extract_bili_jct(cookie: str) -> str:
+    """
+    从 Cookie 中提取 bili_jct (CSRF token)
+
+    Args:
+        cookie: 原始 Cookie 字符串
+
+    Returns:
+        bili_jct 值，失败返回空字符串
+    """
+    if not cookie:
+        return ""
+    try:
+        import re
+        match = re.search(r'bili_jct=([^;]+)', cookie)
+        if match:
+            return match.group(1)
+    except Exception as e:
+        logger.warning(f"[bili/extract_bili_jct] Failed to extract bili_jct: {e}")
+    return ""
+
+
 # =============================================================================
 # Response Models
 # =============================================================================
@@ -95,6 +117,19 @@ class BilibiliSubtitlesResponse(BaseModel):
 class BilibiliVideoInfoResponse(BaseModel):
     success: bool = True
     data: Dict = {}
+    message: str = ""
+
+
+class BilibiliSendCommentRequest(BaseModel):
+    bvid: str
+    message: str
+    parent: int = 0
+    root: int = 0
+
+
+class BilibiliSendCommentResponse(BaseModel):
+    success: bool = True
+    rpid: int = 0
     message: str = ""
 
 
@@ -161,6 +196,7 @@ async def get_comments(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=50),
     sort: int = Query(0, description="排序: 0=最热 1=最新 2=最早"),
+    offset: str = Query("", description="游标偏移值，用于加载更多（从响应的 next_offset 获取）"),
     conn_id: str = Query("", description="平台连接 ID"),
 ):
     """
@@ -170,7 +206,7 @@ async def get_comments(
         from app.services.platforms import create_client
         cookie = get_raw_cookie(conn_id) if conn_id else ""
         async with create_client("bili", mode="api", cookie=cookie) as client:
-            result = await client.get_comments_paged(bvid, page, page_size, sort)
+            result = await client.get_comments_paged(bvid, page, page_size, sort, offset)
             return BilibiliCommentsResponse(
                 success=True,
                 data=result,
@@ -283,3 +319,41 @@ async def get_video_info(
     except Exception as e:
         logger.error(f"[bili/video/info] Error: {e}")
         raise HTTPException(status_code=500, detail=f"获取视频信息失败: {str(e)}")
+
+
+@router.post("/comment/send", summary="发送B站评论", response_model=BilibiliSendCommentResponse)
+async def send_comment(
+    request: BilibiliSendCommentRequest,
+    conn_id: str = Query("", description="平台连接 ID"),
+):
+    """
+    发送B站视频评论
+    """
+    try:
+        from app.services.platforms import create_client
+        cookie = get_raw_cookie(conn_id) if conn_id else ""
+        if not cookie:
+            raise HTTPException(status_code=400, detail="需要提供有效的平台连接")
+        
+        csrf = extract_bili_jct(cookie)
+        if not csrf:
+            raise HTTPException(status_code=400, detail="Cookie 中缺少 bili_jct (CSRF token)")
+        
+        async with create_client("bili", mode="api", cookie=cookie) as client:
+            result = await client.send_comment(
+                request.bvid,
+                request.message,
+                request.parent,
+                request.root,
+                csrf
+            )
+            return BilibiliSendCommentResponse(
+                success=result.get("success", False),
+                rpid=result.get("rpid", 0),
+                message=result.get("message", "")
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[bili/comment/send] Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
