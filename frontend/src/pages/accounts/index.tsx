@@ -31,12 +31,12 @@ import {
 import {
   GlobalOutlined,
   LinkOutlined,
+  KeyOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
   PlusOutlined,
   EditOutlined,
   DeleteOutlined,
-  KeyOutlined,
   FileTextOutlined,
   ThunderboltOutlined,
   ReloadOutlined,
@@ -1311,14 +1311,14 @@ export default function PlatformsPage() {
 
   return (
     <div style={{ maxWidth: 1200 }}>
-      {/* 页面标题 — 参考 XHS_ALL_IN_ONE 的账号矩阵标题 */}
+      {/* 页面标题 */}
       <div style={{ marginBottom: 24 }}>
         <Title level={3} style={{ color: theme.textPrimary, marginBottom: 4 }}>
-          <LinkOutlined style={{ marginRight: 12 }} />
-          账号矩阵
+          <KeyOutlined style={{ marginRight: 12 }} />
+          账号中心
         </Title>
         <Text style={{ color: theme.textSecondary, fontSize: 14 }}>
-          管理各平台账号与凭证，支持多账号、多种认证方式、健康检查
+          管理各平台 Cookie / 授权凭证，支持多账号登录态、健康检查
         </Text>
       </div>
 

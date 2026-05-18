@@ -447,11 +447,10 @@ export const fetchNoWatermark = (params: {
   note_ids: string[]
 }) => request('/crawler/fetch-no-watermark', { method: 'POST', body: JSON.stringify(params) })
 
+// ===== B站功能接口（bilibili）=====
+
 /** 获取 B站字幕列表 */
-export const getSubtitles = (params: {
-  item_id: string
-  conn_id?: string
-}) => {
+export const getSubtitles = (params: { item_id: string; conn_id?: string }) => {
   const qs = new URLSearchParams()
   qs.set('bvid', params.item_id)
   if (params.conn_id) qs.set('conn_id', params.conn_id)
@@ -465,8 +464,102 @@ export const downloadCrawlerSubtitle = (itemId: string, lan: string, format: str
   qs.set('lan', lan)
   qs.set('format', format)
   if (connId) qs.set('conn_id', connId)
-  const url = `/api/v1/bilibili/subtitle/download?${qs}`
-  window.open(url, '_blank')
+  window.open(`/api/v1/bilibili/subtitle/download?${qs}`, '_blank')
+}
+
+/** 获取弹幕 */
+export const getDanmaku = (bvid: string, cid?: number) =>
+  request(`/bilibili/danmaku${cid ? `?cid=${cid}` : ''}?bvid=${bvid}`)
+
+/** 下载弹幕文件 */
+export const downloadDanmaku = (bvid: string, format: 'json' | 'ass' | 'xml' = 'json') =>
+  request(`/bilibili/danmaku/download?bvid=${bvid}&format=${format}`)
+
+/** 获取视频详细信息 */
+export const getBiliVideoInfo = (bvid: string) =>
+  request(`/bilibili/video/info?bvid=${bvid}`)
+
+/** 获取作品数据统计 */
+export const getBiliStats = (params: { bvid?: string; aid?: number }) => {
+  const qs = new URLSearchParams()
+  if (params.bvid) qs.set('bvid', params.bvid)
+  if (params.aid) qs.set('aid', String(params.aid))
+  return request(`/bilibili/stats?${qs}`)
+}
+
+/** B站视频搜索 */
+export const searchBiliVideos = (params: {
+  keyword: string
+  order?: string
+  page?: number
+  page_size?: number
+  duration?: string
+  search_type?: string
+  conn_id?: string
+}) => {
+  const qs = new URLSearchParams()
+  qs.set('keyword', params.keyword)
+  if (params.order) qs.set('order', params.order)
+  if (params.page) qs.set('page', String(params.page))
+  if (params.page_size) qs.set('page_size', String(params.page_size))
+  if (params.duration && params.duration !== 'all') qs.set('duration', params.duration)
+  if (params.search_type && params.search_type !== 'video') qs.set('search_type', params.search_type)
+  if (params.conn_id) qs.set('conn_id', params.conn_id)
+  return request(`/bilibili/search?${qs}`)
+}
+
+/** 获取评论列表 */
+export const getBiliComments = (bvid: string, options?: { page?: number; page_size?: number; sort?: number }) => {
+  const qs = new URLSearchParams()
+  qs.set('bvid', bvid)
+  if (options?.page) qs.set('page', String(options.page))
+  if (options?.page_size) qs.set('page_size', String(options.page_size))
+  if (options?.sort !== undefined) qs.set('sort', String(options.sort))
+  return request(`/bilibili/comments?${qs}`)
+}
+
+/** 发送评论 */
+export const sendBiliComment = (body: { bvid: string; message: string; parent?: number; root?: number }, connId?: string) => {
+  const qs = new URLSearchParams()
+  if (connId) qs.set('conn_id', connId)
+  return request(`/bilibili/comment/send?${qs}`, { method: 'POST', body: JSON.stringify(body) })
+}
+
+/** 视频投稿 - 预检查 */
+export const biliVideoPrecheck = (formData: FormData, connId?: string) => {
+  let url = '/bilibili/video/precheck'
+  if (connId) url += `?conn_id=${encodeURIComponent(connId)}`
+  return request(url, { method: 'POST', body: formData, headers: {} as any })
+}
+
+/** 视频投稿 - 提交信息 */
+export const biliVideoSubmit = (
+  body: { title: string; desc?: string; tags?: string[]; tid?: number; copyright?: number; source?: string; cover?: string },
+  connId?: string,
+) => {
+  const qs = new URLSearchParams()
+  if (connId) qs.set('conn_id', connId)
+  return request(`/bilibili/submit?${qs}`, { method: 'POST', body: JSON.stringify(body) })
+}
+
+/** 发布专栏文章 */
+export const publishBiliArticle = (
+  body: { title: string; content: string; summary?: string; tags?: string[]; category?: number; image_urls?: string[] },
+  connId?: string,
+) => {
+  const qs = new URLSearchParams()
+  if (connId) qs.set('conn_id', connId)
+  return request(`/bilibili/article/publish?${qs}`, { method: 'POST', body: JSON.stringify(body) })
+}
+
+/** 发布动态 */
+export const publishBiliDynamic = (
+  body: { content: string; images?: string[]; type?: number },
+  connId?: string,
+) => {
+  const qs = new URLSearchParams()
+  if (connId) qs.set('conn_id', connId)
+  return request(`/bilibili/dynamic/publish?${qs}`, { method: 'POST', body: JSON.stringify(body) })
 }
 
 // ===== Platform Connections（平台连接器）=====

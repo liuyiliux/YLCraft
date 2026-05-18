@@ -8,7 +8,7 @@ import {
   Card, Input, Button, Select, Table, Tag, message, Spin, Space, Row, Col,
   Typography, Alert, Tooltip, Modal, Image, Segmented, Drawer, Descriptions,
   Divider, Empty, Badge, Form, InputNumber, Checkbox, Progress,
-  Dropdown,
+  Dropdown, Tabs,
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import {
@@ -19,11 +19,26 @@ import {
   CloseCircleOutlined, FileExcelOutlined, LoadingOutlined, DatabaseOutlined,
   HeartOutlined, StarOutlined, CommentOutlined, PictureOutlined,
   UserOutlined, TeamOutlined, ReadOutlined, ProfileOutlined, PayCircleOutlined,
-  FileTextOutlined, DownOutlined,
+  FileTextOutlined, DownOutlined, BarChartOutlined, LikeOutlined, ShareAltOutlined,
+  SendOutlined, VideoCameraAddOutlined,
 } from '@ant-design/icons'
 import { useTheme } from '../../constants/theme'
-import { searchEnhanced, importCrawler, getNoteDetail, getSubtitles, downloadCrawlerSubtitle, listPlatformConnections } from '../../api'
+import {
+  searchEnhanced, importCrawler, getNoteDetail, getSubtitles, downloadCrawlerSubtitle, listPlatformConnections,
+  getDanmaku, downloadDanmaku, getBiliStats, getBiliComments, sendBiliComment, getBiliVideoInfo,
+} from '../../api'
 import type { CrawlerResult, PlatformConnectionResponse } from '../../api'
+
+// B站配色
+const BILI_COLORS = {
+  primary: '#FB7299',
+  secondary: '#FFAABB',
+  accent: '#00A1D6',
+  gold: '#FFB800',
+  purple: '#A855F7',
+  warning: '#FFA500',
+  success: '#23ADE5',
+}
 
 const { Text, Title } = Typography
 
@@ -453,6 +468,25 @@ export default function CrawlerPage() {
   const [biliConnections, setBiliConnections] = useState<PlatformConnectionResponse[]>([])
   const [selectedBiliConn, setSelectedBiliConn] = useState<string>('')
 
+  // B站专属状态
+  const [danmakuList, setDanmakuList] = useState<any[]>([])
+  const [danmakuLoading, setDanmakuLoading] = useState(false)
+  const [danmakuFormat, setDanmakuFormat] = useState<'json' | 'ass' | 'xml'>('json')
+
+  const [comments, setComments] = useState<any[]>([])
+  const [commentTotal, setCommentTotal] = useState(0)
+  const [commentPage, setCommentPage] = useState(1)
+  const [commentSort, setCommentSort] = useState(0)
+  const [commentLoading, setCommentLoading] = useState(false)
+  const [commentInput, setCommentInput] = useState('')
+  const [sendingComment, setSendingComment] = useState(false)
+
+  const [biliStats, setBiliStats] = useState<any>(null)
+  const [biliVideoInfo, setBiliVideoInfo] = useState<any>(null)
+  const [statsLoading, setStatsLoading] = useState(false)
+
+  const [detailDrawerTab, setDetailDrawerTab] = useState<string>('detail')
+
   // 加载平台连接
   useEffect(() => {
     listPlatformConnections().then((res: any) => {
@@ -565,16 +599,122 @@ export default function CrawlerPage() {
     downloadCrawlerSubtitle(itemId, lan, format, selectedBiliConn)
   }
 
+  // ===== B站专属：弹幕 =====
+  const fetchDanmaku = async (bvid: string) => {
+    setDanmakuLoading(true)
+    try {
+      const res: any = await getDanmaku(bvid)
+      if (res?.success) {
+        setDanmakuList(res.data || [])
+        message.success(`加载了 ${res.data?.length || 0} 条弹幕`)
+      } else {
+        message.warning('该视频暂无弹幕')
+        setDanmakuList([])
+      }
+    } catch {
+      message.error('获取弹幕失败')
+      setDanmakuList([])
+    } finally {
+      setDanmakuLoading(false)
+    }
+  }
+
+  // ===== B站专属：评论 =====
+  const fetchComments = async (bvid: string, page = 1) => {
+    setCommentLoading(true)
+    setCommentPage(page)
+    try {
+      const res: any = await getBiliComments(bvid, { page, sort: commentSort })
+      if (res?.success) {
+        setComments(res.data?.comments || [])
+        setCommentTotal(res.data?.total || 0)
+      } else {
+        message.error(res?.message || '获取评论失败')
+        setComments([])
+      }
+    } catch {
+      message.error('获取评论失败')
+      setComments([])
+    } finally {
+      setCommentLoading(false)
+    }
+  }
+
+  const handleSendComment = async () => {
+    if (!commentInput.trim()) { message.warning('评论内容不能为空'); return }
+    const bvid = detailNote?.id
+    if (!bvid) return
+    setSendingComment(true)
+    try {
+      const res: any = await sendBiliComment({ bvid, message: commentInput.trim() }, selectedBiliConn)
+      if (res?.success) {
+        message.success('评论发送成功')
+        setCommentInput('')
+        fetchComments(bvid)
+      } else {
+        message.error(res?.message || '评论发送失败（可能需要登录）')
+      }
+    } catch {
+      message.error('评论发送失败')
+    } finally {
+      setSendingComment(false)
+    }
+  }
+
+  // ===== B站专属：数据统计 =====
+  const fetchBiliStats = async (bvid: string) => {
+    setStatsLoading(true)
+    try {
+      const res: any = await getBiliStats({ bvid })
+      if (res?.data?.length) {
+        setBiliStats(res.data[0])
+      }
+    } catch { /* 忽略 */ }
+    finally { setStatsLoading(false) }
+  }
+
+  // ===== B站专属：视频信息 =====
+  const fetchBiliVideoInfo = async (bvid: string) => {
+    try {
+      const res: any = await getBiliVideoInfo(bvid)
+      if (res?.success) {
+        setBiliVideoInfo(res.data)
+      }
+    } catch { /* 忽略 */ }
+  }
+
+  // 格式化数字
+  const formatNum = (n: number | string | undefined) => {
+    if (!n && n !== 0) return '—'
+    const num = typeof n === 'string' ? parseInt(n) : n
+    if (num >= 100000000) return (num / 100000000).toFixed(1) + '亿'
+    if (num >= 10000) return (num / 10000).toFixed(1) + '万'
+    return num.toLocaleString()
+  }
+
   // ===== 笔记详情 =====
   const openDetail = async (record: CrawlerResult) => {
     setDetailNote(record)
     setDetailMediaIdx(0)
     setDetailError('')
     setDetailVisible(true)
+    setDetailDrawerTab('detail')
+    // 重置 B站数据
+    setDanmakuList([])
+    setComments([])
+    setCommentTotal(0)
+    setBiliStats(null)
+    setBiliVideoInfo(null)
     setDetailLoading(true)
     try {
       const detail = await getNoteDetail(record.platform, record.id)
       setDetailNote(prev => prev ? { ...prev, ...detail, raw_data: detail } : null)
+
+      // B站：同时获取统计数据
+      if (record.platform === 'bili') {
+        fetchBiliStats(record.id)
+        fetchBiliVideoInfo(record.id)
+      }
     } catch {
       setDetailError('详情加载失败，保留搜索结果')
     } finally {
@@ -1043,99 +1183,451 @@ export default function CrawlerPage() {
 
       {/* ===== Note Detail Drawer ===== */}
       <Drawer
-        title={stripHtml(detailNote?.title || '笔记详情')}
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {detailNote?.platform === 'bili' && (
+              <div style={{
+                width: 24, height: 24, borderRadius: 6,
+                background: `linear-gradient(135deg, ${BILI_COLORS.primary}, ${BILI_COLORS.secondary})`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: '#fff', fontSize: 12, fontWeight: 800,
+              }}>B</div>
+            )}
+            <span style={{ maxWidth: 380, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {stripHtml(detailNote?.title || '笔记详情')}
+            </span>
+          </div>
+        }
         open={detailVisible}
         onClose={() => setDetailVisible(false)}
-        width={560}
-        styles={{ body: { background: isDark ? '#1a1a1a' : '#fff', padding: 20 } }}
+        width={detailNote?.platform === 'bili' ? 640 : 560}
+        styles={{ body: { background: isDark ? '#1a1a1a' : '#fff', padding: 0 } }}
         extra={null}
       >
-        {detailLoading && <Spin style={{ display: 'block', textAlign: 'center', marginTop: 40 }} />}
-        {detailError && <Alert message={detailError} type="warning" showIcon style={{ marginBottom: 12 }} />}
+        {detailLoading && <div style={{ textAlign: 'center', padding: 60 }}><Spin size="large" /></div>}
+        {detailError && <Alert message={detailError} type="warning" showIcon style={{ margin: 16 }} />}
 
         {detailNote && !detailLoading && (
-          <div>
-            {/* Media preview */}
-            {previewMediaUrls.length > 0 && (
-              <div style={{ marginBottom: 16, position: 'relative', background: isDark ? '#262626' : '#f5f5f5', borderRadius: 8, overflow: 'hidden', textAlign: 'center' }}>
-                <Image src={proxyImageUrl(previewMediaUrls[detailMediaIdx])} alt="media"
-                  style={{ maxWidth: '100%', maxHeight: 360, objectFit: 'contain' }}
-                  fallback="data:image/svg+xml,..."
-                />
-                {previewMediaUrls.length > 1 && (
-                  <div style={{ textAlign: 'center', padding: '8px 0' }}>
-                    <Space size={8}>
-                      {previewMediaUrls.map((url, i) => (
-                        <div key={i} onClick={() => setDetailMediaIdx(i)}
-                          style={{ width: 40, height: 40, borderRadius: 4, overflow: 'hidden', cursor: 'pointer', border: i === detailMediaIdx ? `2px solid ${THEME.primary}` : '2px solid transparent' }}>
-                          <Image src={proxyImageUrl(url)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} preview={false} />
-                        </div>
-                      ))}
-                    </Space>
-                  </div>
-                )}
+          <>
+            {/* B站专属 Tab 导航 */}
+            {detailNote.platform === 'bili' && (
+              <div style={{
+                display: 'flex', borderBottom: `1px solid ${borderColor}`,
+                background: isDark ? '#262626' : '#fafbfc',
+                padding: '0 20px',
+              }}>
+                {[
+                  { key: 'detail', label: '详情', icon: <FileTextOutlined /> },
+                  { key: 'danmaku', label: '弹幕', icon: <CommentOutlined />, badge: danmakuList.length },
+                  { key: 'subtitle', label: '字幕', icon: <FileTextOutlined />, badge: subtitleList.length },
+                  { key: 'comments', label: '评论', icon: <MessageOutlined />, badge: commentTotal },
+                  { key: 'stats', label: '数据', icon: <BarChartOutlined /> },
+                ].map(tab => (
+                  <button
+                    key={tab.key}
+                    onClick={() => {
+                      setDetailDrawerTab(tab.key)
+                      // 懒加载各Tab数据
+                      if (tab.key === 'danmaku' && danmakuList.length === 0) fetchDanmaku(detailNote.id)
+                      if (tab.key === 'subtitle' && subtitleList.length === 0) fetchSubtitles(detailNote.id)
+                      if (tab.key === 'comments' && comments.length === 0) fetchComments(detailNote.id)
+                    }}
+                    style={{
+                      padding: '12px 16px',
+                      border: 'none',
+                      borderBottom: `2px solid ${detailDrawerTab === tab.key ? BILI_COLORS.primary : 'transparent'}`,
+                      background: 'transparent',
+                      color: detailDrawerTab === tab.key ? BILI_COLORS.primary : textSec,
+                      fontWeight: detailDrawerTab === tab.key ? 600 : 400,
+                      fontSize: 14,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      transition: 'all 0.2s',
+                    }}
+                  >
+                    {tab.icon}
+                    {tab.label}
+                    {tab.badge > 0 && (
+                      <span style={{
+                        background: BILI_COLORS.primary,
+                        color: '#fff',
+                        borderRadius: 10,
+                        padding: '0 6px',
+                        fontSize: 11,
+                        fontWeight: 600,
+                      }}>{tab.badge > 999 ? '999+' : tab.badge}</span>
+                    )}
+                  </button>
+                ))}
               </div>
             )}
 
-            {/* Metadata */}
-            <Descriptions column={1} size="small" style={{ marginBottom: 16 }}>
-              {detailNote.author && <Descriptions.Item label="作者">{detailNote.author}</Descriptions.Item>}
-              {detailNote.platform && (
-                <Descriptions.Item label="平台">
-                  <Tag icon={getPlatformInfo(detailNote.platform).icon} color={getPlatformInfo(detailNote.platform).color}>
-                    {getPlatformInfo(detailNote.platform).label}
-                  </Tag>
-                </Descriptions.Item>
-              )}
-              <Descriptions.Item label="互动">
-                赞 {formatNum(detailNote.likes)} · 评 {formatNum(detailNote.comments)} · 转 {formatNum(detailNote.shares)} · 币 {formatNum(detailNote.coins)}
-              </Descriptions.Item>
-              {detailNote.url && (
-                <Descriptions.Item label="原文链接">
-                  <a href={detailNote.url} target="_blank" rel="noreferrer" style={{ fontSize: 12, wordBreak: 'break-all' }}>{detailNote.url}</a>
-                </Descriptions.Item>
-              )}
-            </Descriptions>
-
-            <Divider style={{ borderColor }} />
-
-            {/* Description */}
-            <Text style={{ color: textPri, fontWeight: 600 }}>描述</Text>
-            <div style={{ color: textSec, fontSize: 13, marginTop: 8, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
-              {detailNote.desc || '暂无描述'}
-            </div>
-
-            {/* Actions */}
-            <Divider style={{ borderColor }} />
-            <Space wrap style={{ width: '100%', justifyContent: 'center' }}>
-              {detailNote.url && <Button type="primary" icon={<LinkOutlined />} href={detailNote.url} target="_blank">打开原文</Button>}
-              {detailNote.platform === 'bili' && (
-                <>
-                  {biliConnections.length === 0 && (
-                    <Text style={{ color: '#faad14', fontSize: 12 }}>
-                      字幕需登录：请先在「平台管理」添加 B站 Cookie 连接
-                    </Text>
+            {/* Tab 内容 */}
+            <div style={{ padding: 20 }}>
+              {/* ===== Tab: 详情 ===== */}
+              {detailDrawerTab === 'detail' && (
+                <div>
+                  {/* 封面预览 */}
+                  {previewMediaUrls.length > 0 && (
+                    <div style={{ marginBottom: 16, position: 'relative', background: isDark ? '#262626' : '#f5f5f5', borderRadius: 8, overflow: 'hidden', textAlign: 'center' }}>
+                      <Image src={proxyImageUrl(previewMediaUrls[detailMediaIdx])} alt="media"
+                        style={{ maxWidth: '100%', maxHeight: 320, objectFit: 'contain' }}
+                        fallback="data:image/svg+xml,..."
+                      />
+                      {previewMediaUrls.length > 1 && (
+                        <div style={{ textAlign: 'center', padding: '8px 0' }}>
+                          <Space size={8}>
+                            {previewMediaUrls.map((url, i) => (
+                              <div key={i} onClick={() => setDetailMediaIdx(i)}
+                                style={{ width: 40, height: 40, borderRadius: 4, overflow: 'hidden', cursor: 'pointer', border: i === detailMediaIdx ? `2px solid ${THEME.primary}` : '2px solid transparent' }}>
+                                <Image src={proxyImageUrl(url)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} preview={false} />
+                              </div>
+                            ))}
+                          </Space>
+                        </div>
+                      )}
+                    </div>
                   )}
-                  <Dropdown
-                    trigger={['click']}
-                    menu={{
-                      items: subtitleList.map(s => ({
-                        key: s.lan,
-                        label: s.lan_doc,
-                        onClick: () => handleDownloadSubtitle(detailNote.id, s.lan, 'srt'),
-                      })),
-                      onClick: ({ key }) => handleDownloadSubtitle(detailNote.id, key, 'srt'),
-                    }}
-                    onOpenChange={(open) => { if (open && subtitleList.length === 0) fetchSubtitles(detailNote.id) }}
-                  >
-                    <Button icon={<FileTextOutlined />} loading={subtitleLoading} disabled={biliConnections.length === 0}>
-                      下载字幕 {subtitleList.length > 1 && <DownOutlined />}
-                    </Button>
-                  </Dropdown>
-                </>
+
+                  {/* 元数据 */}
+                  <Descriptions column={1} size="small" style={{ marginBottom: 16 }}>
+                    {detailNote.author && <Descriptions.Item label="作者">{detailNote.author}</Descriptions.Item>}
+                    {detailNote.platform && (
+                      <Descriptions.Item label="平台">
+                        <Tag icon={getPlatformInfo(detailNote.platform).icon} color={getPlatformInfo(detailNote.platform).color}>
+                          {getPlatformInfo(detailNote.platform).label}
+                        </Tag>
+                      </Descriptions.Item>
+                    )}
+                    <Descriptions.Item label="互动">
+                      赞 {formatNum(detailNote.likes)} · 评 {formatNum(detailNote.comments)} · 转 {formatNum(detailNote.shares)} · 币 {formatNum(detailNote.coins)}
+                    </Descriptions.Item>
+                    {detailNote.url && (
+                      <Descriptions.Item label="原文链接">
+                        <a href={detailNote.url} target="_blank" rel="noreferrer" style={{ fontSize: 12, wordBreak: 'break-all' }}>{detailNote.url}</a>
+                      </Descriptions.Item>
+                    )}
+                  </Descriptions>
+
+                  {/* B站视频信息 */}
+                  {detailNote.platform === 'bili' && biliVideoInfo && (
+                    <>
+                      <Divider style={{ borderColor }} />
+                      <Descriptions column={2} size="small">
+                        {biliVideoInfo.basic?.tname && <Descriptions.Item label="分区"><Tag color="blue">{biliVideoInfo.basic.tname}</Tag></Descriptions.Item>}
+                        {biliVideoInfo.basic?.owner?.name && <Descriptions.Item label="UP主">{biliVideoInfo.basic.owner.name}</Descriptions.Item>}
+                        {biliVideoInfo.basic?.pubdate > 0 && <Descriptions.Item label="发布时间">{new Date(biliVideoInfo.basic.pubdate * 1000).toLocaleString('zh-CN')}</Descriptions.Item>}
+                        {biliVideoInfo.pages?.length > 0 && <Descriptions.Item label="分P">{biliVideoInfo.pages.length}P</Descriptions.Item>}
+                      </Descriptions>
+                      {biliVideoInfo.tags?.length > 0 && (
+                        <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                          {biliVideoInfo.tags.slice(0, 8).map((t: any) => (
+                            <Tag key={t.tag_id} color="cyan" style={{ cursor: 'pointer' }}
+                              onClick={() => { setKeyword(t.tag_name); handleSearch(1); setDetailVisible(false) }}>
+                              {t.tag_name}
+                            </Tag>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  <Divider style={{ borderColor }} />
+
+                  {/* 描述 */}
+                  <Text style={{ color: textPri, fontWeight: 600 }}>描述</Text>
+                  <div style={{ color: textSec, fontSize: 13, marginTop: 8, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+                    {detailNote.desc || '暂无描述'}
+                  </div>
+
+                  <Divider style={{ borderColor }} />
+
+                  {/* 操作按钮 */}
+                  <Space wrap style={{ width: '100%', justifyContent: 'center' }}>
+                    {detailNote.url && <Button type="primary" icon={<LinkOutlined />} href={detailNote.url} target="_blank">打开原文</Button>}
+                    {detailNote.platform === 'bili' && biliConnections.length === 0 && (
+                      <Text style={{ color: '#faad14', fontSize: 12 }}>
+                        ⚠️ 字幕/评论需登录态
+                      </Text>
+                    )}
+                    {detailNote.platform === 'bili' && biliConnections.length > 0 && (
+                      <>
+                        <Dropdown
+                          trigger={['click']}
+                          menu={{
+                            items: subtitleList.map(s => ({
+                              key: s.lan,
+                              label: s.lan_doc || s.lan,
+                              onClick: () => handleDownloadSubtitle(detailNote.id, s.lan, 'srt'),
+                            })),
+                          }}
+                          onOpenChange={(open) => { if (open && subtitleList.length === 0) fetchSubtitles(detailNote.id) }}
+                        >
+                          <Button icon={<FileTextOutlined />} loading={subtitleLoading}>
+                            字幕 {subtitleList.length > 0 && `(${subtitleList.length})`} <DownOutlined />
+                          </Button>
+                        </Dropdown>
+                      </>
+                    )}
+                  </Space>
+                </div>
               )}
-            </Space>
-          </div>
+
+              {/* ===== Tab: 弹幕 ===== */}
+              {detailDrawerTab === 'danmaku' && detailNote.platform === 'bili' && (
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                    <Space>
+                      <Text style={{ color: textPri, fontWeight: 600 }}>弹幕列表</Text>
+                      <Tag color={BILI_COLORS.accent}>{danmakuList.length} 条</Tag>
+                    </Space>
+                    <Space>
+                      <Select value={danmakuFormat} onChange={setDanmakuFormat} size="small" style={{ width: 80 }}
+                        options={[{ value: 'json', label: 'JSON' }, { value: 'ass', label: 'ASS' }, { value: 'xml', label: 'XML' }]}
+                      />
+                      <Button size="small" icon={<DownloadOutlined />} onClick={() => window.open(`/api/v1/bilibili/danmaku/download?bvid=${detailNote.id}&format=${danmakuFormat}`, '_blank')} disabled={danmakuList.length === 0}>
+                        下载
+                      </Button>
+                      <Button size="small" icon={<ReloadOutlined />} loading={danmakuLoading} onClick={() => fetchDanmaku(detailNote.id)}>
+                        刷新
+                      </Button>
+                    </Space>
+                  </div>
+                  {danmakuLoading ? (
+                    <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
+                  ) : danmakuList.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: 40, color: textSec }}>
+                      <CommentOutlined style={{ fontSize: 40, opacity: 0.3 }} />
+                      <div style={{ marginTop: 8 }}>暂无弹幕</div>
+                    </div>
+                  ) : (
+                    <div style={{ maxHeight: 400, overflowY: 'auto' }}>
+                      {danmakuList.slice(0, 200).map((d: any, i: number) => (
+                        <div key={i} style={{
+                          display: 'flex', gap: 8, padding: '6px 0',
+                          borderBottom: `1px solid ${borderColor}`,
+                          fontSize: 13,
+                        }}>
+                          <span style={{ color: BILI_COLORS.accent, fontFamily: 'monospace', width: 50, flexShrink: 0 }}>
+                            {Math.floor(d.time / 60)}:{String(Math.floor(d.time % 60)).padStart(2, '0')}
+                          </span>
+                          <span style={{ color: textPri }}>{d.text}</span>
+                        </div>
+                      ))}
+                      {danmakuList.length > 200 && (
+                        <div style={{ textAlign: 'center', padding: 8, color: textSec, fontSize: 12 }}>
+                          仅显示前200条，共 {danmakuList.length} 条
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ===== Tab: 字幕 ===== */}
+              {detailDrawerTab === 'subtitle' && detailNote.platform === 'bili' && (
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                    <Space>
+                      <Text style={{ color: textPri, fontWeight: 600 }}>字幕列表</Text>
+                      <Tag color={BILI_COLORS.gold}>{subtitleList.length} 个</Tag>
+                    </Space>
+                    <Button size="small" icon={<ReloadOutlined />} loading={subtitleLoading} onClick={() => fetchSubtitles(detailNote.id)}>
+                      刷新
+                    </Button>
+                  </div>
+                  {subtitleLoading ? (
+                    <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
+                  ) : subtitleList.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: 40, color: textSec }}>
+                      <FileTextOutlined style={{ fontSize: 40, opacity: 0.3 }} />
+                      <div style={{ marginTop: 8 }}>暂无字幕（需登录态）</div>
+                      {biliConnections.length === 0 && (
+                        <Button size="small" type="link" style={{ marginTop: 8 }} onClick={() => setDetailVisible(false)}>
+                          去「平台管理」添加 B站 Cookie →
+                        </Button>
+                      )}
+                    </div>
+                  ) : (
+                    <div>
+                      {subtitleList.map((s: any) => (
+                        <div key={s.lan} style={{
+                          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                          padding: '10px 12px', marginBottom: 8,
+                          background: isDark ? '#262626' : '#f5f5f5', borderRadius: 8,
+                        }}>
+                          <Text style={{ color: textPri }}>{s.lan_doc || s.lan_str || s.lan}</Text>
+                          <Space>
+                            <Button size="small" type="primary" style={{ background: BILI_COLORS.gold, borderColor: BILI_COLORS.gold }}
+                              onClick={() => handleDownloadSubtitle(detailNote.id, s.lan, 'srt')}>SRT</Button>
+                            <Button size="small" onClick={() => handleDownloadSubtitle(detailNote.id, s.lan, 'ass')}>ASS</Button>
+                          </Space>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ===== Tab: 评论 ===== */}
+              {detailDrawerTab === 'comments' && detailNote.platform === 'bili' && (
+                <div>
+                  {/* 发评论 */}
+                  {biliConnections.length > 0 ? (
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                      <Input.TextArea
+                        placeholder="发送评论（需登录态）..."
+                        value={commentInput}
+                        onChange={e => setCommentInput(e.target.value)}
+                        rows={2}
+                        maxLength={500}
+                        style={{ flex: 1 }}
+                      />
+                      <Button
+                        type="primary"
+                        icon={<SendOutlined />}
+                        style={{ background: BILI_COLORS.warning, borderColor: BILI_COLORS.warning }}
+                        loading={sendingComment}
+                        onClick={handleSendComment}
+                      >
+                        发送
+                      </Button>
+                    </div>
+                  ) : (
+                    <Alert type="warning" showIcon message="评论功能需要登录态，请先在「平台管理」添加 B站 Cookie 连接" style={{ marginBottom: 12 }} />
+                  )}
+                  <Divider style={{ margin: '12px 0' }} />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                    <Text style={{ color: textPri, fontWeight: 600 }}>评论列表</Text>
+                    <Space>
+                      <Segmented
+                        size="small"
+                        options={[{ label: '最热', value: 0 }, { label: '最新', value: 1 }]}
+                        value={commentSort}
+                        onChange={v => { setCommentSort(v as number); fetchComments(detailNote.id) }}
+                      />
+                      <Button size="small" icon={<ReloadOutlined />} loading={commentLoading} onClick={() => fetchComments(detailNote.id)}>
+                        刷新
+                      </Button>
+                    </Space>
+                  </div>
+                  <Tag color="orange" style={{ marginBottom: 12 }}>共 {commentTotal} 条评论</Tag>
+                  {commentLoading ? (
+                    <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
+                  ) : comments.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: 40, color: textSec }}>
+                      <MessageOutlined style={{ fontSize: 40, opacity: 0.3 }} />
+                      <div style={{ marginTop: 8 }}>暂无评论</div>
+                    </div>
+                  ) : (
+                    <div style={{ maxHeight: 350, overflowY: 'auto' }}>
+                      {comments.map((c: any) => (
+                        <div key={c.rpid} style={{
+                          padding: '10px 0', borderBottom: `1px solid ${borderColor}`,
+                        }}>
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                            <div style={{
+                              width: 32, height: 32, borderRadius: '50%',
+                              background: BILI_COLORS.primary, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              color: '#fff', fontSize: 12, flexShrink: 0,
+                            }}>
+                              {c.user_name?.[0] || '?'}
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                                <Text style={{ color: textPri, fontSize: 13, fontWeight: 600 }}>{c.user_name}</Text>
+                                {c.rcount > 0 && <Tag size="small" style={{ fontSize: 11 }}>{c.rcount} 回复</Tag>}
+                              </div>
+                              <Text style={{ color: textPri, fontSize: 13 }}>{c.message}</Text>
+                              <div style={{ marginTop: 4, fontSize: 11, color: textSec }}>
+                                {new Date(c.ctime * 1000).toLocaleString('zh-CN')} · {c.like_count} 赞
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ===== Tab: 数据统计 ===== */}
+              {detailDrawerTab === 'stats' && detailNote.platform === 'bili' && (
+                <div>
+                  <Text style={{ color: textPri, fontWeight: 600, display: 'block', marginBottom: 12 }}>数据统计</Text>
+                  {statsLoading ? (
+                    <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
+                  ) : biliStats ? (
+                    <div>
+                      <Row gutter={[8, 8]}>
+                        {[
+                          { label: '播放', value: biliStats.stat?.view, icon: <EyeOutlined />, color: BILI_COLORS.accent },
+                          { label: '点赞', value: biliStats.stat?.like, icon: <LikeOutlined />, color: BILI_COLORS.primary },
+                          { label: '投币', value: biliStats.stat?.coin, icon: <StarOutlined />, color: BILI_COLORS.gold },
+                          { label: '收藏', value: biliStats.stat?.favorite, icon: <StarOutlined />, color: BILI_COLORS.purple },
+                          { label: '评论', value: biliStats.stat?.reply, icon: <CommentOutlined />, color: BILI_COLORS.warning },
+                          { label: '弹幕', value: biliStats.stat?.danmaku, icon: <MessageOutlined />, color: '#00C7CC' },
+                        ].map((s, i) => (
+                          <Col span={8} key={i}>
+                            <div style={{
+                              textAlign: 'center', padding: '16px 8px',
+                              background: `${s.color}12`, borderRadius: 10,
+                              border: `1px solid ${s.color}33`,
+                            }}>
+                              <div style={{ color: s.color, fontSize: 20, marginBottom: 4 }}>{s.icon}</div>
+                              <div style={{ fontSize: 18, fontWeight: 800, color: s.color }}>
+                                {formatNum(s.value)}
+                              </div>
+                              <div style={{ fontSize: 12, color: textSec }}>{s.label}</div>
+                            </div>
+                          </Col>
+                        ))}
+                      </Row>
+                      {/* 互动率 */}
+                      {biliStats.stat?.view > 0 && (
+                        <div style={{ marginTop: 16 }}>
+                          <Text style={{ color: textPri, fontWeight: 600, fontSize: 13 }}>互动率分析</Text>
+                          <Row gutter={[8, 8]} style={{ marginTop: 8 }}>
+                            <Col span={8}>
+                              <div style={{ padding: '8px 12px', background: isDark ? '#262626' : '#f5f5f5', borderRadius: 8, textAlign: 'center' }}>
+                                <div style={{ fontSize: 16, fontWeight: 700, color: BILI_COLORS.primary }}>
+                                  {((biliStats.stat.like / biliStats.stat.view) * 100).toFixed(2)}%
+                                </div>
+                                <div style={{ fontSize: 11, color: textSec }}>点赞率</div>
+                              </div>
+                            </Col>
+                            <Col span={8}>
+                              <div style={{ padding: '8px 12px', background: isDark ? '#262626' : '#f5f5f5', borderRadius: 8, textAlign: 'center' }}>
+                                <div style={{ fontSize: 16, fontWeight: 700, color: BILI_COLORS.gold }}>
+                                  {((biliStats.stat.coin / biliStats.stat.view) * 100).toFixed(2)}%
+                                </div>
+                                <div style={{ fontSize: 11, color: textSec }}>投币率</div>
+                              </div>
+                            </Col>
+                            <Col span={8}>
+                              <div style={{ padding: '8px 12px', background: isDark ? '#262626' : '#f5f5f5', borderRadius: 8, textAlign: 'center' }}>
+                                <div style={{ fontSize: 16, fontWeight: 700, color: BILI_COLORS.purple }}>
+                                  {((biliStats.stat.favorite / biliStats.stat.view) * 100).toFixed(2)}%
+                                </div>
+                                <div style={{ fontSize: 11, color: textSec }}>收藏率</div>
+                              </div>
+                            </Col>
+                          </Row>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ textAlign: 'center', padding: 40, color: textSec }}>
+                      <BarChartOutlined style={{ fontSize: 40, opacity: 0.3 }} />
+                      <div style={{ marginTop: 8 }}>加载数据中...</div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </>
         )}
       </Drawer>
     </div>

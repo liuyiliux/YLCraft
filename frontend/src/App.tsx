@@ -19,7 +19,7 @@ import Live2DPage from './pages/live2d'
 import SubtitlePage from './pages/subtitle'
 import BGMPage from './pages/bgm'
 import AgentPage from './pages/agent'
-import PlatformsPage from './pages/platforms'
+import AccountsPage from './pages/accounts'
 import PublishPage from './pages/publish'
 import CrawlerPage from './pages/crawler'
 import ComfyUIPage from './pages/comfyui'
@@ -69,7 +69,7 @@ export default function App() {
               <Route path="bgm" element={<BGMPage />} />
               <Route path="tasks" element={<TasksPage />} />
               <Route path="agent" element={<AgentPage />} />
-              <Route path="platforms" element={<PlatformsPage />} />
+              <Route path="accounts" element={<AccountsPage />} />
               <Route path="publish" element={<PublishPage />} />
               <Route path="crawler" element={<CrawlerPage />} />
               <Route path="image-editor" element={<ImageEditorPage />} />

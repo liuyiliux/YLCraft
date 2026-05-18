@@ -29,6 +29,8 @@ import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   ReadOutlined,
+  UserOutlined,
+  KeyOutlined,
 } from '@ant-design/icons'
 
 const { Sider, Content, Header } = Layout
@@ -40,6 +42,7 @@ const MAIN_NAV: MenuProps['items'] = [
 ]
 
 const BOTTOM_NAV: MenuProps['items'] = [
+  { key: '/accounts', icon: <KeyOutlined />, label: '账号中心' },
   { key: '/settings', icon: <SettingOutlined />, label: '设置' },
 ]
 
@@ -64,9 +67,8 @@ const menuItems: MenuProps['items'] = [
     label: '爆款拆解',
     children: [
       { key: '/breaker', label: '爆款拆解' },
-      { key: '/crawler', label: '素材采集' },
+      { key: '/crawler', label: '内容管理' },
       { key: '/download', label: '去水印下载' },
-      { key: '/platforms', label: '平台管理' },
       { key: '/publish', label: '一键发布' },
     ],
   },
