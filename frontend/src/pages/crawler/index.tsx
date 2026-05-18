@@ -605,7 +605,7 @@ export default function CrawlerPage() {
   const fetchDanmaku = async (bvid: string) => {
     setDanmakuLoading(true)
     try {
-      const res: any = await getDanmaku(bvid)
+      const res: any = await getDanmaku(bvid, undefined, selectedBiliConn)
       if (res?.success) {
         setDanmakuList(res.data || [])
         message.success(`加载了 ${res.data?.length || 0} 条弹幕`)
@@ -626,7 +626,7 @@ export default function CrawlerPage() {
     setCommentLoading(true)
     setCommentPage(page)
     try {
-      const res: any = await getBiliComments(bvid, { page, sort: commentSort })
+      const res: any = await getBiliComments(bvid, { page, sort: commentSort, conn_id: selectedBiliConn })
       if (res?.success) {
         setComments(res.data?.comments || [])
         setCommentTotal(res.data?.total || 0)
@@ -667,7 +667,7 @@ export default function CrawlerPage() {
   const fetchBiliStats = async (bvid: string) => {
     setStatsLoading(true)
     try {
-      const res: any = await getBiliStats({ bvid })
+      const res: any = await getBiliStats({ bvid, conn_id: selectedBiliConn })
       if (res?.data?.length) {
         setBiliStats(res.data[0])
       }
@@ -678,7 +678,7 @@ export default function CrawlerPage() {
   // ===== B站专属：视频信息 =====
   const fetchBiliVideoInfo = async (bvid: string) => {
     try {
-      const res: any = await getBiliVideoInfo(bvid)
+      const res: any = await getBiliVideoInfo(bvid, selectedBiliConn)
       if (res?.success) {
         setBiliVideoInfo(res.data)
       }

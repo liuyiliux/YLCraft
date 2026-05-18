@@ -1544,14 +1544,23 @@ class BilibiliClient(BasePlatformClient):
             danmaku_url = f"{BASE_URL}/x/v1/dm/list.so?oid={target_cid}"
             danmaku_resp = await self.request("GET", danmaku_url)
 
+            # 处理不同类型的响应
+            xml_text = None
             if isinstance(danmaku_resp, str):
                 xml_text = danmaku_resp
             elif isinstance(danmaku_resp, dict):
-                # 有时候返回的是错误 JSON
-                self._log(f"Danmaku response is dict: {danmaku_resp}", "warning")
-                return []
+                # _request_api 在 JSON 解析失败时返回 {'text': content, 'status': ...}
+                if 'text' in danmaku_resp:
+                    xml_text = danmaku_resp['text']
+                else:
+                    self._log(f"Danmaku response is dict: {danmaku_resp}", "warning")
+                    return []
             else:
                 self._log(f"Danmaku unexpected type: {type(danmaku_resp)}", "warning")
+                return []
+
+            if not xml_text:
+                self._log("Danmaku xml_text is empty", "warning")
                 return []
 
             # 解析 XML 弹幕
@@ -1619,6 +1628,36 @@ class BilibiliClient(BasePlatformClient):
         except Exception as e:
             self._log(f"Download danmaku error: {e}", "error")
             return ""
+
+    # =========================================================================
+    # 视频信息
+    # =========================================================================
+
+    async def get_video_info(self, bvid: str) -> Dict:
+        """获取视频详细信息
+
+        Args:
+            bvid: B站视频 BV 号
+
+        Returns:
+            视频详细信息（aid, cid, title, description, owner, stat, pages 等）
+        """
+        self._log(f"Getting video info for: {bvid}")
+
+        try:
+            view_url = f"{BASE_URL}/x/web-interface/view?bvid={bvid}"
+            view_resp = await self.request("GET", view_url)
+
+            if isinstance(view_resp, dict) and view_resp.get("code") == 0:
+                data = view_resp.get("data", {})
+                self._log(f"Got video info: {data.get('title', 'unknown')}")
+                return data
+            else:
+                self._log(f"Failed to get video info: {view_resp}", "warning")
+                return {}
+        except Exception as e:
+            self._log(f"Get video info error: {e}", "error")
+            return {}
 
     # =========================================================================
     # 作品数据统计

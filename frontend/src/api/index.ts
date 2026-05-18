@@ -468,22 +468,32 @@ export const downloadCrawlerSubtitle = (itemId: string, lan: string, format: str
 }
 
 /** 获取弹幕 */
-export const getDanmaku = (bvid: string, cid?: number) =>
-  request(`/bilibili/danmaku${cid ? `?cid=${cid}` : ''}?bvid=${bvid}`)
+export const getDanmaku = (bvid: string, cid?: number, connId?: string) => {
+  const qs = new URLSearchParams()
+  qs.set('bvid', bvid)
+  if (cid) qs.set('cid', String(cid))
+  if (connId) qs.set('conn_id', connId)
+  return request(`/bilibili/danmaku?${qs}`)
+}
 
 /** 下载弹幕文件 */
 export const downloadDanmaku = (bvid: string, format: 'json' | 'ass' | 'xml' = 'json') =>
   request(`/bilibili/danmaku/download?bvid=${bvid}&format=${format}`)
 
 /** 获取视频详细信息 */
-export const getBiliVideoInfo = (bvid: string) =>
-  request(`/bilibili/video/info?bvid=${bvid}`)
+export const getBiliVideoInfo = (bvid: string, connId?: string) => {
+  const qs = new URLSearchParams()
+  qs.set('bvid', bvid)
+  if (connId) qs.set('conn_id', connId)
+  return request(`/bilibili/video/info?${qs}`)
+}
 
 /** 获取作品数据统计 */
-export const getBiliStats = (params: { bvid?: string; aid?: number }) => {
+export const getBiliStats = (params: { bvid?: string; aid?: number; conn_id?: string }) => {
   const qs = new URLSearchParams()
   if (params.bvid) qs.set('bvid', params.bvid)
   if (params.aid) qs.set('aid', String(params.aid))
+  if (params.conn_id) qs.set('conn_id', params.conn_id)
   return request(`/bilibili/stats?${qs}`)
 }
 
@@ -509,12 +519,13 @@ export const searchBiliVideos = (params: {
 }
 
 /** 获取评论列表 */
-export const getBiliComments = (bvid: string, options?: { page?: number; page_size?: number; sort?: number }) => {
+export const getBiliComments = (bvid: string, options?: { page?: number; page_size?: number; sort?: number; conn_id?: string }) => {
   const qs = new URLSearchParams()
   qs.set('bvid', bvid)
   if (options?.page) qs.set('page', String(options.page))
   if (options?.page_size) qs.set('page_size', String(options.page_size))
   if (options?.sort !== undefined) qs.set('sort', String(options.sort))
+  if (options?.conn_id) qs.set('conn_id', options.conn_id)
   return request(`/bilibili/comments?${qs}`)
 }
 

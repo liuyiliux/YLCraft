@@ -305,10 +305,10 @@ def _register_routes():
     except Exception as e:
         logger.warning(f"Could not load crawler router: {e}")
 
-    # B站专属路由（字幕、弹幕等）
+    # B站专属路由（模块化结构）
     try:
-        from app.api.v1 import bilibili
-        app.include_router(bilibili.router, prefix="/api/v1/bilibili", tags=["Bilibili"])
+        from app.services.platforms.bilibili.routes import router as bili_router
+        app.include_router(bili_router, prefix="/api/v1/bilibili", tags=["Crawler — Bilibili"])
     except Exception as e:
         logger.warning(f"Could not load bilibili router: {e}")
 

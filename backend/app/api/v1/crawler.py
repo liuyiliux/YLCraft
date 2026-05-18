@@ -35,6 +35,26 @@ from app.services.crawler.models import NoteDetail, SearchFilter, SearchEnhanced
 router = APIRouter()
 logger = logging.getLogger("ylcraft.api.crawler")
 
+
+# =============================================================================
+# 辅助函数
+# =============================================================================
+
+def _get_conn_cookie(conn_id: str) -> str:
+    """从 conn_id 获取 Cookie"""
+    if not conn_id:
+        return ""
+    try:
+        from app.services.platform_connection import PlatformConnectionService
+        service = PlatformConnectionService()
+        conn = service.get(conn_id)
+        if conn and conn.cookie_content:
+            return conn.cookie_content
+    except Exception as e:
+        logger.warning(f"Failed to get cookie from connection {conn_id}: {e}")
+    return ""
+
+
 # =============================================================================
 # Response Models
 # =============================================================================
