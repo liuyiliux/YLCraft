@@ -4,6 +4,7 @@
  */
 
 import { useState, useEffect, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Card, Input, Button, Select, Table, Tag, message, Spin, Space, Row, Col,
   Typography, Alert, Tooltip, Modal, Image, Segmented, Drawer, Descriptions,
@@ -387,6 +388,7 @@ function proxyImageUrl(url?: string): string {
 // ===== 主组件 =====
 export default function CrawlerPage() {
   const { theme: THEME, themeId } = useTheme()
+  const navigate = useNavigate()
 
   // 搜索状态
   const [platform, setPlatform] = useState('bili')
@@ -1201,8 +1203,19 @@ export default function CrawlerPage() {
         open={detailVisible}
         onClose={() => setDetailVisible(false)}
         width={detailNote?.platform === 'bili' ? 640 : 560}
-        styles={{ body: { background: isDark ? '#1a1a1a' : '#fff', padding: 0 } }}
+        styles={{
+          body: {
+            background: isDark ? '#1e1e2e' : '#ffffff',
+            padding: 0,
+          },
+          header: {
+            background: isDark ? '#181828' : '#fafbfc',
+            borderBottom: `1px solid ${borderColor}`,
+            padding: '0 20px',
+          },
+        }}
         extra={null}
+        titleStyle={{ color: textPri }}
       >
         {detailLoading && <div style={{ textAlign: 'center', padding: 60 }}><Spin size="large" /></div>}
         {detailError && <Alert message={detailError} type="warning" showIcon style={{ margin: 16 }} />}
@@ -1213,7 +1226,7 @@ export default function CrawlerPage() {
             {detailNote.platform === 'bili' && (
               <div style={{
                 display: 'flex', borderBottom: `1px solid ${borderColor}`,
-                background: isDark ? '#262626' : '#fafbfc',
+                background: isDark ? '#252538' : '#f0f2f5',
                 padding: '0 20px',
               }}>
                 {[
@@ -1265,13 +1278,13 @@ export default function CrawlerPage() {
             )}
 
             {/* Tab 内容 */}
-            <div style={{ padding: 20 }}>
+            <div style={{ padding: 20, color: isDark ? '#e0e0f0' : '#1a1a2e' }}>
               {/* ===== Tab: 详情 ===== */}
               {detailDrawerTab === 'detail' && (
                 <div>
                   {/* 封面预览 */}
                   {previewMediaUrls.length > 0 && (
-                    <div style={{ marginBottom: 16, position: 'relative', background: isDark ? '#262626' : '#f5f5f5', borderRadius: 8, overflow: 'hidden', textAlign: 'center' }}>
+                    <div style={{ marginBottom: 16, position: 'relative', background: isDark ? '#252538' : '#f5f5f5', borderRadius: 8, overflow: 'hidden', textAlign: 'center' }}>
                       <Image src={proxyImageUrl(previewMediaUrls[detailMediaIdx])} alt="media"
                         style={{ maxWidth: '100%', maxHeight: 320, objectFit: 'contain' }}
                         fallback="data:image/svg+xml,..."
@@ -1292,7 +1305,10 @@ export default function CrawlerPage() {
                   )}
 
                   {/* 元数据 */}
-                  <Descriptions column={1} size="small" style={{ marginBottom: 16 }}>
+                  <Descriptions column={1} size="small" style={{ marginBottom: 16 }}
+                    labelStyle={{ color: isDark ? '#8b8bb5' : '#666', fontSize: 13 }}
+                    contentStyle={{ color: isDark ? '#e0e0f0' : '#1a1a2e', fontSize: 13 }}
+                  >
                     {detailNote.author && <Descriptions.Item label="作者">{detailNote.author}</Descriptions.Item>}
                     {detailNote.platform && (
                       <Descriptions.Item label="平台">
@@ -1302,11 +1318,17 @@ export default function CrawlerPage() {
                       </Descriptions.Item>
                     )}
                     <Descriptions.Item label="互动">
-                      赞 {formatNum(detailNote.likes)} · 评 {formatNum(detailNote.comments)} · 转 {formatNum(detailNote.shares)} · 币 {formatNum(detailNote.coins)}
+                      <Space size={8} style={{ fontSize: 13, fontWeight: 600, color: textPri }}>
+                        <span><LikeOutlined style={{ color: BILI_COLORS.primary }} /> 赞 {biliStats?.stat?.like ?? formatNum(detailNote.likes)}</span>
+                        <span><StarOutlined style={{ color: BILI_COLORS.gold }} /> 投币 {biliStats?.stat?.coin ?? formatNum(detailNote.coins)}</span>
+                        <span><StarOutlined style={{ color: BILI_COLORS.purple }} /> 收藏 {biliStats?.stat?.favorite ?? '—'}</span>
+                        <span><CommentOutlined style={{ color: BILI_COLORS.warning }} /> 评论 {biliStats?.stat?.reply ?? formatNum(detailNote.comments)}</span>
+                        <ShareAltOutlined style={{ color: '#00C7CC' }} />
+                      </Space>
                     </Descriptions.Item>
                     {detailNote.url && (
                       <Descriptions.Item label="原文链接">
-                        <a href={detailNote.url} target="_blank" rel="noreferrer" style={{ fontSize: 12, wordBreak: 'break-all' }}>{detailNote.url}</a>
+                        <a href={detailNote.url} target="_blank" rel="noreferrer" style={{ fontSize: 12, wordBreak: 'break-all', color: THEME.accent }}>{detailNote.url}</a>
                       </Descriptions.Item>
                     )}
                   </Descriptions>
@@ -1315,7 +1337,10 @@ export default function CrawlerPage() {
                   {detailNote.platform === 'bili' && biliVideoInfo && (
                     <>
                       <Divider style={{ borderColor }} />
-                      <Descriptions column={2} size="small">
+                      <Descriptions column={2} size="small"
+                        labelStyle={{ color: isDark ? '#8b8bb5' : '#666', fontSize: 13 }}
+                        contentStyle={{ color: isDark ? '#e0e0f0' : '#1a1a2e', fontSize: 13 }}
+                      >
                         {biliVideoInfo.basic?.tname && <Descriptions.Item label="分区"><Tag color="blue">{biliVideoInfo.basic.tname}</Tag></Descriptions.Item>}
                         {biliVideoInfo.basic?.owner?.name && <Descriptions.Item label="UP主">{biliVideoInfo.basic.owner.name}</Descriptions.Item>}
                         {biliVideoInfo.basic?.pubdate > 0 && <Descriptions.Item label="发布时间">{new Date(biliVideoInfo.basic.pubdate * 1000).toLocaleString('zh-CN')}</Descriptions.Item>}
@@ -1348,28 +1373,12 @@ export default function CrawlerPage() {
                   <Space wrap style={{ width: '100%', justifyContent: 'center' }}>
                     {detailNote.url && <Button type="primary" icon={<LinkOutlined />} href={detailNote.url} target="_blank">打开原文</Button>}
                     {detailNote.platform === 'bili' && biliConnections.length === 0 && (
-                      <Text style={{ color: '#faad14', fontSize: 12 }}>
-                        ⚠️ 字幕/评论需登录态
-                      </Text>
+                      <Text style={{ color: '#faad14', fontSize: 12 }}>⚠️ 字幕/评论需登录态</Text>
                     )}
                     {detailNote.platform === 'bili' && biliConnections.length > 0 && (
-                      <>
-                        <Dropdown
-                          trigger={['click']}
-                          menu={{
-                            items: subtitleList.map(s => ({
-                              key: s.lan,
-                              label: s.lan_doc || s.lan,
-                              onClick: () => handleDownloadSubtitle(detailNote.id, s.lan, 'srt'),
-                            })),
-                          }}
-                          onOpenChange={(open) => { if (open && subtitleList.length === 0) fetchSubtitles(detailNote.id) }}
-                        >
-                          <Button icon={<FileTextOutlined />} loading={subtitleLoading}>
-                            字幕 {subtitleList.length > 0 && `(${subtitleList.length})`} <DownOutlined />
-                          </Button>
-                        </Dropdown>
-                      </>
+                      <Button icon={<FileTextOutlined />} onClick={() => { setDetailDrawerTab('subtitle'); if (subtitleList.length === 0) fetchSubtitles(detailNote.id); }}>
+                        字幕 {subtitleList.length > 0 && `(${subtitleList.length})`}
+                      </Button>
                     )}
                   </Space>
                 </div>
@@ -1445,8 +1454,9 @@ export default function CrawlerPage() {
                       <FileTextOutlined style={{ fontSize: 40, opacity: 0.3 }} />
                       <div style={{ marginTop: 8 }}>暂无字幕（需登录态）</div>
                       {biliConnections.length === 0 && (
-                        <Button size="small" type="link" style={{ marginTop: 8 }} onClick={() => setDetailVisible(false)}>
-                          去「平台管理」添加 B站 Cookie →
+                        <Button size="small" type="link" style={{ marginTop: 8 }}
+                          onClick={() => { setDetailVisible(false); navigate('/accounts') }}>
+                          去「账号中心」添加 B站 Cookie →
                         </Button>
                       )}
                     </div>
@@ -1496,7 +1506,13 @@ export default function CrawlerPage() {
                       </Button>
                     </div>
                   ) : (
-                    <Alert type="warning" showIcon message="评论功能需要登录态，请先在「平台管理」添加 B站 Cookie 连接" style={{ marginBottom: 12 }} />
+                    <div style={{ textAlign: 'center', padding: '12px 16px', background: `${BILI_COLORS.warning}15`, borderRadius: 8, marginBottom: 12 }}>
+                      <div style={{ color: textSec, fontSize: 13 }}>评论功能需要登录态</div>
+                      <Button size="small" type="link"
+                        onClick={() => { setDetailVisible(false); navigate('/accounts') }}>
+                        去「账号中心」添加 B站 Cookie →
+                      </Button>
+                    </div>
                   )}
                   <Divider style={{ margin: '12px 0' }} />
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>

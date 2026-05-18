@@ -1510,9 +1510,327 @@ class BilibiliClient(BasePlatformClient):
         return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
     
     # =========================================================================
+    # 弹幕相关
+    # =========================================================================
+
+    async def get_danmaku(self, bvid: str, cid: int = 0) -> List[Dict]:
+        """获取视频弹幕列表
+
+        Args:
+            bvid: B站视频 BV 号
+            cid: 分P ID，多P视频必填
+
+        Returns:
+            弹幕列表，每个元素包含 time, type, font_size, color, timestamp, pool, user_id, dmid, text
+        """
+        self._log(f"Getting danmaku for: {bvid}, cid={cid}")
+
+        try:
+            # 先获取视频详情拿到 cid
+            view_url = f"{BASE_URL}/x/web-interface/view?bvid={bvid}"
+            view_resp = await self.request("GET", view_url)
+            if not (isinstance(view_resp, dict) and view_resp.get("code") == 0):
+                self._log(f"Get danmaku failed (view): {view_resp}", "warning")
+                return []
+
+            pages = view_resp["data"].get("pages", [])
+            target_cid = cid or (pages[0]["cid"] if pages else None)
+            if not target_cid:
+                self._log("Cannot get cid for danmaku", "warning")
+                return []
+
+            # 获取弹幕
+            import re
+            danmaku_url = f"{BASE_URL}/x/v1/dm/list.so?oid={target_cid}"
+            danmaku_resp = await self.request("GET", danmaku_url)
+
+            if isinstance(danmaku_resp, str):
+                xml_text = danmaku_resp
+            elif isinstance(danmaku_resp, dict):
+                # 有时候返回的是错误 JSON
+                self._log(f"Danmaku response is dict: {danmaku_resp}", "warning")
+                return []
+            else:
+                self._log(f"Danmaku unexpected type: {type(danmaku_resp)}", "warning")
+                return []
+
+            # 解析 XML 弹幕
+            pattern = r'<d p="([^"]+)">([^<]+)</d>'
+            matches = re.findall(pattern, xml_text)
+            danmaku_list = []
+            for p, text in matches:
+                parts = p.split(",")
+                if len(parts) >= 8:
+                    danmaku_list.append({
+                        "time": float(parts[0]),
+                        "type": int(parts[1]),
+                        "font_size": int(parts[2]),
+                        "color": parts[3],
+                        "timestamp": parts[4],
+                        "pool": int(parts[5]),
+                        "user_id": parts[6],
+                        "dmid": parts[7],
+                        "text": text,
+                    })
+
+            self._log(f"Got {len(danmaku_list)} danmaku for {bvid}")
+            return danmaku_list
+
+        except Exception as e:
+            self._log(f"Get danmaku error: {e}", "error")
+            return []
+
+    async def download_danmaku(self, bvid: str, format: str = "json") -> str:
+        """下载弹幕文件
+
+        Args:
+            bvid: B站视频 BV 号
+            format: 格式 'json' 或 'ass'
+
+        Returns:
+            弹幕文件内容
+        """
+        self._log(f"Downloading danmaku for: {bvid}, format={format}")
+
+        try:
+            danmaku_list = await self.get_danmaku(bvid)
+            if not danmaku_list:
+                return ""
+
+            if format == "json":
+                import json
+                return json.dumps(danmaku_list, ensure_ascii=False, indent=2)
+            elif format == "ass":
+                import re
+                lines = ["[Script Info]", "Title: Danmaku ASS", "ScriptType: v4.00+", "",
+                         "[V4+ Styles]", "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+                         "Style: Default,Sans,20,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,2,0,2,10,10,10,1",
+                         "", "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"]
+                for d in danmaku_list:
+                    t = d.get("time", 0)
+                    h = int(t // 3600)
+                    m = int((t % 3600) // 60)
+                    s = t % 60
+                    lines.append(f'Dialogue: 0,{h}:{m:02d}:{s:06.3f},{h}:{m:02d}:{s+5:06.3f},Default,,0,0,0,,{d.get("text", "")}')
+                return "\n".join(lines)
+            else:
+                return ""
+
+        except Exception as e:
+            self._log(f"Download danmaku error: {e}", "error")
+            return ""
+
+    # =========================================================================
+    # 作品数据统计
+    # =========================================================================
+
+    async def get_stats(self, bvid: str = "", aid: int = 0) -> Dict:
+        """获取视频作品数据（播放量/点赞/投币/收藏/评论/分享/弹幕数）
+
+        Args:
+            bvid: BV 号
+            aid: AV 号
+
+        Returns:
+            包含 stat 信息的字典
+        """
+        self._log(f"Getting stats for: bvid={bvid}, aid={aid}")
+
+        if not bvid and not aid:
+            self._log("Must provide bvid or aid", "error")
+            return {}
+
+        params = {}
+        if bvid:
+            params["bvid"] = bvid
+        if aid:
+            params["aid"] = aid
+
+        try:
+            url = f"{BASE_URL}/x/web-interface/view?{urlencode(params)}"
+            response = await self.request("GET", url)
+
+            if isinstance(response, dict) and response.get("code") == 0:
+                info = response.get("data", {})
+                stat = info.get("stat", {})
+                owner = info.get("owner", {})
+
+                return {
+                    "bvid": info.get("bvid", ""),
+                    "aid": info.get("aid", ""),
+                    "title": info.get("title", ""),
+                    "description": info.get("desc", "")[:200],
+                    "owner_name": owner.get("name", ""),
+                    "owner_mid": owner.get("mid", ""),
+                    "duration_seconds": info.get("duration", 0),
+                    "pubdate": info.get("pubdate", 0),
+                    "stat": {
+                        "view": stat.get("view", 0),
+                        "like": stat.get("like", 0),
+                        "coin": stat.get("coin", 0),
+                        "favorite": stat.get("favorite", 0),
+                        "reply": stat.get("reply", 0),
+                        "share": stat.get("share", 0),
+                        "danmaku": stat.get("danmaku", 0),
+                    },
+                }
+            else:
+                msg = response.get("message", "Unknown error") if isinstance(response, dict) else "Request failed"
+                self._log(f"Get stats failed: {msg}", "warning")
+                return {}
+
+        except Exception as e:
+            self._log(f"Get stats error: {e}", "error")
+            return {}
+
+    # =========================================================================
+    # 评论管理
+    # =========================================================================
+
+    async def get_comments_paged(
+        self,
+        bvid: str,
+        page: int = 1,
+        page_size: int = 20,
+        sort: int = 0,
+    ) -> Dict:
+        """获取评论列表（分页版）
+
+        Args:
+            bvid: BV 号
+            page: 页码（1 开始）
+            page_size: 每页条数
+            sort: 排序 0=最热 1=最新 2=最早
+
+        Returns:
+            {"total": int, "page": int, "page_size": int, "comments": [...]}
+        """
+        self._log(f"Getting comments for: {bvid}, page={page}, sort={sort}")
+
+        try:
+            # 先拿 cid
+            view_url = f"{BASE_URL}/x/web-interface/view?bvid={bvid}"
+            view_resp = await self.request("GET", view_url)
+            if not (isinstance(view_resp, dict) and view_resp.get("code") == 0):
+                self._log(f"Get comments failed (view): {view_resp}", "warning")
+                return {"total": 0, "page": page, "page_size": page_size, "comments": []}
+
+            pages = view_resp["data"].get("pages", [])
+            target_cid = pages[0]["cid"] if pages else 0
+
+            params = {
+                "type": 1,
+                "oid": target_cid,
+                "pn": page,
+                "ps": page_size,
+                "sort": sort,
+            }
+            url = f"{BASE_URL}/x/v2/reply/main?{urlencode(params)}"
+            resp = await self.request("GET", url)
+
+            if isinstance(resp, dict) and resp.get("code") == 0:
+                replies = resp.get("data", {})
+                comments = []
+                for r in replies.get("replies", []) or []:
+                    member = r.get("member", {})
+                    c = r.get("content", {})
+                    comments.append({
+                        "rpid": r.get("rpid"),
+                        "user_name": member.get("uname", ""),
+                        "user_avatar": member.get("avatar", ""),
+                        "mid": member.get("mid"),
+                        "message": c.get("message", ""),
+                        "like_count": r.get("like_count", 0),
+                        "ctime": r.get("ctime"),
+                        "replies_count": r.get("rcount", 0),
+                    })
+                return {
+                    "total": replies.get("total", 0),
+                    "page": page,
+                    "page_size": page_size,
+                    "comments": comments,
+                }
+            else:
+                return {"total": 0, "page": page, "page_size": page_size, "comments": []}
+
+        except Exception as e:
+            self._log(f"Get comments error: {e}", "error")
+            return {"total": 0, "page": page, "page_size": page_size, "comments": []}
+
+    async def send_comment(
+        self,
+        bvid: str,
+        message: str,
+        parent: int = 0,
+        root: int = 0,
+        csrf: str = "",
+    ) -> Dict:
+        """发送评论（需要登录态）
+
+        Args:
+            bvid: BV 号
+            message: 评论内容
+            parent: 回复的评论ID（0=一级评论）
+            root: 根评论ID
+            csrf: CSRF token（从 cookie 中的 bili_jct 提取）
+
+        Returns:
+            {"success": bool, "rpid": int, "message": str}
+        """
+        self._log(f"Sending comment for: {bvid}, message={message[:50]}...")
+
+        if not csrf:
+            self._log("CSRF token required for sending comment", "error")
+            return {"success": False, "message": "缺少 CSRF token"}
+
+        try:
+            # 拿 cid
+            view_url = f"{BASE_URL}/x/web-interface/view?bvid={bvid}"
+            view_resp = await self.request("GET", view_url)
+            if not (isinstance(view_resp, dict) and view_resp.get("code") == 0):
+                self._log(f"Send comment failed (view): {view_resp}", "warning")
+                return {"success": False, "message": "视频不存在"}
+
+            pages = view_resp["data"].get("pages", [])
+            oid = pages[0]["cid"] if pages else 0
+
+            payload = {
+                "type": 1,
+                "oid": oid,
+                "message": message,
+                "csrf_token": csrf,
+                "csrf": csrf,
+            }
+            if parent > 0:
+                payload["parent"] = parent
+            if root > 0:
+                payload["root"] = root
+
+            url = f"{BASE_URL}/x/v2/reply-add"
+            headers = {
+                "Content-Type": "application/x-www-form-urlencoded",
+            }
+
+            resp = await self.request("POST", url, data=payload, headers=headers)
+
+            if isinstance(resp, dict) and resp.get("code") == 0:
+                return {
+                    "success": True,
+                    "rpid": resp.get("data", {}).get("rpid", -1),
+                    "message": "评论成功",
+                }
+            else:
+                msg = resp.get("message", "评论失败") if isinstance(resp, dict) else "评论失败"
+                return {"success": False, "message": msg}
+
+        except Exception as e:
+            self._log(f"Send comment error: {e}", "error")
+            return {"success": False, "message": str(e)}
+
+    # =========================================================================
     # WBI 签名（需要 Patchright 模式获取 localStorage）
     # =========================================================================
-    
+
     async def _get_wbi_keys_from_browser(self) -> Optional[tuple]:
         """从浏览器 localStorage 获取 wbi keys"""
         if not self._patchright_page:
