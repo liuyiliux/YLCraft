@@ -1747,28 +1747,55 @@ class BilibiliClient(BasePlatformClient):
         self._log(f"Getting comments for: {bvid}, page={page}, sort={sort}")
 
         try:
-            # 先拿 cid
+            # 先获取视频信息，拿到 aid（avid）
             view_url = f"{BASE_URL}/x/web-interface/view?bvid={bvid}"
             view_resp = await self.request("GET", view_url)
             if not (isinstance(view_resp, dict) and view_resp.get("code") == 0):
                 self._log(f"Get comments failed (view): {view_resp}", "warning")
                 return {"total": 0, "page": page, "page_size": page_size, "comments": []}
 
-            pages = view_resp["data"].get("pages", [])
-            target_cid = pages[0]["cid"] if pages else 0
+            # 评论API的 oid 参数需要使用 aid（avid），不是 cid！
+            # 参考: https://github.com/SocialSisterYi/bilibili-API-collect/blob/master/docs/reply/reply_list.md
+            target_aid = view_resp["data"].get("aid")
+            if not target_aid:
+                self._log(f"Get comments failed: no aid in view response", "warning")
+                return {"total": 0, "page": page, "page_size": page_size, "comments": []}
+            self._log(f"[DEBUG] Using aid={target_aid} for comment API")
 
             params = {
                 "type": 1,
-                "oid": target_cid,
-                "pn": page,
+                "oid": target_aid,
+                "mode": 3,
+                "pagination_str": '{"offset":""}',
                 "ps": page_size,
                 "sort": sort,
             }
-            url = f"{BASE_URL}/x/v2/reply/main?{urlencode(params)}"
+            # 评论 API 需要 WBI 签名
+            query_string = await self._sign_params(params)
+            url = f"{BASE_URL}/x/v2/reply/wbi/main?{query_string}"
+            self._log(f"[DEBUG] Comment API URL: {url[:200]}...")
             resp = await self.request("GET", url)
+
+            # 调试日志：打印原始响应
+            resp_code = resp.get('code') if isinstance(resp, dict) else 'N/A'
+            self._log(f"[DEBUG] Comment API raw resp code={resp_code}")
+            
+            # 如果 code 不是 0，打印详细错误
+            if isinstance(resp, dict) and resp_code != 0:
+                self._log(f"[DEBUG] Comment API error: {resp}", "warning")
+                import json
+                self._log(f"[DEBUG] Full resp JSON: {json.dumps(resp, ensure_ascii=False)[:500]}", "warning")
 
             if isinstance(resp, dict) and resp.get("code") == 0:
                 replies = resp.get("data", {})
+                # 调试日志：打印 replies 结构
+                self._log(f"[DEBUG] Comment replies keys: {list(replies.keys()) if isinstance(replies, dict) else type(replies)}")
+
+                # B站 WBI 评论 API 的 total 在 cursor.all_count 中
+                cursor = replies.get("cursor", {})
+                comment_total = cursor.get("all_count") or cursor.get("all_total") or replies.get("all_total") or replies.get("total") or len(replies.get("replies") or [])
+                self._log(f"[DEBUG] Comment cursor: all_count={cursor.get('all_count', 'N/A')}, Final comment_total: {comment_total}")
+                self._log(f"[DEBUG] Comment replies count: {len(replies.get('replies') or [])}")
                 comments = []
                 for r in replies.get("replies", []) or []:
                     member = r.get("member", {})
@@ -1783,13 +1810,17 @@ class BilibiliClient(BasePlatformClient):
                         "ctime": r.get("ctime"),
                         "replies_count": r.get("rcount", 0),
                     })
+                self._log(f"[DEBUG] Parsed {len(comments)} comments")
                 return {
-                    "total": replies.get("total", 0),
+                    "total": comment_total,
                     "page": page,
                     "page_size": page_size,
                     "comments": comments,
                 }
             else:
+                # 打印错误信息
+                err_msg = resp.get("message", "") if isinstance(resp, dict) else ""
+                self._log(f"[DEBUG] Comment API failed: code={resp.get('code') if isinstance(resp, dict) else 'N/A'}, msg={err_msg}", "warning")
                 return {"total": 0, "page": page, "page_size": page_size, "comments": []}
 
         except Exception as e:

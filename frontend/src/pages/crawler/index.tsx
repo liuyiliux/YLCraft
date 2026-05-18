@@ -584,11 +584,7 @@ export default function CrawlerPage() {
     try {
       const data = await getSubtitles({ item_id: itemId, conn_id: selectedBiliConn })
       setSubtitleList(data.data || [])
-
-      // 如果只有 1 种语言，直接下载
-      if (data.data?.length === 1) {
-        downloadCrawlerSubtitle(itemId, data.data[0].lan, 'srt', selectedBiliConn)
-      }
+      // 不再自动下载！等用户在列表中点击语言再下载
     } catch (e: any) {
       message.error(e?.response?.data?.detail || '获取字幕列表失败')
     } finally {
@@ -622,11 +618,12 @@ export default function CrawlerPage() {
   }
 
   // ===== B站专属：评论 =====
-  const fetchComments = async (bvid: string, page = 1) => {
+  const fetchComments = async (bvid: string, page = 1, sort?: number) => {
     setCommentLoading(true)
     setCommentPage(page)
+    const useSort = sort !== undefined ? sort : commentSort
     try {
-      const res: any = await getBiliComments(bvid, { page, sort: commentSort, conn_id: selectedBiliConn })
+      const res: any = await getBiliComments(bvid, { page, sort: useSort, conn_id: selectedBiliConn })
       if (res?.success) {
         setComments(res.data?.comments || [])
         setCommentTotal(res.data?.total || 0)
@@ -668,8 +665,8 @@ export default function CrawlerPage() {
     setStatsLoading(true)
     try {
       const res: any = await getBiliStats({ bvid, conn_id: selectedBiliConn })
-      if (res?.data?.length) {
-        setBiliStats(res.data[0])
+      if (res?.success && res?.data && Object.keys(res.data).length > 0) {
+        setBiliStats(res.data)
       }
     } catch { /* 忽略 */ }
     finally { setStatsLoading(false) }
@@ -1522,14 +1519,14 @@ export default function CrawlerPage() {
                         size="small"
                         options={[{ label: '最热', value: 0 }, { label: '最新', value: 1 }]}
                         value={commentSort}
-                        onChange={v => { setCommentSort(v as number); fetchComments(detailNote.id) }}
+                        onChange={v => { setCommentSort(v as number); fetchComments(detailNote.id, 1, v as number) }}
                       />
                       <Button size="small" icon={<ReloadOutlined />} loading={commentLoading} onClick={() => fetchComments(detailNote.id)}>
                         刷新
                       </Button>
                     </Space>
                   </div>
-                  <Tag color="orange" style={{ marginBottom: 12 }}>共 {commentTotal} 条评论</Tag>
+                  <Tag color="orange" style={{ marginBottom: 12 }}>共 {commentTotal || comments.length} 条评论</Tag>
                   {commentLoading ? (
                     <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
                   ) : comments.length === 0 ? (
@@ -1538,7 +1535,7 @@ export default function CrawlerPage() {
                       <div style={{ marginTop: 8 }}>暂无评论</div>
                     </div>
                   ) : (
-                    <div style={{ maxHeight: 350, overflowY: 'auto' }}>
+                    <div style={{ maxHeight: 600, overflowY: 'auto', paddingRight: 4 }}>
                       {comments.map((c: any) => (
                         <div key={c.rpid} style={{
                           padding: '10px 0', borderBottom: `1px solid ${borderColor}`,

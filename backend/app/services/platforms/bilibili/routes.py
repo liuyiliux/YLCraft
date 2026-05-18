@@ -27,30 +27,40 @@ router = APIRouter(tags=["Bilibili"])
 
 
 # =============================================================================
-# 辅助函数
+# Cookie 获取（统一接口，不重复查询）
 # =============================================================================
 
-def _get_conn_cookie(conn_id: str) -> str:
-    """从 conn_id 获取 Cookie"""
+def get_raw_cookie(conn_id: str) -> str:
+    """
+    获取原始格式 Cookie（用于 HTTP Header）
+    使用统一的 PlatformConnectionService，直接返回 raw 格式
+
+    Args:
+        conn_id: 平台连接 ID
+
+    Returns:
+        原始格式 "key=value; key2=value2"，失败返回空字符串
+    """
     if not conn_id:
         return ""
+
     try:
         from app.db.database import SessionLocal
         from app.services.platform_connection import PlatformConnectionService
+
         session = SessionLocal()
         try:
             service = PlatformConnectionService(session=session)
-            conn = service.get(conn_id)
-            if conn and conn.cookie_content:
-                return conn.cookie_content
-            # 降级：尝试从 credentials 获取 raw cookie
-            if conn and conn.get_credentials():
-                creds = conn.get_credentials()
-                return creds.get("raw", "") or ""
+            cookie = service.get_raw_cookie(conn_id)
+            if cookie:
+                logger.debug(f"[bili/get_raw_cookie] Got cookie for {conn_id}, length={len(cookie)}")
+            else:
+                logger.warning(f"[bili/get_raw_cookie] No cookie for {conn_id}")
+            return cookie or ""
         finally:
             session.close()
     except Exception as e:
-        logger.warning(f"Failed to get cookie from connection {conn_id}: {e}")
+        logger.warning(f"[bili/get_raw_cookie] Failed to get cookie from connection {conn_id}: {e}")
     return ""
 
 
@@ -103,7 +113,7 @@ async def get_danmaku(
     """
     try:
         from app.services.platforms import create_client
-        cookie = _get_conn_cookie(conn_id) if conn_id else ""
+        cookie = get_raw_cookie(conn_id) if conn_id else ""
         async with create_client("bili", mode="api", cookie=cookie) as client:
             danmaku_list = await client.get_danmaku(bvid, cid)
             return BilibiliDanmakuResponse(
@@ -130,7 +140,7 @@ async def get_stats(
             raise HTTPException(status_code=400, detail="必须提供 bvid 或 aid")
 
         from app.services.platforms import create_client
-        cookie = _get_conn_cookie(conn_id) if conn_id else ""
+        cookie = get_raw_cookie(conn_id) if conn_id else ""
         async with create_client("bili", mode="api", cookie=cookie) as client:
             stats = await client.get_stats(bvid, aid)
             return BilibiliStatsResponse(
@@ -158,7 +168,7 @@ async def get_comments(
     """
     try:
         from app.services.platforms import create_client
-        cookie = _get_conn_cookie(conn_id) if conn_id else ""
+        cookie = get_raw_cookie(conn_id) if conn_id else ""
         async with create_client("bili", mode="api", cookie=cookie) as client:
             result = await client.get_comments_paged(bvid, page, page_size, sort)
             return BilibiliCommentsResponse(
@@ -171,6 +181,12 @@ async def get_comments(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class BilibiliSubtitleDownloadResponse(BaseModel):
+    success: bool = True
+    data: str = ""
+    message: str = ""
+
+
 @router.get("/subtitles", summary="获取B站字幕", response_model=BilibiliSubtitlesResponse)
 async def get_subtitles(
     bvid: str = Query(..., description="B站视频 BV 号"),
@@ -181,7 +197,7 @@ async def get_subtitles(
     """
     try:
         from app.services.platforms import create_client
-        cookie = _get_conn_cookie(conn_id) if conn_id else ""
+        cookie = get_raw_cookie(conn_id) if conn_id else ""
         async with create_client("bili", mode="api", cookie=cookie) as client:
             subtitles = await client.get_subtitles(bvid)
             return BilibiliSubtitlesResponse(
@@ -194,6 +210,58 @@ async def get_subtitles(
         raise HTTPException(status_code=500, detail=f"获取字幕失败: {str(e)}")
 
 
+@router.get("/subtitle/download", summary="下载B站字幕文件")
+async def download_subtitle(
+    bvid: str = Query(..., description="B站视频 BV 号"),
+    lan: str = Query(..., description="字幕语言标识"),
+    format: str = Query("srt", description="输出格式: srt / ass"),
+    conn_id: str = Query("", description="平台连接 ID"),
+):
+    """
+    下载B站字幕文件，返回指定格式（SRT/ASS）的文本内容
+    """
+    try:
+        from app.services.platforms import create_client
+        cookie = get_raw_cookie(conn_id) if conn_id else ""
+        async with create_client("bili", mode="api", cookie=cookie) as client:
+            # 1. 获取字幕列表，找到对应语言的 subtitle_url
+            subtitles = await client.get_subtitles(bvid)
+            target_subtitle = None
+            for sub in subtitles:
+                sub_lan = sub.get("lan", "")
+                if sub_lan == lan:
+                    target_subtitle = sub
+                    break
+
+            if not target_subtitle:
+                raise HTTPException(status_code=404, detail=f"未找到语言为 '{lan}' 的字幕，可用语言: {[s.get('lan') for s in subtitles]}")
+
+            subtitle_url = target_subtitle.get("subtitle_url", "")
+            if not subtitle_url:
+                raise HTTPException(status_code=404, detail=f"字幕 '{lan}' 没有可用的下载地址")
+
+            # 2. 下载并转换格式
+            content = await client.download_subtitle(subtitle_url, format)
+            if not content:
+                raise HTTPException(status_code=500, detail=f"字幕内容为空或解析失败")
+
+            # 3. 返回文本文件
+            from fastapi.responses import Response
+            media_type = "text/plain" if format == "srt" else "text/x-ssa"
+            ext = format.lower()
+            filename = f"{bvid}_{lan}.{ext}"
+            return Response(
+                content=content,
+                media_type=media_type,
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[bili/subtitle/download] Error: {e}")
+        raise HTTPException(status_code=500, detail=f"下载字幕失败: {str(e)}")
+
+
 @router.get("/video/info", summary="获取B站视频信息", response_model=BilibiliVideoInfoResponse)
 async def get_video_info(
     bvid: str = Query(..., description="B站视频 BV 号"),
@@ -204,7 +272,7 @@ async def get_video_info(
     """
     try:
         from app.services.platforms import create_client
-        cookie = _get_conn_cookie(conn_id) if conn_id else ""
+        cookie = get_raw_cookie(conn_id) if conn_id else ""
         async with create_client("bili", mode="api", cookie=cookie) as client:
             info = await client.get_video_info(bvid)
             return BilibiliVideoInfoResponse(
