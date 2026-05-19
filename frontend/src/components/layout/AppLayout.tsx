@@ -66,9 +66,9 @@ const menuItems: MenuProps['items'] = [
     icon: <ExperimentOutlined />,
     label: '爆款拆解',
     children: [
-      { key: '/breaker', label: '爆款拆解' },
-      { key: '/crawler', label: '内容管理' },
+      { key: '/crawler', label: '内容搜索' },
       { key: '/download', label: '去水印下载' },
+      { key: '/breaker', label: '爆款拆解' },
       { key: '/publish', label: '一键发布' },
     ],
   },

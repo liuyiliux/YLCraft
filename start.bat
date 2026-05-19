@@ -37,9 +37,9 @@ if not exist "%VENV_DIR%\Scripts\activate.bat" (
     echo [Backend] Virtual environment exists
     echo [Backend] Checking and updating dependencies...
     call "%VENV_DIR%\Scripts\activate.bat"
-    pip install --upgrade pip >nul 2>&1
+    pip install --upgrade pip -i https://pypi.tuna.tsinghua.edu.cn/simple >nul 2>&1
     if exist "%REQUIREMENTS_FILE%" (
-        pip install -r "%REQUIREMENTS_FILE%" >nul 2>&1
+        pip install -r "%REQUIREMENTS_FILE%" -i https://pypi.tuna.tsinghua.edu.cn/simple >nul 2>&1
     )
     echo [Backend] Dependencies ready
 )

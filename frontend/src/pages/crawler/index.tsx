@@ -1,5 +1,5 @@
 /**
- * YLCraft — 内容管理页
+ * YLCraft —内容搜索页
  * 参考 Spider XHS Discovery/Crawler 设计模式
  */
 
@@ -946,10 +946,10 @@ export default function CrawlerPage() {
       <Row justify="space-between" align="middle" style={{ marginBottom: 20 }}>
         <Col>
           <Title level={4} style={{ margin: 0, color: textPri }}>
-            <CloudDownloadOutlined style={{ marginRight: 8 }} />内容管理
+            <CloudDownloadOutlined style={{ marginRight: 8 }} />内容搜索
           </Title>
           <Text style={{ fontSize: 13, color: textSec }}>
-            多平台笔记/视频搜索、详情查看、无水印下载，支持批量导入素材库
+            多平台笔记/视频搜索、详情查看
           </Text>
         </Col>
         <Col>
