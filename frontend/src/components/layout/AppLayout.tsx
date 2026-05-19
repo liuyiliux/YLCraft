@@ -103,6 +103,15 @@ const menuItems: MenuProps['items'] = [
     ],
   },
   {
+    key: 'g-up-analytics',
+    icon: <TeamOutlined />,
+    label: 'UP主中心',
+    children: [
+      { key: '/up-analytics', label: '搜索UP主' },
+      { key: '/up-analytics/favorites', label: '我的收藏', onClick: () => navigate('/up-analytics?tab=favorites') },
+    ],
+  },
+  {
     key: 'g-live2d',
     icon: <AppstoreOutlined />,
     label: 'Live2D 工厂',

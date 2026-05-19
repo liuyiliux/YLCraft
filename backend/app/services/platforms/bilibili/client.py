@@ -38,9 +38,13 @@ from .apis import (
     VIDEO_PLAYER,
     USER_INFO,
     USER_VIDEOS,
+    USER_SERIES,
     COMMENTS,
     ORDER_TYPE_MAP,
     WBI_KEY_URL,
+    FAV_LIST,
+    FAV_MEDIA,
+    FAV_INFO,
 )
 
 logger = logging.getLogger("ylcraft.platforms.bilibili")
@@ -969,14 +973,29 @@ class BilibiliClient(BasePlatformClient):
                 card = data.get("card", {})
                 stats = data.get("stats", {})
                 
+                # B站不同接口/版本，字段位置可能不同，做多层 fallback
+                archive_count = (
+                    card.get("archive_count")
+                    or card.get("video")
+                    or data.get("archive_count")
+                    or 0
+                )
+                likes_count = (
+                    stats.get("likes")
+                    or card.get("likes")
+                    or data.get("like_num")
+                    or 0
+                )
+                
                 return UserProfile(
                     id=str(card.get("mid", user_id)),
                     name=card.get("name", ""),
                     avatar=card.get("face", ""),
                     platform="bili",
-                    followers=stats.get("follower", 0),
-                    following=stats.get("following", 0),
-                    total_likes=stats.get("likes", 0),
+                    followers=stats.get("follower") or card.get("fans", 0),
+                    following=stats.get("following") or card.get("attention", 0),
+                    total_likes=likes_count,
+                    total_videos=archive_count,
                     desc=card.get("sign", ""),
                     verified=card.get("vip", {}).get("status", 0) == 1,
                     raw_data=data,
@@ -993,38 +1012,51 @@ class BilibiliClient(BasePlatformClient):
         user_id: str,
         max_results: int = 20,
         order: str = "pubdate",  # pubdate发布时间 stow收藏 click播放
-    ) -> List[SearchResult]:
-        """获取用户发布的视频列表"""
-        self._log(f"Getting user videos: {user_id}")
+        page: int = 1,
+    ) -> Dict[str, Any]:
+        """获取用户发布的视频列表
+        
+        Returns:
+            {"list": List[SearchResult], "total": int}
+        """
+        self._log(f"Getting user videos: {user_id}, page={page}, order={order}")
         
         params = {
             "mid": user_id,
             "ps": min(max_results, 50),
-            "pn": 1,
+            "pn": page,
             "order": order,
-            "jsonp": "jsonp",
+            "tid": 0,
+            "keyword": "",
         }
         
-        url = f"{BASE_URL}{USER_VIDEOS}?{urlencode(params)}"
+        query_string = await self._sign_params(params)
+        url = f"{BASE_URL}{USER_VIDEOS}?{query_string}"
         
         try:
             response = await self.request("GET", url)
+            self._log(f"User videos response: code={response.get('code')}, msg={response.get('message', '')}")
             
             if isinstance(response, dict) and response.get("code") == 0:
                 data = response.get("data", {})
                 video_list = data.get("list", {}).get("vlist", [])
+                total_count = data.get("page", {}).get("count", len(video_list))
+                self._log(f"User videos: got {len(video_list)} items, total={total_count}")
+                if len(video_list) > 0:
+                    self._log(f"First video keys: {list(video_list[0].keys())[:10]}")
                 
                 results = []
                 for item in video_list[:max_results]:
                     results.append(self._parse_user_video_result(item, user_id))
                 
-                return results
+                return {"list": results, "total": total_count}
             else:
-                return []
+                self._log(f"User videos failed: {response.get('message', 'unknown')}", "warning")
+                return {"list": [], "total": 0}
                 
         except Exception as e:
             self._log(f"Get user videos error: {e}", "error")
-            return []
+            return {"list": [], "total": 0}
     
     # =========================================================================
     # 合集相关（B站特有）
@@ -1059,6 +1091,171 @@ class BilibiliClient(BasePlatformClient):
         except Exception as e:
             self._log(f"Get series error: {e}", "error")
             return SeriesInfo(id=series_id, title="", cover="", platform="bili", author="", author_id="")
+
+    # =========================================================================
+    # 收藏夹相关（需要登录）
+    # =========================================================================
+
+    async def get_favorite_list(self) -> List[Dict[str, Any]]:
+        """获取用户的收藏夹列表（需要登录）"""
+        self._log(f"Getting favorite list")
+        
+        if not self.config.cookie:
+            self._log("No cookie, cannot get favorite list", "warning")
+            return []
+        
+        params = {"up_mid": "self", "pn": 1, "ps": 100}
+        url = f"{BASE_URL}{FAV_LIST}?{urlencode(params)}"
+        
+        try:
+            response = await self.request("GET", url)
+            
+            if isinstance(response, dict) and response.get("code") == 0:
+                data = response.get("data", {})
+                favorites = data.get("list", []) or []
+                
+                result = []
+                for fav in favorites:
+                    result.append({
+                        "id": str(fav.get("id", "")),
+                        "title": fav.get("title", ""),
+                        "cover": self._fix_bili_url(fav.get("cover", "")),
+                        "media_count": fav.get("media_count", 0),
+                        "ctime": fav.get("ctime", 0),
+                        "mtime": fav.get("mtime", 0),
+                        "fav_state": fav.get("fav_state", 0),
+                    })
+                
+                self._log(f"Got {len(result)} favorites")
+                return result
+            else:
+                code = response.get("code", -1)
+                msg = response.get("message", "")
+                self._log(f"Get favorite list failed: code={code}, msg={msg}", "warning")
+                return []
+                
+        except Exception as e:
+            self._log(f"Get favorite list error: {e}", "error")
+            return []
+    
+    async def get_favorite_detail(self, media_id: str, page: int = 1, page_size: int = 20) -> Dict[str, Any]:
+        """获取收藏夹内的视频列表（需要登录）"""
+        self._log(f"Getting favorite detail: media_id={media_id}, page={page}")
+        
+        if not self.config.cookie:
+            self._log("No cookie, cannot get favorite detail", "warning")
+            return {"total": 0, "list": [], "page": page, "page_size": page_size}
+        
+        params = {
+            "media_id": media_id,
+            "pn": page,
+            "ps": min(page_size, 50),
+            "keyword": "",
+            "order": "mtime",
+            "type": 0,
+        }
+        
+        # 收藏夹 API 需要 WBI 签名
+        query_string = await self._sign_params(params)
+        url = f"{BASE_URL}{FAV_MEDIA}?{query_string}"
+        
+        try:
+            response = await self.request("GET", url)
+            
+            if isinstance(response, dict) and response.get("code") == 0:
+                data = response.get("data", {})
+                items = data.get("medias", []) or []
+                
+                result = []
+                for item in items:
+                    bvid = item.get("bvid", "")
+                    result.append({
+                        "id": bvid,
+                        "title": item.get("title", ""),
+                        "desc": item.get("intro", ""),
+                        "cover": self._fix_bili_url(item.get("cover", "")),
+                        "author": item.get("upper", {}).get("name", ""),
+                        "author_id": str(item.get("upper", {}).get("mid", "")),
+                        "url": f"https://www.bilibili.com/video/{bvid}" if bvid else "",
+                        "duration": item.get("duration", 0),
+                        "bv_id": bvid,
+                        "pubdate": item.get("pubdate", 0),
+                        "ctime": item.get("ctime", 0),
+                        "mtime": item.get("mtime", 0),
+                        "stat": {
+                            "view": item.get("cnt_info", {}).get("play", 0),
+                            "like": item.get("cnt_info", {}).get("like", 0),
+                            "coin": item.get("cnt_info", {}).get("coin", 0),
+                            "favorite": item.get("cnt_info", {}).get("collect", 0),
+                            "reply": item.get("cnt_info", {}).get("reply", 0),
+                        },
+                    })
+                
+                page_info = data.get("pageinfo", {})
+                total = page_info.get("media_count", len(result))
+                
+                return {
+                    "total": total,
+                    "list": result,
+                    "page": page,
+                    "page_size": page_size,
+                }
+            else:
+                code = response.get("code", -1)
+                msg = response.get("message", "")
+                self._log(f"Get favorite detail failed: code={code}, msg={msg}", "warning")
+                return {"total": 0, "list": [], "page": page, "page_size": page_size}
+                
+        except Exception as e:
+            self._log(f"Get favorite detail error: {e}", "error")
+            return {"total": 0, "list": [], "page": page, "page_size": page_size}
+    
+    async def get_user_series_list(self, user_id: str, page: int = 1, page_size: int = 20) -> Dict[str, Any]:
+        """获取用户的合集列表（不需要登录）"""
+        self._log(f"Getting user series list: user_id={user_id}")
+        
+        params = {
+            "mid": user_id,
+            "pn": page,
+            "ps": min(page_size, 50),
+        }
+        
+        url = f"{BASE_URL}{USER_SERIES}?{urlencode(params)}"
+        
+        try:
+            response = await self.request("GET", url)
+            
+            if isinstance(response, dict) and response.get("code") == 0:
+                data = response.get("data", {})
+                series_list = data.get("series_list", []) or []
+                
+                result = []
+                for series in series_list:
+                    result.append({
+                        "id": str(series.get("series_id", "")),
+                        "title": series.get("name", ""),
+                        "cover": self._fix_bili_url(series.get("cover", "")),
+                        "description": series.get("description", ""),
+                        "mid": str(series.get("mid", "")),
+                        "count": series.get("count", 0),
+                        "ctime": series.get("ctime", 0),
+                    })
+                
+                page_info = data.get("page", {})
+                total = page_info.get("total", len(result))
+                
+                return {
+                    "total": total,
+                    "list": result,
+                    "page": page,
+                    "page_size": page_size,
+                }
+            else:
+                return {"total": 0, "list": [], "page": page, "page_size": page_size}
+                
+        except Exception as e:
+            self._log(f"Get user series list error: {e}", "error")
+            return {"total": 0, "list": [], "page": page, "page_size": page_size}
     
     # =========================================================================
     # 评论
@@ -1314,7 +1511,13 @@ class BilibiliClient(BasePlatformClient):
         )
     
     def _parse_user_video_result(self, item: Dict, user_id: str) -> SearchResult:
-        """解析用户视频列表结果"""
+        """解析用户视频列表结果
+        
+        B站 /x/space/wbi/arc/search 返回的 vlist 字段较精简，
+        常见字段：play(播放), comment(评论), video_review(弹幕),
+        favorites(收藏), length, created, description 等。
+        like/coin/share 通常不存在，保持 0 即可。
+        """
         return SearchResult(
             id=item.get("bvid", ""),
             title=item.get("title", ""),
@@ -1327,9 +1530,9 @@ class BilibiliClient(BasePlatformClient):
             type="video",
             likes=item.get("like", 0),
             coins=item.get("coin", 0),
-            comments=item.get("review", 0),
+            comments=item.get("review") or item.get("comment", 0),
             shares=item.get("share", 0),
-            collects=item.get("fav", 0),
+            collects=item.get("fav") or item.get("favorites") or item.get("stow", 0),
             views=item.get("play", 0),
             create_time=str(item.get("created", "")),
             raw_data=item,

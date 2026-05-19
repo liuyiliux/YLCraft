@@ -730,3 +730,94 @@ export const getStory = (storyId: string) => request(`/story/${storyId}`)
 // ===== Novel（小说）=====
 export * from './novel'
 export * from './bookSource'
+
+// ===== Bilibili UP 主分析 API =====
+
+/** 获取 UP主信息 */
+export const getBiliUpProfile = (uid: string, connId?: string) => {
+  const qs = new URLSearchParams()
+  qs.set('uid', uid)
+  if (connId) qs.set('conn_id', connId)
+  return request(`/bilibili/up/profile?${qs}`)
+}
+
+/** 获取 UP主视频列表 */
+export const getBiliUpVideos = (params: {
+  uid: string
+  order?: string
+  page?: number
+  page_size?: number
+  conn_id?: string
+}) => {
+  const qs = new URLSearchParams()
+  qs.set('uid', params.uid)
+  if (params.order) qs.set('order', params.order)
+  if (params.page) qs.set('page', String(params.page))
+  if (params.page_size) qs.set('page_size', String(params.page_size))
+  if (params.conn_id) qs.set('conn_id', params.conn_id)
+  return request(`/bilibili/up/videos?${qs}`)
+}
+
+/** 获取 UP主合集列表 */
+export const getBiliUpSeries = (params: {
+  uid: string
+  page?: number
+  page_size?: number
+  conn_id?: string
+}) => {
+  const qs = new URLSearchParams()
+  qs.set('uid', params.uid)
+  if (params.page) qs.set('page', String(params.page))
+  if (params.page_size) qs.set('page_size', String(params.page_size))
+  if (params.conn_id) qs.set('conn_id', params.conn_id)
+  return request(`/bilibili/up/series?${qs}`)
+}
+
+/** 获取 UP主热门视频排行 */
+export const getBiliUpRanking = (params: {
+  uid: string
+  limit?: number
+  conn_id?: string
+}) => {
+  const qs = new URLSearchParams()
+  qs.set('uid', params.uid)
+  if (params.limit) qs.set('limit', String(params.limit))
+  if (params.conn_id) qs.set('conn_id', params.conn_id)
+  return request(`/bilibili/up/ranking?${qs}`)
+}
+
+/** 获取我的收藏夹列表（需要登录） */
+export const getBiliFavorites = (connId: string) => {
+  const qs = new URLSearchParams()
+  qs.set('conn_id', connId)
+  return request(`/bilibili/favorites?${qs}`)
+}
+
+/** 获取收藏夹详情（需要登录） */
+export const getBiliFavoriteDetail = (params: {
+  mediaId: string
+  page?: number
+  page_size?: number
+  conn_id: string
+}) => {
+  const qs = new URLSearchParams()
+  qs.set('media_id', params.mediaId)
+  if (params.page) qs.set('page', String(params.page))
+  if (params.page_size) qs.set('page_size', String(params.page_size))
+  qs.set('conn_id', params.conn_id)
+  return request(`/bilibili/favorites/${params.mediaId}?${qs}`)
+}
+
+/** 获取合集详情 */
+export const getBiliSeriesDetail = (params: {
+  seriesId: string
+  page?: number
+  page_size?: number
+  conn_id?: string
+}) => {
+  const qs = new URLSearchParams()
+  if (params.page) qs.set('page', String(params.page))
+  if (params.page_size) qs.set('page_size', String(params.page_size))
+  if (params.conn_id) qs.set('conn_id', params.conn_id)
+  return request(`/bilibili/series/${params.seriesId}?${qs}`)
+}

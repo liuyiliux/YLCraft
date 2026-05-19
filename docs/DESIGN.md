@@ -1091,4 +1091,207 @@ defaults:
 
 ***
 
+***
+
+## 十三、多平台 API 架构设计
+
+### 13.1 设计原则
+
+**各平台 API 放在各自文件夹下，不污染公共路由。**
+
+YLCraft 是一个多平台工具，支持 B站、小红书、抖音、YouTube 等多个内容平台。每个平台的 API、客户端代码、路由都放在各自独立的文件夹下，通过统一的 `PlatformService` 接口抽象。
+
+```
+backend/app/services/platforms/
+├── bilibili/
+│   ├── client.py      # B站 API 客户端
+│   ├── routes.py      # B站所有 API 路由
+│   ├── apis.py        # API 端点常量
+│   └── __init__.py
+├── xiaohongshu/
+│   ├── client.py      # 小红书 API 客户端
+│   ├── routes.py      # 小红书所有 API 路由
+│   ├── apis.py        # API 端点常量
+│   └── __init__.py
+├── douyin/
+│   ├── client.py      # 抖音 API 客户端
+│   ├── routes.py      # 抖音所有 API 路由
+│   ├── apis.py        # API 端点常量
+│   └── __init__.py
+├── youtube/
+│   ├── client.py      # YouTube API 客户端
+│   ├── routes.py      # YouTube 所有 API 路由
+│   ├── apis.py        # API 端点常量
+│   └── __init__.py
+└── __init__.py        # 统一导出 create_client()
+```
+
+### 13.2 为什么这样设计
+
+| 设计 | 原因 |
+|------|------|
+| **平台代码隔离** | 每个平台代码独立，B站不会看到抖音的代码，新平台扩展不影响现有代码 |
+| **路由集中管理** | 每个 `routes.py` 包含该平台的所有端点，统一注册到 `/api/v1/{platform}/` 前缀下 |
+| **避免臃肿 v1 目录** | `app/api/v1/` 只放跨平台的公共路由（如资产库、项目管理），不堆放各平台专属路由 |
+| **统一抽象接口** | `create_client(platform, mode, cookie)` 工厂函数，屏蔽平台差异 |
+| **便于多端复用** | 前端通过统一的 `/api/v1/{platform}/xxx` 调用，后端按需路由分发 |
+
+### 13.3 API 前缀约定
+
+所有平台 API 统一使用以下前缀格式：
+
+```
+/api/v1/{platform}/{resource}
+
+/api/v1/bilibili/up/profile        # B站 UP主信息
+/api/v1/bilibili/favorites         # B站收藏夹
+/api/v1/xiaohongshu/note/{id}      # 小红书笔记
+/api/v1/douyin/video/{id}         # 抖音视频
+/api/v1/youtube/channel/{id}       # YouTube 频道
+```
+
+### 13.4 统一客户端工厂
+
+```python
+# backend/app/services/platforms/__init__.py
+
+from contextlib import asynccontextmanager
+
+# 各平台 Client 类
+from app.services.platforms.bilibili.client import BilibiliClient
+from app.services.platforms.xiaohongshu.client import XiaoHongShuClient
+from app.services.platforms.douyin.client import DouYinClient
+from app.services.platforms.youtube.client import YouTubeClient
+
+_PLATFORM_CLIENTS = {
+    "bili": BilibiliClient,
+    "xiaohongshu": XiaoHongShuClient,
+    "douyin": DouYinClient,
+    "youtube": YouTubeClient,
+}
+
+
+@asynccontextmanager
+async def create_client(platform: str, mode: str = "api", cookie: str = ""):
+    """
+    创建平台客户端实例（统一入口）
+
+    Args:
+        platform: 平台标识 (bili/xiaohongshu/douyin/youtube)
+        mode: 调用模式 (api/crawl/simulate)
+        cookie: 登录 Cookie（可选）
+
+    Usage:
+        async with create_client("bili", cookie="xxx") as client:
+            videos = await client.get_user_videos("123456")
+    """
+    platform = platform.lower()
+    if platform not in _PLATFORM_CLIENTS:
+        raise ValueError(f"Unknown platform: {platform}")
+
+    client_cls = _PLATFORM_CLIENTS[platform]
+    config = ClientConfig(platform=platform, mode=mode, cookie=cookie)
+    client = client_cls(config)
+
+    try:
+        yield client
+    finally:
+        await client.close()
+```
+
+### 13.5 路由注册方式
+
+每个平台的 `routes.py` 在 `main.py` 中独立注册：
+
+```python
+# backend/app/main.py
+
+# B站专属路由
+try:
+    from app.services.platforms.bilibili.routes import router as bili_router
+    app.include_router(bili_router, prefix="/api/v1/bilibili", tags=["Bilibili"])
+except Exception as e:
+    logger.warning(f"Could not load bilibili router: {e}")
+
+# 小红书专属路由
+try:
+    from app.services.platforms.xiaohongshu.routes import router as xhs_router
+    app.include_router(xhs_router, prefix="/api/v1/xiaohongshu", tags=["XiaoHongShu"])
+except Exception as e:
+    logger.warning(f"Could not load xiaohongshu router: {e}")
+
+# 抖音专属路由
+try:
+    from app.services.platforms.douyin.routes import router as douyin_router
+    app.include_router(douyin_router, prefix="/api/v1/douyin", tags=["DouYin"])
+except Exception as e:
+    logger.warning(f"Could not load douyin router: {e}")
+```
+
+### 13.6 各平台功能矩阵
+
+| 功能 | B站 | 小红书 | 抖音 | YouTube |
+|------|-----|--------|------|---------|
+| 视频下载 | ✅ | ✅ | ✅ | ✅ |
+| 弹幕/评论 | ✅ | - | - | ✅ |
+| 用户搜索 | ✅ | ✅ | ✅ | ✅ |
+| 用户详情 | ✅ | ✅ | ✅ | ✅ |
+| 收藏夹 | ✅ | ✅ | ✅ | ✅ |
+| 合集/播放列表 | ✅ | - | - | ✅ |
+| 字幕获取 | ✅ | - | - | ✅ |
+| 爆款拆解 | ✅ | ✅ | ✅ | ✅ |
+| **UP主中心** | ✅ | - | - | - |
+| 发布草稿 | ✅ | ✅ | ✅ | - |
+
+### 13.7 B站平台详细结构（示例）
+
+```
+backend/app/services/platforms/bilibili/
+├── __init__.py
+├── client.py          # API 客户端
+│   ├── get_user_profile()     # UP主信息
+│   ├── get_user_videos()      # UP主视频列表
+│   ├── get_user_series_list() # UP主合集列表
+│   ├── get_favorite_list()    # 收藏夹列表（需登录）
+│   ├── get_favorite_detail()  # 收藏夹详情（需登录）
+│   ├── get_series()           # 合集详情
+│   ├── get_danmaku()          # 弹幕
+│   ├── get_comments()         # 评论
+│   ├── get_subtitles()        # 字幕
+│   └── download_subtitle()    # 字幕下载
+├── routes.py          # API 路由
+│   ├── GET /up/profile        # UP主信息
+│   ├── GET /up/videos         # UP主视频
+│   ├── GET /up/series         # UP主合集
+│   ├── GET /up/ranking        # 热门排行
+│   ├── GET /favorites         # 收藏夹列表
+│   ├── GET /favorites/{id}    # 收藏夹详情
+│   ├── GET /series/{id}       # 合集详情
+│   ├── GET /danmaku           # 弹幕
+│   ├── GET /comments          # 评论
+│   ├── GET /subtitles         # 字幕
+│   └── GET /subtitle/download  # 字幕下载
+└── apis.py            # API 端点常量
+```
+
+### 13.8 前端 API 调用规范
+
+前端统一通过 `/api/index.ts` 调用：
+
+```typescript
+// 前端统一 API 调用
+
+// B站 API
+export const getBiliUpProfile = (uid: string) => request(`/bilibili/up/profile?uid=${uid}`)
+export const getBiliFavorites = (connId: string) => request(`/bilibili/favorites?conn_id=${connId}`)
+
+// 小红书 API
+export const getXhsNote = (id: string) => request(`/xiaohongshu/note/${id}`)
+
+// 抖音 API
+export const getDyVideo = (id: string) => request(`/douyin/video/${id}`)
+```
+
+***
+
 *本文档为 YLCraft v0.2.0 设计文档，确认后可作为开发基准。*

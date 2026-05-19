@@ -11,7 +11,7 @@ B站专属 API 路由
 from __future__ import annotations
 
 import logging
-from typing import List, Dict
+from typing import List, Dict, Optional, Any
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -131,6 +131,82 @@ class BilibiliSendCommentResponse(BaseModel):
     success: bool = True
     rpid: int = 0
     message: str = ""
+
+
+# =============================================================================
+# UP主分析 & 个人中心 - Response Models
+# =============================================================================
+
+class UpProfileResponse(BaseModel):
+    success: bool = True
+    data: Optional[Dict[str, Any]] = None
+    message: str = ""
+
+
+class UpVideosResponse(BaseModel):
+    success: bool = True
+    data: Optional[Dict[str, Any]] = None
+    message: str = ""
+
+
+class FavoriteListResponse(BaseModel):
+    success: bool = True
+    data: List[Dict[str, Any]] = []
+    message: str = ""
+
+
+class FavoriteDetailResponse(BaseModel):
+    success: bool = True
+    data: Optional[Dict[str, Any]] = None
+    message: str = ""
+
+
+class SeriesListResponse(BaseModel):
+    success: bool = True
+    data: Optional[Dict[str, Any]] = None
+    message: str = ""
+
+
+# =============================================================================
+# UP主分析 & 个人中心 - 辅助函数
+# =============================================================================
+
+async def _get_bili_client(conn_id: str = "") -> "BilibiliClient":
+    """获取 B站客户端实例（内部初始化 http client）"""
+    from app.services.platforms.types import ClientConfig, ClientMode
+
+    cookie = get_raw_cookie(conn_id) if conn_id else ""
+    config = ClientConfig(
+        platform="bili",
+        mode=ClientMode.API,
+        cookie=cookie,
+    )
+    from app.services.platforms.bilibili.client import BilibiliClient
+    client = BilibiliClient(config)
+    await client._init_http_client()
+    return client
+
+
+class BilibiliClientContext:
+    """B站客户端上下文管理器，自动关闭资源"""
+
+    def __init__(self, conn_id: str = ""):
+        self.conn_id = conn_id
+        self.client = None
+
+    async def __aenter__(self) -> "BilibiliClient":
+        self.client = await _get_bili_client(self.conn_id)
+        return self.client
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.client and self.client._http_client:
+            await self.client._http_client.aclose()
+        return False
+
+
+def bili_client(conn_id: str = ""):
+    """创建 B站客户端上下文管理器"""
+    return BilibiliClientContext(conn_id)
 
 
 # =============================================================================
@@ -357,3 +433,323 @@ async def send_comment(
     except Exception as e:
         logger.error(f"[bili/comment/send] Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# UP主分析 & 个人中心 - API 端点
+# =============================================================================
+
+@router.get("/up/profile", summary="获取UP主信息", response_model=UpProfileResponse)
+async def get_up_profile(
+    uid: str = Query(..., description="UP主 UID"),
+    conn_id: str = Query("", description="B站连接ID（可选，用于需要登录的接口）"),
+):
+    """
+    获取UP主的基本信息
+    - uid: UP主的数字ID（不是用户名）
+    """
+    logger.info(f"[up_profile] uid={uid}")
+
+    async with bili_client(conn_id) as client:
+        try:
+            profile = await client.get_user_profile(uid)
+
+            if not profile.name:
+                return UpProfileResponse(
+                    success=False,
+                    data=None,
+                    message="UP主不存在或获取失败",
+                )
+
+            card = profile.raw_data.get("card", {}) if profile.raw_data else {}
+            level_info = card.get("level_info", {}) or {}
+            vip_info = card.get("vip", {}) or {}
+
+            return UpProfileResponse(
+                success=True,
+                data={
+                    "uid": profile.id,
+                    "name": profile.name,
+                    "avatar": profile.avatar,
+                    "sign": profile.desc,
+                    "fans": profile.followers,
+                    "following": profile.following,
+                    "likes": profile.total_likes,
+                    "archive_count": card.get("archive_count") or profile.total_videos or 0,
+                    "article_count": card.get("article_count", 0),
+                    "level": level_info.get("current_level", 0),
+                    "vip_status": vip_info.get("status", 0),
+                    "vip_label": vip_info.get("label", {}).get("text", ""),
+                    "official_verify": card.get("official_verify", {}),
+                    "sex": card.get("sex", ""),
+                    "fans_badge": card.get("fans_badge", False),
+                    "raw_data": profile.raw_data,
+                },
+                message="获取成功",
+            )
+
+        except Exception as e:
+            logger.error(f"[up_profile] Error: {e}")
+            raise HTTPException(status_code=500, detail=f"获取UP主信息失败: {str(e)}")
+
+
+@router.get("/up/videos", summary="获取UP主视频列表", response_model=UpVideosResponse)
+async def get_up_videos(
+    uid: str = Query(..., description="UP主 UID"),
+    order: str = Query("pubdate", description="排序: pubdate/shadow/stow/click"),
+    page: int = Query(1, ge=1, description="页码"),
+    page_size: int = Query(20, ge=1, le=50, description="每页数量"),
+    conn_id: str = Query("", description="B站连接ID"),
+):
+    """
+    获取UP主发布的视频列表
+    - order: pubdate(最新)/shadows(最多收藏)/stow(最近收藏)/click(最多播放)
+    """
+    logger.info(f"[up_videos] uid={uid}, order={order}, page={page}")
+
+    async with bili_client(conn_id) as client:
+        try:
+            videos_data = await client.get_user_videos(uid, max_results=page_size, order=order, page=page)
+            videos = videos_data.get("list", [])
+            total_count = videos_data.get("total", len(videos))
+
+            result = []
+            for v in videos:
+                result.append({
+                    "bvid": v.id,
+                    "title": v.title,
+                    "desc": v.desc,
+                    "cover": v.cover,
+                    "author": v.author,
+                    "author_id": v.author_id,
+                    "url": v.url,
+                    "duration": v.duration,
+                    "pubdate": v.create_time,
+                    "stat": {
+                        "view": v.views,
+                        "like": v.likes,
+                        "coin": v.coins,
+                        "favorite": v.collects,
+                        "reply": v.comments,
+                        "share": v.shares,
+                    },
+                    "raw_data": v.raw_data,
+                })
+
+            return UpVideosResponse(
+                success=True,
+                data={
+                    "list": result,
+                    "total": total_count,
+                    "page": page,
+                    "page_size": page_size,
+                },
+                message=f"获取到 {len(result)} 个视频",
+            )
+
+        except Exception as e:
+            logger.error(f"[up_videos] Error: {e}")
+            raise HTTPException(status_code=500, detail=f"获取UP主视频失败: {str(e)}")
+
+
+@router.get("/up/series", summary="获取UP主合集列表", response_model=SeriesListResponse)
+async def get_up_series(
+    uid: str = Query(..., description="UP主 UID"),
+    page: int = Query(1, ge=1, description="页码"),
+    page_size: int = Query(20, ge=1, le=50, description="每页数量"),
+    conn_id: str = Query("", description="B站连接ID"),
+):
+    """
+    获取UP主的合集列表
+    """
+    logger.info(f"[up_series] uid={uid}, page={page}")
+
+    async with bili_client(conn_id) as client:
+        try:
+            result = await client.get_user_series_list(uid, page=page, page_size=page_size)
+
+            return SeriesListResponse(
+                success=True,
+                data=result,
+                message=f"获取到 {len(result.get('list', []))} 个合集",
+            )
+
+        except Exception as e:
+            logger.error(f"[up_series] Error: {e}")
+            raise HTTPException(status_code=500, detail=f"获取UP主合集失败: {str(e)}")
+
+
+@router.get("/up/ranking", summary="获取UP主热门视频排行", response_model=UpVideosResponse)
+async def get_up_ranking(
+    uid: str = Query(..., description="UP主 UID"),
+    limit: int = Query(10, ge=1, le=30, description="返回数量"),
+    conn_id: str = Query("", description="B站连接ID"),
+):
+    """
+    获取UP主的热门视频排行（按播放量排序）
+    """
+    logger.info(f"[up_ranking] uid={uid}, limit={limit}")
+
+    async with bili_client(conn_id) as client:
+        try:
+            videos_data = await client.get_user_videos(uid, max_results=limit, order="click", page=1)
+            videos = videos_data.get("list", [])
+
+            sorted_videos = sorted(videos, key=lambda x: x.views or 0, reverse=True)
+
+            result = []
+            for i, v in enumerate(sorted_videos[:limit], 1):
+                result.append({
+                    "rank": i,
+                    "bvid": v.id,
+                    "title": v.title,
+                    "cover": v.cover,
+                    "url": v.url,
+                    "duration": v.duration,
+                    "pubdate": v.create_time,
+                    "stat": {
+                        "view": v.views,
+                        "like": v.likes,
+                        "coin": v.coins,
+                        "favorite": v.collects,
+                        "reply": v.comments,
+                    },
+                })
+
+            return UpVideosResponse(
+                success=True,
+                data={
+                    "list": result,
+                    "total": len(result),
+                },
+                message=f"获取到 {len(result)} 个热门视频",
+            )
+
+        except Exception as e:
+            logger.error(f"[up_ranking] Error: {e}")
+            raise HTTPException(status_code=500, detail=f"获取热门视频失败: {str(e)}")
+
+
+@router.get("/favorites", summary="获取我的收藏夹列表", response_model=FavoriteListResponse)
+async def get_favorite_list(
+    conn_id: str = Query(..., description="B站连接ID（必填，需要登录）"),
+):
+    """
+    获取当前登录用户的收藏夹列表
+    - 必须提供有效的 B站连接（包含 Cookie）
+    """
+    logger.info(f"[favorites] conn_id={conn_id}")
+
+    if not conn_id:
+        raise HTTPException(status_code=400, detail="需要提供 B站连接ID（conn_id）")
+
+    async with bili_client(conn_id) as client:
+        if not client.config.cookie:
+            raise HTTPException(status_code=401, detail="B站连接未包含 Cookie，无法访问收藏夹")
+
+        try:
+            favorites = await client.get_favorite_list()
+
+            return FavoriteListResponse(
+                success=True,
+                data=favorites,
+                message=f"获取到 {len(favorites)} 个收藏夹",
+            )
+
+        except Exception as e:
+            logger.error(f"[favorites] Error: {e}")
+            raise HTTPException(status_code=500, detail=f"获取收藏夹失败: {str(e)}")
+
+
+@router.get("/favorites/{media_id}", summary="获取收藏夹详情", response_model=FavoriteDetailResponse)
+async def get_favorite_detail(
+    media_id: str,
+    page: int = Query(1, ge=1, description="页码"),
+    page_size: int = Query(20, ge=1, le=50, description="每页数量"),
+    conn_id: str = Query(..., description="B站连接ID（必填，需要登录）"),
+):
+    """
+    获取收藏夹内的视频列表
+    - 必须提供有效的 B站连接（包含 Cookie）
+    """
+    logger.info(f"[favorite_detail] media_id={media_id}, page={page}")
+
+    if not conn_id:
+        raise HTTPException(status_code=400, detail="需要提供 B站连接ID（conn_id）")
+
+    async with bili_client(conn_id) as client:
+        if not client.config.cookie:
+            raise HTTPException(status_code=401, detail="B站连接未包含 Cookie，无法访问收藏夹")
+
+        try:
+            result = await client.get_favorite_detail(media_id, page=page, page_size=page_size)
+
+            return FavoriteDetailResponse(
+                success=True,
+                data=result,
+                message=f"获取到 {len(result.get('list', []))} 个视频",
+            )
+
+        except Exception as e:
+            logger.error(f"[favorite_detail] Error: {e}")
+            raise HTTPException(status_code=500, detail=f"获取收藏夹详情失败: {str(e)}")
+
+
+@router.get("/series/{series_id}", summary="获取合集详情", response_model=SeriesListResponse)
+async def get_series_detail(
+    series_id: str,
+    page: int = Query(1, ge=1, description="页码"),
+    page_size: int = Query(20, ge=1, le=50, description="每页数量"),
+    conn_id: str = Query("", description="B站连接ID"),
+):
+    """
+    获取合集内的视频列表
+    """
+    logger.info(f"[series_detail] series_id={series_id}, page={page}")
+
+    async with bili_client(conn_id) as client:
+        try:
+            series = await client.get_series(series_id)
+
+            videos = []
+            for i, bvid in enumerate(series.video_ids[:page_size], 0):
+                if (i // page_size) + 1 != page:
+                    continue
+                try:
+                    info = await client.get_video_info(bvid)
+                    if info:
+                        videos.append({
+                            "bvid": bvid,
+                            "title": info.get("title", ""),
+                            "desc": info.get("desc", ""),
+                            "cover": client._fix_bili_url(info.get("pic", "")),
+                            "author": info.get("owner", {}).get("name", ""),
+                            "author_id": str(info.get("owner", {}).get("mid", "")),
+                            "url": f"https://www.bilibili.com/video/{bvid}",
+                            "duration": info.get("duration", 0),
+                            "pubdate": info.get("pubdate", 0),
+                            "stat": info.get("stat", {}),
+                        })
+                except Exception as e:
+                    logger.warning(f"[series] Failed to get video {bvid}: {e}")
+
+            return SeriesListResponse(
+                success=True,
+                data={
+                    "id": series.id,
+                    "title": series.title,
+                    "cover": series.cover,
+                    "author": series.author,
+                    "author_id": series.author_id,
+                    "total_videos": series.total_videos,
+                    "videos": videos,
+                    "page": page,
+                    "page_size": page_size,
+                    "raw_data": series.raw_data,
+                },
+                message=f"获取到合集: {series.title}",
+            )
+
+        except Exception as e:
+            logger.error(f"[series_detail] Error: {e}")
+            raise HTTPException(status_code=500, detail=f"获取合集详情失败: {str(e)}")
