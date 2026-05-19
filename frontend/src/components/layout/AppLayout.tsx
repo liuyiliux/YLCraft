@@ -108,7 +108,7 @@ const menuItems: MenuProps['items'] = [
     label: 'UP主中心',
     children: [
       { key: '/up-analytics', label: '搜索UP主' },
-      { key: '/up-analytics/favorites', label: '我的收藏', onClick: () => navigate('/up-analytics?tab=favorites') },
+      { key: '/my-data', label: '我的数据' },
     ],
   },
   {

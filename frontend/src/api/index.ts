@@ -793,6 +793,13 @@ export const getBiliFavorites = (connId: string) => {
   return request(`/bilibili/favorites?${qs}`)
 }
 
+/** 获取UP主公开收藏夹列表 */
+export const getBiliUpFavorites = (uid: string, connId?: string) => {
+  const qs = new URLSearchParams()
+  if (connId) qs.set('conn_id', connId)
+  return request(`/bilibili/up/${uid}/favorites?${qs}`)
+}
+
 /** 获取收藏夹详情（需要登录） */
 export const getBiliFavoriteDetail = (params: {
   mediaId: string

@@ -1034,6 +1034,14 @@ class BilibiliClient(BasePlatformClient):
             "order": order,
             "tid": 0,
             "keyword": "",
+            "index": 1,
+            "order_avoided": "true",
+            "platform": "web",
+            "web_location": "333.1387",
+            "dm_img_list": "[]",
+            "dm_img_str": "V2ViR0wgMS4wIChPcGVuR0wgRVMgMi4wIENocm9taXVtKQ",
+            "dm_cover_img_str": "QU5HTEUgKE5WSURJQSwgTlZJRElBIEdlRm9yY2UgUlRYIDMwNjAgTGFwdG9wIEdQVSAoMHgwMDAwMjU2MCkgRGlyZWN0M0QxMSB2c181XzAgcHNfNV8wLCBEM0QxMSlHb29nbGUgSW5jLiAoTlZJRElBKQ",
+            "dm_img_inter": '{"ds":[],"wh":[4182,2169,54],"of":[62,124,62]}',
         }
         
         query_string = await self._sign_params(params)
@@ -1103,15 +1111,47 @@ class BilibiliClient(BasePlatformClient):
     # 收藏夹相关（需要登录）
     # =========================================================================
 
-    async def get_favorite_list(self) -> List[Dict[str, Any]]:
-        """获取用户的收藏夹列表（需要登录）"""
-        self._log(f"Getting favorite list")
+    async def _get_current_user_mid(self) -> Optional[str]:
+        """通过nav接口获取当前登录用户的mid"""
+        try:
+            url = f"{BASE_URL}{WBI_KEY_URL}"
+            response = await self.request("GET", url)
+            
+            if isinstance(response, dict) and response.get("code") == 0:
+                data = response.get("data", {})
+                mid = data.get("mid")
+                if mid:
+                    return str(mid)
+            return None
+        except Exception as e:
+            self._log(f"Get current user mid error: {e}", "error")
+            return None
+    
+    async def get_favorite_list(self, user_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """获取收藏夹列表
         
-        if not self.config.cookie:
-            self._log("No cookie, cannot get favorite list", "warning")
-            return []
+        Args:
+            user_id: 用户ID，如果不传则获取当前登录用户的收藏夹（需要cookie）
+                    如果传了则获取该用户的公开收藏夹（不需要cookie）
+        """
+        if user_id:
+            self._log(f"Getting public favorite list for user: {user_id}")
+            params = {"up_mid": user_id, "pn": 1, "ps": 100, "web_location": "333.1387"}
+        else:
+            self._log(f"Getting my favorite list")
+            if not self.config.cookie:
+                self._log("No cookie, cannot get favorite list", "warning")
+                return []
+            
+            # 获取当前登录用户的mid
+            current_mid = await self._get_current_user_mid()
+            if not current_mid:
+                self._log("Cannot get current user mid", "warning")
+                return []
+            
+            self._log(f"Current user mid: {current_mid}")
+            params = {"up_mid": current_mid, "pn": 1, "ps": 100, "web_location": "333.1387"}
         
-        params = {"up_mid": "self", "pn": 1, "ps": 100}
         url = f"{BASE_URL}{FAV_LIST}?{urlencode(params)}"
         
         try:
@@ -1146,12 +1186,14 @@ class BilibiliClient(BasePlatformClient):
             return []
     
     async def get_favorite_detail(self, media_id: str, page: int = 1, page_size: int = 20) -> Dict[str, Any]:
-        """获取收藏夹内的视频列表（需要登录）"""
+        """获取收藏夹内的视频列表
+        
+        公开收藏夹不需要登录，私有收藏夹需要登录
+        """
         self._log(f"Getting favorite detail: media_id={media_id}, page={page}")
         
         if not self.config.cookie:
-            self._log("No cookie, cannot get favorite detail", "warning")
-            return {"total": 0, "list": [], "page": page, "page_size": page_size}
+            self._log("No cookie, will try to access public favorite folder")
         
         params = {
             "media_id": media_id,

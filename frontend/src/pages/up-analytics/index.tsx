@@ -28,6 +28,7 @@ import {
   getBiliUpRanking,
   getBiliFavorites,
   getBiliFavoriteDetail,
+  getBiliUpFavorites,
 } from '../../api'
 import type { CrawlerResult, PlatformConnectionResponse } from '../../api'
 
@@ -551,12 +552,15 @@ export default function UpAnalyticsPage() {
   const [upProfile, setUpProfile] = useState<any>(null)
   const [upVideos, setUpVideos] = useState<any[]>([])
   const [upSeries, setUpSeries] = useState<any[]>([])
+  const [upFavorites, setUpFavorites] = useState<any[]>([])
   const [profileLoading, setProfileLoading] = useState(false)
   const [videosLoading, setVideosLoading] = useState(false)
   const [seriesLoading, setSeriesLoading] = useState(false)
+  const [upFavoritesLoading, setUpFavoritesLoading] = useState(false)
   const [videoPage, setVideoPage] = useState(1)
   const [videoTotal, setVideoTotal] = useState(0)
   const [videoOrder, setVideoOrder] = useState('pubdate')
+  const [upDetailTab, setUpDetailTab] = useState('videos')
   
   // 收藏夹
   const [favorites, setFavorites] = useState<any[]>([])
@@ -616,9 +620,11 @@ export default function UpAnalyticsPage() {
   const handleUpClick = async (up: any) => {
     setSelectedUp(up)
     setActiveTab('up-detail')
+    setUpDetailTab('videos')
     setProfileLoading(true)
     setVideosLoading(true)
     setSeriesLoading(true)
+    setUpFavoritesLoading(true)
     
     try {
       // 获取 UP主信息
@@ -649,12 +655,19 @@ export default function UpAnalyticsPage() {
       if (seriesRes?.success) {
         setUpSeries(seriesRes.data?.list || [])
       }
+      
+      // 获取公开收藏夹列表
+      const favRes = await getBiliUpFavorites(up.id, selectedConn)
+      if (favRes?.success) {
+        setUpFavorites(favRes.data || [])
+      }
     } catch (e: any) {
       console.error('获取UP主信息失败:', e)
     } finally {
       setProfileLoading(false)
       setVideosLoading(false)
       setSeriesLoading(false)
+      setUpFavoritesLoading(false)
     }
   }
   
@@ -869,13 +882,14 @@ export default function UpAnalyticsPage() {
             {/* UP主信息卡片 */}
             <UpProfileCard profile={upProfile} loading={profileLoading} />
             
-            {/* 视频/合集 Tab */}
+            {/* 视频/合集/收藏夹 Tab */}
             <Card
               style={{ marginTop: 16, background: cardBg, border: `1px solid ${borderColor}`, borderRadius: 12 }}
               styles={{ body: { padding: 0 } }}
             >
               <Tabs
-                defaultActiveKey="videos"
+                activeKey={upDetailTab}
+                onChange={setUpDetailTab}
                 tabBarStyle={{ paddingLeft: 16 }}
                 items={[
                   {
@@ -885,50 +899,6 @@ export default function UpAnalyticsPage() {
                         <VideoCameraOutlined /> 视频列表
                       </span>
                     ),
-                    children: (
-                      <div style={{ padding: '0 16px 16px' }}>
-                        {/* 排序 */}
-                        <div style={{ marginBottom: 16, display: 'flex', gap: 8 }}>
-                          <Text style={{ color: textSec }}>排序：</Text>
-                          {[
-                            { value: 'pubdate', label: '最新' },
-                            { value: 'click', label: '播放最多' },
-                            { value: 'stow', label: '收藏最多' },
-                          ].map(opt => (
-                            <Tag
-                              key={opt.value}
-                              color={videoOrder === opt.value ? BILI_COLORS.primary : undefined}
-                              style={{ cursor: 'pointer' }}
-                              onClick={() => handleVideoOrderChange(opt.value)}
-                            >
-                              {opt.label}
-                            </Tag>
-                          ))}
-                        </div>
-                        
-                        <VideoList
-                          videos={upVideos}
-                          loading={videosLoading}
-                          total={videoTotal}
-                          page={videoPage}
-                          pageSize={20}
-                          onPageChange={handleVideoPageChange}
-                          onVideoClick={(video) => {
-                            // 可以跳转详情或下载
-                            Modal.info({
-                              title: video.title,
-                              content: (
-                                <div>
-                                  <p>播放量: {formatNum(video.stat?.view)}</p>
-                                  <p>点赞: {formatNum(video.stat?.like)}</p>
-                                  <p>投币: {formatNum(video.stat?.coin)}</p>
-                                </div>
-                              ),
-                            })
-                          }}
-                        />
-                      </div>
-                    ),
                   },
                   {
                     key: 'series',
@@ -937,126 +907,136 @@ export default function UpAnalyticsPage() {
                         <AppstoreOutlined /> 合集 ({upSeries.length})
                       </span>
                     ),
-                    children: (
-                      <div style={{ padding: 16 }}>
-                        <SeriesListCard
-                          series={upSeries}
-                          loading={seriesLoading}
-                          onSeriesClick={(s) => {
-                            Modal.info({
-                              title: s.title,
-                              content: <Text>{s.count} 个视频</Text>,
-                            })
-                          }}
-                        />
-                      </div>
+                  },
+                  {
+                    key: 'favorites',
+                    label: (
+                      <span>
+                        <FolderOutlined /> 收藏夹 ({upFavorites.length})
+                      </span>
                     ),
                   },
                 ]}
               />
-            </Card>
-          </div>
-        )
-      
-      case 'favorites':
-        return (
-          <div>
-            {/* 收藏夹入口 */}
-            {!selectedFavorite ? (
-              <Card
-                title="我的收藏夹"
-                extra={
-                  biliConnections.length > 0 ? (
-                    <Space>
-                      <Select
-                        value={selectedConn}
-                        onChange={setSelectedConn}
-                        style={{ width: 200 }}
-                        options={biliConnections.map(c => ({
-                          value: c.id,
-                          label: `${c.name}${c.status === 'active' ? ' ✓' : ''}`,
-                        }))}
-                      />
-                      <Button
-                        type="primary"
-                        icon={<ReloadOutlined />}
-                        onClick={handleLoadFavorites}
-                        loading={favoritesLoading}
-                      >
-                        刷新
-                      </Button>
-                    </Space>
-                  ) : (
-                    <Tag color="warning" icon={<LockOutlined />}>
-                      需要登录 B站账号
-                    </Tag>
-                  )
-                }
-                style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: 12 }}
-              >
-                {favorites.length > 0 || favoritesLoading ? (
-                  <FavoriteListCard
-                    favorites={favorites}
-                    loading={favoritesLoading}
-                    onFavoriteClick={handleFavoriteClick}
-                  />
-                ) : (
-                  <Empty
-                    description={
-                      biliConnections.length === 0
-                        ? '请先在「账号中心」添加 B站 Cookie'
-                        : '点击「刷新」加载收藏夹'
-                    }
-                    image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  >
-                    {biliConnections.length === 0 && (
-                      <Button type="primary" onClick={() => navigate('/accounts')}>
-                        去添加账号
-                      </Button>
-                    )}
-                  </Empty>
+              
+              {/* Tab 内容 */}
+              <div style={{ padding: '16px' }}>
+                {upDetailTab === 'videos' && (
+                  <div>
+                    {/* 排序 */}
+                    <div style={{ marginBottom: 16, display: 'flex', gap: 8 }}>
+                      <Text style={{ color: textSec }}>排序：</Text>
+                      {[
+                        { value: 'pubdate', label: '最新' },
+                        { value: 'click', label: '播放最多' },
+                        { value: 'stow', label: '收藏最多' },
+                      ].map(opt => (
+                        <Tag
+                          key={opt.value}
+                          color={videoOrder === opt.value ? BILI_COLORS.primary : undefined}
+                          style={{ cursor: 'pointer' }}
+                          onClick={() => handleVideoOrderChange(opt.value)}
+                        >
+                          {opt.label}
+                        </Tag>
+                      ))}
+                    </div>
+                    
+                    <VideoList
+                      videos={upVideos}
+                      loading={videosLoading}
+                      total={videoTotal}
+                      page={videoPage}
+                      pageSize={20}
+                      onPageChange={handleVideoPageChange}
+                      onVideoClick={(video) => {
+                        // 可以跳转详情或下载
+                        Modal.info({
+                          title: video.title,
+                          content: (
+                            <div>
+                              <p>播放量: {formatNum(video.stat?.view)}</p>
+                              <p>点赞: {formatNum(video.stat?.like)}</p>
+                              <p>投币: {formatNum(video.stat?.coin)}</p>
+                            </div>
+                          ),
+                        })
+                      }}
+                    />
+                  </div>
                 )}
-              </Card>
-            ) : (
-              /* 收藏夹详情 */
-              <div>
-                <Button
-                  type="text"
-                  icon={<ArrowLeftOutlined />}
-                  onClick={() => setSelectedFavorite(null)}
-                  style={{ marginBottom: 16 }}
-                >
-                  返回收藏夹列表
-                </Button>
                 
-                <Card
-                  title={`收藏夹: ${selectedFavorite.title}`}
-                  extra={<Text style={{ color: textSec }}>{selectedFavorite.media_count} 个视频</Text>}
-                  style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: 12 }}
-                  styles={{ body: { padding: 0 } }}
-                >
-                  <VideoList
-                    videos={favoriteDetail}
-                    loading={favoriteDetailLoading}
-                    total={selectedFavorite.media_count}
-                    page={favoritePage}
-                    pageSize={20}
-                    onPageChange={setFavoritePage}
-                    onVideoClick={(video) => {
+                {upDetailTab === 'series' && (
+                  <SeriesListCard
+                    series={upSeries}
+                    loading={seriesLoading}
+                    onSeriesClick={(s) => {
                       Modal.info({
-                        title: video.title,
-                        content: (
-                          <div>
-                            <p>UP主: {video.author}</p>
-                            <p>播放量: {formatNum(video.stat?.view)}</p>
-                            <p>点赞: {formatNum(video.stat?.like)}</p>
-                          </div>
-                        ),
+                        title: s.title,
+                        content: <Text>{s.count} 个视频</Text>,
                       })
                     }}
                   />
-                </Card>
+                )}
+                
+                {upDetailTab === 'favorites' && (
+                  <FavoriteListCard
+                    favorites={upFavorites}
+                    loading={upFavoritesLoading}
+                    onFavoriteClick={async (favorite) => {
+                      setSelectedFavorite(favorite)
+                      setFavoriteDetailLoading(true)
+                      try {
+                        const res = await getBiliFavoriteDetail({
+                          mediaId: favorite.id,
+                          page: 1,
+                          page_size: 20,
+                          conn_id: selectedConn,
+                        })
+                        if (res?.success) {
+                          setFavoriteDetail(res.data?.list || [])
+                        }
+                      } catch (e) {
+                        console.error('获取收藏夹详情失败:', e)
+                      } finally {
+                        setFavoriteDetailLoading(false)
+                      }
+                    }}
+                  />
+                )}
               </div>
+            </Card>
+            
+            {/* 收藏夹详情弹窗 */}
+            {selectedFavorite && (
+              <Modal
+                title={`收藏夹: ${selectedFavorite.title}`}
+                open={true}
+                onCancel={() => setSelectedFavorite(null)}
+                footer={null}
+                width={800}
+              >
+                <VideoList
+                  videos={favoriteDetail}
+                  loading={favoriteDetailLoading}
+                  total={selectedFavorite.media_count || favoriteDetail.length}
+                  page={1}
+                  pageSize={20}
+                  onPageChange={() => {}}
+                  onVideoClick={(video) => {
+                    Modal.info({
+                      title: video.title,
+                      content: (
+                        <div>
+                          <p>播放量: {formatNum(video.stat?.view)}</p>
+                          <p>点赞: {formatNum(video.stat?.like)}</p>
+                          <p>投币: {formatNum(video.stat?.coin)}</p>
+                        </div>
+                      ),
+                    })
+                  }}
+                />
+              </Modal>
             )}
           </div>
         )
@@ -1075,8 +1055,8 @@ export default function UpAnalyticsPage() {
             <TeamOutlined style={{ marginRight: 8 }} />UP主中心
           </Title>
           <Text style={{ fontSize: 13, color: textSec }}>
-            B站 UP主分析、收藏夹、合集查看
-          </Text>
+              B站 UP主数据分析平台
+            </Text>
         </Col>
         <Col>
           <Space>
@@ -1101,7 +1081,6 @@ export default function UpAnalyticsPage() {
           {[
             { key: 'search', label: '搜索UP主', icon: <SearchOutlined /> },
             { key: 'up-detail', label: 'UP主详情', icon: <UserOutlined />, show: !!selectedUp },
-            { key: 'favorites', label: '我的收藏', icon: <FolderOutlined /> },
           ].filter(tab => !tab.show || tab.show).map(tab => (
             <button
               key={tab.key}

@@ -23,6 +23,7 @@ import AccountsPage from './pages/accounts'
 import PublishPage from './pages/publish'
 import CrawlerPage from './pages/crawler'
 import UpAnalyticsPage from './pages/up-analytics'
+import MyDataPage from './pages/my-data'
 import ComfyUIPage from './pages/comfyui'
 import ImageEditorPage from './pages/image-editor'
 import NovelSearchPage from './pages/novel-search'
@@ -74,6 +75,7 @@ export default function App() {
               <Route path="publish" element={<PublishPage />} />
               <Route path="crawler" element={<CrawlerPage />} />
               <Route path="up-analytics" element={<UpAnalyticsPage />} />
+              <Route path="my-data" element={<MyDataPage />} />
               <Route path="image-editor" element={<ImageEditorPage />} />
               <Route path="novel-search" element={<NovelSearchPage />} />
               <Route path="novel-bookshelf" element={<NovelBookshelfPage />} />

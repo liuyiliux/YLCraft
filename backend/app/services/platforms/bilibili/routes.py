@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 from typing import List, Dict, Optional, Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Path
 from pydantic import BaseModel
 
 logger = logging.getLogger("ylcraft.api.bilibili")
@@ -661,26 +661,47 @@ async def get_favorite_list(
             raise HTTPException(status_code=500, detail=f"获取收藏夹失败: {str(e)}")
 
 
+@router.get("/up/{uid}/favorites", summary="获取UP主公开收藏夹列表", response_model=FavoriteListResponse)
+async def get_up_favorite_list(
+    uid: str = Path(..., description="UP主UID"),
+    conn_id: str = Query("", description="B站连接ID（可选）"),
+):
+    """
+    获取UP主的公开收藏夹列表
+    - 不需要登录也可以获取公开收藏夹
+    """
+    logger.info(f"[up_favorites] uid={uid}")
+
+    async with bili_client(conn_id) as client:
+        try:
+            favorites = await client.get_favorite_list(user_id=uid)
+
+            return FavoriteListResponse(
+                success=True,
+                data=favorites,
+                message=f"获取到 {len(favorites)} 个公开收藏夹",
+            )
+
+        except Exception as e:
+            logger.error(f"[up_favorites] Error: {e}")
+            raise HTTPException(status_code=500, detail=f"获取收藏夹失败: {str(e)}")
+
+
 @router.get("/favorites/{media_id}", summary="获取收藏夹详情", response_model=FavoriteDetailResponse)
 async def get_favorite_detail(
     media_id: str,
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=50, description="每页数量"),
-    conn_id: str = Query(..., description="B站连接ID（必填，需要登录）"),
+    conn_id: str = Query("", description="B站连接ID（可选，公开收藏夹不需要）"),
 ):
     """
     获取收藏夹内的视频列表
-    - 必须提供有效的 B站连接（包含 Cookie）
+    - 公开收藏夹不需要登录
+    - 私有收藏夹需要登录
     """
     logger.info(f"[favorite_detail] media_id={media_id}, page={page}")
 
-    if not conn_id:
-        raise HTTPException(status_code=400, detail="需要提供 B站连接ID（conn_id）")
-
     async with bili_client(conn_id) as client:
-        if not client.config.cookie:
-            raise HTTPException(status_code=401, detail="B站连接未包含 Cookie，无法访问收藏夹")
-
         try:
             result = await client.get_favorite_detail(media_id, page=page, page_size=page_size)
 
