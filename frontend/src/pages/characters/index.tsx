@@ -390,7 +390,10 @@ export default function CharactersPage() {
       </Card>
 
       {loading ? (
-        <div style={{ textAlign: 'center', padding: '80px 0' }}><Spin size="large" tip="加载中..." /></div>
+        <div style={{ textAlign: 'center', padding: '80px 0' }}>
+          <Spin size="large" />
+          <Paragraph style={{ color: '#8b8b9e', marginTop: 16 }}>加载中...</Paragraph>
+        </div>
       ) : characters.length === 0 ? (
         <Empty description={<Text type="secondary">{keyword || filterSourceType || filterRole || filterFavorite ? '没有符合条件的角色' : '还没有角色，点击右上角新建'}</Text>} style={{ padding: '80px 0' }} />
       ) : (

@@ -185,8 +185,8 @@ export default function DownloadPage() {
       {/* Loading */}
       {loading && (
         <div style={{ textAlign: 'center', padding: '60px 0' }}>
-          <Spin size="large" tip="解析中，请稍候..." />
-          <Paragraph style={{ color: THEME.textSecondary, marginTop: 16 }}>正在获取视频信息...</Paragraph>
+          <Spin size="large" />
+          <Paragraph style={{ color: THEME.textSecondary, marginTop: 16 }}>解析中，请稍候...</Paragraph>
         </div>
       )}
 

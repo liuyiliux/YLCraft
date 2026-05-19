@@ -295,8 +295,9 @@ export default function BreakerPage() {
 
       {/* Loading */}
       {loading && (
-        <Card style={{ background: '#1a1a2e', marginBottom: 16, textAlign: 'center', border: '1px solid rgba(255,255,255,0.08)' }}>
-          <Spin size="large" tip={isXhsUrl ? '解析小红书笔记...' : '解析视频...'} />
+        <Card style={{ background: '#1a1a2e', marginBottom: 16, textAlign: 'center', border: '1px solid rgba(255,255,255,0.08)', padding: 40 }}>
+          <Spin size="large" />
+          <Paragraph style={{ color: '#8b8b9e', marginTop: 16 }}>{isXhsUrl ? '解析小红书笔记...' : '解析视频...'}</Paragraph>
         </Card>
       )}
 

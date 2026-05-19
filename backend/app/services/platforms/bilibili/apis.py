@@ -30,7 +30,7 @@ VIDEO_PAGES = "/x/web-interface/view?bvid="      # 视频分P信息
 
 USER_INFO = "/x/web-interface/card"              # 用户信息
 USER_VIDEOS = "/x/space/wbi/arc/search"         # 用户投稿视频
-USER_SERIES = "/x/series/archives"               # 用户合集列表
+USER_SERIES = "/x/polymer/web-space/seasons_series_list"  # 用户合集/频道列表（正确的API）
 
 # =============================================================================
 # 合集 API

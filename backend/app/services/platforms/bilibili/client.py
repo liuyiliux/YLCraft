@@ -1016,6 +1016,12 @@ class BilibiliClient(BasePlatformClient):
     ) -> Dict[str, Any]:
         """获取用户发布的视频列表
         
+        Args:
+            user_id: 用户ID
+            max_results: 最大返回数量
+            order: 排序方式
+            page: 页码
+            
         Returns:
             {"list": List[SearchResult], "total": int}
         """
@@ -1047,7 +1053,8 @@ class BilibiliClient(BasePlatformClient):
                 
                 results = []
                 for item in video_list[:max_results]:
-                    results.append(self._parse_user_video_result(item, user_id))
+                    search_result = self._parse_user_video_result(item, user_id)
+                    results.append(search_result)
                 
                 return {"list": results, "total": total_count}
             else:
@@ -1214,34 +1221,51 @@ class BilibiliClient(BasePlatformClient):
         """获取用户的合集列表（不需要登录）"""
         self._log(f"Getting user series list: user_id={user_id}")
         
+        # 新的API不需要WBI签名，参数也不同
         params = {
             "mid": user_id,
-            "pn": page,
-            "ps": min(page_size, 50),
+            "page_num": page,
+            "page_size": min(page_size, 50),
+            "web_location": "333.1387",
         }
         
         url = f"{BASE_URL}{USER_SERIES}?{urlencode(params)}"
+        self._log(f"[DEBUG] Series API URL: {url[:200]}")
         
         try:
             response = await self.request("GET", url)
+            self._log(f"[DEBUG] Series API response code: {response.get('code', 'N/A')}, keys: {list(response.keys()) if isinstance(response, dict) else type(response)}")
+            import json
+            self._log(f"[DEBUG] Series API full response: {json.dumps(response, ensure_ascii=False)[:800]}")
             
             if isinstance(response, dict) and response.get("code") == 0:
                 data = response.get("data", {})
-                series_list = data.get("series_list", []) or []
+                items_lists = data.get("items_lists", {})
+                self._log(f"[DEBUG] Series data keys: {list(data.keys())}, items_lists keys: {list(items_lists.keys())}")
+                
+                # 获取合集列表（先找seasons_list，如果没有就找series_list）
+                series_list = items_lists.get("seasons_list", []) or items_lists.get("series_list", []) or []
+                self._log(f"[DEBUG] Series list count: {len(series_list)}")
+                if len(series_list) > 0:
+                    self._log(f"[DEBUG] First series item keys: {list(series_list[0].keys())}")
                 
                 result = []
                 for series in series_list:
+                    # 从第一个视频获取封面
+                    first_archive = (series.get("archives", []) or [])[0] if series.get("archives") else {}
+                    cover = first_archive.get("pic", "") or ""
+                    
                     result.append({
-                        "id": str(series.get("series_id", "")),
-                        "title": series.get("name", ""),
-                        "cover": self._fix_bili_url(series.get("cover", "")),
-                        "description": series.get("description", ""),
-                        "mid": str(series.get("mid", "")),
-                        "count": series.get("count", 0),
-                        "ctime": series.get("ctime", 0),
+                        "id": str(series.get("season_id", series.get("series_id", ""))),
+                        "title": series.get("name", series.get("title", "")),
+                        "cover": self._fix_bili_url(cover),
+                        "description": series.get("description", series.get("subtitle", "")),
+                        "mid": str(user_id),
+                        "count": len(series.get("archives", [])),
+                        "ctime": first_archive.get("ctime", 0),
                     })
                 
-                page_info = data.get("page", {})
+                page_info = items_lists.get("page", {})
                 total = page_info.get("total", len(result))
                 
                 return {
