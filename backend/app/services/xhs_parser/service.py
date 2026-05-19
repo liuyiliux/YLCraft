@@ -34,6 +34,7 @@ class XhsNote:
     images: list[str] = field(default_factory=list)
     author: str = ""
     author_id: str = ""
+    author_avatar: str = ""
     likes: int = 0
     covers: list[str] = field(default_factory=list)  # 封面图列表（取前N张）
     source_url: str = ""
@@ -228,6 +229,7 @@ class XhsParserService:
                 user = note_data.get("user", {})
                 author = user.get("nickname", "")
                 author_id = user.get("userId", "") or user.get("id", "")
+                author_avatar = user.get("avatar", "") or user.get("image", "")
 
                 # 点赞数
                 interact = note_data.get("interactInfo", {}) or {}
@@ -237,9 +239,10 @@ class XhsParserService:
                     title=title,
                     description=description,
                     images=images,
-                    covers=images[:9],  # 取前9张
+                    covers=images,
                     author=author,
                     author_id=author_id,
+                    author_avatar=author_avatar,
                     likes=int(likes) if likes else 0,
                     source_url=url,
                     note_id=note_id,

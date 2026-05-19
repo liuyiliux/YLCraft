@@ -248,6 +248,50 @@ body {
   box-shadow: 0 0 0 1px var(--bgCard) !important;
 }
 
+/* ===== Steps 步骤条（暗色主题适配） ===== */
+.breaker-steps .ant-steps-item-title {
+  color: var(--textPrimary) !important;
+}
+
+.breaker-steps .ant-steps-item-description {
+  color: var(--textSecondary) !important;
+}
+
+.breaker-steps .ant-steps-item-wait .ant-steps-item-icon {
+  background: var(--bgElevated) !important;
+  border-color: var(--borderStrong) !important;
+}
+
+.breaker-steps .ant-steps-item-wait .ant-steps-item-icon > .ant-steps-icon {
+  color: var(--textSecondary) !important;
+}
+
+.breaker-steps .ant-steps-item-process .ant-steps-item-icon {
+  background: var(--primary) !important;
+  border-color: var(--primary) !important;
+}
+
+.breaker-steps .ant-steps-item-process .ant-steps-item-icon > .ant-steps-icon {
+  color: #000 !important;
+}
+
+.breaker-steps .ant-steps-item-finish .ant-steps-item-icon {
+  background: var(--bgCard) !important;
+  border-color: var(--primary) !important;
+}
+
+.breaker-steps .ant-steps-item-finish .ant-steps-item-icon > .ant-steps-icon {
+  color: var(--primary) !important;
+}
+
+.breaker-steps .ant-steps-item-finish > .ant-steps-item-container > .ant-steps-item-tail::after {
+  background: var(--primary) !important;
+}
+
+.breaker-steps .ant-steps-item-wait > .ant-steps-item-container > .ant-steps-item-tail::after {
+  background: var(--borderStrong) !important;
+}
+
 /* 图片预览 */
 .ant-image-preview-img {
   border-radius: 8px;

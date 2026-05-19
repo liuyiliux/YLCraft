@@ -167,6 +167,7 @@ async def preview_xhs_note(req: XhsPreviewRequest):
             "covers": note.covers,
             "author": note.author,
             "author_id": note.author_id,
+            "author_avatar": note.author_avatar,
             "likes": note.likes,
             "note_id": note.note_id,
             "source_url": note.source_url,

@@ -148,6 +148,7 @@ export interface XhsNote {
   covers: string[]
   author: string
   author_id: string
+  author_avatar: string
   likes: number
   note_id: string
   source_url: string

@@ -31,6 +31,7 @@ import re
 
 class AnalysisStatus(StrEnum):
     PENDING = "pending"
+    RUNNING = "running"  # 与 UnifiedQueue 任务状态对齐
     PARSING = "parsing"
     DOWNLOADING = "downloading"
     TRANSCRIBING = "transcribing"

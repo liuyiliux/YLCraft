@@ -17,6 +17,8 @@ import {
   Divider,
   Space,
   Badge,
+  Tooltip,
+  Avatar,
 } from 'antd'
 import {
   ExperimentOutlined,
@@ -26,6 +28,8 @@ import {
   ThunderboltOutlined,
   EyeOutlined,
   PictureOutlined,
+  QuestionCircleOutlined,
+  UserOutlined,
 } from '@ant-design/icons'
 import {
   startBreakerTask,
@@ -34,6 +38,7 @@ import {
   previewXhsNote,
 } from '../../api'
 import type { BreakerResult, BreakerTask, XhsPreviewResponse } from '../../types/api'
+import { normalizeUrl } from '../../utils/url'
 
 const { Text, Title, Paragraph } = Typography
 
@@ -57,7 +62,7 @@ export default function BreakerPage() {
   useEffect(() => {
     const urlParam = searchParams.get('url')
     if (urlParam && !url) {
-      setUrl(urlParam)
+      setUrl(normalizeUrl(urlParam))
     }
   }, [searchParams, url])
 
@@ -197,13 +202,13 @@ export default function BreakerPage() {
 
       {/* Input */}
       <Card style={{ background: '#1a1a2e', marginBottom: 24, border: '1px solid rgba(255,255,255,0.08)' }}>
-        <div style={{ display: 'flex', gap: 12 }}>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           <Input
             size="large"
             placeholder="粘贴抖音 / 快手 / B站 / 小红书链接..."
             value={url}
             onChange={e => {
-              setUrl(e.target.value)
+              setUrl(normalizeUrl(e.target.value))
               setXhsPreview(null)
               setStep(0)
             }}
@@ -218,6 +223,17 @@ export default function BreakerPage() {
               ) : null
             }
           />
+          <Tooltip
+            title={
+              <div style={{ fontSize: 12, lineHeight: 1.6 }}>
+                <div><b>预览</b>：快速查看小红书图文内容，无需等待 AI 分析</div>
+                <div style={{ marginTop: 8 }}><b>开始拆解</b>：完整分析，生成文案结构、爆款要素、仿写提示词等报告</div>
+              </div>
+            }
+            placement="bottomRight"
+          >
+            <QuestionCircleOutlined style={{ color: '#8b8ba8', fontSize: 16, cursor: 'help', flexShrink: 0 }} />
+          </Tooltip>
           <Button
             type="primary"
             size="large"
@@ -272,6 +288,7 @@ export default function BreakerPage() {
           { title: '完成' },
         ]}
         style={{ marginBottom: 24 }}
+        className="breaker-steps"
       />
 
       {/* Loading */}
@@ -315,7 +332,16 @@ export default function BreakerPage() {
             <Title level={5} style={{ color: '#fff', marginBottom: 8 }}>{xhsPreview.parsed.title}</Title>
             <Space>
               <Tag color="red">小红书</Tag>
-              {xhsPreview.parsed.author && <Tag>👤 {xhsPreview.parsed.author}</Tag>}
+              {xhsPreview.parsed.author && (
+                <Tag>
+                  {xhsPreview.parsed.author_avatar ? (
+                    <Avatar src={`/api/v1/proxy/image?url=${encodeURIComponent(xhsPreview.parsed.author_avatar)}`} size={16} style={{ marginRight: 4 }} />
+                  ) : (
+                    <UserOutlined style={{ marginRight: 4 }} />
+                  )}
+                  {xhsPreview.parsed.author}
+                </Tag>
+              )}
               {xhsPreview.parsed.likes > 0 && (
                 <Tag color="gold">❤️ {xhsPreview.parsed.likes}</Tag>
               )}
@@ -343,7 +369,7 @@ export default function BreakerPage() {
                   {xhsPreview.parsed.images.slice(0, 6).map((img, i) => (
                     <Image
                       key={i}
-                      src={img}
+                      src={`/api/v1/proxy/image?url=${encodeURIComponent(img)}`}
                       width={120}
                       height={120}
                       style={{ objectFit: 'cover', borderRadius: 8 }}
@@ -387,7 +413,16 @@ export default function BreakerPage() {
               extra={
                 <Space>
                   <Tag color="red">小红书</Tag>
-                  {xhsPreview.parsed.author && <Text style={{ color: '#8b8ba8' }}>👤 {xhsPreview.parsed.author}</Text>}
+                  {xhsPreview.parsed.author && (
+                    <Text style={{ color: '#8b8ba8' }}>
+                      {xhsPreview.parsed.author_avatar ? (
+                        <Avatar src={`/api/v1/proxy/image?url=${encodeURIComponent(xhsPreview.parsed.author_avatar)}`} size={16} style={{ marginRight: 4 }} />
+                      ) : (
+                        <UserOutlined style={{ marginRight: 4 }} />
+                      )}
+                      {xhsPreview.parsed.author}
+                    </Text>
+                  )}
                 </Space>
               }
             >
@@ -397,7 +432,7 @@ export default function BreakerPage() {
                     {xhsPreview.parsed.images.slice(0, 4).map((img, i) => (
                       <Image
                         key={i}
-                        src={img}
+                        src={`/api/v1/proxy/image?url=${encodeURIComponent(img)}`}
                         width={80}
                         height={80}
                         style={{ objectFit: 'cover', borderRadius: 6 }}

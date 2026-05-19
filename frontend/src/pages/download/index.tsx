@@ -10,6 +10,7 @@ import {
 import { parseDownloadUrl, createDownloadTask, getDownloadTask, openFolder } from '../../api'
 import type { DownloadParseResponse, VideoQuality } from '../../types/api'
 import { useTheme } from '../../constants/theme'
+import { normalizeUrl } from '../../utils/url'
 
 const { Title, Text, Paragraph } = Typography
 
@@ -33,7 +34,7 @@ export default function DownloadPage() {
   useEffect(() => {
     const urlParam = searchParams.get('url')
     if (urlParam && !url) {
-      setUrl(urlParam)
+      setUrl(normalizeUrl(urlParam))
     }
   }, [searchParams, url])
   const [loading, setLoading] = useState(false)
@@ -137,7 +138,7 @@ export default function DownloadPage() {
           <Input
             size="large"
             placeholder="粘贴视频或图片链接（支持 1000+ 平台，包括抖音/B站/Twitter 等）..."
-            value={url} onChange={e => setUrl(e.target.value)} onPressEnter={handleParse}
+            value={url} onChange={e => setUrl(normalizeUrl(e.target.value))} onPressEnter={handleParse}
             style={{ background: THEME.bgInput, color: THEME.textPrimary }}
             prefix={<LinkOutlined style={{ color: THEME.textSecondary }} />}
             suffix={url && (
