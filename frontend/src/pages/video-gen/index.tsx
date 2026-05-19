@@ -773,7 +773,7 @@ export default function VideoGenPage() {
                   {previewVideo.duration}s · {previewVideo.resolution} · {previewVideo.aspect_ratio}
                 </span>
               </Space>
-              <div style={{ marginTop: 8, color: '#e2e8f0' }}>{previewVideo.prompt}</div>
+              <div style={{ marginTop: 8, color: THEME.textPrompt }}>{previewVideo.prompt}</div>
             </div>
           </div>
         )}

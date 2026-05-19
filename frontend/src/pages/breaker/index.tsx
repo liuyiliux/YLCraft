@@ -39,6 +39,7 @@ import {
 } from '../../api'
 import type { BreakerResult, BreakerTask, XhsPreviewResponse } from '../../types/api'
 import { normalizeUrl } from '../../utils/url'
+import { useTheme } from '../../constants/theme'
 
 const { Text, Title, Paragraph } = Typography
 
@@ -46,6 +47,7 @@ const { Text, Title, Paragraph } = Typography
 const XHS_PATTERN = /xiaohongshu\.com|xhs\.cn/i
 
 export default function BreakerPage() {
+  const { theme: THEME } = useTheme()
   const [searchParams] = useSearchParams()
   const [url, setUrl] = useState('')
   const [loading, setLoading] = useState(false)
@@ -518,8 +520,8 @@ export default function BreakerPage() {
           {/* Prompts */}
           {result.prompts && result.prompts.length > 0 && (
             <Card
-              title={<Text style={{ color: '#f59e0b' }}>💡 仿写提示词</Text>}
-              style={{ background: '#1a1a2e', border: '1px solid rgba(255,255,255,0.08)' }}
+              title={<Text style={{ color: THEME.textPrompt }}>💡 仿写提示词</Text>}
+              style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}` }}
             >
               <List
                 size="small"
@@ -527,16 +529,16 @@ export default function BreakerPage() {
                 renderItem={p => (
                   <List.Item style={{ border: 'none', padding: '8px 0' }}>
                     <div style={{ width: '100%' }}>
-                      <Tag style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b33', color: '#f59e0b' }}>
+                      <Tag style={{ background: `${THEME.primary}1a`, border: `1px solid ${THEME.primary}33`, color: THEME.primary }}>
                         {p.type}
                       </Tag>
                       <Paragraph
                         style={{
-                          color: '#c8c8d8',
+                          color: THEME.textPrompt,
                           fontFamily: 'monospace',
                           fontSize: 12,
                           marginTop: 8,
-                          background: '#12122a',
+                          background: THEME.bgInput,
                           padding: 12,
                           borderRadius: 6,
                         }}

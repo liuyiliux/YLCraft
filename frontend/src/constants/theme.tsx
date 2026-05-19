@@ -72,6 +72,7 @@ export interface ThemeColors {
   textPrimary: string
   textSecondary: string
   textDisabled: string
+  textPrompt: string      // 提示词/代码等特殊文本（用于生成内容展示）
   
   // 边框
   border: string
@@ -138,6 +139,7 @@ const themes: Record<string, ThemeDefinition> = {
       textPrimary: '#e0e0e0',
       textSecondary: '#8b8ba8',
       textDisabled: 'rgba(255,255,255,0.25)',
+      textPrompt: '#c8c8d8',  // 提示词等生成内容
       border: 'rgba(255,255,255,0.08)',
       borderLight: 'rgba(255,255,255,0.12)',
       borderStrong: 'rgba(255,255,255,0.18)',
@@ -193,6 +195,7 @@ const themes: Record<string, ThemeDefinition> = {
       Modal: { contentBg: '#1a1a2e', headerBg: '#1a1a2e' },
       Select: { colorBgContainer: '#22223a', colorBorder: 'rgba(255,255,255,0.15)', colorText: '#e0e0e0', colorTextPlaceholder: '#6b6b80', colorTextTertiary: '#8b8ba8', colorTextQuaternary: '#8b8ba8' },
       Tabs: { colorText: '#8b8ba8', colorTextActive: '#00d4ff' },
+      Typography: { colorTextSecondary: '#8b8ba8' },
     },
   },
 
@@ -213,6 +216,7 @@ const themes: Record<string, ThemeDefinition> = {
         textPrimary: '#e0e0f0',
         textSecondary: '#8b8bb5',
         textDisabled: 'rgba(255,255,255,0.25)',
+        textPrompt: '#c8c8d8',  // 提示词等生成内容
         border: 'rgba(144, 179, 255, 0.08)',
         borderLight: 'rgba(144, 179, 255, 0.12)',
         borderStrong: 'rgba(144, 179, 255, 0.18)',
@@ -269,6 +273,7 @@ const themes: Record<string, ThemeDefinition> = {
       Modal: { contentBg: '#1a1a2e', headerBg: '#1a1a2e' },
       Select: { colorBgContainer: '#24243a', colorBorder: 'rgba(144, 179, 255, 0.15)', colorText: '#e0e0f0', colorTextPlaceholder: '#6b6b95', colorTextTertiary: '#8b8bb5', colorTextQuaternary: '#8b8bb5' },
       Tabs: { colorText: '#8b8bb5', colorTextActive: '#7c9bff' },
+      Typography: { colorTextSecondary: '#8b8bb5' },
     },
   },
 
@@ -289,6 +294,7 @@ const themes: Record<string, ThemeDefinition> = {
         textPrimary: '#1a1a2e',
         textSecondary: '#8c8c8c',
         textDisabled: 'rgba(0,0,0,0.25)',
+        textPrompt: '#4a4a5a',  // 提示词等生成内容（浅色主题用深色）
         border: '#e8e8e8',
         borderLight: '#f0f0f0',
         borderStrong: '#d9d9d9',
@@ -345,6 +351,7 @@ const themes: Record<string, ThemeDefinition> = {
       Modal: { contentBg: '#ffffff', headerBg: '#ffffff' },
       Select: { colorBgContainer: '#ffffff', colorBorder: '#d9d9d9', colorText: '#1a1a2e', colorTextPlaceholder: '#bfbfbf', colorTextTertiary: '#8c8c8c', colorTextQuaternary: '#8c8c8c' },
       Tabs: { colorText: '#8c8c8c', colorTextActive: '#1677ff' },
+      Typography: { colorTextSecondary: '#8c8c8c' },
     },
   },
 }
@@ -353,7 +360,7 @@ const themes: Record<string, ThemeDefinition> = {
 // 每次切换主题时，将这些 CSS 变量设置到 :root 上
 const THEME_CSS_VARS = [
   'bgPage', 'bgCard', 'bgElevated', 'bgInput', 'bgHover',
-  'textPrimary', 'textSecondary', 'textDisabled',
+  'textPrimary', 'textSecondary', 'textDisabled', 'textPrompt',
   'border', 'borderLight', 'borderStrong',
   'primary', 'primaryHover',
   'success', 'warning', 'error', 'info',
@@ -459,6 +466,7 @@ export const THEME = {
   textPrimary: '#e0e0e0',
   textSecondary: '#8b8ba8',
   textDisabled: 'rgba(255,255,255,0.25)',
+  textPrompt: '#c8c8d8',
   border: 'rgba(255,255,255,0.08)',
   borderLight: 'rgba(255,255,255,0.12)',
   borderStrong: 'rgba(255,255,255,0.18)',
