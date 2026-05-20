@@ -43,7 +43,7 @@ from .apis import (
     ORDER_TYPE_MAP,
     WBI_KEY_URL,
     FAV_LIST,
-    FAV_MEDIA,
+    FAV_RESOURCE_LIST,
     FAV_INFO,
 )
 
@@ -184,8 +184,8 @@ class BilibiliClient(BasePlatformClient):
         """构建请求头（API 模式用）"""
         headers = {
             "User-Agent": self._get_default_user_agent(),
-            "Referer": "https://search.bilibili.com",
-            "Origin": "https://search.bilibili.com",
+            "Referer": "https://www.bilibili.com",
+            "Origin": "https://www.bilibili.com",
             "Accept": "application/json, text/plain, */*",
             "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
             "Accept-Encoding": "gzip, deflate, br",
@@ -1188,12 +1188,10 @@ class BilibiliClient(BasePlatformClient):
     async def get_favorite_detail(self, media_id: str, page: int = 1, page_size: int = 20) -> Dict[str, Any]:
         """获取收藏夹内的视频列表
         
-        公开收藏夹不需要登录，私有收藏夹需要登录
+        使用 web API /x/v3/fav/resource/list，需要 WBI 签名
+        关键参数：platform=web 和 web_location=333.1387
         """
         self._log(f"Getting favorite detail: media_id={media_id}, page={page}")
-        
-        if not self.config.cookie:
-            self._log("No cookie, will try to access public favorite folder")
         
         params = {
             "media_id": media_id,
@@ -1202,22 +1200,31 @@ class BilibiliClient(BasePlatformClient):
             "keyword": "",
             "order": "mtime",
             "type": 0,
+            "tid": 0,
+            "platform": "web",
+            "web_location": "333.1387",
         }
         
-        # 收藏夹 API 需要 WBI 签名
-        query_string = await self._sign_params(params)
-        url = f"{BASE_URL}{FAV_MEDIA}?{query_string}"
-        
         try:
+            # WBI 签名
+            query_string = await self._sign_params(params)
+            url = f"{BASE_URL}{FAV_RESOURCE_LIST}?{query_string}"
+            
             response = await self.request("GET", url)
+            
+            # 调试：打印原始响应
+            raw = json.dumps(response, ensure_ascii=False)[:1000] if isinstance(response, dict) else str(response)[:500]
+            self._log(f"Favorite detail raw response: {raw}", "debug")
             
             if isinstance(response, dict) and response.get("code") == 0:
                 data = response.get("data", {})
                 items = data.get("medias", []) or []
                 
+                self._log(f"Got {len(items)} medias from favorite detail")
+                
                 result = []
                 for item in items:
-                    bvid = item.get("bvid", "")
+                    bvid = item.get("bvid", "") or item.get("bv_id", "")
                     result.append({
                         "id": bvid,
                         "title": item.get("title", ""),
@@ -1228,20 +1235,21 @@ class BilibiliClient(BasePlatformClient):
                         "url": f"https://www.bilibili.com/video/{bvid}" if bvid else "",
                         "duration": item.get("duration", 0),
                         "bv_id": bvid,
-                        "pubdate": item.get("pubdate", 0),
+                        "pubdate": item.get("pubtime", 0) or item.get("pubdate", 0),
                         "ctime": item.get("ctime", 0),
-                        "mtime": item.get("mtime", 0),
+                        "fav_time": item.get("fav_time", 0),
                         "stat": {
                             "view": item.get("cnt_info", {}).get("play", 0),
-                            "like": item.get("cnt_info", {}).get("like", 0),
+                            "like": item.get("cnt_info", {}).get("vt", 0),
                             "coin": item.get("cnt_info", {}).get("coin", 0),
                             "favorite": item.get("cnt_info", {}).get("collect", 0),
                             "reply": item.get("cnt_info", {}).get("reply", 0),
                         },
                     })
                 
-                page_info = data.get("pageinfo", {})
-                total = page_info.get("media_count", len(result))
+                # 获取总条数
+                info = data.get("info", {})
+                total = info.get("media_count", len(result))
                 
                 return {
                     "total": total,
@@ -1250,8 +1258,8 @@ class BilibiliClient(BasePlatformClient):
                     "page_size": page_size,
                 }
             else:
-                code = response.get("code", -1)
-                msg = response.get("message", "")
+                code = response.get("code", -1) if isinstance(response, dict) else -1
+                msg = response.get("message", "") if isinstance(response, dict) else str(response)[:200]
                 self._log(f"Get favorite detail failed: code={code}, msg={msg}", "warning")
                 return {"total": 0, "list": [], "page": page, "page_size": page_size}
                 
@@ -2036,23 +2044,41 @@ class BilibiliClient(BasePlatformClient):
 
             # 将 sort 参数映射到正确的 mode 值：0=最热(mode=3), 1=最新(mode=2), 2=最早(mode=1)
             mode_map = {0: 3, 1: 2, 2: 1}
+            target_mode = mode_map.get(sort, 3)
             
-            # 构建 pagination_str
-            pagination_str = '{"offset":""}'
-            if offset:
-                pagination_str = f'{{"offset":"{offset}"}}'
-            
-            params = {
-                "type": 1,
-                "oid": target_aid,
-                "mode": mode_map.get(sort, 3),
-                "pagination_str": pagination_str,
-                "ps": page_size,
-            }
-            # 评论 API 需要 WBI 签名
-            query_string = await self._sign_params(params)
-            url = f"{BASE_URL}/x/v2/reply/wbi/main?{query_string}"
-            self._log(f"[DEBUG] Comment API URL: {url[:200]}...")
+            # 最早(mode=1)时，WBI API 的 pagination_str 排序不可靠，改用非 WBI 旧版 API
+            # 非 WBI API 使用 pn 页码分页，避免 next_offset 在时间排序下乱序的问题
+            if target_mode == 1:
+                # 非 WBI 旧版评论 API（mode=1 时使用）
+                # pagination_str 固定为空，依赖 pn 页码分页
+                non_wbi_params = {
+                    "type": 1,
+                    "oid": target_aid,
+                    "mode": target_mode,
+                    "pn": page,
+                    "ps": page_size,
+                }
+                import urllib.parse
+                qs = urllib.parse.urlencode(non_wbi_params)
+                url = f"{BASE_URL}/x/v2/reply/main?{qs}"
+                self._log(f"[DEBUG] Comment API (non-WBI) URL: {url[:200]}...")
+                resp = await self.request("GET", url)
+            else:
+                # WBI 签名 API（最热/最新模式）
+                pagination_str = '{"offset":""}'
+                if offset:
+                    pagination_str = f'{{"offset":"{offset}"}}'
+                params = {
+                    "type": 1,
+                    "oid": target_aid,
+                    "mode": target_mode,
+                    "pagination_str": pagination_str,
+                    "ps": page_size,
+                }
+                query_string = await self._sign_params(params)
+                url = f"{BASE_URL}/x/v2/reply/wbi/main?{query_string}"
+                self._log(f"[DEBUG] Comment API (WBI) URL: {url[:200]}...")
+                resp = await self.request("GET", url)
             resp = await self.request("GET", url)
 
             # 调试日志：打印原始响应
@@ -2076,7 +2102,7 @@ class BilibiliClient(BasePlatformClient):
                 import json
                 self._log(f"[DEBUG] Full cursor: {json.dumps(cursor, ensure_ascii=False)[:500]}")
                 comment_total = cursor.get("all_count") or cursor.get("all_total") or replies.get("all_total") or replies.get("total") or len(replies.get("replies") or [])
-                self._log(f"[DEBUG] Comment cursor: all_count={cursor.get('all_count', 'N/A')}, is_end={cursor.get('is_end', 'N/A')}, next_offset={cursor.get('next_offset', 'N/A')}, Final comment_total: {comment_total}")
+                self._log(f"[DEBUG] Comment cursor: all_count={cursor.get('all_count', 'N/A')}, is_end={cursor.get('is_end', 'N/A')}, next_offset={cursor.get('pagination_reply', {}).get('next_offset', 'N/A') or cursor.get('next_offset', 'N/A')}, Final comment_total: {comment_total}")
                 self._log(f"[DEBUG] Comment replies count: {len(replies.get('replies') or [])}")
                 comments = []
                 for r in replies.get("replies", []) or []:
@@ -2095,7 +2121,15 @@ class BilibiliClient(BasePlatformClient):
                 self._log(f"[DEBUG] Parsed {len(comments)} comments")
                 
                 # 提取下一页的 offset
-                next_offset = cursor.get("next_offset", "")
+                # WBI API: next_offset 在 pagination_reply 中; 非 WBI (mode=1): 用页码分页，编码为 __page:N
+                if target_mode == 1:
+                    # 非 WBI API，用 pn 分页，不返回 next_offset（前端改用 page+1）
+                    next_offset = ""
+                else:
+                    next_offset = (
+                        cursor.get("pagination_reply", {}).get("next_offset", "")
+                        or cursor.get("next_offset", "")
+                    )
                 has_more = not bool(cursor.get("is_end", True))
                 
                 return {

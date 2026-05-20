@@ -24,7 +24,8 @@ _detector_registry: dict[str, str] = {
 }
 
 _qrcode_registry: dict[str, str] = {
-    # 二维码适配器暂未实现，预留接口
+    "bilibili": "app.services.cookie_acquisition.platforms.bilibili:BilibiliQrcodeAdapter",
+    # 其他平台二维码适配器预留
 }
 
 # 已加载的实例缓存
@@ -84,7 +85,7 @@ def get_qrcode_adapter(platform: str) -> Optional[QrcodeAdapter]:
         return None
 
 
-def get_supported_playwright_platforms() -> list[str]:
+def get_supported_patchright_platforms() -> list[str]:
     """获取支持 Playwright 获取的平台列表"""
     return list(_detector_registry.keys())
 

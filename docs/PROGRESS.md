@@ -55,6 +55,7 @@
 | `live2d-processing-mode-design.md` | Live2D 处理模式设计 | ✅ 已实现 |
 | `story-maker-design.md` | Story Maker 设计 | ✅ 已实现 |
 | `cookie-acquisition-design.md` | Cookie 自动获取设计 v2.0（统一凭证 + Playwright + QrCode） | ✅ 前端已实现，后端部分实现 |
+| `BILIBILI_QRCODE_IMPL.md` | B站二维码登录实现文档（API + WebSocket + 排错） | ✅ B站扫码登录已完成 |
 | `REF_PROJECTS.md` | 参考项目列表 | 📋 参考文档 |
 
 ---
@@ -595,21 +596,23 @@ pip install jinja2 jsonpath-ng
 
 ```
 Playwright:
-  POST  /api/v1/acquire/playwright/start          — 启动浏览器会话
-  WS    /api/v1/acquire/playwright/{sid}/ws       — WebSocket 状态推送
-  POST  /api/v1/acquire/playwright/{sid}/cancel   — 取消会话
-  GET   /api/v1/acquire/playwright/sessions        — 列出活跃会话
+  POST  /api/v1/platforms/acquire/playwright/start   — 启动浏览器会话
+  WS    /api/v1/platforms/acquire/playwright/{sid}/ws — WebSocket 状态推送
+  POST  /api/v1/platforms/acquire/playwright/{sid}/cancel — 取消会话
+  GET   /api/v1/platforms/acquire/playwright/sessions  — 列出活跃会话
 
 QrCode:
-  POST  /api/v1/acquire/qrcode/generate           — 生成登录二维码
-  WS    /api/v1/acquire/qrcode/{sid}/ws            — WebSocket 等待扫码结果
-  GET   /api/v1/acquire/qrcode/{sid}/status        — 轮询扫码状态
-  POST  /api/v1/acquire/qrcode/{sid}/refresh       — 刷新过期二维码
+  POST  /api/v1/platforms/acquire/qrcode/generate    — 生成登录二维码
+  WS    /api/v1/platforms/acquire/qrcode/{sid}/ws     — WebSocket 等待扫码结果
+  GET   /api/v1/platforms/acquire/qrcode/{sid}/status — 轮询扫码状态
+  POST  /api/v1/platforms/acquire/qrcode/{sid}/refresh — 刷新过期二维码
 
 Cookie Content:
   GET   /api/v1/platforms/{id}/cookie-content       — 获取连接的 Cookie 内容
   POST  /api/v1/platforms/{id}/cookie-content       — 保存连接的 Cookie 内容
 ```
+
+> ⚠️ **WebSocket 开发环境直连**：前端开发时（`import.meta.env.DEV`），WebSocket 直连后端 `ws://localhost:8000`，绕过 Vite 代理。生产环境用 `window.location.origin` 自动适配。
 
 ### 前端页面（账号矩阵 — 参考 XHS_ALL_IN_ONE）
 

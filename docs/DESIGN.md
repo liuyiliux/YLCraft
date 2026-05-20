@@ -1294,4 +1294,79 @@ export const getDyVideo = (id: string) => request(`/douyin/video/${id}`)
 
 ***
 
+***
+
+## 十四、前端组件复用规范
+
+### 14.1 抽成公共组件的判断标准
+
+当一个 UI 场景在 **≥2 个页面** 中出现时，应考虑抽成公共组件。
+
+判断依据：
+| 条件 | 说明 | 示例 |
+|------|------|------|
+| 视觉/交互相同 | 同一功能的 UI 完全一致 | 视频详情弹窗、账号卡片 |
+| 数据来源不同 | 各页面数据格式相同但来源不同 | crawler/my-data/up-analytics 的视频详情 |
+| 改动频率低 | 该 UI 逻辑稳定，不会频繁单独变更 | 详情弹窗 vs 搜索结果列表（后者各平台差异大） |
+
+### 14.2 平台标识兼容
+
+**当前问题**：不同数据来源的 `platform` 字段不统一：
+- 后端 API（`parser_bilibili.py`）：`'bilibili'`
+- 前端页面（`up-analytics`、`crawler`）：`'bili'`
+
+**解决方案**：公共组件中同时兼容两种标识：
+```tsx
+const isBili = video?.platform === 'bili' || video?.platform === 'bilibili'
+```
+
+**后续要求**：
+- 新增平台时，统一规范前端和后端的 platform 值
+- 后端统一用短标识（如 `'bili'`），避免与后端 client 的 `@register_platform("bili")` 不一致
+
+### 14.3 公共组件放置规范
+
+```
+frontend/src/components/
+├── bilibili/                 # B站专用组件
+│   ├── VideoDetailDrawer.tsx  # 视频详情抽屉（5个Tab）
+│   ├── VideoList.tsx         # 视频列表
+│   ├── FavoriteCard.tsx      # 收藏夹卡片
+│   └── index.ts               # 统一导出
+├── common/                   # 通用组件（跨平台）
+│   ├── MediaCard.tsx          # 通用媒体卡片
+│   ├── PlatformTag.tsx        # 平台标签
+│   └── index.ts
+└── [platform]/               # 其他平台专用
+```
+
+### 14.4 已有公共组件
+
+| 组件 | 用途 | 使用页面 |
+|------|------|---------|
+| `VideoDetailDrawer` | B站视频详情（详情/弹幕/字幕/评论/数据） | crawler、my-data、up-analytics |
+| `VideoList` | 视频列表（封面+标题+作者+数据） | my-data |
+| `FavoriteCard` | 收藏夹卡片（封面+标题+数量） | my-data |
+
+### 14.5 公共组件 Props 设计原则
+
+```tsx
+// ✅ 推荐：显式 props，语义清晰
+interface VideoDetailDrawerProps {
+  video: VideoItem          // 视频数据对象
+  visible: boolean          // 控制显示
+  onClose: () => void       // 关闭回调
+  connId?: string           // B站连接ID（登录态相关功能需要）
+  width?: number            // Drawer 宽度
+}
+
+// ❌ 避免：混入页面状态
+interface BadProps {
+  onVideoClick: (v: VideoItem) => void  // 页面状态混入组件
+  somePageState: boolean
+}
+```
+
+---
+
 *本文档为 YLCraft v0.2.0 设计文档，确认后可作为开发基准。*

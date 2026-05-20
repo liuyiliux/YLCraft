@@ -44,7 +44,8 @@ SERIES_INFO = "/x/series/archives"               # 合集详情 + 视频列表
 
 FAV_LIST = "/x/v3/fav/folder/created/list"       # 创建的收藏夹列表
 FAV_FAVLIST = "/x/v3/fav/folder/favlist"          # 收藏夹详情
-FAV_MEDIA = "/x/v3/fav/folder/media"              # 收藏夹内视频列表
+FAV_MEDIA = "/x/v3/fav/folder/media"              # 收藏夹内视频列表（WBI签名，旧版）
+FAV_RESOURCE_LIST = "/x/v3/fav/resource/list"     # 收藏夹内视频列表（正确API，需要platform=web和web_location）
 FAV_INFO = "/x/v3/fav/folder/info"               # 收藏夹信息
 
 # =============================================================================

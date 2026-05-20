@@ -563,10 +563,16 @@ function QrLoginPanel({
   }
 
   const connectWebSocket = (sid: string) => {
-    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const ws = new WebSocket(`${proto}//${window.location.hostname}:${window.location.port || (window.location.protocol === 'https:' ? '443' : '8000')}/api/v1/acquire/qrcode/${sid}/ws`)
+    // 开发环境直接连接后端 8000，生产环境通过当前 origin
+    const isDev = import.meta.env.DEV
+    const wsUrl = isDev
+      ? `ws://${window.location.hostname}:8000/api/v1/platforms/acquire/qrcode/${sid}/ws`
+      : `${window.location.protocol === 'https:' ? 'wss:' : 'ws://'}${window.location.host}/api/v1/platforms/acquire/qrcode/${sid}/ws`
+    console.log('[WS] Connecting to:', wsUrl)
+    const ws = new WebSocket(wsUrl)
 
-    ws.onopen = () => { setIsLoading(true) }
+    ws.onopen = () => { console.log('[WS] Connected!'); setIsLoading(true) }
+    ws.onerror = (e) => { console.error('[WS] Error:', e); }
 
     ws.onmessage = (event) => {
       try {
@@ -809,8 +815,13 @@ function BrowserLoginPanel({
   }
 
   const connectWebSocket = (sid: string) => {
-    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const ws = new WebSocket(`${proto}//${window.location.hostname}:${window.location.port || (window.location.protocol === 'https:' ? '443' : '8000')}/api/v1/acquire/playwright/${sid}/ws`)
+    // 开发环境直接连接后端 8000，生产环境通过当前 origin
+    const isDev = import.meta.env.DEV
+    const wsUrl = isDev
+      ? `ws://${window.location.hostname}:8000/api/v1/platforms/acquire/playwright/${sid}/ws`
+      : `${window.location.protocol === 'https:' ? 'wss:' : 'ws://'}${window.location.host}/api/v1/platforms/acquire/playwright/${sid}/ws`
+    console.log('[WS] Connecting to:', wsUrl)
+    const ws = new WebSocket(wsUrl)
 
     ws.onopen = () => { setIsLoading(true) }
 

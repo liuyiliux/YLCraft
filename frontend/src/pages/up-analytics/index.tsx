@@ -7,7 +7,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Card, Input, Button, Select, Table, Tag, message, Spin, Space, Row, Col,
   Typography, Tabs, Empty, Image, Tooltip, Divider, Badge, Descriptions,
-  Avatar, List, Modal,
+  Avatar, List,
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import {
@@ -30,6 +30,7 @@ import {
   getBiliFavoriteDetail,
   getBiliUpFavorites,
 } from '../../api'
+import { VideoDetailDrawer } from '../../components/bilibili'
 import type { CrawlerResult, PlatformConnectionResponse } from '../../api'
 
 const { Text, Title, Paragraph } = Typography
@@ -575,6 +576,9 @@ export default function UpAnalyticsPage() {
   const [seriesDetail, setSeriesDetail] = useState<any[]>([])
   const [selectedSeries, setSelectedSeries] = useState<any>(null)
   
+  // 视频详情 Drawer
+  const [detailVideo, setDetailVideo] = useState<any>(null)
+
   // B站连接
   const [biliConnections, setBiliConnections] = useState<PlatformConnectionResponse[]>([])
   const [selectedConn, setSelectedConn] = useState<string>('')
@@ -949,23 +953,11 @@ export default function UpAnalyticsPage() {
                       page={videoPage}
                       pageSize={20}
                       onPageChange={handleVideoPageChange}
-                      onVideoClick={(video) => {
-                        // 可以跳转详情或下载
-                        Modal.info({
-                          title: video.title,
-                          content: (
-                            <div>
-                              <p>播放量: {formatNum(video.stat?.view)}</p>
-                              <p>点赞: {formatNum(video.stat?.like)}</p>
-                              <p>投币: {formatNum(video.stat?.coin)}</p>
-                            </div>
-                          ),
-                        })
-                      }}
+                      onVideoClick={(video) => setDetailVideo(video)}
                     />
                   </div>
                 )}
-                
+
                 {upDetailTab === 'series' && (
                   <SeriesListCard
                     series={upSeries}
@@ -1023,24 +1015,13 @@ export default function UpAnalyticsPage() {
                   page={1}
                   pageSize={20}
                   onPageChange={() => {}}
-                  onVideoClick={(video) => {
-                    Modal.info({
-                      title: video.title,
-                      content: (
-                        <div>
-                          <p>播放量: {formatNum(video.stat?.view)}</p>
-                          <p>点赞: {formatNum(video.stat?.like)}</p>
-                          <p>投币: {formatNum(video.stat?.coin)}</p>
-                        </div>
-                      ),
-                    })
-                  }}
+                  onVideoClick={(video) => setDetailVideo(video)}
                 />
               </Modal>
             )}
           </div>
         )
-      
+
       default:
         return null
     }
@@ -1109,6 +1090,14 @@ export default function UpAnalyticsPage() {
           {renderTabContent()}
         </div>
       </Card>
+
+      {/* 视频详情 Drawer */}
+      <VideoDetailDrawer
+        video={detailVideo}
+        visible={!!detailVideo}
+        onClose={() => setDetailVideo(null)}
+        connId={selectedConn}
+      />
     </div>
   )
 }

@@ -7,8 +7,8 @@ YLCraft — Cookie 自动获取模块
 - qrcode：二维码扫码
 """
 
+from app.db.models.platform_connection import AcquisitionMethod
 from app.services.cookie_acquisition.base import (
-    AcquisitionMethod,
     AcquisitionStatus,
     AcquisitionSession,
     AcquisitionResult,

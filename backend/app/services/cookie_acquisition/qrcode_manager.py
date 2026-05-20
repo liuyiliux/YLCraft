@@ -267,11 +267,15 @@ class QrcodeAcquisitionManager:
                 conn.acquisition_method = AcquisitionMethod.QRCODE
                 conn.status = ConnectionStatus.ACTIVE
                 conn.error_message = None
-                if account_info.get("account_name"):
-                    conn.account_id = account_info.get("account_id")
-                    conn.account_name = account_info.get("account_name")
-                    conn.account_avatar = account_info.get("account_avatar")
-                    conn.account_url = account_info.get("account_url")
+                if account_info.get("account_id") or account_info.get("account_name"):
+                    if account_info.get("account_id"):
+                        conn.account_id = account_info.get("account_id")
+                    if account_info.get("account_name"):
+                        conn.account_name = account_info.get("account_name")
+                    if account_info.get("account_avatar"):
+                        conn.account_avatar = account_info.get("account_avatar")
+                    if account_info.get("account_url"):
+                        conn.account_url = account_info.get("account_url")
                 conn.update_timestamp()
             else:
                 import uuid as _uuid
