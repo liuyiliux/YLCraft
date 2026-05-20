@@ -333,23 +333,15 @@ def _sanitize_filename(name: str) -> str:
 
 def _get_cookie_file_for_ytdlp(url: str) -> Optional[str]:
     """获取适用于 yt-dlp 的 cookie 文件路径（Netscape 格式）
-
-    关键：yt-dlp 对 Twitter/X 等平台必须用 cookie 文件，
-    内存 CookieJar 经常失效。
+    
+    使用 CookieManager 的公共方法，会自动从 DB 重建文件（如不存在）。
     """
-    from pathlib import Path as _Path
     try:
         mgr = get_cookie_manager()
         platform = _detect_platform(url)
         if not platform:
             return None
-        if hasattr(mgr, 'get_cookie_file_path'):
-            path = mgr.get_cookie_file_path(platform)
-        else:
-            backend_dir = _Path(__file__).parent.parent.parent
-            path = backend_dir / 'data' / 'cookies' / f'{platform}.txt'
-        if path and os.path.exists(path):
-            return str(path)
+        return mgr.get_cookie_file(platform)
     except Exception as e:
         logger.warning(f'[_cookie] 获取 cookie 文件失败: {e}')
     return None
@@ -492,11 +484,23 @@ async def download_video(req: DownloadRequest):
     effective_url = req.page_url if req.page_url else req.url
     file_size = os.path.getsize(filepath) if os.path.exists(filepath) else 0
     
-    width = video_info.width if video_info else 0
-    height = video_info.height if video_info else 0
-    duration = video_info.duration if video_info else 0
-    thumbnail_path = video_info.cover_url if video_info else ""
-
+    # 从数据库查询已有元数据（parse 阶段已保存）
+    width = height = duration = 0
+    thumbnail_path = ""
+    try:
+        from app.db.database import get_async_session
+        from app.services.asset.service import AssetService
+        async with get_async_session() as _db_session:
+            _asset_service = AssetService(_db_session)
+            _existing = await _asset_service.get_by_url(effective_url)
+            if _existing:
+                width = _existing.width or 0
+                height = _existing.height or 0
+                duration = _existing.duration or 0
+                thumbnail_path = _existing.cover_url or ""
+    except Exception:
+        pass
+    
     from app.db.database import get_async_session
     from app.services.asset.service import AssetService
 

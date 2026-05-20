@@ -387,6 +387,56 @@ class CookieManager:
         finally:
             session.close()
 
+    def get_cookie_file(self, platform: str) -> Optional[str]:
+        """
+        获取 Cookie 文件路径（Netscape 格式），如果文件不存在则从 DB 重建。
+        
+        这是供下载器使用的公共方法。
+        yt-dlp 需要 cookie 文件路径，不能传内存 CookieJar。
+        
+        Returns:
+            Cookie 文件路径字符串，如果 DB 中也没有则返回 None
+        """
+        path = self._get_cookie_file_path(platform)
+        
+        # 文件存在，直接返回
+        if path.exists():
+            return str(path)
+        
+        # 文件不存在，尝试从 DB 重建
+        logger.info(f"[CookieManager] Cookie 文件不存在，尝试从 DB 重建: {path}")
+        session = self._get_db_session()
+        try:
+            from app.db.models.platform_connection import (
+                PlatformConnection, PlatformType, AuthType
+            )
+            try:
+                plat_enum = PlatformType(platform)
+            except ValueError:
+                logger.warning(f"[CookieManager] 未知平台: {platform}")
+                return None
+            
+            conn = session.query(PlatformConnection).filter(
+                PlatformConnection.platform == plat_enum,
+                PlatformConnection.auth_type == AuthType.COOKIE,
+                PlatformConnection.cookie_content != None,
+            ).first()
+            
+            if conn and conn.cookie_content:
+                clean_content = self._clean_netscape_content(conn.cookie_content)
+                path.write_text(clean_content, encoding="utf-8")
+                path.chmod(0o600)
+                logger.info(f"[CookieManager] 从 DB 重建 Cookie 文件成功: {path}")
+                return str(path)
+            else:
+                logger.warning(f"[CookieManager] DB 中没有找到 {platform} 的 cookie_content")
+                return None
+        except Exception as e:
+            logger.warning(f"[CookieManager] 从 DB 重建 Cookie 文件失败: {e}")
+            return None
+        finally:
+            session.close()
+    
     def list_cookies(self) -> dict[str, dict]:
         """列出所有平台 Cookie 状态（从 PlatformConnection 统一凭证表读取）"""
         session = self._get_db_session()

@@ -38,8 +38,8 @@ class DouyinDownloader(BaseDownloader):
 
         try:
             mgr = get_cookie_manager()
-            if hasattr(mgr, "get_cookie_file_path"):
-                path = mgr.get_cookie_file_path("douyin")
+            if hasattr(mgr, "_get_cookie_file_path"):
+                path = mgr._get_cookie_file_path("douyin")
             else:
                 from app.services.video.parser import BASE_DIR
                 path = BASE_DIR / "data" / "cookies" / "douyin.txt"

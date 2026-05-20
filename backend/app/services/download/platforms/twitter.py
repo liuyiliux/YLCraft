@@ -34,25 +34,17 @@ class TwitterDownloader(BaseDownloader):
     def _get_cookie_file(self) -> Optional[str]:
         """
         获取 Twitter cookie 文件路径（Netscape 格式）
-
-        yt-dlp 对 Twitter 必须用 cookie 文件，内存 CookieJar 经常失效。
-        CookieManager 已将 cookie 保存为 Netscape 格式文件。
+        
+        使用 CookieManager 的公共方法，会自动从 DB 重建文件（如不存在）。
         """
         if self._cookie_file_path is not None:
             return self._cookie_file_path
 
         try:
             mgr = get_cookie_manager()
-            # CookieManager 有 get_cookie_file_path 方法
-            if hasattr(mgr, "get_cookie_file_path"):
-                path = mgr.get_cookie_file_path("twitter")
-            else:
-                # 兜底：直接拼路径
-                from app.services.video.parser import BASE_DIR
-                path = BASE_DIR / "data" / "cookies" / "twitter.txt"
-
-            if path and os.path.exists(path):
-                self._cookie_file_path = str(path)
+            path = mgr.get_cookie_file("twitter")
+            if path:
+                self._cookie_file_path = path
                 logger.info(f"[TwitterDownloader] cookie 文件: {path}")
                 return self._cookie_file_path
         except Exception as e:

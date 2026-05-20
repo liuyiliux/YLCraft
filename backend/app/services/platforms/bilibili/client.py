@@ -926,8 +926,8 @@ class BilibiliClient(BasePlatformClient):
             "fnval": 16,  # dash 格式
         }
         
-        # 添加 WBI 签名
-        # params = await self._sign_params(params)
+        # 添加 WBI 签名（必须启用才能获取高清画质）
+        params = await self._sign_params(params)
         
         url = f"{BASE_URL}{VIDEO_PLAYER}?{urlencode(params)}"
         
@@ -953,6 +953,45 @@ class BilibiliClient(BasePlatformClient):
         except Exception as e:
             self._log(f"Get video URL error: {e}", "error")
             return ""
+    
+    async def get_video_play_info(self, bvid: str) -> dict:
+        """
+        获取视频完整播放信息（DASH格式，含多清晰度 + 音频）
+        
+        返回 dict: {
+            "dash": {
+                "video": [{"id": 127, "baseUrl": "...", "width": 1920, "height": 1080}],
+                "audio": [{"baseUrl": "..."}]
+            }
+        }
+        """
+        self._log(f"Getting video play info: {bvid}")
+        
+        params = {
+            "bvid": bvid,
+            "qn": 127,      # 最高画质
+            "fnval": 16,     # dash 格式
+            "fourk": 1,      # 支持 4K
+        }
+        
+        # 添加 WBI 签名（必须启用才能获取高清画质）
+        params = await self._sign_params(params)
+        
+        url = f"{BASE_URL}{VIDEO_PLAYER}?{urlencode(params)}"
+        
+        try:
+            response = await self.request("GET", url)
+            
+            if isinstance(response, dict) and response.get("code") == 0:
+                return response.get("data", {})
+            else:
+                error_msg = response.get("message", "Unknown error") if isinstance(response, dict) else "Request failed"
+                self._log(f"Get play info failed: {error_msg}", "error")
+                return {}
+                
+        except Exception as e:
+            self._log(f"Get play info error: {e}", "error")
+            return {}
     
     # =========================================================================
     # 用户相关

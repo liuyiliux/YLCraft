@@ -17,7 +17,9 @@ import httpx
 
 from app.services.download.base import BaseDownloader, VideoInfo, VideoQuality
 from app.services.video.parser import get_cookie_manager
-from app.core.config import ensure_download_path
+from app.core.config import ensure_download_path, get_ffmpeg_path
+from app.services.platforms.types import ClientConfig
+from app.services.platforms.bilibili.client import BilibiliClient
 from app.core.config import get_ffmpeg_path
 
 logger = logging.getLogger("ylcraft.download.bilibili")
@@ -51,7 +53,9 @@ class BilibiliDownloader(BaseDownloader):
         """获取 BilibiliClient 实例"""
         if self._client is None:
             from app.services.platforms.bilibili.client import BilibiliClient
-            self._client = BilibiliClient()
+            from app.services.platforms.types import ClientConfig
+            config = ClientConfig(platform="bilibili")
+            self._client = BilibiliClient(config)
         return self._client
 
     async def parse(self, url: str) -> Optional[VideoInfo]:
@@ -69,14 +73,14 @@ class BilibiliDownloader(BaseDownloader):
                 logger.error(f"[BilibiliDownloader] 无法提取 bvid: {url}")
                 return None
 
-            # 获取视频详情
-            detail = await client.get_video_detail(bvid)
+            # 获取视频详情（使用 get_detail，返回 NoteDetail）
+            detail = await client.get_detail(bvid)
             if not detail:
                 logger.error(f"[BilibiliDownloader] 获取视频详情失败: {bvid}")
                 return None
 
-            # 获取高清播放地址（DASH格式）
-            play_info = await client.get_video_url_no_watermark(bvid)
+            # 获取高清播放地址（DASH格式，返回 dict）
+            play_info = await client.get_video_play_info(bvid)
 
             # 构建清晰度列表
             qualities = []
@@ -137,8 +141,8 @@ class BilibiliDownloader(BaseDownloader):
         if not bvid:
             raise ValueError(f"无法提取 bvid: {url}")
 
-        # 获取播放地址
-        play_info = await client.get_video_url_no_watermark(bvid)
+        # 获取播放地址（DASH格式，返回 dict）
+        play_info = await client.get_video_play_info(bvid)
         if not play_info:
             raise ValueError(f"获取播放地址失败: {bvid}")
 
