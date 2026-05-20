@@ -29,6 +29,7 @@ from starlette.responses import JSONResponse, StreamingResponse, Response
 from app.services.breaker.service import parse_video_url
 from app.services.video.parser import get_cookie_manager, _detect_platform
 from app.core.config import ensure_download_path, get_ffmpeg_path
+from app.services.download import parse_with_manager, download_with_manager, get_supported_platforms
 
 router = APIRouter()
 logger = logging.getLogger("ylcraft.download")
@@ -161,6 +162,38 @@ async def _get_qualities(url: str, title: str, platform: str) -> list[VideoQuali
 async def parse_download_url(req: ParseRequest):
     """解析视频链接，返回元数据 + 多清晰度列表"""
     url = req.url
+    
+    # 1. 先尝试使用平台专用下载器
+    try:
+        from app.services.download import parse_with_manager
+        info_new = await parse_with_manager(url)
+        if info_new:
+            logger.info(f"[parse] 使用平台专用下载器解析成功: {url[:60]}")
+            # 转换为 ParseResponse 格式
+            qualities = [
+                VideoQuality(
+                    quality=q.quality,
+                    resolution=q.resolution,
+                    filesize=q.filesize,
+                    url=q.url,
+                )
+                for q in info_new.qualities
+            ]
+            return ParseResponse(
+                success=True,
+                title=info_new.title,
+                author=info_new.author,
+                platform=info_new.platform,
+                cover_url=info_new.cover_url,
+                duration=info_new.duration,
+                duration_str=_format_duration(info_new.duration),
+                qualities=qualities,
+                page_url=info_new.page_url,
+            )
+    except Exception as e:
+        logger.warning(f"[parse] 平台专用下载器失败，降级到 yt-dlp: {e}")
+    
+    # 2. 降级到 yt-dlp
     try:
         info = await parse_video_url(url)
     except Exception as e:
@@ -296,35 +329,48 @@ def _sanitize_filename(name: str) -> str:
     return re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", name).strip()[:200]
 
 
+
+
+def _get_cookie_file_for_ytdlp(url: str) -> Optional[str]:
+    """获取适用于 yt-dlp 的 cookie 文件路径（Netscape 格式）
+
+    关键：yt-dlp 对 Twitter/X 等平台必须用 cookie 文件，
+    内存 CookieJar 经常失效。
+    """
+    from pathlib import Path as _Path
+    try:
+        mgr = get_cookie_manager()
+        platform = _detect_platform(url)
+        if not platform:
+            return None
+        if hasattr(mgr, 'get_cookie_file_path'):
+            path = mgr.get_cookie_file_path(platform)
+        else:
+            backend_dir = _Path(__file__).parent.parent.parent
+            path = backend_dir / 'data' / 'cookies' / f'{platform}.txt'
+        if path and os.path.exists(path):
+            return str(path)
+    except Exception as e:
+        logger.warning(f'[_cookie] 获取 cookie 文件失败: {e}')
+    return None
+
 def _ytdlp_download(url: str, quality_label: str | None, title: str | None, page_url: str | None = None, is_audio: bool = False) -> str:
-    """用 yt-dlp 下载视频，由 run_in_executor 调用（同步阻塞），完全内存模式 Cookie"""
+    """用 yt-dlp 下载视频（兜底方案）
+
+    关键点：使用 cookie 文件路径（Netscape 格式），不用内存 CookieJar。
+    Twitter/X 等平台对内存 CookieJar 支持不好，必须用文件。
+    """
     savedir = ensure_download_path()
-    logger.info(f"[download] start | url={url[:80]} | quality={quality_label} | is_audio={is_audio}")
+    logger.info(f"[download] yt-dlp start | url={url[:80]} | quality={quality_label} | is_audio={is_audio}")
 
-    # 判断 url 是否已经是 CDN 直链（如 video.twimg.com / pbs.twimg.com）
-    # 如果是直链，直接用 httpx 下载，不要再让 yt-dlp 解析
-    is_direct_url = any(
-        x in url for x in ("video.twimg.com", "pbs.twimg.com", "abs.twimg.com", "amplify_video")
-    )
-
-    if is_direct_url:
-        logger.info(f"[download] 检测到 CDN 直链，直接用 httpx 下载: {url[:80]}")
-        import httpx
-        cookie_jar = get_cookie_manager().get_cookiejar_for_url(url)
-        cookies_dict = {c.name: c.value for c in cookie_jar} if cookie_jar else {}
-        headers = {"User-Agent": _BROWSER_UA, "Referer": "https://x.com/"}
-        out_path = savedir / f"{title or 'video'}.mp4"
-        with httpx.stream("GET", url, headers=headers, cookies=cookies_dict, timeout=300) as resp:
-            resp.raise_for_status()
-            with open(out_path, "wb") as f:
-                for chunk in resp.iter_bytes():
-                    f.write(chunk)
-        logger.info(f"[download] success (direct) | path={out_path}")
-        return str(out_path)
-
-    # 不是直链，走 yt-dlp 正常解析+下载流程
     effective_url = page_url if page_url else url
-    cookie_jar = get_cookie_manager().get_cookiejar_for_url(effective_url)
+
+    # 获取 cookie 文件路径（Netscape 格式），不用 CookieJar
+    cookie_file = _get_cookie_file_for_ytdlp(effective_url)
+    if cookie_file:
+        logger.info(f"[download] yt-dlp 使用 cookie 文件: {cookie_file}")
+    else:
+        logger.info(f"[download] yt-dlp 无 cookie 文件，匿名下载")
 
     if is_audio:
         format_str = "bestaudio/best"
@@ -357,62 +403,80 @@ def _ytdlp_download(url: str, quality_label: str | None, title: str | None, page
         "http_headers": {"User-Agent": _BROWSER_UA},
     }
 
+    # 关键：传 cookie 文件，不传 CookieJar
+    if cookie_file and os.path.exists(cookie_file):
+        ydl_opts["cookiefile"] = cookie_file
+        logger.info(f"[download] yt-dlp cookiefile={cookie_file}")
+
     ffmpeg_path = get_ffmpeg_path()
     if ffmpeg_path:
         ydl_opts["ffmpeg_location"] = str(ffmpeg_path)
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        if cookie_jar:
-            ydl.cookiejar = cookie_jar
         logger.info(f"[download] yt-dlp extracting info for {effective_url[:80]}")
         info = ydl.extract_info(effective_url, download=True)
         if not info:
-            raise HTTPException(status_code=500, detail="yt-dlp 未能获取视频信息")
+            raise ValueError("yt-dlp 未能获取视频信息")
 
         output_path = info.get("_filename") or ydl.prepare_filename(info)
         if output_path and os.path.exists(output_path):
-            logger.info(f"[download] success | path={output_path}")
+            logger.info(f"[download] yt-dlp success | path={output_path}")
             return output_path
 
+        # fallback：按前缀匹配最新文件
         candidates = [
             os.path.join(savedir, f)
             for f in os.listdir(savedir)
-            if f.startswith(f"ytdlp_{hash(effective_url) & 0xFFFFFFFF}_") and f.endswith((".mp4", ".m4a", ".mp3", ".wav"))
+            if f.startswith(f"ytdlp_{hash(effective_url) & 0xFFFFFFFF}_")
+            and f.endswith((".mp4", ".m4a", ".mp3", ".wav"))
         ]
         if candidates:
             latest = max(candidates, key=os.path.getmtime)
-            logger.info(f"[download] fallback found | path={latest}")
+            logger.info(f"[download] yt-dlp fallback | path={latest}")
             return latest
 
-    raise HTTPException(status_code=500, detail="yt-dlp 下载失败，未找到输出文件")
+    raise ValueError("yt-dlp 下载失败，未找到输出文件")
 
 
 @router.post("/download", summary="通过 yt-dlp 下载视频（返回文件流）")
 async def download_video(req: DownloadRequest):
-    """调用 yt-dlp 下载视频，以流式响应返回"""
+    """调用下载器下载视频，以流式响应返回"""
     loop = asyncio.get_running_loop()
     
-    # 先解析视频获取 width/height/thumbnail
-    video_info = None
+    # 1. 先尝试使用平台专用下载器
     try:
-        from app.services.video import parser
-        video_info = await parser.parse(req.url)
-    except Exception:
-        pass
-    
-    try:
+        from app.services.download import download_with_manager
         filepath = await asyncio.wait_for(
-            loop.run_in_executor(
-                None, _ytdlp_download, req.url, req.quality, req.title, req.page_url, req.is_audio
+            download_with_manager(
+                url=req.url,
+                quality=req.quality or "best",
+                title=req.title,
+                page_url=req.page_url,
+                is_audio=req.is_audio,
             ),
             timeout=1800,
         )
-    except asyncio.TimeoutError:
-        raise HTTPException(status_code=504, detail="下载超时（30分钟），请尝试更低清晰度")
-    except HTTPException:
-        raise
+        if filepath:
+            logger.info(f"[download] 使用平台专用下载器完成: {filepath}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"下载失败: {e}")
+        logger.warning(f"[download] 平台专用下载器失败，降级到 yt-dlp: {e}")
+        filepath = None
+    
+    # 2. 降级到 yt-dlp
+    if not filepath:
+        try:
+            filepath = await asyncio.wait_for(
+                loop.run_in_executor(
+                    None, _ytdlp_download, req.url, req.quality, req.title, req.page_url, req.is_audio
+                ),
+                timeout=1800,
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(status_code=504, detail="下载超时（30分钟），请尝试更低清晰度")
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"下载失败: {e}")
 
     filename = os.path.basename(filepath)
     ext = filename.rsplit(".", 1)[-1].lower()
@@ -539,11 +603,6 @@ class DownloadTask:
         self.completed_at: float | None = None
 
 
-def _is_douyin_direct_url(url: str) -> bool:
-    """判断 URL 是否为抖音 direct CDN URL（可直接用 httpx 下载，跳过 yt-dlp）"""
-    return bool(url and ("douyinvod.com" in url or "amemv.com" in url))
-
-
 def _download_cover_image(cover_url: str, video_path: str, title: str | None) -> str:
     """下载封面图到本地，与视频同目录"""
     import httpx
@@ -580,210 +639,6 @@ def _download_cover_image(cover_url: str, video_path: str, title: str | None) ->
     except Exception as e:
         logger.warning(f"[_download_cover_image] 封面下载失败: {e}")
         return ""
-
-
-def _httpx_download(url: str, quality_label: str | None, title: str | None,
-                     is_audio: bool = False, page_url: str | None = None, task_id: str | None = None) -> str:
-    """直接用 httpx 下载 CDN 直链（抖音/Twitter 等），绕过 yt-dlp。返回保存的文件路径。"""
-    import httpx
-    import threading
-    import time
-
-    savedir = ensure_download_path()
-    logger.info(f"[_httpx_download] start | url={url[:80]} | quality={quality_label} | is_audio={is_audio} | page_url={page_url[:60] if page_url else 'NONE'}")
-
-    # 根据平台决定 Referer 和 Cookie 来源
-    # page_url 是原始分享页 URL，用于判断平台和获取对应 Cookie
-    cookie_url = page_url if page_url else url
-    cookie_jar = get_cookie_manager().get_cookiejar_for_url(cookie_url)
-    cookies_dict = {c.name: c.value for c in cookie_jar} if cookie_jar else {}
-
-    # 根据 URL 判断平台，设置正确的 Referer
-    referer = "https://www.douyin.com/"
-    url_lower = (page_url or url).lower()
-    if "x.com" in url_lower or "twitter.com" in url_lower or "t.co" in url_lower:
-        referer = "https://x.com/"
-    elif "bilibili" in url_lower or "b23.tv" in url_lower:
-        referer = "https://www.bilibili.com"
-
-    req_headers = {
-        "User-Agent": _BROWSER_UA,
-        "Referer": referer,
-    }
-
-    # 生成文件名
-    ext = "m4a" if is_audio else "mp4"
-    safe_title = _sanitize_filename(title) if title else "video"
-    filename = f"{safe_title}.{ext}"
-    filepath = savedir / filename
-
-    total_size = 0
-    downloaded_size = 0
-    last_update_time = 0
-
-    def update_progress():
-        nonlocal last_update_time
-        if task_id and total_size > 0:
-            current_time = time.time()
-            # 每 200ms 更新一次进度
-            if current_time - last_update_time > 0.2:
-                progress = min(int((downloaded_size / total_size) * 85), 85)  # 留 15% 给保存和封面处理
-                if task_id in _download_tasks:
-                    _download_tasks[task_id]["progress"] = progress
-                    _download_tasks[task_id]["progress_message"] = f"正在下载... {downloaded_size // 1024 // 1024}MB / {total_size // 1024 // 1024}MB"
-                last_update_time = current_time
-
-    with httpx.stream("GET", url, headers=req_headers, cookies=cookies_dict,
-                      follow_redirects=True, timeout=300.0) as resp:
-        resp.raise_for_status()
-        total_size = int(resp.headers.get("content-length", 0))
-        content_type = resp.headers.get("content-type", "")
-        logger.info(f"[_httpx_download] status={resp.status_code} | size={total_size} | ct={content_type}")
-
-        with open(filepath, "wb") as f:
-            for chunk in resp.iter_bytes(chunk_size=65536):
-                if chunk:
-                    f.write(chunk)
-                    downloaded_size += len(chunk)
-                    update_progress()
-
-    logger.info(f"[_httpx_download] done | path={filepath} | size={downloaded_size}")
-    return str(filepath)
-
-
-async def _run_download_task(task: DownloadTask):
-    task.status = "DOWNLOADING"
-    task.started_at = time.time()
-    _download_tasks[task.task_id] = task.__dict__
-
-    try:
-        # 抖音/Twitter CDN 直链 → 直接用 httpx 下载，跳过 yt-dlp
-        is_direct = _is_douyin_direct_url(task.url)
-        if not is_direct:
-            is_direct = any(
-                x in task.url for x in (
-                    "video.twimg.com", "pbs.twimg.com", "abs.twimg.com", "amplify_video"
-                )
-            )
-        if is_direct:
-            loop = asyncio.get_running_loop()
-            filepath = await asyncio.wait_for(
-                loop.run_in_executor(None, _httpx_download,
-                    task.url, task.quality, task.title, task.is_audio, task.page_url, task.task_id
-                ),
-                timeout=1800,
-            )
-        else:
-            loop = asyncio.get_running_loop()
-            filepath = await asyncio.wait_for(
-                loop.run_in_executor(None, _ytdlp_download,
-                    task.url, task.quality, task.title, task.page_url, task.is_audio
-                ),
-                timeout=1800,
-            )
-
-        task.progress = 90
-        task.progress_message = "下载完成，准备文件..."
-        _download_tasks[task.task_id] = task.__dict__
-
-        filename = os.path.basename(filepath)
-        ext = filename.rsplit(".", 1)[-1].lower()
-        if ext in ("mp3", "mpeg"):
-            media_type = "audio/mpeg"
-        elif ext in ("m4a", "aac"):
-            media_type = "audio/mp4"
-        elif ext == "wav":
-            media_type = "audio/wav"
-        else:
-            media_type = "video/mp4"
-
-        effective_url = task.page_url if task.page_url else task.url
-        file_size = os.path.getsize(filepath) if os.path.exists(filepath) else 0
-
-        # 初始化封面本地路径变量
-        thumbnail_local_path = ""
-
-        from app.db.database import get_async_session
-        from app.services.asset.service import AssetService
-
-        # 构建下载元数据
-        download_metadata = {
-            "quality": task.quality or "best",
-            "is_audio": task.is_audio,
-            "page_url": task.page_url or "",
-        }
-
-        async with get_async_session() as db_session:
-            asset_service = AssetService(db_session)
-            existing = await asset_service.get_by_url(effective_url)
-            platform = _detect_platform(effective_url)
-            if existing:
-                await asset_service.mark_ready(existing, file_path=filepath, file_size=file_size, mime_type=media_type)
-                # 保存本地封面路径
-                if thumbnail_local_path and not existing.cover_url.startswith("/"):
-                    existing.cover_url = thumbnail_local_path
-                # 合并下载元数据到已有 metadata
-                if existing.metadata_json:
-                    try:
-                        import json as _json
-                        existing_meta = _json.loads(existing.metadata_json)
-                        existing_meta.update(download_metadata)
-                        existing.metadata_json = _json.dumps(existing_meta, ensure_ascii=False)
-                    except Exception:
-                        existing.metadata_json = json.dumps(download_metadata, ensure_ascii=False)
-                else:
-                    existing.metadata_json = json.dumps(download_metadata, ensure_ascii=False)
-                task.asset_id = existing.id
-            else:
-                asset_type = "audio" if task.is_audio else "video"
-                new_asset = await asset_service.create(
-                    asset_type=asset_type,
-                    title=task.title or filename,
-                    source_url=effective_url,
-                    platform=platform,
-                    file_path=filepath,
-                    file_size=file_size,
-                    mime_type=media_type,
-                    status="READY",
-                    metadata_json=json.dumps(download_metadata, ensure_ascii=False),
-                )
-                task.asset_id = new_asset.id
-
-        task.file_path = filepath
-        task.progress = 90
-        task.progress_message = "下载封面..."
-        _download_tasks[task.task_id] = task.__dict__
-
-        # 下载封面图到本地
-        try:
-            video_info_for_cover = await parser.parse(task.page_url or task.url)
-            cover_url = video_info_for_cover.cover_url if video_info_for_cover else ""
-            if cover_url:
-                loop = asyncio.get_running_loop()
-                thumbnail_local_path = await loop.run_in_executor(
-                    None, _download_cover_image, cover_url, filepath, task.title
-                )
-                if thumbnail_local_path:
-                    logger.info(f"[download] 封面已保存到: {thumbnail_local_path}")
-        except Exception as cover_err:
-            logger.warning(f"[download] 封面下载失败（非阻塞）: {cover_err}")
-
-        task.status = "DONE"
-        task.progress = 100
-        task.progress_message = "完成"
-        task.completed_at = time.time()
-        _download_tasks[task.task_id] = task.__dict__
-
-    except asyncio.TimeoutError:
-        task.status = "FAILED"
-        task.error = "下载超时（30分钟），请尝试更低清晰度"
-        task.completed_at = time.time()
-        _download_tasks[task.task_id] = task.__dict__
-    except Exception as e:
-        task.status = "FAILED"
-        task.error = str(e)
-        task.completed_at = time.time()
-        _download_tasks[task.task_id] = task.__dict__
 
 
 class TaskCreateRequest(BaseModel):

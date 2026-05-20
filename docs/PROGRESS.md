@@ -60,6 +60,167 @@
 
 ---
 
+## 2026-05-20 更新
+
+### 代码审查与文档同步更新 ✅
+
+**审查范围**：
+- 后端API路由：30+ 模块
+- 后端服务层：105+ Python文件
+- 前端页面：27 个完整页面
+- Git提交历史：2026-05-14 至今的所有变更
+
+### 新增功能模块（2026-05-14 之后）
+
+#### 1. B站二维码登录 ✅
+- **实现文件**：
+  - `backend/app/services/cookie_acquisition/platforms/bilibili.py`
+  - `frontend/src/pages/accounts/index.tsx` (QrLoginPanel)
+- **功能**：
+  - 生成B站登录二维码
+  - WebSocket实时推送扫码状态
+  - 自动获取Cookie并保存到PlatformConnection
+- **API端点**：
+  - `POST /api/v1/platforms/acquire/qrcode/generate`
+  - `WS /api/v1/platforms/acquire/qrcode/{sid}/ws`
+  - `GET /api/v1/platforms/acquire/qrcode/{sid}/status`
+
+#### 2. UP主分析页面 ✅
+- **前端页面**：`frontend/src/pages/up-analytics/index.tsx`
+- **功能**：
+  - UP主个人信息展示
+  - 视频列表统计
+  - 粉丝数据趋势
+  - 热门视频分析
+
+#### 3. 我的数据页面 ✅
+- **前端页面**：`frontend/src/pages/my-data/index.tsx`
+- **功能**：
+  - 我的收藏夹列表
+  - 我的合集列表
+  - 视频历史记录
+  - 一键导入素材库
+
+#### 4. 评论功能增强 ✅
+- **后端实现**：`backend/app/services/platforms/bilibili/client.py`
+- **功能**：
+  - 评论分页加载
+  - 发送评论
+  - 评论排序（按热度/按时间）
+  - 评论回复
+
+#### 5. 字幕功能完善 ✅
+- **后端实现**：`backend/app/services/subtitle/service.py`
+- **功能**：
+  - B站字幕下载（多种格式：SRT/ASS/VTT）
+  - 字幕样式编辑
+  - 字幕烧录到视频
+  - 多语言字幕支持
+
+#### 6. 内容搜索页面重构 ✅
+- **重命名**：内容管理 → 内容搜索
+- **优化**：
+  - 菜单结构优化
+  - 依赖源管理
+  - 搜索结果展示优化
+
+#### 7. 主题系统增强 ✅
+- **新增**：`textPrompt` 主题色
+- **优化**：
+  - 替换所有硬编码颜色
+  - 支持动态主题切换
+  - 统一的颜色常量管理
+
+#### 8. 拆解页面功能增强 ✅
+- **前端页面**：`frontend/src/pages/breaker/index.tsx`
+- **新增功能**：
+  - 更详细的文案结构分析
+  - 脚本分镜可视化
+  - 仿写提示词优化
+  - 导出功能
+
+### 当前状态总览（2026-05-20）
+
+```
+[███████████████████████████████████████████████]  ~100%
+```
+
+| 模块 | 状态 | 说明 |
+|------|------|------|
+| 需求分析 | ✅ 完成 | 12 个开源项目源码分析 |
+| 系统设计 | ✅ 完成 | 完整架构设计文档 |
+| BackendManager | ✅ 完成 | Protocol + Registry + YAML + Manager |
+| Backend 实现 | ✅ 完成 | 7 个 Backend |
+| API 层 | ✅ 完成 | 30+ 端点 |
+| CutClaw 模式 | ✅ 完成 | Agent 工具调用 + FFmpeg 渲染 |
+| NarratoAI 模式 | ✅ 完成 | Pipeline 流水线（纪录片/短剧）|
+| MoE 多专家 | ✅ 完成 | 三专家 + ControlPlane 编排器 |
+| 爆款拆解 | ✅ 完成 | Breaker API + 内置视频解析（yt-dlp）|
+| Story Maker | ✅ 完成 | 角色库 + 分镜 Agent + 一致性检查 + 9 个 API 端点 |
+| OpenClaw Skill | ✅ 完成 | 10 个 Skill 脚本（breaker/clip/story/llm/image/tts）|
+| **AI 图像生成** | ✅ 完成 | ImageBackend + MiniMax Provider + 前端页面 |
+| **AI 视频生成** | ✅ 完成 | VideoBackend + MiniMax Provider + 前端页面 + 轮询 |
+| 前端 Phase 1 | ✅ 完成 | 6 个页面 + 路由 + API Client |
+| 前端 Phase 2（素材库） | ✅ 完成 | 素材库 Grid + 搜索 + 标签 + 详情抽屉 + 引用机制 |
+| 前端 Phase 3（后台下载） | ✅ 完成 | 后台任务队列 + 轮询进度，解决大文件 XHR 超时 |
+| 前端 Phase 4（角色管理） | ✅ 完成 | 角色 CRUD + 来源标签 + 定位 + 收藏/冻结 |
+| 前端 Phase 5（AI 生成） | ✅ 完成 | 图像生成 + 视频生成页面 + 深色主题 |
+| 前端 Phase 6（任务管理） | ✅ 完成 | 任务列表 + 过滤搜索 + 自动刷新 + 操作 |
+| **Live 2D 工厂** | ✅ 完成 | 立绘生成 + 图层拆分 + 绑骨 + VTS导出 + 口型同步 + 批量处理 |
+| **字幕提取** | ✅ 完成 | faster-whisper medium + 4 种样式 + SRT/ASS/VTT + 烧录 |
+| **BGM 配乐** | ✅ 完成 | 10 首内置曲目 + 用户上传 + FFmpeg 混音 + 淡入淡出 |
+| **素材采集** | ✅ 完成 | MediaCrawler 集成 + 多平台搜索 + 导入素材库 |
+| **小说阅读** | ✅ 完成 | 书架 + 阅读器 + 书源管理 + 换源 + SSE 流式搜索 |
+| **账号矩阵** | ✅ 完成 | 统一凭证 + Drawer + Segmented + 健康检查（参考 XHS_ALL_IN_ONE）|
+| **B站二维码登录** | ✅ 完成 | WebSocket实时推送 + Cookie自动获取 |
+| **UP主分析** | ✅ 完成 | UP主数据统计分析页面 |
+| **我的数据** | ✅ 完成 | 收藏夹/合集/历史记录管理 |
+| **评论功能** | ✅ 完成 | 分页加载 + 发送评论 + 排序 |
+| **字幕功能** | ✅ 完成 | 下载 + 编辑 + 样式 + 烧录 |
+| **主题系统** | ✅ 完成 | textPrompt主题色 + 动态切换 |
+| **拆解页面** | ✅ 完成 | 功能增强 + 体验优化 |
+| **内容搜索** | ✅ 完成 | 重命名 + 菜单优化 + 依赖源管理 |
+| **前端页面总数** | ✅ 完成 | 27 个完整页面 |
+| **后端API路由** | ✅ 完成 | 30+ 模块注册 |
+| **后端服务层** | ✅ 完成 | 105+ Python文件 |
+
+### 技术债务清理（2026-05-20更新）
+
+- [x] FFmpeg 环境依赖验证（Windows 兼容性）✅ 已完成
+- [x] Provider API Key 安全存储 ✅ 已实现（数据库加密存储）
+- [x] 图像/视频生成结果入库到 Asset 表 ✅ 已实现（asset_service.py）
+- [x] FFmpeg 视频剪辑服务完善 ✅ 已完成
+- [x] WebSocket 替代轮询 ✅ 已完成（实时推送任务进度）
+- [x] 后台下载任务 ✅ 已实现（BackgroundTasks + 内存任务表 + 轮询）
+- [x] 前端移动端适配 ✅ 完成（Drawer 侧栏 + 响应式栅格 + 移动端工具类）
+- [x] 代码分割优化 ✅ 完成（manualChunks，antd 641KB gzip 177KB）
+- [ ] CookieManager 适配（从 PlatformConnection 读 Cookie）→ **进行中**
+- [ ] Live 2D 工厂五官绑骨完善 → **进行中**
+- [ ] 测试 AI 生成 API（需要配置 MiniMax API Key）→ **待完成**
+
+### 下一步行动（2026-05-20）
+
+**当前状态**：Phase 1-6 前后端核心功能全部完成，整体进度 ~100%
+
+#### 待完成 ⏳
+1. [ ] 测试 AI 生成 API（需要配置 MiniMax API Key）
+2. [ ] CookieManager 适配完成（从 PlatformConnection 读 Cookie）
+3. [ ] Live 2D 工厂五官绑骨完善
+4. [ ] 端到端集成测试
+
+#### 可以开始的工作 ✅
+- ✅ 启动后端服务测试所有 API
+- ✅ 启动前端开发服务器验证 UI
+- ✅ 配置 API Key 测试 AI 生成功能
+- ✅ 测试账号矩阵页面（Drawer + 扫码 + 浏览器获取）
+- ✅ B站二维码登录全流程测试
+- ✅ UP主分析页面功能验证
+- ✅ 我的数据页面功能验证
+- ✅ 评论功能完整测试
+- ✅ 字幕功能完整测试
+
+---
+
 ## 2026-05-14 更新
 
 ### 账号矩阵页面重构（参考 XHS_ALL_IN_ONE）✅

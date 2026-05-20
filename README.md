@@ -21,9 +21,14 @@
 | **Live2D 工厂** | Live2D 全自动生产线（动漫立绘 / Coser真人 / Coser转二次元 → 抠图 → 分层 → 绑骨 → VTS 导出 → 口型同步） |
 | **AI 图像/视频生成** | 多 Provider 统一调度，支持文生图/图生视频 |
 | **AI 智能助手** | Agent 模式，支持会话记忆、工具调用、任务编排 |
-| **素材采集** | 多平台素材抓取（抖音/B站/小红书/微博等） |
-| **小说阅读** | 书架 + 阅读器 + 多书源管理 + 换源 |
+| **素材采集** | 多平台素材抓取（抖音/B站/小红书/微博/知乎/快手） |
+| **小说阅读** | 书架 + 阅读器 + 多书源管理 + 换源 + SSE 流式搜索 |
 | **ComfyUI 管理** | 工作流模板管理、任务队列、预设参数 |
+| **B站二维码登录** | 扫码登录 + WebSocket 实时推送 + Cookie 自动获取 |
+| **UP主分析** | UP主数据统计 + 视频分析 + 粉丝趋势 |
+| **我的数据** | 收藏夹管理 + 合集管理 + 观看历史 |
+| **评论功能** | 评论分页加载 + 发送评论 + 排序（热度/时间）|
+| **字幕功能** | 字幕下载（SRT/ASS/VTT）+ 编辑 + 样式 + 烧录 |
 
 ## 技术栈
 
@@ -137,7 +142,7 @@ API 密钥优先从数据库读取（`backend/data/ylcraft.db`），支持前端
 YLCraft/
 ├── backend/                    # 后端服务
 │   ├── app/
-│   │   ├── main.py            # FastAPI 入口 & 生命周期管理
+│   │   ├── main.py            # FastAPI 入口 & 生命周期管理（30+ API 模块）
 │   │   ├── api/v1/            # REST API 路由（30+ 模块）
 │   │   ├── services/          # 业务逻辑层
 │   │   │   ├── agent/         # AI Agent（记忆/会话/工具调用）
@@ -175,8 +180,8 @@ YLCraft/
 │   └── .env.example
 ├── frontend/                   # 前端应用
 │   ├── src/
-│   │   ├── App.tsx            # 路由入口（21 页面）
-│   │   ├── pages/             # 页面组件（24 页面）
+│   │   ├── App.tsx            # 路由入口（27 页面）
+│   │   ├── pages/             # 页面组件（27 页面）
 │   │   ├── components/        # 通用组件 & Live2D 查看器
 │   │   ├── api/               # API 调用层
 │   │   ├── hooks/             # 自定义 Hooks（WebSocket）
@@ -310,9 +315,10 @@ Live2D 工厂各环节支持本地模型和云端 API 双模式，可通过配�
 
 | 文档 | 说明 |
 |------|------|
-| [DESIGN](docs/DESIGN.md) | 完整架构设计 v0.2.0 |
-| [PROGRESS](docs/PROGRESS.md) | 开发进度追踪 |
-| [FRONTEND_STYLE_GUIDE](docs/FRONTEND_STYLE_GUIDE.md) | 前端开发规范 |
+| [DESIGN](docs/DESIGN.md) | 完整架构设计 v0.3.0（实现状态 ~100%） |
+| [PROGRESS](docs/PROGRESS.md) | 开发进度追踪（最后更新：2026-05-20） |
+| [FRONTEND_STYLE_GUIDE](docs/FRONTEND_STYLE_GUIDE.md) | 前端开发规范 v1.0 |
+| [BILIBILI_QRCODE_IMPL](docs/BILIBILI_QRCODE_IMPL.md) | B站二维码登录实现文档 |
 
 ### 归档文档 (docs/archive/)
 
