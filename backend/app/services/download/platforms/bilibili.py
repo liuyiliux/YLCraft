@@ -50,11 +50,20 @@ class BilibiliDownloader(BaseDownloader):
         self._cookie_manager = None
 
     async def _get_client(self):
-        """获取 BilibiliClient 实例"""
+        """获取 BilibiliClient 实例（带 Cookie）"""
         if self._client is None:
             from app.services.platforms.bilibili.client import BilibiliClient
             from app.services.platforms.types import ClientConfig
-            config = ClientConfig(platform="bilibili")
+            # 从 CookieManager 获取 B站 Cookie
+            cookie_manager = get_cookie_manager()
+            cookie = ""
+            try:
+                cookie_jar = cookie_manager.get_cookiejar_for_url("https://www.bilibili.com")
+                if cookie_jar:
+                    cookie = "; ".join([f"{c.name}={c.value}" for c in cookie_jar])
+            except Exception as e:
+                logger.warning(f"[BilibiliDownloader] 获取 Cookie 失败: {e}")
+            config = ClientConfig(platform="bilibili", cookie=cookie)
             self._client = BilibiliClient(config)
         return self._client
 
@@ -108,12 +117,12 @@ class BilibiliDownloader(BaseDownloader):
                 ]
 
             return VideoInfo(
-                title=detail.get("title", ""),
-                author=detail.get("owner", {}).get("name", ""),
+                title=getattr(detail, "title", "") or "",
+                author=getattr(detail, "author", "") or "",
                 platform="bilibili",
-                cover_url=detail.get("pic", ""),
-                duration=detail.get("duration", 0),
-                description=detail.get("desc", ""),
+                cover_url=getattr(detail, "video_cover", "") or "",
+                duration=getattr(detail, "duration", 0) or 0,
+                description=getattr(detail, "desc", "") or "",
                 qualities=qualities,
                 page_url=url,
             )

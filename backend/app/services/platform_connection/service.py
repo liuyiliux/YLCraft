@@ -31,7 +31,7 @@ from app.db.models.platform_connection import (
     ConnectionStatus,
     AcquisitionMethod,
 )
-from app.services.cookie_manager import CookieManager, get_cookie_manager
+from app.services.cookies.manager import CookieManager, get_cookie_manager
 
 logger = logging.getLogger("ylcraft.platform_connection")
 
@@ -46,7 +46,7 @@ def extract_bilibili_account_info_sync(cookie_str: str) -> dict:
     }
     try:
         # 先把 Netscape 格式的 Cookie 转换成原始格式
-        from app.services.cookie_manager import CookieManager
+        from app.services.cookies.manager import CookieManager
         mgr = CookieManager("bilibili")
         raw_cookie = mgr.extract_raw(cookie_str)
         

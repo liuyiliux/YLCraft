@@ -6,7 +6,7 @@ YLCraft — 小红书平台适配器
 
 from __future__ import annotations
 
-from app.services.cookie_acquisition.base import PlatformDetector
+from app.services.cookies.base import PlatformDetector
 
 
 class XhsDetector(PlatformDetector):

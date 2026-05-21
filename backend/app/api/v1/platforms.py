@@ -91,8 +91,8 @@ async def get_supported_platforms():
     # 检查 Playwright 是否可用
     playwright_available = False
     try:
-        from app.services.cookie_acquisition.playwright_manager import get_playwright_manager
-        playwright_available = get_playwright_manager().is_available()
+        from app.services.cookies.patchright_manager import get_patchright_manager
+        playwright_available = get_patchright_manager().is_available()
     except Exception:
         pass
 

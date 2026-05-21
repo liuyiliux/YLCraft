@@ -927,9 +927,9 @@ class BilibiliClient(BasePlatformClient):
         }
         
         # 添加 WBI 签名（必须启用才能获取高清画质）
-        params = await self._sign_params(params)
+        query_string = await self._sign_params(params)
         
-        url = f"{BASE_URL}{VIDEO_PLAYER}?{urlencode(params)}"
+        url = f"{BASE_URL}{VIDEO_PLAYER}?{query_string}"
         
         try:
             response = await self.request("GET", url)
@@ -967,31 +967,70 @@ class BilibiliClient(BasePlatformClient):
         """
         self._log(f"Getting video play info: {bvid}")
         
-        params = {
-            "bvid": bvid,
-            "qn": 127,      # 最高画质
-            "fnval": 16,     # dash 格式
-            "fourk": 1,      # 支持 4K
-        }
-        
-        # 添加 WBI 签名（必须启用才能获取高清画质）
-        params = await self._sign_params(params)
-        
-        url = f"{BASE_URL}{VIDEO_PLAYER}?{urlencode(params)}"
-        
+        # 先通过 view API 获取视频信息，判断是 UGC 还是 PGC（动漫/影视类）
+        view_url = f"{BASE_URL}{VIDEO_DETAIL}?{urlencode({'bvid': bvid})}"
         try:
-            response = await self.request("GET", url)
-            
-            if isinstance(response, dict) and response.get("code") == 0:
-                return response.get("data", {})
-            else:
-                error_msg = response.get("message", "Unknown error") if isinstance(response, dict) else "Request failed"
-                self._log(f"Get play info failed: {error_msg}", "error")
+            view_resp = await self.request("GET", view_url)
+            view_data = view_resp.get("data", {}) if isinstance(view_resp, dict) else {}
+        except Exception:
+            view_data = {}
+        
+        # 判断是否为 PGC 内容（动漫/番剧/影视），PGC 视频有 season_id
+        season_id = view_data.get("season_id")
+        aid = view_data.get("aid")
+        cid = view_data.get("cid")  # 视频分P的 cid
+        
+        if season_id:
+            # PGC 内容（动漫/番剧/影视）使用专用 API
+            self._log(f"Detected PGC video (season_id={season_id}), using PGC playurl API")
+            # PGC API 需要 epid/cid，先尝试用 aid+cid
+            pgc_params = {
+                "aid": aid,
+                "cid": cid,
+                "qn": 127,
+                "fnval": 16,
+                "fourk": 1,
+            }
+            query_string = await self._sign_params(pgc_params)
+            url = f"{BASE_URL}/pgc/player/web/playurl?{query_string}"
+            try:
+                response = await self.request("GET", url)
+                if isinstance(response, dict) and response.get("code") == 0:
+                    return response.get("data", {})
+                else:
+                    error_msg = response.get("message", "Unknown error") if isinstance(response, dict) else "Request failed"
+                    self._log(f"PGC play info failed: {error_msg}", "error")
+                    return {}
+            except Exception as e:
+                self._log(f"PGC play info error: {e}", "error")
                 return {}
+        else:
+            # UGC 内容使用标准 API
+            params = {
+                "bvid": bvid,
+                "qn": 127,      # 最高画质
+                "fnval": 16,     # dash 格式
+                "fourk": 1,      # 支持 4K
+            }
+            
+            # 添加 WBI 签名（必须启用才能获取高清画质）
+            query_string = await self._sign_params(params)
+            
+            url = f"{BASE_URL}{VIDEO_PLAYER}?{query_string}"
+            
+            try:
+                response = await self.request("GET", url)
                 
-        except Exception as e:
-            self._log(f"Get play info error: {e}", "error")
-            return {}
+                if isinstance(response, dict) and response.get("code") == 0:
+                    return response.get("data", {})
+                else:
+                    error_msg = response.get("message", "Unknown error") if isinstance(response, dict) else "Request failed"
+                    self._log(f"UGC play info failed: {error_msg}", "error")
+                    return {}
+                    
+            except Exception as e:
+                self._log(f"UGC play info error: {e}", "error")
+                return {}
     
     # =========================================================================
     # 用户相关

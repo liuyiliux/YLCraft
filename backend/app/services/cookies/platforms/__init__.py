@@ -8,23 +8,23 @@ from __future__ import annotations
 
 from typing import Optional
 
-from app.services.cookie_acquisition.base import PlatformDetector, QrcodeAdapter, get_platform_domains as _get_platform_domains
+from app.services.cookies.base import PlatformDetector, QrcodeAdapter, get_platform_domains as _get_platform_domains
 
 
 def get_platform_domains(platform: str) -> str:
     """获取平台的关联域名列表（委托给 base.py）"""
     return _get_platform_domains(platform)
 _detector_registry: dict[str, str] = {
-    "xhs": "app.services.cookie_acquisition.platforms.xiaohongshu:XhsDetector",
-    "douyin": "app.services.cookie_acquisition.platforms.douyin:DouyinDetector",
-    "kuaishou": "app.services.cookie_acquisition.platforms.kuaishou:KuaishouDetector",
-    "bilibili": "app.services.cookie_acquisition.platforms.bilibili:BilibiliDetector",
-    "weibo": "app.services.cookie_acquisition.platforms.weibo:WeiboDetector",
-    "zhihu": "app.services.cookie_acquisition.platforms.zhihu:ZhihuDetector",
+    "xhs": "app.services.cookies.platforms.xiaohongshu:XhsDetector",
+    "douyin": "app.services.cookies.platforms.douyin:DouyinDetector",
+    "kuaishou": "app.services.cookies.platforms.kuaishou:KuaishouDetector",
+    "bilibili": "app.services.cookies.platforms.bilibili:BilibiliDetector",
+    "weibo": "app.services.cookies.platforms.weibo:WeiboDetector",
+    "zhihu": "app.services.cookies.platforms.zhihu:ZhihuDetector",
 }
 
 _qrcode_registry: dict[str, str] = {
-    "bilibili": "app.services.cookie_acquisition.platforms.bilibili:BilibiliQrcodeAdapter",
+    "bilibili": "app.services.cookies.platforms.bilibili:BilibiliQrcodeAdapter",
     # 其他平台二维码适配器预留
 }
 
@@ -57,7 +57,7 @@ def get_detector(platform: str) -> Optional[PlatformDetector]:
         return instance
     except Exception as e:
         import logging
-        logging.getLogger("ylcraft.cookie_acquisition.platforms").warning(
+        logging.getLogger("ylcraft.cookies.platforms").warning(
             f"Failed to load detector for {platform}: {e}"
         )
         return None
@@ -79,7 +79,7 @@ def get_qrcode_adapter(platform: str) -> Optional[QrcodeAdapter]:
         return instance
     except Exception as e:
         import logging
-        logging.getLogger("ylcraft.cookie_acquisition.platforms").warning(
+        logging.getLogger("ylcraft.cookies.platforms").warning(
             f"Failed to load qrcode adapter for {platform}: {e}"
         )
         return None

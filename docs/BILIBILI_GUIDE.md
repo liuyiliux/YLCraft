@@ -118,6 +118,85 @@ location /api/v1/platforms/acquire {
 
 ---
 
+### 1.5 评论获取 ✅
+
+**实现文件**：
+- 后端：`backend/app/services/platforms/bilibili/routes.py`（API 路由）
+- 后端：`backend/app/services/platforms/bilibili/client.py` → `get_comments_paged()`
+- 前端：`frontend/src/components/bilibili/VideoDetailDrawer.tsx`
+
+**API 端点**：
+| 接口 | 方法 | URL |
+|------|------|-----|
+| 获取评论 | GET | `/api/v1/bilibili/comments` |
+| 发送评论 | POST | `/api/v1/bilibili/comment/send` |
+
+**请求参数**（GET `/comments`）：
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `bvid` | string | 视频 BV 号（必填） |
+| `page` | int | 页码，从 1 开始（默认 1） |
+| `page_size` | int | 每页条数，默认 20，最大 50 |
+| `sort` | int | 排序方式（见下表） |
+| `offset` | string | 游标偏移值，用于加载更多 |
+| `conn_id` | string | 平台连接 ID（可选） |
+
+**排序映射**（`sort` → B站 `mode`）：
+| 前端 sort 值 | 后端 mode | 排序名称 | 分页方式 |
+|-------------|-----------|----------|----------|
+| 0 | 3 | 最热（热门评论） | WBI API + `pagination_str` 游标 |
+| 1 | 2 | 最新（最新评论） | WBI API + `pagination_str` 游标 |
+| 2 | 1 | 最早 | 非 WBI 旧版 API + `pn` 页码 |
+
+**⚠️ 重要坑点：WBI API 与最早排序不兼容**
+
+B站 WBI 评论 API（`/x/v2/reply/wbi/main`）对 `mode=1`（最早）排序时，`pagination_reply.next_offset` 游标在时间排序下不可靠，会导致"加载更多返回重复评论"的 bug。
+
+**解决方案**：
+- `mode=1`（最早）→ 改用非 WBI 旧版 API `/x/v2/reply/main`，用 `pn` 页码分页
+- `mode=2/3`（最新/最热）→ 保持 WBI API + `pagination_str` 游标分页
+
+**⚠️ 另一个坑点：`next_offset` 的正确提取路径**
+
+B站 API 返回的游标结构：
+```json
+"cursor": {
+  "pagination_reply": { "next_offset": "CAESEDE4..." },  // WBI API 的 offset 在这里
+  "is_end": false,
+  "all_count": 150
+}
+```
+
+**错误做法**：`cursor.get("next_offset")` —— 直接从 cursor 取，会得到空字符串 `""`
+**正确做法**：`cursor.get("pagination_reply", {}).get("next_offset", "")` —— 从 `pagination_reply` 中取
+
+> 这个 bug 会导致所有分页请求都使用空的 `offset`，API 始终返回第一页，造成评论重复加载。**（已修复）**
+
+**评论数据结构**（返回值示例）：
+```python
+{
+    "total": 150,           # 评论总数
+    "page": 1,              # 当前页码
+    "page_size": 20,        # 每页条数
+    "comments": [
+        {
+            "rpid": 1234567890,       # 评论 ID
+            "user_name": "用户名",    # 评论者昵称
+            "user_avatar": "https://...",  # 头像 URL
+            "mid": "123456",          # 用户 mid
+            "message": "评论内容",    # 评论文本
+            "like_count": 100,        # 点赞数
+            "ctime": 1716000000,      # 发布时间（Unix 时间戳）
+            "replies_count": 5,       # 回复数（子评论数）
+        }
+    ],
+    "next_offset": "CAESEDE4...",  # 下一页游标（最早排序时为空）
+    "has_more": true               # 是否还有更多
+}
+```
+
+---
+
 ## 二、B站 API 调用方式分析
 
 ### 2.1 登录认证
@@ -481,4 +560,4 @@ BiliTools 使用 **GPL-3.0-or-later** 协议，这意味着：
 ---
 
 **维护者**：YLCraft Team  
-**最后更新**：2026-05-20
+**最后更新**：2026-05-21

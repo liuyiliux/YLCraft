@@ -14,7 +14,7 @@ from typing import Optional
 import qrcode
 import httpx
 
-from app.services.cookie_acquisition.base import PlatformDetector, QrcodeAdapter
+from app.services.cookies.base import PlatformDetector, QrcodeAdapter
 
 logger = logging.getLogger("ylcraft.bilibili.qrcode")
 

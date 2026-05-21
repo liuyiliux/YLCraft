@@ -23,13 +23,13 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
-from app.services.cookie_acquisition.base import (
+from app.services.cookies.base import (
     AcquisitionStatus,
     get_status_message,
 )
-from app.services.cookie_acquisition.patchright_manager import get_patchright_manager  # ✅ 改为 Patchright
-from app.services.cookie_acquisition.qrcode_manager import get_qrcode_manager
-from app.services.cookie_acquisition.platforms import (
+from app.services.cookies.patchright_manager import get_patchright_manager  # ✅ Patchright 浏览器自动化
+from app.services.cookies.qrcode_manager import get_qrcode_manager
+from app.services.cookies.platforms import (
     get_supported_patchright_platforms,  # ✅ 改为 patchright
     get_supported_qrcode_platforms,
 )

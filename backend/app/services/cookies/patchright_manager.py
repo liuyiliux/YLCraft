@@ -12,7 +12,7 @@ import time
 import uuid
 from typing import Optional
 
-from app.services.cookie_acquisition.base import (
+from app.services.cookies.base import (
     AcquisitionSession,
     AcquisitionStatus,
     get_status_message,
@@ -21,9 +21,9 @@ from app.services.cookie_acquisition.base import (
     get_platform_domains,
     get_platform_test_url,
 )
-from app.services.cookie_acquisition.platforms import get_detector
+from app.services.cookies.platforms import get_detector
 
-logger = logging.getLogger("ylcraft.cookie_acquisition.patchright")
+logger = logging.getLogger("ylcraft.cookies.patchright")
 
 # 默认最大等待登录时间（秒）
 DEFAULT_LOGIN_TIMEOUT = 300
@@ -223,7 +223,7 @@ class PatchrightAcquisitionManager:
                         cookie_dir.mkdir(parents=True, exist_ok=True)
                         cookie_path = cookie_dir / f"{platform}.txt"
                         # 写入清洗后的 Netscape 内容
-                        from app.services.video.parser import get_cookie_manager
+                        from app.services.cookies.manager import get_cookie_manager
                         mgr = get_cookie_manager()
                         clean_content = mgr._clean_netscape_content(cookie_content)
                         cookie_path.write_text(clean_content, encoding="utf-8")
