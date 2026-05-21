@@ -632,7 +632,26 @@ async def _run_download_task(task: DownloadTask):
             page_url=task.page_url,
             is_audio=task.is_audio,
         )
-        
+
+        # 平台专用下载器失败，降级到 yt-dlp
+        if not filepath:
+            task.progress_message = "专用下载器失败，尝试 yt-dlp 兜底..."
+            _download_tasks[task.task_id] = task.__dict__
+            logger.warning(f"[_run_download_task] 平台下载器失败，降级到 yt-dlp: {task.url[:80]}")
+            
+            loop = asyncio.get_running_loop()
+            filepath = await asyncio.wait_for(
+                loop.run_in_executor(
+                    None, _ytdlp_download,
+                    task.url, task.quality, task.title,
+                    task.page_url, task.is_audio,
+                ),
+                timeout=1800,
+            )
+
+        if not filepath:
+            raise ValueError("所有下载方式均失败（平台下载器 + yt-dlp 兜底），可能解析或权限问题")
+
         task.file_path = filepath
         task.status = "DONE"
         task.progress = 100

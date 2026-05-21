@@ -964,10 +964,17 @@ class BilibiliClient(BasePlatformClient):
                 "audio": [{"baseUrl": "..."}]
             }
         }
+        
+        策略：优先使用 UGC API（x/player/playurl），适用于所有视频类型。
+        只有确认是真正的 PGC 内容（官方番剧/动漫）且 UGC API 不可用时，
+        才使用 PGC 专用 API（pgc/player/web/playurl）。
+        
+        注意：用户"合集"（UGC collection）也有 season_id，但绝非 PGC 内容，
+        必须使用 UGC API。
         """
         self._log(f"Getting video play info: {bvid}")
         
-        # 先通过 view API 获取视频信息，判断是 UGC 还是 PGC（动漫/影视类）
+        # 先获取视频基础信息
         view_url = f"{BASE_URL}{VIDEO_DETAIL}?{urlencode({'bvid': bvid})}"
         try:
             view_resp = await self.request("GET", view_url)
@@ -975,62 +982,103 @@ class BilibiliClient(BasePlatformClient):
         except Exception:
             view_data = {}
         
-        # 判断是否为 PGC 内容（动漫/番剧/影视），PGC 视频有 season_id
         season_id = view_data.get("season_id")
         aid = view_data.get("aid")
-        cid = view_data.get("cid")  # 视频分P的 cid
+        cid = view_data.get("cid")
         
+        # 判断是否为真正的 PGC 内容（而非 UGC 合集）
+        # 真正的 PGC 内容特征：redirect_url 指向 bangumi，或 rights 中有 PGC 标记
+        is_true_pgc = False
         if season_id:
-            # PGC 内容（动漫/番剧/影视）使用专用 API
-            self._log(f"Detected PGC video (season_id={season_id}), using PGC playurl API")
-            # PGC API 需要 epid/cid，先尝试用 aid+cid
+            redirect_url = view_data.get("redirect_url", "")
+            if redirect_url and "bangumi" in redirect_url:
+                is_true_pgc = True
+            elif view_data.get("rights", {}).get("is_pgc"):
+                is_true_pgc = True
+        
+        # ═══════════════════════════════════════════════════════════════
+        # Step 1: 始终优先使用 UGC API（适用所有 UGC + 合集视频）
+        # ═══════════════════════════════════════════════════════════════
+        ugc_params = {
+            "bvid": bvid,
+            "qn": 127,
+            "fnval": 4048,    # 更现代的格式值（支持 8K/HDR/杜比）
+            "fourk": 1,
+        }
+        ugc_query = await self._sign_params(ugc_params)
+        ugc_play_url = f"{BASE_URL}{VIDEO_PLAYER}?{ugc_query}"
+        
+        try:
+            ugc_resp = await self.request("GET", ugc_play_url)
+            if isinstance(ugc_resp, dict) and ugc_resp.get("code") == 0:
+                data = ugc_resp.get("data", {})
+                if data.get("dash") or data.get("durl"):
+                    self._log(f"UGC API success: got {len(data.get('dash', {}).get('video', []))} video streams")
+                    return data
+                self._log(f"UGC API returned empty play data", "warning")
+            else:
+                err_msg = ugc_resp.get("message", "") if isinstance(ugc_resp, dict) else ""
+                err_code = ugc_resp.get("code", 0) if isinstance(ugc_resp, dict) else 0
+                self._log(f"UGC API failed: code={err_code}, msg={err_msg}", "warning")
+        except Exception as e:
+            self._log(f"UGC API error: {e}", "warning")
+        
+        # ═══════════════════════════════════════════════════════════════
+        # Step 2: 只有真正的 PGC 内容才尝试 PGC 专用 API
+        # ═══════════════════════════════════════════════════════════════
+        if is_true_pgc and season_id and aid and cid:
+            self._log(f"True PGC video (season_id={season_id}), trying PGC playurl API")
             pgc_params = {
                 "aid": aid,
                 "cid": cid,
                 "qn": 127,
-                "fnval": 16,
+                "fnval": 4048,
                 "fourk": 1,
             }
-            query_string = await self._sign_params(pgc_params)
-            url = f"{BASE_URL}/pgc/player/web/playurl?{query_string}"
-            try:
-                response = await self.request("GET", url)
-                if isinstance(response, dict) and response.get("code") == 0:
-                    return response.get("data", {})
-                else:
-                    error_msg = response.get("message", "Unknown error") if isinstance(response, dict) else "Request failed"
-                    self._log(f"PGC play info failed: {error_msg}", "error")
-                    return {}
-            except Exception as e:
-                self._log(f"PGC play info error: {e}", "error")
-                return {}
-        else:
-            # UGC 内容使用标准 API
-            params = {
-                "bvid": bvid,
-                "qn": 127,      # 最高画质
-                "fnval": 16,     # dash 格式
-                "fourk": 1,      # 支持 4K
-            }
-            
-            # 添加 WBI 签名（必须启用才能获取高清画质）
-            query_string = await self._sign_params(params)
-            
-            url = f"{BASE_URL}{VIDEO_PLAYER}?{query_string}"
+            pgc_query = await self._sign_params(pgc_params)
+            pgc_play_url = f"{BASE_URL}/pgc/player/web/playurl?{pgc_query}"
             
             try:
-                response = await self.request("GET", url)
-                
-                if isinstance(response, dict) and response.get("code") == 0:
-                    return response.get("data", {})
+                pgc_resp = await self.request("GET", pgc_play_url)
+                if isinstance(pgc_resp, dict) and pgc_resp.get("code") == 0:
+                    data = pgc_resp.get("data", {})
+                    if data.get("dash") or data.get("durl"):
+                        self._log(f"PGC API success")
+                        return data
+                    self._log(f"PGC API returned empty play data", "warning")
                 else:
-                    error_msg = response.get("message", "Unknown error") if isinstance(response, dict) else "Request failed"
-                    self._log(f"UGC play info failed: {error_msg}", "error")
-                    return {}
-                    
+                    err_msg = pgc_resp.get("message", "") if isinstance(pgc_resp, dict) else ""
+                    err_code = pgc_resp.get("code", 0) if isinstance(pgc_resp, dict) else 0
+                    self._log(f"PGC API failed: code={err_code}, msg={err_msg}", "error")
             except Exception as e:
-                self._log(f"UGC play info error: {e}", "error")
-                return {}
+                self._log(f"PGC API error: {e}", "error")
+        
+        # ═══════════════════════════════════════════════════════════════
+        # Step 3: 最后尝试不带 WBI 签名的 UGC API（兼容老接口）
+        # ═══════════════════════════════════════════════════════════════
+        self._log(f"Trying unsigned UGC API as last resort", "warning")
+        fallback_params = {
+            "bvid": bvid,
+            "qn": 80,           # 降级到 1080P
+            "fnval": 1,          # 基础格式
+            "platform": "web",
+        }
+        fallback_url = f"{BASE_URL}{VIDEO_PLAYER}?{urlencode(fallback_params)}"
+        
+        try:
+            fb_resp = await self.request("GET", fallback_url)
+            if isinstance(fb_resp, dict) and fb_resp.get("code") == 0:
+                data = fb_resp.get("data", {})
+                if data.get("dash") or data.get("durl"):
+                    self._log(f"Unsigned UGC API success (degraded quality)")
+                    return data
+            else:
+                err_msg = fb_resp.get("message", "") if isinstance(fb_resp, dict) else ""
+                self._log(f"All play APIs failed. Final error: {err_msg}", "error")
+        except Exception as e:
+            self._log(f"All play APIs failed: {e}", "error")
+        
+        return {}
     
     # =========================================================================
     # 用户相关

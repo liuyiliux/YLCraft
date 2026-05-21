@@ -45,20 +45,40 @@ logger = logging.getLogger("ylcraft.platform_connection")
 class PlatformConnectionService:
     """平台连接器服务"""
 
-    def __init__(self, session: Session):
+    def __init__(self, session: Optional[Session] = None):
         self.session = session
+        self._own_session = False  # 标记是否由内部创建，需要自行关闭
+
+    def _ensure_session(self):
+        """确保 session 可用，如果未传入则自动创建"""
+        if self.session is None:
+            from app.db.database import get_session
+            self.session = get_session()
+            self._own_session = True
+
+    def _close_own_session(self):
+        """关闭内部创建的 session"""
+        if self._own_session and self.session is not None:
+            try:
+                self.session.close()
+            except Exception:
+                pass
+            self.session = None
+            self._own_session = False
 
     # =========================================================================
     # 基础 CRUD
     # =========================================================================
 
     def list_all(self) -> list[PlatformConnection]:
+        self._ensure_session()
         """列出所有平台连接"""
         stmt = select(PlatformConnection).order_by(PlatformConnection.created_at.desc())
         return self.session.exec(stmt).all()
 
     def list_by_platform(self, platform: PlatformType) -> list[PlatformConnection]:
         """列出指定平台的所有连接"""
+        self._ensure_session()
         stmt = (
             select(PlatformConnection)
             .where(PlatformConnection.platform == platform)
@@ -68,10 +88,12 @@ class PlatformConnectionService:
 
     def get(self, conn_id: str) -> Optional[PlatformConnection]:
         """获取单个连接"""
+        self._ensure_session()
         return self.session.get(PlatformConnection, conn_id)
 
     def get_active(self, platform: PlatformType | str) -> Optional[PlatformConnection]:
         """获取指定平台的活跃连接"""
+        self._ensure_session()
         if isinstance(platform, str):
             try:
                 platform = PlatformType(platform)
@@ -85,6 +107,26 @@ class PlatformConnectionService:
                 PlatformConnection.status == ConnectionStatus.ACTIVE,
             )
             .order_by(PlatformConnection.last_used.desc().nulls_last())
+            .limit(1)
+        )
+        return self.session.exec(stmt).first()
+
+    def get_default_connection(self, platform: str) -> Optional[PlatformConnection]:
+        """获取指定平台的默认连接（优先活跃，否则最近创建）"""
+        self._ensure_session()
+        conn = self.get_active(platform)
+        if conn:
+            return conn
+        # 降级：取最近创建的
+        if isinstance(platform, str):
+            try:
+                platform = PlatformType(platform)
+            except ValueError:
+                return None
+        stmt = (
+            select(PlatformConnection)
+            .where(PlatformConnection.platform == platform)
+            .order_by(PlatformConnection.created_at.desc())
             .limit(1)
         )
         return self.session.exec(stmt).first()
