@@ -179,6 +179,88 @@ async def get_detail(
 
 
 # =============================================================================
+# 带连接ID的便捷函数（自动获取cookie）
+# =============================================================================
+
+async def search_with_conn_id(
+    platform: str,
+    keyword: str,
+    conn_id: Optional[str] = None,
+    **kwargs
+) -> list[SearchResult]:
+    """
+    带连接ID的搜索（自动从DB获取cookie）
+    
+    Args:
+        platform: 平台标识
+        keyword: 搜索关键词
+        conn_id: 连接ID（可选，不传则使用无cookie模式）
+        **kwargs: 其他参数（同search函数）
+    
+    Returns:
+        搜索结果列表
+    """
+    cookie = None
+    
+    if conn_id:
+        try:
+            from app.services.platform_connection.service import PlatformConnectionService
+            from app.db.session import get_session
+            
+            async with get_session() as session:
+                service = PlatformConnectionService(session)
+                conn = service.get(conn_id)
+                if conn:
+                    cookie = service.get_raw_cookie(conn_id)
+                    if cookie:
+                        logger.debug(f"[platforms] Got cookie for conn_id: {conn_id[:8]}...")
+        except Exception as e:
+            logger.warning(f"[platforms] Failed to get cookie for conn_id {conn_id}: {e}")
+    
+    # 调用普通search函数，传入获取到的cookie
+    return await search(platform, keyword, cookie=cookie or "", **kwargs)
+
+
+async def get_detail_with_conn_id(
+    platform: str,
+    item_id: str,
+    conn_id: Optional[str] = None,
+    **kwargs
+) -> Optional[NoteDetail]:
+    """
+    带连接ID的详情获取（自动从DB获取cookie）
+    
+    Args:
+        platform: 平台标识
+        item_id: 笔记/视频 ID
+        conn_id: 连接ID（可选，不传则使用无cookie模式）
+        **kwargs: 其他参数（同get_detail函数）
+    
+    Returns:
+        详情对象 或 None
+    """
+    cookie = None
+    
+    if conn_id:
+        try:
+            from app.services.platform_connection.service import PlatformConnectionService
+            from app.db.session import get_session
+            
+            async with get_session() as session:
+                service = PlatformConnectionService(session)
+                conn = service.get(conn_id)
+                if conn:
+                    cookie = service.get_raw_cookie(conn_id)
+                    if cookie:
+                        logger.debug(f"[platforms] Got cookie for conn_id: {conn_id[:8]}...")
+        except Exception as e:
+            logger.warning(f"[platforms] Failed to get cookie for conn_id {conn_id}: {e}")
+    
+    # 调用普通get_detail函数，传入获取到的cookie
+    return await get_detail(platform, item_id, cookie=cookie or "", **kwargs)
+
+
+# =============================================================================
 # 导出
 # =============================================================================
 
@@ -200,4 +282,8 @@ __all__ = [
     "create_client",
     "search",
     "get_detail",
+    
+    # 带连接ID的便捷函数
+    "search_with_conn_id",
+    "get_detail_with_conn_id",
 ]

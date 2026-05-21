@@ -95,12 +95,17 @@ class BilibiliDownloader(BaseDownloader):
             qualities = []
             if play_info and play_info.get("dash"):
                 dash = play_info["dash"]
+                # 获取视频时长用于估算文件大小
+                video_duration = getattr(detail, "duration", 0) or 0
                 # 视频流
                 for video in dash.get("video", []):
                     qn = video.get("id", 0)
                     quality_label = BILI_QUALITY_MAP.get(qn, f"qn{qn}")
                     resolution = f"{video.get('width', 0)}x{video.get('height', 0)}"
-                    filesize = self._format_filesize(video.get("size", 0))
+                    # 获取文件大小，优先使用直接大小，否则用比特率估算
+                    size = video.get("size", 0)
+                    bitrate = video.get("bitrate", 0)
+                    filesize = self._format_filesize(size, video_duration, bitrate)
                     qualities.append(VideoQuality(
                         quality=str(qn),
                         resolution=resolution,
@@ -313,15 +318,31 @@ class BilibiliDownloader(BaseDownloader):
         if proc.returncode != 0:
             raise ValueError(f"ffmpeg 合并失败: {stderr.decode(errors='ignore')[:200]}")
 
-    def _format_filesize(self, size_bytes: int) -> str:
-        """格式化文件大小"""
-        if size_bytes <= 0:
-            return "未知"
-        for unit in ["B", "KB", "MB", "GB", "TB"]:
-            if size_bytes < 1024:
-                return f"{size_bytes:.1f}{unit}"
-            size_bytes /= 1024
-        return f"{size_bytes:.1f}PB"
+    def _format_filesize(self, size_bytes: int, duration: int = 0, bitrate: int = 0) -> str:
+        """格式化文件大小（支持估算）
+        
+        Args:
+            size_bytes: 文件大小（字节）
+            duration: 视频时长（秒），用于估算
+            bitrate: 比特率（bps），用于估算
+        
+        Returns:
+            格式化的文件大小字符串
+        """
+        if size_bytes > 0:
+            for unit in ["B", "KB", "MB", "GB", "TB"]:
+                if size_bytes < 1024:
+                    return f"{size_bytes:.1f}{unit}"
+                size_bytes /= 1024
+            return f"{size_bytes:.1f}PB"
+        
+        # 如果没有直接的文件大小，尝试估算
+        if duration > 0 and bitrate > 0:
+            # 比特率 * 时长 / 8 = 字节数
+            estimated_bytes = bitrate * duration / 8
+            return self._format_filesize(int(estimated_bytes))
+        
+        return "未知"
 
     def _safe_filename(self, name: str) -> str:
         """生成安全的文件名"""

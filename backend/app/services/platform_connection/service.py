@@ -33,46 +33,13 @@ from app.db.models.platform_connection import (
 )
 from app.services.cookies.manager import CookieManager, get_cookie_manager
 
+# 平台特定的工具函数（按需导入）
+try:
+    from app.services.platforms.bilibili.utils import extract_account_info_from_cookie as bilibili_extract_account
+except ImportError:
+    bilibili_extract_account = None
+
 logger = logging.getLogger("ylcraft.platform_connection")
-
-
-def extract_bilibili_account_info_sync(cookie_str: str) -> dict:
-    """从B站Cookie中提取账号信息（同步版本）"""
-    info = {
-        "account_id": None,
-        "account_name": None,
-        "account_avatar": None,
-        "account_url": None,
-    }
-    try:
-        # 先把 Netscape 格式的 Cookie 转换成原始格式
-        from app.services.cookies.manager import CookieManager
-        mgr = CookieManager("bilibili")
-        raw_cookie = mgr.extract_raw(cookie_str)
-        
-        with httpx.Client(timeout=30) as client:
-            headers = {
-                "Cookie": raw_cookie or cookie_str,
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                "Referer": "https://www.bilibili.com/",
-            }
-            logger.info(f"[PlatformConnection] Testing Bilibili cookie, raw len={len(raw_cookie or '')}")
-            resp = client.get("https://api.bilibili.com/x/web-interface/nav", headers=headers)
-            logger.info(f"[PlatformConnection] Bilibili API resp code={resp.status_code}")
-            if resp.status_code == 200:
-                result = resp.json()
-                logger.info(f"[PlatformConnection] Bilibili API result code={result.get('code')}")
-                if result.get("code") == 0:
-                    data = result.get("data", {})
-                    logger.info(f"[PlatformConnection] Bilibili isLogin={data.get('isLogin')}")
-                    if data.get("isLogin"):
-                        info["account_id"] = str(data.get("mid", ""))
-                        info["account_name"] = data.get("uname", "")
-                        info["account_avatar"] = data.get("face", "")
-                        info["account_url"] = f"https://space.bilibili.com/{info['account_id']}"
-    except Exception as e:
-        logger.warning(f"[PlatformConnection] Failed to extract Bilibili account info: {e}")
-    return info
 
 
 class PlatformConnectionService:
@@ -432,8 +399,8 @@ class PlatformConnectionService:
         result = mgr.validate(cookie_str)
         if result["valid"]:
             # 如果是B站，尝试提取账号信息
-            if platform == "bilibili":
-                info = extract_bilibili_account_info_sync(cookie_str)
+            if platform == "bilibili" and bilibili_extract_account:
+                info = bilibili_extract_account(cookie_str)
                 if info.get("account_id"):
                     conn.account_id = info["account_id"]
                     conn.account_name = info["account_name"]
@@ -450,8 +417,8 @@ class PlatformConnectionService:
             result = mgr.validate(netscape)
             if result["valid"]:
                 # 如果是B站，尝试提取账号信息
-                if platform == "bilibili":
-                    info = extract_bilibili_account_info_sync(cookie_str)
+                if platform == "bilibili" and bilibili_extract_account:
+                    info = bilibili_extract_account(cookie_str)
                     if info.get("account_id"):
                         conn.account_id = info["account_id"]
                         conn.account_name = info["account_name"]

@@ -9,6 +9,7 @@ import {
   HeartOutlined, StarOutlined, FolderOutlined,
 } from '@ant-design/icons'
 import { useTheme } from '../../constants/theme'
+export { VideoDetailDrawer } from './VideoDetailDrawer'
 
 const { Text } = Typography
 const { Meta } = Card

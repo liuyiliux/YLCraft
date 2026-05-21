@@ -21,7 +21,7 @@ import {
   getBiliFavoriteDetail,
 } from '../../api'
 import type { PlatformConnectionResponse } from '../../api'
-import { VideoList, FavoriteCard, proxyImageUrl, formatNum } from '../../components/bilibili'
+import { VideoList, FavoriteCard, VideoDetailDrawer, proxyImageUrl, formatNum } from '../../components/bilibili'
 
 const { Text, Title } = Typography
 
@@ -64,6 +64,10 @@ export default function MyDataPage() {
   const [selectedFavorite, setSelectedFavorite] = useState<any>(null)
   const [favoriteDetail, setFavoriteDetail] = useState<any[]>([])
   const [favoriteDetailLoading, setFavoriteDetailLoading] = useState(false)
+
+  // 视频详情弹窗
+  const [selectedVideo, setSelectedVideo] = useState<any>(null)
+  const [videoDetailVisible, setVideoDetailVisible] = useState(false)
 
   // 加载 B站连接
   useEffect(() => {
@@ -146,6 +150,12 @@ export default function MyDataPage() {
   const handleRefresh = () => {
     loadUserData()
     message.success('数据已刷新')
+  }
+
+  // 视频点击
+  const handleVideoClick = (video: any) => {
+    setSelectedVideo(video)
+    setVideoDetailVisible(true)
   }
 
   // 视频排序变化
@@ -544,6 +554,7 @@ export default function MyDataPage() {
                 page={videoPage}
                 pageSize={20}
                 onPageChange={handleVideoPageChange}
+                onVideoClick={handleVideoClick}
               />
             </div>
           )}
@@ -589,8 +600,17 @@ export default function MyDataPage() {
           page={1}
           pageSize={20}
           onPageChange={() => {}}
+          onVideoClick={handleVideoClick}
         />
       </Modal>
+
+      {/* 视频详情弹窗 */}
+      <VideoDetailDrawer
+        video={selectedVideo}
+        visible={videoDetailVisible}
+        onClose={() => setVideoDetailVisible(false)}
+        connId={selectedConn}
+      />
     </div>
   )
 }

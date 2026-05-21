@@ -315,7 +315,7 @@ class CookieManager:
 
     @staticmethod
     def _netscape_to_raw(cookie_content: str) -> str:
-        """从 Netscape 格式提取 raw 字符串"""
+        """从 Netscape 格式提取 raw 字符串（内部方法）"""
         parts = []
         for line in cookie_content.splitlines():
             line = line.strip()
@@ -325,6 +325,27 @@ class CookieManager:
             if len(fields) >= 7:
                 parts.append(f"{fields[5]}={fields[6]}")
         return "; ".join(parts)
+
+    def extract_raw(self, cookie_content: str) -> str:
+        """从 Cookie 内容提取 raw 字符串（支持多种格式）
+        
+        Args:
+            cookie_content: Cookie 内容（Netscape格式、JSON格式或raw格式）
+        
+        Returns:
+            raw 格式字符串 "key=value; key2=value2"
+        """
+        # 如果已经是 raw 格式（不包含 Netscape 标记），直接返回
+        if not cookie_content.startswith("# Netscape HTTP Cookie File"):
+            # 尝试解析为 Netscape 格式，然后提取 raw
+            try:
+                netscape = self._convert_to_netscape("generic", cookie_content)
+                return self._netscape_to_raw(netscape)
+            except Exception:
+                # 如果解析失败，直接返回原始内容
+                return cookie_content
+        # 如果是 Netscape 格式，直接提取
+        return self._netscape_to_raw(cookie_content)
 
     def delete_cookie(self, platform: str) -> bool:
         """从 PlatformConnection 清空 Cookie + 删除持久文件"""

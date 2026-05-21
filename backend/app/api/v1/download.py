@@ -607,6 +607,79 @@ class DownloadTask:
         self.completed_at: float | None = None
 
 
+async def _run_download_task(task: DownloadTask):
+    """执行后台下载任务"""
+    task.started_at = time.time()
+    task.status = "DOWNLOADING"
+    task.progress = 5
+    task.progress_message = "开始下载"
+    
+    try:
+        from app.services.download import download_with_manager
+        
+        # 更新全局任务字典（状态同步）
+        _download_tasks[task.task_id] = task.__dict__
+        
+        # 调用下载逻辑
+        task.progress = 10
+        task.progress_message = "解析视频信息..."
+        _download_tasks[task.task_id] = task.__dict__
+        
+        filepath = await download_with_manager(
+            url=task.url,
+            quality=task.quality or "best",
+            title=task.title,
+            page_url=task.page_url,
+            is_audio=task.is_audio,
+        )
+        
+        task.file_path = filepath
+        task.status = "DONE"
+        task.progress = 100
+        task.progress_message = "下载完成"
+        
+        # 记录到数据库
+        try:
+            from app.db.database import get_async_session
+            from app.services.asset.service import AssetService
+            
+            async with get_async_session() as db_session:
+                asset_service = AssetService(db_session)
+                platform = _detect_platform(task.url)
+                file_size = os.path.getsize(filepath) if filepath and os.path.exists(filepath) else 0
+                
+                existing = await asset_service.get_by_url(task.url)
+                if existing:
+                    await asset_service.mark_ready(existing, file_path=filepath, file_size=file_size)
+                    task.asset_id = existing.id
+                else:
+                    new_asset = await asset_service.create(
+                        type="audio" if task.is_audio else "video",
+                        title=task.title or os.path.basename(filepath),
+                        source_url=task.url,
+                        platform=platform,
+                        file_path=filepath,
+                        file_size=file_size,
+                        mime_type="audio/mpeg" if task.is_audio else "video/mp4",
+                        status="READY",
+                    )
+                    task.asset_id = new_asset.id
+                    
+        except Exception as db_e:
+            logger.warning(f"[_run_download_task] 数据库记录失败: {db_e}")
+        
+    except Exception as e:
+        task.status = "FAILED"
+        task.error = str(e)
+        task.progress_message = f"下载失败: {str(e)[:50]}"
+        logger.error(f"[_run_download_task] 下载失败: {e}")
+        
+    finally:
+        task.completed_at = time.time()
+        # 更新全局任务字典
+        _download_tasks[task.task_id] = task.__dict__
+
+
 def _download_cover_image(cover_url: str, video_path: str, title: str | None) -> str:
     """下载封面图到本地，与视频同目录"""
     import httpx

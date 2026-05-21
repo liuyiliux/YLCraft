@@ -319,7 +319,7 @@ export default function DownloadPage() {
                         onClick={() => handleDownload(q)} disabled={downloading}
                         style={{ height: 52, padding: '0 24px', border: `1px solid ${color}44`, color, background: downloading ? 'rgba(0,0,0,0.04)' : `${color}11` }}>
                         <div style={{ lineHeight: 1.2 }}>
-                          <div style={{ fontSize: 14, fontWeight: 700 }}>{q.quality}</div>
+                          <div style={{ fontSize: 14, fontWeight: 700 }}>{q.resolution || q.quality}</div>
                           <div style={{ fontSize: 11, opacity: 0.7 }}>{q.filesize}</div>
                         </div>
                       </Button>

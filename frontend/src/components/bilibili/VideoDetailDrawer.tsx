@@ -66,7 +66,8 @@ export function VideoDetailDrawer({ video, visible, onClose, connId, width = 640
   const borderColor = THEME.border
 
   // 同时兼容 'bili'（crawler/up-analytics）和 'bilibili'（后端API）两种标识
-  const isBili = video?.platform === 'bili' || video?.platform === 'bilibili'
+  // 也通过 bvid 来判断（收藏夹视频可能没有 platform 属性）
+  const isBili = video?.platform === 'bili' || video?.platform === 'bilibili' || !!video?.bvid
 
   // Tab
   const [activeTab, setActiveTab] = useState('detail')
