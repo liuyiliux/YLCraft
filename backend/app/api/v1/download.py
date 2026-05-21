@@ -50,6 +50,7 @@ class VideoQuality(BaseModel):
 
 class ParseResponse(BaseModel):
     success: bool
+    asset_id: str = ""   # 素材ID（解析时创建）
     title: str = ""
     author: str = ""
     platform: str = ""
@@ -132,13 +133,12 @@ async def _get_qualities(url: str, title: str, platform: str) -> list[VideoQuali
                 else:
                     quality = ext
 
-                size_str = "未知"
-                if filesize and filesize > 0:
-                    size_str = f"{filesize / 1024 / 1024:.1f}MB"
-                elif tbr and tbr > 0 and duration > 0:
-                    # 正确估算：tbr (kbps) * duration (秒) / 8 / 1024 = MB
-                    estimated_size = tbr * duration / 8 / 1024
-                    size_str = f"~{estimated_size:.1f}MB"
+                from app.services.download.base import BaseDownloader
+                size_str = BaseDownloader.calculate_filesize(
+                    filesize_bytes=filesize,
+                    bitrate_bps=tbr * 1000 if tbr else None,  # convert kbps to bps
+                    duration_seconds=duration,
+                )
 
                 qualities.append(VideoQuality(
                     quality=quality,
@@ -162,6 +162,7 @@ async def _get_qualities(url: str, title: str, platform: str) -> list[VideoQuali
 async def parse_download_url(req: ParseRequest):
     """解析视频链接，返回元数据 + 多清晰度列表"""
     url = req.url
+    parsed_asset_id = ""
     
     # 1. 先尝试使用平台专用下载器
     try:
@@ -169,6 +170,7 @@ async def parse_download_url(req: ParseRequest):
         info_new = await parse_with_manager(url)
         if info_new:
             logger.info(f"[parse] 使用平台专用下载器解析成功: {url[:60]}")
+            
             # 转换为 ParseResponse 格式
             qualities = [
                 VideoQuality(
@@ -179,8 +181,34 @@ async def parse_download_url(req: ParseRequest):
                 )
                 for q in info_new.qualities
             ]
+            
+            # 解析时创建素材记录
+            page_url = info_new.page_url or url
+            try:
+                from app.db.database import get_async_session
+                from app.services.asset.service import AssetService
+                
+                async with get_async_session() as db_session:
+                    asset_service = AssetService(db_session)
+                    asset = await asset_service.create_from_parse(
+                        source_url=url,
+                        title=info_new.title,
+                        platform=info_new.platform,
+                        author=info_new.author,
+                        cover_url=info_new.cover_url,
+                        duration=info_new.duration,
+                        metadata={"parse_method": "platform_manager"},
+                    )
+                    await db_session.commit()
+                    await db_session.refresh(asset)
+                    parsed_asset_id = asset.id
+                    logger.info(f"[parse] asset tracked (platform) | id={asset.id}")
+            except Exception as asset_e:
+                logger.warning(f"[parse] asset tracking failed (platform): {asset_e}")
+            
             return ParseResponse(
                 success=True,
+                asset_id=parsed_asset_id,
                 title=info_new.title,
                 author=info_new.author,
                 platform=info_new.platform,
@@ -188,7 +216,7 @@ async def parse_download_url(req: ParseRequest):
                 duration=info_new.duration,
                 duration_str=_format_duration(info_new.duration),
                 qualities=qualities,
-                page_url=info_new.page_url,
+                page_url=page_url,
             )
     except Exception as e:
         logger.warning(f"[parse] 平台专用下载器失败，降级到 yt-dlp: {e}")
@@ -293,14 +321,17 @@ async def parse_download_url(req: ParseRequest):
             await db_session.commit()
             await db_session.refresh(asset)
             logger.info(f"[parse] asset tracked | id={asset.id} | platform={platform}")
+            parsed_asset_id = asset.id
     except Exception as e:
         logger.warning(f"[parse] asset tracking failed (non-blocking): {e}")
+        parsed_asset_id = ""
 
     # page_url：原始分享页 URL，用于 yt-dlp 下载（不是 CDN 直链）
     page_url = info.get("original_url", "") or url
 
     return ParseResponse(
         success=True,
+        asset_id=parsed_asset_id,
         title=title,
         author=author_name,
         platform=platform,
@@ -323,6 +354,7 @@ class DownloadRequest(BaseModel):
     title: str | None = Field(None, description="文件名（不含扩展名）")
     page_url: str | None = Field(None, description="原始分享页URL（用于yt-dlp格式枚举）")
     is_audio: bool = Field(False, description="是否仅下载音频（mp3/m4a）")
+    asset_id: str | None = Field(None, description="素材ID（解析时创建，用于关联素材记录）")
 
 
 def _sanitize_filename(name: str) -> str:
@@ -485,21 +517,41 @@ async def download_video(req: DownloadRequest):
     file_size = os.path.getsize(filepath) if os.path.exists(filepath) else 0
     
     # 从数据库查询已有元数据（parse 阶段已保存）
+    # 先尝试用 page_url 查询，再用 url 查询
     width = height = duration = 0
     thumbnail_path = ""
+    title = ""
+    author = ""
+    platform = ""
+    cover_url = ""
+    
+    search_urls = [req.page_url, req.url] if req.page_url else [req.url]
+    
     try:
         from app.db.database import get_async_session
         from app.services.asset.service import AssetService
         async with get_async_session() as _db_session:
             _asset_service = AssetService(_db_session)
-            _existing = await _asset_service.get_by_url(effective_url)
+            _existing = None
+            for url_to_search in search_urls:
+                _existing = await _asset_service.get_by_url(url_to_search)
+                if _existing:
+                    break
+            
             if _existing:
                 width = _existing.width or 0
                 height = _existing.height or 0
                 duration = _existing.duration or 0
                 thumbnail_path = _existing.cover_url or ""
+                title = _existing.title or ""
+                author = _existing.author or ""
+                platform = _existing.platform or ""
+                cover_url = _existing.cover_url or ""
     except Exception:
         pass
+    
+    # 如果没有找到已有记录，使用请求参数中的标题或文件名
+    effective_title = title or req.title or filename
     
     from app.db.database import get_async_session
     from app.services.asset.service import AssetService
@@ -513,15 +565,38 @@ async def download_video(req: DownloadRequest):
 
     async with get_async_session() as db_session:
         asset_service = AssetService(db_session)
-        existing = await asset_service.get_by_url(effective_url)
-        platform = _detect_platform(effective_url)
+        
+        # 优先使用 req.asset_id 查找资产（最准确）
+        existing = None
+        if req.asset_id:
+            existing = await asset_service.get_by_id(req.asset_id)
+            if existing:
+                logger.info(f"[download] 使用 asset_id 找到素材: {req.asset_id}")
+        
+        # 如果没有 asset_id 或找不到，按 URL 查找
+        if not existing:
+            for url_to_search in search_urls:
+                existing = await asset_service.get_by_url(url_to_search)
+                if existing:
+                    break
+        
+        # 如果还是没找到，尝试用原始 URL
+        if not existing:
+            existing = await asset_service.get_by_url(req.url)
+        
+        detected_platform = platform or _detect_platform(effective_url)
+        
         if existing:
             await asset_service.mark_ready(existing, file_path=filepath, file_size=file_size, mime_type=media_type)
             if width: existing.width = width
             if height: existing.height = height
             if duration: existing.duration = duration
-            if thumbnail_path and not existing.cover_url:
-                existing.cover_url = thumbnail_path
+            if cover_url and not existing.cover_url:
+                existing.cover_url = cover_url
+            # 保留原始标题和作者（如果已存在）
+            if title: existing.title = title
+            if author: existing.author = author
+            if detected_platform: existing.platform = detected_platform
             # 合并下载元数据到已有 metadata
             if existing.metadata_json:
                 try:
@@ -540,7 +615,7 @@ async def download_video(req: DownloadRequest):
             asset_type = "audio" if req.is_audio else "video"
             new_asset = await asset_service.create(
                 asset_type=asset_type,
-                title=req.title or filename,
+                title=effective_title,
                 source_url=effective_url,
                 platform=platform,
                 file_path=filepath,
@@ -589,18 +664,19 @@ _download_tasks: dict[str, dict] = {}
 
 class DownloadTask:
     def __init__(self, task_id: str, url: str, quality: str | None,
-                 title: str | None, page_url: str | None, is_audio: bool):
+                 title: str | None, page_url: str | None, is_audio: bool,
+                 asset_id: str | None = None):
         self.task_id = task_id
         self.url = url
         self.quality = quality
         self.title = title
         self.page_url = page_url
         self.is_audio = is_audio
+        self.asset_id = asset_id  # 素材ID（解析时创建）
         self.status = "PENDING"
         self.progress = 0
         self.progress_message = ""
         self.file_path: str | None = None
-        self.asset_id: str | None = None
         self.error: str | None = None
         self.created_at = time.time()
         self.started_at: float | None = None
@@ -667,9 +743,23 @@ async def _run_download_task(task: DownloadTask):
                 platform = _detect_platform(task.url)
                 file_size = os.path.getsize(filepath) if filepath and os.path.exists(filepath) else 0
                 
-                existing = await asset_service.get_by_url(task.url)
+                # 优先使用 task.asset_id 查找资产（最准确）
+                existing = None
+                if task.asset_id:
+                    existing = await asset_service.get_by_id(task.asset_id)
+                    if existing:
+                        logger.info(f"[_run_download_task] 使用 asset_id 找到素材: {task.asset_id}")
+                
+                # 如果没有 asset_id 或找不到，按 URL 查找
+                if not existing:
+                    if task.page_url:
+                        existing = await asset_service.get_by_url(task.page_url)
+                    if not existing:
+                        existing = await asset_service.get_by_url(task.url)
+                
                 if existing:
-                    await asset_service.mark_ready(existing, file_path=filepath, file_size=file_size)
+                    mime_type = "audio/mpeg" if task.is_audio else "video/mp4"
+                    await asset_service.mark_ready(existing, file_path=filepath, file_size=file_size, mime_type=mime_type)
                     task.asset_id = existing.id
                 else:
                     new_asset = await asset_service.create(
@@ -743,6 +833,7 @@ class TaskCreateRequest(BaseModel):
     title: str | None = Field(None, description="文件名")
     page_url: str | None = Field(None, description="原始分享页URL")
     is_audio: bool = Field(False, description="是否仅下载音频")
+    asset_id: str | None = Field(None, description="素材ID（解析时创建，用于关联素材记录）")
 
 
 @router.post("/tasks", summary="创建下载任务（后台，后台轮询）")
@@ -756,6 +847,7 @@ async def create_download_task(req: TaskCreateRequest, background: BackgroundTas
         title=req.title,
         page_url=req.page_url,
         is_audio=req.is_audio,
+        asset_id=req.asset_id,
     )
     _download_tasks[task_id] = task.__dict__
     background.add_task(_run_download_task, task)

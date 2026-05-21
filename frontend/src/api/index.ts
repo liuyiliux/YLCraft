@@ -93,8 +93,8 @@ export const getAssetStats = () => request('/assets/stats')
 export const parseDownloadUrl = (url: string) =>
   request('/download/parse', { method: 'POST', body: JSON.stringify({ url }) })
 
-export const createDownloadTask = (url: string, quality?: string, title?: string, pageUrl?: string) =>
-  request('/download/tasks', { method: 'POST', body: JSON.stringify({ url, quality, title, page_url: pageUrl }) })
+export const createDownloadTask = (url: string, quality?: string, title?: string, pageUrl?: string, assetId?: string) =>
+  request('/download/tasks', { method: 'POST', body: JSON.stringify({ url, quality, title, page_url: pageUrl, asset_id: assetId }) })
 
 export const getDownloadTask = (taskId: string) => request(`/download/tasks/${taskId}`)
 
@@ -110,6 +110,7 @@ export const downloadVideoWithProgress = (
   quality: string | undefined,
   title: string | undefined,
   pageUrl: string | undefined,
+  assetId: string | undefined,
   onProgress: (percent: number) => void,
 ): Promise<{ blob: Blob; filePath: string }> =>
   new Promise((resolve, reject) => {
@@ -136,7 +137,7 @@ export const downloadVideoWithProgress = (
     xhr.onerror = () => reject(new Error('网络错误'))
     xhr.ontimeout = () => reject(new Error('下载超时'))
 
-    const jsonBody = JSON.stringify({ url, quality: quality || null, title: title || null, page_url: pageUrl || null })
+    const jsonBody = JSON.stringify({ url, quality: quality || null, title: title || null, page_url: pageUrl || null, asset_id: assetId || null })
     xhr.setRequestHeader('Content-Type', 'application/json')
     xhr.send(jsonBody)
   })

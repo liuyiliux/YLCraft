@@ -101,7 +101,7 @@ export default function DownloadPage() {
     setDownloading(true); setDlProgress(0); setDlError(''); setSavedFilePath('')
     try {
       const downloadUrl = result.video_url || result.page_url || url
-      const { task_id } = await createDownloadTask(downloadUrl, quality?.quality, result.title, result.page_url)
+      const { task_id } = await createDownloadTask(downloadUrl, quality?.quality, result.title, result.page_url, result.asset_id)
       let pollCount = 0
       const poll = async (): Promise<void> => {
         const res = await getDownloadTask(task_id)

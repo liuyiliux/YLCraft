@@ -312,6 +312,7 @@ export interface VideoQuality {
 
 export interface DownloadParseResponse {
   success: boolean
+  asset_id: string   // 素材ID（解析时创建）
   title: string
   author: string
   platform: string

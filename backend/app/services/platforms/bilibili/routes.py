@@ -176,6 +176,7 @@ async def _get_bili_client(conn_id: str = "") -> "BilibiliClient":
     from app.services.platforms.types import ClientConfig, ClientMode
 
     cookie = get_raw_cookie(conn_id) if conn_id else ""
+    logger.debug(f"[bili/_get_bili_client] conn_id={conn_id}, cookie len={len(cookie) if cookie else 0}, preview={cookie[:80] if cookie else 'NONE'!r}")
     config = ClientConfig(
         platform="bili",
         mode=ClientMode.API,

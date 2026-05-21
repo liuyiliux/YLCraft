@@ -104,43 +104,56 @@ class BilibiliDownloader(BaseDownloader):
             if not detail:
                 logger.error(f"[BilibiliDownloader] 获取视频详情失败: {bvid}")
                 return None
+            
+            # 检查视频是否有效（标题为空表示获取失败）
+            title = getattr(detail, "title", "")
+            if not title:
+                logger.error(f"[BilibiliDownloader] 视频详情无效（标题为空）: {bvid}")
+                return None
 
             # 获取高清播放地址（DASH格式，返回 dict）
             play_info = await client.get_video_play_info(bvid)
+            
+            # 检查播放地址是否有效
+            if not play_info or (not play_info.get("dash") and not play_info.get("durl")):
+                logger.error(f"[BilibiliDownloader] 获取播放地址失败: {bvid}")
+                return None
 
             # 构建清晰度列表
             qualities = []
+            seen_resolutions = set()
             if play_info and play_info.get("dash"):
                 dash = play_info["dash"]
                 # 获取视频时长用于估算文件大小
                 video_duration = getattr(detail, "duration", 0) or 0
-                # 视频流
-                for video in dash.get("video", []):
+                # 视频流（按清晰度从高到低排序）
+                videos = sorted(dash.get("video", []), key=lambda v: v.get("id", 0), reverse=True)
+                for i, video in enumerate(videos):
                     qn = video.get("id", 0)
                     quality_label = BILI_QUALITY_MAP.get(qn, f"qn{qn}")
-                    resolution = f"{video.get('width', 0)}x{video.get('height', 0)}"
-                    # 获取文件大小，优先使用直接大小，否则用比特率估算
-                    size = video.get("size", 0)
-                    bitrate = video.get("bitrate", 0)
-                    filesize = self._format_filesize(size, video_duration, bitrate)
+                    width = video.get("width", 0)
+                    height = video.get("height", 0)
+                    resolution = f"{width}x{height}"
+                    # 跳过重复分辨率
+                    if resolution in seen_resolutions:
+                        continue
+                    seen_resolutions.add(resolution)
+                    # 使用基类的公共方法计算文件大小
+                    filesize = self.calculate_filesize(
+                        filesize_bytes=video.get("size"),
+                        bitrate_bps=video.get("bandwidth", video.get("bitrate")),
+                        duration_seconds=video_duration,
+                    )
+                    
                     qualities.append(VideoQuality(
                         quality=str(qn),
                         resolution=resolution,
                         filesize=filesize,
                         url=video.get("baseUrl", ""),
                     ))
-            else:
-                # 降级：使用普通清晰度（基于时长估算文件大小）
-                video_duration = getattr(detail, "duration", 0) or 0
-                qualities = [
-                    VideoQuality(quality="80", resolution="1920x1080", filesize=self._estimate_filesize(video_duration, 5000), url=""),  # ~5000 kbps
-                    VideoQuality(quality="64", resolution="1280x720", filesize=self._estimate_filesize(video_duration, 2500), url=""),  # ~2500 kbps
-                    VideoQuality(quality="32", resolution="854x480", filesize=self._estimate_filesize(video_duration, 1000), url=""),  # ~1000 kbps
-                    VideoQuality(quality="16", resolution="640x360", filesize=self._estimate_filesize(video_duration, 500), url=""),   # ~500 kbps
-                ]
 
             return VideoInfo(
-                title=getattr(detail, "title", "") or "",
+                title=title,
                 author=getattr(detail, "author", "") or "",
                 platform="bilibili",
                 cover_url=getattr(detail, "video_cover", "") or "",
@@ -326,64 +339,26 @@ class BilibiliDownloader(BaseDownloader):
             str(output_path),
         ]
 
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        _, stderr = await proc.communicate()
+        # 使用 run_in_executor 配合 subprocess.run，兼容 Windows
+        import subprocess
+        loop = asyncio.get_running_loop()
+        
+        def run_ffmpeg():
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                errors='ignore'
+            )
+            return result.returncode, result.stderr
+        
+        returncode, stderr = await loop.run_in_executor(None, run_ffmpeg)
 
-        if proc.returncode != 0:
-            raise ValueError(f"ffmpeg 合并失败: {stderr.decode(errors='ignore')[:200]}")
+        if returncode != 0:
+            raise ValueError(f"ffmpeg 合并失败: {stderr[:200]}")
 
-    def _format_filesize(self, size_bytes: int, duration: int = 0, bitrate: int = 0) -> str:
-        """格式化文件大小（支持估算）
-        
-        Args:
-            size_bytes: 文件大小（字节）
-            duration: 视频时长（秒），用于估算
-            bitrate: 比特率（bps），用于估算
-        
-        Returns:
-            格式化的文件大小字符串
-        """
-        if size_bytes > 0:
-            for unit in ["B", "KB", "MB", "GB", "TB"]:
-                if size_bytes < 1024:
-                    return f"{size_bytes:.1f}{unit}"
-                size_bytes /= 1024
-            return f"{size_bytes:.1f}PB"
-        
-        # 如果没有直接的文件大小，尝试估算
-        if duration > 0 and bitrate > 0:
-            # 比特率 * 时长 / 8 = 字节数
-            estimated_bytes = bitrate * duration / 8
-            return self._format_filesize(int(estimated_bytes))
-        
-        return "未知"
 
-    def _estimate_filesize(self, duration_seconds: int, bitrate_kbps: int) -> str:
-        """根据时长和比特率估算文件大小
-        
-        Args:
-            duration_seconds: 视频时长（秒）
-            bitrate_kbps: 比特率（kbps）
-        
-        Returns:
-            格式化的文件大小字符串（带 ~ 表示估算）
-        """
-        if duration_seconds <= 0 or bitrate_kbps <= 0:
-            return "未知"
-        
-        # 比特率(kbps) * 时长(秒) / 8 / 1024 = MB
-        size_mb = bitrate_kbps * duration_seconds / 8 / 1024
-        
-        if size_mb < 1:
-            return f"~{size_mb * 1024:.0f}KB"
-        elif size_mb < 1024:
-            return f"~{size_mb:.1f}MB"
-        else:
-            return f"~{size_mb / 1024:.1f}GB"
 
     def _safe_filename(self, name: str) -> str:
         """生成安全的文件名"""

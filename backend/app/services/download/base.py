@@ -37,6 +37,40 @@ class BaseDownloader(abc.ABC):
 
     platform_name: str = ""  # 平台名称 (e.g., "bilibili", "twitter")
 
+    @staticmethod
+    def calculate_filesize(
+        filesize_bytes: Optional[int] = None,
+        bitrate_bps: Optional[int] = None,
+        duration_seconds: Optional[int] = None,
+    ) -> str:
+        """
+        计算并格式化文件大小
+
+        Args:
+            filesize_bytes: 已知文件大小（字节）
+            bitrate_bps: 比特率（bps）
+            duration_seconds: 视频时长（秒）
+
+        Returns:
+            格式化的文件大小字符串，例如 "100MB" 或 "~50MB"
+        """
+        # 优先使用已知的文件大小
+        if filesize_bytes and filesize_bytes > 0:
+            for unit in ["B", "KB", "MB", "GB", "TB"]:
+                if filesize_bytes < 1024:
+                    return f"{filesize_bytes:.1f}{unit}"
+                filesize_bytes /= 1024
+            return f"{filesize_bytes:.1f}PB"
+        
+        # 否则使用比特率估算
+        if bitrate_bps and bitrate_bps > 0 and duration_seconds and duration_seconds > 0:
+            # bandwidth (bps) / 1000 = tbr (kbps)
+            # tbr (kbps) * duration (秒) / 8 / 1024 = MB
+            estimated_size = (bitrate_bps / 1000) * duration_seconds / 8 / 1024
+            return f"~{estimated_size:.1f}MB"
+        
+        return "未知"
+
     @abc.abstractmethod
     async def parse(self, url: str) -> Optional[VideoInfo]:
         """

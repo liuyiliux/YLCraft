@@ -566,8 +566,8 @@ function QrLoginPanel({
     // 开发环境直接连接后端 8000，生产环境通过当前 origin
     const isDev = import.meta.env.DEV
     const wsUrl = isDev
-      ? `ws://${window.location.hostname}:8000/api/v1/platforms/acquire/qrcode/${sid}/ws`
-      : `${window.location.protocol === 'https:' ? 'wss:' : 'ws://'}${window.location.host}/api/v1/platforms/acquire/qrcode/${sid}/ws`
+      ? `ws://${window.location.hostname}:8000/api/v1/acquire/qrcode/${sid}/ws`
+      : `${window.location.protocol === 'https:' ? 'wss:' : 'ws://'}${window.location.host}/api/v1/acquire/qrcode/${sid}/ws`
     console.log('[WS] Connecting to:', wsUrl)
     const ws = new WebSocket(wsUrl)
 

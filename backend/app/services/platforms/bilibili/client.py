@@ -1002,9 +1002,15 @@ class BilibiliClient(BasePlatformClient):
         ugc_params = {
             "bvid": bvid,
             "qn": 127,
-            "fnval": 4048,    # 更现代的格式值（支持 8K/HDR/杜比）
+            "fnval": 4048,        # 更现代的格式值（支持 8K/HDR/杜比）
+            "fnver": 0,
             "fourk": 1,
+            "platform": "web",    # 必须参数
+            "high_level": 1,      # 高清画质标识
         }
+        # cid 是可选的，但某些视频需要
+        if cid:
+            ugc_params["cid"] = cid
         ugc_query = await self._sign_params(ugc_params)
         ugc_play_url = f"{BASE_URL}{VIDEO_PLAYER}?{ugc_query}"
         
@@ -1033,7 +1039,9 @@ class BilibiliClient(BasePlatformClient):
                 "cid": cid,
                 "qn": 127,
                 "fnval": 4048,
+                "fnver": 0,
                 "fourk": 1,
+                "platform": "web",
             }
             pgc_query = await self._sign_params(pgc_params)
             pgc_play_url = f"{BASE_URL}/pgc/player/web/playurl?{pgc_query}"
@@ -1059,10 +1067,14 @@ class BilibiliClient(BasePlatformClient):
         self._log(f"Trying unsigned UGC API as last resort", "warning")
         fallback_params = {
             "bvid": bvid,
-            "qn": 80,           # 降级到 1080P
+            "qn": 80,            # 降级到 1080P
             "fnval": 1,          # 基础格式
+            "fnver": 0,
             "platform": "web",
+            "wts": int(time.time()),  # 添加时间戳
         }
+        if cid:
+            fallback_params["cid"] = cid
         fallback_url = f"{BASE_URL}{VIDEO_PLAYER}?{urlencode(fallback_params)}"
         
         try:
@@ -1243,11 +1255,18 @@ class BilibiliClient(BasePlatformClient):
             url = f"{BASE_URL}{WBI_KEY_URL}"
             response = await self.request("GET", url)
             
-            if isinstance(response, dict) and response.get("code") == 0:
-                data = response.get("data", {})
-                mid = data.get("mid")
-                if mid:
-                    return str(mid)
+            self._log(f"nav response type: {type(response)}, keys: {list(response.keys()) if isinstance(response, dict) else 'N/A'}", "debug")
+            
+            if isinstance(response, dict):
+                self._log(f"nav response code: {response.get('code')}, data keys: {list(response.get('data', {}).keys())}")
+                if response.get("code") == 0:
+                    data = response.get("data", {})
+                    # 尝试多种可能的字段名
+                    mid = data.get("mid") or data.get("midStr") or data.get("uid")
+                    if mid:
+                        self._log(f"Got current user mid: {mid}")
+                        return str(mid)
+            self._log("Cannot find mid from nav response", "warning")
             return None
         except Exception as e:
             self._log(f"Get current user mid error: {e}", "error")
@@ -1278,14 +1297,22 @@ class BilibiliClient(BasePlatformClient):
             self._log(f"Current user mid: {current_mid}")
             params = {"up_mid": current_mid, "pn": 1, "ps": 100, "web_location": "333.1387"}
         
-        url = f"{BASE_URL}{FAV_LIST}?{urlencode(params)}"
-        
         try:
+            # WBI 签名
+            query_string = await self._sign_params(params)
+            url = f"{BASE_URL}{FAV_LIST}?{query_string}"
+            
             response = await self.request("GET", url)
+            
+            self._log(f"Favorite list API response keys: {list(response.keys()) if isinstance(response, dict) else type(response)}", "debug")
             
             if isinstance(response, dict) and response.get("code") == 0:
                 data = response.get("data", {})
-                favorites = data.get("list", []) or []
+                self._log(f"Favorite data keys: {list(data.keys())}", "debug")
+                
+                # 尝试多种可能的字段名
+                favorites = data.get("list", []) or data.get("folders", []) or data.get("data", []) or []
+                self._log(f"Got {len(favorites)} favorites", "debug")
                 
                 result = []
                 for fav in favorites:
@@ -1293,7 +1320,7 @@ class BilibiliClient(BasePlatformClient):
                         "id": str(fav.get("id", "")),
                         "title": fav.get("title", ""),
                         "cover": self._fix_bili_url(fav.get("cover", "")),
-                        "media_count": fav.get("media_count", 0),
+                        "media_count": fav.get("media_count", 0) or fav.get("cnt", 0),
                         "ctime": fav.get("ctime", 0),
                         "mtime": fav.get("mtime", 0),
                         "fav_state": fav.get("fav_state", 0),

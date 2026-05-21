@@ -343,7 +343,7 @@ def _register_routes():
     # Cookie 自动获取路由（Playwright + QrCode + WebSocket）
     try:
         from app.api.v1 import cookie_acquisition
-        app.include_router(cookie_acquisition.router, prefix="/api/v1/platforms", tags=["Cookie Acquisition"])
+        app.include_router(cookie_acquisition.router, prefix="/api/v1", tags=["Cookie Acquisition"])
     except Exception as e:
         logger.warning(f"Could not load cookie_acquisition router: {e}")
 

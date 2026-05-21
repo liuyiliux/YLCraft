@@ -66,8 +66,8 @@ export function VideoDetailDrawer({ video, visible, onClose, connId, width = 640
   const borderColor = THEME.border
 
   // 同时兼容 'bili'（crawler/up-analytics）和 'bilibili'（后端API）两种标识
-  // 也通过 bvid 来判断（收藏夹视频可能没有 platform 属性）
-  const isBili = video?.platform === 'bili' || video?.platform === 'bilibili' || !!video?.bvid
+  // 也通过 bvid/bv_id 来判断（收藏夹视频可能没有 platform 属性）
+  const isBili = video?.platform === 'bili' || video?.platform === 'bilibili' || !!video?.bvid || !!video?.bv_id
 
   // Tab
   const [activeTab, setActiveTab] = useState('detail')
@@ -118,12 +118,15 @@ export function VideoDetailDrawer({ video, visible, onClose, connId, width = 640
     setBiliVideoInfo(null)
     setBiliStats(null)
 
+    // 获取 bvid（兼容收藏夹视频的 bv_id 字段）
+    const bvid = video.id || video.bvid || video.bv_id
+    
     // 加载基础详情
     if (isBili) {
       setDetailLoading(true)
       Promise.all([
-        getBiliVideoInfo(video.id || video.bvid, connId).catch(() => null),
-        getBiliStats({ bvid: video.id || video.bvid, conn_id: connId }).catch(() => null),
+        getBiliVideoInfo(bvid, connId).catch(() => null),
+        getBiliStats({ bvid, conn_id: connId }).catch(() => null),
       ]).then(([infoRes, statsRes]) => {
         if (infoRes?.success) setBiliVideoInfo(infoRes.data)
         if (statsRes?.success) setBiliStats(statsRes.data)
@@ -138,7 +141,7 @@ export function VideoDetailDrawer({ video, visible, onClose, connId, width = 640
   // 懒加载各 Tab 数据
   const handleTabChange = useCallback((tab: string) => {
     setActiveTab(tab)
-    const bvid = video?.id || video?.bvid
+    const bvid = video?.id || video?.bvid || video?.bv_id
     if (!bvid || !isBili) return
 
     if (tab === 'danmaku' && danmakuList.length === 0) {
@@ -184,7 +187,7 @@ export function VideoDetailDrawer({ video, visible, onClose, connId, width = 640
   // 发送评论
   const handleSendComment = async () => {
     if (!commentInput.trim()) return
-    const bvid = video?.id || video?.bvid
+    const bvid = video?.id || video?.bvid || video?.bv_id
     if (!bvid) return
     setSendingComment(true)
     try {
@@ -209,7 +212,7 @@ export function VideoDetailDrawer({ video, visible, onClose, connId, width = 640
 
   // 加载更多评论
   const handleLoadMoreComments = async () => {
-    const bvid = video?.id || video?.bvid
+    const bvid = video?.id || video?.bvid || video?.bv_id
     if (!bvid || !commentHasMore) return
     setCommentLoading(true)
     try {
@@ -238,7 +241,7 @@ export function VideoDetailDrawer({ video, visible, onClose, connId, width = 640
     setCommentNextOffset('')
     setCommentHasMore(true)
     setCommentPage(1)
-    const bvid = video?.id || video?.bvid
+    const bvid = video?.id || video?.bvid || video?.bv_id
     if (!bvid) return
     setCommentLoading(true)
     getBiliComments(bvid, { page: 1, sort, conn_id: connId }).then((res: any) => {
@@ -253,7 +256,7 @@ export function VideoDetailDrawer({ video, visible, onClose, connId, width = 640
 
   // 下载字幕
   const handleDownloadSubtitle = (lan: string, format: string) => {
-    const bvid = video?.id || video?.bvid
+    const bvid = video?.id || video?.bvid || video?.bv_id
     if (!bvid) return
     window.open(`/api/v1/bilibili/subtitle/download?bvid=${bvid}&lan=${lan}&format=${format}&conn_id=${connId || ''}`, '_blank')
   }
@@ -472,7 +475,10 @@ export function VideoDetailDrawer({ video, visible, onClose, connId, width = 640
                       <option value="xml">XML</option>
                     </select>
                     <Button size="small" icon={<DownloadOutlined />} disabled={danmakuList.length === 0}
-                      onClick={() => window.open(`/api/v1/bilibili/danmaku/download?bvid=${video.id}&format=${danmakuFormat}`, '_blank')}>
+                      onClick={() => {
+                        const bvid = video.id || video.bvid || video.bv_id
+                        window.open(`/api/v1/bilibili/danmaku/download?bvid=${bvid}&format=${danmakuFormat}`, '_blank')
+                      }}>
                       下载
                     </Button>
                     <Button size="small" icon={<ReloadOutlined />} loading={danmakuLoading}
