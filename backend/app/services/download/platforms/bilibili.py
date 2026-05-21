@@ -54,15 +54,32 @@ class BilibiliDownloader(BaseDownloader):
         if self._client is None:
             from app.services.platforms.bilibili.client import BilibiliClient
             from app.services.platforms.types import ClientConfig
-            # 从 CookieManager 获取 B站 Cookie
-            cookie_manager = get_cookie_manager()
+            
             cookie = ""
+            
+            # 方式1：优先从平台连接服务获取B站连接的Cookie
             try:
-                cookie_jar = cookie_manager.get_cookiejar_for_url("https://www.bilibili.com")
-                if cookie_jar:
-                    cookie = "; ".join([f"{c.name}={c.value}" for c in cookie_jar])
+                from app.services.platform_connection.service import PlatformConnectionService
+                
+                service = PlatformConnectionService()
+                conn = service.get_default_connection("bilibili")
+                if conn:
+                    cookie = service.get_raw_cookie(conn.id) or ""
+                    logger.info(f"[BilibiliDownloader] 从连接服务获取Cookie成功")
             except Exception as e:
-                logger.warning(f"[BilibiliDownloader] 获取 Cookie 失败: {e}")
+                logger.warning(f"[BilibiliDownloader] 从连接服务获取Cookie失败: {e}")
+            
+            # 方式2：如果方式1失败，从 CookieManager 获取
+            if not cookie:
+                try:
+                    cookie_manager = get_cookie_manager()
+                    cookie_jar = cookie_manager.get_cookiejar_for_url("https://www.bilibili.com")
+                    if cookie_jar:
+                        cookie = "; ".join([f"{c.name}={c.value}" for c in cookie_jar])
+                    logger.info(f"[BilibiliDownloader] 从CookieManager获取Cookie")
+                except Exception as e:
+                    logger.warning(f"[BilibiliDownloader] 从CookieManager获取Cookie失败: {e}")
+            
             config = ClientConfig(platform="bilibili", cookie=cookie)
             self._client = BilibiliClient(config)
         return self._client
