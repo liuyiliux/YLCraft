@@ -10,8 +10,7 @@ import {
 import {
   UserOutlined, TeamOutlined, VideoCameraOutlined, HeartOutlined,
   FolderOutlined, ReloadOutlined, BarChartOutlined,
-  LikeOutlined, StarOutlined, PlayCircleOutlined, EyeOutlined,
-  MessageOutlined, LinkOutlined,
+  LikeOutlined, StarOutlined, PlayCircleOutlined,
 } from '@ant-design/icons'
 import { useTheme } from '../../constants/theme'
 import {
@@ -20,10 +19,9 @@ import {
   getBiliUpVideos,
   getBiliFavorites,
   getBiliFavoriteDetail,
-  getBiliVideoInfo,
 } from '../../api'
 import type { PlatformConnectionResponse } from '../../api'
-import { VideoList, FavoriteCard, VideoDetailDrawer, proxyImageUrl, formatNum } from '../../components/bilibili'
+import { VideoList, FavoriteCard, proxyImageUrl, formatNum } from '../../components/bilibili'
 
 const { Text, Title } = Typography
 
@@ -67,10 +65,6 @@ export default function MyDataPage() {
   const [favoriteDetail, setFavoriteDetail] = useState<any[]>([])
   const [favoriteDetailLoading, setFavoriteDetailLoading] = useState(false)
 
-  // 视频详情
-  const [selectedVideo, setSelectedVideo] = useState<any>(null)
-  const [videoDetailLoading, setVideoDetailLoading] = useState(false)
-
   // 加载 B站连接
   useEffect(() => {
     listPlatformConnections().then((res: any) => {
@@ -112,10 +106,10 @@ export default function MyDataPage() {
           setProfile(profileRes.data)
         }
 
-        // 获取视频列表（数据概览固定用最新排序）
+        // 获取视频列表
         const videosRes = await getBiliUpVideos({
           uid,
-          order: 'pubdate',
+          order: videoOrder,
           page: 1,
           page_size: 20,
           conn_id: selectedConn,
@@ -227,24 +221,6 @@ export default function MyDataPage() {
       console.error('获取收藏夹详情失败:', e)
     } finally {
       setFavoriteDetailLoading(false)
-    }
-  }
-
-  // 点击视频查看详情
-  const handleVideoClick = async (video: any) => {
-    // 优先用列表已有数据，API 用来补充完整信息
-    setSelectedVideo(video)
-    setVideoDetailLoading(true)
-    try {
-      const bvid = video.bvid || video.id
-      const res = await getBiliVideoInfo(bvid, selectedConn)
-      if (res?.success) {
-        setSelectedVideo({ ...video, ...res.data })
-      }
-    } catch (e) {
-      console.error('获取视频详情失败:', e)
-    } finally {
-      setVideoDetailLoading(false)
     }
   }
 
@@ -418,7 +394,41 @@ export default function MyDataPage() {
           {activeTab === 'overview' && (
             <div>
               <Row gutter={[16, 16]}>
-                <Col xs={24} sm={12}>
+                <Col xs={24} sm={12} md={6}>
+                  <Card
+                    style={{
+                      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                      borderRadius: 12,
+                      border: 'none',
+                    }}
+                  >
+                    <Statistic
+                      title={<Text style={{ color: 'rgba(255,255,255,0.8)' }}>总播放量</Text>}
+                      value={profile?.likes || 0}
+                      formatter={(v) => formatNum(v as number)}
+                      prefix={<PlayCircleOutlined />}
+                      valueStyle={{ color: 'white', fontSize: 28 }}
+                    />
+                  </Card>
+                </Col>
+                <Col xs={24} sm={12} md={6}>
+                  <Card
+                    style={{
+                      background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+                      borderRadius: 12,
+                      border: 'none',
+                    }}
+                  >
+                    <Statistic
+                      title={<Text style={{ color: 'rgba(255,255,255,0.8)' }}>总点赞数</Text>}
+                      value={profile?.likes || 0}
+                      formatter={(v) => formatNum(v as number)}
+                      prefix={<LikeOutlined />}
+                      valueStyle={{ color: 'white', fontSize: 28 }}
+                    />
+                  </Card>
+                </Col>
+                <Col xs={24} sm={12} md={6}>
                   <Card
                     style={{
                       background: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
@@ -435,7 +445,7 @@ export default function MyDataPage() {
                     />
                   </Card>
                 </Col>
-                <Col xs={24} sm={12}>
+                <Col xs={24} sm={12} md={6}>
                   <Card
                     style={{
                       background: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
@@ -470,7 +480,6 @@ export default function MyDataPage() {
                   page={1}
                   pageSize={5}
                   onPageChange={() => {}}
-                  onVideoClick={handleVideoClick}
                   hidePagination={true}
                 />
               </Card>
@@ -535,7 +544,6 @@ export default function MyDataPage() {
                 page={videoPage}
                 pageSize={20}
                 onPageChange={handleVideoPageChange}
-                onVideoClick={handleVideoClick}
               />
             </div>
           )}
@@ -581,17 +589,8 @@ export default function MyDataPage() {
           page={1}
           pageSize={20}
           onPageChange={() => {}}
-          onVideoClick={handleVideoClick}
         />
       </Modal>
-
-      {/* 视频详情 Drawer */}
-      <VideoDetailDrawer
-        video={selectedVideo}
-        visible={!!selectedVideo}
-        onClose={() => setSelectedVideo(null)}
-        connId={selectedConn}
-      />
     </div>
   )
 }

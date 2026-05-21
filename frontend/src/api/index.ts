@@ -697,15 +697,15 @@ export const cancelPlaywrightSession = (sessionId: string) =>
 export const qrcodeGenerate = (data: {
   platform: string
   connector_name?: string
-}) => request('/platforms/acquire/qrcode/generate', { method: 'POST', body: JSON.stringify(data) })
+}) => request('/acquire/qrcode/generate', { method: 'POST', body: JSON.stringify(data) })
 
 /** 轮询扫码状态 */
 export const getQrcodeStatus = (sessionId: string) =>
-  request(`/platforms/acquire/qrcode/${sessionId}/status`)
+  request(`/acquire/qrcode/${sessionId}/status`)
 
 /** 刷新过期二维码 */
 export const refreshQrcode = (sessionId: string) =>
-  request(`/platforms/acquire/qrcode/${sessionId}/refresh`, { method: 'POST' })
+  request(`/acquire/qrcode/${sessionId}/refresh`, { method: 'POST' })
 
 /** 获取平台连接的 Cookie 内容 */
 export const getConnectionCookieContent = (connId: string) =>

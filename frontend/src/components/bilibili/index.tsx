@@ -2,14 +2,11 @@
  * YLCraft — B站共享组件
  */
 
-export { VideoDetailDrawer } from './VideoDetailDrawer'
-export type { VideoDetailDrawerProps } from './VideoDetailDrawer'
-
 import { Table, Image, Button, Space, Tooltip, Typography, Pagination, Card } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import {
   EyeOutlined, LinkOutlined, DownloadOutlined, VideoCameraOutlined,
-  HeartOutlined, StarOutlined, FolderOutlined, MessageOutlined,
+  HeartOutlined, StarOutlined, FolderOutlined,
 } from '@ant-design/icons'
 import { useTheme } from '../../constants/theme'
 
@@ -136,11 +133,13 @@ export function VideoList({ videos, loading, total, page, pageSize, onPageChange
     {
       title: '数据',
       key: 'stat',
-      width: 160,
+      width: 200,
       render: (_: any, record: any) => (
         <div style={{ display: 'flex', gap: 12, fontSize: 12, color: THEME.textSecondary }}>
           <span><EyeOutlined /> {formatNum(record.stat?.view)}</span>
-          <span><MessageOutlined /> {formatNum(record.stat?.reply)}</span>
+          <span><HeartOutlined style={{ color: BILI_COLORS.primary }} /> {formatNum(record.stat?.like)}</span>
+          <span><StarOutlined style={{ color: BILI_COLORS.gold }} /> {formatNum(record.stat?.coin)}</span>
+          <span><StarOutlined style={{ color: BILI_COLORS.purple }} /> {formatNum(record.stat?.favorite)}</span>
         </div>
       ),
     },
