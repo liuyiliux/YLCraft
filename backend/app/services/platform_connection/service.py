@@ -281,8 +281,7 @@ class PlatformConnectionService:
         if not conn:
             return False
 
-        platform = self._get_platform_str(conn.platform)
-        mgr = get_cookie_manager(platform)
+        mgr = get_cookie_manager()
 
         # 解析为 Netscape 格式
         netscape_content = mgr.parse_cookie(cookie_str, conn.domains or "")
@@ -316,8 +315,7 @@ class PlatformConnectionService:
         """从连接对象获取原始 Cookie"""
         # 优先从 cookie_content 提取
         if conn.cookie_content:
-            platform = self._get_platform_str(conn.platform)
-            mgr = get_cookie_manager(platform)
+            mgr = get_cookie_manager()
             raw = mgr.extract_raw(conn.cookie_content)
             if raw:
                 return raw
@@ -350,8 +348,7 @@ class PlatformConnectionService:
             content = credentials.get("content", "")
             cookie_str = raw or content
             if cookie_str:
-                platform = self._get_platform_str(conn.platform)
-                mgr = get_cookie_manager(platform)
+                mgr = get_cookie_manager()
                 conn.cookie_content = mgr.parse_cookie(cookie_str, conn.domains or "")
 
     def _sync_cookie_file(self, conn: PlatformConnection, cookie_content: str):
@@ -367,7 +364,7 @@ class PlatformConnectionService:
             cookie_path = cookie_dir / f"{platform}.txt"
 
             # 清洗内容
-            mgr = get_cookie_manager(platform)
+            mgr = get_cookie_manager()
             clean_content = mgr.parse_cookie(cookie_content, conn.domains or "")
 
             cookie_path.write_text(clean_content, encoding="utf-8")
@@ -424,7 +421,7 @@ class PlatformConnectionService:
     def _test_cookie(self, conn: PlatformConnection) -> dict:
         """测试 Cookie 有效性"""
         platform = self._get_platform_str(conn.platform)
-        mgr = get_cookie_manager(platform)
+        mgr = get_cookie_manager()
 
         # 优先用 cookie_content
         cookie_str = conn.cookie_content or self._get_raw_cookie_from_connection(conn)
