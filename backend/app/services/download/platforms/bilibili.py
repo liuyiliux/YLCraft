@@ -113,12 +113,13 @@ class BilibiliDownloader(BaseDownloader):
                         url=video.get("baseUrl", ""),
                     ))
             else:
-                # 降级：使用普通清晰度
+                # 降级：使用普通清晰度（基于时长估算文件大小）
+                video_duration = getattr(detail, "duration", 0) or 0
                 qualities = [
-                    VideoQuality(quality="80", resolution="1920x1080", filesize="未知", url=""),
-                    VideoQuality(quality="64", resolution="1280x720", filesize="未知", url=""),
-                    VideoQuality(quality="32", resolution="854x480", filesize="未知", url=""),
-                    VideoQuality(quality="16", resolution="640x360", filesize="未知", url=""),
+                    VideoQuality(quality="80", resolution="1920x1080", filesize=self._estimate_filesize(video_duration, 5000), url=""),  # ~5000 kbps
+                    VideoQuality(quality="64", resolution="1280x720", filesize=self._estimate_filesize(video_duration, 2500), url=""),  # ~2500 kbps
+                    VideoQuality(quality="32", resolution="854x480", filesize=self._estimate_filesize(video_duration, 1000), url=""),  # ~1000 kbps
+                    VideoQuality(quality="16", resolution="640x360", filesize=self._estimate_filesize(video_duration, 500), url=""),   # ~500 kbps
                 ]
 
             return VideoInfo(
@@ -343,6 +344,29 @@ class BilibiliDownloader(BaseDownloader):
             return self._format_filesize(int(estimated_bytes))
         
         return "未知"
+
+    def _estimate_filesize(self, duration_seconds: int, bitrate_kbps: int) -> str:
+        """根据时长和比特率估算文件大小
+        
+        Args:
+            duration_seconds: 视频时长（秒）
+            bitrate_kbps: 比特率（kbps）
+        
+        Returns:
+            格式化的文件大小字符串（带 ~ 表示估算）
+        """
+        if duration_seconds <= 0 or bitrate_kbps <= 0:
+            return "未知"
+        
+        # 比特率(kbps) * 时长(秒) / 8 / 1024 = MB
+        size_mb = bitrate_kbps * duration_seconds / 8 / 1024
+        
+        if size_mb < 1:
+            return f"~{size_mb * 1024:.0f}KB"
+        elif size_mb < 1024:
+            return f"~{size_mb:.1f}MB"
+        else:
+            return f"~{size_mb / 1024:.1f}GB"
 
     def _safe_filename(self, name: str) -> str:
         """生成安全的文件名"""
