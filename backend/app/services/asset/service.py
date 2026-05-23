@@ -142,15 +142,23 @@ class AssetService:
         query_asset_type = asset_type.upper() if asset_type else None
         print(f"[DEBUG list_assets] asset_type={asset_type}, query_asset_type={query_asset_type}")
         
+        # 默认过滤掉已删除的记录
+        if status is None:
+            conditions.append(Asset.status != "DELETED")
+        elif status.upper() != "DELETED":
+            # 如果用户明确查询了其他状态，同时也要排除 DELETED
+            conditions.append(Asset.status != "DELETED")
+            conditions.append(Asset.status.ilike(status))
+        else:
+            # 用户明确查询 DELETED 状态，不要额外过滤
+            conditions.append(Asset.status.ilike(status))
+        
         if asset_type:
             conditions.append(func.lower(Asset.type) == func.lower(asset_type))
         if platform:
             conditions.append(Asset.platform == platform)
         if source_type:
             conditions.append(Asset.source_type == source_type)
-        if status:
-            # 使用不区分大小写的匹配
-            conditions.append(Asset.status.ilike(status))
         if search:
             conditions.append(Asset.title.contains(search))
 
@@ -577,15 +585,15 @@ class AssetService:
     async def delete(self, asset_id: str, hard: bool = False) -> bool:
         """
         删除资产。
-        - hard=False：软删除（保留记录）
-        - hard=True：同时删除物理文件和数据库记录
+        - hard=False：仅删除数据库记录，保留文件
+        - hard=True：同时删除文件和数据库记录
         """
         asset = await self.get_by_id(asset_id)
         if not asset:
             return False
 
         if hard:
-            # 删除物理文件
+            # 硬删除：删除文件 + 删除数据库记录
             if asset.file_path and os.path.exists(asset.file_path):
                 try:
                     os.remove(asset.file_path)
@@ -601,9 +609,15 @@ class AssetService:
                         os.remove(thumbnail_path)
             except Exception:
                 pass
-
-        await self.session.delete(asset)
-        await self.session.flush()
+            
+            await self.session.delete(asset)
+            await self.session.flush()
+            logger.info(f"Hard deleted asset | id={asset.id}")
+        else:
+            # 仅删除记录：从数据库删除记录，保留文件
+            await self.session.delete(asset)
+            await self.session.flush()
+            logger.info(f"Deleted record only (keep file) | id={asset.id}")
         return True
 
     # -------------------------------------------------------------------------

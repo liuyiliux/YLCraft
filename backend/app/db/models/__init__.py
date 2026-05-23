@@ -1,4 +1,11 @@
 from app.db.models.asset import Asset, AssetCollection, AssetTag
+from app.db.models.asset_hub import (
+    AssetNode, AssetVersion, AssetRepresentation,
+    AssetEmbedding, AssetRelation,
+    AssetType, RelationType,
+    Tag, AssetTagLink,
+    AIModel,
+)
 from app.db.models.character import Character, CharacterStoryLink, CharacterSourceType, CharacterRole
 from app.db.models.story import Story, StoryCharacterPortrait, StoryStatus, StoryStyle
 from app.db.models.live2d import Live2DModel, Live2DBone, Live2DMotion, Live2DModelStatus

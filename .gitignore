@@ -53,3 +53,5 @@ backend/storage/
 .codebuddy/
 backend/migrate_assets_v2.py
 backend/data/cookies/
+.trae/
+.gitignore

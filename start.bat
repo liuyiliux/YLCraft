@@ -13,6 +13,29 @@ set "VENV_DIR=backend\venv_win"
 set "REQUIREMENTS_FILE=backend\requirements.txt"
 
 REM ========================================
+REM Docker Compose - PostgreSQL & Redis
+REM ========================================
+echo [Docker] Checking Docker Compose services...
+
+docker compose version >nul 2>&1
+if errorlevel 1 (
+    echo [Docker] Docker Compose not found, please install Docker Desktop
+    echo [Docker] Skipping database services...
+) else (
+    echo [Docker] Starting PostgreSQL and Redis...
+    docker compose up -d
+    
+    echo [Docker] Waiting for PostgreSQL to be ready...
+    :wait_loop
+    docker compose exec -T postgres pg_isready -U ylcraft >nul 2>&1
+    if errorlevel 1 (
+        timeout /t 1 /nobreak >nul
+        goto wait_loop
+    )
+    echo [Docker] PostgreSQL is ready!
+)
+
+REM ========================================
 REM Backend Setup
 REM ========================================
 echo [Backend] Checking Python virtual environment...
@@ -42,6 +65,24 @@ if not exist "%VENV_DIR%\Scripts\activate.bat" (
         pip install -r "%REQUIREMENTS_FILE%" -i https://pypi.tuna.tsinghua.edu.cn/simple >nul 2>&1
     )
     echo [Backend] Dependencies ready
+)
+
+REM ========================================
+REM Database Migration (Alembic)
+REM ========================================
+if exist "backend\.env" (
+    echo [Database] Running Alembic migrations...
+    cd /d "%~dp0backend"
+    call venv_win\Scripts\activate.bat
+    alembic upgrade head
+    if errorlevel 1 (
+        echo [Database] Migration failed, please check database connection
+    ) else (
+        echo [Database] Migrations completed!
+    )
+    cd /d "%~dp0"
+) else (
+    echo [Database] .env not found, skipping migrations
 )
 
 REM ========================================
@@ -77,5 +118,6 @@ echo  YLCraft Started!
 echo  Backend: http://localhost:8000
 echo  Frontend: http://localhost:5173
 echo  API Docs: http://localhost:8000/docs
+echo  PostgreSQL: localhost:5432
 echo ========================================
 pause

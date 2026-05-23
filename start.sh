@@ -40,6 +40,28 @@ echo "  YLCraft 启动脚本"
 echo -e "========================================${NC}"
 echo ""
 
+# ========================================
+# Docker Compose - PostgreSQL & Redis
+# ========================================
+echo -e "${CYAN}[Docker]${NC} 检查 Docker Compose 服务..."
+
+if command -v docker &>/dev/null && command -v docker compose &>/dev/null; then
+    echo -e "${CYAN}[Docker]${NC} 启动 PostgreSQL 和 Redis..."
+    docker compose up -d
+    
+    echo -e "${CYAN}[Docker]${NC} 等待 PostgreSQL 就绪..."
+    until docker compose exec -T postgres pg_isready -U ylcraft &>/dev/null; do
+        sleep 1
+    done
+    echo -e "${GREEN}[Docker]${NC} PostgreSQL 已就绪！"
+else
+    echo -e "${YELLOW}[Docker]${NC} Docker Compose 未找到，请安装 Docker Desktop"
+    echo -e "${YELLOW}[Docker]${NC} 跳过数据库服务..."
+fi
+
+# ========================================
+# Backend Setup
+# ========================================
 VENV_DIR="backend/venv_linux"
 
 check_command() {
@@ -104,6 +126,23 @@ if [ ! -f "backend/.env" ] && [ -f "backend/.env.example" ]; then
     cp backend/.env.example backend/.env
 fi
 
+# ========================================
+# Database Migration (Alembic)
+# ========================================
+if [ -f "backend/.env" ]; then
+    echo -e "${CYAN}[数据库]${NC} 运行 Alembic 迁移..."
+    cd "$SCRIPT_DIR/backend"
+    source "$VENV_DIR/bin/activate"
+    if alembic upgrade head; then
+        echo -e "${GREEN}[数据库]${NC} 迁移完成！"
+    else
+        echo -e "${RED}[数据库]${NC} 迁移失败，请检查数据库连接"
+    fi
+    cd "$SCRIPT_DIR"
+else
+    echo -e "${YELLOW}[数据库]${NC} .env 未找到，跳过迁移"
+fi
+
 echo -e "${CYAN}[前端]${NC} 检查依赖..."
 if [ ! -d "frontend/node_modules" ]; then
     echo -e "${YELLOW}[前端]${NC} node_modules 不存在，正在安装..."
@@ -138,6 +177,7 @@ echo "  YLCraft 已启动！"
 echo "  后端: http://localhost:8000"
 echo "  前端: http://localhost:5173"
 echo "  API文档: http://localhost:8000/docs"
+echo "  PostgreSQL: localhost:5432"
 echo ""
 echo "  按 Ctrl+C 停止所有服务"
 echo -e "========================================${NC}"

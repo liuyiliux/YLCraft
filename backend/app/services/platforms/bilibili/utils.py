@@ -30,7 +30,7 @@ def extract_account_info_from_cookie(cookie_str: str) -> dict:
     
     try:
         # 将Netscape格式的Cookie转换成原始格式
-        mgr = CookieManager("bilibili")
+        mgr = CookieManager()
         raw_cookie = mgr.extract_raw(cookie_str)
         
         with httpx.Client(timeout=30) as client:

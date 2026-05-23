@@ -242,6 +242,55 @@ def _register_routes():
     except Exception as e:
         logger.warning(f"Could not load assets router: {e}")
 
+    # 标签系统路由
+    try:
+        from app.api.v1 import tags
+        app.include_router(tags.router, prefix="/api/v1", tags=["Tags"])
+    except Exception as e:
+        logger.warning(f"Could not load tags router: {e}")
+
+    # 向量搜索路由
+    try:
+        from app.api.v1 import search
+        app.include_router(search.router, prefix="/api/v1", tags=["Search"])
+    except Exception as e:
+        logger.warning(f"Could not load search router: {e}")
+
+    # 谱系追踪路由
+    try:
+        from app.api.v1 import lineage
+        app.include_router(lineage.router, prefix="/api/v1", tags=["Lineage"])
+    except Exception as e:
+        logger.warning(f"Could not load lineage router: {e}")
+
+    # 模型管理路由
+    try:
+        from app.api.v1 import models
+        app.include_router(models.router, prefix="/api/v1", tags=["Models"])
+    except Exception as e:
+        logger.warning(f"Could not load models router: {e}")
+
+    # 3D 模型路由
+    try:
+        from app.api.v1 import model3d
+        app.include_router(model3d.router, prefix="/api/v1", tags=["3D Models"])
+    except Exception as e:
+        logger.warning(f"Could not load model3d router: {e}")
+
+    # 剪映草稿路由
+    try:
+        from app.api.v1 import jianying
+        app.include_router(jianying.router, prefix="/api/v1", tags=["JianYing"])
+    except Exception as e:
+        logger.warning(f"Could not load jianying router: {e}")
+
+    # 导出 + 质量路由
+    try:
+        from app.api.v1 import export
+        app.include_router(export.router, prefix="/api/v1", tags=["Export"])
+    except Exception as e:
+        logger.warning(f"Could not load export router: {e}")
+
     # 角色管理路由
     try:
         from app.api.v1 import characters

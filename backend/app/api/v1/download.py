@@ -470,7 +470,7 @@ async def download_video(req: DownloadRequest):
     # 1. 先尝试使用平台专用下载器
     try:
         from app.services.download import download_with_manager
-        filepath = await asyncio.wait_for(
+        result = await asyncio.wait_for(
             download_with_manager(
                 url=req.url,
                 quality=req.quality or "best",
@@ -480,11 +480,13 @@ async def download_video(req: DownloadRequest):
             ),
             timeout=1800,
         )
+        filepath, video_info = result
         if filepath:
             logger.info(f"[download] 使用平台专用下载器完成: {filepath}")
     except Exception as e:
         logger.warning(f"[download] 平台专用下载器失败，降级到 yt-dlp: {e}")
         filepath = None
+        video_info = None
     
     # 2. 降级到 yt-dlp
     if not filepath:
@@ -516,15 +518,30 @@ async def download_video(req: DownloadRequest):
     effective_url = req.page_url if req.page_url else req.url
     file_size = os.path.getsize(filepath) if os.path.exists(filepath) else 0
     
-    # 从数据库查询已有元数据（parse 阶段已保存）
-    # 先尝试用 page_url 查询，再用 url 查询
-    width = height = duration = 0
-    thumbnail_path = ""
-    title = ""
-    author = ""
-    platform = ""
-    cover_url = ""
+    # 从 video_info 获取元数据（优先）
+    if video_info:
+        width = height = 0
+        if video_info.qualities:
+            best_quality = video_info.qualities[0]
+            if best_quality.resolution:
+                res_parts = best_quality.resolution.split("x")
+                if len(res_parts) == 2:
+                    width = int(res_parts[0])
+                    height = int(res_parts[1])
+        duration = video_info.duration or 0
+        cover_url = video_info.cover_url or ""
+        title = video_info.title or ""
+        author = video_info.author or ""
+        platform = video_info.platform or ""
+    else:
+        width = height = duration = 0
+        thumbnail_path = ""
+        title = ""
+        author = ""
+        platform = ""
+        cover_url = ""
     
+    # 从数据库查询已有元数据（补充）
     search_urls = [req.page_url, req.url] if req.page_url else [req.url]
     
     try:
@@ -539,14 +556,20 @@ async def download_video(req: DownloadRequest):
                     break
             
             if _existing:
-                width = _existing.width or 0
-                height = _existing.height or 0
-                duration = _existing.duration or 0
-                thumbnail_path = _existing.cover_url or ""
-                title = _existing.title or ""
-                author = _existing.author or ""
-                platform = _existing.platform or ""
-                cover_url = _existing.cover_url or ""
+                if not width:
+                    width = _existing.width or 0
+                if not height:
+                    height = _existing.height or 0
+                if not duration:
+                    duration = _existing.duration or 0
+                if not title:
+                    title = _existing.title or ""
+                if not author:
+                    author = _existing.author or ""
+                if not platform:
+                    platform = _existing.platform or ""
+                if not cover_url:
+                    cover_url = _existing.cover_url or ""
     except Exception:
         pass
     
@@ -591,9 +614,8 @@ async def download_video(req: DownloadRequest):
             if width: existing.width = width
             if height: existing.height = height
             if duration: existing.duration = duration
-            if cover_url and not existing.cover_url:
+            if cover_url:
                 existing.cover_url = cover_url
-            # 保留原始标题和作者（如果已存在）
             if title: existing.title = title
             if author: existing.author = author
             if detected_platform: existing.platform = detected_platform
@@ -701,13 +723,14 @@ async def _run_download_task(task: DownloadTask):
         task.progress_message = "解析视频信息..."
         _download_tasks[task.task_id] = task.__dict__
         
-        filepath = await download_with_manager(
+        result = await download_with_manager(
             url=task.url,
             quality=task.quality or "best",
             title=task.title,
             page_url=task.page_url,
             is_audio=task.is_audio,
         )
+        filepath, video_info = result
 
         # 平台专用下载器失败，降级到 yt-dlp
         if not filepath:
@@ -757,9 +780,39 @@ async def _run_download_task(task: DownloadTask):
                     if not existing:
                         existing = await asset_service.get_by_url(task.url)
                 
+                # 从 video_info 中获取元数据
+                width = 0
+                height = 0
+                cover_url = ""
+                if video_info:
+                    # 获取分辨率（从 qualities 中提取最高分辨率）
+                    if video_info.qualities:
+                        best_quality = video_info.qualities[0]
+                        if best_quality.resolution:
+                            res_parts = best_quality.resolution.split("x")
+                            if len(res_parts) == 2:
+                                width = int(res_parts[0])
+                                height = int(res_parts[1])
+                    # 获取封面URL
+                    cover_url = video_info.cover_url or ""
+                
+                # 下载封面到本地
+                local_cover_path = ""
+                if cover_url and cover_url.startswith("http"):
+                    local_cover_path = _download_cover_image(cover_url, filepath, task.title)
+                    if local_cover_path:
+                        logger.info(f"[_run_download_task] 封面已下载: {local_cover_path}")
+                
                 if existing:
                     mime_type = "audio/mpeg" if task.is_audio else "video/mp4"
                     await asset_service.mark_ready(existing, file_path=filepath, file_size=file_size, mime_type=mime_type)
+                    # 更新元数据
+                    if width: existing.width = width
+                    if height: existing.height = height
+                    if local_cover_path:
+                        existing.cover_url = local_cover_path
+                    elif cover_url and not existing.cover_url:
+                        existing.cover_url = cover_url
                     task.asset_id = existing.id
                 else:
                     new_asset = await asset_service.create(
@@ -771,8 +824,13 @@ async def _run_download_task(task: DownloadTask):
                         file_size=file_size,
                         mime_type="audio/mpeg" if task.is_audio else "video/mp4",
                         status="READY",
+                        width=width,
+                        height=height,
+                        cover_url=local_cover_path or cover_url,
                     )
                     task.asset_id = new_asset.id
+                
+                await db_session.commit()
                     
         except Exception as db_e:
             logger.warning(f"[_run_download_task] 数据库记录失败: {db_e}")

@@ -1,32 +1,28 @@
 """
 YLCraft — 数据库模块
 
-SQLite 异步数据库层（使用 aiosqlite + SQLModel）。
+PostgreSQL + pgvector 异步数据库层（使用 asyncpg + SQLModel）。
 """
 
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from pathlib import Path
 from typing import AsyncGenerator
+import os
 
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine
 from sqlmodel import SQLModel, Session as SQLModelSession
 
-# 动态数据库路径（兼容 Windows / Linux / macOS）
-_DB_DIR = Path(__file__).resolve().parent.parent.parent / "data"
-_DB_DIR.mkdir(parents=True, exist_ok=True)
-_DB_PATH = _DB_DIR / "ylcraft.db"
-
 # 异步数据库配置
-DATABASE_URL = f"sqlite+aiosqlite:///{_DB_PATH}"
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://ylcraft:ylcraft_dev@localhost:5432/ylcraft")
 
 engine = create_async_engine(
     DATABASE_URL,
     echo=False,
-    connect_args={"check_same_thread": False},
+    pool_size=20,
+    max_overflow=10,
 )
 
 AsyncSessionLocal = sessionmaker(
@@ -34,11 +30,12 @@ AsyncSessionLocal = sessionmaker(
 )
 
 # 同步数据库配置（用于 init_manager 等同步上下文）
-SYNC_DATABASE_URL = f"sqlite:///{_DB_PATH}"
+SYNC_DATABASE_URL = DATABASE_URL.replace("+asyncpg", "")
 sync_engine = create_engine(
     SYNC_DATABASE_URL,
     echo=False,
-    connect_args={"check_same_thread": False},
+    pool_size=20,
+    max_overflow=10,
 )
 
 SessionLocal = sessionmaker(

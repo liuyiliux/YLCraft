@@ -89,9 +89,28 @@ class CookieManager:
             # 按域名匹配度排序（最长匹配优先）
             matched = []
             for conn in platforms:
-                if not conn.domains:
+                # 优先使用 conn.domains 中的域名
+                domains_list = []
+                if conn.domains:
+                    domains_list = [d.strip().lower() for d in conn.domains.split(",") if d.strip()]
+                else:
+                    # 如果没有设置 domains，尝试获取该平台的默认域名
+                    try:
+                        plat_str = conn.platform.value if hasattr(conn.platform, 'value') else str(conn.platform)
+                        from app.services.cookies.base import get_platform_domains
+                        default_domains = get_platform_domains(plat_str)
+                        if default_domains:
+                            domains_list = [d.strip().lower() for d in default_domains.split(",") if d.strip()]
+                    except Exception as e:
+                        logger.debug(f"[CookieManager] 获取默认域名失败: {e}")
+                
+                if not domains_list:
+                    # 如果还是没有域名，使用平台名进行简单匹配（回退方案）
+                    plat_str = conn.platform.value if hasattr(conn.platform, 'value') else str(conn.platform)
+                    if plat_str in url_domain:
+                        matched.append((1, conn))
                     continue
-                domains_list = [d.strip().lower() for d in conn.domains.split(",") if d.strip()]
+                
                 for d in domains_list:
                     if d.startswith('.'):
                         pure_domain = d[1:]
@@ -646,6 +665,28 @@ class CookieManager:
             return {"valid": False, "count": 0, "message": "没有有效的 Cookie 条目"}
 
         return {"valid": True, "count": count, "message": f"有效，共 {count} 条"}
+
+    def normalize_cookie(self, platform: str, cookie_content: str) -> str:
+        """
+        公共方法：将任意格式的 Cookie 转换为 Netscape 格式
+        
+        支持的输入格式：
+        1. 已为 Netscape 格式（直接返回）
+        2. JSON 数组格式（浏览器扩展导出）
+        3. key=value; key2="value2" 字符串格式（DevTools 复制）
+        
+        Returns:
+            Netscape 格式字符串
+        """
+        return self._convert_to_netscape(platform, cookie_content)
+
+    def clean_cookie_content(self, cookie_content: str) -> str:
+        """
+        公共方法：清洗 Netscape Cookie 内容
+        
+        移除值两端的引号等，确保格式正确
+        """
+        return self._clean_netscape_content(cookie_content)
 
 
 # =============================================================================

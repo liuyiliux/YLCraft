@@ -85,12 +85,41 @@ providers:
     default_model: sd15
     default_workflow: txt2img
 
+# ========== Embedding ==========
+  qwen-embedding:
+    media_type: embedding
+    provider: qwen
+    model: Qwen/Qwen3-Embedding-8B
+    api_base: https://dashscope.aliyuncs.com/api/v1/services/embeddings/text-embedding
+    api_key: "${QWEN_API_KEY}"
+    default_model: "Qwen/Qwen3-Embedding-8B"
+    dimension: 4096
+
+  bge-m3:
+    media_type: embedding
+    provider: huggingface
+    model: BAAI/bge-m3
+    api_base: https://api-inference.huggingface.co/models/BAAI/bge-m3
+    api_key: "${HUGGINGFACE_API_KEY}"
+    default_model: "BAAI/bge-m3"
+    dimension: 1024
+
+  openai-embedding:
+    media_type: embedding
+    provider: openai
+    model: text-embedding-3-large
+    api_base: https://api.openai.com/v1
+    api_key: "${OPENAI_API_KEY}"
+    default_model: "text-embedding-3-large"
+    dimension: 3072
+
 # 全局默认值
 defaults:
   llm: doubao-lite
   image: seedance
   video: minimax-video
   tts: doubao-tts
+  embedding: qwen-embedding
   # Live2D 各环节默认 provider
   live2d_rembg: removebg
   live2d_style_transfer: replicate-sdxl

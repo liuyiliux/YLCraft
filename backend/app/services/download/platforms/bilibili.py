@@ -146,7 +146,7 @@ class BilibiliDownloader(BaseDownloader):
                     )
                     
                     qualities.append(VideoQuality(
-                        quality=str(qn),
+                        quality=quality_label,
                         resolution=resolution,
                         filesize=filesize,
                         url=video.get("baseUrl", ""),
@@ -252,6 +252,10 @@ class BilibiliDownloader(BaseDownloader):
             return 127
         if quality.isdigit():
             return int(quality)
+        # 反向查找质量标签对应的 qn 值
+        for qn, label in BILI_QUALITY_MAP.items():
+            if label == quality:
+                return qn
         # 尝试从字符串中提取数字
         m = re.search(r"(\d+)", quality)
         return int(m.group(1)) if m else 80

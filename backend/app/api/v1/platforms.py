@@ -268,17 +268,17 @@ async def save_cookie_content(
     if not req.content or len(req.content.strip()) < 10:
         raise HTTPException(status_code=400, detail="Cookie 内容太短，请检查是否正确")
 
-    # 使用 CookieManager 的格式转换能力
+    # 使用 CookieManager 的公共方法进行格式转换
     try:
         from app.services.video.parser import get_cookie_manager
         mgr = get_cookie_manager()
-        # 转换为 Netscape 格式
         conn = service.get(conn_id)
         if not conn:
             raise HTTPException(status_code=404, detail="连接不存在")
 
         platform = conn.platform.value if hasattr(conn.platform, 'value') else str(conn.platform)
-        netscape_content = mgr._convert_to_netscape(platform, req.content)
+        # 使用公共方法 normalize_cookie 转换为 Netscape 格式
+        netscape_content = mgr.normalize_cookie(platform, req.content)
         
         ok = service.save_cookie_content(conn_id, netscape_content)
         if ok:

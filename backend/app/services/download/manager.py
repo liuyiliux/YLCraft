@@ -115,7 +115,7 @@ async def download_with_manager(
     title: Optional[str] = None,
     page_url: Optional[str] = None,
     is_audio: bool = False,
-) -> Optional[str]:
+) -> tuple[Optional[str], Optional[VideoInfo]]:
     """
     使用管理器下载视频
 
@@ -131,23 +131,26 @@ async def download_with_manager(
         is_audio: 是否只下载音频
 
     Returns:
-        下载文件的本地路径，或 None
+        (下载文件的本地路径, VideoInfo)，或 (None, None)
     """
     platform = _detect_platform(url) or (page_url and _detect_platform(page_url))
     if not platform:
-        return None
+        return None, None
 
     downloader = get_downloader(platform)
     if downloader:
         try:
+            # 先解析获取元信息（包括封面URL）
+            info = await downloader.parse(url)
+            
             filepath = await downloader.download(url, quality, title, is_audio)
             if filepath:
                 logger.info(f"[DownloadManager] 使用 {platform} 专用下载器下载: {filepath}")
-                return filepath
+                return filepath, info
         except Exception as e:
             logger.error(f"[DownloadManager] {platform} 专用下载器下载失败: {e}")
 
-    return None
+    return None, None
 
 
 def get_supported_platforms() -> List[str]:

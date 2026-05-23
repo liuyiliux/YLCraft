@@ -314,12 +314,15 @@ export default function DownloadPage() {
                 <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                   {result.qualities.map((q, i) => {
                     const color = QUALITY_COLORS[q.quality] || THEME.primary
+                    const displayText = q.resolution && q.quality && q.resolution !== q.quality 
+                      ? `${q.resolution} (${q.quality})` 
+                      : q.resolution || q.quality
                     return (
                       <Button key={i} type="default" size="large" icon={<CloudDownloadOutlined />}
                         onClick={() => handleDownload(q)} disabled={downloading}
                         style={{ height: 52, padding: '0 24px', border: `1px solid ${color}44`, color, background: downloading ? 'rgba(0,0,0,0.04)' : `${color}11` }}>
                         <div style={{ lineHeight: 1.2 }}>
-                          <div style={{ fontSize: 14, fontWeight: 700 }}>{q.resolution || q.quality}</div>
+                          <div style={{ fontSize: 14, fontWeight: 700 }}>{displayText}</div>
                           <div style={{ fontSize: 11, opacity: 0.7 }}>{q.filesize}</div>
                         </div>
                       </Button>

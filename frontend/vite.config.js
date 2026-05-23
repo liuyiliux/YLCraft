@@ -18,6 +18,7 @@ export default defineConfig({
                 target: 'http://127.0.0.1:8000',
                 changeOrigin: true,
                 secure: false,
+                ws: true,
                 configure: function (proxy, options) {
                     proxy.on('proxyReq', function (proxyReq, req, res) {
                         console.log("[Proxy] ".concat(req.method, " ").concat(req.url, " -> http://127.0.0.1:8000").concat(req.url));

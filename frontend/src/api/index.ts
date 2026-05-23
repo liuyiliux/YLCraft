@@ -80,13 +80,278 @@ export const listAssetTags = () => request('/assets/tags')
 
 export const getTags = () => request('/assets/tags')
 
-export const createTag = (name: string, color?: string) =>
-  request('/assets/tags', { method: 'POST', body: JSON.stringify({ name, color }) })
-
 export const createAssetTag = (name: string, color?: string) =>
   request('/assets/tags', { method: 'POST', body: JSON.stringify({ name, color }) })
 
 export const getAssetStats = () => request('/assets/stats')
+
+// ===== Asset Hub v3 =====
+// Tags API
+export const getTagTree = (rootId?: string) => 
+  request(`/tags${rootId ? `?root_id=${rootId}` : ''}`)
+
+export const listTags = (params?: {
+  keyword?: string
+  category?: string
+  minAssetCount?: number
+}) => {
+  const sp = new URLSearchParams()
+  if (params?.keyword) sp.set('keyword', params.keyword)
+  if (params?.category) sp.set('category', params.category)
+  if (params?.minAssetCount) sp.set('min_asset_count', String(params.minAssetCount))
+  return request(`/tags/list?${sp}`)
+}
+
+export const getTag = (tagId: string) => request(`/tags/${tagId}`)
+
+export const createAssetHubTag = (data: {
+  name: string
+  parentId?: string
+  color?: string
+  category?: string
+}) => request('/tags', { 
+  method: 'POST', 
+  body: JSON.stringify({
+    name: data.name,
+    parent_id: data.parentId,
+    color: data.color,
+    category: data.category,
+  }) 
+})
+
+export const updateTag = (tagId: string, data: {
+  name?: string
+  color?: string
+  category?: string
+}) => request(`/tags/${tagId}`, { 
+  method: 'PUT', 
+  body: JSON.stringify(data) 
+})
+
+export const deleteTag = (tagId: string, cascade: boolean = true) =>
+  request(`/tags/${tagId}?cascade=${cascade ? '1' : '0'}`, { method: 'DELETE' })
+
+export const getTagChildren = (tagId: string) => request(`/tags/${tagId}/children`)
+
+export const getTagDescendants = (tagId: string) => request(`/tags/${tagId}/descendants`)
+
+export const getTagAncestors = (tagId: string) => request(`/tags/${tagId}/ancestors`)
+
+export const getTagCategories = () => request('/tags/categories')
+
+export const getTaggedAssets = (tagId: string) => request(`/tags/${tagId}/assets`)
+
+export const tagAsset = (tagId: string, data: {
+  assetId: string
+  confidence?: number
+  source?: string
+}) => request(`/tags/${tagId}/assets`, {
+  method: 'POST',
+  body: JSON.stringify({
+    asset_id: data.assetId,
+    confidence: data.confidence,
+    source: data.source || 'manual',
+  })
+})
+
+export const untagAsset = (tagId: string, assetId: string) =>
+  request(`/tags/${tagId}/assets?asset_id=${encodeURIComponent(assetId)}`, { method: 'DELETE' })
+
+export const batchTagAssets = (data: {
+  assetIds: string[]
+  tagId: string
+  confidence?: number
+  source?: string
+}) => request('/tags/batch', {
+  method: 'POST',
+  body: JSON.stringify({
+    asset_ids: data.assetIds,
+    tag_id: data.tagId,
+    confidence: data.confidence,
+    source: data.source || 'manual',
+  })
+})
+
+export const getAssetTags = (assetId: string) => request(`/assets/${assetId}/tags`)
+
+export const suggestTags = (assetId: string) => request(`/tags/suggest/${assetId}`)
+
+export const autoTagAsset = (assetId: string, data?: {
+  confidenceThreshold?: number
+  useApi?: boolean
+  model?: string
+}) => request(`/assets/${assetId}/auto-tag`, {
+  method: 'POST',
+  body: JSON.stringify(data || {})
+})
+
+export const autoTagBatchAssets = (data: {
+  assetIds: string[]
+  confidenceThreshold?: number
+}) => request('/assets/batch-auto-tag', {
+  method: 'POST',
+  body: JSON.stringify({
+    asset_ids: data.assetIds,
+    confidence_threshold: data.confidenceThreshold || 0.7,
+  })
+})
+
+export const syncTagCounts = (tagId?: string) => request('/tags/sync-counts', {
+  method: 'POST',
+  body: JSON.stringify({ tag_id: tagId })
+})
+
+// Search API
+export const hybridSearch = (data: {
+  query: string
+  topK?: number
+  vectorWeight?: number
+  textWeight?: number
+  minSimilarity?: number
+  tagFilters?: string[]
+  assetType?: string
+}) => request('/search/hybrid', {
+  method: 'POST',
+  body: JSON.stringify({
+    query: data.query,
+    top_k: data.topK || 10,
+    vector_weight: data.vectorWeight || 0.7,
+    text_weight: data.textWeight || 0.3,
+    min_similarity: data.minSimilarity || 0,
+    tag_filters: data.tagFilters,
+    asset_type: data.assetType,
+  })
+})
+
+export const searchByText = (data: {
+  query: string
+  topK?: number
+  minSimilarity?: number
+  assetType?: string
+}) => request('/search/by-text', {
+  method: 'POST',
+  body: JSON.stringify({
+    query: data.query,
+    top_k: data.topK || 10,
+    min_similarity: data.minSimilarity || 0,
+    asset_type: data.assetType,
+  })
+})
+
+export const searchByImage = (data: {
+  imagePath: string
+  topK?: number
+  minSimilarity?: number
+  assetType?: string
+}) => request('/search/by-image', {
+  method: 'POST',
+  body: JSON.stringify({
+    image_path: data.imagePath,
+    top_k: data.topK || 10,
+    min_similarity: data.minSimilarity || 0,
+    asset_type: data.assetType,
+  })
+})
+
+export const getSimilarAssets = (assetId: string, topK?: number) =>
+  request(`/search/similar/${assetId}?top_k=${topK || 10}`)
+
+export const embedText = (data: { assetId: string; text: string }) =>
+  request('/embed/text', { method: 'POST', body: JSON.stringify(data) })
+
+export const embedImage = (data: { assetId: string; imagePath: string }) =>
+  request('/embed/image', { method: 'POST', body: JSON.stringify(data) })
+
+export const batchEmbed = (data: { items: Array<{ assetId: string; text?: string; imagePath?: string }> }) =>
+  request('/embed/batch', {
+    method: 'POST',
+    body: JSON.stringify({
+      items: data.items.map(item => ({
+        asset_id: item.assetId,
+        text: item.text,
+        image_path: item.imagePath,
+      }))
+    })
+  })
+
+export const getEmbeddingInfo = (assetId: string) => request(`/embed/${assetId}`)
+
+export const deleteEmbedding = (assetId: string, model?: string) =>
+  request(`/embed/${assetId}${model ? `?model=${model}` : ''}`, { method: 'DELETE' })
+
+// Lineage API
+export const getAssetLineage = (assetId: string) => request(`/assets/${assetId}/lineage`)
+
+export const getAssetLineageUpstream = (assetId: string) => request(`/assets/${assetId}/lineage/upstream`)
+
+export const getAssetLineageDownstream = (assetId: string) => request(`/assets/${assetId}/lineage/downstream`)
+
+// Version Management
+export const getAssetVersions = (assetId: string) => {
+  // 这是我们组件内部模拟用的 API，实际需要根据后端实现
+  return Promise.resolve({
+    success: true,
+    data: [
+      {
+        id: 'v1',
+        version_number: 'v1.0.0',
+        created_at: '2024-01-15 14:30:00',
+        description: '初始版本',
+        is_current: false,
+        tags: ['production'],
+        thumbnail_url: 'https://neeko-copilot.bytedance.net/api/text-to-image?prompt=cyberpunk%20city%20night%20scene&image_size=square',
+      },
+      {
+        id: 'v2',
+        version_number: 'v1.1.0',
+        created_at: '2024-01-16 09:15:00',
+        description: '优化了光照效果',
+        is_current: false,
+        tags: ['staging'],
+        thumbnail_url: 'https://neeko-copilot.bytedance.net/api/text-to-image?prompt=cyberpunk%20city%20with%20neon%20lights&image_size=square',
+      },
+      {
+        id: 'v3',
+        version_number: 'v1.2.0',
+        created_at: '2024-01-17 16:45:00',
+        description: '添加了动态云层',
+        is_current: true,
+        tags: ['latest', 'production'],
+        thumbnail_url: 'https://neeko-copilot.bytedance.net/api/text-to-image?prompt=cyberpunk%20city%20with%20clouds%20and%20neon&image_size=square',
+      },
+    ],
+    total: 3,
+  })
+}
+
+export const getLineageGraphData = (assetId?: string) => {
+  // 模拟谱系数据
+  return Promise.resolve({
+    success: true,
+    data: assetId ? {
+      nodes: [
+        { id: 'center', name: '生成图片', type: 'asset', depth: 0, x: 400, y: 200 },
+        { id: 'prompt', name: '赛博朋克城市', type: 'prompt', depth: -1, x: 200, y: 100 },
+        { id: 'model', name: 'SDXL v1.0', type: 'model', depth: -1, x: 200, y: 300 },
+        { id: 'lora', name: 'Cyberpunk LoRA', type: 'model', depth: -2, x: 50, y: 300 },
+        { id: 'input1', name: '参考图1', type: 'input', depth: -1, x: 600, y: 100 },
+        { id: 'input2', name: '参考图2', type: 'input', depth: -1, x: 600, y: 300 },
+        { id: 'output1', name: '裁剪版本', type: 'output', depth: 1, x: 700, y: 150 },
+        { id: 'output2', name: '高清版本', type: 'output', depth: 1, x: 700, y: 250 },
+      ],
+      edges: [
+        { source: 'prompt', target: 'center', relationType: 'PROMPT' },
+        { source: 'model', target: 'center', relationType: 'MODEL' },
+        { source: 'lora', target: 'model', relationType: 'USES' },
+        { source: 'input1', target: 'center', relationType: 'REFERENCE' },
+        { source: 'input2', target: 'center', relationType: 'REFERENCE' },
+        { source: 'center', target: 'output1', relationType: 'DERIVED_FROM' },
+        { source: 'center', target: 'output2', relationType: 'DERIVED_FROM' },
+      ],
+      centerNode: 'center',
+    } : { nodes: [], edges: [], centerNode: null },
+  })
+}
 
 // ===== Download =====
 

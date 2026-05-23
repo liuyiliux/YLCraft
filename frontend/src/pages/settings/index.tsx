@@ -621,6 +621,8 @@ export default function SettingsPage() {
                           { value: 'image', label: '图像' },
                           { value: 'video', label: '视频' },
                           { value: 'tts', label: '语音' },
+                          { value: 'stt', label: '语音识别' },
+                          { value: 'embedding', label: '嵌入' },
                         ]}
                       />
                       <Select

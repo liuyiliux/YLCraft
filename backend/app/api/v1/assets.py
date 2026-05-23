@@ -88,6 +88,41 @@ def _asset_to_dict(asset: Asset, include_metadata: bool = False) -> dict:
         except Exception:
             pass
     
+    def _format_datetime(dt) -> Optional[str]:
+        """将 datetime 对象格式化为可读字符串"""
+        if not dt:
+            return None
+        # 格式：2026-05-23 18:37:56
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
+    
+    def _get_resolution_label(width: int, height: int) -> str:
+        """根据分辨率返回友好的标签"""
+        if not width or not height:
+            return ""
+        
+        # 根据高度判断分辨率等级
+        if height >= 2160:
+            return "4K"
+        elif height >= 1440:
+            return "2K"
+        elif height >= 1080:
+            return "1080P"
+        elif height >= 720:
+            return "720P"
+        elif height >= 480:
+            return "480P"
+        else:
+            return ""
+    
+    def _format_resolution(width: int, height: int) -> Optional[str]:
+        """格式化分辨率显示，如：1280x720 (720P)"""
+        if not width or not height:
+            return None
+        label = _get_resolution_label(width, height)
+        if label:
+            return f"{width}x{height} ({label})"
+        return f"{width}x{height}"
+    
     # 基础字段（列表和详情都需要）
     result = {
         "id": asset.id,
@@ -97,11 +132,17 @@ def _asset_to_dict(asset: Asset, include_metadata: bool = False) -> dict:
         "author": asset.author,
         "status": asset.status,
         "source_type": asset.source_type,
-        "source_url": asset.source_url,  # 添加 source_url 到列表页
+        "source_url": asset.source_url,
         "tags": json.loads(asset.tags) if asset.tags else [],
-        "created_at": asset.created_at.isoformat() if asset.created_at else None,
-        "updated_at": asset.updated_at.isoformat() if asset.updated_at else None,
+        "created_at": _format_datetime(asset.created_at),
+        "updated_at": _format_datetime(asset.updated_at),
+        "downloaded_at": _format_datetime(asset.updated_at) if asset.status == "READY" else None,
         "thumbnail_url": f"/api/v1/assets/{asset.id}/thumbnail" if asset.cover_url else None,
+        "duration": asset.duration,
+        "width": asset.width,
+        "height": asset.height,
+        "file_size": asset.file_size,
+        "resolution": _format_resolution(asset.width, asset.height),
     }
     
     # AI 生成需要的最小 metadata（用于列表跳转）

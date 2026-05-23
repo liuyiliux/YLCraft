@@ -59,6 +59,7 @@ class AIProviderType(str, enum.Enum):
     video = "video"       # 视频生成
     tts = "tts"           # 文本转语音
     stt = "stt"           # 语音转文本
+    embedding = "embedding"  # 嵌入模型（文本/图像向量化）
 
 
 class AIConnectorBase(SQLModel):
@@ -119,9 +120,21 @@ class AIConnectorBase(SQLModel):
     # 参考图支持配置
     support_reference_image: bool = Field(False, description="是否支持参考图")
     support_multiple_reference_images: bool = Field(False, description="是否支持多张参考图")
-    reference_image_field: str = Field("image", description="参考图字段名（逗号分隔，如 image1,image2,image）")
+    reference_image_field: str = Field("image", description="参考图字段名（逗号分隔，如 image1,image2,）")
     reference_image_array_field: Optional[str] = Field(None, description="参考图数组字段名，如 images（所有图片组成数组）")
     # ===== 结束：图像/视频生成专用配置 =====
+
+    # ===== 嵌入模型专用配置 =====
+    embedding_type: Optional[str] = Field(
+        None,
+        description="嵌入类型：text（文本嵌入）/ image（图像嵌入）/ multimodal（多模态）"
+    )
+    embedding_dimension: Optional[int] = Field(
+        None,
+        description="向量维度，如 384、512、1024、3072 等"
+    )
+    normalize_embeddings: bool = Field(True, description="是否归一化向量（余弦相似度搜索推荐开启）")
+    # ===== 结束：嵌入模型专用配置 =====
 
     # 测试配置
     test_prompt: Optional[str] = Field(
@@ -286,6 +299,10 @@ class AIConnectorResponse(SQLModel):
     reference_image_array_field: Optional[str] = None
     test_prompt: Optional[str] = None
     has_api_key: bool = False  # 是否配置了 API Key（不返回实际 key）
+    # 嵌入模型专用配置
+    embedding_type: Optional[str] = None
+    embedding_dimension: Optional[int] = None
+    normalize_embeddings: bool = True
 
     @classmethod
     def from_db(cls, conn: AIConnector) -> "AIConnectorResponse":
@@ -347,6 +364,10 @@ class AIConnectorResponse(SQLModel):
             reference_image_array_field=conn.reference_image_array_field,
             test_prompt=conn.test_prompt,
             has_api_key=bool(conn.api_key),
+            # 嵌入模型专用配置
+            embedding_type=conn.embedding_type,
+            embedding_dimension=conn.embedding_dimension,
+            normalize_embeddings=conn.normalize_embeddings,
         )
 
 

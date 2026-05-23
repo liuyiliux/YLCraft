@@ -53,7 +53,7 @@ class PlatformConnectionService:
         """确保 session 可用，如果未传入则自动创建"""
         if self.session is None:
             from app.db.database import get_session
-            self.session = get_session()
+            self.session = next(get_session())
             self._own_session = True
 
     def _close_own_session(self):
@@ -135,6 +135,32 @@ class PlatformConnectionService:
         """创建新连接"""
         import uuid
 
+        # 如果没有指定 domains，设置默认值
+        domains = data.domains
+        if not domains:
+            try:
+                from app.services.cookies.base import get_platform_domains
+                platform_str = self._get_platform_str(data.platform)
+                default_domains = get_platform_domains(platform_str)
+                if default_domains:
+                    domains = default_domains
+                    logger.info(f"[PlatformConnection] 使用默认 domains: {domains}")
+            except Exception as e:
+                logger.warning(f"[PlatformConnection] 获取默认 domains 失败: {e}")
+
+        # 如果没有指定 test_url，设置默认值
+        test_url = data.test_url
+        if not test_url:
+            try:
+                from app.services.cookies.base import get_platform_test_url
+                platform_str = self._get_platform_str(data.platform)
+                default_test_url = get_platform_test_url(platform_str)
+                if default_test_url:
+                    test_url = default_test_url
+                    logger.info(f"[PlatformConnection] 使用默认 test_url: {test_url}")
+            except Exception as e:
+                logger.warning(f"[PlatformConnection] 获取默认 test_url 失败: {e}")
+
         conn = PlatformConnection(
             id=str(uuid.uuid4()),
             platform=data.platform,
@@ -147,8 +173,8 @@ class PlatformConnectionService:
             account_name=data.account_name,
             account_avatar=data.account_avatar,
             account_url=data.account_url,
-            domains=data.domains,
-            test_url=data.test_url,
+            domains=domains,
+            test_url=test_url,
         )
 
         # 处理 Cookie 存储
@@ -160,7 +186,7 @@ class PlatformConnectionService:
         self.session.add(conn)
         self.session.commit()
         self.session.refresh(conn)
-        logger.info(f"[PlatformConnection] Created: {conn.id} for {conn.platform}")
+        logger.info(f"[PlatformConnection] Created: {conn.id} for {conn.platform}, domains={domains}")
         return conn
 
     def update(self, conn_id: str, data: PlatformConnectionUpdate) -> Optional[PlatformConnection]:
@@ -293,7 +319,8 @@ class PlatformConnectionService:
         mgr = get_cookie_manager()
 
         # 解析为 Netscape 格式
-        netscape_content = mgr.parse_cookie(cookie_str, conn.domains or "")
+        platform_str = self._get_platform_str(conn.platform)
+        netscape_content = mgr.normalize_cookie(platform_str, cookie_str)
         if not netscape_content:
             logger.warning(f"[PlatformConnectionService] Cookie parse failed for {conn_id}")
             return False
@@ -352,13 +379,14 @@ class PlatformConnectionService:
             # 直接存储 Netscape 格式
             conn.cookie_content = cookie_content
         elif credentials:
-            # 从 credentials 解析
+            # 从 credentials 解析并转换为 Netscape 格式
             raw = credentials.get("raw", "")
             content = credentials.get("content", "")
             cookie_str = raw or content
             if cookie_str:
                 mgr = get_cookie_manager()
-                conn.cookie_content = mgr.parse_cookie(cookie_str, conn.domains or "")
+                platform_str = self._get_platform_str(conn.platform)
+                conn.cookie_content = mgr.normalize_cookie(platform_str, cookie_str)
 
     def _sync_cookie_file(self, conn: PlatformConnection, cookie_content: str):
         """同步写入 Cookie 文件"""
@@ -374,7 +402,7 @@ class PlatformConnectionService:
 
             # 清洗内容
             mgr = get_cookie_manager()
-            clean_content = mgr.parse_cookie(cookie_content, conn.domains or "")
+            clean_content = mgr.clean_cookie_content(cookie_content)
 
             cookie_path.write_text(clean_content, encoding="utf-8")
             cookie_path.chmod(0o600)
@@ -454,7 +482,7 @@ class PlatformConnectionService:
             return {"success": True, "message": result["message"]}
 
         # 尝试自动转换
-        netscape = mgr.parse_cookie(cookie_str, conn.domains or "")
+        netscape = mgr.normalize_cookie(platform, cookie_str)
         if netscape:
             result = mgr.validate(netscape)
             if result["valid"]:
