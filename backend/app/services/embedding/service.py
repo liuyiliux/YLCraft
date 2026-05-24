@@ -599,7 +599,7 @@ class EmbeddingService:
         # pgvector 格式: '[0.1,0.2,0.3]'（无空格）— asyncpg 需要 string 类型
         vector_literal = "[" + ",".join(str(v) for v in query_vector) + "]"
 
-        # 构建查询（优先显式传入的模型，其次 API 配置的模型，最后本地模型）
+        query = sql_text("""
             SELECT
                 ae.asset_node_id,
                 1 - (ae.embedding <=> :query_vector\\:\\:vector) AS similarity,
