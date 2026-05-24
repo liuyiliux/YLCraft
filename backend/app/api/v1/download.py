@@ -785,8 +785,21 @@ async def _run_download_task(task: DownloadTask):
                 height = 0
                 cover_url = ""
                 if video_info:
-                    # 获取分辨率（从 qualities 中提取最高分辨率）
-                    if video_info.qualities:
+                    # 获取分辨率：优先匹配实际下载的 quality，否则取最高分辨率
+                    if video_info.qualities and task.quality:
+                        matched_quality = None
+                        for q in video_info.qualities:
+                            if q.quality == task.quality:
+                                matched_quality = q
+                                break
+                        if not matched_quality:
+                            matched_quality = video_info.qualities[0]
+                        if matched_quality and matched_quality.resolution:
+                            res_parts = matched_quality.resolution.split("x")
+                            if len(res_parts) == 2:
+                                width = int(res_parts[0])
+                                height = int(res_parts[1])
+                    elif video_info.qualities:
                         best_quality = video_info.qualities[0]
                         if best_quality.resolution:
                             res_parts = best_quality.resolution.split("x")

@@ -11,7 +11,6 @@ import StoryPage from './pages/story'
 import TasksPage from './pages/tasks'
 import SettingsPage from './pages/settings'
 import AssetsPage from './pages/assets'
-import AssetHubPage from './pages/asset-hub'
 import CharactersPage from './pages/characters'
 import ImageGenPage from './pages/image-gen'
 import VideoGenPage from './pages/video-gen'
@@ -59,7 +58,7 @@ export default function App() {
               <Route index element={<DashboardPage />} />
               <Route path="download" element={<DownloadPage />} />
               <Route path="assets" element={<AssetsPage />} />
-              <Route path="asset-hub" element={<AssetHubPage />} />
+              <Route path="asset-hub" element={<Navigate to="/assets" replace />} />
               <Route path="characters" element={<CharactersPage />} />
               <Route path="breaker" element={<BreakerPage />} />
               <Route path="clip" element={<ClipLabPage />} />

@@ -149,13 +149,6 @@ def _register_routes():
     """延迟导入并注册所有路由，避免循环导入"""
     from fastapi import APIRouter
 
-    # Provider 管理路由
-    try:
-        from app.api.v1 import providers
-        app.include_router(providers.router, prefix="/api/v1/providers", tags=["Providers"])
-    except Exception as e:
-        logger.warning(f"Could not load providers router: {e}")
-
     # LLM 路由
     try:
         from app.api.v1 import llm
@@ -385,7 +378,7 @@ def _register_routes():
     # AI 连接器路由
     try:
         from app.api.v1 import ai_connectors
-        app.include_router(ai_connectors.router, prefix="/api/v1/ai", tags=["AI Connectors"])
+        app.include_router(ai_connectors.router, prefix="/api/v1/ai/connectors", tags=["AI Connectors"])
     except Exception as e:
         logger.warning(f"Could not load ai_connectors router: {e}")
 

@@ -38,7 +38,6 @@ const { Sider, Content, Header } = Layout
 const MAIN_NAV: MenuProps['items'] = [
   { key: '/', icon: <DashboardOutlined />, label: '概览' },
   { key: '/assets', icon: <FolderOpenOutlined />, label: '素材库' },
-  { key: '/asset-hub', icon: <AppstoreOutlined />, label: '资产中枢 v3' },
   { key: '/tasks', icon: <ThunderboltOutlined />, label: '任务管理' },
 ]
 

@@ -9,14 +9,15 @@
  */
 
 import { useState, useCallback, useEffect } from 'react'
-import { Tree, Input, Checkbox, Tooltip } from 'antd'
-import { 
-  FolderOutlined, 
-  FolderOpenOutlined, 
-  TagOutlined, 
+import { Tree, Input, Spin } from 'antd'
+import {
+  FolderOutlined,
+  FolderOpenOutlined,
+  TagOutlined,
   SearchOutlined
 } from '@ant-design/icons'
 import type { DataNode } from 'antd/es/tree'
+import { getTagTree, getTagChildren } from '../../api'
 
 interface TagItem {
   id: string
@@ -53,55 +54,75 @@ export function TagTree({
   const [expandedKeys, setExpandedKeys] = useState<string[]>([])
   const [searchValue, setSearchValue] = useState('')
   const [loadingKeys, setLoadingKeys] = useState<Set<string>>(new Set())
+  const [loading, setLoading] = useState(false)
+  const [tagMap, setTagMap] = useState<Record<string, TagItem>>({})
 
-  // 模拟获取标签数据（实际项目中应该调用 API）
+  // 从 API 加载标签数据
   const fetchTags = useCallback(async (parentId?: string): Promise<TagItem[]> => {
-    // TODO: 实际调用 API
-    await new Promise(resolve => setTimeout(resolve, 300))
-    
-    const mockTags: TagItem[] = [
-      { id: 'cat1', name: '人物', parent_id: parentId || null, level: parentId ? 1 : 0, path: parentId ? `root/分类/人物` : 'root/人物', color: '#ff4d6a', category: '分类', asset_count: 128 },
-      { id: 'cat2', name: '场景', parent_id: parentId || null, level: parentId ? 1 : 0, path: parentId ? `root/分类/场景` : 'root/场景', color: '#00d4ff', category: '分类', asset_count: 89 },
-      { id: 'cat3', name: '物品', parent_id: parentId || null, level: parentId ? 1 : 0, path: parentId ? `root/分类/物品` : 'root/物品', color: '#722ed1', category: '分类', asset_count: 256 },
-      { id: 'cat4', name: '风格', parent_id: parentId || null, level: parentId ? 1 : 0, path: parentId ? `root/分类/风格` : 'root/风格', color: '#52c41a', category: '分类', asset_count: 64 },
-    ]
-    
-    // 只有顶层有子节点
-    if (!parentId) {
-      return mockTags.map(t => ({
-        ...t,
-        children: t.asset_count > 50 ? [] : undefined // 模拟子节点
-      }))
+    try {
+      if (parentId) {
+        const res = await getTagChildren(parentId)
+        const children = res?.data || res || []
+        const items: TagItem[] = children.map((t: any) => {
+          const tag: TagItem = {
+            id: t.id, name: t.name,
+            parent_id: t.parent_id || null,
+            level: t.level || 0,
+            path: t.path || '',
+            color: t.color || null,
+            category: t.category || null,
+            asset_count: t.asset_count || 0,
+          }
+          setTagMap(prev => ({ ...prev, [tag.id]: tag }))
+          return tag
+        })
+        return items
+      } else {
+        const res = await getTagTree()
+        const tags = res?.data || res || []
+        const items: TagItem[] = (Array.isArray(tags) ? tags : []).map((t: any) => {
+          const tag: TagItem = {
+            id: t.id, name: t.name,
+            parent_id: t.parent_id || null,
+            level: t.level || 0,
+            path: t.path || '',
+            color: t.color || null,
+            category: t.category || null,
+            asset_count: t.asset_count || 0,
+            children: t.children,
+          }
+          setTagMap(prev => ({ ...prev, [tag.id]: tag }))
+          return tag
+        })
+        return items
+      }
+    } catch {
+      return []
     }
-    return mockTags.slice(0, 2).map((t, index) => ({
-      ...t,
-      id: `${parentId}-${t.id}-${index}`,
-      name: `${t.name}子项`,
-      level: t.level + 1,
-      asset_count: Math.floor(Math.random() * 30),
-    }))
   }, [])
 
   // 初始化加载顶层标签
   useEffect(() => {
+    setLoading(true)
     fetchTags().then(tags => {
       setTreeData(tags.map(tagToTreeNode))
-    })
+    }).finally(() => setLoading(false))
   }, [fetchTags])
 
   const tagToTreeNode = (tag: TagItem): DataNode => {
-    const hasChildren = tag.asset_count > 50 || (tag.children && tag.children.length > 0)
+    const hasChildren = !!(tag.children && tag.children.length > 0) || tag.asset_count > 0
+    const childrenList = tag.children || undefined
     return {
       title: (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
-          <span 
-            style={{ 
-              display: 'inline-block', 
-              width: 8, 
-              height: 8, 
-              borderRadius: '50%', 
-              backgroundColor: tag.color || '#8b8ba8' 
-            }} 
+          <span
+            style={{
+              display: 'inline-block',
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              backgroundColor: tag.color || '#8b8ba8'
+            }}
           />
           <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {tag.name}
@@ -114,7 +135,7 @@ export function TagTree({
       key: tag.id,
       icon: hasChildren ? <FolderOutlined /> : <TagOutlined />,
       isLeaf: !hasChildren,
-      children: hasChildren ? [] : undefined,
+      children: childrenList ? childrenList.map(tagToTreeNode) : (hasChildren ? [] : undefined),
     }
   }
 
@@ -229,10 +250,17 @@ export function TagTree({
         loadData={onLoadData}
         icon={renderTreeIcon}
         onDoubleClick={onTagClick ? (_, info) => {
-          // TODO: 查找对应的 tag 并调用 onTagClick
+          const key = info.node.key as string
+          const tag = tagMap[key]
+          if (tag) onTagClick(tag)
         } : undefined}
         style={{ padding: 12 }}
       />
+      {loading && (
+        <div style={{ textAlign: 'center', padding: 12 }}>
+          <Spin size="small" />
+        </div>
+      )}
     </div>
   )
 }

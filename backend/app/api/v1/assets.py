@@ -111,6 +111,8 @@ def _asset_to_dict(asset: Asset, include_metadata: bool = False) -> dict:
             return "720P"
         elif height >= 480:
             return "480P"
+        elif height >= 360:
+            return "360P"
         else:
             return ""
     

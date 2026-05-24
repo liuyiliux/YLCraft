@@ -9,7 +9,7 @@
  */
 
 import { useState, useCallback } from 'react'
-import { Card, Tag, Button, Pagination, Empty, Skeleton, Tooltip } from 'antd'
+import { Card, Tag, Button, Pagination, Empty, Skeleton, Tooltip, Checkbox } from 'antd'
 import { 
   FileImageOutlined, 
   VideoCameraOutlined, 
@@ -25,16 +25,25 @@ import {
   UnorderedListOutlined,
 } from '@ant-design/icons'
 
-interface AssetItem {
+export interface AssetItem {
   id: string
-  name: string
-  asset_type: string
-  thumbnail_url: string
-  quality_score: number
-  tags: string[]
-  created_at: string
-  view_count: number
-  size?: string
+  title: string
+  name?: string
+  type: string
+  platform?: string
+  author?: string
+  resolution?: string
+  duration?: number
+  file_size?: number
+  thumbnail_url?: string
+  cover_url?: string
+  status?: string
+  tags?: string[]
+  source_type?: string
+  source_url?: string
+  created_at?: string
+  quality_score?: number
+  relevance_score?: number
 }
 
 interface AssetGridProps {
@@ -45,6 +54,10 @@ interface AssetGridProps {
   currentPage?: number
   onPageChange?: (page: number, pageSize: number) => void
   onAssetClick?: (asset: AssetItem) => void
+  selectable?: boolean
+  selectedIds?: string[]
+  onSelect?: (id: string, checked: boolean) => void
+  onSelectAll?: (checked: boolean) => void
 }
 
 const TYPE_ICONS: Record<string, React.ReactNode> = {
@@ -75,6 +88,10 @@ export function AssetGrid({
   currentPage = 1,
   onPageChange,
   onAssetClick,
+  selectable = false,
+  selectedIds = [],
+  onSelect,
+  onSelectAll,
 }: AssetGridProps) {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const [hoveredAsset, setHoveredAsset] = useState<string | null>(null)
@@ -82,6 +99,17 @@ export function AssetGrid({
   const handlePageChange = useCallback((page: number, size: number) => {
     onPageChange?.(page, size)
   }, [onPageChange])
+
+  const getDisplayName = (asset: AssetItem) => asset.title || asset.name || 'Untitled'
+  const getThumbnail = (asset: AssetItem) => asset.thumbnail_url || asset.cover_url || ''
+  const getType = (asset: AssetItem) => (asset.type || 'FILE').toUpperCase()
+  const getTags = (asset: AssetItem) => asset.tags || []
+  const getScore = (asset: AssetItem) => asset.relevance_score ?? asset.quality_score ?? 0
+  const getSize = (asset: AssetItem) => {
+    if (!asset.file_size) return ''
+    const mb = asset.file_size / 1024 / 1024
+    return mb >= 1 ? `${mb.toFixed(1)} MB` : `${(asset.file_size / 1024).toFixed(0)} KB`
+  }
 
   const renderSkeleton = () => (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 16 }}>
@@ -97,8 +125,14 @@ export function AssetGrid({
 
   const renderAssetCard = (asset: AssetItem) => {
     const isHovered = hoveredAsset === asset.id
-    const typeIcon = TYPE_ICONS[asset.asset_type] || <InboxOutlined />
-    const typeColor = TYPE_COLORS[asset.asset_type] || '#8b8ba8'
+    const isSelected = selectedIds.includes(asset.id)
+    const displayName = getDisplayName(asset)
+    const typeIcon = TYPE_ICONS[getType(asset)] || <InboxOutlined />
+    const typeColor = TYPE_COLORS[getType(asset)] || '#8b8ba8'
+    const tags = getTags(asset)
+    const score = getScore(asset)
+    const sizeStr = getSize(asset)
+    const thumbnailUrl = getThumbnail(asset)
 
     return (
       <Card
@@ -110,16 +144,17 @@ export function AssetGrid({
           transform: isHovered ? 'translateY(-4px)' : 'none',
           boxShadow: isHovered ? 'var(--elevation8)' : 'none',
           cursor: 'pointer',
+          border: isSelected ? '2px solid #1890ff' : undefined,
         }}
         onMouseEnter={() => setHoveredAsset(asset.id)}
         onMouseLeave={() => setHoveredAsset(null)}
         onClick={() => onAssetClick?.(asset)}
         cover={
           <div style={{ position: 'relative', height: 150, overflow: 'hidden' }}>
-            {asset.thumbnail_url ? (
+            {thumbnailUrl ? (
               <img
-                src={asset.thumbnail_url}
-                alt={asset.name}
+                src={thumbnailUrl}
+                alt={displayName}
                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}
               />
             ) : (
@@ -137,6 +172,21 @@ export function AssetGrid({
               </div>
             )}
             
+            {/* Selection checkbox */}
+            {selectable && (
+              <div style={{
+                position: 'absolute',
+                top: 8,
+                left: 8,
+                zIndex: 2,
+              }} onClick={e => e.stopPropagation()}>
+                <Checkbox
+                  checked={isSelected}
+                  onChange={e => onSelect?.(asset.id, e.target.checked)}
+                />
+              </div>
+            )}
+
             {/* 悬停遮罩 */}
             <div 
               style={{
@@ -155,21 +205,18 @@ export function AssetGrid({
               }}
             >
               <Tooltip title="预览">
-                <Button type="primary" icon={<EyeOutlined />} size="small" />
-              </Tooltip>
-              <Tooltip title="下载">
-                <Button type="default" icon={<DownloadOutlined />} size="small" />
+                <Button type="primary" icon={<EyeOutlined />} size="small" onClick={(e) => { e.stopPropagation(); onAssetClick?.(asset) }} />
               </Tooltip>
               <Tooltip title="更多">
-                <Button type="default" icon={<MoreOutlined />} size="small" />
+                <Button type="default" icon={<MoreOutlined />} size="small" onClick={e => e.stopPropagation()} />
               </Tooltip>
             </div>
 
             {/* 类型标签 */}
             <div style={{ 
               position: 'absolute', 
-              top: 8, 
-              left: 8,
+              top: selectable ? 8 : 8, 
+              right: 8,
               backgroundColor: typeColor,
               padding: '4px 8px',
               borderRadius: 4,
@@ -179,26 +226,26 @@ export function AssetGrid({
             }}>
               {typeIcon}
               <span style={{ color: '#fff', fontSize: 11 }}>
-                {asset.asset_type}
+                {getType(asset)}
               </span>
             </div>
 
-            {/* 质量评分 */}
-            {asset.quality_score > 0 && (
+            {/* 相关度评分 */}
+            {score > 0 && (
               <div style={{ 
                 position: 'absolute', 
-                top: 8, 
-                right: 8,
-                backgroundColor: 'rgba(0,0,0,0.6)',
-                padding: '4px 8px',
+                top: selectable ? 40 : 8, 
+                left: 8,
+                backgroundColor: 'rgba(0,0,0,0.7)',
+                padding: '2px 8px',
                 borderRadius: 4,
                 display: 'flex',
                 alignItems: 'center',
                 gap: 4,
               }}>
-                <StarOutlined style={{ color: '#faad14' }} />
+                <StarOutlined style={{ color: '#faad14', fontSize: 11 }} />
                 <span style={{ color: '#fff', fontSize: 11 }}>
-                  {asset.quality_score.toFixed(1)}
+                  {Math.round(score * 100)}%
                 </span>
               </div>
             )}
@@ -215,22 +262,24 @@ export function AssetGrid({
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
             }}>
-              {asset.name}
+              {displayName}
             </h3>
           </div>
 
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-            {asset.tags.slice(0, 3).map((tag, index) => (
-              <Tag key={index} style={{ fontSize: 11 }}>
-                {tag}
-              </Tag>
-            ))}
-            {asset.tags.length > 3 && (
-              <Tag style={{ fontSize: 11 }}>
-                +{asset.tags.length - 3}
-              </Tag>
-            )}
-          </div>
+          {tags.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+              {tags.slice(0, 3).map((tag, index) => (
+                <Tag key={index} style={{ fontSize: 11 }}>
+                  {tag}
+                </Tag>
+              ))}
+              {tags.length > 3 && (
+                <Tag style={{ fontSize: 11 }}>
+                  +{tags.length - 3}
+                </Tag>
+              )}
+            </div>
+          )}
 
           <div style={{ 
             display: 'flex', 
@@ -240,11 +289,8 @@ export function AssetGrid({
             fontSize: 12,
             marginTop: 'auto',
           }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <EyeOutlined />
-              {asset.view_count}
-            </span>
-            {asset.size && <span>{asset.size}</span>}
+            {asset.platform && <span>{asset.platform}</span>}
+            {sizeStr && <span>{sizeStr}</span>}
           </div>
         </div>
       </Card>

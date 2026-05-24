@@ -36,6 +36,7 @@ interface LineageEdge {
 
 interface LineageGraphProps {
   assetId?: string
+  data?: { nodes?: any[]; edges?: any[] }
 }
 
 const NODE_COLORS: Record<string, string> = {
@@ -47,7 +48,7 @@ const NODE_COLORS: Record<string, string> = {
   default: '#8b8ba8',
 }
 
-export function LineageGraph({ assetId }: LineageGraphProps) {
+export function LineageGraph({ assetId, data }: LineageGraphProps) {
   const [nodes, setNodes] = useState<LineageNode[]>([])
   const [edges, setEdges] = useState<LineageEdge[]>([])
   const [centerNode, setCenterNode] = useState<string | null>(null)
@@ -61,8 +62,29 @@ export function LineageGraph({ assetId }: LineageGraphProps) {
   const [isDragging, setIsDragging] = useState(false)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
 
-  // 模拟谱系数据
+  // 加载谱系数据
   useEffect(() => {
+    // 如果提供了外部 data，优先使用
+    if (data && (data.nodes || data.edges)) {
+      const realNodes: LineageNode[] = (data.nodes || []).map((n: any, i: number) => ({
+        id: n.id || String(i),
+        name: n.name || n.title || n.label || 'Asset',
+        type: n.type || 'asset',
+        depth: n.depth || 0,
+        x: 50 + (n.depth || 0) * 180 + (i % 3) * 40,
+        y: 50 + Math.floor(i / 3) * 120,
+      }))
+      const realEdges: LineageEdge[] = (data.edges || []).map((e: any) => ({
+        source: e.source || e.from,
+        target: e.target || e.to,
+        relationType: e.relationType || e.type || 'RELATED',
+      }))
+      setNodes(realNodes)
+      setEdges(realEdges)
+      if (realNodes.length > 0) setCenterNode(realNodes[0].id)
+      return
+    }
+
     if (!assetId) return
 
     const mockNodes: LineageNode[] = [

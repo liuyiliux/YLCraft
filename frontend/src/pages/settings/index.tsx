@@ -35,6 +35,7 @@ import {
   EyeOutlined,
   SearchOutlined,
   CopyOutlined,
+  DeleteOutlined,
   QuestionCircleOutlined,
 } from '@ant-design/icons'
 import { listConnectors, createConnector, updateConnector, deleteConnector, testConnector, getSettings, updateSettings } from '../../api'
@@ -757,6 +758,7 @@ export default function SettingsPage() {
                 { value: 'video', label: '视频生成' },
                 { value: 'tts', label: '语音合成 (TTS)' },
                 { value: 'stt', label: '语音识别 (STT)' },
+                { value: 'embedding', label: '嵌入 (Embedding)' },
               ]} />
             </Form.Item>
           </div>
@@ -775,12 +777,19 @@ export default function SettingsPage() {
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16' }}>
             <Form.Item name="default_model" label={<span style={{ color: THEME.textPrimary }}>默认模型</span>}>
-              <Input placeholder="gpt-4o" />
+              <Input placeholder="gpt-4o / text-embedding-3-large / BAAI/bge-m3" />
             </Form.Item>
             {selectedType === 'llm' && (
               <>
                 <Form.Item name="max_tokens" label={<span style={{ color: THEME.textPrimary }}>最大 Token 数</span>}>
                   <InputNumber min={1} max={200000} style={{ width: '100%' }} placeholder="4096" />
+                </Form.Item>
+              </>
+            )}
+            {selectedType === 'embedding' && (
+              <>
+                <Form.Item name="embedding_dimension" label={<span style={{ color: THEME.textPrimary }}>向量维度</span>}>
+                  <InputNumber min={64} max={8192} step={64} style={{ width: '100%' }} placeholder="1536" />
                 </Form.Item>
               </>
             )}
@@ -792,6 +801,25 @@ export default function SettingsPage() {
               </Form.Item>
               <div></div>
             </div>
+          )}
+          {selectedType === 'embedding' && (
+            <>
+              <Form.Item name="embedding_type" label={<span style={{ color: THEME.textPrimary }}>嵌入类型</span>}>
+                <Select options={[
+                  { value: 'text', label: '文本嵌入' },
+                  { value: 'image', label: '图像嵌入' },
+                  { value: 'multimodal', label: '多模态嵌入' },
+                ]} placeholder="text" style={{ width: '100%' }} allowClear />
+              </Form.Item>
+              <Alert
+                type="info"
+                showIcon
+                message="Embedding 配置说明"
+                description="配置完成后，系统将在素材入库时自动调用此 API 生成向量，用于混合搜索（向量+全文+标签）。"
+                style={{ marginBottom: 16 }}
+                closable
+              />
+            </>
           )}
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0 16' }}>

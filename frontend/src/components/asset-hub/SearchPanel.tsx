@@ -11,22 +11,25 @@
  */
 
 import { useState, useCallback } from 'react'
-import { Input, Select, Slider, Tag, Button, Card, Space, Divider } from 'antd'
+import { Input, Select, Slider, Tag, Button, Card, Space, Divider, Radio } from 'antd'
 import { SearchOutlined, FilterOutlined, SettingOutlined, CloseOutlined, HistoryOutlined, StarOutlined } from '@ant-design/icons'
 import { TagSelector } from './TagSelector'
 
-interface SearchPanelProps {
-  onSearch?: (params: SearchParams) => void
-  defaultParams?: SearchParams
-}
-
-interface SearchParams {
+export interface SearchParams {
   query: string
   tagIds: string[]
   assetTypes: string[]
   minQuality: number
   vectorWeight: number
   textWeight: number
+  mode: 'fuzzy' | 'hybrid'
+}
+
+interface SearchPanelProps {
+  onSearch?: (params: SearchParams) => void
+  defaultParams?: Partial<SearchParams>
+  searchHistory?: string[]
+  onHistoryClick?: (keyword: string) => void
 }
 
 const ASSET_TYPES = [
@@ -39,14 +42,7 @@ const ASSET_TYPES = [
   { value: '3D_MODEL', label: '3D模型' },
 ]
 
-const SEARCH_HISTORY = [
-  '赛博朋克城市',
-  '古风美女',
-  'AI生成插画',
-  '科幻场景',
-]
-
-export function SearchPanel({ onSearch, defaultParams }: SearchPanelProps) {
+export function SearchPanel({ onSearch, defaultParams, searchHistory = [], onHistoryClick }: SearchPanelProps) {
   const [query, setQuery] = useState(defaultParams?.query || '')
   const [tagIds, setTagIds] = useState(defaultParams?.tagIds || [])
   const [assetTypes, setAssetTypes] = useState(defaultParams?.assetTypes || [])
@@ -54,6 +50,7 @@ export function SearchPanel({ onSearch, defaultParams }: SearchPanelProps) {
   const [vectorWeight, setVectorWeight] = useState(defaultParams?.vectorWeight || 70)
   const [textWeight, setTextWeight] = useState(defaultParams?.textWeight || 30)
   const [showAdvanced, setShowAdvanced] = useState(false)
+  const [searchMode, setSearchMode] = useState<'fuzzy' | 'hybrid'>(defaultParams?.mode || 'fuzzy')
 
   const handleSearch = useCallback(() => {
     onSearch?.({
@@ -63,8 +60,9 @@ export function SearchPanel({ onSearch, defaultParams }: SearchPanelProps) {
       minQuality,
       vectorWeight: vectorWeight / 100,
       textWeight: textWeight / 100,
+      mode: searchMode,
     })
-  }, [query, tagIds, assetTypes, minQuality, vectorWeight, textWeight, onSearch])
+  }, [query, tagIds, assetTypes, minQuality, vectorWeight, textWeight, searchMode, onSearch])
 
   const handleClear = useCallback(() => {
     setQuery('')
@@ -75,10 +73,22 @@ export function SearchPanel({ onSearch, defaultParams }: SearchPanelProps) {
     setTextWeight(30)
   }, [])
 
-  const handleHistoryClick = useCallback((keyword: string) => {
+  const handleHistoryClickLocal = useCallback((keyword: string) => {
     setQuery(keyword)
-    handleSearch()
-  }, [handleSearch])
+    if (onHistoryClick) {
+      onHistoryClick(keyword)
+    } else {
+      onSearch?.({
+        query: keyword,
+        tagIds,
+        assetTypes,
+        minQuality,
+        vectorWeight: vectorWeight / 100,
+        textWeight: textWeight / 100,
+        mode: searchMode,
+      })
+    }
+  }, [tagIds, assetTypes, minQuality, vectorWeight, textWeight, searchMode, onSearch, onHistoryClick])
 
   const updateWeights = useCallback((newVectorWeight: number) => {
     setVectorWeight(newVectorWeight)
@@ -123,18 +133,18 @@ export function SearchPanel({ onSearch, defaultParams }: SearchPanelProps) {
       </div>
 
       {/* 搜索历史 */}
-      {SEARCH_HISTORY.length > 0 && !query && (
+      {searchHistory.length > 0 && !query && (
         <div style={{ marginTop: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
             <HistoryOutlined style={{ color: '#8b8ba8' }} />
             <span style={{ color: '#8b8ba8', fontSize: 12 }}>搜索历史</span>
           </div>
           <Space wrap>
-            {SEARCH_HISTORY.map((keyword, index) => (
+            {searchHistory.map((keyword, index) => (
               <Button
                 key={index}
                 type="text"
-                onClick={() => handleHistoryClick(keyword)}
+                onClick={() => handleHistoryClickLocal(keyword)}
               >
                 {keyword}
               </Button>
@@ -143,12 +153,23 @@ export function SearchPanel({ onSearch, defaultParams }: SearchPanelProps) {
         </div>
       )}
 
-      {/* 高级选项切换 */}
-      <div style={{ marginTop: 16 }}>
+      {/* 搜索模式 + 高级选项 */}
+      <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 16 }}>
+        <Radio.Group
+          value={searchMode}
+          onChange={e => setSearchMode(e.target.value)}
+          size="small"
+          optionType="button"
+          buttonStyle="solid"
+        >
+          <Radio.Button value="fuzzy">模糊搜索</Radio.Button>
+          <Radio.Button value="hybrid">混合搜索</Radio.Button>
+        </Radio.Group>
         <Button
           type="text"
           onClick={() => setShowAdvanced(!showAdvanced)}
           icon={<SettingOutlined />}
+          size="small"
         >
           {showAdvanced ? '收起高级选项' : '展开高级选项'}
         </Button>

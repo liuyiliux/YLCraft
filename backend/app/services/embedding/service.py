@@ -528,10 +528,13 @@ class EmbeddingService:
         model_filter = embedding_model or self.TEXT_MODEL
 
         # PostgreSQL 向量相似度搜索（余弦相似度）
+        # pgvector 格式: '[0.1,0.2,0.3]'（无空格）
+        vector_literal = "[" + ",".join(str(v) for v in query_vector) + "]"
+
         query = text("""
             SELECT
                 ae.asset_node_id,
-                1 - (ae.embedding <=> :query_vector::vector) AS similarity,
+                1 - (ae.embedding <=> :query_vector\\:\\:vector) AS similarity,
                 an.name,
                 an.asset_type,
                 an.thumbnail_url,
@@ -540,14 +543,14 @@ class EmbeddingService:
             JOIN asset_nodes an ON ae.asset_node_id = an.id
             WHERE ae.embedding_model = :model
             AND an.asset_type = COALESCE(:asset_type, an.asset_type)
-            ORDER BY ae.embedding <=> :query_vector::vector
+            ORDER BY ae.embedding <=> :query_vector\\:\\:vector
             LIMIT :top_k
         """)
 
         result = await self.session.execute(
             query,
             {
-                "query_vector": str(query_vector),
+                "query_vector": vector_literal,
                 "model": model_filter,
                 "asset_type": asset_type_filter,
                 "top_k": top_k,
@@ -586,73 +589,129 @@ class EmbeddingService:
         混合搜索：向量 + 全文 + 标签
 
         一次查询完成所有搜索，综合排序。
+        如果没有可用的 embedding 模型，返回空结果（前端应切换到模糊搜索）。
         """
         from app.db.models.asset_hub import AssetNode, AssetEmbedding, AssetTagLink, Tag
 
         # 获取文本向量
         embedding = await self.embed_text(query_text)
-        query_vector_str = str(embedding) if embedding else None
 
-        # 构建混合搜索 SQL
-        sql = """
-            WITH vector_scores AS (
-                SELECT
-                    ae.asset_node_id,
-                    1 - (ae.embedding <=> :query_vector::vector) AS vector_score
-                FROM asset_embeddings ae
-                WHERE ae.embedding_model = :model
-                AND :query_vector IS NOT NULL
-            ),
-            text_scores AS (
-                SELECT
-                    id AS asset_node_id,
-                    COALESCE(ts_rank(fulltext_vector, plainto_tsquery('simple', :query_text)), 0) AS text_score
-                FROM asset_nodes
-                WHERE fulltext_vector @@ plainto_tsquery('simple', :query_text)
-            ),
-            tag_scores AS (
-                SELECT
-                    atl.asset_node_id,
-                    COUNT(*) AS tag_match_count
-                FROM asset_tag_links atl
-                JOIN tags t ON atl.tag_id = t.id
-                WHERE t.name = ANY(:tag_filters)
-                GROUP BY atl.asset_node_id
+        if embedding is None or len(embedding) == 0:
+            logger.warning(
+                "[EmbeddingService] No embedding model available. "
+                "Hybrid search requires sentence-transformers. "
+                "Install with: pip install sentence-transformers"
             )
-            SELECT
-                an.id AS asset_id,
-                an.name,
-                an.asset_type,
-                an.thumbnail_url,
-                an.metadata_json,
-                COALESCE(vs.vector_score, 0) AS vector_score,
-                COALESCE(ts.text_score, 0) AS text_score,
-                COALESCE(tag_s.tag_match_count, 0) AS tag_match_count,
-                (COALESCE(vs.vector_score, 0) * :vector_weight +
-                 COALESCE(ts.text_score, 0) * :text_weight) AS combined_score
-            FROM asset_nodes an
-            LEFT JOIN vector_scores vs ON an.id = vs.asset_node_id
-            LEFT JOIN text_scores ts ON an.id = ts.asset_node_id
-            LEFT JOIN tag_scores tag_s ON an.id = tag_s.asset_node_id
-            WHERE an.asset_type = COALESCE(:asset_type, an.asset_type)
-            AND (vs.vector_score > 0 OR ts.text_score > 0 OR tag_s.tag_match_count > 0)
-            ORDER BY combined_score DESC
-            LIMIT :top_k
-        """
+            return []
 
-        result = await self.session.execute(
-            text(sql),
-            {
-                "query_vector": query_vector_str,
+        # pgvector 格式: '[0.1,0.2,0.3]'（无空格）
+        vector_literal = "[" + ",".join(str(v) for v in embedding) + "]"
+
+        tag_list = tag_filters or []
+        has_tags = len(tag_list) > 0
+
+        # 完整混合搜索：向量 + 文本 + 标签
+        if has_tags:
+            sql = """
+                WITH vector_scores AS (
+                    SELECT
+                        ae.asset_node_id,
+                        1 - (ae.embedding <=> :query_vector\\:\\:vector) AS vector_score
+                    FROM asset_embeddings ae
+                    WHERE ae.embedding_model = :model
+                ),
+                text_scores AS (
+                    SELECT
+                        id AS asset_node_id,
+                        COALESCE(ts_rank(fulltext_vector, plainto_tsquery('simple', :query_text)), 0) AS text_score
+                    FROM asset_nodes
+                    WHERE fulltext_vector @@ plainto_tsquery('simple', :query_text)
+                ),
+                tag_scores AS (
+                    SELECT
+                        atl.asset_node_id,
+                        COUNT(*) AS tag_match_count
+                    FROM asset_tag_links atl
+                    JOIN tags t ON atl.tag_id = t.id
+                    WHERE t.name = ANY(:tag_filters)
+                    GROUP BY atl.asset_node_id
+                )
+                SELECT
+                    an.id AS asset_id,
+                    an.name,
+                    an.asset_type,
+                    an.thumbnail_url,
+                    an.metadata_json,
+                    COALESCE(vs.vector_score, 0) AS vector_score,
+                    COALESCE(ts.text_score, 0) AS text_score,
+                    COALESCE(tag_s.tag_match_count, 0) AS tag_match_count,
+                    (COALESCE(vs.vector_score, 0) * :vector_weight +
+                     COALESCE(ts.text_score, 0) * :text_weight) AS combined_score
+                FROM asset_nodes an
+                LEFT JOIN vector_scores vs ON an.id = vs.asset_node_id
+                LEFT JOIN text_scores ts ON an.id = ts.asset_node_id
+                LEFT JOIN tag_scores tag_s ON an.id = tag_s.asset_node_id
+                WHERE (:asset_type IS NULL OR an.asset_type = :asset_type)
+                AND (vs.vector_score > 0 OR ts.text_score > 0 OR tag_s.tag_match_count > 0)
+                ORDER BY combined_score DESC
+                LIMIT :top_k
+            """
+            params = {
+                "query_vector": vector_literal,
                 "query_text": query_text,
                 "model": self.TEXT_MODEL,
                 "vector_weight": vector_weight,
                 "text_weight": text_weight,
-                "tag_filters": tag_filters or [],
+                "tag_filters": tag_list,
                 "asset_type": asset_type_filter,
                 "top_k": top_k,
             }
-        )
+        else:
+            sql = """
+                WITH vector_scores AS (
+                    SELECT
+                        ae.asset_node_id,
+                        1 - (ae.embedding <=> :query_vector\\:\\:vector) AS vector_score
+                    FROM asset_embeddings ae
+                    WHERE ae.embedding_model = :model
+                ),
+                text_scores AS (
+                    SELECT
+                        id AS asset_node_id,
+                        COALESCE(ts_rank(fulltext_vector, plainto_tsquery('simple', :query_text)), 0) AS text_score
+                    FROM asset_nodes
+                    WHERE fulltext_vector @@ plainto_tsquery('simple', :query_text)
+                )
+                SELECT
+                    an.id AS asset_id,
+                    an.name,
+                    an.asset_type,
+                    an.thumbnail_url,
+                    an.metadata_json,
+                    COALESCE(vs.vector_score, 0) AS vector_score,
+                    COALESCE(ts.text_score, 0) AS text_score,
+                    0 AS tag_match_count,
+                    (COALESCE(vs.vector_score, 0) * :vector_weight +
+                     COALESCE(ts.text_score, 0) * :text_weight) AS combined_score
+                FROM asset_nodes an
+                LEFT JOIN vector_scores vs ON an.id = vs.asset_node_id
+                LEFT JOIN text_scores ts ON an.id = ts.asset_node_id
+                WHERE (:asset_type IS NULL OR an.asset_type = :asset_type)
+                AND (vs.vector_score > 0 OR ts.text_score > 0)
+                ORDER BY combined_score DESC
+                LIMIT :top_k
+            """
+            params = {
+                "query_vector": vector_literal,
+                "query_text": query_text,
+                "model": self.TEXT_MODEL,
+                "vector_weight": vector_weight,
+                "text_weight": text_weight,
+                "asset_type": asset_type_filter,
+                "top_k": top_k,
+            }
+
+        result = await self.session.execute(text(sql), params)
 
         search_results = []
         for row in result.all():
