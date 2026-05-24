@@ -760,6 +760,7 @@ async def _run_download_task(task: DownloadTask):
         try:
             from app.db.database import get_async_session
             from app.services.asset.service import AssetService
+            from sqlalchemy import select
             
             async with get_async_session() as db_session:
                 asset_service = AssetService(db_session)
@@ -844,6 +845,45 @@ async def _run_download_task(task: DownloadTask):
                     task.asset_id = new_asset.id
                 
                 await db_session.commit()
+
+                # 确保 asset_node 存在（嵌入向量存储需要引用 asset_nodes.id）
+                try:
+                    from app.db.models.asset_hub import AssetNode, AssetType as HubAssetType
+                    result = await db_session.execute(
+                        select(AssetNode).where(AssetNode.id == task.asset_id)
+                    )
+                    if not result.scalar_one_or_none():
+                        asset_type = HubAssetType.VIDEO
+                        if task.is_audio:
+                            asset_type = HubAssetType.AUDIO
+                        asset_node = AssetNode(
+                            id=task.asset_id,
+                            name=task.title or os.path.basename(filepath),
+                            asset_type=asset_type,
+                            thumbnail_url=local_cover_path or cover_url or "",
+                        )
+                        db_session.add(asset_node)
+                        await db_session.commit()
+                        logger.info(f"[_run_download_task] 已创建 asset_node: {task.asset_id}")
+                except Exception as node_e:
+                    logger.warning(f"[_run_download_task] 创建 asset_node 失败: {node_e}")
+
+                # 自动生成嵌入向量（用于混合搜索）
+                if task.asset_id:
+                    try:
+                        from app.services.embedding.service import EmbeddingService
+                        embed_service = EmbeddingService(db_session)
+                        # 文本嵌入：用标题
+                        if task.title:
+                            await embed_service.store_text_embedding(task.asset_id, task.title)
+                            logger.info(f"[_run_download_task] 已生成文本嵌入: {task.asset_id}")
+                        # 图像嵌入：用封面图
+                        cover = local_cover_path or cover_url
+                        if cover:
+                            await embed_service.store_image_embedding(task.asset_id, cover)
+                            logger.info(f"[_run_download_task] 已生成图像嵌入: {task.asset_id}")
+                    except Exception as embed_e:
+                        logger.warning(f"[_run_download_task] 嵌入生成失败（不影响下载）: {embed_e}")
                     
         except Exception as db_e:
             logger.warning(f"[_run_download_task] 数据库记录失败: {db_e}")

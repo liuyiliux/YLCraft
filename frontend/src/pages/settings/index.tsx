@@ -328,8 +328,9 @@ export default function SettingsPage() {
         await updateConnector(editingProvider.id, processedValues)
         message.success('AI 模型更新成功')
       } else {
-        // 创建新连接器
-        await createConnector(processedValues)
+        // 创建新连接器 - 移除 id 字段（让后端自动生成）
+        const { id, ...createData } = processedValues
+        await createConnector(createData)
         message.success('AI 模型创建成功')
       }
       setModalVisible(false)
@@ -564,6 +565,27 @@ export default function SettingsPage() {
           <Button type="text" size="small" onClick={() => handleTest(record.id)} style={{ color: THEME.primary, padding: '0 8px' }}>
             测试
           </Button>
+          <Popconfirm
+            title={record.is_active ? '确认禁用此连接？' : '确认启用此连接？'}
+            onConfirm={async () => {
+              try {
+                await updateConnector(record.id, { is_active: !record.is_active })
+                message.success(`已${record.is_active ? '禁用' : '启用'} ${record.name}`)
+                loadProviders()
+              } catch (e: any) {
+                message.error(e?.response?.data?.detail || '操作失败')
+              }
+            }}
+          >
+            <Switch
+              size="small"
+              checked={record.is_active}
+              checkedChildren="启用"
+              unCheckedChildren="禁用"
+              style={{ marginLeft: 4, marginRight: 4 }}
+              onClick={(e) => e.stopPropagation()}
+            />
+          </Popconfirm>
           <Button type="text" size="small" onClick={() => handleEdit(record)} style={{ color: THEME.textSecondary, padding: '0 8px' }}>
             编辑
           </Button>

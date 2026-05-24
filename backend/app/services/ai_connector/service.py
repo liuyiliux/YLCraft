@@ -163,6 +163,7 @@ class AIConnectorService:
 
     async def create(self, data: AIConnectorCreate) -> AIConnector:
         """创建新连接"""
+        logger.info(f"[AIConnector] Creating connector: name={data.name}, provider={data.provider}, type={data.provider_type}")
         # 标准化 supported_sizes（兼容 x/* 分隔符）
         supported_sizes_value = normalize_sizes_value(data.supported_sizes) if data.supported_sizes else None
         
@@ -197,6 +198,10 @@ class AIConnectorService:
             reference_image_field=data.reference_image_field,
             reference_image_array_field=data.reference_image_array_field,
             test_prompt=data.test_prompt,
+            # 嵌入模型配置
+            embedding_type=data.embedding_type,
+            embedding_dimension=data.embedding_dimension,
+            normalize_embeddings=data.normalize_embeddings,
         )
         conn.set_available_models(data.available_models)
 
@@ -276,8 +281,15 @@ class AIConnectorService:
             conn.reference_image_array_field = data.reference_image_array_field
         if data.test_prompt is not None:
             conn.test_prompt = data.test_prompt
+        # 嵌入模型配置
+        if data.embedding_type is not None:
+            conn.embedding_type = data.embedding_type
+        if data.embedding_dimension is not None:
+            conn.embedding_dimension = data.embedding_dimension
+        if data.normalize_embeddings is not None:
+            conn.normalize_embeddings = data.normalize_embeddings
 
-        conn.updated_at = datetime.now(timezone.utc)
+        conn.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
         self.session.add(conn)
         await self.session.commit()
         await self.session.refresh(conn)
@@ -451,6 +463,16 @@ class AIConnectorService:
                     ],
                     "max_tokens": 8,
                     "temperature": 0,
+                },
+            }
+
+        if provider_type == "embedding":
+            return {
+                "method": "POST",
+                "url": build_url("/embeddings"),
+                "json": {
+                    "model": model or "text-embedding-3-small",
+                    "input": test_prompt or "connection test",
                 },
             }
 

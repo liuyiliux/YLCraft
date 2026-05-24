@@ -125,11 +125,11 @@ class PlatformConnection(PlatformConnectionBase, table=True):
 
     id: str = Field(primary_key=True, description="连接ID")
     created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
         description="创建时间"
     )
     updated_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
         description="更新时间"
     )
 
@@ -148,17 +148,17 @@ class PlatformConnection(PlatformConnectionBase, table=True):
 
     def update_timestamp(self):
         """更新时间戳"""
-        self.updated_at = datetime.now(timezone.utc)
+        self.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
     def update_success(self):
         """记录成功使用"""
-        self.last_used = datetime.now(timezone.utc)
+        self.last_used = datetime.now(timezone.utc).replace(tzinfo=None)
         self.success_count += 1
         self.update_timestamp()
 
     def update_failure(self, error: str = ""):
         """记录失败"""
-        self.last_used = datetime.now(timezone.utc)
+        self.last_used = datetime.now(timezone.utc).replace(tzinfo=None)
         self.fail_count += 1
         self.error_message = error
         self.update_timestamp()

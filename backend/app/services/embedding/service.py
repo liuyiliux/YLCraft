@@ -17,7 +17,7 @@ import os
 from typing import List, Optional, Dict, Any, Union
 from uuid import uuid4
 import numpy as np
-from sqlalchemy import select, func, text
+from sqlalchemy import select, func, text as sql_text
 from sqlalchemy.ext.asyncio import AsyncSession
 import httpx
 
@@ -40,9 +40,15 @@ class EmbeddingService:
         self._provider_name = provider_name
         self._provider_config: Optional[Dict[str, Any]] = None  # 延迟加载
 
+    async def _get_effective_text_model_name(self) -> str:
+        """返回实际使用的文本模型名（API 模型名或本地模型名）"""
+        config = await self._load_provider_config()
+        if config and config.get("model"):
+            return config["model"]
+        return self.TEXT_MODEL
+
     async def _load_provider_config(self) -> Optional[Dict[str, Any]]:
         """从数据库加载嵌入 provider 配置（优先）或配置文件（备用）"""
-        # 如果已经加载过，直接返回
         if self._provider_config is not None:
             return self._provider_config
 
@@ -51,30 +57,69 @@ class EmbeddingService:
             try:
                 from app.db.models.ai_connector import AIConnector, AIProviderType
 
-                # 查找指定 provider
+                # 按 name 或 provider 查找（name 更精确）
                 result = await self.session.execute(
                     select(AIConnector)
-                    .where(AIConnector.provider == self._provider_name)
+                    .where(
+                        ((AIConnector.name == self._provider_name) |
+                         (AIConnector.provider == self._provider_name))
+                    )
                     .where(AIConnector.provider_type == AIProviderType.embedding)
                     .where(AIConnector.is_active == True)
+                    .limit(1)
                 )
                 conn = result.scalar_one_or_none()
 
                 if conn:
+                    # 如果有 api_endpoint（如 /v1/embeddings），拼接到 base_url 后面
+                    api_base = (conn.base_url or "").rstrip("/")
+                    if conn.api_endpoint:
+                        api_base += conn.api_endpoint
                     self._provider_config = {
                         "provider": conn.provider,
+                        "name": conn.name,
                         "model": conn.default_model,
-                        "api_base": conn.base_url,
+                        "api_base": api_base,
                         "api_key": conn.api_key,
-                        "dimension": conn.embedding_dimension,
-                        "embedding_type": conn.embedding_type,
+                        "dimension": conn.embedding_dimension or 1536,
+                        "embedding_type": conn.embedding_type or "text",
                         "normalize": conn.normalize_embeddings,
                     }
-                    logger.info(f"[EmbeddingService] Loaded config from database for {self._provider_name}")
+                    logger.info(f"[EmbeddingService] Loaded config from database: {conn.name} (provider={conn.provider})")
                     return self._provider_config
 
             except Exception as e:
                 logger.warning(f"[EmbeddingService] Failed to load from database: {e}")
+
+        # 备用：查找任意激活的 embedding connector
+        try:
+            from app.db.models.ai_connector import AIConnector, AIProviderType
+            result = await self.session.execute(
+                select(AIConnector)
+                .where(AIConnector.provider_type == AIProviderType.embedding)
+                .where(AIConnector.is_active == True)
+                .order_by(AIConnector.priority)
+                .limit(1)
+            )
+            conn = result.scalar_one_or_none()
+            if conn:
+                api_base = (conn.base_url or "").rstrip("/")
+                if conn.api_endpoint:
+                    api_base += conn.api_endpoint
+                self._provider_config = {
+                    "provider": conn.provider,
+                    "name": conn.name,
+                    "model": conn.default_model,
+                    "api_base": api_base,
+                    "api_key": conn.api_key,
+                    "dimension": conn.embedding_dimension or 1536,
+                    "embedding_type": conn.embedding_type or "text",
+                    "normalize": conn.normalize_embeddings,
+                }
+                logger.info(f"[EmbeddingService] Auto-loaded embedding config: {conn.name}")
+                return self._provider_config
+        except Exception as e:
+            logger.warning(f"[EmbeddingService] Failed to auto-load from database: {e}")
 
         # 备用：从配置文件加载
         return self._load_config_from_yaml()
@@ -177,8 +222,9 @@ class EmbeddingService:
             elif provider == "huggingface":
                 return await self._call_huggingface_api(text, api_base, api_key, config.get("model"))
             else:
-                logger.warning(f"[EmbeddingService] Unknown provider: {provider}")
-                return await self.embed_text_local(text)
+                # 通用 OpenAI 兼容 API（siliconflow, ollama, together, 自定义 等）
+                logger.info(f"[EmbeddingService] Using generic OpenAI-compatible API for provider={provider}")
+                return await self._call_openai_api(text, api_base, api_key, config.get("model"))
         except Exception as e:
             logger.error(f"[EmbeddingService] API call failed: {e}, falling back to local")
             return await self.embed_text_local(text)
@@ -202,10 +248,15 @@ class EmbeddingService:
             return data.get("output", {}).get("embedding")
 
     async def _call_openai_api(self, text: str, api_base: str, api_key: str, model: str = "text-embedding-3-large") -> Optional[List[float]]:
-        """调用 OpenAI 嵌入 API"""
+        """调用 OpenAI 兼容嵌入 API（同时支持硅基流动等兼容服务）"""
+        # 智能拼接 URL：如果 api_base 已包含 /embeddings 则直接用，否则拼接
+        if "/embeddings" in api_base:
+            url = api_base
+        else:
+            url = api_base.rstrip("/") + "/embeddings"
         async with httpx.AsyncClient(timeout=30) as client:
             response = await client.post(
-                f"{api_base}/embeddings",
+                url,
                 headers={
                     "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
@@ -245,9 +296,9 @@ class EmbeddingService:
 
     async def embed_text(self, text: str) -> Optional[List[float]]:
         """将单条文本转换为向量（自动选择本地或 API）"""
-        # 如果配置了外部 provider，优先使用 API
+        # 尝试加载配置（从 DB 或 YAML），有配置就用 API
         config = await self._load_provider_config()
-        if config and self._provider_name:
+        if config:
             return await self.embed_text_via_api(text)
         return await self.embed_text_local(text)
 
@@ -267,7 +318,7 @@ class EmbeddingService:
     async def embed_texts(self, texts: List[str]) -> List[Optional[List[float]]]:
         """批量将文本转换为向量（自动选择本地或 API）"""
         config = await self._load_provider_config()
-        if config and self._provider_name:
+        if config:
             # API 模式：逐个调用
             results = []
             for text in texts:
@@ -383,42 +434,56 @@ class EmbeddingService:
         """存储资产的文本嵌入向量"""
         from app.db.models.asset_hub import AssetEmbedding
 
-        embedding = await self.embed_text(text)
+        try:
+            embedding = await self.embed_text(text)
+        except Exception as e:
+            logger.exception(f"[EmbeddingService] embed_text failed: {e}")
+            return None
         if not embedding:
+            logger.warning(f"[EmbeddingService] embed_text returned None for asset={asset_id}")
             return None
 
-        # 检查是否已存在
-        result = await self.session.execute(
-            select(AssetEmbedding)
-            .where(AssetEmbedding.asset_node_id == asset_id)
-            .where(AssetEmbedding.embedding_model == self.TEXT_MODEL)
-        )
-        existing = result.scalar_one_or_none()
+        # 使用实际模型名（API 或本地）
+        model_name = await self._get_effective_text_model_name()
 
-        if existing:
-            existing.embedding = embedding
-            self.session.add(existing)
-        else:
-            embedding_record = AssetEmbedding(
-                id=str(uuid4()),
-                asset_node_id=asset_id,
-                embedding=embedding,
-                embedding_model=self.TEXT_MODEL,
+        try:
+            # 检查是否已存在
+            result = await self.session.execute(
+                select(AssetEmbedding)
+                .where(AssetEmbedding.asset_node_id == asset_id)
+                .where(AssetEmbedding.embedding_model == model_name)
             )
-            self.session.add(embedding_record)
+            existing = result.scalar_one_or_none()
 
-        # 更新资产的全文字段
-        await self.session.execute(
-            text("""
-                UPDATE asset_nodes
-                SET fulltext_vector = to_tsvector('simple', :text)
-                WHERE id = :asset_id
-            """),
-            {"text": text, "asset_id": asset_id}
-        )
+            if existing:
+                existing.embedding = embedding
+                self.session.add(existing)
+            else:
+                import uuid as _uuid
+                embedding_record = AssetEmbedding(
+                    id=str(_uuid.uuid4()),
+                    asset_node_id=asset_id,
+                    embedding=embedding,
+                    embedding_model=model_name,
+                )
+                self.session.add(embedding_record)
 
-        await self.session.commit()
-        return {"asset_id": asset_id, "embedding_type": embedding_type, "dimension": len(embedding)}
+            # 更新资产的全文字段（用于 ts_rank 排序）
+            await self.session.execute(
+                sql_text("""
+                    UPDATE asset_nodes
+                    SET fulltext_vector = to_tsvector('simple', :text)
+                    WHERE id = :asset_id
+                """),
+                {"text": text, "asset_id": asset_id}
+            )
+
+            await self.session.commit()
+            logger.info(f"[EmbeddingService] Stored text embedding: asset={asset_id}, model={model_name}, dim={len(embedding)}")
+            return {"asset_id": asset_id, "embedding_type": embedding_type, "dimension": len(embedding)}
+        except Exception as e:
+            logger.exception(f"[EmbeddingService] store_text_embedding failed at save step: {e}")
+            raise
 
     async def store_image_embedding(
         self,
@@ -524,14 +589,17 @@ class EmbeddingService:
         """执行向量相似度搜索"""
         from app.db.models.asset_hub import AssetEmbedding, AssetNode
 
-        # 构建查询
-        model_filter = embedding_model or self.TEXT_MODEL
+        # 构建查询（优先显式传入的模型，其次 API 配置的模型，最后本地模型）
+        if embedding_model:
+            model_filter = embedding_model
+        else:
+            model_filter = await self._get_effective_text_model_name()
 
         # PostgreSQL 向量相似度搜索（余弦相似度）
-        # pgvector 格式: '[0.1,0.2,0.3]'（无空格）
+        # pgvector 格式: '[0.1,0.2,0.3]'（无空格）— asyncpg 需要 string 类型
         vector_literal = "[" + ",".join(str(v) for v in query_vector) + "]"
 
-        query = text("""
+        # 构建查询（优先显式传入的模型，其次 API 配置的模型，最后本地模型）
             SELECT
                 ae.asset_node_id,
                 1 - (ae.embedding <=> :query_vector\\:\\:vector) AS similarity,
@@ -593,8 +661,9 @@ class EmbeddingService:
         """
         from app.db.models.asset_hub import AssetNode, AssetEmbedding, AssetTagLink, Tag
 
-        # 获取文本向量
+        # 获取文本向量和实际模型名
         embedding = await self.embed_text(query_text)
+        effective_model = await self._get_effective_text_model_name()
 
         if embedding is None or len(embedding) == 0:
             logger.warning(
@@ -604,15 +673,19 @@ class EmbeddingService:
             )
             return []
 
-        # pgvector 格式: '[0.1,0.2,0.3]'（无空格）
+        # pgvector 格式: '[0.1,0.2,0.3]'（无空格）— asyncpg 需要 string 类型
         vector_literal = "[" + ",".join(str(v) for v in embedding) + "]"
 
         tag_list = tag_filters or []
         has_tags = len(tag_list) > 0
 
+        # asset_type 过滤：为 None 时用空字符串避免 asyncpg 类型推断问题
+        asset_type_val = asset_type_filter or ""
+        type_condition = "an.asset_type = :asset_type" if asset_type_filter else "TRUE"
+
         # 完整混合搜索：向量 + 文本 + 标签
         if has_tags:
-            sql = """
+            sql = f"""
                 WITH vector_scores AS (
                     SELECT
                         ae.asset_node_id,
@@ -651,7 +724,7 @@ class EmbeddingService:
                 LEFT JOIN vector_scores vs ON an.id = vs.asset_node_id
                 LEFT JOIN text_scores ts ON an.id = ts.asset_node_id
                 LEFT JOIN tag_scores tag_s ON an.id = tag_s.asset_node_id
-                WHERE (:asset_type IS NULL OR an.asset_type = :asset_type)
+                WHERE {type_condition}
                 AND (vs.vector_score > 0 OR ts.text_score > 0 OR tag_s.tag_match_count > 0)
                 ORDER BY combined_score DESC
                 LIMIT :top_k
@@ -659,15 +732,15 @@ class EmbeddingService:
             params = {
                 "query_vector": vector_literal,
                 "query_text": query_text,
-                "model": self.TEXT_MODEL,
+                "model": effective_model,
                 "vector_weight": vector_weight,
                 "text_weight": text_weight,
                 "tag_filters": tag_list,
-                "asset_type": asset_type_filter,
+                "asset_type": asset_type_val,
                 "top_k": top_k,
             }
         else:
-            sql = """
+            sql = f"""
                 WITH vector_scores AS (
                     SELECT
                         ae.asset_node_id,
@@ -696,7 +769,7 @@ class EmbeddingService:
                 FROM asset_nodes an
                 LEFT JOIN vector_scores vs ON an.id = vs.asset_node_id
                 LEFT JOIN text_scores ts ON an.id = ts.asset_node_id
-                WHERE (:asset_type IS NULL OR an.asset_type = :asset_type)
+                WHERE {type_condition}
                 AND (vs.vector_score > 0 OR ts.text_score > 0)
                 ORDER BY combined_score DESC
                 LIMIT :top_k
@@ -704,14 +777,14 @@ class EmbeddingService:
             params = {
                 "query_vector": vector_literal,
                 "query_text": query_text,
-                "model": self.TEXT_MODEL,
+                "model": effective_model,
                 "vector_weight": vector_weight,
                 "text_weight": text_weight,
-                "asset_type": asset_type_filter,
+                "asset_type": asset_type_val,
                 "top_k": top_k,
             }
 
-        result = await self.session.execute(text(sql), params)
+        result = await self.session.execute(sql_text(sql), params)
 
         search_results = []
         for row in result.all():

@@ -168,11 +168,11 @@ class AIConnector(AIConnectorBase, table=True):
     # provider 字段为字符串，不再限制为枚举
     id: str = Field(primary_key=True, description="连接 ID")
     created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
         description="创建时间"
     )
     updated_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
         description="更新时间"
     )
 
@@ -191,13 +191,14 @@ class AIConnector(AIConnectorBase, table=True):
 
     def update_usage(self, tokens_used: int = 0, cost: float = 0.0):
         """更新使用统计"""
-        self.last_used = datetime.now(timezone.utc)
+        self.last_used = datetime.now(timezone.utc).replace(tzinfo=None)
         self.usage_count += 1
         self.total_cost += cost
 
 
 class AIConnectorCreate(SQLModel):
     """创建 AI 连接请求"""
+    model_config = {"extra": "ignore"}
     provider: str
     name: str
     api_key: str = ""
@@ -228,10 +229,15 @@ class AIConnectorCreate(SQLModel):
     reference_image_field: str = "image"
     reference_image_array_field: Optional[str] = None
     test_prompt: Optional[str] = None
+    # 嵌入模型专用配置
+    embedding_type: Optional[str] = None
+    embedding_dimension: Optional[int] = None
+    normalize_embeddings: bool = True
 
 
 class AIConnectorUpdate(SQLModel):
     """更新 AI 连接请求"""
+    model_config = {"extra": "ignore"}
     name: Optional[str] = None
     api_key: Optional[str] = None
     base_url: Optional[str] = None
@@ -261,6 +267,10 @@ class AIConnectorUpdate(SQLModel):
     reference_image_field: Optional[str] = None
     reference_image_array_field: Optional[str] = None
     test_prompt: Optional[str] = None
+    # 嵌入模型专用配置
+    embedding_type: Optional[str] = None
+    embedding_dimension: Optional[int] = None
+    normalize_embeddings: Optional[bool] = None
 
 
 class AIConnectorResponse(SQLModel):
@@ -391,6 +401,6 @@ class AIUsageLog(SQLModel, table=True):
     status: str = Field("success", description="请求状态")
     error_message: Optional[str] = Field(None, description="错误信息")
     created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
         description="请求时间"
     )

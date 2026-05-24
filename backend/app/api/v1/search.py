@@ -33,9 +33,20 @@ logger = logging.getLogger("ylcraft.search")
 # ---------------------------------------------------------------------------
 
 async def get_embedding_service():
-    """获取 EmbeddingService 实例"""
+    """获取 EmbeddingService 实例，自动查找数据库中配置的 embedding provider"""
     async with get_async_session() as session:
-        yield EmbeddingService(session)
+        from app.db.models.ai_connector import AIConnector, AIProviderType
+        from sqlalchemy import select
+        result = await session.execute(
+            select(AIConnector)
+            .where(AIConnector.provider_type == AIProviderType.embedding)
+            .where(AIConnector.is_active == True)
+            .order_by(AIConnector.priority)
+            .limit(1)
+        )
+        conn = result.scalar_one_or_none()
+        provider_name = conn.name if conn else None
+        yield EmbeddingService(session, provider_name=provider_name)
 
 # ---------------------------------------------------------------------------
 # Pydantic Schema

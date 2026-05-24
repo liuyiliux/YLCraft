@@ -164,6 +164,7 @@ async def create_connector(
             "message": f"AI 连接 {conn.name} 创建成功",
         }
     except Exception as e:
+        logger.exception(f"[AIConnector] 创建连接失败: {e}")
         raise HTTPException(status_code=500, detail=f"创建失败: {str(e)}")
 
 
@@ -249,7 +250,7 @@ async def mark_used(
     if not conn:
         raise HTTPException(status_code=404, detail="连接不存在")
 
-    conn.last_used = datetime.now(timezone.utc)
+    conn.last_used = datetime.now(timezone.utc).replace(tzinfo=None)
     service.session.add(conn)
     await service.session.commit()
 
