@@ -1,9 +1,8 @@
 /**
  * YLCraft — 自媒体平台概览页
- * 基于 Spider XHS 风格 + SuperDesign 规范重构
+ * 去重重构：每个路由只出现 1 次，补小说入口
  */
-
-import { Card, Row, Col, Statistic, Progress, Tag, Button, Space, Typography } from 'antd'
+import { Card, Row, Col, Statistic, Progress, Tag, Button, Space, Typography, Collapse } from 'antd'
 import type { StatisticProps } from 'antd'
 import {
   DashboardOutlined,
@@ -12,20 +11,19 @@ import {
   BookOutlined,
   PictureOutlined,
   VideoCameraOutlined,
-  ThunderboltOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
   FireOutlined,
   ArrowRightOutlined,
   RocketOutlined,
   HistoryOutlined,
-  ShareAltOutlined,
   FileAddOutlined,
   DownloadOutlined,
+  ReadOutlined,
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { useState, useEffect } from 'react'
-import { useTheme, TYPOGRAPHY, SPACING } from '../../constants/theme'
+import { useTheme } from '../../constants/theme'
 
 const { Text } = Typography
 
@@ -37,20 +35,19 @@ interface TaskStats {
 
 const API_BASE = '/api/v1'
 
-const QUICK_ACTIONS = [
-  { label: 'AI 生成', icon: <RocketOutlined />, path: '/image-gen', desc: '文生图/视频', color: '#7c3aed' },
-  { label: '上传素材', icon: <FileAddOutlined />, path: '/assets', desc: '管理素材库', color: '#3b82f6' },
-  { label: '去水印', icon: <DownloadOutlined />, path: '/download', desc: '多平台下载', color: '#ec4899' },
-  { label: '一键发布', icon: <ShareAltOutlined />, path: '/publish', desc: '多平台分发', color: '#10b981' },
+const FEATURE_CARDS = [
+  { title: 'AI 图像生成', icon: <PictureOutlined />,       desc: '文生图 / 图生图',       path: '/image-gen',    gradient: 'linear-gradient(135deg, #7c3aed, #a855f7)',  status: 'ready' as const },
+  { title: 'AI 视频生成', icon: <VideoCameraOutlined />,   desc: '文生视频 / 图生视频',   path: '/video-gen',    gradient: 'linear-gradient(135deg, #ec4899, #f472b6)',  status: 'ready' as const },
+  { title: '小说搜索',    icon: <ReadOutlined />,          desc: '多源搜索与书架',        path: '/novel-search', gradient: 'linear-gradient(135deg, #f59e0b, #fbbf24)',  status: 'ready' as const },
+  { title: '多平台下载',  icon: <DownloadOutlined />,      desc: 'B站 / 抖音 / Twitter',  path: '/download',     gradient: 'linear-gradient(135deg, #3b82f6, #60a5fa)',  status: 'ready' as const },
+  { title: 'AI 视频剪辑', icon: <ScissorOutlined />,       desc: 'CutClaw / NarratoAI',   path: '/clip',         gradient: 'linear-gradient(135deg, #10b981, #34d399)',  status: 'ready' as const },
+  { title: '爆款拆解',    icon: <ExperimentOutlined />,    desc: '文案 / 分镜分析',        path: '/breaker',      gradient: 'linear-gradient(135deg, #6366f1, #818cf8)',  status: 'ready' as const },
+  { title: '素材管理',    icon: <FileAddOutlined />,       desc: '统一素材库',             path: '/assets',       gradient: 'linear-gradient(135deg, #06b6d4, #22d3ee)', status: 'ready' as const },
 ]
 
-const FEATURE_CARDS = [
-  { title: 'AI 图像生成', icon: <PictureOutlined />, desc: '文生图 / 图生图', path: '/image-gen', color: '#7c3aed', gradient: 'linear-gradient(135deg, #7c3aed, #a855f7)', status: 'ready' as const },
-  { title: 'AI 视频生成', icon: <VideoCameraOutlined />, desc: '文生视频 / 图生视频', path: '/video-gen', color: '#ec4899', gradient: 'linear-gradient(135deg, #ec4899, #f472b6)', status: 'ready' as const },
-  { title: '爆款拆解', icon: <ExperimentOutlined />, desc: '文案/分镜分析', path: '/breaker', color: '#3b82f6', gradient: 'linear-gradient(135deg, #3b82f6, #60a5fa)', status: 'ready' as const },
-  { title: 'AI 视频剪辑', icon: <ScissorOutlined />, desc: 'CutClaw / NarratoAI', path: '/clip', color: '#10b981', gradient: 'linear-gradient(135deg, #10b981, #34d399)', status: 'ready' as const },
-  { title: '短剧创作', icon: <BookOutlined />, desc: '角色立绘与分镜', path: '/story', color: '#f59e0b', gradient: 'linear-gradient(135deg, #f59e0b, #fbbf24)', status: 'beta' as const },
-  { title: 'Live2D 工厂', icon: <FireOutlined />, desc: 'COSER 全自动生产线', path: '/live2d', color: '#8b5cf6', gradient: 'linear-gradient(135deg, #8b5cf6, #a78bfa)', status: 'dev' as const },
+const BETA_CARDS = [
+  { title: '短剧创作',    icon: <BookOutlined />,          desc: '角色立绘与分镜',         path: '/story',        gradient: 'linear-gradient(135deg, #fb923c, #fbbf24)',  status: 'beta' as const },
+  { title: 'Live2D 工厂', icon: <FireOutlined />,          desc: 'COSER 全自动生产线',     path: '/live2d',       gradient: 'linear-gradient(135deg, #a78bfa, #c4b5fd)',  status: 'dev' as const },
 ]
 
 const TREND_DATA = [
@@ -61,7 +58,7 @@ const TREND_DATA = [
 ]
 
 export default function DashboardPage() {
-  const { theme: THEME, themeId } = useTheme()
+  const { theme: THEME } = useTheme()
   const navigate = useNavigate()
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
   const [stats, setStats] = useState<TaskStats>({
@@ -117,14 +114,11 @@ export default function DashboardPage() {
               <div style={{ color: THEME.textSecondary, fontSize: 14, lineHeight: 1.5, maxWidth: 480 }}>
                 AI 驱动的自媒体创作平台 — 支持内容创作、素材管理、多平台发布一站式完成
               </div>
-              <Space size={12} style={{ marginTop: 4 }}>
+              <div style={{ marginTop: 4 }}>
                 <Button type="primary" icon={<RocketOutlined />} onClick={() => navigate('/image-gen')} style={{ background: THEME.gradientCreative, border: 'none', fontWeight: 600, borderRadius: 8 }}>
                   开始创作
                 </Button>
-                <Button icon={<HistoryOutlined />} onClick={() => navigate('/tasks')} style={{ borderRadius: 8 }}>
-                  查看任务
-                </Button>
-              </Space>
+              </div>
             </div>
           </Col>
           {!isMobile && (
@@ -137,37 +131,7 @@ export default function DashboardPage() {
         </Row>
       </Card>
 
-      {/* ===== Section 2: Quick Actions ===== */}
-      <Card
-        title={
-          <Space size={8}>
-            <ThunderboltOutlined style={{ color: THEME.primary }} />
-            <span style={{ color: THEME.textPrimary, fontWeight: 600 }}>快速操作</span>
-          </Space>
-        }
-        style={{ marginBottom: 20, background: THEME.bgCard, border: `1px solid ${THEME.border}`, borderRadius: 12 }}
-        styles={{ body: { padding: 16 } }}
-      >
-        <Row gutter={[12, 12]}>
-          {QUICK_ACTIONS.map(action => (
-            <Col xs={12} sm={12} md={6} key={action.path}>
-              <Card
-                hoverable
-                size="small"
-                onClick={() => navigate(action.path)}
-                style={{ background: THEME.bgElevated, border: `1px solid ${THEME.border}`, borderRadius: 10, textAlign: 'center' }}
-                styles={{ body: { padding: isMobile ? 12 : 16 } }}
-              >
-                <div style={{ fontSize: 28, color: action.color, marginBottom: 6 }}>{action.icon}</div>
-                <div style={{ color: THEME.textPrimary, fontWeight: 500, fontSize: 14 }}>{action.label}</div>
-                <div style={{ color: THEME.textSecondary, fontSize: 11, marginTop: 2 }}>{action.desc}</div>
-              </Card>
-            </Col>
-          ))}
-        </Row>
-      </Card>
-
-      {/* ===== Section 3: Feature Cards ===== */}
+      {/* ===== Section 2: 核心功能 ===== */}
       <div style={{ marginBottom: 12 }}>
         <Space size={8} style={{ marginBottom: 12 }}>
           <DashboardOutlined style={{ color: THEME.primary }} />
@@ -175,96 +139,99 @@ export default function DashboardPage() {
         </Space>
         <Row gutter={[12, 12]}>
           {FEATURE_CARDS.map(item => (
-            <Col xs={24} sm={12} md={8} lg={8} key={item.path}>
+            <Col xs={24} sm={12} md={8} lg={24 / 7} key={item.path}>
               <Card
-                hoverable={item.status === 'ready'}
-                onClick={() => item.status === 'ready' && navigate(item.path)}
+                hoverable
+                onClick={() => navigate(item.path)}
                 style={{
                   background: THEME.bgCard,
                   border: `1px solid ${THEME.border}`,
                   borderRadius: 12,
-                  cursor: item.status === 'ready' ? 'pointer' : 'not-allowed',
-                  opacity: item.status === 'dev' ? 0.6 : 1,
+                  cursor: 'pointer',
                 }}
                 styles={{ body: { padding: 20 } }}
               >
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
-                  <div style={{ width: 48, height: 48, borderRadius: 12, background: item.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, color: '#fff', flexShrink: 0 }}>
+                  <div style={{ width: 44, height: 44, borderRadius: 12, background: item.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, color: '#fff', flexShrink: 0 }}>
                     {item.icon}
                   </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                      <span style={{ fontWeight: 600, fontSize: 15, color: THEME.textPrimary }}>{item.title}</span>
-                      {item.status === 'beta' && <Tag color="orange" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>Beta</Tag>}
-                      {item.status === 'dev' && <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>开发中</Tag>}
-                    </div>
-                    <div style={{ fontSize: 13, color: THEME.textSecondary }}>{item.desc}</div>
-                    {item.status === 'ready' && (
-                      <div style={{ marginTop: 10, color: item.color, fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
-                        立即使用 <ArrowRightOutlined style={{ fontSize: 11 }} />
-                      </div>
-                    )}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 14, color: THEME.textPrimary, marginBottom: 2 }}>{item.title}</div>
+                    <div style={{ fontSize: 12, color: THEME.textSecondary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.desc}</div>
                   </div>
+                  <ArrowRightOutlined style={{ color: THEME.textSecondary, fontSize: 12, flexShrink: 0, alignSelf: 'center' }} />
                 </div>
               </Card>
             </Col>
           ))}
         </Row>
+
+        {/* 实验功能 (Beta / 开发中) */}
+        <Collapse
+          ghost
+          size="small"
+          items={[{
+            key: 'experimental',
+            label: <span style={{ color: THEME.textSecondary, fontSize: 13 }}>实验功能（{BETA_CARDS.length} 项）</span>,
+            children: (
+              <Row gutter={[12, 12]}>
+                {BETA_CARDS.map(item => (
+                  <Col xs={24} sm={12} key={item.path}>
+                    <Card
+                      onClick={() => item.status === 'beta' && navigate(item.path)}
+                      style={{
+                        background: THEME.bgCard,
+                        border: `1px solid ${THEME.border}`,
+                        borderRadius: 12,
+                        cursor: item.status === 'beta' ? 'pointer' : 'not-allowed',
+                        opacity: 0.65,
+                      }}
+                      styles={{ body: { padding: 16 } }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                        <div style={{ width: 40, height: 40, borderRadius: 10, background: item.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, color: '#fff', flexShrink: 0 }}>
+                          {item.icon}
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                            <span style={{ fontWeight: 600, fontSize: 14, color: THEME.textPrimary }}>{item.title}</span>
+                            {item.status === 'beta' && <Tag color="orange" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px', margin: 0 }}>Beta</Tag>}
+                            {item.status === 'dev' && <Tag color="default" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px', margin: 0 }}>开发中</Tag>}
+                          </div>
+                          <div style={{ fontSize: 12, color: THEME.textSecondary }}>{item.desc}</div>
+                        </div>
+                      </div>
+                    </Card>
+                  </Col>
+                ))}
+              </Row>
+            ),
+          }]}
+        />
       </div>
 
-      {/* ===== Section 4: Recent Activity ===== */}
-      <Row gutter={[16, 16]} style={{ marginTop: 20 }}>
-        <Col xs={24} md={12}>
-          <Card
-            title={<Space size={8}><HistoryOutlined style={{ color: THEME.primary }} /><span style={{ color: THEME.textPrimary, fontWeight: 600 }}>使用趋势</span></Space>}
-            style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}`, borderRadius: 12 }}
-            styles={{ body: { padding: 20 } }}
-          >
-            {TREND_DATA.map(item => {
-              const val = stats[item.key as keyof TaskStats] as number || 0
-              const total = Math.max(val, 10)
-              return (
-                <div key={item.key} style={{ marginBottom: 14 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <span style={{ color: THEME.textSecondary, fontSize: 12 }}>{item.label}</span>
-                    <span style={{ color: THEME.textPrimary, fontSize: 12 }}>{val}</span>
-                  </div>
+      {/* ===== Section 3: 使用趋势 (全宽) ===== */}
+      <Card
+        title={<Space size={8}><HistoryOutlined style={{ color: THEME.primary }} /><span style={{ color: THEME.textPrimary, fontWeight: 600 }}>使用趋势</span></Space>}
+        style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}`, borderRadius: 12 }}
+        styles={{ body: { padding: 20 } }}
+      >
+        <Row gutter={[24, 12]}>
+          {TREND_DATA.map(item => {
+            const val = stats[item.key as keyof TaskStats] as number || 0
+            const total = Math.max(val, 10)
+            return (
+              <Col xs={12} md={6} key={item.key}>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ color: THEME.textPrimary, fontSize: 22, fontWeight: 700 }}>{val}</div>
+                  <div style={{ color: THEME.textSecondary, fontSize: 12, marginBottom: 8 }}>{item.label}</div>
                   <Progress percent={Math.round((val / total) * 100)} showInfo={false} strokeColor={item.color} trailColor="rgba(255,255,255,0.06)" size="small" />
                 </div>
-              )
-            })}
-          </Card>
-        </Col>
-        <Col xs={24} md={12}>
-          <Card
-            title={<Space size={8}><ThunderboltOutlined style={{ color: THEME.primary }} /><span style={{ color: THEME.textPrimary, fontWeight: 600 }}>快捷入口</span></Space>}
-            style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}`, borderRadius: 12 }}
-            styles={{ body: { padding: 16 } }}
-          >
-            <Row gutter={[8, 8]}>
-              {[
-                { label: '图像生成', icon: <PictureOutlined />, path: '/image-gen', color: '#7c3aed' },
-                { label: '视频生成', icon: <VideoCameraOutlined />, path: '/video-gen', color: '#ec4899' },
-                { label: '素材库', icon: <DashboardOutlined />, path: '/assets', color: '#3b82f6' },
-                { label: '任务中心', icon: <CheckCircleOutlined />, path: '/tasks', color: '#10b981' },
-              ].map(item => (
-                <Col span={12} key={item.path}>
-                  <Card
-                    hoverable
-                    size="small"
-                    onClick={() => navigate(item.path)}
-                    style={{ background: THEME.bgElevated, border: `1px solid ${THEME.border}`, borderRadius: 10, textAlign: 'center' }}
-                    styles={{ body: { padding: 12 } }}
-                  >
-                    <div style={{ fontSize: 22, color: item.color, marginBottom: 2 }}>{item.icon}</div>
-                    <div style={{ color: THEME.textSecondary, fontSize: 12 }}>{item.label}</div>
-                  </Card>
-                </Col>
-              ))}
-            </Row>
-          </Card>
-        </Col>
-      </Row>
+              </Col>
+            )
+          })}
+        </Row>
+      </Card>
     </div>
   )
 }

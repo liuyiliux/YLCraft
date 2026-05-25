@@ -46,6 +46,7 @@ import {
 import type { UploadFile } from 'antd/es/upload/interface'
 import { useTheme } from '../../constants/theme'
 import { getImageBackends, generateImage as generateImageApi } from '../../api'
+import MultiPlatformGen from './MultiPlatformGen'
 
 const { TextArea } = Input
 const { Dragger } = Upload
@@ -140,7 +141,7 @@ export default function ImageGenPage() {
   const [searchParams] = useSearchParams()
 
   // 生成模式
-  const [mode, setMode] = useState<'text2img' | 'img2img'>('text2img')
+  const [mode, setMode] = useState<'text2img' | 'img2img' | 'multi'>('text2img')
 
   // 输入
   const [prompt, setPrompt] = useState('')
@@ -492,6 +493,27 @@ export default function ImageGenPage() {
     message.success('已复制到剪贴板')
   }
 
+  // 多平台生图模式：直接渲染独立组件
+  if (mode === 'multi' as any) {
+    return (
+      <div>
+        <Card style={{ marginBottom: 16 }}>
+          <Tabs
+            activeKey={mode}
+            onChange={key => setMode(key as any)}
+            items={[
+              { key: 'text2img', label: '📝 文生图' },
+              { key: 'img2img', label: '🖼️ 图生图' },
+              { key: 'multi', label: '🔀 多平台生图' },
+            ]}
+            size="small"
+          />
+        </Card>
+        <MultiPlatformGen />
+      </div>
+    )
+  }
+
   return (
     <div style={{ padding: 0 }}>
       <Row gutter={24}>
@@ -513,6 +535,7 @@ export default function ImageGenPage() {
               items={[
                 { key: 'text2img', label: '📝 文生图' },
                 { key: 'img2img', label: '🖼️ 图生图' },
+                { key: 'multi', label: '🔀 多平台生图' },
               ]}
               size="small"
             />

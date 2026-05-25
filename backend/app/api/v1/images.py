@@ -238,3 +238,116 @@ async def generate_image(req: ImageGenerateRequest):
     except Exception as e:
         logger.error(f"Image generation failed: {e}")
         return ImageResponse(success=False, error=str(e), provider="")
+
+
+# =============================================================================
+# 多平台生图
+# =============================================================================
+
+class PlatformTemplateInfo(BaseModel):
+    id: str = ""
+    platform: str = ""
+    name: str = ""
+    default_size: str = "1024x1024"
+    is_active: bool = True
+
+
+class GenerateOutlineRequest(BaseModel):
+    topic: str
+    platforms: list[str] = []  # ["xiaohongshu", "douyin"]
+
+
+class GenerateOutlineResponse(BaseModel):
+    success: bool = True
+    outlines: dict = {}  # { xiaohongshu: { title, description, pages: [{type, prompt}] } }
+    error: Optional[str] = None
+
+
+class BatchGenerateRequest(BaseModel):
+    pages: list[dict] = []  # [{ prompt, platform, size, n }]
+    provider: Optional[str] = None
+    model: Optional[str] = None
+
+
+class BatchGenerateResponse(BaseModel):
+    success: bool = True
+    results: dict = {}  # { xiaohongshu: [{ urls, prompt, success }] }
+    error: Optional[str] = None
+
+
+@router.get("/platform-templates", response_model=dict, summary="可用平台模板列表")
+async def list_platform_templates():
+    """返回所有已激活的平台生成模板"""
+    from app.db.database import get_async_session
+    from app.db.models.platform_template import PlatformTemplate
+    from sqlmodel import select
+    
+    async with get_async_session() as session:
+        result = await session.exec(
+            select(PlatformTemplate)
+            .where(PlatformTemplate.is_active == True)
+            .order_by(PlatformTemplate.sort_order)
+        )
+        templates = result.all()
+        return {
+            "success": True,
+            "templates": [
+                {
+                    "id": str(t.id),
+                    "platform": t.platform,
+                    "name": t.name,
+                    "default_size": t.default_size,
+                    "is_active": t.is_active,
+                }
+                for t in templates
+            ],
+        }
+
+
+@router.post("/generate-outline", response_model=GenerateOutlineResponse, summary="多平台大纲生成")
+async def generate_outline_endpoint(req: GenerateOutlineRequest):
+    """
+    使用 LLM 为输入的 topic 生成多平台结构化大纲。
+    每个平台返回 title、description、pages（含 type 和 prompt）。
+    """
+    from app.db.database import get_async_session
+    from app.services.image.outline_service import generate_outline
+    
+    if not req.topic or not req.topic.strip():
+        return GenerateOutlineResponse(success=False, error="Topic is required")
+    if not req.platforms:
+        return GenerateOutlineResponse(success=False, error="At least one platform is required")
+    
+    try:
+        async with get_async_session() as session:
+            outlines = await generate_outline(session, req.topic, req.platforms)
+            return GenerateOutlineResponse(success=bool(outlines), outlines=outlines)
+    except Exception as e:
+        logger.error(f"Generate outline failed: {e}")
+        return GenerateOutlineResponse(success=False, error=str(e))
+
+
+@router.post("/generate-batch", response_model=BatchGenerateResponse, summary="批量生成多平台图片")
+async def batch_generate_endpoint(req: BatchGenerateRequest):
+    """
+    批量生成图片：对每页并行调用现有 generate_image。
+    返回按平台分组的结果。
+    """
+    from app.db.database import get_async_session
+    from app.services.image.outline_service import batch_generate_images
+    
+    if not req.pages:
+        return BatchGenerateResponse(success=False, error="pages is required")
+    
+    try:
+        async with get_async_session() as session:
+            results = await batch_generate_images(
+                session,
+                req.pages,
+                provider=req.provider or "",
+                model=req.model or "",
+            )
+            return BatchGenerateResponse(success=True, results=results.get("results", {}))
+    except Exception as e:
+        logger.error(f"Batch generate failed: {e}")
+        return BatchGenerateResponse(success=False, error=str(e))
