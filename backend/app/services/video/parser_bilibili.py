@@ -21,6 +21,11 @@ from typing import Optional
 import httpx
 import logging
 
+from app.services.platforms.bilibili.utils import (
+    _quality_to_resolution,
+    _get_filesize_for_qn,
+)
+
 logger = logging.getLogger("ylcraft.parser.bilibili")
 
 _USER_AGENT = (
@@ -159,36 +164,63 @@ async def parse_bilibili(url: str) -> dict:
         if isinstance(durl_list, list) and durl_list:
             best = durl_list[0]
             video_url = best.get("url", "") or ""
-            # 尝试从 data 里获取 width/height
-            # B站API可能在不同位置返回尺寸，尝试从多个字段获取
+
+            # 尝试从 view_data 获取 width/height
             if isinstance(view_data, dict):
-                # 尝试从 pages 中获取
                 pages = view_data.get("pages", [])
                 if pages and len(pages) > 0:
                     first_page = pages[0] if isinstance(pages[0], dict) else {}
-                    width = int(first_page.get("width") or 0)
-                    height = int(first_page.get("height") or 0)
-                # 如果没有，尝试从 view 数据里找
+                    width = int(first_page.get("dimension", {}).get("width")
+                                or first_page.get("width") or 0)
+                    height = int(first_page.get("dimension", {}).get("height")
+                                 or first_page.get("height") or 0)
                 if not width or not height:
                     width = int(view_data.get("width") or 0)
                     height = int(view_data.get("height") or 0)
 
-            if len(durl_list) > 1:
+            # 从 play_data 获取可用清晰度列表
+            accept_quality = play_data.get("accept_quality", [])
+            accept_description = play_data.get("accept_description", [])
+            current_qn = play_data.get("quality", 80)
+
+            if accept_quality and accept_description and len(accept_quality) == len(accept_description):
+                # 有完整的清晰度列表：为每个清晰度构建条目
+                # 每个 qn 用自己的分辨率：优先从映射表读取
+                current_size = durl_list[0].get("size", 0) if durl_list else 0
+                for qn, desc in zip(accept_quality, accept_description):
+                    q_res = _quality_to_resolution(qn, height)
+                    # 当前 qn 已有 URL，其他 qn 暂用当前 URL
+                    q_url = video_url if qn == current_qn else ""
+                    q_size = current_size if qn == current_qn else 0
+                    qualities.append({
+                        "quality": desc,
+                        "url": q_url,
+                        "resolution": q_res,
+                        "filesize": _get_filesize_for_qn(qn, q_size, duration),
+                    })
+            elif len(durl_list) > 1:
+                # 分段视频
                 for i, d in enumerate(durl_list):
                     segment_url = d.get("url", "") if isinstance(d, dict) else ""
                     if segment_url:
+                        res = _quality_to_resolution(current_qn, height)
+                        sz = d.get("size", 0) if isinstance(d, dict) else 0
                         qualities.append({
                             "quality": f"分段{i+1}",
                             "url": segment_url,
-                            "resolution": f"{width}x{height}" if width and height else "",
-                            "filesize": str(d.get("size", "")) or "未知",
+                            "resolution": res or "",
+                            "filesize": _get_filesize_for_qn(current_qn, sz, duration),
                         })
             else:
+                # 无 accept_quality，仅一个清晰度
+                label = "1080P"  # qn=80
+                res = _quality_to_resolution(current_qn, height)
+                sz = durl_list[0].get("size", 0) if durl_list else 0
                 qualities.append({
-                    "quality": "720P",
+                    "quality": label,
                     "url": video_url,
-                    "resolution": f"{width}x{height}" if width and height else "",
-                    "filesize": str(durl_list[0].get("size", "")) or "未知",
+                    "resolution": res or "",
+                    "filesize": _get_filesize_for_qn(current_qn, sz, duration),
                 })
 
         if not video_url:

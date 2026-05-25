@@ -20,41 +20,14 @@ from app.services.video.parser import get_cookie_manager
 from app.core.config import ensure_download_path, get_ffmpeg_path
 from app.services.platforms.types import ClientConfig
 from app.services.platforms.bilibili.client import BilibiliClient
+from app.services.platforms.bilibili.utils import (
+    BILI_QUALITY_MAP,
+    _quality_to_resolution,
+    _get_filesize_for_qn,
+    _normalize_resolution,
+)
 
 logger = logging.getLogger("ylcraft.download.bilibili")
-
-# B站清晰度映射
-BILI_QUALITY_MAP = {
-    127: "8K",
-    126: "杜比视界",
-    125: "HDR",
-    120: "4K",
-    116: "1080P60",
-    112: "1080P+",
-    80: "1080P",
-    64: "720P",
-    32: "480P",
-    16: "360P",
-    6: "240P",
-}
-
-
-def _normalize_resolution(res: str) -> str:
-    """将分辨率统一为 widthxheight 格式（如下载器外部已传入 1080p 格式则在此转换）"""
-    if not res:
-        return ""
-    res = res.strip()
-    if "x" in res:
-        return res
-    if res.endswith("p"):
-        try:
-            h = int(res[:-1])
-            w = int(h * 16 / 9)
-            return f"{w}x{h}"
-        except ValueError:
-            return ""
-    return res
-
 
 # =============================================================================
 # 免费 API 兜底（无需 Cookie）
@@ -82,11 +55,14 @@ async def _call_free_api(url: str) -> dict:
         return resp.json()
 
 
-async def _parse_with_free_api(url: str) -> Optional[dict]:
+async def _parse_with_free_api(url: str, default_qn: int = 80) -> Optional[dict]:
     """
     使用 B站免费 Web API 解析（无需 Cookie）
     返回 dict: {title, author_name, cover_url, video_url, width, height, duration, qualities}
     失败返回 None
+
+    使用 durl 格式获取所有可用清晰度，通过解析 accept_quality / accept_description
+    为每种画质获取对应 URL。
     """
     try:
         bvid = _extract_bvid_free(url)
@@ -114,7 +90,8 @@ async def _parse_with_free_api(url: str) -> Optional[dict]:
         # 2. 获取播放地址（durl 格式，音视频合一）
         play = await _call_free_api(
             f"https://api.bilibili.com/x/player/playurl?"
-            f"otype=json&fnver=0&fnval=0&qn=80&bvid={bvid}&cid={first_cid}&platform=html5"
+            f"otype=json&fnver=0&fnval=0&qn={default_qn}&bvid={bvid}"
+            f"&cid={first_cid}&platform=html5"
         )
         play_data = play.get("data") or {}
         if not isinstance(play_data, dict) or play_data.get("code", 0) != 0:
@@ -129,22 +106,87 @@ async def _parse_with_free_api(url: str) -> Optional[dict]:
         if not video_url:
             return None
 
-        # 获取分辨率
+        # 从 API 返回的 view 数据获取 width/height（部分视频不会返回）
         width, height = 0, 0
         p0 = (pages[0] if pages else {}) if isinstance(pages, list) else {}
-        width = int(p0.get("width") or v.get("width") or 0)
-        height = int(p0.get("height") or v.get("height") or 0)
+        width = int(p0.get("dimension", {}).get("width") or p0.get("width") or v.get("width") or 0)
+        height = int(p0.get("dimension", {}).get("height") or p0.get("height") or v.get("height") or 0)
+
+        # 3. 解析所有可用清晰度（accept_quality / accept_description）
+        accept_quality = play_data.get("accept_quality", [])
+        accept_description = play_data.get("accept_description", [])
+        current_qn = play_data.get("quality", default_qn)
 
         qualities = []
-        if len(durl_list) > 1:
+
+        if accept_quality and accept_description and len(accept_quality) == len(accept_description):
+            # 有完整的 accept_quality / accept_description，构建多清晰度列表
+            # 当前请求的 qn 已有 URL，其他 qn 需要额外请求
+            urls_by_qn: dict = {}
+
+            # 并行获取其他清晰度的 URL
+            other_qns = [qn for qn in accept_quality if qn != current_qn]
+            if other_qns:
+                async def fetch_qn_url(qn: int) -> Optional[tuple]:
+                    try:
+                        q_play = await _call_free_api(
+                            f"https://api.bilibili.com/x/player/playurl?"
+                            f"otype=json&fnver=0&fnval=0&qn={qn}&bvid={bvid}"
+                            f"&cid={first_cid}&platform=html5"
+                        )
+                        q_data = q_play.get("data", {})
+                        q_durl = q_data.get("durl", [])
+                        if q_durl:
+                            return (qn, q_durl[0].get("url", ""), q_durl[0].get("size", 0))
+                    except Exception as e:
+                        logger.debug(f"[BilibiliDownloader] 获取qn={qn}的URL失败: {e}")
+                    return None
+
+                results = await asyncio.gather(*[fetch_qn_url(qn) for qn in other_qns])
+                for r in results:
+                    if r:
+                        urls_by_qn[r[0]] = (r[1], r[2])  # (url, size_bytes)
+
+            # 当前 qn 的 URL 和 size
+            current_size = durl_list[0].get("size", 0) if durl_list else 0
+            urls_by_qn[current_qn] = (video_url, current_size)
+
+            # 按照 accept_quality 顺序构建 qualities（API 已按清晰度从高到低排列）
+            for qn, desc in zip(accept_quality, accept_description):
+                q_info = urls_by_qn.get(qn, (video_url, 0))
+                q_url, q_size = q_info if isinstance(q_info, tuple) else (q_info, 0)
+                # 每个 qn 用自己的分辨率：优先从映射表读取，其次用 view API 的高度推算
+                q_res = _quality_to_resolution(qn, height)
+                qualities.append({
+                    "quality": desc,
+                    "url": q_url,
+                    "resolution": q_res,
+                    "filesize": _get_filesize_for_qn(qn, q_size, duration),
+                })
+        elif len(durl_list) > 1:
+            # 分段视频（极少见）
             for i, d in enumerate(durl_list):
                 u = d.get("url", "")
                 if u:
-                    qualities.append({"quality": f"分段{i+1}", "url": u,
-                                     "resolution": _normalize_resolution(f"{width}x{height}") if width and height else ""})
+                    res = _quality_to_resolution(current_qn, height)
+                    sz = d.get("size", 0)
+                        qualities.append({
+                            "quality": f"分段{i+1}",
+                            "url": u,
+                            "resolution": res or "",
+                            "filesize": _get_filesize_for_qn(current_qn, sz, duration),
+                        })
         else:
-            qualities.append({"quality": "720P", "url": video_url,
-                             "resolution": _normalize_resolution(f"{width}x{height}") if width and height else ""})
+            # 无 accept_quality，仅返回一个清晰度
+            label = BILI_QUALITY_MAP.get(current_qn, f"清晰度{current_qn}")
+            res = _quality_to_resolution(current_qn, height)
+            sz = durl_list[0].get("size", 0) if durl_list else 0
+                qualities.append({
+                    "quality": label,
+                    "url": video_url,
+                    "resolution": res,
+                    "filesize": _get_filesize_for_qn(current_qn, sz, duration),
+                })
 
         return {
             "title": title,
@@ -168,20 +210,32 @@ async def _download_with_free_api(
 ) -> Optional[str]:
     """
     使用免费 API 获取视频直链，直接下载（无需合并音视频）
+    根据 quality 参数选择对应的清晰度 qn。
     """
     savedir = ensure_download_path()
     bvid = _extract_bvid_free(url)
     safe_title = re.sub(r'[\\/*?:"<>|]', "", title or bvid or "bilibili")[:100]
 
-    # 获取播放地址
-    result = await _parse_with_free_api(url)
+    # 解析清晰度参数 → qn 编号
+    target_qn = 80  # 默认 1080P
+    if quality and quality.isdigit():
+        target_qn = int(quality)
+    elif quality and quality != "best":
+        # quality 可能是 "1080P" / "720P" 等标签
+        for qn, label in BILI_QUALITY_MAP.items():
+            if label == quality:
+                target_qn = qn
+                break
+
+    # 获取播放地址（使用指定的 qn）
+    result = await _parse_with_free_api(url, default_qn=target_qn)
     if not result or not result.get("video_url"):
         return None
 
     video_url = result["video_url"]
     output_path = savedir / f"{safe_title}.mp4"
 
-    logger.info(f"[BilibiliDownloader] 免费API下载: {video_url[:80]}")
+    logger.info(f"[BilibiliDownloader] 免费API下载 (qn={target_qn}): {video_url[:80]}")
 
     try:
         await _download_file_simple(video_url, output_path)
@@ -304,7 +358,7 @@ class BilibiliDownloader(BaseDownloader):
                     VideoQuality(
                         quality=q["quality"],
                         resolution=q["resolution"],
-                        filesize="未知",
+                        filesize=q.get("filesize", "未知"),
                         url=q["url"],
                     )
                     for q in free_result["qualities"]
