@@ -70,8 +70,11 @@ export const getAsset = (id: string) => request(`/assets/${id}`)
 export const updateAsset = (id: string, data: any) =>
   request(`/assets/${id}`, { method: 'PUT', body: JSON.stringify(data) })
 
-export const deleteAsset = (id: string, hard: boolean = false) =>
-  request(`/assets/${id}?hard=${hard ? '1' : '0'}`, { method: 'DELETE' })
+export const deleteAsset = (id: string, mode: 'soft' | 'del_file' | 'hard' = 'soft') =>
+  request(`/assets/${id}?mode=${mode}`, { method: 'DELETE' })
+
+export const restoreAsset = (id: string) =>
+  request(`/assets/${id}/restore`, { method: 'POST' })
 
 export const importAssetFromUrl = (url: string) =>
   request('/assets/import-url', { method: 'POST', body: JSON.stringify({ url }) })

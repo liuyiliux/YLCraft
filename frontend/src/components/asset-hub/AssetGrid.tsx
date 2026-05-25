@@ -9,10 +9,11 @@
  */
 
 import { useState, useCallback } from 'react'
-import { Card, Tag, Button, Pagination, Empty, Skeleton, Tooltip, Checkbox } from 'antd'
-import { 
-  FileImageOutlined, 
-  VideoCameraOutlined, 
+import { formatFileSize } from '../../utils/format'
+import { Card, Tag, Button, Pagination, Empty, Skeleton, Tooltip, Checkbox, Dropdown, Menu } from 'antd'
+import {
+  FileImageOutlined,
+  VideoCameraOutlined,
   FileTextOutlined,
   SoundOutlined,
   InboxOutlined,
@@ -20,6 +21,7 @@ import {
   StarOutlined,
   EyeOutlined,
   DownloadOutlined,
+  DeleteOutlined,
   MoreOutlined,
   AppstoreOutlined,
   UnorderedListOutlined,
@@ -58,6 +60,7 @@ interface AssetGridProps {
   selectedIds?: string[]
   onSelect?: (id: string, checked: boolean) => void
   onSelectAll?: (checked: boolean) => void
+  onMoreAction?: (action: string, asset: AssetItem) => void
 }
 
 const TYPE_ICONS: Record<string, React.ReactNode> = {
@@ -92,6 +95,7 @@ export function AssetGrid({
   selectedIds = [],
   onSelect,
   onSelectAll,
+  onMoreAction,
 }: AssetGridProps) {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const [hoveredAsset, setHoveredAsset] = useState<string | null>(null)
@@ -107,8 +111,7 @@ export function AssetGrid({
   const getScore = (asset: AssetItem) => asset.relevance_score ?? asset.quality_score ?? 0
   const getSize = (asset: AssetItem) => {
     if (!asset.file_size) return ''
-    const mb = asset.file_size / 1024 / 1024
-    return mb >= 1 ? `${mb.toFixed(1)} MB` : `${(asset.file_size / 1024).toFixed(0)} KB`
+    return formatFileSize(asset.file_size)
   }
 
   const renderSkeleton = () => (
@@ -207,9 +210,22 @@ export function AssetGrid({
               <Tooltip title="预览">
                 <Button type="primary" icon={<EyeOutlined />} size="small" onClick={(e) => { e.stopPropagation(); onAssetClick?.(asset) }} />
               </Tooltip>
-              <Tooltip title="更多">
-                <Button type="default" icon={<MoreOutlined />} size="small" onClick={e => e.stopPropagation()} />
-              </Tooltip>
+              <Dropdown
+                menu={{
+                  onClick: (info) => {
+                    info.domEvent.stopPropagation()
+                    onMoreAction?.(info.key, asset)
+                  },
+                  items: [
+                    { key: 'delete', icon: <DeleteOutlined />, label: '删除', danger: true },
+                  ],
+                }}
+                trigger={['click']}
+              >
+                <Tooltip title="更多">
+                  <Button type="default" icon={<MoreOutlined />} size="small" onClick={e => e.stopPropagation()} />
+                </Tooltip>
+              </Dropdown>
             </div>
 
             {/* 类型标签 */}

@@ -55,6 +55,16 @@ class Asset(SQLModel, table=True):
 
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
+    deleted_at: datetime | None = Field(default=None, index=True)
+
+    @property
+    def is_deleted(self) -> bool:
+        return self.deleted_at is not None or self.status == "DELETED"
+    deleted_at: datetime | None = Field(default=None, index=True)
+
+    @property
+    def is_deleted(self) -> bool:
+        return self.deleted_at is not None or self.status == "DELETED"
 
     class Config:
         use_enum_values = True
@@ -79,6 +89,11 @@ class AssetCollection(SQLModel, table=True):
     asset_ids: str = Field(default="[]")
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
+    deleted_at: datetime | None = Field(default=None, index=True)
+
+    @property
+    def is_deleted(self) -> bool:
+        return self.deleted_at is not None or self.status == "DELETED"
 
     class Config:
         use_enum_values = True

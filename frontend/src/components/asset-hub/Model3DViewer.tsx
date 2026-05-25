@@ -6,6 +6,7 @@
  */
 
 import { useState, useRef, Suspense } from 'react'
+import { formatFileSize } from '../../utils/format'
 import { Canvas, useFrame, useLoader, useThree } from '@react-three/fiber'
 import { 
   OrbitControls, 
@@ -256,14 +257,7 @@ export function Model3DViewer({
   const [isFullscreen, setIsFullscreen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  // 格式化文件大小
-  const formatFileSize = (bytes: number) => {
-    if (bytes === 0) return '0 B'
-    const k = 1024
-    const sizes = ['B', 'KB', 'MB', 'GB']
-    const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-  }
+  // 格式化文件大小（使用公共工具函数）
 
   // 重置视角
   const resetView = () => {

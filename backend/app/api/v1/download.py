@@ -34,6 +34,28 @@ from app.services.download import parse_with_manager, download_with_manager, get
 router = APIRouter()
 logger = logging.getLogger("ylcraft.download")
 
+
+def _parse_resolution(resolution: str) -> tuple[int, int]:
+    """从分辨率字符串解析 width x height，支持 '1920x1080' 和 '1080p' 格式"""
+    if not resolution:
+        return 0, 0
+    res = resolution.strip()
+    if "x" in res:
+        parts = res.split("x")
+        if len(parts) == 2:
+            try:
+                return int(parts[0]), int(parts[1])
+            except ValueError:
+                pass
+    elif res.endswith("p"):
+        try:
+            h = int(res[:-1])
+            w = int(h * 16 / 9)
+            return w, h
+        except ValueError:
+            pass
+    return 0, 0
+
 # 浏览器 UA
 _BROWSER_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -529,14 +551,11 @@ async def download_video(req: DownloadRequest):
     
     # 从 video_info 获取元数据（优先）
     if video_info:
-        width = height = 0
+        width, height = 0, 0
         if video_info.qualities:
             best_quality = video_info.qualities[0]
             if best_quality.resolution:
-                res_parts = best_quality.resolution.split("x")
-                if len(res_parts) == 2:
-                    width = int(res_parts[0])
-                    height = int(res_parts[1])
+                width, height = _parse_resolution(best_quality.resolution)
         duration = video_info.duration or 0
         cover_url = video_info.cover_url or ""
         title = video_info.title or ""
@@ -796,26 +815,18 @@ async def _run_download_task(task: DownloadTask):
                 cover_url = ""
                 if video_info:
                     # 获取分辨率：优先匹配实际下载的 quality，否则取最高分辨率
+                    target_quality = None
                     if video_info.qualities and task.quality:
-                        matched_quality = None
                         for q in video_info.qualities:
                             if q.quality == task.quality:
-                                matched_quality = q
+                                target_quality = q
                                 break
-                        if not matched_quality:
-                            matched_quality = video_info.qualities[0]
-                        if matched_quality and matched_quality.resolution:
-                            res_parts = matched_quality.resolution.split("x")
-                            if len(res_parts) == 2:
-                                width = int(res_parts[0])
-                                height = int(res_parts[1])
+                        if not target_quality:
+                            target_quality = video_info.qualities[0]
                     elif video_info.qualities:
-                        best_quality = video_info.qualities[0]
-                        if best_quality.resolution:
-                            res_parts = best_quality.resolution.split("x")
-                            if len(res_parts) == 2:
-                                width = int(res_parts[0])
-                                height = int(res_parts[1])
+                        target_quality = video_info.qualities[0]
+                    if target_quality and target_quality.resolution:
+                        width, height = _parse_resolution(target_quality.resolution)
                     # 获取封面URL
                     cover_url = video_info.cover_url or ""
                 

@@ -3,7 +3,6 @@ B站专用下载器
 
 优先使用 BilibiliClient（WBI签名，需 Cookie）获取高清 DASH 视频
 无 Cookie 时降级到免费 Web API（无需登录，/x/player/playurl）
-返回 (文件路径, VideoInfo) 元组
 """
 from __future__ import annotations
 
@@ -40,6 +39,23 @@ BILI_QUALITY_MAP = {
 }
 
 
+def _normalize_resolution(res: str) -> str:
+    """将分辨率统一为 widthxheight 格式（如下载器外部已传入 1080p 格式则在此转换）"""
+    if not res:
+        return ""
+    res = res.strip()
+    if "x" in res:
+        return res
+    if res.endswith("p"):
+        try:
+            h = int(res[:-1])
+            w = int(h * 16 / 9)
+            return f"{w}x{h}"
+        except ValueError:
+            return ""
+    return res
+
+
 # =============================================================================
 # 免费 API 兜底（无需 Cookie）
 # =============================================================================
@@ -69,7 +85,7 @@ async def _call_free_api(url: str) -> dict:
 async def _parse_with_free_api(url: str) -> Optional[dict]:
     """
     使用 B站免费 Web API 解析（无需 Cookie）
-    返回 dict: {title, author_name, cover_url, video_url, width, height, duration, qualities, bvid}
+    返回 dict: {title, author_name, cover_url, video_url, width, height, duration, qualities}
     失败返回 None
     """
     try:
@@ -125,10 +141,10 @@ async def _parse_with_free_api(url: str) -> Optional[dict]:
                 u = d.get("url", "")
                 if u:
                     qualities.append({"quality": f"分段{i+1}", "url": u,
-                                     "resolution": f"{width}x{height}" if width and height else ""})
+                                     "resolution": _normalize_resolution(f"{width}x{height}") if width and height else ""})
         else:
             qualities.append({"quality": "720P", "url": video_url,
-                             "resolution": f"{width}x{height}" if width and height else ""})
+                             "resolution": _normalize_resolution(f"{width}x{height}") if width and height else ""})
 
         return {
             "title": title,
@@ -144,6 +160,35 @@ async def _parse_with_free_api(url: str) -> Optional[dict]:
 
     except Exception as e:
         logger.warning(f"[BilibiliDownloader] 免费API解析失败: {e}")
+        return None
+
+
+async def _download_with_free_api(
+    url: str, quality: str, title: Optional[str], is_audio: bool
+) -> Optional[str]:
+    """
+    使用免费 API 获取视频直链，直接下载（无需合并音视频）
+    """
+    savedir = ensure_download_path()
+    bvid = _extract_bvid_free(url)
+    safe_title = re.sub(r'[\\/*?:"<>|]', "", title or bvid or "bilibili")[:100]
+
+    # 获取播放地址
+    result = await _parse_with_free_api(url)
+    if not result or not result.get("video_url"):
+        return None
+
+    video_url = result["video_url"]
+    output_path = savedir / f"{safe_title}.mp4"
+
+    logger.info(f"[BilibiliDownloader] 免费API下载: {video_url[:80]}")
+
+    try:
+        await _download_file_simple(video_url, output_path)
+        logger.info(f"[BilibiliDownloader] 免费API下载完成: {output_path}")
+        return str(output_path)
+    except Exception as e:
+        logger.warning(f"[BilibiliDownloader] 免费API下载失败: {e}")
         return None
 
 
@@ -166,55 +211,6 @@ async def _download_file_simple(url: str, output_path: Path, max_retries: int = 
     raise ValueError(f"下载失败（已重试 {max_retries} 次）")
 
 
-async def _download_with_free_api(
-    url: str, quality: str, title: Optional[str], is_audio: bool
-) -> Optional[Tuple[str, VideoInfo]]:
-    """
-    使用免费 API 获取视频直链，直接下载（无需合并音视频）
-    返回 (filepath, VideoInfo) 或 None
-    """
-    savedir = ensure_download_path()
-    bvid = _extract_bvid_free(url)
-    safe_title = re.sub(r'[\\/*?:"<>|]', "", title or bvid or "bilibili")[:100]
-
-    # 获取视频信息和播放地址
-    parse_result = await _parse_with_free_api(url)
-    if not parse_result or not parse_result.get("video_url"):
-        return None
-
-    video_url = parse_result["video_url"]
-    output_path = savedir / f"{safe_title}.mp4"
-
-    logger.info(f"[BilibiliDownloader] 免费API下载: {video_url[:80]}")
-
-    try:
-        await _download_file_simple(video_url, output_path)
-        logger.info(f"[BilibiliDownloader] 免费API下载完成: {output_path}")
-
-        info = VideoInfo(
-            title=parse_result["title"],
-            author=parse_result["author_name"],
-            platform="bilibili",
-            cover_url=parse_result["cover_url"],
-            duration=parse_result["duration"],
-            qualities=[
-                VideoQuality(
-                    quality=q["quality"],
-                    resolution=q["resolution"],
-                    filesize="未知",
-                    url=q["url"],
-                )
-                for q in parse_result["qualities"]
-            ],
-            page_url=url,
-        )
-        return str(output_path), info
-
-    except Exception as e:
-        logger.warning(f"[BilibiliDownloader] 免费API下载失败: {e}")
-        return None
-
-
 # =============================================================================
 # BilibiliDownloader
 # =============================================================================
@@ -227,7 +223,6 @@ class BilibiliDownloader(BaseDownloader):
     def __init__(self):
         self._client = None
         self._has_cookie = False
-        self._cached_parse_result: Optional[VideoInfo] = None
 
     async def _get_client(self) -> Tuple[Optional[BilibiliClient], bool]:
         """
@@ -280,9 +275,7 @@ class BilibiliDownloader(BaseDownloader):
     async def parse(self, url: str) -> Optional[VideoInfo]:
         """
         解析B站视频信息
-
         优先使用 BilibiliClient（WBI签名），失败则降级到免费 API
-        结果缓存到 self._cached_parse_result，供 download() 使用
         """
         bvid = self._extract_bvid(url)
         if not bvid:
@@ -293,10 +286,7 @@ class BilibiliDownloader(BaseDownloader):
         client, has_cookie = await self._get_client()
         if has_cookie and client:
             try:
-                info = await self._parse_with_client(client, bvid, url)
-                if info:
-                    self._cached_parse_result = info
-                    return info
+                return await self._parse_with_client(client, bvid, url)
             except Exception as e:
                 logger.warning(f"[BilibiliDownloader] WBI解析失败，降级到免费API: {e}")
 
@@ -304,7 +294,7 @@ class BilibiliDownloader(BaseDownloader):
         logger.info(f"[BilibiliDownloader] 使用免费API解析: {bvid}")
         free_result = await _parse_with_free_api(url)
         if free_result:
-            info = VideoInfo(
+            return VideoInfo(
                 title=free_result["title"],
                 author=free_result["author_name"],
                 platform="bilibili",
@@ -321,8 +311,6 @@ class BilibiliDownloader(BaseDownloader):
                 ],
                 page_url=url,
             )
-            self._cached_parse_result = info
-            return info
 
         logger.error(f"[BilibiliDownloader] 解析失败（WBI + 免费API均失败）: {bvid}")
         return None
@@ -352,7 +340,7 @@ class BilibiliDownloader(BaseDownloader):
                 label = BILI_QUALITY_MAP.get(qn, f"qn{qn}")
                 w = video.get("width", 0)
                 h = video.get("height", 0)
-                res = f"{w}x{h}"
+                res = _normalize_resolution(f"{w}x{h}")
                 if res in seen:
                     continue
                 seen.add(res)
@@ -385,12 +373,11 @@ class BilibiliDownloader(BaseDownloader):
         quality: str = "best",
         title: Optional[str] = None,
         is_audio: bool = False,
-    ) -> Tuple[str, Optional[VideoInfo]]:
+    ) -> str:
         """
         下载B站视频
         优先使用 BilibiliClient（DASH格式，需合并音视频）
         无 Cookie 时降级到免费 API（durl格式，音视频合一，无需合并）
-        返回 (文件路径, VideoInfo)
         """
         bvid = self._extract_bvid(url)
         if not bvid:
@@ -401,19 +388,16 @@ class BilibiliDownloader(BaseDownloader):
         # 方式1：WBI 签名（需 Cookie）→ DASH 格式
         if has_cookie and client:
             try:
-                filepath = await self._download_with_client(client, bvid, url, quality, title, is_audio)
-                return filepath, self._cached_parse_result
+                return await self._download_with_client(client, bvid, url, quality, title, is_audio)
             except Exception as e:
                 logger.warning(f"[BilibiliDownloader] WBI下载失败，降级到免费API: {e}")
+                # 继续到方式2
 
         # 方式2：免费 API（无需 Cookie）→ durl 格式
         logger.info(f"[BilibiliDownloader] 使用免费API下载: {bvid}")
         result = await _download_with_free_api(url, quality, title, is_audio)
         if result:
-            # result 已经是 (filepath, VideoInfo)
-            filepath, info = result
-            self._cached_parse_result = info
-            return filepath, info
+            return result
 
         raise ValueError(f"B站下载失败（WBI + 免费API均失败）: {bvid}")
 

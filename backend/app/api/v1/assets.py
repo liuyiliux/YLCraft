@@ -483,19 +483,31 @@ async def update_asset(
 # ---------------------------------------------------------------------------
 
 class DeleteRequest(BaseModel):
-    hard: bool = Field(False, description="true=同时删除物理文件，false=仅删除记录")
+    mode: str = Field("soft", description="删除模式：soft=软删除 / del_file=删文件+软删记录 / hard=永久删除")
+    restore: bool = Field(False, description="恢复已软删除的资产")
 
 
 @router.delete("/{asset_id}", summary="删除资产")
 async def delete_asset(
     asset_id: str,
-    hard: bool = Query(False, description="true=同时删除物理文件，false=仅删除记录"),
+    mode: str = Query("soft", description="soft / del_file / hard"),
     service: AssetService = Depends(get_asset_service),
 ):
-    ok = await service.delete(asset_id, hard=hard)
+    ok = await service.delete(asset_id, mode=mode)
     if not ok:
         raise HTTPException(status_code=404, detail="资产不存在")
-    return {"success": True, "message": "已删除"}
+    return {"success": True, "message": f"已{mode}删除"}
+
+
+@router.post("/{asset_id}/restore", summary="恢复软删除的资产")
+async def restore_asset(
+    asset_id: str,
+    service: AssetService = Depends(get_asset_service),
+):
+    ok = await service.restore(asset_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="资产不存在或未处于软删除状态")
+    return {"success": True, "message": "已恢复"}
 
 
 

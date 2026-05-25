@@ -9,6 +9,7 @@
  * - 批量选择与删除
  */
 import { useTheme } from '../../constants/theme'
+import { formatFileSize } from '../../utils/format'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -46,6 +47,7 @@ import { LineageGraph } from '../../components/asset-hub/LineageGraph'
 import {
   listAssets,
   deleteAsset,
+  restoreAsset,
   getAsset,
   hybridSearch,
   getAssetLineage,
@@ -263,11 +265,20 @@ export default function AssetsPage() {
     setDeleteModal({ visible: true, assets: selected })
   }
 
-  const handleDelete = async (hard: boolean) => {
+  const handleMoreAction = (action: string, asset: any) => {
+    if (action === 'view') {
+      handleAssetClick(asset)
+    } else if (action === 'delete') {
+      setDeleteModal({ visible: true, assets: [asset] })
+    }
+  }
+
+  const handleDelete = async (mode: 'soft' | 'del_file' | 'hard') => {
     const ids = deleteModal.assets.map((a: any) => a.id)
+    const labels: Record<string, string> = { soft: '软删除', del_file: '删除文件+保留记录', hard: '永久删除' }
     try {
-      for (const id of ids) { await deleteAsset(id, hard) }
-      message.success(`已${hard ? '永久' : '软'}删除 ${ids.length} 个素材`)
+      for (const id of ids) { await deleteAsset(id, mode) }
+      message.success(`已${labels[mode]} ${ids.length} 个素材`)
       setDeleteModal({ visible: false, assets: [] })
       setSelectedIds([])
       loadAssets(page, searchQuery, filters, searchMode)
@@ -382,14 +393,14 @@ export default function AssetsPage() {
               </Button>
             </div>
 
-            <Descriptions column={1} size="small" style={{ marginBottom: 16 }}>
+            <Descriptions column={1} size="small" style={{ marginBottom: 16 }} labelStyle={{ color: theme.textSecondary }} contentStyle={{ color: theme.textPrimary }}>
               <Descriptions.Item label="类型">{detailAsset.type}</Descriptions.Item>
               <Descriptions.Item label="平台">{detailAsset.platform || '-'}</Descriptions.Item>
               <Descriptions.Item label="作者">{detailAsset.author || '-'}</Descriptions.Item>
               <Descriptions.Item label="状态">
-                <Tag color={ds === 'READY' ? 'green' : 'orange'}>{STATUS_LABELS[ds] || detailAsset.status}</Tag>
+                <Tag color={ds === 'READY' ? 'green' : 'orange'} style={{ color: '#e0e0e0' }}>{STATUS_LABELS[ds] || detailAsset.status}</Tag>
               </Descriptions.Item>
-              <Descriptions.Item label="大小">{detailAsset.file_size ? `${(detailAsset.file_size / 1024 / 1024).toFixed(1)} MB` : '-'}</Descriptions.Item>
+              <Descriptions.Item label="大小">{detailAsset.file_size ? formatFileSize(detailAsset.file_size) : '-'}</Descriptions.Item>
               <Descriptions.Item label="分辨率">{detailAsset.resolution || (detailAsset.width && detailAsset.height ? `${detailAsset.width}x${detailAsset.height}` : '-')}</Descriptions.Item>
               <Descriptions.Item label="时长">{detailAsset.duration ? `${Math.floor(detailAsset.duration / 60)}:${String(Math.floor(detailAsset.duration % 60)).padStart(2, '0')}` : '-'}</Descriptions.Item>
               <Descriptions.Item label="来源">{SOURCE_TYPE_LABELS[detailAsset.source_type] || '-'}</Descriptions.Item>
@@ -401,7 +412,9 @@ export default function AssetsPage() {
               <div style={{ marginBottom: 16 }}>
                 <Space wrap>
                   {detailAsset.tags.map((tag: string, i: number) => (
-                    <Tag key={i}>{tag}</Tag>
+                    <Tag key={i} color="blue" style={{ color: '#e0e0e0', borderColor: 'rgba(0,212,255,0.3)', background: 'rgba(0,212,255,0.1)' }}>
+                      {tag}
+                    </Tag>
                   ))}
                 </Space>
               </div>
@@ -409,7 +422,7 @@ export default function AssetsPage() {
 
             {/* AI params */}
             {aiGen && (
-              <Descriptions column={1} size="small" title="AI 生成参数" style={{ marginTop: 16 }}>
+              <Descriptions column={1} size="small" title="AI 生成参数" style={{ marginTop: 16 }} labelStyle={{ color: theme.textSecondary }} contentStyle={{ color: theme.textPrimary }}>
                 {meta.prompt && <Descriptions.Item label="提示词">{meta.prompt}</Descriptions.Item>}
                 {meta.negative_prompt && <Descriptions.Item label="反向提示词">{meta.negative_prompt}</Descriptions.Item>}
                 {meta.model && <Descriptions.Item label="模型">{meta.model}</Descriptions.Item>}
@@ -594,6 +607,7 @@ export default function AssetsPage() {
                 selectable={batchMode}
                 selectedIds={selectedIds}
                 onSelect={handleSelect}
+                onMoreAction={handleMoreAction}
               />
             </div>
           </Content>
@@ -643,8 +657,9 @@ export default function AssetsPage() {
         title="确认删除"
         onCancel={() => setDeleteModal({ visible: false, assets: [] })}
         footer={[
-          <Button key="soft" type="primary" danger icon={<DeleteOutlined />} onClick={() => handleDelete(false)}>软删除（可恢复）</Button>,
-          <Button key="hard" danger icon={<DeleteOutlined />} onClick={() => handleDelete(true)}>永久删除</Button>,
+          <Button key="soft" danger icon={<DeleteOutlined />} onClick={() => handleDelete('soft')}>软删除（记录+文件保留）</Button>,
+          <Button key="del_file" danger icon={<DeleteOutlined />} onClick={() => handleDelete('del_file')}>删文件+保留记录</Button>,
+          <Button key="hard" type="primary" danger icon={<DeleteOutlined />} onClick={() => handleDelete('hard')}>永久删除（全删）</Button>,
         ]}
       >
         <p>确定要删除选中的 {deleteModal.assets.length} 个素材吗？</p>

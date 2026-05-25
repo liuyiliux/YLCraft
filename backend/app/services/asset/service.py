@@ -582,42 +582,68 @@ class AssetService:
             await self._inc_tag_count(tag_name)
         return asset
 
-    async def delete(self, asset_id: str, hard: bool = False) -> bool:
+    async def delete(self, asset_id: str, mode: str = "soft") -> bool:
         """
         删除资产。
-        - hard=False：仅删除数据库记录，保留文件
-        - hard=True：同时删除文件和数据库记录
+        - mode="soft"：软删除（标记 deleted，保留记录+文件，列表中默认隐藏）
+        - mode="del_file"：删除文件 + 软删除记录（释放磁盘，保留记录可查）
+        - mode="hard"：永久删除（记录+文件全部删除）
         """
         asset = await self.get_by_id(asset_id)
         if not asset:
             return False
 
-        if hard:
-            # 硬删除：删除文件 + 删除数据库记录
-            if asset.file_path and os.path.exists(asset.file_path):
-                try:
-                    os.remove(asset.file_path)
-                    logger.info(f"Deleted file: {asset.file_path}")
-                except OSError as e:
-                    logger.warning(f"Failed to delete file {asset.file_path}: {e}")
-            # 删除缩略图（从 metadata_json 中读取路径）
-            try:
-                if asset.metadata_json:
-                    meta = json.loads(asset.metadata_json)
-                    thumbnail_path = meta.get("thumbnail_path", "")
-                    if thumbnail_path and os.path.exists(thumbnail_path):
-                        os.remove(thumbnail_path)
-            except Exception:
-                pass
-            
+        if mode == "hard":
+            # 永久删除：删除文件 + 删除数据库记录
+            self._delete_file(asset.file_path)
+            self._delete_thumbnail(asset)
             await self.session.delete(asset)
             await self.session.flush()
             logger.info(f"Hard deleted asset | id={asset.id}")
         else:
-            # 仅删除记录：从数据库删除记录，保留文件
-            await self.session.delete(asset)
+            # 软删除或删除文件：保留数据库记录
+            asset.status = "DELETED"
+            asset.deleted_at = datetime.now()
+            asset.updated_at = datetime.now()
+            if mode == "del_file":
+                self._delete_file(asset.file_path)
+                self._delete_thumbnail(asset)
+                logger.info(f"Deleted file + soft-deleted record | id={asset.id}")
+            else:
+                logger.info(f"Soft deleted record (keep file) | id={asset.id}")
             await self.session.flush()
-            logger.info(f"Deleted record only (keep file) | id={asset.id}")
+        return True
+
+    @staticmethod
+    def _delete_file(file_path: str) -> None:
+        if file_path and os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+                logger.info(f"Deleted file: {file_path}")
+            except OSError as e:
+                logger.warning(f"Failed to delete file {file_path}: {e}")
+
+    @staticmethod
+    def _delete_thumbnail(asset: Asset) -> None:
+        try:
+            if asset.metadata_json:
+                meta = json.loads(asset.metadata_json)
+                thumbnail_path = meta.get("thumbnail_path", "")
+                if thumbnail_path and os.path.exists(thumbnail_path):
+                    os.remove(thumbnail_path)
+        except Exception:
+            pass
+
+    async def restore(self, asset_id: str) -> bool:
+        """恢复软删除的资产"""
+        asset = await self.get_by_id(asset_id)
+        if not asset or asset.status != "DELETED":
+            return False
+        asset.status = "READY"
+        asset.deleted_at = None
+        asset.updated_at = datetime.now()
+        await self.session.flush()
+        logger.info(f"Restored asset | id={asset.id}")
         return True
 
     # -------------------------------------------------------------------------
