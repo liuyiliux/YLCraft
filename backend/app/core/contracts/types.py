@@ -159,7 +159,7 @@ class VideoGenerationResult:
 @dataclass
 class LLMMessage:
     role: str  # "system" | "user" | "assistant"
-    content: str
+    content: str | list[dict]  # 支持纯文本或多模态数组（[{"type": "text", "text": ...}, {"type": "image_url", "image_url": {"url": ...}}]）
 
 
 @dataclass

@@ -248,18 +248,34 @@ class PlatformTemplateInfo(BaseModel):
     id: str = ""
     platform: str = ""
     name: str = ""
+    outline_template: str = ""
+    image_template: str = ""
+    video_template: Optional[str] = None
     default_size: str = "1024x1024"
     is_active: bool = True
+    sort_order: int = 0
+
+
+class PlatformTemplateUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    outline_template: Optional[str] = None
+    image_template: Optional[str] = None
+    video_template: Optional[str] = None
+    default_size: Optional[str] = None
+    is_active: Optional[bool] = None
+    sort_order: Optional[int] = None
 
 
 class GenerateOutlineRequest(BaseModel):
     topic: str
     platforms: list[str] = []  # ["xiaohongshu", "douyin"]
+    llm_model: Optional[str] = None  # 指定 LLM 模型
+    reference_images: Optional[list[str]] = None  # 参考图（base64，用于多模态 LLM 反推）
 
 
 class GenerateOutlineResponse(BaseModel):
     success: bool = True
-    outlines: dict = {}  # { xiaohongshu: { title, description, pages: [{type, prompt}] } }
+    outlines: dict = {}  # { xiaohongshu: { title, copywriting, pages: [{type, prompt}] } }
     error: Optional[str] = None
 
 
@@ -267,6 +283,13 @@ class BatchGenerateRequest(BaseModel):
     pages: list[dict] = []  # [{ prompt, platform, size, n }]
     provider: Optional[str] = None
     model: Optional[str] = None
+    # 多平台生图上下文（可选，用于资产库记录）
+    topic: Optional[str] = None
+    template_id: Optional[str] = None
+    outline_title: Optional[str] = None
+    outline_copywriting: Optional[str] = None
+    # 参考图（支持反推人物特征）
+    reference_images: list[str] = []  # base64 编码的图片
 
 
 class BatchGenerateResponse(BaseModel):
@@ -277,7 +300,7 @@ class BatchGenerateResponse(BaseModel):
 
 @router.get("/platform-templates", response_model=dict, summary="可用平台模板列表")
 async def list_platform_templates():
-    """返回所有已激活的平台生成模板"""
+    """返回所有已激活的平台生成模板（完整信息）"""
     from app.db.database import get_async_session
     from app.db.models.platform_template import PlatformTemplate
     from sqlmodel import select
@@ -296,11 +319,89 @@ async def list_platform_templates():
                     "id": str(t.id),
                     "platform": t.platform,
                     "name": t.name,
+                    "outline_template": t.outline_template,
+                    "image_template": t.image_template,
+                    "video_template": t.video_template,
                     "default_size": t.default_size,
                     "is_active": t.is_active,
+                    "sort_order": t.sort_order,
                 }
                 for t in templates
             ],
+        }
+
+
+@router.put("/platform-templates/{template_id}", response_model=dict, summary="更新平台模板")
+async def update_platform_template(
+    template_id: str,
+    req: PlatformTemplateUpdateRequest,
+):
+    """更新指定平台模板"""
+    from app.db.database import get_async_session
+    from app.db.models.platform_template import PlatformTemplate
+    from sqlmodel import select
+    import uuid
+
+    async with get_async_session() as session:
+        # 查询模板
+        stmt = select(PlatformTemplate).where(PlatformTemplate.id == uuid.UUID(template_id))
+        result = await session.exec(stmt)
+        template = result.one_or_none()
+
+        if not template:
+            raise HTTPException(status_code=404, detail="模板不存在")
+
+        # 更新字段
+        update_data = req.model_dump(exclude_unset=True)
+        for key, value in update_data.items():
+            if value is not None:
+                setattr(template, key, value)
+
+        session.add(template)
+        await session.commit()
+        await session.refresh(template)
+
+        return {
+            "success": True,
+            "template": {
+                "id": str(template.id),
+                "platform": template.platform,
+                "name": template.name,
+                "outline_template": template.outline_template,
+                "image_template": template.image_template,
+                "video_template": template.video_template,
+                "default_size": template.default_size,
+                "is_active": template.is_active,
+                "sort_order": template.sort_order,
+            },
+            "message": "更新成功",
+        }
+
+
+@router.delete("/platform-templates/{template_id}", response_model=dict, summary="删除平台模板")
+async def delete_platform_template(template_id: str):
+    """删除指定平台模板（软删除：设置 is_active=False）"""
+    from app.db.database import get_async_session
+    from app.db.models.platform_template import PlatformTemplate
+    from sqlmodel import select
+    import uuid
+
+    async with get_async_session() as session:
+        stmt = select(PlatformTemplate).where(PlatformTemplate.id == uuid.UUID(template_id))
+        result = await session.exec(stmt)
+        template = result.one_or_none()
+
+        if not template:
+            raise HTTPException(status_code=404, detail="模板不存在")
+
+        # 软删除
+        template.is_active = False
+        session.add(template)
+        await session.commit()
+
+        return {
+            "success": True,
+            "message": "删除成功",
         }
 
 
@@ -308,7 +409,8 @@ async def list_platform_templates():
 async def generate_outline_endpoint(req: GenerateOutlineRequest):
     """
     使用 LLM 为输入的 topic 生成多平台结构化大纲。
-    每个平台返回 title、description、pages（含 type 和 prompt）。
+    每个平台返回 title、copywriting、pages（含 type 和 prompt）。
+    支持参考图（多模态 LLM）。
     """
     from app.db.database import get_async_session
     from app.services.image.outline_service import generate_outline
@@ -320,11 +422,90 @@ async def generate_outline_endpoint(req: GenerateOutlineRequest):
     
     try:
         async with get_async_session() as session:
-            outlines = await generate_outline(session, req.topic, req.platforms)
+            outlines = await generate_outline(session, req.topic, req.platforms, req.llm_model, req.reference_images)
             return GenerateOutlineResponse(success=bool(outlines), outlines=outlines)
     except Exception as e:
         logger.error(f"Generate outline failed: {e}")
         return GenerateOutlineResponse(success=False, error=str(e))
+
+
+class BatchRetryRequest(BaseModel):
+    prompt: str
+    platform: str = ""
+    size: Optional[str] = "1024x1024"
+    n: Optional[int] = 1
+    provider: Optional[str] = None
+    model: Optional[str] = None
+
+
+class BatchRetryResponse(BaseModel):
+    success: bool = True
+    urls: list[str] = []
+    platform: str = ""
+    prompt: str = ""
+    error: Optional[str] = None
+
+
+@router.post("/generate-batch/retry", response_model=BatchRetryResponse, summary="单张图片重生成")
+async def batch_retry_endpoint(req: BatchRetryRequest):
+    """
+    对批量生成中失败的图片进行单张重生成。
+    复用 generate_image 逻辑，返回新的图片 URL。
+    """
+    from app.core.contracts.types import ImageGenerationRequest
+    from app.db.database import get_async_session
+    from app.services.asset.service import AssetService
+
+    manager = get_manager()
+    if not manager.is_loaded():
+        raise HTTPException(status_code=503, detail="BackendManager 未初始化")
+
+    try:
+        img_req = ImageGenerationRequest(
+            prompt=req.prompt,
+            size=req.size or "1024x1024",
+            n=req.n or 1,
+            provider=req.provider or "",
+            model=req.model or "",
+        )
+        result = await manager.generate_image(img_req)
+
+        if result.success:
+            urls = result.urls or [result.url] if result.url else []
+
+            # 自动入库到资产库
+            if result.local_path:
+                try:
+                    async with get_async_session() as session:
+                        service = AssetService(session)
+                        await service.create_from_image_generation(
+                            image_path=str(result.local_path),
+                            prompt=req.prompt,
+                            provider=result.provider,
+                            model=result.model,
+                            seed=result.seed,
+                            url=result.url or "",
+                            size=req.size or "1024x1024",
+                        )
+                except Exception as e:
+                    logger.warning(f"Failed to save retry image to asset library: {e}")
+
+            return BatchRetryResponse(
+                success=True,
+                urls=urls,
+                platform=req.platform,
+                prompt=req.prompt,
+            )
+        else:
+            return BatchRetryResponse(
+                success=False,
+                platform=req.platform,
+                prompt=req.prompt,
+                error=result.error or "Generation failed",
+            )
+    except Exception as e:
+        logger.error(f"Batch retry failed: {e}")
+        return BatchRetryResponse(success=False, error=str(e), platform=req.platform, prompt=req.prompt)
 
 
 @router.post("/generate-batch", response_model=BatchGenerateResponse, summary="批量生成多平台图片")
@@ -332,6 +513,8 @@ async def batch_generate_endpoint(req: BatchGenerateRequest):
     """
     批量生成图片：对每页并行调用现有 generate_image。
     返回按平台分组的结果。
+    自动入库到资产库（topic/template_id 等上下文字段用于标记多平台生图来源）。
+    支持参考图反推人物特征。
     """
     from app.db.database import get_async_session
     from app.services.image.outline_service import batch_generate_images
@@ -346,6 +529,11 @@ async def batch_generate_endpoint(req: BatchGenerateRequest):
                 req.pages,
                 provider=req.provider or "",
                 model=req.model or "",
+                topic=req.topic,
+                template_id=req.template_id,
+                outline_title=req.outline_title,
+                outline_copywriting=req.outline_copywriting,
+                reference_images=req.reference_images,
             )
             return BatchGenerateResponse(success=True, results=results.get("results", {}))
     except Exception as e:

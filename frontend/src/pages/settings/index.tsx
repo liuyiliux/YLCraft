@@ -22,6 +22,7 @@ import {
   Row,
   Col,
   Divider,
+  Collapse,
 } from 'antd'
 import { App as AntApp } from 'antd'
 import {
@@ -39,6 +40,7 @@ import {
   QuestionCircleOutlined,
   UploadOutlined,
   DownloadOutlined,
+  ToolOutlined,
 } from '@ant-design/icons'
 import { listConnectors, createConnector, updateConnector, deleteConnector, testConnector, exportConnectors, importConnectors, getSettings, updateSettings } from '../../api'
 import type { Provider, PROVIDER_OPTIONS, ConnectorTestResult } from '../../types/api'
@@ -137,6 +139,88 @@ function SizeConfigField({ value = [], onChange }: { value?: string[], onChange?
   )
 }
 
+// 服务商预设配置（按 provider_type 区分）
+interface ProviderPreset {
+  base_url?: string
+  api_endpoint?: string
+  default_model?: string
+  available_models?: string[]
+  max_tokens?: number
+  temperature?: number
+  request_template?: string
+  response_config?: string
+  default_params?: Record<string, any>
+  supported_sizes?: string[]
+  support_reference_image?: boolean
+  support_multiple_reference_images?: boolean
+  reference_image_field?: string
+  reference_image_array_field?: string
+  support_vision_input?: boolean
+}
+
+const PROVIDER_PRESETS: Record<string, Record<string, ProviderPreset>> = {
+  openai: {
+    llm: {
+      base_url: 'https://api.openai.com/v1',
+      default_model: 'gpt-4o',
+      available_models: ['gpt-4o', 'gpt-4-turbo', 'gpt-4', 'gpt-3.5-turbo'],
+      max_tokens: 4096,
+      temperature: 0.7,
+      support_vision_input: true,
+    },
+    image: {
+      base_url: 'https://api.openai.com/v1',
+      api_endpoint: '/images/generations',
+      default_model: 'dall-e-3',
+      available_models: ['dall-e-3', 'dall-e-2'],
+      supported_sizes: ['1024x1024', '1792x1024', '1024x1792'],
+      request_template: '{"model": "{{ model }}", "prompt": "{{ prompt }}", "n": {{ n | default(1) }}, "size": "{{ size }}"}',
+      response_config: '{"images_path": "$.data[*].url", "error_path": "$.error.message"}',
+      default_params: { n: 1, quality: 'standard' },
+    },
+  },
+  siliconflow: {
+    llm: {
+      base_url: 'https://api.siliconflow.cn/v1',
+      default_model: 'Qwen/Qwen2.5-72B-Instruct',
+      available_models: ['Qwen/Qwen2.5-72B-Instruct', 'Qwen/Qwen2-VL-72B-Instruct'],
+      max_tokens: 8192,
+      temperature: 0.7,
+      support_vision_input: true,
+    },
+    image: {
+      base_url: 'https://api.siliconflow.cn/v1',
+      api_endpoint: '/images/generations',
+      default_model: 'stabilityai/stable-diffusion-3.5-large',
+      available_models: ['stabilityai/stable-diffusion-3.5-large', 'runwayml/stable-diffusion-v1-5'],
+      supported_sizes: ['1024x1024', '768x1344', '1344x768'],
+      request_template: '{"model": "{{ model }}", "prompt": "{{ prompt }}", "image_size": "{{ size }}", "n": {{ n | default(1) }}, "seed": {{ seed | default(-1) }}}',
+      response_config: '{"images_path": "$.data[*].url", "error_path": "$.error.message"}',
+      default_params: { n: 1, size_param: 'image_size', seed_param: 'seed' },
+      support_reference_image: true,
+      reference_image_field: 'image',
+    },
+  },
+  gemini: {
+    llm: {
+      base_url: 'https://generativelanguage.googleapis.com/v1beta',
+      default_model: 'gemini-2.0-flash',
+      available_models: ['gemini-2.0-flash', 'gemini-2.0-pro', 'gemini-1.5-flash', 'gemini-1.5-pro'],
+      max_tokens: 8192,
+      temperature: 0.7,
+      support_vision_input: true,
+    },
+  },
+  generic: {
+    llm: {},
+    image: {},
+    video: {},
+    tts: {},
+    stt: {},
+    embedding: {},
+  },
+}
+
 // Provider 下拉选项（简化版：全部使用 OpenAI 兼容 API）
 const PROVIDER_SELECT_OPTIONS = [
   { value: 'openai', label: 'OpenAI' },
@@ -186,9 +270,68 @@ export default function SettingsPage() {
   const [searchText, setSearchText] = useState('')
   const [filterType, setFilterType] = useState<string>('all')
   const [filterStatus, setFilterStatus] = useState<string>('all')
+  const [showAdvancedConfig, setShowAdvancedConfig] = useState(false)
   const [form] = Form.useForm()
   const { message } = AntApp.useApp()
   const selectedType = Form.useWatch('provider_type', form)
+  const selectedProvider = Form.useWatch('provider', form)
+
+  const getPreset = () => {
+    if (!selectedProvider || !selectedType) return null
+    return PROVIDER_PRESETS[selectedProvider]?.[selectedType] || null
+  }
+
+  const applyPreset = () => {
+    const preset = getPreset()
+    if (!preset) {
+      message.warning('请先选择服务商和类型')
+      return
+    }
+
+    form.setFieldsValue({
+      base_url: preset.base_url || '',
+      api_endpoint: preset.api_endpoint || '',
+      default_model: preset.default_model || '',
+      available_models: preset.available_models ? JSON.stringify(preset.available_models) : '',
+      max_tokens: preset.max_tokens ?? 4096,
+      temperature: preset.temperature ?? 0.7,
+      request_template: preset.request_template || '',
+      response_config: preset.response_config || '',
+      supported_sizes: preset.supported_sizes || [],
+      default_params: preset.default_params ? JSON.stringify(preset.default_params) : '',
+      support_reference_image: preset.support_reference_image ?? false,
+      support_multiple_reference_images: preset.support_multiple_reference_images ?? false,
+      reference_image_field: preset.reference_image_field || '',
+      reference_image_array_field: preset.reference_image_array_field || '',
+      support_vision_input: preset.support_vision_input ?? false,
+    })
+    message.success('已应用推荐配置')
+  }
+
+  useEffect(() => {
+    if (!selectedProvider || !selectedType || editingProvider) return
+    
+    const preset = getPreset()
+    if (!preset) return
+
+    form.setFieldsValue({
+      base_url: preset.base_url || '',
+      api_endpoint: preset.api_endpoint || '',
+      default_model: preset.default_model || '',
+      available_models: preset.available_models ? JSON.stringify(preset.available_models) : '',
+      max_tokens: preset.max_tokens ?? 4096,
+      temperature: preset.temperature ?? 0.7,
+      request_template: preset.request_template || '',
+      response_config: preset.response_config || '',
+      supported_sizes: preset.supported_sizes || [],
+      default_params: preset.default_params ? JSON.stringify(preset.default_params) : '',
+      support_reference_image: preset.support_reference_image ?? false,
+      support_multiple_reference_images: preset.support_multiple_reference_images ?? false,
+      reference_image_field: preset.reference_image_field || '',
+      reference_image_array_field: preset.reference_image_array_field || '',
+      support_vision_input: preset.support_vision_input ?? false,
+    })
+  }, [selectedProvider, selectedType, editingProvider, form])
 
   const loadProviders = async () => {
     setLoading(true)
@@ -289,6 +432,7 @@ export default function SettingsPage() {
       support_multiple_reference_images: provider.support_multiple_reference_images || false,
       reference_image_field: provider.reference_image_field || 'image',
       reference_image_array_field: provider.reference_image_array_field || '',
+      support_vision_input: provider.support_vision_input || false,
       test_prompt: provider.test_prompt || '',
     })
     setModalVisible(true)
@@ -407,6 +551,7 @@ export default function SettingsPage() {
       support_multiple_reference_images: provider.support_multiple_reference_images || false,
       reference_image_field: provider.reference_image_field || 'image',
       reference_image_array_field: provider.reference_image_array_field || '',
+      support_vision_input: provider.support_vision_input || false,
     })
     setModalVisible(true)
   }
@@ -834,6 +979,23 @@ export default function SettingsPage() {
                 options={PROVIDER_SELECT_OPTIONS} 
               />
             </Form.Item>
+            <Form.Item label="">
+              <Button 
+                type="primary" 
+                size="small" 
+                icon={<ToolOutlined />}
+                onClick={applyPreset}
+                disabled={!selectedProvider || !selectedType}
+                style={{ 
+                  background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+                  border: 'none',
+                  boxShadow: '0 2px 8px rgba(99, 102, 241, 0.3)',
+                  fontWeight: 500,
+                }}
+              >
+                应用推荐配置
+              </Button>
+            </Form.Item>
             <Form.Item name="name" label={<span style={{ color: THEME.textPrimary }}>显示名称</span>} rules={[{ required: true, message: '请输入名称' }]}>
               <Input placeholder="如：OpenAI GPT-4" />
             </Form.Item>
@@ -885,7 +1047,9 @@ export default function SettingsPage() {
               <Form.Item name="temperature" label={<span style={{ color: THEME.textPrimary }}>温度参数</span>}>
                 <InputNumber min={0} max={2} step={0.1} style={{ width: '100%' }} placeholder="0.7" />
               </Form.Item>
-              <div></div>
+              <Form.Item name="support_vision_input" label={<span style={{ color: THEME.textPrimary }}>支持视觉输入</span>} valuePropName="checked">
+                <Switch checkedChildren="是" unCheckedChildren="否" />
+              </Form.Item>
             </div>
           )}
           {selectedType === 'embedding' && (
@@ -933,85 +1097,99 @@ export default function SettingsPage() {
             />
           </Form.Item>
 
-          {selectedType === 'image' || selectedType === 'video' || selectedType === undefined ? (
-            <div style={{ 
-              marginTop: 16, 
-              padding: 16, 
-              background: 'rgba(168,85,247,0.05)', 
-              border: '1px solid rgba(168,85,247,0.2)', 
-              borderRadius: 8 
-            }}>
-              <Title level={5} style={{ color: '#a855f7', fontSize: 14, marginBottom: 12 }}>
-                生成配置（请求模板/参考图）
-              </Title>
-              
-              <Form.Item name="request_template" label={<span style={{ color: THEME.textPrimary }}>Request 模板 (Jinja2)</span>} style={{ marginBottom: 8 }}>
-                <TextArea 
-                  rows={4} 
-                  placeholder={`JSON 格式的请求模板，例如：\n{"model": "{{ model }}", "prompt": "{{ prompt }}"}`}
-                />
-              </Form.Item>
-
-              <Form.Item name="response_config" label={<span style={{ color: THEME.textPrimary }}>Response 解析配置</span>} style={{ marginBottom: 8 }}>
-                <TextArea 
-                  rows={3} 
-                  placeholder={`JSON 格式的响应配置，例如：\n{"images_path": "$.data[*].url", "error_path": "$.error.message"}`}
-                />
-              </Form.Item>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0 16' }}>
-                <Form.Item 
-                  name="supported_sizes" 
-                  label={<span style={{ color: THEME.textPrimary }}>支持的尺寸/比例</span>} 
-                  style={{ marginBottom: 8, gridColumn: 'span 3' }}
-                >
-                  <SizeConfigField />
-                </Form.Item>
-                <Form.Item 
-                  name="reference_image_field" 
-                  label={
+          {selectedType === 'image' || selectedType === 'video' ? (
+            <Collapse
+              ghost
+              activeKey={showAdvancedConfig ? ['advanced'] : []}
+              onChange={(keys) => setShowAdvancedConfig(keys.includes('advanced'))}
+              style={{ marginTop: 16 }}
+              items={[
+                {
+                  key: 'advanced',
+                  label: (
                     <span style={{ color: THEME.textPrimary }}>
-                      参考图占位符
-                      <Tooltip title="逗号分隔的字段名，如 image1,image2,image。模板中需要有对应空占位符">
-                        <QuestionCircleOutlined style={{ marginLeft: 4, color: THEME.textSecondary }} />
-                      </Tooltip>
+                      <SettingOutlined style={{ marginRight: 8 }} />
+                      高级配置（请求模板/参考图）
                     </span>
-                  } 
-                  style={{ marginBottom: 8 }}
-                >
-                  <Input placeholder="如: image1,image2,image" />
-                </Form.Item>
-                <Form.Item name="support_reference_image" label={<span style={{ color: THEME.textPrimary }}>支持参考图</span>} valuePropName="checked" style={{ marginBottom: 8 }}>
-                  <Switch checkedChildren="是" unCheckedChildren="否" />
-                </Form.Item>
-              </div>
+                  ),
+                  children: (
+                    <div style={{ 
+                      padding: 16, 
+                      background: 'rgba(168,85,247,0.05)', 
+                      border: '1px solid rgba(168,85,247,0.2)', 
+                      borderRadius: 8 
+                    }}>
+                      <Form.Item name="request_template" label={<span style={{ color: THEME.textPrimary }}>Request 模板 (Jinja2)</span>} style={{ marginBottom: 8 }}>
+                        <TextArea 
+                          rows={4} 
+                          placeholder={`JSON 格式的请求模板，例如：\n{"model": "{{ model }}", "prompt": "{{ prompt }}"}`}
+                        />
+                      </Form.Item>
 
-              <Form.Item
-                name="reference_image_array_field"
-                label={
-                  <span style={{ color: THEME.textPrimary }}>
-                    参考图数组字段
-                    <Tooltip title="所有参考图组成数组放入该字段。支持嵌套路径，如 reference.images。优先级高于占位符模式">
-                      <QuestionCircleOutlined style={{ marginLeft: 4, color: THEME.textSecondary }} />
-                    </Tooltip>
-                  </span>
-                }
-                style={{ marginBottom: 8 }}
-              >
-                <Input placeholder="如: images 或 reference.images" />
-              </Form.Item>
+                      <Form.Item name="response_config" label={<span style={{ color: THEME.textPrimary }}>Response 解析配置</span>} style={{ marginBottom: 8 }}>
+                        <TextArea 
+                          rows={3} 
+                          placeholder={`JSON 格式的响应配置，例如：\n{"images_path": "$.data[*].url", "error_path": "$.error.message"}`}
+                        />
+                      </Form.Item>
 
-              <Form.Item name="default_params" label={<span style={{ color: THEME.textPrimary }}>默认参数 (JSON)</span>} style={{ marginBottom: 0 }}
-                extra={<span style={{ color: THEME.textSecondary, fontSize: 12 }}>
-                  参数名映射：size_param 指定尺寸字段名（如硅基流动用 image_size），seed_param 指定种子字段名
-                </span>}
-              >
-                <TextArea 
-                  rows={2} 
-                  placeholder={`JSON 格式的默认参数，例如：\n{"n": 1, "quality": "standard", "size_param": "image_size", "seed_param": "seed"}`}
-                />
-              </Form.Item>
-            </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0 16' }}>
+                        <Form.Item 
+                          name="supported_sizes" 
+                          label={<span style={{ color: THEME.textPrimary }}>支持的尺寸/比例</span>} 
+                          style={{ marginBottom: 8, gridColumn: 'span 3' }}
+                        >
+                          <SizeConfigField />
+                        </Form.Item>
+                        <Form.Item 
+                          name="reference_image_field" 
+                          label={
+                            <span style={{ color: THEME.textPrimary }}>
+                              参考图占位符
+                              <Tooltip title="逗号分隔的字段名，如 image1,image2,image。模板中需要有对应空占位符">
+                                <QuestionCircleOutlined style={{ marginLeft: 4, color: THEME.textSecondary }} />
+                              </Tooltip>
+                            </span>
+                          } 
+                          style={{ marginBottom: 8 }}
+                        >
+                          <Input placeholder="如: image1,image2,image" />
+                        </Form.Item>
+                        <Form.Item name="support_reference_image" label={<span style={{ color: THEME.textPrimary }}>支持参考图</span>} valuePropName="checked" style={{ marginBottom: 8 }}>
+                          <Switch checkedChildren="是" unCheckedChildren="否" />
+                        </Form.Item>
+                      </div>
+
+                      <Form.Item
+                        name="reference_image_array_field"
+                        label={
+                          <span style={{ color: THEME.textPrimary }}>
+                            参考图数组字段
+                            <Tooltip title="所有参考图组成数组放入该字段。支持嵌套路径，如 reference.images。优先级高于占位符模式">
+                              <QuestionCircleOutlined style={{ marginLeft: 4, color: THEME.textSecondary }} />
+                            </Tooltip>
+                          </span>
+                        }
+                        style={{ marginBottom: 8 }}
+                      >
+                        <Input placeholder="如: images 或 reference.images" />
+                      </Form.Item>
+
+                      <Form.Item name="default_params" label={<span style={{ color: THEME.textPrimary }}>默认参数 (JSON)</span>} style={{ marginBottom: 0 }}
+                        extra={<span style={{ color: THEME.textSecondary, fontSize: 12 }}>
+                          参数名映射：size_param 指定尺寸字段名（如硅基流动用 image_size），seed_param 指定种子字段名
+                        </span>}
+                      >
+                        <TextArea 
+                          rows={2} 
+                          placeholder={`JSON 格式的默认参数，例如：\n{"n": 1, "quality": "standard", "size_param": "image_size", "seed_param": "seed"}`}
+                        />
+                      </Form.Item>
+                    </div>
+                  ),
+                },
+              ]}
+            />
           ) : null}
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0 16' }}>

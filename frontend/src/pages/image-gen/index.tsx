@@ -169,6 +169,11 @@ export default function ImageGenPage() {
   const hasFetchedBackends = useRef(false)
   const hasAppliedUrlParams = useRef(false)  // 标记是否已应用 URL 参数
 
+  // 多平台生图 URL 参数
+  const [multiTopic, setMultiTopic] = useState<string>('')
+  const [multiPlatforms, setMultiPlatforms] = useState<string[]>([])
+  const [multiAutoGenerate, setMultiAutoGenerate] = useState(false)
+
   // 按厂商分组后端（根据 mode 过滤不支持的模型）
   const { groupedBackends, vendorOptions } = useMemo(() => {
     // 图生图模式：只保留支持 image_to_image 的后端
@@ -259,8 +264,23 @@ export default function ImageGenPage() {
     const modelParam = searchParams.get('model')
     const sizeParam = searchParams.get('size')
     const referenceImageParam = searchParams.get('reference_image')
+    const tabParam = searchParams.get('tab')
+    const topicParam = searchParams.get('topic')
+    const platformsParam = searchParams.get('platforms')
 
-    console.log('[ImageGen] URL params:', { promptParam, negativePromptParam, modelParam, sizeParam, referenceImageParam })
+    console.log('[ImageGen] URL params:', { promptParam, negativePromptParam, modelParam, sizeParam, referenceImageParam, tabParam, topicParam, platformsParam })
+
+    // 处理多平台生图 URL 参数
+    if (tabParam === 'multi') {
+      setMode('multi')
+      if (topicParam) {
+        setMultiTopic(decodeURIComponent(topicParam))
+        setMultiAutoGenerate(true)
+      }
+      if (platformsParam) {
+        setMultiPlatforms(decodeURIComponent(platformsParam).split(',').filter(Boolean))
+      }
+    }
 
     if (promptParam) {
       console.log('[ImageGen] Setting prompt:', promptParam)
@@ -509,7 +529,11 @@ export default function ImageGenPage() {
             size="small"
           />
         </Card>
-        <MultiPlatformGen />
+        <MultiPlatformGen
+          initialTopic={multiTopic}
+          initialPlatforms={multiPlatforms}
+          autoGenerate={multiAutoGenerate}
+        />
       </div>
     )
   }

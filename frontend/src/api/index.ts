@@ -443,10 +443,34 @@ export const importConnectors = (connectors: any[], mode: string = 'upsert') =>
 export const chat = (data: any) =>
   request('/llm/chat', { method: 'POST', body: JSON.stringify(data) })
 
+export const getLlmBackends = () => request('/llm/backends')
+
 export const generateImage = (data: any) =>
   request('/images/generate', { method: 'POST', body: JSON.stringify(data) })
 
 export const getImageBackends = () => request('/images/backends')
+
+// ===== Platform Templates（平台模板）=====
+
+export interface PlatformTemplate {
+  id: string
+  platform: string
+  name: string
+  outline_template: string
+  image_template: string
+  video_template: string | null
+  default_size: string
+  is_active: boolean
+  sort_order: number
+}
+
+export const getPlatformTemplates = () => request('/images/platform-templates')
+
+export const updatePlatformTemplate = (id: string, data: Partial<PlatformTemplate>) =>
+  request(`/images/platform-templates/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+
+export const deletePlatformTemplate = (id: string) =>
+  request(`/images/platform-templates/${id}`, { method: 'DELETE' })
 
 export const ttsSpeak = (data: any) =>
   request('/tts/speak', { method: 'POST', body: JSON.stringify(data) })

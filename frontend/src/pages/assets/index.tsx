@@ -270,6 +270,21 @@ export default function AssetsPage() {
       handleAssetClick(asset)
     } else if (action === 'delete') {
       setDeleteModal({ visible: true, assets: [asset] })
+    } else if (action === 'jump_to_multi') {
+      // 跳转到多平台生图页面
+      const meta = asset.metadata || (asset.metadata_json ? JSON.parse(asset.metadata_json) : null)
+      if (meta && meta.topic) {
+        const params = new URLSearchParams({
+          tab: 'multi',
+          topic: encodeURIComponent(meta.topic),
+        })
+        if (meta.content_platform) {
+          params.set('platforms', encodeURIComponent(meta.content_platform))
+        }
+        navigate(`/image-gen?${params.toString()}`)
+      } else {
+        message.warning('该资产没有多平台生图主题信息')
+      }
     }
   }
 

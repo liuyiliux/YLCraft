@@ -25,6 +25,7 @@ import {
   MoreOutlined,
   AppstoreOutlined,
   UnorderedListOutlined,
+  BranchesOutlined,
 } from '@ant-design/icons'
 
 export interface AssetItem {
@@ -46,6 +47,14 @@ export interface AssetItem {
   created_at?: string
   quality_score?: number
   relevance_score?: number
+  // 多平台生图元数据
+  metadata_json?: string
+  metadata?: {
+    topic?: string
+    content_platform?: string
+    outline_title?: string
+    page_type?: string
+  }
 }
 
 interface AssetGridProps {
@@ -114,6 +123,19 @@ export function AssetGrid({
     return formatFileSize(asset.file_size)
   }
 
+  // 解析多平台生图元数据
+  const getMultiPlatformMeta = (asset: AssetItem) => {
+    if (asset.metadata) return asset.metadata
+    if (asset.metadata_json) {
+      try {
+        return JSON.parse(asset.metadata_json)
+      } catch {
+        return null
+      }
+    }
+    return null
+  }
+
   const renderSkeleton = () => (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 16 }}>
       {Array.from({ length: 8 }).map((_, index) => (
@@ -136,6 +158,16 @@ export function AssetGrid({
     const score = getScore(asset)
     const sizeStr = getSize(asset)
     const thumbnailUrl = getThumbnail(asset)
+    const multiMeta = getMultiPlatformMeta(asset)
+    const hasMultiMeta = multiMeta && (multiMeta.topic || multiMeta.content_platform)
+
+    // 构建菜单项
+    const menuItems = [
+      { key: 'delete', icon: <DeleteOutlined />, label: '删除', danger: true },
+    ]
+    if (hasMultiMeta && multiMeta.topic) {
+      menuItems.unshift({ key: 'jump_to_multi', icon: <BranchesOutlined />, label: '跳到多平台生图' })
+    }
 
     return (
       <Card
@@ -216,9 +248,7 @@ export function AssetGrid({
                     info.domEvent.stopPropagation()
                     onMoreAction?.(info.key, asset)
                   },
-                  items: [
-                    { key: 'delete', icon: <DeleteOutlined />, label: '删除', danger: true },
-                  ],
+                  items: menuItems,
                 }}
                 trigger={['click']}
               >

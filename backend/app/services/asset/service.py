@@ -345,6 +345,7 @@ class AssetService:
         controlnet: str = "",
         source_image: str = "",
         reference_images: list[str] | None = None,
+        metadata: dict | None = None,
     ) -> Asset:
         """
         从图像生成结果创建资产。
@@ -399,7 +400,8 @@ class AssetService:
             gen_tags.append("image-to-image")
 
         # 构建完整元数据
-        metadata: dict = {
+        extra_meta = metadata or {}
+        gen_metadata: dict = {
             "provider": provider,
             "model": model,
             "seed": seed,
@@ -408,19 +410,21 @@ class AssetService:
             "size": size,
         }
         if steps is not None:
-            metadata["steps"] = steps
+            gen_metadata["steps"] = steps
         if cfg_scale is not None:
-            metadata["cfg_scale"] = cfg_scale
+            gen_metadata["cfg_scale"] = cfg_scale
         if sampler:
-            metadata["sampler"] = sampler
+            gen_metadata["sampler"] = sampler
         if lora:
-            metadata["lora"] = lora
+            gen_metadata["lora"] = lora
         if controlnet:
-            metadata["controlnet"] = controlnet
+            gen_metadata["controlnet"] = controlnet
         if processed_source_image:
-            metadata["source_image"] = processed_source_image
+            gen_metadata["source_image"] = processed_source_image
         if processed_ref_images:
-            metadata["reference_images"] = processed_ref_images
+            gen_metadata["reference_images"] = processed_ref_images
+        # 合并额外传入的元数据
+        gen_metadata.update(extra_meta)
 
         asset = Asset(
             type="image",
@@ -438,7 +442,7 @@ class AssetService:
             source_type="ai_generated",
             status="READY",
             tags=json.dumps(gen_tags, ensure_ascii=False),
-            metadata_json=json.dumps(metadata, ensure_ascii=False),
+            metadata_json=json.dumps(gen_metadata, ensure_ascii=False),
         )
         self.session.add(asset)
         await self.session.flush()

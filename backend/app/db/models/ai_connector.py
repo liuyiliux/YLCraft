@@ -135,6 +135,13 @@ class AIConnectorBase(SQLModel):
     )
     normalize_embeddings: bool = Field(True, description="是否归一化向量（余弦相似度搜索推荐开启）")
     # ===== 结束：嵌入模型专用配置 =====
+    
+    # ===== LLM 视觉支持配置 =====
+    support_vision_input: bool = Field(
+        False,
+        description="是否支持视觉输入（多模态模型，如 Qwen/Qwen3-VL-32B-Instruct）"
+    )
+    # ===== 结束：LLM 视觉支持配置 =====
 
     # 测试配置
     test_prompt: Optional[str] = Field(
@@ -229,6 +236,8 @@ class AIConnectorCreate(SQLModel):
     reference_image_field: str = "image"
     reference_image_array_field: Optional[str] = None
     test_prompt: Optional[str] = None
+    # LLM 视觉支持配置
+    support_vision_input: bool = False
     # 嵌入模型专用配置
     embedding_type: Optional[str] = None
     embedding_dimension: Optional[int] = None
@@ -267,6 +276,8 @@ class AIConnectorUpdate(SQLModel):
     reference_image_field: Optional[str] = None
     reference_image_array_field: Optional[str] = None
     test_prompt: Optional[str] = None
+    # LLM 视觉支持配置
+    support_vision_input: Optional[bool] = None
     # 嵌入模型专用配置
     embedding_type: Optional[str] = None
     embedding_dimension: Optional[int] = None
@@ -308,6 +319,7 @@ class AIConnectorResponse(SQLModel):
     reference_image_field: str = "image"
     reference_image_array_field: Optional[str] = None
     test_prompt: Optional[str] = None
+    support_vision_input: bool = False
     has_api_key: bool = False  # 是否配置了 API Key（不返回实际 key）
     # 嵌入模型专用配置
     embedding_type: Optional[str] = None
@@ -373,6 +385,7 @@ class AIConnectorResponse(SQLModel):
             reference_image_field=conn.reference_image_field,
             reference_image_array_field=conn.reference_image_array_field,
             test_prompt=conn.test_prompt,
+            support_vision_input=conn.support_vision_input,
             has_api_key=bool(conn.api_key),
             # 嵌入模型专用配置
             embedding_type=conn.embedding_type,

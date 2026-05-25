@@ -27,9 +27,10 @@ import MyDataPage from './pages/my-data'
 import ComfyUIPage from './pages/comfyui'
 import ImageEditorPage from './pages/image-editor'
 import NovelSearchPage from './pages/novel-search'
-import NovelBookshelfPage from './pages/novel-bookshelf'
 import NovelReaderPage from './pages/novel-reader'
+import NovelBookshelfPage from './pages/novel-bookshelf'
 import BookSourcePage from './pages/book-source'
+import PlatformTemplatesPage from './pages/platform-templates'
 
 /** 包裹层：读取当前主题并传给 Ant Design ConfigProvider */
 function AntdThemeWrapper({ children }: { children: React.ReactNode }) {
@@ -82,6 +83,7 @@ export default function App() {
               <Route path="novel-bookshelf" element={<NovelBookshelfPage />} />
               <Route path="novel-reader/:id" element={<NovelReaderPage />} />
               <Route path="book-source" element={<BookSourcePage />} />
+              <Route path="platform-templates" element={<PlatformTemplatesPage />} />
               <Route path="settings" element={<SettingsPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>

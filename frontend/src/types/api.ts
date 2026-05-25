@@ -32,6 +32,7 @@ export interface Provider {
   support_multiple_reference_images?: boolean
   reference_image_field?: string
   reference_image_array_field?: string
+  support_vision_input?: boolean
   test_prompt?: string
   has_api_key?: boolean
   price_per_call?: number
@@ -83,7 +84,7 @@ export interface ChatRequest {
 
 export interface LLMMessage {
   role: 'user' | 'assistant' | 'system'
-  content: string
+  content: string | Array<{ type: 'text' | 'image_url'; text?: string; image_url?: { url: string } }>
 }
 
 export interface ChatResponse {

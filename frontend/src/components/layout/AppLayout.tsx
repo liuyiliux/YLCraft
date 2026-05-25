@@ -55,6 +55,7 @@ const menuItems: MenuProps['items'] = [
     label: 'AI 创作',
     children: [
       { key: '/image-gen', label: '图像生成' },
+      { key: '/platform-templates', label: '平台模板' },
       { key: '/video-gen', label: '视频生成' },
       { key: '/comfyui', label: 'ComfyUI' },
       { key: '/agent', label: '智能体' },
