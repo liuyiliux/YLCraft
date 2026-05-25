@@ -12,7 +12,7 @@ import logging
 import os
 import tempfile
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
 import httpx
 
@@ -30,6 +30,7 @@ class TwitterDownloader(BaseDownloader):
 
     def __init__(self):
         self._cookie_file_path: Optional[str] = None
+        self._cached_info: Optional[VideoInfo] = None
 
     def _get_cookie_file(self) -> Optional[str]:
         """
@@ -54,7 +55,7 @@ class TwitterDownloader(BaseDownloader):
     async def parse(self, url: str) -> Optional[VideoInfo]:
         """
         解析 Twitter/X 视频信息
-
+        
         策略：
         1. 先尝试 syndication API（无需登录，支持部分视频）
         2. 失败则返回 None，让调用方降级到 yt-dlp
@@ -71,7 +72,7 @@ class TwitterDownloader(BaseDownloader):
                         filesize="",
                         url=v.get("url", ""),
                     ))
-                return VideoInfo(
+                info = VideoInfo(
                     title=result.get("title", ""),
                     author=result.get("author", ""),
                     platform="twitter",
@@ -80,6 +81,8 @@ class TwitterDownloader(BaseDownloader):
                     qualities=qualities,
                     page_url=url,
                 )
+                self._cached_info = info
+                return info
         except Exception as e:
             logger.warning(f"[TwitterDownloader] syndication 解析失败: {e}")
 
@@ -92,11 +95,12 @@ class TwitterDownloader(BaseDownloader):
         quality: str = "best",
         title: Optional[str] = None,
         is_audio: bool = False,
-    ) -> str:
+    ) -> Tuple[str, Optional[VideoInfo]]:
         """
         用 yt-dlp 下载 Twitter/X 视频
-
+        
         关键点：使用 cookie 文件路径，不用内存 CookieJar
+        返回 (文件路径, VideoInfo)
         """
         import yt_dlp
 
@@ -116,7 +120,7 @@ class TwitterDownloader(BaseDownloader):
                     raise ValueError("yt-dlp 未能获取视频信息")
                 output_path = ydl.prepare_filename(info)
                 if not os.path.exists(output_path):
-                    #  fallback
+                    # fallback
                     candidates = list(savedir.glob(f"twitter_{safe_title}_*"))
                     if candidates:
                         output_path = str(max(candidates, key=os.path.getmtime))
@@ -130,7 +134,9 @@ class TwitterDownloader(BaseDownloader):
             timeout=1800,
         )
         logger.info(f"[TwitterDownloader] 下载完成: {filepath}")
-        return filepath
+        
+        # 如果 parse() 之前成功了，返回缓存的 VideoInfo
+        return str(filepath), self._cached_info
 
     def _build_ydl_opts(
         self,
@@ -188,3 +194,16 @@ class TwitterDownloader(BaseDownloader):
     def _sanitize(self, name: str) -> str:
         import re
         return re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", name).strip()[:100]
+
+    async def get_qualities(self, url: str) -> list:
+        """
+        获取 Twitter/X 可选清晰度列表
+        
+        Twitter 通过 yt-dlp 下载时，清晰度由 format 参数控制。
+        这里返回常见选项供前端展示。
+        """
+        return [
+            VideoQuality(quality="best", resolution="原始", filesize="", url=""),
+            VideoQuality(quality="1080P", resolution="1920x1080", filesize="", url=""),
+            VideoQuality(quality="720P", resolution="1280x720", filesize="", url=""),
+        ]

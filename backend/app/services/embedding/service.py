@@ -790,6 +790,8 @@ class EmbeddingService:
         for row in result.all():
             combined_score = float(row.combined_score)
             if combined_score >= min_similarity:
+                # 从 metadata_json 中提取常用字段供前端使用
+                metadata = row.metadata_json or {}
                 search_results.append({
                     "asset_id": str(row.asset_id),
                     "name": row.name,
@@ -799,6 +801,21 @@ class EmbeddingService:
                     "text_score": float(row.text_score) if row.text_score else 0,
                     "tag_match_count": row.tag_match_count,
                     "combined_score": combined_score,
+                    # 从 metadata 提取的常用字段
+                    "platform": metadata.get("platform"),
+                    "author": metadata.get("author"),
+                    "source_type": metadata.get("source_type"),
+                    "source_url": metadata.get("source_url"),
+                    "bvid": metadata.get("bvid"),
+                    "cover_url": metadata.get("cover_url"),
+                    "status": metadata.get("status"),
+                    "file_size": metadata.get("file_size"),
+                    "width": metadata.get("width"),
+                    "height": metadata.get("height"),
+                    "duration": metadata.get("duration"),
+                    "resolution": metadata.get("resolution"),
+                    "tags": metadata.get("tags", []),
+                    "metadata": metadata,
                 })
 
         return search_results

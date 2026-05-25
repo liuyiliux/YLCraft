@@ -12,9 +12,9 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
-import httpx
+import yt_dlp
 
 from app.services.download.base import BaseDownloader, VideoInfo, VideoQuality
 from app.services.video.parser import get_cookie_manager
@@ -30,6 +30,7 @@ class DouyinDownloader(BaseDownloader):
 
     def __init__(self):
         self._cookie_file_path: Optional[str] = None
+        self._cached_info: Optional[VideoInfo] = None
 
     def _get_cookie_file(self) -> Optional[str]:
         """获取抖音 cookie 文件路径（Netscape 格式）"""
@@ -72,7 +73,7 @@ class DouyinDownloader(BaseDownloader):
                         filesize="",
                         url=result["video_url"],
                     ))
-                return VideoInfo(
+                info = VideoInfo(
                     title=result.get("title", ""),
                     author=result.get("author", ""),
                     platform="douyin",
@@ -81,6 +82,8 @@ class DouyinDownloader(BaseDownloader):
                     qualities=qualities,
                     page_url=url,
                 )
+                self._cached_info = info
+                return info
         except Exception as e:
             logger.warning(f"[DouyinDownloader] 桌面端 API 解析失败: {e}")
 
@@ -92,15 +95,13 @@ class DouyinDownloader(BaseDownloader):
         quality: str = "best",
         title: Optional[str] = None,
         is_audio: bool = False,
-    ) -> str:
+    ) -> Tuple[str, Optional[VideoInfo]]:
         """
         用 yt-dlp 下载抖音视频
 
         关键点：使用 cookie 文件路径，不用内存 CookieJar
-        抖音登录态可以获取无水印视频
+        返回 (文件路径, VideoInfo)
         """
-        import yt_dlp
-
         savedir = ensure_download_path()
         safe_title = self._sanitize(title or "douyin_video")
         outtmpl = str(savedir / f"douyin_{safe_title}_%(id)s.%(ext)s")
@@ -130,7 +131,9 @@ class DouyinDownloader(BaseDownloader):
             timeout=1800,
         )
         logger.info(f"[DouyinDownloader] 下载完成: {filepath}")
-        return filepath
+
+        # 返回缓存的 VideoInfo（parse() 可能已填充）
+        return str(filepath), self._cached_info
 
     def _build_ydl_opts(
         self,

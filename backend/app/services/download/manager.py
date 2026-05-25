@@ -142,8 +142,18 @@ async def download_with_manager(
         try:
             # 先解析获取元信息（包括封面URL）
             info = await downloader.parse(url)
-            
-            filepath = await downloader.download(url, quality, title, is_audio)
+
+            result = await downloader.download(url, quality, title, is_audio)
+            # download() 返回 (filepath, VideoInfo) 或 filepath 字符串（兼容）
+            if isinstance(result, tuple):
+                filepath, dl_info = result
+            else:
+                filepath, dl_info = result, None
+
+            # 如果 parse 失败了但 download 拿到了 info，用 download 的
+            if not info and dl_info:
+                info = dl_info
+
             if filepath:
                 logger.info(f"[DownloadManager] 使用 {platform} 专用下载器下载: {filepath}")
                 return filepath, info

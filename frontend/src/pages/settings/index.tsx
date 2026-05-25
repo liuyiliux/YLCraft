@@ -37,8 +37,10 @@ import {
   CopyOutlined,
   DeleteOutlined,
   QuestionCircleOutlined,
+  UploadOutlined,
+  DownloadOutlined,
 } from '@ant-design/icons'
-import { listConnectors, createConnector, updateConnector, deleteConnector, testConnector, getSettings, updateSettings } from '../../api'
+import { listConnectors, createConnector, updateConnector, deleteConnector, testConnector, exportConnectors, importConnectors, getSettings, updateSettings } from '../../api'
 import type { Provider, PROVIDER_OPTIONS, ConnectorTestResult } from '../../types/api'
 import { useTheme } from '../../constants/theme'
 
@@ -409,6 +411,53 @@ export default function SettingsPage() {
     setModalVisible(true)
   }
 
+  // 导出所有模型配置为 JSON
+  const handleExport = async () => {
+    try {
+      const result = await exportConnectors() as any
+      if (!result?.connectors) {
+        message.error('导出失败：未获取到数据')
+        return
+      }
+      const blob = new Blob([JSON.stringify(result, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `ai-connectors-${new Date().toISOString().slice(0, 10)}.json`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      message.success(`已导出 ${result.connectors.length} 个模型配置`)
+    } catch (e: any) {
+      message.error(e?.message || '导出失败')
+    }
+  }
+
+  // 导入模型配置
+  const handleImport = async (file: File) => {
+    try {
+      const text = await file.text()
+      const data = JSON.parse(text)
+      const connectors = data?.connectors || data
+      if (!Array.isArray(connectors)) {
+        message.error('JSON 格式错误：未找到 connectors 数组')
+        return false
+      }
+      const result = await importConnectors(connectors, 'upsert') as any
+      if (result?.success) {
+        message.success(result.message || '导入成功')
+        loadProviders()
+      } else {
+        message.error(result?.message || '导入失败')
+      }
+      return false // 阻止 antd Upload 自动上传
+    } catch (e: any) {
+      message.error(e?.message || '导入失败：请检查 JSON 文件格式')
+      return false
+    }
+  }
+
   // 获取提供商对应的颜色
   const getProviderColor = (provider: string): string => {
     return PROVIDER_COLORS[provider] || THEME.textSecondary
@@ -658,6 +707,21 @@ export default function SettingsPage() {
                           { value: 'active', label: '已启用' },
                           { value: 'inactive', label: '已禁用' },
                         ]}
+                      />
+                      <Button size="small" icon={<DownloadOutlined />} onClick={handleExport}>导出</Button>
+                      <Button size="small" icon={<UploadOutlined />} onClick={() => document.getElementById('import-connectors-input')?.click()}>导入</Button>
+                      <input
+                        id="import-connectors-input"
+                        type="file"
+                        accept=".json,application/json"
+                        style={{ display: 'none' }}
+                        onChange={e => {
+                          const file = e.target.files?.[0]
+                          if (file) {
+                            handleImport(file)
+                            e.target.value = ''
+                          }
+                        }}
                       />
                       <Button size="small" icon={<ReloadOutlined />} onClick={loadProviders} loading={loading}>刷新</Button>
                       <Button type="primary" size="small" icon={<PlusOutlined />} onClick={handleAdd}>新增</Button>

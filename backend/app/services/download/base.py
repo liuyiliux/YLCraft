@@ -91,9 +91,9 @@ class BaseDownloader(abc.ABC):
         quality: str = "best",
         title: Optional[str] = None,
         is_audio: bool = False,
-    ) -> str:
+    ) -> Tuple[str, Optional[VideoInfo]]:
         """
-        下载视频，返回文件路径
+        下载视频，返回 (文件路径, 视频信息)
 
         Args:
             url: 视频链接或下载链接
@@ -102,7 +102,7 @@ class BaseDownloader(abc.ABC):
             is_audio: 是否只下载音频
 
         Returns:
-            下载文件的本地路径
+            (下载文件的本地路径, 视频信息)
         """
         pass
 

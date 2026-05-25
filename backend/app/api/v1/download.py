@@ -82,6 +82,9 @@ async def _get_qualities(url: str, title: str, platform: str) -> list[VideoQuali
 
     def _fetch() -> list[VideoQuality]:
         cookie_jar = get_cookie_manager().get_cookiejar_for_url(url)
+        headers = {"User-Agent": _BROWSER_UA}
+        if platform == "bilibili":
+            headers["Referer"] = "https://www.bilibili.com/"
         ydl_opts = {
             "quiet": True,
             "no_warnings": True,
@@ -89,7 +92,7 @@ async def _get_qualities(url: str, title: str, platform: str) -> list[VideoQuali
             "nocheckcertificate": True,
             "noplaylist": True,
             "format": "bestvideo+bestaudio/best",
-            "http_headers": {"User-Agent": _BROWSER_UA},
+            "http_headers": headers,
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             if cookie_jar:
@@ -415,6 +418,12 @@ def _ytdlp_download(url: str, quality_label: str | None, title: str | None, page
 
     outtmpl = str(savedir / f"ytdlp_{hash(effective_url) & 0xFFFFFFFF}_%(title)s.%(ext)s")
 
+    # B站需要 Referer 头，否则 HTTP 412
+    effective_headers = {"User-Agent": _BROWSER_UA}
+    platform = _detect_platform(effective_url) or ""
+    if platform == "bilibili":
+        effective_headers["Referer"] = "https://www.bilibili.com/"
+
     ydl_opts = {
         "format": format_str,
         "outtmpl": outtmpl,
@@ -424,7 +433,7 @@ def _ytdlp_download(url: str, quality_label: str | None, title: str | None, page
         "noplaylist": True,
         "restrict_filenames": True,
         "keepvideo": False,
-        "http_headers": {"User-Agent": _BROWSER_UA},
+        "http_headers": effective_headers,
     }
 
     # 关键：传 cookie 文件，不传 CookieJar
@@ -846,13 +855,36 @@ async def _run_download_task(task: DownloadTask):
                 
                 await db_session.commit()
 
-                # 确保 asset_node 存在（嵌入向量存储需要引用 asset_nodes.id）
+                # 构建 asset_node metadata_json（供混合搜索使用的元数据）
+                def _build_node_metadata() -> dict:
+                    meta = {
+                        "platform": platform,
+                        "source_url": task.url or task.page_url,
+                        "source_type": "parse" if platform else "upload",
+                        "author": video_info.author_name if video_info and hasattr(video_info, 'author_name') else None,
+                        "bvid": (video_info.raw.get("bvid") if video_info and hasattr(video_info, 'raw') and video_info.raw else None) if platform == "bilibili" else None,
+                        "width": width,
+                        "height": height,
+                        "duration": video_info.duration if video_info and hasattr(video_info, 'duration') else None,
+                        "like_count": video_info.like_count if video_info and hasattr(video_info, 'like_count') else 0,
+                        "play_count": video_info.play_count if video_info and hasattr(video_info, 'play_count') else 0,
+                        "file_size": file_size,
+                        "status": "READY",
+                        "resolution": f"{width}x{height}" if width and height else None,
+                    }
+                    return {k: v for k, v in meta.items() if v is not None}
+
+                # 确保 asset_node 存在并填充元数据（嵌入向量存储需要引用 asset_nodes.id）
                 try:
                     from app.db.models.asset_hub import AssetNode, AssetType as HubAssetType
                     result = await db_session.execute(
                         select(AssetNode).where(AssetNode.id == task.asset_id)
                     )
-                    if not result.scalar_one_or_none():
+                    existing_node = result.scalar_one_or_none()
+                    node_metadata = _build_node_metadata()
+
+                    if not existing_node:
+                        # 新建 AssetNode
                         asset_type = HubAssetType.VIDEO
                         if task.is_audio:
                             asset_type = HubAssetType.AUDIO
@@ -861,10 +893,18 @@ async def _run_download_task(task: DownloadTask):
                             name=task.title or os.path.basename(filepath),
                             asset_type=asset_type,
                             thumbnail_url=local_cover_path or cover_url or "",
+                            metadata_json=node_metadata,
                         )
                         db_session.add(asset_node)
                         await db_session.commit()
                         logger.info(f"[_run_download_task] 已创建 asset_node: {task.asset_id}")
+                    elif not existing_node.metadata_json:
+                        # 已有 AssetNode 但无元数据（旧数据），补齐
+                        existing_node.metadata_json = node_metadata
+                        existing_node.thumbnail_url = local_cover_path or cover_url or existing_node.thumbnail_url or ""
+                        db_session.add(existing_node)
+                        await db_session.commit()
+                        logger.info(f"[_run_download_task] 已补齐 asset_node 元数据: {task.asset_id}")
                 except Exception as node_e:
                     logger.warning(f"[_run_download_task] 创建 asset_node 失败: {node_e}")
 

@@ -426,6 +426,15 @@ export const testConnector = (id: string, data?: { body?: any }) =>
     body: data ? JSON.stringify(data) : undefined
   })
 
+export const exportConnectors = () =>
+  request('/ai/connectors/export')
+
+export const importConnectors = (connectors: any[], mode: string = 'upsert') =>
+  request('/ai/connectors/import', {
+    method: 'POST',
+    body: JSON.stringify({ connectors, mode }),
+  })
+
 // ===== LLM =====
 
 export const chat = (data: any) =>

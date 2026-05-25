@@ -138,9 +138,15 @@ export default function AssetsPage() {
       })
       const data = res?.data || res?.results || []
       const items = Array.isArray(data) ? data : []
-      // Add relevance to each item
+      // Map hybrid search fields to match fuzzy search (assets API) format
+      // and spread metadata fields for detail drawer
       const enriched = items.map((item: any, i: number) => ({
         ...item,
+        // Map hybrid-specific field names to standard names
+        id: item.id || item.asset_id,
+        type: item.type || item.asset_type,
+        title: item.title || item.name,
+        cover_url: item.cover_url || item.thumbnail_url,
         relevance_score: item.hybrid_score ?? item.score ?? (1 - i * 0.05),
       }))
       // Client-side filter for platform/source (not supported by hybrid API natively)

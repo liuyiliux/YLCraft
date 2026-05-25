@@ -36,7 +36,32 @@ logger = logging.getLogger("ylcraft")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用启动/关闭时的生命周期管理"""
-    # 启动时初始化 BackendManager
+    # 1. 先初始化数据库（创建所有表）
+    from app.db.database import init_db
+    data_dir = Path(__file__).parent.parent / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    await init_db()
+    logger.info("Database initialized")
+
+    # 2. 初始化任务队列（自动检测 Redis 可用性）
+    from app.core.task_queue import get_queue_mode
+    queue = get_task_queue()
+    mode = get_queue_mode()
+    
+    if mode == "redis":
+        try:
+            redis_client = await queue._get_redis()
+            await redis_client.ping()
+            logger.info("Task queue: Redis mode (connected)")
+        except Exception as e:
+            logger.warning(f"Redis connection failed: {e}, falling back to memory mode")
+            from app.core.task_queue import init_task_queue
+            init_task_queue(use_redis=False)
+            logger.info("Task queue: Memory mode (fallback)")
+    else:
+        logger.info("Task queue: Memory mode (no Redis configured)")
+    
+    # 3. 初始化 BackendManager（在所有表创建完成后，可从数据库加载）
     config_path = Path(__file__).parent.parent / "config" / "providers.yaml"
     
     # 创建数据库 session
@@ -55,31 +80,6 @@ async def lifespan(app: FastAPI):
             # 配置文件不存在，使用空配置初始化
             init_manager(None, session=db_session)
             logger.warning(f"providers.yaml not found at {config_path}, using database only")
-    
-    # 初始化任务队列（自动检测 Redis 可用性）
-    from app.core.task_queue import get_queue_mode
-    queue = get_task_queue()
-    mode = get_queue_mode()
-    
-    if mode == "redis":
-        try:
-            redis_client = await queue._get_redis()
-            await redis_client.ping()
-            logger.info("Task queue: Redis mode (connected)")
-        except Exception as e:
-            logger.warning(f"Redis connection failed: {e}, falling back to memory mode")
-            from app.core.task_queue import init_task_queue
-            init_task_queue(use_redis=False)
-            logger.info("Task queue: Memory mode (fallback)")
-    else:
-        logger.info("Task queue: Memory mode (no Redis configured)")
-    
-    # 初始化数据库（创建所有表）
-    from app.db.database import init_db
-    data_dir = Path(__file__).parent.parent / "data"
-    data_dir.mkdir(parents=True, exist_ok=True)
-    await init_db()
-    logger.info("Database initialized")
     
     # 初始化平台连接器（自动注册所有连接器）
     try:
