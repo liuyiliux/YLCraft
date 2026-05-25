@@ -21,7 +21,33 @@ main:
       runner: { cpus: 2 }
       docker:
         image: python:3.11-slim
+      services:
+        - docker
+      env:
+        POSTGRES_DB: ylcraft
+        POSTGRES_USER: ylcraft
+        POSTGRES_PASSWORD: ylcraft_dev
+        DATABASE_URL: postgresql+asyncpg://ylcraft:ylcraft_dev@localhost:5432/ylcraft
+        REDIS_URL: redis://localhost:6379/0
       stages:
+        - name: start-services
+          script: |
+            docker run -d --name postgres \
+              -e POSTGRES_DB=$POSTGRES_DB \
+              -e POSTGRES_USER=$POSTGRES_USER \
+              -e POSTGRES_PASSWORD=$POSTGRES_PASSWORD \
+              -p 5432:5432 \
+              pgvector/pgvector:pg16
+            docker run -d --name redis \
+              -p 6379:6379 \
+              redis:7-alpine
+            echo '等待 PostgreSQL 就绪...'
+            until docker exec postgres pg_isready -U ylcraft; do sleep 1; done
+            echo 'PostgreSQL 已就绪！'
+            echo '创建 pgvector 扩展...'
+            docker exec postgres psql -U ylcraft -d ylcraft -c 'CREATE EXTENSION IF NOT EXISTS vector;'
+            docker exec postgres psql -U ylcraft -d ylcraft -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'
+            echo '数据库服务启动完成'
         - name: backend-check
           script: |
             apt-get update && apt-get install -y --no-install-recommends > /dev/null 2>&1
