@@ -132,7 +132,7 @@ fi
 if [ -f "backend/.env" ]; then
     echo -e "${CYAN}[数据库]${NC} 运行 Alembic 迁移..."
     cd "$SCRIPT_DIR/backend"
-    source "$VENV_DIR/bin/activate"
+    source "$SCRIPT_DIR/$VENV_DIR/bin/activate"
     if alembic upgrade head; then
         echo -e "${GREEN}[数据库]${NC} 迁移完成！"
     else
