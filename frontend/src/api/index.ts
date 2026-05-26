@@ -438,6 +438,21 @@ export const importConnectors = (connectors: any[], mode: string = 'upsert') =>
     body: JSON.stringify({ connectors, mode }),
   })
 
+export const discoverModels = (params: {
+  api_format: string
+  base_url: string
+  api_key?: string
+  models_endpoint?: string
+}) => {
+  const searchParams = new URLSearchParams({
+    api_format: params.api_format,
+    base_url: params.base_url,
+  })
+  if (params.api_key) searchParams.set('api_key', params.api_key)
+  if (params.models_endpoint) searchParams.set('models_endpoint', params.models_endpoint)
+  return request(`/ai/connectors/discover-models?${searchParams.toString()}`)
+}
+
 // ===== LLM =====
 
 export const chat = (data: any) =>

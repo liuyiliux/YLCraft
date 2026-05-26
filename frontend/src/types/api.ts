@@ -36,6 +36,7 @@ export interface Provider {
   test_prompt?: string
   has_api_key?: boolean
   price_per_call?: number
+  api_format?: string
 }
 
 export interface ConnectorTestDebug {

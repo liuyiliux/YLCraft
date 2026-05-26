@@ -40,9 +40,8 @@ import {
   QuestionCircleOutlined,
   UploadOutlined,
   DownloadOutlined,
-  ToolOutlined,
 } from '@ant-design/icons'
-import { listConnectors, createConnector, updateConnector, deleteConnector, testConnector, exportConnectors, importConnectors, getSettings, updateSettings } from '../../api'
+import { listConnectors, createConnector, updateConnector, deleteConnector, testConnector, exportConnectors, importConnectors, discoverModels, getSettings, updateSettings } from '../../api'
 import type { Provider, PROVIDER_OPTIONS, ConnectorTestResult } from '../../types/api'
 import { useTheme } from '../../constants/theme'
 
@@ -210,6 +209,14 @@ const PROVIDER_PRESETS: Record<string, Record<string, ProviderPreset>> = {
       temperature: 0.7,
       support_vision_input: true,
     },
+    image: {
+      base_url: 'https://generativelanguage.googleapis.com/v1beta',
+      default_model: 'gemini-2.5-flash-image',
+      available_models: ['gemini-2.5-flash-image'],
+      supported_sizes: ['1024x1024'],
+      support_reference_image: true,
+      support_multiple_reference_images: true,
+    },
   },
   generic: {
     llm: {},
@@ -270,68 +277,123 @@ export default function SettingsPage() {
   const [searchText, setSearchText] = useState('')
   const [filterType, setFilterType] = useState<string>('all')
   const [filterStatus, setFilterStatus] = useState<string>('all')
-  const [showAdvancedConfig, setShowAdvancedConfig] = useState(false)
+  const [advancedManuallyToggled, setAdvancedManuallyToggled] = useState(false)
+  const [fetchingModels, setFetchingModels] = useState(false)
+  const [discoveredModels, setDiscoveredModels] = useState<string[]>([])
   const [form] = Form.useForm()
   const { message } = AntApp.useApp()
   const selectedType = Form.useWatch('provider_type', form)
   const selectedProvider = Form.useWatch('provider', form)
+  const selectedApiFormat = Form.useWatch('api_format', form)
+
+  // 动态 API 格式选项（根据 provider + type 组合返回）
+  const getApiFormatOptions = () => {
+    // Gemini 图像生成 → 使用 google-genai 原生 SDK
+    if (selectedProvider === 'gemini' && selectedType === 'image') {
+      return [
+        { value: 'gemini_sdk', label: '🌟 Google Gemini SDK（原生图片生成）' },
+        { value: 'custom', label: '⚙️ 自定义 HTTP（手动）' },
+      ]
+    }
+    // 默认选项（LLM / OpenAI 兼容）
+    return [
+      { value: 'openai_sdk', label: '🧩 OpenAI SDK（Chat Completions）' },
+      { value: 'openai_sdk_responses', label: '🧩 OpenAI SDK（Responses API）' },
+      { value: 'custom', label: '⚙️ 自定义 HTTP（手动）' },
+    ]
+  }
+
+  // 当 provider + type 组合确定时，自动选择最合适的 api_format
+  useEffect(() => {
+    if (!selectedProvider || !selectedType) return
+    if (form.getFieldValue('api_format')) {
+      const current = form.getFieldValue('api_format')
+      // 检查当前值是否在可用选项中，如果不在则自动切换
+      const options = getApiFormatOptions()
+      if (!options.some((o: any) => o.value === current)) {
+        if (selectedProvider === 'gemini' && selectedType === 'image') {
+          form.setFieldValue('api_format', 'gemini_sdk')
+        } else {
+          form.setFieldValue('api_format', 'openai_sdk')
+        }
+      }
+    }
+  }, [selectedProvider, selectedType])
 
   const getPreset = () => {
     if (!selectedProvider || !selectedType) return null
     return PROVIDER_PRESETS[selectedProvider]?.[selectedType] || null
   }
 
-  const applyPreset = () => {
-    const preset = getPreset()
-    if (!preset) {
-      message.warning('请先选择服务商和类型')
+  const handleDiscoverModels = async () => {
+    const baseUrl = form.getFieldValue('base_url')
+    const apiKey = form.getFieldValue('api_key')
+    const apiFormat = selectedApiFormat || 'custom'
+    const modelsEndpoint = form.getFieldValue('models_endpoint') || '/v1/models'
+
+    if (!baseUrl) {
+      message.warning('请先填写 Base URL')
       return
     }
 
-    form.setFieldsValue({
-      base_url: preset.base_url || '',
-      api_endpoint: preset.api_endpoint || '',
-      default_model: preset.default_model || '',
-      available_models: preset.available_models ? JSON.stringify(preset.available_models) : '',
-      max_tokens: preset.max_tokens ?? 4096,
-      temperature: preset.temperature ?? 0.7,
-      request_template: preset.request_template || '',
-      response_config: preset.response_config || '',
-      supported_sizes: preset.supported_sizes || [],
-      default_params: preset.default_params ? JSON.stringify(preset.default_params) : '',
-      support_reference_image: preset.support_reference_image ?? false,
-      support_multiple_reference_images: preset.support_multiple_reference_images ?? false,
-      reference_image_field: preset.reference_image_field || '',
-      reference_image_array_field: preset.reference_image_array_field || '',
-      support_vision_input: preset.support_vision_input ?? false,
-    })
-    message.success('已应用推荐配置')
+    setFetchingModels(true)
+    try {
+      const result = await discoverModels({
+        api_format: apiFormat,
+        base_url: baseUrl,
+        api_key: apiKey || '',
+        models_endpoint: apiFormat === 'custom' ? modelsEndpoint : undefined,
+      }) as any
+
+      if (result?.success && result?.models?.length > 0) {
+        setDiscoveredModels(result.models)
+        message.success(`发现 ${result.models.length} 个模型`)
+      } else {
+        setDiscoveredModels([])
+        message.warning(result?.error || '未发现任何模型')
+      }
+    } catch (e: any) {
+      setDiscoveredModels([])
+      message.error(e?.message || '获取模型列表失败')
+    } finally {
+      setFetchingModels(false)
+    }
   }
 
   useEffect(() => {
     if (!selectedProvider || !selectedType || editingProvider) return
-    
+
     const preset = getPreset()
     if (!preset) return
 
-    form.setFieldsValue({
+    const format = selectedApiFormat || 'custom'
+
+    // SDK 模式只预填基础字段，custom 模式填全部
+    const values: Record<string, any> = {
       base_url: preset.base_url || '',
-      api_endpoint: preset.api_endpoint || '',
       default_model: preset.default_model || '',
-      available_models: preset.available_models ? JSON.stringify(preset.available_models) : '',
-      max_tokens: preset.max_tokens ?? 4096,
-      temperature: preset.temperature ?? 0.7,
-      request_template: preset.request_template || '',
-      response_config: preset.response_config || '',
-      supported_sizes: preset.supported_sizes || [],
-      default_params: preset.default_params ? JSON.stringify(preset.default_params) : '',
-      support_reference_image: preset.support_reference_image ?? false,
-      support_multiple_reference_images: preset.support_multiple_reference_images ?? false,
-      reference_image_field: preset.reference_image_field || '',
-      reference_image_array_field: preset.reference_image_array_field || '',
       support_vision_input: preset.support_vision_input ?? false,
-    })
-  }, [selectedProvider, selectedType, editingProvider, form])
+    }
+
+    if (format === 'custom') {
+      Object.assign(values, {
+        api_endpoint: preset.api_endpoint || '',
+        available_models: preset.available_models ? JSON.stringify(preset.available_models) : '',
+        max_tokens: preset.max_tokens ?? 4096,
+        temperature: preset.temperature ?? 0.7,
+        request_template: preset.request_template || '',
+        response_config: preset.response_config || '',
+        supported_sizes: preset.supported_sizes || [],
+        default_params: preset.default_params ? JSON.stringify(preset.default_params) : '',
+        support_reference_image: preset.support_reference_image ?? false,
+        support_multiple_reference_images: preset.support_multiple_reference_images ?? false,
+        reference_image_field: preset.reference_image_field || '',
+        reference_image_array_field: preset.reference_image_array_field || '',
+      })
+    }
+
+    form.setFieldsValue(values)
+  }, [selectedProvider, selectedType, selectedApiFormat, editingProvider, form])
 
   const loadProviders = async () => {
     setLoading(true)
@@ -403,6 +465,8 @@ export default function SettingsPage() {
   const handleEdit = (provider: Provider) => {
     setViewingProvider(null)
     setEditingProvider(provider)
+    setAdvancedManuallyToggled(false)
+    setDiscoveredModels([])
     form.setFieldsValue({
       id: provider.id,
       name: provider.name,
@@ -434,6 +498,7 @@ export default function SettingsPage() {
       reference_image_array_field: provider.reference_image_array_field || '',
       support_vision_input: provider.support_vision_input || false,
       test_prompt: provider.test_prompt || '',
+      api_format: provider.api_format || 'custom',
     })
     setModalVisible(true)
   }
@@ -445,11 +510,14 @@ export default function SettingsPage() {
   const handleAdd = () => {
     setEditingProvider(null)
     form.resetFields()
+    setAdvancedManuallyToggled(false)
+    setDiscoveredModels([])
     // 自动生成唯一标识符
     const generatedId = `connector-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
     form.setFieldsValue({ 
       id: generatedId,
-      is_active: true 
+      is_active: true,
+      api_format: 'custom',
     })
     setModalVisible(true)
   }
@@ -552,6 +620,7 @@ export default function SettingsPage() {
       reference_image_field: provider.reference_image_field || 'image',
       reference_image_array_field: provider.reference_image_array_field || '',
       support_vision_input: provider.support_vision_input || false,
+      api_format: provider.api_format || 'custom',
     })
     setModalVisible(true)
   }
@@ -979,23 +1048,6 @@ export default function SettingsPage() {
                 options={PROVIDER_SELECT_OPTIONS} 
               />
             </Form.Item>
-            <Form.Item label="">
-              <Button 
-                type="primary" 
-                size="small" 
-                icon={<ToolOutlined />}
-                onClick={applyPreset}
-                disabled={!selectedProvider || !selectedType}
-                style={{ 
-                  background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
-                  border: 'none',
-                  boxShadow: '0 2px 8px rgba(99, 102, 241, 0.3)',
-                  fontWeight: 500,
-                }}
-              >
-                应用推荐配置
-              </Button>
-            </Form.Item>
             <Form.Item name="name" label={<span style={{ color: THEME.textPrimary }}>显示名称</span>} rules={[{ required: true, message: '请输入名称' }]}>
               <Input placeholder="如：OpenAI GPT-4" />
             </Form.Item>
@@ -1010,7 +1062,15 @@ export default function SettingsPage() {
               ]} />
             </Form.Item>
           </div>
-          
+
+          {/* API格式选择 — 根据 provider+type 动态渲染选项 */}
+          <Form.Item name="api_format" label={<span style={{ color: THEME.textPrimary }}>API 格式</span>} initialValue="custom">
+            <Select
+              options={getApiFormatOptions()}
+              onChange={() => setDiscoveredModels([])}
+            />
+          </Form.Item>
+
           <Form.Item name="api_key" label={<span style={{ color: THEME.textPrimary }}>API Key</span>}>
             <Input.Password placeholder={editingProvider ? '留空表示不修改' : '请输入 API Key'} />
           </Form.Item>
@@ -1018,19 +1078,50 @@ export default function SettingsPage() {
           <Form.Item name="base_url" label={<span style={{ color: THEME.textPrimary }}>Base URL (可选)</span>}>
             <Input placeholder="https://api.openai.com/v1" />
           </Form.Item>
-          
+
           <Form.Item name="api_endpoint" label={<span style={{ color: THEME.textPrimary }}>API Endpoint (可选)</span>}>
             <Input placeholder="例如：/images/generations 或 /services/aigc/wanx/v1/image/generation" />
           </Form.Item>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16' }}>
             <Form.Item name="default_model" label={<span style={{ color: THEME.textPrimary }}>默认模型</span>}>
-              <Input placeholder="gpt-4o / text-embedding-3-large / BAAI/bge-m3" />
+              {discoveredModels.length > 0 ? (
+                <Select
+                  showSearch
+                  placeholder="选择模型..."
+                  options={discoveredModels.map(m => ({ value: m, label: m }))}
+                  onChange={(val) => form.setFieldValue('default_model', val)}
+                  notFoundContent="无匹配模型"
+                  allowCreate="true"
+                />
+              ) : (
+                <Input placeholder="gpt-4o / text-embedding-3-large / BAAI/bge-m3" />
+              )}
             </Form.Item>
+            <Form.Item label={<span style={{ color: THEME.textPrimary }}>&nbsp;</span>}>
+              <Button
+                icon={<ReloadOutlined />}
+                onClick={handleDiscoverModels}
+                loading={fetchingModels}
+                style={{ width: '100%' }}
+              >
+                获取模型列表
+              </Button>
+            </Form.Item>
+          </div>
+
+          {/* custom 模式：模型列表端点 */}
+          {selectedApiFormat === 'custom' && (
+            <Form.Item name="models_endpoint" label={<span style={{ color: THEME.textPrimary }}>模型列表端点</span>} initialValue="/v1/models">
+              <Input placeholder="/v1/models" />
+            </Form.Item>
+          )}
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16' }}>
             {selectedType === 'llm' && (
               <>
                 <Form.Item name="max_tokens" label={<span style={{ color: THEME.textPrimary }}>最大 Token 数</span>}>
-                  <InputNumber min={1} max={200000} style={{ width: '100%' }} placeholder="4096" />
+                  <InputNumber min={1} max={200000} style={{ width: '100%' }} placeholder="留空使用默认值" />
                 </Form.Item>
               </>
             )}
@@ -1045,7 +1136,7 @@ export default function SettingsPage() {
           {selectedType === 'llm' && (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16' }}>
               <Form.Item name="temperature" label={<span style={{ color: THEME.textPrimary }}>温度参数</span>}>
-                <InputNumber min={0} max={2} step={0.1} style={{ width: '100%' }} placeholder="0.7" />
+                <InputNumber min={0} max={2} step={0.1} style={{ width: '100%' }} placeholder="留空使用默认值" />
               </Form.Item>
               <Form.Item name="support_vision_input" label={<span style={{ color: THEME.textPrimary }}>支持视觉输入</span>} valuePropName="checked">
                 <Switch checkedChildren="是" unCheckedChildren="否" />
@@ -1072,6 +1163,7 @@ export default function SettingsPage() {
             </>
           )}
 
+          {!selectedApiFormat?.startsWith('openai_sdk') && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0 16' }}>
             <Form.Item name="monthly_budget" label={<span style={{ color: THEME.textPrimary }}>月度预算 (美元，可选)</span>}>
               <InputNumber min={0} step={10} style={{ width: '100%' }} placeholder="如：100" />
@@ -1085,6 +1177,7 @@ export default function SettingsPage() {
               <InputNumber min={0} style={{ width: '100%' }} placeholder="如：1000" />
             </Form.Item>
           </div>
+          )}
 
           <Form.Item name="description" label={<span style={{ color: THEME.textPrimary }}>备注说明</span>}>
             <TextArea rows={2} placeholder="可选：记录此连接的用途、限制等" />
@@ -1100,8 +1193,12 @@ export default function SettingsPage() {
           {selectedType === 'image' || selectedType === 'video' ? (
             <Collapse
               ghost
-              activeKey={showAdvancedConfig ? ['advanced'] : []}
-              onChange={(keys) => setShowAdvancedConfig(keys.includes('advanced'))}
+              activeKey={
+                (advancedManuallyToggled || !selectedApiFormat?.startsWith('openai_sdk')) ? ['advanced'] : []
+              }
+              onChange={(keys) => {
+                setAdvancedManuallyToggled(true)
+              }}
               style={{ marginTop: 16 }}
               items={[
                 {

@@ -167,6 +167,9 @@ class AIConnectorBase(SQLModel):
     usage_count: int = Field(0, description="使用次数")
     total_cost: float = Field(0.0, description="累计消耗（美元）")
 
+    # API 格式类型：openai_sdk（使用 OpenAI SDK）/ custom（使用 httpx 手动模式）
+    api_format: str = Field("custom", description="API 格式类型：openai_sdk / custom")
+
 
 class AIConnector(AIConnectorBase, table=True):
     """AI 连接数据库模型"""
@@ -242,6 +245,8 @@ class AIConnectorCreate(SQLModel):
     embedding_type: Optional[str] = None
     embedding_dimension: Optional[int] = None
     normalize_embeddings: bool = True
+    # API 格式类型
+    api_format: str = "custom"
 
 
 class AIConnectorUpdate(SQLModel):
@@ -282,6 +287,8 @@ class AIConnectorUpdate(SQLModel):
     embedding_type: Optional[str] = None
     embedding_dimension: Optional[int] = None
     normalize_embeddings: Optional[bool] = None
+    # API 格式类型
+    api_format: Optional[str] = None
 
 
 class AIConnectorResponse(SQLModel):
@@ -325,6 +332,8 @@ class AIConnectorResponse(SQLModel):
     embedding_type: Optional[str] = None
     embedding_dimension: Optional[int] = None
     normalize_embeddings: bool = True
+    # API 格式类型
+    api_format: str = "custom"
 
     @classmethod
     def from_db(cls, conn: AIConnector) -> "AIConnectorResponse":
@@ -391,6 +400,7 @@ class AIConnectorResponse(SQLModel):
             embedding_type=conn.embedding_type,
             embedding_dimension=conn.embedding_dimension,
             normalize_embeddings=conn.normalize_embeddings,
+            api_format=getattr(conn, 'api_format', 'custom'),
         )
 
 

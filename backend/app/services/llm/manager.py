@@ -149,24 +149,61 @@ class BackendManager:
             logger.warning(f"[Manager] 未知的 provider_type: {provider_type}")
 
     def _init_llm_backend(self, conn: AIConnector) -> None:
-        """初始化 LLM Backend（使用 GenericLLMBackend）"""
-        # 数据库加载的 Provider 统一使用 GenericLLMBackend
+        """初始化 LLM Backend（根据 api_format 路由）"""
+        api_format = getattr(conn, 'api_format', 'custom')
+
+        # openai_sdk / openai_sdk_responses 模式 → OpenAISDKLLMBackend
+        if api_format.startswith('openai_sdk'):
+            try:
+                from app.services.llm.openai_sdk_backend import OpenAISDKLLMBackend
+                backend = OpenAISDKLLMBackend(connector=conn)
+                self._backends[MediaType.LLM][conn.name] = backend
+                logger.info(f"[LLM] 已注册 OpenAISDKLLMBackend: {conn.name}")
+                return
+            except Exception as e:
+                logger.warning(f"[LLM] SDK Backend 初始化失败，降级到 GenericBackend: {e}")
+
+        # custom 模式（默认）→ GenericLLMBackend
         from app.services.llm.generic_backend import GenericLLMBackend
         try:
             backend = GenericLLMBackend(connector=conn, session=self._session)
             self._backends[MediaType.LLM][conn.name] = backend
-            logger.info(f"[LLM] 已注册 GenericLLMBackend: {conn.name} (from DB)")
+            logger.info(f"[LLM] 已注册 GenericLLMBackend: {conn.name}")
         except Exception as e:
             logger.error(f"[LLM] 初始化 GenericLLMBackend 失败 {conn.name}: {e}")
 
     def _init_image_backend(self, conn: AIConnector, session: Session) -> None:
-        """初始化 Image Backend（使用 GenericImageBackend）"""
-        # 数据库加载的 Provider 统一使用 GenericImageBackend
+        """初始化 Image Backend（根据 provider 和 api_format 路由）"""
+        api_format = getattr(conn, 'api_format', 'custom')
+
+        # openai_sdk / openai_sdk_responses 模式 → OpenAISDKImageBackend
+        if api_format.startswith('openai_sdk'):
+            try:
+                from app.services.image.openai_sdk_image_backend import OpenAISDKImageBackend
+                backend = OpenAISDKImageBackend(connector=conn)
+                self._backends[MediaType.IMAGE][conn.name] = backend
+                logger.info(f"[Image] 已注册 OpenAISDKImageBackend: {conn.name}")
+                return
+            except Exception as e:
+                logger.warning(f"[Image] SDK Backend 初始化失败，降级到 Gemini/Generic: {e}")
+
+        # gemini provider → GeminiImageBackend（Google 原生图片生成 API）
+        if conn.provider == 'gemini':
+            try:
+                from app.services.image.gemini_image_backend import GeminiImageBackend
+                backend = GeminiImageBackend(connector=conn)
+                self._backends[MediaType.IMAGE][conn.name] = backend
+                logger.info(f"[Image] 已注册 GeminiImageBackend: {conn.name}")
+                return
+            except Exception as e:
+                logger.warning(f"[Image] Gemini Backend 初始化失败，降级到 GenericBackend: {e}")
+
+        # custom 模式（默认）→ GenericImageBackend
         from app.services.image.generic_backend import GenericImageBackend
         try:
             backend = GenericImageBackend(connector=conn, session=session)
             self._backends[MediaType.IMAGE][conn.name] = backend
-            logger.info(f"[Image] 已注册 GenericImageBackend: {conn.name} (from DB)")
+            logger.info(f"[Image] 已注册 GenericImageBackend: {conn.name}")
         except Exception as e:
             import traceback
             logger.error(f"[Image] 初始化 GenericImageBackend 失败 {conn.name}: {e}")

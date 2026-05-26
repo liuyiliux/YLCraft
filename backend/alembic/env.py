@@ -18,6 +18,7 @@ from app.db.models.asset_hub import (
     AssetEmbedding, AssetRelation,
     Tag, AssetTagLink, AIModel,
 )
+from app.db.models.ai_connector import AIConnector, AIUsageLog
 
 # Alembic Config 对象
 config = context.config

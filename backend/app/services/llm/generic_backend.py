@@ -47,6 +47,10 @@ class GenericLLMBackend(LLMBackend):
         self.session = session
         # 不要直接设置 self.model，已经在 super().__init__() 中设置了
         
+        # 从 DB 读取默认参数，null 时回退到行业标准值
+        self._default_temperature = connector.temperature if connector.temperature is not None else 0.7
+        self._default_max_tokens = connector.max_tokens or 4096
+        
         # 创建 HTTP 客户端
         headers = {}
         if connector.api_key:
@@ -79,12 +83,12 @@ class GenericLLMBackend(LLMBackend):
             # 优先使用传入的 model 参数，否则使用默认 model（支持动态模型切换控制花费）
             model = kwargs.get("model", self.model)
             
-            # 构建请求体
+            # 构建请求体（kwargs 传入值优先，否则用 DB 默认值）
             request_body = {
                 "model": model,
                 "messages": [{"role": m.role, "content": m.content} for m in messages],
-                "temperature": kwargs.get("temperature", 0.7),
-                "max_tokens": kwargs.get("max_tokens", 4096),
+                "temperature": kwargs.get("temperature", self._default_temperature),
+                "max_tokens": kwargs.get("max_tokens", self._default_max_tokens),
             }
             
             # 发送请求
