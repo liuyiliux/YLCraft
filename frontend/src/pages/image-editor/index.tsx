@@ -1258,7 +1258,7 @@ export default function ImageEditorPage() {
                     编辑工具
                   </span>
                 }
-                bodyStyle={{ padding: '12px 8px 8px' }}
+                styles={{ body: { padding: '12px 8px 8px' } }}
                 style={{ borderRadius: 8, overflow: 'hidden' }}
               >
                 <Tabs

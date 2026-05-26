@@ -150,7 +150,7 @@ export function AssetVersionManager({ assetId }: AssetVersionManagerProps) {
           cursor: compareMode ? 'pointer' : 'default',
           opacity: compareMode && !isSelected ? 0.5 : 1,
         }}
-        bodyStyle={{ padding: 16 }}
+        styles={{ body: { padding: 16 } }}
       >
         <div style={{ display: 'flex', gap: 16 }}>
           {/* 缩略图 */}

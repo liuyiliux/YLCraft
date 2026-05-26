@@ -427,3 +427,286 @@ class AIUsageLog(SQLModel, table=True):
         default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
         description="请求时间"
     )
+
+
+# =============================================================================
+# AI Provider 元数据模型
+# =============================================================================
+
+class AIProviderMetadataBase(SQLModel):
+    """AI Provider 元数据基础模型
+    
+    注意：此模型用于数据库表 ai_provider_metadata。
+    已废弃的 request_template 字段已删除，统一使用按类型分组的 request_templates。
+    """
+    # Provider 基本信息
+    name: str = Field(..., description="Provider 显示名称（如 OpenAI、硅基流动）")
+    icon: str = Field("brain", description="图标标识")
+    color: str = Field("#94a3b8", description="品牌颜色（十六进制）")
+    description: str = Field("", description="描述信息")
+
+    # API 配置
+    base_url: Optional[str] = Field(None, description="默认 API 基础 URL")
+    api_key: Optional[str] = Field(None, description="默认 API Key（加密存储）")
+    api_format: str = Field(
+        "openai-compatible",
+        description="API 格式类型：openai-compatible / custom / gemini"
+    )
+
+    # 支持的类型列表
+    supported_types: str = Field(
+        "[]",
+        description="支持的类型列表 JSON，如 ['llm', 'image']"
+    )
+
+    # 按类型分组的默认模型
+    default_models: str = Field(
+        "{}",
+        description="按类型分组的默认模型 JSON，如 {'llm': 'gpt-4o', 'image': 'dall-e-3'}"
+    )
+
+    # 按类型分组的可用模型列表
+    available_models: str = Field(
+        "{}",
+        description="按类型分组的可用模型列表 JSON，如 {'llm': ['gpt-4o', 'gpt-4o-mini']}"
+    )
+
+    # 按类型分组的默认参数
+    default_params: str = Field(
+        "{}",
+        description="按类型分组的默认参数 JSON"
+    )
+
+    # 按类型分组的请求模板
+    request_templates: str = Field(
+        "{}",
+        description="按类型分组的请求模板 JSON，如 {'llm': '...', 'image': '...'}"
+    )
+
+    # 按类型分组的响应配置
+    response_configs: str = Field(
+        "{}",
+        description="按类型分组的响应配置 JSON"
+    )
+
+    # 按类型分组的支持尺寸
+    supported_sizes: str = Field(
+        "{}",
+        description="按类型分组的支持尺寸 JSON"
+    )
+
+    # 按类型分组的参考图配置
+    reference_image_configs: str = Field(
+        "{}",
+        description="按类型分组的参考图配置 JSON"
+    )
+
+    # 按类型分组的参数转换
+    parameter_transforms: str = Field(
+        "{}",
+        description="按类型分组的参数转换 JSON"
+    )
+
+    # 状态
+    is_active: bool = Field(True, description="是否启用")
+    is_editable: bool = Field(False, description="是否可编辑（系统内置 Provider 不可编辑）")
+
+
+class AIProviderMetadata(AIProviderMetadataBase, table=True):
+    """AI Provider 元数据数据库模型"""
+    __tablename__ = "ai_provider_metadata"
+
+    provider_id: str = Field(primary_key=True, description="Provider ID（如 openai、siliconflow）")
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+        description="创建时间"
+    )
+    updated_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+        description="更新时间"
+    )
+
+    def get_supported_types(self) -> list[str]:
+        """获取支持的类型列表"""
+        if not self.supported_types:
+            return []
+        try:
+            return json.loads(self.supported_types)
+        except Exception:
+            return []
+
+    def get_default_models(self) -> dict:
+        """获取按类型分组的默认模型"""
+        if not self.default_models:
+            return {}
+        try:
+            return json.loads(self.default_models)
+        except Exception:
+            return {}
+
+    def get_available_models(self) -> dict:
+        """获取按类型分组的可用模型列表"""
+        if not self.available_models:
+            return {}
+        try:
+            return json.loads(self.available_models)
+        except Exception:
+            return {}
+
+    def get_default_params(self) -> dict:
+        """获取按类型分组的默认参数"""
+        if not self.default_params:
+            return {}
+        try:
+            return json.loads(self.default_params)
+        except Exception:
+            return {}
+
+    def get_default_for_type(self, provider_type: str) -> dict:
+        """获取指定类型的默认配置"""
+        params = self.get_default_params()
+        return params.get(provider_type, {})
+
+    def get_request_templates(self) -> dict:
+        """获取按类型分组的请求模板"""
+        if not self.request_templates:
+            return {}
+        try:
+            return json.loads(self.request_templates)
+        except Exception:
+            return {}
+
+    def get_response_configs(self) -> dict:
+        """获取按类型分组的响应配置"""
+        if not self.response_configs:
+            return {}
+        try:
+            return json.loads(self.response_configs)
+        except Exception:
+            return {}
+
+    def get_supported_sizes(self) -> dict:
+        """获取按类型分组的支持尺寸"""
+        if not self.supported_sizes:
+            return {}
+        try:
+            return json.loads(self.supported_sizes)
+        except Exception:
+            return {}
+
+    def get_reference_image_configs(self) -> dict:
+        """获取按类型分组的参考图配置"""
+        if not self.reference_image_configs:
+            return {}
+        try:
+            return json.loads(self.reference_image_configs)
+        except Exception:
+            return {}
+
+    def get_parameter_transforms(self) -> dict:
+        """获取按类型分组的参数转换"""
+        if not self.parameter_transforms:
+            return {}
+        try:
+            return json.loads(self.parameter_transforms)
+        except Exception:
+            return {}
+
+
+class AIProviderMetadataCreate(SQLModel):
+    """创建 Provider 元数据请求"""
+    model_config = {"extra": "ignore"}
+    provider_id: str
+    name: str
+    icon: str = "brain"
+    color: str = "#94a3b8"
+    description: str = ""
+    base_url: Optional[str] = None
+    api_key: Optional[str] = None
+    api_format: str = "openai-compatible"
+    supported_types: list[str] = Field(default_factory=list)
+    default_models: dict = Field(default_factory=dict)
+    available_models: dict = Field(default_factory=dict)
+    default_params: dict = Field(default_factory=dict)
+    request_templates: dict = Field(default_factory=dict)
+    response_configs: dict = Field(default_factory=dict)
+    supported_sizes: dict = Field(default_factory=dict)
+    reference_image_configs: dict = Field(default_factory=dict)
+    parameter_transforms: dict = Field(default_factory=dict)
+    is_active: bool = True
+    is_editable: bool = True
+
+
+class AIProviderMetadataUpdate(SQLModel):
+    """更新 Provider 元数据请求"""
+    model_config = {"extra": "ignore"}
+    name: Optional[str] = None
+    icon: Optional[str] = None
+    color: Optional[str] = None
+    description: Optional[str] = None
+    base_url: Optional[str] = None
+    api_key: Optional[str] = None
+    api_format: Optional[str] = None
+    supported_types: Optional[list[str]] = None
+    default_models: Optional[dict] = None
+    available_models: Optional[dict] = None
+    default_params: Optional[dict] = None
+    request_templates: Optional[dict] = None
+    response_configs: Optional[dict] = None
+    supported_sizes: Optional[dict] = None
+    reference_image_configs: Optional[dict] = None
+    parameter_transforms: Optional[dict] = None
+    is_active: Optional[bool] = None
+
+
+class AIProviderMetadataResponse(SQLModel):
+    """Provider 元数据响应"""
+    provider_id: str
+    name: str
+    icon: str = "brain"
+    color: str = "#94a3b8"
+    description: str = ""
+    base_url: Optional[str] = None
+    api_key: Optional[str] = None  # 完整的 API Key（仅用于编辑时显示）
+    api_format: str = "openai-compatible"
+    supported_types: list[str] = Field(default_factory=list)
+    default_models: dict = Field(default_factory=dict)
+    available_models: dict = Field(default_factory=dict)
+    default_params: dict = Field(default_factory=dict)
+    request_templates: dict = Field(default_factory=dict)
+    response_configs: dict = Field(default_factory=dict)
+    supported_sizes: dict = Field(default_factory=dict)
+    reference_image_configs: dict = Field(default_factory=dict)
+    parameter_transforms: dict = Field(default_factory=dict)
+    is_active: bool = True
+    is_editable: bool = False
+    has_api_key: bool = False  # 是否配置了 API Key
+    created_at: datetime = None
+    updated_at: datetime = None
+
+    @classmethod
+    def from_db(cls, metadata: AIProviderMetadata) -> "AIProviderMetadataResponse":
+        return cls(
+            provider_id=metadata.provider_id,
+            name=metadata.name,
+            icon=metadata.icon,
+            color=metadata.color,
+            description=metadata.description or "",
+            base_url=metadata.base_url,
+            api_key=metadata.api_key,
+            api_format=metadata.api_format,
+            supported_types=metadata.get_supported_types(),
+            default_models=metadata.get_default_models(),
+            available_models=metadata.get_available_models(),
+            default_params=metadata.get_default_params(),
+            request_templates=metadata.get_request_templates(),
+            response_configs=metadata.get_response_configs(),
+            supported_sizes=metadata.get_supported_sizes(),
+            reference_image_configs=metadata.get_reference_image_configs(),
+            parameter_transforms=metadata.get_parameter_transforms(),
+            is_active=metadata.is_active,
+            is_editable=metadata.is_editable,
+            has_api_key=bool(metadata.api_key),
+            created_at=metadata.created_at,
+            updated_at=metadata.updated_at,
+        )

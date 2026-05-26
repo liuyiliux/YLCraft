@@ -317,7 +317,7 @@ export default function BGMPage() {
                               border: `2px solid ${selectedTrack?.id === track.id ? '#f59e0b' : '#333'}`,
                               cursor: 'pointer',
                             }}
-                            bodyStyle={{ padding: 16 }}
+                            styles={{ body: { padding: 16 } }}
                           >
                             {/* 顶部：风格标签 + 收藏 */}
                             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>

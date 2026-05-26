@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   Card,
   Tabs,
@@ -34,21 +34,82 @@ import {
   ReloadOutlined,
   PlusOutlined,
   EyeOutlined,
+  EditOutlined,
   SearchOutlined,
   CopyOutlined,
   DeleteOutlined,
   QuestionCircleOutlined,
   UploadOutlined,
   DownloadOutlined,
+  RocketOutlined,
 } from '@ant-design/icons'
-import { listConnectors, createConnector, updateConnector, deleteConnector, testConnector, exportConnectors, importConnectors, discoverModels, getSettings, updateSettings } from '../../api'
-import type { Provider, PROVIDER_OPTIONS, ConnectorTestResult } from '../../types/api'
+import { listConnectors, createConnector, updateConnector, deleteConnector, testConnector, exportConnectors, importConnectors, discoverModels, getSettings, updateSettings, listProviders, createProvider, updateProvider, deleteProvider, initDefaultProviders, getProviderDefaults } from '../../api'
+import type { Provider, PROVIDER_OPTIONS, ConnectorTestResult, ProviderMetadata } from '../../types/api'
 import { useTheme } from '../../constants/theme'
 
 const { Title, Text, Paragraph } = Typography
 const { TextArea } = Input
 
-// 计算宽高比例
+// ==================== 可拖拽调整列宽的表头 ====================
+function useResizableColumns(initialWidths: Record<string, number>) {
+  const [colWidths, setColWidths] = useState<Record<string, number>>(initialWidths)
+  const resizing = useRef<{ key: string; startX: number; startWidth: number } | null>(null)
+  const moveRef = useRef<((e: MouseEvent) => void) | null>(null)
+  const upRef = useRef<(() => void) | null>(null)
+
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (!resizing.current) return
+    const { key, startX, startWidth } = resizing.current
+    const diff = e.clientX - startX
+    const newWidth = Math.max(80, startWidth + diff)
+    setColWidths(prev => ({ ...prev, [key]: newWidth }))
+  }, [])
+
+  const handleMouseUp = useCallback(() => {
+    if (resizing.current) {
+      document.removeEventListener('mousemove', moveRef.current!)
+      document.removeEventListener('mouseup', upRef.current!)
+      resizing.current = null
+    }
+  }, [])
+
+  // 始终保持 ref 指向最新回调
+  moveRef.current = handleMouseMove
+  upRef.current = handleMouseUp
+
+  const handleMouseDown = useCallback((key: string, e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    resizing.current = { key, startX: e.clientX, startWidth: colWidths[key] || 0 }
+    document.addEventListener('mousemove', moveRef.current!)
+    document.addEventListener('mouseup', upRef.current!)
+  }, [colWidths])
+
+  // 给列定义添加 resize handle 的渲染器
+  function wrapColumnTitle(title: string, key: string): React.ReactNode {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', width: '100%', position: 'relative' }}>
+        <span style={{ flex: 1 }}>{title}</span>
+        <div
+          onMouseDown={(e) => handleMouseDown(key, e)}
+          style={{
+            width: 6,
+            cursor: 'col-resize',
+            position: 'absolute',
+            right: -3,
+            top: 0,
+            bottom: 0,
+            zIndex: 10,
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.borderRight = '2px solid #00d4ff')}
+          onMouseLeave={(e) => (e.currentTarget.style.borderRight = '2px solid transparent')}
+        />
+      </div>
+    )
+  }
+
+  return { colWidths, wrapColumnTitle }
+}
 function calculateAspectRatio(size: string): string {
   const match = size.match(/(\d+)\s*[x*]\s*(\d+)/i)
   if (!match) return ''
@@ -134,6 +195,772 @@ function SizeConfigField({ value = [], onChange }: { value?: string[], onChange?
           添加比例
         </Button>
       </Space>
+    </div>
+  )
+}
+
+// ==================== Provider 管理组件 ====================
+
+interface ProviderCardProps {
+  provider: ProviderMetadata
+  onEdit: (provider: ProviderMetadata) => void
+  onDelete: (providerId: string) => void
+  onToggleActive: (providerId: string, active: boolean) => void
+  theme: any
+}
+
+const ProviderCard: React.FC<ProviderCardProps> = ({ provider, onEdit, onDelete, onToggleActive, theme }) => {
+  const typeLabels: Record<string, string> = {
+    llm: '文本',
+    image: '图像',
+    video: '视频',
+    tts: '语音',
+    stt: '识别',
+    embedding: '嵌入',
+  }
+
+  return (
+    <Card
+      size="small"
+      style={{
+        background: theme.bgCard,
+        border: `1px solid ${provider.is_active ? provider.color + '40' : theme.border}`,
+        borderRadius: 12,
+        overflow: 'hidden',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+        {/* Logo 区域 */}
+        <div
+          style={{
+            width: 48,
+            height: 48,
+            borderRadius: 10,
+            background: `linear-gradient(135deg, ${provider.color}30, ${provider.color}10)`,
+            border: `1px solid ${provider.color}40`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 20,
+            flexShrink: 0,
+          }}
+        >
+          {provider.icon === 'brain' && '🧠'}
+          {provider.icon === 'cloud' && '☁️'}
+          {provider.icon === 'globe' && '🌐'}
+          {provider.icon === 'settings' && '⚙️'}
+        </div>
+
+        {/* 信息区域 */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <Text strong style={{ color: theme.textPrimary, fontSize: 15 }}>{provider.name}</Text>
+            {!provider.is_active && (
+              <Tag color="default" style={{ marginLeft: 4 }}>已禁用</Tag>
+            )}
+            {provider.has_api_key && (
+              <Tag color="green" style={{ fontSize: 10 }}>已配置 Key</Tag>
+            )}
+          </div>
+
+          <Text style={{ color: theme.textSecondary, fontSize: 12, display: 'block', marginBottom: 8 }}>
+            {provider.description || provider.base_url || '无描述'}
+          </Text>
+
+          {/* 支持的类型 */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 8 }}>
+            {provider.supported_types?.map(type => (
+              <Tag
+                key={type}
+                color={provider.color}
+                style={{
+                  borderRadius: 4,
+                  fontSize: 11,
+                  padding: '0 6px',
+                  margin: 0,
+                  background: provider.color + '15',
+                  border: `1px solid ${provider.color}30`,
+                }}
+              >
+                {typeLabels[type] || type}
+              </Tag>
+            ))}
+          </div>
+
+          {/* 默认模型信息 */}
+          {Object.keys(provider.default_models || {}).length > 0 && (
+            <div style={{ fontSize: 11, color: theme.textSecondary }}>
+              {Object.entries(provider.default_models).map(([type, model]) => (
+                <div key={type} style={{ marginBottom: 2 }}>
+                  <span style={{ color: provider.color }}>{typeLabels[type] || type}:</span>{' '}
+                  <Text code style={{ fontSize: 10 }}>{model}</Text>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 操作按钮 */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 }}>
+          <Switch
+            size="small"
+            checked={provider.is_active}
+            onChange={(checked) => onToggleActive(provider.provider_id, checked)}
+            disabled={!provider.is_editable}
+          />
+          <Button
+            type="text"
+            size="small"
+            icon={<EditOutlined />}
+            onClick={() => onEdit(provider)}
+            disabled={!provider.is_editable}
+            style={{ color: provider.is_editable ? theme.primary : theme.textDisabled }}
+          />
+          <Popconfirm
+            title="确定要删除这个 Provider 吗？"
+            description="删除后，用户新增该 Provider 的模型时将无法继承默认配置"
+            onConfirm={() => onDelete(provider.provider_id)}
+            okText="删除"
+            cancelText="取消"
+            okButtonProps={{ danger: true }}
+            disabled={!provider.is_editable}
+          >
+            <Button
+              type="text"
+              size="small"
+              icon={<DeleteOutlined />}
+              danger
+              disabled={!provider.is_editable}
+            />
+          </Popconfirm>
+        </div>
+      </div>
+    </Card>
+  )
+}
+
+interface ProviderFormModalProps {
+  open: boolean
+  provider?: ProviderMetadata | null
+  onCancel: () => void
+  onSave: (data: any) => void
+  theme: any
+}
+
+const ProviderFormModal: React.FC<ProviderFormModalProps> = ({ open, provider, onCancel, onSave, theme }) => {
+  const [form] = Form.useForm()
+  const { message } = AntApp.useApp()
+  const [saving, setSaving] = useState(false)
+  const [activeTab, setActiveTab] = useState<string>('llm')
+  
+  const typeOptions = [
+    { value: 'llm', label: '文本 (LLM)' },
+    { value: 'image', label: '图像生成' },
+    { value: 'video', label: '视频生成' },
+    { value: 'tts', label: '语音合成 (TTS)' },
+    { value: 'stt', label: '语音识别 (STT)' },
+    { value: 'embedding', label: '嵌入 (Embedding)' },
+  ]
+  
+  const supportedTypes = Form.useWatch(['supported_types'], form) || []
+
+  useEffect(() => {
+    if (open) {
+      if (provider) {
+        // 解析 JSON 字符串为对象
+        const parseJson = (val: any) => {
+          if (typeof val === 'string') {
+            try { return JSON.parse(val) } catch { return {} }
+          }
+          return val || {}
+        }
+
+        const parseJsonArray = (val: any) => {
+          if (typeof val === 'string') {
+            try { return JSON.parse(val) } catch { return [] }
+          }
+          return val || []
+        }
+        
+        // 设置各类型的配置
+        const defaultParams = parseJson(provider.default_params)
+        const defaultModels = parseJson(provider.default_models)
+        const requestTemplates = parseJson(provider.request_templates)
+        const responseConfigs = parseJson(provider.response_configs)
+        const supportedSizes = parseJson(provider.supported_sizes)
+        const refImageConfigs = parseJson(provider.reference_image_configs)
+        const parameterTransforms = parseJson(provider.parameter_transforms)
+        const supportedTypes = parseJsonArray(provider.supported_types)
+        
+        form.setFieldsValue({
+          name: provider.name,
+          icon: provider.icon,
+          color: provider.color,
+          description: provider.description,
+          base_url: provider.base_url,
+          api_key: provider.api_key || '',
+          api_format: provider.api_format,
+          supported_types: supportedTypes,
+        })
+        
+        typeOptions.forEach(type => {
+          const params = defaultParams[type as keyof typeof defaultParams]
+          const model = defaultModels[type as keyof typeof defaultModels]
+          const template = requestTemplates[type as keyof typeof requestTemplates]
+          const responseConfig = responseConfigs[type as keyof typeof responseConfigs]
+          const sizes = supportedSizes[type as keyof typeof supportedSizes]
+          const refImage = refImageConfigs[type as keyof typeof refImageConfigs]
+          const transforms = parameterTransforms[type as keyof typeof parameterTransforms]
+          
+          if (params) {
+            form.setFieldValue(`type_${type}_params`, JSON.stringify(params, null, 2))
+          }
+          
+          if (model) {
+            form.setFieldValue(`type_${type}_model`, model)
+          }
+          
+          if (template) {
+            form.setFieldValue(`type_${type}_template`, template)
+          }
+          
+          if (responseConfig) {
+            form.setFieldValue(`type_${type}_response_config`, JSON.stringify(responseConfig, null, 2))
+          }
+          
+          if (sizes) {
+            form.setFieldValue(`type_${type}_sizes`, Array.isArray(sizes) ? sizes.join(', ') : sizes)
+          }
+          
+          if (refImage) {
+            form.setFieldValue(`type_${type}_support_ref_image`, refImage.support_reference_image || false)
+            form.setFieldValue(`type_${type}_support_multi_ref`, refImage.support_multiple_reference_images || false)
+            form.setFieldValue(`type_${type}_ref_image_field`, refImage.reference_image_field || '')
+            form.setFieldValue(`type_${type}_ref_image_array_field`, refImage.reference_image_array_field || '')
+          }
+          
+          if (transforms) {
+            form.setFieldValue(`type_${type}_transforms`, JSON.stringify(transforms, null, 2))
+          }
+        })
+        
+        if (supportedTypes.length > 0) {
+          setActiveTab(supportedTypes[0])
+        }
+      } else {
+        form.resetFields()
+        form.setFieldsValue({
+          icon: 'settings',
+          color: '#94a3b8',
+          api_format: 'openai-compatible',
+          supported_types: ['llm'],
+        })
+      }
+    }
+  }, [open, provider, form])
+
+  const handleSubmit = async () => {
+    try {
+      const values = await form.validateFields()
+      setSaving(true)
+      
+      // 处理各类型的配置
+      const defaultParams: Record<string, any> = {}
+      const defaultModels: Record<string, string> = {}
+      const requestTemplates: Record<string, string> = {}
+      const responseConfigs: Record<string, any> = {}
+      const supportedSizes: Record<string, any> = {}
+      const referenceImageConfigs: Record<string, any> = {}
+      const parameterTransforms: Record<string, any> = {}
+      
+      typeOptions.forEach(type => {
+        const params = values[`type_${type}_params`]
+        const model = values[`type_${type}_model`]
+        const template = values[`type_${type}_template`]
+        const responseConfig = values[`type_${type}_response_config`]
+        const sizes = values[`type_${type}_sizes`]
+        const supportRefImage = values[`type_${type}_support_ref_image`]
+        const supportMultiRef = values[`type_${type}_support_multi_ref`]
+        const refImageField = values[`type_${type}_ref_image_field`]
+        const refImageArrayField = values[`type_${type}_ref_image_array_field`]
+        const transforms = values[`type_${type}_transforms`]
+        
+        if (params) {
+          try {
+            defaultParams[type] = JSON.parse(params)
+          } catch (e) {
+            // 忽略解析错误
+          }
+        }
+        
+        if (model) {
+          defaultModels[type] = model
+        }
+        
+        if (template) {
+          requestTemplates[type] = template
+        }
+        
+        if (responseConfig) {
+          try {
+            responseConfigs[type] = JSON.parse(responseConfig)
+          } catch (e) {
+            // 忽略解析错误
+          }
+        }
+        
+        if (sizes) {
+          const sizesArray = sizes.split(',').map(s => s.trim()).filter(Boolean)
+          if (sizesArray.length > 0) {
+            supportedSizes[type] = sizesArray.length > 1 ? sizesArray : sizes
+          }
+        }
+        
+        if (supportRefImage || supportMultiRef || refImageField || refImageArrayField) {
+          referenceImageConfigs[type] = {
+            support_reference_image: supportRefImage || false,
+            support_multiple_reference_images: supportMultiRef || false,
+            reference_image_field: refImageField || '',
+            reference_image_array_field: refImageArrayField || '',
+          }
+        }
+        
+        if (transforms) {
+          try {
+            parameterTransforms[type] = JSON.parse(transforms)
+          } catch (e) {
+            // 忽略解析错误
+          }
+        }
+      })
+
+      // 处理数据 - 只发送必要的字段，不包含临时字段
+      const data = {
+        name: values.name,
+        icon: values.icon,
+        color: values.color,
+        description: values.description,
+        base_url: values.base_url,
+        api_key: values.api_key,
+        api_format: values.api_format,
+        supported_types: values.supported_types,
+        default_params: defaultParams,
+        default_models: defaultModels,
+        request_templates: requestTemplates,
+        response_configs: responseConfigs,
+        supported_sizes: supportedSizes,
+        reference_image_configs: referenceImageConfigs,
+        parameter_transforms: parameterTransforms,
+      }
+
+      onSave(data)
+    } catch (e: any) {
+      if (e.errorFields) {
+        message.error('请检查表单填写')
+      } else {
+        message.error(e.message || '保存失败')
+      }
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const iconOptions = [
+    { value: 'brain', label: '🧠 Brain' },
+    { value: 'cloud', label: '☁️ Cloud' },
+    { value: 'globe', label: '🌐 Globe' },
+    { value: 'settings', label: '⚙️ Settings' },
+  ]
+
+  const apiFormatOptions = [
+    { value: 'openai-compatible', label: 'OpenAI 兼容 API' },
+    { value: 'custom', label: '自定义格式' },
+    { value: 'gemini', label: 'Google Gemini' },
+  ]
+
+  return (
+    <Modal
+      title={provider ? '编辑 Provider' : '新增 Provider'}
+      open={open}
+      onCancel={onCancel}
+      onOk={handleSubmit}
+      confirmLoading={saving}
+      width={800}
+      styles={{ body: { padding: '16px 24px' } }}
+    >
+      <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+          <Form.Item
+            name="name"
+            label="显示名称"
+            rules={[{ required: true, message: '请输入显示名称' }]}
+          >
+            <Input placeholder="如：OpenAI" />
+          </Form.Item>
+
+          <Form.Item
+            name="icon"
+            label="图标"
+          >
+            <Select options={iconOptions} />
+          </Form.Item>
+
+          <Form.Item
+            name="color"
+            label="品牌颜色"
+          >
+            <Input type="color" style={{ width: '100%', height: 32 }} />
+          </Form.Item>
+
+          <Form.Item
+            name="api_format"
+            label="API 格式"
+          >
+            <Select options={apiFormatOptions} />
+          </Form.Item>
+        </div>
+
+        <Form.Item name="description" label="描述">
+          <Input.TextArea placeholder="描述这个 Provider" rows={2} />
+        </Form.Item>
+
+        <Form.Item name="base_url" label="默认 Base URL">
+          <Input placeholder="https://api.openai.com/v1" />
+        </Form.Item>
+
+        <Form.Item name="api_key" label="默认 API Key">
+          <Input.Password placeholder="可选，用于继承到新建的模型" />
+        </Form.Item>
+
+        <Form.Item name="supported_types" label="支持的类型">
+          <Select
+            mode="multiple"
+            placeholder="选择支持的 AI 类型"
+            options={typeOptions}
+          />
+        </Form.Item>
+        
+        {/* 按类型分别配置的标签页 */}
+        {supportedTypes.length > 0 && (
+          <Tabs
+            activeKey={activeTab}
+            onChange={setActiveTab}
+            style={{ marginBottom: 16 }}
+            items={supportedTypes.map((type: string) => {
+              const typeOption = typeOptions.find(t => t.value === type)
+              return {
+                key: type,
+                label: typeOption?.label || type,
+              }
+            })}
+          />
+        )}
+        
+        {supportedTypes.map((type: string) => {
+          const typeOption = typeOptions.find(t => t.value === type)
+          return activeTab === type ? (
+            <div key={type} style={{ marginTop: 16 }}>
+              <div style={{ 
+                padding: '16px', 
+                background: theme.bgSecondary, 
+                borderRadius: 8,
+                marginBottom: 16
+              }}>
+                <div style={{ fontWeight: 600, marginBottom: 16, color: theme.textPrimary }}>
+                  {typeOption?.label || type} 配置
+                </div>
+                
+                <Form.Item
+                  name={`type_${type}_model`}
+                  label="默认模型"
+                  extra={`${typeOption?.label || type} 类型的默认模型`}
+                >
+                  <Input placeholder="如：gpt-4o" />
+                </Form.Item>
+                
+                <Form.Item
+                  name={`type_${type}_params`}
+                  label="默认参数 (JSON)"
+                  extra={`${typeOption?.label || type} 类型的默认请求参数`}
+                >
+                  <Input.TextArea
+                    placeholder={type === 'llm' 
+                      ? '{"temperature": 0.7, "max_tokens": 4096}'
+                      : type === 'image'
+                      ? '{"n": 1, "size": "1024x1024", "quality": "standard"}'
+                      : type === 'tts'
+                      ? '{"voice": "alloy", "speed": 1.0}'
+                      : '{}'
+                    }
+                    rows={4}
+                    style={{ fontFamily: 'monospace', fontSize: 12 }}
+                  />
+                </Form.Item>
+                
+                {/* 请求模板 - 主要用于 image 类型 */}
+                {type === 'image' && (
+                  <Form.Item
+                    name={`type_${type}_template`}
+                    label="请求模板 (Jinja2)"
+                    extra="用于构建 API 请求体的模板，支持 {{ model }}, {{ prompt }}, {{ size }} 等变量"
+                  >
+                    <Input.TextArea
+                      placeholder={`{\n  "model": "{{ model }}",\n  "prompt": "{{ prompt }}",\n  "size": "{{ size }}"\n}`}
+                      rows={6}
+                      style={{ fontFamily: 'monospace', fontSize: 12 }}
+                    />
+                  </Form.Item>
+                )}
+                
+                {/* 响应配置 - 主要用于 image 类型 */}
+                {type === 'image' && (
+                  <Form.Item
+                    name={`type_${type}_response_config`}
+                    label="响应配置 (JSON)"
+                    extra='配置响应数据的提取路径，如 {"images_path": "$.images[*].url", "error_path": "$.error.message"}'
+                  >
+                    <Input.TextArea
+                      placeholder={`{\n  "images_path": "$.images[*].url",\n  "error_path": "$.error.message",\n  "usage_path": "$.usage",\n  "response_format": "url"\n}`}
+                      rows={4}
+                      style={{ fontFamily: 'monospace', fontSize: 12 }}
+                    />
+                  </Form.Item>
+                )}
+                
+                {/* 支持尺寸 - 主要用于 image/video 类型 */}
+                {(type === 'image' || type === 'video') && (
+                  <Form.Item
+                    name={`type_${type}_sizes`}
+                    label="支持的尺寸"
+                    extra="多个尺寸用逗号分隔，如: 1024x1024, 1024x1792, 1792x1024"
+                  >
+                    <Input placeholder="1024x1024, 1024x1792, 1792x1024" />
+                  </Form.Item>
+                )}
+                
+                {/* 参考图配置 - 主要用于 image 类型 */}
+                {type === 'image' && (
+                  <>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+                      <Form.Item
+                        name={`type_${type}_support_ref_image`}
+                        label="支持参考图"
+                        valuePropName="checked"
+                      >
+                        <Switch />
+                      </Form.Item>
+                      <Form.Item
+                        name={`type_${type}_support_multi_ref`}
+                        label="支持多张参考图"
+                        valuePropName="checked"
+                      >
+                        <Switch />
+                      </Form.Item>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+                      <Form.Item
+                        name={`type_${type}_ref_image_field`}
+                        label="参考图片段名"
+                      >
+                        <Input placeholder="如：image" />
+                      </Form.Item>
+                      <Form.Item
+                        name={`type_${type}_ref_image_array_field`}
+                        label="参考图数组字段"
+                      >
+                        <Input placeholder="如：image_urls" />
+                      </Form.Item>
+                    </div>
+                  </>
+                )}
+                
+                {/* 参数转换 - 主要用于 image 类型 */}
+                {type === 'image' && (
+                  <Form.Item
+                    name={`type_${type}_transforms`}
+                    label="参数转换 (JSON)"
+                    extra='参数值的转换规则，如 {"size": "{{ size.replace("x", "*") }}"}'
+                  >
+                    <Input.TextArea
+                      placeholder='{"size": "{{ size.replace("x", "*") }}"}'
+                      rows={3}
+                      style={{ fontFamily: 'monospace', fontSize: 12 }}
+                    />
+                  </Form.Item>
+                )}
+              </div>
+            </div>
+          ) : null
+        })}
+      </Form>
+    </Modal>
+  )
+}
+
+// Provider 管理面板
+const ProviderManagement: React.FC = () => {
+  const { theme: THEME } = useTheme()
+  const { message } = AntApp.useApp()
+  const [providers, setProviders] = useState<ProviderMetadata[]>([])
+  const [loading, setLoading] = useState(false)
+  const [modalVisible, setModalVisible] = useState(false)
+  const [editingProvider, setEditingProvider] = useState<ProviderMetadata | null>(null)
+
+  const loadProviders = async () => {
+    setLoading(true)
+    try {
+      const result = await listProviders() as any
+      setProviders(result.providers || [])
+    } catch {
+      message.error('加载 Provider 失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadProviders()
+  }, [])
+
+  const handleEdit = (provider: ProviderMetadata) => {
+    setEditingProvider(provider)
+    setModalVisible(true)
+  }
+
+  const handleDelete = async (providerId: string) => {
+    try {
+      await deleteProvider(providerId)
+      message.success('删除成功')
+      loadProviders()
+    } catch (e: any) {
+      message.error(e?.response?.data?.detail || '删除失败')
+    }
+  }
+
+  const handleToggleActive = async (providerId: string, active: boolean) => {
+    try {
+      await updateProvider(providerId, { is_active: active })
+      message.success(active ? '已启用' : '已禁用')
+      loadProviders()
+    } catch (e: any) {
+      message.error(e?.response?.data?.detail || '操作失败')
+    }
+  }
+
+  const handleSave = async (data: any) => {
+    try {
+      if (editingProvider) {
+        await updateProvider(editingProvider.provider_id, data)
+        message.success('更新成功')
+      } else {
+        await createProvider({
+          provider_id: data.name.toLowerCase().replace(/\s+/g, '-'),
+          ...data,
+        })
+        message.success('创建成功')
+      }
+      setModalVisible(false)
+      loadProviders()
+    } catch (e: any) {
+      message.error(e?.response?.data?.detail || '保存失败')
+    }
+  }
+
+  const handleInitDefaults = async () => {
+    try {
+      const result = await initDefaultProviders() as any
+      message.success(result.message || '初始化完成')
+      loadProviders()
+    } catch (e: any) {
+      message.error(e?.response?.data?.detail || '初始化失败')
+    }
+  }
+
+  return (
+    <div>
+      {/* 头部操作栏 */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 16,
+        flexWrap: 'wrap',
+        gap: 12,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <Text strong style={{ color: THEME.textPrimary, fontSize: 15 }}>
+            AI 服务商配置
+          </Text>
+          <Badge count={providers.length} style={{ backgroundColor: THEME.primary }} />
+        </div>
+        <Space>
+          <Button icon={<ReloadOutlined />} onClick={loadProviders} loading={loading} size="small">
+            刷新
+          </Button>
+          <Button icon={<SettingOutlined />} onClick={handleInitDefaults} size="small">
+            初始化默认
+          </Button>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => { setEditingProvider(null); setModalVisible(true) }}
+            size="small"
+          >
+            新增 Provider
+          </Button>
+        </Space>
+      </div>
+
+      {/* 说明卡片 */}
+      <Alert
+        type="info"
+        showIcon
+        message="Provider 管理"
+        description="Provider 定义了 AI 服务商的默认配置（URL、API Key、默认参数等）。用户创建模型时可以选择继承 Provider 的默认配置，也可以自定义覆盖。"
+        style={{ marginBottom: 16, background: 'rgba(0,212,255,0.05)', border: `1px solid rgba(0,212,255,0.2)` }}
+      />
+
+      {/* Provider 列表 */}
+      {loading ? (
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          {[1, 2, 3].map(i => (
+            <Card key={i} size="small" style={{ width: 340, background: THEME.bgCard }}>
+              <Skeleton active paragraph={{ rows: 3 }} />
+            </Card>
+          ))}
+        </div>
+      ) : providers.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '40px 0' }}>
+          <Text style={{ color: THEME.textSecondary }}>暂无 Provider 配置</Text>
+          <div style={{ marginTop: 12 }}>
+            <Button type="primary" icon={<SettingOutlined />} onClick={handleInitDefaults}>
+              初始化默认 Provider
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          {providers.map(provider => (
+            <ProviderCard
+              key={provider.provider_id}
+              provider={provider}
+              onEdit={handleEdit}
+              onDelete={handleDelete}
+              onToggleActive={handleToggleActive}
+              theme={THEME}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* 编辑/新增 Modal */}
+      <ProviderFormModal
+        open={modalVisible}
+        provider={editingProvider}
+        onCancel={() => setModalVisible(false)}
+        onSave={handleSave}
+        theme={THEME}
+      />
     </div>
   )
 }
@@ -264,7 +1091,8 @@ const TYPE_LABELS: Record<string, string> = {
 export default function SettingsPage() {
   const { theme: THEME } = useTheme()
   const [activeTab, setActiveTab] = useState('models')
-  const [providers, setProviders] = useState<Provider[]>([])
+  const [providers, setProviders] = useState<Provider[]>([]) // 这里是 Connectors（具体模型）
+  const [providerMetadata, setProviderMetadata] = useState<ProviderMetadata[]>([]) // 这里是 Provider 配置（服务商）
   const [filteredProviders, setFilteredProviders] = useState<Provider[]>([])
   const [loading, setLoading] = useState(false)
   const [modalVisible, setModalVisible] = useState(false)
@@ -407,8 +1235,18 @@ export default function SettingsPage() {
     }
   }
 
+  const loadProviderMetadata = async () => {
+    try {
+      const result = await listProviders() as any
+      setProviderMetadata(result.providers || [])
+    } catch {
+      message.error('加载 Provider 配置失败')
+    }
+  }
+
   useEffect(() => {
     loadProviders()
+    loadProviderMetadata()
   }, [])
 
   // 搜索和筛选逻辑
@@ -725,12 +1563,24 @@ export default function SettingsPage() {
     return [...new Set(urls)]
   }
 
+  // 可拖拽调整列宽
+  const { colWidths, wrapColumnTitle } = useResizableColumns({
+    name: 280,
+    provider: 120,
+    provider_type: 100,
+    default_model: 150,
+    status: 100,
+    usage: 180,
+    last_used: 140,
+    action: 300,
+  })
+
   const providerColumns = [
     {
-      title: '名称',
+      title: wrapColumnTitle('名称', 'name'),
       dataIndex: 'name',
       key: 'name',
-      width: 280,
+      width: colWidths['name'],
       render: (text: string, record: Provider) => (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'nowrap' }}>
           <Text strong style={{ color: THEME.textPrimary, fontSize: 14 }}>{text}</Text>
@@ -742,10 +1592,10 @@ export default function SettingsPage() {
       ),
     },
     {
-      title: '提供商',
+      title: wrapColumnTitle('提供商', 'provider'),
       dataIndex: 'provider',
       key: 'provider',
-      width: 120,
+      width: colWidths['provider'],
       render: (provider: string) => {
         const color = getProviderColor(provider)
         return (
@@ -756,10 +1606,10 @@ export default function SettingsPage() {
       },
     },
     {
-      title: '类型',
+      title: wrapColumnTitle('类型', 'provider_type'),
       dataIndex: 'provider_type',
       key: 'provider_type',
-      width: 100,
+      width: colWidths['provider_type'],
       render: (type: string) => {
         const color = TYPE_COLORS[type] || THEME.textSecondary
         const label = TYPE_LABELS[type] || type
@@ -771,10 +1621,10 @@ export default function SettingsPage() {
       },
     },
     {
-      title: '模型',
+      title: wrapColumnTitle('模型', 'default_model'),
       dataIndex: 'default_model',
       key: 'default_model',
-      width: 150,
+      width: colWidths['default_model'],
       render: (model: string) => model ? (
         <Tag style={{ background: 'rgba(255,255,255,0.06)', border: 'none', color: THEME.textSecondary }}>
           {model}
@@ -782,9 +1632,9 @@ export default function SettingsPage() {
       ) : <Text type="secondary" style={{ fontSize: 12 }}>未设置</Text>,
     },
     {
-      title: '状态',
+      title: wrapColumnTitle('状态', 'status'),
       key: 'status',
-      width: 100,
+      width: colWidths['status'],
       render: (_: any, record: Provider) => (
         <Badge 
           status={record.is_active ? 'success' : 'default'} 
@@ -793,9 +1643,9 @@ export default function SettingsPage() {
       ),
     },
     {
-      title: '使用统计',
+      title: wrapColumnTitle('使用统计', 'usage'),
       key: 'usage',
-      width: 180,
+      width: colWidths['usage'],
       render: (_: any, record: Provider) => (
         <div style={{ display: 'flex', gap: 12 }}>
           <Text style={{ color: THEME.textSecondary, fontSize: 12, whiteSpace: 'nowrap' }}>使用: {record.usage_count || 0}</Text>
@@ -804,18 +1654,18 @@ export default function SettingsPage() {
       ),
     },
     {
-      title: '最后使用',
+      title: wrapColumnTitle('最后使用', 'last_used'),
       dataIndex: 'last_used',
       key: 'last_used',
-      width: 140,
+      width: colWidths['last_used'],
       render: (time: string) => time ? (
         <Text style={{ color: THEME.textSecondary, fontSize: 12, whiteSpace: 'nowrap' }}>{new Date(time).toLocaleDateString('zh-CN')}</Text>
       ) : <Text type="secondary" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>从未使用</Text>,
     },
     {
-      title: '操作',
+      title: wrapColumnTitle('操作', 'action'),
       key: 'action',
-      width: 300,
+      width: colWidths['action'],
       fixed: 'right' as const,
       render: (_: any, record: Provider) => (
         <Space size={0} split={<div style={{ width: 1, height: 14, background: THEME.borderLight }} />}>
@@ -873,6 +1723,13 @@ export default function SettingsPage() {
         type="card"
         size="large"
         items={[
+          {
+            key: 'provider',
+            label: (
+              <span><ApiOutlined style={{ marginRight: 8 }} />服务商管理</span>
+            ),
+            children: <ProviderManagement />,
+          },
           {
             key: 'models',
             label: (
@@ -943,7 +1800,7 @@ export default function SettingsPage() {
                   </div>
                 }
                 style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}` }}
-                bodyStyle={{ padding: '12px 16px' }}
+                styles={{ body: { padding: '12px 16px' } }}
               >
                 <Alert
                   type="info"
@@ -972,7 +1829,7 @@ export default function SettingsPage() {
                       rowKey="id" 
                       pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (total: number) => (`共 ${total} 个`), size: 'small' }}
                       style={{ background: THEME.bgCard, borderRadius: 8 }}
-                      scroll={{ x: 1200 }}
+                      scroll={{ x: Object.values(colWidths).reduce((a, b) => a + b, 0) }}
                       size="small"
                       components={{
                         header: {
@@ -980,6 +1837,7 @@ export default function SettingsPage() {
                             <th
                               {...props}
                               style={{
+                                ...(props.style || {}),
                                 background: THEME.bgElevated,
                                 color: THEME.textPrimary,
                                 borderColor: THEME.border,
@@ -995,6 +1853,7 @@ export default function SettingsPage() {
                             <td
                               {...props}
                               style={{
+                                ...(props.style || {}),
                                 background: THEME.bgCard,
                                 color: THEME.textPrimary,
                                 borderColor: THEME.border,
@@ -1042,10 +1901,10 @@ export default function SettingsPage() {
               <Input placeholder="如：openai-gpt4" disabled={!!editingProvider} />
             </Form.Item>
             <Form.Item name="provider" label={<span style={{ color: THEME.textPrimary }}>底层服务商</span>} rules={[{ required: true, message: '请选择服务商' }]}>
-              <Select 
+              <Select
                 showSearch
                 optionFilterProp="label"
-                options={PROVIDER_SELECT_OPTIONS} 
+                options={providerMetadata.map(p => ({ value: p.provider_id, label: p.name }))}
               />
             </Form.Item>
             <Form.Item name="name" label={<span style={{ color: THEME.textPrimary }}>显示名称</span>} rules={[{ required: true, message: '请输入名称' }]}>
@@ -1062,6 +1921,58 @@ export default function SettingsPage() {
               ]} />
             </Form.Item>
           </div>
+
+          {/* 继承 Provider 默认配置按钮 */}
+          <Form.Item noStyle shouldUpdate={(prev, curr) => prev.provider !== curr.provider || prev.provider_type !== curr.provider_type}>
+            {({ getFieldValue }) => {
+              const providerVal = getFieldValue('provider')
+              const providerTypeVal = getFieldValue('provider_type')
+              return providerVal && providerTypeVal ? (
+                <div style={{ marginBottom: 16, padding: '12px 16px', background: 'rgba(0,212,255,0.05)', borderRadius: 8, border: '1px solid rgba(0,212,255,0.2)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <RocketOutlined style={{ fontSize: 20, color: THEME.primary }} />
+                    <div style={{ flex: 1 }}>
+                      <Text strong style={{ color: THEME.textPrimary }}>从 Provider 继承默认配置</Text>
+                      <Text style={{ color: THEME.textSecondary, fontSize: 12, display: 'block' }}>
+                        自动填充服务商 {providerVal} 在 {providerTypeVal} 类型下的默认 URL、模型、参数等
+                      </Text>
+                    </div>
+                    <Button
+                      type="primary"
+                      size="small"
+                      icon={<DownloadOutlined />}
+                      onClick={async () => {
+                        try {
+                          const result = await getProviderDefaults(providerVal, providerTypeVal) as any
+                          if (result.success) {
+                            const defaults = result.defaults
+                            // 自动填充表单字段
+                            if (defaults.base_url) form.setFieldValue('base_url', defaults.base_url)
+                            if (defaults.api_key && !form.getFieldValue('api_key')) form.setFieldValue('api_key', defaults.api_key)
+                            if (defaults.api_format) form.setFieldValue('api_format', defaults.api_format)
+                            if (defaults.default_model) form.setFieldValue('default_model', defaults.default_model)
+                            // 设置默认参数
+                            if (defaults.params) {
+                              if (defaults.params.temperature !== undefined) form.setFieldValue('temperature', defaults.params.temperature)
+                              if (defaults.params.max_tokens !== undefined) form.setFieldValue('max_tokens', defaults.params.max_tokens)
+                              if (defaults.params.size) form.setFieldValue('default_size', defaults.params.size)
+                              if (defaults.params.quality) form.setFieldValue('default_quality', defaults.params.quality)
+                              if (defaults.params.n) form.setFieldValue('default_n', defaults.params.n)
+                            }
+                            message.success(`已继承 ${result.provider_name} 的默认配置`)
+                          }
+                        } catch (e: any) {
+                          message.error(e?.response?.data?.detail || '获取默认配置失败')
+                        }
+                      }}
+                    >
+                      继承默认
+                    </Button>
+                  </div>
+                </div>
+              ) : null
+            }}
+          </Form.Item>
 
           {/* API格式选择 — 根据 provider+type 动态渲染选项 */}
           <Form.Item name="api_format" label={<span style={{ color: THEME.textPrimary }}>API 格式</span>} initialValue="custom">

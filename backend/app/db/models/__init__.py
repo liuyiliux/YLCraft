@@ -49,6 +49,10 @@ from app.db.models.ai_connector import (
     AIConnectorUpdate,
     AIConnectorResponse,
     AIUsageLog,
+    AIProviderMetadata,
+    AIProviderMetadataCreate,
+    AIProviderMetadataUpdate,
+    AIProviderMetadataResponse,
 )
 
 # ComfyUI 相关模型

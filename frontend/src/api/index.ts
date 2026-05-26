@@ -453,6 +453,100 @@ export const discoverModels = (params: {
   return request(`/ai/connectors/discover-models?${searchParams.toString()}`)
 }
 
+// ===== AI Provider 元数据管理 =====
+
+export interface ProviderMetadata {
+  provider_id: string
+  name: string
+  icon: string
+  color: string
+  description: string
+  base_url: string | null
+  api_key: string | null
+  api_format: string
+  request_template: string | null
+  supported_types: string[]
+  default_models: Record<string, string>
+  available_models: Record<string, string[]>
+  default_params: Record<string, Record<string, any>>
+  is_active: boolean
+  is_editable: boolean
+  has_api_key: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface ProviderDefaults {
+  provider_id: string
+  provider_name: string
+  provider_type: string
+  defaults: {
+    base_url: string | null
+    api_key: string | null
+    api_format: string
+    request_template: string | null
+    default_model: string | null
+    available_models: string[]
+    params: Record<string, any>
+  }
+}
+
+/** 获取所有 Provider 元数据 */
+export const listProviders = (activeOnly?: boolean) =>
+  request(`/ai/connectors/provider-metadata${activeOnly ? '?active_only=true' : ''}`)
+
+/** 获取单个 Provider 元数据 */
+export const getProvider = (providerId: string) =>
+  request(`/ai/connectors/provider-metadata/${providerId}`)
+
+/** 创建 Provider 元数据 */
+export const createProvider = (data: {
+  provider_id: string
+  name: string
+  icon?: string
+  color?: string
+  description?: string
+  base_url?: string
+  api_key?: string
+  api_format?: string
+  request_template?: string
+  supported_types?: string[]
+  default_models?: Record<string, string>
+  available_models?: Record<string, string[]>
+  default_params?: Record<string, Record<string, any>>
+  is_active?: boolean
+  is_editable?: boolean
+}) => request('/ai/connectors/provider-metadata', { method: 'POST', body: JSON.stringify(data) })
+
+/** 更新 Provider 元数据 */
+export const updateProvider = (providerId: string, data: Partial<{
+  name: string
+  icon: string
+  color: string
+  description: string
+  base_url: string
+  api_key: string
+  api_format: string
+  request_template: string
+  supported_types: string[]
+  default_models: Record<string, string>
+  available_models: Record<string, string[]>
+  default_params: Record<string, Record<string, any>>
+  is_active: boolean
+}>) => request(`/ai/connectors/provider-metadata/${providerId}`, { method: 'PUT', body: JSON.stringify(data) })
+
+/** 删除 Provider 元数据 */
+export const deleteProvider = (providerId: string) =>
+  request(`/ai/connectors/provider-metadata/${providerId}`, { method: 'DELETE' })
+
+/** 获取 Provider 指定类型的默认配置 */
+export const getProviderDefaults = (providerId: string, providerType: string) =>
+  request(`/ai/connectors/provider-metadata/${providerId}/defaults/${providerType}`)
+
+/** 初始化默认 Provider 数据 */
+export const initDefaultProviders = () =>
+  request('/ai/connectors/provider-metadata/init', { method: 'POST' })
+
 // ===== LLM =====
 
 export const chat = (data: any) =>

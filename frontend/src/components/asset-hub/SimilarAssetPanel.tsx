@@ -87,7 +87,7 @@ export function SimilarAssetPanel({
           cursor: 'pointer',
           transition: 'transform 0.2s',
         }}
-        bodyStyle={{ padding: 8 }}
+        styles={{ body: { padding: 8 } }}
         cover={
           <div style={{ 
             position: 'relative',
@@ -224,7 +224,7 @@ export function SimilarAssetPanel({
         onCancel={() => setModalVisible(false)}
         footer={null}
         width={800}
-        bodyStyle={{ padding: 16 }}
+        styles={{ body: { padding: 16 } }}
       >
         <Row gutter={[12, 12]}>
           {similarAssets.map(asset => (

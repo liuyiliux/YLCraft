@@ -285,7 +285,7 @@ export default function AgentPage() {
         {/* 左侧：对话 / 工具调用 */}
         <Card
           style={{ flex: 1, display: 'flex', flexDirection: 'column' }}
-          bodyStyle={{ flex: 1, display: 'flex', flexDirection: 'column', padding: 0 }}
+          styles={{ body: { flex: 1, display: 'flex', flexDirection: 'column', padding: 0 } }}
         >
           <Tabs
             activeKey={activeTab}
@@ -448,7 +448,7 @@ export default function AgentPage() {
       </div>
 
       {/* ===== 输入框 ===== */}
-      <Card bodyStyle={{ padding: '12px 16px' }}>
+      <Card styles={{ body: { padding: '12px 16px' } }}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
           <TextArea
             value={input}

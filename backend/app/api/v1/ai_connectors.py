@@ -391,6 +391,474 @@ async def import_connectors(
 
 
 # =============================================================================
+# Provider 元数据管理 API
+# =============================================================================
+
+from app.db.models.ai_connector import (
+    AIProviderMetadata,
+    AIProviderMetadataCreate,
+    AIProviderMetadataUpdate,
+    AIProviderMetadataResponse,
+)
+
+
+@router.get("/provider-metadata", summary="获取所有 Provider 元数据")
+async def list_providers(
+    active_only: bool = Query(False, description="仅显示活跃"),
+):
+    """列出所有 Provider 元数据"""
+    from app.db.database import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as session:
+        from sqlmodel import select
+
+        stmt = select(AIProviderMetadata)
+        if active_only:
+            stmt = stmt.where(AIProviderMetadata.is_active == True)
+
+        result = await session.execute(stmt)
+        providers = result.scalars().all()
+
+        return {
+            "success": True,
+            "providers": [AIProviderMetadataResponse.from_db(p) for p in providers],
+            "total": len(providers),
+        }
+
+
+@router.get("/provider-metadata/{provider_id}", summary="获取单个 Provider 元数据")
+async def get_provider(
+    provider_id: str,
+):
+    """获取单个 Provider 元数据详情"""
+    from app.db.database import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as session:
+        from sqlmodel import select
+
+        stmt = select(AIProviderMetadata).where(AIProviderMetadata.provider_id == provider_id)
+        result = await session.execute(stmt)
+        provider = result.scalar_one_or_none()
+
+        if not provider:
+            raise HTTPException(status_code=404, detail="Provider 不存在")
+
+        return {
+            "success": True,
+            "provider": AIProviderMetadataResponse.from_db(provider),
+        }
+
+
+@router.post("/provider-metadata", summary="创建 Provider 元数据")
+async def create_provider(
+    data: AIProviderMetadataCreate,
+):
+    """创建新的 Provider 元数据"""
+    from app.db.database import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as session:
+        from sqlmodel import select
+
+        # 检查是否已存在
+        stmt = select(AIProviderMetadata).where(AIProviderMetadata.provider_id == data.provider_id)
+        result = await session.execute(stmt)
+        existing = result.scalar_one_or_none()
+
+        if existing:
+            raise HTTPException(status_code=400, detail=f"Provider {data.provider_id} 已存在")
+
+        # 转换 JSON 字段
+        import json
+        provider = AIProviderMetadata(
+            provider_id=data.provider_id,
+            name=data.name,
+            icon=data.icon,
+            color=data.color,
+            description=data.description or "",
+            base_url=data.base_url,
+            api_key=data.api_key,
+            api_format=data.api_format,
+            supported_types=json.dumps(data.supported_types or []),
+            default_models=json.dumps(data.default_models or {}),
+            available_models=json.dumps(data.available_models or {}),
+            default_params=json.dumps(data.default_params or {}),
+            request_templates=json.dumps(data.request_templates or {}),
+            response_configs=json.dumps(data.response_configs or {}),
+            supported_sizes=json.dumps(data.supported_sizes or {}),
+            reference_image_configs=json.dumps(data.reference_image_configs or {}),
+            parameter_transforms=json.dumps(data.parameter_transforms or {}),
+            is_active=data.is_active,
+            is_editable=data.is_editable,
+        )
+
+        session.add(provider)
+        await session.commit()
+        await session.refresh(provider)
+
+        return {
+            "success": True,
+            "provider": AIProviderMetadataResponse.from_db(provider),
+            "message": f"Provider {provider.name} 创建成功",
+        }
+
+
+@router.put("/provider-metadata/{provider_id}", summary="更新 Provider 元数据")
+async def update_provider(
+    provider_id: str,
+    data: AIProviderMetadataUpdate,
+):
+    """更新 Provider 元数据"""
+    from app.db.database import AsyncSessionLocal
+    import json
+
+    async with AsyncSessionLocal() as session:
+        from sqlmodel import select
+
+        stmt = select(AIProviderMetadata).where(AIProviderMetadata.provider_id == provider_id)
+        result = await session.execute(stmt)
+        provider = result.scalar_one_or_none()
+
+        if not provider:
+            raise HTTPException(status_code=404, detail="Provider 不存在")
+
+        if not provider.is_editable:
+            raise HTTPException(status_code=403, detail="系统内置 Provider 不可编辑")
+
+        # 获取模型中定义的所有有效字段名
+        valid_fields = set(AIProviderMetadataUpdate.model_fields.keys())
+        
+        # 获取请求中的所有字段
+        raw_data = data.model_dump(exclude_unset=True)
+        
+        # 只处理有效字段，过滤掉任何临时/废弃字段
+        update_data = {k: v for k, v in raw_data.items() if k in valid_fields}
+
+        # 处理 JSON 字段（序列化字典/列表为 JSON 字符串）
+        json_fields = ["supported_types", "default_models", "available_models", "default_params",
+                       "request_templates", "response_configs", "supported_sizes", 
+                       "reference_image_configs", "parameter_transforms"]
+        for field in json_fields:
+            if field in update_data and update_data[field] is not None:
+                update_data[field] = json.dumps(update_data[field])
+
+        # 更新数据库记录
+        for key, value in update_data.items():
+            if value is not None:
+                setattr(provider, key, value)
+
+        from datetime import datetime, timezone
+        provider.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+
+        await session.commit()
+        await session.refresh(provider)
+
+        return {
+            "success": True,
+            "provider": AIProviderMetadataResponse.from_db(provider),
+            "message": "更新成功",
+        }
+
+
+@router.delete("/provider-metadata/{provider_id}", summary="删除 Provider 元数据")
+async def delete_provider(
+    provider_id: str,
+):
+    """删除 Provider 元数据"""
+    from app.db.database import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as session:
+        from sqlmodel import select
+
+        stmt = select(AIProviderMetadata).where(AIProviderMetadata.provider_id == provider_id)
+        result = await session.execute(stmt)
+        provider = result.scalar_one_or_none()
+
+        if not provider:
+            raise HTTPException(status_code=404, detail="Provider 不存在")
+
+        if not provider.is_editable:
+            raise HTTPException(status_code=403, detail="系统内置 Provider 不可删除")
+
+        await session.delete(provider)
+        await session.commit()
+
+        return {
+            "success": True,
+            "message": "删除成功",
+        }
+
+
+@router.get("/provider-metadata/{provider_id}/defaults/{provider_type}", summary="获取指定类型的默认配置")
+async def get_provider_defaults(
+    provider_id: str,
+    provider_type: str,
+):
+    """获取 Provider 对应类型的默认配置（用于继承）"""
+    from app.db.database import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as session:
+        from sqlmodel import select
+
+        stmt = select(AIProviderMetadata).where(AIProviderMetadata.provider_id == provider_id)
+        result = await session.execute(stmt)
+        provider = result.scalar_one_or_none()
+
+        if not provider:
+            raise HTTPException(status_code=404, detail="Provider 不存在")
+
+        if not provider.is_active:
+            raise HTTPException(status_code=400, detail="Provider 已禁用")
+
+        # 获取该类型的默认配置
+        all_params = provider.get_default_params()
+        type_params = all_params.get(provider_type, {})
+
+        # 获取默认模型
+        default_models = provider.get_default_models()
+        default_model = default_models.get(provider_type)
+
+        # 获取可用模型
+        available_models = provider.get_available_models()
+        type_models = available_models.get(provider_type, [])
+
+        # 转换 api_format 为前端期望的格式
+        api_format = provider.api_format
+        if api_format == "openai-compatible":
+            api_format = "openai_sdk"
+        elif api_format == "gemini":
+            if provider_type == "image":
+                api_format = "gemini_sdk"
+            else:
+                api_format = "openai_sdk"
+        
+        return {
+            "success": True,
+            "provider_id": provider_id,
+            "provider_name": provider.name,
+            "provider_type": provider_type,
+            "defaults": {
+                "base_url": provider.base_url,
+                "api_key": provider.api_key,
+                "api_format": api_format,
+                "default_model": default_model,
+                "available_models": type_models,
+                "params": type_params,
+            },
+        }
+
+
+@router.post("/provider-metadata/init", summary="初始化默认 Provider 数据")
+async def init_default_providers():
+    """初始化默认的 Provider 元数据（OpenAI、SiliconFlow、Gemini、百炼等）"""
+    from app.db.database import AsyncSessionLocal
+    import json
+
+    default_providers = [
+        {
+            "provider_id": "openai",
+            "name": "OpenAI",
+            "icon": "brain",
+            "color": "#10a37f",
+            "description": "OpenAI GPT-4、DALL-E、Whisper 等",
+            "base_url": "https://api.openai.com/v1",
+            "api_format": "openai-compatible",
+            "supported_types": ["llm", "image", "tts", "stt", "embedding"],
+            "default_models": {
+                "llm": "gpt-4o",
+                "image": "dall-e-3",
+                "tts": "tts-1",
+                "stt": "whisper-1",
+                "embedding": "text-embedding-3-small",
+            },
+            "default_params": {
+                "llm": {"temperature": 0.7, "max_tokens": 4096},
+                "image": {"size": "1024x1024", "quality": "standard"},
+                "tts": {"voice": "alloy", "speed": 1.0},
+            },
+            "is_editable": True,
+        },
+        {
+            "provider_id": "siliconflow",
+            "name": "硅基流动 (SiliconFlow)",
+            "icon": "cloud",
+            "color": "#00d4aa",
+            "description": "硅基流动 API，支持多种开源模型",
+            "base_url": "https://api.siliconflow.cn/v1",
+            "api_format": "openai-compatible",
+            "supported_types": ["llm", "image", "embedding"],
+            "default_models": {
+                "llm": "Qwen/Qwen3-VL-32B-Instruct",
+                "image": "Kwai-Kolors/Kolors",
+                "embedding": "BAAI/bge-m3",
+            },
+            "available_models": {
+                "llm": ["Qwen/Qwen3-VL-32B-Instruct", "Qwen/QwQ-32B", "tencent/Hunyuan-MT-7B"],
+                "image": ["Qwen/Qwen-Image-Edit", "Kwai-Kolors/Kolors", "black-forest-labs/FLUX.1-schnell"],
+            },
+            "default_params": {
+                "llm": {"temperature": 0.7, "max_tokens": 8192},
+                "image": {"n": 1, "quality": "standard", "watermark": False, "prompt_extend": False},
+            },
+            "request_templates": {
+                "image": '{"model": "{{ model }}", "prompt": "{{ prompt }}", "image1": "", "num_inference_steps": {{ num_inference_steps | default(20) }}, "guidance_scale": {{ guidance_scale | default(4) }}, "n": {{ n | default(1) }}}',
+            },
+            "response_configs": {
+                "image": '{"images_path": "$.images[*].url", "error_path": "$.error.message", "usage_path": "$.usage", "response_format": "url"}',
+            },
+            "supported_sizes": {
+                "image": ["1024x1024", "768x1344", "1344x768", "1328x1328", "1664x928", "928x1664"],
+            },
+            "reference_image_configs": {
+                "image": {
+                    "support_reference_image": True,
+                    "support_multiple_reference_images": False,
+                    "reference_image_field": "image1",
+                    "reference_image_array_field": "",
+                },
+            },
+            "is_editable": True,
+        },
+        {
+            "provider_id": "qwen",
+            "name": "阿里云百炼 (Qwen)",
+            "icon": "cloud",
+            "color": "#FF6A00",
+            "description": "阿里云百炼 API，通义千问系列模型",
+            "base_url": "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
+            "api_format": "custom",
+            "supported_types": ["llm", "image"],
+            "default_models": {
+                "llm": "qwen-plus",
+                "image": "z-image-turbo",
+            },
+            "available_models": {
+                "image": ["z-image-turbo", "qwen-image-edit-plus", "qwen2.5-vl-32b-instruct"],
+            },
+            "default_params": {
+                "image": {"n": 1, "quality": "standard", "watermark": False, "prompt_extend": False},
+            },
+            "request_templates": {
+                "image": '{"model": "{{ model }}", "input": {"messages": [{"role": "user", "content": [{"image": ""}, {"image": ""}, {"text": "{{ prompt }}"}]}]}, "parameters": {"n": 1, "negative_prompt": "{{ negative_prompt }}", "prompt_extend": {{ prompt_extend | default(false) }}, "size": "{{ size }}", "watermark": false}}',
+            },
+            "response_configs": {
+                "image": '{"images_path": "$.output.choices[*].message.content[*].image", "error_path": "$.message", "usage_path": "$.usage", "response_format": "url"}',
+            },
+            "supported_sizes": {
+                "image": ["1024x1024", "1152x896", "896x1152", "1024x1792", "1792x1024", "1280x1280"],
+            },
+            "parameter_transforms": {
+                "image": '{"size": "{{ size.replace(\'x\', \'*\') }}"}',
+            },
+            "reference_image_configs": {
+                "image": {
+                    "support_reference_image": True,
+                    "support_multiple_reference_images": True,
+                    "reference_image_field": "image",
+                    "reference_image_array_field": "",
+                },
+            },
+            "is_editable": True,
+        },
+        {
+            "provider_id": "gemini",
+            "name": "Google Gemini",
+            "icon": "globe",
+            "color": "#4285f4",
+            "description": "Google Gemini 多模态模型",
+            "base_url": "https://generativelanguage.googleapis.com/v1beta",
+            "api_format": "gemini",
+            "supported_types": ["llm", "image"],
+            "default_models": {
+                "llm": "gemini-2.0-flash",
+                "image": "gemini-2.0-flash",
+            },
+            "default_params": {
+                "llm": {"temperature": 0.9, "max_tokens": 8192},
+            },
+            "is_editable": True,
+        },
+        {
+            "provider_id": "generic",
+            "name": "通用配置",
+            "icon": "settings",
+            "color": "#94a3b8",
+            "description": "通用 OpenAI 兼容 API 配置",
+            "base_url": None,
+            "api_format": "custom",
+            "supported_types": ["llm", "image", "video", "tts", "stt", "embedding"],
+            "default_models": {},
+            "default_params": {},
+            "is_editable": True,
+        },
+    ]
+
+    async with AsyncSessionLocal() as session:
+        from sqlmodel import select
+
+        created = 0
+        updated = 0
+        skipped = 0
+
+        # 需要序列化为 JSON 的字段
+        json_fields = [
+            "supported_types", "default_models", "available_models", "default_params",
+            "request_templates", "response_configs", "supported_sizes",
+            "reference_image_configs", "parameter_transforms"
+        ]
+
+        for provider_data in default_providers:
+            # 检查是否已存在
+            stmt = select(AIProviderMetadata).where(
+                AIProviderMetadata.provider_id == provider_data["provider_id"]
+            )
+            result = await session.execute(stmt)
+            existing = result.scalar_one_or_none()
+
+            if existing:
+                # 更新现有记录
+                for key, value in provider_data.items():
+                    if key not in ["provider_id", "created_at"]:
+                        if key in json_fields:
+                            setattr(existing, key, json.dumps(value))
+                        else:
+                            setattr(existing, key, value)
+                updated += 1
+            else:
+                # 创建新记录
+                provider = AIProviderMetadata(
+                    provider_id=provider_data["provider_id"],
+                    name=provider_data["name"],
+                    icon=provider_data["icon"],
+                    color=provider_data["color"],
+                    description=provider_data["description"],
+                    base_url=provider_data["base_url"],
+                    api_format=provider_data["api_format"],
+                    supported_types=json.dumps(provider_data["supported_types"]),
+                    default_models=json.dumps(provider_data["default_models"]),
+                    available_models=json.dumps(provider_data.get("available_models", {})),
+                    default_params=json.dumps(provider_data["default_params"]),
+                    request_templates=json.dumps(provider_data.get("request_templates", {})),
+                    response_configs=json.dumps(provider_data.get("response_configs", {})),
+                    supported_sizes=json.dumps(provider_data.get("supported_sizes", {})),
+                    reference_image_configs=json.dumps(provider_data.get("reference_image_configs", {})),
+                    parameter_transforms=json.dumps(provider_data.get("parameter_transforms", {})),
+                    is_editable=provider_data["is_editable"],
+                )
+                session.add(provider)
+                created += 1
+
+        await session.commit()
+
+        return {
+            "success": True,
+            "created": created,
+            "updated": updated,
+            "skipped": skipped,
+            "message": f"初始化完成: 新建 {created} 个, 更新 {updated} 个",
+        }
+
+
+# =============================================================================
 # 单个连接器操作 (带 {conn_id} 的路径参数，必须放在上面特定路径之后)
 # =============================================================================
 
