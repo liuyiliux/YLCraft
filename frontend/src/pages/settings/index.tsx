@@ -1955,10 +1955,24 @@ export default function SettingsPage() {
                             if (defaults.params) {
                               if (defaults.params.temperature !== undefined) form.setFieldValue('temperature', defaults.params.temperature)
                               if (defaults.params.max_tokens !== undefined) form.setFieldValue('max_tokens', defaults.params.max_tokens)
-                              if (defaults.params.size) form.setFieldValue('default_size', defaults.params.size)
+                              if (defaults.params.size) form.setFieldValue('supported_sizes', Array.isArray(defaults.params.size) ? defaults.params.size : [defaults.params.size])
                               if (defaults.params.quality) form.setFieldValue('default_quality', defaults.params.quality)
                               if (defaults.params.n) form.setFieldValue('default_n', defaults.params.n)
                             }
+                            // 请求模板和响应配置（Image/Video 类型使用）
+                            if (defaults.request_template) form.setFieldValue('request_template', defaults.request_template)
+                            if (defaults.response_config) form.setFieldValue('response_config', defaults.response_config)
+                            if (defaults.supported_sizes) form.setFieldValue('supported_sizes', defaults.supported_sizes)
+                            // 参考图配置
+                            if (defaults.reference_image_config) {
+                              const refCfg = defaults.reference_image_config
+                              if (refCfg.reference_image_field) form.setFieldValue('reference_image_field', refCfg.reference_image_field)
+                              if (refCfg.reference_image_array_field) form.setFieldValue('reference_image_array_field', refCfg.reference_image_array_field)
+                              if (refCfg.support_reference_image !== undefined) form.setFieldValue('support_reference_image', refCfg.support_reference_image)
+                              if (refCfg.support_multiple_reference_images !== undefined) form.setFieldValue('support_multiple_reference_images', refCfg.support_multiple_reference_images)
+                            }
+                            // 参数转换配置
+                            if (defaults.parameter_transforms) form.setFieldValue('parameter_transforms', defaults.parameter_transforms)
                             message.success(`已继承 ${result.provider_name} 的默认配置`)
                           }
                         } catch (e: any) {

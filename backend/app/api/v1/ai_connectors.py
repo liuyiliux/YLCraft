@@ -621,6 +621,22 @@ async def get_provider_defaults(
         available_models = provider.get_available_models()
         type_models = available_models.get(provider_type, [])
 
+        # 获取按类型分组的请求模板 / 响应配置 / 尺寸 / 参考图配置 / 参数转换
+        all_templates = provider.get_request_templates()
+        type_template = all_templates.get(provider_type)
+
+        all_responses = provider.get_response_configs()
+        type_response = all_responses.get(provider_type)
+
+        all_sizes = provider.get_supported_sizes()
+        type_sizes = all_sizes.get(provider_type)
+
+        all_ref_configs = provider.get_reference_image_configs()
+        type_ref_config = all_ref_configs.get(provider_type, {})
+
+        all_param_transforms = provider.get_parameter_transforms()
+        type_param_transforms = all_param_transforms.get(provider_type)
+
         # 转换 api_format 为前端期望的格式
         api_format = provider.api_format
         if api_format == "openai-compatible":
@@ -643,6 +659,11 @@ async def get_provider_defaults(
                 "default_model": default_model,
                 "available_models": type_models,
                 "params": type_params,
+                "request_template": type_template,
+                "response_config": type_response,
+                "supported_sizes": type_sizes,
+                "reference_image_config": type_ref_config,
+                "parameter_transforms": type_param_transforms,
             },
         }
 

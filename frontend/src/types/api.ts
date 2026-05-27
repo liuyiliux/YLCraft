@@ -72,6 +72,32 @@ export const PROVIDER_OPTIONS = [
   { value: 'generic', label: '通用配置' },
 ]
 
+// Provider 元数据（系统级服务商配置，对应 ai_provider_metadata 表）
+export interface ProviderMetadata {
+  provider_id: string
+  name: string
+  icon: string
+  color: string
+  description: string
+  base_url?: string
+  api_key?: string
+  api_format: string
+  supported_types: string[]
+  default_models: Record<string, string>
+  available_models: Record<string, string[]>
+  default_params: Record<string, Record<string, any>>
+  request_templates: Record<string, string>
+  response_configs: Record<string, string>
+  supported_sizes: Record<string, string[]>
+  reference_image_configs: Record<string, any>
+  parameter_transforms: Record<string, any>
+  is_active: boolean
+  is_editable: boolean
+  has_api_key: boolean
+  created_at?: string
+  updated_at?: string
+}
+
 // ===== LLM =====
 
 export interface ChatRequest {
