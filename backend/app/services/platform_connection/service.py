@@ -508,15 +508,6 @@ class PlatformConnectionService:
         if not api_key:
             return {"success": False, "message": "API Key 为空"}
 
-        # 简单检查格式
-        platform = self._get_platform_str(conn.platform)
-        if platform == "openai":
-            if not api_key.startswith("sk-"):
-                return {"success": False, "message": "OpenAI API Key 格式不正确"}
-        elif platform == "minimax":
-            if not api_key.startswith(" eyJ"):
-                pass  # 不强制检查
-
         return {"success": True, "message": "API Key 格式正确（未进行实际连接测试）"}
 
     # =========================================================================

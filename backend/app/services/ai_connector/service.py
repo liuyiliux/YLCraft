@@ -202,6 +202,8 @@ class AIConnectorService:
             embedding_type=data.embedding_type,
             embedding_dimension=data.embedding_dimension,
             normalize_embeddings=data.normalize_embeddings,
+            # API 格式
+            api_format=data.api_format or "custom",
         )
         conn.set_available_models(data.available_models)
 
@@ -288,6 +290,9 @@ class AIConnectorService:
             conn.embedding_dimension = data.embedding_dimension
         if data.normalize_embeddings is not None:
             conn.normalize_embeddings = data.normalize_embeddings
+        # API 格式
+        if data.api_format is not None:
+            conn.api_format = data.api_format
 
         conn.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
         self.session.add(conn)
@@ -322,19 +327,11 @@ class AIConnectorService:
         if not conn.api_key:
             return {"success": False, "message": "API Key 为空"}
 
-        # 格式验证（根据 provider 类型）
-        provider = conn.provider.lower()
-        if provider == "openai" and not conn.api_key.startswith("sk-"):
-            return {"success": False, "message": "OpenAI API Key 格式不正确（应使用 sk- 开头）"}
-        elif provider == "anthropic" and not conn.api_key.startswith("sk-ant-"):
-            return {"success": False, "message": "Anthropic API Key 格式不正确（应使用 sk-ant- 开头）"}
-        elif provider == "minimax" and not conn.api_key.strip().startswith("ey"):
-            return {"success": False, "message": "MiniMax API Key 格式不正确"}
-
         if conn.base_url:
             try:
                 provider_type = conn.provider_type.value if hasattr(conn.provider_type, "value") else str(conn.provider_type or "llm")
-                request = self._build_test_request(conn.base_url, conn.api_endpoint, provider_type, conn.default_model, conn.test_prompt)
+                api_format = getattr(conn, 'api_format', 'custom')
+                request = self._build_test_request(conn.base_url, conn.api_endpoint, provider_type, conn.default_model, conn.test_prompt, api_format)
                 
                 # 使用自定义请求体（如果提供了）
                 if custom_body:
@@ -399,18 +396,20 @@ class AIConnectorService:
 
         return {"success": True, "message": "API Key 格式正确"}
 
-    def _build_test_request(self, base_url: str, api_endpoint: Optional[str], provider_type: str, model: str, test_prompt: Optional[str] = None) -> dict:
+    def _build_test_request(self, base_url: str, api_endpoint: Optional[str], provider_type: str, model: str, test_prompt: Optional[str] = None, api_format: str = "custom") -> dict:
         """
         构造最小测试请求。
 
         参考 yiliu：支持 base_url + api_endpoint 分离配置。
         优先级：
         1. 如果有 api_endpoint，使用 base_url + api_endpoint
-        2. 否则检查 base_url 是否已经包含路径，如果是，直接使用
-        3. 否则使用默认路径
+        2. SDK 模式下，base_url 视为根地址，强制追加默认端点
+        3. 否则检查 base_url 是否已经包含路径，如果是，直接使用
+        4. 否则使用默认路径
         """
         normalized_base = (base_url or "").rstrip("/")
         provider_type = (provider_type or "llm").lower()
+        api_format = (api_format or "custom").lower()
 
         # 检查 base_url 是否已经包含路径（超过域名层级）
         def base_url_has_path() -> bool:
@@ -427,6 +426,11 @@ class AIConnectorService:
             # 如果有 api_endpoint，优先使用
             if api_endpoint:
                 return f"{normalized_base}{api_endpoint}"
+            # SDK 模式下，base_url 视为根地址，强制追加默认端点
+            if api_format.startswith("openai_sdk"):
+                if normalized_base.endswith("/v1"):
+                    return f"{normalized_base}{default_endpoint}"
+                return f"{normalized_base}/v1{default_endpoint}"
             # 如果 base_url 已经包含路径，直接使用
             if has_path:
                 return normalized_base

@@ -880,6 +880,131 @@ async def init_default_providers():
 
 
 # =============================================================================
+# 模型发现 API（必须放在 /{conn_id} 之前，避免被路径参数捕获）
+# =============================================================================
+
+@router.get("/discover-models", summary="发现可用模型")
+async def discover_models(
+    api_format: str = Query("custom", description="API 格式：openai_sdk / openai_sdk_responses / custom"),
+    base_url: str = Query(..., description="API Base URL"),
+    api_key: str = Query("", description="API Key"),
+    models_endpoint: str = Query("/v1/models", description="模型列表端点（custom 模式有效）"),
+):
+    """
+    根据 api_format 自动选择发现方式：
+
+    - openai_sdk / openai_sdk_responses: 使用 openai.OpenAI(...).models.list() 获取模型列表
+    - custom: 使用 httpx GET {base_url}{models_endpoint} 获取模型列表
+
+    返回统一格式: { models: [...], error: null|string }
+    """
+    import httpx
+
+    if api_format.startswith("openai_sdk"):
+        try:
+            import openai
+
+            client = openai.OpenAI(
+                api_key=api_key,
+                base_url=base_url or None,
+                timeout=30.0,
+            )
+            model_list = client.models.list()
+
+            # 过滤掉非对话模型（常见的 prefix 过滤）
+            # GPT/Claude/Qwen/DeepSeek/Gemini 等常见命名模式
+            filtered_models = []
+            for m in model_list.data:
+                model_id = m.id.lower() if hasattr(m, 'id') else str(m)
+                # 跳过已知的非对话模型（embedding, moderation, tts, whisper, dall-e 等）
+                skip_prefixes = (
+                    'text-embedding', 'text-moderation', 'tts-', 'whisper-',
+                    'dall-e', 'babbage', 'davinci', 'curie', 'ada-',
+                )
+                if any(model_id.startswith(p) for p in skip_prefixes):
+                    continue
+                # 跳过纯数字 ID（可能是 fine-tuned 或其他非标准模型）
+                if model_id.isdigit():
+                    continue
+                filtered_models.append(m.id)
+
+            client.close()
+            return {
+                "success": True,
+                "models": filtered_models,
+                "error": None,
+            }
+
+        except ImportError:
+            return {
+                "success": False,
+                "models": [],
+                "error": "openai 包未安装，请运行 pip install openai",
+            }
+        except openai.APIError as e:
+            return {
+                "success": False,
+                "models": [],
+                "error": f"API 错误: {e}",
+            }
+        except Exception as e:
+            logger.error(f"[discover-models] SDK 方式失败: {e}")
+            return {
+                "success": False,
+                "models": [],
+                "error": str(e),
+            }
+
+    else:
+        # custom 模式：HTTP GET {base_url}{models_endpoint}
+        try:
+            base = base_url.rstrip("/")
+            endpoint = models_endpoint if models_endpoint.startswith("/") else f"/{models_endpoint}"
+            url = f"{base}{endpoint}"
+
+            headers = {}
+            if api_key:
+                headers["Authorization"] = f"Bearer {api_key}"
+
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.get(url, headers=headers)
+                resp.raise_for_status()
+                data = resp.json()
+
+            # 兼容 OpenAI /v1/models 响应格式: { data: [{ id: "model-name" }, ...] }
+            raw_models = data.get("data", []) if isinstance(data, dict) else data
+            if isinstance(raw_models, list):
+                models = [
+                    m.get("id", str(m))
+                    if isinstance(m, dict)
+                    else (m.id if hasattr(m, 'id') else str(m))
+                    for m in raw_models
+                ]
+            else:
+                models = []
+
+            return {
+                "success": True,
+                "models": models,
+                "error": None,
+            }
+
+        except httpx.HTTPStatusError as e:
+            return {
+                "success": False,
+                "models": [],
+                "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}",
+            }
+        except Exception as e:
+            logger.error(f"[discover-models] HTTP 方式失败: {e}")
+            return {
+                "success": False,
+                "models": [],
+                "error": str(e),
+            }
+
+
+# =============================================================================
 # 单个连接器操作 (带 {conn_id} 的路径参数，必须放在上面特定路径之后)
 # =============================================================================
 
@@ -1006,131 +1131,6 @@ async def mark_used(
         "success": True,
         "message": "已更新使用时间",
     }
-
-
-# =============================================================================
-# 模型发现 API
-# =============================================================================
-
-@router.get("/discover-models", summary="发现可用模型")
-async def discover_models(
-    api_format: str = Query("custom", description="API 格式：openai_sdk / openai_sdk_responses / custom"),
-    base_url: str = Query(..., description="API Base URL"),
-    api_key: str = Query("", description="API Key"),
-    models_endpoint: str = Query("/v1/models", description="模型列表端点（custom 模式有效）"),
-):
-    """
-    根据 api_format 自动选择发现方式：
-
-    - openai_sdk / openai_sdk_responses: 使用 openai.OpenAI(...).models.list() 获取模型列表
-    - custom: 使用 httpx GET {base_url}{models_endpoint} 获取模型列表
-
-    返回统一格式: { models: [...], error: null|string }
-    """
-    import httpx
-
-    if api_format.startswith("openai_sdk"):
-        try:
-            import openai
-
-            client = openai.OpenAI(
-                api_key=api_key,
-                base_url=base_url or None,
-                timeout=30.0,
-            )
-            model_list = client.models.list()
-
-            # 过滤掉非对话模型（常见的 prefix 过滤）
-            # GPT/Claude/Qwen/DeepSeek/Gemini 等常见命名模式
-            filtered_models = []
-            for m in model_list.data:
-                model_id = m.id.lower() if hasattr(m, 'id') else str(m)
-                # 跳过已知的非对话模型（embedding, moderation, tts, whisper, dall-e 等）
-                skip_prefixes = (
-                    'text-embedding', 'text-moderation', 'tts-', 'whisper-',
-                    'dall-e', 'babbage', 'davinci', 'curie', 'ada-',
-                )
-                if any(model_id.startswith(p) for p in skip_prefixes):
-                    continue
-                # 跳过纯数字 ID（可能是 fine-tuned 或其他非标准模型）
-                if model_id.isdigit():
-                    continue
-                filtered_models.append(m.id)
-
-            client.close()
-            return {
-                "success": True,
-                "models": filtered_models,
-                "error": None,
-            }
-
-        except ImportError:
-            return {
-                "success": False,
-                "models": [],
-                "error": "openai 包未安装，请运行 pip install openai",
-            }
-        except openai.APIError as e:
-            return {
-                "success": False,
-                "models": [],
-                "error": f"API 错误: {e}",
-            }
-        except Exception as e:
-            logger.error(f"[discover-models] SDK 方式失败: {e}")
-            return {
-                "success": False,
-                "models": [],
-                "error": str(e),
-            }
-
-    else:
-        # custom 模式：HTTP GET {base_url}{models_endpoint}
-        try:
-            base = base_url.rstrip("/")
-            endpoint = models_endpoint if models_endpoint.startswith("/") else f"/{models_endpoint}"
-            url = f"{base}{endpoint}"
-
-            headers = {}
-            if api_key:
-                headers["Authorization"] = f"Bearer {api_key}"
-
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                resp = await client.get(url, headers=headers)
-                resp.raise_for_status()
-                data = resp.json()
-
-            # 兼容 OpenAI /v1/models 响应格式: { data: [{ id: "model-name" }, ...] }
-            raw_models = data.get("data", []) if isinstance(data, dict) else data
-            if isinstance(raw_models, list):
-                models = [
-                    m.get("id", str(m))
-                    if isinstance(m, dict)
-                    else (m.id if hasattr(m, 'id') else str(m))
-                    for m in raw_models
-                ]
-            else:
-                models = []
-
-            return {
-                "success": True,
-                "models": models,
-                "error": None,
-            }
-
-        except httpx.HTTPStatusError as e:
-            return {
-                "success": False,
-                "models": [],
-                "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}",
-            }
-        except Exception as e:
-            logger.error(f"[discover-models] HTTP 方式失败: {e}")
-            return {
-                "success": False,
-                "models": [],
-                "error": str(e),
-            }
 
 
 # =============================================================================
