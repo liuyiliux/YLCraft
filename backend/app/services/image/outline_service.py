@@ -53,8 +53,8 @@ async def generate_outline(
         PlatformTemplate.platform.in_(platforms),
         PlatformTemplate.is_active == True,
     ).order_by(PlatformTemplate.sort_order)
-    result = await session.exec(stmt)
-    templates = result.all()
+    result = await session.execute(stmt)
+    templates = result.scalars().all()
 
     if not templates:
         logger.warning(f"No active platform templates found for: {platforms}")

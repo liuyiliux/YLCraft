@@ -10,10 +10,11 @@ from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 import os
 
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession as SAAsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine
 from sqlmodel import SQLModel, Session as SQLModelSession
+from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
 
 # 异步数据库配置
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://ylcraft:ylcraft_dev@localhost:5432/ylcraft")
@@ -26,7 +27,7 @@ engine = create_async_engine(
 )
 
 AsyncSessionLocal = sessionmaker(
-    engine, class_=AsyncSession, expire_on_commit=False
+    engine, class_=SQLModelAsyncSession, expire_on_commit=False
 )
 
 # 同步数据库配置（用于 init_manager 等同步上下文）
@@ -60,7 +61,7 @@ async def init_db():
 
 
 @asynccontextmanager
-async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
+async def get_async_session() -> AsyncGenerator[SAAsyncSession, None]:
     """获取异步数据库会话（用于需要 async 的场景）"""
     async with AsyncSessionLocal() as session:
         try:

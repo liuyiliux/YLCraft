@@ -287,10 +287,10 @@ async def seed_platform_templates(session):
     logger = logging.getLogger("ylcraft.seed.platform_templates")
     
     for seed in PLATFORM_TEMPLATE_SEEDS:
-        existing = await session.exec(
+        existing = (await session.execute(
             select(PlatformTemplate).where(PlatformTemplate.platform == seed["platform"])
-        )
-        if existing.first():
+        )).scalars().first()
+        if existing:
             logger.info(f"Platform template '{seed['platform']}' already exists, skipping")
             continue
         
