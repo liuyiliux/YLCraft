@@ -42,11 +42,14 @@ import {
   DeleteOutlined,
   PlusOutlined,
   InboxOutlined,
+  FileTextOutlined,
+  ImageIcon,
+  BranchesOutlined,
 } from '@ant-design/icons'
 import type { UploadFile } from 'antd/es/upload/interface'
 import { useTheme } from '../../constants/theme'
 import { getImageBackends, generateImage as generateImageApi } from '../../api'
-import MultiPlatformGen from './MultiPlatformGen'
+
 
 const { TextArea } = Input
 const { Dragger } = Upload
@@ -141,7 +144,7 @@ export default function ImageGenPage() {
   const [searchParams] = useSearchParams()
 
   // 生成模式
-  const [mode, setMode] = useState<'text2img' | 'img2img' | 'multi'>('text2img')
+  const [mode, setMode] = useState<'text2img' | 'img2img'>('text2img')
 
   // 输入
   const [prompt, setPrompt] = useState('')
@@ -169,10 +172,7 @@ export default function ImageGenPage() {
   const hasFetchedBackends = useRef(false)
   const hasAppliedUrlParams = useRef(false)  // 标记是否已应用 URL 参数
 
-  // 多平台生图 URL 参数
-  const [multiTopic, setMultiTopic] = useState<string>('')
-  const [multiPlatforms, setMultiPlatforms] = useState<string[]>([])
-  const [multiAutoGenerate, setMultiAutoGenerate] = useState(false)
+
 
   // 按厂商分组后端（根据 mode 过滤不支持的模型）
   const { groupedBackends, vendorOptions } = useMemo(() => {
@@ -264,23 +264,6 @@ export default function ImageGenPage() {
     const modelParam = searchParams.get('model')
     const sizeParam = searchParams.get('size')
     const referenceImageParam = searchParams.get('reference_image')
-    const tabParam = searchParams.get('tab')
-    const topicParam = searchParams.get('topic')
-    const platformsParam = searchParams.get('platforms')
-
-    console.log('[ImageGen] URL params:', { promptParam, negativePromptParam, modelParam, sizeParam, referenceImageParam, tabParam, topicParam, platformsParam })
-
-    // 处理多平台生图 URL 参数
-    if (tabParam === 'multi') {
-      setMode('multi')
-      if (topicParam) {
-        setMultiTopic(decodeURIComponent(topicParam))
-        setMultiAutoGenerate(true)
-      }
-      if (platformsParam) {
-        setMultiPlatforms(decodeURIComponent(platformsParam).split(',').filter(Boolean))
-      }
-    }
 
     if (promptParam) {
       console.log('[ImageGen] Setting prompt:', promptParam)
@@ -513,31 +496,6 @@ export default function ImageGenPage() {
     message.success('已复制到剪贴板')
   }
 
-  // 多平台生图模式：直接渲染独立组件
-  if (mode === 'multi' as any) {
-    return (
-      <div>
-        <Card style={{ marginBottom: 16 }}>
-          <Tabs
-            activeKey={mode}
-            onChange={key => setMode(key as any)}
-            items={[
-              { key: 'text2img', label: '📝 文生图' },
-              { key: 'img2img', label: '🖼️ 图生图' },
-              { key: 'multi', label: '🔀 多平台生图' },
-            ]}
-            size="small"
-          />
-        </Card>
-        <MultiPlatformGen
-          initialTopic={multiTopic}
-          initialPlatforms={multiPlatforms}
-          autoGenerate={multiAutoGenerate}
-        />
-      </div>
-    )
-  }
-
   return (
     <div style={{ padding: 0 }}>
       <Row gutter={24}>
@@ -559,7 +517,6 @@ export default function ImageGenPage() {
               items={[
                 { key: 'text2img', label: '📝 文生图' },
                 { key: 'img2img', label: '🖼️ 图生图' },
-                { key: 'multi', label: '🔀 多平台生图' },
               ]}
               size="small"
             />

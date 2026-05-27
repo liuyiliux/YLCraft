@@ -31,6 +31,7 @@ import NovelReaderPage from './pages/novel-reader'
 import NovelBookshelfPage from './pages/novel-bookshelf'
 import BookSourcePage from './pages/book-source'
 import PlatformTemplatesPage from './pages/platform-templates'
+import MultiPlatformGenPage from './pages/image-gen/MultiPlatformGen'
 
 /** 包裹层：读取当前主题并传给 Ant Design ConfigProvider */
 function AntdThemeWrapper({ children }: { children: React.ReactNode }) {
@@ -65,6 +66,7 @@ export default function App() {
               <Route path="clip" element={<ClipLabPage />} />
               <Route path="story" element={<StoryPage />} />
               <Route path="image-gen" element={<ImageGenPage />} />
+              <Route path="multi-platform-gen" element={<MultiPlatformGenPage />} />
               <Route path="video-gen" element={<VideoGenPage />} />
               <Route path="comfyui" element={<ComfyUIPage />} />
               <Route path="clip-ops" element={<ClipOpsPage />} />

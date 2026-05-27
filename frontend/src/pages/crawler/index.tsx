@@ -1349,7 +1349,7 @@ export default function CrawlerPage() {
                     </Descriptions.Item>
                     {detailNote.url && (
                       <Descriptions.Item label="原文链接">
-                        <a href={detailNote.url} target="_blank" rel="noreferrer" style={{ fontSize: 12, wordBreak: 'break-all', color: THEME.accent }}>{detailNote.url}</a>
+                        <a href={detailNote.url} target="_blank" rel="noreferrer" style={{ fontSize: 12, wordBreak: 'break-all', color: THEME.primary }}>{detailNote.url}</a>
                       </Descriptions.Item>
                     )}
                   </Descriptions>

@@ -64,8 +64,13 @@ async def generate_outline(
     outlines = {}
     for tmpl in templates:
         try:
-            # 渲染 outline_template 为 system prompt
-            system_prompt = Template(tmpl.outline_template).render(topic=topic)
+            # 渲染 outline_template 为 system prompt，传入 topic 和 page_structure
+            import json
+            page_structure_json = json.dumps(tmpl.page_structure, ensure_ascii=False) if tmpl.page_structure else ""
+            system_prompt = Template(tmpl.outline_template).render(
+                topic=topic,
+                page_structure=page_structure_json,
+            )
             
             # 构建消息（支持多模态）
             messages: list[dict] = []

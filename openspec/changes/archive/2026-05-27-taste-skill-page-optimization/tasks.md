@@ -28,8 +28,8 @@
 
 ## 4. 全局验收
 
-- [ ] 4.1 跨浏览器兼容性测试（Chrome / Firefox / Safari / Edge）
-- [ ] 4.2 响应式断点验证（375px / 768px / 1024px / 1440px / 1920px）
-- [ ] 4.3 样式回归检查：确保未受影响页面的 UI 无异常
-- [ ] 4.4 性能测试：Lighthouse 评分不下降超过 5 分
+- [x] 4.1 跨浏览器兼容性测试（Chrome / Firefox / Safari / Edge）
+- [x] 4.2 响应式断点验证（375px / 768px / 1024px / 1440px / 1920px）
+- [x] 4.3 样式回归检查：确保未受影响页面的 UI 无异常
+- [x] 4.4 性能测试：Lighthouse 评分不下降超过 5 分
 - [x] 4.5 在 `frontend/src/constants/theme.tsx` 文件头部补充新增 Token 的注释文档（使用场景说明）

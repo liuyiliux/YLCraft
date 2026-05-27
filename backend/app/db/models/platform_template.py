@@ -5,21 +5,26 @@
 每个平台（小红书/抖音/微信/头条）有两套模板：
 - outline_template: LLM 将 topic 分析为结构化大纲
 - image_template: 将大纲每页渲染为生图提示词
+
+page_structure（JSONB）定义平台默认页面结构，驱动空白大纲创建和前端渲染：
+  { "default_pages": [{"type":"封面"}, {"type":"内容"}, {"type":"内容"}, {"type":"总结"}] }
 """
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Column
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlmodel import SQLModel, Field
 
 
 class PlatformTemplate(SQLModel, table=True):
     """平台生成模板
-    
+
     模板变量说明（outline_template）：
         {topic} - 用户输入的主题
-    
+        {page_structure} - 平台默认页面结构（JSON 文本，供 LLM 参考）
+
     模板变量说明（image_template）：
         {user_topic} - 用户原始输入主题
         {topic} - 当前平台的大纲标题
@@ -37,8 +42,12 @@ class PlatformTemplate(SQLModel, table=True):
     )
     platform: str = Field(max_length=30, unique=True, index=True, description="平台标识: xiaohongshu/douyin/wechat/toutiao")
     name: str = Field(max_length=50, description="平台中文名: 小红书/抖音/微信/头条")
-    outline_template: str = Field(description="LLM 大纲模板, 变量 {topic}")
+    outline_template: str = Field(description="LLM 大纲模板, 变量 {topic}{page_structure}")
     image_template: str = Field(description="生图提示词模板, 变量 {user_topic}{topic}{page_content}{page_type}{full_outline}{copywriting}")
+    page_structure: dict = Field(
+        default={},
+        sa_column=Column(JSONB)
+    )
     video_template: Optional[str] = Field(default=None, description="视频模板（可选）")
     default_size: str = Field(default="1024x1024", max_length=20)
     is_active: bool = Field(default=True)

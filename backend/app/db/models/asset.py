@@ -60,11 +60,6 @@ class Asset(SQLModel, table=True):
     @property
     def is_deleted(self) -> bool:
         return self.deleted_at is not None or self.status == "DELETED"
-    deleted_at: datetime | None = Field(default=None, index=True)
-
-    @property
-    def is_deleted(self) -> bool:
-        return self.deleted_at is not None or self.status == "DELETED"
 
     class Config:
         use_enum_values = True

@@ -1133,7 +1133,7 @@ function AddAccountDrawer({
       destroyOnClose
       styles={{
         header: { background: theme.bgCard, borderBottom: `1px solid ${theme.border}` },
-        body: { background: theme.bg, padding: 24 },
+        body: { background: theme.bgPage, padding: 24 },
       }}
     >
       {/* 方式选择 — 参考 XHS_ALL_IN_ONE 的 Segmented */}

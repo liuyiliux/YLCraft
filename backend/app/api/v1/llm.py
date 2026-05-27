@@ -35,6 +35,8 @@ class ChatResponse(BaseModel):
 
 class BackendInfo(BaseModel):
     name: str
+    provider: str = ""
+    provider_label: str = ""
     model: str
     available_models: list[str] = []
     support_vision_input: bool = False
@@ -53,51 +55,64 @@ async def list_llm_backends():
     """
     from app.db.database import SessionLocal
     manager = get_manager()
-    
-    with SessionLocal() as db_session:
-        try:
-            if not manager.is_loaded():
-                from app.services.llm.manager import init_manager
-                from pathlib import Path
-                config_path = Path(__file__).parent.parent.parent.parent / "config" / "providers.yaml"
-                init_manager(str(config_path), session=db_session)
-                logger.info("BackendManager reinitialized from /llm/backends endpoint")
-        except Exception as e:
-            logger.warning(f"Reinitializing manager failed: {e}")
-        
-        from app.db.models.ai_connector import AIConnector
-        connectors = db_session.query(AIConnector).filter(
-            AIConnector.is_active == True,
-            AIConnector.provider_type == 'llm'
-        ).all()
-        
-        backends = []
-        for conn in connectors:
+
+    try:
+        with SessionLocal() as db_session:
             try:
-                name = conn.name
-                model = conn.default_model or ''
-                
-                available_models = []
-                if conn.available_models:
-                    try:
-                        import json
-                        available_models = json.loads(conn.available_models) if isinstance(conn.available_models, str) else conn.available_models
-                    except Exception:
-                        pass
-                if not available_models and model:
-                    available_models = [model]
-                
-                backends.append(BackendInfo(
-                    name=name,
-                    model=model,
-                    available_models=available_models,
-                    support_vision_input=bool(conn.support_vision_input),
-                ))
+                if not manager.is_loaded():
+                    from app.services.llm.manager import init_manager
+                    from pathlib import Path
+                    config_path = Path(__file__).parent.parent.parent.parent / "config" / "providers.yaml"
+                    init_manager(str(config_path), session=db_session)
+                    logger.info("BackendManager reinitialized from /llm/backends endpoint")
             except Exception as e:
-                logger.warning(f"Failed to get backend info for {conn.name}: {e}")
-                continue
-        
-        return BackendsResponse(success=True, backends=backends)
+                logger.warning(f"Reinitializing manager failed: {e}")
+
+            from app.db.models.ai_connector import AIConnector
+            connectors = db_session.query(AIConnector).filter(
+                AIConnector.is_active == True,
+                AIConnector.provider_type == 'llm'
+            ).all()
+
+            backends = []
+            for conn in connectors:
+                try:
+                    name = conn.name
+                    model = conn.default_model or ''
+                    provider = conn.provider or ''
+
+                    # provider_label 映射
+                    provider_labels = {
+                        "openai": "OpenAI",
+                        "siliconflow": "硅基流动",
+                        "gemini": "Google Gemini",
+                        "generic": "通用配置",
+                    }
+                    provider_label = provider_labels.get(provider, provider)
+
+                    available_models = []
+                    if conn.available_models:
+                        try:
+                            import json
+                            available_models = json.loads(conn.available_models) if isinstance(conn.available_models, str) else conn.available_models
+                        except Exception:
+                            pass
+                    if not available_models and model:
+                        available_models = [model]
+
+                    backends.append(BackendInfo(
+                        name=name,
+                        provider=provider,
+                        provider_label=provider_label,
+                        model=model,
+                        available_models=available_models,
+                        support_vision_input=bool(conn.support_vision_input),
+                    ))
+                except Exception as e:
+                    logger.warning(f"Failed to get backend info for {conn.name}: {e}")
+                    continue
+
+            return BackendsResponse(success=True, backends=backends)
     except Exception as e:
         logger.error(f"Failed to list LLM backends: {e}")
         return BackendsResponse(success=False, backends=[])

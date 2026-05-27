@@ -8,10 +8,10 @@
       "computedHash": "b63012f3c3d21197e0185d3e9cc7ec40c589fb10e0b5a32a561739de31aa3f20"
     },
     "design-taste-frontend": {
-      "source": "leonxlnx/taste-skill",
+      "source": "BND-1/taste-skill",
       "sourceType": "github",
-      "skillPath": "skills/taste-skill/SKILL.md",
-      "computedHash": "6d838b246d0e35d0b53f4f23f98ba7a1dd561937e64f7d0c7553b0928e376c3e"
+      "skillPath": "SKILL.md",
+      "computedHash": "89fb0ffc370300f65add6ccced60d8e59f45fe072bfa7f2a53b40a03a1366a12"
     },
     "design-taste-frontend-v1": {
       "source": "leonxlnx/taste-skill",

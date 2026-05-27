@@ -392,7 +392,7 @@ export function VideoDetailDrawer({ video, visible, onClose, connId, width = 640
                   </Descriptions.Item>
                   {video?.url && (
                     <Descriptions.Item label="原文链接">
-                      <a href={video.url} target="_blank" rel="noreferrer" style={{ fontSize: 12, wordBreak: 'break-all', color: THEME.accent }}>
+                      <a href={video.url} target="_blank" rel="noreferrer" style={{ fontSize: 12, wordBreak: 'break-all', color: THEME.primary }}>
                         {video.url}
                       </a>
                     </Descriptions.Item>

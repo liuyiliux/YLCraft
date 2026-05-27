@@ -567,6 +567,7 @@ export interface PlatformTemplate {
   name: string
   outline_template: string
   image_template: string
+  page_structure?: Record<string, any>
   video_template: string | null
   default_size: string
   is_active: boolean
@@ -574,6 +575,9 @@ export interface PlatformTemplate {
 }
 
 export const getPlatformTemplates = () => request('/images/platform-templates')
+
+export const createPlatformTemplate = (data: Omit<PlatformTemplate, 'id'>) =>
+  request('/images/platform-templates', { method: 'POST', body: JSON.stringify(data) })
 
 export const updatePlatformTemplate = (id: string, data: Partial<PlatformTemplate>) =>
   request(`/images/platform-templates/${id}`, { method: 'PUT', body: JSON.stringify(data) })

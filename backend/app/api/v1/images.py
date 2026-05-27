@@ -250,6 +250,19 @@ class PlatformTemplateInfo(BaseModel):
     name: str = ""
     outline_template: str = ""
     image_template: str = ""
+    page_structure: dict = {}
+    video_template: Optional[str] = None
+    default_size: str = "1024x1024"
+    is_active: bool = True
+    sort_order: int = 0
+
+
+class PlatformTemplateCreateRequest(BaseModel):
+    platform: str
+    name: str
+    outline_template: str
+    image_template: str
+    page_structure: Optional[dict] = {}
     video_template: Optional[str] = None
     default_size: str = "1024x1024"
     is_active: bool = True
@@ -260,6 +273,7 @@ class PlatformTemplateUpdateRequest(BaseModel):
     name: Optional[str] = None
     outline_template: Optional[str] = None
     image_template: Optional[str] = None
+    page_structure: Optional[dict] = None
     video_template: Optional[str] = None
     default_size: Optional[str] = None
     is_active: Optional[bool] = None
@@ -321,6 +335,7 @@ async def list_platform_templates():
                     "name": t.name,
                     "outline_template": t.outline_template,
                     "image_template": t.image_template,
+                    "page_structure": t.page_structure or {},
                     "video_template": t.video_template,
                     "default_size": t.default_size,
                     "is_active": t.is_active,
@@ -328,6 +343,44 @@ async def list_platform_templates():
                 }
                 for t in templates
             ],
+        }
+
+
+@router.post("/platform-templates", response_model=dict, summary="新增平台模板")
+async def create_platform_template(req: PlatformTemplateCreateRequest):
+    """新增一个平台模板"""
+    from app.db.database import get_async_session
+    from app.db.models.platform_template import PlatformTemplate
+    from sqlmodel import select
+
+    async with get_async_session() as session:
+        # 检查 platform 是否已存在
+        existing = await session.exec(
+            select(PlatformTemplate).where(PlatformTemplate.platform == req.platform)
+        )
+        if existing.first():
+            raise HTTPException(status_code=409, detail=f"平台标识 '{req.platform}' 已存在")
+
+        template = PlatformTemplate(**req.model_dump())
+        session.add(template)
+        await session.commit()
+        await session.refresh(template)
+
+        return {
+            "success": True,
+            "template": {
+                "id": str(template.id),
+                "platform": template.platform,
+                "name": template.name,
+                "outline_template": template.outline_template,
+                "image_template": template.image_template,
+                "page_structure": template.page_structure or {},
+                "video_template": template.video_template,
+                "default_size": template.default_size,
+                "is_active": template.is_active,
+                "sort_order": template.sort_order,
+            },
+            "message": "创建成功",
         }
 
 
@@ -369,6 +422,7 @@ async def update_platform_template(
                 "name": template.name,
                 "outline_template": template.outline_template,
                 "image_template": template.image_template,
+                "page_structure": template.page_structure or {},
                 "video_template": template.video_template,
                 "default_size": template.default_size,
                 "is_active": template.is_active,
