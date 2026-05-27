@@ -1154,6 +1154,113 @@ export default function MultiPlatformGen({ initialTopic, initialPlatforms, autoG
                             生成图片
                           </Button>
                         </div>
+
+                        {/* 该页面生成结果 — 直接显示在卡片内 */}
+                        {(() => {
+                          const r = batchResults[platform]?.[i]
+                          const retryKey = `${platform}-${i}`
+                          if (!r) return null
+                          return (
+                            <div style={{ marginTop: 14 }}>
+                              {r.success && r.urls[0] ? (
+                                <div style={{ position: 'relative' }}>
+                                  <div style={{
+                                    width: '100%',
+                                    aspectRatio: '3/4',
+                                    borderRadius: T.radiusMD,
+                                    overflow: 'hidden',
+                                    background: T.bgElevated,
+                                  }}>
+                                    <Image
+                                      src={r.urls[0]}
+                                      style={{
+                                        width: '100%',
+                                        height: '100%',
+                                        objectFit: 'cover',
+                                        display: 'block',
+                                      }}
+                                    />
+                                  </div>
+                                  <div style={{
+                                    position: 'absolute',
+                                    top: 8,
+                                    right: 8,
+                                    display: 'flex',
+                                    gap: 6,
+                                  }}>
+                                    <Button
+                                      type="text"
+                                      size="small"
+                                      icon={<ReloadOutlined style={{ fontSize: 13 }} />}
+                                      loading={retryLoading[retryKey]}
+                                      onClick={() => handleRetryResult(platform, i, r)}
+                                      style={{
+                                        background: 'rgba(0,0,0,0.5)',
+                                        borderRadius: T.radiusSM,
+                                        width: 28,
+                                        height: 28,
+                                        padding: 0,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        color: '#fff',
+                                        border: 'none',
+                                      }}
+                                    />
+                                    <Button
+                                      type="text"
+                                      size="small"
+                                      danger
+                                      icon={<DeleteOutlined style={{ fontSize: 13 }} />}
+                                      onClick={() => handleDeleteResult(platform, i)}
+                                      style={{
+                                        background: 'rgba(0,0,0,0.5)',
+                                        borderRadius: T.radiusSM,
+                                        width: 28,
+                                        height: 28,
+                                        padding: 0,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        color: '#fff',
+                                        border: 'none',
+                                      }}
+                                    />
+                                  </div>
+                                </div>
+                              ) : (
+                                <div style={{
+                                  aspectRatio: '3/4',
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  background: T.bgElevated,
+                                  borderRadius: T.radiusMD,
+                                  border: `1px dashed ${T.border}`,
+                                  gap: 10,
+                                }}>
+                                  <span style={{
+                                    color: T.textSecondary,
+                                    fontSize: 13,
+                                  }}>
+                                    {r.error || '生成失败'}
+                                  </span>
+                                  <Button
+                                    type="primary"
+                                    size="small"
+                                    icon={<ReloadOutlined />}
+                                    loading={retryLoading[retryKey]}
+                                    onClick={() => handleRetryResult(platform, i, r)}
+                                    style={{ borderRadius: T.radiusSM }}
+                                  >
+                                    重试
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })()}
                       </div>
                     </Col>
                   ))}
@@ -1204,123 +1311,6 @@ export default function MultiPlatformGen({ initialTopic, initialPlatforms, autoG
                     </div>
                   </Col>
                 </Row>
-
-                {/* 该平台生成结果 — 三列卡片 */}
-                {batchResults[platform]?.length > 0 && (
-                  <div style={{ marginTop: 24 }}>
-                    <Space size={8} style={{ marginBottom: 12 }}>
-                      <PictureOutlined style={{ color: T.primary }} />
-                      <span style={{
-                        color: T.textPrimary,
-                        fontWeight: 600,
-                        fontSize: 16,
-                      }}>
-                        生成结果
-                      </span>
-                    </Space>
-                    <Row gutter={[16, 16]}>
-                      {batchResults[platform].map((r, i) => {
-                        const retryKey = `${platform}-${i}`
-                        return (
-                          <Col span={8} key={i}>
-                            <div style={{
-                              background: T.bgCard,
-                              border: `1px solid ${T.border}`,
-                              borderRadius: T.radiusLG,
-                              padding: 12,
-                              transition: `all ${T.animationDuration} ${T.animationEasing}`,
-                            }}>
-                              {r.success && r.urls[0] ? (
-                                <div style={{ position: 'relative' }}>
-                                  <Image
-                                    src={r.urls[0]}
-                                    style={{
-                                      borderRadius: T.radiusMD,
-                                      width: '100%',
-                                      display: 'block',
-                                    }}
-                                  />
-                                  <div style={{
-                                    position: 'absolute',
-                                    top: 8,
-                                    right: 8,
-                                    display: 'flex',
-                                    gap: 6,
-                                  }}>
-                                    <Button
-                                      type="text"
-                                      size="small"
-                                      icon={<ReloadOutlined style={{ fontSize: 13 }} />}
-                                      loading={retryLoading[retryKey]}
-                                      onClick={() => handleRetryResult(platform, i, r)}
-                                      style={{
-                                        background: T.bgElevated,
-                                        borderRadius: T.radiusSM,
-                                        width: 28,
-                                        height: 28,
-                                        padding: 0,
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        color: T.textSecondary,
-                                      }}
-                                    />
-                                    <Button
-                                      type="text"
-                                      size="small"
-                                      danger
-                                      icon={<DeleteOutlined style={{ fontSize: 13 }} />}
-                                      onClick={() => handleDeleteResult(platform, i)}
-                                      style={{
-                                        background: T.bgElevated,
-                                        borderRadius: T.radiusSM,
-                                        width: 28,
-                                        height: 28,
-                                        padding: 0,
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                      }}
-                                    />
-                                  </div>
-                                </div>
-                              ) : (
-                                <div style={{
-                                  height: 180,
-                                  display: 'flex',
-                                  flexDirection: 'column',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  background: T.bgElevated,
-                                  borderRadius: T.radiusMD,
-                                  border: `1px dashed ${T.border}`,
-                                  gap: 10,
-                                }}>
-                                  <span style={{
-                                    color: T.textSecondary,
-                                    fontSize: 13,
-                                  }}>
-                                    {r.error || '生成失败'}
-                                  </span>
-                                  <Button
-                                    type="primary"
-                                    size="small"
-                                    icon={<ReloadOutlined />}
-                                    loading={retryLoading[retryKey]}
-                                    onClick={() => handleRetryResult(platform, i, r)}
-                                    style={{ borderRadius: T.radiusSM }}
-                                  >
-                                    重试
-                                  </Button>
-                                </div>
-                              )}
-                            </div>
-                          </Col>
-                        )
-                      })}
-                    </Row>
-                  </div>
-                )}
               </div>
             ),
           }))}
