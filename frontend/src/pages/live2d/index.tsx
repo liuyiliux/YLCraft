@@ -7,6 +7,9 @@
  */
 
 import { useState, useEffect, useCallback } from 'react'
+import { useRef } from 'react'
+import gsap from 'gsap'
+import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import {
   Card, Row, Col, Input, Button, Tag, Typography, Spin,
   message, Space, Empty, Upload, Progress, Alert, Modal, Form, Select, Divider,
@@ -18,10 +21,11 @@ import {
   SettingOutlined, CloudOutlined, LaptopOutlined, KeyOutlined, CheckCircleOutlined,
 } from '@ant-design/icons'
 import type { UploadFile } from 'antd/es/upload/interface'
-import { useRef } from 'react'
 import { useWebSocket, WSTaskProgress } from '../../hooks/useWebSocket'
 import { useTheme } from '../../constants/theme'
 import { Live2DViewer } from '../../components/live2d/Live2DViewer'
+
+gsap.registerPlugin(ScrollTrigger)
 
 const { Title, Text, Paragraph } = Typography
 const { Search } = Input
@@ -52,33 +56,36 @@ const STATUS_LABELS: Record<string, string> = {
 const STYLE_MODE_OPTIONS = [
   {
     value: 'anime',
-    label: '🎨 动漫立绘',
-    desc: '上传透明底PNG/PSD立绘，生成二次元Live2D模型',
+    label: 'Anime Artwork',
+    desc: 'Upload transparent PNG/PSD illustration for 2D Live2D model generation',
     color: '#722ed1',
+    tag: 'Artwork',
   },
   {
     value: 'coser_real',
-    label: '📷 Coser（真人）',
-    desc: '上传Cos照片，保持真人风格',
+    label: 'Coser (Realistic)',
+    desc: 'Upload cosplay photo, keep realistic style',
     color: '#fa8c16',
+    tag: 'Real',
   },
   {
     value: 'coser_anime',
-    label: '✨ Coser（转二次元）',
-    desc: '上传Cos照片，AI转换为动漫风格',
+    label: 'Coser to Anime',
+    desc: 'Upload cosplay photo, AI converts to anime style',
     color: '#52c41a',
+    tag: 'Anime',
   },
 ]
 
 // 阶段映射
 const STEPS = [
-  { key: 'segment', label: 'AI分层', phase: 'Phase 2' },
-  { key: 'inpaint', label: '遮挡补全', phase: 'Phase 2' },
-  { key: 'rig', label: '自动绑骨', phase: 'Phase 3' },
-  { key: 'mesh', label: '网格生成', phase: 'Phase 3' },
-  { key: 'physics', label: '物理模拟', phase: 'Phase 4' },
-  { key: 'motion', label: '待机动画', phase: 'Phase 4' },
-  { key: 'export', label: '导出模型', phase: 'Phase 4' },
+  { key: 'segment', label: 'AI Layering', phase: 'Deconstruct' },
+  { key: 'inpaint', label: 'Occlusion Fill', phase: 'Deconstruct' },
+  { key: 'rig', label: 'Auto Rigging', phase: 'Skeleton' },
+  { key: 'mesh', label: 'Mesh Generation', phase: 'Skeleton' },
+  { key: 'physics', label: 'Physics Simulation', phase: 'Motion' },
+  { key: 'motion', label: 'Idle Animation', phase: 'Motion' },
+  { key: 'export', label: 'Export Model', phase: 'Deliver' },
 ]
 
 // 处理模式映射
@@ -122,15 +129,15 @@ const getStyleModeInfo = (mode: string) => {
   return STYLE_MODE_OPTIONS.find(m => m.value === mode) || STYLE_MODE_OPTIONS[0]
 }
 
-  // 获取当前进度步骤
-  const getCurrentStep = (status: string) => {
-    if (status === 'draft') return 0
-    if (status === 'processing') return 1
-    if (status === 'rigged') return 4
-    if (status === 'animated') return 6
-    if (status === 'completed') return 7
-    return 0
-  }
+// 获取当前进度步骤索引
+const getCurrentStep = (status: string) => {
+  if (status === 'draft') return 0
+  if (status === 'processing') return 1
+  if (status === 'rigged') return 4
+  if (status === 'animated') return 6
+  if (status === 'completed') return 7
+  return 0
+}
 
 export default function Live2DPage() {
   const [loading, setLoading] = useState(false)
@@ -149,6 +156,129 @@ export default function Live2DPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null)
 
   const { theme } = useTheme()
+
+  // ===== Taste Skill: GSAP ScrollTrigger refs =====
+  const sectionRef = useRef<HTMLDivElement>(null)
+  const featureCardsRef = useRef<HTMLDivElement>(null)
+  const bentoGridRef = useRef<HTMLDivElement>(null)
+  const pipelineRef = useRef<HTMLDivElement>(null)
+  const pipelineLineRef = useRef<HTMLDivElement>(null)
+
+  // Intersection Observer hook for scroll-triggered animations
+  const useInView = (ref: React.RefObject<HTMLElement | null>, options?: IntersectionObserverInit) => {
+    const [isInView, setIsInView] = useState(false)
+
+    useEffect(() => {
+      if (!ref.current) return
+      const observer = new IntersectionObserver(
+        ([entry]) => {
+          if (entry.isIntersecting) {
+            setIsInView(true)
+            observer.unobserve(entry.target)
+          }
+        },
+        { threshold: 0.15, rootMargin: '0px 0px -40px 0px', ...options },
+      )
+      observer.observe(ref.current)
+      return () => observer.disconnect()
+    }, [ref, options])
+
+    return isInView
+  }
+
+  const sectionInView = useInView(sectionRef)
+  const featuresInView = useInView(featureCardsRef)
+  const bentoInView = useInView(bentoGridRef)
+
+  // ===== GSAP ScrollTrigger: Pipeline steps animation =====
+  useEffect(() => {
+    const isMobile = window.innerWidth < 768
+    const ctx = gsap.context(() => {
+      // Pipeline connector line scrub
+      if (pipelineLineRef.current) {
+        // Mobile: simple CSS transition; Desktop: GSAP pin + scrub
+        if (isMobile) {
+          pipelineLineRef.current.style.width = '100%'
+        } else {
+          ScrollTrigger.create({
+            trigger: pipelineRef.current,
+            start: 'top 85%',
+            end: 'bottom 30%',
+            onEnter: () => {
+              if (pipelineLineRef.current) {
+                pipelineLineRef.current.style.width = '100%'
+              }
+            },
+            onLeaveBack: () => {
+              if (pipelineLineRef.current) {
+                pipelineLineRef.current.style.width = '0%'
+              }
+            },
+          })
+
+          // Pipeline dots: sequential color fill
+          const dots = document.querySelectorAll('.pipeline-dot')
+          dots.forEach((dot, i) => {
+            const el = dot as HTMLElement
+            ScrollTrigger.create({
+              trigger: pipelineRef.current,
+              start: `top+=${i * 14}%`,
+              end: 'bottom',
+              onEnter: () => {
+                el.style.background = theme.primary
+                el.style.borderColor = theme.primary
+                el.style.color = '#000'
+                el.style.transform = 'scale(1.15)'
+              },
+              onLeaveBack: () => {
+                el.style.background = theme.bgElevated
+                el.style.borderColor = theme.borderStrong
+                el.style.color = theme.textSecondary
+                el.style.transform = 'scale(1)'
+              },
+            })
+          })
+        }
+      }
+    }, [pipelineRef])
+
+    return () => ctx.revert()
+  }, [theme.primary, theme.bgElevated, theme.borderStrong, theme.textSecondary])
+
+  // ===== GSAP: Bento grid cards entry animation =====
+  useEffect(() => {
+    if (!bentoInView || !bentoGridRef.current) return
+    const cards = bentoGridRef.current.querySelectorAll('.live2d-bento-item')
+    gsap.fromTo(
+      cards,
+      { opacity: 0, y: 30, scale: 0.96 },
+      {
+        opacity: 1,
+        y: 0,
+        scale: 1,
+        duration: 0.5,
+        ease: theme.animationEasing,
+        stagger: 0.06,
+      },
+    )
+  }, [bentoInView, models.length, theme.animationEasing])
+
+  // ===== GSAP: Feature cards entry animation =====
+  useEffect(() => {
+    if (!featuresInView || !featureCardsRef.current) return
+    const items = featureCardsRef.current.querySelectorAll('.live2d-feature-item')
+    gsap.fromTo(
+      items,
+      { opacity: 0, x: -20 },
+      {
+        opacity: 1,
+        x: 0,
+        duration: 0.4,
+        ease: theme.animationEasing,
+        stagger: 0.1,
+      },
+    )
+  }, [featuresInView, theme.animationEasing])
 
   // 预览相关状态
   const [previewVisible, setPreviewVisible] = useState(false)
@@ -624,50 +754,46 @@ export default function Live2DPage() {
     })
   }
 
-  // 渲染步骤进度
-  const renderSteps = (model: Live2DModel) => {
-    const currentStep = getCurrentStep(model.status)
-    const isCompleted = model.status === 'completed'
-
-    return (
-      <div style={{ marginTop: 8 }}>
-        <Text type="secondary" style={{ fontSize: 12 }}>处理进度：</Text>
-        <div style={{ display: 'flex', gap: 4, marginTop: 4, flexWrap: 'wrap' }}>
-          {STEPS.map((step, index) => {
-            const isActive = index === currentStep
-            const isPast = index < currentStep || isCompleted
-
-            return (
-              <Tag
-                key={step.key}
-                color={isPast ? 'success' : isActive ? 'processing' : 'default'}
-                style={{ fontSize: 11, padding: '0 4px', margin: 2 }}
-              >
-                {step.label}
-              </Tag>
-            )
-          })}
-        </div>
-      </div>
-    )
-  }
-
+  // ===== Section 1: Hero (Attention) — editorial split =====
   return (
-    <div style={{ padding: 24 }}>
-      {/* 标题区域 */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <div>
-          <Title level={3} style={{ margin: 0 }}>
-            <span style={{ marginRight: 8 }}>🎭</span>
-            Live2D 工厂
-          </Title>
-          <Text type="secondary">AI 自动生成 Live2D 模型 · 支持 Coser 照片</Text>
+    <main style={{ padding: '32px 28px 40px', maxWidth: 1440, margin: '0 auto' }}>
+      <div
+        ref={sectionRef}
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-end',
+          gap: 32,
+          marginBottom: 48,
+          paddingBottom: 32,
+          borderBottom: `1px solid ${theme.border}`,
+        }}
+      >
+        <div style={{ flex: 1, maxWidth: 680 }}>
+          <div
+            style={{
+              fontSize: 'clamp(1.6rem, 3vw, 2.4rem)',
+              fontWeight: 700,
+              color: theme.textPrimary,
+              letterSpacing: '-0.02em',
+              lineHeight: 1.15,
+              marginBottom: 10,
+              transition: `color ${theme.animationDuration} ${theme.animationEasing}`,
+            }}
+          >
+            Live2D Model
+            <span style={{ color: theme.primary, marginLeft: 6 }}>Factory</span>
+          </div>
+          <div style={{ color: theme.textSecondary, fontSize: 14, lineHeight: 1.6, maxWidth: 520 }}>
+            AI-powered automatic Live2D generation with COSER photo support. Upload a single image and let the pipeline handle character separation, rigging, physics simulation, and export.
+          </div>
         </div>
-        <Space>
-          <Tooltip title="处理模式设置">
+        <Space size={12}>
+          <Tooltip title="Processing mode configuration">
             <Button
               icon={<SettingOutlined />}
               onClick={() => setModeModalVisible(true)}
+              style={{ borderRadius: theme.radiusSM }}
             >
               {processingModes ? (
                 <span>
@@ -675,94 +801,265 @@ export default function Live2DPage() {
                   {' '}
                   {PROCESS_MODE_LABELS[processingModes.default_mode]}
                 </span>
-              ) : '模式'}
+              ) : 'Mode'}
             </Button>
           </Tooltip>
           <Button
             type="primary"
             icon={<PlusOutlined />}
-            size="large"
             onClick={showUploadModal}
+            style={{
+              height: 40,
+              fontSize: 14,
+              fontWeight: 600,
+              borderRadius: theme.radiusSM,
+              padding: '0 24px',
+              background: theme.gradientCreative,
+              border: 'none',
+            }}
           >
-            创建模型
+            New Model
           </Button>
         </Space>
       </div>
 
-      {/* 功能说明 */}
-      <Card size="small" style={{ marginBottom: 24, background: theme.bgCard }}>
-        <Row gutter={[24, 16]}>
+      {/* ===== Section 2: Feature Modes (Interest) — inline pill chips ===== */}
+      <div ref={featureCardsRef} style={{ marginBottom: 40 }}>
+        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
           {STYLE_MODE_OPTIONS.map(mode => (
-            <Col key={mode.value} span={8}>
-              <div style={{ padding: '8px 12px', borderRadius: 6, background: theme.bgElevated, border: `2px solid ${mode.color}20` }}>
-                <Text strong style={{ color: mode.color }}>{mode.label}</Text>
-                <br />
-                <Text type="secondary" style={{ fontSize: 12 }}>{mode.desc}</Text>
+            <div
+              key={mode.value}
+              className="live2d-feature-item"
+              style={{
+                flex: '1 1 240px',
+                minWidth: 200,
+                padding: '18px 20px',
+                borderRadius: theme.radiusLG,
+                background: theme.bgCard,
+                border: `1px solid ${theme.border}`,
+                boxShadow: theme.shadowCard,
+                cursor: 'pointer',
+                transition: `box-shadow ${theme.animationDuration} ${theme.animationEasing}, transform ${theme.animationDuration} ${theme.animationEasing}`,
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.boxShadow = theme.shadowElevated
+                e.currentTarget.style.transform = 'translateY(-3px)'
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.boxShadow = theme.shadowCard
+                e.currentTarget.style.transform = 'translateY(0)'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                <div style={{ width: 10, height: 10, borderRadius: '50%', background: mode.color, flexShrink: 0 }} />
+                <span style={{ fontWeight: 600, fontSize: 14, color: theme.textPrimary }}>{mode.label}</span>
+                <Tag color="default" style={{ margin: 0, fontSize: 10, padding: '0 6px', lineHeight: '18px', borderRadius: theme.radiusXS }}>{mode.tag}</Tag>
               </div>
-            </Col>
+              <div style={{ color: theme.textSecondary, fontSize: 12, lineHeight: 1.5 }}>{mode.desc}</div>
+            </div>
           ))}
-        </Row>
-      </Card>
+        </div>
+      </div>
 
-      {/* 筛选区域 */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16, gap: 16 }}>
-        <Space>
+      {/* ===== Section 3: Process Pipeline (Desire) — GSAP ScrollTrigger pinned steps ===== */}
+      <div
+        ref={pipelineRef}
+        style={{
+          marginBottom: 40,
+          padding: '20px 0',
+          position: 'relative',
+        }}
+      >
+        <div
+          style={{
+            color: theme.textSecondary,
+            fontSize: 12,
+            fontWeight: 600,
+            textTransform: 'uppercase',
+            letterSpacing: '0.08em',
+            marginBottom: 14,
+          }}
+        >
+          Processing Pipeline
+        </div>
+        <div
+          style={{
+            display: 'flex',
+            gap: 0,
+            position: 'relative',
+            overflow: 'hidden',
+          }}
+        >
+          {/* Connector line */}
+          <div
+            ref={pipelineLineRef}
+            style={{
+              position: 'absolute',
+              top: 11,
+              left: 0,
+              height: 2,
+              background: theme.primary,
+              borderRadius: 1,
+              zIndex: 0,
+              width: '0%',
+              transition: `width 0.6s ${theme.animationEasing}`,
+            }}
+          />
+          {STEPS.map((step, i) => (
+            <div
+              key={step.key}
+              className="pipeline-step"
+              data-step-index={i}
+              style={{
+                flex: '1 1 0',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 6,
+                position: 'relative',
+                zIndex: 1,
+                cursor: 'default',
+              }}
+            >
+              <div
+                className="pipeline-dot"
+                style={{
+                  width: 24,
+                  height: 24,
+                  borderRadius: '50%',
+                  background: theme.bgElevated,
+                  border: `2px solid ${theme.borderStrong}`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  color: theme.textSecondary,
+                  transition: `all ${theme.animationDuration} ${theme.animationEasing}`,
+                }}
+              >
+                {i + 1}
+              </div>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: theme.textPrimary, marginBottom: 1 }}>{step.label}</div>
+                <div style={{ fontSize: 10, color: theme.textSecondary, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{step.phase}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ===== Section 4: Filters ===== */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, gap: 16, flexWrap: 'wrap' }}>
+        <Space size={10} wrap>
           <Search
-            placeholder="搜索模型名称..."
+            placeholder="Search models..."
             allowClear
             onSearch={(value) => { setKeyword(value); setPage(1) }}
             style={{ width: 240 }}
           />
           <Select
-            placeholder="状态筛选"
+            placeholder="Status"
             allowClear
-            style={{ width: 120 }}
+            style={{ width: 130 }}
             value={statusFilter || undefined}
             onChange={(v) => { setStatusFilter(v || ''); setPage(1) }}
             options={[
-              { value: 'draft', label: '草稿' },
-              { value: 'processing', label: '处理中' },
-              { value: 'rigged', label: '已绑骨' },
-              { value: 'animated', label: '已生成动作' },
-              { value: 'completed', label: '已完成' },
+              { value: 'draft', label: 'Draft' },
+              { value: 'processing', label: 'Processing' },
+              { value: 'rigged', label: 'Rigged' },
+              { value: 'animated', label: 'Animated' },
+              { value: 'completed', label: 'Completed' },
             ]}
           />
           <Select
-            placeholder="模式筛选"
+            placeholder="Style"
             allowClear
-            style={{ width: 140 }}
+            style={{ width: 150 }}
             value={styleFilter || undefined}
             onChange={(v) => { setStyleFilter(v || ''); setPage(1) }}
             options={STYLE_MODE_OPTIONS.map(m => ({ value: m.value, label: m.label }))}
           />
         </Space>
-        <Text type="secondary">共 {total} 个模型</Text>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ width: 8, height: 8, borderRadius: '50%', background: theme.success }} />
+          <Text type="secondary">{total} models</Text>
+        </div>
       </div>
 
-      {/* 模型列表 */}
-      {loading ? (
-        <Spin size="large" style={{ display: 'block', textAlign: 'center', padding: 50 }} />
-      ) : models.length === 0 ? (
-        <Empty
-          description={
-            <span>
-              暂无 Live2D 模型
-              <br />
-              <Text type="secondary">点击右上角「创建模型」开始</Text>
-            </span>
-          }
-        />
-      ) : (
-        <Row gutter={[16, 16]}>
-          {models.map(model => {
-            const styleInfo = getStyleModeInfo(model.style_mode)
+      {/* ===== Section 5: Bento Grid model list ===== */}
+      <div ref={bentoGridRef}>
+        {loading ? (
+          <Spin size="large" style={{ display: 'block', textAlign: 'center', padding: 80 }} />
+        ) : models.length === 0 ? (
+          <Empty
+            description={
+              <span style={{ color: theme.textSecondary }}>
+                No Live2D models yet
+                <br />
+                Click <span style={{ color: theme.primary }}>New Model</span> to begin
+              </span>
+            }
+          />
+        ) : (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+              gridAutoFlow: 'dense',
+              gap: 14,
+              gridAutoRows: 'minmax(min-content, auto)',
+            }}
+          >
+            {models.map((model, modelIndex) => {
+              const styleInfo = getStyleModeInfo(model.style_mode)
+              // Bento variance: every 4th card is taller (double row)
+              const isTall = modelIndex % 4 === 0
+              const imgH = isTall ? 280 : 200
 
-            return (
-              <Col key={model.id} xs={24} sm={12} md={8} lg={6}>
-                <Card
-                  hoverable
-                  cover={
-                    <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f5f5f5', position: 'relative' }}>
+              return (
+                <div
+                  key={model.id}
+                  className="live2d-bento-item"
+                  style={{
+                    gridRow: isTall ? 'span 2' : 'span 1',
+                  }}
+                >
+                  <Card
+                    hoverable={false}
+                    style={{
+                      height: '100%',
+                      background: theme.bgCard,
+                      border: `1px solid ${theme.border}`,
+                      borderRadius: theme.radiusLG,
+                      boxShadow: theme.shadowCard,
+                      transition: `box-shadow ${theme.animationDuration} ${theme.animationEasing}, transform ${theme.animationDuration} ${theme.animationEasing}`,
+                      overflow: 'hidden',
+                      cursor: 'pointer',
+                    }}
+                    styles={{ body: { padding: 0 } }}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.boxShadow = theme.shadowElevated
+                      e.currentTarget.style.transform = 'translateY(-2px)'
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.boxShadow = theme.shadowCard
+                      e.currentTarget.style.transform = 'translateY(0)'
+                    }}
+                    onClick={() => showPreview(model)}
+                  >
+                    {/* Image area */}
+                    <div
+                      style={{
+                        height: imgH,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: theme.bgElevated,
+                        position: 'relative',
+                        overflow: 'hidden',
+                      }}
+                    >
                       {model.source_image_url ? (
                         <>
                           <img
@@ -771,99 +1068,136 @@ export default function Live2DPage() {
                             style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain' }}
                           />
                           <Tag
-                            style={{ position: 'absolute', top: 8, right: 8 }}
+                            style={{ position: 'absolute', top: 8, right: 8, borderRadius: theme.radiusXS }}
                             color={styleInfo.color}
                           >
-                            {styleInfo.label}
+                            {styleInfo.tag}
                           </Tag>
                         </>
                       ) : (
                         <FileOutlined style={{ fontSize: 48, color: theme.textSecondary }} />
                       )}
                     </div>
-                  }
-                  actions={[
-                    <EyeOutlined key="preview" title="预览" onClick={() => showPreview(model)} />,
-                    actionLoading === 'pipeline' ? (
-                      <Tooltip title="流水线运行中...">
-                        <Spin size="small" />
-                      </Tooltip>
-                    ) : (
-                      <Tooltip title="一键生成" key="pipeline">
-                        <PlayCircleOutlined
-                          onClick={() => model.status === 'draft' && handlePipeline(model)}
-                          style={{ opacity: model.status === 'draft' ? 1 : 0.4 }}
+
+                    {/* Info area */}
+                    <div style={{ padding: '12px 14px 14px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                        <span style={{ fontWeight: 600, fontSize: 14, color: theme.textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '70%' }}>
+                          {model.name}
+                        </span>
+                        <span
+                          className="live2d-status-dot"
+                          style={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: '50%',
+                            background: STATUS_COLORS[model.status]
+                              ? ({ default: '#8c8c8c', processing: '#f59e0b', rigged: '#3b82f6', animated: '#a78bfa', completed: '#4ade80', error: '#f87171' } as Record<string, string>)[STATUS_COLORS[model.status]] || '#8c8c8c'
+                              : '#8c8c8c',
+                            animation: model.status === 'processing'
+                              ? `live2d-pulse 1.5s ${theme.animationEasing} infinite`
+                              : 'none',
+                            flexShrink: 0,
+                          }}
                         />
-                      </Tooltip>
-                    ),
-                    model.status === 'processing' && (
-                      <Tooltip title="中断流水线">
+                      </div>
+                      <Space size={4} wrap style={{ marginBottom: 4 }}>
+                        <Tag color={STATUS_COLORS[model.status] || 'default'} style={{ borderRadius: theme.radiusXS }}>
+                          {STATUS_LABELS[model.status] || model.status}
+                        </Tag>
+                        {model.use_count > 0 && (
+                          <Tag color="blue" style={{ borderRadius: theme.radiusXS }}>{model.use_count} uses</Tag>
+                        )}
+                      </Space>
+
+                      {/* WebSocket progress */}
+                      {model.status === 'processing' && (() => {
+                        const progress = getModelProgress(model.id)
+                        if (progress) {
+                          return (
+                            <Progress
+                              percent={progress.progress}
+                              size="small"
+                              status={progress.status === 'failed' ? 'exception' : 'active'}
+                              format={pct => `${pct}%`}
+                              style={{ marginBottom: 6 }}
+                            />
+                          )
+                        }
+                        const stepPct = Math.round(getCurrentStep(model.status) * 100 / 7)
+                        return (
+                          <Progress
+                            percent={stepPct}
+                            size="small"
+                            status="active"
+                            format={() => `${stepPct}%`}
+                            style={{ marginBottom: 6 }}
+                          />
+                        )
+                      })()}
+
+                      <div style={{ color: theme.textSecondary, fontSize: 11 }}>
+                        {model.created_at}
+                      </div>
+
+                      {/* Action row */}
+                      <div style={{ display: 'flex', gap: 6, marginTop: 8, paddingTop: 8, borderTop: `1px solid ${theme.border}` }}>
                         <Button
+                          size="small"
+                          type="text"
+                          icon={<EyeOutlined />}
+                          onClick={e => { e.stopPropagation(); showPreview(model) }}
+                          style={{ color: theme.textSecondary }}
+                        />
+                        {actionLoading === 'pipeline' ? (
+                          <Spin size="small" />
+                        ) : (
+                          <Button
+                            size="small"
+                            type="text"
+                            icon={<PlayCircleOutlined />}
+                            onClick={e => { e.stopPropagation(); model.status === 'draft' && handlePipeline(model) }}
+                            style={{
+                              color: model.status === 'draft' ? theme.primary : theme.textDisabled,
+                              opacity: model.status === 'draft' ? 1 : 0.4,
+                            }}
+                          />
+                        )}
+                        {model.status === 'processing' && (
+                          <Button
+                            size="small"
+                            type="text"
+                            danger
+                            onClick={e => { e.stopPropagation(); handleInterruptPipeline(model.id) }}
+                          >
+                            Stop
+                          </Button>
+                        )}
+                        <Button
+                          size="small"
                           type="text"
                           danger
-                          size="small"
-                          onClick={() => handleInterruptPipeline(model.id)}
-                        >
-                          停止
-                        </Button>
-                      </Tooltip>
-                    ),
-                    <DeleteOutlined key="delete" title="删除" onClick={() => handleDelete(model)} />,
-                  ].filter(Boolean)}
-                >
-                  <Card.Meta
-                    title={model.name}
-                    description={
-                      <div>
-                        <Space>
-                          <Tag color={STATUS_COLORS[model.status] || 'default'}>
-                            {STATUS_LABELS[model.status] || model.status}
-                          </Tag>
-                          {model.use_count > 0 && (
-                            <Tag color="blue">使用 {model.use_count} 次</Tag>
-                          )}
-                        </Space>
-                        {renderSteps(model)}
-
-                        {/* WebSocket 实时进度显示 */}
-                        {model.status === 'processing' && (() => {
-                          const progress = getModelProgress(model.id)
-                          if (progress) {
-                            return (
-                              <div style={{ marginTop: 8 }}>
-                                <Progress
-                                  percent={progress.progress}
-                                  size="small"
-                                  status={progress.status === 'failed' ? 'exception' : 'active'}
-                                  format={percent => `${percent}% - ${progress.message}`}
-                                />
-                              </div>
-                            )
-                          }
-                          return (
-                            <div style={{ marginTop: 8 }}>
-                              <Progress
-                                percent={getCurrentStep(model.status) * 100 / 7}
-                                size="small"
-                                status="active"
-                                format={() => '处理中...'}
-                              />
-                            </div>
-                          )
-                        })()}
-
-                        <Text type="secondary" style={{ display: 'block', marginTop: 8, fontSize: 12 }}>
-                          {model.created_at}
-                        </Text>
+                          icon={<DeleteOutlined />}
+                          onClick={e => { e.stopPropagation(); handleDelete(model) }}
+                          style={{ marginLeft: 'auto' }}
+                        />
                       </div>
-                    }
-                  />
-                </Card>
-              </Col>
-            )
-          })}
-        </Row>
-      )}
+                    </div>
+                  </Card>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Status pulse keyframe injected via style */}
+      <style>{`
+        @keyframes live2d-pulse {
+          0%, 100% { box-shadow: 0 0 0 0 ${theme.primary}40; }
+          50% { box-shadow: 0 0 0 6px ${theme.primary}0; }
+        }
+      `}</style>
 
       {/* 上传弹窗 */}
       <Modal
@@ -1429,6 +1763,6 @@ export default function Live2DPage() {
                 </Card>
 
       </Modal>
-    </div>
+    </main>
   )
 }

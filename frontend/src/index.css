@@ -20,11 +20,11 @@ body {
 .ant-card {
   background: var(--bgCard) !important;
   border: 1px solid var(--border) !important;
-  border-radius: 12px !important;
+  border-radius: var(--radiusLG, 16px) !important;
 }
 
 .ant-card:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+  box-shadow: var(--shadowElevated, 0 4px 12px rgba(0, 0, 0, 0.15)) !important;
 }
 
 .ant-card-head {
@@ -44,7 +44,7 @@ body {
   background: var(--bgInput) !important;
   border: 1px solid var(--border) !important;
   color: var(--textPrimary) !important;
-  border-radius: 8px !important;
+  border-radius: var(--radiusSM, 8px) !important;
 }
 
 .ant-input::placeholder,
@@ -65,8 +65,8 @@ body {
 .ant-select-dropdown {
   background: var(--bgElevated) !important;
   border: 1px solid var(--border) !important;
-  border-radius: 8px !important;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4) !important;
+  border-radius: var(--radiusSM, 8px) !important;
+  box-shadow: var(--shadowElevated, 0 6px 16px rgba(0,0,0,0.4)) !important;
 }
 
 .ant-select-item {
@@ -136,8 +136,8 @@ body {
 .ant-modal-content {
   background: var(--bgCard) !important;
   border: 1px solid var(--border) !important;
-  border-radius: 12px !important;
-  box-shadow: 0 6px 32px rgba(0, 0, 0, 0.4) !important;
+  border-radius: var(--radiusLG, 16px) !important;
+  box-shadow: var(--shadowModal, 0 6px 32px rgba(0,0,0,0.4)) !important;
 }
 
 .ant-modal-header {
@@ -157,8 +157,8 @@ body {
 .ant-message-notice-content {
   background: var(--bgCard) !important;
   border: 1px solid var(--border) !important;
-  border-radius: 8px !important;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4) !important;
+  border-radius: var(--radiusSM, 8px) !important;
+  box-shadow: var(--shadowElevated, 0 6px 16px rgba(0,0,0,0.4)) !important;
   color: var(--textPrimary) !important;
 }
 
@@ -201,7 +201,7 @@ body {
 .ant-upload-drag {
   background: var(--bgCard) !important;
   border: 1px dashed var(--border) !important;
-  border-radius: 12px !important;
+  border-radius: var(--radiusMD, 12px) !important;
 }
 
 .ant-upload-drag:hover {
@@ -215,7 +215,7 @@ body {
 
 /* 标签 */
 .ant-tag {
-  border-radius: 6px !important;
+  border-radius: var(--radiusXS, 4px) !important;
 }
 
 /* 统计数值 */
@@ -294,7 +294,7 @@ body {
 
 /* 图片预览 */
 .ant-image-preview-img {
-  border-radius: 8px;
+  border-radius: var(--radiusSM, 8px);
 }
 
 /* 侧边栏 Sider */
@@ -360,7 +360,7 @@ body {
   }
 
   .ant-card {
-    border-radius: 8px !important;
+    border-radius: var(--radiusSM, 8px) !important;
   }
 
   .ant-card-body {
