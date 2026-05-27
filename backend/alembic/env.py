@@ -11,14 +11,12 @@ import sys
 # 添加 backend 目录到 path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# 导入 SQLModel metadata
+# SQLModel.metadata 自动收集所有 table=True 的模型
 from sqlmodel import SQLModel
-from app.db.models.asset_hub import (
-    AssetNode, AssetVersion, AssetRepresentation,
-    AssetEmbedding, AssetRelation,
-    Tag, AssetTagLink, AIModel,
-)
-from app.db.models.ai_connector import AIConnector, AIUsageLog
+
+# 确保所有模型被导入（用于 autogenerate 检测）
+from app.db.models import asset_hub    # noqa: F401 — AssetNode, AssetVersion, ...
+from app.db.models import ai_connector # noqa: F401 — AIConnector, AIUsageLog, AIProviderMetadata
 
 # Alembic Config 对象
 config = context.config
