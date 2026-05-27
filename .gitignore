@@ -42,6 +42,7 @@ Thumbs.db
 
 # Project specific
 backend/config/local.yaml
+backend/app/data/settings.json
 backend/data/ylcraft.db
 frontend/.env.local
 .env.local
