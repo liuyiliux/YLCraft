@@ -1048,9 +1048,9 @@ export default function MultiPlatformGen({ initialTopic, initialPlatforms, autoG
                         }}
                         style={{
                           background: T.bgCard,
-                          border: `1px solid ${dragOverIndex === i ? T.primary : T.border}`,
+                          border: dragOverIndex === i ? `1px solid ${T.primary}` : '1px solid transparent',
                           borderRadius: T.radiusLG,
-                          padding: 20,
+                          padding: 18,
                           cursor: 'move',
                           opacity: dragOverIndex === i ? 0.7 : 1,
                           transition: `all ${T.animationDuration} ${T.animationEasing}`,
@@ -1065,10 +1065,10 @@ export default function MultiPlatformGen({ initialTopic, initialPlatforms, autoG
                           display: 'flex',
                           alignItems: 'center',
                           gap: 10,
-                          marginBottom: 16,
+                          marginBottom: 14,
                         }}>
                           <span style={{
-                            color: T.coser,
+                            color: '#f472b6',
                             fontWeight: 700,
                             fontSize: 15,
                             fontFamily: 'Inter, sans-serif',
@@ -1077,19 +1077,40 @@ export default function MultiPlatformGen({ initialTopic, initialPlatforms, autoG
                           }}>
                             P{i + 1}
                           </span>
-                          <Tag
-                            color={page.type === '封面' ? 'error' : page.type === '总结' ? 'success' : 'processing'}
-                            style={{ borderRadius: T.radiusXS, fontSize: 11, margin: 0 }}
-                          >
+                          <span style={{
+                            background: page.type === '封面'
+                              ? 'rgba(251, 191, 36, 0.12)'
+                              : page.type === '总结'
+                                ? 'rgba(74, 222, 128, 0.12)'
+                                : 'rgba(56, 189, 248, 0.12)',
+                            color: page.type === '封面'
+                              ? '#fbbf24'
+                              : page.type === '总结'
+                                ? '#4ade80'
+                                : '#38bdf8',
+                            fontSize: 11,
+                            padding: '2px 8px',
+                            borderRadius: 4,
+                            fontWeight: 500,
+                            lineHeight: '18px',
+                          }}>
                             {page.type}
-                          </Tag>
+                          </span>
                           <div style={{ flex: 1 }} />
                           <Button
                             type="text"
                             size="small"
                             icon={<CloseOutlined style={{ fontSize: 12 }} />}
                             onClick={() => handleDeletePage(platform, i)}
-                            style={{ color: T.textDisabled, width: 24, height: 24, padding: 0 }}
+                            style={{
+                              color: 'rgba(255,255,255,0.15)',
+                              width: 22,
+                              height: 22,
+                              padding: 0,
+                              transition: 'color 0.2s',
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.color = 'rgba(255,255,255,0.6)' }}
+                            onMouseLeave={e => { e.currentTarget.style.color = 'rgba(255,255,255,0.15)' }}
                           />
                         </div>
 
@@ -1119,40 +1140,54 @@ export default function MultiPlatformGen({ initialTopic, initialPlatforms, autoG
                           }}
                           autoSize={{ minRows: 3, maxRows: 6 }}
                           style={{
-                            background: T.bgInput,
-                            border: `1px solid ${T.border}`,
+                            background: T.bgElevated,
+                            border: 'none',
                             borderRadius: T.radiusSM,
                             color: T.textPrimary,
                             fontSize: 13,
                             flex: 1,
+                            padding: '10px 12px',
                           }}
                         />
                         <div style={{
                           textAlign: 'right',
                           marginTop: 6,
-                          color: T.textDisabled,
+                          color: 'rgba(255,255,255,0.12)',
                           fontSize: 12,
                         }}>
                           {(page.prompt || '').length}字
                         </div>
 
                         {/* 底部按钮 */}
-                        <div style={{ marginTop: 12, display: 'flex', gap: 10 }}>
-                          <Button
-                            type="primary"
-                            size="small"
-                            icon={<ThunderboltOutlined />}
-                            loading={singleGenerating[`${platform}-${i}`]}
+                        <div style={{ marginTop: 14 }}>
+                          <button
+                            disabled={singleGenerating[`${platform}-${i}`]}
                             onClick={() => handleSingleGenerate(platform, i)}
                             style={{
-                              borderRadius: T.radiusSM,
-                              flex: 1,
+                              width: '100%',
+                              height: 34,
+                              borderRadius: 999,
+                              border: 'none',
+                              background: 'linear-gradient(90deg, #7c3aed 0%, #a78bfa 100%)',
+                              color: '#fff',
                               fontSize: 13,
                               fontWeight: 500,
+                              cursor: singleGenerating[`${platform}-${i}`] ? 'not-allowed' : 'pointer',
+                              opacity: singleGenerating[`${platform}-${i}`] ? 0.6 : 1,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: 6,
+                              transition: 'opacity 0.2s, transform 0.15s',
                             }}
+                            onMouseEnter={e => { if (!singleGenerating[`${platform}-${i}`]) e.currentTarget.style.opacity = '0.9' }}
+                            onMouseLeave={e => { e.currentTarget.style.opacity = singleGenerating[`${platform}-${i}`] ? '0.6' : '1' }}
+                            onMouseDown={e => { if (!singleGenerating[`${platform}-${i}`]) e.currentTarget.style.transform = 'scale(0.98)' }}
+                            onMouseUp={e => { e.currentTarget.style.transform = 'scale(1)' }}
                           >
+                            <ThunderboltOutlined style={{ fontSize: 13 }} />
                             生成图片
-                          </Button>
+                          </button>
                         </div>
 
                         {/* 该页面生成结果 — 直接显示在卡片内 */}
@@ -1188,44 +1223,55 @@ export default function MultiPlatformGen({ initialTopic, initialPlatforms, autoG
                                     display: 'flex',
                                     gap: 6,
                                   }}>
-                                    <Button
-                                      type="text"
-                                      size="small"
-                                      icon={<ReloadOutlined style={{ fontSize: 13 }} />}
-                                      loading={retryLoading[retryKey]}
+                                    <button
+                                      disabled={retryLoading[retryKey]}
                                       onClick={() => handleRetryResult(platform, i, r)}
                                       style={{
-                                        background: 'rgba(0,0,0,0.5)',
-                                        borderRadius: T.radiusSM,
-                                        width: 28,
-                                        height: 28,
+                                        background: 'rgba(0,0,0,0.45)',
+                                        borderRadius: '50%',
+                                        width: 26,
+                                        height: 26,
                                         padding: 0,
                                         display: 'flex',
                                         alignItems: 'center',
                                         justifyContent: 'center',
                                         color: '#fff',
                                         border: 'none',
+                                        cursor: retryLoading[retryKey] ? 'not-allowed' : 'pointer',
+                                        opacity: retryLoading[retryKey] ? 0.5 : 1,
+                                        fontSize: 11,
+                                        fontWeight: 500,
+                                        transition: 'background 0.2s',
                                       }}
-                                    />
-                                    <Button
-                                      type="text"
-                                      size="small"
-                                      danger
-                                      icon={<DeleteOutlined style={{ fontSize: 13 }} />}
+                                      onMouseEnter={e => { e.currentTarget.style.background = 'rgba(0,0,0,0.65)' }}
+                                      onMouseLeave={e => { e.currentTarget.style.background = 'rgba(0,0,0,0.45)' }}
+                                      title="重新生成"
+                                    >
+                                      C
+                                    </button>
+                                    <button
                                       onClick={() => handleDeleteResult(platform, i)}
                                       style={{
-                                        background: 'rgba(0,0,0,0.5)',
-                                        borderRadius: T.radiusSM,
-                                        width: 28,
-                                        height: 28,
+                                        background: 'rgba(0,0,0,0.45)',
+                                        borderRadius: '50%',
+                                        width: 26,
+                                        height: 26,
                                         padding: 0,
                                         display: 'flex',
                                         alignItems: 'center',
                                         justifyContent: 'center',
                                         color: '#fff',
                                         border: 'none',
+                                        cursor: 'pointer',
+                                        fontSize: 11,
+                                        transition: 'background 0.2s',
                                       }}
-                                    />
+                                      onMouseEnter={e => { e.currentTarget.style.background = 'rgba(0,0,0,0.65)' }}
+                                      onMouseLeave={e => { e.currentTarget.style.background = 'rgba(0,0,0,0.45)' }}
+                                      title="删除"
+                                    >
+                                      <DeleteOutlined style={{ fontSize: 11 }} />
+                                    </button>
                                   </div>
                                 </div>
                               ) : (
@@ -1246,16 +1292,32 @@ export default function MultiPlatformGen({ initialTopic, initialPlatforms, autoG
                                   }}>
                                     {r.error || '生成失败'}
                                   </span>
-                                  <Button
-                                    type="primary"
-                                    size="small"
-                                    icon={<ReloadOutlined />}
-                                    loading={retryLoading[retryKey]}
+                                  <button
+                                    disabled={retryLoading[retryKey]}
                                     onClick={() => handleRetryResult(platform, i, r)}
-                                    style={{ borderRadius: T.radiusSM }}
+                                    style={{
+                                      height: 30,
+                                      borderRadius: 999,
+                                      border: 'none',
+                                      background: 'linear-gradient(90deg, #7c3aed 0%, #a78bfa 100%)',
+                                      color: '#fff',
+                                      fontSize: 12,
+                                      fontWeight: 500,
+                                      cursor: retryLoading[retryKey] ? 'not-allowed' : 'pointer',
+                                      opacity: retryLoading[retryKey] ? 0.6 : 1,
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      gap: 4,
+                                      padding: '0 16px',
+                                      transition: 'opacity 0.2s',
+                                    }}
+                                    onMouseEnter={e => { if (!retryLoading[retryKey]) e.currentTarget.style.opacity = '0.9' }}
+                                    onMouseLeave={e => { e.currentTarget.style.opacity = retryLoading[retryKey] ? '0.6' : '1' }}
                                   >
+                                    <ReloadOutlined style={{ fontSize: 11 }} />
                                     重试
-                                  </Button>
+                                  </button>
                                 </div>
                               )}
                             </div>
@@ -1271,7 +1333,7 @@ export default function MultiPlatformGen({ initialTopic, initialPlatforms, autoG
                       onClick={() => handleAddPage(platform)}
                       style={{
                         background: T.bgCard,
-                        border: `1.5px dashed ${T.border}`,
+                        border: `1.5px dashed rgba(255,255,255,0.08)`,
                         borderRadius: T.radiusLG,
                         padding: 20,
                         cursor: 'pointer',
