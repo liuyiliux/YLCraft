@@ -403,7 +403,7 @@ const ProviderFormModal: React.FC<ProviderFormModalProps> = ({ open, provider, o
           supported_types: supportedTypes,
         })
         
-        typeOptions.forEach(type => {
+        typeOptions.forEach(({ value: type }) => {
           const params = defaultParams[type as keyof typeof defaultParams]
           const model = defaultModels[type as keyof typeof defaultModels]
           const template = requestTemplates[type as keyof typeof requestTemplates]
@@ -473,7 +473,7 @@ const ProviderFormModal: React.FC<ProviderFormModalProps> = ({ open, provider, o
       const referenceImageConfigs: Record<string, any> = {}
       const parameterTransforms: Record<string, any> = {}
       
-      typeOptions.forEach(type => {
+      typeOptions.forEach(({ value: type }) => {
         const params = values[`type_${type}_params`]
         const model = values[`type_${type}_model`]
         const template = values[`type_${type}_template`]
@@ -645,153 +645,146 @@ const ProviderFormModal: React.FC<ProviderFormModalProps> = ({ open, provider, o
           <Tabs
             activeKey={activeTab}
             onChange={setActiveTab}
+            destroyOnHidden={false}
             style={{ marginBottom: 16 }}
             items={supportedTypes.map((type: string) => {
               const typeOption = typeOptions.find(t => t.value === type)
               return {
                 key: type,
                 label: typeOption?.label || type,
+                // 关键：把每个类型的表单内容放到 children 里
+                // destroyInactiveTabPane=false 时 Ant Design 不会销毁非激活 tab 的 DOM
+                // 这样 Form.Item 始终挂载，validateFields() 能收集到所有字段值
+                children: (
+                  <div style={{ marginTop: 16, padding: '16px', background: theme.bgSecondary, borderRadius: 8, marginBottom: 16 }}>
+                    <div style={{ fontWeight: 600, marginBottom: 16, color: theme.textPrimary }}>
+                      {typeOption?.label || type} 配置
+                    </div>
+
+                    <Form.Item
+                      name={`type_${type}_model`}
+                      label="默认模型"
+                      extra={`${typeOption?.label || type} 类型的默认模型`}
+                    >
+                      <Input placeholder="如：gpt-4o" />
+                    </Form.Item>
+
+                    <Form.Item
+                      name={`type_${type}_params`}
+                      label="默认参数 (JSON)"
+                      extra={`${typeOption?.label || type} 类型的默认请求参数`}
+                    >
+                      <Input.TextArea
+                        placeholder={type === 'llm' 
+                          ? '{"temperature": 0.7, "max_tokens": 4096}'
+                          : type === 'image'
+                          ? '{"n": 1, "size": "1024x1024", "quality": "standard"}'
+                          : type === 'tts'
+                          ? '{"voice": "alloy", "speed": 1.0}'
+                          : '{}'
+                        }
+                        rows={4}
+                        style={{ fontFamily: 'monospace', fontSize: 12 }}
+                      />
+                    </Form.Item>
+
+                    {/* 请求模板 - 主要用于 image 类型 */}
+                    {type === 'image' && (
+                      <Form.Item
+                        name={`type_${type}_template`}
+                        label="请求模板 (Jinja2)"
+                        extra="用于构建 API 请求体的模板，支持 {{ model }}, {{ prompt }}, {{ size }} 等变量"
+                      >
+                        <Input.TextArea
+                          placeholder={`{\n  "model": "{{ model }}",\n  "prompt": "{{ prompt }}",\n  "size": "{{ size }}"\n}`}
+                          rows={6}
+                          style={{ fontFamily: 'monospace', fontSize: 12 }}
+                        />
+                      </Form.Item>
+                    )}
+
+                    {/* 响应配置 - 主要用于 image 类型 */}
+                    {type === 'image' && (
+                      <Form.Item
+                        name={`type_${type}_response_config`}
+                        label="响应配置 (JSON)"
+                        extra='配置响应数据的提取路径，如 {"images_path": "$.images[*].url", "error_path": "$.error.message"}'
+                      >
+                        <Input.TextArea
+                          placeholder={`{\n  "images_path": "$.images[*].url",\n  "error_path": "$.error.message",\n  "usage_path": "$.usage",\n  "response_format": "url"\n}`}
+                          rows={4}
+                          style={{ fontFamily: 'monospace', fontSize: 12 }}
+                        />
+                      </Form.Item>
+                    )}
+
+                    {/* 支持尺寸 - 主要用于 image/video 类型 */}
+                    {(type === 'image' || type === 'video') && (
+                      <Form.Item
+                        name={`type_${type}_sizes`}
+                        label="支持的尺寸"
+                        extra="多个尺寸用逗号分隔，如: 1024x1024, 1024x1792, 1792x1024"
+                      >
+                        <Input placeholder="1024x1024, 1024x1792, 1792x1024" />
+                      </Form.Item>
+                    )}
+
+                    {/* 参考图配置 - 主要用于 image 类型 */}
+                    {type === 'image' && (
+                      <>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+                          <Form.Item
+                            name={`type_${type}_support_ref_image`}
+                            label="支持参考图"
+                            valuePropName="checked"
+                          >
+                            <Switch />
+                          </Form.Item>
+                          <Form.Item
+                            name={`type_${type}_support_multi_ref`}
+                            label="支持多张参考图"
+                            valuePropName="checked"
+                          >
+                            <Switch />
+                          </Form.Item>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+                          <Form.Item
+                            name={`type_${type}_ref_image_field`}
+                            label="参考图片段名"
+                          >
+                            <Input placeholder="如：image" />
+                          </Form.Item>
+                          <Form.Item
+                            name={`type_${type}_ref_image_array_field`}
+                            label="参考图数组字段"
+                          >
+                            <Input placeholder="如：image_urls" />
+                          </Form.Item>
+                        </div>
+                      </>
+                    )}
+
+                    {/* 参数转换 - 主要用于 image 类型 */}
+                    {type === 'image' && (
+                      <Form.Item
+                        name={`type_${type}_transforms`}
+                        label="参数转换 (JSON)"
+                        extra='参数值的转换规则，如 {"size": "{{ size.replace("x", "*") }}"}'
+                      >
+                        <Input.TextArea
+                          placeholder='{"size": "{{ size.replace("x", "*") }}"}'
+                          rows={3}
+                          style={{ fontFamily: 'monospace', fontSize: 12 }}
+                        />
+                      </Form.Item>
+                    )}
+                  </div>
+                ),
               }
             })}
           />
         )}
-        
-        {supportedTypes.map((type: string) => {
-          const typeOption = typeOptions.find(t => t.value === type)
-          return activeTab === type ? (
-            <div key={type} style={{ marginTop: 16 }}>
-              <div style={{ 
-                padding: '16px', 
-                background: theme.bgSecondary, 
-                borderRadius: 8,
-                marginBottom: 16
-              }}>
-                <div style={{ fontWeight: 600, marginBottom: 16, color: theme.textPrimary }}>
-                  {typeOption?.label || type} 配置
-                </div>
-                
-                <Form.Item
-                  name={`type_${type}_model`}
-                  label="默认模型"
-                  extra={`${typeOption?.label || type} 类型的默认模型`}
-                >
-                  <Input placeholder="如：gpt-4o" />
-                </Form.Item>
-                
-                <Form.Item
-                  name={`type_${type}_params`}
-                  label="默认参数 (JSON)"
-                  extra={`${typeOption?.label || type} 类型的默认请求参数`}
-                >
-                  <Input.TextArea
-                    placeholder={type === 'llm' 
-                      ? '{"temperature": 0.7, "max_tokens": 4096}'
-                      : type === 'image'
-                      ? '{"n": 1, "size": "1024x1024", "quality": "standard"}'
-                      : type === 'tts'
-                      ? '{"voice": "alloy", "speed": 1.0}'
-                      : '{}'
-                    }
-                    rows={4}
-                    style={{ fontFamily: 'monospace', fontSize: 12 }}
-                  />
-                </Form.Item>
-                
-                {/* 请求模板 - 主要用于 image 类型 */}
-                {type === 'image' && (
-                  <Form.Item
-                    name={`type_${type}_template`}
-                    label="请求模板 (Jinja2)"
-                    extra="用于构建 API 请求体的模板，支持 {{ model }}, {{ prompt }}, {{ size }} 等变量"
-                  >
-                    <Input.TextArea
-                      placeholder={`{\n  "model": "{{ model }}",\n  "prompt": "{{ prompt }}",\n  "size": "{{ size }}"\n}`}
-                      rows={6}
-                      style={{ fontFamily: 'monospace', fontSize: 12 }}
-                    />
-                  </Form.Item>
-                )}
-                
-                {/* 响应配置 - 主要用于 image 类型 */}
-                {type === 'image' && (
-                  <Form.Item
-                    name={`type_${type}_response_config`}
-                    label="响应配置 (JSON)"
-                    extra='配置响应数据的提取路径，如 {"images_path": "$.images[*].url", "error_path": "$.error.message"}'
-                  >
-                    <Input.TextArea
-                      placeholder={`{\n  "images_path": "$.images[*].url",\n  "error_path": "$.error.message",\n  "usage_path": "$.usage",\n  "response_format": "url"\n}`}
-                      rows={4}
-                      style={{ fontFamily: 'monospace', fontSize: 12 }}
-                    />
-                  </Form.Item>
-                )}
-                
-                {/* 支持尺寸 - 主要用于 image/video 类型 */}
-                {(type === 'image' || type === 'video') && (
-                  <Form.Item
-                    name={`type_${type}_sizes`}
-                    label="支持的尺寸"
-                    extra="多个尺寸用逗号分隔，如: 1024x1024, 1024x1792, 1792x1024"
-                  >
-                    <Input placeholder="1024x1024, 1024x1792, 1792x1024" />
-                  </Form.Item>
-                )}
-                
-                {/* 参考图配置 - 主要用于 image 类型 */}
-                {type === 'image' && (
-                  <>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
-                      <Form.Item
-                        name={`type_${type}_support_ref_image`}
-                        label="支持参考图"
-                        valuePropName="checked"
-                      >
-                        <Switch />
-                      </Form.Item>
-                      <Form.Item
-                        name={`type_${type}_support_multi_ref`}
-                        label="支持多张参考图"
-                        valuePropName="checked"
-                      >
-                        <Switch />
-                      </Form.Item>
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
-                      <Form.Item
-                        name={`type_${type}_ref_image_field`}
-                        label="参考图片段名"
-                      >
-                        <Input placeholder="如：image" />
-                      </Form.Item>
-                      <Form.Item
-                        name={`type_${type}_ref_image_array_field`}
-                        label="参考图数组字段"
-                      >
-                        <Input placeholder="如：image_urls" />
-                      </Form.Item>
-                    </div>
-                  </>
-                )}
-                
-                {/* 参数转换 - 主要用于 image 类型 */}
-                {type === 'image' && (
-                  <Form.Item
-                    name={`type_${type}_transforms`}
-                    label="参数转换 (JSON)"
-                    extra='参数值的转换规则，如 {"size": "{{ size.replace("x", "*") }}"}'
-                  >
-                    <Input.TextArea
-                      placeholder='{"size": "{{ size.replace("x", "*") }}"}'
-                      rows={3}
-                      style={{ fontFamily: 'monospace', fontSize: 12 }}
-                    />
-                  </Form.Item>
-                )}
-              </div>
-            </div>
-          ) : null
-        })}
       </Form>
     </Modal>
   )

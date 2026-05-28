@@ -7,9 +7,14 @@ from sqlalchemy import pool
 from alembic import context
 import os
 import sys
+from pathlib import Path
+from dotenv import load_dotenv
 
 # 添加 backend 目录到 path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# 加载 .env 文件（确保 DATABASE_URL 等环境变量生效）
+load_dotenv(Path(__file__).parent.parent / ".env")
 
 # SQLModel.metadata 自动收集所有 table=True 的模型
 from sqlmodel import SQLModel
@@ -21,7 +26,7 @@ from app.db.models import ai_connector # noqa: F401 — AIConnector, AIUsageLog,
 # Alembic Config 对象
 config = context.config
 
-# 设置数据库 URL
+# 设置数据库 URL（优先从环境变量/ .env 读取）
 config.set_main_option("sqlalchemy.url", os.getenv(
     "DATABASE_URL",
     "postgresql://ylcraft:ylcraft_dev@localhost:5432/ylcraft"
