@@ -721,13 +721,6 @@ export default function MultiPlatformGen({ initialTopic, initialPlatforms, autoG
               color: '#f59e0b',
             },
             {
-              icon: <AppstoreOutlined />,
-              title: '批量生成',
-              desc: '同时生成多个主题的图文内容',
-              action: () => message.info('批量主题生成即将上线'),
-              color: '#8b5cf6',
-            },
-            {
               icon: <SettingOutlined />,
               title: '配置管理',
               desc: '管理平台模板和AI提供商配置',
@@ -742,7 +735,7 @@ export default function MultiPlatformGen({ initialTopic, initialPlatforms, autoG
               color: T.primary,
             },
           ].map((item, i) => (
-            <Col xs={24} sm={12} md={6} key={i}>
+            <Col xs={24} sm={12} md={8} key={i}>
               <Card
                 hoverable
                 onClick={item.action}
@@ -755,6 +748,7 @@ export default function MultiPlatformGen({ initialTopic, initialPlatforms, autoG
                 }}
                 bodyStyle={{ padding: 20 }}
               >
+                {item.icon && (
                 <div style={{
                   width: 44,
                   height: 44,
@@ -769,6 +763,7 @@ export default function MultiPlatformGen({ initialTopic, initialPlatforms, autoG
                 }}>
                   {item.icon}
                 </div>
+                )}
                 <div style={{
                   color: T.textPrimary,
                   fontSize: 15,
