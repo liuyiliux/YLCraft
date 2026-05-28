@@ -353,7 +353,8 @@ export default function MultiPlatformGen({ initialTopic, initialPlatforms, autoG
         body: JSON.stringify({
           topic,
           platforms: selectedPlatforms,
-          llm_model: selectedLlmModel,
+          backend_name: selectedLlmBackend,
+          model: selectedLlmModel,
           reference_images: referenceImages.map(img => img.base64),
         }),
       })

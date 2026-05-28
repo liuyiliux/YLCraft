@@ -22,8 +22,11 @@ DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://ylcraft:ylcraft_d
 engine = create_async_engine(
     DATABASE_URL,
     echo=False,
-    pool_size=20,
-    max_overflow=10,
+    pool_size=10,
+    max_overflow=5,
+    pool_timeout=30,
+    pool_recycle=3600,
+    pool_pre_ping=True,
 )
 
 AsyncSessionLocal = sessionmaker(
@@ -35,8 +38,11 @@ SYNC_DATABASE_URL = DATABASE_URL.replace("+asyncpg", "")
 sync_engine = create_engine(
     SYNC_DATABASE_URL,
     echo=False,
-    pool_size=20,
-    max_overflow=10,
+    pool_size=10,
+    max_overflow=5,
+    pool_timeout=30,
+    pool_recycle=3600,
+    pool_pre_ping=True,
 )
 
 SessionLocal = sessionmaker(

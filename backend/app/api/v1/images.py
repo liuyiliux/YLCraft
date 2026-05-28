@@ -283,7 +283,8 @@ class PlatformTemplateUpdateRequest(BaseModel):
 class GenerateOutlineRequest(BaseModel):
     topic: str
     platforms: list[str] = []  # ["xiaohongshu", "douyin"]
-    llm_model: Optional[str] = None  # 指定 LLM 模型
+    backend_name: Optional[str] = None  # 指定 Backend 名称（如"小米2.5pro"），使用该 Backend 的默认模型
+    model: Optional[str] = None  # 指定模型（如"mimo-v2.5-pro"），覆盖 Backend 默认模型
     reference_images: Optional[list[str]] = None  # 参考图（base64，用于多模态 LLM 反推）
 
 
@@ -465,7 +466,14 @@ async def generate_outline_endpoint(req: GenerateOutlineRequest):
     使用 LLM 为输入的 topic 生成多平台结构化大纲。
     每个平台返回 title、copywriting、pages（含 type 和 prompt）。
     支持参考图（多模态 LLM）。
+    
+    选择逻辑：
+    1. 如果传了 backend_name，使用该 Backend 的默认模型
+    2. 如果同时传了 backend_name + model，使用指定的模型（覆盖默认）
+    3. 如果都没传，使用系统默认 Backend
     """
+    logger.info("[API] generate-outline called: topic=%s, platforms=%s, backend_name=%s, model=%s",
+                req.topic, req.platforms, req.backend_name, req.model)
     from app.db.database import get_async_session
     from app.services.image.outline_service import generate_outline
     
@@ -476,7 +484,14 @@ async def generate_outline_endpoint(req: GenerateOutlineRequest):
     
     try:
         async with get_async_session() as session:
-            outlines = await generate_outline(session, req.topic, req.platforms, req.llm_model, req.reference_images)
+            outlines = await generate_outline(
+                session, 
+                req.topic, 
+                req.platforms, 
+                backend_name=req.backend_name,
+                model=req.model,
+                reference_images=req.reference_images
+            )
             return GenerateOutlineResponse(success=bool(outlines), outlines=outlines)
     except Exception as e:
         logger.error(f"Generate outline failed: {e}")

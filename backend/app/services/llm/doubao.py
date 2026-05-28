@@ -70,6 +70,9 @@ class DoubaoLLMBackend:
         """
         调用豆包 chat completion API。
         """
+        # 优先使用传入的 model 参数，否则使用默认 model
+        model = kwargs.get("model", self._model)
+        
         # 构建请求
         url = f"{self._api_base}/chat/completions"
         headers = {
@@ -86,7 +89,7 @@ class DoubaoLLMBackend:
             })
 
         body = {
-            "model": self._model,
+            "model": model,
             "messages": oai_messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
@@ -101,23 +104,25 @@ class DoubaoLLMBackend:
 
                 content = data["choices"][0]["message"]["content"]
                 return LLMGenerationResult(
+                    success=True,
                     content=content,
-                    model=self._model,
+                    model=model,
+                    provider=self._provider,
                     usage=data.get("usage", {}),
                 )
 
         except httpx.HTTPStatusError as e:
             logger.error(f"[Doubao] HTTP错误: {e.response.status_code} - {e.response.text}")
             return LLMGenerationResult(
+                success=False,
                 content="",
-                model=self._model,
                 error=f"HTTP {e.response.status_code}: {e.response.text[:200]}",
             )
         except Exception as e:
             logger.error(f"[Doubao] 调用失败: {e}")
             return LLMGenerationResult(
+                success=False,
                 content="",
-                model=self._model,
                 error=str(e),
             )
 

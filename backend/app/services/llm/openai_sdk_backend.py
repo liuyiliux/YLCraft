@@ -143,6 +143,7 @@ class OpenAISDKLLMBackend:
                 success=True,
                 content=choice.message.content or "",
                 model=model,
+                provider=self._provider,
                 usage={
                     "prompt_tokens": usage.prompt_tokens if usage else 0,
                     "completion_tokens": usage.completion_tokens if usage else 0,
@@ -210,6 +211,7 @@ class OpenAISDKLLMBackend:
                 success=True,
                 content=output_text or '',
                 model=model,
+                provider=self._provider,
                 usage={
                     "prompt_tokens": usage.input_tokens if usage else 0,
                     "completion_tokens": usage.output_tokens if usage else 0,

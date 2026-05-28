@@ -361,16 +361,87 @@ class BackendManager:
     async def chat(
         self,
         messages: list[LLMMessage],
-        provider: str | None = None,
+        backend_name: str | None = None,
+        model: str | None = None,
         **kwargs
     ) -> LLMGenerationResult:
-        backend = self.get_backend(MediaType.LLM, provider)
+        """
+        调用 LLM 生成响应。
+        
+        选择逻辑：
+        1. 如果传了 backend_name，使用该 Backend（使用其默认模型）
+        2. 如果同时传了 backend_name + model，使用指定的模型（覆盖默认）
+        3. 如果只传了 model，根据 model 查找对应的 Backend
+        4. 如果都没传，使用系统默认 Backend
+        """
+        backend = None
+        target_model = model  # 最终使用的模型
+        
+        # 1. 如果指定了 backend_name，优先使用该 Backend
+        if backend_name:
+            logger.info("[Manager] 查找 Backend: %s", backend_name)
+            backend = self.get_backend(MediaType.LLM, backend_name)
+            if backend:
+                logger.info("[Manager] 找到 Backend: %s", backend_name)
+                # 如果同时指定了 model，使用指定的 model；否则使用 backend 的默认 model
+                if not model:
+                    # 从 backend 获取默认 model
+                    backend_model = getattr(backend.connector, 'default_model', None) if hasattr(backend, 'connector') else None
+                    if backend_model:
+                        target_model = backend_model
+                        logger.info("[Manager] 使用 Backend 默认模型: %s", target_model)
+            else:
+                logger.warning("[Manager] 未找到指定的 Backend: %s", backend_name)
+        
+        # 2. 如果没有指定 backend_name，或者不存在，尝试根据 model 查找
+        if not backend and model:
+            logger.info("[Manager] 尝试根据 model 查找 Backend: %s", model)
+            for name, b in self._backends[MediaType.LLM].items():
+                if hasattr(b, 'connector'):
+                    conn = b.connector
+                    # 检查 default_model
+                    if getattr(conn, 'default_model', None) == model:
+                        backend = b
+                        logger.info("[Manager] 根据 default_model 找到 Backend: %s", name)
+                        break
+                    # 检查 available_models
+                    available_models_str = getattr(conn, 'available_models', None)
+                    if available_models_str:
+                        try:
+                            import json
+                            available_models = json.loads(available_models_str)
+                            if model in available_models:
+                                backend = b
+                                logger.info("[Manager] 根据 available_models 找到 Backend: %s", name)
+                                break
+                        except Exception:
+                            pass
+        
+        # 3. 如果还没找到，使用默认的或第一个可用的
+        if not backend:
+            backend = self.get_backend(MediaType.LLM, None)
+            if not backend:
+                llm_backends = self.list_backends(MediaType.LLM)
+                if llm_backends:
+                    logger.info("[Manager] 使用第一个可用的 LLM Backend: %s", llm_backends[0])
+                    backend = self._backends[MediaType.LLM].get(llm_backends[0])
+                    # 获取该 backend 的默认 model
+                    if not target_model and backend and hasattr(backend, 'connector'):
+                        target_model = getattr(backend.connector, 'default_model', None)
+        
         if not backend:
             return LLMGenerationResult(
                 success=False,
-                error=f"Provider not found: {provider or self._defaults.get(MediaType.LLM)}"
+                error=f"No available LLM Backend. Backend: {backend_name}, Model: {model}",
+                model=model or "",
+                provider="",
             )
-        return await backend.chat(messages, **kwargs)
+        
+        backend_name_for_log = getattr(backend, 'name', 'unknown')
+        logger.info("[Manager] 调用 LLM Backend: %s, 模型: %s", backend_name_for_log, target_model or 'default')
+        
+        # 调用 backend 的 chat 方法，传入实际的模型
+        return await backend.chat(messages, model=target_model, **kwargs)
 
     # -------------------------------------------------------------------------
     # Image

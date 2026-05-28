@@ -13,26 +13,40 @@ set "VENV_DIR=backend\venv_win"
 set "REQUIREMENTS_FILE=backend\requirements.txt"
 
 REM ========================================
-REM Docker Compose - PostgreSQL & Redis
+REM Check if using remote database
 REM ========================================
-echo [Docker] Checking Docker Compose services...
-
-docker compose version >nul 2>&1
-if errorlevel 1 (
-    echo [Docker] Docker Compose not found, please install Docker Desktop
-    echo [Docker] Skipping database services...
-) else (
-    echo [Docker] Starting PostgreSQL and Redis...
-    docker compose up -d
-    
-    echo [Docker] Waiting for PostgreSQL to be ready...
-    :wait_loop
-    docker compose exec -T postgres pg_isready -U ylcraft >nul 2>&1
+set "USE_REMOTE_DB=no"
+if exist "backend\.env" (
+    findstr /C:"localhost" "backend\.env" >nul
     if errorlevel 1 (
-        timeout /t 1 /nobreak >nul
-        goto wait_loop
+        echo [Config] Remote database detected in .env
+        set "USE_REMOTE_DB=yes"
     )
-    echo [Docker] PostgreSQL is ready!
+)
+
+REM ========================================
+REM Docker Compose - PostgreSQL ^& Redis (skip if using remote)
+REM ========================================
+if "%USE_REMOTE_DB%"=="yes" (
+    echo [Docker] Skipping local Docker ^(using remote database^)
+) else (
+    echo [Docker] Checking Docker Compose services...
+    docker compose version >nul 2>&1
+    if errorlevel 1 (
+        echo [Docker] Docker Compose not found, please install Docker Desktop
+        echo [Docker] Skipping database services...
+    ) else (
+        echo [Docker] Starting PostgreSQL and Redis...
+        docker compose up -d
+        echo [Docker] Waiting for PostgreSQL to be ready...
+        :wait_loop
+        docker compose exec -T postgres pg_isready -U ylcraft >nul 2>&1
+        if errorlevel 1 (
+            timeout /t 1 /nobreak >nul
+            goto wait_loop
+        )
+        echo [Docker] PostgreSQL is ready!
+    )
 )
 
 REM ========================================
@@ -68,7 +82,7 @@ if not exist "%VENV_DIR%\Scripts\activate.bat" (
 )
 
 REM ========================================
-REM Database Migration (Alembic)
+REM Database Migration
 REM ========================================
 if exist "backend\.env" (
     echo [Database] Running Alembic migrations...
@@ -118,6 +132,5 @@ echo  YLCraft Started!
 echo  Backend: http://localhost:8000
 echo  Frontend: http://localhost:5173
 echo  API Docs: http://localhost:8000/docs
-echo  PostgreSQL: localhost:5432
 echo ========================================
 pause

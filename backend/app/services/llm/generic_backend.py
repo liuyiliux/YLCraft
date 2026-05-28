@@ -65,7 +65,7 @@ class GenericLLMBackend(LLMBackend):
         
         logger.info(f"[GenericLLM] 初始化 Backend: {connector.name}")
     
-    async def generate(self, messages: List[LLMMessage], **kwargs) -> LLMGenerationResult:
+    async def chat(self, messages: List[LLMMessage], **kwargs) -> LLMGenerationResult:
         """
         生成 LLM 响应
         
@@ -92,17 +92,28 @@ class GenericLLMBackend(LLMBackend):
             }
             
             # 发送请求
+            logger.info("[GenericLLM] Sending request to %s/chat/completions, model: %s", 
+                       self.connector.base_url or "no base url", model)
+            logger.info("[GenericLLM] Request body (first 200 chars): %s", str(request_body)[:200])
+            
             response = await self.client.post("/chat/completions", json=request_body)
+            
+            logger.info("[GenericLLM] Response status: %s", response.status_code)
+            
             response.raise_for_status()
+            
             data = response.json()
+            logger.info("[GenericLLM] Response data (first 500 chars): %s", str(data)[:500])
             
             # 解析响应
             content = data["choices"][0]["message"]["content"]
             usage = data.get("usage", {})
             
             return LLMGenerationResult(
+                success=True,
                 content=content,
-                model=model,  # 返回实际使用的模型
+                model=model,
+                provider=self.connector.provider,
                 usage={
                     "prompt_tokens": usage.get("prompt_tokens", 0),
                     "completion_tokens": usage.get("completion_tokens", 0),
@@ -111,8 +122,23 @@ class GenericLLMBackend(LLMBackend):
             )
             
         except Exception as e:
-            logger.error(f"[GenericLLM] 生成失败: {e}")
-            raise
+            logger.error(f"[GenericLLM] 生成失败: {e}", exc_info=True)
+            return LLMGenerationResult(
+                success=False,
+                error=str(e),
+                content="",
+            )
+
+    async def structured_output(self, schema: dict, prompt: str) -> dict:
+        """结构化输出（简单实现，直接返回 chat 结果）"""
+        messages = [LLMMessage(role="user", content=prompt)]
+        result = await self.chat(messages)
+        if not result.success:
+            raise ValueError(result.error)
+        try:
+            return result.content  # 暂时直接返回字符串，后续可以完善 JSON 解析
+        except Exception:
+            return {"raw": result.content}
     
     def get_available_models(self) -> List[str]:
         """获取可用模型列表"""
