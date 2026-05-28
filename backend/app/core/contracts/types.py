@@ -169,6 +169,7 @@ class LLMGenerationResult:
     usage: dict = field(default_factory=dict)
     cost: float = 0.0
     provider: str = ""
+    model: str = ""
     latency_ms: float = 0.0
     error: str | None = None
 
