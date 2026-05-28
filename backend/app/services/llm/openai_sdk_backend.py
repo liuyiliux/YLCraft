@@ -66,6 +66,7 @@ class OpenAISDKLLMBackend:
         self._name = connector.name
         self._model = connector.default_model
         self._api_format = getattr(connector, 'api_format', 'openai_sdk')
+        self._provider = getattr(connector, 'provider', '')
         
         # 从 DB 读取默认参数，null 时回退到行业标准值
         self._default_temperature = connector.temperature if connector.temperature is not None else 0.7
