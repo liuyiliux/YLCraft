@@ -91,12 +91,18 @@ class GenericLLMBackend(LLMBackend):
                 "max_tokens": kwargs.get("max_tokens", self._default_max_tokens),
             }
             
+            # 确定 API 路径：优先用 api_endpoint，否则默认 /chat/completions
+            api_path = self.connector.api_endpoint or "/chat/completions"
+            
+            # 拼接完整 URL（用于日志）
+            base_url = self.connector.base_url or ""
+            full_url = base_url.rstrip("/") + api_path
+            
             # 发送请求
-            logger.info("[GenericLLM] Sending request to %s/chat/completions, model: %s", 
-                       self.connector.base_url or "no base url", model)
+            logger.info("[GenericLLM] Sending request to %s, model: %s", full_url, model)
             logger.info("[GenericLLM] Request body (first 200 chars): %s", str(request_body)[:200])
             
-            response = await self.client.post("/chat/completions", json=request_body)
+            response = await self.client.post(api_path, json=request_body)
             
             logger.info("[GenericLLM] Response status: %s", response.status_code)
             
