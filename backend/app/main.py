@@ -8,9 +8,14 @@ YLCraft — FastAPI 入口
 
 from __future__ import annotations
 
+# 必须在所有其他导入之前加载 .env，确保 DATABASE_URL / REDIS_URL 等环境变量生效
+from dotenv import load_dotenv
+from pathlib import Path
+_env_path = Path(__file__).parent.parent / ".env"
+load_dotenv(_env_path)
+
 import logging
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware

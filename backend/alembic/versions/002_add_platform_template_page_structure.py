@@ -1,7 +1,7 @@
-"""add page_structure (JSONB) to platform_templates
+"""create platform_templates table with page_structure
 
-每个平台模板新增 page_structure 字段，定义默认页面结构和字段
-驱动空白大纲创建和前端渲染
+创建平台生成模板表，包含 page_structure (JSONB) 字段，
+驱动空白大纲创建和前端渲染。
 
 Revision ID: 002
 Revises: 001
@@ -20,21 +20,22 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # 使用 IF NOT EXISTS 避免表已存在时报错
-    op.execute("""
-        ALTER TABLE platform_templates
-        ADD COLUMN IF NOT EXISTS page_structure JSONB DEFAULT '{}'::jsonb
-    """)
-    # 为已有数据设置默认值
-    op.execute("""
-        UPDATE platform_templates
-        SET page_structure = '{"default_pages": []}'::jsonb
-        WHERE page_structure IS NULL
-    """)
+    op.create_table(
+        'platform_templates',
+        sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column('platform', sa.String(30), unique=True, index=True, nullable=False),
+        sa.Column('name', sa.String(50), nullable=False),
+        sa.Column('outline_template', sa.Text(), nullable=False),
+        sa.Column('image_template', sa.Text(), nullable=False),
+        sa.Column('page_structure', postgresql.JSONB, server_default=sa.text("'{}'::jsonb")),
+        sa.Column('video_template', sa.Text(), nullable=True),
+        sa.Column('default_size', sa.String(20), server_default='1024x1024'),
+        sa.Column('is_active', sa.Boolean(), server_default=sa.text('true')),
+        sa.Column('sort_order', sa.Integer(), server_default='0'),
+        sa.Column('created_at', sa.DateTime(), server_default=sa.func.now()),
+        sa.Column('updated_at', sa.DateTime(), server_default=sa.func.now()),
+    )
 
 
 def downgrade() -> None:
-    op.execute("""
-        ALTER TABLE platform_templates
-        DROP COLUMN IF EXISTS page_structure
-    """)
+    op.drop_table('platform_templates')

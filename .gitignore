@@ -56,3 +56,4 @@ backend/migrate_assets_v2.py
 backend/data/cookies/
 .trae/
 .gitignore
+backend/.env

@@ -116,6 +116,20 @@ class InMemoryTaskQueue:
 _queue: InMemoryTaskQueue | None = None
 
 
+def _parse_redis_url() -> dict:
+    """解析 REDIS_URL 环境变量，返回 {host, port, password}"""
+    import os
+    from urllib.parse import urlparse
+
+    url = os.environ.get("REDIS_URL", "redis://localhost:6379")
+    parsed = urlparse(url)
+    return {
+        "host": parsed.hostname or "localhost",
+        "port": parsed.port or 6379,
+        "password": parsed.password or None,
+    }
+
+
 def get_queue_mode() -> str:
     """
     返回当前队列运行模式。
@@ -127,10 +141,16 @@ def get_queue_mode() -> str:
     mode = os.environ.get("YLCRAFT_QUEUE_MODE", "")
     if mode in ("redis", "memory"):
         return mode
-    # 自动检测 Redis
+    # 自动检测 Redis（从 REDIS_URL 读取连接信息）
     try:
         import redis
-        r = redis.Redis(host="localhost", port=6379, socket_connect_timeout=1)
+        cfg = _parse_redis_url()
+        r = redis.Redis(
+            host=cfg["host"],
+            port=cfg["port"],
+            password=cfg["password"],
+            socket_connect_timeout=3,
+        )
         r.ping()
         return "redis"
     except Exception:
