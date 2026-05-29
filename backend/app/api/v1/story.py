@@ -189,7 +189,7 @@ async def generate_portrait(
     通过 ImageBackend（Minimax/Seedance）生成。
     """
     try:
-        from app.services.backend_registry import BackendManager
+        from app.services.ai import get_ai_service
         from app.db.models.story import StoryCharacterPortrait
 
         # 构建 prompt
@@ -206,12 +206,12 @@ async def generate_portrait(
         portrait_urls = []
         seed = ""
 
-        backend_manager = BackendManager()
+        ai_service = get_ai_service()
 
         for view in views:
             view_prompt = f"{prompt}，视角：{view}，确保角色外观高度一致"
             try:
-                result = await backend_manager.generate_image(
+                result = await ai_service.generate_image(
                     prompt=view_prompt,
                     aspect_ratio="3:4",  # 肖像比例
                 )

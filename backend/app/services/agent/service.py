@@ -19,11 +19,11 @@ from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.contracts.types import LLMMessage, MediaType
+from app.services.ai.types import LLMMessage, MediaType
 from app.services.agent.registry import ToolRegistry, ToolCallResult
 from app.services.agent.session.manager import SessionManager
 from app.services.agent.memory.manager import MemoryManager
-from app.services.llm.manager import get_manager
+from app.services.ai import get_ai_service
 
 logger = logging.getLogger("ylcraft.agent.service")
 
@@ -71,7 +71,7 @@ class AgentService:
     def llm_manager(self):
         """延迟获取 LLM Manager"""
         if self._llm_manager is None:
-            self._llm_manager = get_manager()
+            self._llm_manager = get_ai_service()
         return self._llm_manager
 
     # -----------------------------------------------------------------

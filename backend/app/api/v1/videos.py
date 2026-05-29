@@ -15,8 +15,8 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.services.llm.manager import get_manager
-from app.core.contracts.types import VideoGenerationRequest
+from app.services.ai import get_ai_service, AIService
+from app.services.ai.types import VideoGenerationRequest
 
 router = APIRouter()
 logger = logging.getLogger("ylcraft.videos")
@@ -74,11 +74,11 @@ class TaskStatusResponse(BaseModel):
 @router.get("/backends", response_model=VideoBackendsResponse, summary="可用视频后端列表")
 async def list_backends():
     """返回所有已注册的视频生成后端"""
-    manager = get_manager()
+    manager = get_ai_service()
     if not manager.is_loaded():
         return VideoBackendsResponse(success=False, backends=[], default=None)
 
-    from app.core.contracts.types import MediaType
+    from app.services.ai.types import MediaType
     keys = manager.list_backends(MediaType.VIDEO)
     info_list = []
     for key in keys:
@@ -104,9 +104,9 @@ async def generate_video(req: VideoGenerateRequest):
     调用视频生成后端生成视频。
     自动选择默认后端或指定 provider。
     """
-    manager = get_manager()
+    manager = get_ai_service()
     if not manager.is_loaded():
-        raise HTTPException(status_code=503, detail="BackendManager 未初始化")
+        raise HTTPException(status_code=503, detail="AIService 未初始化")
 
     try:
         video_req = VideoGenerationRequest(
@@ -173,9 +173,9 @@ async def get_task_status(task_id: str, provider: Optional[str] = None):
     查询视频生成任务状态。
     用于轮询异步生成任务。
     """
-    manager = get_manager()
+    manager = get_ai_service()
     if not manager.is_loaded():
-        raise HTTPException(status_code=503, detail="BackendManager 未初始化")
+        raise HTTPException(status_code=503, detail="AIService 未初始化")
 
     try:
         result = await manager.poll_video(provider, task_id)

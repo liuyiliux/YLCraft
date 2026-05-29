@@ -125,8 +125,8 @@ class StoryGenerationService:
     """故事生成服务"""
 
     def __init__(self):
-        from app.services.backend_registry import BackendManager
-        self.backend_manager = BackendManager()
+        from app.services.ai import get_ai_service
+        self.ai_service = get_ai_service()
 
     def _build_prompt(self, request: StoryGenerationRequest) -> str:
         """构建 LLM Prompt"""
@@ -186,7 +186,7 @@ class StoryGenerationService:
             logger.info(f"Generating story for topic: {request.topic}")
 
             # 调用 LLM
-            response = await self.backend_manager.chat(
+            response = await self.ai_service.chat(
                 messages=[
                     {
                         "role": "system",

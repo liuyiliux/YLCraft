@@ -67,8 +67,8 @@ from app.db.models.comfyui import (
 from app.services.comfyui.service import (
     WorkflowService, PresetService, TaskService, NodeService,
 )
-from app.services.llm.manager import get_manager
-from app.core.contracts.types import MediaType
+from app.services.ai import get_ai_service
+from app.services.ai.types import MediaType
 
 router = APIRouter()
 logger = logging.getLogger("ylcraft.comfyui")
@@ -110,7 +110,7 @@ async def list_workflows():
         工作流名称列表
     """
     try:
-        manager = get_manager()
+        manager = get_ai_service()
         backend = manager.get_backend(MediaType.IMAGE, "comfyui-image")
         
         if not backend or not hasattr(backend, '_client'):
@@ -143,7 +143,7 @@ async def get_workflow(name: str):
         name: 工作流名称（不含 .json 后缀）
     """
     try:
-        manager = get_manager()
+        manager = get_ai_service()
         backend = manager.get_backend(MediaType.IMAGE, "comfyui-image")
         
         if not backend or not hasattr(backend, '_client'):
@@ -167,7 +167,7 @@ async def save_workflow(request: WorkflowSaveRequest):
         request: 包含 name 和 workflow 的请求
     """
     try:
-        manager = get_manager()
+        manager = get_ai_service()
         backend = manager.get_backend(MediaType.IMAGE, "comfyui-image")
         
         if not backend or not hasattr(backend, '_client'):
@@ -189,7 +189,7 @@ async def delete_workflow(name: str):
         name: 工作流名称（不含 .json 后缀）
     """
     try:
-        manager = get_manager()
+        manager = get_ai_service()
         backend = manager.get_backend(MediaType.IMAGE, "comfyui-image")
         
         if not backend or not hasattr(backend, '_client'):
@@ -223,7 +223,7 @@ async def get_models():
         模型信息列表
     """
     try:
-        manager = get_manager()
+        manager = get_ai_service()
         backend = manager.get_backend(MediaType.IMAGE, "comfyui-image")
         
         if not backend or not hasattr(backend, '_client'):
@@ -248,7 +248,7 @@ async def get_loras():
         LoRA 模型信息列表
     """
     try:
-        manager = get_manager()
+        manager = get_ai_service()
         backend = manager.get_backend(MediaType.IMAGE, "comfyui-image")
         
         if not backend or not hasattr(backend, '_client'):
@@ -273,7 +273,7 @@ async def get_controlnets():
         ControlNet 模型信息列表
     """
     try:
-        manager = get_manager()
+        manager = get_ai_service()
         backend = manager.get_backend(MediaType.IMAGE, "comfyui-image")
         
         if not backend or not hasattr(backend, '_client'):
@@ -302,7 +302,7 @@ async def get_progress():
         进度信息（0.0 - 1.0）
     """
     try:
-        manager = get_manager()
+        manager = get_ai_service()
         backend = manager.get_backend(MediaType.IMAGE, "comfyui-image")
         
         if not backend or not hasattr(backend, '_client'):
@@ -328,7 +328,7 @@ async def get_queue():
         队列信息（运行中、待处理）
     """
     try:
-        manager = get_manager()
+        manager = get_ai_service()
         backend = manager.get_backend(MediaType.IMAGE, "comfyui-image")
         
         if not backend or not hasattr(backend, '_client'):
@@ -347,7 +347,7 @@ async def interrupt():
     中断 ComfyUI 当前执行的任务
     """
     try:
-        manager = get_manager()
+        manager = get_ai_service()
         backend = manager.get_backend(MediaType.IMAGE, "comfyui-image")
         
         if not backend or not hasattr(backend, '_client'):
@@ -369,7 +369,7 @@ async def delete_from_queue(prompt_id: str):
         prompt_id: 任务 ID
     """
     try:
-        manager = get_manager()
+        manager = get_ai_service()
         backend = manager.get_backend(MediaType.IMAGE, "comfyui-image")
         
         if not backend or not hasattr(backend, '_client'):
@@ -752,7 +752,7 @@ async def cancel_task(prompt_id: str):
     """取消任务"""
     # 先尝试从 ComfyUI 队列删除
     try:
-        manager = get_manager()
+        manager = get_ai_service()
         backend = manager.get_backend(MediaType.IMAGE, "comfyui-image")
         if backend and hasattr(backend, '_client'):
             await backend._client.delete_from_queue(prompt_id)
@@ -868,7 +868,7 @@ async def generate_image(request: GenerateRequest, background_tasks: BackgroundT
     prompt_id = f"gen_{uuid.uuid4().hex[:12]}"
 
     try:
-        manager = get_manager()
+        manager = get_ai_service()
         pool = get_pool()
         scheduler = ComfyUIScheduler(pool)
 

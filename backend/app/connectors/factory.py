@@ -1,16 +1,18 @@
 """
-YLCraft — 连接器工厂
+YLCraft — 社交媒体连接器工厂
 
 参考 MediaCrawler 的工厂模式设计：
 - 运行时动态选择平台连接器
 - 支持按平台类型和认证方式创建
 - 提供连接器注册机制，方便扩展
+
+注：AI 连接器已迁移至 services/ai/backends/，此处仅保留社交媒体连接器。
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Optional, Type, Dict, Any, Callable
+from typing import Optional, Type, Dict, Any
 from dataclasses import dataclass
 
 logger = logging.getLogger("ylcraft.connectors.factory")
@@ -179,132 +181,6 @@ class SocialConnectorFactory:
 
 
 # =============================================================================
-# AI 连接器工厂
-# =============================================================================
-
-@dataclass
-class AIConnectorInfo:
-    """AI 连接器信息"""
-    provider_id: str
-    provider_name: str
-    connector_class: Type
-    factory_class: Type
-    supported_model_types: list
-    default_models: dict
-    description: str = ""
-
-
-class AIConnectorFactory:
-    """
-    AI 连接器工厂
-
-    使用示例：
-        # 注册
-        AIConnectorFactory.register("openai", OpenAIConnector, OpenAIFactory)
-
-        # 创建
-        connector = AIConnectorFactory.create("openai", "sk-...")
-    """
-
-    _connectors: Dict[str, AIConnectorInfo] = {}
-
-    @classmethod
-    def register(
-        cls,
-        provider_id: str,
-        connector_class: Type,
-        factory_class: Type,
-        supported_model_types: list = None,
-        default_models: dict = None,
-        description: str = "",
-    ):
-        """
-        注册 AI 连接器
-
-        Args:
-            provider_id: 提供商标识（如 "openai"）
-            connector_class: 连接器类
-            factory_class: 工厂类
-            supported_model_types: 支持的模型类型
-            default_models: 默认模型映射
-            description: 描述
-        """
-        from app.connectors.base import AIModelType
-
-        info = AIConnectorInfo(
-            provider_id=provider_id,
-            provider_name=getattr(connector_class, "PROVIDER_NAME", provider_id),
-            connector_class=connector_class,
-            factory_class=factory_class,
-            supported_model_types=supported_model_types or [],
-            default_models=default_models or {},
-            description=description,
-        )
-        cls._connectors[provider_id] = info
-        logger.info(f"[AIConnectorFactory] Registered: {provider_id}")
-
-    @classmethod
-    def unregister(cls, provider_id: str):
-        """取消注册"""
-        if provider_id in cls._connectors:
-            del cls._connectors[provider_id]
-            logger.info(f"[AIConnectorFactory] Unregistered: {provider_id}")
-
-    @classmethod
-    def create(cls, provider_id: str, api_key: str, config: dict = None) -> Optional[Any]:
-        """
-        创建 AI 连接器实例
-
-        Args:
-            provider_id: 提供商标识
-            api_key: API 密钥
-            config: 额外配置
-
-        Returns:
-            连接器实例或 None
-        """
-        info = cls._connectors.get(provider_id)
-        if not info:
-            logger.warning(f"[AIConnectorFactory] Unknown provider: {provider_id}")
-            return None
-
-        try:
-            return info.connector_class(api_key, config or {})
-        except Exception as e:
-            logger.error(f"[AIConnectorFactory] Failed to create {provider_id}: {e}")
-            return None
-
-    @classmethod
-    def create_with_factory(cls, provider_id: str, api_key: str, config: dict = None) -> Optional[Any]:
-        """使用工厂类创建连接器"""
-        info = cls._connectors.get(provider_id)
-        if not info:
-            return None
-
-        try:
-            factory = info.factory_class()
-            return factory.create(api_key, config)
-        except Exception as e:
-            logger.error(f"[AIConnectorFactory] Factory failed for {provider_id}: {e}")
-            return None
-
-    @classmethod
-    def get_info(cls, provider_id: str) -> Optional[AIConnectorInfo]:
-        """获取连接器信息"""
-        return cls._connectors.get(provider_id)
-
-    @classmethod
-    def list_providers(cls) -> list[AIConnectorInfo]:
-        """列出所有已注册的连接器"""
-        return list(cls._connectors.values())
-
-    @classmethod
-    def supports_provider(cls, provider_id: str) -> bool:
-        """检查是否支持指定提供商"""
-        return provider_id in cls._connectors
-
-
-# =============================================================================
 # 连接器注册装饰器
 # =============================================================================
 
@@ -341,34 +217,6 @@ def register_social_connector(
             oauth_token_url=oauth_token_url,
             oauth_scope=oauth_scope,
             oauth_redirect_uri=oauth_redirect_uri,
-        )
-        return cls
-    return decorator
-
-
-def register_ai_connector(
-    provider_id: str,
-    supported_model_types: list = None,
-    default_models: dict = None,
-    description: str = "",
-    **kwargs,
-):
-    """
-    AI 连接器注册装饰器
-    
-    使用示例：
-        @register_ai_connector("openai", supported_model_types=["llm"], default_models={...})
-        class OpenAIConnector:
-            pass
-    """
-    def decorator(cls):
-        AIConnectorFactory.register(
-            provider_id=provider_id,
-            connector_class=cls,
-            factory_class=getattr(cls, "Factory", None),
-            supported_model_types=supported_model_types,
-            default_models=default_models,
-            description=description,
         )
         return cls
     return decorator

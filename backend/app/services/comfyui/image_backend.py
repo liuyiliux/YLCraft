@@ -18,8 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from app.core.contracts.types import ImageGenerationRequest, ImageGenerationResult, ImageCapability
-from app.services.image.base import BaseImageBackend
+from app.services.ai.types import ImageGenerationRequest, ImageGenerationResult, ImageCapability
 
 logger = logging.getLogger("ylcraft.comfyui.image")
 
@@ -49,7 +48,7 @@ class ComfyUIImageCapabilities:
     supported_models: List[str] = field(default_factory=lambda: ["sd15", "sdxl", "flux"])
 
 
-class ComfyUIImageBackend(BaseImageBackend):
+class ComfyUIImageBackend:
     """
     ComfyUI 图像生成后端
 
@@ -183,7 +182,7 @@ class ComfyUIImageBackend(BaseImageBackend):
         Returns:
             图像生成结果
         """
-        from app.core.contracts.types import ImageGenerationResult
+        from app.services.ai.types import ImageGenerationResult
 
         start = time.perf_counter()
         prompt_id = req.prompt_id or f"comfyui_{int(start * 1000)}"

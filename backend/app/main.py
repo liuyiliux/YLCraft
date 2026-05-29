@@ -22,7 +22,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 
-from app.services.llm.manager import init_manager
+from app.services.ai import AIService, get_ai_service
+from app.services.ai.backends.registry import BackendRegistry
 from app.core.task_queue import get_task_queue
 from app.db.database import SessionLocal  # 新增：导入数据库 session
 
@@ -50,7 +51,7 @@ async def lifespan(app: FastAPI):
 
     # 1.5. 种子数据：平台模板（幂等）
     try:
-        from app.services.image.platform_templates_seed import seed_platform_templates
+        from app.services.ai.platform_templates_seed import seed_platform_templates
         from app.db.database import get_async_session
         async with get_async_session() as seed_session:
             await seed_platform_templates(seed_session)
@@ -76,24 +77,20 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("Task queue: Memory mode (no Redis configured)")
     
-    # 3. 初始化 BackendManager（在所有表创建完成后，可从数据库加载）
+    # 3. 初始化 AIService（统一 AI 入口，替代旧 BackendManager）
     config_path = Path(__file__).parent.parent / "config" / "providers.yaml"
-    
-    # 创建数据库 session
     db_session = SessionLocal()
     
     try:
-        # 传入 session，优先从数据库加载
-        init_manager(str(config_path), session=db_session)
-        logger.info("BackendManager initialized (with database session)")
+        AIService.initialize(str(config_path), session=db_session)
+        logger.info("AIService initialized (with database session)")
     except Exception as e:
-        logger.warning(f"BackendManager initialization failed: {e}, trying YAML only")
+        logger.warning(f"AIService initialization failed: {e}, trying YAML only")
         try:
-            init_manager(str(config_path), session=None)
-            logger.info("BackendManager initialized (YAML only)")
+            AIService.initialize(str(config_path), session=None)
+            logger.info("AIService initialized (YAML only)")
         except FileNotFoundError:
-            # 配置文件不存在，使用空配置初始化
-            init_manager(None, session=db_session)
+            AIService.initialize(None, session=db_session)
             logger.warning(f"providers.yaml not found at {config_path}, using database only")
     
     # 初始化平台连接器（自动注册所有连接器）

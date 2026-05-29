@@ -22,8 +22,8 @@ from typing import Any
 
 import httpx
 
-from app.core.contracts.types import LLMMessage, MediaType, StrEnum
-from app.services.llm.manager import get_manager
+from app.services.ai.types import LLMMessage, MediaType, StrEnum
+from app.services.ai import get_ai_service
 from app.services.video import parser as video_parser
 from app.services.xhs_parser import get_xhs_parser, XhsNote
 import re
@@ -483,7 +483,7 @@ async def analyze_xhs_content(
     provider: str | None = None,
 ) -> dict:
     """使用 LLM 分析小红书图文内容"""
-    manager = get_manager()
+    manager = get_ai_service()
     if not manager.is_loaded() or not manager.get_default(MediaType.LLM):
         return {}
 
@@ -525,7 +525,7 @@ async def analyze_with_llm(
     provider: str | None = None,
 ) -> dict:
     """使用 LLM 分析视频内容"""
-    manager = get_manager()
+    manager = get_ai_service()
     if not manager.is_loaded() or not manager.get_default(MediaType.LLM):
         return {}
 
@@ -610,7 +610,7 @@ async def run_analysis(break_task: BreakTask) -> None:
                 # 构建图文分析用的 transcript（description 作为主要内容）
                 text_content = f"""标题：{xhs_note.title}\n\n正文：{xhs_note.description}\n\n图片数量：{len(xhs_note.images)}张"""
 
-                manager = get_manager()
+                manager = get_ai_service()
                 llm_available = manager.is_loaded() and bool(manager.get_default(MediaType.LLM))
 
                 if llm_available:
@@ -730,7 +730,7 @@ async def run_analysis(break_task: BreakTask) -> None:
             video_url = break_task.url
 
         # Step 3: LLM 分析
-        manager = get_manager()
+        manager = get_ai_service()
         llm_available = manager.is_loaded() and bool(manager.get_default(MediaType.LLM))
 
         if llm_available:

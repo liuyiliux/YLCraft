@@ -21,8 +21,8 @@ from app.services.breaker import (
     analyze_xhs_content,
 )
 from app.services.xhs_parser import get_xhs_parser, XhsNote
-from app.core.contracts.types import MediaType
-from app.services.llm.manager import get_manager
+from app.services.ai.types import MediaType
+from app.services.ai import get_ai_service
 from typing import Optional
 import re
 
@@ -177,7 +177,7 @@ async def preview_xhs_note(req: XhsPreviewRequest):
         # LLM 分析（可选）
         analysis_result = None
         if not req.skip_llm:
-            manager = get_manager()
+            manager = get_ai_service()
             llm_available = manager.is_loaded() and bool(manager.get_default(MediaType.LLM))
 
             if llm_available:

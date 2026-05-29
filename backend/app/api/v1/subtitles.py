@@ -23,7 +23,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
 from app.services.subtitle.service import subtitle_service
-from app.services.ffmpeg_service import FFmpegService
+from app.services.video.ffmpeg import FFmpegService
 
 router = APIRouter()
 logger = logging.getLogger("ylcraft.subtitles")

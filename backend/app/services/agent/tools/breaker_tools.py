@@ -16,8 +16,8 @@ from app.services.breaker import (
     BreakTask,
     AnalysisStatus,
 )
-from app.services.llm.manager import get_manager
-from app.core.contracts.types import MediaType
+from app.services.ai import get_ai_service
+from app.services.ai.types import MediaType
 
 logger = logging.getLogger("ylcraft.agent.tools.breaker")
 
@@ -135,7 +135,7 @@ async def generate_script(
 ) -> dict:
     """生成仿写脚本"""
     try:
-        manager = get_manager()
+        manager = get_ai_service()
         if not manager.is_loaded() or not manager.get_default(MediaType.LLM):
             return {"success": False, "error": "LLM 服务不可用，无法生成脚本"}
 
@@ -181,7 +181,7 @@ async def generate_script(
 
 请用中文输出，确保脚本结构清晰、有爆款潜质。"""
 
-        from app.core.contracts.types import LLMMessage
+        from app.services.ai.types import LLMMessage
         result = await manager.chat(
             [LLMMessage(role="user", content=prompt)],
         )

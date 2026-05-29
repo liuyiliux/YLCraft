@@ -106,9 +106,6 @@ npm run dev
 ### 环境变量（`backend/.env`）
 
 ```bash
-# 豆包 API（LLM + TTS）
-DOUBAO_API_KEY=your_doubao_api_key_here
-
 # MiniMax API（图生视频）
 MINIMAX_API_KEY=your_minimax_api_key_here
 
@@ -292,7 +289,6 @@ YLCraft/
 
 | Provider | 用途 |
 |----------|------|
-| 豆包（Doubao） | LLM / TTS |
 | MiniMax | 图像生成 / 视频生成 |
 | Replicate (SDXL) | Live2D 风格转换 |
 | Remove.bg | Live2D 抠图 |

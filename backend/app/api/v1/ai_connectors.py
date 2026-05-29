@@ -34,7 +34,7 @@ from app.db.models.ai_connector import (
     AIProviderType,
 )
 from app.services.ai_connector.service import AIConnectorService
-from app.services.llm.manager import init_manager as llm_init_manager
+from app.services.ai import AIService
 
 logger = logging.getLogger("ylcraft.api.ai")
 
@@ -151,7 +151,7 @@ async def reload_connectors():
     try:
         from app.db.database import get_session
         session = next(get_session())
-        llm_init_manager(session=session)
+        AIService.initialize(session=session)
         logger.info("[AI Connectors] 已成功重新加载所有 AI 连接器配置")
         return {
             "success": True,

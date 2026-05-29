@@ -13,8 +13,8 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.services.llm.manager import get_manager
-from app.core.contracts.types import ImageGenerationRequest
+from app.services.ai import get_ai_service, AIService
+from app.services.ai.types import ImageGenerationRequest
 
 router = APIRouter()
 logger = logging.getLogger("ylcraft.images")
@@ -78,16 +78,15 @@ class ImageBackendsResponse(BaseModel):
 async def list_backends():
     """返回所有已注册的图像生成后端"""
     from app.db.database import SessionLocal
-    manager = get_manager()
+    manager = get_ai_service()
     
     with SessionLocal() as db_session:
         try:
             if not manager.is_loaded():
-                from app.services.llm.manager import init_manager
                 from pathlib import Path
                 config_path = Path(__file__).parent.parent.parent.parent / "config" / "providers.yaml"
-                init_manager(str(config_path), session=db_session)
-                logger.info("BackendManager reinitialized from /backends endpoint")
+                AIService.initialize(str(config_path), session=db_session)
+                logger.info("AIService reinitialized from /backends endpoint")
         except Exception as e:
             logger.warning(f"Reinitializing manager failed: {e}")
         
@@ -160,9 +159,9 @@ async def generate_image(req: ImageGenerateRequest):
     自动选择默认后端或指定 provider。
     支持动态指定 model 参数控制花费。
     """
-    manager = get_manager()
+    manager = get_ai_service()
     if not manager.is_loaded():
-        raise HTTPException(status_code=503, detail="BackendManager 未初始化")
+        raise HTTPException(status_code=503, detail="AIService 未初始化")
 
     try:
         img_req = ImageGenerationRequest(
@@ -475,7 +474,7 @@ async def generate_outline_endpoint(req: GenerateOutlineRequest):
     logger.info("[API] generate-outline called: topic=%s, platforms=%s, backend_name=%s, model=%s",
                 req.topic, req.platforms, req.backend_name, req.model)
     from app.db.database import get_async_session
-    from app.services.image.outline_service import generate_outline
+    from app.services.ai.outline_service import generate_outline
     
     if not req.topic or not req.topic.strip():
         return GenerateOutlineResponse(success=False, error="Topic is required")
@@ -521,13 +520,13 @@ async def batch_retry_endpoint(req: BatchRetryRequest):
     对批量生成中失败的图片进行单张重生成。
     复用 generate_image 逻辑，返回新的图片 URL。
     """
-    from app.core.contracts.types import ImageGenerationRequest
+    from app.services.ai.types import ImageGenerationRequest
     from app.db.database import get_async_session
     from app.services.asset.service import AssetService
 
-    manager = get_manager()
+    manager = get_ai_service()
     if not manager.is_loaded():
-        raise HTTPException(status_code=503, detail="BackendManager 未初始化")
+        raise HTTPException(status_code=503, detail="AIService 未初始化")
 
     try:
         img_req = ImageGenerationRequest(
@@ -586,7 +585,7 @@ async def batch_generate_endpoint(req: BatchGenerateRequest):
     支持参考图反推人物特征。
     """
     from app.db.database import get_async_session
-    from app.services.image.outline_service import batch_generate_images
+    from app.services.ai.outline_service import batch_generate_images
     
     if not req.pages:
         return BatchGenerateResponse(success=False, error="pages is required")

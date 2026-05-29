@@ -1,9 +1,13 @@
 # YLCraft — 逸流创作平台
 
-> **版本**：v0.3.0
-> **状态**：部分实现（~100% 核心功能已完成）
-> **最后更新**：2026-05-20
+> **版本**：v0.4.0
+> **状态**：部分实现（~100% 核心功能已完成，架构重整中）
+> **最后更新**：2026-05-29
 > **目标**：任何 AI Agent 或开发者加载本文档后，可无缝继续开发
+>
+> **架构文档**：详见 `docs/architecture/`
+> - [YLCraft-架构指导原则](./architecture/YLCraft-架构指导原则.md) — 全局架构规则与反模式速查
+> - [YLCraft-AI服务层架构设计](./architecture/YLCraft-AI服务层架构设计.md) — AI 领域层详细设计
 
 ***
 
@@ -181,315 +185,123 @@ waoowaoo ───────────→ features/ 功能模块分层
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-### 3.2 模块划分
+### 3.2 模块划分（2026-05 重整后）
 
 ```
 backend/
 ├── app/
 │   ├── main.py                    # FastAPI 入口
-│   ├── config.py                 # 配置管理
+│   ├── config.py                  # 配置管理
 │   │
-│   ├── api/v1/                   # API 路由
-│   │   ├── assets.py             # 🆕 素材资产库 API
-│   │   ├── collections.py        # 🆕 收藏集 API
-│   │   ├── download.py           # 🆕 下载 API（含队列）
-│   │   ├── characters.py         # 角色管理
-│   │   ├── projects.py           # 项目管理
-│   │   ├── scripts.py            # 脚本管理
-│   │   ├── shots.py              # 分镜管理
-│   │   ├── media.py              # 媒体管理
-│   │   ├── providers.py          # Provider 配置
-│   │   ├── ecommerce/            # 🆕 电商垂直 API
-│   │   │   ├── products.py
-│   │   │   └── campaigns.py
-│   │   └── photography/          # 🆕 摄影垂直 API
-│   │       ├── sessions.py
-│   │       └── presets.py
+│   ├── api/v1/                    # API 路由层（仅 HTTP 处理）
+│   │   ├── llm.py                 # LLM 对话路由
+│   │   ├── images.py              # 图像生成路由
+│   │   ├── videos.py              # 视频生成路由
+│   │   ├── breaker.py             # 爆款拆解路由
+│   │   ├── comfyui.py             # ComfyUI 路由
+│   │   ├── ai_connectors.py       # AI Connector 管理路由
+│   │   ├── assets.py              # 素材资产库 API
+│   │   ├── ...                    # 其他路由
 │   │
-│   ├── core/
-│   │   ├── contracts/            # 数据契约（Dataclass）
-│   │   │   ├── requests.py
-│   │   │   └── results.py
-│   │   └── integrations/        # API 集成适配器
+│   ├── core/                      # 基础设施层
+│   │   ├── config.py              # 配置中心
+│   │   ├── ws_broadcast.py        # WebSocket 广播
+│   │   └── ...                    # 中间件、安全
 │   │
-│   ├── services/
-│   │   ├── llm/
-│   │   │   ├── manager.py        # BackendManager
-│   │   │   ├── registry.py       # ProviderRegistry
-│   │   │   └── bootstrap.py      # 启动注册
-│   │   ├── asset/               # 🆕 统一素材资产库
-│   │   │   ├── models.py         # Asset / AssetTag / AssetCollection
-│   │   │   ├── service.py        # CRUD 服务
-│   │   │   ├── search.py         # 搜索过滤
-│   │   │   ├── dedup.py          # 去重检测
-│   │   │   ├── importer.py       # 导入器（URL/上传）
-│   │   │   └── thumbnailer.py    # 缩略图生成
-│   │   ├── download/            # 🆕 下载服务（重构）
-│   │   │   ├── fetcher.py        # URL 获取（yt-dlp 封装）
-│   │   │   ├── queue.py          # 下载队列
-│   │   │   └── dedup.py          # 去重
-│   │   ├── breaker/              # 爆款拆解
-│   │   │   └── analyzer.py
-│   │   ├── clip/                 # Clip Lab
-│   │   │   ├── cutclaw.py
-│   │   │   ├── narrato.py
-│   │   │   └── moe.py
-│   │   ├── story/                # Story Maker
-│   │   │   └── maker.py
-│   │   ├── ecommerce/            # 🆕 电商垂直
-│   │   │   ├── models.py
-│   │   │   ├── product.py
-│   │   │   ├── generator.py      # 种草视频生成
-│   │   │   └── publisher.py      # 多平台发布
-│   │   └── photography/          # 🆕 摄影垂直
-│   │       ├── models.py
-│   │       ├── session.py        # 拍摄场次
-│   │       ├── color_grading.py  # AI 调色
-│   │       └── photo_mv.py       # 写真 MV
+│   ├── services/                  # 业务服务层（领域驱动）
+│   │   ├── ai/                    # ★ AI 统一领域层
+│   │   │   ├── types.py           # 所有 AI 类型、枚举、Protocol
+│   │   │   ├── service.py         # AIService 编排层（全局单例）
+│   │   │   ├── outline_service.py # 多平台大纲生成
+│   │   │   ├── platform_templates_seed.py
+│   │   │   └── backends/          # AI Backend 实现
+│   │   │       ├── registry.py    # 注册中心（DB+YAML）
+│   │   │       ├── router.py      # 路由选择+降级
+│   │   │       ├── llm/           # LLM Backend
+│   │   │       ├── image/         # Image Backend
+│   │   │       └── video/         # Video Backend
+│   │   ├── comfyui/               # ComfyUI 独立服务（客户端+连接池+工作流）
+│   │   ├── ai_connector/          # AI Connector CRUD 管理
+│   │   ├── asset/                 # 统一素材资产库
+│   │   ├── breaker/               # 爆款拆解
+│   │   ├── clip/                  # Clip Lab（cutclaw/moe/narrato）
+│   │   ├── story/                 # Story Maker
+│   │   ├── agent/                 # Agent 服务
+│   │   ├── download/              # 下载服务
+│   │   ├── live2d/                # Live 2D 工厂
+│   │   └── ...                    # 其他领域服务
 │   │
-│   ├── chains/                   # LangChain Agent
-│   │   ├── agents/
-│   │   │   ├── base.py
-│   │   │   ├── character.py
-│   │   │   ├── scene.py
-│   │   │   └── script.py
-│   │   └── tools/
+│   ├── connectors/                # 外部平台连接器
+│   │   ├── factory.py             # 连接器工厂
+│   │   ├── registry.py            # 连接器注册
+│   │   └── social/                # 社交平台连接器（bilibili/douyin/...）
 │   │
-│   ├── tasks/                    # 任务队列
-│   │   └── manager.py
-│   │
-│   └── db/
-│       ├── database.py           # 数据库连接
-│       ├── models/              # SQLModel 模型
-│       │   ├── asset.py         # 🆕 资产模型
-│       │   ├── character.py    # 角色模型
-│       │   ├── ecommerce.py     # 🆕 电商模型
-│       │   └── photography.py   # 🆕 摄影模型
-│       └── migrations/
+│   └── db/                        # 数据层
+│       ├── database.py            # 数据库连接
+│       └── models/                # SQLModel ORM 模型
 
 frontend/
 ├── src/
-│   ├── pages/
-│   │   ├── assets/               # 🆕 素材资产库页面
-│   │   ├── breaker/              # 爆款拆解
-│   │   ├── clip-lab/            # Clip Lab
-│   │   ├── story/               # Story Maker
-│   │   ├── characters/          # 角色管理
-│   │   ├── ecommerce/          # 🆕 电商
-│   │   └── photography/        # 🆕 摄影
-│   ├── components/
-│   │   ├── provider-panel/
-│   │   ├── agent-debugger/
-│   │   ├── timeline/
-│   │   └── media-uploader/
-│   └── services/
-│       └── api.ts
+│   ├── pages/                     # 页面（27 个）
+│   │   ├── assets/                # 素材资产库
+│   │   ├── breaker/               # 爆款拆解
+│   │   ├── clip-lab/              # Clip Lab
+│   │   ├── story/                 # Story Maker
+│   │   ├── image-gen/             # 图像生成
+│   │   ├── video-gen/             # 视频生成
+│   │   ├── comfyui/               # ComfyUI 工作台
+│   │   └── ...
+│   └── components/
 ```
+
+> **注意**：已删除的旧模块：`services/llm/`、`services/image/`、`services/video_gen/`、`core/contracts/`。详见 `docs/architecture/YLCraft-AI服务层架构设计.md`。
 
 ***
 
-## 四、BackendManager — 模型调度核心
+## 四、AIService — AI 统一调度核心
+
+> **已重整**：2026-05 从 `services/llm/manager.py` (BackendManager) 重构为 `services/ai/service.py` (AIService)。
+> 详见 `docs/architecture/YLCraft-AI服务层架构设计.md`。
 
 ### 4.1 设计来源
 
 融合了 **ArcReel 的 Protocol 接口** + **Provider 注册表设计** + **MoneyPrinterTurbo 的 YAML 配置**。
 
-### 4.2 核心类型定义
+### 4.2 入口
 
 ```python
-# backend/app/core/contracts/types.py
+# 启动时：从 DB + YAML 加载所有 Backend
+from app.services.ai import AIService
+AIService.initialize(config_path="config/providers.yaml", session=db_session)
 
-from dataclasses import dataclass, field
-from enum import StrEnum
-from typing import Protocol
-from pathlib import Path
+# 运行时：获取全局单例
+from app.services.ai import get_ai_service
+service = get_ai_service()
 
-# ==================== 媒体类型 ====================
-class MediaType(StrEnum):
-    IMAGE = "image"
-    VIDEO = "video"
-    LLM = "llm"
-    TTS = "tts"
-
-# ==================== 能力枚举 ====================
-class ImageCapability(StrEnum):
-    TEXT_TO_IMAGE = "text_to_image"
-    IMAGE_TO_IMAGE = "image_to_image"
-    STYLE_CONTROL = "style_control"
-
-class VideoCapability(StrEnum):
-    TEXT_TO_VIDEO = "text_to_video"
-    IMAGE_TO_VIDEO = "image_to_video"
-    SEED_CONTROL = "seed_control"
-
-class LLMCapability(StrEnum):
-    TEXT_GENERATION = "text_generation"
-    VISION = "vision"
-    STRUCTURED_OUTPUT = "structured_output"
-
-# ==================== 请求/响应 Dataclass ====================
-@dataclass
-class ImageGenerationRequest:
-    prompt: str
-    negative_prompt: str = ""
-    size: str = "1024*1024"
-    style: str = ""
-    n: int = 1
-    seed: int | None = None
-    model: str = ""
-    provider: str = ""
-
-@dataclass
-class ImageGenerationResult:
-    success: bool
-    url: str | None = None
-    local_path: Path | None = None
-    cost: float = 0.0
-    latency_ms: float = 0.0
-    provider: str = ""
-    error: str | None = None
-
-@dataclass
-class LLMMessage:
-    role: str  # "system" | "user" | "assistant"
-    content: str
-
-@dataclass
-class LLMGenerationResult:
-    success: bool
-    content: str = ""
-    usage: dict = field(default_factory=dict)
-    cost: float = 0.0
-    provider: str = ""
-    latency_ms: float = 0.0
-    error: str | None = None
-
-# ==================== Protocol 接口 ====================
-class ImageBackend(Protocol):
-    @property
-    def name(self) -> str: ...
-    @property
-    def model(self) -> str: ...
-    @property
-    def capabilities(self) -> set: ...
-    async def generate(self, req: ImageGenerationRequest) -> ImageGenerationResult: ...
-    async def health_check(self) -> bool: ...
-
-class LLMBackend(Protocol):
-    @property
-    def name(self) -> str: ...
-    @property
-    def model(self) -> str: ...
-    @property
-    def capabilities(self) -> set: ...
-    async def chat(self, messages: list[LLMMessage], **kwargs) -> LLMGenerationResult: ...
-    async def structured_output(self, schema: dict, prompt: str) -> dict: ...
+# 调用
+result = await service.chat(messages=[...])
+result = await service.generate_image(req)
+result = await service.generate_video(req)
 ```
 
-### 4.3 ProviderSpec 注册规格
+### 4.3 三层架构
 
-```python
-# backend/app/services/llm/registry.py
-
-from dataclasses import dataclass, field
-from threading import RLock
-
-@dataclass(frozen=True, slots=True)
-class ProviderSpec:
-    """
-    Provider 注册规格（参考 Provider 注册表模式）
-    frozen=True：不可变，线程安全
-    slots=True：节省内存
-    """
-    key: str                          # 标准名称："seedance-2"
-    display_name: str                  # 显示名称："火山方舟 Seedance 2"
-    aliases: tuple[str, ...]           # 别名：("ark", "doubao", "火山")
-    media_type: MediaType              # 媒体类型
-    default_base_url: str | None       # 默认 API 地址
-    requires_api_key: bool = True
-    requires_secret: bool = False
-    default_model: str = ""
-    init_params: dict = field(default_factory=dict)
-    cost_per_call: float = 0.0
-    cost_per_1k_tokens: float = 0.0
-    is_experimental: bool = False
-
-_REGISTRY: dict[str, ProviderSpec] = {}
-_ALIAS_MAP: dict[str, str] = {}
-_REGISTRY_LOCK = RLock()
-
-def register_provider(spec: ProviderSpec) -> None:
-    with _REGISTRY_LOCK:
-        _REGISTRY[spec.key] = spec
-        _ALIAS_MAP[spec.key] = spec.key
-        for alias in spec.aliases:
-            _ALIAS_MAP[alias.lower()] = spec.key
-
-def resolve_key(name: str) -> str:
-    return _ALIAS_MAP.get(name.lower(), name.lower())
-
-def get_provider_spec(key: str) -> ProviderSpec | None:
-    return _REGISTRY.get(resolve_key(key))
-
-def list_providers(media_type: MediaType = None) -> list[ProviderSpec]:
-    specs = list(_REGISTRY.values())
-    if media_type:
-        specs = [s for s in specs if s.media_type == media_type]
-    return sorted(specs, key=lambda s: s.key)
+```
+AIService (编排层) → BackendRouter (选择+降级) → BackendRegistry (注册)
+                                                        ↓
+                                              backends/llm/  backends/image/  backends/video/
 ```
 
-### 4.4 BackendManager 统一调度
+### 4.4 核心类型
 
-```python
-# backend/app/services/llm/manager.py
+所有 AI 类型定义在 `app/services/ai/types.py`（单一数据源）：
 
-class BackendManager:
-    """
-    统一模型调度器
-    参考：ArcReel Registry + Provider 注册表设计 + MoneyPrinterTurbo Config
-    """
-
-    def __init__(self, config_path: str = "config/providers.yaml"):
-        self._backends: dict[MediaType, dict[str, object]] = {
-            mt: {} for mt in MediaType
-        }
-        self._defaults: dict[MediaType, str] = {}
-        self._load_from_yaml(config_path)
-
-    def get_backend(self, media_type: MediaType, name: str = None):
-        key = resolve_key(name) if name else self._defaults.get(media_type)
-        return self._backends[media_type].get(key)
-
-    async def generate_image(self, req: ImageGenerationRequest) -> ImageGenerationResult:
-        preferred = req.provider or req.model or self._defaults.get(MediaType.IMAGE)
-        backends = self._backends[MediaType.IMAGE]
-
-        if preferred:
-            key = resolve_key(preferred)
-            if key in backends:
-                result = await backends[key].generate(req)
-                if result.success:
-                    return result
-
-        for name, backend in backends.items():
-            if name == preferred:
-                continue
-            try:
-                if await backend.health_check():
-                    result = await backend.generate(req)
-                    if result.success:
-                        return result
-            except Exception:
-                continue
-
-        return ImageGenerationResult(success=False, error="All providers failed")
-
-    async def chat(self, messages: list[LLMMessage], provider: str = None, **kwargs) -> LLMGenerationResult:
-        backend = self.get_backend(MediaType.LLM, provider)
-        if not backend:
-            return LLMGenerationResult(success=False, error=f"Provider not found: {provider}")
-        return await backend.chat(messages, **kwargs)
-```
+| 类别 | 内容 |
+|------|------|
+| **枚举** | `MediaType`, `ImageCapability`, `VideoCapability`, `LLMCapability` |
+| **请求/响应** | `ImageGenerationRequest/Result`, `VideoGenerationRequest/Result`, `LLMMessage`, `LLMGenerationResult` |
+| **Protocol** | `ImageBackend`, `VideoBackend`, `LLMBackend` |
+| **工具函数** | `image_to_base64_data_uri()`, `download_file()`, `poll_with_retry()` |
 
 ***
 
@@ -923,9 +735,11 @@ Phase 3c（短剧，延续当前路线）
 
 ## 十一、AI 图像/视频生成
 
+> **已重整**：详见 `docs/architecture/YLCraft-AI服务层架构设计.md`。
+
 ### 11.1 架构设计
 
-YLCraft 采用 **Provider 架构**，统一调度多种 AI 生成服务。
+YLCraft 采用 **Provider 架构**，通过 `services/ai/` 统一调度多种 AI 生成服务。
 
 ```
 ┌───────────────────────────────────────────────────────────────┐
@@ -934,114 +748,50 @@ YLCraft 采用 **Provider 架构**，统一调度多种 AI 生成服务。
 └───────────────────────────────┬───────────────────────────────┘
                                 │
 ┌───────────────────────────────▼───────────────────────────────┐
-│                    BackendManager                              │
-│   - 从 providers.yaml 加载配置                                 │
-│   - 实例化 ImageBackend / VideoBackend                        │
-│   - 自动降级：默认 Provider → 遍历其他可用 Backend             │
+│                    AIService (services/ai/service.py)          │
+│   - 全局单例，编排层                                            │
+│   - 委托 BackendRouter 选择 + BackendRegistry 注册             │
 └───────────────────────────────┬───────────────────────────────┘
                                 │
           ┌─────────────────────┼─────────────────────┐
           │                     │                     │
           ▼                     ▼                     ▼
    ┌─────────────┐      ┌─────────────┐      ┌─────────────┐
-   │MiniMaxImage │      │MiniMaxVideo │      │  Future...  │
-   │  (Seedance) │      │  (Seedance) │      │  VolcEngine │
+   │ Gemini Image│      │MiniMax Video│      │  OpenAI SDK │
+   │  (Gemini)   │      │  (Seedance) │      │  (DALL-E)  │
    └─────────────┘      └─────────────┘      └─────────────┘
 ```
 
 ### 11.2 核心类型
 
-```python
-# app/core/contracts/types.py
-
-@dataclass
-class ImageGenerationRequest:
-    prompt: str
-    output_path: Path | None
-    negative_prompt: str = ""
-    size: str = "1024x1024"
-    aspect_ratio: str = "9:16"
-    seed: int | None = None
-    reference_images: list[str] = field(default_factory=list)
-
-@dataclass
-class ImageGenerationResult:
-    success: bool
-    image_path: Path | None
-    url: str | None
-    provider: str
-    model: str
-    cost: float
-    error: str | None
-
-@dataclass
-class VideoGenerationRequest:
-    prompt: str
-    output_path: Path | None
-    duration: int = 5
-    resolution: str = "720p"
-    aspect_ratio: str = "9:16"
-    start_image: Path | None  # 图生视频首帧
-    generate_audio: bool = True
-
-@dataclass
-class VideoGenerationResult:
-    success: bool
-    video_path: Path | None
-    task_id: str
-    url: str
-    status: str  # pending/processing/done/error
-    progress: int
-```
-
-### 11.3 Backend 接口
+所有类型定义在 `app/services/ai/types.py`：
 
 ```python
-# app/services/image/base.py
-
-class ImageBackend(Protocol):
-    @property
-    def name(self) -> str: ...
-    @property
-    def model(self) -> str: ...
-    @property
-    def capabilities(self) -> set[ImageCapability]: ...
-    async def generate(self, req: ImageGenerationRequest) -> ImageGenerationResult: ...
-    async def health_check(self) -> bool: ...
-
-# app/services/video_gen/base.py
-
-class VideoBackend(Protocol):
-    @property
-    def name(self) -> str: ...
-    @property
-    def model(self) -> str: ...
-    @property
-    def capabilities(self) -> set[VideoCapability]: ...
-    async def generate(self, req: VideoGenerationRequest) -> VideoGenerationResult: ...
-    async def poll(self, task_id: str) -> VideoGenerationResult: ...
-    async def health_check(self) -> bool: ...
+from app.services.ai.types import (
+    ImageGenerationRequest, ImageGenerationResult,
+    VideoGenerationRequest, VideoGenerationResult,
+    ImageCapability, VideoCapability,
+    ImageBackend, VideoBackend,       # Protocol 接口
+)
 ```
 
-### 11.4 已实现 Provider
+### 11.3 Backend 实现
 
-| Provider      | 类型    | 模型           | 能力              |
-| ------------- | ----- | ------------ | --------------- |
-| MiniMax Image | Image | seedance-2.0 | T2I, I2I        |
-| MiniMax Video | Video | seedance-2.0 | T2V, I2V, Audio |
+| Backend | 类型 | 文件 | 注册方式 |
+|---------|------|------|----------|
+| Gemini Image | Image | `ai/backends/image/gemini.py` | DB (api_format=gemini) |
+| OpenAI DALL-E | Image | `ai/backends/image/openai_sdk.py` | DB (api_format=openai_sdk) |
+| Generic HTTP | Image | `ai/backends/image/generic.py` | DB (api_format=custom) |
+| ComfyUI | Image | `comfyui/image_backend.py` | YAML |
+| MiniMax Video | Video | `ai/backends/video/minimax.py` | YAML |
+| OpenAI SDK | LLM | `ai/backends/llm/openai_sdk.py` | DB (api_format=openai_sdk) |
+| Generic HTTP | LLM | `ai/backends/llm/generic.py` | DB (api_format=custom) |
 
-### 11.5 配置示例
+### 11.4 配置示例
 
 ```yaml
 # backend/config/providers.yaml
 providers:
-  seedance:
-    media_type: image
-    provider: minimax
-    model: seedance-2.0
-    api_base: https://api.minimax.chat/v1
-    api_key: "${MINIMAX_API_KEY}"
-
   minimax-video:
     media_type: video
     provider: minimax
@@ -1049,18 +799,16 @@ providers:
     api_base: https://api.minimax.chat/v1
     api_key: "${MINIMAX_API_KEY}"
 
+  comfyui-image:
+    media_type: comfyui
+    server_url: http://127.0.0.1:8188
+    provides: [image]
+
 defaults:
-  image: seedance
   video: minimax-video
 ```
 
-### 11.6 参考架构来源
-
-- **ArcReel** `lib/image_backends/` + `lib/video_backends/`
-  - Protocol 接口定义
-  - Request/Result dataclass
-  - Registry 注册工厂
-  - `poll_with_retry()` 异步轮询
+> LLM 和 Image Backend 通过数据库 `AIConnector` 表配置，不在此 YAML 中管理。
 
 ***
 
@@ -1327,30 +1075,34 @@ export const getDyVideo = (id: string) => request(`/douyin/video/${id}`)
 
 ### 14.2 后端服务实现详情
 
-**已实现服务（105+ Python 文件）**：
+**已实现服务（100+ Python 文件）**：
 
 | 服务模块 | 文件路径 | 状态 |
 |---------|---------|------|
+| **AI 统一服务** | `services/ai/` | ✅ 重整完成（LLM+Image+Video 统一入口） |
 | Agent 服务 | `services/agent/` | ✅ 完成 |
-| AI 连接器 | `services/ai_connector/` | ✅ 完成 |
+| AI 连接器管理 | `services/ai_connector/` | ✅ 完成 |
+| ComfyUI | `services/comfyui/` | ✅ 完成（独立服务） |
 | 素材资产库 | `services/asset/` | ✅ 完成 |
 | BGM 配乐 | `services/bgm/` | ✅ 完成 |
 | 爆款拆解 | `services/breaker/` | ✅ 完成 |
 | 角色管理 | `services/character/` | ✅ 完成 |
 | 视频剪辑 | `services/clip/` | ✅ 完成 |
-| ComfyUI | `services/comfyui/` | ✅ 完成 |
-| Cookie 获取 | `services/cookie_acquisition/` | ✅ 完成 |
+| Cookie 获取 | `services/cookies/` | ✅ 完成 |
 | 素材采集 | `services/crawler/` | ✅ 完成 |
 | Live 2D | `services/live2d/` | ✅ 完成 (98%) |
-| LLM 管理 | `services/llm/` | ✅ 完成 |
 | 小说阅读 | `services/novel/` | ✅ 完成 |
 | 平台连接 | `services/platform_connection/` | ✅ 完成 |
 | 社交媒体 | `services/social_media_connector/` | ✅ 完成 |
 | Story Maker | `services/story/` | ✅ 完成 |
 | 字幕提取 | `services/subtitle/` | ✅ 完成 |
-| 视频生成 | `services/video_gen/` | ✅ 完成 |
-| 图片生成 | `services/image/` | ✅ 完成 |
 | XHS 解析 | `services/xhs_parser/` | ✅ 完成 |
+
+**已删除的旧模块**（已迁移到 `services/ai/`）：
+- ~~`services/llm/`~~ → `services/ai/backends/llm/`
+- ~~`services/image/`~~ → `services/ai/backends/image/`
+- ~~`services/video_gen/`~~ → `services/ai/backends/video/`
+- ~~`core/contracts/types.py`~~ → `services/ai/types.py`
 
 ### 14.3 前端页面实现详情
 

@@ -33,7 +33,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
-from app.core.contracts.types import LLMMessage
+from app.services.ai.types import LLMMessage
 from app.core.task_queue import get_task_queue, TaskStatus
 from app.services.clip.base import (
     HWAccelConfig,
@@ -46,7 +46,7 @@ from app.services.clip.base import (
     get_video_info_full,
     get_encoder_config,
 )
-from app.services.llm.manager import BackendManager, get_manager
+from app.services.ai import get_ai_service, AIService
 
 logger = logging.getLogger("ylcraft.clip.cutclaw")
 
@@ -498,7 +498,7 @@ class CutClawAgent:
                 )
 
             # 调用 LLM
-            manager = self.manager or self._get_manager()
+            manager = self.manager or self._get_ai_service()
             if not manager:
                 return ToolResult(
                     success=False,
@@ -586,7 +586,7 @@ class CutClawService:
     def _get_manager(self) -> Optional[BackendManager]:
         if self._manager is None:
             try:
-                from app.services.llm.manager import get_manager as _get_m
+                from app.services.ai import get_ai_service as _get_m
                 self._manager = _get_m()
             except Exception:
                 logger.warning("BackendManager not available")
@@ -668,7 +668,7 @@ class CutClawService:
                 video_path=video_path,
                 instruction=instruction,
                 config=config,
-                manager=self._get_manager(),
+                manager=self._get_ai_service(),
             )
 
             result = await agent.run(progress_cb)

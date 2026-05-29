@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
-from app.core.contracts.types import LLMMessage
+from app.services.ai.types import LLMMessage
 from app.core.task_queue import get_task_queue, TaskStatus
 from app.services.clip.base import (
     HWAccelConfig,
@@ -37,7 +37,7 @@ from app.services.clip.base import (
     get_video_info_full,
     get_encoder_config,
 )
-from app.services.llm.manager import BackendManager, get_manager
+from app.services.ai import get_ai_service, AIService
 
 logger = logging.getLogger("ylcraft.clip.moe")
 
@@ -476,7 +476,7 @@ class MoEService:
     def _get_manager(self) -> Optional[BackendManager]:
         if self._manager is None:
             try:
-                from app.services.llm.manager import get_manager as _get_m
+                from app.services.ai import get_ai_service as _get_m
                 self._manager = _get_m()
             except Exception:
                 logger.warning("BackendManager not available")
@@ -552,7 +552,7 @@ class MoEService:
         try:
             await self._queue.update_progress(task_id, 0, "MoE 多专家分析中...")
 
-            manager = self._get_manager()
+            manager = self._get_ai_service()
             if not manager:
                 raise RuntimeError("LLM Manager 不可用")
 

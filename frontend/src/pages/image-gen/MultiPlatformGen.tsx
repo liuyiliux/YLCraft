@@ -4,7 +4,7 @@
  * 阶段2（生成页）：大纲编辑 + 图像模型配置 + 批量生成 + 结果
  */
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Card, Row, Col, Input, Button, Select, Space, message, Upload,
   Image, Tag, Collapse, Empty, Progress, Tabs,
@@ -50,6 +50,7 @@ interface MultiPlatformGenProps {
 export default function MultiPlatformGen({ initialTopic, initialPlatforms, autoGenerate }: MultiPlatformGenProps) {
   const navigate = useNavigate()
   const { theme: T } = useTheme()
+  const [searchParams] = useSearchParams()
 
   // ========== 阶段管理 ==========
   const [phase, setPhase] = useState<'input' | 'outline'>('input')
@@ -254,6 +255,14 @@ export default function MultiPlatformGen({ initialTopic, initialPlatforms, autoG
       }
     }).catch(() => { })
   }, [])
+
+  // URL 参数：从平台模板页跳转时自动选中平台
+  useEffect(() => {
+    const platformParam = searchParams.get('platform')
+    if (platformParam && !initialPlatforms) {
+      setSelectedPlatforms([platformParam])
+    }
+  }, [searchParams, initialPlatforms])
 
   // 自动生成（URL 参数传入时）
   useEffect(() => {

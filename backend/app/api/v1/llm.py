@@ -11,8 +11,8 @@ import logging
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.services.llm.manager import get_manager
-from app.core.contracts.types import LLMMessage
+from app.services.ai import get_ai_service, AIService
+from app.services.ai.types import LLMMessage
 
 router = APIRouter()
 logger = logging.getLogger("ylcraft.llm")
@@ -54,17 +54,16 @@ async def list_llm_backends():
     从数据库 AIConnector 表读取。
     """
     from app.db.database import SessionLocal
-    manager = get_manager()
+    manager = get_ai_service()
 
     try:
         with SessionLocal() as db_session:
             try:
                 if not manager.is_loaded():
-                    from app.services.llm.manager import init_manager
                     from pathlib import Path
                     config_path = Path(__file__).parent.parent.parent.parent / "config" / "providers.yaml"
-                    init_manager(str(config_path), session=db_session)
-                    logger.info("BackendManager reinitialized from /llm/backends endpoint")
+                    AIService.initialize(str(config_path), session=db_session)
+                    logger.info("AIService reinitialized from /llm/backends endpoint")
             except Exception as e:
                 logger.warning(f"Reinitializing manager failed: {e}")
 
@@ -123,9 +122,9 @@ async def chat(req: ChatRequest):
     """
     统一的 LLM 对话接口。
     """
-    manager = get_manager()
+    manager = get_ai_service()
     if not manager.is_loaded():
-        raise HTTPException(status_code=503, detail="BackendManager 未初始化")
+        raise HTTPException(status_code=503, detail="AIService 未初始化")
 
     try:
         llm_messages = [
