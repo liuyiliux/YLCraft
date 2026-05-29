@@ -46,6 +46,7 @@ import {
 import { listConnectors, createConnector, updateConnector, deleteConnector, testConnector, exportConnectors, importConnectors, discoverModels, getSettings, updateSettings, listProviders, createProvider, updateProvider, deleteProvider, initDefaultProviders, getProviderDefaults } from '../../api'
 import type { Provider, PROVIDER_OPTIONS, ConnectorTestResult, ProviderMetadata } from '../../types/api'
 import { useTheme } from '../../constants/theme'
+import { calculateAspectRatio } from '../../utils/size'
 
 const { Title, Text, Paragraph } = Typography
 const { TextArea } = Input
@@ -109,24 +110,6 @@ function useResizableColumns(initialWidths: Record<string, number>) {
   }
 
   return { colWidths, wrapColumnTitle }
-}
-function calculateAspectRatio(size: string): string {
-  const match = size.match(/(\d+)\s*[x*]\s*(\d+)/i)
-  if (!match) return ''
-  
-  const width = parseInt(match[1])
-  const height = parseInt(match[2])
-  
-  const gcd = (a: number, b: number): number => b === 0 ? a : gcd(b, a % b)
-  const divisor = gcd(width, height)
-  
-  const ratioWidth = width / divisor
-  const ratioHeight = height / divisor
-  
-  if (ratioWidth > ratioHeight && ratioHeight === 1) {
-    return `${ratioWidth}:1`
-  }
-  return `${ratioWidth}:${ratioHeight}`
 }
 
 // 尺寸配置字段组件

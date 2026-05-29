@@ -3,6 +3,7 @@
  * 支持查看、编辑、删除平台生成模板
  */
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Card,
   Table,
@@ -29,6 +30,7 @@ import {
   PlusOutlined,
   AppstoreOutlined,
   InboxOutlined,
+  ThunderboltOutlined,
 } from '@ant-design/icons'
 import { useTheme } from '../../constants/theme'
 import {
@@ -71,6 +73,7 @@ const SIZE_OPTIONS = [
 
 export default function PlatformTemplatesPage() {
   const { theme: T } = useTheme()
+  const navigate = useNavigate()
   const [templates, setTemplates] = useState<PlatformTemplate[]>([])
   const [loading, setLoading] = useState(false)
   const [editModalOpen, setEditModalOpen] = useState(false)
@@ -284,10 +287,32 @@ export default function PlatformTemplatesPage() {
     {
       title: '操作',
       key: 'action',
-      width: 120,
+      width: 150,
       align: 'center' as const,
       render: (_: any, record: PlatformTemplate) => (
         <Space size={4}>
+          <Button
+            type="text"
+            size="small"
+            icon={<ThunderboltOutlined />}
+            title="去生成"
+            style={{
+              color: T.textSecondary,
+              borderRadius: T.radiusSM,
+              width: 32,
+              height: 32,
+              transition: `all ${T.transitionDuration} ${T.transitionEasing}`,
+            }}
+            onMouseEnter={e => {
+              (e.currentTarget as HTMLElement).style.color = T.success
+              ;(e.currentTarget as HTMLElement).style.background = `${T.success}10`
+            }}
+            onMouseLeave={e => {
+              (e.currentTarget as HTMLElement).style.color = T.textSecondary
+              ;(e.currentTarget as HTMLElement).style.background = 'transparent'
+            }}
+            onClick={() => navigate(`/multi-platform-gen?platform=${record.platform}`)}
+          />
           <Button
             type="text"
             size="small"

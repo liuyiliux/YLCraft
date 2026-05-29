@@ -17,14 +17,10 @@ import {
 } from '@ant-design/icons'
 import { useTheme } from '../../constants/theme'
 import { getImageBackends, getLlmBackends } from '../../api'
+import { calculateAspectRatio } from '../../utils/size'
+import { BackendSelect, type BackendInfo } from '../../components/BackendSelect'
 
 const { TextArea } = Input
-
-interface BackendInfo {
-  provider: string; provider_label?: string; name: string; model: string
-  available_models: string[]; support_reference_image?: boolean
-  supported_sizes?: string[]; support_vision_input?: boolean
-}
 
 interface PlatformTemplateInfo {
   id: string; platform: string; name: string; default_size: string
@@ -573,18 +569,13 @@ export default function MultiPlatformGen({ initialTopic, initialPlatforms, autoG
             }}>
               AI 文本模型
             </div>
-            <Select
-              value={selectedLlmBackend || undefined}
-              onChange={val => {
-                setSelectedLlmBackend(val)
-                const b = llmBackends.find(b => b.name === val)
+            <BackendSelect
+              backends={llmBackends}
+              value={selectedLlmBackend}
+              onChange={(name, b) => {
+                setSelectedLlmBackend(name)
                 setSelectedLlmModel(b?.available_models?.[0] || b?.model || '')
               }}
-              style={{ width: '100%' }}
-              options={llmBackends.map(b => ({
-                label: `${b.provider_label || b.provider || b.name} — ${b.model || b.available_models?.[0] || ''}`,
-                value: b.name,
-              }))}
               placeholder="请选择 AI 文本模型"
               notFoundContent={(
                 <div style={{ textAlign: 'center', padding: '12px 0', color: T.textSecondary }}>
@@ -860,25 +851,23 @@ export default function MultiPlatformGen({ initialTopic, initialPlatforms, autoG
             }}>
               图像模型
             </div>
-            <Select
+            <BackendSelect
+              backends={backends}
               value={selectedBackend}
-              onChange={val => {
-                setSelectedBackend(val)
-                const b = backends.find(b => b.name === val)
+              onChange={(name, b) => {
+                setSelectedBackend(name)
                 setSelectedModel(b?.available_models?.[0] || b?.model || '')
+                // 切换供应商后，自动重置所有平台的尺寸为新列表的第一个值
+                const newSizes = b?.supported_sizes?.length
+                  ? b.supported_sizes
+                  : ['1024x1024', '1280x720', '720x1280', '768x1024', '1080x1920']
+                const firstSize = newSizes[0]
+                const updated: Record<string, string> = {}
+                selectedPlatforms.forEach(plat => {
+                  updated[plat] = firstSize
+                })
+                setPlatformSizes(updated)
               }}
-              style={{ width: '100%' }}
-              options={backends.map(b => ({
-                label: (
-                  <span>
-                    {b.provider_label || b.provider} / {b.model || b.name}
-                    {b.support_reference_image && (
-                      <Tag color="success" style={{ marginLeft: 8, fontSize: 10 }}>支持参考图</Tag>
-                    )}
-                  </span>
-                ),
-                value: b.name,
-              }))}
             />
           </Col>
           <Col xs={12} sm={5}>
@@ -950,7 +939,10 @@ export default function MultiPlatformGen({ initialTopic, initialPlatforms, autoG
                   onChange={val => setPlatformSizes(prev => ({ ...prev, [plat]: val }))}
                   style={{ width: '100%' }}
                   size="small"
-                  options={currentBackendSizes.map((s: string) => ({ label: s, value: s }))}
+                  options={currentBackendSizes.map((s: string) => {
+                    const ratio = calculateAspectRatio(s)
+                    return { label: ratio ? `${s} (${ratio})` : s, value: s }
+                  })}
                 />
               </Col>
             )
@@ -1157,7 +1149,7 @@ export default function MultiPlatformGen({ initialTopic, initialPlatforms, autoG
                         {/* 底部按钮 */}
                         <div style={{ marginTop: 14 }}>
                           <button
-                            disabled={singleGenerating[`${platform}-${i}`]}
+                            disabled={singleGenerating[`${platform}-${i}`] || batchLoading}
                             onClick={() => handleSingleGenerate(platform, i)}
                             style={{
                               width: '100%',
@@ -1168,17 +1160,17 @@ export default function MultiPlatformGen({ initialTopic, initialPlatforms, autoG
                               color: '#fff',
                               fontSize: 13,
                               fontWeight: 500,
-                              cursor: singleGenerating[`${platform}-${i}`] ? 'not-allowed' : 'pointer',
-                              opacity: singleGenerating[`${platform}-${i}`] ? 0.6 : 1,
+                              cursor: (singleGenerating[`${platform}-${i}`] || batchLoading) ? 'not-allowed' : 'pointer',
+                              opacity: (singleGenerating[`${platform}-${i}`] || batchLoading) ? 0.6 : 1,
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'center',
                               gap: 6,
                               transition: 'opacity 0.2s, transform 0.15s',
                             }}
-                            onMouseEnter={e => { if (!singleGenerating[`${platform}-${i}`]) e.currentTarget.style.opacity = '0.9' }}
-                            onMouseLeave={e => { e.currentTarget.style.opacity = singleGenerating[`${platform}-${i}`] ? '0.6' : '1' }}
-                            onMouseDown={e => { if (!singleGenerating[`${platform}-${i}`]) e.currentTarget.style.transform = 'scale(0.98)' }}
+                            onMouseEnter={e => { if (!singleGenerating[`${platform}-${i}`] && !batchLoading) e.currentTarget.style.opacity = '0.9' }}
+                            onMouseLeave={e => { e.currentTarget.style.opacity = (singleGenerating[`${platform}-${i}`] || batchLoading) ? '0.6' : '1' }}
+                            onMouseDown={e => { if (!singleGenerating[`${platform}-${i}`] && !batchLoading) e.currentTarget.style.transform = 'scale(0.98)' }}
                             onMouseUp={e => { e.currentTarget.style.transform = 'scale(1)' }}
                           >
                             <ThunderboltOutlined style={{ fontSize: 13 }} />
