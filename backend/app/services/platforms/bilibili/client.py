@@ -45,6 +45,8 @@ from .apis import (
     FAV_LIST,
     FAV_RESOURCE_LIST,
     FAV_INFO,
+    HISTORY_CURSOR,
+    HISTORY_SEARCH,
 )
 
 logger = logging.getLogger("ylcraft.platforms.bilibili")
@@ -2432,3 +2434,249 @@ class BilibiliClient(BasePlatformClient):
             self._log(f"Get wbi keys from API error: {e}", "warning")
         
         return None
+
+    # =========================================================================
+    # 历史观看记录（需要登录）
+    # =========================================================================
+
+    async def get_watch_history(
+        self,
+        max_results: int = 20,
+        max_oid: int = 0,
+        view_at: int = 0,
+        business: str = "",
+        history_type: str = "all",
+    ) -> Dict[str, Any]:
+        """获取当前登录用户的历史观看记录
+
+        使用 B站 /x/web-interface/history/cursor 接口，需要登录态 Cookie
+        该接口使用游标分页，通过 max（oid）和 view_at 定位下一页
+
+        Args:
+            max_results: 每页返回数量（默认20）
+            max_oid: 上一页最后一条记录的 oid（游标分页用，首次请求传0）
+            view_at: 上一页最后一条记录的 view_at 时间戳（游标分页用，首次请求传0）
+            business: 业务类型过滤（空字符串=全部, archive=视频, live=直播, article=专栏）
+            history_type: 类型过滤（all=全部）
+
+        Returns:
+            {"list": List[Dict], "cursor": {...}, "has_more": bool}
+            cursor 包含下一页所需的 max 和 view_at 值
+        """
+        self._log(f"Getting watch history: ps={max_results}, max={max_oid}, view_at={view_at}")
+
+        if not self.config.cookie:
+            self._log("No cookie, cannot get watch history", "warning")
+            return {"list": [], "cursor": {}, "has_more": False}
+
+        try:
+            params: Dict[str, Any] = {
+                "max": max_oid,
+                "view_at": view_at,
+                "business": business,
+                "ps": min(max_results, 50),
+                "type": history_type,
+                "web_location": "333.1391",
+            }
+
+            query_string = await self._sign_params(params)
+            url = f"{BASE_URL}{HISTORY_CURSOR}?{query_string}"
+
+            response = await self.request("GET", url)
+
+            if isinstance(response, dict) and response.get("code") == 0:
+                data = response.get("data", {})
+                items = data.get("list", []) or []
+                cursor = data.get("cursor", {})
+
+                self._log(f"Got {len(items)} history items, cursor={cursor}")
+
+                result = []
+                for item in items:
+                    history = item.get("history", {})
+                    bvid = history.get("bvid", "")
+                    stat = item.get("stat", {}) or {}
+
+                    result.append({
+                        "bvid": bvid,
+                        "title": item.get("title", ""),
+                        "cover": self._fix_bili_url(
+                            item.get("cover", "")
+                            or (item.get("covers") or [None])[0]
+                            or ""
+                        ),
+                        "author": item.get("author_name", ""),
+                        "author_face": self._fix_bili_url(item.get("author_face", "")),
+                        "author_id": str(item.get("author_mid", "")),
+                        "url": f"https://www.bilibili.com/video/{bvid}" if bvid else "",
+                        "duration": item.get("duration", 0),
+                        "view_at": item.get("view_at", 0),
+                        "progress": item.get("progress", 0),
+                        "show_title": item.get("show_title", ""),
+                        "badge": item.get("badge", ""),
+                        "tag_name": item.get("tag_name", ""),
+                        "is_fav": item.get("is_fav", 0),
+                        "videos": item.get("videos", 1),
+                        "new_desc": item.get("new_desc", ""),
+                        "is_finish": item.get("is_finish", 0),
+                        "stat": {
+                            "view": stat.get("view", 0),
+                            "like": stat.get("like", 0),
+                            "coin": stat.get("coin", 0),
+                            "favorite": stat.get("favorite", 0),
+                            "reply": stat.get("reply", 0),
+                        },
+                        "history": {
+                            "oid": history.get("oid", 0),
+                            "bvid": bvid,
+                            "page": history.get("page", 1),
+                            "cid": history.get("cid", 0),
+                            "part": history.get("part", ""),
+                            "business": history.get("business", ""),
+                        },
+                        "raw_data": item,
+                    })
+
+                has_more = cursor.get("ps", 0) > 0 and len(items) > 0
+
+                return {
+                    "list": result,
+                    "cursor": {
+                        "max": cursor.get("max", 0),
+                        "view_at": cursor.get("view_at", 0),
+                        "business": cursor.get("business", ""),
+                        "ps": cursor.get("ps", 0),
+                    },
+                    "has_more": has_more,
+                }
+            else:
+                code = response.get("code", -1) if isinstance(response, dict) else -1
+                msg = response.get("message", "") if isinstance(response, dict) else str(response)[:200]
+                self._log(f"Get watch history failed: code={code}, msg={msg}", "warning")
+                return {"list": [], "cursor": {}, "has_more": False}
+
+        except Exception as e:
+            self._log(f"Get watch history error: {e}", "error")
+            return {"list": [], "cursor": {}, "has_more": False}
+
+    async def search_watch_history(
+        self,
+        business: str = "archive",
+        page: int = 1,
+        page_size: int = 20,
+        keyword: str = "",
+        add_time_start: int = 0,
+        add_time_end: int = 0,
+    ) -> Dict[str, Any]:
+        """搜索历史观看记录（支持时间筛选和关键词搜索）
+
+        使用 B站 /x/web-interface/history/search 接口
+        支持按类型（视频/直播/专栏）、时间范围、关键词筛选
+
+        Args:
+            business: 业务类型（archive=视频, live=直播, article=专栏）
+            page: 页码（从1开始）
+            page_size: 每页数量
+            keyword: 搜索关键词
+            add_time_start: 起始时间戳（秒），0=不限
+            add_time_end: 结束时间戳（秒），0=不限
+
+        Returns:
+            {"list": List[Dict], "total": int, "page": int, "has_more": bool}
+        """
+        self._log(f"Searching watch history: business={business}, page={page}, keyword={keyword}, start={add_time_start}, end={add_time_end}")
+
+        if not self.config.cookie:
+            self._log("No cookie, cannot search watch history", "warning")
+            return {"list": [], "total": 0, "page": page, "has_more": False}
+
+        try:
+            params: Dict[str, Any] = {
+                "pn": page,
+                "keyword": keyword,
+                "business": business,
+                "add_time_start": add_time_start,
+                "add_time_end": add_time_end,
+                "arc_max_duration": 0,
+                "arc_min_duration": 0,
+                "device_type": 0,
+                "web_location": "333.1391",
+            }
+
+            query_string = await self._sign_params(params)
+            url = f"{BASE_URL}{HISTORY_SEARCH}?{query_string}"
+
+            response = await self.request("GET", url)
+
+            if isinstance(response, dict) and response.get("code") == 0:
+                data = response.get("data", {})
+                items = data.get("list", []) or []
+                page_info = data.get("page", {}) or {}
+
+                self._log(f"Got {len(items)} history search items")
+
+                result = []
+                for item in items:
+                    history = item.get("history", {})
+                    bvid = history.get("bvid", "")
+                    stat = item.get("stat", {}) or {}
+
+                    result.append({
+                        "bvid": bvid,
+                        "title": item.get("title", ""),
+                        "cover": self._fix_bili_url(
+                            item.get("cover", "")
+                            or (item.get("covers") or [None])[0]
+                            or ""
+                        ),
+                        "author": item.get("author_name", ""),
+                        "author_face": self._fix_bili_url(item.get("author_face", "")),
+                        "author_id": str(item.get("author_mid", "")),
+                        "url": f"https://www.bilibili.com/video/{bvid}" if bvid else "",
+                        "duration": item.get("duration", 0),
+                        "view_at": item.get("view_at", 0),
+                        "progress": item.get("progress", 0),
+                        "show_title": item.get("show_title", ""),
+                        "badge": item.get("badge", ""),
+                        "tag_name": item.get("tag_name", ""),
+                        "is_fav": item.get("is_fav", 0),
+                        "videos": item.get("videos", 1),
+                        "new_desc": item.get("new_desc", ""),
+                        "is_finish": item.get("is_finish", 0),
+                        "stat": {
+                            "view": stat.get("view", 0),
+                            "like": stat.get("like", 0),
+                            "coin": stat.get("coin", 0),
+                            "favorite": stat.get("favorite", 0),
+                            "reply": stat.get("reply", 0),
+                        },
+                        "history": {
+                            "oid": history.get("oid", 0),
+                            "bvid": bvid,
+                            "page": history.get("page", 1),
+                            "cid": history.get("cid", 0),
+                            "part": history.get("part", ""),
+                            "business": history.get("business", ""),
+                        },
+                        "raw_data": item,
+                    })
+
+                total = page_info.get("total", 0) or len(result)
+                has_more = page * page_size < total
+
+                return {
+                    "list": result,
+                    "total": total,
+                    "page": page,
+                    "page_size": page_size,
+                    "has_more": has_more,
+                }
+            else:
+                code = response.get("code", -1) if isinstance(response, dict) else -1
+                msg = response.get("message", "") if isinstance(response, dict) else str(response)[:200]
+                self._log(f"Search watch history failed: code={code}, msg={msg}", "warning")
+                return {"list": [], "total": 0, "page": page, "has_more": False}
+
+        except Exception as e:
+            self._log(f"Search watch history error: {e}", "error")
+            return {"list": [], "total": 0, "page": page, "has_more": False}

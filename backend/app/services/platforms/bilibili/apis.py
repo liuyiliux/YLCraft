@@ -99,3 +99,10 @@ WBI_SUB_KEY = "sub_key"
 
 # 用于签名的字段（参考 MediaCrawler）
 WBI_MIXIN_KEY = "z8xRb9pKjM2vLqW7nT3fY5hD1aU6cE4"
+
+# =============================================================================
+# 历史记录 API
+# =============================================================================
+
+HISTORY_CURSOR = "/x/web-interface/history/cursor"   # 历史观看记录（游标分页浏览）
+HISTORY_SEARCH = "/x/web-interface/history/search"   # 历史观看记录（搜索+时间筛选）

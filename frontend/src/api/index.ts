@@ -1243,3 +1243,41 @@ export const getBiliSeriesDetail = (params: {
   if (params.conn_id) qs.set('conn_id', params.conn_id)
   return request(`/bilibili/series/${params.seriesId}?${qs}`)
 }
+
+/** 获取B站历史观看记录（游标浏览，需要登录） */
+export const getBiliHistory = (params: {
+  conn_id: string
+  ps?: number
+  max?: number
+  view_at?: number
+  type?: string
+}) => {
+  const qs = new URLSearchParams()
+  qs.set('conn_id', params.conn_id)
+  if (params.ps) qs.set('ps', String(params.ps))
+  if (params.max) qs.set('max', String(params.max))
+  if (params.view_at) qs.set('view_at', String(params.view_at))
+  if (params.type) qs.set('type', params.type)
+  return request(`/bilibili/history?${qs}`)
+}
+
+/** 搜索B站历史观看记录（时间筛选+关键词，需要登录） */
+export const searchBiliHistory = (params: {
+  conn_id: string
+  business?: string
+  page?: number
+  page_size?: number
+  keyword?: string
+  add_time_start?: number
+  add_time_end?: number
+}) => {
+  const qs = new URLSearchParams()
+  qs.set('conn_id', params.conn_id)
+  if (params.business) qs.set('business', params.business)
+  if (params.page) qs.set('page', String(params.page))
+  if (params.page_size) qs.set('page_size', String(params.page_size))
+  if (params.keyword) qs.set('keyword', params.keyword)
+  if (params.add_time_start) qs.set('add_time_start', String(params.add_time_start))
+  if (params.add_time_end) qs.set('add_time_end', String(params.add_time_end))
+  return request(`/bilibili/history/search?${qs}`)
+}
