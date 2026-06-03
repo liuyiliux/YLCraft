@@ -47,6 +47,7 @@ from .apis import (
     FAV_INFO,
     HISTORY_CURSOR,
     HISTORY_SEARCH,
+    FOLLOWINGS,
 )
 
 logger = logging.getLogger("ylcraft.platforms.bilibili")
@@ -2679,4 +2680,94 @@ class BilibiliClient(BasePlatformClient):
 
         except Exception as e:
             self._log(f"Search watch history error: {e}", "error")
+            return {"list": [], "total": 0, "page": page, "has_more": False}
+
+    # =========================================================================
+    # 关注列表（需要登录）
+    # =========================================================================
+
+    async def get_followings(
+        self,
+        vmid: int = 0,
+        page: int = 1,
+        page_size: int = 20,
+        order_type: str = "desc",
+    ) -> Dict[str, Any]:
+        """获取当前登录用户的关注列表
+
+        使用 B站 /x/relation/followings 接口，需要登录态 Cookie
+        返回关注的 UP 主列表，包含用户基本信息
+
+        Args:
+            vmid: 用户UID（0=当前登录用户自己）
+            page: 页码（从1开始）
+            page_size: 每页数量（最大50）
+            order_type: 排序方式（desc=最近关注在前, asc=最早关注在前）
+
+        Returns:
+            {"list": List[Dict], "total": int, "page": int, "has_more": bool}
+        """
+        self._log(f"Getting followings: vmid={vmid}, page={page}, page_size={page_size}")
+
+        if not self.config.cookie:
+            self._log("No cookie, cannot get followings", "warning")
+            return {"list": [], "total": 0, "page": page, "has_more": False}
+
+        try:
+            params: Dict[str, Any] = {
+                "vmid": vmid,
+                "pn": page,
+                "ps": min(page_size, 50),
+                "order_type": order_type,
+                "order": order_type,
+                "web_location": "333.999",
+            }
+
+            query_string = await self._sign_params(params)
+            url = f"{BASE_URL}{FOLLOWINGS}?{query_string}"
+
+            response = await self.request("GET", url)
+
+            if isinstance(response, dict) and response.get("code") == 0:
+                data = response.get("data", {})
+                items = data.get("list", []) or []
+                total = data.get("total", 0) or len(items)
+
+                self._log(f"Got {len(items)} followings, total={total}")
+
+                result = []
+                for item in items:
+                    result.append({
+                        "mid": str(item.get("mid", "")),
+                        "uname": item.get("uname", ""),
+                        "face": self._fix_bili_url(item.get("face", "")),
+                        "sign": item.get("sign", ""),
+                        "official_verify": item.get("official_verify", {}),
+                        "vip": item.get("vip", {}),
+                        "live_status": item.get("live_status", 0),
+                        "live_url": item.get("live_url", ""),
+                        "mtime": item.get("mtime", 0),
+                        "attribute": item.get("attribute", 0),
+                        "special": item.get("special", 0),
+                        "contract_desc": item.get("contract_desc", ""),
+                        "raw_data": item,
+                    })
+
+                has_more = page * page_size < total
+
+                return {
+                    "list": result,
+                    "total": total,
+                    "page": page,
+                    "page_size": page_size,
+                    "has_more": has_more,
+                }
+            else:
+                code = response.get("code", -1) if isinstance(response, dict) else -1
+                msg = response.get("message", "") if isinstance(response, dict) else str(response)[:200]
+                self._log(f"Get followings failed: code={code}, msg={msg}", "warning")
+                return {"list": [], "total": 0, "page": page, "has_more": False}
+
+        except Exception as e:
+            self._log(f"Get followings error: {e}", "error")
             return {"list": [], "total": 0, "page": page, "has_more": False}

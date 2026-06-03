@@ -23,6 +23,7 @@ import {
   getBiliFavoriteDetail,
   getBiliHistory,
   searchBiliHistory,
+  getBiliFollowings,
 } from '../../api'
 import type { PlatformConnectionResponse } from '../../api'
 import { VideoList, FavoriteCard, VideoDetailDrawer, proxyImageUrl, formatNum } from '../../components/bilibili'
@@ -95,6 +96,13 @@ export default function MyDataPage() {
   const [historyTimeRange, setHistoryTimeRange] = useState('all')
   const [historyPage, setHistoryPage] = useState(1)
   const [historyTotal, setHistoryTotal] = useState(0)
+
+  // 关注列表
+  const [followings, setFollowings] = useState<any[]>([])
+  const [followingsLoading, setFollowingsLoading] = useState(false)
+  const [followingsPage, setFollowingsPage] = useState(1)
+  const [followingsTotal, setFollowingsTotal] = useState(0)
+  const [followingsHasMore, setFollowingsHasMore] = useState(false)
 
   // 加载 B站连接
   useEffect(() => {
@@ -304,6 +312,37 @@ export default function MyDataPage() {
       console.error('加载更多历史记录失败:', e)
     } finally {
       setHistoryLoading(false)
+    }
+  }
+
+  /** 加载关注列表 */
+  const loadFollowings = async (page: number = 1) => {
+    if (!selectedConn) return
+    
+    setFollowingsLoading(true)
+    setFollowingsPage(page)
+    
+    try {
+      const res = await getBiliFollowings({
+        conn_id: selectedConn,
+        page,
+        page_size: 20,
+      })
+      if (res?.success) {
+        const data = res.data || {}
+        if (page === 1) {
+          setFollowings(data.list || [])
+        } else {
+          setFollowings(prev => [...prev, ...(data.list || [])])
+        }
+        setFollowingsTotal(data.total || 0)
+        setFollowingsHasMore(data.has_more || false)
+      }
+    } catch (e) {
+      console.error('加载关注列表失败:', e)
+      message.error('加载关注列表失败')
+    } finally {
+      setFollowingsLoading(false)
     }
   }
 
@@ -529,6 +568,9 @@ export default function MyDataPage() {
             if (key === 'history' && historyList.length === 0) {
               loadHistory(historyType, historyTimeRange)
             }
+            if (key === 'followings' && followings.length === 0) {
+              loadFollowings(1)
+            }
           }}
           tabBarStyle={{ paddingLeft: 16 }}
           items={[
@@ -561,6 +603,14 @@ export default function MyDataPage() {
               label: (
                 <span>
                   <HistoryOutlined /> 历史记录
+                </span>
+              ),
+            },
+            {
+              key: 'followings',
+              label: (
+                <span>
+                  <TeamOutlined /> 关注列表 ({followingsTotal})
                 </span>
               ),
             },
@@ -945,6 +995,172 @@ export default function MyDataPage() {
                   image={Empty.PRESENTED_IMAGE_SIMPLE}
                 >
                   <Button type="primary" onClick={() => loadHistory(historyType, historyTimeRange)}>
+                    刷新
+                  </Button>
+                </Empty>
+              )}
+            </div>
+          )}
+
+          {/* 关注列表 */}
+          {activeTab === 'followings' && (
+            <div>
+              {followingsLoading && followings.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: 40 }}>
+                  <Spin size="large" />
+                </div>
+              ) : followings.length > 0 ? (
+                <div>
+                  <Row gutter={[16, 16]}>
+                    {followings.map((item: any) => {
+                      const isVip = item.vip?.status === 1
+                      const isOfficial = item.official_verify?.type === 0
+                      const isPersonal = item.official_verify?.type === 1
+
+                      return (
+                        <Col key={item.mid} xs={24} sm={12} md={8} lg={6}>
+                          <Card
+                            hoverable
+                            style={{
+                              background: cardBg,
+                              border: `1px solid ${borderColor}`,
+                              borderRadius: 10,
+                              overflow: 'hidden',
+                            }}
+                            styles={{ body: { padding: 0 } }}
+                            onClick={() => {
+                              window.open(`https://space.bilibili.com/${item.mid}`, '_blank')
+                            }}
+                          >
+                            {/* 头像区域 */}
+                            <div style={{
+                              padding: '20px 16px 12px',
+                              textAlign: 'center',
+                              background: 'linear-gradient(180deg, rgba(251,114,153,0.08) 0%, transparent 100%)',
+                            }}>
+                              <div style={{ position: 'relative', display: 'inline-block' }}>
+                                <Avatar
+                                  src={proxyImageUrl(item.face)}
+                                  icon={<UserOutlined />}
+                                  size={64}
+                                  style={{
+                                    border: isVip
+                                      ? `2px solid ${BILI_COLORS.gold}`
+                                      : `2px solid ${borderColor}`,
+                                  }}
+                                />
+                                {/* 直播状态指示 */}
+                                {item.live_status === 1 && (
+                                  <div style={{
+                                    position: 'absolute', bottom: -2, right: -2,
+                                    width: 16, height: 16, borderRadius: '50%',
+                                    background: '#FF4D4F', border: '2px solid #fff',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  }}>
+                                    <div style={{
+                                      width: 6, height: 6, borderRadius: '50%',
+                                      background: '#fff',
+                                    }} />
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* 信息区域 */}
+                            <div style={{ padding: '8px 12px 12px' }}>
+                              <div style={{
+                                display: 'flex', alignItems: 'center', gap: 6,
+                                justifyContent: 'center', marginBottom: 6,
+                              }}>
+                                <Text
+                                  strong
+                                  style={{
+                                    fontSize: 14, color: textPri,
+                                    maxWidth: 140, overflow: 'hidden',
+                                    textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                  }}
+                                >
+                                  {item.uname}
+                                </Text>
+                                {isVip && (
+                                  <Tag color="gold" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px', margin: 0 }}>
+                                    大会员
+                                  </Tag>
+                                )}
+                              </div>
+
+                              {/* 认证标签 */}
+                              <div style={{ textAlign: 'center', marginBottom: 6 }}>
+                                {isOfficial && (
+                                  <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px', margin: 0 }}>
+                                    机构认证
+                                  </Tag>
+                                )}
+                                {isPersonal && (
+                                  <Tag color="orange" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px', margin: 0 }}>
+                                    个人认证
+                                  </Tag>
+                                )}
+                                {item.contract_desc && (
+                                  <Tag style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px', margin: 0 }}>
+                                    {item.contract_desc}
+                                  </Tag>
+                                )}
+                              </div>
+
+                              {/* 签名 */}
+                              {item.sign && (
+                                <div style={{
+                                  fontSize: 12, color: textSec,
+                                  lineHeight: 1.4, height: 32, overflow: 'hidden',
+                                  textAlign: 'center',
+                                  display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                                }}>
+                                  {item.sign}
+                                </div>
+                              )}
+
+                              {/* 关注时间 */}
+                              {item.mtime > 0 && (
+                                <div style={{ textAlign: 'center', marginTop: 8 }}>
+                                  <Text style={{ fontSize: 11, color: textSec }}>
+                                    <ClockCircleOutlined style={{ marginRight: 3 }} />
+                                    {new Date(item.mtime * 1000).toLocaleDateString('zh-CN')} 关注
+                                  </Text>
+                                </div>
+                              )}
+                            </div>
+                          </Card>
+                        </Col>
+                      )
+                    })}
+                  </Row>
+
+                  {/* 加载更多按钮 */}
+                  {followingsHasMore && (
+                    <div style={{ textAlign: 'center', marginTop: 20 }}>
+                      <Button
+                        type="default"
+                        onClick={() => loadFollowings(followingsPage + 1)}
+                        loading={followingsLoading}
+                        style={{ borderRadius: 20, paddingLeft: 24, paddingRight: 24 }}
+                      >
+                        加载更多
+                      </Button>
+                    </div>
+                  )}
+                  {!followingsHasMore && followings.length > 0 && (
+                    <div style={{ textAlign: 'center', padding: '16px 0', color: textSec, fontSize: 13 }}>
+                      — 共 {followingsTotal} 位关注 —
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <Empty
+                  description="暂无关注"
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                >
+                  <Button type="primary" onClick={() => loadFollowings(1)}>
                     刷新
                   </Button>
                 </Empty>

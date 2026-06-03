@@ -173,6 +173,12 @@ class WatchHistoryResponse(BaseModel):
     message: str = ""
 
 
+class FollowingsResponse(BaseModel):
+    success: bool = True
+    data: Optional[Dict[str, Any]] = None
+    message: str = ""
+
+
 # =============================================================================
 # UP主分析 & 个人中心 - 辅助函数
 # =============================================================================
@@ -873,3 +879,49 @@ async def search_watch_history(
         except Exception as e:
             logger.error(f"[history_search] Error: {e}")
             raise HTTPException(status_code=500, detail=f"搜索历史记录失败: {str(e)}")
+
+
+# =============================================================================
+# 关注列表 - API 端点
+# =============================================================================
+
+@router.get("/followings", summary="获取关注列表", response_model=FollowingsResponse)
+async def get_followings(
+    conn_id: str = Query(..., description="B站连接ID（必填，需要登录）"),
+    vmid: int = Query(0, description="用户UID（0=当前登录用户自己）"),
+    page: int = Query(1, ge=1, description="页码"),
+    page_size: int = Query(20, ge=1, le=50, description="每页数量"),
+    order_type: str = Query("desc", description="排序方式（desc=最近关注在前, asc=最早关注在前）"),
+):
+    """
+    获取当前登录用户的关注列表（关注的 UP 主）
+    - 必须提供有效的 B站连接（包含 Cookie）
+    - vmid=0 表示获取自己的关注列表
+    - 支持分页和排序
+    """
+    logger.info(f"[followings] conn_id={conn_id}, vmid={vmid}, page={page}, page_size={page_size}")
+
+    if not conn_id:
+        raise HTTPException(status_code=400, detail="需要提供 B站连接ID（conn_id）")
+
+    async with bili_client(conn_id) as client:
+        if not client.config.cookie:
+            raise HTTPException(status_code=401, detail="B站连接未包含 Cookie，无法访问关注列表")
+
+        try:
+            result = await client.get_followings(
+                vmid=vmid,
+                page=page,
+                page_size=page_size,
+                order_type=order_type,
+            )
+
+            return FollowingsResponse(
+                success=True,
+                data=result,
+                message=f"获取到 {len(result.get('list', []))} 条关注",
+            )
+
+        except Exception as e:
+            logger.error(f"[followings] Error: {e}")
+            raise HTTPException(status_code=500, detail=f"获取关注列表失败: {str(e)}")

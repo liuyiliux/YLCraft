@@ -1281,3 +1281,20 @@ export const searchBiliHistory = (params: {
   if (params.add_time_end) qs.set('add_time_end', String(params.add_time_end))
   return request(`/bilibili/history/search?${qs}`)
 }
+
+/** 获取B站关注列表（需要登录） */
+export const getBiliFollowings = (params: {
+  conn_id: string
+  vmid?: number
+  page?: number
+  page_size?: number
+  order_type?: string
+}) => {
+  const qs = new URLSearchParams()
+  qs.set('conn_id', params.conn_id)
+  if (params.vmid) qs.set('vmid', String(params.vmid))
+  if (params.page) qs.set('page', String(params.page))
+  if (params.page_size) qs.set('page_size', String(params.page_size))
+  if (params.order_type) qs.set('order_type', params.order_type)
+  return request(`/bilibili/followings?${qs}`)
+}
