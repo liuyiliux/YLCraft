@@ -163,7 +163,12 @@ class BackendRegistry:
 
         try:
             backend_cls = _import_class(class_path)
-            backend = backend_cls(connector=conn)
+            import inspect
+            sig = inspect.signature(backend_cls.__init__)
+            if 'session' in sig.parameters:
+                backend = backend_cls(connector=conn, session=session)
+            else:
+                backend = backend_cls(connector=conn)
             self._backends[media_type][conn.name] = backend
             logger.info(f"[Registry] 已注册 {provider_type.upper()} Backend: {conn.name} ({class_path.rsplit('.',1)[1]})")
         except Exception as e:

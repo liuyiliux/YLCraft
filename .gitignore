@@ -57,3 +57,4 @@ backend/data/cookies/
 .trae/
 .gitignore
 backend/.env
+backend/app/storage/images/
