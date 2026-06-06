@@ -187,8 +187,8 @@ class BilibiliClient(BasePlatformClient):
         """构建请求头（API 模式用）"""
         headers = {
             "User-Agent": self._get_default_user_agent(),
-            "Referer": "https://www.bilibili.com",
-            "Origin": "https://www.bilibili.com",
+            "Referer": "https://space.bilibili.com/",  # 修正：空间相关API需要此referer
+            "Origin": "https://space.bilibili.com",
             "Accept": "application/json, text/plain, */*",
             "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
             "Accept-Encoding": "gzip, deflate, br",
@@ -209,6 +209,28 @@ class BilibiliClient(BasePlatformClient):
             "AppleWebKit/537.36 (KHTML, like Gecko) "
             "Chrome/120.0.0.0 Safari/537.36"
         )
+
+    def _extract_user_id_from_cookie(self) -> int:
+        """从 Cookie 中提取用户 ID（DedeUserID）
+        
+        Returns:
+            用户ID，如果提取失败返回 0
+        """
+        if not self.config.cookie:
+            return 0
+        
+        try:
+            # 从 Cookie 字符串中查找 DedeUserID
+            cookie_str = self.config.cookie
+            # 匹配 DedeUserID=xxx 模式
+            import re
+            match = re.search(r'DedeUserID=(\d+)', cookie_str)
+            if match:
+                return int(match.group(1))
+        except Exception as e:
+            self._log(f"Failed to extract user ID from cookie: {e}", "warning")
+        
+        return 0
     
     def _get_platform_domain(self) -> str:
         """获取平台域名"""
@@ -2713,6 +2735,13 @@ class BilibiliClient(BasePlatformClient):
             self._log("No cookie, cannot get followings", "warning")
             return {"list": [], "total": 0, "page": page, "has_more": False}
 
+        # 当 vmid=0 时，从 Cookie 中提取 DedeUserID
+        if vmid == 0:
+            vmid = self._extract_user_id_from_cookie()
+            if vmid == 0:
+                self._log("Cannot extract user ID from cookie", "warning")
+                return {"list": [], "total": 0, "page": page, "has_more": False}
+
         try:
             params: Dict[str, Any] = {
                 "vmid": vmid,
@@ -2720,7 +2749,8 @@ class BilibiliClient(BasePlatformClient):
                 "ps": min(page_size, 50),
                 "order_type": order_type,
                 "order": order_type,
-                "web_location": "333.999",
+                "web_location": "333.1387",  # 修正：使用正确的 web_location 值
+                "gaia_source": "main_web",     # 添加：必要的来源标识
             }
 
             query_string = await self._sign_params(params)
