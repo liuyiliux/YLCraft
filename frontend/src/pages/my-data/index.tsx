@@ -6,11 +6,13 @@ import { useState, useEffect } from 'react'
 import {
   Card, Button, Select, Tag, message, Spin, Space, Row, Col,
   Typography, Tabs, Empty, Statistic, Badge, Modal, Avatar,
+  Image, Tooltip, Progress,
 } from 'antd'
 import {
   UserOutlined, TeamOutlined, VideoCameraOutlined, HeartOutlined,
   FolderOutlined, ReloadOutlined, BarChartOutlined,
   LikeOutlined, StarOutlined, PlayCircleOutlined,
+  ClockCircleOutlined, EyeOutlined, HistoryOutlined,
 } from '@ant-design/icons'
 import { useTheme } from '../../constants/theme'
 import {
@@ -19,11 +21,27 @@ import {
   getBiliUpVideos,
   getBiliFavorites,
   getBiliFavoriteDetail,
+  getBiliHistory,
+  searchBiliHistory,
+  getBiliFollowings,
 } from '../../api'
 import type { PlatformConnectionResponse } from '../../api'
 import { VideoList, FavoriteCard, VideoDetailDrawer, proxyImageUrl, formatNum } from '../../components/bilibili'
 
 const { Text, Title } = Typography
+
+/** 格式化视频时长（秒 → mm:ss） */
+function formatDuration(seconds: number): string {
+  if (!seconds || seconds <= 0) return '00:00'
+  const m = Math.floor(seconds / 60)
+  const s = Math.floor(seconds % 60)
+  if (m >= 60) {
+    const h = Math.floor(m / 60)
+    const rm = m % 60
+    return `${h}:${String(rm).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  }
+  return `${m}:${String(s).padStart(2, '0')}`
+}
 
 // B站配色
 const BILI_COLORS = {
@@ -68,6 +86,23 @@ export default function MyDataPage() {
   // 视频详情弹窗
   const [selectedVideo, setSelectedVideo] = useState<any>(null)
   const [videoDetailVisible, setVideoDetailVisible] = useState(false)
+
+  // 历史观看记录
+  const [historyList, setHistoryList] = useState<any[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyCursor, setHistoryCursor] = useState<{ max: number; view_at: number }>({ max: 0, view_at: 0 })
+  const [historyHasMore, setHistoryHasMore] = useState(false)
+  const [historyType, setHistoryType] = useState('all')
+  const [historyTimeRange, setHistoryTimeRange] = useState('all')
+  const [historyPage, setHistoryPage] = useState(1)
+  const [historyTotal, setHistoryTotal] = useState(0)
+
+  // 关注列表
+  const [followings, setFollowings] = useState<any[]>([])
+  const [followingsLoading, setFollowingsLoading] = useState(false)
+  const [followingsPage, setFollowingsPage] = useState(1)
+  const [followingsTotal, setFollowingsTotal] = useState(0)
+  const [followingsHasMore, setFollowingsHasMore] = useState(false)
 
   // 加载 B站连接
   useEffect(() => {
@@ -150,6 +185,165 @@ export default function MyDataPage() {
   const handleRefresh = () => {
     loadUserData()
     message.success('数据已刷新')
+  }
+
+  /** 获取今天0点的时间戳（秒） */
+  const getTodayStart = () => {
+    const d = new Date()
+    d.setHours(0, 0, 0, 0)
+    return Math.floor(d.getTime() / 1000)
+  }
+
+  /** 根据时间范围获取起止时间戳 */
+  const getTimeRange = (range: string): { start: number; end: number } => {
+    const todayStart = getTodayStart()
+    switch (range) {
+      case 'today':
+        return { start: todayStart, end: 0 }
+      case 'yesterday':
+        return { start: todayStart - 86400, end: todayStart - 1 }
+      case 'week':
+        return { start: todayStart - 86400 * 7, end: 0 }
+      default:
+        return { start: 0, end: 0 }
+    }
+  }
+
+  /** 加载历史观看记录（首次加载或切换筛选条件） */
+  const loadHistory = async (type: string = 'all', timeRange: string = 'all') => {
+    if (!selectedConn) return
+
+    setHistoryLoading(true)
+    setHistoryList([])
+    setHistoryCursor({ max: 0, view_at: 0 })
+    setHistoryHasMore(false)
+    setHistoryPage(1)
+    setHistoryTotal(0)
+
+    try {
+      // 有时间筛选时，使用 search API
+      if (timeRange !== 'all') {
+        const { start, end } = getTimeRange(timeRange)
+        // search API 的 business 参数：all 时需要分别请求或默认 archive
+        const business = type === 'all' ? 'archive' : type
+        const res = await searchBiliHistory({
+          conn_id: selectedConn,
+          business,
+          page: 1,
+          page_size: 20,
+          add_time_start: start,
+          add_time_end: end,
+        })
+        if (res?.success) {
+          const data = res.data || {}
+          setHistoryList(data.list || [])
+          setHistoryTotal(data.total || 0)
+          setHistoryHasMore(data.has_more || false)
+          setHistoryPage(1)
+        }
+      } else {
+        // 无时间筛选时，使用 cursor API
+        const res = await getBiliHistory({
+          conn_id: selectedConn,
+          ps: 20,
+          max: 0,
+          view_at: 0,
+          type,
+        })
+        if (res?.success) {
+          const data = res.data || {}
+          setHistoryList(data.list || [])
+          const cursor = data.cursor || {}
+          setHistoryCursor({ max: cursor.max || 0, view_at: cursor.view_at || 0 })
+          setHistoryHasMore(data.has_more || false)
+        }
+      }
+    } catch (e) {
+      console.error('加载历史记录失败:', e)
+      message.error('加载历史记录失败')
+    } finally {
+      setHistoryLoading(false)
+    }
+  }
+
+  /** 加载更多历史记录（追加） */
+  const loadMoreHistory = async () => {
+    if (!selectedConn || !historyHasMore) return
+
+    setHistoryLoading(true)
+    try {
+      if (historyTimeRange !== 'all') {
+        // search API 用页码分页
+        const nextPage = historyPage + 1
+        const { start, end } = getTimeRange(historyTimeRange)
+        const business = historyType === 'all' ? 'archive' : historyType
+        const res = await searchBiliHistory({
+          conn_id: selectedConn,
+          business,
+          page: nextPage,
+          page_size: 20,
+          add_time_start: start,
+          add_time_end: end,
+        })
+        if (res?.success) {
+          const data = res.data || {}
+          setHistoryList(prev => [...prev, ...(data.list || [])])
+          setHistoryHasMore(data.has_more || false)
+          setHistoryPage(nextPage)
+        }
+      } else {
+        // cursor API 用游标分页
+        const res = await getBiliHistory({
+          conn_id: selectedConn,
+          ps: 20,
+          max: historyCursor.max,
+          view_at: historyCursor.view_at,
+          type: historyType,
+        })
+        if (res?.success) {
+          const data = res.data || {}
+          setHistoryList(prev => [...prev, ...(data.list || [])])
+          const cursor = data.cursor || {}
+          setHistoryCursor({ max: cursor.max || 0, view_at: cursor.view_at || 0 })
+          setHistoryHasMore(data.has_more || false)
+        }
+      }
+    } catch (e) {
+      console.error('加载更多历史记录失败:', e)
+    } finally {
+      setHistoryLoading(false)
+    }
+  }
+
+  /** 加载关注列表 */
+  const loadFollowings = async (page: number = 1) => {
+    if (!selectedConn) return
+    
+    setFollowingsLoading(true)
+    setFollowingsPage(page)
+    
+    try {
+      const res = await getBiliFollowings({
+        conn_id: selectedConn,
+        page,
+        page_size: 20,
+      })
+      if (res?.success) {
+        const data = res.data || {}
+        if (page === 1) {
+          setFollowings(data.list || [])
+        } else {
+          setFollowings(prev => [...prev, ...(data.list || [])])
+        }
+        setFollowingsTotal(data.total || 0)
+        setFollowingsHasMore(data.has_more || false)
+      }
+    } catch (e) {
+      console.error('加载关注列表失败:', e)
+      message.error('加载关注列表失败')
+    } finally {
+      setFollowingsLoading(false)
+    }
   }
 
   // 视频点击
@@ -369,7 +563,15 @@ export default function MyDataPage() {
       >
         <Tabs
           activeKey={activeTab}
-          onChange={setActiveTab}
+          onChange={(key: string) => {
+            setActiveTab(key)
+            if (key === 'history' && historyList.length === 0) {
+              loadHistory(historyType, historyTimeRange)
+            }
+            if (key === 'followings' && followings.length === 0) {
+              loadFollowings(1)
+            }
+          }}
           tabBarStyle={{ paddingLeft: 16 }}
           items={[
             {
@@ -393,6 +595,22 @@ export default function MyDataPage() {
               label: (
                 <span>
                   <FolderOutlined /> 我的收藏 ({favorites.length})
+                </span>
+              ),
+            },
+            {
+              key: 'history',
+              label: (
+                <span>
+                  <HistoryOutlined /> 历史记录
+                </span>
+              ),
+            },
+            {
+              key: 'followings',
+              label: (
+                <span>
+                  <TeamOutlined /> 关注列表 ({followingsTotal})
                 </span>
               ),
             },
@@ -579,6 +797,373 @@ export default function MyDataPage() {
                 </Row>
               ) : (
                 <Empty description="暂无收藏" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              )}
+            </div>
+          )}
+
+          {/* 历史观看记录 */}
+          {activeTab === 'history' && (
+            <div>
+              {/* 筛选栏 */}
+              <div style={{ marginBottom: 16, display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <Text style={{ color: textSec, fontSize: 13 }}>类型：</Text>
+                  {[
+                    { value: 'all', label: '全部' },
+                    { value: 'archive', label: '视频' },
+                    { value: 'live', label: '直播' },
+                    { value: 'article', label: '专栏' },
+                  ].map(opt => (
+                    <Tag
+                      key={opt.value}
+                      color={historyType === opt.value ? BILI_COLORS.primary : undefined}
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => {
+                        setHistoryType(opt.value)
+                        loadHistory(opt.value, historyTimeRange)
+                      }}
+                    >
+                      {opt.label}
+                    </Tag>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <Text style={{ color: textSec, fontSize: 13 }}>时间：</Text>
+                  {[
+                    { value: 'all', label: '全部' },
+                    { value: 'today', label: '今天' },
+                    { value: 'yesterday', label: '昨天' },
+                    { value: 'week', label: '近一周' },
+                  ].map(opt => (
+                    <Tag
+                      key={opt.value}
+                      color={historyTimeRange === opt.value ? BILI_COLORS.accent : undefined}
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => {
+                        setHistoryTimeRange(opt.value)
+                        loadHistory(historyType, opt.value)
+                      }}
+                    >
+                      {opt.label}
+                    </Tag>
+                  ))}
+                </div>
+              </div>
+
+              {historyLoading && historyList.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: 40 }}>
+                  <Spin size="large" />
+                </div>
+              ) : historyList.length > 0 ? (
+                <div>
+                  <Row gutter={[16, 16]}>
+                    {historyList.map((item: any, idx: number) => {
+                      const progressPercent = item.duration > 0
+                        ? Math.min(Math.round((Math.max(item.progress, 0) / item.duration) * 100), 100)
+                        : 0
+                      const isFinished = item.progress === -1 || progressPercent >= 95
+                      const viewAtDate = item.view_at
+                        ? new Date(item.view_at * 1000).toLocaleString('zh-CN', {
+                            month: '2-digit', day: '2-digit',
+                            hour: '2-digit', minute: '2-digit',
+                          })
+                        : ''
+
+                      return (
+                        <Col key={`${item.bvid}-${idx}`} xs={24} sm={12} md={8} lg={6}>
+                          <Card
+                            hoverable
+                            style={{
+                              background: cardBg,
+                              border: `1px solid ${borderColor}`,
+                              borderRadius: 10,
+                              overflow: 'hidden',
+                            }}
+                            styles={{ body: { padding: 0 } }}
+                            onClick={() => handleVideoClick(item)}
+                          >
+                            {/* 封面区域 */}
+                            <div style={{ position: 'relative', paddingTop: '56.25%', overflow: 'hidden' }}>
+                              <img
+                                src={proxyImageUrl(item.cover)}
+                                alt={item.title}
+                                style={{
+                                  position: 'absolute', top: 0, left: 0,
+                                  width: '100%', height: '100%', objectFit: 'cover',
+                                }}
+                              />
+                              {/* 时长标签 */}
+                              <div style={{
+                                position: 'absolute', bottom: 6, right: 6,
+                                background: 'rgba(0,0,0,0.75)', color: '#fff',
+                                fontSize: 11, padding: '1px 6px', borderRadius: 4,
+                              }}>
+                                {formatDuration(item.duration)}
+                              </div>
+                              {/* 观看进度条 */}
+                              {!isFinished && item.progress > 0 && item.duration > 0 && (
+                                <div style={{
+                                  position: 'absolute', bottom: 0, left: 0, right: 0,
+                                  height: 3, background: 'rgba(255,255,255,0.3)',
+                                }}>
+                                  <div style={{
+                                    width: `${progressPercent}%`, height: '100%',
+                                    background: BILI_COLORS.primary,
+                                  }} />
+                                </div>
+                              )}
+                              {/* 已看完标记 */}
+                              {isFinished && (
+                                <div style={{
+                                  position: 'absolute', top: 6, left: 6,
+                                  background: BILI_COLORS.accent, color: '#fff',
+                                  fontSize: 10, padding: '1px 6px', borderRadius: 4,
+                                }}>
+                                  已看完
+                                </div>
+                              )}
+                              {/* 分P标记 */}
+                              {item.show_title && (
+                                <Tooltip title={item.show_title}>
+                                  <div style={{
+                                    position: 'absolute', top: 6, right: 6,
+                                    background: 'rgba(0,0,0,0.75)', color: '#fff',
+                                    fontSize: 10, padding: '1px 6px', borderRadius: 4,
+                                    maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                  }}>
+                                    {item.show_title}
+                                  </div>
+                                </Tooltip>
+                              )}
+                            </div>
+                            {/* 信息区域 */}
+                            <div style={{ padding: '10px 12px' }}>
+                              <div style={{
+                                fontSize: 13, fontWeight: 500, color: textPri,
+                                lineHeight: 1.4, height: 36, overflow: 'hidden',
+                                display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                              }}>
+                                {item.title}
+                              </div>
+                              <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                {item.author && (
+                                  <Text style={{ fontSize: 12, color: textSec }} ellipsis>
+                                    {item.author}
+                                  </Text>
+                                )}
+                              </div>
+                              <div style={{ marginTop: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <Text style={{ fontSize: 11, color: textSec }}>
+                                  <ClockCircleOutlined style={{ marginRight: 3 }} />
+                                  {viewAtDate}
+                                </Text>
+                                {item.tag_name && (
+                                  <Tag style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px', margin: 0 }}>
+                                    {item.tag_name}
+                                  </Tag>
+                                )}
+                              </div>
+                            </div>
+                          </Card>
+                        </Col>
+                      )
+                    })}
+                  </Row>
+
+                  {/* 加载更多按钮 */}
+                  {historyHasMore && (
+                    <div style={{ textAlign: 'center', marginTop: 20 }}>
+                      <Button
+                        type="default"
+                        onClick={loadMoreHistory}
+                        loading={historyLoading}
+                        style={{ borderRadius: 20, paddingLeft: 24, paddingRight: 24 }}
+                      >
+                        加载更多
+                      </Button>
+                    </div>
+                  )}
+                  {!historyHasMore && historyList.length > 0 && (
+                    <div style={{ textAlign: 'center', padding: '16px 0', color: textSec, fontSize: 13 }}>
+                      — 没有更多了 —
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <Empty
+                  description="暂无观看记录"
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                >
+                  <Button type="primary" onClick={() => loadHistory(historyType, historyTimeRange)}>
+                    刷新
+                  </Button>
+                </Empty>
+              )}
+            </div>
+          )}
+
+          {/* 关注列表 */}
+          {activeTab === 'followings' && (
+            <div>
+              {followingsLoading && followings.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: 40 }}>
+                  <Spin size="large" />
+                </div>
+              ) : followings.length > 0 ? (
+                <div>
+                  <Row gutter={[16, 16]}>
+                    {followings.map((item: any) => {
+                      const isVip = item.vip?.status === 1
+                      const isOfficial = item.official_verify?.type === 0
+                      const isPersonal = item.official_verify?.type === 1
+
+                      return (
+                        <Col key={item.mid} xs={24} sm={12} md={8} lg={6}>
+                          <Card
+                            hoverable
+                            style={{
+                              background: cardBg,
+                              border: `1px solid ${borderColor}`,
+                              borderRadius: 10,
+                              overflow: 'hidden',
+                            }}
+                            styles={{ body: { padding: 0 } }}
+                            onClick={() => {
+                              window.open(`https://space.bilibili.com/${item.mid}`, '_blank')
+                            }}
+                          >
+                            {/* 头像区域 */}
+                            <div style={{
+                              padding: '20px 16px 12px',
+                              textAlign: 'center',
+                              background: 'linear-gradient(180deg, rgba(251,114,153,0.08) 0%, transparent 100%)',
+                            }}>
+                              <div style={{ position: 'relative', display: 'inline-block' }}>
+                                <Avatar
+                                  src={proxyImageUrl(item.face)}
+                                  icon={<UserOutlined />}
+                                  size={64}
+                                  style={{
+                                    border: isVip
+                                      ? `2px solid ${BILI_COLORS.gold}`
+                                      : `2px solid ${borderColor}`,
+                                  }}
+                                />
+                                {/* 直播状态指示 */}
+                                {item.live_status === 1 && (
+                                  <div style={{
+                                    position: 'absolute', bottom: -2, right: -2,
+                                    width: 16, height: 16, borderRadius: '50%',
+                                    background: '#FF4D4F', border: '2px solid #fff',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  }}>
+                                    <div style={{
+                                      width: 6, height: 6, borderRadius: '50%',
+                                      background: '#fff',
+                                    }} />
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* 信息区域 */}
+                            <div style={{ padding: '8px 12px 12px' }}>
+                              <div style={{
+                                display: 'flex', alignItems: 'center', gap: 6,
+                                justifyContent: 'center', marginBottom: 6,
+                              }}>
+                                <Text
+                                  strong
+                                  style={{
+                                    fontSize: 14, color: textPri,
+                                    maxWidth: 140, overflow: 'hidden',
+                                    textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                  }}
+                                >
+                                  {item.uname}
+                                </Text>
+                                {isVip && (
+                                  <Tag color="gold" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px', margin: 0 }}>
+                                    大会员
+                                  </Tag>
+                                )}
+                              </div>
+
+                              {/* 认证标签 */}
+                              <div style={{ textAlign: 'center', marginBottom: 6 }}>
+                                {isOfficial && (
+                                  <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px', margin: 0 }}>
+                                    机构认证
+                                  </Tag>
+                                )}
+                                {isPersonal && (
+                                  <Tag color="orange" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px', margin: 0 }}>
+                                    个人认证
+                                  </Tag>
+                                )}
+                                {item.contract_desc && (
+                                  <Tag style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px', margin: 0 }}>
+                                    {item.contract_desc}
+                                  </Tag>
+                                )}
+                              </div>
+
+                              {/* 签名 */}
+                              {item.sign && (
+                                <div style={{
+                                  fontSize: 12, color: textSec,
+                                  lineHeight: 1.4, height: 32, overflow: 'hidden',
+                                  textAlign: 'center',
+                                  display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                                }}>
+                                  {item.sign}
+                                </div>
+                              )}
+
+                              {/* 关注时间 */}
+                              {item.mtime > 0 && (
+                                <div style={{ textAlign: 'center', marginTop: 8 }}>
+                                  <Text style={{ fontSize: 11, color: textSec }}>
+                                    <ClockCircleOutlined style={{ marginRight: 3 }} />
+                                    {new Date(item.mtime * 1000).toLocaleDateString('zh-CN')} 关注
+                                  </Text>
+                                </div>
+                              )}
+                            </div>
+                          </Card>
+                        </Col>
+                      )
+                    })}
+                  </Row>
+
+                  {/* 加载更多按钮 */}
+                  {followingsHasMore && (
+                    <div style={{ textAlign: 'center', marginTop: 20 }}>
+                      <Button
+                        type="default"
+                        onClick={() => loadFollowings(followingsPage + 1)}
+                        loading={followingsLoading}
+                        style={{ borderRadius: 20, paddingLeft: 24, paddingRight: 24 }}
+                      >
+                        加载更多
+                      </Button>
+                    </div>
+                  )}
+                  {!followingsHasMore && followings.length > 0 && (
+                    <div style={{ textAlign: 'center', padding: '16px 0', color: textSec, fontSize: 13 }}>
+                      — 共 {followingsTotal} 位关注 —
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <Empty
+                  description="暂无关注"
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                >
+                  <Button type="primary" onClick={() => loadFollowings(1)}>
+                    刷新
+                  </Button>
+                </Empty>
               )}
             </div>
           )}

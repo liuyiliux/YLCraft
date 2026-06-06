@@ -167,6 +167,18 @@ class SeriesListResponse(BaseModel):
     message: str = ""
 
 
+class WatchHistoryResponse(BaseModel):
+    success: bool = True
+    data: Optional[Dict[str, Any]] = None
+    message: str = ""
+
+
+class FollowingsResponse(BaseModel):
+    success: bool = True
+    data: Optional[Dict[str, Any]] = None
+    message: str = ""
+
+
 # =============================================================================
 # UP主分析 & 个人中心 - 辅助函数
 # =============================================================================
@@ -775,3 +787,141 @@ async def get_series_detail(
         except Exception as e:
             logger.error(f"[series_detail] Error: {e}")
             raise HTTPException(status_code=500, detail=f"获取合集详情失败: {str(e)}")
+
+
+# =============================================================================
+# 历史观看记录 - API 端点
+# =============================================================================
+
+@router.get("/history", summary="获取历史观看记录（游标浏览）", response_model=WatchHistoryResponse)
+async def get_watch_history(
+    conn_id: str = Query(..., description="B站连接ID（必填，需要登录）"),
+    ps: int = Query(20, ge=1, le=50, description="每页数量"),
+    max: int = Query(0, description="游标：上一页最后一条记录的 oid（首次请求传0）"),
+    view_at: int = Query(0, description="游标：上一页最后一条记录的 view_at 时间戳（首次请求传0）"),
+    type: str = Query("all", description="类型（all=全部, archive=视频, live=直播, article=专栏）"),
+):
+    """
+    获取当前登录用户的历史观看记录（游标分页浏览）
+    - 必须提供有效的 B站连接（包含 Cookie）
+    - 使用游标分页：首次请求 max=0&view_at=0，后续请求使用返回的 cursor 值
+    - type 参数可按类型筛选：all/archive/live/article
+    """
+    logger.info(f"[history] conn_id={conn_id}, ps={ps}, max={max}, view_at={view_at}, type={type}")
+
+    if not conn_id:
+        raise HTTPException(status_code=400, detail="需要提供 B站连接ID（conn_id）")
+
+    async with bili_client(conn_id) as client:
+        if not client.config.cookie:
+            raise HTTPException(status_code=401, detail="B站连接未包含 Cookie，无法访问历史记录")
+
+        try:
+            result = await client.get_watch_history(
+                max_results=ps,
+                max_oid=max,
+                view_at=view_at,
+                history_type=type,
+            )
+
+            return WatchHistoryResponse(
+                success=True,
+                data=result,
+                message=f"获取到 {len(result.get('list', []))} 条记录",
+            )
+
+        except Exception as e:
+            logger.error(f"[history] Error: {e}")
+            raise HTTPException(status_code=500, detail=f"获取历史记录失败: {str(e)}")
+
+
+@router.get("/history/search", summary="搜索历史观看记录（时间筛选）", response_model=WatchHistoryResponse)
+async def search_watch_history(
+    conn_id: str = Query(..., description="B站连接ID（必填，需要登录）"),
+    business: str = Query("archive", description="业务类型（archive=视频, live=直播, article=专栏）"),
+    page: int = Query(1, ge=1, description="页码"),
+    page_size: int = Query(20, ge=1, le=50, description="每页数量"),
+    keyword: str = Query("", description="搜索关键词"),
+    add_time_start: int = Query(0, description="起始时间戳（秒），0=不限"),
+    add_time_end: int = Query(0, description="结束时间戳（秒），0=不限"),
+):
+    """
+    搜索历史观看记录（支持时间筛选和关键词搜索）
+    - 必须提供有效的 B站连接（包含 Cookie）
+    - 支持按类型（视频/直播/专栏）和时间范围筛选
+    - 时间筛选示例：今天=add_time_start=今天0点时间戳, 昨天=start=昨天0点&end=今天0点-1
+    """
+    logger.info(f"[history_search] conn_id={conn_id}, business={business}, page={page}, keyword={keyword}, start={add_time_start}, end={add_time_end}")
+
+    if not conn_id:
+        raise HTTPException(status_code=400, detail="需要提供 B站连接ID（conn_id）")
+
+    async with bili_client(conn_id) as client:
+        if not client.config.cookie:
+            raise HTTPException(status_code=401, detail="B站连接未包含 Cookie，无法访问历史记录")
+
+        try:
+            result = await client.search_watch_history(
+                business=business,
+                page=page,
+                page_size=page_size,
+                keyword=keyword,
+                add_time_start=add_time_start,
+                add_time_end=add_time_end,
+            )
+
+            return WatchHistoryResponse(
+                success=True,
+                data=result,
+                message=f"获取到 {len(result.get('list', []))} 条记录",
+            )
+
+        except Exception as e:
+            logger.error(f"[history_search] Error: {e}")
+            raise HTTPException(status_code=500, detail=f"搜索历史记录失败: {str(e)}")
+
+
+# =============================================================================
+# 关注列表 - API 端点
+# =============================================================================
+
+@router.get("/followings", summary="获取关注列表", response_model=FollowingsResponse)
+async def get_followings(
+    conn_id: str = Query(..., description="B站连接ID（必填，需要登录）"),
+    vmid: int = Query(0, description="用户UID（0=当前登录用户自己）"),
+    page: int = Query(1, ge=1, description="页码"),
+    page_size: int = Query(20, ge=1, le=50, description="每页数量"),
+    order_type: str = Query("desc", description="排序方式（desc=最近关注在前, asc=最早关注在前）"),
+):
+    """
+    获取当前登录用户的关注列表（关注的 UP 主）
+    - 必须提供有效的 B站连接（包含 Cookie）
+    - vmid=0 表示获取自己的关注列表
+    - 支持分页和排序
+    """
+    logger.info(f"[followings] conn_id={conn_id}, vmid={vmid}, page={page}, page_size={page_size}")
+
+    if not conn_id:
+        raise HTTPException(status_code=400, detail="需要提供 B站连接ID（conn_id）")
+
+    async with bili_client(conn_id) as client:
+        if not client.config.cookie:
+            raise HTTPException(status_code=401, detail="B站连接未包含 Cookie，无法访问关注列表")
+
+        try:
+            result = await client.get_followings(
+                vmid=vmid,
+                page=page,
+                page_size=page_size,
+                order_type=order_type,
+            )
+
+            return FollowingsResponse(
+                success=True,
+                data=result,
+                message=f"获取到 {len(result.get('list', []))} 条关注",
+            )
+
+        except Exception as e:
+            logger.error(f"[followings] Error: {e}")
+            raise HTTPException(status_code=500, detail=f"获取关注列表失败: {str(e)}")

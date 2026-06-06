@@ -170,23 +170,23 @@ async def _parse_with_free_api(url: str, default_qn: int = 80) -> Optional[dict]
                 if u:
                     res = _quality_to_resolution(current_qn, height)
                     sz = d.get("size", 0)
-                        qualities.append({
-                            "quality": f"分段{i+1}",
-                            "url": u,
-                            "resolution": res or "",
-                            "filesize": _get_filesize_for_qn(current_qn, sz, duration),
-                        })
+                    qualities.append({
+                        "quality": f"分段{i+1}",
+                        "url": u,
+                        "resolution": res or "",
+                        "filesize": _get_filesize_for_qn(current_qn, sz, duration),
+                    })
         else:
             # 无 accept_quality，仅返回一个清晰度
             label = BILI_QUALITY_MAP.get(current_qn, f"清晰度{current_qn}")
             res = _quality_to_resolution(current_qn, height)
             sz = durl_list[0].get("size", 0) if durl_list else 0
-                qualities.append({
-                    "quality": label,
-                    "url": video_url,
-                    "resolution": res,
-                    "filesize": _get_filesize_for_qn(current_qn, sz, duration),
-                })
+            qualities.append({
+                "quality": label,
+                "url": video_url,
+                "resolution": res,
+                "filesize": _get_filesize_for_qn(current_qn, sz, duration),
+            })
 
         return {
             "title": title,
