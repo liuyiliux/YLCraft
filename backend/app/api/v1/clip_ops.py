@@ -14,7 +14,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 
-from app.services.video.ffmpeg import get_ffmpeg_service
+from app.core.ffmpeg import get_ffmpeg_service
 
 router = APIRouter()
 logger = logging.getLogger("ylcraft.clip")

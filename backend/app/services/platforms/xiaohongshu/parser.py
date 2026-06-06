@@ -4,6 +4,9 @@ YLCraft — 小红书图文链接解析服务
 解析小红书笔记链接，提取标题、正文、图片列表等信息。
 优先从 window.__INITIAL_STATE__ 提取 JSON，降级到 Meta 标签和 DOM 解析。
 
+本模块为 XiaohongshuClient 的内部解析实现，提供 HTML 解析能力。
+作为 API 模式的降级 fallback。
+
 参考：F:\workspace\图文\yiliu\backend\src\services\xiaohongshu_service.py
 """
 
@@ -20,11 +23,21 @@ from typing import Optional
 import requests
 from bs4 import BeautifulSoup
 
-logger = logging.getLogger("ylcraft.xhs_parser")
+logger = logging.getLogger("ylcraft.platforms.xiaohongshu.parser")
 
-# =============================================================================
-# 数据模型
-# =============================================================================
+NOTE_PATTERNS = [
+    r"xiaohongshu\.com/explore/([a-f0-9]+)",
+    r"xiaohongshu\.com/discovery/item/([a-f0-9]+)",
+    r"xhs\.cn/t/([a-f0-9]+)",
+]
+
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 Edg/122.0.0.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0",
+]
+
 
 @dataclass
 class XhsNote:
@@ -36,7 +49,7 @@ class XhsNote:
     author_id: str = ""
     author_avatar: str = ""
     likes: int = 0
-    covers: list[str] = field(default_factory=list)  # 封面图列表（取前N张）
+    covers: list[str] = field(default_factory=list)
     source_url: str = ""
     note_id: str = ""
 
@@ -46,34 +59,15 @@ class XhsNote:
         return self.images[0] if self.images else ""
 
 
-# =============================================================================
-# 小红书解析服务
-# =============================================================================
-
 class XhsParserService:
     """小红书图文链接解析服务"""
-
-    # 小红书笔记 URL 格式
-    NOTE_PATTERNS = [
-        r"xiaohongshu\.com/explore/([a-f0-9]+)",
-        r"xiaohongshu\.com/discovery/item/([a-f0-9]+)",
-        r"xhs\.cn/t/([a-f0-9]+)",
-    ]
-
-    # User-Agent 池
-    USER_AGENTS = [
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 Edg/122.0.0.0",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0",
-    ]
 
     def __init__(self, timeout: int = 15):
         self.timeout = timeout
         self.delay_range = (1.0, 3.0)
 
     def _random_ua(self) -> str:
-        return random.choice(self.USER_AGENTS)
+        return random.choice(USER_AGENTS)
 
     def _delay(self):
         """随机延迟，模拟真实用户"""
@@ -95,15 +89,11 @@ class XhsParserService:
 
     def _extract_note_id(self, url: str) -> Optional[str]:
         """从 URL 中提取笔记 ID"""
-        for pattern in self.NOTE_PATTERNS:
+        for pattern in NOTE_PATTERNS:
             match = re.search(pattern, url)
             if match:
                 return match.group(1)
         return None
-
-    # -------------------------------------------------------------------------
-    # 核心解析方法
-    # -------------------------------------------------------------------------
 
     def parse(self, url: str) -> Optional[XhsNote]:
         """
@@ -123,7 +113,6 @@ class XhsParserService:
         logger.info(f"[XhsParser] 开始解析笔记: note_id={note_id}")
         self._delay()
 
-        # 发送请求
         try:
             response = requests.get(
                 url,
@@ -141,13 +130,11 @@ class XhsParserService:
         html = response.text
         soup = BeautifulSoup(html, "html.parser")
 
-        # 策略1: window.__INITIAL_STATE__（最准确）
         note = self._parse_initial_state(soup, url, note_id)
         if note and (note.title or note.description or note.images):
             logger.info(f"[XhsParser] ✅ INITIAL_STATE 解析成功: {note.title[:30]}")
             return note
 
-        # 策略2: Meta og: 标签（兜底信息）
         note = self._parse_meta_tags(soup, url)
         if note.title or note.description:
             logger.info(f"[XhsParser] ⚠️ Meta 标签解析: {note.title[:30]}")
@@ -168,7 +155,6 @@ class XhsParserService:
                 continue
 
             try:
-                # 提取 JSON 字符串
                 json_str = text.replace("window.__INITIAL_STATE__=", "").replace(
                     "undefined", "null"
                 )
@@ -177,41 +163,33 @@ class XhsParserService:
 
                 data = json.loads(json_str)
 
-                # 查找笔记数据 — 多种路径兼容
                 note_data = None
                 detail_map = None
 
-                # 路径 A: note.noteDetailMap[noteId]
                 if "note" in data and "noteDetailMap" in data["note"]:
                     detail_map = data["note"]["noteDetailMap"]
                     note_data = detail_map.get(note_id)
                     if not note_data:
-                        # 尝试遍历
                         for k, v in detail_map.items():
                             if isinstance(v, dict) and v.get("note", {}).get("noteId") == note_id:
                                 note_data = v.get("note")
                                 break
 
-                # 路径 B: note.note（直接）
                 if not note_data and "note" in data and "note" in data["note"]:
                     note_data = data["note"]["note"]
 
-                # 路径 C: note.firstNote
                 if not note_data and "note" in data and "firstNote" in data["note"]:
                     note_data = data["note"]["firstNote"]
 
                 if not note_data:
                     continue
 
-                # 解包嵌套结构
                 if isinstance(note_data, dict) and "note" in note_data:
                     note_data = note_data["note"]
 
-                # 提取字段
                 title = note_data.get("title", "") or note_data.get("displayTitle", "")
                 description = note_data.get("desc", "") or note_data.get("description", "")
 
-                # 图片列表
                 images = []
                 image_list = note_data.get("imageList") or note_data.get("imagesList") or []
                 for img in image_list:
@@ -225,13 +203,11 @@ class XhsParserService:
                             img_url = "https:" + img_url
                         images.append(img_url)
 
-                # 作者信息
                 user = note_data.get("user", {})
                 author = user.get("nickname", "")
                 author_id = user.get("userId", "") or user.get("id", "")
                 author_avatar = user.get("avatar", "") or user.get("image", "")
 
-                # 点赞数
                 interact = note_data.get("interactInfo", {}) or {}
                 likes = note_data.get("likedCount", 0) or interact.get("likedCount", 0) or 0
 
@@ -262,24 +238,20 @@ class XhsParserService:
         description = ""
         cover_url = ""
 
-        # og:title
         og_title = soup.find("meta", property="og:title")
         if og_title:
             title = og_title.get("content", "")
 
-        # og:description
         og_desc = soup.find("meta", property="og:description")
         if og_desc:
             description = og_desc.get("content", "")
 
-        # og:image
         og_image = soup.find("meta", property="og:image")
         if og_image:
             cover_url = og_image.get("content", "")
             if cover_url.startswith("//"):
                 cover_url = "https:" + cover_url
 
-        # 如果 title 还是空的，尝试 title tag
         if not title and soup.title:
             title = soup.title.string.replace(" - 小红书", "").strip()
 
@@ -295,15 +267,6 @@ class XhsParserService:
         )
 
 
-# =============================================================================
-# 全局实例
-# =============================================================================
-
-_xhs_parser: Optional[XhsParserService] = None
-
-
 def get_xhs_parser() -> XhsParserService:
-    global _xhs_parser
-    if _xhs_parser is None:
-        _xhs_parser = XhsParserService()
-    return _xhs_parser
+    """获取小红书解析服务实例"""
+    return XhsParserService()

@@ -3,6 +3,8 @@ YLCraft — FFmpeg 视频处理服务
 
 提供视频剪辑、合并、字幕、转码等核心功能。
 参考 CutClaw render_video.py 的实现。
+
+本模块是视频处理基础设施，位于 core/ 目录。
 """
 
 from __future__ import annotations
@@ -15,7 +17,7 @@ import tempfile
 from pathlib import Path
 from typing import Optional
 
-logger = logging.getLogger("ylcraft.ffmpeg")
+logger = logging.getLogger("ylcraft.core.ffmpeg")
 
 
 class FFmpegService:
@@ -61,7 +63,6 @@ class FFmpegService:
             stream = data.get("streams", [{}])[0]
             format_info = data.get("format", {})
 
-            # 解析帧率
             fps_str = stream.get("r_frame_rate", "30/1")
             if "/" in fps_str:
                 num, den = map(int, fps_str.split("/"))
@@ -103,22 +104,18 @@ class FFmpegService:
             raise ValueError("video_paths cannot be empty")
 
         if len(video_paths) == 1:
-            # 单个文件直接复制
             import shutil
             shutil.copy(video_paths[0], output_path)
             return output_path
 
-        # 使用 concat demuxer（快速，无需重编码）
         with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
             for path in video_paths:
-                # 需要转义路径中的特殊字符
                 escaped_path = str(path).replace("\\", "/").replace("'", "'\\''")
                 f.write(f"file '{escaped_path}'\n")
             concat_list = f.name
 
         try:
             if reencode:
-                # 重新编码（兼容不同编码格式）
                 cmd = [
                     self.ffmpeg, "-y",
                     "-f", "concat", "-safe", "0",
@@ -128,7 +125,6 @@ class FFmpegService:
                     str(output_path)
                 ]
             else:
-                # 直接复制（快速）
                 cmd = [
                     self.ffmpeg, "-y",
                     "-f", "concat", "-safe", "0",
@@ -142,7 +138,7 @@ class FFmpegService:
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=300  # 5分钟超时
+                timeout=300
             )
 
             if result.returncode != 0:
@@ -152,7 +148,6 @@ class FFmpegService:
             return output_path
 
         finally:
-            # 清理临时文件
             try:
                 Path(concat_list).unlink()
             except Exception:
@@ -192,7 +187,6 @@ class FFmpegService:
                 str(output_path)
             ]
         else:
-            # 快速裁剪（关键帧定位）
             cmd = [
                 self.ffmpeg, "-y",
                 "-ss", str(start_time),
@@ -241,10 +235,8 @@ class FFmpegService:
         Returns:
             Path: 输出文件路径
         """
-        # 转义路径
         subtitle_escaped = str(subtitle_path).replace("\\", "/").replace(":", "\\:")
 
-        # 使用 drawtext filter（硬字幕）
         filter_str = (
             f"subtitles='{subtitle_escaped}':"
             f"force_style='FontName={font_name},FontSize={font_size},"
@@ -298,11 +290,9 @@ class FFmpegService:
         filter_parts = []
 
         if replace_original:
-            # 替换原音频
             filter_parts.append(f"[1:a]volume={audio_volume}[audio]")
             map_opts = ["-map", "0:v", "-map", "1:a"]
         else:
-            # 混合音频
             filter_parts.append(f"[0:a]volume=1[a0];[1:a]volume={audio_volume}[a1];[a0][a1]amix=inputs=2[audio]")
             map_opts = ["-map", "0:v", "-map", "[audio]"]
 
@@ -354,7 +344,6 @@ class FFmpegService:
         Returns:
             Path: 输出文件路径
         """
-        # 计算水印位置
         positions = {
             "top_left": f"{margin}:{margin}",
             "top_right": f"W-w-{margin}:{margin}",
@@ -412,10 +401,8 @@ class FFmpegService:
             Path: 输出文件路径
         """
         if maintain_aspect:
-            # 保持宽高比，黑边填充
             filter_str = f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2"
         else:
-            # 强制拉伸
             filter_str = f"scale={width}:{height}"
 
         cmd = [
@@ -536,7 +523,6 @@ class FFmpegService:
         return color_map.get(color.lower(), "FFFFFF")
 
 
-# 全局实例
 _ffmpeg_service: Optional[FFmpegService] = None
 
 

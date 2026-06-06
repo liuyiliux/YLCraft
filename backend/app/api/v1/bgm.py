@@ -29,7 +29,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
 from app.services.bgm.service import bgm_service
-from app.services.video.ffmpeg import FFmpegService
+from app.core.ffmpeg import FFmpegService
 
 router = APIRouter()
 logger = logging.getLogger("ylcraft.bgm")

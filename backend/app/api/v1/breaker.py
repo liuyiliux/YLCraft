@@ -20,7 +20,7 @@ from app.services.breaker import (
     AnalysisStatus,
     analyze_xhs_content,
 )
-from app.services.xhs_parser import get_xhs_parser, XhsNote
+from app.services.platforms.xiaohongshu import get_xhs_parser, XhsNote
 from app.services.ai.types import MediaType
 from app.services.ai import get_ai_service
 from typing import Optional
