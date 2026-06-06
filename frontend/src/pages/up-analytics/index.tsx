@@ -19,6 +19,7 @@ import {
   ArrowLeftOutlined,
 } from '@ant-design/icons'
 import { useTheme } from '../../constants/theme'
+import { VideoDetailDrawer } from '../../components/bilibili'
 import {
   searchEnhanced,
   listPlatformConnections,
@@ -575,6 +576,10 @@ export default function UpAnalyticsPage() {
   const [seriesDetail, setSeriesDetail] = useState<any[]>([])
   const [selectedSeries, setSelectedSeries] = useState<any>(null)
   
+  // 视频详情弹窗
+  const [selectedVideo, setSelectedVideo] = useState<any>(null)
+  const [videoDetailVisible, setVideoDetailVisible] = useState(false)
+  
   // B站连接
   const [biliConnections, setBiliConnections] = useState<PlatformConnectionResponse[]>([])
   const [selectedConn, setSelectedConn] = useState<string>('')
@@ -591,6 +596,19 @@ export default function UpAnalyticsPage() {
       }
     }).catch(() => {})
   }, [])
+
+  // 处理URL参数中的uid，自动加载UP主详情
+  useEffect(() => {
+    const uid = searchParams.get('uid')
+    if (uid && selectedConn) {
+      // 构造一个简化的UP对象，包含id和name
+      const up = {
+        id: uid,
+        title: '',
+      }
+      handleUpClick(up)
+    }
+  }, [searchParams, selectedConn])
   
   // 搜索 UP主
   const handleSearchUp = async (page: number = 1) => {
@@ -950,17 +968,8 @@ export default function UpAnalyticsPage() {
                       pageSize={20}
                       onPageChange={handleVideoPageChange}
                       onVideoClick={(video) => {
-                        // 可以跳转详情或下载
-                        Modal.info({
-                          title: video.title,
-                          content: (
-                            <div>
-                              <p>播放量: {formatNum(video.stat?.view)}</p>
-                              <p>点赞: {formatNum(video.stat?.like)}</p>
-                              <p>投币: {formatNum(video.stat?.coin)}</p>
-                            </div>
-                          ),
-                        })
+                        setSelectedVideo(video)
+                        setVideoDetailVisible(true)
                       }}
                     />
                   </div>
@@ -1024,16 +1033,8 @@ export default function UpAnalyticsPage() {
                   pageSize={20}
                   onPageChange={() => {}}
                   onVideoClick={(video) => {
-                    Modal.info({
-                      title: video.title,
-                      content: (
-                        <div>
-                          <p>播放量: {formatNum(video.stat?.view)}</p>
-                          <p>点赞: {formatNum(video.stat?.like)}</p>
-                          <p>投币: {formatNum(video.stat?.coin)}</p>
-                        </div>
-                      ),
-                    })
+                    setSelectedVideo(video)
+                    setVideoDetailVisible(true)
                   }}
                 />
               </Modal>
@@ -1109,6 +1110,14 @@ export default function UpAnalyticsPage() {
           {renderTabContent()}
         </div>
       </Card>
+
+      {/* 视频详情弹窗 */}
+      <VideoDetailDrawer
+        video={selectedVideo}
+        visible={videoDetailVisible}
+        onClose={() => setVideoDetailVisible(false)}
+        connId={selectedConn}
+      />
     </div>
   )
 }

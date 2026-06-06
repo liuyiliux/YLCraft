@@ -112,3 +112,11 @@ HISTORY_SEARCH = "/x/web-interface/history/search"   # 历史观看记录（搜�
 # =============================================================================
 
 FOLLOWINGS = "/x/relation/followings"              # 关注列表（需要登录）
+
+# =============================================================================
+# 付费课程 API（芝士课堂）
+# =============================================================================
+
+PAID_COURSES = "/pugv/pay/web/my/paid"             # 我的付费课程列表
+PAID_COURSE_DETAIL = "/pugv/view/web/season"       # 课程详情和章节列表
+PAID_COURSE_PLAYURL = "/pugv/player/web/playurl"   # 课程视频播放地址

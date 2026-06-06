@@ -1003,6 +1003,7 @@ export interface PlatformConnectionResponse {
   created_at: string
   has_credentials: boolean
   error_message: string | null
+  account_id?: string  // B站账号ID（用户UID）
 }
 
 /** 获取支持的平台和认证类型 */
@@ -1297,4 +1298,43 @@ export const getBiliFollowings = (params: {
   if (params.page_size) qs.set('page_size', String(params.page_size))
   if (params.order_type) qs.set('order_type', params.order_type)
   return request(`/bilibili/followings?${qs}`)
+}
+
+/** 获取B站付费课程列表（需要登录） */
+export const getBiliPaidCourses = (params: {
+  conn_id: string
+  page?: number
+  page_size?: number
+}) => {
+  const qs = new URLSearchParams()
+  qs.set('conn_id', params.conn_id)
+  if (params.page) qs.set('page', String(params.page))
+  if (params.page_size) qs.set('page_size', String(params.page_size))
+  return request(`/bilibili/paid-courses?${qs}`)
+}
+
+/** 获取B站付费课程详情和章节列表（需要登录） */
+export const getBiliPaidCourseDetail = (params: {
+  conn_id: string
+  season_id: number
+  pay_gid?: number
+}) => {
+  const qs = new URLSearchParams()
+  qs.set('conn_id', params.conn_id)
+  qs.set('season_id', String(params.season_id))
+  if (params.pay_gid) qs.set('pay_gid', String(params.pay_gid))
+  return request(`/bilibili/paid-course/detail?${qs}`)
+}
+
+/** 获取B站付费课程视频播放地址（需要登录） */
+export const getBiliPaidCoursePlayurl = (params: {
+  conn_id: string
+  ep_id: number
+  qn?: number
+}) => {
+  const qs = new URLSearchParams()
+  qs.set('conn_id', params.conn_id)
+  qs.set('ep_id', String(params.ep_id))
+  if (params.qn) qs.set('qn', String(params.qn))
+  return request(`/bilibili/paid-course/playurl?${qs}`)
 }

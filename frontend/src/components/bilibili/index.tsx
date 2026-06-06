@@ -45,7 +45,7 @@ export function formatDuration(seconds: number): string {
 // 代理图片URL
 export function proxyImageUrl(url?: string): string {
   if (!url) return ''
-  if (url.includes('hdslb.com')) {
+  if (url.includes('hdslb.com') || url.includes('biliimg.com')) {
     return `/api/v1/proxy/image?url=${encodeURIComponent(url)}`
   }
   return url

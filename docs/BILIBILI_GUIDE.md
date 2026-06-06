@@ -197,6 +197,144 @@ B站 API 返回的游标结构：
 
 ---
 
+### 1.6 关注列表获取 ✅
+
+**实现文件**：
+- 后端：`backend/app/services/platforms/bilibili/client.py` → `get_followings()`
+- 后端：`backend/app/services/platforms/bilibili/routes.py` → `/followings`
+- 前端：`frontend/src/pages/my-data/index.tsx`
+
+**功能**：
+- 获取当前登录用户的关注列表
+- 支持分页
+- 点击卡片跳转本地 UP 分析页面
+
+**API 端点**：`GET /api/v1/bilibili/followings`
+
+**关键实现细节**：
+- 需要从 Cookie 中提取 `DedeUserID` 作为 `vmid` 参数
+- 若 `vmid=0`，B站 API 返回空数据
+
+---
+
+### 1.7 付费课程（芝士课堂）下载 ✅
+
+**实现文件**：
+- 后端：`backend/app/services/platforms/bilibili/client.py` → `get_paid_courses()`, `get_paid_course_detail()`, `get_paid_course_playurl()`
+- 后端：`backend/app/services/platforms/bilibili/routes.py` → `/paid-courses`, `/paid-course/detail`, `/paid-course/playurl`
+- 前端：`frontend/src/pages/my-data/index.tsx`（付费课程标签页）
+
+**功能**：
+- 获取用户购买的付费课程列表
+- 获取课程详情和章节列表
+- 获取课程视频播放地址（用于下载）
+- 支持高清画质选择（默认 1080P）
+
+**API 端点**：
+| 接口 | 方法 | URL |
+|------|------|-----|
+| 获取付费课程列表 | GET | `/api/v1/bilibili/paid-courses` |
+| 获取课程详情和章节 | GET | `/api/v1/bilibili/paid-course/detail` |
+| 获取播放地址 | GET | `/api/v1/bilibili/paid-course/playurl` |
+
+**请求参数**（GET `/paid-courses`）：
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `conn_id` | string | B站连接 ID（必填） |
+| `page` | int | 页码，从 1 开始（默认 1） |
+| `page_size` | int | 每页条数，默认 10，最大 100 |
+
+**请求参数**（GET `/paid-course/detail`）：
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `conn_id` | string | B站连接 ID（必填） |
+| `season_id` | int | 课程 ID（必填） |
+| `pay_gid` | int | 支付订单 ID（备用，用于兼容不同数据结构） |
+
+**请求参数**（GET `/paid-course/playurl`）：
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `conn_id` | string | B站连接 ID（必填） |
+| `ep_id` | int | 章节 ID（必填） |
+| `qn` | int | 画质质量（默认 80=1080P，64=720P，32=480P，16=360P） |
+
+**课程列表数据结构**（返回值示例）：
+```python
+{
+    "list": [
+        {
+            "id": 123456,           # 课程 ID（season_id）
+            "pay_gid": 789012,       # 支付订单 ID
+            "title": "课程标题",      # 课程名称
+            "sub_title": "副标题",    # 课程副标题
+            "cover": "https://...",  # 封面图片 URL
+            "url": "https://www.bilibili.com/cheese/play/ss123456",
+            "ep_count": 25,          # 课时数
+            "price": 9900,           # 价格（单位：分）
+            "update_info": "已更新至第20话",
+            "progress": {
+                "last_ep_id": 123,
+                "last_ep_index": "第3章 - 第2节",
+                "last_time": 1234567890
+            }
+        }
+    ],
+    "total": 5,           # 课程总数
+    "page": 1,            # 当前页码
+    "has_more": false     # 是否还有更多
+}
+```
+
+**课程详情数据结构**（返回值示例）：
+```python
+{
+    "title": "课程标题",
+    "cover": "https://...",
+    "desc": "课程简介...",
+    "ep_count": 25,
+    "update_info": "已更新至第20话",
+    "episodes": [
+        {
+            "ep_id": 123456,        # 章节 ID
+            "aid": 789012,          # 视频 aid
+            "cid": 345678,          # 视频 cid
+            "title": "章节标题",     # 章节名称
+            "section_title": "第1章", # 所属章节名称
+            "duration": 1200,        # 时长（秒）
+            "page": 1
+        }
+    ]
+}
+```
+
+**播放地址数据结构**（返回值示例）：
+```python
+{
+    "video_url": "https://upos-sz-mirrorcos...",  # 视频流地址
+    "audio_url": "https://upos-sz-mirrorcos...",  # 音频流地址（DASH 模式）
+    "quality": 80,                                # 画质质量
+    "duration": 1200,                             # 时长（秒）
+    "quality_list": [
+        {"id": 80, "quality": 80, "name": "高清 1080P"},
+        {"id": 64, "quality": 64, "name": "高清 720P"}
+    ]
+}
+```
+
+**前端交互流程**：
+1. 用户进入「我的数据」→「付费课程」标签页
+2. 点击课程卡片 → 弹出课程详情弹窗
+3. 在弹窗中显示课程信息和章节列表
+4. 点击章节右侧的「下载」按钮 → 获取播放地址并触发浏览器下载
+
+**技术要点**：
+- 付费课程 API 需要登录 Cookie 认证
+- 使用 `pugv` 系列 API（芝士课堂专用）
+- 播放地址支持 DASH 格式（音视频分离）
+- 响应数据结构可能有多种格式，需要兼容处理
+
+---
+
 ## 二、B站 API 调用方式分析
 
 ### 2.1 登录认证
@@ -244,9 +382,12 @@ B站 API 返回的游标结构：
 | `/x/web-interface/view` | 获取视频详情 | `pages[].cid`，`cid` 是获取弹幕的关键参数 |
 | `/x/player/wbi/playurl` | 获取播放/下载 URL（高清需用此端点） | `dash`（DASH 格式，含 4K/8K/HDR 链接）|
 | `/pgc/view/web/season` | 番剧/影视详情 | 分集信息、付费状态 |
+| `/pugv/view/web/season` | 芝士课堂课程详情 | 课程章节信息 |
+| `/pugv/player/web/playurl` | 芝士课堂播放地址 | 付费课程视频流 |
 
 **关键发现**：
 - 高清视频（4K/8K/HDR）需要通过 `wbi/playurl` 端点获取 DASH 链接
+- 付费课程需要通过 `pugv` 系列 API 获取
 - 该端点需要 **WBI 签名**（B站的反爬机制）
 - YLCraft 当前仅支持普通 MP4 格式，不支持 DASH 高清格式
 
@@ -560,4 +701,4 @@ BiliTools 使用 **GPL-3.0-or-later** 协议，这意味着：
 ---
 
 **维护者**：YLCraft Team  
-**最后更新**：2026-05-21
+**最后更新**：2026-06-06

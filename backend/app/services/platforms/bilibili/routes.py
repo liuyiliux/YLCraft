@@ -925,3 +925,139 @@ async def get_followings(
         except Exception as e:
             logger.error(f"[followings] Error: {e}")
             raise HTTPException(status_code=500, detail=f"获取关注列表失败: {str(e)}")
+
+
+# =============================================================================
+# 付费课程（芝士课堂）- Response Models
+# =============================================================================
+
+class PaidCoursesResponse(BaseModel):
+    success: bool = True
+    data: Optional[Dict[str, Any]] = None
+    message: str = ""
+
+
+class PaidCourseDetailResponse(BaseModel):
+    success: bool = True
+    data: Optional[Dict[str, Any]] = None
+    message: str = ""
+
+
+class PaidCoursePlayurlResponse(BaseModel):
+    success: bool = True
+    data: Optional[Dict[str, Any]] = None
+    message: str = ""
+
+
+# =============================================================================
+# 付费课程（芝士课堂）- API 端点
+# =============================================================================
+
+@router.get("/paid-courses", summary="获取付费课程列表", response_model=PaidCoursesResponse)
+async def get_paid_courses(
+    conn_id: str = Query(..., description="B站连接ID（必填，需要登录）"),
+    page: int = Query(1, ge=1, description="页码"),
+    page_size: int = Query(10, ge=1, le=100, description="每页数量"),
+):
+    """
+    获取当前登录用户购买的付费课程列表（芝士课堂）
+    - 必须提供有效的 B站连接（包含 Cookie）
+    - 支持分页
+    """
+    logger.info(f"[paid_courses] conn_id={conn_id}, page={page}, page_size={page_size}")
+
+    if not conn_id:
+        raise HTTPException(status_code=400, detail="需要提供 B站连接ID（conn_id）")
+
+    async with bili_client(conn_id) as client:
+        if not client.config.cookie:
+            raise HTTPException(status_code=401, detail="B站连接未包含 Cookie，无法访问付费课程")
+
+        try:
+            result = await client.get_paid_courses(
+                page=page,
+                page_size=page_size,
+            )
+
+            return PaidCoursesResponse(
+                success=True,
+                data=result,
+                message=f"获取到 {len(result.get('list', []))} 门付费课程",
+            )
+
+        except Exception as e:
+            logger.error(f"[paid_courses] Error: {e}")
+            raise HTTPException(status_code=500, detail=f"获取付费课程失败: {str(e)}")
+
+
+@router.get("/paid-course/detail", summary="获取付费课程详情和章节列表", response_model=PaidCourseDetailResponse)
+async def get_paid_course_detail(
+    conn_id: str = Query(..., description="B站连接ID（必填，需要登录）"),
+    season_id: int = Query(..., description="课程ID（season_id）"),
+    pay_gid: int = Query(0, description="支付订单ID（备用）"),
+):
+    """
+    获取付费课程的详细信息和章节列表
+    - 必须提供有效的 B站连接（包含 Cookie）
+    """
+    logger.info(f"[paid_course_detail] conn_id={conn_id}, season_id={season_id}, pay_gid={pay_gid}")
+
+    if not conn_id:
+        raise HTTPException(status_code=400, detail="需要提供 B站连接ID（conn_id）")
+
+    async with bili_client(conn_id) as client:
+        if not client.config.cookie:
+            raise HTTPException(status_code=401, detail="B站连接未包含 Cookie，无法访问付费课程")
+
+        try:
+            # 先尝试使用 season_id
+            result = await client.get_paid_course_detail(season_id=season_id)
+            
+            # 如果没有获取到章节，尝试使用 pay_gid
+            if not result.get("episodes") and pay_gid:
+                logger.info(f"[paid_course_detail] No episodes with season_id, trying pay_gid={pay_gid}")
+                result = await client.get_paid_course_detail(season_id=pay_gid)
+
+            return PaidCourseDetailResponse(
+                success=True,
+                data=result,
+                message=f"获取课程详情成功",
+            )
+
+        except Exception as e:
+            logger.error(f"[paid_course_detail] Error: {e}")
+            raise HTTPException(status_code=500, detail=f"获取课程详情失败: {str(e)}")
+
+
+@router.get("/paid-course/playurl", summary="获取付费课程视频播放地址", response_model=PaidCoursePlayurlResponse)
+async def get_paid_course_playurl(
+    conn_id: str = Query(..., description="B站连接ID（必填，需要登录）"),
+    ep_id: int = Query(..., description="章节ID（ep_id）"),
+    qn: int = Query(80, description="画质质量（80=高清1080P, 64=高清720P, 32=清晰480P, 16=流畅360P）"),
+):
+    """
+    获取付费课程视频的播放地址（用于下载）
+    - 必须提供有效的 B站连接（包含 Cookie）
+    - 需要用户已购买该课程
+    """
+    logger.info(f"[paid_course_playurl] conn_id={conn_id}, ep_id={ep_id}, qn={qn}")
+
+    if not conn_id:
+        raise HTTPException(status_code=400, detail="需要提供 B站连接ID（conn_id）")
+
+    async with bili_client(conn_id) as client:
+        if not client.config.cookie:
+            raise HTTPException(status_code=401, detail="B站连接未包含 Cookie，无法获取播放地址")
+
+        try:
+            result = await client.get_paid_course_playurl(ep_id=ep_id, qn=qn)
+
+            return PaidCoursePlayurlResponse(
+                success=True,
+                data=result,
+                message="获取播放地址成功",
+            )
+
+        except Exception as e:
+            logger.error(f"[paid_course_playurl] Error: {e}")
+            raise HTTPException(status_code=500, detail=f"获取播放地址失败: {str(e)}")

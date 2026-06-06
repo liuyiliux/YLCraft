@@ -6,13 +6,14 @@ import { useState, useEffect } from 'react'
 import {
   Card, Button, Select, Tag, message, Spin, Space, Row, Col,
   Typography, Tabs, Empty, Statistic, Badge, Modal, Avatar,
-  Image, Tooltip, Progress,
+  Image, Tooltip, Progress, List,
 } from 'antd'
 import {
   UserOutlined, TeamOutlined, VideoCameraOutlined, HeartOutlined,
   FolderOutlined, ReloadOutlined, BarChartOutlined,
   LikeOutlined, StarOutlined, PlayCircleOutlined,
   ClockCircleOutlined, EyeOutlined, HistoryOutlined,
+  DownloadOutlined,
 } from '@ant-design/icons'
 import { useTheme } from '../../constants/theme'
 import {
@@ -24,6 +25,9 @@ import {
   getBiliHistory,
   searchBiliHistory,
   getBiliFollowings,
+  getBiliPaidCourses,
+  getBiliPaidCourseDetail,
+  getBiliPaidCoursePlayurl,
 } from '../../api'
 import type { PlatformConnectionResponse } from '../../api'
 import { VideoList, FavoriteCard, VideoDetailDrawer, proxyImageUrl, formatNum } from '../../components/bilibili'
@@ -103,6 +107,14 @@ export default function MyDataPage() {
   const [followingsPage, setFollowingsPage] = useState(1)
   const [followingsTotal, setFollowingsTotal] = useState(0)
   const [followingsHasMore, setFollowingsHasMore] = useState(false)
+
+  // 付费课程
+  const [paidCourses, setPaidCourses] = useState<any[]>([])
+  const [paidCoursesLoading, setPaidCoursesLoading] = useState(false)
+  const [paidCoursesTotal, setPaidCoursesTotal] = useState(0)
+  const [selectedCourse, setSelectedCourse] = useState<any>(null)
+  const [courseDetail, setCourseDetail] = useState<any>(null)
+  const [courseDetailLoading, setCourseDetailLoading] = useState(false)
 
   // 加载 B站连接
   useEffect(() => {
@@ -346,6 +358,93 @@ export default function MyDataPage() {
     }
   }
 
+  /** 加载付费课程 */
+  const loadPaidCourses = async () => {
+    if (!selectedConn) return
+    
+    setPaidCoursesLoading(true)
+    
+    try {
+      const res = await getBiliPaidCourses({
+        conn_id: selectedConn,
+        page: 1,
+        page_size: 20,
+      })
+      if (res?.success) {
+        const data = res.data || {}
+        setPaidCourses(data.list || [])
+        setPaidCoursesTotal(data.total || 0)
+      }
+    } catch (e) {
+      console.error('加载付费课程失败:', e)
+      message.error('加载付费课程失败')
+    } finally {
+      setPaidCoursesLoading(false)
+    }
+  }
+
+  /** 加载课程详情 */
+  const loadCourseDetail = async (course: any) => {
+    if (!selectedConn) return
+    
+    setSelectedCourse(course)
+    setCourseDetailLoading(true)
+    
+    try {
+      const res = await getBiliPaidCourseDetail({
+        conn_id: selectedConn,
+        season_id: course.id,
+        pay_gid: course.pay_gid,
+      })
+      if (res?.success) {
+        setCourseDetail(res.data)
+      }
+    } catch (e) {
+      console.error('加载课程详情失败:', e)
+      message.error('加载课程详情失败')
+    } finally {
+      setCourseDetailLoading(false)
+    }
+  }
+
+  /** 下载课程章节 */
+  const downloadEpisode = async (episode: any) => {
+    if (!selectedConn) return
+    
+    message.info('正在获取播放地址...')
+    
+    try {
+      // 获取播放地址
+      const res = await getBiliPaidCoursePlayurl({
+        conn_id: selectedConn,
+        ep_id: episode.ep_id,
+        qn: 80, // 高清1080P
+      })
+      
+      if (res?.success && res.data) {
+        const { video_url, audio_url } = res.data
+        
+        if (video_url) {
+          // 创建下载链接
+          const link = document.createElement('a')
+          link.href = video_url
+          link.download = `${episode.section_title} - ${episode.title}.mp4`
+          document.body.appendChild(link)
+          link.click()
+          document.body.removeChild(link)
+          message.success('开始下载')
+        } else {
+          message.error('无法获取下载地址')
+        }
+      } else {
+        message.error(res?.message || '获取播放地址失败')
+      }
+    } catch (e) {
+      console.error('下载课程失败:', e)
+      message.error('下载课程失败')
+    }
+  }
+
   // 视频点击
   const handleVideoClick = (video: any) => {
     setSelectedVideo(video)
@@ -571,6 +670,9 @@ export default function MyDataPage() {
             if (key === 'followings' && followings.length === 0) {
               loadFollowings(1)
             }
+            if (key === 'paidCourses' && paidCourses.length === 0) {
+              loadPaidCourses()
+            }
           }}
           tabBarStyle={{ paddingLeft: 16 }}
           items={[
@@ -611,6 +713,14 @@ export default function MyDataPage() {
               label: (
                 <span>
                   <TeamOutlined /> 关注列表 ({followingsTotal})
+                </span>
+              ),
+            },
+            {
+              key: 'paidCourses',
+              label: (
+                <span>
+                  <StarOutlined /> 付费课程 ({paidCoursesTotal})
                 </span>
               ),
             },
@@ -709,6 +819,7 @@ export default function MyDataPage() {
                   pageSize={5}
                   onPageChange={() => {}}
                   hidePagination={true}
+                  onVideoClick={handleVideoClick}
                 />
               </Card>
 
@@ -1029,7 +1140,7 @@ export default function MyDataPage() {
                             }}
                             styles={{ body: { padding: 0 } }}
                             onClick={() => {
-                              window.open(`https://space.bilibili.com/${item.mid}`, '_blank')
+                              window.location.href = `/up-analytics?uid=${item.mid}`
                             }}
                           >
                             {/* 头像区域 */}
@@ -1167,6 +1278,88 @@ export default function MyDataPage() {
               )}
             </div>
           )}
+
+          {/* 付费课程 */}
+          {activeTab === 'paidCourses' && (
+            <div>
+              {paidCoursesLoading ? (
+                <div style={{ textAlign: 'center', padding: 40 }}>
+                  <Spin size="large" />
+                </div>
+              ) : paidCourses.length > 0 ? (
+                <Row gutter={[16, 16]}>
+                  {paidCourses.map((course) => (
+                    <Col xs={24} sm={12} md={8} key={course.id}>
+                      <Card
+                        hoverable
+                        style={{ borderRadius: 12, border: `1px solid ${borderColor}`, background: cardBg }}
+                        cover={
+                          <div style={{ height: 160, overflow: 'hidden', borderRadius: '12px 12px 0 0' }}>
+                            <Image
+                              src={proxyImageUrl(course.cover)}
+                              alt={course.title}
+                              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                            />
+                          </div>
+                        }
+                        onClick={() => loadCourseDetail(course)}
+                      >
+                        <Card.Meta
+                          title={
+                            <Text style={{ fontWeight: 500, fontSize: 14, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                              {course.title}
+                            </Text>
+                          }
+                          description={
+                            <div>
+                              {course.sub_title && (
+                                <Text style={{ fontSize: 12, color: textSec, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                  {course.sub_title}
+                                </Text>
+                              )}
+                              <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 12 }}>
+                                <Text style={{ fontSize: 11, color: textSec }}>
+                                  <VideoCameraOutlined style={{ marginRight: 3 }} />
+                                  {course.ep_count} 课时
+                                </Text>
+                                <Text style={{ fontSize: 11, color: textSec }}>
+                                  {course.update_info}
+                                </Text>
+                              </div>
+                              {course.price > 0 && (
+                                <div style={{ marginTop: 8, color: BILI_COLORS.primary, fontWeight: 600 }}>
+                                  ¥{(course.price / 100).toFixed(2)}
+                                </div>
+                              )}
+                              {course.progress?.last_ep_index && (
+                                <div style={{ marginTop: 8, padding: 8, background: THEME.bgElevated, borderRadius: 8 }}>
+                                  <Text style={{ fontSize: 11, color: textSec }}>
+                                    上次学到:
+                                  </Text>
+                                  <Text style={{ fontSize: 12, display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                    {course.progress.last_ep_index}
+                                  </Text>
+                                </div>
+                              )}
+                            </div>
+                          }
+                        />
+                      </Card>
+                    </Col>
+                  ))}
+                </Row>
+              ) : (
+                <Empty
+                  description="暂无付费课程"
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                >
+                  <Button type="primary" onClick={() => loadPaidCourses()}>
+                    刷新
+                  </Button>
+                </Empty>
+              )}
+            </div>
+          )}
         </div>
       </Card>
 
@@ -1196,6 +1389,99 @@ export default function MyDataPage() {
         onClose={() => setVideoDetailVisible(false)}
         connId={selectedConn}
       />
+
+      {/* 付费课程详情弹窗 */}
+      <Modal
+        title={selectedCourse?.title || '课程详情'}
+        open={!!selectedCourse}
+        onCancel={() => {
+          setSelectedCourse(null)
+          setCourseDetail(null)
+        }}
+        footer={null}
+        width={800}
+        destroyOnClose
+      >
+        {courseDetailLoading ? (
+          <div style={{ textAlign: 'center', padding: 40 }}>
+            <Spin size="large" />
+          </div>
+        ) : courseDetail ? (
+          <div>
+            {/* 课程信息 */}
+            <div style={{ display: 'flex', gap: 16, marginBottom: 24, paddingBottom: 16, borderBottom: `1px solid ${borderColor}` }}>
+              <Image
+                src={proxyImageUrl(courseDetail.cover)}
+                alt={courseDetail.title}
+                style={{ width: 180, height: 101, borderRadius: 8, objectFit: 'cover' }}
+              />
+              <div style={{ flex: 1 }}>
+                <Title level={4} style={{ marginBottom: 8 }}>{courseDetail.title}</Title>
+                {courseDetail.desc && (
+                  <Text style={{ fontSize: 13, color: textSec }}>{courseDetail.desc}</Text>
+                )}
+                <div style={{ marginTop: 12, display: 'flex', gap: 24 }}>
+                  <Text style={{ fontSize: 12, color: textSec }}>
+                    <VideoCameraOutlined style={{ marginRight: 4 }} />
+                    {courseDetail.ep_count} 课时
+                  </Text>
+                  <Text style={{ fontSize: 12, color: textSec }}>
+                    {courseDetail.update_info}
+                  </Text>
+                </div>
+              </div>
+            </div>
+
+            {/* 章节列表 */}
+            <div>
+              <Title level={5} style={{ marginBottom: 16 }}>章节列表</Title>
+              <div style={{ maxHeight: 400, overflowY: 'auto' }}>
+                {courseDetail.episodes?.length > 0 ? (
+                  <List
+                    dataSource={courseDetail.episodes}
+                    renderItem={(episode: any, index) => (
+                      <List.Item
+                        key={episode.ep_id}
+                        style={{ 
+                          padding: 12, 
+                          borderBottom: `1px solid ${borderColor}`,
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          <Text style={{ fontSize: 12, color: textSec, width: 32 }}>
+                            {String(index + 1).padStart(2, '0')}
+                          </Text>
+                          <div>
+                            <Text style={{ fontSize: 13 }}>{episode.title}</Text>
+                            {episode.section_title && (
+                              <Text style={{ fontSize: 11, color: textSec, marginLeft: 8 }}>
+                                - {episode.section_title}
+                              </Text>
+                            )}
+                          </div>
+                        </div>
+                        <Button
+                          type="primary"
+                          size="small"
+                          onClick={() => downloadEpisode(episode)}
+                          icon={<DownloadOutlined />}
+                        >
+                          下载
+                        </Button>
+                      </List.Item>
+                    )}
+                  />
+                ) : (
+                  <Empty description="暂无章节" />
+                )}
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
     </div>
   )
 }

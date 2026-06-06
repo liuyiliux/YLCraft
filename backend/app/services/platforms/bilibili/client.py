@@ -48,6 +48,9 @@ from .apis import (
     HISTORY_CURSOR,
     HISTORY_SEARCH,
     FOLLOWINGS,
+    PAID_COURSES,
+    PAID_COURSE_DETAIL,
+    PAID_COURSE_PLAYURL,
 )
 
 logger = logging.getLogger("ylcraft.platforms.bilibili")
@@ -2801,3 +2804,295 @@ class BilibiliClient(BasePlatformClient):
         except Exception as e:
             self._log(f"Get followings error: {e}", "error")
             return {"list": [], "total": 0, "page": page, "has_more": False}
+
+    # =========================================================================
+    # 付费课程（芝士课堂）
+    # =========================================================================
+
+    async def get_paid_courses(
+        self,
+        page: int = 1,
+        page_size: int = 10,
+    ) -> Dict[str, Any]:
+        """获取当前登录用户的付费课程列表（芝士课堂）
+
+        使用 B站 /pugv/pay/web/my/paid 接口，需要登录态 Cookie
+
+        Args:
+            page: 页码（从1开始）
+            page_size: 每页数量（最大100）
+
+        Returns:
+            {"list": List[Dict], "total": int, "page": int, "has_more": bool}
+        """
+        self._log(f"Getting paid courses: page={page}, page_size={page_size}")
+
+        if not self.config.cookie:
+            self._log("No cookie, cannot get paid courses", "warning")
+            return {"list": [], "total": 0, "page": page, "has_more": False}
+
+        try:
+            params: Dict[str, Any] = {
+                "pn": page,
+                "ps": min(page_size, 100),
+            }
+
+            url = f"{BASE_URL}{PAID_COURSES}?{urlencode(params)}"
+
+            response = await self.request("GET", url)
+
+            if isinstance(response, dict) and response.get("code") == 0:
+                data = response.get("data", {})
+                items = data.get("data", []) or []
+                total = data.get("total", 0) or len(items)
+                has_more = data.get("next", False)
+
+                self._log(f"Got {len(items)} paid courses, total={total}")
+
+                result = []
+                for item in items:
+                    progress = item.get("progress", {})
+                    result.append({
+                        "id": item.get("id", 0),
+                        "pay_gid": item.get("pay_gid", 0),
+                        "title": item.get("title", ""),
+                        "sub_title": item.get("sub_title", ""),
+                        "cover": self._fix_bili_url(item.get("cover", "")),
+                        "url": item.get("url", ""),
+                        "up_id": str(item.get("up_id", "")),
+                        "ep_count": item.get("ep_count", 0),
+                        "price": item.get("price", 0),
+                        "platformPrice": item.get("platformPrice", 0),
+                        "status": item.get("status", 0),
+                        "is_expired": item.get("is_expired", False),
+                        "expiry_day": item.get("expiry_day", 0),
+                        "pay_status": item.get("pay_status", 0),
+                        "update_info": item.get("update_info", ""),
+                        "seasonStyle": item.get("seasonStyle", 0),
+                        "progress": {
+                            "last_ep_id": progress.get("last_ep_id", 0),
+                            "last_ep_index": progress.get("last_ep_index", ""),
+                            "last_time": progress.get("last_time", 0),
+                        },
+                        "raw_data": item,
+                    })
+
+                return {
+                    "list": result,
+                    "total": total,
+                    "page": page,
+                    "page_size": page_size,
+                    "has_more": has_more,
+                }
+            else:
+                code = response.get("code", -1) if isinstance(response, dict) else -1
+                msg = response.get("message", "") if isinstance(response, dict) else str(response)[:200]
+                self._log(f"Get paid courses failed: code={code}, msg={msg}", "warning")
+                return {"list": [], "total": 0, "page": page, "has_more": False}
+
+        except Exception as e:
+            self._log(f"Get paid courses error: {e}", "error")
+            return {"list": [], "total": 0, "page": page, "has_more": False}
+
+    async def get_paid_course_detail(
+        self,
+        season_id: int,
+    ) -> Dict[str, Any]:
+        """获取付费课程详情和章节列表
+
+        Args:
+            season_id: 课程ID（season_id）
+
+        Returns:
+            {"title": str, "cover": str, "episodes": List[Dict]}
+        """
+        self._log(f"Getting paid course detail: season_id={season_id}")
+
+        if not self.config.cookie:
+            self._log("No cookie, cannot get paid course detail", "warning")
+            return {}
+
+        try:
+            params: Dict[str, Any] = {
+                "season_id": season_id,
+                "platform": "web",
+            }
+
+            url = f"{BASE_URL}{PAID_COURSE_DETAIL}?{urlencode(params)}"
+
+            response = await self.request("GET", url)
+
+            # 调试：打印响应状态和数据结构
+            if isinstance(response, dict):
+                code = response.get("code")
+                self._log(f"Course detail response code: {code}, keys: {list(response.keys())}", "debug")
+                if code != 0:
+                    self._log(f"Response message: {response.get('message')}", "warning")
+                
+                data = response.get("data", {})
+                if data:
+                    self._log(f"Data keys: {list(data.keys())}", "debug")
+                    self._log(f"Has sections: {'sections' in data}, Has episodes: {'episodes' in data}, Has ep: {'ep' in data}", "debug")
+
+            if isinstance(response, dict) and response.get("code") == 0:
+                data = response.get("data", {})
+                
+                # 尝试多种可能的数据结构
+                episodes = []
+                
+                # 结构1：sections -> episodes
+                sections = data.get("sections", [])
+                if sections:
+                    self._log(f"Found {len(sections)} sections", "debug")
+                    for section in sections:
+                        eps = section.get("episodes", [])
+                        self._log(f"Section '{section.get('title', '')}' has {len(eps)} episodes", "debug")
+                        for episode in eps:
+                            episodes.append({
+                                "ep_id": episode.get("id", 0),
+                                "aid": episode.get("aid", 0),
+                                "cid": episode.get("cid", 0),
+                                "title": episode.get("title", ""),
+                                "section_title": section.get("title", ""),
+                                "duration": episode.get("duration", 0),
+                                "page": episode.get("page", 0),
+                                "raw_data": episode,
+                            })
+                
+                # 结构2：episodes 直接在根级别
+                if not episodes:
+                    raw_episodes = data.get("episodes", [])
+                    self._log(f"Found {len(raw_episodes)} episodes in root", "debug")
+                    for episode in raw_episodes:
+                        episodes.append({
+                            "ep_id": episode.get("id", 0) or episode.get("ep_id", 0),
+                            "aid": episode.get("aid", 0),
+                            "cid": episode.get("cid", 0),
+                            "title": episode.get("title", ""),
+                            "section_title": episode.get("section_title", "") or episode.get("subtitle", ""),
+                            "duration": episode.get("duration", 0),
+                            "page": episode.get("page", 0),
+                            "raw_data": episode,
+                        })
+                
+                # 结构3：ep 字段
+                if not episodes:
+                    raw_eps = data.get("ep", [])
+                    self._log(f"Found {len(raw_eps)} eps in root", "debug")
+                    for episode in raw_eps:
+                        episodes.append({
+                            "ep_id": episode.get("id", 0) or episode.get("ep_id", 0),
+                            "aid": episode.get("aid", 0),
+                            "cid": episode.get("cid", 0),
+                            "title": episode.get("title", "") or episode.get("index_title", ""),
+                            "section_title": episode.get("section_title", ""),
+                            "duration": episode.get("duration", 0),
+                            "page": episode.get("page", 0),
+                            "raw_data": episode,
+                        })
+
+                self._log(f"Total episodes extracted: {len(episodes)}", "debug")
+
+                return {
+                    "title": data.get("title", ""),
+                    "cover": self._fix_bili_url(data.get("cover", "")),
+                    "desc": data.get("desc", ""),
+                    "ep_count": data.get("ep_count", 0) or len(episodes),
+                    "update_info": data.get("update_info", ""),
+                    "episodes": episodes,
+                    "raw_data": data,
+                }
+            else:
+                code = response.get("code", -1) if isinstance(response, dict) else -1
+                msg = response.get("message", "") if isinstance(response, dict) else str(response)[:200]
+                self._log(f"Get paid course detail failed: code={code}, msg={msg}", "warning")
+                return {}
+
+        except Exception as e:
+            self._log(f"Get paid course detail error: {e}", "error")
+            return {}
+
+    async def get_paid_course_playurl(
+        self,
+        ep_id: int,
+        qn: int = 80,
+    ) -> Dict[str, Any]:
+        """获取付费课程视频播放地址
+
+        Args:
+            ep_id: 章节ID
+            qn: 画质质量（80=高清1080P, 64=高清720P, 32=清晰480P, 16=流畅360P）
+
+        Returns:
+            {"video_url": str, "audio_url": str, "quality": int, "duration": int}
+        """
+        self._log(f"Getting paid course playurl: ep_id={ep_id}, qn={qn}")
+
+        if not self.config.cookie:
+            self._log("No cookie, cannot get paid course playurl", "warning")
+            return {}
+
+        try:
+            params: Dict[str, Any] = {
+                "ep_id": ep_id,
+                "qn": qn,
+                "platform": "web",
+                "fnval": 4048,
+                "fnver": 0,
+                "fourk": 1,
+            }
+
+            url = f"{BASE_URL}{PAID_COURSE_PLAYURL}?{urlencode(params)}"
+
+            response = await self.request("GET", url)
+
+            if isinstance(response, dict) and response.get("code") == 0:
+                data = response.get("data", {})
+                
+                # 提取视频流
+                video_url = ""
+                audio_url = ""
+                duration = data.get("duration", 0)
+                
+                # 优先使用 dash 格式（音视频分离）
+                dash = data.get("dash", {})
+                if dash:
+                    video_streams = dash.get("video", [])
+                    audio_streams = dash.get("audio", [])
+                    
+                    if video_streams:
+                        # 找到匹配 qn 的视频流
+                        matched_stream = None
+                        for stream in video_streams:
+                            if stream.get("id") == qn:
+                                matched_stream = stream
+                                break
+                        if not matched_stream:
+                            matched_stream = video_streams[0]
+                        video_url = matched_stream.get("base_url", "")
+                    
+                    if audio_streams:
+                        audio_url = audio_streams[0].get("base_url", "")
+                else:
+                    # 使用 durl 格式（音视频合一）
+                    durl = data.get("durl", [])
+                    if durl:
+                        video_url = durl[0].get("url", "")
+
+                return {
+                    "video_url": video_url,
+                    "audio_url": audio_url,
+                    "quality": qn,
+                    "duration": duration,
+                    "quality_list": data.get("quality_description", []),
+                    "raw_data": data,
+                }
+            else:
+                code = response.get("code", -1) if isinstance(response, dict) else -1
+                msg = response.get("message", "") if isinstance(response, dict) else str(response)[:200]
+                self._log(f"Get paid course playurl failed: code={code}, msg={msg}", "warning")
+                return {}
+
+        except Exception as e:
+            self._log(f"Get paid course playurl error: {e}", "error")
+            return {}
