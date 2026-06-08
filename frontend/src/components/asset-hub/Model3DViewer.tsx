@@ -203,7 +203,7 @@ function Scene({
 
       {showEnvironment && <Environment preset="studio" background={false} />}
       
-      <Stage environment="studio" intensity={0.5} contactShadow={false}>
+      <Stage environment="studio" intensity={0.5}>
         {modelUrl && (
           <Suspense fallback={<LoadingPlaceholder />}>
             <GLTFModel 
@@ -389,7 +389,7 @@ export function Model3DViewer({
             {metadata.textures.length > 0 && (
               <Descriptions.Item label="贴图">
                 {metadata.textures.map(t => (
-                  <Tag key={t} size="small" style={{ marginRight: 4 }}>
+                  <Tag key={t} style={{ marginRight: 4 }}>
                     {t}
                   </Tag>
                 ))}

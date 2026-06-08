@@ -36,7 +36,7 @@ interface OutlineData {
 }
 
 interface BatchResult {
-  urls: string[]; prompt: string; success: boolean; error?: string
+  urls: string[]; prompt: string; success: boolean; error?: string; platform?: string
 }
 
 const API_BASE = '/api/v1/images'

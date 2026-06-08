@@ -10,11 +10,15 @@ B站专属 API 路由
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
+import uuid
 from typing import List, Dict, Optional, Any
 
-from fastapi import APIRouter, HTTPException, Query, Path
-from pydantic import BaseModel
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Path
+from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger("ylcraft.api.bilibili")
 
@@ -949,6 +953,210 @@ class PaidCoursePlayurlResponse(BaseModel):
     message: str = ""
 
 
+class PaidCourseDownloadTaskRequest(BaseModel):
+    conn_id: str
+    ep_id: int = 0
+    aid: int = 0
+    cid: int = 0
+    qn: int = 80
+    title: str = ""
+    episode_index: int = 0
+    episodes: List[Dict[str, Any]] = Field(default_factory=list)
+    download_extras: bool = True
+    season_id: int = 0
+    course_title: str = ""
+    course_cover: str = ""
+    course_desc: str = ""
+    course_author: str = ""
+    ep_count: int = 0
+    update_info: str = ""
+
+
+_paid_course_download_tasks: dict[str, dict[str, Any]] = {}
+
+
+def _update_paid_course_task(task_id: str, **updates: Any) -> None:
+    task = _paid_course_download_tasks.get(task_id, {})
+    task.update(updates)
+    task["updated_at"] = time.time()
+    _paid_course_download_tasks[task_id] = task
+
+
+async def _run_paid_course_download_task(task_id: str, req: PaidCourseDownloadTaskRequest) -> None:
+    is_full_course = bool(req.episodes)
+    _update_paid_course_task(
+        task_id,
+        status="DOWNLOADING",
+        progress=5,
+        progress_message="开始下载全课程" if is_full_course else "开始下载",
+        total_count=len(req.episodes) if is_full_course else 1,
+        finished_count=0,
+        skipped_count=0,
+    )
+    try:
+        async with bili_client(req.conn_id) as client:
+            if not client.config.cookie:
+                raise ValueError("B站连接未包含 Cookie，无法下载付费课程")
+
+            from app.services.download.bilibili_paid_course import (
+                download_paid_course_episode as download_course_episode_file,
+                download_paid_course_episode_extras,
+                register_paid_course_asset,
+            )
+
+            def report(progress: int, message: str) -> None:
+                _update_paid_course_task(task_id, progress=progress, progress_message=message)
+
+            output_path = None
+            skipped_count = 0
+            downloaded_count = 0
+
+            if is_full_course:
+                total = len(req.episodes)
+                for idx, episode in enumerate(req.episodes):
+                    ep_id = int(episode.get("ep_id") or episode.get("id") or 0)
+                    if not ep_id:
+                        continue
+                    aid = int(episode.get("aid") or 0)
+                    cid = int(episode.get("cid") or 0)
+
+                    episode_index = int(episode.get("episode_index") or episode.get("index") or idx + 1)
+                    title = episode.get("download_title") or " - ".join(
+                        str(part) for part in [episode.get("section_title"), episode.get("title")] if part
+                    )
+                    title = title or f"ep_{ep_id}"
+                    current_no = idx + 1
+
+                    def episode_report(progress: int, message: str, current_no: int = current_no, title: str = title) -> None:
+                        overall = min(98, int(((current_no - 1) + progress / 100) / max(total, 1) * 95) + 3)
+                        _update_paid_course_task(
+                            task_id,
+                            progress=overall,
+                            progress_message=f"{current_no}/{total} {title}: {message}",
+                            current_episode=title,
+                            finished_count=current_no - 1,
+                        )
+
+                    output_path = await download_course_episode_file(
+                        client=client,
+                        ep_id=ep_id,
+                        aid=aid,
+                        cid=cid,
+                        qn=req.qn,
+                        title=title,
+                        episode_index=episode_index,
+                        season_id=req.season_id,
+                        course_title=req.course_title,
+                        course_cover=req.course_cover,
+                        course_desc=req.course_desc,
+                        course_author=req.course_author,
+                        ep_count=req.ep_count or total,
+                        update_info=req.update_info,
+                        progress_callback=episode_report,
+                    )
+
+                    media_message = _paid_course_download_tasks.get(task_id, {}).get("progress_message", "")
+                    if req.download_extras:
+                        await download_paid_course_episode_extras(
+                            client=client,
+                            ep_id=ep_id,
+                            aid=aid,
+                            cid=cid,
+                            title=title,
+                            episode_index=episode_index,
+                            season_id=req.season_id,
+                            course_title=req.course_title,
+                            course_cover=req.course_cover,
+                            course_desc=req.course_desc,
+                            course_author=req.course_author,
+                            ep_count=req.ep_count or total,
+                            update_info=req.update_info,
+                            progress_callback=episode_report,
+                        )
+
+                    if "已跳过" in media_message:
+                        skipped_count += 1
+                    else:
+                        downloaded_count += 1
+
+                    _update_paid_course_task(
+                        task_id,
+                        finished_count=current_no,
+                        skipped_count=skipped_count,
+                        downloaded_count=downloaded_count,
+                    )
+                    if current_no < total:
+                        await asyncio.sleep(1.5)
+            else:
+                if not req.ep_id:
+                    raise ValueError("需要提供章节ID")
+
+                output_path = await download_course_episode_file(
+                    client=client,
+                    ep_id=req.ep_id,
+                    aid=req.aid,
+                    cid=req.cid,
+                    qn=req.qn,
+                    title=req.title,
+                    episode_index=req.episode_index,
+                    season_id=req.season_id,
+                    course_title=req.course_title,
+                    course_cover=req.course_cover,
+                    course_desc=req.course_desc,
+                    course_author=req.course_author,
+                    ep_count=req.ep_count,
+                    update_info=req.update_info,
+                    progress_callback=report,
+                )
+                if req.download_extras:
+                    await download_paid_course_episode_extras(
+                        client=client,
+                        ep_id=req.ep_id,
+                        aid=req.aid,
+                        cid=req.cid,
+                        title=req.title,
+                        episode_index=req.episode_index,
+                        season_id=req.season_id,
+                        course_title=req.course_title,
+                        course_cover=req.course_cover,
+                        course_desc=req.course_desc,
+                        course_author=req.course_author,
+                        ep_count=req.ep_count,
+                        update_info=req.update_info,
+                        progress_callback=report,
+                    )
+            asset_id = await register_paid_course_asset(
+                season_id=req.season_id,
+                course_title=req.course_title,
+                course_cover=req.course_cover,
+                course_desc=req.course_desc,
+                course_author=req.course_author,
+                ep_count=req.ep_count,
+                update_info=req.update_info,
+            )
+            _update_paid_course_task(
+                task_id,
+                status="DONE",
+                progress=100,
+                progress_message=(
+                    f"全课程补全完成，新增视频 {downloaded_count} 个，跳过视频 {skipped_count} 个，已更新素材库"
+                    if is_full_course else "下载完成，已加入素材库"
+                ),
+                file_path=str(output_path) if output_path else "",
+                asset_id=asset_id,
+                completed_at=time.time(),
+            )
+    except Exception as e:
+        logger.error(f"[paid_course_download_task] Error: {e}", exc_info=True)
+        _update_paid_course_task(
+            task_id,
+            status="FAILED",
+            progress_message=f"下载失败: {str(e)[:80]}",
+            error=str(e),
+            completed_at=time.time(),
+        )
+
+
 # =============================================================================
 # 付费课程（芝士课堂）- API 端点
 # =============================================================================
@@ -1061,3 +1269,107 @@ async def get_paid_course_playurl(
         except Exception as e:
             logger.error(f"[paid_course_playurl] Error: {e}")
             raise HTTPException(status_code=500, detail=f"获取播放地址失败: {str(e)}")
+
+
+@router.post("/paid-course/download-task", summary="创建付费课程章节下载任务")
+async def create_paid_course_download_task(
+    req: PaidCourseDownloadTaskRequest,
+    background: BackgroundTasks,
+):
+    if not req.conn_id:
+        raise HTTPException(status_code=400, detail="需要提供 B站连接ID（conn_id）")
+    if not req.ep_id and not req.episodes:
+        raise HTTPException(status_code=400, detail="需要提供章节ID（ep_id）或章节列表（episodes）")
+
+    task_id = uuid.uuid4().hex[:12]
+    is_full_course = bool(req.episodes)
+    _paid_course_download_tasks[task_id] = {
+        "task_id": task_id,
+        "task_type": "bilibili_paid_course_full_download" if is_full_course else "bilibili_paid_course_download",
+        "status": "PENDING",
+        "progress": 0,
+        "progress_message": "等待下载全课程" if is_full_course else "等待下载",
+        "file_path": "",
+        "asset_id": "",
+        "error": "",
+        "total_count": len(req.episodes) if is_full_course else 1,
+        "finished_count": 0,
+        "skipped_count": 0,
+        "downloaded_count": 0,
+        "created_at": time.time(),
+        "updated_at": time.time(),
+        "completed_at": None,
+    }
+    background.add_task(_run_paid_course_download_task, task_id, req)
+    return {
+        "success": True,
+        "task_id": task_id,
+        "status": "PENDING",
+        "progress": 0,
+        "progress_message": "等待下载全课程" if is_full_course else "等待下载",
+        "total_count": len(req.episodes) if is_full_course else 1,
+    }
+
+
+@router.get("/paid-course/download-task/{task_id}", summary="查询付费课程章节下载任务")
+async def get_paid_course_download_task(task_id: str):
+    task = _paid_course_download_tasks.get(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    return {
+        "success": True,
+        **task,
+    }
+
+
+@router.get("/paid-course/download", summary="下载付费课程章节")
+async def download_paid_course_episode(
+    conn_id: str = Query(..., description="B站连接ID（必填，需要登录）"),
+    ep_id: int = Query(..., description="章节ID（ep_id）"),
+    qn: int = Query(80, description="画质质量（80=高清1080P, 64=高清720P, 32=清晰480P, 16=流畅360P）"),
+    title: str = Query("", description="下载文件名"),
+    episode_index: int = Query(0, description="章节序号"),
+    season_id: int = Query(0, description="课程ID（season_id）"),
+    course_title: str = Query("", description="课程标题"),
+    course_cover: str = Query("", description="课程封面 URL"),
+):
+    """
+    后端代理下载付费课程章节，避免浏览器直连 B站 CDN 时缺 Cookie/Referer。
+    DASH 音视频分离流会先下载再用 ffmpeg 合并为 MP4。
+    """
+    logger.info(f"[paid_course_download] conn_id={conn_id}, ep_id={ep_id}, qn={qn}")
+
+    if not conn_id:
+        raise HTTPException(status_code=400, detail="需要提供 B站连接ID（conn_id）")
+
+    async with bili_client(conn_id) as client:
+        if not client.config.cookie:
+            raise HTTPException(status_code=401, detail="B站连接未包含 Cookie，无法下载付费课程")
+
+        try:
+            from app.services.download.bilibili_paid_course import (
+                download_paid_course_episode as download_course_episode_file,
+            )
+
+            output_path = await download_course_episode_file(
+                client=client,
+                ep_id=ep_id,
+                qn=qn,
+                title=title,
+                episode_index=episode_index,
+                season_id=season_id,
+                course_title=course_title,
+                course_cover=course_cover,
+            )
+
+            return FileResponse(
+                path=output_path,
+                media_type="video/mp4",
+                filename=output_path.name,
+            )
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"[paid_course_download] Error: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"下载付费课程失败: {str(e)}")

@@ -23,9 +23,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-import httpx
 from fastapi import APIRouter, HTTPException, Depends, Query
-from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.responses import StreamingResponse, FileResponse, Response
 from pydantic import BaseModel, Field
 
 from app.db.database import get_async_session
@@ -287,6 +286,180 @@ async def download_asset(
     )
 
 
+@router.get("/{asset_id}/stream", summary="播放资产视频文件")
+async def stream_asset(
+    asset_id: str,
+    service: AssetService = Depends(get_asset_service),
+):
+    asset = await service.get_by_id(asset_id)
+    if not asset:
+        raise HTTPException(status_code=404, detail="资产不存在")
+    if asset.status != "READY":
+        raise HTTPException(status_code=400, detail=f"资产状态为 {asset.status}，无法播放")
+    if (asset.type or "").lower() != "video":
+        raise HTTPException(status_code=400, detail="当前资产不是视频")
+    if not asset.file_path or not os.path.exists(asset.file_path):
+        raise HTTPException(status_code=404, detail="文件不存在")
+    return FileResponse(path=asset.file_path, media_type=asset.mime_type or "video/mp4")
+
+
+def _get_course_episode_file(asset: Asset, episode_index: int) -> str:
+    metadata = {}
+    if asset.metadata_json:
+        try:
+            metadata = json.loads(asset.metadata_json)
+        except Exception:
+            metadata = {}
+
+    episodes = metadata.get("episodes") or []
+    episode = next((item for item in episodes if item.get("index") == episode_index), None)
+    if not episode and 0 <= episode_index - 1 < len(episodes):
+        episode = episodes[episode_index - 1]
+    if not episode:
+        raise HTTPException(status_code=404, detail="章节不存在")
+
+    file_path = episode.get("file_path") or ""
+    if not file_path or not os.path.isfile(file_path):
+        raise HTTPException(status_code=404, detail="章节文件不存在")
+
+    return file_path
+
+
+def _asset_metadata(asset: Asset) -> dict:
+    if not asset.metadata_json:
+        return {}
+    try:
+        return json.loads(asset.metadata_json)
+    except Exception:
+        return {}
+
+
+def _get_course_episode(asset: Asset, episode_index: int) -> dict:
+    metadata = _asset_metadata(asset)
+    episodes = metadata.get("episodes") or []
+    episode = next((item for item in episodes if item.get("index") == episode_index), None)
+    if not episode and 0 <= episode_index - 1 < len(episodes):
+        episode = episodes[episode_index - 1]
+    if not episode:
+        raise HTTPException(status_code=404, detail="章节不存在")
+    return episode
+
+
+def _sidecar_path_from_meta(meta: dict, kind: str, subtitle_index: int = 0) -> str:
+    if kind == "subtitle":
+        paths = meta.get("subtitle_paths") or []
+        if not isinstance(paths, list) or not (0 <= subtitle_index < len(paths)):
+            raise HTTPException(status_code=404, detail="字幕不存在")
+        path = paths[subtitle_index]
+    elif kind == "danmaku":
+        path = meta.get("danmaku_path") or ""
+    else:
+        path = ""
+
+    if not isinstance(path, str) or not path or not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail="sidecar 文件不存在")
+    return path
+
+
+def _subtitle_to_vtt(path: str) -> str:
+    text = Path(path).read_text(encoding="utf-8-sig", errors="ignore")
+    if text.lstrip().startswith("WEBVTT"):
+        return text
+    lines = []
+    for line in text.splitlines():
+        if "-->" in line:
+            line = line.replace(",", ".")
+        lines.append(line)
+    return "WEBVTT\n\n" + "\n".join(lines) + "\n"
+
+
+@router.get("/{asset_id}/sidecars/subtitles/{subtitle_index}.vtt", summary="读取资产字幕")
+async def get_asset_subtitle(
+    asset_id: str,
+    subtitle_index: int,
+    service: AssetService = Depends(get_asset_service),
+):
+    asset = await service.get_by_id(asset_id)
+    if not asset:
+        raise HTTPException(status_code=404, detail="资产不存在")
+    path = _sidecar_path_from_meta(_asset_metadata(asset), "subtitle", subtitle_index)
+    return Response(content=_subtitle_to_vtt(path), media_type="text/vtt; charset=utf-8")
+
+
+@router.get("/{asset_id}/sidecars/danmaku", summary="读取资产弹幕")
+async def get_asset_danmaku(
+    asset_id: str,
+    service: AssetService = Depends(get_asset_service),
+):
+    asset = await service.get_by_id(asset_id)
+    if not asset:
+        raise HTTPException(status_code=404, detail="资产不存在")
+    path = _sidecar_path_from_meta(_asset_metadata(asset), "danmaku")
+    return Response(content=Path(path).read_text(encoding="utf-8", errors="ignore"), media_type="application/json; charset=utf-8")
+
+
+@router.get("/{asset_id}/course-episodes/{episode_index}/sidecars/subtitles/{subtitle_index}.vtt", summary="读取课程章节字幕")
+async def get_course_episode_subtitle(
+    asset_id: str,
+    episode_index: int,
+    subtitle_index: int,
+    service: AssetService = Depends(get_asset_service),
+):
+    asset = await service.get_by_id(asset_id)
+    if not asset:
+        raise HTTPException(status_code=404, detail="资产不存在")
+    episode = _get_course_episode(asset, episode_index)
+    path = _sidecar_path_from_meta(episode, "subtitle", subtitle_index)
+    return Response(content=_subtitle_to_vtt(path), media_type="text/vtt; charset=utf-8")
+
+
+@router.get("/{asset_id}/course-episodes/{episode_index}/sidecars/danmaku", summary="读取课程章节弹幕")
+async def get_course_episode_danmaku(
+    asset_id: str,
+    episode_index: int,
+    service: AssetService = Depends(get_asset_service),
+):
+    asset = await service.get_by_id(asset_id)
+    if not asset:
+        raise HTTPException(status_code=404, detail="资产不存在")
+    episode = _get_course_episode(asset, episode_index)
+    path = _sidecar_path_from_meta(episode, "danmaku")
+    return Response(content=Path(path).read_text(encoding="utf-8", errors="ignore"), media_type="application/json; charset=utf-8")
+
+
+@router.get("/{asset_id}/course-episodes/{episode_index}/download", summary="下载课程章节文件")
+async def download_course_episode_asset(
+    asset_id: str,
+    episode_index: int,
+    service: AssetService = Depends(get_asset_service),
+):
+    asset = await service.get_by_id(asset_id)
+    if not asset:
+        raise HTTPException(status_code=404, detail="资产不存在")
+
+    file_path = _get_course_episode_file(asset, episode_index)
+
+    return FileResponse(
+        path=file_path,
+        media_type="video/mp4",
+        filename=os.path.basename(file_path),
+    )
+
+
+@router.get("/{asset_id}/course-episodes/{episode_index}/stream", summary="播放课程章节文件")
+async def stream_course_episode_asset(
+    asset_id: str,
+    episode_index: int,
+    service: AssetService = Depends(get_asset_service),
+):
+    asset = await service.get_by_id(asset_id)
+    if not asset:
+        raise HTTPException(status_code=404, detail="资产不存在")
+
+    file_path = _get_course_episode_file(asset, episode_index)
+    return FileResponse(path=file_path, media_type="video/mp4")
+
+
 # ---------------------------------------------------------------------------
 # 标签管理（必须在泛型路由之前）
 # ---------------------------------------------------------------------------
@@ -317,7 +490,7 @@ async def create_tag(
 # 图片代理（解决B站等平台跨域问题）
 # ---------------------------------------------------------------------------
 
-async def _fetch_image(image_source: str, platform: str = "") -> StreamingResponse:
+async def _fetch_image(image_source: str, platform: str = "") -> Response:
     """
     通用图片获取逻辑，支持本地文件和远程 URL。
     处理 base64 数据、文件路径（Windows/Linux）和远程 URL。
@@ -330,7 +503,6 @@ async def _fetch_image(image_source: str, platform: str = "") -> StreamingRespon
         mime_type = header.split(";")[0].replace("data:", "") or "image/png"
         try:
             binary_data = base64.b64decode(data)
-            from fastapi.responses import Response
             return Response(content=binary_data, media_type=mime_type, headers={"Cache-Control": "public, max-age=86400"})
         except Exception:
             pass
@@ -359,34 +531,12 @@ async def _fetch_image(image_source: str, platform: str = "") -> StreamingRespon
     
     # 远程 URL（必须包含协议）
     if image_source.startswith("http://") or image_source.startswith("https://"):
-        try:
-            async with httpx.AsyncClient(
-                headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                    "Referer": f"https://{platform}.com" if platform else "",
-                },
-                follow_redirects=True,
-                timeout=30.0
-            ) as client:
-                resp = await client.get(image_source)
-                resp.raise_for_status()
-                
-                async def streamer():
-                    async for chunk in resp.aiter_bytes(chunk_size=8192):
-                        yield chunk
-                
-                return StreamingResponse(
-                    streamer(),
-                    media_type=resp.headers.get("content-type", "image/jpeg"),
-                    headers={
-                        "Cache-Control": "public, max-age=86400",
-                    }
-                )
-        except Exception as e:
-            logger.error(f"代理加载图片失败: {e}")
-            raise HTTPException(status_code=500, detail="加载图片失败")
+        from app.api.v1.proxy import fetch_remote_image_response
+        return await fetch_remote_image_response(image_source, fallback_label="NO IMAGE")
     
-    raise HTTPException(status_code=400, detail=f"不支持的图片来源: {image_source[:100]}")
+    logger.warning(f"不支持的图片来源，返回占位图: {image_source[:100]}")
+    from app.api.v1.proxy import placeholder_image_response
+    return placeholder_image_response("NO IMAGE")
 
 
 @router.get("/{asset_id}/thumbnail", summary="代理加载封面图")
@@ -427,7 +577,8 @@ async def proxy_thumbnail(
     if asset.cover_url:
         return await _fetch_image(asset.cover_url, asset.platform or "")
     
-    raise HTTPException(status_code=404, detail="图片不存在")
+    from app.api.v1.proxy import placeholder_image_response
+    return placeholder_image_response("NO IMAGE")
 
 
 # ---------------------------------------------------------------------------
@@ -508,7 +659,3 @@ async def restore_asset(
     if not ok:
         raise HTTPException(status_code=404, detail="资产不存在或未处于软删除状态")
     return {"success": True, "message": "已恢复"}
-
-
-
-

@@ -76,7 +76,7 @@ export default function NovelBookshelfPage() {
   const handleDelete = async (asset: any, e: React.MouseEvent) => {
     e.stopPropagation()
     try {
-      await deleteAsset(asset.id, false)
+      await deleteAsset(asset.id, 'soft')
       message.success('已删除')
       loadNovels()
     } catch (e: any) {

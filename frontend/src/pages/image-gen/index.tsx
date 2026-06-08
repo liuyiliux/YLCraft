@@ -43,7 +43,6 @@ import {
   PlusOutlined,
   InboxOutlined,
   FileTextOutlined,
-  ImageIcon,
   BranchesOutlined,
 } from '@ant-design/icons'
 import type { UploadFile } from 'antd/es/upload/interface'

@@ -32,7 +32,7 @@ def upgrade() -> None:
         sa.Column('width', sa.Integer(), server_default='0'),
         sa.Column('height', sa.Integer(), server_default='0'),
         sa.Column('file_path', sa.String(), server_default=''),
-        sa.Column('file_size', sa.Integer(), server_default='0'),
+        sa.Column('file_size', sa.BigInteger(), server_default='0'),
         sa.Column('mime_type', sa.String(), server_default=''),
         sa.Column('status', sa.String(), server_default='parsed', index=True),
         sa.Column('progress', sa.Integer(), server_default='0'),

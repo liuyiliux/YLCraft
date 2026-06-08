@@ -261,6 +261,11 @@ export default function DownloadPage() {
                   {result.duration_str && (
                     <Text style={{ color: THEME.textSecondary, fontSize: 13 }}>时长：{result.duration_str}</Text>
                   )}
+                  {(result.resolution || (result.width && result.height)) && (
+                    <Text style={{ color: THEME.textSecondary, fontSize: 13 }}>
+                      分辨率：{result.resolution || `${result.width}x${result.height}`}
+                    </Text>
+                  )}
                   {result.images && result.images.length > 0 && (
                     <Text style={{ color: '#00bcd4', fontSize: 13 }}>图片数量：{result.images.length}</Text>
                   )}

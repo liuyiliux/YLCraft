@@ -786,6 +786,7 @@ export interface CrawlerResult {
   coins?: number
   comments: number
   shares: number
+  views?: number
   url: string
   create_time: string
   followers?: number
@@ -1338,3 +1339,53 @@ export const getBiliPaidCoursePlayurl = (params: {
   if (params.qn) qs.set('qn', String(params.qn))
   return request(`/bilibili/paid-course/playurl?${qs}`)
 }
+
+/** 获取B站付费课程章节后端下载地址（需要登录） */
+export const getBiliPaidCourseDownloadUrl = (params: {
+  conn_id: string
+  ep_id: number
+  qn?: number
+  title?: string
+  episode_index?: number
+  season_id?: number
+  course_title?: string
+  course_cover?: string
+}) => {
+  const qs = new URLSearchParams()
+  qs.set('conn_id', params.conn_id)
+  qs.set('ep_id', String(params.ep_id))
+  if (params.qn) qs.set('qn', String(params.qn))
+  if (params.title) qs.set('title', params.title)
+  if (params.episode_index) qs.set('episode_index', String(params.episode_index))
+  if (params.season_id) qs.set('season_id', String(params.season_id))
+  if (params.course_title) qs.set('course_title', params.course_title)
+  if (params.course_cover) qs.set('course_cover', params.course_cover)
+  return `${BASE}/bilibili/paid-course/download?${qs}`
+}
+
+/** 创建B站付费课程章节后台下载任务 */
+export const createBiliPaidCourseDownloadTask = (data: {
+  conn_id: string
+  ep_id?: number
+  aid?: number
+  cid?: number
+  qn?: number
+  title?: string
+  episode_index?: number
+  episodes?: any[]
+  download_extras?: boolean
+  season_id?: number
+  course_title?: string
+  course_cover?: string
+  course_desc?: string
+  course_author?: string
+  ep_count?: number
+  update_info?: string
+}) => request('/bilibili/paid-course/download-task', {
+  method: 'POST',
+  body: JSON.stringify(data),
+})
+
+/** 查询B站付费课程章节后台下载任务 */
+export const getBiliPaidCourseDownloadTask = (taskId: string) =>
+  request(`/bilibili/paid-course/download-task/${taskId}`)

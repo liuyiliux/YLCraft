@@ -1832,6 +1832,14 @@ class BilibiliClient(BasePlatformClient):
             self._log(f"Get subtitles error (view step): {e}", "error")
             return []
 
+        return await self.get_subtitles_by_aid_cid(aid=aid, cid=cid)
+
+    async def get_subtitles_by_aid_cid(self, aid: int, cid: int) -> List[Dict]:
+        """通过 aid/cid 获取字幕列表，适用于付费课程章节。"""
+        if not aid or not cid:
+            self._log(f"Get subtitles failed: invalid aid={aid}, cid={cid}", "warning")
+            return []
+
         # 第 2 步：用 aid + cid 调 /x/player/wbi/v2（需要 WBI 签名）
         # 参照真实浏览器请求，加上 dm_* 反爬参数
         params = {
@@ -1985,14 +1993,15 @@ class BilibiliClient(BasePlatformClient):
 
         try:
             # 先获取视频详情拿到 cid
-            view_url = f"{BASE_URL}/x/web-interface/view?bvid={bvid}"
-            view_resp = await self.request("GET", view_url)
-            if not (isinstance(view_resp, dict) and view_resp.get("code") == 0):
-                self._log(f"Get danmaku failed (view): {view_resp}", "warning")
-                return []
-
-            pages = view_resp["data"].get("pages", [])
-            target_cid = cid or (pages[0]["cid"] if pages else None)
+            target_cid = cid
+            if not target_cid:
+                view_url = f"{BASE_URL}/x/web-interface/view?bvid={bvid}"
+                view_resp = await self.request("GET", view_url)
+                if not (isinstance(view_resp, dict) and view_resp.get("code") == 0):
+                    self._log(f"Get danmaku failed (view): {view_resp}", "warning")
+                    return []
+                pages = view_resp["data"].get("pages", [])
+                target_cid = pages[0]["cid"] if pages else None
             if not target_cid:
                 self._log("Cannot get cid for danmaku", "warning")
                 return []
@@ -2046,6 +2055,29 @@ class BilibiliClient(BasePlatformClient):
         except Exception as e:
             self._log(f"Get danmaku error: {e}", "error")
             return []
+
+    async def download_danmaku_by_cid(self, cid: int, format: str = "json") -> str:
+        """通过 cid 下载弹幕文件内容，适用于付费课程章节。"""
+        danmaku_list = await self.get_danmaku("", cid=cid)
+        if not danmaku_list:
+            return ""
+
+        if format == "json":
+            import json
+            return json.dumps(danmaku_list, ensure_ascii=False, indent=2)
+        if format == "ass":
+            lines = ["[Script Info]", "Title: Danmaku ASS", "ScriptType: v4.00+", "",
+                     "[V4+ Styles]", "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+                     "Style: Default,Sans,20,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,2,0,2,10,10,10,1",
+                     "", "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"]
+            for d in danmaku_list:
+                t = d.get("time", 0)
+                h = int(t // 3600)
+                m = int((t % 3600) // 60)
+                s = t % 60
+                lines.append(f'Dialogue: 0,{h}:{m:02d}:{s:06.3f},{h}:{m:02d}:{s+5:06.3f},Default,,0,0,0,,{d.get("text", "")}')
+            return "\n".join(lines)
+        return ""
 
     async def download_danmaku(self, bvid: str, format: str = "json") -> str:
         """下载弹幕文件
@@ -2992,11 +3024,28 @@ class BilibiliClient(BasePlatformClient):
                         })
 
                 self._log(f"Total episodes extracted: {len(episodes)}", "debug")
+                up_info = data.get("up_info", {}) if isinstance(data.get("up_info"), dict) else {}
+                author = (
+                    up_info.get("uname")
+                    or up_info.get("name")
+                    or data.get("author")
+                    or data.get("uname")
+                    or ""
+                )
+                author_id = str(
+                    up_info.get("mid")
+                    or up_info.get("uid")
+                    or data.get("author_mid")
+                    or data.get("mid")
+                    or ""
+                )
 
                 return {
                     "title": data.get("title", ""),
                     "cover": self._fix_bili_url(data.get("cover", "")),
                     "desc": data.get("desc", ""),
+                    "author": author,
+                    "author_id": author_id,
                     "ep_count": data.get("ep_count", 0) or len(episodes),
                     "update_info": data.get("update_info", ""),
                     "episodes": episodes,

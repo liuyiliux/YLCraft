@@ -12,7 +12,7 @@ import os
 
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession as SAAsyncSession
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlmodel import SQLModel, Session as SQLModelSession
 from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
 
@@ -64,6 +64,21 @@ async def init_db():
     from app.db.models.book_source import BookSource  # 书源表
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
+        if DATABASE_URL.startswith("postgresql"):
+            await conn.execute(text("""
+                DO $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1
+                        FROM information_schema.columns
+                        WHERE table_name = 'assets'
+                          AND column_name = 'file_size'
+                          AND data_type <> 'bigint'
+                    ) THEN
+                        ALTER TABLE assets ALTER COLUMN file_size TYPE BIGINT;
+                    END IF;
+                END $$;
+            """))
 
 
 @asynccontextmanager

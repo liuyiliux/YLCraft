@@ -40,6 +40,12 @@ _USER_AGENT = (
 _FREE_HEADERS = {"User-Agent": _USER_AGENT, "Referer": "https://www.bilibili.com/"}
 
 
+def _bilibili_download_dir() -> Path:
+    savedir = ensure_download_path("bilibili")
+    savedir.mkdir(parents=True, exist_ok=True)
+    return savedir
+
+
 def _extract_bvid_free(url: str) -> Optional[str]:
     for p in [r"/video/(BV[\w]{10})", r"bvid=(BV[\w]{10})", r"/(BV[\w]{10})"]:
         m = re.search(p, url)
@@ -198,6 +204,8 @@ async def _parse_with_free_api(url: str, default_qn: int = 80) -> Optional[dict]
             "duration": duration,
             "qualities": qualities,
             "bvid": bvid,
+            "aid": v.get("aid", 0),
+            "cid": first_cid,
         }
 
     except Exception as e:
@@ -212,7 +220,7 @@ async def _download_with_free_api(
     使用免费 API 获取视频直链，直接下载（无需合并音视频）
     根据 quality 参数选择对应的清晰度 qn。
     """
-    savedir = ensure_download_path()
+    savedir = _bilibili_download_dir()
     bvid = _extract_bvid_free(url)
     safe_title = re.sub(r'[\\/*?:"<>|]', "", title or bvid or "bilibili")[:100]
 
@@ -364,6 +372,13 @@ class BilibiliDownloader(BaseDownloader):
                     for q in free_result["qualities"]
                 ],
                 page_url=url,
+                raw={
+                    "bvid": free_result.get("bvid", ""),
+                    "aid": free_result.get("aid", 0),
+                    "cid": free_result.get("cid", 0),
+                    "width": free_result.get("width", 0),
+                    "height": free_result.get("height", 0),
+                },
             )
 
         logger.error(f"[BilibiliDownloader] 解析失败（WBI + 免费API均失败）: {bvid}")
@@ -419,6 +434,22 @@ class BilibiliDownloader(BaseDownloader):
             description=getattr(detail, "desc", "") or "",
             qualities=qualities,
             page_url=url,
+            raw={
+                "bvid": bvid,
+                "aid": (detail.raw_data or {}).get("aid", 0) if getattr(detail, "raw_data", None) else 0,
+                "cid": (
+                    ((detail.raw_data or {}).get("pages") or [{}])[0].get("cid", 0)
+                    if getattr(detail, "raw_data", None) else 0
+                ),
+                "width": (
+                    (((detail.raw_data or {}).get("pages") or [{}])[0].get("dimension") or {}).get("width", 0)
+                    if getattr(detail, "raw_data", None) else 0
+                ),
+                "height": (
+                    (((detail.raw_data or {}).get("pages") or [{}])[0].get("dimension") or {}).get("height", 0)
+                    if getattr(detail, "raw_data", None) else 0
+                ),
+            },
         )
 
     async def download(
@@ -470,7 +501,7 @@ class BilibiliDownloader(BaseDownloader):
         if not video_url:
             raise ValueError(f"未找到对应清晰度的下载链接: {quality}")
 
-        savedir = ensure_download_path()
+        savedir = _bilibili_download_dir()
         safe_title = self._safe_filename(title or bvid)
         video_path = savedir / f"{safe_title}_video.mp4"
         audio_path = savedir / f"{safe_title}_audio.m4a" if audio_url else None

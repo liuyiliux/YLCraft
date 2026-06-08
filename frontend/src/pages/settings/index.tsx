@@ -1672,7 +1672,7 @@ export default function SettingsPage() {
               checkedChildren="启用"
               unCheckedChildren="禁用"
               style={{ marginLeft: 4, marginRight: 4 }}
-              onClick={(e) => e.stopPropagation()}
+              onClick={(_, e) => e.stopPropagation()}
             />
           </Popconfirm>
           <Button type="text" size="small" onClick={() => handleEdit(record)} style={{ color: THEME.textSecondary, padding: '0 8px' }}>
@@ -1993,7 +1993,6 @@ export default function SettingsPage() {
                   options={discoveredModels.map(m => ({ value: m, label: m }))}
                   onChange={(val) => form.setFieldValue('default_model', val)}
                   notFoundContent="无匹配模型"
-                  allowCreate="true"
                 />
               ) : (
                 <Input placeholder="gpt-4o / text-embedding-3-large / BAAI/bge-m3" />
@@ -2636,7 +2635,7 @@ function StorageSettings() {
       <Form form={form} layout="vertical" onFinish={handleSave} style={{ marginTop: 16 }}>
         <Row gutter={16}>
           <Col span={12}>
-            <Form.Item label={<span style={{ color: THEME.textPrimary }}>视频解析下载</span>} name="video_download_path" extra={<span style={{ color: THEME.textSecondary, fontSize: 11 }}>抖音、B站等平台视频下载保存路径</span>}>
+            <Form.Item label={<span style={{ color: THEME.textPrimary }}>视频解析下载</span>} name="video_download_path" extra={<span style={{ color: THEME.textSecondary, fontSize: 11 }}>平台视频下载根目录，文件会按平台保存到 bilibili、douyin、telegram 等子目录</span>}>
               <Input placeholder="/workspace/backend/downloads" style={{ width: '100%' }} />
             </Form.Item>
           </Col>
@@ -2673,4 +2672,3 @@ function StorageSettings() {
     </Card>
   )
 }
-

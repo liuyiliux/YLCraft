@@ -420,7 +420,7 @@ function FavoriteListCard({ favorites, loading, onFavoriteClick }: FavoriteListP
           >
             <Card.Meta
               title={
-                <Text style={{ fontSize: 13 }} ellipsis={{ rows: 1 }}>
+                <Text style={{ fontSize: 13 }} ellipsis>
                   {item.title}
                 </Text>
               }
@@ -506,7 +506,7 @@ function SeriesListCard({ series, loading, onSeriesClick }: SeriesListProps) {
           >
             <Card.Meta
               title={
-                <Text style={{ fontSize: 13 }} ellipsis={{ rows: 1 }}>
+                <Text style={{ fontSize: 13 }} ellipsis>
                   {item.title}
                 </Text>
               }

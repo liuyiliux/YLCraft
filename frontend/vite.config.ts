@@ -37,17 +37,17 @@ export default defineConfig({
     chunkSizeWarningLimit: 600,
     rollupOptions: {
       output: {
-        manualChunks: (id) => {
-          if (id.includes('node_modules/antd')) {
+        manualChunks: (id: string) => {
+          if (id.indexOf('node_modules/antd') >= 0) {
             return 'antd'
           }
-          if (id.includes('node_modules/@ant-design')) {
+          if (id.indexOf('node_modules/@ant-design') >= 0) {
             return 'antd-icons'
           }
-          if (id.includes('node_modules/react')) {
+          if (id.indexOf('node_modules/react') >= 0) {
             return 'react-vendor'
           }
-          if (id.includes('node_modules')) {
+          if (id.indexOf('node_modules') >= 0) {
             return 'misc-vendor'
           }
         },

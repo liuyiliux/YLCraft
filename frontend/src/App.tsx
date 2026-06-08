@@ -32,6 +32,7 @@ import NovelBookshelfPage from './pages/novel-bookshelf'
 import BookSourcePage from './pages/book-source'
 import PlatformTemplatesPage from './pages/platform-templates'
 import MultiPlatformGenPage from './pages/image-gen/MultiPlatformGen'
+import PlayerPage from './pages/player'
 
 /** 包裹层：读取当前主题并传给 Ant Design ConfigProvider */
 function AntdThemeWrapper({ children }: { children: React.ReactNode }) {
@@ -86,6 +87,7 @@ export default function App() {
               <Route path="novel-reader/:id" element={<NovelReaderPage />} />
               <Route path="book-source" element={<BookSourcePage />} />
               <Route path="platform-templates" element={<PlatformTemplatesPage />} />
+              <Route path="player/assets/:assetId" element={<PlayerPage />} />
               <Route path="settings" element={<SettingsPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>

@@ -10,6 +10,7 @@ import base64
 import json
 import logging
 import os
+import shutil
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -599,8 +600,7 @@ class AssetService:
 
         if mode == "hard":
             # 永久删除：删除文件 + 删除数据库记录
-            self._delete_file(asset.file_path)
-            self._delete_thumbnail(asset)
+            self._delete_asset_files(asset)
             await self.session.delete(asset)
             await self.session.flush()
             logger.info(f"Hard deleted asset | id={asset.id}")
@@ -610,8 +610,7 @@ class AssetService:
             asset.deleted_at = datetime.now()
             asset.updated_at = datetime.now()
             if mode == "del_file":
-                self._delete_file(asset.file_path)
-                self._delete_thumbnail(asset)
+                self._delete_asset_files(asset)
                 logger.info(f"Deleted file + soft-deleted record | id={asset.id}")
             else:
                 logger.info(f"Soft deleted record (keep file) | id={asset.id}")
@@ -620,12 +619,69 @@ class AssetService:
 
     @staticmethod
     def _delete_file(file_path: str) -> None:
-        if file_path and os.path.exists(file_path):
-            try:
-                os.remove(file_path)
-                logger.info(f"Deleted file: {file_path}")
-            except OSError as e:
-                logger.warning(f"Failed to delete file {file_path}: {e}")
+        AssetService._delete_path(file_path)
+
+    @staticmethod
+    def _delete_path(path_value: str) -> None:
+        if not path_value or path_value.startswith(("http://", "https://")):
+            return
+        path = Path(path_value)
+        if not path.exists():
+            return
+        try:
+            if path.is_dir():
+                from app.core.config import ensure_download_path
+
+                downloads_root = ensure_download_path().resolve()
+                resolved = path.resolve()
+                if resolved == downloads_root or downloads_root not in resolved.parents:
+                    logger.warning(f"Refuse to delete directory outside downloads: {resolved}")
+                    return
+                shutil.rmtree(resolved)
+                logger.info(f"Deleted directory: {resolved}")
+            else:
+                path.unlink()
+                logger.info(f"Deleted file: {path}")
+        except OSError as e:
+            logger.warning(f"Failed to delete path {path}: {e}")
+
+    @staticmethod
+    def _delete_asset_files(asset: Asset) -> None:
+        paths: set[str] = set()
+        if asset.file_path:
+            paths.add(asset.file_path)
+        if asset.cover_url and not asset.cover_url.startswith(("http://", "https://", "/api/")):
+            paths.add(asset.cover_url)
+
+        try:
+            meta = json.loads(asset.metadata_json or "{}")
+        except Exception:
+            meta = {}
+
+        for key in ("thumbnail_path", "danmaku_path", "index_file"):
+            value = meta.get(key)
+            if isinstance(value, str) and value:
+                paths.add(value)
+        for value in meta.get("subtitle_paths", []) or []:
+            if isinstance(value, str) and value:
+                paths.add(value)
+        for episode in meta.get("episodes", []) or []:
+            if not isinstance(episode, dict):
+                continue
+            for key in ("file_path", "danmaku_path"):
+                value = episode.get(key)
+                if isinstance(value, str) and value:
+                    paths.add(value)
+            for value in episode.get("subtitle_paths", []) or []:
+                if isinstance(value, str) and value:
+                    paths.add(value)
+
+        for path in sorted(paths, key=len, reverse=True):
+            AssetService._delete_path(path)
+
+        course_dir = meta.get("course_dir")
+        if isinstance(course_dir, str) and course_dir:
+            AssetService._delete_path(course_dir)
 
     @staticmethod
     def _delete_thumbnail(asset: Asset) -> None:

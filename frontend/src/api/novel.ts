@@ -173,6 +173,7 @@ export async function downloadChapters(data: {
   author: string
   chapters: Chapter[]
   site?: string
+  asset_id?: string
 }) {
   const res = await request('/novels/download-chapters', {
     method: 'POST',

@@ -12,6 +12,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
+from sqlalchemy import BigInteger, Column
 from sqlmodel import SQLModel, Field
 
 
@@ -35,7 +36,7 @@ class Asset(SQLModel, table=True):
     height: int = Field(default=0)
 
     file_path: str = Field(default="")
-    file_size: int = Field(default=0)
+    file_size: int = Field(default=0, sa_column=Column(BigInteger, default=0, nullable=False))
     mime_type: str = Field(default="")
 
     status: str = Field(default="parsed", index=True)

@@ -184,7 +184,7 @@ export default function ComfyUIPage() {
 
   // WebSocket ref
   const wsRef = useRef<WebSocket | null>(null)
-  const pollIntervalsRef = useRef<Map<string, NodeJS.Timeout>>(new Map())
+  const pollIntervalsRef = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map())
 
   // ============================================================================
   // WebSocket 连接

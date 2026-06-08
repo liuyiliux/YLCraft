@@ -243,7 +243,7 @@ export default function PlatformTemplatesPage() {
       width: 80,
       align: 'center' as const,
       render: (val: number) => (
-        <Text style={{ color: T.textTertiary, fontSize: 13, fontFamily: 'monospace' }}>
+        <Text style={{ color: T.textSecondary, fontSize: 13, fontFamily: 'monospace' }}>
           {val}
         </Text>
       ),
@@ -301,7 +301,7 @@ export default function PlatformTemplatesPage() {
               borderRadius: T.radiusSM,
               width: 32,
               height: 32,
-              transition: `all ${T.transitionDuration} ${T.transitionEasing}`,
+              transition: `all ${T.animationDuration} ${T.animationEasing}`,
             }}
             onMouseEnter={e => {
               (e.currentTarget as HTMLElement).style.color = T.success
@@ -322,7 +322,7 @@ export default function PlatformTemplatesPage() {
               borderRadius: T.radiusSM,
               width: 32,
               height: 32,
-              transition: `all ${T.transitionDuration} ${T.transitionEasing}`,
+              transition: `all ${T.animationDuration} ${T.animationEasing}`,
             }}
             onMouseEnter={e => {
               (e.currentTarget as HTMLElement).style.color = T.primary
@@ -349,7 +349,7 @@ export default function PlatformTemplatesPage() {
                 borderRadius: T.radiusSM,
                 width: 32,
                 height: 32,
-                transition: `all ${T.transitionDuration} ${T.transitionEasing}`,
+                transition: `all ${T.animationDuration} ${T.animationEasing}`,
               }}
               onMouseEnter={e => {
                 (e.currentTarget as HTMLElement).style.background = `${T.error}10`
@@ -414,7 +414,7 @@ export default function PlatformTemplatesPage() {
                 borderColor: T.border,
                 color: T.textSecondary,
                 fontWeight: 500,
-                transition: `all ${T.transitionDuration} ${T.transitionEasing}`,
+                transition: `all ${T.animationDuration} ${T.animationEasing}`,
               }}
               onMouseEnter={e => {
                 (e.currentTarget as HTMLElement).style.borderColor = T.primary
@@ -455,7 +455,7 @@ export default function PlatformTemplatesPage() {
                   <Text style={{ color: T.textSecondary, fontSize: 14, display: 'block', marginBottom: 4 }}>
                     暂无平台模板
                   </Text>
-                  <Text style={{ color: T.textTertiary, fontSize: 12 }}>
+                  <Text style={{ color: T.textSecondary, fontSize: 12 }}>
                     请先在系统中初始化平台模板数据
                   </Text>
                 </div>
@@ -659,13 +659,13 @@ export default function PlatformTemplatesPage() {
       {/* Global row hover styles */}
       <style>{`
         .platform-template-row {
-          transition: background-color ${T.transitionDuration} ${T.transitionEasing};
+          transition: background-color ${T.animationDuration} ${T.animationEasing};
         }
         .platform-template-row:hover {
           background-color: ${T.bgHover} !important;
         }
         .platform-template-row td {
-          transition: border-color ${T.transitionDuration} ${T.transitionEasing};
+          transition: border-color ${T.animationDuration} ${T.animationEasing};
         }
       `}</style>
     </div>

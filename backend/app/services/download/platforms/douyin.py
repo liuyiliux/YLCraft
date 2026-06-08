@@ -102,7 +102,7 @@ class DouyinDownloader(BaseDownloader):
         关键点：使用 cookie 文件路径，不用内存 CookieJar
         返回 (文件路径, VideoInfo)
         """
-        savedir = ensure_download_path()
+        savedir = ensure_download_path("douyin")
         safe_title = self._sanitize(title or "douyin_video")
         outtmpl = str(savedir / f"douyin_{safe_title}_%(id)s.%(ext)s")
 

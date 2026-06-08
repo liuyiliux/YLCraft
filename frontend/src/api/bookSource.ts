@@ -24,6 +24,7 @@ export interface BookSource {
   enabled: boolean
   book_source_group?: string
   enabled_by_user: boolean
+  is_js_source: boolean
   created_at?: string
 }
 
@@ -32,6 +33,7 @@ export interface BookSourceImportResponse {
   added: number
   updated: number
   total: number
+  failed?: number
   error?: string
 }
 

@@ -6,8 +6,8 @@
 from __future__ import annotations
 
 import abc
-from typing import Optional, Dict, List, Tuple
-from pydantic import BaseModel
+from typing import Optional, Dict, List, Tuple, Any
+from pydantic import BaseModel, Field
 
 
 class VideoQuality(BaseModel):
@@ -30,6 +30,7 @@ class VideoInfo(BaseModel):
     qualities: List[VideoQuality] = []
     audio_url: str = ""
     page_url: str = ""  # 原始页面URL（用于yt-dlp下载）
+    raw: Dict[str, Any] = Field(default_factory=dict)
 
 
 class BaseDownloader(abc.ABC):

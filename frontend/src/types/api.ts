@@ -347,6 +347,9 @@ export interface DownloadParseResponse {
   cover_url: string
   duration: number
   duration_str: string
+  width?: number
+  height?: number
+  resolution?: string
   video_url: string
   qualities: VideoQuality[]
   audio_url: string
@@ -405,13 +408,16 @@ export interface Asset {
   author_url?: string
   cover_url?: string
   thumbnail_path?: string
+  thumbnail_url?: string
   duration?: number
   file_path?: string
   file_size?: number
   mime_type?: string
   width?: number
   height?: number
+  resolution?: string
   status: AssetStatus
+  source_type?: string
   error_message?: string
   tags: AssetTag[]
   metadata?: Record<string, unknown>

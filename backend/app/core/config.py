@@ -553,10 +553,14 @@ def get_live2d_config() -> Live2DConfig:
 
 # ---- 通用辅助函数 ----
 
-def ensure_download_path() -> Path:
-    """确保下载目录存在并返回路径"""
+def ensure_download_path(platform: str = "") -> Path:
+    """确保下载目录存在并返回路径，可按平台创建子目录"""
     backend_dir = Path(__file__).parent.parent.parent
     download_dir = backend_dir / "downloads"
+    if platform:
+        safe_platform = "".join(ch for ch in platform.lower() if ch.isalnum() or ch in ("_", "-"))
+        if safe_platform:
+            download_dir = download_dir / safe_platform
     download_dir.mkdir(parents=True, exist_ok=True)
     return download_dir
 

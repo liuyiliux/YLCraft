@@ -104,7 +104,7 @@ class TwitterDownloader(BaseDownloader):
         """
         import yt_dlp
 
-        savedir = ensure_download_path()
+        savedir = ensure_download_path("twitter")
         safe_title = self._sanitize(title or "twitter_video")
         outtmpl = str(savedir / f"twitter_{safe_title}_%(id)s.%(ext)s")
 

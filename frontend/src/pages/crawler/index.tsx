@@ -1129,7 +1129,7 @@ export default function CrawlerPage() {
                     : 'transparent',
                   transition: 'all 0.15s',
                 }}
-                onClick={() => { setKeyword(k); setNoteUrl('') }}
+                onClick={() => { setKeyword(k) }}
               >
                 {k}
               </Tag>
@@ -1232,7 +1232,6 @@ export default function CrawlerPage() {
           },
         }}
         extra={null}
-        titleStyle={{ color: textPri }}
       >
         {detailLoading && <div style={{ textAlign: 'center', padding: 60 }}><Spin size="large" /></div>}
         {detailError && <Alert message={detailError} type="warning" showIcon style={{ margin: 16 }} />}
@@ -1581,7 +1580,7 @@ export default function CrawlerPage() {
                               <div style={{ flex: 1, minWidth: 0 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                                   <Text style={{ color: textPri, fontSize: 13, fontWeight: 600 }}>{c.user_name}</Text>
-                                  {c.rcount > 0 && <Tag size="small" style={{ fontSize: 11 }}>{c.rcount} 回复</Tag>}
+                                  {c.rcount > 0 && <Tag style={{ fontSize: 11 }}>{c.rcount} 回复</Tag>}
                                 </div>
                                 <Text style={{ color: textPri, fontSize: 13 }}>{c.message}</Text>
                                 <div style={{ marginTop: 4, fontSize: 11, color: textSec }}>

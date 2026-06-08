@@ -11,6 +11,7 @@
 import { useState, useCallback } from 'react'
 import { formatFileSize } from '../../utils/format'
 import { Card, Tag, Button, Pagination, Empty, Skeleton, Tooltip, Checkbox, Dropdown, Menu } from 'antd'
+import type { MenuProps } from 'antd'
 import {
   FileImageOutlined,
   VideoCameraOutlined,
@@ -26,6 +27,7 @@ import {
   AppstoreOutlined,
   UnorderedListOutlined,
   BranchesOutlined,
+  FolderOutlined,
 } from '@ant-design/icons'
 
 export interface AssetItem {
@@ -79,6 +81,7 @@ const TYPE_ICONS: Record<string, React.ReactNode> = {
   TEXT: <FileTextOutlined />,
   MODEL: <InboxOutlined />,
   CHARACTER: <UserOutlined />,
+  COLLECTION: <FolderOutlined />,
   '3D_MODEL': <InboxOutlined />,
 }
 
@@ -89,6 +92,7 @@ const TYPE_COLORS: Record<string, string> = {
   TEXT: '#faad14',
   MODEL: '#ff4d6a',
   CHARACTER: '#eb2f96',
+  COLLECTION: '#13c2c2',
   '3D_MODEL': '#1890ff',
 }
 
@@ -162,7 +166,7 @@ export function AssetGrid({
     const hasMultiMeta = multiMeta && (multiMeta.topic || multiMeta.content_platform)
 
     // 构建菜单项
-    const menuItems = [
+    const menuItems: MenuProps['items'] = [
       { key: 'delete', icon: <DeleteOutlined />, label: '删除', danger: true },
     ]
     if (hasMultiMeta && multiMeta.topic) {

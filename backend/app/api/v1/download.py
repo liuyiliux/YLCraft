@@ -10,9 +10,11 @@ GET  /api/v1/download/tasks/{task_id} — 查询后台任务状态
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import re
 import logging
+import subprocess
 import uuid
 import time
 from pathlib import Path
@@ -56,6 +58,124 @@ def _parse_resolution(resolution: str) -> tuple[int, int]:
             pass
     return 0, 0
 
+
+def _probe_video_file(filepath: str) -> dict:
+    """Read width/height/duration from a downloaded local media file."""
+    if not filepath or not os.path.exists(filepath):
+        return {}
+
+    ffmpeg_path = get_ffmpeg_path()
+    ffprobe = "ffprobe"
+    if ffmpeg_path:
+        ffmpeg_path = Path(ffmpeg_path)
+        candidate = ffmpeg_path.with_name("ffprobe.exe" if ffmpeg_path.suffix.lower() == ".exe" else "ffprobe")
+        ffprobe = str(candidate if candidate.exists() else candidate)
+
+    cmd = [
+        ffprobe,
+        "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=width,height,duration",
+        "-show_entries", "format=duration,size",
+        "-of", "json",
+        filepath,
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="ignore", timeout=30)
+        if result.returncode != 0:
+            logger.warning(f"[_probe_video_file] ffprobe failed: {result.stderr[:200]}")
+            return {}
+        data = json.loads(result.stdout or "{}")
+        stream = (data.get("streams") or [{}])[0]
+        fmt = data.get("format") or {}
+        return {
+            "width": int(stream.get("width") or 0),
+            "height": int(stream.get("height") or 0),
+            "duration": int(float(stream.get("duration") or fmt.get("duration") or 0)),
+            "file_size": int(fmt.get("size") or 0),
+        }
+    except Exception as e:
+        logger.warning(f"[_probe_video_file] failed: {e}")
+        return {}
+
+
+def _format_resolution_value(width: int, height: int) -> str:
+    return f"{width}x{height}" if width and height else ""
+
+
+def _dimensions_from_video_info(video_info, quality: str | None = None) -> tuple[int, int]:
+    if not video_info:
+        return 0, 0
+    raw = getattr(video_info, "raw", {}) or {}
+    width = int(raw.get("width") or 0)
+    height = int(raw.get("height") or 0)
+    if width and height:
+        return width, height
+
+    target_quality = None
+    qualities = getattr(video_info, "qualities", None) or []
+    if qualities and quality:
+        target_quality = next((q for q in qualities if q.quality == quality), None)
+    if not target_quality and qualities:
+        target_quality = qualities[0]
+    if target_quality and getattr(target_quality, "resolution", ""):
+        return _parse_resolution(target_quality.resolution)
+    return 0, 0
+
+
+async def _download_bilibili_sidecars(
+    *,
+    filepath: str,
+    source_url: str,
+    video_info=None,
+    progress_callback=None,
+) -> dict:
+    if not filepath or not os.path.exists(filepath):
+        return {}
+
+    raw = getattr(video_info, "raw", {}) or {}
+    bvid = raw.get("bvid") or ""
+    aid = int(raw.get("aid") or 0)
+    cid = int(raw.get("cid") or 0)
+
+    if not bvid:
+        match = re.search(r"(BV\w+)", source_url or "")
+        bvid = match.group(1) if match else ""
+
+    try:
+        from app.services.download.bilibili_resources import download_bilibili_sidecar_files
+        from app.services.download.platforms.bilibili import BilibiliDownloader
+        from app.services.platforms.bilibili.client import BilibiliClient
+        from app.services.platforms.types import ClientConfig
+
+        downloader = BilibiliDownloader()
+        client, _has_cookie = await downloader._get_client()
+        if client is None:
+            client = BilibiliClient(ClientConfig(platform="bilibili", cookie=""))
+
+        if (not aid or not cid) and bvid:
+            detail = await client.get_detail(bvid)
+            detail_raw = getattr(detail, "raw_data", {}) or {}
+            aid = aid or int(detail_raw.get("aid") or 0)
+            pages = detail_raw.get("pages") or []
+            cid = cid or int((pages[0].get("cid") if pages else detail_raw.get("cid")) or 0)
+
+        if not aid and not cid:
+            return {}
+
+        path = Path(filepath)
+        return await download_bilibili_sidecar_files(
+            client=client,
+            target_dir=path.parent,
+            base_name=path.stem,
+            aid=aid,
+            cid=cid,
+            progress_callback=progress_callback,
+        )
+    except Exception as e:
+        logger.warning(f"[download] B站字幕/弹幕下载失败（非阻塞）: {e}")
+        return {}
+
 # 浏览器 UA
 _BROWSER_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -79,6 +199,9 @@ class ParseResponse(BaseModel):
     cover_url: str = ""
     duration: int = 0
     duration_str: str = ""
+    width: int = 0
+    height: int = 0
+    resolution: str = ""
     video_url: str = ""
     qualities: list[VideoQuality] = []
     audio_url: str = ""
@@ -206,6 +329,7 @@ async def parse_download_url(req: ParseRequest):
                 )
                 for q in info_new.qualities
             ]
+            width, height = _dimensions_from_video_info(info_new)
             
             # 解析时创建素材记录
             page_url = info_new.page_url or url
@@ -224,6 +348,10 @@ async def parse_download_url(req: ParseRequest):
                         duration=info_new.duration,
                         metadata={"parse_method": "platform_manager"},
                     )
+                    if width and not asset.width:
+                        asset.width = width
+                    if height and not asset.height:
+                        asset.height = height
                     await db_session.commit()
                     await db_session.refresh(asset)
                     parsed_asset_id = asset.id
@@ -240,6 +368,9 @@ async def parse_download_url(req: ParseRequest):
                 cover_url=info_new.cover_url,
                 duration=info_new.duration,
                 duration_str=_format_duration(info_new.duration),
+                width=width,
+                height=height,
+                resolution=_format_resolution_value(width, height),
                 qualities=qualities,
                 page_url=page_url,
             )
@@ -311,8 +442,12 @@ async def parse_download_url(req: ParseRequest):
     if cover_url and cover_url.startswith("http"):
         try:
             loop = asyncio.get_running_loop()
+            cover_base_path = ""
+            if platform == "bilibili":
+                bili_dir = ensure_download_path("bilibili")
+                cover_base_path = str(bili_dir / "placeholder.mp4")
             thumbnail_local_path = await loop.run_in_executor(
-                None, _download_cover_image, cover_url, "", title
+                None, _download_cover_image, cover_url, cover_base_path, title
             )
             if thumbnail_local_path:
                 logger.info(f"[parse] 封面已保存: {thumbnail_local_path}")
@@ -363,6 +498,9 @@ async def parse_download_url(req: ParseRequest):
         cover_url=cover_url,
         duration=duration,
         duration_str=duration_str,
+        width=width,
+        height=height,
+        resolution=_format_resolution_value(width, height),
         video_url=video_url,
         qualities=qualities,
         page_url=page_url,
@@ -409,10 +547,12 @@ def _ytdlp_download(url: str, quality_label: str | None, title: str | None, page
     关键点：使用 cookie 文件路径（Netscape 格式），不用内存 CookieJar。
     Twitter/X 等平台对内存 CookieJar 支持不好，必须用文件。
     """
-    savedir = ensure_download_path()
     logger.info(f"[download] yt-dlp start | url={url[:80]} | quality={quality_label} | is_audio={is_audio}")
 
     effective_url = page_url if page_url else url
+    platform = _detect_platform(effective_url) or ""
+    savedir = ensure_download_path(platform if platform else "")
+    savedir.mkdir(parents=True, exist_ok=True)
 
     # 获取 cookie 文件路径（Netscape 格式），不用 CookieJar
     cookie_file = _get_cookie_file_for_ytdlp(effective_url)
@@ -442,7 +582,6 @@ def _ytdlp_download(url: str, quality_label: str | None, title: str | None, page
 
     # B站需要 Referer 头，否则 HTTP 412
     effective_headers = {"User-Agent": _BROWSER_UA}
-    platform = _detect_platform(effective_url) or ""
     if platform == "bilibili":
         effective_headers["Referer"] = "https://www.bilibili.com/"
 
@@ -548,14 +687,11 @@ async def download_video(req: DownloadRequest):
 
     effective_url = req.page_url if req.page_url else req.url
     file_size = os.path.getsize(filepath) if os.path.exists(filepath) else 0
+    sidecar_metadata = {}
     
     # 从 video_info 获取元数据（优先）
     if video_info:
-        width, height = 0, 0
-        if video_info.qualities:
-            best_quality = video_info.qualities[0]
-            if best_quality.resolution:
-                width, height = _parse_resolution(best_quality.resolution)
+        width, height = _dimensions_from_video_info(video_info, req.quality)
         duration = video_info.duration or 0
         cover_url = video_info.cover_url or ""
         title = video_info.title or ""
@@ -563,11 +699,19 @@ async def download_video(req: DownloadRequest):
         platform = video_info.platform or ""
     else:
         width = height = duration = 0
-        thumbnail_path = ""
         title = ""
         author = ""
         platform = ""
         cover_url = ""
+
+    if not req.is_audio:
+        probed = _probe_video_file(filepath)
+        if not width:
+            width = probed.get("width", 0) or 0
+        if not height:
+            height = probed.get("height", 0) or 0
+        if not duration:
+            duration = probed.get("duration", 0) or 0
     
     # 从数据库查询已有元数据（补充）
     search_urls = [req.page_url, req.url] if req.page_url else [req.url]
@@ -603,6 +747,7 @@ async def download_video(req: DownloadRequest):
     
     # 如果没有找到已有记录，使用请求参数中的标题或文件名
     effective_title = title or req.title or filename
+    detected_platform = platform or _detect_platform(effective_url)
     
     from app.db.database import get_async_session
     from app.services.asset.service import AssetService
@@ -613,6 +758,14 @@ async def download_video(req: DownloadRequest):
         "is_audio": req.is_audio,
         "page_url": req.page_url or "",
     }
+    if detected_platform == "bilibili" and not req.is_audio:
+        sidecar_metadata = await _download_bilibili_sidecars(
+            filepath=filepath,
+            source_url=effective_url,
+            video_info=video_info,
+        )
+        if sidecar_metadata:
+            download_metadata.update(sidecar_metadata)
 
     async with get_async_session() as db_session:
         asset_service = AssetService(db_session)
@@ -634,8 +787,6 @@ async def download_video(req: DownloadRequest):
         # 如果还是没找到，尝试用原始 URL
         if not existing:
             existing = await asset_service.get_by_url(req.url)
-        
-        detected_platform = platform or _detect_platform(effective_url)
         
         if existing:
             await asset_service.mark_ready(existing, file_path=filepath, file_size=file_size, mime_type=media_type)
@@ -664,10 +815,11 @@ async def download_video(req: DownloadRequest):
         else:
             asset_type = "audio" if req.is_audio else "video"
             new_asset = await asset_service.create(
-                asset_type=asset_type,
+                type=asset_type,
                 title=effective_title,
                 source_url=effective_url,
-                platform=platform,
+                platform=detected_platform or platform,
+                author=author,
                 file_path=filepath,
                 file_size=file_size,
                 mime_type=media_type,
@@ -675,7 +827,8 @@ async def download_video(req: DownloadRequest):
                 width=width,
                 height=height,
                 duration=duration,
-                cover_url=thumbnail_path,
+                cover_url=cover_url,
+                source_type="parse",
                 metadata_json=json.dumps(download_metadata, ensure_ascii=False),
             )
             asset_id = new_asset.id
@@ -780,9 +933,9 @@ async def _run_download_task(task: DownloadTask):
             raise ValueError("所有下载方式均失败（平台下载器 + yt-dlp 兜底），可能解析或权限问题")
 
         task.file_path = filepath
-        task.status = "DONE"
-        task.progress = 100
-        task.progress_message = "下载完成"
+        task.progress = 90
+        task.progress_message = "下载完成，正在写入素材库..."
+        _download_tasks[task.task_id] = task.__dict__
         
         # 记录到数据库
         try:
@@ -794,6 +947,16 @@ async def _run_download_task(task: DownloadTask):
                 asset_service = AssetService(db_session)
                 platform = _detect_platform(task.url)
                 file_size = os.path.getsize(filepath) if filepath and os.path.exists(filepath) else 0
+                sidecar_metadata = {}
+                if platform == "bilibili" and not task.is_audio:
+                    task.progress = 96
+                    task.progress_message = "下载字幕/弹幕..."
+                    _download_tasks[task.task_id] = task.__dict__
+                    sidecar_metadata = await _download_bilibili_sidecars(
+                        filepath=filepath,
+                        source_url=task.page_url or task.url,
+                        video_info=video_info,
+                    )
                 
                 # 优先使用 task.asset_id 查找资产（最准确）
                 existing = None
@@ -812,6 +975,7 @@ async def _run_download_task(task: DownloadTask):
                 # 从 video_info 中获取元数据
                 width = 0
                 height = 0
+                duration = 0
                 cover_url = ""
                 if video_info:
                     # 获取分辨率：优先匹配实际下载的 quality，否则取最高分辨率
@@ -827,8 +991,20 @@ async def _run_download_task(task: DownloadTask):
                         target_quality = video_info.qualities[0]
                     if target_quality and target_quality.resolution:
                         width, height = _parse_resolution(target_quality.resolution)
+                    if not width or not height:
+                        width, height = _dimensions_from_video_info(video_info, task.quality)
+                    duration = video_info.duration or 0
                     # 获取封面URL
                     cover_url = video_info.cover_url or ""
+
+                if not task.is_audio:
+                    probed = _probe_video_file(filepath)
+                    if not width:
+                        width = probed.get("width", 0) or 0
+                    if not height:
+                        height = probed.get("height", 0) or 0
+                    if not duration:
+                        duration = probed.get("duration", 0) or 0
                 
                 # 下载封面到本地
                 local_cover_path = ""
@@ -843,10 +1019,18 @@ async def _run_download_task(task: DownloadTask):
                     # 更新元数据
                     if width: existing.width = width
                     if height: existing.height = height
+                    if duration: existing.duration = duration
                     if local_cover_path:
                         existing.cover_url = local_cover_path
                     elif cover_url and not existing.cover_url:
                         existing.cover_url = cover_url
+                    if sidecar_metadata:
+                        try:
+                            existing_meta = json.loads(existing.metadata_json or "{}")
+                        except Exception:
+                            existing_meta = {}
+                        existing_meta.update(sidecar_metadata)
+                        existing.metadata_json = json.dumps(existing_meta, ensure_ascii=False)
                     task.asset_id = existing.id
                 else:
                     new_asset = await asset_service.create(
@@ -860,7 +1044,9 @@ async def _run_download_task(task: DownloadTask):
                         status="READY",
                         width=width,
                         height=height,
+                        duration=duration,
                         cover_url=local_cover_path or cover_url,
+                        metadata_json=json.dumps(sidecar_metadata, ensure_ascii=False) if sidecar_metadata else "{}",
                     )
                     task.asset_id = new_asset.id
                 
@@ -876,13 +1062,14 @@ async def _run_download_task(task: DownloadTask):
                         "bvid": (video_info.raw.get("bvid") if video_info and hasattr(video_info, 'raw') and video_info.raw else None) if platform == "bilibili" else None,
                         "width": width,
                         "height": height,
-                        "duration": video_info.duration if video_info and hasattr(video_info, 'duration') else None,
+                        "duration": duration or (video_info.duration if video_info and hasattr(video_info, 'duration') else None),
                         "like_count": video_info.like_count if video_info and hasattr(video_info, 'like_count') else 0,
                         "play_count": video_info.play_count if video_info and hasattr(video_info, 'play_count') else 0,
                         "file_size": file_size,
                         "status": "READY",
                         "resolution": f"{width}x{height}" if width and height else None,
                     }
+                    meta.update(sidecar_metadata)
                     return {k: v for k, v in meta.items() if v is not None}
 
                 # 确保 asset_node 存在并填充元数据（嵌入向量存储需要引用 asset_nodes.id）
@@ -938,6 +1125,10 @@ async def _run_download_task(task: DownloadTask):
                     
         except Exception as db_e:
             logger.warning(f"[_run_download_task] 数据库记录失败: {db_e}")
+
+        task.status = "DONE"
+        task.progress = 100
+        task.progress_message = "下载完成"
         
     except Exception as e:
         task.status = "FAILED"
@@ -960,7 +1151,8 @@ def _download_cover_image(cover_url: str, video_path: str, title: str | None) ->
         return ""
 
     try:
-        savedir = ensure_download_path()
+        savedir = Path(video_path).parent if video_path else ensure_download_path()
+        savedir.mkdir(parents=True, exist_ok=True)
         safe_title = _sanitize_filename(title) if title else "video"
         ext = "jpg"
 

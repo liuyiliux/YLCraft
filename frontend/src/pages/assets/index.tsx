@@ -28,6 +28,7 @@ import {
   Tabs,
   Checkbox,
   Spin,
+  List,
 } from 'antd'
 import {
   ThunderboltOutlined,
@@ -38,6 +39,8 @@ import {
   CloseOutlined,
   PlayCircleOutlined,
   PauseCircleOutlined,
+  FolderOpenOutlined,
+  ExpandOutlined,
 } from '@ant-design/icons'
 import { SearchPanel } from '../../components/asset-hub/SearchPanel'
 import type { SearchParams } from '../../components/asset-hub/SearchPanel'
@@ -52,6 +55,7 @@ import {
   hybridSearch,
   getAssetLineage,
 } from '../../api'
+import { AssetVideoPlayer } from '../../components/video/AssetVideoPlayer'
 
 const { Sider, Content } = Layout
 
@@ -63,7 +67,7 @@ const STATUS_LABELS: Record<string, string> = {
 
 const SOURCE_TYPE_LABELS: Record<string, string> = {
   upload: '本地上传', parse: '视频解析',
-  ai_generated: 'AI生成', import: '导入', '': '未知',
+  ai_generated: 'AI生成', import: '导入', download: '下载', '': '未知',
 }
 
 const SEARCH_HISTORY_KEY = 'ylcraft_asset_search_history'
@@ -99,6 +103,7 @@ export default function AssetsPage() {
   const [lineageData, setLineageData] = useState<any>(null)
   const [lineageLoading, setLineageLoading] = useState(false)
   const [playingAssetId, setPlayingAssetId] = useState<string | null>(null)
+  const [playingCourseEpisodeIndex, setPlayingCourseEpisodeIndex] = useState<number | null>(null)
 
   // Tag tree (sidebar)
   const [siderCollapsed, setSiderCollapsed] = useState(false)
@@ -232,10 +237,17 @@ export default function AssetsPage() {
   }, [loadAssets, searchQuery, searchMode])
 
   // ---- Asset click → detail drawer ----
-  const handleAssetClick = useCallback((asset: any) => {
+  const handleAssetClick = useCallback(async (asset: any) => {
     setDetailAsset(asset)
     setDetailDrawerOpen(true)
     setLineageData(null)
+    setPlayingCourseEpisodeIndex(null)
+    try {
+      const res = await getAsset(asset.id)
+      if (res?.success && res.data) setDetailAsset(res.data)
+    } catch {
+      // Keep list-level asset data if detail fetch fails.
+    }
   }, [])
 
   // Load lineage when tab changes
@@ -369,6 +381,56 @@ export default function AssetsPage() {
     const meta = detailAsset.metadata || {}
     const aiParams = meta.ai_params || {}
     const aiGen = isAIGenerated(detailAsset)
+    const isPaidCourse = dt === 'COLLECTION' && detailAsset.platform === 'bilibili' && meta.type === 'paid_course'
+    const courseEpisodes = Array.isArray(meta.episodes) ? meta.episodes : []
+    const courseReadyCount = courseEpisodes.filter((ep: any) => ep.status === 'ready').length
+    const playingCourseEpisode = courseEpisodes.find((ep: any) => {
+      const index = ep.index || courseEpisodes.indexOf(ep) + 1
+      return index === playingCourseEpisodeIndex
+    })
+    const qualityLabel = (qn?: number) => {
+      const labels: Record<number, string> = { 127: '8K', 120: '4K', 116: '1080P60', 112: '1080P+', 80: '1080P', 64: '720P', 32: '480P', 16: '360P' }
+      return qn ? (labels[qn] || `${qn}`) : '-'
+    }
+
+    const handlePlayCourseEpisode = (episode: any) => {
+      const index = episode.index || courseEpisodes.indexOf(episode) + 1
+      setPlayingCourseEpisodeIndex(index)
+    }
+
+    const handleDownloadCourseEpisode = (episode: any) => {
+      const index = episode.index || courseEpisodes.indexOf(episode) + 1
+      const link = document.createElement('a')
+      link.href = `/api/v1/assets/${detailAsset.id}/course-episodes/${index}/download`
+      link.download = episode.title || `episode_${index}.mp4`
+      link.click()
+    }
+
+    const buildSubtitles = (paths: any, episodeIndex?: number) => {
+      const count = Array.isArray(paths) ? paths.length : 0
+      return Array.from({ length: count }).map((_, index) => ({
+        label: `字幕 ${index + 1}`,
+        language: 'zh',
+        src: episodeIndex
+          ? `/api/v1/assets/${detailAsset.id}/course-episodes/${episodeIndex}/sidecars/subtitles/${index}.vtt`
+          : `/api/v1/assets/${detailAsset.id}/sidecars/subtitles/${index}.vtt`,
+        default: index === 0,
+      }))
+    }
+
+    const buildDanmaku = (path: any, episodeIndex?: number) => path
+      ? {
+          src: episodeIndex
+            ? `/api/v1/assets/${detailAsset.id}/course-episodes/${episodeIndex}/sidecars/danmaku`
+            : `/api/v1/assets/${detailAsset.id}/sidecars/danmaku`,
+        }
+      : null
+
+    const openPlayer = (episodeIndex?: number) => {
+      const params = new URLSearchParams()
+      if (episodeIndex) params.set('episode', String(episodeIndex))
+      navigate(`/player/assets/${detailAsset.id}${params.toString() ? `?${params.toString()}` : ''}`)
+    }
 
     const detailTabs = [
       {
@@ -377,17 +439,20 @@ export default function AssetsPage() {
         children: (
           <div>
             {isVideo ? (
-              <div style={{ marginBottom: 16, textAlign: 'center', background: '#000', borderRadius: 8, overflow: 'hidden' }}>
-                <video
-                  src={`/api/v1/assets/${detailAsset.id}/download`}
-                  controls
-                  style={{ width: '100%', maxHeight: 300, objectFit: 'contain' }}
+              <div style={{ marginBottom: 16 }}>
+                <AssetVideoPlayer
+                  videoSrc={`/api/v1/assets/${detailAsset.id}/stream`}
+                  poster={detailAsset.thumbnail_url || `/api/v1/assets/${detailAsset.id}/thumbnail`}
+                  title={detailAsset.title}
+                  subtitles={buildSubtitles(meta.subtitle_paths)}
+                  danmaku={buildDanmaku(meta.danmaku_path)}
+                  maxHeight={300}
                 />
               </div>
             ) : detailAsset.cover_url || detailAsset.thumbnail_url ? (
               <div style={{ marginBottom: 16, textAlign: 'center' }}>
                 <Image
-                  src={detailAsset.cover_url || detailAsset.thumbnail_url}
+                  src={detailAsset.thumbnail_url || `/api/v1/assets/${detailAsset.id}/thumbnail`}
                   alt={detailAsset.title}
                   style={{ maxHeight: 240, objectFit: 'contain' }}
                 />
@@ -403,24 +468,134 @@ export default function AssetsPage() {
                   link.click()
                 }} style={{ marginRight: 8 }}>下载</Button>
               )}
-              <Button icon={<ThunderboltOutlined />} onClick={(e) => handleJumpToGenerator(detailAsset, e)}>
-                {aiGen ? '再次生成' : '跳转解析'}
-              </Button>
+              {isVideo && (
+                <Button icon={<ExpandOutlined />} onClick={() => openPlayer()} style={{ marginRight: 8 }}>
+                  打开播放器
+                </Button>
+              )}
+              {!isPaidCourse && (
+                <Button icon={<ThunderboltOutlined />} onClick={(e) => handleJumpToGenerator(detailAsset, e)}>
+                  {aiGen ? '再次生成' : '跳转解析'}
+                </Button>
+              )}
             </div>
 
             <Descriptions column={1} size="small" style={{ marginBottom: 16 }} labelStyle={{ color: theme.textSecondary }} contentStyle={{ color: theme.textPrimary }}>
               <Descriptions.Item label="类型">{detailAsset.type}</Descriptions.Item>
               <Descriptions.Item label="平台">{detailAsset.platform || '-'}</Descriptions.Item>
-              <Descriptions.Item label="作者">{detailAsset.author || '-'}</Descriptions.Item>
+              <Descriptions.Item label={isPaidCourse ? '作者/讲师' : '作者'}>{detailAsset.author || meta.author || '-'}</Descriptions.Item>
               <Descriptions.Item label="状态">
                 <Tag color={ds === 'READY' ? 'green' : 'orange'} style={{ color: '#e0e0e0' }}>{STATUS_LABELS[ds] || detailAsset.status}</Tag>
               </Descriptions.Item>
-              <Descriptions.Item label="大小">{detailAsset.file_size ? formatFileSize(detailAsset.file_size) : '-'}</Descriptions.Item>
-              <Descriptions.Item label="分辨率">{detailAsset.resolution || (detailAsset.width && detailAsset.height ? `${detailAsset.width}x${detailAsset.height}` : '-')}</Descriptions.Item>
-              <Descriptions.Item label="时长">{detailAsset.duration ? `${Math.floor(detailAsset.duration / 60)}:${String(Math.floor(detailAsset.duration % 60)).padStart(2, '0')}` : '-'}</Descriptions.Item>
+              <Descriptions.Item label={isPaidCourse ? '总大小' : '大小'}>{detailAsset.file_size ? formatFileSize(detailAsset.file_size) : '-'}</Descriptions.Item>
+              {!isPaidCourse && (
+                <>
+                  <Descriptions.Item label="分辨率">{detailAsset.resolution || (detailAsset.width && detailAsset.height ? `${detailAsset.width}x${detailAsset.height}` : '-')}</Descriptions.Item>
+                  <Descriptions.Item label="时长">{detailAsset.duration ? `${Math.floor(detailAsset.duration / 60)}:${String(Math.floor(detailAsset.duration % 60)).padStart(2, '0')}` : '-'}</Descriptions.Item>
+                </>
+              )}
               <Descriptions.Item label="来源">{SOURCE_TYPE_LABELS[detailAsset.source_type] || '-'}</Descriptions.Item>
               <Descriptions.Item label="创建时间">{detailAsset.created_at || '-'}</Descriptions.Item>
             </Descriptions>
+
+            {isPaidCourse && (
+              <div style={{ marginBottom: 16 }}>
+                <Descriptions
+                  column={1}
+                  size="small"
+                  title="课程信息"
+                  labelStyle={{ color: theme.textSecondary }}
+                  contentStyle={{ color: theme.textPrimary }}
+                >
+                  <Descriptions.Item label="课程ID">{meta.season_id || '-'}</Descriptions.Item>
+                  {meta.desc && <Descriptions.Item label="课程简介">{meta.desc}</Descriptions.Item>}
+                  {meta.update_info && <Descriptions.Item label="更新信息">{meta.update_info}</Descriptions.Item>}
+                  <Descriptions.Item label="课程课时">{meta.ep_count || courseEpisodes.length || '-'}</Descriptions.Item>
+                  <Descriptions.Item label="已下载章节">{courseReadyCount} / {meta.ep_count || courseEpisodes.length}</Descriptions.Item>
+                  <Descriptions.Item label="默认画质">{qualityLabel(courseEpisodes.find((ep: any) => ep.quality)?.quality)}</Descriptions.Item>
+                  <Descriptions.Item label="课程目录">{meta.course_dir || detailAsset.file_path || '-'}</Descriptions.Item>
+                  <Descriptions.Item label="索引文件">{meta.index_file || '-'}</Descriptions.Item>
+                </Descriptions>
+
+                <div style={{ marginTop: 12, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <FolderOpenOutlined style={{ color: theme.primary }} />
+                  <span style={{ color: theme.textPrimary, fontWeight: 600 }}>章节列表</span>
+                </div>
+                {playingCourseEpisodeIndex !== null && (
+                  <div style={{ marginBottom: 12, background: '#000', borderRadius: 8, overflow: 'hidden' }}>
+                    <div style={{ padding: '8px 12px', color: '#fff', background: 'rgba(255,255,255,0.08)', fontSize: 13 }}>
+                      {playingCourseEpisode?.title || `章节 ${playingCourseEpisodeIndex}`}
+                    </div>
+                    <AssetVideoPlayer
+                      key={`${detailAsset.id}-${playingCourseEpisodeIndex}`}
+                      videoSrc={`/api/v1/assets/${detailAsset.id}/course-episodes/${playingCourseEpisodeIndex}/stream`}
+                      title={playingCourseEpisode?.title || `章节 ${playingCourseEpisodeIndex}`}
+                      subtitles={buildSubtitles(playingCourseEpisode?.subtitle_paths, playingCourseEpisodeIndex)}
+                      danmaku={buildDanmaku(playingCourseEpisode?.danmaku_path, playingCourseEpisodeIndex)}
+                      autoPlay
+                      maxHeight={300}
+                    />
+                  </div>
+                )}
+                {courseEpisodes.length > 0 ? (
+                  <List
+                    size="small"
+                    dataSource={courseEpisodes}
+                    renderItem={(episode: any) => (
+                      <List.Item
+                        actions={[
+                          <Button
+                            key="play"
+                            type="link"
+                            size="small"
+                            icon={<PlayCircleOutlined />}
+                            disabled={episode.status !== 'ready'}
+                            onClick={() => handlePlayCourseEpisode(episode)}
+                          >
+                            播放
+                          </Button>,
+                          <Button
+                            key="download"
+                            type="link"
+                            size="small"
+                            icon={<DownloadOutlined />}
+                            disabled={episode.status !== 'ready'}
+                            onClick={() => handleDownloadCourseEpisode(episode)}
+                          >
+                            下载
+                          </Button>,
+                          <Button
+                            key="open-player"
+                            type="link"
+                            size="small"
+                            icon={<ExpandOutlined />}
+                            disabled={episode.status !== 'ready'}
+                            onClick={() => openPlayer(episode.index || courseEpisodes.indexOf(episode) + 1)}
+                          >
+                            播放器
+                          </Button>,
+                        ]}
+                      >
+                        <List.Item.Meta
+                          title={
+                            <span style={{ color: theme.textPrimary }}>
+                              {String(episode.index || '').padStart(2, '0')} {episode.title || `章节 ${episode.ep_id}`}
+                            </span>
+                          }
+                          description={
+                            <span style={{ color: theme.textSecondary, fontSize: 12 }}>
+                              ep_id: {episode.ep_id} · 画质: {qualityLabel(episode.quality)} · {episode.status || '-'}
+                            </span>
+                          }
+                        />
+                      </List.Item>
+                    )}
+                  />
+                ) : (
+                  <Empty description="暂无章节数据" />
+                )}
+              </div>
+            )}
 
             {/* Tags */}
             {detailAsset.tags && detailAsset.tags.length > 0 && (
@@ -658,7 +833,7 @@ export default function AssetsPage() {
       {/* Detail drawer */}
       <Drawer
         open={detailDrawerOpen}
-        onClose={() => { setDetailDrawerOpen(false); setLineageData(null) }}
+        onClose={() => { setDetailDrawerOpen(false); setLineageData(null); setPlayingCourseEpisodeIndex(null) }}
         width={480}
         title={detailAsset?.title || '资产详情'}
         destroyOnClose={false}

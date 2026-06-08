@@ -249,7 +249,7 @@ export function TagTree({
         checkable={showCheckbox}
         loadData={onLoadData}
         icon={renderTreeIcon}
-        onDoubleClick={onTagClick ? (_, info) => {
+        onDoubleClick={onTagClick ? (_, info: any) => {
           const key = info.node.key as string
           const tag = tagMap[key]
           if (tag) onTagClick(tag)

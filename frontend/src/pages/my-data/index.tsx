@@ -27,7 +27,8 @@ import {
   getBiliFollowings,
   getBiliPaidCourses,
   getBiliPaidCourseDetail,
-  getBiliPaidCoursePlayurl,
+  createBiliPaidCourseDownloadTask,
+  getBiliPaidCourseDownloadTask,
 } from '../../api'
 import type { PlatformConnectionResponse } from '../../api'
 import { VideoList, FavoriteCard, VideoDetailDrawer, proxyImageUrl, formatNum } from '../../components/bilibili'
@@ -115,6 +116,8 @@ export default function MyDataPage() {
   const [selectedCourse, setSelectedCourse] = useState<any>(null)
   const [courseDetail, setCourseDetail] = useState<any>(null)
   const [courseDetailLoading, setCourseDetailLoading] = useState(false)
+  const [courseDownloadTask, setCourseDownloadTask] = useState<any>(null)
+  const [downloadingEpisodeIds, setDownloadingEpisodeIds] = useState<number[]>([])
 
   // 加载 B站连接
   useEffect(() => {
@@ -408,40 +411,149 @@ export default function MyDataPage() {
   }
 
   /** 下载课程章节 */
-  const downloadEpisode = async (episode: any) => {
+  const downloadEpisode = async (episode: any, episodeIndex = 0) => {
     if (!selectedConn) return
-    
-    message.info('正在获取播放地址...')
-    
+
     try {
-      // 获取播放地址
-      const res = await getBiliPaidCoursePlayurl({
+      const title = [episode.section_title, episode.title].filter(Boolean).join(' - ')
+      const rawCourse = courseDetail?.raw_data || selectedCourse?.raw_data || {}
+      const courseAuthor =
+        courseDetail?.author ||
+        selectedCourse?.author ||
+        rawCourse?.up_info?.uname ||
+        rawCourse?.up_info?.name ||
+        rawCourse?.author ||
+        rawCourse?.uname ||
+        ''
+      setDownloadingEpisodeIds(prev => [...new Set([...prev, episode.ep_id])])
+      const task = await createBiliPaidCourseDownloadTask({
         conn_id: selectedConn,
         ep_id: episode.ep_id,
+        aid: episode.aid || 0,
+        cid: episode.cid || 0,
         qn: 80, // 高清1080P
+        title,
+        episode_index: episodeIndex,
+        download_extras: true,
+        season_id: selectedCourse?.id,
+        course_title: courseDetail?.title || selectedCourse?.title,
+        course_cover: courseDetail?.cover || selectedCourse?.cover,
+        course_desc: courseDetail?.desc || selectedCourse?.sub_title || '',
+        course_author: courseAuthor,
+        ep_count: courseDetail?.ep_count || selectedCourse?.ep_count || 0,
+        update_info: courseDetail?.update_info || selectedCourse?.update_info || '',
       })
-      
-      if (res?.success && res.data) {
-        const { video_url, audio_url } = res.data
-        
-        if (video_url) {
-          // 创建下载链接
-          const link = document.createElement('a')
-          link.href = video_url
-          link.download = `${episode.section_title} - ${episode.title}.mp4`
-          document.body.appendChild(link)
-          link.click()
-          document.body.removeChild(link)
-          message.success('开始下载')
-        } else {
-          message.error('无法获取下载地址')
-        }
-      } else {
-        message.error(res?.message || '获取播放地址失败')
+      if (!task?.success || !task.task_id) {
+        throw new Error(task?.message || '创建下载任务失败')
       }
+
+      setCourseDownloadTask({
+        ...task,
+        title,
+        ep_id: episode.ep_id,
+      })
+      message.success('已创建后台下载任务')
+
+      const timer = window.setInterval(async () => {
+        try {
+          const latest = await getBiliPaidCourseDownloadTask(task.task_id)
+          setCourseDownloadTask({
+            ...latest,
+            title,
+            ep_id: episode.ep_id,
+          })
+          if (latest.status === 'DONE' || latest.status === 'FAILED') {
+            window.clearInterval(timer)
+            setDownloadingEpisodeIds(prev => prev.filter(id => id !== episode.ep_id))
+            if (latest.status === 'DONE') {
+              message.success('下载完成，已加入素材库')
+            } else {
+              message.error(latest.error || '下载失败')
+            }
+          }
+        } catch (pollError: any) {
+          window.clearInterval(timer)
+          setDownloadingEpisodeIds(prev => prev.filter(id => id !== episode.ep_id))
+          message.error('查询下载进度失败: ' + pollError.message)
+        }
+      }, 1000)
     } catch (e) {
       console.error('下载课程失败:', e)
       message.error('下载课程失败')
+      setDownloadingEpisodeIds(prev => prev.filter(id => id !== episode.ep_id))
+    }
+  }
+
+  /** 下载全课程 */
+  const downloadFullCourse = async () => {
+    if (!selectedConn || !courseDetail?.episodes?.length) return
+
+    try {
+      const rawCourse = courseDetail?.raw_data || selectedCourse?.raw_data || {}
+      const courseAuthor =
+        courseDetail?.author ||
+        selectedCourse?.author ||
+        rawCourse?.up_info?.uname ||
+        rawCourse?.up_info?.name ||
+        rawCourse?.author ||
+        rawCourse?.uname ||
+        ''
+      const episodes = courseDetail.episodes.map((episode: any, index: number) => ({
+        ...episode,
+        episode_index: index + 1,
+        download_title: [episode.section_title, episode.title].filter(Boolean).join(' - '),
+      }))
+
+      setDownloadingEpisodeIds(episodes.map((episode: any) => episode.ep_id).filter(Boolean))
+      const task = await createBiliPaidCourseDownloadTask({
+        conn_id: selectedConn,
+        qn: 80,
+        episodes,
+        download_extras: true,
+        season_id: selectedCourse?.id,
+        course_title: courseDetail?.title || selectedCourse?.title,
+        course_cover: courseDetail?.cover || selectedCourse?.cover,
+        course_desc: courseDetail?.desc || selectedCourse?.sub_title || '',
+        course_author: courseAuthor,
+        ep_count: courseDetail?.ep_count || selectedCourse?.ep_count || episodes.length,
+        update_info: courseDetail?.update_info || selectedCourse?.update_info || '',
+      })
+      if (!task?.success || !task.task_id) {
+        throw new Error(task?.message || '创建全课程下载任务失败')
+      }
+
+      setCourseDownloadTask({
+        ...task,
+        title: `全课程补全：${courseDetail?.title || selectedCourse?.title || ''}`,
+      })
+      message.success('已创建全课程补全任务')
+
+      const timer = window.setInterval(async () => {
+        try {
+          const latest = await getBiliPaidCourseDownloadTask(task.task_id)
+          setCourseDownloadTask({
+            ...latest,
+            title: `全课程补全：${courseDetail?.title || selectedCourse?.title || ''}`,
+          })
+          if (latest.status === 'DONE' || latest.status === 'FAILED') {
+            window.clearInterval(timer)
+            setDownloadingEpisodeIds([])
+            if (latest.status === 'DONE') {
+              message.success(latest.progress_message || '全课程补全完成，已加入素材库')
+            } else {
+              message.error(latest.error || '全课程下载失败')
+            }
+          }
+        } catch (pollError: any) {
+          window.clearInterval(timer)
+          setDownloadingEpisodeIds([])
+          message.error('查询下载进度失败: ' + pollError.message)
+        }
+      }, 1000)
+    } catch (e) {
+      console.error('下载全课程失败:', e)
+      message.error('下载全课程失败')
+      setDownloadingEpisodeIds([])
     }
   }
 
@@ -1397,6 +1509,7 @@ export default function MyDataPage() {
         onCancel={() => {
           setSelectedCourse(null)
           setCourseDetail(null)
+          setCourseDownloadTask(null)
         }}
         footer={null}
         width={800}
@@ -1434,7 +1547,35 @@ export default function MyDataPage() {
 
             {/* 章节列表 */}
             <div>
-              <Title level={5} style={{ marginBottom: 16 }}>章节列表</Title>
+              <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                <Title level={5} style={{ marginBottom: 0 }}>章节列表</Title>
+                <Button
+                  type="primary"
+                  icon={<DownloadOutlined />}
+                  onClick={downloadFullCourse}
+                  disabled={!courseDetail.episodes?.length || (courseDownloadTask && !['DONE', 'FAILED'].includes(courseDownloadTask.status))}
+                >
+                  下载/补全全课程
+                </Button>
+              </div>
+              {courseDownloadTask && (
+                <div style={{ marginBottom: 16, padding: 12, border: `1px solid ${borderColor}`, borderRadius: 8, background: cardBg }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
+                    <Text style={{ fontSize: 13, fontWeight: 500 }}>{courseDownloadTask.title || '课程章节下载'}</Text>
+                    <Text style={{ fontSize: 12, color: textSec }}>{courseDownloadTask.progress_message}</Text>
+                  </div>
+                  {courseDownloadTask.total_count ? (
+                    <Text style={{ display: 'block', marginBottom: 6, fontSize: 12, color: textSec }}>
+                      已处理 {courseDownloadTask.finished_count || 0}/{courseDownloadTask.total_count}
+                      {courseDownloadTask.skipped_count ? `，跳过 ${courseDownloadTask.skipped_count}` : ''}
+                    </Text>
+                  ) : null}
+                  <Progress
+                    percent={courseDownloadTask.progress || 0}
+                    status={courseDownloadTask.status === 'FAILED' ? 'exception' : courseDownloadTask.status === 'DONE' ? 'success' : 'active'}
+                  />
+                </div>
+              )}
               <div style={{ maxHeight: 400, overflowY: 'auto' }}>
                 {courseDetail.episodes?.length > 0 ? (
                   <List
@@ -1466,8 +1607,9 @@ export default function MyDataPage() {
                         <Button
                           type="primary"
                           size="small"
-                          onClick={() => downloadEpisode(episode)}
+                          onClick={() => downloadEpisode(episode, index + 1)}
                           icon={<DownloadOutlined />}
+                          loading={downloadingEpisodeIds.includes(episode.ep_id)}
                         >
                           下载
                         </Button>

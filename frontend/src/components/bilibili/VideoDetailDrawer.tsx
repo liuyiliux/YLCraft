@@ -646,7 +646,7 @@ export function VideoDetailDrawer({ video, visible, onClose, connId, width = 640
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                                 <Text style={{ color: textPri, fontSize: 13, fontWeight: 600 }}>{c.user_name}</Text>
-                                {c.replies_count > 0 && <Tag size="small" style={{ fontSize: 11 }}>{c.replies_count} 回复</Tag>}
+                                {c.replies_count > 0 && <Tag style={{ fontSize: 11 }}>{c.replies_count} 回复</Tag>}
                               </div>
                               <Text style={{ color: textPri, fontSize: 13 }}>{c.message}</Text>
                               <div style={{ marginTop: 4, fontSize: 11, color: textSec }}>
