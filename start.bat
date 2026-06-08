@@ -130,7 +130,7 @@ echo.
 echo ========================================
 echo  YLCraft Started!
 echo  Backend: http://localhost:8000
-echo  Frontend: http://localhost:5173
+echo  Frontend: http://localhost:3000
 echo  API Docs: http://localhost:8000/docs
 echo ========================================
 pause
