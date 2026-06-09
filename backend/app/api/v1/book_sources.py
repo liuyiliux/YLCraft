@@ -242,8 +242,9 @@ async def delete_book_source_cookie(
 @router.get("/{source_id}/test")
 async def test_book_source(
     source_id: str,
-    url: str = Query(..., description="Target URL to fetch and parse"),
+    url: Optional[str] = Query(None, description="Target URL to fetch and parse"),
     rule_type: Optional[str] = Query(None, description="search, toc, or content"),
+    keyword: Optional[str] = Query(None, description="Search keyword used to build URL from source searchUrl"),
     show_raw: bool = Query(True, description="Return raw HTML preview"),
     db: Session = Depends(get_db),
 ):
@@ -253,6 +254,7 @@ async def test_book_source(
             source_id=source_id,
             url=url,
             rule_type=rule_type,
+            keyword=keyword,
             show_raw=show_raw,
         )
     except ValueError as e:

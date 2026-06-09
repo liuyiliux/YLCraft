@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 import httpx
 from sqlalchemy.orm import Session
 
-from app.services.novel.book_source_manager import BookSourceManager
+from app.services.novel.book_source_manager import BookSourceManager, _build_search_url
 from app.services.novel.cookie_manager import BookSourceCookieManager
 from app.services.novel.rule_converter import convert_legado_to_ylcraft
 from app.services.novel.rule_parser import RuleParser
@@ -33,13 +33,25 @@ class BookSourceTestManager:
     async def test_url(
         self,
         source_id: str,
-        url: str,
+        url: Optional[str] = None,
         rule_type: Optional[str] = None,
+        keyword: Optional[str] = None,
         show_raw: bool = True,
     ) -> Dict[str, Any]:
         source = self.source_manager.get_source(source_id)
         if not source:
             raise ValueError("book source does not exist")
+        if keyword and (rule_type is None or rule_type == "search"):
+            search_config = _build_search_url(source.searchUrl or "", keyword, source.bookSourceUrl, page=1)
+            url = search_config.get("url") or url
+            method = str(search_config.get("method") or "GET").upper()
+            data = search_config.get("data")
+            rule_type = "search"
+        else:
+            method = "GET"
+            data = None
+        if not url:
+            raise ValueError("url is required unless a search keyword is provided")
         if not url.startswith(("http://", "https://")):
             raise ValueError("url must start with http:// or https://")
 
@@ -55,8 +67,16 @@ class BookSourceTestManager:
             timeout=httpx.Timeout(30.0, connect=10.0),
             follow_redirects=True,
             verify=False,
+            trust_env=False,
         ) as client:
-            response = await client.get(url, headers=headers)
+            try:
+                if method == "POST":
+                    response = await client.post(url, data=data, headers=headers)
+                else:
+                    response = await client.get(url, headers=headers)
+            except httpx.HTTPError as exc:
+                message = str(exc) or "no details"
+                raise ValueError(f"request failed for {url}: {exc.__class__.__name__}: {message}") from exc
         response_time_ms = int((time.perf_counter() - start) * 1000)
         html = response.text or ""
 

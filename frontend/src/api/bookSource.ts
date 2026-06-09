@@ -37,6 +37,28 @@ export interface BookSourceImportResponse {
   error?: string
 }
 
+export interface BookSourceTestResult {
+  success: boolean
+  data?: {
+    url: string
+    status_code: number
+    headers: Record<string, string>
+    response_time_ms: number
+    raw_html: string
+    raw_html_truncated: boolean
+    parsed_result: any
+    debug_info: {
+      cookie_used: boolean
+      cookie_match?: any
+      rule_type: 'search' | 'toc' | 'content'
+      rule_used?: any
+      matched_elements?: number
+      parse_time_ms?: number
+    }
+  }
+  detail?: string
+}
+
 /**
  * 获取书源列表
  */
@@ -123,4 +145,24 @@ export async function exportBookSources(): Promise<void> {
 export async function searchBooks(keyword: string): Promise<any[]> {
   const res = await request(`/book-sources/search?keyword=${encodeURIComponent(keyword)}`)
   return res.data || []
+}
+
+/**
+ * 测试单个书源规则
+ */
+export async function testBookSource(
+  sourceId: string,
+  params: {
+    url?: string
+    keyword?: string
+    rule_type?: 'search' | 'toc' | 'content'
+    show_raw?: boolean
+  }
+): Promise<BookSourceTestResult> {
+  const sp = new URLSearchParams()
+  if (params.url) sp.set('url', params.url)
+  if (params.keyword) sp.set('keyword', params.keyword)
+  if (params.rule_type) sp.set('rule_type', params.rule_type)
+  sp.set('show_raw', String(params.show_raw ?? true))
+  return request(`/book-sources/${sourceId}/test?${sp.toString()}`)
 }
