@@ -48,10 +48,20 @@ import {
 import type { UploadFile } from 'antd/es/upload/interface'
 import { useTheme } from '../../constants/theme'
 import { getImageBackends, generateImage as generateImageApi } from '../../api'
+import MultiPlatformGen from './MultiPlatformGen'
 
 
 const { TextArea } = Input
 const { Dragger } = Upload
+
+function safeDecode(value: string | null): string {
+  if (!value) return ''
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
+}
 
 // 常见标准比例
 const STANDARD_RATIOS = [
@@ -138,6 +148,28 @@ interface BackendInfo {
 }
 
 export default function ImageGenPage() {
+  const [searchParams] = useSearchParams()
+  const urlTab = searchParams.get('tab')
+  const multiTopic = safeDecode(searchParams.get('topic'))
+  const multiPlatforms = safeDecode(searchParams.get('platforms'))
+    .split(',')
+    .map(p => p.trim())
+    .filter(Boolean)
+
+  if (urlTab === 'multi') {
+    return (
+      <MultiPlatformGen
+        initialTopic={multiTopic}
+        initialPlatforms={multiPlatforms.length > 0 ? multiPlatforms : undefined}
+        autoGenerate={Boolean(multiTopic)}
+      />
+    )
+  }
+
+  return <ImageGenSinglePage />
+}
+
+function ImageGenSinglePage() {
   const { theme: THEME } = useTheme()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()

@@ -36,7 +36,14 @@ interface OutlineData {
 }
 
 interface BatchResult {
-  urls: string[]; prompt: string; success: boolean; error?: string; platform?: string
+  urls: string[]; prompt: string; success: boolean; error?: string; platform?: string; asset_id?: string
+}
+
+interface BatchTopicResult {
+  topic: string
+  success: boolean
+  error?: string
+  results: Record<string, BatchResult[]>
 }
 
 const API_BASE = '/api/v1/images'
@@ -57,6 +64,10 @@ export default function MultiPlatformGen({ initialTopic, initialPlatforms, autoG
 
   // ========== 输入状态 ==========
   const [topic, setTopic] = useState(initialTopic || '')
+  const [inputMode, setInputMode] = useState<'single' | 'batch'>('single')
+  const [batchTopicsText, setBatchTopicsText] = useState('')
+  const [batchTopicLoading, setBatchTopicLoading] = useState(false)
+  const [batchTopicResults, setBatchTopicResults] = useState<BatchTopicResult[]>([])
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(initialPlatforms || ['xiaohongshu', 'douyin'])
   const [platformTemplates, setPlatformTemplates] = useState<PlatformTemplateInfo[]>([])
   const [templatesLoaded, setTemplatesLoaded] = useState(false)
@@ -108,7 +119,19 @@ export default function MultiPlatformGen({ initialTopic, initialPlatforms, autoG
 
   // ------------------------------------------------------------------
   // 删除单个结果
-  const handleDeleteResult = (platform: string, index: number) => {
+  const handleDeleteResult = async (platform: string, index: number) => {
+    const target = batchResults[platform]?.[index]
+    if (target?.asset_id) {
+      try {
+        const res = await fetch(`/api/v1/assets/${target.asset_id}?mode=soft`, { method: 'DELETE' })
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}))
+          message.warning(data.detail || '资产库删除失败，仅移除当前结果')
+        }
+      } catch (e: any) {
+        message.warning('资产库删除失败，仅移除当前结果: ' + e.message)
+      }
+    }
     setBatchResults(prev => {
       const updated = { ...prev }
       updated[platform] = updated[platform].filter((_, i) => i !== index)
@@ -156,6 +179,7 @@ export default function MultiPlatformGen({ initialTopic, initialPlatforms, autoG
             platform,
             urls,
             success: true,
+            asset_id: data.asset_id || '',
           }
           return updated
         })
@@ -213,6 +237,11 @@ export default function MultiPlatformGen({ initialTopic, initialPlatforms, autoG
           n: 1,
           provider: selectedBackend,
           model: selectedModel || undefined,
+          topic,
+          template_id: platformTemplates.find(t => t.platform === platform)?.id || '',
+          outline_title: outlines[platform]?.title || topic,
+          outline_copywriting: outlines[platform]?.copywriting || '',
+          page_type: outlines[platform]?.pages?.[index]?.type || '',
         }),
       })
       const data = await res.json()
@@ -220,7 +249,7 @@ export default function MultiPlatformGen({ initialTopic, initialPlatforms, autoG
         setBatchResults(prev => {
           const updated = { ...prev }
           updated[platform] = [...updated[platform]]
-          updated[platform][index] = { urls: data.urls, prompt: result.prompt, success: true }
+          updated[platform][index] = { urls: data.urls, prompt: result.prompt, success: true, platform, asset_id: data.asset_id || '' }
           return updated
         })
         message.success('重生成成功')
@@ -274,6 +303,14 @@ export default function MultiPlatformGen({ initialTopic, initialPlatforms, autoG
       return () => clearTimeout(timer)
     }
   }, [autoGenerate, initialTopic, templatesLoaded])
+
+  const parsedBatchTopics = useMemo(
+    () => batchTopicsText
+      .split(/\r?\n/)
+      .map(item => item.trim())
+      .filter(Boolean),
+    [batchTopicsText]
+  )
 
   // ------------------------------------------------------------------
   // Derived values
@@ -424,7 +461,7 @@ export default function MultiPlatformGen({ initialTopic, initialPlatforms, autoG
       const tmpl = platformTemplates.find(t => t.platform === platform)
       const size = platformSizes[platform] || tmpl?.default_size || '1024x1024'
       for (const page of outline.pages || []) {
-        pages.push({ prompt: page.prompt, platform, size, n: 1, type: page.type })
+        pages.push({ prompt: page.prompt, platform, size, n: 1, type: page.type, template_id: tmpl?.id || '' })
       }
     }
     if (pages.length === 0) { message.warning('没有可生成的页面'); return }
@@ -439,6 +476,9 @@ export default function MultiPlatformGen({ initialTopic, initialPlatforms, autoG
           pages,
           provider: selectedBackend,
           model: selectedModel || undefined,
+          topic,
+          outline_title: Object.values(outlines)[0]?.title || topic,
+          outline_copywriting: Object.values(outlines)[0]?.copywriting || '',
           reference_images: referenceImages.map(img => img.base64),
         }),
       })
@@ -454,6 +494,42 @@ export default function MultiPlatformGen({ initialTopic, initialPlatforms, autoG
     } finally {
       setBatchLoading(false)
       setGenerationProgress({ total: 0, completed: 0 })
+    }
+  }
+
+  const handleBatchTopicGenerate = async () => {
+    if (parsedBatchTopics.length === 0) { message.warning('请至少输入一个主题'); return }
+    if (selectedPlatforms.length === 0) { message.warning('请选择平台'); return }
+    if (!selectedBackend) { message.warning('请选择图像模型'); return }
+    setBatchTopicLoading(true)
+    setBatchTopicResults([])
+    try {
+      const res = await fetch(`${API_BASE}/generate-batch/topics`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          topics: parsedBatchTopics,
+          platforms: selectedPlatforms,
+          provider: selectedBackend,
+          model: selectedModel || undefined,
+          backend_name: selectedLlmBackend,
+          llm_model: selectedLlmModel,
+          reference_images: referenceImages.map(img => img.base64),
+        }),
+      })
+      const data = await res.json()
+      if (data.results) {
+        setBatchTopicResults(data.results)
+      }
+      if (data.success) {
+        message.success(`已完成 ${data.results?.length || 0} 个主题`)
+      } else {
+        message.warning(data.error || '部分主题生成失败')
+      }
+    } catch (e: any) {
+      message.error('批量主题生成失败: ' + e.message)
+    } finally {
+      setBatchTopicLoading(false)
     }
   }
 
@@ -510,24 +586,52 @@ export default function MultiPlatformGen({ initialTopic, initialPlatforms, autoG
         }}
         bodyStyle={{ padding: 32 }}
       >
+        <Tabs
+          activeKey={inputMode}
+          onChange={key => setInputMode(key as 'single' | 'batch')}
+          size="small"
+          style={{ marginBottom: 18 }}
+          items={[
+            { key: 'single', label: '单主题' },
+            { key: 'batch', label: '批量主题' },
+          ]}
+        />
+
         {/* 主题输入 */}
         <div style={{ marginBottom: 24 }}>
-          <Input
-            prefix={<SearchOutlined style={{ color: T.textSecondary, fontSize: 16 }} />}
-            value={topic}
-            onChange={e => setTopic(e.target.value)}
-            placeholder="输入主题，例如：鉴定白水晶..."
-            size="large"
-            onPressEnter={handleGenerateOutline}
-            style={{
-              height: 52,
-              fontSize: 16,
-              background: T.bgInput,
-              border: `1px solid ${T.border}`,
-              borderRadius: T.radiusSM,
-              color: T.textPrimary,
-            }}
-          />
+          {inputMode === 'single' ? (
+            <Input
+              prefix={<SearchOutlined style={{ color: T.textSecondary, fontSize: 16 }} />}
+              value={topic}
+              onChange={e => setTopic(e.target.value)}
+              placeholder="输入主题，例如：鉴定白水晶..."
+              size="large"
+              onPressEnter={handleGenerateOutline}
+              style={{
+                height: 52,
+                fontSize: 16,
+                background: T.bgInput,
+                border: `1px solid ${T.border}`,
+                borderRadius: T.radiusSM,
+                color: T.textPrimary,
+              }}
+            />
+          ) : (
+            <TextArea
+              value={batchTopicsText}
+              onChange={e => setBatchTopicsText(e.target.value)}
+              placeholder={'每行一个主题，例如：\n鉴定白水晶\n通勤穿搭公式\n夏季低糖饮品'}
+              autoSize={{ minRows: 5, maxRows: 10 }}
+              style={{
+                fontSize: 14,
+                background: T.bgInput,
+                border: `1px solid ${T.border}`,
+                borderRadius: T.radiusSM,
+                color: T.textPrimary,
+                padding: 14,
+              }}
+            />
+          )}
         </div>
 
         {/* 平台 + LLM */}
@@ -601,6 +705,41 @@ export default function MultiPlatformGen({ initialTopic, initialPlatforms, autoG
               )}
             />
           </Col>
+          {inputMode === 'batch' && (
+            <Col xs={24} sm={12}>
+              <div style={{
+                color: T.textSecondary,
+                fontSize: 12,
+                marginBottom: 10,
+                fontWeight: 600,
+                letterSpacing: '0.02em',
+              }}>
+                AI 图像模型
+              </div>
+              <BackendSelect
+                backends={backends}
+                value={selectedBackend}
+                onChange={(name, b) => {
+                  setSelectedBackend(name)
+                  setSelectedModel(b?.available_models?.[0] || b?.model || '')
+                }}
+                placeholder="请选择 AI 图像模型"
+                notFoundContent={(
+                  <div style={{ textAlign: 'center', padding: '12px 0', color: T.textSecondary }}>
+                    <div style={{ fontSize: 12, marginBottom: 8 }}>暂无已配置的图像模型</div>
+                    <Button
+                      type="primary"
+                      size="small"
+                      onClick={() => navigate('/settings')}
+                      style={{ borderRadius: T.radiusSM }}
+                    >
+                      去配置模型
+                    </Button>
+                  </div>
+                )}
+              />
+            </Col>
+          )}
         </Row>
 
         {/* 参考图上传 */}
@@ -670,36 +809,105 @@ export default function MultiPlatformGen({ initialTopic, initialPlatforms, autoG
 
         {/* 操作按钮 */}
         <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
-          <Button
-            size="large"
-            onClick={handleBlankOutline}
-            style={{
-              borderRadius: T.radiusSM,
-              minWidth: 130,
-              height: 44,
-              fontWeight: 500,
-            }}
-          >
-            生成空白大纲
-          </Button>
-          <Button
-            type="primary"
-            size="large"
-            icon={<BranchesOutlined />}
-            onClick={handleGenerateOutline}
-            loading={outlineLoading}
-            style={{
-              borderRadius: T.radiusSM,
-              minWidth: 130,
-              height: 44,
-              fontWeight: 600,
-              boxShadow: `0 2px 8px ${T.primaryAlpha(0.25)}`,
-            }}
-          >
-            生成大纲
-          </Button>
+          {inputMode === 'single' ? (
+            <>
+              <Button
+                size="large"
+                onClick={handleBlankOutline}
+                style={{
+                  borderRadius: T.radiusSM,
+                  minWidth: 130,
+                  height: 44,
+                  fontWeight: 500,
+                }}
+              >
+                生成空白大纲
+              </Button>
+              <Button
+                type="primary"
+                size="large"
+                icon={<BranchesOutlined />}
+                onClick={handleGenerateOutline}
+                loading={outlineLoading}
+                style={{
+                  borderRadius: T.radiusSM,
+                  minWidth: 130,
+                  height: 44,
+                  fontWeight: 600,
+                  boxShadow: `0 2px 8px ${T.primaryAlpha(0.25)}`,
+                }}
+              >
+                生成大纲
+              </Button>
+            </>
+          ) : (
+            <Button
+              type="primary"
+              size="large"
+              icon={<ThunderboltOutlined />}
+              onClick={handleBatchTopicGenerate}
+              loading={batchTopicLoading}
+              style={{
+                borderRadius: T.radiusSM,
+                minWidth: 170,
+                height: 44,
+                fontWeight: 600,
+                boxShadow: `0 2px 8px ${T.primaryAlpha(0.25)}`,
+              }}
+            >
+              批量生成 {parsedBatchTopics.length > 0 ? `(${parsedBatchTopics.length})` : ''}
+            </Button>
+          )}
         </div>
       </Card>
+
+      {batchTopicResults.length > 0 && (
+        <Card
+          title="批量主题结果"
+          style={{
+            marginTop: 24,
+            borderRadius: T.radiusLG,
+            background: T.bgCard,
+            border: `1px solid ${T.border}`,
+          }}
+          bodyStyle={{ padding: 18 }}
+        >
+          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+            {batchTopicResults.map(item => {
+              const imageCount = Object.values(item.results || {})
+                .flat()
+                .reduce((sum, r) => sum + (r.urls?.length || 0), 0)
+              return (
+                <div
+                  key={item.topic}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 16,
+                    padding: '12px 14px',
+                    borderRadius: T.radiusSM,
+                    background: T.bgElevated,
+                    border: `1px solid ${T.border}`,
+                  }}
+                >
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ color: T.textPrimary, fontWeight: 600, marginBottom: 4 }}>
+                      {item.topic}
+                    </div>
+                    <div style={{ color: T.textSecondary, fontSize: 12 }}>
+                      {item.success ? `${Object.keys(item.results || {}).length} 个平台，${imageCount} 张图片` : item.error || '生成失败'}
+                    </div>
+                  </div>
+                  <Tag color={item.success ? 'green' : 'red'}>
+                    {item.success ? '已完成' : '失败'}
+                  </Tag>
+                </div>
+              )
+            })}
+          </Space>
+        </Card>
+      )}
 
       {/* 快速操作 */}
       <div style={{ marginTop: 48 }}>

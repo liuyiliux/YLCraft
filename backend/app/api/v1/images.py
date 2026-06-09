@@ -7,6 +7,7 @@ GET  /api/v1/images/backends — 可用的图像后端列表
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Optional
 
@@ -312,6 +313,22 @@ class BatchGenerateResponse(BaseModel):
     error: Optional[str] = None
 
 
+class BatchTopicGenerateRequest(BaseModel):
+    topics: list[str] = []
+    platforms: list[str] = []
+    provider: Optional[str] = None
+    model: Optional[str] = None
+    backend_name: Optional[str] = None
+    llm_model: Optional[str] = None
+    reference_images: list[str] = []
+
+
+class BatchTopicGenerateResponse(BaseModel):
+    success: bool = True
+    results: list[dict] = []
+    error: Optional[str] = None
+
+
 @router.get("/platform-templates", response_model=dict, summary="可用平台模板列表")
 async def list_platform_templates():
     """返回所有已激活的平台生成模板（完整信息）"""
@@ -504,6 +521,11 @@ class BatchRetryRequest(BaseModel):
     n: Optional[int] = 1
     provider: Optional[str] = None
     model: Optional[str] = None
+    topic: Optional[str] = None
+    template_id: Optional[str] = None
+    outline_title: Optional[str] = None
+    outline_copywriting: Optional[str] = None
+    page_type: Optional[str] = None
 
 
 class BatchRetryResponse(BaseModel):
@@ -511,6 +533,7 @@ class BatchRetryResponse(BaseModel):
     urls: list[str] = []
     platform: str = ""
     prompt: str = ""
+    asset_id: str = ""
     error: Optional[str] = None
 
 
@@ -546,7 +569,7 @@ async def batch_retry_endpoint(req: BatchRetryRequest):
                 try:
                     async with get_async_session() as session:
                         service = AssetService(session)
-                        await service.create_from_image_generation(
+                        asset = await service.create_from_image_generation(
                             image_path=str(result.local_path),
                             prompt=req.prompt,
                             provider=result.provider,
@@ -554,6 +577,14 @@ async def batch_retry_endpoint(req: BatchRetryRequest):
                             seed=result.seed,
                             url=result.url or "",
                             size=req.size or "1024x1024",
+                            metadata={
+                                "topic": req.topic or "",
+                                "template_id": req.template_id or "",
+                                "outline_title": req.outline_title or "",
+                                "outline_copywriting": req.outline_copywriting or "",
+                                "page_type": req.page_type or "",
+                                "content_platform": req.platform or "",
+                            },
                         )
                 except Exception as e:
                     logger.warning(f"Failed to save retry image to asset library: {e}")
@@ -563,6 +594,7 @@ async def batch_retry_endpoint(req: BatchRetryRequest):
                 urls=urls,
                 platform=req.platform,
                 prompt=req.prompt,
+                asset_id=str(asset.id) if result.local_path and 'asset' in locals() else "",
             )
         else:
             return BatchRetryResponse(
@@ -607,3 +639,81 @@ async def batch_generate_endpoint(req: BatchGenerateRequest):
     except Exception as e:
         logger.error(f"Batch generate failed: {e}")
         return BatchGenerateResponse(success=False, error=str(e))
+
+
+@router.post("/generate-batch/topics", response_model=BatchTopicGenerateResponse, summary="多主题批量生成")
+async def batch_topics_generate_endpoint(req: BatchTopicGenerateRequest):
+    """
+    多主题编排：每个主题先生成多平台大纲，再批量生成图片并入库。
+    """
+    from app.db.database import get_async_session
+    from app.services.ai.outline_service import batch_generate_images, generate_outline
+
+    topics = [t.strip() for t in req.topics if t and t.strip()]
+    if not topics:
+        return BatchTopicGenerateResponse(success=False, error="topics is required")
+    if not req.platforms:
+        return BatchTopicGenerateResponse(success=False, error="platforms is required")
+
+    async def run_topic(topic: str) -> dict:
+        async with get_async_session() as session:
+            try:
+                outlines = await generate_outline(
+                    session,
+                    topic,
+                    req.platforms,
+                    backend_name=req.backend_name,
+                    model=req.llm_model,
+                    reference_images=req.reference_images,
+                )
+                pages: list[dict] = []
+                for platform, outline in outlines.items():
+                    for page in outline.get("pages", []) or []:
+                        pages.append({
+                            "prompt": page.get("prompt", ""),
+                            "platform": platform,
+                            "size": page.get("size", "1024x1024"),
+                            "n": 1,
+                            "type": page.get("type", ""),
+                        })
+
+                generated = {"results": {}}
+                if pages:
+                    generated = await batch_generate_images(
+                        session,
+                        pages,
+                        provider=req.provider or "",
+                        model=req.model or "",
+                        topic=topic,
+                        outline_title=next(iter(outlines.values())).get("title", topic) if outlines else topic,
+                        outline_copywriting=next(iter(outlines.values())).get("copywriting", "") if outlines else "",
+                        reference_images=req.reference_images,
+                    )
+
+                return {
+                    "topic": topic,
+                    "success": True,
+                    "outlines": outlines,
+                    "results": generated.get("results", {}),
+                }
+            except Exception as e:
+                logger.error("Batch topic generation failed for %s: %s", topic, e)
+                return {
+                    "topic": topic,
+                    "success": False,
+                    "error": str(e),
+                    "outlines": {},
+                    "results": {},
+                }
+
+    semaphore = asyncio.Semaphore(2)
+
+    async def run_limited(topic: str) -> dict:
+        async with semaphore:
+            return await run_topic(topic)
+
+    results = await asyncio.gather(*(run_limited(topic) for topic in topics))
+    return BatchTopicGenerateResponse(
+        success=all(item.get("success") for item in results),
+        results=results,
+    )

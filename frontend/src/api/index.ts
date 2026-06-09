@@ -913,6 +913,14 @@ export const getBiliStats = (params: { bvid?: string; aid?: number; conn_id?: st
   return request(`/bilibili/stats?${qs}`)
 }
 
+/** B站登录态体检 */
+export const getBiliLoginHealth = (params: { conn_id?: string; bvid?: string }) => {
+  const qs = new URLSearchParams()
+  if (params.conn_id) qs.set('conn_id', params.conn_id)
+  if (params.bvid) qs.set('bvid', params.bvid)
+  return request(`/bilibili/login-health?${qs}`)
+}
+
 /** B站视频搜索 */
 export const searchBiliVideos = (params: {
   keyword: string

@@ -32,12 +32,9 @@ from app.db.models.platform_connection import (
     AcquisitionMethod,
 )
 from app.services.cookies.manager import CookieManager, get_cookie_manager
-
-# 平台特定的工具函数（按需导入）
-try:
-    from app.services.platforms.bilibili.utils import extract_account_info_from_cookie as bilibili_extract_account
-except ImportError:
-    bilibili_extract_account = None
+from app.services.platform_connection.bilibili import (
+    extract_account_info_from_cookie as bilibili_extract_account,
+)
 
 logger = logging.getLogger("ylcraft.platform_connection")
 

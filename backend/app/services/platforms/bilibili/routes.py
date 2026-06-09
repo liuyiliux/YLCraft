@@ -137,6 +137,25 @@ class BilibiliSendCommentResponse(BaseModel):
     message: str = ""
 
 
+class BilibiliLoginHealthItem(BaseModel):
+    key: str
+    label: str
+    ok: bool = False
+    status: str = "fail"
+    message: str = ""
+    reason: str = ""
+    data: Dict[str, Any] = Field(default_factory=dict)
+
+
+class BilibiliLoginHealthResponse(BaseModel):
+    success: bool = False
+    conn_id: str = ""
+    bvid: str = ""
+    checked_at: int = 0
+    checks: Dict[str, BilibiliLoginHealthItem] = Field(default_factory=dict)
+    message: str = ""
+
+
 # =============================================================================
 # UP主分析 & 个人中心 - Response Models
 # =============================================================================
@@ -226,9 +245,288 @@ def bili_client(conn_id: str = ""):
     return BilibiliClientContext(conn_id)
 
 
+def _health_item(
+    key: str,
+    label: str,
+    ok: bool,
+    message: str,
+    *,
+    status: Optional[str] = None,
+    reason: str = "",
+    data: Optional[Dict[str, Any]] = None,
+) -> BilibiliLoginHealthItem:
+    return BilibiliLoginHealthItem(
+        key=key,
+        label=label,
+        ok=ok,
+        status=status or ("ok" if ok else "fail"),
+        message=message,
+        reason=reason or ("" if ok else message),
+        data=data or {},
+    )
+
+
+def _bili_api_reason(response: Any, fallback: str) -> str:
+    if isinstance(response, dict):
+        code = response.get("code")
+        msg = response.get("message") or response.get("msg") or fallback
+        return f"B站返回 code={code}: {msg}"
+    return fallback
+
+
+async def _bili_health_get_view(client: Any, bvid: str) -> tuple[Optional[Dict[str, Any]], str]:
+    from urllib.parse import urlencode
+    from app.services.platforms.bilibili.apis import BASE_URL
+
+    if not bvid:
+        return None, "未提供 BV 号，无法检测需要具体视频的能力"
+
+    view_url = f"{BASE_URL}/x/web-interface/view?{urlencode({'bvid': bvid})}"
+    try:
+        view_resp = await client.request("GET", view_url)
+    except Exception as e:
+        return None, f"视频信息接口请求失败: {str(e)}"
+
+    if not (isinstance(view_resp, dict) and view_resp.get("code") == 0):
+        return None, _bili_api_reason(view_resp, "视频信息接口返回异常")
+
+    data = view_resp.get("data") or {}
+    if not isinstance(data, dict):
+        return None, "视频信息接口未返回 data"
+    return data, ""
+
+
+async def _bili_health_check_subtitles(client: Any, view_data: Dict[str, Any]) -> BilibiliLoginHealthItem:
+    from app.services.platforms.bilibili.apis import BASE_URL
+
+    aid = view_data.get("aid")
+    pages = view_data.get("pages") or []
+    cid = pages[0].get("cid") if pages and isinstance(pages[0], dict) else view_data.get("cid")
+    if not aid or not cid:
+        return _health_item("subtitles", "字幕", False, "无法从视频信息中取得 aid/cid")
+
+    params = {
+        "aid": aid,
+        "cid": cid,
+        "isGaiaAvoided": "false",
+        "web_location": "1315873",
+        "dm_img_list": "[]",
+        "dm_img_str": "V2ViR0wgMS4wIChPcGVuR0wgRVMgMi4wIENocm9taXVtKQ==",
+        "dm_cover_img_str": "QU5HTEUgKE5WSURJQSk=",
+        "dm_img_inter": '{"ds":[],"wh":[1920,1080,24],"of":[0,0,0]}',
+    }
+
+    try:
+        query_string = await client._sign_params(params)
+        player_resp = await client.request("GET", f"{BASE_URL}/x/player/wbi/v2?{query_string}")
+    except Exception as e:
+        return _health_item("subtitles", "字幕", False, f"字幕接口请求失败: {str(e)}")
+
+    if not (isinstance(player_resp, dict) and player_resp.get("code") == 0):
+        return _health_item(
+            "subtitles",
+            "字幕",
+            False,
+            _bili_api_reason(player_resp, "字幕接口返回异常"),
+        )
+
+    subtitle_info = (player_resp.get("data") or {}).get("subtitle") or {}
+    subtitles = subtitle_info.get("subtitles") or []
+    count = len(subtitles) if isinstance(subtitles, list) else 0
+    return _health_item(
+        "subtitles",
+        "字幕",
+        True,
+        f"字幕接口可访问，当前视频字幕 {count} 个" if count else "字幕接口可访问，当前视频暂无字幕",
+        data={"count": count},
+    )
+
+
+async def _bili_health_check_comments(client: Any, view_data: Dict[str, Any]) -> BilibiliLoginHealthItem:
+    from app.services.platforms.bilibili.apis import BASE_URL
+
+    aid = view_data.get("aid")
+    if not aid:
+        return _health_item("comments", "评论", False, "无法从视频信息中取得 aid")
+
+    params = {
+        "type": 1,
+        "oid": aid,
+        "mode": 3,
+        "pagination_str": '{"offset":""}',
+        "ps": 1,
+    }
+
+    try:
+        query_string = await client._sign_params(params)
+        reply_resp = await client.request("GET", f"{BASE_URL}/x/v2/reply/wbi/main?{query_string}")
+    except Exception as e:
+        return _health_item("comments", "评论", False, f"评论接口请求失败: {str(e)}")
+
+    if not (isinstance(reply_resp, dict) and reply_resp.get("code") == 0):
+        return _health_item(
+            "comments",
+            "评论",
+            False,
+            _bili_api_reason(reply_resp, "评论接口返回异常"),
+        )
+
+    data = reply_resp.get("data") or {}
+    cursor = data.get("cursor") or {}
+    total = cursor.get("all_count") or cursor.get("all_total") or data.get("total") or 0
+    return _health_item(
+        "comments",
+        "评论",
+        True,
+        f"评论接口可访问，当前视频评论约 {total} 条",
+        data={"total": total},
+    )
+
+
 # =============================================================================
 # API 端点
 # =============================================================================
+
+@router.get("/login-health", summary="B站登录态体检", response_model=BilibiliLoginHealthResponse)
+async def check_login_health(
+    conn_id: str = Query("", description="平台连接 ID"),
+    bvid: str = Query("", description="可选：用于检测字幕/评论能力的 BV 号"),
+):
+    """
+    一键检查 B站登录态和素材采集相关能力。
+
+    - Cookie / bili_jct：直接检查连接中保存的 Cookie
+    - 登录态：调用 B站 nav 接口确认 Cookie 是否仍然有效
+    - 字幕 / 评论：需要 BV 号，会对当前视频做只读接口探测
+    - 发评论：只做非破坏性检查，不会真实发送评论
+    """
+    from app.services.platforms import create_client
+    from app.services.platforms.bilibili.apis import BASE_URL
+
+    checks: Dict[str, BilibiliLoginHealthItem] = {}
+
+    cookie = get_raw_cookie(conn_id) if conn_id else ""
+    checks["cookie"] = _health_item(
+        "cookie",
+        "Cookie",
+        bool(cookie),
+        f"已获取 Cookie，长度 {len(cookie)}" if cookie else "未获取到 Cookie，请先选择或重新登录 B站连接",
+        data={"length": len(cookie)},
+    )
+
+    csrf = extract_bili_jct(cookie)
+    checks["bili_jct"] = _health_item(
+        "bili_jct",
+        "bili_jct",
+        bool(csrf),
+        "Cookie 中包含 bili_jct" if csrf else "Cookie 中缺少 bili_jct，发评论等需要 CSRF 的接口不可用",
+    )
+
+    if not cookie:
+        checks["login"] = _health_item("login", "登录态", False, "没有 Cookie，无法确认 B站登录态")
+        checks["subtitles"] = _health_item("subtitles", "字幕", False, "没有 Cookie，无法检测字幕接口")
+        checks["comments"] = _health_item("comments", "评论", False, "没有 Cookie，无法检测评论接口")
+        checks["post_comment"] = _health_item("post_comment", "发评论", False, "没有 Cookie，无法发送评论")
+    else:
+        view_data: Optional[Dict[str, Any]] = None
+        view_error = ""
+
+        async with create_client("bili", mode="api", cookie=cookie) as client:
+            try:
+                nav_resp = await client.request("GET", f"{BASE_URL}/x/web-interface/nav")
+                nav_data = (nav_resp.get("data") or {}) if isinstance(nav_resp, dict) else {}
+                is_login = bool(nav_data.get("isLogin"))
+                checks["login"] = _health_item(
+                    "login",
+                    "登录态",
+                    is_login,
+                    f"B站已识别登录用户：{nav_data.get('uname') or nav_data.get('mid') or '未知账号'}"
+                    if is_login else _bili_api_reason(nav_resp, "B站未识别为已登录"),
+                    data={
+                        "mid": nav_data.get("mid"),
+                        "uname": nav_data.get("uname"),
+                        "is_login": is_login,
+                    },
+                )
+            except Exception as e:
+                checks["login"] = _health_item("login", "登录态", False, f"登录态接口请求失败: {str(e)}")
+
+            if bvid:
+                view_data, view_error = await _bili_health_get_view(client, bvid)
+
+            if not bvid:
+                checks["subtitles"] = _health_item(
+                    "subtitles",
+                    "字幕",
+                    False,
+                    "请打开或勾选一个 B站视频后再检测字幕接口",
+                    status="skipped",
+                )
+                checks["comments"] = _health_item(
+                    "comments",
+                    "评论",
+                    False,
+                    "请打开或勾选一个 B站视频后再检测评论接口",
+                    status="skipped",
+                )
+            elif view_error:
+                checks["subtitles"] = _health_item("subtitles", "字幕", False, f"无法检测字幕：{view_error}")
+                checks["comments"] = _health_item("comments", "评论", False, f"无法检测评论：{view_error}")
+            else:
+                checks["subtitles"] = await _bili_health_check_subtitles(client, view_data or {})
+                checks["comments"] = await _bili_health_check_comments(client, view_data or {})
+
+        if not csrf:
+            checks["post_comment"] = _health_item(
+                "post_comment",
+                "发评论",
+                False,
+                "缺少 bili_jct，无法发送评论",
+            )
+        elif not checks.get("login", _health_item("login", "登录态", False, "")).ok:
+            checks["post_comment"] = _health_item(
+                "post_comment",
+                "发评论",
+                False,
+                "B站未确认登录态，发评论不可用",
+            )
+        elif not bvid:
+            checks["post_comment"] = _health_item(
+                "post_comment",
+                "发评论",
+                False,
+                "请打开或勾选一个 B站视频后再检测发评论目标",
+                status="skipped",
+            )
+        elif view_error:
+            checks["post_comment"] = _health_item("post_comment", "发评论", False, f"目标视频不可访问：{view_error}")
+        else:
+            checks["post_comment"] = _health_item(
+                "post_comment",
+                "发评论",
+                True,
+                "凭据齐全且目标视频可访问；体检不会实际发送测试评论",
+            )
+
+    failed = [item for item in checks.values() if not item.ok and item.status != "skipped"]
+    skipped = [item for item in checks.values() if item.status == "skipped"]
+    success = not failed and not skipped
+    if success:
+        message = "B站登录态体检通过"
+    elif failed:
+        message = f"B站登录态体检发现 {len(failed)} 项问题"
+    else:
+        message = "Cookie 基础检查通过，视频能力待选择 BV 号后检测"
+
+    return BilibiliLoginHealthResponse(
+        success=success,
+        conn_id=conn_id,
+        bvid=bvid,
+        checked_at=int(time.time()),
+        checks=checks,
+        message=message,
+    )
+
 
 @router.get("/danmaku", summary="获取B站弹幕", response_model=BilibiliDanmakuResponse)
 async def get_danmaku(

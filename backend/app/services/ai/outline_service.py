@@ -247,13 +247,13 @@ async def batch_generate_images(
                         # 构建多平台生图元数据
                         extra_metadata = {
                             "topic": topic or "",
-                            "template_id": template_id or "",
+                            "template_id": page.get("template_id", "") or template_id or "",
                             "outline_title": outline_title or "",
                             "outline_copywriting": outline_copywriting or "",
                             "page_type": page.get("type", ""),
                             "content_platform": page.get("platform", ""),  # 目标内容平台
                         }
-                        await asset_service.create_from_image_generation(
+                        asset = await asset_service.create_from_image_generation(
                             image_path=str(result.local_path),
                             prompt=page.get("prompt", ""),
                             provider=result.provider or provider,
@@ -272,6 +272,7 @@ async def batch_generate_images(
                     "prompt": page.get("prompt", ""),
                     "urls": urls,
                     "success": True,
+                    "asset_id": str(asset.id) if result.local_path and 'asset' in locals() else "",
                 }
             return {
                 "platform": page.get("platform", ""),

@@ -93,3 +93,12 @@ def get_supported_patchright_platforms() -> list[str]:
 def get_supported_qrcode_platforms() -> list[str]:
     """获取支持二维码获取的平台列表"""
     return list(_qrcode_registry.keys())
+
+
+__all__ = [
+    "get_detector",
+    "get_platform_domains",
+    "get_qrcode_adapter",
+    "get_supported_patchright_platforms",
+    "get_supported_qrcode_platforms",
+]

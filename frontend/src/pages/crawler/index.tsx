@@ -27,6 +27,7 @@ import { useTheme } from '../../constants/theme'
 import {
   searchEnhanced, importCrawler, getNoteDetail, getSubtitles, downloadCrawlerSubtitle, listPlatformConnections,
   getDanmaku, downloadDanmaku, getBiliStats, getBiliComments, sendBiliComment, getBiliVideoInfo,
+  getBiliLoginHealth,
 } from '../../api'
 import type { CrawlerResult, PlatformConnectionResponse } from '../../api'
 
@@ -45,6 +46,25 @@ const { Text, Title } = Typography
 
 // ===== 平台配置 =====
 interface PlatformInfo { value: string; label: string; icon: React.ReactNode; color: string }
+
+interface BiliHealthCheck {
+  key: string
+  label: string
+  ok: boolean
+  status: string
+  message: string
+  reason?: string
+  data?: Record<string, any>
+}
+
+interface BiliHealthResult {
+  success: boolean
+  conn_id?: string
+  bvid?: string
+  checked_at?: number
+  checks?: Record<string, BiliHealthCheck>
+  message?: string
+}
 
 const PLATFORMS: PlatformInfo[] = [
   { value: 'xhs', label: '小红书', icon: <BookOutlined />, color: '#fe2c55' },
@@ -469,6 +489,8 @@ export default function CrawlerPage() {
   // B站平台连接（字幕需要登录态）
   const [biliConnections, setBiliConnections] = useState<PlatformConnectionResponse[]>([])
   const [selectedBiliConn, setSelectedBiliConn] = useState<string>('')
+  const [biliHealth, setBiliHealth] = useState<BiliHealthResult | null>(null)
+  const [biliHealthLoading, setBiliHealthLoading] = useState(false)
 
   // B站专属状态
   const [danmakuList, setDanmakuList] = useState<any[]>([])
@@ -506,12 +528,117 @@ export default function CrawlerPage() {
     })
   }, [])
 
+  useEffect(() => {
+    setBiliHealth(null)
+  }, [selectedBiliConn])
+
   const isDark = themeId !== 'dawn'
   const pageBg = THEME.bgPage
   const cardBg = THEME.bgCard
   const borderColor = THEME.border
   const textSec = THEME.textSecondary
   const textPri = THEME.textPrimary
+
+  const getBiliHealthBvid = () => {
+    if (detailNote?.platform === 'bili' && detailNote.id) return detailNote.id
+    const picked = selectedRows.find(r => r.platform === 'bili' && r.id)
+    return picked?.id || ''
+  }
+
+  const getBiliHealthIssue = (key: string) => {
+    const check = biliHealth?.checks?.[key]
+    if (!check || check.ok || check.status === 'skipped') return ''
+    return check.reason || check.message || ''
+  }
+
+  const runBiliHealthCheck = async (bvid?: string) => {
+    if (!selectedBiliConn) {
+      message.warning('请先选择 B站连接')
+      return
+    }
+    setBiliHealthLoading(true)
+    try {
+      const targetBvid = bvid || getBiliHealthBvid()
+      const res: any = await getBiliLoginHealth({ conn_id: selectedBiliConn, bvid: targetBvid })
+      if (res?.checks) {
+        setBiliHealth(res)
+        if (res.success) {
+          message.success(res.message || 'B站登录态体检通过')
+        } else {
+          message.warning(res.message || 'B站登录态体检完成，请查看失败原因')
+        }
+      } else {
+        const msg = res?.detail || 'B站登录态体检失败'
+        setBiliHealth({ success: false, message: msg, checks: {} })
+        message.error(msg)
+      }
+    } catch (e: any) {
+      const msg = e?.response?.data?.detail || e?.message || 'B站登录态体检失败'
+      setBiliHealth({ success: false, message: msg, checks: {} })
+      message.error(msg)
+    } finally {
+      setBiliHealthLoading(false)
+    }
+  }
+
+  const renderBiliHealthPanel = () => {
+    if (!biliHealth) return null
+    const order = ['cookie', 'bili_jct', 'login', 'subtitles', 'comments', 'post_comment']
+    const checks = order
+      .map(key => biliHealth.checks?.[key])
+      .filter(Boolean) as BiliHealthCheck[]
+    const getColor = (check: BiliHealthCheck) => {
+      if (check.status === 'skipped') return textSec
+      return check.ok ? BILI_COLORS.success : '#ff4d4f'
+    }
+
+    return (
+      <div style={{
+        marginTop: 12,
+        padding: 12,
+        borderRadius: 8,
+        border: `1px solid ${biliHealth.success ? `${BILI_COLORS.success}55` : '#faad1455'}`,
+        background: biliHealth.success ? `${BILI_COLORS.success}10` : '#faad1410',
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', marginBottom: 10 }}>
+          <Space size={8} wrap>
+            <Badge status={biliHealth.success ? 'success' : 'warning'} />
+            <Text style={{ color: textPri, fontWeight: 600 }}>{biliHealth.message || 'B站登录态体检结果'}</Text>
+            {biliHealth.bvid && <Tag color="blue">{biliHealth.bvid}</Tag>}
+          </Space>
+          <Button size="small" icon={<ReloadOutlined />} loading={biliHealthLoading} onClick={() => runBiliHealthCheck(biliHealth.bvid || getBiliHealthBvid())}>
+            复检
+          </Button>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8 }}>
+          {checks.map(check => {
+            const color = getColor(check)
+            const Icon = check.status === 'skipped' ? QuestionCircleOutlined : check.ok ? CheckCircleOutlined : CloseCircleOutlined
+            return (
+              <div key={check.key} style={{
+                minHeight: 78,
+                padding: '9px 10px',
+                borderRadius: 8,
+                border: `1px solid ${color}33`,
+                background: isDark ? '#1f1f1f' : '#ffffff',
+              }}>
+                <Space size={6} style={{ marginBottom: 4 }}>
+                  <Icon style={{ color }} />
+                  <Text style={{ color: textPri, fontWeight: 600, fontSize: 13 }}>{check.label}</Text>
+                  <Tag color={check.status === 'skipped' ? 'default' : check.ok ? 'success' : 'error'} style={{ margin: 0 }}>
+                    {check.status === 'skipped' ? '待检测' : check.ok ? '可用' : '失败'}
+                  </Tag>
+                </Space>
+                <div style={{ color: check.ok ? textSec : color, fontSize: 12, lineHeight: 1.45 }}>
+                  {check.reason || check.message}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
 
   // ===== 搜索 =====
   const handleSearch = async (page: number = currentPage) => {
@@ -585,10 +712,16 @@ export default function CrawlerPage() {
     setSubtitleLoading(true)
     try {
       const data = await getSubtitles({ item_id: itemId, conn_id: selectedBiliConn })
+      if (data?.detail || data?.success === false) {
+        const msg = getBiliHealthIssue('subtitles') || data.detail || data.message || '获取字幕列表失败'
+        setSubtitleList([])
+        message.error(msg)
+        return
+      }
       setSubtitleList(data.data || [])
       // 不再自动下载！等用户在列表中点击语言再下载
     } catch (e: any) {
-      message.error(e?.response?.data?.detail || '获取字幕列表失败')
+      message.error(getBiliHealthIssue('subtitles') || e?.response?.data?.detail || e?.message || '获取字幕列表失败')
     } finally {
       setSubtitleLoading(false)
     }
@@ -643,13 +776,13 @@ export default function CrawlerPage() {
         setCommentNextOffset(res.data?.next_offset || '')
         setCommentHasMore(res.data?.has_more || false)
       } else {
-        message.error(res?.message || '获取评论失败')
+        message.error(getBiliHealthIssue('comments') || res?.detail || res?.message || '获取评论失败')
         if (page === 1) {
           setComments([])
         }
       }
-    } catch (err) {
-      message.error('获取评论失败')
+    } catch (err: any) {
+      message.error(getBiliHealthIssue('comments') || err?.response?.data?.detail || err?.message || '获取评论失败')
       console.error(`[Comments] Error:`, err)
       if (page === 1) {
         setComments([])
@@ -671,10 +804,10 @@ export default function CrawlerPage() {
         setCommentInput('')
         fetchComments(bvid)
       } else {
-        message.error(res?.message || '评论发送失败（可能需要登录）')
+        message.error(getBiliHealthIssue('post_comment') || res?.detail || res?.message || '评论发送失败（可能需要登录）')
       }
-    } catch {
-      message.error('评论发送失败')
+    } catch (e: any) {
+      message.error(getBiliHealthIssue('post_comment') || e?.response?.data?.detail || e?.message || '评论发送失败')
     } finally {
       setSendingComment(false)
     }
@@ -984,19 +1117,30 @@ export default function CrawlerPage() {
             </Col>
             {platform === 'bili' && (
               <Col xs={24} sm={8} md={7}>
-                <Select
-                  value={selectedBiliConn || undefined}
-                  onChange={setSelectedBiliConn}
-                  placeholder="选择 B站连接（字幕需登录）"
-                  style={{ width: '100%' }}
-                  options={biliConnections.map(c => ({
-                    value: c.id,
-                    label: `${c.name}${c.status === 'active' ? ' ✓' : ''}`,
-                  }))}
-                />
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Select
+                    value={selectedBiliConn || undefined}
+                    onChange={setSelectedBiliConn}
+                    placeholder="选择 B站连接"
+                    style={{ flex: 1, minWidth: 0 }}
+                    options={biliConnections.map(c => ({
+                      value: c.id,
+                      label: `${c.name}${c.status === 'active' ? ' ✓' : ''}`,
+                    }))}
+                  />
+                  <Button
+                    icon={<CheckCircleOutlined />}
+                    loading={biliHealthLoading}
+                    disabled={!selectedBiliConn}
+                    onClick={() => runBiliHealthCheck()}
+                  >
+                    体检
+                  </Button>
+                </div>
               </Col>
             )}
           </Row>
+          {platform === 'bili' && renderBiliHealthPanel()}
         </div>
 
         {/* ② 搜索类型 Tab（带下划线高亮，B站风格） */}
@@ -1294,6 +1438,20 @@ export default function CrawlerPage() {
                     )}
                   </button>
                 ))}
+              </div>
+            )}
+
+            {detailNote.platform === 'bili' && (
+              <div style={{ padding: '12px 20px 0' }}>
+                <Button
+                  icon={<CheckCircleOutlined />}
+                  loading={biliHealthLoading}
+                  disabled={!selectedBiliConn}
+                  onClick={() => runBiliHealthCheck(detailNote.id)}
+                >
+                  登录态体检
+                </Button>
+                {renderBiliHealthPanel()}
               </div>
             )}
 
