@@ -6,13 +6,21 @@
 import re
 import json
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Query
 from sqlmodel import Session, select
 from pydantic import BaseModel
 
 from app.db.database import SessionLocal
 from app.db.models.book_source import BookSource
+from app.db.models.book_source_cookie import BookSourceCookie
+from app.schemas.book_source import (
+    BookSourceCookieCreate,
+    BookSourceCookieRead,
+    BookSourceCookieUpdate,
+)
 from app.services.novel.book_source_manager import BookSourceManager
+from app.services.novel.cookie_manager import BookSourceCookieManager, count_cookies
+from app.services.novel.test_manager import BookSourceTestManager
 
 
 router = APIRouter(tags=["book-sources"])
@@ -47,6 +55,26 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def _serialize_cookie(cookie: BookSourceCookie) -> Dict[str, Any]:
+    return BookSourceCookieRead(
+        id=cookie.id,
+        book_source_id=cookie.book_source_id,
+        domain=cookie.domain,
+        description=cookie.description,
+        is_active=cookie.is_active,
+        expires_at=cookie.expires_at,
+        cookie_count=count_cookies(cookie.cookie_content),
+        created_at=cookie.created_at,
+        updated_at=cookie.updated_at,
+    ).model_dump()
+
+
+def _ensure_source_exists(source_id: str, db: Session) -> None:
+    manager = BookSourceManager(db)
+    if not manager.get_source(source_id):
+        raise HTTPException(status_code=404, detail="book source does not exist")
 
 
 @router.get("")
@@ -155,21 +183,105 @@ async def delete_book_source(
     return {"success": True}
 
 
+@router.get("/{source_id}/cookies")
+async def list_book_source_cookies(
+    source_id: str,
+    db: Session = Depends(get_db),
+):
+    _ensure_source_exists(source_id, db)
+    manager = BookSourceCookieManager(db)
+    cookies = manager.get_cookies_by_source(source_id)
+    return {"success": True, "data": [_serialize_cookie(cookie) for cookie in cookies]}
+
+
+@router.post("/{source_id}/cookies")
+async def create_book_source_cookie(
+    source_id: str,
+    payload: BookSourceCookieCreate,
+    db: Session = Depends(get_db),
+):
+    _ensure_source_exists(source_id, db)
+    manager = BookSourceCookieManager(db)
+    try:
+        data = payload.model_dump()
+        data["book_source_id"] = source_id
+        cookie = manager.create_cookie(data)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"success": True, "data": _serialize_cookie(cookie)}
+
+
+@router.put("/{source_id}/cookies/{cookie_id}")
+async def update_book_source_cookie(
+    source_id: str,
+    cookie_id: str,
+    payload: BookSourceCookieUpdate,
+    db: Session = Depends(get_db),
+):
+    _ensure_source_exists(source_id, db)
+    manager = BookSourceCookieManager(db)
+    if not manager.get_cookie(cookie_id, source_id):
+        raise HTTPException(status_code=404, detail="book source cookie does not exist")
+    cookie = manager.update_cookie(cookie_id, payload.model_dump(exclude_unset=True))
+    return {"success": True, "data": _serialize_cookie(cookie)}
+
+
+@router.delete("/{source_id}/cookies/{cookie_id}")
+async def delete_book_source_cookie(
+    source_id: str,
+    cookie_id: str,
+    db: Session = Depends(get_db),
+):
+    _ensure_source_exists(source_id, db)
+    manager = BookSourceCookieManager(db)
+    if not manager.get_cookie(cookie_id, source_id):
+        raise HTTPException(status_code=404, detail="book source cookie does not exist")
+    return {"success": manager.delete_cookie(cookie_id)}
+
+
+@router.get("/{source_id}/test")
+async def test_book_source(
+    source_id: str,
+    url: str = Query(..., description="Target URL to fetch and parse"),
+    rule_type: Optional[str] = Query(None, description="search, toc, or content"),
+    show_raw: bool = Query(True, description="Return raw HTML preview"),
+    db: Session = Depends(get_db),
+):
+    manager = BookSourceTestManager(db)
+    try:
+        return await manager.test_url(
+            source_id=source_id,
+            url=url,
+            rule_type=rule_type,
+            show_raw=show_raw,
+        )
+    except ValueError as e:
+        status_code = 404 if "does not exist" in str(e) else 400
+        raise HTTPException(status_code=status_code, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/export")
 async def export_book_sources(
+    format: str = Query("legado", description="Export format: legado or ylcraft"),
     db: Session = Depends(get_db)
 ):
     """
     导出所有启用的书源为JSON（阅读App格式）
     """
     manager = BookSourceManager(db)
-    json_str = manager.export_sources()
+    try:
+        json_str = manager.export_sources(output_format=format)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     
     from fastapi.responses import Response
+    filename = f"book_sources_{format}.json"
     return Response(
         content=json_str,
         media_type="application/json",
-        headers={"Content-Disposition": "attachment; filename=book_sources.json"}
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
 
 

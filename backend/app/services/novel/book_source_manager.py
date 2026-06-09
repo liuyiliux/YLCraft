@@ -24,6 +24,8 @@ from app.services.novel.source_parser import (
     parse_chapter_content, parse_book_info
 )
 from app.services.novel.crawler import NovelCrawler
+from app.services.novel.cookie_manager import BookSourceCookieManager
+from app.services.novel.rule_converter import convert_legado_to_ylcraft, parse_mixed_book_source_json
 import httpx
 
 
@@ -263,6 +265,12 @@ class BookSourceManager:
                     "weight": row.get("weight") or 0,
                     "respondTime": row.get("respond_time") or 0,
                     "lastUpdateTime": row.get("last_update_time"),
+                    "ruleFormat": row.get("rule_format") or "legado",
+                    "ruleVersion": row.get("rule_version"),
+                    "ylcraftRule": json.loads(row["ylcraft_rule"]) if row.get("ylcraft_rule") else None,
+                    "originalFormat": row.get("original_format"),
+                    "originalSource": json.loads(row["original_source"]) if row.get("original_source") else None,
+                    "migrationLog": row.get("migration_log"),
                 }
                 try:
                     source = BookSource(**mapped)
@@ -287,7 +295,8 @@ class BookSourceManager:
     def import_sources(self, json_str: str) -> Dict[str, Any]:
         """导入书源JSON"""
         try:
-            new_sources = parse_book_source_json(json_str)
+            normalized_sources = parse_mixed_book_source_json(json_str)
+            new_sources = [BookSource(**item) for item in normalized_sources]
         except Exception as e:
             return {"success": False, "error": str(e), "added": 0, "updated": 0, "failed": 0}
         
@@ -367,7 +376,13 @@ class BookSourceManager:
                             book_source_comment = :book_source_comment,
                             weight = :weight,
                             respond_time = :respond_time,
-                            last_update_time = :last_update_time
+                            last_update_time = :last_update_time,
+                            rule_format = :rule_format,
+                            rule_version = :rule_version,
+                            ylcraft_rule = :ylcraft_rule,
+                            original_format = :original_format,
+                            original_source = :original_source,
+                            migration_log = :migration_log
                         WHERE book_source_url = :url
                     """),
                     {
@@ -390,6 +405,12 @@ class BookSourceManager:
                         "weight": source.weight or 0,
                         "respond_time": source.respondTime or 0,
                         "last_update_time": str(source.lastUpdateTime) if source.lastUpdateTime else "",
+                        "rule_format": source.ruleFormat or "legado",
+                        "rule_version": source.ruleVersion or "",
+                        "ylcraft_rule": json.dumps(source.ylcraftRule, ensure_ascii=False) if source.ylcraftRule else "",
+                        "original_format": source.originalFormat or "",
+                        "original_source": json.dumps(source.originalSource, ensure_ascii=False) if source.originalSource else "",
+                        "migration_log": source.migrationLog or "",
                         "url": source.bookSourceUrl
                     }
                 )
@@ -404,6 +425,7 @@ class BookSourceManager:
                          book_source_group, enabled_by_user, custom_order, search_url, explore,
                          cookie, header, login_url, login_ui, login_check_js,
                          cover_url, book_source_comment, weight, respond_time, last_update_time,
+                         rule_format, rule_version, ylcraft_rule, original_format, original_source, migration_log,
                          created_at, updated_at)
                         VALUES
                         (:id, :name, :url, :type, :enabled,
@@ -411,6 +433,7 @@ class BookSourceManager:
                          :group, :enabled_by_user, :custom_order, :search_url, :explore,
                          :cookie, :header, :login_url, :login_ui, :login_check_js,
                          :cover_url, :book_source_comment, :weight, :respond_time, :last_update_time,
+                         :rule_format, :rule_version, :ylcraft_rule, :original_format, :original_source, :migration_log,
                          :created_at, :updated_at)
                     """),
                     {
@@ -439,6 +462,12 @@ class BookSourceManager:
                         "weight": source.weight or 0,
                         "respond_time": source.respondTime or 0,
                         "last_update_time": str(source.lastUpdateTime) if source.lastUpdateTime else "",
+                        "rule_format": source.ruleFormat or "legado",
+                        "rule_version": source.ruleVersion or "",
+                        "ylcraft_rule": json.dumps(source.ylcraftRule, ensure_ascii=False) if source.ylcraftRule else "",
+                        "original_format": source.originalFormat or "",
+                        "original_source": json.dumps(source.originalSource, ensure_ascii=False) if source.originalSource else "",
+                        "migration_log": source.migrationLog or "",
                         "created_at": now,
                         "updated_at": now,
                     }
@@ -480,6 +509,8 @@ class BookSourceManager:
                 "book_source_group": source.bookSourceGroup,
                 "enabled_by_user": source.enabled_by_user,
                 "is_js_source": self._is_js_source(source),
+                "rule_format": source.ruleFormat,
+                "rule_version": source.ruleVersion,
             })
         return result
     
@@ -519,6 +550,10 @@ class BookSourceManager:
         # 先操作数据库
         try:
             self.db.execute(
+                text("DELETE FROM book_source_cookies WHERE book_source_id = :id"),
+                {"id": source_id}
+            )
+            self.db.execute(
                 text("DELETE FROM book_sources WHERE id = :id"),
                 {"id": source_id}
             )
@@ -556,6 +591,10 @@ class BookSourceManager:
             # SQLite 不支持 IN :tuple，需要展开参数
             placeholders = ', '.join(f':id{i}' for i in range(len(source_ids)))
             params = {f'id{i}': sid for i, sid in enumerate(source_ids)}
+            self.db.execute(
+                text(f"DELETE FROM book_source_cookies WHERE book_source_id IN ({placeholders})"),
+                params
+            )
             self.db.execute(
                 text(f"DELETE FROM book_sources WHERE id IN ({placeholders})"),
                 params
@@ -622,13 +661,33 @@ class BookSourceManager:
         
         return {"success": failed == 0, "updated": updated, "failed": failed}
     
-    def export_sources(self) -> str:
+    def export_sources(self, output_format: str = "legado") -> str:
         """导出所有书源为JSON"""
+        if output_format not in {"legado", "ylcraft"}:
+            raise ValueError("output_format must be legado or ylcraft")
+
         sources_dict = []
         for source in self.sources:
             if not source.enabled_by_user:
                 continue
-            sources_dict.append(source.dict(exclude={"source_id", "enabled_by_user"}, exclude_none=True))
+            exclude_fields = {
+                "source_id",
+                "enabled_by_user",
+                "ruleFormat",
+                "ruleVersion",
+                "ylcraftRule",
+                "originalFormat",
+                "originalSource",
+                "migrationLog",
+            }
+            if hasattr(source, "model_dump"):
+                source_dict = source.model_dump(exclude=exclude_fields, exclude_none=True)
+            else:
+                source_dict = source.dict(exclude=exclude_fields, exclude_none=True)
+            if output_format == "ylcraft":
+                sources_dict.append(source.ylcraftRule or convert_legado_to_ylcraft(source_dict))
+            else:
+                sources_dict.append(source_dict)
         
         return json.dumps(sources_dict, ensure_ascii=False, indent=2)
     
@@ -696,7 +755,7 @@ class BookSourceManager:
 
         return unique
 
-    def _build_headers(self, source: BookSource) -> Dict[str, str]:
+    def _build_headers(self, source: BookSource, request_url: Optional[str] = None) -> Dict[str, str]:
         """
         构建请求头（模拟真实浏览器）
         参考 Legado AnalyzeUrl.kt 的 headerMap 处理
@@ -724,9 +783,20 @@ class BookSourceManager:
             except Exception:
                 pass
         
-        # 添加 Cookie（如果书源配置了 cookie 字段）
-        # 参考 Legado 的 CookieManager
-        if hasattr(source, 'cookie') and source.cookie:
+        matched_cookie = None
+        if request_url and self.db and getattr(source, "source_id", None):
+            try:
+                matched_cookie = BookSourceCookieManager(self.db).get_cookie_for_url(
+                    request_url,
+                    source.source_id,
+                )
+            except Exception as e:
+                print(f"书源 Cookie 匹配失败: {e}")
+
+        # New book-source cookies take precedence; legacy source.cookie remains fallback.
+        if matched_cookie:
+            headers["Cookie"] = matched_cookie
+        elif hasattr(source, 'cookie') and source.cookie:
             headers["Cookie"] = source.cookie
         
         return headers
@@ -830,7 +900,7 @@ class BookSourceManager:
             return []
         
         # 构建请求头（参考 Legado）
-        headers = self._build_headers(source)
+        headers = self._build_headers(source, search_url)
 
         # 调试：打印实际发出的请求信息
         
@@ -911,9 +981,7 @@ class BookSourceManager:
         
         try:
             async with httpx.AsyncClient(timeout=10.0, verify=False) as client:
-                response = await client.get(book_url, headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-                })
+                response = await client.get(book_url, headers=self._build_headers(source, book_url))
                 response.raise_for_status()
                 html = response.text
             
@@ -966,7 +1034,7 @@ class BookSourceManager:
             return []
 
         # 构建请求头（与搜索一致，使用 Cookie/Referer 等）
-        headers = self._build_headers(source)
+        headers = self._build_headers(source, toc_url)
 
         max_retries = 3
         timeout = getattr(source, 'timeout', 30) or 30
@@ -1079,9 +1147,7 @@ class BookSourceManager:
         """获取章节内容"""
         try:
             async with httpx.AsyncClient(timeout=10.0, verify=False) as client:
-                response = await client.get(chapter_url, headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-                })
+                response = await client.get(chapter_url, headers=self._build_headers(source, chapter_url))
                 response.raise_for_status()
                 html = response.text
             

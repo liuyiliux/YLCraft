@@ -8,6 +8,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
+from sqlalchemy import Column, Text
 from sqlmodel import SQLModel, Field
 
 
@@ -66,6 +67,14 @@ class BookSource(SQLModel, table=True):
     rule_toc: str = Field(default="")       # JSON字符串
     rule_content: str = Field(default="")   # JSON字符串
     rule_explore: str = Field(default="")   # JSON字符串
+
+    # YLCraft 规则格式元数据
+    rule_format: str = Field(default="legado", index=True)
+    rule_version: str = Field(default="")
+    ylcraft_rule: str = Field(default="", sa_column=Column(Text, nullable=False, default=""))
+    original_format: str = Field(default="")
+    original_source: str = Field(default="", sa_column=Column(Text, nullable=False, default=""))
+    migration_log: str = Field(default="", sa_column=Column(Text, nullable=False, default=""))
     
     # 用户是否启用（我们的扩展字段）
     enabled_by_user: bool = Field(default=True)

@@ -62,6 +62,7 @@ async def init_db():
     from app.db.models.ai_connector import AIConnector, AIUsageLog  # AI 连接器
     from app.db.models.comfyui import WorkflowTemplate, WorkflowPreset, ComfyUITask, ComfyUINode
     from app.db.models.book_source import BookSource  # 书源表
+    from app.db.models.book_source_cookie import BookSourceCookie
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
         if DATABASE_URL.startswith("postgresql"):

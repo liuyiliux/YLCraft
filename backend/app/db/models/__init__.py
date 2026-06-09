@@ -74,6 +74,7 @@ from app.db.models.novel import NovelChapter
 
 # 书源模型（阅读App兼容）
 from app.db.models.book_source import BookSource
+from app.db.models.book_source_cookie import BookSourceCookie
 
 # 平台生成模板
 from app.db.models.platform_template import PlatformTemplate

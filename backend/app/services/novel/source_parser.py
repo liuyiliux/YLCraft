@@ -158,6 +158,12 @@ class BookSource(BaseModel):
     # 以下字段为内部使用，不在JSON中
     source_id: Optional[str] = None
     enabled_by_user: bool = True
+    ruleFormat: str = "legado"
+    ruleVersion: Optional[str] = None
+    ylcraftRule: Optional[Dict[str, Any]] = None
+    originalFormat: Optional[str] = None
+    originalSource: Optional[Dict[str, Any]] = None
+    migrationLog: Optional[str] = None
 
 
 # ========== 书源 JSON 解析 ===========

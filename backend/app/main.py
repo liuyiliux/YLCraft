@@ -49,6 +49,19 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("Database initialized")
 
+    try:
+        from app.services.novel.migration_manager import BookSourceMigrationManager
+
+        migration_session = SessionLocal()
+        try:
+            migration_result = BookSourceMigrationManager(migration_session).migrate_existing_sources()
+            if migration_result.get("migrated"):
+                logger.info(f"Book source rules migrated: {migration_result}")
+        finally:
+            migration_session.close()
+    except Exception as e:
+        logger.warning(f"Book source rule migration failed: {e}")
+
     # 1.5. 种子数据：平台模板（幂等）
     try:
         from app.services.ai.platform_templates_seed import seed_platform_templates
