@@ -10,6 +10,7 @@ import time
 import hashlib
 import base64
 import asyncio
+from datetime import datetime
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -25,7 +26,12 @@ from app.services.novel.source_parser import (
 )
 from app.services.novel.crawler import NovelCrawler
 from app.services.novel.cookie_manager import BookSourceCookieManager
-from app.services.novel.rule_converter import convert_legado_to_ylcraft, parse_mixed_book_source_json
+from app.services.novel.rule_converter import (
+    SUPPORTED_YLCRAFT_VERSION,
+    convert_legado_to_ylcraft,
+    convert_ylcraft_to_legado,
+    parse_mixed_book_source_json,
+)
 import httpx
 
 
@@ -377,12 +383,14 @@ class BookSourceManager:
                             weight = :weight,
                             respond_time = :respond_time,
                             last_update_time = :last_update_time,
+                            search_url = :search_url,
                             rule_format = :rule_format,
                             rule_version = :rule_version,
                             ylcraft_rule = :ylcraft_rule,
                             original_format = :original_format,
                             original_source = :original_source,
-                            migration_log = :migration_log
+                            migration_log = :migration_log,
+                            updated_at = :updated_at
                         WHERE book_source_url = :url
                     """),
                     {
@@ -405,17 +413,18 @@ class BookSourceManager:
                         "weight": source.weight or 0,
                         "respond_time": source.respondTime or 0,
                         "last_update_time": str(source.lastUpdateTime) if source.lastUpdateTime else "",
+                        "search_url": source.searchUrl or "",
                         "rule_format": source.ruleFormat or "legado",
                         "rule_version": source.ruleVersion or "",
                         "ylcraft_rule": json.dumps(source.ylcraftRule, ensure_ascii=False) if source.ylcraftRule else "",
                         "original_format": source.originalFormat or "",
                         "original_source": json.dumps(source.originalSource, ensure_ascii=False) if source.originalSource else "",
                         "migration_log": source.migrationLog or "",
+                        "updated_at": datetime.now().isoformat(),
                         "url": source.bookSourceUrl
                     }
                 )
             else:
-                from datetime import datetime
                 now = datetime.now().isoformat()
                 self.db.execute(
                     text("""
@@ -517,6 +526,109 @@ class BookSourceManager:
     def get_source(self, source_id: str) -> Optional[BookSource]:
         """获取指定书源"""
         return next((s for s in self.sources if s.source_id == source_id), None)
+
+    def get_source_rules(self, source_id: str) -> Optional[Dict[str, Any]]:
+        """Return editable Legado and YLCraft rule payloads for a book source."""
+        source = self.get_source(source_id)
+        if not source:
+            return None
+
+        legado = self._source_to_legado_rules(source)
+        ylcraft_rule = source.ylcraftRule or convert_legado_to_ylcraft(legado)
+        return {
+            "id": source.source_id,
+            "book_source_name": source.bookSourceName,
+            "book_source_url": source.bookSourceUrl,
+            "rule_format": source.ruleFormat or "legado",
+            "rule_version": source.ruleVersion or ylcraft_rule.get("version", SUPPORTED_YLCRAFT_VERSION),
+            "original_format": source.originalFormat or "",
+            "migration_log": source.migrationLog or "",
+            "legado": legado,
+            "ylcraft": ylcraft_rule,
+        }
+
+    def update_source_rules(self, source_id: str, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Update a book source's rules from either Legado or YLCraft editor input."""
+        source = self.get_source(source_id)
+        if not source:
+            return None
+
+        save_format = (data.get("save_format") or data.get("rule_format") or "legado").lower()
+        if save_format not in {"legado", "ylcraft"}:
+            raise ValueError("save_format must be legado or ylcraft")
+
+        if save_format == "ylcraft":
+            ylcraft_rule = self._require_rule_object(data.get("ylcraft_rule"), "ylcraft_rule")
+            converted = convert_ylcraft_to_legado(ylcraft_rule)
+            source.searchUrl = data.get("search_url") or converted.get("searchUrl") or source.searchUrl or ""
+            source.ruleSearch = self._rule_or_empty(converted.get("ruleSearch"))
+            source.ruleBookInfo = self._rule_or_empty(converted.get("ruleBookInfo"))
+            source.ruleToc = self._rule_or_empty(converted.get("ruleToc"))
+            source.ruleContent = self._rule_or_empty(converted.get("ruleContent"))
+            source.ruleExplore = self._rule_or_empty(data.get("rule_explore"))
+            source.ylcraftRule = ylcraft_rule
+            source.ruleFormat = "ylcraft"
+            source.ruleVersion = str(ylcraft_rule.get("version") or SUPPORTED_YLCRAFT_VERSION)
+            source.originalFormat = "ylcraft"
+            source.originalSource = ylcraft_rule
+        else:
+            if "search_url" in data:
+                source.searchUrl = data.get("search_url") or ""
+            field_map = {
+                "rule_search": "ruleSearch",
+                "rule_book_info": "ruleBookInfo",
+                "rule_toc": "ruleToc",
+                "rule_content": "ruleContent",
+                "rule_explore": "ruleExplore",
+            }
+            for payload_key, attr_name in field_map.items():
+                if payload_key in data:
+                    setattr(source, attr_name, self._rule_or_empty(data.get(payload_key), payload_key))
+
+            legado = self._source_to_legado_rules(source)
+            ylcraft_rule = convert_legado_to_ylcraft(legado)
+            source.ylcraftRule = ylcraft_rule
+            source.ruleFormat = "ylcraft"
+            source.ruleVersion = str(ylcraft_rule.get("version") or SUPPORTED_YLCRAFT_VERSION)
+            source.originalFormat = "legado"
+            source.originalSource = legado
+
+        source.migrationLog = json.dumps(
+            {
+                "updated_at": datetime.now().isoformat(),
+                "source": "rule_debugger",
+                "save_format": save_format,
+            },
+            ensure_ascii=False,
+        )
+
+        if self.db and not self._save_source_to_db(source):
+            raise ValueError("failed to save book source rules")
+        return self.get_source_rules(source_id)
+
+    def _source_to_legado_rules(self, source: BookSource) -> Dict[str, Any]:
+        return {
+            "bookSourceName": source.bookSourceName,
+            "bookSourceUrl": source.bookSourceUrl,
+            "searchUrl": source.searchUrl or "",
+            "ruleSearch": source.ruleSearch or {},
+            "ruleBookInfo": source.ruleBookInfo or {},
+            "ruleToc": source.ruleToc or {},
+            "ruleContent": source.ruleContent or {},
+            "ruleExplore": source.ruleExplore or {},
+        }
+
+    def _rule_or_empty(self, value: Any, name: str = "rule") -> Dict[str, Any]:
+        if value is None:
+            return {}
+        if isinstance(value, dict):
+            return value
+        raise ValueError(f"{name} must be a JSON object")
+
+    def _require_rule_object(self, value: Any, name: str) -> Dict[str, Any]:
+        if not isinstance(value, dict):
+            raise ValueError(f"{name} must be a JSON object")
+        return value
     
     def toggle_source(self, source_id: str, enabled: bool) -> bool:
         """启用/禁用书源"""

@@ -11,8 +11,12 @@ function request(path: string, init?: RequestInit) {
     ...init,
   }).then(async r => {
     const ct = r.headers.get('content-type') || ''
-    if (ct.includes('application/json')) return r.json()
-    return r.text()
+    const payload = ct.includes('application/json') ? await r.json() : await r.text()
+    if (!r.ok) {
+      const detail = typeof payload === 'object' && payload ? (payload.detail || payload.error) : payload
+      throw new Error(detail || `HTTP ${r.status}`)
+    }
+    return payload
   })
 }
 
@@ -25,6 +29,8 @@ export interface BookSource {
   book_source_group?: string
   enabled_by_user: boolean
   is_js_source: boolean
+  rule_format?: string
+  rule_version?: string
   created_at?: string
 }
 
@@ -41,22 +47,86 @@ export interface BookSourceTestResult {
   success: boolean
   data?: {
     url: string
+    request_info?: any
     status_code: number
     headers: Record<string, string>
     response_time_ms: number
     raw_html: string
     raw_html_truncated: boolean
     parsed_result: any
+    diagnostics?: Array<{
+      type: string
+      message: string
+      suggestion?: string
+    }>
     debug_info: {
       cookie_used: boolean
       cookie_match?: any
       rule_type: 'search' | 'toc' | 'content'
+      fetch_mode?: 'http' | 'browser'
       rule_used?: any
       matched_elements?: number
       parse_time_ms?: number
+      diagnostics?: Array<{
+        type: string
+        message: string
+        suggestion?: string
+      }>
     }
   }
   detail?: string
+}
+
+export interface BookSourceRules {
+  id: string
+  book_source_name: string
+  book_source_url: string
+  rule_format: string
+  rule_version?: string
+  original_format?: string
+  migration_log?: string
+  legado: {
+    bookSourceName: string
+    bookSourceUrl: string
+    searchUrl?: string
+    ruleSearch?: Record<string, any>
+    ruleBookInfo?: Record<string, any>
+    ruleToc?: Record<string, any>
+    ruleContent?: Record<string, any>
+    ruleExplore?: Record<string, any>
+  }
+  ylcraft: Record<string, any>
+}
+
+export interface BookSourceRulesPayload {
+  search_url?: string
+  rule_search?: Record<string, any>
+  rule_book_info?: Record<string, any>
+  rule_toc?: Record<string, any>
+  rule_content?: Record<string, any>
+  rule_explore?: Record<string, any>
+  ylcraft_rule?: Record<string, any>
+  save_format?: 'legado' | 'ylcraft'
+}
+
+export interface BookSourceCookie {
+  id: string
+  book_source_id: string
+  domain: string
+  description: string
+  is_active: boolean
+  expires_at?: string | null
+  cookie_count: number
+  created_at?: string
+  updated_at?: string
+}
+
+export interface BookSourceCookiePayload {
+  domain: string
+  cookie_content?: string
+  description?: string
+  is_active?: boolean
+  expires_at?: string | null
 }
 
 /**
@@ -139,6 +209,67 @@ export async function exportBookSources(): Promise<void> {
   a.click()
 }
 
+export async function getBookSourceRules(sourceId: string): Promise<BookSourceRules> {
+  const res = await request(`/book-sources/${sourceId}/rules`)
+  return res.data
+}
+
+export async function updateBookSourceRules(
+  sourceId: string,
+  payload: BookSourceRulesPayload,
+): Promise<BookSourceRules> {
+  const res = await request(`/book-sources/${sourceId}/rules`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+  return res.data
+}
+
+export async function convertBookSourceRules(
+  direction: 'legado_to_ylcraft' | 'ylcraft_to_legado',
+  source: Record<string, any>,
+): Promise<Record<string, any>> {
+  const res = await request('/book-sources/rules/convert', {
+    method: 'POST',
+    body: JSON.stringify({ direction, source }),
+  })
+  return res.data
+}
+
+export async function getBookSourceCookies(sourceId: string): Promise<BookSourceCookie[]> {
+  const res = await request(`/book-sources/${sourceId}/cookies`)
+  return res.data || []
+}
+
+export async function createBookSourceCookie(
+  sourceId: string,
+  payload: BookSourceCookiePayload,
+): Promise<BookSourceCookie> {
+  const res = await request(`/book-sources/${sourceId}/cookies`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+  return res.data
+}
+
+export async function updateBookSourceCookie(
+  sourceId: string,
+  cookieId: string,
+  payload: Partial<BookSourceCookiePayload>,
+): Promise<BookSourceCookie> {
+  const res = await request(`/book-sources/${sourceId}/cookies/${cookieId}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+  return res.data
+}
+
+export async function deleteBookSourceCookie(sourceId: string, cookieId: string): Promise<void> {
+  await request(`/book-sources/${sourceId}/cookies/${cookieId}`, {
+    method: 'DELETE',
+  })
+}
+
 /**
  * 在所有制用书源中搜索小说
  */
@@ -155,14 +286,23 @@ export async function testBookSource(
   params: {
     url?: string
     keyword?: string
+    page?: number
     rule_type?: 'search' | 'toc' | 'content'
     show_raw?: boolean
+    rule_format?: 'legado' | 'ylcraft'
+    fetch_mode?: 'http' | 'browser'
+    headers?: Record<string, string>
+    rules?: BookSourceRulesPayload
   }
 ): Promise<BookSourceTestResult> {
-  const sp = new URLSearchParams()
-  if (params.url) sp.set('url', params.url)
-  if (params.keyword) sp.set('keyword', params.keyword)
-  if (params.rule_type) sp.set('rule_type', params.rule_type)
-  sp.set('show_raw', String(params.show_raw ?? true))
-  return request(`/book-sources/${sourceId}/test?${sp.toString()}`)
+  return request(`/book-sources/${sourceId}/test`, {
+    method: 'POST',
+    body: JSON.stringify({
+      ...params,
+      page: params.page || 1,
+      show_raw: params.show_raw ?? true,
+      rule_format: params.rule_format || 'legado',
+      fetch_mode: params.fetch_mode || 'http',
+    }),
+  })
 }

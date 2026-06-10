@@ -5,7 +5,7 @@
 
 import re
 import json
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Literal
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Query
 from sqlmodel import Session, select
 from pydantic import BaseModel
@@ -20,6 +20,7 @@ from app.schemas.book_source import (
 )
 from app.services.novel.book_source_manager import BookSourceManager
 from app.services.novel.cookie_manager import BookSourceCookieManager, count_cookies
+from app.services.novel.rule_converter import convert_legado_to_ylcraft, convert_ylcraft_to_legado
 from app.services.novel.test_manager import BookSourceTestManager
 
 
@@ -46,6 +47,34 @@ class BookSourceImportResponse(BaseModel):
     updated: int = 0
     total: int = 0
     error: Optional[str] = None
+
+
+class BookSourceRulesUpdate(BaseModel):
+    search_url: Optional[str] = None
+    rule_search: Optional[Dict[str, Any]] = None
+    rule_book_info: Optional[Dict[str, Any]] = None
+    rule_toc: Optional[Dict[str, Any]] = None
+    rule_content: Optional[Dict[str, Any]] = None
+    rule_explore: Optional[Dict[str, Any]] = None
+    ylcraft_rule: Optional[Dict[str, Any]] = None
+    save_format: Literal["legado", "ylcraft"] = "legado"
+
+
+class BookSourceRuleConvertRequest(BaseModel):
+    direction: Literal["legado_to_ylcraft", "ylcraft_to_legado"]
+    source: Dict[str, Any]
+
+
+class BookSourceTestRequest(BaseModel):
+    url: Optional[str] = None
+    keyword: Optional[str] = None
+    page: int = 1
+    rule_type: Optional[Literal["search", "toc", "content"]] = None
+    show_raw: bool = True
+    rule_format: Literal["legado", "ylcraft"] = "legado"
+    fetch_mode: Literal["http", "browser"] = "http"
+    headers: Optional[Dict[str, Any]] = None
+    rules: Optional[BookSourceRulesUpdate] = None
 
 
 def get_db():
@@ -183,6 +212,46 @@ async def delete_book_source(
     return {"success": True}
 
 
+@router.get("/{source_id}/rules")
+async def get_book_source_rules(
+    source_id: str,
+    db: Session = Depends(get_db),
+):
+    manager = BookSourceManager(db)
+    rules = manager.get_source_rules(source_id)
+    if not rules:
+        raise HTTPException(status_code=404, detail="book source does not exist")
+    return {"success": True, "data": rules}
+
+
+@router.put("/{source_id}/rules")
+async def update_book_source_rules(
+    source_id: str,
+    payload: BookSourceRulesUpdate,
+    db: Session = Depends(get_db),
+):
+    manager = BookSourceManager(db)
+    try:
+        rules = manager.update_source_rules(source_id, payload.model_dump(exclude_none=True))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not rules:
+        raise HTTPException(status_code=404, detail="book source does not exist")
+    return {"success": True, "data": rules}
+
+
+@router.post("/rules/convert")
+async def convert_book_source_rules(payload: BookSourceRuleConvertRequest):
+    try:
+        if payload.direction == "legado_to_ylcraft":
+            data = convert_legado_to_ylcraft(payload.source)
+        else:
+            data = convert_ylcraft_to_legado(payload.source)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"success": True, "data": data}
+
+
 @router.get("/{source_id}/cookies")
 async def list_book_source_cookies(
     source_id: str,
@@ -245,7 +314,9 @@ async def test_book_source(
     url: Optional[str] = Query(None, description="Target URL to fetch and parse"),
     rule_type: Optional[str] = Query(None, description="search, toc, or content"),
     keyword: Optional[str] = Query(None, description="Search keyword used to build URL from source searchUrl"),
+    page: int = Query(1, description="Search page used with keyword templates"),
     show_raw: bool = Query(True, description="Return raw HTML preview"),
+    rule_format: str = Query("legado", description="Rule parser format: legado or ylcraft"),
     db: Session = Depends(get_db),
 ):
     manager = BookSourceTestManager(db)
@@ -255,7 +326,37 @@ async def test_book_source(
             url=url,
             rule_type=rule_type,
             keyword=keyword,
+            page=page,
             show_raw=show_raw,
+            rule_format=rule_format,
+        )
+    except ValueError as e:
+        status_code = 404 if "does not exist" in str(e) else 400
+        raise HTTPException(status_code=status_code, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{source_id}/test")
+async def test_book_source_with_rules(
+    source_id: str,
+    payload: BookSourceTestRequest,
+    db: Session = Depends(get_db),
+):
+    manager = BookSourceTestManager(db)
+    rule_override = payload.rules.model_dump(exclude_none=True) if payload.rules else None
+    try:
+        return await manager.test_url(
+            source_id=source_id,
+            url=payload.url,
+            rule_type=payload.rule_type,
+            keyword=payload.keyword,
+            page=payload.page,
+            show_raw=payload.show_raw,
+            rule_format=payload.rule_format,
+            rule_override=rule_override,
+            request_headers=payload.headers,
+            fetch_mode=payload.fetch_mode,
         )
     except ValueError as e:
         status_code = 404 if "does not exist" in str(e) else 400

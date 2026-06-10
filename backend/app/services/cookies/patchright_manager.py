@@ -22,6 +22,10 @@ from app.services.cookies.base import (
     get_platform_test_url,
 )
 from app.services.cookies.platforms import get_detector
+from app.services.browser.patchright_runtime import (
+    PATCHRIGHT_INSTALL_MESSAGE,
+    get_patchright_runtime,
+)
 
 logger = logging.getLogger("ylcraft.cookies.patchright")
 
@@ -40,43 +44,15 @@ class PatchrightAcquisitionManager:
 
     def __init__(self):
         self._sessions: dict[str, AcquisitionSession] = {}
-        self._patchright = None
-        self._browser = None
-        self._patchright_available: Optional[bool] = None
+        self._runtime = get_patchright_runtime()
 
     def is_available(self) -> bool:
         """检查 Patchright 是否可用"""
-        if self._patchright_available is not None:
-            return self._patchright_available
-        try:
-            import patchright  # noqa: F401
-            self._patchright_available = True
-        except ImportError:
-            self._patchright_available = False
-        return self._patchright_available
+        return self._runtime.is_available()
 
     async def ensure_browser(self, headless: bool = False):
         """确保浏览器实例存在（懒加载）"""
-        if self._browser:
-            return
-
-        try:
-            from patchright.async_api import async_playwright
-        except ImportError:
-            raise RuntimeError(
-                "Patchright 未安装。请运行: pip install patchright && patchright install chromium"
-            )
-
-        self._patchright = await async_playwright().start()
-        self._browser = await self._patchright.chromium.launch(
-            headless=headless,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
-            ],
-        )
-        # ✅ 无需注入 Stealth 脚本！Patchright 已内置
+        return await self._runtime.ensure_browser(headless=headless)
 
     def get_session(self, session_id: str) -> Optional[AcquisitionSession]:
         """获取会话"""
@@ -99,9 +75,7 @@ class PatchrightAcquisitionManager:
             session_id
         """
         if not self.is_available():
-            raise RuntimeError(
-                "Patchright 未安装。请运行: pip install patchright && patchright install chromium"
-            )
+            raise RuntimeError(PATCHRIGHT_INSTALL_MESSAGE)
 
         session_id = str(uuid.uuid4())
         session = AcquisitionSession(
@@ -116,7 +90,8 @@ class PatchrightAcquisitionManager:
             await self.ensure_browser(headless)
             session.status = AcquisitionStatus.BROWSER_LAUNCHING
 
-            context = await self._browser.new_context(
+            context = await self._runtime.new_context(
+                headless=headless,
                 viewport={"width": 1280, "height": 800},
                 user_agent=get_user_agent(platform),
             )
@@ -403,18 +378,7 @@ class PatchrightAcquisitionManager:
 
     async def close(self):
         """关闭所有资源"""
-        if self._browser:
-            try:
-                await self._browser.close()
-            except Exception:
-                pass
-        if self._patchright:
-            try:
-                await self._patchright.stop()
-            except Exception:
-                pass
-        self._browser = None
-        self._patchright = None
+        await self._runtime.close()
 
 
 # 全局单例
