@@ -10,7 +10,11 @@ from app.services.browser.patchright_runtime import cookie_header_to_browser_coo
 from app.services.novel.book_source_manager import BookSourceManager
 from app.services.novel.cookie_manager import BookSourceCookieManager, count_cookies
 from app.services.novel.migration_manager import BookSourceMigrationManager
-from app.services.novel.test_manager import BookSourceTestManager, _detect_response_diagnostics
+from app.services.novel.test_manager import (
+    BookSourceTestManager,
+    _browser_cookie_summary,
+    _detect_response_diagnostics,
+)
 from app.services.novel.rule_converter import (
     convert_legado_to_ylcraft,
     convert_ylcraft_to_legado,
@@ -411,6 +415,72 @@ def test_book_source_test_manager_validates_fetch_mode_before_request():
         asyncio.run(manager.test_url("source1", keyword="Example", fetch_mode="unknown"))
 
 
+def test_visible_browser_session_snapshot_reuses_test_context(monkeypatch):
+    session = make_session()
+    create_source(session)
+    manager = BookSourceTestManager(session)
+
+    class FakeVisibleSessionManager:
+        async def start_session(self, url, *, headers=None, **kwargs):
+            self.start_url = url
+            self.start_headers = headers
+            return {
+                "session_id": "session-1",
+                "url": url,
+                "status_code": 200,
+                "headers": {"content-type": "text/html"},
+            }
+
+        async def snapshot_session(self, session_id):
+            assert session_id == "session-1"
+            return {
+                "session_id": session_id,
+                "url": self.start_url,
+                "status_code": 200,
+                "headers": {"content-type": "text/html"},
+                "html": """
+                <div class="book-item">
+                  <a href="/book/1"><h3>Example Book</h3></a>
+                </div>
+                """,
+                "cookies": [{"name": "token", "value": "abc", "domain": ".example.com"}],
+            }
+
+        async def close_session(self, session_id):
+            assert session_id == "session-1"
+            return True
+
+    fake = FakeVisibleSessionManager()
+    monkeypatch.setattr(
+        "app.services.novel.test_manager.get_visible_browser_session_manager",
+        lambda: fake,
+    )
+
+    import asyncio
+
+    async def run():
+        started = await manager.start_visible_browser_session(
+            "source1",
+            keyword="Example",
+            rule_type="search",
+            request_headers={"User-Agent": "Test UA"},
+        )
+        assert started["data"]["session_id"] == "session-1"
+        assert fake.start_headers["User-Agent"] == "Test UA"
+
+        snapshot = await manager.snapshot_visible_browser_session("session-1")
+        data = snapshot["data"]
+        assert data["debug_info"]["fetch_mode"] == "visible_browser"
+        assert data["parsed_result"]["parse_success"] is True
+        assert data["parsed_result"]["items"][0]["name"] == "Example Book"
+        assert data["browser_cookie"]["cookie_content"] == "token=abc"
+
+        closed = await manager.close_visible_browser_session("session-1")
+        assert closed["data"]["closed"] is True
+
+    asyncio.run(run())
+
+
 def test_response_diagnostics_detects_anti_bot_probe_page():
     diagnostics = _detect_response_diagnostics(
         202,
@@ -421,6 +491,54 @@ def test_response_diagnostics_detects_anti_bot_probe_page():
     assert diagnostics
     assert diagnostics[0]["type"] == "anti_bot_probe"
     assert "浏览器渲染模式" in diagnostics[0]["suggestion"]
+
+
+def test_response_diagnostics_detects_rule_no_match():
+    diagnostics = _detect_response_diagnostics(
+        200,
+        "<html><body><main>normal page</main></body></html>",
+        "http",
+        {"type": "search", "parse_success": False, "items": []},
+        {"matched_elements": 0},
+    )
+
+    assert any(item["type"] == "rule_no_match" for item in diagnostics)
+
+
+def test_book_source_test_manager_returns_rule_trace_for_legado_rules():
+    session = make_session()
+    create_source(session)
+    manager = BookSourceTestManager(session)
+    source = manager.source_manager.get_source("source1")
+
+    html = """
+    <div class="book-item">
+      <a href="/book/1"><h3>Example Book</h3></a>
+      <span class="author">Alice</span>
+    </div>
+    """
+
+    parsed = manager._parse_response(source, html, "https://m.example.com/search", "search", "legado")
+    trace = parsed["debug_info"]["rule_trace"]
+
+    assert trace[0]["name"] == "bookList"
+    assert trace[0]["matches"] == 1
+    assert any(item["name"] == "name" and item["matches"] == 1 for item in trace)
+
+
+def test_browser_cookie_summary_builds_saveable_cookie_header():
+    summary = _browser_cookie_summary(
+        "https://www.qidian.com/soushu/example.html",
+        [
+            {"name": "a", "value": "1", "domain": ".qidian.com"},
+            {"name": "b", "value": "2", "domain": "www.qidian.com"},
+        ],
+    )
+
+    assert summary["domain"] == "www.qidian.com"
+    assert summary["cookie_count"] == 2
+    assert summary["cookie_content"] == "a=1; b=2"
+    assert ".qidian.com" in summary["source_domains"]
 
 
 def test_patchright_cookie_header_conversion_uses_target_origin():

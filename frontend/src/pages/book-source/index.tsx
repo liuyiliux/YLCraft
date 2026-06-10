@@ -44,6 +44,7 @@ import {
 import {
   batchDeleteBookSources,
   batchToggleBookSources,
+  closeBookSourceBrowserSession,
   convertBookSourceRules,
   createBookSourceCookie,
   deleteBookSource,
@@ -53,6 +54,8 @@ import {
   getBookSourceRules,
   getBookSources,
   importBookSources,
+  snapshotBookSourceBrowserSession,
+  startBookSourceBrowserSession,
   testBookSource,
   toggleBookSource,
   updateBookSourceCookie,
@@ -63,6 +66,7 @@ import type {
   BookSourceCookie,
   BookSourceRules,
   BookSourceRulesPayload,
+  BookSourceTestParams,
 } from '../../api/bookSource'
 import { useTheme } from '../../constants/theme'
 
@@ -184,6 +188,9 @@ const BookSourcePage: React.FC = () => {
   const fetchMode = Form.useWatch('fetch_mode', testForm) || 'http'
   const [testLoading, setTestLoading] = useState(false)
   const [testResult, setTestResult] = useState<any>(null)
+  const [browserSession, setBrowserSession] = useState<{ session_id: string; url: string; status_code?: number } | null>(null)
+  const [browserSessionLoading, setBrowserSessionLoading] = useState(false)
+  const [browserSnapshotLoading, setBrowserSnapshotLoading] = useState(false)
 
   const [rulesLoading, setRulesLoading] = useState(false)
   const [rulesSaving, setRulesSaving] = useState(false)
@@ -260,6 +267,10 @@ const BookSourcePage: React.FC = () => {
   }
 
   const openDebugModal = (source: BookSource) => {
+    if (browserSession) {
+      void closeBookSourceBrowserSession(browserSession.session_id)
+      setBrowserSession(null)
+    }
     setDebugSource(source)
     setDebugOpen(true)
     setActiveDebugTab('test')
@@ -436,6 +447,111 @@ const BookSourcePage: React.FC = () => {
     }
   }
 
+  const buildCurrentTestPayload = async (): Promise<BookSourceTestParams | null> => {
+    const values = await testForm.validateFields()
+    if (!values.keyword?.trim() && !values.url?.trim()) {
+      message.warning('请输入书名关键词，或填写完整测试 URL')
+      return null
+    }
+
+    try {
+      const rules = values.rule_format === 'ylcraft' ? buildYlcraftPayload() : buildLegadoPayload()
+      const headers = parseHeadersInput(values.request_headers)
+      return {
+        url: values.url,
+        keyword: values.keyword,
+        page: values.page,
+        rule_type: values.rule_type,
+        rule_format: values.rule_format,
+        fetch_mode: values.fetch_mode,
+        show_raw: values.show_raw,
+        headers,
+        rules,
+      }
+    } catch (err: any) {
+      message.error(err.message)
+      return null
+    }
+  }
+
+  const handleStartVisibleBrowser = async () => {
+    if (!debugSource) return
+    const payload = await buildCurrentTestPayload()
+    if (!payload) return
+
+    setBrowserSessionLoading(true)
+    try {
+      if (browserSession) {
+        await closeBookSourceBrowserSession(browserSession.session_id)
+        setBrowserSession(null)
+      }
+      const result = await startBookSourceBrowserSession(debugSource.id, payload)
+      setBrowserSession({
+        session_id: result.data.session_id,
+        url: result.data.url,
+        status_code: result.data.status_code,
+      })
+      message.success('已打开可见浏览器，完成站点校验后点击“读取当前页面”')
+    } catch (err: any) {
+      message.error(`打开可见浏览器失败: ${err.message}`)
+    } finally {
+      setBrowserSessionLoading(false)
+    }
+  }
+
+  const handleSnapshotVisibleBrowser = async () => {
+    if (!browserSession) {
+      message.warning('请先打开可见浏览器')
+      return
+    }
+
+    setBrowserSnapshotLoading(true)
+    try {
+      const result = await snapshotBookSourceBrowserSession(
+        browserSession.session_id,
+        testForm.getFieldValue('show_raw') ?? true,
+      )
+      setTestResult(result)
+      if (!result.success) {
+        message.error(result.detail || '读取当前页面失败')
+      } else {
+        message.success('已读取当前浏览器页面并重新解析规则')
+      }
+    } catch (err: any) {
+      if (String(err.message || '').includes('does not exist')) {
+        setBrowserSession(null)
+      }
+      message.error(`读取当前页面失败: ${err.message}`)
+    } finally {
+      setBrowserSnapshotLoading(false)
+    }
+  }
+
+  const closeCurrentBrowserSession = async (silent = false) => {
+    const session = browserSession
+    if (!session) return
+
+    setBrowserSessionLoading(true)
+    try {
+      await closeBookSourceBrowserSession(session.session_id)
+      if (!silent) {
+        message.success('已关闭可见浏览器')
+      }
+    } catch (err: any) {
+      if (!silent) {
+        message.error(`关闭可见浏览器失败: ${err.message}`)
+      }
+    } finally {
+      setBrowserSession(prev => (prev?.session_id === session.session_id ? null : prev))
+      setBrowserSessionLoading(false)
+    }
+  }
+
+  const handleCloseDebugModal = () => {
+    setDebugOpen(false)
+    void closeCurrentBrowserSession(true)
+  }
+
   const handleSaveLegadoRules = async () => {
     if (!debugSource) return
     let payload: BookSourceRulesPayload
@@ -589,6 +705,28 @@ const BookSourcePage: React.FC = () => {
     })
   }
 
+  const handleSaveBrowserCookie = async () => {
+    if (!debugSource) return
+    const browserCookie = testResult?.data?.browser_cookie
+    if (!browserCookie?.cookie_content) {
+      message.warning('当前测试结果没有可保存的浏览器 Cookie')
+      return
+    }
+    try {
+      await createBookSourceCookie(debugSource.id, {
+        domain: browserCookie.domain || '*',
+        cookie_content: browserCookie.cookie_content,
+        description: `浏览器渲染保存 ${new Date().toLocaleString('zh-CN')}`,
+        is_active: true,
+      })
+      message.success(`已保存 ${browserCookie.cookie_count || 0} 项浏览器 Cookie`)
+      loadCookies(debugSource.id)
+      setActiveDebugTab('cookie')
+    } catch (err: any) {
+      message.error(`保存浏览器 Cookie 失败: ${err.message}`)
+    }
+  }
+
   const uploadProps: UploadProps = {
     accept: '.json',
     showUploadList: false,
@@ -689,6 +827,13 @@ const BookSourcePage: React.FC = () => {
 
     const data = testResult.data
     const diagnostics = data.diagnostics || data.debug_info?.diagnostics || []
+    const ruleTrace = data.debug_info?.rule_trace || []
+    const fetchModeText =
+      data.debug_info?.fetch_mode === 'visible_browser'
+        ? '可见浏览器'
+        : data.debug_info?.fetch_mode === 'browser'
+          ? '浏览器渲染'
+          : '普通请求'
     return (
       <Space direction="vertical" style={{ width: '100%' }} size={16}>
         <Descriptions bordered size="small" column={2}>
@@ -701,7 +846,7 @@ const BookSourcePage: React.FC = () => {
           <Descriptions.Item label="解析耗时">{data.debug_info?.parse_time_ms ?? '-'} ms</Descriptions.Item>
           <Descriptions.Item label="解析类型">{data.debug_info?.rule_type || '-'}</Descriptions.Item>
           <Descriptions.Item label="规则格式">{data.debug_info?.rule_format || '-'}</Descriptions.Item>
-          <Descriptions.Item label="请求模式">{data.debug_info?.fetch_mode === 'browser' ? '浏览器渲染' : '普通请求'}</Descriptions.Item>
+          <Descriptions.Item label="请求模式">{fetchModeText}</Descriptions.Item>
           <Descriptions.Item label="命中元素">{data.debug_info?.matched_elements ?? '-'}</Descriptions.Item>
           <Descriptions.Item label="使用 Cookie">
             {data.debug_info?.cookie_used ? '是' : '否'}
@@ -722,6 +867,73 @@ const BookSourcePage: React.FC = () => {
             }
           />
         ))}
+
+        {data.browser_cookie && (
+          <Alert
+            type="info"
+            showIcon
+            style={isDark ? darkInfoAlertStyle : undefined}
+            message={<span style={isDark ? darkInfoAlertTitleStyle : undefined}>浏览器 Cookie 可保存</span>}
+            description={
+              <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                <span style={isDark ? darkInfoAlertDescriptionStyle : undefined}>
+                  当前浏览器渲染拿到 {data.browser_cookie.cookie_count} 项 Cookie，域名：{data.browser_cookie.domain || '-'}
+                  {data.browser_cookie.source_domains?.length ? `，来源域：${data.browser_cookie.source_domains.join(', ')}` : ''}
+                </span>
+                <Button size="small" icon={<KeyOutlined />} onClick={handleSaveBrowserCookie}>
+                  保存到书源 Cookie
+                </Button>
+              </Space>
+            }
+          />
+        )}
+
+        {ruleTrace.length > 0 && (
+          <div>
+            <Text strong>规则命中视图</Text>
+            <Table
+              size="small"
+              style={{ marginTop: 8 }}
+              pagination={false}
+              rowKey={(_, index) => `${index}`}
+              dataSource={ruleTrace}
+              columns={[
+                {
+                  title: '规则',
+                  dataIndex: 'name',
+                  width: 160,
+                  render: value => <Text code>{value}</Text>,
+                },
+                {
+                  title: '命中',
+                  dataIndex: 'matches',
+                  width: 80,
+                  render: value => <Tag color={value > 0 ? 'success' : 'warning'}>{value}</Tag>,
+                },
+                {
+                  title: '表达式',
+                  dataIndex: 'rule',
+                  ellipsis: true,
+                  render: value => (
+                    <Text style={{ maxWidth: 320 }} ellipsis title={typeof value === 'string' ? value : JSON.stringify(value)}>
+                      {typeof value === 'string' ? value : JSON.stringify(value)}
+                    </Text>
+                  ),
+                },
+                {
+                  title: '样例',
+                  dataIndex: 'sample',
+                  ellipsis: true,
+                  render: value => (
+                    <Text style={{ maxWidth: 360 }} ellipsis title={value}>
+                      {value || '-'}
+                    </Text>
+                  ),
+                },
+              ]}
+            />
+          </div>
+        )}
 
         {data.request_info && (
           <div>
@@ -798,6 +1010,27 @@ const BookSourcePage: React.FC = () => {
             </span>
           }
         />
+      )}
+      {fetchMode === 'browser' && (
+        <Space wrap>
+          <Button icon={<BugOutlined />} loading={browserSessionLoading} onClick={handleStartVisibleBrowser}>
+            打开可见浏览器
+          </Button>
+          <Button icon={<ReloadOutlined />} loading={browserSnapshotLoading} disabled={!browserSession} onClick={handleSnapshotVisibleBrowser}>
+            读取当前页面
+          </Button>
+          <Button danger icon={<DeleteOutlined />} loading={browserSessionLoading} disabled={!browserSession} onClick={() => closeCurrentBrowserSession()}>
+            关闭浏览器
+          </Button>
+          {browserSession && (
+            <Space size={8}>
+              <Tag color="processing">会话已打开</Tag>
+              <Text type="secondary" style={{ maxWidth: 520 }} ellipsis>
+                {browserSession.url}
+              </Text>
+            </Space>
+          )}
+        </Space>
       )}
       <Form form={testForm} layout="vertical" initialValues={{ rule_type: 'search', rule_format: 'legado', fetch_mode: 'http', page: 1, show_raw: true }}>
         <Row gutter={16}>
@@ -1184,10 +1417,10 @@ const BookSourcePage: React.FC = () => {
         open={debugOpen}
         title={debugSource ? `书源调试：${debugSource.book_source_name}` : '书源调试'}
         width={1180}
-        onCancel={() => setDebugOpen(false)}
+        onCancel={handleCloseDebugModal}
         destroyOnClose={false}
         footer={[
-          <Button key="close" onClick={() => setDebugOpen(false)}>
+          <Button key="close" onClick={handleCloseDebugModal}>
             关闭
           </Button>,
           <Button key="test" type="primary" icon={<BugOutlined />} loading={testLoading} onClick={handleRunTest}>

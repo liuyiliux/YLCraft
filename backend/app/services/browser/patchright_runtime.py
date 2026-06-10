@@ -36,6 +36,7 @@ class BrowserFetchResult:
     status_code: int
     headers: Dict[str, str]
     html: str
+    cookies: list[Dict[str, Any]]
 
 
 class PatchrightBrowserRuntime:
@@ -182,11 +183,13 @@ class PatchrightBrowserRuntime:
             if settle_ms > 0:
                 await page.wait_for_timeout(settle_ms)
             html = await page.content()
+            cookies = await context.cookies()
             return BrowserFetchResult(
                 url=page.url,
                 status_code=response.status if response else 0,
                 headers=dict(response.headers) if response else {},
                 html=html,
+                cookies=cookies,
             )
         finally:
             await context.close()

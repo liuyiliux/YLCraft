@@ -77,6 +77,10 @@ class BookSourceTestRequest(BaseModel):
     rules: Optional[BookSourceRulesUpdate] = None
 
 
+class BookSourceBrowserSessionSnapshotRequest(BaseModel):
+    show_raw: bool = True
+
+
 def get_db():
     """获取数据库会话（依赖注入）"""
     db = SessionLocal()
@@ -361,6 +365,63 @@ async def test_book_source_with_rules(
     except ValueError as e:
         status_code = 404 if "does not exist" in str(e) else 400
         raise HTTPException(status_code=status_code, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{source_id}/browser-session/start")
+async def start_book_source_browser_session(
+    source_id: str,
+    payload: BookSourceTestRequest,
+    db: Session = Depends(get_db),
+):
+    manager = BookSourceTestManager(db)
+    rule_override = payload.rules.model_dump(exclude_none=True) if payload.rules else None
+    try:
+        return await manager.start_visible_browser_session(
+            source_id=source_id,
+            url=payload.url,
+            rule_type=payload.rule_type,
+            keyword=payload.keyword,
+            page=payload.page,
+            rule_format=payload.rule_format,
+            rule_override=rule_override,
+            request_headers=payload.headers,
+        )
+    except ValueError as e:
+        status_code = 404 if "does not exist" in str(e) else 400
+        raise HTTPException(status_code=status_code, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/browser-sessions/{session_id}/snapshot")
+async def snapshot_book_source_browser_session(
+    session_id: str,
+    payload: BookSourceBrowserSessionSnapshotRequest,
+    db: Session = Depends(get_db),
+):
+    manager = BookSourceTestManager(db)
+    try:
+        return await manager.snapshot_visible_browser_session(
+            session_id=session_id,
+            show_raw=payload.show_raw,
+        )
+    except ValueError as e:
+        status_code = 404 if "does not exist" in str(e) else 400
+        raise HTTPException(status_code=status_code, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/browser-sessions/{session_id}")
+async def close_book_source_browser_session(
+    session_id: str,
+    db: Session = Depends(get_db),
+):
+    manager = BookSourceTestManager(db)
+    try:
+        return await manager.close_visible_browser_session(session_id)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

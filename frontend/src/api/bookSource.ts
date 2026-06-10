@@ -54,6 +54,12 @@ export interface BookSourceTestResult {
     raw_html: string
     raw_html_truncated: boolean
     parsed_result: any
+    browser_cookie?: {
+      domain: string
+      cookie_count: number
+      cookie_content: string
+      source_domains?: string[]
+    } | null
     diagnostics?: Array<{
       type: string
       message: string
@@ -63,8 +69,15 @@ export interface BookSourceTestResult {
       cookie_used: boolean
       cookie_match?: any
       rule_type: 'search' | 'toc' | 'content'
-      fetch_mode?: 'http' | 'browser'
+      rule_format?: 'legado' | 'ylcraft'
+      fetch_mode?: 'http' | 'browser' | 'visible_browser'
       rule_used?: any
+      rule_trace?: Array<{
+        name: string
+        rule: any
+        matches: number
+        sample?: string
+      }>
       matched_elements?: number
       parse_time_ms?: number
       diagnostics?: Array<{
@@ -278,22 +291,36 @@ export async function searchBooks(keyword: string): Promise<any[]> {
   return res.data || []
 }
 
+export interface BookSourceTestParams {
+  url?: string
+  keyword?: string
+  page?: number
+  rule_type?: 'search' | 'toc' | 'content'
+  show_raw?: boolean
+  rule_format?: 'legado' | 'ylcraft'
+  fetch_mode?: 'http' | 'browser'
+  headers?: Record<string, string>
+  rules?: BookSourceRulesPayload
+}
+
+export interface BookSourceBrowserSession {
+  success: boolean
+  data: {
+    session_id: string
+    url: string
+    status_code: number
+    headers: Record<string, string>
+    request_info?: any
+  }
+  detail?: string
+}
+
 /**
  * 测试单个书源规则
  */
 export async function testBookSource(
   sourceId: string,
-  params: {
-    url?: string
-    keyword?: string
-    page?: number
-    rule_type?: 'search' | 'toc' | 'content'
-    show_raw?: boolean
-    rule_format?: 'legado' | 'ylcraft'
-    fetch_mode?: 'http' | 'browser'
-    headers?: Record<string, string>
-    rules?: BookSourceRulesPayload
-  }
+  params: BookSourceTestParams,
 ): Promise<BookSourceTestResult> {
   return request(`/book-sources/${sourceId}/test`, {
     method: 'POST',
@@ -304,5 +331,37 @@ export async function testBookSource(
       rule_format: params.rule_format || 'legado',
       fetch_mode: params.fetch_mode || 'http',
     }),
+  })
+}
+
+export async function startBookSourceBrowserSession(
+  sourceId: string,
+  params: BookSourceTestParams,
+): Promise<BookSourceBrowserSession> {
+  return request(`/book-sources/${sourceId}/browser-session/start`, {
+    method: 'POST',
+    body: JSON.stringify({
+      ...params,
+      page: params.page || 1,
+      show_raw: params.show_raw ?? true,
+      rule_format: params.rule_format || 'legado',
+      fetch_mode: 'browser',
+    }),
+  })
+}
+
+export async function snapshotBookSourceBrowserSession(
+  sessionId: string,
+  showRaw: boolean = true,
+): Promise<BookSourceTestResult> {
+  return request(`/book-sources/browser-sessions/${sessionId}/snapshot`, {
+    method: 'POST',
+    body: JSON.stringify({ show_raw: showRaw }),
+  })
+}
+
+export async function closeBookSourceBrowserSession(sessionId: string): Promise<void> {
+  await request(`/book-sources/browser-sessions/${sessionId}`, {
+    method: 'DELETE',
   })
 }
