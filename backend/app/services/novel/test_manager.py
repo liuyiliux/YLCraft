@@ -84,7 +84,7 @@ class BookSourceTestManager:
                     method=method,
                     headers=headers,
                     timeout_ms=30000,
-                    wait_until="networkidle",
+                    wait_until="domcontentloaded",
                 )
             except RuntimeError as exc:
                 raise ValueError(str(exc)) from exc
@@ -122,6 +122,7 @@ class BookSourceTestManager:
             actual_fetch_mode,
             parsed["parsed_result"],
             parsed["debug_info"],
+            response_headers,
         )
 
         return {
@@ -221,6 +222,7 @@ class BookSourceTestManager:
             "visible_browser",
             parsed["parsed_result"],
             parsed["debug_info"],
+            snapshot.get("headers") or {},
         )
         raw_html = html[: self.RAW_HTML_LIMIT] if show_raw else ""
         browser_cookie = _browser_cookie_summary(final_url, snapshot.get("cookies") or [])
@@ -595,18 +597,34 @@ def _detect_response_diagnostics(
     fetch_mode: str,
     parsed_result: Optional[Dict[str, Any]] = None,
     debug_info: Optional[Dict[str, Any]] = None,
+    response_headers: Optional[Dict[str, Any]] = None,
 ) -> list[Dict[str, str]]:
     source = (html or "").lower()
+    stripped = (html or "").strip()
+    header_source = "\n".join(
+        f"{key}: {value}" for key, value in (response_headers or {}).items()
+    ).lower()
+    has_waf_header = "x-waf-captcha" in header_source
     diagnostics: list[Dict[str, str]] = []
+    parse_success = bool((parsed_result or {}).get("parse_success"))
+    matched_elements = int((debug_info or {}).get("matched_elements") or 0)
     is_probe_page = (
         status_code == 202
-        and ("probe.js" in source or "debugger" in source or "aegis" in source)
+        and not parse_success
+        and matched_elements == 0
+        and (
+            has_waf_header
+            or "probe.js" in source
+            or "debugger" in source
+            or "aegis" in source
+            or _looks_like_js_shell_page(stripped)
+        )
     )
     if is_probe_page:
         suggestion = (
-            "当前普通 HTTP 请求命中站点反爬探测页，建议切换到浏览器渲染模式，或补全从真实浏览器复制的 Cookie。"
+            "当前普通 HTTP 请求拿到的是 202 反爬探测页，不是书籍列表。建议先用可见浏览器完成站点校验并保存 Cookie，或改用该站提供的授权接口。"
             if fetch_mode == "http"
-            else "浏览器渲染模式仍命中反爬探测页，请重新获取当前浏览器 Cookie，必要时使用可见浏览器完成站点校验后再测试。"
+            else "Patchright 已打开 Chromium，但当前响应仍是 202 WAF 探测页；通常是独立浏览器上下文没有通过站点校验。请在可见浏览器里刷新或完成校验后再读取，或保存真实浏览器 Cookie 后重试。"
         )
         diagnostics.append(
             {
@@ -637,7 +655,6 @@ def _detect_response_diagnostics(
             }
         )
 
-    stripped = (html or "").strip()
     if status_code < 400 and not stripped:
         diagnostics.append(
             {
@@ -655,8 +672,6 @@ def _detect_response_diagnostics(
             }
         )
 
-    parse_success = bool((parsed_result or {}).get("parse_success"))
-    matched_elements = int((debug_info or {}).get("matched_elements") or 0)
     if status_code < 400 and stripped and not parse_success and matched_elements == 0 and not is_probe_page:
         diagnostics.append(
             {
@@ -710,7 +725,10 @@ def _trace_legado_list_rules(
             continue
         field_elements = _safe_select_legado(field_rule, first_html) if first_html else []
         sample = _safe_parse_legado_value(field_rule, first_html) if first_html else ""
-        trace.append(_trace_item(key, field_rule, len(field_elements), sample))
+        matches = len(field_elements)
+        if matches == 0 and sample and _is_current_element_rule(field_rule):
+            matches = 1
+        trace.append(_trace_item(key, field_rule, matches, sample))
     return trace
 
 
@@ -776,6 +794,13 @@ def _safe_parse_legado_value(rule_value: Any, html: str) -> str:
         return _short_text(_parse_css_rule(rule_value, html) or "")
     except Exception:
         return ""
+
+
+def _is_current_element_rule(rule_value: Any) -> bool:
+    if not isinstance(rule_value, str):
+        return False
+    selector = rule_value.strip()
+    return selector in {"@text", "@html"} or (selector.startswith("@") and _looks_like_attr_name(selector[1:]))
 
 
 def _selection_rule(rule_value: Any) -> str:

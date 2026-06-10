@@ -82,10 +82,23 @@ class BookSourceCookieManager:
         if not source_id:
             raise ValueError("book_source_id is required")
         self._require_source(source_id)
+        domain = _normalize_cookie_domain(cookie_data.get("domain", ""))
+
+        existing = self._get_cookie_by_domain(source_id, domain)
+        if existing:
+            existing.cookie_content = cookie_data.get("cookie_content", existing.cookie_content)
+            existing.description = cookie_data.get("description", "") or existing.description
+            existing.is_active = cookie_data.get("is_active", True)
+            existing.expires_at = cookie_data.get("expires_at")
+            existing.updated_at = datetime.now()
+            self.db.add(existing)
+            self.db.commit()
+            self.db.refresh(existing)
+            return existing
 
         cookie = BookSourceCookie(
             book_source_id=source_id,
-            domain=_normalize_cookie_domain(cookie_data.get("domain", "")),
+            domain=domain,
             cookie_content=cookie_data.get("cookie_content", ""),
             description=cookie_data.get("description", "") or "",
             is_active=cookie_data.get("is_active", True),
@@ -129,6 +142,13 @@ class BookSourceCookieManager:
         source = self.db.get(BookSource, source_id)
         if not source:
             raise ValueError("book source does not exist")
+
+    def _get_cookie_by_domain(self, source_id: str, domain: str) -> Optional[BookSourceCookie]:
+        statement = select(BookSourceCookie).where(
+            BookSourceCookie.book_source_id == source_id,
+            BookSourceCookie.domain == domain,
+        )
+        return self.db.exec(statement).first()
 
 
 CookieManager = BookSourceCookieManager

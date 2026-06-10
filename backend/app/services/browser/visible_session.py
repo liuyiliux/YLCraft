@@ -13,6 +13,7 @@ from app.services.browser.patchright_runtime import (
     PatchrightBrowserRuntime,
     browser_extra_headers,
     cookie_header_to_browser_cookies,
+    wait_for_probe_resolution,
 )
 
 
@@ -103,24 +104,28 @@ class VisibleBrowserSessionManager:
                     await context.add_cookies(cookies)
 
             page = await context.new_page()
+            latest_response: Dict[str, Any] = {"url": url, "status_code": 0, "headers": {}}
+            page.on("response", lambda response: _record_main_document_response(page, latest_response, response))
             response = await page.goto(
                 url,
                 wait_until=wait_until,
                 timeout=timeout_ms,
                 referer=referer,
             )
+            _record_main_document_response(page, latest_response, response)
             self._sessions[session_id] = {
                 "context": context,
                 "page": page,
                 "created_at": time.time(),
-                "status_code": response.status if response else 0,
-                "headers": dict(response.headers) if response else {},
+                "status_code": int(latest_response.get("status_code") or (response.status if response else 0)),
+                "headers": latest_response.get("headers") or (dict(response.headers) if response else {}),
+                "latest_response": latest_response,
             }
             return {
                 "session_id": session_id,
                 "url": page.url,
-                "status_code": response.status if response else 0,
-                "headers": dict(response.headers) if response else {},
+                "status_code": int(latest_response.get("status_code") or (response.status if response else 0)),
+                "headers": latest_response.get("headers") or (dict(response.headers) if response else {}),
             }
         except Exception:
             await context.close()
@@ -136,12 +141,18 @@ class VisibleBrowserSessionManager:
             raise ValueError("browser session page is closed")
 
         html = await page.content()
+        latest_response = session.get("latest_response") or {}
+        html = await wait_for_probe_resolution(
+            page,
+            html,
+            status_code=int(latest_response.get("status_code") or session.get("status_code", 0)),
+        )
         cookies = await session["context"].cookies()
         return {
             "session_id": session_id,
             "url": page.url,
-            "status_code": session.get("status_code", 0),
-            "headers": session.get("headers", {}),
+            "status_code": int(latest_response.get("status_code") or session.get("status_code", 0)),
+            "headers": latest_response.get("headers") or session.get("headers", {}),
             "html": html,
             "cookies": cookies,
         }
@@ -179,6 +190,27 @@ def _pop_header(headers: Dict[str, str], name: str) -> Optional[str]:
         if key.lower() == name.lower():
             return headers.pop(key)
     return None
+
+
+def _record_main_document_response(page: Any, latest_response: Dict[str, Any], response: Any) -> None:
+    if response is None:
+        return
+    try:
+        if response.request.resource_type != "document":
+            return
+    except Exception:
+        pass
+    try:
+        if response.frame != page.main_frame:
+            return
+    except Exception:
+        pass
+    try:
+        latest_response["url"] = response.url
+        latest_response["status_code"] = response.status
+        latest_response["headers"] = dict(response.headers)
+    except Exception:
+        return
 
 
 _visible_browser_session_manager: Optional[VisibleBrowserSessionManager] = None

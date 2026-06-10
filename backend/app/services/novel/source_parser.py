@@ -5,6 +5,7 @@
 
 import json
 import re
+from urllib.parse import urljoin
 from typing import Optional, Dict, List, Any, Union
 from pydantic import BaseModel, Field
 
@@ -311,6 +312,10 @@ def _parse_css_rule(rule_str: str, html: str) -> Optional[str]:
                     parts = parts[:-1]
             
             elements = [soup]
+            selector_parts = [part for part in parts if part]
+            if directive and not selector_parts:
+                first_element = soup.find(True)
+                elements = [first_element] if first_element else [soup]
             
             for i, part in enumerate(parts):
                 if not part:
@@ -583,6 +588,13 @@ def _parse_regex(pattern: str, html: str, group: int = 0) -> Optional[str]:
         return None
 
 
+def _absolute_url(url: str, base_url: str) -> str:
+    value = (url or "").strip()
+    if not value:
+        return ""
+    return urljoin(base_url.rstrip("/") + "/", value)
+
+
 # ========== 书列表解析 ===========
 
 def parse_book_list(rule: Dict[str, Any], html: str, base_url: str) -> List[Dict[str, Any]]:
@@ -634,8 +646,7 @@ def parse_book_list(rule: Dict[str, Any], html: str, base_url: str) -> List[Dict
             url = ""
             if book_url_rule and isinstance(book_url_rule, str) and not _is_jsonpath_rule(book_url_rule):
                 url = _parse_css_rule(book_url_rule, elem_html) or ""
-                if url and not url.startswith("http"):
-                    url = base_url.rstrip("/") + "/" + url.lstrip("/")
+                url = _absolute_url(url, base_url)
                 print(f"[DEBUG] parse_book_list: book[{idx}] url='{url}', rule='{book_url_rule}'")
                 book["bookUrl"] = url
             
@@ -700,8 +711,7 @@ def _parse_book_list_json(rule: Dict[str, Any], json_data: Any, base_url: str) -
                     href = item.get(url_expr, "")
                 else:
                     href = ""
-                if href and not href.startswith("http"):
-                    href = base_url.rstrip("/") + "/" + href.lstrip("/")
+                href = _absolute_url(href, base_url)
                 book["bookUrl"] = href
 
             author_expr = rule.get("author", "")
@@ -721,8 +731,7 @@ def _parse_book_list_json(rule: Dict[str, Any], json_data: Any, base_url: str) -
                     src = item.get(cover_expr, "")
                 else:
                     src = ""
-                if src and not src.startswith("http"):
-                    src = base_url.rstrip("/") + "/" + src.lstrip("/")
+                src = _absolute_url(src, base_url)
                 book["coverUrl"] = src
 
             if book.get("name") and book.get("bookUrl"):
@@ -741,7 +750,6 @@ def parse_chapter_list(rule: Dict[str, Any], html: str, base_url: str) -> List[D
     """解析章节列表，支持 HTML（Legado规则）和 JSON 两种格式"""
     from bs4 import BeautifulSoup
     import json as json_mod
-    import urllib.parse
     
     try:
         is_json = False
@@ -795,12 +803,7 @@ def parse_chapter_list(rule: Dict[str, Any], html: str, base_url: str) -> List[D
             url_rule = rule.get("chapterUrl", "")
             if url_rule and isinstance(url_rule, str) and not _is_jsonpath_rule(url_rule):
                 url = _parse_css_rule(url_rule, elem_html) or ""
-                if url and not url.startswith("http"):
-                    if url.startswith("/"):
-                        parsed = urllib.parse.urlparse(base_url)
-                        url = f"{parsed.scheme}://{parsed.netloc}{url}"
-                    else:
-                        url = base_url.rstrip("/") + "/" + url.lstrip("/")
+                url = _absolute_url(url, base_url)
                 chapter["url"] = url
             
             if chapter.get("name") and chapter.get("url"):
@@ -844,8 +847,7 @@ def _parse_chapter_list_json(rule: Dict[str, Any], json_data: Any, base_url: str
                     href = item.get(url_expr, "")
                 else:
                     href = ""
-                if href and not href.startswith("http"):
-                    href = base_url.rstrip("/") + "/" + href.lstrip("/")
+                href = _absolute_url(href, base_url)
                 chapter["url"] = href
 
             if chapter.get("name"):
@@ -1022,8 +1024,7 @@ def parse_book_info(rule: Dict[str, Any], html: str, base_url: str) -> Dict[str,
         cover_rule = rule.get("coverUrl", "")
         if cover_rule and not _is_jsonpath_rule(cover_rule):
             src = _parse_css_rule(cover_rule, html) or ""
-            if src and not src.startswith("http"):
-                src = base_url.rstrip("/") + "/" + src.lstrip("/")
+            src = _absolute_url(src, base_url)
             info["coverUrl"] = src
 
         intro_rule = rule.get("intro", "")
@@ -1033,8 +1034,7 @@ def parse_book_info(rule: Dict[str, Any], html: str, base_url: str) -> Dict[str,
         toc_url_rule = rule.get("tocUrl", "")
         if toc_url_rule and not _is_jsonpath_rule(toc_url_rule):
             href = _parse_css_rule(toc_url_rule, html) or ""
-            if href and not href.startswith("http"):
-                href = base_url.rstrip("/") + "/" + href.lstrip("/")
+            href = _absolute_url(href, base_url)
             info["tocUrl"] = href
 
         return info

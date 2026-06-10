@@ -27,6 +27,11 @@ _BROWSER_MANAGED_HEADERS = {
     "cookie",
     "user-agent",
     "referer",
+    "sec-fetch-dest",
+    "sec-fetch-mode",
+    "sec-fetch-site",
+    "sec-fetch-user",
+    "upgrade-insecure-requests",
 }
 
 
@@ -174,20 +179,28 @@ class PatchrightBrowserRuntime:
                     await context.add_cookies(cookies)
 
             page = await context.new_page()
+            latest_response: Dict[str, Any] = {"url": url, "status_code": 0, "headers": {}}
+            page.on("response", lambda response: _record_main_document_response(page, latest_response, response))
             response = await page.goto(
                 url,
                 wait_until=wait_until,
                 timeout=timeout_ms,
                 referer=referer,
             )
+            _record_main_document_response(page, latest_response, response)
             if settle_ms > 0:
                 await page.wait_for_timeout(settle_ms)
             html = await page.content()
+            html = await wait_for_probe_resolution(
+                page,
+                html,
+                status_code=int(latest_response.get("status_code") or (response.status if response else 0)),
+            )
             cookies = await context.cookies()
             return BrowserFetchResult(
                 url=page.url,
-                status_code=response.status if response else 0,
-                headers=dict(response.headers) if response else {},
+                status_code=int(latest_response.get("status_code") or (response.status if response else 0)),
+                headers=latest_response.get("headers") or (dict(response.headers) if response else {}),
                 html=html,
                 cookies=cookies,
             )
@@ -338,6 +351,70 @@ def _pop_header(headers: Dict[str, str], name: str) -> Optional[str]:
         if key.lower() == name.lower():
             return headers.pop(key)
     return None
+
+
+def _record_main_document_response(page: Any, latest_response: Dict[str, Any], response: Any) -> None:
+    if response is None:
+        return
+    try:
+        if response.request.resource_type != "document":
+            return
+    except Exception:
+        pass
+    try:
+        if response.frame != page.main_frame:
+            return
+    except Exception:
+        pass
+    try:
+        latest_response["url"] = response.url
+        latest_response["status_code"] = response.status
+        latest_response["headers"] = dict(response.headers)
+    except Exception:
+        return
+
+
+def looks_like_probe_shell(html: str, status_code: int = 0) -> bool:
+    source = (html or "").lower()
+    if status_code and status_code != 202 and "probe.js" not in source:
+        return False
+    if "probe.js" in source or "probev3.js" in source:
+        return True
+    stripped = source.strip()
+    return status_code == 202 and len(stripped) < 2500 and "<script" in stripped and len(_strip_html_text(stripped)) < 120
+
+
+async def wait_for_probe_resolution(
+    page: Any,
+    html: str,
+    *,
+    status_code: int = 0,
+    timeout_ms: int = 12000,
+    interval_ms: int = 500,
+) -> str:
+    if not looks_like_probe_shell(html, status_code):
+        return html
+
+    deadline = asyncio.get_running_loop().time() + (timeout_ms / 1000)
+    current = html
+    while asyncio.get_running_loop().time() < deadline:
+        await page.wait_for_timeout(interval_ms)
+        try:
+            await page.wait_for_load_state("networkidle", timeout=1500)
+        except Exception:
+            pass
+        current = await page.content()
+        if not looks_like_probe_shell(current):
+            return current
+    return current
+
+
+def _strip_html_text(html: str) -> str:
+    return " ".join(
+        part.strip()
+        for part in html.replace("<", " <").replace(">", "> ").split()
+        if not part.startswith("<")
+    )
 
 
 _patchright_runtime: Optional[PatchrightBrowserRuntime] = None
