@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 from typing import Any, Dict, List, Optional
 from urllib.parse import urljoin
@@ -121,27 +122,14 @@ class RuleParser:
         return items, len(elements)
 
     def extract_field(self, root: Tag, field_config: Dict[str, Any]) -> str:
+        # 支持 Legado 的 && 多选择器语法：
+        #   "a.-1&&span.-1" -> 先选 a 倒数第 1 个，找不到再选 span 倒数第 1 个
         selector = field_config.get("selector") or ""
-        element: Optional[Tag]
-        if selector:
-            element = root.select_one(selector)
-        else:
-            element = root
-        if not element:
+        result = self._extract_with_fallback(root, selector, field_config)
+        if not result:
             return ""
 
-        field_type = field_config.get("type", "text")
-        if field_type == "attr":
-            attr_name = field_config.get("attr") or ""
-            result = element.get(attr_name, "") if attr_name else ""
-        elif field_type == "html":
-            result = str(element)
-        else:
-            result = element.get_text(strip=field_config.get("trim", True))
-
-        if result is None:
-            return ""
-        result = str(result)
+        # 应用修饰符（prefix / suffix / max_length）
         if field_config.get("trim", True):
             result = result.strip()
 
@@ -162,6 +150,114 @@ class RuleParser:
         if isinstance(max_length, int) and max_length >= 0:
             result = result[:max_length]
         return result
+
+    def _extract_with_fallback(
+        self,
+        root: Tag,
+        selector: str,
+        field_config: Dict[str, Any],
+    ) -> str:
+        """按 && 拆分候选选择器，依次尝试直到命中。
+
+        支持 Legado 兼容语法：
+        - && 分隔的备选选择器
+        - .N 索引语法（选择第 N 个）
+        - .-N 索引语法（选择倒数第 N 个）
+        """
+        if not selector:
+            element: Optional[Tag] = root
+        else:
+            element = None
+            for candidate in self._split_fallback_selector(selector):
+                element = self._select_with_legado_index(root, candidate)
+                if element is not None:
+                    break
+            if element is None and selector:
+                # 所有候选都失败，兜底使用最后一个
+                element = None
+
+        if element is None:
+            return ""
+
+        field_type = field_config.get("type", "text")
+        if field_type == "attr":
+            attr_name = field_config.get("attr") or ""
+            result = element.get(attr_name, "") if attr_name else ""
+        elif field_type == "html":
+            result = str(element)
+        else:
+            result = element.get_text(strip=field_config.get("trim", True))
+
+        if result is None:
+            return ""
+        return str(result)
+
+    @staticmethod
+    def _split_fallback_selector(selector: str) -> List[str]:
+        """按 && 拆分成多个候选选择器，去掉空字符串。"""
+        return [part.strip() for part in selector.split("&&") if part.strip()]
+
+    @staticmethod
+    def _select_one_safely(root: Optional[Tag], selector: str) -> Optional[Tag]:
+        """安全地执行 select_one，解析失败返回 None 而不抛异常。"""
+        if root is None or not selector:
+            return None
+        try:
+            return root.select_one(selector)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _select_with_legado_index(
+        root: Optional[Tag],
+        selector: str,
+    ) -> Optional[Tag]:
+        """支持 Legado 的 .N / .-N 索引语法。
+
+        - "a"             -> 等同 CSS a（取首个）
+        - "a.0"           -> 第 1 个 a
+        - "a.-1"          -> 倒数第 1 个 a
+        - "a.0.2"         -> 第 1 个和第 3 个 a（去重，取第一个）
+        - ".author a.0"   -> .author 下第 1 个 a
+        """
+        if root is None or not selector:
+            return None
+
+        # 先尝试标准 CSS 解析
+        element = RuleParser._select_one_safely(root, selector)
+        if element is not None:
+            return element
+
+        # 解析 Legado 索引语法：拆出 selector 末尾的 .N / .-N
+        # 支持 "a.0"、"a.-1"、"a.0.2"、".author a.0" 等
+        match = re.match(r"^(.*?)\.(-?\d+(?:\.\d+)*)$", selector)
+        if not match:
+            return None
+
+        base_selector = match.group(1)
+        indices_str = match.group(2)
+        try:
+            raw_indices = [int(x) for x in indices_str.split(".")]
+        except ValueError:
+            return None
+        if not base_selector:
+            return None
+
+        try:
+            candidates = root.select(base_selector)
+        except Exception:
+            return None
+
+        if not candidates:
+            return None
+
+        n = len(candidates)
+        for idx in raw_indices:
+            if idx < 0:
+                idx = n + idx
+            if 0 <= idx < n:
+                return candidates[idx]
+        return None
 
 
 def _elapsed_ms(start: float) -> int:

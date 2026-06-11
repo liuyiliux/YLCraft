@@ -251,7 +251,10 @@ def _eval_js_rule(js_code: str, result: str) -> str:
         ctx.eval(f"var result = {json.dumps(result)};")
         # 执行 JS 代码，返回最后表达式的值
         val = ctx.eval(js_code)
-        return str(val) if val is not None else result
+        # JS 返回 falsy 时，保留原 result 避免有效文本被抹掉
+        if val is None or (isinstance(val, str) and val == ""):
+            return result
+        return str(val)
     except Exception as e:
         print(f"[WARN] JS 规则执行失败: {e}")
         return result
@@ -637,26 +640,59 @@ def parse_book_list(rule: Dict[str, Any], html: str, base_url: str) -> List[Dict
             name_rule = rule.get("name", "")
             name = ""
             if name_rule and isinstance(name_rule, str) and not _is_jsonpath_rule(name_rule):
-                name = _parse_css_rule(name_rule, elem_html) or ""
+                try:
+                    name = _parse_css_rule(name_rule, elem_html) or ""
+                except Exception:
+                    name = ""
                 print(f"[DEBUG] parse_book_list: book[{idx}] name='{name}', rule='{name_rule}'")
                 book["name"] = name
-            
+
             # 解析 bookUrl 规则
             book_url_rule = rule.get("bookUrl", "")
             url = ""
             if book_url_rule and isinstance(book_url_rule, str) and not _is_jsonpath_rule(book_url_rule):
-                url = _parse_css_rule(book_url_rule, elem_html) or ""
+                try:
+                    url = _parse_css_rule(book_url_rule, elem_html) or ""
+                except Exception:
+                    url = ""
                 url = _absolute_url(url, base_url)
                 print(f"[DEBUG] parse_book_list: book[{idx}] url='{url}', rule='{book_url_rule}'")
                 book["bookUrl"] = url
-            
+
             # 解析 author 规则
             author_rule = rule.get("author", "")
             if author_rule and isinstance(author_rule, str) and not _is_jsonpath_rule(author_rule):
-                author = _parse_css_rule(author_rule, elem_html) or ""
+                try:
+                    author = _parse_css_rule(author_rule, elem_html) or ""
+                except Exception:
+                    author = ""
                 print(f"[DEBUG] parse_book_list: book[{idx}] author='{author}'")
                 book["author"] = author
-            
+
+            # 解析 coverUrl 规则
+            cover_rule = rule.get("coverUrl", "")
+            if cover_rule and isinstance(cover_rule, str) and not _is_jsonpath_rule(cover_rule):
+                try:
+                    cover = _parse_css_rule(cover_rule, elem_html) or ""
+                except Exception:
+                    cover = ""
+                cover = _absolute_url(cover, base_url)
+                if cover:
+                    book["coverUrl"] = cover
+
+            # 解析 intro 规则
+            intro_rule = rule.get("intro", "")
+            if intro_rule and isinstance(intro_rule, str) and not _is_jsonpath_rule(intro_rule):
+                try:
+                    intro = _parse_css_rule(intro_rule, elem_html) or ""
+                except Exception:
+                    intro = ""
+                if intro:
+                    book["intro"] = intro[:500]
+
+            # 容错：name 缺失但 bookUrl 存在时，用 bookUrl 末段或 '未命名' 占位，避免整条被丢
+            if not book.get("name") and book.get("bookUrl"):
+                book["name"] = "未命名"
             if book.get("name") and book.get("bookUrl"):
                 books.append(book)
                 print(f"[DEBUG] parse_book_list: book[{idx}] ADDED: {book['name']}")
