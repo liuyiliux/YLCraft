@@ -156,6 +156,84 @@ def test_rule_parser_extracts_search_items_and_content():
     assert "ad text" not in content_result["content"]
 
 
+def test_rule_parser_applies_ylcraft_field_and_content_transforms():
+    html = """
+    <html>
+      <body>
+        <div class="book-item">
+          <a href="/book/1"><h3>《Example Book》</h3></a>
+          <span class="author"> 作者： Alice </span>
+          <span class="words">字数：123万</span>
+        </div>
+        <article id="content">
+          <p>　　Chapter text</p>
+          <p>本章完</p>
+        </article>
+      </body>
+    </html>
+    """
+    rule = {
+        "base_url": "https://m.example.com",
+        "search": {
+            "items": {
+                "selector": ".book-item",
+                "fields": {
+                    "title": {
+                        "selector": "h3",
+                        "type": "text",
+                        "transforms": [
+                            {"type": "replace", "old": "《", "new": ""},
+                            {"type": "replace", "old": "》", "new": ""},
+                            {"type": "trim"},
+                        ],
+                    },
+                    "author": {
+                        "selector": ".author",
+                        "type": "text",
+                        "transforms": [
+                            {"type": "replace", "old": "作者：", "new": ""},
+                            {"type": "trim"},
+                        ],
+                    },
+                    "url": {
+                        "selector": "a",
+                        "type": "attr",
+                        "attr": "href",
+                        "transforms": [{"type": "urljoin"}],
+                    },
+                    "word_count": {
+                        "selector": ".words",
+                        "type": "text",
+                        "transforms": [{"type": "regex_extract", "pattern": r"(\d+万)"}],
+                    },
+                },
+            }
+        },
+        "content": {
+            "selector": "#content",
+            "text_only": True,
+            "join_with": "\n",
+            "transforms": [
+                {"type": "regex_replace", "pattern": r"^　+", "repl": "", "flags": "m"},
+                {"type": "replace", "old": "本章完", "new": ""},
+                {"type": "slice", "start": "0", "end": "12"},
+                {"type": "trim"},
+            ],
+        },
+    }
+
+    parser = RuleParser(rule)
+    search_result = parser.parse_search(html)
+    assert search_result["items"][0]["title"] == "Example Book"
+    assert search_result["items"][0]["author"] == "Alice"
+    assert search_result["items"][0]["url"] == "https://m.example.com/book/1"
+    assert search_result["items"][0]["word_count"] == "123万"
+
+    content_result = parser.parse_content(html)
+    assert content_result["parse_success"] is True
+    assert content_result["content"] == "Chapter text"
+
+
 def test_rule_converter_maps_legado_search_toc_and_content_rules():
     converted = convert_legado_to_ylcraft(
         {
@@ -187,6 +265,74 @@ def test_rule_converter_maps_legado_search_toc_and_content_rules():
     assert converted["toc"]["items"]["selector"] == "#list li"
     assert converted["content"]["selector"] == "#content"
     assert converted["content"]["remove"] == [".ad"]
+
+
+def test_rule_converter_preserves_legado_regex_and_js_as_ylcraft_transforms():
+    converted = convert_legado_to_ylcraft(
+        {
+            "bookSourceName": "Example",
+            "bookSourceUrl": "https://m.example.com",
+            "searchUrl": "/search?kw={{key}}",
+            "ruleSearch": {
+                "bookList": ".book-item",
+                "name": "h3@text##《|》<js>result.trim()</js>",
+                "author": ".author@text@JS:result.trim()",
+                "bookUrl": "a@href",
+            },
+            "ruleContent": {
+                "content": "#content##本章完<js>result.replace(/^\\s+/, '')</js>",
+            },
+        }
+    )
+
+    title_transforms = converted["search"]["items"]["fields"]["title"]["transforms"]
+    assert title_transforms == [
+        {"type": "regex_replace", "pattern": "《|》", "repl": ""},
+        {"type": "js", "code": "result.trim()"},
+    ]
+    assert converted["search"]["items"]["fields"]["author"]["transforms"] == [
+        {"type": "js", "code": "result.trim()"},
+    ]
+    assert converted["content"]["transforms"] == [
+        {"type": "regex_replace", "pattern": "本章完", "repl": ""},
+        {"type": "js", "code": "result.replace(/^\\s+/, '')"},
+    ]
+    assert converted["conversion_warnings"] == []
+
+
+def test_rule_converter_exports_supported_transforms_back_to_legado_syntax():
+    ylcraft = {
+        "version": "1.0",
+        "name": "Y Source",
+        "base_url": "https://m.example.com",
+        "search": {
+            "url": "/search?kw={{keyword}}",
+            "items": {
+                "selector": ".book-item",
+                "fields": {
+                    "title": {
+                        "selector": "h3",
+                        "type": "text",
+                        "transforms": [
+                            {"type": "regex_replace", "pattern": "《|》", "repl": ""},
+                            {"type": "js", "code": "result.trim()"},
+                        ],
+                    },
+                },
+            },
+        },
+        "content": {
+            "selector": "#content",
+            "transforms": [
+                {"type": "regex_replace", "pattern": "本章完", "repl": ""},
+                {"type": "js", "code": "result.replace(/^\\s+/, '')"},
+            ],
+        },
+    }
+
+    legado = convert_ylcraft_to_legado(ylcraft)
+    assert legado["ruleSearch"]["name"] == "h3@text##《|》<js>result.trim()</js>"
+    assert legado["ruleContent"]["content"] == "#content##本章完<js>result.replace(/^\\s+/, '')</js>"
 
 
 def test_rule_converter_round_trips_ylcraft_to_legado_shape():

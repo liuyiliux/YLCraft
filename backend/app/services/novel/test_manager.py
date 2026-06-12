@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 from typing import Any, Dict, Optional
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import httpx
 from sqlalchemy.orm import Session
@@ -75,6 +75,7 @@ class BookSourceTestManager:
         cookie_match = prepared["cookie_match"]
         cookie_source = prepared["cookie_source"]
         browser_cookie = None
+        browser_request_headers = None
 
         start = time.perf_counter()
         if actual_fetch_mode == "browser":
@@ -93,6 +94,7 @@ class BookSourceTestManager:
             response_headers = rendered.headers
             html = rendered.html or ""
             browser_cookie = _browser_cookie_summary(final_url, rendered.cookies)
+            browser_request_headers = _safe_browser_request_headers(rendered.request_headers)
         else:
             async with httpx.AsyncClient(
                 timeout=httpx.Timeout(30.0, connect=10.0),
@@ -138,6 +140,7 @@ class BookSourceTestManager:
                 "parsed_result": parsed["parsed_result"],
                 "diagnostics": diagnostics,
                 "browser_cookie": browser_cookie,
+                "browser_request_headers": browser_request_headers,
                 "debug_info": {
                     **parsed["debug_info"],
                     "cookie_used": cookie_source != "none",
@@ -226,6 +229,7 @@ class BookSourceTestManager:
         )
         raw_html = html[: self.RAW_HTML_LIMIT] if show_raw else ""
         browser_cookie = _browser_cookie_summary(final_url, snapshot.get("cookies") or [])
+        browser_request_headers = _safe_browser_request_headers(snapshot.get("request_headers") or {})
         return {
             "success": True,
             "data": {
@@ -239,6 +243,7 @@ class BookSourceTestManager:
                 "parsed_result": parsed["parsed_result"],
                 "diagnostics": diagnostics,
                 "browser_cookie": browser_cookie,
+                "browser_request_headers": browser_request_headers,
                 "debug_info": {
                     **parsed["debug_info"],
                     "cookie_used": meta["cookie_source"] != "none",
@@ -379,7 +384,7 @@ class BookSourceTestManager:
 
         if rule_type == "search":
             rule_used = source.ruleSearch or rule_used
-            rule_trace = _trace_legado_rules(source.ruleSearch or {}, html, "search")
+            rule_trace = _trace_legado_rules(source.ruleSearch or {}, html, "search", source.bookSourceUrl)
             items = parse_book_list(source.ruleSearch or {}, html, source.bookSourceUrl)
             parsed_result = {
                 "type": "search",
@@ -391,7 +396,7 @@ class BookSourceTestManager:
                 matched_elements = len(items)
         elif rule_type == "toc":
             rule_used = source.ruleToc or rule_used
-            rule_trace = _trace_legado_rules(source.ruleToc or {}, html, "toc")
+            rule_trace = _trace_legado_rules(source.ruleToc or {}, html, "toc", url)
             items = parse_chapter_list(source.ruleToc or {}, html, url)
             parsed_result = {
                 "type": "toc",
@@ -405,13 +410,18 @@ class BookSourceTestManager:
             rule_used = source.ruleContent or rule_used
             rule_trace = _trace_legado_rules(source.ruleContent or {}, html, "content")
             content = parse_chapter_content(source.ruleContent or {}, html) or ""
+            content_source = "rule"
+            if not content:
+                content = _extract_meta_description_preview(html)
+                content_source = "meta_description" if content else "rule"
             parsed_result = {
                 "type": "content",
                 "parse_success": bool(content),
                 "content": content,
                 "content_length": len(content),
+                "content_source": content_source,
             }
-            if matched_elements == 0 and content:
+            if matched_elements == 0 and content and content_source == "rule":
                 matched_elements = 1
 
         return {
@@ -528,6 +538,26 @@ def _safe_headers(headers: Dict[str, str]) -> Dict[str, str]:
     return safe
 
 
+def _safe_browser_request_headers(headers: Dict[str, Any]) -> Dict[str, str]:
+    blocked = {
+        "host",
+        "content-length",
+        "connection",
+        "transfer-encoding",
+        "accept-encoding",
+        "cookie",
+    }
+    safe: Dict[str, str] = {}
+    for key, value in (headers or {}).items():
+        name = str(key).strip()
+        if not name or name.startswith(":") or name.lower() in blocked:
+            continue
+        if value is None:
+            continue
+        safe[name] = str(value)
+    return safe
+
+
 def _normalize_request_headers(headers: Optional[Dict[str, Any]]) -> Dict[str, str]:
     if not headers:
         return {}
@@ -622,7 +652,7 @@ def _detect_response_diagnostics(
     )
     if is_probe_page:
         suggestion = (
-            "当前普通 HTTP 请求拿到的是 202 反爬探测页，不是书籍列表。建议先用可见浏览器完成站点校验并保存 Cookie，或改用该站提供的授权接口。"
+            "当前普通 HTTP 请求拿到的是 202 反爬探测页，不是书籍列表。建议先用浏览器渲染模式或可见浏览器完成站点校验并保存 Cookie，或改用该站提供的授权接口。"
             if fetch_mode == "http"
             else "Patchright 已打开 Chromium，但当前响应仍是 202 WAF 探测页；通常是独立浏览器上下文没有通过站点校验。请在可见浏览器里刷新或完成校验后再读取，或保存真实浏览器 Cookie 后重试。"
         )
@@ -680,7 +710,31 @@ def _detect_response_diagnostics(
                 "suggestion": "查看规则命中视图，先修正列表/正文根选择器，再逐项调字段规则。",
             }
         )
+    if (parsed_result or {}).get("content_source") == "meta_description":
+        diagnostics.append(
+            {
+                "type": "meta_description_fallback",
+                "message": "正文规则未命中，已使用页面 meta description 作为预览",
+                "suggestion": "这只是章节摘要，不是完整正文。需要完整正文时，请使用浏览器渲染后检查真实正文 DOM，或定位章节页前端接口。",
+            }
+        )
     return diagnostics
+
+
+def _extract_meta_description_preview(html: str) -> str:
+    if not html:
+        return ""
+    try:
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup(html, "html.parser")
+        meta = soup.select_one('meta[name="description"]')
+        if not meta:
+            return ""
+        content = str(meta.get("content") or "").strip()
+        return content
+    except Exception:
+        return ""
 
 
 def _looks_like_js_shell_page(html: str) -> bool:
@@ -698,13 +752,18 @@ def _looks_like_js_shell_page(html: str) -> bool:
         return False
 
 
-def _trace_legado_rules(rule: Dict[str, Any], html: str, rule_type: str) -> list[Dict[str, Any]]:
+def _trace_legado_rules(
+    rule: Dict[str, Any],
+    html: str,
+    rule_type: str,
+    base_url: str = "",
+) -> list[Dict[str, Any]]:
     if not rule:
         return []
     if rule_type == "search":
-        return _trace_legado_list_rules(rule, html, "bookList", ["name", "author", "bookUrl", "coverUrl", "intro"])
+        return _trace_legado_list_rules(rule, html, "bookList", ["name", "author", "bookUrl", "coverUrl", "intro"], base_url)
     if rule_type == "toc":
-        return _trace_legado_list_rules(rule, html, "chapterList", ["chapterName", "chapterUrl"])
+        return _trace_legado_list_rules(rule, html, "chapterList", ["chapterName", "chapterUrl"], base_url)
     return _trace_legado_content_rules(rule, html)
 
 
@@ -713,6 +772,7 @@ def _trace_legado_list_rules(
     html: str,
     list_key: str,
     field_keys: list[str],
+    base_url: str = "",
 ) -> list[Dict[str, Any]]:
     trace: list[Dict[str, Any]] = []
     list_rule = rule.get(list_key)
@@ -724,7 +784,7 @@ def _trace_legado_list_rules(
         if not field_rule:
             continue
         field_elements = _safe_select_legado(field_rule, first_html) if first_html else []
-        sample = _safe_parse_legado_value(field_rule, first_html) if first_html else ""
+        sample = _safe_parse_legado_value(field_rule, first_html, base_url, key) if first_html else ""
         matches = len(field_elements)
         if matches == 0 and sample and _is_current_element_rule(field_rule):
             matches = 1
@@ -787,11 +847,19 @@ def _safe_select_legado(rule_value: Any, html: Any) -> list[Any]:
         return []
 
 
-def _safe_parse_legado_value(rule_value: Any, html: str) -> str:
+def _safe_parse_legado_value(
+    rule_value: Any,
+    html: str,
+    base_url: str = "",
+    field_name: str = "",
+) -> str:
     if not isinstance(rule_value, str) or _is_jsonpath_rule(rule_value):
         return ""
     try:
-        return _short_text(_parse_css_rule(rule_value, html) or "")
+        value = _parse_css_rule(rule_value, html) or ""
+        if value and field_name.lower() in {"bookurl", "chapterurl", "coverurl"}:
+            value = urljoin(base_url.rstrip("/") + "/", value)
+        return _short_text(value)
     except Exception:
         return ""
 

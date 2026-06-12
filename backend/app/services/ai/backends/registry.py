@@ -170,6 +170,8 @@ class BackendRegistry:
             else:
                 backend = backend_cls(connector=conn)
             self._backends[media_type][conn.name] = backend
+            if bool(getattr(conn, "is_default", False)):
+                self._defaults[media_type] = conn.name
             logger.info(f"[Registry] 已注册 {provider_type.upper()} Backend: {conn.name} ({class_path.rsplit('.',1)[1]})")
         except Exception as e:
             logger.error(f"[Registry] 初始化 Backend 失败 {conn.name}: {e}")

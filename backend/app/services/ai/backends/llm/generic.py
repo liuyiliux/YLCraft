@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 from typing import Optional, Dict, List
+from urllib.parse import urlparse
 
 import httpx
 from jinja2 import Template
@@ -52,9 +53,9 @@ class GenericLLMBackend(LLMBackend):
         if connector.api_key:
             headers["Authorization"] = f"Bearer {connector.api_key}"
         headers["Content-Type"] = "application/json"
+        self._chat_url = _build_chat_url(connector.base_url or "", connector.api_endpoint)
         
         self.client = httpx.AsyncClient(
-            base_url=connector.base_url or "",
             headers=headers,
             timeout=120.0,
         )
@@ -73,17 +74,24 @@ class GenericLLMBackend(LLMBackend):
                 "max_tokens": kwargs.get("max_tokens", self._default_max_tokens),
             }
             
-            api_path = self.connector.api_endpoint or "/chat/completions"
-            base_url = self.connector.base_url or ""
-            full_url = base_url.rstrip("/") + api_path
+            logger.info("[GenericLLM] Sending request to %s, model: %s", self._chat_url, model)
             
-            logger.info("[GenericLLM] Sending request to %s, model: %s", full_url, model)
-            
-            response = await self.client.post(api_path, json=request_body)
+            response = await self.client.post(self._chat_url, json=request_body)
             response.raise_for_status()
             
             data = response.json()
-            content = data["choices"][0]["message"]["content"]
+            choice = (data.get("choices") or [{}])[0]
+            message = choice.get("message") or {}
+            content = (
+                message.get("content")
+                or message.get("reasoning_content")
+                or choice.get("text")
+                or data.get("output_text")
+                or data.get("content")
+                or ""
+            )
+            if not isinstance(content, str):
+                content = json.dumps(content, ensure_ascii=False)
             usage = data.get("usage", {})
             
             return LLMGenerationResult(
@@ -131,3 +139,20 @@ class GenericLLMBackend(LLMBackend):
     async def close(self):
         """关闭 HTTP 客户端"""
         await self.client.aclose()
+
+
+def _build_chat_url(base_url: str, api_endpoint: Optional[str] = None) -> str:
+    """Build an OpenAI-compatible chat URL without duplicating endpoint paths."""
+    base = (base_url or "").strip().rstrip("/")
+    endpoint = (api_endpoint or "/chat/completions").strip() or "/chat/completions"
+    endpoint_path = "/" + endpoint.lstrip("/")
+    if not base:
+        return endpoint_path
+
+    base_path = urlparse(base).path.rstrip("/")
+    normalized_endpoint = endpoint_path.rstrip("/")
+    if normalized_endpoint and base_path.lower().endswith(normalized_endpoint.lower()):
+        return base
+    if base_path and normalized_endpoint.lower().startswith((base_path + "/").lower()):
+        normalized_endpoint = normalized_endpoint[len(base_path):]
+    return base + normalized_endpoint

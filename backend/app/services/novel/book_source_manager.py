@@ -224,6 +224,26 @@ def _build_search_url(search_url_template: str, keyword: str, base_url: str, pag
     return result
 
 
+def _sanitize_book_source_headers(headers: Dict[str, Any]) -> Dict[str, str]:
+    blocked = {
+        "host",
+        "content-length",
+        "connection",
+        "transfer-encoding",
+        "accept-encoding",
+        "cookie",
+    }
+    sanitized: Dict[str, str] = {}
+    for key, value in (headers or {}).items():
+        name = str(key).strip()
+        if not name or name.startswith(":") or name.lower() in blocked:
+            continue
+        if value is None:
+            continue
+        sanitized[name] = str(value)
+    return sanitized
+
+
 class BookSourceManager:
     """书源管理器"""
     
@@ -605,6 +625,20 @@ class BookSourceManager:
         if self.db and not self._save_source_to_db(source):
             raise ValueError("failed to save book source rules")
         return self.get_source_rules(source_id)
+
+    def update_source_headers(self, source_id: str, headers: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Persist reusable request headers for a book source."""
+        source = self.get_source(source_id)
+        if not source:
+            return None
+
+        source.header = json.dumps(_sanitize_book_source_headers(headers), ensure_ascii=False)
+        if self.db and not self._save_source_to_db(source):
+            raise ValueError("failed to save book source headers")
+        return {
+            "id": source.source_id,
+            "headers": json.loads(source.header or "{}"),
+        }
 
     def _source_to_legado_rules(self, source: BookSource) -> Dict[str, Any]:
         return {

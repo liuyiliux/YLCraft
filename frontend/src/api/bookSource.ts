@@ -60,6 +60,7 @@ export interface BookSourceTestResult {
       cookie_content: string
       source_domains?: string[]
     } | null
+    browser_request_headers?: Record<string, string> | null
     diagnostics?: Array<{
       type: string
       message: string
@@ -238,6 +239,17 @@ export async function updateBookSourceRules(
   return res.data
 }
 
+export async function updateBookSourceHeaders(
+  sourceId: string,
+  headers: Record<string, string>,
+): Promise<Record<string, string>> {
+  const res = await request(`/book-sources/${sourceId}/headers`, {
+    method: 'PUT',
+    body: JSON.stringify({ headers }),
+  })
+  return res.data?.headers || {}
+}
+
 export async function convertBookSourceRules(
   direction: 'legado_to_ylcraft' | 'ylcraft_to_legado',
   source: Record<string, any>,
@@ -303,6 +315,60 @@ export interface BookSourceTestParams {
   rules?: BookSourceRulesPayload
 }
 
+export interface RuleAssistantPatch {
+  target: string
+  format: 'legado' | 'ylcraft'
+  mode?: 'merge' | 'replace'
+  value: any
+  reason?: string
+  confidence?: number
+  risks?: string[]
+  validation?: Record<string, any>
+}
+
+export interface RuleAssistantSuggestion {
+  success: boolean
+  plugin?: string
+  summary?: string
+  patches?: RuleAssistantPatch[]
+  selector_candidates?: Array<Record<string, any>>
+  test_plan?: string[]
+  warnings?: string[]
+  usage?: Record<string, any>
+  provider?: string
+  model?: string
+  raw_response?: string
+  error?: string
+}
+
+export interface RuleAssistantSuggestPayload {
+  domain: 'book_source'
+  rule_type: 'search' | 'toc' | 'content'
+  rule_format: 'legado' | 'ylcraft'
+  current_rules: BookSourceRulesPayload
+  source_id: string
+  source_name: string
+  source_url: string
+  target_url?: string
+  test_result?: Record<string, any>
+  provider?: string
+  model?: string
+}
+
+export interface LlmBackendInfo {
+  name: string
+  provider: string
+  provider_label?: string
+  model: string
+  available_models?: string[]
+  support_vision_input?: boolean
+}
+
+export async function getBookSourceLlmBackends(): Promise<LlmBackendInfo[]> {
+  const res = await request('/llm/backends')
+  return res.backends || []
+}
+
 export interface BookSourceBrowserSession {
   success: boolean
   data: {
@@ -332,6 +398,16 @@ export async function testBookSource(
       fetch_mode: params.fetch_mode || 'http',
     }),
   })
+}
+
+export async function suggestBookSourceRule(
+  payload: RuleAssistantSuggestPayload,
+): Promise<RuleAssistantSuggestion> {
+  const res = await request('/rule-assistant/suggest', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+  return res.data
 }
 
 export async function startBookSourceBrowserSession(

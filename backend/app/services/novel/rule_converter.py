@@ -9,6 +9,26 @@ from typing import Any, Dict, List, Tuple
 
 
 SUPPORTED_YLCRAFT_VERSION = "1.0"
+_JS_TAG_PATTERN = re.compile(r"<js>(.*?)</js>", re.DOTALL | re.IGNORECASE)
+_SUPPORTED_TRANSFORM_PATHS = {
+    "ruleSearch.name",
+    "ruleSearch.author",
+    "ruleSearch.bookUrl",
+    "ruleSearch.coverUrl",
+    "ruleSearch.intro",
+    "ruleSearch.kind",
+    "ruleSearch.wordCount",
+    "ruleBookInfo.name",
+    "ruleBookInfo.author",
+    "ruleBookInfo.coverUrl",
+    "ruleBookInfo.intro",
+    "ruleBookInfo.tocUrl",
+    "ruleBookInfo.kind",
+    "ruleBookInfo.wordCount",
+    "ruleToc.chapterName",
+    "ruleToc.chapterUrl",
+    "ruleContent.content",
+}
 
 
 def convert_legado_to_ylcraft(legado_json: Any) -> Dict[str, Any]:
@@ -111,7 +131,10 @@ def convert_ylcraft_to_legado(ylcraft_json: Any) -> Dict[str, Any]:
     if content:
         rule_content: Dict[str, Any] = {}
         if content.get("selector"):
-            rule_content["content"] = content["selector"]
+            rule_content["content"] = _append_transforms_to_legado_rule(
+                str(content["selector"]),
+                content.get("transforms") or [],
+            )
         remove = content.get("remove") or []
         if isinstance(remove, list) and remove:
             rule_content["removeContent"] = ", ".join(str(item) for item in remove if item)
@@ -185,8 +208,8 @@ def convert_selector(legado_selector: str) -> str:
     if not selector:
         return ""
 
+    selector, _ = _extract_rule_transforms(selector)
     selector = selector.split("##", 1)[0]
-    selector = re.sub(r"<js>.*?</js>", "", selector, flags=re.DOTALL).strip()
     parts = [part for part in selector.split("@") if part]
     css_parts: List[str] = []
     for part in parts:
@@ -199,13 +222,16 @@ def convert_selector(legado_selector: str) -> str:
 
 
 def convert_field_rule(legado_rule: str) -> Dict[str, Any]:
-    selector, field_type, attr = _split_field_rule(legado_rule or "")
+    raw_rule, transforms = _extract_rule_transforms(legado_rule or "")
+    selector, field_type, attr = _split_field_rule(raw_rule)
     config: Dict[str, Any] = {
         "selector": selector,
         "type": field_type,
     }
     if attr:
         config["attr"] = attr
+    if transforms:
+        config["transforms"] = transforms
     return config
 
 
@@ -289,15 +315,19 @@ def _convert_toc(rule_toc: Dict[str, Any], warnings: List[str]) -> Dict[str, Any
 def _convert_content(rule_content: Dict[str, Any], warnings: List[str]) -> Dict[str, Any]:
     if not rule_content:
         return {}
-    selector = convert_selector(str(rule_content.get("content") or ""))
+    raw_content, transforms = _extract_rule_transforms(str(rule_content.get("content") or ""))
+    selector = convert_selector(raw_content)
     remove = rule_content.get("removeContent") or []
     if isinstance(remove, str):
         remove = [convert_selector(remove)] if remove else []
-    return {
+    config = {
         "selector": selector,
         "remove": [item for item in remove if item],
         "text_only": True,
     }
+    if transforms:
+        config["transforms"] = transforms
+    return config
 
 
 def _split_field_rule(rule: str) -> Tuple[str, str, str]:
@@ -374,10 +404,13 @@ def _field_to_legado(config: Dict[str, Any]) -> str:
     field_type = config.get("type", "text")
     if field_type == "attr":
         attr = config.get("attr") or _infer_attr(selector) or "href"
-        return f"{selector}@{attr}" if selector else attr
+        rule = f"{selector}@{attr}" if selector else attr
+        return _append_transforms_to_legado_rule(rule, config.get("transforms") or [])
     if field_type == "html":
-        return f"{selector}@html" if selector else "html"
-    return f"{selector}@text" if selector else "text"
+        rule = f"{selector}@html" if selector else "html"
+        return _append_transforms_to_legado_rule(rule, config.get("transforms") or [])
+    rule = f"{selector}@text" if selector else "text"
+    return _append_transforms_to_legado_rule(rule, config.get("transforms") or [])
 
 
 def _scan_unsupported_js(value: Any, warnings: List[str], path: str = "") -> None:
@@ -388,5 +421,60 @@ def _scan_unsupported_js(value: Any, warnings: List[str], path: str = "") -> Non
         for index, child in enumerate(value):
             _scan_unsupported_js(child, warnings, f"{path}[{index}]")
     elif isinstance(value, str):
-        if "@js:" in value or "{{" in value or "<js>" in value:
+        lowered = value.lower()
+        if ("@js:" in lowered or "<js>" in lowered) and path not in _SUPPORTED_TRANSFORM_PATHS:
             warnings.append(f"unsupported JS rule at {path}")
+        if "{{" in value and path != "searchUrl":
+            warnings.append(f"unsupported template rule at {path}")
+
+
+def _extract_rule_transforms(rule_value: str) -> Tuple[str, List[Dict[str, Any]]]:
+    text = (rule_value or "").strip()
+    transforms: List[Dict[str, Any]] = []
+
+    def collect_js(match: re.Match[str]) -> str:
+        code = match.group(1).strip()
+        if code:
+            transforms.append({"type": "js", "code": code})
+        return ""
+
+    text = _JS_TAG_PATTERN.sub(collect_js, text)
+    js_match = re.search(r"@js:", text, flags=re.IGNORECASE)
+    if js_match:
+        text, js_code = text[: js_match.start()], text[js_match.end() :]
+        js_code = js_code.strip()
+        if js_code:
+            transforms.append({"type": "js", "code": js_code})
+
+    regex_transforms: List[Dict[str, Any]] = []
+    if "##" in text and not text.startswith("##"):
+        text, pattern = text.split("##", 1)
+        pattern = pattern.strip()
+        if pattern:
+            regex_transforms.append({"type": "regex_replace", "pattern": pattern, "repl": ""})
+
+    return text.rstrip("@").strip(), regex_transforms + transforms
+
+
+def _append_transforms_to_legado_rule(rule_value: str, transforms: Any) -> str:
+    if isinstance(transforms, dict):
+        transforms = [transforms]
+    if not isinstance(transforms, list) or not transforms:
+        return rule_value
+
+    regex_suffixes: List[str] = []
+    js_suffixes: List[str] = []
+    for transform in transforms:
+        if not isinstance(transform, dict):
+            continue
+        transform_type = str(transform.get("type") or transform.get("name") or "").strip().lower()
+        if transform_type in {"regex_replace", "replace_regex"}:
+            pattern = str(transform.get("pattern") or transform.get("regex") or "")
+            repl = str(transform.get("repl", transform.get("replacement", "")))
+            if pattern and repl == "":
+                regex_suffixes.append(f"##{pattern}")
+        elif transform_type == "js":
+            code = str(transform.get("code") or transform.get("script") or "").strip()
+            if code:
+                js_suffixes.append(f"<js>{code}</js>")
+    return rule_value + "".join(regex_suffixes) + "".join(js_suffixes)

@@ -104,7 +104,12 @@ class VisibleBrowserSessionManager:
                     await context.add_cookies(cookies)
 
             page = await context.new_page()
-            latest_response: Dict[str, Any] = {"url": url, "status_code": 0, "headers": {}}
+            latest_response: Dict[str, Any] = {
+                "url": url,
+                "status_code": 0,
+                "headers": {},
+                "request_headers": {},
+            }
             page.on("response", lambda response: _record_main_document_response(page, latest_response, response))
             response = await page.goto(
                 url,
@@ -119,6 +124,7 @@ class VisibleBrowserSessionManager:
                 "created_at": time.time(),
                 "status_code": int(latest_response.get("status_code") or (response.status if response else 0)),
                 "headers": latest_response.get("headers") or (dict(response.headers) if response else {}),
+                "request_headers": latest_response.get("request_headers") or {},
                 "latest_response": latest_response,
             }
             return {
@@ -153,6 +159,7 @@ class VisibleBrowserSessionManager:
             "url": page.url,
             "status_code": int(latest_response.get("status_code") or session.get("status_code", 0)),
             "headers": latest_response.get("headers") or session.get("headers", {}),
+            "request_headers": latest_response.get("request_headers") or session.get("request_headers", {}),
             "html": html,
             "cookies": cookies,
         }
@@ -209,6 +216,7 @@ def _record_main_document_response(page: Any, latest_response: Dict[str, Any], r
         latest_response["url"] = response.url
         latest_response["status_code"] = response.status
         latest_response["headers"] = dict(response.headers)
+        latest_response["request_headers"] = dict(response.request.headers)
     except Exception:
         return
 

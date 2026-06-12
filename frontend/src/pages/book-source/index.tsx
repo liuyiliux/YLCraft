@@ -32,11 +32,13 @@ import {
 import type { TableProps, UploadProps } from 'antd'
 import {
   BugOutlined,
+  CheckCircleOutlined,
   DeleteOutlined,
   DownloadOutlined,
   KeyOutlined,
   PlusOutlined,
   ReloadOutlined,
+  RobotOutlined,
   SaveOutlined,
   SwapOutlined,
   UploadOutlined,
@@ -51,13 +53,16 @@ import {
   deleteBookSourceCookie,
   exportBookSources,
   getBookSourceCookies,
+  getBookSourceLlmBackends,
   getBookSourceRules,
   getBookSources,
   importBookSources,
   snapshotBookSourceBrowserSession,
   startBookSourceBrowserSession,
+  suggestBookSourceRule,
   testBookSource,
   toggleBookSource,
+  updateBookSourceHeaders,
   updateBookSourceCookie,
   updateBookSourceRules,
 } from '../../api/bookSource'
@@ -67,6 +72,9 @@ import type {
   BookSourceRules,
   BookSourceRulesPayload,
   BookSourceTestParams,
+  LlmBackendInfo,
+  RuleAssistantPatch,
+  RuleAssistantSuggestion,
 } from '../../api/bookSource'
 import { useTheme } from '../../constants/theme'
 
@@ -92,6 +100,25 @@ const emptyRuleEditor = (): LegadoRuleEditor => ({
 })
 
 const jsonText = (value: unknown) => JSON.stringify(value || {}, null, 2)
+
+const isPlainObject = (value: unknown): value is Record<string, any> =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+
+const deepMergeObject = (
+  base: Record<string, any>,
+  patch: Record<string, any>,
+): Record<string, any> => {
+  const merged: Record<string, any> = { ...base }
+  Object.entries(patch).forEach(([key, value]) => {
+    const current = merged[key]
+    if (isPlainObject(current) && isPlainObject(value)) {
+      merged[key] = deepMergeObject(current, value)
+    } else {
+      merged[key] = value
+    }
+  })
+  return merged
+}
 
 const darkInfoAlertStyle: React.CSSProperties = {
   background: '#2b2112',
@@ -129,6 +156,21 @@ const parseJsonObject = (text: string, label: string): Record<string, any> => {
     throw new Error(`${label} 必须是 JSON 对象`)
   }
   return parsed
+}
+
+const mergeJsonObjectText = (
+  currentText: string,
+  patchValue: any,
+  label: string,
+  mode: string = 'merge',
+): string => {
+  if (mode === 'replace') {
+    return jsonText(patchValue)
+  }
+  if (!patchValue || typeof patchValue !== 'object' || Array.isArray(patchValue)) {
+    return jsonText(patchValue)
+  }
+  return jsonText(deepMergeObject(parseJsonObject(currentText, label), patchValue))
 }
 
 const defaultTestHeadersText = () => jsonText({
@@ -191,6 +233,12 @@ const BookSourcePage: React.FC = () => {
   const [browserSession, setBrowserSession] = useState<{ session_id: string; url: string; status_code?: number } | null>(null)
   const [browserSessionLoading, setBrowserSessionLoading] = useState(false)
   const [browserSnapshotLoading, setBrowserSnapshotLoading] = useState(false)
+  const [browserHeadersSaving, setBrowserHeadersSaving] = useState(false)
+  const [ruleAssistantLoading, setRuleAssistantLoading] = useState(false)
+  const [ruleAssistantResult, setRuleAssistantResult] = useState<RuleAssistantSuggestion | null>(null)
+  const [llmBackends, setLlmBackends] = useState<LlmBackendInfo[]>([])
+  const [llmBackendsLoading, setLlmBackendsLoading] = useState(false)
+  const [ruleAssistantModelValue, setRuleAssistantModelValue] = useState('')
 
   const [rulesLoading, setRulesLoading] = useState(false)
   const [rulesSaving, setRulesSaving] = useState(false)
@@ -221,6 +269,23 @@ const BookSourcePage: React.FC = () => {
     fetchSources()
   }, [])
 
+  useEffect(() => {
+    setLlmBackendsLoading(true)
+    getBookSourceLlmBackends()
+      .then(data => {
+        setLlmBackends(data)
+        if (!ruleAssistantModelValue && data.length > 0) {
+          const first = data[0]
+          const model = first.model || first.available_models?.[0] || ''
+          setRuleAssistantModelValue(`${first.name}::${model}`)
+        }
+      })
+      .catch(() => {
+        setLlmBackends([])
+      })
+      .finally(() => setLlmBackendsLoading(false))
+  }, [])
+
   const filteredSources = useMemo(() => {
     const keyword = sourceNameKeyword.trim().toLowerCase()
     if (!keyword) return sources
@@ -228,6 +293,23 @@ const BookSourcePage: React.FC = () => {
       (source.book_source_name || '').toLowerCase().includes(keyword),
     )
   }, [sources, sourceNameKeyword])
+
+  const ruleAssistantModelOptions = useMemo(() => {
+    return llmBackends.flatMap(backend => {
+      const models = backend.available_models?.length ? backend.available_models : [backend.model].filter(Boolean)
+      return models.map(model => ({
+        label: `${backend.provider_label || backend.provider || backend.name} / ${model || backend.model || '默认模型'}（${backend.name}）`,
+        value: `${backend.name}::${model || backend.model || ''}`,
+      }))
+    })
+  }, [llmBackends])
+
+  const selectedRuleAssistantBackend = useMemo(() => {
+    if (!ruleAssistantModelValue) return null
+    const [backendName, model = ''] = ruleAssistantModelValue.split('::')
+    const backend = llmBackends.find(item => item.name === backendName)
+    return backend ? { backend, model } : null
+  }, [llmBackends, ruleAssistantModelValue])
 
   const applyRules = (data: BookSourceRules) => {
     setRulesMeta(data)
@@ -275,6 +357,7 @@ const BookSourcePage: React.FC = () => {
     setDebugOpen(true)
     setActiveDebugTab('test')
     setTestResult(null)
+    setRuleAssistantResult(null)
     setRulesMeta(null)
     setLegadoEditor(emptyRuleEditor())
     setYlcraftText('{}')
@@ -424,6 +507,7 @@ const BookSourcePage: React.FC = () => {
 
     setTestLoading(true)
     setTestResult(null)
+    setRuleAssistantResult(null)
     try {
       const result = await testBookSource(debugSource.id, {
         url: values.url,
@@ -512,6 +596,7 @@ const BookSourcePage: React.FC = () => {
         testForm.getFieldValue('show_raw') ?? true,
       )
       setTestResult(result)
+      setRuleAssistantResult(null)
       if (!result.success) {
         message.error(result.detail || '读取当前页面失败')
       } else {
@@ -727,6 +812,125 @@ const BookSourcePage: React.FC = () => {
     }
   }
 
+  const handleSaveBrowserHeaders = async () => {
+    if (!debugSource) return
+    const headers = testResult?.data?.browser_request_headers || {}
+    if (!Object.keys(headers).length) {
+      message.warning('当前测试结果没有可保存的浏览器请求头')
+      return
+    }
+
+    setBrowserHeadersSaving(true)
+    try {
+      const saved = await updateBookSourceHeaders(debugSource.id, headers)
+      testForm.setFieldValue('request_headers', jsonText(saved))
+      message.success(`已保存 ${Object.keys(saved).length} 项浏览器请求头`)
+    } catch (err: any) {
+      message.error(`保存浏览器请求头失败: ${err.message}`)
+    } finally {
+      setBrowserHeadersSaving(false)
+    }
+  }
+
+  const handleAskRuleAssistant = async () => {
+    if (!debugSource) return
+    const data = testResult?.data
+    if (!data) {
+      message.warning('请先运行一次测试，AI 才能根据页面和命中视图修复规则')
+      return
+    }
+
+    const values = testForm.getFieldsValue()
+    const ruleType = (data.debug_info?.rule_type || values.rule_type || 'content') as 'search' | 'toc' | 'content'
+    const ruleFormat = (data.debug_info?.rule_format || values.rule_format || 'legado') as 'legado' | 'ylcraft'
+    let currentRules: BookSourceRulesPayload
+    try {
+      currentRules = ruleFormat === 'ylcraft' ? buildYlcraftPayload() : buildLegadoPayload()
+    } catch (err: any) {
+      message.error(err.message)
+      return
+    }
+
+    setRuleAssistantLoading(true)
+    try {
+      const suggestion = await suggestBookSourceRule({
+        domain: 'book_source',
+        rule_type: ruleType,
+        rule_format: ruleFormat,
+        current_rules: currentRules,
+        source_id: debugSource.id,
+        source_name: debugSource.book_source_name,
+        source_url: debugSource.book_source_url,
+        target_url: data.url || values.url,
+        test_result: data,
+        provider: selectedRuleAssistantBackend?.backend.name,
+        model: selectedRuleAssistantBackend?.model,
+      })
+      setRuleAssistantResult(suggestion)
+      if (!suggestion.success) {
+        message.error(suggestion.error || 'AI 规则助手生成失败')
+      } else if ((suggestion.patches || []).length > 0) {
+        message.success(`AI 已生成 ${suggestion.patches?.length || 0} 个候选补丁`)
+      } else {
+        message.warning('AI 没有生成可应用补丁，请查看提示信息')
+      }
+    } catch (err: any) {
+      message.error(`AI 规则助手失败: ${err.message}`)
+    } finally {
+      setRuleAssistantLoading(false)
+    }
+  }
+
+  const applyRuleAssistantPatch = (patch: RuleAssistantPatch) => {
+    if (!patch) return
+    const mode = patch.mode || 'merge'
+    if (patch.format === 'ylcraft' || patch.target === 'ylcraft_rule') {
+      try {
+        setYlcraftText(mergeJsonObjectText(ylcraftText, patch.value, 'YLCraft 规则', mode))
+      } catch (err: any) {
+        message.error(err.message)
+        return
+      }
+      testForm.setFieldValue('rule_format', 'ylcraft')
+      setActiveDebugTab('ylcraft')
+      message.success(`已${mode === 'replace' ? '替换' : '合并'}到 YLCraft 编辑器，请复测后再保存`)
+      return
+    }
+
+    const applyLegadoObjectPatch = (field: keyof LegadoRuleEditor, label: string) => {
+      let nextText: string
+      try {
+        nextText = mergeJsonObjectText(legadoEditor[field], patch.value, label, mode)
+      } catch (err: any) {
+        message.error(err.message)
+        return false
+      }
+      setLegadoEditor(prev => ({ ...prev, [field]: nextText }))
+      return true
+    }
+
+    if (patch.target === 'search_url') {
+      setLegadoEditor(prev => ({ ...prev, searchUrl: String(patch.value || '') }))
+    } else if (patch.target === 'rule_search') {
+      if (!applyLegadoObjectPatch('ruleSearch', '搜索规则')) return
+    } else if (patch.target === 'rule_book_info') {
+      if (!applyLegadoObjectPatch('ruleBookInfo', '详情规则')) return
+    } else if (patch.target === 'rule_toc') {
+      if (!applyLegadoObjectPatch('ruleToc', '目录规则')) return
+    } else if (patch.target === 'rule_content') {
+      if (!applyLegadoObjectPatch('ruleContent', '正文规则')) return
+    } else if (patch.target === 'rule_explore') {
+      if (!applyLegadoObjectPatch('ruleExplore', '发现规则')) return
+    } else {
+      message.warning(`暂不支持应用补丁目标: ${patch.target}`)
+      return
+    }
+
+    testForm.setFieldValue('rule_format', 'legado')
+    setActiveDebugTab('legado')
+    message.success(`已${mode === 'replace' ? '替换' : '合并'}到 Legado 编辑器，请复测后再保存`)
+  }
+
   const uploadProps: UploadProps = {
     accept: '.json',
     showUploadList: false,
@@ -819,6 +1023,130 @@ const BookSourcePage: React.FC = () => {
     },
   ]
 
+  const renderRuleAssistantPanel = () => {
+    if (!ruleAssistantResult) return null
+
+    const patches = ruleAssistantResult.patches || []
+    const warnings = ruleAssistantResult.warnings || []
+    const candidates = (ruleAssistantResult.selector_candidates || []).slice(0, 8)
+
+    return (
+      <Space direction="vertical" style={{ width: '100%' }} size={12}>
+        <Alert
+          type={ruleAssistantResult.success ? 'success' : 'error'}
+          showIcon
+          message="AI 规则建议"
+          description={
+            <Space direction="vertical" size={6} style={{ width: '100%' }}>
+              <span>{ruleAssistantResult.summary || ruleAssistantResult.error || '暂无摘要'}</span>
+              {(ruleAssistantResult.provider || ruleAssistantResult.model) && (
+                <Text type="secondary">
+                  后端：{ruleAssistantResult.provider || '-'} / {ruleAssistantResult.model || '-'}
+                </Text>
+              )}
+            </Space>
+          }
+        />
+
+        {warnings.map((item, index) => (
+          <Alert key={`${item}-${index}`} type="warning" showIcon message={item} />
+        ))}
+
+        {patches.length > 0 && (
+          <List
+            size="small"
+            bordered
+            dataSource={patches}
+            renderItem={(patch, index) => {
+              const validation = patch.validation || {}
+              const matched = validation.matched_elements
+              const confidence = Math.round((patch.confidence || 0) * 100)
+              return (
+                <List.Item
+                  actions={[
+                    <Button
+                      key="apply"
+                      type="primary"
+                      size="small"
+                      icon={<CheckCircleOutlined />}
+                      onClick={() => applyRuleAssistantPatch(patch)}
+                    >
+                      应用到编辑器
+                    </Button>,
+                  ]}
+                >
+                  <List.Item.Meta
+                    title={
+                      <Space wrap size={8}>
+                        <Text strong>候选 {index + 1}</Text>
+                        <Tag>{patch.format}</Tag>
+                        <Tag color={patch.mode === 'replace' ? 'orange' : 'green'}>{patch.mode || 'merge'}</Tag>
+                        <Tag color="blue">{patch.target}</Tag>
+                        <Tag color={confidence >= 75 ? 'success' : confidence >= 45 ? 'warning' : 'default'}>
+                          {confidence}%
+                        </Tag>
+                        {matched !== undefined && (
+                          <Tag color={matched > 0 ? 'success' : 'error'}>命中 {matched}</Tag>
+                        )}
+                      </Space>
+                    }
+                    description={
+                      <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                        {patch.reason && <Text>{patch.reason}</Text>}
+                        {patch.risks?.length ? (
+                          <Space wrap size={4}>
+                            {patch.risks.map((risk, riskIndex) => (
+                              <Tag key={`${risk}-${riskIndex}`} color="warning">{risk}</Tag>
+                            ))}
+                          </Space>
+                        ) : null}
+                        {validation.sample && <Text type="secondary">样例：{validation.sample}</Text>}
+                        <TextArea
+                          readOnly
+                          value={JSON.stringify(patch.value, null, 2)}
+                          rows={4}
+                          style={{ fontFamily: 'monospace' }}
+                        />
+                      </Space>
+                    }
+                  />
+                </List.Item>
+              )
+            }}
+          />
+        )}
+
+        {ruleAssistantResult.success && patches.length === 0 && (
+          <Alert
+            type="warning"
+            showIcon
+            message="没有可应用补丁"
+            description="模型这次只返回了分析摘要，没有返回 patches。可以换一个 AI 模型重试，或把测试类型切到要修的搜索/目录/正文后重新运行测试。"
+          />
+        )}
+
+        {candidates.length > 0 && (
+          <div>
+            <Text strong>本地选择器探测</Text>
+            <Table
+              size="small"
+              style={{ marginTop: 8 }}
+              pagination={false}
+              rowKey={(item: any) => item.selector}
+              dataSource={candidates}
+              columns={[
+                { title: '选择器', dataIndex: 'selector', width: 220, render: value => <Text code>{value}</Text> },
+                { title: '命中', dataIndex: 'matches', width: 80, render: value => <Tag color={value > 0 ? 'success' : 'default'}>{value}</Tag> },
+                { title: '文本长度', dataIndex: 'text_length', width: 100 },
+                { title: '样例', dataIndex: 'sample', ellipsis: true },
+              ]}
+            />
+          </div>
+        )}
+      </Space>
+    )
+  }
+
   const renderTestResult = () => {
     if (testResult?.detail) {
       return <Alert type="error" showIcon message="测试失败" description={testResult.detail} />
@@ -887,6 +1215,46 @@ const BookSourcePage: React.FC = () => {
             }
           />
         )}
+
+        {data.browser_request_headers && Object.keys(data.browser_request_headers).length > 0 && (
+          <Alert
+            type="info"
+            showIcon
+            style={isDark ? darkInfoAlertStyle : undefined}
+            message={<span style={isDark ? darkInfoAlertTitleStyle : undefined}>浏览器请求头可保存</span>}
+            description={
+              <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                <span style={isDark ? darkInfoAlertDescriptionStyle : undefined}>
+                  当前浏览器主文档请求包含 {Object.keys(data.browser_request_headers).length} 项可复用请求头，已自动过滤 Cookie、Host 和长度类请求头。
+                </span>
+                <Button size="small" icon={<SaveOutlined />} loading={browserHeadersSaving} onClick={handleSaveBrowserHeaders}>
+                  保存到书源请求头
+                </Button>
+              </Space>
+            }
+          />
+        )}
+
+        <Space wrap>
+          <Select
+            loading={llmBackendsLoading}
+            value={ruleAssistantModelValue || undefined}
+            onChange={setRuleAssistantModelValue}
+            options={ruleAssistantModelOptions}
+            placeholder="选择 AI 模型"
+            style={{ minWidth: 320 }}
+            showSearch
+            optionFilterProp="label"
+          />
+          <Button icon={<RobotOutlined />} loading={ruleAssistantLoading} onClick={handleAskRuleAssistant}>
+            AI 修复规则
+          </Button>
+          <Text type="secondary">
+            基于当前测试结果、规则命中视图和 HTML 片段生成候选补丁；应用后请重新运行测试。
+          </Text>
+        </Space>
+
+        {renderRuleAssistantPanel()}
 
         {ruleTrace.length > 0 && (
           <div>

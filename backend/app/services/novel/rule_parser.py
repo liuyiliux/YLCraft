@@ -4,10 +4,21 @@ from __future__ import annotations
 
 import re
 import time
+import json
+import logging
 from typing import Any, Dict, List, Optional
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup, Tag
+
+try:
+    from py_mini_racer import MiniRacer
+    HAS_MINIRACER = True
+except ImportError:
+    MiniRacer = None
+    HAS_MINIRACER = False
+
+logger = logging.getLogger("ylcraft.novel.rule_parser")
 
 
 class RuleParser:
@@ -83,6 +94,8 @@ class RuleParser:
         else:
             content = str(element)
 
+        content = self._apply_transforms(content, content_rule.get("transforms") or [])
+
         return {
             "type": "content",
             "parse_success": bool(content),
@@ -146,10 +159,86 @@ class RuleParser:
         if suffix:
             result = result + suffix
 
+        result = self._apply_transforms(result, field_config.get("transforms") or [])
+
         max_length = field_config.get("max_length")
         if isinstance(max_length, int) and max_length >= 0:
             result = result[:max_length]
         return result
+
+    def _apply_transforms(self, value: str, transforms: Any) -> str:
+        if not transforms:
+            return value
+        if isinstance(transforms, dict):
+            transforms = [transforms]
+        if not isinstance(transforms, list):
+            return value
+
+        result = "" if value is None else str(value)
+        for transform in transforms:
+            result = self._apply_transform(result, transform)
+        return result
+
+    def _apply_transform(self, value: str, transform: Any) -> str:
+        if isinstance(transform, str):
+            config: Dict[str, Any] = {"type": transform}
+        elif isinstance(transform, dict):
+            config = transform
+        else:
+            return value
+
+        transform_type = str(config.get("type") or config.get("name") or "").strip().lower()
+        if not transform_type:
+            return value
+
+        try:
+            if transform_type == "trim":
+                return value.strip()
+            if transform_type in {"replace", "text_replace"}:
+                old = str(config.get("old", config.get("from", "")))
+                new = str(config.get("new", config.get("to", "")))
+                return value.replace(old, new) if old else value
+            if transform_type in {"regex_replace", "replace_regex"}:
+                pattern = str(config.get("pattern") or config.get("regex") or "")
+                repl = str(config.get("repl", config.get("replacement", "")))
+                return re.sub(pattern, repl, value, flags=_regex_flags(config)) if pattern else value
+            if transform_type in {"regex_extract", "extract_regex"}:
+                pattern = str(config.get("pattern") or config.get("regex") or "")
+                if not pattern:
+                    return value
+                match = re.search(pattern, value, flags=_regex_flags(config))
+                if not match:
+                    return ""
+                group = config.get("group", 1 if match.groups() else 0)
+                try:
+                    return str(match.group(group))
+                except Exception:
+                    return str(match.group(0))
+            if transform_type == "prefix":
+                prefix = str(config.get("value", config.get("prefix", "")))
+                return _apply_prefix(value, prefix)
+            if transform_type == "suffix":
+                suffix = str(config.get("value", config.get("suffix", "")))
+                return value + suffix if suffix else value
+            if transform_type in {"urljoin", "absolute_url"}:
+                base = str(config.get("base") or config.get("value") or self.rule.get("base_url") or "")
+                return urljoin(base.rstrip("/") + "/", value) if base and value else value
+            if transform_type in {"max_length", "truncate"}:
+                length = config.get("value", config.get("length"))
+                if isinstance(length, int) and length >= 0:
+                    return value[:length]
+                return value
+            if transform_type == "slice":
+                start = _optional_int(config.get("start"))
+                end = _optional_int(config.get("end"))
+                return value[start:end]
+            if transform_type == "js":
+                code = str(config.get("code") or config.get("script") or "")
+                return _eval_js_transform(code, value) if code else value
+        except Exception as exc:
+            logger.warning("YLCraft transform failed: type=%s error=%s", transform_type, exc)
+            return value
+        return value
 
     def _extract_with_fallback(
         self,
@@ -262,3 +351,57 @@ class RuleParser:
 
 def _elapsed_ms(start: float) -> int:
     return int((time.perf_counter() - start) * 1000)
+
+
+def _regex_flags(config: Dict[str, Any]) -> int:
+    flags = 0
+    raw_flags = str(config.get("flags") or "")
+    if config.get("ignore_case") or "i" in raw_flags:
+        flags |= re.IGNORECASE
+    if config.get("multi_line") or "m" in raw_flags:
+        flags |= re.MULTILINE
+    if config.get("dot_all") or "s" in raw_flags:
+        flags |= re.DOTALL
+    return flags
+
+
+def _optional_int(value: Any) -> Optional[int]:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _apply_prefix(value: str, prefix: str) -> str:
+    if not prefix:
+        return value
+    if prefix.startswith(("http://", "https://")) and value and not value.startswith(("http://", "https://")):
+        return urljoin(prefix.rstrip("/") + "/", value.lstrip("/"))
+    return prefix + value
+
+
+def _eval_js_transform(code: str, result: str) -> str:
+    if not HAS_MINIRACER or MiniRacer is None:
+        logger.warning("py_mini_racer is not installed; keeping value before js transform")
+        return result
+    try:
+        ctx = MiniRacer()
+        ctx.eval(f"var result = {json.dumps(result)};")
+        try:
+            value = ctx.eval(code)
+            if value is not None and value != "":
+                return str(value)
+        except Exception:
+            pass
+
+        value = ctx.eval("(function() {\n" + code + "\n})();")
+        if value is None or value == "":
+            value = ctx.eval("result")
+        if value is None or value == "":
+            return result
+        return str(value)
+    except Exception as exc:
+        logger.warning("YLCraft js transform failed: %s", exc)
+        return result

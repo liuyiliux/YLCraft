@@ -65,6 +65,10 @@ class BookSourceRuleConvertRequest(BaseModel):
     source: Dict[str, Any]
 
 
+class BookSourceHeadersUpdate(BaseModel):
+    headers: Dict[str, Any]
+
+
 class BookSourceTestRequest(BaseModel):
     url: Optional[str] = None
     keyword: Optional[str] = None
@@ -254,6 +258,22 @@ async def convert_book_source_rules(payload: BookSourceRuleConvertRequest):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"success": True, "data": data}
+
+
+@router.put("/{source_id}/headers")
+async def update_book_source_headers(
+    source_id: str,
+    payload: BookSourceHeadersUpdate,
+    db: Session = Depends(get_db),
+):
+    manager = BookSourceManager(db)
+    try:
+        result = manager.update_source_headers(source_id, payload.headers)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not result:
+        raise HTTPException(status_code=404, detail="book source does not exist")
+    return {"success": True, "data": result}
 
 
 @router.get("/{source_id}/cookies")

@@ -181,6 +181,12 @@ def _register_routes():
     except Exception as e:
         logger.warning(f"Could not load llm router: {e}")
 
+    try:
+        from app.api.v1 import rule_assistant
+        app.include_router(rule_assistant.router, prefix="/api/v1/rule-assistant", tags=["Rule Assistant"])
+    except Exception as e:
+        logger.warning(f"Could not load rule_assistant router: {e}")
+
     # 图像生成路由
     try:
         from app.api.v1 import images
