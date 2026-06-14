@@ -11,6 +11,9 @@ from typing import Any, Dict, Optional
 
 from app.services.browser.patchright_runtime import (
     PatchrightBrowserRuntime,
+    _collect_browser_resource_entries,
+    _dedupe_resources,
+    _record_interesting_resource,
     browser_extra_headers,
     cookie_header_to_browser_cookies,
     wait_for_probe_resolution,
@@ -104,6 +107,7 @@ class VisibleBrowserSessionManager:
                     await context.add_cookies(cookies)
 
             page = await context.new_page()
+            resources: list[Dict[str, str]] = []
             latest_response: Dict[str, Any] = {
                 "url": url,
                 "status_code": 0,
@@ -111,6 +115,7 @@ class VisibleBrowserSessionManager:
                 "request_headers": {},
             }
             page.on("response", lambda response: _record_main_document_response(page, latest_response, response))
+            page.on("response", lambda response: _record_interesting_resource(resources, response))
             response = await page.goto(
                 url,
                 wait_until=wait_until,
@@ -126,6 +131,7 @@ class VisibleBrowserSessionManager:
                 "headers": latest_response.get("headers") or (dict(response.headers) if response else {}),
                 "request_headers": latest_response.get("request_headers") or {},
                 "latest_response": latest_response,
+                "resources": resources,
             }
             return {
                 "session_id": session_id,
@@ -154,6 +160,9 @@ class VisibleBrowserSessionManager:
             status_code=int(latest_response.get("status_code") or session.get("status_code", 0)),
         )
         cookies = await session["context"].cookies()
+        resources = _dedupe_resources(
+            list(session.get("resources") or []) + await _collect_browser_resource_entries(page)
+        )
         return {
             "session_id": session_id,
             "url": page.url,
@@ -162,6 +171,7 @@ class VisibleBrowserSessionManager:
             "request_headers": latest_response.get("request_headers") or session.get("request_headers", {}),
             "html": html,
             "cookies": cookies,
+            "resources": resources,
         }
 
     async def _close_session(self, session_id: str) -> bool:

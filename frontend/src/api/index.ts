@@ -630,6 +630,19 @@ export const updateSystemSettings = (data: any) =>
 export const testSystemConnection = (type: string, config: any) =>
   request('/admin/settings/test', { method: 'POST', body: JSON.stringify({ type, config }) })
 
+// ===== AI Capabilities =====
+
+export const listAICapabilities = (params?: {
+  type?: 'llm' | 'image' | 'video' | 'tts' | 'stt' | 'embedding'
+  availableOnly?: boolean
+}) => {
+  const sp = new URLSearchParams()
+  if (params?.type) sp.set('type', params.type)
+  if (params?.availableOnly) sp.set('available_only', 'true')
+  const qs = sp.toString()
+  return request(`/ai/capabilities${qs ? `?${qs}` : ''}`)
+}
+
 // ===== Subtitles =====
 
 export const listSubtitleStyles = () => request('/subtitles/styles')

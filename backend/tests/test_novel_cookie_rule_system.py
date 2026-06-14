@@ -12,6 +12,9 @@ from app.services.novel.cookie_manager import BookSourceCookieManager, count_coo
 from app.services.novel.migration_manager import BookSourceMigrationManager
 from app.services.novel.test_manager import (
     BookSourceTestManager,
+    _header_value,
+    _looks_like_qidian_font_encrypted,
+    _repair_mojibake_text,
     _browser_cookie_summary,
     _detect_response_diagnostics,
 )
@@ -559,6 +562,147 @@ def test_book_source_test_manager_validates_fetch_mode_before_request():
 
     with pytest.raises(ValueError, match="fetch_mode"):
         asyncio.run(manager.test_url("source1", keyword="Example", fetch_mode="unknown"))
+
+
+def test_header_value_matches_case_insensitively():
+    assert _header_value({"cookie": "a=1"}, "Cookie") == "a=1"
+    assert _header_value({"User-Agent": "Test UA"}, "user-agent") == "Test UA"
+    assert _header_value({}, "Cookie") == ""
+
+
+def test_qidian_font_encrypted_detection():
+    assert _looks_like_qidian_font_encrypted("正常章节内容") is False
+    assert _looks_like_qidian_font_encrypted(chr(0x20000) * 51) is True
+    assert _looks_like_qidian_font_encrypted(chr(0xE000) * 51) is True
+
+
+def test_repair_mojibake_text_before_qidian_encryption_detection():
+    encrypted = "\u3000\u3000\uf931\uf931\ueaa9"
+    mojibake = encrypted.encode("utf-8").decode("latin-1")
+    repaired = _repair_mojibake_text(mojibake)
+
+    assert repaired != mojibake
+    assert "\uf931" in repaired
+    assert _looks_like_qidian_font_encrypted(mojibake) is True
+
+
+def test_qidian_crawler_passes_prepared_headers_to_api(monkeypatch):
+    from app.services.novel.qidian_crawler import QidianCrawler
+
+    captured = {}
+
+    class FakeVipParser:
+        async def fetch_via_api(self, *, book_id, chapter_id, cookie=None, headers=None):
+            captured["book_id"] = book_id
+            captured["chapter_id"] = chapter_id
+            captured["cookie"] = cookie
+            captured["headers"] = headers
+            return {"code": 0, "data": {"content": "chapter body", "chapterName": "chapter title"}}
+
+    crawler = QidianCrawler(cookie="fallback=1")
+    crawler._vip_parser = FakeVipParser()
+
+    import asyncio
+
+    result = asyncio.run(
+        crawler.fetch_chapter_content(
+            "https://www.qidian.com/chapter/1048382821/904922040/",
+            cookie="session=abc",
+            headers={"User-Agent": "Browser UA", "Cookie": "session=abc"},
+        )
+    )
+
+    assert result["success"] is True
+    assert result["method"] == "api"
+    assert captured["book_id"] == "1048382821"
+    assert captured["chapter_id"] == "904922040"
+    assert captured["cookie"] == "session=abc"
+    assert captured["headers"]["User-Agent"] == "Browser UA"
+    assert captured["headers"]["Cookie"] == "session=abc"
+
+
+def test_qidian_crawler_rejects_still_encrypted_browser_content():
+    from app.services.novel.qidian_crawler import QidianCrawler
+
+    class FakeVipParser:
+        async def fetch_via_api(self, *, book_id, chapter_id, cookie=None, headers=None):
+            raise RuntimeError("api unavailable")
+
+        async def fetch_via_browser(self, url, cookie=None, headers=None):
+            return chr(0x20000) * 80
+
+    crawler = QidianCrawler(cookie="session=abc")
+    crawler._vip_parser = FakeVipParser()
+
+    import asyncio
+
+    result = asyncio.run(
+        crawler.fetch_chapter_content(
+            "https://www.qidian.com/chapter/1048382821/904922040/",
+            headers={"Cookie": "session=abc"},
+        )
+    )
+
+    assert result["method"] == "browser"
+    assert result["success"] is False
+    assert result["error"] == "qidian browser content is still font-encrypted"
+
+
+def test_qidian_fallback_does_not_apply_still_encrypted_content():
+    session = make_session()
+    source = create_source(session)
+    source.rule_content = json.dumps({"content": "main@text"})
+    session.add(source)
+    session.commit()
+    manager = BookSourceTestManager(session)
+
+    parsed = {
+        "parsed_result": {
+            "type": "content",
+            "parse_success": True,
+            "content": chr(0x20000) * 80,
+            "content_length": 80,
+            "content_source": "rule",
+        },
+        "debug_info": {},
+    }
+
+    class FakeCrawler:
+        def __init__(self, cookie=None):
+            pass
+
+        def extract_book_chapter_id(self, url):
+            return {"book_id": "1048382821", "chapter_id": "904922040"}
+
+        async def fetch_chapter_content(self, url, cookie=None, headers=None):
+            return {
+                "success": True,
+                "method": "browser",
+                "content": chr(0x20001) * 80,
+            }
+
+    import asyncio
+    import app.services.novel.qidian_crawler as qidian_crawler
+
+    original = qidian_crawler.QidianCrawler
+    qidian_crawler.QidianCrawler = FakeCrawler
+    try:
+        debug = asyncio.run(
+            manager._apply_qidian_content_fallback(
+                parsed,
+                html='<main class="r-font-encrypt"></main>',
+                url="https://www.qidian.com/chapter/1048382821/904922040/",
+                rule_type="content",
+                headers={"Cookie": "session=abc"},
+            )
+        )
+    finally:
+        qidian_crawler.QidianCrawler = original
+
+    assert debug["attempted"] is True
+    assert debug["applied"] is False
+    assert debug["reason"] == "qidian_content_still_encrypted"
+    assert parsed["parsed_result"]["content"] == chr(0x20000) * 80
 
 
 def test_visible_browser_session_snapshot_reuses_test_context(monkeypatch):

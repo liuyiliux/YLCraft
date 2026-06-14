@@ -147,7 +147,7 @@ export interface BookSourceCookiePayload {
  * 获取书源列表
  */
 export async function getBookSources(enabledOnly: boolean = true): Promise<BookSource[]> {
-  const res = await request(`/book-sources?enabled_only=${enabledOnly}`)
+  const res = await request(`/book-sources/?enabled_only=${enabledOnly}`)
   return res.data || []
 }
 

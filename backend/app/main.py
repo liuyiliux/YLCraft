@@ -413,6 +413,12 @@ def _register_routes():
     except Exception as e:
         logger.warning(f"Could not load ai_connectors router: {e}")
 
+    try:
+        from app.api.v1 import ai_capabilities
+        app.include_router(ai_capabilities.router, prefix="/api/v1/ai", tags=["AI Capabilities"])
+    except Exception as e:
+        logger.warning(f"Could not load ai_capabilities router: {e}")
+
     # Cookie 自动获取路由（Playwright + QrCode + WebSocket）
     try:
         from app.api.v1 import cookie_acquisition

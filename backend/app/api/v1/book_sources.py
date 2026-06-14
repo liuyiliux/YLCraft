@@ -114,7 +114,8 @@ def _ensure_source_exists(source_id: str, db: Session) -> None:
         raise HTTPException(status_code=404, detail="book source does not exist")
 
 
-@router.get("")
+@router.get("", include_in_schema=False)
+@router.get("/")
 async def list_book_sources(
     enabled_only: bool = True,
     db: Session = Depends(get_db)

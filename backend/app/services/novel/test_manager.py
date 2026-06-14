@@ -76,6 +76,7 @@ class BookSourceTestManager:
         cookie_source = prepared["cookie_source"]
         browser_cookie = None
         browser_request_headers = None
+        browser_resources: list[Dict[str, str]] = []
 
         start = time.perf_counter()
         if actual_fetch_mode == "browser":
@@ -85,7 +86,7 @@ class BookSourceTestManager:
                     method=method,
                     headers=headers,
                     timeout_ms=30000,
-                    wait_until="domcontentloaded",
+                    wait_until="load",
                 )
             except RuntimeError as exc:
                 raise ValueError(str(exc)) from exc
@@ -95,6 +96,7 @@ class BookSourceTestManager:
             html = rendered.html or ""
             browser_cookie = _browser_cookie_summary(final_url, rendered.cookies)
             browser_request_headers = _safe_browser_request_headers(rendered.request_headers)
+            browser_resources = _safe_browser_resources(rendered.resources)
         else:
             async with httpx.AsyncClient(
                 timeout=httpx.Timeout(30.0, connect=10.0),
@@ -116,7 +118,20 @@ class BookSourceTestManager:
             html = response.text or ""
         response_time_ms = int((time.perf_counter() - start) * 1000)
 
-        parsed = self._parse_response(source, html, url, actual_rule_type, actual_rule_format)
+        parsed = self._parse_response(
+            source, html, url, actual_rule_type, actual_rule_format,
+        )
+
+        qidian_debug = await self._apply_qidian_content_fallback(
+            parsed,
+            html=html,
+            url=url,
+            rule_type=actual_rule_type,
+            headers=headers,
+            resources=browser_resources,
+        )
+        parsed.setdefault("debug_info", {})["qidian"] = qidian_debug
+
         raw_html = html[: self.RAW_HTML_LIMIT] if show_raw else ""
         diagnostics = _detect_response_diagnostics(
             status_code,
@@ -149,6 +164,8 @@ class BookSourceTestManager:
                     "rule_type": actual_rule_type,
                     "rule_format": actual_rule_format,
                     "fetch_mode": actual_fetch_mode,
+                    "qidian": qidian_debug,
+                    "browser_resources": browser_resources,
                     "diagnostics": diagnostics,
                 },
             },
@@ -189,6 +206,7 @@ class BookSourceTestManager:
             "rule_type": prepared["rule_type"],
             "rule_format": prepared["rule_format"],
             "request_info": prepared["request_info"],
+            "headers": prepared["headers"],
             "cookie_match": prepared["cookie_match"],
             "cookie_source": prepared["cookie_source"],
         }
@@ -219,6 +237,15 @@ class BookSourceTestManager:
         status_code = int(snapshot.get("status_code") or 0)
         final_url = snapshot.get("url") or meta["request_info"]["url"]
         parsed = self._parse_response(source, html, final_url, actual_rule_type, actual_rule_format)
+        qidian_debug = await self._apply_qidian_content_fallback(
+            parsed,
+            html=html,
+            url=final_url,
+            rule_type=actual_rule_type,
+            headers=meta.get("headers") or {},
+            resources=_safe_browser_resources(snapshot.get("resources") or []),
+        )
+        parsed.setdefault("debug_info", {})["qidian"] = qidian_debug
         diagnostics = _detect_response_diagnostics(
             status_code,
             html,
@@ -230,6 +257,7 @@ class BookSourceTestManager:
         raw_html = html[: self.RAW_HTML_LIMIT] if show_raw else ""
         browser_cookie = _browser_cookie_summary(final_url, snapshot.get("cookies") or [])
         browser_request_headers = _safe_browser_request_headers(snapshot.get("request_headers") or {})
+        browser_resources = _safe_browser_resources(snapshot.get("resources") or [])
         return {
             "success": True,
             "data": {
@@ -252,6 +280,8 @@ class BookSourceTestManager:
                     "rule_type": actual_rule_type,
                     "rule_format": actual_rule_format,
                     "fetch_mode": "visible_browser",
+                    "qidian": qidian_debug,
+                    "browser_resources": browser_resources,
                     "diagnostics": diagnostics,
                 },
             },
@@ -411,6 +441,7 @@ class BookSourceTestManager:
             rule_trace = _trace_legado_rules(source.ruleContent or {}, html, "content")
             content = parse_chapter_content(source.ruleContent or {}, html) or ""
             content_source = "rule"
+
             if not content:
                 content = _extract_meta_description_preview(html)
                 content_source = "meta_description" if content else "rule"
@@ -502,6 +533,77 @@ class BookSourceTestManager:
             )
         return test_source, actual_rule_format
 
+    async def _apply_qidian_content_fallback(
+        self,
+        parsed: Dict[str, Any],
+        *,
+        html: str,
+        url: str,
+        rule_type: str,
+        headers: Dict[str, Any],
+        resources: Optional[list[Dict[str, str]]] = None,
+    ) -> Dict[str, Any]:
+        debug: Dict[str, Any] = {
+            "attempted": False,
+            "applied": False,
+            "reason": "",
+            "resources": _qidian_resource_summary(resources or []),
+        }
+        if rule_type != "content" or "qidian.com/chapter/" not in (url or ""):
+            debug["reason"] = "not_qidian_content"
+            return debug
+
+        parsed_result = parsed.get("parsed_result") or {}
+        content_text = str(parsed_result.get("content") or "")
+        is_font_encrypted = (
+            "r-font-encrypt" in (html or "")
+            or _looks_like_qidian_font_encrypted(content_text)
+        )
+        if not is_font_encrypted:
+            debug["reason"] = "no_font_encryption_detected"
+            return debug
+
+        debug["attempted"] = True
+        try:
+            from app.services.novel.qidian_crawler import QidianCrawler
+
+            cookie_str = _header_value(headers, "Cookie") or ""
+            crawler = QidianCrawler(cookie=cookie_str)
+            ids = crawler.extract_book_chapter_id(url)
+            if not ids:
+                debug["reason"] = "invalid_qidian_chapter_url"
+                return debug
+
+            qidian_result = await crawler.fetch_chapter_content(
+                url,
+                cookie=cookie_str,
+                headers=headers,
+            )
+            debug["method"] = qidian_result.get("method")
+            debug["success"] = bool(qidian_result.get("success"))
+            debug["error"] = qidian_result.get("error", "")
+            qidian_content = _repair_mojibake_text(str(qidian_result.get("content") or ""))
+            if not qidian_result.get("success") or not qidian_content:
+                debug["reason"] = "qidian_fetch_failed"
+                return debug
+            if _looks_like_qidian_font_encrypted(qidian_content):
+                debug["reason"] = "qidian_content_still_encrypted"
+                return debug
+
+            content_source = f"qidian_{qidian_result.get('method', 'unknown')}"
+            parsed_result["content"] = qidian_content
+            parsed_result["content_length"] = len(qidian_content)
+            parsed_result["parse_success"] = True
+            parsed_result["content_source"] = content_source
+            parsed.setdefault("debug_info", {})["content_source"] = content_source
+            debug["applied"] = True
+            debug["reason"] = "applied"
+            return debug
+        except Exception as exc:
+            debug["error"] = str(exc)
+            debug["reason"] = "exception"
+            return debug
+
     def _detect_rule_type(self, url: str, source: Any) -> str:
         parsed = urlparse(url)
         haystack = f"{parsed.path}?{parsed.query}".lower()
@@ -556,6 +658,52 @@ def _safe_browser_request_headers(headers: Dict[str, Any]) -> Dict[str, str]:
             continue
         safe[name] = str(value)
     return safe
+
+
+def _safe_browser_resources(resources: list[Dict[str, Any]]) -> list[Dict[str, str]]:
+    safe: list[Dict[str, str]] = []
+    seen: set[str] = set()
+    for item in resources or []:
+        raw_url = str((item or {}).get("url") or "").strip()
+        if not raw_url:
+            continue
+        parsed = urlparse(raw_url)
+        display_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}" if parsed.scheme and parsed.netloc else raw_url.split("?", 1)[0]
+        if display_url in seen:
+            continue
+        seen.add(display_url)
+        safe.append(
+            {
+                "url": display_url,
+                "type": str((item or {}).get("type") or ""),
+                "status": str((item or {}).get("status") or ""),
+                "content_type": str((item or {}).get("content_type") or ""),
+            }
+        )
+        if len(safe) >= 160:
+            break
+    return safe
+
+
+def _qidian_resource_summary(resources: list[Dict[str, str]]) -> Dict[str, Any]:
+    relevant: list[Dict[str, str]] = []
+    font_urls: list[str] = []
+    for item in resources or []:
+        url = str((item or {}).get("url") or "")
+        lower = url.lower()
+        resource_type = str((item or {}).get("type") or "").lower()
+        if (
+            "qidian" not in lower
+            and resource_type not in {"font", "stylesheet", "script", "xhr", "fetch", "css", "link", "xmlhttprequest"}
+        ):
+            continue
+        relevant.append(item)
+        if resource_type == "font" or any(token in lower for token in (".woff", ".woff2", ".ttf", ".otf", ".eot", "font")):
+            font_urls.append(url)
+    return {
+        "font_urls": list(dict.fromkeys(font_urls))[:20],
+        "items": relevant[:80],
+    }
 
 
 def _normalize_request_headers(headers: Optional[Dict[str, Any]]) -> Dict[str, str]:
@@ -716,6 +864,21 @@ def _detect_response_diagnostics(
                 "type": "meta_description_fallback",
                 "message": "正文规则未命中，已使用页面 meta description 作为预览",
                 "suggestion": "这只是章节摘要，不是完整正文。需要完整正文时，请使用浏览器渲染后检查真实正文 DOM，或定位章节页前端接口。",
+            }
+        )
+    qidian_debug = (debug_info or {}).get("qidian") or {}
+    if qidian_debug.get("attempted") and not qidian_debug.get("applied"):
+        reason = qidian_debug.get("reason") or "unknown"
+        suggestions = {
+            "qidian_content_still_encrypted": "起点页面视觉正常但 DOM 文本仍是字体混淆；需要继续接入字体映射解码或可用明文接口，不能直接读取 innerText。",
+            "qidian_fetch_failed": "起点专用接口和浏览器兜底没有拿到可用明文；请检查 Cookie 是否登录有效，以及章节是否需要权限。",
+            "exception": "起点专用流程执行异常；请查看后端日志里的 qidian 错误详情。",
+        }
+        diagnostics.append(
+            {
+                "type": "qidian_fallback_not_applied",
+                "message": f"起点专用处理已尝试但未应用：{reason}",
+                "suggestion": suggestions.get(reason, "请查看调试信息中的 debug_info.qidian，确认是接口失败、权限问题还是字体混淆仍未解码。"),
             }
         )
     return diagnostics
@@ -951,3 +1114,49 @@ def _rule_or_empty(value: Any, name: str = "rule") -> Dict[str, Any]:
     if isinstance(value, dict):
         return value
     raise ValueError(f"{name} must be a JSON object")
+
+
+def _header_value(headers: Dict[str, Any], name: str) -> str:
+    target = name.lower()
+    for key, value in (headers or {}).items():
+        if str(key).lower() == target and value is not None:
+            return str(value)
+    return ""
+
+
+def _looks_like_qidian_font_encrypted(text: str) -> bool:
+    source = text or ""
+    if not source:
+        return False
+    if _looks_like_utf8_mojibake(source):
+        source = _repair_mojibake_text(source)
+    encrypted_chars = sum(
+        1
+        for char in source
+        if 0x3400 <= ord(char) <= 0x4DBF
+        or 0x20000 <= ord(char) <= 0x3FFFF
+        or 0xE000 <= ord(char) <= 0xF8FF
+        or 0xF900 <= ord(char) <= 0xFAFF
+    )
+    if encrypted_chars > 50:
+        return True
+    meaningful_chars = sum(1 for char in source if not char.isspace())
+    return meaningful_chars > 0 and encrypted_chars / meaningful_chars > 0.2
+
+
+def _looks_like_utf8_mojibake(text: str) -> bool:
+    if not text:
+        return False
+    markers = ("ã", "ä", "å", "æ", "è", "é", "ï¼", "ï¤", "â", "Â")
+    marker_hits = sum(text.count(marker) for marker in markers)
+    return marker_hits >= 3 or (len(text) >= 20 and marker_hits / len(text) > 0.05)
+
+
+def _repair_mojibake_text(text: str) -> str:
+    if not _looks_like_utf8_mojibake(text):
+        return text
+    try:
+        repaired = text.encode("latin-1").decode("utf-8")
+    except UnicodeError:
+        return text
+    return repaired if repaired else text

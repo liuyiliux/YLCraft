@@ -43,7 +43,7 @@ import {
   DownloadOutlined,
   RocketOutlined,
 } from '@ant-design/icons'
-import { listConnectors, createConnector, updateConnector, deleteConnector, testConnector, exportConnectors, importConnectors, discoverModels, getSettings, updateSettings, listProviders, createProvider, updateProvider, deleteProvider, initDefaultProviders, getProviderDefaults } from '../../api'
+import { listConnectors, createConnector, updateConnector, deleteConnector, testConnector, exportConnectors, importConnectors, discoverModels, getSettings, updateSettings, listProviders, createProvider, updateProvider, deleteProvider, initDefaultProviders, getProviderDefaults, listAICapabilities } from '../../api'
 import type { Provider, PROVIDER_OPTIONS, ConnectorTestResult, ProviderMetadata } from '../../types/api'
 import { useTheme } from '../../constants/theme'
 import { calculateAspectRatio } from '../../utils/size'
@@ -1061,6 +1061,188 @@ const TYPE_LABELS: Record<string, string> = {
   audio: '语音',
   video: '视频',
   stt: '识别',
+  tts: '语音',
+  embedding: '嵌入',
+}
+
+interface AICapability {
+  id: string
+  name: string
+  provider: string
+  provider_label: string
+  type: string
+  model: string
+  available_models: string[]
+  base_url?: string
+  api_endpoint?: string
+  api_format?: string
+  has_api_key: boolean
+  is_default: boolean
+  priority: number
+  status: string
+  status_message: string
+  capabilities: string[]
+  supported_sizes: string[]
+  support_reference_image: boolean
+  support_multiple_reference_images: boolean
+  support_vision_input: boolean
+}
+
+const CAPABILITY_STATUS: Record<string, { color: string; text: string }> = {
+  available: { color: 'success', text: '可用' },
+  disabled: { color: 'default', text: '已禁用' },
+  missing_key: { color: 'warning', text: '缺少 Key' },
+  missing_model: { color: 'error', text: '缺少模型' },
+}
+
+function AICapabilityPanel() {
+  const { theme: THEME } = useTheme()
+  const { message } = AntApp.useApp()
+  const [items, setItems] = useState<AICapability[]>([])
+  const [loading, setLoading] = useState(false)
+  const [type, setType] = useState<string>('all')
+  const [availableOnly, setAvailableOnly] = useState(false)
+
+  const loadCapabilities = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await listAICapabilities({
+        type: type === 'all' ? undefined : type as any,
+        availableOnly,
+      })
+      setItems(res.capabilities || [])
+    } catch {
+      message.error('加载 AI 能力失败')
+    } finally {
+      setLoading(false)
+    }
+  }, [availableOnly, message, type])
+
+  useEffect(() => {
+    loadCapabilities()
+  }, [loadCapabilities])
+
+  const availableCount = items.filter(item => item.status === 'available').length
+  const issueCount = items.length - availableCount
+
+  return (
+    <Card
+      title={
+        <Space>
+          <RocketOutlined />
+          <Text strong style={{ color: THEME.textPrimary }}>AI 能力诊断</Text>
+          <Badge count={availableCount} style={{ backgroundColor: THEME.success }} />
+          {issueCount > 0 && <Badge count={issueCount} style={{ backgroundColor: '#faad14' }} />}
+        </Space>
+      }
+      extra={
+        <Space wrap>
+          <Select
+            value={type}
+            onChange={setType}
+            style={{ width: 130 }}
+            options={[
+              { value: 'all', label: '全部类型' },
+              { value: 'llm', label: '文本' },
+              { value: 'image', label: '图像' },
+              { value: 'video', label: '视频' },
+              { value: 'tts', label: '语音' },
+              { value: 'stt', label: '识别' },
+              { value: 'embedding', label: '嵌入' },
+            ]}
+          />
+          <Switch checked={availableOnly} onChange={setAvailableOnly} checkedChildren="仅可用" unCheckedChildren="全部" />
+          <Button icon={<ReloadOutlined />} onClick={loadCapabilities} loading={loading}>刷新</Button>
+        </Space>
+      }
+      style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}` }}
+    >
+      <Alert
+        type="info"
+        showIcon
+        message="这里统一读取设置里的 AI 模型配置。后续业务页会逐步只从这里取可用模型，避免出现未配置模型也能被选中、URL 被重复拼接的问题。"
+        style={{ marginBottom: 12 }}
+      />
+      <Table
+        rowKey="id"
+        loading={loading}
+        dataSource={items}
+        size="small"
+        pagination={{ pageSize: 12, showSizeChanger: true, showTotal: total => `共 ${total} 个` }}
+        scroll={{ x: 980 }}
+        columns={[
+          {
+            title: '模型',
+            dataIndex: 'name',
+            width: 220,
+            render: (name: string, record: AICapability) => (
+              <Space direction="vertical" size={2}>
+                <Space>
+                  <Text strong>{name}</Text>
+                  {record.is_default && <Tag color="gold">默认</Tag>}
+                </Space>
+                <Text type="secondary" style={{ fontSize: 12 }}>{record.id}</Text>
+              </Space>
+            ),
+          },
+          {
+            title: '类型',
+            dataIndex: 'type',
+            width: 90,
+            render: (value: string) => <Tag color={TYPE_COLORS[value] || 'default'}>{TYPE_LABELS[value] || value}</Tag>,
+          },
+          {
+            title: '服务商',
+            dataIndex: 'provider_label',
+            width: 130,
+            render: (value: string, record: AICapability) => (
+              <Tag style={{ color: getReadableColor(PROVIDER_COLORS[record.provider] || THEME.textSecondary) }}>{value || record.provider}</Tag>
+            ),
+          },
+          {
+            title: '默认模型',
+            dataIndex: 'model',
+            width: 180,
+            render: (model: string) => model ? <Text code>{model}</Text> : <Text type="secondary">未设置</Text>,
+          },
+          {
+            title: '状态',
+            dataIndex: 'status',
+            width: 110,
+            render: (status: string, record: AICapability) => {
+              const item = CAPABILITY_STATUS[status] || { color: 'default', text: status }
+              return <Tag color={item.color}>{record.status_message || item.text}</Tag>
+            },
+          },
+          {
+            title: '能力',
+            dataIndex: 'capabilities',
+            width: 220,
+            render: (caps: string[]) => (
+              <Space size={[4, 4]} wrap>
+                {(caps || []).map(cap => <Tag key={cap}>{cap}</Tag>)}
+              </Space>
+            ),
+          },
+          {
+            title: '接口',
+            key: 'endpoint',
+            width: 260,
+            render: (_: any, record: AICapability) => (
+              <Space direction="vertical" size={2}>
+                <Text type="secondary" ellipsis style={{ maxWidth: 240 }}>{record.base_url || '-'}</Text>
+                {record.api_endpoint && <Text type="secondary" style={{ fontSize: 12 }}>{record.api_endpoint}</Text>}
+              </Space>
+            ),
+          },
+        ]}
+      />
+    </Card>
+  )
+}
+
+function getReadableColor(color: string) {
+  return color || undefined
 }
 
 // ==================== 组件 ====================
@@ -1843,6 +2025,13 @@ export default function SettingsPage() {
                 )}
               </Card>
             ),
+          },
+          {
+            key: 'capabilities',
+            label: (
+              <span><RocketOutlined style={{ marginRight: 8 }} />能力诊断</span>
+            ),
+            children: <AICapabilityPanel />,
           },
           {
             key: 'video',

@@ -4,19 +4,41 @@
  * 监控所有异步任务：爆款拆解、下载、视频剪辑、AI生成等。
  */
 
-import { Card, Table, Tag, Button, Space, Select, Input, Tooltip, message, Popconfirm, Modal } from 'antd'
+import {
+  Alert,
+  Button,
+  Card,
+  Descriptions,
+  Drawer,
+  Input,
+  Popconfirm,
+  Progress,
+  Select,
+  Space,
+  Table,
+  Tag,
+  Tooltip,
+  Typography,
+  message,
+} from 'antd'
 import {
   ThunderboltOutlined,
   ReloadOutlined,
   DeleteOutlined,
   StopOutlined,
   EyeOutlined,
+  ArrowRightOutlined,
+  FileSearchOutlined,
+  PlayCircleOutlined,
 } from '@ant-design/icons'
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { listTasks, getTask, cancelTask, deleteTask } from '../../api'
 import { useWebSocket, WSTaskProgress } from '../../hooks/useWebSocket'
+import { useTheme } from '../../constants/theme'
 import type { ColumnsType } from 'antd/es/table'
+
+const { Paragraph, Text } = Typography
 
 // 任务类型选项
 const TASK_TYPE_OPTIONS = [
@@ -33,8 +55,20 @@ const STATUS_COLOR_MAP: Record<string, string> = {
   pending: 'default',
   running: 'processing',
   done: 'success',
+  completed: 'success',
+  succeeded: 'success',
   failed: 'error',
   cancelled: 'warning',
+}
+
+const STATUS_LABEL_MAP: Record<string, string> = {
+  pending: '等待中',
+  running: '运行中',
+  done: '已完成',
+  completed: '已完成',
+  succeeded: '已完成',
+  failed: '失败',
+  cancelled: '已取消',
 }
 
 // 任务类型颜色映射
@@ -53,11 +87,63 @@ interface TaskItem {
   progress: number
   progress_message: string
   created_at?: string
+  started_at?: string
+  completed_at?: string
   updated_at?: string
+  duration_seconds?: number
+  payload?: Record<string, any> | null
+  result?: Record<string, any> | null
+  error?: string | null
+}
+
+const ROUTE_MAP: Record<string, { path: string; label: string }> = {
+  breaker: { path: '/breaker', label: '爆款拆解' },
+  download: { path: '/assets', label: '素材库' },
+  image_generation: { path: '/image-gen', label: '图像生成' },
+  video_generation: { path: '/video-gen', label: '视频生成' },
+  clip: { path: '/clip', label: 'AI 剪辑' },
+}
+
+function getTypeLabel(type: string) {
+  return TASK_TYPE_OPTIONS.find((opt) => opt.value === type)?.label || type
+}
+
+function formatTime(value?: string) {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString()
+}
+
+function JsonBlock({ value, theme }: { value?: Record<string, any> | null; theme: any }) {
+  if (!value || Object.keys(value).length === 0) {
+    return <Text style={{ color: theme.textSecondary }}>暂无</Text>
+  }
+  return (
+    <pre
+      style={{
+        margin: 0,
+        maxHeight: 260,
+        overflow: 'auto',
+        padding: 12,
+        borderRadius: 6,
+        background: theme.bgElevated,
+        border: `1px solid ${theme.border}`,
+        color: theme.textPrompt || theme.textPrimary,
+        fontSize: 12,
+        lineHeight: 1.65,
+        whiteSpace: 'pre-wrap',
+        wordBreak: 'break-word',
+      }}
+    >
+      {JSON.stringify(value, null, 2)}
+    </pre>
+  )
 }
 
 export default function TasksPage() {
   const navigate = useNavigate()
+  const { theme: THEME } = useTheme()
   const [tasks, setTasks] = useState<TaskItem[]>([])
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
 
@@ -69,19 +155,22 @@ export default function TasksPage() {
   const [loading, setLoading] = useState(false)
   const [typeFilter, setTypeFilter] = useState<string>('')
   const [searchText, setSearchText] = useState('')
+  const [detailOpen, setDetailOpen] = useState(false)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [selectedTask, setSelectedTask] = useState<TaskItem | null>(null)
 
-  const loadTasks = useCallback(async () => {
-    setLoading(true)
+  const loadTasks = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true)
     try {
       const res = await listTasks()
       if (res.success && res.tasks) {
         setTasks(res.tasks)
       }
     } catch (err) {
-      message.error('加载任务列表失败')
+      if (!silent) message.error('加载任务列表失败')
       console.error(err)
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }, [])
 
@@ -130,17 +219,33 @@ export default function TasksPage() {
 
   useEffect(() => {
     loadTasks()
-    // WS 断开时降级为 30s 轮询
-    if (!isConnected) {
-      const timer = setInterval(loadTasks, 30000)
-      return () => clearInterval(timer)
-    }
+    // 下载等旧任务源暂时不会推送 WS，因此保留轻量轮询。
+    const timer = setInterval(() => loadTasks(true), isConnected ? 10000 : 30000)
+    return () => clearInterval(timer)
   }, [loadTasks, isConnected])
+
+  useEffect(() => {
+    if (!detailOpen || !selectedTask || !['pending', 'running'].includes(selectedTask.status)) return
+    const timer = setInterval(async () => {
+      try {
+        const res = await getTask(selectedTask.task_id)
+        if (res.success && res.task) setSelectedTask(res.task)
+      } catch {
+        // 列表轮询会兜底，详情刷新失败不打扰用户。
+      }
+    }, 3000)
+    return () => clearInterval(timer)
+  }, [detailOpen, selectedTask?.task_id, selectedTask?.status])
 
   const handleCancel = async (taskId: string) => {
     try {
-      await cancelTask(taskId)
-      message.success('任务已取消')
+      const res = await cancelTask(taskId)
+      if (res?.success === false) {
+        message.warning(res.message || '当前任务无法取消')
+      } else {
+        message.success(res?.message || '任务已取消')
+        if (res?.task) setSelectedTask(res.task)
+      }
       loadTasks()
     } catch {
       message.error('取消任务失败')
@@ -149,8 +254,16 @@ export default function TasksPage() {
 
   const handleDelete = async (taskId: string) => {
     try {
-      await deleteTask(taskId)
-      message.success('任务已删除')
+      const res = await deleteTask(taskId)
+      if (res?.success === false) {
+        message.warning(res.message || '删除任务失败')
+      } else {
+        message.success(res?.message || '任务已删除')
+        if (selectedTask?.task_id === taskId) {
+          setDetailOpen(false)
+          setSelectedTask(null)
+        }
+      }
       loadTasks()
     } catch {
       message.error('删除任务失败')
@@ -158,48 +271,38 @@ export default function TasksPage() {
   }
 
   const handleViewDetail = async (taskId: string) => {
+    setDetailOpen(true)
+    setDetailLoading(true)
     try {
       const res = await getTask(taskId)
       if (res.success && res.task) {
-        const task = res.task
-        Modal.info({
-          title: `任务详情 - ${task.task_id}`,
-          content: (
-            <div style={{ marginTop: 16 }}>
-              <p><strong>类型：</strong>{task.task_type}</p>
-              <p><strong>状态：</strong>{task.status}</p>
-              <p><strong>进度：</strong>{task.progress}%</p>
-              <p><strong>消息：</strong>{task.progress_message}</p>
-              <div style={{ marginTop: 16 }}>
-                <Button 
-                  type="primary" 
-                  onClick={() => {
-                    const routeMap: Record<string, string> = {
-                      breaker: '/breaker',
-                      download: '/assets',
-                      image_generation: '/image-gen',
-                      video_generation: '/video-gen',
-                      clip: '/clip',
-                    }
-                    const route = routeMap[task.task_type] || '/'
-                    navigate(route)
-                  }}
-                >
-                  跳转到{task.task_type === 'breaker' ? '爆款拆解' :
-                    task.task_type === 'download' ? '资产库' :
-                    task.task_type === 'image_generation' ? '图像生成' :
-                    task.task_type === 'video_generation' ? '视频生成' :
-                    task.task_type === 'clip' ? '视频剪辑' : '首页'}
-                </Button>
-              </div>
-            </div>
-          ),
-          width: 600,
-        })
+        setSelectedTask(res.task)
+      } else {
+        message.warning('任务不存在或已被清理')
+        setDetailOpen(false)
       }
     } catch {
       message.error('获取任务详情失败')
+      setDetailOpen(false)
+    } finally {
+      setDetailLoading(false)
     }
+  }
+
+  const handleNavigateTask = (task: TaskItem) => {
+    const route = ROUTE_MAP[task.task_type] || { path: '/', label: '首页' }
+    navigate(route.path)
+    setDetailOpen(false)
+  }
+
+  const handleOpenResult = (task: TaskItem) => {
+    const assetId = task.result?.asset_id
+    if (assetId) {
+      navigate(`/player/assets/${assetId}`)
+      setDetailOpen(false)
+      return
+    }
+    handleNavigateTask(task)
   }
 
   // 过滤任务
@@ -231,7 +334,7 @@ export default function TasksPage() {
       width: 120,
       render: (type: string) => (
         <Tag color={TYPE_COLOR_MAP[type] || 'default'}>
-          {TASK_TYPE_OPTIONS.find((opt) => opt.value === type)?.label || type}
+          {getTypeLabel(type)}
         </Tag>
       ),
     },
@@ -241,7 +344,7 @@ export default function TasksPage() {
       key: 'status',
       width: 100,
       render: (status: string) => (
-        <Tag color={STATUS_COLOR_MAP[status] || 'default'}>{status}</Tag>
+        <Tag color={STATUS_COLOR_MAP[status] || 'default'}>{STATUS_LABEL_MAP[status] || status}</Tag>
       ),
     },
     {
@@ -250,8 +353,9 @@ export default function TasksPage() {
       key: 'progress',
       width: 120,
       render: (progress: number, record: TaskItem) => (
-        <Space>
-          <span>{progress}%</span>
+        <Space style={{ width: '100%' }}>
+          <Progress percent={progress} size="small" showInfo={false} style={{ minWidth: 72 }} />
+          <span style={{ width: 38 }}>{progress}%</span>
           {record.status === 'running' && (
             <ThunderboltOutlined style={{ color: '#1890ff', animation: 'blink 1s infinite' }} />
           )}
@@ -264,6 +368,14 @@ export default function TasksPage() {
       key: 'progress_message',
       ellipsis: true,
       render: (msg: string) => msg || '-',
+    },
+    {
+      title: '创建时间',
+      dataIndex: 'created_at',
+      key: 'created_at',
+      width: 170,
+      render: (value?: string) => formatTime(value),
+      responsive: ['lg'],
     },
     {
       title: '操作',
@@ -279,7 +391,7 @@ export default function TasksPage() {
               onClick={() => handleViewDetail(record.task_id)}
             />
           </Tooltip>
-          {record.status === 'running' && (
+          {['pending', 'running'].includes(record.status) && (
             <Tooltip title="取消任务">
               <Popconfirm
                 title="确定取消此任务？"
@@ -336,7 +448,7 @@ export default function TasksPage() {
               allowClear
               size={isMobile ? 'small' : 'middle'}
             />
-            <Button icon={<ReloadOutlined />} onClick={loadTasks} loading={loading} size={isMobile ? 'small' : 'middle'}>
+            <Button icon={<ReloadOutlined />} onClick={() => loadTasks()} loading={loading} size={isMobile ? 'small' : 'middle'}>
               刷新
             </Button>
           </Space>
@@ -354,11 +466,149 @@ export default function TasksPage() {
         />
       </Card>
 
+      <Drawer
+        rootClassName="task-detail-drawer"
+        title={
+          <Space direction="vertical" size={2}>
+            <Space>
+              <FileSearchOutlined />
+              <span style={{ color: THEME.textPrimary }}>任务详情</span>
+              {selectedTask && <Tag color={TYPE_COLOR_MAP[selectedTask.task_type] || 'default'}>{getTypeLabel(selectedTask.task_type)}</Tag>}
+            </Space>
+            {selectedTask && (
+              <Text style={{ color: THEME.textSecondary, fontSize: 12, fontFamily: 'monospace' }}>
+                {selectedTask.task_id}
+              </Text>
+            )}
+          </Space>
+        }
+        open={detailOpen}
+        onClose={() => setDetailOpen(false)}
+        width={isMobile ? '100%' : 720}
+        styles={{
+          header: {
+            background: THEME.bgCard,
+            borderBottom: `1px solid ${THEME.border}`,
+          },
+          body: {
+            background: THEME.bgPage,
+            color: THEME.textPrimary,
+          },
+          content: {
+            background: THEME.bgPage,
+          },
+        }}
+        extra={
+          selectedTask ? (
+            <Space>
+              {selectedTask.result?.asset_id && (
+                <Button type="primary" icon={<PlayCircleOutlined />} onClick={() => handleOpenResult(selectedTask)}>
+                  打开结果
+                </Button>
+              )}
+              {ROUTE_MAP[selectedTask.task_type] && (
+                <Button icon={<ArrowRightOutlined />} onClick={() => handleNavigateTask(selectedTask)}>
+                  去{ROUTE_MAP[selectedTask.task_type].label}
+                </Button>
+              )}
+              {['pending', 'running'].includes(selectedTask.status) && (
+                <Popconfirm title="确定取消此任务？" onConfirm={() => handleCancel(selectedTask.task_id)}>
+                  <Button danger icon={<StopOutlined />}>取消</Button>
+                </Popconfirm>
+              )}
+            </Space>
+          ) : null
+        }
+      >
+        {detailLoading || !selectedTask ? (
+          <Card loading />
+        ) : (
+          <Space direction="vertical" size={16} style={{ width: '100%' }}>
+            {selectedTask.error && (
+              <Alert
+                type="error"
+                showIcon
+                message="任务失败"
+                description={<Paragraph copyable style={{ marginBottom: 0 }}>{selectedTask.error}</Paragraph>}
+              />
+            )}
+
+            <Card
+              size="small"
+              style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}`, color: THEME.textPrimary }}
+            >
+              <Descriptions column={1} size="small">
+                <Descriptions.Item label="状态">
+                  <Tag color={STATUS_COLOR_MAP[selectedTask.status] || 'default'}>
+                    {STATUS_LABEL_MAP[selectedTask.status] || selectedTask.status}
+                  </Tag>
+                </Descriptions.Item>
+                <Descriptions.Item label="进度">
+                  <Progress percent={selectedTask.progress} status={selectedTask.status === 'failed' ? 'exception' : undefined} />
+                </Descriptions.Item>
+                <Descriptions.Item label="消息">
+                  <span style={{ color: THEME.textPrimary }}>{selectedTask.progress_message || '-'}</span>
+                </Descriptions.Item>
+                <Descriptions.Item label="创建时间">
+                  <span style={{ color: THEME.textPrimary }}>{formatTime(selectedTask.created_at)}</span>
+                </Descriptions.Item>
+                <Descriptions.Item label="开始时间">
+                  <span style={{ color: THEME.textPrimary }}>{formatTime(selectedTask.started_at)}</span>
+                </Descriptions.Item>
+                <Descriptions.Item label="完成时间">
+                  <span style={{ color: THEME.textPrimary }}>{formatTime(selectedTask.completed_at)}</span>
+                </Descriptions.Item>
+                <Descriptions.Item label="耗时">
+                  <span style={{ color: THEME.textPrimary }}>
+                    {typeof selectedTask.duration_seconds === 'number' ? `${selectedTask.duration_seconds}s` : '-'}
+                  </span>
+                </Descriptions.Item>
+              </Descriptions>
+            </Card>
+
+            <Card
+              size="small"
+              title={<span style={{ color: THEME.textPrimary }}>输入参数</span>}
+              style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}` }}
+            >
+              <JsonBlock value={selectedTask.payload} theme={THEME} />
+            </Card>
+
+            <Card
+              size="small"
+              title={<span style={{ color: THEME.textPrimary }}>结果数据</span>}
+              style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}` }}
+            >
+              <JsonBlock value={selectedTask.result} theme={THEME} />
+            </Card>
+          </Space>
+        )}
+      </Drawer>
+
       {/* 全局样式：让运行中的图标闪烁 */}
       <style>{`
         @keyframes blink {
           0%, 100% { opacity: 1; }
           50% { opacity: 0.3; }
+        }
+        .task-detail-drawer .ant-drawer-close,
+        .task-detail-drawer .ant-drawer-title {
+          color: ${THEME.textPrimary};
+        }
+        .task-detail-drawer .ant-card-head {
+          background: ${THEME.bgCard};
+          border-bottom-color: ${THEME.border};
+          color: ${THEME.textPrimary};
+        }
+        .task-detail-drawer .ant-card-body {
+          background: ${THEME.bgCard};
+          color: ${THEME.textPrimary};
+        }
+        .task-detail-drawer .ant-descriptions-item-label {
+          color: ${THEME.textSecondary} !important;
+        }
+        .task-detail-drawer .ant-descriptions-item-content {
+          color: ${THEME.textPrimary} !important;
         }
       `}</style>
     </div>

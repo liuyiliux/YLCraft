@@ -15,6 +15,17 @@ from http.cookies import CookieError, SimpleCookie
 from typing import Any, Dict, Optional
 from urllib.parse import urlparse
 
+# Windows 需要 ProactorEventLoop 支持子进程（patchright 内部使用）
+if sys.platform == "win32":
+    # 检查当前事件循环类型，如果不是 Proactor 则设置
+    try:
+        loop = asyncio.get_event_loop()
+        if not isinstance(loop, asyncio.ProactorEventLoop):
+            asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+    except RuntimeError:
+        # 没有事件循环时设置策略
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
 PATCHRIGHT_INSTALL_MESSAGE = "Patchright 未安装。请运行: pip install patchright && patchright install chromium"
 
 _DEFAULT_VIEWPORT = {"width": 1280, "height": 800}
@@ -43,6 +54,7 @@ class BrowserFetchResult:
     request_headers: Dict[str, str]
     html: str
     cookies: list[Dict[str, Any]]
+    resources: list[Dict[str, str]]
 
 
 class PatchrightBrowserRuntime:
@@ -82,6 +94,8 @@ class PatchrightBrowserRuntime:
                 "--disable-blink-features=AutomationControlled",
                 "--no-sandbox",
                 "--disable-dev-shm-usage",
+                "--disable-web-security",
+                "--disable-features=IsolateOrigins,site-per-process",
             ],
         }
         try:
@@ -180,6 +194,27 @@ class PatchrightBrowserRuntime:
                     await context.add_cookies(cookies)
 
             page = await context.new_page()
+            resources: list[Dict[str, str]] = []
+            # 反反爬：禁用页面的 debugger 陷阱（起点等网站常用此手段）
+            await page.add_init_script("""
+                // 禁用 debugger 陷阱
+                (function() {
+                    const originalDebugger = window.debugger;
+                    Object.defineProperty(window, 'debugger', {
+                        get: function() { return function() {}; },
+                        set: function() {}
+                    });
+                    // 禁用 console.log 以避免反爬检测
+                    // 拦截 setInterval 中的 debugger
+                    const originalSetInterval = window.setInterval;
+                    window.setInterval = function(fn, delay) {
+                        if (typeof fn === 'function' && fn.toString().indexOf('debugger') !== -1) {
+                            return 0;
+                        }
+                        return originalSetInterval.apply(this, arguments);
+                    };
+                })();
+            """)
             latest_response: Dict[str, Any] = {
                 "url": url,
                 "status_code": 0,
@@ -187,6 +222,7 @@ class PatchrightBrowserRuntime:
                 "request_headers": {},
             }
             page.on("response", lambda response: _record_main_document_response(page, latest_response, response))
+            page.on("response", lambda response: _record_interesting_resource(resources, response))
             response = await page.goto(
                 url,
                 wait_until=wait_until,
@@ -196,6 +232,17 @@ class PatchrightBrowserRuntime:
             _record_main_document_response(page, latest_response, response)
             if settle_ms > 0:
                 await page.wait_for_timeout(settle_ms)
+            # 等待字体加载完成（起点等网站使用自定义字体加密章节内容）
+            try:
+                await page.evaluate("""
+                    async () => {
+                        if (document.fonts && document.fonts.ready) {
+                            await document.fonts.ready;
+                        }
+                    }
+                """)
+            except Exception:
+                pass
             html = await page.content()
             html = await wait_for_probe_resolution(
                 page,
@@ -203,6 +250,7 @@ class PatchrightBrowserRuntime:
                 status_code=int(latest_response.get("status_code") or (response.status if response else 0)),
             )
             cookies = await context.cookies()
+            resources.extend(await _collect_browser_resource_entries(page))
             return BrowserFetchResult(
                 url=page.url,
                 status_code=int(latest_response.get("status_code") or (response.status if response else 0)),
@@ -210,6 +258,7 @@ class PatchrightBrowserRuntime:
                 request_headers=latest_response.get("request_headers") or {},
                 html=html,
                 cookies=cookies,
+                resources=_dedupe_resources(resources),
             )
         finally:
             await context.close()
@@ -380,6 +429,85 @@ def _record_main_document_response(page: Any, latest_response: Dict[str, Any], r
         latest_response["request_headers"] = dict(response.request.headers)
     except Exception:
         return
+
+
+def _record_interesting_resource(resources: list[Dict[str, str]], response: Any) -> None:
+    if response is None:
+        return
+    try:
+        url = str(response.url)
+        resource_type = str(response.request.resource_type or "")
+        content_type = str(response.headers.get("content-type") or "")
+        lower = url.lower()
+        if (
+            resource_type in {"font", "stylesheet", "script", "xhr", "fetch"}
+            or any(token in lower for token in ("font", "woff", "ttf", "otf", "eot", "chapter", "ajax", "content"))
+        ):
+            resources.append(
+                {
+                    "url": url,
+                    "type": resource_type,
+                    "status": str(response.status),
+                    "content_type": content_type,
+                }
+            )
+    except Exception:
+        return
+
+
+async def _collect_browser_resource_entries(page: Any) -> list[Dict[str, str]]:
+    try:
+        entries = await page.evaluate(
+            """
+            () => (performance.getEntriesByType('resource') || []).map((entry) => ({
+                url: entry.name || '',
+                type: entry.initiatorType || '',
+                status: '',
+                content_type: '',
+            }))
+            """
+        )
+    except Exception:
+        return []
+    output: list[Dict[str, str]] = []
+    for entry in entries or []:
+        url = str((entry or {}).get("url") or "")
+        lower = url.lower()
+        resource_type = str((entry or {}).get("type") or "")
+        if (
+            resource_type in {"css", "link", "script", "xmlhttprequest", "fetch"}
+            or any(token in lower for token in ("font", "woff", "ttf", "otf", "eot", "chapter", "ajax", "content"))
+        ):
+            output.append(
+                {
+                    "url": url,
+                    "type": resource_type,
+                    "status": str((entry or {}).get("status") or ""),
+                    "content_type": str((entry or {}).get("content_type") or ""),
+                }
+            )
+    return output
+
+
+def _dedupe_resources(resources: list[Dict[str, str]], limit: int = 160) -> list[Dict[str, str]]:
+    deduped: list[Dict[str, str]] = []
+    seen: set[str] = set()
+    for item in resources:
+        url = str((item or {}).get("url") or "")
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        deduped.append(
+            {
+                "url": url,
+                "type": str((item or {}).get("type") or ""),
+                "status": str((item or {}).get("status") or ""),
+                "content_type": str((item or {}).get("content_type") or ""),
+            }
+        )
+        if len(deduped) >= limit:
+            break
+    return deduped
 
 
 def looks_like_probe_shell(html: str, status_code: int = 0) -> bool:
