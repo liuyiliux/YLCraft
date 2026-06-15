@@ -377,32 +377,56 @@ async def _search_wechat_mp(req: SearchEnhancedRequest) -> SearchResponse:
     - "article": 拉取文章列表（需在 filters 中传 fake_id）
     """
     from app.services.wechat_mp import get_wechat_mp_service
-    from app.db.models.platform_connection import PlatformConnection
-    import json as _json
+    from app.db.models.platform_connection import PlatformConnection, PlatformType
+    from app.services.platform_connection.service import PlatformConnectionService
 
     service = get_wechat_mp_service()
 
     # 从请求中获取 conn_id
     conn_id = req.filters.get("conn_id", "") if req.filters else ""
 
-    # 从数据库获取连接的 Cookie
+    # 从数据库获取连接的 Cookie / Token。
+    # cookie_content 是 Netscape 文件格式，不能直接放进 HTTP Cookie header；
+    # 这里统一通过 PlatformConnectionService 提取原始 "k=v; ..." 格式。
     cookie = ""
     token = ""
-    if conn_id:
-        try:
-            from app.db.database import get_session
-            with get_session() as session:
-                conn = session.get(PlatformConnection, conn_id)
-                if conn:
-                    cookie = conn.cookie_content or ""
-                    credentials = {}
-                    try:
-                        credentials = _json.loads(conn.credentials or "{}")
-                    except (_json.JSONDecodeError, TypeError):
-                        pass
-                    token = credentials.get("token", "")
-        except Exception as e:
-            logger.warning(f"[_search_wechat_mp] 获取凭证失败: {e}")
+    db_session = None
+    try:
+        from app.db.database import SessionLocal
+
+        db_session = SessionLocal()
+        conn_service = PlatformConnectionService(db_session)
+        conn: PlatformConnection | None = None
+        if conn_id:
+            conn = conn_service.get(conn_id)
+        else:
+            conn = conn_service.get_active(PlatformType.WECHAT_MP)
+            conn_id = conn.id if conn else ""
+
+        if conn:
+            cookie = conn_service.get_raw_cookie(conn.id) or ""
+            credentials = conn.get_credentials()
+            token = (
+                str(credentials.get("token") or "")
+                or str(conn.account_id or "")
+            )
+            logger.info(
+                "[_search_wechat_mp] using conn=%s, cookie=%s, token=%s",
+                conn.id,
+                "yes" if cookie else "no",
+                "yes" if token else "no",
+            )
+    except Exception as e:
+        logger.warning(f"[_search_wechat_mp] 获取凭证失败: {e}")
+    finally:
+        if db_session is not None:
+            db_session.close()
+
+    if not cookie or not token:
+        raise HTTPException(
+            status_code=400,
+            detail="微信公众号连接缺少 Cookie 或 token，请先在账号中心完成扫码登录",
+        )
 
     if req.search_type == "account":
         # 搜索公众号
