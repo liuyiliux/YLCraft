@@ -175,6 +175,8 @@ PLATFORM_LOGIN_URLS = {
     "tiktok": "https://www.tiktok.com",
     "twitter": "https://x.com",
     "telegram": "https://web.telegram.org",
+    # 微信公众号公众平台后台登录页
+    "wechat_mp": "https://mp.weixin.qq.com/",
 }
 
 PLATFORM_DOMAINS = {
@@ -188,6 +190,8 @@ PLATFORM_DOMAINS = {
     "tiktok": ".tiktok.com",
     "twitter": ".twitter.com,.x.com,t.co,pbs.twimg.com,abs.twimg.com",
     "telegram": ".telegram.org,t.me",
+    # 微信公众号相关域名
+    "wechat_mp": ".weixin.qq.com,.qq.com,mp.weixin.qq.com",
 }
 
 PLATFORM_TEST_URLS = {
@@ -201,6 +205,8 @@ PLATFORM_TEST_URLS = {
     "tiktok": "https://www.tiktok.com/@tiktok/video/7043492019477857454",
     "twitter": "https://x.com/Twitter/status/12345",
     "telegram": "https://t.me/telegram",
+    # 微信公众号登录后默认跳到首页
+    "wechat_mp": "https://mp.weixin.qq.com/cgi-bin/home?t=home/index&lang=zh_CN",
 }
 
 DEFAULT_USER_AGENT = (
@@ -216,6 +222,8 @@ PLATFORM_USER_AGENTS = {
     "bilibili": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "weibo": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "zhihu": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    # 微信公众号需要与 bizlogin 端点校验一致的 Chrome 149
+    "wechat_mp": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
 }
 
 

@@ -4,15 +4,37 @@
 
 const BASE = '/api/v1'
 
-function request(path: string, init?: RequestInit) {
-  return fetch(`${BASE}${path}`, {
-    headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', ...init?.headers },
+async function request(path: string, init?: RequestInit) {
+  const headers = new Headers(init?.headers)
+  if (!headers.has('Accept')) headers.set('Accept', 'application/json')
+  if (!(init?.body instanceof FormData) && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json')
+  }
+
+  const r = await fetch(`${BASE}${path}`, {
     ...init,
-  }).then(async r => {
-    const ct = r.headers.get('content-type') || ''
-    if (ct.includes('application/json')) return r.json()
-    return r.text()
+    headers,
   })
+  const ct = r.headers.get('content-type') || ''
+  const data = ct.includes('application/json') ? await r.json() : await r.text()
+
+  if (!r.ok) {
+    const detail =
+      data && typeof data === 'object'
+        ? ((data as any).detail ?? (data as any).message)
+        : data
+    const message =
+      typeof detail === 'string' && detail
+        ? detail
+        : `HTTP ${r.status} ${r.statusText}`.trim()
+    const error = new Error(message)
+    ;(error as any).status = r.status
+    ;(error as any).data = data
+    ;(error as any).response = { status: r.status, data }
+    throw error
+  }
+
+  return data
 }
 
 // ===== Characters =====
@@ -1025,7 +1047,14 @@ export interface PlatformConnectionResponse {
   created_at: string
   has_credentials: boolean
   error_message: string | null
-  account_id?: string  // B站账号ID（用户UID）
+  account_id?: string | null
+  account_name?: string | null
+  account_avatar?: string | null
+  account_url?: string | null
+  acquisition_method?: string
+  has_cookie_content?: boolean
+  domains?: string | null
+  test_url?: string | null
 }
 
 /** 获取支持的平台和认证类型 */
@@ -1044,6 +1073,14 @@ export const createPlatformConnection = (data: {
   auth_type: string
   credentials?: { [key: string]: any }
   description?: string
+  account_name?: string
+  account_id?: string
+  account_avatar?: string
+  account_url?: string
+  acquisition_method?: string
+  cookie_content?: string
+  domains?: string
+  test_url?: string
 }) => request('/platforms', { method: 'POST', body: JSON.stringify(data) })
 
 /** 更新平台连接 */
@@ -1053,6 +1090,14 @@ export const updatePlatformConnection = (id: string, data: {
   credentials?: { [key: string]: any }
   description?: string
   status?: string
+  account_id?: string
+  account_name?: string
+  account_avatar?: string
+  account_url?: string
+  cookie_content?: string
+  acquisition_method?: string
+  domains?: string
+  test_url?: string
 }) => request(`/platforms/${id}`, { method: 'PUT', body: JSON.stringify(data) })
 
 /** 删除平台连接 */

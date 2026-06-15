@@ -72,6 +72,8 @@ import {
   refreshQrcode,
   getConnectionCookieContent,
   saveConnectionCookieContent,
+  wechatMpLoginQrcode,
+  wechatMpLoginStatus,
 } from '../../api'
 import type { PlatformConnectionResponse, AcquisitionWSMessage } from '../../api'
 
@@ -551,7 +553,10 @@ function QrLoginPanel({
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
+  const pollRef = useRef<ReturnType<typeof setInterval>>()
   const confirmedRef = useRef(false)
+  // 记录刚创建但还未完成扫码的 connId，失败/取消时自动删除
+  const pendingConnIdRef = useRef<string>('')
   const platformInfo = getPlatformMeta(platform)
 
   const isActive = isLoading || (status && !['success', 'failed', 'cancelled', 'expired'].includes(status))
@@ -561,6 +566,73 @@ function QrLoginPanel({
     if (['failed', 'expired', 'cancelled'].includes(s)) return theme.error
     if (['saving', 'cookies_extracting', 'cookies_extracted'].includes(s)) return theme.primary
     return theme.warning
+  }
+
+  // 微信公众号专用：轮询登录状态
+  const startWechatMpPolling = (sid: string, connId: string) => {
+    if (pollRef.current) clearInterval(pollRef.current)
+    setStatus('waiting')
+    setStatusText('请使用微信扫描上方二维码')
+
+    pollRef.current = setInterval(async () => {
+      try {
+        const res = await wechatMpLoginStatus(sid)
+        const s = res?.status || 'waiting'
+        setStatus(s)
+
+        if (s === 'waiting') {
+          setStatusText('请使用微信扫描上方二维码')
+        } else if (s === 'scanned') {
+          setStatusText(res?.message || '已扫码，请在手机端确认登录')
+        } else if (s === 'confirmed') {
+          clearInterval(pollRef.current)
+          setStatusText('登录成功，正在保存...')
+          setIsLoading(false)
+
+          // 保存 Cookie 和 Token 到平台连接
+          try {
+            await updatePlatformConnection(connId, {
+              credentials: {
+                raw: res.cookie || '',
+                token: res.token || '',
+                source: 'qrcode',
+              },
+              status: 'active',
+              account_id: res.token || undefined,
+              account_avatar: res.head_img || undefined,
+              acquisition_method: 'qrcode',
+              account_name: res.nickname || connectorName || '微信公众号',
+            })
+            // 确认成功，清空 pending 标记（不再回滚）
+            pendingConnIdRef.current = ''
+            if (!confirmedRef.current) {
+              confirmedRef.current = true
+              setStatusText('账号绑定成功')
+              message.success('微信公众号扫码登录成功！')
+              onConfirmed()
+            }
+          } catch (e: any) {
+            setStatus('failed')
+            setStatusText('保存登录信息失败')
+            setError(e?.response?.data?.detail || '保存失败')
+            // 保存失败 → 删除这个半成品
+            await rollbackPendingConn(connId)
+          }
+        } else if (s === 'expired') {
+          clearInterval(pollRef.current)
+          setStatusText('二维码已过期，请点击刷新')
+          setIsLoading(false)
+          // 过期 → 不删除（用户可能想刷新重试）
+        } else if (s === 'error') {
+          clearInterval(pollRef.current)
+          setStatus('failed')
+          setStatusText(res.message || '登录失败')
+          setIsLoading(false)
+          // 错误 → 删除半成品
+          await rollbackPendingConn(connId)
+        }
+      } catch { /* ignore poll errors */ }
+    }, 2000)
   }
 
   const connectWebSocket = (sid: string) => {
@@ -615,10 +687,100 @@ function QrLoginPanel({
     wsRef.current = ws
   }
 
+  // 浏览器方式（Playwright/Patchright）的 WebSocket —— 微信公众号专用
+  const connectPlaywrightWebSocket = (sid: string) => {
+    const isDev = import.meta.env.DEV
+    const wsUrl = isDev
+      ? `ws://${window.location.hostname}:8000/api/v1/platforms/acquire/playwright/${sid}/ws`
+      : `${window.location.protocol === 'https:' ? 'wss:' : 'ws://'}${window.location.host}/api/v1/platforms/acquire/playwright/${sid}/ws`
+    console.log('[WS Playwright] Connecting to:', wsUrl)
+    const ws = new WebSocket(wsUrl)
+
+    ws.onopen = () => { setIsLoading(true) }
+
+    ws.onmessage = (event) => {
+      try {
+        const msg: AcquisitionWSMessage = JSON.parse(event.data)
+        if (msg.type === 'status_update') {
+          setStatus(msg.status)
+          setStatusText(msg.message)
+        } else if (msg.type === 'completed') {
+          setStatus(msg.status)
+          setStatusText(msg.message)
+          setIsLoading(false)
+          if (msg.status === 'success' && !confirmedRef.current) {
+            confirmedRef.current = true
+            setStatusText('账号绑定成功')
+            message.success('微信公众号登录成功！')
+            onConfirmed()
+          }
+          ws.close()
+        } else if (msg.type === 'error') {
+          setStatus('failed')
+          setStatusText(msg.message || '未知错误')
+          setIsLoading(false)
+          ws.close()
+        }
+      } catch { /* ignore */ }
+    }
+
+    ws.onclose = () => { setIsLoading(false) }
+    ws.onerror = () => {
+      setStatus('failed')
+      setStatusText('WebSocket 连接失败')
+      setIsLoading(false)
+    }
+
+    wsRef.current = ws
+  }
+
   const startSession = async () => {
     setIsLoading(true)
     setError(null)
     confirmedRef.current = false
+
+    // 微信公众号走专用扫码登录 API（bizlogin 流程）
+    if (platform === 'wechat_mp') {
+      try {
+        // 先创建一个空的 PlatformConnection 用于关联
+        const name = connectorName.trim() || '微信公众号'
+        const connRes = await createPlatformConnection({
+          platform: 'wechat_mp',
+          name,
+          auth_type: 'cookie',       // 最终获取的是 cookie 凭证
+          acquisition_method: 'qrcode',  // 获取方式是扫码
+          credentials: {},
+        })
+        const connId = (connRes as any)?.connection?.id || (connRes as any)?.id || ''
+        if (!connId) {
+          setStatus('failed')
+          setStatusText('创建连接失败')
+          setIsLoading(false)
+          return
+        }
+        pendingConnIdRef.current = connId
+
+        const qrRes = await wechatMpLoginQrcode(connId)
+        if (qrRes?.qr_url) {
+          setSessionId(qrRes.session_id || '')
+          setQrImage(qrRes.qr_url)  // data:image/jpg;base64,... 格式
+          setStatus('qr_generated')
+          setStatusText('请使用微信扫描上方二维码')
+          startWechatMpPolling(qrRes.session_id, connId)
+        } else {
+          setStatus('failed')
+          setStatusText(qrRes?.message || '生成二维码失败')
+          setIsLoading(false)
+          await rollbackPendingConn(connId)
+        }
+      } catch (e: any) {
+        setError(e?.message || '二维码生成失败，请稍后重试')
+        setIsLoading(false)
+      }
+      return
+    }
+
+    // 其他平台使用通用 Qrcode 流程
     try {
       const res = await qrcodeGenerate({
         platform,
@@ -643,6 +805,31 @@ function QrLoginPanel({
 
   const handleRefresh = async () => {
     if (!sessionId) return
+
+    // 微信公众号刷新：重新调用登录接口（重新 startlogin）
+    if (platform === 'wechat_mp') {
+      try {
+        // 获取当前 connId（可能存在 pendingConnIdRef 中）
+        const connId = pendingConnIdRef.current
+        if (!connId) {
+          message.error('会话已过期，请重新生成')
+          return
+        }
+        const res = await wechatMpLoginQrcode(connId)
+        if (res?.qr_url) {
+          setQrImage(res.qr_url)
+          setStatus('qr_generated')
+          setStatusText('二维码已刷新，请重新扫描')
+          // 重新开始轮询（用新的 session_id）
+          if (res.session_id) {
+            setSessionId(res.session_id)
+            startWechatMpPolling(res.session_id, connId)
+          }
+        }
+      } catch { message.error('刷新失败') }
+      return
+    }
+
     try {
       const res = await refreshQrcode(sessionId)
       if (res.success) {
@@ -655,6 +842,7 @@ function QrLoginPanel({
 
   const reset = () => {
     wsRef.current?.close()
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = undefined }
     setSessionId('')
     setStatus('')
     setStatusText('点击下方按钮生成二维码')
@@ -662,10 +850,29 @@ function QrLoginPanel({
     setIsLoading(false)
     setError(null)
     confirmedRef.current = false
+    pendingConnIdRef.current = ''
+  }
+
+  // 回滚：删除刚创建但未完成扫码的 PlatformConnection 记录
+  const rollbackPendingConn = async (connId: string) => {
+    if (!connId) return
+    try {
+      await deletePlatformConnection(connId)
+      console.info(`[QrLoginPanel] Rolled back pending conn: ${connId}`)
+    } catch (e) {
+      console.warn(`[QrLoginPanel] Failed to rollback conn ${connId}:`, e)
+    } finally {
+      if (pendingConnIdRef.current === connId) {
+        pendingConnIdRef.current = ''
+      }
+    }
   }
 
   useEffect(() => {
-    return () => { wsRef.current?.close() }
+    return () => {
+      wsRef.current?.close()
+      if (pollRef.current) clearInterval(pollRef.current)
+    }
   }, [])
 
   return (
@@ -1096,13 +1303,14 @@ function AddAccountDrawer({
 }) {
   const { theme } = useTheme()
   const platformMeta = getPlatformMeta(platform)
-  const isApiPlatform = platformMeta && !platformMeta.authTypes.includes('cookie')
+  // API Key 平台：既不支持 Cookie 也不支持扫码
+  const isApiPlatform = platformMeta && !platformMeta.authTypes.includes('cookie') && !platformMeta.authTypes.includes('qrcode')
 
-  // Cookie 平台有三种方式，API 平台只有 API Key
+  // Cookie 平台有三种方式，扫码平台有扫码+浏览器，API 平台只有 API Key
   const methodOptions = isApiPlatform
     ? [{ label: 'API Key', value: 'cookie' as AddMethod }]
     : [
-        { label: 'Cookie', value: 'cookie' as AddMethod, icon: <KeyOutlined /> },
+        ...(platformMeta?.authTypes.includes('cookie') ? [{ label: 'Cookie', value: 'cookie' as AddMethod, icon: <KeyOutlined /> }] : []),
         ...(platformMeta?.supportQrcode ? [{ label: '扫码登录', value: 'qrcode' as AddMethod, icon: <QrcodeOutlined /> }] : []),
         ...(playwrightAvailable ? [{ label: '浏览器', value: 'browser' as AddMethod, icon: <ChromeOutlined /> }] : []),
       ]
@@ -1111,8 +1319,14 @@ function AddAccountDrawer({
 
   // 平台切换时重置方法
   useEffect(() => {
-    setMethod(isApiPlatform ? 'cookie' : 'cookie')
-  }, [platform, isApiPlatform])
+    if (isApiPlatform) {
+      setMethod('cookie')
+    } else if (platformMeta?.supportQrcode) {
+      setMethod('qrcode')
+    } else {
+      setMethod('cookie')
+    }
+  }, [platform, isApiPlatform, platformMeta])
 
   return (
     <Drawer
@@ -1198,7 +1412,15 @@ export default function PlatformsPage() {
         listPlatformConnections(),
         getSupportedPlatforms(),
       ])
-      setConnections(connRes.connections || [])
+      const visibleConnections = (connRes.connections || []).filter((conn: PlatformConnectionResponse) => {
+        return !(
+          conn.platform === 'wechat_mp' &&
+          conn.acquisition_method === 'qrcode' &&
+          conn.status !== 'active' &&
+          !conn.has_cookie_content
+        )
+      })
+      setConnections(visibleConnections)
       setSupportedPlatforms(platformRes.platforms || [])
       setAuthTypes(platformRes.auth_types || [])
       setPlaywrightAvailable(platformRes.playwright_available || false)

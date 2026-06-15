@@ -341,7 +341,15 @@ async def _get_conn_credentials(conn_id: str) -> tuple[str, str]:
             except (json.JSONDecodeError, TypeError):
                 pass
             token = credentials.get("token", "")
-            cookie = row[1] or ""
+            cookie = credentials.get("raw") or credentials.get("content") or ""
+            if not cookie and row[1]:
+                cookie = row[1]
+                if cookie.startswith("# Netscape HTTP Cookie File"):
+                    try:
+                        from app.services.cookies.manager import get_cookie_manager
+                        cookie = get_cookie_manager().extract_raw(cookie)
+                    except Exception:
+                        pass
             return cookie, token
     except Exception as e:
         logger.warning(f"[wechat-mp] 获取凭证失败: {e}")

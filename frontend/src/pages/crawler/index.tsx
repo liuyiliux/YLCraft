@@ -365,6 +365,25 @@ const PLATFORM_SEARCH_CONFIG: Record<string, PlatformSearchConfig> = {
     ],
     defaultSearchType: 'note',
   },
+  wechat_mp: {
+    searchTypes: [
+      {
+        value: 'account', label: '公众号', icon: <MessageOutlined />,
+        sortOptions: [
+          { value: 'default', label: '综合' },
+        ],
+        defaultSort: 'default',
+      },
+      {
+        value: 'article', label: '文章', icon: <ReadOutlined />,
+        sortOptions: [
+          { value: 'default', label: '综合' },
+        ],
+        defaultSort: 'default',
+      },
+    ],
+    defaultSearchType: 'account',
+  },
 }
 
 const SEARCH_KEYWORDS = ['AI教程', '短剧', '美食探店', '穿搭', '数码评测', 'vlog', 'travel']

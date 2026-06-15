@@ -1,12 +1,12 @@
 """
 微信公众号服务 — 业务编排层
 
-整合 API 客户端、解析器、素材库，提供高层业务操作。
+整合 API 客户端、二维码适配器、解析器，提供高层业务操作。
+扫码登录统一走 cookies.platforms 的 QrcodeAdapter 体系。
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import uuid
@@ -17,6 +17,7 @@ from typing import Optional
 from .api_client import WechatMPAPIClient
 from .parser import WechatMPParser
 from app.core.config import ensure_download_path
+from app.services.cookies.platforms import get_qrcode_adapter
 
 logger = logging.getLogger("ylcraft.wechat_mp.service")
 
@@ -26,7 +27,7 @@ class WechatMPService:
     微信公众号业务服务
 
     功能：
-        - 扫码登录流程管理
+        - 扫码登录流程管理（通过 QrcodeAdapter）
         - 搜索公众号
         - 拉取文章列表
         - 下载单篇文章
@@ -37,7 +38,7 @@ class WechatMPService:
     def __init__(self):
         self._clients: dict[str, WechatMPAPIClient] = {}
         self._parser = WechatMPParser()
-        # 登录会话 {session_id: {status, uuid, conn_id, created_at}}
+        # 登录会话 {session_id: {status, session_key, conn_id, created_at}}
         self._login_sessions: dict[str, dict] = {}
 
     # ── 客户端管理 ──────────────────────────────────────────────
@@ -54,30 +55,36 @@ class WechatMPService:
                 client.token = token
         return self._clients[conn_id]
 
-    # ── 登录流程 ────────────────────────────────────────────────
+    # ── 登录流程（通过 QrcodeAdapter）──────────────────────────
 
     async def start_qrcode_login(self, conn_id: str) -> dict:
         """
         启动扫码登录
 
+        使用 WechatMPQrcodeAdapter 生成二维码。
+
         Returns:
-            { session_id, qr_url }
+            { session_id, qr_url, qr_uuid }
+            qr_url 是 data:image/jpg;base64,... 格式的 data URI
         """
-        client = self._get_client(conn_id)
-        result = await client.get_login_qrcode()
+        adapter = get_qrcode_adapter("wechat_mp")
+        if not adapter:
+            raise RuntimeError("微信公众号二维码适配器不可用")
+
+        result = await adapter.generate_qrcode()
 
         session_id = str(uuid.uuid4())
         self._login_sessions[session_id] = {
             "status": "waiting",
-            "uuid": result.get("uuid", ""),
+            "session_key": result.get("session_key", ""),
             "conn_id": conn_id,
             "created_at": datetime.now(timezone.utc).replace(tzinfo=None),
         }
 
         return {
             "session_id": session_id,
-            "qr_url": result.get("qr_url", ""),
-            "qr_uuid": result.get("uuid", ""),
+            "qr_url": result.get("qr_image_base64", ""),
+            "qr_uuid": result.get("session_key", ""),
         }
 
     async def check_login_status(self, session_id: str) -> dict:
@@ -85,26 +92,107 @@ class WechatMPService:
         轮询扫码登录状态
 
         Returns:
-            { status, cookie, token, nickname }
+            { status, cookie, token, nickname, head_img, message }
         """
         session = self._login_sessions.get(session_id)
         if not session:
             return {"status": "error", "message": "会话不存在或已过期"}
 
-        client = self._get_client(session["conn_id"])
-        result = await client.check_login_status(session["qr_uuid"])
+        adapter = get_qrcode_adapter("wechat_mp")
+        if not adapter:
+            return {"status": "error", "message": "二维码适配器不可用"}
 
-        session["status"] = result.get("status", "waiting")
+        session_key = session.get("session_key", "")
+        if not session_key:
+            return {"status": "error", "message": "会话缺少 session_key"}
 
-        if result.get("status") == "confirmed":
-            # 登录成功，获取用户信息
-            verify = await client.verify_login()
-            result["nickname"] = verify.get("nickname", "")
-            result["head_img"] = verify.get("head_img", "")
+        result = await adapter.check_status(session_key)
 
-        return result
+        status = result.get("status", "waiting")
+        session["status"] = status
+
+        if status == "confirmed":
+            cookies_array = result.get("cookies", [])
+            account_info = result.get("account_info", {})
+
+            # 拼接 cookie 字符串
+            cookie_str = "; ".join(
+                f"{c['name']}={c['value']}" for c in cookies_array
+            )
+
+            # 从 account_info 或 redirect_url 提取 token
+            token = account_info.get("account_id", "")
+            self._persist_login_result(
+                conn_id=session.get("conn_id", ""),
+                cookie_str=cookie_str,
+                token=token,
+                account_info=account_info,
+            )
+
+            return {
+                "status": "confirmed",
+                "cookie": cookie_str,
+                "token": token,
+                "nickname": account_info.get("account_name", ""),
+                "head_img": account_info.get("account_avatar", ""),
+            }
+
+        return {"status": status}
 
     # ── 搜索公众号 ──────────────────────────────────────────────
+
+    def _persist_login_result(
+        self,
+        conn_id: str,
+        cookie_str: str,
+        token: str,
+        account_info: dict,
+    ) -> None:
+        if not conn_id or not cookie_str:
+            return
+
+        try:
+            from app.db.database import SessionLocal
+            from app.db.models.platform_connection import (
+                AcquisitionMethod,
+                ConnectionStatus,
+                PlatformConnectionUpdate,
+            )
+            from app.services.platform_connection.service import PlatformConnectionService
+
+            db = SessionLocal()
+            try:
+                service = PlatformConnectionService(db)
+                conn = service.get(conn_id)
+                if not conn:
+                    logger.warning(f"[WechatMPService] connection not found: {conn_id}")
+                    return
+
+                creds = conn.get_credentials()
+                creds.update({
+                    "raw": cookie_str,
+                    "source": "qrcode",
+                })
+                if token:
+                    creds["token"] = token
+
+                service.update(
+                    conn_id,
+                    PlatformConnectionUpdate(
+                        credentials=creds,
+                        status=ConnectionStatus.ACTIVE,
+                        acquisition_method=AcquisitionMethod.QRCODE,
+                        account_id=token or account_info.get("account_id") or conn.account_id,
+                        account_name=account_info.get("account_name") or conn.account_name or conn.name,
+                        account_avatar=account_info.get("account_avatar") or conn.account_avatar,
+                        account_url=account_info.get("account_url") or conn.account_url or "https://mp.weixin.qq.com/",
+                    ),
+                )
+                logger.info(f"[WechatMPService] login result saved: {conn_id}")
+            finally:
+                db.close()
+        except Exception as e:
+            logger.warning(f"[WechatMPService] save login result failed: {e}")
 
     async def search_accounts(
         self,
@@ -170,7 +258,6 @@ class WechatMPService:
             # 3. 确定保存目录
             if not download_dir:
                 download_dir = ensure_download_path()
-            # 用公众号名创建子目录
             author = parsed.get("author", "unknown")
             safe_author = "".join(c for c in author if c.isalnum() or c in "._- ").strip()[:50]
             save_dir = Path(download_dir) / "wechat_mp" / (safe_author or "articles")

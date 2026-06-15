@@ -123,14 +123,16 @@ class WechatMPAPIClient:
             self._update_cookie_from_response(resp)
             return resp
 
-    # ── 登录 ──────────────────────────────────────────────────
+    # ── 登录（已废弃 — 扫码登录请使用 WechatMPQrcodeAdapter）──────────
 
     async def get_login_qrcode(self) -> dict:
         """
         获取登录二维码
 
-        Returns:
-            { qr_url: str, uuid: str }
+        .. deprecated::
+            此方法使用旧版 scanloginqrcode?action=ask 端点，
+            该端点在 2024 年公众号切换到 bizlogin 体系后已不可用。
+            请使用 app.services.cookies.platforms.wechat_mp.WechatMPQrcodeAdapter
         """
         # 先生成 uuid
         qr_uuid = str(uuid.uuid4())
@@ -160,6 +162,11 @@ class WechatMPAPIClient:
     async def check_login_status(self, qr_uuid: str) -> dict:
         """
         轮询登录状态
+
+        .. deprecated::
+            此方法使用旧版 scanloginqrcode?action=ask 端点 + ret 判定，
+            实际 ret=1 是错误状态而非"等待扫码"。
+            请使用 app.services.cookies.platforms.wechat_mp.WechatMPQrcodeAdapter.check_status
 
         Returns:
             { status: "waiting"|"scanned"|"confirmed"|"expired",

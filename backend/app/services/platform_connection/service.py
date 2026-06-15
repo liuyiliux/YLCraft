@@ -218,11 +218,15 @@ class PlatformConnectionService:
         # 处理 Cookie 更新
         if data.cookie_content is not None or data.credentials is not None:
             self._apply_cookie_to_connection(conn, data.cookie_content, data.credentials)
+        if data.credentials is not None:
+            conn.set_credentials(data.credentials)
 
         conn.update_timestamp()
         self.session.add(conn)
         self.session.commit()
         self.session.refresh(conn)
+        if (data.cookie_content is not None or data.credentials is not None) and conn.cookie_content:
+            self._sync_cookie_file(conn, conn.cookie_content)
         logger.info(f"[PlatformConnection] Updated: {conn.id}")
         return conn
 
@@ -374,7 +378,9 @@ class PlatformConnectionService:
         """将 Cookie 数据应用到连接对象（不查询数据库）"""
         if cookie_content:
             # 直接存储 Netscape 格式
-            conn.cookie_content = cookie_content
+            mgr = get_cookie_manager()
+            platform_str = self._get_platform_str(conn.platform)
+            conn.cookie_content = mgr.normalize_cookie(platform_str, cookie_content)
         elif credentials:
             # 从 credentials 解析并转换为 Netscape 格式
             raw = credentials.get("raw", "")

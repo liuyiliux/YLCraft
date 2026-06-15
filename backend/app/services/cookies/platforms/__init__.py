@@ -21,11 +21,12 @@ _detector_registry: dict[str, str] = {
     "bilibili": "app.services.cookies.platforms.bilibili:BilibiliDetector",
     "weibo": "app.services.cookies.platforms.weibo:WeiboDetector",
     "zhihu": "app.services.cookies.platforms.zhihu:ZhihuDetector",
+    "wechat_mp": "app.services.cookies.platforms.wechat_mp:WechatMPDetector",
 }
 
 _qrcode_registry: dict[str, str] = {
     "bilibili": "app.services.cookies.platforms.bilibili:BilibiliQrcodeAdapter",
-    # 其他平台二维码适配器预留
+    "wechat_mp": "app.services.cookies.platforms.wechat_mp:WechatMPQrcodeAdapter",
 }
 
 # 已加载的实例缓存
