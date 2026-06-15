@@ -79,5 +79,12 @@ from app.db.models.book_source_cookie import BookSourceCookie
 # 平台生成模板
 from app.db.models.platform_template import PlatformTemplate
 
+# 微信公众号下载
+from app.db.models.wechat_mp import (
+    WechatMPDownload,
+    WechatMPDownloadCreate,
+    WechatMPDownloadResponse,
+)
+
 # 向量库模型
 from app.db.models.vector import VectorDocument, VectorIndex

@@ -311,7 +311,68 @@ async def parse_download_url(req: ParseRequest):
     """解析视频链接，返回元数据 + 多清晰度列表"""
     url = req.url
     parsed_asset_id = ""
-    
+
+    # 0. 检测微信公众号文章链接
+    if "mp.weixin.qq.com" in url:
+        try:
+            from app.services.wechat_mp import get_wechat_mp_service
+            from app.services.wechat_mp.parser import WechatMPParser
+            import httpx
+
+            parser = WechatMPParser()
+            async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=15.0) as client:
+                resp = await client.get(url, headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0.0.0 Safari/537.36"
+                })
+                html = resp.text
+
+            parsed = parser.parse(html, url)
+            title = parsed.get("title", "微信公众号文章")
+            author = parsed.get("author", "")
+            cover = parsed.get("cover", "")
+            images = parsed.get("images", [])
+            digest = parsed.get("content_text", "")[:200]
+
+            # 创建素材记录
+            try:
+                from app.db.database import get_async_session
+                from app.services.asset.service import AssetService
+                async with get_async_session() as db_session:
+                    asset_service = AssetService(db_session)
+                    asset = await asset_service.create(
+                        title=title,
+                        asset_type="ARTICLE",
+                        platform="wechat_mp",
+                        source_type="parse",
+                        source_url=url,
+                        author=author,
+                        cover_url=cover,
+                        status="PARSED",
+                    )
+                    parsed_asset_id = asset.id
+            except Exception as asset_e:
+                logger.warning(f"[parse/wechat_mp] asset tracking failed: {asset_e}")
+
+            return ParseResponse(
+                success=True,
+                asset_id=parsed_asset_id,
+                title=title,
+                author=author,
+                platform="wechat_mp",
+                cover_url=cover,
+                duration=0,
+                duration_str="",
+                width=0,
+                height=0,
+                resolution="",
+                qualities=[],
+                page_url=url,
+                error="",
+            )
+        except Exception as e:
+            logger.error(f"[parse/wechat_mp] 解析失败: {e}")
+            raise HTTPException(status_code=400, detail=f"公众号文章解析失败: {str(e)}")
+
     # 1. 先尝试使用平台专用下载器
     try:
         from app.services.download import parse_with_manager

@@ -18,6 +18,7 @@ import asyncio
 import logging
 import time
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -74,6 +75,7 @@ PLATFORMS = [
     {"value": "bili",  "label": "B站",     "icon": "tv",          "color": "#00aeec"},
     {"value": "wb",    "label": "微博",     "icon": "message",     "color": "#ff8200"},
     {"value": "zhihu", "label": "知乎",     "icon": "question",    "color": "#0066ff"},
+    {"value": "wechat_mp", "label": "微信公众号", "icon": "wechat", "color": "#07C160"},
 ]
 
 CRAWLER_TYPES = [
@@ -241,6 +243,10 @@ async def search_enhanced(req: SearchEnhancedRequest):
     """
     logger.info(f"[search_enhanced] platform={req.platform} keyword={req.keyword} type={req.search_type} sort={req.sort_by}")
 
+    # ===== 微信公众号特殊处理 =====
+    if req.platform == "wechat_mp":
+        return await _search_wechat_mp(req)
+
     service = get_crawler_service()
 
     # ===== 普通搜索模式 =====
@@ -358,3 +364,121 @@ async def fetch_no_watermark(req: FetchNoWatermarkRequest):
     except Exception as e:
         logger.error(f"[fetch_no_watermark] Error: {e}")
         raise HTTPException(status_code=500, detail=f"批量获取失败: {str(e)}")
+
+
+# =============================================================================
+# 微信公众号搜索（专用处理）
+# =============================================================================
+
+async def _search_wechat_mp(req: SearchEnhancedRequest) -> SearchResponse:
+    """
+    微信公众号搜索：根据 search_type 不同执行不同操作
+    - "account": 搜索公众号
+    - "article": 拉取文章列表（需在 filters 中传 fake_id）
+    """
+    from app.services.wechat_mp import get_wechat_mp_service
+    from app.db.models.platform_connection import PlatformConnection
+    import json as _json
+
+    service = get_wechat_mp_service()
+
+    # 从请求中获取 conn_id
+    conn_id = req.filters.get("conn_id", "") if req.filters else ""
+
+    # 从数据库获取连接的 Cookie
+    cookie = ""
+    token = ""
+    if conn_id:
+        try:
+            from app.db.database import get_session
+            with get_session() as session:
+                conn = session.get(PlatformConnection, conn_id)
+                if conn:
+                    cookie = conn.cookie_content or ""
+                    credentials = {}
+                    try:
+                        credentials = _json.loads(conn.credentials or "{}")
+                    except (_json.JSONDecodeError, TypeError):
+                        pass
+                    token = credentials.get("token", "")
+        except Exception as e:
+            logger.warning(f"[_search_wechat_mp] 获取凭证失败: {e}")
+
+    if req.search_type == "account":
+        # 搜索公众号
+        result = await service.search_accounts(
+            conn_id=conn_id,
+            keyword=req.keyword,
+            cookie=cookie,
+            token=token,
+            page=req.page,
+            page_size=req.max_results,
+        )
+        accounts = result.get("list", [])
+        # 转换为 CrawlerResult 格式
+        from app.services.crawler.service import CrawlerResult
+        results = []
+        for acc in accounts:
+            results.append(CrawlerResult(
+                id=acc.get("fake_id", ""),
+                platform="wechat_mp",
+                title=acc.get("nickname", ""),
+                desc=acc.get("signature", ""),
+                cover=acc.get("round_head_img", ""),
+                author=acc.get("nickname", ""),
+                author_id=acc.get("fake_id", ""),
+                url=f"https://mp.weixin.qq.com/mp/profile_ext?action=home&__biz={acc.get('fake_id', '')}",
+                raw_data=acc,
+            ))
+        return SearchResponse(
+            success=True,
+            results=results,
+            total=result.get("total", 0),
+            message=f"找到 {result.get('total', 0)} 个公众号",
+            using="wechat_mp_api",
+        )
+
+    elif req.search_type == "article":
+        # 拉取文章列表
+        fake_id = req.filters.get("fake_id", "") if req.filters else ""
+        if not fake_id:
+            raise HTTPException(status_code=400, detail="缺少 fake_id 参数")
+
+        result = await service.get_articles(
+            conn_id=conn_id,
+            fake_id=fake_id,
+            cookie=cookie,
+            token=token,
+            begin=(req.page - 1) * req.max_results,
+            count=min(req.max_results, 5),
+        )
+
+        if result.get("error"):
+            raise HTTPException(status_code=500, detail=f"拉取文章列表失败: {result.get('error')}")
+
+        articles = result.get("list", [])
+        from app.services.crawler.service import CrawlerResult
+        results = []
+        for art in articles:
+            results.append(CrawlerResult(
+                id=art.get("aid", ""),
+                platform="wechat_mp",
+                title=art.get("title", ""),
+                desc=art.get("digest", ""),
+                cover=art.get("cover", ""),
+                author="",
+                author_id="",
+                url=art.get("link", ""),
+                create_time=datetime.fromtimestamp(art.get("create_time", 0)).isoformat() if art.get("create_time") else "",
+                raw_data=art,
+            ))
+        return SearchResponse(
+            success=True,
+            results=results,
+            total=result.get("total_count", 0),
+            message=f"已获取 {len(articles)} 篇文章（共约 {result.get('total_count', 0)} 篇）",
+            using="wechat_mp_api",
+        )
+
+    else:
+        raise HTTPException(status_code=400, detail=f"微信公众号不支持 search_type={req.search_type}，请使用 account 或 article")

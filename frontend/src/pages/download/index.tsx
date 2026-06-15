@@ -17,7 +17,8 @@ const { Title, Text, Paragraph } = Typography
 const PLATFORM_LABELS: Record<string, string> = {
   bilibili: 'B站', douyin: '抖音', kuaishou: '快手',
   xiaohongshu: '小红书', weibo: '微博', youtube: 'YouTube', tiktok: 'TikTok',
-  twitter: 'Twitter/X', telegram: 'Telegram', unknown: '未知平台',
+  twitter: 'Twitter/X', telegram: 'Telegram', wechat_mp: '微信公众号',
+  unknown: '未知平台',
 }
 
 const QUALITY_COLORS: Record<string, string> = {
@@ -68,6 +69,13 @@ export default function DownloadPage() {
       return {
         type: 'info',
         text: 'ℹ️ Twitter/X 链接可能需要登录才能解析，请确认内容是公开的'
+      }
+    }
+
+    if (url.includes('mp.weixin.qq.com')) {
+      return {
+        type: 'info',
+        text: 'ℹ️ 检测到微信公众号文章链接，将尝试解析文章标题、正文和图片。如需批量下载，请前往「内容搜索」→「微信公众号」'
       }
     }
 

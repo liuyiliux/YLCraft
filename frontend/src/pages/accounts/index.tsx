@@ -95,6 +95,7 @@ const PLATFORM_METAS: PlatformMeta[] = [
   { value: 'bilibili',   label: 'B站',     icon: <span style={{fontSize:18}}>📺</span>, color: '#00aeec', authTypes: ['cookie'], supportQrcode: true },
   { value: 'weibo',      label: '微博',    icon: <span style={{fontSize:18}}>💬</span>, color: '#ff8200', authTypes: ['cookie'], supportQrcode: false },
   { value: 'zhihu',      label: '知乎',    icon: <span style={{fontSize:18}}>❓</span>, color: '#0066ff', authTypes: ['cookie'], supportQrcode: false },
+  { value: 'wechat_mp',  label: '微信公众号', icon: <MessageOutlined style={{color:'#07C160',fontSize:16}} />, color: '#07C160', authTypes: ['qrcode'], supportQrcode: true },
   { value: 'youtube',    label: 'YouTube', icon: <span style={{fontSize:18}}>▶️</span>, color: '#ff0000', authTypes: ['cookie'], supportQrcode: false },
   { value: 'tiktok',     label: 'TikTok',  icon: <span style={{fontSize:18}}>♪</span>,  color: '#000000', authTypes: ['cookie'], supportQrcode: false },
   { value: 'twitter',    label: 'X',       icon: <span style={{fontSize:18}}>🐦</span>, color: '#1da1f2', authTypes: ['cookie'], supportQrcode: false },

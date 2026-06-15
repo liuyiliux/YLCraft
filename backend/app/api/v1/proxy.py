@@ -123,3 +123,94 @@ async def proxy_image(
     支持缓存（Cache-Control: public, max-age=86400）。
     """
     return await fetch_remote_image_response(url)
+
+
+# =============================================================================
+# 代理抓包 API
+# =============================================================================
+
+from pydantic import BaseModel, Field
+from typing import Optional as Opt
+from app.services.proxy.sniffer import ProxySniffer
+
+_sniffer: Opt[ProxySniffer] = None
+
+
+def _get_sniffer() -> ProxySniffer:
+    global _sniffer
+    if _sniffer is None:
+        _sniffer = ProxySniffer()
+    return _sniffer
+
+
+class SnifferStartRequest(BaseModel):
+    port: int = Field(8080, description="监听端口")
+    filter_domains: list[str] = Field(default_factory=list, description="过滤域名列表")
+    duration: int = Field(60, description="监听时长（秒），0=手动停止")
+
+
+class SnifferStatusResponse(BaseModel):
+    session_id: str = ""
+    running: bool = False
+    port: int = 0
+    started_at: str = ""
+    elapsed_seconds: int = 0
+    total_captured: int = 0
+    filter_domains: list[str] = []
+    captured_requests: list[dict] = []
+
+
+@router.post("/sniffer/start", summary="启动抓包代理")
+async def start_sniffer(req: SnifferStartRequest):
+    """启动本地 HTTP 代理抓包"""
+    sniffer = _get_sniffer()
+    result = sniffer.start(port=req.port, filter_domains=req.filter_domains)
+    if "error" in result:
+        raise HTTPException(status_code=500, detail=result["error"])
+    return result
+
+
+@router.get("/sniffer/status/{session_id}", summary="查询抓包状态")
+async def get_sniffer_status(session_id: str):
+    """查询抓包代理状态 + 已捕获请求"""
+    sniffer = _get_sniffer()
+    status = sniffer.get_status()
+    return SnifferStatusResponse(**status)
+
+
+@router.post("/sniffer/stop/{session_id}", summary="停止抓包")
+async def stop_sniffer(session_id: str):
+    """手动停止抓包代理"""
+    sniffer = _get_sniffer()
+    result = sniffer.stop()
+    return result
+
+
+@router.get("/sniffer/health", summary="检查代理状态")
+async def sniffer_health():
+    """检查代理抓包运行状态"""
+    sniffer = _get_sniffer()
+    return {
+        "running": sniffer.is_running,
+        "captured_count": sniffer.captured_count,
+    }
+
+
+@router.get("/sniffer/cert", summary="下载 CA 证书")
+async def download_ca_cert():
+    """下载代理 CA 证书（用于 HTTPS 抓包）"""
+    from app.services.proxy.cert import CertManager
+    cert_path = CertManager.get_ca_cert_path()
+    if not CertManager.ca_cert_exists():
+        CertManager.generate_ca_cert()
+    if not CertManager.ca_cert_exists():
+        raise HTTPException(status_code=404, detail="CA 证书不可用")
+
+    import os
+    return Response(
+        content=open(cert_path, "rb").read(),
+        media_type="application/x-pem-file",
+        headers={
+            "Content-Disposition": "attachment; filename=ylcraft-ca.pem",
+        },
+    )

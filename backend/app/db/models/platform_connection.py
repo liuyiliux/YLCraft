@@ -35,6 +35,7 @@ class PlatformType(str, enum.Enum):
     TIKTOK = "tiktok"       # TikTok
     TWITTER = "twitter"      # Twitter/X
     TELEGRAM = "telegram"    # Telegram
+    WECHAT_MP = "wechat_mp"  # 微信公众号
 
     # AI 服务
     OPENAI = "openai"

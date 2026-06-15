@@ -49,6 +49,7 @@ SUPPORTED_PLATFORMS = [
     {"value": "bilibili",   "label": "B站",      "icon": "tv",          "color": "#00aeec",  "auth_types": ["cookie"]},
     {"value": "weibo",      "label": "微博",     "icon": "message",     "color": "#ff8200",  "auth_types": ["cookie"]},
     {"value": "zhihu",      "label": "知乎",     "icon": "question",    "color": "#0066ff",  "auth_types": ["cookie"]},
+    {"value": "wechat_mp",  "label": "微信公众号", "icon": "wechat",     "color": "#07C160",  "auth_types": ["qrcode"]},
     {"value": "youtube",    "label": "YouTube",   "icon": "youtube",     "color": "#ff0000",  "auth_types": ["cookie"]},
     {"value": "tiktok",     "label": "TikTok",    "icon": "tiktok",      "color": "#000000",  "auth_types": ["cookie"]},
     {"value": "twitter",    "label": "Twitter/X", "icon": "twitter",    "color": "#1da1f2",  "auth_types": ["cookie"]},
@@ -63,6 +64,7 @@ AUTH_TYPES = [
     {"value": "api_key",  "label": "API Key"},
     {"value": "oauth2",   "label": "OAuth2.0"},
     {"value": "password", "label": "账号密码"},
+    {"value": "qrcode",   "label": "扫码登录"},
     {"value": "none",     "label": "无需认证"},
 ]
 

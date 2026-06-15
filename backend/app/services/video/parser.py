@@ -170,6 +170,8 @@ def _detect_platform(url: str) -> str:
         return "twitter"
     if any(x in url_lower for x in ["telegram.org", "t.me", "web.telegram.org"]):
         return "telegram"
+    if "mp.weixin.qq.com" in url_lower:
+        return "wechat_mp"
     return "unknown"
 
 

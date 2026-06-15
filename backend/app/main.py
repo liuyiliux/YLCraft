@@ -433,6 +433,20 @@ def _register_routes():
     except Exception as e:
         logger.warning(f"Could not load proxy router: {e}")
 
+    # 微信公众号路由
+    try:
+        from app.api.v1 import wechat_mp
+        app.include_router(wechat_mp.router, prefix="/api/v1/wechat-mp", tags=["Wechat MP"])
+    except Exception as e:
+        logger.warning(f"Could not load wechat_mp router: {e}")
+
+    # EPUB 电子书路由
+    try:
+        from app.api.v1 import ebook
+        app.include_router(ebook.router, prefix="/api/v1/ebook", tags=["Ebook"])
+    except Exception as e:
+        logger.warning(f"Could not load ebook router: {e}")
+
 _register_routes()
 
 

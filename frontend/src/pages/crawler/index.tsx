@@ -75,6 +75,7 @@ const PLATFORMS: PlatformInfo[] = [
   { value: 'zhihu', label: '知乎', icon: <QuestionCircleOutlined />, color: '#0066ff' },
   { value: 'twitter', label: 'Twitter/X', icon: <TwitterOutlined />, color: '#1DA1F2' },
   { value: 'youtube', label: 'YouTube', icon: <YoutubeOutlined />, color: '#FF0000' },
+  { value: 'wechat_mp', label: '微信公众号', icon: <MessageOutlined />, color: '#07C160' },
 ]
 
 const PLATFORM_MAP = Object.fromEntries(PLATFORMS.map(p => [p.value, p]))

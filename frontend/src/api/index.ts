@@ -1410,3 +1410,168 @@ export const createBiliPaidCourseDownloadTask = (data: {
 /** 查询B站付费课程章节后台下载任务 */
 export const getBiliPaidCourseDownloadTask = (taskId: string) =>
   request(`/bilibili/paid-course/download-task/${taskId}`)
+
+// ===== 微信公众号 =====
+
+export interface WechatMPArticle {
+  aid: string
+  appmsgid: string
+  title: string
+  link: string
+  cover: string
+  digest: string
+  create_time: number
+  update_time: number
+  item_idx: number
+  content_url: string
+  source_url: string
+  is_pay_subscribe: number
+}
+
+export interface WechatMPAccount {
+  fake_id: string
+  nickname: string
+  alias: string
+  round_head_img: string
+  service_type: number
+  signature: string
+}
+
+/** 生成微信公众号登录二维码 */
+export const wechatMpLoginQrcode = (connId: string) =>
+  request(`/wechat-mp/login/qrcode?conn_id=${encodeURIComponent(connId)}`, { method: 'POST' })
+
+/** 轮询登录状态 */
+export const wechatMpLoginStatus = (sessionId: string) =>
+  request(`/wechat-mp/login/status/${sessionId}`)
+
+/** 搜索公众号 */
+export const wechatMpSearchAccounts = (params: {
+  conn_id: string
+  keyword: string
+  page?: number
+  page_size?: number
+}) => {
+  const sp = new URLSearchParams()
+  sp.set('conn_id', params.conn_id)
+  sp.set('keyword', params.keyword)
+  if (params.page) sp.set('page', String(params.page))
+  if (params.page_size) sp.set('page_size', String(params.page_size))
+  return request(`/wechat-mp/search-accounts?${sp}`)
+}
+
+/** 拉取公众号文章列表 */
+export const wechatMpGetArticles = (params: {
+  conn_id: string
+  fake_id: string
+  begin?: number
+  count?: number
+}) => {
+  const sp = new URLSearchParams()
+  sp.set('conn_id', params.conn_id)
+  sp.set('fake_id', params.fake_id)
+  if (params.begin !== undefined) sp.set('begin', String(params.begin))
+  sp.set('count', String(params.count || 5))
+  return request(`/wechat-mp/articles?${sp}`)
+}
+
+/** 下载单篇公众号文章 */
+export const wechatMpDownloadSingle = (data: {
+  conn_id: string
+  article_url: string
+  article_title?: string
+  format?: string
+}) => request('/wechat-mp/download-single', { method: 'POST', body: JSON.stringify(data) })
+
+/** 批量下载公众号文章 */
+export const wechatMpDownloadBatch = (data: {
+  conn_id: string
+  articles: WechatMPArticle[]
+  format?: string
+}) => request('/wechat-mp/download-batch', { method: 'POST', body: JSON.stringify(data) })
+
+/** 导入已下载文章到素材库 */
+export const wechatMpImportAssets = (data: {
+  conn_id: string
+  file_paths: string[]
+  account_name?: string
+}) => request('/wechat-mp/import-assets', { method: 'POST', body: JSON.stringify(data) })
+
+// ===== EPUB 电子书 =====
+
+export interface EbookGenerateResult {
+  task_id: string
+  status: string
+  title: string
+  chapter_count: number
+  file_path: string
+  file_size: number
+  error: string
+}
+
+export interface EbookGenerateParams {
+  title: string
+  folder_path: string
+  author?: string
+  cover_path?: string
+  output_dir?: string
+}
+
+/** 生成 EPUB 电子书 */
+export const generateEbook = (data: EbookGenerateParams) =>
+  request('/ebook/generate', { method: 'POST', body: JSON.stringify(data) })
+
+/** 查询 EPUB 生成任务 */
+export const getEbookTask = (taskId: string) =>
+  request(`/ebook/tasks/${taskId}`)
+
+/** 列出所有 EPUB 任务 */
+export const listEbookTasks = () => request('/ebook/tasks')
+
+/** EPUB 下载 URL */
+export const getEbookDownloadUrl = (taskId: string) =>
+  `${BASE}/ebook/download/${taskId}`
+
+// ===== 代理抓包 =====
+
+export interface SnifferCapturedRequest {
+  id: string
+  method: string
+  url: string
+  host: string
+  content_type: string
+  user_agent: string
+  headers: Record<string, string>
+  body?: string
+  timestamp: number
+  captured_at: string
+}
+
+export interface SnifferStatus {
+  session_id: string
+  running: boolean
+  port: number
+  started_at: string
+  elapsed_seconds: number
+  total_captured: number
+  filter_domains: string[]
+  captured_requests: SnifferCapturedRequest[]
+}
+
+/** 启动抓包 */
+export const startSniffer = (data: {
+  port?: number
+  filter_domains?: string[]
+  duration?: number
+}) => request('/proxy/sniffer/start', { method: 'POST', body: JSON.stringify(data) })
+
+/** 查询抓包状态 */
+export const getSnifferStatus = (sessionId: string) =>
+  request(`/proxy/sniffer/status/${sessionId}`)
+
+/** 停止抓包 */
+export const stopSniffer = (sessionId: string) =>
+  request(`/proxy/sniffer/stop/${sessionId}`, { method: 'POST' })
+
+/** 检查抓包健康 */
+export const snifferHealth = () => request('/proxy/sniffer/health')
