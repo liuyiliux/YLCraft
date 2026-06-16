@@ -71,7 +71,7 @@ class SearchAccountsResponse(BaseModel):
 
 class ArticleInfo(BaseModel):
     aid: str = ""
-    appmsgid: str = ""
+    appmsgid: int = 0
     title: str
     link: str
     cover: str = ""
@@ -118,9 +118,12 @@ class DownloadBatchRequest(BaseModel):
 
 class DownloadBatchResponse(BaseModel):
     total: int
-    success: int
-    fail: int
-    results: list[dict]
+    downloaded: int
+    failed: int
+    success: bool = True
+    download_dir: str = ""
+    file_paths: list[str] = []
+    error: str = ""
 
 
 class ImportAssetsRequest(BaseModel):

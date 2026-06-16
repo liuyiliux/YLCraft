@@ -10,8 +10,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import random
 import re
 import time
 import uuid
@@ -268,71 +270,112 @@ class WechatMPAPIClient:
 
     # ── 拉取文章列表 ────────────────────────────────────────────
 
+    # 类级别缓存：fake_id -> {begin -> (timestamp, result)}
+    _articles_cache: dict = {}
+    _CACHE_TTL = 1800  # 30 分钟
+    _last_request_time: float = 0
+    _MIN_INTERVAL = 3  # 最小请求间隔 3 秒
+
+    async def _throttle(self):
+        """请求限流：确保两次请求间隔至少 _MIN_INTERVAL 秒"""
+        now = time.time()
+        elapsed = now - WechatMPClient._last_request_time
+        if elapsed < WechatMPClient._MIN_INTERVAL:
+            await asyncio.sleep(WechatMPClient._MIN_INTERVAL - elapsed)
+        WechatMPClient._last_request_time = time.time()
+
     async def get_articles(
         self,
         fake_id: str,
         begin: int = 0,
         count: int = 5,
+        max_retries: int = 3,
     ) -> dict:
         """
-        拉取公众号历史文章列表
+        拉取公众号历史文章列表（带缓存 + 限流 + 指数退避重试）
 
         Args:
             fake_id: 公众号 FakeID
             begin: 起始位置
             count: 每页数量（微信限制最大 5）
+            max_retries: 频率限制时的最大重试次数
 
         Returns:
             { total_count: int, list: [{ title, link, cover, digest, create_time }] }
         """
-        try:
-            url = (
-                f"{MP_BASE}/cgi-bin/appmsg"
-                f"?action=list_ex"
-                f"&begin={begin}"
-                f"&count={count}"
-                f"&fakeid={fake_id}"
-                f"&type=9"
-                f"&token={self._token}"
-                f"&lang=zh_CN"
-                f"&f=json"
-            )
-            resp = await self._request("GET", url)
-            data = resp.json()
+        # 1. 检查缓存（30 分钟内不重复请求）
+        cache_key = f"{fake_id}_{begin}_{count}"
+        cached = WechatMPClient._articles_cache.get(cache_key)
+        if cached and (time.time() - cached[0]) < WechatMPClient._CACHE_TTL:
+            logger.info(f"[WechatMPAPI] 使用缓存: {cache_key}")
+            return cached[1]
 
-            if data.get("base_resp", {}).get("ret") != 0:
-                err_msg = data.get("base_resp", {}).get("err_msg", "未知错误")
-                logger.warning(f"[WechatMPAPI] 拉取文章列表失败: ret={data.get('base_resp', {}).get('ret')}, msg={err_msg}")
-                return {
-                    "total_count": 0,
-                    "list": [],
-                    "error": err_msg,
-                    "error_code": data.get("base_resp", {}).get("ret"),
-                }
+        # 2. 请求限流（最小间隔 3 秒）
+        await self._throttle()
 
-            total = data.get("app_msg_cnt", 0)
-            articles = []
-            for item in data.get("app_msg_list", []):
-                articles.append({
-                    "aid": item.get("aid", ""),
-                    "appmsgid": item.get("appmsgid", ""),
-                    "title": item.get("title", ""),
-                    "link": item.get("link", ""),
-                    "cover": item.get("cover", ""),
-                    "digest": item.get("digest", ""),
-                    "create_time": item.get("create_time", 0),
-                    "update_time": item.get("update_time", 0),
-                    "item_idx": item.get("item_idx", 0),
-                    "content_url": item.get("content_url", ""),
-                    "source_url": item.get("source_url", ""),
-                    "is_pay_subscribe": item.get("is_pay_subscribe", 0),
-                })
+        for attempt in range(max_retries + 1):
+            try:
+                url = (
+                    f"{MP_BASE}/cgi-bin/appmsg"
+                    f"?action=list_ex"
+                    f"&begin={begin}"
+                    f"&count={count}"
+                    f"&fakeid={fake_id}"
+                    f"&type=9"
+                    f"&token={self._token}"
+                    f"&lang=zh_CN"
+                    f"&f=json"
+                )
+                resp = await self._request("GET", url)
+                data = resp.json()
 
-            return {"total_count": total, "list": articles}
+                ret = data.get("base_resp", {}).get("ret")
+                if ret != 0:
+                    err_msg = data.get("base_resp", {}).get("err_msg", "未知错误")
+                    # 频率限制 ret=200013 时自动重试（指数退避 + 随机抖动）
+                    if ret == 200013 and attempt < max_retries:
+                        # 退避策略：30s、60s、120s... 加 0-10s 随机抖动
+                        wait = (30 * (2 ** attempt)) + random.uniform(0, 10)
+                        logger.warning(f"[WechatMPAPI] 触发频率限制，{wait:.1f}秒后重试 ({attempt+1}/{max_retries})")
+                        await asyncio.sleep(wait)
+                        continue
+                    logger.warning(f"[WechatMPAPI] 拉取文章列表失败: ret={ret}, msg={err_msg}")
+                    return {
+                        "total_count": 0,
+                        "list": [],
+                        "error": err_msg,
+                        "error_code": ret,
+                    }
 
-        except Exception as e:
-            logger.error(f"[WechatMPAPI] 拉取文章列表异常: {e}")
-            return {"total_count": 0, "list": [], "error": str(e)}
+                total = data.get("app_msg_cnt", 0)
+                articles = []
+                for item in data.get("app_msg_list", []):
+                    articles.append({
+                        "aid": item.get("aid", ""),
+                        "appmsgid": item.get("appmsgid", ""),
+                        "title": item.get("title", ""),
+                        "link": item.get("link", ""),
+                        "cover": item.get("cover", ""),
+                        "digest": item.get("digest", ""),
+                        "create_time": item.get("create_time", 0),
+                        "update_time": item.get("update_time", 0),
+                        "item_idx": item.get("item_idx", 0),
+                        "content_url": item.get("content_url", ""),
+                        "source_url": item.get("source_url", ""),
+                        "is_pay_subscribe": item.get("is_pay_subscribe", 0),
+                    })
+
+                result = {"total_count": total, "list": articles}
+                # 3. 成功时写入缓存（30 分钟内不重复请求）
+                WechatMPClient._articles_cache[cache_key] = (time.time(), result)
+                return result
+
+            except Exception as e:
+                logger.error(f"[WechatMPAPI] 拉取文章列表异常: {e}")
+                return {"total_count": 0, "list": [], "error": str(e)}
+
+        # 所有重试都失败
+        return {"total_count": 0, "list": [], "error": "频率限制，已达最大重试次数", "error_code": 200013}
 
     # ── 获取文章内容 ──────────────────────────────────────────────
 

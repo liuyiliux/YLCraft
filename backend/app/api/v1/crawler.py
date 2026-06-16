@@ -287,11 +287,39 @@ async def search_enhanced(req: SearchEnhancedRequest):
 async def get_note_detail(platform: str, note_id: str, conn_id: str = ""):
     """
     获取笔记详情（无水印图片 & 视频）
-    - platform: 平台（xhs/dy/ks）
+    - platform: 平台（xhs/dy/ks/bili/wechat_mp）
     - note_id: 笔记ID
     - conn_id: 可选，使用指定连接的 Cookie
     """
     logger.info(f"[get_note_detail] platform={platform} note_id={note_id}")
+
+    # 微信公众号特殊处理：公众号账号没有"笔记详情"概念，返回空结果
+    # 前端会直接使用搜索结果中的数据显示详情
+    if platform == "wechat_mp":
+        return NoteDetailResponse(
+            success=True,
+            data={
+                "id": note_id,
+                "platform": "wechat_mp",
+                "title": "",
+                "desc": "",
+                "images": [],
+                "video": "",
+                "video_cover": "",
+                "video_duration": 0,
+                "author": "",
+                "author_id": "",
+                "author_avatar": "",
+                "like_count": 0,
+                "comment_count": 0,
+                "share_count": 0,
+                "view_count": 0,
+                "create_time": "",
+                "tags": [],
+                "raw_data": {},
+            },
+            message="微信公众号详情由前端直接展示",
+        )
 
     # 获取 Cookie
     cookie = ""
@@ -439,6 +467,7 @@ async def _search_wechat_mp(req: SearchEnhancedRequest) -> SearchResponse:
             page_size=req.max_results,
         )
         accounts = result.get("list", [])
+
         # 转换为 CrawlerResult 格式
         from app.services.crawler.service import CrawlerResult
         results = []
@@ -452,6 +481,11 @@ async def _search_wechat_mp(req: SearchEnhancedRequest) -> SearchResponse:
                 author=acc.get("nickname", ""),
                 author_id=acc.get("fake_id", ""),
                 url=f"https://mp.weixin.qq.com/mp/profile_ext?action=home&__biz={acc.get('fake_id', '')}",
+                # 公众号账号本身没有"发布时间"，用空字符串
+                create_time="",
+                # 公众号没有粉丝数/文章数
+                followers=0,
+                videos=0,
                 raw_data=acc,
             ))
         return SearchResponse(

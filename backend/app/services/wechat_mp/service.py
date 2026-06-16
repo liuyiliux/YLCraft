@@ -335,10 +335,19 @@ class WechatMPService:
             else:
                 fail_count += 1
 
+        # 收集成功下载的文件路径
+        file_paths = [r.get("file_path") for r in results if r.get("success") and r.get("file_path")]
+        # 确保 download_dir 始终是字符串类型
+        result_dir = results[0].get("download_dir") if results else ""
+        final_download_dir = str(download_dir or result_dir or "")
+
         return {
             "total": len(articles),
-            "success": success_count,
-            "fail": fail_count,
+            "downloaded": success_count,
+            "failed": fail_count,
+            "success": fail_count == 0,
+            "download_dir": final_download_dir,
+            "file_paths": file_paths,
             "results": results,
         }
 

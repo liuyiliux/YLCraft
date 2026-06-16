@@ -21,15 +21,17 @@ import {
   HeartOutlined, StarOutlined, CommentOutlined, PictureOutlined,
   UserOutlined, TeamOutlined, ReadOutlined, ProfileOutlined, PayCircleOutlined,
   FileTextOutlined, DownOutlined, BarChartOutlined, LikeOutlined, ShareAltOutlined,
-  SendOutlined, VideoCameraAddOutlined,
+  SendOutlined, VideoCameraAddOutlined, CopyOutlined, ArrowUpOutlined,
 } from '@ant-design/icons'
 import { useTheme } from '../../constants/theme'
 import {
   searchEnhanced, importCrawler, getNoteDetail, getSubtitles, downloadCrawlerSubtitle, listPlatformConnections,
   getDanmaku, downloadDanmaku, getBiliStats, getBiliComments, sendBiliComment, getBiliVideoInfo,
-  getBiliLoginHealth,
+  getBiliLoginHealth, wechatMpGetArticles, wechatMpDownloadSingle, wechatMpDownloadBatch, wechatMpImportAssets,
 } from '../../api'
 import type { CrawlerResult, PlatformConnectionResponse } from '../../api'
+import { formatNum, parseCreateTime, formatTime } from '../../utils/format'
+import EpubCreatorModal from '../../components/ebook/EpubCreatorModal'
 
 // B站配色
 const BILI_COLORS = {
@@ -393,12 +395,6 @@ function stripHtml(str: string): string {
   return str.replace(/<[^>]+>/g, '').replace(/&[^;]+;/g, '')
 }
 
-function formatNum(n: number): string {
-  if (n === undefined || n === null || isNaN(n)) return '0'
-  if (n >= 10000) return `${(n / 10000).toFixed(n >= 100000 ? 0 : 1)}w`
-  return n.toLocaleString()
-}
-
 function getPlatformInfo(pf: string): PlatformInfo {
   return PLATFORM_MAP[pf] || { value: pf, label: pf, icon: <GlobalOutlined />, color: '#8b8ba8' }
 }
@@ -419,7 +415,15 @@ function getCurrentSearchTypeConfig(pf: string, st: string): SearchTypeConfig | 
 
 function proxyImageUrl(url?: string): string {
   if (!url) return ''
-  if (url.includes('hdslb.com') || url.includes('xhscdn.com') || url.includes('douyincdn.com')) {
+  // 微信公众号图片 CDN / B站 / 小红书 / 抖音等都需要走代理（防盗链）
+  if (
+    url.includes('hdslb.com') ||
+    url.includes('xhscdn.com') ||
+    url.includes('douyincdn.com') ||
+    url.includes('mmbiz.qpic.cn') ||
+    url.includes('mmbiz.qlogo.cn') ||
+    url.includes('qpic.cn')
+  ) {
     return `/api/v1/proxy/image?url=${encodeURIComponent(url)}`
   }
   return url
@@ -429,19 +433,45 @@ function proxyImageUrl(url?: string): string {
 export default function CrawlerPage() {
   const { theme: THEME, themeId } = useTheme()
   const navigate = useNavigate()
+  const articleListRef = useRef<HTMLDivElement>(null)
+  const [showScrollTop, setShowScrollTop] = useState(false)
 
   // 搜索状态
-  const [platform, setPlatform] = useState('bili')
+  const [platform, setPlatform] = useState<string>(() => {
+    const saved = localStorage.getItem('ylcraft_crawler_platform')
+    return saved || 'bili'
+  })
   const [keyword, setKeyword] = useState('')
 
   // 平台搜索配置（动态计算）
   const platformConfig = useMemo(() => getPlatformSearchConfig(platform), [platform])
 
-  const [searchType, setSearchType] = useState<string>(platformConfig.defaultSearchType)
+  const [searchType, setSearchType] = useState<string>(() => {
+    const saved = localStorage.getItem('ylcraft_crawler_search_type')
+    return saved || platformConfig.defaultSearchType
+  })
   const [sortBy, setSortBy] = useState<string>('')
   const [filters, setFilters] = useState<Record<string, string>>({})
-  const [maxResults, setMaxResults] = useState(20)
+  const [maxResults, setMaxResults] = useState(() => {
+    const saved = localStorage.getItem('ylcraft_crawler_max_results')
+    return saved ? parseInt(saved, 10) : 10
+  })
   const [currentPage, setCurrentPage] = useState(1)
+
+  // 保存平台选择到 localStorage
+  useEffect(() => {
+    localStorage.setItem('ylcraft_crawler_platform', platform)
+  }, [platform])
+
+  // 保存搜索类型到 localStorage
+  useEffect(() => {
+    localStorage.setItem('ylcraft_crawler_search_type', searchType)
+  }, [searchType])
+
+  // 保存每页数量到 localStorage
+  useEffect(() => {
+    localStorage.setItem('ylcraft_crawler_max_results', String(maxResults))
+  }, [maxResults])
 
   // 当前搜索类型的配置（动态计算）
   const currentTypeConfig = useMemo(
@@ -470,6 +500,14 @@ export default function CrawlerPage() {
       }
     }
   }, [searchType])
+
+  // 平台/搜索类型切换时，如果 maxResults 超出当前平台允许的最大值，自动矫正
+  useEffect(() => {
+    if (platform === 'wechat_mp' && searchType === 'account' && maxResults > 10) {
+      setMaxResults(10)
+      setCurrentPage(1)
+    }
+  }, [platform, searchType])
 
   // 排序/筛选/每页数量变化时重置页码
   useEffect(() => {
@@ -533,6 +571,22 @@ export default function CrawlerPage() {
 
   const [detailDrawerTab, setDetailDrawerTab] = useState<string>('detail')
 
+  // 微信公众号文章列表弹窗状态
+  const [wechatConnId, setWechatConnId] = useState<string>('')
+  const [wechatArticleList, setWechatArticleList] = useState<any[]>([])
+  const [wechatArticleLoading, setWechatArticleLoading] = useState(false)
+  const [wechatArticleModal, setWechatArticleModal] = useState<{
+    open: boolean
+    fake_id: string
+    account_name: string
+    begin: number
+  }>({ open: false, fake_id: '', account_name: '', begin: 0 })
+  const [selectedArticles, setSelectedArticles] = useState<string[]>([])
+  const [downloadingArticles, setDownloadingArticles] = useState<string[]>([])
+  const [downloadedArticles, setDownloadedArticles] = useState<string[]>([])
+  const [downloadDir, setDownloadDir] = useState<string>('')
+  const [epubModalOpen, setEpubModalOpen] = useState(false)
+
   // 加载平台连接
   useEffect(() => {
     listPlatformConnections().then((res: any) => {
@@ -543,6 +597,13 @@ export default function CrawlerPage() {
       if (conns.length > 0 && !selectedBiliConn) {
         setSelectedBiliConn(conns[0].id)
       }
+      // 同时加载已登录的微信公众平台连接（用于"查看公众号文章"）
+      const wechatConns = (res.connections || []).filter(
+        (c: PlatformConnectionResponse) => c.platform === 'wechat_mp' && c.status === 'active'
+      )
+      if (wechatConns.length > 0) {
+        setWechatConnId(wechatConns[0].id)
+      }
     }).catch(() => {
       // 静默失败，不影响主功能
     })
@@ -551,6 +612,27 @@ export default function CrawlerPage() {
   useEffect(() => {
     setBiliHealth(null)
   }, [selectedBiliConn])
+
+  // 滚动监听：显示/隐藏回到顶部按钮
+  useEffect(() => {
+    const handleScroll = () => {
+      if (articleListRef.current) {
+        const scrollTop = articleListRef.current.scrollTop
+        setShowScrollTop(scrollTop > 200)
+      }
+    }
+    const container = articleListRef.current
+    if (container) {
+      container.addEventListener('scroll', handleScroll)
+      return () => container.removeEventListener('scroll', handleScroll)
+    }
+  }, [articleListRef, wechatArticleModal.open])
+
+  const scrollToTop = () => {
+    if (articleListRef.current) {
+      articleListRef.current.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+  }
 
   const isDark = themeId !== 'dawn'
   const pageBg = THEME.bgPage
@@ -905,9 +987,29 @@ export default function CrawlerPage() {
     {
       title: '封面', dataIndex: 'cover', key: 'cover', width: 100,
       render: (cover: string, r: CrawlerResult) => {
-        const src = cover?.includes('hdslb.com') || cover?.includes('xhscdn.com') || cover?.includes('douyincdn.com')
-          ? `/api/v1/proxy/image?url=${encodeURIComponent(cover)}`
-          : cover
+        // 走统一的代理函数（含微信公众号 CDN / B站 / 小红书 / 抖音等）
+        const src = proxyImageUrl(cover)
+        // 微信公众号头像 / 账号搜索结果用 1:1 圆形
+        const isWechatAccount = r.platform === 'wechat_mp' && searchType === 'account'
+        if (isWechatAccount) {
+          return src ? (
+            <div style={{
+              width: 48, height: 48, borderRadius: '50%',
+              overflow: 'hidden', border: `2px solid ${isDark ? '#2a2a3e' : '#f0f2f5'}`,
+              background: '#07C160', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <img src={src} alt={stripHtml(r.title)} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+            </div>
+          ) : (
+            <div style={{
+              width: 48, height: 48, borderRadius: '50%',
+              background: '#07C160', color: '#fff', fontWeight: 700, fontSize: 18,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              {stripHtml(r.title)?.[0] || '微'}
+            </div>
+          )
+        }
         return src ? (
           <Image
             src={src} alt={stripHtml(r.title)} width={72} height={54}
@@ -924,7 +1026,9 @@ export default function CrawlerPage() {
     {
       title: searchType === 'user' ? '用户名' : (searchType === 'bangumi' || searchType === 'movie' ? '影视信息' : '标题'),
       dataIndex: 'title', key: 'title',
-      width: searchType === 'user' ? 120 : (searchType === 'bangumi' || searchType === 'movie' ? 300 : undefined),
+      // 给标题列一个最小宽度，避免被其他列挤压导致 platform / author 贴在一起
+      width: searchType === 'user' ? 140 : (searchType === 'bangumi' || searchType === 'movie' ? 320 : 280),
+      minWidth: 220,
       ellipsis: searchType !== 'bangumi' && searchType !== 'movie',
       render: (text: string, r: CrawlerResult) => {
         const isMedia = searchType === 'bangumi' || searchType === 'movie'
@@ -967,7 +1071,7 @@ export default function CrawlerPage() {
       },
     },
     {
-      title: '平台', dataIndex: 'platform', key: 'platform', width: 80,
+      title: '平台', dataIndex: 'platform', key: 'platform', width: 110,
       render: (pf: string) => {
         const info = getPlatformInfo(pf)
         return (
@@ -979,6 +1083,9 @@ export default function CrawlerPage() {
               color: info.color,
               background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.02)',
               fontWeight: 500,
+              // 防止标签被挤变形
+              whiteSpace: 'nowrap',
+              maxWidth: '100%',
             }}
           >
             {info.label}
@@ -988,39 +1095,24 @@ export default function CrawlerPage() {
     },
     ...(searchType === 'user' || searchType === 'bangumi' || searchType === 'movie'
       ? []
-      : [{ title: '作者', dataIndex: 'author', key: 'author', width: 100, ellipsis: true }]
+      : [{ title: '作者', dataIndex: 'author', key: 'author', width: 140, ellipsis: true }]
     ),
-    ...(searchType !== 'user' && searchType !== 'live' ? [{
+    ...(searchType !== 'user' && searchType !== 'live' && searchType !== 'account' ? [{
       title: '发布时间', dataIndex: 'create_time', key: 'create_time', width: 120,
-      render: (create_time: string) => {
-        if (!create_time) return '-'
-        try {
-          const date = new Date(parseInt(create_time) * 1000)
-          // 影视类型显示具体日期
-          if (searchType === 'bangumi' || searchType === 'movie') {
-            return date.toLocaleDateString('zh-CN')
-          }
-          const now = new Date()
-          const diff = now.getTime() - date.getTime()
-          const days = Math.floor(diff / (1000 * 60 * 60 * 24))
-          const hours = Math.floor(diff / (1000 * 60 * 60))
-          const minutes = Math.floor(diff / (1000 * 60))
-          
-          if (minutes < 60) return `${minutes}分钟前`
-          if (hours < 24) return `${hours}小时前`
-          if (days < 7) return `${days}天前`
-          if (days < 30) return `${Math.floor(days / 7)}周前`
-          if (days < 365) return `${Math.floor(days / 30)}月前`
-          return `${Math.floor(days / 365)}年前`
-        } catch {
-          return '-'
-        }
+      render: (create_time: any, r: CrawlerResult) => {
+        // 智能时间格式化（兼容 ISO 字符串 / 10 位秒 / 13 位毫秒）
+        return formatTime(create_time, r.platform, searchType)
       },
     }] : []),
     {
-      title: searchType === 'user' ? '用户信息' : (searchType === 'bangumi' || searchType === 'movie' ? '评分' : '互动'),
+      // 公众号账号列头改为「公众号信息」；其它维持原样
+      title: searchType === 'user' ? '用户信息'
+        : (searchType === 'bangumi' || searchType === 'movie' ? '评分'
+        : (searchType === 'account' ? '公众号信息' : '互动')),
       key: 'stats',
-      width: searchType === 'user' ? 220 : (searchType === 'bangumi' || searchType === 'movie' ? 120 : 160),
+      width: searchType === 'user' ? 220
+        : (searchType === 'bangumi' || searchType === 'movie' ? 120
+        : (searchType === 'account' ? 200 : 160)),
       render: (_: any, r: CrawlerResult) => {
         if (searchType === 'user') {
           return (
@@ -1059,13 +1151,54 @@ export default function CrawlerPage() {
             </div>
           )
         }
+        // 微信公众号账号：显示「简介 / 微信号」（其他信息需点进去看文章才能拿到）
+        if (r.platform === 'wechat_mp' && searchType === 'account') {
+          const raw: any = r.raw_data || {}
+          const alias = raw.alias ? `@${raw.alias}` : ''
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <Text style={{ fontSize: 11, color: textSec, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {r.desc || '暂无简介'}
+              </Text>
+              {alias && (
+                <Text style={{ fontSize: 11, color: textSec, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {alias}
+                </Text>
+              )}
+            </div>
+          )
+        }
+        // 微信公众号文章：阅读 / 点赞 / 在看
+        if (r.platform === 'wechat_mp') {
+          const raw: any = r.raw_data || {}
+          const watch = r.shares ?? raw.share_count ?? raw.like_count ?? 0
+          return (
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <Tooltip title="阅读量">
+                <span style={{ color: '#07C160', fontSize: 12, fontWeight: 500 }}>
+                  <EyeOutlined /> {formatNum(r.views ?? raw.read_count)}
+                </span>
+              </Tooltip>
+              <Tooltip title="点赞">
+                <span style={{ color: '#FF9500', fontSize: 12, fontWeight: 500 }}>
+                  <LikeOutlined /> {formatNum(r.likes ?? raw.praise_count)}
+                </span>
+              </Tooltip>
+              <Tooltip title="在看 / 分享">
+                <span style={{ color: '#3478F6', fontSize: 12, fontWeight: 500 }}>
+                  <StarOutlined /> {formatNum(watch)}
+                </span>
+              </Tooltip>
+            </div>
+          )
+        }
         return (
           <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
             <Text style={{ color: textSec, fontSize: 12 }}><HeartOutlined /> {formatNum(r.likes)}</Text>
             <Text style={{ color: textSec, fontSize: 12 }}><StarOutlined /> {formatNum(r.comments)}</Text>
             {r.shares > 0 && <Text style={{ color: textSec, fontSize: 12 }}><CommentOutlined /> {formatNum(r.shares)}</Text>}
             {r.coins > 0 && <Text style={{ color: textSec, fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-              <svg width="12" height="12" viewBox="0 0 28 28" fill="currentColor" style={{ verticalAlign: 'text-bottom' }}><path fillRule="evenodd" clipRule="evenodd" d="M14.045 25.5454C7.69377 25.5454 2.54504 20.3967 2.54504 14.0454C2.54504 7.69413 7.69377 2.54541 14.045 2.54541C20.3963 2.54541 25.545 7.69413 25.545 14.0454C25.545 17.0954 24.3334 20.0205 22.1768 22.1771C20.0201 24.3338 17.095 25.5454 14.045 25.5454ZM9.66202 6.81624H18.2761C18.825 6.81624 19.27 7.22183 19.27 7.72216C19.27 8.22248 18.825 8.62807 18.2761 8.62807H14.95V10.2903C17.989 10.4444 20.3766 12.9487 20.3855 15.9916V17.1995C20.3854 17.6997 19.9799 18.1052 19.4796 18.1052C18.9793 18.1052 18.5738 17.6997 18.5737 17.1995V15.9916C18.5667 13.9478 16.9882 12.2535 14.95 12.1022V20.5574C14.95 21.0577 14.5444 21.4633 14.0441 21.4633C13.5437 21.4633 13.1382 21.0577 13.1382 20.5574V12.1022C11.1 12.2535 9.52148 13.9478 9.51448 15.9916V17.1995C9.5144 17.6997 9.10883 18.1052 8.60856 18.1052C8.1083 18.1052 7.70273 17.6997 7.70265 17.1995V15.9916C7.71158 12.9487 10.0992 10.4444 13.1382 10.2903V8.62807H9.66202C9.11309 8.62807 8.66809 8.22248 8.66809 7.72216C8.66809 7.22183 9.11309 6.81624 9.66202 6.81624Z" /></svg> {formatNum(r.coins)}
+              <svg width="12" height="12" viewBox="0 0 28 28" fill="currentColor" style={{ verticalAlign: 'text-bottom' }}><path fillRule="evenodd" clipRule="evenodd" d="M14.045 25.5454C7.69377 25.5454 2.54504 20.3967 2.54504 14.0454C2.54504 7.69413 7.69377 2.54541 14.045 2.54541C20.3963 2.54541 25.545 7.69413 25.545 14.0454C25.545 17.0954 24.3334 20.0205 22.1768 22.1771C20.0201 24.3338 17.095 25.5454 14.045 25.5454ZM9.66202 6.81624H18.2761C18.2761 6.81624 18.825 6.22183 19.27 7.72216C19.27 8.22248 18.825 8.62807 18.2761 8.62807H14.95V10.2903C17.989 10.4444 20.3766 12.9487 20.3855 15.9916V17.1995C20.3854 17.6997 19.9799 18.1052 19.4796 18.1052C18.9793 18.1052 18.5738 17.6997 18.5737 17.1995V15.9916C18.5667 13.9478 16.9882 12.2535 14.95 12.1022V20.5574C14.95 21.0577 14.5444 21.4633 14.0441 21.4633C13.5437 21.4633 13.1382 21.0577 13.1382 20.5574V12.1022C11.1 12.2535 9.52148 13.9478 9.51448 15.9916V17.1995C9.5144 17.6997 9.10883 18.1052 8.60856 18.1052C8.1083 18.1052 7.70273 17.6997 7.70265 17.1995V15.9916C7.71158 12.9487 10.0992 10.4444 13.1382 10.2903V8.62807H9.66202C9.11309 8.62807 8.66809 8.22248 8.66809 7.72216C8.66809 7.22183 9.11309 6.81624 9.66202 6.81624Z" /></svg> {formatNum(r.coins)}
             </Text>}
           </div>
         )
@@ -1264,15 +1397,34 @@ export default function CrawlerPage() {
             {/* 每页数量 */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
               <Text style={{ color: textSec, fontSize: 12 }}>每页</Text>
-              <Select value={maxResults} onChange={setMaxResults} size="small" style={{ width: 70 }}
-                options={[
-                  { value: 5, label: '5条' },
-                  { value: 10, label: '10条' },
-                  { value: 20, label: '20条' },
-                  { value: 50, label: '50条' },
-                  { value: 100, label: '100条' },
-                ]}
-              />
+              <Tooltip
+                title={
+                  platform === 'wechat_mp' && searchType === 'account'
+                    ? '微信官方 searchbiz 接口单页最多返回 10 条'
+                    : '每页结果数量'
+                }
+              >
+                <Select value={maxResults} onChange={setMaxResults} size="small" style={{ width: 70 }}
+                  options={
+                    // 微信公众号账号搜索：官方接口封顶 10 条，禁用更大值
+                    platform === 'wechat_mp' && searchType === 'account'
+                      ? [
+                          { value: 5, label: '5条' },
+                          { value: 10, label: '10条' },
+                        ]
+                      : [
+                          { value: 5, label: '5条' },
+                          { value: 10, label: '10条' },
+                          { value: 20, label: '20条' },
+                          { value: 50, label: '50条' },
+                          { value: 100, label: '100条' },
+                        ]
+                  }
+                />
+              </Tooltip>
+              {platform === 'wechat_mp' && searchType === 'account' && (
+                <Tag color="orange" style={{ margin: 0, fontSize: 11 }}>微信接口限制</Tag>
+              )}
             </div>
           </div>
         )}
@@ -1330,7 +1482,8 @@ export default function CrawlerPage() {
       >
         {results.length > 0 ? (
           <Table<CrawlerResult>
-            rowKey={(record, index) => record.id || `row-${index}`}
+            // 用 record 自身的唯一字段（id / url）作为 key，避免使用已废弃的 index 参数
+            rowKey={(record) => record.id || record.url || record.title || 'unknown'}
             columns={columns}
             dataSource={results}
             loading={loading}
@@ -1376,23 +1529,36 @@ export default function CrawlerPage() {
                 color: '#fff', fontSize: 12, fontWeight: 800,
               }}>B</div>
             )}
+            {detailNote?.platform === 'wechat_mp' && (
+              <div style={{
+                width: 24, height: 24, borderRadius: 6,
+                background: '#07C160',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: '#fff', fontSize: 12, fontWeight: 800,
+              }}>微</div>
+            )}
             <span style={{ maxWidth: 380, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {stripHtml(detailNote?.title || '笔记详情')}
+              {stripHtml(detailNote?.title || '内容详情')}
             </span>
           </div>
         }
         open={detailVisible}
         onClose={() => setDetailVisible(false)}
-        width={detailNote?.platform === 'bili' ? 640 : 560}
+        // 微信文章详情需要更宽一些，便于阅读正文
+        width={detailNote?.platform === 'bili' ? 640 : detailNote?.platform === 'wechat_mp' ? 620 : 560}
         styles={{
           body: {
             background: isDark ? '#1e1e2e' : '#ffffff',
             padding: 0,
           },
           header: {
-            background: isDark ? '#181828' : '#fafbfc',
+            background: detailNote?.platform === 'wechat_mp'
+              ? '#07C160'
+              : (isDark ? '#181828' : '#fafbfc'),
             borderBottom: `1px solid ${borderColor}`,
             padding: '0 20px',
+            // 微信详情头部用白字（绿色背景）
+            color: detailNote?.platform === 'wechat_mp' ? '#fff' : undefined,
           },
         }}
         extra={null}
@@ -1477,8 +1643,304 @@ export default function CrawlerPage() {
 
             {/* Tab 内容 */}
             <div style={{ padding: 20, color: isDark ? '#e0e0f0' : '#1a1a2e' }}>
-              {/* ===== Tab: 详情 ===== */}
-              {detailDrawerTab === 'detail' && (
+              {/* ===== Tab: 详情 — 微信公众号（公众号 / 文章） ===== */}
+              {detailDrawerTab === 'detail' && detailNote.platform === 'wechat_mp' && (
+                <div>
+                  {searchType === 'account' ? (
+                    /* ==== 公众号卡片风格 ==== */
+                    <div>
+                      {/* 公众号头部卡片 */}
+                      <div style={{
+                        display: 'flex', gap: 14, alignItems: 'center',
+                        padding: 16,
+                        background: 'linear-gradient(135deg, rgba(7,193,96,0.12) 0%, rgba(7,193,96,0.04) 100%)',
+                        border: `1px solid rgba(7,193,96,0.3)`,
+                        borderRadius: 10,
+                        marginBottom: 16,
+                      }}>
+                        <div style={{
+                          width: 64, height: 64, borderRadius: '50%',
+                          background: '#07C160', display: 'flex',
+                          alignItems: 'center', justifyContent: 'center',
+                          color: '#fff', fontSize: 26, fontWeight: 700,
+                          flexShrink: 0, overflow: 'hidden',
+                        }}>
+                          {detailNote.cover ? (
+                            <img src={proxyImageUrl(detailNote.cover)} alt={detailNote.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          ) : (
+                            detailNote.title?.[0] || '微'
+                          )}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <Text style={{ color: textPri, fontWeight: 700, fontSize: 17 }}>{stripHtml(detailNote.title) || '未命名公众号'}</Text>
+                            <Tag color="success" style={{ margin: 0 }}>公众号</Tag>
+                          </div>
+                          {detailNote.author_id && (
+                            <Text style={{ color: textSec, fontSize: 12, display: 'block', marginTop: 2 }}>ID: {detailNote.author_id}</Text>
+                          )}
+                          {detailNote.desc && (
+                            <Text style={{
+                              color: textSec, fontSize: 13, lineHeight: 1.5,
+                              display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                              overflow: 'hidden', marginTop: 6,
+                            }}>
+                              {detailNote.desc}
+                            </Text>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* 元数据 */}
+                      <Descriptions column={1} size="small"
+                        labelStyle={{ color: isDark ? '#8b8bb5' : '#666', fontSize: 13 }}
+                        contentStyle={{ color: isDark ? '#e0e0f0' : '#1a1a2e', fontSize: 13 }}
+                      >
+                        {detailNote.url && (
+                          <Descriptions.Item label="公众号主页">
+                            <a href={detailNote.url} target="_blank" rel="noreferrer" style={{ fontSize: 12, wordBreak: 'break-all', color: '#07C160' }}>{detailNote.url}</a>
+                          </Descriptions.Item>
+                        )}
+                      </Descriptions>
+
+                      <Divider style={{ borderColor }} />
+
+                      <Space wrap style={{ width: '100%', justifyContent: 'center' }}>
+                        {detailNote.url && (
+                          <Button type="primary" icon={<CopyOutlined />}
+                            style={{ background: '#07C160', borderColor: '#07C160' }}
+                            onClick={async () => {
+                              try {
+                                await navigator.clipboard.writeText(detailNote.url)
+                                message.success('链接已复制到剪贴板')
+                              } catch {
+                                // 降级方案：创建临时输入框
+                                const input = document.createElement('input')
+                                input.value = detailNote.url
+                                document.body.appendChild(input)
+                                input.select()
+                                document.execCommand('copy')
+                                document.body.removeChild(input)
+                                message.success('链接已复制到剪贴板')
+                              }
+                            }}>
+                            复制公众号主页链接
+                          </Button>
+                        )}
+                        <Button
+                          icon={<SearchOutlined />}
+                          loading={wechatArticleLoading}
+                          onClick={async () => {
+                            const fakeId = detailNote.id
+                            const accountName = stripHtml(detailNote.title) || '公众号'
+                            if (!fakeId) {
+                              message.warning('该公众号缺少 fake_id，无法拉取文章')
+                              return
+                            }
+                            if (!wechatConnId) {
+                              message.warning('请先在「账号中心」登录微信公众号')
+                              return
+                            }
+                            // 打开弹窗 + 直接调 wechatMpGetArticles
+                            setWechatArticleModal({ open: true, fake_id: fakeId, account_name: accountName, begin: 0 })
+                            setWechatArticleList([])
+                            setWechatArticleLoading(true)
+                            // 从 localStorage 恢复之前的勾选状态
+                            const savedKey = `ylcraft_wechat_articles_selected_${fakeId}`
+                            const savedSelected = localStorage.getItem(savedKey)
+                            if (savedSelected) {
+                              try {
+                                setSelectedArticles(JSON.parse(savedSelected))
+                              } catch {
+                                setSelectedArticles([])
+                              }
+                            } else {
+                              setSelectedArticles([])
+                            }
+                            try {
+                              const res: any = await wechatMpGetArticles({
+                                conn_id: wechatConnId,
+                                fake_id: fakeId,
+                                begin: 0,
+                                count: 5,
+                              })
+                              // 频率限制提示
+                              if (res?.error_code === 200013 || (res?.error || '').includes('freq')) {
+                                message.warning('触发微信频率限制，已自动重试仍未成功，请稍候再试（建议 1 分钟后再来）')
+                                setWechatArticleList([])
+                                return
+                              }
+                              const list = res?.list || res?.data?.list || []
+                              setWechatArticleList(list)
+                            } catch (e: any) {
+                              message.error(e?.message || '拉取公众号文章失败')
+                            } finally {
+                              setWechatArticleLoading(false)
+                            }
+                          }}
+                        >
+                          查看该公众号文章
+                        </Button>
+                      </Space>
+                    </div>
+                  ) : (
+                    /* ==== 文章详情风格（仿微信文章页）==== */
+                    <div>
+                      {/* 公众号作者信息条 */}
+                      {(detailNote.author || detailNote.cover) && (
+                        <div style={{
+                          display: 'flex', gap: 10, alignItems: 'center',
+                          padding: '10px 12px', marginBottom: 14,
+                          background: isDark ? '#262626' : '#f5f5f5',
+                          borderRadius: 8,
+                        }}>
+                          <div style={{
+                            width: 40, height: 40, borderRadius: '50%',
+                            background: '#07C160', display: 'flex',
+                            alignItems: 'center', justifyContent: 'center',
+                            color: '#fff', fontSize: 16, fontWeight: 700,
+                            flexShrink: 0, overflow: 'hidden',
+                          }}>
+                            {detailNote.cover ? (
+                              <img src={proxyImageUrl(detailNote.cover)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            ) : (
+                              <span>微</span>
+                            )}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <Text style={{ color: textPri, fontWeight: 600, fontSize: 14 }}>{stripHtml(detailNote.author) || '公众号'}</Text>
+                            <div style={{ color: textSec, fontSize: 12, marginTop: 2 }}>
+                              {detailNote.create_time
+                                ? new Date(detailNote.create_time).toLocaleString('zh-CN')
+                                : '—'}
+                            </div>
+                          </div>
+                          <Button size="small" type="primary" ghost
+                            style={{ color: '#07C160', borderColor: '#07C160' }}
+                            onClick={() => {
+                              if (detailNote.url) window.open(detailNote.url, '_blank')
+                            }}
+                          >
+                            关注
+                          </Button>
+                        </div>
+                      )}
+
+                      {/* 文章标题（微信风格大字号）*/}
+                      <h1 style={{
+                        color: textPri, fontSize: 22, fontWeight: 700,
+                        lineHeight: 1.4, margin: '0 0 12px 0',
+                      }}>
+                        {stripHtml(detailNote.title) || '未命名文章'}
+                      </h1>
+
+                      {/* 封面图（如果 detail API 返回了图片列表）*/}
+                      {previewMediaUrls.length > 0 && (
+                        <div style={{ marginBottom: 14, borderRadius: 8, overflow: 'hidden' }}>
+                          <Image
+                            src={proxyImageUrl(previewMediaUrls[detailMediaIdx])}
+                            alt="cover"
+                            style={{ width: '100%', maxHeight: 320, objectFit: 'cover', display: 'block' }}
+                            preview={{ mask: <EyeOutlined /> }}
+                          />
+                        </div>
+                      )}
+
+                      {/* 摘要/描述 */}
+                      {detailNote.desc && (
+                        <div style={{
+                          color: isDark ? '#a0a0c0' : '#595959',
+                          fontSize: 14, lineHeight: 1.75,
+                          padding: '12px 14px', marginBottom: 14,
+                          background: isDark ? 'rgba(7,193,96,0.06)' : 'rgba(7,193,96,0.04)',
+                          borderLeft: '3px solid #07C160',
+                          borderRadius: 4,
+                        }}>
+                          {detailNote.desc}
+                        </div>
+                      )}
+
+                      <Divider style={{ borderColor, margin: '12px 0' }} />
+
+                      {/* 互动数据（微信文章式）*/}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 14 }}>
+                        {(() => {
+                          // 兼容 raw_data 里的字段（微信后端没有标准字段时回退到 raw_data）
+                          const raw: any = detailNote.raw_data || {}
+                          const watchVal = detailNote.shares ?? raw.share_count ?? raw.like_count ?? 0
+                          return [
+                            { label: '阅读', value: detailNote.views ?? raw.read_count, icon: <EyeOutlined />, color: '#07C160' },
+                            { label: '点赞', value: detailNote.likes ?? raw.praise_count, icon: <LikeOutlined />, color: '#FF9500' },
+                            { label: '在看', value: watchVal, icon: <StarOutlined />, color: '#3478F6' },
+                          ]
+                        })().map((s, i) => (
+                          <div key={i} style={{
+                            textAlign: 'center', padding: '12px 4px',
+                            background: `${s.color}10`, borderRadius: 8,
+                            border: `1px solid ${s.color}33`,
+                          }}>
+                            <div style={{ color: s.color, fontSize: 16, marginBottom: 2 }}>{s.icon}</div>
+                            <div style={{ fontSize: 16, fontWeight: 700, color: s.color }}>
+                              {formatNum(s.value)}
+                            </div>
+                            <div style={{ fontSize: 11, color: textSec }}>{s.label}</div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* 原文链接 */}
+                      {detailNote.url && (
+                        <Descriptions column={1} size="small" style={{ marginBottom: 12 }}
+                          labelStyle={{ color: isDark ? '#8b8bb5' : '#666', fontSize: 12 }}
+                          contentStyle={{ color: isDark ? '#e0e0f0' : '#1a1a2e', fontSize: 12 }}
+                        >
+                          <Descriptions.Item label="原文链接">
+                            <a href={detailNote.url} target="_blank" rel="noreferrer" style={{ fontSize: 12, wordBreak: 'break-all', color: '#07C160' }}>{detailNote.url}</a>
+                          </Descriptions.Item>
+                        </Descriptions>
+                      )}
+
+                      <Divider style={{ borderColor, margin: '12px 0' }} />
+
+                      {/* 操作按钮 */}
+                      <Space wrap style={{ width: '100%', justifyContent: 'center' }}>
+                        {detailNote.url && (
+                          <Button type="primary" icon={<LinkOutlined />} href={detailNote.url} target="_blank"
+                            style={{ background: '#07C160', borderColor: '#07C160' }}>
+                            打开原文
+                          </Button>
+                        )}
+                        <Button
+                          icon={<DownloadOutlined />}
+                          onClick={async () => {
+                            // 触发后端 wechat-mp 下载
+                            try {
+                              const res: any = await import('../../api').then(m => m.wechatMpDownloadSingle({
+                                conn_id: '',
+                                article_url: detailNote.url || '',
+                                article_title: stripHtml(detailNote.title),
+                                format: 'md',
+                              }))
+                              if (res?.success) {
+                                message.success(`已下载到 ${res.file_path}`)
+                              } else {
+                                message.warning(res?.error || '下载失败：需要先在账号中心登录微信公众号')
+                              }
+                            } catch (e: any) {
+                              message.error(e?.message || '下载失败：需要先在账号中心登录微信公众号')
+                            }
+                          }}
+                        >
+                          下载 Markdown
+                        </Button>
+                      </Space>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ===== Tab: 详情 — B站 / 其他平台（保留旧实现） ===== */}
+              {detailDrawerTab === 'detail' && detailNote.platform !== 'wechat_mp' && (
                 <div>
                   {/* 封面预览 */}
                   {previewMediaUrls.length > 0 && (
@@ -1515,15 +1977,17 @@ export default function CrawlerPage() {
                         </Tag>
                       </Descriptions.Item>
                     )}
-                    <Descriptions.Item label="互动">
-                      <Space size={8} style={{ fontSize: 13, fontWeight: 600, color: textPri }}>
-                        <span><LikeOutlined style={{ color: BILI_COLORS.primary }} /> 赞 {biliStats?.stat?.like ?? formatNum(detailNote.likes)}</span>
-                        <span><StarOutlined style={{ color: BILI_COLORS.gold }} /> 投币 {biliStats?.stat?.coin ?? formatNum(detailNote.coins)}</span>
-                        <span><StarOutlined style={{ color: BILI_COLORS.purple }} /> 收藏 {biliStats?.stat?.favorite ?? '—'}</span>
-                        <span><CommentOutlined style={{ color: BILI_COLORS.warning }} /> 评论 {biliStats?.stat?.reply ?? formatNum(detailNote.comments)}</span>
-                        <ShareAltOutlined style={{ color: '#00C7CC' }} />
-                      </Space>
-                    </Descriptions.Item>
+                    {detailNote.platform === 'bili' && (
+                      <Descriptions.Item label="互动">
+                        <Space size={8} style={{ fontSize: 13, fontWeight: 600, color: textPri }}>
+                          <span><LikeOutlined style={{ color: BILI_COLORS.primary }} /> 赞 {biliStats?.stat?.like ?? formatNum(detailNote.likes)}</span>
+                          <span><StarOutlined style={{ color: BILI_COLORS.gold }} /> 投币 {biliStats?.stat?.coin ?? formatNum(detailNote.coins)}</span>
+                          <span><StarOutlined style={{ color: BILI_COLORS.purple }} /> 收藏 {biliStats?.stat?.favorite ?? '—'}</span>
+                          <span><CommentOutlined style={{ color: BILI_COLORS.warning }} /> 评论 {biliStats?.stat?.reply ?? formatNum(detailNote.comments)}</span>
+                          <ShareAltOutlined style={{ color: '#00C7CC' }} />
+                        </Space>
+                      </Descriptions.Item>
+                    )}
                     {detailNote.url && (
                       <Descriptions.Item label="原文链接">
                         <a href={detailNote.url} target="_blank" rel="noreferrer" style={{ fontSize: 12, wordBreak: 'break-all', color: THEME.primary }}>{detailNote.url}</a>
@@ -1871,6 +2335,274 @@ export default function CrawlerPage() {
           </>
         )}
       </Drawer>
+
+      {/* ===== 公众号文章列表弹窗 ===== */}
+      <Modal
+        open={wechatArticleModal.open}
+        onCancel={() => {
+          setWechatArticleModal({ ...wechatArticleModal, open: false })
+          setSelectedArticles([])
+        }}
+        footer={null}
+        width={720}
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{
+              width: 24, height: 24, borderRadius: 6,
+              background: '#07C160', color: '#fff',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 12, fontWeight: 800,
+            }}>微</div>
+            <span>{wechatArticleModal.account_name} 的文章</span>
+            {wechatArticleList.length > 0 && <Tag color="success">{wechatArticleList.length} 篇</Tag>}
+            {selectedArticles.length > 0 && (
+              <Tag color="orange">{selectedArticles.length} 已选</Tag>
+            )}
+          </div>
+        }
+        styles={{
+          body: { background: isDark ? '#1e1e2e' : '#fff', maxHeight: '70vh', overflowY: 'auto' },
+        }}
+      >
+        <div ref={articleListRef} style={{ position: 'relative' }}>
+          {wechatArticleLoading ? (
+            <div style={{ textAlign: 'center', padding: 40 }}><Spin indicator={<LoadingOutlined style={{ fontSize: 28 }} />} /></div>
+          ) : wechatArticleList.length === 0 ? (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={<span style={{ color: textSec }}>暂无文章</span>} />
+          ) : (
+            <div>
+              {/* 操作栏 */}
+              <div style={{ display: 'flex', gap: 8, marginBottom: 12, paddingBottom: 12, borderBottom: `1px solid ${isDark ? '#333' : '#eee'}`, position: 'sticky', top: 0, background: isDark ? '#1e1e2e' : '#fff', zIndex: 10 }}>
+                <Checkbox
+                  checked={selectedArticles.length === wechatArticleList.length && wechatArticleList.length > 0}
+                  onChange={(e) => {
+                    const newSelected = e.target.checked
+                      ? wechatArticleList.map(a => a.aid || a.link || String(Math.random()))
+                      : []
+                    setSelectedArticles(newSelected)
+                    // 保存到 localStorage
+                    const saveKey = `ylcraft_wechat_articles_selected_${wechatArticleModal.fake_id}`
+                    localStorage.setItem(saveKey, JSON.stringify(newSelected))
+                  }}
+                >
+                  全选
+                </Checkbox>
+                <Button
+                  type="primary"
+                  icon={<DownloadOutlined />}
+                  disabled={selectedArticles.length === 0}
+                  loading={downloadingArticles.length > 0}
+                  onClick={async () => {
+                    if (selectedArticles.length === 0) return
+                    const articlesToDownload = wechatArticleList.filter(a => {
+                      const key = a.aid || a.link || String(Math.random())
+                      return selectedArticles.includes(key)
+                    })
+                    setDownloadingArticles(selectedArticles)
+                    try {
+                      const res: any = await wechatMpDownloadBatch({
+                        conn_id: wechatConnId,
+                        articles: articlesToDownload,
+                        format: 'md',
+                      })
+                      if (res.success) {
+                        message.success(`成功下载 ${res.downloaded} 篇文章`)
+                        setDownloadDir(res.download_dir)
+                        // 标记已下载的文章
+                        setDownloadedArticles(prev => [...new Set([...prev, ...selectedArticles])])
+                        // 保留勾选状态，方便用户继续操作（生成 EPUB 等）
+                        // setSelectedArticles([])
+                      } else {
+                        message.error(res.error || '下载失败')
+                      }
+                    } catch (e: any) {
+                      message.error(e?.message || '下载失败')
+                    } finally {
+                      setDownloadingArticles([])
+                    }
+                  }}
+                >
+                  下载选中 ({selectedArticles.length})
+                </Button>
+                <Button
+                  type="primary"
+                  ghost
+                  icon={<BookOutlined />}
+                  disabled={selectedArticles.length === 0 || !selectedArticles.some(k => downloadedArticles.includes(k)) || !downloadDir}
+                  onClick={() => {
+                    setEpubModalOpen(true)
+                  }}
+                >
+                  生成 EPUB
+                </Button>
+                <Button
+                  icon={<ImportOutlined />}
+                  disabled={selectedArticles.length === 0}
+                  onClick={async () => {
+                    if (selectedArticles.length === 0) return
+                    const articlesToDownload = wechatArticleList.filter(a => {
+                      const key = a.aid || a.link || String(Math.random())
+                      return selectedArticles.includes(key)
+                    })
+                    setDownloadingArticles(selectedArticles)
+                    try {
+                      const downloadRes: any = await wechatMpDownloadBatch({
+                        conn_id: wechatConnId,
+                        articles: articlesToDownload,
+                        format: 'md',
+                      })
+                      if (!downloadRes.success) {
+                        message.error(downloadRes.error || '下载失败')
+                        return
+                      }
+                      // 标记已下载的文章
+                      setDownloadedArticles(prev => [...new Set([...prev, ...selectedArticles])])
+                      setDownloadDir(downloadRes.download_dir)
+                      const importRes: any = await wechatMpImportAssets({
+                        conn_id: wechatConnId,
+                        file_paths: downloadRes.file_paths || [],
+                        account_name: wechatArticleModal.account_name,
+                      })
+                      if (importRes.imported > 0) {
+                        message.success(`成功导入 ${importRes.imported} 篇文章到素材库`)
+                      }
+                      if (importRes.failed > 0) {
+                        message.warning(`${importRes.failed} 篇导入失败`)
+                      }
+                      setSelectedArticles([])
+                    } catch (e: any) {
+                      message.error(e?.message || '导入失败')
+                    } finally {
+                      setDownloadingArticles([])
+                    }
+                  }}
+                >
+                  导入素材库
+                </Button>
+              </div>
+
+              {wechatArticleList.map((a: any, idx: number) => {
+                const key = a.aid || a.link || String(idx)
+                const isSelected = selectedArticles.includes(key)
+                const isDownloading = downloadingArticles.includes(key)
+                const isDownloaded = downloadedArticles.includes(key)
+                return (
+                  <div key={key}
+                    style={{
+                      display: 'flex', gap: 12, padding: 12, marginBottom: 10,
+                      background: isDark ? '#262626' : '#fafafa',
+                      borderRadius: 8, border: `1px solid ${isDark ? '#333' : '#eee'}`,
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                    }}
+                    onClick={() => a.link && window.open(a.link, '_blank')}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.boxShadow = '0 2px 8px rgba(7,193,96,0.15)' }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.boxShadow = 'none' }}
+                  >
+                  <Checkbox
+                    checked={isSelected}
+                    onChange={(e) => {
+                      e.stopPropagation()
+                      const newSelected = e.target.checked
+                        ? [...selectedArticles, key]
+                        : selectedArticles.filter(k => k !== key)
+                      setSelectedArticles(newSelected)
+                      // 保存到 localStorage
+                      const saveKey = `ylcraft_wechat_articles_selected_${wechatArticleModal.fake_id}`
+                      localStorage.setItem(saveKey, JSON.stringify(newSelected))
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    style={{ flexShrink: 0, marginTop: 10 }}
+                  />
+                  {a.cover && (
+                    <div style={{ width: 80, height: 60, borderRadius: 6, overflow: 'hidden', flexShrink: 0 }}>
+                      <img src={proxyImageUrl(a.cover)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    </div>
+                  )}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      color: textPri, fontSize: 14, fontWeight: 600,
+                      display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                      overflow: 'hidden', lineHeight: 1.4,
+                    }}>
+                      {stripHtml(a.title) || '未命名文章'}
+                    </div>
+                    {a.digest && (
+                      <div style={{
+                        color: textSec, fontSize: 12, marginTop: 4,
+                        display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden', lineHeight: 1.4,
+                      }}>
+                        {stripHtml(a.digest)}
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', gap: 12, marginTop: 6, fontSize: 11, color: textSec }}>
+                      {a.create_time ? <span>📅 {new Date(a.create_time * 1000).toLocaleDateString('zh-CN')}</span> : null}
+                      {a.link && <span style={{ color: '#07C160' }}>🔗 打开原文</span>}
+                      {isDownloading && <span style={{ color: '#f5a623' }}>⏳ 下载中...</span>}
+                      {isDownloaded && !isDownloading && <span style={{ color: '#10b981' }}>✓ 已下载</span>}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+            <div style={{ textAlign: 'center', marginTop: 12 }}>
+              <Button
+                type="primary" ghost
+                icon={<ReloadOutlined />}
+                loading={wechatArticleLoading}
+                onClick={async () => {
+                  const nextBegin = wechatArticleModal.begin + 5
+                  setWechatArticleLoading(true)
+                  try {
+                    const res: any = await wechatMpGetArticles({
+                      conn_id: wechatConnId,
+                      fake_id: wechatArticleModal.fake_id,
+                      begin: nextBegin,
+                      count: 5,
+                    })
+                    const list = res?.list || res?.data?.list || []
+                    if (list.length === 0) {
+                      message.info('已加载全部文章')
+                    } else {
+                      setWechatArticleList([...wechatArticleList, ...list])
+                      setWechatArticleModal({ ...wechatArticleModal, begin: nextBegin })
+                    }
+                  } catch (e: any) {
+                    message.error(e?.message || '加载更多失败')
+                  } finally {
+                    setWechatArticleLoading(false)
+                  }
+                }}
+              >
+                加载更多
+              </Button>
+            </div>
+            {/* 回到顶部按钮 */}
+            {showScrollTop && (
+              <div style={{ position: 'fixed', bottom: 20, right: 20, zIndex: 1000 }}>
+                <Button
+                  type="primary"
+                  shape="circle"
+                  icon={<ArrowUpOutlined />}
+                  size="large"
+                  onClick={scrollToTop}
+                  style={{ boxShadow: '0 2px 12px rgba(0,0,0,0.2)' }}
+                />
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      </Modal>
+
+      {/* EPUB 生成弹窗 */}
+      <EpubCreatorModal
+        open={epubModalOpen}
+        onClose={() => setEpubModalOpen(false)}
+        defaultFolder={downloadDir}
+        defaultTitle={wechatArticleModal.account_name + ' 的文章'}
+      />
     </div>
   )
 }

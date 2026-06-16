@@ -35,6 +35,11 @@ _REFERER_MAP = {
     "twimg.com": "https://twitter.com",
     "youtube.com": "https://www.youtube.com",
     "ytimg.com": "https://www.youtube.com",
+    # 微信公众号图片 / 头像 CDN — 必须带 mp.weixin.qq.com Referer 才能拉到
+    "mmbiz.qpic.cn": "https://mp.weixin.qq.com/",
+    "mmbiz.qlogo.cn": "https://mp.weixin.qq.com/",
+    "qpic.cn": "https://mp.weixin.qq.com/",
+    "wx.qlogo.cn": "https://mp.weixin.qq.com/",
 }
 
 # 通用浏览器 UA

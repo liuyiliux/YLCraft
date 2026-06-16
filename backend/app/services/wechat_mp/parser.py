@@ -175,6 +175,59 @@ class WechatMPParser:
         text = re.sub(r"\s+", " ", text)
         return text.strip()
 
+    def _html_to_markdown(self, html: str) -> str:
+        """
+        将 HTML 正文转换为 Markdown 格式
+        保留段落、加粗、斜体、链接、列表等格式
+        """
+        if not html:
+            return ""
+        
+        text = html
+        
+        # 处理段落
+        text = re.sub(r'<p[^>]*>(.*?)</p>', r'\1\n\n', text, flags=re.I | re.DOTALL)
+        
+        # 处理标题
+        for i in range(6, 0, -1):
+            text = re.sub(f'<h{i}[^>]*>(.*?)</h{i}>', '#' * i + r' \1\n\n', text, flags=re.I | re.DOTALL)
+        
+        # 处理加粗
+        text = re.sub(r'<strong[^>]*>(.*?)</strong>', r'**\1**', text, flags=re.I | re.DOTALL)
+        text = re.sub(r'<b[^>]*>(.*?)</b>', r'**\1**', text, flags=re.I | re.DOTALL)
+        
+        # 处理斜体
+        text = re.sub(r'<em[^>]*>(.*?)</em>', r'*\1*', text, flags=re.I | re.DOTALL)
+        text = re.sub(r'<i[^>]*>(.*?)</i>', r'*\1*', text, flags=re.I | re.DOTALL)
+        
+        # 处理链接
+        text = re.sub(r'<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>', r'[\2](\1)', text, flags=re.I | re.DOTALL)
+        
+        # 处理图片（保留在原位）
+        text = re.sub(r'<img[^>]+data-src="([^"]+)"[^>]*>', r'![图片](\1)', text, flags=re.I)
+        text = re.sub(r'<img[^>]+src="([^"]+)"[^>]*>', r'![图片](\1)', text, flags=re.I)
+        
+        # 处理无序列表
+        text = re.sub(r'<li[^>]*>(.*?)</li>', r'- \1', text, flags=re.I | re.DOTALL)
+        text = re.sub(r'</?ul[^>]*>', '', text, flags=re.I)
+        text = re.sub(r'</?ol[^>]*>', '', text, flags=re.I)
+        
+        # 处理换行
+        text = re.sub(r'<br[^>]*>', '\n', text, flags=re.I)
+        text = re.sub(r'<div[^>]*>', '', text, flags=re.I)
+        text = re.sub(r'</div>', '\n', text, flags=re.I)
+        
+        # 移除其他标签
+        text = re.sub(r'<[^>]+>', '', text)
+        
+        # 解码 HTML 实体
+        text = unescape(text)
+        
+        # 清理多余的空行
+        text = re.sub(r'\n{3,}', '\n\n', text)
+        
+        return text.strip()
+
     def to_markdown(self, parse_result: dict) -> str:
         """
         将解析结果转为 Markdown
@@ -210,22 +263,13 @@ class WechatMPParser:
         lines.append("---")
         lines.append("")
 
-        # 正文（纯文本版）
-        content = parse_result.get("content_text", "")
-        if content:
-            lines.append(content)
+        # 正文（带格式的 markdown）
+        content_html = parse_result.get("content_html", "")
+        if content_html:
+            lines.append(self._html_to_markdown(content_html))
         else:
             lines.append("> 暂无正文内容")
 
         lines.append("")
-
-        # 图片
-        images = parse_result.get("images", [])
-        if images:
-            lines.append("## 图片")
-            lines.append("")
-            for i, img_url in enumerate(images):
-                lines.append(f"![图片 {i + 1}]({img_url})")
-                lines.append("")
 
         return "\n".join(lines)
