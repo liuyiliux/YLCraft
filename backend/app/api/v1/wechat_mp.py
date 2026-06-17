@@ -116,6 +116,7 @@ class DownloadBatchRequest(BaseModel):
     articles: list[ArticleInfo]
     format: str = "md"
     download_dir: str = ""
+    concurrency: int = 3  # 并发下载数（1~8）
 
 
 class DownloadBatchResponse(BaseModel):
@@ -127,6 +128,7 @@ class DownloadBatchResponse(BaseModel):
     file_paths: list[str] = []
     error: str = ""
     skipped: int = 0  # 命中去重跳过的数量
+    task_id: str = ""  # WebSocket 进度订阅用
 
 
 class ImportAssetsRequest(BaseModel):
@@ -281,6 +283,7 @@ async def download_batch_articles(req: DownloadBatchRequest):
         cookie=cookie,
         format=req.format,
         download_dir=req.download_dir,
+        concurrency=req.concurrency,
     )
 
     return DownloadBatchResponse(**result)

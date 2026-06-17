@@ -406,12 +406,13 @@ class WechatMPService:
             parsed = self._parser.parse(html, article_url)
             title = article_title or parsed.get("title", "未命名文章")
 
-            # 3. 确定保存目录
+            # 3. 确定保存目录：<download>/wechat_mp/<author>/<YYYY-MM>/
             if not download_dir:
                 download_dir = ensure_download_path()
             author = parsed.get("author", "unknown")
             safe_author = "".join(c for c in author if c.isalnum() or c in "._- ").strip()[:50]
-            save_dir = Path(download_dir) / "wechat_mp" / (safe_author or "articles")
+            yyyy_mm = self._publish_month(parsed.get("publish_time", ""))
+            save_dir = Path(download_dir) / "wechat_mp" / (safe_author or "articles") / yyyy_mm
             save_dir.mkdir(parents=True, exist_ok=True)
 
             # 4. 图片本地化（默认开启）：下载远程图片到 images/，改写正文/全文中的 URL
@@ -438,22 +439,20 @@ class WechatMPService:
                 parsed["images"] = [url_map.get(u, u) for u in parsed.get("images", [])]
                 html = self._rewrite_urls(html, url_map)
 
-            # 5. 生成文件名
+            # 5. 生成文件名（文件名去下载时间戳，同名自动追加序号防覆盖）
             safe_title = "".join(c for c in title if c.isalnum() or c in "._- ()（）")[:80]
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            ext = {"md": "md", "html": "html", "epub": "epub"}.get(format, "md")
+            file_path = self._unique_file_path(save_dir, safe_title or "未命名", ext)
 
             if format == "md":
-                file_path = str(save_dir / f"{timestamp}_{safe_title}.md")
                 content = self._parser.to_markdown(parsed)
                 with open(file_path, "w", encoding="utf-8") as f:
                     f.write(content)
             elif format == "html":
-                file_path = str(save_dir / f"{timestamp}_{safe_title}.html")
                 with open(file_path, "w", encoding="utf-8") as f:
                     f.write(html)
             elif format == "epub":
                 from .epub_exporter import build_epub
-                file_path = str(save_dir / f"{timestamp}_{safe_title}.epub")
                 build_epub(
                     book_title=title,
                     articles=[{
@@ -469,7 +468,6 @@ class WechatMPService:
                 )
             else:
                 # 默认 markdown
-                file_path = str(save_dir / f"{timestamp}_{safe_title}.md")
                 content = self._parser.to_markdown(parsed)
                 with open(file_path, "w", encoding="utf-8") as f:
                     f.write(content)
@@ -523,54 +521,118 @@ class WechatMPService:
         format: str = "md",
         download_dir: str = "",
         skip_if_exists: bool = True,
+        concurrency: int = 3,
     ) -> dict:
         """
-        批量下载文章（单篇去重 + 落库已在 download_article 内生效）
+        批量下载文章（并发 + WebSocket 实时进度推送）
+
+        单篇去重 + 落库已在 download_article 内生效。
+        并发安全：api_client 每次请求新建 httpx.AsyncClient、DB session 每次新建、
+        parser 无状态、ImageLocalizer 每篇独立实例。
 
         Args:
             articles: [{ title, link, cover, digest }]
             skip_if_exists: 同 URL 已成功下载则跳过
-        """
-        results = []
-        success_count = 0
-        fail_count = 0
-        skipped_count = 0
+            concurrency: 并发下载数（1~8，默认 3）
 
-        for article in articles:
-            result = await self.download_article(
-                conn_id=conn_id,
-                article_url=article.get("link", ""),
-                article_title=article.get("title", ""),
-                cookie=cookie,
-                format=format,
-                download_dir=download_dir,
-                skip_if_exists=skip_if_exists,
-            )
-            result["_article"] = article
-            results.append(result)
-            if result.get("success"):
-                if result.get("skipped"):
-                    skipped_count += 1
-                else:
-                    success_count += 1
+        Returns:
+            {..., task_id} — task_id 可供前端 WebSocket 订阅实时进度
+        """
+        import asyncio
+        from app.core.ws_manager import push_task_progress
+
+        total = len(articles)
+        task_id = str(uuid.uuid4())
+
+        # 并发度钳制在 1~8
+        max_concurrency = max(1, min(int(concurrency) if concurrency else 3, 8))
+        sem = asyncio.Semaphore(max_concurrency)
+        counter_lock = asyncio.Lock()
+        results: list[dict | None] = [None] * total
+        done_count = 0
+
+        async def _push(progress: int, message: str, status: str) -> None:
+            """推送 WebSocket 进度，失败不影响主流程"""
+            try:
+                await push_task_progress(
+                    task_id=task_id,
+                    progress=progress,
+                    message=message,
+                    task_type="wechat_mp_batch",
+                    status=status,
+                )
+            except Exception as e:
+                logger.debug(f"[WechatMPService] WS 进度推送失败（忽略）: {e}")
+
+        async def _download_one(idx: int, article: dict) -> None:
+            nonlocal done_count
+            async with sem:
+                result = await self.download_article(
+                    conn_id=conn_id,
+                    article_url=article.get("link", ""),
+                    article_title=article.get("title", ""),
+                    cookie=cookie,
+                    format=format,
+                    download_dir=download_dir,
+                    skip_if_exists=skip_if_exists,
+                )
+                result["_article"] = article
+                results[idx] = result
+
+            # 单篇完成，更新计数并推送进度（计数加锁避免竞态）
+            async with counter_lock:
+                done_count += 1
+                cur = done_count
+            progress = int(cur / total * 100) if total else 100
+            if result.get("skipped"):
+                item_status = "skipped"
+            elif result.get("success"):
+                item_status = "done"
             else:
-                fail_count += 1
+                item_status = "failed"
+            title = article.get("title", "") or article.get("link", "")
+            await _push(progress, f"[{cur}/{total}] {item_status}: {title}", "running")
+
+        # 开始事件
+        await _push(0, f"批量下载开始，共 {total} 篇（并发 {max_concurrency}）", "running")
+
+        # 并发执行，gather 保持输入顺序
+        if articles:
+            await asyncio.gather(*[_download_one(i, a) for i, a in enumerate(articles)])
+
+        # 统计
+        success_count = sum(
+            1 for r in results if r and r.get("success") and not r.get("skipped")
+        )
+        skipped_count = sum(1 for r in results if r and r.get("skipped"))
+        fail_count = sum(1 for r in results if not (r and r.get("success")))
 
         # 收集成功下载的文件路径
-        file_paths = [r.get("file_path") for r in results if r.get("success") and r.get("file_path")]
+        file_paths = [
+            r.get("file_path") for r in results
+            if r and r.get("success") and r.get("file_path")
+        ]
         # 确保 download_dir 始终是字符串类型
-        result_dir = results[0].get("download_dir") if results else ""
-        final_download_dir = str(download_dir or result_dir or "")
+        final_download_dir = str(download_dir or "")
+
+        # 完成事件
+        final_status = "done" if fail_count == 0 else "failed"
+        await _push(
+            100,
+            f"完成: 成功 {success_count} 跳过 {skipped_count} 失败 {fail_count}",
+            final_status,
+        )
 
         return {
-            "total": len(articles),
+            "total": total,
             "downloaded": success_count,
             "skipped": skipped_count,
             "failed": fail_count,
             "success": fail_count == 0,
             "download_dir": final_download_dir,
             "file_paths": file_paths,
-            "results": results,
+            "results": [r for r in results if r is not None],
+            "task_id": task_id,
         }
 
     # ── 图片 URL 改写 ────────────────────────────────────────────
@@ -583,6 +645,35 @@ class WechatMPService:
         for orig, rel in url_map.items():
             text = text.replace(orig, rel)
         return text
+
+    @staticmethod
+    def _publish_month(publish_time: str) -> str:
+        """
+        从 publish_time（'YYYY-MM-DD HH:MM:SS'）提取 'YYYY-MM' 作为目录名。
+        无效或缺失时回退到当前年月。
+        """
+        pt = (publish_time or "").strip()
+        if len(pt) >= 7 and pt[4] == "-" and pt[:7].replace("-", "").isdigit():
+            return pt[:7]
+        return datetime.now().strftime("%Y-%m")
+
+    @staticmethod
+    def _unique_file_path(directory: Path, stem: str, ext: str) -> str:
+        """
+        生成不重名的文件路径：<stem>.<ext>，已存在则追加 _2、_3 ...。
+        用于批量下载同名文章防覆盖。
+        """
+        p = directory / f"{stem}.{ext}"
+        if not p.exists():
+            return str(p)
+        n = 2
+        while n < 1000:
+            p = directory / f"{stem}_{n}.{ext}"
+            if not p.exists():
+                return str(p)
+            n += 1
+        # 兜底
+        return str(directory / f"{stem}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{ext}")
 
     # ── 批量合并导出 EPUB ────────────────────────────────────────
 
