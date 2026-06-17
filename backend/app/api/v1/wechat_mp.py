@@ -95,7 +95,7 @@ class DownloadSingleRequest(BaseModel):
     conn_id: str
     article_url: str
     article_title: str = ""
-    format: str = "md"  # md / html / epub
+    format: str = "md"  # md / html / epub / pdf
     download_dir: str = ""
 
 
@@ -106,6 +106,7 @@ class DownloadSingleResponse(BaseModel):
     format: str = "md"
     title: str = ""
     author: str = ""
+    download_dir: str = ""  # 下载目录（用于生成 EPUB）
     error: str = ""
     skipped: bool = False  # 命中去重跳过
     record_id: str = ""    # 下载记录 id
@@ -326,7 +327,7 @@ async def import_articles_to_assets(
     from app.services.asset.service import AssetService
     import os as _os
 
-    asset_service = AssetService()
+    asset_service = AssetService(session)
     imported = []
     failed = []
 
@@ -337,12 +338,19 @@ async def import_articles_to_assets(
                 continue
 
             file_name = _os.path.basename(file_path)
-            # 尝试从文件名解析标题（格式: YYYYMMDD_HHMMSS_标题.ext）
+            # 尝试从文件名解析标题
+            # 格式1（旧）: YYYYMMDD_HHMMSS_标题.ext
+            # 格式2（新）: 标题.ext 或 标题_N.ext
             title = file_name
-            if "_" in file_name:
-                parts = file_name.split("_", 2)
-                if len(parts) >= 3:
-                    title = parts[2].rsplit(".", 1)[0]
+            stem = file_name.rsplit(".", 1)[0] if "." in file_name else file_name
+            if "_" in stem:
+                parts = stem.split("_", 2)
+                if len(parts) >= 3 and parts[0].isdigit() and len(parts[0]) == 8:
+                    # 旧格式: YYYYMMDD_HHMMSS_标题
+                    title = parts[2]
+                else:
+                    # 新格式: 标题_N（去重后缀）
+                    title = stem
 
             asset = await asset_service.create(
                 title=title,
@@ -362,6 +370,8 @@ async def import_articles_to_assets(
         except Exception as e:
             logger.error(f"[wechat-mp/import] 导入失败 {file_path}: {e}")
             failed.append({"file_path": file_path, "error": str(e)})
+
+    await session.commit()
 
     return {
         "total": len(req.file_paths),

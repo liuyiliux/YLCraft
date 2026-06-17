@@ -78,9 +78,7 @@ class WechatMPService:
         from app.db.models.wechat_mp import WechatMPDownload
 
         try:
-            session_gen = get_async_session()
-            session = await session_gen.__anext__()
-            try:
+            async with get_async_session() as session:
                 stmt = select(WechatMPDownload).where(
                     WechatMPDownload.article_url == article_url
                 )
@@ -92,8 +90,6 @@ class WechatMPService:
                         "file_path": row.file_path,
                     }
                 return None
-            finally:
-                await session_gen.aclose()
         except Exception as e:
             logger.warning(f"[WechatMPService] 查询去重记录失败（忽略，继续下载）: {e}")
             return None
@@ -125,9 +121,7 @@ class WechatMPService:
         from app.db.models.wechat_mp import WechatMPDownload
 
         try:
-            session_gen = get_async_session()
-            session = await session_gen.__anext__()
-            try:
+            async with get_async_session() as session:
                 stmt = select(WechatMPDownload).where(
                     WechatMPDownload.article_url == article_url
                 )
@@ -174,8 +168,6 @@ class WechatMPService:
 
                 await session.commit()
                 return existing.id if existing else record.id  # type: ignore[union-attr]
-            finally:
-                await session_gen.aclose()
         except Exception as e:
             logger.warning(f"[WechatMPService] 落库下载记录失败（忽略）: {e}")
             return None
@@ -400,7 +392,7 @@ class WechatMPService:
         Args:
             skip_if_exists: 若同 article_url 已有成功下载记录，则跳过（去重）。
             localize_images: 是否将远程图片下载到本地并改写引用（默认开启）。
-            format: md / html / epub。
+            format: md / html / epub / pdf。
 
         Returns:
             { success, file_path, format, title, author, parsed, record_id?, skipped?, error? }
@@ -489,7 +481,7 @@ class WechatMPService:
 
             # 5. 生成文件名（文件名去下载时间戳，同名自动追加序号防覆盖）
             safe_title = "".join(c for c in title if c.isalnum() or c in "._- ()（）")[:80]
-            ext = {"md": "md", "html": "html", "epub": "epub"}.get(format, "md")
+            ext = {"md": "md", "html": "html", "epub": "epub", "pdf": "pdf"}.get(format, "md")
             file_path = self._unique_file_path(save_dir, safe_title or "未命名", ext)
 
             if format == "md":
@@ -513,6 +505,14 @@ class WechatMPService:
                     out_path=file_path,
                     cover_image_path=cover_local_path,
                     images_base_dir=str(save_dir),
+                )
+            elif format == "pdf":
+                from .pdf_exporter import render_pdf
+                await render_pdf(
+                    html=html,
+                    out_path=file_path,
+                    title=title,
+                    base_dir=str(save_dir),
                 )
             else:
                 # 默认 markdown
@@ -545,6 +545,7 @@ class WechatMPService:
                 "format": format,
                 "title": title,
                 "author": author,
+                "download_dir": str(save_dir),
                 "parsed": parsed,
                 "record_id": record_id,
             }
@@ -660,8 +661,18 @@ class WechatMPService:
             r.get("file_path") for r in results
             if r and r.get("success") and r.get("file_path")
         ]
-        # 确保 download_dir 始终是字符串类型
+        # 推导 download_dir：优先用传入值，否则从首个成功路径的 wechat_mp 父目录推导
         final_download_dir = str(download_dir or "")
+        if not final_download_dir and file_paths:
+            first_path = Path(file_paths[0])
+            # 向上找 wechat_mp 目录：.../wechat_mp/作者/年月/文件 → .../wechat_mp
+            for parent in first_path.parents:
+                if parent.name == "wechat_mp":
+                    final_download_dir = str(parent)
+                    break
+            else:
+                # 兜底：取文件所在目录
+                final_download_dir = str(first_path.parent)
 
         # 完成事件
         final_status = "done" if fail_count == 0 else "failed"

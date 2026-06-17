@@ -2428,7 +2428,7 @@ export default function CrawlerPage() {
                   type="primary"
                   ghost
                   icon={<BookOutlined />}
-                  disabled={selectedArticles.length === 0 || !selectedArticles.some(k => downloadedArticles.includes(k)) || !downloadDir}
+                  disabled={selectedArticles.length === 0 || !selectedArticles.some(k => downloadedArticles.includes(k))}
                   onClick={() => {
                     setEpubModalOpen(true)
                   }}
@@ -2486,6 +2486,17 @@ export default function CrawlerPage() {
                 const isSelected = selectedArticles.includes(key)
                 const isDownloading = downloadingArticles.includes(key)
                 const isDownloaded = downloadedArticles.includes(key)
+                const articleRecord: any = {
+                  id: key,
+                  platform: 'wechat_mp',
+                  title: a.title,
+                  author: wechatArticleModal.account_name,
+                  url: a.link,
+                  cover: a.cover,
+                  desc: a.digest,
+                  create_time: a.create_time ? String(a.create_time * 1000) : '',
+                  raw_data: a,
+                }
                 return (
                   <div key={key}
                     style={{
@@ -2495,7 +2506,7 @@ export default function CrawlerPage() {
                       cursor: 'pointer',
                       transition: 'all 0.2s',
                     }}
-                    onClick={() => a.link && window.open(a.link, '_blank')}
+                    onClick={() => openDetail(articleRecord)}
                     onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.boxShadow = '0 2px 8px rgba(7,193,96,0.15)' }}
                     onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.boxShadow = 'none' }}
                   >
