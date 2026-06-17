@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -39,11 +40,17 @@ class WechatMPService:
         - 导入素材库
     """
 
+    # parsed 结果缓存配置（parse 端点 → download 复用，避免二次抓取）
+    _PARSED_CACHE_TTL = 300  # 5 分钟
+    _PARSED_CACHE_MAX = 50
+
     def __init__(self):
         self._clients: dict[str, WechatMPAPIClient] = {}
         self._parser = WechatMPParser()
         # 登录会话 {session_id: {status, session_key, conn_id, created_at}}
         self._login_sessions: dict[str, dict] = {}
+        # parsed 缓存 {article_url: (timestamp, parsed_copy, html)}
+        self._parsed_cache: dict[str, tuple[float, dict, str]] = {}
 
     # ── 客户端管理 ──────────────────────────────────────────────
 
@@ -340,6 +347,40 @@ class WechatMPService:
         client = self._get_client(conn_id, cookie=cookie, token=token)
         return await client.get_articles(fake_id, begin, count)
 
+    # ── parsed 结果缓存（parse 端点 → download 复用）──────────────
+
+    def cache_parsed(self, article_url: str, parsed: dict, html: str = "") -> None:
+        """
+        缓存已解析结果，供随后的 download_article 复用（跳过二次抓取+解析）。
+        仅存内存，进程重启即失效；带 TTL 与容量上限，避免泄漏。
+        """
+        if not article_url or not parsed:
+            return
+        # 超容量时淘汰最旧条目
+        if len(self._parsed_cache) >= self._PARSED_CACHE_MAX:
+            try:
+                oldest = min(self._parsed_cache.items(), key=lambda kv: kv[1][0])[0]
+                self._parsed_cache.pop(oldest, None)
+            except ValueError:
+                pass
+        self._parsed_cache[article_url] = (time.time(), dict(parsed), html)
+
+    def get_cached_parsed(self, article_url: str) -> Optional[tuple[dict, str]]:
+        """
+        取出未过期的缓存 (parsed_copy, html)；过期或不存在返回 None。
+        返回 parsed 的浅拷贝，调用方可安全修改。
+        """
+        if not article_url:
+            return None
+        entry = self._parsed_cache.get(article_url)
+        if not entry:
+            return None
+        ts, parsed, html = entry
+        if (time.time() - ts) >= self._PARSED_CACHE_TTL:
+            self._parsed_cache.pop(article_url, None)
+            return None
+        return dict(parsed), html
+
     # ── 下载单篇文章 ─────────────────────────────────────────────
 
     async def download_article(
@@ -382,28 +423,35 @@ class WechatMPService:
                     }
 
         try:
-            # 1. 获取文章 HTML
-            content_result = await client.get_article_content(article_url)
-            if "error" in content_result:
-                # 落库失败记录
-                await self._record_download(
-                    conn_id=conn_id, article_url=article_url, article_title=article_title,
-                    author="", file_path="", file_size=0, fmt=format, status="failed",
-                    error_message=str(content_result["error"]),
-                )
-                return {"success": False, "error": content_result["error"]}
+            # 1. 获取并解析文章 HTML（优先复用 parse 端点的缓存，避免二次抓取）
+            cached = self.get_cached_parsed(article_url)
+            if cached:
+                parsed, html = cached
+                logger.info(f"[WechatMPService] 命中 parsed 缓存，跳过抓取: {article_url}")
+            else:
+                content_result = await client.get_article_content(article_url)
+                if "error" in content_result:
+                    # 落库失败记录
+                    await self._record_download(
+                        conn_id=conn_id, article_url=article_url, article_title=article_title,
+                        author="", file_path="", file_size=0, fmt=format, status="failed",
+                        error_message=str(content_result["error"]),
+                    )
+                    return {"success": False, "error": content_result["error"]}
 
-            html = content_result.get("html", "")
-            if not html:
-                await self._record_download(
-                    conn_id=conn_id, article_url=article_url, article_title=article_title,
-                    author="", file_path="", file_size=0, fmt=format, status="failed",
-                    error_message="获取文章内容为空",
-                )
-                return {"success": False, "error": "获取文章内容为空"}
+                html = content_result.get("html", "")
+                if not html:
+                    await self._record_download(
+                        conn_id=conn_id, article_url=article_url, article_title=article_title,
+                        author="", file_path="", file_size=0, fmt=format, status="failed",
+                        error_message="获取文章内容为空",
+                    )
+                    return {"success": False, "error": "获取文章内容为空"}
 
-            # 2. 解析文章
-            parsed = self._parser.parse(html, article_url)
+                # 2. 解析文章并缓存（供同进程后续 download/batch 复用）
+                parsed = self._parser.parse(html, article_url)
+                self.cache_parsed(article_url, parsed, html)
+
             title = article_title or parsed.get("title", "未命名文章")
 
             # 3. 确定保存目录：<download>/wechat_mp/<author>/<YYYY-MM>/
@@ -484,8 +532,8 @@ class WechatMPService:
                 file_size=file_size,
                 fmt=format,
                 status="done",
-                cover_url=parsed.get("cover_url", ""),
-                digest=parsed.get("digest", ""),
+                cover_url=parsed.get("cover", ""),
+                digest=(parsed.get("content_text") or "")[:200],
                 publish_time=parsed.get("publish_time"),
                 account_name=author,
             )

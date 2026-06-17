@@ -327,6 +327,11 @@ async def parse_download_url(req: ParseRequest):
                 html = resp.text
 
             parsed = parser.parse(html, url)
+            # 缓存 parsed 供随后的 download 复用（跳过二次抓取+解析）
+            try:
+                get_wechat_mp_service().cache_parsed(url, parsed, html)
+            except Exception as cache_e:
+                logger.debug(f"[parse/wechat_mp] 缓存 parsed 失败（忽略）: {cache_e}")
             title = parsed.get("title", "微信公众号文章")
             author = parsed.get("author", "")
             cover = parsed.get("cover", "")
