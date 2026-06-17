@@ -95,7 +95,7 @@ class DownloadSingleRequest(BaseModel):
     conn_id: str
     article_url: str
     article_title: str = ""
-    format: str = "md"  # md / html
+    format: str = "md"  # md / html / epub
     download_dir: str = ""
 
 
@@ -107,6 +107,8 @@ class DownloadSingleResponse(BaseModel):
     title: str = ""
     author: str = ""
     error: str = ""
+    skipped: bool = False  # 命中去重跳过
+    record_id: str = ""    # 下载记录 id
 
 
 class DownloadBatchRequest(BaseModel):
@@ -124,12 +126,38 @@ class DownloadBatchResponse(BaseModel):
     download_dir: str = ""
     file_paths: list[str] = []
     error: str = ""
+    skipped: int = 0  # 命中去重跳过的数量
 
 
 class ImportAssetsRequest(BaseModel):
     conn_id: str
     file_paths: list[str]
     account_name: str = ""
+
+
+class EpubArticle(BaseModel):
+    title: str = ""
+    author: str = ""
+    publish_time: str = ""
+    content_html: str = ""
+    source_url: str = ""
+
+
+class ExportEpubRequest(BaseModel):
+    conn_id: str
+    book_title: str
+    articles: list[EpubArticle]
+    download_dir: str = ""
+    images_base_dir: str = ""
+
+
+class ExportEpubResponse(BaseModel):
+    success: bool
+    file_path: str = ""
+    file_size: int = 0
+    format: str = "epub"
+    record_id: str = ""
+    error: str = ""
 
 
 # ── 登录 ──────────────────────────────────────────────────────
@@ -256,6 +284,32 @@ async def download_batch_articles(req: DownloadBatchRequest):
     )
 
     return DownloadBatchResponse(**result)
+
+
+# ── 导出 EPUB ──────────────────────────────────────────────────
+
+@router.post("/export-epub", response_model=ExportEpubResponse, summary="多篇已下载文章合并导出 EPUB")
+async def export_epub(req: ExportEpubRequest):
+    """
+    将多篇已下载文章合并导出为单个 EPUB 电子书。
+
+    articles 中的 content_html 应为已本地化图片的 HTML（图片引用 images/xxx），
+    可由前端在下载后回传；images_base_dir 指向图片所在根目录。
+    """
+    service = get_wechat_mp_service()
+    articles = [a.model_dump() for a in req.articles]
+    try:
+        result = await service.export_batch_to_epub(
+            conn_id=req.conn_id,
+            articles=articles,
+            book_title=req.book_title,
+            download_dir=req.download_dir,
+            images_base_dir=req.images_base_dir,
+        )
+        return ExportEpubResponse(**result)
+    except Exception as e:
+        logger.error(f"[wechat-mp/export-epub] 导出失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ── 导入素材库 ──────────────────────────────────────────────────

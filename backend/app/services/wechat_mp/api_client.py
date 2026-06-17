@@ -270,7 +270,8 @@ class WechatMPAPIClient:
 
     # ── 拉取文章列表 ────────────────────────────────────────────
 
-    # 类级别缓存：fake_id -> {begin -> (timestamp, result)}
+    # 类级别缓存：cache_key -> (timestamp, result)
+    # 注意：缓存按 fake_id + begin 切分（不含 count，避免 count 变化导致翻页缓存失效）
     _articles_cache: dict = {}
     _CACHE_TTL = 1800  # 30 分钟
     _last_request_time: float = 0
@@ -279,10 +280,22 @@ class WechatMPAPIClient:
     async def _throttle(self):
         """请求限流：确保两次请求间隔至少 _MIN_INTERVAL 秒"""
         now = time.time()
-        elapsed = now - WechatMPClient._last_request_time
-        if elapsed < WechatMPClient._MIN_INTERVAL:
-            await asyncio.sleep(WechatMPClient._MIN_INTERVAL - elapsed)
-        WechatMPClient._last_request_time = time.time()
+        elapsed = now - WechatMPAPIClient._last_request_time
+        if elapsed < WechatMPAPIClient._MIN_INTERVAL:
+            await asyncio.sleep(WechatMPAPIClient._MIN_INTERVAL - elapsed)
+        WechatMPAPIClient._last_request_time = time.time()
+
+    @classmethod
+    def _cache_cleanup(cls) -> None:
+        """清理过期的文章列表缓存，避免长期运行内存泄漏"""
+        if not cls._articles_cache:
+            return
+        now = time.time()
+        expired = [k for k, (ts, _) in cls._articles_cache.items() if (now - ts) >= cls._CACHE_TTL]
+        for k in expired:
+            cls._articles_cache.pop(k, None)
+        if expired:
+            logger.debug(f"[WechatMPAPI] 清理过期缓存 {len(expired)} 条")
 
     async def get_articles(
         self,
@@ -303,10 +316,10 @@ class WechatMPAPIClient:
         Returns:
             { total_count: int, list: [{ title, link, cover, digest, create_time }] }
         """
-        # 1. 检查缓存（30 分钟内不重复请求）
-        cache_key = f"{fake_id}_{begin}_{count}"
-        cached = WechatMPClient._articles_cache.get(cache_key)
-        if cached and (time.time() - cached[0]) < WechatMPClient._CACHE_TTL:
+        # 1. 检查缓存（30 分钟内不重复请求）；key 不含 count，避免翻页缓存失效
+        cache_key = f"{fake_id}_{begin}"
+        cached = WechatMPAPIClient._articles_cache.get(cache_key)
+        if cached and (time.time() - cached[0]) < WechatMPAPIClient._CACHE_TTL:
             logger.info(f"[WechatMPAPI] 使用缓存: {cache_key}")
             return cached[1]
 
@@ -366,8 +379,9 @@ class WechatMPAPIClient:
                     })
 
                 result = {"total_count": total, "list": articles}
-                # 3. 成功时写入缓存（30 分钟内不重复请求）
-                WechatMPClient._articles_cache[cache_key] = (time.time(), result)
+                # 3. 成功时写入缓存（30 分钟内不重复请求）；顺带清理过期条目
+                WechatMPAPIClient._cache_cleanup()
+                WechatMPAPIClient._articles_cache[cache_key] = (time.time(), result)
                 return result
 
             except Exception as e:
