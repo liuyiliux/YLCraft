@@ -1542,6 +1542,22 @@ export const wechatMpImportAssets = (data: {
   account_name?: string
 }) => request('/wechat-mp/import-assets', { method: 'POST', body: JSON.stringify(data) })
 
+/** 已下载文章合并导出 EPUB（Step 2 新增） */
+export interface WechatMpEpubArticle {
+  title: string
+  author: string
+  publish_time: string
+  content_html: string
+  source_url: string
+}
+export const wechatMpExportEpub = (data: {
+  conn_id: string
+  book_title: string
+  articles: WechatMpEpubArticle[]
+  download_dir?: string
+  images_base_dir?: string
+}) => request('/wechat-mp/export-epub', { method: 'POST', body: JSON.stringify(data) })
+
 // ===== EPUB 电子书 =====
 
 export interface EbookGenerateResult {

@@ -28,10 +28,10 @@ import {
   searchEnhanced, importCrawler, getNoteDetail, getSubtitles, downloadCrawlerSubtitle, listPlatformConnections,
   getDanmaku, downloadDanmaku, getBiliStats, getBiliComments, sendBiliComment, getBiliVideoInfo,
   getBiliLoginHealth, wechatMpGetArticles, wechatMpDownloadSingle, wechatMpDownloadBatch, wechatMpImportAssets,
+  wechatMpExportEpub,
 } from '../../api'
 import type { CrawlerResult, PlatformConnectionResponse } from '../../api'
 import { formatNum, parseCreateTime, formatTime } from '../../utils/format'
-import EpubCreatorModal from '../../components/ebook/EpubCreatorModal'
 
 // B站配色
 const BILI_COLORS = {
@@ -585,7 +585,10 @@ export default function CrawlerPage() {
   const [downloadingArticles, setDownloadingArticles] = useState<string[]>([])
   const [downloadedArticles, setDownloadedArticles] = useState<string[]>([])
   const [downloadDir, setDownloadDir] = useState<string>('')
+  const [downloadedResults, setDownloadedResults] = useState<any[]>([])  // 保存解析后的文章数据，供 EPUB 导出使用
   const [epubModalOpen, setEpubModalOpen] = useState(false)
+  const [epubTitle, setEpubTitle] = useState('')
+  const [epubExporting, setEpubExporting] = useState(false)
 
   // 加载平台连接
   useEffect(() => {
@@ -2410,6 +2413,8 @@ export default function CrawlerPage() {
                         setDownloadDir(res.download_dir)
                         // 标记已下载的文章
                         setDownloadedArticles(prev => [...new Set([...prev, ...selectedArticles])])
+                        // 保存解析结果，供后面生成 EPUB 使用
+                        setDownloadedResults(res.article_data || [])
                         // 保留勾选状态，方便用户继续操作（生成 EPUB 等）
                         // setSelectedArticles([])
                       } else {
@@ -2430,6 +2435,7 @@ export default function CrawlerPage() {
                   icon={<BookOutlined />}
                   disabled={selectedArticles.length === 0 || !selectedArticles.some(k => downloadedArticles.includes(k)) || !downloadDir}
                   onClick={() => {
+                    setEpubTitle(wechatArticleModal.account_name + ' 的文章')
                     setEpubModalOpen(true)
                   }}
                 >
@@ -2458,6 +2464,7 @@ export default function CrawlerPage() {
                       // 标记已下载的文章
                       setDownloadedArticles(prev => [...new Set([...prev, ...selectedArticles])])
                       setDownloadDir(downloadRes.download_dir)
+                      setDownloadedResults(downloadRes.article_data || [])
                       const importRes: any = await wechatMpImportAssets({
                         conn_id: wechatConnId,
                         file_paths: downloadRes.file_paths || [],
@@ -2596,13 +2603,64 @@ export default function CrawlerPage() {
       </div>
       </Modal>
 
-      {/* EPUB 生成弹窗 */}
-      <EpubCreatorModal
+      {/* EPUB 生成弹窗 — 调用 Step 2 /export-epub */}
+      <Modal
+        title={<Space><BookOutlined style={{ color: '#07C160' }} />生成 EPUB 电子书</Space>}
         open={epubModalOpen}
-        onClose={() => setEpubModalOpen(false)}
-        defaultFolder={downloadDir}
-        defaultTitle={wechatArticleModal.account_name + ' 的文章'}
-      />
+        onCancel={() => setEpubModalOpen(false)}
+        footer={null}
+        width={480}
+        destroyOnClose
+      >
+        <Form
+          layout="vertical"
+          initialValues={{ book_title: epubTitle }}
+          onFinish={async (vals: { book_title: string }) => {
+            setEpubExporting(true)
+            try {
+              // article_data 是扁平结构: { success, title, author, publish_time, content_html, source_url }
+              const articles = downloadedResults
+                .filter((r: any) => r?.success && r?.content_html)
+                .map((r: any) => ({
+                  title: r.title || '',
+                  author: r.author || '',
+                  publish_time: r.publish_time || '',
+                  content_html: r.content_html || '',
+                  source_url: r.source_url || '',
+                }))
+              const res: any = await wechatMpExportEpub({
+                conn_id: wechatConnId,
+                book_title: vals.book_title,
+                articles,
+                download_dir: downloadDir,
+                images_base_dir: downloadDir,
+              })
+              if (res.success) {
+                message.success(`EPUB 已生成: ${(res.file_size / 1024).toFixed(1)} KB`)
+                setEpubModalOpen(false)
+              } else {
+                message.error(res.error || '导出失败')
+              }
+            } catch (e: any) {
+              message.error(e?.message || '导出失败')
+            } finally {
+              setEpubExporting(false)
+            }
+          }}
+        >
+          <Form.Item label="书名" name="book_title" rules={[{ required: true }]}>
+            <Input placeholder="电子书标题" />
+          </Form.Item>
+          <Form.Item label="包含章节">
+            <Text type="secondary">
+              {downloadedResults.filter((r: any) => r?.success && r?.content_html).length} 篇已下载文章
+            </Text>
+          </Form.Item>
+          <Button type="primary" htmlType="submit" loading={epubExporting} icon={<BookOutlined />} block size="large">
+            开始生成
+          </Button>
+        </Form>
+      </Modal>
     </div>
   )
 }

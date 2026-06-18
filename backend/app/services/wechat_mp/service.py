@@ -558,9 +558,28 @@ class WechatMPService:
 
         # 收集成功下载的文件路径
         file_paths = [r.get("file_path") for r in results if r.get("success") and r.get("file_path")]
-        # 确保 download_dir 始终是字符串类型
-        result_dir = results[0].get("download_dir") if results else ""
-        final_download_dir = str(download_dir or result_dir or "")
+        # 从第一个成功文件的路径反推下载目录（父目录即 save_dir）
+        first_path = file_paths[0] if file_paths else ""
+        if first_path:
+            final_download_dir = str(Path(first_path).parent)
+        elif download_dir:
+            final_download_dir = str(download_dir)
+        else:
+            final_download_dir = ""
+
+        # 提取轻量级文章数据，供前端生成 EPUB 使用（避免传整个 results 导致响应过大）
+        article_data: list[dict] = []
+        for r in results:
+            p = r.get("parsed", {}) or {}
+            article_data.append({
+                "success": r.get("success", False),
+                "skipped": r.get("skipped", False),
+                "title": r.get("title", "") or p.get("title", ""),
+                "author": r.get("author", "") or p.get("author", ""),
+                "publish_time": p.get("publish_time", ""),
+                "content_html": p.get("content_html", ""),
+                "source_url": p.get("article_url", "") or p.get("source_url", ""),
+            })
 
         return {
             "total": len(articles),
@@ -570,7 +589,7 @@ class WechatMPService:
             "success": fail_count == 0,
             "download_dir": final_download_dir,
             "file_paths": file_paths,
-            "results": results,
+            "article_data": article_data,
         }
 
     # ── 图片 URL 改写 ────────────────────────────────────────────

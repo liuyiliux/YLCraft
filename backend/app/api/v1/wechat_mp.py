@@ -125,6 +125,7 @@ class DownloadBatchResponse(BaseModel):
     success: bool = True
     download_dir: str = ""
     file_paths: list[str] = []
+    article_data: list[dict] = []   # 轻量级解析结果，供 EPUB 导出使用
     error: str = ""
     skipped: int = 0  # 命中去重跳过的数量
 
