@@ -31,7 +31,7 @@ class WechatMPDownload(SQLModel, table=True):
 
     # 下载状态
     status: str = Field("pending", description="pending / downloading / done / failed")
-    format: str = Field("md", description="导出格式: md / html / pdf")
+    format: str = Field("md", description="导出格式: md / html / epub / pdf")
     file_path: str = Field("", description="本地文件路径")
     file_size: int = Field(0, description="文件大小（字节）")
     asset_id: str = Field("", description="关联素材库 asset.id")

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -39,11 +40,17 @@ class WechatMPService:
         - 导入素材库
     """
 
+    # parsed 结果缓存配置（parse 端点 → download 复用，避免二次抓取）
+    _PARSED_CACHE_TTL = 300  # 5 分钟
+    _PARSED_CACHE_MAX = 50
+
     def __init__(self):
         self._clients: dict[str, WechatMPAPIClient] = {}
         self._parser = WechatMPParser()
         # 登录会话 {session_id: {status, session_key, conn_id, created_at}}
         self._login_sessions: dict[str, dict] = {}
+        # parsed 缓存 {article_url: (timestamp, parsed_copy, html)}
+        self._parsed_cache: dict[str, tuple[float, dict, str]] = {}
 
     # ── 客户端管理 ──────────────────────────────────────────────
 
@@ -71,9 +78,7 @@ class WechatMPService:
         from app.db.models.wechat_mp import WechatMPDownload
 
         try:
-            session_gen = get_async_session()
-            session = await session_gen.__anext__()
-            try:
+            async with get_async_session() as session:
                 stmt = select(WechatMPDownload).where(
                     WechatMPDownload.article_url == article_url
                 )
@@ -85,8 +90,6 @@ class WechatMPService:
                         "file_path": row.file_path,
                     }
                 return None
-            finally:
-                await session_gen.aclose()
         except Exception as e:
             logger.warning(f"[WechatMPService] 查询去重记录失败（忽略，继续下载）: {e}")
             return None
@@ -118,9 +121,7 @@ class WechatMPService:
         from app.db.models.wechat_mp import WechatMPDownload
 
         try:
-            session_gen = get_async_session()
-            session = await session_gen.__anext__()
-            try:
+            async with get_async_session() as session:
                 stmt = select(WechatMPDownload).where(
                     WechatMPDownload.article_url == article_url
                 )
@@ -167,8 +168,6 @@ class WechatMPService:
 
                 await session.commit()
                 return existing.id if existing else record.id  # type: ignore[union-attr]
-            finally:
-                await session_gen.aclose()
         except Exception as e:
             logger.warning(f"[WechatMPService] 落库下载记录失败（忽略）: {e}")
             return None
@@ -340,6 +339,40 @@ class WechatMPService:
         client = self._get_client(conn_id, cookie=cookie, token=token)
         return await client.get_articles(fake_id, begin, count)
 
+    # ── parsed 结果缓存（parse 端点 → download 复用）──────────────
+
+    def cache_parsed(self, article_url: str, parsed: dict, html: str = "") -> None:
+        """
+        缓存已解析结果，供随后的 download_article 复用（跳过二次抓取+解析）。
+        仅存内存，进程重启即失效；带 TTL 与容量上限，避免泄漏。
+        """
+        if not article_url or not parsed:
+            return
+        # 超容量时淘汰最旧条目
+        if len(self._parsed_cache) >= self._PARSED_CACHE_MAX:
+            try:
+                oldest = min(self._parsed_cache.items(), key=lambda kv: kv[1][0])[0]
+                self._parsed_cache.pop(oldest, None)
+            except ValueError:
+                pass
+        self._parsed_cache[article_url] = (time.time(), dict(parsed), html)
+
+    def get_cached_parsed(self, article_url: str) -> Optional[tuple[dict, str]]:
+        """
+        取出未过期的缓存 (parsed_copy, html)；过期或不存在返回 None。
+        返回 parsed 的浅拷贝，调用方可安全修改。
+        """
+        if not article_url:
+            return None
+        entry = self._parsed_cache.get(article_url)
+        if not entry:
+            return None
+        ts, parsed, html = entry
+        if (time.time() - ts) >= self._PARSED_CACHE_TTL:
+            self._parsed_cache.pop(article_url, None)
+            return None
+        return dict(parsed), html
+
     # ── 下载单篇文章 ─────────────────────────────────────────────
 
     async def download_article(
@@ -359,7 +392,7 @@ class WechatMPService:
         Args:
             skip_if_exists: 若同 article_url 已有成功下载记录，则跳过（去重）。
             localize_images: 是否将远程图片下载到本地并改写引用（默认开启）。
-            format: md / html / epub。
+            format: md / html / epub / pdf。
 
         Returns:
             { success, file_path, format, title, author, parsed, record_id?, skipped?, error? }
@@ -382,36 +415,44 @@ class WechatMPService:
                     }
 
         try:
-            # 1. 获取文章 HTML
-            content_result = await client.get_article_content(article_url)
-            if "error" in content_result:
-                # 落库失败记录
-                await self._record_download(
-                    conn_id=conn_id, article_url=article_url, article_title=article_title,
-                    author="", file_path="", file_size=0, fmt=format, status="failed",
-                    error_message=str(content_result["error"]),
-                )
-                return {"success": False, "error": content_result["error"]}
+            # 1. 获取并解析文章 HTML（优先复用 parse 端点的缓存，避免二次抓取）
+            cached = self.get_cached_parsed(article_url)
+            if cached:
+                parsed, html = cached
+                logger.info(f"[WechatMPService] 命中 parsed 缓存，跳过抓取: {article_url}")
+            else:
+                content_result = await client.get_article_content(article_url)
+                if "error" in content_result:
+                    # 落库失败记录
+                    await self._record_download(
+                        conn_id=conn_id, article_url=article_url, article_title=article_title,
+                        author="", file_path="", file_size=0, fmt=format, status="failed",
+                        error_message=str(content_result["error"]),
+                    )
+                    return {"success": False, "error": content_result["error"]}
 
-            html = content_result.get("html", "")
-            if not html:
-                await self._record_download(
-                    conn_id=conn_id, article_url=article_url, article_title=article_title,
-                    author="", file_path="", file_size=0, fmt=format, status="failed",
-                    error_message="获取文章内容为空",
-                )
-                return {"success": False, "error": "获取文章内容为空"}
+                html = content_result.get("html", "")
+                if not html:
+                    await self._record_download(
+                        conn_id=conn_id, article_url=article_url, article_title=article_title,
+                        author="", file_path="", file_size=0, fmt=format, status="failed",
+                        error_message="获取文章内容为空",
+                    )
+                    return {"success": False, "error": "获取文章内容为空"}
 
-            # 2. 解析文章
-            parsed = self._parser.parse(html, article_url)
+                # 2. 解析文章并缓存（供同进程后续 download/batch 复用）
+                parsed = self._parser.parse(html, article_url)
+                self.cache_parsed(article_url, parsed, html)
+
             title = article_title or parsed.get("title", "未命名文章")
 
-            # 3. 确定保存目录
+            # 3. 确定保存目录：<download>/wechat_mp/<author>/<YYYY-MM>/
             if not download_dir:
                 download_dir = ensure_download_path()
             author = parsed.get("author", "unknown")
             safe_author = "".join(c for c in author if c.isalnum() or c in "._- ").strip()[:50]
-            save_dir = Path(download_dir) / "wechat_mp" / (safe_author or "articles")
+            yyyy_mm = self._publish_month(parsed.get("publish_time", ""))
+            save_dir = Path(download_dir) / "wechat_mp" / (safe_author or "articles") / yyyy_mm
             save_dir.mkdir(parents=True, exist_ok=True)
 
             # 4. 图片本地化（默认开启）：下载远程图片到 images/，改写正文/全文中的 URL
@@ -438,22 +479,20 @@ class WechatMPService:
                 parsed["images"] = [url_map.get(u, u) for u in parsed.get("images", [])]
                 html = self._rewrite_urls(html, url_map)
 
-            # 5. 生成文件名
+            # 5. 生成文件名（文件名去下载时间戳，同名自动追加序号防覆盖）
             safe_title = "".join(c for c in title if c.isalnum() or c in "._- ()（）")[:80]
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            ext = {"md": "md", "html": "html", "epub": "epub", "pdf": "pdf"}.get(format, "md")
+            file_path = self._unique_file_path(save_dir, safe_title or "未命名", ext)
 
             if format == "md":
-                file_path = str(save_dir / f"{timestamp}_{safe_title}.md")
                 content = self._parser.to_markdown(parsed)
                 with open(file_path, "w", encoding="utf-8") as f:
                     f.write(content)
             elif format == "html":
-                file_path = str(save_dir / f"{timestamp}_{safe_title}.html")
                 with open(file_path, "w", encoding="utf-8") as f:
                     f.write(html)
             elif format == "epub":
                 from .epub_exporter import build_epub
-                file_path = str(save_dir / f"{timestamp}_{safe_title}.epub")
                 build_epub(
                     book_title=title,
                     articles=[{
@@ -467,9 +506,16 @@ class WechatMPService:
                     cover_image_path=cover_local_path,
                     images_base_dir=str(save_dir),
                 )
+            elif format == "pdf":
+                from .pdf_exporter import render_pdf
+                await render_pdf(
+                    html=html,
+                    out_path=file_path,
+                    title=title,
+                    base_dir=str(save_dir),
+                )
             else:
                 # 默认 markdown
-                file_path = str(save_dir / f"{timestamp}_{safe_title}.md")
                 content = self._parser.to_markdown(parsed)
                 with open(file_path, "w", encoding="utf-8") as f:
                     f.write(content)
@@ -486,8 +532,8 @@ class WechatMPService:
                 file_size=file_size,
                 fmt=format,
                 status="done",
-                cover_url=parsed.get("cover_url", ""),
-                digest=parsed.get("digest", ""),
+                cover_url=parsed.get("cover", ""),
+                digest=(parsed.get("content_text") or "")[:200],
                 publish_time=parsed.get("publish_time"),
                 account_name=author,
             )
@@ -499,6 +545,7 @@ class WechatMPService:
                 "format": format,
                 "title": title,
                 "author": author,
+                "download_dir": str(save_dir),
                 "parsed": parsed,
                 "record_id": record_id,
             }
@@ -523,53 +570,115 @@ class WechatMPService:
         format: str = "md",
         download_dir: str = "",
         skip_if_exists: bool = True,
+        concurrency: int = 3,
     ) -> dict:
         """
-        批量下载文章（单篇去重 + 落库已在 download_article 内生效）
+        批量下载文章（并发 + WebSocket 实时进度推送）
+
+        单篇去重 + 落库已在 download_article 内生效。
+        并发安全：api_client 每次请求新建 httpx.AsyncClient、DB session 每次新建、
+        parser 无状态、ImageLocalizer 每篇独立实例。
 
         Args:
             articles: [{ title, link, cover, digest }]
             skip_if_exists: 同 URL 已成功下载则跳过
-        """
-        results = []
-        success_count = 0
-        fail_count = 0
-        skipped_count = 0
+            concurrency: 并发下载数（1~8，默认 3）
 
-        for article in articles:
-            result = await self.download_article(
-                conn_id=conn_id,
-                article_url=article.get("link", ""),
-                article_title=article.get("title", ""),
-                cookie=cookie,
-                format=format,
-                download_dir=download_dir,
-                skip_if_exists=skip_if_exists,
-            )
-            result["_article"] = article
-            results.append(result)
-            if result.get("success"):
-                if result.get("skipped"):
-                    skipped_count += 1
-                else:
-                    success_count += 1
+        Returns:
+            {..., task_id} — task_id 可供前端 WebSocket 订阅实时进度
+        """
+        import asyncio
+        from app.core.ws_manager import push_task_progress
+
+        total = len(articles)
+        task_id = str(uuid.uuid4())
+
+        # 并发度钳制在 1~8
+        max_concurrency = max(1, min(int(concurrency) if concurrency else 3, 8))
+        sem = asyncio.Semaphore(max_concurrency)
+        counter_lock = asyncio.Lock()
+        results: list[dict | None] = [None] * total
+        done_count = 0
+
+        async def _push(progress: int, message: str, status: str) -> None:
+            """推送 WebSocket 进度，失败不影响主流程"""
+            try:
+                await push_task_progress(
+                    task_id=task_id,
+                    progress=progress,
+                    message=message,
+                    task_type="wechat_mp_batch",
+                    status=status,
+                )
+            except Exception as e:
+                logger.debug(f"[WechatMPService] WS 进度推送失败（忽略）: {e}")
+
+        async def _download_one(idx: int, article: dict) -> None:
+            nonlocal done_count
+            async with sem:
+                result = await self.download_article(
+                    conn_id=conn_id,
+                    article_url=article.get("link", ""),
+                    article_title=article.get("title", ""),
+                    cookie=cookie,
+                    format=format,
+                    download_dir=download_dir,
+                    skip_if_exists=skip_if_exists,
+                )
+                result["_article"] = article
+                results[idx] = result
+
+            # 单篇完成，更新计数并推送进度（计数加锁避免竞态）
+            async with counter_lock:
+                done_count += 1
+                cur = done_count
+            progress = int(cur / total * 100) if total else 100
+            if result.get("skipped"):
+                item_status = "skipped"
+            elif result.get("success"):
+                item_status = "done"
             else:
-                fail_count += 1
+                item_status = "failed"
+            title = article.get("title", "") or article.get("link", "")
+            await _push(progress, f"[{cur}/{total}] {item_status}: {title}", "running")
+
+        # 开始事件
+        await _push(0, f"批量下载开始，共 {total} 篇（并发 {max_concurrency}）", "running")
+
+        # 并发执行，gather 保持输入顺序
+        if articles:
+            await asyncio.gather(*[_download_one(i, a) for i, a in enumerate(articles)])
+
+        # 统计
+        success_count = sum(
+            1 for r in results if r and r.get("success") and not r.get("skipped")
+        )
+        skipped_count = sum(1 for r in results if r and r.get("skipped"))
+        fail_count = sum(1 for r in results if not (r and r.get("success")))
 
         # 收集成功下载的文件路径
-        file_paths = [r.get("file_path") for r in results if r.get("success") and r.get("file_path")]
-        # 从第一个成功文件的路径反推下载目录（父目录即 save_dir）
-        first_path = file_paths[0] if file_paths else ""
-        if first_path:
-            final_download_dir = str(Path(first_path).parent)
-        elif download_dir:
-            final_download_dir = str(download_dir)
-        else:
-            final_download_dir = ""
+        file_paths = [
+            r.get("file_path") for r in results
+            if r and r.get("success") and r.get("file_path")
+        ]
+        # 推导 download_dir：优先用传入值，否则从首个成功路径的 wechat_mp 父目录推导
+        final_download_dir = str(download_dir or "")
+        if not final_download_dir and file_paths:
+            first_path = Path(file_paths[0])
+            # 向上找 wechat_mp 目录：.../wechat_mp/作者/年月/文件 → .../wechat_mp
+            for parent in first_path.parents:
+                if parent.name == "wechat_mp":
+                    final_download_dir = str(parent)
+                    break
+            else:
+                # 兜底：取文件所在目录
+                final_download_dir = str(first_path.parent)
 
         # 提取轻量级文章数据，供前端生成 EPUB 使用（避免传整个 results 导致响应过大）
         article_data: list[dict] = []
         for r in results:
+            if not r:
+                continue
             p = r.get("parsed", {}) or {}
             article_data.append({
                 "success": r.get("success", False),
@@ -581,8 +690,16 @@ class WechatMPService:
                 "source_url": p.get("article_url", "") or p.get("source_url", ""),
             })
 
+        # 完成事件
+        final_status = "done" if fail_count == 0 else "failed"
+        await _push(
+            100,
+            f"完成: 成功 {success_count} 跳过 {skipped_count} 失败 {fail_count}",
+            final_status,
+        )
+
         return {
-            "total": len(articles),
+            "total": total,
             "downloaded": success_count,
             "skipped": skipped_count,
             "failed": fail_count,
@@ -590,6 +707,8 @@ class WechatMPService:
             "download_dir": final_download_dir,
             "file_paths": file_paths,
             "article_data": article_data,
+            "results": [r for r in results if r is not None],
+            "task_id": task_id,
         }
 
     # ── 图片 URL 改写 ────────────────────────────────────────────
@@ -602,6 +721,35 @@ class WechatMPService:
         for orig, rel in url_map.items():
             text = text.replace(orig, rel)
         return text
+
+    @staticmethod
+    def _publish_month(publish_time: str) -> str:
+        """
+        从 publish_time（'YYYY-MM-DD HH:MM:SS'）提取 'YYYY-MM' 作为目录名。
+        无效或缺失时回退到当前年月。
+        """
+        pt = (publish_time or "").strip()
+        if len(pt) >= 7 and pt[4] == "-" and pt[:7].replace("-", "").isdigit():
+            return pt[:7]
+        return datetime.now().strftime("%Y-%m")
+
+    @staticmethod
+    def _unique_file_path(directory: Path, stem: str, ext: str) -> str:
+        """
+        生成不重名的文件路径：<stem>.<ext>，已存在则追加 _2、_3 ...。
+        用于批量下载同名文章防覆盖。
+        """
+        p = directory / f"{stem}.{ext}"
+        if not p.exists():
+            return str(p)
+        n = 2
+        while n < 1000:
+            p = directory / f"{stem}_{n}.{ext}"
+            if not p.exists():
+                return str(p)
+            n += 1
+        # 兜底
+        return str(directory / f"{stem}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{ext}")
 
     # ── 批量合并导出 EPUB ────────────────────────────────────────
 

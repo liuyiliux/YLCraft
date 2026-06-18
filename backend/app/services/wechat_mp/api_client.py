@@ -120,10 +120,20 @@ class WechatMPAPIClient:
         kwargs.setdefault("timeout", 30.0)
         kwargs.setdefault("follow_redirects", True)
 
-        async with httpx.AsyncClient(verify=False) as client:
-            resp = await client.request(method, url, **kwargs)
-            self._update_cookie_from_response(resp)
-            return resp
+        try:
+            async with httpx.AsyncClient(verify=False) as client:
+                resp = await client.request(method, url, **kwargs)
+                self._update_cookie_from_response(resp)
+                return resp
+        except httpx.TimeoutException:
+            logger.error(f"[WechatMPAPI] 请求超时: {method} {url}")
+            raise
+        except httpx.HTTPError as e:
+            logger.error(f"[WechatMPAPI] HTTP 请求失败: {method} {url} - {e}")
+            raise
+        except Exception as e:
+            logger.error(f"[WechatMPAPI] 请求异常: {method} {url} - {e}")
+            raise
 
     # ── 登录（已废弃 — 扫码登录请使用 WechatMPQrcodeAdapter）──────────
 

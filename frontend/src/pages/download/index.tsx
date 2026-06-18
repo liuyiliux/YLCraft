@@ -7,7 +7,7 @@ import {
   CloudDownloadOutlined, AudioOutlined, PlayCircleOutlined, LinkOutlined, DeleteOutlined, FolderOpenOutlined,
   PictureOutlined, DownloadOutlined, SaveOutlined
 } from '@ant-design/icons'
-import { parseDownloadUrl, createDownloadTask, getDownloadTask, openFolder } from '../../api'
+import { parseDownloadUrl, createDownloadTask, getDownloadTask, openFolder, wechatMpDownloadSingle, listPlatformConnections } from '../../api'
 import type { DownloadParseResponse, VideoQuality } from '../../types/api'
 import { useTheme } from '../../constants/theme'
 import { normalizeUrl } from '../../utils/url'
@@ -30,6 +30,21 @@ export default function DownloadPage() {
   const { theme: THEME } = useTheme()
   const [searchParams] = useSearchParams()
   const [url, setUrl] = useState('')
+  const [wechatConnId, setWechatConnId] = useState<string>('')
+  const [wechatDownloading, setWechatDownloading] = useState(false)
+  const [wechatDownloadedPath, setWechatDownloadedPath] = useState('')
+
+  // 加载微信连接
+  useEffect(() => {
+    listPlatformConnections().then((res: any) => {
+      const wechatConns = (res.connections || []).filter(
+        (c: any) => c.platform === 'wechat_mp' && c.status === 'active'
+      )
+      if (wechatConns.length > 0) {
+        setWechatConnId(wechatConns[0].id)
+      }
+    }).catch(() => {})
+  }, [])
 
   // 从 URL 参数自动填充
   useEffect(() => {
@@ -221,7 +236,11 @@ export default function DownloadPage() {
               </Text>
               {platformLabel && <Tag color={result.images && result.images.length > 0 ? 'cyan' : 'blue'}>{platformLabel}</Tag>}
             </Space>
-          } style={{ background: THEME.bgCard, marginBottom: 16, border: `1px solid ${THEME.border}` }}>
+          } style={{ 
+            background: THEME.bgCard, 
+            marginBottom: 16, 
+            border: `1px solid ${THEME.border}`
+          }}>
             <div style={{ display: 'flex', gap: 20 }}>
               {/* 如果有图片，优先显示图片 */}
               {result.images && result.images.length > 0 ? (
@@ -280,7 +299,56 @@ export default function DownloadPage() {
                 </Space>
                 
                 {/* 下载按钮 */}
-                {result.images && result.images.length > 0 ? (
+                {result.platform === 'wechat_mp' ? (
+                  <div style={{ marginTop: 12 }}>
+                    <Button 
+                      type="primary" 
+                      icon={<DownloadOutlined />} 
+                      loading={wechatDownloading}
+                      disabled={!wechatConnId}
+                      onClick={async () => {
+                        if (!wechatConnId) {
+                          message.warning('请先在账号中心登录微信公众号')
+                          return
+                        }
+                        setWechatDownloading(true)
+                        setWechatDownloadedPath('')
+                        try {
+                          const res: any = await wechatMpDownloadSingle({
+                            conn_id: wechatConnId,
+                            article_url: result.page_url || url,
+                            article_title: result.title || '',
+                            format: 'md',
+                          })
+                          if (res?.success) {
+                            setWechatDownloadedPath(res.file_path || '')
+                            message.success(`已下载到 ${res.file_path}`)
+                          } else {
+                            message.error(res?.error || '下载失败')
+                          }
+                        } catch (e: any) {
+                          message.error(e?.message || '下载失败')
+                        } finally {
+                          setWechatDownloading(false)
+                        }
+                      }}
+                      size="small"
+                      style={{ background: '#07C160', borderColor: '#07C160' }}
+                    >
+                      下载 Markdown
+                    </Button>
+                    {!wechatConnId && (
+                      <Text style={{ color: '#f59e0b', fontSize: 12, display: 'block', marginTop: 8 }}>
+                        ⚠️ 需要先在账号中心登录微信公众号
+                      </Text>
+                    )}
+                    {wechatDownloadedPath && (
+                      <Text style={{ color: '#10b981', fontSize: 12, display: 'block', marginTop: 8 }}>
+                        ✓ 已保存到：{wechatDownloadedPath}
+                      </Text>
+                    )}
+                  </div>
+                ) : result.images && result.images.length > 0 ? (
                   <div style={{ marginTop: 12 }}>
                     <Button type="primary" icon={<DownloadOutlined />} onClick={() => {
                       result.images?.forEach(img => {
