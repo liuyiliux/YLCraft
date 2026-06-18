@@ -319,59 +319,58 @@ async def export_epub(req: ExportEpubRequest):
 # ── 导入素材库 ──────────────────────────────────────────────────
 
 @router.post("/import-assets", summary="将已下载文章导入素材库")
-async def import_articles_to_assets(
-    req: ImportAssetsRequest,
-    session=Depends(get_async_session),
-):
+async def import_articles_to_assets(req: ImportAssetsRequest):
     """将已下载的公众号文章导入素材库"""
     from app.services.asset.service import AssetService
     import os as _os
 
-    asset_service = AssetService(session)
     imported = []
     failed = []
 
-    for file_path in req.file_paths:
-        try:
-            if not _os.path.exists(file_path):
-                failed.append({"file_path": file_path, "error": "文件不存在"})
-                continue
+    async with get_async_session() as session:
+        asset_service = AssetService(session)
 
-            file_name = _os.path.basename(file_path)
-            # 尝试从文件名解析标题
-            # 格式1（旧）: YYYYMMDD_HHMMSS_标题.ext
-            # 格式2（新）: 标题.ext 或 标题_N.ext
-            title = file_name
-            stem = file_name.rsplit(".", 1)[0] if "." in file_name else file_name
-            if "_" in stem:
-                parts = stem.split("_", 2)
-                if len(parts) >= 3 and parts[0].isdigit() and len(parts[0]) == 8:
-                    # 旧格式: YYYYMMDD_HHMMSS_标题
-                    title = parts[2]
+        for file_path in req.file_paths:
+            try:
+                if not _os.path.exists(file_path):
+                    failed.append({"file_path": file_path, "error": "文件不存在"})
+                    continue
+
+                file_name = _os.path.basename(file_path)
+                # 尝试从文件名解析标题
+                # 格式1（旧）: YYYYMMDD_HHMMSS_标题.ext
+                # 格式2（新）: 标题.ext 或 标题_N.ext
+                title = file_name
+                stem = file_name.rsplit(".", 1)[0] if "." in file_name else file_name
+                if "_" in stem:
+                    parts = stem.split("_", 2)
+                    if len(parts) >= 3 and parts[0].isdigit() and len(parts[0]) == 8:
+                        # 旧格式: YYYYMMDD_HHMMSS_标题
+                        title = parts[2]
+                    else:
+                        # 新格式: 标题_N（去重后缀）
+                        title = stem
+
+                asset = await asset_service.create(
+                    title=title,
+                    type="ARTICLE",
+                    platform="wechat_mp",
+                    source_type="download",
+                    source_url="",
+                    file_path=file_path,
+                    file_size=_os.path.getsize(file_path),
+                    status="READY",
+                    author=req.account_name or "",
+                )
+                if asset:
+                    imported.append({"file_path": file_path, "asset_id": asset.id})
                 else:
-                    # 新格式: 标题_N（去重后缀）
-                    title = stem
+                    failed.append({"file_path": file_path, "error": "创建素材失败"})
+            except Exception as e:
+                logger.error(f"[wechat-mp/import] 导入失败 {file_path}: {e}")
+                failed.append({"file_path": file_path, "error": str(e)})
 
-            asset = await asset_service.create(
-                title=title,
-                asset_type="ARTICLE",
-                platform="wechat_mp",
-                source_type="download",
-                source_url="",
-                file_path=file_path,
-                file_size=_os.path.getsize(file_path),
-                status="READY",
-                author=req.account_name or "",
-            )
-            if asset:
-                imported.append({"file_path": file_path, "asset_id": asset.id})
-            else:
-                failed.append({"file_path": file_path, "error": "创建素材失败"})
-        except Exception as e:
-            logger.error(f"[wechat-mp/import] 导入失败 {file_path}: {e}")
-            failed.append({"file_path": file_path, "error": str(e)})
-
-    await session.commit()
+        # async with 退出时自动 commit（见 get_async_session）
 
     return {
         "total": len(req.file_paths),
@@ -391,42 +390,33 @@ async def _get_conn_credentials(conn_id: str) -> tuple[str, str]:
     Returns:
         (cookie_str, token_str)
     """
-    session_gen = get_async_session()
-    session = await session_gen.__anext__() if hasattr(session_gen, "__anext__") else None
-
-    if session is None:
-        return "", ""
+    from sqlalchemy import text
 
     try:
-        from sqlalchemy import text
-        result = await session.execute(
-            text("SELECT credentials, cookie_content FROM platform_connections WHERE id = :id"),
-            {"id": conn_id},
-        )
-        row = result.fetchone()
-        if row:
-            credentials = {}
-            try:
-                credentials = json.loads(row[0] or "{}")
-            except (json.JSONDecodeError, TypeError):
-                pass
-            token = credentials.get("token", "")
-            cookie = credentials.get("raw") or credentials.get("content") or ""
-            if not cookie and row[1]:
-                cookie = row[1]
-                if cookie.startswith("# Netscape HTTP Cookie File"):
-                    try:
-                        from app.services.cookies.manager import get_cookie_manager
-                        cookie = get_cookie_manager().extract_raw(cookie)
-                    except Exception:
-                        pass
-            return cookie, token
+        async with get_async_session() as session:
+            result = await session.execute(
+                text("SELECT credentials, cookie_content FROM platform_connections WHERE id = :id"),
+                {"id": conn_id},
+            )
+            row = result.fetchone()
+            if row:
+                credentials = {}
+                try:
+                    credentials = json.loads(row[0] or "{}")
+                except (json.JSONDecodeError, TypeError):
+                    pass
+                token = credentials.get("token", "")
+                cookie = credentials.get("raw") or credentials.get("content") or ""
+                if not cookie and row[1]:
+                    cookie = row[1]
+                    if cookie.startswith("# Netscape HTTP Cookie File"):
+                        try:
+                            from app.services.cookies.manager import get_cookie_manager
+                            cookie = get_cookie_manager().extract_raw(cookie)
+                        except Exception:
+                            pass
+                return cookie, token
     except Exception as e:
         logger.warning(f"[wechat-mp] 获取凭证失败: {e}")
-    finally:
-        try:
-            await session.close()
-        except Exception:
-            pass
 
     return "", ""
