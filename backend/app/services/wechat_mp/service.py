@@ -12,6 +12,7 @@ import os
 import time
 import uuid
 from datetime import datetime, timezone
+from html import escape
 from pathlib import Path
 from typing import Optional
 
@@ -68,9 +69,10 @@ class WechatMPService:
 
     # ── 下载记录落库（wechat_mp_downloads）─────────────────────
 
-    async def _find_existing_download(self, article_url: str) -> Optional[dict]:
+    async def _find_existing_download(self, article_url: str, fmt: str = "") -> Optional[dict]:
         """
         按 article_url 查询已存在的下载记录（用于去重）。
+        fmt 传入时只复用同格式文件，避免用户选择 HTML 时命中旧 MD。
         返回 dict（{id, status, file_path}）或 None。
         """
         from sqlalchemy import select
@@ -79,15 +81,22 @@ class WechatMPService:
 
         try:
             async with get_async_session() as session:
-                stmt = select(WechatMPDownload).where(
+                conditions = [
                     WechatMPDownload.article_url == article_url
-                )
+                ]
+                if fmt:
+                    conditions.append(WechatMPDownload.format == fmt)
+                stmt = select(WechatMPDownload).where(*conditions)
                 row = (await session.execute(stmt)).scalar_one_or_none()
                 if row:
                     return {
                         "id": row.id,
                         "status": row.status,
                         "file_path": row.file_path,
+                        "format": row.format,
+                        "title": row.article_title,
+                        "author": row.account_name,
+                        "publish_time": row.publish_time.strftime("%Y-%m-%d %H:%M:%S") if row.publish_time else "",
                     }
                 return None
         except Exception as e:
@@ -113,7 +122,7 @@ class WechatMPService:
         account_fake_id: str = "",
     ) -> Optional[str]:
         """
-        落库一条下载记录（upsert：按 article_url 去重）。
+        落库一条下载记录（upsert：按 article_url + format 去重）。
         返回记录 id；失败时返回 None（不影响下载主流程）。
         """
         from sqlalchemy import select
@@ -121,9 +130,20 @@ class WechatMPService:
         from app.db.models.wechat_mp import WechatMPDownload
 
         try:
+            # 处理 publish_time：支持字符串格式转换
+            if isinstance(publish_time, str):
+                try:
+                    publish_time = datetime.strptime(publish_time, "%Y-%m-%d %H:%M:%S")
+                except ValueError:
+                    try:
+                        publish_time = datetime.strptime(publish_time, "%Y-%m-%d")
+                    except ValueError:
+                        publish_time = None
+
             async with get_async_session() as session:
                 stmt = select(WechatMPDownload).where(
-                    WechatMPDownload.article_url == article_url
+                    WechatMPDownload.article_url == article_url,
+                    WechatMPDownload.format == fmt,
                 )
                 existing = (await session.execute(stmt)).scalar_one_or_none()
                 now = _utcnow()
@@ -148,9 +168,8 @@ class WechatMPService:
                     )
                     session.add(record)
                 else:
-                    # 已存在则更新（同 URL 重新下载：刷新状态/路径/时间）
+                    # 已存在则更新（同 URL + 同格式重新下载：刷新状态/路径/时间）
                     existing.status = status
-                    existing.format = fmt
                     existing.file_path = file_path
                     existing.file_size = file_size
                     existing.error_message = error_message
@@ -324,6 +343,72 @@ class WechatMPService:
         client = self._get_client(conn_id, cookie=cookie, token=token)
         return await client.search_accounts(keyword, page, page_size)
 
+    async def search_global_articles(
+        self,
+        conn_id: str,
+        keyword: str,
+        cookie: str = "",
+        token: str = "",
+        page: int = 1,
+        page_size: int = 10,
+    ) -> dict:
+        """按关键词搜索全网公众号文章，并缓存返回正文供下载复用。"""
+        client = self._get_client(conn_id, cookie=cookie, token=token)
+        result = await client.search_global_articles(
+            keyword=keyword,
+            begin=(max(page, 1) - 1) * min(page_size, 10),
+            count=min(page_size, 10),
+        )
+
+        if not result.get("error"):
+            for article in result.get("list", []) or []:
+                link = article.get("link", "")
+                content_html = article.get("content", "")
+                if not link or not content_html:
+                    continue
+                parsed, html = self._build_global_article_cache(article)
+                self.cache_parsed(link, parsed, html)
+
+        return result
+
+    def _build_global_article_cache(self, article: dict) -> tuple[dict, str]:
+        """将版权检测接口返回的正文片段包装成标准微信文章解析结果。"""
+        title = article.get("title", "") or "未命名文章"
+        author = article.get("nickname") or article.get("author") or "公众号"
+        link = article.get("link", "")
+        content_html = article.get("content", "") or ""
+        cover = article.get("cover", "") or ""
+        digest = article.get("digest", "") or ""
+
+        cover_attr = escape(cover, quote=True).replace("&amp;", "&")
+
+        html = (
+            "<!doctype html><html><head><meta charset=\"utf-8\">"
+            f"<meta property=\"og:title\" content=\"{escape(title, quote=True)}\">"
+            f"<meta name=\"author\" content=\"{escape(author, quote=True)}\">"
+            f"<meta property=\"og:image\" content=\"{cover_attr}\">"
+            f"<title>{escape(title)}</title>"
+            "</head><body>"
+            f"<h1 id=\"activity-name\">{escape(title)}</h1>"
+            f"<div id=\"js_name\">{escape(author)}</div>"
+            f"<div id=\"js_content\">{content_html}</div>"
+            "</body></html>"
+        )
+        parsed = self._parser.parse(html, link)
+        parsed.update({
+            "title": parsed.get("title") or title,
+            "author": parsed.get("author") or author,
+            "content_html": parsed.get("content_html") or content_html,
+            "content_text": parsed.get("content_text") or digest,
+            "cover": parsed.get("cover") or cover,
+            "source_url": parsed.get("source_url") or article.get("source_url", ""),
+            "article_url": link,
+            "error": parsed.get("error", ""),
+        })
+        if cover and cover not in parsed.get("images", []):
+            parsed["images"] = [*parsed.get("images", []), cover]
+        return parsed, html
+
     # ── 文章列表 ────────────────────────────────────────────────
 
     async def get_articles(
@@ -401,17 +486,45 @@ class WechatMPService:
 
         # 0. 去重：同 URL 已成功下载过则跳过
         if skip_if_exists and article_url:
-            existing = await self._find_existing_download(article_url)
+            existing = await self._find_existing_download(article_url, format)
             if existing and existing.get("status") == "done" and existing.get("file_path"):
                 if os.path.exists(existing["file_path"]):
                     logger.info(f"[WechatMPService] 跳过已下载文章: {article_url}")
+                    # 读取已下载文件内容，供前端生成 EPUB 使用
+                    content_html = ""
+                    file_path = existing["file_path"]
+                    existing_format = existing.get("format") or Path(file_path).suffix.lower().lstrip(".") or format
+                    read_success = True
+                    try:
+                        with open(file_path, "r", encoding="utf-8") as f:
+                            content = f.read()
+                        # 如果是 markdown 文件，转换为 HTML
+                        if file_path.endswith(".md"):
+                            from markdown import markdown
+                            content_html = markdown(content)
+                        elif file_path.endswith(".html"):
+                            content_html = content
+                    except Exception as e:
+                        logger.warning(f"[WechatMPService] 读取已下载文件失败: {e}")
+                        read_success = False
+                    # 构造 parsed 数据
+                    parsed = {
+                        "title": existing.get("title", article_title),
+                        "author": existing.get("author", ""),
+                        "publish_time": existing.get("publish_time", ""),
+                        "content_html": content_html,
+                        "article_url": article_url,
+                    }
                     return {
-                        "success": True,
+                        "success": read_success,
                         "skipped": True,
-                        "file_path": existing["file_path"],
-                        "format": format,
-                        "title": article_title,
+                        "file_path": file_path,
+                        "format": existing_format,
+                        "title": existing.get("title") or article_title,
+                        "author": existing.get("author", ""),
                         "record_id": existing["id"],
+                        "parsed": parsed,
+                        "error": None if read_success else f"读取已下载文件失败",
                     }
 
         try:
@@ -443,6 +556,16 @@ class WechatMPService:
                 # 2. 解析文章并缓存（供同进程后续 download/batch 复用）
                 parsed = self._parser.parse(html, article_url)
                 self.cache_parsed(article_url, parsed, html)
+
+                # 检查解析是否成功
+                if parsed.get("error") or not parsed.get("content_html"):
+                    logger.warning(f"[WechatMPService] 文章解析失败或内容为空: {article_url}")
+                    await self._record_download(
+                        conn_id=conn_id, article_url=article_url, article_title=article_title,
+                        author="", file_path="", file_size=0, fmt=format, status="failed",
+                        error_message=parsed.get("error") or "解析失败，内容为空",
+                    )
+                    return {"success": False, "error": parsed.get("error") or "解析失败，内容为空", "parsed": parsed}
 
             title = article_title or parsed.get("title", "未命名文章")
 
@@ -650,9 +773,7 @@ class WechatMPService:
             await asyncio.gather(*[_download_one(i, a) for i, a in enumerate(articles)])
 
         # 统计
-        success_count = sum(
-            1 for r in results if r and r.get("success") and not r.get("skipped")
-        )
+        success_count = sum(1 for r in results if r and r.get("success"))
         skipped_count = sum(1 for r in results if r and r.get("skipped"))
         fail_count = sum(1 for r in results if not (r and r.get("success")))
 
@@ -680,15 +801,24 @@ class WechatMPService:
             if not r:
                 continue
             p = r.get("parsed", {}) or {}
-            article_data.append({
+            article = r.get("_article", {}) or {}
+            item = {
                 "success": r.get("success", False),
                 "skipped": r.get("skipped", False),
+                "file_path": r.get("file_path", ""),
+                "format": r.get("format", format),
+                "article_key": article.get("aid") or article.get("link") or "",
                 "title": r.get("title", "") or p.get("title", ""),
                 "author": r.get("author", "") or p.get("author", ""),
                 "publish_time": p.get("publish_time", ""),
                 "content_html": p.get("content_html", ""),
                 "source_url": p.get("article_url", "") or p.get("source_url", ""),
-            })
+            }
+            article_data.append(item)
+            # 调试日志
+            logger.info(f"[WechatMPService] article_data item: success={item['success']}, has_content={len(item['content_html']) > 0}, title={item['title'][:30]}...")
+
+        logger.info(f"[WechatMPService] 生成 article_data: 共 {len(article_data)} 条，成功且有内容: {sum(1 for item in article_data if item['success'] and item['content_html'])} 条")
 
         # 完成事件
         final_status = "done" if fail_count == 0 else "failed"
@@ -718,9 +848,79 @@ class WechatMPService:
         """将文本中的原图片 URL 替换为本地相对路径（HTML/Markdown 通用）。"""
         if not text or not url_map:
             return text
+
+        import re
+
         for orig, rel in url_map.items():
-            text = text.replace(orig, rel)
+            try:
+                text = text.replace(orig, rel)
+            except Exception:
+                pass
+
+            try:
+                text = text.replace(orig.replace("&", "&amp;"), rel)
+            except Exception:
+                pass
+
+            try:
+                text = text.replace('data-src="' + orig + '"', 'src="' + rel + '"')
+            except Exception:
+                pass
+
+            try:
+                text = text.replace('data-src="' + orig.replace("&", "&amp;") + '"', 'src="' + rel + '"')
+            except Exception:
+                pass
+
+            try:
+                orig_no_query = orig.split("?")[0]
+                pattern = r'data-src=["\']' + re.escape(orig_no_query) + r'[^\s"\']*["\']'
+                text = re.sub(pattern, 'src="' + rel + '"', text)
+            except Exception:
+                pass
+
+            try:
+                orig_escaped = orig_no_query.replace("&", "&amp;")
+                pattern = r'data-src=["\']' + re.escape(orig_escaped) + r'[^\s"\']*["\']'
+                text = re.sub(pattern, 'src="' + rel + '"', text)
+            except Exception:
+                pass
+
+        try:
+            text = WechatMPService._promote_localized_image_sources(text, set(url_map.values()))
+        except Exception:
+            pass
+
         return text
+
+    @staticmethod
+    def _promote_localized_image_sources(text: str, local_refs: set[str]) -> str:
+        """微信 HTML 常把真实图放在 data-src，src 是占位图；本地化后要把 src 同步成本地文件。"""
+        if "<" not in text or not local_refs:
+            return text
+
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup(text, "html.parser")
+        changed = False
+        for img in soup.find_all("img"):
+            candidates = [
+                str(img.get("data-src") or ""),
+                str(img.get("data-original") or ""),
+                str(img.get("data-backsrc") or ""),
+            ]
+            local = next((value for value in candidates if value in local_refs), "")
+            if not local:
+                continue
+            img["src"] = local
+            img["data-src"] = local
+            if img.get("data-original"):
+                img["data-original"] = local
+            if img.get("data-backsrc"):
+                img["data-backsrc"] = local
+            changed = True
+
+        return str(soup) if changed else text
 
     @staticmethod
     def _publish_month(publish_time: str) -> str:
@@ -774,9 +974,8 @@ class WechatMPService:
         """
         from .epub_exporter import build_epub
 
-        if not download_dir:
-            download_dir = str(ensure_download_path())
-        save_dir = Path(download_dir) / "wechat_mp" / "epub"
+        base_dir = Path(download_dir) if download_dir else ensure_download_path()
+        save_dir = base_dir / "epub" if base_dir.name == "wechat_mp" else base_dir / "wechat_mp" / "epub"
         save_dir.mkdir(parents=True, exist_ok=True)
 
         safe_title = "".join(c for c in book_title if c.isalnum() or c in "._- ")[:80] or "epub"

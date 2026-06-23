@@ -240,15 +240,18 @@ class QrcodeAcquisitionManager:
                 plat_enum = None
 
             if plat_enum:
-                stmt = (
-                    select(PlatformConnection)
-                    .where(
-                        PlatformConnection.platform == plat_enum,
-                        PlatformConnection.auth_type == AuthType.COOKIE,
-                    )
-                    .order_by(PlatformConnection.last_used.desc().nulls_last())
-                    .limit(1)
+                stmt = select(PlatformConnection).where(
+                    PlatformConnection.platform == plat_enum,
+                    PlatformConnection.auth_type == AuthType.COOKIE,
                 )
+                
+                # 优先按账号匹配（相同账号覆盖）
+                if account_info.get("account_id"):
+                    stmt = stmt.where(PlatformConnection.account_id == account_info["account_id"])
+                elif account_info.get("account_name"):
+                    stmt = stmt.where(PlatformConnection.account_name == account_info["account_name"])
+                
+                stmt = stmt.order_by(PlatformConnection.last_used.desc().nulls_last()).limit(1)
                 conn = db.exec(stmt).first()
             else:
                 conn = None

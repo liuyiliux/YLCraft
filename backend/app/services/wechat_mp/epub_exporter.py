@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import re
 from pathlib import Path
+from urllib.parse import unquote
 
 from ebooklib import epub
 
@@ -68,15 +69,22 @@ def build_epub(
         title = art.get("title") or f"第{i}章"
         content_html = art.get("content_html", "")
         file_name = f"chap_{i:03d}.xhtml"
+        article_base = _article_base_dir(art, base)
+        image_map: dict[str, str] = {}
+
+        # 嵌入该章节引用的本地图片资源，并把章节内图片 src 改写为 EPUB 内部路径。
+        for img_rel in _extract_local_images(content_html):
+            epub_rel = _epub_image_name(i, img_rel)
+            image_map[img_rel] = epub_rel
+            if epub_rel not in embedded_images:
+                _add_image(book, article_base, img_rel, epub_rel)
+                embedded_images.add(epub_rel)
+
+        if image_map:
+            content_html = _rewrite_image_refs(content_html, image_map)
 
         chap = epub.EpubHtml(title=title, file_name=file_name)
         chap.set_content(f"<h1>{_escape(title)}</h1>{content_html}")
-
-        # 嵌入该章节引用的本地图片资源
-        for img_rel in _extract_local_images(content_html):
-            if img_rel not in embedded_images:
-                _add_image(book, base, img_rel)
-                embedded_images.add(img_rel)
 
         book.add_item(chap)
         chapters.append(chap)
@@ -124,7 +132,31 @@ def _extract_local_images(html: str) -> list[str]:
     return found
 
 
-def _add_image(book: epub.EpubBook, base: Path, rel: str) -> None:
+def _article_base_dir(article: dict, fallback: Path) -> Path:
+    file_path = article.get("file_path") or ""
+    if file_path:
+        path = Path(file_path)
+        if path.exists() and path.is_file():
+            return path.parent
+    return fallback
+
+
+def _epub_image_name(chapter_index: int, rel: str) -> str:
+    rel = unquote(rel).replace("\\", "/").lstrip("/")
+    name = rel.split("images/", 1)[-1]
+    name = re.sub(r"[^A-Za-z0-9._-]+", "_", name) or f"image_{chapter_index}.jpg"
+    return f"images/ch{chapter_index:03d}_{name}"
+
+
+def _rewrite_image_refs(html: str, image_map: dict[str, str]) -> str:
+    if not html or not image_map:
+        return html
+    for old, new in image_map.items():
+        html = html.replace(old, new)
+    return html
+
+
+def _add_image(book: epub.EpubBook, base: Path, rel: str, epub_name: str) -> None:
     """把本地图片文件作为资源加入 EPUB。"""
     fpath = base / rel
     if not fpath.exists():
@@ -134,7 +166,7 @@ def _add_image(book: epub.EpubBook, base: Path, rel: str) -> None:
         ext = fpath.suffix.lower()
         media = _MEDIA_TYPES.get(ext, "image/jpeg")
         item = epub.EpubImage(
-            file_name=rel,
+            file_name=epub_name,
             media_type=media,
             content=fpath.read_bytes(),
         )

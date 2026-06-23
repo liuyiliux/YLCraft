@@ -424,7 +424,7 @@ class PlatformConnectionService:
     # 连接测试
     # =========================================================================
 
-    def test_connection(self, conn_id: str) -> dict:
+    async def test_connection(self, conn_id: str) -> dict:
         """
         测试连接有效性
         返回 {"success": bool, "message": str}
@@ -435,7 +435,7 @@ class PlatformConnectionService:
 
         try:
             if conn.auth_type == AuthType.COOKIE:
-                result = self._test_cookie(conn)
+                result = await self._test_cookie(conn)
             elif conn.auth_type == AuthType.API_KEY:
                 result = self._test_api_key(conn)
             else:
@@ -458,7 +458,7 @@ class PlatformConnectionService:
             self.session.commit()
             return {"success": False, "message": f"测试失败: {str(e)}"}
 
-    def _test_cookie(self, conn: PlatformConnection) -> dict:
+    async def _test_cookie(self, conn: PlatformConnection) -> dict:
         """测试 Cookie 有效性"""
         platform = self._get_platform_str(conn.platform)
         mgr = get_cookie_manager()
@@ -482,6 +482,14 @@ class PlatformConnectionService:
                     self.session.add(conn)
                     self.session.commit()
                     return {"success": True, "message": f"Cookie有效，已提取账号: {info['account_name']}"}
+            
+            # 如果是微信公众号，进行实际会话测试
+            if platform == "wechat_mp":
+                token = conn.get_credentials().get("token", "")
+                if not token:
+                    return {"success": False, "message": "缺少 token，请重新登录"}
+                return await self._test_wechat_mp_session(conn, cookie_str, token)
+            
             return {"success": True, "message": result["message"]}
 
         # 尝试自动转换
@@ -512,6 +520,41 @@ class PlatformConnectionService:
             return {"success": False, "message": "API Key 为空"}
 
         return {"success": True, "message": "API Key 格式正确（未进行实际连接测试）"}
+
+    async def _test_wechat_mp_session(self, conn: PlatformConnection, cookie: str, token: str) -> dict:
+        """测试微信公众号会话有效性"""
+        try:
+            from app.services.wechat_mp import get_wechat_mp_service
+            from app.services.cookies.manager import get_cookie_manager
+            
+            # 使用公共组件将 Netscape 格式的 Cookie 转换为 HTTP Cookie 字符串格式
+            if cookie.startswith("# Netscape HTTP Cookie File"):
+                cookie = get_cookie_manager().extract_raw(cookie)
+            
+            service = get_wechat_mp_service()
+            # 执行一个简单的搜索来测试会话是否有效
+            result = await service.search_accounts(
+                conn_id=conn.id,
+                keyword="test",
+                cookie=cookie,
+                token=token,
+                page=1,
+                page_size=1,
+            )
+            
+            # 检查是否有会话失效错误
+            if result.get("error"):
+                error_code = result.get("error_code")
+                if error_code == 200003:
+                    return {"success": False, "message": "会话已失效，请重新登录微信公众平台"}
+                return {"success": False, "message": result["error"]}
+            
+            # 会话有效
+            return {"success": True, "message": "会话有效"}
+            
+        except Exception as e:
+            logger.error(f"[PlatformConnectionService] 测试微信公众号会话失败: {e}")
+            return {"success": False, "message": f"测试失败: {str(e)}"}
 
     # =========================================================================
     # 统计

@@ -29,6 +29,7 @@ from pydantic import BaseModel, Field
 
 from app.db.database import get_async_session
 from app.db.models.asset import Asset, AssetTag
+from app.services.asset.document_metadata import extract_document_cover_source, is_readable_document_asset
 from app.services.asset.service import AssetService
 
 router = APIRouter()
@@ -124,11 +125,18 @@ def _asset_to_dict(asset: Asset, include_metadata: bool = False) -> dict:
             return f"{width}x{height} ({label})"
         return f"{width}x{height}"
     
+    readable_document = is_readable_document_asset(asset.type, asset.file_path)
+    title = asset.title
+    if readable_document and asset.file_path:
+        file_name = Path(asset.file_path).name
+        if title == file_name:
+            title = Path(asset.file_path).stem
+
     # 基础字段（列表和详情都需要）
     result = {
         "id": asset.id,
         "type": asset.type,
-        "title": asset.title,
+        "title": title,
         "platform": asset.platform,
         "author": asset.author,
         "status": asset.status,
@@ -138,7 +146,7 @@ def _asset_to_dict(asset: Asset, include_metadata: bool = False) -> dict:
         "created_at": _format_datetime(asset.created_at),
         "updated_at": _format_datetime(asset.updated_at),
         "downloaded_at": _format_datetime(asset.updated_at) if asset.status == "READY" else None,
-        "thumbnail_url": f"/api/v1/assets/{asset.id}/thumbnail" if asset.cover_url else None,
+        "thumbnail_url": f"/api/v1/assets/{asset.id}/thumbnail" if (asset.cover_url or readable_document) else None,
         "duration": asset.duration,
         "width": asset.width,
         "height": asset.height,
@@ -576,6 +584,11 @@ async def proxy_thumbnail(
     # 默认返回生成的封面图
     if asset.cover_url:
         return await _fetch_image(asset.cover_url, asset.platform or "")
+
+    if is_readable_document_asset(asset.type, asset.file_path):
+        cover_source = extract_document_cover_source(asset.file_path)
+        if cover_source:
+            return await _fetch_image(cover_source, asset.platform or "")
     
     from app.api.v1.proxy import placeholder_image_response
     return placeholder_image_response("NO IMAGE")

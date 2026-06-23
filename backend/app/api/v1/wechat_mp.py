@@ -14,8 +14,10 @@ from __future__ import annotations
 
 import json
 import logging
+import mimetypes
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -145,6 +147,7 @@ class EpubArticle(BaseModel):
     publish_time: str = ""
     content_html: str = ""
     source_url: str = ""
+    file_path: str = ""
 
 
 class ExportEpubRequest(BaseModel):
@@ -323,7 +326,11 @@ async def export_epub(req: ExportEpubRequest):
 async def import_articles_to_assets(req: ImportAssetsRequest):
     """将已下载的公众号文章导入素材库"""
     from app.services.asset.service import AssetService
-    import os as _os
+    from app.db.models.asset import Asset
+    from app.services.asset.document_metadata import (
+        extract_document_asset_metadata,
+        resolve_document_cover_source,
+    )
 
     imported = []
     failed = []
@@ -333,40 +340,108 @@ async def import_articles_to_assets(req: ImportAssetsRequest):
 
         for file_path in req.file_paths:
             try:
-                if not _os.path.exists(file_path):
+                path = Path(file_path).expanduser()
+                if not path.exists() or not path.is_file():
                     failed.append({"file_path": file_path, "error": "文件不存在"})
                     continue
+                resolved_path = path.resolve()
 
-                file_name = _os.path.basename(file_path)
-                # 尝试从文件名解析标题
-                # 格式1（旧）: YYYYMMDD_HHMMSS_标题.ext
-                # 格式2（新）: 标题.ext 或 标题_N.ext
-                title = file_name
-                stem = file_name.rsplit(".", 1)[0] if "." in file_name else file_name
-                if "_" in stem:
-                    parts = stem.split("_", 2)
-                    if len(parts) >= 3 and parts[0].isdigit() and len(parts[0]) == 8:
-                        # 旧格式: YYYYMMDD_HHMMSS_标题
-                        title = parts[2]
-                    else:
-                        # 新格式: 标题_N（去重后缀）
-                        title = stem
+                record = (await session.execute(
+                    select(WechatMPDownload)
+                    .where(WechatMPDownload.file_path == str(resolved_path))
+                    .order_by(WechatMPDownload.updated_at.desc())
+                    .limit(1)
+                )).scalars().first()
 
-                asset = await asset_service.create(
-                    title=title,
-                    type="ARTICLE",
-                    platform="wechat_mp",
-                    source_type="download",
-                    source_url="",
-                    file_path=file_path,
-                    file_size=_os.path.getsize(file_path),
-                    status="READY",
-                    author=req.account_name or "",
+                file_meta = extract_document_asset_metadata(resolved_path)
+                title = (
+                    (record.article_title if record else "")
+                    or file_meta.get("title", "")
+                    or _title_from_article_file(resolved_path)
                 )
+                author = (
+                    (record.account_name if record else "")
+                    or file_meta.get("author", "")
+                    or req.account_name
+                    or ""
+                )
+                cover_url = (
+                    resolve_document_cover_source(resolved_path, file_meta.get("cover_ref", ""))
+                    or (record.cover_url if record else "")
+                    or ""
+                )
+                article_url = (
+                    (record.article_url if record else "")
+                    or file_meta.get("source_url", "")
+                    or ""
+                )
+                source_url = article_url or f"ylcraft://local-document/{resolved_path.as_posix()}"
+                file_size = resolved_path.stat().st_size
+                fmt = (record.format if record else "") or resolved_path.suffix.lower().lstrip(".")
+                publish_time = record.publish_time.isoformat() if record and record.publish_time else ""
+                metadata = {
+                    "description": (record.digest if record else "") or "",
+                    "reader_root_path": str(resolved_path.parent),
+                    "local_file_path": str(resolved_path),
+                    "article_url": article_url,
+                    "download_record_id": record.id if record else "",
+                    "format": fmt,
+                    "digest": (record.digest if record else "") or "",
+                    "publish_time": publish_time,
+                    "cover_url": cover_url,
+                    "cover_ref": file_meta.get("cover_ref", ""),
+                }
+                tags_json = json.dumps(["wechat_mp", "article"], ensure_ascii=False)
+
+                existing_by_path = (await session.execute(
+                    select(Asset)
+                    .where(Asset.file_path == str(resolved_path))
+                    .where(Asset.status != "DELETED")
+                    .limit(1)
+                )).scalars().first()
+                existing_by_url = await asset_service.get_by_url(source_url)
+                asset = existing_by_url or existing_by_path
+
                 if asset:
-                    imported.append({"file_path": file_path, "asset_id": asset.id})
+                    asset.title = title
+                    asset.type = "ARTICLE"
+                    asset.platform = "wechat_mp"
+                    asset.source_type = "download"
+                    asset.source_url = source_url
+                    asset.file_path = str(resolved_path)
+                    asset.file_size = file_size
+                    asset.mime_type = _guess_article_mime_type(resolved_path)
+                    asset.status = "READY"
+                    asset.author = author
+                    if cover_url:
+                        asset.cover_url = cover_url
+                    asset.metadata_json = json.dumps(metadata, ensure_ascii=False)
+                    if not asset.tags or asset.tags == "[]":
+                        asset.tags = tags_json
+                    asset.updated_at = datetime.now()
+                    await session.flush()
+                    await session.refresh(asset)
+                    imported.append({"file_path": str(resolved_path), "asset_id": asset.id, "updated": True})
                 else:
-                    failed.append({"file_path": file_path, "error": "创建素材失败"})
+                    asset = await asset_service.create(
+                        title=title,
+                        type="ARTICLE",
+                        platform="wechat_mp",
+                        source_type="download",
+                        source_url=source_url,
+                        file_path=str(resolved_path),
+                        file_size=file_size,
+                        mime_type=_guess_article_mime_type(resolved_path),
+                        status="READY",
+                        author=author,
+                        cover_url=cover_url,
+                        metadata_json=json.dumps(metadata, ensure_ascii=False),
+                        tags=tags_json,
+                    )
+                    imported.append({"file_path": str(resolved_path), "asset_id": asset.id, "updated": False})
+
+                if record:
+                    record.asset_id = asset.id
             except Exception as e:
                 logger.error(f"[wechat-mp/import] 导入失败 {file_path}: {e}")
                 failed.append({"file_path": file_path, "error": str(e)})
@@ -384,6 +459,30 @@ async def import_articles_to_assets(req: ImportAssetsRequest):
 
 # ── 辅助函数 ──────────────────────────────────────────────────
 
+def _title_from_article_file(path: Path) -> str:
+    stem = path.stem
+    parts = stem.split("_", 2)
+    if len(parts) >= 3 and parts[0].isdigit() and len(parts[0]) == 8:
+        return parts[2] or stem
+    return stem
+
+
+def _guess_article_mime_type(path: Path) -> str:
+    guessed = mimetypes.guess_type(str(path))[0]
+    if guessed:
+        return guessed
+    suffix = path.suffix.lower()
+    if suffix in {".htm", ".html"}:
+        return "text/html"
+    if suffix in {".md", ".markdown"}:
+        return "text/markdown"
+    if suffix == ".epub":
+        return "application/epub+zip"
+    if suffix in {".txt", ".text"}:
+        return "text/plain"
+    return "application/octet-stream"
+
+
 async def _get_conn_credentials(conn_id: str) -> tuple[str, str]:
     """
     从数据库获取连接的 Cookie 和 Token
@@ -395,10 +494,19 @@ async def _get_conn_credentials(conn_id: str) -> tuple[str, str]:
 
     try:
         async with get_async_session() as session:
-            result = await session.execute(
-                text("SELECT credentials, cookie_content FROM platform_connections WHERE id = :id"),
-                {"id": conn_id},
-            )
+            if conn_id:
+                result = await session.execute(
+                    text("SELECT credentials, cookie_content FROM platform_connections WHERE id = :id"),
+                    {"id": conn_id},
+                )
+            else:
+                result = await session.execute(
+                    text(
+                        "SELECT credentials, cookie_content FROM platform_connections "
+                        "WHERE platform = 'wechat_mp' AND status = 'active' "
+                        "ORDER BY updated_at DESC LIMIT 1"
+                    )
+                )
             row = result.fetchone()
             if row:
                 credentials = {}
@@ -407,15 +515,16 @@ async def _get_conn_credentials(conn_id: str) -> tuple[str, str]:
                 except (json.JSONDecodeError, TypeError):
                     pass
                 token = credentials.get("token", "")
+                # 优先从 credentials 获取，其次从 cookie_content 获取（Netscape格式需要转换）
                 cookie = credentials.get("raw") or credentials.get("content") or ""
                 if not cookie and row[1]:
-                    cookie = row[1]
-                    if cookie.startswith("# Netscape HTTP Cookie File"):
-                        try:
-                            from app.services.cookies.manager import get_cookie_manager
-                            cookie = get_cookie_manager().extract_raw(cookie)
-                        except Exception:
-                            pass
+                    # 尝试从 cookie_content（Netscape格式）提取原始 Cookie
+                    try:
+                        from app.services.cookies.manager import get_cookie_manager
+                        mgr = get_cookie_manager()
+                        cookie = mgr.extract_raw(row[1]) or ""
+                    except Exception as e:
+                        logger.warning(f"[_get_conn_credentials] 解析 cookie_content 失败: {e}")
                 return cookie, token
     except Exception as e:
         logger.warning(f"[wechat-mp] 获取凭证失败: {e}")

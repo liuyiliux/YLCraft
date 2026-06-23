@@ -2824,7 +2824,7 @@ function StorageSettings() {
       <Form form={form} layout="vertical" onFinish={handleSave} style={{ marginTop: 16 }}>
         <Row gutter={16}>
           <Col span={12}>
-            <Form.Item label={<span style={{ color: THEME.textPrimary }}>视频解析下载</span>} name="video_download_path" extra={<span style={{ color: THEME.textSecondary, fontSize: 11 }}>平台视频下载根目录，文件会按平台保存到 bilibili、douyin、telegram 等子目录</span>}>
+            <Form.Item label={<span style={{ color: THEME.textPrimary }}>内容下载根目录</span>} name="video_download_path" extra={<span style={{ color: THEME.textSecondary, fontSize: 11 }}>公众号文章、平台视频和本地阅读器的默认下载根目录；文件会按平台或来源保存到子目录</span>}>
               <Input placeholder="/workspace/backend/downloads" style={{ width: '100%' }} />
             </Form.Item>
           </Col>

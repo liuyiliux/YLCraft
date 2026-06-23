@@ -447,6 +447,13 @@ def _register_routes():
     except Exception as e:
         logger.warning(f"Could not load ebook router: {e}")
 
+    # 本地文档阅读器路由
+    try:
+        from app.api.v1 import reader
+        app.include_router(reader.router, prefix="/api/v1/reader", tags=["Reader"])
+    except Exception as e:
+        logger.warning(f"Could not load reader router: {e}")
+
 _register_routes()
 
 

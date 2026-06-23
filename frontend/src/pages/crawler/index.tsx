@@ -3,7 +3,7 @@
  * 参考 Spider XHS Discovery/Crawler 设计模式
  */
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Card, Input, Button, Select, Table, Tag, message, Spin, Space, Row, Col,
@@ -22,13 +22,14 @@ import {
   UserOutlined, TeamOutlined, ReadOutlined, ProfileOutlined, PayCircleOutlined,
   FileTextOutlined, DownOutlined, BarChartOutlined, LikeOutlined, ShareAltOutlined,
   SendOutlined, VideoCameraAddOutlined, CopyOutlined, ArrowUpOutlined,
+  CalendarOutlined, FolderOpenOutlined, SyncOutlined,
 } from '@ant-design/icons'
 import { useTheme } from '../../constants/theme'
 import {
   searchEnhanced, importCrawler, getNoteDetail, getSubtitles, downloadCrawlerSubtitle, listPlatformConnections,
   getDanmaku, downloadDanmaku, getBiliStats, getBiliComments, sendBiliComment, getBiliVideoInfo,
   getBiliLoginHealth, wechatMpGetArticles, wechatMpDownloadSingle, wechatMpDownloadBatch, wechatMpImportAssets,
-  wechatMpExportEpub,
+  wechatMpExportEpub, openFolder,
 } from '../../api'
 import type { CrawlerResult, PlatformConnectionResponse } from '../../api'
 import { formatNum, parseCreateTime, formatTime } from '../../utils/format'
@@ -45,6 +46,18 @@ const BILI_COLORS = {
 }
 
 const { Text, Title } = Typography
+
+type WechatDownloadFormat = 'html' | 'md'
+
+const WECHAT_DOWNLOAD_FORMAT_OPTIONS: { label: string; value: WechatDownloadFormat }[] = [
+  { label: 'HTML', value: 'html' },
+  { label: 'Markdown', value: 'md' },
+]
+
+const WECHAT_DOWNLOAD_FORMAT_LABEL: Record<WechatDownloadFormat | string, string> = {
+  html: 'HTML',
+  md: 'Markdown',
+}
 
 // ===== 平台配置 =====
 interface PlatformInfo { value: string; label: string; icon: React.ReactNode; color: string }
@@ -377,7 +390,14 @@ const PLATFORM_SEARCH_CONFIG: Record<string, PlatformSearchConfig> = {
         defaultSort: 'default',
       },
       {
-        value: 'article', label: '文章', icon: <ReadOutlined />,
+        value: 'article', label: '账号文章', icon: <ReadOutlined />,
+        sortOptions: [
+          { value: 'default', label: '综合' },
+        ],
+        defaultSort: 'default',
+      },
+      {
+        value: 'global_article', label: '全网文章', icon: <FileTextOutlined />,
         sortOptions: [
           { value: 'default', label: '综合' },
         ],
@@ -393,6 +413,19 @@ const SEARCH_KEYWORDS = ['AI教程', '短剧', '美食探店', '穿搭', '数码
 // ===== 工具函数 =====
 function stripHtml(str: string): string {
   return str.replace(/<[^>]+>/g, '').replace(/&[^;]+;/g, '')
+}
+
+function normalizeWechatHtml(str: string): string {
+  return (str || '')
+    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '')
+    .replace(/\son\w+="[^"]*"/gi, '')
+    .replace(/\son\w+='[^']*'/gi, '')
+    .replace(/\sdata-src=/gi, ' src=')
+    .replace(/\sdata-original=/gi, ' src=')
+    .replace(
+      /\ssrc=(["'])(https?:\/\/[^"']*(?:mmbiz\.qpic\.cn|mmbiz\.qlogo\.cn|qpic\.cn)[^"']*)\1/gi,
+      (_match, quote, url) => ` src=${quote}/api/v1/proxy/image?url=${encodeURIComponent(url)}${quote}`
+    )
 }
 
 function getPlatformInfo(pf: string): PlatformInfo {
@@ -495,7 +528,7 @@ export default function CrawlerPage() {
       setFilters({})
       setCurrentPage(1)
       // 如果已有搜索词，自动搜索
-      if (keyword.trim()) {
+      if (keyword.trim() && !(platform === 'wechat_mp' && searchType === 'article')) {
         handleSearch(1)
       }
     }
@@ -503,7 +536,7 @@ export default function CrawlerPage() {
 
   // 平台/搜索类型切换时，如果 maxResults 超出当前平台允许的最大值，自动矫正
   useEffect(() => {
-    if (platform === 'wechat_mp' && searchType === 'account' && maxResults > 10) {
+    if (platform === 'wechat_mp' && (searchType === 'account' || searchType === 'global_article') && maxResults > 10) {
       setMaxResults(10)
       setCurrentPage(1)
     }
@@ -584,11 +617,142 @@ export default function CrawlerPage() {
   const [selectedArticles, setSelectedArticles] = useState<string[]>([])
   const [downloadingArticles, setDownloadingArticles] = useState<string[]>([])
   const [downloadedArticles, setDownloadedArticles] = useState<string[]>([])
+  const [downloadedArticleFiles, setDownloadedArticleFiles] = useState<Record<string, string>>({})
+  const [wechatDownloadFormat, setWechatDownloadFormat] = useState<WechatDownloadFormat>('html')
+  const [wechatSearchDownloading, setWechatSearchDownloading] = useState(false)
   const [downloadDir, setDownloadDir] = useState<string>('')
   const [downloadedResults, setDownloadedResults] = useState<any[]>([])  // 保存解析后的文章数据，供 EPUB 导出使用
   const [epubModalOpen, setEpubModalOpen] = useState(false)
   const [epubTitle, setEpubTitle] = useState('')
   const [epubExporting, setEpubExporting] = useState(false)
+
+  const openReaderForFile = (filePath?: string) => {
+    if (!filePath) {
+      message.warning('没有可阅读的本地文件路径')
+      return
+    }
+    Modal.destroyAll()
+    navigate(`/reader?file_path=${encodeURIComponent(filePath)}`)
+  }
+
+  const openReaderForFiles = (filePaths: string[], title?: string) => {
+    const paths = filePaths.filter(Boolean)
+    if (paths.length === 0) {
+      message.warning('没有可阅读的本地文件路径')
+      return
+    }
+    if (paths.length === 1) {
+      openReaderForFile(paths[0])
+      return
+    }
+    const params = new URLSearchParams()
+    paths.forEach(path => params.append('file_path', path))
+    if (title) params.set('title', title)
+    Modal.destroyAll()
+    navigate(`/reader?${params.toString()}`)
+  }
+
+  const buildArticleFileMap = (articleData: any[] = [], fallbackArticles: any[] = []) => {
+    const map: Record<string, string> = {}
+    articleData.forEach((item, idx) => {
+      const key = item?.article_key || fallbackArticles[idx]?.aid || fallbackArticles[idx]?.link
+      if (key && item?.file_path) {
+        map[key] = item.file_path
+      }
+    })
+    return map
+  }
+
+  const mergeDownloadedResults = (prev: any[], next: any[] = []) => {
+    const merged = new Map<string, any>()
+    prev.forEach(item => {
+      const key = item?.article_key || item?.source_url || item?.file_path || item?.title
+      if (key) merged.set(key, item)
+    })
+    next.forEach(item => {
+      const key = item?.article_key || item?.source_url || item?.file_path || item?.title
+      if (key) merged.set(key, item)
+    })
+    return Array.from(merged.values())
+  }
+
+  const showLocalFileSuccess = (title: string, filePath?: string, extra?: React.ReactNode) => {
+    if (!filePath) {
+      message.success(title)
+      return
+    }
+    Modal.success({
+      title,
+      width: 560,
+      content: (
+        <div>
+          {extra}
+          <Typography.Paragraph copyable style={{ marginTop: extra ? 12 : 0, marginBottom: 12 }}>
+            {filePath}
+          </Typography.Paragraph>
+          <Space wrap>
+            <Button type="primary" icon={<ReadOutlined />} onClick={() => openReaderForFile(filePath)}>
+              打开阅读
+            </Button>
+            <Button
+              icon={<FolderOpenOutlined />}
+              onClick={async () => {
+                try {
+                  await openFolder(filePath)
+                } catch (e: any) {
+                  message.error(e?.message || '打开文件夹失败')
+                }
+              }}
+            >
+              打开文件夹
+            </Button>
+          </Space>
+        </div>
+      ),
+      okText: '知道了',
+    })
+  }
+
+  const showLocalFilesSuccess = (title: string, filePaths: string[] = [], extra?: React.ReactNode, format = 'md') => {
+    const paths = filePaths.filter(Boolean)
+    if (paths.length <= 1) {
+      showLocalFileSuccess(title, paths[0], extra)
+      return
+    }
+    Modal.success({
+      title,
+      width: 560,
+      content: (
+        <div>
+          {extra}
+          <Typography.Paragraph style={{ marginTop: extra ? 12 : 0, marginBottom: 12 }}>
+            已生成 {paths.length} 个本地 {WECHAT_DOWNLOAD_FORMAT_LABEL[format] || format.toUpperCase()} 文件，将作为章节合集打开。
+          </Typography.Paragraph>
+          <Typography.Paragraph copyable style={{ marginBottom: 12 }}>
+            {paths.join('\n')}
+          </Typography.Paragraph>
+          <Space wrap>
+            <Button type="primary" icon={<ReadOutlined />} onClick={() => openReaderForFiles(paths, title)}>
+              打开阅读
+            </Button>
+            <Button
+              icon={<FolderOpenOutlined />}
+              onClick={async () => {
+                try {
+                  await openFolder(paths[0])
+                } catch (e: any) {
+                  message.error(e?.message || '打开文件夹失败')
+                }
+              }}
+            >
+              打开文件夹
+            </Button>
+          </Space>
+        </div>
+      ),
+      okText: '知道了',
+    })
+  }
 
   // 加载平台连接
   useEffect(() => {
@@ -751,6 +915,12 @@ export default function CrawlerPage() {
       message.warning('请输入关键词')
       return
     }
+    if (platform === 'wechat_mp' && searchType === 'article' && !filters.fake_id) {
+      const msg = '公众号文章需要先搜索公众号，再在公众号详情里点击“查看该公众号文章”'
+      setError(msg)
+      message.warning(msg)
+      return
+    }
     setLoading(true)
     setError('')
     setResults([])
@@ -808,6 +978,59 @@ export default function CrawlerPage() {
       message.error(e?.response?.data?.detail || '导入失败')
     } finally {
       setImporting(false)
+    }
+  }
+
+  const handleDownloadSelectedWechatArticles = async () => {
+    const rows = selectedRows.filter(r => r.platform === 'wechat_mp' && r.url)
+    if (rows.length === 0) {
+      message.warning('请先选择微信文章')
+      return
+    }
+    const connId = rows.find(r => (r.raw_data as any)?.conn_id)?.raw_data?.conn_id || wechatConnId
+    if (!connId) {
+      message.warning('请先在账号中心登录微信公众号')
+      return
+    }
+    const articlesToDownload = rows.map(r => {
+      const raw: any = r.raw_data || {}
+      return {
+        ...raw,
+        aid: raw.aid || r.id || r.url,
+        title: stripHtml(r.title),
+        link: raw.link || r.url,
+        cover: raw.cover || r.cover,
+        digest: raw.digest || r.desc || '',
+      }
+    })
+
+    setWechatSearchDownloading(true)
+    try {
+      const res: any = await wechatMpDownloadBatch({
+        conn_id: connId,
+        articles: articlesToDownload,
+        format: wechatDownloadFormat,
+      })
+      if (!res.success) {
+        message.error(res.error || '下载失败')
+        return
+      }
+      setDownloadDir(res.download_dir)
+      const articleData = res.article_data || []
+      setDownloadedResults(prev => mergeDownloadedResults(prev, articleData))
+      const readableFiles = articleData
+        .filter((item: any) => item?.success && item?.file_path)
+        .map((item: any) => item.file_path)
+      showLocalFilesSuccess(
+        `成功下载 ${res.downloaded} 篇文章`,
+        readableFiles,
+        <Text type="secondary">下载目录：{res.download_dir || '-'}</Text>,
+        res.format || wechatDownloadFormat
+      )
+    } catch (e: any) {
+      message.error(e?.message || '下载失败')
+    } finally {
+      setWechatSearchDownloading(false)
     }
   }
 
@@ -963,6 +1186,10 @@ export default function CrawlerPage() {
     setBiliStats(null)
     setBiliVideoInfo(null)
     setDetailLoading(true)
+    if (record.platform === 'wechat_mp') {
+      setDetailLoading(false)
+      return
+    }
     try {
       const detail = await getNoteDetail(record.platform, record.id)
       setDetailNote(prev => prev ? { ...prev, ...detail, raw_data: detail } : null)
@@ -1219,7 +1446,7 @@ export default function CrawlerPage() {
               <Button type="link" size="small" icon={<LinkOutlined />} href={r.url} target="_blank" style={{ padding: 0 }} />
             </Tooltip>
           )}
-          {searchType !== 'user' && searchType !== 'bangumi' && searchType !== 'movie' && searchType !== 'live' && (
+          {r.platform !== 'wechat_mp' && searchType !== 'user' && searchType !== 'bangumi' && searchType !== 'movie' && searchType !== 'live' && (
             <Tooltip title="去水印下载">
               <Button type="link" size="small" icon={<DownloadOutlined />} onClick={() => { window.location.href = `/download?url=${encodeURIComponent(r.url)}` }} style={{ padding: 0 }} />
             </Tooltip>
@@ -1265,7 +1492,11 @@ export default function CrawlerPage() {
               <Input.Search
                 value={keyword}
                 onChange={e => setKeyword(e.target.value)}
-                placeholder={`在${getPlatformInfo(platform).label}搜索...`}
+                placeholder={
+                  platform === 'wechat_mp' && searchType === 'global_article'
+                    ? '搜索公众号文章标题/正文关键词...'
+                    : `在${getPlatformInfo(platform).label}搜索...`
+                }
                 enterButton={<><SearchOutlined /> 搜索</>}
                 loading={loading}
                 onSearch={() => { setCurrentPage(1); handleSearch(1); }}
@@ -1329,6 +1560,25 @@ export default function CrawlerPage() {
               ))}
             </div>
           </div>
+        )}
+
+        {platform === 'wechat_mp' && searchType === 'article' && (
+          <Alert
+            type="info"
+            showIcon
+            message="公众号文章按账号拉取"
+            description="请先切到“公众号”搜索账号，打开账号详情后点击“查看该公众号文章”。"
+            style={{ margin: '10px 20px 0' }}
+          />
+        )}
+        {platform === 'wechat_mp' && searchType === 'global_article' && (
+          <Alert
+            type="info"
+            showIcon
+            message="全网文章按关键词搜索"
+            description="使用微信公众平台后台的版权检测接口，需要账号中心有可用的微信公众号登录态；该接口单页最多取 10 条。"
+            style={{ margin: '10px 20px 0' }}
+          />
         )}
 
         {/* ③ 排序 + 筛选 + 数量（根据当前搜索类型动态） */}
@@ -1402,15 +1652,15 @@ export default function CrawlerPage() {
               <Text style={{ color: textSec, fontSize: 12 }}>每页</Text>
               <Tooltip
                 title={
-                  platform === 'wechat_mp' && searchType === 'account'
-                    ? '微信官方 searchbiz 接口单页最多返回 10 条'
+                  platform === 'wechat_mp' && (searchType === 'account' || searchType === 'global_article')
+                    ? '微信后台接口单页最多返回 10 条'
                     : '每页结果数量'
                 }
               >
                 <Select value={maxResults} onChange={setMaxResults} size="small" style={{ width: 70 }}
                   options={
-                    // 微信公众号账号搜索：官方接口封顶 10 条，禁用更大值
-                    platform === 'wechat_mp' && searchType === 'account'
+                    // 微信公众号后台接口封顶 10 条，禁用更大值
+                    platform === 'wechat_mp' && (searchType === 'account' || searchType === 'global_article')
                       ? [
                           { value: 5, label: '5条' },
                           { value: 10, label: '10条' },
@@ -1425,7 +1675,7 @@ export default function CrawlerPage() {
                   }
                 />
               </Tooltip>
-              {platform === 'wechat_mp' && searchType === 'account' && (
+              {platform === 'wechat_mp' && (searchType === 'account' || searchType === 'global_article') && (
                 <Tag color="orange" style={{ margin: 0, fontSize: 11 }}>微信接口限制</Tag>
               )}
             </div>
@@ -1476,6 +1726,23 @@ export default function CrawlerPage() {
           selectedRows.length > 0 ? (
             <Space>
               <Text style={{ color: textSec, fontSize: 13 }}>已选 {selectedRows.length} 项</Text>
+              {platform === 'wechat_mp' && searchType === 'global_article' && (
+                <>
+                  <Segmented
+                    size="small"
+                    value={wechatDownloadFormat}
+                    options={WECHAT_DOWNLOAD_FORMAT_OPTIONS}
+                    onChange={(value) => setWechatDownloadFormat(value as WechatDownloadFormat)}
+                  />
+                  <Button
+                    icon={<DownloadOutlined />}
+                    loading={wechatSearchDownloading}
+                    onClick={handleDownloadSelectedWechatArticles}
+                  >
+                    下载微信文章 ({selectedRows.length})
+                  </Button>
+                </>
+              )}
               <Button type="primary" icon={<DatabaseOutlined />} onClick={handleImport} loading={importing}>
                 导入素材库 ({selectedRows.length})
               </Button>
@@ -1649,7 +1916,7 @@ export default function CrawlerPage() {
               {/* ===== Tab: 详情 — 微信公众号（公众号 / 文章） ===== */}
               {detailDrawerTab === 'detail' && detailNote.platform === 'wechat_mp' && (
                 <div>
-                  {searchType === 'account' ? (
+                  {searchType === 'account' && !(detailNote.raw_data as any)?.link && !(detailNote.raw_data as any)?.content ? (
                     /* ==== 公众号卡片风格 ==== */
                     <div>
                       {/* 公众号头部卡片 */}
@@ -1747,19 +2014,12 @@ export default function CrawlerPage() {
                             // 打开弹窗 + 直接调 wechatMpGetArticles
                             setWechatArticleModal({ open: true, fake_id: fakeId, account_name: accountName, begin: 0 })
                             setWechatArticleList([])
+                            setDownloadedArticles([])
+                            setDownloadedArticleFiles({})
+                            // 保留之前的下载结果，用于 EPUB 生成
+                            setDownloadDir('')
                             setWechatArticleLoading(true)
-                            // 从 localStorage 恢复之前的勾选状态
-                            const savedKey = `ylcraft_wechat_articles_selected_${fakeId}`
-                            const savedSelected = localStorage.getItem(savedKey)
-                            if (savedSelected) {
-                              try {
-                                setSelectedArticles(JSON.parse(savedSelected))
-                              } catch {
-                                setSelectedArticles([])
-                              }
-                            } else {
-                              setSelectedArticles([])
-                            }
+                            setSelectedArticles([])
                             try {
                               const res: any = await wechatMpGetArticles({
                                 conn_id: wechatConnId,
@@ -1863,6 +2123,25 @@ export default function CrawlerPage() {
                         </div>
                       )}
 
+                      {(() => {
+                        const raw: any = detailNote.raw_data || {}
+                        const contentHtml = normalizeWechatHtml(raw.content || '')
+                        if (!contentHtml) return null
+                        return (
+                          <div
+                            className="wechat-article-preview"
+                            style={{
+                              color: textPri,
+                              fontSize: 15,
+                              lineHeight: 1.8,
+                              padding: '12px 0',
+                              overflow: 'hidden',
+                            }}
+                            dangerouslySetInnerHTML={{ __html: contentHtml }}
+                          />
+                        )
+                      })()}
+
                       <Divider style={{ borderColor, margin: '12px 0' }} />
 
                       {/* 互动数据（微信文章式）*/}
@@ -1918,14 +2197,23 @@ export default function CrawlerPage() {
                           onClick={async () => {
                             // 触发后端 wechat-mp 下载
                             try {
+                              const raw: any = detailNote.raw_data || {}
+                              const connId = raw.conn_id || wechatConnId
+                              if (!connId) {
+                                message.warning('请先在账号中心登录微信公众号')
+                                return
+                              }
                               const res: any = await import('../../api').then(m => m.wechatMpDownloadSingle({
-                                conn_id: '',
+                                conn_id: connId,
                                 article_url: detailNote.url || '',
                                 article_title: stripHtml(detailNote.title),
-                                format: 'md',
+                                format: wechatDownloadFormat,
                               }))
                               if (res?.success) {
-                                message.success(`已下载到 ${res.file_path}`)
+                                showLocalFileSuccess(
+                                  `${WECHAT_DOWNLOAD_FORMAT_LABEL[res.format || wechatDownloadFormat] || '文件'} 已下载`,
+                                  res.file_path
+                                )
                               } else {
                                 message.warning(res?.error || '下载失败：需要先在账号中心登录微信公众号')
                               }
@@ -1934,7 +2222,7 @@ export default function CrawlerPage() {
                             }
                           }}
                         >
-                          下载 Markdown
+                          下载 {WECHAT_DOWNLOAD_FORMAT_LABEL[wechatDownloadFormat]}
                         </Button>
                       </Space>
                     </div>
@@ -2345,6 +2633,7 @@ export default function CrawlerPage() {
         onCancel={() => {
           setWechatArticleModal({ ...wechatArticleModal, open: false })
           setSelectedArticles([])
+          setDownloadedArticleFiles({})
         }}
         footer={null}
         width={720}
@@ -2375,7 +2664,7 @@ export default function CrawlerPage() {
           ) : (
             <div>
               {/* 操作栏 */}
-              <div style={{ display: 'flex', gap: 8, marginBottom: 12, paddingBottom: 12, borderBottom: `1px solid ${isDark ? '#333' : '#eee'}`, position: 'sticky', top: 0, background: isDark ? '#1e1e2e' : '#fff', zIndex: 10 }}>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 12, paddingBottom: 12, borderBottom: `1px solid ${isDark ? '#333' : '#eee'}`, position: 'sticky', top: 0, background: isDark ? '#1e1e2e' : '#fff', zIndex: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                 <Checkbox
                   checked={selectedArticles.length === wechatArticleList.length && wechatArticleList.length > 0}
                   onChange={(e) => {
@@ -2383,13 +2672,16 @@ export default function CrawlerPage() {
                       ? wechatArticleList.map(a => a.aid || a.link || String(Math.random()))
                       : []
                     setSelectedArticles(newSelected)
-                    // 保存到 localStorage
-                    const saveKey = `ylcraft_wechat_articles_selected_${wechatArticleModal.fake_id}`
-                    localStorage.setItem(saveKey, JSON.stringify(newSelected))
                   }}
                 >
                   全选
                 </Checkbox>
+                <Segmented
+                  size="small"
+                  value={wechatDownloadFormat}
+                  options={WECHAT_DOWNLOAD_FORMAT_OPTIONS}
+                  onChange={(value) => setWechatDownloadFormat(value as WechatDownloadFormat)}
+                />
                 <Button
                   type="primary"
                   icon={<DownloadOutlined />}
@@ -2406,7 +2698,7 @@ export default function CrawlerPage() {
                       const res: any = await wechatMpDownloadBatch({
                         conn_id: wechatConnId,
                         articles: articlesToDownload,
-                        format: 'md',
+                        format: wechatDownloadFormat,
                       })
                       if (res.success) {
                         message.success(`成功下载 ${res.downloaded} 篇文章`)
@@ -2414,7 +2706,23 @@ export default function CrawlerPage() {
                         // 标记已下载的文章
                         setDownloadedArticles(prev => [...new Set([...prev, ...selectedArticles])])
                         // 保存解析结果，供后面生成 EPUB 使用
-                        setDownloadedResults(res.article_data || [])
+                        const articleData = res.article_data || []
+                        setDownloadedResults(prev => mergeDownloadedResults(prev, articleData))
+                        setDownloadedArticleFiles(prev => ({
+                          ...prev,
+                          ...buildArticleFileMap(articleData, articlesToDownload),
+                        }))
+                        const readableFiles = articleData
+                          .filter((item: any) => item?.success && item?.file_path)
+                          .map((item: any) => item.file_path)
+                        showLocalFilesSuccess(
+                          `成功下载 ${res.downloaded} 篇文章`,
+                          readableFiles,
+                          <Text type="secondary">
+                            下载目录：{res.download_dir || '-'}
+                          </Text>,
+                          res.format || wechatDownloadFormat
+                        )
                         // 保留勾选状态，方便用户继续操作（生成 EPUB 等）
                         // setSelectedArticles([])
                       } else {
@@ -2464,7 +2772,12 @@ export default function CrawlerPage() {
                       // 标记已下载的文章
                       setDownloadedArticles(prev => [...new Set([...prev, ...selectedArticles])])
                       setDownloadDir(downloadRes.download_dir)
-                      setDownloadedResults(downloadRes.article_data || [])
+                      const articleData = downloadRes.article_data || []
+                      setDownloadedResults(prev => mergeDownloadedResults(prev, articleData))
+                      setDownloadedArticleFiles(prev => ({
+                        ...prev,
+                        ...buildArticleFileMap(articleData, articlesToDownload),
+                      }))
                       const importRes: any = await wechatMpImportAssets({
                         conn_id: wechatConnId,
                         file_paths: downloadRes.file_paths || [],
@@ -2493,6 +2806,7 @@ export default function CrawlerPage() {
                 const isSelected = selectedArticles.includes(key)
                 const isDownloading = downloadingArticles.includes(key)
                 const isDownloaded = downloadedArticles.includes(key)
+                const localFilePath = downloadedArticleFiles[key]
                 const articleRecord: any = {
                   id: key,
                   platform: 'wechat_mp',
@@ -2525,9 +2839,6 @@ export default function CrawlerPage() {
                         ? [...selectedArticles, key]
                         : selectedArticles.filter(k => k !== key)
                       setSelectedArticles(newSelected)
-                      // 保存到 localStorage
-                      const saveKey = `ylcraft_wechat_articles_selected_${wechatArticleModal.fake_id}`
-                      localStorage.setItem(saveKey, JSON.stringify(newSelected))
                     }}
                     onClick={(e) => e.stopPropagation()}
                     style={{ flexShrink: 0, marginTop: 10 }}
@@ -2555,10 +2866,31 @@ export default function CrawlerPage() {
                       </div>
                     )}
                     <div style={{ display: 'flex', gap: 12, marginTop: 6, fontSize: 11, color: textSec }}>
-                      {a.create_time ? <span>📅 {new Date(a.create_time * 1000).toLocaleDateString('zh-CN')}</span> : null}
-                      {a.link && <span style={{ color: '#07C160' }}>🔗 打开原文</span>}
-                      {isDownloading && <span style={{ color: '#f5a623' }}>⏳ 下载中...</span>}
-                      {isDownloaded && !isDownloading && <span style={{ color: '#10b981' }}>✓ 已下载</span>}
+                      {a.create_time ? (
+                        <span><CalendarOutlined /> {new Date(a.create_time * 1000).toLocaleDateString('zh-CN')}</span>
+                      ) : null}
+                      {a.link && <span style={{ color: '#07C160' }}><LinkOutlined /> 打开原文</span>}
+                      {isDownloading && <span style={{ color: '#f5a623' }}><SyncOutlined spin /> 下载中</span>}
+                      {isDownloaded && !isDownloading && <span style={{ color: '#10b981' }}><CheckCircleOutlined /> 已下载</span>}
+                      {localFilePath && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            openReaderForFile(localFilePath)
+                          }}
+                          style={{
+                            border: 0,
+                            padding: 0,
+                            color: '#07C160',
+                            background: 'transparent',
+                            cursor: 'pointer',
+                            fontSize: 11,
+                          }}
+                        >
+                          <ReadOutlined /> 阅读
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -2638,6 +2970,7 @@ export default function CrawlerPage() {
                   publish_time: r.publish_time || '',
                   content_html: r.content_html || '',
                   source_url: r.source_url || '',
+                  file_path: r.file_path || '',
                 }))
               const res: any = await wechatMpExportEpub({
                 conn_id: wechatConnId,
@@ -2647,8 +2980,14 @@ export default function CrawlerPage() {
                 images_base_dir: downloadDir,
               })
               if (res.success) {
-                message.success(`EPUB 已生成: ${(res.file_size / 1024).toFixed(1)} KB`)
                 setEpubModalOpen(false)
+                showLocalFileSuccess(
+                  'EPUB 已生成',
+                  res.file_path,
+                  <Text type="secondary">
+                    文件大小：{(res.file_size / 1024).toFixed(1)} KB
+                  </Text>
+                )
               } else {
                 message.error(res.error || '导出失败')
               }

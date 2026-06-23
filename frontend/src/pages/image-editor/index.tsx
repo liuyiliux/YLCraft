@@ -50,8 +50,22 @@ import {
   AimOutlined,
   PictureOutlined,
   FileImageOutlined,
+  CodeOutlined,
+  CopyOutlined,
+  EyeOutlined,
 } from '@ant-design/icons'
 import { useTheme } from '../../constants/theme'
+import {
+  canvasToImageDataUrl,
+  fileToImageDataUrl,
+  getBase64Payload,
+  getDataUrlSizeKB,
+  getImageDataUrlMimeType,
+  imageDataUrlToBlob,
+  normalizeImageDataUrl,
+  readImageDataUrlInfo,
+  type ImageDataUrlInfo,
+} from '../../utils/base64Image'
 
 const { TextArea } = Input
 
@@ -82,13 +96,8 @@ function downloadCanvas(canvas: HTMLCanvasElement, filename: string, format: str
   link.download = filename
   // GIF 使用 PNG 导出（canvas 不支持 GIF 动画），其他格式使用 PNG
   const mimeType = format === 'png' || format === 'gif' ? 'image/png' : `image/${format}`
-  link.href = canvas.toDataURL(mimeType, 1.0)
+  link.href = canvasToImageDataUrl(canvas, mimeType, 1.0)
   link.click()
-}
-
-function getFileSizeKB(dataUrl: string): number {
-  const base64 = dataUrl.split(',')[1]
-  return Math.round((base64.length * 3) / 4 / 1024)
 }
 
 function imageToAscii(
@@ -125,6 +134,22 @@ function syncCanvas(srcCanvas: HTMLCanvasElement | null, dstCanvas: HTMLCanvasEl
   const ctx = dstCanvas.getContext('2d')
   ctx?.clearRect(0, 0, dstCanvas.width, dstCanvas.height)
   ctx?.drawImage(srcCanvas, 0, 0)
+}
+
+function imageExtFromMime(mimeType: string) {
+  const clean = mimeType.toLowerCase()
+  if (clean.includes('jpeg')) return 'jpg'
+  if (clean.includes('webp')) return 'webp'
+  if (clean.includes('gif')) return 'gif'
+  if (clean.includes('svg')) return 'svg'
+  return 'png'
+}
+
+function mimeFromFormat(format: string) {
+  const clean = format.toLowerCase()
+  if (clean === 'jpg' || clean === 'jpeg') return 'image/jpeg'
+  if (clean === 'webp') return 'image/webp'
+  return 'image/png'
 }
 
 // ======================== 主组件 ========================
@@ -197,6 +222,11 @@ export default function ImageEditorPage() {
   const [svgFileName, setSvgFileName] = useState('')
   const [wmScale, setWmScale] = useState(15) // % of image size
   const [useSvgWatermark, setUseSvgWatermark] = useState<'image' | 'text'>('text')
+  const [base64Input, setBase64Input] = useState('')
+  const [base64Output, setBase64Output] = useState('')
+  const [base64Preview, setBase64Preview] = useState<ImageDataUrlInfo | null>(null)
+  const [base64Error, setBase64Error] = useState('')
+  const [base64ExportMime, setBase64ExportMime] = useState('image/png')
 
   // ======================== 核心方法 ========================
 
@@ -210,13 +240,13 @@ export default function ImageEditorPage() {
     cvs.height = img.height
     ctx.drawImage(img, 0, 0)
     // 使用最高质量 PNG (1.0) 保存，避免累积质量损失
-    const dataUrl = cvs.toDataURL('image/png', 1.0)
+    const dataUrl = canvasToImageDataUrl(cvs, 'image/png', 1.0)
     syncToPreview()
     if (pushHistory) {
       setHistory(prev => [...prev.slice(0, historyIdx.current + 1), dataUrl])
       historyIdx.current += 1
     }
-    setOriginalSize({ w: img.width, h: img.height, kb: getFileSizeKB(dataUrl) })
+    setOriginalSize({ w: img.width, h: img.height, kb: getDataUrlSizeKB(dataUrl) })
     setResizeW(img.width); setResizeH(img.height)
   }, [])
 
@@ -239,16 +269,124 @@ export default function ImageEditorPage() {
     return false
   }
 
+  const copyText = async (text: string, successText = '已复制') => {
+    if (!text) {
+      message.warning('没有可复制的内容')
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(text)
+      message.success(successText)
+    } catch {
+      message.error('复制失败')
+    }
+  }
+
+  const previewBase64Input = useCallback(async (value = base64Input) => {
+    try {
+      const info = await readImageDataUrlInfo(value)
+      setBase64Input(info.dataUrl)
+      setBase64Preview(info)
+      setBase64ExportMime(info.mimeType)
+      setBase64Error('')
+      return info
+    } catch (e: any) {
+      setBase64Preview(null)
+      setBase64Error(e?.message || 'base64 图片解析失败')
+      return null
+    }
+  }, [base64Input])
+
+  const loadBase64IntoEditor = useCallback(async () => {
+    const info = await previewBase64Input()
+    if (!info) return
+    setOriginalSrc(info.dataUrl)
+    setOriginalFormat(imageExtFromMime(info.mimeType))
+    setProcessedGifUrl('')
+    setHistory([])
+    historyIdx.current = -1
+    setActiveTool('base64')
+    message.success('已载入编辑器')
+  }, [previewBase64Input])
+
+  const handleBase64FileUpload = async (file: File) => {
+    try {
+      const dataUrl = await fileToImageDataUrl(file)
+      const info = await readImageDataUrlInfo(dataUrl)
+      setBase64Input(info.dataUrl)
+      setBase64Preview(info)
+      setBase64Output(info.dataUrl)
+      setBase64ExportMime(info.mimeType)
+      setBase64Error('')
+      message.success('图片已转换为 Base64')
+    } catch (e: any) {
+      message.error(e?.message || '图片转换失败')
+    }
+    return false
+  }
+
+  const generateCurrentBase64 = useCallback(async () => {
+    const cvs = mainCanvasRef.current
+    if (!cvs) {
+      message.warning('当前没有可转换的图片')
+      return
+    }
+    const mimeType = base64ExportMime || mimeFromFormat(originalFormat)
+    const dataUrl = canvasToImageDataUrl(cvs, mimeType, 1)
+    setBase64Output(dataUrl)
+    try {
+      const info = await readImageDataUrlInfo(dataUrl)
+      setBase64Preview(info)
+      setBase64Error('')
+    } catch {
+      // canvas 生成的 data URI 理论上可读；失败时仅保留文本结果。
+    }
+    message.success('已生成 Base64')
+  }, [base64ExportMime, originalFormat])
+
+  const downloadDataUrlImage = (dataUrl: string, prefix = 'ylcraft_base64') => {
+    const normalized = normalizeImageDataUrl(dataUrl)
+    if (!normalized) {
+      message.warning('没有可下载的图片')
+      return
+    }
+    try {
+      const blob = imageDataUrlToBlob(normalized)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${prefix}_${Date.now()}.${imageExtFromMime(getImageDataUrlMimeType(normalized))}`
+      link.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      message.error('图片下载失败')
+    }
+  }
+
+  const downloadBase64Text = (value: string) => {
+    if (!value) {
+      message.warning('没有可下载的 Base64')
+      return
+    }
+    const blob = new Blob([value], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `image_base64_${Date.now()}.txt`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
   /** 快照并推送历史 */
   const snapshotAndPush = () => {
     const cvs = mainCanvasRef.current
     if (!cvs) return
     // 使用最高质量 PNG (1.0) 保存历史，避免累积质量损失
-    const dataUrl = cvs.toDataURL('image/png', 1.0)
+    const dataUrl = canvasToImageDataUrl(cvs, 'image/png', 1.0)
     syncToPreview()
     setHistory(prev => [...prev.slice(0, historyIdx.current + 1), dataUrl])
     historyIdx.current += 1
-    setOriginalSize(prev => ({ ...prev, kb: getFileSizeKB(dataUrl) }))
+    setOriginalSize(prev => ({ ...prev, kb: getDataUrlSizeKB(dataUrl) }))
   }
 
   const applyDataUrl = async (dataUrl: string) => {
@@ -867,6 +1005,7 @@ export default function ImageEditorPage() {
     { key: 'draw', label: <span><EditOutlined /> 画图</span> },
     { key: 'text', label: <span><FontColorsOutlined /> 文字</span> },
     { key: 'watermark', label: <span><AimOutlined /> 水印</span> },
+    { key: 'base64', label: <span><CodeOutlined /> Base64</span> },
   ]
 
   /** 渲染当前激活工具的配置面板 */
@@ -1186,6 +1325,113 @@ export default function ImageEditorPage() {
             )}
           </>
         )
+
+      case 'base64':
+        return (
+          <>
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: THEME.textPrimary, marginBottom: 8 }}>
+                当前图片转 Base64
+              </div>
+              <Row gutter={[8, 8]} style={{ marginBottom: 8 }}>
+                <Col span={12}>
+                  <Select
+                    value={base64ExportMime}
+                    onChange={setBase64ExportMime}
+                    style={{ width: '100%' }}
+                    options={[
+                      { label: 'PNG Data URI', value: 'image/png' },
+                      { label: 'JPEG Data URI', value: 'image/jpeg' },
+                      { label: 'WEBP Data URI', value: 'image/webp' },
+                    ]}
+                  />
+                </Col>
+                <Col span={12}>
+                  <Button block type="primary" icon={<CodeOutlined />} onClick={generateCurrentBase64}>
+                    生成
+                  </Button>
+                </Col>
+              </Row>
+              <TextArea
+                rows={5}
+                value={base64Output}
+                onChange={e => setBase64Output(e.target.value)}
+                placeholder="当前图片生成的 data:image/...;base64,... 会显示在这里"
+                style={{ fontFamily: 'Consolas, monospace', fontSize: 12 }}
+              />
+              <Space wrap style={{ marginTop: 8 }}>
+                <Button size="small" icon={<CopyOutlined />} onClick={() => copyText(base64Output, 'Base64 已复制')}>
+                  复制 Data URI
+                </Button>
+                <Button size="small" onClick={() => copyText(getBase64Payload(base64Output), '纯 Base64 已复制')}>
+                  复制纯 Base64
+                </Button>
+                <Button size="small" icon={<DownloadOutlined />} onClick={() => downloadBase64Text(base64Output)}>
+                  下载文本
+                </Button>
+              </Space>
+            </div>
+
+            <Divider />
+
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: THEME.textPrimary, marginBottom: 8 }}>
+                Base64 转图片
+              </div>
+              <Upload
+                accept="image/*"
+                maxCount={1}
+                beforeUpload={(file: any) => handleBase64FileUpload(file as File)}
+                showUploadList={false}
+              >
+                <Button block icon={<FileImageOutlined />} style={{ marginBottom: 8 }}>
+                  上传图片转 Base64
+                </Button>
+              </Upload>
+              <TextArea
+                rows={6}
+                value={base64Input}
+                onChange={e => {
+                  setBase64Input(e.target.value)
+                  if (base64Error) setBase64Error('')
+                  if (base64Preview) setBase64Preview(null)
+                }}
+                placeholder="粘贴 data:image/...;base64,... 或纯 base64"
+                style={{ fontFamily: 'Consolas, monospace', fontSize: 12 }}
+              />
+              {base64Error && (
+                <div style={{ color: '#ff4d4f', fontSize: 12, marginTop: 6 }}>
+                  {base64Error}
+                </div>
+              )}
+              <Space wrap style={{ marginTop: 8 }}>
+                <Button size="small" icon={<EyeOutlined />} onClick={() => previewBase64Input()}>
+                  预览
+                </Button>
+                <Button size="small" type="primary" icon={<PictureOutlined />} onClick={loadBase64IntoEditor}>
+                  载入编辑器
+                </Button>
+                <Button size="small" icon={<DownloadOutlined />} onClick={() => downloadDataUrlImage(base64Input)}>
+                  下载图片
+                </Button>
+              </Space>
+              {base64Preview && (
+                <div style={{ marginTop: 12, border: `1px solid ${THEME.border}`, borderRadius: 6, padding: 8, background: THEME.bgPage }}>
+                  <img
+                    src={base64Preview.dataUrl}
+                    alt="Base64 预览"
+                    style={{ display: 'block', width: '100%', maxHeight: 180, objectFit: 'contain', borderRadius: 4 }}
+                  />
+                  <Space wrap style={{ marginTop: 8 }}>
+                    <Tag>{base64Preview.mimeType}</Tag>
+                    <Tag>{base64Preview.width} &times; {base64Preview.height}</Tag>
+                    <Tag>~{base64Preview.sizeKB} KB</Tag>
+                  </Space>
+                </div>
+              )}
+            </div>
+          </>
+        )
     }
   }
 
@@ -1194,21 +1440,106 @@ export default function ImageEditorPage() {
     <div style={{ minHeight: 'calc(100vh - 120px)' }}>
       {!originalSrc ? (
         /* ========== 未上传时的全屏上传区 ========== */
-        <Card style={{ height: 'calc(100vh - 140px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Upload.Dragger
-            accept="image/*"
-            maxCount={1}
-            beforeUpload={(file: any) => handleUpload(file as File)}
-            showUploadList={false}
-            style={{
-              background: THEME.bgPage, border: `3px dashed ${THEME.primary}`,
-              maxWidth: 520, width: '100%', padding: '48px 24px',
-            }}
-          >
-            <p style={{ fontSize: 56, color: THEME.primary, marginBottom: 12 }}><PictureOutlined /></p>
-            <p style={{ fontSize: 18, color: THEME.textPrimary, fontWeight: 600, marginBottom: 8 }}>点击或拖拽上传图片开始编辑</p>
-            <p style={{ fontSize: 13, color: THEME.textSecondary }}>支持 JPG / PNG / WEBP / GIF / SVG 格式</p>
-          </Upload.Dragger>
+        <Card style={{ minHeight: 'calc(100vh - 140px)', display: 'flex', alignItems: 'center' }}>
+          <div style={{ width: '100%', maxWidth: 1180, margin: '0 auto', padding: '24px 0' }}>
+            <Row gutter={[20, 20]} align="stretch">
+              <Col xs={24} lg={11}>
+                <Upload.Dragger
+                  accept="image/*"
+                  maxCount={1}
+                  beforeUpload={(file: any) => handleUpload(file as File)}
+                  showUploadList={false}
+                  style={{
+                    background: THEME.bgPage,
+                    border: `3px dashed ${THEME.primary}`,
+                    width: '100%',
+                    height: '100%',
+                    minHeight: 360,
+                    padding: '48px 24px',
+                  }}
+                >
+                  <p style={{ fontSize: 56, color: THEME.primary, marginBottom: 12 }}><PictureOutlined /></p>
+                  <p style={{ fontSize: 18, color: THEME.textPrimary, fontWeight: 600, marginBottom: 8 }}>点击或拖拽上传图片开始编辑</p>
+                  <p style={{ fontSize: 13, color: THEME.textSecondary }}>支持 JPG / PNG / WEBP / GIF / SVG 格式</p>
+                </Upload.Dragger>
+              </Col>
+
+              <Col xs={24} lg={13}>
+                <div style={{
+                  height: '100%',
+                  minHeight: 360,
+                  border: `1px solid ${THEME.border}`,
+                  borderRadius: 8,
+                  background: THEME.bgPage,
+                  padding: 20,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 12,
+                }}>
+                  <div>
+                    <div style={{ fontSize: 18, fontWeight: 700, color: THEME.textPrimary, marginBottom: 6 }}>
+                      Base64 图片预览
+                    </div>
+                    <div style={{ fontSize: 13, color: THEME.textSecondary }}>
+                      粘贴 data URI 或纯 base64，预览确认后可直接进入图片编辑器。
+                    </div>
+                  </div>
+
+                  <TextArea
+                    rows={8}
+                    value={base64Input}
+                    onChange={e => {
+                      setBase64Input(e.target.value)
+                      if (base64Error) setBase64Error('')
+                      if (base64Preview) setBase64Preview(null)
+                    }}
+                    placeholder="data:image/png;base64,..."
+                    style={{ fontFamily: 'Consolas, monospace', fontSize: 12, flex: '0 0 auto' }}
+                  />
+
+                  {base64Error && <div style={{ color: '#ff4d4f', fontSize: 12 }}>{base64Error}</div>}
+
+                  <Space wrap>
+                    <Button icon={<EyeOutlined />} onClick={() => previewBase64Input()}>
+                      预览
+                    </Button>
+                    <Button type="primary" icon={<PictureOutlined />} onClick={loadBase64IntoEditor}>
+                      载入编辑器
+                    </Button>
+                    <Upload
+                      accept="image/*"
+                      maxCount={1}
+                      beforeUpload={(file: any) => handleBase64FileUpload(file as File)}
+                      showUploadList={false}
+                    >
+                      <Button icon={<FileImageOutlined />}>上传图片转 Base64</Button>
+                    </Upload>
+                  </Space>
+
+                  <div style={{ flex: 1, minHeight: 120, border: `1px solid ${THEME.border}`, borderRadius: 6, background: THEME.bgCard, padding: 10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {base64Preview ? (
+                      <div style={{ width: '100%', textAlign: 'center' }}>
+                        <img
+                          src={base64Preview.dataUrl}
+                          alt="Base64 预览"
+                          style={{ maxWidth: '100%', maxHeight: 220, objectFit: 'contain', borderRadius: 4 }}
+                        />
+                        <div style={{ marginTop: 8 }}>
+                          <Space wrap>
+                            <Tag>{base64Preview.mimeType}</Tag>
+                            <Tag>{base64Preview.width} &times; {base64Preview.height}</Tag>
+                            <Tag>~{base64Preview.sizeKB} KB</Tag>
+                          </Space>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ color: THEME.textSecondary, fontSize: 13 }}>预览会显示在这里</div>
+                    )}
+                  </div>
+                </div>
+              </Col>
+            </Row>
+          </div>
         </Card>
       ) : (
         /* ========== 已上传后的编辑界面 ========== */

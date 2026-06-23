@@ -1549,6 +1549,7 @@ export interface WechatMpEpubArticle {
   publish_time: string
   content_html: string
   source_url: string
+  file_path?: string
 }
 export const wechatMpExportEpub = (data: {
   conn_id: string
@@ -1557,6 +1558,87 @@ export const wechatMpExportEpub = (data: {
   download_dir?: string
   images_base_dir?: string
 }) => request('/wechat-mp/export-epub', { method: 'POST', body: JSON.stringify(data) })
+
+// ===== 本地文档阅读器 =====
+
+export interface ReaderChapter {
+  id: string
+  title: string
+  content: string
+  content_type: string
+  order: number
+}
+
+export interface ReaderDocument {
+  success: boolean
+  title: string
+  root_path?: string
+  file_path: string
+  file_name: string
+  format: string
+  file_size: number
+  modified_at: number
+  chapters: ReaderChapter[]
+}
+
+export interface ReaderLibraryItem {
+  name: string
+  path: string
+  relative_path: string
+  is_dir: boolean
+  readable: boolean
+  format: string
+  file_size: number
+  modified_at: number
+}
+
+export interface ReaderLibraryResponse {
+  success: boolean
+  root_path: string
+  current_path: string
+  current_relative_path: string
+  parent_relative_path: string
+  items: ReaderLibraryItem[]
+  supported_formats: string[]
+}
+
+export const browseReaderLibrary = (directory = '', rootPath = '') => {
+  const sp = new URLSearchParams()
+  if (directory) sp.set('directory', directory)
+  if (rootPath) sp.set('root_path', rootPath)
+  return request(`/reader/browse?${sp}`) as Promise<ReaderLibraryResponse>
+}
+
+export const getReaderFile = (filePath: string, rootPath = '') => {
+  const sp = new URLSearchParams()
+  sp.set('file_path', filePath)
+  if (rootPath) sp.set('root_path', rootPath)
+  return request(`/reader/file?${sp}`) as Promise<ReaderDocument>
+}
+
+export const getReaderFiles = (filePaths: string[], title?: string, rootPath = '') =>
+  request('/reader/files', {
+    method: 'POST',
+    body: JSON.stringify({ file_paths: filePaths, title: title || '', root_path: rootPath }),
+  }) as Promise<ReaderDocument>
+
+export interface ReaderDeleteResponse {
+  success: boolean
+  path: string
+  relative_path: string
+  parent_relative_path: string
+  is_dir: boolean
+  deleted_files: number
+  deleted_dirs: number
+  freed_size: number
+  message: string
+}
+
+export const deleteReaderItem = (path: string, rootPath = '', recursive = false) =>
+  request('/reader/delete', {
+    method: 'POST',
+    body: JSON.stringify({ path, root_path: rootPath, recursive }),
+  }) as Promise<ReaderDeleteResponse>
 
 // ===== EPUB 电子书 =====
 

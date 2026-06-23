@@ -17,6 +17,7 @@ import random
 import re
 import time
 import uuid
+from html import unescape
 from typing import Optional
 from urllib.parse import urlparse, parse_qs
 
@@ -256,9 +257,14 @@ class WechatMPAPIClient:
             resp = await self._request("GET", url)
             data = resp.json()
 
-            if data.get("base_resp", {}).get("ret") != 0:
-                logger.warning(f"[WechatMPAPI] 搜索公众号失败: {data}")
-                return {"total": 0, "list": []}
+            ret = data.get("base_resp", {}).get("ret")
+            if ret != 0:
+                err_msg = data.get("base_resp", {}).get("err_msg", "未知错误")
+                logger.warning(f"[WechatMPAPI] 搜索公众号失败: ret={ret}, msg={err_msg}")
+                # 会话失效错误，返回明确的错误信息
+                if ret == 200003:
+                    return {"total": 0, "list": [], "error": "会话已失效，请重新登录微信公众平台", "error_code": ret}
+                return {"total": 0, "list": [], "error": err_msg, "error_code": ret}
 
             total = data.get("total", 0)
             accounts = []
@@ -276,6 +282,130 @@ class WechatMPAPIClient:
 
         except Exception as e:
             logger.error(f"[WechatMPAPI] 搜索公众号异常: {e}")
+            return {"total": 0, "list": [], "error": str(e)}
+
+    # ── 全网文章搜索（微信后台版权检测接口）───────────────────────
+
+    @staticmethod
+    def _strip_html_fragment(html: str, limit: int = 160) -> str:
+        text = re.sub(r"<[^>]+>", "", html or "")
+        text = unescape(re.sub(r"\s+", " ", text)).strip()
+        return text[:limit]
+
+    @staticmethod
+    def _article_id_from_url(url: str) -> str:
+        try:
+            parsed = urlparse(url)
+            qs = parse_qs(parsed.query)
+            biz = qs.get("__biz", [""])[0]
+            mid = qs.get("mid", [""])[0]
+            idx = qs.get("idx", [""])[0]
+            if biz and mid:
+                return f"{biz}_{mid}_{idx or '1'}"
+        except Exception:
+            pass
+        return url
+
+    async def search_global_articles(
+        self,
+        keyword: str,
+        begin: int = 0,
+        count: int = 10,
+    ) -> dict:
+        """
+        通过微信公众平台编辑器的版权检测接口按关键词搜索全网文章。
+
+        该接口需要已登录的 mp.weixin.qq.com Cookie + token。它不是公开文档接口，
+        但返回中包含文章 URL、标题、公众号昵称、封面和正文片段，适合复用现有下载链路。
+        """
+        keyword = (keyword or "").strip()
+        if not keyword:
+            return {"total": 0, "list": []}
+
+        begin = max(0, int(begin or 0))
+        count = max(1, min(int(count or 10), 10))
+
+        try:
+            await self._throttle()
+            url = f"{MP_BASE}/cgi-bin/operate_appmsg?sub=check_appmsg_copyright_stat"
+            payload = {
+                "token": self._token,
+                "lang": "zh_CN",
+                "f": "json",
+                "ajax": "1",
+                "fingerprint": uuid.uuid4().hex,
+                "random": f"{random.random():.17f}",
+                "url": keyword,
+                "allow_reprint": "0",
+                "begin": str(begin),
+                "count": str(count),
+            }
+            headers = {
+                "Accept": "application/json, text/javascript, */*; q=0.01",
+                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                "Origin": MP_BASE,
+                "Referer": (
+                    f"{MP_BASE}/cgi-bin/appmsg"
+                    f"?t=media/appmsg_edit_v2&action=edit&isNew=1&type=77"
+                    f"&token={self._token}&lang=zh_CN"
+                ),
+                "X-Requested-With": "XMLHttpRequest",
+            }
+
+            resp = await self._request("POST", url, headers=headers, data=payload)
+            data = resp.json()
+
+            base_resp = data.get("base_resp") or {}
+            ret = base_resp.get("ret")
+            if ret != 0:
+                err_msg = base_resp.get("err_msg", "未知错误")
+                logger.warning(f"[WechatMPAPI] 全网文章搜索失败: ret={ret}, msg={err_msg}")
+                if ret == 200003:
+                    return {
+                        "total": 0,
+                        "list": [],
+                        "error": "会话已失效，请重新登录微信公众平台",
+                        "error_code": ret,
+                    }
+                return {"total": 0, "list": [], "error": err_msg, "error_code": ret}
+
+            articles = []
+            for item in data.get("list", []) or []:
+                link = item.get("url", "") or item.get("source_url", "")
+                content = item.get("content", "") or ""
+                cover = (
+                    item.get("cover_url")
+                    or item.get("cover_url_235_1")
+                    or item.get("cover_url_16_9")
+                    or item.get("cover_url_1_1")
+                    or ""
+                )
+                digest = item.get("digest", "") or self._strip_html_fragment(content)
+                articles.append({
+                    "aid": self._article_id_from_url(link),
+                    "title": item.get("title", ""),
+                    "link": link,
+                    "cover": cover,
+                    "digest": digest,
+                    "author": item.get("author", ""),
+                    "nickname": item.get("nickname", ""),
+                    "head_img_url": item.get("head_img_url", ""),
+                    "profile_description": item.get("profile_description", ""),
+                    "content": content,
+                    "source_url": item.get("source_url", ""),
+                    "is_pay_subscribe": item.get("is_pay_subscribe", 0),
+                    "source_reprint_status": item.get("source_reprint_status", ""),
+                    "raw": item,
+                })
+
+            return {
+                "total": int(data.get("total") or len(articles)),
+                "list": articles,
+                "open_ad_reprint_status": data.get("open_ad_reprint_status", ""),
+            }
+
+        except Exception as e:
+            logger.error(f"[WechatMPAPI] 全网文章搜索异常: {e}")
             return {"total": 0, "list": [], "error": str(e)}
 
     # ── 拉取文章列表 ────────────────────────────────────────────

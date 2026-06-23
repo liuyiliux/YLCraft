@@ -41,6 +41,7 @@ import {
   PauseCircleOutlined,
   FolderOpenOutlined,
   ExpandOutlined,
+  ReadOutlined,
 } from '@ant-design/icons'
 import { SearchPanel } from '../../components/asset-hub/SearchPanel'
 import type { SearchParams } from '../../components/asset-hub/SearchPanel'
@@ -54,6 +55,7 @@ import {
   getAsset,
   hybridSearch,
   getAssetLineage,
+  openFolder,
 } from '../../api'
 import { AssetVideoPlayer } from '../../components/video/AssetVideoPlayer'
 
@@ -71,6 +73,23 @@ const SOURCE_TYPE_LABELS: Record<string, string> = {
 }
 
 const SEARCH_HISTORY_KEY = 'ylcraft_asset_search_history'
+
+const LOCAL_READABLE_TYPES = new Set(['ARTICLE', 'TEXT', 'DOCUMENT', 'NOVEL'])
+const LOCAL_READABLE_EXTS = ['.html', '.htm', '.md', '.markdown', '.txt', '.text', '.epub']
+
+const isLocalReadableAsset = (asset: any) => {
+  const type = String(asset?.type || '').toUpperCase()
+  const filePath = String(asset?.file_path || '')
+  const lowerPath = filePath.toLowerCase()
+  return LOCAL_READABLE_TYPES.has(type) && !!filePath && LOCAL_READABLE_EXTS.some(ext => lowerPath.endsWith(ext))
+}
+
+const getLocalDocumentRootPath = (asset: any) => {
+  const metadataRoot = asset?.metadata?.reader_root_path
+  if (metadataRoot) return metadataRoot
+  const filePath = String(asset?.file_path || '')
+  return filePath.replace(/[\\/][^\\/]+$/, '')
+}
 
 export default function AssetsPage() {
   const navigate = useNavigate()
@@ -312,6 +331,38 @@ export default function AssetsPage() {
     } catch (e: any) { message.error(e.message) }
   }
 
+  const openLocalReader = useCallback((asset: any) => {
+    if (!asset?.file_path) {
+      message.warning('没有可阅读的本地文件路径')
+      return
+    }
+    const params = new URLSearchParams()
+    params.set('file_path', asset.file_path)
+    const rootPath = getLocalDocumentRootPath(asset)
+    if (rootPath) params.set('root_path', rootPath)
+    navigate(`/reader?${params.toString()}`)
+  }, [navigate])
+
+  const openAssetFolder = useCallback(async (asset: any) => {
+    if (!asset?.file_path) {
+      message.warning('没有可打开的本地文件路径')
+      return
+    }
+    try {
+      await openFolder(asset.file_path)
+    } catch (e: any) {
+      message.error(e?.message || '打开文件夹失败')
+    }
+  }, [])
+
+  const downloadAssetFile = useCallback((asset: any) => {
+    if (!asset?.id) return
+    const link = document.createElement('a')
+    link.href = `/api/v1/assets/${asset.id}/download`
+    link.download = asset.title || 'asset'
+    link.click()
+  }, [])
+
   // ---- Generator jump ----
   const handleJumpToGenerator = async (asset: any, e?: React.MouseEvent) => {
     if (e) e.stopPropagation()
@@ -382,6 +433,7 @@ export default function AssetsPage() {
     const aiParams = meta.ai_params || {}
     const aiGen = isAIGenerated(detailAsset)
     const isPaidCourse = dt === 'COLLECTION' && detailAsset.platform === 'bilibili' && meta.type === 'paid_course'
+    const localReadable = isLocalReadableAsset(detailAsset)
     const courseEpisodes = Array.isArray(meta.episodes) ? meta.episodes : []
     const courseReadyCount = courseEpisodes.filter((ep: any) => ep.status === 'ready').length
     const playingCourseEpisode = courseEpisodes.find((ep: any) => {
@@ -460,6 +512,21 @@ export default function AssetsPage() {
             ) : null}
 
             <div style={{ marginBottom: 16 }}>
+              {localReadable && (
+                <Button type="primary" icon={<ReadOutlined />} onClick={() => openLocalReader(detailAsset)} style={{ marginRight: 8 }}>
+                  阅读
+                </Button>
+              )}
+              {localReadable && (
+                <Button icon={<DownloadOutlined />} onClick={() => downloadAssetFile(detailAsset)} style={{ marginRight: 8 }}>
+                  下载源文件
+                </Button>
+              )}
+              {localReadable && (
+                <Button icon={<FolderOpenOutlined />} onClick={() => openAssetFolder(detailAsset)} style={{ marginRight: 8 }}>
+                  打开文件夹
+                </Button>
+              )}
               {isVideo && (
                 <Button type="primary" icon={<DownloadOutlined />} onClick={() => {
                   const link = document.createElement('a')
@@ -473,7 +540,7 @@ export default function AssetsPage() {
                   打开播放器
                 </Button>
               )}
-              {!isPaidCourse && (
+              {!isPaidCourse && !localReadable && (
                 <Button icon={<ThunderboltOutlined />} onClick={(e) => handleJumpToGenerator(detailAsset, e)}>
                   {aiGen ? '再次生成' : '跳转解析'}
                 </Button>
@@ -738,6 +805,7 @@ export default function AssetsPage() {
                 <option value="video">视频</option>
                 <option value="image">图片</option>
                 <option value="audio">音频</option>
+                <option value="article">文章</option>
                 <option value="novel">小说</option>
               </select>
               <select
@@ -749,6 +817,7 @@ export default function AssetsPage() {
                 <option value="bilibili">B站</option>
                 <option value="douyin">抖音</option>
                 <option value="kuaishou">快手</option>
+                <option value="wechat_mp">微信公众号</option>
                 <option value="local">本地</option>
               </select>
               <select
@@ -759,6 +828,7 @@ export default function AssetsPage() {
                 <option value="">全部来源</option>
                 <option value="ai_generated">AI生成</option>
                 <option value="parse">视频解析</option>
+                <option value="download">下载</option>
                 <option value="upload">本地上传</option>
                 <option value="import">导入</option>
               </select>

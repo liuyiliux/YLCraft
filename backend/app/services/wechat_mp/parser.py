@@ -79,8 +79,13 @@ class WechatMPParser:
             result["images"] = self._extract_images(soup)
             result["cover"] = self._extract_cover(soup)
             result["source_url"] = self._extract_source_url(soup)
+
+            # 调试日志
+            logger.debug(f"[WechatMPParser] 解析完成: title={result['title'][:30]}..., content_len={len(result['content_html'])}")
         except Exception as e:
             logger.error(f"[WechatMPParser] 解析异常: {e}")
+            import traceback
+            logger.error(f"[WechatMPParser] 异常堆栈: {traceback.format_exc()}")
             result["error"] = str(e)
 
         return result
@@ -132,11 +137,26 @@ class WechatMPParser:
     def _extract_content_html(self, soup: BeautifulSoup) -> str:
         node = soup.find("div", id=self.JS_CONTENT_ID)
         if not node:
-            return ""
-        # 移除隐藏节点（visibility:hidden / display:none）
-        for tag in list(node.find_all(True)):
+            logger.warning(f"[WechatMPParser] 未找到文章内容容器 js_content")
+            # 尝试其他可能的容器
+            alt_nodes = soup.find_all("div", class_=re.compile(r"rich_media_content|content|article"))
+            if alt_nodes:
+                logger.info(f"[WechatMPParser] 找到替代容器: {len(alt_nodes)} 个")
+                node = alt_nodes[0]
+            else:
+                return ""
+        # Remove hidden nodes after scanning. Calling decompose() while iterating a
+        # cached ResultSet can invalidate descendants that are still in the list.
+        hidden_tags: list[Tag] = []
+        for tag in node.find_all(True):
+            if not isinstance(tag, Tag) or getattr(tag, "attrs", None) is None:
+                continue
             style = (tag.get("style") or "").replace(" ", "").lower()
             if "visibility:hidden" in style or "display:none" in style:
+                hidden_tags.append(tag)
+
+        for tag in hidden_tags:
+            if getattr(tag, "attrs", None) is not None and tag.parent is not None:
                 tag.decompose()
         return node.decode_contents()
 
@@ -242,7 +262,8 @@ class WechatMPParser:
         if name in ("ul", "ol"):
             return self._render_list(node, ordered=(name == "ol"))
         if name == "li":
-            return f"- {inner.strip()}\n"
+            text = inner.strip()
+            return f"- {text}\n" if text else ""
         if name == "table":
             return self._render_table(node)
         if name in ("thead", "tbody", "tfoot", "tr", "td", "th"):
@@ -260,6 +281,8 @@ class WechatMPParser:
         for li in node.find_all("li", recursive=False):
             txt = "".join(self._render_node(c) for c in li.children).strip()
             txt = re.sub(r"\s+", " ", txt)
+            if not txt:
+                continue
             if ordered:
                 items.append(f"{idx}. {txt}")
                 idx += 1

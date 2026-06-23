@@ -557,6 +557,15 @@ def ensure_download_path(platform: str = "") -> Path:
     """确保下载目录存在并返回路径，可按平台创建子目录"""
     backend_dir = Path(__file__).parent.parent.parent
     download_dir = backend_dir / "downloads"
+    try:
+        settings_path = backend_dir / "app" / "data" / "settings.json"
+        if settings_path.exists():
+            with open(settings_path, "r", encoding="utf-8") as f:
+                configured = json.load(f).get("video_download_path")
+            if configured:
+                download_dir = Path(configured)
+    except Exception:
+        download_dir = backend_dir / "downloads"
     if platform:
         safe_platform = "".join(ch for ch in platform.lower() if ch.isalnum() or ch in ("_", "-"))
         if safe_platform:

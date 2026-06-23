@@ -195,7 +195,7 @@ async def test_connection(
     service: PlatformConnectionService = Depends(get_platform_service),
 ):
     """测试连接是否有效"""
-    result = service.test_connection(conn_id)
+    result = await service.test_connection(conn_id)
     return {
         "success": result["success"],
         "message": result["message"],

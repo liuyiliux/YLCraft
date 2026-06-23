@@ -119,7 +119,7 @@ class SearchEnhancedRequest(BaseModel):
     """增强搜索请求"""
     platform: str = Field(..., description="平台: xhs/dy/ks/bili/wb/zhihu")
     keyword: str = Field(..., description="搜索关键词")
-    search_type: str = Field("note", description="搜索类型: note/user/article/bangumi/movie/live")
+    search_type: str = Field("note", description="搜索类型: note/user/article/global_article/bangumi/movie/live")
     max_results: int = Field(20, description="每页结果数", ge=1, le=100)
     sort_by: str = Field("", description="排序方式")
     order_sort: int = Field(0, description="排序方向：0=高到低，1=低到高（仅bili用户搜索有效）")
@@ -403,6 +403,7 @@ async def _search_wechat_mp(req: SearchEnhancedRequest) -> SearchResponse:
     微信公众号搜索：根据 search_type 不同执行不同操作
     - "account": 搜索公众号
     - "article": 拉取文章列表（需在 filters 中传 fake_id）
+    - "global_article": 按关键词搜索全网公众号文章
     """
     from app.services.wechat_mp import get_wechat_mp_service
     from app.db.models.platform_connection import PlatformConnection, PlatformType
@@ -466,6 +467,18 @@ async def _search_wechat_mp(req: SearchEnhancedRequest) -> SearchResponse:
             page=req.page,
             page_size=req.max_results,
         )
+        # 检查是否有错误（如会话失效）
+        if result.get("error"):
+            error_code = result.get("error_code")
+            if error_code == 200003:
+                raise HTTPException(
+                    status_code=401,
+                    detail="微信公众平台会话已失效，请重新登录",
+                )
+            raise HTTPException(
+                status_code=500,
+                detail=result["error"],
+            )
         accounts = result.get("list", [])
 
         # 转换为 CrawlerResult 格式
@@ -496,11 +509,62 @@ async def _search_wechat_mp(req: SearchEnhancedRequest) -> SearchResponse:
             using="wechat_mp_api",
         )
 
+    elif req.search_type == "global_article":
+        result = await service.search_global_articles(
+            conn_id=conn_id,
+            keyword=req.keyword,
+            cookie=cookie,
+            token=token,
+            page=req.page,
+            page_size=req.max_results,
+        )
+
+        if result.get("error"):
+            error_code = result.get("error_code")
+            if error_code == 200003:
+                raise HTTPException(
+                    status_code=401,
+                    detail="微信公众平台会话已失效，请重新登录",
+                )
+            raise HTTPException(status_code=500, detail=f"搜索全网文章失败: {result.get('error')}")
+
+        articles = result.get("list", [])
+        from app.services.crawler.service import CrawlerResult
+        results = []
+        for art in articles:
+            raw_data = dict(art)
+            raw_data["conn_id"] = conn_id
+            results.append(CrawlerResult(
+                id=art.get("aid") or art.get("link", ""),
+                platform="wechat_mp",
+                title=art.get("title", ""),
+                desc=art.get("digest", ""),
+                cover=art.get("cover", ""),
+                author=art.get("nickname") or art.get("author", ""),
+                author_id="",
+                url=art.get("link", ""),
+                create_time="",
+                raw_data=raw_data,
+            ))
+        return SearchResponse(
+            success=True,
+            results=results,
+            total=result.get("total", 0),
+            message=f"找到 {len(articles)} 篇相关文章（共约 {result.get('total', 0)} 篇）",
+            using="wechat_mp_copyright_search",
+        )
+
     elif req.search_type == "article":
         # 拉取文章列表
         fake_id = req.filters.get("fake_id", "") if req.filters else ""
         if not fake_id:
-            raise HTTPException(status_code=400, detail="缺少 fake_id 参数")
+            return SearchResponse(
+                success=True,
+                results=[],
+                total=0,
+                message="请先搜索公众号，再从公众号详情中查看文章列表",
+                using="wechat_mp_api",
+            )
 
         result = await service.get_articles(
             conn_id=conn_id,
@@ -539,4 +603,4 @@ async def _search_wechat_mp(req: SearchEnhancedRequest) -> SearchResponse:
         )
 
     else:
-        raise HTTPException(status_code=400, detail=f"微信公众号不支持 search_type={req.search_type}，请使用 account 或 article")
+        raise HTTPException(status_code=400, detail=f"微信公众号不支持 search_type={req.search_type}，请使用 account、article 或 global_article")
