@@ -64,6 +64,16 @@ function safeDecode(value: string | null): string {
 }
 
 // 常见标准比例
+function assetFileUrl(path?: string): string {
+  if (!path) return ''
+  if (/^(https?:|data:|blob:|\/api\/)/i.test(path)) return path
+  return `/api/v1/assets/download?path=${encodeURIComponent(path)}`
+}
+
+function getGeneratedImageSrc(img: GeneratedImage): string {
+  return assetFileUrl(img.url || img.local_path)
+}
+
 const STANDARD_RATIOS = [
   { ratio: '1:1', threshold: 0.05 },
   { ratio: '16:9', threshold: 0.05 },
@@ -403,7 +413,7 @@ function ImageGenSinglePage() {
       // 切换到第一个可用厂商
       const firstVendor = availableVendors[0]
       setProvider(firstVendor.provider_label)
-      setSelectedModel(firstVendor.backends[0]?.model)
+      setSelectedModel(firstVendor.backends[0]?.name)
     } else {
       // 检查当前模型是否还可用（通过 name 匹配）
       const vendorGroup = availableVendors.find(g => g.provider_label === provider)
@@ -479,19 +489,23 @@ function ImageGenSinglePage() {
 
       if (data.success) {
         const newImages: GeneratedImage[] = []
-        const urls = data.urls || [data.url]
+        const urls = (data.urls && data.urls.length > 0) ? data.urls : (data.url ? [data.url] : [])
+        const localPaths = (data.all_local_paths && data.all_local_paths.length > 0)
+          ? data.all_local_paths
+          : (data.local_path ? [data.local_path] : [])
+        const resultCount = Math.max(urls.length, localPaths.length)
 
-        urls.forEach((url: string, idx: number) => {
+        for (let idx = 0; idx < resultCount; idx += 1) {
           newImages.push({
             id: `img_${Date.now()}_${idx}`,
-            url,
+            url: urls[idx] || '',
             prompt,
             provider: data.provider || provider || 'unknown',
             model: 'seedance-2.0',
-            local_path: data.local_path,
+            local_path: localPaths[idx] || data.local_path,
             created_at: new Date().toISOString(),
           })
-        })
+        }
 
         setGeneratedImages(prev => [...newImages, ...prev])
         message.success(
@@ -515,9 +529,9 @@ function ImageGenSinglePage() {
   // 下载图片
   const handleDownload = async (img: GeneratedImage) => {
     if (img.local_path) {
-      window.open(`/api/v1/assets/download?path=${img.local_path}`)
+      window.open(assetFileUrl(img.local_path))
     } else if (img.url) {
-      window.open(img.url)
+      window.open(assetFileUrl(img.url))
     }
   }
 
@@ -803,9 +817,9 @@ function ImageGenSinglePage() {
                           }}
                         >
                           <Image
-                            src={img.url || img.local_path}
+                            src={getGeneratedImageSrc(img)}
                             style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain' }}
-                            preview={{ src: img.url || img.local_path }}
+                            preview={{ src: getGeneratedImageSrc(img) }}
                             placeholder
                           />
                         </div>

@@ -1,4 +1,5 @@
 from app.db.models.asset import Asset, AssetCollection, AssetTag
+from app.db.models.torrent import TorrentDownload
 from app.db.models.asset_hub import (
     AssetNode, AssetVersion, AssetRepresentation,
     AssetEmbedding, AssetRelation,

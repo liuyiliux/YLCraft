@@ -18,12 +18,14 @@ from __future__ import annotations
 
 import json
 import logging
+import mimetypes
 import os
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, Request
 from fastapi.responses import StreamingResponse, FileResponse, Response
 from pydantic import BaseModel, Field
 
@@ -250,6 +252,71 @@ async def list_assets(
 # 下载资产文件 GET /api/v1/assets/:id/download
 # ---------------------------------------------------------------------------
 
+def _asset_file_allowed_roots() -> list[Path]:
+    from app.core.config import ensure_download_path
+
+    backend_dir = Path(__file__).resolve().parents[3]
+    project_dir = backend_dir.parent
+    roots = [
+        backend_dir / "app" / "storage",
+        backend_dir / "storage",
+        backend_dir / "downloads",
+        backend_dir / "uploads",
+        project_dir / "storage",
+        project_dir / "downloads",
+        project_dir / "uploads",
+        ensure_download_path(),
+    ]
+    return [root.resolve() for root in roots if root]
+
+
+def _is_allowed_temp_asset_path(path: Path) -> bool:
+    temp_root = Path(tempfile.gettempdir()).resolve()
+    allowed_prefixes = ("ylcraft_uploads", "narrato_out_", "moe_out_", "cutclaw_out_")
+    for parent in (path, *path.parents):
+        if parent.parent == temp_root and parent.name.startswith(allowed_prefixes):
+            return True
+    return False
+
+
+def _resolve_asset_file_path(path_value: str) -> Path:
+    if not path_value or path_value.startswith(("http://", "https://", "data:")):
+        raise HTTPException(status_code=400, detail="不支持的本地文件路径")
+
+    path = Path(os.path.expandvars(os.path.expanduser(path_value))).resolve()
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="文件不存在")
+
+    allowed = False
+    for root in _asset_file_allowed_roots():
+        if path == root or root in path.parents:
+            allowed = True
+            break
+    if not allowed and _is_allowed_temp_asset_path(path):
+        allowed = True
+    if not allowed:
+        raise HTTPException(status_code=403, detail="文件不在允许访问的目录内")
+    return path
+
+
+@router.get("/download", summary="下载/预览本地文件")
+@router.get("/file", summary="预览本地文件")
+async def download_local_asset_file(
+    request: Request,
+    path: str = Query(..., description="本地文件路径"),
+    inline: bool = Query(True, description="是否直接预览"),
+):
+    file_path = _resolve_asset_file_path(path)
+    media_type = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
+    if inline and media_type.startswith("video/"):
+        return _range_file_response(request, str(file_path), media_type)
+
+    headers = {"Cache-Control": "public, max-age=86400"} if inline else None
+    if inline:
+        return FileResponse(path=str(file_path), media_type=media_type, headers=headers)
+    return FileResponse(path=str(file_path), media_type=media_type, filename=file_path.name)
+
+
 @router.get("/{asset_id}/download", summary="下载资产文件")
 async def download_asset(
     asset_id: str,
@@ -297,6 +364,7 @@ async def download_asset(
 @router.get("/{asset_id}/stream", summary="播放资产视频文件")
 async def stream_asset(
     asset_id: str,
+    request: Request,
     service: AssetService = Depends(get_asset_service),
 ):
     asset = await service.get_by_id(asset_id)
@@ -308,7 +376,62 @@ async def stream_asset(
         raise HTTPException(status_code=400, detail="当前资产不是视频")
     if not asset.file_path or not os.path.exists(asset.file_path):
         raise HTTPException(status_code=404, detail="文件不存在")
-    return FileResponse(path=asset.file_path, media_type=asset.mime_type or "video/mp4")
+    return _range_file_response(request, asset.file_path, asset.mime_type or "video/mp4")
+
+
+def _range_file_response(request: Request, file_path: str, media_type: str) -> Response:
+    path = Path(file_path)
+    file_size = path.stat().st_size
+    range_header = request.headers.get("range")
+    if not range_header:
+        return FileResponse(
+            path=file_path,
+            media_type=media_type,
+            headers={"Accept-Ranges": "bytes"},
+        )
+
+    try:
+        units, value = range_header.split("=", 1)
+        if units.strip().lower() != "bytes":
+            raise ValueError("unsupported range unit")
+        start_s, end_s = value.split("-", 1)
+        start = int(start_s) if start_s else 0
+        end = int(end_s) if end_s else file_size - 1
+        end = min(end, file_size - 1)
+        if start < 0 or end < start or start >= file_size:
+            raise ValueError("invalid range")
+    except Exception:
+        return Response(
+            status_code=416,
+            headers={
+                "Content-Range": f"bytes */{file_size}",
+                "Accept-Ranges": "bytes",
+            },
+        )
+
+    chunk_size = end - start + 1
+
+    async def iter_file():
+        with path.open("rb") as f:
+            f.seek(start)
+            remaining = chunk_size
+            while remaining > 0:
+                chunk = f.read(min(1024 * 1024, remaining))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+                yield chunk
+
+    return StreamingResponse(
+        iter_file(),
+        status_code=206,
+        media_type=media_type,
+        headers={
+            "Content-Range": f"bytes {start}-{end}/{file_size}",
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(chunk_size),
+        },
+    )
 
 
 def _get_course_episode_file(asset: Asset, episode_index: int) -> str:

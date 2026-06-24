@@ -7,11 +7,15 @@ YLCraft - OpenAI SDK Image Backend
 
 from __future__ import annotations
 
+import base64
+import json
 import logging
+import mimetypes
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
+from urllib.parse import quote
 
 import httpx
 import openai
@@ -37,6 +41,7 @@ class OpenAISDKImageBackend:
         self.connector = connector
         self._name = connector.name
         self._model = connector.default_model or "dall-e-3"
+        self._default_params = self._parse_json_object(connector.default_params)
 
         self._client = openai.AsyncOpenAI(
             api_key=connector.api_key,

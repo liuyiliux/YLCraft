@@ -447,6 +447,13 @@ def _register_routes():
     except Exception as e:
         logger.warning(f"Could not load ebook router: {e}")
 
+    # Torrent downloads
+    try:
+        from app.api.v1 import torrents
+        app.include_router(torrents.router, prefix="/api/v1/torrents", tags=["Torrents"])
+    except Exception as e:
+        logger.warning(f"Could not load torrents router: {e}")
+
     # 本地文档阅读器路由
     try:
         from app.api.v1 import reader

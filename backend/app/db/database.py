@@ -57,6 +57,7 @@ SessionLocal = sessionmaker(
 async def init_db():
     """初始化数据库表"""
     from app.db.models.asset import Asset, AssetCollection, AssetTag
+    from app.db.models.torrent import TorrentDownload
     from app.db.models.character import Character, CharacterStoryLink
     from app.db.models.live2d import Live2DModel, Live2DBone, Live2DMotion
     from app.db.models.api_key import ApiKey

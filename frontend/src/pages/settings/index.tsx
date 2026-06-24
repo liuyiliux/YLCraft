@@ -182,6 +182,100 @@ function SizeConfigField({ value = [], onChange }: { value?: string[], onChange?
   )
 }
 
+const AI_TYPE_OPTIONS = [
+  { value: 'llm', label: '文本 (LLM)' },
+  { value: 'image', label: '图像生成' },
+  { value: 'video', label: '视频生成' },
+  { value: 'tts', label: '语音合成 (TTS)' },
+  { value: 'stt', label: '语音识别 (STT)' },
+  { value: 'embedding', label: '嵌入 (Embedding)' },
+]
+
+const AI_TYPE_HELP: Record<string, { title: string; description: string; focus: string; detail: string }> = {
+  llm: {
+    title: '文本 (LLM)',
+    description: '用于聊天、提纲、规则修复、文案生成等文本推理能力。',
+    focus: '主要配置 Base URL、API Key、默认模型、温度和最大 Token。',
+    detail: 'OpenAI SDK 模式会由后端组装 Chat Completions 或 Responses API 请求，通常不需要写 Request 模板。',
+  },
+  image: {
+    title: '图像生成',
+    description: '用于文生图、图生图和多参考图生成。',
+    focus: 'OpenAI SDK / Gemini SDK 适合对应的标准接口；通用 HTTP 模式需要配置 Request 模板和 Response 解析。',
+    detail: 'Response 解析使用 JSONPath：URL 通常填 images_path，base64 通常填 base64_images_path，也可以把 response_format 设为 base64。',
+  },
+  video: {
+    title: '视频生成',
+    description: '用于文生视频、图生视频和生成任务提交类接口。',
+    focus: '通常需要确认接口是同步返回结果，还是先返回 task_id 再轮询。',
+    detail: '通用 HTTP 模式适合接入非标准视频平台；尺寸/比例和首帧字段建议按平台文档单独配置。',
+  },
+  tts: {
+    title: '语音合成 (TTS)',
+    description: '用于把文本生成语音或旁白音频。',
+    focus: '主要配置默认模型、音色、语速、输出格式等参数。',
+    detail: '如果平台兼容 OpenAI 音频接口，优先用 SDK；非标准接口再走通用 HTTP。',
+  },
+  stt: {
+    title: '语音识别 (STT)',
+    description: '用于把音频或视频里的声音转成文字。',
+    focus: '主要关注模型、语言、时间戳和文件上传方式。',
+    detail: '后续字幕识别会优先读取此类可用模型。',
+  },
+  embedding: {
+    title: '嵌入 (Embedding)',
+    description: '用于把文本、图片或多模态内容转为向量。',
+    focus: '主要配置默认模型和向量维度，维度要和索引/数据库里保存的一致。',
+    detail: '配置完成后可用于素材入库、相似搜索和混合搜索。',
+  },
+}
+
+function TypeHelpBlock({ type, theme, compact = false }: { type?: string; theme: any; compact?: boolean }) {
+  if (!type) return null
+  const help = AI_TYPE_HELP[type]
+  if (!help) return null
+
+  return (
+    <Alert
+      type="info"
+      showIcon
+      message={`${help.title} 配置说明`}
+      description={
+        <div style={{ color: theme.textSecondary, lineHeight: 1.7 }}>
+          <div>{help.description}</div>
+          <div>{help.focus}</div>
+          {!compact && <div>{help.detail}</div>}
+        </div>
+      }
+      style={{
+        marginBottom: 16,
+        background: 'rgba(0,212,255,0.05)',
+        border: '1px solid rgba(0,212,255,0.2)',
+      }}
+    />
+  )
+}
+
+function getApiFormatHelp(apiFormat?: string, type?: string) {
+  if (apiFormat === 'openai_sdk') {
+    return type === 'image'
+      ? '适合 OpenAI 兼容的图片生成接口，后端直接用 SDK 调用 images.generate，不需要填写 Request 模板和 Response 解析。'
+      : '适合 OpenAI 兼容的聊天接口，后端直接用 SDK 调用 Chat Completions。'
+  }
+  if (apiFormat === 'openai_sdk_responses') {
+    return '适合支持 Responses API 的服务。只有目标平台明确兼容时再选这个模式。'
+  }
+  if (apiFormat === 'gemini_sdk') {
+    return '适合 Gemini 原生图片生成接口，后端会用 google-genai SDK 处理 inlineData/base64 图片结果。'
+  }
+  if (apiFormat === 'custom') {
+    return type === 'image'
+      ? '通用 HTTP 模式会按 Request 模板发请求，并用 Response 解析配置里的 JSONPath 提取图片 URL 或 base64。'
+      : '通用 HTTP 模式会按你填写的模板和字段映射请求非标准接口，适合不兼容 SDK 的平台。'
+  }
+  return ''
+}
+
 // ==================== Provider 管理组件 ====================
 
 interface ProviderCardProps {
@@ -336,14 +430,7 @@ const ProviderFormModal: React.FC<ProviderFormModalProps> = ({ open, provider, o
   const [saving, setSaving] = useState(false)
   const [activeTab, setActiveTab] = useState<string>('llm')
   
-  const typeOptions = [
-    { value: 'llm', label: '文本 (LLM)' },
-    { value: 'image', label: '图像生成' },
-    { value: 'video', label: '视频生成' },
-    { value: 'tts', label: '语音合成 (TTS)' },
-    { value: 'stt', label: '语音识别 (STT)' },
-    { value: 'embedding', label: '嵌入 (Embedding)' },
-  ]
+  const typeOptions = AI_TYPE_OPTIONS
   
   const supportedTypes = Form.useWatch(['supported_types'], form) || []
 
@@ -622,6 +709,13 @@ const ProviderFormModal: React.FC<ProviderFormModalProps> = ({ open, provider, o
             options={typeOptions}
           />
         </Form.Item>
+        {supportedTypes.length > 0 && (
+          <div style={{ marginBottom: 12 }}>
+            <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
+              下面每个标签页只配置对应类型的默认值；新增模型时可按“底层服务商 + 类型”继承这些默认配置。
+            </Text>
+          </div>
+        )}
         
         {/* 按类型分别配置的标签页 */}
         {supportedTypes.length > 0 && (
@@ -640,6 +734,7 @@ const ProviderFormModal: React.FC<ProviderFormModalProps> = ({ open, provider, o
                 // 这样 Form.Item 始终挂载，validateFields() 能收集到所有字段值
                 children: (
                   <div style={{ marginTop: 16, padding: '16px', background: theme.bgSecondary, borderRadius: 8, marginBottom: 16 }}>
+                    <TypeHelpBlock type={type} theme={theme} />
                     <div style={{ fontWeight: 600, marginBottom: 16, color: theme.textPrimary }}>
                       {typeOption?.label || type} 配置
                     </div>
@@ -691,11 +786,11 @@ const ProviderFormModal: React.FC<ProviderFormModalProps> = ({ open, provider, o
                       <Form.Item
                         name={`type_${type}_response_config`}
                         label="响应配置 (JSON)"
-                        extra='配置响应数据的提取路径，如 {"images_path": "$.images[*].url", "error_path": "$.error.message"}'
+                        extra='使用 JSONPath 提取结果：URL 用 images_path，base64 用 base64_images_path；error_path 用于提取错误信息。'
                       >
                         <Input.TextArea
-                          placeholder={`{\n  "images_path": "$.images[*].url",\n  "error_path": "$.error.message",\n  "usage_path": "$.usage",\n  "response_format": "url"\n}`}
-                          rows={4}
+                          placeholder={`{\n  "images_path": "$.data[*].url",\n  "base64_images_path": "$.data[*].b64_json",\n  "error_path": "$.error.message",\n  "usage_path": "$.usage",\n  "response_format": "url"\n}`}
+                          rows={6}
                           style={{ fontFamily: 'monospace', fontSize: 12 }}
                         />
                       </Form.Item>
@@ -1278,6 +1373,12 @@ export default function SettingsPage() {
     if (selectedProvider === 'gemini' && selectedType === 'image') {
       return [
         { value: 'gemini_sdk', label: '🌟 Google Gemini SDK（原生图片生成）' },
+        { value: 'custom', label: '⚙️ 自定义 HTTP（手动）' },
+      ]
+    }
+    if (selectedType === 'image') {
+      return [
+        { value: 'openai_sdk', label: '🧩 OpenAI SDK（Images API）' },
         { value: 'custom', label: '⚙️ 自定义 HTTP（手动）' },
       ]
     }
@@ -2078,22 +2179,17 @@ export default function SettingsPage() {
               <Input placeholder="如：OpenAI GPT-4" />
             </Form.Item>
             <Form.Item name="provider_type" label={<span style={{ color: THEME.textPrimary }}>类型</span>} rules={[{ required: true, message: '请选择类型' }]}>
-              <Select options={[
-                { value: 'llm', label: '文本 (LLM)' },
-                { value: 'image', label: '图像生成' },
-                { value: 'video', label: '视频生成' },
-                { value: 'tts', label: '语音合成 (TTS)' },
-                { value: 'stt', label: '语音识别 (STT)' },
-                { value: 'embedding', label: '嵌入 (Embedding)' },
-              ]} />
+              <Select options={AI_TYPE_OPTIONS} />
             </Form.Item>
           </div>
+          <TypeHelpBlock type={selectedType} theme={THEME} compact />
 
           {/* 继承 Provider 默认配置按钮 */}
           <Form.Item noStyle shouldUpdate={(prev, curr) => prev.provider !== curr.provider || prev.provider_type !== curr.provider_type}>
             {({ getFieldValue }) => {
               const providerVal = getFieldValue('provider')
               const providerTypeVal = getFieldValue('provider_type')
+              const providerTypeLabel = AI_TYPE_HELP[providerTypeVal]?.title || providerTypeVal
               return providerVal && providerTypeVal ? (
                 <div style={{ marginBottom: 16, padding: '12px 16px', background: 'rgba(0,212,255,0.05)', borderRadius: 8, border: '1px solid rgba(0,212,255,0.2)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -2101,7 +2197,7 @@ export default function SettingsPage() {
                     <div style={{ flex: 1 }}>
                       <Text strong style={{ color: THEME.textPrimary }}>从 Provider 继承默认配置</Text>
                       <Text style={{ color: THEME.textSecondary, fontSize: 12, display: 'block' }}>
-                        自动填充服务商 {providerVal} 在 {providerTypeVal} 类型下的默认 URL、模型、参数等
+                        自动填充服务商 {providerVal} 在 {providerTypeLabel} 类型下的默认 URL、模型、参数等
                       </Text>
                     </div>
                     <Button
@@ -2162,6 +2258,19 @@ export default function SettingsPage() {
               onChange={() => setDiscoveredModels([])}
             />
           </Form.Item>
+          {selectedApiFormat && (
+            <Alert
+              type="info"
+              showIcon
+              message="API 格式说明"
+              description={getApiFormatHelp(selectedApiFormat, selectedType)}
+              style={{
+                marginBottom: 16,
+                background: selectedApiFormat === 'custom' ? 'rgba(168,85,247,0.05)' : 'rgba(0,212,255,0.05)',
+                border: selectedApiFormat === 'custom' ? '1px solid rgba(168,85,247,0.2)' : '1px solid rgba(0,212,255,0.2)',
+              }}
+            />
+          )}
 
           <Form.Item name="api_key" label={<span style={{ color: THEME.textPrimary }}>API Key</span>}>
             <Input.Password placeholder={editingProvider ? '留空表示不修改' : '请输入 API Key'} />
@@ -2281,26 +2390,24 @@ export default function SettingsPage() {
             />
           </Form.Item>
 
-          <Form.Item name="timeout" label={<span style={{ color: THEME.textPrimary }}>API 请求超时时间 (秒)</span>}>
+          <Form.Item name="timeout" label={<span style={{ color: THEME.textPrimary }}>API 请求超时时间 (秒)</span>} initialValue={300}>
             <InputNumber 
               style={{ width: 200 }} 
               min={10} 
               max={3600} 
               step={10}
               placeholder="300"
-              initialValue={300}
             />
             <span style={{ marginLeft: 8, color: THEME.textSecondary }}>默认: 300秒 (5分钟)</span>
           </Form.Item>
 
-          <Form.Item name="test_timeout" label={<span style={{ color: THEME.textPrimary }}>连接测试超时时间 (秒)</span>}>
+          <Form.Item name="test_timeout" label={<span style={{ color: THEME.textPrimary }}>连接测试超时时间 (秒)</span>} initialValue={20}>
             <InputNumber 
               style={{ width: 200 }} 
               min={5} 
               max={300} 
               step={5}
               placeholder="20"
-              initialValue={20}
             />
             <span style={{ marginLeft: 8, color: THEME.textSecondary }}>默认: 20秒</span>
           </Form.Item>
@@ -2338,10 +2445,17 @@ export default function SettingsPage() {
                         />
                       </Form.Item>
 
-                      <Form.Item name="response_config" label={<span style={{ color: THEME.textPrimary }}>Response 解析配置</span>} style={{ marginBottom: 8 }}>
+                      <Form.Item
+                        name="response_config"
+                        label={<span style={{ color: THEME.textPrimary }}>Response 解析配置</span>}
+                        style={{ marginBottom: 8 }}
+                        extra={<span style={{ color: THEME.textSecondary, fontSize: 12 }}>
+                          通用 HTTP 模式使用 JSONPath 动态提取结果；URL 响应用 images_path，base64 响应用 base64_images_path 或 response_format=base64。
+                        </span>}
+                      >
                         <TextArea 
-                          rows={3} 
-                          placeholder={`JSON 格式的响应配置，例如：\n{"images_path": "$.data[*].url", "error_path": "$.error.message"}`}
+                          rows={6} 
+                          placeholder={`JSON 格式的响应配置，例如：\n{\n  "images_path": "$.data[*].url",\n  "base64_images_path": "$.data[*].b64_json",\n  "error_path": "$.error.message",\n  "response_format": "url"\n}`}
                         />
                       </Form.Item>
 

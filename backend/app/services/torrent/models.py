@@ -1,0 +1,61 @@
+"""Shared models for torrent services."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+
+
+VIDEO_EXTENSIONS = {
+    ".mp4",
+    ".m4v",
+    ".mov",
+    ".mkv",
+    ".webm",
+    ".avi",
+    ".flv",
+    ".wmv",
+    ".ts",
+    ".m2ts",
+}
+
+
+@dataclass
+class TorrentFileInfo:
+    index: int
+    name: str
+    size: int = 0
+    progress: float = 0.0
+    priority: int = 0
+
+    @property
+    def is_video(self) -> bool:
+        return Path(self.name).suffix.lower() in VIDEO_EXTENSIONS
+
+
+@dataclass
+class TorrentStatus:
+    torrent_hash: str
+    name: str = ""
+    state: str = ""
+    progress: float = 0.0
+    download_speed: int = 0
+    upload_speed: int = 0
+    downloaded_bytes: int = 0
+    total_size: int = 0
+    save_path: str = ""
+    error: str = ""
+
+    @property
+    def normalized_status(self) -> str:
+        state = (self.state or "").lower()
+        if state in {"pauseddl", "pausedup", "paused", "stalleddl"}:
+            return "paused" if state.startswith("paused") else "downloading"
+        if state in {"uploading", "stalledup", "forcedup", "queuedup"}:
+            return "done"
+        if state in {"error", "missingfiles"}:
+            return "failed"
+        if state in {"metadl", "checkingdl", "checkingresume"}:
+            return "metadata"
+        return "downloading"
+

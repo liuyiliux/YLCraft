@@ -102,6 +102,21 @@ async def get_ai_service():
         yield AIConnectorService(session)
 
 
+def reload_ai_service_after_connector_change() -> None:
+    """连接器配置变更后刷新全局 AIService，避免生成页继续使用旧 Backend 实例。"""
+    try:
+        session = next(get_session())
+        try:
+            AIService.initialize(session=session)
+        finally:
+            close = getattr(session, "close", None)
+            if callable(close):
+                close()
+        logger.info("[AI Connectors] 配置变更后已刷新 AIService")
+    except Exception as e:
+        logger.warning(f"[AI Connectors] 配置变更后刷新 AIService 失败: {e}")
+
+
 # =============================================================================
 # API 端点
 # =============================================================================
@@ -1031,6 +1046,7 @@ async def create_connector(
     """创建新的 AI 连接"""
     try:
         conn = await service.create(data)
+        reload_ai_service_after_connector_change()
         return {
             "success": True,
             "connector": AIConnectorResponse.from_db(conn),
@@ -1051,6 +1067,7 @@ async def update_connector(
     conn = await service.update(conn_id, data)
     if not conn:
         raise HTTPException(status_code=404, detail="连接不存在")
+    reload_ai_service_after_connector_change()
     return {
         "success": True,
         "connector": AIConnectorResponse.from_db(conn),
@@ -1067,6 +1084,7 @@ async def delete_connector(
     ok = await service.delete(conn_id)
     if not ok:
         raise HTTPException(status_code=404, detail="连接不存在")
+    reload_ai_service_after_connector_change()
     return {
         "success": True,
         "message": "删除成功",

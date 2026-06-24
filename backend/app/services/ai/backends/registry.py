@@ -276,6 +276,7 @@ class BackendRegistry:
         return dict(self._backends[media_type])
 
 
+
 def get_default_backend(registry: BackendRegistry, media_type: MediaType):
     """获取默认 Backend 实例（给 AIService.get_default 使用）"""
     default_name = registry.get_default(media_type)

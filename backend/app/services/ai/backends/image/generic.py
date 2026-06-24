@@ -7,11 +7,14 @@ YLCraft - Generic Image Backend
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
+import mimetypes
 from datetime import datetime
 from typing import Optional, Any, Dict
 from pathlib import Path
+from urllib.parse import quote
 
 import httpx
 from jinja2 import Template
@@ -76,7 +79,8 @@ class GenericImageBackend(ImageBackend):
         self.default_params = {}
         if connector.default_params:
             try:
-                self.default_params = json.loads(connector.default_params)
+                parsed_default_params = json.loads(connector.default_params)
+                self.default_params = parsed_default_params if isinstance(parsed_default_params, dict) else {}
             except Exception as e:
                 logger.error(f"解析 default_params 失败: {e}")
 
@@ -192,22 +196,48 @@ class GenericImageBackend(ImageBackend):
 
             local_path = None
             image_url = result.get("url")
+            image_urls = result.get("urls", []) or []
             all_local_paths = []
-            if image_url:
-                local_path = await self._download_image(image_url, req.prompt)
-                if local_path:
-                    all_local_paths.append(str(local_path))
 
-            for idx, url in enumerate(result.get("urls", [])):
-                if url != image_url and url:
-                    path = await self._download_image(url, f"{req.prompt}_{idx}")
+            if result.get("format") == "base64":
+                preview_urls = []
+                output_format = result.get("output_format") or "png"
+                for idx, b64_data in enumerate(image_urls):
+                    path = self._save_base64_image(
+                        b64_data=b64_data,
+                        prompt=req.prompt,
+                        index=idx,
+                        output_format=output_format,
+                    )
                     if path:
-                        all_local_paths.append(str(path))
+                        path_str = str(path)
+                        all_local_paths.append(path_str)
+                        preview_urls.append(self._local_file_url(path_str))
+                        if local_path is None:
+                            local_path = path_str
+
+                image_url = preview_urls[0] if preview_urls else None
+                image_urls = preview_urls
+                if result.get("success") and not all_local_paths:
+                    result["success"] = False
+                    result["error"] = "base64 image save failed"
+            else:
+                if image_url:
+                    downloaded_path = await self._download_image(image_url, req.prompt)
+                    if downloaded_path:
+                        local_path = str(downloaded_path)
+                        all_local_paths.append(str(downloaded_path))
+
+                for idx, url in enumerate(image_urls):
+                    if url != image_url and url:
+                        path = await self._download_image(url, f"{req.prompt}_{idx}")
+                        if path:
+                            all_local_paths.append(str(path))
 
             return ImageGenerationResult(
                 success=result.get("success", False),
                 url=image_url,
-                urls=result.get("urls", []),
+                urls=image_urls,
                 local_path=local_path,
                 all_local_paths=all_local_paths,
                 cost=result.get("cost", 0.0),
@@ -241,7 +271,7 @@ class GenericImageBackend(ImageBackend):
         params = {
             "model": model,
             "prompt": req.prompt,
-            **self.default_params,
+            **(self.default_params or {}),
         }
 
         if req.negative_prompt:
@@ -397,7 +427,7 @@ class GenericImageBackend(ImageBackend):
         return replaced_by_field
 
     def _parse_response(self, response: httpx.Response) -> Dict[str, Any]:
-        if response.status_code != 200:
+        if response.status_code not in (200, 201):
             error_msg = self._extract_error(response)
             return {"success": False, "error": f"HTTP {response.status_code}: {error_msg}"}
         try:
@@ -407,14 +437,40 @@ class GenericImageBackend(ImageBackend):
 
         images_path = self.response_config.get("images_path", "$.data[*].url")
         response_format = self.response_config.get("response_format", "url")
+        output_format = self.response_config.get("output_format") or data.get("output_format") or "png"
         
         if response_format == "base64":
             b64_data = self._extract_by_jsonpath(data, images_path, is_list=True)
             if not b64_data:
+                b64_path = self.response_config.get("base64_images_path", "$.data[*].b64_json")
+                if b64_path != images_path:
+                    b64_data = self._extract_by_jsonpath(data, b64_path, is_list=True)
+            if not b64_data:
                 return {"success": False, "error": "未能从响应中提取 base64 图像数据"}
-            return {"success": True, "url": None, "urls": b64_data, "cost": 0.0, "format": "base64"}
+            return {
+                "success": True,
+                "url": None,
+                "urls": b64_data,
+                "cost": 0.0,
+                "format": "base64",
+                "output_format": output_format,
+            }
         else:
             urls = self._extract_by_jsonpath(data, images_path, is_list=True)
+            if urls:
+                return {"success": True, "url": urls[0], "urls": urls, "cost": 0.0, "format": "url"}
+
+            b64_path = self.response_config.get("base64_images_path", "$.data[*].b64_json")
+            b64_data = self._extract_by_jsonpath(data, b64_path, is_list=True)
+            if b64_data:
+                return {
+                    "success": True,
+                    "url": None,
+                    "urls": b64_data,
+                    "cost": 0.0,
+                    "format": "base64",
+                    "output_format": output_format,
+                }
             if not urls:
                 return {"success": False, "error": "未能从响应中提取图像 URL"}
             return {"success": True, "url": urls[0], "urls": urls, "cost": 0.0, "format": "url"}
@@ -456,6 +512,55 @@ class GenericImageBackend(ImageBackend):
                 logger.info(f"[GenericImageBackend] 已更新使用统计 | id={fresh_conn.id} | 次数+1 | 本次花费={cost} | 累计总花费={fresh_conn.total_cost}")
         except Exception as e:
             logger.error(f"更新使用统计失败: {e}")
+
+    def _save_base64_image(
+        self,
+        b64_data: str,
+        prompt: str,
+        index: int = 0,
+        output_format: str = "png",
+    ) -> Optional[Path]:
+        try:
+            backend_dir = Path(__file__).parent.parent.parent.parent.parent
+            save_dir = backend_dir / "storage" / "images"
+            save_dir.mkdir(parents=True, exist_ok=True)
+
+            ext = self._ext_from_output_format(output_format)
+            data = b64_data
+            if b64_data.startswith("data:"):
+                header, data = b64_data.split(",", 1)
+                mime_type = header.split(";")[0].replace("data:", "") or ""
+                ext = self._ext_from_output_format(mime_type)
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            safe_prompt = "".join(c for c in prompt[:20] if c.isalnum() or c in " -_").strip().replace(" ", "_") or "image"
+            filename = f"{timestamp}_{safe_prompt}_{index}{ext}"
+            local_path = save_dir / filename
+            local_path.write_bytes(base64.b64decode(data))
+            logger.info(f"base64 图片已保存到本地: {local_path}")
+            return local_path
+        except Exception as e:
+            logger.error(f"保存 base64 图片失败: {e}")
+            return None
+
+    @staticmethod
+    def _ext_from_output_format(output_format: str) -> str:
+        value = (output_format or "png").strip().lower()
+        if "/" in value:
+            guessed = mimetypes.guess_extension(value)
+            if guessed:
+                return ".jpg" if guessed == ".jpe" else guessed
+            value = value.split("/", 1)[1]
+        value = value.lstrip(".")
+        if value == "jpeg":
+            value = "jpg"
+        if value not in {"png", "jpg", "webp", "gif"}:
+            value = "png"
+        return f".{value}"
+
+    @staticmethod
+    def _local_file_url(path: str) -> str:
+        return f"/api/v1/assets/download?path={quote(path, safe='')}"
 
     async def _download_image(self, url: str, prompt: str) -> Optional[Path]:
         try:

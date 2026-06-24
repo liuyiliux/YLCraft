@@ -7,12 +7,14 @@ YLCraft — AI 连接器服务层
 from __future__ import annotations
 
 import logging
+import json
 import time
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
+from jinja2 import Template
 from sqlmodel import select
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -335,10 +337,20 @@ class AIConnectorService:
             return {"success": False, "message": "API Key 为空"}
 
         if conn.base_url:
+            request = {"method": "GET", "url": conn.base_url, "json": None}
+            headers = {}
             try:
                 provider_type = conn.provider_type.value if hasattr(conn.provider_type, "value") else str(conn.provider_type or "llm")
                 api_format = getattr(conn, 'api_format', 'custom')
-                request = self._build_test_request(conn.base_url, conn.api_endpoint, provider_type, conn.default_model, conn.test_prompt, api_format)
+                request = self._build_test_request(
+                    conn.base_url,
+                    conn.api_endpoint,
+                    provider_type,
+                    conn.default_model,
+                    conn.test_prompt,
+                    api_format,
+                    conn=conn,
+                )
                 
                 # 使用自定义请求体（如果提供了）
                 if custom_body:
@@ -403,7 +415,16 @@ class AIConnectorService:
 
         return {"success": True, "message": "API Key 格式正确"}
 
-    def _build_test_request(self, base_url: str, api_endpoint: Optional[str], provider_type: str, model: str, test_prompt: Optional[str] = None, api_format: str = "custom") -> dict:
+    def _build_test_request(
+        self,
+        base_url: str,
+        api_endpoint: Optional[str],
+        provider_type: str,
+        model: str,
+        test_prompt: Optional[str] = None,
+        api_format: str = "custom",
+        conn: Optional[AIConnector] = None,
+    ) -> dict:
         """
         构造最小测试请求。
 
@@ -450,15 +471,23 @@ class AIConnectorService:
 
         if provider_type == "image":
             default_prompt = "连接测试图片"
+            params = {
+                "model": model or "gpt-image-1",
+                "prompt": test_prompt or default_prompt,
+                "size": "1024x1024",
+                "n": 1,
+                **self._parse_json_object(getattr(conn, "default_params", None)),
+            }
+            if api_format == "custom" and conn and conn.request_template:
+                return {
+                    "method": "POST",
+                    "url": build_url("/images/generations"),
+                    "json": self._render_test_template(conn.request_template, params),
+                }
             return {
                 "method": "POST",
                 "url": build_url("/images/generations"),
-                "json": {
-                    "model": model or "gpt-image-1",
-                    "prompt": test_prompt or default_prompt,
-                    "size": "1024x1024",
-                    "n": 1,
-                },
+                "json": params,
             }
 
         if provider_type == "llm":
@@ -492,6 +521,26 @@ class AIConnectorService:
             "method": "GET",
             "url": normalized_base,
         }
+
+    def _parse_json_object(self, value) -> dict:
+        if not value:
+            return {}
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+            except (json.JSONDecodeError, TypeError):
+                return {}
+            return parsed if isinstance(parsed, dict) else {}
+        return {}
+
+    def _render_test_template(self, request_template: str, params: dict) -> dict:
+        rendered = Template(request_template).render(**params)
+        data = json.loads(rendered)
+        if not isinstance(data, dict):
+            raise ValueError("Request 模板必须渲染为 JSON 对象")
+        return data
 
     def _extract_error_message(self, response) -> Optional[str]:
         """尽量从响应中提取清晰的错误信息。"""

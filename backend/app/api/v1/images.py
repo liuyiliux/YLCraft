@@ -90,6 +90,13 @@ async def list_backends():
                 logger.info("AIService reinitialized from /backends endpoint")
         except Exception as e:
             logger.warning(f"Reinitializing manager failed: {e}")
+
+        registered_backend_names = set()
+        try:
+            from app.services.ai.types import MediaType
+            registered_backend_names = set(manager._registry.get_all_backends(MediaType.IMAGE).keys())
+        except Exception as e:
+            logger.warning(f"Failed to get registered image backends: {e}")
         
         from app.db.models.ai_connector import AIConnector
         connectors = db_session.query(AIConnector).filter(
@@ -100,6 +107,8 @@ async def list_backends():
         info_list = []
         for conn in connectors:
             try:
+                if registered_backend_names and conn.name not in registered_backend_names:
+                    continue
                 name = conn.name
                 model = conn.default_model or ''
                 capabilities = ['text_to_image']

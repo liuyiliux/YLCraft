@@ -1,16 +1,34 @@
 import { useState, useEffect } from 'react'
 import {
-  Card, Input, Button, Typography, Tag, Spin, message, Space, Divider, Progress,
+  Alert, Card, Input, Button, Typography, Tag, Spin, message, Space, Divider, Progress, Table, Upload,
 } from 'antd'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   CloudDownloadOutlined, AudioOutlined, PlayCircleOutlined, LinkOutlined, DeleteOutlined, FolderOpenOutlined,
-  PictureOutlined, DownloadOutlined, SaveOutlined
+  PictureOutlined, DownloadOutlined, SaveOutlined, InboxOutlined, PauseCircleOutlined, ReloadOutlined
 } from '@ant-design/icons'
-import { parseDownloadUrl, createDownloadTask, getDownloadTask, openFolder, wechatMpDownloadSingle, listPlatformConnections } from '../../api'
+import {
+  addTorrentMagnet,
+  deleteTorrentTask,
+  getTorrentFiles,
+  getTorrentTask,
+  importTorrentAssets,
+  listPlatformConnections,
+  listTorrentTasks,
+  openFolder,
+  parseDownloadUrl,
+  pauseTorrentTask,
+  resumeTorrentTask,
+  selectTorrentFiles,
+  uploadTorrentFile,
+  createDownloadTask,
+  getDownloadTask,
+  wechatMpDownloadSingle,
+} from '../../api'
 import type { DownloadParseResponse, VideoQuality } from '../../types/api'
 import { useTheme } from '../../constants/theme'
 import { normalizeUrl } from '../../utils/url'
+import { formatFileSize } from '../../utils/format'
 
 const { Title, Text, Paragraph } = Typography
 
@@ -24,6 +42,304 @@ const PLATFORM_LABELS: Record<string, string> = {
 const QUALITY_COLORS: Record<string, string> = {
   '4K': '#f59e0b', '2K': '#8b5cf6', '1080P': '#10b981',
   '720P': '#3b82f6', '480P': '#6366f1', '360P': '#8b8ba8', '240P': '#8b8ba8',
+}
+
+interface TorrentTask {
+  id: string
+  name: string
+  status: string
+  progress: number
+  torrent_hash: string
+  download_speed: number
+  upload_speed: number
+  downloaded_bytes: number
+  total_size: number
+  selected_files: number[]
+  asset_ids: string[]
+  error_message?: string
+}
+
+interface TorrentFile {
+  index: number
+  name: string
+  size: number
+  progress: number
+  priority: number
+  is_video: boolean
+}
+
+function TorrentDownloadPanel() {
+  const { theme: THEME } = useTheme()
+  const navigate = useNavigate()
+  const [magnet, setMagnet] = useState('')
+  const [tasks, setTasks] = useState<TorrentTask[]>([])
+  const [activeTask, setActiveTask] = useState<TorrentTask | null>(null)
+  const [files, setFiles] = useState<TorrentFile[]>([])
+  const [selectedFiles, setSelectedFiles] = useState<number[]>([])
+  const [loadingTasks, setLoadingTasks] = useState(false)
+  const [adding, setAdding] = useState(false)
+  const [filesLoading, setFilesLoading] = useState(false)
+  const [actionLoading, setActionLoading] = useState('')
+
+  const refreshTasks = async () => {
+    setLoadingTasks(true)
+    try {
+      const res: any = await listTorrentTasks()
+      const nextTasks = (res?.data || []) as TorrentTask[]
+      setTasks(nextTasks)
+      if (activeTask) {
+        const nextActive = nextTasks.find(item => item.id === activeTask.id) || null
+        setActiveTask(nextActive)
+      }
+    } catch (e: any) {
+      message.error(e?.message || '获取种子任务失败')
+    } finally {
+      setLoadingTasks(false)
+    }
+  }
+
+  const loadFiles = async (task: TorrentTask) => {
+    setActiveTask(task)
+    setFilesLoading(true)
+    try {
+      const res: any = await getTorrentFiles(task.id)
+      const nextFiles = (res?.data || []) as TorrentFile[]
+      setFiles(nextFiles)
+      setSelectedFiles(task.selected_files?.length ? task.selected_files : nextFiles.filter(item => item.is_video).map(item => item.index))
+    } catch (e: any) {
+      message.error(e?.message || '获取种子文件列表失败')
+      setFiles([])
+    } finally {
+      setFilesLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    refreshTasks()
+    const timer = window.setInterval(refreshTasks, 5000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  const addMagnet = async () => {
+    const value = magnet.trim()
+    if (!value) {
+      message.warning('请输入磁力链接')
+      return
+    }
+    setAdding(true)
+    try {
+      const res: any = await addTorrentMagnet(value, true)
+      const task = res?.data as TorrentTask
+      message.success('磁力任务已添加')
+      setMagnet('')
+      await refreshTasks()
+      if (task?.id) {
+        const detail: any = await getTorrentTask(task.id)
+        await loadFiles(detail?.data || task)
+      }
+    } catch (e: any) {
+      message.error(e?.message || '添加磁力任务失败')
+    } finally {
+      setAdding(false)
+    }
+  }
+
+  const runTaskAction = async (key: string, action: () => Promise<any>, successText: string) => {
+    setActionLoading(key)
+    try {
+      const res: any = await action()
+      message.success(successText)
+      await refreshTasks()
+      if (res?.data?.id) await loadFiles(res.data)
+      return res
+    } catch (e: any) {
+      message.error(e?.message || '操作失败')
+      return null
+    } finally {
+      setActionLoading('')
+    }
+  }
+
+  const startSelectedFiles = async () => {
+    if (!activeTask) return
+    if (!selectedFiles.length) {
+      message.warning('请选择至少一个文件')
+      return
+    }
+    await runTaskAction(
+      `select-${activeTask.id}`,
+      () => selectTorrentFiles(activeTask.id, selectedFiles, true),
+      '已开始下载选中文件',
+    )
+  }
+
+  const importAssets = async (task: TorrentTask) => {
+    const res = await runTaskAction(`import-${task.id}`, () => importTorrentAssets(task.id), '已导入素材库')
+    const assetId = res?.data?.[0]?.id
+    if (assetId) navigate(`/player/assets/${assetId}`)
+  }
+
+  const taskColumns = [
+    {
+      title: '任务',
+      dataIndex: 'name',
+      render: (_: string, item: TorrentTask) => (
+        <div style={{ minWidth: 0 }}>
+          <Text style={{ color: THEME.textPrimary }} ellipsis>{item.name || item.torrent_hash || item.id}</Text>
+          {item.error_message && <div><Text type="danger" style={{ fontSize: 12 }}>{item.error_message}</Text></div>}
+        </div>
+      ),
+    },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      width: 110,
+      render: (status: string) => <Tag color={status === 'done' ? 'green' : status === 'failed' ? 'red' : status === 'paused' ? 'gold' : 'blue'}>{status}</Tag>,
+    },
+    {
+      title: '进度',
+      dataIndex: 'progress',
+      width: 180,
+      render: (progress: number, item: TorrentTask) => (
+        <div>
+          <Progress percent={progress || 0} size="small" showInfo={false} />
+          <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>
+            {formatFileSize(item.downloaded_bytes || 0)} / {formatFileSize(item.total_size || 0)}
+          </Text>
+        </div>
+      ),
+    },
+    {
+      title: '速度',
+      width: 150,
+      render: (_: unknown, item: TorrentTask) => (
+        <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>
+          ↓ {formatFileSize(item.download_speed || 0)}/s · ↑ {formatFileSize(item.upload_speed || 0)}/s
+        </Text>
+      ),
+    },
+    {
+      title: '操作',
+      width: 260,
+      render: (_: unknown, item: TorrentTask) => (
+        <Space wrap>
+          <Button size="small" icon={<FolderOpenOutlined />} onClick={() => loadFiles(item)}>文件</Button>
+          {item.status === 'paused' ? (
+            <Button size="small" icon={<ReloadOutlined />} loading={actionLoading === `resume-${item.id}`} onClick={() => runTaskAction(`resume-${item.id}`, () => resumeTorrentTask(item.id), '已继续下载')}>继续</Button>
+          ) : (
+            <Button size="small" icon={<PauseCircleOutlined />} loading={actionLoading === `pause-${item.id}`} onClick={() => runTaskAction(`pause-${item.id}`, () => pauseTorrentTask(item.id), '已暂停')}>暂停</Button>
+          )}
+          <Button size="small" icon={<SaveOutlined />} loading={actionLoading === `import-${item.id}`} onClick={() => importAssets(item)}>入库</Button>
+          {item.asset_ids?.[0] && <Button size="small" icon={<PlayCircleOutlined />} onClick={() => navigate(`/player/assets/${item.asset_ids[0]}`)}>播放</Button>}
+          <Button size="small" danger icon={<DeleteOutlined />} loading={actionLoading === `delete-${item.id}`} onClick={() => runTaskAction(`delete-${item.id}`, () => deleteTorrentTask(item.id), '已删除任务')}>删除</Button>
+        </Space>
+      ),
+    },
+  ]
+
+  const fileColumns = [
+    {
+      title: '文件',
+      dataIndex: 'name',
+      render: (name: string, item: TorrentFile) => (
+        <Space>
+          {item.is_video && <Tag color="blue">视频</Tag>}
+          <Text style={{ color: THEME.textPrimary }}>{name}</Text>
+        </Space>
+      ),
+    },
+    { title: '大小', dataIndex: 'size', width: 120, render: (size: number) => formatFileSize(size || 0) },
+    {
+      title: '进度',
+      dataIndex: 'progress',
+      width: 160,
+      render: (progress: number) => <Progress percent={Math.round((progress || 0) * 100)} size="small" />,
+    },
+  ]
+
+  return (
+    <Card
+      title={<Space><InboxOutlined style={{ color: THEME.primary }} /><Text style={{ color: THEME.textPrimary }}>磁力 / 种子下载</Text></Space>}
+      style={{ background: THEME.bgCard, marginBottom: 24, border: `1px solid ${THEME.border}` }}
+    >
+      <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+        <Alert
+          type="info"
+          showIcon
+          message="需要本机 qBittorrent Web UI 可用，默认地址 http://127.0.0.1:8080"
+          description="添加任务后先获取元数据，选择视频文件再开始下载；下载完成后可导入素材库并用现有播放器打开。"
+        />
+        <Space.Compact style={{ width: '100%' }}>
+          <Input
+            size="large"
+            placeholder="magnet:?xt=urn:btih:..."
+            value={magnet}
+            onChange={event => setMagnet(event.target.value)}
+            onPressEnter={addMagnet}
+            style={{ background: THEME.bgInput, color: THEME.textPrimary }}
+          />
+          <Button type="primary" size="large" icon={<CloudDownloadOutlined />} loading={adding} onClick={addMagnet}>
+            添加
+          </Button>
+        </Space.Compact>
+        <Upload
+          accept=".torrent"
+          showUploadList={false}
+          beforeUpload={async file => {
+            setAdding(true)
+            try {
+              const res: any = await uploadTorrentFile(file, true)
+              message.success('种子任务已添加')
+              await refreshTasks()
+              if (res?.data) await loadFiles(res.data)
+            } catch (e: any) {
+              message.error(e?.message || '上传种子失败')
+            } finally {
+              setAdding(false)
+            }
+            return false
+          }}
+        >
+          <Button icon={<InboxOutlined />} loading={adding}>上传 .torrent</Button>
+        </Upload>
+        <Table
+          rowKey="id"
+          size="small"
+          loading={loadingTasks}
+          dataSource={tasks}
+          columns={taskColumns}
+          pagination={false}
+          scroll={{ x: 900 }}
+        />
+        {activeTask && (
+          <Card
+            size="small"
+            title={<Text style={{ color: THEME.textPrimary }}>文件选择：{activeTask.name || activeTask.id}</Text>}
+            style={{ background: THEME.bgInput, border: `1px solid ${THEME.border}` }}
+            extra={
+              <Button type="primary" size="small" loading={actionLoading === `select-${activeTask.id}`} onClick={startSelectedFiles}>
+                下载选中文件
+              </Button>
+            }
+          >
+            <Table
+              rowKey="index"
+              size="small"
+              loading={filesLoading}
+              dataSource={files}
+              columns={fileColumns}
+              pagination={false}
+              rowSelection={{
+                selectedRowKeys: selectedFiles,
+                onChange: keys => setSelectedFiles(keys.map(Number)),
+              }}
+              scroll={{ x: 680, y: 260 }}
+            />
+          </Card>
+        )}
+      </Space>
+    </Card>
+  )
 }
 
 export default function DownloadPage() {
@@ -204,6 +520,8 @@ export default function DownloadPage() {
           ))}
         </div>
       </Card>
+
+      <TorrentDownloadPanel />
 
       {/* Loading */}
       {loading && (

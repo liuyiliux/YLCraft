@@ -119,13 +119,17 @@ class BackendRouter:
         # 1. 指定 provider
         if req.provider:
             backend = backends.get(req.provider)
-            if backend:
-                if is_img2img and not self._supports_img2img(backend):
-                    return ImageGenerationResult(
-                        success=False,
-                        error=f"指定的 Provider '{req.provider}' 不支持图生图功能"
-                    )
-                return await backend.generate(req)
+            if not backend:
+                return ImageGenerationResult(
+                    success=False,
+                    error=f"指定的 Provider '{req.provider}' 不存在或未启用"
+                )
+            if is_img2img and not self._supports_img2img(backend):
+                return ImageGenerationResult(
+                    success=False,
+                    error=f"指定的 Provider '{req.provider}' 不支持图生图功能"
+                )
+            return await backend.generate(req)
 
         # 2. 默认 provider
         default_key = self._registry.get_default(MediaType.IMAGE)

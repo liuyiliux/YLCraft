@@ -395,6 +395,47 @@ export const openFolder = (filePath: string) =>
  * 带下载进度回调的下载函数（使用 XMLHttpRequest，支持 onprogress）
  * 返回 { blob, filePath } — filePath 从 X-File-Path header 读取
  */
+// ===== Torrent Downloads =====
+
+export const listTorrentTasks = () => request('/torrents')
+
+export const addTorrentMagnet = (magnet: string, startPaused = true) =>
+  request('/torrents/magnet', {
+    method: 'POST',
+    body: JSON.stringify({ magnet, start_paused: startPaused }),
+  })
+
+export const uploadTorrentFile = (file: File, startPaused = true) => {
+  const body = new FormData()
+  body.append('file', file)
+  return request(`/torrents/upload?start_paused=${startPaused ? 'true' : 'false'}`, {
+    method: 'POST',
+    body,
+  })
+}
+
+export const getTorrentTask = (downloadId: string) => request(`/torrents/${downloadId}`)
+
+export const getTorrentFiles = (downloadId: string) => request(`/torrents/${downloadId}/files`)
+
+export const selectTorrentFiles = (downloadId: string, fileIndexes: number[], start = true) =>
+  request(`/torrents/${downloadId}/select-files`, {
+    method: 'POST',
+    body: JSON.stringify({ file_indexes: fileIndexes, start }),
+  })
+
+export const pauseTorrentTask = (downloadId: string) =>
+  request(`/torrents/${downloadId}/pause`, { method: 'POST' })
+
+export const resumeTorrentTask = (downloadId: string) =>
+  request(`/torrents/${downloadId}/resume`, { method: 'POST' })
+
+export const deleteTorrentTask = (downloadId: string, deleteFiles = false) =>
+  request(`/torrents/${downloadId}?delete_files=${deleteFiles ? 'true' : 'false'}`, { method: 'DELETE' })
+
+export const importTorrentAssets = (downloadId: string) =>
+  request(`/torrents/${downloadId}/import-assets`, { method: 'POST' })
+
 export const downloadVideoWithProgress = (
   url: string,
   quality: string | undefined,
