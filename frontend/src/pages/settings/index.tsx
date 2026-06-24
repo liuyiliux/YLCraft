@@ -202,7 +202,7 @@ const AI_TYPE_HELP: Record<string, { title: string; description: string; focus: 
     title: '图像生成',
     description: '用于文生图、图生图和多参考图生成。',
     focus: 'OpenAI SDK / Gemini SDK 适合对应的标准接口；通用 HTTP 模式需要配置 Request 模板和 Response 解析。',
-    detail: 'Response 解析使用 JSONPath：URL 通常填 images_path，base64 通常填 base64_images_path，也可以把 response_format 设为 base64。',
+    detail: 'Response 解析使用 JSONPath：URL 通常填 images_path，base64 通常填 base64_images_path；OpenAI SDK 图片接口如需强制 base64 返回，可在默认参数里加 {"response_format":"b64_json"}。',
   },
   video: {
     title: '视频生成',
@@ -259,7 +259,7 @@ function TypeHelpBlock({ type, theme, compact = false }: { type?: string; theme:
 function getApiFormatHelp(apiFormat?: string, type?: string) {
   if (apiFormat === 'openai_sdk') {
     return type === 'image'
-      ? '适合 OpenAI 兼容的图片生成接口，后端直接用 SDK 调用 images.generate，不需要填写 Request 模板和 Response 解析。'
+      ? '适合 OpenAI 兼容的图片生成接口，后端直接用 SDK 调用 images.generate，不需要填写 Request 模板和 Response 解析；如需强制 base64 返回，在默认参数加 {"response_format":"b64_json"}。'
       : '适合 OpenAI 兼容的聊天接口，后端直接用 SDK 调用 Chat Completions。'
   }
   if (apiFormat === 'openai_sdk_responses') {
@@ -750,13 +750,17 @@ const ProviderFormModal: React.FC<ProviderFormModalProps> = ({ open, provider, o
                     <Form.Item
                       name={`type_${type}_params`}
                       label="默认参数 (JSON)"
-                      extra={`${typeOption?.label || type} 类型的默认请求参数`}
+                      extra={
+                        type === 'image'
+                          ? '图像类型的默认请求参数；OpenAI SDK 图片接口如需强制 base64 返回，可加 {"response_format":"b64_json"}。'
+                          : `${typeOption?.label || type} 类型的默认请求参数`
+                      }
                     >
                       <Input.TextArea
                         placeholder={type === 'llm' 
                           ? '{"temperature": 0.7, "max_tokens": 4096}'
                           : type === 'image'
-                          ? '{"n": 1, "size": "1024x1024", "quality": "standard"}'
+                          ? '{"n": 1, "size": "1024x1024", "response_format": "b64_json"}'
                           : type === 'tts'
                           ? '{"voice": "alloy", "speed": 1.0}'
                           : '{}'
@@ -2503,12 +2507,12 @@ export default function SettingsPage() {
 
                       <Form.Item name="default_params" label={<span style={{ color: THEME.textPrimary }}>默认参数 (JSON)</span>} style={{ marginBottom: 0 }}
                         extra={<span style={{ color: THEME.textSecondary, fontSize: 12 }}>
-                          参数名映射：size_param 指定尺寸字段名（如硅基流动用 image_size），seed_param 指定种子字段名
+                          参数名映射：size_param 指定尺寸字段名，seed_param 指定种子字段名；OpenAI SDK 图片接口如需强制 base64 返回，可加 <code>{'{"response_format":"b64_json"}'}</code>。
                         </span>}
                       >
                         <TextArea 
                           rows={2} 
-                          placeholder={`JSON 格式的默认参数，例如：\n{"n": 1, "quality": "standard", "size_param": "image_size", "seed_param": "seed"}`}
+                          placeholder={`JSON 格式的默认参数，例如：\n{"n": 1, "response_format": "b64_json", "size_param": "image_size", "seed_param": "seed"}`}
                         />
                       </Form.Item>
                     </div>
