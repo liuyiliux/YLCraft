@@ -42,6 +42,7 @@ class OpenAISDKImageBackend:
             api_key=connector.api_key,
             base_url=connector.base_url or None,
             max_retries=2,
+            timeout=connector.timeout,
         )
 
         self._capabilities = {
@@ -144,7 +145,7 @@ class OpenAISDKImageBackend:
                 ext = ".webp"
             filename = f"{timestamp}_{safe_prompt}_{index}{ext}"
             local_path = self._save_dir / filename
-            async with httpx.AsyncClient(timeout=300.0, follow_redirects=True) as client:
+            async with httpx.AsyncClient(timeout=self.connector.timeout, follow_redirects=True) as client:
                 resp = await client.get(url)
                 resp.raise_for_status()
                 with open(local_path, "wb") as f:

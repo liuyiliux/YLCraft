@@ -198,6 +198,8 @@ class AIConnectorService:
             reference_image_field=data.reference_image_field,
             reference_image_array_field=data.reference_image_array_field,
             test_prompt=data.test_prompt,
+            timeout=data.timeout,
+            test_timeout=data.test_timeout,
             # 嵌入模型配置
             embedding_type=data.embedding_type,
             embedding_dimension=data.embedding_dimension,
@@ -283,6 +285,11 @@ class AIConnectorService:
             conn.reference_image_array_field = data.reference_image_array_field
         if data.test_prompt is not None:
             conn.test_prompt = data.test_prompt
+        # 超时配置
+        if data.timeout is not None:
+            conn.timeout = data.timeout
+        if data.test_timeout is not None:
+            conn.test_timeout = data.test_timeout
         # 嵌入模型配置
         if data.embedding_type is not None:
             conn.embedding_type = data.embedding_type
@@ -343,7 +350,7 @@ class AIConnectorService:
                 }
                 started_at = time.perf_counter()
 
-                async with httpx.AsyncClient(timeout=20) as client:
+                async with httpx.AsyncClient(timeout=conn.test_timeout) as client:
                     response = await client.request(
                         method=request["method"],
                         url=request["url"],

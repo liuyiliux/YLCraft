@@ -108,8 +108,8 @@ class BackendRouter:
     # Image 路由
     # -------------------------------------------------------------------------
 
-    def resolve_image(self, req: ImageGenerationRequest) -> ImageGenerationResult:
-        """解析 Image Backend，含回退策略"""
+    async def resolve_image(self, req: ImageGenerationRequest) -> ImageGenerationResult:
+        """解析 Image Backend，含回退策略（异步）"""
         backends = self._registry.get_all_backends(MediaType.IMAGE)
         if not backends:
             return ImageGenerationResult(success=False, error="没有可用的图像生成后端")
@@ -125,14 +125,14 @@ class BackendRouter:
                         success=False,
                         error=f"指定的 Provider '{req.provider}' 不支持图生图功能"
                     )
-                return backend.generate(req)
+                return await backend.generate(req)
 
         # 2. 默认 provider
         default_key = self._registry.get_default(MediaType.IMAGE)
         if default_key and default_key in backends:
             backend = backends[default_key]
             if not is_img2img or self._supports_img2img(backend):
-                result = backend.generate(req)
+                result = await backend.generate(req)
                 if result.success:
                     return result
 
@@ -143,8 +143,8 @@ class BackendRouter:
             if is_img2img and not self._supports_img2img(backend):
                 continue
             try:
-                if backend.health_check():
-                    result = backend.generate(req)
+                if await backend.health_check():
+                    result = await backend.generate(req)
                     if result.success:
                         return result
             except Exception:
@@ -166,8 +166,8 @@ class BackendRouter:
     # Video 路由
     # -------------------------------------------------------------------------
 
-    def resolve_video(self, req: VideoGenerationRequest) -> VideoGenerationResult:
-        """解析 Video Backend，含回退策略"""
+    async def resolve_video(self, req: VideoGenerationRequest) -> VideoGenerationResult:
+        """解析 Video Backend，含回退策略（异步）"""
         backends = self._registry.get_all_backends(MediaType.VIDEO)
         if not backends:
             return VideoGenerationResult(success=False, error="没有可用的视频生成后端")
@@ -176,12 +176,12 @@ class BackendRouter:
         if req.provider:
             backend = backends.get(req.provider)
             if backend:
-                return backend.generate(req)
+                return await backend.generate(req)
 
         # 2. 默认 provider
         default_key = self._registry.get_default(MediaType.VIDEO)
         if default_key and default_key in backends:
-            result = backends[default_key].generate(req)
+            result = await backends[default_key].generate(req)
             if result.success:
                 return result
 
@@ -190,8 +190,8 @@ class BackendRouter:
             if key == default_key:
                 continue
             try:
-                if backend.health_check():
-                    result = backend.generate(req)
+                if await backend.health_check():
+                    result = await backend.generate(req)
                     if result.success:
                         return result
             except Exception:
@@ -199,9 +199,9 @@ class BackendRouter:
 
         return VideoGenerationResult(success=False, error="所有视频生成后端均失败")
 
-    def resolve_video_poll(self, provider: str | None, task_id: str) -> VideoGenerationResult:
-        """解析 Video poll Backend"""
+    async def resolve_video_poll(self, provider: str | None, task_id: str) -> VideoGenerationResult:
+        """解析 Video poll Backend（异步）"""
         backend = self._registry.get_backend(MediaType.VIDEO, provider)
         if not backend:
             return VideoGenerationResult(success=False, error=f"Provider not found: {provider}")
-        return backend.poll(task_id)
+        return await backend.poll(task_id)

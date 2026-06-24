@@ -149,6 +149,10 @@ class AIConnectorBase(SQLModel):
         description="测试提示词（为空时使用默认值）"
     )
 
+    # 超时配置（秒）
+    timeout: int = Field(300, description="API 请求超时时间（秒），默认 300 秒（5分钟）")
+    test_timeout: int = Field(20, description="连接测试超时时间（秒），默认 20 秒")
+
     # 成本控制
     monthly_budget: Optional[float] = Field(None, description="月度预算（美元）")
     daily_limit: Optional[int] = Field(None, description="每日请求限制")
@@ -239,6 +243,9 @@ class AIConnectorCreate(SQLModel):
     reference_image_field: str = "image"
     reference_image_array_field: Optional[str] = None
     test_prompt: Optional[str] = None
+    # 超时配置
+    timeout: int = 300
+    test_timeout: int = 20
     # LLM 视觉支持配置
     support_vision_input: bool = False
     # 嵌入模型专用配置
@@ -281,6 +288,9 @@ class AIConnectorUpdate(SQLModel):
     reference_image_field: Optional[str] = None
     reference_image_array_field: Optional[str] = None
     test_prompt: Optional[str] = None
+    # 超时配置
+    timeout: Optional[int] = None
+    test_timeout: Optional[int] = None
     # LLM 视觉支持配置
     support_vision_input: Optional[bool] = None
     # 嵌入模型专用配置
@@ -326,6 +336,9 @@ class AIConnectorResponse(SQLModel):
     reference_image_field: str = "image"
     reference_image_array_field: Optional[str] = None
     test_prompt: Optional[str] = None
+    # 超时配置
+    timeout: int = 300
+    test_timeout: int = 20
     support_vision_input: bool = False
     has_api_key: bool = False  # 是否配置了 API Key（不返回实际 key）
     # 嵌入模型专用配置
@@ -394,6 +407,8 @@ class AIConnectorResponse(SQLModel):
             reference_image_field=conn.reference_image_field,
             reference_image_array_field=conn.reference_image_array_field,
             test_prompt=conn.test_prompt,
+            timeout=conn.timeout,
+            test_timeout=conn.test_timeout,
             support_vision_input=conn.support_vision_input,
             has_api_key=bool(conn.api_key),
             # 嵌入模型专用配置

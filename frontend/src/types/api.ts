@@ -34,6 +34,8 @@ export interface Provider {
   reference_image_array_field?: string
   support_vision_input?: boolean
   test_prompt?: string
+  timeout?: number
+  test_timeout?: number
   has_api_key?: boolean
   price_per_call?: number
   api_format?: string

@@ -1494,6 +1494,8 @@ export default function SettingsPage() {
       reference_image_array_field: provider.reference_image_array_field || '',
       support_vision_input: provider.support_vision_input || false,
       test_prompt: provider.test_prompt || '',
+      timeout: provider.timeout || 300,
+      test_timeout: provider.test_timeout || 20,
       api_format: provider.api_format || 'custom',
     })
     setModalVisible(true)
@@ -2277,6 +2279,30 @@ export default function SettingsPage() {
               rows={2} 
               placeholder={`LLM 模式：测试使用的提示词（默认："Reply with ok."）\nImage 模式：测试图片生成的提示词（默认："连接测试图片"）`}
             />
+          </Form.Item>
+
+          <Form.Item name="timeout" label={<span style={{ color: THEME.textPrimary }}>API 请求超时时间 (秒)</span>}>
+            <InputNumber 
+              style={{ width: 200 }} 
+              min={10} 
+              max={3600} 
+              step={10}
+              placeholder="300"
+              initialValue={300}
+            />
+            <span style={{ marginLeft: 8, color: THEME.textSecondary }}>默认: 300秒 (5分钟)</span>
+          </Form.Item>
+
+          <Form.Item name="test_timeout" label={<span style={{ color: THEME.textPrimary }}>连接测试超时时间 (秒)</span>}>
+            <InputNumber 
+              style={{ width: 200 }} 
+              min={5} 
+              max={300} 
+              step={5}
+              placeholder="20"
+              initialValue={20}
+            />
+            <span style={{ marginLeft: 8, color: THEME.textSecondary }}>默认: 20秒</span>
           </Form.Item>
 
           {selectedType === 'image' || selectedType === 'video' ? (

@@ -100,7 +100,7 @@ class GenericImageBackend(ImageBackend):
         self.client = httpx.AsyncClient(
             base_url=base_url,
             headers=headers,
-            timeout=300.0,
+            timeout=connector.timeout,
             follow_redirects=True,
             max_redirects=5,
         )
@@ -142,6 +142,12 @@ class GenericImageBackend(ImageBackend):
             final_url = self.connector.base_url or ""
             if final_url:
                 final_url = final_url.rstrip("/")
+            # 拼接 api_endpoint（如果有配置）
+            api_endpoint = (self.connector.api_endpoint or "").strip()
+            if api_endpoint:
+                if not api_endpoint.startswith("/"):
+                    api_endpoint = "/" + api_endpoint
+                final_url = final_url + api_endpoint
 
             max_retries = 3
             response = None
@@ -153,7 +159,7 @@ class GenericImageBackend(ImageBackend):
                             "Authorization": f"Bearer {self.connector.api_key}",
                             "Content-Type": "application/json",
                         },
-                        timeout=300.0,
+                        timeout=self.connector.timeout,
                         follow_redirects=True,
                         max_redirects=5,
                     )
@@ -220,7 +226,11 @@ class GenericImageBackend(ImageBackend):
         try:
             test_params = {"model": self.model, "prompt": "test", "n": 1}
             request_body = self._render_request(test_params)
-            response = await self.client.post("", json=request_body)
+            # 拼接 api_endpoint（如果有配置）
+            api_endpoint = (self.connector.api_endpoint or "").strip()
+            if api_endpoint and not api_endpoint.startswith("/"):
+                api_endpoint = "/" + api_endpoint
+            response = await self.client.post(api_endpoint, json=request_body)
             return response.status_code == 200
         except Exception:
             return False
@@ -467,7 +477,7 @@ class GenericImageBackend(ImageBackend):
             filename = f"{timestamp}_{safe_prompt}{ext}"
             local_path = save_dir / filename
             
-            async with httpx.AsyncClient(timeout=300.0, follow_redirects=True) as temp_download_client:
+            async with httpx.AsyncClient(timeout=self.connector.timeout, follow_redirects=True) as temp_download_client:
                 response = await temp_download_client.get(url)
                 response.raise_for_status()
                 with open(local_path, "wb") as f:
