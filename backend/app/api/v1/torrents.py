@@ -110,6 +110,7 @@ async def get_engine_status():
         "engine": config.engine,
         "download_dir": str(config.download_dir),
         "max_active": config.max_active,
+        "listen_interfaces": config.listen_interfaces,
         "requires_external_app": config.engine == "qbittorrent",
         "libtorrent_available": libtorrent_available,
         "hint": (

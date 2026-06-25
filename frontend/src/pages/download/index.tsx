@@ -75,6 +75,7 @@ interface TorrentEngineInfo {
   engine: string
   download_dir: string
   max_active: number
+  listen_interfaces?: string
   requires_external_app: boolean
   libtorrent_available?: boolean
   hint?: string
@@ -287,6 +288,11 @@ function TorrentDownloadPanel() {
           <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>
             最大任务：{engineInfo.max_active}
           </Text>
+          {engineInfo.listen_interfaces && (
+            <Text style={{ color: THEME.textSecondary, fontSize: 12, wordBreak: 'break-all' }}>
+              监听：{engineInfo.listen_interfaces}
+            </Text>
+          )}
         </Space>
       )}
     </Space>

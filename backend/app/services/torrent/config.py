@@ -18,6 +18,7 @@ class TorrentConfig:
     download_dir: Path
     max_active: int
     max_upload_bytes: int
+    listen_interfaces: str
 
 
 def get_torrent_config() -> TorrentConfig:
@@ -31,6 +32,10 @@ def get_torrent_config() -> TorrentConfig:
         download_dir=download_dir,
         max_active=int(os.getenv("TORRENT_MAX_ACTIVE", "3") or "3"),
         max_upload_bytes=int(os.getenv("TORRENT_MAX_UPLOAD_BYTES", str(2 * 1024 * 1024)) or "0"),
+        listen_interfaces=os.getenv(
+            "TORRENT_LISTEN_INTERFACES",
+            "0.0.0.0:6881-6999,[::]:6881-6999",
+        ).strip() or "0.0.0.0:6881-6999,[::]:6881-6999",
     )
 
 
@@ -41,4 +46,3 @@ def assert_inside_download_dir(path: str | Path, root: str | Path | None = None)
     if resolved != root_resolved and root_resolved not in resolved.parents:
         raise ValueError(f"Path is outside torrent download directory: {resolved}")
     return resolved
-

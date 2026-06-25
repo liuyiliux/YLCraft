@@ -22,6 +22,8 @@ DHT_ROUTERS = (
     ("dht.aelitis.com", 6881),
 )
 
+DHT_BOOTSTRAP_NODES = ",".join(f"{host}:{port}" for host, port in DHT_ROUTERS)
+
 DEFAULT_TRACKERS = (
     "udp://tracker.opentrackr.org:1337/announce",
     "udp://open.stealth.si:80/announce",
@@ -182,13 +184,14 @@ class LibtorrentEngine(TorrentEngine):
 
     def _create_session(self):
         settings = {
-            "listen_interfaces": "0.0.0.0:6881",
+            "listen_interfaces": self.config.listen_interfaces,
             "enable_dht": True,
             "enable_lsd": True,
             "enable_upnp": True,
             "enable_natpmp": True,
             "announce_to_all_trackers": True,
             "announce_to_all_tiers": True,
+            "dht_bootstrap_nodes": DHT_BOOTSTRAP_NODES,
             "enable_outgoing_utp": True,
             "enable_incoming_utp": True,
             "connections_limit": 200,
@@ -401,11 +404,21 @@ def _metadata_hint(status, handle, session=None) -> str:
     connections = int(getattr(status, "num_connections", 0) or 0)
     dht_nodes = 0
     has_incoming = False
+    is_listening = False
+    listen_port = 0
     if session is not None:
         try:
             session_status = session.status()
             dht_nodes = int(getattr(session_status, "dht_nodes", 0) or 0)
             has_incoming = bool(getattr(session_status, "has_incoming_connections", False))
+        except Exception:
+            pass
+        try:
+            is_listening = bool(session.is_listening())
+        except Exception:
+            pass
+        try:
+            listen_port = int(session.listen_port() or 0)
         except Exception:
             pass
     trackers = 0
@@ -423,7 +436,8 @@ def _metadata_hint(status, handle, session=None) -> str:
     return (
         "等待种子元数据："
         f"peers={peers}, seeds={seeds}, connections={connections}, "
-        f"trackers={trackers}, dht_nodes={dht_nodes}, incoming={has_incoming}{tracker_suffix}。"
+        f"trackers={trackers}, dht_nodes={dht_nodes}, incoming={has_incoming}, "
+        f"listening={is_listening}, port={listen_port}{tracker_suffix}。"
         "如果长时间取不到，通常是该 magnet 没有可提供 metadata 的活跃节点，"
         "或本机网络/防火墙阻止 DHT/UDP；可以点击“重试元数据”重新公告。"
     )
