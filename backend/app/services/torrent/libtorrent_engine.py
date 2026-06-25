@@ -24,6 +24,15 @@ DHT_ROUTERS = (
 
 DHT_BOOTSTRAP_NODES = ",".join(f"{host}:{port}" for host, port in DHT_ROUTERS)
 
+FALLBACK_LISTEN_INTERFACES = (
+    "0.0.0.0:6883,[::]:6883",
+    "0.0.0.0:6884,[::]:6884",
+    "0.0.0.0:6885,[::]:6885",
+    "0.0.0.0:6886,[::]:6886",
+    "0.0.0.0:6887,[::]:6887",
+    "0.0.0.0:0,[::]:0",
+)
+
 DEFAULT_TRACKERS = (
     "udp://tracker.opentrackr.org:1337/announce",
     "udp://open.stealth.si:80/announce",
@@ -43,6 +52,8 @@ class LibtorrentEngine(TorrentEngine):
     _handles: dict[str, object] = {}
     _metadata_only: set[str] = set()
     _metadata_boost_at: dict[str, float] = {}
+    _dht_rebind_at: float = 0.0
+    _dht_rebind_index: int = 0
 
     def __init__(self, config: TorrentConfig):
         self.config = config
@@ -153,6 +164,7 @@ class LibtorrentEngine(TorrentEngine):
     async def refresh_metadata(self, torrent_hash: str) -> None:
         handle = self._require_handle(torrent_hash)
         self._start_dht(self._session)
+        self._maybe_rebind_stalled_dht()
         self._ensure_handle_trackers(handle)
         try:
             handle.resume()
@@ -250,6 +262,7 @@ class LibtorrentEngine(TorrentEngine):
             return
         self._metadata_boost_at[key] = now
         self._start_dht(self._session)
+        self._maybe_rebind_stalled_dht()
         self._ensure_handle_trackers(handle)
         try:
             handle.resume()
@@ -266,6 +279,37 @@ class LibtorrentEngine(TorrentEngine):
             handle.force_dht_announce()
         except Exception:
             pass
+
+    def _maybe_rebind_stalled_dht(self) -> None:
+        if self._session_dht_nodes(self._session) > 0:
+            return
+        now = time.monotonic()
+        if now - LibtorrentEngine._dht_rebind_at < 60:
+            return
+        listen_interfaces = FALLBACK_LISTEN_INTERFACES[
+            LibtorrentEngine._dht_rebind_index % len(FALLBACK_LISTEN_INTERFACES)
+        ]
+        LibtorrentEngine._dht_rebind_index += 1
+        LibtorrentEngine._dht_rebind_at = now
+        try:
+            self._session.apply_settings({
+                "listen_interfaces": listen_interfaces,
+                "dht_bootstrap_nodes": DHT_BOOTSTRAP_NODES,
+            })
+        except Exception:
+            pass
+        try:
+            self._session.reopen_network_sockets()
+        except Exception:
+            pass
+        self._start_dht(self._session)
+
+    @staticmethod
+    def _session_dht_nodes(session) -> int:
+        try:
+            return int(getattr(session.status(), "dht_nodes", 0) or 0)
+        except Exception:
+            return 0
 
     def _new_add_torrent_params(self):
         factory = getattr(self.lt, "add_torrent_params", None)

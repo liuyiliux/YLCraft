@@ -34,8 +34,8 @@ def get_torrent_config() -> TorrentConfig:
         max_upload_bytes=int(os.getenv("TORRENT_MAX_UPLOAD_BYTES", str(2 * 1024 * 1024)) or "0"),
         listen_interfaces=os.getenv(
             "TORRENT_LISTEN_INTERFACES",
-            "0.0.0.0:6881-6999,[::]:6881-6999",
-        ).strip() or "0.0.0.0:6881-6999,[::]:6881-6999",
+            "0.0.0.0:6883-6999,[::]:6883-6999",
+        ).strip() or "0.0.0.0:6883-6999,[::]:6883-6999",
     )
 
 
