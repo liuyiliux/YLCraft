@@ -25,9 +25,7 @@ class TorrentService:
     def __init__(self, session: AsyncSession):
         self.session = session
         self.config = get_torrent_config()
-        if self.config.engine != "qbittorrent":
-            raise RuntimeError(f"Unsupported torrent engine: {self.config.engine}")
-        self.engine = QBittorrentEngine(self.config)
+        self.engine = _create_engine(self.config)
 
     async def close(self) -> None:
         await self.engine.close()
@@ -94,6 +92,7 @@ class TorrentService:
             matched = await self._match_hash(record)
             if matched:
                 record.torrent_hash = matched.torrent_hash
+        await self._ensure_record_loaded(record)
         if record.torrent_hash:
             status = await self._get_engine_status(record.torrent_hash)
             if status:
@@ -109,6 +108,24 @@ class TorrentService:
         if not record.torrent_hash:
             return []
         return await self.engine.list_files(record.torrent_hash)
+
+    async def get_file_for_stream(self, record: TorrentDownload, file_index: int) -> tuple[TorrentFileInfo, Path]:
+        files = await self.list_files(record)
+        item = next((file for file in files if int(file.index) == int(file_index)), None)
+        if not item:
+            raise ValueError("Torrent file not found")
+        if not item.is_video:
+            raise ValueError("Only video files can be streamed")
+
+        base_dir = Path(record.save_path or self.config.download_dir)
+        path = assert_inside_download_dir(base_dir / item.name, self.config.download_dir)
+        if not path.is_file():
+            qbittorrent_incomplete = path.with_name(f"{path.name}.!qB")
+            if qbittorrent_incomplete.is_file():
+                path = qbittorrent_incomplete
+        if not path.is_file():
+            raise FileNotFoundError("Video file is not available locally yet")
+        return item, path
 
     async def select_files(self, record: TorrentDownload, file_indexes: list[int], start: bool = True) -> TorrentDownload:
         if not record.torrent_hash:
@@ -223,7 +240,29 @@ class TorrentService:
 
     async def _get_engine_status(self, torrent_hash: str) -> TorrentStatus | None:
         torrents = await self.engine.list_torrents()
-        return next((t for t in torrents if t.torrent_hash == torrent_hash.lower()), None)
+        target = (torrent_hash or "").lower()
+        return next((t for t in torrents if (t.torrent_hash or "").lower() == target), None)
+
+    async def _ensure_record_loaded(self, record: TorrentDownload) -> None:
+        if self.config.engine != "libtorrent" or record.engine != "libtorrent" or not record.source_uri:
+            return
+        if record.torrent_hash and await self._get_engine_status(record.torrent_hash):
+            return
+
+        save_path = Path(record.save_path or self.config.download_dir)
+        start_paused = record.status not in {"metadata", "downloading"}
+        try:
+            torrent_hash = ""
+            if record.source == "magnet":
+                torrent_hash = await self.engine.add_magnet(record.source_uri, save_path, start_paused=start_paused)
+            elif record.source == "torrent_file":
+                torrent_path = Path(record.source_uri)
+                if torrent_path.is_file():
+                    torrent_hash = await self.engine.add_torrent_file(torrent_path, save_path, start_paused=start_paused)
+            if torrent_hash and not record.torrent_hash:
+                record.torrent_hash = torrent_hash
+        except Exception as exc:
+            record.error_message = str(exc)
 
     async def _match_hash(self, record: TorrentDownload) -> TorrentStatus | None:
         torrents = await self.engine.list_torrents()
@@ -278,3 +317,13 @@ def _probe_video(path: Path) -> dict:
         }
     except Exception:
         return {}
+
+
+def _create_engine(config):
+    if config.engine == "qbittorrent":
+        return QBittorrentEngine(config)
+    if config.engine == "libtorrent":
+        from app.services.torrent.libtorrent_engine import LibtorrentEngine
+
+        return LibtorrentEngine(config)
+    raise RuntimeError(f"Unsupported torrent engine: {config.engine}")

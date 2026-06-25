@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import mimetypes
 import tempfile
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.db.database import get_async_session
@@ -35,7 +37,10 @@ class SuccessResponse(BaseModel):
 
 async def get_torrent_service():
     async with get_async_session() as session:
-        service = TorrentService(session)
+        try:
+            service = TorrentService(session)
+        except Exception as exc:
+            raise _http_error(exc)
         try:
             yield service
         finally:
@@ -88,9 +93,28 @@ def _http_error(exc: Exception) -> HTTPException:
     message = str(exc) or exc.__class__.__name__
     if isinstance(exc, ValueError):
         return HTTPException(status_code=400, detail=message)
-    if "login" in message.lower() or "connect" in message.lower():
+    lowered = message.lower()
+    if "login" in lowered or "connect" in lowered or "requires installing" in lowered:
         return HTTPException(status_code=503, detail=f"Torrent engine unavailable: {message}")
+    if "unsupported torrent engine" in lowered:
+        return HTTPException(status_code=400, detail=message)
     return HTTPException(status_code=500, detail=message)
+
+
+@router.get("/engine", response_model=SuccessResponse, summary="Get torrent engine status")
+async def get_engine_status():
+    config = get_torrent_config()
+    return SuccessResponse(data={
+        "engine": config.engine,
+        "download_dir": str(config.download_dir),
+        "max_active": config.max_active,
+        "requires_external_app": config.engine == "qbittorrent",
+        "hint": (
+            "qBittorrent Web UI is required"
+            if config.engine == "qbittorrent"
+            else "libtorrent Python package is required"
+        ),
+    })
 
 
 @router.get("", response_model=SuccessResponse, summary="List torrent downloads")
@@ -226,3 +250,87 @@ async def import_assets(download_id: str, service: TorrentService = Depends(get_
         return SuccessResponse(data=[{"id": asset.id, "title": asset.title} for asset in assets])
     except Exception as exc:
         raise _http_error(exc)
+
+
+@router.get("/{download_id}/files/{file_index}/stream", summary="Stream torrent video file")
+async def stream_file(
+    download_id: str,
+    file_index: int,
+    request: Request,
+    service: TorrentService = Depends(get_torrent_service),
+):
+    record = await service.get_record(download_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Torrent task not found")
+    try:
+        item, path = await service.get_file_for_stream(record, file_index)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise _http_error(exc)
+
+    media_type = mimetypes.guess_type(item.name)[0] or "video/mp4"
+    return _range_file_response(request, path, media_type)
+
+
+def _range_file_response(request: Request, file_path: Path, media_type: str) -> Response:
+    file_size = file_path.stat().st_size
+    range_header = request.headers.get("range")
+    if not range_header:
+        return FileResponse(
+            path=file_path,
+            media_type=media_type,
+            headers={"Accept-Ranges": "bytes"},
+        )
+
+    try:
+        units, value = range_header.split("=", 1)
+        if units.strip().lower() != "bytes":
+            raise ValueError("unsupported range unit")
+        start_s, end_s = value.split("-", 1)
+        if start_s:
+            start = int(start_s)
+            end = int(end_s) if end_s else file_size - 1
+        else:
+            suffix_length = int(end_s)
+            if suffix_length <= 0:
+                raise ValueError("invalid suffix range")
+            start = max(file_size - suffix_length, 0)
+            end = file_size - 1
+        end = min(end, file_size - 1)
+        if start < 0 or end < start or start >= file_size:
+            raise ValueError("invalid range")
+    except Exception:
+        return Response(
+            status_code=416,
+            headers={
+                "Content-Range": f"bytes */{file_size}",
+                "Accept-Ranges": "bytes",
+            },
+        )
+
+    chunk_size = end - start + 1
+
+    async def iter_file():
+        with file_path.open("rb") as f:
+            f.seek(start)
+            remaining = chunk_size
+            while remaining > 0:
+                chunk = f.read(min(1024 * 1024, remaining))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+                yield chunk
+
+    return StreamingResponse(
+        iter_file(),
+        status_code=206,
+        media_type=media_type,
+        headers={
+            "Content-Range": f"bytes {start}-{end}/{file_size}",
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(chunk_size),
+        },
+    )

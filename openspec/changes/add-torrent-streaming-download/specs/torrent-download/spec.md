@@ -25,6 +25,26 @@
 - **AND** 调用下载引擎添加任务
 - **AND** 返回任务标识和元数据状态
 
+### Requirement: 系统必须支持 torrent 文件在线播放
+
+系统 SHALL 允许用户在文件列表中直接预览已下载的视频文件，并通过流式接口在线播放。
+
+#### Scenario: 打开视频预览
+- **WHEN** 用户在 torrent 文件列表点击视频文件的播放
+- **THEN** 前端打开在线播放器
+- **AND** 播放器通过 torrent 文件流接口读取本地视频
+
+#### Scenario: 文件级 Range 播放请求
+- **WHEN** 浏览器请求 `/api/v1/torrents/{download_id}/files/{file_index}/stream` 并携带 `Range` 头
+- **THEN** 后端返回 `206 Partial Content`
+- **AND** 响应包含 `Content-Range` 和 `Accept-Ranges: bytes`
+- **AND** 如果 qBittorrent 为未完成文件追加 `.!qB` 后缀，后端仍可定位本地临时文件
+
+#### Scenario: 下载未完成
+- **WHEN** 视频文件尚未完整下载
+- **THEN** 前端显示当前下载进度
+- **AND** 允许用户继续下载该文件
+
 #### Scenario: 拒绝不合法上传
 - **WHEN** 上传文件扩展名不是 `.torrent` 或文件超过限制
 - **THEN** 后端拒绝请求
@@ -84,6 +104,28 @@
 - **WHEN** 请求未携带 Range 头
 - **THEN** 后端仍可返回完整文件响应
 
+### Requirement: torrent 引擎可选纯 Python 模式
+
+系统 SHALL 支持不依赖外部下载器进程的 torrent 引擎模式，前提是安装 `libtorrent` Python bindings。
+
+#### Scenario: 使用 libtorrent 模式
+- **WHEN** 配置 `TORRENT_ENGINE=libtorrent`
+- **THEN** 后端使用 Python `libtorrent` bindings 创建和管理 torrent 会话
+- **AND** 不要求本机运行 qBittorrent 或 aria2
+
+#### Scenario: libtorrent 后端重启恢复
+- **WHEN** 后端重启导致内存中的 libtorrent handle 丢失
+- **THEN** 后端可以根据数据库中的 magnet 链接或已保存 `.torrent` 文件重新挂载任务
+
+### Requirement: 系统必须展示当前 torrent 引擎信息
+
+系统 SHALL 提供当前 torrent 引擎摘要，帮助用户判断是否需要外部下载软件。
+
+#### Scenario: 查看引擎信息
+- **WHEN** 前端打开下载页
+- **THEN** 后端返回当前引擎类型、下载目录、最大任务数和是否依赖外部应用
+- **AND** 前端展示对应提示
+
 ### Requirement: torrent 下载必须受资源与路径限制
 
 系统 SHALL 限制 torrent 下载目录、上传文件、任务并发和磁盘占用。
@@ -97,4 +139,3 @@
 - **WHEN** 活跃 torrent 下载任务数量达到配置上限
 - **THEN** 新任务应保持暂停或被拒绝
 - **AND** 前端展示限制原因
-

@@ -11,7 +11,8 @@
 3. **下载后入素材库** - 下载完成后创建或更新 `Asset` 记录，标记来源为 `torrent`。
 4. **在线播放** - 复用 `/player/assets/:assetId`，通过素材流接口播放本地视频。
 5. **大文件流式播放优化** - 为视频资产流接口补充 HTTP Range 支持，提升拖动进度条和大文件播放体验。
-6. **安全与资源控制** - 限制下载目录、文件路径、任务数量、磁盘占用和允许的来源，避免被当作开放下载代理。
+6. **可选纯 Python 引擎** - 在不安装外部下载器的情况下，允许通过 Python `libtorrent` bindings 运行 torrent 下载引擎。
+7. **安全与资源控制** - 限制下载目录、文件路径、任务数量、磁盘占用和允许的来源，避免被当作开放下载代理。
 
 ## Why
 
@@ -23,10 +24,10 @@
 
 | 层 | 新增 | 修改 |
 |---|---|---|
-| Backend | `app/services/torrent/` 下载引擎适配层 | `requirements.txt` 增加 qBittorrent Web API 客户端或 HTTP 调用依赖 |
+| Backend | `app/services/torrent/` 下载引擎适配层 | `requirements.txt` 增加 torrent 引擎依赖；默认 qBittorrent，支持可选 libtorrent |
 | Backend | `app/api/v1/torrents.py` 种子任务 API | `app/main.py` 注册 `/api/v1/torrents` |
 | Backend | `TorrentTask` / `TorrentFile` 数据模型或持久化结构 | `AssetService` 增加 torrent 入库辅助方法 |
-| Backend | qBittorrent/aria2 配置项 | `settings` 增加下载目录、磁盘上限、最大并发 |
+| Backend | qBittorrent/libtorrent 配置项 | `settings` 增加下载目录、磁盘上限、最大并发 |
 | Backend | Range-aware 视频流工具 | `api/v1/assets.py` 的 `/stream` 接口支持 Range |
 | Frontend | 下载页内新增“磁力/种子”模式 | `pages/download/index.tsx` 增加任务列表、文件选择和播放入口 |
 | Frontend | `api/index.ts` 新增 torrent API | `PlayerPage` 继续复用现有资产播放逻辑 |
@@ -36,7 +37,7 @@
 - 不内置公开磁力搜索、排行、资源站聚合或内容推荐。
 - 不绕过 DRM、付费墙或访问控制。
 - MVP 不要求所有媒体格式边下边转码；先支持下载完成后播放，随后再扩展 HLS/转码。
-- MVP 不要求内嵌 BT 引擎，优先集成本机 qBittorrent Web API 或 aria2 RPC。
+- MVP 不要求内嵌 BT 引擎，但允许通过 Python `libtorrent` bindings 提供无外部软件模式。
 
 ## User flow
 
@@ -47,4 +48,3 @@
 5. 后端调度下载并通过任务状态/API 轮询或 WebSocket 推送进度。
 6. 下载完成后，后端创建 `Asset` 记录。
 7. 用户点击“播放”，跳转 `/player/assets/:assetId`。
-

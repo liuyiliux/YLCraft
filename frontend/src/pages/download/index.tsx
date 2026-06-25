@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import {
-  Alert, Card, Input, Button, Typography, Tag, Spin, message, Space, Divider, Progress, Table, Upload,
+  Alert, Card, Input, Button, Typography, Tag, Spin, message, Space, Divider, Progress, Table, Upload, Modal,
 } from 'antd'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
@@ -10,7 +10,9 @@ import {
 import {
   addTorrentMagnet,
   deleteTorrentTask,
+  getTorrentEngineInfo,
   getTorrentFiles,
+  getTorrentFileStreamUrl,
   getTorrentTask,
   importTorrentAssets,
   listPlatformConnections,
@@ -68,6 +70,14 @@ interface TorrentFile {
   is_video: boolean
 }
 
+interface TorrentEngineInfo {
+  engine: string
+  download_dir: string
+  max_active: number
+  requires_external_app: boolean
+  hint?: string
+}
+
 function TorrentDownloadPanel() {
   const { theme: THEME } = useTheme()
   const navigate = useNavigate()
@@ -80,6 +90,8 @@ function TorrentDownloadPanel() {
   const [adding, setAdding] = useState(false)
   const [filesLoading, setFilesLoading] = useState(false)
   const [actionLoading, setActionLoading] = useState('')
+  const [engineInfo, setEngineInfo] = useState<TorrentEngineInfo | null>(null)
+  const [preview, setPreview] = useState<{ taskId: string; fileIndex: number; title: string; url: string; progress: number } | null>(null)
 
   const refreshTasks = async () => {
     setLoadingTasks(true)
@@ -95,6 +107,15 @@ function TorrentDownloadPanel() {
       message.error(e?.message || '获取种子任务失败')
     } finally {
       setLoadingTasks(false)
+    }
+  }
+
+  const loadEngineInfo = async () => {
+    try {
+      const res: any = await getTorrentEngineInfo()
+      setEngineInfo((res?.data || null) as TorrentEngineInfo | null)
+    } catch {
+      setEngineInfo(null)
     }
   }
 
@@ -115,6 +136,7 @@ function TorrentDownloadPanel() {
   }
 
   useEffect(() => {
+    loadEngineInfo()
     refreshTasks()
     const timer = window.setInterval(refreshTasks, 5000)
     return () => window.clearInterval(timer)
@@ -178,6 +200,61 @@ function TorrentDownloadPanel() {
     const assetId = res?.data?.[0]?.id
     if (assetId) navigate(`/player/assets/${assetId}`)
   }
+
+  const openPreview = (item: TorrentFile) => {
+    if (!activeTask) return
+    if (!item.is_video) {
+      message.warning('只能在线播放视频文件')
+      return
+    }
+    setPreview({
+      taskId: activeTask.id,
+      fileIndex: item.index,
+      title: item.name,
+      url: getTorrentFileStreamUrl(activeTask.id, item.index),
+      progress: Math.round((item.progress || 0) * 100),
+    })
+  }
+
+  const startPreviewFile = async () => {
+    if (!preview) return
+    const nextSelection = activeTask?.id === preview.taskId
+      ? Array.from(new Set([...selectedFiles, preview.fileIndex]))
+      : [preview.fileIndex]
+    await runTaskAction(
+      `preview-${preview.taskId}-${preview.fileIndex}`,
+      () => selectTorrentFiles(preview.taskId, nextSelection, true),
+      '已开始下载当前视频',
+    )
+    if (activeTask?.id === preview.taskId) setSelectedFiles(nextSelection)
+  }
+
+  const engineName = engineInfo?.engine || 'qbittorrent'
+  const engineMessage = engineInfo?.requires_external_app
+    ? '当前使用 qBittorrent 引擎，需要本机 qBittorrent Web UI 可用'
+    : engineName === 'libtorrent'
+      ? '当前使用 libtorrent 引擎，不需要单独安装桌面下载软件'
+      : `当前使用 ${engineName} 引擎`
+  const engineDescription = (
+    <Space direction="vertical" size={4} style={{ width: '100%' }}>
+      <Text style={{ color: THEME.textSecondary }}>
+        {engineInfo?.requires_external_app
+          ? '添加任务后先获取元数据，选择视频文件再开始下载；已下载出本地文件后可直接在线播放，下载完成后也可导入素材库。'
+          : '添加任务后由后端下载引擎管理任务；已下载出本地文件后可直接在线播放，下载完成后也可导入素材库。'}
+      </Text>
+      {engineInfo && (
+        <Space size={6} wrap>
+          <Tag color={engineInfo.requires_external_app ? 'gold' : 'blue'}>{engineInfo.engine}</Tag>
+          <Text style={{ color: THEME.textSecondary, fontSize: 12, wordBreak: 'break-all' }}>
+            下载目录：{engineInfo.download_dir}
+          </Text>
+          <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>
+            最大任务：{engineInfo.max_active}
+          </Text>
+        </Space>
+      )}
+    </Space>
+  )
 
   const taskColumns = [
     {
@@ -244,6 +321,9 @@ function TorrentDownloadPanel() {
       render: (name: string, item: TorrentFile) => (
         <Space>
           {item.is_video && <Tag color="blue">视频</Tag>}
+          {item.is_video && item.progress >= 1 && <Tag color="green">已完成</Tag>}
+          {item.is_video && item.progress > 0 && item.progress < 1 && <Tag color="cyan">可预览</Tag>}
+          {item.is_video && item.progress <= 0 && <Tag color="default">未下载</Tag>}
           <Text style={{ color: THEME.textPrimary }}>{name}</Text>
         </Space>
       ),
@@ -255,90 +335,147 @@ function TorrentDownloadPanel() {
       width: 160,
       render: (progress: number) => <Progress percent={Math.round((progress || 0) * 100)} size="small" />,
     },
+    {
+      title: '操作',
+      width: 110,
+      render: (_: unknown, item: TorrentFile) => (
+        <Button
+          size="small"
+          icon={<PlayCircleOutlined />}
+          disabled={!item.is_video || item.progress <= 0}
+          onClick={() => openPreview(item)}
+        >
+          播放
+        </Button>
+      ),
+    },
   ]
 
   return (
-    <Card
-      title={<Space><InboxOutlined style={{ color: THEME.primary }} /><Text style={{ color: THEME.textPrimary }}>磁力 / 种子下载</Text></Space>}
-      style={{ background: THEME.bgCard, marginBottom: 24, border: `1px solid ${THEME.border}` }}
-    >
-      <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-        <Alert
-          type="info"
-          showIcon
-          message="需要本机 qBittorrent Web UI 可用，默认地址 http://127.0.0.1:8080"
-          description="添加任务后先获取元数据，选择视频文件再开始下载；下载完成后可导入素材库并用现有播放器打开。"
-        />
-        <Space.Compact style={{ width: '100%' }}>
-          <Input
-            size="large"
-            placeholder="magnet:?xt=urn:btih:..."
-            value={magnet}
-            onChange={event => setMagnet(event.target.value)}
-            onPressEnter={addMagnet}
-            style={{ background: THEME.bgInput, color: THEME.textPrimary }}
+    <>
+      <Card
+        title={<Space><InboxOutlined style={{ color: THEME.primary }} /><Text style={{ color: THEME.textPrimary }}>磁力 / 种子下载</Text></Space>}
+        style={{ background: THEME.bgCard, marginBottom: 24, border: `1px solid ${THEME.border}` }}
+      >
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          <Alert
+            type={engineInfo?.requires_external_app ? 'warning' : 'info'}
+            showIcon
+            message={engineMessage}
+            description={engineDescription}
           />
-          <Button type="primary" size="large" icon={<CloudDownloadOutlined />} loading={adding} onClick={addMagnet}>
-            添加
-          </Button>
-        </Space.Compact>
-        <Upload
-          accept=".torrent"
-          showUploadList={false}
-          beforeUpload={async file => {
-            setAdding(true)
-            try {
-              const res: any = await uploadTorrentFile(file, true)
-              message.success('种子任务已添加')
-              await refreshTasks()
-              if (res?.data) await loadFiles(res.data)
-            } catch (e: any) {
-              message.error(e?.message || '上传种子失败')
-            } finally {
-              setAdding(false)
-            }
-            return false
-          }}
-        >
-          <Button icon={<InboxOutlined />} loading={adding}>上传 .torrent</Button>
-        </Upload>
-        <Table
-          rowKey="id"
-          size="small"
-          loading={loadingTasks}
-          dataSource={tasks}
-          columns={taskColumns}
-          pagination={false}
-          scroll={{ x: 900 }}
-        />
-        {activeTask && (
-          <Card
-            size="small"
-            title={<Text style={{ color: THEME.textPrimary }}>文件选择：{activeTask.name || activeTask.id}</Text>}
-            style={{ background: THEME.bgInput, border: `1px solid ${THEME.border}` }}
-            extra={
-              <Button type="primary" size="small" loading={actionLoading === `select-${activeTask.id}`} onClick={startSelectedFiles}>
-                下载选中文件
-              </Button>
-            }
-          >
-            <Table
-              rowKey="index"
-              size="small"
-              loading={filesLoading}
-              dataSource={files}
-              columns={fileColumns}
-              pagination={false}
-              rowSelection={{
-                selectedRowKeys: selectedFiles,
-                onChange: keys => setSelectedFiles(keys.map(Number)),
-              }}
-              scroll={{ x: 680, y: 260 }}
+          <Space.Compact style={{ width: '100%' }}>
+            <Input
+              size="large"
+              placeholder="magnet:?xt=urn:btih:..."
+              value={magnet}
+              onChange={event => setMagnet(event.target.value)}
+              onPressEnter={addMagnet}
+              style={{ background: THEME.bgInput, color: THEME.textPrimary }}
             />
-          </Card>
+            <Button type="primary" size="large" icon={<CloudDownloadOutlined />} loading={adding} onClick={addMagnet}>
+              添加
+            </Button>
+          </Space.Compact>
+          <Upload
+            accept=".torrent"
+            showUploadList={false}
+            beforeUpload={async file => {
+              setAdding(true)
+              try {
+                const res: any = await uploadTorrentFile(file, true)
+                message.success('种子任务已添加')
+                await refreshTasks()
+                if (res?.data) await loadFiles(res.data)
+              } catch (e: any) {
+                message.error(e?.message || '上传种子失败')
+              } finally {
+                setAdding(false)
+              }
+              return false
+            }}
+          >
+            <Button icon={<InboxOutlined />} loading={adding}>上传 .torrent</Button>
+          </Upload>
+          <Table
+            rowKey="id"
+            size="small"
+            loading={loadingTasks}
+            dataSource={tasks}
+            columns={taskColumns}
+            pagination={false}
+            scroll={{ x: 900 }}
+          />
+          {activeTask && (
+            <Card
+              size="small"
+              title={<Text style={{ color: THEME.textPrimary }}>文件选择：{activeTask.name || activeTask.id}</Text>}
+              style={{ background: THEME.bgInput, border: `1px solid ${THEME.border}` }}
+              extra={
+                <Button type="primary" size="small" loading={actionLoading === `select-${activeTask.id}`} onClick={startSelectedFiles}>
+                  下载选中文件
+                </Button>
+              }
+            >
+              <Table
+                rowKey="index"
+                size="small"
+                loading={filesLoading}
+                dataSource={files}
+                columns={fileColumns}
+                pagination={false}
+                rowSelection={{
+                  selectedRowKeys: selectedFiles,
+                  onChange: keys => setSelectedFiles(keys.map(Number)),
+                }}
+                scroll={{ x: 780, y: 260 }}
+              />
+            </Card>
+          )}
+        </Space>
+      </Card>
+
+      <Modal
+        open={!!preview}
+        title={preview?.title || '在线播放'}
+        footer={preview ? [
+          <Button key="close" onClick={() => setPreview(null)}>关闭</Button>,
+          preview.progress < 100 && (
+            <Button
+              key="download"
+              type="primary"
+              loading={actionLoading === `preview-${preview.taskId}-${preview.fileIndex}`}
+              onClick={startPreviewFile}
+            >
+              继续下载此文件
+            </Button>
+          ),
+        ] : null}
+        width={860}
+        destroyOnClose
+        onCancel={() => setPreview(null)}
+      >
+        {preview && (
+          <Space direction="vertical" size="small" style={{ width: '100%' }}>
+            {preview.progress < 100 && (
+              <Alert
+                type="info"
+                showIcon
+                message={`当前文件已下载约 ${preview.progress}%`}
+                description="边下边播取决于文件格式和已下载片段；MP4 若索引在文件尾部，可能需要下载更多后才能播放。"
+              />
+            )}
+            <video
+              key={preview.url}
+              src={preview.url}
+              controls
+              autoPlay
+              style={{ width: '100%', maxHeight: '70vh', background: '#000', borderRadius: 6 }}
+            />
+          </Space>
         )}
-      </Space>
-    </Card>
+      </Modal>
+    </>
   )
 }
 

@@ -2,13 +2,13 @@
 
 ## Architecture
 
-优先采用外部下载引擎模式：
+优先采用外部下载引擎模式，保留一个可选的纯 Python `libtorrent` 后端：
 
 ```text
 Frontend /download
   -> /api/v1/torrents
     -> TorrentService
-      -> qBittorrent Web API 或 aria2 RPC
+      -> qBittorrent Web API 或 libtorrent Python bindings
       -> backend/downloads/torrents
       -> AssetService
         -> assets 表
@@ -18,9 +18,9 @@ Frontend /download
 
 理由：
 
-- qBittorrent/aria2 已经解决 BT 协议、DHT、限速、暂停恢复、文件优先级等复杂问题。
+- qBittorrent 已经解决 BT 协议、DHT、限速、暂停恢复、文件优先级等复杂问题。
+- libtorrent bindings 适合“只安装 Python 包”的无外部软件模式，但需要后端自己承担会话生命周期和状态映射。
 - FastAPI 后端只负责鉴权、任务映射、进度查询、入库和播放接口，维护成本更低。
-- Windows 本地开发环境更容易部署 qBittorrent Web UI 或 aria2。
 
 ## Backend modules
 
@@ -31,21 +31,21 @@ Frontend /download
 ```text
 services/torrent/
 ├── __init__.py
+├── config.py
 ├── models.py
 ├── service.py
 ├── engine.py
 ├── qbittorrent.py
-├── aria2.py
-└── media.py
+└── libtorrent_engine.py
 ```
 
 职责：
 
 - `engine.py` 定义统一接口：添加任务、获取文件列表、设置文件优先级、暂停、继续、删除、查询状态。
 - `qbittorrent.py` 实现 qBittorrent Web API 适配器。
-- `aria2.py` 作为可选后备适配器。
-- `service.py` 负责业务编排、任务状态落库、下载完成后的素材入库。
-- `media.py` 负责识别可播放视频、探测媒体信息、生成 MIME 类型。
+- `libtorrent_engine.py` 实现可选的纯 Python 引擎。
+- `service.py` 负责业务编排、任务状态落库、下载完成后的素材入库和文件级播放路径校验。
+- `config.py` 负责读取引擎类型、连接信息、下载目录、并发和上传限制。
 
 ### Engine interface
 
@@ -198,6 +198,14 @@ Response:
 - 删除任务时默认不删除文件，必须显式选择。
 - 不提供公开搜索与聚合入口。
 
+## Implementation status
+
+- 已实现 `GET /api/v1/torrents/{download_id}/files/{file_index}/stream`，用于 torrent 文件在线播放。
+- 已实现 `GET /api/v1/assets/{asset_id}/stream` 的 Range 支持，适配浏览器拖动播放。
+- 已实现可选 `TORRENT_ENGINE=libtorrent` 引擎入口，默认仍为 qBittorrent。
+- 已实现 `GET /api/v1/torrents/engine`，前端可展示当前引擎、下载目录、最大任务数和是否依赖外部应用。
+- 已兼容 qBittorrent 未完成文件 `.!qB` 后缀和浏览器 suffix Range 请求。
+
 ## Configuration
 
 新增设置项：
@@ -213,4 +221,3 @@ TORRENT_MAX_TOTAL_BYTES=0
 ```
 
 这些配置也可后续接入现有系统设置页。
-

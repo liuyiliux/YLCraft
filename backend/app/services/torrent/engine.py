@@ -41,3 +41,6 @@ class TorrentEngine(ABC):
     async def delete(self, torrent_hash: str, delete_files: bool = False) -> None:
         """Delete a torrent from the engine."""
 
+    @abstractmethod
+    async def close(self) -> None:
+        """Release engine resources."""

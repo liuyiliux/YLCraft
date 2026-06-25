@@ -399,6 +399,8 @@ export const openFolder = (filePath: string) =>
 
 export const listTorrentTasks = () => request('/torrents')
 
+export const getTorrentEngineInfo = () => request('/torrents/engine')
+
 export const addTorrentMagnet = (magnet: string, startPaused = true) =>
   request('/torrents/magnet', {
     method: 'POST',
@@ -417,6 +419,9 @@ export const uploadTorrentFile = (file: File, startPaused = true) => {
 export const getTorrentTask = (downloadId: string) => request(`/torrents/${downloadId}`)
 
 export const getTorrentFiles = (downloadId: string) => request(`/torrents/${downloadId}/files`)
+
+export const getTorrentFileStreamUrl = (downloadId: string, fileIndex: number) =>
+  `${BASE}/torrents/${downloadId}/files/${fileIndex}/stream`
 
 export const selectTorrentFiles = (downloadId: string, fileIndexes: number[], start = true) =>
   request(`/torrents/${downloadId}/select-files`, {
