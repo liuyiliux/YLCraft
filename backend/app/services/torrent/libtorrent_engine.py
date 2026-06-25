@@ -14,6 +14,22 @@ from app.services.torrent.engine import TorrentEngine
 from app.services.torrent.models import TorrentFileInfo, TorrentStatus
 
 
+DHT_ROUTERS = (
+    ("router.bittorrent.com", 6881),
+    ("router.utorrent.com", 6881),
+    ("dht.transmissionbt.com", 6881),
+    ("dht.aelitis.com", 6881),
+)
+
+DEFAULT_TRACKERS = (
+    "udp://tracker.opentrackr.org:1337/announce",
+    "udp://open.stealth.si:80/announce",
+    "udp://tracker.openbittorrent.com:6969/announce",
+    "udp://tracker.torrent.eu.org:451/announce",
+    "udp://exodus.desync.com:6969/announce",
+)
+
+
 class LibtorrentEngine(TorrentEngine):
     _session = None
     _handles: dict[str, object] = {}
@@ -27,6 +43,7 @@ class LibtorrentEngine(TorrentEngine):
 
     async def add_magnet(self, magnet: str, save_path: Path, start_paused: bool = True) -> str:
         params = self.lt.parse_magnet_uri(magnet)
+        self._ensure_magnet_trackers(params)
         self._set_param(params, "save_path", str(save_path))
         self._set_storage_mode(params)
         handle = self._session.add_torrent(params)
@@ -65,6 +82,7 @@ class LibtorrentEngine(TorrentEngine):
                 continue
             self._apply_metadata_only(torrent_hash, handle)
             status = handle.status()
+            has_metadata = handle.has_metadata()
             items.append(
                 TorrentStatus(
                     torrent_hash=torrent_hash,
@@ -76,6 +94,7 @@ class LibtorrentEngine(TorrentEngine):
                     downloaded_bytes=int(getattr(status, "total_done", 0) or 0),
                     total_size=int(getattr(status, "total_wanted", 0) or 0),
                     save_path=str(self.config.download_dir),
+                    error=_metadata_hint(status, handle) if not has_metadata else _status_error(status),
                 )
             )
         return items
@@ -140,14 +159,34 @@ class LibtorrentEngine(TorrentEngine):
             "enable_natpmp": True,
         }
         try:
-            return self.lt.session(settings)
+            session = self.lt.session(settings)
         except TypeError:
             session = self.lt.session()
             try:
                 session.apply_settings(settings)
             except Exception:
                 pass
-            return session
+        self._start_dht(session)
+        return session
+
+    def _start_dht(self, session) -> None:
+        for host, port in DHT_ROUTERS:
+            try:
+                session.add_dht_router(host, port)
+            except Exception:
+                pass
+        try:
+            if not session.is_dht_running():
+                session.start_dht()
+        except Exception:
+            pass
+
+    def _ensure_magnet_trackers(self, params) -> None:
+        trackers = list(getattr(params, "trackers", None) or [])
+        if trackers:
+            return
+        self._set_param(params, "trackers", list(DEFAULT_TRACKERS))
+        self._set_param(params, "tracker_tiers", [0 for _ in DEFAULT_TRACKERS])
 
     def _new_add_torrent_params(self):
         factory = getattr(self.lt, "add_torrent_params", None)
@@ -270,3 +309,27 @@ def _state_name(lt, status) -> str:
         if state == getattr(state_t, "checking_files", object()):
             return "checkingdl"
     return "downloading"
+
+
+def _status_error(status) -> str:
+    error = getattr(status, "error", None)
+    if not error:
+        return ""
+    text = str(error)
+    return "" if text in {"Success", "success"} else text
+
+
+def _metadata_hint(status, handle) -> str:
+    peers = int(getattr(status, "num_peers", 0) or 0)
+    seeds = int(getattr(status, "num_seeds", 0) or 0)
+    connections = int(getattr(status, "num_connections", 0) or 0)
+    trackers = 0
+    try:
+        trackers = len(handle.trackers())
+    except Exception:
+        pass
+    return (
+        "等待种子元数据："
+        f"peers={peers}, seeds={seeds}, connections={connections}, trackers={trackers}。"
+        "如果长时间为 0，通常是该 magnet 没有活跃节点，或本机网络/防火墙阻止 DHT/UDP。"
+    )

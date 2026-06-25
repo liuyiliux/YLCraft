@@ -290,7 +290,13 @@ function TorrentDownloadPanel() {
       render: (_: string, item: TorrentTask) => (
         <div style={{ minWidth: 0 }}>
           <Text style={{ color: THEME.textPrimary }} ellipsis>{item.name || item.torrent_hash || item.id}</Text>
-          {item.error_message && <div><Text type="danger" style={{ fontSize: 12 }}>{item.error_message}</Text></div>}
+          {item.error_message && (
+            <div>
+              <Text type={item.status === 'metadata' ? 'secondary' : 'danger'} style={{ fontSize: 12 }}>
+                {item.error_message}
+              </Text>
+            </div>
+          )}
         </div>
       ),
     },
@@ -452,7 +458,7 @@ function TorrentDownloadPanel() {
                   message={activeTask.status === 'metadata' ? '正在获取种子元数据' : '还没有可选择的文件'}
                   description={
                     activeTask.status === 'metadata'
-                      ? 'magnet 需要先从 DHT/Tracker/Peer 拉到文件列表。文件列表出现后，视频行右侧会显示“播放”按钮；选中文件并开始下载后，进度大于 0 就可以预览。'
+                      ? activeTask.error_message || 'magnet 需要先从 DHT/Tracker/Peer 拉到文件列表。文件列表出现后，视频行右侧会显示“播放”按钮；选中文件并开始下载后，进度大于 0 就可以预览。'
                       : '点击任务右侧“文件”刷新列表；如果仍为空，可能是种子元数据暂未获取完成或当前任务没有文件信息。'
                   }
                 />
