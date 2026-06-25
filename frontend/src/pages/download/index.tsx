@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   Alert, Card, Input, Button, Typography, Tag, Spin, message, Space, Divider, Progress, Table, Upload, Modal,
 } from 'antd'
@@ -93,6 +93,16 @@ function TorrentDownloadPanel() {
   const [actionLoading, setActionLoading] = useState('')
   const [engineInfo, setEngineInfo] = useState<TorrentEngineInfo | null>(null)
   const [preview, setPreview] = useState<{ taskId: string; fileIndex: number; title: string; url: string; progress: number } | null>(null)
+  const activeTaskRef = useRef<TorrentTask | null>(null)
+  const filesRef = useRef<TorrentFile[]>([])
+
+  useEffect(() => {
+    activeTaskRef.current = activeTask
+  }, [activeTask])
+
+  useEffect(() => {
+    filesRef.current = files
+  }, [files])
 
   const refreshTasks = async () => {
     setLoadingTasks(true)
@@ -100,9 +110,22 @@ function TorrentDownloadPanel() {
       const res: any = await listTorrentTasks()
       const nextTasks = (res?.data || []) as TorrentTask[]
       setTasks(nextTasks)
-      if (activeTask) {
-        const nextActive = nextTasks.find(item => item.id === activeTask.id) || null
+      const currentActive = activeTaskRef.current
+      if (currentActive) {
+        const nextActive = nextTasks.find(item => item.id === currentActive.id) || null
         setActiveTask(nextActive)
+        if (nextActive && (filesRef.current.length === 0 || nextActive.status === 'metadata')) {
+          try {
+            const filesRes: any = await getTorrentFiles(nextActive.id)
+            const nextFiles = (filesRes?.data || []) as TorrentFile[]
+            setFiles(nextFiles)
+            if (nextFiles.length && !selectedFiles.length) {
+              setSelectedFiles(nextFiles.filter(item => item.is_video).map(item => item.index))
+            }
+          } catch {
+            // Keep the current table while metadata is still unavailable.
+          }
+        }
       }
     } catch (e: any) {
       message.error(e?.message || '获取种子任务失败')
@@ -421,6 +444,19 @@ function TorrentDownloadPanel() {
                 </Button>
               }
             >
+              {!filesLoading && files.length === 0 && (
+                <Alert
+                  type={activeTask.status === 'metadata' ? 'info' : 'warning'}
+                  showIcon
+                  style={{ marginBottom: 12 }}
+                  message={activeTask.status === 'metadata' ? '正在获取种子元数据' : '还没有可选择的文件'}
+                  description={
+                    activeTask.status === 'metadata'
+                      ? 'magnet 需要先从 DHT/Tracker/Peer 拉到文件列表。文件列表出现后，视频行右侧会显示“播放”按钮；选中文件并开始下载后，进度大于 0 就可以预览。'
+                      : '点击任务右侧“文件”刷新列表；如果仍为空，可能是种子元数据暂未获取完成或当前任务没有文件信息。'
+                  }
+                />
+              )}
               <Table
                 rowKey="index"
                 size="small"

@@ -17,6 +17,7 @@ from app.services.torrent.models import TorrentFileInfo, TorrentStatus
 class LibtorrentEngine(TorrentEngine):
     _session = None
     _handles: dict[str, object] = {}
+    _metadata_only: set[str] = set()
 
     def __init__(self, config: TorrentConfig):
         self.config = config
@@ -30,13 +31,12 @@ class LibtorrentEngine(TorrentEngine):
         self._set_storage_mode(params)
         handle = self._session.add_torrent(params)
         self._set_sequential(handle)
-        if start_paused:
-            handle.pause()
-        else:
-            handle.resume()
         torrent_hash = _hash_from_handle(handle) or _hash_from_magnet(magnet)
         if torrent_hash:
             self._handles[torrent_hash] = handle
+            if start_paused:
+                self._metadata_only.add(torrent_hash)
+        handle.resume()
         return torrent_hash
 
     async def add_torrent_file(self, torrent_file: Path, save_path: Path, start_paused: bool = True) -> str:
@@ -47,11 +47,13 @@ class LibtorrentEngine(TorrentEngine):
         self._set_storage_mode(params)
         handle = self._session.add_torrent(params)
         self._set_sequential(handle)
+        torrent_hash = _hash_from_handle(handle)
         if start_paused:
-            handle.pause()
+            if torrent_hash:
+                self._metadata_only.add(torrent_hash)
+            self._apply_metadata_only(torrent_hash, handle)
         else:
             handle.resume()
-        torrent_hash = _hash_from_handle(handle)
         if torrent_hash:
             self._handles[torrent_hash] = handle
         return torrent_hash
@@ -61,6 +63,7 @@ class LibtorrentEngine(TorrentEngine):
         for torrent_hash, handle in list(self._handles.items()):
             if not handle.is_valid():
                 continue
+            self._apply_metadata_only(torrent_hash, handle)
             status = handle.status()
             items.append(
                 TorrentStatus(
@@ -81,6 +84,7 @@ class LibtorrentEngine(TorrentEngine):
         handle = self._get_handle(torrent_hash)
         if not handle or not handle.is_valid() or not handle.has_metadata():
             return []
+        self._apply_metadata_only(torrent_hash, handle)
         torrent_info = handle.get_torrent_info()
         files = torrent_info.files()
         progress_bytes = self._file_progress(handle)
@@ -108,6 +112,7 @@ class LibtorrentEngine(TorrentEngine):
         for index in range(torrent_info.files().num_files()):
             handle.file_priority(index, 1 if index in selected else 0)
         self._set_sequential(handle)
+        self._metadata_only.discard((torrent_hash or "").lower())
 
     async def pause(self, torrent_hash: str) -> None:
         self._require_handle(torrent_hash).pause()
@@ -117,6 +122,7 @@ class LibtorrentEngine(TorrentEngine):
 
     async def delete(self, torrent_hash: str, delete_files: bool = False) -> None:
         handle = self._handles.pop(torrent_hash.lower(), None)
+        self._metadata_only.discard(torrent_hash.lower())
         if not handle:
             return
         option = self._delete_option(delete_files)
@@ -178,6 +184,18 @@ class LibtorrentEngine(TorrentEngine):
             if value is not None:
                 return value
         return 1
+
+    def _apply_metadata_only(self, torrent_hash: str, handle) -> None:
+        key = (torrent_hash or "").lower()
+        if key not in self._metadata_only or not handle.has_metadata():
+            return
+        try:
+            torrent_info = handle.get_torrent_info()
+            for index in range(torrent_info.files().num_files()):
+                handle.file_priority(index, 0)
+            handle.pause()
+        finally:
+            self._metadata_only.discard(key)
 
     def _get_handle(self, torrent_hash: str):
         return self._handles.get((torrent_hash or "").lower())
