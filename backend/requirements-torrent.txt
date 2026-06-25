@@ -1,0 +1,4 @@
+# Optional dependency for TORRENT_ENGINE=libtorrent.
+# This lets YLCraft parse magnet metadata and download torrents without
+# running qBittorrent/aria2 as a separate local application.
+libtorrent>=2.0.13

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import importlib.util
 import mimetypes
 import tempfile
 from pathlib import Path
@@ -104,15 +105,21 @@ def _http_error(exc: Exception) -> HTTPException:
 @router.get("/engine", response_model=SuccessResponse, summary="Get torrent engine status")
 async def get_engine_status():
     config = get_torrent_config()
+    libtorrent_available = importlib.util.find_spec("libtorrent") is not None
     return SuccessResponse(data={
         "engine": config.engine,
         "download_dir": str(config.download_dir),
         "max_active": config.max_active,
         "requires_external_app": config.engine == "qbittorrent",
+        "libtorrent_available": libtorrent_available,
         "hint": (
             "qBittorrent Web UI is required"
             if config.engine == "qbittorrent"
-            else "libtorrent Python package is required"
+            else (
+                "Project embedded libtorrent engine is available"
+                if libtorrent_available
+                else "libtorrent Python package is required"
+            )
         ),
     })
 

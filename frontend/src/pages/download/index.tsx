@@ -75,6 +75,7 @@ interface TorrentEngineInfo {
   download_dir: string
   max_active: number
   requires_external_app: boolean
+  libtorrent_available?: boolean
   hint?: string
 }
 
@@ -245,6 +246,9 @@ function TorrentDownloadPanel() {
       {engineInfo && (
         <Space size={6} wrap>
           <Tag color={engineInfo.requires_external_app ? 'gold' : 'blue'}>{engineInfo.engine}</Tag>
+          <Tag color={engineInfo.libtorrent_available ? 'green' : 'default'}>
+            libtorrent {engineInfo.libtorrent_available ? '已安装' : '未安装'}
+          </Tag>
           <Text style={{ color: THEME.textSecondary, fontSize: 12, wordBreak: 'break-all' }}>
             下载目录：{engineInfo.download_dir}
           </Text>
