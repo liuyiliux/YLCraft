@@ -166,6 +166,19 @@ class TorrentService:
         await self.session.refresh(record)
         return record
 
+    async def refresh_metadata(self, record: TorrentDownload) -> TorrentDownload:
+        if not record.torrent_hash:
+            await self.sync_record(record)
+        if not record.torrent_hash:
+            raise ValueError("Torrent metadata is not ready yet")
+        await self.engine.refresh_metadata(record.torrent_hash)
+        record.status = "metadata"
+        record.error_message = "已重新公告，正在重新获取种子元数据"
+        record.updated_at = datetime.now()
+        await self.session.flush()
+        await self.session.refresh(record)
+        return await self.sync_record(record)
+
     async def delete(self, record: TorrentDownload, delete_files: bool = False) -> None:
         if record.torrent_hash:
             await self.engine.delete(record.torrent_hash, delete_files=delete_files)

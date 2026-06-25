@@ -435,6 +435,9 @@ export const pauseTorrentTask = (downloadId: string) =>
 export const resumeTorrentTask = (downloadId: string) =>
   request(`/torrents/${downloadId}/resume`, { method: 'POST' })
 
+export const refreshTorrentMetadata = (downloadId: string) =>
+  request(`/torrents/${downloadId}/refresh-metadata`, { method: 'POST' })
+
 export const deleteTorrentTask = (downloadId: string, deleteFiles = false) =>
   request(`/torrents/${downloadId}?delete_files=${deleteFiles ? 'true' : 'false'}`, { method: 'DELETE' })
 

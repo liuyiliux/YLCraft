@@ -20,6 +20,7 @@ import {
   openFolder,
   parseDownloadUrl,
   pauseTorrentTask,
+  refreshTorrentMetadata,
   resumeTorrentTask,
   selectTorrentFiles,
   uploadTorrentFile,
@@ -225,6 +226,14 @@ function TorrentDownloadPanel() {
     if (assetId) navigate(`/player/assets/${assetId}`)
   }
 
+  const retryMetadata = async (task: TorrentTask) => {
+    await runTaskAction(
+      `metadata-${task.id}`,
+      () => refreshTorrentMetadata(task.id),
+      '已重新公告，正在获取种子元数据',
+    )
+  }
+
   const openPreview = (item: TorrentFile) => {
     if (!activeTask) return
     if (!item.is_video) {
@@ -334,6 +343,16 @@ function TorrentDownloadPanel() {
       render: (_: unknown, item: TorrentTask) => (
         <Space wrap>
           <Button size="small" icon={<FolderOpenOutlined />} onClick={() => loadFiles(item)}>文件</Button>
+          {item.status === 'metadata' && (
+            <Button
+              size="small"
+              icon={<ReloadOutlined />}
+              loading={actionLoading === `metadata-${item.id}`}
+              onClick={() => retryMetadata(item)}
+            >
+              重试元数据
+            </Button>
+          )}
           {item.status === 'paused' ? (
             <Button size="small" icon={<ReloadOutlined />} loading={actionLoading === `resume-${item.id}`} onClick={() => runTaskAction(`resume-${item.id}`, () => resumeTorrentTask(item.id), '已继续下载')}>继续</Button>
           ) : (
@@ -456,6 +475,16 @@ function TorrentDownloadPanel() {
                   showIcon
                   style={{ marginBottom: 12 }}
                   message={activeTask.status === 'metadata' ? '正在获取种子元数据' : '还没有可选择的文件'}
+                  action={activeTask.status === 'metadata' ? (
+                    <Button
+                      size="small"
+                      icon={<ReloadOutlined />}
+                      loading={actionLoading === `metadata-${activeTask.id}`}
+                      onClick={() => retryMetadata(activeTask)}
+                    >
+                      重试元数据
+                    </Button>
+                  ) : undefined}
                   description={
                     activeTask.status === 'metadata'
                       ? activeTask.error_message || 'magnet 需要先从 DHT/Tracker/Peer 拉到文件列表。文件列表出现后，视频行右侧会显示“播放”按钮；选中文件并开始下载后，进度大于 0 就可以预览。'

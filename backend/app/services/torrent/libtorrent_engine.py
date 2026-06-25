@@ -94,7 +94,7 @@ class LibtorrentEngine(TorrentEngine):
                     downloaded_bytes=int(getattr(status, "total_done", 0) or 0),
                     total_size=int(getattr(status, "total_wanted", 0) or 0),
                     save_path=str(self.config.download_dir),
-                    error=_metadata_hint(status, handle) if not has_metadata else _status_error(status),
+                    error=_metadata_hint(status, handle, self._session) if not has_metadata else _status_error(status),
                 )
             )
         return items
@@ -139,6 +139,26 @@ class LibtorrentEngine(TorrentEngine):
     async def resume(self, torrent_hash: str) -> None:
         self._require_handle(torrent_hash).resume()
 
+    async def refresh_metadata(self, torrent_hash: str) -> None:
+        handle = self._require_handle(torrent_hash)
+        self._start_dht(self._session)
+        self._ensure_handle_trackers(handle)
+        try:
+            handle.resume()
+        except Exception:
+            pass
+        try:
+            handle.force_reannounce(0)
+        except Exception:
+            try:
+                handle.force_reannounce()
+            except Exception:
+                pass
+        try:
+            handle.force_dht_announce()
+        except Exception:
+            pass
+
     async def delete(self, torrent_hash: str, delete_files: bool = False) -> None:
         handle = self._handles.pop(torrent_hash.lower(), None)
         self._metadata_only.discard(torrent_hash.lower())
@@ -157,6 +177,11 @@ class LibtorrentEngine(TorrentEngine):
             "enable_lsd": True,
             "enable_upnp": True,
             "enable_natpmp": True,
+            "announce_to_all_trackers": True,
+            "announce_to_all_tiers": True,
+            "enable_outgoing_utp": True,
+            "enable_incoming_utp": True,
+            "connections_limit": 200,
         }
         try:
             session = self.lt.session(settings)
@@ -187,6 +212,23 @@ class LibtorrentEngine(TorrentEngine):
             return
         self._set_param(params, "trackers", list(DEFAULT_TRACKERS))
         self._set_param(params, "tracker_tiers", [0 for _ in DEFAULT_TRACKERS])
+
+    def _ensure_handle_trackers(self, handle) -> None:
+        try:
+            existing = {
+                str(item.get("url") or "").strip()
+                for item in handle.trackers()
+                if str(item.get("url") or "").strip()
+            }
+        except Exception:
+            existing = set()
+        for tracker in DEFAULT_TRACKERS:
+            if tracker in existing:
+                continue
+            try:
+                handle.add_tracker({"url": tracker, "tier": 0})
+            except Exception:
+                pass
 
     def _new_add_torrent_params(self):
         factory = getattr(self.lt, "add_torrent_params", None)
@@ -319,17 +361,35 @@ def _status_error(status) -> str:
     return "" if text in {"Success", "success"} else text
 
 
-def _metadata_hint(status, handle) -> str:
+def _metadata_hint(status, handle, session=None) -> str:
     peers = int(getattr(status, "num_peers", 0) or 0)
     seeds = int(getattr(status, "num_seeds", 0) or 0)
     connections = int(getattr(status, "num_connections", 0) or 0)
+    dht_nodes = 0
+    has_incoming = False
+    if session is not None:
+        try:
+            session_status = session.status()
+            dht_nodes = int(getattr(session_status, "dht_nodes", 0) or 0)
+            has_incoming = bool(getattr(session_status, "has_incoming_connections", False))
+        except Exception:
+            pass
     trackers = 0
+    tracker_errors: list[str] = []
     try:
-        trackers = len(handle.trackers())
+        tracker_items = list(handle.trackers())
+        trackers = len(tracker_items)
+        for item in tracker_items:
+            message = str(item.get("message") or item.get("last_error") or "").strip()
+            if message and message not in {"Success", "success"}:
+                tracker_errors.append(message)
     except Exception:
         pass
+    tracker_suffix = f" tracker_error={tracker_errors[0]}" if tracker_errors else ""
     return (
         "等待种子元数据："
-        f"peers={peers}, seeds={seeds}, connections={connections}, trackers={trackers}。"
-        "如果长时间为 0，通常是该 magnet 没有活跃节点，或本机网络/防火墙阻止 DHT/UDP。"
+        f"peers={peers}, seeds={seeds}, connections={connections}, "
+        f"trackers={trackers}, dht_nodes={dht_nodes}, incoming={has_incoming}{tracker_suffix}。"
+        "如果长时间取不到，通常是该 magnet 没有可提供 metadata 的活跃节点，"
+        "或本机网络/防火墙阻止 DHT/UDP；可以点击“重试元数据”重新公告。"
     )

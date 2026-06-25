@@ -124,6 +124,12 @@ class QBittorrentEngine(TorrentEngine):
         response = await self._client.post("/api/v2/torrents/resume", data={"hashes": torrent_hash})
         response.raise_for_status()
 
+    async def refresh_metadata(self, torrent_hash: str) -> None:
+        await self._login()
+        await self.resume(torrent_hash)
+        response = await self._client.post("/api/v2/torrents/reannounce", data={"hashes": torrent_hash})
+        response.raise_for_status()
+
     async def delete(self, torrent_hash: str, delete_files: bool = False) -> None:
         await self._login()
         response = await self._client.post(

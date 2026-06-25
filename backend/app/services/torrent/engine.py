@@ -38,6 +38,10 @@ class TorrentEngine(ABC):
         """Resume a torrent."""
 
     @abstractmethod
+    async def refresh_metadata(self, torrent_hash: str) -> None:
+        """Ask the engine to reannounce and retry metadata discovery."""
+
+    @abstractmethod
     async def delete(self, torrent_hash: str, delete_files: bool = False) -> None:
         """Delete a torrent from the engine."""
 

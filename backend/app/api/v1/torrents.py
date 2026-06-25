@@ -231,6 +231,17 @@ async def resume_torrent(download_id: str, service: TorrentService = Depends(get
         raise _http_error(exc)
 
 
+@router.post("/{download_id}/refresh-metadata", response_model=SuccessResponse, summary="Retry torrent metadata discovery")
+async def refresh_torrent_metadata(download_id: str, service: TorrentService = Depends(get_torrent_service)):
+    record = await service.get_record(download_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Torrent task not found")
+    try:
+        return SuccessResponse(data=_record_to_dict(await service.refresh_metadata(record)))
+    except Exception as exc:
+        raise _http_error(exc)
+
+
 @router.delete("/{download_id}", response_model=SuccessResponse, summary="Delete torrent task")
 async def delete_torrent(
     download_id: str,
