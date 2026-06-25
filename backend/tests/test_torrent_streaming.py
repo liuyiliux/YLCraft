@@ -1,9 +1,11 @@
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from starlette.requests import Request
 
+from app.db.models.torrent import TorrentDownload
 from app.api.v1.torrents import _range_file_response
 from app.services.torrent.config import TorrentConfig
 from app.services.torrent.models import TorrentFileInfo
@@ -70,6 +72,18 @@ async def test_get_file_for_stream_rejects_paths_outside_download_dir(tmp_path: 
 
     with pytest.raises(ValueError, match="outside torrent download directory"):
         await service.get_file_for_stream(SimpleNamespace(save_path=str(root)), 0)
+
+
+@pytest.mark.asyncio
+async def test_sync_record_does_not_resurrect_deleted_task(tmp_path: Path):
+    record = TorrentDownload(status="deleted", torrent_hash="abc")
+    service = _torrent_service(tmp_path / "torrents", [])
+    service._get_engine_status = AsyncMock()
+
+    result = await service.sync_record(record)
+
+    assert result.status == "deleted"
+    service._get_engine_status.assert_not_called()
 
 
 def _torrent_service(root: Path, files: list[TorrentFileInfo]) -> TorrentService:

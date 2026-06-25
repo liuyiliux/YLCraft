@@ -76,18 +76,24 @@ class TorrentService:
     async def get_record(self, download_id: str) -> TorrentDownload | None:
         result = await self.session.execute(select(TorrentDownload).where(TorrentDownload.id == download_id))
         record = result.scalar_one_or_none()
-        if record:
+        if record and record.status != "deleted":
             await self.sync_record(record)
         return record
 
     async def list_records(self) -> list[TorrentDownload]:
-        result = await self.session.execute(select(TorrentDownload).order_by(TorrentDownload.created_at.desc()))
+        result = await self.session.execute(
+            select(TorrentDownload)
+            .where(TorrentDownload.status != "deleted")
+            .order_by(TorrentDownload.created_at.desc())
+        )
         records = list(result.scalars().all())
         for record in records[:20]:
             await self.sync_record(record)
         return records
 
     async def sync_record(self, record: TorrentDownload) -> TorrentDownload:
+        if record.status == "deleted":
+            return record
         if not record.torrent_hash:
             matched = await self._match_hash(record)
             if matched:
