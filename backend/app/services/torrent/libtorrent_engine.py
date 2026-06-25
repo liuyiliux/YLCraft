@@ -6,6 +6,7 @@ requires the libtorrent Python package to be installed in the backend venv.
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -27,6 +28,11 @@ DEFAULT_TRACKERS = (
     "udp://tracker.openbittorrent.com:6969/announce",
     "udp://tracker.torrent.eu.org:451/announce",
     "udp://exodus.desync.com:6969/announce",
+    "udp://open.demonii.com:1337/announce",
+    "udp://tracker.dler.org:6969/announce",
+    "udp://tracker.moeking.me:6969/announce",
+    "udp://explodie.org:6969/announce",
+    "udp://tracker-udp.gbitt.info:80/announce",
 )
 
 
@@ -34,6 +40,7 @@ class LibtorrentEngine(TorrentEngine):
     _session = None
     _handles: dict[str, object] = {}
     _metadata_only: set[str] = set()
+    _metadata_boost_at: dict[str, float] = {}
 
     def __init__(self, config: TorrentConfig):
         self.config = config
@@ -80,9 +87,11 @@ class LibtorrentEngine(TorrentEngine):
         for torrent_hash, handle in list(self._handles.items()):
             if not handle.is_valid():
                 continue
-            self._apply_metadata_only(torrent_hash, handle)
             status = handle.status()
             has_metadata = handle.has_metadata()
+            if not has_metadata:
+                self._boost_metadata_discovery(torrent_hash, handle)
+            self._apply_metadata_only(torrent_hash, handle)
             items.append(
                 TorrentStatus(
                     torrent_hash=torrent_hash,
@@ -162,6 +171,7 @@ class LibtorrentEngine(TorrentEngine):
     async def delete(self, torrent_hash: str, delete_files: bool = False) -> None:
         handle = self._handles.pop(torrent_hash.lower(), None)
         self._metadata_only.discard(torrent_hash.lower())
+        self._metadata_boost_at.pop(torrent_hash.lower(), None)
         if not handle:
             return
         option = self._delete_option(delete_files)
@@ -229,6 +239,30 @@ class LibtorrentEngine(TorrentEngine):
                 handle.add_tracker({"url": tracker, "tier": 0})
             except Exception:
                 pass
+
+    def _boost_metadata_discovery(self, torrent_hash: str, handle) -> None:
+        key = (torrent_hash or "").lower()
+        now = time.monotonic()
+        if now - self._metadata_boost_at.get(key, 0) < 30:
+            return
+        self._metadata_boost_at[key] = now
+        self._start_dht(self._session)
+        self._ensure_handle_trackers(handle)
+        try:
+            handle.resume()
+        except Exception:
+            pass
+        try:
+            handle.force_reannounce(0)
+        except Exception:
+            try:
+                handle.force_reannounce()
+            except Exception:
+                pass
+        try:
+            handle.force_dht_announce()
+        except Exception:
+            pass
 
     def _new_add_torrent_params(self):
         factory = getattr(self.lt, "add_torrent_params", None)
