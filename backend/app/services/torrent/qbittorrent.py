@@ -22,11 +22,27 @@ class QBittorrentEngine(TorrentEngine):
     async def _login(self) -> None:
         if self._logged_in:
             return
-        response = await self._client.post(
-            "/api/v2/auth/login",
-            data={"username": self.config.qbittorrent_username, "password": self.config.qbittorrent_password},
-        )
-        response.raise_for_status()
+        login_path = "/api/v2/auth/login"
+        try:
+            response = await self._client.post(
+                login_path,
+                data={"username": self.config.qbittorrent_username, "password": self.config.qbittorrent_password},
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                raise RuntimeError(
+                    "qBittorrent Web API not found. "
+                    f"Current QBITTORRENT_URL is {self.config.qbittorrent_url}; "
+                    "make sure qBittorrent Web UI is enabled and this URL points to its Web UI port."
+                ) from exc
+            raise
+        except httpx.RequestError as exc:
+            raise RuntimeError(
+                "Cannot connect to qBittorrent Web UI. "
+                f"Current QBITTORRENT_URL is {self.config.qbittorrent_url}; "
+                "make sure qBittorrent is running and Web UI is enabled."
+            ) from exc
         if response.text.strip().lower() != "ok.":
             raise RuntimeError("qBittorrent login failed")
         self._logged_in = True
@@ -142,4 +158,3 @@ def _status_from_qbit(item: dict) -> TorrentStatus:
         save_path=item.get("save_path") or "",
         error=item.get("error") or "",
     )
-
