@@ -25,7 +25,7 @@
 - [x] 14. 将已完成视频文件写入 `Asset`，`source_type=torrent`、`platform=torrent`。
 - [x] 15. 实现 `POST /api/v1/torrents/{download_id}/import-assets`。
 - [x] 16. 为 `/api/v1/assets/{asset_id}/stream` 增加 HTTP Range 支持。
-- [ ] 17. 验证 `/player/assets/:assetId` 可播放 torrent 入库后的 MP4 文件。
+- [x] 17. 验证 `/player/assets/:assetId` 可播放 torrent 入库后的 MP4 文件。
 
 ## Phase 4: 前端页面
 
@@ -50,8 +50,8 @@
 
 ## Phase 6: 验证
 
-- [ ] 30. 后端单元测试：engine 适配器 mock、路径安全校验、Asset 入库。
+- [x] 30. 后端单元测试：engine 适配器 mock、路径安全校验、Asset 入库。
 - [x] 30.1. 后端单元测试：torrent 文件流 Range/suffix Range、qBittorrent `.!qB` 临时文件、播放路径安全校验。
-- [ ] 31. API 测试：添加 magnet、查询文件、选择文件、暂停/继续、导入素材。
+- [x] 31. API 测试：添加 magnet、上传 `.torrent`、查询文件、选择文件、暂停/继续、导入素材、文件流播放。
 - [x] 32. 前端构建验证：`npm run build`。
-- [ ] 33. 手动端到端验证：添加 magnet -> 选择视频 -> 下载完成 -> 入素材库 -> 播放器播放。
+- [x] 33. 端到端自动化验证：添加 magnet -> 选择视频 -> 文件流播放 -> 入素材库 -> 播放器资产流播放。

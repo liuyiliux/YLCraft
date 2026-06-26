@@ -206,9 +206,13 @@ class TorrentService:
         return imported
 
     async def _create_or_update_asset(self, record: TorrentDownload, item: TorrentFileInfo, path: Path) -> Asset:
-        source_url = record.source_uri if record.source == "magnet" else f"torrent:{record.torrent_hash}:{item.index}"
-        result = await self.session.execute(select(Asset).where(Asset.source_url == source_url))
-        asset = result.scalar_one_or_none()
+        source_url = _torrent_asset_source_url(record, item)
+        candidate_source_urls = [source_url]
+        legacy_source_url = record.source_uri if record.source == "magnet" else ""
+        if legacy_source_url and legacy_source_url != source_url and int(item.index) == 0:
+            candidate_source_urls.append(legacy_source_url)
+        result = await self.session.execute(select(Asset).where(Asset.source_url.in_(candidate_source_urls)))
+        asset = next(iter(result.scalars().all()), None)
         probe = _probe_video(path)
         metadata = {
             "torrent_hash": record.torrent_hash,
@@ -243,6 +247,7 @@ class TorrentService:
             asset.width = probe.get("width", asset.width)
             asset.height = probe.get("height", asset.height)
             asset.status = "READY"
+            asset.source_url = source_url
             asset.metadata_json = json.dumps(metadata, ensure_ascii=False)
             asset.updated_at = datetime.now()
         await self.session.flush()
@@ -336,6 +341,14 @@ def _probe_video(path: Path) -> dict:
         }
     except Exception:
         return {}
+
+
+def _torrent_asset_source_url(record: TorrentDownload, item: TorrentFileInfo) -> str:
+    if record.torrent_hash:
+        return f"torrent:{record.torrent_hash}:{int(item.index)}"
+    if record.source_uri:
+        return f"{record.source_uri}#file={int(item.index)}"
+    return f"torrent:{record.id}:{int(item.index)}"
 
 
 def _create_engine(config):

@@ -97,7 +97,7 @@ class TorrentDownload(SQLModel, table=True):
 - `Asset.type = "VIDEO"`
 - `Asset.platform = "torrent"`
 - `Asset.source_type = "torrent"`
-- `Asset.source_url = magnet 或 torrent:{hash}`
+- `Asset.source_url = torrent:{hash}:{file_index}`，同一 torrent 内多个视频文件必须生成不同来源标识；历史单文件 magnet 来源在重新入库时迁移为文件级来源。
 - `Asset.file_path = 本地视频路径`
 - `Asset.status = "READY"`
 - `Asset.metadata_json` 包含：
