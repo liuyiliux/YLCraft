@@ -9,6 +9,14 @@ from pathlib import Path
 from app.core.config import ensure_download_path
 
 
+DEFAULT_METADATA_CACHE_URLS = (
+    "https://itorrents.org/torrent/{hash}.torrent",
+    "https://torrage.info/torrent.php?h={hash}",
+    "https://btcache.me/torrent/{hash}",
+    "https://watercache.nanobytes.org/get/{hash}/{hash}.torrent",
+)
+
+
 @dataclass
 class TorrentConfig:
     engine: str
@@ -19,6 +27,9 @@ class TorrentConfig:
     max_active: int
     max_upload_bytes: int
     listen_interfaces: str
+    metadata_cache_urls: list[str]
+    metadata_cache_timeout: float
+    metadata_cache_max_bytes: int
 
 
 def get_torrent_config() -> TorrentConfig:
@@ -36,6 +47,9 @@ def get_torrent_config() -> TorrentConfig:
             "TORRENT_LISTEN_INTERFACES",
             "0.0.0.0:6883-6999,[::]:6883-6999",
         ).strip() or "0.0.0.0:6883-6999,[::]:6883-6999",
+        metadata_cache_urls=_metadata_cache_urls_from_env(os.getenv("TORRENT_METADATA_CACHE_URLS")),
+        metadata_cache_timeout=float(os.getenv("TORRENT_METADATA_CACHE_TIMEOUT", "5") or "5"),
+        metadata_cache_max_bytes=int(os.getenv("TORRENT_METADATA_CACHE_MAX_BYTES", str(4 * 1024 * 1024)) or "0"),
     )
 
 
@@ -46,3 +60,13 @@ def assert_inside_download_dir(path: str | Path, root: str | Path | None = None)
     if resolved != root_resolved and root_resolved not in resolved.parents:
         raise ValueError(f"Path is outside torrent download directory: {resolved}")
     return resolved
+
+
+def _metadata_cache_urls_from_env(value: str | None) -> list[str]:
+    if value is None:
+        return list(DEFAULT_METADATA_CACHE_URLS)
+    value = value.strip()
+    if not value or value.lower() in {"0", "false", "off", "none", "disabled"}:
+        return []
+    normalized = value.replace("\n", ",").replace(";", ",")
+    return [item.strip() for item in normalized.split(",") if item.strip()]

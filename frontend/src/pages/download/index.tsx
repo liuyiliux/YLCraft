@@ -76,6 +76,7 @@ interface TorrentEngineInfo {
   download_dir: string
   max_active: number
   listen_interfaces?: string
+  metadata_cache_providers?: number
   requires_external_app: boolean
   libtorrent_available?: boolean
   hint?: string
@@ -291,6 +292,11 @@ function TorrentDownloadPanel() {
           {engineInfo.listen_interfaces && (
             <Text style={{ color: THEME.textSecondary, fontSize: 12, wordBreak: 'break-all' }}>
               监听：{engineInfo.listen_interfaces}
+            </Text>
+          )}
+          {typeof engineInfo.metadata_cache_providers === 'number' && (
+            <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>
+              元数据缓存源：{engineInfo.metadata_cache_providers}
             </Text>
           )}
         </Space>

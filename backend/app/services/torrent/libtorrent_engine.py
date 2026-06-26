@@ -6,9 +6,12 @@ requires the libtorrent Python package to be installed in the backend venv.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from pathlib import Path
 from urllib.parse import unquote
+
+import httpx
 
 from app.services.torrent.config import TorrentConfig
 from app.services.torrent.engine import TorrentEngine
@@ -73,6 +76,9 @@ class LibtorrentEngine(TorrentEngine):
                 return self._add_torrent_info(torrent_info, save_path, start_paused, magnet_hash)
             except Exception:
                 pass
+        torrent_info = await self._fetch_remote_metadata(magnet_hash)
+        if torrent_info is not None:
+            return self._add_torrent_info(torrent_info, save_path, start_paused, magnet_hash)
         params = self.lt.parse_magnet_uri(magnet)
         self._ensure_magnet_trackers(params)
         self._set_param(params, "save_path", str(save_path))
@@ -279,6 +285,73 @@ class LibtorrentEngine(TorrentEngine):
             return None
         return self.config.download_dir / "_metadata_cache" / f"{normalized}.torrent"
 
+    async def _fetch_remote_metadata(self, torrent_hash: str):
+        if not torrent_hash or not self.config.metadata_cache_urls:
+            return None
+        urls = [_metadata_cache_url(template, torrent_hash) for template in self.config.metadata_cache_urls]
+        urls = [url for url in urls if url]
+        if not urls:
+            return None
+        async with httpx.AsyncClient(
+            follow_redirects=True,
+            timeout=self.config.metadata_cache_timeout,
+        ) as client:
+            tasks = [asyncio.create_task(self._download_metadata_bytes(client, url)) for url in urls]
+            try:
+                for task in asyncio.as_completed(tasks):
+                    data = await task
+                    if not data:
+                        continue
+                    torrent_info = self._try_cache_metadata_bytes(torrent_hash, data)
+                    if torrent_info is not None:
+                        for pending in tasks:
+                            if not pending.done():
+                                pending.cancel()
+                        return torrent_info
+            finally:
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+        return None
+
+    async def _download_metadata_bytes(self, client: httpx.AsyncClient, url: str) -> bytes:
+        try:
+            response = await client.get(url)
+            if response.status_code >= 400:
+                return b""
+            data = response.content
+            if self.config.metadata_cache_max_bytes and len(data) > self.config.metadata_cache_max_bytes:
+                return b""
+            return data
+        except Exception:
+            return b""
+
+    def _try_cache_metadata_bytes(self, torrent_hash: str, data: bytes):
+        if not data:
+            return None
+        path = self._metadata_cache_path(torrent_hash)
+        if path is None:
+            return None
+        tmp_path = path.with_suffix(".torrent.remote.tmp")
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp_path.write_bytes(data)
+            torrent_info = self.lt.torrent_info(str(tmp_path))
+            if torrent_hash not in _hashes_from_torrent_info(torrent_info):
+                return None
+            tmp_path.replace(path)
+            self._metadata_cache_saved.add(torrent_hash)
+            return torrent_info
+        except Exception:
+            return None
+        finally:
+            try:
+                if tmp_path.exists():
+                    tmp_path.unlink()
+            except Exception:
+                pass
+
     def _save_metadata_cache(self, torrent_hash: str, handle) -> None:
         key = (torrent_hash or "").strip().lower()
         if not key or key in self._metadata_cache_saved:
@@ -473,6 +546,20 @@ def _hashes_from_torrent_info(torrent_info) -> set[str]:
     except Exception:
         pass
     return values
+
+
+def _metadata_cache_url(template: str, torrent_hash: str) -> str:
+    value = (template or "").strip()
+    if not value:
+        return ""
+    upper_hash = torrent_hash.upper()
+    lower_hash = torrent_hash.lower()
+    if "{" in value:
+        try:
+            return value.format(hash=upper_hash, hash_lower=lower_hash, hash_upper=upper_hash)
+        except Exception:
+            return ""
+    return value.replace("%HASH%", upper_hash).replace("%hash%", lower_hash)
 
 
 def _torrent_name(handle) -> str:

@@ -97,6 +97,9 @@ def _torrent_service(root: Path, files: list[TorrentFileInfo]) -> TorrentService
         max_active=3,
         max_upload_bytes=2 * 1024 * 1024,
         listen_interfaces="0.0.0.0:6883-6999,[::]:6883-6999",
+        metadata_cache_urls=[],
+        metadata_cache_timeout=12,
+        metadata_cache_max_bytes=4 * 1024 * 1024,
     )
 
     async def list_files(_record):
