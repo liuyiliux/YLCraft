@@ -47,6 +47,10 @@ const QUALITY_COLORS: Record<string, string> = {
   '720P': '#3b82f6', '480P': '#6366f1', '360P': '#8b8ba8', '240P': '#8b8ba8',
 }
 
+const PREVIEW_READY_POLL_ATTEMPTS = 20
+const PREVIEW_READY_POLL_INTERVAL_MS = 3000
+const sleep = (ms: number) => new Promise(resolve => window.setTimeout(resolve, ms))
+
 interface TorrentTask {
   id: string
   name: string
@@ -252,6 +256,57 @@ function TorrentDownloadPanel() {
     })
   }
 
+  const waitForPreviewProgress = async (taskId: string, fileIndex: number) => {
+    for (let attempt = 0; attempt < PREVIEW_READY_POLL_ATTEMPTS; attempt += 1) {
+      if (attempt > 0) await sleep(PREVIEW_READY_POLL_INTERVAL_MS)
+      const res: any = await getTorrentFiles(taskId)
+      const nextFiles = (res?.data || []) as TorrentFile[]
+      setFiles(nextFiles)
+      const target = nextFiles.find(file => file.index === fileIndex) || null
+      if (target && (target.progress || 0) > 0) return target
+    }
+    return null
+  }
+
+  const startStreamingPreview = async (item: TorrentFile) => {
+    if (!activeTask) return
+    if (!item.is_video) {
+      message.warning('只能在线播放视频文件')
+      return
+    }
+    if ((item.progress || 0) > 0) {
+      openPreview(item)
+      return
+    }
+
+    const taskId = activeTask.id
+    const loadingKey = `stream-${taskId}-${item.index}`
+    const nextSelection = Array.from(new Set([...selectedFiles, item.index]))
+    setActionLoading(loadingKey)
+    try {
+      setSelectedFiles(nextSelection)
+      await selectTorrentFiles(taskId, nextSelection, true)
+      message.success('已开始下载当前视频，正在等待可预览片段')
+      const readyFile = await waitForPreviewProgress(taskId, item.index)
+      await refreshTasks()
+      if (readyFile && (readyFile.progress || 0) > 0) {
+        setPreview({
+          taskId,
+          fileIndex: readyFile.index,
+          title: readyFile.name,
+          url: getTorrentFileStreamUrl(taskId, readyFile.index),
+          progress: Math.round((readyFile.progress || 0) * 100),
+        })
+        return
+      }
+      message.warning('已开始下载，但本地片段还没准备好；稍后再点边下边播即可继续尝试')
+    } catch (e: any) {
+      message.error(e?.message || '启动边下边播失败')
+    } finally {
+      setActionLoading('')
+    }
+  }
+
   const startPreviewFile = async () => {
     if (!preview) return
     const nextSelection = activeTask?.id === preview.taskId
@@ -407,15 +462,16 @@ function TorrentDownloadPanel() {
     },
     {
       title: '操作',
-      width: 110,
+      width: 130,
       render: (_: unknown, item: TorrentFile) => (
         <Button
           size="small"
           icon={<PlayCircleOutlined />}
-          disabled={!item.is_video || item.progress <= 0}
-          onClick={() => openPreview(item)}
+          loading={activeTask ? actionLoading === `stream-${activeTask.id}-${item.index}` : false}
+          disabled={!item.is_video}
+          onClick={() => startStreamingPreview(item)}
         >
-          播放
+          {(item.progress || 0) > 0 ? '播放' : '边下边播'}
         </Button>
       ),
     },

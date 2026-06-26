@@ -34,6 +34,12 @@
 - **THEN** 前端打开在线播放器
 - **AND** 播放器通过 torrent 文件流接口读取本地视频
 
+#### Scenario: 自动启动边下边播
+- **WHEN** 用户在 torrent 文件列表点击尚未下载的视频文件的边下边播
+- **THEN** 前端自动选中该文件并调用选择文件接口启动下载
+- **AND** 在文件进度大于 0 后打开在线播放器
+- **AND** 如果短时间内没有可用本地片段，前端保留下载任务并提示稍后重试
+
 #### Scenario: 文件级 Range 播放请求
 - **WHEN** 浏览器请求 `/api/v1/torrents/{download_id}/files/{file_index}/stream` 并携带 `Range` 头
 - **THEN** 后端返回 `206 Partial Content`
