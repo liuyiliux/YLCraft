@@ -52,6 +52,7 @@ class LibtorrentEngine(TorrentEngine):
     _handles: dict[str, object] = {}
     _metadata_only: set[str] = set()
     _metadata_boost_at: dict[str, float] = {}
+    _metadata_cache_saved: set[str] = set()
     _dht_rebind_at: float = 0.0
     _dht_rebind_index: int = 0
 
@@ -62,6 +63,16 @@ class LibtorrentEngine(TorrentEngine):
             LibtorrentEngine._session = self._create_session()
 
     async def add_magnet(self, magnet: str, save_path: Path, start_paused: bool = True) -> str:
+        magnet_hash = _hash_from_magnet(magnet)
+        cached = self._metadata_cache_path(magnet_hash)
+        if cached and cached.is_file():
+            try:
+                torrent_info = self.lt.torrent_info(str(cached))
+                if magnet_hash not in _hashes_from_torrent_info(torrent_info):
+                    raise ValueError("Cached torrent metadata hash mismatch")
+                return self._add_torrent_info(torrent_info, save_path, start_paused, magnet_hash)
+            except Exception:
+                pass
         params = self.lt.parse_magnet_uri(magnet)
         self._ensure_magnet_trackers(params)
         self._set_param(params, "save_path", str(save_path))
@@ -78,13 +89,16 @@ class LibtorrentEngine(TorrentEngine):
 
     async def add_torrent_file(self, torrent_file: Path, save_path: Path, start_paused: bool = True) -> str:
         torrent_info = self.lt.torrent_info(str(torrent_file))
+        return self._add_torrent_info(torrent_info, save_path, start_paused)
+
+    def _add_torrent_info(self, torrent_info, save_path: Path, start_paused: bool = True, expected_hash: str = "") -> str:
         params = self._new_add_torrent_params()
         self._set_param(params, "ti", torrent_info)
         self._set_param(params, "save_path", str(save_path))
         self._set_storage_mode(params)
         handle = self._session.add_torrent(params)
         self._set_sequential(handle)
-        torrent_hash = _hash_from_handle(handle)
+        torrent_hash = expected_hash or _hash_from_handle(handle)
         if start_paused:
             if torrent_hash:
                 self._metadata_only.add(torrent_hash)
@@ -93,6 +107,7 @@ class LibtorrentEngine(TorrentEngine):
             handle.resume()
         if torrent_hash:
             self._handles[torrent_hash] = handle
+            self._save_metadata_cache(torrent_hash, handle)
         return torrent_hash
 
     async def list_torrents(self) -> list[TorrentStatus]:
@@ -104,6 +119,8 @@ class LibtorrentEngine(TorrentEngine):
             has_metadata = handle.has_metadata()
             if not has_metadata:
                 self._boost_metadata_discovery(torrent_hash, handle)
+            else:
+                self._save_metadata_cache(torrent_hash, handle)
             self._apply_metadata_only(torrent_hash, handle)
             items.append(
                 TorrentStatus(
@@ -125,6 +142,7 @@ class LibtorrentEngine(TorrentEngine):
         handle = self._get_handle(torrent_hash)
         if not handle or not handle.is_valid() or not handle.has_metadata():
             return []
+        self._save_metadata_cache(torrent_hash, handle)
         self._apply_metadata_only(torrent_hash, handle)
         torrent_info = handle.get_torrent_info()
         files = torrent_info.files()
@@ -254,6 +272,36 @@ class LibtorrentEngine(TorrentEngine):
                 handle.add_tracker({"url": tracker, "tier": 0})
             except Exception:
                 pass
+
+    def _metadata_cache_path(self, torrent_hash: str) -> Path | None:
+        normalized = (torrent_hash or "").strip().lower()
+        if not normalized:
+            return None
+        return self.config.download_dir / "_metadata_cache" / f"{normalized}.torrent"
+
+    def _save_metadata_cache(self, torrent_hash: str, handle) -> None:
+        key = (torrent_hash or "").strip().lower()
+        if not key or key in self._metadata_cache_saved:
+            return
+        if not handle or not handle.is_valid() or not handle.has_metadata():
+            return
+        path = self._metadata_cache_path(key)
+        if path is None:
+            return
+        if path.is_file():
+            self._metadata_cache_saved.add(key)
+            return
+        try:
+            torrent_info = handle.get_torrent_info()
+            generated = self.lt.create_torrent(torrent_info).generate()
+            data = self.lt.bencode(generated)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp_path = path.with_suffix(".torrent.tmp")
+            tmp_path.write_bytes(data)
+            tmp_path.replace(path)
+            self._metadata_cache_saved.add(key)
+        except Exception:
+            pass
 
     def _boost_metadata_discovery(self, torrent_hash: str, handle) -> None:
         key = (torrent_hash or "").lower()
@@ -406,6 +454,25 @@ def _hash_from_handle(handle) -> str:
         return str(handle.info_hash()).lower()
     except Exception:
         return ""
+
+
+def _hashes_from_torrent_info(torrent_info) -> set[str]:
+    values: set[str] = set()
+    try:
+        value = str(torrent_info.info_hash()).lower()
+        if value:
+            values.add(value)
+    except Exception:
+        pass
+    try:
+        hashes = torrent_info.info_hashes()
+        for name in ("v1", "v2"):
+            value = getattr(hashes, name, None)
+            if value:
+                values.add(str(value).lower())
+    except Exception:
+        pass
+    return values
 
 
 def _torrent_name(handle) -> str:
