@@ -109,6 +109,7 @@ async def get_engine_status():
     return SuccessResponse(data={
         "engine": config.engine,
         "download_dir": str(config.download_dir),
+        "metadata_cache_dir": str(config.download_dir / "_metadata_cache"),
         "max_active": config.max_active,
         "listen_interfaces": config.listen_interfaces,
         "metadata_cache_providers": len(config.metadata_cache_urls),

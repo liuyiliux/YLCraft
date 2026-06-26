@@ -139,7 +139,7 @@ class LibtorrentEngine(TorrentEngine):
                     downloaded_bytes=int(getattr(status, "total_done", 0) or 0),
                     total_size=int(getattr(status, "total_wanted", 0) or 0),
                     save_path=str(self.config.download_dir),
-                    error=_metadata_hint(status, handle, self._session) if not has_metadata else _status_error(status),
+                    error=_metadata_hint(status, handle, self._session, self.config) if not has_metadata else _status_error(status),
                 )
             )
         return items
@@ -596,7 +596,7 @@ def _status_error(status) -> str:
     return "" if text in {"Success", "success"} else text
 
 
-def _metadata_hint(status, handle, session=None) -> str:
+def _metadata_hint(status, handle, session=None, config: TorrentConfig | None = None) -> str:
     peers = int(getattr(status, "num_peers", 0) or 0)
     seeds = int(getattr(status, "num_seeds", 0) or 0)
     connections = int(getattr(status, "num_connections", 0) or 0)
@@ -620,22 +620,26 @@ def _metadata_hint(status, handle, session=None) -> str:
         except Exception:
             pass
     trackers = 0
-    tracker_errors: list[str] = []
+    tracker_failures = 0
     try:
         tracker_items = list(handle.trackers())
         trackers = len(tracker_items)
         for item in tracker_items:
-            message = str(item.get("message") or item.get("last_error") or "").strip()
-            if message and message not in {"Success", "success"}:
-                tracker_errors.append(message)
+            if int(item.get("fails") or 0) > 0:
+                tracker_failures += 1
     except Exception:
         pass
-    tracker_suffix = f" tracker_error={tracker_errors[0]}" if tracker_errors else ""
+    cache_sources = len(config.metadata_cache_urls) if config else 0
+    if dht_nodes <= 0:
+        state_hint = "DHT 暂未连上节点，通常是本机网络、防火墙或当前端口的 UDP 不通。"
+    elif connections > 0:
+        state_hint = "已经连到 Peer，但暂时没有 Peer 返回 metadata，可能是该 hash 只有云盘缓存。"
+    else:
+        state_hint = "正在通过 DHT 和 Tracker 寻找可提供 metadata 的 Peer。"
     return (
-        "等待种子元数据："
-        f"peers={peers}, seeds={seeds}, connections={connections}, "
-        f"trackers={trackers}, dht_nodes={dht_nodes}, incoming={has_incoming}, "
-        f"listening={is_listening}, port={listen_port}{tracker_suffix}。"
-        "如果长时间取不到，通常是该 magnet 没有可提供 metadata 的活跃节点，"
-        "或本机网络/防火墙阻止 DHT/UDP；可以点击“重试元数据”重新公告。"
+        "正在获取种子元数据："
+        f"缓存源={cache_sources}，DHT节点={dht_nodes}，Peer={peers}，连接={connections}，"
+        f"Tracker={trackers}，Tracker失败={tracker_failures}，"
+        f"监听={is_listening}，端口={listen_port}，入站={has_incoming}。"
+        f"{state_hint} 可以点击“重试元数据”重新公告。"
     )

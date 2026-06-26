@@ -74,6 +74,7 @@ interface TorrentFile {
 interface TorrentEngineInfo {
   engine: string
   download_dir: string
+  metadata_cache_dir?: string
   max_active: number
   listen_interfaces?: string
   metadata_cache_providers?: number
@@ -286,6 +287,11 @@ function TorrentDownloadPanel() {
           <Text style={{ color: THEME.textSecondary, fontSize: 12, wordBreak: 'break-all' }}>
             下载目录：{engineInfo.download_dir}
           </Text>
+          {engineInfo.metadata_cache_dir && (
+            <Text style={{ color: THEME.textSecondary, fontSize: 12, wordBreak: 'break-all' }}>
+              元数据缓存：{engineInfo.metadata_cache_dir}
+            </Text>
+          )}
           <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>
             最大任务：{engineInfo.max_active}
           </Text>
