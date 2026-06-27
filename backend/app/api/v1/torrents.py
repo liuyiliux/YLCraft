@@ -6,6 +6,7 @@ import json
 import importlib.util
 import mimetypes
 import tempfile
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -88,6 +89,10 @@ def _file_to_dict(item) -> dict:
         "priority": item.priority,
         "is_video": item.is_video,
     }
+
+
+def _health_to_dict(item) -> dict:
+    return asdict(item)
 
 
 def _http_error(exc: Exception) -> HTTPException:
@@ -207,6 +212,37 @@ async def select_files(download_id: str, req: SelectFilesRequest, service: Torre
         raise HTTPException(status_code=404, detail="Torrent task not found")
     try:
         record = await service.select_files(record, req.file_indexes, start=req.start)
+        return SuccessResponse(data=_record_to_dict(record))
+    except Exception as exc:
+        raise _http_error(exc)
+
+
+@router.get("/{download_id}/health", response_model=SuccessResponse, summary="Get torrent download health")
+async def get_torrent_health(
+    download_id: str,
+    file_index: int | None = Query(None),
+    service: TorrentService = Depends(get_torrent_service),
+):
+    record = await service.get_record(download_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Torrent task not found")
+    try:
+        return SuccessResponse(data=_health_to_dict(await service.get_health(record, file_index=file_index)))
+    except Exception as exc:
+        raise _http_error(exc)
+
+
+@router.post("/{download_id}/files/{file_index}/prioritize-streaming", response_model=SuccessResponse, summary="Prioritize torrent file for streaming")
+async def prioritize_torrent_streaming(
+    download_id: str,
+    file_index: int,
+    service: TorrentService = Depends(get_torrent_service),
+):
+    record = await service.get_record(download_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Torrent task not found")
+    try:
+        record = await service.prioritize_streaming(record, file_index)
         return SuccessResponse(data=_record_to_dict(record))
     except Exception as exc:
         raise _http_error(exc)

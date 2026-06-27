@@ -5,7 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-from app.services.torrent.models import TorrentFileInfo, TorrentStatus
+from app.services.torrent.models import TorrentFileInfo, TorrentHealth, TorrentStatus
 
 
 class TorrentEngine(ABC):
@@ -28,6 +28,14 @@ class TorrentEngine(ABC):
     @abstractmethod
     async def select_files(self, torrent_hash: str, file_indexes: list[int]) -> None:
         """Set selected files to normal priority and other files to skipped."""
+
+    async def prioritize_streaming(self, torrent_hash: str, file_index: int) -> None:
+        """Raise priority for the current preview file when the engine supports it."""
+        return None
+
+    async def get_health(self, torrent_hash: str) -> TorrentHealth | None:
+        """Return structured engine health if the engine can provide it."""
+        return None
 
     @abstractmethod
     async def pause(self, torrent_hash: str) -> None:

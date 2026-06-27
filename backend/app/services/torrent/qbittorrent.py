@@ -10,7 +10,7 @@ import httpx
 
 from app.services.torrent.config import TorrentConfig
 from app.services.torrent.engine import TorrentEngine
-from app.services.torrent.models import TorrentFileInfo, TorrentStatus
+from app.services.torrent.models import TorrentFileInfo, TorrentHealth, TorrentStatus
 
 
 class QBittorrentEngine(TorrentEngine):
@@ -107,12 +107,63 @@ class QBittorrentEngine(TorrentEngine):
         if select_ids:
             await self._set_priority(torrent_hash, select_ids, 1)
 
+    async def prioritize_streaming(self, torrent_hash: str, file_index: int) -> None:
+        await self._login()
+        await self._set_priority(torrent_hash, [str(int(file_index))], 7)
+        await self.resume(torrent_hash)
+
+    async def get_health(self, torrent_hash: str) -> TorrentHealth | None:
+        await self._login()
+        response = await self._client.get("/api/v2/torrents/info", params={"hashes": torrent_hash})
+        response.raise_for_status()
+        items = response.json()
+        item = items[0] if items else None
+        if not item:
+            return TorrentHealth(
+                torrent_hash=(torrent_hash or "").lower(),
+                reason="任务尚未出现在 qBittorrent Web API 中，可能需要刷新任务列表。",
+            )
+        trackers, tracker_failures = await self._tracker_stats(torrent_hash)
+        state = item.get("state") or ""
+        return TorrentHealth(
+            torrent_hash=(item.get("hash") or torrent_hash or "").lower(),
+            state=state,
+            normalized_status=_status_from_qbit(item).normalized_status,
+            has_metadata=state.lower() not in {"metadl", "checkingresume"} and int(item.get("size") or 0) > 0,
+            progress=float(item.get("progress") or 0),
+            download_speed=int(item.get("dlspeed") or 0),
+            upload_speed=int(item.get("upspeed") or 0),
+            peers=int(item.get("num_leechs") or item.get("num_leechers") or 0),
+            seeds=int(item.get("num_seeds") or 0),
+            connections=int(item.get("num_connections") or 0),
+            tracker_count=trackers,
+            tracker_failures=tracker_failures,
+        )
+
     async def _set_priority(self, torrent_hash: str, ids: list[str], priority: int) -> None:
         response = await self._client.post(
             "/api/v2/torrents/filePrio",
             data={"hash": torrent_hash, "id": "|".join(ids), "priority": str(priority)},
         )
         response.raise_for_status()
+
+    async def _tracker_stats(self, torrent_hash: str) -> tuple[int, int]:
+        try:
+            response = await self._client.get("/api/v2/torrents/trackers", params={"hash": torrent_hash})
+            response.raise_for_status()
+            items = response.json()
+        except Exception:
+            return 0, 0
+        trackers = 0
+        failures = 0
+        for item in items:
+            url = str(item.get("url") or "")
+            if not url or url.startswith("**"):
+                continue
+            trackers += 1
+            if int(item.get("status") or 0) == 4:
+                failures += 1
+        return trackers, failures
 
     async def pause(self, torrent_hash: str) -> None:
         await self._login()

@@ -420,6 +420,11 @@ export const getTorrentTask = (downloadId: string) => request(`/torrents/${downl
 
 export const getTorrentFiles = (downloadId: string) => request(`/torrents/${downloadId}/files`)
 
+export const getTorrentHealth = (downloadId: string, fileIndex?: number) => {
+  const qs = typeof fileIndex === 'number' ? `?file_index=${fileIndex}` : ''
+  return request(`/torrents/${downloadId}/health${qs}`)
+}
+
 export const getTorrentFileStreamUrl = (downloadId: string, fileIndex: number) =>
   `${BASE}/torrents/${downloadId}/files/${fileIndex}/stream`
 
@@ -428,6 +433,9 @@ export const selectTorrentFiles = (downloadId: string, fileIndexes: number[], st
     method: 'POST',
     body: JSON.stringify({ file_indexes: fileIndexes, start }),
   })
+
+export const prioritizeTorrentStreaming = (downloadId: string, fileIndex: number) =>
+  request(`/torrents/${downloadId}/files/${fileIndex}/prioritize-streaming`, { method: 'POST' })
 
 export const pauseTorrentTask = (downloadId: string) =>
   request(`/torrents/${downloadId}/pause`, { method: 'POST' })

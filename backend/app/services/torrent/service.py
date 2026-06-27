@@ -17,7 +17,7 @@ from app.core.config import get_ffmpeg_path
 from app.db.models.asset import Asset
 from app.db.models.torrent import TorrentDownload
 from app.services.torrent.config import assert_inside_download_dir, get_torrent_config
-from app.services.torrent.models import VIDEO_EXTENSIONS, TorrentFileInfo, TorrentStatus
+from app.services.torrent.models import VIDEO_EXTENSIONS, TorrentFileInfo, TorrentHealth, TorrentStatus
 from app.services.torrent.qbittorrent import QBittorrentEngine
 
 
@@ -148,6 +148,37 @@ class TorrentService:
         await self.session.refresh(record)
         return record
 
+    async def prioritize_streaming(self, record: TorrentDownload, file_index: int) -> TorrentDownload:
+        if not record.torrent_hash:
+            await self.sync_record(record)
+        if not record.torrent_hash:
+            raise ValueError("Torrent metadata is not ready yet")
+        await self.engine.prioritize_streaming(record.torrent_hash, int(file_index))
+        record.status = "downloading"
+        record.updated_at = datetime.now()
+        await self.session.flush()
+        await self.session.refresh(record)
+        return await self.sync_record(record)
+
+    async def get_health(self, record: TorrentDownload, file_index: int | None = None) -> TorrentHealth:
+        if not record.torrent_hash:
+            await self.sync_record(record)
+        health = None
+        if record.torrent_hash:
+            health = await self.engine.get_health(record.torrent_hash)
+        if health is None:
+            health = TorrentHealth(
+                torrent_hash=record.torrent_hash,
+                state=record.status,
+                normalized_status=record.status,
+                has_metadata=record.status != "metadata",
+                progress=max(0, min(1, (record.progress or 0) / 100)),
+                download_speed=record.download_speed,
+                upload_speed=record.upload_speed,
+            )
+        await self._enrich_health(record, health, file_index)
+        return health
+
     async def pause(self, record: TorrentDownload) -> TorrentDownload:
         if record.torrent_hash:
             await self.engine.pause(record.torrent_hash)
@@ -204,6 +235,36 @@ class TorrentService:
         record.updated_at = datetime.now()
         await self.session.flush()
         return imported
+
+    async def _enrich_health(
+        self,
+        record: TorrentDownload,
+        health: TorrentHealth,
+        file_index: int | None,
+    ) -> None:
+        files: list[TorrentFileInfo] = []
+        if record.torrent_hash and health.has_metadata:
+            try:
+                files = await self.list_files(record)
+            except Exception:
+                files = []
+        selected = set(_safe_json_ints(record.selected_files_json))
+        videos = [item for item in files if item.is_video]
+        selected_videos = [item for item in videos if item.index in selected]
+        target = _target_file(files, selected_videos, videos, file_index)
+
+        health.selected_file_count = len(selected)
+        health.selected_video_count = len(selected_videos)
+        if target:
+            health.target_file_index = int(target.index)
+            health.target_file_name = target.name
+            health.target_file_size = int(target.size or 0)
+            health.target_file_progress = max(0, min(1, float(target.progress or 0)))
+            path = _resolve_local_torrent_file(record, target, self.config.download_dir)
+            health.target_file_available = bool(path and path.is_file() and path.stat().st_size > 0)
+            health.ready_to_stream = target.is_video and health.target_file_available and health.target_file_progress > 0
+        health.reason = _describe_health(record, health, target)
+        health.hints = _health_hints(health, target)
 
     async def _create_or_update_asset(self, record: TorrentDownload, item: TorrentFileInfo, path: Path) -> Asset:
         source_url = _torrent_asset_source_url(record, item)
@@ -341,6 +402,99 @@ def _probe_video(path: Path) -> dict:
         }
     except Exception:
         return {}
+
+
+def _safe_json_ints(value: str) -> list[int]:
+    try:
+        parsed = json.loads(value or "[]")
+    except Exception:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    result: list[int] = []
+    for item in parsed:
+        try:
+            result.append(int(item))
+        except Exception:
+            continue
+    return result
+
+
+def _target_file(
+    files: list[TorrentFileInfo],
+    selected_videos: list[TorrentFileInfo],
+    videos: list[TorrentFileInfo],
+    file_index: int | None,
+) -> TorrentFileInfo | None:
+    if file_index is not None:
+        return next((item for item in files if int(item.index) == int(file_index)), None)
+    if selected_videos:
+        return selected_videos[0]
+    if videos:
+        return videos[0]
+    return None
+
+
+def _resolve_local_torrent_file(
+    record: TorrentDownload,
+    item: TorrentFileInfo,
+    download_root: Path,
+) -> Path | None:
+    try:
+        base_dir = Path(record.save_path or download_root)
+        path = assert_inside_download_dir(base_dir / item.name, download_root)
+    except Exception:
+        return None
+    if path.is_file():
+        return path
+    qbittorrent_incomplete = path.with_name(f"{path.name}.!qB")
+    if qbittorrent_incomplete.is_file():
+        return qbittorrent_incomplete
+    return path
+
+
+def _describe_health(
+    record: TorrentDownload,
+    health: TorrentHealth,
+    target: TorrentFileInfo | None,
+) -> str:
+    if record.status == "metadata" or not health.has_metadata:
+        return "正在获取种子元数据，还不能选择文件或在线播放。"
+    if not target:
+        return "已获取种子元数据，但没有发现可在线播放的视频文件。"
+    if not target.is_video:
+        return "当前目标文件不是视频文件，不能在线播放。"
+    if health.selected_file_count <= 0:
+        return "已获取文件列表，选择视频文件并开始下载后才能边下边播。"
+    if health.ready_to_stream:
+        return "本机已经拿到当前视频的可读取片段，可以尝试在线播放。"
+    if health.target_file_progress <= 0 and health.download_speed <= 0:
+        if health.connections <= 0 and health.peers <= 0 and health.seeds <= 0:
+            return "当前还没有连到可下载的 peer，本机暂时拿不到视频片段。"
+        return "已经连到部分 peer，但当前视频还没有收到可播放片段。"
+    if health.download_speed > 0:
+        return "下载已经有速度，正在等待当前视频的头部或尾部片段就绪。"
+    return "任务正在等待更多片段，片段到达后即可尝试在线播放。"
+
+
+def _health_hints(health: TorrentHealth, target: TorrentFileInfo | None) -> list[str]:
+    hints: list[str] = []
+    if not health.has_metadata:
+        if health.dht_nodes <= 0:
+            hints.append("DHT 节点为 0 时，通常需要检查本机网络、防火墙或 UDP 端口。")
+        if health.tracker_count > 0 and health.tracker_failures >= health.tracker_count:
+            hints.append("当前 tracker 多数不可用，可以稍后重试元数据或补充 tracker。")
+        hints.append("磁力链接必须先从 DHT、tracker 或 peer 拿到元数据，云盘能识别不代表本机一定能拿到。")
+        return hints[:3]
+    if target and target.is_video and health.target_file_progress <= 0:
+        hints.append("边下边播需要本机先下载到当前视频的部分片段；长期 0 B/s 多半是资源健康度不足。")
+    if health.dht_nodes <= 0:
+        hints.append("DHT 节点为 0 会降低发现 peer 的概率，可以检查网络、防火墙或监听端口。")
+    if health.tracker_count > 0 and health.tracker_failures >= health.tracker_count:
+        hints.append("tracker 全部失败时只能依赖 DHT/已有 peer，获取速度可能很慢。")
+    if health.peers <= 0 and health.seeds <= 0:
+        hints.append("如果迅雷或夸克能秒播，常见原因是它们命中了云端缓存；YLCraft 本地模式不会使用这类缓存。")
+    return hints[:3]
 
 
 def _torrent_asset_source_url(record: TorrentDownload, item: TorrentFileInfo) -> str:

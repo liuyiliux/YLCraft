@@ -13,6 +13,7 @@ import {
   getTorrentEngineInfo,
   getTorrentFiles,
   getTorrentFileStreamUrl,
+  getTorrentHealth,
   getTorrentTask,
   importTorrentAssets,
   listPlatformConnections,
@@ -20,6 +21,7 @@ import {
   openFolder,
   parseDownloadUrl,
   pauseTorrentTask,
+  prioritizeTorrentStreaming,
   refreshTorrentMetadata,
   resumeTorrentTask,
   selectTorrentFiles,
@@ -87,6 +89,35 @@ interface TorrentEngineInfo {
   hint?: string
 }
 
+interface TorrentHealth {
+  torrent_hash: string
+  state: string
+  normalized_status: string
+  has_metadata: boolean
+  progress: number
+  download_speed: number
+  upload_speed: number
+  peers: number
+  seeds: number
+  connections: number
+  dht_nodes: number
+  tracker_count: number
+  tracker_failures: number
+  is_listening: boolean
+  listen_port: number
+  has_incoming_connections: boolean
+  selected_file_count: number
+  selected_video_count: number
+  target_file_index: number | null
+  target_file_name: string
+  target_file_size: number
+  target_file_progress: number
+  target_file_available: boolean
+  ready_to_stream: boolean
+  reason: string
+  hints: string[]
+}
+
 interface PreviewWaitState {
   taskId: string
   fileIndex: number
@@ -108,6 +139,7 @@ function TorrentDownloadPanel() {
   const [filesLoading, setFilesLoading] = useState(false)
   const [actionLoading, setActionLoading] = useState('')
   const [engineInfo, setEngineInfo] = useState<TorrentEngineInfo | null>(null)
+  const [health, setHealth] = useState<TorrentHealth | null>(null)
   const [preview, setPreview] = useState<{ taskId: string; fileIndex: number; title: string; url: string; progress: number } | null>(null)
   const [previewWait, setPreviewWait] = useState<PreviewWaitState | null>(null)
   const activeTaskRef = useRef<TorrentTask | null>(null)
@@ -143,6 +175,7 @@ function TorrentDownloadPanel() {
             // Keep the current table while metadata is still unavailable.
           }
         }
+        await loadHealth(nextActive)
       }
     } catch (e: any) {
       message.error(e?.message || '获取种子任务失败')
@@ -160,6 +193,19 @@ function TorrentDownloadPanel() {
     }
   }
 
+  const loadHealth = async (task: TorrentTask | null, fileIndex?: number) => {
+    if (!task) {
+      setHealth(null)
+      return
+    }
+    try {
+      const res: any = await getTorrentHealth(task.id, fileIndex)
+      setHealth((res?.data || null) as TorrentHealth | null)
+    } catch {
+      setHealth(null)
+    }
+  }
+
   const loadFiles = async (task: TorrentTask) => {
     setActiveTask(task)
     setFilesLoading(true)
@@ -168,9 +214,11 @@ function TorrentDownloadPanel() {
       const nextFiles = (res?.data || []) as TorrentFile[]
       setFiles(nextFiles)
       setSelectedFiles(task.selected_files?.length ? task.selected_files : nextFiles.filter(item => item.is_video).map(item => item.index))
+      await loadHealth(task)
     } catch (e: any) {
       message.error(e?.message || '获取种子文件列表失败')
       setFiles([])
+      await loadHealth(task)
     } finally {
       setFilesLoading(false)
     }
@@ -272,6 +320,7 @@ function TorrentDownloadPanel() {
       const nextFiles = (res?.data || []) as TorrentFile[]
       setFiles(nextFiles)
       const target = nextFiles.find(file => file.index === fileIndex) || null
+      await loadHealth(activeTaskRef.current, fileIndex)
       if (target && (target.progress || 0) > 0) return target
       setPreviewWait({ taskId, fileIndex, fileName: target?.name || fileName, status: 'waiting', checkedCount: attempt + 1 })
     }
@@ -297,6 +346,8 @@ function TorrentDownloadPanel() {
     try {
       setSelectedFiles(nextSelection)
       await selectTorrentFiles(taskId, nextSelection, true)
+      await prioritizeTorrentStreaming(taskId, item.index)
+      await loadHealth(activeTaskRef.current, item.index)
       message.success('已开始下载当前视频，正在等待可预览片段')
       setPreviewWait({ taskId, fileIndex: item.index, fileName: item.name, status: 'waiting', checkedCount: 0 })
       const readyFile = await waitForPreviewProgress(taskId, item.index, item.name)
@@ -335,10 +386,17 @@ function TorrentDownloadPanel() {
       : [preview.fileIndex]
     await runTaskAction(
       `preview-${preview.taskId}-${preview.fileIndex}`,
-      () => selectTorrentFiles(preview.taskId, nextSelection, true),
+      async () => {
+        const res = await selectTorrentFiles(preview.taskId, nextSelection, true)
+        await prioritizeTorrentStreaming(preview.taskId, preview.fileIndex)
+        return res
+      },
       '已开始下载当前视频',
     )
-    if (activeTask?.id === preview.taskId) setSelectedFiles(nextSelection)
+    if (activeTask?.id === preview.taskId) {
+      setSelectedFiles(nextSelection)
+      await loadHealth(activeTask, preview.fileIndex)
+    }
   }
 
   const engineName = engineInfo?.engine || 'qbittorrent'
@@ -514,6 +572,48 @@ function TorrentDownloadPanel() {
   const currentPreviewWaitFile = previewWait && activeTask?.id === previewWait.taskId
     ? files.find(item => item.index === previewWait.fileIndex)
     : null
+  const healthAlertType: 'success' | 'warning' | 'info' = health?.ready_to_stream
+    ? 'success'
+    : health && activeTask?.status === 'downloading' && health.download_speed <= 0
+      ? 'warning'
+      : 'info'
+  const healthTargetProgress = Math.round(((health?.target_file_progress || 0) * 100))
+  const healthDescription = health ? (
+    <Space direction="vertical" size={4} style={{ width: '100%' }}>
+      <Text style={{ color: THEME.textSecondary }}>{health.reason || '正在检查本地下载状态。'}</Text>
+      <Space size={6} wrap>
+        <Tag color="blue">Peer {health.peers}</Tag>
+        <Tag color="cyan">Seeds {health.seeds}</Tag>
+        <Tag color={health.dht_nodes > 0 ? 'green' : 'gold'}>DHT {health.dht_nodes}</Tag>
+        <Tag color={health.tracker_failures >= health.tracker_count && health.tracker_count > 0 ? 'red' : 'default'}>
+          Tracker {health.tracker_count - health.tracker_failures}/{health.tracker_count}
+        </Tag>
+        <Tag color={health.download_speed > 0 ? 'green' : 'default'}>
+          下载 {formatFileSize(health.download_speed)}/s
+        </Tag>
+        {health.target_file_name && (
+          <Tag color={health.ready_to_stream ? 'green' : 'purple'}>
+            目标 {healthTargetProgress}%
+          </Tag>
+        )}
+        {health.listen_port > 0 && <Tag color="default">端口 {health.listen_port}</Tag>}
+      </Space>
+      {health.target_file_name && (
+        <Text style={{ color: THEME.textSecondary, fontSize: 12 }} ellipsis>
+          当前目标：{health.target_file_name}
+        </Text>
+      )}
+      {health.hints?.length > 0 && (
+        <Space direction="vertical" size={2}>
+          {health.hints.map((hint, index) => (
+            <Text key={`${hint}-${index}`} style={{ color: THEME.textSecondary, fontSize: 12 }}>
+              {hint}
+            </Text>
+          ))}
+        </Space>
+      )}
+    </Space>
+  ) : null
 
   return (
     <>
@@ -602,6 +702,15 @@ function TorrentDownloadPanel() {
                       ? activeTask.error_message || 'magnet 需要先从 DHT/Tracker/Peer 拉到文件列表。文件列表出现后，视频行右侧会显示“播放”按钮；选中文件并开始下载后，进度大于 0 就可以预览。'
                       : '点击任务右侧“文件”刷新列表；如果仍为空，可能是种子元数据暂未获取完成或当前任务没有文件信息。'
                   }
+                />
+              )}
+              {health && (
+                <Alert
+                  type={healthAlertType}
+                  showIcon
+                  style={{ marginBottom: 12 }}
+                  message={health.ready_to_stream ? '当前视频片段已可读取' : '下载健康度'}
+                  description={healthDescription}
                 />
               )}
               {previewWait && activeTask.id === previewWait.taskId && (

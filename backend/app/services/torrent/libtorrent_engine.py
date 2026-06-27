@@ -15,7 +15,7 @@ import httpx
 
 from app.services.torrent.config import TorrentConfig
 from app.services.torrent.engine import TorrentEngine
-from app.services.torrent.models import TorrentFileInfo, TorrentStatus
+from app.services.torrent.models import TorrentFileInfo, TorrentHealth, TorrentStatus
 
 
 DHT_ROUTERS = (
@@ -48,6 +48,10 @@ DEFAULT_TRACKERS = (
     "udp://explodie.org:6969/announce",
     "udp://tracker-udp.gbitt.info:80/announce",
 )
+
+STREAM_HEAD_BYTES = 16 * 1024 * 1024
+STREAM_TAIL_BYTES = 8 * 1024 * 1024
+STREAM_PIECE_PRIORITY = 7
 
 
 class LibtorrentEngine(TorrentEngine):
@@ -178,6 +182,45 @@ class LibtorrentEngine(TorrentEngine):
             handle.file_priority(index, 1 if index in selected else 0)
         self._set_sequential(handle)
         self._metadata_only.discard((torrent_hash or "").lower())
+
+    async def prioritize_streaming(self, torrent_hash: str, file_index: int) -> None:
+        handle = self._require_handle(torrent_hash)
+        if not handle.has_metadata():
+            raise RuntimeError("Torrent metadata is not ready yet")
+        target_index = int(file_index)
+        torrent_info = handle.get_torrent_info()
+        files = torrent_info.files()
+        if target_index < 0 or target_index >= files.num_files():
+            raise ValueError("Torrent file not found")
+        try:
+            handle.file_priority(target_index, STREAM_PIECE_PRIORITY)
+        except Exception:
+            pass
+        self._prioritize_file_edges(handle, torrent_info, target_index)
+        self._set_sequential(handle)
+        self._metadata_only.discard((torrent_hash or "").lower())
+        await self.resume(torrent_hash)
+
+    async def get_health(self, torrent_hash: str) -> TorrentHealth | None:
+        handle = self._get_handle(torrent_hash)
+        if not handle or not handle.is_valid():
+            return TorrentHealth(
+                torrent_hash=(torrent_hash or "").lower(),
+                reason="任务尚未加载到本地 libtorrent 会话，可能需要刷新任务或重启后重新载入。",
+            )
+        status = handle.status()
+        has_metadata = handle.has_metadata()
+        if not has_metadata:
+            self._boost_metadata_discovery(torrent_hash, handle)
+        return _health_from_libtorrent_status(
+            self.lt,
+            torrent_hash,
+            status,
+            handle,
+            self._session,
+            self.config,
+            has_metadata,
+        )
 
     async def pause(self, torrent_hash: str) -> None:
         self._require_handle(torrent_hash).pause()
@@ -468,6 +511,27 @@ class LibtorrentEngine(TorrentEngine):
         except Exception:
             return []
 
+    def _prioritize_file_edges(self, handle, torrent_info, file_index: int) -> None:
+        try:
+            files = torrent_info.files()
+            file_size = int(files.file_size(file_index) or 0)
+        except Exception:
+            return
+        if file_size <= 0:
+            return
+        windows = [
+            (0, min(STREAM_HEAD_BYTES, file_size)),
+            (max(file_size - STREAM_TAIL_BYTES, 0), min(STREAM_TAIL_BYTES, file_size)),
+        ]
+        pieces: set[int] = set()
+        for offset, length in windows:
+            pieces.update(_mapped_pieces(torrent_info, file_index, offset, length))
+        for piece in sorted(pieces):
+            try:
+                handle.piece_priority(piece, STREAM_PIECE_PRIORITY)
+            except Exception:
+                pass
+
     def _delete_option(self, delete_files: bool) -> int:
         if not delete_files:
             return 0
@@ -598,6 +662,60 @@ def _state_name(lt, status) -> str:
     return "downloading"
 
 
+def _mapped_pieces(torrent_info, file_index: int, offset: int, length: int) -> set[int]:
+    if length <= 0:
+        return set()
+    try:
+        request = torrent_info.map_file(file_index, int(offset), int(length))
+        piece_length = int(torrent_info.piece_length() or 0)
+        piece_count = int(torrent_info.num_pieces() or 0)
+        first_piece = int(getattr(request, "piece", 0) or 0)
+        start_in_piece = int(getattr(request, "start", 0) or 0)
+        request_length = int(getattr(request, "length", length) or length)
+    except Exception:
+        return set()
+    if piece_length <= 0 or piece_count <= 0:
+        return {first_piece}
+    last_piece = first_piece + max(0, (start_in_piece + request_length - 1) // piece_length)
+    last_piece = min(last_piece, piece_count - 1)
+    return set(range(max(first_piece, 0), last_piece + 1))
+
+
+def _health_from_libtorrent_status(
+    lt,
+    torrent_hash: str,
+    status,
+    handle,
+    session,
+    config: TorrentConfig,
+    has_metadata: bool,
+) -> TorrentHealth:
+    trackers, tracker_failures = _tracker_stats(handle)
+    dht_nodes, has_incoming, is_listening, listen_port = _session_stats(session)
+    state = _state_name(lt, status)
+    health = TorrentHealth(
+        torrent_hash=(torrent_hash or "").lower(),
+        state=state,
+        normalized_status=TorrentStatus(torrent_hash=torrent_hash, state=state).normalized_status,
+        has_metadata=has_metadata,
+        progress=float(getattr(status, "progress", 0) or 0),
+        download_speed=int(getattr(status, "download_rate", 0) or 0),
+        upload_speed=int(getattr(status, "upload_rate", 0) or 0),
+        peers=int(getattr(status, "num_peers", 0) or 0),
+        seeds=int(getattr(status, "num_seeds", 0) or 0),
+        connections=int(getattr(status, "num_connections", 0) or 0),
+        dht_nodes=dht_nodes,
+        tracker_count=trackers,
+        tracker_failures=tracker_failures,
+        is_listening=is_listening,
+        listen_port=listen_port,
+        has_incoming_connections=has_incoming,
+    )
+    if not has_metadata:
+        health.reason = _metadata_hint(status, handle, session, config)
+    return health
+
+
 def _status_error(status) -> str:
     error = getattr(status, "error", None)
     if not error:
@@ -606,29 +724,31 @@ def _status_error(status) -> str:
     return "" if text in {"Success", "success"} else text
 
 
-def _metadata_hint(status, handle, session=None, config: TorrentConfig | None = None) -> str:
-    peers = int(getattr(status, "num_peers", 0) or 0)
-    seeds = int(getattr(status, "num_seeds", 0) or 0)
-    connections = int(getattr(status, "num_connections", 0) or 0)
+def _session_stats(session) -> tuple[int, bool, bool, int]:
     dht_nodes = 0
     has_incoming = False
     is_listening = False
     listen_port = 0
-    if session is not None:
-        try:
-            session_status = session.status()
-            dht_nodes = int(getattr(session_status, "dht_nodes", 0) or 0)
-            has_incoming = bool(getattr(session_status, "has_incoming_connections", False))
-        except Exception:
-            pass
-        try:
-            is_listening = bool(session.is_listening())
-        except Exception:
-            pass
-        try:
-            listen_port = int(session.listen_port() or 0)
-        except Exception:
-            pass
+    if session is None:
+        return dht_nodes, has_incoming, is_listening, listen_port
+    try:
+        session_status = session.status()
+        dht_nodes = int(getattr(session_status, "dht_nodes", 0) or 0)
+        has_incoming = bool(getattr(session_status, "has_incoming_connections", False))
+    except Exception:
+        pass
+    try:
+        is_listening = bool(session.is_listening())
+    except Exception:
+        pass
+    try:
+        listen_port = int(session.listen_port() or 0)
+    except Exception:
+        pass
+    return dht_nodes, has_incoming, is_listening, listen_port
+
+
+def _tracker_stats(handle) -> tuple[int, int]:
     trackers = 0
     tracker_failures = 0
     try:
@@ -639,6 +759,15 @@ def _metadata_hint(status, handle, session=None, config: TorrentConfig | None = 
                 tracker_failures += 1
     except Exception:
         pass
+    return trackers, tracker_failures
+
+
+def _metadata_hint(status, handle, session=None, config: TorrentConfig | None = None) -> str:
+    peers = int(getattr(status, "num_peers", 0) or 0)
+    seeds = int(getattr(status, "num_seeds", 0) or 0)
+    connections = int(getattr(status, "num_connections", 0) or 0)
+    dht_nodes, has_incoming, is_listening, listen_port = _session_stats(session)
+    trackers, tracker_failures = _tracker_stats(handle)
     cache_sources = len(config.metadata_cache_urls) if config else 0
     if dht_nodes <= 0:
         state_hint = "DHT 暂未连上节点，通常是本机网络、防火墙或当前端口的 UDP 不通。"

@@ -17,7 +17,7 @@ from app.api.v1 import torrents as torrents_api
 from app.db.models.asset import Asset
 from app.db.models.torrent import TorrentDownload
 from app.services.torrent.config import TorrentConfig
-from app.services.torrent.models import TorrentFileInfo
+from app.services.torrent.models import TorrentFileInfo, TorrentHealth, TorrentStatus
 from app.services.torrent.service import TorrentService
 
 
@@ -100,6 +100,43 @@ async def test_select_files_delegates_to_engine_and_resumes(tmp_path: Path):
     assert selected.status == "downloading"
 
 
+@pytest.mark.asyncio
+async def test_prioritize_streaming_delegates_to_engine(tmp_path: Path):
+    engine = _FakeEngine()
+    service = object.__new__(TorrentService)
+    service.session = _FakeFlushSession()
+    service.config = _torrent_config(tmp_path)
+    service.engine = engine
+    record = TorrentDownload(torrent_hash="hash-demo", status="metadata")
+
+    result = await service.prioritize_streaming(record, 1)
+
+    assert engine.prioritized == [("hash-demo", 1)]
+    assert result.status == "downloading"
+
+
+@pytest.mark.asyncio
+async def test_torrent_health_explains_stalled_local_preview(tmp_path: Path):
+    engine = _FakeEngine()
+    service = object.__new__(TorrentService)
+    service.session = _FakeFlushSession()
+    service.config = _torrent_config(tmp_path)
+    service.engine = engine
+    record = TorrentDownload(
+        torrent_hash="hash-demo",
+        status="downloading",
+        selected_files_json="[0]",
+        save_path=str(tmp_path),
+    )
+
+    health = await service.get_health(record, file_index=0)
+
+    assert health.target_file_name == "movie.mp4"
+    assert health.ready_to_stream is False
+    assert "还没有连到可下载的 peer" in health.reason
+    assert any("YLCraft 本地模式" in hint for hint in health.hints)
+
+
 def test_torrent_api_lifecycle_and_file_stream(tmp_path: Path):
     service = _FakeTorrentService(tmp_path)
     app = FastAPI()
@@ -126,6 +163,11 @@ def test_torrent_api_lifecycle_and_file_stream(tmp_path: Path):
         assert files_response.status_code == 200
         assert files_response.json()["data"][0]["is_video"] is True
 
+        health_response = client.get(f"/api/v1/torrents/{download_id}/health?file_index=0")
+        assert health_response.status_code == 200
+        assert health_response.json()["data"]["ready_to_stream"] is True
+        assert health_response.json()["data"]["target_file_name"] == "movie.mp4"
+
         select_response = client.post(
             f"/api/v1/torrents/{download_id}/select-files",
             json={"file_indexes": [0], "start": True},
@@ -133,6 +175,10 @@ def test_torrent_api_lifecycle_and_file_stream(tmp_path: Path):
         assert select_response.status_code == 200
         assert select_response.json()["data"]["selected_files"] == [0]
         assert select_response.json()["data"]["status"] == "downloading"
+
+        prioritize_response = client.post(f"/api/v1/torrents/{download_id}/files/0/prioritize-streaming")
+        assert prioritize_response.status_code == 200
+        assert service.prioritized == [0]
 
         pause_response = client.post(f"/api/v1/torrents/{download_id}/pause")
         assert pause_response.status_code == 200
@@ -258,6 +304,7 @@ class _FakeTorrentService:
         )
         self.files = [TorrentFileInfo(index=0, name="movie.mp4", size=10, progress=1, priority=1)]
         self.uploaded_name = ""
+        self.prioritized: list[int] = []
 
     async def list_records(self):
         return [] if self.record.status == "deleted" else [self.record]
@@ -288,6 +335,32 @@ class _FakeTorrentService:
         if start:
             record.status = "downloading"
         return record
+
+    async def prioritize_streaming(self, record, file_index: int):
+        self.prioritized.append(int(file_index))
+        record.status = "downloading"
+        return record
+
+    async def get_health(self, _record, file_index: int | None = None):
+        target = self.files[0]
+        return TorrentHealth(
+            torrent_hash=self.record.torrent_hash,
+            state=self.record.status,
+            normalized_status=self.record.status,
+            has_metadata=True,
+            peers=1,
+            seeds=1,
+            connections=1,
+            selected_file_count=1,
+            selected_video_count=1,
+            target_file_index=target.index if file_index is not None else None,
+            target_file_name=target.name,
+            target_file_size=target.size,
+            target_file_progress=target.progress,
+            target_file_available=True,
+            ready_to_stream=True,
+            reason="本机已经拿到当前视频的可读取片段，可以尝试在线播放。",
+        )
 
     async def pause(self, record):
         record.status = "paused"
@@ -327,9 +400,32 @@ class _FakeEngine:
     def __init__(self):
         self.selected: list[tuple[str, list[int]]] = []
         self.resumed: list[str] = []
+        self.prioritized: list[tuple[str, int]] = []
+        self.files = [TorrentFileInfo(index=0, name="movie.mp4", size=100, progress=0, priority=1)]
 
     async def select_files(self, torrent_hash: str, file_indexes: list[int]):
         self.selected.append((torrent_hash, file_indexes))
 
     async def resume(self, torrent_hash: str):
         self.resumed.append(torrent_hash)
+
+    async def prioritize_streaming(self, torrent_hash: str, file_index: int):
+        self.prioritized.append((torrent_hash, int(file_index)))
+
+    async def list_torrents(self):
+        return [TorrentStatus(torrent_hash="hash-demo", state="downloading")]
+
+    async def list_files(self, _torrent_hash: str):
+        return self.files
+
+    async def get_health(self, torrent_hash: str):
+        return TorrentHealth(
+            torrent_hash=torrent_hash,
+            state="downloading",
+            normalized_status="downloading",
+            has_metadata=True,
+            download_speed=0,
+            peers=0,
+            seeds=0,
+            connections=0,
+        )

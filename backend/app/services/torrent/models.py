@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -59,3 +59,32 @@ class TorrentStatus:
             return "metadata"
         return "downloading"
 
+
+@dataclass
+class TorrentHealth:
+    torrent_hash: str = ""
+    state: str = ""
+    normalized_status: str = ""
+    has_metadata: bool = False
+    progress: float = 0.0
+    download_speed: int = 0
+    upload_speed: int = 0
+    peers: int = 0
+    seeds: int = 0
+    connections: int = 0
+    dht_nodes: int = 0
+    tracker_count: int = 0
+    tracker_failures: int = 0
+    is_listening: bool = False
+    listen_port: int = 0
+    has_incoming_connections: bool = False
+    selected_file_count: int = 0
+    selected_video_count: int = 0
+    target_file_index: int | None = None
+    target_file_name: str = ""
+    target_file_size: int = 0
+    target_file_progress: float = 0.0
+    target_file_available: bool = False
+    ready_to_stream: bool = False
+    reason: str = ""
+    hints: list[str] = field(default_factory=list)
