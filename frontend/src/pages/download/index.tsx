@@ -87,6 +87,14 @@ interface TorrentEngineInfo {
   hint?: string
 }
 
+interface PreviewWaitState {
+  taskId: string
+  fileIndex: number
+  fileName: string
+  status: 'starting' | 'waiting' | 'stalled'
+  checkedCount: number
+}
+
 function TorrentDownloadPanel() {
   const { theme: THEME } = useTheme()
   const navigate = useNavigate()
@@ -101,6 +109,7 @@ function TorrentDownloadPanel() {
   const [actionLoading, setActionLoading] = useState('')
   const [engineInfo, setEngineInfo] = useState<TorrentEngineInfo | null>(null)
   const [preview, setPreview] = useState<{ taskId: string; fileIndex: number; title: string; url: string; progress: number } | null>(null)
+  const [previewWait, setPreviewWait] = useState<PreviewWaitState | null>(null)
   const activeTaskRef = useRef<TorrentTask | null>(null)
   const filesRef = useRef<TorrentFile[]>([])
 
@@ -256,7 +265,7 @@ function TorrentDownloadPanel() {
     })
   }
 
-  const waitForPreviewProgress = async (taskId: string, fileIndex: number) => {
+  const waitForPreviewProgress = async (taskId: string, fileIndex: number, fileName: string) => {
     for (let attempt = 0; attempt < PREVIEW_READY_POLL_ATTEMPTS; attempt += 1) {
       if (attempt > 0) await sleep(PREVIEW_READY_POLL_INTERVAL_MS)
       const res: any = await getTorrentFiles(taskId)
@@ -264,6 +273,7 @@ function TorrentDownloadPanel() {
       setFiles(nextFiles)
       const target = nextFiles.find(file => file.index === fileIndex) || null
       if (target && (target.progress || 0) > 0) return target
+      setPreviewWait({ taskId, fileIndex, fileName: target?.name || fileName, status: 'waiting', checkedCount: attempt + 1 })
     }
     return null
   }
@@ -283,13 +293,16 @@ function TorrentDownloadPanel() {
     const loadingKey = `stream-${taskId}-${item.index}`
     const nextSelection = Array.from(new Set([...selectedFiles, item.index]))
     setActionLoading(loadingKey)
+    setPreviewWait({ taskId, fileIndex: item.index, fileName: item.name, status: 'starting', checkedCount: 0 })
     try {
       setSelectedFiles(nextSelection)
       await selectTorrentFiles(taskId, nextSelection, true)
       message.success('已开始下载当前视频，正在等待可预览片段')
-      const readyFile = await waitForPreviewProgress(taskId, item.index)
+      setPreviewWait({ taskId, fileIndex: item.index, fileName: item.name, status: 'waiting', checkedCount: 0 })
+      const readyFile = await waitForPreviewProgress(taskId, item.index, item.name)
       await refreshTasks()
       if (readyFile && (readyFile.progress || 0) > 0) {
+        setPreviewWait(null)
         setPreview({
           taskId,
           fileIndex: readyFile.index,
@@ -299,8 +312,16 @@ function TorrentDownloadPanel() {
         })
         return
       }
+      setPreviewWait({
+        taskId,
+        fileIndex: item.index,
+        fileName: item.name,
+        status: 'stalled',
+        checkedCount: PREVIEW_READY_POLL_ATTEMPTS,
+      })
       message.warning('已开始下载，但本地片段还没准备好；稍后再点边下边播即可继续尝试')
     } catch (e: any) {
+      setPreviewWait(null)
       message.error(e?.message || '启动边下边播失败')
     } finally {
       setActionLoading('')
@@ -463,19 +484,33 @@ function TorrentDownloadPanel() {
     {
       title: '操作',
       width: 130,
-      render: (_: unknown, item: TorrentFile) => (
-        <Button
-          size="small"
-          icon={<PlayCircleOutlined />}
-          loading={activeTask ? actionLoading === `stream-${activeTask.id}-${item.index}` : false}
-          disabled={!item.is_video}
-          onClick={() => startStreamingPreview(item)}
-        >
-          {(item.progress || 0) > 0 ? '播放' : '边下边播'}
-        </Button>
-      ),
+      render: (_: unknown, item: TorrentFile) => {
+        const isWaitingForThis = !!activeTask
+          && previewWait?.taskId === activeTask.id
+          && previewWait.fileIndex === item.index
+          && previewWait.status !== 'stalled'
+        const isStalledForThis = !!activeTask
+          && previewWait?.taskId === activeTask.id
+          && previewWait.fileIndex === item.index
+          && previewWait.status === 'stalled'
+        return (
+          <Button
+            size="small"
+            icon={<PlayCircleOutlined />}
+            loading={activeTask ? actionLoading === `stream-${activeTask.id}-${item.index}` : false}
+            disabled={!item.is_video}
+            onClick={() => startStreamingPreview(item)}
+          >
+            {isWaitingForThis ? '等待片段' : (item.progress || 0) > 0 ? '播放' : isStalledForThis ? '重试边播' : '边下边播'}
+          </Button>
+        )
+      },
     },
   ]
+
+  const currentPreviewWaitFile = previewWait && activeTask?.id === previewWait.taskId
+    ? files.find(item => item.index === previewWait.fileIndex)
+    : null
 
   return (
     <>
@@ -564,6 +599,33 @@ function TorrentDownloadPanel() {
                       ? activeTask.error_message || 'magnet 需要先从 DHT/Tracker/Peer 拉到文件列表。文件列表出现后，视频行右侧会显示“播放”按钮；选中文件并开始下载后，进度大于 0 就可以预览。'
                       : '点击任务右侧“文件”刷新列表；如果仍为空，可能是种子元数据暂未获取完成或当前任务没有文件信息。'
                   }
+                />
+              )}
+              {previewWait && activeTask.id === previewWait.taskId && (
+                <Alert
+                  type={previewWait.status === 'stalled' ? 'warning' : 'info'}
+                  showIcon
+                  style={{ marginBottom: 12 }}
+                  message={
+                    previewWait.status === 'stalled'
+                      ? '还没有等到可预览片段'
+                      : '正在准备边下边播'
+                  }
+                  description={
+                    previewWait.status === 'stalled'
+                      ? '任务已经开始下载，但当前文件仍是 0%。通常是暂时没有可用 peer、tracker 还没连上，或文件前段还没下载到；等速度起来后再点“重试边播”。'
+                      : `已选中「${previewWait.fileName}」并启动下载，正在等待本地片段可播放。已检查 ${previewWait.checkedCount}/${PREVIEW_READY_POLL_ATTEMPTS} 次。`
+                  }
+                  action={currentPreviewWaitFile ? (
+                    <Button
+                      size="small"
+                      icon={<PlayCircleOutlined />}
+                      loading={actionLoading === `stream-${activeTask.id}-${currentPreviewWaitFile.index}`}
+                      onClick={() => startStreamingPreview(currentPreviewWaitFile)}
+                    >
+                      {(currentPreviewWaitFile.progress || 0) > 0 ? '打开播放' : '重试边播'}
+                    </Button>
+                  ) : undefined}
                 />
               )}
               <Table

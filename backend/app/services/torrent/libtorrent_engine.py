@@ -183,7 +183,17 @@ class LibtorrentEngine(TorrentEngine):
         self._require_handle(torrent_hash).pause()
 
     async def resume(self, torrent_hash: str) -> None:
-        self._require_handle(torrent_hash).resume()
+        handle = self._require_handle(torrent_hash)
+        handle.resume()
+        self._ensure_handle_trackers(handle)
+        try:
+            handle.force_reannounce(0)
+        except Exception:
+            pass
+        try:
+            handle.force_dht_announce()
+        except Exception:
+            pass
 
     async def refresh_metadata(self, torrent_hash: str) -> None:
         handle = self._require_handle(torrent_hash)
