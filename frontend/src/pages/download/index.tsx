@@ -9,6 +9,7 @@ import {
 } from '@ant-design/icons'
 import {
   addTorrentMagnet,
+  boostTorrentTrackers,
   deleteTorrentTask,
   getTorrentEngineInfo,
   getTorrentFiles,
@@ -298,6 +299,15 @@ function TorrentDownloadPanel() {
     )
   }
 
+  const boostTrackers = async (task: TorrentTask) => {
+    await runTaskAction(
+      `boost-trackers-${task.id}`,
+      () => boostTorrentTrackers(task.id),
+      '已补充公共 Tracker 并重新公告',
+    )
+    await loadHealth(task)
+  }
+
   const openPreview = (item: TorrentFile) => {
     if (!activeTask) return
     if (!item.is_video) {
@@ -508,6 +518,16 @@ function TorrentDownloadPanel() {
               重试元数据
             </Button>
           )}
+          {item.status !== 'done' && (
+            <Button
+              size="small"
+              icon={<LinkOutlined />}
+              loading={actionLoading === `boost-trackers-${item.id}`}
+              onClick={() => boostTrackers(item)}
+            >
+              补Tracker
+            </Button>
+          )}
           {item.status === 'paused' ? (
             <Button size="small" icon={<ReloadOutlined />} loading={actionLoading === `resume-${item.id}`} onClick={() => runTaskAction(`resume-${item.id}`, () => resumeTorrentTask(item.id), '已继续下载')}>继续</Button>
           ) : (
@@ -688,14 +708,24 @@ function TorrentDownloadPanel() {
                   style={{ marginBottom: 12 }}
                   message={activeTask.status === 'metadata' ? '正在获取种子元数据' : '还没有可选择的文件'}
                   action={activeTask.status === 'metadata' ? (
-                    <Button
-                      size="small"
-                      icon={<ReloadOutlined />}
-                      loading={actionLoading === `metadata-${activeTask.id}`}
-                      onClick={() => retryMetadata(activeTask)}
-                    >
-                      重试元数据
-                    </Button>
+                    <Space>
+                      <Button
+                        size="small"
+                        icon={<ReloadOutlined />}
+                        loading={actionLoading === `metadata-${activeTask.id}`}
+                        onClick={() => retryMetadata(activeTask)}
+                      >
+                        重试元数据
+                      </Button>
+                      <Button
+                        size="small"
+                        icon={<LinkOutlined />}
+                        loading={actionLoading === `boost-trackers-${activeTask.id}`}
+                        onClick={() => boostTrackers(activeTask)}
+                      >
+                        补Tracker
+                      </Button>
+                    </Space>
                   ) : undefined}
                   description={
                     activeTask.status === 'metadata'
@@ -711,6 +741,16 @@ function TorrentDownloadPanel() {
                   style={{ marginBottom: 12 }}
                   message={health.ready_to_stream ? '当前视频片段已可读取' : '下载健康度'}
                   description={healthDescription}
+                  action={activeTask ? (
+                    <Button
+                      size="small"
+                      icon={<LinkOutlined />}
+                      loading={actionLoading === `boost-trackers-${activeTask.id}`}
+                      onClick={() => boostTrackers(activeTask)}
+                    >
+                      补Tracker
+                    </Button>
+                  ) : undefined}
                 />
               )}
               {previewWait && activeTask.id === previewWait.taskId && (

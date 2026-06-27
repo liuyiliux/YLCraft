@@ -15,7 +15,7 @@ import httpx
 
 from app.services.torrent.config import TorrentConfig
 from app.services.torrent.engine import TorrentEngine
-from app.services.torrent.models import TorrentFileInfo, TorrentHealth, TorrentStatus
+from app.services.torrent.models import PUBLIC_TRACKERS, TorrentFileInfo, TorrentHealth, TorrentStatus
 
 
 DHT_ROUTERS = (
@@ -34,19 +34,6 @@ FALLBACK_LISTEN_INTERFACES = (
     "0.0.0.0:6886,[::]:6886",
     "0.0.0.0:6887,[::]:6887",
     "0.0.0.0:0,[::]:0",
-)
-
-DEFAULT_TRACKERS = (
-    "udp://tracker.opentrackr.org:1337/announce",
-    "udp://open.stealth.si:80/announce",
-    "udp://tracker.openbittorrent.com:6969/announce",
-    "udp://tracker.torrent.eu.org:451/announce",
-    "udp://exodus.desync.com:6969/announce",
-    "udp://open.demonii.com:1337/announce",
-    "udp://tracker.dler.org:6969/announce",
-    "udp://tracker.moeking.me:6969/announce",
-    "udp://explodie.org:6969/announce",
-    "udp://tracker-udp.gbitt.info:80/announce",
 )
 
 STREAM_HEAD_BYTES = 16 * 1024 * 1024
@@ -259,6 +246,9 @@ class LibtorrentEngine(TorrentEngine):
         except Exception:
             pass
 
+    async def boost_trackers(self, torrent_hash: str) -> None:
+        await self.refresh_metadata(torrent_hash)
+
     async def delete(self, torrent_hash: str, delete_files: bool = False) -> None:
         handle = self._handles.pop(torrent_hash.lower(), None)
         self._metadata_only.discard(torrent_hash.lower())
@@ -312,8 +302,8 @@ class LibtorrentEngine(TorrentEngine):
         trackers = list(getattr(params, "trackers", None) or [])
         if trackers:
             return
-        self._set_param(params, "trackers", list(DEFAULT_TRACKERS))
-        self._set_param(params, "tracker_tiers", [0 for _ in DEFAULT_TRACKERS])
+        self._set_param(params, "trackers", list(PUBLIC_TRACKERS))
+        self._set_param(params, "tracker_tiers", [0 for _ in PUBLIC_TRACKERS])
 
     def _ensure_handle_trackers(self, handle) -> None:
         try:
@@ -324,7 +314,7 @@ class LibtorrentEngine(TorrentEngine):
             }
         except Exception:
             existing = set()
-        for tracker in DEFAULT_TRACKERS:
+        for tracker in PUBLIC_TRACKERS:
             if tracker in existing:
                 continue
             try:

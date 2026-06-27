@@ -281,6 +281,17 @@ async def refresh_torrent_metadata(download_id: str, service: TorrentService = D
         raise _http_error(exc)
 
 
+@router.post("/{download_id}/boost-trackers", response_model=SuccessResponse, summary="Add public trackers and reannounce torrent")
+async def boost_torrent_trackers(download_id: str, service: TorrentService = Depends(get_torrent_service)):
+    record = await service.get_record(download_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Torrent task not found")
+    try:
+        return SuccessResponse(data=_record_to_dict(await service.boost_trackers(record)))
+    except Exception as exc:
+        raise _http_error(exc)
+
+
 @router.delete("/{download_id}", response_model=SuccessResponse, summary="Delete torrent task")
 async def delete_torrent(
     download_id: str,

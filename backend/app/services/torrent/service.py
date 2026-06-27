@@ -210,6 +210,27 @@ class TorrentService:
         await self.session.refresh(record)
         return await self.sync_record(record)
 
+    async def boost_trackers(self, record: TorrentDownload) -> TorrentDownload:
+        if not record.torrent_hash:
+            await self.sync_record(record)
+        if not record.torrent_hash:
+            raise ValueError("Torrent metadata is not ready yet")
+        await self.engine.boost_trackers(record.torrent_hash)
+        hint = "已补充公共 tracker 并重新公告，正在等待 peer 响应"
+        record.error_message = hint
+        if record.status == "paused":
+            record.status = "downloading"
+        record.updated_at = datetime.now()
+        await self.session.flush()
+        await self.session.refresh(record)
+        record = await self.sync_record(record)
+        if not record.error_message:
+            record.error_message = hint
+            record.updated_at = datetime.now()
+            await self.session.flush()
+            await self.session.refresh(record)
+        return record
+
     async def delete(self, record: TorrentDownload, delete_files: bool = False) -> None:
         if record.torrent_hash:
             await self.engine.delete(record.torrent_hash, delete_files=delete_files)

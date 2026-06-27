@@ -116,6 +116,21 @@ async def test_prioritize_streaming_delegates_to_engine(tmp_path: Path):
 
 
 @pytest.mark.asyncio
+async def test_boost_trackers_delegates_to_engine(tmp_path: Path):
+    engine = _FakeEngine()
+    service = object.__new__(TorrentService)
+    service.session = _FakeFlushSession()
+    service.config = _torrent_config(tmp_path)
+    service.engine = engine
+    record = TorrentDownload(torrent_hash="hash-demo", status="metadata")
+
+    result = await service.boost_trackers(record)
+
+    assert engine.boosted == ["hash-demo"]
+    assert "公共 tracker" in result.error_message
+
+
+@pytest.mark.asyncio
 async def test_torrent_health_explains_stalled_local_preview(tmp_path: Path):
     engine = _FakeEngine()
     service = object.__new__(TorrentService)
@@ -179,6 +194,10 @@ def test_torrent_api_lifecycle_and_file_stream(tmp_path: Path):
         prioritize_response = client.post(f"/api/v1/torrents/{download_id}/files/0/prioritize-streaming")
         assert prioritize_response.status_code == 200
         assert service.prioritized == [0]
+
+        boost_response = client.post(f"/api/v1/torrents/{download_id}/boost-trackers")
+        assert boost_response.status_code == 200
+        assert service.boosted == [download_id]
 
         pause_response = client.post(f"/api/v1/torrents/{download_id}/pause")
         assert pause_response.status_code == 200
@@ -305,6 +324,7 @@ class _FakeTorrentService:
         self.files = [TorrentFileInfo(index=0, name="movie.mp4", size=10, progress=1, priority=1)]
         self.uploaded_name = ""
         self.prioritized: list[int] = []
+        self.boosted: list[str] = []
 
     async def list_records(self):
         return [] if self.record.status == "deleted" else [self.record]
@@ -339,6 +359,11 @@ class _FakeTorrentService:
     async def prioritize_streaming(self, record, file_index: int):
         self.prioritized.append(int(file_index))
         record.status = "downloading"
+        return record
+
+    async def boost_trackers(self, record):
+        self.boosted.append(record.id)
+        record.error_message = "已补充公共 tracker 并重新公告，正在等待 peer 响应"
         return record
 
     async def get_health(self, _record, file_index: int | None = None):
@@ -401,6 +426,7 @@ class _FakeEngine:
         self.selected: list[tuple[str, list[int]]] = []
         self.resumed: list[str] = []
         self.prioritized: list[tuple[str, int]] = []
+        self.boosted: list[str] = []
         self.files = [TorrentFileInfo(index=0, name="movie.mp4", size=100, progress=0, priority=1)]
 
     async def select_files(self, torrent_hash: str, file_indexes: list[int]):
@@ -411,6 +437,9 @@ class _FakeEngine:
 
     async def prioritize_streaming(self, torrent_hash: str, file_index: int):
         self.prioritized.append((torrent_hash, int(file_index)))
+
+    async def boost_trackers(self, torrent_hash: str):
+        self.boosted.append(torrent_hash)
 
     async def list_torrents(self):
         return [TorrentStatus(torrent_hash="hash-demo", state="downloading")]

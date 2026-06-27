@@ -10,7 +10,7 @@ import httpx
 
 from app.services.torrent.config import TorrentConfig
 from app.services.torrent.engine import TorrentEngine
-from app.services.torrent.models import TorrentFileInfo, TorrentHealth, TorrentStatus
+from app.services.torrent.models import PUBLIC_TRACKERS, TorrentFileInfo, TorrentHealth, TorrentStatus
 
 
 class QBittorrentEngine(TorrentEngine):
@@ -149,9 +149,7 @@ class QBittorrentEngine(TorrentEngine):
 
     async def _tracker_stats(self, torrent_hash: str) -> tuple[int, int]:
         try:
-            response = await self._client.get("/api/v2/torrents/trackers", params={"hash": torrent_hash})
-            response.raise_for_status()
-            items = response.json()
+            items = await self._tracker_items(torrent_hash)
         except Exception:
             return 0, 0
         trackers = 0
@@ -164,6 +162,23 @@ class QBittorrentEngine(TorrentEngine):
             if int(item.get("status") or 0) == 4:
                 failures += 1
         return trackers, failures
+
+    async def _tracker_urls(self, torrent_hash: str) -> set[str]:
+        try:
+            items = await self._tracker_items(torrent_hash)
+        except Exception:
+            return set()
+        return {
+            str(item.get("url") or "").strip()
+            for item in items
+            if str(item.get("url") or "").strip() and not str(item.get("url") or "").startswith("**")
+        }
+
+    async def _tracker_items(self, torrent_hash: str) -> list[dict]:
+        response = await self._client.get("/api/v2/torrents/trackers", params={"hash": torrent_hash})
+        response.raise_for_status()
+        items = response.json()
+        return items if isinstance(items, list) else []
 
     async def pause(self, torrent_hash: str) -> None:
         await self._login()
@@ -180,6 +195,18 @@ class QBittorrentEngine(TorrentEngine):
         await self.resume(torrent_hash)
         response = await self._client.post("/api/v2/torrents/reannounce", data={"hashes": torrent_hash})
         response.raise_for_status()
+
+    async def boost_trackers(self, torrent_hash: str) -> None:
+        await self._login()
+        existing = await self._tracker_urls(torrent_hash)
+        missing = [tracker for tracker in PUBLIC_TRACKERS if tracker not in existing]
+        if missing:
+            response = await self._client.post(
+                "/api/v2/torrents/addTrackers",
+                data={"hash": torrent_hash, "urls": "\n".join(missing)},
+            )
+            response.raise_for_status()
+        await self.refresh_metadata(torrent_hash)
 
     async def delete(self, torrent_hash: str, delete_files: bool = False) -> None:
         await self._login()

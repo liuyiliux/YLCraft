@@ -37,6 +37,10 @@ class TorrentEngine(ABC):
         """Return structured engine health if the engine can provide it."""
         return None
 
+    async def boost_trackers(self, torrent_hash: str) -> None:
+        """Add bundled public trackers when possible and reannounce the torrent."""
+        await self.refresh_metadata(torrent_hash)
+
     @abstractmethod
     async def pause(self, torrent_hash: str) -> None:
         """Pause a torrent."""
