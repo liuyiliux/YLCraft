@@ -343,16 +343,19 @@ function TorrentDownloadPanel() {
 
   const engineName = engineInfo?.engine || 'qbittorrent'
   const engineMessage = engineInfo?.requires_external_app
-    ? '当前使用 qBittorrent 引擎，需要本机 qBittorrent Web UI 可用'
+    ? '当前使用本机 qBittorrent 引擎，需要 qBittorrent Web UI 可用'
     : engineName === 'libtorrent'
-      ? '当前使用 libtorrent 引擎，不需要单独安装桌面下载软件'
-      : `当前使用 ${engineName} 引擎`
+      ? '当前使用本地 libtorrent 引擎，无需安装桌面下载软件'
+      : `当前使用本地 ${engineName} 引擎`
   const engineDescription = (
     <Space direction="vertical" size={4} style={{ width: '100%' }}>
       <Text style={{ color: THEME.textSecondary }}>
         {engineInfo?.requires_external_app
-          ? '添加任务后先获取元数据，选择视频文件再开始下载；已下载出本地文件后可直接在线播放，下载完成后也可导入素材库。'
-          : '添加任务后由后端下载引擎管理任务；已下载出本地文件后可直接在线播放，下载完成后也可导入素材库。'}
+          ? '添加任务后会交给本机 qBittorrent 获取元数据和下载文件；选择视频文件并拿到本地片段后可直接在线播放，下载完成后也可导入素材库。'
+          : '添加任务后由后端本地下载引擎获取元数据和下载文件；选择视频文件并拿到本地片段后可直接在线播放，下载完成后也可导入素材库。'}
+      </Text>
+      <Text style={{ color: THEME.textSecondary }}>
+        YLCraft 是开源本地模式，不内置云端离线、秒传或 CDN 缓存；这里只缓存种子元数据和本机已下载文件。若任务长期 0 B/s，通常表示本机还没从 peer、tracker 或 DHT 拿到数据；迅雷、夸克能播放往往是因为它们有自己的云端资源网络。
       </Text>
       {engineInfo && (
         <Space size={6} wrap>
@@ -613,8 +616,8 @@ function TorrentDownloadPanel() {
                   }
                   description={
                     previewWait.status === 'stalled'
-                      ? '任务已经开始下载，但当前文件仍是 0%。通常是暂时没有可用 peer、tracker 还没连上，或文件前段还没下载到；等速度起来后再点“重试边播”。'
-                      : `已选中「${previewWait.fileName}」并启动下载，正在等待本地片段可播放。已检查 ${previewWait.checkedCount}/${PREVIEW_READY_POLL_ATTEMPTS} 次。`
+                      ? '任务已经开始下载，但本机还没有拿到可播放片段，当前文件仍是 0%。通常是可用 peer 少、tracker/DHT 未连通，或文件前段尚未下载；YLCraft 不走云端离线/秒传缓存。可以继续等待速度起来，换更健康的种子，或用外部网盘/离线工具对比。'
+                      : `已选中「${previewWait.fileName}」并启动本地下载，正在等本机拿到第一个可播放片段；这依赖 peer/tracker/DHT，不会使用云端缓存。已检查 ${previewWait.checkedCount}/${PREVIEW_READY_POLL_ATTEMPTS} 次。`
                   }
                   action={currentPreviewWaitFile ? (
                     <Button
