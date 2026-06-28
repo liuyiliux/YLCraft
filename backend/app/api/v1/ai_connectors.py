@@ -143,7 +143,7 @@ async def list_connectors(
         conns = await service.list_by_provider(provider)
     elif provider_type:
         # 按类型筛选
-        conns = await service.list_by_type(provider_type)
+        conns = await service.list_active_by_type(provider_type) if active_only else await service.list_by_type(provider_type)
     elif active_only:
         conns = await service.list_active()
     else:

@@ -6,14 +6,19 @@
 - outline_template: LLM 将 topic 分析为结构化大纲
 - image_template: 将大纲每页渲染为生图提示词
 
+后续也复用这张表管理创作项目 prompt 模板：
+- template_scope: image_platform / creative_project
+- template_stage: platform / outline / chapter_plan / script / storyboard
+- system_template: 可选 system 角色提示词，创作项目生成时优先使用
+
 page_structure（JSONB）定义平台默认页面结构，驱动空白大纲创建和前端渲染：
   { "default_pages": [{"type":"封面"}, {"type":"内容"}, {"type":"内容"}, {"type":"总结"}] }
 """
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Column
+from sqlalchemy import Column, Text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlmodel import SQLModel, Field
 
@@ -40,23 +45,36 @@ class PlatformTemplate(SQLModel, table=True):
         primary_key=True,
         sa_type=UUID(as_uuid=True),
     )
-    platform: str = Field(max_length=30, unique=True, index=True, description="平台标识: xiaohongshu/douyin/wechat/toutiao")
-    name: str = Field(max_length=50, description="平台中文名: 小红书/抖音/微信/头条")
+    platform: str = Field(max_length=30, unique=True, index=True, description="模板标识: xiaohongshu/douyin/creative_outline")
+    name: str = Field(max_length=50, description="模板名称: 小红书/抖音/故事大纲")
+    template_scope: str = Field(default="image_platform", max_length=40, index=True, description="模板用途: image_platform/creative_project")
+    template_stage: str = Field(default="platform", max_length=40, index=True, description="模板阶段: platform/outline/chapter_plan/script/storyboard")
+    description: Optional[str] = Field(default=None, description="模板说明")
+    system_template: str = Field(
+        default="",
+        sa_column=Column(Text, nullable=False, server_default=""),
+        description="System 角色提示词；为空时使用业务默认 system prompt",
+    )
     outline_template: str = Field(description="LLM 大纲模板, 变量 {topic}{page_structure}")
-    image_template: str = Field(description="生图提示词模板, 变量 {user_topic}{topic}{page_content}{page_type}{full_outline}{copywriting}")
+    image_template: str = Field(default="", description="生图提示词模板, 变量 {user_topic}{topic}{page_content}{page_type}{full_outline}{copywriting}")
     page_structure: dict = Field(
-        default={},
+        default_factory=dict,
         sa_column=Column(JSONB)
+    )
+    variables: dict = Field(
+        default_factory=dict,
+        sa_column=Column(JSONB),
+        description="模板可用变量说明",
     )
     video_template: Optional[str] = Field(default=None, description="视频模板（可选）")
     default_size: str = Field(default="1024x1024", max_length=20)
     is_active: bool = Field(default=True)
     sort_order: int = Field(default=0)
     created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=datetime.now,
         sa_column_kwargs={"server_default": "now()"},
     )
     updated_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=datetime.now,
         sa_column_kwargs={"server_default": "now()", "onupdate": "now()"},
     )

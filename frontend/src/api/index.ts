@@ -494,7 +494,18 @@ export const downloadVideoWithProgress = (
 
 // ===== AI Connectors =====
 
-export const listConnectors = () => request('/ai/connectors')
+export const listConnectors = (params?: {
+  provider?: string
+  provider_type?: string
+  active_only?: boolean
+}) => {
+  const sp = new URLSearchParams()
+  if (params?.provider) sp.set('provider', params.provider)
+  if (params?.provider_type) sp.set('provider_type', params.provider_type)
+  if (params?.active_only !== undefined) sp.set('active_only', String(params.active_only))
+  const qs = sp.toString()
+  return request(`/ai/connectors${qs ? `?${qs}` : ''}`)
+}
 
 export const createConnector = (data: any) =>
   request('/ai/connectors', { method: 'POST', body: JSON.stringify(data) })
@@ -647,16 +658,32 @@ export interface PlatformTemplate {
   id: string
   platform: string
   name: string
+  template_scope: string
+  template_stage: string
+  description?: string | null
+  system_template: string
   outline_template: string
   image_template: string
   page_structure?: Record<string, any>
+  variables?: Record<string, any>
   video_template: string | null
   default_size: string
   is_active: boolean
   sort_order: number
 }
 
-export const getPlatformTemplates = () => request('/images/platform-templates')
+export const getPlatformTemplates = (params?: {
+  template_scope?: string
+  template_stage?: string
+  include_inactive?: boolean
+}) => {
+  const sp = new URLSearchParams()
+  if (params?.template_scope) sp.set('template_scope', params.template_scope)
+  if (params?.template_stage) sp.set('template_stage', params.template_stage)
+  if (params?.include_inactive !== undefined) sp.set('include_inactive', String(params.include_inactive))
+  const qs = sp.toString()
+  return request(`/images/platform-templates${qs ? `?${qs}` : ''}`)
+}
 
 export const createPlatformTemplate = (data: Omit<PlatformTemplate, 'id'>) =>
   request('/images/platform-templates', { method: 'POST', body: JSON.stringify(data) })
@@ -1269,6 +1296,199 @@ export const generateStoryPortrait = (data: { story_id: string; character_name: 
   request('/story/portrait', { method: 'POST', body: JSON.stringify(data) })
 
 export const getStory = (storyId: string) => request(`/story/${storyId}`)
+
+// ===== Creative Projects =====
+export const listCreativeProjects = (params?: {
+  limit?: number
+  offset?: number
+  status?: string
+  projectType?: string
+}) => {
+  const sp = new URLSearchParams()
+  if (params?.limit) sp.set('limit', String(params.limit))
+  if (params?.offset) sp.set('offset', String(params.offset))
+  if (params?.status) sp.set('status', params.status)
+  if (params?.projectType) sp.set('project_type', params.projectType)
+  const qs = sp.toString()
+  return request(`/creative-projects${qs ? `?${qs}` : ''}`)
+}
+
+export const createCreativeProject = (data: {
+  title?: string
+  idea?: string
+  project_type?: string
+  source_type?: string
+  source_ref?: Record<string, any>
+  settings?: Record<string, any>
+  metadata?: Record<string, any>
+}) => request('/creative-projects', { method: 'POST', body: JSON.stringify(data) })
+
+export const getCreativeProject = (projectId: string) =>
+  request(`/creative-projects/${projectId}`)
+
+export const updateCreativeProject = (projectId: string, data: Record<string, any>) =>
+  request(`/creative-projects/${projectId}`, { method: 'PATCH', body: JSON.stringify(data) })
+
+export const generateCreativeProjectOutline = (
+  projectId: string,
+  data: { idea?: string; provider?: string; model?: string; template_id?: string } = {},
+) =>
+  request(`/creative-projects/${projectId}/generate-outline`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
+export const generateCreativeProjectChapterPlan = (
+  projectId: string,
+  data: { chapter_count?: number; provider?: string; model?: string; template_id?: string } = {},
+) =>
+  request(`/creative-projects/${projectId}/generate-chapter-plan`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
+export const generateCreativeProjectScript = (
+  projectId: string,
+  data: { chapter_number: number; provider?: string; model?: string; template_id?: string },
+) =>
+  request(`/creative-projects/${projectId}/generate-script`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
+export const generateCreativeProjectChapterOutline = (
+  projectId: string,
+  data: { chapter_number: number; provider?: string; model?: string; template_id?: string },
+) =>
+  request(`/creative-projects/${projectId}/generate-chapter-outline`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
+export const regenerateCreativeProjectChapterOutlineScenes = (
+  projectId: string,
+  data: { content_id: string; provider?: string; model?: string; template_id?: string },
+) =>
+  request(`/creative-projects/${projectId}/regenerate-chapter-outline-scenes`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
+export const generateCreativeProjectNovelBody = (
+  projectId: string,
+  data: { chapter_number: number; content_id?: string; provider?: string; model?: string; template_id?: string },
+) =>
+  request(`/creative-projects/${projectId}/generate-novel-body`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
+export const refineCreativeProjectNovelBody = (
+  projectId: string,
+  data: { content_id: string; instruction: string; provider?: string; model?: string; template_id?: string },
+) =>
+  request(`/creative-projects/${projectId}/refine-novel-body`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
+export const splitCreativeProjectComicPages = (
+  projectId: string,
+  data: { chapter_number: number; content_id?: string; page_count?: number; visual_style?: string; provider?: string; model?: string; template_id?: string },
+) =>
+  request(`/creative-projects/${projectId}/split-comic-pages`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
+export const generateCreativeProjectStoryboard = (
+  projectId: string,
+  data: { content_id: string; provider?: string; model?: string; template_id?: string },
+) =>
+  request(`/creative-projects/${projectId}/generate-storyboard`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
+export const listCreativeProjectContents = (projectId: string, contentType?: string) => {
+  const qs = contentType ? `?content_type=${encodeURIComponent(contentType)}` : ''
+  return request(`/creative-projects/${projectId}/contents${qs}`)
+}
+
+export const updateCreativeProjectContent = (
+  projectId: string,
+  contentId: string,
+  data: {
+    title?: string
+    data?: Record<string, any>
+    text_content?: string
+    is_locked?: boolean
+  },
+) =>
+  request(`/creative-projects/${projectId}/contents/${contentId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  })
+
+export const listCreativeProjectAssets = (projectId: string) =>
+  request(`/creative-projects/${projectId}/assets`)
+
+export const listCreativeProjectGenerationLogs = (
+  projectId: string,
+  params?: { stage?: string; status?: string; limit?: number; offset?: number },
+) => {
+  const sp = new URLSearchParams()
+  if (params?.stage) sp.set('stage', params.stage)
+  if (params?.status) sp.set('status', params.status)
+  if (params?.limit) sp.set('limit', String(params.limit))
+  if (params?.offset) sp.set('offset', String(params.offset))
+  const qs = sp.toString()
+  return request(`/creative-projects/${projectId}/generation-logs${qs ? `?${qs}` : ''}`)
+}
+
+/**
+ * 跨项目查询生成日志（支持按 scene / ref_id 过滤）。
+ * 典型用法：
+ *   - 查角色立绘日志：listGenerationLogsGlobal({ scene: 'character_portrait', ref_id: characterId })
+ *   - 查所有角色立绘日志：listGenerationLogsGlobal({ scene: 'character_portrait' })
+ */
+export const listGenerationLogsGlobal = (
+  params?: {
+    scene?: string
+    ref_id?: string
+    stage?: string
+    status?: string
+    limit?: number
+    offset?: number
+  },
+) => {
+  const sp = new URLSearchParams()
+  if (params?.scene) sp.set('scene', params.scene)
+  if (params?.ref_id) sp.set('ref_id', params.ref_id)
+  if (params?.stage) sp.set('stage', params.stage)
+  if (params?.status) sp.set('status', params.status)
+  if (params?.limit) sp.set('limit', String(params.limit))
+  if (params?.offset) sp.set('offset', String(params.offset))
+  const qs = sp.toString()
+  return request(`/creative-projects/logs/generation${qs ? `?${qs}` : ''}`)
+}
+
+export const linkCreativeProjectAsset = (projectId: string, data: {
+  asset_id: string
+  content_id?: string
+  role?: string
+  relation?: string
+  metadata?: Record<string, any>
+}) =>
+  request(`/creative-projects/${projectId}/assets`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
+export const syncCreativeProjectCharacters = (projectId: string) =>
+  request(`/creative-projects/${projectId}/sync-characters`, {
+    method: 'POST',
+  })
 
 // ===== Novel（小说）=====
 export * from './novel'

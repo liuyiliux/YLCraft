@@ -16,6 +16,7 @@ from typing import Optional
 import httpx
 from jinja2 import Template
 from sqlmodel import select
+from sqlalchemy import String, cast
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.ai_connector import (
@@ -115,7 +116,7 @@ class AIConnectorService:
         """列出指定类型的连接（llm/image/video/tts/stt）"""
         stmt = (
             select(AIConnector)
-            .where(AIConnector.provider_type == provider_type)
+            .where(cast(AIConnector.provider_type, String) == provider_type)
             .order_by(AIConnector.priority, AIConnector.created_at.desc())
         )
         result = await self.session.execute(stmt)
@@ -126,7 +127,7 @@ class AIConnectorService:
         stmt = (
             select(AIConnector)
             .where(
-                AIConnector.provider_type == provider_type,
+                cast(AIConnector.provider_type, String) == provider_type,
                 AIConnector.is_active == True
             )
             .order_by(AIConnector.priority, AIConnector.created_at.desc())

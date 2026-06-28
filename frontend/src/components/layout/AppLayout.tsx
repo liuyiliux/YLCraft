@@ -79,9 +79,9 @@ const menuItems: MenuProps['items'] = [
   {
     key: 'g-story',
     icon: <BookOutlined />,
-    label: '短剧创作',
+    label: '创作项目',
     children: [
-      { key: '/story', label: '剧本/分镜' },
+      { key: '/story', label: '项目工作台' },
       { key: '/characters', label: '角色管理' },
     ],
   },

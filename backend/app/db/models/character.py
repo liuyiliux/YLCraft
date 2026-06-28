@@ -66,7 +66,8 @@ class Character(SQLModel, table=True):
 
     # 立绘
     portrait_url: str = Field(default="", description="立绘图片 URL")
-    portrait_asset_id: str = Field(default="", description="关联素材资产 ID")
+    portrait_asset_id: str = Field(default="", description="关联素材资产 ID（旧版 Asset 表）")
+    portrait_node_id: Optional[str] = Field(default=None, description="资产中枢 AssetNode ID（新版三层架构）", index=True)
 
     # 关联的参考素材
     reference_asset_ids: str = Field(default="[]", description="关联素材资产 ID 列表（JSON）")

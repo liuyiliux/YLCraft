@@ -327,6 +327,7 @@ class AIConnectorResponse(SQLModel):
     created_at: datetime
     # 扩展字段
     provider_type: str = "llm"
+    available_models: list[str] = Field(default_factory=list)
     request_template: Optional[str] = None
     response_config: Optional[str] = None
     supported_sizes: Optional[list[str]] = None
@@ -373,6 +374,8 @@ class AIConnectorResponse(SQLModel):
             except Exception:
                 pass
 
+        available_models = conn.get_available_models()
+
         return cls(
             id=conn.id,
             provider=conn.provider,
@@ -398,6 +401,7 @@ class AIConnectorResponse(SQLModel):
             created_at=conn.created_at,
             # 扩展字段
             provider_type=conn.provider_type.value if hasattr(conn.provider_type, 'value') else conn.provider_type,
+            available_models=available_models,
             request_template=conn.request_template,
             response_config=conn.response_config,
             supported_sizes=supported_sizes,

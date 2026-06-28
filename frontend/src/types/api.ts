@@ -14,6 +14,7 @@ export interface Provider {
   api_endpoint?: string
   api_key?: string
   default_model?: string
+  available_models?: string[]
   max_tokens?: number
   temperature?: number
   priority?: number
@@ -138,6 +139,10 @@ export interface ImageResponse {
   success: boolean
   url?: string
   urls?: string[]
+  local_path?: string
+  all_local_paths?: string[]
+  asset_id?: string
+  all_asset_ids?: string[]
   error?: string
 }
 
@@ -329,6 +334,111 @@ export interface StoryBeat {
   emotion?: string
   background_hint?: string
   image_url?: string
+}
+
+// ===== Creative Project Workflow =====
+
+export interface CreativeProject {
+  id: string
+  title: string
+  project_type: string
+  source_type: string
+  source_ref: Record<string, any>
+  status: string
+  current_stage: string
+  outline: StoryOutline
+  chapter_plan: ChapterPlan
+  settings: Record<string, any>
+  metadata: Record<string, any>
+  created_at?: string
+  updated_at?: string
+}
+
+export interface StoryOutline {
+  title?: string
+  genre?: string[]
+  premise?: string
+  logline?: string
+  selling_points?: string[]
+  target_reader?: string
+  audience_emotion?: string
+  tone?: string
+  worldview?: string
+  narrative_rules?: string[]
+  main_conflict?: string
+  themes?: string[]
+  characters?: StoryOutlineCharacter[]
+  relationship_map?: string
+  locations?: Array<{
+    name?: string
+    role?: string
+    visual_description?: string
+    mood?: string
+    reusable_asset_note?: string
+  }>
+  story_arc?: {
+    beginning?: string
+    middle?: string
+    climax?: string
+    ending_direction?: string
+  }
+  visual_style?: string
+  image_style_prompt?: string
+  production_notes?: string[]
+}
+
+export interface StoryOutlineCharacter {
+  name?: string
+  role?: string
+  age_range?: string
+  appearance?: string
+  costume_hint?: string
+  personality?: string
+  background?: string
+  goal?: string
+  arc?: string
+  visual_tags?: string[]
+  voice?: string
+  image_prompt?: string
+  negative_prompt?: string
+  portrait_asset_id?: string
+  reference_asset_ids?: string[]
+  character_id?: string
+}
+
+export interface ChapterPlan {
+  chapter_count?: number
+  chapters?: ChapterPlanItem[]
+}
+
+export interface ChapterPlanItem {
+  chapter_number: number
+  title?: string
+  goal?: string
+  conflict?: string
+  key_events?: string[]
+  character_focus?: string[]
+  ending_hook?: string
+  status?: string
+}
+
+export interface CreativeProjectListResponse {
+  success: boolean
+  data: CreativeProject[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export interface CreativeProjectResponse {
+  success: boolean
+  data: CreativeProject
+}
+
+export interface CreativeProjectGenerateResponse<T = any> {
+  success: boolean
+  data: T
+  project?: CreativeProject
 }
 
 // ===== Download =====

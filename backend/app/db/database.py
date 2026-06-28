@@ -58,12 +58,19 @@ async def init_db():
     """初始化数据库表"""
     from app.db.models.asset import Asset, AssetCollection, AssetTag
     from app.db.models.torrent import TorrentDownload
+    from app.db.models.creative_project import (
+        CreativeProject,
+        ProjectAssetLink,
+        ProjectContent,
+        ProjectGenerationLog,
+    )
     from app.db.models.character import Character, CharacterStoryLink
     from app.db.models.live2d import Live2DModel, Live2DBone, Live2DMotion
     from app.db.models.api_key import ApiKey
     from app.db.models.agent import AgentSession, AgentMemory, AgentSkill, AgentToolCall
     from app.db.models.platform_connection import PlatformConnection  # 统一凭证模型
     from app.db.models.ai_connector import AIConnector, AIUsageLog  # AI 连接器
+    from app.db.models.platform_template import PlatformTemplate
     from app.db.models.comfyui import WorkflowTemplate, WorkflowPreset, ComfyUITask, ComfyUINode
     from app.db.models.book_source import BookSource  # 书源表
     from app.db.models.book_source_cookie import BookSourceCookie
@@ -88,6 +95,10 @@ async def init_db():
                         ALTER TABLE assets ALTER COLUMN file_size TYPE BIGINT;
                     END IF;
                 END $$;
+            """))
+            await conn.execute(text("""
+                ALTER TABLE platform_templates
+                ADD COLUMN IF NOT EXISTS system_template TEXT NOT NULL DEFAULT '';
             """))
 
 

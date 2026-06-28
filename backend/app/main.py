@@ -245,6 +245,12 @@ def _register_routes():
     except Exception as e:
         logger.warning(f"Could not load story router: {e}")
 
+    try:
+        from app.api.v1 import creative_projects
+        app.include_router(creative_projects.router, prefix="/api/v1/creative-projects", tags=["Creative Projects"])
+    except Exception as e:
+        logger.warning(f"Could not load creative_projects router: {e}")
+
     # 任务管理路由
     try:
         from app.api.v1 import tasks
@@ -272,6 +278,13 @@ def _register_routes():
         app.include_router(tags.router, prefix="/api/v1", tags=["Tags"])
     except Exception as e:
         logger.warning(f"Could not load tags router: {e}")
+
+    # 资产中枢路由（三层架构：AssetNode / AssetVersion / AssetRepresentation）
+    try:
+        from app.api.v1 import asset_hub
+        app.include_router(asset_hub.router, prefix="/api/v1/asset-hub", tags=["Asset Hub"])
+    except Exception as e:
+        logger.warning(f"Could not load asset_hub router: {e}")
 
     # 向量搜索路由
     try:

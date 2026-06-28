@@ -47,7 +47,7 @@ import {
 } from '@ant-design/icons'
 import type { UploadFile } from 'antd/es/upload/interface'
 import { useTheme } from '../../constants/theme'
-import { getImageBackends, generateImage as generateImageApi } from '../../api'
+import { getImageBackends, generateImage as generateImageApi, linkCreativeProjectAsset } from '../../api'
 import MultiPlatformGen from './MultiPlatformGen'
 
 
@@ -142,6 +142,8 @@ interface GeneratedImage {
   seed?: number
   created_at: string
   local_path?: string
+  asset_id?: string
+  project_linked?: boolean
 }
 
 interface BackendInfo {
@@ -183,6 +185,25 @@ function ImageGenSinglePage() {
   const { theme: THEME } = useTheme()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
+  const projectContext = useMemo(() => {
+    const projectId = searchParams.get('project_id') || ''
+    const contentId = searchParams.get('content_id') || ''
+    const sourceType = searchParams.get('source_type') || ''
+    const sourceIndex = searchParams.get('source_index') || ''
+    const sourceTitle = safeDecode(searchParams.get('source_title'))
+    const chapterNumber = searchParams.get('chapter_number') || ''
+    return {
+      projectId,
+      contentId,
+      sourceType,
+      sourceIndex,
+      sourceTitle,
+      chapterNumber,
+      role: searchParams.get('role') || 'output',
+      relation: searchParams.get('relation') || 'derived_from',
+      hasContext: Boolean(projectId),
+    }
+  }, [searchParams])
 
   // 生成模式
   const [mode, setMode] = useState<'text2img' | 'img2img'>('text2img')
@@ -207,6 +228,7 @@ function ImageGenSinglePage() {
   const [generatedImages, setGeneratedImages] = useState<GeneratedImage[]>([])
   const [backends, setBackends] = useState<BackendInfo[]>([])
   const [defaultBackend, setDefaultBackend] = useState<string>()
+  const [lastProjectLinkStatus, setLastProjectLinkStatus] = useState<'idle' | 'success' | 'error'>('idle')
 
   // 预览
   const [previewImage, setPreviewImage] = useState<GeneratedImage | null>(null)
@@ -446,6 +468,14 @@ function ImageGenSinglePage() {
         n: batchCount,
         seed,
       }
+      if (projectContext.hasContext) {
+        body.project_id = projectContext.projectId
+        body.content_id = projectContext.contentId || undefined
+        body.source_type = projectContext.sourceType || undefined
+        body.source_index = projectContext.sourceIndex || undefined
+        body.source_title = projectContext.sourceTitle || undefined
+        body.chapter_number = projectContext.chapterNumber || undefined
+      }
 
       // 图生图模式：将图片转换为 base64 数据 URI
       if (mode === 'img2img' && referenceImages.length > 0) {
@@ -488,12 +518,49 @@ function ImageGenSinglePage() {
       setProgress(80)
 
       if (data.success) {
+        let projectLinkOk = false
+        const linkedAssetIds: string[] = []
         const newImages: GeneratedImage[] = []
         const urls = (data.urls && data.urls.length > 0) ? data.urls : (data.url ? [data.url] : [])
         const localPaths = (data.all_local_paths && data.all_local_paths.length > 0)
           ? data.all_local_paths
           : (data.local_path ? [data.local_path] : [])
-        const resultCount = Math.max(urls.length, localPaths.length)
+        const assetIds = (data.all_asset_ids && data.all_asset_ids.length > 0)
+          ? data.all_asset_ids
+          : (data.asset_id ? [data.asset_id] : [])
+        const resultCount = Math.max(urls.length, localPaths.length, assetIds.length)
+
+        if (projectContext.hasContext && assetIds.length > 0) {
+          try {
+            for (let idx = 0; idx < assetIds.length; idx += 1) {
+              const assetId = assetIds[idx]
+              if (!assetId) continue
+              await linkCreativeProjectAsset(projectContext.projectId, {
+                asset_id: assetId,
+                content_id: projectContext.contentId || undefined,
+                role: projectContext.role,
+                relation: projectContext.relation,
+                metadata: {
+                  source_type: projectContext.sourceType,
+                  source_index: projectContext.sourceIndex,
+                  source_title: projectContext.sourceTitle,
+                  chapter_number: projectContext.chapterNumber,
+                  prompt,
+                  negative_prompt: negativePrompt || '',
+                  provider: selectedModel || provider || '',
+                  size,
+                  generated_at: new Date().toISOString(),
+                },
+              })
+              linkedAssetIds.push(assetId)
+            }
+            projectLinkOk = linkedAssetIds.length > 0
+            setLastProjectLinkStatus(projectLinkOk ? 'success' : 'idle')
+          } catch (error: any) {
+            setLastProjectLinkStatus('error')
+            message.warning(error?.message || '图片已生成，但回写项目素材失败')
+          }
+        }
 
         for (let idx = 0; idx < resultCount; idx += 1) {
           newImages.push({
@@ -501,8 +568,10 @@ function ImageGenSinglePage() {
             url: urls[idx] || '',
             prompt,
             provider: data.provider || provider || 'unknown',
-            model: 'seedance-2.0',
+            model: selectedModel || data.model || '',
             local_path: localPaths[idx] || data.local_path,
+            asset_id: assetIds[idx],
+            project_linked: projectLinkOk && Boolean(assetIds[idx]) && linkedAssetIds.includes(assetIds[idx]),
             created_at: new Date().toISOString(),
           })
         }
@@ -511,6 +580,7 @@ function ImageGenSinglePage() {
         message.success(
             <span>
               成功生成 {newImages.length} 张图片，
+              {projectLinkOk ? '已回写到项目素材，' : ''}
               <a onClick={() => navigate('/assets')}>查看资产库</a>
             </span>,
             5
@@ -737,6 +807,32 @@ function ImageGenSinglePage() {
             </Card>
 
             {/* 生成按钮 */}
+            {projectContext.hasContext && (
+              <Card
+                size="small"
+                style={{
+                  marginBottom: 12,
+                  background: '#171827',
+                  border: `1px solid ${lastProjectLinkStatus === 'error' ? '#7f1d1d' : '#2f365f'}`,
+                }}
+              >
+                <Space direction="vertical" size={4}>
+                  <Space wrap>
+                    <Tag color={lastProjectLinkStatus === 'success' ? 'green' : 'blue'}>项目回写</Tag>
+                    {projectContext.chapterNumber && <Tag>第 {projectContext.chapterNumber} 章</Tag>}
+                    {projectContext.sourceType && <Tag>{projectContext.sourceType}</Tag>}
+                  </Space>
+                  <div style={{ fontSize: 12, color: THEME.textSecondary }}>
+                    {lastProjectLinkStatus === 'success'
+                      ? '本次生成图片已自动关联到项目素材。'
+                      : lastProjectLinkStatus === 'error'
+                        ? '图片已生成，但项目素材回写失败，可到资产库手动关联。'
+                        : '生成成功后会自动保存到资产库，并关联回当前项目。'}
+                  </div>
+                </Space>
+              </Card>
+            )}
+
             <Button
               type="primary"
               size="large"
@@ -857,6 +953,7 @@ function ImageGenSinglePage() {
                           <Space direction="vertical" size={2} style={{ width: '100%' }}>
                             <Space size={4}>
                               <Tag color="blue">{img.provider}</Tag>
+                              {img.project_linked && <Tag color="green">已回写项目</Tag>}
                               {img.seed && <span style={{ fontSize: 11, color: THEME.textSecondary }}>seed: {img.seed}</span>}
                             </Space>
                             <div style={{ height: 22 }} />

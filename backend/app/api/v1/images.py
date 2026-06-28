@@ -11,7 +11,7 @@ import asyncio
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from app.services.ai import get_ai_service, AIService
@@ -39,6 +39,12 @@ class ImageGenerateRequest(BaseModel):
     reference_images: Optional[list[str]] = None  # 图生图参考图列表
     lora: Optional[str] = None
     controlnet: Optional[str] = None
+    project_id: Optional[str] = None
+    content_id: Optional[str] = None
+    source_type: Optional[str] = None
+    source_index: Optional[str] = None
+    source_title: Optional[str] = None
+    chapter_number: Optional[str] = None
 
 
 class ImageResponse(BaseModel):
@@ -47,6 +53,8 @@ class ImageResponse(BaseModel):
     urls: Optional[list[str]] = None
     local_path: Optional[str] = None
     all_local_paths: Optional[list[str]] = None
+    asset_id: str = ""
+    all_asset_ids: list[str] = []
     task_id: str = ""
     prompt_id: str = ""
     cost: float = 0.0
@@ -196,40 +204,57 @@ async def generate_image(req: ImageGenerateRequest):
         result = await manager.generate_image(img_req)
 
         if result.success:
-            # 自动入库到资产库
-            if result.local_path:
+            # 自动入库到资产库，并把素材 ID 返回给前端，方便项目工作流回写关联。
+            assets = []
+            local_paths = result.all_local_paths or ([result.local_path] if result.local_path else [])
+            if local_paths:
                 try:
                     from app.db.database import get_async_session
                     from app.services.asset.service import AssetService
                     async with get_async_session() as session:
                         service = AssetService(session)
-                        await service.create_from_image_generation(
-                            image_path=str(result.local_path),
-                            prompt=req.prompt,
-                            provider=result.provider,
-                            model=result.model,
-                            seed=result.seed,
-                            url=result.url or "",
-                            negative_prompt=req.negative_prompt or "",
-                            size=req.size or "1024x1024",
-                            steps=req.steps,
-                            cfg_scale=req.cfg_scale,
-                            sampler=req.sampler or "euler",
-                            lora=req.lora or "",
-                            controlnet=req.controlnet or "",
-                            source_image=req.source_image or "",
-                            reference_images=img_req.reference_images if img_req.reference_images else None,
-                        )
-                    logger.info(f"Image saved to asset library: {result.local_path}")
+                        for idx, local_path in enumerate(local_paths):
+                            urls = result.urls or ([result.url] if result.url else [])
+                            asset = await service.create_from_image_generation(
+                                image_path=str(local_path),
+                                prompt=req.prompt,
+                                provider=result.provider,
+                                model=result.model,
+                                seed=result.seed,
+                                url=urls[idx] if idx < len(urls) else (result.url or ""),
+                                negative_prompt=req.negative_prompt or "",
+                                size=req.size or "1024x1024",
+                                steps=req.steps,
+                                cfg_scale=req.cfg_scale,
+                                sampler=req.sampler or "euler",
+                                lora=req.lora or "",
+                                controlnet=req.controlnet or "",
+                                source_image=req.source_image or "",
+                                reference_images=img_req.reference_images if img_req.reference_images else None,
+                                metadata={
+                                    "project_id": req.project_id or "",
+                                    "content_id": req.content_id or "",
+                                    "source_type": req.source_type or "",
+                                    "source_index": req.source_index or "",
+                                    "source_title": req.source_title or "",
+                                    "chapter_number": req.chapter_number or "",
+                                    "image_index": idx,
+                                },
+                            )
+                            assets.append(asset)
+                    logger.info(f"Image saved to asset library: {local_paths}")
                 except Exception as e:
                     logger.warning(f"Failed to save image to asset library: {e}")
 
+            asset_ids = [str(asset.id) for asset in assets]
             return ImageResponse(
                 success=True,
                 url=result.url,
                 urls=result.urls,
                 local_path=str(result.local_path) if result.local_path else None,
                 all_local_paths=result.all_local_paths,
+                asset_id=asset_ids[0] if asset_ids else "",
+                all_asset_ids=asset_ids,
                 task_id=result.task_id,
                 prompt_id=result.prompt_id,
                 cost=result.cost,
@@ -257,9 +282,14 @@ class PlatformTemplateInfo(BaseModel):
     id: str = ""
     platform: str = ""
     name: str = ""
+    template_scope: str = "image_platform"
+    template_stage: str = "platform"
+    description: Optional[str] = None
+    system_template: str = ""
     outline_template: str = ""
     image_template: str = ""
     page_structure: dict = {}
+    variables: dict = {}
     video_template: Optional[str] = None
     default_size: str = "1024x1024"
     is_active: bool = True
@@ -269,9 +299,14 @@ class PlatformTemplateInfo(BaseModel):
 class PlatformTemplateCreateRequest(BaseModel):
     platform: str
     name: str
+    template_scope: str = "image_platform"
+    template_stage: str = "platform"
+    description: Optional[str] = None
+    system_template: str = ""
     outline_template: str
-    image_template: str
+    image_template: str = ""
     page_structure: Optional[dict] = {}
+    variables: Optional[dict] = {}
     video_template: Optional[str] = None
     default_size: str = "1024x1024"
     is_active: bool = True
@@ -280,9 +315,14 @@ class PlatformTemplateCreateRequest(BaseModel):
 
 class PlatformTemplateUpdateRequest(BaseModel):
     name: Optional[str] = None
+    template_scope: Optional[str] = None
+    template_stage: Optional[str] = None
+    description: Optional[str] = None
+    system_template: Optional[str] = None
     outline_template: Optional[str] = None
     image_template: Optional[str] = None
     page_structure: Optional[dict] = None
+    variables: Optional[dict] = None
     video_template: Optional[str] = None
     default_size: Optional[str] = None
     is_active: Optional[bool] = None
@@ -338,37 +378,54 @@ class BatchTopicGenerateResponse(BaseModel):
     error: Optional[str] = None
 
 
-@router.get("/platform-templates", response_model=dict, summary="可用平台模板列表")
-async def list_platform_templates():
-    """返回所有已激活的平台生成模板（完整信息）"""
+def _serialize_platform_template(t) -> dict:
+    return {
+        "id": str(t.id),
+        "platform": t.platform,
+        "name": t.name,
+        "template_scope": getattr(t, "template_scope", "image_platform") or "image_platform",
+        "template_stage": getattr(t, "template_stage", "platform") or "platform",
+        "description": getattr(t, "description", None),
+        "system_template": getattr(t, "system_template", "") or "",
+        "outline_template": t.outline_template,
+        "image_template": t.image_template,
+        "page_structure": t.page_structure or {},
+        "variables": getattr(t, "variables", None) or {},
+        "video_template": t.video_template,
+        "default_size": t.default_size,
+        "is_active": t.is_active,
+        "sort_order": t.sort_order,
+    }
+
+
+@router.get("/platform-templates", response_model=dict, summary="可用平台/Prompt 模板列表")
+async def list_platform_templates(
+    template_scope: str | None = Query(default="image_platform", description="image_platform/creative_project/all"),
+    template_stage: str | None = Query(default=None, description="outline/chapter_plan/script/storyboard/platform"),
+    include_inactive: bool = Query(default=False),
+):
+    """返回平台模板或创作项目 Prompt 模板。
+
+    默认只返回 image_platform，保持多平台生图旧接口行为不变。
+    """
     from app.db.database import get_async_session
     from app.db.models.platform_template import PlatformTemplate
     from sqlmodel import select
     
     async with get_async_session() as session:
-        result = await session.exec(
-            select(PlatformTemplate)
-            .where(PlatformTemplate.is_active == True)
-            .order_by(PlatformTemplate.sort_order)
-        )
+        stmt = select(PlatformTemplate)
+        if not include_inactive:
+            stmt = stmt.where(PlatformTemplate.is_active == True)
+        if template_scope and template_scope not in {"all", "*"}:
+            stmt = stmt.where(PlatformTemplate.template_scope == template_scope)
+        if template_stage and template_stage not in {"all", "*"}:
+            stmt = stmt.where(PlatformTemplate.template_stage == template_stage)
+        stmt = stmt.order_by(PlatformTemplate.template_scope, PlatformTemplate.sort_order)
+        result = await session.exec(stmt)
         templates = result.all()
         return {
             "success": True,
-            "templates": [
-                {
-                    "id": str(t.id),
-                    "platform": t.platform,
-                    "name": t.name,
-                    "outline_template": t.outline_template,
-                    "image_template": t.image_template,
-                    "page_structure": t.page_structure or {},
-                    "video_template": t.video_template,
-                    "default_size": t.default_size,
-                    "is_active": t.is_active,
-                    "sort_order": t.sort_order,
-                }
-                for t in templates
-            ],
+            "templates": [_serialize_platform_template(t) for t in templates],
         }
 
 
@@ -394,18 +451,7 @@ async def create_platform_template(req: PlatformTemplateCreateRequest):
 
         return {
             "success": True,
-            "template": {
-                "id": str(template.id),
-                "platform": template.platform,
-                "name": template.name,
-                "outline_template": template.outline_template,
-                "image_template": template.image_template,
-                "page_structure": template.page_structure or {},
-                "video_template": template.video_template,
-                "default_size": template.default_size,
-                "is_active": template.is_active,
-                "sort_order": template.sort_order,
-            },
+            "template": _serialize_platform_template(template),
             "message": "创建成功",
         }
 
@@ -442,18 +488,7 @@ async def update_platform_template(
 
         return {
             "success": True,
-            "template": {
-                "id": str(template.id),
-                "platform": template.platform,
-                "name": template.name,
-                "outline_template": template.outline_template,
-                "image_template": template.image_template,
-                "page_structure": template.page_structure or {},
-                "video_template": template.video_template,
-                "default_size": template.default_size,
-                "is_active": template.is_active,
-                "sort_order": template.sort_order,
-            },
+            "template": _serialize_platform_template(template),
             "message": "更新成功",
         }
 

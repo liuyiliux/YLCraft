@@ -10,19 +10,25 @@ GET  /api/v1/characters/tags     — 获取所有自定义标签
 POST /api/v1/characters/{id}/tags — 添加自定义标签
 DELETE /api/v1/characters/{id}/tags/{tag} — 移除自定义标签
 POST /api/v1/characters/{id}/favorite — 切换收藏状态
+POST /api/v1/characters/{id}/portrait/generate — AI 生成立绘（自动入资产中枢）
+POST /api/v1/characters/{id}/portrait/upgrade — 把现有立绘升级到资产中枢
 """
 
 from __future__ import annotations
 
+import logging
+from datetime import datetime
+from typing import Any, Optional
+
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
-from typing import Any
 
-from app.db.database import get_session
+from app.db.database import get_async_session
 from app.services.character.service import CharacterService
 from app.db.models.character import CharacterSourceType, CharacterRole
 
 router = APIRouter()
+logger = logging.getLogger("ylcraft.characters")
 
 
 # ---- Request/Response 模型 ----
@@ -89,7 +95,7 @@ async def list_characters(
     - 收藏筛选
     - 分页
     """
-    async with get_session() as session:
+    async with get_async_session() as session:
         service = CharacterService(session)
         items, total = await service.list(
             keyword=keyword,
@@ -112,7 +118,7 @@ async def list_characters(
 @router.post("", summary="创建角色")
 async def create_character(req: CharacterCreateRequest):
     """创建新角色"""
-    async with get_session() as session:
+    async with get_async_session() as session:
         service = CharacterService(session)
         character = await service.create(
             name=req.name,
@@ -131,66 +137,10 @@ async def create_character(req: CharacterCreateRequest):
         return {"success": True, "data": service.to_response(character)}
 
 
-@router.get("/{character_id}", summary="获取角色详情")
-async def get_character(character_id: str):
-    """获取单个角色的完整信息"""
-    async with get_session() as session:
-        service = CharacterService(session)
-        character = await service.get_by_id(character_id)
-        if not character:
-            raise HTTPException(status_code=404, detail="角色不存在")
-        return {"success": True, "data": service.to_response(character)}
-
-
-@router.put("/{character_id}", summary="更新角色")
-async def update_character(character_id: str, req: CharacterUpdateRequest):
-    """更新角色信息（支持部分更新）"""
-    async with get_session() as session:
-        service = CharacterService(session)
-        # 检查是否已冻结
-        character = await service.get_by_id(character_id)
-        if not character:
-            raise HTTPException(status_code=404, detail="角色不存在")
-        if character.is_frozen and any(
-            v is not None for v in [
-                req.appearance, req.costume_hint, req.portrait_url, req.portrait_asset_id
-            ]
-        ):
-            raise HTTPException(status_code=403, detail="角色已冻结，禁止修改外观描述")
-
-        updated = await service.update(
-            character_id=character_id,
-            name=req.name,
-            role=req.role,
-            source_types=req.source_types,
-            appearance=req.appearance,
-            personality=req.personality,
-            costume_hint=req.costume_hint,
-            background=req.background,
-            age_range=req.age_range,
-            tags=req.tags,
-            portrait_url=req.portrait_url,
-            portrait_asset_id=req.portrait_asset_id,
-            reference_asset_ids=req.reference_asset_ids,
-        )
-        return {"success": True, "data": service.to_response(updated)}
-
-
-@router.delete("/{character_id}", summary="删除角色")
-async def delete_character(character_id: str):
-    """删除角色"""
-    async with get_session() as session:
-        service = CharacterService(session)
-        deleted = await service.delete(character_id)
-        if not deleted:
-            raise HTTPException(status_code=404, detail="角色不存在")
-        return {"success": True}
-
-
 @router.get("/tags/all", summary="获取所有自定义标签")
 async def get_all_character_tags():
     """获取所有角色使用的自定义标签（去重）"""
-    async with get_session() as session:
+    async with get_async_session() as session:
         service = CharacterService(session)
         tags = await service.get_all_tags()
         return {"success": True, "data": tags}
@@ -225,7 +175,7 @@ async def get_roles():
 @router.post("/{character_id}/tags", summary="添加自定义标签")
 async def add_character_tag(character_id: str, req: AddTagRequest):
     """为角色添加一个自定义标签"""
-    async with get_session() as session:
+    async with get_async_session() as session:
         service = CharacterService(session)
         character = await service.add_tag(character_id, req.tag)
         if not character:
@@ -236,7 +186,7 @@ async def add_character_tag(character_id: str, req: AddTagRequest):
 @router.delete("/{character_id}/tags/{tag}", summary="移除自定义标签")
 async def remove_character_tag(character_id: str, tag: str):
     """移除角色的一个自定义标签"""
-    async with get_session() as session:
+    async with get_async_session() as session:
         service = CharacterService(session)
         character = await service.remove_tag(character_id, tag)
         if not character:
@@ -247,7 +197,7 @@ async def remove_character_tag(character_id: str, tag: str):
 @router.post("/{character_id}/favorite", summary="切换收藏状态")
 async def toggle_favorite(character_id: str):
     """切换角色的收藏状态"""
-    async with get_session() as session:
+    async with get_async_session() as session:
         service = CharacterService(session)
         character = await service.get_by_id(character_id)
         if not character:
@@ -262,10 +212,494 @@ async def toggle_favorite(character_id: str):
 @router.post("/{character_id}/link-story", summary="关联到故事项目")
 async def link_story(character_id: str, req: CharacterLinkStoryRequest):
     """将角色关联到指定的故事项目（增加引用计数）"""
-    async with get_session() as session:
+    async with get_async_session() as session:
         service = CharacterService(session)
         character = await service.get_by_id(character_id)
         if not character:
             raise HTTPException(status_code=404, detail="角色不存在")
         await service.link_to_story(character_id, req.story_id)
         return {"success": True}
+
+
+@router.get("/{character_id}", summary="获取角色详情")
+async def get_character(character_id: str):
+    """获取单个角色的完整信息"""
+    async with get_async_session() as session:
+        service = CharacterService(session)
+        character = await service.get_by_id(character_id)
+        if not character:
+            raise HTTPException(status_code=404, detail="角色不存在")
+        return {"success": True, "data": service.to_response(character)}
+
+
+@router.put("/{character_id}", summary="更新角色")
+async def update_character(character_id: str, req: CharacterUpdateRequest):
+    """更新角色信息（支持部分更新）"""
+    async with get_async_session() as session:
+        service = CharacterService(session)
+        # 检查是否已冻结
+        character = await service.get_by_id(character_id)
+        if not character:
+            raise HTTPException(status_code=404, detail="角色不存在")
+        if character.is_frozen and any(
+            v is not None for v in [
+                req.appearance, req.costume_hint, req.portrait_url, req.portrait_asset_id
+            ]
+        ):
+            raise HTTPException(status_code=403, detail="角色已冻结，禁止修改外观描述")
+
+        updated = await service.update(
+            character_id=character_id,
+            name=req.name,
+            role=req.role,
+            source_types=req.source_types,
+            appearance=req.appearance,
+            personality=req.personality,
+            costume_hint=req.costume_hint,
+            background=req.background,
+            age_range=req.age_range,
+            tags=req.tags,
+            portrait_url=req.portrait_url,
+            portrait_asset_id=req.portrait_asset_id,
+            reference_asset_ids=req.reference_asset_ids,
+        )
+        return {"success": True, "data": service.to_response(updated)}
+
+
+@router.delete("/{character_id}", summary="删除角色")
+async def delete_character(character_id: str):
+    """删除角色"""
+    async with get_async_session() as session:
+        service = CharacterService(session)
+        deleted = await service.delete(character_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="角色不存在")
+        return {"success": True}
+
+
+# ===========================================================================
+# 立绘生成与资产中枢集成
+# ===========================================================================
+
+class PortraitGenerateRequest(BaseModel):
+    prompt: str = Field(..., description="提示词")
+    provider: Optional[str] = Field(None, description="指定生图后端（image backend name）")
+    model: Optional[str] = Field(None, description="动态指定模型名（控制花费）")
+    size: Optional[str] = Field("1024x1024", description="图片尺寸")
+    n: Optional[int] = Field(1, description="生成数量（>1 时取首张）")
+    negative_prompt: Optional[str] = Field(None, description="负向提示词")
+
+
+def _inspect_image_file(local_path: str, url: str):
+    """从本地文件或 URL 推断图片元信息（mime_type, file_size, width, height, format）"""
+    import os
+    from urllib.parse import urlparse
+
+    mime_type = "image/png"
+    file_size = 0
+    width: Optional[int] = None
+    height: Optional[int] = None
+    fmt: Optional[str] = None
+
+    if local_path and os.path.exists(local_path):
+        try:
+            file_size = os.path.getsize(local_path)
+        except OSError:
+            file_size = 0
+        try:
+            from PIL import Image as PILImage
+            with PILImage.open(local_path) as img:
+                width, height = img.size
+                fmt = (img.format or "").lower()
+                ext_to_mime = {
+                    "png": "image/png",
+                    "jpeg": "image/jpeg",
+                    "jpg": "image/jpeg",
+                    "webp": "image/webp",
+                    "gif": "image/gif",
+                    "bmp": "image/bmp",
+                }
+                mime_type = ext_to_mime.get(fmt, mime_type)
+        except Exception as e:
+            logger.warning(f"[inspect_image] PIL open failed: {local_path} | {e}")
+
+    if not fmt and url:
+        path_lower = urlparse(url).path.lower()
+        for ext in ("png", "jpg", "jpeg", "webp", "gif", "bmp"):
+            if path_lower.endswith("." + ext):
+                fmt = ext
+                mime_type = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
+                break
+
+    return mime_type, file_size, width, height, fmt
+
+
+@router.post(
+    "/{character_id}/portrait/generate",
+    summary="AI 生成角色立绘（资产中枢版）",
+)
+async def generate_character_portrait(character_id: str, req: PortraitGenerateRequest):
+    """
+    AI 生成角色立绘并自动入资产中枢（Node+Version+Representation）。
+
+    - 若角色已有 portrait_node_id，则在该 Node 下创建新版本（保留历史）
+    - 否则创建新 AssetNode (asset_type=character) + Version 1
+    - 同步更新 Character.portrait_url 和 portrait_node_id
+
+    注意：不会调用旧版 /images/generate 端点（避免双入库旧版 Asset 表）。
+    """
+    from app.services.ai import get_ai_service
+    from app.services.ai.types import ImageGenerationRequest
+    from app.services.asset_hub import (
+        AssetNodeService,
+        AssetVersionService,
+        AssetRepresentationService,
+    )
+    from app.db.models.asset_hub import AssetType
+    from app.db.models.character import Character
+
+    manager = get_ai_service()
+    if not manager.is_loaded():
+        raise HTTPException(status_code=503, detail="AIService 未初始化")
+
+    async with get_async_session() as session:
+        # 1. 获取角色
+        character = await session.get(Character, character_id)
+        if not character:
+            raise HTTPException(status_code=404, detail="角色不存在")
+
+        # 2. 生图
+        img_req = ImageGenerationRequest(
+            prompt=req.prompt,
+            negative_prompt=req.negative_prompt or "",
+            size=req.size or "1024x1024",
+            n=req.n or 1,
+            provider=req.provider or "",
+            model=req.model or "",
+        )
+
+        # 准备日志服务（生图前/后均写入，便于追踪失败原因）
+        from app.services.creative_project.service import CreativeProjectService
+        log_service = CreativeProjectService(session)
+
+        try:
+            result = await manager.generate_image(img_req)
+        except Exception as e:
+            logger.exception(f"[portrait/generate] generate_image failed: {e}")
+            # 写入失败日志
+            try:
+                await log_service.log_generation(
+                    scene="character_portrait",
+                    ref_id=character.id,
+                    stage="generate_image",
+                    status="failed",
+                    provider=req.provider or "",
+                    model=req.model or "",
+                    prompt=req.prompt,
+                    request_payload={
+                        "character_id": character.id,
+                        "character_name": character.name,
+                        "size": req.size,
+                        "n": req.n,
+                        "negative_prompt": req.negative_prompt,
+                        "provider": req.provider,
+                        "model": req.model,
+                    },
+                    raw_response=str(e),
+                    validation_error=type(e).__name__,
+                )
+                await session.flush()
+            except Exception as log_err:
+                logger.warning(f"[portrait/generate] log write failed: {log_err}")
+            raise HTTPException(status_code=500, detail=f"生图失败: {e}")
+
+        if not result.success:
+            # 写入失败日志
+            try:
+                await log_service.log_generation(
+                    scene="character_portrait",
+                    ref_id=character.id,
+                    stage="generate_image",
+                    status="failed",
+                    provider=result.provider or req.provider or "",
+                    model=result.model or req.model or "",
+                    prompt=req.prompt,
+                    request_payload={
+                        "character_id": character.id,
+                        "character_name": character.name,
+                        "size": req.size,
+                        "n": req.n,
+                    },
+                    raw_response=result.error or "",
+                    validation_error="provider_returned_failure",
+                )
+                await session.flush()
+            except Exception as log_err:
+                logger.warning(f"[portrait/generate] log write failed: {log_err}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"生图失败: {result.error or 'unknown error'}",
+            )
+
+        urls = result.urls or ([result.url] if result.url else [])
+        local_paths = (
+            result.all_local_paths
+            or ([result.local_path] if result.local_path else [])
+        )
+        if not urls and not local_paths:
+            raise HTTPException(status_code=500, detail="生图成功但未返回图片")
+
+        url = urls[0] if urls else ""
+        local_path = local_paths[0] if local_paths else ""
+
+        # 3. 写入资产中枢
+        node_service = AssetNodeService(session)
+        version_service = AssetVersionService(session)
+        rep_service = AssetRepresentationService(session)
+
+        portrait_node_id = character.portrait_node_id
+        node = None
+
+        try:
+            if portrait_node_id:
+                node = await node_service.get(portrait_node_id)
+            if node is None:
+                node = await node_service.create(
+                    name=f"{character.name or '角色'}-立绘",
+                    asset_type=AssetType.CHARACTER,
+                    thumbnail_url=url,
+                    metadata={
+                        "character_id": character.id,
+                        "character_name": character.name,
+                    },
+                )
+                portrait_node_id = node.id
+            else:
+                # 已有 Node，更新缩略图为最新
+                if url:
+                    await node_service.update(
+                        node_id=node.id, thumbnail_url=url,
+                    )
+
+            version = await version_service.create(
+                asset_node_id=portrait_node_id,
+                prompt_used=req.prompt,
+                model_used=result.model or req.model or "",
+                params={
+                    "provider": result.provider or req.provider or "",
+                    "model": result.model or "",
+                    "seed": result.seed,
+                    "size": req.size,
+                    "n": req.n,
+                    "negative_prompt": req.negative_prompt or "",
+                },
+                lineage={
+                    "character_id": character.id,
+                    "character_name": character.name,
+                },
+            )
+
+            mime_type, file_size, w, h, fmt = _inspect_image_file(local_path, url)
+            rep = await rep_service.create(
+                asset_version_id=version.id,
+                file_path=local_path or url,
+                mime_type=mime_type,
+                file_size=file_size,
+                width=w,
+                height=h,
+                format=fmt,
+                extra={"url": url, "local_path": local_path},
+            )
+
+            # 4. 更新 Character
+            # 重要：node.id / version.id / rep.id 在 session.refresh() 后会被 asyncpg 转成 UUID 对象
+            # 而 SQLModel 的 String 字段需要 str 才能用 ::VARCHAR 编码写入 PG
+            character.portrait_url = url
+            character.portrait_node_id = str(node.id)
+            character.updated_at = datetime.now()
+            await session.flush()
+            await session.refresh(character)
+
+            # 5. 写入成功日志
+            try:
+                await log_service.log_generation(
+                    scene="character_portrait",
+                    ref_id=character.id,
+                    stage="portrait_generate",
+                    status="success",
+                    provider=result.provider or req.provider or "",
+                    model=result.model or req.model or "",
+                    prompt=req.prompt,
+                    request_payload={
+                        "character_id": character.id,
+                        "character_name": character.name,
+                        "size": req.size,
+                        "n": req.n,
+                        "negative_prompt": req.negative_prompt,
+                    },
+                    raw_response=str(url),
+                    normalized={
+                        "node_id": str(node.id),
+                        "version_id": str(version.id),
+                        "version_number": version.version_number,
+                        "representation_id": str(rep.id),
+                        "local_path": local_path,
+                    },
+                )
+                await session.flush()
+            except Exception as log_err:
+                logger.warning(f"[portrait/generate] log write failed: {log_err}")
+
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            logger.exception(f"[portrait/generate] asset_hub sync failed: {e}")
+            # 资产中枢写入失败日志（生图本身是成功的）
+            try:
+                await log_service.log_generation(
+                    scene="character_portrait",
+                    ref_id=character.id,
+                    stage="asset_hub_sync",
+                    status="failed",
+                    provider=result.provider or req.provider or "",
+                    model=result.model or req.model or "",
+                    prompt=req.prompt,
+                    request_payload={"character_id": character.id},
+                    raw_response=str(e),
+                    validation_error="asset_hub_sync_failed",
+                )
+                await session.flush()
+            except Exception as log_err:
+                logger.warning(f"[portrait/generate] log write failed: {log_err}")
+            raise HTTPException(status_code=500, detail=f"资产中枢写入失败: {e}")
+
+    return {
+        "success": True,
+        "data": {
+            "url": url,
+            "local_path": local_path,
+            "node_id": str(node.id),
+            "version_id": str(version.id),
+            "version_number": version.version_number,
+            "representation_id": str(rep.id),
+            "character": {
+                "id": character.id,
+                "name": character.name,
+                "portrait_url": character.portrait_url,
+                "portrait_node_id": str(character.portrait_node_id) if character.portrait_node_id else None,
+            },
+        },
+    }
+
+
+@router.post(
+    "/{character_id}/portrait/upgrade",
+    summary="将现有立绘升级到资产中枢",
+)
+async def upgrade_portrait_to_asset_hub(character_id: str):
+    """
+    把已有的 Character.portrait_url 升级为资产中枢中的资产。
+
+    场景：之前用 /images/generate 生成了立绘但还没入中枢，现在补登记。
+
+    - 创建 AssetNode (type=character) + Version 1 + Representation
+    - 更新 Character.portrait_node_id
+    - 已绑定节点时会拒绝（需要先解绑）
+    """
+    from app.services.asset_hub import (
+        AssetNodeService,
+        AssetVersionService,
+        AssetRepresentationService,
+    )
+    from app.db.models.asset_hub import AssetType
+    from app.db.models.character import Character
+
+    async with get_async_session() as session:
+        character = await session.get(Character, character_id)
+        if not character:
+            raise HTTPException(status_code=404, detail="角色不存在")
+
+        if not character.portrait_url:
+            raise HTTPException(
+                status_code=400,
+                detail="角色尚无 portrait_url，无法升级（请先用 portrait/generate 生成）",
+            )
+
+        if character.portrait_node_id:
+            raise HTTPException(
+                status_code=400,
+                detail=f"角色已绑定资产中枢节点 {character.portrait_node_id}，如需重建请先在数据库清空 portrait_node_id",
+            )
+
+        node_service = AssetNodeService(session)
+        version_service = AssetVersionService(session)
+        rep_service = AssetRepresentationService(session)
+
+        try:
+            node = await node_service.create(
+                name=f"{character.name or '角色'}-立绘",
+                asset_type=AssetType.CHARACTER,
+                thumbnail_url=character.portrait_url,
+                metadata={
+                    "character_id": character.id,
+                    "character_name": character.name,
+                    "upgraded_from": "legacy_portrait_url",
+                    "legacy_asset_id": character.portrait_asset_id or "",
+                },
+            )
+
+            version = await version_service.create(
+                asset_node_id=node.id,
+                prompt_used=character.appearance or "",
+                model_used="",
+                params={"upgraded_from": "legacy"},
+                lineage={
+                    "character_id": character.id,
+                    "character_name": character.name,
+                    "costume_hint": character.costume_hint or "",
+                },
+            )
+
+            mime_type, file_size, w, h, fmt = _inspect_image_file(
+                "", character.portrait_url
+            )
+            rep = await rep_service.create(
+                asset_version_id=version.id,
+                file_path=character.portrait_url,
+                mime_type=mime_type,
+                file_size=file_size,
+                width=w,
+                height=h,
+                format=fmt,
+                extra={
+                    "url": character.portrait_url,
+                    "legacy_asset_id": character.portrait_asset_id or "",
+                },
+            )
+
+            character.portrait_node_id = str(node.id)
+            character.updated_at = datetime.now()
+            await session.flush()
+            await session.refresh(character)
+
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            logger.exception(f"[portrait/upgrade] failed: {e}")
+            raise HTTPException(status_code=500, detail=f"升级失败: {e}")
+
+    return {
+        "success": True,
+        "data": {
+            "node_id": str(node.id),
+            "version_id": str(version.id),
+            "version_number": version.version_number,
+            "representation_id": str(rep.id),
+            "character": {
+                "id": character.id,
+                "name": character.name,
+                "portrait_url": character.portrait_url,
+                "portrait_node_id": str(character.portrait_node_id) if character.portrait_node_id else None,
+            },
+        },
+    }

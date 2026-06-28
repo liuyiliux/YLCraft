@@ -3,7 +3,7 @@
  * 支持查看、编辑、删除平台生成模板
  */
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Card,
   Table,
@@ -22,6 +22,7 @@ import {
   Col,
   Empty,
   Skeleton,
+  Tabs,
 } from 'antd'
 import {
   EditOutlined,
@@ -71,9 +72,24 @@ const SIZE_OPTIONS = [
   { value: '1280x720', label: '1280x720 (16:9)' },
 ]
 
+const SCOPE_OPTIONS = [
+  { value: 'image_platform', label: '多平台生图' },
+  { value: 'creative_project', label: '创作项目 Prompt' },
+]
+
+const STAGE_OPTIONS = [
+  { value: 'platform', label: '平台' },
+  { value: 'outline', label: '故事大纲' },
+  { value: 'chapter_plan', label: '章节规划' },
+  { value: 'script', label: '短剧脚本' },
+  { value: 'storyboard', label: '分镜草稿' },
+]
+
 export default function PlatformTemplatesPage() {
   const { theme: T } = useTheme()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [activeScope, setActiveScope] = useState(searchParams.get('scope') || 'image_platform')
   const [templates, setTemplates] = useState<PlatformTemplate[]>([])
   const [loading, setLoading] = useState(false)
   const [editModalOpen, setEditModalOpen] = useState(false)
@@ -84,7 +100,7 @@ export default function PlatformTemplatesPage() {
   const loadTemplates = async () => {
     setLoading(true)
     try {
-      const res = await getPlatformTemplates()
+      const res = await getPlatformTemplates({ template_scope: activeScope })
       if (res.success) {
         setTemplates(res.templates || [])
       } else {
@@ -98,17 +114,23 @@ export default function PlatformTemplatesPage() {
   }
 
   useEffect(() => {
+    setSearchParams({ scope: activeScope })
     loadTemplates()
-  }, [])
+  }, [activeScope])
 
   const handleEdit = (template: PlatformTemplate) => {
     setEditingTemplate(template)
     form.setFieldsValue({
       name: template.name,
       platform: template.platform,
+      template_scope: template.template_scope || 'image_platform',
+      template_stage: template.template_stage || 'platform',
+      description: template.description || '',
+      system_template: template.system_template || '',
       outline_template: template.outline_template,
       image_template: template.image_template,
       page_structure: JSON.stringify(template.page_structure || {}, null, 2),
+      variables: JSON.stringify(template.variables || {}, null, 2),
       video_template: template.video_template || '',
       default_size: template.default_size,
       is_active: template.is_active,
@@ -124,7 +146,16 @@ export default function PlatformTemplatesPage() {
       is_active: true,
       sort_order: templates.length,
       default_size: '1024x1024',
-      page_structure: '{\n  "default_pages": [\n    {"type": "封面", "hint": ""},\n    {"type": "内容", "hint": ""},\n    {"type": "总结", "hint": ""}\n  ]\n}',
+      template_scope: activeScope,
+      template_stage: activeScope === 'creative_project' ? 'outline' : 'platform',
+      page_structure: activeScope === 'creative_project'
+        ? '{}'
+        : '{\n  "default_pages": [\n    {"type": "封面", "hint": ""},\n    {"type": "内容", "hint": ""},\n    {"type": "总结", "hint": ""}\n  ]\n}',
+      variables: '{}',
+      system_template: activeScope === 'creative_project'
+        ? '你是资深网文主编、漫画脚本统筹和长篇连载策划。\n你必须输出严格 JSON，不要输出 Markdown、解释、代码块或 JSON 以外的文字。\n规划要服务后续逐话正文创作和漫画分镜生成，必须具体、可执行、前后连续。'
+        : '',
+      image_template: '',
     })
     setCreateModalOpen(true)
   }
@@ -158,9 +189,22 @@ export default function PlatformTemplatesPage() {
         }
       }
 
+      let variables = null
+      if (values.variables && typeof values.variables === 'string' && values.variables.trim()) {
+        try {
+          variables = JSON.parse(values.variables)
+        } catch {
+          message.error('变量说明 JSON 格式错误')
+          return
+        }
+      }
+
       const saveData: any = { ...values }
       if (pageStructure !== null) {
         saveData.page_structure = pageStructure
+      }
+      if (variables !== null) {
+        saveData.variables = variables
       }
 
       if (editingTemplate) {
@@ -214,6 +258,28 @@ export default function PlatformTemplatesPage() {
           </Tag>
         )
       },
+    },
+    {
+      title: '用途',
+      dataIndex: 'template_scope',
+      key: 'template_scope',
+      width: 130,
+      render: (val: string) => (
+        <Tag color={val === 'creative_project' ? 'purple' : 'blue'}>
+          {SCOPE_OPTIONS.find((item) => item.value === val)?.label || val || '多平台生图'}
+        </Tag>
+      ),
+    },
+    {
+      title: '阶段',
+      dataIndex: 'template_stage',
+      key: 'template_stage',
+      width: 120,
+      render: (val: string) => (
+        <Text style={{ color: T.textSecondary, fontSize: 13 }}>
+          {STAGE_OPTIONS.find((item) => item.value === val)?.label || val || '平台'}
+        </Text>
+      ),
     },
     {
       title: '名称',
@@ -312,6 +378,7 @@ export default function PlatformTemplatesPage() {
               ;(e.currentTarget as HTMLElement).style.background = 'transparent'
             }}
             onClick={() => navigate(`/multi-platform-gen?platform=${record.platform}`)}
+            disabled={record.template_scope === 'creative_project'}
           />
           <Button
             type="text"
@@ -390,7 +457,7 @@ export default function PlatformTemplatesPage() {
                 display: 'block',
               }}
             >
-              配置多平台生图的平台提示词模板
+              配置多平台生图模板，以及创作项目的大纲、章节、脚本和分镜 Prompt
             </Text>
           </div>
           <Space>
@@ -431,6 +498,13 @@ export default function PlatformTemplatesPage() {
         </Row>
       </div>
 
+      <Tabs
+        activeKey={activeScope}
+        onChange={setActiveScope}
+        items={SCOPE_OPTIONS.map((item) => ({ key: item.value, label: item.label }))}
+        style={{ marginBottom: 12 }}
+      />
+
       {/* Table Card */}
       <Card
         style={{
@@ -453,10 +527,10 @@ export default function PlatformTemplatesPage() {
               description={
                 <div>
                   <Text style={{ color: T.textSecondary, fontSize: 14, display: 'block', marginBottom: 4 }}>
-                    暂无平台模板
+                    暂无模板
                   </Text>
                   <Text style={{ color: T.textSecondary, fontSize: 12 }}>
-                    请先在系统中初始化平台模板数据
+                    请先在系统中初始化模板数据
                   </Text>
                 </div>
               }
@@ -498,16 +572,33 @@ export default function PlatformTemplatesPage() {
         <Form form={form} layout="vertical">
           <Row gutter={20}>
             <Col span={12}>
-              <Form.Item name="platform" label="平台标识" rules={[{ required: true }]}>
-                <Select options={PLATFORM_OPTIONS} disabled size="large" />
+              <Form.Item name="platform" label="模板标识" rules={[{ required: true }]}>
+                <Input disabled size="large" />
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item name="name" label="平台名称" rules={[{ required: true }]}>
-                <Input placeholder="如：小红书" size="large" />
+              <Form.Item name="name" label="模板名称" rules={[{ required: true }]}>
+                <Input placeholder="如：小红书、创作项目：故事大纲" size="large" />
               </Form.Item>
             </Col>
           </Row>
+
+          <Row gutter={20}>
+            <Col span={12}>
+              <Form.Item name="template_scope" label="模板用途" rules={[{ required: true }]}>
+                <Select options={SCOPE_OPTIONS} size="large" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="template_stage" label="模板阶段" rules={[{ required: true }]}>
+                <Select options={STAGE_OPTIONS} size="large" />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Form.Item name="description" label="说明">
+            <Input placeholder="说明这个模板适合什么生成阶段、输出标准或风格要求" size="large" />
+          </Form.Item>
 
           <Row gutter={20}>
             <Col span={12}>
@@ -533,7 +624,7 @@ export default function PlatformTemplatesPage() {
           <Form.Item
             name="page_structure"
             label="页面结构（JSON）"
-            extra='定义平台默认页面类型和顺序，驱动空白大纲创建。格式：{"default_pages":[{"type":"封面","hint":"提示"},...]}'
+            extra='平台模板用于定义默认页面类型；创作项目模板可留空。'
           >
             <TextArea
               rows={6}
@@ -542,18 +633,42 @@ export default function PlatformTemplatesPage() {
             />
           </Form.Item>
 
-          <Form.Item name="outline_template" label="大纲模板" rules={[{ required: true }]}>
+          <Form.Item
+            name="variables"
+            label="变量说明（JSON）"
+            extra='记录模板可用变量，方便后续调 Prompt。例如 {"outline_json":"故事大纲 JSON"}'
+          >
             <TextArea
               rows={4}
-              placeholder="LLM 大纲模板，变量：{topic} {page_structure}"
+              placeholder='{"topic":"用户主题","outline_json":"故事大纲 JSON"}'
+              style={{ borderRadius: T.radiusLG, resize: 'vertical', fontFamily: 'monospace', fontSize: 12 }}
+            />
+          </Form.Item>
+
+          <Form.Item
+            name="system_template"
+            label="System Prompt"
+            extra="创作项目生成时会作为 role=system 发送；为空则使用后端默认值。可使用与主要 Prompt 相同的变量。"
+          >
+            <TextArea
+              rows={4}
+              placeholder="如：你是资深网文主编、漫画脚本统筹和长篇连载策划。你必须输出严格 JSON..."
               style={{ borderRadius: T.radiusLG, resize: 'vertical' }}
             />
           </Form.Item>
 
-          <Form.Item name="image_template" label="生图模板" rules={[{ required: true }]}>
+          <Form.Item name="outline_template" label="主要 Prompt 模板" rules={[{ required: true }]}>
+            <TextArea
+              rows={8}
+              placeholder="主要 Prompt 模板。平台模板变量：{topic} {page_structure}；创作模板变量按阶段不同，如 {idea} {outline_json} {chapter_count}"
+              style={{ borderRadius: T.radiusLG, resize: 'vertical' }}
+            />
+          </Form.Item>
+
+          <Form.Item name="image_template" label="生图模板">
             <TextArea
               rows={4}
-              placeholder="生图提示词模板，变量：{page_content}{page_type}{topic}{full_outline}"
+              placeholder="多平台生图使用。创作项目 Prompt 模板通常可留空。变量：{page_content}{page_type}{topic}{full_outline}"
               style={{ borderRadius: T.radiusLG, resize: 'vertical' }}
             />
           </Form.Item>
@@ -590,16 +705,36 @@ export default function PlatformTemplatesPage() {
         <Form form={form} layout="vertical">
           <Row gutter={20}>
             <Col span={12}>
-              <Form.Item name="platform" label="平台标识" rules={[{ required: true, message: '输入平台标识' }]}>
-                <Input placeholder="如：xiaohongshu、bilibili" size="large" />
+              <Form.Item name="platform" label="模板标识" rules={[{ required: true, message: '输入模板标识' }]}>
+                <Input
+                  placeholder={activeScope === 'creative_project' ? '如：creative_outline_custom' : '如：xiaohongshu、bilibili'}
+                  size="large"
+                />
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item name="name" label="平台名称" rules={[{ required: true, message: '输入平台名称' }]}>
-                <Input placeholder="如：小红书、B站" size="large" />
+              <Form.Item name="name" label="模板名称" rules={[{ required: true, message: '输入模板名称' }]}>
+                <Input placeholder="如：小红书、故事大纲 Pro" size="large" />
               </Form.Item>
             </Col>
           </Row>
+
+          <Row gutter={20}>
+            <Col span={12}>
+              <Form.Item name="template_scope" label="模板用途" rules={[{ required: true }]}>
+                <Select options={SCOPE_OPTIONS} size="large" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="template_stage" label="模板阶段" rules={[{ required: true }]}>
+                <Select options={STAGE_OPTIONS} size="large" />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Form.Item name="description" label="说明">
+            <Input placeholder="说明这个模板适合什么生成阶段、输出标准或风格要求" size="large" />
+          </Form.Item>
 
           <Row gutter={20}>
             <Col span={12}>
@@ -621,7 +756,7 @@ export default function PlatformTemplatesPage() {
           <Form.Item
             name="page_structure"
             label="页面结构（JSON）"
-            extra='定义平台默认页面类型和顺序，驱动空白大纲创建。'
+            extra='平台模板用于定义默认页面类型；创作项目模板可留空。'
           >
             <TextArea
               rows={6}
@@ -630,18 +765,42 @@ export default function PlatformTemplatesPage() {
             />
           </Form.Item>
 
-          <Form.Item name="outline_template" label="大纲模板" rules={[{ required: true, message: '输入大纲模板' }]}>
+          <Form.Item
+            name="variables"
+            label="变量说明（JSON）"
+            extra='记录模板可用变量，方便后续调 Prompt。'
+          >
             <TextArea
               rows={4}
-              placeholder="LLM 大纲模板，变量：{topic} {page_structure}"
+              placeholder='{"idea":"用户创意","outline_json":"故事大纲 JSON"}'
+              style={{ borderRadius: T.radiusLG, resize: 'vertical', fontFamily: 'monospace', fontSize: 12 }}
+            />
+          </Form.Item>
+
+          <Form.Item
+            name="system_template"
+            label="System Prompt"
+            extra="创作项目生成时会作为 role=system 发送；为空则使用后端默认值。可使用与主要 Prompt 相同的变量。"
+          >
+            <TextArea
+              rows={4}
+              placeholder="如：你是资深网文主编、漫画脚本统筹和长篇连载策划。你必须输出严格 JSON..."
               style={{ borderRadius: T.radiusLG, resize: 'vertical' }}
             />
           </Form.Item>
 
-          <Form.Item name="image_template" label="生图模板" rules={[{ required: true, message: '输入生图模板' }]}>
+          <Form.Item name="outline_template" label="主要 Prompt 模板" rules={[{ required: true, message: '输入主要 Prompt 模板' }]}>
+            <TextArea
+              rows={8}
+              placeholder="主要 Prompt 模板。平台模板变量：{topic} {page_structure}；创作模板变量按阶段不同，如 {idea} {outline_json} {chapter_count}"
+              style={{ borderRadius: T.radiusLG, resize: 'vertical' }}
+            />
+          </Form.Item>
+
+          <Form.Item name="image_template" label="生图模板">
             <TextArea
               rows={4}
-              placeholder="生图提示词模板，变量：{page_content}{page_type}{topic}{full_outline}"
+              placeholder="多平台生图使用。创作项目 Prompt 模板通常可留空。变量：{page_content}{page_type}{topic}{full_outline}"
               style={{ borderRadius: T.radiusLG, resize: 'vertical' }}
             />
           </Form.Item>

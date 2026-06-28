@@ -135,6 +135,7 @@ class CharacterService:
     def to_response(self, character: Character) -> dict:
         tags = json.loads(character.tags) if character.tags else []
         source_types = json.loads(character.source_types) if character.source_types else []
+        reference_asset_ids = json.loads(character.reference_asset_ids) if character.reference_asset_ids else []
 
         role_labels = {
             "protagonist": "主角",
@@ -166,6 +167,8 @@ class CharacterService:
             "tags": tags,
             "portrait_url": character.portrait_url or "",
             "portrait_asset_id": character.portrait_asset_id or "",
+            "portrait_node_id": character.portrait_node_id or None,
+            "reference_asset_ids": reference_asset_ids,
             "is_favorite": character.is_favorite,
             "is_frozen": character.is_frozen,
             "use_count": character.use_count or 0,
