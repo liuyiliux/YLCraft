@@ -181,7 +181,13 @@ async def test_connection_test_supports_async_image_poll():
     async def handler(request: httpx.Request) -> httpx.Response:
         seen["url"] = str(request.url)
         seen["task_type"] = request.headers.get("X-ModelScope-Task-Type")
-        return httpx.Response(200, json={"task_status": "PENDING"})
+        return httpx.Response(
+            200,
+            json={
+                "task_status": "SUCCEED",
+                "output_images": ["https://img.example/test.png"],
+            },
+        )
 
     service = object.__new__(AIConnectorService)
     conn = _connector()
@@ -195,6 +201,8 @@ async def test_connection_test_supports_async_image_poll():
 
     assert result["success"] is True
     assert result["task_id"] == "task-123"
+    assert result["status"] == "SUCCEED"
+    assert result["image_urls"] == ["https://img.example/test.png"]
     assert seen == {
         "url": "https://api-inference.modelscope.cn/v1/tasks/task-123",
         "task_type": "image_generation",

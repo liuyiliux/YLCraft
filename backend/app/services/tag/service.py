@@ -230,11 +230,11 @@ class TagService:
         self, tags: List[Tag], root_id: Optional[str]
     ) -> List[Dict[str, Any]]:
         """将标签列表构建为树形结构"""
-        tag_map = {tag.id: tag for tag in tags}
+        node_map: Dict[str, Dict[str, Any]] = {}
         tree = []
 
         for tag in tags:
-            node = {
+            node_map[tag.id] = {
                 "id": tag.id,
                 "name": tag.name,
                 "path": tag.path,
@@ -245,9 +245,11 @@ class TagService:
                 "children": [],
             }
 
-            if tag.parent_id and tag.parent_id in tag_map:
-                tag_map[tag.parent_id].children.append(node)
-            elif root_id is None:
+        for tag in tags:
+            node = node_map[tag.id]
+            if tag.parent_id and tag.parent_id in node_map:
+                node_map[tag.parent_id]["children"].append(node)
+            elif root_id is None or tag.id == root_id:
                 tree.append(node)
 
         return tree

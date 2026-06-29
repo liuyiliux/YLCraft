@@ -11,6 +11,7 @@ import json
 import os
 import time
 import uuid
+import asyncio
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -265,6 +266,8 @@ class AIConnectorService:
             conn.priority = data.priority
         if data.description is not None:
             conn.description = data.description
+        if data.provider is not None:
+            conn.provider = data.provider
         # 扩展字段
         if data.provider_type is not None:
             conn.provider_type = data.provider_type
@@ -505,47 +508,94 @@ class AIConnectorService:
             "json": {} if poll_method == "POST" else None,
         }
 
-        started_at = time.perf_counter()
-        if poll_method == "GET":
-            poll_response = await client.get(poll_url, headers=poll_headers)
-        elif poll_method == "POST":
-            poll_response = await client.post(poll_url, headers=poll_headers, json={})
-        else:
+        if poll_method not in {"GET", "POST"}:
             return {
                 "success": False,
                 "message": f"不支持的异步轮询方法: {poll_method}",
                 "task_id": task_id,
             }
 
-        latency_ms = round((time.perf_counter() - started_at) * 1000, 2)
-        debug = self._build_debug_info(poll_request, poll_headers, poll_response, latency_ms)
-        if poll_response.status_code not in (200, 201, 202):
-            return {
-                "success": False,
-                "message": f"异步轮询失败: HTTP {poll_response.status_code}",
-                "task_id": task_id,
-                "debug": debug,
-            }
-
-        try:
-            poll_data = poll_response.json()
-        except Exception:
-            return {
-                "success": False,
-                "message": "异步轮询响应不是有效 JSON",
-                "task_id": task_id,
-                "debug": debug,
-            }
-
         status_path = async_config.get("status_path")
-        status = self._extract_jsonpath_value(poll_data, status_path) if status_path else None
-        return {
-            "success": True,
-            "message": f"连接正常，异步任务已创建并可轮询（状态: {status or 'unknown'}）",
-            "task_id": task_id,
-            "status": status,
-            "debug": debug,
-        }
+        done_value = str(async_config.get("done_value", "SUCCEED")).upper()
+        failed_value = str(async_config.get("failed_value", "FAILED")).upper()
+        images_path = async_config.get("images_path")
+        error_path = async_config.get("error_path")
+        poll_interval = max(float(async_config.get("poll_interval", 5) or 5), 0.2)
+        max_wait = max(float(async_config.get("max_wait", conn.test_timeout or 20) or 20), 1.0)
+        deadline = time.monotonic() + max_wait
+        attempts = 0
+        last_debug = None
+        last_status = None
+
+        while True:
+            attempts += 1
+            started_at = time.perf_counter()
+            if poll_method == "GET":
+                poll_response = await client.get(poll_url, headers=poll_headers)
+            else:
+                poll_response = await client.post(poll_url, headers=poll_headers, json={})
+
+            latency_ms = round((time.perf_counter() - started_at) * 1000, 2)
+            debug = self._build_debug_info(poll_request, poll_headers, poll_response, latency_ms)
+            debug["attempt"] = attempts
+            debug["max_wait"] = max_wait
+            last_debug = debug
+
+            if poll_response.status_code not in (200, 201, 202):
+                return {
+                    "success": False,
+                    "message": f"异步轮询失败: HTTP {poll_response.status_code}",
+                    "task_id": task_id,
+                    "debug": debug,
+                }
+
+            try:
+                poll_data = poll_response.json()
+            except Exception:
+                return {
+                    "success": False,
+                    "message": "异步轮询响应不是有效 JSON",
+                    "task_id": task_id,
+                    "debug": debug,
+                }
+
+            status = self._extract_jsonpath_value(poll_data, status_path) if status_path else None
+            last_status = status
+            normalized_status = str(status).upper() if status is not None else ""
+            if normalized_status == done_value:
+                image_urls = self._extract_jsonpath_values(poll_data, images_path) if images_path else []
+                message = f"连接正常，异步图片任务已完成（轮询 {attempts} 次）"
+                if not image_urls:
+                    message += "，但未按配置提取到图片，请检查 images_path"
+                return {
+                    "success": True,
+                    "message": message,
+                    "task_id": task_id,
+                    "status": status,
+                    "image_urls": image_urls,
+                    "debug": debug,
+                }
+
+            if normalized_status == failed_value:
+                error_message = self._extract_jsonpath_value(poll_data, error_path) if error_path else None
+                return {
+                    "success": False,
+                    "message": error_message or f"异步图片任务失败（状态: {status}）",
+                    "task_id": task_id,
+                    "status": status,
+                    "debug": debug,
+                }
+
+            if time.monotonic() + poll_interval > deadline:
+                return {
+                    "success": True,
+                    "message": f"连接正常，异步任务已创建并可轮询，但测试等待超时仍未完成（状态: {last_status or 'unknown'}，轮询 {attempts} 次）。可到生图页正式生成后继续等待结果。",
+                    "task_id": task_id,
+                    "status": last_status,
+                    "debug": last_debug,
+                }
+
+            await asyncio.sleep(poll_interval)
 
     def _build_test_request(
         self,
@@ -685,6 +735,24 @@ class AIConnectorService:
         except Exception as e:
             logger.warning("JSONPath 提取失败: %s, 错误: %s", path, e)
             return None
+
+    def _extract_jsonpath_values(self, data: dict, path: Optional[str]) -> list:
+        if not path:
+            return []
+        try:
+            from jsonpath_ng import parse as jsonpath_parse
+
+            values = []
+            for match in jsonpath_parse(path).find(data):
+                value = match.value
+                if isinstance(value, list):
+                    values.extend(value)
+                elif value is not None:
+                    values.append(value)
+            return values
+        except Exception as e:
+            logger.warning("JSONPath 列表提取失败: %s, 错误: %s", path, e)
+            return []
 
     def _extract_error_message(self, response) -> Optional[str]:
         """尽量从响应中提取清晰的错误信息。"""

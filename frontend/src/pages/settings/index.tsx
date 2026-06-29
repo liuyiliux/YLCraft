@@ -463,6 +463,7 @@ const ProviderFormModal: React.FC<ProviderFormModalProps> = ({ open, provider, o
         const supportedTypes = parseJsonArray(provider.supported_types)
         
         form.setFieldsValue({
+          provider_id: provider.provider_id,
           name: provider.name,
           icon: provider.icon,
           color: provider.color,
@@ -520,6 +521,7 @@ const ProviderFormModal: React.FC<ProviderFormModalProps> = ({ open, provider, o
       } else {
         form.resetFields()
         form.setFieldsValue({
+          provider_id: '',
           icon: 'settings',
           color: '#94a3b8',
           api_format: 'openai-compatible',
@@ -606,6 +608,7 @@ const ProviderFormModal: React.FC<ProviderFormModalProps> = ({ open, provider, o
 
       // 处理数据 - 只发送必要的字段，不包含临时字段
       const data = {
+        provider_id: values.provider_id,
         name: values.name,
         icon: values.icon,
         color: values.color,
@@ -660,6 +663,18 @@ const ProviderFormModal: React.FC<ProviderFormModalProps> = ({ open, provider, o
     >
       <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+          <Form.Item
+            name="provider_id"
+            label="英文标识"
+            rules={[
+              { required: !provider, message: '请输入英文标识' },
+              { pattern: /^[a-zA-Z0-9_-]+$/, message: '仅支持英文、数字、下划线和短横线' },
+            ]}
+            extra="模型配置里的“底层服务商”保存的就是这个值，如 modelscope、qwen。创建后不建议修改。"
+          >
+            <Input placeholder="如：modelscope" disabled={!!provider} />
+          </Form.Item>
+
           <Form.Item
             name="name"
             label="显示名称"
@@ -1944,6 +1959,13 @@ export default function SettingsPage() {
       obj.images.forEach((item: any) => {
         if (item.url) urls.push(item.url)
         if (item.b64_json) urls.push(`data:image/png;base64,${item.b64_json}`)
+      })
+    }
+    // ModelScope 异步生图完成响应
+    else if (obj.output_images && Array.isArray(obj.output_images)) {
+      obj.output_images.forEach((item: any) => {
+        if (typeof item === 'string') urls.push(item)
+        else if (item?.url) urls.push(item.url)
       })
     }
     // 最后尝试单个 url

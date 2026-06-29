@@ -588,7 +588,17 @@ class GenericImageBackend(ImageBackend):
             params["reference_images"] = reference_images
             params["reference_image_field"] = self.reference_image_field
 
+        raw_size = params.get("size")
         params = self._apply_parameter_transforms(params)
+        if raw_size != params.get("size") or self.parameter_transforms:
+            logger.info(
+                "[GenericImageBackend] size 参数诊断 | provider=%s | model=%s | req_size=%s | params_size=%s | transforms=%s",
+                self.name,
+                model,
+                raw_size,
+                params.get("size"),
+                self.parameter_transforms,
+            )
         return params
 
     def _url_to_base64(self, url_or_path: str) -> str:
@@ -667,6 +677,15 @@ class GenericImageBackend(ImageBackend):
         for internal_key, api_key in param_mapping.items():
             if internal_key in params and params[internal_key] and api_key not in request_body:
                 request_body[api_key] = params[internal_key]
+
+        if params.get("size") or request_body.get(param_mapping["size"]):
+            logger.info(
+                "[GenericImageBackend] request size 诊断 | provider=%s | params_size=%s | body_key=%s | body_size=%s",
+                self.name,
+                params.get("size"),
+                param_mapping["size"],
+                request_body.get(param_mapping["size"]),
+            )
 
         reference_images = params.get("reference_images", [])
         if reference_images:

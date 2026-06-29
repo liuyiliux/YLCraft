@@ -260,6 +260,7 @@ class AIConnectorUpdate(SQLModel):
     """更新 AI 连接请求"""
     model_config = {"extra": "ignore"}
     name: Optional[str] = None
+    provider: Optional[str] = None
     api_key: Optional[str] = None
     base_url: Optional[str] = None
     api_endpoint: Optional[str] = None

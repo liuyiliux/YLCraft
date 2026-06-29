@@ -24,6 +24,7 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Depends, Query, Request
 from fastapi.responses import StreamingResponse, FileResponse, Response
@@ -31,8 +32,12 @@ from pydantic import BaseModel, Field
 
 from app.db.database import get_async_session
 from app.db.models.asset import Asset, AssetTag
+from app.db.models.asset_hub import AssetNode, AssetType
 from app.services.asset.document_metadata import extract_document_cover_source, is_readable_document_asset
 from app.services.asset.service import AssetService
+from app.services.asset_hub.node_service import AssetNodeService
+from app.services.asset_hub.representation_service import AssetRepresentationService
+from app.services.asset_hub.version_service import AssetVersionService
 
 router = APIRouter()
 logger = logging.getLogger("ylcraft.assets")
@@ -202,6 +207,204 @@ def _tag_to_dict(tag: AssetTag) -> dict:
     }
 
 
+def _format_asset_datetime(dt) -> Optional[str]:
+    if not dt:
+        return None
+    return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _hub_file_url(path_or_url: str) -> str:
+    if not path_or_url:
+        return ""
+    if path_or_url.startswith(("/api/", "http://", "https://", "data:")):
+        return path_or_url
+    return f"/api/v1/assets/download?path={quote(path_or_url)}"
+
+
+def _resolution_label(width: Optional[int], height: Optional[int]) -> Optional[str]:
+    if not width or not height:
+        return None
+    if height >= 2160:
+        label = "4K"
+    elif height >= 1440:
+        label = "2K"
+    elif height >= 1080:
+        label = "1080P"
+    elif height >= 720:
+        label = "720P"
+    elif height >= 480:
+        label = "480P"
+    else:
+        label = ""
+    return f"{width}x{height} ({label})" if label else f"{width}x{height}"
+
+
+def _dict_value(value) -> dict:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+            return parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            return {}
+    return {}
+
+
+def _list_value(value) -> list:
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+            return parsed if isinstance(parsed, list) else []
+        except Exception:
+            return []
+    return []
+
+
+async def _asset_hub_card(
+    service: AssetService,
+    node: AssetNode,
+    include_metadata: bool = False,
+) -> Optional[dict]:
+    version_service = AssetVersionService(service.session)
+    rep_service = AssetRepresentationService(service.session)
+    version = await version_service.get_latest_version(str(node.id))
+    if not version:
+        return None
+    rep = await rep_service.get_primary(str(version.id))
+    if not rep:
+        return None
+
+    params = _dict_value(version.params_json)
+    lineage = _dict_value(version.lineage_json)
+    node_meta = _dict_value(node.metadata_json)
+    file_url = _hub_file_url(rep.file_path)
+    provider = params.get("provider") or node_meta.get("provider") or "asset-hub"
+    model = version.model_used or params.get("model") or ""
+    title = node.name or (version.prompt_used or "Asset Hub Image")[:80]
+    tags = _list_value(node.tags_json)
+    if node.asset_type == AssetType.CHARACTER and "character_portrait" not in tags:
+        tags.append("character_portrait")
+    if provider and provider not in tags:
+        tags.append(str(provider))
+    if model and model not in tags:
+        tags.append(str(model))
+
+    metadata = {
+        "prompt": version.prompt_used or "",
+        "negative_prompt": params.get("negative_prompt", ""),
+        "model": model,
+        "size": params.get("size", ""),
+        "provider": provider,
+        "asset_hub": True,
+        "node_id": str(node.id),
+        "version_id": str(version.id),
+        "version_number": version.version_number,
+        "lineage": lineage,
+        "node_metadata": node_meta,
+        "has_reference_images": False,
+        "reference_images_count": 0,
+        "has_source_image": False,
+        "ai_params": params,
+    }
+
+    data = {
+        "id": str(node.id),
+        "type": "image" if (rep.mime_type or "").startswith("image/") else node.asset_type.value,
+        "title": title,
+        "platform": provider,
+        "author": f"AI ({model})" if model else "Asset Hub",
+        "status": "READY",
+        "source_type": "ai_generated",
+        "source_url": file_url,
+        "cover_url": file_url,
+        "thumbnail_url": file_url,
+        "tags": tags,
+        "created_at": _format_asset_datetime(version.created_at or node.created_at),
+        "updated_at": _format_asset_datetime(node.updated_at or version.created_at),
+        "downloaded_at": _format_asset_datetime(version.created_at or node.created_at),
+        "duration": rep.duration or 0,
+        "width": rep.width or 0,
+        "height": rep.height or 0,
+        "file_size": rep.file_size or 0,
+        "resolution": _resolution_label(rep.width, rep.height),
+        "metadata": metadata,
+        "_sort_created_at": version.created_at or node.created_at,
+    }
+    if include_metadata:
+        data.update({
+            "description": node_meta.get("description", ""),
+            "file_path": rep.file_path,
+            "mime_type": rep.mime_type,
+            "metadata": metadata,
+        })
+    return data
+
+
+async def _list_asset_hub_cards(
+    service: AssetService,
+    asset_type: Optional[str] = None,
+    platform: Optional[str] = None,
+    source_type: Optional[str] = None,
+    status: Optional[str] = None,
+    search: Optional[str] = None,
+    tags: Optional[list[str]] = None,
+) -> list[dict]:
+    if status and status.upper() != "READY":
+        return []
+    if source_type and source_type != "ai_generated":
+        return []
+    normalized_type = (asset_type or "").lower()
+    if normalized_type and normalized_type not in {"image", "character"}:
+        return []
+
+    node_service = AssetNodeService(service.session)
+    node_types = [AssetType.IMAGE, AssetType.CHARACTER]
+    if normalized_type == "image":
+        node_types = [AssetType.IMAGE, AssetType.CHARACTER]
+    elif normalized_type == "character":
+        node_types = [AssetType.CHARACTER]
+
+    nodes = []
+    for node_type in node_types:
+        type_nodes, _ = await node_service.list_nodes(
+            asset_type=node_type,
+            keyword=search,
+            page=1,
+            page_size=1000,
+        )
+        nodes.extend(type_nodes)
+
+    cards: list[dict] = []
+    tag_filters = [tag for tag in (tags or []) if tag]
+    for node in nodes:
+        card = await _asset_hub_card(service, node)
+        if not card:
+            continue
+        if platform and card.get("platform") != platform:
+            continue
+        if tag_filters and not all(tag in (card.get("tags") or []) for tag in tag_filters):
+            continue
+        cards.append(card)
+    return cards
+
+
+async def _get_asset_hub_card(
+    service: AssetService,
+    asset_id: str,
+    include_metadata: bool = True,
+) -> Optional[dict]:
+    node = await service.session.get(AssetNode, asset_id)
+    if not node:
+        return None
+    card = await _asset_hub_card(service, node, include_metadata=include_metadata)
+    if card:
+        card.pop("_sort_created_at", None)
+    return card
+
+
 # ---------------------------------------------------------------------------
 # 资产列表 GET /api/v1/assets
 # ---------------------------------------------------------------------------
@@ -226,7 +429,7 @@ async def list_assets(
     tag_list = [t.strip() for t in tags.split(",")] if tags else None
     
     # 统一处理空字符串 -> None，并转大写匹配数据库
-    assets, total = await service.list_assets(
+    assets, _old_total = await service.list_assets(
         asset_type=asset_type.upper() if asset_type else None,
         platform=platform if platform else None,
         source_type=source_type if source_type else None,
@@ -235,13 +438,56 @@ async def list_assets(
         tags=tag_list,
         sort_by=sort_by,
         sort_order=sort_order,
-        page=page,
-        page_size=page_size,
+        page=1,
+        page_size=1000,
     )
+    old_cards = [_asset_to_dict(a, include_metadata=False) for a in assets]
+    try:
+        hub_cards = await _list_asset_hub_cards(
+            service,
+            asset_type=asset_type,
+            platform=platform if platform else None,
+            source_type=source_type if source_type else None,
+            status=status.upper() if status else None,
+            search=search,
+            tags=tag_list,
+        )
+    except Exception as exc:
+        logger.warning("[assets] asset_hub merge failed: %s", exc, exc_info=True)
+        hub_cards = []
+
+    migrated_legacy_ids = {
+        str((card.get("metadata") or {}).get("node_metadata", {}).get("legacy_asset_id"))
+        for card in hub_cards
+        if (card.get("metadata") or {}).get("node_metadata", {}).get("legacy_asset_id")
+    }
+    if migrated_legacy_ids:
+        old_cards = [card for card in old_cards if str(card.get("id")) not in migrated_legacy_ids]
+
+    merged = [*hub_cards, *old_cards]
+    reverse = sort_order != "asc"
+    if sort_by in {"created_at", "updated_at", "downloaded_at"}:
+        def sort_datetime_value(item: dict) -> str:
+            value = item.get("_sort_created_at") or item.get(sort_by) or ""
+            if isinstance(value, datetime):
+                return value.isoformat()
+            return str(value)
+
+        merged.sort(key=sort_datetime_value, reverse=reverse)
+    elif sort_by in {"file_size", "duration", "width", "height"}:
+        merged.sort(key=lambda item: item.get(sort_by) or 0, reverse=reverse)
+    else:
+        merged.sort(key=lambda item: str(item.get(sort_by) or ""), reverse=reverse)
+
+    total = len(merged)
+    offset = (page - 1) * page_size
+    page_items = merged[offset: offset + page_size]
+    for item in page_items:
+        item.pop("_sort_created_at", None)
 
     return AssetListResponse(
         success=True,
-        data=[_asset_to_dict(a, include_metadata=False) for a in assets],
+        data=page_items,
         total=total,
         page=page,
         page_size=page_size,
@@ -684,6 +930,10 @@ async def proxy_thumbnail(
     """
     asset = await service.get_by_id(asset_id)
     if not asset:
+        hub_asset = await _get_asset_hub_card(service, asset_id, include_metadata=True)
+        if hub_asset and hub_asset.get("source_url"):
+            return await _fetch_image(hub_asset["source_url"], hub_asset.get("platform") or "")
+    if not asset:
         raise HTTPException(status_code=404, detail="资产不存在")
     
     # 解析 metadata
@@ -727,6 +977,10 @@ async def get_asset(
     service: AssetService = Depends(get_asset_service),
 ):
     asset = await service.get_by_id(asset_id)
+    if not asset:
+        hub_asset = await _get_asset_hub_card(service, asset_id, include_metadata=True)
+        if hub_asset:
+            return AssetResponse(success=True, data=hub_asset)
     if not asset:
         raise HTTPException(status_code=404, detail="资产不存在")
     return AssetResponse(success=True, data=_asset_to_dict(asset, include_metadata=True))
