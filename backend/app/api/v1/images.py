@@ -8,17 +8,35 @@ GET  /api/v1/images/backends — 可用的图像后端列表
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import time
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
+from app.core.task_queue import TaskStatus, get_task_queue
 from app.services.ai import get_ai_service, AIService
 from app.services.ai.types import ImageGenerationRequest
 
 router = APIRouter()
 logger = logging.getLogger("ylcraft.images")
+
+
+def _utc_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _response_excerpt(data: dict, limit: int = 1000) -> str:
+    try:
+        text = json.dumps(data, ensure_ascii=False)
+    except Exception:
+        text = str(data)
+    if len(text) > limit:
+        return text[:limit] + "...(truncated)"
+    return text
 
 
 class ImageGenerateRequest(BaseModel):
@@ -56,9 +74,11 @@ class ImageResponse(BaseModel):
     asset_id: str = ""
     all_asset_ids: list[str] = []
     task_id: str = ""
+    external_task_id: str = ""
     prompt_id: str = ""
     cost: float = 0.0
     provider: str = ""
+    model: str = ""
     status: str = "pending"
     progress: float = 0.0
     error: Optional[str] = None
@@ -204,6 +224,73 @@ async def generate_image(req: ImageGenerateRequest):
         result = await manager.generate_image(img_req)
 
         if result.success:
+            if result.task_id and result.status == "pending":
+                queue = get_task_queue()
+                task = await queue.create_task(
+                    task_type="image_generation",
+                    payload={
+                        "external_task_id": result.task_id,
+                        "provider": result.provider or req.provider or "",
+                        "model": result.model or req.model or "",
+                        "prompt": req.prompt,
+                        "negative_prompt": req.negative_prompt or "",
+                        "size": req.size or "1024x1024",
+                        "steps": req.steps,
+                        "cfg_scale": req.cfg_scale,
+                        "sampler": req.sampler or "euler",
+                        "lora": req.lora or "",
+                        "controlnet": req.controlnet or "",
+                        "source_image": req.source_image or "",
+                        "reference_images": img_req.reference_images if img_req.reference_images else None,
+                        "project_id": req.project_id or "",
+                        "content_id": req.content_id or "",
+                        "source_type": req.source_type or "",
+                        "source_index": req.source_index or "",
+                        "source_title": req.source_title or "",
+                        "chapter_number": req.chapter_number or "",
+                        "diagnostics": {
+                            "external_task_id": result.task_id,
+                            "provider": result.provider or req.provider or "",
+                            "model": result.model or req.model or "",
+                            "last_remote_status": result.status,
+                            "last_polled_at": None,
+                            "poll_count": 0,
+                            "poll_error_count": 0,
+                            "last_poll_error": "",
+                            "last_response_excerpt": "",
+                        },
+                    },
+                    max_retries=0,
+                )
+                await queue.append_event(
+                    task.task_id,
+                    "created",
+                    "图片生成任务已创建",
+                    data={"provider": result.provider or req.provider or "", "model": result.model or req.model or ""},
+                )
+                await queue.append_event(
+                    task.task_id,
+                    "submitted_remote",
+                    "已提交到远端生图服务",
+                    data={"external_task_id": result.task_id},
+                )
+                await queue.update_progress(
+                    task.task_id,
+                    max(5, int(result.progress or 0)),
+                    "图片生成任务已提交",
+                )
+                return ImageResponse(
+                    success=True,
+                    task_id=task.task_id,
+                    external_task_id=result.task_id,
+                    prompt_id=result.prompt_id,
+                    cost=result.cost,
+                    provider=result.provider or "",
+                    model=result.model or "",
+                    status="pending",
+                    progress=result.progress,
+                )
+
             # 自动入库到资产库，并把素材 ID 返回给前端，方便项目工作流回写关联。
             assets = []
             local_paths = result.all_local_paths or ([result.local_path] if result.local_path else [])
@@ -256,9 +343,11 @@ async def generate_image(req: ImageGenerateRequest):
                 asset_id=asset_ids[0] if asset_ids else "",
                 all_asset_ids=asset_ids,
                 task_id=result.task_id,
+                external_task_id=result.task_id,
                 prompt_id=result.prompt_id,
                 cost=result.cost,
                 provider=result.provider or "",
+                model=result.model or "",
                 status=result.status,
                 progress=result.progress,
             )
@@ -272,6 +361,283 @@ async def generate_image(req: ImageGenerateRequest):
     except Exception as e:
         logger.error(f"Image generation failed: {e}")
         return ImageResponse(success=False, error=str(e), provider="")
+
+
+@router.get("/tasks/{task_id}", response_model=ImageResponse, summary="轮询图像生成任务")
+async def poll_image_task(
+    task_id: str,
+    provider: str | None = Query(None, description="指定 provider（可选，默认使用默认后端）"),
+):
+    """
+    轮询异步图像生成任务状态。
+
+    适用于 ModelScope 等先返回 task_id 再通过轮询获取结果的 API。
+    - 如果任务还在进行中，返回 status="pending"
+    - 如果任务已完成，返回 status="done" + 图片 URL
+    - 如果任务失败，返回 success=false
+    """
+    manager = get_ai_service()
+    if not manager.is_loaded():
+        raise HTTPException(status_code=503, detail="AIService 未初始化")
+
+    try:
+        queue = get_task_queue()
+        tracked_task = await queue.get_task(task_id)
+        external_task_id = task_id
+        task_provider = provider
+
+        if tracked_task and tracked_task.task_type == "image_generation":
+            payload = tracked_task.payload or {}
+            external_task_id = payload.get("external_task_id") or task_id
+            task_provider = provider or payload.get("provider") or None
+            diagnostics = payload.get("diagnostics") if isinstance(payload.get("diagnostics"), dict) else {}
+            poll_count = int(diagnostics.get("poll_count") or 0) + 1
+            await queue.update_diagnostics(
+                task_id,
+                poll_count=poll_count,
+                last_polled_at=_utc_iso(),
+            )
+
+            if tracked_task.status == TaskStatus.DONE and tracked_task.result:
+                data = tracked_task.result
+                return ImageResponse(
+                    success=True,
+                    url=data.get("url"),
+                    urls=data.get("urls"),
+                    local_path=data.get("local_path"),
+                    all_local_paths=data.get("all_local_paths"),
+                    asset_id=data.get("asset_id", ""),
+                    all_asset_ids=data.get("all_asset_ids", []),
+                    task_id=task_id,
+                    external_task_id=external_task_id,
+                    provider=data.get("provider", "") or payload.get("provider", ""),
+                    model=data.get("model", "") or payload.get("model", ""),
+                    status="done",
+                    progress=100.0,
+                )
+
+            if tracked_task.status == TaskStatus.FAILED:
+                return ImageResponse(
+                    success=False,
+                    error=tracked_task.error or "图片生成任务失败",
+                    task_id=task_id,
+                    external_task_id=external_task_id,
+                    provider=payload.get("provider", ""),
+                    model=payload.get("model", ""),
+                    status="error",
+                    progress=float(tracked_task.progress or 0),
+                )
+
+            await queue.update_progress(
+                task_id,
+                max(10, int(tracked_task.progress or 0)),
+                "正在生成图片...",
+            )
+
+        result = await manager.poll_image(task_provider, external_task_id)
+        if tracked_task and tracked_task.task_type == "image_generation":
+            await queue.update_diagnostics(
+                task_id,
+                last_remote_status=result.status or "pending",
+                last_response_excerpt=_response_excerpt({
+                    "success": result.success,
+                    "status": result.status,
+                    "error": result.error,
+                    "url_count": len(result.urls or []),
+                }),
+            )
+
+        if result.success and result.status == "done":
+            asset_ids = []
+            if tracked_task and tracked_task.task_type == "image_generation":
+                await queue.append_event(
+                    task_id,
+                    "poll_done",
+                    "远端图片生成完成",
+                    data={"external_task_id": external_task_id, "url_count": len(result.urls or [])},
+                )
+                payload = tracked_task.payload or {}
+                local_paths = result.all_local_paths or ([result.local_path] if result.local_path else [])
+                if local_paths:
+                    try:
+                        from app.db.database import get_async_session
+                        from app.services.asset.service import AssetService
+
+                        await queue.append_event(
+                            task_id,
+                            "download_started",
+                            "开始保存生成图片",
+                            data={"file_count": len(local_paths)},
+                        )
+                        async with get_async_session() as session:
+                            service = AssetService(session)
+                            urls = result.urls or ([result.url] if result.url else [])
+                            for idx, local_path in enumerate(local_paths):
+                                asset = await service.create_from_image_generation(
+                                    image_path=str(local_path),
+                                    prompt=payload.get("prompt", ""),
+                                    provider=result.provider,
+                                    model=result.model,
+                                    seed=result.seed,
+                                    url=urls[idx] if idx < len(urls) else (result.url or ""),
+                                    negative_prompt=payload.get("negative_prompt", ""),
+                                    size=payload.get("size", "1024x1024"),
+                                    steps=payload.get("steps"),
+                                    cfg_scale=payload.get("cfg_scale"),
+                                    sampler=payload.get("sampler", "euler"),
+                                    lora=payload.get("lora", ""),
+                                    controlnet=payload.get("controlnet", ""),
+                                    source_image=payload.get("source_image", ""),
+                                    reference_images=payload.get("reference_images"),
+                                    metadata={
+                                        "project_id": payload.get("project_id", ""),
+                                        "content_id": payload.get("content_id", ""),
+                                        "source_type": payload.get("source_type", ""),
+                                        "source_index": payload.get("source_index", ""),
+                                        "source_title": payload.get("source_title", ""),
+                                        "chapter_number": payload.get("chapter_number", ""),
+                                        "image_index": idx,
+                                    },
+                                )
+                                asset_ids.append(str(asset.id))
+                                await queue.append_event(
+                                    task_id,
+                                    "asset_saved",
+                                    "生成图片已入素材库",
+                                    data={"asset_id": str(asset.id), "image_index": idx},
+                                )
+                        await queue.append_event(
+                            task_id,
+                            "download_done",
+                            "生成图片保存完成",
+                            data={"file_count": len(local_paths), "asset_count": len(asset_ids)},
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to save async image to asset library: {e}")
+                        await queue.append_event(
+                            task_id,
+                            "failed",
+                            "生成图片入素材库失败",
+                            level="warning",
+                            data={"error": str(e)},
+                        )
+
+            response_data = {
+                "url": result.url,
+                "urls": result.urls,
+                "local_path": result.local_path,
+                "all_local_paths": result.all_local_paths,
+                "asset_id": asset_ids[0] if asset_ids else "",
+                "all_asset_ids": asset_ids,
+                "provider": result.provider or "",
+                "model": result.model or "",
+                "diagnostics": (tracked_task.payload or {}).get("diagnostics", {}) if tracked_task else {},
+            }
+            if tracked_task and tracked_task.task_type == "image_generation":
+                tracked_task.status = TaskStatus.DONE
+                tracked_task.progress = 100
+                tracked_task.progress_message = "图片生成完成"
+                tracked_task.result = response_data
+                tracked_task.error = None
+                tracked_task.completed_at = time.time()
+                await queue.update_task(tracked_task)
+
+            return ImageResponse(
+                success=True,
+                url=result.url,
+                urls=result.urls,
+                local_path=result.local_path,
+                all_local_paths=result.all_local_paths,
+                asset_id=asset_ids[0] if asset_ids else "",
+                all_asset_ids=asset_ids,
+                task_id=task_id,
+                external_task_id=result.task_id or external_task_id,
+                provider=result.provider or "",
+                model=result.model or "",
+                status=result.status,
+                progress=result.progress,
+            )
+        elif not result.success and result.error:
+            if tracked_task and tracked_task.task_type == "image_generation":
+                payload = tracked_task.payload or {}
+                diagnostics = payload.get("diagnostics") if isinstance(payload.get("diagnostics"), dict) else {}
+                await queue.update_diagnostics(
+                    task_id,
+                    poll_error_count=int(diagnostics.get("poll_error_count") or 0) + 1,
+                    last_poll_error=result.error,
+                    last_remote_status=result.status or "error",
+                )
+                await queue.append_event(
+                    task_id,
+                    "failed",
+                    "图片生成任务失败",
+                    level="error",
+                    data={"error": result.error, "remote_status": result.status},
+                )
+                tracked_task.status = TaskStatus.FAILED
+                tracked_task.error = result.error
+                tracked_task.progress_message = result.error
+                tracked_task.completed_at = time.time()
+                await queue.update_task(tracked_task)
+
+            return ImageResponse(
+                success=False,
+                error=result.error,
+                task_id=task_id,
+                external_task_id=external_task_id,
+                provider=result.provider or "",
+                status=result.status or "error",
+            )
+        else:
+            if tracked_task and tracked_task.task_type == "image_generation":
+                diagnostics = (tracked_task.payload or {}).get("diagnostics", {})
+                poll_count = int(diagnostics.get("poll_count") or 0)
+                if poll_count <= 1 or poll_count % 5 == 0:
+                    await queue.append_event(
+                        task_id,
+                        "poll_pending",
+                        "远端任务仍在处理中",
+                        data={"remote_status": result.status or "pending", "poll_count": poll_count},
+                    )
+                await queue.update_progress(
+                    task_id,
+                    max(int(result.progress or 0), int(tracked_task.progress or 0), 10),
+                    "正在生成图片...",
+                )
+
+            return ImageResponse(
+                success=True,
+                task_id=task_id,
+                external_task_id=result.task_id or external_task_id,
+                provider=result.provider or "",
+                model=result.model or "",
+                status=result.status or "pending",
+                progress=result.progress,
+            )
+    except Exception as e:
+        logger.error(f"Image poll failed: {e}")
+        try:
+            queue = get_task_queue()
+            tracked_task = await queue.get_task(task_id)
+            if tracked_task and tracked_task.task_type == "image_generation":
+                payload = tracked_task.payload or {}
+                diagnostics = payload.get("diagnostics") if isinstance(payload.get("diagnostics"), dict) else {}
+                await queue.update_diagnostics(
+                    task_id,
+                    poll_error_count=int(diagnostics.get("poll_error_count") or 0) + 1,
+                    last_poll_error=str(e),
+                    last_polled_at=_utc_iso(),
+                )
+                await queue.append_event(
+                    task_id,
+                    "failed",
+                    "查询图片生成任务异常",
+                    level="error",
+                    data={"error": str(e)},
+                )
+        except Exception:
+            pass
+        return ImageResponse(success=False, error=str(e), task_id=task_id)
 
 
 # =============================================================================

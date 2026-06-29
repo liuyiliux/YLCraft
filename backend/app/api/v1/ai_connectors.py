@@ -103,18 +103,26 @@ async def get_ai_service():
 
 
 def reload_ai_service_after_connector_change() -> None:
-    """连接器配置变更后刷新全局 AIService，避免生成页继续使用旧 Backend 实例。"""
-    try:
-        session = next(get_session())
+    """连接器配置变更后刷新全局 AIService（后台线程执行，不阻塞 API 响应）。
+
+    避免全量 Backend 重新初始化阻塞编辑保存请求的返回。
+    """
+    import threading
+
+    def _reload_in_background():
         try:
-            AIService.initialize(session=session)
-        finally:
-            close = getattr(session, "close", None)
-            if callable(close):
-                close()
-        logger.info("[AI Connectors] 配置变更后已刷新 AIService")
-    except Exception as e:
-        logger.warning(f"[AI Connectors] 配置变更后刷新 AIService 失败: {e}")
+            session = next(get_session())
+            try:
+                AIService.initialize(session=session)
+            finally:
+                close = getattr(session, "close", None)
+                if callable(close):
+                    close()
+            logger.info("[AI Connectors] 配置变更后已刷新 AIService")
+        except Exception as e:
+            logger.warning(f"[AI Connectors] 配置变更后刷新 AIService 失败: {e}")
+
+    threading.Thread(target=_reload_in_background, daemon=True).start()
 
 
 # =============================================================================

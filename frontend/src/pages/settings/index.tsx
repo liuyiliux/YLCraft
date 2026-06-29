@@ -1059,6 +1059,109 @@ interface ProviderPreset {
   support_vision_input?: boolean
 }
 
+const MODELSCOPE_ASYNC_CONFIG = {
+  request_headers: {
+    'X-ModelScope-Async-Mode': 'true',
+  },
+  task_id_path: '$.task_id',
+  poll_endpoint: '/v1/tasks/{task_id}',
+  poll_method: 'GET',
+  poll_headers: {
+    'X-ModelScope-Task-Type': 'image_generation',
+  },
+  status_path: '$.task_status',
+  done_value: 'SUCCEED',
+  failed_value: 'FAILED',
+  images_path: '$.output_images[*]',
+  error_path: '$.message',
+  poll_interval: 5,
+  max_wait: 300,
+}
+
+function parseJsonObject(value: any): Record<string, any> {
+  if (!value) return {}
+  if (typeof value === 'object' && !Array.isArray(value)) return value
+  if (typeof value !== 'string') return {}
+  try {
+    const parsed = JSON.parse(value)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function stringifyJson(value: any): string {
+  return JSON.stringify(value || {}, null, 2)
+}
+
+function asyncConfigToFields(responseConfig: any): Record<string, any> {
+  const config = parseJsonObject(responseConfig)
+  const asyncConfig = parseJsonObject(config.async_config)
+  if (!Object.keys(asyncConfig).length) {
+    return {
+      async_enabled: false,
+      async_request_headers: stringifyJson({}),
+      async_poll_headers: stringifyJson({}),
+    }
+  }
+
+  return {
+    async_enabled: true,
+    async_request_headers: stringifyJson(asyncConfig.request_headers || {}),
+    async_task_id_path: asyncConfig.task_id_path || '$.task_id',
+    async_poll_endpoint: asyncConfig.poll_endpoint || '',
+    async_poll_method: asyncConfig.poll_method || 'GET',
+    async_poll_headers: stringifyJson(asyncConfig.poll_headers || {}),
+    async_status_path: asyncConfig.status_path || '',
+    async_done_value: asyncConfig.done_value || 'SUCCEED',
+    async_failed_value: asyncConfig.failed_value || 'FAILED',
+    async_images_path: asyncConfig.images_path || '',
+    async_error_path: asyncConfig.error_path || '',
+    async_poll_interval: asyncConfig.poll_interval ?? 5,
+    async_max_wait: asyncConfig.max_wait ?? 300,
+  }
+}
+
+function buildResponseConfigWithAsync(values: any): string {
+  const responseConfig = parseJsonObject(values.response_config)
+  if (!values.async_enabled) {
+    delete responseConfig.async_config
+    return stringifyJson(responseConfig)
+  }
+
+  responseConfig.async_config = {
+    request_headers: parseJsonObject(values.async_request_headers),
+    task_id_path: values.async_task_id_path || '$.task_id',
+    poll_endpoint: values.async_poll_endpoint || '',
+    poll_method: values.async_poll_method || 'GET',
+    poll_headers: parseJsonObject(values.async_poll_headers),
+    status_path: values.async_status_path || '',
+    done_value: values.async_done_value || 'SUCCEED',
+    failed_value: values.async_failed_value || 'FAILED',
+    images_path: values.async_images_path || '',
+    error_path: values.async_error_path || '',
+    poll_interval: values.async_poll_interval ?? 5,
+    max_wait: values.async_max_wait ?? 300,
+  }
+  return stringifyJson(responseConfig)
+}
+
+const ASYNC_FORM_FIELDS = [
+  'async_enabled',
+  'async_request_headers',
+  'async_task_id_path',
+  'async_poll_endpoint',
+  'async_poll_method',
+  'async_poll_headers',
+  'async_status_path',
+  'async_done_value',
+  'async_failed_value',
+  'async_images_path',
+  'async_error_path',
+  'async_poll_interval',
+  'async_max_wait',
+]
+
 const PROVIDER_PRESETS: Record<string, Record<string, ProviderPreset>> = {
   openai: {
     llm: {
@@ -1100,6 +1203,18 @@ const PROVIDER_PRESETS: Record<string, Record<string, ProviderPreset>> = {
       default_params: { n: 1, size_param: 'image_size', seed_param: 'seed' },
       support_reference_image: true,
       reference_image_field: 'image',
+    },
+  },
+  modelscope: {
+    image: {
+      base_url: 'https://api-inference.modelscope.cn',
+      api_endpoint: '/v1/images/generations',
+      default_model: 'Qwen/Qwen-Image',
+      available_models: ['Qwen/Qwen-Image'],
+      supported_sizes: ['1024x1024'],
+      request_template: '{"model": "{{ model }}", "prompt": "{{ prompt }}"}',
+      response_config: stringifyJson({ async_config: MODELSCOPE_ASYNC_CONFIG }),
+      default_params: { n: 1 },
     },
   },
   gemini: {
@@ -1481,6 +1596,9 @@ export default function SettingsPage() {
         reference_image_field: preset.reference_image_field || '',
         reference_image_array_field: preset.reference_image_array_field || '',
       })
+      if (preset.response_config) {
+        Object.assign(values, asyncConfigToFields(preset.response_config))
+      }
     }
 
     form.setFieldsValue(values)
@@ -1602,6 +1720,7 @@ export default function SettingsPage() {
       timeout: provider.timeout || 300,
       test_timeout: provider.test_timeout || 20,
       api_format: provider.api_format || 'custom',
+      ...asyncConfigToFields(provider.response_config),
     })
     setModalVisible(true)
   }
@@ -1621,6 +1740,9 @@ export default function SettingsPage() {
       id: generatedId,
       is_active: true,
       api_format: 'custom',
+      async_enabled: false,
+      async_request_headers: stringifyJson({}),
+      async_poll_headers: stringifyJson({}),
     })
     setModalVisible(true)
   }
@@ -1639,6 +1761,11 @@ export default function SettingsPage() {
       if (processedValues.supported_sizes && Array.isArray(processedValues.supported_sizes)) {
         processedValues.supported_sizes = JSON.stringify(processedValues.supported_sizes)
       }
+
+      if (processedValues.provider_type === 'image' && processedValues.api_format === 'custom') {
+        processedValues.response_config = buildResponseConfigWithAsync(processedValues)
+      }
+      ASYNC_FORM_FIELDS.forEach(field => delete processedValues[field])
 
       if (editingProvider) {
         // 更新现有连接器
@@ -2228,7 +2355,10 @@ export default function SettingsPage() {
                             }
                             // 请求模板和响应配置（Image/Video 类型使用）
                             if (defaults.request_template) form.setFieldValue('request_template', defaults.request_template)
-                            if (defaults.response_config) form.setFieldValue('response_config', defaults.response_config)
+                            if (defaults.response_config) {
+                              form.setFieldValue('response_config', defaults.response_config)
+                              form.setFieldsValue(asyncConfigToFields(defaults.response_config))
+                            }
                             if (defaults.supported_sizes) form.setFieldValue('supported_sizes', defaults.supported_sizes)
                             // 参考图配置
                             if (defaults.reference_image_config) {
@@ -2462,6 +2592,91 @@ export default function SettingsPage() {
                           placeholder={`JSON 格式的响应配置，例如：\n{\n  "images_path": "$.data[*].url",\n  "base64_images_path": "$.data[*].b64_json",\n  "error_path": "$.error.message",\n  "response_format": "url"\n}`}
                         />
                       </Form.Item>
+
+                      {selectedType === 'image' && (
+                        <div style={{ margin: '12px 0 16px', padding: 12, border: `1px solid ${THEME.border}`, borderRadius: 6, background: THEME.bgElevated }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
+                            <Form.Item name="async_enabled" valuePropName="checked" style={{ marginBottom: 0 }}>
+                              <Switch checkedChildren="异步" unCheckedChildren="同步" />
+                            </Form.Item>
+                            <Button
+                              size="small"
+                              icon={<DownloadOutlined />}
+                              onClick={() => {
+                                const responseConfig = parseJsonObject(form.getFieldValue('response_config'))
+                                responseConfig.async_config = MODELSCOPE_ASYNC_CONFIG
+                                form.setFieldsValue({
+                                  response_config: stringifyJson(responseConfig),
+                                  ...asyncConfigToFields(responseConfig),
+                                })
+                                if (!form.getFieldValue('base_url')) form.setFieldValue('base_url', 'https://api-inference.modelscope.cn')
+                                if (!form.getFieldValue('api_endpoint')) form.setFieldValue('api_endpoint', '/v1/images/generations')
+                                if (!form.getFieldValue('default_model')) form.setFieldValue('default_model', 'Qwen/Qwen-Image')
+                                if (!form.getFieldValue('request_template')) {
+                                  form.setFieldValue('request_template', '{"model": "{{ model }}", "prompt": "{{ prompt }}"}')
+                                }
+                                message.success('已填充 ModelScope 异步生图配置')
+                              }}
+                            >
+                              填充 ModelScope
+                            </Button>
+                          </div>
+
+                          <Form.Item noStyle shouldUpdate={(prev, curr) => prev.async_enabled !== curr.async_enabled}>
+                            {({ getFieldValue }) => getFieldValue('async_enabled') ? (
+                              <>
+                                <Alert
+                                  type="info"
+                                  showIcon
+                                  message="异步任务模式"
+                                  description="开启后，生成接口先返回 task_id，前端通过 /images/tasks/{task_id} 轮询结果；保存时这些字段会写入 response_config.async_config。"
+                                  style={{ marginBottom: 12 }}
+                                />
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 12px' }}>
+                                  <Form.Item name="async_task_id_path" label={<span style={{ color: THEME.textPrimary }}>Task ID 路径</span>} style={{ marginBottom: 8 }}>
+                                    <Input placeholder="$.task_id" />
+                                  </Form.Item>
+                                  <Form.Item name="async_poll_endpoint" label={<span style={{ color: THEME.textPrimary }}>轮询 Endpoint</span>} style={{ marginBottom: 8 }}>
+                                    <Input placeholder="/v1/tasks/{task_id}" />
+                                  </Form.Item>
+                                  <Form.Item name="async_poll_method" label={<span style={{ color: THEME.textPrimary }}>轮询 Method</span>} style={{ marginBottom: 8 }}>
+                                    <Select options={[{ value: 'GET', label: 'GET' }, { value: 'POST', label: 'POST' }]} />
+                                  </Form.Item>
+                                  <Form.Item name="async_status_path" label={<span style={{ color: THEME.textPrimary }}>状态路径</span>} style={{ marginBottom: 8 }}>
+                                    <Input placeholder="$.task_status" />
+                                  </Form.Item>
+                                  <Form.Item name="async_done_value" label={<span style={{ color: THEME.textPrimary }}>完成值</span>} style={{ marginBottom: 8 }}>
+                                    <Input placeholder="SUCCEED" />
+                                  </Form.Item>
+                                  <Form.Item name="async_failed_value" label={<span style={{ color: THEME.textPrimary }}>失败值</span>} style={{ marginBottom: 8 }}>
+                                    <Input placeholder="FAILED" />
+                                  </Form.Item>
+                                </div>
+                                <Form.Item name="async_images_path" label={<span style={{ color: THEME.textPrimary }}>图片结果路径</span>} style={{ marginBottom: 8 }}>
+                                  <Input placeholder="$.output_images[*]" />
+                                </Form.Item>
+                                <Form.Item name="async_error_path" label={<span style={{ color: THEME.textPrimary }}>错误信息路径</span>} style={{ marginBottom: 8 }}>
+                                  <Input placeholder="$.message" />
+                                </Form.Item>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 12px' }}>
+                                  <Form.Item name="async_poll_interval" label={<span style={{ color: THEME.textPrimary }}>轮询间隔 (秒)</span>} style={{ marginBottom: 8 }}>
+                                    <InputNumber min={1} max={60} style={{ width: '100%' }} />
+                                  </Form.Item>
+                                  <Form.Item name="async_max_wait" label={<span style={{ color: THEME.textPrimary }}>最大等待 (秒)</span>} style={{ marginBottom: 8 }}>
+                                    <InputNumber min={10} max={3600} style={{ width: '100%' }} />
+                                  </Form.Item>
+                                </div>
+                                <Form.Item name="async_request_headers" label={<span style={{ color: THEME.textPrimary }}>创建请求 Header (JSON)</span>} style={{ marginBottom: 8 }}>
+                                  <TextArea rows={2} placeholder='{"X-ModelScope-Async-Mode":"true"}' />
+                                </Form.Item>
+                                <Form.Item name="async_poll_headers" label={<span style={{ color: THEME.textPrimary }}>轮询 Header (JSON)</span>} style={{ marginBottom: 0 }}>
+                                  <TextArea rows={2} placeholder='{"X-ModelScope-Task-Type":"image_generation"}' />
+                                </Form.Item>
+                              </>
+                            ) : null}
+                          </Form.Item>
+                        </div>
+                      )}
 
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0 16' }}>
                         <Form.Item 

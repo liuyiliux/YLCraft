@@ -650,6 +650,13 @@ export const getLlmBackends = () => request('/llm/backends')
 export const generateImage = (data: any) =>
   request('/images/generate', { method: 'POST', body: JSON.stringify(data) })
 
+export const getImageTask = (taskId: string, provider?: string) => {
+  const sp = new URLSearchParams()
+  if (provider) sp.set('provider', provider)
+  const qs = sp.toString()
+  return request(`/images/tasks/${taskId}${qs ? `?${qs}` : ''}`)
+}
+
 export const getImageBackends = () => request('/images/backends')
 
 // ===== Platform Templates（平台模板）=====

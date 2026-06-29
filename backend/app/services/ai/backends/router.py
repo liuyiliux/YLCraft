@@ -166,6 +166,32 @@ class BackendRouter:
         except Exception:
             return False
 
+    async def resolve_image_poll(self, provider: Optional[str], task_id: str) -> ImageGenerationResult:
+        """轮询图像生成任务状态（异步 API 如 ModelScope）。"""
+        backend = self._resolve_image_backend(provider)
+        if not backend:
+            return ImageGenerationResult(success=False, error="没有可用的图像生成后端")
+        try:
+            return await backend.poll(task_id)
+        except Exception as e:
+            logger.error(f"[Router] 图像轮询异常: {e}")
+            return ImageGenerationResult(success=False, error=str(e))
+
+    def _resolve_image_backend(self, provider: Optional[str] = None) -> Any | None:
+        """根据 provider 查找图像后端实例。"""
+        backends = self._registry.get_all_backends(MediaType.IMAGE)
+        if not backends:
+            return None
+        if provider and provider in backends:
+            return backends[provider]
+        default_key = self._registry.get_default(MediaType.IMAGE)
+        if default_key and default_key in backends:
+            return backends[default_key]
+        # 取第一个可用
+        for backend in backends.values():
+            return backend
+        return None
+
     # -------------------------------------------------------------------------
     # Video 路由
     # -------------------------------------------------------------------------

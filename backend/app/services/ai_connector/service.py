@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import json
+import os
 import time
 import uuid
 from datetime import datetime, timezone
@@ -361,19 +362,54 @@ class AIConnectorService:
                     "Authorization": f"Bearer {conn.api_key}",
                     "Content-Type": "application/json",
                 }
+                response_config = self._parse_json_object(conn.response_config)
+                async_config = response_config.get("async_config") if isinstance(response_config, dict) else None
+                if provider_type != "image":
+                    async_config = None
+                if isinstance(async_config, dict):
+                    headers.update(async_config.get("request_headers") or {})
+
                 started_at = time.perf_counter()
 
-                async with httpx.AsyncClient(timeout=conn.test_timeout) as client:
+                # 自动检测系统代理（支持 HTTP_PROXY / HTTPS_PROXY / ALL_PROXY 环境变量）
+                httpx_kwargs = {"timeout": conn.test_timeout}
+                proxy_url = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY") or os.environ.get("ALL_PROXY") or os.environ.get("http_proxy") or os.environ.get("https_proxy")
+                if proxy_url:
+                    httpx_kwargs["proxy"] = proxy_url
+
+                async with httpx.AsyncClient(**httpx_kwargs) as client:
                     response = await client.request(
                         method=request["method"],
                         url=request["url"],
                         headers=headers,
                         json=request.get("json"),
                     )
-                latency_ms = round((time.perf_counter() - started_at) * 1000, 2)
-                debug_info = self._build_debug_info(request, headers, response, latency_ms)
+                    latency_ms = round((time.perf_counter() - started_at) * 1000, 2)
+                    debug_info = self._build_debug_info(request, headers, response, latency_ms)
 
-                if response.status_code == 200:
+                    if response.status_code in (200, 201, 202) and isinstance(async_config, dict) and async_config:
+                        async_test = await self._test_async_image_poll(
+                            conn=conn,
+                            client=client,
+                            create_response=response,
+                            async_config=async_config,
+                        )
+                        debug_info["async_poll"] = async_test.get("debug")
+                        if async_test.get("task_id"):
+                            debug_info["async_task_id"] = async_test.get("task_id")
+                        if not async_test.get("success"):
+                            return {
+                                "success": False,
+                                "message": async_test.get("message") or "异步轮询测试失败",
+                                "debug": debug_info,
+                            }
+                        return {
+                            "success": True,
+                            "message": async_test.get("message") or "连接正常，异步任务创建并轮询成功",
+                            "debug": debug_info,
+                        }
+
+                if response.status_code in (200, 201, 202):
                     return {
                         "success": True,
                         "message": "连接正常，可访问 API",
@@ -393,6 +429,16 @@ class AIConnectorService:
                     "debug": debug_info,
                 }
             except Exception as e:
+                err_str = str(e)
+                # DNS 解析失败 / 网络不可达，给出更具体的提示
+                hint = ""
+                if "getaddrinfo" in err_str.lower() or "name or service not known" in err_str.lower():
+                    hint = "（DNS 解析失败，请检查服务器是否能访问该 API 域名，或是否需要配置代理）"
+                elif "connection refused" in err_str.lower() or "connection reset" in err_str.lower():
+                    hint = "（服务器拒绝连接，请检查 Base URL 是否正确，或目标服务是否正常运行）"
+                elif any(kw in err_str.lower() for kw in ["timeout", "timed out", "connection timed"]):
+                    hint = "（连接超时，请检查网络连通性或是否需要配置代理）"
+
                 failed_debug = {
                     "request": {
                         "method": request.get("method"),
@@ -410,11 +456,96 @@ class AIConnectorService:
                 }
                 return {
                     "success": False,
-                    "message": f"连接测试失败: {str(e)}",
+                    "message": f"连接测试失败: {err_str}{hint}",
                     "debug": failed_debug,
                 }
 
         return {"success": True, "message": "API Key 格式正确"}
+
+    async def _test_async_image_poll(
+        self,
+        conn: AIConnector,
+        client: httpx.AsyncClient,
+        create_response: httpx.Response,
+        async_config: dict,
+    ) -> dict:
+        """按通用 async_config 对图片异步任务做一次轮询测试。"""
+        try:
+            create_data = create_response.json()
+        except Exception:
+            return {"success": False, "message": "异步响应不是有效 JSON"}
+
+        task_id_path = async_config.get("task_id_path")
+        if not task_id_path:
+            return {"success": False, "message": "未配置 async_config.task_id_path"}
+
+        task_id = self._extract_jsonpath_value(create_data, task_id_path)
+        if not task_id:
+            return {"success": False, "message": f"未能从创建响应提取 task_id: {task_id_path}"}
+
+        poll_endpoint_template = async_config.get("poll_endpoint")
+        if not poll_endpoint_template:
+            return {"success": False, "message": "未配置 async_config.poll_endpoint", "task_id": task_id}
+
+        poll_endpoint = str(poll_endpoint_template).replace("{task_id}", str(task_id))
+        if poll_endpoint.startswith("http://") or poll_endpoint.startswith("https://"):
+            poll_url = poll_endpoint
+        else:
+            poll_url = f"{(conn.base_url or '').rstrip('/')}/{poll_endpoint.lstrip('/')}"
+
+        poll_headers = {
+            "Authorization": f"Bearer {conn.api_key}",
+            "Content-Type": "application/json",
+            **(async_config.get("poll_headers") or {}),
+        }
+        poll_method = str(async_config.get("poll_method") or "GET").upper()
+        poll_request = {
+            "method": poll_method,
+            "url": poll_url,
+            "json": {} if poll_method == "POST" else None,
+        }
+
+        started_at = time.perf_counter()
+        if poll_method == "GET":
+            poll_response = await client.get(poll_url, headers=poll_headers)
+        elif poll_method == "POST":
+            poll_response = await client.post(poll_url, headers=poll_headers, json={})
+        else:
+            return {
+                "success": False,
+                "message": f"不支持的异步轮询方法: {poll_method}",
+                "task_id": task_id,
+            }
+
+        latency_ms = round((time.perf_counter() - started_at) * 1000, 2)
+        debug = self._build_debug_info(poll_request, poll_headers, poll_response, latency_ms)
+        if poll_response.status_code not in (200, 201, 202):
+            return {
+                "success": False,
+                "message": f"异步轮询失败: HTTP {poll_response.status_code}",
+                "task_id": task_id,
+                "debug": debug,
+            }
+
+        try:
+            poll_data = poll_response.json()
+        except Exception:
+            return {
+                "success": False,
+                "message": "异步轮询响应不是有效 JSON",
+                "task_id": task_id,
+                "debug": debug,
+            }
+
+        status_path = async_config.get("status_path")
+        status = self._extract_jsonpath_value(poll_data, status_path) if status_path else None
+        return {
+            "success": True,
+            "message": f"连接正常，异步任务已创建并可轮询（状态: {status or 'unknown'}）",
+            "task_id": task_id,
+            "status": status,
+            "debug": debug,
+        }
 
     def _build_test_request(
         self,
@@ -542,6 +673,18 @@ class AIConnectorService:
         if not isinstance(data, dict):
             raise ValueError("Request 模板必须渲染为 JSON 对象")
         return data
+
+    def _extract_jsonpath_value(self, data: dict, path: Optional[str]):
+        if not path:
+            return None
+        try:
+            from jsonpath_ng import parse as jsonpath_parse
+
+            matches = jsonpath_parse(path).find(data)
+            return matches[0].value if matches else None
+        except Exception as e:
+            logger.warning("JSONPath 提取失败: %s, 错误: %s", path, e)
+            return None
 
     def _extract_error_message(self, response) -> Optional[str]:
         """尽量从响应中提取清晰的错误信息。"""

@@ -201,6 +201,13 @@ class GeminiImageBackend:
             logger.warning(f"[Gemini-Image] 健康检查失败: {e}")
             return False
 
+    async def poll(self, task_id: str) -> ImageGenerationResult:
+        """Gemini Backend 不支持异步轮询。"""
+        return ImageGenerationResult(
+            success=False, error="当前 Backend 不支持异步轮询",
+            task_id=task_id, provider=self.name, model=self.model,
+        )
+
     async def close(self):
         if hasattr(self._client, "aclose"):
             await self._client.aclose()

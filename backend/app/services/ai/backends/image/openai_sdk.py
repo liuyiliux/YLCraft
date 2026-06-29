@@ -264,6 +264,13 @@ class OpenAISDKImageBackend:
             logger.warning("[OpenAISDK-Image] health check failed: %s", e)
             return False
 
+    async def poll(self, task_id: str) -> ImageGenerationResult:
+        """OpenAI SDK Backend 不支持异步轮询。"""
+        return ImageGenerationResult(
+            success=False, error="当前 Backend 不支持异步轮询",
+            task_id=task_id, provider=self.name, model=self.model,
+        )
+
     async def close(self):
         await self._client.close()
 

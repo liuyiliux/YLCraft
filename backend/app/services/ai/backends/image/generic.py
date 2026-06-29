@@ -37,8 +37,11 @@ class GenericImageBackend(ImageBackend):
     通过数据库配置驱动，支持任意 OpenAI 兼容的图像生成 API
     无需为每个 Provider 写代码，只需在数据库中配置：
     - request_template (Jinja2 模板)
-    - response_config (JSON 解析配置)
+    - response_config (JSON 解析配置，含 async_config 异步轮询配置)
     - parameter_transforms (参数转换规则)
+
+    异步生成支持（通过 response_config.async_config 配置）：
+    适用于 ModelScope 等先返回 task_id 再轮询结果的 API。
     """
 
     def __init__(self, connector: AIConnector, session):
@@ -61,6 +64,10 @@ class GenericImageBackend(ImageBackend):
                 self.response_config = json.loads(connector.response_config)
             except Exception as e:
                 logger.error(f"解析 response_config 失败: {e}")
+
+        # 异步轮询配置
+        self.async_config = self.response_config.get("async_config") or {}
+        self._async_mode = bool(self.async_config)
 
         self.parameter_transforms = {}
         if connector.parameter_transforms:
@@ -155,14 +162,18 @@ class GenericImageBackend(ImageBackend):
 
             max_retries = 3
             response = None
+            # 异步模式额外请求头（如 ModelScope 的 X-ModelScope-Async-Mode）
+            extra_headers = self.async_config.get("request_headers", {}) or {}
             for attempt in range(max_retries):
                 try:
                     logger.info(f"[GenericImageBackend] 发送请求到 {final_url} (尝试 {attempt + 1}/{max_retries})")
+                    headers = {
+                        "Authorization": f"Bearer {self.connector.api_key}",
+                        "Content-Type": "application/json",
+                        **extra_headers,
+                    }
                     temp_client = httpx.AsyncClient(
-                        headers={
-                            "Authorization": f"Bearer {self.connector.api_key}",
-                            "Content-Type": "application/json",
-                        },
+                        headers=headers,
                         timeout=self.connector.timeout,
                         follow_redirects=True,
                         max_redirects=5,
@@ -177,7 +188,7 @@ class GenericImageBackend(ImageBackend):
                     except Exception:
                         logger.info(f"[GENERIC IMAGE] 响应状态码: {response.status_code}, 内容: {response.text[:500]}")
 
-                    if response.status_code in [200, 201]:
+                    if response.status_code in [200, 201, 202]:
                         break
                     if response.status_code == 400:
                         break
@@ -188,11 +199,35 @@ class GenericImageBackend(ImageBackend):
                     import asyncio
                     await asyncio.sleep(2 ** attempt)
 
-            result = self._parse_response(response)
+            # 判断是否需要异步轮询
+            if self._async_mode:
+                task_result = await self._handle_async_response(response, final_url)
+                if task_result is not None:
+                    # 异步响应：可能是 pending 任务，也可能首次响应已经完成
+                    parsed = task_result
+                else:
+                    # 同步完成或非异步响应，走正常解析
+                    parsed = self._parse_response(response)
+            else:
+                parsed = self._parse_response(response)
+
+            result = parsed
             call_cost = self.connector.price_per_call if self.connector.price_per_call is not None else result.get("cost", 0.0)
             self._update_usage(call_cost)
             
             actual_model = params.get("model", self.model)
+
+            if result.get("task_id") and result.get("status") == "pending":
+                return ImageGenerationResult(
+                    success=True,
+                    task_id=result.get("task_id", ""),
+                    cost=result.get("cost", 0.0),
+                    provider=self.name,
+                    model=actual_model,
+                    status="pending",
+                    progress=result.get("progress", 0.0),
+                    error=result.get("error"),
+                )
 
             local_path = None
             image_url = result.get("url")
@@ -243,6 +278,9 @@ class GenericImageBackend(ImageBackend):
                 cost=result.get("cost", 0.0),
                 provider=self.name,
                 model=actual_model,
+                task_id=result.get("task_id", ""),
+                status=result.get("status", "done" if result.get("success", False) else "error"),
+                progress=result.get("progress", 100.0 if result.get("success", False) else 0.0),
                 error=result.get("error"),
             )
 
@@ -252,7 +290,256 @@ class GenericImageBackend(ImageBackend):
             logger.error(traceback.format_exc())
             return ImageGenerationResult(success=False, error=str(e), provider=self.name, model=self.model)
 
+    # -------------------------------------------------------------------------
+    # 异步轮询支持（ModelScope 等先返回 task_id 再轮询结果的 API）
+    # -------------------------------------------------------------------------
+
+    def _has_async_response(self, data: dict) -> str | None:
+        """检测响应是否包含异步任务 task_id。
+
+        返回 task_id（有异步任务）或 None（无异步任务/同步完成）。
+        如果 status 已经是终态（done/failed），仍返回 task_id，由调用方判断。
+        """
+        task_id_path = self.async_config.get("task_id_path", "")
+        if not task_id_path:
+            return None
+        task_id = self._extract_single_jsonpath(data, task_id_path)
+        return task_id if task_id else None
+
+    def _is_async_done(self, data: dict) -> bool:
+        """检查异步任务是否已完成。"""
+        status_path = self.async_config.get("status_path", "")
+        done_value = self.async_config.get("done_value", "SUCCEED")
+        if not status_path:
+            return False
+        status = self._extract_single_jsonpath(data, status_path)
+        return status is not None and str(status).upper() == str(done_value).upper()
+
+    def _is_async_failed(self, data: dict) -> str | None:
+        """检查异步任务是否失败，返回错误信息。"""
+        status_path = self.async_config.get("status_path", "")
+        failed_value = self.async_config.get("failed_value", "FAILED")
+        if not status_path:
+            return None
+        status = self._extract_single_jsonpath(data, status_path)
+        if status is not None and str(status).upper() == str(failed_value).upper():
+            return self._extract_async_error(data)
+        return None
+
+    def _extract_async_error(self, data: dict) -> str:
+        """从异步任务响应中提取失败原因。"""
+        error_path = self.async_config.get("error_path", "")
+        if error_path:
+            value = self._extract_single_jsonpath(data, error_path)
+            if value:
+                return str(value)
+        for key in ("message", "error", "error_message", "err_msg"):
+            value = data.get(key)
+            if value:
+                return str(value)
+        return "任务失败"
+
+    def _extract_async_images(self, data: dict) -> list[str]:
+        """从异步任务完成响应中提取图片 URL 列表。"""
+        images_path = self.async_config.get("images_path", "")
+        if not images_path:
+            return []
+        return self._extract_by_jsonpath(data, images_path, is_list=True)
+
+    async def _handle_async_response(
+        self, response: httpx.Response, base_url: str
+    ) -> dict | None:
+        """
+        处理首次请求的响应，如果检测到异步任务则返回任务状态。
+
+        返回 None 表示响应不是异步任务（回退到普通 _parse_response）。
+        返回 dict 表示异步任务已处理，包含 pending 任务或已完成结果。
+        """
+        try:
+            data = response.json()
+        except Exception:
+            return None  # 非 JSON 响应，回退普通处理
+
+        task_id = self._has_async_response(data)
+        if not task_id:
+            logger.info("[GenericImageBackend] 未检测到异步任务，按同步响应处理")
+            return None
+
+        logger.info(f"[GenericImageBackend] 检测到异步任务 task_id={task_id}")
+
+        # 检查首次响应是否已经完成（简单 prompt 可能立即返回结果）
+        if self._is_async_done(data):
+            logger.info(f"[GenericImageBackend] 首次响应即完成 task_id={task_id}")
+            images = self._extract_async_images(data)
+            if images:
+                return {
+                    "success": True,
+                    "url": images[0],
+                    "urls": images,
+                    "cost": 0.0,
+                    "format": "url",
+                    "task_id": task_id,
+                    "status": "done",
+                    "progress": 100.0,
+                }
+            # 使用普通解析作为回退
+            return None
+
+        # 检查是否失败
+        error_msg = self._is_async_failed(data)
+        if error_msg:
+            logger.error(f"[GenericImageBackend] 任务创建失败 task_id={task_id}: {error_msg}")
+            return {"success": False, "error": error_msg, "task_id": task_id, "status": "error"}
+
+        logger.info(f"[GenericImageBackend] 异步任务已创建 task_id={task_id}")
+        return {
+            "success": True,
+            "task_id": task_id,
+            "status": "pending",
+            "progress": 0.0,
+            "cost": 0.0,
+        }
+
+    async def poll(self, task_id: str) -> ImageGenerationResult:
+        """轮询异步图像生成任务状态。
+
+        由 generate() 内部调用，也可由 API 层直接调用供前端手动轮询。
+        """
+        if not self._async_mode:
+            return ImageGenerationResult(
+                success=False, error="当前 Backend 未启用异步模式",
+                task_id=task_id, provider=self.name, model=self.model,
+            )
+
+        poll_endpoint_template = self.async_config.get("poll_endpoint", "")
+        if not poll_endpoint_template:
+            return ImageGenerationResult(
+                success=False, error="未配置 poll_endpoint",
+                task_id=task_id, provider=self.name, model=self.model,
+            )
+
+        poll_endpoint = poll_endpoint_template.replace("{task_id}", task_id)
+        poll_method = self.async_config.get("poll_method", "GET").upper()
+        poll_headers = self.async_config.get("poll_headers", {}) or {}
+
+        # 拼接完整 URL
+        base = (self.connector.base_url or "").rstrip("/")
+        if not poll_endpoint.startswith("http"):
+            poll_endpoint = poll_endpoint.lstrip("/")
+            poll_url = f"{base}/{poll_endpoint}"
+        else:
+            poll_url = poll_endpoint
+
+        headers = {
+            "Authorization": f"Bearer {self.connector.api_key}",
+            "Content-Type": "application/json",
+            **poll_headers,
+        }
+
+        try:
+            async with httpx.AsyncClient(
+                headers=headers,
+                timeout=self.connector.timeout,
+                follow_redirects=True,
+            ) as client:
+                if poll_method == "GET":
+                    resp = await client.get(poll_url)
+                elif poll_method == "POST":
+                    resp = await client.post(poll_url, json={})
+                else:
+                    return ImageGenerationResult(
+                        success=False, error=f"不支持的轮询方法: {poll_method}",
+                        task_id=task_id, provider=self.name, model=self.model,
+                    )
+
+            if resp.status_code not in (200, 201, 202):
+                return ImageGenerationResult(
+                    success=False, error=f"轮询失败 HTTP {resp.status_code}: {resp.text[:200]}",
+                    task_id=task_id, provider=self.name, model=self.model,
+                )
+
+            data = resp.json()
+            logger.info(f"[GenericImageBackend] 轮询响应 task_id={task_id}: {self._truncate_debug(data)}")
+
+            done_value = self.async_config.get("done_value", "SUCCEED")
+            failed_value = self.async_config.get("failed_value", "FAILED")
+            status_path = self.async_config.get("status_path", "")
+
+            status = "pending"
+            if status_path:
+                raw_status = self._extract_single_jsonpath(data, status_path)
+                if raw_status is not None:
+                    raw_status = str(raw_status).upper()
+                    if raw_status == str(done_value).upper():
+                        status = "done"
+                    elif raw_status == str(failed_value).upper():
+                        status = "error"
+                    else:
+                        status = "pending"
+
+            if status == "error":
+                error_msg = self._extract_async_error(data)
+                return ImageGenerationResult(
+                    success=False, error=error_msg or "任务失败", status="error",
+                    task_id=task_id, provider=self.name, model=self.model,
+                )
+
+            if status == "done":
+                images = self._extract_async_images(data)
+                url = images[0] if images else None
+                local_path = None
+                all_local_paths = []
+                for idx, image_url in enumerate(images):
+                    downloaded_path = await self._download_image(image_url, f"{task_id}_{idx}")
+                    if downloaded_path:
+                        path_str = str(downloaded_path)
+                        all_local_paths.append(path_str)
+                        if local_path is None:
+                            local_path = path_str
+                return ImageGenerationResult(
+                    success=True,
+                    url=url,
+                    urls=images,
+                    local_path=local_path,
+                    all_local_paths=all_local_paths,
+                    status="done",
+                    progress=100.0,
+                    task_id=task_id, provider=self.name, model=self.model,
+                )
+
+            return ImageGenerationResult(
+                success=True, status="pending",
+                task_id=task_id, provider=self.name, model=self.model,
+            )
+
+        except Exception as e:
+            logger.error(f"[GenericImageBackend] 轮询异常 task_id={task_id}: {e}")
+            return ImageGenerationResult(
+                success=False, error=str(e),
+                task_id=task_id, provider=self.name, model=self.model,
+            )
+
+    @staticmethod
+    def _extract_single_jsonpath(data: dict, path: str) -> str | None:
+        """从 JSON 中提取单个值。"""
+        try:
+            expr = jsonpath_parse(path)
+            matches = expr.find(data)
+            return str(matches[0].value) if matches else None
+        except Exception:
+            return None
+
+    @staticmethod
+    def _truncate_debug(obj, max_len=300) -> str:
+        """截断调试输出，避免过长。"""
+        s = json.dumps(obj, ensure_ascii=False)
+        if len(s) > max_len:
+            s = s[:max_len] + "..."
+        return s
+
     async def health_check(self) -> bool:
+        if self._async_mode:
+            return True
         try:
             test_params = {"model": self.model, "prompt": "test", "n": 1}
             request_body = self._render_request(test_params)
@@ -427,7 +714,7 @@ class GenericImageBackend(ImageBackend):
         return replaced_by_field
 
     def _parse_response(self, response: httpx.Response) -> Dict[str, Any]:
-        if response.status_code not in (200, 201):
+        if response.status_code not in (200, 201, 202):
             error_msg = self._extract_error(response)
             return {"success": False, "error": f"HTTP {response.status_code}: {error_msg}"}
         try:

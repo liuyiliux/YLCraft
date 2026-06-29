@@ -182,6 +182,10 @@ class AIService:
         """轮询视频生成任务状态"""
         return await self._router.resolve_video_poll(provider, task_id)
 
+    async def poll_image(self, provider: str | None, task_id: str) -> ImageGenerationResult:
+        """轮询图像生成任务状态（异步 API 如 ModelScope）"""
+        return await self._router.resolve_image_poll(provider, task_id)
+
     # -------------------------------------------------------------------------
     # 查询接口
     # -------------------------------------------------------------------------

@@ -9,7 +9,7 @@
  * - 图片下载 / 入库
  */
 
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Card,
@@ -47,8 +47,9 @@ import {
 } from '@ant-design/icons'
 import type { UploadFile } from 'antd/es/upload/interface'
 import { useTheme } from '../../constants/theme'
-import { getImageBackends, generateImage as generateImageApi, linkCreativeProjectAsset } from '../../api'
+import { getImageBackends, generateImage as generateImageApi, getImageTask, linkCreativeProjectAsset } from '../../api'
 import MultiPlatformGen from './MultiPlatformGen'
+import { useTaskPolling } from '../../hooks/useTaskPolling'
 
 
 const { TextArea } = Input
@@ -159,6 +160,29 @@ interface BackendInfo {
   supported_aspect_ratios: string[]  // 支持的比例列表（如 1:1, 16:9）
 }
 
+interface ProjectContext {
+  projectId: string
+  contentId: string
+  sourceType: string
+  sourceIndex: string
+  sourceTitle: string
+  chapterNumber: string
+  role: string
+  relation: string
+  hasContext: boolean
+}
+
+interface PendingImageTask {
+  taskId: string
+  externalTaskId?: string
+  prompt: string
+  negativePrompt: string
+  provider?: string
+  selectedModel?: string
+  size: string
+  projectContext: ProjectContext
+}
+
 export default function ImageGenPage() {
   const [searchParams] = useSearchParams()
   const urlTab = searchParams.get('tab')
@@ -223,6 +247,7 @@ function ImageGenSinglePage() {
   // 状态
   const [loading, setLoading] = useState(false)
   const [progress, setProgress] = useState(0)
+  const [pendingTask, setPendingTask] = useState<PendingImageTask | null>(null)
 
   // 结果
   const [generatedImages, setGeneratedImages] = useState<GeneratedImage[]>([])
@@ -449,6 +474,120 @@ function ImageGenSinglePage() {
     }
   }, [mode])
 
+  const appendGeneratedImages = useCallback(async (
+    data: any,
+    context: {
+      prompt: string
+      negativePrompt: string
+      provider?: string
+      selectedModel?: string
+      size: string
+      projectContext: ProjectContext
+    }
+  ) => {
+    let projectLinkOk = false
+    const linkedAssetIds: string[] = []
+    const newImages: GeneratedImage[] = []
+    const urls = (data.urls && data.urls.length > 0) ? data.urls : (data.url ? [data.url] : [])
+    const localPaths = (data.all_local_paths && data.all_local_paths.length > 0)
+      ? data.all_local_paths
+      : (data.local_path ? [data.local_path] : [])
+    const assetIds = (data.all_asset_ids && data.all_asset_ids.length > 0)
+      ? data.all_asset_ids
+      : (data.asset_id ? [data.asset_id] : [])
+    const resultCount = Math.max(urls.length, localPaths.length, assetIds.length)
+
+    if (context.projectContext.hasContext && assetIds.length > 0) {
+      try {
+        for (let idx = 0; idx < assetIds.length; idx += 1) {
+          const assetId = assetIds[idx]
+          if (!assetId) continue
+          await linkCreativeProjectAsset(context.projectContext.projectId, {
+            asset_id: assetId,
+            content_id: context.projectContext.contentId || undefined,
+            role: context.projectContext.role,
+            relation: context.projectContext.relation,
+            metadata: {
+              source_type: context.projectContext.sourceType,
+              source_index: context.projectContext.sourceIndex,
+              source_title: context.projectContext.sourceTitle,
+              chapter_number: context.projectContext.chapterNumber,
+              prompt: context.prompt,
+              negative_prompt: context.negativePrompt || '',
+              provider: context.selectedModel || context.provider || '',
+              size: context.size,
+              generated_at: new Date().toISOString(),
+            },
+          })
+          linkedAssetIds.push(assetId)
+        }
+        projectLinkOk = linkedAssetIds.length > 0
+        setLastProjectLinkStatus(projectLinkOk ? 'success' : 'idle')
+      } catch (error: any) {
+        setLastProjectLinkStatus('error')
+        message.warning(error?.message || '图片已生成，但回写项目素材失败')
+      }
+    }
+
+    for (let idx = 0; idx < resultCount; idx += 1) {
+      newImages.push({
+        id: `img_${Date.now()}_${idx}`,
+        url: urls[idx] || '',
+        prompt: context.prompt,
+        provider: data.provider || context.provider || 'unknown',
+        model: context.selectedModel || data.model || '',
+        local_path: localPaths[idx] || data.local_path,
+        asset_id: assetIds[idx],
+        project_linked: projectLinkOk && Boolean(assetIds[idx]) && linkedAssetIds.includes(assetIds[idx]),
+        created_at: new Date().toISOString(),
+      })
+    }
+
+    setGeneratedImages(prev => [...newImages, ...prev])
+    message.success(
+      <span>
+        成功生成 {newImages.length} 张图片，
+        {projectLinkOk ? '已回写到项目素材，' : ''}
+        <a onClick={() => navigate('/assets')}>查看资产库</a>
+      </span>,
+      5
+    )
+  }, [navigate])
+
+  useTaskPolling({
+    enabled: Boolean(pendingTask?.taskId),
+    intervalMs: 5000,
+    fetcher: useCallback(() => {
+      if (!pendingTask) return Promise.resolve(null as any)
+      return getImageTask(pendingTask.taskId, pendingTask.selectedModel)
+    }, [pendingTask]),
+    isDone: useCallback((data: any) => data?.success && data?.status === 'done', []),
+    isFailed: useCallback((data: any) => data?.success === false || data?.status === 'error' || data?.status === 'failed', []),
+    onData: useCallback((data: any) => {
+      if (!data) return
+      if (data.status === 'pending' || data.status === 'running') {
+        setProgress(prev => Math.max(prev, Math.min(95, Math.round(data.progress || prev || 35))))
+      }
+    }, []),
+    onDone: useCallback(async (data: any) => {
+      if (!pendingTask) return
+      setProgress(100)
+      await appendGeneratedImages(data, pendingTask)
+      setPendingTask(null)
+      setLoading(false)
+      setProgress(0)
+    }, [appendGeneratedImages, pendingTask]),
+    onFailed: useCallback((data: any) => {
+      message.error(data?.error || '异步生图失败')
+      setPendingTask(null)
+      setLoading(false)
+      setProgress(0)
+    }, []),
+    onError: useCallback((error: any) => {
+      message.warning(error?.message ? `查询生图任务失败：${error.message}` : '查询生图任务失败')
+    }, []),
+  })
+
   // 生成图片
   const handleGenerate = async () => {
     if (!prompt.trim()) {
@@ -458,6 +597,7 @@ function ImageGenSinglePage() {
 
     setLoading(true)
     setProgress(10)
+    let startedAsyncTask = false
 
     try {
       const body: any = {
@@ -518,81 +658,41 @@ function ImageGenSinglePage() {
       setProgress(80)
 
       if (data.success) {
-        let projectLinkOk = false
-        const linkedAssetIds: string[] = []
-        const newImages: GeneratedImage[] = []
-        const urls = (data.urls && data.urls.length > 0) ? data.urls : (data.url ? [data.url] : [])
-        const localPaths = (data.all_local_paths && data.all_local_paths.length > 0)
-          ? data.all_local_paths
-          : (data.local_path ? [data.local_path] : [])
-        const assetIds = (data.all_asset_ids && data.all_asset_ids.length > 0)
-          ? data.all_asset_ids
-          : (data.asset_id ? [data.asset_id] : [])
-        const resultCount = Math.max(urls.length, localPaths.length, assetIds.length)
-
-        if (projectContext.hasContext && assetIds.length > 0) {
-          try {
-            for (let idx = 0; idx < assetIds.length; idx += 1) {
-              const assetId = assetIds[idx]
-              if (!assetId) continue
-              await linkCreativeProjectAsset(projectContext.projectId, {
-                asset_id: assetId,
-                content_id: projectContext.contentId || undefined,
-                role: projectContext.role,
-                relation: projectContext.relation,
-                metadata: {
-                  source_type: projectContext.sourceType,
-                  source_index: projectContext.sourceIndex,
-                  source_title: projectContext.sourceTitle,
-                  chapter_number: projectContext.chapterNumber,
-                  prompt,
-                  negative_prompt: negativePrompt || '',
-                  provider: selectedModel || provider || '',
-                  size,
-                  generated_at: new Date().toISOString(),
-                },
-              })
-              linkedAssetIds.push(assetId)
-            }
-            projectLinkOk = linkedAssetIds.length > 0
-            setLastProjectLinkStatus(projectLinkOk ? 'success' : 'idle')
-          } catch (error: any) {
-            setLastProjectLinkStatus('error')
-            message.warning(error?.message || '图片已生成，但回写项目素材失败')
-          }
-        }
-
-        for (let idx = 0; idx < resultCount; idx += 1) {
-          newImages.push({
-            id: `img_${Date.now()}_${idx}`,
-            url: urls[idx] || '',
+        if (data.status === 'pending' && data.task_id) {
+          startedAsyncTask = true
+          setPendingTask({
+            taskId: data.task_id,
+            externalTaskId: data.external_task_id,
             prompt,
-            provider: data.provider || provider || 'unknown',
-            model: selectedModel || data.model || '',
-            local_path: localPaths[idx] || data.local_path,
-            asset_id: assetIds[idx],
-            project_linked: projectLinkOk && Boolean(assetIds[idx]) && linkedAssetIds.includes(assetIds[idx]),
-            created_at: new Date().toISOString(),
+            negativePrompt,
+            provider,
+            selectedModel,
+            size,
+            projectContext,
           })
+          setProgress(35)
+          message.info(`图片任务已提交，任务 ID：${data.task_id}`)
+          return
         }
 
-        setGeneratedImages(prev => [...newImages, ...prev])
-        message.success(
-            <span>
-              成功生成 {newImages.length} 张图片，
-              {projectLinkOk ? '已回写到项目素材，' : ''}
-              <a onClick={() => navigate('/assets')}>查看资产库</a>
-            </span>,
-            5
-          )
+        await appendGeneratedImages(data, {
+          prompt,
+          negativePrompt,
+          provider,
+          selectedModel,
+          size,
+          projectContext,
+        })
       } else {
         message.error(data.error || '生成失败')
       }
     } catch (e: any) {
       message.error('生成失败: ' + e.message)
     } finally {
-      setLoading(false)
-      setProgress(0)
+      if (!startedAsyncTask) {
+        setLoading(false)
+        setProgress(0)
+      }
     }
   }
 
@@ -848,17 +948,39 @@ function ImageGenSinglePage() {
                 border: 'none',
               }}
             >
-              {loading ? '生成中...' : '开始生成'}
+              {pendingTask ? '等待生成结果...' : loading ? '生成中...' : '开始生成'}
             </Button>
 
             {/* 进度条 */}
             {loading && (
-              <Progress
-                percent={progress}
-                status="active"
-                style={{ marginTop: 12 }}
-                strokeColor={{ '0%': '#7c3aed', '100%': '#a855f7' }}
-              />
+              <>
+                <Progress
+                  percent={progress}
+                  status="active"
+                  style={{ marginTop: 12 }}
+                  strokeColor={{ '0%': '#7c3aed', '100%': '#a855f7' }}
+                />
+                {pendingTask && (
+                  <Space direction="vertical" size={4} style={{ marginTop: 6, width: '100%' }}>
+                    <div style={{ fontSize: 12, color: THEME.textSecondary }}>
+                      异步任务 {pendingTask.taskId} 正在生成，完成后会自动保存到素材库。
+                    </div>
+                    {pendingTask.externalTaskId && (
+                      <div style={{ fontSize: 12, color: THEME.textSecondary }}>
+                        外部任务 {pendingTask.externalTaskId}
+                      </div>
+                    )}
+                    <Button
+                      size="small"
+                      type="link"
+                      style={{ alignSelf: 'flex-start', padding: 0 }}
+                      onClick={() => navigate(`/tasks?task_id=${encodeURIComponent(pendingTask.taskId)}`)}
+                    >
+                      查看任务详情
+                    </Button>
+                  </Space>
+                )}
+              </>
             )}
           </Card>
         </Col>

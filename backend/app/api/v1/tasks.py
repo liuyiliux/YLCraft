@@ -15,7 +15,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.core.task_queue import get_task_queue
+from app.core.task_queue import get_task_queue, task_event_to_dict
 
 router = APIRouter()
 logger = logging.getLogger("ylcraft.tasks")
@@ -33,6 +33,8 @@ class TaskInfo(BaseModel):
     duration_seconds: float | None = None
     payload: dict[str, Any] | None = None
     result: dict[str, Any] | None = None
+    diagnostics: dict[str, Any] | None = None
+    events: list[dict[str, Any]] | None = None
     error: str | None = None
 
 
@@ -124,6 +126,18 @@ def _task_status(task: Any) -> str:
 
 
 def _task_info(task: Any, include_detail: bool = False) -> TaskInfo:
+    payload = _get_task_value(task, "payload")
+    result = _get_task_value(task, "result")
+    diagnostics = None
+    if include_detail:
+        if isinstance(payload, dict) and isinstance(payload.get("diagnostics"), dict):
+            diagnostics = payload.get("diagnostics")
+        if isinstance(result, dict) and isinstance(result.get("diagnostics"), dict):
+            diagnostics = {**(diagnostics or {}), **result.get("diagnostics")}
+    events = None
+    if include_detail:
+        raw_events = _get_task_value(task, "events", []) or []
+        events = [task_event_to_dict(event) if not isinstance(event, dict) else event for event in raw_events]
     return TaskInfo(
         task_id=_get_task_value(task, "task_id"),
         task_type=_get_task_value(task, "task_type"),
@@ -134,8 +148,10 @@ def _task_info(task: Any, include_detail: bool = False) -> TaskInfo:
         started_at=_format_timestamp(_get_task_value(task, "started_at")),
         completed_at=_format_timestamp(_get_task_value(task, "completed_at") or _get_task_value(task, "finished_at")),
         duration_seconds=_duration_seconds(task),
-        payload=_get_task_value(task, "payload") if include_detail else None,
-        result=_get_task_value(task, "result") if include_detail else None,
+        payload=payload if include_detail else None,
+        result=result if include_detail else None,
+        diagnostics=diagnostics,
+        events=events,
         error=_get_task_value(task, "error") if include_detail else None,
     )
 

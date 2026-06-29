@@ -11,14 +11,17 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from enum import Enum
+from typing import Any
 
 
 class StrEnum(str, Enum):
     """兼容 Python 3.10"""
     pass
-from typing import Any
+MAX_TASK_EVENTS = 100
+MAX_EVENT_STRING_LENGTH = 1000
+SENSITIVE_KEYS = {"authorization", "api_key", "apikey", "token", "access_token", "secret", "password"}
 
 
 class TaskStatus(StrEnum):
@@ -26,6 +29,16 @@ class TaskStatus(StrEnum):
     RUNNING = "running"
     DONE = "done"
     FAILED = "failed"
+
+
+@dataclass
+class TaskEvent:
+    event_id: str
+    type: str
+    message: str
+    level: str = "info"
+    data: dict = field(default_factory=dict)
+    created_at: float = field(default_factory=time.time)
 
 
 @dataclass
@@ -42,6 +55,29 @@ class Task:
     started_at: float | None = None
     completed_at: float | None = None
     max_retries: int = 2
+    events: list[TaskEvent] = field(default_factory=list)
+
+
+def _sanitize_event_value(value: Any):
+    if isinstance(value, dict):
+        sanitized = {}
+        for key, item in value.items():
+            if str(key).lower() in SENSITIVE_KEYS:
+                sanitized[key] = "***"
+            else:
+                sanitized[key] = _sanitize_event_value(item)
+        return sanitized
+    if isinstance(value, list):
+        return [_sanitize_event_value(item) for item in value[:50]]
+    if isinstance(value, str):
+        if value.startswith("data:image") or len(value) > MAX_EVENT_STRING_LENGTH:
+            return value[:MAX_EVENT_STRING_LENGTH] + "...(truncated)"
+        return value
+    return value
+
+
+def task_event_to_dict(event: TaskEvent) -> dict:
+    return asdict(event)
 
 
 class InMemoryTaskQueue:
@@ -110,6 +146,57 @@ class InMemoryTaskQueue:
             )
         except Exception:
             pass
+
+    async def append_event(
+        self,
+        task_id: str,
+        type: str,
+        message: str,
+        level: str = "info",
+        data: dict | None = None,
+    ) -> TaskEvent | None:
+        event = TaskEvent(
+            event_id=str(uuid.uuid4())[:12],
+            type=type,
+            message=message,
+            level=level,
+            data=_sanitize_event_value(data or {}),
+        )
+        async with self._lock:
+            task = self._tasks.get(task_id)
+            if not task:
+                return None
+            task.events.append(event)
+            if len(task.events) > MAX_TASK_EVENTS:
+                task.events = task.events[-MAX_TASK_EVENTS:]
+
+        try:
+            from app.core.ws_manager import push_task_progress
+            task = self._tasks.get(task_id)
+            await push_task_progress(
+                task_id=task_id,
+                progress=task.progress if task else 0,
+                message=message,
+                task_type=task.task_type if task else "",
+                status=task.status.value if task and hasattr(task.status, "value") else "",
+            )
+        except Exception:
+            pass
+        return event
+
+    async def update_diagnostics(self, task_id: str, **fields) -> dict | None:
+        async with self._lock:
+            task = self._tasks.get(task_id)
+            if not task:
+                return None
+            payload = task.payload or {}
+            diagnostics = payload.get("diagnostics")
+            if not isinstance(diagnostics, dict):
+                diagnostics = {}
+            diagnostics.update(_sanitize_event_value(fields))
+            payload["diagnostics"] = diagnostics
+            task.payload = payload
+            return diagnostics
 
 
 # 全局单例

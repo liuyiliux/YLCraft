@@ -17,6 +17,7 @@ import {
   Space,
   Table,
   Tag,
+  Timeline,
   Tooltip,
   Typography,
   message,
@@ -32,7 +33,7 @@ import {
   PlayCircleOutlined,
 } from '@ant-design/icons'
 import { useState, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { listTasks, getTask, cancelTask, deleteTask } from '../../api'
 import { useWebSocket, WSTaskProgress } from '../../hooks/useWebSocket'
 import { useTheme } from '../../constants/theme'
@@ -93,7 +94,18 @@ interface TaskItem {
   duration_seconds?: number
   payload?: Record<string, any> | null
   result?: Record<string, any> | null
+  diagnostics?: Record<string, any> | null
+  events?: TaskEventItem[] | null
   error?: string | null
+}
+
+interface TaskEventItem {
+  event_id?: string
+  type: string
+  message: string
+  level?: 'info' | 'warning' | 'error' | string
+  data?: Record<string, any>
+  created_at?: number
 }
 
 const ROUTE_MAP: Record<string, { path: string; label: string }> = {
@@ -115,7 +127,20 @@ function formatTime(value?: string) {
   return date.toLocaleString()
 }
 
-function JsonBlock({ value, theme }: { value?: Record<string, any> | null; theme: any }) {
+function formatEventTime(value?: number) {
+  if (!value) return '-'
+  const date = new Date(value * 1000)
+  if (Number.isNaN(date.getTime())) return '-'
+  return date.toLocaleString()
+}
+
+function getEventColor(level?: string) {
+  if (level === 'error') return 'red'
+  if (level === 'warning') return 'orange'
+  return 'blue'
+}
+
+function JsonBlock({ value, theme }: { value?: any; theme: any }) {
   if (!value || Object.keys(value).length === 0) {
     return <Text style={{ color: theme.textSecondary }}>暂无</Text>
   }
@@ -143,6 +168,7 @@ function JsonBlock({ value, theme }: { value?: Record<string, any> | null; theme
 
 export default function TasksPage() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const { theme: THEME } = useTheme()
   const [tasks, setTasks] = useState<TaskItem[]>([])
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
@@ -158,6 +184,7 @@ export default function TasksPage() {
   const [detailOpen, setDetailOpen] = useState(false)
   const [detailLoading, setDetailLoading] = useState(false)
   const [selectedTask, setSelectedTask] = useState<TaskItem | null>(null)
+  const [openedQueryTaskId, setOpenedQueryTaskId] = useState('')
 
   const loadTasks = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
@@ -288,6 +315,13 @@ export default function TasksPage() {
       setDetailLoading(false)
     }
   }
+
+  useEffect(() => {
+    const taskId = searchParams.get('task_id')
+    if (!taskId || taskId === openedQueryTaskId) return
+    setOpenedQueryTaskId(taskId)
+    handleViewDetail(taskId)
+  }, [searchParams, openedQueryTaskId])
 
   const handleNavigateTask = (task: TaskItem) => {
     const route = ROUTE_MAP[task.task_type] || { path: '/', label: '首页' }
@@ -565,6 +599,105 @@ export default function TasksPage() {
                 </Descriptions.Item>
               </Descriptions>
             </Card>
+
+            {selectedTask.diagnostics && Object.keys(selectedTask.diagnostics).length > 0 && (
+              <Card
+                size="small"
+                title={<span style={{ color: THEME.textPrimary }}>诊断信息</span>}
+                style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}` }}
+              >
+                <Descriptions column={1} size="small">
+                  <Descriptions.Item label="外部任务 ID">
+                    <span style={{ color: THEME.textPrimary, fontFamily: 'monospace' }}>
+                      {selectedTask.diagnostics.external_task_id || '-'}
+                    </span>
+                  </Descriptions.Item>
+                  <Descriptions.Item label="服务商">
+                    <span style={{ color: THEME.textPrimary }}>{selectedTask.diagnostics.provider || '-'}</span>
+                  </Descriptions.Item>
+                  <Descriptions.Item label="模型">
+                    <span style={{ color: THEME.textPrimary }}>{selectedTask.diagnostics.model || '-'}</span>
+                  </Descriptions.Item>
+                  <Descriptions.Item label="远端状态">
+                    <span style={{ color: THEME.textPrimary }}>{selectedTask.diagnostics.last_remote_status || '-'}</span>
+                  </Descriptions.Item>
+                  <Descriptions.Item label="轮询次数">
+                    <span style={{ color: THEME.textPrimary }}>{selectedTask.diagnostics.poll_count ?? '-'}</span>
+                  </Descriptions.Item>
+                  <Descriptions.Item label="轮询错误">
+                    <span style={{ color: THEME.textPrimary }}>{selectedTask.diagnostics.poll_error_count ?? 0}</span>
+                  </Descriptions.Item>
+                  <Descriptions.Item label="最近轮询">
+                    <span style={{ color: THEME.textPrimary }}>{selectedTask.diagnostics.last_polled_at || '-'}</span>
+                  </Descriptions.Item>
+                  {selectedTask.diagnostics.last_poll_error && (
+                    <Descriptions.Item label="最近错误">
+                      <Paragraph copyable style={{ marginBottom: 0, color: THEME.textPrimary }}>
+                        {String(selectedTask.diagnostics.last_poll_error)}
+                      </Paragraph>
+                    </Descriptions.Item>
+                  )}
+                </Descriptions>
+
+                {selectedTask.diagnostics.last_response_excerpt && (
+                  <div style={{ marginTop: 12 }}>
+                    <Text style={{ color: THEME.textSecondary }}>最近响应摘要</Text>
+                    <Paragraph
+                      copyable
+                      ellipsis={{ rows: 4, expandable: true, symbol: '展开' }}
+                      style={{
+                        marginTop: 6,
+                        marginBottom: 0,
+                        padding: 12,
+                        borderRadius: 6,
+                        background: THEME.bgElevated,
+                        border: `1px solid ${THEME.border}`,
+                        color: THEME.textPrimary,
+                        fontFamily: 'monospace',
+                        fontSize: 12,
+                        lineHeight: 1.65,
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-word',
+                      }}
+                    >
+                      {typeof selectedTask.diagnostics.last_response_excerpt === 'string'
+                        ? selectedTask.diagnostics.last_response_excerpt
+                        : JSON.stringify(selectedTask.diagnostics.last_response_excerpt, null, 2)}
+                    </Paragraph>
+                  </div>
+                )}
+              </Card>
+            )}
+
+            {selectedTask.events && selectedTask.events.length > 0 && (
+              <Card
+                size="small"
+                title={<span style={{ color: THEME.textPrimary }}>事件时间线</span>}
+                style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}` }}
+              >
+                <Timeline
+                  items={selectedTask.events.map((event) => ({
+                    color: getEventColor(event.level),
+                    children: (
+                      <div>
+                        <Space size={8} wrap>
+                          <Tag color={getEventColor(event.level)}>{event.type}</Tag>
+                          <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>
+                            {formatEventTime(event.created_at)}
+                          </Text>
+                        </Space>
+                        <div style={{ marginTop: 4, color: THEME.textPrimary }}>{event.message}</div>
+                        {event.data && Object.keys(event.data).length > 0 && (
+                          <div style={{ marginTop: 8 }}>
+                            <JsonBlock value={event.data} theme={THEME} />
+                          </div>
+                        )}
+                      </div>
+                    ),
+                  }))}
+                />
+              </Card>
+            )}
 
             <Card
               size="small"
