@@ -130,7 +130,7 @@ class ChineseSearchConfig:
         创建搜索向量列
         
         使用方法：
-            ALTER TABLE assets ADD COLUMN search_vector tsvector
+            ALTER TABLE <table_name> ADD COLUMN search_vector tsvector
             GENERATED ALWAYS AS (to_tsvector('chinese', coalesce(name, '') || ' ' || coalesce(description, ''))) STORED;
         """
         try:

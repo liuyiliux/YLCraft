@@ -56,7 +56,6 @@ SessionLocal = sessionmaker(
 
 async def init_db():
     """初始化数据库表"""
-    from app.db.models.asset import Asset, AssetCollection, AssetTag
     from app.db.models.torrent import TorrentDownload
     from app.db.models.creative_project import (
         CreativeProject,
@@ -82,20 +81,6 @@ async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
         if DATABASE_URL.startswith("postgresql"):
-            await conn.execute(text("""
-                DO $$
-                BEGIN
-                    IF EXISTS (
-                        SELECT 1
-                        FROM information_schema.columns
-                        WHERE table_name = 'assets'
-                          AND column_name = 'file_size'
-                          AND data_type <> 'bigint'
-                    ) THEN
-                        ALTER TABLE assets ALTER COLUMN file_size TYPE BIGINT;
-                    END IF;
-                END $$;
-            """))
             await conn.execute(text("""
                 ALTER TABLE platform_templates
                 ADD COLUMN IF NOT EXISTS system_template TEXT NOT NULL DEFAULT '';

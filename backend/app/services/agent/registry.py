@@ -8,6 +8,7 @@ YLCraft — 工具注册表
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
@@ -24,6 +25,17 @@ class Tool:
     category: str = "general"           # 分类：asset/clip/subtitle/bgm/...
     examples: list[str] = field(default_factory=list)  # 使用示例
     requires_progress: bool = False     # 是否需要进度回调
+
+
+@dataclass
+class ToolCallResult:
+    """工具执行结果"""
+
+    tool_name: str
+    success: bool
+    result: object = None
+    error: str | None = None
+    duration_ms: int = 0
 
 
 class ToolRegistry:
@@ -76,6 +88,38 @@ class ToolRegistry:
     def get_categories(cls) -> dict[str, list[str]]:
         """获取所有分类及其工具"""
         return cls._categories.copy()
+
+    @classmethod
+    async def execute_tool(cls, name: str, arguments: dict | None = None) -> ToolCallResult:
+        """执行已注册工具并返回统一结果"""
+        started = time.perf_counter()
+        tool = cls.get_tool(name)
+        if not tool:
+            return ToolCallResult(
+                tool_name=name,
+                success=False,
+                error=f"工具不存在: {name}",
+                duration_ms=int((time.perf_counter() - started) * 1000),
+            )
+
+        try:
+            result = tool.handler(**(arguments or {}))
+            if hasattr(result, "__await__"):
+                result = await result
+            return ToolCallResult(
+                tool_name=name,
+                success=True,
+                result=result,
+                duration_ms=int((time.perf_counter() - started) * 1000),
+            )
+        except Exception as exc:
+            logger.exception("[ToolRegistry] tool execution failed: %s", name)
+            return ToolCallResult(
+                tool_name=name,
+                success=False,
+                error=str(exc),
+                duration_ms=int((time.perf_counter() - started) * 1000),
+            )
 
 
 def register_tool(

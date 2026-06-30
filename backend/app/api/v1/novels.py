@@ -1,56 +1,44 @@
 """
-YLCraft — 小说 API 路由
-支持搜索、目录获取、加入书架、在线阅读、章节下载
+Novel API routes.
+
+Bookshelf and downloaded novel records now use Asset Hub as the canonical
+storage. Legacy asset ids are still resolved through `legacy_asset_id`
+metadata so migrated data keeps working.
 """
 
 from __future__ import annotations
 
-import re
-import json
-import os
-import uuid
 import asyncio
 import logging
-from typing import Optional, List, Dict, Any
+import os
+import re
 from datetime import datetime
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, Query
+from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
 from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from app.db.database import AsyncSessionLocal, SessionLocal
-from app.db.models.asset import Asset
-from app.db.models.asset_hub import AssetType
+from app.db.models.asset_hub import AssetNode, AssetType
 from app.db.models.novel import NovelChapter
-from app.services.asset_hub import AssetHubFacade
+from app.services.asset_hub import (
+    AssetNodeService,
+    AssetRepresentationService,
+    AssetVersionService,
+)
+from app.services.novel.book_source_manager import BookSourceManager
 from app.services.novel.crawler import get_crawler
 from app.services.novel.downloader import NovelDownloader
-from app.services.novel.book_source_manager import BookSourceManager
 
 router = APIRouter(tags=["novels"])
 logger = logging.getLogger("ylcraft.api.novels")
 
-
-def _populate_source_catalogs(
-    catalogs: Dict[str, Any],
-    sources_list: List[Dict[str, Any]]
-) -> None:
-    """遍历 sources 列表，把每书源占位符存入 catalogs（如果还不存在）"""
-    if sources_list:
-        for s in sources_list:
-            s_id = s.get('id') or s.get('source_id', '')
-            if s_id and s_id not in catalogs:
-                catalogs[s_id] = {
-                    'chapters': [],
-                    'chapter_count': 0,
-                    'source_name': s.get('name') or s.get('source_name', ''),
-                    'source_url': s.get('url') or s.get('source_url') or s.get('book_url', ''),
-                    'toc_url': '',
-                }
+_NOVEL_SOURCE_TYPES = {"novel", "novel_bookshelf", "novel_download"}
 
 
 def get_db():
-    """获取数据库会话（依赖注入）"""
     db = SessionLocal()
     try:
         yield db
@@ -58,12 +46,42 @@ def get_db():
         db.close()
 
 
-def _load_json_object(raw: str | None) -> Dict[str, Any]:
-    try:
-        value = json.loads(raw or "{}")
-        return value if isinstance(value, dict) else {}
-    except Exception:
-        return {}
+class DownloadChaptersRequest(BaseModel):
+    book_url: str
+    book_title: str
+    author: str
+    chapters: List[Dict[str, Any]]
+    site: str = "biqigecn"
+    asset_id: Optional[str] = None
+
+
+class AddToBookshelfRequest(BaseModel):
+    book_url: str
+    book_title: str
+    author: str = ""
+    cover_url: str = ""
+    intro: str = ""
+    kind: str = ""
+    toc_url: str = ""
+    source_id: str = ""
+    source_name: str = ""
+    source_url: str = ""
+    chapters: List[Dict[str, Any]] = []
+    sources: List[Dict[str, Any]] = []
+
+
+def _populate_source_catalogs(catalogs: Dict[str, Any], sources_list: List[Dict[str, Any]]) -> None:
+    for source in sources_list or []:
+        source_id = source.get("id") or source.get("source_id") or ""
+        if not source_id or source_id in catalogs:
+            continue
+        catalogs[source_id] = {
+            "chapters": [],
+            "chapter_count": 0,
+            "source_name": source.get("name") or source.get("source_name") or "",
+            "source_url": source.get("url") or source.get("source_url") or source.get("book_url") or "",
+            "toc_url": "",
+        }
 
 
 def _chapter_indices(chapters: List[Dict[str, Any]]) -> List[int]:
@@ -76,656 +94,622 @@ def _chapter_indices(chapters: List[Dict[str, Any]]) -> List[int]:
     return indices
 
 
-async def _archive_novel_download_to_asset_hub(
-    *,
-    asset_id: str,
-    book_url: str,
-    book_title: str,
-    author: str,
-    site: str,
-    chapters: List[Dict[str, Any]],
-    download_result: Dict[str, Any],
-) -> None:
-    """Save the merged downloaded novel text file into Asset Hub."""
+def _normalize_book_metadata(req: AddToBookshelfRequest) -> Dict[str, Any]:
+    catalogs: Dict[str, Any] = {}
+    if req.source_id:
+        catalogs[req.source_id] = {
+            "chapters": req.chapters,
+            "chapter_count": len(req.chapters),
+            "source_name": req.source_name,
+            "source_url": req.source_url,
+            "toc_url": req.toc_url,
+        }
+    _populate_source_catalogs(catalogs, req.sources)
+    return {
+        "novel_title": req.book_title,
+        "author": req.author,
+        "cover_url": req.cover_url,
+        "intro": req.intro[:500] if req.intro else "",
+        "kind": req.kind,
+        "book_url": req.book_url,
+        "toc_url": req.toc_url,
+        "source_id": req.source_id,
+        "source_name": req.source_name,
+        "source_url": req.source_url,
+        "chapters": req.chapters,
+        "chapter_count": len(req.chapters),
+        "catalogs": catalogs,
+        "downloaded_chapter_indices": [],
+        "last_read_chapter": 0,
+        "last_read_position": 0,
+        "content_path": "",
+        "status": "bookshelf",
+        "source": "novel_bookshelf",
+        "source_type": "novel_bookshelf",
+        "last_updated": datetime.now().isoformat(),
+    }
 
-    file_path = str(download_result.get("file_path") or "")
-    if not asset_id or not file_path or not os.path.exists(file_path):
-        return
+
+def _node_metadata(node: AssetNode | None) -> Dict[str, Any]:
+    if not node:
+        return {}
+    return node.metadata_json if isinstance(node.metadata_json, dict) else {}
+
+
+def _is_novel_node(node: AssetNode | None) -> bool:
+    if not node:
+        return False
+    metadata = _node_metadata(node)
+    source_type = str(metadata.get("source_type") or metadata.get("source") or "").lower()
+    return source_type in _NOVEL_SOURCE_TYPES
+
+
+async def _resolve_novel_node(session, *, asset_id: str = "", book_url: str = "") -> AssetNode | None:
+    if asset_id:
+        node = await session.get(AssetNode, asset_id)
+        if _is_novel_node(node):
+            return node
+
+        result = await session.execute(
+            text(
+                """
+                SELECT id
+                FROM asset_nodes
+                WHERE metadata_json ->> 'legacy_asset_id' = :asset_id
+                LIMIT 1
+                """
+            ),
+            {"asset_id": asset_id},
+        )
+        row = result.first()
+        if row:
+            node = await session.get(AssetNode, str(row[0]))
+            if _is_novel_node(node):
+                return node
+
+    if book_url:
+        result = await session.execute(
+            text(
+                """
+                SELECT id
+                FROM asset_nodes
+                WHERE asset_type = 'TEXT'
+                  AND (
+                    metadata_json ->> 'book_url' = :book_url
+                    OR metadata_json ->> 'source_url' = :book_url
+                  )
+                ORDER BY updated_at DESC
+                LIMIT 1
+                """
+            ),
+            {"book_url": book_url},
+        )
+        row = result.first()
+        if row:
+            node = await session.get(AssetNode, str(row[0]))
+            if _is_novel_node(node):
+                return node
+    return None
+
+
+async def _create_novel_node(
+    session,
+    *,
+    title: str,
+    author: str,
+    cover_url: str,
+    metadata: Dict[str, Any],
+    file_path: str = "",
+) -> AssetNode:
+    node_service = AssetNodeService(session)
+    version_service = AssetVersionService(session)
+    rep_service = AssetRepresentationService(session)
+
+    meta = dict(metadata)
+    meta.setdefault("author", author)
+    meta.setdefault("cover_url", cover_url)
+
+    node = await node_service.create(
+        name=title,
+        asset_type=AssetType.TEXT,
+        thumbnail_url=cover_url or None,
+        metadata=meta,
+        tags=[tag for tag in ["novel", meta.get("source_type") or "", meta.get("source_name") or meta.get("source_site") or ""] if tag],
+    )
+    version = await version_service.create(
+        asset_node_id=str(node.id),
+        prompt_used=title,
+        model_used="",
+        params=meta,
+        lineage={
+            "source": meta.get("source_type") or meta.get("source") or "novel_bookshelf",
+            "book_url": meta.get("book_url") or meta.get("source_url") or "",
+        },
+    )
+
+    is_local = bool(file_path and os.path.exists(file_path))
+    rep_path = file_path or meta.get("book_url") or meta.get("source_url") or title
+    await rep_service.create(
+        asset_version_id=str(version.id),
+        file_path=str(rep_path),
+        mime_type="text/plain" if is_local else "application/x-ylcraft-remote-book",
+        file_size=os.path.getsize(file_path) if is_local else 0,
+        format=os.path.splitext(file_path)[1].lstrip(".").lower() or ("txt" if is_local else "remote-book"),
+        extra={
+            "book_url": meta.get("book_url") or "",
+            "source_url": meta.get("source_url") or meta.get("book_url") or "",
+            "content_path": file_path or "",
+            "remote": not is_local,
+        },
+    )
+    return node
+
+
+def _novel_payload(node: AssetNode) -> Dict[str, Any]:
+    metadata = _node_metadata(node)
+    return {
+        "id": str(node.id),
+        "title": node.name or metadata.get("novel_title") or "",
+        "author": metadata.get("author") or "",
+        "cover_url": node.thumbnail_url or metadata.get("cover_url") or "",
+        "status": metadata.get("status") or "bookshelf",
+        "created_at": node.created_at.isoformat() if node.created_at else None,
+        **metadata,
+    }
+
+
+async def _record_downloaded_chapters(session, asset_id: str, chapters: List[Dict[str, Any]]) -> None:
+    for chapter in chapters:
+        existing = await session.execute(
+            text("SELECT id FROM novel_chapters WHERE asset_id=:aid AND chapter_index=:idx"),
+            {"aid": asset_id, "idx": chapter["index"]},
+        )
+        if existing.first():
+            await session.execute(
+                text(
+                    """
+                    UPDATE novel_chapters
+                    SET is_downloaded=true, chapter_title=:title, chapter_url=:url
+                    WHERE asset_id=:aid AND chapter_index=:idx
+                    """
+                ),
+                {
+                    "aid": asset_id,
+                    "idx": chapter["index"],
+                    "title": chapter["title"],
+                    "url": chapter.get("url", ""),
+                },
+            )
+            continue
+
+        session.add(
+            NovelChapter(
+                asset_id=asset_id,
+                chapter_index=chapter["index"],
+                chapter_title=chapter["title"],
+                chapter_url=chapter.get("url", ""),
+                is_downloaded=True,
+            )
+        )
+
+
+async def _upsert_bookshelf_node(req: AddToBookshelfRequest) -> str:
+    metadata = _normalize_book_metadata(req)
+    async with AsyncSessionLocal() as session:
+        node = await _resolve_novel_node(session, book_url=req.book_url)
+        if node:
+            current = _node_metadata(node)
+            catalogs = current.get("catalogs", {}) if isinstance(current.get("catalogs"), dict) else {}
+            catalogs.update(metadata.get("catalogs", {}))
+            metadata["catalogs"] = catalogs
+            metadata["downloaded_chapter_indices"] = current.get("downloaded_chapter_indices", [])
+            metadata["last_read_chapter"] = current.get("last_read_chapter", 0)
+            metadata["last_read_position"] = current.get("last_read_position", 0)
+            metadata["content_path"] = current.get("content_path", "")
+            metadata["status"] = current.get("status", metadata["status"])
+            if current.get("source_type") == "novel_download":
+                metadata["source"] = "novel_download"
+                metadata["source_type"] = "novel_download"
+
+            current.update(metadata)
+            node.name = req.book_title
+            node.thumbnail_url = req.cover_url or node.thumbnail_url
+            node.metadata_json = current
+            node.updated_at = datetime.utcnow()
+            session.add(node)
+            await session.commit()
+            return str(node.id)
+
+        node = await _create_novel_node(
+            session,
+            title=req.book_title,
+            author=req.author,
+            cover_url=req.cover_url,
+            metadata=metadata,
+        )
+        await session.commit()
+        return str(node.id)
+
+
+async def _persist_download_result(req: DownloadChaptersRequest, result: Dict[str, Any]) -> str:
+    file_path = str(result.get("file_path") or "")
+    chapter_indices = _chapter_indices(req.chapters)
 
     async with AsyncSessionLocal() as session:
-        asset = await session.get(Asset, asset_id)
-        if not asset:
-            return
+        node = await _resolve_novel_node(session, asset_id=req.asset_id or "", book_url=req.book_url)
+        if node:
+            metadata = _node_metadata(node)
+            downloaded = set(metadata.get("downloaded_chapter_indices", []))
+            downloaded.update(chapter_indices)
 
-        existing_meta = _load_json_object(asset.metadata_json)
-        if existing_meta.get("asset_hub_node_id"):
-            return
+            chapter_count = int(metadata.get("chapter_count") or len(req.chapters) or 0)
+            status = "ready" if chapter_count and len(downloaded) >= chapter_count else "partial"
+            if not chapter_count and file_path:
+                status = "ready"
 
-        indices = _chapter_indices(chapters)
-        hub_metadata = {
-            "novel_title": existing_meta.get("novel_title") or book_title,
-            "author": existing_meta.get("author") or author,
-            "source_site": existing_meta.get("source_site") or site,
-            "book_url": existing_meta.get("book_url") or book_url,
-            "source_url": asset.source_url or book_url,
-            "chapter_count": existing_meta.get("chapter_count") or download_result.get("total_chapters") or len(chapters),
-            "downloaded_chapters": existing_meta.get("downloaded_chapters") or indices,
-            "downloaded_chapter_indices": existing_meta.get("downloaded_chapter_indices") or indices,
-            "success_count": download_result.get("success_count", 0),
-            "failed_count": download_result.get("failed_count", 0),
+            catalogs = metadata.get("catalogs", {}) if isinstance(metadata.get("catalogs"), dict) else {}
+            if req.site and req.chapters:
+                catalogs.setdefault(
+                    req.site,
+                    {
+                        "chapters": req.chapters,
+                        "chapter_count": len(req.chapters),
+                        "source_name": metadata.get("source_name") or req.site,
+                        "source_url": metadata.get("source_url") or "",
+                        "toc_url": metadata.get("toc_url") or "",
+                    },
+                )
+
+            metadata.update(
+                {
+                    "novel_title": metadata.get("novel_title") or req.book_title,
+                    "author": metadata.get("author") or req.author,
+                    "source_site": metadata.get("source_site") or req.site,
+                    "book_url": metadata.get("book_url") or req.book_url,
+                    "source_url": metadata.get("source_url") or req.book_url,
+                    "chapters": metadata.get("chapters") or req.chapters,
+                    "chapter_count": chapter_count or len(req.chapters),
+                    "catalogs": catalogs,
+                    "downloaded_chapters": sorted(downloaded),
+                    "downloaded_chapter_indices": sorted(downloaded),
+                    "content_path": file_path,
+                    "last_downloaded": datetime.now().isoformat(),
+                    "status": status,
+                    "source": "novel_download",
+                    "source_type": "novel_download",
+                    "success_count": result.get("success_count", 0),
+                    "failed_count": result.get("failed_count", 0),
+                }
+            )
+            node.name = req.book_title
+            node.metadata_json = metadata
+            node.updated_at = datetime.utcnow()
+            if metadata.get("cover_url"):
+                node.thumbnail_url = metadata.get("cover_url")
+            session.add(node)
+
+            version_service = AssetVersionService(session)
+            rep_service = AssetRepresentationService(session)
+            version = await version_service.create(
+                asset_node_id=str(node.id),
+                prompt_used=req.book_title,
+                model_used="",
+                params=metadata,
+                lineage={
+                    "source": "novel_download",
+                    "book_url": req.book_url,
+                    "chapter_indices": chapter_indices,
+                },
+            )
+            if file_path:
+                await rep_service.create(
+                    asset_version_id=str(version.id),
+                    file_path=file_path,
+                    mime_type="text/plain",
+                    file_size=os.path.getsize(file_path) if os.path.exists(file_path) else 0,
+                    format=os.path.splitext(file_path)[1].lstrip(".").lower() or "txt",
+                    extra={
+                        "book_url": req.book_url,
+                        "content_path": file_path,
+                        "downloaded_chapter_indices": sorted(downloaded),
+                    },
+                )
+            await _record_downloaded_chapters(session, str(node.id), req.chapters)
+            await session.commit()
+            return str(node.id)
+
+        metadata = {
+            "novel_title": req.book_title,
+            "author": req.author,
+            "source_site": req.site,
+            "book_url": req.book_url,
+            "source_url": req.book_url,
+            "chapters": req.chapters,
+            "chapter_count": len(req.chapters),
+            "downloaded_chapters": chapter_indices,
+            "downloaded_chapter_indices": chapter_indices,
             "content_path": file_path,
-            "status": existing_meta.get("status") or asset.status,
-            "legacy_asset_id": str(asset.id),
+            "last_read_chapter": 0,
+            "last_read_position": 0,
+            "last_downloaded": datetime.now().isoformat(),
+            "status": "ready" if len(req.chapters) > 10 else "partial",
+            "source": "novel_download",
+            "source_type": "novel_download",
+            "success_count": result.get("success_count", 0),
+            "failed_count": result.get("failed_count", 0),
         }
-        hub_result = await AssetHubFacade(session).create_imported_file(
+        node = await _create_novel_node(
+            session,
+            title=req.book_title,
+            author=req.author,
+            cover_url="",
+            metadata=metadata,
             file_path=file_path,
-            title=asset.title or book_title,
-            asset_type=AssetType.TEXT,
-            source="novel_download",
-            source_url=asset.source_url or book_url,
-            thumbnail_url=asset.cover_url or str(existing_meta.get("cover_url") or ""),
-            metadata=hub_metadata,
-            lineage={
-                "asset_id": str(asset.id),
-                "book_url": book_url,
-                "source_site": site,
-                "chapter_indices": indices,
-            },
-            legacy_asset_id=str(asset.id),
-            tags=["novel", site],
         )
-        existing_meta["asset_hub_node_id"] = hub_result.node_id
-        existing_meta["asset_hub_version_id"] = hub_result.version_id
-        existing_meta["asset_hub_representation_id"] = hub_result.representation_id
-        existing_meta.setdefault("asset_hub_archive_state", "archived_in_hub")
-        existing_meta.setdefault("archived_in_hub", True)
-        asset.metadata_json = json.dumps(existing_meta, ensure_ascii=False)
-        asset.updated_at = datetime.now()
-        session.add(asset)
+        await _record_downloaded_chapters(session, str(node.id), req.chapters)
         await session.commit()
+        return str(node.id)
 
-
-class DownloadChaptersRequest(BaseModel):
-    book_url: str
-    book_title: str
-    author: str
-    chapters: List[Dict[str, Any]]  # [{'index': 1, 'title': '...', 'url': '...'}]
-    site: str = 'biqigecn'
-    asset_id: Optional[str] = None  # 已有书架记录时传入，用于更新
-
-
-class AddToBookshelfRequest(BaseModel):
-    """加入书架请求（仅保存元信息，不下载内容）"""
-    book_url: str
-    book_title: str
-    author: str = ''
-    cover_url: str = ''
-    intro: str = ''
-    kind: str = ''  # 分类/标签
-    toc_url: str = ''  # 目录页 URL
-    source_id: str = ''  # 书源 ID
-    source_name: str = ''  # 书源名称
-    source_url: str = ''  # 书源 URL
-    chapters: List[Dict[str, Any]] = []  # [{'index': 1, 'title': '...', 'url': '...'}]
-    sources: List[Dict[str, Any]] = []  # 多书源信息列表：[{"id": "...", "name": "...", "book_url": "..."}]
-
-
-class SearchResponse(BaseModel):
-    success: bool = True
-    data: List[Dict[str, Any]] = []
-    total: int = 0
-    page: int = 1
-    limit: int = 20
-
-
-class CatalogResponse(BaseModel):
-    success: bool = True
-    data: List[Dict[str, Any]] = []
-    total: int = 0
-
-
-# ==================== 搜索 & 目录 ====================
 
 @router.get("/search")
 async def search_novels(
     q: str,
-    site: str = 'biqigecn',
+    site: str = "biqigecn",
     page: int = 1,
     limit: int = 20,
 ):
-    """搜索小说"""
     try:
         crawler = get_crawler(site)
         results = crawler.search(q)
-        
         start = (page - 1) * limit
         end = start + limit
-        paged = results[start:end]
-        
         return {
-            'success': True,
-            'data': paged,
-            'total': len(results),
-            'page': page,
-            'limit': limit,
+            "success": True,
+            "data": results[start:end],
+            "total": len(results),
+            "page": page,
+            "limit": limit,
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @router.get("/catalog")
 async def get_catalog(
     url: str,
-    site: str = '',
+    site: str = "",
     db: Session = Depends(get_db),
 ):
-    """获取小说目录（使用书源解析器）"""
     try:
         manager = BookSourceManager(db)
-
         source = None
         if site:
             source = manager.get_source(site)
             if not source:
-                # 尝试通过 URL 前缀匹配
-                for s in manager.sources:
-                    if s.bookSourceUrl and url.startswith(s.bookSourceUrl.rstrip('/')):
-                        source = s
+                for item in manager.sources:
+                    if item.bookSourceUrl and url.startswith(item.bookSourceUrl.rstrip("/")):
+                        source = item
                         break
             if not source and manager.sources:
-                # 使用第一个启用的书源作为 fallback
-                source = next((s for s in manager.sources if s.enabled_by_user), manager.sources[0])
+                source = next((item for item in manager.sources if item.enabled_by_user), manager.sources[0])
         else:
-            for s in manager.sources:
-                if s.bookSourceUrl and url.startswith(s.bookSourceUrl.rstrip('/')):
-                    source = s
+            for item in manager.sources:
+                if item.bookSourceUrl and url.startswith(item.bookSourceUrl.rstrip("/")):
+                    source = item
                     break
             if not source:
-                source = next((s for s in manager.sources if s.enabled_by_user), None)
+                source = next((item for item in manager.sources if item.enabled_by_user), None)
 
         if not source:
             raise HTTPException(status_code=404, detail="没有可用的书源")
 
         chapters = await manager.get_chapter_list(source, url)
-
-        normalized_chapters = []
-        for idx, ch in enumerate(chapters, 1):
-            normalized_chapters.append({
-                'index': idx,
-                'title': ch.get('title') or ch.get('name', ''),
-                'url': ch.get('url', ''),
-            })
-
-        return {
-            'success': True,
-            'data': normalized_chapters,
-            'total': len(normalized_chapters),
-        }
+        normalized = [
+            {"index": idx, "title": chapter.get("title") or chapter.get("name", ""), "url": chapter.get("url", "")}
+            for idx, chapter in enumerate(chapters, 1)
+        ]
+        return {"success": True, "data": normalized, "total": len(normalized)}
     except HTTPException:
         raise
-    except Exception as e:
-        print(f"获取目录失败: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:
+        logger.exception("get_catalog failed")
+        raise HTTPException(status_code=500, detail=str(exc))
 
-
-# ==================== 加入书架（仅保存元信息）====================
 
 @router.post("/add-to-bookshelf")
-async def add_to_bookshelf(req: AddToBookshelfRequest, db: Session = Depends(get_db)):
-    """
-    加入书架：仅保存书籍元信息 + 章节目录 + 关联书源，不下载正文内容。
-    
-    参考 Legado 设计：
-    - Book 实体存储 bookUrl/tocUrl/origin(书源)/章节列表/阅读进度
-    - 阅读时通过书源规则实时从网络获取内容
-    - 下载是独立的后续操作
-    """
+async def add_to_bookshelf(req: AddToBookshelfRequest):
     try:
-        # 检查是否已存在相同 book_url 的记录（同一本书）
-        existing = db.execute(
-            text("SELECT id, metadata_json FROM assets WHERE type='NOVEL' AND source_url=:burl"),
-            {"burl": req.book_url}
-        ).fetchone()
-
-        if existing:
-            asset_id = existing[0]
-            # 更新已有记录的章节数据和书源信息
-            meta = json.loads(existing[1] or '{}')
-            # 多源目录：以 source_id 为 key 存储各书源的目录
-            catalogs = meta.get('catalogs', {})
-            catalogs[req.source_id] = {
-                'chapters': req.chapters,
-                'chapter_count': len(req.chapters),
-                'source_name': req.source_name,
-                'source_url': req.source_url,
-                'toc_url': req.toc_url,
-            }
-            # 把其他搜索到的书源也存进去（即使还没有章节，换源时可动态获取）
-            _populate_source_catalogs(catalogs, req.sources)
-            meta.update({
-                # 当前阅读使用的目录（兼容旧逻辑）
-                'chapters': req.chapters,
-                'chapter_count': len(req.chapters),
-                'source_id': req.source_id,
-                'source_name': req.source_name,
-                'toc_url': req.toc_url,
-                'catalogs': catalogs,
-                'last_updated': datetime.now().isoformat(),
-            })
-            db.execute(
-                text("UPDATE assets SET metadata_json=:meta, updated_at=:now WHERE id=:id"),
-                {"meta": json.dumps(meta, ensure_ascii=False), "now": datetime.now(), "id": asset_id}
-            )
-            db.commit()
-            return {'success': True, 'message': '书架信息已更新', 'asset_id': asset_id}
-
-        # 创建新 Asset 记录
-        asset_id = uuid.uuid4().hex
-        
-        # 多源目录：key 为 source_id，value 包含该书源的章节列表和 URL
-        catalogs: Dict[str, Any] = {
-            req.source_id: {
-                'chapters': req.chapters,
-                'chapter_count': len(req.chapters),
-                'source_name': req.source_name,
-                'source_url': req.source_url,
-                'toc_url': req.toc_url,
-            }
-        }
-        
-        # 把其他搜索到的书源也存进去（即使还没有章节，换源时可动态获取）
-        _populate_source_catalogs(catalogs, req.sources)
-        
-        metadata = {
-            'novel_title': req.book_title,
-            'author': req.author,
-            'cover_url': req.cover_url,
-            'intro': req.intro[:500] if req.intro else '',
-            'kind': req.kind,
-            'book_url': req.book_url,
-            'toc_url': req.toc_url,
-            'source_id': req.source_id,
-            'source_name': req.source_name,
-            'source_url': req.source_url,
-            'chapters': req.chapters,
-            'chapter_count': len(req.chapters),
-            'catalogs': catalogs,
-            'downloaded_chapter_indices': [],
-            'last_read_chapter': 0,
-            'last_read_position': 0,
-            'status': 'bookshelf',  # 在书架中但未下载
-        }
-
-        asset = Asset(
-            id=asset_id,
-            type='NOVEL',
-            platform=req.source_name or 'web',
-            title=req.book_title,
-            author=req.author,
-            cover_url=req.cover_url,
-            source_type='novel_bookshelf',
-            status='bookshelf',  # 自定义状态：在书架中
-            source_url=req.book_url,  # 用 source_url 存 book_url 做去重
-            metadata_json=json.dumps(metadata, ensure_ascii=False),
-            tags='[]',
+        asset_id = await _upsert_bookshelf_node(req)
+        logger.info(
+            "[Bookshelf] added/upserted novel hub node | title=%s | asset_id=%s | chapters=%s",
+            req.book_title,
+            asset_id,
+            len(req.chapters),
         )
-
-        db.add(asset)
-        db.commit()
-        
-        print(f"[Bookshelf] 已加入书架: {req.book_title} (asset_id={asset_id}, 章节数={len(req.chapters)})")
-        
         return {
-            'success': True,
-            'message': f'已将《{req.book_title}》加入书架',
-            'asset_id': asset_id,
+            "success": True,
+            "message": f"已将《{req.book_title}》加入书架",
+            "asset_id": asset_id,
         }
-    
-    except Exception as e:
-        print(f"加入书架失败: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:
+        logger.exception("add_to_bookshelf failed")
+        raise HTTPException(status_code=500, detail=str(exc))
 
-
-# ==================== 在线阅读（从网络获取章节内容）====================
 
 @router.get("/chapter-content")
 async def get_chapter_content(
     chapter_url: str = Query(..., description="章节 URL"),
-    source_id: str = Query('', description="书源 ID"),
-    book_url: str = Query('', description="书籍 URL（备用匹配书源）"),
+    source_id: str = Query("", description="书源 ID"),
+    book_url: str = Query("", description="书籍 URL"),
     db: Session = Depends(get_db),
 ):
-    """
-    在线获取章节正文（不依赖本地文件，直接从网站抓取）
-    
-    用于阅读器的在线阅读模式，参考 Legado CacheBook.download() 实现
-    """
     try:
         manager = BookSourceManager(db)
-        
-        # 确定使用哪个书源
         source = None
         if source_id:
             source = manager.get_source(source_id)
         elif book_url:
-            # 根据 book_url 匹配书源
-            for s in manager.sources:
-                if s.bookSourceUrl and book_url.startswith(s.bookSourceUrl.rstrip('/')):
-                    source = s
+            for item in manager.sources:
+                if item.bookSourceUrl and book_url.startswith(item.bookSourceUrl.rstrip("/")):
+                    source = item
                     break
-        
         if not source:
-            # 尝试使用第一个启用的书源
-            source = next((s for s in manager.sources if s.enabled_by_user), None)
-
+            source = next((item for item in manager.sources if item.enabled_by_user), None)
         if not source:
             raise HTTPException(status_code=404, detail="没有可用的书源")
 
-        # 通过书源规则获取章节正文
         content = await manager.get_chapter_content(source, chapter_url)
-        
         if content is None:
-            raise HTTPException(status_code=502, detail="无法获取章节内容，请检查书源规则或稍后重试")
+            raise HTTPException(status_code=502, detail="无法获取章节内容，请检查书源规则后重试")
 
-        return {
-            'success': True,
-            'data': {
-                'content': content,
-                'source_name': source.bookSourceName,
-            },
-        }
-    
+        return {"success": True, "data": {"content": content, "source_name": source.bookSourceName}}
     except HTTPException:
         raise
-    except Exception as e:
-        print(f"获取章节内容失败: {chapter_url} - {e}")
-        raise HTTPException(status_code=500, detail=f"获取章节内容失败: {str(e)}")
+    except Exception as exc:
+        logger.exception("get_chapter_content failed")
+        raise HTTPException(status_code=500, detail=f"获取章节内容失败: {exc}")
 
 
 @router.get("/bookshelf-item/{asset_id}")
-async def get_bookshelf_item(asset_id: str, db: Session = Depends(get_db)):
-    """获取书架中的书籍详情（含章节列表、书源信息等）"""
+async def get_bookshelf_item(asset_id: str):
     try:
-        asset = db.get(Asset, asset_id)
-        if not asset or asset.type.lower() != 'novel':
-            raise HTTPException(status_code=404, detail="书籍不存在")
-
-        meta = json.loads(asset.metadata_json or '{}')
-        
-        chapters_data = meta.get('chapters', [])
-        print(f"[DEBUG get_bookshelf_item] asset_id={asset_id}, chapters_count={len(chapters_data)}, meta_keys={list(meta.keys())}")
-        
-        return {
-            'success': True,
-            'data': {
-                'id': asset.id,
-                'title': asset.title,
-                'author': asset.author,
-                'cover_url': asset.cover_url,
-                'status': asset.status,
-                'created_at': asset.created_at.isoformat() if asset.created_at else None,
-                **meta,  # 展开所有 metadata 字段
-            },
-        }
-    
+        async with AsyncSessionLocal() as session:
+            node = await _resolve_novel_node(session, asset_id=asset_id)
+            if not node:
+                raise HTTPException(status_code=404, detail="书籍不存在")
+            payload = _novel_payload(node)
+            logger.debug(
+                "[get_bookshelf_item] asset_id=%s, chapters=%s, meta_keys=%s",
+                asset_id,
+                len(payload.get("chapters") or []),
+                list(_node_metadata(node).keys()),
+            )
+            return {"success": True, "data": payload}
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
-
-# ==================== 下载章节（全本 / 选章 / 范围）====================
 
 @router.post("/download-chapters")
 async def download_chapters(
     req: DownloadChaptersRequest,
     background_tasks: BackgroundTasks,
 ):
-    """
-    下载指定章节
-    
-    支持：
-    - 全本下载（chapters 包含全部章节）
-    - 选章下载（chapters 只包含选中的章节）
-    - 更新模式（传 asset_id 则更新已有书架记录）
-    """
     try:
         downloader = NovelDownloader()
-        
+
         def do_download():
-            import asyncio
-            
-            result = asyncio.run(downloader.download_chapters(
-                book_title=req.book_title,
-                author=req.author,
-                chapters=req.chapters,
-                site=req.site,
-            ))
-
-            db = SessionLocal()
-            archive_asset_id = ""
+            result = asyncio.run(
+                downloader.download_chapters(
+                    book_title=req.book_title,
+                    author=req.author,
+                    chapters=req.chapters,
+                    site=req.site,
+                )
+            )
             try:
-                if req.asset_id:
-                    # 更新已有记录
-                    asset = db.get(Asset, req.asset_id)
-                    if asset:
-                        meta = _load_json_object(asset.metadata_json)
-                        downloaded = set(meta.get('downloaded_chapter_indices', []))
-                        for ch in req.chapters:
-                            downloaded.add(ch['index'])
-                        meta['downloaded_chapter_indices'] = sorted(list(downloaded))
-                        meta['content_path'] = result.get('file_path', '')
-                        meta['last_downloaded'] = datetime.now().isoformat()
-                        
-                        # 如果全部下载完毕，标记为 ready
-                        if len(downloaded) >= meta.get('chapter_count', 99999):
-                            meta['status'] = 'ready'
-                            asset.status = 'ready'
-                        else:
-                            meta['status'] = 'partial'
-                            asset.status = 'partial'
-
-                        asset.metadata_json = json.dumps(meta, ensure_ascii=False)
-                        asset.updated_at = datetime.now()
-                        archive_asset_id = str(asset.id)
-                        
-                        # 更新 NovelChapter 记录
-                        for ch in req.chapters:
-                            existing_ch = db.execute(
-                                text("SELECT id FROM novel_chapters WHERE asset_id=:aid AND chapter_index=:ci"),
-                                {"aid": req.asset_id, "ci": ch['index']}
-                            ).fetchone()
-                            
-                            if existing_ch:
-                                db.execute(
-                                    text("""UPDATE novel_chapters SET is_downloaded=True 
-                                        WHERE asset_id=:aid AND chapter_index=:ci"""),
-                                    {"aid": req.asset_id, "ci": ch['index']}
-                                )
-                            else:
-                                chapter = NovelChapter(
-                                    asset_id=req.asset_id,
-                                    chapter_index=ch['index'],
-                                    chapter_title=ch['title'],
-                                    chapter_url=ch.get('url', ''),
-                                    is_downloaded=True,
-                                )
-                                db.add(chapter)
-                        
-                        print(f"[Download] 更新书架记录: {req.asset_id}, 新增下载 {len(req.chapters)} 章")
-                    
-                else:
-                    # 创建新 Asset 记录（兼容旧逻辑，无 bookshelf 时用）
-                    asset_id = uuid.uuid4().hex
-                    
-                    metadata = {
-                        'novel_title': req.book_title,
-                        'author': req.author,
-                        'source_site': req.site,
-                        'chapter_count': len(req.chapters),
-                        'downloaded_chapters': [ch['index'] for ch in req.chapters],
-                        'content_path': result.get('file_path', ''),
-                        'last_read_chapter': 0,
-                        'last_read_position': 0,
-                        'status': 'ready' if len(req.chapters) > 10 else 'partial',
-                    }
-                    
-                    asset = Asset(
-                        id=asset_id,
-                        type='novel',
-                        platform=req.site,
-                        title=req.book_title,
-                        author=req.author,
-                        source_type='novel_download',
-                        status='ready',
-                        source_url=req.book_url,
-                        metadata_json=json.dumps(metadata, ensure_ascii=False),
-                        tags='[]',
-                    )
-                    
-                    db.add(asset)
-                    archive_asset_id = asset_id
-                    
-                    for ch in req.chapters:
-                        chapter = NovelChapter(
-                            asset_id=asset_id,
-                            chapter_index=ch['index'],
-                            chapter_title=ch['title'],
-                            chapter_url=ch.get('url', ''),
-                            is_downloaded=True,
-                        )
-                        db.add(chapter)
-
-                db.commit()
-                if archive_asset_id:
-                    try:
-                        asyncio.run(_archive_novel_download_to_asset_hub(
-                            asset_id=archive_asset_id,
-                            book_url=req.book_url,
-                            book_title=req.book_title,
-                            author=req.author,
-                            site=req.site,
-                            chapters=req.chapters,
-                            download_result=result,
-                        ))
-                    except Exception as hub_e:
-                        logger.warning(f"[NovelDownload] Asset Hub 写入失败: {hub_e}")
-                
-            except Exception as e:
-                print(f"创建/更新 Asset 记录失败: {e}")
-                db.rollback()
-            finally:
-                db.close()
+                asset_id = asyncio.run(_persist_download_result(req, result))
+                logger.info(
+                    "[NovelDownload] persisted to Asset Hub | title=%s | asset_id=%s | chapters=%s",
+                    req.book_title,
+                    asset_id,
+                    len(req.chapters),
+                )
+            except Exception:
+                logger.exception("persist novel download failed")
 
         background_tasks.add_task(do_download)
-        
-        mode_msg = "全本" if len(req.chapters) > 5 else f"{len(req.chapters)} 个章节"
+
+        mode_msg = "全文" if len(req.chapters) > 5 else f"{len(req.chapters)} 个章节"
         action = "更新" if req.asset_id else "创建"
         return {
-            'success': True,
-            'message': f'已开始下载{mode_msg}，{action}书架记录，请稍后查看',
+            "success": True,
+            "message": f"已开始下载{mode_msg}，{action}书架记录，请稍后查看",
         }
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @router.get("/sources")
 async def get_sources(db: Session = Depends(get_db)):
-    """获取可用的书源列表（从数据库读取）"""
     manager = BookSourceManager(db)
     sources = manager.list_sources(enabled_only=True)
-    data = [
-        {'id': s['id'], 'name': s['book_source_name'] + ('(JS)' if s.get('is_js_source') else ''), 'enabled': s['enabled_by_user']}
-        for s in sources
-    ]
-    return {'success': True, 'data': data}
+    return {
+        "success": True,
+        "data": [
+            {
+                "id": item["id"],
+                "name": item["book_source_name"] + ("(JS)" if item.get("is_js_source") else ""),
+                "enabled": item["enabled_by_user"],
+            }
+            for item in sources
+        ],
+    }
 
 
 @router.get("/source-catalog")
 async def get_source_catalog(
-    book_url: str = Query(..., description="书籍 URL（原始书源）"),
+    book_url: str = Query(..., description="书籍 URL"),
     source_id: str = Query(..., description="目标书源 ID"),
-    book_title: str = Query('', description="书籍名称（用于换源时在目标书源重新搜索）"),
+    book_title: str = Query("", description="书籍名称"),
     db: Session = Depends(get_db),
 ):
-    """
-    从指定书源获取书籍目录（用于换源时动态加载目录）。
-    优先用书籍名称在目标书源中搜索，找到后取对应目录；失败时才尝试构造URL。
-    """
     try:
         manager = BookSourceManager(db)
         source = manager.get_source(source_id)
         if not source:
             raise HTTPException(status_code=404, detail="书源不存在")
 
-        catalog_url = ''
-        chapters = []
-        
-        # ============== 策略1：用书籍标题在目标书源中重新搜索 ==============
-        if book_title:
-            print(f"[换源] 目标书源={source.bookSourceName}, 尝试搜索书名: {book_title}")
-            try:
-                # _search_single_source 返回的字段: name, author, url, cover
-                search_results = await manager._search_single_source(source, book_title)
-                
-                if search_results:
-                    def normalize(t):
-                        return re.sub(r'[^\u4e00-\u9fa5a-zA-Z0-9]', '', t).lower()
-                    
-                    target_key = normalize(book_title)
-                    matched_book = None
-                    for book in search_results:
-                        book_name = book.get('name', '')
-                        if normalize(book_name) == target_key:
-                            matched_book = book
-                            break
-                    
-                    if matched_book:
-                        toc_url = matched_book.get('bookUrl', '') or matched_book.get('url', '') or matched_book.get('tocUrl', '')
-                        if toc_url:
-                            chapters = await manager.get_chapter_list(source, toc_url)
-                            catalog_url = toc_url
-            except Exception as search_err:
-                print(f"[换源] 搜索模式出错: {search_err}")
-                import traceback
-                traceback.print_exc()
+        catalog_url = ""
+        chapters: List[Dict[str, Any]] = []
 
-        # ============== 策略2：URL 构造模式（备用）==============
+        if book_title:
+            logger.info("[换源] source=%s, search=%s", source.bookSourceName, book_title)
+            try:
+                results = await manager._search_single_source(source, book_title)
+                if results:
+                    def normalize(value: str) -> str:
+                        return re.sub(r"[^\u4e00-\u9fa5a-zA-Z0-9]", "", value).lower()
+
+                    target = normalize(book_title)
+                    matched = next((item for item in results if normalize(item.get("name", "")) == target), None)
+                    if matched:
+                        catalog_url = matched.get("bookUrl", "") or matched.get("url", "") or matched.get("tocUrl", "")
+                        if catalog_url:
+                            chapters = await manager.get_chapter_list(source, catalog_url)
+            except Exception:
+                logger.exception("[换源] search strategy failed")
+
         if not chapters:
-            print(f"[换源] 搜索模式未获取到章节，尝试 URL 构造模式")
-            target_base = source.bookSourceUrl.rstrip('/')
-            
+            target_base = source.bookSourceUrl.rstrip("/")
             catalog_url = target_base
             if source.ruleToc and isinstance(source.ruleToc, dict):
-                toc_url_template = source.ruleToc.get('bookUrl', '') or source.ruleToc.get('url', '')
-                if toc_url_template and toc_url_template.startswith('http'):
-                    catalog_url = toc_url_template
-                elif toc_url_template:
-                    catalog_url = target_base + toc_url_template
-
-            print(f"[换源] 构造目录URL={catalog_url}")
+                toc_template = source.ruleToc.get("bookUrl", "") or source.ruleToc.get("url", "")
+                if toc_template and toc_template.startswith("http"):
+                    catalog_url = toc_template
+                elif toc_template:
+                    catalog_url = target_base + toc_template
             chapters = await manager.get_chapter_list(source, catalog_url)
 
         if not chapters:
-            raise HTTPException(status_code=404, detail=f"该书源无法获取目录，可能需要手动设置目录页 URL")
+            raise HTTPException(status_code=404, detail="该书源无法获取目录，可能需要手动配置目录页 URL")
 
         normalized = [
-            {'index': idx, 'title': ch.get('title') or ch.get('name', ''), 'url': ch.get('url', '')}
-            for idx, ch in enumerate(chapters, 1)
+            {"index": idx, "title": chapter.get("title") or chapter.get("name", ""), "url": chapter.get("url", "")}
+            for idx, chapter in enumerate(chapters, 1)
         ]
-
         return {
-            'success': True,
-            'data': {
-                'source_id': source_id,
-                'source_name': source.bookSourceName,
-                'catalog_url': catalog_url,
-                'chapters': normalized,
+            "success": True,
+            "data": {
+                "source_id": source_id,
+                "source_name": source.bookSourceName,
+                "catalog_url": catalog_url,
+                "chapters": normalized,
             },
         }
     except HTTPException:
         raise
-    except Exception as e:
-        print(f"[换源] 获取目录失败: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:
+        logger.exception("get_source_catalog failed")
+        raise HTTPException(status_code=500, detail=str(exc))

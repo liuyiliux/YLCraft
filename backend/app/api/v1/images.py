@@ -39,10 +39,9 @@ def _response_excerpt(data: dict, limit: int = 1000) -> str:
     return text
 
 
-async def _link_generated_image_to_asset_hub(
+async def _create_generated_image_asset_hub(
     session,
     *,
-    legacy_asset,
     image_path: str,
     prompt: str,
     provider: str,
@@ -67,21 +66,7 @@ async def _link_generated_image_to_asset_hub(
         seed=seed,
         generation_params=generation_params,
         lineage=lineage,
-        legacy_asset_id=str(legacy_asset.id),
     )
-    metadata = {}
-    if legacy_asset.metadata_json:
-        try:
-            metadata = json.loads(legacy_asset.metadata_json)
-        except Exception:
-            metadata = {}
-    metadata["asset_hub_node_id"] = result.node_id
-    metadata["asset_hub_version_id"] = result.version_id
-    metadata["asset_hub_representation_id"] = result.representation_id
-    metadata.setdefault("asset_hub_archive_state", "archived_in_hub")
-    metadata.setdefault("archived_in_hub", True)
-    legacy_asset.metadata_json = json.dumps(metadata, ensure_ascii=False)
-    session.add(legacy_asset)
     return result.node_id
 
 
@@ -340,49 +325,19 @@ async def generate_image(req: ImageGenerateRequest):
                 )
 
             # 自动入库到资产库，并把素材 ID 返回给前端，方便项目工作流回写关联。
-            assets = []
+            asset_ids = []
             asset_hub_node_ids = []
             local_paths = result.all_local_paths or ([result.local_path] if result.local_path else [])
             if local_paths:
                 try:
                     from app.db.database import get_async_session
-                    from app.services.asset.service import AssetService
                     async with get_async_session() as session:
-                        service = AssetService(session)
                         for idx, local_path in enumerate(local_paths):
                             urls = result.urls or ([result.url] if result.url else [])
-                            asset = await service.create_from_image_generation(
-                                image_path=str(local_path),
-                                prompt=req.prompt,
-                                provider=result.provider,
-                                model=result.model,
-                                seed=result.seed,
-                                url=urls[idx] if idx < len(urls) else (result.url or ""),
-                                negative_prompt=req.negative_prompt or "",
-                                size=req.size or "1024x1024",
-                                steps=req.steps,
-                                cfg_scale=req.cfg_scale,
-                                sampler=req.sampler or "euler",
-                                lora=req.lora or "",
-                                controlnet=req.controlnet or "",
-                                source_image=req.source_image or "",
-                                reference_images=img_req.reference_images if img_req.reference_images else None,
-                                metadata={
-                                    "project_id": req.project_id or "",
-                                    "content_id": req.content_id or "",
-                                    "source_type": req.source_type or "",
-                                    "source_index": req.source_index or "",
-                                    "source_title": req.source_title or "",
-                                    "chapter_number": req.chapter_number or "",
-                                    "image_index": idx,
-                                },
-                            )
-                            assets.append(asset)
                             asset_hub_node_id = ""
                             try:
-                                asset_hub_node_id = await _link_generated_image_to_asset_hub(
+                                asset_hub_node_id = await _create_generated_image_asset_hub(
                                     session,
-                                    legacy_asset=asset,
                                     image_path=str(local_path),
                                     prompt=req.prompt,
                                     provider=result.provider or "",
@@ -412,11 +367,11 @@ async def generate_image(req: ImageGenerateRequest):
                                 logger.warning(f"Failed to save image to Asset Hub: {hub_error}")
                             if asset_hub_node_id:
                                 asset_hub_node_ids.append(asset_hub_node_id)
+                                asset_ids.append(asset_hub_node_id)
                     logger.info(f"Image saved to asset library: {local_paths}")
                 except Exception as e:
                     logger.warning(f"Failed to save image to asset library: {e}")
 
-            asset_ids = [str(asset.id) for asset in assets]
             return ImageResponse(
                 success=True,
                 url=result.url,
@@ -549,7 +504,6 @@ async def poll_image_task(
                 if local_paths:
                     try:
                         from app.db.database import get_async_session
-                        from app.services.asset.service import AssetService
 
                         await queue.append_event(
                             task_id,
@@ -558,41 +512,12 @@ async def poll_image_task(
                             data={"file_count": len(local_paths)},
                         )
                         async with get_async_session() as session:
-                            service = AssetService(session)
                             urls = result.urls or ([result.url] if result.url else [])
                             for idx, local_path in enumerate(local_paths):
-                                asset = await service.create_from_image_generation(
-                                    image_path=str(local_path),
-                                    prompt=payload.get("prompt", ""),
-                                    provider=result.provider,
-                                    model=result.model,
-                                    seed=result.seed,
-                                    url=urls[idx] if idx < len(urls) else (result.url or ""),
-                                    negative_prompt=payload.get("negative_prompt", ""),
-                                    size=payload.get("size", "1024x1024"),
-                                    steps=payload.get("steps"),
-                                    cfg_scale=payload.get("cfg_scale"),
-                                    sampler=payload.get("sampler", "euler"),
-                                    lora=payload.get("lora", ""),
-                                    controlnet=payload.get("controlnet", ""),
-                                    source_image=payload.get("source_image", ""),
-                                    reference_images=payload.get("reference_images"),
-                                    metadata={
-                                        "project_id": payload.get("project_id", ""),
-                                        "content_id": payload.get("content_id", ""),
-                                        "source_type": payload.get("source_type", ""),
-                                        "source_index": payload.get("source_index", ""),
-                                        "source_title": payload.get("source_title", ""),
-                                        "chapter_number": payload.get("chapter_number", ""),
-                                        "image_index": idx,
-                                    },
-                                )
-                                asset_ids.append(str(asset.id))
                                 asset_hub_node_id = ""
                                 try:
-                                    asset_hub_node_id = await _link_generated_image_to_asset_hub(
+                                    asset_hub_node_id = await _create_generated_image_asset_hub(
                                         session,
-                                        legacy_asset=asset,
                                         image_path=str(local_path),
                                         prompt=payload.get("prompt", ""),
                                         provider=result.provider or "",
@@ -624,11 +549,12 @@ async def poll_image_task(
                                     logger.warning(f"Failed to save async image to Asset Hub: {hub_error}")
                                 if asset_hub_node_id:
                                     asset_hub_node_ids.append(asset_hub_node_id)
+                                    asset_ids.append(asset_hub_node_id)
                                 await queue.append_event(
                                     task_id,
                                     "asset_saved",
                                     "生成图片已入素材库",
-                                    data={"asset_id": str(asset.id), "asset_hub_node_id": asset_hub_node_id, "image_index": idx},
+                                    data={"asset_id": asset_hub_node_id, "asset_hub_node_id": asset_hub_node_id, "image_index": idx},
                                 )
                         await queue.append_event(
                             task_id,
@@ -1083,7 +1009,6 @@ async def batch_retry_endpoint(req: BatchRetryRequest):
     """
     from app.services.ai.types import ImageGenerationRequest
     from app.db.database import get_async_session
-    from app.services.asset.service import AssetService
 
     manager = get_ai_service()
     if not manager.is_loaded():
@@ -1103,31 +1028,13 @@ async def batch_retry_endpoint(req: BatchRetryRequest):
             urls = result.urls or [result.url] if result.url else []
 
             # 自动入库到资产库
+            asset_hub_node_id = ""
             if result.local_path:
                 try:
                     async with get_async_session() as session:
-                        service = AssetService(session)
-                        asset = await service.create_from_image_generation(
-                            image_path=str(result.local_path),
-                            prompt=req.prompt,
-                            provider=result.provider,
-                            model=result.model,
-                            seed=result.seed,
-                            url=result.url or "",
-                            size=req.size or "1024x1024",
-                            metadata={
-                                "topic": req.topic or "",
-                                "template_id": req.template_id or "",
-                                "outline_title": req.outline_title or "",
-                                "outline_copywriting": req.outline_copywriting or "",
-                                "page_type": req.page_type or "",
-                                "content_platform": req.platform or "",
-                            },
-                        )
                         try:
-                            await _link_generated_image_to_asset_hub(
+                            asset_hub_node_id = await _create_generated_image_asset_hub(
                                 session,
-                                legacy_asset=asset,
                                 image_path=str(result.local_path),
                                 prompt=req.prompt,
                                 provider=result.provider or "",
@@ -1154,7 +1061,7 @@ async def batch_retry_endpoint(req: BatchRetryRequest):
                 urls=urls,
                 platform=req.platform,
                 prompt=req.prompt,
-                asset_id=str(asset.id) if result.local_path and 'asset' in locals() else "",
+                asset_id=asset_hub_node_id,
             )
         else:
             return BatchRetryResponse(

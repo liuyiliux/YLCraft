@@ -8,14 +8,15 @@ import mimetypes
 import shutil
 import subprocess
 import uuid
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import bindparam, select, text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_ffmpeg_path
-from app.db.models.asset import Asset
 from app.db.models.asset_hub import AssetType
 from app.db.models.torrent import TorrentDownload
 from app.services.asset_hub import AssetHubFacade
@@ -24,6 +25,12 @@ from app.services.torrent.models import VIDEO_EXTENSIONS, TorrentFileInfo, Torre
 from app.services.torrent.qbittorrent import QBittorrentEngine
 
 logger = logging.getLogger("ylcraft.torrent")
+
+
+@dataclass
+class ImportedTorrentAsset:
+    id: str
+    title: str
 
 
 class TorrentService:
@@ -243,10 +250,10 @@ class TorrentService:
         record.updated_at = datetime.now()
         await self.session.flush()
 
-    async def import_assets(self, record: TorrentDownload) -> list[Asset]:
+    async def import_assets(self, record: TorrentDownload) -> list[ImportedTorrentAsset]:
         files = await self.list_files(record)
         selected = set(json.loads(record.selected_files_json or "[]"))
-        imported: list[Asset] = []
+        imported: list[ImportedTorrentAsset] = []
         for item in files:
             if selected and item.index not in selected:
                 continue
@@ -255,7 +262,7 @@ class TorrentService:
             path = assert_inside_download_dir(Path(record.save_path or self.config.download_dir) / item.name, self.config.download_dir)
             if not path.is_file():
                 continue
-            asset = await self._create_or_update_asset(record, item, path)
+            asset = await self._create_or_update_asset_node(record, item, path)
             imported.append(asset)
         record.asset_ids_json = json.dumps([a.id for a in imported], ensure_ascii=False)
         record.updated_at = datetime.now()
@@ -292,110 +299,142 @@ class TorrentService:
         health.reason = _describe_health(record, health, target)
         health.hints = _health_hints(health, target)
 
-    async def _create_or_update_asset(self, record: TorrentDownload, item: TorrentFileInfo, path: Path) -> Asset:
+    async def _create_or_update_asset_node(
+        self,
+        record: TorrentDownload,
+        item: TorrentFileInfo,
+        path: Path,
+    ) -> ImportedTorrentAsset:
         source_url = _torrent_asset_source_url(record, item)
         candidate_source_urls = [source_url]
         legacy_source_url = record.source_uri if record.source == "magnet" else ""
         if legacy_source_url and legacy_source_url != source_url and int(item.index) == 0:
             candidate_source_urls.append(legacy_source_url)
-        result = await self.session.execute(select(Asset).where(Asset.source_url.in_(candidate_source_urls)))
-        asset = next(iter(result.scalars().all()), None)
         probe = _probe_video(path)
+        title = Path(item.name).stem
         metadata = {
             "torrent_hash": record.torrent_hash,
             "torrent_name": record.name,
             "download_id": record.id,
             "file_index": item.index,
             "original_file_name": item.name,
-        }
-        if asset is None:
-            asset = Asset(
-                type="VIDEO",
-                title=Path(item.name).stem,
-                platform="torrent",
-                source_type="torrent",
-                source_url=source_url,
-                file_path=str(path),
-                file_size=path.stat().st_size,
-                mime_type=mimetypes.guess_type(path.name)[0] or "video/mp4",
-                duration=probe.get("duration", 0),
-                width=probe.get("width", 0),
-                height=probe.get("height", 0),
-                status="READY",
-                tags=json.dumps(["torrent"], ensure_ascii=False),
-                metadata_json=json.dumps(metadata, ensure_ascii=False),
-            )
-            self.session.add(asset)
-        else:
-            asset.file_path = str(path)
-            asset.file_size = path.stat().st_size
-            asset.mime_type = mimetypes.guess_type(path.name)[0] or asset.mime_type or "video/mp4"
-            asset.duration = probe.get("duration", asset.duration)
-            asset.width = probe.get("width", asset.width)
-            asset.height = probe.get("height", asset.height)
-            asset.status = "READY"
-            asset.source_url = source_url
-            asset.metadata_json = json.dumps(metadata, ensure_ascii=False)
-            asset.updated_at = datetime.now()
-        await self.session.flush()
-        await self.session.refresh(asset)
-        await self._link_asset_to_hub(record, item, asset, path, probe, metadata)
-        return asset
-
-    async def _link_asset_to_hub(
-        self,
-        record: TorrentDownload,
-        item: TorrentFileInfo,
-        asset: Asset,
-        path: Path,
-        probe: dict,
-        metadata: dict,
-    ) -> None:
-        try:
-            existing_meta = json.loads(asset.metadata_json or "{}")
-        except Exception:
-            existing_meta = {}
-        if existing_meta.get("asset_hub_node_id"):
-            return
-
-        hub_metadata = {
-            **metadata,
             "platform": "torrent",
             "source_type": "torrent",
             "width": probe.get("width", 0),
             "height": probe.get("height", 0),
             "duration": probe.get("duration", 0),
-            "file_size": path.stat().st_size if path.exists() else 0,
+            "file_size": path.stat().st_size,
         }
-        try:
-            result = await AssetHubFacade(self.session).create_imported_file(
+        existing_node_id = await self._find_asset_hub_node(candidate_source_urls)
+        if existing_node_id:
+            await self._append_asset_hub_version(
+                node_id=existing_node_id,
+                title=title,
+                source_url=source_url,
                 file_path=str(path),
-                title=asset.title or Path(item.name).stem,
-                asset_type=AssetType.VIDEO,
-                source="torrent",
-                source_url=asset.source_url or _torrent_asset_source_url(record, item),
-                metadata=hub_metadata,
+                metadata=metadata,
                 lineage={
                     "download_id": record.id,
                     "torrent_hash": record.torrent_hash,
                     "file_index": item.index,
                     "source_uri": record.source_uri,
                 },
-                legacy_asset_id=str(asset.id),
-                tags=["video"],
             )
-        except Exception as exc:
-            logger.warning("Failed to save torrent file to Asset Hub: %s", exc)
-            return
+            return ImportedTorrentAsset(id=existing_node_id, title=title)
 
-        existing_meta["asset_hub_node_id"] = result.node_id
-        existing_meta["asset_hub_version_id"] = result.version_id
-        existing_meta["asset_hub_representation_id"] = result.representation_id
-        existing_meta.setdefault("asset_hub_archive_state", "archived_in_hub")
-        existing_meta.setdefault("archived_in_hub", True)
-        asset.metadata_json = json.dumps(existing_meta, ensure_ascii=False)
-        self.session.add(asset)
-        await self.session.flush()
+        result = await AssetHubFacade(self.session).create_imported_file(
+            file_path=str(path),
+            title=title,
+            asset_type=AssetType.VIDEO,
+            source="torrent",
+            source_url=source_url,
+            metadata=metadata,
+            lineage={
+                "download_id": record.id,
+                "torrent_hash": record.torrent_hash,
+                "file_index": item.index,
+                "source_uri": record.source_uri,
+            },
+            tags=["video"],
+        )
+        return ImportedTorrentAsset(id=result.node_id, title=title)
+
+    async def _find_asset_hub_node(self, source_urls: list[str]) -> str:
+        if not source_urls:
+            return ""
+        statement = text(
+            """
+            SELECT CAST(id AS TEXT)
+            FROM asset_nodes
+            WHERE CAST(asset_type AS TEXT) IN ('VIDEO', 'video')
+              AND metadata_json ->> 'source' = 'torrent'
+              AND metadata_json ->> 'source_url' IN :source_urls
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """
+        ).bindparams(bindparam("source_urls", expanding=True))
+        try:
+            result = await self.session.execute(statement, {"source_urls": source_urls})
+        except SQLAlchemyError:
+            return ""
+        return str(result.scalar_one_or_none() or "")
+
+    async def _append_asset_hub_version(
+        self,
+        *,
+        node_id: str,
+        title: str,
+        source_url: str,
+        file_path: str,
+        metadata: dict,
+        lineage: dict,
+    ) -> None:
+        from app.services.asset_hub.node_service import AssetNodeService
+        from app.services.asset_hub.representation_service import AssetRepresentationService
+        from app.services.asset_hub.version_service import AssetVersionService
+
+        path = Path(file_path)
+        await AssetNodeService(self.session).update(
+            node_id=node_id,
+            name=title[:120],
+            metadata={
+                "source": "torrent",
+                "source_url": source_url,
+                **metadata,
+            },
+        )
+        version_service = AssetVersionService(self.session)
+        latest = await version_service.get_latest_version(node_id)
+        version = await version_service.create(
+            asset_node_id=node_id,
+            params={
+                "source": "torrent",
+                "source_url": source_url,
+                **metadata,
+            },
+            lineage={
+                "source": "torrent",
+                "source_url": source_url,
+                **lineage,
+            },
+            parent_version_id=str(latest.id) if latest else None,
+        )
+        await AssetRepresentationService(self.session).create(
+            asset_version_id=str(version.id),
+            file_path=str(path),
+            mime_type=mimetypes.guess_type(path.name)[0] or "video/mp4",
+            file_size=path.stat().st_size if path.exists() else 0,
+            width=_optional_int(metadata.get("width")),
+            height=_optional_int(metadata.get("height")),
+            duration=_optional_float(metadata.get("duration")),
+            format=path.suffix.lstrip(".").lower() or None,
+            extra={
+                "source": "torrent",
+                "source_url": source_url,
+                "download_id": metadata.get("download_id", ""),
+                "file_index": metadata.get("file_index", ""),
+            },
+        )
 
     async def _assert_active_limit(self) -> None:
         result = await self.session.execute(
@@ -484,6 +523,20 @@ def _probe_video(path: Path) -> dict:
         }
     except Exception:
         return {}
+
+
+def _optional_int(value) -> int | None:
+    try:
+        return int(value) if value not in (None, "") else None
+    except Exception:
+        return None
+
+
+def _optional_float(value) -> float | None:
+    try:
+        return float(value) if value not in (None, "") else None
+    except Exception:
+        return None
 
 
 def _safe_json_ints(value: str) -> list[int]:

@@ -8,7 +8,6 @@ from fastapi.responses import Response
 from fastapi.testclient import TestClient
 
 from app.api.v1 import assets as assets_api
-from app.db.models.asset import Asset
 from app.db.models.asset_hub import AssetNode, AssetType
 
 
@@ -33,7 +32,7 @@ def _assets_test_client(service):
     async def override_asset_service():
         return service
 
-    app.dependency_overrides[assets_api.get_asset_service] = override_asset_service
+    app.dependency_overrides[assets_api.get_asset_session] = override_asset_service
     return TestClient(app)
 
 
@@ -108,7 +107,6 @@ async def test_soft_delete_asset_hub_node_marks_legacy_asset_deleted(monkeypatch
         metadata_json={"legacy_asset_id": "legacy-1"},
         updated_at=datetime.utcnow(),
     )
-    legacy_asset = Asset(id="legacy-1", type="image", title="legacy", status="READY")
 
     class FakeSession:
         def __init__(self):
@@ -134,7 +132,7 @@ async def test_soft_delete_asset_hub_node_marks_legacy_asset_deleted(monkeypatch
     monkeypatch.setattr(assets_api, "_get_asset_hub_primary", fake_primary)
 
     deleted = await assets_api._soft_delete_asset_hub_node(
-        _FakeService(session=session, legacy_asset=legacy_asset),
+        session,
         node.id,
         mode="soft",
     )
@@ -143,32 +141,6 @@ async def test_soft_delete_asset_hub_node_marks_legacy_asset_deleted(monkeypatch
     assert session.committed is True
     assert node.metadata_json["status"] == "DELETED"
     assert node.metadata_json["deleted_at"]
-    assert legacy_asset.status == "DELETED"
-
-
-@pytest.mark.asyncio
-async def test_get_asset_uses_hub_card_for_migrated_legacy_asset(monkeypatch):
-    legacy_asset = Asset(
-        id="legacy-1",
-        type="image",
-        title="legacy",
-        metadata_json='{"asset_hub_node_id":"hub-node-1"}',
-    )
-
-    async def fake_hub_card(_service, asset_id, include_metadata=True):
-        if asset_id == "hub-node-1":
-            return {"id": "hub-node-1", "title": "hub asset", "metadata": {"asset_hub": True}}
-        return None
-
-    monkeypatch.setattr(assets_api, "_get_asset_hub_card", fake_hub_card)
-
-    response = await assets_api.get_asset(
-        "legacy-1",
-        service=_FakeService(legacy_asset=legacy_asset),
-    )
-
-    assert response.data["id"] == "hub-node-1"
-    assert response.data["metadata"]["asset_hub"] is True
 
 
 def test_assets_api_serves_asset_hub_list_detail_thumbnail_and_download(monkeypatch, tmp_path):
@@ -235,30 +207,10 @@ def test_assets_api_serves_asset_hub_list_detail_thumbnail_and_download(monkeypa
     assert download_response.content == b"png-bytes"
 
 
-def test_assets_api_keeps_legacy_fallback_detail_and_download(tmp_path):
-    video = tmp_path / "legacy.mp4"
-    video.write_bytes(b"legacy-bytes")
-    legacy_asset = Asset(
-        id="legacy-1",
-        type="VIDEO",
-        title="Legacy Video",
-        platform="upload",
-        source_type="upload",
-        source_url="ylcraft://legacy",
-        file_path=str(video),
-        file_size=video.stat().st_size,
-        mime_type="video/mp4",
-        status="READY",
-        metadata_json="{}",
-        tags="[]",
-    )
-
-    with _assets_test_client(_FakeService(legacy_asset=legacy_asset)) as client:
+def test_assets_api_no_longer_serves_legacy_fallback_assets():
+    with _assets_test_client(_FakeService()) as client:
         detail_response = client.get("/api/v1/assets/legacy-1")
         download_response = client.get("/api/v1/assets/legacy-1/download")
 
-    assert detail_response.status_code == 200
-    assert detail_response.json()["data"]["id"] == "legacy-1"
-    assert detail_response.json()["data"]["title"] == "Legacy Video"
-    assert download_response.status_code == 200
-    assert download_response.content == b"legacy-bytes"
+    assert detail_response.status_code == 404
+    assert download_response.status_code == 404

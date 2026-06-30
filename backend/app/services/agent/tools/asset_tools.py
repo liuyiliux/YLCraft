@@ -9,11 +9,58 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
+from app.db.models.asset_hub import AssetType
 from app.services.agent.registry import register_tool
-from app.services.asset.service import AssetService
+from app.services.asset_hub import (
+    AssetNodeService,
+    AssetRepresentationService,
+    AssetVersionService,
+)
 from app.db.database import AsyncSessionLocal
 
 logger = logging.getLogger("ylcraft.agent.tools.asset")
+
+
+def _asset_type(value: Optional[str]) -> AssetType | None:
+    if not value:
+        return None
+    normalized = value.lower()
+    aliases = {
+        "img": "image",
+        "picture": "image",
+        "document": "text",
+        "doc": "text",
+    }
+    normalized = aliases.get(normalized, normalized)
+    try:
+        return AssetType(normalized)
+    except ValueError:
+        return None
+
+
+async def _node_to_tool_dict(session, node) -> dict:
+    version_service = AssetVersionService(session)
+    rep_service = AssetRepresentationService(session)
+    latest = await version_service.get_latest_version(str(node.id))
+    rep = await rep_service.get_primary(str(latest.id)) if latest else None
+    metadata = node.metadata_json or {}
+    return {
+        "id": str(node.id),
+        "title": node.name,
+        "type": node.asset_type.value if hasattr(node.asset_type, "value") else str(node.asset_type),
+        "thumbnail_url": node.thumbnail_url,
+        "tags": node.tags_json or [],
+        "metadata": metadata,
+        "status": metadata.get("status", "READY"),
+        "file_path": getattr(rep, "file_path", "") if rep else "",
+        "mime_type": getattr(rep, "mime_type", "") if rep else "",
+        "file_size": getattr(rep, "file_size", 0) if rep else 0,
+        "width": getattr(rep, "width", None) if rep else None,
+        "height": getattr(rep, "height", None) if rep else None,
+        "duration": getattr(rep, "duration", None) if rep else None,
+        "version_id": str(latest.id) if latest else "",
+        "version_number": getattr(latest, "version_number", None) if latest else None,
+    }
 
 
 @register_tool(
@@ -38,13 +85,27 @@ async def search_assets(
         limit: 返回数量限制
     """
     async with AsyncSessionLocal() as session:
-        service = AssetService(session)
-        # 注意：实际实现需要根据 AssetService 的实际接口调整
-        results = await service.search(query, asset_type=asset_type, tags=tags, limit=limit)
+        node_service = AssetNodeService(session)
+        results, total = await node_service.list_nodes(
+            asset_type=_asset_type(asset_type),
+            keyword=query or None,
+            page=1,
+            page_size=max(1, min(limit, 50)),
+        )
+        if tags:
+            wanted = {tag.lower() for tag in tags}
+            filtered = []
+            for node in results:
+                names = {tag.name.lower() for tag in await node_service.get_tags(str(node.id))}
+                names.update(str(tag).lower() for tag in (node.tags_json or []))
+                if wanted.issubset(names):
+                    filtered.append(node)
+            results = filtered
         return {
             "success": True,
-            "assets": [r.to_dict() for r in results],
+            "assets": [await _node_to_tool_dict(session, node) for node in results],
             "total": len(results),
+            "matched_total": total,
         }
 
 
@@ -62,13 +123,13 @@ async def get_asset_detail(asset_id: str):
         asset_id: 资产 ID
     """
     async with AsyncSessionLocal() as session:
-        service = AssetService(session)
-        asset = await service.get(asset_id)
+        node_service = AssetNodeService(session)
+        asset = await node_service.get(asset_id)
         if not asset:
             return {"success": False, "message": "资产不存在"}
         return {
             "success": True,
-            "asset": asset.to_dict(),
+            "asset": await _node_to_tool_dict(session, asset),
         }
 
 
@@ -86,9 +147,21 @@ async def download_asset(asset_id: str):
         asset_id: 资产 ID
     """
     async with AsyncSessionLocal() as session:
-        service = AssetService(session)
-        result = await service.download(asset_id)
-        return result
+        node_service = AssetNodeService(session)
+        node = await node_service.get(asset_id)
+        if not node:
+            return {"success": False, "message": "资产不存在"}
+        data = await _node_to_tool_dict(session, node)
+        file_path = data.get("file_path")
+        if not file_path:
+            return {"success": False, "message": "资产没有可下载文件"}
+        return {
+            "success": True,
+            "asset_id": asset_id,
+            "file_path": file_path,
+            "mime_type": data.get("mime_type", ""),
+            "file_size": data.get("file_size", 0),
+        }
 
 
 @register_tool(
@@ -105,11 +178,15 @@ async def add_asset_tag(asset_id: str, tag: str):
         tag: 标签名称
     """
     async with AsyncSessionLocal() as session:
-        service = AssetService(session)
-        ok = await service.add_tag(asset_id, tag)
+        node_service = AssetNodeService(session)
+        asset = await node_service.get(asset_id)
+        if not asset:
+            return {"success": False, "message": "资产不存在"}
+        await node_service.add_tags(asset_id, [tag])
+        await session.commit()
         return {
-            "success": ok,
-            "message": "标签已添加" if ok else "添加失败",
+            "success": True,
+            "message": "标签已添加",
         }
 
 
@@ -127,9 +204,19 @@ async def delete_asset(asset_id: str):
         asset_id: 资产 ID
     """
     async with AsyncSessionLocal() as session:
-        service = AssetService(session)
-        ok = await service.delete(asset_id)
+        node_service = AssetNodeService(session)
+        asset = await node_service.get(asset_id)
+        if not asset:
+            return {"success": False, "message": "删除失败，资产可能不存在"}
+        await node_service.update(
+            asset_id,
+            metadata={
+                "status": "DELETED",
+                "deleted_by": "agent_tool",
+            },
+        )
+        await session.commit()
         return {
-            "success": ok,
-            "message": "资产已删除" if ok else "删除失败，资产可能不存在",
+            "success": True,
+            "message": "资产已删除",
         }

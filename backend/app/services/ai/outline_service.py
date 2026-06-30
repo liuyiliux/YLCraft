@@ -205,7 +205,7 @@ async def batch_generate_images(
 ) -> dict:
     """
     批量生成图片：对每一页调用现有的 generate_image。
-    成功后自动入库到 AssetService。
+    成功后自动入库到 Asset Hub。
 
     Args:
         pages: [{ "prompt", "platform", "size", "n" }]
@@ -222,7 +222,7 @@ async def batch_generate_images(
     """
     import asyncio
     from app.services.ai.types import ImageGenerationRequest
-    from app.services.asset.service import AssetService
+    from app.services.asset_hub import AssetHubFacade
 
     manager = get_ai_service()
 
@@ -240,10 +240,10 @@ async def batch_generate_images(
             if result.success:
                 urls = result.urls or [result.url] if result.url else []
 
-                # 入库到资产库
+                asset_hub_node_id = ""
+                # 入库到资产中枢
                 if result.local_path:
                     try:
-                        asset_service = AssetService(session)
                         # 构建多平台生图元数据
                         extra_metadata = {
                             "topic": topic or "",
@@ -253,16 +253,25 @@ async def batch_generate_images(
                             "page_type": page.get("type", ""),
                             "content_platform": page.get("platform", ""),  # 目标内容平台
                         }
-                        asset = await asset_service.create_from_image_generation(
-                            image_path=str(result.local_path),
+                        hub_result = await AssetHubFacade(session).create_generated_image(
+                            file_path=str(result.local_path),
                             prompt=page.get("prompt", ""),
                             provider=result.provider or provider,
                             model=result.model or model,
                             seed=result.seed,
-                            url=result.url or "",
+                            source_url=result.url or "",
                             size=page.get("size", "1024x1024"),
-                            metadata=extra_metadata,
+                            generation_params=extra_metadata,
+                            lineage={
+                                "topic": topic or "",
+                                "template_id": page.get("template_id", "") or template_id or "",
+                                "outline_title": outline_title or "",
+                                "page_type": page.get("type", ""),
+                                "content_platform": page.get("platform", ""),
+                            },
+                            tags=[page.get("platform", ""), page.get("type", "")],
                         )
+                        asset_hub_node_id = hub_result.node_id
                         logger.info(f"Batch image saved to asset library: {result.local_path}")
                     except Exception as asset_err:
                         logger.warning(f"Failed to save batch image to asset library: {asset_err}")
@@ -272,7 +281,7 @@ async def batch_generate_images(
                     "prompt": page.get("prompt", ""),
                     "urls": urls,
                     "success": True,
-                    "asset_id": str(asset.id) if result.local_path and 'asset' in locals() else "",
+                    "asset_id": asset_hub_node_id,
                 }
             return {
                 "platform": page.get("platform", ""),

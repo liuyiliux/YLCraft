@@ -203,15 +203,17 @@ export function TagTree({
   }
 
   const handleSelect = useCallback((keys: string[], info) => {
+    const key = info.node.key as string
     setExpandedKeys(prev => {
-      const key = info.node.key as string
       if (prev.includes(key)) {
         return prev.filter(k => k !== key)
       }
       return [...prev, key]
     })
+    const tag = tagMap[key]
+    if (tag) onTagClick?.(tag)
     onSelect?.(keys, info)
-  }, [onSelect])
+  }, [onSelect, onTagClick, tagMap])
 
   const renderTreeIcon = (props: { expanded?: boolean; isLeaf?: boolean }) => {
     if (props.isLeaf) {
@@ -249,11 +251,6 @@ export function TagTree({
         checkable={showCheckbox}
         loadData={onLoadData}
         icon={renderTreeIcon}
-        onDoubleClick={onTagClick ? (_, info: any) => {
-          const key = info.node.key as string
-          const tag = tagMap[key]
-          if (tag) onTagClick(tag)
-        } : undefined}
         style={{ padding: 12 }}
       />
       {loading && (

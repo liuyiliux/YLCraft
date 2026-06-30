@@ -42,6 +42,8 @@ import {
   generateImage as generateImageApi,
   getPlatformTemplates,
   getImageBackends,
+  getAsset,
+  listAssets,
   linkCreativeProjectAsset,
   listConnectors,
   listCreativeProjectContents,
@@ -116,6 +118,18 @@ interface ProjectAssetLink {
   relation: string
   metadata: Record<string, any>
   created_at?: string
+}
+
+type AssetSummary = {
+  id: string
+  title?: string
+  type?: string
+  thumbnail_url?: string
+  cover_url?: string
+  source_url?: string
+  file_path?: string
+  tags?: string[]
+  metadata?: Record<string, any>
 }
 
 interface ProjectGenerationLog {
@@ -215,6 +229,7 @@ export default function StoryPage() {
   const [selectedProject, setSelectedProject] = useState<CreativeProject | null>(null)
   const [contents, setContents] = useState<ProjectContent[]>([])
   const [projectAssets, setProjectAssets] = useState<ProjectAssetLink[]>([])
+  const [assetDetails, setAssetDetails] = useState<Record<string, AssetSummary>>({})
   const [generationLogs, setGenerationLogs] = useState<ProjectGenerationLog[]>([])
   const [llmConnectors, setLlmConnectors] = useState<Provider[]>([])
   const [imageBackends, setImageBackends] = useState<ImageBackendOption[]>([])
@@ -237,6 +252,7 @@ export default function StoryPage() {
   const [workbenchWidths, setWorkbenchWidths] = useState({ outline: 360, prose: 520 })
   const [savingImageModel, setSavingImageModel] = useState(false)
   const [inlineImageLoadingKey, setInlineImageLoadingKey] = useState<string | null>(null)
+  const [batchStoryboardImageChapter, setBatchStoryboardImageChapter] = useState<number | null>(null)
   const [inlineImages, setInlineImages] = useState<Record<string, InlineGeneratedImage>>({})
   const [form] = Form.useForm()
 
@@ -274,6 +290,8 @@ export default function StoryPage() {
     const normalizedContext = { ...context, chapterNumber }
     const key = imageContextKey(normalizedContext)
     const size = defaultImageModel.default_size || '1024x1024'
+    const referenceAssets = pickReferenceAssetsForPrompt(trimmedPrompt)
+    const referenceImages = referenceAssets.map((asset) => `/api/v1/assets/${asset.asset_id}/thumbnail?original=true`)
     setInlineImageLoadingKey(key)
 
     try {
@@ -289,6 +307,7 @@ export default function StoryPage() {
           normalizedContext.sourceIndex !== undefined ? String(normalizedContext.sourceIndex) : undefined,
         source_title: normalizedContext.sourceTitle || undefined,
         chapter_number: chapterNumber !== undefined && chapterNumber !== null ? String(chapterNumber) : undefined,
+        reference_images: referenceImages.length ? referenceImages : undefined,
       })
 
       if (!data?.success) {
@@ -329,6 +348,7 @@ export default function StoryPage() {
               provider: defaultImageModel.name,
               model: defaultImageModel.model || '',
               size,
+              reference_asset_ids: referenceAssets.map((asset) => asset.asset_id),
               generated_at: new Date().toISOString(),
             },
           })
@@ -358,6 +378,42 @@ export default function StoryPage() {
     }
   }
 
+  function pickReferenceAssetsForPrompt(prompt: string, maxCount = 4) {
+    const references = projectAssets.filter((asset) =>
+      ['character', 'background', 'style', 'reference'].includes(asset.role),
+    )
+    if (!references.length) return []
+
+    const promptText = prompt.toLowerCase()
+    const scored = references.map((asset, index) => {
+      const meta = asset.metadata || {}
+      const marker = [
+        meta.character_name,
+        meta.name,
+        meta.source_title,
+        meta.label,
+        asset.role,
+        asset.asset_id,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+      let score = 0
+      if (asset.role === 'style') score += 8
+      if (asset.role === 'background') score += 6
+      if (asset.role === 'reference') score += 4
+      if (asset.role === 'character') score += 3
+      if (marker && promptText.includes(marker)) score += 20
+      if (meta.character_name && promptText.includes(String(meta.character_name).toLowerCase())) score += 30
+      return { asset, score, index }
+    })
+
+    return scored
+      .sort((a, b) => b.score - a.score || a.index - b.index)
+      .slice(0, maxCount)
+      .map((item) => item.asset)
+  }
+
   useEffect(() => {
     loadProjects()
     loadLlmConnectors()
@@ -378,6 +434,101 @@ export default function StoryPage() {
       setGenerationLogs([])
     }
   }, [selectedId, projects])
+
+  useEffect(() => {
+    const ids = Array.from(new Set(projectAssets.map((asset) => asset.asset_id).filter(Boolean)))
+    const missingIds = ids.filter((id) => !assetDetails[id])
+    if (!missingIds.length) return
+
+    let cancelled = false
+    ;(async () => {
+      const entries = await Promise.all(
+        missingIds.map(async (id) => {
+          try {
+            const response = await getAsset(id)
+            return [id, response?.data || null] as const
+          } catch {
+            return [id, null] as const
+          }
+        }),
+      )
+      if (cancelled) return
+      const next: Record<string, AssetSummary> = {}
+      entries.forEach(([id, asset]) => {
+        if (asset) next[id] = asset
+      })
+      if (Object.keys(next).length) {
+        setAssetDetails((prev) => ({ ...prev, ...next }))
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [projectAssets, assetDetails])
+
+  useEffect(() => {
+    if (!selectedProject?.id) {
+      setInlineImages({})
+      return
+    }
+
+    const outputLinks = projectAssets.filter((link) => {
+      const metadata = link.metadata || {}
+      return link.role === 'output' && metadata.source_type && metadata.source_index !== undefined
+    })
+
+    if (!outputLinks.length) {
+      setInlineImages({})
+      return
+    }
+
+    let cancelled = false
+    ;(async () => {
+      const entries = await Promise.all(
+        outputLinks.map(async (link) => {
+          const metadata = link.metadata || {}
+          const context: ImagePromptContext = {
+            contentId: link.content_id || undefined,
+            sourceType: metadata.source_type,
+            sourceIndex: metadata.source_index,
+            chapterNumber:
+              metadata.chapter_number !== undefined && metadata.chapter_number !== null
+                ? Number(metadata.chapter_number)
+                : undefined,
+          }
+          const key = imageContextKey(context)
+          let asset: any = null
+          try {
+            const response = await getAsset(link.asset_id)
+            asset = response?.data || null
+          } catch {
+            asset = null
+          }
+          return [
+            key,
+            {
+              assetId: link.asset_id,
+              url: asset?.thumbnail_url || asset?.cover_url || asset?.source_url || '',
+              localPath: asset?.file_path || '',
+              prompt: metadata.prompt || asset?.metadata?.prompt || '',
+              provider: metadata.provider || asset?.metadata?.provider || asset?.platform || '',
+              model: metadata.model || asset?.metadata?.model || '',
+              createdAt: metadata.generated_at || link.created_at || '',
+            } satisfies InlineGeneratedImage,
+          ] as const
+        }),
+      )
+
+      if (!cancelled) {
+        setInlineImages(Object.fromEntries([...entries].reverse()))
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedProject?.id, projectAssets])
 
   useEffect(() => {
     if (!chapters.length) return
@@ -637,7 +788,7 @@ export default function StoryPage() {
     }
   }
 
-  async function handleLinkAsset(assetId: string, role: string) {
+  async function handleLinkAsset(assetId: string, role: string, metadata?: Record<string, any>) {
     if (!selectedProject || !assetId.trim()) return
     setLoadingAction('asset')
     try {
@@ -645,6 +796,7 @@ export default function StoryPage() {
         asset_id: assetId.trim(),
         role,
         relation: role === 'output' ? 'derived_from' : 'references',
+        metadata: metadata || {},
       })
       message.success('素材已关联到项目')
       await loadProjectAssets(selectedProject.id)
@@ -923,6 +1075,49 @@ export default function StoryPage() {
     } finally {
       setLoadingAction(null)
       setLoadingChapterAction({ action: null, chapterNumber: null })
+    }
+  }
+
+  async function handleBatchGenerateStoryboardImages(chapterNumber: number) {
+    const storyboard = contentForChapter('storyboard', chapterNumber)
+    if (!storyboard) {
+      message.warning('请先生成这一章的分镜')
+      return
+    }
+    if (!defaultImageModel.name) {
+      message.warning('请先在顶部选择默认生图模型')
+      return
+    }
+
+    const panels = (storyboard.data?.panels || []).filter((panel: any) => panel?.image_prompt)
+    if (!panels.length) {
+      message.warning('当前分镜没有可用的生图提示词')
+      return
+    }
+
+    setBatchStoryboardImageChapter(chapterNumber)
+    try {
+      let generated = 0
+      for (const panel of panels) {
+        const key = imageContextKey({
+          contentId: storyboard.id,
+          sourceType: 'storyboard_panel',
+          sourceIndex: panel.panel_number,
+          chapterNumber,
+        })
+        if (inlineImages[key]) continue
+        await handleInlineGenerateImage(panel.image_prompt, {
+          contentId: storyboard.id,
+          sourceType: 'storyboard_panel',
+          sourceIndex: panel.panel_number,
+          sourceTitle: panel.action || `分镜 ${panel.panel_number}`,
+          chapterNumber,
+        })
+        generated += 1
+      }
+      message.success(generated ? `已批量生成 ${generated} 张分镜图` : '本话分镜图都已经生成过了')
+    } finally {
+      setBatchStoryboardImageChapter(null)
     }
   }
 
@@ -1375,6 +1570,7 @@ export default function StoryPage() {
                         setColumnWidths={setWorkbenchWidths}
                         startHorizontalResize={startHorizontalResize}
                         projectAssets={projectAssets}
+                        assetDetails={assetDetails}
                         savingContentId={savingContentId}
                         linkingAsset={loadingAction === 'asset'}
                         onGenerateChapterOutline={handleGenerateChapterOutline}
@@ -1383,12 +1579,14 @@ export default function StoryPage() {
                         onRefineNovelBody={handleRefineNovelBody}
                         onGenerateScript={handleGenerateScript}
                         onGenerateStoryboard={handleGenerateStoryboardForChapter}
+                        onBatchGenerateStoryboardImages={handleBatchGenerateStoryboardImages}
                         onSplitComicPages={handleSplitComicPages}
                         onSaveContent={handleSaveContent}
                         onLinkReferenceAsset={handleLinkAsset}
                         onSendImagePrompt={handleInlineGenerateImage}
                         inlineImages={inlineImages}
                         inlineImageLoadingKey={inlineImageLoadingKey}
+                        batchStoryboardImageChapter={batchStoryboardImageChapter}
                       />
                     ),
                   },
@@ -1770,6 +1968,7 @@ function EpisodeWorkbenchTab({
   setColumnWidths,
   startHorizontalResize,
   projectAssets,
+  assetDetails,
   savingContentId,
   linkingAsset,
   onGenerateChapterOutline,
@@ -1778,12 +1977,14 @@ function EpisodeWorkbenchTab({
   onRefineNovelBody,
   onGenerateScript,
   onGenerateStoryboard,
+  onBatchGenerateStoryboardImages,
   onSplitComicPages,
   onSaveContent,
   onLinkReferenceAsset,
   onSendImagePrompt,
   inlineImages,
   inlineImageLoadingKey,
+  batchStoryboardImageChapter,
 }: {
   chapters: ChapterPlanItem[]
   activeChapterNumber: number
@@ -1802,6 +2003,7 @@ function EpisodeWorkbenchTab({
     options: { initial: number; min: number; max: number; onChange: (value: number) => void },
   ) => void
   projectAssets: ProjectAssetLink[]
+  assetDetails: Record<string, AssetSummary>
   savingContentId: string | null
   linkingAsset: boolean
   onGenerateChapterOutline: (chapterNumber: number) => void
@@ -1810,15 +2012,17 @@ function EpisodeWorkbenchTab({
   onRefineNovelBody: (chapterNumber: number, instruction: string) => void
   onGenerateScript: (chapterNumber: number) => void
   onGenerateStoryboard: (chapterNumber: number) => void
+  onBatchGenerateStoryboardImages: (chapterNumber: number) => void
   onSplitComicPages: (chapterNumber: number) => void
   onSaveContent: (
     contentId: string,
     patch: { title?: string; data?: Record<string, any>; text_content?: string; is_locked?: boolean },
   ) => void
-  onLinkReferenceAsset: (assetId: string, role: string) => void
+  onLinkReferenceAsset: (assetId: string, role: string, metadata?: Record<string, any>) => void
   onSendImagePrompt: (prompt: string, context?: ImagePromptContext) => void
   inlineImages: Record<string, InlineGeneratedImage>
   inlineImageLoadingKey: string | null
+  batchStoryboardImageChapter: number | null
 }) {
   const chapterOutline = contentForChapter('chapter_outline', activeChapterNumber)
   const novelBody = contentForChapter('novel_body', activeChapterNumber)
@@ -2422,6 +2626,7 @@ function EpisodeWorkbenchTab({
       <Space direction="vertical" size={12} style={{ width: '100%' }}>
         <ReferenceCardsPanel
           assets={projectAssets}
+          assetDetails={assetDetails}
           loading={linkingAsset}
           onLinkAsset={onLinkReferenceAsset}
         />
@@ -2504,17 +2709,29 @@ function EpisodeWorkbenchTab({
         <WorkbenchSection
           title={`分镜${panelCount ? ` · ${panelCount}` : ''}`}
           extra={
-            <Tooltip title={canGenerateStoryboard ? '' : '先生成脚本'}>
-              <Button
-                size="small"
-                icon={<PictureOutlined />}
-                disabled={!canGenerateStoryboard}
-                loading={isChapterActionLoading('storyboard', activeChapterNumber)}
-                onClick={() => onGenerateStoryboard(activeChapterNumber)}
-              >
-                {storyboard ? '重拆分镜' : '由脚本生成分镜'}
-              </Button>
-            </Tooltip>
+            <Space size={6}>
+              {storyboard ? (
+                <Button
+                  size="small"
+                  icon={<ThunderboltOutlined />}
+                  loading={batchStoryboardImageChapter === activeChapterNumber}
+                  onClick={() => onBatchGenerateStoryboardImages(activeChapterNumber)}
+                >
+                  批量生图
+                </Button>
+              ) : null}
+              <Tooltip title={canGenerateStoryboard ? '' : '先生成脚本'}>
+                <Button
+                  size="small"
+                  icon={<PictureOutlined />}
+                  disabled={!canGenerateStoryboard}
+                  loading={isChapterActionLoading('storyboard', activeChapterNumber)}
+                  onClick={() => onGenerateStoryboard(activeChapterNumber)}
+                >
+                  {storyboard ? '重拆分镜' : '生成分镜'}
+                </Button>
+              </Tooltip>
+            </Space>
           }
         >
           {storyboard ? (
@@ -2745,18 +2962,53 @@ function InlineImageResult({
 
 function ReferenceCardsPanel({
   assets,
+  assetDetails,
   loading,
   onLinkAsset,
 }: {
   assets: ProjectAssetLink[]
+  assetDetails: Record<string, AssetSummary>
   loading: boolean
-  onLinkAsset: (assetId: string, role: string) => void
+  onLinkAsset: (assetId: string, role: string, metadata?: Record<string, any>) => void
 }) {
   const [assetId, setAssetId] = useState('')
+  const [searchKeyword, setSearchKeyword] = useState('')
+  const [searching, setSearching] = useState(false)
+  const [searchResults, setSearchResults] = useState<AssetSummary[]>([])
   const [role, setRole] = useState('character')
+  const [label, setLabel] = useState('')
+  const [characterName, setCharacterName] = useState('')
   const referenceAssets = assets.filter((asset) =>
     ['character', 'background', 'style', 'reference'].includes(asset.role),
   )
+  const buildMetadata = (source?: AssetSummary) => ({
+    label: label.trim() || source?.title || '',
+    character_name: role === 'character' ? characterName.trim() || label.trim() || source?.title || '' : '',
+    source_title: source?.title || '',
+    source_type: source?.type || '',
+    linked_from: 'story_workbench_reference_card',
+  })
+  const linkAsset = (id: string, source?: AssetSummary) => {
+    if (!id.trim()) return
+    onLinkAsset(id.trim(), role, buildMetadata(source))
+    setAssetId('')
+    setLabel('')
+    setCharacterName('')
+  }
+  const searchAssets = async () => {
+    setSearching(true)
+    try {
+      const response = await listAssets({
+        search: searchKeyword.trim() || undefined,
+        page_size: 12,
+      })
+      setSearchResults(response?.data || [])
+    } catch (error: any) {
+      message.error(error?.message || '搜索素材失败')
+    } finally {
+      setSearching(false)
+    }
+  }
 
   return (
     <WorkbenchSection
@@ -2768,6 +3020,84 @@ function ReferenceCardsPanel({
       }
     >
       <Space direction="vertical" size={10} style={{ width: '100%' }}>
+        <Space.Compact style={{ width: '100%' }}>
+          <Input
+            value={searchKeyword}
+            onChange={(event) => setSearchKeyword(event.target.value)}
+            onPressEnter={searchAssets}
+            placeholder="搜索素材库：角色名 / 背景 / 画风 / 分镜图"
+          />
+          <Button loading={searching} onClick={searchAssets}>
+            搜索
+          </Button>
+        </Space.Compact>
+        <Space.Compact style={{ width: '100%' }}>
+          <Input
+            value={label}
+            onChange={(event) => setLabel(event.target.value)}
+            placeholder="参考名称：如 萧然立绘 / 夜晚办公室 / 统一漫画风格"
+          />
+          <Input
+            value={characterName}
+            disabled={role !== 'character'}
+            onChange={(event) => setCharacterName(event.target.value)}
+            placeholder="角色名"
+            style={{ width: 160 }}
+          />
+          <Select
+            value={role}
+            onChange={setRole}
+            style={{ width: 120 }}
+            options={referenceRoleOptions}
+          />
+        </Space.Compact>
+        {searchResults.length ? (
+          <List
+            size="small"
+            dataSource={searchResults}
+            renderItem={(asset) => {
+              const preview = assetFileUrl(asset.thumbnail_url || asset.cover_url || asset.source_url || asset.file_path)
+              return (
+                <List.Item
+                  actions={[
+                    <Button
+                      key="link"
+                      size="small"
+                      icon={<PlusOutlined />}
+                      loading={loading}
+                      onClick={() => linkAsset(asset.id, asset)}
+                    >
+                      关联
+                    </Button>,
+                  ]}
+                >
+                  <List.Item.Meta
+                    avatar={
+                      preview ? (
+                        <Image
+                          src={preview}
+                          width={44}
+                          height={44}
+                          preview={false}
+                          style={{ objectFit: 'cover', borderRadius: 6 }}
+                        />
+                      ) : null
+                    }
+                    title={<Text ellipsis={{ tooltip: asset.title }}>{asset.title || asset.id}</Text>}
+                    description={
+                      <Space size={4} wrap>
+                        {asset.type ? <Tag>{asset.type}</Tag> : null}
+                        {(asset.tags || []).slice(0, 3).map((tag) => (
+                          <Tag key={tag}>{tag}</Tag>
+                        ))}
+                      </Space>
+                    }
+                  />
+                </List.Item>
+              )
+            }}
+          />
+        ) : null}
         <Space.Compact style={{ width: '100%' }}>
           <Input
             value={assetId}
@@ -2784,8 +3114,7 @@ function ReferenceCardsPanel({
             type="primary"
             loading={loading}
             onClick={() => {
-              onLinkAsset(assetId, role)
-              setAssetId('')
+              linkAsset(assetId)
             }}
           >
             关联
@@ -2795,13 +3124,9 @@ function ReferenceCardsPanel({
           角色卡、背景和画风参考会作为漫画生成的一致性资产入口；当前先建立项目关联，后续生成提示会读取这些参考。
         </Text>
         {referenceAssets.length ? (
-          <Space size={[6, 6]} wrap>
+          <Space direction="vertical" size={8} style={{ width: '100%' }}>
             {referenceAssets.map((asset) => (
-              <Tooltip key={asset.id} title={asset.asset_id}>
-                <Tag color={asset.role === 'character' ? 'green' : asset.role === 'style' ? 'purple' : 'blue'}>
-                  {referenceRoleOptions.find((item) => item.value === asset.role)?.label || asset.role}
-                </Tag>
-              </Tooltip>
+              <ReferenceAssetCard key={asset.id} link={asset} asset={assetDetails[asset.asset_id]} />
             ))}
           </Space>
         ) : (
@@ -2809,6 +3134,49 @@ function ReferenceCardsPanel({
         )}
       </Space>
     </WorkbenchSection>
+  )
+}
+
+function ReferenceAssetCard({
+  link,
+  asset,
+}: {
+  link: ProjectAssetLink
+  asset?: AssetSummary
+}) {
+  const roleLabel = referenceRoleOptions.find((item) => item.value === link.role)?.label || link.role
+  const preview = assetFileUrl(asset?.thumbnail_url || asset?.cover_url || asset?.source_url || asset?.file_path)
+  const title = link.metadata?.label || link.metadata?.character_name || asset?.title || link.asset_id
+  const roleColor = link.role === 'character' ? 'green' : link.role === 'style' ? 'purple' : 'blue'
+
+  return (
+    <div style={referenceAssetCardStyle}>
+      {preview ? (
+        <Image
+          src={preview}
+          width={52}
+          height={52}
+          preview={false}
+          style={{ objectFit: 'cover', borderRadius: 6, border: '1px solid #eef0f3' }}
+        />
+      ) : (
+        <div style={referenceAssetPlaceholderStyle}>
+          <PictureOutlined />
+        </div>
+      )}
+      <Space direction="vertical" size={3} style={{ minWidth: 0, flex: 1 }}>
+        <Space size={4} wrap>
+          <Tag color={roleColor}>{roleLabel}</Tag>
+          {link.metadata?.character_name ? <Tag>{link.metadata.character_name}</Tag> : null}
+        </Space>
+        <Text strong ellipsis={{ tooltip: title }}>
+          {title}
+        </Text>
+        <Text type="secondary" copyable ellipsis={{ tooltip: link.asset_id }} style={{ fontSize: 12 }}>
+          {link.asset_id}
+        </Text>
+      </Space>
+    </div>
   )
 }
 
@@ -3355,6 +3723,28 @@ const inlineImageShellStyle: React.CSSProperties = {
   borderRadius: 8,
   padding: 10,
   background: '#fbfcff',
+}
+
+const referenceAssetCardStyle: React.CSSProperties = {
+  display: 'flex',
+  gap: 10,
+  alignItems: 'center',
+  border: '1px solid #eef0f3',
+  borderRadius: 8,
+  padding: 8,
+  background: '#fff',
+}
+
+const referenceAssetPlaceholderStyle: React.CSSProperties = {
+  width: 52,
+  height: 52,
+  borderRadius: 6,
+  border: '1px solid #eef0f3',
+  background: '#fafafa',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  color: '#8c8c8c',
 }
 
 const resizeHandleStyle: React.CSSProperties = {

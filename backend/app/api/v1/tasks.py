@@ -10,10 +10,12 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import text
 
 from app.core.task_queue import get_task_queue, task_event_to_dict
 
@@ -244,16 +246,9 @@ def _find_external_task(task_id: str, include_detail: bool = True) -> TaskInfo |
         logger.debug("Failed to find external task %s: %s", task_id, exc)
     if task_id.startswith("asset_download_"):
         asset_id = task_id.removeprefix("asset_download_")
-        try:
-            from app.db.database import SessionLocal
-            from app.db.models.asset import Asset
-
-            with SessionLocal() as session:
-                asset = session.query(Asset).filter(Asset.id == asset_id).one_or_none()
-            if asset:
-                return _asset_download_task_info(asset, include_detail=include_detail)
-        except Exception as exc:
-            logger.debug("Failed to find asset-backed task %s: %s", task_id, exc)
+        asset_row = _asset_hub_download_row(asset_id)
+        if asset_row:
+            return _asset_hub_download_task_info(asset_row, include_detail=include_detail)
     return None
 
 
@@ -292,6 +287,10 @@ def _asset_download_task_id(asset_id: str) -> str:
     return f"asset_download_{asset_id}"
 
 
+def _dict_value(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
 def _asset_download_task_info(asset: Any, include_detail: bool = False) -> TaskInfo:
     payload = {
         "source_url": getattr(asset, "source_url", ""),
@@ -325,29 +324,168 @@ def _asset_download_task_info(asset: Any, include_detail: bool = False) -> TaskI
     )
 
 
-def _recent_asset_download_infos(include_detail: bool = False, limit: int = 30) -> list[TaskInfo]:
-    """Backfill completed download tasks from recent parsed media assets."""
-    try:
-        from sqlalchemy import func
+def _asset_hub_download_task_info(row: Any, include_detail: bool = False) -> TaskInfo:
+    node_meta = _dict_value(getattr(row, "node_metadata", None))
+    params = _dict_value(getattr(row, "params", None))
+    lineage = _dict_value(getattr(row, "lineage", None))
+    rep_extra = _dict_value(getattr(row, "rep_extra", None))
 
+    source_url = (
+        node_meta.get("source_url")
+        or lineage.get("source_url")
+        or params.get("source_url")
+        or rep_extra.get("source_url")
+        or ""
+    )
+    platform = (
+        node_meta.get("platform")
+        or lineage.get("platform")
+        or params.get("platform")
+        or ""
+    )
+    title = getattr(row, "name", "") or node_meta.get("title") or ""
+    file_path = getattr(row, "file_path", "") or ""
+    created_at = getattr(row, "created_at", None)
+    completed_at = getattr(row, "updated_at", None) or created_at
+
+    payload = {
+        "source_url": source_url,
+        "platform": platform,
+        "title": title,
+    }
+    payload = {key: value for key, value in payload.items() if value}
+    result = {
+        "asset_id": getattr(row, "id", ""),
+        "file_path": file_path,
+    }
+    result = {key: value for key, value in result.items() if value}
+    timing = {"created_at": created_at, "completed_at": completed_at}
+
+    return TaskInfo(
+        task_id=_asset_download_task_id(getattr(row, "id", "")),
+        task_type="download",
+        status="done",
+        progress=100,
+        progress_message="下载完成，已入素材库",
+        created_at=_format_timestamp(created_at),
+        started_at=_format_timestamp(created_at),
+        completed_at=_format_timestamp(completed_at),
+        duration_seconds=_duration_seconds(timing),
+        payload=payload if include_detail else None,
+        result=result or None,
+        error=None,
+    )
+
+
+def _asset_hub_download_source_predicate() -> str:
+    return """
+    (
+        an.metadata_json ->> 'source_type' IN ('parse', 'download')
+        OR an.metadata_json ->> 'source' IN ('parse', 'download')
+        OR av.params_json ->> 'source_type' IN ('parse', 'download')
+        OR av.params_json ->> 'source' IN ('parse', 'download')
+        OR av.lineage_json ->> 'source' IN ('parse', 'download')
+    )
+    """
+
+
+def _asset_hub_media_type_predicate() -> str:
+    return """
+    (
+        ar.mime_type ILIKE 'video/%'
+        OR ar.mime_type ILIKE 'audio/%'
+        OR an.asset_type IN ('VIDEO', 'AUDIO')
+    )
+    """
+
+
+def _asset_hub_download_row(asset_id: str) -> Any | None:
+    try:
         from app.db.database import SessionLocal
-        from app.db.models.asset import Asset
 
         with SessionLocal() as session:
-            assets = (
-                session.query(Asset)
-                .filter(Asset.source_type == "parse")
-                .filter(Asset.status == "READY")
-                .filter(Asset.deleted_at.is_(None))
-                .filter(func.lower(Asset.type).in_(["video", "audio"]))
-                .order_by(Asset.updated_at.desc())
-                .limit(limit)
+            row = session.execute(
+                text(
+                    f"""
+                    SELECT
+                        an.id,
+                        an.name,
+                        an.metadata_json AS node_metadata,
+                        an.created_at,
+                        an.updated_at,
+                        av.params_json AS params,
+                        av.lineage_json AS lineage,
+                        ar.file_path,
+                        ar.extra_json AS rep_extra
+                    FROM asset_nodes an
+                    JOIN asset_versions av ON av.asset_node_id = an.id
+                    JOIN asset_representations ar ON ar.asset_version_id = av.id
+                    WHERE an.id = :asset_id
+                      AND {_asset_hub_download_source_predicate()}
+                      AND {_asset_hub_media_type_predicate()}
+                      AND COALESCE(an.metadata_json ->> 'status', 'READY') <> 'DELETED'
+                    ORDER BY av.version_number DESC, ar.file_size DESC
+                    LIMIT 1
+                    """
+                ),
+                {"asset_id": asset_id},
+            ).mappings().first()
+        return SimpleNamespace(**dict(row)) if row else None
+    except Exception as exc:
+        logger.debug("Failed to find Asset Hub download task %s: %s", asset_id, exc)
+        return None
+
+
+def _recent_asset_hub_download_rows(limit: int = 30) -> list[Any]:
+    try:
+        from app.db.database import SessionLocal
+
+        with SessionLocal() as session:
+            rows = (
+                session.execute(
+                    text(
+                        f"""
+                        SELECT *
+                        FROM (
+                            SELECT DISTINCT ON (an.id)
+                                an.id,
+                                an.name,
+                                an.metadata_json AS node_metadata,
+                                an.created_at,
+                                an.updated_at,
+                                av.params_json AS params,
+                                av.lineage_json AS lineage,
+                                ar.file_path,
+                                ar.extra_json AS rep_extra
+                            FROM asset_nodes an
+                            JOIN asset_versions av ON av.asset_node_id = an.id
+                            JOIN asset_representations ar ON ar.asset_version_id = av.id
+                            WHERE {_asset_hub_download_source_predicate()}
+                              AND {_asset_hub_media_type_predicate()}
+                              AND COALESCE(an.metadata_json ->> 'status', 'READY') <> 'DELETED'
+                            ORDER BY an.id, an.updated_at DESC, av.version_number DESC, ar.file_size DESC
+                        ) recent_download_assets
+                        ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST
+                        LIMIT :limit
+                        """
+                    ),
+                    {"limit": limit},
+                )
+                .mappings()
                 .all()
             )
-        return [_asset_download_task_info(asset, include_detail=include_detail) for asset in assets]
+        return [SimpleNamespace(**dict(row)) for row in rows]
     except Exception as exc:
-        logger.debug("Failed to collect recent asset download tasks: %s", exc)
+        logger.debug("Failed to collect recent Asset Hub download tasks: %s", exc)
         return []
+
+
+def _recent_asset_download_infos(include_detail: bool = False, limit: int = 30) -> list[TaskInfo]:
+    """Backfill completed download tasks from recent Asset Hub media assets."""
+    return [
+        _asset_hub_download_task_info(row, include_detail=include_detail)
+        for row in _recent_asset_hub_download_rows(limit=limit)
+    ]
 
 
 @router.get("", response_model=TaskListResponse, summary="任务列表")

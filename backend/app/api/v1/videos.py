@@ -123,27 +123,38 @@ async def generate_video(req: VideoGenerateRequest):
         result = await manager.generate_video(video_req)
 
         if result.success:
-            # 自动入库到资产库
+            # 自动入库到资产中枢
             if result.video_path:
                 try:
                     from app.db.database import get_async_session
-                    from app.services.asset.service import AssetService
+                    from app.db.models.asset_hub import AssetType
+                    from app.services.asset_hub import AssetHubFacade
                     async with get_async_session() as session:
-                        service = AssetService(session)
-                        await service.create_from_video_generation(
-                            video_path=str(result.video_path),
-                            prompt=req.prompt,
-                            provider=result.provider,
-                            model=result.model,
-                            duration=result.duration_seconds,
-                            seed=result.seed,
-                            url=result.url or "",
-                            negative_prompt="",
-                            resolution=req.resolution or "720p",
-                            aspect_ratio=req.aspect_ratio or "9:16",
-                            generate_audio=req.generate_audio or True,
-                            start_image=str(req.start_image) if req.start_image else "",
-                            reference_images=[str(p) for p in video_req.reference_images] if video_req.reference_images else None,
+                        await AssetHubFacade(session).create_imported_file(
+                            file_path=str(result.video_path),
+                            title=req.prompt or Path(result.video_path).stem,
+                            asset_type=AssetType.VIDEO,
+                            source="video_generation",
+                            source_url=result.url or "",
+                            metadata={
+                                "prompt": req.prompt,
+                                "provider": result.provider,
+                                "model": result.model,
+                                "duration": result.duration_seconds,
+                                "seed": result.seed,
+                                "resolution": req.resolution or "720p",
+                                "aspect_ratio": req.aspect_ratio or "9:16",
+                                "generate_audio": req.generate_audio if req.generate_audio is not None else True,
+                                "start_image": str(req.start_image) if req.start_image else "",
+                                "reference_images": [str(p) for p in video_req.reference_images] if video_req.reference_images else [],
+                            },
+                            lineage={
+                                "source": "video_generation",
+                                "prompt": req.prompt,
+                                "provider": result.provider,
+                                "model": result.model,
+                            },
+                            tags=["ai-generated", result.provider or "", result.model or ""],
                         )
                     logger.info(f"Video saved to asset library: {result.video_path}")
                 except Exception as e:

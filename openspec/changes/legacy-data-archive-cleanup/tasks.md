@@ -35,22 +35,22 @@
 
 ## Phase 4: Legacy Code Pruning
 
-- [ ] 4.1 Mark direct `AssetService` imports outside the compatibility layer as deprecated.
-- [ ] 4.2 Remove unused old page routes, mock asset hub pages, or dead compatibility helpers after verifying no references remain.
-- [ ] 4.3 Move one-off migration scripts into an archive/migrations folder with documentation after the migration is stable.
-- [ ] 4.4 Add regression checks so new modules do not call old asset write APIs directly.
+- [x] 4.1 Mark direct `AssetService` imports outside the compatibility layer as deprecated.
+- [x] 4.2 Remove unused old page routes, mock asset hub pages, or dead compatibility helpers after verifying no references remain.
+- [x] 4.3 Move one-off migration scripts into an archive/migrations folder with documentation after the migration is stable.
+- [x] 4.4 Add regression checks so new modules do not call old asset write APIs directly.
 
 ## Phase 5: Final Archive Decision
 
-- [ ] 5.1 Run final dry-run audit and confirm zero unmigrated required old assets.
-- [ ] 5.2 Export or backup old `assets` table before any destructive operation.
-- [ ] 5.3 Create a separate final deletion OpenSpec task if the user wants to drop old tables.
+- [x] 5.1 Run final dry-run audit and confirm zero unmigrated required old assets.
+- [x] 5.2 Export or backup old `assets` table before any destructive operation.
+- [x] 5.3 Create a separate final deletion OpenSpec task if the user wants to drop old tables.
 - [ ] 5.4 Only after explicit approval, archive/drop old table and remove old models/services.
 
 ## Phase 6: Verification
 
 - [x] 6.1 Run backend compile/import checks for asset API and migration modules.
-- [ ] 6.2 Smoke test generated image -> Asset Hub -> `/assets` display.
-- [ ] 6.3 Smoke test character portrait -> Asset Hub -> character/project link -> `/assets` display.
-- [ ] 6.4 Smoke test downloaded file -> Asset Hub -> preview/download.
-- [ ] 6.5 Confirm no duplicate migrated legacy cards appear in `/assets`.
+- [x] 6.2 Smoke test generated image -> Asset Hub -> `/assets` display.
+- [x] 6.3 Smoke test character portrait -> Asset Hub -> character/project link -> `/assets` display.
+- [x] 6.4 Smoke test downloaded file -> Asset Hub -> preview/download.
+- [x] 6.5 Confirm no duplicate migrated legacy cards appear in `/assets`.

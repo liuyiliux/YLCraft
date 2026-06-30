@@ -335,40 +335,61 @@ class CrawlerService:
         将采集结果导入到 YLCraft 素材库
         返回导入的素材 ID 列表
         """
-        from app.db.database import get_session
-        from app.db.models.asset import Asset
-        from app.services.asset.service import AssetService
+        from sqlalchemy import text
+
+        from app.db.database import get_async_session
+        from app.db.models.asset_hub import AssetType
+        from app.services.asset_hub.node_service import AssetNodeService
 
         asset_ids = []
-        async with get_session() as db_session:
-            asset_service = AssetService(db_session)
+        async with get_async_session() as db_session:
+            node_service = AssetNodeService(db_session)
             for result in results:
                 try:
                     # 检查是否已存在
-                    existing = await asset_service.get_by_url(result.url)
-                    if existing:
-                        asset_ids.append(existing.id)
+                    existing = await db_session.execute(
+                        text(
+                            """
+                            SELECT id
+                            FROM asset_nodes
+                            WHERE metadata_json ->> 'source_url' = :source_url
+                            LIMIT 1
+                            """
+                        ),
+                        {"source_url": result.url},
+                    )
+                    existing_id = existing.scalar_one_or_none()
+                    if existing_id:
+                        asset_ids.append(str(existing_id))
                         continue
 
-                    # 创建新素材记录
-                    asset_type = "video"
-                    asset = await asset_service.create(
-                        asset_type=asset_type,
-                        title=result.title or "未命名素材",
-                        source_url=result.url,
-                        platform=result.platform,
-                        author=result.author,
-                        cover_url=result.cover,
-                        status="parsed",
+                    # 创建新素材节点。采集结果多为远端素材卡片，未必有本地文件。
+                    node = await node_service.create(
+                        name=result.title or "未命名素材",
+                        asset_type=AssetType.VIDEO,
+                        thumbnail_url=result.cover or None,
                         metadata={
+                            "source": "crawler",
+                            "source_url": result.url,
                             "crawler": True,
+                            "platform": result.platform,
+                            "author": result.author,
+                            "author_id": result.author_id,
+                            "cover_url": result.cover,
+                            "video_url": result.video_url,
+                            "description": result.desc or "",
+                            "external_id": result.id,
+                            "create_time": result.create_time,
                             "likes": result.likes,
                             "comments": result.comments,
                             "shares": result.shares,
-                            "author_id": result.author_id,
+                            "followers": result.followers,
+                            "videos": result.videos,
+                            "raw_data": result.raw_data,
                         },
+                        tags=["crawler", result.platform],
                     )
-                    asset_ids.append(asset.id)
+                    asset_ids.append(str(node.id))
                 except Exception as e:
                     logger.error(f"[import_to_asset_library] Failed to import {result.id}: {e}")
 

@@ -15,8 +15,6 @@ from __future__ import annotations
 import json
 import logging
 import mimetypes
-import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -325,8 +323,9 @@ async def export_epub(req: ExportEpubRequest):
 @router.post("/import-assets", summary="将已下载文章导入素材库")
 async def import_articles_to_assets(req: ImportAssetsRequest):
     """将已下载的公众号文章导入素材库"""
-    from app.services.asset.service import AssetService
-    from app.db.models.asset import Asset
+    from app.db.models.asset_hub import AssetType
+    from app.services.asset_hub import AssetHubFacade
+    from app.services.asset_hub.node_service import AssetNodeService
     from app.services.asset.document_metadata import (
         extract_document_asset_metadata,
         resolve_document_cover_source,
@@ -336,7 +335,8 @@ async def import_articles_to_assets(req: ImportAssetsRequest):
     failed = []
 
     async with get_async_session() as session:
-        asset_service = AssetService(session)
+        hub_facade = AssetHubFacade(session)
+        node_service = AssetNodeService(session)
 
         for file_path in req.file_paths:
             try:
@@ -391,57 +391,65 @@ async def import_articles_to_assets(req: ImportAssetsRequest):
                     "cover_url": cover_url,
                     "cover_ref": file_meta.get("cover_ref", ""),
                 }
-                tags_json = json.dumps(["wechat_mp", "article"], ensure_ascii=False)
+                existing_node_id = await _find_wechat_article_node_id(
+                    session=session,
+                    file_path=str(resolved_path),
+                    source_url=source_url,
+                    article_url=article_url,
+                )
 
-                existing_by_path = (await session.execute(
-                    select(Asset)
-                    .where(Asset.file_path == str(resolved_path))
-                    .where(Asset.status != "DELETED")
-                    .limit(1)
-                )).scalars().first()
-                existing_by_url = await asset_service.get_by_url(source_url)
-                asset = existing_by_url or existing_by_path
-
-                if asset:
-                    asset.title = title
-                    asset.type = "ARTICLE"
-                    asset.platform = "wechat_mp"
-                    asset.source_type = "download"
-                    asset.source_url = source_url
-                    asset.file_path = str(resolved_path)
-                    asset.file_size = file_size
-                    asset.mime_type = _guess_article_mime_type(resolved_path)
-                    asset.status = "READY"
-                    asset.author = author
-                    if cover_url:
-                        asset.cover_url = cover_url
-                    asset.metadata_json = json.dumps(metadata, ensure_ascii=False)
-                    if not asset.tags or asset.tags == "[]":
-                        asset.tags = tags_json
-                    asset.updated_at = datetime.now()
-                    await session.flush()
-                    await session.refresh(asset)
-                    imported.append({"file_path": str(resolved_path), "asset_id": asset.id, "updated": True})
-                else:
-                    asset = await asset_service.create(
-                        title=title,
-                        type="ARTICLE",
-                        platform="wechat_mp",
-                        source_type="download",
-                        source_url=source_url,
-                        file_path=str(resolved_path),
-                        file_size=file_size,
-                        mime_type=_guess_article_mime_type(resolved_path),
-                        status="READY",
-                        author=author,
-                        cover_url=cover_url,
-                        metadata_json=json.dumps(metadata, ensure_ascii=False),
-                        tags=tags_json,
+                if existing_node_id:
+                    await node_service.update(
+                        node_id=existing_node_id,
+                        name=(title or resolved_path.stem)[:120],
+                        thumbnail_url=cover_url or None,
+                        metadata={
+                            "source": "wechat_mp",
+                            "source_type": "download",
+                            "platform": "wechat_mp",
+                            "source_url": source_url,
+                            "author": author,
+                            "file_size": file_size,
+                            **metadata,
+                        },
                     )
-                    imported.append({"file_path": str(resolved_path), "asset_id": asset.id, "updated": False})
+                    await node_service.add_tags(existing_node_id, ["wechat_mp", "article"])
+                    await _append_wechat_article_version(
+                        session=session,
+                        node_id=existing_node_id,
+                        file_path=str(resolved_path),
+                        title=title,
+                        source_url=source_url,
+                        metadata=metadata,
+                    )
+                    asset_id = existing_node_id
+                    imported.append({"file_path": str(resolved_path), "asset_id": asset_id, "updated": True})
+                else:
+                    result = await hub_facade.create_imported_file(
+                        file_path=str(resolved_path),
+                        title=title,
+                        asset_type=AssetType.TEXT,
+                        source="wechat_mp",
+                        source_url=source_url,
+                        thumbnail_url=cover_url,
+                        metadata={
+                            "source_type": "download",
+                            "platform": "wechat_mp",
+                            "author": author,
+                            "file_size": file_size,
+                            **metadata,
+                        },
+                        lineage={
+                            "download_record_id": record.id if record else "",
+                            "article_url": article_url,
+                        },
+                        tags=["article"],
+                    )
+                    asset_id = result.node_id
+                    imported.append({"file_path": str(resolved_path), "asset_id": asset_id, "updated": False})
 
                 if record:
-                    record.asset_id = asset.id
+                    record.asset_id = asset_id
             except Exception as e:
                 logger.error(f"[wechat-mp/import] 导入失败 {file_path}: {e}")
                 failed.append({"file_path": file_path, "error": str(e)})
@@ -458,6 +466,95 @@ async def import_articles_to_assets(req: ImportAssetsRequest):
 
 
 # ── 辅助函数 ──────────────────────────────────────────────────
+
+async def _find_wechat_article_node_id(
+    *,
+    session,
+    file_path: str,
+    source_url: str,
+    article_url: str,
+) -> str:
+    from sqlalchemy import text
+
+    result = await session.execute(
+        text(
+            """
+            SELECT an.id::text
+            FROM asset_nodes an
+            LEFT JOIN asset_versions av ON av.asset_node_id = an.id
+            LEFT JOIN asset_representations ar ON ar.asset_version_id = av.id
+            WHERE CAST(an.asset_type AS text) IN ('TEXT', 'text')
+              AND (
+                an.metadata_json ->> 'source' = 'wechat_mp'
+                OR an.metadata_json ->> 'platform' = 'wechat_mp'
+              )
+              AND (
+                ar.file_path = :file_path
+                OR an.metadata_json ->> 'local_file_path' = :file_path
+                OR an.metadata_json ->> 'source_url' = :source_url
+                OR an.metadata_json ->> 'article_url' = :article_url
+              )
+            ORDER BY an.updated_at DESC
+            LIMIT 1
+            """
+        ),
+        {
+            "file_path": file_path,
+            "source_url": source_url,
+            "article_url": article_url,
+        },
+    )
+    return str(result.scalar_one_or_none() or "")
+
+
+async def _append_wechat_article_version(
+    *,
+    session,
+    node_id: str,
+    file_path: str,
+    title: str,
+    source_url: str,
+    metadata: dict,
+) -> None:
+    from app.services.asset_hub.representation_service import AssetRepresentationService
+    from app.services.asset_hub.version_service import AssetVersionService
+
+    path = Path(file_path)
+    version_service = AssetVersionService(session)
+    rep_service = AssetRepresentationService(session)
+    latest = await version_service.get_latest_version(node_id)
+    version = await version_service.create(
+        asset_node_id=node_id,
+        prompt_used="",
+        model_used="",
+        params={
+            "title": title,
+            "source": "wechat_mp",
+            "source_url": source_url,
+            **(metadata or {}),
+        },
+        lineage={
+            "source": "wechat_mp",
+            "source_url": source_url,
+            "download_record_id": (metadata or {}).get("download_record_id", ""),
+            "article_url": (metadata or {}).get("article_url", ""),
+        },
+        parent_version_id=str(latest.id) if latest else None,
+    )
+    await rep_service.create(
+        asset_version_id=str(version.id),
+        file_path=str(path),
+        mime_type=_guess_article_mime_type(path),
+        file_size=path.stat().st_size if path.exists() else 0,
+        format=path.suffix.lstrip(".").lower() or None,
+        extra={
+            "source": "wechat_mp",
+            "source_url": source_url,
+            "thumbnail_url": (metadata or {}).get("cover_url", ""),
+            "local_file_path": str(path),
+        },
+    )
+
 
 def _title_from_article_file(path: Path) -> str:
     stem = path.stem

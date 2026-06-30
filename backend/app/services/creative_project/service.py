@@ -15,7 +15,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session, select
 
-from app.db.models.asset import Asset
+from app.db.models.asset_hub import AssetNode
 from app.db.models.character import Character, CharacterRole, CharacterSourceType, CharacterStoryLink
 from app.db.models.creative_project import (
     CreativeProject,
@@ -167,9 +167,17 @@ class CreativeProjectService:
         title: str = "",
         project_type: str = "short_drama",
     ) -> CreativeProject:
-        asset = self.session.get(Asset, asset_id)
-        if not asset:
+        source_node = self.session.get(AssetNode, asset_id)
+        if not source_node:
             raise ValueError("小说素材不存在")
+        source_meta = source_node.metadata_json or {}
+        novel_title = (
+            source_meta.get("novel_title")
+            or source_meta.get("title")
+            or source_node.name
+            or "未命名小说"
+        )
+        novel_author = source_meta.get("novel_author") or source_meta.get("author") or ""
 
         chapters = self._select_novel_chapters(
             asset_id=asset_id,
@@ -183,18 +191,18 @@ class CreativeProjectService:
             "chapter_indices": [c.chapter_index for c in chapters],
         }
         metadata = {
-            "novel_title": asset.title,
-            "novel_author": asset.author,
+            "novel_title": novel_title,
+            "novel_author": novel_author,
             "source_sample": sample_text,
         }
-        idea = f"改编小说《{asset.title}》"
+        idea = f"改编小说《{novel_title}》"
         if chapters:
             title_list = "、".join(c.chapter_title for c in chapters[:5] if c.chapter_title)
             if title_list:
                 idea += f"，选定章节：{title_list}"
 
         return self.create_project(
-            title=title or f"{asset.title} 改编项目",
+            title=title or f"{novel_title} 改编项目",
             project_type=project_type,
             source_type="novel",
             source_ref=source_ref,

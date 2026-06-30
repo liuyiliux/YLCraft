@@ -1,11 +1,10 @@
-"""Legacy asset archive audit placeholder.
+"""Archived legacy asset migration placeholder.
 
 Usage:
-    python -m app.scripts.audit_legacy_assets_archive
+    python -m app.scripts.archive.migrate_legacy_assets_to_hub
 
-The old `assets` tables were migrated to Asset Hub and removed by the
-drop-legacy-assets-final change. Use the JSON backups under
-backend/backups/legacy_assets for historical inspection.
+The final legacy cleanup removed the old `assets` tables and migration bridge.
+Use backend/backups/legacy_assets JSON exports for historical inspection.
 """
 
 from __future__ import annotations
@@ -23,7 +22,7 @@ def _run() -> None:
             {
                 "success": False,
                 "archived": True,
-                "message": "Legacy asset tables have been removed. Inspect backend/backups/legacy_assets/*.json instead.",
+                "message": "Legacy asset migration is closed because old asset tables have been removed.",
             },
             ensure_ascii=False,
             indent=2,

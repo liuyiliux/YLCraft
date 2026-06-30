@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import mimetypes
 import os
 import re
 import logging
@@ -121,6 +122,146 @@ def _dimensions_from_video_info(video_info, quality: str | None = None) -> tuple
     if target_quality and getattr(target_quality, "resolution", ""):
         return _parse_resolution(target_quality.resolution)
     return 0, 0
+
+
+async def _find_asset_hub_node_id(session, source_urls: list[str]) -> str:
+    urls = [url for url in source_urls if url]
+    if not urls:
+        return ""
+    from sqlalchemy import bindparam, text
+
+    statement = text(
+        """
+        SELECT id
+        FROM asset_nodes
+        WHERE metadata_json ->> 'source_url' IN :source_urls
+        ORDER BY updated_at DESC
+        LIMIT 1
+        """
+    ).bindparams(bindparam("source_urls", expanding=True))
+    result = await session.execute(statement, {"source_urls": urls})
+    return str(result.scalar_one_or_none() or "")
+
+
+async def _create_parsed_asset_hub_node(
+    session,
+    *,
+    source_url: str,
+    title: str,
+    platform: str,
+    asset_type: str = "video",
+    author: str = "",
+    cover_url: str = "",
+    duration: int = 0,
+    width: int = 0,
+    height: int = 0,
+    metadata: dict | None = None,
+) -> str:
+    existing_id = await _find_asset_hub_node_id(session, [source_url])
+    if existing_id:
+        return existing_id
+
+    from app.db.models.asset_hub import AssetNode, AssetType
+    from app.services.asset_hub.node_service import AssetNodeService
+
+    node = await AssetNodeService(session).create(
+        name=title or "未命名素材",
+        asset_type=AssetType(asset_type),
+        thumbnail_url=cover_url or None,
+        metadata={
+            "source": "download_parse",
+            "source_type": "parse",
+            "source_url": source_url,
+            "platform": platform,
+            "author": author,
+            "cover_url": cover_url,
+            "duration": duration,
+            "width": width,
+            "height": height,
+            "status": "PARSED",
+            **(metadata or {}),
+        },
+        tags=[platform or "download", "parsed"],
+    )
+    return str(node.id)
+
+
+async def _save_downloaded_asset_hub_file(
+    session,
+    *,
+    existing_node_id: str = "",
+    file_path: str,
+    title: str,
+    asset_type: str,
+    source_url: str,
+    thumbnail_url: str = "",
+    metadata: dict | None = None,
+    lineage: dict | None = None,
+    tags: list[str] | None = None,
+    mime_type: str = "",
+) -> str:
+    from app.db.models.asset_hub import AssetType
+    from app.services.asset_hub import AssetHubFacade
+    from app.services.asset_hub.node_service import AssetNodeService
+    from app.services.asset_hub.representation_service import AssetRepresentationService
+    from app.services.asset_hub.version_service import AssetVersionService
+
+    path = Path(file_path)
+    node_id = existing_node_id
+    if node_id:
+        node = await session.get(AssetNode, node_id)
+        if not node:
+            node_id = ""
+    if not node_id:
+        node_id = await _find_asset_hub_node_id(session, [source_url])
+
+    meta = dict(metadata or {})
+    if node_id:
+        await AssetNodeService(session).update(
+            node_id=node_id,
+            name=title or path.stem,
+            thumbnail_url=thumbnail_url or None,
+            metadata={
+                **meta,
+                "source_url": source_url,
+                "status": "READY",
+            },
+        )
+        version = await AssetVersionService(session).create(
+            asset_node_id=node_id,
+            model_used=str(meta.get("model") or ""),
+            params=meta,
+            lineage=lineage or {},
+        )
+        rep = await AssetRepresentationService(session).create(
+            asset_version_id=str(version.id),
+            file_path=str(path),
+            mime_type=mime_type or mimetypes.guess_type(path.name)[0] or "application/octet-stream",
+            file_size=path.stat().st_size if path.exists() else 0,
+            width=int(meta.get("width") or 0) or None,
+            height=int(meta.get("height") or 0) or None,
+            duration=float(meta.get("duration") or 0) or None,
+            format=path.suffix.lstrip(".").lower() or None,
+            extra={
+                "source": "download",
+                "source_url": source_url,
+                "thumbnail_url": thumbnail_url,
+            },
+        )
+        return node_id
+
+    result = await AssetHubFacade(session).create_imported_file(
+        file_path=str(path),
+        title=title or path.stem,
+        asset_type=AssetType(asset_type),
+        source="download",
+        source_url=source_url,
+        thumbnail_url=thumbnail_url,
+        metadata=meta,
+        lineage=lineage,
+        tags=tags,
+    )
+    return result.node_id
 
 
 async def _download_bilibili_sidecars(
@@ -341,20 +482,22 @@ async def parse_download_url(req: ParseRequest):
             # 创建素材记录
             try:
                 from app.db.database import get_async_session
-                from app.services.asset.service import AssetService
                 async with get_async_session() as db_session:
-                    asset_service = AssetService(db_session)
-                    asset = await asset_service.create(
-                        title=title,
-                        asset_type="ARTICLE",
-                        platform="wechat_mp",
-                        source_type="parse",
+                    parsed_asset_id = await _create_parsed_asset_hub_node(
+                        db_session,
                         source_url=url,
+                        title=title,
+                        platform="wechat_mp",
+                        asset_type="text",
                         author=author,
                         cover_url=cover,
-                        status="PARSED",
+                        metadata={
+                            "source": "wechat_mp_parse",
+                            "asset_type": "ARTICLE",
+                            "digest": digest,
+                            "image_count": len(images),
+                        },
                     )
-                    parsed_asset_id = asset.id
             except Exception as asset_e:
                 logger.warning(f"[parse/wechat_mp] asset tracking failed: {asset_e}")
 
@@ -401,27 +544,21 @@ async def parse_download_url(req: ParseRequest):
             page_url = info_new.page_url or url
             try:
                 from app.db.database import get_async_session
-                from app.services.asset.service import AssetService
                 
                 async with get_async_session() as db_session:
-                    asset_service = AssetService(db_session)
-                    asset = await asset_service.create_from_parse(
+                    parsed_asset_id = await _create_parsed_asset_hub_node(
+                        db_session,
                         source_url=url,
                         title=info_new.title,
                         platform=info_new.platform,
                         author=info_new.author,
                         cover_url=info_new.cover_url,
                         duration=info_new.duration,
-                        metadata={"parse_method": "platform_manager"},
+                        width=width,
+                        height=height,
+                        metadata={"parse_method": "platform_manager", "page_url": page_url},
                     )
-                    if width and not asset.width:
-                        asset.width = width
-                    if height and not asset.height:
-                        asset.height = height
-                    await db_session.commit()
-                    await db_session.refresh(asset)
-                    parsed_asset_id = asset.id
-                    logger.info(f"[parse] asset tracked (platform) | id={asset.id}")
+                    logger.info(f"[parse] asset tracked (platform) | id={parsed_asset_id}")
             except Exception as asset_e:
                 logger.warning(f"[parse] asset tracking failed (platform): {asset_e}")
             
@@ -492,9 +629,8 @@ async def parse_download_url(req: ParseRequest):
         if not qualities:
             video_url = video_url or url
 
-    # 解析完成后，在素材库创建一条 parsed 状态记录
+    # 解析完成后，在素材中枢创建一条 parsed 状态记录
     from app.db.database import get_async_session
-    from app.services.asset.service import AssetService
 
     # 从 info 中提取 width/height
     width = 0
@@ -522,32 +658,19 @@ async def parse_download_url(req: ParseRequest):
 
     try:
         async with get_async_session() as db_session:
-            asset_service = AssetService(db_session)
-            asset = await asset_service.create_from_parse(
+            parsed_asset_id = await _create_parsed_asset_hub_node(
+                db_session,
                 source_url=url,
                 title=title,
                 platform=platform,
                 author=author_name,
-                cover_url=cover_url,
+                cover_url=thumbnail_local_path or cover_url,
                 duration=duration,
                 metadata=info,
+                width=width,
+                height=height,
             )
-            # 更新 width/height/cover_url
-            if width and asset.width == 0:
-                asset.width = width
-            if height and asset.height == 0:
-                asset.height = height
-            # 优先使用本地封面路径，其次使用URL
-            if thumbnail_local_path:
-                asset.cover_url = thumbnail_local_path
-            elif cover_url and not asset.cover_url:
-                asset.cover_url = cover_url
-            if asset.duration == 0 and duration:
-                asset.duration = duration
-            await db_session.commit()
-            await db_session.refresh(asset)
-            logger.info(f"[parse] asset tracked | id={asset.id} | platform={platform}")
-            parsed_asset_id = asset.id
+            logger.info(f"[parse] asset tracked | id={parsed_asset_id} | platform={platform}")
     except Exception as e:
         logger.warning(f"[parse] asset tracking failed (non-blocking): {e}")
         parsed_asset_id = ""
@@ -784,30 +907,32 @@ async def download_video(req: DownloadRequest):
     
     try:
         from app.db.database import get_async_session
-        from app.services.asset.service import AssetService
+        from app.db.models.asset_hub import AssetNode
         async with get_async_session() as _db_session:
-            _asset_service = AssetService(_db_session)
             _existing = None
-            for url_to_search in search_urls:
-                _existing = await _asset_service.get_by_url(url_to_search)
-                if _existing:
-                    break
+            if req.asset_id:
+                _existing = await _db_session.get(AssetNode, req.asset_id)
+            if not _existing:
+                existing_id = await _find_asset_hub_node_id(_db_session, search_urls)
+                if existing_id:
+                    _existing = await _db_session.get(AssetNode, existing_id)
             
             if _existing:
+                meta = _existing.metadata_json or {}
                 if not width:
-                    width = _existing.width or 0
+                    width = int(meta.get("width") or 0)
                 if not height:
-                    height = _existing.height or 0
+                    height = int(meta.get("height") or 0)
                 if not duration:
-                    duration = _existing.duration or 0
+                    duration = int(meta.get("duration") or 0)
                 if not title:
-                    title = _existing.title or ""
+                    title = _existing.name or ""
                 if not author:
-                    author = _existing.author or ""
+                    author = str(meta.get("author") or "")
                 if not platform:
-                    platform = _existing.platform or ""
+                    platform = str(meta.get("platform") or "")
                 if not cover_url:
-                    cover_url = _existing.cover_url or ""
+                    cover_url = _existing.thumbnail_url or str(meta.get("cover_url") or "")
     except Exception:
         pass
     
@@ -816,7 +941,6 @@ async def download_video(req: DownloadRequest):
     detected_platform = platform or _detect_platform(effective_url)
     
     from app.db.database import get_async_session
-    from app.services.asset.service import AssetService
 
     # 构建下载元数据
     download_metadata = {
@@ -834,70 +958,31 @@ async def download_video(req: DownloadRequest):
             download_metadata.update(sidecar_metadata)
 
     async with get_async_session() as db_session:
-        asset_service = AssetService(db_session)
-        
-        # 优先使用 req.asset_id 查找资产（最准确）
-        existing = None
-        if req.asset_id:
-            existing = await asset_service.get_by_id(req.asset_id)
-            if existing:
-                logger.info(f"[download] 使用 asset_id 找到素材: {req.asset_id}")
-        
-        # 如果没有 asset_id 或找不到，按 URL 查找
-        if not existing:
-            for url_to_search in search_urls:
-                existing = await asset_service.get_by_url(url_to_search)
-                if existing:
-                    break
-        
-        # 如果还是没找到，尝试用原始 URL
-        if not existing:
-            existing = await asset_service.get_by_url(req.url)
-        
-        if existing:
-            await asset_service.mark_ready(existing, file_path=filepath, file_size=file_size, mime_type=media_type)
-            if width: existing.width = width
-            if height: existing.height = height
-            if duration: existing.duration = duration
-            if cover_url:
-                existing.cover_url = cover_url
-            if title: existing.title = title
-            if author: existing.author = author
-            if detected_platform: existing.platform = detected_platform
-            # 合并下载元数据到已有 metadata
-            if existing.metadata_json:
-                try:
-                    import json as _json
-                    existing_meta = _json.loads(existing.metadata_json)
-                    existing_meta.update(download_metadata)
-                    existing.metadata_json = _json.dumps(existing_meta, ensure_ascii=False)
-                except Exception:
-                    existing.metadata_json = json.dumps(download_metadata, ensure_ascii=False)
-            else:
-                existing.metadata_json = json.dumps(download_metadata, ensure_ascii=False)
-            await db_session.commit()
-            await db_session.refresh(existing)
-            asset_id = existing.id
-        else:
-            asset_type = "audio" if req.is_audio else "video"
-            new_asset = await asset_service.create(
-                type=asset_type,
-                title=effective_title,
-                source_url=effective_url,
-                platform=detected_platform or platform,
-                author=author,
-                file_path=filepath,
-                file_size=file_size,
-                mime_type=media_type,
-                status="READY",
-                width=width,
-                height=height,
-                duration=duration,
-                cover_url=cover_url,
-                source_type="parse",
-                metadata_json=json.dumps(download_metadata, ensure_ascii=False),
-            )
-            asset_id = new_asset.id
+        asset_id = await _save_downloaded_asset_hub_file(
+            db_session,
+            existing_node_id=req.asset_id or "",
+            file_path=filepath,
+            title=effective_title,
+            asset_type="audio" if req.is_audio else "video",
+            source_url=effective_url,
+            thumbnail_url=cover_url or "",
+            metadata={
+                **download_metadata,
+                "platform": detected_platform or platform,
+                "author": author,
+                "width": width,
+                "height": height,
+                "duration": duration,
+                "status": "READY",
+            },
+            lineage={
+                "asset_id": req.asset_id or "",
+                "page_url": req.page_url or "",
+                "quality": req.quality or "",
+            },
+            tags=[detected_platform or platform or "download"],
+            mime_type=media_type,
+        )
 
     from urllib.parse import quote
     safe_path = quote(filepath, safe=":/\\")
@@ -1006,11 +1091,8 @@ async def _run_download_task(task: DownloadTask):
         # 记录到数据库
         try:
             from app.db.database import get_async_session
-            from app.services.asset.service import AssetService
-            from sqlalchemy import select
             
             async with get_async_session() as db_session:
-                asset_service = AssetService(db_session)
                 platform = _detect_platform(task.url)
                 file_size = os.path.getsize(filepath) if filepath and os.path.exists(filepath) else 0
                 sidecar_metadata = {}
@@ -1023,21 +1105,7 @@ async def _run_download_task(task: DownloadTask):
                         source_url=task.page_url or task.url,
                         video_info=video_info,
                     )
-                
-                # 优先使用 task.asset_id 查找资产（最准确）
-                existing = None
-                if task.asset_id:
-                    existing = await asset_service.get_by_id(task.asset_id)
-                    if existing:
-                        logger.info(f"[_run_download_task] 使用 asset_id 找到素材: {task.asset_id}")
-                
-                # 如果没有 asset_id 或找不到，按 URL 查找
-                if not existing:
-                    if task.page_url:
-                        existing = await asset_service.get_by_url(task.page_url)
-                    if not existing:
-                        existing = await asset_service.get_by_url(task.url)
-                
+
                 # 从 video_info 中获取元数据
                 width = 0
                 height = 0
@@ -1078,47 +1146,6 @@ async def _run_download_task(task: DownloadTask):
                     local_cover_path = _download_cover_image(cover_url, filepath, task.title)
                     if local_cover_path:
                         logger.info(f"[_run_download_task] 封面已下载: {local_cover_path}")
-                
-                if existing:
-                    mime_type = "audio/mpeg" if task.is_audio else "video/mp4"
-                    await asset_service.mark_ready(existing, file_path=filepath, file_size=file_size, mime_type=mime_type)
-                    # 更新元数据
-                    if width: existing.width = width
-                    if height: existing.height = height
-                    if duration: existing.duration = duration
-                    if local_cover_path:
-                        existing.cover_url = local_cover_path
-                    elif cover_url and not existing.cover_url:
-                        existing.cover_url = cover_url
-                    if sidecar_metadata:
-                        try:
-                            existing_meta = json.loads(existing.metadata_json or "{}")
-                        except Exception:
-                            existing_meta = {}
-                        existing_meta.update(sidecar_metadata)
-                        existing.metadata_json = json.dumps(existing_meta, ensure_ascii=False)
-                    task.asset_id = existing.id
-                    saved_asset = existing
-                else:
-                    new_asset = await asset_service.create(
-                        type="audio" if task.is_audio else "video",
-                        title=task.title or os.path.basename(filepath),
-                        source_url=task.url,
-                        platform=platform,
-                        file_path=filepath,
-                        file_size=file_size,
-                        mime_type="audio/mpeg" if task.is_audio else "video/mp4",
-                        status="READY",
-                        width=width,
-                        height=height,
-                        duration=duration,
-                        cover_url=local_cover_path or cover_url,
-                        metadata_json=json.dumps(sidecar_metadata, ensure_ascii=False) if sidecar_metadata else "{}",
-                    )
-                    task.asset_id = new_asset.id
-                    saved_asset = new_asset
-                
-                await db_session.commit()
 
                 # 构建 asset_node metadata_json（供混合搜索使用的元数据）
                 def _build_node_metadata() -> dict:
@@ -1142,80 +1169,32 @@ async def _run_download_task(task: DownloadTask):
 
                 node_metadata = _build_node_metadata()
 
-                # 写入完整 Asset Hub 三层记录，旧 Asset 继续作为兼容入口保留。
+                # 写入完整 Asset Hub 三层记录。
                 try:
-                    try:
-                        existing_meta = json.loads(saved_asset.metadata_json or "{}")
-                    except Exception:
-                        existing_meta = {}
-                    if not existing_meta.get("asset_hub_node_id"):
-                        from app.db.models.asset_hub import AssetType as HubAssetType
-                        from app.services.asset_hub import AssetHubFacade
-
-                        hub_result = await AssetHubFacade(db_session).create_imported_file(
-                            file_path=filepath,
-                            title=saved_asset.title or task.title or os.path.basename(filepath),
-                            asset_type=HubAssetType.AUDIO if task.is_audio else HubAssetType.VIDEO,
-                            source="download",
-                            source_url=task.url or task.page_url,
-                            thumbnail_url=local_cover_path or cover_url or "",
-                            metadata={
-                                **node_metadata,
-                                "task_id": task.task_id,
-                                "legacy_asset_id": str(saved_asset.id),
-                            },
-                            lineage={
-                                "task_id": task.task_id,
-                                "asset_id": str(saved_asset.id),
-                                "platform": platform,
-                                "page_url": task.page_url or "",
-                                "quality": task.quality or "",
-                            },
-                            legacy_asset_id=str(saved_asset.id),
-                            tags=[platform or "download"],
-                        )
-                        existing_meta["asset_hub_node_id"] = hub_result.node_id
-                        existing_meta["asset_hub_version_id"] = hub_result.version_id
-                        existing_meta["asset_hub_representation_id"] = hub_result.representation_id
-                        existing_meta.setdefault("asset_hub_archive_state", "archived_in_hub")
-                        existing_meta.setdefault("archived_in_hub", True)
-                        saved_asset.metadata_json = json.dumps(existing_meta, ensure_ascii=False)
-                        db_session.add(saved_asset)
-                        await db_session.commit()
+                    task.asset_id = await _save_downloaded_asset_hub_file(
+                        db_session,
+                        existing_node_id=task.asset_id or "",
+                        file_path=filepath,
+                        title=task.title or os.path.basename(filepath),
+                        asset_type="audio" if task.is_audio else "video",
+                        source_url=task.url or task.page_url,
+                        thumbnail_url=local_cover_path or cover_url or "",
+                        metadata={
+                            **node_metadata,
+                            "task_id": task.task_id,
+                        },
+                        lineage={
+                            "task_id": task.task_id,
+                            "asset_id": task.asset_id or "",
+                            "platform": platform,
+                            "page_url": task.page_url or "",
+                            "quality": task.quality or "",
+                        },
+                        tags=[platform or "download"],
+                        mime_type="audio/mpeg" if task.is_audio else "video/mp4",
+                    )
                 except Exception as hub_e:
                     logger.warning(f"[_run_download_task] Asset Hub 写入失败: {hub_e}")
-
-                # 确保 asset_node 存在并填充元数据（嵌入向量存储需要引用 asset_nodes.id）
-                try:
-                    from app.db.models.asset_hub import AssetNode, AssetType as HubAssetType
-                    result = await db_session.execute(
-                        select(AssetNode).where(AssetNode.id == task.asset_id)
-                    )
-                    existing_node = result.scalar_one_or_none()
-                    if not existing_node:
-                        # 新建 AssetNode
-                        asset_type = HubAssetType.VIDEO
-                        if task.is_audio:
-                            asset_type = HubAssetType.AUDIO
-                        asset_node = AssetNode(
-                            id=task.asset_id,
-                            name=task.title or os.path.basename(filepath),
-                            asset_type=asset_type,
-                            thumbnail_url=local_cover_path or cover_url or "",
-                            metadata_json=node_metadata,
-                        )
-                        db_session.add(asset_node)
-                        await db_session.commit()
-                        logger.info(f"[_run_download_task] 已创建 asset_node: {task.asset_id}")
-                    elif not existing_node.metadata_json:
-                        # 已有 AssetNode 但无元数据（旧数据），补齐
-                        existing_node.metadata_json = node_metadata
-                        existing_node.thumbnail_url = local_cover_path or cover_url or existing_node.thumbnail_url or ""
-                        db_session.add(existing_node)
-                        await db_session.commit()
-                        logger.info(f"[_run_download_task] 已补齐 asset_node 元数据: {task.asset_id}")
-                except Exception as node_e:
-                    logger.warning(f"[_run_download_task] 创建 asset_node 失败: {node_e}")
 
                 # 自动生成嵌入向量（用于混合搜索）
                 if task.asset_id:

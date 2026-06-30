@@ -10,7 +10,7 @@
  */
 import { useTheme } from '../../constants/theme'
 import { formatFileSize } from '../../utils/format'
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Alert,
@@ -60,6 +60,12 @@ import {
 import { AssetVideoPlayer } from '../../components/video/AssetVideoPlayer'
 
 const { Sider, Content } = Layout
+
+type SelectedTag = {
+  id: string
+  name: string
+  path?: string
+}
 
 const STATUS_LABELS: Record<string, string> = {
   PENDING: '等待中', PARSING: '解析中', PARSED: '已解析',
@@ -184,7 +190,9 @@ export default function AssetsPage() {
 
   // Tag tree (sidebar)
   const [siderCollapsed, setSiderCollapsed] = useState(false)
-  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([])
+  const [selectedTags, setSelectedTags] = useState<SelectedTag[]>([])
+  const selectedTagIds = useMemo(() => selectedTags.map(tag => tag.id), [selectedTags])
+  const selectedTagNames = useMemo(() => selectedTags.map(tag => tag.name || tag.path || tag.id), [selectedTags])
 
   // Search history
   const [searchHistory, setSearchHistory] = useState<string[]>(() => {
@@ -202,11 +210,11 @@ export default function AssetsPage() {
       if (f.platform) params.platform = f.platform
       if (f.source_type) params.source_type = f.source_type
       if (s) params.search = s
-      if (selectedTagIds.length > 0) params.tags = selectedTagIds.join(',')
+      if (selectedTagNames.length > 0) params.tags = selectedTagNames.join(',')
       const res = await listAssets(params)
       if (res.success) { setAssets(res.data); setTotal(res.total) }
     } catch (e: any) { message.error(e.message) } finally { setLoading(false) }
-  }, [pageSize, selectedTagIds])
+  }, [pageSize, selectedTagNames])
 
   const loadHybrid = useCallback(async (p: number, s: string, f: typeof filters) => {
     setLoading(true)
@@ -217,7 +225,7 @@ export default function AssetsPage() {
         topK: 50,
         vectorWeight: 0.7,
         textWeight: 0.3,
-        tagFilters: selectedTagIds.length > 0 ? selectedTagIds : undefined,
+        tagFilters: selectedTagNames.length > 0 ? selectedTagNames : undefined,
         assetType: typeFilter,
       })
       const data = res?.data || res?.results || []
@@ -240,7 +248,7 @@ export default function AssetsPage() {
       setAssets(filtered)
       setTotal(filtered.length)
     } catch (e: any) { message.error('混合搜索接口异常，请切换到模糊搜索'); setAssets([]); setTotal(0) } finally { setLoading(false) }
-  }, [selectedTagIds])
+  }, [selectedTagNames])
 
   const loadAssets = useCallback((p: number, s: string, f: typeof filters, mode: string) => {
     if (mode === 'hybrid' && s) {
@@ -273,7 +281,7 @@ export default function AssetsPage() {
 
     // Reset tag selection from search params
     if (params.tagIds?.length > 0) {
-      setSelectedTagIds(params.tagIds)
+      setSelectedTags(params.tagIds.map(id => ({ id, name: id })))
     }
 
     setFilters({
@@ -298,12 +306,17 @@ export default function AssetsPage() {
   // ---- Tag tree click ----
   const handleTagClick = useCallback((tag: any) => {
     const tagId = tag.id
-    setSelectedTagIds(prev => {
-      if (prev.includes(tagId)) return prev.filter(id => id !== tagId)
-      return [...prev, tagId]
+    setSelectedTags(prev => {
+      if (prev.some(item => item.id === tagId)) return prev.filter(item => item.id !== tagId)
+      return [...prev, { id: tagId, name: tag.name || tag.path || tagId, path: tag.path }]
     })
     setPage(1)
   }, [])
+
+  useEffect(() => {
+    setPage(1)
+    loadAssets(1, searchQuery, filters, searchMode)
+  }, [selectedTags])
 
   // Quick filters
   const handleFilterChange = useCallback((key: string, value: string) => {
@@ -827,6 +840,7 @@ export default function AssetsPage() {
           </div>
           <TagTree
             onTagClick={handleTagClick}
+            selectedKeys={selectedTagIds}
           />
         </Sider>
 
@@ -888,10 +902,12 @@ export default function AssetsPage() {
               </select>
               {selectedTagIds.length > 0 && (
                 <Space>
-                  {selectedTagIds.map(id => (
-                    <Tag key={id} closable onClose={() => setSelectedTagIds(prev => prev.filter(x => x !== id))}>{id}</Tag>
+                  {selectedTags.map(tag => (
+                    <Tag key={tag.id} closable onClose={() => setSelectedTags(prev => prev.filter(x => x.id !== tag.id))}>
+                      {tag.name}
+                    </Tag>
                   ))}
-                  <Button size="small" type="link" onClick={() => { setSelectedTagIds([]); setPage(1) }}>清除</Button>
+                  <Button size="small" type="link" onClick={() => { setSelectedTags([]); setPage(1) }}>清除</Button>
                 </Space>
               )}
             </div>

@@ -1,4 +1,5 @@
-# Asset Service package
-from app.services.asset.service import AssetService
+"""Asset utility package.
 
-__all__ = ["AssetService"]
+The legacy asset CRUD service was removed after the Asset Hub migration. Keep
+this package for small helpers such as document metadata extraction.
+"""

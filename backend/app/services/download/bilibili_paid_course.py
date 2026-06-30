@@ -347,7 +347,6 @@ async def register_paid_course_asset(
     update_info: str = "",
 ) -> str:
     from app.db.database import get_async_session
-    from app.services.asset.service import AssetService
 
     course_dir = get_paid_course_dir(season_id=season_id, course_title=course_title)
     index_path = course_dir / "course.json"
@@ -377,41 +376,77 @@ async def register_paid_course_asset(
     source_url = f"bilibili:paid_course:ss{season_id}" if season_id else f"bilibili:paid_course:{safe_filename(course_title)}"
 
     async with get_async_session() as session:
-        service = AssetService(session)
-        existing = await service.get_by_url(source_url)
-        if existing:
-            existing.type = "COLLECTION"
-            existing.platform = "bilibili"
-            existing.title = course_title or existing.title
-            existing.author = course_author or existing.author
-            existing.cover_url = course_cover or existing.cover_url
-            existing.file_path = str(course_dir)
-            existing.file_size = file_size
-            existing.mime_type = "application/vnd.ylcraft.course"
-            existing.status = "READY"
-            existing.source_type = "download"
-            existing.metadata_json = json.dumps(metadata, ensure_ascii=False)
-            existing.tags = json.dumps(["B站", "付费课程"], ensure_ascii=False)
-            existing.updated_at = datetime.now()
-            await session.commit()
-            await session.refresh(existing)
-            return existing.id
+        from sqlalchemy import text
 
-        asset = await service.create(
-            type="COLLECTION",
-            platform="bilibili",
-            title=course_title or f"B站课程 ss{season_id}",
-            author=course_author,
-            cover_url=course_cover,
-            file_path=str(course_dir),
-            file_size=file_size,
-            mime_type="application/vnd.ylcraft.course",
-            status="READY",
-            source_type="download",
-            source_url=source_url,
-            metadata_json=json.dumps(metadata, ensure_ascii=False),
-            tags=json.dumps(["B站", "付费课程"], ensure_ascii=False),
+        from app.db.models.asset_hub import AssetType
+        from app.services.asset_hub import AssetHubFacade
+        from app.services.asset_hub.representation_service import AssetRepresentationService
+        from app.services.asset_hub.version_service import AssetVersionService
+
+        if not index_path.exists():
+            index_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        metadata.update(
+            {
+                "source": "bilibili_paid_course",
+                "source_type": "download",
+                "source_url": source_url,
+                "cover_url": course_cover or metadata.get("cover", ""),
+                "file_size": file_size,
+                "status": "READY",
+            }
         )
-        await session.commit()
-        await session.refresh(asset)
-        return asset.id
+
+        existing = await session.execute(
+            text(
+                """
+                SELECT id
+                FROM asset_nodes
+                WHERE metadata_json ->> 'source_url' = :source_url
+                LIMIT 1
+                """
+            ),
+            {"source_url": source_url},
+        )
+        existing_id = existing.scalar_one_or_none()
+        if existing_id:
+            from app.services.asset_hub.node_service import AssetNodeService
+
+            node_id = str(existing_id)
+            await AssetNodeService(session).update(
+                node_id=node_id,
+                name=course_title or metadata.get("title") or f"B站课程 ss{season_id}",
+                thumbnail_url=course_cover or metadata.get("cover", "") or None,
+                metadata=metadata,
+            )
+            version = await AssetVersionService(session).create(
+                asset_node_id=node_id,
+                params=metadata,
+                lineage={"source": "bilibili_paid_course", "source_url": source_url},
+            )
+            await AssetRepresentationService(session).create(
+                asset_version_id=str(version.id),
+                file_path=str(index_path),
+                mime_type="application/json",
+                file_size=index_path.stat().st_size if index_path.exists() else 0,
+                format="json",
+                extra={
+                    "course_dir": str(course_dir),
+                    "source_url": source_url,
+                    "file_size": file_size,
+                },
+            )
+            return node_id
+
+        result = await AssetHubFacade(session).create_imported_file(
+            file_path=str(index_path),
+            title=course_title or metadata.get("title") or f"B站课程 ss{season_id}",
+            asset_type=AssetType.COLLECTION,
+            source="bilibili_paid_course",
+            source_url=source_url,
+            thumbnail_url=course_cover or metadata.get("cover", ""),
+            metadata=metadata,
+            lineage={"source": "bilibili_paid_course", "source_url": source_url},
+            tags=["B站", "付费课程"],
+        )
+        return result.node_id

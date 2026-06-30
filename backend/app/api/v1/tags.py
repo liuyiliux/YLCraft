@@ -28,6 +28,7 @@ from app.db.database import get_async_session
 from app.db.models.asset_hub import Tag, AssetNode
 from app.services.tag.service import TagService
 from app.services.auto_tagging.service import AutoTaggingService
+from app.api.v1.assets import VIRTUAL_TAGS, _card_matches_tag_filter, _list_asset_hub_cards
 
 router = APIRouter()
 logger = logging.getLogger("ylcraft.tags")
@@ -117,6 +118,28 @@ def _tag_to_dict(tag: Tag) -> dict:
         "created_at": tag.created_at.isoformat() if tag.created_at else None,
     }
 
+
+async def _virtual_tag_counts(service: TagService) -> Dict[str, int]:
+    try:
+        cards = await _list_asset_hub_cards(service.session)
+    except Exception as exc:
+        logger.warning("[tags] virtual tag count failed: %s", exc, exc_info=True)
+        return {}
+    return {
+        tag: sum(1 for card in cards if _card_matches_tag_filter(card, tag))
+        for tag in VIRTUAL_TAGS
+    }
+
+
+def _apply_virtual_counts_to_tree(tree: List[Dict[str, Any]], counts: Dict[str, int]) -> None:
+    for node in tree:
+        name = str(node.get("name") or "")
+        if name in counts:
+            node["asset_count"] = counts[name]
+        children = node.get("children") or []
+        if children:
+            _apply_virtual_counts_to_tree(children, counts)
+
 # ---------------------------------------------------------------------------
 # API 路由
 # ---------------------------------------------------------------------------
@@ -128,6 +151,7 @@ async def get_tag_tree(
 ):
     """获取标签树结构"""
     tree = await service.get_tag_tree(root_id)
+    _apply_virtual_counts_to_tree(tree, await _virtual_tag_counts(service))
     return {"success": True, "data": tree}
 
 @router.get("/tags/list", response_model=TagListResponse)
@@ -206,9 +230,13 @@ async def get_tag_children(
 ):
     """获取标签的直接子标签"""
     children = await service.get_children(tag_id)
+    counts = await _virtual_tag_counts(service)
     return {
         "success": True,
-        "data": [_tag_to_dict(tag) for tag in children],
+        "data": [
+            {**_tag_to_dict(tag), "asset_count": counts.get(tag.name, tag.asset_count)}
+            for tag in children
+        ],
         "total": len(children),
     }
 

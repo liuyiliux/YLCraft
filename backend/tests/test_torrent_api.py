@@ -2,19 +2,18 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.v1 import assets as assets_api
 from app.api.v1 import torrents as torrents_api
-from app.db.models.asset import Asset
 from app.db.models.torrent import TorrentDownload
 from app.services.torrent.config import TorrentConfig
 from app.services.torrent.models import TorrentFileInfo, TorrentHealth, TorrentStatus
@@ -29,7 +28,6 @@ MAGNET = "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&dn=demo"
 async def sqlite_session(tmp_path: Path):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'torrent-test.db'}")
     async with engine.begin() as conn:
-        await conn.run_sync(Asset.__table__.create)
         await conn.run_sync(TorrentDownload.__table__.create)
     async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with async_session() as session:
@@ -40,6 +38,7 @@ async def sqlite_session(tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_import_assets_creates_file_level_torrent_assets(sqlite_session: AsyncSession, tmp_path: Path, monkeypatch):
+    _FakeAssetHubFacade.created = []
     monkeypatch.setattr(torrent_service_module, "AssetHubFacade", _FakeAssetHubFacade)
     root = tmp_path / "downloads"
     root.mkdir()
@@ -72,18 +71,15 @@ async def test_import_assets_creates_file_level_torrent_assets(sqlite_session: A
 
     assert len(imported) == 2
     assert {asset.title for asset in imported} == {"episode-1", "episode-2"}
-    assert {asset.source_url for asset in imported} == {
+    assert {item["source_url"] for item in _FakeAssetHubFacade.created} == {
         "torrent:0123456789abcdef0123456789abcdef01234567:0",
         "torrent:0123456789abcdef0123456789abcdef01234567:1",
     }
-    assert all(asset.platform == "torrent" for asset in imported)
-    assert all(asset.source_type == "torrent" for asset in imported)
-    assert all(asset.status == "READY" for asset in imported)
-    assert all(json.loads(asset.metadata_json)["asset_hub_node_id"].startswith("hub-") for asset in imported)
+    assert all(item["source"] == "torrent" for item in _FakeAssetHubFacade.created)
+    assert all(item["metadata"]["platform"] == "torrent" for item in _FakeAssetHubFacade.created)
     assert sorted(json.loads(record.asset_ids_json)) == sorted(asset.id for asset in imported)
 
-    result = await sqlite_session.execute(select(Asset).where(Asset.platform == "torrent"))
-    assert len(result.scalars().all()) == 2
+    assert _FakeAssetHubFacade.created
 
 
 @pytest.mark.asyncio
@@ -250,30 +246,35 @@ def test_torrent_upload_endpoint_accepts_torrent_file(tmp_path: Path):
 
 
 def test_imported_torrent_asset_stream_supports_range(tmp_path: Path):
-    video = tmp_path / "movie.mp4"
+    storage_dir = Path(__file__).resolve().parents[1] / "storage" / "test_assets"
+    storage_dir.mkdir(parents=True, exist_ok=True)
+    video = storage_dir / "torrent-stream-range.mp4"
     video.write_bytes(b"0123456789")
-    asset = Asset(
-        id="asset-demo",
-        type="VIDEO",
-        title="movie",
-        platform="torrent",
-        source_type="torrent",
-        source_url="torrent:hash:0",
-        file_path=str(video),
-        file_size=10,
-        mime_type="video/mp4",
-        status="READY",
-    )
     app = FastAPI()
     app.include_router(assets_api.router, prefix="/api/v1/assets")
 
-    async def override_asset_service():
-        return _FakeAssetService(asset)
+    async def override_asset_session():
+        return SimpleNamespace()
 
-    app.dependency_overrides[assets_api.get_asset_service] = override_asset_service
+    async def fake_hub_primary(_session, asset_id):
+        if asset_id != "asset-demo":
+            return None
+        return (
+            SimpleNamespace(id="asset-demo", asset_type="video", metadata_json={}),
+            SimpleNamespace(id="version-demo", params_json={}, lineage_json={}),
+            SimpleNamespace(file_path=str(video), mime_type="video/mp4"),
+        )
 
-    with TestClient(app) as client:
-        response = client.get("/api/v1/assets/asset-demo/stream", headers={"Range": "bytes=3-6"})
+    app.dependency_overrides[assets_api.get_asset_session] = override_asset_session
+    original_primary = assets_api._get_asset_hub_primary
+    assets_api._get_asset_hub_primary = fake_hub_primary
+
+    try:
+        with TestClient(app) as client:
+            response = client.get("/api/v1/assets/asset-demo/stream", headers={"Range": "bytes=3-6"})
+    finally:
+        assets_api._get_asset_hub_primary = original_primary
+        video.unlink(missing_ok=True)
 
     assert response.status_code == 206
     assert response.headers["content-range"] == "bytes 3-6/10"
@@ -399,7 +400,7 @@ class _FakeTorrentService:
         return record
 
     async def import_assets(self, _record):
-        return [Asset(id="asset-demo", title="movie", type="VIDEO", status="READY")]
+        return [SimpleNamespace(id="asset-demo", title="movie", type="VIDEO", status="READY")]
 
     async def get_file_for_stream(self, _record, file_index: int):
         return self.files[file_index], self.video
@@ -408,26 +409,22 @@ class _FakeTorrentService:
         record.status = "deleted"
 
 
-class _FakeAssetService:
-    def __init__(self, asset: Asset):
-        self.asset = asset
-
-    async def get_by_id(self, asset_id: str):
-        return self.asset if asset_id == self.asset.id else None
-
-
 class _FakeAssetHubFacade:
+    created = []
+
     def __init__(self, _session):
         pass
 
-    async def create_imported_file(self, *, legacy_asset_id: str, **_kwargs):
+    async def create_imported_file(self, **kwargs):
+        self.created.append(kwargs)
+        node_id = f"hub-{len(self.created)}"
         return type(
             "AssetHubResult",
             (),
             {
-                "node_id": f"hub-{legacy_asset_id}",
-                "version_id": f"version-{legacy_asset_id}",
-                "representation_id": f"rep-{legacy_asset_id}",
+                "node_id": node_id,
+                "version_id": f"version-{node_id}",
+                "representation_id": f"rep-{node_id}",
             },
         )()
 
