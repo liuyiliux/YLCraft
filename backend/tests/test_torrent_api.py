@@ -19,6 +19,7 @@ from app.db.models.torrent import TorrentDownload
 from app.services.torrent.config import TorrentConfig
 from app.services.torrent.models import TorrentFileInfo, TorrentHealth, TorrentStatus
 from app.services.torrent.service import TorrentService
+import app.services.torrent.service as torrent_service_module
 
 
 MAGNET = "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&dn=demo"
@@ -38,7 +39,8 @@ async def sqlite_session(tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_import_assets_creates_file_level_torrent_assets(sqlite_session: AsyncSession, tmp_path: Path):
+async def test_import_assets_creates_file_level_torrent_assets(sqlite_session: AsyncSession, tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(torrent_service_module, "AssetHubFacade", _FakeAssetHubFacade)
     root = tmp_path / "downloads"
     root.mkdir()
     (root / "episode-1.mp4").write_bytes(b"video-one")
@@ -77,6 +79,7 @@ async def test_import_assets_creates_file_level_torrent_assets(sqlite_session: A
     assert all(asset.platform == "torrent" for asset in imported)
     assert all(asset.source_type == "torrent" for asset in imported)
     assert all(asset.status == "READY" for asset in imported)
+    assert all(json.loads(asset.metadata_json)["asset_hub_node_id"].startswith("hub-") for asset in imported)
     assert sorted(json.loads(record.asset_ids_json)) == sorted(asset.id for asset in imported)
 
     result = await sqlite_session.execute(select(Asset).where(Asset.platform == "torrent"))
@@ -411,6 +414,22 @@ class _FakeAssetService:
 
     async def get_by_id(self, asset_id: str):
         return self.asset if asset_id == self.asset.id else None
+
+
+class _FakeAssetHubFacade:
+    def __init__(self, _session):
+        pass
+
+    async def create_imported_file(self, *, legacy_asset_id: str, **_kwargs):
+        return type(
+            "AssetHubResult",
+            (),
+            {
+                "node_id": f"hub-{legacy_asset_id}",
+                "version_id": f"version-{legacy_asset_id}",
+                "representation_id": f"rep-{legacy_asset_id}",
+            },
+        )()
 
 
 class _FakeFlushSession:

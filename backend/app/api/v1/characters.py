@@ -290,50 +290,6 @@ class PortraitGenerateRequest(BaseModel):
     negative_prompt: Optional[str] = Field(None, description="负向提示词")
 
 
-def _inspect_image_file(local_path: str, url: str):
-    """从本地文件或 URL 推断图片元信息（mime_type, file_size, width, height, format）"""
-    import os
-    from urllib.parse import urlparse
-
-    mime_type = "image/png"
-    file_size = 0
-    width: Optional[int] = None
-    height: Optional[int] = None
-    fmt: Optional[str] = None
-
-    if local_path and os.path.exists(local_path):
-        try:
-            file_size = os.path.getsize(local_path)
-        except OSError:
-            file_size = 0
-        try:
-            from PIL import Image as PILImage
-            with PILImage.open(local_path) as img:
-                width, height = img.size
-                fmt = (img.format or "").lower()
-                ext_to_mime = {
-                    "png": "image/png",
-                    "jpeg": "image/jpeg",
-                    "jpg": "image/jpeg",
-                    "webp": "image/webp",
-                    "gif": "image/gif",
-                    "bmp": "image/bmp",
-                }
-                mime_type = ext_to_mime.get(fmt, mime_type)
-        except Exception as e:
-            logger.warning(f"[inspect_image] PIL open failed: {local_path} | {e}")
-
-    if not fmt and url:
-        path_lower = urlparse(url).path.lower()
-        for ext in ("png", "jpg", "jpeg", "webp", "gif", "bmp"):
-            if path_lower.endswith("." + ext):
-                fmt = ext
-                mime_type = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
-                break
-
-    return mime_type, file_size, width, height, fmt
-
-
 @router.post(
     "/{character_id}/portrait/generate",
     summary="AI 生成角色立绘（资产中枢版）",
@@ -350,12 +306,7 @@ async def generate_character_portrait(character_id: str, req: PortraitGenerateRe
     """
     from app.services.ai import get_ai_service
     from app.services.ai.types import ImageGenerationRequest
-    from app.services.asset_hub import (
-        AssetNodeService,
-        AssetVersionService,
-        AssetRepresentationService,
-    )
-    from app.db.models.asset_hub import AssetType
+    from app.services.asset_hub import AssetHubFacade
     from app.db.models.character import Character
 
     manager = get_ai_service()
@@ -453,69 +404,23 @@ async def generate_character_portrait(character_id: str, req: PortraitGenerateRe
         local_path = local_paths[0] if local_paths else ""
 
         # 3. 写入资产中枢
-        node_service = AssetNodeService(session)
-        version_service = AssetVersionService(session)
-        rep_service = AssetRepresentationService(session)
-
-        portrait_node_id = character.portrait_node_id
-        node = None
-
         try:
-            if portrait_node_id:
-                node = await node_service.get(portrait_node_id)
-            if node is None:
-                node = await node_service.create(
-                    name=f"{character.name or '角色'}-立绘",
-                    asset_type=AssetType.CHARACTER,
-                    thumbnail_url=url,
-                    metadata={
-                        "character_id": character.id,
-                        "character_name": character.name,
-                    },
-                )
-                portrait_node_id = node.id
-            else:
-                # 已有 Node，更新缩略图为最新
-                if url:
-                    await node_service.update(
-                        node_id=node.id, thumbnail_url=url,
-                    )
-
-            version = await version_service.create(
-                asset_node_id=portrait_node_id,
-                prompt_used=req.prompt,
-                model_used=result.model or req.model or "",
-                params={
-                    "provider": result.provider or req.provider or "",
-                    "model": result.model or "",
-                    "seed": result.seed,
-                    "size": req.size,
-                    "n": req.n,
-                    "negative_prompt": req.negative_prompt or "",
-                },
-                lineage={
-                    "character_id": character.id,
-                    "character_name": character.name,
-                },
-            )
-
-            mime_type, file_size, w, h, fmt = _inspect_image_file(local_path, url)
-            rep = await rep_service.create(
-                asset_version_id=version.id,
-                file_path=local_path or url,
-                mime_type=mime_type,
-                file_size=file_size,
-                width=w,
-                height=h,
-                format=fmt,
-                extra={"url": url, "local_path": local_path},
+            asset_hub_result = await AssetHubFacade(session).create_or_update_character_portrait(
+                character=character,
+                portrait_url=url,
+                local_path=local_path,
+                prompt=req.prompt,
+                provider=result.provider or req.provider or "",
+                model=result.model or req.model or "",
+                negative_prompt=req.negative_prompt or "",
+                size=req.size or "",
+                seed=result.seed,
+                generation_params={"n": req.n},
             )
 
             # 4. 更新 Character
-            # 重要：node.id / version.id / rep.id 在 session.refresh() 后会被 asyncpg 转成 UUID 对象
-            # 而 SQLModel 的 String 字段需要 str 才能用 ::VARCHAR 编码写入 PG
             character.portrait_url = url
-            character.portrait_node_id = str(node.id)
+            character.portrait_node_id = asset_hub_result.node_id
             character.updated_at = datetime.now()
             await session.flush()
             await session.refresh(character)
@@ -539,10 +444,10 @@ async def generate_character_portrait(character_id: str, req: PortraitGenerateRe
                     },
                     raw_response=str(url),
                     normalized={
-                        "node_id": str(node.id),
-                        "version_id": str(version.id),
-                        "version_number": version.version_number,
-                        "representation_id": str(rep.id),
+                        "node_id": asset_hub_result.node_id,
+                        "version_id": asset_hub_result.version_id,
+                        "version_number": asset_hub_result.version_number,
+                        "representation_id": asset_hub_result.representation_id,
                         "local_path": local_path,
                     },
                 )
@@ -578,10 +483,10 @@ async def generate_character_portrait(character_id: str, req: PortraitGenerateRe
         "data": {
             "url": url,
             "local_path": local_path,
-            "node_id": str(node.id),
-            "version_id": str(version.id),
-            "version_number": version.version_number,
-            "representation_id": str(rep.id),
+            "node_id": asset_hub_result.node_id,
+            "version_id": asset_hub_result.version_id,
+            "version_number": asset_hub_result.version_number,
+            "representation_id": asset_hub_result.representation_id,
             "character": {
                 "id": character.id,
                 "name": character.name,
@@ -606,12 +511,7 @@ async def upgrade_portrait_to_asset_hub(character_id: str):
     - 更新 Character.portrait_node_id
     - 已绑定节点时会拒绝（需要先解绑）
     """
-    from app.services.asset_hub import (
-        AssetNodeService,
-        AssetVersionService,
-        AssetRepresentationService,
-    )
-    from app.db.models.asset_hub import AssetType
+    from app.services.asset_hub import AssetHubFacade
     from app.db.models.character import Character
 
     async with get_async_session() as session:
@@ -631,53 +531,23 @@ async def upgrade_portrait_to_asset_hub(character_id: str):
                 detail=f"角色已绑定资产中枢节点 {character.portrait_node_id}，如需重建请先在数据库清空 portrait_node_id",
             )
 
-        node_service = AssetNodeService(session)
-        version_service = AssetVersionService(session)
-        rep_service = AssetRepresentationService(session)
-
         try:
-            node = await node_service.create(
-                name=f"{character.name or '角色'}-立绘",
-                asset_type=AssetType.CHARACTER,
-                thumbnail_url=character.portrait_url,
-                metadata={
-                    "character_id": character.id,
-                    "character_name": character.name,
-                    "upgraded_from": "legacy_portrait_url",
-                    "legacy_asset_id": character.portrait_asset_id or "",
-                },
-            )
-
-            version = await version_service.create(
-                asset_node_id=node.id,
-                prompt_used=character.appearance or "",
-                model_used="",
-                params={"upgraded_from": "legacy"},
+            asset_hub_result = await AssetHubFacade(session).create_or_update_character_portrait(
+                character=character,
+                portrait_url=character.portrait_url,
+                prompt=character.appearance or "",
+                generation_params={"upgraded_from": "legacy"},
                 lineage={
                     "character_id": character.id,
                     "character_name": character.name,
                     "costume_hint": character.costume_hint or "",
                 },
+                legacy_asset_id=character.portrait_asset_id or "",
+                source="legacy_character_portrait",
+                upgraded_from="legacy_portrait_url",
             )
 
-            mime_type, file_size, w, h, fmt = _inspect_image_file(
-                "", character.portrait_url
-            )
-            rep = await rep_service.create(
-                asset_version_id=version.id,
-                file_path=character.portrait_url,
-                mime_type=mime_type,
-                file_size=file_size,
-                width=w,
-                height=h,
-                format=fmt,
-                extra={
-                    "url": character.portrait_url,
-                    "legacy_asset_id": character.portrait_asset_id or "",
-                },
-            )
-
-            character.portrait_node_id = str(node.id)
+            character.portrait_node_id = asset_hub_result.node_id
             character.updated_at = datetime.now()
             await session.flush()
             await session.refresh(character)
@@ -691,10 +561,10 @@ async def upgrade_portrait_to_asset_hub(character_id: str):
     return {
         "success": True,
         "data": {
-            "node_id": str(node.id),
-            "version_id": str(version.id),
-            "version_number": version.version_number,
-            "representation_id": str(rep.id),
+            "node_id": asset_hub_result.node_id,
+            "version_id": asset_hub_result.version_id,
+            "version_number": asset_hub_result.version_number,
+            "representation_id": asset_hub_result.representation_id,
             "character": {
                 "id": character.id,
                 "name": character.name,

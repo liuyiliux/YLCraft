@@ -81,9 +81,15 @@ const TYPE_ICONS: Record<string, React.ReactNode> = {
   ARTICLE: <FileTextOutlined />,
   TEXT: <FileTextOutlined />,
   DOCUMENT: <FileTextOutlined />,
+  NOVEL: <FileTextOutlined />,
   MODEL: <InboxOutlined />,
   CHARACTER: <UserOutlined />,
+  WORLD_SETTING: <FileTextOutlined />,
+  WORKFLOW: <BranchesOutlined />,
+  ANIMATION: <VideoCameraOutlined />,
+  SUBTITLE: <FileTextOutlined />,
   COLLECTION: <FolderOutlined />,
+  JIANYING_DRAFT: <VideoCameraOutlined />,
   '3D_MODEL': <InboxOutlined />,
 }
 
@@ -94,10 +100,35 @@ const TYPE_COLORS: Record<string, string> = {
   ARTICLE: '#faad14',
   TEXT: '#faad14',
   DOCUMENT: '#faad14',
+  NOVEL: '#faad14',
   MODEL: '#ff4d6a',
   CHARACTER: '#eb2f96',
+  WORLD_SETTING: '#13c2c2',
+  WORKFLOW: '#2f54eb',
+  ANIMATION: '#722ed1',
+  SUBTITLE: '#fa8c16',
   COLLECTION: '#13c2c2',
+  JIANYING_DRAFT: '#1677ff',
   '3D_MODEL': '#1890ff',
+}
+
+const TYPE_LABELS: Record<string, string> = {
+  IMAGE: '图片',
+  VIDEO: '视频',
+  AUDIO: '音频',
+  ARTICLE: '文章',
+  TEXT: '文本',
+  DOCUMENT: '文档',
+  NOVEL: '小说',
+  MODEL: '模型',
+  CHARACTER: '角色',
+  WORLD_SETTING: '世界观',
+  WORKFLOW: '工作流',
+  ANIMATION: '动画',
+  SUBTITLE: '字幕',
+  COLLECTION: '集合',
+  JIANYING_DRAFT: '剪映草稿',
+  '3D_MODEL': '3D模型',
 }
 
 export function AssetGrid({
@@ -124,6 +155,7 @@ export function AssetGrid({
   const getDisplayName = (asset: AssetItem) => asset.title || asset.name || 'Untitled'
   const getThumbnail = (asset: AssetItem) => asset.thumbnail_url || asset.cover_url || ''
   const getType = (asset: AssetItem) => (asset.type || 'FILE').toUpperCase()
+  const getTypeLabel = (asset: AssetItem) => TYPE_LABELS[getType(asset)] || getType(asset)
   const getTags = (asset: AssetItem) => asset.tags || []
   const getScore = (asset: AssetItem) => asset.relevance_score ?? asset.quality_score ?? 0
   const getSize = (asset: AssetItem) => {
@@ -280,7 +312,7 @@ export function AssetGrid({
             }}>
               {typeIcon}
               <span style={{ color: '#fff', fontSize: 11 }}>
-                {getType(asset)}
+                {getTypeLabel(asset)}
               </span>
             </div>
 

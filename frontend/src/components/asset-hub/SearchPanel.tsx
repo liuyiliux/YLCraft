@@ -36,10 +36,18 @@ const ASSET_TYPES = [
   { value: 'IMAGE', label: '图片' },
   { value: 'VIDEO', label: '视频' },
   { value: 'AUDIO', label: '音频' },
+  { value: 'ARTICLE', label: '文章' },
   { value: 'TEXT', label: '文本' },
+  { value: 'DOCUMENT', label: '文档' },
+  { value: 'NOVEL', label: '小说' },
   { value: 'MODEL', label: '模型' },
   { value: 'CHARACTER', label: '角色' },
+  { value: 'WORLD_SETTING', label: '世界观' },
+  { value: 'WORKFLOW', label: '工作流' },
   { value: '3D_MODEL', label: '3D模型' },
+  { value: 'ANIMATION', label: '动画' },
+  { value: 'SUBTITLE', label: '字幕' },
+  { value: 'COLLECTION', label: '集合' },
 ]
 
 export function SearchPanel({ onSearch, defaultParams, searchHistory = [], onHistoryClick }: SearchPanelProps) {

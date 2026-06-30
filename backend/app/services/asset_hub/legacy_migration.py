@@ -7,6 +7,7 @@ import mimetypes
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urlsplit, urlunsplit
 
 from sqlalchemy import select, text
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -219,6 +220,106 @@ class LegacyAssetHubMigration:
         return None
 
 
+class LegacyAssetArchiveAudit:
+    """Non-destructive audit for legacy assets that were migrated into Asset Hub."""
+
+    def __init__(self, session: AsyncSession):
+        self.session = session
+        self.migration = LegacyAssetHubMigration(session)
+
+    async def audit(
+        self,
+        *,
+        limit: Optional[int] = None,
+        apply_markers: bool = False,
+    ) -> dict[str, Any]:
+        query = select(Asset).order_by(Asset.created_at.desc())
+        if limit:
+            query = query.limit(limit)
+
+        result = await self.session.execute(query)
+        assets = list(result.scalars().all())
+        duplicate_paths = _duplicate_asset_paths(assets)
+
+        migrated: list[dict[str, Any]] = []
+        unmigrated: list[dict[str, Any]] = []
+        missing_files: list[dict[str, Any]] = []
+        ignored: list[dict[str, Any]] = []
+        marked = 0
+        errors: list[dict[str, str]] = []
+
+        for asset in assets:
+            metadata = _json_dict(asset.metadata_json)
+            archive_state = metadata.get("asset_hub_archive_state")
+            ignore_reason = metadata.get("asset_hub_ignore_reason") or metadata.get("archive_ignore_reason")
+
+            if _asset_missing_file(asset):
+                missing_files.append(_asset_audit_item(asset, metadata))
+
+            try:
+                node = await self.migration.find_existing_node(asset)
+            except Exception as exc:
+                node = None
+                errors.append({"asset_id": asset.id, "error": str(exc)})
+
+            if ignore_reason or archive_state == "ignored":
+                item = _asset_audit_item(asset, metadata, node)
+                item["reason"] = ignore_reason or "ignored"
+                ignored.append(item)
+                continue
+
+            if node:
+                item = _asset_audit_item(asset, metadata, node)
+                migrated.append(item)
+                if apply_markers and archive_state != "archived_in_hub":
+                    metadata["asset_hub_archive_state"] = "archived_in_hub"
+                    metadata["archived_in_hub"] = True
+                    metadata["asset_hub_archived_at"] = datetime.now().isoformat()
+                    metadata.setdefault("asset_hub_node_id", str(node.id))
+                    asset.metadata_json = json.dumps(metadata, ensure_ascii=False)
+                    asset.updated_at = datetime.now()
+                    self.session.add(asset)
+                    marked += 1
+                continue
+
+            unmigrated.append(_asset_audit_item(asset, metadata))
+
+        if apply_markers:
+            await self.session.commit()
+
+        return {
+            "success": not errors,
+            "dry_run": not apply_markers,
+            "total_scanned": len(assets),
+            "migrated": {
+                "count": len(migrated),
+                "items": migrated[:100],
+            },
+            "unmigrated": {
+                "count": len(unmigrated),
+                "items": unmigrated[:100],
+            },
+            "missing_files": {
+                "count": len(missing_files),
+                "items": missing_files[:100],
+            },
+            "duplicate_paths": {
+                "count": len(duplicate_paths),
+                "items": duplicate_paths[:100],
+            },
+            "ignored": {
+                "count": len(ignored),
+                "items": ignored[:100],
+            },
+            "marked_archived_in_hub": marked,
+            "errors": errors[:50],
+            "notes": [
+                "No rows, tables, or files are deleted by this audit.",
+                "Use --apply-markers only to write metadata markers on migrated legacy assets.",
+            ],
+        }
+
+
 def _json_dict(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
         return dict(value)
@@ -292,3 +393,56 @@ def _format_from_path(path: str, mime_type: str) -> str:
     if "/" in mime_type:
         return mime_type.split("/", 1)[1]
     return mime_type or "bin"
+
+
+def _asset_missing_file(asset: Asset) -> bool:
+    path = asset.file_path or ""
+    if not path or path.startswith(("http://", "https://", "data:", "ylcraft://")):
+        return False
+    try:
+        return not Path(path).is_file()
+    except Exception:
+        return True
+
+
+def _duplicate_asset_paths(assets: list[Asset]) -> list[dict[str, Any]]:
+    buckets: dict[str, list[str]] = {}
+    for asset in assets:
+        path = (asset.file_path or "").strip()
+        if not path:
+            continue
+        buckets.setdefault(path, []).append(asset.id)
+    return [
+        {"file_path": path, "asset_ids": ids, "count": len(ids)}
+        for path, ids in buckets.items()
+        if len(ids) > 1
+    ]
+
+
+def _asset_audit_item(asset: Asset, metadata: dict[str, Any], node: AssetNode | None = None) -> dict[str, Any]:
+    return {
+        "asset_id": asset.id,
+        "asset_hub_node_id": str(node.id) if node else metadata.get("asset_hub_node_id"),
+        "title": asset.title,
+        "type": asset.type,
+        "status": asset.status,
+        "source_type": asset.source_type,
+        "file_path": asset.file_path,
+        "source_url": _safe_audit_url(asset.source_url),
+        "archive_state": metadata.get("asset_hub_archive_state"),
+        "archived_in_hub": bool(metadata.get("archived_in_hub")),
+    }
+
+
+def _safe_audit_url(value: str, max_length: int = 240) -> str:
+    if not value:
+        return ""
+    if value.startswith(("http://", "https://")):
+        try:
+            parts = urlsplit(value)
+            value = urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
+        except Exception:
+            pass
+    if len(value) > max_length:
+        return value[:max_length] + "...(truncated)"
+    return value

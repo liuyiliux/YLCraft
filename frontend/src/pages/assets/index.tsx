@@ -69,8 +69,66 @@ const STATUS_LABELS: Record<string, string> = {
 
 const SOURCE_TYPE_LABELS: Record<string, string> = {
   upload: '本地上传', parse: '视频解析',
-  ai_generated: 'AI生成', import: '导入', download: '下载', '': '未知',
+  ai_generated: 'AI生成',
+  image_generation: 'AI生成',
+  character_portrait: '角色立绘',
+  import: '导入',
+  imported_file: '导入文件',
+  download: '下载',
+  torrent: '磁力/种子',
+  novel_download: '小说下载',
+  legacy_assets: '旧素材迁移',
+  asset_hub: '资产中枢',
+  wechat_mp: '公众号文章',
+  novel_bookshelf: '小说书架',
+  '': '未知',
 }
+
+const ASSET_TYPE_LABELS: Record<string, string> = {
+  video: '视频',
+  image: '图片',
+  audio: '音频',
+  article: '文章',
+  document: '文档',
+  text: '文本',
+  novel: '小说',
+  model: '模型',
+  character: '角色',
+  world_setting: '世界观',
+  workflow: '工作流',
+  '3d_model': '3D模型',
+  animation: '动画',
+  subtitle: '字幕',
+  collection: '集合',
+  jianying_draft: '剪映草稿',
+}
+
+const ASSET_TYPE_OPTIONS = [
+  { value: 'video', label: '视频' },
+  { value: 'image', label: '图片' },
+  { value: 'audio', label: '音频' },
+  { value: 'article', label: '文章' },
+  { value: 'document', label: '文档' },
+  { value: 'text', label: '文本' },
+  { value: 'novel', label: '小说' },
+  { value: 'model', label: '模型' },
+  { value: 'character', label: '角色' },
+  { value: 'workflow', label: '工作流' },
+  { value: '3d_model', label: '3D模型' },
+  { value: 'collection', label: '集合' },
+]
+
+const SOURCE_TYPE_OPTIONS = [
+  { value: 'ai_generated', label: 'AI生成' },
+  { value: 'parse', label: '视频解析' },
+  { value: 'download', label: '下载' },
+  { value: 'torrent', label: '磁力/种子' },
+  { value: 'novel_download', label: '小说下载' },
+  { value: 'wechat_mp', label: '公众号文章' },
+  { value: 'upload', label: '本地上传' },
+  { value: 'import', label: '导入' },
+  { value: 'legacy_assets', label: '旧素材迁移' },
+]
 
 const SEARCH_HISTORY_KEY = 'ylcraft_asset_search_history'
 
@@ -548,7 +606,7 @@ export default function AssetsPage() {
             </div>
 
             <Descriptions column={1} size="small" style={{ marginBottom: 16 }} labelStyle={{ color: theme.textSecondary }} contentStyle={{ color: theme.textPrimary }}>
-              <Descriptions.Item label="类型">{detailAsset.type}</Descriptions.Item>
+              <Descriptions.Item label="类型">{ASSET_TYPE_LABELS[String(detailAsset.type || detailAsset.asset_type || '').toLowerCase()] || detailAsset.type || detailAsset.asset_type || '-'}</Descriptions.Item>
               <Descriptions.Item label="平台">{detailAsset.platform || '-'}</Descriptions.Item>
               <Descriptions.Item label={isPaidCourse ? '作者/讲师' : '作者'}>{detailAsset.author || meta.author || '-'}</Descriptions.Item>
               <Descriptions.Item label="状态">
@@ -561,7 +619,7 @@ export default function AssetsPage() {
                   <Descriptions.Item label="时长">{detailAsset.duration ? `${Math.floor(detailAsset.duration / 60)}:${String(Math.floor(detailAsset.duration % 60)).padStart(2, '0')}` : '-'}</Descriptions.Item>
                 </>
               )}
-              <Descriptions.Item label="来源">{SOURCE_TYPE_LABELS[detailAsset.source_type] || '-'}</Descriptions.Item>
+              <Descriptions.Item label="来源">{SOURCE_TYPE_LABELS[String(detailAsset.source_type || '').toLowerCase()] || detailAsset.source_type || '-'}</Descriptions.Item>
               <Descriptions.Item label="创建时间">{detailAsset.created_at || '-'}</Descriptions.Item>
             </Descriptions>
 
@@ -802,11 +860,9 @@ export default function AssetsPage() {
                 style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bgInput)', color: 'var(--textPrimary)' }}
               >
                 <option value="">全部类型</option>
-                <option value="video">视频</option>
-                <option value="image">图片</option>
-                <option value="audio">音频</option>
-                <option value="article">文章</option>
-                <option value="novel">小说</option>
+                {ASSET_TYPE_OPTIONS.map(option => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
               </select>
               <select
                 value={filters.platform}
@@ -826,11 +882,9 @@ export default function AssetsPage() {
                 style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bgInput)', color: 'var(--textPrimary)' }}
               >
                 <option value="">全部来源</option>
-                <option value="ai_generated">AI生成</option>
-                <option value="parse">视频解析</option>
-                <option value="download">下载</option>
-                <option value="upload">本地上传</option>
-                <option value="import">导入</option>
+                {SOURCE_TYPE_OPTIONS.map(option => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
               </select>
               {selectedTagIds.length > 0 && (
                 <Space>

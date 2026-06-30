@@ -492,9 +492,13 @@ function ImageGenSinglePage() {
     const localPaths = (data.all_local_paths && data.all_local_paths.length > 0)
       ? data.all_local_paths
       : (data.local_path ? [data.local_path] : [])
-    const assetIds = (data.all_asset_ids && data.all_asset_ids.length > 0)
-      ? data.all_asset_ids
-      : (data.asset_id ? [data.asset_id] : [])
+    const assetIds = (data.all_asset_hub_node_ids && data.all_asset_hub_node_ids.length > 0)
+      ? data.all_asset_hub_node_ids
+      : (data.asset_hub_node_id
+        ? [data.asset_hub_node_id]
+        : (data.all_asset_ids && data.all_asset_ids.length > 0)
+          ? data.all_asset_ids
+          : (data.asset_id ? [data.asset_id] : []))
     const resultCount = Math.max(urls.length, localPaths.length, assetIds.length)
 
     if (context.projectContext.hasContext && assetIds.length > 0) {

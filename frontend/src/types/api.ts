@@ -143,6 +143,8 @@ export interface ImageResponse {
   all_local_paths?: string[]
   asset_id?: string
   all_asset_ids?: string[]
+  asset_hub_node_id?: string
+  all_asset_hub_node_ids?: string[]
   error?: string
 }
 
@@ -488,7 +490,23 @@ export interface Task {
 
 // ===== Asset Library =====
 
-export type AssetType = 'video' | 'audio' | 'image' | 'document'
+export type AssetType =
+  | 'video'
+  | 'audio'
+  | 'image'
+  | 'document'
+  | 'article'
+  | 'novel'
+  | 'text'
+  | 'model'
+  | 'character'
+  | 'world_setting'
+  | 'workflow'
+  | '3d_model'
+  | 'animation'
+  | 'subtitle'
+  | 'collection'
+  | 'jianying_draft'
 export type AssetStatus = 'parsed' | 'downloading' | 'ready' | 'processing' | 'error'
 
 export interface AssetTag {
@@ -511,7 +529,8 @@ export interface AssetCollection {
 
 export interface Asset {
   id: string
-  asset_type: AssetType
+  asset_type?: AssetType
+  type?: AssetType
   title: string
   description?: string
   source_url: string
@@ -568,7 +587,7 @@ export interface AssetFilterParams {
 
 export interface AssetStat {
   total: number
-  by_type: { video: number; audio: number; image: number; document: number }
+  by_type: Partial<Record<AssetType, number>>
   by_status: Record<AssetStatus, number>
   total_size: number
 }

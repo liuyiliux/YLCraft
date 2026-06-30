@@ -1098,6 +1098,7 @@ async def _run_download_task(task: DownloadTask):
                         existing_meta.update(sidecar_metadata)
                         existing.metadata_json = json.dumps(existing_meta, ensure_ascii=False)
                     task.asset_id = existing.id
+                    saved_asset = existing
                 else:
                     new_asset = await asset_service.create(
                         type="audio" if task.is_audio else "video",
@@ -1115,6 +1116,7 @@ async def _run_download_task(task: DownloadTask):
                         metadata_json=json.dumps(sidecar_metadata, ensure_ascii=False) if sidecar_metadata else "{}",
                     )
                     task.asset_id = new_asset.id
+                    saved_asset = new_asset
                 
                 await db_session.commit()
 
@@ -1138,6 +1140,51 @@ async def _run_download_task(task: DownloadTask):
                     meta.update(sidecar_metadata)
                     return {k: v for k, v in meta.items() if v is not None}
 
+                node_metadata = _build_node_metadata()
+
+                # 写入完整 Asset Hub 三层记录，旧 Asset 继续作为兼容入口保留。
+                try:
+                    try:
+                        existing_meta = json.loads(saved_asset.metadata_json or "{}")
+                    except Exception:
+                        existing_meta = {}
+                    if not existing_meta.get("asset_hub_node_id"):
+                        from app.db.models.asset_hub import AssetType as HubAssetType
+                        from app.services.asset_hub import AssetHubFacade
+
+                        hub_result = await AssetHubFacade(db_session).create_imported_file(
+                            file_path=filepath,
+                            title=saved_asset.title or task.title or os.path.basename(filepath),
+                            asset_type=HubAssetType.AUDIO if task.is_audio else HubAssetType.VIDEO,
+                            source="download",
+                            source_url=task.url or task.page_url,
+                            thumbnail_url=local_cover_path or cover_url or "",
+                            metadata={
+                                **node_metadata,
+                                "task_id": task.task_id,
+                                "legacy_asset_id": str(saved_asset.id),
+                            },
+                            lineage={
+                                "task_id": task.task_id,
+                                "asset_id": str(saved_asset.id),
+                                "platform": platform,
+                                "page_url": task.page_url or "",
+                                "quality": task.quality or "",
+                            },
+                            legacy_asset_id=str(saved_asset.id),
+                            tags=[platform or "download"],
+                        )
+                        existing_meta["asset_hub_node_id"] = hub_result.node_id
+                        existing_meta["asset_hub_version_id"] = hub_result.version_id
+                        existing_meta["asset_hub_representation_id"] = hub_result.representation_id
+                        existing_meta.setdefault("asset_hub_archive_state", "archived_in_hub")
+                        existing_meta.setdefault("archived_in_hub", True)
+                        saved_asset.metadata_json = json.dumps(existing_meta, ensure_ascii=False)
+                        db_session.add(saved_asset)
+                        await db_session.commit()
+                except Exception as hub_e:
+                    logger.warning(f"[_run_download_task] Asset Hub 写入失败: {hub_e}")
+
                 # 确保 asset_node 存在并填充元数据（嵌入向量存储需要引用 asset_nodes.id）
                 try:
                     from app.db.models.asset_hub import AssetNode, AssetType as HubAssetType
@@ -1145,8 +1192,6 @@ async def _run_download_task(task: DownloadTask):
                         select(AssetNode).where(AssetNode.id == task.asset_id)
                     )
                     existing_node = result.scalar_one_or_none()
-                    node_metadata = _build_node_metadata()
-
                     if not existing_node:
                         # 新建 AssetNode
                         asset_type = HubAssetType.VIDEO

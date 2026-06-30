@@ -263,6 +263,35 @@ def _list_value(value) -> list:
     return []
 
 
+def _legacy_asset_hub_node_id(asset: Asset | None) -> str:
+    if not asset:
+        return ""
+    metadata = _dict_value(asset.metadata_json)
+    return str(metadata.get("asset_hub_node_id") or "")
+
+
+def _asset_type_value(asset_type) -> str:
+    if hasattr(asset_type, "value"):
+        return str(asset_type.value)
+    value = str(asset_type or "")
+    if "." in value:
+        value = value.rsplit(".", 1)[-1]
+    return value.lower()
+
+
+def _type_from_representation(node: AssetNode, mime_type: str) -> str:
+    node_type = _asset_type_value(node.asset_type)
+    if mime_type.startswith("image/"):
+        return "image"
+    if mime_type.startswith("video/"):
+        return "video"
+    if mime_type.startswith("audio/"):
+        return "audio"
+    if mime_type.startswith("text/") or mime_type in {"application/json", "application/epub+zip"}:
+        return "text"
+    return node_type
+
+
 async def _asset_hub_card(
     service: AssetService,
     node: AssetNode,
@@ -280,12 +309,25 @@ async def _asset_hub_card(
     params = _dict_value(version.params_json)
     lineage = _dict_value(version.lineage_json)
     node_meta = _dict_value(node.metadata_json)
+    if node_meta.get("deleted_at") or str(node_meta.get("status", "")).upper() == "DELETED":
+        return None
+
     file_url = _hub_file_url(rep.file_path)
-    provider = params.get("provider") or node_meta.get("provider") or "asset-hub"
+    source = node_meta.get("source") or lineage.get("source") or params.get("source") or "asset_hub"
+    source_type = node_meta.get("source_type")
+    if not source_type:
+        source_type = "ai_generated" if source in {"image_generation", "character_portrait"} else source
+    provider = (
+        params.get("provider")
+        or node_meta.get("provider")
+        or node_meta.get("platform")
+        or source
+        or "asset-hub"
+    )
     model = version.model_used or params.get("model") or ""
-    title = node.name or (version.prompt_used or "Asset Hub Image")[:80]
+    title = node.name or (version.prompt_used or Path(rep.file_path).stem or "Asset Hub Asset")[:80]
     tags = _list_value(node.tags_json)
-    if node.asset_type == AssetType.CHARACTER and "character_portrait" not in tags:
+    if _asset_type_value(node.asset_type) == AssetType.CHARACTER.value and "character_portrait" not in tags:
         tags.append("character_portrait")
     if provider and provider not in tags:
         tags.append(str(provider))
@@ -310,17 +352,23 @@ async def _asset_hub_card(
         "ai_params": params,
     }
 
+    mime_type = rep.mime_type or mimetypes.guess_type(rep.file_path)[0] or "application/octet-stream"
+    asset_type = _type_from_representation(node, mime_type)
+    thumbnail_source = node.thumbnail_url or (rep.file_path if mime_type.startswith("image/") else "")
+    thumbnail_url = _hub_file_url(thumbnail_source) if thumbnail_source else None
+    status = str(node_meta.get("status") or "READY").upper()
+
     data = {
         "id": str(node.id),
-        "type": "image" if (rep.mime_type or "").startswith("image/") else node.asset_type.value,
+        "type": asset_type,
         "title": title,
         "platform": provider,
-        "author": f"AI ({model})" if model else "Asset Hub",
-        "status": "READY",
-        "source_type": "ai_generated",
-        "source_url": file_url,
-        "cover_url": file_url,
-        "thumbnail_url": file_url,
+        "author": node_meta.get("author") or (f"AI ({model})" if model else "Asset Hub"),
+        "status": status,
+        "source_type": source_type,
+        "source_url": node_meta.get("source_url") or lineage.get("source_url") or file_url,
+        "cover_url": thumbnail_url or "",
+        "thumbnail_url": thumbnail_url,
         "tags": tags,
         "created_at": _format_asset_datetime(version.created_at or node.created_at),
         "updated_at": _format_asset_datetime(node.updated_at or version.created_at),
@@ -337,7 +385,7 @@ async def _asset_hub_card(
         data.update({
             "description": node_meta.get("description", ""),
             "file_path": rep.file_path,
-            "mime_type": rep.mime_type,
+            "mime_type": mime_type,
             "metadata": metadata,
         })
     return data
@@ -352,20 +400,13 @@ async def _list_asset_hub_cards(
     search: Optional[str] = None,
     tags: Optional[list[str]] = None,
 ) -> list[dict]:
-    if status and status.upper() != "READY":
-        return []
-    if source_type and source_type != "ai_generated":
-        return []
     normalized_type = (asset_type or "").lower()
-    if normalized_type and normalized_type not in {"image", "character"}:
+    type_map = {item.value: item for item in AssetType}
+    if normalized_type and normalized_type not in type_map:
         return []
 
     node_service = AssetNodeService(service.session)
-    node_types = [AssetType.IMAGE, AssetType.CHARACTER]
-    if normalized_type == "image":
-        node_types = [AssetType.IMAGE, AssetType.CHARACTER]
-    elif normalized_type == "character":
-        node_types = [AssetType.CHARACTER]
+    node_types = [type_map[normalized_type]] if normalized_type else list(AssetType)
 
     nodes = []
     for node_type in node_types:
@@ -383,6 +424,10 @@ async def _list_asset_hub_cards(
         card = await _asset_hub_card(service, node)
         if not card:
             continue
+        if status and str(card.get("status") or "").upper() != status.upper():
+            continue
+        if source_type and card.get("source_type") != source_type:
+            continue
         if platform and card.get("platform") != platform:
             continue
         if tag_filters and not all(tag in (card.get("tags") or []) for tag in tag_filters):
@@ -396,13 +441,122 @@ async def _get_asset_hub_card(
     asset_id: str,
     include_metadata: bool = True,
 ) -> Optional[dict]:
-    node = await service.session.get(AssetNode, asset_id)
+    session = getattr(service, "session", None)
+    if session is None or not hasattr(session, "get"):
+        return None
+
+    node = await session.get(AssetNode, asset_id)
     if not node:
         return None
     card = await _asset_hub_card(service, node, include_metadata=include_metadata)
     if card:
         card.pop("_sort_created_at", None)
     return card
+
+
+async def _get_asset_hub_primary(
+    service: AssetService,
+    asset_id: str,
+) -> Optional[tuple[AssetNode, object, object]]:
+    session = getattr(service, "session", None)
+    if session is None or not hasattr(session, "get"):
+        return None
+
+    node = await session.get(AssetNode, asset_id)
+    if not node:
+        return None
+    node_meta = _dict_value(node.metadata_json)
+    if node_meta.get("deleted_at") or str(node_meta.get("status", "")).upper() == "DELETED":
+        return None
+
+    version = await AssetVersionService(session).get_latest_version(str(node.id))
+    if not version:
+        return None
+    rep = await AssetRepresentationService(session).get_primary(str(version.id))
+    if not rep:
+        return None
+    return node, version, rep
+
+
+def _asset_hub_file_response(rep, *, inline: bool = False) -> FileResponse:
+    path = _resolve_asset_file_path(rep.file_path)
+    media_type = rep.mime_type or mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    headers = {"Cache-Control": "public, max-age=86400"} if inline else None
+    return FileResponse(
+        path=str(path),
+        media_type=media_type,
+        filename=None if inline else path.name,
+        headers=headers,
+    )
+
+
+async def _soft_delete_asset_hub_node(
+    service: AssetService,
+    asset_id: str,
+    mode: str,
+) -> bool:
+    primary = await _get_asset_hub_primary(service, asset_id)
+    if not primary:
+        return False
+    node, _version, rep = primary
+
+    if mode in {"del_file", "hard"} and rep.file_path:
+        try:
+            path = _resolve_asset_file_path(rep.file_path)
+            if path.exists():
+                path.unlink()
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.warning("[assets] failed to delete Asset Hub file %s: %s", rep.file_path, exc)
+
+    node_meta = _dict_value(node.metadata_json)
+    node_meta["status"] = "DELETED"
+    node_meta["deleted_at"] = datetime.now().isoformat()
+    node_meta["delete_mode"] = mode
+    node.metadata_json = node_meta
+    node.updated_at = datetime.utcnow() if hasattr(datetime, "utcnow") else datetime.now()
+    service.session.add(node)
+
+    legacy_asset_id = str(node_meta.get("legacy_asset_id") or "")
+    if legacy_asset_id:
+        legacy_asset = await service.get_by_id(legacy_asset_id)
+        if legacy_asset:
+            legacy_asset.status = "DELETED"
+            legacy_asset.deleted_at = datetime.now()
+            legacy_asset.updated_at = datetime.now()
+            service.session.add(legacy_asset)
+
+    await service.session.commit()
+    return True
+
+
+async def _restore_asset_hub_node(service: AssetService, asset_id: str) -> bool:
+    node = await service.session.get(AssetNode, asset_id)
+    if not node:
+        return False
+    node_meta = _dict_value(node.metadata_json)
+    if not (node_meta.get("deleted_at") or str(node_meta.get("status", "")).upper() == "DELETED"):
+        return False
+
+    node_meta.pop("deleted_at", None)
+    node_meta.pop("delete_mode", None)
+    node_meta["status"] = "READY"
+    node.metadata_json = node_meta
+    node.updated_at = datetime.utcnow()
+    service.session.add(node)
+
+    legacy_asset_id = str(node_meta.get("legacy_asset_id") or "")
+    if legacy_asset_id:
+        legacy_asset = await service.get_by_id(legacy_asset_id)
+        if legacy_asset and legacy_asset.status == "DELETED":
+            legacy_asset.status = "READY"
+            legacy_asset.deleted_at = None
+            legacy_asset.updated_at = datetime.now()
+            service.session.add(legacy_asset)
+
+    await service.session.commit()
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -572,9 +726,20 @@ async def download_asset(
     返回资产文件（流式响应，不阻塞）。
     资产必须处于 READY 状态。
     """
+    hub_primary = await _get_asset_hub_primary(service, asset_id)
+    if hub_primary:
+        _node, _version, rep = hub_primary
+        return _asset_hub_file_response(rep)
+
     asset = await service.get_by_id(asset_id)
     if not asset:
         raise HTTPException(status_code=404, detail="资产不存在")
+    legacy_hub_id = _legacy_asset_hub_node_id(asset)
+    if legacy_hub_id:
+        hub_primary = await _get_asset_hub_primary(service, legacy_hub_id)
+        if hub_primary:
+            _node, _version, rep = hub_primary
+            return _asset_hub_file_response(rep)
 
     if asset.status != "READY":
         raise HTTPException(
@@ -613,9 +778,29 @@ async def stream_asset(
     request: Request,
     service: AssetService = Depends(get_asset_service),
 ):
+    hub_primary = await _get_asset_hub_primary(service, asset_id)
+    if hub_primary:
+        node, _version, rep = hub_primary
+        media_type = rep.mime_type or mimetypes.guess_type(rep.file_path)[0] or "application/octet-stream"
+        if _type_from_representation(node, media_type) != "video":
+            raise HTTPException(status_code=400, detail="当前资产不是视频")
+        path = _resolve_asset_file_path(rep.file_path)
+        return _range_file_response(request, str(path), media_type)
+
     asset = await service.get_by_id(asset_id)
     if not asset:
         raise HTTPException(status_code=404, detail="资产不存在")
+    legacy_hub_id = _legacy_asset_hub_node_id(asset)
+    if legacy_hub_id:
+        hub_primary = await _get_asset_hub_primary(service, legacy_hub_id)
+        if hub_primary:
+            node, _version, rep = hub_primary
+            media_type = rep.mime_type or mimetypes.guess_type(rep.file_path)[0] or "application/octet-stream"
+            if _type_from_representation(node, media_type) != "video":
+                raise HTTPException(status_code=400, detail="当前资产不是视频")
+            path = _resolve_asset_file_path(rep.file_path)
+            return _range_file_response(request, str(path), media_type)
+
     if asset.status != "READY":
         raise HTTPException(status_code=400, detail=f"资产状态为 {asset.status}，无法播放")
     if (asset.type or "").lower() != "video":
@@ -928,6 +1113,13 @@ async def proxy_thumbnail(
     - original=true 返回原始参考图（用于再次生成时的参考）
     支持本地文件路径、远程 URL 和 base64 数据。
     """
+    hub_primary = await _get_asset_hub_primary(service, asset_id)
+    if hub_primary:
+        node, _version, rep = hub_primary
+        source = node.thumbnail_url or (rep.file_path if (rep.mime_type or "").startswith("image/") else "")
+        if source:
+            return await _fetch_image(source, "")
+
     asset = await service.get_by_id(asset_id)
     if not asset:
         hub_asset = await _get_asset_hub_card(service, asset_id, include_metadata=True)
@@ -935,6 +1127,14 @@ async def proxy_thumbnail(
             return await _fetch_image(hub_asset["source_url"], hub_asset.get("platform") or "")
     if not asset:
         raise HTTPException(status_code=404, detail="资产不存在")
+    legacy_hub_id = _legacy_asset_hub_node_id(asset)
+    if legacy_hub_id:
+        hub_primary = await _get_asset_hub_primary(service, legacy_hub_id)
+        if hub_primary:
+            node, _version, rep = hub_primary
+            source = node.thumbnail_url or (rep.file_path if (rep.mime_type or "").startswith("image/") else "")
+            if source:
+                return await _fetch_image(source, "")
     
     # 解析 metadata
     metadata = {}
@@ -976,13 +1176,18 @@ async def get_asset(
     asset_id: str,
     service: AssetService = Depends(get_asset_service),
 ):
+    hub_asset = await _get_asset_hub_card(service, asset_id, include_metadata=True)
+    if hub_asset:
+        return AssetResponse(success=True, data=hub_asset)
+
     asset = await service.get_by_id(asset_id)
     if not asset:
-        hub_asset = await _get_asset_hub_card(service, asset_id, include_metadata=True)
+        raise HTTPException(status_code=404, detail="资产不存在")
+    legacy_hub_id = _legacy_asset_hub_node_id(asset)
+    if legacy_hub_id:
+        hub_asset = await _get_asset_hub_card(service, legacy_hub_id, include_metadata=True)
         if hub_asset:
             return AssetResponse(success=True, data=hub_asset)
-    if not asset:
-        raise HTTPException(status_code=404, detail="资产不存在")
     return AssetResponse(success=True, data=_asset_to_dict(asset, include_metadata=True))
 
 
@@ -1002,9 +1207,48 @@ async def update_asset(
     req: AssetUpdateRequest,
     service: AssetService = Depends(get_asset_service),
 ):
+    node = await service.session.get(AssetNode, asset_id)
+    if node:
+        node_meta = _dict_value(node.metadata_json)
+        if node_meta.get("deleted_at") or str(node_meta.get("status", "")).upper() == "DELETED":
+            raise HTTPException(status_code=404, detail="资产不存在")
+        if req.title is not None:
+            node.name = req.title
+        if req.description is not None:
+            node_meta["description"] = req.description
+            node.metadata_json = node_meta
+        if req.tags is not None:
+            node.tags_json = req.tags
+        node.updated_at = datetime.utcnow()
+        service.session.add(node)
+        await service.session.commit()
+        await service.session.refresh(node)
+        hub_asset = await _get_asset_hub_card(service, asset_id, include_metadata=True)
+        if hub_asset:
+            return AssetResponse(success=True, data=hub_asset)
+
     asset = await service.get_by_id(asset_id)
     if not asset:
         raise HTTPException(status_code=404, detail="资产不存在")
+    legacy_hub_id = _legacy_asset_hub_node_id(asset)
+    if legacy_hub_id:
+        node = await service.session.get(AssetNode, legacy_hub_id)
+        if node:
+            if req.title is not None:
+                node.name = req.title
+            node_meta = _dict_value(node.metadata_json)
+            if req.description is not None:
+                node_meta["description"] = req.description
+                node.metadata_json = node_meta
+            if req.tags is not None:
+                node.tags_json = req.tags
+            node.updated_at = datetime.utcnow()
+            service.session.add(node)
+            await service.session.commit()
+            await service.session.refresh(node)
+            hub_asset = await _get_asset_hub_card(service, legacy_hub_id, include_metadata=True)
+            if hub_asset:
+                return AssetResponse(success=True, data=hub_asset)
 
     if req.title is not None:
         asset.title = req.title
@@ -1034,6 +1278,20 @@ async def delete_asset(
     mode: str = Query("soft", description="soft / del_file / hard"),
     service: AssetService = Depends(get_asset_service),
 ):
+    if mode not in {"soft", "del_file", "hard"}:
+        raise HTTPException(status_code=400, detail="不支持的删除模式")
+
+    hub_deleted = await _soft_delete_asset_hub_node(service, asset_id, mode=mode)
+    if hub_deleted:
+        return {"success": True, "message": f"已{mode}删除"}
+
+    asset = await service.get_by_id(asset_id)
+    legacy_hub_id = _legacy_asset_hub_node_id(asset)
+    if legacy_hub_id:
+        hub_deleted = await _soft_delete_asset_hub_node(service, legacy_hub_id, mode=mode)
+        if hub_deleted:
+            return {"success": True, "message": f"已{mode}删除"}
+
     ok = await service.delete(asset_id, mode=mode)
     if not ok:
         raise HTTPException(status_code=404, detail="资产不存在")
@@ -1045,6 +1303,17 @@ async def restore_asset(
     asset_id: str,
     service: AssetService = Depends(get_asset_service),
 ):
+    hub_restored = await _restore_asset_hub_node(service, asset_id)
+    if hub_restored:
+        return {"success": True, "message": "已恢复"}
+
+    asset = await service.get_by_id(asset_id)
+    legacy_hub_id = _legacy_asset_hub_node_id(asset)
+    if legacy_hub_id:
+        hub_restored = await _restore_asset_hub_node(service, legacy_hub_id)
+        if hub_restored:
+            return {"success": True, "message": "已恢复"}
+
     ok = await service.restore(asset_id)
     if not ok:
         raise HTTPException(status_code=404, detail="资产不存在或未处于软删除状态")

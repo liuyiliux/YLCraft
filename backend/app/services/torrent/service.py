@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import mimetypes
 import shutil
 import subprocess
@@ -15,10 +16,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_ffmpeg_path
 from app.db.models.asset import Asset
+from app.db.models.asset_hub import AssetType
 from app.db.models.torrent import TorrentDownload
+from app.services.asset_hub import AssetHubFacade
 from app.services.torrent.config import assert_inside_download_dir, get_torrent_config
 from app.services.torrent.models import VIDEO_EXTENSIONS, TorrentFileInfo, TorrentHealth, TorrentStatus
 from app.services.torrent.qbittorrent import QBittorrentEngine
+
+logger = logging.getLogger("ylcraft.torrent")
 
 
 class TorrentService:
@@ -334,7 +339,63 @@ class TorrentService:
             asset.updated_at = datetime.now()
         await self.session.flush()
         await self.session.refresh(asset)
+        await self._link_asset_to_hub(record, item, asset, path, probe, metadata)
         return asset
+
+    async def _link_asset_to_hub(
+        self,
+        record: TorrentDownload,
+        item: TorrentFileInfo,
+        asset: Asset,
+        path: Path,
+        probe: dict,
+        metadata: dict,
+    ) -> None:
+        try:
+            existing_meta = json.loads(asset.metadata_json or "{}")
+        except Exception:
+            existing_meta = {}
+        if existing_meta.get("asset_hub_node_id"):
+            return
+
+        hub_metadata = {
+            **metadata,
+            "platform": "torrent",
+            "source_type": "torrent",
+            "width": probe.get("width", 0),
+            "height": probe.get("height", 0),
+            "duration": probe.get("duration", 0),
+            "file_size": path.stat().st_size if path.exists() else 0,
+        }
+        try:
+            result = await AssetHubFacade(self.session).create_imported_file(
+                file_path=str(path),
+                title=asset.title or Path(item.name).stem,
+                asset_type=AssetType.VIDEO,
+                source="torrent",
+                source_url=asset.source_url or _torrent_asset_source_url(record, item),
+                metadata=hub_metadata,
+                lineage={
+                    "download_id": record.id,
+                    "torrent_hash": record.torrent_hash,
+                    "file_index": item.index,
+                    "source_uri": record.source_uri,
+                },
+                legacy_asset_id=str(asset.id),
+                tags=["video"],
+            )
+        except Exception as exc:
+            logger.warning("Failed to save torrent file to Asset Hub: %s", exc)
+            return
+
+        existing_meta["asset_hub_node_id"] = result.node_id
+        existing_meta["asset_hub_version_id"] = result.version_id
+        existing_meta["asset_hub_representation_id"] = result.representation_id
+        existing_meta.setdefault("asset_hub_archive_state", "archived_in_hub")
+        existing_meta.setdefault("archived_in_hub", True)
+        asset.metadata_json = json.dumps(existing_meta, ensure_ascii=False)
+        self.session.add(asset)
+        await self.session.flush()
 
     async def _assert_active_limit(self) -> None:
         result = await self.session.execute(

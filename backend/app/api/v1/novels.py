@@ -10,6 +10,7 @@ import json
 import os
 import uuid
 import asyncio
+import logging
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, Query
@@ -17,14 +18,17 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
-from app.db.database import SessionLocal
+from app.db.database import AsyncSessionLocal, SessionLocal
 from app.db.models.asset import Asset
+from app.db.models.asset_hub import AssetType
 from app.db.models.novel import NovelChapter
+from app.services.asset_hub import AssetHubFacade
 from app.services.novel.crawler import get_crawler
 from app.services.novel.downloader import NovelDownloader
 from app.services.novel.book_source_manager import BookSourceManager
 
 router = APIRouter(tags=["novels"])
+logger = logging.getLogger("ylcraft.api.novels")
 
 
 def _populate_source_catalogs(
@@ -52,6 +56,93 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def _load_json_object(raw: str | None) -> Dict[str, Any]:
+    try:
+        value = json.loads(raw or "{}")
+        return value if isinstance(value, dict) else {}
+    except Exception:
+        return {}
+
+
+def _chapter_indices(chapters: List[Dict[str, Any]]) -> List[int]:
+    indices: List[int] = []
+    for chapter in chapters:
+        try:
+            indices.append(int(chapter.get("index")))
+        except Exception:
+            continue
+    return indices
+
+
+async def _archive_novel_download_to_asset_hub(
+    *,
+    asset_id: str,
+    book_url: str,
+    book_title: str,
+    author: str,
+    site: str,
+    chapters: List[Dict[str, Any]],
+    download_result: Dict[str, Any],
+) -> None:
+    """Save the merged downloaded novel text file into Asset Hub."""
+
+    file_path = str(download_result.get("file_path") or "")
+    if not asset_id or not file_path or not os.path.exists(file_path):
+        return
+
+    async with AsyncSessionLocal() as session:
+        asset = await session.get(Asset, asset_id)
+        if not asset:
+            return
+
+        existing_meta = _load_json_object(asset.metadata_json)
+        if existing_meta.get("asset_hub_node_id"):
+            return
+
+        indices = _chapter_indices(chapters)
+        hub_metadata = {
+            "novel_title": existing_meta.get("novel_title") or book_title,
+            "author": existing_meta.get("author") or author,
+            "source_site": existing_meta.get("source_site") or site,
+            "book_url": existing_meta.get("book_url") or book_url,
+            "source_url": asset.source_url or book_url,
+            "chapter_count": existing_meta.get("chapter_count") or download_result.get("total_chapters") or len(chapters),
+            "downloaded_chapters": existing_meta.get("downloaded_chapters") or indices,
+            "downloaded_chapter_indices": existing_meta.get("downloaded_chapter_indices") or indices,
+            "success_count": download_result.get("success_count", 0),
+            "failed_count": download_result.get("failed_count", 0),
+            "content_path": file_path,
+            "status": existing_meta.get("status") or asset.status,
+            "legacy_asset_id": str(asset.id),
+        }
+        hub_result = await AssetHubFacade(session).create_imported_file(
+            file_path=file_path,
+            title=asset.title or book_title,
+            asset_type=AssetType.TEXT,
+            source="novel_download",
+            source_url=asset.source_url or book_url,
+            thumbnail_url=asset.cover_url or str(existing_meta.get("cover_url") or ""),
+            metadata=hub_metadata,
+            lineage={
+                "asset_id": str(asset.id),
+                "book_url": book_url,
+                "source_site": site,
+                "chapter_indices": indices,
+            },
+            legacy_asset_id=str(asset.id),
+            tags=["novel", site],
+        )
+        existing_meta["asset_hub_node_id"] = hub_result.node_id
+        existing_meta["asset_hub_version_id"] = hub_result.version_id
+        existing_meta["asset_hub_representation_id"] = hub_result.representation_id
+        existing_meta.setdefault("asset_hub_archive_state", "archived_in_hub")
+        existing_meta.setdefault("archived_in_hub", True)
+        asset.metadata_json = json.dumps(existing_meta, ensure_ascii=False)
+        asset.updated_at = datetime.now()
+        session.add(asset)
+        await session.commit()
 
 
 class DownloadChaptersRequest(BaseModel):
@@ -412,12 +503,13 @@ async def download_chapters(
             ))
 
             db = SessionLocal()
+            archive_asset_id = ""
             try:
                 if req.asset_id:
                     # 更新已有记录
                     asset = db.get(Asset, req.asset_id)
                     if asset:
-                        meta = json.loads(asset.metadata_json or '{}')
+                        meta = _load_json_object(asset.metadata_json)
                         downloaded = set(meta.get('downloaded_chapter_indices', []))
                         for ch in req.chapters:
                             downloaded.add(ch['index'])
@@ -435,6 +527,7 @@ async def download_chapters(
 
                         asset.metadata_json = json.dumps(meta, ensure_ascii=False)
                         asset.updated_at = datetime.now()
+                        archive_asset_id = str(asset.id)
                         
                         # 更新 NovelChapter 记录
                         for ch in req.chapters:
@@ -491,6 +584,7 @@ async def download_chapters(
                     )
                     
                     db.add(asset)
+                    archive_asset_id = asset_id
                     
                     for ch in req.chapters:
                         chapter = NovelChapter(
@@ -503,6 +597,19 @@ async def download_chapters(
                         db.add(chapter)
 
                 db.commit()
+                if archive_asset_id:
+                    try:
+                        asyncio.run(_archive_novel_download_to_asset_hub(
+                            asset_id=archive_asset_id,
+                            book_url=req.book_url,
+                            book_title=req.book_title,
+                            author=req.author,
+                            site=req.site,
+                            chapters=req.chapters,
+                            download_result=result,
+                        ))
+                    except Exception as hub_e:
+                        logger.warning(f"[NovelDownload] Asset Hub 写入失败: {hub_e}")
                 
             except Exception as e:
                 print(f"创建/更新 Asset 记录失败: {e}")

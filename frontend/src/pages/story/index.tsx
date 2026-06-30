@@ -302,11 +302,15 @@ export default function StoryPage() {
         : data.local_path
           ? [data.local_path]
           : []
-      const assetIds = data.all_asset_ids?.length
-        ? data.all_asset_ids
-        : data.asset_id
-          ? [data.asset_id]
-          : []
+      const assetIds = data.all_asset_hub_node_ids?.length
+        ? data.all_asset_hub_node_ids
+        : data.asset_hub_node_id
+          ? [data.asset_hub_node_id]
+          : data.all_asset_ids?.length
+            ? data.all_asset_ids
+            : data.asset_id
+              ? [data.asset_id]
+              : []
       const assetId = assetIds[0]
 
       if (assetId) {

@@ -16,7 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from sqlalchemy import select, func
+from sqlalchemy import or_, not_, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.asset import Asset, AssetTag
@@ -134,14 +134,13 @@ class AssetService:
         sort_order: str = "desc",
         page: int = 1,
         page_size: int = 20,
+        include_archived_legacy: bool = False,
     ) -> tuple[list[Asset], int]:
         """
         多条件分页查询资产。
         返回 (资产列表, 总数)
         """
         conditions = []
-        query_asset_type = asset_type.upper() if asset_type else None
-        print(f"[DEBUG list_assets] asset_type={asset_type}, query_asset_type={query_asset_type}")
         
         # 默认过滤掉已删除的记录
         if status is None:
@@ -162,16 +161,26 @@ class AssetService:
             conditions.append(Asset.source_type == source_type)
         if search:
             conditions.append(Asset.title.contains(search))
-
-        query = select(Asset)
-        if conditions:
-            for cond in conditions:
-                query = query.where(cond)
+        if not include_archived_legacy:
+            # 目前 /api/v1/assets 的 Asset Hub 兼容列表只稳定承接图片/角色。
+            # 课程、视频等旧资产即使已有 asset_hub_node_id，也必须保留旧卡片入口，
+            # 避免旧记录被隐藏但新素材库尚无对应详情/章节 UI。
+            conditions.append(
+                or_(
+                    not_(Asset.metadata_json.contains("asset_hub_node_id")),
+                    not_(func.lower(Asset.type).in_(["image", "character"])),
+                )
+            )
 
         # 标签过滤（JSON 数组包含）
         if tags:
             for tag in tags:
                 conditions.append(Asset.tags.contains(tag))
+
+        query = select(Asset)
+        if conditions:
+            for cond in conditions:
+                query = query.where(cond)
 
         # 总数
         count_query = select(func.count(Asset.id))
