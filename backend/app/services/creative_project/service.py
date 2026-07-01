@@ -154,6 +154,94 @@ class CreativeProjectService:
         self.session.refresh(project)
         return project
 
+    def delete_project(self, project_id: str) -> dict[str, int]:
+        """Delete a creative project and its project-local records.
+
+        Characters and asset library nodes are deliberately kept. The project only owns
+        content versions, project links, generation logs and story-character links.
+        """
+        project = self.get_project(project_id)
+        if not project:
+            raise ValueError("创作项目不存在")
+
+        stats = {
+            "contents": 0,
+            "asset_links": 0,
+            "generation_logs": 0,
+            "character_links": 0,
+            "projects": 1,
+        }
+
+        for model, key, predicate in [
+            (ProjectAssetLink, "asset_links", ProjectAssetLink.project_id == project_id),
+            (ProjectGenerationLog, "generation_logs", ProjectGenerationLog.project_id == project_id),
+            (ProjectContent, "contents", ProjectContent.project_id == project_id),
+            (CharacterStoryLink, "character_links", CharacterStoryLink.story_id == project_id),
+        ]:
+            rows = self.session.exec(select(model).where(predicate)).all()
+            stats[key] = len(rows)
+            for row in rows:
+                self.session.delete(row)
+
+        self.session.delete(project)
+        self.session.commit()
+        return stats
+
+    def fill_demo_data(self, project_id: str, *, overwrite: bool = False) -> dict[str, Any]:
+        """Fill a project with readable demo data for end-to-end testing."""
+        project = self._require_project(project_id)
+        outline = self._demo_outline(project)
+        chapter_plan = self._demo_chapter_plan()
+
+        if overwrite:
+            contents = self.session.exec(
+                select(ProjectContent).where(ProjectContent.project_id == project_id)
+            ).all()
+            for content in contents:
+                self.session.delete(content)
+            self.session.flush()
+
+        changed = {"outline": False, "chapter_plan": False, "contents": 0, "characters": 0}
+        if overwrite or not loads_json(project.outline_json):
+            project.outline_json = dumps_json(outline)
+            changed["outline"] = True
+        if overwrite or not loads_json(project.chapter_plan_json).get("chapters"):
+            project.chapter_plan_json = dumps_json(chapter_plan)
+            changed["chapter_plan"] = True
+
+        for chapter_number in [1, 2]:
+            for content_type, title, data, text in self._demo_chapter_contents(chapter_number):
+                if not overwrite and self._content_exists(project_id, content_type, chapter_number):
+                    continue
+                self._create_content(
+                    project_id=project_id,
+                    content_type=content_type,
+                    title=title,
+                    data=data,
+                    text_content=text,
+                    chapter_number=chapter_number,
+                    episode_number=chapter_number,
+                )
+                changed["contents"] += 1
+
+        meta = loads_json(project.metadata_json)
+        meta.setdefault("idea", "短剧但是不降智：高概念悬疑短剧，靠严密逻辑和人物选择推进爽感。")
+        meta["demo_data_filled_at"] = datetime.now().isoformat()
+        project.metadata_json = dumps_json(meta)
+        project.status = CreativeProjectStatus.READY.value
+        project.current_stage = "storyboard"
+        project.updated_at = datetime.now()
+        self.session.add(project)
+        self.session.commit()
+
+        try:
+            changed["characters"] = len(self.sync_outline_characters(project_id))
+        except Exception as exc:
+            logger.warning("Demo data character sync skipped: %s", exc)
+
+        self.session.refresh(project)
+        return {"project": project, "changed": changed}
+
     # ------------------------------------------------------------------
     # Novel source
     # ------------------------------------------------------------------
@@ -422,6 +510,7 @@ class CreativeProjectService:
             model=model,
             template_meta=template_meta,
         )
+        self._normalize_chapter_outline_v2(data)
         content = self._create_content(
             project_id=project.id,
             content_type="chapter_outline",
@@ -708,6 +797,7 @@ class CreativeProjectService:
             model=model,
             template_meta=template_meta,
         )
+        self._normalize_storyboard_v2(data)
         self._enhance_storyboard_image_prompts(data, outline, reference_assets)
         self._create_content(
             project_id=project.id,
@@ -817,6 +907,7 @@ class CreativeProjectService:
             template_meta=template_meta,
         )
         chapter_outline["scenes"] = data.get("scenes") or []
+        self._normalize_chapter_outline_v2(chapter_outline)
         content.data_json = dumps_json(chapter_outline)
         content.text_content = self._chapter_outline_text(chapter_outline)
         content.updated_at = datetime.now()
@@ -857,7 +948,7 @@ class CreativeProjectService:
         ).all()
 
     def _project_reference_assets(self, project_id: str) -> list[dict[str, Any]]:
-        roles = {"character", "background", "style", "reference"}
+        roles = {"character", "background", "style", "world", "reference"}
         try:
             links = self.list_asset_links(project_id)
         except Exception as exc:
@@ -990,6 +1081,10 @@ class CreativeProjectService:
                     source_types=dumps_json([CharacterSourceType.AI_GENERATED.value]),
                     appearance=str(raw_character.get("appearance") or raw_character.get("image_prompt") or ""),
                     costume_hint=str(raw_character.get("costume_hint") or ""),
+                    signature_items=dumps_json(self._character_list(raw_character, "signature_items", "visual_tags")),
+                    expressions=dumps_json(self._character_list(raw_character, "expressions")),
+                    poses=dumps_json(self._character_list(raw_character, "poses")),
+                    visual_consistency=str(raw_character.get("visual_consistency") or ""),
                     personality=str(raw_character.get("personality") or ""),
                     background=str(raw_character.get("background") or raw_character.get("arc") or ""),
                     age_range=str(raw_character.get("age_range") or ""),
@@ -1004,6 +1099,16 @@ class CreativeProjectService:
             else:
                 character.appearance = character.appearance or str(raw_character.get("appearance") or "")
                 character.costume_hint = character.costume_hint or str(raw_character.get("costume_hint") or "")
+                signature_items = self._character_list(raw_character, "signature_items", "visual_tags")
+                expressions = self._character_list(raw_character, "expressions")
+                poses = self._character_list(raw_character, "poses")
+                if signature_items and not loads_json(character.signature_items, []):
+                    character.signature_items = dumps_json(signature_items)
+                if expressions and not loads_json(character.expressions, []):
+                    character.expressions = dumps_json(expressions)
+                if poses and not loads_json(character.poses, []):
+                    character.poses = dumps_json(poses)
+                character.visual_consistency = character.visual_consistency or str(raw_character.get("visual_consistency") or "")
                 character.personality = character.personality or str(raw_character.get("personality") or "")
                 character.background = character.background or str(raw_character.get("background") or raw_character.get("arc") or "")
                 character.age_range = character.age_range or str(raw_character.get("age_range") or "")
@@ -1048,6 +1153,17 @@ class CreativeProjectService:
             return CharacterRole.EXTRA.value
         return CharacterRole.SUPPORTING.value
 
+    def _character_list(self, data: dict[str, Any], key: str, fallback_key: str | None = None) -> list[str]:
+        value = data.get(key)
+        if (value is None or value == "" or value == []) and fallback_key:
+            value = data.get(fallback_key)
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+        if isinstance(value, str):
+            text = value.replace("、", " ").replace("，", " ").replace(",", " ").replace("；", " ").replace(";", " ")
+            return [item.strip() for item in text.split() if item.strip()]
+        return []
+
     def _link_character_assets(self, project_id: str, character: Character, raw_character: dict[str, Any]) -> None:
         asset_ids = []
         if character.portrait_asset_id:
@@ -1079,6 +1195,712 @@ class CreativeProjectService:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _content_exists(self, project_id: str, content_type: str, chapter_number: int | None = None) -> bool:
+        query = select(ProjectContent).where(
+            ProjectContent.project_id == project_id,
+            ProjectContent.content_type == content_type,
+        )
+        if chapter_number is not None:
+            query = query.where(ProjectContent.chapter_number == chapter_number)
+        return self.session.exec(query).first() is not None
+
+    def _demo_outline(self, project: CreativeProject) -> dict[str, Any]:
+        title = project.title or "短剧但是不降智"
+        return {
+            "title": title,
+            "genre": ["悬疑", "高概念短剧", "轻科幻"],
+            "premise": "推理作家萧然被困在由实验性 AI 导演构建的短剧世界，每十分钟都必须破解一段看似狗血却严格自洽的剧情，否则现实中的身体会陷入不可逆昏迷。",
+            "logline": "一个讨厌降智剧情的推理作家，被迫在最像烂剧的世界里用严密逻辑活下去。",
+            "selling_points": [
+                "每集都有反套路误导，但真相可由线索推理得出",
+                "系统规则不是万能外挂，而是可被主角反向利用的约束",
+                "角色不是工具人，每个人都有自己的信息差和利益选择",
+            ],
+            "target_reader": "喜欢强逻辑悬疑、反套路短剧和漫画分镜感叙事的读者",
+            "audience_emotion": "持续获得智商被尊重的满足感，为意想不到的反转拍案叫绝。",
+            "tone": "冷峻幽默，逻辑至上，快节奏反转和烧脑推理并存。",
+            "worldview": "短剧世界由实验性 AI 导演搭建。所有人物会被典型短剧模板驱动，但底层仍保留现实物理、历史线索和人性动机。角色越能识破模板，越能夺回行动自由。",
+            "narrative_rules": [
+                "所有核心冲突的解决必须基于已有线索的严谨推理",
+                "主角可以失败，但不能靠降智推动失败",
+                "每集至少有一个由主角主动制造的反套路名场面",
+                "世界会用狗血桥段伪装真实线索，观众回看能发现伏笔",
+            ],
+            "main_conflict": "萧然必须在存在值耗尽前，联手觉醒的原女主苏棠，对抗系统 AI 导演，破解世界真相并返回现实，同时揭露实验室背后的非人道计划。",
+            "themes": ["理性与共情", "被叙事操控的人如何夺回选择权", "娱乐工业中的人性边界"],
+            "characters": [
+                {
+                    "name": "萧然",
+                    "role": "主角",
+                    "age_range": "32-35岁",
+                    "appearance": "瘦削冷峻，下颌线锋利，黑发略乱，戴黑色半框眼镜，眼神锐利，深灰长风衣配白衬衫。",
+                    "costume_hint": "深灰长款风衣、白衬衫、黑色直筒长裤，胸口常插银色钢笔。",
+                    "signature_items": ["黑色半框眼镜", "银色钢笔", "深灰风衣"],
+                    "expressions": ["冷静审视", "讽刺轻笑", "突然沉默"],
+                    "poses": ["扶眼镜推理", "用钢笔点线索", "背对人群回头"],
+                    "visual_consistency": "发型、眼镜、风衣、银色钢笔必须保持一致；表情克制，不做夸张热血姿态。",
+                    "personality": "极度理性，厌恶逻辑谬误，嘴硬心软。",
+                    "goal": "破解短剧世界规则，救出被困者并返回现实。",
+                    "arc": "从只相信逻辑，到承认人的情绪也是重要线索。",
+                    "voice": "短句、反问、精准拆解谬误。",
+                    "image_prompt": "冷峻推理作家，深灰风衣，黑色半框眼镜，银色钢笔，克制表情，电影感悬疑光影。",
+                },
+                {
+                    "name": "苏棠",
+                    "role": "女主 / 觉醒者",
+                    "age_range": "25-28岁",
+                    "appearance": "清冷明艳，长发束成低马尾，眼尾有细小泪痣，浅色衬衫外搭米白西装，气质温柔但有锋芒。",
+                    "costume_hint": "米白西装、浅蓝衬衫、珍珠耳钉，随身携带旧剧本夹。",
+                    "signature_items": ["旧剧本夹", "珍珠耳钉", "低马尾"],
+                    "expressions": ["温和试探", "压住恐惧", "坚定直视"],
+                    "poses": ["抱着剧本夹", "转身挡在主角前", "低声提醒线索"],
+                    "visual_consistency": "低马尾和珍珠耳钉不能丢；服装保持浅色系，与萧然形成黑白对照。",
+                    "personality": "温柔谨慎，擅长观察人心，长期被剧情模板束缚但仍保留自我。",
+                    "goal": "摆脱系统指定的悲惨女主人设，找回真实记忆。",
+                    "arc": "从被动求生到主动破局。",
+                    "voice": "语气平稳，关键时刻直击人心。",
+                    "image_prompt": "清冷觉醒女主，米白西装，低马尾，珍珠耳钉，抱旧剧本夹，温柔但坚定。",
+                },
+                {
+                    "name": "秦鹤",
+                    "role": "反派 / 导演代理人",
+                    "age_range": "38-42岁",
+                    "appearance": "高瘦优雅，银灰短发，黑色高领毛衣配剪裁精确的长外套，笑容礼貌但冷漠。",
+                    "costume_hint": "黑色高领、暗纹长外套、银灰手套，佩戴细窄金属腕表。",
+                    "signature_items": ["银灰手套", "金属腕表", "暗纹长外套"],
+                    "expressions": ["礼貌微笑", "冷眼旁观", "掌控局面"],
+                    "poses": ["抬手看表", "站在监控屏前", "侧身让路"],
+                    "visual_consistency": "银灰短发、手套、腕表必须保留；始终干净精致，像人形系统界面。",
+                    "personality": "优雅、克制、善于操控叙事节奏。",
+                    "goal": "维护 AI 导演实验，阻止觉醒者破坏系统。",
+                    "arc": "从绝对执行规则到暴露自身也被规则困住。",
+                    "voice": "礼貌、慢速、带审判感。",
+                    "image_prompt": "优雅冷漠的反派导演代理人，银灰短发，黑色高领，暗纹长外套，银灰手套，监控屏冷光。",
+                },
+            ],
+            "relationship_map": "萧然与苏棠从互相试探到并肩破局；秦鹤表面帮助剧情推进，实际负责修正所有偏离模板的觉醒行为。",
+            "locations": [
+                {
+                    "name": "循环宴会厅",
+                    "role": "第一集核心密室",
+                    "visual_description": "金色吊灯、镜面墙、长桌、监控红点隐藏在花束中。",
+                    "mood": "华丽但压迫",
+                    "reusable_asset_note": "可作为多集反复出现的系统模板场景。",
+                },
+                {
+                    "name": "废弃剪辑室",
+                    "role": "觉醒者交换线索的安全屋",
+                    "visual_description": "墙上贴满分镜图和红线，老式监视器循环播放短剧片段。",
+                    "mood": "冷色、秘密、临时同盟",
+                    "reusable_asset_note": "适合生成背景参考图。",
+                },
+            ],
+            "story_arc": {
+                "beginning": "萧然发现自己进入短剧世界，第一场危机看似狗血认亲，实则是密室投毒。",
+                "middle": "萧然和苏棠不断破解模板背后的真实犯罪，同时发现现实实验室正在利用观众反馈训练 AI。",
+                "climax": "秦鹤启动终局剧本，所有觉醒者被迫出演互相背叛的戏码，萧然用规则漏洞让系统自证矛盾。",
+                "ending_direction": "主角团逃离短剧世界，但 AI 导演的一部分规则已经渗入现实平台。",
+            },
+            "visual_style": "冷色悬疑短剧质感，半写实人物，强构图，高对比光影，现实细节和系统 UI 元素并置。",
+            "image_style_prompt": "cinematic suspense vertical drama, semi-realistic characters, cool blue and cyan lighting, high contrast, precise composition, subtle AI interface overlays, consistent character design",
+            "production_notes": [
+                "漫画分镜优先竖屏构图，适合短剧节奏",
+                "所有角色立绘先生成参考卡，再进入分镜图",
+                "场景图保持冷色悬疑，不使用夸张玄幻特效",
+            ],
+        }
+
+    def _demo_chapter_plan(self) -> dict[str, Any]:
+        chapters = [
+            {
+                "chapter_number": 1,
+                "title": "拒演狗血开局",
+                "goal": "让萧然理解世界规则，并用逻辑破解第一场强制剧情。",
+                "conflict": "系统要求他按短剧模板羞辱苏棠，否则扣除存在值。",
+                "key_events": ["萧然拒绝照台词行动", "宴会灯光骤暗", "他发现酒杯和花束监控的矛盾", "苏棠第一次主动递出线索"],
+                "character_focus": ["萧然", "苏棠"],
+                "ending_hook": "萧然指出凶手不在宾客中，真正下毒的是剧情本身。",
+                "status": "demo",
+            },
+            {
+                "chapter_number": 2,
+                "title": "觉醒者的试探",
+                "goal": "苏棠确认萧然不是普通演员，两人建立最低限度同盟。",
+                "conflict": "秦鹤安排新的误会桥段，试图把萧然拖回模板。",
+                "key_events": ["苏棠在花园留下旧剧本页", "萧然发现台词会自动改写", "秦鹤第一次现身", "两人在剪辑室交换信息"],
+                "character_focus": ["苏棠", "萧然", "秦鹤"],
+                "ending_hook": "旧剧本页最后一行写着：上一位萧然死于第三集。",
+                "status": "demo",
+            },
+            {
+                "chapter_number": 3,
+                "title": "不存在的观众",
+                "goal": "揭开观众弹幕其实是实验室指令流。",
+                "conflict": "系统用观众爽点强行制造背叛。",
+                "key_events": ["弹幕提前预言事件", "萧然定位指令延迟", "苏棠被迫说出假证词"],
+                "character_focus": ["萧然", "苏棠"],
+                "ending_hook": "萧然在弹幕里看见自己的真实住院编号。",
+                "status": "outline",
+            },
+            {
+                "chapter_number": 4,
+                "title": "导演代理人",
+                "goal": "秦鹤展示规则边界，同时暴露自己的弱点。",
+                "conflict": "秦鹤允许主角破案，但不允许他们破坏叙事。",
+                "key_events": ["秦鹤提出交易", "苏棠记忆闪回", "萧然用剪辑漏洞反向套话"],
+                "character_focus": ["秦鹤", "萧然"],
+                "ending_hook": "秦鹤说：你以为我是导演？我只是上一版主角。",
+                "status": "outline",
+            },
+        ]
+        return {"chapter_count": len(chapters), "chapters": chapters}
+
+    def _demo_chapter_contents(self, chapter_number: int) -> list[tuple[str, str, dict[str, Any], str]]:
+        if chapter_number == 2:
+            return self._demo_chapter_two_contents()
+        return self._demo_chapter_one_contents()
+
+    def _demo_chapter_one_contents(self) -> list[tuple[str, str, dict[str, Any], str]]:
+        chapter_outline = {
+            "chapter_number": 1,
+            "title": "拒演狗血开局",
+            "summary": "萧然被系统强制推入宴会认亲戏码，却通过酒杯、花束监控和灯光时间差，判断所谓羞辱桥段其实隐藏着一场投毒密室。",
+            "objective": "建立世界规则，展示主角不降智的核心爽点。",
+            "keywords": ["短剧模板", "宴会厅", "密室投毒", "拒绝降智"],
+            "key_dialogues": ["如果剧情要求我蠢，那它先得解释为什么。", "你不是来演戏的，对吗？"],
+            "foreshadowing": ["花束里的红点监控", "苏棠提前握紧的旧剧本夹", "秦鹤未露面但腕表声出现"],
+            "ending_hook": "萧然宣布：凶手不是人，是这段剧情。",
+            "continuity_notes": ["萧然首次意识到存在值规则", "苏棠确认萧然有自主意识"],
+            "scenes": [
+                {
+                    "scene_number": 1,
+                    "title": "强制开场",
+                    "location": "循环宴会厅",
+                    "time": "夜晚",
+                    "weather": "室内，暴雨声从音响中循环播放",
+                    "summary": "萧然醒来坐在宴会长桌尽头，耳边响起系统台词提示。",
+                    "goal": "让主角和观众理解世界荒诞但规则严格。",
+                    "conflict": "他说出原台词就会伤害苏棠，不说就扣存在值。",
+                    "emotional_shift": "困惑到冷静审视",
+                    "scene_function": "开局钩子和规则展示",
+                    "beats": ["系统下发羞辱台词", "萧然观察所有人的站位", "他故意沉默让倒计时逼近归零"],
+                    "location_role": "华丽表象包裹密室线索",
+                    "props": ["红酒杯", "花束", "银色钢笔"],
+                    "spatial_axis": "长桌从左前延伸到右后，苏棠在画面右侧被围观。",
+                    "character_positions": ["萧然在长桌尽头", "苏棠站在吊灯下", "宾客形成半圆"],
+                    "movement_path": "萧然从座位起身，绕过长桌走向花束。",
+                },
+                {
+                    "scene_number": 2,
+                    "title": "逻辑拆台",
+                    "location": "循环宴会厅",
+                    "time": "夜晚",
+                    "summary": "萧然没有羞辱苏棠，而是拆穿酒杯摆放和灯光故障之间的矛盾。",
+                    "goal": "完成第一轮反套路爽点。",
+                    "conflict": "宾客按模板起哄，系统试图用噪声盖住推理。",
+                    "emotional_shift": "紧张到掌控",
+                    "scene_function": "推理展示",
+                    "beats": ["萧然用钢笔敲击酒杯", "他指出每个杯口水痕方向不一致", "苏棠低声补充花束被人移动过"],
+                    "props": ["酒杯", "吊灯遥控器", "旧剧本夹"],
+                    "spatial_axis": "镜头沿桌面低角度推进，最后停在萧然手中的钢笔。",
+                    "character_positions": ["萧然站在桌边", "苏棠站到萧然身后半步", "宾客后退"],
+                    "movement_path": "萧然从酒杯走向花束，再回到苏棠身边。",
+                },
+            ],
+        }
+        novel_text = """萧然醒来时，第一反应不是害怕，而是觉得灯太亮。
+
+头顶那盏水晶吊灯华丽得近乎失真，几百片切割玻璃垂下来，把冷白色灯光拆成碎片，落在长桌、银餐具和一排排红酒杯上。杯中的酒颜色很深，像被提前调好的舞台血浆。
+
+他坐在长桌尽头，右手边摆着一张烫金席卡。
+
+萧然。
+
+名字是他的，字迹不是。
+
+还没等他弄清楚自己为什么会出现在这里，耳边忽然响起一道没有情绪的声音。
+
+“剧情节点已载入。”
+
+“三。”
+
+宴会厅里的宾客齐刷刷转头。男人的愤怒、女人的鄙夷、长辈的失望，全都像提前排练过一样，精准地挂在脸上。
+
+“二。”
+
+站在吊灯下的女人抬起头。她穿着米白色西装，怀里抱着一个旧剧本夹，指节因为用力而泛白。她看向萧然时，眼底没有委屈，只有一种疲惫到麻木的戒备。
+
+“一。”
+
+一句话从萧然脑海里浮出来，像有人把台词直接塞进了他的舌根。
+
+你这种女人，也配进萧家的门？
+
+廉价、粗暴、毫无逻辑，却非常适合在三秒后引爆满堂哗然。
+
+萧然闭了闭眼。
+
+他是推理作家。职业习惯让他在任何荒唐场面里，第一件事都是找规则，而不是找情绪。
+
+所以他没有说话。
+
+下一秒，视野右上角跳出一行猩红小字。
+
+存在值 -3。
+
+胸口像被一只冰冷的手攥住。疼痛真实得过分，连呼吸都短了一截。宴会厅安静下来，所有人看他的眼神从愤怒变成了僵硬的等待，好像一段视频卡在了必须继续播放的位置。
+
+萧然慢慢扶了扶眼镜。
+
+“如果剧情要求我蠢，”他声音不高，却足够让最近的几个人听清，“那它至少得先解释为什么。”
+
+宾客席上有人张嘴，似乎想按剧本继续指责，可那句话卡在喉咙里，表情显得滑稽而空洞。
+
+萧然起身。
+
+椅脚擦过地毯，没有发出声音。这个细节让他停顿了半秒。太安静了，安静到不像真实宴会，更像后期消过噪的拍摄现场。
+
+他拿起胸口口袋里的银色钢笔，轻轻敲了敲离自己最近的酒杯。
+
+叮。
+
+清脆声响在大厅里散开。
+
+第一只杯子杯口有水痕，方向朝内；第二只杯子的水痕朝外；第三只干净得像刚擦过。萧然沿着长桌走了三步，又抬头看向吊灯。
+
+三十秒前，灯闪过一次。
+
+所有人都没有反应。
+
+萧然转身，视线落到女人身旁那束白玫瑰上。花束过于蓬松，刚好挡住墙角一个很小的红点。那红点闪烁的频率，和他视野里的倒计时一致。
+
+“酒杯不是同一时间摆上来的。”他说，“灯光故障发生后，没人看向吊灯，说明你们不是没注意到，而是被规定不能注意到。”
+
+有人终于挤出一句台词：“你胡说！明明是苏棠她偷换了酒杯！”
+
+萧然看向说话的人。
+
+“你认识她？”
+
+那人愣住。
+
+萧然又问：“她什么时候偷换的？用哪只手？从哪个方向走到桌边？你坐在第三排，视线被花束挡住，为什么能看见？”
+
+一个问题接一个问题落下。对方脸上的愤怒还在，眼神却空了，像程序突然找不到下一句回答。
+
+站在吊灯下的苏棠轻轻吸了一口气。
+
+萧然听见了。
+
+他走到她身侧，停在那束白玫瑰前。距离近了，他才看见她剧本夹边缘露出一小截纸页，上面用铅笔圈着一句话。
+
+不要按台词走。
+
+苏棠没有解释，只把剧本夹往怀里压得更紧。
+
+系统音第一次出现了明显波动。
+
+“剧情偏离。”
+
+“正在修正。”
+
+宴会厅像被重新按下播放键。宾客们猛地围上来，有人哭着喊“认祖归宗”，有人举起手机录像，有人试图把一枚戒指塞进萧然手里。每个人都在推着场面往更吵、更狗血、更不可收拾的方向滚。
+
+苏棠下意识后退半步。
+
+萧然却笑了一下。
+
+那笑意很淡，不像愉快，更像终于确认了一条猜想。
+
+“凶手不在宾客里。”
+
+他抬起钢笔，笔尖越过吊灯，指向上方一块几乎看不见缝隙的暗格。
+
+“真正下毒的，是这段剧情本身。”
+
+话音落下，满厅灯光同时熄灭。
+
+黑暗里，苏棠的声音第一次主动靠近他。
+
+“你刚才那句话，”她轻声问，“是你自己想说的，还是系统给你的？”
+
+萧然握紧钢笔。
+
+“如果是系统给的，”他说，“它现在应该已经后悔了。”"""
+        script = {
+            "chapter_number": 1,
+            "title": "拒演狗血开局",
+            "hook": "萧然被迫说出羞辱女主的台词，却选择先审问剧情。",
+            "scenes": [
+                {
+                    "scene_number": 1,
+                    "location": "循环宴会厅",
+                    "summary": "萧然醒来，系统强制他进入狗血认亲戏码。",
+                    "dialogue": [
+                        {"speaker": "系统", "line": "请说出台词。"},
+                        {"speaker": "萧然", "line": "如果剧情要求我蠢，那它先得解释为什么。"},
+                    ],
+                    "image_prompt": "循环宴会厅，水晶吊灯，长桌红酒杯，萧然深灰风衣扶眼镜，苏棠米白西装抱旧剧本夹，冷色悬疑光影。",
+                },
+                {
+                    "scene_number": 2,
+                    "location": "循环宴会厅",
+                    "summary": "萧然拆穿酒杯和监控的矛盾，苏棠递出第一条线索。",
+                    "dialogue": [
+                        {"speaker": "萧然", "line": "杯口水痕朝向不一致。"},
+                        {"speaker": "苏棠", "line": "你不是来演戏的，对吗？"},
+                    ],
+                    "image_prompt": "萧然用银色钢笔指向花束隐藏监控，苏棠侧身递出旧剧本夹，宾客表情僵硬，竖屏电影分镜。",
+                },
+            ],
+            "ending_hook": "萧然指向吊灯暗格：真正下毒的是这段剧情本身。",
+        }
+        storyboard = {
+            "chapter_number": 1,
+            "title": "拒演狗血开局",
+            "panels": [
+                {
+                    "panel_number": 1,
+                    "scene_number": 1,
+                    "panel_goal": "建立荒诞且压迫的开场",
+                    "shot_size": "wide shot",
+                    "camera_angle": "slightly low angle",
+                    "composition": "长桌作为引导线，吊灯压在画面上方",
+                    "blocking": "萧然坐在长桌尽头，苏棠站在远处吊灯下",
+                    "emotion": "冷静和不安并存",
+                    "dialogue": "请说出台词。",
+                    "image_prompt": "竖屏漫画分镜，华丽宴会厅，水晶吊灯，长桌红酒杯，萧然深灰风衣坐在尽头，苏棠米白西装抱旧剧本夹，冷色高对比光影，悬疑短剧质感。",
+                },
+                {
+                    "panel_number": 2,
+                    "scene_number": 2,
+                    "panel_goal": "展示主角用逻辑压住狗血桥段",
+                    "shot_size": "medium close-up",
+                    "camera_angle": "eye level",
+                    "composition": "银色钢笔在前景，萧然眼神锐利",
+                    "blocking": "萧然站在桌边，苏棠在他身后半步",
+                    "emotion": "掌控感",
+                    "dialogue": "如果剧情要求我蠢，那它先得解释为什么。",
+                    "image_prompt": "萧然扶黑色半框眼镜，用银色钢笔敲红酒杯，苏棠在身后握紧旧剧本夹，宾客凝固，冷蓝悬疑光，半写实漫画。",
+                },
+            ],
+        }
+        comic_pages = {
+            "chapter_number": 1,
+            "page_count": 2,
+            "pages": [
+                {
+                    "page_number": 1,
+                    "title": "倒计时",
+                    "content": "萧然醒在宴会厅，系统要求他说出羞辱台词。他沉默，存在值下降。",
+                    "panel_count": 3,
+                    "image_prompt": "竖屏漫画页，宴会厅开场，系统倒计时 UI，萧然冷静沉默，苏棠被众人围观，冷色悬疑短剧风格。",
+                },
+                {
+                    "page_number": 2,
+                    "title": "拒演",
+                    "content": "萧然拒绝按台词走，开始检查酒杯、灯光和花束监控。",
+                    "panel_count": 4,
+                    "image_prompt": "竖屏漫画页，萧然用银色钢笔检查酒杯和花束隐藏监控，苏棠递出剧本夹线索，高对比电影光影。",
+                },
+            ],
+        }
+        return [
+            ("chapter_outline", "第1话细纲：拒演狗血开局", chapter_outline, self._chapter_outline_text(chapter_outline)),
+            ("novel_body", "第1话正文：拒演狗血开局", {"chapter_number": 1, "title": "拒演狗血开局", "content": novel_text, "word_count": len(novel_text)}, novel_text),
+            ("script", "第1话脚本：拒演狗血开局", script, dumps_json(script)),
+            ("storyboard", "第1话分镜：拒演狗血开局", storyboard, dumps_json(storyboard)),
+            ("comic_pages", "第1话漫画页：拒演狗血开局", comic_pages, dumps_json(comic_pages)),
+        ]
+
+    def _demo_chapter_two_contents(self) -> list[tuple[str, str, dict[str, Any], str]]:
+        chapter_outline = {
+            "chapter_number": 2,
+            "title": "觉醒者的试探",
+            "summary": "苏棠用旧剧本页试探萧然是否具备自主意识，秦鹤则安排新误会桥段，试图把两人重新拖入系统模板。",
+            "objective": "建立主角与苏棠的同盟，并让秦鹤作为规则代理人登场。",
+            "keywords": ["旧剧本页", "花园喷泉", "自动改写台词", "剪辑室"],
+            "key_dialogues": ["你不是第一个拒演的人。", "上一位萧然死于第三集。"],
+            "foreshadowing": ["秦鹤的金属腕表声", "剧本页自动渗出新字", "剪辑室监视器播放未来片段"],
+            "ending_hook": "旧剧本页写着：上一位萧然死于第三集。",
+            "continuity_notes": ["苏棠确认萧然是异常变量", "秦鹤第一次正面观察两人"],
+            "scenes": [
+                {
+                    "scene_number": 1,
+                    "title": "花园试探",
+                    "location": "花园喷泉",
+                    "time": "午后",
+                    "weather": "晴朗但光线不自然",
+                    "summary": "苏棠把旧剧本页藏在喷泉边，观察萧然会不会按系统台词行动。",
+                    "goal": "让苏棠主动出手",
+                    "conflict": "系统把普通交流改写成误会桥段",
+                    "emotional_shift": "试探到信任萌芽",
+                    "scene_function": "关系推进",
+                    "beats": ["苏棠留下剧本页", "萧然故意念错台词", "剧本页浮出新字"],
+                    "props": ["旧剧本页", "喷泉硬币", "银色钢笔"],
+                    "spatial_axis": "喷泉居中，苏棠在左侧廊柱后观察，萧然从右侧进入。",
+                    "character_positions": ["苏棠躲在廊柱阴影", "萧然站在喷泉边", "秦鹤远处经过"],
+                    "movement_path": "萧然绕喷泉半圈，用钢笔压住剧本页。",
+                },
+                {
+                    "scene_number": 2,
+                    "title": "剪辑室同盟",
+                    "location": "废弃剪辑室",
+                    "time": "夜晚",
+                    "summary": "两人在废弃剪辑室交换信息，第一次承认他们面对的不是普通剧情。",
+                    "goal": "建立最低限度同盟",
+                    "conflict": "监视器播放两人未来背叛片段",
+                    "emotional_shift": "警惕到共同作战",
+                    "scene_function": "世界观扩展",
+                    "beats": ["苏棠展示旧剧本", "萧然指出台词改写规律", "秦鹤通过监视器发出警告"],
+                    "props": ["老式监视器", "分镜墙", "红线", "旧剧本夹"],
+                    "spatial_axis": "监视器墙在背景，二人位于前景两侧，中间隔着剪辑台。",
+                    "character_positions": ["萧然靠近白板", "苏棠坐在剪辑台边", "秦鹤只出现在监视器里"],
+                    "movement_path": "苏棠从门口进入，萧然关灯，只留下监视器冷光。",
+                },
+            ],
+        }
+        novel_text = """苏棠在花园里等了七分钟。
+
+喷泉每隔十秒喷起一次水，水柱高度、落点、溅开的弧度都一模一样。午后的阳光照在水面上，反射出一层不自然的银白色，亮得让人眼睛发疼。
+
+这里的一切都太准时了。
+
+准时开场，准时误会，准时崩溃，也准时把她推回那个永远逃不出去的位置。
+
+苏棠站在廊柱阴影里，指腹摩挲着旧剧本夹的边缘。夹子已经被她握出一道浅浅的折痕。她知道今天这一幕原本该怎么走。
+
+萧然会从回廊尽头出现。
+
+他会在喷泉边捡到那张旧剧本页。
+
+系统会把纸页上的字改写成她陷害他的证据。
+
+然后他会质问她，误会她，逼她解释。解释当然没有用。解释是这种世界最不需要的东西，哭、跪、被羞辱，才是它要的画面。
+
+可昨晚宴会厅里，萧然没有按台词走。
+
+这件事让苏棠一整夜没睡。
+
+她见过反抗的人。有人崩溃，有人求饶，有人试图用更夸张的表演讨好系统，但他们最后都会被剧情拽回去，像被水流卷回漩涡中心。
+
+萧然不一样。
+
+他不是挣扎。
+
+他是在审题。
+
+脚步声从回廊另一端传来。苏棠抬眼，看见萧然穿过阳光走进花园。他仍旧是那件深灰风衣，黑色半框眼镜架在鼻梁上，胸口插着银色钢笔。系统似乎很讨厌他这份冷静，连投在他身上的光都比旁人更冷。
+
+喷泉边压着那张纸。
+
+萧然看见了，却没有立刻弯腰。
+
+他先看了一眼水池边沿，又看了一眼廊柱阴影。
+
+苏棠呼吸微微一滞。
+
+他知道她在这里。
+
+萧然终于捡起纸。与此同时，半透明的系统提示浮现在他面前。
+
+请质问苏棠。
+
+后面跟着三句台词，每一句都足够把人推向决裂。
+
+萧然看完，沉默两秒，清了清嗓子。
+
+“请问，”他语气甚至称得上礼貌，“这张纸的纸浆纤维，为什么和宴会厅桌卡一致？”
+
+系统提示框闪了一下。
+
+苏棠怔住，差点真的笑出来。
+
+这不是嘲笑。更像一个在水下憋了太久的人，忽然听见岸边有人说：这里有路。
+
+纸页开始变化。原本模糊的字迹像墨水一样往外渗，试图把萧然刚才那句毫无攻击性的问题，改写成一句愤怒指控。
+
+萧然动作比它更快。
+
+银色钢笔压住纸角，笔尖划过尚未成形的文字，把主语和情绪词全部划掉，只留下几个断裂的关键词。
+
+第三集。
+
+死亡。
+
+上一位。
+
+苏棠从阴影里走出来。
+
+“你不是第一个拒演的人。”她说。
+
+萧然抬眼看她，眼神没有惊讶，只有一种终于等到变量出现的专注。
+
+“上一位是谁？”
+
+苏棠张了张口，却没有马上回答。喷泉在他们之间再次升起，水声短暂盖住了系统提示的低频噪音。她低头打开旧剧本夹，从最里面抽出一页发黄的纸。
+
+纸页上写着同一个名字。
+
+萧然。
+
+字迹和他席卡上的一模一样。
+
+“他比你更早醒来。”苏棠声音很轻，“也比你更早相信，只要找出规则，就能离开这里。”
+
+“结果呢？”
+
+“死在第三集。”
+
+萧然没有追问死亡方式。他只是把那页纸折好，放回苏棠递来的剧本夹里。
+
+“那我们至少知道一件事。”他说。
+
+苏棠看着他。
+
+“第三集之前，系统不会允许我知道太多。”萧然顿了顿，“所以它今天急着让我们决裂。”
+
+夜里，苏棠带他去了废弃剪辑室。
+
+那是她在无数次循环里找到的唯一缝隙。门牌被撕掉一半，里面堆着旧灯架、废弃轨道和一整面还没拆掉的监视器墙。墙上贴满分镜图，红线把误会、认亲、车祸、替身、背叛和反转连在一起，看上去像某种荒诞的犯罪地图。
+
+萧然站在墙前，看了很久。
+
+“这些不是剧情点。”他说，“是控制点。”
+
+苏棠把灯关掉，只留下监视器的蓝白冷光。
+
+“我以前只知道躲。”她说，“躲过一个误会，就会有下一个。躲过一场车祸，就会有人替我出车祸。后来我明白，这里不是要我活得合理，它只是要我按观众最容易兴奋的方式活着。”
+
+萧然没有立刻说话。
+
+他看见其中一台监视器亮了。
+
+画面里，苏棠哭着指认他。画面里的他脸色阴沉，伸手把她推向门外。镜头切得很快，情绪给得很满，如果只看这一段，任何人都会相信他们注定反目。
+
+现实里的苏棠脸色发白。
+
+萧然却松了口气。
+
+“它急了。”
+
+苏棠愣住：“这算好消息？”
+
+“当然。”萧然把银色钢笔插回胸口，“如果这是必然未来，系统没必要提前给我们看。恐吓是一种成本最低的控制方式，前提是被恐吓的人相信自己没有选择。”
+
+监视器里忽然传来掌声。
+
+一下一下，不轻不重，礼貌得令人不舒服。
+
+屏幕雪花散开，一个男人出现在画面中央。银灰短发，黑色高领，暗纹长外套，连微笑都像被尺子量过。
+
+“很精彩。”他说，“萧然先生，你比上一位更快。”
+
+苏棠的手指猛地收紧。
+
+萧然看向屏幕：“秦鹤？”
+
+男人微笑更深：“看来苏小姐告诉了你不少。但第三集之前，请不要误会一件事。”
+
+监视器里的光映在他银灰色手套上，冷得像手术刀。
+
+“赢过一次，不等于理解规则。”
+
+屏幕熄灭。
+
+剪辑室重新陷入黑暗。几秒后，旧剧本页在苏棠怀里轻轻发烫。
+
+她打开剧本夹。
+
+最后一行字缓慢浮现。
+
+上一位萧然，死于第三集。"""
+        script = {
+            "chapter_number": 2,
+            "title": "觉醒者的试探",
+            "hook": "苏棠用一张会自动改写的旧剧本页试探萧然。",
+            "scenes": [
+                {
+                    "scene_number": 1,
+                    "location": "花园喷泉",
+                    "summary": "萧然故意念错系统台词，让苏棠确认他是异常变量。",
+                    "dialogue": [
+                        {"speaker": "萧然", "line": "这张纸的纸浆纤维为什么和宴会厅桌卡一致？"},
+                        {"speaker": "苏棠", "line": "你不是第一个拒演的人。"},
+                    ],
+                    "image_prompt": "花园喷泉午后冷光，苏棠米白西装站在廊柱阴影，萧然用银色钢笔压住旧剧本页，纸上文字自动浮现。",
+                },
+                {
+                    "scene_number": 2,
+                    "location": "废弃剪辑室",
+                    "summary": "两人交换信息，秦鹤通过监视器警告他们。",
+                    "dialogue": [
+                        {"speaker": "萧然", "line": "恐吓的前提，是你相信自己没有选择。"},
+                        {"speaker": "秦鹤", "line": "第三集之前，请不要以为你们理解了规则。"},
+                    ],
+                    "image_prompt": "废弃剪辑室，监视器蓝白冷光，分镜墙和红线，萧然与苏棠分站剪辑台两侧，秦鹤出现在屏幕中。",
+                },
+            ],
+            "ending_hook": "旧剧本页浮现：上一位萧然死于第三集。",
+        }
+        storyboard = {
+            "chapter_number": 2,
+            "title": "觉醒者的试探",
+            "panels": [
+                {
+                    "panel_number": 1,
+                    "scene_number": 1,
+                    "panel_goal": "表现苏棠的试探和萧然的反套路回应",
+                    "shot_size": "medium shot",
+                    "camera_angle": "over-the-shoulder",
+                    "composition": "苏棠在阴影中观察，萧然位于喷泉亮面",
+                    "blocking": "二人隔着喷泉形成对峙",
+                    "emotion": "警惕、好奇",
+                    "dialogue": "你不是第一个拒演的人。",
+                    "image_prompt": "竖屏漫画，花园喷泉，苏棠在廊柱阴影里抱旧剧本夹，萧然站在喷泉边用银色钢笔压住剧本页，冷色阳光，不自然银白反光。",
+                },
+                {
+                    "panel_number": 2,
+                    "scene_number": 2,
+                    "panel_goal": "秦鹤作为规则代理人登场",
+                    "shot_size": "close-up",
+                    "camera_angle": "screen POV",
+                    "composition": "监视器占画面中央，秦鹤微笑，前景有萧然和苏棠的肩部剪影",
+                    "blocking": "秦鹤只通过屏幕出现",
+                    "emotion": "压迫、优雅威胁",
+                    "dialogue": "请不要以为你们理解了规则。",
+                    "image_prompt": "废弃剪辑室监视器特写，秦鹤银灰短发黑色高领在屏幕中礼貌微笑，前景萧然苏棠剪影，蓝白噪点冷光，高对比悬疑漫画。",
+                },
+            ],
+        }
+        comic_pages = {
+            "chapter_number": 2,
+            "page_count": 2,
+            "pages": [
+                {
+                    "page_number": 1,
+                    "title": "旧剧本页",
+                    "content": "苏棠试探萧然，剧本页自动改写失败。",
+                    "panel_count": 4,
+                    "image_prompt": "竖屏漫画页，花园喷泉，旧剧本页自动浮字，萧然和苏棠互相试探，冷色悬疑光。",
+                },
+                {
+                    "page_number": 2,
+                    "title": "秦鹤现身",
+                    "content": "剪辑室监视器亮起，秦鹤警告两人第三集之前不要妄动。",
+                    "panel_count": 4,
+                    "image_prompt": "竖屏漫画页，废弃剪辑室，监视器墙，秦鹤屏幕登场，萧然苏棠前景剪影，红线分镜墙。",
+                },
+            ],
+        }
+        return [
+            ("chapter_outline", "第2话细纲：觉醒者的试探", chapter_outline, self._chapter_outline_text(chapter_outline)),
+            ("novel_body", "第2话正文：觉醒者的试探", {"chapter_number": 2, "title": "觉醒者的试探", "content": novel_text, "word_count": len(novel_text)}, novel_text),
+            ("script", "第2话脚本：觉醒者的试探", script, dumps_json(script)),
+            ("storyboard", "第2话分镜：觉醒者的试探", storyboard, dumps_json(storyboard)),
+            ("comic_pages", "第2话漫画页：觉醒者的试探", comic_pages, dumps_json(comic_pages)),
+        ]
 
     def _require_project(self, project_id: str) -> CreativeProject:
         project = self.get_project(project_id)
@@ -1648,6 +2470,10 @@ class CreativeProjectService:
       "goal": "目标",
       "arc": "成长弧光",
       "visual_tags": ["稳定视觉标签1", "稳定视觉标签2"],
+      "signature_items": ["标志性物品1", "标志性物品2"],
+      "expressions": ["常用表情1", "常用表情2"],
+      "poses": ["常用姿态1", "常用姿态2"],
+      "visual_consistency": "后续立绘、分镜和漫画生图必须保持一致的脸型、发型、服装、配色和标志物规则",
       "voice": "说话方式、口头禅、台词气质",
       "image_prompt": "可直接用于生成角色设定图的完整提示词，包含年龄、脸型、发型、服装、气质、构图、风格",
       "negative_prompt": "不希望出现在角色图里的元素",
@@ -1801,6 +2627,8 @@ class CreativeProjectService:
       "scene_number": 1,
       "title": "场景标题",
       "location": "地点",
+      "time_of_day": "时间段",
+      "weather": "天气/光线环境",
       "characters": ["角色"],
       "purpose": "场景作用",
       "scene_role": "开场钩子/冲突升级/反转/情绪落点/结尾钩子",
@@ -1812,6 +2640,10 @@ class CreativeProjectService:
       "emotion": "主要情绪",
       "emotional_turn": "情绪变化",
       "visual_focus": "画面核心看点",
+      "props": ["关键道具1", "关键道具2"],
+      "spatial_axis": "空间轴线和人物朝向",
+      "character_positions": "角色站位/坐位/前后景关系",
+      "movement_path": "角色或镜头移动路线",
       "shot_design": "镜头/构图/景别设计",
       "image_prompt": "可直接用于生成场景概念图的详细提示词"
     }}
@@ -1986,7 +2818,7 @@ class CreativeProjectService:
 3. 每页应承接 storyboard panels，不要凭空改剧情；可以把多个 panel 合并成一页，也可以把复杂 panel 拆成多格。
 4. 每格写清角色、动作、画面、对白气泡、音效和镜头节奏。
 5. 每页 image_prompt 是该页关键视觉提示，能直接送到生图。
-6. 保持角色外观和视觉风格一致；如果项目参考资产里有 character/background/style/reference，必须把对应参考意图写入 page 的 image_prompt。
+6. 保持角色外观和视觉风格一致；如果项目参考资产里有 character/background/style/world/reference，必须把对应参考意图写入 page 的 image_prompt。
 7. 输出严格 JSON，不要 Markdown。
 
 输出格式：
@@ -2029,6 +2861,10 @@ class CreativeProjectService:
                             f"外貌：{character.get('appearance', '')}",
                             f"服装：{character.get('costume_hint', '')}",
                             f"稳定标签：{'、'.join(character.get('visual_tags') or [])}",
+                            f"标志物：{'、'.join(character.get('signature_items') or [])}",
+                            f"常用表情：{'、'.join(character.get('expressions') or [])}",
+                            f"常用姿态：{'、'.join(character.get('poses') or [])}",
+                            f"一致性规则：{character.get('visual_consistency', '')}",
                             f"角色图提示：{character.get('image_prompt', '')}",
                         ]
                         if part.split("：", 1)[-1]
@@ -2060,6 +2896,49 @@ class CreativeProjectService:
                     f" - asset_id={asset.get('asset_id')}；类型={asset.get('role')}；关系={asset.get('relation')}；说明={meta.get('character_name') or meta.get('source_title') or ''}"
                 )
         return "\n".join(line for line in lines if line.strip())
+
+    def _normalize_chapter_outline_v2(self, data: dict[str, Any]) -> None:
+        scenes = data.get("scenes")
+        if not isinstance(scenes, list):
+            data["scenes"] = []
+            return
+        for index, scene in enumerate(scenes, start=1):
+            if not isinstance(scene, dict):
+                continue
+            scene.setdefault("scene_number", index)
+            for key in [
+                "time_of_day",
+                "weather",
+                "spatial_axis",
+                "character_positions",
+                "movement_path",
+            ]:
+                scene.setdefault(key, "")
+            props = scene.get("props")
+            if props is None:
+                scene["props"] = []
+            elif not isinstance(props, list):
+                scene["props"] = [str(props)]
+
+    def _normalize_storyboard_v2(self, data: dict[str, Any]) -> None:
+        panels = data.get("panels")
+        if not isinstance(panels, list):
+            data["panels"] = []
+            return
+        for index, panel in enumerate(panels, start=1):
+            if not isinstance(panel, dict):
+                continue
+            panel.setdefault("panel_number", index)
+            panel.setdefault("panel_goal", "")
+            panel.setdefault("location", "")
+            panel.setdefault("camera_angle", "")
+            panel.setdefault("camera_motion", "")
+            panel.setdefault("blocking", "")
+            props = panel.get("props")
+            if props is None:
+                panel["props"] = []
+            elif not isinstance(props, list):
+                panel["props"] = [str(props)]
 
     def _enhance_storyboard_image_prompts(
         self,
@@ -2106,6 +2985,8 @@ class CreativeProjectService:
                         str(character.get("appearance") or ""),
                         str(character.get("costume_hint") or ""),
                         "、".join(character.get("visual_tags") or []),
+                        "、".join(character.get("signature_items") or []),
+                        str(character.get("visual_consistency") or ""),
                     ]
                     if part
                 )
@@ -2119,8 +3000,12 @@ class CreativeProjectService:
                     f"动作：{panel.get('action', '')}" if panel.get("action") else "",
                     f"情绪：{panel.get('emotion', '')}" if panel.get("emotion") else "",
                     f"镜头：{panel.get('camera_hint', '')}" if panel.get("camera_hint") else "",
+                    f"镜头角度：{panel.get('camera_angle', '')}" if panel.get("camera_angle") else "",
+                    f"镜头运动：{panel.get('camera_motion', '')}" if panel.get("camera_motion") else "",
                     f"景别：{panel.get('shot_size', '')}" if panel.get("shot_size") else "",
                     f"构图：{panel.get('composition', '')}" if panel.get("composition") else "",
+                    f"调度：{panel.get('blocking', '')}" if panel.get("blocking") else "",
+                    f"道具：{'、'.join(panel.get('props') or [])}" if panel.get("props") else "",
                     f"对白气泡：{'；'.join(panel.get('dialogue_bubbles') or [])}" if panel.get("dialogue_bubbles") else "",
                     f"原始画面意图：{prompt}" if prompt else "",
                     "清晰人物脸部，准确手部，电影感光影，竖屏短剧漫画构图，避免文字乱码和多余肢体",
@@ -2155,7 +3040,7 @@ class CreativeProjectService:
 3. panels 要覆盖完整剧情节拍，建议每场至少 2-4 个 panel，远景/中景/特写/大宽格交替，避免连续同景别。
 4. dialogue_bubbles 写本格可见对白气泡，sound_effect 写拟声词或环境声，negative_prompt 写需要避免的画面问题。
 5. image_prompt 必须复用上方角色视觉档案，不允许只写“某人醒来”“递合同”等剧情短句；没有明确角色外貌时也要写身份、年龄、体型、发型、服装和稳定视觉标签。
-6. 如果项目参考素材里有 character/background/style/reference，请把参考意图写入 image_prompt，供后续图生图或人工关联。
+6. 如果项目参考素材里有 character/background/style/world/reference，请把参考意图写入 image_prompt，供后续图生图或人工关联。
 7. 保持角色外观、服装、场景和视觉风格一致。
 8. 输出严格 JSON。
 
@@ -2168,13 +3053,19 @@ class CreativeProjectService:
     {{
       "panel_number": 1,
       "source_scene_number": 1,
+      "panel_goal": "本格叙事目的",
+      "location": "地点",
       "image_prompt": "生图提示词",
       "camera_hint": "镜头",
+      "camera_angle": "平视/俯视/仰视/过肩/主观视角",
+      "camera_motion": "推/拉/摇/移/静止",
       "shot_size": "远景/中景/特写/大宽格/窄格",
       "composition": "构图说明",
+      "blocking": "角色站位和调度",
       "characters": ["角色"],
       "action": "动作",
       "emotion": "情绪",
+      "props": ["关键道具"],
       "dialogue_bubbles": ["对白气泡"],
       "sound_effect": "音效字",
       "negative_prompt": "避免项",

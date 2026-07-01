@@ -24,10 +24,33 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.db.database import get_async_session
+from app.db.models.creative_project import ProjectGenerationLog
 from app.services.character.service import CharacterService
+from app.services.creative_project.service import dumps_json
 from app.db.models.character import CharacterSourceType, CharacterRole
 
 router = APIRouter()
+
+
+async def _write_project_generation_log(session, **kwargs) -> ProjectGenerationLog:
+    log = ProjectGenerationLog(
+        scene=kwargs.get("scene", "creative_project"),
+        project_id=kwargs.get("project_id"),
+        content_id=kwargs.get("content_id"),
+        ref_id=kwargs.get("ref_id"),
+        stage=kwargs.get("stage", ""),
+        provider=kwargs.get("provider", "") or "",
+        model=kwargs.get("model", "") or "",
+        status=kwargs.get("status", "success"),
+        prompt=kwargs.get("prompt", "") or "",
+        request_json=dumps_json(kwargs.get("request_payload") or {}),
+        raw_response=kwargs.get("raw_response", "") or "",
+        normalized_json=dumps_json(kwargs.get("normalized") or {}),
+        validation_error=kwargs.get("validation_error", "") or "",
+    )
+    session.add(log)
+    await session.flush()
+    return log
 logger = logging.getLogger("ylcraft.characters")
 
 
@@ -43,6 +66,10 @@ class CharacterCreateRequest(BaseModel):
     appearance: str = Field(default="", description="外貌描述")
     personality: str = Field(default="", description="性格特点")
     costume_hint: str = Field(default="", description="服装提示")
+    signature_items: list[str] = Field(default=[], description="角色标志性物品/符号")
+    expressions: list[str] = Field(default=[], description="角色常用表情")
+    poses: list[str] = Field(default=[], description="角色常用姿态/动作")
+    visual_consistency: str = Field(default="", description="角色视觉一致性规则")
     background: str = Field(default="", description="背景故事")
     age_range: str = Field(default="", description="年龄范围，如 20-25岁")
     tags: list[str] = Field(default=[], description="自定义标签")
@@ -58,6 +85,10 @@ class CharacterUpdateRequest(BaseModel):
     appearance: str | None = None
     personality: str | None = None
     costume_hint: str | None = None
+    signature_items: list[str] | None = None
+    expressions: list[str] | None = None
+    poses: list[str] | None = None
+    visual_consistency: str | None = None
     background: str | None = None
     age_range: str | None = None
     tags: list[str] | None = None
@@ -127,6 +158,10 @@ async def create_character(req: CharacterCreateRequest):
             appearance=req.appearance,
             personality=req.personality,
             costume_hint=req.costume_hint,
+            signature_items=req.signature_items,
+            expressions=req.expressions,
+            poses=req.poses,
+            visual_consistency=req.visual_consistency,
             background=req.background,
             age_range=req.age_range,
             tags=req.tags,
@@ -243,7 +278,8 @@ async def update_character(character_id: str, req: CharacterUpdateRequest):
             raise HTTPException(status_code=404, detail="角色不存在")
         if character.is_frozen and any(
             v is not None for v in [
-                req.appearance, req.costume_hint, req.portrait_url, req.portrait_asset_id
+                req.appearance, req.costume_hint, req.portrait_url, req.portrait_asset_id,
+                req.signature_items, req.expressions, req.poses, req.visual_consistency,
             ]
         ):
             raise HTTPException(status_code=403, detail="角色已冻结，禁止修改外观描述")
@@ -256,6 +292,10 @@ async def update_character(character_id: str, req: CharacterUpdateRequest):
             appearance=req.appearance,
             personality=req.personality,
             costume_hint=req.costume_hint,
+            signature_items=req.signature_items,
+            expressions=req.expressions,
+            poses=req.poses,
+            visual_consistency=req.visual_consistency,
             background=req.background,
             age_range=req.age_range,
             tags=req.tags,
@@ -329,17 +369,14 @@ async def generate_character_portrait(character_id: str, req: PortraitGenerateRe
             model=req.model or "",
         )
 
-        # 准备日志服务（生图前/后均写入，便于追踪失败原因）
-        from app.services.creative_project.service import CreativeProjectService
-        log_service = CreativeProjectService(session)
-
         try:
             result = await manager.generate_image(img_req)
         except Exception as e:
             logger.exception(f"[portrait/generate] generate_image failed: {e}")
             # 写入失败日志
             try:
-                await log_service.log_generation(
+                await _write_project_generation_log(
+                    session,
                     scene="character_portrait",
                     ref_id=character.id,
                     stage="generate_image",
@@ -367,7 +404,8 @@ async def generate_character_portrait(character_id: str, req: PortraitGenerateRe
         if not result.success:
             # 写入失败日志
             try:
-                await log_service.log_generation(
+                await _write_project_generation_log(
+                    session,
                     scene="character_portrait",
                     ref_id=character.id,
                     stage="generate_image",
@@ -427,7 +465,8 @@ async def generate_character_portrait(character_id: str, req: PortraitGenerateRe
 
             # 5. 写入成功日志
             try:
-                await log_service.log_generation(
+                await _write_project_generation_log(
+                    session,
                     scene="character_portrait",
                     ref_id=character.id,
                     stage="portrait_generate",
@@ -461,7 +500,8 @@ async def generate_character_portrait(character_id: str, req: PortraitGenerateRe
             logger.exception(f"[portrait/generate] asset_hub sync failed: {e}")
             # 资产中枢写入失败日志（生图本身是成功的）
             try:
-                await log_service.log_generation(
+                await _write_project_generation_log(
+                    session,
                     scene="character_portrait",
                     ref_id=character.id,
                     stage="asset_hub_sync",

@@ -2,11 +2,14 @@
 
 ## Phase 1: Reference Cards and Character Portraits
 
-- [ ] 1. Define character card schema with text fields, visual fields, signature items, expressions, poses and negative constraints.
-- [ ] 2. Add character portrait prompt template that outputs full copyable prompts for multi-view reference sheets.
-- [ ] 3. Link generated character portraits back to project characters and asset hub nodes.
-- [ ] 4. Add reference-card grouping for character, background, style, world and panel-specific references.
-- [ ] 5. Let storyboard and comic image generation select project references automatically and allow manual override per panel.
+- [x] 1. Define character card schema with text fields, visual fields, signature items, expressions, poses and negative constraints.
+- [x] 2. Add character portrait prompt template that outputs full copyable prompts for multi-view reference sheets.
+- [x] 3. Link generated character portraits back to project characters and asset hub nodes.
+- [x] 4. Add reference-card grouping for character, background, style, world and panel-specific references.
+- [x] 5. Let storyboard and comic image generation select project references automatically and allow manual override per panel.
+- [x] 5.1 Add in-project character portrait generation from outline characters, using the project default image backend.
+- [x] 5.2 Add non-destructive demo data fill for project outline, chapter plan, prose, scripts, storyboards and comic pages.
+- [x] 5.3 Add project deletion that removes project-local content/log/link records while preserving asset library and character library data.
 
 ## Phase 2: World Bible Assets
 
@@ -18,12 +21,12 @@
 
 ## Phase 3: Storyboard Prompt V2
 
-- [ ] 11. Extend storyboard schema with panel goal, shot size, camera angle, camera motion, composition and blocking.
-- [ ] 12. Add scene card fields for location, time, weather, props, spatial axis, character positions and movement path.
-- [ ] 13. Generate detailed image prompts from role cards, scene cards, camera cards and style cards.
-- [ ] 14. Add full prompt preview/copy for each storyboard panel and comic page.
+- [x] 11. Extend storyboard schema with panel goal, shot size, camera angle, camera motion, composition and blocking.
+- [x] 12. Add scene card fields for location, time, weather, props, spatial axis, character positions and movement path.
+- [x] 13. Generate detailed image prompts from role cards, scene cards, camera cards and style cards.
+- [x] 14. Add full prompt preview/copy for each storyboard panel and comic page.
 - [ ] 15. Add actions to rewrite only the image prompt without changing source story/script.
-- [ ] 16. Add single-panel regeneration and batch panel generation with skip-existing behavior.
+- [x] 16. Add single-panel regeneration and batch panel generation with skip-existing behavior.
 
 ## Phase 4: Batch Production Queue
 
@@ -49,8 +52,8 @@
 
 ## Verification
 
-- [ ] 30. Verify a character portrait can be generated, linked and reused by a storyboard panel.
-- [ ] 31. Verify a storyboard panel prompt includes character, scene, world and style context.
+- [x] 30. Verify a character portrait can be generated, linked and reused by a storyboard panel.
+- [x] 31. Verify a storyboard panel prompt includes character, scene, world and style context.
 - [ ] 32. Verify batch generation can skip existing images and continue after a failed panel.
 - [ ] 33. Verify project bible/world assets influence chapter outline generation.
 - [ ] 34. Verify multi-agent MVP output can be saved as a candidate version without overwriting approved content.

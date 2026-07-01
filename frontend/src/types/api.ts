@@ -399,7 +399,11 @@ export interface StoryOutlineCharacter {
   background?: string
   goal?: string
   arc?: string
-  visual_tags?: string[]
+  visual_tags?: string[] | string
+  signature_items?: string[]
+  expressions?: string[]
+  poses?: string[]
+  visual_consistency?: string
   voice?: string
   image_prompt?: string
   negative_prompt?: string

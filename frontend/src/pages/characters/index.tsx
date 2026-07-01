@@ -76,6 +76,10 @@ export interface Character {
   appearance: string
   personality: string
   costume_hint: string
+  signature_items: string[]
+  expressions: string[]
+  poses: string[]
+  visual_consistency: string
   background: string
   age_range: string
   tags: string[]
@@ -99,6 +103,10 @@ export interface CharacterCreateRequest {
   appearance?: string
   personality?: string
   costume_hint?: string
+  signature_items?: string[]
+  expressions?: string[]
+  poses?: string[]
+  visual_consistency?: string
   background?: string
   age_range?: string
   tags?: string[]
@@ -113,6 +121,10 @@ export interface CharacterUpdateRequest {
   appearance?: string
   personality?: string
   costume_hint?: string
+  signature_items?: string[]
+  expressions?: string[]
+  poses?: string[]
+  visual_consistency?: string
   background?: string
   age_range?: string
   tags?: string[]
@@ -297,6 +309,9 @@ function buildCharacterPortraitPrompt(form: CharacterCreateRequest): string {
     .map(value => CHARACTER_SOURCE_TYPE_OPTIONS.find(o => o.value === value)?.label || value)
     .filter(Boolean)
   const tags = (form.tags || []).filter(Boolean)
+  const signatureItems = (form.signature_items || []).filter(Boolean)
+  const expressions = (form.expressions || []).filter(Boolean)
+  const poses = (form.poses || []).filter(Boolean)
   const lines = [
     '单人角色立绘，完整角色设定图，适合作为后续漫画/短剧分镜的一致性参考图。',
     form.name ? `角色名：${form.name}` : '',
@@ -305,6 +320,10 @@ function buildCharacterPortraitPrompt(form: CharacterCreateRequest): string {
     sourceLabels.length ? `来源/风格标签：${sourceLabels.join('、')}` : '',
     form.appearance ? `外貌特征：${form.appearance.trim()}` : '',
     form.costume_hint ? `服装与配饰：${form.costume_hint.trim()}` : '',
+    signatureItems.length ? `角色标志物：${signatureItems.join('、')}` : '',
+    expressions.length ? `常用表情：${expressions.join('、')}` : '',
+    poses.length ? `常用姿态：${poses.join('、')}` : '',
+    form.visual_consistency ? `一致性规则：${form.visual_consistency.trim()}` : '',
     form.personality ? `性格气质：${form.personality.trim()}` : '',
     form.background ? `角色背景暗示：${form.background.trim()}` : '',
     tags.length ? `补充标签：${tags.join('、')}` : '',
@@ -325,6 +344,26 @@ function cleanPromptResponse(content: string): string {
     .trim()
 }
 
+function emptyCharacterForm(): CharacterCreateRequest {
+  return {
+    name: '',
+    role: 'supporting',
+    source_types: [],
+    appearance: '',
+    personality: '',
+    costume_hint: '',
+    signature_items: [],
+    expressions: [],
+    poses: [],
+    visual_consistency: '',
+    background: '',
+    age_range: '',
+    tags: [],
+    portrait_url: '',
+    portrait_asset_id: '',
+  }
+}
+
 export default function CharactersPage() {
   const { theme: THEME } = useTheme()
   const navigate = useNavigate()
@@ -341,11 +380,7 @@ export default function CharactersPage() {
   const [formModalOpen, setFormModalOpen] = useState(false)
   const [editingCharacter, setEditingCharacter] = useState<Character | null>(null)
   const [tagInput, setTagInput] = useState('')
-  const [form, setForm] = useState<CharacterCreateRequest>({
-    name: '', role: 'supporting', source_types: [], appearance: '',
-    personality: '', costume_hint: '', background: '', age_range: '', tags: [],
-    portrait_url: '', portrait_asset_id: '',
-  })
+  const [form, setForm] = useState<CharacterCreateRequest>(emptyCharacterForm())
   const [saving, setSaving] = useState(false)
   // 角色立绘 AI 生图状态
   const [portraitBackends, setPortraitBackends] = useState<ImageBackendInfo[]>([])
@@ -375,6 +410,15 @@ export default function CharactersPage() {
   const [portraitLogs, setPortraitLogs] = useState<PortraitLog[]>([])
   const [portraitLogsLoading, setPortraitLogsLoading] = useState(false)
   const [drawerActiveTab, setDrawerActiveTab] = useState<'detail' | 'logs'>('detail')
+  const surfaceCardStyle: React.CSSProperties = {
+    background: THEME.bgCard,
+    border: `1px solid ${THEME.borderLight}`,
+  }
+  const accentTagStyle: React.CSSProperties = {
+    background: THEME.primaryAlpha(0.1),
+    border: `1px solid ${THEME.primaryAlpha(0.3)}`,
+    color: THEME.primary,
+  }
 
   const loadPortraitLogs = useCallback(async (characterId: string) => {
     setPortraitLogsLoading(true)
@@ -678,6 +722,10 @@ export default function CharactersPage() {
         if (form.appearance !== editingCharacter.appearance) req.appearance = form.appearance
         if (form.personality !== editingCharacter.personality) req.personality = form.personality
         if (form.costume_hint !== editingCharacter.costume_hint) req.costume_hint = form.costume_hint
+        if (JSON.stringify(form.signature_items || []) !== JSON.stringify(editingCharacter.signature_items || [])) req.signature_items = form.signature_items || []
+        if (JSON.stringify(form.expressions || []) !== JSON.stringify(editingCharacter.expressions || [])) req.expressions = form.expressions || []
+        if (JSON.stringify(form.poses || []) !== JSON.stringify(editingCharacter.poses || [])) req.poses = form.poses || []
+        if ((form.visual_consistency || '') !== (editingCharacter.visual_consistency || '')) req.visual_consistency = form.visual_consistency || ''
         if (form.background !== editingCharacter.background) req.background = form.background
         if (form.age_range !== editingCharacter.age_range) req.age_range = form.age_range
         if (JSON.stringify(form.tags) !== JSON.stringify(editingCharacter.tags)) req.tags = form.tags
@@ -711,8 +759,8 @@ export default function CharactersPage() {
     <div style={{ padding: 24 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <div>
-          <Title level={3} style={{ color: '#fff', marginBottom: 4 }}>
-            <TeamOutlined style={{ color: '#00d4ff', marginRight: 8 }} />
+          <Title level={3} style={{ color: THEME.textPrimary, marginBottom: 4 }}>
+            <TeamOutlined style={{ color: THEME.primary, marginRight: 8 }} />
             角色管理
           </Title>
           <Text type="secondary" style={{ fontSize: 13 }}>
@@ -723,40 +771,40 @@ export default function CharactersPage() {
           type="primary"
           icon={<PlusOutlined />}
           size="large"
-          onClick={() => { setEditingCharacter(null); setForm({ name: '', role: 'supporting', source_types: [], appearance: '', personality: '', costume_hint: '', background: '', age_range: '', tags: [], portrait_url: '', portrait_asset_id: '' }); setFormModalOpen(true) }}
+          onClick={() => { setEditingCharacter(null); setForm(emptyCharacterForm()); setFormModalOpen(true) }}
           style={{ height: 44 }}
         >
           新建角色
         </Button>
       </div>
 
-      <Card style={{ background: '#1a1a2e', border: '1px solid rgba(255,255,255,0.08)', marginBottom: 20 }}
+      <Card style={{ ...surfaceCardStyle, marginBottom: 20 }}
         styles={{ body: { padding: '16px 20px' } }}
       >
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 12 }}>
           <Text type="secondary" style={{ fontSize: 13, marginRight: 4 }}>来源：</Text>
-          <Tag style={{ cursor: 'pointer', background: !filterSourceType ? 'rgba(0,212,255,0.15)' : 'transparent', border: !filterSourceType ? '1px solid rgba(0,212,255,0.5)' : '1px solid rgba(255,255,255,0.15)', color: !filterSourceType ? '#00d4ff' : '#8b8ba8' }} onClick={() => setFilterSourceType(null)}>全部</Tag>
+          <Tag style={{ cursor: 'pointer', background: !filterSourceType ? THEME.primaryAlpha(0.15) : 'transparent', border: !filterSourceType ? `1px solid ${THEME.primaryAlpha(0.5)}` : `1px solid ${THEME.borderLight}`, color: !filterSourceType ? THEME.primary : THEME.textSecondary }} onClick={() => setFilterSourceType(null)}>全部</Tag>
           {CHARACTER_SOURCE_TYPE_OPTIONS.map(opt => {
             const active = filterSourceType === opt.value
             return (
-              <Tag key={opt.value} style={{ cursor: 'pointer', background: active ? `${SOURCE_TYPE_COLORS[opt.value]}20` : 'transparent', border: active ? `1px solid ${SOURCE_TYPE_COLORS[opt.value]}` : '1px solid rgba(255,255,255,0.15)', color: active ? SOURCE_TYPE_COLORS[opt.value] : '#8b8ba8' }} onClick={() => setFilterSourceType(active ? null : opt.value)}>
+              <Tag key={opt.value} style={{ cursor: 'pointer', background: active ? `${SOURCE_TYPE_COLORS[opt.value]}20` : 'transparent', border: active ? `1px solid ${SOURCE_TYPE_COLORS[opt.value]}` : `1px solid ${THEME.borderLight}`, color: active ? SOURCE_TYPE_COLORS[opt.value] : THEME.textSecondary }} onClick={() => setFilterSourceType(active ? null : opt.value)}>
                 {SOURCE_TYPE_ICONS[opt.value]} {opt.label}
               </Tag>
             )
           })}
-          <Divider type="vertical" style={{ borderColor: 'rgba(255,255,255,0.1)', height: 20, margin: '0 8px' }} />
+          <Divider type="vertical" style={{ borderColor: THEME.borderLight, height: 20, margin: '0 8px' }} />
           <Text type="secondary" style={{ fontSize: 13, marginRight: 4 }}>定位：</Text>
           <Select size="small" placeholder="全部定位" allowClear value={filterRole} onChange={v => setFilterRole(v)} style={{ width: 100 }}
             options={CHARACTER_ROLE_OPTIONS}
           />
-          <Divider type="vertical" style={{ borderColor: 'rgba(255,255,255,0.1)', height: 20, margin: '0 8px' }} />
-          <Tag style={{ cursor: 'pointer', background: filterFavorite ? 'rgba(245,158,11,0.15)' : 'transparent', border: filterFavorite ? '1px solid rgba(245,158,11,0.5)' : '1px solid rgba(255,255,255,0.15)', color: filterFavorite ? '#f59e0b' : '#8b8ba8' }}
+          <Divider type="vertical" style={{ borderColor: THEME.borderLight, height: 20, margin: '0 8px' }} />
+          <Tag style={{ cursor: 'pointer', background: filterFavorite ? 'rgba(245,158,11,0.15)' : 'transparent', border: filterFavorite ? '1px solid rgba(245,158,11,0.5)' : `1px solid ${THEME.borderLight}`, color: filterFavorite ? '#f59e0b' : THEME.textSecondary }}
             onClick={() => setFilterFavorite(f => !f)} icon={filterFavorite ? <StarFilled /> : <StarOutlined />}>
             仅收藏
           </Tag>
         </div>
-        <Input placeholder="搜索角色名称..." prefix={<SearchOutlined style={{ color: '#8b8ba8' }} />} value={keyword}
-          onChange={e => setKeyword(e.target.value)} allowClear style={{ background: '#12122a', maxWidth: 360 }} />
+        <Input placeholder="搜索角色名称..." prefix={<SearchOutlined style={{ color: THEME.textSecondary }} />} value={keyword}
+          onChange={e => setKeyword(e.target.value)} allowClear style={{ background: THEME.bgInput, maxWidth: 360 }} />
       </Card>
 
       {loading ? (
@@ -771,10 +819,10 @@ export default function CharactersPage() {
           {characters.map(character => (
             <Col key={character.id} xs={24} sm={12} md={8} lg={6}>
               <Card hoverable onClick={() => handleOpenDetail(character)}
-                style={{ background: '#1a1a2e', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, overflow: 'hidden', position: 'relative' }}
+                style={{ ...surfaceCardStyle, borderRadius: 12, overflow: 'hidden', position: 'relative' }}
                 styles={{ body: { padding: 0 } }}
               >
-                <div style={{ height: 160, background: `linear-gradient(135deg, ${SOURCE_TYPE_COLORS[character.source_types[0]] || '#1890ff'}20, #1a1a2e)`, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+                <div style={{ height: 160, background: `linear-gradient(135deg, ${SOURCE_TYPE_COLORS[character.source_types[0]] || '#1890ff'}20, ${THEME.bgElevated})`, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
                   {character.portrait_url ? (
                     <img src={character.portrait_url} alt={character.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
                   ) : (
@@ -782,8 +830,8 @@ export default function CharactersPage() {
                   )}
                   <div style={{ position: 'absolute', top: 8, right: 8, display: 'flex', gap: 4 }}>
                     {character.is_frozen && <Tag style={{ background: 'rgba(245,158,11,0.15)', border: `1px solid rgba(245,158,11,0.3)`, color: '#f59e0b' }}><LockOutlined /> 冻结</Tag>}
-                    <Button type="text" size="small" icon={character.is_favorite ? <StarFilled style={{ color: '#f59e0b' }} /> : <StarOutlined style={{ color: '#8b8ba8' }} />}
-                      onClick={e => { e.stopPropagation(); handleFavorite(character) }} style={{ background: 'rgba(255,255,255,0.06)', color: 'inherit' }} />
+                    <Button type="text" size="small" icon={character.is_favorite ? <StarFilled style={{ color: '#f59e0b' }} /> : <StarOutlined style={{ color: THEME.textSecondary }} />}
+                      onClick={e => { e.stopPropagation(); handleFavorite(character) }} style={{ background: THEME.bgHover, color: THEME.textPrimary }} />
                   </div>
                   <div style={{ position: 'absolute', bottom: 8, left: 8, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                     {character.source_types.slice(0, 2).map(st => (
@@ -795,18 +843,25 @@ export default function CharactersPage() {
                 </div>
                 <div style={{ padding: '10px 12px 12px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                    <Text strong style={{ color: '#fff', fontSize: 15 }} ellipsis>{character.name}</Text>
+                    <Text strong style={{ color: THEME.textPrimary, fontSize: 15 }} ellipsis>{character.name}</Text>
                     <Tag style={{ background: `${ROLE_COLORS[character.role]}20`, border: `1px solid ${ROLE_COLORS[character.role]}50`, color: ROLE_COLORS[character.role], fontSize: 11, padding: '0 4px', lineHeight: '16px' }}>
                       {CHARACTER_ROLE_OPTIONS.find(o => o.value === character.role)?.label}
                     </Tag>
                   </div>
-                  {character.appearance && <Text style={{ color: '#8b8ba8', fontSize: 12 }} ellipsis>{character.appearance}</Text>}
+                  {character.appearance && <Text style={{ color: THEME.textSecondary, fontSize: 12 }} ellipsis>{character.appearance}</Text>}
+                  {(character.signature_items || []).length > 0 && (
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 6 }}>
+                      {character.signature_items.slice(0, 3).map(item => (
+                        <Tag key={item} color="cyan" style={{ fontSize: 11 }}>{item}</Tag>
+                      ))}
+                    </div>
+                  )}
                   {character.tags.length > 0 && (
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 6 }}>
                       {character.tags.slice(0, 3).map(tag => (
-                        <Tag key={tag} style={{ fontSize: 11, background: 'rgba(255,255,255,0.06)', border: 'none', color: '#8b8ba8' }}>{tag}</Tag>
+                        <Tag key={tag} style={{ fontSize: 11, background: THEME.bgElevated, border: 'none', color: THEME.textSecondary }}>{tag}</Tag>
                       ))}
-                      {character.tags.length > 3 && <Tag style={{ fontSize: 11, background: 'transparent', border: 'none', color: '#8b8ba8' }}>+{character.tags.length - 3}</Tag>}
+                      {character.tags.length > 3 && <Tag style={{ fontSize: 11, background: 'transparent', border: 'none', color: THEME.textSecondary }}>+{character.tags.length - 3}</Tag>}
                     </div>
                   )}
                 </div>
@@ -819,18 +874,18 @@ export default function CharactersPage() {
       {total > PAGE_SIZE && (
         <div style={{ textAlign: 'center', marginTop: 24 }}>
           <Button disabled={page === 1} onClick={() => { const p = page - 1; setPage(p); load(p, { keyword, source_type: filterSourceType, role: filterRole, is_favorite: filterFavorite || undefined }) }} style={{ marginRight: 8 }}>上一页</Button>
-          <Text style={{ color: '#8b8ba8', margin: '0 16px' }}>第 {page} / {Math.ceil(total / PAGE_SIZE)} 页，共 {total} 条</Text>
+          <Text style={{ color: THEME.textSecondary, margin: '0 16px' }}>第 {page} / {Math.ceil(total / PAGE_SIZE)} 页，共 {total} 条</Text>
           <Button disabled={page >= Math.ceil(total / PAGE_SIZE)} onClick={() => { const p = page + 1; setPage(p); load(p, { keyword, source_type: filterSourceType, role: filterRole, is_favorite: filterFavorite || undefined }) }}>下一页</Button>
         </div>
       )}
 
       {/* Detail Drawer */}
       <Drawer open={drawerOpen} onClose={() => { setDrawerOpen(false); setSelectedCharacter(null) }}
-        title={<Space><UserOutlined style={{ color: '#00d4ff' }} /><span style={{ color: '#fff' }}>{selectedCharacter?.name}</span>
+        title={<Space><UserOutlined style={{ color: THEME.primary }} /><span style={{ color: THEME.textPrimary }}>{selectedCharacter?.name}</span>
           {selectedCharacter && <Tag style={{ background: `${ROLE_COLORS[selectedCharacter.role]}20`, border: `1px solid ${ROLE_COLORS[selectedCharacter.role]}50`, color: ROLE_COLORS[selectedCharacter.role] }}>{CHARACTER_ROLE_OPTIONS.find(o => o.value === selectedCharacter.role)?.label}</Tag>}
           {selectedCharacter?.is_frozen && <Tag icon={<LockOutlined />} style={{ color: '#f59e0b', background: 'rgba(245,158,11,0.1)' }}>已冻结</Tag>}
         </Space>}
-        width={480} styles={{ body: { background: '#0f0f23', padding: 0 } }}>
+        width={480} styles={{ body: { background: THEME.bgPage, padding: 0 }, header: { background: THEME.bgCard, borderBottom: `1px solid ${THEME.borderLight}` } }}>
         {selectedCharacter && (
           <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
             {selectedCharacter.portrait_url && (
@@ -859,22 +914,48 @@ export default function CharactersPage() {
                 </div>
               </div>
               <Collapse ghost defaultActiveKey={['appearance', 'personality', 'tags']} style={{ marginBottom: 16 }}>
-                <Panel header={<Text style={{ color: '#00d4ff' }}>外观描述</Text>} key="appearance">
-                  {selectedCharacter.appearance ? <Paragraph style={{ color: '#e0e0e0', whiteSpace: 'pre-wrap' }}>{selectedCharacter.appearance}</Paragraph> : <Text type="secondary">暂无</Text>}
-                  {selectedCharacter.costume_hint && <><Text type="secondary" style={{ fontSize: 12 }}>服装提示</Text><Paragraph style={{ color: '#e0e0e0', whiteSpace: 'pre-wrap' }}>{selectedCharacter.costume_hint}</Paragraph></>}
+                <Panel header={<Text style={{ color: THEME.primary }}>外观描述</Text>} key="appearance">
+                  {selectedCharacter.appearance ? <Paragraph style={{ color: THEME.textPrimary, whiteSpace: 'pre-wrap' }}>{selectedCharacter.appearance}</Paragraph> : <Text type="secondary">暂无</Text>}
+                  {selectedCharacter.costume_hint && <><Text type="secondary" style={{ fontSize: 12 }}>服装提示</Text><Paragraph style={{ color: THEME.textPrimary, whiteSpace: 'pre-wrap' }}>{selectedCharacter.costume_hint}</Paragraph></>}
                 </Panel>
-                <Panel header={<Text style={{ color: '#00d4ff' }}>性格特点</Text>} key="personality">
-                  {selectedCharacter.personality ? <Paragraph style={{ color: '#e0e0e0', whiteSpace: 'pre-wrap' }}>{selectedCharacter.personality}</Paragraph> : <Text type="secondary">暂无</Text>}
+                <Panel header={<Text style={{ color: THEME.primary }}>视觉一致性</Text>} key="visual">
+                  <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                    <div>
+                      <Text type="secondary" style={{ fontSize: 12 }}>标志物</Text>
+                      <div style={{ marginTop: 4 }}>
+                        {(selectedCharacter.signature_items || []).length ? selectedCharacter.signature_items.map(item => <Tag key={item}>{item}</Tag>) : <Text type="secondary">暂无</Text>}
+                      </div>
+                    </div>
+                    <div>
+                      <Text type="secondary" style={{ fontSize: 12 }}>常用表情</Text>
+                      <div style={{ marginTop: 4 }}>
+                        {(selectedCharacter.expressions || []).length ? selectedCharacter.expressions.map(item => <Tag key={item}>{item}</Tag>) : <Text type="secondary">暂无</Text>}
+                      </div>
+                    </div>
+                    <div>
+                      <Text type="secondary" style={{ fontSize: 12 }}>常用姿态</Text>
+                      <div style={{ marginTop: 4 }}>
+                        {(selectedCharacter.poses || []).length ? selectedCharacter.poses.map(item => <Tag key={item}>{item}</Tag>) : <Text type="secondary">暂无</Text>}
+                      </div>
+                    </div>
+                    <div>
+                      <Text type="secondary" style={{ fontSize: 12 }}>一致性规则</Text>
+                      {selectedCharacter.visual_consistency ? <Paragraph style={{ color: THEME.textPrimary, whiteSpace: 'pre-wrap', marginTop: 4 }}>{selectedCharacter.visual_consistency}</Paragraph> : <Text type="secondary">暂无</Text>}
+                    </div>
+                  </Space>
                 </Panel>
-                <Panel header={<Text style={{ color: '#00d4ff' }}>背景故事</Text>} key="background">
-                  {selectedCharacter.background ? <Paragraph style={{ color: '#e0e0e0', whiteSpace: 'pre-wrap' }}>{selectedCharacter.background}</Paragraph> : <Text type="secondary">暂无</Text>}
+                <Panel header={<Text style={{ color: THEME.primary }}>性格特点</Text>} key="personality">
+                  {selectedCharacter.personality ? <Paragraph style={{ color: THEME.textPrimary, whiteSpace: 'pre-wrap' }}>{selectedCharacter.personality}</Paragraph> : <Text type="secondary">暂无</Text>}
+                </Panel>
+                <Panel header={<Text style={{ color: THEME.primary }}>背景故事</Text>} key="background">
+                  {selectedCharacter.background ? <Paragraph style={{ color: THEME.textPrimary, whiteSpace: 'pre-wrap' }}>{selectedCharacter.background}</Paragraph> : <Text type="secondary">暂无</Text>}
                 </Panel>
               </Collapse>
               <div style={{ marginBottom: 16 }}>
                 <Text type="secondary" style={{ fontSize: 12 }}>自定义标签</Text>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6, marginBottom: 8 }}>
                   {selectedCharacter.tags.map(tag => (
-                    <Tag key={tag} closable onClose={() => handleRemoveTag(tag)} style={{ background: 'rgba(0,212,255,0.1)', border: '1px solid rgba(0,212,255,0.3)', color: '#00d4ff' }}>{tag}</Tag>
+                    <Tag key={tag} closable onClose={() => handleRemoveTag(tag)} style={accentTagStyle}>{tag}</Tag>
                   ))}
                 </div>
                 <Space>
@@ -886,9 +967,9 @@ export default function CharactersPage() {
                 <Statistic title="引用次数" value={selectedCharacter.use_count || 0} />
                 {selectedCharacter.age_range && <Statistic title="年龄范围" value={selectedCharacter.age_range} />}
               </div>
-              <Divider style={{ borderColor: 'rgba(255,255,255,0.08)' }} />
+              <Divider style={{ borderColor: THEME.borderLight }} />
               <Space wrap>
-                <Button icon={<EditOutlined />} onClick={() => { setEditingCharacter(selectedCharacter); setForm({ name: selectedCharacter.name, role: selectedCharacter.role, source_types: selectedCharacter.source_types, appearance: selectedCharacter.appearance, personality: selectedCharacter.personality, costume_hint: selectedCharacter.costume_hint, background: selectedCharacter.background, age_range: selectedCharacter.age_range, tags: selectedCharacter.tags, portrait_url: selectedCharacter.portrait_url, portrait_asset_id: selectedCharacter.portrait_asset_id || '' }); setDrawerOpen(false); setFormModalOpen(true) }}>编辑</Button>
+                <Button icon={<EditOutlined />} onClick={() => { setEditingCharacter(selectedCharacter); setForm({ name: selectedCharacter.name, role: selectedCharacter.role, source_types: selectedCharacter.source_types, appearance: selectedCharacter.appearance, personality: selectedCharacter.personality, costume_hint: selectedCharacter.costume_hint, signature_items: selectedCharacter.signature_items || [], expressions: selectedCharacter.expressions || [], poses: selectedCharacter.poses || [], visual_consistency: selectedCharacter.visual_consistency || '', background: selectedCharacter.background, age_range: selectedCharacter.age_range, tags: selectedCharacter.tags, portrait_url: selectedCharacter.portrait_url, portrait_asset_id: selectedCharacter.portrait_asset_id || '' }); setDrawerOpen(false); setFormModalOpen(true) }}>编辑</Button>
                 <Button icon={<ReadOutlined />} onClick={() => navigate(`/story?character_id=${selectedCharacter.id}`)}>在 Story Maker 中使用</Button>
                 <Button icon={selectedCharacter.is_favorite ? <StarFilled style={{ color: '#f59e0b' }} /> : <StarOutlined />} onClick={() => handleFavorite(selectedCharacter)}>{selectedCharacter.is_favorite ? '取消收藏' : '收藏'}</Button>
                 {selectedCharacter.portrait_url && !selectedCharacter.portrait_node_id && (
@@ -946,7 +1027,7 @@ export default function CharactersPage() {
         width={640} destroyOnClose>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div>
-            <Text strong style={{ color: '#fff' }}>基本信息</Text>
+            <Text strong style={{ color: THEME.textPrimary }}>基本信息</Text>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 8 }}>
               <Input placeholder="角色名称 *" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} maxLength={50} />
               <Select value={form.role} onChange={v => setForm(f => ({ ...f, role: v }))}
@@ -955,12 +1036,12 @@ export default function CharactersPage() {
             <Input placeholder="年龄范围，如 20-25岁" value={form.age_range} onChange={e => setForm(f => ({ ...f, age_range: e.target.value }))} style={{ marginTop: 8 }} />
           </div>
           <div>
-            <Text strong style={{ color: '#fff' }}>来源类型 *（可多选）</Text>
+            <Text strong style={{ color: THEME.textPrimary }}>来源类型 *（可多选）</Text>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
               {CHARACTER_SOURCE_TYPE_OPTIONS.map(opt => {
                 const selected = form.source_types?.includes(opt.value)
                 return (
-                  <Tag key={opt.value} style={{ cursor: 'pointer', border: selected ? `1px solid ${SOURCE_TYPE_COLORS[opt.value]}` : '1px solid rgba(255,255,255,0.15)', color: selected ? SOURCE_TYPE_COLORS[opt.value] : '#8b8ba8', background: selected ? `${SOURCE_TYPE_COLORS[opt.value]}15` : 'transparent', padding: '4px 10px', fontSize: 13 }}
+                  <Tag key={opt.value} style={{ cursor: 'pointer', border: selected ? `1px solid ${SOURCE_TYPE_COLORS[opt.value]}` : `1px solid ${THEME.borderLight}`, color: selected ? SOURCE_TYPE_COLORS[opt.value] : THEME.textSecondary, background: selected ? `${SOURCE_TYPE_COLORS[opt.value]}15` : 'transparent', padding: '4px 10px', fontSize: 13 }}
                     onClick={() => setForm(f => ({ ...f, source_types: selected ? f.source_types.filter(t => t !== opt.value) : [...(f.source_types || []), opt.value] }))}>
                     {SOURCE_TYPE_ICONS[opt.value]} {opt.label}
                   </Tag>
@@ -969,18 +1050,24 @@ export default function CharactersPage() {
             </div>
           </div>
           <div>
-            <Text strong style={{ color: '#00d4ff' }}>外观描述（用于 AI 生图提示词）</Text>
+            <Text strong style={{ color: THEME.primary }}>外观描述（用于 AI 生图提示词）</Text>
             <TextArea placeholder="外貌特征，如：黑长直、瓜子脸、肤白貌美..." value={form.appearance} onChange={e => setForm(f => ({ ...f, appearance: e.target.value }))} rows={2} style={{ marginTop: 8 }} />
             <TextArea placeholder="服装提示，如：白色衬衫+黑色短裙、古典汉服..." value={form.costume_hint} onChange={e => setForm(f => ({ ...f, costume_hint: e.target.value }))} rows={2} style={{ marginTop: 8 }} />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
+              <Select mode="tags" placeholder="标志物：眼镜 / 银色钢笔 / 蝴蝶纹身" value={form.signature_items || []} onChange={value => setForm(f => ({ ...f, signature_items: value }))} />
+              <Select mode="tags" placeholder="常用表情：冷静 / 讥讽 / 震惊" value={form.expressions || []} onChange={value => setForm(f => ({ ...f, expressions: value }))} />
+              <Select mode="tags" placeholder="常用姿态：扶眼镜 / 抱臂 / 回头" value={form.poses || []} onChange={value => setForm(f => ({ ...f, poses: value }))} />
+              <Input placeholder="一致性短规则：发型服装配色不要变" value={form.visual_consistency} onChange={e => setForm(f => ({ ...f, visual_consistency: e.target.value }))} />
+            </div>
           </div>
           <div>
-            <Text strong style={{ color: '#fff' }}>其他信息</Text>
+            <Text strong style={{ color: THEME.textPrimary }}>其他信息</Text>
             <TextArea placeholder="性格特点，如：温柔善良、傲娇..." value={form.personality} onChange={e => setForm(f => ({ ...f, personality: e.target.value }))} rows={2} style={{ marginTop: 8 }} />
             <TextArea placeholder="背景故事（可选）" value={form.background} onChange={e => setForm(f => ({ ...f, background: e.target.value }))} rows={2} style={{ marginTop: 8 }} />
           </div>
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text strong style={{ color: '#fff' }}>立绘 / 参考图</Text>
+              <Text strong style={{ color: THEME.textPrimary }}>立绘 / 参考图</Text>
               <Space size={4}>
                 <Select
                   size="small"
@@ -1006,10 +1093,10 @@ export default function CharactersPage() {
                 </Button>
               </Space>
             </div>
-            <div style={{ marginTop: 10, padding: 12, borderRadius: 10, border: '1px solid rgba(0,212,255,0.18)', background: 'rgba(0,212,255,0.04)' }}>
+            <div style={{ marginTop: 10, padding: 12, borderRadius: 10, border: `1px solid ${THEME.primaryAlpha(0.18)}`, background: THEME.primaryAlpha(0.04) }}>
               <Space style={{ justifyContent: 'space-between', width: '100%', marginBottom: 8 }} align="center">
                 <Space size={8}>
-                  <Text strong style={{ color: '#00d4ff' }}>完整生图提示词</Text>
+                  <Text strong style={{ color: THEME.primary }}>完整生图提示词</Text>
                   <Tooltip title="这里的提示词会直接用于 AI 生成立绘，也可以复制到其他生图工具。">
                     <Tag color="cyan">可复制</Tag>
                   </Tooltip>
@@ -1042,20 +1129,20 @@ export default function CharactersPage() {
             <Input placeholder="输入立绘图片 URL（也可由 AI 生成自动回填）" value={form.portrait_url} onChange={e => setForm(f => ({ ...f, portrait_url: e.target.value }))} style={{ marginTop: 8 }} />
             {form.portrait_url && <Image src={form.portrait_url} width={120} height={120} style={{ objectFit: 'cover', borderRadius: 8, marginTop: 8 }} fallback="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==" />}
             {form.portrait_asset_id && (
-              <div style={{ marginTop: 6, fontSize: 12, color: '#8b8ba8' }}>
+              <div style={{ marginTop: 6, fontSize: 12, color: THEME.textSecondary }}>
                 已绑定资产 ID: <span style={{ fontFamily: 'monospace' }}>{form.portrait_asset_id}</span>
               </div>
             )}
           </div>
           <div>
-            <Text strong style={{ color: '#fff' }}>自定义标签</Text>
+            <Text strong style={{ color: THEME.textPrimary }}>自定义标签</Text>
             <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
               <Input placeholder="输入标签后回车添加" value={tagInput} onChange={e => setTagInput(e.target.value)} onPressEnter={addTagToForm} style={{ flex: 1 }} />
               <Button onClick={addTagToForm}>添加</Button>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
               {(form.tags || []).map(tag => (
-                <Tag key={tag} closable onClose={() => setForm(f => ({ ...f, tags: (f.tags || []).filter(t => t !== tag) }))} style={{ background: 'rgba(0,212,255,0.1)', border: '1px solid rgba(0,212,255,0.3)', color: '#00d4ff' }}>{tag}</Tag>
+                <Tag key={tag} closable onClose={() => setForm(f => ({ ...f, tags: (f.tags || []).filter(t => t !== tag) }))} style={accentTagStyle}>{tag}</Tag>
               ))}
             </div>
           </div>
@@ -1101,6 +1188,7 @@ function CharacterPortraitLogsTab({
   loading: boolean
   onRefresh: () => void
 }) {
+  const { theme } = useTheme()
   const columns = [
     {
       title: '时间',
@@ -1127,13 +1215,13 @@ function CharacterPortraitLogsTab({
       dataIndex: 'model',
       width: 180,
       ellipsis: true,
-      render: (v: string) => v ? <Text style={{ color: '#e0e0e0' }}>{v}</Text> : <Text type="secondary">-</Text>,
+      render: (v: string) => v ? <Text style={{ color: theme.textPrimary }}>{v}</Text> : <Text type="secondary">-</Text>,
     },
     {
       title: 'Prompt',
       dataIndex: 'prompt',
       ellipsis: true,
-      render: (v: string) => v ? <Text style={{ color: '#e0e0e0' }}>{v.slice(0, 60)}{v.length > 60 ? '...' : ''}</Text> : <Text type="secondary">-</Text>,
+      render: (v: string) => v ? <Text style={{ color: theme.textPrimary }}>{v.slice(0, 60)}{v.length > 60 ? '...' : ''}</Text> : <Text type="secondary">-</Text>,
     },
     {
       title: '错误',
@@ -1200,6 +1288,7 @@ function CharacterPortraitLogsTab({
 }
 
 function LogTextBlock({ title, value, rows }: { title: string; value: string; rows: number }) {
+  const { theme } = useTheme()
   return (
     <div>
       <Text type="secondary" style={{ fontSize: 12 }}>{title}</Text>
@@ -1209,9 +1298,9 @@ function LogTextBlock({ title, value, rows }: { title: string; value: string; ro
         autoSize={{ minRows: Math.min(rows, 12), maxRows: 12 }}
         style={{
           marginTop: 4,
-          background: 'rgba(0,0,0,0.3)',
-          borderColor: 'rgba(255,255,255,0.1)',
-          color: '#e0e0e0',
+          background: theme.bgInput,
+          borderColor: theme.borderLight,
+          color: theme.textPrimary,
           fontFamily: 'monospace',
           fontSize: 12,
         }}

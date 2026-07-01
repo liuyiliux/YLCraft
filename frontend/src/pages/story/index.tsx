@@ -9,6 +9,7 @@ import {
   InputNumber,
   List,
   Modal,
+  Popconfirm,
   Select,
   Skeleton,
   Space,
@@ -21,6 +22,7 @@ import {
 } from 'antd'
 import {
   BranchesOutlined,
+  DeleteOutlined,
   FileTextOutlined,
   FolderOpenOutlined,
   HistoryOutlined,
@@ -33,6 +35,9 @@ import {
 import { useNavigate } from 'react-router-dom'
 import {
   createCreativeProject,
+  deleteCreativeProject,
+  fillCreativeProjectDemoData,
+  generateCharacterPortrait,
   generateCreativeProjectChapterPlan,
   generateCreativeProjectChapterOutline,
   generateCreativeProjectNovelBody,
@@ -67,6 +72,7 @@ import type {
   Provider,
   StoryOutlineCharacter,
 } from '../../types/api'
+import { useTheme, type ThemeColors } from '../../constants/theme'
 
 const { Text, Title, Paragraph } = Typography
 const { TextArea } = Input
@@ -85,6 +91,9 @@ type LoadingAction =
   | 'storyboard'
   | 'asset'
   | 'sync_characters'
+  | 'delete_project'
+  | 'fill_demo_data'
+  | 'portrait_generate'
   | null
 
 type ChapterAction =
@@ -223,6 +232,7 @@ type ImageBackendOption = {
 }
 
 export default function StoryPage() {
+  const { theme } = useTheme()
   const navigate = useNavigate()
   const [projects, setProjects] = useState<CreativeProject[]>([])
   const [selectedId, setSelectedId] = useState<string>('')
@@ -254,6 +264,7 @@ export default function StoryPage() {
   const [inlineImageLoadingKey, setInlineImageLoadingKey] = useState<string | null>(null)
   const [batchStoryboardImageChapter, setBatchStoryboardImageChapter] = useState<number | null>(null)
   const [inlineImages, setInlineImages] = useState<Record<string, InlineGeneratedImage>>({})
+  const [portraitGeneratingCharacter, setPortraitGeneratingCharacter] = useState<string | null>(null)
   const [form] = Form.useForm()
 
   const outline = selectedProject?.outline || {}
@@ -380,7 +391,7 @@ export default function StoryPage() {
 
   function pickReferenceAssetsForPrompt(prompt: string, maxCount = 4) {
     const references = projectAssets.filter((asset) =>
-      ['character', 'background', 'style', 'reference'].includes(asset.role),
+      ['character', 'background', 'style', 'world', 'reference'].includes(asset.role),
     )
     if (!references.length) return []
 
@@ -643,7 +654,10 @@ export default function StoryPage() {
       const response = (await listCreativeProjects({ limit: 80 })) as CreativeProjectListResponse
       const data = response.data || []
       setProjects(data)
-      const targetId = nextSelectedId || selectedId || data[0]?.id || ''
+      const requestedId = nextSelectedId !== undefined ? nextSelectedId : selectedId
+      const targetId = requestedId && data.some((item) => item.id === requestedId)
+        ? requestedId
+        : data[0]?.id || ''
       setSelectedId(targetId)
     } catch (error: any) {
       message.error(error?.message || '项目列表加载失败')
@@ -776,6 +790,41 @@ export default function StoryPage() {
     }
   }
 
+  async function handleDeleteProject() {
+    if (!selectedProject) return
+    const deletingId = selectedProject.id
+    setLoadingAction('delete_project')
+    try {
+      await deleteCreativeProject(deletingId)
+      message.success('项目已删除，角色库和素材库资产已保留')
+      setSelectedId('')
+      setSelectedProject(null)
+      setContents([])
+      setProjectAssets([])
+      setGenerationLogs([])
+      await loadProjects()
+    } catch (error: any) {
+      message.error(error?.message || '删除项目失败')
+    } finally {
+      setLoadingAction(null)
+    }
+  }
+
+  async function handleFillDemoData() {
+    if (!selectedProject) return
+    setLoadingAction('fill_demo_data')
+    try {
+      const response = (await fillCreativeProjectDemoData(selectedProject.id, { overwrite: false })) as CreativeProjectGenerateResponse
+      message.success('已补齐示例大纲、章节、正文、脚本和分镜')
+      await refreshSelected(response.project || selectedProject)
+      await loadProjects(response.project?.id || selectedProject.id)
+    } catch (error: any) {
+      message.error(error?.message || '补测试数据失败')
+    } finally {
+      setLoadingAction(null)
+    }
+  }
+
   async function refreshSelected(project?: CreativeProject | null) {
     if (project) {
       setProjects((prev) => prev.map((item) => (item.id === project.id ? project : item)))
@@ -835,6 +884,91 @@ export default function StoryPage() {
     } catch (error: any) {
       message.error(error?.message || '同步角色库失败')
     } finally {
+      setLoadingAction(null)
+    }
+  }
+
+  function buildProjectCharacterPortraitPrompt(record: StoryOutlineCharacter) {
+    const parts = [
+      '单人角色立绘，完整角色设定图，适合作为后续漫画/短剧分镜的一致性参考图。',
+      record.name ? `角色名：${record.name}` : '',
+      record.role ? `角色定位：${record.role}` : '',
+      record.age_range ? `年龄范围：${record.age_range}` : '',
+      record.appearance ? `外貌特征：${record.appearance}` : '',
+      record.costume_hint ? `服装与配饰：${record.costume_hint}` : '',
+      record.signature_items?.length ? `标志物：${record.signature_items.join('、')}` : '',
+      record.expressions?.length ? `常用表情：${record.expressions.join('、')}` : '',
+      record.poses?.length ? `常用姿态：${record.poses.join('、')}` : '',
+      record.visual_consistency ? `一致性规则：${record.visual_consistency}` : '',
+      record.personality ? `性格气质：${record.personality}` : '',
+      record.image_prompt ? `既有生图提示：${record.image_prompt}` : '',
+      outline.image_style_prompt ? `项目统一画风：${outline.image_style_prompt}` : '',
+      '要求：正面半身或全身清晰可辨，干净背景，角色特征稳定，不添加无关人物，不遮挡脸部。',
+    ]
+    return parts.filter(Boolean).join('\n')
+  }
+
+  async function handleGenerateCharacterPortrait(record: StoryOutlineCharacter) {
+    if (!selectedProject) return
+    if (!record.character_id) {
+      message.warning('请先同步角色库，再生成角色立绘')
+      return
+    }
+    if (!defaultImageModel.name) {
+      message.warning('请先在顶部选择默认生图模型')
+      return
+    }
+    const key = record.character_id || record.name || ''
+    setPortraitGeneratingCharacter(key)
+    setLoadingAction('portrait_generate')
+    try {
+      const prompt = buildProjectCharacterPortraitPrompt(record)
+      const size = defaultImageModel.default_size || '1024x1024'
+      const response = await generateCharacterPortrait(record.character_id, {
+        prompt,
+        provider: defaultImageModel.name,
+        model: defaultImageModel.model || undefined,
+        size,
+        n: 1,
+      })
+      const nodeId = response?.data?.node_id
+      if (nodeId) {
+        await linkCreativeProjectAsset(selectedProject.id, {
+          asset_id: nodeId,
+          role: 'character',
+          relation: 'portrait',
+          metadata: {
+            character_id: record.character_id,
+            character_name: record.name,
+            prompt,
+            provider: defaultImageModel.name,
+            model: defaultImageModel.model || '',
+            generated_from: 'creative_project_outline_character',
+            generated_at: new Date().toISOString(),
+          },
+        })
+        const nextOutline = {
+          ...outline,
+          characters: (outline.characters || []).map((item: StoryOutlineCharacter) => {
+            const sameCharacter = item.character_id
+              ? item.character_id === record.character_id
+              : item.name === record.name
+            if (!sameCharacter) return item
+            const refs = Array.from(new Set([...(item.reference_asset_ids || []), nodeId]))
+            return { ...item, portrait_asset_id: nodeId, reference_asset_ids: refs }
+          }),
+        }
+        const projectResponse = (await updateCreativeProject(selectedProject.id, { outline: nextOutline })) as CreativeProjectResponse
+        await refreshSelected(projectResponse.data || selectedProject)
+        await loadProjectAssets(selectedProject.id)
+      } else {
+        await refreshSelected(selectedProject)
+      }
+      message.success(nodeId ? '角色立绘已生成并关联到项目参考卡' : '角色立绘已生成')
+    } catch (error: any) {
+      message.error(error?.message || '生成角色立绘失败')
+    } finally {
+      setPortraitGeneratingCharacter(null)
       setLoadingAction(null)
     }
   }
@@ -1130,7 +1264,7 @@ export default function StoryPage() {
     {
       title: '标题',
       dataIndex: 'title',
-      width: 180,
+      width: 220,
       render: (value: string) => <Text strong>{value || '未命名'}</Text>,
     },
     {
@@ -1274,6 +1408,38 @@ export default function StoryPage() {
       ellipsis: true,
     },
     {
+      title: '一致性',
+      width: 220,
+      render: (_: unknown, record: StoryOutlineCharacter) => {
+        const visualTags = Array.isArray(record.visual_tags)
+          ? record.visual_tags
+          : String(record.visual_tags || '').split(/[、，,;\s]+/).filter(Boolean)
+        const signatureItems = (record.signature_items?.length ? record.signature_items : visualTags).filter(Boolean)
+        return (
+          <Space direction="vertical" size={4}>
+            <Space size={[4, 4]} wrap>
+              {signatureItems.slice(0, 3).map((item) => (
+              <Tag key={item} color="cyan">{item}</Tag>
+              ))}
+              {(record.expressions || []).slice(0, 2).map((item) => (
+              <Tag key={item} color="blue">{item}</Tag>
+              ))}
+              {(record.poses || []).slice(0, 2).map((item) => (
+              <Tag key={item} color="purple">{item}</Tag>
+              ))}
+            </Space>
+            {record.visual_consistency ? (
+              <Text type="secondary" ellipsis={{ tooltip: record.visual_consistency }}>
+                {record.visual_consistency}
+              </Text>
+            ) : (
+              <Text type="secondary">未填写一致性规则</Text>
+            )}
+          </Space>
+        )
+      },
+    },
+    {
       title: '素材 / 提示词',
       width: 180,
       render: (_: unknown, record: StoryOutlineCharacter) => (
@@ -1291,13 +1457,22 @@ export default function StoryPage() {
               有角色图提示词
             </Text>
           ) : null}
+          <Button
+            size="small"
+            icon={<PictureOutlined />}
+            disabled={!record.character_id || !defaultImageModel.name}
+            loading={portraitGeneratingCharacter === (record.character_id || record.name)}
+            onClick={() => handleGenerateCharacterPortrait(record)}
+          >
+            {record.portrait_asset_id ? '重生立绘' : '生成立绘'}
+          </Button>
         </Space>
       ),
     },
   ]
 
   return (
-    <div style={{ padding: 24, maxWidth: 1760, margin: '0 auto' }}>
+    <div className="story-theme-page" style={{ padding: 24, maxWidth: 1760, margin: '0 auto', color: theme.textPrimary }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, marginBottom: 20 }}>
         <div>
           <Title level={2} style={{ marginBottom: 4 }}>
@@ -1343,9 +1518,30 @@ export default function StoryPage() {
           <Button onClick={() => navigate('/platform-templates?scope=creative_project')}>
             模板管理
           </Button>
+          <Button
+            icon={<ThunderboltOutlined />}
+            loading={loadingAction === 'fill_demo_data'}
+            disabled={!selectedProject}
+            onClick={handleFillDemoData}
+          >
+            补测试数据
+          </Button>
           <Button icon={<ReloadOutlined />} onClick={() => loadProjects(selectedId)}>
             刷新
           </Button>
+          <Popconfirm
+            title="删除当前创作项目？"
+            description="只删除项目、内容版本、日志和项目关联，不删除角色库角色或素材库资产。"
+            okText="删除"
+            cancelText="取消"
+            okButtonProps={{ danger: true, loading: loadingAction === 'delete_project' }}
+            onConfirm={handleDeleteProject}
+            disabled={!selectedProject}
+          >
+            <Button danger icon={<DeleteOutlined />} disabled={!selectedProject}>
+              删除项目
+            </Button>
+          </Popconfirm>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
             新建项目
           </Button>
@@ -1362,13 +1558,13 @@ export default function StoryPage() {
       >
         <section
           style={{
-            border: '1px solid #e5e7eb',
+            border: `1px solid ${theme.borderLight}`,
             borderRadius: 8,
-            background: '#fff',
+            background: theme.bgCard,
             overflow: 'hidden',
           }}
         >
-          <div style={{ padding: '14px 16px', borderBottom: '1px solid #eef0f3' }}>
+          <div style={{ padding: '14px 16px', borderBottom: `1px solid ${theme.border}` }}>
             <Space>
               <FolderOpenOutlined />
               <Text strong>项目库</Text>
@@ -1389,8 +1585,8 @@ export default function StoryPage() {
                   style={{
                     cursor: 'pointer',
                     padding: '12px 16px',
-                    background: item.id === selectedId ? '#f0f6ff' : '#fff',
-                    borderLeft: item.id === selectedId ? '3px solid #1677ff' : '3px solid transparent',
+                    background: item.id === selectedId ? theme.primaryAlpha(0.12) : theme.bgCard,
+                    borderLeft: item.id === selectedId ? `3px solid ${theme.primary}` : '3px solid transparent',
                   }}
                 >
                   <List.Item.Meta
@@ -1435,9 +1631,9 @@ export default function StoryPage() {
         <main
           style={{
             minHeight: 620,
-            border: '1px solid #e5e7eb',
+            border: `1px solid ${theme.borderLight}`,
             borderRadius: 8,
-            background: '#fff',
+            background: theme.bgCard,
           }}
         >
           {!selectedProject ? (
@@ -1446,7 +1642,7 @@ export default function StoryPage() {
             </div>
           ) : (
             <>
-              <div style={{ padding: 20, borderBottom: '1px solid #eef0f3' }}>
+              <div style={{ padding: 20, borderBottom: `1px solid ${theme.border}` }}>
                 <Space direction="vertical" size={8} style={{ width: '100%' }}>
                   <Space style={{ justifyContent: 'space-between', width: '100%' }} align="start">
                     <div>
@@ -2029,6 +2225,9 @@ function EpisodeWorkbenchTab({
   const script = contentForChapter('script', activeChapterNumber)
   const storyboard = contentForChapter('storyboard', activeChapterNumber)
   const comic = contentForChapter('comic_pages', activeChapterNumber)
+  const { theme } = useTheme()
+  const themedWorkbenchHeaderStyle = createWorkbenchHeaderStyle(theme)
+  const themedCompactBlockStyle = createCompactBlockStyle(theme)
   const [outlineDraft, setOutlineDraft] = useState<Record<string, any>>({})
   const [sceneDrafts, setSceneDrafts] = useState<any[]>([])
   const [novelDraft, setNovelDraft] = useState('')
@@ -2121,7 +2320,7 @@ function EpisodeWorkbenchTab({
 
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
-      <div style={workbenchHeaderStyle}>
+      <div style={themedWorkbenchHeaderStyle}>
         <div>
           <Space size={8} wrap>
             <Title level={4} style={{ margin: 0 }}>
@@ -2339,7 +2538,7 @@ function EpisodeWorkbenchTab({
           >
             <Space direction="vertical" size={10} style={{ width: '100%' }}>
               {sceneDrafts.map((scene: any, index: number) => (
-                <div key={`${scene.scene_number}-${index}`} style={compactBlockStyle}>
+                <div key={`${scene.scene_number}-${index}`} style={themedCompactBlockStyle}>
                   <Space direction="vertical" size={8} style={{ width: '100%' }}>
                     <Space style={{ justifyContent: 'space-between', width: '100%' }} align="start">
                       <Text strong>场景 {index + 1}</Text>
@@ -2647,13 +2846,13 @@ function EpisodeWorkbenchTab({
           {script ? (
             <Space direction="vertical" size={8} style={{ width: '100%' }}>
               {script.data?.hook ? (
-                <div style={compactBlockStyle}>
+                <div style={themedCompactBlockStyle}>
                   <Text strong>开头钩子</Text>
                   <Paragraph style={{ margin: '6px 0 0' }}>{script.data.hook}</Paragraph>
                 </div>
               ) : null}
               {(script.data?.scenes || []).slice(0, 8).map((scene: any) => (
-                <div key={scene.scene_number} style={compactBlockStyle}>
+                <div key={scene.scene_number} style={themedCompactBlockStyle}>
                   <Space direction="vertical" size={6} style={{ width: '100%' }}>
                     <Space style={{ justifyContent: 'space-between', width: '100%' }} align="start">
                       <Text strong>场景 {scene.scene_number} · {scene.location || '未设定地点'}</Text>
@@ -2695,7 +2894,7 @@ function EpisodeWorkbenchTab({
                 </div>
               ))}
               {script.data?.ending_hook ? (
-                <div style={compactBlockStyle}>
+                <div style={themedCompactBlockStyle}>
                   <Text strong>结尾钩子</Text>
                   <Paragraph style={{ margin: '6px 0 0' }}>{script.data.ending_hook}</Paragraph>
                 </div>
@@ -2737,7 +2936,7 @@ function EpisodeWorkbenchTab({
           {storyboard ? (
             <Space direction="vertical" size={8} style={{ width: '100%' }}>
               {(storyboard.data?.panels || []).slice(0, 10).map((panel: any) => (
-                <div key={panel.panel_number} style={compactBlockStyle}>
+                <div key={panel.panel_number} style={themedCompactBlockStyle}>
                   <Space style={{ justifyContent: 'space-between', width: '100%' }} align="start">
                     <Text strong>分镜 {panel.panel_number}</Text>
                     {panel.image_prompt ? (
@@ -2834,7 +3033,7 @@ function EpisodeWorkbenchTab({
                 保存漫画页
               </Button>
               {comicDrafts.map((page: any, index: number) => (
-                <div key={`${page.page_number}-${index}`} style={compactBlockStyle}>
+                <div key={`${page.page_number}-${index}`} style={themedCompactBlockStyle}>
                   <Space direction="vertical" size={8} style={{ width: '100%' }}>
                     <Space style={{ justifyContent: 'space-between', width: '100%' }} align="start">
                       <Text strong>第 {index + 1} 页</Text>
@@ -2908,6 +3107,7 @@ const referenceRoleOptions = [
   { label: '角色参考', value: 'character' },
   { label: '背景参考', value: 'background' },
   { label: '画风参考', value: 'style' },
+  { label: '世界观参考', value: 'world' },
   { label: '通用参考', value: 'reference' },
 ]
 
@@ -2947,7 +3147,7 @@ function InlineImageResult({
         src={src}
         width={168}
         height={112}
-        style={{ objectFit: 'cover', borderRadius: 6, border: '1px solid #eef0f3' }}
+        style={{ objectFit: 'cover', borderRadius: 6, border: '1px solid var(--borderLight)' }}
       />
       <Space direction="vertical" size={4} style={{ minWidth: 0 }}>
         <Text strong>已生成图片</Text>
@@ -2979,7 +3179,7 @@ function ReferenceCardsPanel({
   const [label, setLabel] = useState('')
   const [characterName, setCharacterName] = useState('')
   const referenceAssets = assets.filter((asset) =>
-    ['character', 'background', 'style', 'reference'].includes(asset.role),
+    ['character', 'background', 'style', 'world', 'reference'].includes(asset.role),
   )
   const buildMetadata = (source?: AssetSummary) => ({
     label: label.trim() || source?.title || '',
@@ -3147,7 +3347,13 @@ function ReferenceAssetCard({
   const roleLabel = referenceRoleOptions.find((item) => item.value === link.role)?.label || link.role
   const preview = assetFileUrl(asset?.thumbnail_url || asset?.cover_url || asset?.source_url || asset?.file_path)
   const title = link.metadata?.label || link.metadata?.character_name || asset?.title || link.asset_id
-  const roleColor = link.role === 'character' ? 'green' : link.role === 'style' ? 'purple' : 'blue'
+  const roleColor = link.role === 'character'
+    ? 'green'
+    : link.role === 'style'
+      ? 'purple'
+      : link.role === 'world'
+        ? 'gold'
+        : 'blue'
 
   return (
     <div style={referenceAssetCardStyle}>
@@ -3157,7 +3363,7 @@ function ReferenceAssetCard({
           width={52}
           height={52}
           preview={false}
-          style={{ objectFit: 'cover', borderRadius: 6, border: '1px solid #eef0f3' }}
+          style={{ objectFit: 'cover', borderRadius: 6, border: '1px solid var(--borderLight)' }}
         />
       ) : (
         <div style={referenceAssetPlaceholderStyle}>
@@ -3219,21 +3425,22 @@ function WorkbenchSection({
 }
 
 function ResizeHandle({ onMouseDown }: { onMouseDown: (event: React.MouseEvent) => void }) {
+  const { theme } = useTheme()
   return (
     <div
       role="separator"
       aria-orientation="vertical"
       title="拖动调整宽度"
       onMouseDown={onMouseDown}
-      style={resizeHandleStyle}
+      style={createResizeHandleStyle(theme)}
       onMouseEnter={(event) => {
-        event.currentTarget.style.background = '#e6f4ff'
+        event.currentTarget.style.background = theme.primaryAlpha(0.1)
       }}
       onMouseLeave={(event) => {
         event.currentTarget.style.background = 'transparent'
       }}
     >
-      <span style={resizeHandleLineStyle} />
+      <span style={createResizeHandleLineStyle(theme)} />
     </div>
   )
 }
@@ -3575,6 +3782,9 @@ function AssetsTab({
             options={[
               { label: '参考', value: 'reference' },
               { label: '角色', value: 'character' },
+              { label: '背景', value: 'background' },
+              { label: '画风', value: 'style' },
+              { label: '世界观', value: 'world' },
               { label: '输出', value: 'output' },
               { label: '封面', value: 'cover' },
             ]}
@@ -3663,35 +3873,43 @@ function projectTypeLabel(value: string) {
 }
 
 const panelStyle: React.CSSProperties = {
-  border: '1px solid #eef0f3',
+  border: '1px solid var(--borderLight)',
   borderRadius: 8,
   padding: 14,
-  background: '#fafafa',
+  background: 'var(--bgElevated)',
+  color: 'var(--textPrimary)',
 }
 
-const workbenchHeaderStyle: React.CSSProperties = {
-  border: '1px solid #eef0f3',
+function createWorkbenchHeaderStyle(theme: ThemeColors): React.CSSProperties {
+  return {
+  border: `1px solid ${theme.borderLight}`,
   borderRadius: 8,
   padding: 14,
-  background: '#fff',
+  background: theme.bgElevated,
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-between',
   gap: 16,
+  color: theme.textPrimary,
+  }
 }
 
-const compactBlockStyle: React.CSSProperties = {
-  border: '1px solid #eef0f3',
+function createCompactBlockStyle(theme: ThemeColors): React.CSSProperties {
+  return {
+  border: `1px solid ${theme.borderLight}`,
   borderRadius: 8,
   padding: 10,
-  background: '#fff',
+  background: theme.bgElevated,
+  color: theme.textPrimary,
+  }
 }
 
 const readerPanelStyle: React.CSSProperties = {
-  border: '1px solid #eef0f3',
+  border: '1px solid var(--borderLight)',
   borderRadius: 8,
   padding: '22px 26px',
-  background: '#fff',
+  background: 'var(--bgElevated)',
+  color: 'var(--textPrimary)',
 }
 
 const readerTextStyle: React.CSSProperties = {
@@ -3699,6 +3917,7 @@ const readerTextStyle: React.CSSProperties = {
   whiteSpace: 'pre-wrap',
   fontSize: 16,
   lineHeight: 1.9,
+  color: 'var(--textPrimary)',
 }
 
 const comicPreviewGridStyle: React.CSSProperties = {
@@ -3708,10 +3927,11 @@ const comicPreviewGridStyle: React.CSSProperties = {
 }
 
 const comicPreviewPageStyle: React.CSSProperties = {
-  border: '1px solid #eef0f3',
+  border: '1px solid var(--borderLight)',
   borderRadius: 8,
   padding: 12,
-  background: '#fff',
+  background: 'var(--bgElevated)',
+  color: 'var(--textPrimary)',
   minHeight: 180,
 }
 
@@ -3719,35 +3939,38 @@ const inlineImageShellStyle: React.CSSProperties = {
   display: 'flex',
   gap: 12,
   alignItems: 'center',
-  border: '1px solid #eef0f3',
+  border: '1px solid var(--borderLight)',
   borderRadius: 8,
   padding: 10,
-  background: '#fbfcff',
+  background: 'var(--bgElevated)',
+  color: 'var(--textPrimary)',
 }
 
 const referenceAssetCardStyle: React.CSSProperties = {
   display: 'flex',
   gap: 10,
   alignItems: 'center',
-  border: '1px solid #eef0f3',
+  border: '1px solid var(--borderLight)',
   borderRadius: 8,
   padding: 8,
-  background: '#fff',
+  background: 'var(--bgElevated)',
+  color: 'var(--textPrimary)',
 }
 
 const referenceAssetPlaceholderStyle: React.CSSProperties = {
   width: 52,
   height: 52,
   borderRadius: 6,
-  border: '1px solid #eef0f3',
-  background: '#fafafa',
+  border: '1px solid var(--borderLight)',
+  background: 'var(--bgInput)',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  color: '#8c8c8c',
+  color: 'var(--textSecondary)',
 }
 
-const resizeHandleStyle: React.CSSProperties = {
+function createResizeHandleStyle(_theme: ThemeColors): React.CSSProperties {
+  return {
   alignSelf: 'stretch',
   minHeight: 120,
   cursor: 'col-resize',
@@ -3756,11 +3979,14 @@ const resizeHandleStyle: React.CSSProperties = {
   justifyContent: 'center',
   borderRadius: 8,
   transition: 'background 120ms ease',
+  }
 }
 
-const resizeHandleLineStyle: React.CSSProperties = {
+function createResizeHandleLineStyle(theme: ThemeColors): React.CSSProperties {
+  return {
   width: 2,
   borderRadius: 2,
-  background: '#d9dee8',
+  background: theme.borderStrong,
   margin: '8px 0',
+  }
 }

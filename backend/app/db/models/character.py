@@ -58,6 +58,10 @@ class Character(SQLModel, table=True):
     # 外观描述（重点区域，冻结后禁止修改）
     appearance: str = Field(default="", description="外貌描述，用于 AI 生图提示词")
     costume_hint: str = Field(default="", description="服装提示")
+    signature_items: str = Field(default="[]", description="角色标志性物品/符号（JSON 数组）")
+    expressions: str = Field(default="[]", description="角色常用表情（JSON 数组）")
+    poses: str = Field(default="[]", description="角色常用姿态/动作（JSON 数组）")
+    visual_consistency: str = Field(default="", description="立绘、分镜和漫画生图的一致性规则")
 
     # 其他描述
     personality: str = Field(default="", description="性格特点")
