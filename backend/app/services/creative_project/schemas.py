@@ -20,6 +20,10 @@ class StoryCharacterSchema(FlexibleModel):
     goal: str = ""
     arc: str = ""
     visual_tags: list[str] = Field(default_factory=list)
+    signature_items: list[str] = Field(default_factory=list)
+    expressions: list[str] = Field(default_factory=list)
+    poses: list[str] = Field(default_factory=list)
+    visual_consistency: str = ""
     voice: str = ""
     image_prompt: str = ""
     negative_prompt: str = ""
@@ -85,6 +89,8 @@ class ChapterOutlineSceneSchema(FlexibleModel):
     scene_number: int
     title: str = ""
     location: str = ""
+    time_of_day: str = ""
+    weather: str = ""
     characters: list[str] = Field(default_factory=list)
     purpose: str = ""
     scene_role: str = ""
@@ -96,6 +102,10 @@ class ChapterOutlineSceneSchema(FlexibleModel):
     emotion: str = ""
     emotional_turn: str = ""
     visual_focus: str = ""
+    props: list[str] = Field(default_factory=list)
+    spatial_axis: str = ""
+    character_positions: str = ""
+    movement_path: str = ""
     shot_design: str = ""
     image_prompt: str = ""
 
@@ -169,13 +179,19 @@ class ShortDramaScriptSchema(FlexibleModel):
 class StoryboardPanelSchema(FlexibleModel):
     panel_number: int
     source_scene_number: int | None = None
+    panel_goal: str = ""
+    location: str = ""
     image_prompt: str = ""
     camera_hint: str = ""
+    camera_angle: str = ""
+    camera_motion: str = ""
     shot_size: str = ""
     composition: str = ""
+    blocking: str = ""
     characters: list[str] = Field(default_factory=list)
     action: str = ""
     emotion: str = ""
+    props: list[str] = Field(default_factory=list)
     dialogue_bubbles: list[str] = Field(default_factory=list)
     sound_effect: str = ""
     negative_prompt: str = ""

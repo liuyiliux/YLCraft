@@ -47,6 +47,7 @@ import {
 } from '@ant-design/icons'
 import { listAgentSessions, deleteAgentSession, listAgentTools } from '../../api/agent'
 import type { AgentMessage, AgentToolCall, AgentToolCallResult } from '../../types/agent'
+import { useTheme } from '../../constants/theme'
 
 const { Text, Title } = Typography
 const { TextArea } = Input
@@ -80,6 +81,7 @@ interface SessionItem {
 interface ToolItem extends AgentToolCall {}
 
 export default function AgentPage() {
+  const { theme: THEME } = useTheme()
   // ===== 状态 =====
   const [messages, setMessages] = useState<AgentMessage[]>([])
   const [input, setInput] = useState('')
@@ -343,8 +345,9 @@ export default function AgentPage() {
                               background:
                                 msg.role === 'user'
                                   ? 'linear-gradient(135deg, #00d4ff, #0080ff)'
-                                  : '#f5f5f5',
-                              color: msg.role === 'user' ? '#fff' : '#333',
+                                  : THEME.bgElevated,
+                              color: msg.role === 'user' ? '#fff' : THEME.textPrimary,
+                              border: msg.role === 'user' ? 'none' : `1px solid ${THEME.borderLight}`,
                               borderRadius: 12,
                               padding: '10px 14px',
                               maxWidth: '70%',
@@ -381,12 +384,13 @@ export default function AgentPage() {
                           />
                           <div
                             style={{
-                              background: '#f5f5f5',
+                              background: THEME.bgElevated,
+                              border: `1px solid ${THEME.borderLight}`,
                               borderRadius: 12,
                               padding: '10px 14px',
                               maxWidth: '70%',
                               whiteSpace: 'pre-wrap',
-                              color: '#333',
+                              color: THEME.textPrimary,
                             }}
                           >
                             {replyText}

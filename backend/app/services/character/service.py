@@ -55,7 +55,7 @@ class CharacterService:
 
     async def create(self, **kwargs) -> Character:
         # Convert list fields to JSON strings
-        for field in ["source_types", "tags", "reference_asset_ids"]:
+        for field in ["source_types", "tags", "reference_asset_ids", "signature_items", "expressions", "poses"]:
             if field in kwargs and kwargs[field] is not None:
                 kwargs[field] = json.dumps(kwargs[field], ensure_ascii=False)
         character = Character(**kwargs)
@@ -69,7 +69,7 @@ class CharacterService:
         if not character:
             return None
         # Convert list fields to JSON strings
-        for field in ["source_types", "tags", "reference_asset_ids"]:
+        for field in ["source_types", "tags", "reference_asset_ids", "signature_items", "expressions", "poses"]:
             if field in kwargs and kwargs[field] is not None:
                 kwargs[field] = json.dumps(kwargs[field], ensure_ascii=False)
         for key, value in kwargs.items():
@@ -136,6 +136,9 @@ class CharacterService:
         tags = json.loads(character.tags) if character.tags else []
         source_types = json.loads(character.source_types) if character.source_types else []
         reference_asset_ids = json.loads(character.reference_asset_ids) if character.reference_asset_ids else []
+        signature_items = json.loads(character.signature_items) if character.signature_items else []
+        expressions = json.loads(character.expressions) if character.expressions else []
+        poses = json.loads(character.poses) if character.poses else []
 
         role_labels = {
             "protagonist": "主角",
@@ -162,6 +165,10 @@ class CharacterService:
             "appearance": character.appearance or "",
             "personality": character.personality or "",
             "costume_hint": character.costume_hint or "",
+            "signature_items": signature_items,
+            "expressions": expressions,
+            "poses": poses,
+            "visual_consistency": character.visual_consistency or "",
             "background": character.background or "",
             "age_range": character.age_range or "",
             "tags": tags,

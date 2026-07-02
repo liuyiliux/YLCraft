@@ -1336,6 +1336,31 @@ export const getCreativeProject = (projectId: string) =>
 export const updateCreativeProject = (projectId: string, data: Record<string, any>) =>
   request(`/creative-projects/${projectId}`, { method: 'PATCH', body: JSON.stringify(data) })
 
+export const deleteCreativeProject = (projectId: string) =>
+  request(`/creative-projects/${projectId}`, { method: 'DELETE' })
+
+export const fillCreativeProjectDemoData = (projectId: string, data: { overwrite?: boolean } = {}) =>
+  request(`/creative-projects/${projectId}/fill-demo-data`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
+export const generateCharacterPortrait = (
+  characterId: string,
+  data: {
+    prompt: string
+    negative_prompt?: string
+    provider?: string
+    model?: string
+    size?: string
+    n?: number
+  },
+) =>
+  request(`/characters/${characterId}/portrait/generate`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
 export const generateCreativeProjectOutline = (
   projectId: string,
   data: { idea?: string; provider?: string; model?: string; template_id?: string } = {},

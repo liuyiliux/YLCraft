@@ -838,3 +838,42 @@ body {
   max-width: 100%;
   word-break: break-word;
 }
+
+/* 创作项目页：修正深色主题下 AntD 默认黑色文字漏出的问题 */
+.story-theme-page,
+.story-theme-page .ant-typography,
+.story-theme-page .ant-list-item-meta-title,
+.story-theme-page .ant-list-item-meta-title > a,
+.story-theme-page .ant-table,
+.story-theme-page .ant-table-cell,
+.story-theme-page .ant-tabs-tab,
+.story-theme-page .ant-tabs-content,
+.story-theme-page .ant-empty-description {
+  color: var(--textPrimary);
+}
+
+.story-theme-page .ant-typography-secondary,
+.story-theme-page .ant-list-item-meta-description,
+.story-theme-page .ant-table-tbody .ant-table-cell .ant-typography-secondary {
+  color: var(--textSecondary) !important;
+}
+
+.story-theme-page .ant-table-wrapper .ant-table,
+.story-theme-page .ant-table-thead > tr > th,
+.story-theme-page .ant-table-tbody > tr > td {
+  background: var(--bgCard);
+  border-color: var(--borderLight);
+}
+
+.story-theme-page .ant-table-thead > tr > th {
+  color: var(--textPrimary);
+  background: var(--bgElevated);
+}
+
+.story-theme-page .ant-table-tbody > tr.ant-table-row:hover > td {
+  background: var(--bgHover);
+}
+
+.story-theme-page .ant-list-item {
+  border-color: var(--border);
+}

@@ -47,6 +47,10 @@ class CreativeProjectUpdateRequest(BaseModel):
     canvas: dict[str, Any] | None = None
 
 
+class FillDemoDataRequest(BaseModel):
+    overwrite: bool = Field(default=False, description="是否覆盖项目已有阶段内容")
+
+
 class GenerateOutlineRequest(BaseModel):
     idea: str = ""
     provider: str | None = None
@@ -228,6 +232,35 @@ def update_project(
     if not project:
         raise HTTPException(status_code=404, detail="创作项目不存在")
     return {"success": True, "data": serialize_project(project)}
+
+
+@router.delete("/{project_id}", summary="删除创作项目")
+def delete_project(
+    project_id: str,
+    svc: CreativeProjectService = Depends(service),
+):
+    try:
+        stats = svc.delete_project(project_id)
+        return {"success": True, "data": stats}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+
+@router.post("/{project_id}/fill-demo-data", summary="为创作项目补充示例大纲、正文、脚本和分镜")
+def fill_demo_data(
+    project_id: str,
+    req: FillDemoDataRequest,
+    svc: CreativeProjectService = Depends(service),
+):
+    try:
+        result = svc.fill_demo_data(project_id, overwrite=req.overwrite)
+        return {
+            "success": True,
+            "data": result["changed"],
+            "project": serialize_project(result["project"]),
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
 
 
 @router.post("/{project_id}/generate-outline", summary="生成故事大纲")
@@ -661,6 +694,10 @@ def serialize_character(character: Any) -> dict[str, Any]:
         "appearance": character.appearance,
         "personality": character.personality,
         "costume_hint": character.costume_hint,
+        "signature_items": loads_json(getattr(character, "signature_items", "[]"), []),
+        "expressions": loads_json(getattr(character, "expressions", "[]"), []),
+        "poses": loads_json(getattr(character, "poses", "[]"), []),
+        "visual_consistency": getattr(character, "visual_consistency", "") or "",
         "background": character.background,
         "age_range": character.age_range,
         "portrait_asset_id": character.portrait_asset_id,
