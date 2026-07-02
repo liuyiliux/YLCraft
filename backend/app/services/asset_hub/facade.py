@@ -217,6 +217,8 @@ class AssetHubFacade:
                 "legacy_asset_id": legacy_asset_id,
                 "source": source,
                 "upgraded_from": upgraded_from,
+                "preset": params.get("preset"),
+                "is_main": params.get("set_as_main"),
             },
         )
 

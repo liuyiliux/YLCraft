@@ -56,6 +56,16 @@ def loads_json(value: str | None, fallback: Any = None) -> Any:
         return {} if fallback is None else fallback
 
 
+def _list_join(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        return "、".join(str(item) for item in value if str(item or "").strip())
+    return str(value)
+
+
 class CreativeProjectService:
     """业务编排：创作项目、阶段内容、生成日志和素材关联。"""
 
@@ -694,8 +704,17 @@ class CreativeProjectService:
 
         storyboard_data = loads_json(storyboard.data_json)
         reference_assets = self._project_reference_assets(project_id)
+        character_profiles = self._project_character_production_profiles(project_id, outline)
         effective_visual_style = (visual_style or outline.get("visual_style") or "").strip()
-        default_prompt = self._comic_pages_prompt(project, outline, storyboard, page_count, reference_assets, effective_visual_style)
+        default_prompt = self._comic_pages_prompt(
+            project,
+            outline,
+            storyboard,
+            page_count,
+            reference_assets,
+            effective_visual_style,
+            character_profiles=character_profiles,
+        )
         prompt, system_prompt, template_meta = self._stage_prompt(
             stage="comic_pages",
             default_prompt=default_prompt,
@@ -713,6 +732,7 @@ class CreativeProjectService:
                 "source_content_json": dumps_json(storyboard_data),
                 "source_content_text": storyboard.text_content,
                 "reference_assets_json": dumps_json(reference_assets),
+                "character_production_profiles_json": dumps_json(character_profiles),
             },
         )
         data = await self._generate_json(
@@ -767,8 +787,14 @@ class CreativeProjectService:
         outline = loads_json(project.outline_json)
         script_data = loads_json(script.data_json)
         reference_assets = self._project_reference_assets(project_id)
-        visual_context = self._story_visual_context(outline, reference_assets)
-        default_prompt = self._storyboard_prompt(project, script, reference_assets=reference_assets)
+        character_profiles = self._project_character_production_profiles(project_id, outline)
+        visual_context = self._story_visual_context(outline, reference_assets, character_profiles=character_profiles)
+        default_prompt = self._storyboard_prompt(
+            project,
+            script,
+            reference_assets=reference_assets,
+            character_profiles=character_profiles,
+        )
         prompt, system_prompt, template_meta = self._stage_prompt(
             stage="storyboard",
             default_prompt=default_prompt,
@@ -779,6 +805,7 @@ class CreativeProjectService:
                 "visual_style": outline.get("visual_style", ""),
                 "image_style_prompt": outline.get("image_style_prompt", ""),
                 "character_bible_json": dumps_json(outline.get("characters") or []),
+                "character_production_profiles_json": dumps_json(character_profiles),
                 "locations_json": dumps_json(outline.get("locations") or []),
                 "reference_assets_json": dumps_json(reference_assets),
                 "visual_context": visual_context,
@@ -798,7 +825,7 @@ class CreativeProjectService:
             template_meta=template_meta,
         )
         self._normalize_storyboard_v2(data)
-        self._enhance_storyboard_image_prompts(data, outline, reference_assets)
+        self._enhance_storyboard_image_prompts(data, outline, reference_assets, character_profiles=character_profiles)
         self._create_content(
             project_id=project.id,
             content_type="storyboard",
@@ -1063,6 +1090,19 @@ class CreativeProjectService:
                 select(Character).where(Character.id.in_(existing_character_ids))
             ).all()
         existing_by_name = {item.name: item for item in existing_characters if item.name}
+        outline_names = [
+            str(item.get("name") or "").strip()
+            for item in outline_characters
+            if isinstance(item, dict) and str(item.get("name") or "").strip()
+        ]
+        global_by_name: dict[str, Character] = {}
+        if outline_names:
+            global_characters = self.session.exec(
+                select(Character).where(Character.name.in_(outline_names))
+            ).all()
+            global_by_name = {item.name: item for item in global_characters if item.name}
+        existing_links_by_character_id = {link.character_id: link for link in existing_links}
+        world_name = self._project_world_name(project)
 
         synced: list[Character] = []
         changed = False
@@ -1073,7 +1113,7 @@ class CreativeProjectService:
             if not name:
                 continue
 
-            character = existing_by_name.get(name)
+            character = existing_by_name.get(name) or global_by_name.get(name)
             if character is None:
                 character = Character(
                     name=name,
@@ -1095,7 +1135,6 @@ class CreativeProjectService:
                 self.session.add(character)
                 self.session.flush()
                 self.session.refresh(character)
-                self.session.add(CharacterStoryLink(character_id=character.id, story_id=project_id))
             else:
                 character.appearance = character.appearance or str(raw_character.get("appearance") or "")
                 character.costume_hint = character.costume_hint or str(raw_character.get("costume_hint") or "")
@@ -1114,6 +1153,24 @@ class CreativeProjectService:
                 character.age_range = character.age_range or str(raw_character.get("age_range") or "")
                 if raw_character.get("portrait_asset_id") and not character.portrait_asset_id:
                     character.portrait_asset_id = str(raw_character.get("portrait_asset_id"))
+
+            link = existing_links_by_character_id.get(character.id)
+            if link is None:
+                link = CharacterStoryLink(character_id=character.id, story_id=project_id)
+                self.session.add(link)
+                existing_links_by_character_id[character.id] = link
+                character.use_count = (character.use_count or 0) + 1
+                character.last_used_at = datetime.now()
+            link.world_name = link.world_name or world_name
+            link.usage_role = link.usage_role or self._character_role(raw_character.get("role"))
+            link.local_identity = link.local_identity or str(raw_character.get("identity") or raw_character.get("role") or "")
+            link.local_faction = link.local_faction or str(raw_character.get("faction") or raw_character.get("organization") or "")
+            link.local_costume = link.local_costume or str(raw_character.get("costume_hint") or "")
+            if not loads_json(link.local_prompt_tags, []):
+                link.local_prompt_tags = dumps_json(self._character_list(raw_character, "visual_tags", "signature_items"))
+            link.ooc_notes = link.ooc_notes or str(raw_character.get("ooc_notes") or raw_character.get("behavior_boundary") or "")
+            link.off_model_notes = link.off_model_notes or str(raw_character.get("off_model_notes") or raw_character.get("visual_consistency") or "")
+            link.updated_at = datetime.now()
 
             if raw_character.get("character_id") != character.id:
                 raw_character["character_id"] = character.id
@@ -1142,6 +1199,22 @@ class CreativeProjectService:
         self.session.add(project)
         self.session.commit()
         return canvas
+
+    def _project_world_name(self, project: CreativeProject) -> str:
+        settings = loads_json(project.settings_json)
+        metadata = loads_json(project.metadata_json)
+        outline = loads_json(project.outline_json)
+        world = (
+            settings.get("world_name")
+            or settings.get("world")
+            or metadata.get("world_name")
+            or outline.get("worldview_title")
+            or outline.get("world_title")
+            or ""
+        )
+        if not world and outline.get("worldview"):
+            world = str(outline.get("worldview"))[:80]
+        return str(world or project.title or "").strip()
 
     def _character_role(self, value: Any) -> str:
         text = str(value or "").lower()
@@ -2794,10 +2867,16 @@ class CreativeProjectService:
         page_count: int,
         reference_assets: list[dict[str, Any]] | None = None,
         visual_style: str | None = None,
+        character_profiles: list[dict[str, Any]] | None = None,
     ) -> str:
         chapter_number = storyboard.chapter_number or storyboard.episode_number or 1
         storyboard_data = loads_json(storyboard.data_json)
         reference_text = dumps_json(reference_assets or [])
+        character_profile_text = self._story_visual_context(
+            outline,
+            reference_assets=None,
+            character_profiles=character_profiles or [],
+        )
         effective_visual_style = visual_style or outline.get("visual_style", "")
         return f"""请根据分镜草稿整理成适合漫画生成的 {page_count} 页漫画脚本 JSON。
 
@@ -2809,6 +2888,9 @@ class CreativeProjectService:
 项目参考资产：
 {reference_text}
 
+角色生产档案：
+{character_profile_text}
+
 分镜草稿：
 {dumps_json(storyboard_data)}
 
@@ -2818,8 +2900,9 @@ class CreativeProjectService:
 3. 每页应承接 storyboard panels，不要凭空改剧情；可以把多个 panel 合并成一页，也可以把复杂 panel 拆成多格。
 4. 每格写清角色、动作、画面、对白气泡、音效和镜头节奏。
 5. 每页 image_prompt 是该页关键视觉提示，能直接送到生图。
-6. 保持角色外观和视觉风格一致；如果项目参考资产里有 character/background/style/world/reference，必须把对应参考意图写入 page 的 image_prompt。
-7. 输出严格 JSON，不要 Markdown。
+6. 保持角色外观和视觉风格一致；page.image_prompt 必须优先复用“角色生产档案”里的本项目身份、服装覆盖、OOC 约束和 Off-Model 约束。
+7. 如果项目参考资产里有 character/background/style/world/reference，必须把对应参考意图写入 page 的 image_prompt。
+8. 输出严格 JSON，不要 Markdown。
 
 输出格式：
 {{
@@ -2838,14 +2921,174 @@ class CreativeProjectService:
   ]
 }}"""
 
-    def _story_visual_context(self, outline: dict[str, Any], reference_assets: list[dict[str, Any]] | None = None) -> str:
+    def _project_character_production_profiles(
+        self,
+        project_id: str,
+        outline: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        outline_characters = [
+            item for item in outline.get("characters") or []
+            if isinstance(item, dict) and str(item.get("name") or "").strip()
+        ]
+        links = self.session.exec(
+            select(CharacterStoryLink).where(CharacterStoryLink.story_id == project_id)
+        ).all()
+        character_ids = [link.character_id for link in links if link.character_id]
+        characters_by_id: dict[str, Character] = {}
+        if character_ids:
+            characters = self.session.exec(
+                select(Character).where(Character.id.in_(character_ids))
+            ).all()
+            characters_by_id = {item.id: item for item in characters}
+        links_by_character_id = {link.character_id: link for link in links}
+        outline_by_name = {str(item.get("name")): item for item in outline_characters}
+
+        profiles: list[dict[str, Any]] = []
+        used_names: set[str] = set()
+        for link in links:
+            character = characters_by_id.get(link.character_id)
+            if not character:
+                continue
+            outline_character = outline_by_name.get(character.name, {})
+            profiles.append(self._character_production_profile(character, link, outline_character))
+            used_names.add(character.name)
+
+        for outline_character in outline_characters:
+            name = str(outline_character.get("name") or "")
+            if name in used_names:
+                continue
+            character_id = str(outline_character.get("character_id") or "")
+            link = links_by_character_id.get(character_id)
+            character = characters_by_id.get(character_id)
+            if character and link:
+                profiles.append(self._character_production_profile(character, link, outline_character))
+                used_names.add(character.name)
+                continue
+            profiles.append(self._outline_character_profile(outline_character))
+
+        return profiles
+
+    def _character_production_profile(
+        self,
+        character: Character,
+        link: CharacterStoryLink,
+        outline_character: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        outline_character = outline_character or {}
+        identity = loads_json(getattr(character, "identity_json", "{}"), {})
+        motivation = loads_json(getattr(character, "motivation_json", "{}"), {})
+        speech = loads_json(getattr(character, "speech_json", "{}"), {})
+        behavior = loads_json(getattr(character, "behavior_json", "{}"), {})
+        ability = loads_json(getattr(character, "ability_json", "{}"), {})
+        arc = loads_json(getattr(character, "arc_json", "{}"), {})
+        visual_overrides = loads_json(getattr(link, "visual_overrides_json", "{}"), {})
+        bible_overrides = loads_json(getattr(link, "bible_overrides_json", "{}"), {})
+        return {
+            "character_id": character.id,
+            "name": character.name,
+            "world_name": link.world_name or "",
+            "usage_role": link.usage_role or character.role,
+            "local_alias": link.local_alias or identity.get("alias") or "",
+            "local_identity": link.local_identity or identity.get("logline") or outline_character.get("role") or "",
+            "local_faction": link.local_faction or identity.get("organization") or "",
+            "age_range": character.age_range or outline_character.get("age_range") or "",
+            "appearance": visual_overrides.get("appearance") or character.appearance or outline_character.get("appearance") or "",
+            "costume": link.local_costume or visual_overrides.get("costume") or character.costume_hint or outline_character.get("costume_hint") or "",
+            "signature_items": _list_join(loads_json(character.signature_items, []) or outline_character.get("signature_items") or []),
+            "expression_set": _list_join(loads_json(character.expressions, []) or outline_character.get("expressions") or []),
+            "pose_set": _list_join(loads_json(character.poses, []) or outline_character.get("poses") or []),
+            "visual_tags": _list_join(loads_json(link.local_prompt_tags, []) or outline_character.get("visual_tags") or []),
+            "visual_consistency": "；".join(
+                part for part in [
+                    character.visual_consistency,
+                    link.off_model_notes,
+                    str(visual_overrides.get("consistency") or ""),
+                ] if part
+            ),
+            "ooc_rules": "；".join(
+                part for part in [
+                    link.ooc_notes,
+                    str(behavior.get("never_do") or ""),
+                    str(behavior.get("boundary") or ""),
+                    str(bible_overrides.get("ooc") or ""),
+                ] if part
+            ),
+            "motivation": "；".join(part for part in [motivation.get("desire"), motivation.get("fear")] if part),
+            "speech": "；".join(part for part in [speech.get("tone"), speech.get("catchphrase")] if part),
+            "ability": "；".join(part for part in [ability.get("skills"), ability.get("limits")] if part),
+            "arc": "；".join(part for part in [arc.get("turning_point"), arc.get("risk_notes")] if part),
+            "portrait_node_id": getattr(character, "portrait_node_id", None),
+            "portrait_url": getattr(character, "portrait_url", "") or "",
+        }
+
+    def _outline_character_profile(self, character: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "character_id": character.get("character_id", ""),
+            "name": character.get("name", ""),
+            "world_name": "",
+            "usage_role": character.get("role", ""),
+            "local_alias": "",
+            "local_identity": character.get("role", ""),
+            "local_faction": character.get("faction", ""),
+            "age_range": character.get("age_range", ""),
+            "appearance": character.get("appearance", ""),
+            "costume": character.get("costume_hint", ""),
+            "signature_items": _list_join(character.get("signature_items") or []),
+            "expression_set": _list_join(character.get("expressions") or []),
+            "pose_set": _list_join(character.get("poses") or []),
+            "visual_tags": _list_join(character.get("visual_tags") or []),
+            "visual_consistency": character.get("visual_consistency", ""),
+            "ooc_rules": character.get("ooc_notes", ""),
+            "motivation": character.get("motivation", ""),
+            "speech": "",
+            "ability": "",
+            "arc": character.get("arc", ""),
+            "portrait_node_id": "",
+            "portrait_url": "",
+        }
+
+    def _story_visual_context(
+        self,
+        outline: dict[str, Any],
+        reference_assets: list[dict[str, Any]] | None = None,
+        *,
+        character_profiles: list[dict[str, Any]] | None = None,
+    ) -> str:
         characters = outline.get("characters") or []
         locations = outline.get("locations") or []
         lines = [
             f"统一视觉风格：{outline.get('visual_style', '')}",
             f"统一生图风格提示：{outline.get('image_style_prompt', '')}",
         ]
-        if characters:
+        profiles = character_profiles or []
+        if profiles:
+            lines.append("角色生产档案（全局角色本体 + 本项目/世界使用覆盖，必须优先使用）：")
+            for profile in profiles:
+                lines.append(
+                    " - "
+                    + "；".join(
+                        part
+                        for part in [
+                            f"姓名：{profile.get('name', '')}",
+                            f"世界身份：{profile.get('local_identity', '')}",
+                            f"本世界职责：{profile.get('usage_role', '')}",
+                            f"阵营：{profile.get('local_faction', '')}",
+                            f"年龄：{profile.get('age_range', '')}",
+                            f"外貌：{profile.get('appearance', '')}",
+                            f"服装：{profile.get('costume', '')}",
+                            f"稳定标签：{profile.get('visual_tags', '')}",
+                            f"标志物：{profile.get('signature_items', '')}",
+                            f"表情：{profile.get('expression_set', '')}",
+                            f"姿态：{profile.get('pose_set', '')}",
+                            f"Off-Model 约束：{profile.get('visual_consistency', '')}",
+                            f"OOC 约束：{profile.get('ooc_rules', '')}",
+                            f"语言：{profile.get('speech', '')}",
+                            f"动机：{profile.get('motivation', '')}",
+                        ]
+                        if part.split("：", 1)[-1]
+                    )
+                )
+        elif characters:
             lines.append("角色视觉档案：")
             for character in characters:
                 if not isinstance(character, dict):
@@ -2945,11 +3188,18 @@ class CreativeProjectService:
         data: dict[str, Any],
         outline: dict[str, Any],
         reference_assets: list[dict[str, Any]] | None = None,
+        *,
+        character_profiles: list[dict[str, Any]] | None = None,
     ) -> None:
         characters = {
             str(character.get("name")): character
             for character in outline.get("characters") or []
             if isinstance(character, dict) and character.get("name")
+        }
+        profiles = {
+            str(profile.get("name")): profile
+            for profile in character_profiles or []
+            if isinstance(profile, dict) and profile.get("name")
         }
         style_parts = [
             outline.get("image_style_prompt", ""),
@@ -2973,6 +3223,26 @@ class CreativeProjectService:
             character_names = [str(name) for name in panel.get("characters") or [] if str(name).strip()]
             character_desc = []
             for name in character_names:
+                profile = profiles.get(name)
+                if profile:
+                    desc = "，".join(
+                        part
+                        for part in [
+                            name,
+                            str(profile.get("local_identity") or ""),
+                            str(profile.get("usage_role") or ""),
+                            str(profile.get("age_range") or ""),
+                            str(profile.get("appearance") or ""),
+                            str(profile.get("costume") or ""),
+                            str(profile.get("visual_tags") or ""),
+                            str(profile.get("signature_items") or ""),
+                            str(profile.get("visual_consistency") or ""),
+                            str(profile.get("ooc_rules") or ""),
+                        ]
+                        if part
+                    )
+                    character_desc.append(desc)
+                    continue
                 character = characters.get(name)
                 if not character:
                     character_desc.append(name)
@@ -3015,17 +3285,29 @@ class CreativeProjectService:
             )
             panel["image_prompt"] = enriched
             if not panel.get("negative_prompt"):
-                panel["negative_prompt"] = "低清晰度，脸部崩坏，手指错误，多余肢体，文字乱码，角色服装不一致，画风突变"
+                ooc_negative = "，".join(
+                    profile.get("ooc_rules", "")
+                    for name in character_names
+                    for profile in [profiles.get(name)]
+                    if profile and profile.get("ooc_rules")
+                )
+                panel["negative_prompt"] = "，".join(
+                    part for part in [
+                        "低清晰度，脸部崩坏，手指错误，多余肢体，文字乱码，角色服装不一致，画风突变",
+                        ooc_negative,
+                    ] if part
+                )
 
     def _storyboard_prompt(
         self,
         project: CreativeProject,
         script: ProjectContent,
         reference_assets: list[dict[str, Any]] | None = None,
+        character_profiles: list[dict[str, Any]] | None = None,
     ) -> str:
         outline = loads_json(project.outline_json)
         script_data = loads_json(script.data_json)
-        visual_context = self._story_visual_context(outline, reference_assets)
+        visual_context = self._story_visual_context(outline, reference_assets, character_profiles=character_profiles)
         return f"""请根据短剧脚本生成漫画/视频分镜 JSON。
 
 视觉制作档案：

@@ -68,6 +68,14 @@ class Character(SQLModel, table=True):
     background: str = Field(default="", description="背景故事")
     age_range: str = Field(default="", description="年龄范围，如 20-25岁")
 
+    # Character Bible 分区（JSON 对象）
+    identity_json: str = Field(default="{}", description="基础身份档案：别名、性别、种族、身高、组织、职位等")
+    motivation_json: str = Field(default="{}", description="动机心理：欲望、恐惧、目标、价值观、执念等")
+    speech_json: str = Field(default="{}", description="语言语态：口头禅、句式、语速、禁用话术、方言等")
+    behavior_json: str = Field(default="{}", description="行为与 OOC 边界：习惯、应激反应、底线、绝不会做的事")
+    ability_json: str = Field(default="{}", description="能力体系：技能、短板、限制、代价、知识特长等")
+    arc_json: str = Field(default="{}", description="人物弧光：前中后期变化、高光、退场、剧情雷点")
+
     # 立绘
     portrait_url: str = Field(default="", description="立绘图片 URL")
     portrait_asset_id: str = Field(default="", description="关联素材资产 ID（旧版 Asset 表）")
@@ -96,10 +104,24 @@ class Character(SQLModel, table=True):
 
 
 class CharacterStoryLink(SQLModel, table=True):
-    """角色与故事项目的关联表"""
+    """角色在某个创作项目/世界中的使用配置。"""
     __tablename__ = "character_story_links"
 
     id: str = Field(primary_key=True, default_factory=lambda: uuid.uuid4().hex)
     character_id: str = Field(index=True)
     story_id: str = Field(index=True)
+    world_id: str = Field(default="", index=True)
+    world_name: str = Field(default="", index=True)
+    usage_role: str = Field(default="", index=True)
+    local_alias: str = Field(default="")
+    local_identity: str = Field(default="")
+    local_faction: str = Field(default="", index=True)
+    local_status: str = Field(default="active", index=True)
+    local_costume: str = Field(default="")
+    local_prompt_tags: str = Field(default="[]")
+    ooc_notes: str = Field(default="")
+    off_model_notes: str = Field(default="")
+    bible_overrides_json: str = Field(default="{}")
+    visual_overrides_json: str = Field(default="{}")
     linked_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)

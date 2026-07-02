@@ -45,7 +45,7 @@
 - [x] 5.1 Run final dry-run audit and confirm zero unmigrated required old assets.
 - [x] 5.2 Export or backup old `assets` table before any destructive operation.
 - [x] 5.3 Create a separate final deletion OpenSpec task if the user wants to drop old tables.
-- [ ] 5.4 Only after explicit approval, archive/drop old table and remove old models/services.
+- [x] 5.4 Final old-table drop/removal is approved and tracked by `drop-legacy-assets-final`.
 
 ## Phase 6: Verification
 

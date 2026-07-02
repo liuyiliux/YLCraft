@@ -16,9 +16,10 @@ import {
   DeleteOutlined, EditOutlined, PlusOutlined, SearchOutlined,
   HeartOutlined, RobotOutlined, PictureOutlined, TeamOutlined, ReadOutlined,
   DatabaseOutlined, HistoryOutlined, ReloadOutlined, CopyOutlined,
+  CheckOutlined, FileImageOutlined, ThunderboltOutlined,
 } from '@ant-design/icons'
 import { useTheme } from '../../constants/theme'
-import { chat, listGenerationLogsGlobal } from '../../api'
+import { chat, listCreativeProjects, listGenerationLogsGlobal } from '../../api'
 
 const { Title, Text, Paragraph } = Typography
 const { TextArea } = Input
@@ -40,8 +41,8 @@ const SOURCE_TYPE_ICONS: Record<string, React.ReactNode> = {
   local_material: <PictureOutlined />,
   real_person: <UserOutlined />,
   anime_reference: <TeamOutlined />,
-  stock_footage: <span style={{ fontSize: 12 }}>📦</span>,
-  other: <span style={{ fontSize: 12 }}>🏷️</span>,
+  stock_footage: <DatabaseOutlined />,
+  other: <ReadOutlined />,
 }
 
 const ROLE_COLORS: Record<string, string> = {
@@ -67,6 +68,32 @@ export const CHARACTER_ROLE_OPTIONS = [
   { value: 'extra', label: '路人' },
 ]
 
+type PortraitPreset =
+  | 'main_portrait'
+  | 'headshot_icon'
+  | 'key_visual'
+  | 'multi_view_sheet'
+  | 'identity_board_16_9'
+  | 'expression_pack'
+  | 'expression_grid_3x3'
+  | 'action_pose_pack'
+  | 'pose_grid_3x3'
+  | 'transparent_or_white_background'
+  | 'expression_pose_sheet'
+
+const PORTRAIT_PRESET_OPTIONS: { label: string; value: PortraitPreset }[] = [
+  { label: '主立绘', value: 'main_portrait' },
+  { label: '头像/半身', value: 'headshot_icon' },
+  { label: 'Key Visual', value: 'key_visual' },
+  { label: '多视图', value: 'multi_view_sheet' },
+  { label: '16:9 身份板', value: 'identity_board_16_9' },
+  { label: '表情包', value: 'expression_pack' },
+  { label: '表情九宫格', value: 'expression_grid_3x3' },
+  { label: '动作姿态', value: 'action_pose_pack' },
+  { label: '动作九宫格', value: 'pose_grid_3x3' },
+  { label: '透明/白底', value: 'transparent_or_white_background' },
+]
+
 export interface Character {
   id: string
   name: string
@@ -82,6 +109,12 @@ export interface Character {
   visual_consistency: string
   background: string
   age_range: string
+  identity?: Record<string, any>
+  motivation?: Record<string, any>
+  speech?: Record<string, any>
+  behavior?: Record<string, any>
+  ability?: Record<string, any>
+  arc?: Record<string, any>
   tags: string[]
   portrait_url: string
   portrait_asset_id: string
@@ -91,6 +124,39 @@ export interface Character {
   role_label: string
   use_count: number
   created_at: string
+  world_usages?: CharacterWorldUsage[]
+}
+
+export interface CharacterWorldUsage {
+  id: string
+  character_id: string
+  story_id: string
+  project_id: string
+  project_title: string
+  project_type: string
+  world_id: string
+  world_name: string
+  usage_role: string
+  local_alias: string
+  local_identity: string
+  local_faction: string
+  local_status: string
+  local_costume: string
+  local_prompt_tags: string[]
+  ooc_notes: string
+  off_model_notes: string
+  bible_overrides: Record<string, any>
+  visual_overrides: Record<string, any>
+  linked_at: string
+  updated_at: string
+}
+
+interface CreativeProjectOption {
+  id: string
+  title: string
+  project_type?: string
+  settings?: Record<string, any>
+  metadata?: Record<string, any>
 }
 
 export type CharacterSourceType = string
@@ -109,6 +175,12 @@ export interface CharacterCreateRequest {
   visual_consistency?: string
   background?: string
   age_range?: string
+  identity?: Record<string, any>
+  motivation?: Record<string, any>
+  speech?: Record<string, any>
+  behavior?: Record<string, any>
+  ability?: Record<string, any>
+  arc?: Record<string, any>
   tags?: string[]
   portrait_url?: string
   portrait_asset_id?: string
@@ -127,6 +199,12 @@ export interface CharacterUpdateRequest {
   visual_consistency?: string
   background?: string
   age_range?: string
+  identity?: Record<string, any>
+  motivation?: Record<string, any>
+  speech?: Record<string, any>
+  behavior?: Record<string, any>
+  ability?: Record<string, any>
+  arc?: Record<string, any>
   tags?: string[]
   portrait_url?: string
   portrait_asset_id?: string
@@ -262,6 +340,100 @@ export interface PortraitGenerateAssetHubResponse {
   }
 }
 
+export interface PortraitPromptPreviewResponse {
+  success: boolean
+  detail?: string
+  data?: {
+    preset: PortraitPreset
+    prompt: string
+    negative_prompt: string
+    visual_profile_snapshot: Record<string, any>
+    prompt_template_version: string
+  }
+}
+
+export interface PortraitVersionItem {
+  id: string
+  version_number: number
+  created_at: string | null
+  model: string
+  provider: string
+  preset: string
+  prompt: string
+  negative_prompt: string
+  image_url: string
+  file_path: string
+  representation_id: string | null
+  width?: number | null
+  height?: number | null
+  is_main: boolean
+  params: Record<string, any>
+}
+
+export function listCharacterPortraitVersions(
+  characterId: string
+): Promise<{ success: boolean; detail?: string; data?: { node_id: string | null; versions: PortraitVersionItem[] } }> {
+  return fetch(`/api/v1/characters/${characterId}/portrait/versions`, {
+    headers: { 'Accept': 'application/json' },
+  }).then(r => r.json())
+}
+
+export function setCharacterMainPortraitVersion(
+  characterId: string,
+  versionId: string,
+): Promise<{ success: boolean; detail?: string; data?: { character: Character; portrait_url: string } }> {
+  return fetch(`/api/v1/characters/${characterId}/portrait/versions/${versionId}/set-main`, {
+    method: 'POST',
+    headers: { 'Accept': 'application/json' },
+  }).then(r => r.json())
+}
+
+export function enrichCharacter(
+  characterId: string,
+  data: {
+    mode?: 'fill_missing' | 'rewrite'
+    context?: string
+    apply?: boolean
+    provider?: string
+    model?: string
+  }
+): Promise<{
+  success: boolean
+  detail?: string
+  data?: {
+    mode: string
+    proposal: Record<string, any>
+    merged: Record<string, any>
+    applied_fields: string[]
+    character: Character | null
+    provider: string
+    model: string
+  }
+}> {
+  return fetch(`/api/v1/characters/${characterId}/enrich`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    body: JSON.stringify(data),
+  }).then(r => r.json())
+}
+
+export function previewCharacterPortraitPrompt(
+  characterId: string,
+  data: {
+    preset?: PortraitPreset
+    visual_profile?: Record<string, any>
+    style_override?: string
+    negative_override?: string
+    language?: string
+  }
+): Promise<PortraitPromptPreviewResponse> {
+  return fetch(`/api/v1/characters/${characterId}/portrait/prompt-preview`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    body: JSON.stringify(data),
+  }).then(r => r.json())
+}
+
 export function generateCharacterPortraitViaAssetHub(
   characterId: string,
   data: {
@@ -269,6 +441,9 @@ export function generateCharacterPortraitViaAssetHub(
     provider?: string
     size?: string
     n?: number
+    preset?: PortraitPreset
+    negative_prompt?: string
+    set_as_main?: boolean
   }
 ): Promise<PortraitGenerateAssetHubResponse> {
   return fetch(`/api/v1/characters/${characterId}/portrait/generate`, {
@@ -301,6 +476,35 @@ export function removeCharacterTag(id: string, tag: string) {
 export function getAllCharacterTags() {
   return fetch('/api/v1/characters/tags/all', { headers: { 'Accept': 'application/json' } })
     .then(r => r.json())
+}
+
+export function listCharacterWorldUsages(characterId: string): Promise<{ success: boolean; data: CharacterWorldUsage[]; detail?: string }> {
+  return fetch(`/api/v1/characters/${characterId}/world-usages`, {
+    headers: { 'Accept': 'application/json' },
+  }).then(r => r.json())
+}
+
+export function linkCharacterToWorld(characterId: string, data: Record<string, any>) {
+  return fetch(`/api/v1/characters/${characterId}/link-story`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    body: JSON.stringify(data),
+  }).then(r => r.json())
+}
+
+export function updateCharacterWorldUsage(characterId: string, usageId: string, data: Record<string, any>) {
+  return fetch(`/api/v1/characters/${characterId}/world-usages/${usageId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    body: JSON.stringify(data),
+  }).then(r => r.json())
+}
+
+export function deleteCharacterWorldUsage(characterId: string, usageId: string) {
+  return fetch(`/api/v1/characters/${characterId}/world-usages/${usageId}`, {
+    method: 'DELETE',
+    headers: { 'Accept': 'application/json' },
+  }).then(r => r.json())
 }
 
 function buildCharacterPortraitPrompt(form: CharacterCreateRequest): string {
@@ -358,6 +562,12 @@ function emptyCharacterForm(): CharacterCreateRequest {
     visual_consistency: '',
     background: '',
     age_range: '',
+    identity: {},
+    motivation: {},
+    speech: {},
+    behavior: {},
+    ability: {},
+    arc: {},
     tags: [],
     portrait_url: '',
     portrait_asset_id: '',
@@ -387,6 +597,10 @@ export default function CharactersPage() {
   const [selectedPortraitBackend, setSelectedPortraitBackend] = useState<string>('')
   const [generatingPortrait, setGeneratingPortrait] = useState(false)
   const [portraitPromptDraft, setPortraitPromptDraft] = useState('')
+  const [portraitNegativePromptDraft, setPortraitNegativePromptDraft] = useState('')
+  const [selectedPortraitPreset, setSelectedPortraitPreset] = useState<PortraitPreset>('main_portrait')
+  const [portraitPromptCache, setPortraitPromptCache] = useState<Partial<Record<PortraitPreset, { prompt: string; negativePrompt: string }>>>({})
+  const [previewingPortraitPrompt, setPreviewingPortraitPrompt] = useState(false)
   const [optimizingPortraitPrompt, setOptimizingPortraitPrompt] = useState(false)
   // 资产中枢升级状态（在 Drawer 中点"升级到资产中枢"时使用）
   const [upgradingPortrait, setUpgradingPortrait] = useState(false)
@@ -409,7 +623,31 @@ export default function CharactersPage() {
   }
   const [portraitLogs, setPortraitLogs] = useState<PortraitLog[]>([])
   const [portraitLogsLoading, setPortraitLogsLoading] = useState(false)
-  const [drawerActiveTab, setDrawerActiveTab] = useState<'detail' | 'logs'>('detail')
+  const [portraitVersions, setPortraitVersions] = useState<PortraitVersionItem[]>([])
+  const [portraitVersionsLoading, setPortraitVersionsLoading] = useState(false)
+  const [settingMainPortrait, setSettingMainPortrait] = useState<string>('')
+  const [enrichingCharacter, setEnrichingCharacter] = useState(false)
+  const [worldUsages, setWorldUsages] = useState<CharacterWorldUsage[]>([])
+  const [worldUsagesLoading, setWorldUsagesLoading] = useState(false)
+  const [creativeProjects, setCreativeProjects] = useState<CreativeProjectOption[]>([])
+  const [worldUsageModalOpen, setWorldUsageModalOpen] = useState(false)
+  const [editingWorldUsage, setEditingWorldUsage] = useState<CharacterWorldUsage | null>(null)
+  const [worldUsageSaving, setWorldUsageSaving] = useState(false)
+  const [worldUsageForm, setWorldUsageForm] = useState({
+    story_id: '',
+    world_id: '',
+    world_name: '',
+    usage_role: '',
+    local_alias: '',
+    local_identity: '',
+    local_faction: '',
+    local_status: 'active',
+    local_costume: '',
+    local_prompt_tags: [] as string[],
+    ooc_notes: '',
+    off_model_notes: '',
+  })
+  const [drawerActiveTab, setDrawerActiveTab] = useState<'detail' | 'worlds' | 'portraits' | 'logs'>('detail')
   const surfaceCardStyle: React.CSSProperties = {
     background: THEME.bgCard,
     border: `1px solid ${THEME.borderLight}`,
@@ -436,13 +674,137 @@ export default function CharactersPage() {
     }
   }, [])
 
+  const loadPortraitVersions = useCallback(async (characterId: string) => {
+    setPortraitVersionsLoading(true)
+    try {
+      const res = await listCharacterPortraitVersions(characterId)
+      setPortraitVersions(res?.data?.versions || [])
+    } catch {
+      setPortraitVersions([])
+    } finally {
+      setPortraitVersionsLoading(false)
+    }
+  }, [])
+
+  const loadWorldUsages = useCallback(async (characterId: string) => {
+    setWorldUsagesLoading(true)
+    try {
+      const res = await listCharacterWorldUsages(characterId)
+      const usages = res?.data || []
+      setWorldUsages(usages)
+      setSelectedCharacter(prev => prev?.id === characterId ? { ...prev, world_usages: usages } : prev)
+    } catch {
+      setWorldUsages([])
+    } finally {
+      setWorldUsagesLoading(false)
+    }
+  }, [])
+
+  const loadCreativeProjectsForWorldUsage = useCallback(async () => {
+    try {
+      const res = await listCreativeProjects({ limit: 200 }) as any
+      setCreativeProjects(res?.data || [])
+    } catch {
+      setCreativeProjects([])
+    }
+  }, [])
+
+  const resetWorldUsageForm = () => {
+    setWorldUsageForm({
+      story_id: '',
+      world_id: '',
+      world_name: '',
+      usage_role: '',
+      local_alias: '',
+      local_identity: '',
+      local_faction: '',
+      local_status: 'active',
+      local_costume: '',
+      local_prompt_tags: [],
+      ooc_notes: '',
+      off_model_notes: '',
+    })
+  }
+
+  const openWorldUsageModal = (usage?: CharacterWorldUsage) => {
+    setEditingWorldUsage(usage || null)
+    if (usage) {
+      setWorldUsageForm({
+        story_id: usage.story_id,
+        world_id: usage.world_id || '',
+        world_name: usage.world_name || '',
+        usage_role: usage.usage_role || '',
+        local_alias: usage.local_alias || '',
+        local_identity: usage.local_identity || '',
+        local_faction: usage.local_faction || '',
+        local_status: usage.local_status || 'active',
+        local_costume: usage.local_costume || '',
+        local_prompt_tags: usage.local_prompt_tags || [],
+        ooc_notes: usage.ooc_notes || '',
+        off_model_notes: usage.off_model_notes || '',
+      })
+    } else {
+      resetWorldUsageForm()
+    }
+    setWorldUsageModalOpen(true)
+    loadCreativeProjectsForWorldUsage()
+  }
+
+  const handleSaveWorldUsage = async () => {
+    if (!selectedCharacter) return
+    if (!editingWorldUsage && !worldUsageForm.story_id) {
+      message.warning('请选择要使用此角色的项目/世界')
+      return
+    }
+    setWorldUsageSaving(true)
+    try {
+      const payload = {
+        ...worldUsageForm,
+        bible_overrides: {},
+        visual_overrides: {},
+      }
+      const res = editingWorldUsage
+        ? await updateCharacterWorldUsage(selectedCharacter.id, editingWorldUsage.id, payload)
+        : await linkCharacterToWorld(selectedCharacter.id, payload)
+      if (!res?.success) {
+        message.error(res?.detail || '保存世界使用失败')
+        return
+      }
+      message.success(editingWorldUsage ? '世界使用已更新' : '已绑定到项目/世界')
+      setWorldUsageModalOpen(false)
+      setEditingWorldUsage(null)
+      await loadWorldUsages(selectedCharacter.id)
+    } catch (e: any) {
+      message.error(e?.message || '保存世界使用失败')
+    } finally {
+      setWorldUsageSaving(false)
+    }
+  }
+
+  const handleDeleteWorldUsage = async (usage: CharacterWorldUsage) => {
+    if (!selectedCharacter) return
+    try {
+      const res = await deleteCharacterWorldUsage(selectedCharacter.id, usage.id)
+      if (!res?.success) {
+        message.error(res?.detail || '移除失败')
+        return
+      }
+      message.success('已移除世界使用关系')
+      loadWorldUsages(selectedCharacter.id)
+    } catch (e: any) {
+      message.error(e?.message || '移除失败')
+    }
+  }
+
   // 打开 Drawer 时加载日志
   useEffect(() => {
     if (drawerOpen && selectedCharacter) {
       setDrawerActiveTab('detail')
       loadPortraitLogs(selectedCharacter.id)
+      loadPortraitVersions(selectedCharacter.id)
+      loadWorldUsages(selectedCharacter.id)
     }
-  }, [drawerOpen, selectedCharacter, loadPortraitLogs])
+  }, [drawerOpen, selectedCharacter?.id, loadPortraitLogs, loadPortraitVersions, loadWorldUsages])
 
   const load = useCallback(async (p: number, opts: {
     keyword?: string
@@ -492,8 +854,54 @@ export default function CharactersPage() {
 
   useEffect(() => {
     if (!formModalOpen) return
-    setPortraitPromptDraft(buildCharacterPortraitPrompt(form))
+    const initialPrompt = buildCharacterPortraitPrompt(form)
+    setPortraitPromptDraft(initialPrompt)
+    setPortraitNegativePromptDraft('')
+    setSelectedPortraitPreset('main_portrait')
+    setPortraitPromptCache({
+      main_portrait: {
+        prompt: initialPrompt,
+        negativePrompt: '',
+      },
+    })
   }, [formModalOpen, editingCharacter?.id])
+
+  const updatePortraitPromptDraft = (prompt: string) => {
+    setPortraitPromptDraft(prompt)
+    setPortraitPromptCache(prev => ({
+      ...prev,
+      [selectedPortraitPreset]: {
+        prompt,
+        negativePrompt: portraitNegativePromptDraft,
+      },
+    }))
+  }
+
+  const updatePortraitNegativePromptDraft = (negativePrompt: string) => {
+    setPortraitNegativePromptDraft(negativePrompt)
+    setPortraitPromptCache(prev => ({
+      ...prev,
+      [selectedPortraitPreset]: {
+        prompt: portraitPromptDraft,
+        negativePrompt,
+      },
+    }))
+  }
+
+  const handleChangePortraitPreset = (preset: PortraitPreset) => {
+    const nextCache = {
+      ...portraitPromptCache,
+      [selectedPortraitPreset]: {
+        prompt: portraitPromptDraft,
+        negativePrompt: portraitNegativePromptDraft,
+      },
+    }
+    const cached = nextCache[preset]
+    setPortraitPromptCache(nextCache)
+    setSelectedPortraitPreset(preset)
+    setPortraitPromptDraft(cached?.prompt || '')
+    setPortraitNegativePromptDraft(cached?.negativePrompt || '')
+  }
 
   const handleOpenDetail = async (character: Character) => {
     try {
@@ -569,6 +977,7 @@ export default function CharactersPage() {
       message.success(`已升级到资产中枢（v${info.version_number}）`)
       // 刷新日志 Tab
       loadPortraitLogs(selectedCharacter.id)
+      loadPortraitVersions(selectedCharacter.id)
     } catch (e: any) {
       message.error(e?.message || '升级失败')
     } finally {
@@ -576,10 +985,110 @@ export default function CharactersPage() {
     }
   }
 
+  const refreshSelectedCharacter = async (characterId: string) => {
+    try {
+      const data = await getCharacter(characterId)
+      if (data?.data) {
+        setSelectedCharacter(data.data)
+        setCharacters(cs => cs.map(c => c.id === characterId ? data.data : c))
+      }
+    } catch {
+      // 保持当前页面状态即可
+    }
+  }
+
+  const handleSetMainPortraitVersion = async (version: PortraitVersionItem) => {
+    if (!selectedCharacter || settingMainPortrait) return
+    setSettingMainPortrait(version.id)
+    try {
+      const res = await setCharacterMainPortraitVersion(selectedCharacter.id, version.id)
+      if (!res?.success || !res.data?.character) {
+        message.error(res?.detail || '设置主立绘失败')
+        return
+      }
+      const updated = {
+        ...res.data.character,
+        world_usages: selectedCharacter.world_usages || [],
+      }
+      setSelectedCharacter(updated)
+      setCharacters(cs => cs.map(c => c.id === selectedCharacter.id ? updated : c))
+      await loadPortraitVersions(selectedCharacter.id)
+      message.success(`已设为主立绘 v${version.version_number}`)
+    } catch (e: any) {
+      message.error(e?.message || '设置主立绘失败')
+    } finally {
+      setSettingMainPortrait('')
+    }
+  }
+
+  const handleEnrichCharacter = async (mode: 'fill_missing' | 'rewrite' = 'fill_missing') => {
+    if (!selectedCharacter || enrichingCharacter) return
+    setEnrichingCharacter(true)
+    try {
+      const contextParts = [
+        selectedCharacter.world_usages?.length
+          ? `该角色已用于 ${selectedCharacter.world_usages.length} 个世界，请保持角色本体可复用，不要写死单一项目身份。`
+          : '',
+        selectedCharacter.appearance ? `已有外观：${selectedCharacter.appearance}` : '',
+        selectedCharacter.background ? `已有背景：${selectedCharacter.background}` : '',
+      ].filter(Boolean)
+      const res = await enrichCharacter(selectedCharacter.id, {
+        mode,
+        apply: true,
+        context: contextParts.join('\n'),
+      })
+      if (!res?.success) {
+        message.error(res?.detail || 'AI 补全失败')
+        return
+      }
+      if (!res.data?.character) {
+        message.info('AI 没有找到需要补全的字段')
+        return
+      }
+      const updated = {
+        ...res.data.character,
+        world_usages: selectedCharacter.world_usages || [],
+      }
+      setSelectedCharacter(updated)
+      setCharacters(cs => cs.map(c => c.id === selectedCharacter.id ? updated : c))
+      message.success(
+        res.data.applied_fields.length
+          ? `已补全 ${res.data.applied_fields.length} 类角色信息`
+          : '角色信息已检查',
+      )
+    } catch (e: any) {
+      message.error(e?.message || 'AI 补全失败')
+    } finally {
+      setEnrichingCharacter(false)
+    }
+  }
+
   // AI 生成立绘：编辑模式走资产中枢端点（保留版本历史），新建模式走旧 /images/generate
-  const handleRefreshPortraitPrompt = () => {
+  const handleRefreshPortraitPrompt = async () => {
+    if (editingCharacter?.id) {
+      setPreviewingPortraitPrompt(true)
+      try {
+        const data = await previewCharacterPortraitPrompt(editingCharacter.id, {
+          preset: selectedPortraitPreset,
+          language: 'zh',
+        })
+        if (!data?.success || !data.data) {
+          message.error(data?.detail || '生成提示词失败')
+          return
+        }
+        updatePortraitPromptDraft(data.data.prompt)
+        updatePortraitNegativePromptDraft(data.data.negative_prompt || '')
+        message.success('已根据预设生成完整提示词')
+      } catch (e: any) {
+        message.error(e?.message || '生成提示词失败')
+      } finally {
+        setPreviewingPortraitPrompt(false)
+      }
+      return
+    }
     const prompt = buildCharacterPortraitPrompt(form)
-    setPortraitPromptDraft(prompt)
+    updatePortraitPromptDraft(prompt)
+    updatePortraitNegativePromptDraft('')
     message.success('已根据当前角色信息生成完整提示词')
   }
 
@@ -628,7 +1137,7 @@ export default function CharactersPage() {
         message.error(res?.error || 'AI 优化提示词失败')
         return
       }
-      setPortraitPromptDraft(optimized)
+      updatePortraitPromptDraft(optimized)
       message.success('AI 已优化完整提示词')
     } catch (e: any) {
       message.error(e?.message || 'AI 优化提示词失败')
@@ -647,9 +1156,9 @@ export default function CharactersPage() {
       message.warning('请先选择生图模型')
       return
     }
-    const prompt = portraitPromptDraft.trim() || buildCharacterPortraitPrompt(form)
-    if (!portraitPromptDraft.trim()) {
-      setPortraitPromptDraft(prompt)
+    const prompt = portraitPromptDraft.trim() || (editingCharacter ? '' : buildCharacterPortraitPrompt(form))
+    if (!portraitPromptDraft.trim() && !editingCharacter) {
+      updatePortraitPromptDraft(prompt)
     }
 
     setGeneratingPortrait(true)
@@ -663,6 +1172,9 @@ export default function CharactersPage() {
             provider: selectedPortraitBackend,
             size: '1024x1024',
             n: 1,
+            preset: selectedPortraitPreset,
+            negative_prompt: portraitNegativePromptDraft,
+            set_as_main: true,
           }
         )
         if (!data?.success || !data.data) {
@@ -680,6 +1192,8 @@ export default function CharactersPage() {
         // 刷新日志 Tab
         if (editingCharacter?.id) {
           loadPortraitLogs(editingCharacter.id)
+          loadPortraitVersions(editingCharacter.id)
+          refreshSelectedCharacter(editingCharacter.id)
         }
       } else {
         // 新建模式 → 走旧 /images/generate（保存后可在 Drawer 中点"升级到资产中枢"补登记）
@@ -728,6 +1242,12 @@ export default function CharactersPage() {
         if ((form.visual_consistency || '') !== (editingCharacter.visual_consistency || '')) req.visual_consistency = form.visual_consistency || ''
         if (form.background !== editingCharacter.background) req.background = form.background
         if (form.age_range !== editingCharacter.age_range) req.age_range = form.age_range
+        if (JSON.stringify(form.identity || {}) !== JSON.stringify(editingCharacter.identity || {})) req.identity = form.identity || {}
+        if (JSON.stringify(form.motivation || {}) !== JSON.stringify(editingCharacter.motivation || {})) req.motivation = form.motivation || {}
+        if (JSON.stringify(form.speech || {}) !== JSON.stringify(editingCharacter.speech || {})) req.speech = form.speech || {}
+        if (JSON.stringify(form.behavior || {}) !== JSON.stringify(editingCharacter.behavior || {})) req.behavior = form.behavior || {}
+        if (JSON.stringify(form.ability || {}) !== JSON.stringify(editingCharacter.ability || {})) req.ability = form.ability || {}
+        if (JSON.stringify(form.arc || {}) !== JSON.stringify(editingCharacter.arc || {})) req.arc = form.arc || {}
         if (JSON.stringify(form.tags) !== JSON.stringify(editingCharacter.tags)) req.tags = form.tags
         if (form.portrait_url !== editingCharacter.portrait_url) req.portrait_url = form.portrait_url
         if ((form.portrait_asset_id || '') !== (editingCharacter.portrait_asset_id || '')) req.portrait_asset_id = form.portrait_asset_id || ''
@@ -753,6 +1273,20 @@ export default function CharactersPage() {
       setForm(f => ({ ...f, tags: [...(f.tags || []), t ] }))
     }
     setTagInput('')
+  }
+
+  const setBibleField = (
+    section: 'identity' | 'motivation' | 'speech' | 'behavior' | 'ability' | 'arc',
+    key: string,
+    value: any,
+  ) => {
+    setForm(f => ({
+      ...f,
+      [section]: {
+        ...((f as any)[section] || {}),
+        [key]: value,
+      },
+    }))
   }
 
   return (
@@ -885,24 +1419,27 @@ export default function CharactersPage() {
           {selectedCharacter && <Tag style={{ background: `${ROLE_COLORS[selectedCharacter.role]}20`, border: `1px solid ${ROLE_COLORS[selectedCharacter.role]}50`, color: ROLE_COLORS[selectedCharacter.role] }}>{CHARACTER_ROLE_OPTIONS.find(o => o.value === selectedCharacter.role)?.label}</Tag>}
           {selectedCharacter?.is_frozen && <Tag icon={<LockOutlined />} style={{ color: '#f59e0b', background: 'rgba(245,158,11,0.1)' }}>已冻结</Tag>}
         </Space>}
-        width={480} styles={{ body: { background: THEME.bgPage, padding: 0 }, header: { background: THEME.bgCard, borderBottom: `1px solid ${THEME.borderLight}` } }}>
+        width={860} styles={{ body: { background: THEME.bgPage, padding: 0 }, header: { background: THEME.bgCard, borderBottom: `1px solid ${THEME.borderLight}` } }}>
         {selectedCharacter && (
           <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-            {selectedCharacter.portrait_url && (
-              <div style={{ height: 240, overflow: 'hidden' }}>
-                <img src={selectedCharacter.portrait_url} alt={selectedCharacter.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
-              </div>
-            )}
+            <CharacterIdentityBoard character={selectedCharacter} theme={THEME} />
             <div style={{ padding: 20, flex: 1, overflow: 'auto' }}>
               <Tabs
                 activeKey={drawerActiveTab}
-                onChange={(k) => setDrawerActiveTab(k as 'detail' | 'logs')}
+                onChange={(k) => setDrawerActiveTab(k as 'detail' | 'worlds' | 'portraits' | 'logs')}
                 items={[
                   {
                     key: 'detail',
                     label: '详情',
                     children: (
                       <>
+              <CharacterEnrichmentStrip
+                character={selectedCharacter}
+                loading={enrichingCharacter}
+                onFillMissing={() => handleEnrichCharacter('fill_missing')}
+                onRewrite={() => handleEnrichCharacter('rewrite')}
+              />
+              <CharacterBibleQuickPanels character={selectedCharacter} theme={THEME} />
               <div style={{ marginBottom: 16 }}>
                 <Text type="secondary" style={{ fontSize: 12 }}>来源类型</Text>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
@@ -969,7 +1506,7 @@ export default function CharactersPage() {
               </div>
               <Divider style={{ borderColor: THEME.borderLight }} />
               <Space wrap>
-                <Button icon={<EditOutlined />} onClick={() => { setEditingCharacter(selectedCharacter); setForm({ name: selectedCharacter.name, role: selectedCharacter.role, source_types: selectedCharacter.source_types, appearance: selectedCharacter.appearance, personality: selectedCharacter.personality, costume_hint: selectedCharacter.costume_hint, signature_items: selectedCharacter.signature_items || [], expressions: selectedCharacter.expressions || [], poses: selectedCharacter.poses || [], visual_consistency: selectedCharacter.visual_consistency || '', background: selectedCharacter.background, age_range: selectedCharacter.age_range, tags: selectedCharacter.tags, portrait_url: selectedCharacter.portrait_url, portrait_asset_id: selectedCharacter.portrait_asset_id || '' }); setDrawerOpen(false); setFormModalOpen(true) }}>编辑</Button>
+                <Button icon={<EditOutlined />} onClick={() => { setEditingCharacter(selectedCharacter); setForm({ name: selectedCharacter.name, role: selectedCharacter.role, source_types: selectedCharacter.source_types, appearance: selectedCharacter.appearance, personality: selectedCharacter.personality, costume_hint: selectedCharacter.costume_hint, signature_items: selectedCharacter.signature_items || [], expressions: selectedCharacter.expressions || [], poses: selectedCharacter.poses || [], visual_consistency: selectedCharacter.visual_consistency || '', background: selectedCharacter.background, age_range: selectedCharacter.age_range, identity: selectedCharacter.identity || {}, motivation: selectedCharacter.motivation || {}, speech: selectedCharacter.speech || {}, behavior: selectedCharacter.behavior || {}, ability: selectedCharacter.ability || {}, arc: selectedCharacter.arc || {}, tags: selectedCharacter.tags, portrait_url: selectedCharacter.portrait_url, portrait_asset_id: selectedCharacter.portrait_asset_id || '' }); setDrawerOpen(false); setFormModalOpen(true) }}>编辑</Button>
                 <Button icon={<ReadOutlined />} onClick={() => navigate(`/story?character_id=${selectedCharacter.id}`)}>在 Story Maker 中使用</Button>
                 <Button icon={selectedCharacter.is_favorite ? <StarFilled style={{ color: '#f59e0b' }} /> : <StarOutlined />} onClick={() => handleFavorite(selectedCharacter)}>{selectedCharacter.is_favorite ? '取消收藏' : '收藏'}</Button>
                 {selectedCharacter.portrait_url && !selectedCharacter.portrait_node_id && (
@@ -993,6 +1530,49 @@ export default function CharactersPage() {
                 </Popconfirm>
               </Space>
                       </>
+                    ),
+                  },
+                  {
+                    key: 'worlds',
+                    label: (
+                      <Space>
+                        <TeamOutlined />
+                        世界使用
+                        {worldUsages.length > 0 && (
+                          <Tag color="purple" style={{ marginInlineStart: 0 }}>{worldUsages.length}</Tag>
+                        )}
+                      </Space>
+                    ),
+                    children: (
+                      <CharacterWorldUsagesTab
+                        usages={worldUsages}
+                        loading={worldUsagesLoading}
+                        onAdd={() => openWorldUsageModal()}
+                        onEdit={openWorldUsageModal}
+                        onDelete={handleDeleteWorldUsage}
+                        onRefresh={() => selectedCharacter && loadWorldUsages(selectedCharacter.id)}
+                      />
+                    ),
+                  },
+                  {
+                    key: 'portraits',
+                    label: (
+                      <Space>
+                        <FileImageOutlined />
+                        立绘版本
+                        {portraitVersions.length > 0 && (
+                          <Tag color="green" style={{ marginInlineStart: 0 }}>{portraitVersions.length}</Tag>
+                        )}
+                      </Space>
+                    ),
+                    children: (
+                      <CharacterPortraitVersionsTab
+                        versions={portraitVersions}
+                        loading={portraitVersionsLoading}
+                        settingMainId={settingMainPortrait}
+                        onSetMain={handleSetMainPortraitVersion}
+                        onRefresh={() => selectedCharacter && loadPortraitVersions(selectedCharacter.id)}
+                      />
                     ),
                   },
                   {
@@ -1020,6 +1600,63 @@ export default function CharactersPage() {
           </div>
         )}
       </Drawer>
+
+      <Modal
+        open={worldUsageModalOpen}
+        title={editingWorldUsage ? '编辑世界使用' : '绑定到项目/世界'}
+        onCancel={() => { setWorldUsageModalOpen(false); setEditingWorldUsage(null) }}
+        footer={
+          <Space>
+            <Button onClick={() => { setWorldUsageModalOpen(false); setEditingWorldUsage(null) }}>取消</Button>
+            <Button type="primary" loading={worldUsageSaving} onClick={handleSaveWorldUsage}>
+              {editingWorldUsage ? '保存' : '绑定'}
+            </Button>
+          </Space>
+        }
+        width={720}
+        destroyOnClose
+      >
+        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          <div>
+            <Text strong>项目/世界</Text>
+            <Select
+              showSearch
+              disabled={Boolean(editingWorldUsage)}
+              placeholder="选择创作项目"
+              value={worldUsageForm.story_id || undefined}
+              onChange={(projectId) => {
+                const project = creativeProjects.find(item => item.id === projectId)
+                setWorldUsageForm(f => ({
+                  ...f,
+                  story_id: projectId,
+                  world_name: f.world_name || project?.settings?.world_name || project?.metadata?.world_name || project?.title || '',
+                }))
+              }}
+              options={creativeProjects.map(project => ({
+                value: project.id,
+                label: `${project.title}${project.project_type ? ` · ${project.project_type}` : ''}`,
+              }))}
+              style={{ width: '100%', marginTop: 8 }}
+            />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <Input placeholder="世界名/宇宙名" value={worldUsageForm.world_name} onChange={e => setWorldUsageForm(f => ({ ...f, world_name: e.target.value }))} />
+            <Input placeholder="该世界中的角色职责：主角/NPC/反派" value={worldUsageForm.usage_role} onChange={e => setWorldUsageForm(f => ({ ...f, usage_role: e.target.value }))} />
+            <Input placeholder="本世界别名/代号" value={worldUsageForm.local_alias} onChange={e => setWorldUsageForm(f => ({ ...f, local_alias: e.target.value }))} />
+            <Input placeholder="阵营/组织/派系" value={worldUsageForm.local_faction} onChange={e => setWorldUsageForm(f => ({ ...f, local_faction: e.target.value }))} />
+          </div>
+          <TextArea rows={2} placeholder="该世界中的身份说明" value={worldUsageForm.local_identity} onChange={e => setWorldUsageForm(f => ({ ...f, local_identity: e.target.value }))} />
+          <TextArea rows={2} placeholder="该世界服装/形态覆盖" value={worldUsageForm.local_costume} onChange={e => setWorldUsageForm(f => ({ ...f, local_costume: e.target.value }))} />
+          <Select
+            mode="tags"
+            placeholder="局部 Prompt 标签：赛博世界 / 校服 / 受伤状态"
+            value={worldUsageForm.local_prompt_tags}
+            onChange={value => setWorldUsageForm(f => ({ ...f, local_prompt_tags: value }))}
+          />
+          <TextArea rows={3} placeholder="OOC 约束：这个世界里绝对不会做什么、说什么、如何避免人设跑偏" value={worldUsageForm.ooc_notes} onChange={e => setWorldUsageForm(f => ({ ...f, ooc_notes: e.target.value }))} />
+          <TextArea rows={3} placeholder="Off-Model 约束：这个世界里哪些外观、服装、比例、道具不能画错" value={worldUsageForm.off_model_notes} onChange={e => setWorldUsageForm(f => ({ ...f, off_model_notes: e.target.value }))} />
+        </Space>
+      </Modal>
 
       {/* Create/Edit Modal */}
       <Modal open={formModalOpen} title={editingCharacter ? '编辑角色' : '新建角色'} onCancel={() => { setFormModalOpen(false); setEditingCharacter(null) }}
@@ -1066,6 +1703,89 @@ export default function CharactersPage() {
             <TextArea placeholder="背景故事（可选）" value={form.background} onChange={e => setForm(f => ({ ...f, background: e.target.value }))} rows={2} style={{ marginTop: 8 }} />
           </div>
           <div>
+            <Text strong style={{ color: THEME.textPrimary }}>角色圣经 Character Bible</Text>
+            <Collapse
+              size="small"
+              style={{ marginTop: 8, background: THEME.bgCard, border: `1px solid ${THEME.borderLight}` }}
+              items={[
+                {
+                  key: 'identity',
+                  label: '身份档案',
+                  children: (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      <Input placeholder="别名/代号" value={form.identity?.alias || ''} onChange={e => setBibleField('identity', 'alias', e.target.value)} />
+                      <Input placeholder="性别/种族/物种" value={form.identity?.species || ''} onChange={e => setBibleField('identity', 'species', e.target.value)} />
+                      <Input placeholder="身高/体型" value={form.identity?.body_profile || ''} onChange={e => setBibleField('identity', 'body_profile', e.target.value)} />
+                      <Input placeholder="组织/阵营" value={form.identity?.organization || ''} onChange={e => setBibleField('identity', 'organization', e.target.value)} />
+                      <Input placeholder="职位/职级" value={form.identity?.position || ''} onChange={e => setBibleField('identity', 'position', e.target.value)} />
+                      <Input placeholder="一句话人设摘要" value={form.identity?.logline || ''} onChange={e => setBibleField('identity', 'logline', e.target.value)} />
+                    </div>
+                  ),
+                },
+                {
+                  key: 'motivation',
+                  label: '动机与心理',
+                  children: (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      <TextArea rows={2} placeholder="核心欲望：想要什么" value={form.motivation?.desire || ''} onChange={e => setBibleField('motivation', 'desire', e.target.value)} />
+                      <TextArea rows={2} placeholder="深层恐惧：害怕失去什么" value={form.motivation?.fear || ''} onChange={e => setBibleField('motivation', 'fear', e.target.value)} />
+                      <TextArea rows={2} placeholder="短期目标" value={form.motivation?.short_goal || ''} onChange={e => setBibleField('motivation', 'short_goal', e.target.value)} />
+                      <TextArea rows={2} placeholder="长期目标/执念" value={form.motivation?.long_goal || ''} onChange={e => setBibleField('motivation', 'long_goal', e.target.value)} />
+                    </div>
+                  ),
+                },
+                {
+                  key: 'speech',
+                  label: '语言语态',
+                  children: (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      <Input placeholder="说话风格/语速/语气" value={form.speech?.tone || ''} onChange={e => setBibleField('speech', 'tone', e.target.value)} />
+                      <Input placeholder="口头禅" value={form.speech?.catchphrase || ''} onChange={e => setBibleField('speech', 'catchphrase', e.target.value)} />
+                      <TextArea rows={2} placeholder="常用句式" value={form.speech?.sentence_pattern || ''} onChange={e => setBibleField('speech', 'sentence_pattern', e.target.value)} />
+                      <TextArea rows={2} placeholder="禁用话术/回避话题" value={form.speech?.forbidden_topics || ''} onChange={e => setBibleField('speech', 'forbidden_topics', e.target.value)} />
+                    </div>
+                  ),
+                },
+                {
+                  key: 'behavior',
+                  label: '行为边界 / OOC',
+                  children: (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      <TextArea rows={2} placeholder="习惯性动作/小癖好" value={form.behavior?.habits || ''} onChange={e => setBibleField('behavior', 'habits', e.target.value)} />
+                      <TextArea rows={2} placeholder="应激反应" value={form.behavior?.stress_response || ''} onChange={e => setBibleField('behavior', 'stress_response', e.target.value)} />
+                      <TextArea rows={2} placeholder="绝对底线" value={form.behavior?.boundary || ''} onChange={e => setBibleField('behavior', 'boundary', e.target.value)} />
+                      <TextArea rows={2} placeholder="绝对不会做的事（OOC 判定）" value={form.behavior?.never_do || ''} onChange={e => setBibleField('behavior', 'never_do', e.target.value)} />
+                    </div>
+                  ),
+                },
+                {
+                  key: 'ability',
+                  label: '能力与限制',
+                  children: (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      <TextArea rows={2} placeholder="天赋/技能" value={form.ability?.skills || ''} onChange={e => setBibleField('ability', 'skills', e.target.value)} />
+                      <TextArea rows={2} placeholder="弱点/短板" value={form.ability?.weakness || ''} onChange={e => setBibleField('ability', 'weakness', e.target.value)} />
+                      <TextArea rows={2} placeholder="使用限制/代价" value={form.ability?.limits || ''} onChange={e => setBibleField('ability', 'limits', e.target.value)} />
+                      <TextArea rows={2} placeholder="知识特长" value={form.ability?.knowledge || ''} onChange={e => setBibleField('ability', 'knowledge', e.target.value)} />
+                    </div>
+                  ),
+                },
+                {
+                  key: 'arc',
+                  label: '人物弧光',
+                  children: (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      <TextArea rows={2} placeholder="前期人设" value={form.arc?.early || ''} onChange={e => setBibleField('arc', 'early', e.target.value)} />
+                      <TextArea rows={2} placeholder="转变触发条件" value={form.arc?.turning_point || ''} onChange={e => setBibleField('arc', 'turning_point', e.target.value)} />
+                      <TextArea rows={2} placeholder="结局走向" value={form.arc?.ending || ''} onChange={e => setBibleField('arc', 'ending', e.target.value)} />
+                      <TextArea rows={2} placeholder="剧情雷点 / 容易 OOC 的桥段" value={form.arc?.risk_notes || ''} onChange={e => setBibleField('arc', 'risk_notes', e.target.value)} />
+                    </div>
+                  ),
+                },
+              ]}
+            />
+          </div>
+          <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <Text strong style={{ color: THEME.textPrimary }}>立绘 / 参考图</Text>
               <Space size={4}>
@@ -1094,6 +1814,18 @@ export default function CharactersPage() {
               </Space>
             </div>
             <div style={{ marginTop: 10, padding: 12, borderRadius: 10, border: `1px solid ${THEME.primaryAlpha(0.18)}`, background: THEME.primaryAlpha(0.04) }}>
+              <div style={{ marginBottom: 10 }}>
+                <Text strong style={{ color: THEME.textPrimary, display: 'block', marginBottom: 6 }}>立绘模式</Text>
+                <Segmented
+                  size="small"
+                  value={selectedPortraitPreset}
+                  options={PORTRAIT_PRESET_OPTIONS}
+                  onChange={(value) => {
+                    handleChangePortraitPreset(value as PortraitPreset)
+                  }}
+                  style={{ maxWidth: '100%', overflowX: 'auto' }}
+                />
+              </div>
               <Space style={{ justifyContent: 'space-between', width: '100%', marginBottom: 8 }} align="center">
                 <Space size={8}>
                   <Text strong style={{ color: THEME.primary }}>完整生图提示词</Text>
@@ -1102,7 +1834,7 @@ export default function CharactersPage() {
                   </Tooltip>
                 </Space>
                 <Space size={6} wrap>
-                  <Button size="small" onClick={handleRefreshPortraitPrompt}>
+                  <Button size="small" onClick={handleRefreshPortraitPrompt} loading={previewingPortraitPrompt}>
                     根据角色信息生成
                   </Button>
                   <Button
@@ -1120,10 +1852,17 @@ export default function CharactersPage() {
               </Space>
               <TextArea
                 value={portraitPromptDraft}
-                onChange={e => setPortraitPromptDraft(e.target.value)}
+                onChange={e => updatePortraitPromptDraft(e.target.value)}
                 rows={8}
                 placeholder="根据角色信息生成或手动编辑完整立绘提示词；AI 生成立绘会使用这里的内容。"
                 style={{ fontFamily: 'monospace', fontSize: 12 }}
+              />
+              <TextArea
+                value={portraitNegativePromptDraft}
+                onChange={e => updatePortraitNegativePromptDraft(e.target.value)}
+                rows={3}
+                placeholder="负向提示词。编辑已有角色时点击生成提示词会由后端按预设自动生成。"
+                style={{ fontFamily: 'monospace', fontSize: 12, marginTop: 8 }}
               />
             </div>
             <Input placeholder="输入立绘图片 URL（也可由 AI 生成自动回填）" value={form.portrait_url} onChange={e => setForm(f => ({ ...f, portrait_url: e.target.value }))} style={{ marginTop: 8 }} />
@@ -1150,6 +1889,452 @@ export default function CharactersPage() {
         </div>
       </Modal>
     </div>
+  )
+}
+
+function CharacterIdentityBoard({ character, theme }: { character: Character; theme: any }) {
+  const identity = character.identity || {}
+  const motivation = character.motivation || {}
+  const behavior = character.behavior || {}
+  const speech = character.speech || {}
+  const primaryMeta = [
+    character.age_range,
+    identity.gender,
+    identity.species,
+    identity.organization || identity.faction,
+    identity.position,
+  ].filter(Boolean)
+  return (
+    <div style={{ padding: 20, background: `linear-gradient(135deg, ${theme.bgCard}, ${theme.bgElevated})`, borderBottom: `1px solid ${theme.borderLight}` }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 18, alignItems: 'stretch' }}>
+        <div style={{ borderRadius: 10, overflow: 'hidden', background: theme.bgElevated, minHeight: 220, border: `1px solid ${theme.borderLight}` }}>
+          {character.portrait_url ? (
+            <img src={character.portrait_url} alt={character.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+          ) : (
+            <div style={{ height: '100%', minHeight: 220, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Avatar size={88} icon={<UserOutlined />} />
+            </div>
+          )}
+        </div>
+        <div style={{ minWidth: 0 }}>
+          <Space wrap size={6} style={{ marginBottom: 8 }}>
+            <Tag color="blue">{CHARACTER_ROLE_OPTIONS.find(o => o.value === character.role)?.label || character.role}</Tag>
+            {character.is_frozen ? <Tag color="gold" icon={<LockOutlined />}>冻结</Tag> : null}
+            {character.portrait_node_id ? <Tag color="green" icon={<DatabaseOutlined />}>资产中枢</Tag> : null}
+            {(character.world_usages || []).length ? <Tag color="purple">{(character.world_usages || []).length} 个世界</Tag> : null}
+          </Space>
+          <Title level={3} style={{ margin: 0, color: theme.textPrimary }}>{character.name}</Title>
+          <Text style={{ display: 'block', color: theme.textSecondary, marginTop: 6 }}>
+            {primaryMeta.length ? primaryMeta.join(' · ') : '未补充基础身份'}
+          </Text>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 16 }}>
+            <BibleMetric label="核心欲望" value={motivation.desire || motivation.core_desire} theme={theme} />
+            <BibleMetric label="深层恐惧" value={motivation.fear || motivation.deep_fear} theme={theme} />
+            <BibleMetric label="说话方式" value={speech.tone || speech.style || speech.catchphrase} theme={theme} />
+            <BibleMetric label="OOC 底线" value={behavior.never_do || behavior.boundary || behavior.ooc_boundary} theme={theme} />
+          </div>
+          <div style={{ marginTop: 14, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {(character.signature_items || []).slice(0, 5).map(item => <Tag key={item}>{item}</Tag>)}
+            {(character.tags || []).slice(0, 5).map(tag => <Tag key={tag} style={{ background: theme.bgElevated, color: theme.textSecondary }}>{tag}</Tag>)}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function BibleMetric({ label, value, theme }: { label: string; value: any; theme: any }) {
+  return (
+    <div style={{ padding: '10px 12px', borderRadius: 8, background: theme.bgPage, border: `1px solid ${theme.borderLight}`, minHeight: 62 }}>
+      <Text type="secondary" style={{ fontSize: 12 }}>{label}</Text>
+      <div style={{ color: value ? theme.textPrimary : theme.textSecondary, marginTop: 4, fontSize: 13, lineHeight: 1.45 }}>
+        {value || '未设置'}
+      </div>
+    </div>
+  )
+}
+
+function CharacterBibleQuickPanels({ character, theme }: { character: Character; theme: any }) {
+  const panels = [
+    {
+      title: '身份',
+      items: [
+        ['别名', character.identity?.alias],
+        ['组织', character.identity?.organization],
+        ['职位', character.identity?.position],
+        ['摘要', character.identity?.logline],
+      ],
+    },
+    {
+      title: '动机',
+      items: [
+        ['欲望', character.motivation?.desire],
+        ['恐惧', character.motivation?.fear],
+        ['目标', character.motivation?.long_goal || character.motivation?.short_goal],
+        ['执念', character.motivation?.obsession],
+      ],
+    },
+    {
+      title: '语言/OOC',
+      items: [
+        ['语气', character.speech?.tone],
+        ['口头禅', character.speech?.catchphrase],
+        ['底线', character.behavior?.boundary],
+        ['绝不做', character.behavior?.never_do],
+      ],
+    },
+    {
+      title: '能力/弧光',
+      items: [
+        ['技能', character.ability?.skills],
+        ['弱点', character.ability?.weakness],
+        ['转折', character.arc?.turning_point],
+        ['结局', character.arc?.ending],
+      ],
+    },
+  ]
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12, marginBottom: 18 }}>
+      {panels.map(panel => (
+        <div key={panel.title} style={{ padding: 14, borderRadius: 10, background: theme.bgCard, border: `1px solid ${theme.borderLight}` }}>
+          <Text strong style={{ color: theme.textPrimary }}>{panel.title}</Text>
+          <div style={{ display: 'grid', gap: 7, marginTop: 10 }}>
+            {panel.items.map(([label, value]) => (
+              <div key={label} style={{ display: 'grid', gridTemplateColumns: '56px 1fr', gap: 8 }}>
+                <Text type="secondary" style={{ fontSize: 12 }}>{label}</Text>
+                <Text style={{ color: value ? theme.textPrimary : theme.textSecondary, fontSize: 13 }} ellipsis={{ tooltip: String(value || '') }}>
+                  {value || '未设置'}
+                </Text>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function CharacterEnrichmentStrip({
+  character,
+  loading,
+  onFillMissing,
+  onRewrite,
+}: {
+  character: Character
+  loading: boolean
+  onFillMissing: () => void
+  onRewrite: () => void
+}) {
+  const { theme } = useTheme()
+  const completeness = getCharacterCompleteness(character)
+  const missing = getCharacterMissingLabels(character)
+  return (
+    <div style={{
+      marginBottom: 14,
+      padding: 14,
+      borderRadius: 10,
+      background: theme.bgCard,
+      border: `1px solid ${theme.borderLight}`,
+      display: 'grid',
+      gridTemplateColumns: '1fr auto',
+      gap: 12,
+      alignItems: 'center',
+    }}>
+      <Space direction="vertical" size={4}>
+        <Space wrap>
+          <Text strong style={{ color: theme.textPrimary }}>设定完整度 {completeness}%</Text>
+          {missing.slice(0, 5).map(item => <Tag key={item}>{item}</Tag>)}
+          {missing.length > 5 ? <Tag>+{missing.length - 5}</Tag> : null}
+        </Space>
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          老角色和小说抽取角色适合先补空字段；已定稿角色需要统一口径时再重写。
+        </Text>
+      </Space>
+      <Space wrap style={{ justifyContent: 'flex-end' }}>
+        <Button icon={<ThunderboltOutlined />} loading={loading} onClick={onFillMissing}>
+          AI 补空字段
+        </Button>
+        <Popconfirm
+          title="用 AI 统一重写角色设定？"
+          description="会保留核心身份，但可能覆盖已有字段。建议只在早期开发或设定混乱时使用。"
+          okText="重写"
+          cancelText="取消"
+          onConfirm={onRewrite}
+        >
+          <Button loading={loading}>统一重写</Button>
+        </Popconfirm>
+      </Space>
+    </div>
+  )
+}
+
+function getCharacterCompleteness(character: Character): number {
+  const checks = [
+    character.appearance,
+    character.costume_hint,
+    character.personality,
+    character.background,
+    character.age_range,
+    character.visual_consistency,
+    (character.signature_items || []).length,
+    (character.expressions || []).length,
+    (character.poses || []).length,
+    character.identity?.logline || character.identity?.position,
+    character.motivation?.desire,
+    character.motivation?.fear,
+    character.speech?.tone,
+    character.behavior?.never_do || character.behavior?.boundary,
+    character.ability?.skills,
+    character.arc?.turning_point || character.arc?.ending,
+  ]
+  const done = checks.filter(Boolean).length
+  return Math.round((done / checks.length) * 100)
+}
+
+function getCharacterMissingLabels(character: Character): string[] {
+  const pairs: [string, any][] = [
+    ['外观', character.appearance],
+    ['服装', character.costume_hint],
+    ['性格', character.personality],
+    ['背景', character.background],
+    ['年龄', character.age_range],
+    ['一致性', character.visual_consistency],
+    ['标志物', (character.signature_items || []).length],
+    ['表情', (character.expressions || []).length],
+    ['姿态', (character.poses || []).length],
+    ['一句话人设', character.identity?.logline],
+    ['欲望', character.motivation?.desire],
+    ['恐惧', character.motivation?.fear],
+    ['语气', character.speech?.tone],
+    ['OOC 底线', character.behavior?.never_do || character.behavior?.boundary],
+    ['能力', character.ability?.skills],
+    ['弧光', character.arc?.turning_point || character.arc?.ending],
+  ]
+  return pairs.filter(([, value]) => !value).map(([label]) => label)
+}
+
+// ---------------------------------------------------------------------------
+// 角色立绘版本 Tab
+// ---------------------------------------------------------------------------
+
+function CharacterPortraitVersionsTab({
+  versions,
+  loading,
+  settingMainId,
+  onSetMain,
+  onRefresh,
+}: {
+  versions: PortraitVersionItem[]
+  loading: boolean
+  settingMainId: string
+  onSetMain: (version: PortraitVersionItem) => void
+  onRefresh: () => void
+}) {
+  const { theme } = useTheme()
+  const columns = [
+    {
+      title: '预览',
+      dataIndex: 'image_url',
+      width: 92,
+      render: (url: string, record: PortraitVersionItem) => url ? (
+        <Image
+          src={url}
+          alt={`v${record.version_number}`}
+          width={64}
+          height={64}
+          style={{ objectFit: 'cover', borderRadius: 8, border: `1px solid ${theme.borderLight}` }}
+          fallback="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+        />
+      ) : <Text type="secondary">无图</Text>,
+    },
+    {
+      title: '版本',
+      dataIndex: 'version_number',
+      width: 110,
+      render: (_: number, record: PortraitVersionItem) => (
+        <Space direction="vertical" size={2}>
+          <Space>
+            <Text strong style={{ color: theme.textPrimary }}>v{record.version_number}</Text>
+            {record.is_main ? <Tag color="green" icon={<CheckOutlined />}>主立绘</Tag> : null}
+          </Space>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            {record.created_at ? new Date(record.created_at).toLocaleString('zh-CN', { hour12: false }) : '-'}
+          </Text>
+        </Space>
+      ),
+    },
+    {
+      title: '用途/模型',
+      dataIndex: 'preset',
+      render: (_: string, record: PortraitVersionItem) => (
+        <Space direction="vertical" size={4}>
+          <Space wrap size={4}>
+            {record.preset ? <Tag>{PORTRAIT_PRESET_OPTIONS.find(item => item.value === record.preset)?.label || record.preset}</Tag> : null}
+            {record.provider ? <Tag color="blue">{record.provider}</Tag> : null}
+          </Space>
+          <Text style={{ color: theme.textSecondary }} ellipsis={{ tooltip: record.model }}>
+            {record.model || '未记录模型'}
+          </Text>
+        </Space>
+      ),
+    },
+    {
+      title: '尺寸',
+      width: 90,
+      render: (_: any, record: PortraitVersionItem) => (
+        <Text type="secondary">
+          {record.width && record.height ? `${record.width}x${record.height}` : '-'}
+        </Text>
+      ),
+    },
+    {
+      title: '操作',
+      width: 130,
+      render: (_: any, record: PortraitVersionItem) => (
+        <Button
+          size="small"
+          disabled={record.is_main}
+          loading={settingMainId === record.id}
+          onClick={() => onSetMain(record)}
+        >
+          设为主立绘
+        </Button>
+      ),
+    },
+  ]
+  return (
+    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+      <Space style={{ justifyContent: 'space-between', width: '100%' }}>
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          每次生成都会保留一个 Asset Hub 版本；主立绘决定角色列表、详情页和后续参考图默认使用哪张。
+        </Text>
+        <Button size="small" icon={<ReloadOutlined />} onClick={onRefresh} loading={loading}>刷新</Button>
+      </Space>
+      {versions.length ? (
+        <Table
+          size="small"
+          rowKey="id"
+          columns={columns}
+          dataSource={versions}
+          loading={loading}
+          pagination={false}
+          expandable={{
+            expandedRowRender: (record: PortraitVersionItem) => (
+              <Space direction="vertical" size={10} style={{ width: '100%' }}>
+                {record.prompt ? <LogTextBlock title="Prompt" value={record.prompt} rows={5} /> : null}
+                {record.negative_prompt ? <LogTextBlock title="负面提示词" value={record.negative_prompt} rows={3} /> : null}
+                {Object.keys(record.params || {}).length ? (
+                  <LogTextBlock title="生成参数" value={JSON.stringify(record.params, null, 2)} rows={5} />
+                ) : null}
+              </Space>
+            ),
+          }}
+        />
+      ) : (
+        <Empty description={loading ? '加载中...' : '暂无立绘版本。生成或升级立绘后会出现在这里。'} />
+      )}
+    </Space>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// 角色跨世界使用 Tab
+// ---------------------------------------------------------------------------
+
+function CharacterWorldUsagesTab({
+  usages,
+  loading,
+  onAdd,
+  onEdit,
+  onDelete,
+  onRefresh,
+}: {
+  usages: CharacterWorldUsage[]
+  loading: boolean
+  onAdd: () => void
+  onEdit: (usage: CharacterWorldUsage) => void
+  onDelete: (usage: CharacterWorldUsage) => void
+  onRefresh: () => void
+}) {
+  const { theme } = useTheme()
+  const columns = [
+    {
+      title: '项目/世界',
+      dataIndex: 'project_title',
+      render: (_: string, record: CharacterWorldUsage) => (
+        <Space direction="vertical" size={2}>
+          <Text strong style={{ color: theme.textPrimary }}>{record.project_title || record.story_id}</Text>
+          <Space size={4} wrap>
+            {record.world_name ? <Tag color="purple">{record.world_name}</Tag> : null}
+            {record.project_type ? <Tag>{record.project_type}</Tag> : null}
+          </Space>
+        </Space>
+      ),
+    },
+    {
+      title: '局部身份',
+      dataIndex: 'local_identity',
+      render: (_: string, record: CharacterWorldUsage) => (
+        <Space direction="vertical" size={2}>
+          <Space size={4} wrap>
+            {record.usage_role ? <Tag color="blue">{record.usage_role}</Tag> : null}
+            {record.local_alias ? <Tag>{record.local_alias}</Tag> : null}
+            {record.local_faction ? <Tag color="geekblue">{record.local_faction}</Tag> : null}
+          </Space>
+          {record.local_identity ? (
+            <Text style={{ color: theme.textSecondary }}>{record.local_identity}</Text>
+          ) : (
+            <Text type="secondary">未设置局部身份</Text>
+          )}
+        </Space>
+      ),
+    },
+    {
+      title: '约束',
+      dataIndex: 'ooc_notes',
+      render: (_: string, record: CharacterWorldUsage) => (
+        <Space direction="vertical" size={4}>
+          {record.ooc_notes ? <Text style={{ color: theme.textPrimary }}>OOC：{record.ooc_notes.slice(0, 48)}{record.ooc_notes.length > 48 ? '...' : ''}</Text> : null}
+          {record.off_model_notes ? <Text style={{ color: theme.textPrimary }}>Off-Model：{record.off_model_notes.slice(0, 48)}{record.off_model_notes.length > 48 ? '...' : ''}</Text> : null}
+          {!record.ooc_notes && !record.off_model_notes ? <Text type="secondary">暂无约束</Text> : null}
+        </Space>
+      ),
+    },
+    {
+      title: '操作',
+      width: 150,
+      render: (_: any, record: CharacterWorldUsage) => (
+        <Space size={6}>
+          <Button size="small" onClick={() => onEdit(record)}>编辑</Button>
+          <Popconfirm title="移除此世界使用关系？" onConfirm={() => onDelete(record)} okText="移除" cancelText="取消">
+            <Button size="small" danger>移除</Button>
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ]
+
+  return (
+    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+      <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          角色本体可被多个项目/世界复用；这里记录每个世界里的局部身份、阵营、服装覆盖和 OOC/Off-Model 约束。
+        </Text>
+        <Space>
+          <Button size="small" icon={<ReloadOutlined />} onClick={onRefresh} loading={loading}>刷新</Button>
+          <Button size="small" type="primary" icon={<PlusOutlined />} onClick={onAdd}>绑定项目</Button>
+        </Space>
+      </Space>
+      <Table
+        size="small"
+        rowKey="id"
+        columns={columns}
+        dataSource={usages}
+        loading={loading}
+        pagination={false}
+        locale={{ emptyText: '此角色还没有绑定到项目/世界' }}
+      />
+    </Space>
   )
 }
 

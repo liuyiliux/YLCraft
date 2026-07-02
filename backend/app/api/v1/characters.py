@@ -72,6 +72,12 @@ class CharacterCreateRequest(BaseModel):
     visual_consistency: str = Field(default="", description="角色视觉一致性规则")
     background: str = Field(default="", description="背景故事")
     age_range: str = Field(default="", description="年龄范围，如 20-25岁")
+    identity: dict[str, Any] = Field(default={}, description="Character Bible: 基础身份档案")
+    motivation: dict[str, Any] = Field(default={}, description="Character Bible: 动机心理")
+    speech: dict[str, Any] = Field(default={}, description="Character Bible: 语言语态")
+    behavior: dict[str, Any] = Field(default={}, description="Character Bible: 行为/OOC 边界")
+    ability: dict[str, Any] = Field(default={}, description="Character Bible: 能力短板限制")
+    arc: dict[str, Any] = Field(default={}, description="Character Bible: 人物弧光")
     tags: list[str] = Field(default=[], description="自定义标签")
     portrait_url: str = Field(default="", description="立绘图片 URL")
     portrait_asset_id: str = Field(default="", description="关联素材资产 ID（立绘）")
@@ -91,6 +97,12 @@ class CharacterUpdateRequest(BaseModel):
     visual_consistency: str | None = None
     background: str | None = None
     age_range: str | None = None
+    identity: dict[str, Any] | None = None
+    motivation: dict[str, Any] | None = None
+    speech: dict[str, Any] | None = None
+    behavior: dict[str, Any] | None = None
+    ability: dict[str, Any] | None = None
+    arc: dict[str, Any] | None = None
     tags: list[str] | None = None
     portrait_url: str | None = None
     portrait_asset_id: str | None = None
@@ -103,6 +115,35 @@ class AddTagRequest(BaseModel):
 
 class CharacterLinkStoryRequest(BaseModel):
     story_id: str = Field(..., description="故事项目 ID")
+    world_id: str = Field(default="", description="世界/宇宙 ID，可为空时默认项目本身")
+    world_name: str = Field(default="", description="世界/宇宙名称")
+    usage_role: str = Field(default="", description="该世界中的角色职责，如 主角/NPC/反派/旁白")
+    local_alias: str = Field(default="", description="该世界中的别名/代号")
+    local_identity: str = Field(default="", description="该世界中的身份说明")
+    local_faction: str = Field(default="", description="阵营/组织/派系")
+    local_status: str = Field(default="active", description="active / cameo / archived 等")
+    local_costume: str = Field(default="", description="该世界中的服装覆盖")
+    local_prompt_tags: list[str] = Field(default=[], description="该世界中的局部 prompt 标签")
+    ooc_notes: str = Field(default="", description="该世界中的 OOC 约束")
+    off_model_notes: str = Field(default="", description="该世界中的 Off-Model 视觉约束")
+    bible_overrides: dict[str, Any] = Field(default={}, description="文字设定覆盖")
+    visual_overrides: dict[str, Any] = Field(default={}, description="视觉设定覆盖")
+
+
+class CharacterWorldUsageUpdateRequest(BaseModel):
+    world_id: str | None = None
+    world_name: str | None = None
+    usage_role: str | None = None
+    local_alias: str | None = None
+    local_identity: str | None = None
+    local_faction: str | None = None
+    local_status: str | None = None
+    local_costume: str | None = None
+    local_prompt_tags: list[str] | None = None
+    ooc_notes: str | None = None
+    off_model_notes: str | None = None
+    bible_overrides: dict[str, Any] | None = None
+    visual_overrides: dict[str, Any] | None = None
 
 
 # ---- 路由 ----
@@ -164,6 +205,12 @@ async def create_character(req: CharacterCreateRequest):
             visual_consistency=req.visual_consistency,
             background=req.background,
             age_range=req.age_range,
+            identity=req.identity,
+            motivation=req.motivation,
+            speech=req.speech,
+            behavior=req.behavior,
+            ability=req.ability,
+            arc=req.arc,
             tags=req.tags,
             portrait_url=req.portrait_url,
             portrait_asset_id=req.portrait_asset_id,
@@ -246,13 +293,69 @@ async def toggle_favorite(character_id: str):
 
 @router.post("/{character_id}/link-story", summary="关联到故事项目")
 async def link_story(character_id: str, req: CharacterLinkStoryRequest):
-    """将角色关联到指定的故事项目（增加引用计数）"""
+    """将全局角色关联到指定项目/世界，并保存该世界中的局部使用配置。"""
     async with get_async_session() as session:
         service = CharacterService(session)
         character = await service.get_by_id(character_id)
         if not character:
             raise HTTPException(status_code=404, detail="角色不存在")
-        await service.link_to_story(character_id, req.story_id)
+        link = await service.link_to_story(
+            character_id,
+            req.story_id,
+            world_id=req.world_id,
+            world_name=req.world_name,
+            usage_role=req.usage_role,
+            local_alias=req.local_alias,
+            local_identity=req.local_identity,
+            local_faction=req.local_faction,
+            local_status=req.local_status,
+            local_costume=req.local_costume,
+            local_prompt_tags=req.local_prompt_tags,
+            ooc_notes=req.ooc_notes,
+            off_model_notes=req.off_model_notes,
+            bible_overrides=req.bible_overrides,
+            visual_overrides=req.visual_overrides,
+        )
+        return {"success": True, "data": service.story_link_to_response(link)}
+
+
+@router.get("/{character_id}/world-usages", summary="列出角色在不同世界/项目中的使用")
+async def list_character_world_usages(character_id: str):
+    async with get_async_session() as session:
+        service = CharacterService(session)
+        character = await service.get_by_id(character_id)
+        if not character:
+            raise HTTPException(status_code=404, detail="角色不存在")
+        return {"success": True, "data": await service.list_world_usages(character_id)}
+
+
+@router.put("/{character_id}/world-usages/{usage_id}", summary="更新角色世界使用配置")
+async def update_character_world_usage(
+    character_id: str,
+    usage_id: str,
+    req: CharacterWorldUsageUpdateRequest,
+):
+    async with get_async_session() as session:
+        service = CharacterService(session)
+        character = await service.get_by_id(character_id)
+        if not character:
+            raise HTTPException(status_code=404, detail="角色不存在")
+        link = await service.update_world_usage(usage_id, character_id=character_id, **req.model_dump())
+        if not link:
+            raise HTTPException(status_code=404, detail="世界使用记录不存在")
+        return {"success": True, "data": service.story_link_to_response(link)}
+
+
+@router.delete("/{character_id}/world-usages/{usage_id}", summary="移除角色世界使用关系")
+async def delete_character_world_usage(character_id: str, usage_id: str):
+    async with get_async_session() as session:
+        service = CharacterService(session)
+        character = await service.get_by_id(character_id)
+        if not character:
+            raise HTTPException(status_code=404, detail="角色不存在")
+        deleted = await service.delete_world_usage(usage_id, character_id=character_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="世界使用记录不存在")
         return {"success": True}
 
 
@@ -264,7 +367,9 @@ async def get_character(character_id: str):
         character = await service.get_by_id(character_id)
         if not character:
             raise HTTPException(status_code=404, detail="角色不存在")
-        return {"success": True, "data": service.to_response(character)}
+        data = service.to_response(character)
+        data["world_usages"] = await service.list_world_usages(character_id)
+        return {"success": True, "data": data}
 
 
 @router.put("/{character_id}", summary="更新角色")
@@ -298,6 +403,12 @@ async def update_character(character_id: str, req: CharacterUpdateRequest):
             visual_consistency=req.visual_consistency,
             background=req.background,
             age_range=req.age_range,
+            identity=req.identity,
+            motivation=req.motivation,
+            speech=req.speech,
+            behavior=req.behavior,
+            ability=req.ability,
+            arc=req.arc,
             tags=req.tags,
             portrait_url=req.portrait_url,
             portrait_asset_id=req.portrait_asset_id,
@@ -322,12 +433,265 @@ async def delete_character(character_id: str):
 # ===========================================================================
 
 class PortraitGenerateRequest(BaseModel):
-    prompt: str = Field(..., description="提示词")
+    prompt: str = Field(default="", description="提示词")
     provider: Optional[str] = Field(None, description="指定生图后端（image backend name）")
     model: Optional[str] = Field(None, description="动态指定模型名（控制花费）")
     size: Optional[str] = Field("1024x1024", description="图片尺寸")
     n: Optional[int] = Field(1, description="生成数量（>1 时取首张）")
     negative_prompt: Optional[str] = Field(None, description="负向提示词")
+    preset: Optional[str] = Field("main_portrait", description="立绘预设")
+    visual_profile: dict[str, Any] | None = Field(default=None, description="视觉卡覆盖字段")
+    style_override: str = Field(default="", description="画风覆盖")
+    negative_override: str = Field(default="", description="负向约束覆盖")
+    set_as_main: bool = Field(default=True, description="是否设为角色主立绘")
+
+
+class PortraitPromptPreviewRequest(BaseModel):
+    preset: Optional[str] = Field("main_portrait", description="立绘预设")
+    visual_profile: dict[str, Any] | None = Field(default=None, description="视觉卡覆盖字段")
+    style_override: str = Field(default="", description="画风覆盖")
+    negative_override: str = Field(default="", description="负向约束覆盖")
+    language: str = Field(default="zh", description="提示词语言")
+
+
+class CharacterEnrichRequest(BaseModel):
+    mode: str = Field(default="fill_missing", description="fill_missing 只补空字段；rewrite 重写并统一设定")
+    context: str = Field(default="", description="额外上下文，如项目大纲、小说片段、角色关系")
+    apply: bool = Field(default=False, description="是否直接写回角色")
+    provider: Optional[str] = Field(None, description="指定 LLM 后端")
+    model: Optional[str] = Field(None, description="指定 LLM 模型")
+
+
+@router.post(
+    "/{character_id}/portrait/prompt-preview",
+    summary="预览角色立绘提示词",
+)
+async def preview_character_portrait_prompt(character_id: str, req: PortraitPromptPreviewRequest):
+    from app.db.models.character import Character
+    from app.services.character.portrait_prompt import build_portrait_prompt
+
+    async with get_async_session() as session:
+        character = await session.get(Character, character_id)
+        if not character:
+            raise HTTPException(status_code=404, detail="角色不存在")
+        try:
+            data = build_portrait_prompt(
+                character=character,
+                preset=req.preset,
+                visual_profile=req.visual_profile,
+                style_override=req.style_override,
+                negative_override=req.negative_override,
+                language=req.language,
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        return {"success": True, "data": data}
+
+
+@router.get(
+    "/{character_id}/portrait/versions",
+    summary="列出角色立绘版本",
+)
+async def list_character_portrait_versions(character_id: str):
+    from sqlalchemy import select
+
+    from app.db.models.asset_hub import AssetNode, AssetRepresentation, AssetVersion
+    from app.db.models.character import Character
+
+    async with get_async_session() as session:
+        character = await session.get(Character, character_id)
+        if not character:
+            raise HTTPException(status_code=404, detail="角色不存在")
+        if not character.portrait_node_id:
+            return {"success": True, "data": {"node_id": None, "versions": []}}
+
+        node = await session.get(AssetNode, str(character.portrait_node_id))
+        if not node:
+            return {"success": True, "data": {"node_id": str(character.portrait_node_id), "versions": []}}
+
+        result = await session.execute(
+            select(AssetVersion)
+            .where(AssetVersion.asset_node_id == str(node.id))
+            .order_by(AssetVersion.version_number.desc())
+        )
+        versions = list(result.scalars().all())
+        version_ids = [str(version.id) for version in versions]
+        reps_by_version: dict[str, AssetRepresentation] = {}
+        if version_ids:
+            rep_result = await session.execute(
+                select(AssetRepresentation).where(AssetRepresentation.asset_version_id.in_(version_ids))
+            )
+            for rep in rep_result.scalars().all():
+                version_id = str(rep.asset_version_id)
+                current = reps_by_version.get(version_id)
+                if current is None or (rep.file_size or 0) > (current.file_size or 0):
+                    reps_by_version[version_id] = rep
+
+        payload = []
+        for version in versions:
+            rep = reps_by_version.get(str(version.id))
+            rep_extra = dict(rep.extra_json or {}) if rep else {}
+            image_url = rep_extra.get("url") or (rep.file_path if rep else "") or ""
+            params = dict(version.params_json or {})
+            payload.append(
+                {
+                    "id": str(version.id),
+                    "version_number": version.version_number,
+                    "created_at": str(version.created_at) if version.created_at else None,
+                    "model": version.model_used or params.get("model") or "",
+                    "provider": params.get("provider") or "",
+                    "preset": params.get("preset") or rep_extra.get("preset") or "",
+                    "prompt": version.prompt_used or "",
+                    "negative_prompt": params.get("negative_prompt") or "",
+                    "image_url": image_url,
+                    "file_path": rep.file_path if rep else "",
+                    "representation_id": str(rep.id) if rep else None,
+                    "width": rep.width if rep else None,
+                    "height": rep.height if rep else None,
+                    "is_main": bool(rep_extra.get("is_main")) or bool(image_url and image_url == character.portrait_url),
+                    "params": params,
+                }
+            )
+        return {"success": True, "data": {"node_id": str(node.id), "versions": payload}}
+
+
+@router.post(
+    "/{character_id}/portrait/versions/{version_id}/set-main",
+    summary="设置角色主立绘版本",
+)
+async def set_character_main_portrait_version(character_id: str, version_id: str):
+    from sqlalchemy import select
+
+    from app.db.models.asset_hub import AssetNode, AssetRepresentation, AssetVersion
+    from app.db.models.character import Character
+
+    async with get_async_session() as session:
+        character = await session.get(Character, character_id)
+        if not character:
+            raise HTTPException(status_code=404, detail="角色不存在")
+        if not character.portrait_node_id:
+            raise HTTPException(status_code=400, detail="角色尚未绑定立绘资产节点")
+
+        version = await session.get(AssetVersion, version_id)
+        if not version or str(version.asset_node_id) != str(character.portrait_node_id):
+            raise HTTPException(status_code=404, detail="立绘版本不存在或不属于该角色")
+
+        rep_result = await session.execute(
+            select(AssetRepresentation)
+            .where(AssetRepresentation.asset_version_id == str(version.id))
+            .order_by(AssetRepresentation.file_size.desc())
+        )
+        selected_rep = rep_result.scalars().first()
+        if not selected_rep:
+            raise HTTPException(status_code=400, detail="该立绘版本没有可用图片")
+
+        versions_result = await session.execute(
+            select(AssetVersion).where(AssetVersion.asset_node_id == str(character.portrait_node_id))
+        )
+        all_version_ids = [str(item.id) for item in versions_result.scalars().all()]
+        if all_version_ids:
+            reps_result = await session.execute(
+                select(AssetRepresentation).where(AssetRepresentation.asset_version_id.in_(all_version_ids))
+            )
+            for rep in reps_result.scalars().all():
+                extra = dict(rep.extra_json or {})
+                extra["is_main"] = str(rep.asset_version_id) == str(version.id)
+                rep.extra_json = extra
+
+        params = dict(version.params_json or {})
+        params["set_as_main"] = True
+        version.params_json = params
+
+        selected_extra = dict(selected_rep.extra_json or {})
+        portrait_url = selected_extra.get("url") or selected_rep.file_path
+        character.portrait_url = portrait_url
+        character.updated_at = datetime.now()
+
+        node = await session.get(AssetNode, str(character.portrait_node_id))
+        if node:
+            node.thumbnail_url = portrait_url
+            node.updated_at = datetime.now()
+
+        await session.flush()
+        await session.refresh(character)
+
+        return {
+            "success": True,
+            "data": {
+                "version_id": str(version.id),
+                "version_number": version.version_number,
+                "portrait_url": character.portrait_url,
+                "character": CharacterService(session).to_response(character),
+            },
+        }
+
+
+@router.post(
+    "/{character_id}/enrich",
+    summary="AI 补全角色信息",
+)
+async def enrich_character(character_id: str, req: CharacterEnrichRequest):
+    from app.db.models.character import Character
+    from app.services.ai import get_ai_service
+    from app.services.ai.types import LLMMessage
+    from app.services.character.enrichment import (
+        build_character_enrichment_prompt,
+        character_response_for_enrichment,
+        merge_character_enrichment,
+        parse_character_enrichment_response,
+    )
+
+    mode = req.mode if req.mode in {"fill_missing", "rewrite"} else "fill_missing"
+    try:
+        manager = get_ai_service()
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"AIService 未初始化: {e}")
+    if not manager.is_loaded():
+        raise HTTPException(status_code=503, detail="AIService 未初始化")
+
+    async with get_async_session() as session:
+        character = await session.get(Character, character_id)
+        if not character:
+            raise HTTPException(status_code=404, detail="角色不存在")
+        current = character_response_for_enrichment(character)
+        prompt = build_character_enrichment_prompt(current, context=req.context, mode=mode)
+        result = await manager.chat(
+            [
+                LLMMessage(role="system", content="你是严格输出 JSON 的角色设定师。"),
+                LLMMessage(role="user", content=prompt),
+            ],
+            backend_name=req.provider,
+            model=req.model,
+            temperature=0.4,
+        )
+        if not result.success:
+            raise HTTPException(status_code=500, detail=f"AI 补全失败: {result.error or 'unknown error'}")
+        try:
+            proposal = parse_character_enrichment_response(result.content)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"AI 返回解析失败: {e}")
+
+        merged, applied_fields = merge_character_enrichment(current, proposal, mode=mode)
+        updated = None
+        if req.apply and applied_fields:
+            service = CharacterService(session)
+            update_payload = {field: merged[field] for field in applied_fields}
+            updated_character = await service.update(character_id, **update_payload)
+            await session.flush()
+            updated = service.to_response(updated_character) if updated_character else None
+
+        return {
+            "success": True,
+            "data": {
+                "mode": mode,
+                "proposal": proposal,
+                "merged": merged,
+                "applied_fields": applied_fields if req.apply else [],
+                "character": updated,
+                "provider": result.provider,
+                "model": result.model,
+            },
+        }
 
 
 @router.post(
@@ -348,6 +712,7 @@ async def generate_character_portrait(character_id: str, req: PortraitGenerateRe
     from app.services.ai.types import ImageGenerationRequest
     from app.services.asset_hub import AssetHubFacade
     from app.db.models.character import Character
+    from app.services.character.portrait_prompt import build_portrait_prompt
 
     manager = get_ai_service()
     if not manager.is_loaded():
@@ -359,10 +724,24 @@ async def generate_character_portrait(character_id: str, req: PortraitGenerateRe
         if not character:
             raise HTTPException(status_code=404, detail="角色不存在")
 
+        try:
+            prompt_bundle = build_portrait_prompt(
+                character=character,
+                preset=req.preset,
+                visual_profile=req.visual_profile,
+                style_override=req.style_override,
+                negative_override=req.negative_override,
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+        prompt = (req.prompt or "").strip() or prompt_bundle["prompt"]
+        negative_prompt = (req.negative_prompt or "").strip() or prompt_bundle["negative_prompt"]
+
         # 2. 生图
         img_req = ImageGenerationRequest(
-            prompt=req.prompt,
-            negative_prompt=req.negative_prompt or "",
+            prompt=prompt,
+            negative_prompt=negative_prompt,
             size=req.size or "1024x1024",
             n=req.n or 1,
             provider=req.provider or "",
@@ -383,15 +762,16 @@ async def generate_character_portrait(character_id: str, req: PortraitGenerateRe
                     status="failed",
                     provider=req.provider or "",
                     model=req.model or "",
-                    prompt=req.prompt,
+                    prompt=prompt,
                     request_payload={
                         "character_id": character.id,
                         "character_name": character.name,
                         "size": req.size,
                         "n": req.n,
-                        "negative_prompt": req.negative_prompt,
+                        "negative_prompt": negative_prompt,
                         "provider": req.provider,
                         "model": req.model,
+                        "preset": prompt_bundle["preset"],
                     },
                     raw_response=str(e),
                     validation_error=type(e).__name__,
@@ -412,12 +792,13 @@ async def generate_character_portrait(character_id: str, req: PortraitGenerateRe
                     status="failed",
                     provider=result.provider or req.provider or "",
                     model=result.model or req.model or "",
-                    prompt=req.prompt,
+                    prompt=prompt,
                     request_payload={
                         "character_id": character.id,
                         "character_name": character.name,
                         "size": req.size,
                         "n": req.n,
+                        "preset": prompt_bundle["preset"],
                     },
                     raw_response=result.error or "",
                     validation_error="provider_returned_failure",
@@ -447,19 +828,32 @@ async def generate_character_portrait(character_id: str, req: PortraitGenerateRe
                 character=character,
                 portrait_url=url,
                 local_path=local_path,
-                prompt=req.prompt,
+                prompt=prompt,
                 provider=result.provider or req.provider or "",
                 model=result.model or req.model or "",
-                negative_prompt=req.negative_prompt or "",
+                negative_prompt=negative_prompt,
                 size=req.size or "",
                 seed=result.seed,
-                generation_params={"n": req.n},
+                generation_params={
+                    "n": req.n,
+                    "preset": prompt_bundle["preset"],
+                    "set_as_main": req.set_as_main,
+                    "prompt_template_version": prompt_bundle["prompt_template_version"],
+                    "visual_profile_snapshot": prompt_bundle["visual_profile_snapshot"],
+                },
+                lineage={
+                    "character_id": character.id,
+                    "character_name": character.name,
+                    "portrait_preset": prompt_bundle["preset"],
+                },
+                tags=[prompt_bundle["preset"]],
             )
 
             # 4. 更新 Character
-            character.portrait_url = url
-            character.portrait_node_id = asset_hub_result.node_id
-            character.updated_at = datetime.now()
+            if req.set_as_main:
+                character.portrait_url = url
+                character.portrait_node_id = asset_hub_result.node_id
+                character.updated_at = datetime.now()
             await session.flush()
             await session.refresh(character)
 
@@ -473,13 +867,14 @@ async def generate_character_portrait(character_id: str, req: PortraitGenerateRe
                     status="success",
                     provider=result.provider or req.provider or "",
                     model=result.model or req.model or "",
-                    prompt=req.prompt,
+                    prompt=prompt,
                     request_payload={
                         "character_id": character.id,
                         "character_name": character.name,
                         "size": req.size,
                         "n": req.n,
-                        "negative_prompt": req.negative_prompt,
+                        "negative_prompt": negative_prompt,
+                        "preset": prompt_bundle["preset"],
                     },
                     raw_response=str(url),
                     normalized={
@@ -508,8 +903,8 @@ async def generate_character_portrait(character_id: str, req: PortraitGenerateRe
                     status="failed",
                     provider=result.provider or req.provider or "",
                     model=result.model or req.model or "",
-                    prompt=req.prompt,
-                    request_payload={"character_id": character.id},
+                    prompt=prompt,
+                    request_payload={"character_id": character.id, "preset": prompt_bundle["preset"]},
                     raw_response=str(e),
                     validation_error="asset_hub_sync_failed",
                 )

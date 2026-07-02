@@ -13,6 +13,7 @@ from app.db.models.creative_project import (
     ProjectContent,
     ProjectGenerationLog,
 )
+from app.db.models.character import Character, CharacterStoryLink
 from app.services.ai.types import LLMGenerationResult
 from app.services.creative_project.service import CreativeProjectService, loads_json
 
@@ -302,6 +303,8 @@ class TruncatedJsonNovelBodyAIService(FakeAIService):
 @pytest.fixture
 def session():
     engine = create_engine("sqlite:///:memory:")
+    Character.__table__.create(engine)
+    CharacterStoryLink.__table__.create(engine)
     CreativeProject.__table__.create(engine)
     ProjectContent.__table__.create(engine)
     ProjectAssetLink.__table__.create(engine)
@@ -448,6 +451,87 @@ async def test_generate_outline_repairs_malformed_json_locally(session: Session)
     assert len(logs) == 1
     assert logs[0].status == "success_locally_repaired"
     assert logs[0].validation_error == ""
+
+
+def test_story_visual_context_uses_global_character_and_world_usage_overrides(session: Session):
+    service = CreativeProjectService(session, ai_service=FakeAIService())
+    project = service.create_project(title="霓虹测试", idea="cyber drama")
+    character = Character(
+        name="林昭",
+        role="protagonist",
+        appearance="黑色短发，凤眼",
+        costume_hint="白衬衫",
+        signature_items=json.dumps(["银色吊坠"], ensure_ascii=False),
+        expressions=json.dumps(["冷静"], ensure_ascii=False),
+        poses=json.dumps(["抱臂"], ensure_ascii=False),
+        visual_consistency="吊坠不能丢",
+        identity_json=json.dumps({"organization": "灰塔", "position": "情报商"}, ensure_ascii=False),
+        behavior_json=json.dumps({"never_do": "不会无理由背叛交易"}, ensure_ascii=False),
+    )
+    session.add(character)
+    session.flush()
+    session.add(
+        CharacterStoryLink(
+            character_id=character.id,
+            story_id=project.id,
+            world_name="霓虹城",
+            usage_role="反派盟友",
+            local_identity="地下情报商",
+            local_faction="灰塔",
+            local_costume="黑色长风衣",
+            local_prompt_tags=json.dumps(["赛博雨夜"], ensure_ascii=False),
+            ooc_notes="不会主动暴露客户",
+            off_model_notes="银色吊坠必须出现",
+        )
+    )
+    session.commit()
+    outline = {"characters": [{"name": "林昭", "role": "主角"}], "image_style_prompt": "冷色漫画"}
+
+    profiles = service._project_character_production_profiles(project.id, outline)
+    context = service._story_visual_context(outline, character_profiles=profiles)
+
+    assert "地下情报商" in context
+    assert "黑色长风衣" in context
+    assert "不会主动暴露客户" in context
+    assert "银色吊坠必须出现" in context
+
+
+def test_enhance_storyboard_prompt_uses_world_usage_profile(session: Session):
+    service = CreativeProjectService(session, ai_service=FakeAIService())
+    data = {
+        "panels": [
+            {
+                "panel_number": 1,
+                "characters": ["林昭"],
+                "action": "递出情报",
+                "emotion": "克制",
+                "image_prompt": "递出纸条",
+            }
+        ]
+    }
+    outline = {"characters": [{"name": "林昭", "appearance": "旧外貌"}], "image_style_prompt": "冷色漫画"}
+    profiles = [
+        {
+            "name": "林昭",
+            "local_identity": "地下情报商",
+            "usage_role": "反派盟友",
+            "age_range": "28岁",
+            "appearance": "黑色短发，凤眼",
+            "costume": "黑色长风衣",
+            "visual_tags": "赛博雨夜",
+            "signature_items": "银色吊坠",
+            "visual_consistency": "银色吊坠必须出现",
+            "ooc_rules": "不会主动暴露客户",
+        }
+    ]
+
+    service._enhance_storyboard_image_prompts(data, outline, character_profiles=profiles)
+
+    prompt = data["panels"][0]["image_prompt"]
+    assert "地下情报商" in prompt
+    assert "黑色长风衣" in prompt
+    assert "银色吊坠必须出现" in prompt
+    assert "不会主动暴露客户" in data["panels"][0]["negative_prompt"]
 
 
 @pytest.mark.asyncio

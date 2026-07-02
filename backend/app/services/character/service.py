@@ -5,12 +5,13 @@ YLCraft — 角色服务层
 from __future__ import annotations
 
 import json
-from typing import Optional
+from typing import Any, Optional
 
 from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.character import Character, CharacterStoryLink, CharacterRole
+from app.db.models.creative_project import CreativeProject
 
 
 class CharacterService:
@@ -58,6 +59,9 @@ class CharacterService:
         for field in ["source_types", "tags", "reference_asset_ids", "signature_items", "expressions", "poses"]:
             if field in kwargs and kwargs[field] is not None:
                 kwargs[field] = json.dumps(kwargs[field], ensure_ascii=False)
+        for api_field, model_field in _BIBLE_FIELD_MAP.items():
+            if api_field in kwargs and kwargs[api_field] is not None:
+                kwargs[model_field] = json.dumps(kwargs.pop(api_field), ensure_ascii=False)
         character = Character(**kwargs)
         self.session.add(character)
         await self.session.flush()
@@ -72,6 +76,9 @@ class CharacterService:
         for field in ["source_types", "tags", "reference_asset_ids", "signature_items", "expressions", "poses"]:
             if field in kwargs and kwargs[field] is not None:
                 kwargs[field] = json.dumps(kwargs[field], ensure_ascii=False)
+        for api_field, model_field in _BIBLE_FIELD_MAP.items():
+            if api_field in kwargs and kwargs[api_field] is not None:
+                kwargs[model_field] = json.dumps(kwargs.pop(api_field), ensure_ascii=False)
         for key, value in kwargs.items():
             if value is not None and hasattr(character, key):
                 setattr(character, key, value)
@@ -122,15 +129,121 @@ class CharacterService:
                 all_tags.add(t)
         return sorted(all_tags)
 
-    async def link_to_story(self, character_id: str, story_id: str):
-        link = CharacterStoryLink(character_id=character_id, story_id=story_id)
-        self.session.add(link)
+    async def list_world_usages(self, character_id: str) -> list[dict[str, Any]]:
+        result = await self.session.exec(
+            select(CharacterStoryLink).where(CharacterStoryLink.character_id == character_id)
+        )
+        links = result.all()
+        project_ids = [link.story_id for link in links if link.story_id]
+        projects_by_id: dict[str, CreativeProject] = {}
+        if project_ids:
+            project_result = await self.session.exec(
+                select(CreativeProject).where(CreativeProject.id.in_(project_ids))
+            )
+            projects_by_id = {project.id: project for project in project_result.all()}
+        return [self.story_link_to_response(link, projects_by_id.get(link.story_id)) for link in links]
+
+    async def link_to_story(
+        self,
+        character_id: str,
+        story_id: str,
+        *,
+        world_id: str = "",
+        world_name: str = "",
+        usage_role: str = "",
+        local_alias: str = "",
+        local_identity: str = "",
+        local_faction: str = "",
+        local_status: str = "active",
+        local_costume: str = "",
+        local_prompt_tags: list[str] | None = None,
+        ooc_notes: str = "",
+        off_model_notes: str = "",
+        bible_overrides: dict[str, Any] | None = None,
+        visual_overrides: dict[str, Any] | None = None,
+    ) -> CharacterStoryLink:
+        result = await self.session.exec(
+            select(CharacterStoryLink).where(
+                CharacterStoryLink.character_id == character_id,
+                CharacterStoryLink.story_id == story_id,
+                CharacterStoryLink.world_id == (world_id or ""),
+            )
+        )
+        link = result.first()
+        is_new = link is None
+        if link is None:
+            link = CharacterStoryLink(character_id=character_id, story_id=story_id, world_id=world_id or "")
+            self.session.add(link)
+
+        link.world_name = world_name or link.world_name or ""
+        link.usage_role = usage_role or link.usage_role or ""
+        link.local_alias = local_alias or link.local_alias or ""
+        link.local_identity = local_identity or link.local_identity or ""
+        link.local_faction = local_faction or link.local_faction or ""
+        link.local_status = local_status or link.local_status or "active"
+        link.local_costume = local_costume or link.local_costume or ""
+        if local_prompt_tags is not None:
+            link.local_prompt_tags = json.dumps(local_prompt_tags, ensure_ascii=False)
+        if ooc_notes:
+            link.ooc_notes = ooc_notes
+        if off_model_notes:
+            link.off_model_notes = off_model_notes
+        if bible_overrides is not None:
+            link.bible_overrides_json = json.dumps(bible_overrides, ensure_ascii=False)
+        if visual_overrides is not None:
+            link.visual_overrides_json = json.dumps(visual_overrides, ensure_ascii=False)
+        link.updated_at = datetime.now()
+
         character = await self.get_by_id(character_id)
-        if character:
+        if character and is_new:
             character.use_count = (character.use_count or 0) + 1
-            from datetime import datetime
             character.last_used_at = datetime.now()
         await self.session.flush()
+        await self.session.refresh(link)
+        return link
+
+    async def update_world_usage(
+        self,
+        link_id: str,
+        *,
+        character_id: str | None = None,
+        **kwargs,
+    ) -> Optional[CharacterStoryLink]:
+        query = select(CharacterStoryLink).where(CharacterStoryLink.id == link_id)
+        if character_id:
+            query = query.where(CharacterStoryLink.character_id == character_id)
+        result = await self.session.exec(query)
+        link = result.first()
+        if not link:
+            return None
+        json_fields = {
+            "local_prompt_tags": "local_prompt_tags",
+            "bible_overrides": "bible_overrides_json",
+            "visual_overrides": "visual_overrides_json",
+        }
+        for key, value in kwargs.items():
+            if value is None:
+                continue
+            if key in json_fields:
+                setattr(link, json_fields[key], json.dumps(value, ensure_ascii=False))
+            elif hasattr(link, key):
+                setattr(link, key, value)
+        link.updated_at = datetime.now()
+        await self.session.flush()
+        await self.session.refresh(link)
+        return link
+
+    async def delete_world_usage(self, link_id: str, *, character_id: str | None = None) -> bool:
+        query = select(CharacterStoryLink).where(CharacterStoryLink.id == link_id)
+        if character_id:
+            query = query.where(CharacterStoryLink.character_id == character_id)
+        result = await self.session.exec(query)
+        link = result.first()
+        if not link:
+            return False
+        await self.session.delete(link)
+        await self.session.flush()
+        return True
 
     def to_response(self, character: Character) -> dict:
         tags = json.loads(character.tags) if character.tags else []
@@ -171,6 +284,12 @@ class CharacterService:
             "visual_consistency": character.visual_consistency or "",
             "background": character.background or "",
             "age_range": character.age_range or "",
+            "identity": _loads_json(getattr(character, "identity_json", "{}"), {}),
+            "motivation": _loads_json(getattr(character, "motivation_json", "{}"), {}),
+            "speech": _loads_json(getattr(character, "speech_json", "{}"), {}),
+            "behavior": _loads_json(getattr(character, "behavior_json", "{}"), {}),
+            "ability": _loads_json(getattr(character, "ability_json", "{}"), {}),
+            "arc": _loads_json(getattr(character, "arc_json", "{}"), {}),
             "tags": tags,
             "portrait_url": character.portrait_url or "",
             "portrait_asset_id": character.portrait_asset_id or "",
@@ -184,5 +303,51 @@ class CharacterService:
             "updated_at": str(character.updated_at) if character.updated_at else None,
         }
 
+    def story_link_to_response(
+        self,
+        link: CharacterStoryLink,
+        project: CreativeProject | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "id": link.id,
+            "character_id": link.character_id,
+            "story_id": link.story_id,
+            "project_id": link.story_id,
+            "project_title": project.title if project else "",
+            "project_type": project.project_type if project else "",
+            "world_id": link.world_id or "",
+            "world_name": link.world_name or (project.title if project else ""),
+            "usage_role": link.usage_role or "",
+            "local_alias": link.local_alias or "",
+            "local_identity": link.local_identity or "",
+            "local_faction": link.local_faction or "",
+            "local_status": link.local_status or "active",
+            "local_costume": link.local_costume or "",
+            "local_prompt_tags": _loads_json(link.local_prompt_tags, []),
+            "ooc_notes": link.ooc_notes or "",
+            "off_model_notes": link.off_model_notes or "",
+            "bible_overrides": _loads_json(link.bible_overrides_json, {}),
+            "visual_overrides": _loads_json(link.visual_overrides_json, {}),
+            "linked_at": str(link.linked_at) if link.linked_at else None,
+            "updated_at": str(link.updated_at) if link.updated_at else None,
+        }
+
 
 from datetime import datetime
+
+
+_BIBLE_FIELD_MAP = {
+    "identity": "identity_json",
+    "motivation": "motivation_json",
+    "speech": "speech_json",
+    "behavior": "behavior_json",
+    "ability": "ability_json",
+    "arc": "arc_json",
+}
+
+
+def _loads_json(value: str, fallback: Any) -> Any:
+    try:
+        return json.loads(value) if value else fallback
+    except Exception:
+        return fallback

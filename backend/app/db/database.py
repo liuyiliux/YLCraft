@@ -85,6 +85,32 @@ async def init_db():
                 ALTER TABLE platform_templates
                 ADD COLUMN IF NOT EXISTS system_template TEXT NOT NULL DEFAULT '';
             """))
+            await conn.execute(text("""
+                ALTER TABLE character_story_links
+                ADD COLUMN IF NOT EXISTS world_id TEXT NOT NULL DEFAULT '',
+                ADD COLUMN IF NOT EXISTS world_name TEXT NOT NULL DEFAULT '',
+                ADD COLUMN IF NOT EXISTS usage_role TEXT NOT NULL DEFAULT '',
+                ADD COLUMN IF NOT EXISTS local_alias TEXT NOT NULL DEFAULT '',
+                ADD COLUMN IF NOT EXISTS local_identity TEXT NOT NULL DEFAULT '',
+                ADD COLUMN IF NOT EXISTS local_faction TEXT NOT NULL DEFAULT '',
+                ADD COLUMN IF NOT EXISTS local_status TEXT NOT NULL DEFAULT 'active',
+                ADD COLUMN IF NOT EXISTS local_costume TEXT NOT NULL DEFAULT '',
+                ADD COLUMN IF NOT EXISTS local_prompt_tags TEXT NOT NULL DEFAULT '[]',
+                ADD COLUMN IF NOT EXISTS ooc_notes TEXT NOT NULL DEFAULT '',
+                ADD COLUMN IF NOT EXISTS off_model_notes TEXT NOT NULL DEFAULT '',
+                ADD COLUMN IF NOT EXISTS bible_overrides_json TEXT NOT NULL DEFAULT '{}',
+                ADD COLUMN IF NOT EXISTS visual_overrides_json TEXT NOT NULL DEFAULT '{}',
+                ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT NOW();
+            """))
+            await conn.execute(text("""
+                ALTER TABLE characters
+                ADD COLUMN IF NOT EXISTS identity_json TEXT NOT NULL DEFAULT '{}',
+                ADD COLUMN IF NOT EXISTS motivation_json TEXT NOT NULL DEFAULT '{}',
+                ADD COLUMN IF NOT EXISTS speech_json TEXT NOT NULL DEFAULT '{}',
+                ADD COLUMN IF NOT EXISTS behavior_json TEXT NOT NULL DEFAULT '{}',
+                ADD COLUMN IF NOT EXISTS ability_json TEXT NOT NULL DEFAULT '{}',
+                ADD COLUMN IF NOT EXISTS arc_json TEXT NOT NULL DEFAULT '{}';
+            """))
 
 
 # 平台/认证/状态/获取方式枚举需要与 SQLModel 同步
