@@ -24,6 +24,7 @@ import {
 import {
   BranchesOutlined,
   DeleteOutlined,
+  EditOutlined,
   FileTextOutlined,
   FolderOpenOutlined,
   HistoryOutlined,
@@ -83,6 +84,7 @@ const { TextArea } = Input
 type LoadingAction =
   | 'projects'
   | 'create'
+  | 'rename'
   | 'outline'
   | 'chapter_plan'
   | 'chapter_outline'
@@ -448,6 +450,8 @@ export default function StoryPage() {
   const [selectedLlm, setSelectedLlm] = useState<string>('')
   const [selectedModel, setSelectedModel] = useState<string>('')
   const [createOpen, setCreateOpen] = useState(false)
+  const [renameOpen, setRenameOpen] = useState(false)
+  const [renameForm] = Form.useForm()
   const [loadingAction, setLoadingAction] = useState<LoadingAction>(null)
   const [savingContentId, setSavingContentId] = useState<string | null>(null)
   const [loadingChapterAction, setLoadingChapterAction] = useState<{ action: ChapterAction; chapterNumber: number | null }>({
@@ -1113,6 +1117,43 @@ export default function StoryPage() {
       await loadProjects(response.data.id)
     } catch (error: any) {
       message.error(error?.message || '创建失败')
+    } finally {
+      setLoadingAction(null)
+    }
+  }
+
+  // 打开重命名弹窗，并把当前项目名预填到表单
+  function openRenameModal() {
+    if (!selectedProject) {
+      message.warning('请先选择项目')
+      return
+    }
+    renameForm.setFieldsValue({ title: selectedProject.title || '' })
+    setRenameOpen(true)
+  }
+
+  // 提交重命名：调用 PATCH 接口更新项目名，并刷新当前项目
+  async function handleRename(values: { title: string }) {
+    if (!selectedProject) return
+    const nextTitle = (values.title || '').trim()
+    if (!nextTitle) {
+      message.error('项目名不能为空')
+      return
+    }
+    if (nextTitle === selectedProject.title) {
+      setRenameOpen(false)
+      return
+    }
+    setLoadingAction('rename')
+    try {
+      const response = (await updateCreativeProject(selectedProject.id, { title: nextTitle })) as CreativeProjectResponse
+      setSelectedProject(response.data)
+      // 同步刷新项目列表中的标题
+      setProjects((prev) => prev.map((p) => (p.id === response.data.id ? response.data : p)))
+      message.success('项目已重命名')
+      setRenameOpen(false)
+    } catch (error: any) {
+      message.error(error?.message || '重命名失败')
     } finally {
       setLoadingAction(null)
     }
@@ -2058,6 +2099,15 @@ export default function StoryPage() {
                         <Title level={3} style={{ margin: 0 }}>
                           {selectedProject.title}
                         </Title>
+                        <Button
+                          size="small"
+                          type="text"
+                          icon={<EditOutlined />}
+                          onClick={openRenameModal}
+                          loading={loadingAction === 'rename'}
+                        >
+                          重命名
+                        </Button>
                         <Tag color="processing">{projectTypeLabel(selectedProject.project_type)}</Tag>
                         <Tag>{stageLabels[selectedProject.current_stage] || selectedProject.current_stage}</Tag>
                       </Space>
@@ -2229,6 +2279,7 @@ export default function StoryPage() {
                         onSendImagePrompt={handleInlineGenerateImage}
                         inlineImages={inlineImages}
                         inlineImageLoadingKey={inlineImageLoadingKey}
+                        projectTitle={selectedProject?.title || ''}
                       />
                     ),
                   },
@@ -2308,6 +2359,31 @@ export default function StoryPage() {
             rules={[{ required: true, message: '请输入创意' }]}
           >
             <TextArea rows={5} placeholder="例如：短剧但是不降智" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="重命名项目"
+        open={renameOpen}
+        onCancel={() => setRenameOpen(false)}
+        onOk={() => renameForm.submit()}
+        confirmLoading={loadingAction === 'rename'}
+        destroyOnClose
+        okText="保存"
+        cancelText="取消"
+      >
+        <Form
+          form={renameForm}
+          layout="vertical"
+          onFinish={handleRename}
+        >
+          <Form.Item
+            label="项目名称"
+            name="title"
+            rules={[{ required: true, message: '请输入项目名称' }, { max: 80, message: '名称最多 80 字' }]}
+          >
+            <Input placeholder="请输入新的项目名称" maxLength={80} allowClear />
           </Form.Item>
         </Form>
       </Modal>
@@ -4344,6 +4420,7 @@ function ScriptTab({
   onSendImagePrompt,
   inlineImages,
   inlineImageLoadingKey,
+  projectTitle = '',
 }: {
   novelBodies: ProjectContent[]
   comicPages: ProjectContent[]
@@ -4351,6 +4428,7 @@ function ScriptTab({
   onSendImagePrompt: (prompt: string, context?: ImagePromptContext) => void
   inlineImages: Record<string, InlineGeneratedImage>
   inlineImageLoadingKey: string | null
+  projectTitle?: string
 }) {
   const sortedNovelBodies = useMemo(() => sortProjectContentsForReading(novelBodies), [novelBodies])
   const sortedComicPages = useMemo(() => sortProjectContentsForReading(comicPages), [comicPages])
@@ -4368,7 +4446,9 @@ function ScriptTab({
   const plannedChapterCount = Number(chapterPlan?.chapter_count || 0)
   const actualPlanChapterCount = Array.isArray(chapterPlan?.chapters) ? chapterPlan.chapters.length : 0
   const allNovelMarkdown = sortedNovelBodies.map(buildNovelChapterMarkdown).join('\n\n')
-  const exportTitle = sortedNovelBodies[0]?.title ? 'creative-project-novel' : 'novel'
+  // 文件名优先使用当前项目名（从父组件传下来），去除文件名非法字符
+  const safeProjectTitle = (projectTitle || '').trim().replace(/[\\/:*?"<>|]/g, '_')
+  const exportTitle = safeProjectTitle || (sortedNovelBodies[0]?.title ? 'creative-project-novel' : 'novel')
 
   useEffect(() => {
     if (!sortedNovelBodies.length) {
@@ -4431,7 +4511,7 @@ function ScriptTab({
                     </div>
                     <Button
                       block
-                      onClick={() => downloadTextFile(`${exportTitle}-full.md`, allNovelMarkdown)}
+                      onClick={() => downloadTextFile(`${exportTitle}.md`, allNovelMarkdown)}
                     >
                       导出全文
                     </Button>
