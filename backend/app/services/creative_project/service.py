@@ -33,6 +33,7 @@ from app.services.creative_project.schemas import (
     ChapterPlanSchema,
     ComicPagesSchema,
     NovelBodySchema,
+    ReferenceAssetMatchSchema,
     ShortDramaScriptSchema,
     StoryOutlineSchema,
     StoryboardSchema,
@@ -64,6 +65,22 @@ def _list_join(value: Any) -> str:
     if isinstance(value, list):
         return "、".join(str(item) for item in value if str(item or "").strip())
     return str(value)
+
+
+def _dedupe_keep_order(values: Any) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    if values is None:
+        return result
+    if isinstance(values, str):
+        values = [values]
+    for value in values if isinstance(values, list) else list(values):
+        text = str(value or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+    return result
 
 
 class CreativeProjectService:
@@ -435,7 +452,8 @@ class CreativeProjectService:
             raise ValueError("请先生成故事大纲和章节规划")
 
         selected_chapter = self._chapter_plan_item(chapter_plan, chapter_number)
-        default_prompt = self._script_prompt(outline, chapter_plan, chapter_number)
+        reference_assets = self._project_reference_assets(project_id)
+        default_prompt = self._script_prompt(outline, chapter_plan, chapter_number, reference_assets=reference_assets)
         prompt, system_prompt, template_meta = self._stage_prompt(
             stage="script",
             default_prompt=default_prompt,
@@ -447,6 +465,7 @@ class CreativeProjectService:
                 "outline_json": dumps_json(outline),
                 "chapter_plan_json": dumps_json(chapter_plan),
                 "current_chapter_json": dumps_json(selected_chapter),
+                "reference_assets_json": dumps_json(reference_assets),
             },
         )
         data = await self._generate_json(
@@ -459,6 +478,7 @@ class CreativeProjectService:
             model=model,
             template_meta=template_meta,
         )
+        self._normalize_script_scene_references(data, reference_assets)
         self._create_content(
             project_id=project.id,
             content_type="script",
@@ -590,6 +610,15 @@ class CreativeProjectService:
             model=model,
             template_meta=template_meta,
         )
+        data = await self._ensure_novel_body_quality(
+            project=project,
+            stage="novel_body",
+            prompt=prompt,
+            system_prompt=system_prompt,
+            data=data,
+            provider=provider,
+            model=model,
+        )
         content = str(data.get("content") or "")
         if not data.get("word_count"):
             data["word_count"] = len(content)
@@ -662,6 +691,15 @@ class CreativeProjectService:
             provider=provider,
             model=model,
             template_meta=template_meta,
+        )
+        data = await self._ensure_novel_body_quality(
+            project=project,
+            stage="novel_body_refine",
+            prompt=prompt,
+            system_prompt=system_prompt,
+            data=data,
+            provider=provider,
+            model=model,
         )
         text = str(data.get("content") or "")
         if not data.get("word_count"):
@@ -752,6 +790,7 @@ class CreativeProjectService:
         data["page_count"] = actual_page_count or data.get("page_count") or page_count
         if actual_page_count and actual_page_count != page_count:
             data["page_count_warning"] = f"模型返回 {actual_page_count} 页，和请求的 {page_count} 页不一致"
+        self._inherit_comic_page_references(data, storyboard_data)
         comic = self._create_content(
             project_id=project.id,
             content_type="comic_pages",
@@ -825,6 +864,7 @@ class CreativeProjectService:
             template_meta=template_meta,
         )
         self._normalize_storyboard_v2(data)
+        self._inherit_storyboard_scene_references(data, script_data)
         self._enhance_storyboard_image_prompts(data, outline, reference_assets, character_profiles=character_profiles)
         self._create_content(
             project_id=project.id,
@@ -842,6 +882,317 @@ class CreativeProjectService:
         self.session.add(project)
         self.session.commit()
         return data
+
+    async def match_reference_assets(
+        self,
+        project_id: str,
+        *,
+        content_id: str,
+        provider: str | None = None,
+        model: str | None = None,
+    ) -> ProjectContent:
+        project = self._require_project(project_id)
+        content = self.session.get(ProjectContent, content_id)
+        if not content or content.project_id != project_id:
+            raise ValueError("内容不存在")
+
+        data = loads_json(content.data_json)
+        reference_assets = self._project_reference_assets(project_id)
+        if not reference_assets:
+            return content
+
+        target_key, number_key = self._reference_match_target_fields(content.content_type)
+        items = [item for item in data.get(target_key) or [] if isinstance(item, dict)]
+        if not items:
+            return content
+
+        valid_ids = {str(asset.get("asset_id")) for asset in reference_assets if asset.get("asset_id")}
+        ai_matches: dict[int, dict[str, Any]] = {}
+        try:
+            match_data = await self._generate_json(
+                project=project,
+                stage="reference_asset_match",
+                prompt=self._reference_asset_match_prompt(
+                    project=project,
+                    content=content,
+                    target_key=target_key,
+                    number_key=number_key,
+                    items=items,
+                    reference_assets=reference_assets,
+                ),
+                system_prompt=self._default_system_prompt(),
+                schema_model=ReferenceAssetMatchSchema,
+                provider=provider,
+                model=model,
+                template_meta=None,
+            )
+            for item in match_data.get("items") or []:
+                try:
+                    target_number = int(item.get("target_number") or 0)
+                except Exception:
+                    continue
+                ai_matches[target_number] = item
+        except Exception as exc:
+            logger.warning("AI reference asset matching skipped, fallback to local rules: %s", exc)
+
+        for item in items:
+            try:
+                target_number = int(item.get(number_key) or 0)
+            except Exception:
+                target_number = 0
+            ai_item = ai_matches.get(target_number, {})
+            ai_ids = [
+                str(asset_id)
+                for asset_id in ai_item.get("reference_asset_ids") or []
+                if str(asset_id) in valid_ids
+            ]
+            local_ids = self._local_reference_asset_ids_for_item(item, reference_assets)
+            item["reference_asset_ids"] = _dedupe_keep_order([
+                *item.get("reference_asset_ids", []),
+                *ai_ids,
+                *local_ids,
+            ])
+            notes = [
+                *[str(note) for note in item.get("reference_notes", []) if str(note or "").strip()],
+                *[str(note) for note in ai_item.get("reference_notes", []) if str(note or "").strip()],
+            ]
+            if ai_item.get("reason"):
+                notes.append(f"AI匹配：{ai_item.get('reason')}")
+            item["reference_notes"] = _dedupe_keep_order(notes)
+
+        content.data_json = dumps_json(data)
+        content.text_content = dumps_json(data)
+        content.updated_at = datetime.now()
+        self.session.add(content)
+        self.session.commit()
+        self.session.refresh(content)
+        return content
+
+    async def run_pipeline(
+        self,
+        project_id: str,
+        *,
+        stages: list[str] | None = None,
+        chapters: list[int] | None = None,
+        chapter_count: int | None = None,
+        page_count: int = 10,
+        visual_style: str | None = None,
+        provider: str | None = None,
+        model: str | None = None,
+        template_id: str | None = None,
+        skip_existing: bool = True,
+        continue_on_error: bool = False,
+        match_source_type: str = "storyboard",
+    ) -> dict[str, Any]:
+        """Run a non-destructive creative project production pipeline.
+
+        Existing generation methods are kept as the source of truth so logs,
+        content versions and project state stay consistent with manual actions.
+        """
+        project = self._require_project(project_id)
+        normalized_stages = self._normalize_pipeline_stages(stages)
+        target_chapters = self._normalize_pipeline_chapters(project, chapters, chapter_count)
+        results: list[dict[str, Any]] = []
+
+        async def run_step(stage: str, runner: Any, *, chapter_number: int | None = None) -> None:
+            started_at = datetime.now()
+            item: dict[str, Any] = {
+                "stage": stage,
+                "chapter_number": chapter_number,
+                "status": "pending",
+                "started_at": started_at.isoformat(),
+            }
+            try:
+                item.update(await runner())
+                item.setdefault("status", "generated")
+            except Exception as exc:
+                item["status"] = "failed"
+                item["error"] = str(exc)
+                results.append(item)
+                if not continue_on_error:
+                    raise
+                return
+            item["finished_at"] = datetime.now().isoformat()
+            results.append(item)
+
+        if "outline" in normalized_stages:
+            async def outline_runner() -> dict[str, Any]:
+                if skip_existing and loads_json(project.outline_json):
+                    return {"status": "skipped", "reason": "outline exists"}
+                data = await self.generate_outline(
+                    project_id,
+                    provider=provider,
+                    model=model,
+                    template_id=template_id,
+                )
+                return {"content_type": "outline", "title": data.get("title", "")}
+
+            await run_step("outline", outline_runner)
+            project = self._require_project(project_id)
+
+        if "sync_characters" in normalized_stages:
+            async def sync_runner() -> dict[str, Any]:
+                characters = self.sync_outline_characters(project_id)
+                return {
+                    "content_type": "character",
+                    "count": len(characters),
+                    "character_ids": [getattr(character, "id", "") for character in characters],
+                }
+
+            await run_step("sync_characters", sync_runner)
+
+        if "chapter_plan" in normalized_stages:
+            async def chapter_plan_runner() -> dict[str, Any]:
+                existing = loads_json(project.chapter_plan_json)
+                if skip_existing and existing.get("chapters"):
+                    return {"status": "skipped", "reason": "chapter_plan exists"}
+                requested_count = chapter_count or len(target_chapters) or 12
+                data = await self.generate_chapter_plan(
+                    project_id,
+                    chapter_count=requested_count,
+                    provider=provider,
+                    model=model,
+                    template_id=template_id,
+                )
+                return {"content_type": "chapter_plan", "count": len(data.get("chapters") or [])}
+
+            await run_step("chapter_plan", chapter_plan_runner)
+            project = self._require_project(project_id)
+            target_chapters = self._normalize_pipeline_chapters(project, chapters, chapter_count)
+
+        per_chapter_order = [
+            "chapter_outline",
+            "novel_body",
+            "script",
+            "storyboard",
+            "match_references",
+            "comic_pages",
+        ]
+        for chapter_number in target_chapters:
+            for stage in per_chapter_order:
+                if stage not in normalized_stages:
+                    continue
+
+                async def chapter_runner(
+                    stage: str = stage,
+                    chapter_number: int = chapter_number,
+                ) -> dict[str, Any]:
+                    existing_type = {
+                        "chapter_outline": "chapter_outline",
+                        "novel_body": "novel_body",
+                        "script": "script",
+                        "storyboard": "storyboard",
+                        "comic_pages": "comic_pages",
+                    }.get(stage)
+                    if skip_existing and existing_type and self._latest_content(project_id, existing_type, chapter_number):
+                        return {
+                            "status": "skipped",
+                            "content_type": existing_type,
+                            "reason": f"{existing_type} exists",
+                        }
+
+                    if stage == "chapter_outline":
+                        data = await self.generate_chapter_outline(
+                            project_id,
+                            chapter_number=chapter_number,
+                            provider=provider,
+                            model=model,
+                            template_id=template_id,
+                        )
+                        return {"content_type": "chapter_outline", "title": data.get("title", "")}
+
+                    if stage == "novel_body":
+                        source = self._latest_content(project_id, "chapter_outline", chapter_number)
+                        data = await self.generate_novel_body(
+                            project_id,
+                            chapter_number=chapter_number,
+                            content_id=source.id if source else None,
+                            provider=provider,
+                            model=model,
+                            template_id=template_id,
+                        )
+                        return {
+                            "content_type": "novel_body",
+                            "title": data.get("title", ""),
+                            "word_count": data.get("word_count") or len(str(data.get("content") or "")),
+                        }
+
+                    if stage == "script":
+                        data = await self.generate_script(
+                            project_id,
+                            chapter_number=chapter_number,
+                            provider=provider,
+                            model=model,
+                            template_id=template_id,
+                        )
+                        return {"content_type": "script", "title": data.get("title", "")}
+
+                    if stage == "storyboard":
+                        script = self._latest_content(project_id, "script", chapter_number)
+                        if not script:
+                            raise ValueError(f"missing script for chapter {chapter_number}")
+                        data = await self.generate_storyboard(
+                            project_id,
+                            content_id=script.id,
+                            provider=provider,
+                            model=model,
+                            template_id=template_id,
+                        )
+                        return {"content_type": "storyboard", "panel_count": len(data.get("panels") or [])}
+
+                    if stage == "match_references":
+                        source = self._latest_content(project_id, match_source_type, chapter_number)
+                        if not source:
+                            raise ValueError(f"missing {match_source_type} for chapter {chapter_number}")
+                        content = await self.match_reference_assets(
+                            project_id,
+                            content_id=source.id,
+                            provider=provider,
+                            model=model,
+                        )
+                        return {
+                            "content_type": content.content_type,
+                            "content_id": content.id,
+                            "matched_source_type": match_source_type,
+                        }
+
+                    if stage == "comic_pages":
+                        storyboard = self._latest_content(project_id, "storyboard", chapter_number)
+                        if not storyboard:
+                            raise ValueError(f"missing storyboard for chapter {chapter_number}")
+                        data = await self.split_comic_pages(
+                            project_id,
+                            chapter_number=chapter_number,
+                            content_id=storyboard.id,
+                            page_count=page_count,
+                            visual_style=visual_style,
+                            provider=provider,
+                            model=model,
+                            template_id=template_id,
+                        )
+                        return {"content_type": "comic_pages", "page_count": len(data.get("pages") or [])}
+
+                    raise ValueError(f"unsupported pipeline stage: {stage}")
+
+                await run_step(stage, chapter_runner, chapter_number=chapter_number)
+
+        failed = [item for item in results if item.get("status") == "failed"]
+        generated = [item for item in results if item.get("status") == "generated"]
+        skipped = [item for item in results if item.get("status") == "skipped"]
+        return {
+            "project_id": project_id,
+            "stages": normalized_stages,
+            "chapters": target_chapters,
+            "skip_existing": skip_existing,
+            "continue_on_error": continue_on_error,
+            "summary": {
+                "total": len(results),
+                "generated": len(generated),
+                "skipped": len(skipped),
+                "failed": len(failed),
+            },
+            "results": results,
+        }
 
     # ------------------------------------------------------------------
     # Contents and assets
@@ -992,6 +1343,183 @@ class CreativeProjectService:
             for link in links
             if link.role in roles
         ]
+
+    def _reference_match_target_fields(self, content_type: str) -> tuple[str, str]:
+        if content_type == "script":
+            return "scenes", "scene_number"
+        if content_type == "storyboard":
+            return "panels", "panel_number"
+        if content_type == "comic_pages":
+            return "pages", "page_number"
+        raise ValueError("当前内容类型暂不支持参考卡匹配")
+
+    def _reference_asset_match_prompt(
+        self,
+        *,
+        project: CreativeProject,
+        content: ProjectContent,
+        target_key: str,
+        number_key: str,
+        items: list[dict[str, Any]],
+        reference_assets: list[dict[str, Any]],
+    ) -> str:
+        compact_assets = [
+            {
+                "asset_id": asset.get("asset_id"),
+                "role": asset.get("role"),
+                "metadata": asset.get("metadata") or {},
+            }
+            for asset in reference_assets
+            if asset.get("asset_id")
+        ]
+        compact_items = [
+            {
+                number_key: item.get(number_key),
+                "location": item.get("location", ""),
+                "characters": item.get("characters", []),
+                "action": item.get("action", ""),
+                "emotion": item.get("emotion", ""),
+                "props": item.get("props", []),
+                "image_prompt": item.get("image_prompt", ""),
+                "camera_hint": item.get("camera_hint", ""),
+            }
+            for item in items
+        ]
+        return f"""你是影视/漫画制作统筹。请根据项目参考卡集合，为当前内容里的每个条目选择最应该携带的参考素材 ID。
+
+项目：{project.title}
+内容类型：{content.content_type}
+参考卡集合（只能从这些 asset_id 中选择，不允许编造 ID）：
+{dumps_json(compact_assets)}
+
+待匹配条目：
+{dumps_json(compact_items)}
+
+匹配规则：
+1. 角色出现时优先选择对应 character 参考卡。
+2. 地点、时间、氛围匹配时选择 background/world 参考卡。
+3. 画风或统一视觉要求匹配时选择 style 参考卡。
+4. 道具、服装、特殊物件匹配时选择 reference 参考卡。
+5. 每个条目最多选择 6 个 reference_asset_ids；没有合适素材时返回空数组。
+6. reference_notes 用中文解释每个素材为什么被选中，后续会作为生图注释。
+7. 只输出严格 JSON，不要 Markdown。
+
+输出格式：
+{{
+  "items": [
+    {{
+      "target_number": 1,
+      "reference_asset_ids": ["asset_id_1"],
+      "reference_notes": ["使用某角色主立绘保持一致"],
+      "reason": "简短中文原因"
+    }}
+  ]
+}}"""
+
+    def _local_reference_asset_ids_for_item(
+        self,
+        item: dict[str, Any],
+        reference_assets: list[dict[str, Any]],
+    ) -> list[str]:
+        haystack = " ".join(
+            str(part or "")
+            for part in [
+                item.get("location"),
+                item.get("action"),
+                item.get("emotion"),
+                item.get("image_prompt"),
+                item.get("camera_hint"),
+                " ".join(str(v) for v in item.get("characters") or []),
+                " ".join(str(v) for v in item.get("props") or []),
+            ]
+        ).lower()
+        character_names = {str(name).strip() for name in item.get("characters") or [] if str(name).strip()}
+        picked: list[str] = []
+        for asset in reference_assets or []:
+            if not isinstance(asset, dict) or not asset.get("asset_id"):
+                continue
+            asset_id = str(asset.get("asset_id"))
+            role = asset.get("role")
+            meta = asset.get("metadata") or {}
+            marker = " ".join(
+                str(value or "")
+                for value in [
+                    meta.get("label"),
+                    meta.get("character_name"),
+                    meta.get("source_title"),
+                    meta.get("source_type"),
+                    role,
+                    asset_id,
+                ]
+            ).lower()
+            if role == "style":
+                picked.append(asset_id)
+            elif role == "character" and (
+                str(meta.get("character_name") or "").strip() in character_names
+                or str(meta.get("label") or "").strip() in character_names
+                or marker and any(name.lower() in marker for name in character_names)
+            ):
+                picked.append(asset_id)
+            elif role in {"background", "world", "reference"} and marker and any(
+                token and token in haystack
+                for token in re.split(r"[\s,，。；;、/|]+", marker)
+                if len(token) >= 2
+            ):
+                picked.append(asset_id)
+        return _dedupe_keep_order(picked)[:6]
+
+    def _normalize_script_scene_references(
+        self,
+        data: dict[str, Any],
+        reference_assets: list[dict[str, Any]],
+    ) -> None:
+        valid_ids = {str(asset.get("asset_id")) for asset in reference_assets or [] if asset.get("asset_id")}
+        for scene in data.get("scenes") or []:
+            if not isinstance(scene, dict):
+                continue
+            local_ids = self._local_reference_asset_ids_for_item(scene, reference_assets)
+            scene["reference_asset_ids"] = _dedupe_keep_order([
+                *[
+                    str(asset_id)
+                    for asset_id in scene.get("reference_asset_ids", [])
+                    if str(asset_id) in valid_ids
+                ],
+                *local_ids,
+            ])
+            scene["reference_notes"] = _dedupe_keep_order(
+                str(note)
+                for note in scene.get("reference_notes", [])
+                if str(note or "").strip()
+            )
+
+    def _inherit_storyboard_scene_references(
+        self,
+        data: dict[str, Any],
+        script_data: dict[str, Any],
+    ) -> None:
+        scenes = [
+            scene for scene in script_data.get("scenes") or []
+            if isinstance(scene, dict) and str(scene.get("scene_number") or "").isdigit()
+        ]
+        scenes_by_number = {int(scene.get("scene_number")): scene for scene in scenes}
+        for panel in data.get("panels") or []:
+            if not isinstance(panel, dict):
+                continue
+            try:
+                source_scene_number = int(panel.get("source_scene_number") or 0)
+            except Exception:
+                source_scene_number = 0
+            scene = scenes_by_number.get(source_scene_number)
+            if not scene:
+                continue
+            panel["reference_asset_ids"] = _dedupe_keep_order([
+                *panel.get("reference_asset_ids", []),
+                *scene.get("reference_asset_ids", []),
+            ])
+            panel["reference_notes"] = _dedupe_keep_order([
+                *[str(note) for note in panel.get("reference_notes", []) if str(note or "").strip()],
+                *[str(note) for note in scene.get("reference_notes", []) if str(note or "").strip()],
+            ])
 
     def list_generation_logs(
         self,
@@ -1277,6 +1805,104 @@ class CreativeProjectService:
         if chapter_number is not None:
             query = query.where(ProjectContent.chapter_number == chapter_number)
         return self.session.exec(query).first() is not None
+
+    def _latest_content(
+        self,
+        project_id: str,
+        content_type: str,
+        chapter_number: int | None = None,
+    ) -> ProjectContent | None:
+        query = select(ProjectContent).where(
+            ProjectContent.project_id == project_id,
+            ProjectContent.content_type == content_type,
+        )
+        if chapter_number is not None:
+            query = query.where(ProjectContent.chapter_number == chapter_number)
+        return self.session.exec(
+            query.order_by(ProjectContent.version.desc(), ProjectContent.created_at.desc())
+        ).first()
+
+    def _normalize_pipeline_stages(self, stages: list[str] | None) -> list[str]:
+        aliases = {
+            "characters": "sync_characters",
+            "character": "sync_characters",
+            "sync-character": "sync_characters",
+            "sync-characters": "sync_characters",
+            "chapter-plan": "chapter_plan",
+            "chapter-outline": "chapter_outline",
+            "outline-scenes": "chapter_outline",
+            "body": "novel_body",
+            "novel": "novel_body",
+            "novel-body": "novel_body",
+            "prose": "novel_body",
+            "comic": "comic_pages",
+            "comic-pages": "comic_pages",
+            "story-board": "storyboard",
+            "match": "match_references",
+            "match-reference": "match_references",
+            "match-references": "match_references",
+            "reference-match": "match_references",
+            "reference-matching": "match_references",
+        }
+        default = [
+            "outline",
+            "sync_characters",
+            "chapter_plan",
+            "chapter_outline",
+            "novel_body",
+            "script",
+            "storyboard",
+            "match_references",
+        ]
+        allowed = {
+            "outline",
+            "sync_characters",
+            "chapter_plan",
+            "chapter_outline",
+            "novel_body",
+            "script",
+            "storyboard",
+            "match_references",
+            "comic_pages",
+        }
+        result: list[str] = []
+        for raw in stages or default:
+            value = str(raw or "").strip().lower().replace("-", "_")
+            value = aliases.get(value, value)
+            if not value:
+                continue
+            if value not in allowed:
+                raise ValueError(f"unsupported pipeline stage: {raw}")
+            if value not in result:
+                result.append(value)
+        return result or default
+
+    def _normalize_pipeline_chapters(
+        self,
+        project: CreativeProject,
+        chapters: list[int] | None,
+        chapter_count: int | None,
+    ) -> list[int]:
+        explicit = sorted({int(chapter) for chapter in chapters or [] if int(chapter) > 0})
+        if explicit:
+            return explicit
+        if chapter_count and chapter_count > 0:
+            return list(range(1, int(chapter_count) + 1))
+        chapter_plan = loads_json(project.chapter_plan_json)
+        planned = []
+        for item in chapter_plan.get("chapters") or []:
+            try:
+                number = int(item.get("chapter_number") or 0)
+            except Exception:
+                number = 0
+            if number > 0:
+                planned.append(number)
+        if planned:
+            return sorted(set(planned))
+        count = int(chapter_plan.get("chapter_count") or 0)
+        if count > 0:
+            return list(range(1, count + 1))
+        return [1]
 
     def _demo_outline(self, project: CreativeProject) -> dict[str, Any]:
         title = project.title or "短剧但是不降智"
@@ -2095,7 +2721,7 @@ class CreativeProjectService:
                 provider=provider,
                 model=model,
                 temperature=0.75,
-                max_tokens=5000,
+                max_tokens=12000 if stage in {"novel_body", "novel_body_refine"} else 5000,
             )
             raw_response = self._response_content(response)
             response_provider = self._response_attr(response, "provider")
@@ -2300,6 +2926,115 @@ class CreativeProjectService:
         except ValidationError as exc:
             raise ValueError(str(exc)) from exc
         return model.model_dump()
+
+    async def _ensure_novel_body_quality(
+        self,
+        *,
+        project: CreativeProject,
+        stage: str,
+        prompt: str,
+        system_prompt: str | None,
+        data: dict[str, Any],
+        provider: str | None,
+        model: str | None,
+    ) -> dict[str, Any]:
+        """Prevent short summaries or obvious repetitions from being saved as novel body."""
+        reason = self._novel_body_quality_problem(data)
+        if not reason:
+            content = str(data.get("content") or "")
+            data["word_count"] = data.get("word_count") or len(content)
+            return data
+
+        repair_prompt = f"""刚才生成的小说正文质量不达标：{reason}
+
+请基于原始任务重新输出严格 JSON。重点要求：
+1. content 必须是完整小说正文，不是摘要、梗概或拆条说明。
+2. 正文至少 2800 个中文字符，目标 3000-4500 字；如果剧情接近结尾，也要写成完整场景。
+3. 必须覆盖单话细纲中的主要场景、冲突、反转、关键台词和结尾钩子。
+4. 禁止连续复用同一段句式、同一句口头禅或前文模板句。
+5. 要有场景动作、人物对白、心理反应、推理/决策过程和章节收束。
+6. 只输出 JSON，不要 Markdown，不要解释。
+
+原始任务：
+{prompt}
+
+质量不达标的输出：
+{dumps_json(data)}
+
+输出格式：
+{{
+  "chapter_number": {data.get("chapter_number") or 1},
+  "title": "章节标题",
+  "content": "重写后的完整小说正文",
+  "word_count": 0,
+  "continuity_notes": ["给下一章或拆页使用的连续性备注"]
+}}"""
+        response = await self.ai_service.chat(
+            messages=[
+                LLMMessage(role="system", content=system_prompt or self._default_system_prompt()),
+                LLMMessage(role="user", content=repair_prompt),
+            ],
+            provider=provider,
+            model=model,
+            temperature=0.65,
+            max_tokens=8000,
+        )
+        raw_response = self._response_content(response)
+        response_provider = self._response_attr(response, "provider")
+        response_model = self._response_attr(response, "model") or model or ""
+        if not self._response_success(response):
+            raise ValueError(self._response_error(response) or "正文质量修复失败")
+        try:
+            repaired = self._parse_and_validate(raw_response, NovelBodySchema, allow_local_repair=True)
+        except Exception as exc:
+            raise ValueError(f"正文质量修复返回不可用：{exc}") from exc
+
+        repaired_reason = self._novel_body_quality_problem(repaired)
+        self._log_generation(
+            project_id=project.id,
+            stage=f"{stage}_quality_repair",
+            status="success" if not repaired_reason else "failed",
+            provider=response_provider,
+            model=response_model,
+            prompt=repair_prompt,
+            request_payload={"stage": f"{stage}_quality_repair"},
+            raw_response=raw_response,
+            normalized=repaired,
+            validation_error=repaired_reason or "",
+        )
+        if repaired_reason:
+            self.session.commit()
+            raise ValueError(f"正文质量仍不达标：{repaired_reason}")
+        self.session.commit()
+        content = str(repaired.get("content") or "")
+        repaired["word_count"] = repaired.get("word_count") or len(content)
+        return repaired
+
+    def _novel_body_quality_problem(self, data: dict[str, Any]) -> str:
+        content = str(data.get("content") or "").strip()
+        if len(content) < 2800:
+            return f"正文过短（{len(content)} 字）"
+        if len(content.splitlines()) <= 2 and len(content) < 1500:
+            return "正文段落过少，疑似摘要"
+        paragraphs = [line.strip() for line in content.splitlines() if line.strip()]
+        if len(paragraphs) >= 4:
+            counts: dict[str, int] = {}
+            for paragraph in paragraphs:
+                key = re.sub(r"\s+", "", paragraph[:80])
+                counts[key] = counts.get(key, 0) + 1
+            if max(counts.values(), default=0) >= 3:
+                return "出现重复段落，疑似复读"
+        sentences = [item.strip() for item in re.split(r"[。！？!?]\s*", content) if item.strip()]
+        if len(sentences) >= 8:
+            counts: dict[str, int] = {}
+            for sentence in sentences:
+                key = re.sub(r"\s+", "", sentence[:40])
+                if len(key) < 8:
+                    continue
+                counts[key] = counts.get(key, 0) + 1
+            if max(counts.values(), default=0) >= 3:
+                return "出现重复句式，疑似复读"
+        return ""
 
     def _wrap_plain_novel_body_response(
         self,
@@ -2612,6 +3347,7 @@ class CreativeProjectService:
         outline: dict[str, Any],
         chapter_plan: dict[str, Any],
         chapter_number: int,
+        reference_assets: list[dict[str, Any]] | None = None,
     ) -> str:
         selected = self._chapter_plan_item(chapter_plan, chapter_number)
         return f"""请把指定章节改写成短剧单集脚本 JSON。
@@ -2622,11 +3358,15 @@ class CreativeProjectService:
 当前章节：
 {dumps_json(selected)}
 
+项目参考卡集合（scene.reference_asset_ids 只能从这些 asset_id 中选择，不要编造 ID）：
+{dumps_json(reference_assets or [])}
+
 要求：
 1. 开头 5 秒必须有钩子。
 2. 场景适合 60-120 秒竖屏短剧。
 3. 每个 scene 都要给出可用于 AI 生图的 image_prompt。
-4. 输出严格 JSON。
+4. 每个 scene 根据角色、地点、道具、画风选择 reference_asset_ids，并用 reference_notes 说明为什么选这些参考图。
+5. 输出严格 JSON。
 
 输出格式：
 {{
@@ -2643,7 +3383,9 @@ class CreativeProjectService:
       "dialogue": [{{"character": "角色", "line": "台词"}}],
       "camera_hint": "镜头建议",
       "emotion": "情绪",
-      "image_prompt": "画面提示词"
+      "image_prompt": "画面提示词",
+      "reference_asset_ids": ["项目参考卡 asset_id"],
+      "reference_notes": ["中文说明：这张参考图用于角色/背景/画风/道具"]
     }}
   ],
   "ending_hook": "结尾钩子"
@@ -2805,11 +3547,12 @@ class CreativeProjectService:
 {previous_context or "暂无"}
 
 要求：
-1. content 字段输出完整小说正文，不要只写摘要。
+1. content 字段输出完整小说正文，不要只写摘要；目标 3000-4500 个中文字符，最低不要低于 2800 字。
 2. 正文要遵守大纲中的人物设定、视觉风格、世界规则和连续性备注。
 3. 保持网文/短剧改编友好的节奏：开头有钩子，中段有推进，结尾留悬念。
 4. 可以有对白、动作和心理描写，但不要输出 Markdown 标题。
-5. 输出严格 JSON，不要 Markdown。
+5. 保留舒适分段，每个主要场景都要展开成可阅读段落。
+6. 输出严格 JSON，不要 Markdown。
 
 输出格式：
 {{
@@ -2844,11 +3587,12 @@ class CreativeProjectService:
 {instruction}
 
 要求：
-1. 只修改正文，不要输出解释、Markdown 或代码块。
+1. 只修改正文，不要输出解释、Markdown 或代码块；如果用户没有要求压缩，目标 3000-4500 个中文字符，最低不要低于 2800 字。
 2. 保留原有主线、人物身份、连续性和重要伏笔，按照用户要求加强或压缩。
 3. 如果用户要求“加强冲突/压缩对白/更爽/更细腻/更像网文”等，要落实到具体段落。
 4. 输出完整正文，不要只输出修改片段。
-5. 输出严格 JSON。
+5. 保留舒适分段，每个主要场景都要展开成可阅读段落。
+6. 输出严格 JSON。
 
 输出格式：
 {{
@@ -3217,14 +3961,16 @@ class CreativeProjectService:
             if not isinstance(panel, dict):
                 continue
             prompt = str(panel.get("image_prompt") or "").strip()
-            if len(prompt) >= 90 and any(key in prompt for key in ["镜头", "构图", "光线", "景别", "特写", "中景", "远景"]):
-                continue
 
             character_names = [str(name) for name in panel.get("characters") or [] if str(name).strip()]
             character_desc = []
+            character_ids = []
+            portrait_node_ids = []
             for name in character_names:
                 profile = profiles.get(name)
                 if profile:
+                    character_ids.append(profile.get("character_id"))
+                    portrait_node_ids.append(profile.get("portrait_node_id"))
                     desc = "，".join(
                         part
                         for part in [
@@ -3247,6 +3993,7 @@ class CreativeProjectService:
                 if not character:
                     character_desc.append(name)
                     continue
+                character_ids.append(character.get("character_id"))
                 desc = "，".join(
                     part
                     for part in [
@@ -3261,6 +4008,52 @@ class CreativeProjectService:
                     if part
                 )
                 character_desc.append(desc)
+
+            character_ids = _dedupe_keep_order(character_ids)
+            portrait_node_ids = _dedupe_keep_order(portrait_node_ids)
+            reference_asset_ids = list(panel.get("reference_asset_ids") or [])
+            for asset in reference_assets or []:
+                if not isinstance(asset, dict):
+                    continue
+                asset_id = asset.get("asset_id")
+                if not asset_id:
+                    continue
+                meta = asset.get("metadata") or {}
+                if asset.get("role") == "style":
+                    reference_asset_ids.append(asset_id)
+                elif asset.get("role") == "character" and (
+                    meta.get("character_id") in character_ids
+                    or meta.get("character_name") in character_names
+                    or asset_id in portrait_node_ids
+                ):
+                    reference_asset_ids.append(asset_id)
+                elif asset.get("role") in {"background", "world", "reference"}:
+                    marker = " ".join(
+                        str(value or "")
+                        for value in [
+                            meta.get("label"),
+                            meta.get("source_title"),
+                            meta.get("source_type"),
+                            asset_id,
+                        ]
+                    ).lower()
+                    panel_text = " ".join(
+                        str(value or "")
+                        for value in [
+                            panel.get("location"),
+                            panel.get("action"),
+                            panel.get("image_prompt"),
+                            panel.get("blocking"),
+                            " ".join(str(prop) for prop in panel.get("props") or []),
+                        ]
+                    ).lower()
+                    if marker and any(
+                        token and token in panel_text
+                        for token in re.split(r"[\s,，。；;、/|]+", marker)
+                        if len(token) >= 2
+                    ):
+                        reference_asset_ids.append(asset_id)
+            reference_asset_ids = _dedupe_keep_order(reference_asset_ids)
 
             enriched = "，".join(
                 part
@@ -3284,6 +4077,9 @@ class CreativeProjectService:
                 if part
             )
             panel["image_prompt"] = enriched
+            panel["character_ids"] = character_ids
+            panel["portrait_node_ids"] = portrait_node_ids
+            panel["reference_asset_ids"] = reference_asset_ids
             if not panel.get("negative_prompt"):
                 ooc_negative = "，".join(
                     profile.get("ooc_rules", "")
@@ -3297,6 +4093,68 @@ class CreativeProjectService:
                         ooc_negative,
                     ] if part
                 )
+
+    def _inherit_comic_page_references(self, data: dict[str, Any], storyboard_data: dict[str, Any]) -> None:
+        panels = [panel for panel in storyboard_data.get("panels") or [] if isinstance(panel, dict)]
+        panel_by_number = {
+            int(panel.get("panel_number")): panel
+            for panel in panels
+            if str(panel.get("panel_number") or "").isdigit()
+        }
+        all_character_ids = _dedupe_keep_order(
+            item
+            for panel in panels
+            for item in panel.get("character_ids", [])
+        )
+        all_portrait_node_ids = _dedupe_keep_order(
+            item
+            for panel in panels
+            for item in panel.get("portrait_node_ids", [])
+        )
+        all_reference_asset_ids = _dedupe_keep_order(
+            item
+            for panel in panels
+            for item in panel.get("reference_asset_ids", [])
+        )
+
+        for page in data.get("pages") or []:
+            if not isinstance(page, dict):
+                continue
+            raw_numbers = page.get("source_panel_numbers") or page.get("source_panels") or []
+            if isinstance(raw_numbers, (str, int)):
+                raw_numbers = [raw_numbers]
+            source_numbers = [
+                int(value)
+                for value in raw_numbers
+                if str(value or "").isdigit()
+            ]
+            source_panels = [panel_by_number[number] for number in source_numbers if number in panel_by_number]
+            if not source_panels:
+                source_panels = panels
+            page["character_ids"] = _dedupe_keep_order([
+                *page.get("character_ids", []),
+                *(item for panel in source_panels for item in panel.get("character_ids", [])),
+                *all_character_ids,
+            ])
+            page["portrait_node_ids"] = _dedupe_keep_order([
+                *page.get("portrait_node_ids", []),
+                *(item for panel in source_panels for item in panel.get("portrait_node_ids", [])),
+                *all_portrait_node_ids,
+            ])
+            page["reference_asset_ids"] = _dedupe_keep_order([
+                *page.get("reference_asset_ids", []),
+                *(item for panel in source_panels for item in panel.get("reference_asset_ids", [])),
+                *all_reference_asset_ids,
+            ])
+            page["reference_notes"] = _dedupe_keep_order([
+                *[str(note) for note in page.get("reference_notes", []) if str(note or "").strip()],
+                *[
+                    str(note)
+                    for panel in source_panels
+                    for note in panel.get("reference_notes", [])
+                    if str(note or "").strip()
+                ],
+            ])
 
     def _storyboard_prompt(
         self,

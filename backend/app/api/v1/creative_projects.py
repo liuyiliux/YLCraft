@@ -112,6 +112,12 @@ class GenerateStoryboardRequest(BaseModel):
     template_id: str | None = None
 
 
+class MatchReferenceAssetsRequest(BaseModel):
+    content_id: str
+    provider: str | None = None
+    model: str | None = None
+
+
 class CreateFromNovelRequest(BaseModel):
     asset_id: str
     chapter_ids: list[str] = Field(default_factory=list)
@@ -146,6 +152,20 @@ class CanvasSaveRequest(BaseModel):
     nodes: list[dict[str, Any]] = Field(default_factory=list)
     edges: list[dict[str, Any]] = Field(default_factory=list)
     viewport: dict[str, Any] = Field(default_factory=dict)
+
+
+class RunPipelineRequest(BaseModel):
+    stages: list[str] = Field(default_factory=list)
+    chapters: list[int] = Field(default_factory=list)
+    chapter_count: int | None = Field(default=None, ge=1, le=200)
+    page_count: int = Field(default=10, ge=1, le=80)
+    visual_style: str | None = None
+    provider: str | None = None
+    model: str | None = None
+    template_id: str | None = None
+    skip_existing: bool = True
+    continue_on_error: bool = False
+    match_source_type: str = "storyboard"
 
 
 def service(session: Session = Depends(get_session)) -> CreativeProjectService:
@@ -303,6 +323,33 @@ async def generate_chapter_plan(
         raise HTTPException(status_code=400, detail=str(e)) from e
 
 
+@router.post("/{project_id}/run-pipeline", summary="Run creative project production pipeline")
+async def run_pipeline(
+    project_id: str,
+    req: RunPipelineRequest,
+    svc: CreativeProjectService = Depends(service),
+):
+    try:
+        data = await svc.run_pipeline(
+            project_id,
+            stages=req.stages,
+            chapters=req.chapters,
+            chapter_count=req.chapter_count,
+            page_count=req.page_count,
+            visual_style=req.visual_style,
+            provider=req.provider,
+            model=req.model,
+            template_id=req.template_id,
+            skip_existing=req.skip_existing,
+            continue_on_error=req.continue_on_error,
+            match_source_type=req.match_source_type,
+        )
+        project = svc.get_project(project_id)
+        return {"success": True, "data": data, "project": serialize_project(project) if project else None}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
 @router.post("/{project_id}/generate-script", summary="生成短剧脚本")
 async def generate_script(
     project_id: str,
@@ -421,6 +468,24 @@ async def generate_storyboard(
             template_id=req.template_id,
         )
         return {"success": True, "data": data}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.post("/{project_id}/match-reference-assets", summary="AI 匹配脚本/分镜参考卡")
+async def match_reference_assets(
+    project_id: str,
+    req: MatchReferenceAssetsRequest,
+    svc: CreativeProjectService = Depends(service),
+):
+    try:
+        content = await svc.match_reference_assets(
+            project_id,
+            content_id=req.content_id,
+            provider=req.provider,
+            model=req.model,
+        )
+        return {"success": True, "data": serialize_content(content)}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 

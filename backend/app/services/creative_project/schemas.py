@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class FlexibleModel(BaseModel):
@@ -109,6 +109,50 @@ class ChapterOutlineSceneSchema(FlexibleModel):
     shot_design: str = ""
     image_prompt: str = ""
 
+    @field_validator(
+        "title",
+        "location",
+        "time_of_day",
+        "weather",
+        "purpose",
+        "scene_role",
+        "objective",
+        "conflict",
+        "action",
+        "key_dialogue",
+        "emotion",
+        "emotional_turn",
+        "visual_focus",
+        "spatial_axis",
+        "character_positions",
+        "movement_path",
+        "shot_design",
+        "image_prompt",
+        mode="before",
+    )
+    @classmethod
+    def coerce_text_field(cls, value):
+        if value is None:
+            return ""
+        if isinstance(value, list):
+            return " / ".join(str(item).strip() for item in value if str(item).strip())
+        if isinstance(value, dict):
+            return "；".join(
+                f"{key}: {item}"
+                for key, item in value.items()
+                if str(item).strip()
+            )
+        return str(value)
+
+    @field_validator("characters", "beats", "props", mode="before")
+    @classmethod
+    def coerce_list_field(cls, value):
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return value
+        return [str(value)]
+
 
 class ChapterOutlineSchema(FlexibleModel):
     chapter_number: int = 1
@@ -140,6 +184,11 @@ class ComicPageSchema(FlexibleModel):
     title: str = ""
     content: str = ""
     image_prompt: str = ""
+    source_panel_numbers: list[int] = Field(default_factory=list)
+    character_ids: list[str] = Field(default_factory=list)
+    portrait_node_ids: list[str] = Field(default_factory=list)
+    portrait_version_ids: list[str] = Field(default_factory=list)
+    reference_asset_ids: list[str] = Field(default_factory=list)
 
 
 class ComicPagesSchema(FlexibleModel):
@@ -165,6 +214,8 @@ class ScriptSceneSchema(FlexibleModel):
     camera_hint: str = ""
     emotion: str = ""
     image_prompt: str = ""
+    reference_asset_ids: list[str] = Field(default_factory=list)
+    reference_notes: list[str] = Field(default_factory=list)
 
 
 class ShortDramaScriptSchema(FlexibleModel):
@@ -195,6 +246,11 @@ class StoryboardPanelSchema(FlexibleModel):
     dialogue_bubbles: list[str] = Field(default_factory=list)
     sound_effect: str = ""
     negative_prompt: str = ""
+    character_ids: list[str] = Field(default_factory=list)
+    portrait_node_ids: list[str] = Field(default_factory=list)
+    portrait_version_ids: list[str] = Field(default_factory=list)
+    reference_asset_ids: list[str] = Field(default_factory=list)
+    reference_notes: list[str] = Field(default_factory=list)
     notes: str = ""
 
 
@@ -203,3 +259,14 @@ class StoryboardSchema(FlexibleModel):
     title: str = ""
     visual_style: str = ""
     panels: list[StoryboardPanelSchema] = Field(default_factory=list)
+
+
+class ReferenceAssetMatchItemSchema(FlexibleModel):
+    target_number: int
+    reference_asset_ids: list[str] = Field(default_factory=list)
+    reference_notes: list[str] = Field(default_factory=list)
+    reason: str = ""
+
+
+class ReferenceAssetMatchSchema(FlexibleModel):
+    items: list[ReferenceAssetMatchItemSchema] = Field(default_factory=list)

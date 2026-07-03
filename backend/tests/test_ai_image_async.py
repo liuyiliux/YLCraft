@@ -37,6 +37,23 @@ def _connector() -> AIConnector:
     )
 
 
+def test_generic_image_template_escapes_multiline_prompt():
+    backend = GenericImageBackend(_connector(), session=None)
+
+    request_body = backend._render_request(
+        {
+            "model": "gpt-image-2",
+            "prompt": "输出主立绘。\n外貌：冷白肤色，眼球是淡蓝色数据流。\n禁止：\"普通人类皮肤\"",
+            "size": "1024x1024",
+            "n": 1,
+        }
+    )
+
+    assert request_body["model"] == "gpt-image-2"
+    assert request_body["prompt"].startswith("输出主立绘。\n外貌")
+    assert "普通人类皮肤" in request_body["prompt"]
+
+
 @pytest.mark.asyncio
 async def test_generic_image_async_generate_returns_pending_without_polling(monkeypatch):
     requests = []

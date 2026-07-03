@@ -1,0 +1,7 @@
+interface:
+  display_name: "YLCraft Creative Workflow"
+  short_description: "Run YLCraft story and storyboard pipelines."
+  default_prompt: "Use $ylcraft-creative-workflow to inspect a YLCraft creative project and continue its novel/script/storyboard pipeline."
+
+policy:
+  allow_implicit_invocation: true

@@ -17,8 +17,11 @@ POST /api/v1/characters/{id}/portrait/upgrade — 把现有立绘升级到资产
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -51,6 +54,17 @@ async def _write_project_generation_log(session, **kwargs) -> ProjectGenerationL
     session.add(log)
     await session.flush()
     return log
+
+
+async def _write_project_generation_log_committed(**kwargs) -> None:
+    """Write a generation log in its own transaction so failures are still visible."""
+    try:
+        async with get_async_session() as log_session:
+            await _write_project_generation_log(log_session, **kwargs)
+    except Exception as log_err:
+        logger.warning(f"[characters] committed log write failed: {log_err}")
+
+
 logger = logging.getLogger("ylcraft.characters")
 
 
@@ -439,6 +453,7 @@ class PortraitGenerateRequest(BaseModel):
     size: Optional[str] = Field("1024x1024", description="图片尺寸")
     n: Optional[int] = Field(1, description="生成数量（>1 时取首张）")
     negative_prompt: Optional[str] = Field(None, description="负向提示词")
+    reference_images: list[str] = Field(default_factory=list, description="参考图 URL/base64 列表")
     preset: Optional[str] = Field("main_portrait", description="立绘预设")
     visual_profile: dict[str, Any] | None = Field(default=None, description="视觉卡覆盖字段")
     style_override: str = Field(default="", description="画风覆盖")
@@ -454,12 +469,90 @@ class PortraitPromptPreviewRequest(BaseModel):
     language: str = Field(default="zh", description="提示词语言")
 
 
+class PortraitGridSliceRequest(BaseModel):
+    grid_type: str = Field("auto", description="auto/expression/pose")
+    rows: int = Field(3, ge=1, le=6, description="网格行数")
+    cols: int = Field(3, ge=1, le=6, description="网格列数")
+    overwrite_existing: bool = Field(False, description="是否重复切片并创建新子素材")
+
+
 class CharacterEnrichRequest(BaseModel):
     mode: str = Field(default="fill_missing", description="fill_missing 只补空字段；rewrite 重写并统一设定")
     context: str = Field(default="", description="额外上下文，如项目大纲、小说片段、角色关系")
     apply: bool = Field(default=False, description="是否直接写回角色")
     provider: Optional[str] = Field(None, description="指定 LLM 后端")
     model: Optional[str] = Field(None, description="指定 LLM 模型")
+
+
+def _safe_filename_part(value: str, fallback: str = "asset") -> str:
+    safe = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", (value or "").strip())
+    safe = re.sub(r"\s+", "_", safe).strip("._ ")
+    return (safe or fallback)[:60]
+
+
+def _decode_asset_download_path(value: str) -> str:
+    if not value:
+        return ""
+    parsed = urlparse(value)
+    if parsed.scheme in {"http", "https"}:
+        return ""
+    if parsed.path.endswith("/api/v1/assets/download") or parsed.path.endswith("/assets/download"):
+        path_values = parse_qs(parsed.query).get("path") or []
+        return unquote(path_values[0]) if path_values else ""
+    if value.startswith("/api/v1/assets/download"):
+        path_values = parse_qs(urlparse(value).query).get("path") or []
+        return unquote(path_values[0]) if path_values else ""
+    if parsed.scheme == "file":
+        return unquote(parsed.path)
+    return value
+
+
+def _resolve_local_representation_path(rep) -> Path | None:
+    candidates = []
+    extra = dict(getattr(rep, "extra_json", None) or {})
+    for key in ("local_path", "file_path", "path"):
+        if extra.get(key):
+            candidates.append(str(extra.get(key)))
+    if getattr(rep, "file_path", ""):
+        candidates.append(str(rep.file_path))
+    if extra.get("url"):
+        candidates.append(str(extra.get("url")))
+
+    for candidate in candidates:
+        decoded = _decode_asset_download_path(candidate)
+        if not decoded:
+            continue
+        path = Path(decoded).expanduser()
+        if path.exists() and path.is_file():
+            return path
+    return None
+
+
+def _infer_grid_type(requested: str, preset: str) -> str:
+    value = (requested or "auto").strip().lower()
+    if value in {"expression", "pose"}:
+        return value
+    preset_value = (preset or "").lower()
+    if "pose" in preset_value or "action" in preset_value:
+        return "pose"
+    return "expression"
+
+
+def _grid_slice_label(grid_type: str, index: int) -> str:
+    expression_labels = ["中性", "微笑", "大笑", "惊讶", "愤怒", "悲伤", "害羞", "思考", "坚定"]
+    pose_labels = ["正面站姿", "侧身站姿", "背面回头", "抱臂", "行走", "奔跑", "坐姿", "战斗准备", "特写动作"]
+    labels = pose_labels if grid_type == "pose" else expression_labels
+    if 0 <= index < len(labels):
+        return labels[index]
+    return f"{grid_type}-{index + 1}"
+
+
+def _local_file_url(path_or_url: str) -> str:
+    if not path_or_url:
+        return ""
+    if path_or_url.startswith(("/api/", "http://", "https://", "data:")):
+        return path_or_url
+    return f"/api/v1/assets/download?path={quote(path_or_url)}"
 
 
 @router.post(
@@ -626,6 +719,390 @@ async def set_character_main_portrait_version(character_id: str, version_id: str
         }
 
 
+@router.get(
+    "/{character_id}/portrait/slices",
+    summary="列出角色立绘九宫格切片子素材",
+)
+async def list_character_portrait_slices(
+    character_id: str,
+    grid_type: str | None = Query(None, description="expression/pose，可选"),
+):
+    from sqlalchemy import select
+
+    from app.db.models.asset_hub import AssetNode, AssetRepresentation, AssetVersion
+    from app.db.models.character import Character
+
+    async with get_async_session() as session:
+        character = await session.get(Character, character_id)
+        if not character:
+            raise HTTPException(status_code=404, detail="角色不存在")
+        if not character.portrait_node_id:
+            return {"success": True, "data": {"node_id": None, "items": []}}
+
+        portrait_node_id = str(character.portrait_node_id)
+        children_result = await session.execute(
+            select(AssetNode)
+            .where(AssetNode.parent_id == portrait_node_id)
+            .order_by(AssetNode.created_at.asc())
+        )
+        children = list(children_result.scalars().all())
+        slice_nodes = []
+        for child in children:
+            metadata = dict(child.metadata_json or {})
+            if metadata.get("source") != "character_portrait_grid_slice":
+                continue
+            if grid_type and metadata.get("grid_type") != grid_type:
+                continue
+            slice_nodes.append(child)
+
+        if not slice_nodes:
+            return {"success": True, "data": {"node_id": portrait_node_id, "items": []}}
+
+        node_ids = [str(node.id) for node in slice_nodes]
+        versions_result = await session.execute(
+            select(AssetVersion)
+            .where(AssetVersion.asset_node_id.in_(node_ids))
+            .order_by(AssetVersion.created_at.desc())
+        )
+        versions_by_node: dict[str, AssetVersion] = {}
+        for version in versions_result.scalars().all():
+            versions_by_node.setdefault(str(version.asset_node_id), version)
+
+        version_ids = [str(version.id) for version in versions_by_node.values()]
+        reps_by_version: dict[str, AssetRepresentation] = {}
+        if version_ids:
+            reps_result = await session.execute(
+                select(AssetRepresentation)
+                .where(AssetRepresentation.asset_version_id.in_(version_ids))
+                .order_by(AssetRepresentation.file_size.desc())
+            )
+            for rep in reps_result.scalars().all():
+                reps_by_version.setdefault(str(rep.asset_version_id), rep)
+
+        items = []
+        for node in slice_nodes:
+            metadata = dict(node.metadata_json or {})
+            version = versions_by_node.get(str(node.id))
+            rep = reps_by_version.get(str(version.id)) if version else None
+            file_path = rep.file_path if rep else (node.thumbnail_url or "")
+            items.append(
+                {
+                    "node_id": str(node.id),
+                    "version_id": str(version.id) if version else None,
+                    "representation_id": str(rep.id) if rep else None,
+                    "title": node.name,
+                    "label": metadata.get("label") or node.name,
+                    "grid_type": metadata.get("grid_type") or "",
+                    "grid_index": metadata.get("grid_index") or 0,
+                    "row": metadata.get("row") or 0,
+                    "col": metadata.get("col") or 0,
+                    "source_version_id": metadata.get("source_version_id") or "",
+                    "source_representation_id": metadata.get("source_representation_id") or "",
+                    "source_preset": metadata.get("source_preset") or "",
+                    "file_path": file_path,
+                    "image_url": _local_file_url(file_path),
+                    "width": rep.width if rep else None,
+                    "height": rep.height if rep else None,
+                    "created_at": str(node.created_at) if node.created_at else None,
+                }
+            )
+
+        items.sort(key=lambda item: (str(item.get("source_version_id") or ""), item.get("grid_index") or 0))
+        return {"success": True, "data": {"node_id": portrait_node_id, "items": items}}
+
+
+@router.post(
+    "/{character_id}/portrait/versions/{version_id}/slice-grid",
+    summary="将九宫格立绘版本切成可复用子素材",
+)
+async def slice_character_portrait_grid(
+    character_id: str,
+    version_id: str,
+    req: PortraitGridSliceRequest,
+):
+    from PIL import Image
+    from sqlalchemy import select
+
+    from app.db.models.asset_hub import (
+        AssetNode,
+        AssetRepresentation,
+        AssetType,
+        AssetVersion,
+        RelationType,
+    )
+    from app.db.models.character import Character
+    from app.services.asset_hub.node_service import AssetNodeService
+    from app.services.asset_hub.representation_service import AssetRepresentationService
+    from app.services.asset_hub.version_service import AssetVersionService
+
+    async with get_async_session() as session:
+        character = await session.get(Character, character_id)
+        if not character:
+            raise HTTPException(status_code=404, detail="角色不存在")
+        if not character.portrait_node_id:
+            raise HTTPException(status_code=400, detail="角色尚未绑定立绘资产节点")
+
+        portrait_node_id = str(character.portrait_node_id)
+        portrait_node = await session.get(AssetNode, portrait_node_id)
+        if not portrait_node:
+            raise HTTPException(status_code=404, detail="角色立绘资产节点不存在")
+
+        version = await session.get(AssetVersion, version_id)
+        if not version or str(version.asset_node_id) != portrait_node_id:
+            raise HTTPException(status_code=404, detail="立绘版本不存在或不属于该角色")
+
+        rep_result = await session.execute(
+            select(AssetRepresentation)
+            .where(AssetRepresentation.asset_version_id == str(version.id))
+            .order_by(AssetRepresentation.file_size.desc())
+        )
+        source_rep = rep_result.scalars().first()
+        if not source_rep:
+            raise HTTPException(status_code=400, detail="该立绘版本没有可切图的文件表示")
+
+        source_path = _resolve_local_representation_path(source_rep)
+        if not source_path:
+            raise HTTPException(
+                status_code=400,
+                detail="当前立绘版本没有本地图片文件，无法九宫格切图。请使用本地保存后的生成结果或先重新生成立绘。",
+            )
+
+        params = dict(version.params_json or {})
+        preset = str(params.get("preset") or dict(source_rep.extra_json or {}).get("preset") or "")
+        grid_type = _infer_grid_type(req.grid_type, preset)
+        expected_count = req.rows * req.cols
+
+        if not req.overwrite_existing:
+            children = await AssetNodeService(session).list_children(portrait_node_id)
+            existing_items = []
+            for child in children:
+                metadata = dict(child.metadata_json or {})
+                if (
+                    metadata.get("source") == "character_portrait_grid_slice"
+                    and str(metadata.get("source_version_id")) == str(version.id)
+                    and metadata.get("grid_rows") == req.rows
+                    and metadata.get("grid_cols") == req.cols
+                ):
+                    existing_items.append(
+                        {
+                            "node_id": str(child.id),
+                            "label": metadata.get("label") or child.name,
+                            "index": metadata.get("grid_index"),
+                            "row": metadata.get("row"),
+                            "col": metadata.get("col"),
+                            "file_path": child.thumbnail_url or "",
+                            "reused": True,
+                        }
+                    )
+            if len(existing_items) >= expected_count:
+                return {
+                    "success": True,
+                    "data": {
+                        "source_version_id": str(version.id),
+                        "source_representation_id": str(source_rep.id),
+                        "grid_type": grid_type,
+                        "rows": req.rows,
+                        "cols": req.cols,
+                        "items": sorted(existing_items, key=lambda item: item.get("index") or 0),
+                        "reused": True,
+                    },
+                }
+
+        output_root = Path(__file__).resolve().parents[2] / "storage" / "character_slices"
+        output_dir = output_root / _safe_filename_part(character_id, "character") / _safe_filename_part(version_id, "version")
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        node_service = AssetNodeService(session)
+        version_service = AssetVersionService(session)
+        rep_service = AssetRepresentationService(session)
+        created_items = []
+
+        try:
+            with Image.open(source_path) as source_image:
+                image = source_image.convert("RGBA")
+                width, height = image.size
+                if width < req.cols or height < req.rows:
+                    raise HTTPException(status_code=400, detail="图片尺寸小于网格数量，无法切图")
+
+                for row in range(req.rows):
+                    for col in range(req.cols):
+                        index = row * req.cols + col
+                        label = _grid_slice_label(grid_type, index)
+                        left = round(col * width / req.cols)
+                        upper = round(row * height / req.rows)
+                        right = round((col + 1) * width / req.cols)
+                        lower = round((row + 1) * height / req.rows)
+                        crop = image.crop((left, upper, right, lower))
+                        filename = (
+                            f"{index + 1:02d}_{row + 1}x{col + 1}_"
+                            f"{_safe_filename_part(character.name, 'character')}_"
+                            f"{_safe_filename_part(label, 'slice')}.png"
+                        )
+                        crop_path = output_dir / filename
+                        crop.save(crop_path, format="PNG")
+                        file_size = crop_path.stat().st_size
+
+                        metadata = {
+                            "source": "character_portrait_grid_slice",
+                            "character_id": str(character.id),
+                            "character_name": character.name,
+                            "source_portrait_node_id": portrait_node_id,
+                            "source_version_id": str(version.id),
+                            "source_representation_id": str(source_rep.id),
+                            "source_preset": preset,
+                            "grid_type": grid_type,
+                            "grid_rows": req.rows,
+                            "grid_cols": req.cols,
+                            "grid_index": index + 1,
+                            "row": row + 1,
+                            "col": col + 1,
+                            "label": label,
+                        }
+                        child_node = await node_service.create(
+                            name=f"{character.name}-{label}",
+                            asset_type=AssetType.IMAGE,
+                            parent_id=portrait_node_id,
+                            thumbnail_url=str(crop_path),
+                            metadata=metadata,
+                            tags=[
+                                "角色立绘",
+                                "九宫格切片",
+                                "表情" if grid_type == "expression" else "动作",
+                                character.name,
+                            ],
+                        )
+                        child_version = await version_service.create(
+                            asset_node_id=str(child_node.id),
+                            prompt_used=version.prompt_used,
+                            model_used=version.model_used,
+                            params={
+                                **params,
+                                "source": "character_portrait_grid_slice",
+                                "source_preset": preset,
+                                "grid_type": grid_type,
+                                "grid_rows": req.rows,
+                                "grid_cols": req.cols,
+                                "grid_index": index + 1,
+                                "slice_label": label,
+                            },
+                            lineage={
+                                "source": "character_portrait_grid_slice",
+                                "character_id": str(character.id),
+                                "character_name": character.name,
+                                "source_portrait_node_id": portrait_node_id,
+                                "source_version_id": str(version.id),
+                                "source_representation_id": str(source_rep.id),
+                            },
+                        )
+                        child_rep = await rep_service.create(
+                            asset_version_id=str(child_version.id),
+                            file_path=str(crop_path),
+                            mime_type="image/png",
+                            file_size=file_size,
+                            width=crop.width,
+                            height=crop.height,
+                            format="png",
+                            extra={
+                                **metadata,
+                                "local_path": str(crop_path),
+                                "url": str(crop_path),
+                            },
+                        )
+                        await version_service.link_versions(
+                            source_id=portrait_node_id,
+                            target_id=str(child_node.id),
+                            relation_type=RelationType.DERIVED_FROM,
+                            context={
+                                "source": "character_portrait_grid_slice",
+                                "source_version_id": str(version.id),
+                                "grid_index": index + 1,
+                                "label": label,
+                            },
+                        )
+                        created_items.append(
+                            {
+                                "node_id": str(child_node.id),
+                                "version_id": str(child_version.id),
+                                "representation_id": str(child_rep.id),
+                                "file_path": str(crop_path),
+                                "label": label,
+                                "index": index + 1,
+                                "row": row + 1,
+                                "col": col + 1,
+                                "width": crop.width,
+                                "height": crop.height,
+                            }
+                        )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"[portrait/slice-grid] failed: {e}")
+            try:
+                await _write_project_generation_log(
+                    session,
+                    scene="character_portrait",
+                    ref_id=character.id,
+                    stage="portrait_grid_slice",
+                    status="failed",
+                    prompt=version.prompt_used or "",
+                    request_payload={
+                        "character_id": str(character.id),
+                        "version_id": str(version.id),
+                        "rows": req.rows,
+                        "cols": req.cols,
+                        "grid_type": req.grid_type,
+                    },
+                    raw_response=str(e),
+                    validation_error=type(e).__name__,
+                )
+                await session.flush()
+            except Exception as log_err:
+                logger.warning(f"[portrait/slice-grid] log write failed: {log_err}")
+            raise HTTPException(status_code=500, detail=f"九宫格切图失败: {e}")
+
+        await _write_project_generation_log(
+            session,
+            scene="character_portrait",
+            ref_id=character.id,
+            stage="portrait_grid_slice",
+            status="success",
+            prompt=version.prompt_used or "",
+            request_payload={
+                "character_id": str(character.id),
+                "character_name": character.name,
+                "version_id": str(version.id),
+                "representation_id": str(source_rep.id),
+                "source_path": str(source_path),
+                "rows": req.rows,
+                "cols": req.cols,
+                "grid_type": grid_type,
+            },
+            normalized={
+                "source_version_id": str(version.id),
+                "source_representation_id": str(source_rep.id),
+                "grid_type": grid_type,
+                "rows": req.rows,
+                "cols": req.cols,
+                "count": len(created_items),
+                "items": created_items,
+            },
+        )
+        await session.flush()
+
+        return {
+            "success": True,
+            "data": {
+                "source_version_id": str(version.id),
+                "source_representation_id": str(source_rep.id),
+                "grid_type": grid_type,
+                "rows": req.rows,
+                "cols": req.cols,
+                "items": created_items,
+                "reused": False,
+            },
+        }
+
+
 @router.post(
     "/{character_id}/enrich",
     summary="AI 补全角色信息",
@@ -655,6 +1132,15 @@ async def enrich_character(character_id: str, req: CharacterEnrichRequest):
             raise HTTPException(status_code=404, detail="角色不存在")
         current = character_response_for_enrichment(character)
         prompt = build_character_enrichment_prompt(current, context=req.context, mode=mode)
+        log_request_payload = {
+            "character_id": str(character.id),
+            "character_name": character.name,
+            "mode": mode,
+            "apply": req.apply,
+            "provider": req.provider,
+            "model": req.model,
+            "context": req.context,
+        }
         result = await manager.chat(
             [
                 LLMMessage(role="system", content="你是严格输出 JSON 的角色设定师。"),
@@ -665,10 +1151,36 @@ async def enrich_character(character_id: str, req: CharacterEnrichRequest):
             temperature=0.4,
         )
         if not result.success:
+            await _write_project_generation_log_committed(
+                scene="character_portrait",
+                ref_id=str(character.id),
+                stage=f"character_enrich_{mode}",
+                provider=result.provider or req.provider or "",
+                model=result.model or req.model or "",
+                status="failed",
+                prompt=prompt,
+                request_payload=log_request_payload,
+                raw_response=result.content or "",
+                normalized={"current": current},
+                validation_error=result.error or "unknown error",
+            )
             raise HTTPException(status_code=500, detail=f"AI 补全失败: {result.error or 'unknown error'}")
         try:
             proposal = parse_character_enrichment_response(result.content)
         except Exception as e:
+            await _write_project_generation_log_committed(
+                scene="character_portrait",
+                ref_id=str(character.id),
+                stage=f"character_enrich_{mode}",
+                provider=result.provider or req.provider or "",
+                model=result.model or req.model or "",
+                status="failed",
+                prompt=prompt,
+                request_payload=log_request_payload,
+                raw_response=result.content or "",
+                normalized={"current": current},
+                validation_error=f"parse_error: {e}",
+            )
             raise HTTPException(status_code=500, detail=f"AI 返回解析失败: {e}")
 
         merged, applied_fields = merge_character_enrichment(current, proposal, mode=mode)
@@ -679,6 +1191,26 @@ async def enrich_character(character_id: str, req: CharacterEnrichRequest):
             updated_character = await service.update(character_id, **update_payload)
             await session.flush()
             updated = service.to_response(updated_character) if updated_character else None
+
+        await _write_project_generation_log(
+            session,
+            scene="character_portrait",
+            ref_id=str(character.id),
+            stage=f"character_enrich_{mode}",
+            provider=result.provider or req.provider or "",
+            model=result.model or req.model or "",
+            status="success",
+            prompt=prompt,
+            request_payload=log_request_payload,
+            raw_response=result.content or "",
+            normalized={
+                "current": current,
+                "proposal": proposal,
+                "merged": merged,
+                "applied_fields": applied_fields if req.apply else [],
+            },
+        )
+        await session.flush()
 
         return {
             "success": True,
@@ -746,6 +1278,7 @@ async def generate_character_portrait(character_id: str, req: PortraitGenerateRe
             n=req.n or 1,
             provider=req.provider or "",
             model=req.model or "",
+            reference_images=req.reference_images or [],
         )
 
         try:
@@ -769,6 +1302,8 @@ async def generate_character_portrait(character_id: str, req: PortraitGenerateRe
                         "size": req.size,
                         "n": req.n,
                         "negative_prompt": negative_prompt,
+                        "reference_images_count": len(req.reference_images or []),
+                        "reference_images": req.reference_images or [],
                         "provider": req.provider,
                         "model": req.model,
                         "preset": prompt_bundle["preset"],
@@ -798,6 +1333,8 @@ async def generate_character_portrait(character_id: str, req: PortraitGenerateRe
                         "character_name": character.name,
                         "size": req.size,
                         "n": req.n,
+                        "reference_images_count": len(req.reference_images or []),
+                        "reference_images": req.reference_images or [],
                         "preset": prompt_bundle["preset"],
                     },
                     raw_response=result.error or "",
@@ -840,11 +1377,14 @@ async def generate_character_portrait(character_id: str, req: PortraitGenerateRe
                     "set_as_main": req.set_as_main,
                     "prompt_template_version": prompt_bundle["prompt_template_version"],
                     "visual_profile_snapshot": prompt_bundle["visual_profile_snapshot"],
+                    "reference_images": req.reference_images or [],
+                    "reference_images_count": len(req.reference_images or []),
                 },
                 lineage={
                     "character_id": character.id,
                     "character_name": character.name,
                     "portrait_preset": prompt_bundle["preset"],
+                    "reference_images": req.reference_images or [],
                 },
                 tags=[prompt_bundle["preset"]],
             )
@@ -874,6 +1414,8 @@ async def generate_character_portrait(character_id: str, req: PortraitGenerateRe
                         "size": req.size,
                         "n": req.n,
                         "negative_prompt": negative_prompt,
+                        "reference_images_count": len(req.reference_images or []),
+                        "reference_images": req.reference_images or [],
                         "preset": prompt_bundle["preset"],
                     },
                     raw_response=str(url),
@@ -883,6 +1425,8 @@ async def generate_character_portrait(character_id: str, req: PortraitGenerateRe
                         "version_number": asset_hub_result.version_number,
                         "representation_id": asset_hub_result.representation_id,
                         "local_path": local_path,
+                        "reference_images": req.reference_images or [],
+                        "reference_images_count": len(req.reference_images or []),
                     },
                 )
                 await session.flush()

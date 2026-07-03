@@ -23,6 +23,26 @@ CHARACTER_ENRICHMENT_SCHEMA: dict[str, Any] = {
         "organization": "组织/阵营",
         "position": "职位/社会身份",
         "logline": "一句话人设",
+        "visual_profile": {
+            "face": "脸部识别点：脸型、眉眼、痣、疤、辨识性五官",
+            "hair": "发型发色：长度、刘海、卷直、颜色、固定造型",
+            "eyes": "眼睛：瞳色、眼型、眼神、是否戴眼镜",
+            "skin": "肤色/皮肤特征",
+            "temperament": "视觉气质：冷峻、甜美、阴郁、贵气等",
+            "body_shape": "体型：瘦削、高挑、健壮、娇小等",
+            "body_proportion": "身体比例：肩宽、腿长、少年感、九头身等",
+            "costume": "服装结构：默认服装的版型、层次、关键单品",
+            "costume_colors": ["服装配色"],
+            "materials": ["材质：皮革、金属、丝绸、校服布料等"],
+            "shoes": "鞋履",
+            "accessories": ["配饰：眼镜、耳坠、手套、颈环等"],
+            "signature_items": ["视觉标志物/随身道具"],
+            "expression_set": ["常用表情"],
+            "pose_set": ["常用姿态/动作"],
+            "style": "画风：日漫赛璐璐、写实电影感、国风厚涂等",
+            "negative_constraints": ["不要画错/不要出现的视觉约束"],
+            "visual_consistency": "画同一角色时必须保持一致的视觉规则",
+        },
     },
     "motivation": {
         "desire": "核心欲望",
@@ -95,6 +115,8 @@ def build_character_enrichment_prompt(
 3. 所有内容使用中文，具体、可执行，适合后续小说写作、分镜、漫画和 AI 生图。
 4. OOC 边界要写清楚这个角色绝不会做什么；Off-Model 相关内容写入 visual_consistency。
 5. expressions 和 poses 建议给 6-9 个，便于后续生成表情九宫格/动作九宫格。
+6. 必须补全 identity.visual_profile 下的视觉卡细项；即使 appearance 或 costume_hint 已经有内容，也要拆解到 face、hair、eyes、skin、body_shape、body_proportion、costume、costume_colors、materials、shoes、accessories、style、negative_constraints 和 visual_consistency。
+7. 如果某个视觉卡细项无法从已有资料直接确定，请基于角色身份、立绘图描述、服装结构和世界观做合理推断，但不要和已有外观冲突。
 
 schema:
 {schema_json}
@@ -112,16 +134,43 @@ def parse_character_enrichment_response(content: str) -> dict[str, Any]:
     if not text:
         raise ValueError("AI 返回为空")
     text = _strip_code_fence(text)
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError:
-        match = re.search(r"\{.*\}", text, flags=re.S)
-        if not match:
-            raise ValueError("AI 返回不是 JSON 对象")
-        data = json.loads(match.group(0))
+    data = _loads_json_with_repair(text)
     if not isinstance(data, dict):
         raise ValueError("AI 返回不是 JSON 对象")
     return normalize_character_enrichment(data)
+
+
+def _loads_json_with_repair(text: str) -> Any:
+    candidates = [text]
+    match = re.search(r"\{.*\}", text, flags=re.S)
+    if match and match.group(0) != text:
+        candidates.append(match.group(0))
+
+    first_error: Exception | None = None
+    for candidate in candidates:
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError as exc:
+            first_error = first_error or exc
+
+    try:
+        from json_repair import repair_json
+    except Exception:
+        repair_json = None
+
+    if repair_json:
+        for candidate in candidates:
+            try:
+                repaired = repair_json(candidate, return_objects=True)
+                if isinstance(repaired, str):
+                    return json.loads(repaired)
+                return repaired
+            except Exception as exc:
+                first_error = first_error or exc
+
+    if not match:
+        raise ValueError("AI 返回不是 JSON 对象")
+    raise ValueError(f"AI 返回 JSON 解析失败: {first_error}")
 
 
 def normalize_character_enrichment(data: dict[str, Any]) -> dict[str, Any]:
@@ -135,6 +184,12 @@ def normalize_character_enrichment(data: dict[str, Any]) -> dict[str, Any]:
     for field in TOP_LEVEL_DICT_FIELDS:
         value = data.get(field)
         result[field] = _clean_dict(value if isinstance(value, dict) else {})
+    top_level_visual = data.get("visual_profile")
+    if isinstance(top_level_visual, dict) and _has_value(top_level_visual):
+        identity = result.get("identity") if isinstance(result.get("identity"), dict) else {}
+        existing_visual = identity.get("visual_profile") if isinstance(identity.get("visual_profile"), dict) else {}
+        identity["visual_profile"] = _clean_dict({**existing_visual, **top_level_visual})
+        result["identity"] = identity
     return {key: value for key, value in result.items() if _has_value(value)}
 
 
@@ -209,7 +264,14 @@ def _merge_dict_missing(current: dict[str, Any], candidate: dict[str, Any], *, r
     for key, value in candidate.items():
         if not _has_value(value):
             continue
-        if rewrite or not _has_value(result.get(key)):
+        current_value = result.get(key)
+        if isinstance(current_value, dict) and isinstance(value, dict) and not rewrite:
+            nested, nested_changed = _merge_dict_missing(current_value, value, rewrite=rewrite)
+            if nested_changed:
+                result[key] = nested
+                changed = True
+            continue
+        if rewrite or not _has_value(current_value):
             result[key] = value
             changed = True
     return result, changed

@@ -30,8 +30,12 @@
 
 ## Phase 4: Batch Production Queue
 
-- [ ] 17. Add production queue UI for chapter ranges and selected stages.
+- [x] 16.1 Add a repo-local Codex skill and API workflow CLI for creative-project inspection, generation batches, reference matching and novel export.
+- [x] 16.2 Add a backend non-destructive run-pipeline API for chapter-range production with skip-existing and continue-on-error controls.
+- [x] 17. Add production queue UI for chapter ranges and selected stages.
+- [x] 17.1 Show run summaries and per-step generated/skipped/failed results in the project workspace.
 - [ ] 18. Support skip existing, overwrite, retry failed and continue from failure.
+- [x] 18.1 Expose skip-existing and continue-on-error controls in the batch production UI.
 - [ ] 19. Persist queue step logs with provider, model, prompt template, duration and error.
 - [ ] 20. Add manual review checkpoints before expensive image generation.
 

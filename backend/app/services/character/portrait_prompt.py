@@ -6,6 +6,8 @@ from typing import Any
 
 PROMPT_TEMPLATE_VERSION = "character_portrait_v1"
 
+ZH_LANGUAGE_RULE = "语言要求：最终提示词必须以中文开头，主体必须使用中文输出；如果输入里有英文长句或英文段落，必须翻译并改写为中文，不要照抄；只允许在末尾保留少量必要英文模型关键词、风格标签或固定短语，例如 character reference sheet, clean background。"
+
 PORTRAIT_PRESETS = {
     "main_portrait",
     "headshot_icon",
@@ -161,6 +163,7 @@ def synthesize_visual_profile(character: Any, overrides: dict[str, Any] | None =
     speech = _json_obj(getattr(character, "speech_json", {}))
     behavior = _json_obj(getattr(character, "behavior_json", {}))
     ability = _json_obj(getattr(character, "ability_json", {}))
+    visual = _json_obj(identity.get("visual_profile"))
     data = {
         "identity_brief": _join_text(
             getattr(character, "name", ""),
@@ -172,26 +175,27 @@ def synthesize_visual_profile(character: Any, overrides: dict[str, Any] | None =
             identity.get("logline"),
             getattr(character, "personality", ""),
         ),
-        "visual_tags": _json_list(getattr(character, "tags", [])),
-        "face": getattr(character, "appearance", "") or "",
-        "hair": "",
-        "eyes": "",
-        "skin": "",
-        "temperament": getattr(character, "personality", "") or "",
-        "body_shape": "",
-        "body_proportion": "",
-        "costume": getattr(character, "costume_hint", "") or "",
-        "costume_colors": [],
-        "materials": [],
-        "shoes": "",
-        "accessories": [],
-        "signature_items": _json_list(getattr(character, "signature_items", [])),
-        "expression_set": _json_list(getattr(character, "expressions", [])) or ["中性", "微笑", "愤怒", "悲伤", "震惊"],
-        "pose_set": _json_list(getattr(character, "poses", [])) or ["正面站姿", "侧面", "背面", "坐姿", "动作姿态"],
-        "style": "",
-        "background_rule": "plain_white_or_soft_off_white",
-        "negative_constraints": DEFAULT_NEGATIVE_CONSTRAINTS.copy(),
+        "visual_tags": _json_list(visual.get("visual_tags")) or _json_list(getattr(character, "tags", [])),
+        "face": visual.get("face") or getattr(character, "appearance", "") or "",
+        "hair": visual.get("hair") or identity.get("hair") or "",
+        "eyes": visual.get("eyes") or identity.get("eyes") or "",
+        "skin": visual.get("skin") or identity.get("skin") or "",
+        "temperament": visual.get("temperament") or getattr(character, "personality", "") or "",
+        "body_shape": visual.get("body_shape") or identity.get("body_shape") or identity.get("body_profile") or "",
+        "body_proportion": visual.get("body_proportion") or identity.get("body_proportion") or "",
+        "costume": visual.get("costume") or getattr(character, "costume_hint", "") or "",
+        "costume_colors": _json_list(visual.get("costume_colors")),
+        "materials": _json_list(visual.get("materials")),
+        "shoes": visual.get("shoes") or "",
+        "accessories": _json_list(visual.get("accessories")),
+        "signature_items": _json_list(visual.get("signature_items")) or _json_list(getattr(character, "signature_items", [])),
+        "expression_set": _json_list(visual.get("expression_set")) or _json_list(getattr(character, "expressions", [])) or ["中性", "微笑", "愤怒", "悲伤", "震惊"],
+        "pose_set": _json_list(visual.get("pose_set")) or _json_list(getattr(character, "poses", [])) or ["正面站姿", "侧面", "背面", "坐姿", "动作姿态"],
+        "style": visual.get("style") or "",
+        "background_rule": visual.get("background_rule") or "plain_white_or_soft_off_white",
+        "negative_constraints": _json_list(visual.get("negative_constraints")) or DEFAULT_NEGATIVE_CONSTRAINTS.copy(),
         "visual_consistency": _join_text(
+            visual.get("visual_consistency"),
             getattr(character, "visual_consistency", ""),
             behavior.get("never_do"),
             behavior.get("boundary"),
@@ -299,6 +303,7 @@ def _preset_prompt(preset: str, character: Any, profile: dict[str, Any], style: 
         _line("标志物", "、".join(profile["signature_items"])),
         _line("一致性规则", profile["visual_consistency"]),
         _line("画风", style),
+        ZH_LANGUAGE_RULE,
         "必须保持同一个角色身份、同一张脸、同一发型、同一服装结构、同一身体比例。",
     ]
 

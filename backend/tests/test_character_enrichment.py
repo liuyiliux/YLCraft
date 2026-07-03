@@ -26,6 +26,43 @@ def test_parse_character_enrichment_response_accepts_json_fence():
     assert data["behavior"]["never_do"] == "不会无理由背叛同伴"
 
 
+def test_parse_character_enrichment_response_repairs_common_json_errors():
+    data = parse_character_enrichment_response(
+        """模型说明：
+{
+  "appearance": "完美到失真的英俊",
+  "signature_items": ["黑色西装", "白色手套",],
+  "identity": {
+    "visual_profile": {
+      "face": "面部线条对称"
+      "hair": "黑色短发"
+    }
+  }
+}
+"""
+    )
+
+    assert data["appearance"] == "完美到失真的英俊"
+    assert data["signature_items"] == ["黑色西装", "白色手套"]
+    assert data["identity"]["visual_profile"]["face"]
+
+
+def test_parse_character_enrichment_response_moves_top_level_visual_profile():
+    data = parse_character_enrichment_response(
+        """
+{
+  "visual_profile": {
+    "face": "下颌线锋利",
+    "style": "冷峻科幻漫画风"
+  }
+}
+"""
+    )
+
+    assert data["identity"]["visual_profile"]["face"] == "下颌线锋利"
+    assert data["identity"]["visual_profile"]["style"] == "冷峻科幻漫画风"
+
+
 def test_merge_character_enrichment_fill_missing_preserves_existing_fields():
     current = {
         "appearance": "已有外貌",

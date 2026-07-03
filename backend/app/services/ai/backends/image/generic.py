@@ -661,12 +661,26 @@ class GenericImageBackend(ImageBackend):
                 params["image"] = params["reference_images"][0]
             return params
 
-        rendered = self.request_template.render(**params)
+        template_params = self._build_template_params(params)
+        rendered = self.request_template.render(**template_params)
         try:
             request_body = json.loads(rendered)
         except json.JSONDecodeError as e:
-            logger.error(f"请求模板渲染失败: {e}")
-            raise
+            safe_params = {
+                **template_params,
+                **{key: self._json_string_escape(value) if isinstance(value, str) else value for key, value in params.items()},
+            }
+            safe_rendered = self.request_template.render(**safe_params)
+            try:
+                request_body = json.loads(safe_rendered)
+                logger.warning(
+                    "[GenericImageBackend] request_template used raw string interpolation; "
+                    "retried with JSON-escaped string params. Prefer {{ prompt_json }} in connector templates."
+                )
+            except json.JSONDecodeError:
+                logger.error(f"请求模板渲染失败: {e}")
+                logger.debug("[GenericImageBackend] invalid rendered template preview: %s", rendered[:1000])
+                raise
 
         param_mapping = {
             "size": self.default_params.get("size_param", "size"),
@@ -712,6 +726,18 @@ class GenericImageBackend(ImageBackend):
                 request_body["image"] = reference_images[0]
 
         return request_body
+
+    def _build_template_params(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        template_params = dict(params)
+        for key, value in params.items():
+            template_params[f"{key}_json"] = json.dumps(value, ensure_ascii=False)
+            if isinstance(value, str):
+                template_params[f"{key}_json_str"] = self._json_string_escape(value)
+        return template_params
+
+    @staticmethod
+    def _json_string_escape(value: str) -> str:
+        return json.dumps(value or "", ensure_ascii=False)[1:-1]
 
     def _replace_reference_image_placeholders(self, obj: Any, image_field_mapping: list, replaced_by_field: dict = None) -> dict:
         if replaced_by_field is None:

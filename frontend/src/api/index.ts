@@ -1442,6 +1442,15 @@ export const generateCreativeProjectStoryboard = (
     body: JSON.stringify(data),
   })
 
+export const matchCreativeProjectReferenceAssets = (
+  projectId: string,
+  data: { content_id: string; provider?: string; model?: string },
+) =>
+  request(`/creative-projects/${projectId}/match-reference-assets`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
 export const listCreativeProjectContents = (projectId: string, contentType?: string) => {
   const qs = contentType ? `?content_type=${encodeURIComponent(contentType)}` : ''
   return request(`/creative-projects/${projectId}/contents${qs}`)
@@ -1520,6 +1529,27 @@ export const linkCreativeProjectAsset = (projectId: string, data: {
 export const syncCreativeProjectCharacters = (projectId: string) =>
   request(`/creative-projects/${projectId}/sync-characters`, {
     method: 'POST',
+  })
+
+export const runCreativeProjectPipeline = (
+  projectId: string,
+  data: {
+    stages?: string[]
+    chapters?: number[]
+    chapter_count?: number
+    page_count?: number
+    visual_style?: string
+    provider?: string
+    model?: string
+    template_id?: string
+    skip_existing?: boolean
+    continue_on_error?: boolean
+    match_source_type?: string
+  } = {},
+) =>
+  request(`/creative-projects/${projectId}/run-pipeline`, {
+    method: 'POST',
+    body: JSON.stringify(data),
   })
 
 // ===== Novel（小说）=====

@@ -16,6 +16,11 @@ The system SHALL maintain a structured visual profile for each character that ca
 - **THEN** the system stores the normalized profile with the character
 - **AND** preserves the previous portrait versions
 
+#### Scenario: Use unsaved visual edits for prompt preview
+- **WHEN** the user edits visual card fields in the character form and previews or generates a portrait before saving the character
+- **THEN** the frontend sends the current visual card as a visual_profile override
+- **AND** the generated prompt reflects those current form values
+
 ### Requirement: Portrait prompt presets
 
 The system SHALL generate full copyable prompts from named portrait presets.
@@ -95,6 +100,26 @@ The system SHALL store generated character portraits as Asset Hub versions under
 - **WHEN** a portrait is generated
 - **THEN** the Asset Hub version stores preset, provider, model, size, seed, prompt, negative prompt, visual profile snapshot and prompt template version where available
 
+### Requirement: Portrait grid slicing creates reusable child assets
+
+The system SHALL turn generated expression and pose grid portraits into reusable Asset Hub image assets.
+
+#### Scenario: Slice expression or pose grid
+- **WHEN** the user slices a portrait version generated from `expression_grid_3x3` or `pose_grid_3x3`
+- **THEN** the backend cuts the local image into 9 child image assets under the character portrait node
+- **AND** each child asset stores row, column, label, source portrait node, source version and source representation metadata
+- **AND** each child asset has its own Asset Hub version and representation
+
+#### Scenario: Avoid duplicate grid children
+- **WHEN** the same portrait version has already been sliced with the same grid dimensions
+- **THEN** the backend returns the existing child assets by default
+- **AND** does not create duplicate nodes unless overwrite is requested
+
+#### Scenario: Review sliced grid children
+- **WHEN** a character has sliced expression or pose child assets
+- **THEN** the character portrait workflow lists those child assets with preview image, label, grid type and grid position
+- **AND** the user can inspect them without leaving the character drawer
+
 ### Requirement: Main portrait selection
 
 The system SHALL allow the user to select one portrait version as the character main portrait.
@@ -116,6 +141,7 @@ The character page SHALL expose visual profile editing, preset selection, prompt
 #### Scenario: Edit portrait workflow
 - **WHEN** the user opens a character for editing
 - **THEN** the UI shows visual profile fields, preset selection, prompt preview, copy, optimize, generate and set-main actions
+- **AND** visual profile fields include face, hair, eyes, skin, body shape, body proportion, costume colors, materials, accessories, style and negative constraints
 
 #### Scenario: Existing simple workflow still works
 - **WHEN** the user only fills appearance and costume_hint
@@ -139,3 +165,9 @@ The system SHALL reuse character visual profiles and main portrait references in
 - **WHEN** the selected image backend does not support reference images
 - **THEN** the system still injects the character visual profile into the text prompt
 - **AND** records that no binary reference image was sent
+
+#### Scenario: Manually override panel reference cards
+- **WHEN** the user selects project reference cards on a storyboard panel
+- **THEN** the panel stores those `reference_asset_ids`
+- **AND** single-panel and batch storyboard image generation use those selected assets before automatic prompt matching
+- **AND** generated image lineage records the selected reference assets

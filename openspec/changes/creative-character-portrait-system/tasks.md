@@ -30,14 +30,17 @@
 - [x] 3.3 Store generated representations with preset and main-selection metadata.
 - [x] 3.4 Add endpoint to mark an existing portrait version as main.
 - [x] 3.5 Add tests for Asset Hub metadata, main portrait selection and version preservation.
+- [x] 3.6 Add endpoint to slice expression/pose grid portrait versions into child Asset Hub image nodes.
 
 ## Phase 4: Frontend Character Page
 
-- [ ] 4.1 Add visual card editing controls to the character form/drawer.
+- [x] 4.1 Add visual card editing controls to the character form/drawer.
 - [x] 4.2 Add portrait preset segmented control for 主立绘、多视图设定板、16:9 身份板、表情包、动作姿态、透明底/白底.
 - [x] 4.3 Add prompt preview, copy and optimize flow backed by the prompt-preview endpoint.
 - [x] 4.6 Add expression grid and pose grid preset choices.
 - [x] 4.7 Add headshot and Key Visual preset choices.
+- [x] 4.9 Add frontend action to cut 3x3 expression/pose grid versions into reusable child assets.
+- [x] 4.10 Show sliced expression/pose child assets in the character portrait versions tab.
 
 ## Phase 4B: Character Bible and World Usage
 
@@ -56,11 +59,19 @@
 
 ## Phase 5: Creative Project Integration
 
-- [ ] 5.1 Make project storyboard/comic image prompt generation read character visual profiles.
-- [ ] 5.2 When supported by the selected backend, pass main portrait image as a reference image.
-- [ ] 5.3 Add manual per-panel reference override.
-- [ ] 5.4 Record character and portrait Asset Hub lineage on generated panel images.
-- [ ] 5.5 Add tests for prompt injection and lineage metadata.
+- [x] 5.1 Make project storyboard/comic image prompt generation read character visual profiles.
+- [x] 5.2 When supported by the selected backend, pass main portrait image as a reference image.
+- [x] 5.3 Add manual per-panel reference override.
+- [x] 5.4 Record character and portrait Asset Hub lineage on generated panel images.
+- [x] 5.5 Remove the demo/test data fill entry from the creative project workbench UI.
+- [x] 5.6 Store a per-generation reference image collection snapshot with source labels.
+- [x] 5.7 Add AI reference-card matching for script scenes and storyboard panels.
+- [x] 5.8 Show matched reference-card thumbnails across script, storyboard and comic pages.
+- [x] 5.9 Add preflight reference coverage and image-backend capability hints before batch storyboard generation.
+- [x] 5.10 Allow generated outputs to be promoted back into the project reference-card collection.
+- [x] 5.11 Add ordered novel-body reader with chapter TOC, previous/next navigation and Markdown export.
+- [x] 5.12 Add backend novel-body quality gate for short summaries/repeated output and local schema coercion for chapter-outline scene fields.
+- [ ] 5.13 Add tests for prompt injection and lineage metadata.
 
 ## Verification
 
@@ -68,5 +79,6 @@
 - [x] 6.2 Verify `identity_board_16_9` prompt includes layout, no-overlap, face anchor, multi-view, expression and detail study rules.
 - [x] 6.3 Verify each preset maps to the expected output intent: main portrait, multi-view sheet, identity board, expression pack, action pose pack and transparent/white-background material.
 - [ ] 6.4 Verify generated portrait versions remain visible in Asset Hub and one can be selected as main.
-- [ ] 6.5 Verify a storyboard panel prompt includes linked character profile and portrait reference information.
+- [x] 6.5 Verify a storyboard panel prompt includes linked character profile and portrait reference information.
 - [x] 6.6 Run backend tests and frontend build for changed areas.
+- [ ] 6.7 Verify a generated 3x3 portrait grid creates 9 child image assets with source-version lineage.

@@ -2,7 +2,7 @@
  * YLCraft — 角色管理页面
  */
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Card, Row, Col, Input, Select, Button, Tag, Typography, Spin,
@@ -19,13 +19,29 @@ import {
   CheckOutlined, FileImageOutlined, ThunderboltOutlined,
 } from '@ant-design/icons'
 import { useTheme } from '../../constants/theme'
-import { chat, listCreativeProjects, listGenerationLogsGlobal } from '../../api'
+import { chat, listAssets, listConnectors, listCreativeProjects, listGenerationLogsGlobal } from '../../api'
 
 const { Title, Text, Paragraph } = Typography
 const { TextArea } = Input
 const { Panel } = Collapse
 
 const PAGE_SIZE = 24
+const CHARACTER_FORM_MODAL_WIDTH = 860
+const PORTRAIT_PROMPT_LANGUAGE_RULE =
+  '语言要求：最终提示词必须以中文开头，主体必须使用中文输出；如果输入里有英文长句或英文段落，必须翻译并改写为中文，不要照抄；只允许在末尾保留少量必要英文模型关键词、风格标签或固定短语，例如 character reference sheet, clean background。'
+
+const getModalPopupContainer = (triggerNode: HTMLElement) =>
+  (triggerNode.closest('.ant-modal') as HTMLElement | null) || triggerNode.parentElement || document.body
+
+const compactTagSelectProps = {
+  maxTagCount: 'responsive' as const,
+  maxTagTextLength: 18,
+  listHeight: 192,
+  popupMatchSelectWidth: true,
+  getPopupContainer: getModalPopupContainer,
+  style: { width: '100%' },
+  dropdownStyle: { maxWidth: 'min(420px, calc(100vw - 48px))' },
+}
 
 const SOURCE_TYPE_COLORS: Record<string, string> = {
   ai_generated: '#a855f7',
@@ -283,6 +299,21 @@ export interface ImageBackendInfo {
   supported_sizes: string[]
 }
 
+interface AssetImageItem {
+  id: string
+  title?: string
+  type?: string
+  thumbnail_url?: string
+  cover_url?: string
+  source_url?: string
+  width?: number
+  height?: number
+  platform?: string
+  source_type?: string
+  created_at?: string
+  metadata?: Record<string, any>
+}
+
 export interface ImageBackendsResponse {
   success: boolean
   backends: ImageBackendInfo[]
@@ -370,10 +401,38 @@ export interface PortraitVersionItem {
   params: Record<string, any>
 }
 
+export interface PortraitSliceItem {
+  node_id: string
+  version_id?: string | null
+  representation_id?: string | null
+  title: string
+  label: string
+  grid_type: string
+  grid_index: number
+  row: number
+  col: number
+  source_version_id: string
+  source_representation_id: string
+  source_preset: string
+  file_path: string
+  image_url: string
+  width?: number | null
+  height?: number | null
+  created_at?: string | null
+}
+
 export function listCharacterPortraitVersions(
   characterId: string
 ): Promise<{ success: boolean; detail?: string; data?: { node_id: string | null; versions: PortraitVersionItem[] } }> {
   return fetch(`/api/v1/characters/${characterId}/portrait/versions`, {
+    headers: { 'Accept': 'application/json' },
+  }).then(r => r.json())
+}
+
+export function listCharacterPortraitSlices(
+  characterId: string,
+): Promise<{ success: boolean; detail?: string; data?: { node_id: string | null; items: PortraitSliceItem[] } }> {
+  return fetch(`/api/v1/characters/${characterId}/portrait/slices`, {
     headers: { 'Accept': 'application/json' },
   }).then(r => r.json())
 }
@@ -385,6 +444,51 @@ export function setCharacterMainPortraitVersion(
   return fetch(`/api/v1/characters/${characterId}/portrait/versions/${versionId}/set-main`, {
     method: 'POST',
     headers: { 'Accept': 'application/json' },
+  }).then(r => r.json())
+}
+
+export function sliceCharacterPortraitGrid(
+  characterId: string,
+  versionId: string,
+  data: {
+    grid_type?: 'auto' | 'expression' | 'pose'
+    rows?: number
+    cols?: number
+    overwrite_existing?: boolean
+  } = {},
+): Promise<{
+  success: boolean
+  detail?: string
+  data?: {
+    source_version_id: string
+    grid_type: string
+    rows: number
+    cols: number
+    reused?: boolean
+    items: Array<{
+      node_id: string
+      version_id?: string
+      representation_id?: string
+      file_path?: string
+      label: string
+      index: number
+      row: number
+      col: number
+      width?: number
+      height?: number
+      reused?: boolean
+    }>
+  }
+}> {
+  return fetch(`/api/v1/characters/${characterId}/portrait/versions/${versionId}/slice-grid`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    body: JSON.stringify({
+      grid_type: data.grid_type || 'auto',
+      rows: data.rows || 3,
+      cols: data.cols || 3,
+      overwrite_existing: Boolean(data.overwrite_existing),
+    }),
   }).then(r => r.json())
 }
 
@@ -443,6 +547,10 @@ export function generateCharacterPortraitViaAssetHub(
     n?: number
     preset?: PortraitPreset
     negative_prompt?: string
+    reference_images?: string[]
+    visual_profile?: Record<string, any>
+    style_override?: string
+    negative_override?: string
     set_as_main?: boolean
   }
 ): Promise<PortraitGenerateAssetHubResponse> {
@@ -533,10 +641,71 @@ function buildCharacterPortraitPrompt(form: CharacterCreateRequest): string {
     tags.length ? `补充标签：${tags.join('、')}` : '',
     '构图要求：单人，正面或轻微三分之二角度，全身或膝上立绘，头发、五官、服装、配饰清晰可辨，站姿自然，轮廓干净。',
     '画面要求：简洁纯色或浅灰背景，无复杂场景，不遮挡身体，不裁切头部和脚部，适合作为角色卡、参考图和后续一致性生图素材。',
+    PORTRAIT_PROMPT_LANGUAGE_RULE,
     '质量要求：高质量，细节明确，面部稳定，服饰结构准确，干净线条，统一光照，专业角色设计，character reference sheet, clean background.',
     '避免：多人、背影、夸张透视、过度遮挡、低清晰度、畸形手指、脸部崩坏、文字、水印、logo、复杂背景。',
   ]
   return lines.filter(Boolean).join('\n')
+}
+
+function buildVisualProfileOverride(form: CharacterCreateRequest): Record<string, any> {
+  const visualProfile = form.identity?.visual_profile || {}
+  const data = {
+    ...visualProfile,
+    face: visualProfile.face || form.appearance || '',
+    temperament: visualProfile.temperament || form.personality || '',
+    costume: visualProfile.costume || form.costume_hint || '',
+    signature_items: visualProfile.signature_items || form.signature_items || [],
+    expression_set: visualProfile.expression_set || form.expressions || [],
+    pose_set: visualProfile.pose_set || form.poses || [],
+    visual_consistency: [visualProfile.visual_consistency, form.visual_consistency].filter(Boolean).join('\n'),
+  }
+  return Object.fromEntries(
+    Object.entries(data).filter(([, value]) => {
+      if (Array.isArray(value)) return value.length > 0
+      return value !== undefined && value !== null && String(value).trim() !== ''
+    }),
+  )
+}
+
+function buildCharacterEnrichmentContext(character: Character): string {
+  const data = {
+    name: character.name,
+    role: character.role,
+    source_types: character.source_types || [],
+    age_range: character.age_range || '',
+    appearance: character.appearance || '',
+    costume_hint: character.costume_hint || '',
+    personality: character.personality || '',
+    background: character.background || '',
+    visual_consistency: character.visual_consistency || '',
+    signature_items: character.signature_items || [],
+    expressions: character.expressions || [],
+    poses: character.poses || [],
+    tags: character.tags || [],
+    identity: character.identity || {},
+    motivation: character.motivation || {},
+    speech: character.speech || {},
+    behavior: character.behavior || {},
+    ability: character.ability || {},
+    arc: character.arc || {},
+    world_usages: (character.world_usages || []).map((usage) => ({
+      project_title: usage.project_title,
+      world_name: usage.world_name,
+      usage_role: usage.usage_role,
+      local_alias: usage.local_alias,
+      local_identity: usage.local_identity,
+      local_faction: usage.local_faction,
+      local_costume: usage.local_costume,
+      local_prompt_tags: usage.local_prompt_tags || [],
+      ooc_notes: usage.ooc_notes,
+      off_model_notes: usage.off_model_notes,
+    })),
+  }
+  return [
+    '请基于下面“当前角色完整资料”补全，不要忽略已有字段；fill_missing 模式只补空缺，rewrite 模式也必须保留核心身份。',
+    JSON.stringify(data, null, 2),
+  ].join('\n')
 }
 
 function cleanPromptResponse(content: string): string {
@@ -546,6 +715,23 @@ function cleanPromptResponse(content: string): string {
     .replace(/^```(?:text|markdown|json)?/i, '')
     .replace(/```$/i, '')
     .trim()
+}
+
+function getAssetReferenceUrl(asset: AssetImageItem): string {
+  const sourceUrl = asset.source_url || ''
+  if (sourceUrl.startsWith('/api/') || sourceUrl.startsWith('http') || sourceUrl.startsWith('data:')) {
+    return sourceUrl
+  }
+  if (asset.id) return `/api/v1/assets/${asset.id}/thumbnail?original=true`
+  return asset.thumbnail_url || asset.cover_url || ''
+}
+
+function getAssetPreviewUrl(asset: AssetImageItem): string {
+  return asset.thumbnail_url || asset.cover_url || getAssetReferenceUrl(asset)
+}
+
+function formatImageSizeLabel(item: { width?: number | null; height?: number | null }): string {
+  return item.width && item.height ? `${item.width}x${item.height}` : ''
 }
 
 function emptyCharacterForm(): CharacterCreateRequest {
@@ -595,6 +781,7 @@ export default function CharactersPage() {
   // 角色立绘 AI 生图状态
   const [portraitBackends, setPortraitBackends] = useState<ImageBackendInfo[]>([])
   const [selectedPortraitBackend, setSelectedPortraitBackend] = useState<string>('')
+  const [selectedPortraitSize, setSelectedPortraitSize] = useState<string>('1024x1024')
   const [generatingPortrait, setGeneratingPortrait] = useState(false)
   const [portraitPromptDraft, setPortraitPromptDraft] = useState('')
   const [portraitNegativePromptDraft, setPortraitNegativePromptDraft] = useState('')
@@ -602,6 +789,13 @@ export default function CharactersPage() {
   const [portraitPromptCache, setPortraitPromptCache] = useState<Partial<Record<PortraitPreset, { prompt: string; negativePrompt: string }>>>({})
   const [previewingPortraitPrompt, setPreviewingPortraitPrompt] = useState(false)
   const [optimizingPortraitPrompt, setOptimizingPortraitPrompt] = useState(false)
+  const [llmConnectors, setLlmConnectors] = useState<any[]>([])
+  const [selectedEnrichProvider, setSelectedEnrichProvider] = useState<string>('')
+  const [selectedEnrichModel, setSelectedEnrichModel] = useState<string>('')
+  const [referencePickerOpen, setReferencePickerOpen] = useState(false)
+  const [referenceAssetSearch, setReferenceAssetSearch] = useState('')
+  const [referenceAssets, setReferenceAssets] = useState<AssetImageItem[]>([])
+  const [referenceAssetsLoading, setReferenceAssetsLoading] = useState(false)
   // 资产中枢升级状态（在 Drawer 中点"升级到资产中枢"时使用）
   const [upgradingPortrait, setUpgradingPortrait] = useState(false)
 
@@ -625,7 +819,10 @@ export default function CharactersPage() {
   const [portraitLogsLoading, setPortraitLogsLoading] = useState(false)
   const [portraitVersions, setPortraitVersions] = useState<PortraitVersionItem[]>([])
   const [portraitVersionsLoading, setPortraitVersionsLoading] = useState(false)
+  const [portraitSlices, setPortraitSlices] = useState<PortraitSliceItem[]>([])
+  const [portraitSlicesLoading, setPortraitSlicesLoading] = useState(false)
   const [settingMainPortrait, setSettingMainPortrait] = useState<string>('')
+  const [slicingPortraitVersion, setSlicingPortraitVersion] = useState<string>('')
   const [enrichingCharacter, setEnrichingCharacter] = useState(false)
   const [worldUsages, setWorldUsages] = useState<CharacterWorldUsage[]>([])
   const [worldUsagesLoading, setWorldUsagesLoading] = useState(false)
@@ -683,6 +880,18 @@ export default function CharactersPage() {
       setPortraitVersions([])
     } finally {
       setPortraitVersionsLoading(false)
+    }
+  }, [])
+
+  const loadPortraitSlices = useCallback(async (characterId: string) => {
+    setPortraitSlicesLoading(true)
+    try {
+      const res = await listCharacterPortraitSlices(characterId)
+      setPortraitSlices(res?.data?.items || [])
+    } catch {
+      setPortraitSlices([])
+    } finally {
+      setPortraitSlicesLoading(false)
     }
   }, [])
 
@@ -802,9 +1011,10 @@ export default function CharactersPage() {
       setDrawerActiveTab('detail')
       loadPortraitLogs(selectedCharacter.id)
       loadPortraitVersions(selectedCharacter.id)
+      loadPortraitSlices(selectedCharacter.id)
       loadWorldUsages(selectedCharacter.id)
     }
-  }, [drawerOpen, selectedCharacter?.id, loadPortraitLogs, loadPortraitVersions, loadWorldUsages])
+  }, [drawerOpen, selectedCharacter?.id, loadPortraitLogs, loadPortraitVersions, loadPortraitSlices, loadWorldUsages])
 
   const load = useCallback(async (p: number, opts: {
     keyword?: string
@@ -835,6 +1045,68 @@ export default function CharactersPage() {
     load(1, { keyword, source_type: filterSourceType, role: filterRole, is_favorite: filterFavorite || undefined })
     setPage(1)
   }, [keyword, filterSourceType, filterRole, filterFavorite, load])
+
+  useEffect(() => {
+    listConnectors({ provider_type: 'llm', active_only: true })
+      .then((res: any) => {
+        const items = res?.connectors || res?.data || []
+        setLlmConnectors(items)
+        if (!selectedEnrichProvider && items.length) {
+          const first = items[0]
+          setSelectedEnrichProvider(first.name || '')
+          setSelectedEnrichModel(first.default_model || first.model || first.available_models?.[0] || '')
+        }
+      })
+      .catch(() => setLlmConnectors([]))
+  }, [selectedEnrichProvider])
+
+  const enrichProviderOptions = useMemo(
+    () =>
+      llmConnectors.map((item) => ({
+        label: `${item.name || item.provider || 'LLM'}${item.default_model ? ` · ${item.default_model}` : ''}`,
+        value: item.name,
+      })),
+    [llmConnectors],
+  )
+
+  const enrichModelOptions = useMemo(() => {
+    const active = llmConnectors.find((item) => item.name === selectedEnrichProvider)
+    const models = active?.available_models?.length
+      ? active.available_models
+      : active?.default_model
+        ? [active.default_model]
+        : active?.model
+          ? [active.model]
+          : []
+    const uniqueModels: string[] = Array.from(new Set<string>(models.map((model: any) => String(model || '').trim()).filter(Boolean)))
+    return uniqueModels.map((model) => ({
+      label: model,
+      value: model,
+    }))
+  }, [llmConnectors, selectedEnrichProvider])
+
+  const portraitSizeOptions = useMemo(() => {
+    const activeBackend = portraitBackends.find((item) => item.name === selectedPortraitBackend)
+    const backendSizes = (activeBackend?.supported_sizes || []).map(size => String(size || '').trim()).filter(Boolean)
+    const fallbackSizes = ['1024x1024', '1024x1536', '1536x1024', '1152x896', '896x1152']
+    const uniqueSizes = Array.from(new Set([...backendSizes, ...fallbackSizes]))
+    return uniqueSizes.map(size => {
+      const [w, h] = size.split(/[x*]/i).map(v => Number(v))
+      const ratio = w && h
+        ? w === h
+          ? '1:1'
+          : w > h
+            ? '横图'
+            : '竖图'
+        : ''
+      return { label: ratio ? `${size} · ${ratio}` : size, value: size }
+    })
+  }, [portraitBackends, selectedPortraitBackend])
+
+  useEffect(() => {
+    if (!selectedPortraitSize || portraitSizeOptions.some(option => option.value === selectedPortraitSize)) return
+    setSelectedPortraitSize(portraitSizeOptions[0]?.value || '1024x1024')
+  }, [portraitSizeOptions, selectedPortraitSize])
 
   // 弹窗打开时加载生图后端列表（缓存，第二次起不重复拉）
   useEffect(() => {
@@ -1021,11 +1293,40 @@ export default function CharactersPage() {
     }
   }
 
+  const handleSlicePortraitGrid = async (version: PortraitVersionItem) => {
+    if (!selectedCharacter || slicingPortraitVersion) return
+    const gridType = version.preset === 'pose_grid_3x3' ? 'pose' : 'expression'
+    setSlicingPortraitVersion(version.id)
+    try {
+      const res = await sliceCharacterPortraitGrid(selectedCharacter.id, version.id, {
+        grid_type: gridType,
+        rows: 3,
+        cols: 3,
+      })
+      if (!res?.success || !res.data) {
+        message.error(res?.detail || '九宫格切片失败')
+        return
+      }
+      const count = res.data.items?.length || 0
+      message.success(res.data.reused ? `已复用 ${count} 张九宫格子素材` : `已切出 ${count} 张九宫格子素材`)
+      await Promise.all([
+        loadPortraitVersions(selectedCharacter.id),
+        loadPortraitSlices(selectedCharacter.id),
+        loadPortraitLogs(selectedCharacter.id),
+      ])
+    } catch (e: any) {
+      message.error(e?.message || '九宫格切片失败')
+    } finally {
+      setSlicingPortraitVersion('')
+    }
+  }
+
   const handleEnrichCharacter = async (mode: 'fill_missing' | 'rewrite' = 'fill_missing') => {
     if (!selectedCharacter || enrichingCharacter) return
     setEnrichingCharacter(true)
     try {
       const contextParts = [
+        buildCharacterEnrichmentContext(selectedCharacter),
         selectedCharacter.world_usages?.length
           ? `该角色已用于 ${selectedCharacter.world_usages.length} 个世界，请保持角色本体可复用，不要写死单一项目身份。`
           : '',
@@ -1036,6 +1337,8 @@ export default function CharactersPage() {
         mode,
         apply: true,
         context: contextParts.join('\n'),
+        provider: selectedEnrichProvider || undefined,
+        model: selectedEnrichModel || undefined,
       })
       if (!res?.success) {
         message.error(res?.detail || 'AI 补全失败')
@@ -1059,6 +1362,9 @@ export default function CharactersPage() {
     } catch (e: any) {
       message.error(e?.message || 'AI 补全失败')
     } finally {
+      if (selectedCharacter?.id) {
+        await loadPortraitLogs(selectedCharacter.id)
+      }
       setEnrichingCharacter(false)
     }
   }
@@ -1070,6 +1376,7 @@ export default function CharactersPage() {
       try {
         const data = await previewCharacterPortraitPrompt(editingCharacter.id, {
           preset: selectedPortraitPreset,
+          visual_profile: buildVisualProfileOverride(form),
           language: 'zh',
         })
         if (!data?.success || !data.data) {
@@ -1119,18 +1426,27 @@ export default function CharactersPage() {
           {
             role: 'system',
             content:
-              '你是资深角色设定师和 AI 生图提示词工程师。只输出一段可直接用于生图的完整提示词，不要 Markdown，不要解释。',
+              `你是资深角色设定师和 AI 生图提示词工程师。只输出一段可直接用于生图的完整提示词，不要 Markdown，不要解释。${PORTRAIT_PROMPT_LANGUAGE_RULE}`,
           },
           {
             role: 'user',
             content:
               `请把下面的角色立绘提示词优化成更稳定、更完整的生图提示词。\n` +
-              `要求：保留角色身份和外观，不添加矛盾设定；强调单人立绘、角色卡、清晰五官、服装细节、简洁背景、后续漫画一致性参考；包含必要负面约束。\n\n` +
+              `要求：保留角色身份和外观，不添加矛盾设定；强调单人立绘、角色卡、清晰五官、服装细节、简洁背景、后续漫画一致性参考；包含必要负面约束；${PORTRAIT_PROMPT_LANGUAGE_RULE} 输出不要出现英文整句，不要以 "3x3 grid layout"、"Panel 1" 这类英文段落开头。若输入是九宫格/分格提示词，必须完整输出第 1 到第 9 格，不能只写前几格。\n\n` +
               basePrompt,
           },
         ],
+        provider: selectedEnrichProvider || undefined,
+        model: selectedEnrichModel || undefined,
         temperature: 0.35,
-        max_tokens: 1200,
+        log_scene: 'character_portrait',
+        log_ref_id: editingCharacter?.id || undefined,
+        log_stage: 'portrait_prompt_optimize',
+        log_request: {
+          character_id: editingCharacter?.id || '',
+          character_name: form.name || editingCharacter?.name || '',
+          source: 'character_edit_modal',
+        },
       })
       const optimized = cleanPromptResponse(res?.content || '')
       if (!res?.success || !optimized) {
@@ -1170,10 +1486,12 @@ export default function CharactersPage() {
           {
             prompt,
             provider: selectedPortraitBackend,
-            size: '1024x1024',
+            size: selectedPortraitSize || '1024x1024',
             n: 1,
             preset: selectedPortraitPreset,
             negative_prompt: portraitNegativePromptDraft,
+            reference_images: (visualProfile.reference_image_urls || []).filter(Boolean),
+            visual_profile: buildVisualProfileOverride(form),
             set_as_main: true,
           }
         )
@@ -1200,7 +1518,7 @@ export default function CharactersPage() {
         const data = await generateCharacterPortraitImage({
           prompt,
           provider: selectedPortraitBackend,
-          size: '1024x1024',
+          size: selectedPortraitSize || '1024x1024',
           n: 1,
         })
         if (!data?.success) {
@@ -1288,6 +1606,60 @@ export default function CharactersPage() {
       },
     }))
   }
+
+  const setVisualProfileField = (key: string, value: any) => {
+    setForm(f => ({
+      ...f,
+      identity: {
+        ...(f.identity || {}),
+        visual_profile: {
+          ...((f.identity || {}).visual_profile || {}),
+          [key]: value,
+        },
+      },
+    }))
+  }
+
+  const visualProfile = form.identity?.visual_profile || {}
+
+  const appendReferenceImages = useCallback((urls: string[], successText?: string) => {
+    const cleaned = urls.map(url => String(url || '').trim()).filter(Boolean)
+    if (!cleaned.length) {
+      message.warning('没有可用的参考图地址')
+      return
+    }
+    const existing = (form.identity?.visual_profile?.reference_image_urls || []).map((url: string) => String(url || '').trim()).filter(Boolean)
+    const merged = Array.from(new Set([...existing, ...cleaned]))
+    setVisualProfileField('reference_image_urls', merged)
+    const added = merged.length - existing.length
+    message.success(successText || (added > 0 ? `已加入 ${added} 张参考图` : '参考图已存在'))
+  }, [form.identity])
+
+  const loadReferenceAssets = useCallback(async () => {
+    setReferenceAssetsLoading(true)
+    try {
+      const res = await listAssets({
+        asset_type: 'image',
+        search: referenceAssetSearch.trim() || undefined,
+        page: 1,
+        page_size: 36,
+      }) as any
+      setReferenceAssets(res?.data || [])
+    } catch (e: any) {
+      setReferenceAssets([])
+      message.error(e?.message || '加载素材库图片失败')
+    } finally {
+      setReferenceAssetsLoading(false)
+    }
+  }, [referenceAssetSearch])
+
+  useEffect(() => {
+    if (!referencePickerOpen) return
+    const timer = window.setTimeout(() => {
+      loadReferenceAssets()
+    }, 250)
+    return () => window.clearTimeout(timer)
+  }, [referencePickerOpen, loadReferenceAssets])
 
   return (
     <div style={{ padding: 24 }}>
@@ -1436,10 +1808,21 @@ export default function CharactersPage() {
               <CharacterEnrichmentStrip
                 character={selectedCharacter}
                 loading={enrichingCharacter}
+                providerOptions={enrichProviderOptions}
+                selectedProvider={selectedEnrichProvider}
+                selectedModel={selectedEnrichModel}
+                modelOptions={enrichModelOptions}
+                onProviderChange={(value) => {
+                  setSelectedEnrichProvider(value)
+                  const connector = llmConnectors.find((item) => item.name === value)
+                  setSelectedEnrichModel(connector?.default_model || connector?.model || connector?.available_models?.[0] || '')
+                }}
+                onModelChange={setSelectedEnrichModel}
                 onFillMissing={() => handleEnrichCharacter('fill_missing')}
                 onRewrite={() => handleEnrichCharacter('rewrite')}
               />
               <CharacterBibleQuickPanels character={selectedCharacter} theme={THEME} />
+              <CharacterBibleDetailedPanels character={selectedCharacter} theme={THEME} />
               <div style={{ marginBottom: 16 }}>
                 <Text type="secondary" style={{ fontSize: 12 }}>来源类型</Text>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
@@ -1568,10 +1951,18 @@ export default function CharactersPage() {
                     children: (
                       <CharacterPortraitVersionsTab
                         versions={portraitVersions}
+                        slices={portraitSlices}
                         loading={portraitVersionsLoading}
+                        slicesLoading={portraitSlicesLoading}
                         settingMainId={settingMainPortrait}
+                        slicingId={slicingPortraitVersion}
                         onSetMain={handleSetMainPortraitVersion}
-                        onRefresh={() => selectedCharacter && loadPortraitVersions(selectedCharacter.id)}
+                        onSliceGrid={handleSlicePortraitGrid}
+                        onRefresh={() => {
+                          if (!selectedCharacter) return
+                          loadPortraitVersions(selectedCharacter.id)
+                          loadPortraitSlices(selectedCharacter.id)
+                        }}
                       />
                     ),
                   },
@@ -1648,6 +2039,7 @@ export default function CharactersPage() {
           <TextArea rows={2} placeholder="该世界中的身份说明" value={worldUsageForm.local_identity} onChange={e => setWorldUsageForm(f => ({ ...f, local_identity: e.target.value }))} />
           <TextArea rows={2} placeholder="该世界服装/形态覆盖" value={worldUsageForm.local_costume} onChange={e => setWorldUsageForm(f => ({ ...f, local_costume: e.target.value }))} />
           <Select
+            {...compactTagSelectProps}
             mode="tags"
             placeholder="局部 Prompt 标签：赛博世界 / 校服 / 受伤状态"
             value={worldUsageForm.local_prompt_tags}
@@ -1661,7 +2053,10 @@ export default function CharactersPage() {
       {/* Create/Edit Modal */}
       <Modal open={formModalOpen} title={editingCharacter ? '编辑角色' : '新建角色'} onCancel={() => { setFormModalOpen(false); setEditingCharacter(null) }}
         footer={<Space><Button onClick={() => { setFormModalOpen(false); setEditingCharacter(null) }}>取消</Button><Button type="primary" loading={saving} onClick={handleSave}>{editingCharacter ? '保存修改' : '创建角色'}</Button></Space>}
-        width={640} destroyOnClose>
+        width={CHARACTER_FORM_MODAL_WIDTH}
+        style={{ maxWidth: 'calc(100vw - 32px)' }}
+        styles={{ body: { maxHeight: 'min(76vh, 760px)', overflowY: 'auto', paddingRight: 16 } }}
+        destroyOnClose>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div>
             <Text strong style={{ color: THEME.textPrimary }}>基本信息</Text>
@@ -1690,12 +2085,55 @@ export default function CharactersPage() {
             <Text strong style={{ color: THEME.primary }}>外观描述（用于 AI 生图提示词）</Text>
             <TextArea placeholder="外貌特征，如：黑长直、瓜子脸、肤白貌美..." value={form.appearance} onChange={e => setForm(f => ({ ...f, appearance: e.target.value }))} rows={2} style={{ marginTop: 8 }} />
             <TextArea placeholder="服装提示，如：白色衬衫+黑色短裙、古典汉服..." value={form.costume_hint} onChange={e => setForm(f => ({ ...f, costume_hint: e.target.value }))} rows={2} style={{ marginTop: 8 }} />
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
-              <Select mode="tags" placeholder="标志物：眼镜 / 银色钢笔 / 蝴蝶纹身" value={form.signature_items || []} onChange={value => setForm(f => ({ ...f, signature_items: value }))} />
-              <Select mode="tags" placeholder="常用表情：冷静 / 讥讽 / 震惊" value={form.expressions || []} onChange={value => setForm(f => ({ ...f, expressions: value }))} />
-              <Select mode="tags" placeholder="常用姿态：扶眼镜 / 抱臂 / 回头" value={form.poses || []} onChange={value => setForm(f => ({ ...f, poses: value }))} />
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 8, marginTop: 8 }}>
+              <Select {...compactTagSelectProps} mode="tags" placeholder="标志物：眼镜 / 银色钢笔 / 蝴蝶纹身" value={form.signature_items || []} onChange={value => setForm(f => ({ ...f, signature_items: value }))} />
+              <Select {...compactTagSelectProps} mode="tags" placeholder="常用表情：冷静 / 讥讽 / 震惊" value={form.expressions || []} onChange={value => setForm(f => ({ ...f, expressions: value }))} />
+              <Select {...compactTagSelectProps} mode="tags" placeholder="常用姿态：扶眼镜 / 抱臂 / 回头" value={form.poses || []} onChange={value => setForm(f => ({ ...f, poses: value }))} />
               <Input placeholder="一致性短规则：发型服装配色不要变" value={form.visual_consistency} onChange={e => setForm(f => ({ ...f, visual_consistency: e.target.value }))} />
             </div>
+            <Collapse
+              size="small"
+              style={{ marginTop: 10, background: THEME.bgCard, border: `1px solid ${THEME.borderLight}` }}
+              items={[
+                {
+                  key: 'visual-profile',
+                  label: '视觉卡细项（用于稳定立绘、九宫格和分镜生图）',
+                  children: (
+                    <Space direction="vertical" size={10} style={{ width: '100%' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                        <Input placeholder="脸部识别点：脸型 / 痣 / 伤疤 / 眉眼特征" value={visualProfile.face || ''} onChange={e => setVisualProfileField('face', e.target.value)} />
+                        <Input placeholder="发型发色：黑色短发 / 银白长发 / 刘海" value={visualProfile.hair || ''} onChange={e => setVisualProfileField('hair', e.target.value)} />
+                        <Input placeholder="眼睛：瞳色 / 眼型 / 眼神" value={visualProfile.eyes || ''} onChange={e => setVisualProfileField('eyes', e.target.value)} />
+                        <Input placeholder="肤色/皮肤特征" value={visualProfile.skin || ''} onChange={e => setVisualProfileField('skin', e.target.value)} />
+                        <Input placeholder="体型：瘦削 / 高挑 / 健壮 / 娇小" value={visualProfile.body_shape || ''} onChange={e => setVisualProfileField('body_shape', e.target.value)} />
+                        <Input placeholder="身体比例：九头身 / 少年感 / 宽肩窄腰" value={visualProfile.body_proportion || ''} onChange={e => setVisualProfileField('body_proportion', e.target.value)} />
+                        <Input placeholder="鞋履：黑色短靴 / 白色运动鞋" value={visualProfile.shoes || ''} onChange={e => setVisualProfileField('shoes', e.target.value)} />
+                        <Input placeholder="画风：日漫赛璐璐 / 写实电影感 / 国风厚涂" value={visualProfile.style || ''} onChange={e => setVisualProfileField('style', e.target.value)} />
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 8 }}>
+                        <Select {...compactTagSelectProps} mode="tags" placeholder="视觉标签：冷峻 / 甜美 / 机械义体" value={visualProfile.visual_tags || []} onChange={value => setVisualProfileField('visual_tags', value)} />
+                        <Select {...compactTagSelectProps} mode="tags" placeholder="服装配色：黑白灰 / 红金 / 蓝银" value={visualProfile.costume_colors || []} onChange={value => setVisualProfileField('costume_colors', value)} />
+                        <Select {...compactTagSelectProps} mode="tags" placeholder="材质：皮革 / 金属 / 丝绸 / 校服布料" value={visualProfile.materials || []} onChange={value => setVisualProfileField('materials', value)} />
+                        <Select {...compactTagSelectProps} mode="tags" placeholder="配饰：耳坠 / 眼镜 / 颈环 / 手套" value={visualProfile.accessories || []} onChange={value => setVisualProfileField('accessories', value)} />
+                      </div>
+                      <Select
+                        {...compactTagSelectProps}
+                        mode="tags"
+                        placeholder="负面约束：不要换发型 / 不要新增配饰 / 不要改变瞳色"
+                        value={visualProfile.negative_constraints || []}
+                        onChange={value => setVisualProfileField('negative_constraints', value)}
+                      />
+                      <TextArea
+                        rows={2}
+                        placeholder="视觉一致性补充：哪些细节在所有立绘、分镜、漫画图里都必须保持一致"
+                        value={visualProfile.visual_consistency || ''}
+                        onChange={e => setVisualProfileField('visual_consistency', e.target.value)}
+                      />
+                    </Space>
+                  ),
+                },
+              ]}
+            />
           </div>
           <div>
             <Text strong style={{ color: THEME.textPrimary }}>其他信息</Text>
@@ -1714,6 +2152,7 @@ export default function CharactersPage() {
                   children: (
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                       <Input placeholder="别名/代号" value={form.identity?.alias || ''} onChange={e => setBibleField('identity', 'alias', e.target.value)} />
+                      <Input placeholder="性别/性别表达" value={form.identity?.gender || ''} onChange={e => setBibleField('identity', 'gender', e.target.value)} />
                       <Input placeholder="性别/种族/物种" value={form.identity?.species || ''} onChange={e => setBibleField('identity', 'species', e.target.value)} />
                       <Input placeholder="身高/体型" value={form.identity?.body_profile || ''} onChange={e => setBibleField('identity', 'body_profile', e.target.value)} />
                       <Input placeholder="组织/阵营" value={form.identity?.organization || ''} onChange={e => setBibleField('identity', 'organization', e.target.value)} />
@@ -1731,6 +2170,8 @@ export default function CharactersPage() {
                       <TextArea rows={2} placeholder="深层恐惧：害怕失去什么" value={form.motivation?.fear || ''} onChange={e => setBibleField('motivation', 'fear', e.target.value)} />
                       <TextArea rows={2} placeholder="短期目标" value={form.motivation?.short_goal || ''} onChange={e => setBibleField('motivation', 'short_goal', e.target.value)} />
                       <TextArea rows={2} placeholder="长期目标/执念" value={form.motivation?.long_goal || ''} onChange={e => setBibleField('motivation', 'long_goal', e.target.value)} />
+                      <TextArea rows={2} placeholder="执念：反复驱动 TA 的念头" value={form.motivation?.obsession || ''} onChange={e => setBibleField('motivation', 'obsession', e.target.value)} />
+                      <TextArea rows={2} placeholder="价值观：判断取舍的底层原则" value={form.motivation?.values || ''} onChange={e => setBibleField('motivation', 'values', e.target.value)} />
                     </div>
                   ),
                 },
@@ -1741,8 +2182,8 @@ export default function CharactersPage() {
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                       <Input placeholder="说话风格/语速/语气" value={form.speech?.tone || ''} onChange={e => setBibleField('speech', 'tone', e.target.value)} />
                       <Input placeholder="口头禅" value={form.speech?.catchphrase || ''} onChange={e => setBibleField('speech', 'catchphrase', e.target.value)} />
-                      <TextArea rows={2} placeholder="常用句式" value={form.speech?.sentence_pattern || ''} onChange={e => setBibleField('speech', 'sentence_pattern', e.target.value)} />
-                      <TextArea rows={2} placeholder="禁用话术/回避话题" value={form.speech?.forbidden_topics || ''} onChange={e => setBibleField('speech', 'forbidden_topics', e.target.value)} />
+                      <TextArea rows={2} placeholder="常用句式/语言风格" value={form.speech?.style || form.speech?.sentence_pattern || ''} onChange={e => setBibleField('speech', 'style', e.target.value)} />
+                      <TextArea rows={2} placeholder="不会说的话/回避话题" value={form.speech?.taboo || form.speech?.forbidden_topics || ''} onChange={e => setBibleField('speech', 'taboo', e.target.value)} />
                     </div>
                   ),
                 },
@@ -1751,7 +2192,7 @@ export default function CharactersPage() {
                   label: '行为边界 / OOC',
                   children: (
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                      <TextArea rows={2} placeholder="习惯性动作/小癖好" value={form.behavior?.habits || ''} onChange={e => setBibleField('behavior', 'habits', e.target.value)} />
+                      <TextArea rows={2} placeholder="习惯性动作/小癖好" value={form.behavior?.habit || form.behavior?.habits || ''} onChange={e => setBibleField('behavior', 'habit', e.target.value)} />
                       <TextArea rows={2} placeholder="应激反应" value={form.behavior?.stress_response || ''} onChange={e => setBibleField('behavior', 'stress_response', e.target.value)} />
                       <TextArea rows={2} placeholder="绝对底线" value={form.behavior?.boundary || ''} onChange={e => setBibleField('behavior', 'boundary', e.target.value)} />
                       <TextArea rows={2} placeholder="绝对不会做的事（OOC 判定）" value={form.behavior?.never_do || ''} onChange={e => setBibleField('behavior', 'never_do', e.target.value)} />
@@ -1766,6 +2207,7 @@ export default function CharactersPage() {
                       <TextArea rows={2} placeholder="天赋/技能" value={form.ability?.skills || ''} onChange={e => setBibleField('ability', 'skills', e.target.value)} />
                       <TextArea rows={2} placeholder="弱点/短板" value={form.ability?.weakness || ''} onChange={e => setBibleField('ability', 'weakness', e.target.value)} />
                       <TextArea rows={2} placeholder="使用限制/代价" value={form.ability?.limits || ''} onChange={e => setBibleField('ability', 'limits', e.target.value)} />
+                      <TextArea rows={2} placeholder="代价：使用能力或达成目标要付出什么" value={form.ability?.cost || ''} onChange={e => setBibleField('ability', 'cost', e.target.value)} />
                       <TextArea rows={2} placeholder="知识特长" value={form.ability?.knowledge || ''} onChange={e => setBibleField('ability', 'knowledge', e.target.value)} />
                     </div>
                   ),
@@ -1775,10 +2217,10 @@ export default function CharactersPage() {
                   label: '人物弧光',
                   children: (
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                      <TextArea rows={2} placeholder="前期人设" value={form.arc?.early || ''} onChange={e => setBibleField('arc', 'early', e.target.value)} />
+                      <TextArea rows={2} placeholder="开局状态/前期人设" value={form.arc?.start_state || form.arc?.early || ''} onChange={e => setBibleField('arc', 'start_state', e.target.value)} />
                       <TextArea rows={2} placeholder="转变触发条件" value={form.arc?.turning_point || ''} onChange={e => setBibleField('arc', 'turning_point', e.target.value)} />
                       <TextArea rows={2} placeholder="结局走向" value={form.arc?.ending || ''} onChange={e => setBibleField('arc', 'ending', e.target.value)} />
-                      <TextArea rows={2} placeholder="剧情雷点 / 容易 OOC 的桥段" value={form.arc?.risk_notes || ''} onChange={e => setBibleField('arc', 'risk_notes', e.target.value)} />
+                      <TextArea rows={2} placeholder="剧情雷点 / 容易 OOC 的桥段" value={form.arc?.risk || form.arc?.risk_notes || ''} onChange={e => setBibleField('arc', 'risk', e.target.value)} />
                     </div>
                   ),
                 },
@@ -1799,6 +2241,15 @@ export default function CharactersPage() {
                     label: b.name || b.model || b.provider,
                     value: b.name,
                   }))}
+                  disabled={generatingPortrait}
+                />
+                <Select
+                  size="small"
+                  style={{ width: 150 }}
+                  placeholder="尺寸/比例"
+                  value={selectedPortraitSize}
+                  onChange={setSelectedPortraitSize}
+                  options={portraitSizeOptions}
                   disabled={generatingPortrait}
                 />
                 <Button
@@ -1834,6 +2285,28 @@ export default function CharactersPage() {
                   </Tooltip>
                 </Space>
                 <Space size={6} wrap>
+                  <Select
+                    size="small"
+                    placeholder="LLM provider"
+                    value={selectedEnrichProvider || undefined}
+                    options={enrichProviderOptions}
+                    onChange={(value) => {
+                      setSelectedEnrichProvider(value)
+                      const connector = llmConnectors.find((item) => item.name === value)
+                      setSelectedEnrichModel(connector?.default_model || connector?.model || connector?.available_models?.[0] || '')
+                    }}
+                    style={{ width: 170 }}
+                    disabled={optimizingPortraitPrompt}
+                  />
+                  <Select
+                    size="small"
+                    placeholder="LLM model"
+                    value={selectedEnrichModel || undefined}
+                    options={enrichModelOptions}
+                    onChange={setSelectedEnrichModel}
+                    style={{ width: 170 }}
+                    disabled={optimizingPortraitPrompt || !selectedEnrichProvider}
+                  />
                   <Button size="small" onClick={handleRefreshPortraitPrompt} loading={previewingPortraitPrompt}>
                     根据角色信息生成
                   </Button>
@@ -1867,6 +2340,57 @@ export default function CharactersPage() {
             </div>
             <Input placeholder="输入立绘图片 URL（也可由 AI 生成自动回填）" value={form.portrait_url} onChange={e => setForm(f => ({ ...f, portrait_url: e.target.value }))} style={{ marginTop: 8 }} />
             {form.portrait_url && <Image src={form.portrait_url} width={120} height={120} style={{ objectFit: 'cover', borderRadius: 8, marginTop: 8 }} fallback="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==" />}
+            <div style={{ marginTop: 10 }}>
+              <Text type="secondary" style={{ display: 'block', fontSize: 12, marginBottom: 6 }}>
+                参考图 URL（用于支持图生图/参考图的模型；可填素材库图片下载地址或外部图片地址）
+              </Text>
+              <Space size={6} wrap style={{ marginBottom: 8 }}>
+                <Button
+                  size="small"
+                  icon={<PictureOutlined />}
+                  onClick={() => appendReferenceImages([form.portrait_url || ''], '已加入当前主立绘作为参考图')}
+                  disabled={!form.portrait_url}
+                >
+                  使用当前主立绘
+                </Button>
+                <Button
+                  size="small"
+                  icon={<HistoryOutlined />}
+                  onClick={() => appendReferenceImages(portraitVersions.map(version => version.image_url || '').filter(Boolean), '已加入历史立绘版本')}
+                  disabled={!portraitVersions.length}
+                >
+                  加入历史立绘
+                </Button>
+                <Button
+                  size="small"
+                  icon={<FileImageOutlined />}
+                  onClick={() => setReferencePickerOpen(true)}
+                >
+                  从素材库选择
+                </Button>
+              </Space>
+              <Select
+                {...compactTagSelectProps}
+                mode="tags"
+                placeholder="粘贴参考图 URL 后回车；例如素材库 /api/v1/assets/download?... 地址"
+                value={visualProfile.reference_image_urls || []}
+                onChange={value => setVisualProfileField('reference_image_urls', value)}
+              />
+              {(visualProfile.reference_image_urls || []).length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+                  {(visualProfile.reference_image_urls || []).slice(0, 6).map((url: string, index: number) => (
+                    <Image
+                      key={`${url}-${index}`}
+                      src={url}
+                      width={72}
+                      height={72}
+                      style={{ objectFit: 'cover', borderRadius: 8, border: `1px solid ${THEME.borderLight}` }}
+                      fallback="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
             {form.portrait_asset_id && (
               <div style={{ marginTop: 6, fontSize: 12, color: THEME.textSecondary }}>
                 已绑定资产 ID: <span style={{ fontFamily: 'monospace' }}>{form.portrait_asset_id}</span>
@@ -1887,6 +2411,113 @@ export default function CharactersPage() {
           </div>
           {editingCharacter?.is_frozen && <Alert type="warning" message="此角色已冻结（生成后为保持一致性禁止修改外观描述）" showIcon />}
         </div>
+      </Modal>
+      <Modal
+        open={referencePickerOpen}
+        title="选择数据库参考图"
+        width={760}
+        footer={null}
+        onCancel={() => setReferencePickerOpen(false)}
+        destroyOnClose
+      >
+        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          <Alert
+            type="info"
+            showIcon
+            message="参考图会加入角色视觉卡的 reference_image_urls。生成立绘时，支持图生图/参考图的模型会收到这些图片。"
+          />
+          <Tabs
+            items={[
+              {
+                key: 'portraits',
+                label: `角色立绘版本 (${portraitVersions.length})`,
+                children: portraitVersions.length ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 10 }}>
+                    {portraitVersions.map(version => {
+                      const url = version.image_url || ''
+                      return (
+                        <div key={version.id} style={{ border: `1px solid ${THEME.borderLight}`, borderRadius: 8, padding: 8, background: THEME.bgElevated }}>
+                          <Image
+                            src={url}
+                            width="100%"
+                            height={110}
+                            style={{ objectFit: 'cover', borderRadius: 6 }}
+                            fallback="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+                          />
+                          <Space direction="vertical" size={4} style={{ width: '100%', marginTop: 8 }}>
+                            <Text strong style={{ fontSize: 12, color: THEME.textPrimary }}>
+                              v{version.version_number}{version.is_main ? ' · 主立绘' : ''}
+                            </Text>
+                            <Text type="secondary" style={{ fontSize: 11 }}>
+                              {[version.preset, formatImageSizeLabel(version)].filter(Boolean).join(' · ') || '角色立绘'}
+                            </Text>
+                            <Button size="small" block onClick={() => appendReferenceImages([url])} disabled={!url}>
+                              加入参考
+                            </Button>
+                          </Space>
+                        </div>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <Empty description="暂无立绘版本，生成或升级到资产中枢后会出现在这里" />
+                ),
+              },
+              {
+                key: 'assets',
+                label: '素材库图片',
+                children: (
+                  <Space direction="vertical" size={10} style={{ width: '100%' }}>
+                    <Input.Search
+                      allowClear
+                      placeholder="搜索素材库图片标题、标签或模型"
+                      value={referenceAssetSearch}
+                      onChange={e => setReferenceAssetSearch(e.target.value)}
+                      onSearch={loadReferenceAssets}
+                      enterButton={<SearchOutlined />}
+                    />
+                    <Spin spinning={referenceAssetsLoading}>
+                      {referenceAssets.length ? (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 10, minHeight: 180 }}>
+                          {referenceAssets.map(asset => {
+                            const refUrl = getAssetReferenceUrl(asset)
+                            const previewUrl = getAssetPreviewUrl(asset)
+                            return (
+                              <div key={asset.id} style={{ border: `1px solid ${THEME.borderLight}`, borderRadius: 8, padding: 8, background: THEME.bgElevated }}>
+                                <Image
+                                  src={previewUrl}
+                                  width="100%"
+                                  height={110}
+                                  style={{ objectFit: 'cover', borderRadius: 6 }}
+                                  fallback="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+                                />
+                                <Space direction="vertical" size={4} style={{ width: '100%', marginTop: 8 }}>
+                                  <Tooltip title={asset.title}>
+                                    <Text strong ellipsis style={{ fontSize: 12, color: THEME.textPrimary, maxWidth: '100%' }}>
+                                      {asset.title || asset.id}
+                                    </Text>
+                                  </Tooltip>
+                                  <Text type="secondary" style={{ fontSize: 11 }}>
+                                    {[formatImageSizeLabel(asset), asset.platform || asset.source_type].filter(Boolean).join(' · ') || '素材库图片'}
+                                  </Text>
+                                  <Button size="small" block onClick={() => appendReferenceImages([refUrl])} disabled={!refUrl}>
+                                    加入参考
+                                  </Button>
+                                </Space>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      ) : (
+                        <Empty description={referenceAssetsLoading ? '加载中...' : '没有找到图片素材'} />
+                      )}
+                    </Spin>
+                  </Space>
+                ),
+              },
+            ]}
+          />
+        </Space>
       </Modal>
     </div>
   )
@@ -2014,14 +2645,136 @@ function CharacterBibleQuickPanels({ character, theme }: { character: Character;
   )
 }
 
+function CharacterBibleDetailedPanels({ character, theme }: { character: Character; theme: any }) {
+  const visual = character.identity?.visual_profile || {}
+  const sections = [
+    {
+      key: 'visual_profile',
+      title: '视觉卡细项',
+      items: [
+        ['脸部识别点', visual.face],
+        ['发型发色', visual.hair],
+        ['眼睛', visual.eyes],
+        ['肤色/皮肤', visual.skin],
+        ['体型', visual.body_shape || character.identity?.body_profile],
+        ['身体比例', visual.body_proportion],
+        ['服装结构', visual.costume || character.costume_hint],
+        ['服装配色', visual.costume_colors],
+        ['材质', visual.materials],
+        ['鞋履', visual.shoes],
+        ['配饰', visual.accessories],
+        ['画风', visual.style],
+        ['负面约束', visual.negative_constraints],
+      ],
+    },
+    {
+      key: 'motivation_full',
+      title: '动机与心理',
+      items: [
+        ['核心欲望', character.motivation?.desire],
+        ['深层恐惧', character.motivation?.fear],
+        ['短期目标', character.motivation?.short_goal],
+        ['长期目标', character.motivation?.long_goal],
+        ['执念', character.motivation?.obsession],
+        ['价值观', character.motivation?.values],
+      ],
+    },
+    {
+      key: 'speech_full',
+      title: '语言语态',
+      items: [
+        ['语气', character.speech?.tone],
+        ['口头禅', character.speech?.catchphrase],
+        ['句式/风格', character.speech?.style || character.speech?.sentence_pattern],
+        ['禁忌话题', character.speech?.taboo || character.speech?.forbidden_topics],
+      ],
+    },
+    {
+      key: 'behavior_full',
+      title: '行为与 OOC 边界',
+      items: [
+        ['行为习惯', character.behavior?.habit || character.behavior?.habits],
+        ['压力反应', character.behavior?.stress_response],
+        ['底线', character.behavior?.boundary],
+        ['绝不会做', character.behavior?.never_do],
+      ],
+    },
+    {
+      key: 'ability_arc_full',
+      title: '能力限制与人物弧光',
+      items: [
+        ['技能/特长', character.ability?.skills],
+        ['弱点', character.ability?.weakness],
+        ['限制', character.ability?.limits],
+        ['代价', character.ability?.cost],
+        ['开局状态', character.arc?.start_state || character.arc?.early],
+        ['关键转折', character.arc?.turning_point],
+        ['结局方向', character.arc?.ending],
+        ['剧情风险', character.arc?.risk || character.arc?.risk_notes],
+      ],
+    },
+  ]
+
+  return (
+    <Collapse
+      size="small"
+      style={{ marginBottom: 16, background: theme.bgCard, border: `1px solid ${theme.borderLight}` }}
+      items={sections.map((section) => ({
+        key: section.key,
+        label: section.title,
+        children: (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+            {section.items.map(([label, value]) => (
+              <BibleDetailCell key={label} label={label} value={value} theme={theme} />
+            ))}
+          </div>
+        ),
+      }))}
+    />
+  )
+}
+
+function BibleDetailCell({ label, value, theme }: { label: string; value: any; theme: any }) {
+  const text = formatBibleValue(value)
+  return (
+    <div style={{ padding: 10, borderRadius: 8, background: theme.bgPage, border: `1px solid ${theme.borderLight}` }}>
+      <Text type="secondary" style={{ display: 'block', fontSize: 12, marginBottom: 4 }}>{label}</Text>
+      <Paragraph
+        style={{ margin: 0, color: text ? theme.textPrimary : theme.textSecondary, whiteSpace: 'pre-wrap' }}
+        ellipsis={{ rows: 3, tooltip: text }}
+      >
+        {text || '未设置'}
+      </Paragraph>
+    </div>
+  )
+}
+
+function formatBibleValue(value: any): string {
+  if (Array.isArray(value)) return value.filter(Boolean).join('、')
+  if (value && typeof value === 'object') return JSON.stringify(value, null, 2)
+  return String(value || '').trim()
+}
+
 function CharacterEnrichmentStrip({
   character,
   loading,
+  providerOptions,
+  selectedProvider,
+  selectedModel,
+  modelOptions,
+  onProviderChange,
+  onModelChange,
   onFillMissing,
   onRewrite,
 }: {
   character: Character
   loading: boolean
+  providerOptions: Array<{ label: string; value: string }>
+  selectedProvider: string
+  selectedModel: string
+  modelOptions: Array<{ label: string; value: string }>
+  onProviderChange: (value: string) => void
+  onModelChange: (value: string) => void
   onFillMissing: () => void
   onRewrite: () => void
 }) {
@@ -2051,6 +2804,24 @@ function CharacterEnrichmentStrip({
         </Text>
       </Space>
       <Space wrap style={{ justifyContent: 'flex-end' }}>
+        <Select
+          size="small"
+          placeholder="LLM provider"
+          value={selectedProvider || undefined}
+          options={providerOptions}
+          onChange={onProviderChange}
+          style={{ width: 190 }}
+          disabled={loading}
+        />
+        <Select
+          size="small"
+          placeholder="LLM model"
+          value={selectedModel || undefined}
+          options={modelOptions}
+          onChange={onModelChange}
+          style={{ width: 190 }}
+          disabled={loading || !selectedProvider}
+        />
         <Button icon={<ThunderboltOutlined />} loading={loading} onClick={onFillMissing}>
           AI 补空字段
         </Button>
@@ -2119,18 +2890,27 @@ function getCharacterMissingLabels(character: Character): string[] {
 
 function CharacterPortraitVersionsTab({
   versions,
+  slices,
   loading,
+  slicesLoading,
   settingMainId,
+  slicingId,
   onSetMain,
+  onSliceGrid,
   onRefresh,
 }: {
   versions: PortraitVersionItem[]
+  slices: PortraitSliceItem[]
   loading: boolean
+  slicesLoading: boolean
   settingMainId: string
+  slicingId: string
   onSetMain: (version: PortraitVersionItem) => void
+  onSliceGrid: (version: PortraitVersionItem) => void
   onRefresh: () => void
 }) {
   const { theme } = useTheme()
+  const isGridVersion = (record: PortraitVersionItem) => ['expression_grid_3x3', 'pose_grid_3x3'].includes(record.preset)
   const columns = [
     {
       title: '预览',
@@ -2189,16 +2969,35 @@ function CharacterPortraitVersionsTab({
     },
     {
       title: '操作',
-      width: 130,
+      width: 210,
       render: (_: any, record: PortraitVersionItem) => (
-        <Button
-          size="small"
-          disabled={record.is_main}
-          loading={settingMainId === record.id}
-          onClick={() => onSetMain(record)}
-        >
-          设为主立绘
-        </Button>
+        <Space size={6} wrap>
+          {isGridVersion(record) ? (
+            <Popconfirm
+              title="切出 3x3 子素材？"
+              description="会把这张九宫格图切成 9 张图片，并挂到该角色立绘节点下供分镜引用。"
+              okText="切片"
+              cancelText="取消"
+              onConfirm={() => onSliceGrid(record)}
+            >
+              <Button
+                size="small"
+                icon={<FileImageOutlined />}
+                loading={slicingId === record.id}
+              >
+                切九宫格
+              </Button>
+            </Popconfirm>
+          ) : null}
+          <Button
+            size="small"
+            disabled={record.is_main}
+            loading={settingMainId === record.id}
+            onClick={() => onSetMain(record)}
+          >
+            设为主立绘
+          </Button>
+        </Space>
       ),
     },
   ]
@@ -2221,6 +3020,7 @@ function CharacterPortraitVersionsTab({
           expandable={{
             expandedRowRender: (record: PortraitVersionItem) => (
               <Space direction="vertical" size={10} style={{ width: '100%' }}>
+                <ReferenceImagesPreview urls={record.params?.reference_images || []} />
                 {record.prompt ? <LogTextBlock title="Prompt" value={record.prompt} rows={5} /> : null}
                 {record.negative_prompt ? <LogTextBlock title="负面提示词" value={record.negative_prompt} rows={3} /> : null}
                 {Object.keys(record.params || {}).length ? (
@@ -2232,6 +3032,72 @@ function CharacterPortraitVersionsTab({
         />
       ) : (
         <Empty description={loading ? '加载中...' : '暂无立绘版本。生成或升级立绘后会出现在这里。'} />
+      )}
+      <Divider style={{ margin: '4px 0 0' }} />
+      <Space style={{ justifyContent: 'space-between', width: '100%' }} align="center">
+        <Space direction="vertical" size={2}>
+          <Text strong style={{ color: theme.textPrimary }}>九宫格子素材</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            从表情/动作九宫格切出的可复用素材，会作为该角色立绘节点的子资产保存。
+          </Text>
+        </Space>
+        {slices.length ? <Tag color="cyan">{slices.length} 张</Tag> : null}
+      </Space>
+      {slicesLoading ? (
+        <Spin />
+      ) : slices.length ? (
+        <Image.PreviewGroup>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))', gap: 10 }}>
+            {slices.map(slice => (
+              <div
+                key={slice.node_id}
+                style={{
+                  border: `1px solid ${theme.borderLight}`,
+                  background: theme.bgCard,
+                  borderRadius: 8,
+                  overflow: 'hidden',
+                }}
+              >
+                <div style={{ aspectRatio: '1 / 1', background: theme.bgElevated }}>
+                  {slice.image_url ? (
+                    <Image
+                      src={slice.image_url}
+                      alt={slice.label}
+                      width="100%"
+                      height="100%"
+                      style={{ objectFit: 'cover', display: 'block' }}
+                      fallback="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+                    />
+                  ) : (
+                    <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <FileImageOutlined style={{ color: theme.textSecondary }} />
+                    </div>
+                  )}
+                </div>
+                <div style={{ padding: '6px 8px' }}>
+                  <Text
+                    strong
+                    style={{ display: 'block', color: theme.textPrimary, fontSize: 12 }}
+                    ellipsis={{ tooltip: slice.label }}
+                  >
+                    {slice.grid_index ? `${slice.grid_index}. ` : ''}{slice.label}
+                  </Text>
+                  <Space size={4} wrap style={{ marginTop: 4 }}>
+                    <Tag color={slice.grid_type === 'pose' ? 'purple' : 'blue'} style={{ marginInlineEnd: 0 }}>
+                      {slice.grid_type === 'pose' ? '动作' : '表情'}
+                    </Tag>
+                    {slice.row && slice.col ? <Tag style={{ marginInlineEnd: 0 }}>{slice.row}x{slice.col}</Tag> : null}
+                  </Space>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Image.PreviewGroup>
+      ) : (
+        <Empty
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+          description="暂无九宫格子素材。先生成表情九宫格或动作九宫格版本，再点击“切九宫格”。"
+        />
       )}
     </Space>
   )
@@ -2362,6 +3228,10 @@ const STAGE_LABELS: Record<string, string> = {
   portrait_generate: '立绘生成',
   generate_image: '调用生图',
   asset_hub_sync: '资产中枢写入',
+  character_enrich_fill_missing: 'AI 补空字段',
+  character_enrich_rewrite: 'AI 统一重写',
+  portrait_prompt_optimize: '提示词优化',
+  portrait_grid_slice: '九宫格切片',
 }
 
 function CharacterPortraitLogsTab({
@@ -2490,6 +3360,33 @@ function LogTextBlock({ title, value, rows }: { title: string; value: string; ro
           fontSize: 12,
         }}
       />
+    </div>
+  )
+}
+
+function ReferenceImagesPreview({ urls }: { urls: string[] }) {
+  const { theme } = useTheme()
+  const items = (urls || []).map(url => String(url || '').trim()).filter(Boolean)
+  if (!items.length) return null
+  return (
+    <div>
+      <Text type="secondary" style={{ display: 'block', fontSize: 12, marginBottom: 6 }}>
+        参考图 · {items.length}
+      </Text>
+      <Image.PreviewGroup>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          {items.slice(0, 12).map((url, index) => (
+            <Image
+              key={`${url}-${index}`}
+              src={url}
+              width={72}
+              height={72}
+              style={{ objectFit: 'cover', borderRadius: 8, border: `1px solid ${theme.borderLight}` }}
+              fallback="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+            />
+          ))}
+        </div>
+      </Image.PreviewGroup>
     </div>
   )
 }

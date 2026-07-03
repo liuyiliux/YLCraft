@@ -146,6 +146,21 @@ Required traits:
 
 This preset remains as a convenience alias for workflows that want expressions and poses in one compact sheet. New UI should prefer the clearer `expression_pack` and `action_pose_pack` presets.
 
+#### `expression_grid_3x3` and `pose_grid_3x3`
+
+Cutting-friendly sheets for producing reusable downstream assets.
+
+Target output:
+
+- One character only.
+- Exactly 3 rows and 3 columns.
+- Equal-sized cells with clear separation.
+- Same face, outfit, body proportion and signature items in every cell.
+- Expression grid cells should map to neutral, smile, laugh, shocked, angry, sad, shy, thinking and determined.
+- Pose grid cells should map to front standing, side standing, back/turning, arms crossed, walking, running, sitting, ready stance and action close-up.
+
+After generation, the user can run the grid slicing action. The backend crops the local image into 9 child `image` Asset Hub nodes under the character portrait node and records source node/version/representation lineage on each child.
+
 ## Prompt Builder
 
 The prompt builder should be backend-owned so logs and generated assets can be reproduced.
@@ -225,6 +240,24 @@ Representation extra should include:
 - `local_path`
 - `is_main`
 - `preset`
+
+Grid-sliced child nodes should use:
+
+- Node `asset_type = image`
+- Node `parent_id = character.portrait_node_id`
+- Node metadata:
+  - `source = character_portrait_grid_slice`
+  - `character_id`
+  - `source_portrait_node_id`
+  - `source_version_id`
+  - `source_representation_id`
+  - `grid_type`
+  - `grid_index`
+  - `row`
+  - `col`
+  - `label`
+- Child version lineage mirroring the same source fields.
+- A `derived_from` AssetRelation from the portrait node to each sliced image node.
 
 ## Main Portrait Selection
 

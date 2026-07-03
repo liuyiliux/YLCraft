@@ -94,6 +94,47 @@ class ImageGenerateRequest(BaseModel):
     source_index: Optional[str] = None
     source_title: Optional[str] = None
     chapter_number: Optional[str] = None
+    reference_asset_ids: Optional[list[str]] = None
+    character_ids: Optional[list[str]] = None
+    portrait_node_ids: Optional[list[str]] = None
+    portrait_version_ids: Optional[list[str]] = None
+    reference_image_collection: Optional[list[dict]] = None
+
+
+def _generation_lineage_from_request(req: ImageGenerateRequest, *, extra: dict | None = None) -> dict:
+    lineage = {
+        "project_id": req.project_id or "",
+        "content_id": req.content_id or "",
+        "source_type": req.source_type or "",
+        "source_index": req.source_index or "",
+        "source_title": req.source_title or "",
+        "chapter_number": req.chapter_number or "",
+        "reference_asset_ids": req.reference_asset_ids or [],
+        "character_ids": req.character_ids or [],
+        "portrait_node_ids": req.portrait_node_ids or [],
+        "portrait_version_ids": req.portrait_version_ids or [],
+        "reference_image_collection": req.reference_image_collection or [],
+        **(extra or {}),
+    }
+    return {key: value for key, value in lineage.items() if value not in (None, "", [])}
+
+
+def _generation_lineage_from_payload(payload: dict, *, extra: dict | None = None) -> dict:
+    lineage = {
+        "project_id": payload.get("project_id", ""),
+        "content_id": payload.get("content_id", ""),
+        "source_type": payload.get("source_type", ""),
+        "source_index": payload.get("source_index", ""),
+        "source_title": payload.get("source_title", ""),
+        "chapter_number": payload.get("chapter_number", ""),
+        "reference_asset_ids": payload.get("reference_asset_ids") or [],
+        "character_ids": payload.get("character_ids") or [],
+        "portrait_node_ids": payload.get("portrait_node_ids") or [],
+        "portrait_version_ids": payload.get("portrait_version_ids") or [],
+        "reference_image_collection": payload.get("reference_image_collection") or [],
+        **(extra or {}),
+    }
+    return {key: value for key, value in lineage.items() if value not in (None, "", [])}
 
 
 class ImageResponse(BaseModel):
@@ -281,6 +322,11 @@ async def generate_image(req: ImageGenerateRequest):
                         "source_index": req.source_index or "",
                         "source_title": req.source_title or "",
                         "chapter_number": req.chapter_number or "",
+                        "reference_asset_ids": req.reference_asset_ids or [],
+                        "character_ids": req.character_ids or [],
+                        "portrait_node_ids": req.portrait_node_ids or [],
+                        "portrait_version_ids": req.portrait_version_ids or [],
+                        "reference_image_collection": req.reference_image_collection or [],
                         "diagnostics": {
                             "external_task_id": result.task_id,
                             "provider": result.provider or req.provider or "",
@@ -353,15 +399,10 @@ async def generate_image(req: ImageGenerateRequest):
                                         "lora": req.lora or "",
                                         "controlnet": req.controlnet or "",
                                         "image_index": idx,
+                                        "reference_images_count": len(req.reference_images or []),
+                                        "reference_image_collection": req.reference_image_collection or [],
                                     },
-                                    lineage={
-                                        "project_id": req.project_id or "",
-                                        "content_id": req.content_id or "",
-                                        "source_type": req.source_type or "",
-                                        "source_index": req.source_index or "",
-                                        "source_title": req.source_title or "",
-                                        "chapter_number": req.chapter_number or "",
-                                    },
+                                    lineage=_generation_lineage_from_request(req),
                                 )
                             except Exception as hub_error:
                                 logger.warning(f"Failed to save image to Asset Hub: {hub_error}")
@@ -533,17 +574,16 @@ async def poll_image_task(
                                             "lora": payload.get("lora", ""),
                                             "controlnet": payload.get("controlnet", ""),
                                             "image_index": idx,
+                                            "reference_images_count": len(payload.get("reference_images") or []),
+                                            "reference_image_collection": payload.get("reference_image_collection") or [],
                                         },
-                                        lineage={
-                                            "task_id": task_id,
-                                            "external_task_id": external_task_id,
-                                            "project_id": payload.get("project_id", ""),
-                                            "content_id": payload.get("content_id", ""),
-                                            "source_type": payload.get("source_type", ""),
-                                            "source_index": payload.get("source_index", ""),
-                                            "source_title": payload.get("source_title", ""),
-                                            "chapter_number": payload.get("chapter_number", ""),
-                                        },
+                                        lineage=_generation_lineage_from_payload(
+                                            payload,
+                                            extra={
+                                                "task_id": task_id,
+                                                "external_task_id": external_task_id,
+                                            },
+                                        ),
                                     )
                                 except Exception as hub_error:
                                     logger.warning(f"Failed to save async image to Asset Hub: {hub_error}")

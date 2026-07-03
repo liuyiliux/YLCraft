@@ -24,6 +24,10 @@ class ChatRequest(BaseModel):
     temperature: float | None = None
     max_tokens: int | None = None
     provider: str | None = None
+    log_scene: str | None = None
+    log_ref_id: str | None = None
+    log_stage: str | None = None
+    log_request: dict | None = None
 
 
 class ChatResponse(BaseModel):
@@ -134,9 +138,43 @@ async def chat(req: ChatRequest):
         result = await manager.chat(
             messages=llm_messages,
             provider=req.provider,
+            model=req.model,
             temperature=req.temperature,
             max_tokens=req.max_tokens,
         )
+
+        if req.log_scene or req.log_stage or req.log_ref_id:
+            try:
+                from app.db.database import get_async_session
+                from app.db.models.creative_project import ProjectGenerationLog
+                from app.services.creative_project.service import dumps_json
+
+                async with get_async_session() as session:
+                    session.add(
+                        ProjectGenerationLog(
+                            scene=req.log_scene or "llm_chat",
+                            ref_id=req.log_ref_id,
+                            stage=req.log_stage or "chat",
+                            provider=result.provider or req.provider or "",
+                            model=result.model or req.model or "",
+                            status="success" if result.success else "failed",
+                            prompt=dumps_json(req.messages),
+                            request_json=dumps_json({
+                                "messages": req.messages,
+                                "provider": req.provider,
+                                "model": req.model,
+                                "temperature": req.temperature,
+                                "max_tokens": req.max_tokens,
+                                **(req.log_request or {}),
+                            }),
+                            raw_response=result.content or "",
+                            normalized_json=dumps_json({"usage": result.usage or {}}),
+                            validation_error=result.error or "",
+                        )
+                    )
+                    await session.commit()
+            except Exception as log_err:
+                logger.warning(f"LLM chat log write failed: {log_err}")
 
         return ChatResponse(
             success=result.success,
