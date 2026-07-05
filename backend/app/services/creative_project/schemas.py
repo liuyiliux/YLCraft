@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
@@ -177,6 +179,75 @@ class NovelBodySchema(FlexibleModel):
     content: str = ""
     word_count: int = 0
     continuity_notes: list[str] = Field(default_factory=list)
+
+
+class WriterRoomSceneBeatSchema(FlexibleModel):
+    scene_number: int = 1
+    title: str = ""
+    purpose: str = ""
+    location: str = ""
+    characters: list[str] = Field(default_factory=list)
+    dramatic_question: str = ""
+    character_wants: list[str] = Field(default_factory=list)
+    obstacle: str = ""
+    conflict_pressure: str = ""
+    action_beats: list[str] = Field(default_factory=list)
+    subtext: str = ""
+    sensory_anchors: list[str] = Field(default_factory=list)
+    turning_point: str = ""
+    hook: str = ""
+
+
+class WriterRoomSceneBeatsSchema(FlexibleModel):
+    chapter_number: int = 1
+    title: str = ""
+    summary: str = ""
+    scene_beats: list[WriterRoomSceneBeatSchema] = Field(default_factory=list)
+    continuity_notes: list[str] = Field(default_factory=list)
+
+
+class WriterRoomCharacterReactionSchema(FlexibleModel):
+    character: str = ""
+    public_goal: str = ""
+    private_goal: str = ""
+    fear: str = ""
+    knows: str = ""
+    hides: str = ""
+    likely_action: str = ""
+    likely_dialogue: list[str] = Field(default_factory=list)
+    subtext: str = ""
+    voice_rules: list[str] = Field(default_factory=list)
+
+
+class WriterRoomCharacterRehearsalSchema(FlexibleModel):
+    chapter_number: int = 1
+    title: str = ""
+    scene_rehearsals: list[dict[str, Any]] = Field(default_factory=list)
+    character_reactions: list[WriterRoomCharacterReactionSchema] = Field(default_factory=list)
+    usable_conflicts: list[str] = Field(default_factory=list)
+    continuity_notes: list[str] = Field(default_factory=list)
+
+
+class WriterRoomReviewIssueSchema(FlexibleModel):
+    severity: str = "medium"
+    category: str = ""
+    location: str = ""
+    problem: str = ""
+    suggestion: str = ""
+    rewrite_instruction: str = ""
+
+
+class WriterRoomProseReviewSchema(FlexibleModel):
+    chapter_number: int = 1
+    title: str = ""
+    overall_score: int = Field(default=0, ge=0, le=100)
+    ai_smell_score: int = Field(default=0, ge=0, le=100)
+    quality_tags: list[str] = Field(default_factory=list)
+    ai_smell_checks: list[str] = Field(default_factory=list)
+    strengths: list[str] = Field(default_factory=list)
+    issues: list[WriterRoomReviewIssueSchema] = Field(default_factory=list)
+    rewrite_plan: list[str] = Field(default_factory=list)
+    approval_recommendation: str = ""
 
 
 class ComicPageSchema(FlexibleModel):

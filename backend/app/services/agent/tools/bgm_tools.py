@@ -1,8 +1,5 @@
-"""
-YLCraft — BGM 工具封装
+"""BGM tools exposed to the Agent Center."""
 
-封装 BGMService 为 Agent 可调用的工具
-"""
 from __future__ import annotations
 
 import asyncio
@@ -13,15 +10,19 @@ from pathlib import Path
 from typing import Optional
 
 from app.services.agent.registry import register_tool
-from app.services.bgm.service import BGMService, bgm_service
+from app.services.bgm.service import bgm_service
 
 logger = logging.getLogger("ylcraft.agent.tools.bgm")
 
 
 @register_tool(
     name="list_bgm_tracks",
-    description="列出所有可用的 BGM 曲目，支持按风格/情绪过滤和关键词搜索",
-    category="bgm"
+    description="列出可用 BGM 曲目，支持按风格、情绪和关键词搜索。",
+    category="bgm",
+    input_schema_note="genre/mood/search 可为空；include_unavailable=true 时会返回不可用曲目供诊断。",
+    output_schema_note="返回 tracks、total、genres、moods；tracks 含 id/name/file_path/风格/情绪/可用状态等字段。",
+    risk_level="read",
+    output_type="bgm_track_list",
 )
 async def list_bgm_tracks(
     genre: Optional[str] = None,
@@ -29,7 +30,6 @@ async def list_bgm_tracks(
     search: Optional[str] = None,
     include_unavailable: bool = True,
 ) -> dict:
-    """列出所有 BGM 曲目"""
     try:
         tracks = bgm_service.list_tracks(
             genre=genre,
@@ -44,17 +44,21 @@ async def list_bgm_tracks(
                 "total": len(tracks),
                 "genres": bgm_service.get_genres(),
                 "moods": bgm_service.get_moods(),
-            }
+            },
         }
-    except Exception as e:
-        logger.error(f"list_bgm_tracks failed: {e}")
-        return {"success": False, "error": str(e)}
+    except Exception as exc:
+        logger.error("list_bgm_tracks failed: %s", exc)
+        return {"success": False, "error": str(exc)}
 
 
 @register_tool(
     name="add_bgm_to_video",
-    description="添加 BGM 到视频（混音，支持淡入淡出和音量控制）",
-    category="bgm"
+    description="把 BGM 混入本地视频，支持音量、淡入淡出和循环控制。",
+    category="bgm",
+    input_schema_note="必须提供本地 video_path 和 bgm_track_id；volume 建议 0.1-0.5；fade_in/fade_out 为秒数；loop 控制是否循环。",
+    output_schema_note="返回 output_path、video_path、bgm_track、volume、fade_in、fade_out；会生成带 BGM 的新视频文件。",
+    risk_level="write",
+    output_type="video_file_result",
 )
 async def add_bgm_to_video(
     video_path: str,
@@ -65,7 +69,6 @@ async def add_bgm_to_video(
     fade_out: float = 2.0,
     loop: bool = True,
 ) -> dict:
-    """添加 BGM 到视频"""
     try:
         video_path_obj = Path(video_path)
         if not video_path_obj.exists():
@@ -86,26 +89,33 @@ async def add_bgm_to_video(
 
         output_path_obj.parent.mkdir(parents=True, exist_ok=True)
 
-        # 获取视频时长
         try:
             result = await asyncio.to_thread(
                 subprocess.run,
-                ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-                 "-of", "default=noprint_wrappers=1:nokey=1", str(video_path_obj)],
-                capture_output=True, text=True, timeout=10,
+                [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "format=duration",
+                    "-of",
+                    "default=noprint_wrappers=1:nokey=1",
+                    str(video_path_obj),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
             )
             video_duration = float(result.stdout.strip()) if result.returncode == 0 else 60.0
         except Exception:
             video_duration = 60.0
 
-        # 获取 BGM 时长
         try:
             bgm_duration_result = await bgm_service.get_audio_duration(bgm_file_path)
             bgm_duration = bgm_duration_result if bgm_duration_result > 0 else 120.0
         except Exception:
             bgm_duration = 120.0
 
-        # 构建音频滤镜
         audio_filter_parts = [f"volume={volume}"]
         if fade_in > 0:
             audio_filter_parts.append(f"afade=t=in:ss=0:d={fade_in}")
@@ -120,16 +130,24 @@ async def add_bgm_to_video(
         audio_filter = ",".join(audio_filter_parts)
 
         cmd = [
-            "ffmpeg", "-y",
-            "-i", str(video_path_obj),
-            "-i", bgm_file_path,
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(video_path_obj),
+            "-i",
+            bgm_file_path,
             "-filter_complex",
             f"[1:a]{audio_filter}[bgm];[0:a][bgm]amix=inputs=2:duration=first:dropout_transition=2[aout]",
-            "-map", "0:v",
-            "-map", "[aout]",
-            "-c:v", "copy",
-            "-c:a", "aac",
-            "-b:a", "192k",
+            "-map",
+            "0:v",
+            "-map",
+            "[aout]",
+            "-c:v",
+            "copy",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
             str(output_path_obj),
         ]
 
@@ -153,17 +171,21 @@ async def add_bgm_to_video(
                 "volume": volume,
                 "fade_in": fade_in,
                 "fade_out": fade_out,
-            }
+            },
         }
-    except Exception as e:
-        logger.error(f"add_bgm_to_video failed: {e}")
-        return {"success": False, "error": str(e)}
+    except Exception as exc:
+        logger.error("add_bgm_to_video failed: %s", exc)
+        return {"success": False, "error": str(exc)}
 
 
 @register_tool(
     name="upload_bgm",
-    description="上传自定义 BGM 到曲库",
-    category="bgm"
+    description="把本地音频文件复制到 BGM 曲库并登记为可检索曲目。",
+    category="bgm",
+    input_schema_note="必须提供本地音频 file_path；title 可为空自动用文件名；genre/mood 用于后续检索。",
+    output_schema_note="返回 track、file_path、message；会复制音频到 data/bgm 并登记曲库。",
+    risk_level="write",
+    output_type="bgm_track_created",
 )
 async def upload_bgm(
     file_path: str,
@@ -172,7 +194,6 @@ async def upload_bgm(
     genre: str = "other",
     mood: str = "neutral",
 ) -> dict:
-    """上传自定义 BGM"""
     try:
         file_path_obj = Path(file_path)
         if not file_path_obj.exists():
@@ -215,11 +236,11 @@ async def upload_bgm(
                 "track": track,
                 "file_path": str(dest_path),
                 "message": f"BGM '{track_name}' 上传成功",
-            }
+            },
         }
-    except Exception as e:
-        logger.error(f"upload_bgm failed: {e}")
-        return {"success": False, "error": str(e)}
+    except Exception as exc:
+        logger.error("upload_bgm failed: %s", exc)
+        return {"success": False, "error": str(exc)}
 
 
-logger.info("[bgm_tools] BGM 工具注册完成: list_bgm_tracks, add_bgm_to_video, upload_bgm")
+logger.info("[bgm_tools] registered: list_bgm_tracks, add_bgm_to_video, upload_bgm")

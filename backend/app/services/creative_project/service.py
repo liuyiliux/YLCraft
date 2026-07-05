@@ -37,6 +37,9 @@ from app.services.creative_project.schemas import (
     ShortDramaScriptSchema,
     StoryOutlineSchema,
     StoryboardSchema,
+    WriterRoomCharacterRehearsalSchema,
+    WriterRoomProseReviewSchema,
+    WriterRoomSceneBeatsSchema,
 )
 
 logger = logging.getLogger("ylcraft.creative_project")
@@ -268,6 +271,65 @@ class CreativeProjectService:
 
         self.session.refresh(project)
         return {"project": project, "changed": changed}
+
+    def sync_project_bible(self, project_id: str, *, overwrite: bool = False) -> list[ProjectContent]:
+        """Create editable project-bible and world-asset cards from the latest outline.
+
+        The cards are stored as ProjectContent rows so existing deployments do not
+        need a schema migration. Re-running without overwrite only fills missing
+        cards; overwrite creates fresh versions from the current outline.
+        """
+        project = self._require_project(project_id)
+        outline = loads_json(project.outline_json)
+        if not outline:
+            raise ValueError("请先生成或保存故事大纲")
+
+        created: list[ProjectContent] = []
+        for card in self._project_bible_cards_from_outline(outline):
+            if not overwrite and self._latest_content_by_data_key(
+                project_id,
+                "project_bible",
+                "section_key",
+                card["section_key"],
+            ):
+                continue
+            created.append(
+                self._create_content(
+                    project_id=project_id,
+                    content_type="project_bible",
+                    title=card["title"],
+                    data=card,
+                    text_content=self._bible_card_text(card),
+                )
+            )
+
+        for card in self._world_asset_cards_from_outline(outline):
+            if not overwrite and self._latest_content_by_data_key(
+                project_id,
+                "world_asset",
+                "asset_key",
+                card["asset_key"],
+            ):
+                continue
+            created.append(
+                self._create_content(
+                    project_id=project_id,
+                    content_type="world_asset",
+                    title=card["title"],
+                    data=card,
+                    text_content=self._bible_card_text(card),
+                )
+            )
+
+        meta = loads_json(project.metadata_json)
+        meta["project_bible_synced_at"] = datetime.now().isoformat()
+        project.metadata_json = dumps_json(meta)
+        project.updated_at = datetime.now()
+        self.session.add(project)
+        self.session.commit()
+        for content in created:
+            self.session.refresh(content)
+        return created
 
     # ------------------------------------------------------------------
     # Novel source
@@ -515,7 +577,15 @@ class CreativeProjectService:
             raise ValueError(f"章节规划中找不到第 {chapter_number} 章")
 
         previous_context = self._previous_chapter_context(project_id, chapter_number)
-        default_prompt = self._chapter_outline_prompt(outline, chapter_plan, current_chapter, chapter_number, previous_context)
+        project_bible_context = self._locked_project_bible_context(project.id)
+        default_prompt = self._chapter_outline_prompt(
+            outline,
+            chapter_plan,
+            current_chapter,
+            chapter_number,
+            previous_context,
+            project_bible_context=project_bible_context,
+        )
         prompt, system_prompt, template_meta = self._stage_prompt(
             stage="chapter_outline",
             default_prompt=default_prompt,
@@ -528,6 +598,7 @@ class CreativeProjectService:
                 "chapter_plan_json": dumps_json(chapter_plan),
                 "current_chapter_json": dumps_json(current_chapter),
                 "previous_context": previous_context,
+                "project_bible_context": project_bible_context,
             },
         )
         data = await self._generate_json(
@@ -712,6 +783,193 @@ class CreativeProjectService:
         self.session.commit()
         self.session.refresh(content)
         return content
+
+    async def run_writer_room_step(
+        self,
+        project_id: str,
+        *,
+        step: str,
+        chapter_number: int,
+        content_id: str | None = None,
+        instruction: str | None = None,
+        selected_text: str | None = None,
+        provider: str | None = None,
+        model: str | None = None,
+        template_id: str | None = None,
+    ) -> ProjectContent:
+        project = self._require_project(project_id)
+        step = self._normalize_writer_room_step(step)
+        context = self._writer_room_context(
+            project_id=project_id,
+            chapter_number=chapter_number,
+            source_content_id=content_id,
+            selected_text=selected_text,
+        )
+        schema_model = self._writer_room_schema(step)
+        default_prompt = self._writer_room_prompt(
+            project=project,
+            step=step,
+            chapter_number=chapter_number,
+            context=context,
+            instruction=instruction or "",
+        )
+        prompt, system_prompt, template_meta = self._stage_prompt(
+            stage=step,
+            default_prompt=default_prompt,
+            template_id=template_id,
+            variables=self._writer_room_prompt_variables(
+                project=project,
+                chapter_number=chapter_number,
+                context=context,
+                instruction=instruction or "",
+                selected_text=selected_text or "",
+            ),
+        )
+        data = await self._generate_json(
+            project=project,
+            stage=step,
+            prompt=prompt,
+            system_prompt=system_prompt,
+            schema_model=schema_model,
+            provider=provider,
+            model=model,
+            template_meta=template_meta,
+        )
+        data["chapter_number"] = chapter_number
+        if step == "prose_review":
+            data = self._normalize_writer_room_review(data)
+        if step in {"prose_draft", "prose_humanized", "prose_rewrite"}:
+            text = str(data.get("content") or "")
+            data["word_count"] = data.get("word_count") or len(text)
+        else:
+            text = self._writer_room_text(step, data)
+
+        content = self._create_content(
+            project_id=project_id,
+            content_type=step,
+            chapter_number=chapter_number,
+            episode_number=data.get("chapter_number") or chapter_number,
+            title=data.get("title") or self._writer_room_title(step, chapter_number),
+            data={
+                **data,
+                "writer_room": {
+                    "step": step,
+                    "source_content_id": content_id or context.get("source_content_id") or "",
+                    "instruction": instruction or "",
+                    "selected_text": selected_text or "",
+                },
+            },
+            text_content=text,
+            source_content_id=content_id or context.get("source_content_id"),
+        )
+        project.current_stage = "writer_room"
+        project.updated_at = datetime.now()
+        self.session.add(project)
+        self.session.commit()
+        self.session.refresh(content)
+        return content
+
+    async def run_writer_room(
+        self,
+        project_id: str,
+        *,
+        steps: list[str],
+        chapter_number: int,
+        content_id: str | None = None,
+        instruction: str | None = None,
+        selected_text: str | None = None,
+        provider: str | None = None,
+        model: str | None = None,
+        template_id: str | None = None,
+        continue_on_error: bool = True,
+    ) -> dict[str, Any]:
+        normalized_steps = [self._normalize_writer_room_step(step) for step in (steps or [])]
+        if not normalized_steps:
+            normalized_steps = ["scene_beats", "character_rehearsal", "prose_draft", "prose_humanized", "prose_review"]
+
+        results: list[dict[str, Any]] = []
+        source_content_id = content_id
+        for step in normalized_steps:
+            try:
+                content = await self.run_writer_room_step(
+                    project_id,
+                    step=step,
+                    chapter_number=chapter_number,
+                    content_id=source_content_id if step in {"prose_humanized", "prose_review", "prose_rewrite"} else content_id,
+                    instruction=instruction,
+                    selected_text=selected_text if step == "prose_rewrite" else None,
+                    provider=provider,
+                    model=model,
+                    template_id=template_id,
+                )
+                results.append({
+                    "step": step,
+                    "status": "success",
+                    "content_id": content.id,
+                    "content_type": content.content_type,
+                    "title": content.title,
+                    "version": content.version,
+                })
+                if step in {"prose_draft", "prose_humanized", "prose_rewrite"}:
+                    source_content_id = content.id
+            except Exception as exc:
+                results.append({"step": step, "status": "failed", "error": str(exc)})
+                if not continue_on_error:
+                    raise
+
+        return {
+            "project_id": project_id,
+            "chapter_number": chapter_number,
+            "steps": normalized_steps,
+            "results": results,
+            "summary": {
+                "total": len(results),
+                "success": len([item for item in results if item.get("status") == "success"]),
+                "failed": len([item for item in results if item.get("status") == "failed"]),
+            },
+        }
+
+    def promote_writer_room_content(
+        self,
+        project_id: str,
+        *,
+        content_id: str,
+    ) -> ProjectContent:
+        project = self._require_project(project_id)
+        content = self.session.get(ProjectContent, content_id)
+        if not content or content.project_id != project_id:
+            raise ValueError("写作室内容不存在")
+        if content.content_type not in {"prose_draft", "prose_humanized", "prose_rewrite"}:
+            raise ValueError("只有正文草稿、人味润色或重写结果可以提升为正文")
+        data = loads_json(content.data_json)
+        text = str(data.get("content") or content.text_content or "")
+        if not text.strip():
+            raise ValueError("写作室内容没有可提升的正文")
+        novel_data = {
+            "chapter_number": content.chapter_number or content.episode_number or data.get("chapter_number") or 1,
+            "title": data.get("title") or content.title,
+            "content": text,
+            "word_count": data.get("word_count") or len(text),
+            "continuity_notes": data.get("continuity_notes") or [],
+            "promoted_from_content_id": content.id,
+            "promoted_from_type": content.content_type,
+        }
+        body = self._create_content(
+            project_id=project_id,
+            content_type="novel_body",
+            chapter_number=novel_data["chapter_number"],
+            episode_number=novel_data["chapter_number"],
+            title=novel_data["title"] or f"第 {novel_data['chapter_number']} 章正文",
+            data=novel_data,
+            text_content=text,
+            source_content_id=content.id,
+        )
+        project.current_stage = "novel_body"
+        project.updated_at = datetime.now()
+        self.session.add(project)
+        self.session.commit()
+        self.session.refresh(body)
+        return body
 
     async def split_comic_pages(
         self,
@@ -1822,6 +2080,179 @@ class CreativeProjectService:
             query.order_by(ProjectContent.version.desc(), ProjectContent.created_at.desc())
         ).first()
 
+    def _latest_content_by_data_key(
+        self,
+        project_id: str,
+        content_type: str,
+        key: str,
+        value: str,
+    ) -> ProjectContent | None:
+        contents = self.session.exec(
+            select(ProjectContent)
+            .where(
+                ProjectContent.project_id == project_id,
+                ProjectContent.content_type == content_type,
+            )
+            .order_by(ProjectContent.version.desc(), ProjectContent.created_at.desc())
+        ).all()
+        for content in contents:
+            data = loads_json(content.data_json)
+            if str(data.get(key) or "") == str(value):
+                return content
+        return None
+
+    def _project_bible_cards_from_outline(self, outline: dict[str, Any]) -> list[dict[str, Any]]:
+        story_arc = outline.get("story_arc") or {}
+        return [
+            {
+                "section_key": "premise",
+                "role": "premise",
+                "title": "核心前提",
+                "summary": outline.get("premise") or outline.get("logline") or "",
+                "details": outline.get("logline") or "",
+                "source": "outline",
+            },
+            {
+                "section_key": "worldview",
+                "role": "worldview",
+                "title": "世界观与规则",
+                "summary": outline.get("worldview") or "",
+                "details": "\n".join(str(item) for item in outline.get("narrative_rules") or []),
+                "source": "outline",
+            },
+            {
+                "section_key": "conflict",
+                "role": "conflict",
+                "title": "主线冲突",
+                "summary": outline.get("main_conflict") or "",
+                "details": "\n".join(str(item) for item in outline.get("themes") or []),
+                "source": "outline",
+            },
+            {
+                "section_key": "relationship_map",
+                "role": "relationship",
+                "title": "人物关系图",
+                "summary": outline.get("relationship_map") or "",
+                "details": "",
+                "source": "outline",
+            },
+            {
+                "section_key": "story_arc",
+                "role": "arc",
+                "title": "故事弧线",
+                "summary": " / ".join(str(story_arc.get(key) or "") for key in ["beginning", "middle", "climax", "ending_direction"] if story_arc.get(key)),
+                "details": dumps_json(story_arc),
+                "source": "outline",
+            },
+            {
+                "section_key": "visual_style",
+                "role": "style",
+                "title": "视觉风格",
+                "summary": outline.get("visual_style") or "",
+                "details": outline.get("image_style_prompt") or "",
+                "source": "outline",
+            },
+            {
+                "section_key": "production_notes",
+                "role": "constraint",
+                "title": "制作约束",
+                "summary": "\n".join(str(item) for item in outline.get("production_notes") or []),
+                "details": "",
+                "source": "outline",
+            },
+        ]
+
+    def _world_asset_cards_from_outline(self, outline: dict[str, Any]) -> list[dict[str, Any]]:
+        cards: list[dict[str, Any]] = []
+
+        def add(role: str, key: str, title: str, summary: Any, details: Any = "", metadata: dict[str, Any] | None = None) -> None:
+            cards.append(
+                {
+                    "asset_key": f"{role}:{key}",
+                    "role": role,
+                    "title": title,
+                    "summary": _list_join(summary),
+                    "details": details if isinstance(details, str) else dumps_json(details),
+                    "source": "outline",
+                    "metadata": metadata or {},
+                }
+            )
+
+        add("rule", "worldview", "世界规则", outline.get("worldview"), outline.get("narrative_rules") or [])
+        add("style", "visual", "统一画风", outline.get("visual_style"), outline.get("image_style_prompt") or "")
+        add("map", "relationship", "人物关系地图", outline.get("relationship_map"), "")
+        story_arc = outline.get("story_arc") or {}
+        for key, label in [
+            ("beginning", "开局事件"),
+            ("middle", "中段升级"),
+            ("climax", "高潮事件"),
+            ("ending_direction", "结局方向"),
+        ]:
+            if story_arc.get(key):
+                add("event", key, label, story_arc.get(key), "", {"arc_key": key})
+        for index, location in enumerate(outline.get("locations") or [], start=1):
+            if not isinstance(location, dict):
+                continue
+            title = location.get("name") or f"地点 {index}"
+            add(
+                "location",
+                str(location.get("name") or index),
+                title,
+                location.get("role") or location.get("mood") or "",
+                {
+                    "visual_description": location.get("visual_description") or "",
+                    "mood": location.get("mood") or "",
+                    "reusable_asset_note": location.get("reusable_asset_note") or "",
+                },
+            )
+        if not any(card["role"] == "faction" for card in cards):
+            add("faction", "placeholder", "势力与组织", "", "可补充组织、公司、家族、阵营和利益关系。")
+        if not any(card["role"] == "power-system" for card in cards):
+            add("power-system", "placeholder", "能力/系统规则", "", "可补充异能、系统、科技或叙事规则的边界。")
+        if not any(card["role"] == "economy" for card in cards):
+            add("economy", "placeholder", "资源与代价", "", "可补充金钱、权力、情绪能源、积分或稀缺资源的流通规则。")
+        return cards
+
+    def _bible_card_text(self, card: dict[str, Any]) -> str:
+        parts = [
+            f"# {card.get('title') or ''}",
+            f"类型：{card.get('role') or ''}",
+            str(card.get("summary") or ""),
+            str(card.get("details") or ""),
+        ]
+        return "\n\n".join(part for part in parts if part)
+
+    def _locked_project_bible_context(self, project_id: str) -> str:
+        contents = self.session.exec(
+            select(ProjectContent)
+            .where(
+                ProjectContent.project_id == project_id,
+                ProjectContent.content_type.in_(["project_bible", "world_asset"]),
+                ProjectContent.is_locked == True,
+            )
+            .order_by(ProjectContent.content_type.asc(), ProjectContent.created_at.asc())
+        ).all()
+        lines: list[str] = []
+        for content in contents:
+            data = loads_json(content.data_json)
+            summary = data.get("summary") or ""
+            details = data.get("details") or ""
+            role = data.get("role") or content.content_type
+            text = content.text_content or self._bible_card_text(data)
+            lines.append(
+                "\n".join(
+                    part
+                    for part in [
+                        f"[{role}] {content.title}",
+                        f"摘要：{summary}" if summary else "",
+                        f"细节：{details}" if details else "",
+                        text if text and text not in {summary, details} else "",
+                    ]
+                    if part
+                )
+            )
+        return "\n\n".join(lines)
+
     def _normalize_pipeline_stages(self, stages: list[str] | None) -> list[str]:
         aliases = {
             "characters": "sync_characters",
@@ -2721,7 +3152,13 @@ class CreativeProjectService:
                 provider=provider,
                 model=model,
                 temperature=0.75,
-                max_tokens=12000 if stage in {"novel_body", "novel_body_refine"} else 5000,
+                max_tokens=12000 if stage in {
+                    "novel_body",
+                    "novel_body_refine",
+                    "prose_draft",
+                    "prose_humanized",
+                    "prose_rewrite",
+                } else 5000,
             )
             raw_response = self._response_content(response)
             response_provider = self._response_attr(response, "provider")
@@ -2735,7 +3172,7 @@ class CreativeProjectService:
                 try:
                     normalized = self._parse_and_validate(raw_response, schema_model, allow_local_repair=True)
                 except Exception:
-                    if stage in {"novel_body", "novel_body_refine"}:
+                    if stage in {"novel_body", "novel_body_refine", "prose_draft", "prose_humanized", "prose_rewrite"}:
                         normalized = self._wrap_plain_novel_body_response(raw_response, prompt, schema_model)
                     else:
                         raise
@@ -3405,6 +3842,7 @@ class CreativeProjectService:
         current_chapter: dict[str, Any],
         chapter_number: int,
         previous_context: str,
+        project_bible_context: str = "",
     ) -> str:
         return f"""请根据故事大纲和章节规划，生成第 {chapter_number} 章/集的单话细纲 JSON。
 
@@ -3420,6 +3858,9 @@ class CreativeProjectService:
 前文上下文：
 {previous_context or "暂无"}
 
+已锁定项目圣经/世界资产：
+{project_bible_context or "暂无"}
+
 要求：
 1. 单话细纲要比章节规划更细，必须能直接服务后续小说正文、短剧脚本、漫画分镜和生图。
 2. 顶层必须写清 summary、objective、keywords、key_dialogues、foreshadowing、ending_hook、continuity_notes，不能只写空泛总结。
@@ -3428,7 +3869,8 @@ class CreativeProjectService:
 5. key_dialogues 写可直接进入正文或漫画气泡的关键台词。
 6. image_prompt 必须是镜头级中文提示词，至少包含：角色外观或身份、地点、动作、表情、构图景别、光线色调、氛围、漫画/影视风格、一致性要求；不要只写一句剧情。
 7. foreshadowing 和 continuity_notes 要帮助后续章节保持连续。
-8. 输出严格 JSON，不要 Markdown。
+8. 如果“已锁定项目圣经/世界资产”不为空，必须优先遵守这些设定，不能改写世界规则、地点约束、画风约束和连续性事实。
+9. 输出严格 JSON，不要 Markdown。
 
 输出格式：
 {{
@@ -3562,6 +4004,375 @@ class CreativeProjectService:
   "word_count": 0,
   "continuity_notes": ["给下一章或拆页使用的连续性备注"]
 }}"""
+
+    def _normalize_writer_room_step(self, step: str) -> str:
+        aliases = {
+            "beats": "scene_beats",
+            "scene-beats": "scene_beats",
+            "rehearsal": "character_rehearsal",
+            "character-rehearsal": "character_rehearsal",
+            "draft": "prose_draft",
+            "prose-draft": "prose_draft",
+            "humanize": "prose_humanized",
+            "humanized": "prose_humanized",
+            "prose-humanized": "prose_humanized",
+            "review": "prose_review",
+            "prose-review": "prose_review",
+            "rewrite": "prose_rewrite",
+            "prose-rewrite": "prose_rewrite",
+        }
+        normalized = aliases.get(str(step or "").strip(), str(step or "").strip())
+        allowed = {
+            "scene_beats",
+            "character_rehearsal",
+            "prose_draft",
+            "prose_humanized",
+            "prose_review",
+            "prose_rewrite",
+        }
+        if normalized not in allowed:
+            raise ValueError(f"不支持的写作室步骤: {step}")
+        return normalized
+
+    def _writer_room_schema(self, step: str) -> type[BaseModel]:
+        if step == "scene_beats":
+            return WriterRoomSceneBeatsSchema
+        if step == "character_rehearsal":
+            return WriterRoomCharacterRehearsalSchema
+        if step == "prose_review":
+            return WriterRoomProseReviewSchema
+        return NovelBodySchema
+
+    def _writer_room_context(
+        self,
+        *,
+        project_id: str,
+        chapter_number: int,
+        source_content_id: str | None = None,
+        selected_text: str | None = None,
+    ) -> dict[str, Any]:
+        project = self._require_project(project_id)
+        outline = loads_json(project.outline_json)
+        chapter_plan = loads_json(project.chapter_plan_json)
+        chapter_outline = self._latest_content(project_id, "chapter_outline", chapter_number)
+        novel_body = self._latest_content(project_id, "novel_body", chapter_number)
+        scene_beats = self._latest_content(project_id, "scene_beats", chapter_number)
+        rehearsal = self._latest_content(project_id, "character_rehearsal", chapter_number)
+        draft = self._latest_content(project_id, "prose_draft", chapter_number)
+        humanized = self._latest_content(project_id, "prose_humanized", chapter_number)
+        review = self._latest_content(project_id, "prose_review", chapter_number)
+        source = self.session.get(ProjectContent, source_content_id) if source_content_id else None
+        if source and source.project_id != project_id:
+            raise ValueError("写作室源内容不属于当前项目")
+
+        current_chapter = {}
+        for item in chapter_plan.get("chapters") or []:
+            if isinstance(item, dict) and int(item.get("chapter_number") or 0) == int(chapter_number):
+                current_chapter = item
+                break
+
+        prose_source = source or humanized or draft or novel_body
+        return {
+            "outline": outline,
+            "chapter_plan": chapter_plan,
+            "current_chapter": current_chapter,
+            "chapter_outline": loads_json(chapter_outline.data_json) if chapter_outline else {},
+            "chapter_outline_id": chapter_outline.id if chapter_outline else "",
+            "novel_body": loads_json(novel_body.data_json) if novel_body else {},
+            "novel_body_text": novel_body.text_content if novel_body else "",
+            "scene_beats": loads_json(scene_beats.data_json) if scene_beats else {},
+            "character_rehearsal": loads_json(rehearsal.data_json) if rehearsal else {},
+            "prose_draft": loads_json(draft.data_json) if draft else {},
+            "prose_humanized": loads_json(humanized.data_json) if humanized else {},
+            "prose_review": loads_json(review.data_json) if review else {},
+            "source_content_id": prose_source.id if prose_source else (chapter_outline.id if chapter_outline else ""),
+            "source_content_type": prose_source.content_type if prose_source else (chapter_outline.content_type if chapter_outline else ""),
+            "source_text": prose_source.text_content if prose_source else "",
+            "source_json": loads_json(prose_source.data_json) if prose_source else {},
+            "selected_text": selected_text or "",
+            "previous_context": self._previous_chapter_context(project_id, chapter_number),
+        }
+
+    def _writer_room_prompt_variables(
+        self,
+        *,
+        project: CreativeProject,
+        chapter_number: int,
+        context: dict[str, Any],
+        instruction: str,
+        selected_text: str = "",
+    ) -> dict[str, Any]:
+        return {
+            "project_title": project.title,
+            "project_type": project.project_type,
+            "chapter_number": chapter_number,
+            "outline_json": dumps_json(context.get("outline")),
+            "chapter_plan_json": dumps_json(context.get("chapter_plan")),
+            "current_chapter_json": dumps_json(context.get("current_chapter")),
+            "chapter_outline_json": dumps_json(context.get("chapter_outline")),
+            "scene_beats_json": dumps_json(context.get("scene_beats")),
+            "character_rehearsal_json": dumps_json(context.get("character_rehearsal")),
+            "source_json": dumps_json(context.get("source_json")),
+            "source_text": context.get("source_text") or context.get("novel_body_text") or "",
+            "selected_text": selected_text or context.get("selected_text") or "",
+            "prose_review_json": dumps_json(context.get("prose_review")),
+            "previous_context": context.get("previous_context") or "暂无",
+            "instruction": instruction or "",
+        }
+
+    def _writer_room_prompt(
+        self,
+        *,
+        project: CreativeProject,
+        step: str,
+        chapter_number: int,
+        context: dict[str, Any],
+        instruction: str,
+    ) -> str:
+        variables = self._writer_room_prompt_variables(
+            project=project,
+            chapter_number=chapter_number,
+            context=context,
+            instruction=instruction,
+        )
+        common = f"""项目：{project.title}
+第 {chapter_number} 章
+
+故事大纲：
+{variables["outline_json"]}
+
+章节规划：
+{variables["chapter_plan_json"]}
+
+当前章节细纲：
+{variables["chapter_outline_json"]}
+
+前文上下文：
+{variables["previous_context"]}
+"""
+        if step == "scene_beats":
+            return common + """请作为导演，把本章拆成可写正文的场景节拍 JSON。
+要求：
+1. 每个场景都要有目标、阻碍、冲突压力、动作节拍、潜台词、感官锚点和转折。
+2. 不要写泛泛摘要，要写作者下一步能直接展开成正文的戏。
+3. 输出严格 JSON，不要 Markdown。
+格式：
+{
+  "chapter_number": 1,
+  "title": "标题",
+  "summary": "本章戏剧推进摘要",
+  "scene_beats": [
+    {
+      "scene_number": 1,
+      "title": "场景名",
+      "purpose": "场景功能",
+      "location": "地点",
+      "characters": ["角色"],
+      "dramatic_question": "这一场观众想知道的问题",
+      "character_wants": ["角色想要什么"],
+      "obstacle": "阻碍",
+      "conflict_pressure": "冲突压力",
+      "action_beats": ["具体动作节拍"],
+      "subtext": "台词背后的真实意思",
+      "sensory_anchors": ["可写进正文的物件/声音/触感/气味"],
+      "turning_point": "转折",
+      "hook": "场景尾钩子"
+    }
+  ],
+  "continuity_notes": ["连续性备注"]
+}"""
+        if step == "character_rehearsal":
+            return common + f"""场景节拍：
+{variables["scene_beats_json"]}
+
+请作为角色演绎室，让本章关键角色按自己的欲望、恐惧、已知信息和隐瞒信息先“演一遍”。
+要求：
+1. 角色不能替作者解释主题，只能从自身利益和情绪出发。
+2. 输出能直接喂给正文作者的动作、对白方向和潜台词。
+3. 输出严格 JSON。
+格式：
+{{
+  "chapter_number": {chapter_number},
+  "title": "标题",
+  "scene_rehearsals": [{{"scene_number": 1, "conflict": "这场角色如何互相顶住", "usable_moments": ["可写瞬间"]}}],
+  "character_reactions": [
+    {{"character": "角色", "public_goal": "表面目标", "private_goal": "真实目标", "fear": "恐惧", "knows": "已知", "hides": "隐瞒", "likely_action": "会做什么", "likely_dialogue": ["可能说的话"], "subtext": "潜台词", "voice_rules": ["说话规则"]}}
+  ],
+  "usable_conflicts": ["可写冲突"],
+  "continuity_notes": ["连续性备注"]
+}}"""
+        if step == "prose_draft":
+            return common + f"""场景节拍：
+{variables["scene_beats_json"]}
+
+角色演绎：
+{variables["character_rehearsal_json"]}
+
+请写成本章小说正文初稿 JSON。
+要求：
+1. content 是完整正文，不是摘要，目标 3000-4500 中文字符。
+2. 开头有钩子，中段有动作推进、对白、误解或反转，结尾留悬念。
+3. 多写具体动作、物件互动、环境细节和潜台词，少写“他意识到/她感到/空气仿佛”这类泛化句。
+4. 保留舒适分段，不要 Markdown。
+格式：{{"chapter_number": {chapter_number}, "title": "章节标题", "content": "完整正文", "word_count": 0, "continuity_notes": ["备注"]}}"""
+        if step == "prose_humanized":
+            return common + f"""待润色正文：
+{variables["source_text"]}
+
+用户额外要求：
+{instruction or "无"}
+
+请作为人味润色编辑，重写正文并输出 JSON。
+要求：
+1. 保留剧情事实和角色关系，但让行文更像真人作者。
+2. 删掉解释性废话，把直接情绪改成动作、停顿、视线、物件互动和对白潜台词。
+3. 改掉重复句式和万能比喻；句长要有变化，段落要有呼吸。
+4. 不要只给建议，直接输出完整润色后的正文。
+格式：{{"chapter_number": {chapter_number}, "title": "章节标题", "content": "完整润色正文", "word_count": 0, "continuity_notes": ["备注"]}}"""
+        if step == "prose_review":
+            return common + f"""待审稿正文：
+{variables["source_text"]}
+
+请作为网文主编审稿，找出正文里“不像人写”的地方并输出 JSON。
+要求：
+1. 问题必须具体到段落、场景或句式位置。
+2. 必须覆盖：节奏、逻辑、角色声音、情绪连续性、爽点/钩子、AI腔。
+3. quality_tags 输出 3-8 个短标签，例如“解释过密”“动作不足”“对白顺口”“钩子偏弱”。
+4. ai_smell_checks 必须逐项检查：直接情绪标签、泛化形容词、万能比喻、重复句式、缺少物件互动、角色声音漂移、说明替代戏剧动作。
+5. rewrite_instruction 要能直接用于下一轮重写。
+格式：
+{{
+  "chapter_number": {chapter_number},
+  "title": "标题",
+  "overall_score": 0,
+  "ai_smell_score": 0,
+  "quality_tags": ["质量标签"],
+  "ai_smell_checks": ["AI味检查项"],
+  "strengths": ["优点"],
+  "issues": [
+    {{"severity": "high/medium/low", "category": "AI腔/节奏/逻辑/角色声音/情绪/钩子", "location": "位置", "problem": "问题", "suggestion": "建议", "rewrite_instruction": "重写指令"}}
+  ],
+  "rewrite_plan": ["重写计划"],
+  "approval_recommendation": "是否建议提升为正文"
+}}"""
+        return common + f"""待重写正文：
+{variables["source_text"]}
+
+局部选段（如果为空则整章重写）：
+{variables["selected_text"] or "无"}
+
+审稿意见：
+{variables["prose_review_json"]}
+
+用户额外要求：
+{instruction or "无"}
+
+请作为重写作者，根据审稿意见输出完整重写正文 JSON。
+要求：
+1. 只改写表达、节奏、冲突呈现和人物反应，不擅自改主线事实。
+2. 优先修复 high/medium 问题。
+3. 如果提供了“局部选段”，只重写该选段相关段落，并把修好的段落替换回全文；content 仍必须输出完整正文。
+4. 输出完整正文，不要只输出片段或解释。
+格式：{{"chapter_number": {chapter_number}, "title": "章节标题", "content": "完整重写正文", "word_count": 0, "continuity_notes": ["备注"]}}"""
+
+    def _normalize_writer_room_review(self, data: dict[str, Any]) -> dict[str, Any]:
+        issues = data.get("issues")
+        if not isinstance(issues, list):
+            issues = []
+        if not issues and isinstance(data.get("review"), dict) and isinstance(data["review"].get("issues"), list):
+            issues = data["review"]["issues"]
+        issues = [item for item in issues if isinstance(item, dict)]
+        normalized_issues = []
+        for index, item in enumerate(issues, start=1):
+            normalized_issues.append(
+                {
+                    "severity": item.get("severity") or ("high" if index <= 3 else "medium"),
+                    "category": item.get("category") or item.get("type") or "AI腔",
+                    "location": item.get("location") or f"审稿问题 {index}",
+                    "problem": item.get("problem") or item.get("description") or item.get("issue") or "",
+                    "suggestion": item.get("suggestion") or item.get("detail") or "",
+                    "rewrite_instruction": item.get("rewrite_instruction") or item.get("suggestion") or item.get("description") or "",
+                }
+            )
+        issues = normalized_issues
+
+        fallback_instruction = str(data.get("rewrite_instruction") or "").strip()
+        checks = data.get("ai_smell_checks") if isinstance(data.get("ai_smell_checks"), list) else []
+        if not issues and checks:
+            for index, check in enumerate(checks, start=1):
+                text = str(check).strip()
+                if not text:
+                    continue
+                location = ""
+                problem = text
+                if text.startswith("[") and "]" in text:
+                    location, problem = text[1:].split("]", 1)
+                    problem = problem.strip(" -：: ")
+                issues.append(
+                    {
+                        "severity": "high" if index <= 3 else "medium",
+                        "category": "AI腔",
+                        "location": location or f"AI味检查 {index}",
+                        "problem": problem,
+                        "suggestion": fallback_instruction or "压低解释，改成动作、物件互动、停顿和对白潜台词。",
+                        "rewrite_instruction": fallback_instruction or problem,
+                    }
+                )
+
+        if fallback_instruction and not data.get("rewrite_plan"):
+            data["rewrite_plan"] = [line.strip() for line in fallback_instruction.splitlines() if line.strip()]
+        if not data.get("quality_tags") and issues:
+            data["quality_tags"] = list({str(item.get("category") or "质量问题") for item in issues})
+        if not data.get("overall_score") and issues:
+            high_count = sum(1 for item in issues if str(item.get("severity", "")).lower() == "high")
+            data["overall_score"] = max(35, 75 - high_count * 8 - max(0, len(issues) - high_count) * 4)
+        if not data.get("ai_smell_score") and (checks or issues):
+            data["ai_smell_score"] = min(95, 45 + len(checks or issues) * 6)
+        data["issues"] = issues
+        return data
+
+    def _writer_room_text(self, step: str, data: dict[str, Any]) -> str:
+        if step == "scene_beats":
+            lines = [data.get("summary") or ""]
+            for item in data.get("scene_beats") or []:
+                lines.append(f"场景 {item.get('scene_number')}: {item.get('title')} - {item.get('purpose')}")
+                lines.extend(f"- {beat}" for beat in item.get("action_beats") or [])
+            return "\n".join(line for line in lines if str(line).strip())
+        if step == "character_rehearsal":
+            lines = []
+            for item in data.get("character_reactions") or []:
+                lines.append(f"{item.get('character')}: {item.get('private_goal') or item.get('public_goal')}")
+                if item.get("subtext"):
+                    lines.append(f"潜台词：{item.get('subtext')}")
+            return "\n".join(lines) or dumps_json(data)
+        if step == "prose_review":
+            lines = [
+                f"总分：{data.get('overall_score', 0)}",
+                f"AI腔：{data.get('ai_smell_score', 0)}",
+            ]
+            tags = data.get("quality_tags") or []
+            if tags:
+                lines.append("质量标签：" + "、".join(str(item) for item in tags))
+            checks = data.get("ai_smell_checks") or []
+            if checks:
+                lines.append("AI味检查：" + "；".join(str(item) for item in checks))
+            for issue in data.get("issues") or []:
+                lines.append(f"[{issue.get('severity')}] {issue.get('category')} {issue.get('location')}: {issue.get('problem')}")
+                if issue.get("rewrite_instruction"):
+                    lines.append(f"重写：{issue.get('rewrite_instruction')}")
+            return "\n".join(lines)
+        return str(data.get("content") or dumps_json(data))
+
+    def _writer_room_title(self, step: str, chapter_number: int) -> str:
+        labels = {
+            "scene_beats": "场景节拍",
+            "character_rehearsal": "角色演绎",
+            "prose_draft": "正文初稿",
+            "prose_humanized": "人味润色",
+            "prose_review": "主编审稿",
+            "prose_rewrite": "定向重写",
+        }
+        return f"第 {chapter_number} 章{labels.get(step, step)}"
 
     def _refine_novel_body_prompt(
         self,
@@ -3725,8 +4536,12 @@ class CreativeProjectService:
         behavior = loads_json(getattr(character, "behavior_json", "{}"), {})
         ability = loads_json(getattr(character, "ability_json", "{}"), {})
         arc = loads_json(getattr(character, "arc_json", "{}"), {})
+        visual_profile = identity.get("visual_profile") if isinstance(identity.get("visual_profile"), dict) else {}
         visual_overrides = loads_json(getattr(link, "visual_overrides_json", "{}"), {})
         bible_overrides = loads_json(getattr(link, "bible_overrides_json", "{}"), {})
+        reference_image_urls = visual_profile.get("reference_image_urls")
+        if not isinstance(reference_image_urls, list):
+            reference_image_urls = []
         return {
             "character_id": character.id,
             "name": character.name,
@@ -3763,6 +4578,9 @@ class CreativeProjectService:
             "arc": "；".join(part for part in [arc.get("turning_point"), arc.get("risk_notes")] if part),
             "portrait_node_id": getattr(character, "portrait_node_id", None),
             "portrait_url": getattr(character, "portrait_url", "") or "",
+            "identity_reference_url": str(visual_profile.get("identity_reference_url") or "").strip(),
+            "identity_reference_version_id": str(visual_profile.get("identity_reference_version_id") or "").strip(),
+            "reference_image_count": len([url for url in reference_image_urls if str(url or "").strip()]),
         }
 
     def _outline_character_profile(self, character: dict[str, Any]) -> dict[str, Any]:
@@ -3789,6 +4607,9 @@ class CreativeProjectService:
             "arc": character.get("arc", ""),
             "portrait_node_id": "",
             "portrait_url": "",
+            "identity_reference_url": "",
+            "identity_reference_version_id": "",
+            "reference_image_count": 0,
         }
 
     def _story_visual_context(
@@ -3828,6 +4649,8 @@ class CreativeProjectService:
                             f"OOC 约束：{profile.get('ooc_rules', '')}",
                             f"语言：{profile.get('speech', '')}",
                             f"动机：{profile.get('motivation', '')}",
+                            f"身份基准图：{'已配置' if profile.get('identity_reference_url') else ''}",
+                            f"默认参考图数量：{profile.get('reference_image_count') or ''}",
                         ]
                         if part.split("：", 1)[-1]
                     )
@@ -3984,6 +4807,8 @@ class CreativeProjectService:
                             str(profile.get("signature_items") or ""),
                             str(profile.get("visual_consistency") or ""),
                             str(profile.get("ooc_rules") or ""),
+                            "已有身份基准图，生图时优先参考以保持同脸同服装" if profile.get("identity_reference_url") else "",
+                            f"默认参考图{profile.get('reference_image_count')}张" if profile.get("reference_image_count") else "",
                         ]
                         if part
                     )

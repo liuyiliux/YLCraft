@@ -18,6 +18,14 @@ DEFAULT_PROVIDER = "deepseek"
 DEFAULT_MODEL = "deepseek-v4-pro"
 DEFAULT_TIMEOUT = 600
 REQUEST_TIMEOUT = DEFAULT_TIMEOUT
+WRITER_ROOM_STEPS = [
+    "scene_beats",
+    "character_rehearsal",
+    "prose_draft",
+    "prose_humanized",
+    "prose_review",
+    "prose_rewrite",
+]
 
 
 class ApiError(RuntimeError):
@@ -217,6 +225,11 @@ def command_sync_characters(args: argparse.Namespace) -> None:
     print_json(unwrap(api_request(args.base_url, "POST", f"/creative-projects/{args.project_id}/sync-characters", {})))
 
 
+def command_sync_project_bible(args: argparse.Namespace) -> None:
+    payload = {"overwrite": args.overwrite}
+    print_json(unwrap(api_request(args.base_url, "POST", f"/creative-projects/{args.project_id}/sync-project-bible", payload)))
+
+
 def command_generate_chapter_plan(args: argparse.Namespace) -> None:
     payload = model_payload(args, {"chapter_count": args.chapter_count})
     print_json(unwrap(api_request(args.base_url, "POST", f"/creative-projects/{args.project_id}/generate-chapter-plan", payload)))
@@ -320,6 +333,37 @@ def command_run_pipeline(args: argparse.Namespace) -> None:
     print_json(unwrap(api_request(args.base_url, "POST", f"/creative-projects/{args.project_id}/run-pipeline", payload)))
 
 
+def command_writer_room_step(args: argparse.Namespace) -> None:
+    payload = model_payload(
+        args,
+        {
+            "chapter_number": args.chapter,
+            "content_id": args.content_id,
+            "instruction": args.instruction,
+            "selected_text": args.selected_text,
+        },
+    )
+    print_json(unwrap(api_request(args.base_url, "POST", f"/creative-projects/{args.project_id}/writer-room/step/{args.step}", payload)))
+
+
+def command_writer_room_run(args: argparse.Namespace) -> None:
+    payload = model_payload(
+        args,
+        {
+            "chapter_number": args.chapter,
+            "steps": args.steps or WRITER_ROOM_STEPS[:-1],
+            "selected_text": args.selected_text,
+            "continue_on_error": args.continue_on_error,
+        },
+    )
+    print_json(unwrap(api_request(args.base_url, "POST", f"/creative-projects/{args.project_id}/writer-room/run", payload)))
+
+
+def command_writer_room_promote(args: argparse.Namespace) -> None:
+    payload = {"content_id": args.content_id}
+    print_json(unwrap(api_request(args.base_url, "POST", f"/creative-projects/{args.project_id}/writer-room/promote", payload)))
+
+
 def command_export_novel(args: argparse.Namespace) -> None:
     project = unwrap(api_request(args.base_url, "GET", f"/creative-projects/{args.project_id}"))
     bodies = list_contents(args.base_url, args.project_id, "novel_body")
@@ -395,6 +439,11 @@ def build_parser() -> argparse.ArgumentParser:
     command.add_argument("--project-id", required=True)
     command.set_defaults(func=command_sync_characters)
 
+    command = subparsers.add_parser("sync-project-bible")
+    command.add_argument("--project-id", required=True)
+    command.add_argument("--overwrite", action="store_true")
+    command.set_defaults(func=command_sync_project_bible)
+
     command = subparsers.add_parser("generate-chapter-plan")
     command.add_argument("--project-id", required=True)
     command.add_argument("--chapter-count", type=int, default=12)
@@ -459,6 +508,30 @@ def build_parser() -> argparse.ArgumentParser:
     command.add_argument("--continue-on-error", action="store_true")
     add_model(command)
     command.set_defaults(func=command_run_pipeline)
+
+    command = subparsers.add_parser("writer-room-step")
+    command.add_argument("--project-id", required=True)
+    command.add_argument("--chapter", type=int, required=True)
+    command.add_argument("--step", required=True, choices=WRITER_ROOM_STEPS)
+    command.add_argument("--content-id", default=None)
+    command.add_argument("--instruction", default=None)
+    command.add_argument("--selected-text", default=None)
+    add_model(command)
+    command.set_defaults(func=command_writer_room_step)
+
+    command = subparsers.add_parser("writer-room-run")
+    command.add_argument("--project-id", required=True)
+    command.add_argument("--chapter", type=int, required=True)
+    command.add_argument("--steps", nargs="*", choices=WRITER_ROOM_STEPS, default=WRITER_ROOM_STEPS[:-1])
+    command.add_argument("--selected-text", default=None)
+    command.add_argument("--continue-on-error", action="store_true")
+    add_model(command)
+    command.set_defaults(func=command_writer_room_run)
+
+    command = subparsers.add_parser("writer-room-promote")
+    command.add_argument("--project-id", required=True)
+    command.add_argument("--content-id", required=True)
+    command.set_defaults(func=command_writer_room_promote)
 
     command = subparsers.add_parser("export-novel")
     command.add_argument("--project-id", required=True)

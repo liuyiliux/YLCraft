@@ -85,6 +85,7 @@ class CrawlerService:
     """
 
     def __init__(self):
+        self.use_mediacrawler = False
         logger.info(f"[CrawlerService] Initialized (using platforms module)")
 
     async def search_videos(

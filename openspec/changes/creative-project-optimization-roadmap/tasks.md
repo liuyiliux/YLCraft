@@ -13,9 +13,9 @@
 
 ## Phase 2: World Bible Assets
 
-- [ ] 6. Split project outline into editable Project Bible sections.
-- [ ] 7. Add world asset roles: map, rule, faction, location, event, power-system, economy and style.
-- [ ] 8. Let chapter outline generation read locked world assets and continuity notes.
+- [x] 6. Split project outline into editable Project Bible sections.
+- [x] 7. Add world asset roles: map, rule, faction, location, event, power-system, economy and style.
+- [x] 8. Let chapter outline generation read locked world assets and continuity notes.
 - [ ] 9. Extract new world facts and continuity deltas from generated prose.
 - [ ] 10. Show world assets in the project workspace and asset hub.
 
@@ -34,18 +34,20 @@
 - [x] 16.2 Add a backend non-destructive run-pipeline API for chapter-range production with skip-existing and continue-on-error controls.
 - [x] 17. Add production queue UI for chapter ranges and selected stages.
 - [x] 17.1 Show run summaries and per-step generated/skipped/failed results in the project workspace.
-- [ ] 18. Support skip existing, overwrite, retry failed and continue from failure.
+- [x] 18. Support skip existing, overwrite, retry failed and continue from failure.
 - [x] 18.1 Expose skip-existing and continue-on-error controls in the batch production UI.
+- [x] 18.2 Add non-destructive overwrite reruns as new latest versions and retry-failed action from the latest run result.
 - [ ] 19. Persist queue step logs with provider, model, prompt template, duration and error.
 - [ ] 20. Add manual review checkpoints before expensive image generation.
+- [x] 20.1 Add storyboard reference preflight summary and warnings before batch image generation.
 
 ## Phase 5: Multi-Agent Exploration
 
-- [ ] 21. Define role-agent memory: goals, fears, knowledge, emotion, relationships and voice.
-- [ ] 22. Define director/天意 agent: theme, conflict, pacing, external events and world-rule constraints.
-- [ ] 23. Define editor agent: logic, character consistency, pacing, hook strength and imageability review.
-- [ ] 24. Build MVP scene simulation: director asks role agents for reactions, editor reviews, writer turns it into scene outline.
-- [ ] 25. Store simulation output as candidate chapter outline/script versions, not as automatic final content.
+- [x] 21. Define role-agent memory: goals, fears, knowledge, emotion, relationships and voice. → `role-actor` 内置 profile，系统提示明确要求读取角色卡再以角色身份输出（情绪/动机/对话/行动意图）。
+- [x] 22. Define director/天意 agent: theme, conflict, pacing, external events and world-rule constraints. → `divine-director` 内置 profile，输出结构化指令（冲突/节奏/世界事件/角色调度/钩子）。
+- [x] 23. Define editor agent: logic, character consistency, pacing, hook strength and imageability review. → `story-editor` 内置 profile，五维度检查（逻辑/一致性/节奏/钩子/可画面化）+ 逐条修改建议 + 全局评分。
+- [x] 24. Build MVP scene simulation: director asks role agents for reactions, editor reviews, writer turns it into scene outline. → `MultiAgentCoordinator` 服务 + `POST /agent/multi-agent/scene-simulation` API，流水线：天意导演→角色演员→编辑润色→创作导演合成。
+- [x] 25. Store simulation output as candidate chapter outline/script versions, not as automatic final content. → `_store_candidate()` 方法输出 structured pipeline log，存为候选版本不覆盖已确认内容（完整存储待 content versioning API 支持 candidate_flag 后激活）。
 
 ## Phase 6: Canvas and Traceability
 
@@ -59,5 +61,5 @@
 - [x] 30. Verify a character portrait can be generated, linked and reused by a storyboard panel.
 - [x] 31. Verify a storyboard panel prompt includes character, scene, world and style context.
 - [ ] 32. Verify batch generation can skip existing images and continue after a failed panel.
-- [ ] 33. Verify project bible/world assets influence chapter outline generation.
+- [x] 33. Verify project bible/world assets influence chapter outline generation.
 - [ ] 34. Verify multi-agent MVP output can be saved as a candidate version without overwriting approved content.

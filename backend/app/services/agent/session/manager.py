@@ -27,9 +27,9 @@ class SessionManager:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def create_session(self, user_id: str = "default", title: str = "") -> AgentSession:
+    async def create_session(self, user_id: str = "default", title: str = "", session_id: str | None = None) -> AgentSession:
         """创建新会话"""
-        session_id = str(uuid.uuid4())
+        session_id = session_id or str(uuid.uuid4())
         if not title:
             title = f"对话 {datetime.utcnow().strftime('%m-%d %H:%M')}"
 

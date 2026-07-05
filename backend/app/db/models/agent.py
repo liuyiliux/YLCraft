@@ -51,12 +51,68 @@ class AgentSessionRead(AgentSessionBase):
 # Agent 记忆表 — 中期记忆（跨会话沉淀）
 # =============================================================================
 
+class AgentThreadBase(SQLModel):
+    user_id: str = Field(default="default", max_length=64, index=True)
+    title: str = Field(default="", max_length=200)
+    status: str = Field(default="active", max_length=32, index=True)
+    active_profile_id: str = Field(default="", max_length=64, index=True)
+    metadata_json: str = Field(default="{}", sa_column=Column(Text))
+
+
+class AgentThread(AgentThreadBase, table=True):
+    __tablename__ = "agent_threads"
+
+    id: str = Field(primary_key=True, max_length=64)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    archived_at: Optional[datetime] = Field(default=None)
+
+
+class AgentMessageBase(SQLModel):
+    thread_id: str = Field(max_length=64, foreign_key="agent_threads.id", index=True)
+    run_id: str = Field(default="", max_length=64, index=True)
+    role: str = Field(max_length=32, index=True)
+    content: str = Field(default="", sa_column=Column(Text))
+    content_json: str = Field(default="{}", sa_column=Column(Text))
+    tool_call_id: str = Field(default="", max_length=120, index=True)
+    metadata_json: str = Field(default="{}", sa_column=Column(Text))
+
+
+class AgentMessage(AgentMessageBase, table=True):
+    __tablename__ = "agent_messages"
+
+    id: int = Field(primary_key=True, default=None)
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+
+
+class AgentContextSnapshotBase(SQLModel):
+    thread_id: str = Field(max_length=64, foreign_key="agent_threads.id", index=True)
+    run_id: str = Field(default="", max_length=64, index=True)
+    kind: str = Field(default="planning", max_length=64, index=True)
+    context_json: str = Field(default="{}", sa_column=Column(Text))
+    summary: str = Field(default="", sa_column=Column(Text))
+    token_estimate: int = Field(default=0)
+
+
+class AgentContextSnapshot(AgentContextSnapshotBase, table=True):
+    __tablename__ = "agent_context_snapshots"
+
+    id: int = Field(primary_key=True, default=None)
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+
+
 class AgentMemoryBase(SQLModel):
     user_id: str = Field(default="default", max_length=64)
     key: str = Field(max_length=100)
     value: str = Field(sa_column=Column(Text))
     memory_type: str = Field(max_length=50)   # preference / project_context / fact
+    status: str = Field(default="pending", max_length=32)  # Hermes: pending / confirmed / rejected
     importance: int = Field(default=5, ge=1, le=10)
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)  # DeerFlow-inspired: fact confidence score
+    # Provenance tracking (memory provenance)
+    thread_id: Optional[str] = Field(default=None, max_length=64, index=True)
+    run_id: Optional[str] = Field(default=None, max_length=64, index=True)
+    message_ids: Optional[str] = Field(default=None, sa_column=Column(Text))  # JSON array of message IDs that contributed
 
 
 class AgentMemory(AgentMemoryBase, table=True):
@@ -67,6 +123,7 @@ class AgentMemory(AgentMemoryBase, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     access_count: int = Field(default=0)
+    source: Optional[str] = Field(default=None, max_length=100)  # DeerFlow: fact provenance tracking
 
     # 关系定义（使用类型注解）
     session: Optional["AgentSession"] = Relationship(back_populates="memories")
@@ -144,7 +201,115 @@ class AgentToolCall(AgentToolCallBase, table=True):
 
 
 # =============================================================================
+# Agent 运行记录：可回放、可继续、可定位失败的执行态
+# =============================================================================
+
+class AgentRunBase(SQLModel):
+    user_id: str = Field(default="default", max_length=64, index=True)
+    session_id: str = Field(default="", max_length=64, index=True)
+    profile_id: str = Field(default="", max_length=64, index=True)
+    parent_run_id: Optional[str] = Field(default=None, max_length=64, index=True)
+    status: str = Field(default="running", max_length=32, index=True)
+    objective: str = Field(default="", sa_column=Column(Text))
+    context_json: str = Field(default="{}", sa_column=Column(Text))
+    result_json: str = Field(default="{}", sa_column=Column(Text))
+    error: str = Field(default="", sa_column=Column(Text))
+
+
+class AgentRun(AgentRunBase, table=True):
+    __tablename__ = "agent_runs"
+
+    id: str = Field(primary_key=True, max_length=64)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    started_at: datetime = Field(default_factory=datetime.utcnow)
+    finished_at: Optional[datetime] = Field(default=None)
+
+
+class AgentRunStepBase(SQLModel):
+    run_id: str = Field(max_length=64, foreign_key="agent_runs.id", index=True)
+    session_id: str = Field(default="", max_length=64, index=True)
+    profile_id: str = Field(default="", max_length=64, index=True)
+    step_type: str = Field(max_length=50, index=True)
+    status: str = Field(default="completed", max_length=32, index=True)
+    order_index: int = Field(default=0, index=True)
+    tool_name: str = Field(default="", max_length=120, index=True)
+    summary: str = Field(default="", sa_column=Column(Text))
+    input_json: str = Field(default="{}", sa_column=Column(Text))
+    output_json: str = Field(default="{}", sa_column=Column(Text))
+    linked_objects_json: str = Field(default="[]", sa_column=Column(Text))
+    error: str = Field(default="", sa_column=Column(Text))
+    duration_ms: int = Field(default=0)
+
+
+class AgentRunStep(AgentRunStepBase, table=True):
+    __tablename__ = "agent_run_steps"
+
+    id: int = Field(primary_key=True, default=None)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+# =============================================================================
+# Agent 记忆快照：每次 run 实际注入模型的 frozen context
+# =============================================================================
+
+class AgentMemorySnapshotBase(SQLModel):
+    user_id: str = Field(default="default", max_length=64, index=True)
+    run_id: str = Field(max_length=64, foreign_key="agent_runs.id", index=True)
+    session_id: str = Field(default="", max_length=64, index=True)
+    profile_id: str = Field(default="", max_length=64, index=True)
+    memory_context: str = Field(default="", sa_column=Column(Text))
+    context_summary: str = Field(default="", sa_column=Column(Text))
+    tool_index_text: str = Field(default="", sa_column=Column(Text))
+    snapshot_json: str = Field(default="{}", sa_column=Column(Text))
+
+
+class AgentMemorySnapshot(AgentMemorySnapshotBase, table=True):
+    __tablename__ = "agent_memory_snapshots"
+
+    id: int = Field(primary_key=True, default=None)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+# =============================================================================
 # 导出（让 init_db 能发现）
 # =============================================================================
 
-AgentSession, AgentMemory, AgentSkill, AgentToolCall
+class AgentProfileBase(SQLModel):
+    user_id: str = Field(default="default", max_length=64, index=True)
+    name: str = Field(default="", max_length=100, index=True)
+    description: str = Field(default="", max_length=500)
+    avatar: str = Field(default="🤖", max_length=32)
+    role_type: str = Field(default="assistant", max_length=64, index=True)
+    system_prompt: str = Field(default="", sa_column=Column(Text))
+    allowed_tools_json: str = Field(default="[]", sa_column=Column(Text))
+    default_context_json: str = Field(default="{}", sa_column=Column(Text))
+    default_project_id: str = Field(default="", max_length=64, index=True)
+    default_workflow: str = Field(default="", max_length=120)
+    default_skill_ids_json: str = Field(default="[]", sa_column=Column(Text))
+    provider: str = Field(default="", max_length=120)
+    model: str = Field(default="", max_length=160)
+    max_steps: int = Field(default=8, ge=1, le=20)
+    is_default: bool = Field(default=False, index=True)
+    is_builtin: bool = Field(default=False, index=True)
+
+
+class AgentProfile(AgentProfileBase, table=True):
+    __tablename__ = "agent_profiles"
+
+    id: str = Field(primary_key=True, max_length=64)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class AgentProfileCreate(AgentProfileBase):
+    pass
+
+
+class AgentProfileRead(AgentProfileBase):
+    id: str
+    created_at: datetime
+    updated_at: datetime
+
+
+AgentSession, AgentThread, AgentMessage, AgentContextSnapshot, AgentMemory, AgentSkill, AgentToolCall, AgentRun, AgentRunStep, AgentMemorySnapshot, AgentProfile

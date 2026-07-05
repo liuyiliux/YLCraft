@@ -1,8 +1,5 @@
-"""
-YLCraft — 字幕工具封装
+"""Subtitle tools exposed to the Agent Center."""
 
-封装 SubtitleService 为 Agent 可调用的工具
-"""
 from __future__ import annotations
 
 import asyncio
@@ -11,7 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from app.services.agent.registry import register_tool
-from app.services.subtitle.service import SubtitleService, SUBTITLE_STYLES
+from app.services.subtitle.service import SUBTITLE_STYLES, SubtitleService
 
 logger = logging.getLogger("ylcraft.agent.tools.subtitle")
 
@@ -20,8 +17,13 @@ _subtitle_service = SubtitleService()
 
 @register_tool(
     name="extract_subtitle",
-    description="提取视频字幕（语音转文字），返回 SRT/ASS 文件路径",
-    category="subtitle"
+    description="从本地视频中提取字幕或语音转文字，生成 SRT/ASS 字幕文件。",
+    category="subtitle",
+    input_schema_note="必须提供本地 video_path；language 默认 zh；style 为字幕样式；output_format 支持 srt/ass；model_size 控制识别模型大小。",
+    output_schema_note="返回 subtitle_path、subtitle_id、language、duration、segments_count、output_format。",
+    risk_level="costly",
+    output_type="subtitle_extract_result",
+    cost_hint="会运行语音识别模型并读取视频文件，长视频耗时更高，执行前需要确认。",
 )
 async def extract_subtitle(
     video_path: str,
@@ -30,7 +32,6 @@ async def extract_subtitle(
     output_format: str = "srt",
     model_size: str = "medium",
 ) -> dict:
-    """提取视频字幕"""
     try:
         video_path_obj = Path(video_path)
         if not video_path_obj.exists():
@@ -54,22 +55,24 @@ async def extract_subtitle(
                     "duration": result.get("duration"),
                     "segments_count": result.get("segments_count"),
                     "output_format": result.get("output_format"),
-                }
+                },
             }
-        else:
-            return {"success": False, "error": result.get("error", "字幕提取失败")}
-    except Exception as e:
-        logger.error(f"extract_subtitle failed: {e}")
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": result.get("error", "字幕提取失败")}
+    except Exception as exc:
+        logger.error("extract_subtitle failed: %s", exc)
+        return {"success": False, "error": str(exc)}
 
 
 @register_tool(
     name="get_subtitle_styles",
-    description="获取所有可用的字幕样式预设",
-    category="subtitle"
+    description="获取所有可用的字幕样式预设。",
+    category="subtitle",
+    input_schema_note="无参数。",
+    output_schema_note="返回 styles 和 available_styles，可用于 burn_subtitle 或 extract_subtitle 的 style 参数。",
+    risk_level="read",
+    output_type="subtitle_style_list",
 )
 async def get_subtitle_styles() -> dict:
-    """获取所有字幕样式预设"""
     try:
         styles = _subtitle_service.get_styles()
         return {
@@ -77,17 +80,21 @@ async def get_subtitle_styles() -> dict:
             "data": {
                 "styles": styles,
                 "available_styles": list(SUBTITLE_STYLES.keys()),
-            }
+            },
         }
-    except Exception as e:
-        logger.error(f"get_subtitle_styles failed: {e}")
-        return {"success": False, "error": str(e)}
+    except Exception as exc:
+        logger.error("get_subtitle_styles failed: %s", exc)
+        return {"success": False, "error": str(exc)}
 
 
 @register_tool(
     name="burn_subtitle",
-    description="将字幕烧录到视频中（硬字幕）",
-    category="subtitle"
+    description="把字幕硬烧录到视频中，生成一个带字幕的新视频文件。",
+    category="subtitle",
+    input_schema_note="必须提供 video_path 和 subtitle_path；output_path 可为空自动生成；style 需来自 get_subtitle_styles。",
+    output_schema_note="返回 output_path、video_path、subtitle_path、style；会生成一个新视频文件。",
+    risk_level="write",
+    output_type="video_file_result",
 )
 async def burn_subtitle(
     video_path: str,
@@ -95,7 +102,6 @@ async def burn_subtitle(
     output_path: Optional[str] = None,
     style: str = "tiktok",
 ) -> dict:
-    """烧录字幕到视频"""
     try:
         import subprocess
 
@@ -110,16 +116,14 @@ async def burn_subtitle(
         if output_path:
             output_path_obj = Path(output_path)
         else:
-            suffix = video_path_obj.suffix
-            stem = video_path_obj.stem
-            output_path_obj = video_path_obj.parent / f"{stem}_subtitled{suffix}"
+            output_path_obj = video_path_obj.parent / f"{video_path_obj.stem}_subtitled{video_path_obj.suffix}"
 
         output_path_obj.parent.mkdir(parents=True, exist_ok=True)
 
         is_ass = subtitle_path_obj.suffix.lower() == ".ass"
+        escaped = str(subtitle_path_obj).replace(":", "\\:")
 
         if is_ass:
-            escaped = str(subtitle_path_obj).replace(':', '\\:')
             vf_filter = f"subtitles='{escaped}'"
         else:
             style_config = SUBTITLE_STYLES.get(style, SUBTITLE_STYLES["tiktok"])
@@ -128,7 +132,6 @@ async def burn_subtitle(
             primary_color = style_config.get("primary_color", "&H00FFFFFF")
             outline_color = style_config.get("outline_color", "&H00000000")
             outline = style_config.get("outline", 3)
-            escaped = str(subtitle_path_obj).replace(':', '\\:')
             vf_filter = (
                 f"subtitles='{escaped}':"
                 f"force_style='FontName={font_name},FontSize={font_size},"
@@ -136,13 +139,20 @@ async def burn_subtitle(
             )
 
         cmd = [
-            "ffmpeg", "-y",
-            "-i", str(video_path_obj),
-            "-vf", vf_filter,
-            "-c:a", "copy",
-            "-c:v", "libx264",
-            "-preset", "fast",
-            "-crf", "23",
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(video_path_obj),
+            "-vf",
+            vf_filter,
+            "-c:a",
+            "copy",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "fast",
+            "-crf",
+            "23",
             str(output_path_obj),
         ]
 
@@ -164,11 +174,11 @@ async def burn_subtitle(
                 "video_path": str(video_path_obj),
                 "subtitle_path": str(subtitle_path_obj),
                 "style": style if not is_ass else "ass_builtin",
-            }
+            },
         }
-    except Exception as e:
-        logger.error(f"burn_subtitle failed: {e}")
-        return {"success": False, "error": str(e)}
+    except Exception as exc:
+        logger.error("burn_subtitle failed: %s", exc)
+        return {"success": False, "error": str(exc)}
 
 
-logger.info("[subtitle_tools] 字幕工具注册完成: extract_subtitle, get_subtitle_styles, burn_subtitle")
+logger.info("[subtitle_tools] registered: extract_subtitle, get_subtitle_styles, burn_subtitle")

@@ -72,6 +72,7 @@ class LLMMessage:
 class LLMGenerationResult:
     success: bool
     content: str = ""
+    tool_calls: list[dict] = field(default_factory=list)
     usage: dict = field(default_factory=dict)
     cost: float = 0.0
     provider: str = ""

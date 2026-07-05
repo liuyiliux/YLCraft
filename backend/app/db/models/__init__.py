@@ -19,9 +19,15 @@ from app.db.models.live2d import Live2DModel, Live2DBone, Live2DMotion, Live2DMo
 from app.db.models.api_key import ApiKey, ApiKeyStatus, ApiKeyCategory
 from app.db.models.agent import (
     AgentSession, AgentSessionCreate, AgentSessionRead,
+    AgentThread, AgentThreadBase,
+    AgentMessage, AgentMessageBase,
+    AgentContextSnapshot, AgentContextSnapshotBase,
     AgentMemory, AgentMemoryCreate, AgentMemoryRead,
     AgentSkill, AgentSkillCreate, AgentSkillRead,
     AgentToolCall, AgentToolCallBase,
+    AgentRun, AgentRunBase, AgentRunStep, AgentRunStepBase,
+    AgentMemorySnapshot, AgentMemorySnapshotBase,
+    AgentProfile, AgentProfileCreate, AgentProfileRead,
 )
 
 # =============================================================================

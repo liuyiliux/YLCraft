@@ -55,7 +55,8 @@ class EmbeddingService:
         # 优先从数据库加载（用户在前端配置的）
         if self._provider_name:
             try:
-                from app.db.models.ai_connector import AIConnector, AIProviderType
+                from app.db.models.ai_connector import AIConnector
+                from sqlalchemy import String, cast
 
                 # 按 name 或 provider 查找（name 更精确）
                 result = await self.session.execute(
@@ -64,7 +65,7 @@ class EmbeddingService:
                         ((AIConnector.name == self._provider_name) |
                          (AIConnector.provider == self._provider_name))
                     )
-                    .where(AIConnector.provider_type == AIProviderType.embedding)
+                    .where(cast(AIConnector.provider_type, String) == "embedding")
                     .where(AIConnector.is_active == True)
                     .limit(1)
                 )
@@ -93,10 +94,11 @@ class EmbeddingService:
 
         # 备用：查找任意激活的 embedding connector
         try:
-            from app.db.models.ai_connector import AIConnector, AIProviderType
+            from app.db.models.ai_connector import AIConnector
+            from sqlalchemy import String, cast
             result = await self.session.execute(
                 select(AIConnector)
-                .where(AIConnector.provider_type == AIProviderType.embedding)
+                .where(cast(AIConnector.provider_type, String) == "embedding")
                 .where(AIConnector.is_active == True)
                 .order_by(AIConnector.priority)
                 .limit(1)

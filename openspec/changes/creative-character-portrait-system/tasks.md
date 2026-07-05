@@ -5,7 +5,7 @@
 - [x] 1.1 Define the character visual profile schema and decide first storage location (`visual_profile_json` column or metadata-compatible fallback).
 - [x] 1.2 Add backend helpers to synthesize a visual profile from existing `Character` fields.
 - [x] 1.3 Add validation and normalization for visual tags, signature items, expression set, pose set and negative constraints.
-- [ ] 1.4 Add migration/backfill behavior that leaves existing characters valid.
+- [x] 1.4 Add migration/backfill behavior that leaves existing characters valid.
 
 ## Phase 2: Prompt Presets
 
@@ -54,7 +54,7 @@
 - [x] 4B.8 Feed Character Bible fields into portrait prompt synthesis.
 - [x] 4B.9 Redesign character detail drawer with a summary identity board and Bible quick panels.
 - [x] 4.4 Add portrait version list with preset/model/time and set-main action.
-- [ ] 4.5 Preserve existing quick generation behavior for users who only fill appearance/costume.
+- [x] 4.5 Preserve existing quick generation behavior for users who only fill appearance/costume.
 - [x] 4.8 Add AI-assisted Character Bible enrichment for legacy characters and generated draft characters.
 
 ## Phase 5: Creative Project Integration
@@ -71,14 +71,14 @@
 - [x] 5.10 Allow generated outputs to be promoted back into the project reference-card collection.
 - [x] 5.11 Add ordered novel-body reader with chapter TOC, previous/next navigation and Markdown export.
 - [x] 5.12 Add backend novel-body quality gate for short summaries/repeated output and local schema coercion for chapter-outline scene fields.
-- [ ] 5.13 Add tests for prompt injection and lineage metadata.
+- [x] 5.13 Add tests for prompt injection and lineage metadata.
 
 ## Verification
 
 - [x] 6.1 Verify existing characters without visual profiles can still generate portraits.
 - [x] 6.2 Verify `identity_board_16_9` prompt includes layout, no-overlap, face anchor, multi-view, expression and detail study rules.
 - [x] 6.3 Verify each preset maps to the expected output intent: main portrait, multi-view sheet, identity board, expression pack, action pose pack and transparent/white-background material.
-- [ ] 6.4 Verify generated portrait versions remain visible in Asset Hub and one can be selected as main.
+- [x] 6.4 Verify generated portrait versions remain visible in Asset Hub and one can be selected as main.
 - [x] 6.5 Verify a storyboard panel prompt includes linked character profile and portrait reference information.
 - [x] 6.6 Run backend tests and frontend build for changed areas.
-- [ ] 6.7 Verify a generated 3x3 portrait grid creates 9 child image assets with source-version lineage.
+- [x] 6.7 Verify a generated 3x3 portrait grid creates 9 child image assets with source-version lineage.

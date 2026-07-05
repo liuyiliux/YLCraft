@@ -2606,12 +2606,12 @@ export default function SettingsPage() {
                         label={<span style={{ color: THEME.textPrimary }}>Response 解析配置</span>}
                         style={{ marginBottom: 8 }}
                         extra={<span style={{ color: THEME.textSecondary, fontSize: 12 }}>
-                          通用 HTTP 模式使用 JSONPath 动态提取结果；URL 响应用 images_path，base64 响应用 base64_images_path 或 response_format=base64。
+                          通用 HTTP 模式使用 JSONPath 动态提取结果；图片用 images_path / base64_images_path，LLM 工具调用可配 tool_calls_path、tool_name_path、tool_arguments_path、finish_reason_path。
                         </span>}
                       >
                         <TextArea 
                           rows={6} 
-                          placeholder={`JSON 格式的响应配置，例如：\n{\n  "images_path": "$.data[*].url",\n  "base64_images_path": "$.data[*].b64_json",\n  "error_path": "$.error.message",\n  "response_format": "url"\n}`}
+                          placeholder={`JSON 格式的响应配置，例如：\n{\n  "content_path": "$.choices[0].message.content",\n  "tool_calls_path": "$.choices[0].message.tool_calls[*]",\n  "tool_name_path": "$.function.name",\n  "tool_arguments_path": "$.function.arguments",\n  "finish_reason_path": "$.choices[0].finish_reason",\n  "tool_finish_reasons": ["tool_calls"]\n}`}
                         />
                       </Form.Item>
 

@@ -84,6 +84,11 @@ class AIService:
 
         registry = BackendRegistry()
         registry.load_all(config_path=config_path, session=session)
+        if session is not None:
+            try:
+                session.rollback()
+            except Exception as exc:
+                logger.debug("AIService session rollback after registry load failed: %s", exc)
 
         router = BackendRouter(registry)
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "YLCraft Novel Writer Room"
+  short_description: "Run and inspect YLCraft novel writer-room workflows."
+  default_prompt: "Use the YLCraft novel writer room to inspect a project, run chapter writing passes, review outputs, and promote approved prose."

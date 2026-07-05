@@ -66,7 +66,7 @@ async def init_db():
     from app.db.models.character import Character, CharacterStoryLink
     from app.db.models.live2d import Live2DModel, Live2DBone, Live2DMotion
     from app.db.models.api_key import ApiKey
-    from app.db.models.agent import AgentSession, AgentMemory, AgentSkill, AgentToolCall
+    from app.db.models.agent import AgentSession, AgentThread, AgentMessage, AgentContextSnapshot, AgentMemory, AgentSkill, AgentToolCall, AgentRun, AgentRunStep, AgentMemorySnapshot, AgentProfile
     from app.db.models.platform_connection import PlatformConnection  # 统一凭证模型
     from app.db.models.ai_connector import AIConnector, AIUsageLog  # AI 连接器
     from app.db.models.platform_template import PlatformTemplate
@@ -84,6 +84,10 @@ async def init_db():
             await conn.execute(text("""
                 ALTER TABLE platform_templates
                 ADD COLUMN IF NOT EXISTS system_template TEXT NOT NULL DEFAULT '';
+            """))
+            await conn.execute(text("""
+                ALTER TABLE platform_templates
+                ALTER COLUMN platform TYPE VARCHAR(80);
             """))
             await conn.execute(text("""
                 ALTER TABLE character_story_links
@@ -111,6 +115,64 @@ async def init_db():
                 ADD COLUMN IF NOT EXISTS ability_json TEXT NOT NULL DEFAULT '{}',
                 ADD COLUMN IF NOT EXISTS arc_json TEXT NOT NULL DEFAULT '{}';
             """))
+
+
+async def ensure_agent_tables():
+    """Create Agent Center tables on demand.
+
+    This keeps the Agent page usable after code updates even when the server was
+    started before the new AgentProfile model existed.
+    """
+    from app.db.models.agent import AgentSession, AgentThread, AgentMessage, AgentContextSnapshot, AgentMemory, AgentSkill, AgentToolCall, AgentRun, AgentRunStep, AgentMemorySnapshot, AgentProfile
+
+    tables = [
+        AgentSession.__table__,
+        AgentThread.__table__,
+        AgentMessage.__table__,
+        AgentContextSnapshot.__table__,
+        AgentMemory.__table__,
+        AgentSkill.__table__,
+        AgentToolCall.__table__,
+        AgentRun.__table__,
+        AgentRunStep.__table__,
+        AgentMemorySnapshot.__table__,
+        AgentProfile.__table__,
+    ]
+    async with engine.begin() as conn:
+        for table in tables:
+            await conn.run_sync(lambda sync_conn, t=table: t.create(sync_conn, checkfirst=True))
+        if conn.dialect.name == "postgresql":
+            for ddl in [
+                "ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS role_type VARCHAR(64) DEFAULT 'assistant'",
+                "ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS default_project_id VARCHAR(64) DEFAULT ''",
+                "ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS default_workflow VARCHAR(120) DEFAULT ''",
+                "ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS default_skill_ids_json TEXT DEFAULT '[]'",
+            ]:
+                await conn.execute(text(ddl))
+            await conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_agent_profiles_role_type "
+                    "ON agent_profiles (role_type)"
+                )
+            )
+            await conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_agent_profiles_default_project_id "
+                    "ON agent_profiles (default_project_id)"
+                )
+            )
+        elif conn.dialect.name == "sqlite":
+            columns = await conn.execute(text("PRAGMA table_info(agent_profiles)"))
+            column_names = {row[1] for row in columns.fetchall()}
+            sqlite_columns = {
+                "role_type": "VARCHAR(64) DEFAULT 'assistant'",
+                "default_project_id": "VARCHAR(64) DEFAULT ''",
+                "default_workflow": "VARCHAR(120) DEFAULT ''",
+                "default_skill_ids_json": "TEXT DEFAULT '[]'",
+            }
+            for column, column_type in sqlite_columns.items():
+                if column not in column_names:
+                    await conn.execute(text(f"ALTER TABLE agent_profiles ADD COLUMN {column} {column_type}"))
 
 
 # 平台/认证/状态/获取方式枚举需要与 SQLModel 同步
@@ -194,6 +256,17 @@ async def get_async_session() -> AsyncGenerator[SAAsyncSession, None]:
         except Exception:
             await session.rollback()
             raise
+
+
+async def get_async_session_dependency() -> AsyncGenerator[SAAsyncSession, None]:
+    """FastAPI dependency wrapper for async DB sessions.
+
+    `get_async_session()` is an async context manager used throughout the codebase
+    with `async with`. FastAPI Depends needs a plain async generator, otherwise it
+    raises: '_AsyncGeneratorContextManager' object is not an async iterator.
+    """
+    async with get_async_session() as session:
+        yield session
 
 
 def get_session():

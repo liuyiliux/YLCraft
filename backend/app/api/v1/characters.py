@@ -17,6 +17,7 @@ POST /api/v1/characters/{id}/portrait/upgrade — 把现有立绘升级到资产
 from __future__ import annotations
 
 import logging
+import json
 import re
 from datetime import datetime
 from pathlib import Path
@@ -698,6 +699,37 @@ async def set_character_main_portrait_version(character_id: str, version_id: str
         selected_extra = dict(selected_rep.extra_json or {})
         portrait_url = selected_extra.get("url") or selected_rep.file_path
         character.portrait_url = portrait_url
+        identity = {}
+        try:
+            identity = json.loads(character.identity_json or "{}")
+        except Exception:
+            identity = {}
+        if not isinstance(identity, dict):
+            identity = {}
+        visual_profile = identity.get("visual_profile")
+        if not isinstance(visual_profile, dict):
+            visual_profile = {}
+        reference_urls = visual_profile.get("reference_image_urls")
+        if not isinstance(reference_urls, list):
+            reference_urls = []
+        cleaned_refs = []
+        seen_refs = set()
+        for url in [portrait_url, *reference_urls]:
+            text = str(url or "").strip()
+            if not text or text in seen_refs:
+                continue
+            seen_refs.add(text)
+            cleaned_refs.append(text)
+        visual_profile.update(
+            {
+                "identity_reference_url": portrait_url,
+                "identity_reference_version_id": str(version.id),
+                "identity_reference_representation_id": str(selected_rep.id),
+                "reference_image_urls": cleaned_refs,
+            }
+        )
+        identity["visual_profile"] = visual_profile
+        character.identity_json = json.dumps(identity, ensure_ascii=False)
         character.updated_at = datetime.now()
 
         node = await session.get(AssetNode, str(character.portrait_node_id))
@@ -1393,6 +1425,37 @@ async def generate_character_portrait(character_id: str, req: PortraitGenerateRe
             if req.set_as_main:
                 character.portrait_url = url
                 character.portrait_node_id = asset_hub_result.node_id
+                identity = {}
+                try:
+                    identity = json.loads(character.identity_json or "{}")
+                except Exception:
+                    identity = {}
+                if not isinstance(identity, dict):
+                    identity = {}
+                visual_profile = identity.get("visual_profile")
+                if not isinstance(visual_profile, dict):
+                    visual_profile = {}
+                reference_urls = visual_profile.get("reference_image_urls")
+                if not isinstance(reference_urls, list):
+                    reference_urls = []
+                cleaned_refs = []
+                seen_refs = set()
+                for ref_url in [url, *reference_urls]:
+                    text = str(ref_url or "").strip()
+                    if not text or text in seen_refs:
+                        continue
+                    seen_refs.add(text)
+                    cleaned_refs.append(text)
+                visual_profile.update(
+                    {
+                        "identity_reference_url": url,
+                        "identity_reference_version_id": asset_hub_result.version_id,
+                        "identity_reference_representation_id": asset_hub_result.representation_id,
+                        "reference_image_urls": cleaned_refs,
+                    }
+                )
+                identity["visual_profile"] = visual_profile
+                character.identity_json = json.dumps(identity, ensure_ascii=False)
                 character.updated_at = datetime.now()
             await session.flush()
             await session.refresh(character)
@@ -1466,12 +1529,7 @@ async def generate_character_portrait(character_id: str, req: PortraitGenerateRe
             "version_id": asset_hub_result.version_id,
             "version_number": asset_hub_result.version_number,
             "representation_id": asset_hub_result.representation_id,
-            "character": {
-                "id": character.id,
-                "name": character.name,
-                "portrait_url": character.portrait_url,
-                "portrait_node_id": str(character.portrait_node_id) if character.portrait_node_id else None,
-            },
+            "character": CharacterService(session).to_response(character),
         },
     }
 

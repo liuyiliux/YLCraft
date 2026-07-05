@@ -897,6 +897,9 @@ export {
   saveAgentMemory,
   deleteAgentMemory,
   listAgentSkills,
+  listAgentProfiles,
+  createAgentProfile,
+  updateAgentProfile,
   sendToAgent,
 } from './agent'
 
@@ -1345,6 +1348,12 @@ export const fillCreativeProjectDemoData = (projectId: string, data: { overwrite
     body: JSON.stringify(data),
   })
 
+export const syncCreativeProjectBible = (projectId: string, data: { overwrite?: boolean } = {}) =>
+  request(`/creative-projects/${projectId}/sync-project-bible`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
 export const generateCharacterPortrait = (
   characterId: string,
   data: {
@@ -1550,6 +1559,52 @@ export const runCreativeProjectPipeline = (
   request(`/creative-projects/${projectId}/run-pipeline`, {
     method: 'POST',
     body: JSON.stringify(data),
+  })
+
+export const runCreativeProjectWriterRoomStep = (
+  projectId: string,
+  step: string,
+  data: {
+    chapter_number?: number
+    content_id?: string
+    instruction?: string
+    selected_text?: string
+    provider?: string
+    model?: string
+    template_id?: string
+  } = {},
+) =>
+  request(`/creative-projects/${projectId}/writer-room/step/${encodeURIComponent(step)}`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
+export const runCreativeProjectWriterRoom = (
+  projectId: string,
+  data: {
+    chapter_number?: number
+    steps?: string[]
+    content_id?: string
+    instruction?: string
+    selected_text?: string
+    provider?: string
+    model?: string
+    template_id?: string
+    continue_on_error?: boolean
+  } = {},
+) =>
+  request(`/creative-projects/${projectId}/writer-room/run`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
+export const promoteCreativeProjectWriterRoomContent = (
+  projectId: string,
+  contentId: string,
+) =>
+  request(`/creative-projects/${projectId}/writer-room/promote`, {
+    method: 'POST',
+    body: JSON.stringify({ content_id: contentId }),
   })
 
 // ===== Novel（小说）=====

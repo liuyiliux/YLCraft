@@ -57,6 +57,143 @@ from .breaker_tools import (
     generate_script,
 )
 
+from .image_tools import (
+    list_image_backends,
+    preview_image_generation_request,
+    generate_image_asset,
+    poll_image_generation_task,
+)
+
+from .video_tools import (
+    list_video_backends,
+    preview_video_generation_request,
+    generate_video_asset,
+    poll_video_generation_task,
+)
+
+from .prompt_template_tools import (
+    list_prompt_templates,
+    get_prompt_template,
+    preview_prompt_template_render,
+    update_prompt_template,
+)
+
+from .ai_config_tools import (
+    list_ai_connectors,
+    get_ai_connector,
+    list_provider_metadata,
+    get_provider_metadata,
+    upsert_provider_metadata,
+    create_ai_connector,
+    update_ai_connector,
+    test_ai_connector,
+    discover_connector_models,
+)
+
+from .task_tools import (
+    list_project_tasks,
+    get_project_task,
+    cancel_project_task,
+    delete_project_task,
+)
+
+from .novel_tools import (
+    list_novel_sources,
+    list_novel_bookshelf,
+    search_novel_sources,
+    get_novel_catalog,
+    preview_novel_chapter,
+)
+
+from .download_tools import (
+    parse_download_link,
+    create_download_task,
+    poll_download_task,
+)
+
+from .wechat_mp_tools import (
+    list_wechat_mp_connections,
+    search_wechat_mp_accounts,
+    list_wechat_mp_articles,
+    download_wechat_mp_article,
+)
+
+from .tts_tools import (
+    preview_tts_request,
+    generate_tts_audio,
+)
+
+from .ebook_tools import (
+    create_ebook_from_folder,
+    get_ebook_task,
+    list_ebook_tasks,
+)
+
+from .semantic_search_tools import (
+    semantic_search_assets,
+    find_similar_assets,
+    get_asset_embedding_info,
+)
+
+from .lineage_tools import (
+    get_asset_lineage_graph,
+    get_asset_upstream_lineage,
+    get_asset_downstream_lineage,
+    get_asset_lineage_stats,
+    link_asset_lineage,
+    find_asset_common_ancestor,
+)
+
+from .reader_tools import (
+    browse_reader_documents,
+    read_reader_document,
+    read_reader_document_collection,
+    delete_reader_document,
+)
+
+from .export_tools import (
+    get_export_dataset_stats,
+    export_asset_dataset,
+    calculate_asset_quality,
+    batch_calculate_asset_quality,
+    find_duplicate_assets,
+    merge_duplicate_assets,
+)
+
+from .platform_source_tools import (
+    list_platform_source_options,
+    list_platform_connections,
+    search_platform_sources,
+    search_platform_sources_enhanced,
+    get_platform_note_detail,
+    fetch_platform_no_watermark,
+    import_platform_results_to_assets,
+)
+
+from .creative_project_tools import (
+    list_creative_projects,
+    inspect_creative_project,
+    build_creative_project_context_pack_tool,
+    list_creative_project_contents,
+    get_creative_project_content,
+    update_creative_project_content,
+    list_creative_project_asset_links,
+    link_creative_project_asset,
+    match_creative_project_reference_assets,
+    list_creative_project_generation_logs,
+    get_creative_project_generation_log,
+    sync_creative_project_bible,
+    run_creative_project_pipeline,
+    run_creative_writer_room,
+)
+
+from .character_tools import (
+    list_characters,
+    inspect_character,
+    preview_character_portrait_prompt,
+    update_character_visual_profile,
+)
+
 # 工具列表（用于批量注册）
 TOOLS = [
     # 素材工具
@@ -82,6 +219,95 @@ TOOLS = [
     analyze_viral_content,
     get_breaker_task_status,
     generate_script,
+    # AI 图片工具
+    list_image_backends,
+    preview_image_generation_request,
+    generate_image_asset,
+    poll_image_generation_task,
+    # AI 视频工具
+    list_video_backends,
+    preview_video_generation_request,
+    generate_video_asset,
+    poll_video_generation_task,
+    list_prompt_templates,
+    get_prompt_template,
+    preview_prompt_template_render,
+    update_prompt_template,
+    list_ai_connectors,
+    get_ai_connector,
+    list_provider_metadata,
+    get_provider_metadata,
+    upsert_provider_metadata,
+    create_ai_connector,
+    update_ai_connector,
+    test_ai_connector,
+    discover_connector_models,
+    list_project_tasks,
+    get_project_task,
+    cancel_project_task,
+    delete_project_task,
+    list_novel_sources,
+    list_novel_bookshelf,
+    search_novel_sources,
+    get_novel_catalog,
+    preview_novel_chapter,
+    parse_download_link,
+    create_download_task,
+    poll_download_task,
+    list_wechat_mp_connections,
+    search_wechat_mp_accounts,
+    list_wechat_mp_articles,
+    download_wechat_mp_article,
+    preview_tts_request,
+    generate_tts_audio,
+    create_ebook_from_folder,
+    get_ebook_task,
+    list_ebook_tasks,
+    semantic_search_assets,
+    find_similar_assets,
+    get_asset_embedding_info,
+    get_asset_lineage_graph,
+    get_asset_upstream_lineage,
+    get_asset_downstream_lineage,
+    get_asset_lineage_stats,
+    link_asset_lineage,
+    find_asset_common_ancestor,
+    browse_reader_documents,
+    read_reader_document,
+    read_reader_document_collection,
+    delete_reader_document,
+    get_export_dataset_stats,
+    export_asset_dataset,
+    calculate_asset_quality,
+    batch_calculate_asset_quality,
+    find_duplicate_assets,
+    merge_duplicate_assets,
+    list_platform_source_options,
+    list_platform_connections,
+    search_platform_sources,
+    search_platform_sources_enhanced,
+    get_platform_note_detail,
+    fetch_platform_no_watermark,
+    import_platform_results_to_assets,
+    list_creative_projects,
+    inspect_creative_project,
+    build_creative_project_context_pack_tool,
+    list_creative_project_contents,
+    get_creative_project_content,
+    update_creative_project_content,
+    list_creative_project_asset_links,
+    link_creative_project_asset,
+    match_creative_project_reference_assets,
+    list_creative_project_generation_logs,
+    get_creative_project_generation_log,
+    sync_creative_project_bible,
+    run_creative_project_pipeline,
+    run_creative_writer_room,
+    # 角色工具
+    list_characters,
+    inspect_character,
+    preview_character_portrait_prompt,
+    update_character_visual_profile,
 ]
 
 __all__ = [
@@ -110,6 +336,96 @@ __all__ = [
     "analyze_viral_content",
     "get_breaker_task_status",
     "generate_script",
+    # AI 图片工具
+    "list_image_backends",
+    "preview_image_generation_request",
+    "generate_image_asset",
+    "poll_image_generation_task",
+    # AI 视频工具
+    "list_video_backends",
+    "preview_video_generation_request",
+    "generate_video_asset",
+    "poll_video_generation_task",
+    # 创作项目工具
+    "list_prompt_templates",
+    "get_prompt_template",
+    "preview_prompt_template_render",
+    "update_prompt_template",
+    "list_ai_connectors",
+    "get_ai_connector",
+    "list_provider_metadata",
+    "get_provider_metadata",
+    "upsert_provider_metadata",
+    "create_ai_connector",
+    "update_ai_connector",
+    "test_ai_connector",
+    "discover_connector_models",
+    "list_project_tasks",
+    "get_project_task",
+    "cancel_project_task",
+    "delete_project_task",
+    "list_novel_sources",
+    "list_novel_bookshelf",
+    "search_novel_sources",
+    "get_novel_catalog",
+    "preview_novel_chapter",
+    "parse_download_link",
+    "create_download_task",
+    "poll_download_task",
+    "list_wechat_mp_connections",
+    "search_wechat_mp_accounts",
+    "list_wechat_mp_articles",
+    "download_wechat_mp_article",
+    "preview_tts_request",
+    "generate_tts_audio",
+    "create_ebook_from_folder",
+    "get_ebook_task",
+    "list_ebook_tasks",
+    "semantic_search_assets",
+    "find_similar_assets",
+    "get_asset_embedding_info",
+    "get_asset_lineage_graph",
+    "get_asset_upstream_lineage",
+    "get_asset_downstream_lineage",
+    "get_asset_lineage_stats",
+    "link_asset_lineage",
+    "find_asset_common_ancestor",
+    "browse_reader_documents",
+    "read_reader_document",
+    "read_reader_document_collection",
+    "delete_reader_document",
+    "get_export_dataset_stats",
+    "export_asset_dataset",
+    "calculate_asset_quality",
+    "batch_calculate_asset_quality",
+    "find_duplicate_assets",
+    "merge_duplicate_assets",
+    "list_platform_source_options",
+    "list_platform_connections",
+    "search_platform_sources",
+    "search_platform_sources_enhanced",
+    "get_platform_note_detail",
+    "fetch_platform_no_watermark",
+    "import_platform_results_to_assets",
+    "list_creative_projects",
+    "inspect_creative_project",
+    "build_creative_project_context_pack_tool",
+    "list_creative_project_contents",
+    "get_creative_project_content",
+    "update_creative_project_content",
+    "list_creative_project_asset_links",
+    "link_creative_project_asset",
+    "match_creative_project_reference_assets",
+    "list_creative_project_generation_logs",
+    "get_creative_project_generation_log",
+    "sync_creative_project_bible",
+    "run_creative_project_pipeline",
+    "run_creative_writer_room",
+    # 角色工具
+    "list_characters",
+    "inspect_character",
+    "preview_character_portrait_prompt",
+    "update_character_visual_profile",
     # 工具列表
     "TOOLS",
 ]

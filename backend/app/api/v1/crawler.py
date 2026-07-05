@@ -180,7 +180,7 @@ async def search_materials(req: SearchRequest):
             results=results,
             total=len(results),
             message=f"找到 {len(results)} 条结果",
-            using="MediaCrawler" if service.use_mediacrawler else "yt-dlp",
+            using="MediaCrawler" if getattr(service, "use_mediacrawler", False) else "platforms",
         )
     except NotImplementedError as e:
         raise HTTPException(status_code=501, detail=str(e))

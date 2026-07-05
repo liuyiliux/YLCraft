@@ -11,6 +11,7 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
+from sqlalchemy import String, cast
 
 from app.db.database import SessionLocal
 from app.db.models.ai_connector import AIConnector, AIProvider, AIProviderType
@@ -139,7 +140,7 @@ async def list_ai_capabilities(
     with SessionLocal() as session:
         query = session.query(AIConnector)
         if type:
-            query = query.filter(AIConnector.provider_type == AIProviderType(type))
+            query = query.filter(cast(AIConnector.provider_type, String) == str(type))
         connectors = query.order_by(AIConnector.priority.asc(), AIConnector.created_at.desc()).all()
 
     capabilities = [_to_capability(conn) for conn in connectors]

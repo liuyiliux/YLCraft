@@ -110,6 +110,63 @@ const PORTRAIT_PRESET_OPTIONS: { label: string; value: PortraitPreset }[] = [
   { label: '透明/白底', value: 'transparent_or_white_background' },
 ]
 
+const PORTRAIT_PRESET_HELP: Record<PortraitPreset, { title: string; detail: string; sizeHint?: string }> = {
+  main_portrait: {
+    title: '第一步锁定角色身份',
+    detail: '优先生成单人主立绘，先把脸、发型、服装和标志物稳定下来，再用作后续九宫格和分镜参考。',
+    sizeHint: '建议 1024x1536 或 1024x1024。',
+  },
+  headshot_icon: {
+    title: '头像/半身用于头像和对话框',
+    detail: '聚焦五官、眼睛和服装领口，不适合用来判断完整服装比例。',
+  },
+  key_visual: {
+    title: '氛围宣传图',
+    detail: '适合封面、海报和PV氛围，不建议作为角色服装结构和比例的最终基准。',
+  },
+  multi_view_sheet: {
+    title: '生产级三视图',
+    detail: '用于锁定正面、侧面、背面比例和服装结构，是后续漫画一致性最重要的参考之一。',
+  },
+  identity_board_16_9: {
+    title: '角色身份板',
+    detail: '用于快速总览角色气质、道具和设定摘要，不要把完整九宫格和大量说明都塞进一张图。',
+  },
+  expression_pack: {
+    title: '表情包设定',
+    detail: '适合生成多个头像表情，要求同脸同发同配饰。',
+  },
+  expression_grid_3x3: {
+    title: '表情九宫格用于切片素材',
+    detail: '九格会稀释脸部细节，最好先有主立绘或三视图参考图，再生成表情九宫格。',
+    sizeHint: '建议尽量用 1536x1536、2048x2048 或模型支持的更大方图。',
+  },
+  action_pose_pack: {
+    title: '动作姿态设定板',
+    detail: '用于少量姿态参考，动作要简单，避免道具和大幅度动作抢走脸部细节。',
+  },
+  pose_grid_3x3: {
+    title: '动作九宫格用于切成9张动作素材',
+    detail: '不要第一次就生成九宫格锁脸。推荐先生成主立绘/多视图，再用同一角色参考图生成九个简单站姿。',
+    sizeHint: '建议尽量用 1536x1536、2048x2048 或模型支持的更大方图。',
+  },
+  transparent_or_white_background: {
+    title: '透明/白底素材',
+    detail: '适合抠图、Live2D、分镜合成和漫画复用。',
+  },
+  expression_pose_sheet: {
+    title: '紧凑表情+姿态板',
+    detail: '适合快速探索，但一致性不如先锁脸再分别生成表情/动作。',
+  },
+}
+
+const REFERENCE_FIRST_PRESETS: PortraitPreset[] = [
+  'expression_grid_3x3',
+  'action_pose_pack',
+  'pose_grid_3x3',
+  'expression_pose_sheet',
+]
+
 export interface Character {
   id: string
   name: string
@@ -362,12 +419,7 @@ export interface PortraitGenerateAssetHubResponse {
     version_id: string
     version_number: number
     representation_id: string
-    character: {
-      id: string
-      name: string
-      portrait_url: string
-      portrait_node_id: string
-    }
+    character: Character
   }
 }
 
@@ -615,6 +667,13 @@ export function deleteCharacterWorldUsage(characterId: string, usageId: string) 
   }).then(r => r.json())
 }
 
+/**
+ * 快速生成立绘路径（保留行为）—— task 4.5
+ *
+ * 当用户仅填写 appearance / costume_hint 时，此函数从表单字段构建完整立绘提示词，
+ * 无需依赖 visual_profile / identity_json / Bible 字段。
+ * 该路径与资产中枢的 build_portrait_prompt 并行存在，确保轻量角色也能一键生图。
+ */
 function buildCharacterPortraitPrompt(form: CharacterCreateRequest): string {
   const roleLabel = CHARACTER_ROLE_OPTIONS.find(o => o.value === form.role)?.label || form.role || '角色'
   const sourceLabels = (form.source_types || [])
@@ -666,6 +725,110 @@ function buildVisualProfileOverride(form: CharacterCreateRequest): Record<string
       return value !== undefined && value !== null && String(value).trim() !== ''
     }),
   )
+}
+
+function getSavedPortraitPrompts(form: CharacterCreateRequest): Record<string, { prompt?: string; negative_prompt?: string }> {
+  const saved = form.identity?.visual_profile?.portrait_prompts
+  return saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {}
+}
+
+function getSavedPortraitPrompt(form: CharacterCreateRequest, preset: PortraitPreset) {
+  const saved = getSavedPortraitPrompts(form)[preset]
+  return saved && typeof saved === 'object' ? saved : null
+}
+
+function mergePortraitPromptDrafts(
+  form: CharacterCreateRequest,
+  selectedPreset: PortraitPreset,
+  prompt: string,
+  negativePrompt: string,
+  cache: Partial<Record<PortraitPreset, { prompt: string; negativePrompt: string }>>,
+): CharacterCreateRequest {
+  const promptEntries: Record<string, { prompt: string; negative_prompt: string }> = {
+    ...getSavedPortraitPrompts(form),
+  } as Record<string, { prompt: string; negative_prompt: string }>
+  Object.entries(cache).forEach(([preset, item]) => {
+    if (!item) return
+    promptEntries[preset] = {
+      prompt: item.prompt || '',
+      negative_prompt: item.negativePrompt || '',
+    }
+  })
+  promptEntries[selectedPreset] = {
+    prompt: prompt || '',
+    negative_prompt: negativePrompt || '',
+  }
+  return {
+    ...form,
+    identity: {
+      ...(form.identity || {}),
+      visual_profile: {
+        ...((form.identity || {}).visual_profile || {}),
+        portrait_prompts: promptEntries,
+      },
+    },
+  }
+}
+
+function cleanImageUrls(urls: any[]): string[] {
+  return Array.from(new Set(urls.map(url => String(url || '').trim()).filter(Boolean)))
+}
+
+function getVisualProfileReferenceImages(form: CharacterCreateRequest): string[] {
+  const raw = form.identity?.visual_profile?.reference_image_urls
+  return Array.isArray(raw) ? cleanImageUrls(raw) : []
+}
+
+function getIdentityReferenceImage(form: CharacterCreateRequest): string {
+  return String(form.identity?.visual_profile?.identity_reference_url || form.portrait_url || '').trim()
+}
+
+function shouldAutoAttachMainPortrait(preset: PortraitPreset): boolean {
+  return REFERENCE_FIRST_PRESETS.includes(preset)
+}
+
+function getGenerationReferenceImages(form: CharacterCreateRequest, preset: PortraitPreset): string[] {
+  const identityReference = getIdentityReferenceImage(form)
+  return cleanImageUrls([
+    ...getVisualProfileReferenceImages(form),
+    ...(shouldAutoAttachMainPortrait(preset) && identityReference ? [identityReference] : []),
+  ])
+}
+
+function mergeReferenceImagesIntoForm(form: CharacterCreateRequest, referenceImages: string[]): CharacterCreateRequest {
+  return {
+    ...form,
+    identity: {
+      ...(form.identity || {}),
+      visual_profile: {
+        ...((form.identity || {}).visual_profile || {}),
+        reference_image_urls: cleanImageUrls(referenceImages),
+      },
+    },
+  }
+}
+
+function mergeIdentityReferenceIntoForm(
+  form: CharacterCreateRequest,
+  url: string,
+  versionId?: string,
+  representationId?: string | null,
+): CharacterCreateRequest {
+  const referenceUrl = String(url || '').trim()
+  const referenceImages = cleanImageUrls([referenceUrl, ...getVisualProfileReferenceImages(form)])
+  return {
+    ...form,
+    identity: {
+      ...(form.identity || {}),
+      visual_profile: {
+        ...((form.identity || {}).visual_profile || {}),
+        ...(referenceUrl ? { identity_reference_url: referenceUrl } : {}),
+        ...(versionId ? { identity_reference_version_id: versionId } : {}),
+        ...(representationId ? { identity_reference_representation_id: representationId } : {}),
+        reference_image_urls: referenceImages,
+      },
+    },
+  }
 }
 
 function buildCharacterEnrichmentContext(character: Character): string {
@@ -1126,14 +1289,26 @@ export default function CharactersPage() {
 
   useEffect(() => {
     if (!formModalOpen) return
-    const initialPrompt = buildCharacterPortraitPrompt(form)
+    const savedPrompts = getSavedPortraitPrompts(form)
+    const savedMainPrompt = getSavedPortraitPrompt(form, 'main_portrait')
+    const initialPrompt = savedMainPrompt?.prompt || buildCharacterPortraitPrompt(form)
+    const initialNegativePrompt = savedMainPrompt?.negative_prompt || ''
     setPortraitPromptDraft(initialPrompt)
-    setPortraitNegativePromptDraft('')
+    setPortraitNegativePromptDraft(initialNegativePrompt)
     setSelectedPortraitPreset('main_portrait')
     setPortraitPromptCache({
+      ...Object.fromEntries(
+        Object.entries(savedPrompts).map(([preset, item]) => [
+          preset,
+          {
+            prompt: item?.prompt || '',
+            negativePrompt: item?.negative_prompt || '',
+          },
+        ]),
+      ),
       main_portrait: {
         prompt: initialPrompt,
-        negativePrompt: '',
+        negativePrompt: initialNegativePrompt,
       },
     })
   }, [formModalOpen, editingCharacter?.id])
@@ -1285,11 +1460,51 @@ export default function CharactersPage() {
       setSelectedCharacter(updated)
       setCharacters(cs => cs.map(c => c.id === selectedCharacter.id ? updated : c))
       await loadPortraitVersions(selectedCharacter.id)
-      message.success(`已设为主立绘 v${version.version_number}`)
+      message.success(`已设为主立绘/身份基准图 v${version.version_number}`)
     } catch (e: any) {
       message.error(e?.message || '设置主立绘失败')
     } finally {
       setSettingMainPortrait('')
+    }
+  }
+
+  const handleAddPortraitVersionToReferences = async (version: PortraitVersionItem) => {
+    if (!selectedCharacter || !version.image_url) return
+    try {
+      const identity = selectedCharacter.identity || {}
+      const visualProfile = identity.visual_profile && typeof identity.visual_profile === 'object'
+        ? identity.visual_profile
+        : {}
+      const referenceImages = cleanImageUrls([
+        ...(
+          Array.isArray(visualProfile.reference_image_urls)
+            ? visualProfile.reference_image_urls
+            : []
+        ),
+        version.image_url,
+      ])
+      const res = await updateCharacter(selectedCharacter.id, {
+        identity: {
+          ...identity,
+          visual_profile: {
+            ...visualProfile,
+            reference_image_urls: referenceImages,
+          },
+        },
+      })
+      if (!res?.success || !res.data) {
+        message.error(res?.detail || '加入参考图失败')
+        return
+      }
+      const updated = {
+        ...res.data,
+        world_usages: selectedCharacter.world_usages || [],
+      }
+      setSelectedCharacter(updated)
+      setCharacters(cs => cs.map(c => c.id === selectedCharacter.id ? updated : c))
+      message.success(`已加入默认参考图集合（共 ${referenceImages.length} 张）`)
+    } catch (e: any) {
+      message.error(e?.message || '加入参考图失败')
     }
   }
 
@@ -1370,6 +1585,11 @@ export default function CharactersPage() {
   }
 
   // AI 生成立绘：编辑模式走资产中枢端点（保留版本历史），新建模式走旧 /images/generate
+  //
+  // 快速生成路径（task 4.5）：
+  //   - 新建：buildCharacterPortraitPrompt(form) 从 appearance/costume_hint 直接构建 prompt
+  //   - 编辑：buildVisualProfileOverride(form) 桥接表单字段 → visual_profile → 后端 build_portrait_prompt
+  //   两者均无需用户填写完整 visual card，保留轻量一键生图行为。
   const handleRefreshPortraitPrompt = async () => {
     if (editingCharacter?.id) {
       setPreviewingPortraitPrompt(true)
@@ -1426,13 +1646,13 @@ export default function CharactersPage() {
           {
             role: 'system',
             content:
-              `你是资深角色设定师和 AI 生图提示词工程师。只输出一段可直接用于生图的完整提示词，不要 Markdown，不要解释。${PORTRAIT_PROMPT_LANGUAGE_RULE}`,
+              `你是资深角色设定师和 AI 生图提示词工程师。只输出一段可直接用于生图的完整提示词，不要 Markdown，不要解释。你必须优先保证角色一致性：同一张脸、同一发型、同一眼型和瞳色、同一服装结构、同一身体比例。${PORTRAIT_PROMPT_LANGUAGE_RULE}`,
           },
           {
             role: 'user',
             content:
               `请把下面的角色立绘提示词优化成更稳定、更完整的生图提示词。\n` +
-              `要求：保留角色身份和外观，不添加矛盾设定；强调单人立绘、角色卡、清晰五官、服装细节、简洁背景、后续漫画一致性参考；包含必要负面约束；${PORTRAIT_PROMPT_LANGUAGE_RULE} 输出不要出现英文整句，不要以 "3x3 grid layout"、"Panel 1" 这类英文段落开头。若输入是九宫格/分格提示词，必须完整输出第 1 到第 9 格，不能只写前几格。\n\n` +
+              `要求：保留角色身份和外观，不添加矛盾设定；强调单人立绘、角色卡、清晰五官、服装细节、简洁背景、后续漫画一致性参考；包含必要负面约束；${PORTRAIT_PROMPT_LANGUAGE_RULE} 输出不要出现英文整句，不要以 "3x3 grid layout"、"Panel 1" 这类英文段落开头。若输入是九宫格/分格提示词，必须完整输出第 1 到第 9 格，不能只写前几格；动作九宫格只安排简单站姿或轻微身体动作，不要坐下、奔跑、跳跃、打斗或复杂道具；明确提醒使用已确认主立绘/身份板作为参考图，九宫格用于切素材而不是第一次锁脸。\n\n` +
               basePrompt,
           },
         ],
@@ -1476,10 +1696,30 @@ export default function CharactersPage() {
     if (!portraitPromptDraft.trim() && !editingCharacter) {
       updatePortraitPromptDraft(prompt)
     }
+    let formForGenerate = mergePortraitPromptDrafts(
+      form,
+      selectedPortraitPreset,
+      prompt,
+      portraitNegativePromptDraft,
+      portraitPromptCache,
+    )
+    const generationReferenceImages = getGenerationReferenceImages(formForGenerate, selectedPortraitPreset)
+    if (generationReferenceImages.length) {
+      formForGenerate = mergeReferenceImagesIntoForm(formForGenerate, generationReferenceImages)
+    }
+    if (JSON.stringify(formForGenerate.identity || {}) !== JSON.stringify(form.identity || {})) {
+      setForm(formForGenerate)
+    }
 
     setGeneratingPortrait(true)
     try {
       if (editingCharacter) {
+        if (JSON.stringify(formForGenerate.identity || {}) !== JSON.stringify(editingCharacter.identity || {})) {
+          const saveRes = await updateCharacter(editingCharacter.id, { identity: formForGenerate.identity || {} })
+          if (!saveRes?.success) {
+            message.warning(saveRes?.detail || '提示词/参考图暂未保存，但会继续用于本次生成')
+          }
+        }
         // 编辑已有角色 → 走资产中枢端点（自动创建/复用 AssetNode + 新 Version）
         const data = await generateCharacterPortraitViaAssetHub(
           editingCharacter.id,
@@ -1490,8 +1730,8 @@ export default function CharactersPage() {
             n: 1,
             preset: selectedPortraitPreset,
             negative_prompt: portraitNegativePromptDraft,
-            reference_images: (visualProfile.reference_image_urls || []).filter(Boolean),
-            visual_profile: buildVisualProfileOverride(form),
+            reference_images: generationReferenceImages,
+            visual_profile: buildVisualProfileOverride(formForGenerate),
             set_as_main: true,
           }
         )
@@ -1500,12 +1740,16 @@ export default function CharactersPage() {
           return
         }
         const info = data.data
+        const updatedCharacter = info.character
         setForm(f => ({
           ...f,
-          portrait_url: info.url,
-          portrait_asset_id: '',
-          portrait_node_id: info.character.portrait_node_id,
+          identity: updatedCharacter.identity || formForGenerate.identity || {},
+          portrait_url: updatedCharacter.portrait_url || info.url,
+          portrait_asset_id: updatedCharacter.portrait_asset_id || '',
         }))
+        setEditingCharacter(updatedCharacter)
+        setSelectedCharacter(prev => prev?.id === updatedCharacter.id ? { ...updatedCharacter, world_usages: prev.world_usages || [] } : prev)
+        setCharacters(cs => cs.map(c => c.id === updatedCharacter.id ? updatedCharacter : c))
         message.success(`立绘已生成并入资产中枢（v${info.version_number}）`)
         // 刷新日志 Tab
         if (editingCharacter?.id) {
@@ -1546,33 +1790,44 @@ export default function CharactersPage() {
     if (form.source_types.length === 0) { message.warning('请至少选择一个来源类型'); return }
     setSaving(true)
     try {
+      let formToSave = mergePortraitPromptDrafts(
+        form,
+        selectedPortraitPreset,
+        portraitPromptDraft,
+        portraitNegativePromptDraft,
+        portraitPromptCache,
+      )
+      const generationReferenceImages = getGenerationReferenceImages(formToSave, selectedPortraitPreset)
+      if (generationReferenceImages.length) {
+        formToSave = mergeReferenceImagesIntoForm(formToSave, generationReferenceImages)
+      }
       if (editingCharacter) {
         const req: CharacterUpdateRequest = {}
-        if (form.name !== editingCharacter.name) req.name = form.name
-        if (form.role !== editingCharacter.role) req.role = form.role
-        if (JSON.stringify(form.source_types) !== JSON.stringify(editingCharacter.source_types)) req.source_types = form.source_types
-        if (form.appearance !== editingCharacter.appearance) req.appearance = form.appearance
-        if (form.personality !== editingCharacter.personality) req.personality = form.personality
-        if (form.costume_hint !== editingCharacter.costume_hint) req.costume_hint = form.costume_hint
-        if (JSON.stringify(form.signature_items || []) !== JSON.stringify(editingCharacter.signature_items || [])) req.signature_items = form.signature_items || []
-        if (JSON.stringify(form.expressions || []) !== JSON.stringify(editingCharacter.expressions || [])) req.expressions = form.expressions || []
-        if (JSON.stringify(form.poses || []) !== JSON.stringify(editingCharacter.poses || [])) req.poses = form.poses || []
-        if ((form.visual_consistency || '') !== (editingCharacter.visual_consistency || '')) req.visual_consistency = form.visual_consistency || ''
-        if (form.background !== editingCharacter.background) req.background = form.background
-        if (form.age_range !== editingCharacter.age_range) req.age_range = form.age_range
-        if (JSON.stringify(form.identity || {}) !== JSON.stringify(editingCharacter.identity || {})) req.identity = form.identity || {}
-        if (JSON.stringify(form.motivation || {}) !== JSON.stringify(editingCharacter.motivation || {})) req.motivation = form.motivation || {}
-        if (JSON.stringify(form.speech || {}) !== JSON.stringify(editingCharacter.speech || {})) req.speech = form.speech || {}
-        if (JSON.stringify(form.behavior || {}) !== JSON.stringify(editingCharacter.behavior || {})) req.behavior = form.behavior || {}
-        if (JSON.stringify(form.ability || {}) !== JSON.stringify(editingCharacter.ability || {})) req.ability = form.ability || {}
-        if (JSON.stringify(form.arc || {}) !== JSON.stringify(editingCharacter.arc || {})) req.arc = form.arc || {}
-        if (JSON.stringify(form.tags) !== JSON.stringify(editingCharacter.tags)) req.tags = form.tags
-        if (form.portrait_url !== editingCharacter.portrait_url) req.portrait_url = form.portrait_url
-        if ((form.portrait_asset_id || '') !== (editingCharacter.portrait_asset_id || '')) req.portrait_asset_id = form.portrait_asset_id || ''
+        if (formToSave.name !== editingCharacter.name) req.name = formToSave.name
+        if (formToSave.role !== editingCharacter.role) req.role = formToSave.role
+        if (JSON.stringify(formToSave.source_types) !== JSON.stringify(editingCharacter.source_types)) req.source_types = formToSave.source_types
+        if (formToSave.appearance !== editingCharacter.appearance) req.appearance = formToSave.appearance
+        if (formToSave.personality !== editingCharacter.personality) req.personality = formToSave.personality
+        if (formToSave.costume_hint !== editingCharacter.costume_hint) req.costume_hint = formToSave.costume_hint
+        if (JSON.stringify(formToSave.signature_items || []) !== JSON.stringify(editingCharacter.signature_items || [])) req.signature_items = formToSave.signature_items || []
+        if (JSON.stringify(formToSave.expressions || []) !== JSON.stringify(editingCharacter.expressions || [])) req.expressions = formToSave.expressions || []
+        if (JSON.stringify(formToSave.poses || []) !== JSON.stringify(editingCharacter.poses || [])) req.poses = formToSave.poses || []
+        if ((formToSave.visual_consistency || '') !== (editingCharacter.visual_consistency || '')) req.visual_consistency = formToSave.visual_consistency || ''
+        if (formToSave.background !== editingCharacter.background) req.background = formToSave.background
+        if (formToSave.age_range !== editingCharacter.age_range) req.age_range = formToSave.age_range
+        if (JSON.stringify(formToSave.identity || {}) !== JSON.stringify(editingCharacter.identity || {})) req.identity = formToSave.identity || {}
+        if (JSON.stringify(formToSave.motivation || {}) !== JSON.stringify(editingCharacter.motivation || {})) req.motivation = formToSave.motivation || {}
+        if (JSON.stringify(formToSave.speech || {}) !== JSON.stringify(editingCharacter.speech || {})) req.speech = formToSave.speech || {}
+        if (JSON.stringify(formToSave.behavior || {}) !== JSON.stringify(editingCharacter.behavior || {})) req.behavior = formToSave.behavior || {}
+        if (JSON.stringify(formToSave.ability || {}) !== JSON.stringify(editingCharacter.ability || {})) req.ability = formToSave.ability || {}
+        if (JSON.stringify(formToSave.arc || {}) !== JSON.stringify(editingCharacter.arc || {})) req.arc = formToSave.arc || {}
+        if (JSON.stringify(formToSave.tags) !== JSON.stringify(editingCharacter.tags)) req.tags = formToSave.tags
+        if (formToSave.portrait_url !== editingCharacter.portrait_url) req.portrait_url = formToSave.portrait_url
+        if ((formToSave.portrait_asset_id || '') !== (editingCharacter.portrait_asset_id || '')) req.portrait_asset_id = formToSave.portrait_asset_id || ''
         await updateCharacter(editingCharacter.id, req)
         message.success('角色已更新')
       } else {
-        await createCharacter(form)
+        await createCharacter(formToSave)
         message.success('角色已创建')
       }
       setFormModalOpen(false)
@@ -1621,6 +1876,15 @@ export default function CharactersPage() {
   }
 
   const visualProfile = form.identity?.visual_profile || {}
+  const selectedPortraitHelp = PORTRAIT_PRESET_HELP[selectedPortraitPreset]
+  const identityReferenceImage = getIdentityReferenceImage(form)
+  const currentGenerationReferenceImages = getGenerationReferenceImages(form, selectedPortraitPreset)
+  const portraitPreviewDuplicatedByBaseline =
+    Boolean(form.portrait_url) && Boolean(identityReferenceImage) && form.portrait_url === identityReferenceImage
+  const willAutoAttachMainPortrait =
+    shouldAutoAttachMainPortrait(selectedPortraitPreset) &&
+    Boolean(identityReferenceImage) &&
+    !getVisualProfileReferenceImages(form).includes(identityReferenceImage)
 
   const appendReferenceImages = useCallback((urls: string[], successText?: string) => {
     const cleaned = urls.map(url => String(url || '').trim()).filter(Boolean)
@@ -1821,6 +2085,7 @@ export default function CharactersPage() {
                 onFillMissing={() => handleEnrichCharacter('fill_missing')}
                 onRewrite={() => handleEnrichCharacter('rewrite')}
               />
+              <CharacterReferenceStatus character={selectedCharacter} theme={THEME} />
               <CharacterBibleQuickPanels character={selectedCharacter} theme={THEME} />
               <CharacterBibleDetailedPanels character={selectedCharacter} theme={THEME} />
               <div style={{ marginBottom: 16 }}>
@@ -1957,6 +2222,7 @@ export default function CharactersPage() {
                         settingMainId={settingMainPortrait}
                         slicingId={slicingPortraitVersion}
                         onSetMain={handleSetMainPortraitVersion}
+                        onAddReference={handleAddPortraitVersionToReferences}
                         onSliceGrid={handleSlicePortraitGrid}
                         onRefresh={() => {
                           if (!selectedCharacter) return
@@ -2276,12 +2542,24 @@ export default function CharactersPage() {
                   }}
                   style={{ maxWidth: '100%', overflowX: 'auto' }}
                 />
+                {selectedPortraitHelp && (
+                  <Alert
+                    type={selectedPortraitPreset.includes('grid') ? 'warning' : 'info'}
+                    showIcon
+                    message={selectedPortraitHelp.title}
+                    description={[selectedPortraitHelp.detail, selectedPortraitHelp.sizeHint].filter(Boolean).join(' ')}
+                    style={{ marginTop: 8 }}
+                  />
+                )}
               </div>
               <Space style={{ justifyContent: 'space-between', width: '100%', marginBottom: 8 }} align="center">
                 <Space size={8}>
                   <Text strong style={{ color: THEME.primary }}>完整生图提示词</Text>
                   <Tooltip title="这里的提示词会直接用于 AI 生成立绘，也可以复制到其他生图工具。">
                     <Tag color="cyan">可复制</Tag>
+                  </Tooltip>
+                  <Tooltip title="保存角色时会按当前立绘模式保存，下次编辑会自动带回。">
+                    <Tag color="green">随角色保存</Tag>
                   </Tooltip>
                 </Space>
                 <Space size={6} wrap>
@@ -2327,7 +2605,7 @@ export default function CharactersPage() {
                 value={portraitPromptDraft}
                 onChange={e => updatePortraitPromptDraft(e.target.value)}
                 rows={8}
-                placeholder="根据角色信息生成或手动编辑完整立绘提示词；AI 生成立绘会使用这里的内容。"
+                placeholder="根据角色信息生成或手动编辑完整立绘提示词；AI 生成立绘会使用这里的内容，保存角色后下次编辑会自动带回。"
                 style={{ fontFamily: 'monospace', fontSize: 12 }}
               />
               <TextArea
@@ -2339,19 +2617,84 @@ export default function CharactersPage() {
               />
             </div>
             <Input placeholder="输入立绘图片 URL（也可由 AI 生成自动回填）" value={form.portrait_url} onChange={e => setForm(f => ({ ...f, portrait_url: e.target.value }))} style={{ marginTop: 8 }} />
-            {form.portrait_url && <Image src={form.portrait_url} width={120} height={120} style={{ objectFit: 'cover', borderRadius: 8, marginTop: 8 }} fallback="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==" />}
+            {form.portrait_url && !portraitPreviewDuplicatedByBaseline && (
+              <div style={{ marginTop: 8 }}>
+                <Space direction="vertical" size={4}>
+                  <Text type="secondary" style={{ fontSize: 12 }}>当前立绘预览</Text>
+                  <Image
+                    src={form.portrait_url}
+                    width={120}
+                    height={120}
+                    style={{ objectFit: 'cover', borderRadius: 8 }}
+                    fallback="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+                  />
+                </Space>
+              </div>
+            )}
             <div style={{ marginTop: 10 }}>
-              <Text type="secondary" style={{ display: 'block', fontSize: 12, marginBottom: 6 }}>
-                参考图 URL（用于支持图生图/参考图的模型；可填素材库图片下载地址或外部图片地址）
-              </Text>
+              {identityReferenceImage && (
+                <div style={{ marginBottom: 10, padding: 10, borderRadius: 8, border: `1px solid ${THEME.borderLight}`, background: THEME.bgElevated }}>
+                  <Space align="start" size={10}>
+                    <Image
+                      src={identityReferenceImage}
+                      width={64}
+                      height={64}
+                      style={{ objectFit: 'cover', borderRadius: 8, border: `1px solid ${THEME.borderLight}` }}
+                      fallback="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+                    />
+                    <Space direction="vertical" size={2}>
+                      <Space size={6} wrap>
+                        <Text strong style={{ color: THEME.textPrimary }}>身份基准图</Text>
+                        <Tag color="green" style={{ marginInlineEnd: 0 }}>默认参考</Tag>
+                      </Space>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        九宫格、动作姿态和后续分镜会优先用这张图保持同脸同服装。
+                      </Text>
+                      {visualProfile.identity_reference_version_id && (
+                        <Text type="secondary" style={{ fontSize: 12, fontFamily: 'monospace' }}>
+                          version: {visualProfile.identity_reference_version_id}
+                        </Text>
+                      )}
+                    </Space>
+                  </Space>
+                </div>
+              )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  参考图 URL（用于支持图生图/参考图的模型；可填素材库图片下载地址或外部图片地址）
+                </Text>
+                <Space size={4} wrap>
+                  <Tag color={currentGenerationReferenceImages.length ? 'blue' : 'default'} style={{ marginInlineEnd: 0 }}>
+                    本次发送 {currentGenerationReferenceImages.length} 张
+                  </Tag>
+                  {willAutoAttachMainPortrait && (
+                    <Tooltip title="表情/动作九宫格会自动把身份基准图加入本次参考图，并随角色视觉卡保存。">
+                      <Tag color="gold" style={{ marginInlineEnd: 0 }}>自动带基准图</Tag>
+                    </Tooltip>
+                  )}
+                </Space>
+              </div>
               <Space size={6} wrap style={{ marginBottom: 8 }}>
                 <Button
                   size="small"
-                  icon={<PictureOutlined />}
-                  onClick={() => appendReferenceImages([form.portrait_url || ''], '已加入当前主立绘作为参考图')}
-                  disabled={!form.portrait_url}
+                  icon={<CheckOutlined />}
+                  onClick={() => {
+                    if (!form.portrait_url) return
+                    const nextForm = mergeIdentityReferenceIntoForm(form, form.portrait_url)
+                    setForm(nextForm)
+                    message.success('已设为身份基准图')
+                  }}
+                  disabled={!form.portrait_url || portraitPreviewDuplicatedByBaseline}
                 >
-                  使用当前主立绘
+                  设当前图为基准
+                </Button>
+                <Button
+                  size="small"
+                  icon={<PictureOutlined />}
+                  onClick={() => appendReferenceImages([identityReferenceImage], '已加入身份基准图作为参考图')}
+                  disabled={!identityReferenceImage}
+                >
+                  使用身份基准图
                 </Button>
                 <Button
                   size="small"
@@ -2755,6 +3098,70 @@ function formatBibleValue(value: any): string {
   return String(value || '').trim()
 }
 
+function CharacterReferenceStatus({ character, theme }: { character: Character; theme: any }) {
+  const visualProfile = character.identity?.visual_profile || {}
+  const identityReference = String(visualProfile.identity_reference_url || character.portrait_url || '').trim()
+  const referenceImages = Array.isArray(visualProfile.reference_image_urls)
+    ? cleanImageUrls(visualProfile.reference_image_urls)
+    : []
+  return (
+    <div style={{
+      marginBottom: 14,
+      padding: 12,
+      borderRadius: 10,
+      background: theme.bgCard,
+      border: `1px solid ${theme.borderLight}`,
+    }}>
+      <Space align="start" size={12} style={{ width: '100%' }}>
+        {identityReference ? (
+          <Image
+            src={identityReference}
+            width={72}
+            height={72}
+            style={{ objectFit: 'cover', borderRadius: 8, border: `1px solid ${theme.borderLight}` }}
+            fallback="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+          />
+        ) : (
+          <div style={{
+            width: 72,
+            height: 72,
+            borderRadius: 8,
+            border: `1px dashed ${theme.borderLight}`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: theme.textSecondary,
+          }}>
+            <PictureOutlined />
+          </div>
+        )}
+        <Space direction="vertical" size={6} style={{ minWidth: 0, flex: 1 }}>
+          <Space wrap size={6}>
+            <Text strong style={{ color: theme.textPrimary }}>视觉参考状态</Text>
+            <Tag color={identityReference ? 'green' : 'orange'} style={{ marginInlineEnd: 0 }}>
+              {identityReference ? '已有身份基准图' : '缺身份基准图'}
+            </Tag>
+            <Tag color={referenceImages.length ? 'blue' : 'default'} style={{ marginInlineEnd: 0 }}>
+              默认参考图 {referenceImages.length}
+            </Tag>
+            <Tag color={character.portrait_node_id ? 'green' : 'default'} style={{ marginInlineEnd: 0 }}>
+              {character.portrait_node_id ? '资产中枢已绑定' : '未绑定资产中枢'}
+            </Tag>
+          </Space>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            身份基准图用于锁脸；默认参考图会在九宫格和后续分镜生图时优先参与参考。
+          </Text>
+          {visualProfile.identity_reference_version_id ? (
+            <Text type="secondary" style={{ fontSize: 12, fontFamily: 'monospace' }}>
+              baseline version: {visualProfile.identity_reference_version_id}
+            </Text>
+          ) : null}
+        </Space>
+      </Space>
+    </div>
+  )
+}
+
 function CharacterEnrichmentStrip({
   character,
   loading,
@@ -2896,6 +3303,7 @@ function CharacterPortraitVersionsTab({
   settingMainId,
   slicingId,
   onSetMain,
+  onAddReference,
   onSliceGrid,
   onRefresh,
 }: {
@@ -2906,6 +3314,7 @@ function CharacterPortraitVersionsTab({
   settingMainId: string
   slicingId: string
   onSetMain: (version: PortraitVersionItem) => void
+  onAddReference: (version: PortraitVersionItem) => void
   onSliceGrid: (version: PortraitVersionItem) => void
   onRefresh: () => void
 }) {
@@ -2995,7 +3404,14 @@ function CharacterPortraitVersionsTab({
             loading={settingMainId === record.id}
             onClick={() => onSetMain(record)}
           >
-            设为主立绘
+            设为基准
+          </Button>
+          <Button
+            size="small"
+            disabled={!record.image_url}
+            onClick={() => onAddReference(record)}
+          >
+            加入参考
           </Button>
         </Space>
       ),

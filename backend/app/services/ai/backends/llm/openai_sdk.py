@@ -47,6 +47,24 @@ def _extract_text_content(content) -> str:
     return str(content)
 
 
+def _serialize_tool_calls(tool_calls) -> list[dict]:
+    """Convert OpenAI SDK tool calls into plain dicts for AgentService."""
+    serialized = []
+    for item in tool_calls or []:
+        function = getattr(item, "function", None)
+        serialized.append(
+            {
+                "id": getattr(item, "id", "") or "",
+                "type": getattr(item, "type", "function") or "function",
+                "function": {
+                    "name": getattr(function, "name", "") if function else "",
+                    "arguments": getattr(function, "arguments", "{}") if function else "{}",
+                },
+            }
+        )
+    return serialized
+
+
 class OpenAISDKLLMBackend:
     """
     基于 OpenAI Python SDK 的 LLM 后端。
@@ -106,21 +124,31 @@ class OpenAISDKLLMBackend:
         model = kwargs.get("model", self._model)
         temperature = kwargs.get("temperature", self._default_temperature)
         max_tokens = kwargs.get("max_tokens", self._default_max_tokens)
+        tools = kwargs.get("tools")
+        tool_choice = kwargs.get("tool_choice")
+
+        request_params = {
+            "model": model,
+            "messages": [{"role": m.role, "content": m.content} for m in messages],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        if tools:
+            request_params["tools"] = tools
+        if tool_choice:
+            request_params["tool_choice"] = tool_choice
 
         try:
-            response = await self._client.chat.completions.create(
-                model=model,
-                messages=[{"role": m.role, "content": m.content} for m in messages],
-                temperature=temperature,
-                max_tokens=max_tokens,
-            )
+            response = await self._client.chat.completions.create(**request_params)
 
             choice = response.choices[0]
             usage = response.usage
+            tool_calls = _serialize_tool_calls(getattr(choice.message, "tool_calls", None))
 
             return LLMGenerationResult(
                 success=True,
                 content=choice.message.content or "",
+                tool_calls=tool_calls,
                 model=model,
                 provider=self._provider,
                 usage={

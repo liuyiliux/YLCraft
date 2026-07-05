@@ -54,6 +54,14 @@ For a new or incomplete project, run stages in this order:
 10. Split comic pages from storyboards when comic output is needed.
 11. Export novel or inspect logs for review.
 
+When prose quality is the focus, use the writer-room flow before promoting a chapter:
+
+```bash
+python .agents/skills/ylcraft-creative-workflow/scripts/creative_project_workflow.py writer-room-run --project-id <id> --chapter 1 --provider deepseek --model deepseek-v4-pro --continue-on-error
+python .agents/skills/ylcraft-creative-workflow/scripts/creative_project_workflow.py writer-room-step --project-id <id> --chapter 1 --step prose_rewrite --instruction "压低解释，增加动作和潜台词"
+python .agents/skills/ylcraft-creative-workflow/scripts/creative_project_workflow.py writer-room-promote --project-id <id> --content-id <prose_rewrite-content-id>
+```
+
 Do not start expensive image generation until the story text, script, reference-card matching, and user intent are clear.
 
 For the backend-orchestrated version, prefer:

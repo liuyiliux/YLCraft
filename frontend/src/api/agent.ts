@@ -4,11 +4,28 @@
 
 const BASE = '/api/v1'
 
+async function parseJsonResponse(response: Response) {
+  const text = await response.text()
+  let data: any = null
+  if (text) {
+    try {
+      data = JSON.parse(text)
+    } catch {
+      data = { detail: text }
+    }
+  }
+  if (!response.ok) {
+    throw new Error(data?.detail || data?.message || `HTTP ${response.status}`)
+  }
+  return data
+}
+
 // SSE 流式对话
 export function chatWithAgent(
   message: string,
-  sessionId?: string,
+  threadId?: string,
   context?: Record<string, any>,
+  profileId?: string,
   callbacks?: {
     onToken?: (token: string) => void
     onToolCalls?: (calls: any[]) => void
@@ -17,16 +34,22 @@ export function chatWithAgent(
   }
 ) {
   const params = new URLSearchParams()
-  if (sessionId) params.set('session_id', sessionId)
+  if (threadId) params.set('thread_id', threadId)
 
   return fetch(`${BASE}/agent/chat?${params}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message, context: context || {}, stream: true }),
+    body: JSON.stringify({ message, thread_id: threadId, context: context || {}, profile_id: profileId, stream: true }),
   }).then(async (response) => {
     if (!response.ok) {
-      const err = await response.json().catch(() => ({ detail: 'Network error' }))
-      callbacks.onError?.(err.detail || '请求失败')
+      const text = await response.text()
+      let detail = text || 'Network error'
+      try {
+        detail = JSON.parse(text)?.detail || detail
+      } catch {
+        // keep raw text when server returns a plain 500 page
+      }
+      callbacks.onError?.(detail)
       return
     }
 
@@ -59,7 +82,7 @@ export function chatWithAgent(
               callbacks.onToolCalls?.(event.data)
               break
             case 'done':
-              callbacks.onDone?.(event.data?.session_id)
+              callbacks.onDone?.(event.data?.thread_id || event.data?.session_id)
               break
             case 'error':
               callbacks.onError?.(event.data)
@@ -76,59 +99,174 @@ export function chatWithAgent(
 // 普通 JSON 对话（非流式）
 export const agentChat = (params: {
   message: string
+  thread_id?: string
   session_id?: string
   context?: Record<string, any>
+  profile_id?: string
+  force_new_thread?: boolean
 }) => {
   return fetch(`${BASE}/agent/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ...params, stream: false }),
-  }).then(r => r.json())
+  }).then(parseJsonResponse)
 }
 
 // 会话管理
 export const listAgentSessions = () =>
-  fetch(`${BASE}/agent/sessions`).then(r => r.json())
+  fetch(`${BASE}/agent/sessions`).then(parseJsonResponse)
+
+export const listAgentThreads = () =>
+  fetch(`${BASE}/agent/threads`).then(parseJsonResponse)
 
 export const getAgentSession = (sessionId: string) =>
-  fetch(`${BASE}/agent/sessions/${sessionId}`).then(r => r.json())
+  fetch(`${BASE}/agent/sessions/${sessionId}`).then(parseJsonResponse)
+
+export const getAgentThread = (threadId: string) =>
+  fetch(`${BASE}/agent/threads/${threadId}`).then(parseJsonResponse)
 
 export const deleteAgentSession = (sessionId: string) =>
-  fetch(`${BASE}/agent/sessions/${sessionId}`, { method: 'DELETE' }).then(r => r.json())
+  fetch(`${BASE}/agent/sessions/${sessionId}`, { method: 'DELETE' }).then(parseJsonResponse)
+
+export const deleteAgentThread = (threadId: string) =>
+  fetch(`${BASE}/agent/threads/${threadId}`, { method: 'DELETE' }).then(parseJsonResponse)
+
+export const listAgentRuns = (params?: { thread_id?: string; session_id?: string; limit?: number }) => {
+  const sp = new URLSearchParams()
+  if (params?.thread_id) sp.set('thread_id', params.thread_id)
+  if (params?.session_id) sp.set('session_id', params.session_id)
+  if (params?.limit) sp.set('limit', String(params.limit))
+  return fetch(`${BASE}/agent/runs?${sp}`).then(parseJsonResponse)
+}
+
+export const getAgentRun = (runId: string) =>
+  fetch(`${BASE}/agent/runs/${runId}`).then(parseJsonResponse)
+
+export const getAgentRunLinkedLogs = (runId: string) =>
+  fetch(`${BASE}/agent/runs/${runId}/linked-logs`).then(parseJsonResponse)
+
+export const getAgentRunMemorySnapshot = (runId: string) =>
+  fetch(`${BASE}/agent/runs/${runId}/memory-snapshot`).then(parseJsonResponse)
+
+export const exportAgentRunMarkdown = async (runId: string) => {
+  const response = await fetch(`${BASE}/agent/runs/${runId}/export.md`)
+  if (!response.ok) {
+    const text = await response.text()
+    throw new Error(text || `HTTP ${response.status}`)
+  }
+  return response.text()
+}
+
+export const cancelAgentRun = (runId: string) =>
+  fetch(`${BASE}/agent/runs/${runId}/cancel`, { method: 'POST' }).then(parseJsonResponse)
+
+export const continueAgentRun = (runId: string, data?: { message?: string; context?: Record<string, any> }) =>
+  fetch(`${BASE}/agent/runs/${runId}/continue`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data || {}),
+  }).then(parseJsonResponse)
+
+export const retryAgentRunStep = (runId: string, stepId?: number) =>
+  fetch(`${BASE}/agent/runs/${runId}/retry`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(stepId ? { step_id: stepId } : {}),
+  }).then(parseJsonResponse)
+
+export const confirmAgentRunStep = (runId: string, stepId: number) =>
+  fetch(`${BASE}/agent/runs/${runId}/steps/${stepId}/confirm`, {
+    method: 'POST',
+  }).then(parseJsonResponse)
+
+export const saveAgentMemoryCandidates = (runId: string, stepId: number, indices?: number[]) =>
+  fetch(`${BASE}/agent/runs/${runId}/steps/${stepId}/memory-candidates/save`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ indices: indices || [] }),
+  }).then(parseJsonResponse)
+
+export const discardAgentMemoryCandidates = (runId: string, stepId: number) =>
+  fetch(`${BASE}/agent/runs/${runId}/steps/${stepId}/memory-candidates/discard`, {
+    method: 'POST',
+  }).then(parseJsonResponse)
+
+export const delegateAgentRun = (
+  runId: string,
+  data: { profile_id: string; message?: string; context?: Record<string, any> },
+) =>
+  fetch(`${BASE}/agent/runs/${runId}/delegate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data || {}),
+  }).then(parseJsonResponse)
 
 // 工具列表
 export const listAgentTools = (category?: string) => {
   const sp = new URLSearchParams()
   if (category) sp.set('category', category)
-  return fetch(`${BASE}/agent/tools?${sp}`).then(r => r.json())
+  return fetch(`${BASE}/agent/tools?${sp}`).then(parseJsonResponse)
 }
+
+export const testAgentTool = (data: {
+  tool_name: string
+  arguments?: Record<string, any>
+  profile_id?: string
+  confirmed?: boolean
+}) =>
+  fetch(`${BASE}/agent/tools/test`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  }).then(parseJsonResponse)
+
+export const listAgentProfiles = () =>
+  fetch(`${BASE}/agent/profiles`).then(parseJsonResponse)
+
+export const createAgentProfile = (data: Record<string, any>) =>
+  fetch(`${BASE}/agent/profiles`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  }).then(parseJsonResponse)
+
+export const updateAgentProfile = (profileId: string, data: Record<string, any>) =>
+  fetch(`${BASE}/agent/profiles/${profileId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  }).then(parseJsonResponse)
 
 // 记忆管理
 export const getAgentMemories = () =>
-  fetch(`${BASE}/agent/memories`).then(r => r.json())
+  fetch(`${BASE}/agent/memories`).then(parseJsonResponse)
+
+export const getAgentMemoryView = () =>
+  fetch(`${BASE}/agent/memories/view`).then(parseJsonResponse)
 
 export const saveAgentMemory = (params: {
   key: string
   value: string
   memory_type?: string
   importance?: number
+  confidence?: number
 }) => {
   const { key, ...rest } = params
   return fetch(`${BASE}/agent/memories?key=${encodeURIComponent(key)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(rest),
-  }).then(r => r.json())
+  }).then(parseJsonResponse)
 }
 
 export const deleteAgentMemory = (key: string) =>
   fetch(`${BASE}/agent/memories/${encodeURIComponent(key)}`, {
     method: 'DELETE',
-  }).then(r => r.json())
+  }).then(parseJsonResponse)
 
 // 技能管理
 export const listAgentSkills = () =>
-  fetch(`${BASE}/agent/skills`).then(r => r.json())
+  fetch(`${BASE}/agent/skills`).then(parseJsonResponse)
 
 // 发送到 Agent（其他页面调用）
 export const sendToAgent = (params: {
@@ -140,5 +278,5 @@ export const sendToAgent = (params: {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
-  }).then(r => r.json())
+  }).then(parseJsonResponse)
 }

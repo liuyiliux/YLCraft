@@ -548,6 +548,90 @@ _CREATIVE_STORYBOARD = """请根据短剧脚本生成漫画/视频分镜 JSON。
   ]
 }"""
 
+_WRITER_ROOM_SCENE_BEATS = """请作为导演，把第 {chapter_number} 章拆成可写正文的场景节拍 JSON。
+故事大纲：{outline_json}
+章节规划：{chapter_plan_json}
+当前章节细纲：{chapter_outline_json}
+前文上下文：{previous_context}
+要求：场景必须有目标、阻碍、冲突压力、动作节拍、潜台词、感官锚点和转折。输出严格 JSON。"""
+
+_WRITER_ROOM_CHARACTER_REHEARSAL = """请作为角色演绎室，让第 {chapter_number} 章关键角色按自己的欲望、恐惧、已知信息和隐瞒信息先演一遍。
+故事大纲：{outline_json}
+章节细纲：{chapter_outline_json}
+场景节拍：{scene_beats_json}
+要求：输出角色反应、可用冲突、潜台词和可能对白。输出严格 JSON。"""
+
+_WRITER_ROOM_PROSE_DRAFT = """请根据场景节拍和角色演绎，写第 {chapter_number} 章小说正文初稿 JSON。
+故事大纲：{outline_json}
+章节细纲：{chapter_outline_json}
+场景节拍：{scene_beats_json}
+角色演绎：{character_rehearsal_json}
+要求：content 是完整正文，目标 3000-4500 中文字符，多写具体动作、物件互动、环境细节和潜台词，少写泛化情绪解释。输出严格 JSON。"""
+
+_WRITER_ROOM_HUMANIZE = """请作为人味润色编辑，重写第 {chapter_number} 章正文并输出 JSON。
+章节细纲：{chapter_outline_json}
+待润色正文：{source_text}
+用户额外要求：{instruction}
+要求：保留剧情事实和角色关系；删掉解释性废话；把直接情绪改成动作、停顿、视线、物件互动和对白潜台词；改掉重复句式和万能比喻。输出完整正文 JSON。"""
+
+_WRITER_ROOM_REVIEW = """请作为网文主编审稿，指出第 {chapter_number} 章正文里不像真人作者的地方。
+章节细纲：{chapter_outline_json}
+待审稿正文：{source_text}
+要求：问题必须具体到段落、场景或句式位置，覆盖节奏、逻辑、角色声音、情绪连续性、爽点/钩子、AI腔，并给出 quality_tags、ai_smell_checks 和可执行 rewrite_instruction。输出严格 JSON。"""
+
+_WRITER_ROOM_REWRITE = """请作为重写作者，根据审稿意见重写第 {chapter_number} 章正文。
+章节细纲：{chapter_outline_json}
+待重写正文：{source_text}
+局部选段（如果为空则整章重写）：{selected_text}
+审稿意见：{prose_review_json}
+用户额外要求：{instruction}
+要求：不擅自改主线事实，优先修复 high/medium 问题；如果有局部选段，只重写选段相关段落并替换回全文；输出完整正文 JSON。"""
+
+
+def _writer_room_seed(
+    *,
+    platform: str,
+    name: str,
+    stage: str,
+    description: str,
+    template: str,
+    sort_order: int,
+    template_id: str,
+):
+    return {
+        "platform": platform,
+        "name": name,
+        "template_scope": "creative_project",
+        "template_stage": stage,
+        "description": description,
+        "system_template": _CREATIVE_SYSTEM,
+        "outline_template": template,
+        "image_template": "",
+        "page_structure": {},
+        "variables": {
+            "project_title": "项目标题",
+            "project_type": "项目类型",
+            "chapter_number": "当前章节",
+            "outline_json": "故事大纲 JSON",
+            "chapter_plan_json": "章节规划 JSON",
+            "current_chapter_json": "当前章节规划 JSON",
+            "chapter_outline_json": "章节细纲 JSON",
+            "scene_beats_json": "场景节拍 JSON",
+            "character_rehearsal_json": "角色演绎 JSON",
+            "source_text": "源正文文本",
+            "selected_text": "局部选段文本",
+            "source_json": "源内容 JSON",
+            "prose_review_json": "审稿意见 JSON",
+            "previous_context": "前文上下文",
+            "instruction": "用户额外要求",
+        },
+        "video_template": None,
+        "default_size": "1024x1024",
+        "is_active": True,
+        "sort_order": sort_order,
+        "id": template_id,
+    }
+
 CREATIVE_PROJECT_TEMPLATE_SEEDS = [
     {
         "platform": "creative_outline",
@@ -713,6 +797,60 @@ CREATIVE_PROJECT_TEMPLATE_SEEDS = [
         "sort_order": 107,
         "id": "b2796b4e-0e0c-452d-a78f-776953444926",
     },
+    _writer_room_seed(
+        platform="writer_room_scene_beats",
+        name="写作室：导演场景节拍",
+        stage="scene_beats",
+        description="把章节细纲拆成可写正文的戏剧节拍、冲突压力和感官锚点。",
+        template=_WRITER_ROOM_SCENE_BEATS,
+        sort_order=121,
+        template_id="5d7c1d7a-0609-4d52-a39b-3a1c0bcf7121",
+    ),
+    _writer_room_seed(
+        platform="writer_room_character_rehearsal",
+        name="写作室：角色演绎",
+        stage="character_rehearsal",
+        description="让角色从自身欲望、恐惧和隐瞒信息出发表演，沉淀潜台词和对白方向。",
+        template=_WRITER_ROOM_CHARACTER_REHEARSAL,
+        sort_order=122,
+        template_id="0d1b2c89-8b94-4cb0-9858-5d7a422b0d2d",
+    ),
+    _writer_room_seed(
+        platform="writer_room_prose_draft",
+        name="写作室：正文初稿",
+        stage="prose_draft",
+        description="基于场景节拍和角色演绎生成完整正文初稿。",
+        template=_WRITER_ROOM_PROSE_DRAFT,
+        sort_order=123,
+        template_id="3e9d8c01-0a9f-4b20-b6f1-12af3ae7422e",
+    ),
+    _writer_room_seed(
+        platform="writer_room_humanize",
+        name="写作室：人味润色",
+        stage="prose_humanized",
+        description="把 AI 腔正文重写成更自然的动作、对白、节奏和潜台词。",
+        template=_WRITER_ROOM_HUMANIZE,
+        sort_order=124,
+        template_id="e8e7fc3f-9a2d-4a0c-9f7f-c01082ab3d66",
+    ),
+    _writer_room_seed(
+        platform="writer_room_review",
+        name="写作室：网文主编审稿",
+        stage="prose_review",
+        description="按节奏、逻辑、角色声音、情绪连续性和 AI 腔给出可执行审稿意见。",
+        template=_WRITER_ROOM_REVIEW,
+        sort_order=125,
+        template_id="94ce0b13-89a7-42dd-950f-7834de38c932",
+    ),
+    _writer_room_seed(
+        platform="writer_room_rewrite",
+        name="写作室：定向重写",
+        stage="prose_rewrite",
+        description="根据审稿意见重写正文，保留主线事实并修复重点问题。",
+        template=_WRITER_ROOM_REWRITE,
+        sort_order=126,
+        template_id="63512f59-1ec3-40fe-aac2-7e4a0efa26fa",
+    ),
 ]
 
 

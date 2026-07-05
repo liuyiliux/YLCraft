@@ -31,7 +31,7 @@
 
 ## Phase 3: Verification
 
-- [ ] 3.1 Run backend tests for asset library, image generation, novels, downloads, torrents, and creative projects.
+- [x] 3.1 Run backend tests for asset library, image generation, novels, downloads, torrents, and creative projects.
 - [x] 3.2 Smoke test `/api/v1/assets` list/detail/thumbnail/download.
-- [ ] 3.3 Smoke test generated image and character portrait creation.
+- [x] 3.3 Smoke test generated image and character portrait creation.
 - [x] 3.4 Smoke test downloaded/torrent file import and preview.

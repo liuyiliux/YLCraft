@@ -51,6 +51,10 @@ class FillDemoDataRequest(BaseModel):
     overwrite: bool = Field(default=False, description="是否覆盖项目已有阶段内容")
 
 
+class SyncProjectBibleRequest(BaseModel):
+    overwrite: bool = Field(default=False, description="是否从当前大纲重新创建圣经/世界资产版本")
+
+
 class GenerateOutlineRequest(BaseModel):
     idea: str = ""
     provider: str | None = None
@@ -168,6 +172,32 @@ class RunPipelineRequest(BaseModel):
     match_source_type: str = "storyboard"
 
 
+class WriterRoomStepRequest(BaseModel):
+    chapter_number: int = Field(default=1, ge=1)
+    content_id: str | None = None
+    instruction: str | None = None
+    selected_text: str | None = None
+    provider: str | None = None
+    model: str | None = None
+    template_id: str | None = None
+
+
+class WriterRoomRunRequest(BaseModel):
+    chapter_number: int = Field(default=1, ge=1)
+    steps: list[str] = Field(default_factory=list)
+    content_id: str | None = None
+    instruction: str | None = None
+    selected_text: str | None = None
+    provider: str | None = None
+    model: str | None = None
+    template_id: str | None = None
+    continue_on_error: bool = True
+
+
+class WriterRoomPromoteRequest(BaseModel):
+    content_id: str
+
+
 def service(session: Session = Depends(get_session)) -> CreativeProjectService:
     return CreativeProjectService(session)
 
@@ -281,6 +311,19 @@ def fill_demo_data(
         }
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
+
+
+@router.post("/{project_id}/sync-project-bible", summary="从故事大纲同步项目圣经和世界资产")
+def sync_project_bible(
+    project_id: str,
+    req: SyncProjectBibleRequest,
+    svc: CreativeProjectService = Depends(service),
+):
+    try:
+        contents = svc.sync_project_bible(project_id, overwrite=req.overwrite)
+        return {"success": True, "data": [serialize_content(content) for content in contents]}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.post("/{project_id}/generate-outline", summary="生成故事大纲")
@@ -426,6 +469,72 @@ async def refine_novel_body(
             template_id=req.template_id,
         )
         return {"success": True, "data": serialize_content(content)}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.post("/{project_id}/writer-room/step/{step}", summary="Run one novel writer-room step")
+async def run_writer_room_step(
+    project_id: str,
+    step: str,
+    req: WriterRoomStepRequest,
+    svc: CreativeProjectService = Depends(service),
+):
+    try:
+        content = await svc.run_writer_room_step(
+            project_id,
+            step=step,
+            chapter_number=req.chapter_number,
+            content_id=req.content_id,
+            instruction=req.instruction,
+            selected_text=req.selected_text,
+            provider=req.provider,
+            model=req.model,
+            template_id=req.template_id,
+        )
+        return {"success": True, "data": serialize_content(content)}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.post("/{project_id}/writer-room/run", summary="Run selected novel writer-room steps")
+async def run_writer_room(
+    project_id: str,
+    req: WriterRoomRunRequest,
+    svc: CreativeProjectService = Depends(service),
+):
+    try:
+        data = await svc.run_writer_room(
+            project_id,
+            steps=req.steps,
+            chapter_number=req.chapter_number,
+            content_id=req.content_id,
+            instruction=req.instruction,
+            selected_text=req.selected_text,
+            provider=req.provider,
+            model=req.model,
+            template_id=req.template_id,
+            continue_on_error=req.continue_on_error,
+        )
+        return {"success": True, "data": data}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.post("/{project_id}/writer-room/promote", summary="Promote writer-room prose to latest novel body")
+def promote_writer_room_content(
+    project_id: str,
+    req: WriterRoomPromoteRequest,
+    svc: CreativeProjectService = Depends(service),
+):
+    try:
+        content = svc.promote_writer_room_content(project_id, content_id=req.content_id)
+        project = svc.get_project(project_id)
+        return {
+            "success": True,
+            "data": serialize_content(content),
+            "project": serialize_project(project) if project else None,
+        }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 

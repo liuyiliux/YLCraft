@@ -1,14 +1,11 @@
-"""
-YLCraft — 素材库工具
-
-为 Agent 提供素材库操作工具。
-"""
+"""Asset Hub tools exposed to the Agent Center."""
 
 from __future__ import annotations
 
 import logging
 from typing import Optional
 
+from app.db.database import AsyncSessionLocal
 from app.db.models.asset_hub import AssetType
 from app.services.agent.registry import register_tool
 from app.services.asset_hub import (
@@ -16,7 +13,6 @@ from app.services.asset_hub import (
     AssetRepresentationService,
     AssetVersionService,
 )
-from app.db.database import AsyncSessionLocal
 
 logger = logging.getLogger("ylcraft.agent.tools.asset")
 
@@ -28,8 +24,11 @@ def _asset_type(value: Optional[str]) -> AssetType | None:
     aliases = {
         "img": "image",
         "picture": "image",
+        "photo": "image",
         "document": "text",
         "doc": "text",
+        "bgm": "audio",
+        "music": "audio",
     }
     normalized = aliases.get(normalized, normalized)
     try:
@@ -65,35 +64,34 @@ async def _node_to_tool_dict(session, node) -> dict:
 
 @register_tool(
     name="search_assets",
-    description="搜索素材库中的视频、图片、音频等资产",
+    description="搜索素材库中的图片、视频、音频、文本等资产。",
     category="asset",
-    examples=["搜索搞笑猫咪视频", "找找有没有美食素材", "搜索时长大于 1 分钟的视频"],
+    examples=["搜索主角立绘", "查找可用的背景参考图", "搜索时长大于 1 分钟的视频素材"],
+    input_schema_note=(
+        "query 可为空；asset_type 支持 image/video/audio/text/model/character 等，也支持 img/photo/bgm/music/doc 别名；"
+        "tags 为需要同时命中的标签；status 默认 READY，可传 all 不过滤；limit 最大 50。"
+    ),
+    output_schema_note="返回 success、assets、total、matched_total；assets 含 id/title/type/tags/status/file_path/mime_type/尺寸/时长/版本。",
+    risk_level="read",
+    output_type="asset_search_results",
 )
 async def search_assets(
-    query: str,
+    query: str = "",
     asset_type: Optional[str] = None,
     tags: Optional[list[str]] = None,
+    status: str = "READY",
     limit: int = 10,
 ):
-    """
-    搜索素材库
-
-    Args:
-        query: 搜索关键词
-        asset_type: 资产类型（VIDEO/IMAGE/AUDIO/SUBTITLE/BGM）
-        tags: 标签过滤
-        limit: 返回数量限制
-    """
     async with AsyncSessionLocal() as session:
         node_service = AssetNodeService(session)
         results, total = await node_service.list_nodes(
             asset_type=_asset_type(asset_type),
             keyword=query or None,
             page=1,
-            page_size=max(1, min(limit, 50)),
+            page_size=max(1, min(int(limit or 10), 50)),
         )
         if tags:
-            wanted = {tag.lower() for tag in tags}
+            wanted = {str(tag).lower() for tag in tags if str(tag or "").strip()}
             filtered = []
             for node in results:
                 names = {tag.name.lower() for tag in await node_service.get_tags(str(node.id))}
@@ -101,27 +99,28 @@ async def search_assets(
                 if wanted.issubset(names):
                     filtered.append(node)
             results = filtered
+        assets = [await _node_to_tool_dict(session, node) for node in results]
+        if status and status.lower() != "all":
+            assets = [item for item in assets if str(item.get("status") or "READY").upper() == status.upper()]
         return {
             "success": True,
-            "assets": [await _node_to_tool_dict(session, node) for node in results],
-            "total": len(results),
+            "assets": assets,
+            "total": len(assets),
             "matched_total": total,
         }
 
 
 @register_tool(
     name="get_asset_detail",
-    description="获取资产详情",
+    description="获取素材库资产详情。",
     category="asset",
-    examples=["获取 asset_123 的详细信息"],
+    examples=["获取 asset_123 的详细信息", "查看这张参考图的本地文件路径"],
+    input_schema_note="必须提供 asset_id，通常来自素材库搜索、项目引用或生图返回的资产 id。",
+    output_schema_note="返回 success 和 asset；asset 含主文件路径、缩略图、标签、元数据、版本信息和媒体属性。",
+    risk_level="read",
+    output_type="asset_detail",
 )
 async def get_asset_detail(asset_id: str):
-    """
-    获取资产详情
-
-    Args:
-        asset_id: 资产 ID
-    """
     async with AsyncSessionLocal() as session:
         node_service = AssetNodeService(session)
         asset = await node_service.get(asset_id)
@@ -135,17 +134,15 @@ async def get_asset_detail(asset_id: str):
 
 @register_tool(
     name="download_asset",
-    description="下载资产文件到本地",
+    description="返回素材库资产的本地可访问文件引用。",
     category="asset",
     requires_progress=True,
+    input_schema_note="必须提供 asset_id；只返回本地可访问文件路径，不会复制、下载或删除原文件。",
+    output_schema_note="返回 asset_id、file_path、mime_type、file_size，可供后续剪辑、字幕、BGM 或参考图工具继续使用。",
+    risk_level="read",
+    output_type="asset_file_reference",
 )
 async def download_asset(asset_id: str):
-    """
-    下载资产文件
-
-    Args:
-        asset_id: 资产 ID
-    """
     async with AsyncSessionLocal() as session:
         node_service = AssetNodeService(session)
         node = await node_service.get(asset_id)
@@ -154,7 +151,7 @@ async def download_asset(asset_id: str):
         data = await _node_to_tool_dict(session, node)
         file_path = data.get("file_path")
         if not file_path:
-            return {"success": False, "message": "资产没有可下载文件"}
+            return {"success": False, "message": "资产没有可用文件路径"}
         return {
             "success": True,
             "asset_id": asset_id,
@@ -166,17 +163,14 @@ async def download_asset(asset_id: str):
 
 @register_tool(
     name="add_asset_tag",
-    description="为资产添加标签",
+    description="为素材库资产添加标签。",
     category="asset",
+    input_schema_note="必须提供 asset_id 和单个 tag；tag 建议使用短中文名或业务标签。",
+    output_schema_note="返回 success/message；会写入素材标签关系，便于后续筛选和智能体检索。",
+    risk_level="write",
+    output_type="asset_mutation_result",
 )
 async def add_asset_tag(asset_id: str, tag: str):
-    """
-    为资产添加标签
-
-    Args:
-        asset_id: 资产 ID
-        tag: 标签名称
-    """
     async with AsyncSessionLocal() as session:
         node_service = AssetNodeService(session)
         asset = await node_service.get(asset_id)
@@ -192,17 +186,15 @@ async def add_asset_tag(asset_id: str, tag: str):
 
 @register_tool(
     name="delete_asset",
-    description="删除素材库中的资产",
+    description="把素材库资产标记为已删除。",
     category="asset",
-    examples=["删除这个视频素材", "把那张图片删掉"],
+    examples=["删除这个视频素材", "把那张图片标记为已删除"],
+    input_schema_note="必须提供 asset_id；当前实现为标记 DELETED，不直接移除磁盘文件。",
+    output_schema_note="返回 success/message；删除后素材在默认 search_assets(status=READY) 中会被过滤。",
+    risk_level="delete",
+    output_type="asset_mutation_result",
 )
 async def delete_asset(asset_id: str):
-    """
-    删除资产
-
-    Args:
-        asset_id: 资产 ID
-    """
     async with AsyncSessionLocal() as session:
         node_service = AssetNodeService(session)
         asset = await node_service.get(asset_id)
@@ -218,5 +210,5 @@ async def delete_asset(asset_id: str):
         await session.commit()
         return {
             "success": True,
-            "message": "资产已删除",
+            "message": "资产已标记为删除",
         }

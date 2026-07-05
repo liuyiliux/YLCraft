@@ -26,6 +26,7 @@ Projects:
 - `PATCH /creative-projects/{project_id}`
 - `DELETE /creative-projects/{project_id}`
 - `POST /creative-projects/{project_id}/fill-demo-data`
+- `POST /creative-projects/{project_id}/sync-project-bible`
 
 Generation:
 
@@ -41,6 +42,9 @@ Generation:
 - `POST /creative-projects/{project_id}/generate-storyboard`
 - `POST /creative-projects/{project_id}/match-reference-assets`
 - `POST /creative-projects/{project_id}/run-pipeline`
+- `POST /creative-projects/{project_id}/writer-room/step/{step}`
+- `POST /creative-projects/{project_id}/writer-room/run`
+- `POST /creative-projects/{project_id}/writer-room/promote`
 
 Inspection:
 
@@ -59,6 +63,14 @@ Common project content types:
 - `script`
 - `comic_pages`
 - `storyboard`
+- `project_bible`
+- `world_asset`
+- `scene_beats`
+- `character_rehearsal`
+- `prose_draft`
+- `prose_humanized`
+- `prose_review`
+- `prose_rewrite`
 
 Use `GET /creative-projects/{project_id}/contents?content_type=<type>` to fetch a stage.
 
@@ -86,6 +98,12 @@ Generate chapter outlines for a range:
 python .agents/skills/ylcraft-creative-workflow/scripts/creative_project_workflow.py generate-chapter-outline --project-id <id> --chapters 1-12 --provider deepseek --model deepseek-v4-pro
 ```
 
+Sync editable Project Bible and world asset cards from the latest outline:
+
+```bash
+python .agents/skills/ylcraft-creative-workflow/scripts/creative_project_workflow.py sync-project-bible --project-id <id>
+```
+
 Generate novel bodies for a range:
 
 ```bash
@@ -109,6 +127,51 @@ Run the backend orchestrated pipeline:
 ```bash
 python .agents/skills/ylcraft-creative-workflow/scripts/creative_project_workflow.py run-pipeline --project-id <id> --chapters 1-12 --stages chapter_outline novel_body script storyboard match_references --provider deepseek --model deepseek-v4-pro
 ```
+
+Run the recommended writer-room flow for one chapter:
+
+```bash
+python .agents/skills/ylcraft-creative-workflow/scripts/creative_project_workflow.py writer-room-run --project-id <id> --chapter 2 --provider deepseek --model deepseek-v4-pro --continue-on-error
+```
+
+Run the writer-room flow with the user's currently requested text backend:
+
+```bash
+python .agents/skills/ylcraft-creative-workflow/scripts/creative_project_workflow.py writer-room-run --project-id <id> --chapter 2 --provider "<connector-name>" --model "<model-name>" --steps scene_beats character_rehearsal prose_draft prose_humanized prose_review --continue-on-error
+```
+
+For long Chinese prose, prefer `deepseek-v4-pro` when the user says "用 deepseekv4 那个写" or asks for more natural novel writing:
+
+```bash
+python .agents/skills/ylcraft-creative-workflow/scripts/creative_project_workflow.py writer-room-run --project-id <id> --chapter 2 --provider deepseek --model deepseek-v4-pro --steps scene_beats character_rehearsal prose_draft prose_humanized prose_review --continue-on-error
+```
+
+Run a single writer-room pass:
+
+```bash
+python .agents/skills/ylcraft-creative-workflow/scripts/creative_project_workflow.py writer-room-step --project-id <id> --chapter 2 --step prose_review --provider deepseek --model deepseek-v4-pro
+```
+
+Review and rewrite without rerunning the whole flow:
+
+```bash
+python .agents/skills/ylcraft-creative-workflow/scripts/creative_project_workflow.py writer-room-step --project-id <id> --chapter 2 --step prose_review --provider deepseek --model deepseek-v4-pro
+python .agents/skills/ylcraft-creative-workflow/scripts/creative_project_workflow.py writer-room-step --project-id <id> --chapter 2 --step prose_rewrite --instruction "按主编意见重写，保留剧情事实，压低解释感，增加动作、物件互动和潜台词" --provider deepseek --model deepseek-v4-pro
+```
+
+Run a selected-paragraph rewrite:
+
+```bash
+python .agents/skills/ylcraft-creative-workflow/scripts/creative_project_workflow.py writer-room-step --project-id <id> --chapter 2 --step prose_rewrite --selected-text "需要重写的原文片段" --instruction "少解释，多动作和潜台词" --provider deepseek --model deepseek-v4-pro
+```
+
+Promote a writer-room draft or rewrite to latest readable prose:
+
+```bash
+python .agents/skills/ylcraft-creative-workflow/scripts/creative_project_workflow.py writer-room-promote --project-id <id> --content-id <writer-room-content-id>
+```
+
+Only promote after reviewing the candidate content. Promotion creates a new `novel_body` version; previous readable prose remains in version history.
 
 Export the ordered novel:
 

@@ -45,7 +45,7 @@ class PlatformTemplate(SQLModel, table=True):
         primary_key=True,
         sa_type=UUID(as_uuid=True),
     )
-    platform: str = Field(max_length=30, unique=True, index=True, description="模板标识: xiaohongshu/douyin/creative_outline")
+    platform: str = Field(max_length=80, unique=True, index=True, description="模板标识: xiaohongshu/douyin/creative_outline")
     name: str = Field(max_length=50, description="模板名称: 小红书/抖音/故事大纲")
     template_scope: str = Field(default="image_platform", max_length=40, index=True, description="模板用途: image_platform/creative_project")
     template_stage: str = Field(default="platform", max_length=40, index=True, description="模板阶段: platform/outline/chapter_plan/script/storyboard")
@@ -76,5 +76,5 @@ class PlatformTemplate(SQLModel, table=True):
     )
     updated_at: datetime = Field(
         default_factory=datetime.now,
-        sa_column_kwargs={"server_default": "now()", "onupdate": "now()"},
+        sa_column_kwargs={"server_default": "now()", "onupdate": datetime.now},
     )
