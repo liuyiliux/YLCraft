@@ -59,6 +59,19 @@ def _loads(value: str | None, fallback: Any) -> Any:
         return fallback
 
 
+def _parse_json_argument(raw: str | None, field_name: str, expected: type) -> tuple[Any, str | None]:
+    if raw is None or str(raw).strip() == "":
+        return expected(), None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as e:
+        return None, f"{field_name} 不是有效 JSON: {e.msg}"
+    if not isinstance(parsed, expected):
+        expected_name = "array" if expected is list else "object"
+        return None, f"{field_name} 必须是 JSON {expected_name}"
+    return parsed, None
+
+
 def _to_json_str(value: Any) -> str:
     """序列化为 JSON 字符串（用于数据库字段）。"""
     if isinstance(value, str):
@@ -325,30 +338,33 @@ async def upsert_provider_metadata(
 ) -> dict[str, Any]:
     """创建或更新供应商元数据。"""
     # 解析所有 JSON 参数字段
-    def _parse_json_field(raw: str, field_name: str) -> dict | list:
-        if not raw or raw.strip() == "":
-            return {}
-        try:
-            val = json.loads(raw)
-            if field_name == "supported_types":
-                if isinstance(val, list):
-                    return val
-                return []
-            if isinstance(val, dict):
-                return val
-            return {}
-        except json.JSONDecodeError as e:
-            return {}
-
-    parsed_supported_types = _parse_json_field(supported_types, "supported_types")
-    parsed_request_templates = _parse_json_field(request_templates, "request_templates")
-    parsed_response_configs = _parse_json_field(response_configs, "response_configs")
-    parsed_default_models = _parse_json_field(default_models, "default_models")
-    parsed_available_models = _parse_json_field(available_models, "available_models")
-    parsed_default_params = _parse_json_field(default_params, "default_params")
-    parsed_supported_sizes = _parse_json_field(supported_sizes, "supported_sizes")
-    parsed_ref_configs = _parse_json_field(reference_image_configs, "reference_image_configs")
-    parsed_param_transforms = _parse_json_field(parameter_transforms, "parameter_transforms")
+    parsed_supported_types, error = _parse_json_argument(supported_types, "supported_types", list)
+    if error:
+        return {"success": False, "message": error, "field": "supported_types"}
+    parsed_request_templates, error = _parse_json_argument(request_templates, "request_templates", dict)
+    if error:
+        return {"success": False, "message": error, "field": "request_templates"}
+    parsed_response_configs, error = _parse_json_argument(response_configs, "response_configs", dict)
+    if error:
+        return {"success": False, "message": error, "field": "response_configs"}
+    parsed_default_models, error = _parse_json_argument(default_models, "default_models", dict)
+    if error:
+        return {"success": False, "message": error, "field": "default_models"}
+    parsed_available_models, error = _parse_json_argument(available_models, "available_models", dict)
+    if error:
+        return {"success": False, "message": error, "field": "available_models"}
+    parsed_default_params, error = _parse_json_argument(default_params, "default_params", dict)
+    if error:
+        return {"success": False, "message": error, "field": "default_params"}
+    parsed_supported_sizes, error = _parse_json_argument(supported_sizes, "supported_sizes", dict)
+    if error:
+        return {"success": False, "message": error, "field": "supported_sizes"}
+    parsed_ref_configs, error = _parse_json_argument(reference_image_configs, "reference_image_configs", dict)
+    if error:
+        return {"success": False, "message": error, "field": "reference_image_configs"}
+    parsed_param_transforms, error = _parse_json_argument(parameter_transforms, "parameter_transforms", dict)
+    if error:
+        return {"success": False, "message": error, "field": "parameter_transforms"}
 
     with SessionLocal() as session:
         existing = session.get(AIProviderMetadata, provider_id)
@@ -767,7 +783,14 @@ async def update_ai_connector(
     risk_level="read",
     output_type="test_result",
 )
-async def test_ai_connector(connector_id: str) -> dict[str, Any]:
+async def test_ai_connector(
+    connector_id: str,
+    image_url: str = "",
+    image_path: str = "",
+    image_mode: str = "",
+    request_content_type: str = "",
+    response_format: str = "",
+) -> dict[str, Any]:
     """测试连接器连通性（异步方式调用 AIConnectorService）。"""
     try:
         async with AsyncSessionLocal() as session:
@@ -776,7 +799,18 @@ async def test_ai_connector(connector_id: str) -> dict[str, Any]:
             if not conn:
                 return {"success": False, "message": f"连接器 '{connector_id}' 不存在"}
 
-            result = await service.test_connection(connector_id)
+            test_options = {
+                key: value
+                for key, value in {
+                    "image_url": image_url,
+                    "image_path": image_path,
+                    "image_mode": image_mode,
+                    "request_content_type": request_content_type,
+                    "response_format": response_format,
+                }.items()
+                if value
+            }
+            result = await service.test_connection(connector_id, test_options=test_options or None)
             return {
                 "success": result.get("success", False),
                 "message": result.get("message", ""),

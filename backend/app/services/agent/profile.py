@@ -31,6 +31,44 @@ DEFAULT_AGENT_PROFILES: list[dict[str, Any]] = [
         "is_default": True,
     },
     {
+        "id": "ai-config-specialist",
+        "name": "AI 模型配置专家",
+        "avatar": "API",
+        "role_type": "orchestrator",
+        "description": "负责供应商规范、模型连接器、图片编辑/生图模型配置和连通性测试。",
+        "system_prompt": (
+            "你是 YLCraft 的 AI 模型配置专家。优先检查现有供应商和连接器，再根据用户提供的 API 文档或 curl 示例生成配置。"
+            "配置图片编辑模型时要区分 text-to-image 和 image-to-image/edit："
+            "公网图片链接使用 JSON images=[{image_url}]；本地图片上传使用 multipart image 字段；"
+            "OpenAI-compatible 图片编辑端点通常是 /v1/images/edits，response_format 可用 b64_json。"
+            "写入前先说明将创建或更新哪些字段；写入后调用测试工具验证，并把请求 URL、模式、模型名和解析配置摘要反馈给用户。"
+        ),
+        "allowed_tools": [
+            "list_ai_connectors",
+            "get_ai_connector",
+            "list_provider_metadata",
+            "get_provider_metadata",
+            "upsert_provider_metadata",
+            "create_ai_connector",
+            "update_ai_connector",
+            "test_ai_connector",
+            "discover_connector_models",
+            "list_image_backends",
+            "preview_image_generation_request",
+            "list_prompt_templates",
+            "get_prompt_template",
+        ],
+        "default_context": {
+            "focus": "ai_model_configuration",
+        },
+        "default_workflow": "ai_model_configuration",
+        "default_skill_ids": [],
+        "provider": "",
+        "model": "",
+        "max_steps": 10,
+        "is_default": False,
+    },
+    {
         "id": "creative-director",
         "name": "创作导演",
         "avatar": "CD",
@@ -579,8 +617,13 @@ class AgentProfileManager:
                     existing.role_type = item.get("role_type", "assistant")
                     existing.system_prompt = item["system_prompt"]
                     existing.allowed_tools_json = _json(item["allowed_tools"])
+                    existing.default_context_json = _json(item.get("default_context") or {})
                     existing.default_workflow = item.get("default_workflow", "")
                     existing.default_skill_ids_json = _json(item.get("default_skill_ids") or [])
+                    if item.get("provider") and not existing.provider:
+                        existing.provider = item.get("provider", "")
+                    if item.get("model") and not existing.model:
+                        existing.model = item.get("model", "")
                     existing.max_steps = item["max_steps"]
                     existing.updated_at = datetime.utcnow()
                     self.session.add(existing)
@@ -594,12 +637,12 @@ class AgentProfileManager:
                 role_type=item.get("role_type", "assistant"),
                 system_prompt=item["system_prompt"],
                 allowed_tools_json=_json(item["allowed_tools"]),
-                default_context_json="{}",
+                default_context_json=_json(item.get("default_context") or {}),
                 default_project_id=item.get("default_project_id", ""),
                 default_workflow=item.get("default_workflow", ""),
                 default_skill_ids_json=_json(item.get("default_skill_ids") or []),
-                provider="",
-                model="",
+                provider=item.get("provider", ""),
+                model=item.get("model", ""),
                 max_steps=item["max_steps"],
                 is_default=item["is_default"],
                 is_builtin=True,

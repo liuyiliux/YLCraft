@@ -8,11 +8,13 @@ from __future__ import annotations
 
 import logging
 import json
+import mimetypes
 import os
 import time
 import uuid
 import asyncio
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 import httpx
@@ -329,7 +331,12 @@ class AIConnectorService:
     # 测试与验证
     # -------------------------------------------------------------------------
 
-    async def test_connection(self, conn_id: str, custom_body: Optional[dict] = None) -> dict:
+    async def test_connection(
+        self,
+        conn_id: str,
+        custom_body: Optional[dict] = None,
+        test_options: Optional[dict] = None,
+    ) -> dict:
         """
         测试连接有效性
         返回 {"success": bool, "message": str}
@@ -355,16 +362,16 @@ class AIConnectorService:
                     conn.test_prompt,
                     api_format,
                     conn=conn,
+                    test_options=test_options,
                 )
                 
                 # 使用自定义请求体（如果提供了）
                 if custom_body:
                     request["json"] = custom_body
                 
-                headers = {
-                    "Authorization": f"Bearer {conn.api_key}",
-                    "Content-Type": "application/json",
-                }
+                headers = {"Authorization": f"Bearer {conn.api_key}"}
+                if not request.get("files"):
+                    headers["Content-Type"] = "application/json"
                 response_config = self._parse_json_object(conn.response_config)
                 async_config = response_config.get("async_config") if isinstance(response_config, dict) else None
                 if provider_type != "image":
@@ -386,6 +393,8 @@ class AIConnectorService:
                         url=request["url"],
                         headers=headers,
                         json=request.get("json"),
+                        data=request.get("data"),
+                        files=request.get("files"),
                     )
                     latency_ms = round((time.perf_counter() - started_at) * 1000, 2)
                     debug_info = self._build_debug_info(request, headers, response, latency_ms)
@@ -606,6 +615,7 @@ class AIConnectorService:
         test_prompt: Optional[str] = None,
         api_format: str = "custom",
         conn: Optional[AIConnector] = None,
+        test_options: Optional[dict] = None,
     ) -> dict:
         """
         构造最小测试请求。
@@ -652,25 +662,14 @@ class AIConnectorService:
             return f"{normalized_base}/{default_endpoint.lstrip('/')}"
 
         if provider_type == "image":
-            default_prompt = "连接测试图片"
-            params = {
-                "model": model or "gpt-image-1",
-                "prompt": test_prompt or default_prompt,
-                "size": "1024x1024",
-                "n": 1,
-                **self._parse_json_object(getattr(conn, "default_params", None)),
-            }
-            if api_format == "custom" and conn and conn.request_template:
-                return {
-                    "method": "POST",
-                    "url": build_url("/images/generations"),
-                    "json": self._render_test_template(conn.request_template, params),
-                }
-            return {
-                "method": "POST",
-                "url": build_url("/images/generations"),
-                "json": params,
-            }
+            return self._build_image_test_request(
+                build_url=build_url,
+                model=model,
+                test_prompt=test_prompt,
+                api_format=api_format,
+                conn=conn,
+                test_options=test_options,
+            )
 
         if provider_type == "llm":
             default_prompt = "Reply with ok."
@@ -717,8 +716,145 @@ class AIConnectorService:
             return parsed if isinstance(parsed, dict) else {}
         return {}
 
+    def _build_image_test_request(
+        self,
+        build_url,
+        model: str,
+        test_prompt: Optional[str],
+        api_format: str,
+        conn: Optional[AIConnector],
+        test_options: Optional[dict],
+    ) -> dict:
+        default_prompt = "连接测试图片"
+        default_params = self._parse_json_object(getattr(conn, "default_params", None))
+        test_options = test_options or {}
+        image_input = (
+            test_options.get("image_url")
+            or test_options.get("image_path")
+            or test_options.get("source_image")
+            or default_params.get("test_image_url")
+            or default_params.get("test_image_path")
+            or ""
+        )
+        endpoint_hint = str(getattr(conn, "api_endpoint", "") or "").lower()
+        explicit_mode = str(
+            test_options.get("image_mode")
+            or default_params.get("image_mode")
+            or default_params.get("mode")
+            or ""
+        ).lower()
+        is_edit_request = (
+            explicit_mode in {"edit", "image_edit", "image-to-image", "image_to_image"}
+            or "edits" in endpoint_hint
+            or bool(image_input)
+        )
+        default_endpoint = "/images/edits" if is_edit_request else "/images/generations"
+        params = {
+            "model": model or "gpt-image-1",
+            "prompt": test_prompt or default_prompt,
+            "size": "1024x1024",
+            "n": 1,
+            **default_params,
+        }
+        if test_options.get("response_format"):
+            params["response_format"] = test_options["response_format"]
+        if is_edit_request:
+            params.setdefault("response_format", "b64_json")
+            if image_input:
+                params["image"] = image_input
+                params["images"] = [{"image_url": image_input}]
+
+        content_type = str(
+            test_options.get("request_content_type")
+            or default_params.get("request_content_type")
+            or ""
+        ).lower()
+        is_local_image = self._looks_like_local_file(str(image_input))
+        is_remote_image = str(image_input).startswith(("http://", "https://"))
+        use_multipart = bool(
+            image_input
+            and is_local_image
+            and (content_type in {"", "multipart"} or not is_remote_image)
+        )
+
+        if api_format == "custom" and conn and conn.request_template:
+            rendered = self._render_test_template(conn.request_template, params)
+            if use_multipart:
+                return self._build_multipart_image_test_request(
+                    url=build_url(default_endpoint),
+                    params={**params, **rendered},
+                    image_input=str(image_input),
+                    image_field=str(default_params.get("multipart_image_field") or "image"),
+                )
+            return {"method": "POST", "url": build_url(default_endpoint), "json": rendered}
+
+        if use_multipart:
+            return self._build_multipart_image_test_request(
+                url=build_url(default_endpoint),
+                params=params,
+                image_input=str(image_input),
+                image_field=str(default_params.get("multipart_image_field") or "image"),
+            )
+
+        json_body = {
+            key: value
+            for key, value in params.items()
+            if value is not None
+            and key not in {"image", "request_content_type", "image_mode", "mode"}
+        }
+        if is_edit_request and image_input:
+            json_body["images"] = [{"image_url": image_input}]
+        return {"method": "POST", "url": build_url(default_endpoint), "json": json_body}
+
+    def _looks_like_local_file(self, value: str) -> bool:
+        if not value or value.startswith(("http://", "https://", "data:")):
+            return False
+        try:
+            return Path(value).expanduser().exists()
+        except Exception:
+            return False
+
+    def _build_multipart_image_test_request(
+        self,
+        url: str,
+        params: dict,
+        image_input: str,
+        image_field: str = "image",
+    ) -> dict:
+        image_path = Path(image_input).expanduser()
+        if not image_path.exists():
+            raise ValueError(f"Multipart 测试图片不存在: {image_input}")
+        mime_type = mimetypes.guess_type(str(image_path))[0] or "image/png"
+        data = {
+            key: str(value)
+            for key, value in params.items()
+            if key
+            not in {
+                "image",
+                "images",
+                "request_content_type",
+                "image_mode",
+                "mode",
+                "test_image_url",
+                "test_image_path",
+                "multipart_image_field",
+            }
+            and value is not None
+        }
+        return {
+            "method": "POST",
+            "url": url,
+            "data": data,
+            "files": {image_field: (image_path.name, image_path.read_bytes(), mime_type)},
+        }
+
     def _render_test_template(self, request_template: str, params: dict) -> dict:
-        rendered = Template(request_template).render(**params)
+        template_params = dict(params)
+        for key, value in params.items():
+            template_params[f"{key}_json"] = json.dumps(value, ensure_ascii=False)
+            if isinstance(value, str):
+                template_params[f"{key}_json_str"] = json.dumps(value or "", ensure_ascii=False)[1:-1]
+        rendered = Template(request_template).render(**template_params)
         data = json.loads(rendered)
         if not isinstance(data, dict):
             raise ValueError("Request 模板必须渲染为 JSON 对象")

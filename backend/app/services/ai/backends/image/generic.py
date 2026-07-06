@@ -167,18 +167,27 @@ class GenericImageBackend(ImageBackend):
             for attempt in range(max_retries):
                 try:
                     logger.info(f"[GenericImageBackend] 发送请求到 {final_url} (尝试 {attempt + 1}/{max_retries})")
+                    multipart_payload = self._build_multipart_payload(request_body)
                     headers = {
                         "Authorization": f"Bearer {self.connector.api_key}",
-                        "Content-Type": "application/json",
                         **extra_headers,
                     }
+                    if multipart_payload is None:
+                        headers["Content-Type"] = "application/json"
                     temp_client = httpx.AsyncClient(
                         headers=headers,
                         timeout=self.connector.timeout,
                         follow_redirects=True,
                         max_redirects=5,
                     )
-                    response = await temp_client.post(final_url, json=request_body)
+                    if multipart_payload is None:
+                        response = await temp_client.post(final_url, json=request_body)
+                    else:
+                        response = await temp_client.post(
+                            final_url,
+                            data=multipart_payload["data"],
+                            files=multipart_payload["files"],
+                        )
                     await temp_client.aclose()
                     
                     try:
@@ -586,7 +595,9 @@ class GenericImageBackend(ImageBackend):
         
         if reference_images:
             params["reference_images"] = reference_images
+            params["images"] = [{"image_url": image} for image in reference_images]
             params["reference_image_field"] = self.reference_image_field
+            params.setdefault("response_format", "b64_json")
 
         raw_size = params.get("size")
         params = self._apply_parameter_transforms(params)
@@ -622,7 +633,7 @@ class GenericImageBackend(ImageBackend):
             except Exception as e:
                 raise ValueError(f"通过代理下载图片失败: {e}")
         
-        if url_or_path.startswith('/') or url_or_path.startswith('.'):
+        if url_or_path.startswith('/') or url_or_path.startswith('.') or Path(url_or_path).is_absolute():
             file_path = Path(url_or_path)
             if file_path.exists():
                 with open(file_path, 'rb') as f:
@@ -654,6 +665,49 @@ class GenericImageBackend(ImageBackend):
                 template = Template(transform_template)
                 transformed[key] = template.render(**params)
         return transformed
+
+    def _build_multipart_payload(self, request_body: Dict[str, Any]) -> dict | None:
+        content_type = str(self.default_params.get("request_content_type") or "").lower()
+        if content_type != "multipart":
+            return None
+
+        image_field = str(self.default_params.get("multipart_image_field") or "image")
+        image_value = request_body.get(image_field) or request_body.get("image")
+        if not image_value:
+            images = request_body.get("images")
+            if isinstance(images, list) and images:
+                first = images[0]
+                if isinstance(first, dict):
+                    image_value = first.get("image_url") or first.get("url") or first.get("image")
+                elif isinstance(first, str):
+                    image_value = first
+        if not isinstance(image_value, str) or image_value.startswith(("http://", "https://")):
+            return None
+
+        file_bytes, file_name, mime_type = self._decode_multipart_image(image_value)
+        data = {
+            key: str(value)
+            for key, value in request_body.items()
+            if key not in {image_field, "image", "images"} and value is not None
+        }
+        return {
+            "data": data,
+            "files": {image_field: (file_name, file_bytes, mime_type)},
+        }
+
+    def _decode_multipart_image(self, image_value: str) -> tuple[bytes, str, str]:
+        if image_value.startswith("data:"):
+            header, payload = image_value.split(",", 1)
+            mime_type = header.split(";", 1)[0].replace("data:", "") or "image/png"
+            ext = self._ext_from_output_format(mime_type)
+            return base64.b64decode(payload), f"image{ext}", mime_type
+
+        path = Path(image_value)
+        if path.exists():
+            mime_type = mimetypes.guess_type(str(path))[0] or "image/png"
+            return path.read_bytes(), path.name, mime_type
+
+        raise ValueError(f"Multipart image value must be a data URL or local path: {image_value[:80]}")
 
     def _render_request(self, params: Dict[str, Any]) -> Dict[str, Any]:
         if not self.request_template:

@@ -37,6 +37,32 @@ def _connector() -> AIConnector:
     )
 
 
+def _aaccx_edit_connector(default_params: dict | None = None) -> AIConnector:
+    return AIConnector(
+        id="conn-aaccx-edit",
+        provider="aaccx",
+        name="aaccx-image-edit",
+        provider_type=AIProviderType.image,
+        api_key="test-token",
+        base_url="https://api.aaccx.pw/v1",
+        api_endpoint="/images/edits",
+        default_model="gpt-image-2",
+        request_template=(
+            '{"model":"{{ model }}","prompt":{{ prompt_json }},'
+            '"images":{{ images_json }},"size":"{{ size }}",'
+            '"response_format":"{{ response_format }}"}'
+        ),
+        response_config=json.dumps(
+            {
+                "images_path": "$.data[*].b64_json",
+                "base64_images_path": "$.data[*].b64_json",
+                "response_format": "base64",
+            }
+        ),
+        default_params=json.dumps(default_params or {}),
+    )
+
+
 def test_generic_image_template_escapes_multiline_prompt():
     backend = GenericImageBackend(_connector(), session=None)
 
@@ -52,6 +78,104 @@ def test_generic_image_template_escapes_multiline_prompt():
     assert request_body["model"] == "gpt-image-2"
     assert request_body["prompt"].startswith("输出主立绘。\n外貌")
     assert "普通人类皮肤" in request_body["prompt"]
+
+
+def test_aaccx_edit_connector_builds_json_edit_request():
+    service = object.__new__(AIConnectorService)
+    request = service._build_test_request(
+        base_url="https://api.aaccx.pw/v1",
+        api_endpoint="/images/edits",
+        provider_type="image",
+        model="gpt-image-2",
+        test_prompt="把这张图改成黑白极简海报风格，保留主体轮廓",
+        api_format="custom",
+        conn=_aaccx_edit_connector({"request_content_type": "multipart"}),
+        test_options={"image_url": "https://example.com/input.png", "image_mode": "edit"},
+    )
+
+    assert request["method"] == "POST"
+    assert request["url"] == "https://api.aaccx.pw/v1/images/edits"
+    assert request["json"] == {
+        "model": "gpt-image-2",
+        "prompt": "把这张图改成黑白极简海报风格，保留主体轮廓",
+        "images": [{"image_url": "https://example.com/input.png"}],
+        "size": "1024x1024",
+        "response_format": "b64_json",
+    }
+
+
+def test_aaccx_edit_connector_builds_multipart_edit_request(tmp_path):
+    image_path = tmp_path / "input.png"
+    image_path.write_bytes(b"\x89PNG\r\n\x1a\n")
+    service = object.__new__(AIConnectorService)
+    conn = _aaccx_edit_connector({"request_content_type": "multipart"})
+
+    request = service._build_test_request(
+        base_url="https://api.aaccx.pw/v1",
+        api_endpoint="/images/edits",
+        provider_type="image",
+        model="gpt-image-2",
+        test_prompt="把这张图改成黑白极简海报风格，保留主体轮廓",
+        api_format="custom",
+        conn=conn,
+        test_options={"image_path": str(image_path), "image_mode": "edit"},
+    )
+
+    assert request["method"] == "POST"
+    assert request["url"] == "https://api.aaccx.pw/v1/images/edits"
+    assert "json" not in request
+    assert request["data"]["model"] == "gpt-image-2"
+    assert request["data"]["response_format"] == "b64_json"
+    assert "images" not in request["data"]
+    file_name, file_bytes, mime_type = request["files"]["image"]
+    assert file_name == "input.png"
+    assert file_bytes == b"\x89PNG\r\n\x1a\n"
+    assert mime_type == "image/png"
+
+
+@pytest.mark.asyncio
+async def test_generic_image_backend_sends_multipart_edit_request(monkeypatch, tmp_path):
+    image_path = tmp_path / "input.png"
+    image_path.write_bytes(b"\x89PNG\r\n\x1a\n")
+    requests = []
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            self.headers = kwargs.get("headers") or {}
+
+        async def post(self, url, json=None, data=None, files=None):
+            requests.append(
+                {
+                    "url": url,
+                    "headers": dict(self.headers),
+                    "json": json,
+                    "data": data,
+                    "files": files,
+                }
+            )
+            return httpx.Response(200, json={"data": [{"b64_json": "aGVsbG8="}]})
+
+        async def aclose(self):
+            return None
+
+    monkeypatch.setattr("app.services.ai.backends.image.generic.httpx.AsyncClient", FakeAsyncClient)
+    backend = GenericImageBackend(_aaccx_edit_connector({"request_content_type": "multipart"}), session=None)
+
+    result = await backend.generate(
+        ImageGenerationRequest(
+            prompt="把这张图改成黑白极简海报风格，保留主体轮廓",
+            source_image=str(image_path),
+            size="1024x1024",
+        )
+    )
+
+    assert result.success is True
+    assert requests[0]["url"] == "https://api.aaccx.pw/v1/images/edits"
+    assert requests[0]["json"] is None
+    assert requests[0]["data"]["model"] == "gpt-image-2"
+    assert requests[0]["data"]["response_format"] == "b64_json"
+    assert "Content-Type" not in requests[0]["headers"]
+    assert requests[0]["files"]["image"][0] == "image.png"
 
 
 @pytest.mark.asyncio

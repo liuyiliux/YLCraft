@@ -415,6 +415,35 @@ def test_agent_tool_registry_exposes_ai_config_tools_with_specs():
     assert ToolRegistry.get_tool("discover_connector_models").risk_level == "read"
 
 
+def test_squashed_alembic_initial_schema_imports_sqlmodel():
+    import importlib.util
+    from pathlib import Path
+
+    migration_path = Path(__file__).resolve().parents[1] / "alembic" / "versions" / "001_initial_schema.py"
+    spec = importlib.util.spec_from_file_location("ylcraft_initial_schema_test", migration_path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+
+    assert hasattr(module, "sqlmodel")
+
+
+@pytest.mark.asyncio
+async def test_upsert_provider_metadata_rejects_invalid_json_arguments():
+    from app.services.agent.tools.ai_config_tools import upsert_provider_metadata
+
+    result = await upsert_provider_metadata(
+        provider_id="bad-json-provider",
+        name="Bad JSON Provider",
+        supported_types='["image"]',
+        request_templates="{bad json",
+    )
+
+    assert result["success"] is False
+    assert result["field"] == "request_templates"
+    assert "不是有效 JSON" in result["message"]
+
+
 def test_agent_tool_registry_exposes_task_tools_with_specs():
     tools = ToolRegistry.list_tools("task")
     names = {tool.name for tool in tools}
