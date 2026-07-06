@@ -44,7 +44,7 @@
 - [x] 25. Add project asset list and link endpoints.
 - [x] 26. Add canvas get/save endpoints backed by project metadata.
 - [x] 26.1 Add project content update endpoint for saving edited stage output in place.
-- [ ] 27. Keep old `/api/v1/story` endpoints working during transition or return clear migration hints.
+- [x] 27. Keep old `/api/v1/story` endpoints working during transition or return clear migration hints.
 
 ## Phase 4: Frontend project workspace
 

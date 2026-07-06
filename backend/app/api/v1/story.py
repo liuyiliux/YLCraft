@@ -33,6 +33,13 @@ router = APIRouter()
 
 # ── Request / Response Models ──────────────────────────────────
 
+STORY_MIGRATION_HINT = {
+    "status": "legacy_compatible",
+    "message": "旧 Story Maker 接口仍可用；新创作项目闭环请使用 /api/v1/creative-projects。",
+    "replacement_api": "/api/v1/creative-projects",
+    "replacement_page": "/story",
+}
+
 class StoryGenerateRequest(BaseModel):
     topic: str
     style: str = "short_drama"  # short_drama | manga
@@ -59,12 +66,14 @@ class StoryGenerateResponse(BaseModel):
     message: str
     story_id: str | None = None
     data: dict | None = None
+    migration_hint: dict | None = None
 
 
 class StoryListResponse(BaseModel):
     success: bool
     stories: list[dict] = []
     total: int = 0
+    migration_hint: dict | None = None
 
 
 # ── Endpoints ─────────────────────────────────────────────────
@@ -115,6 +124,7 @@ async def generate_story(
             message="故事生成成功",
             story_id=story.id,
             data=result.to_dict(),
+            migration_hint=STORY_MIGRATION_HINT,
         )
 
     except Exception as e:
@@ -274,6 +284,7 @@ async def get_story(
 
     return {
         "success": True,
+        "migration_hint": STORY_MIGRATION_HINT,
         "story": {
             "id": story.id,
             "title": story.title,
@@ -319,4 +330,4 @@ async def list_stories(
             "created_at": s.created_at.isoformat() if s.created_at else None,
         })
 
-    return StoryListResponse(success=True, stories=result, total=total)
+    return StoryListResponse(success=True, stories=result, total=total, migration_hint=STORY_MIGRATION_HINT)
