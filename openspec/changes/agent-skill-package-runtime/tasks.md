@@ -75,3 +75,9 @@
 - [x] M8.3 Memory context tests proving full skill content is not injected unnecessarily.
 - [x] M8.4 API tests for skill list/detail/route-preview/pending approval.
 - [x] M8.5 Frontend build and smoke test after UI changes.
+
+## M9. Documentation
+
+- [x] M9.1 Add a user/developer guide for `SKILL.md` authoring.
+- [x] M9.2 Document Bundle YAML structure and activation.
+- [x] M9.3 Document draft approval, match testing and validation commands.

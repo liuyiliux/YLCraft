@@ -141,6 +141,7 @@ async def list_agent_skill_drafts(status: str = "pending") -> dict[str, Any]:
     description="List loaded file-backed Agent skill packages and bundles.",
     category="agent_skill",
     examples=["列出当前可用 Agent skills", "看看有哪些 SKILL.md 包已经加载"],
+    input_schema_note="No input is required.",
     output_schema_note="Returns package index and bundle index from the file-backed skill loader.",
     risk_level="read",
     output_type="agent_skill_package_index",

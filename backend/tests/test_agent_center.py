@@ -1800,7 +1800,7 @@ async def test_agent_chat_persists_run_and_steps(
         )
     ).scalars().all()
     step_types = [step.step_type for step in steps]
-    assert step_types[:3] == ["intake", "context_pack", "llm_response"]
+    assert step_types[:4] == ["intake", "context_pack", "skill_route", "llm_response"]
     assert "final" in step_types
 
     thread_messages = (
