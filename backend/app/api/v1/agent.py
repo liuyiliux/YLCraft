@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import json
 import logging
+import difflib
 from collections.abc import AsyncGenerator
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
@@ -22,8 +25,11 @@ from app.services.agent import tools as _agent_tools  # noqa: F401 - register to
 from app.services.agent.memory.manager import MemoryManager as AgentMemoryManager
 from app.services.agent.profile import AgentProfileManager, profile_to_dict
 from app.services.agent.registry import ToolRegistry
+from app.services.agent.runtime import SkillRouter
 from app.services.agent.service import CONFIRMATION_RISK_LEVELS, AgentService
 from app.services.agent.session.manager import SessionManager as AgentSessionManager
+from app.services.agent.skill_drafts import AgentSkillDraftService, SkillDraftError
+from app.services.agent.skill_loader import SkillPackageLoader
 from app.services.agent.thread_manager import ThreadManager
 
 router = APIRouter(tags=["Agent"])
@@ -52,6 +58,35 @@ class CreateSkillRequest(BaseModel):
     description: str
     content: str
     skill_type: str = "tool"
+
+
+class SkillRoutePreviewRequest(BaseModel):
+    message: str = ""
+    context: dict = Field(default_factory=dict)
+    allowed_tools: list[str] = Field(default_factory=list)
+    default_skill_ids: list[str] = Field(default_factory=list)
+    max_skills: int = Field(default=8, ge=1, le=20)
+
+
+class SkillDraftCreateRequest(BaseModel):
+    content: str
+    source_type: str = "manual"
+    source_url: str = ""
+    source_run_id: str = ""
+    source_step_ids: list[int] = Field(default_factory=list)
+
+
+class SkillDraftImportUrlRequest(BaseModel):
+    url: str
+
+
+class SkillDraftRejectRequest(BaseModel):
+    reason: str = ""
+
+
+class SkillDraftFromRunRequest(BaseModel):
+    name: str = ""
+    title: str = ""
 
 
 class AgentProfileRequest(BaseModel):
@@ -580,6 +615,33 @@ async def get_run_detail(run_id: str, db_session=Depends(get_async_session_depen
         .order_by(AgentRunStep.order_index.asc(), AgentRunStep.id.asc())
     )
     return _run_to_dict(run, include_steps=True, steps=steps_result.scalars().all())
+
+
+@router.get("/runs/{run_id}/skill-candidate", summary="分析 Run 是否适合沉淀为 Skill")
+async def inspect_run_skill_candidate(run_id: str, user_id: str = "default", db_session=Depends(get_async_session_dependency)):
+    await ensure_agent_tables()
+    service = AgentSkillDraftService(db_session, user_id=user_id)
+    try:
+        analysis = await service.inspect_run_candidate(run_id)
+    except SkillDraftError as exc:
+        _raise_skill_draft_error(exc)
+    return {"success": True, "analysis": analysis}
+
+
+@router.post("/runs/{run_id}/skill-draft", summary="从 Run 生成待审批 Skill 草稿")
+async def create_skill_draft_from_run(
+    run_id: str,
+    request: SkillDraftFromRunRequest,
+    user_id: str = "default",
+    db_session=Depends(get_async_session_dependency),
+):
+    await ensure_agent_tables()
+    service = AgentSkillDraftService(db_session, user_id=user_id)
+    try:
+        draft = await service.create_draft_from_run(run_id, name=request.name, title=request.title)
+    except SkillDraftError as exc:
+        _raise_skill_draft_error(exc)
+    return {"success": True, "draft": _skill_draft_to_dict(draft)}
 
 
 @router.get("/runs/{run_id}/linked-logs", summary="Agent Run 关联日志")
@@ -1346,6 +1408,261 @@ async def list_skills(skill_type: Optional[str] = None, user_id: str = "default"
         }
         for item in skills
     ]
+
+
+@router.get("/skills/package-index", summary="文件化 Skill 包索引")
+async def list_skill_package_index():
+    loader = SkillPackageLoader()
+    return {
+        "root": str(loader.default_builtin_root()),
+        "packages": loader.package_index(),
+        "bundles": loader.bundle_index(),
+    }
+
+
+@router.get("/skills/packages/{skill_name}/files", summary="Skill 包文件列表")
+async def list_skill_package_files(skill_name: str):
+    loader = SkillPackageLoader()
+    package = loader.get_package(skill_name)
+    if package is None:
+        raise HTTPException(status_code=404, detail="Skill package not found")
+    return {
+        "name": package.name,
+        "title": package.title,
+        "source_path": package.source_path,
+        "files": loader.package_files(skill_name),
+    }
+
+
+@router.get("/skills/packages/{skill_name}/files/content", summary="读取 Skill 包文件")
+async def read_skill_package_file(skill_name: str, path: str = "SKILL.md"):
+    loader = SkillPackageLoader()
+    package = loader.get_package(skill_name)
+    if package is None:
+        raise HTTPException(status_code=404, detail="Skill package not found")
+    item = loader.read_package_file(skill_name, path)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Skill package file not found")
+    return {
+        "name": package.name,
+        "title": package.title,
+        "source_path": package.source_path,
+        "file": item,
+    }
+
+
+def _skill_draft_to_dict(item) -> dict:
+    try:
+        metadata = json.loads(item.metadata_json or "{}")
+    except json.JSONDecodeError:
+        metadata = {}
+    try:
+        diagnostics = json.loads(item.diagnostics_json or "[]")
+    except json.JSONDecodeError:
+        diagnostics = []
+    review = _skill_draft_review(item)
+    return {
+        "id": item.id,
+        "user_id": item.user_id,
+        "name": item.name,
+        "title": item.title,
+        "description": item.description,
+        "skill_type": item.skill_type,
+        "content": item.content,
+        "metadata": metadata,
+        "source_type": item.source_type,
+        "source_url": item.source_url,
+        "source_run_id": item.source_run_id,
+        "status": item.status,
+        "target_path": item.target_path,
+        "checksum": item.checksum,
+        "diagnostics": diagnostics,
+        "review": review,
+        "created_at": item.created_at.isoformat() if item.created_at else "",
+        "updated_at": item.updated_at.isoformat() if item.updated_at else "",
+        "reviewed_at": item.reviewed_at.isoformat() if item.reviewed_at else "",
+    }
+
+
+def _skill_draft_review(item) -> dict:
+    target_path = str(getattr(item, "target_path", "") or "")
+    review = {
+        "mode": "create",
+        "existing_path": "",
+        "existing_checksum": "",
+        "diff": "",
+    }
+    if not target_path:
+        return review
+    try:
+        root = SkillPackageLoader.default_builtin_root().resolve()
+        target = (Path(__file__).resolve().parents[3] / target_path).resolve()
+        target.relative_to(root)
+    except Exception:
+        return review
+    if not target.exists() or not target.is_file():
+        return review
+    try:
+        existing = target.read_text(encoding="utf-8")
+    except OSError:
+        return review
+    existing_package, _diagnostics = SkillPackageLoader().validate_raw_package(existing, target)
+    review["mode"] = "update"
+    review["existing_path"] = target_path
+    review["existing_checksum"] = existing_package.checksum if existing_package else ""
+    review["diff"] = "\n".join(
+        difflib.unified_diff(
+            existing.splitlines(),
+            str(getattr(item, "content", "") or "").splitlines(),
+            fromfile=f"current/{getattr(item, 'name', 'skill')}",
+            tofile=f"draft/{getattr(item, 'name', 'skill')}",
+            lineterm="",
+            n=3,
+        )
+    )
+    return review
+
+
+def _raise_skill_draft_error(exc: SkillDraftError) -> None:
+    raise HTTPException(
+        status_code=400,
+        detail={
+            "message": str(exc),
+            "diagnostics": exc.diagnostics,
+        },
+    )
+
+
+@router.get("/skills/drafts", summary="Skill 待审批草稿列表")
+async def list_skill_drafts(
+    status: str = "pending",
+    user_id: str = "default",
+    db_session=Depends(get_async_session_dependency),
+):
+    await ensure_agent_tables()
+    service = AgentSkillDraftService(db_session, user_id=user_id)
+    drafts = await service.list_drafts(status=status)
+    return {"drafts": [_skill_draft_to_dict(item) for item in drafts]}
+
+
+@router.post("/skills/drafts", summary="创建 Skill 草稿")
+async def create_skill_draft(
+    request: SkillDraftCreateRequest,
+    user_id: str = "default",
+    db_session=Depends(get_async_session_dependency),
+):
+    await ensure_agent_tables()
+    service = AgentSkillDraftService(db_session, user_id=user_id)
+    try:
+        draft = await service.create_manual_draft(
+            request.content,
+            source_type=request.source_type,
+            source_url=request.source_url,
+            source_run_id=request.source_run_id,
+            source_step_ids=request.source_step_ids,
+        )
+    except SkillDraftError as exc:
+        _raise_skill_draft_error(exc)
+    return {"draft": _skill_draft_to_dict(draft)}
+
+
+@router.post("/skills/drafts/import-url", summary="从 URL 导入 Skill 草稿")
+async def import_skill_draft_url(
+    request: SkillDraftImportUrlRequest,
+    user_id: str = "default",
+    db_session=Depends(get_async_session_dependency),
+):
+    await ensure_agent_tables()
+    service = AgentSkillDraftService(db_session, user_id=user_id)
+    try:
+        draft = await service.import_url(request.url)
+    except SkillDraftError as exc:
+        _raise_skill_draft_error(exc)
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"message": f"Fetch skill URL failed: {exc}", "diagnostics": [str(exc)]},
+        )
+    return {"draft": _skill_draft_to_dict(draft)}
+
+
+@router.get("/skills/drafts/{draft_id}", summary="读取 Skill 草稿")
+async def get_skill_draft(
+    draft_id: int,
+    user_id: str = "default",
+    db_session=Depends(get_async_session_dependency),
+):
+    await ensure_agent_tables()
+    service = AgentSkillDraftService(db_session, user_id=user_id)
+    draft = await service.get_draft(draft_id)
+    if draft is None:
+        raise HTTPException(status_code=404, detail="Skill draft not found")
+    return {"draft": _skill_draft_to_dict(draft)}
+
+
+@router.post("/skills/drafts/{draft_id}/approve", summary="批准并启用 Skill 草稿")
+async def approve_skill_draft(
+    draft_id: int,
+    user_id: str = "default",
+    db_session=Depends(get_async_session_dependency),
+):
+    await ensure_agent_tables()
+    service = AgentSkillDraftService(db_session, user_id=user_id)
+    try:
+        draft = await service.approve(draft_id)
+    except SkillDraftError as exc:
+        _raise_skill_draft_error(exc)
+    return {"draft": _skill_draft_to_dict(draft)}
+
+
+@router.post("/skills/drafts/{draft_id}/reject", summary="拒绝 Skill 草稿")
+async def reject_skill_draft(
+    draft_id: int,
+    request: SkillDraftRejectRequest,
+    user_id: str = "default",
+    db_session=Depends(get_async_session_dependency),
+):
+    await ensure_agent_tables()
+    service = AgentSkillDraftService(db_session, user_id=user_id)
+    try:
+        draft = await service.reject(draft_id, request.reason)
+    except SkillDraftError as exc:
+        _raise_skill_draft_error(exc)
+    return {"draft": _skill_draft_to_dict(draft)}
+
+
+@router.post("/skills/route-preview", summary="Skill 路由预览")
+async def preview_skill_route(request: SkillRoutePreviewRequest):
+    router_instance = SkillRouter()
+    activation = router_instance.parse_activation(request.message)
+    routes = router_instance.route(
+        message=activation.cleaned_message or request.message,
+        context=request.context,
+        allowed_tools=request.allowed_tools,
+        default_skill_ids=request.default_skill_ids,
+        activated_skill_ids=list(activation.skill_ids),
+        max_skills=request.max_skills,
+    )
+    return {
+        "activation": {
+            "cleaned_message": activation.cleaned_message,
+            "skill_ids": list(activation.skill_ids),
+            "bundle_ids": list(activation.bundle_ids),
+            "bundle_instruction": activation.bundle_instruction,
+            "diagnostics": list(activation.diagnostics),
+        },
+        "routes": [
+            {
+                "skill_id": item.skill_id,
+                "reason": item.reason,
+                "score": item.score,
+                "source": item.source,
+                "trigger_type": item.trigger_type,
+                "matches": list(item.matches),
+            }
+            for item in routes
+        ]
+    }
 
 
 @router.post("/skills", summary="创建技能")

@@ -3,15 +3,17 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
+import httpx
 import pytest
 import pytest_asyncio
+from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.task_queue import get_task_queue
-from app.db.models.agent import AgentContextSnapshot, AgentMemory, AgentMemorySnapshot, AgentMessage, AgentProfile, AgentRun, AgentRunStep, AgentSession, AgentSkill, AgentThread, AgentToolCall
+from app.db.models.agent import AgentContextSnapshot, AgentMemory, AgentMemorySnapshot, AgentMessage, AgentProfile, AgentRun, AgentRunStep, AgentSession, AgentSkill, AgentSkillDraft, AgentThread, AgentToolCall
 from app.db.models.ai_connector import AIConnector
 from app.db.models.creative_project import CreativeProject, ProjectContent, ProjectGenerationLog
 from app.services.agent import tools as _agent_tools  # noqa: F401 - register tools
@@ -21,19 +23,37 @@ from app.services.agent.skill_templates import builtin_skill_names
 from app.api.v1.agent import (
     SaveMemoryCandidatesRequest,
     SaveMemoryRequest,
+    SkillRoutePreviewRequest,
+    SkillDraftCreateRequest,
+    SkillDraftFromRunRequest,
     ToolTestRequest,
+    approve_skill_draft,
     confirm_pending_step,
+    create_skill_draft,
+    create_skill_draft_from_run,
     discard_memory_candidates,
     export_run_markdown,
     get_memory_view,
     get_run_linked_logs,
     get_run_memory_snapshot,
+    inspect_run_skill_candidate,
+    list_skill_package_files,
+    list_skill_package_index,
+    list_skill_drafts,
+    preview_skill_route,
+    read_skill_package_file,
     run_tool_test,
     save_memory,
     save_memory_candidates,
 )
 from app.services.agent.registry import Tool, ToolCallResult, ToolRegistry
 from app.services.agent.runtime import Planner, RunLoop, SkillRouter, ToolExecutor
+from app.services.agent.skill_loader import SkillPackageLoader
+from app.services.agent.skill_drafts import AgentSkillDraftService, SkillDraftError
+from app.services.agent.tools.skill_tools import create_agent_skill_draft as create_agent_skill_draft_tool
+from app.services.agent.tools.skill_tools import create_agent_skill_draft_from_run as create_agent_skill_draft_from_run_tool
+from app.services.agent.tools.skill_tools import inspect_agent_run_skill_candidate as inspect_agent_run_skill_candidate_tool
+from app.services.agent.tools.skill_tools import list_agent_skill_drafts as list_agent_skill_drafts_tool
 from app.services.agent.service import AgentService
 from app.services.agent.session.manager import SessionManager
 from app.services.agent.thread_manager import ThreadManager
@@ -52,6 +72,7 @@ async def agent_session(tmp_path):
         await conn.run_sync(AgentContextSnapshot.__table__.create)
         await conn.run_sync(AgentMemory.__table__.create)
         await conn.run_sync(AgentSkill.__table__.create)
+        await conn.run_sync(AgentSkillDraft.__table__.create)
         await conn.run_sync(AgentProfile.__table__.create)
         await conn.run_sync(AgentToolCall.__table__.create)
         await conn.run_sync(AgentRun.__table__.create)
@@ -691,6 +712,439 @@ def test_agent_skill_router_maps_business_domains_to_skills():
     assert "platform_source_search" in names
     assert "download_workflow" in names
     assert "asset_search" in names
+
+
+def test_agent_skill_package_loader_reads_standard_skill_md():
+    packages = SkillPackageLoader().load_packages()
+    package_by_name = {item.name: item for item in packages}
+
+    assert "character_visual_card" in package_by_name
+    character_package = package_by_name["character_visual_card"]
+    assert character_package.skill_type == "workflow"
+    assert "角色" in character_package.triggers["keywords"]
+    assert "inspect_character" in character_package.requires_tools
+    assert character_package.source_path.endswith("SKILL.md")
+
+
+@pytest.mark.asyncio
+async def test_agent_memory_manager_seeds_file_backed_builtin_skills(agent_session: AsyncSession):
+    manager = MemoryManager(agent_session)
+
+    skills = await manager.list_skills()
+    character_skill = next(item for item in skills if item.name == "character_visual_card")
+
+    assert character_skill.is_builtin is True
+    assert "# 角色视觉卡" in character_skill.content
+    assert "When To Use" in character_skill.content
+
+
+def test_agent_skill_router_prefers_package_metadata_for_migrated_skills():
+    router = SkillRouter()
+
+    routes = router.route(
+        message="帮我补角色人设并生成表情包和动作姿势",
+        context={"character_id": "char-1"},
+        allowed_tools=["inspect_character", "preview_character_portrait_prompt", "generate_image_asset"],
+    )
+    by_name = {item.skill_id: item for item in routes}
+
+    assert by_name["character_visual_card"].source == "package"
+    assert by_name["portrait_prompt"].source == "package"
+    assert by_name["portrait_prompt"].trigger_type == "keyword"
+    assert (
+        "表情包" in by_name["portrait_prompt"].matches
+        or "动作姿势" in by_name["portrait_prompt"].matches
+    )
+
+
+def test_agent_skill_router_parses_slash_skill_activation():
+    router = SkillRouter()
+
+    activation = router.parse_activation("/portrait_prompt 帮我生成角色表情包")
+    assert activation.cleaned_message == "帮我生成角色表情包"
+    assert activation.skill_ids == ("portrait_prompt",)
+
+    routes = router.route(
+        message=activation.cleaned_message,
+        context={"character_id": "char-1"},
+        allowed_tools=["preview_character_portrait_prompt"],
+        activated_skill_ids=list(activation.skill_ids),
+    )
+    by_name = {item.skill_id: item for item in routes}
+    assert by_name["portrait_prompt"].source == "slash"
+    assert by_name["portrait_prompt"].score == 20
+
+
+def test_agent_skill_router_parses_slash_bundle_activation():
+    router = SkillRouter()
+
+    activation = router.parse_activation("/character_portrait_workflow 给这个角色做立绘")
+    assert activation.cleaned_message == "给这个角色做立绘"
+    assert activation.bundle_ids == ("character_portrait_workflow",)
+    assert "character_visual_card" in activation.skill_ids
+    assert "portrait_prompt" in activation.skill_ids
+    assert "image_generation_workflow" in activation.skill_ids
+    assert "先补视觉卡" in activation.bundle_instruction
+
+
+@pytest.mark.asyncio
+async def test_agent_skill_package_index_api_exposes_loaded_packages():
+    response = await list_skill_package_index()
+    packages = {item["name"]: item for item in response["packages"]}
+
+    assert "character_visual_card" in packages
+    assert packages["character_visual_card"]["source_path"].endswith("SKILL.md")
+    assert "角色" in packages["character_visual_card"]["triggers"]["keywords"]
+    bundles = {item["name"]: item for item in response["bundles"]}
+    assert "character_portrait_workflow" in bundles
+
+
+@pytest.mark.asyncio
+async def test_agent_skill_package_file_api_reads_allowed_files():
+    response = await list_skill_package_files("portrait_prompt")
+    files = {item["path"]: item for item in response["files"]}
+
+    assert response["name"] == "portrait_prompt"
+    assert files["SKILL.md"]["kind"] == "skill"
+
+    content = await read_skill_package_file("portrait_prompt", "SKILL.md")
+    assert content["file"]["path"] == "SKILL.md"
+    assert "# 角色立绘提示词" in content["file"]["content"]
+
+
+@pytest.mark.asyncio
+async def test_agent_skill_package_file_api_blocks_path_traversal():
+    with pytest.raises(HTTPException) as exc_info:
+        await read_skill_package_file("portrait_prompt", "../skill_templates.py")
+
+    assert exc_info.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_agent_skill_route_preview_api_returns_diagnostics():
+    response = await preview_skill_route(
+        SkillRoutePreviewRequest(
+            message="/character_portrait_workflow 帮这个角色生成立绘和表情包",
+            context={"character_id": "char-1"},
+            allowed_tools=["inspect_character", "preview_character_portrait_prompt"],
+        )
+    )
+    routes = {item["skill_id"]: item for item in response["routes"]}
+
+    assert response["activation"]["bundle_ids"] == ["character_portrait_workflow"]
+    assert routes["character_visual_card"]["source"] == "slash"
+    assert routes["portrait_prompt"]["trigger_type"] == "slash"
+
+
+def sample_skill_md(name: str = "user_test_skill") -> str:
+    return f"""---
+name: {name}
+title: User Test Skill
+description: Test user imported skill package.
+skill_type: workflow
+version: 1.0.0
+category: test
+tags:
+  - test
+triggers:
+  keywords:
+    - user test
+requires_tools:
+  - inspect_character
+risk: read
+---
+
+# User Test Skill
+
+Use this workflow when a user asks for a test imported skill.
+"""
+
+
+@pytest.mark.asyncio
+async def test_agent_skill_draft_service_approves_to_user_skill_root(agent_session: AsyncSession, tmp_path):
+    loader = SkillPackageLoader(roots=[tmp_path / "skills"])
+    service = AgentSkillDraftService(agent_session, loader=loader)
+
+    draft = await service.create_manual_draft(sample_skill_md())
+    approved = await service.approve(draft.id)
+
+    assert approved.status == "approved"
+    target = tmp_path / "skills" / "user" / "user_test_skill" / "SKILL.md"
+    assert target.exists()
+    assert loader.get_package("user_test_skill").source_type == "user"
+
+    result = await agent_session.execute(select(AgentSkill).where(AgentSkill.name == "user_test_skill"))
+    skill = result.scalar_one()
+    assert skill.is_builtin is False
+    assert "User Test Skill" in skill.content
+
+
+@pytest.mark.asyncio
+async def test_agent_skill_draft_service_rejects_invalid_metadata(agent_session: AsyncSession, tmp_path):
+    service = AgentSkillDraftService(agent_session, loader=SkillPackageLoader(roots=[tmp_path / "skills"]))
+
+    with pytest.raises(SkillDraftError) as exc_info:
+        await service.create_manual_draft("# Missing frontmatter")
+
+    assert "metadata" in str(exc_info.value).lower()
+    assert exc_info.value.diagnostics
+
+
+@pytest.mark.asyncio
+async def test_agent_skill_draft_service_blocks_builtin_override(agent_session: AsyncSession):
+    service = AgentSkillDraftService(agent_session)
+
+    with pytest.raises(SkillDraftError) as exc_info:
+        await service.create_manual_draft(sample_skill_md("portrait_prompt"))
+
+    assert "Cannot override built-in skill package" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_agent_skill_draft_api_create_list_and_approve(agent_session: AsyncSession, monkeypatch, tmp_path):
+    async def noop_ensure_agent_tables():
+        return None
+
+    monkeypatch.setattr("app.api.v1.agent.ensure_agent_tables", noop_ensure_agent_tables)
+    monkeypatch.setattr(SkillPackageLoader, "default_builtin_root", staticmethod(lambda: tmp_path / "skills"))
+
+    created = await create_skill_draft(
+        SkillDraftCreateRequest(content=sample_skill_md("api_user_skill")),
+        db_session=agent_session,
+    )
+    listed = await list_skill_drafts(db_session=agent_session)
+    approved = await approve_skill_draft(created["draft"]["id"], db_session=agent_session)
+
+    assert created["draft"]["name"] == "api_user_skill"
+    assert listed["drafts"][0]["name"] == "api_user_skill"
+    assert approved["draft"]["status"] == "approved"
+    assert (tmp_path / "skills" / "user" / "api_user_skill" / "SKILL.md").exists()
+
+
+def test_agent_skill_tools_are_registered():
+    assert ToolRegistry.get_tool("import_agent_skill_from_url") is not None
+    assert ToolRegistry.get_tool("create_agent_skill_draft") is not None
+    assert ToolRegistry.get_tool("list_agent_skill_drafts") is not None
+    assert ToolRegistry.get_tool("list_agent_skill_packages") is not None
+    assert ToolRegistry.get_tool("inspect_agent_run_skill_candidate") is not None
+    assert ToolRegistry.get_tool("create_agent_skill_draft_from_run") is not None
+
+
+def test_agent_skill_draft_service_normalizes_github_blob_url():
+    raw_url = AgentSkillDraftService._normalize_skill_url(
+        "https://github.com/acme/project/blob/main/skills/example/SKILL.md"
+    )
+
+    assert raw_url == "https://raw.githubusercontent.com/acme/project/main/skills/example/SKILL.md"
+
+
+def test_agent_skill_draft_service_rejects_private_import_url():
+    with pytest.raises(SkillDraftError) as exc_info:
+        AgentSkillDraftService._validate_url("http://192.168.1.10/SKILL.md")
+
+    assert "Private network" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_agent_skill_draft_service_rejects_private_redirect(agent_session: AsyncSession, monkeypatch, tmp_path):
+    real_async_client = httpx.AsyncClient
+
+    class MockAsyncClient:
+        def __init__(self, *args, **kwargs):
+            self.client = real_async_client(
+                transport=httpx.MockTransport(
+                    lambda request: httpx.Response(
+                        302,
+                        headers={"location": "http://127.0.0.1/SKILL.md"},
+                        request=request,
+                    )
+                )
+            )
+
+        async def __aenter__(self):
+            return self.client
+
+        async def __aexit__(self, exc_type, exc, tb):
+            await self.client.aclose()
+            return False
+
+    monkeypatch.setattr("app.services.agent.skill_drafts.httpx.AsyncClient", MockAsyncClient)
+    service = AgentSkillDraftService(agent_session, loader=SkillPackageLoader(roots=[tmp_path / "skills"]))
+
+    with pytest.raises(SkillDraftError) as exc_info:
+        await service.import_url("https://example.com/SKILL.md")
+
+    assert "Local skill URLs" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_agent_skill_tools_create_pending_draft(agent_session: AsyncSession, monkeypatch, tmp_path):
+    class SessionFactory:
+        async def __aenter__(self):
+            return agent_session
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    async def noop_ensure_agent_tables():
+        return None
+
+    monkeypatch.setattr("app.services.agent.tools.skill_tools.AsyncSessionLocal", lambda: SessionFactory())
+    monkeypatch.setattr("app.services.agent.tools.skill_tools.ensure_agent_tables", noop_ensure_agent_tables)
+    monkeypatch.setattr(SkillPackageLoader, "default_builtin_root", staticmethod(lambda: tmp_path / "skills"))
+
+    created = await create_agent_skill_draft_tool(sample_skill_md("tool_user_skill"))
+    listed = await list_agent_skill_drafts_tool()
+
+    assert created["success"] is True
+    assert created["draft"]["name"] == "tool_user_skill"
+    assert listed["success"] is True
+    assert listed["drafts"][0]["name"] == "tool_user_skill"
+
+
+async def _seed_completed_skill_candidate_run(agent_session: AsyncSession, run_id: str = "run-skill-candidate") -> AgentRun:
+    run = AgentRun(
+        id=run_id,
+        user_id="default",
+        session_id="thread-skill-candidate",
+        profile_id="default-assistant",
+        status="completed",
+        objective="导入公众号文章并整理为可阅读素材",
+        context_json=json.dumps({"project_id": "project-skill-1", "platform": "wechat_mp"}, ensure_ascii=False),
+        result_json=json.dumps({"reply": "已完成导入和整理", "tool_call_count": 3}, ensure_ascii=False),
+    )
+    steps = [
+        AgentRunStep(
+            run_id=run.id,
+            session_id=run.session_id,
+            profile_id=run.profile_id,
+            step_type="tool_call",
+            status="completed",
+            order_index=1,
+            tool_name="search_wechat_mp_accounts",
+            summary="搜索公众号账号成功",
+            input_json=json.dumps({"arguments": {"keyword": "测试账号"}}, ensure_ascii=False),
+            output_json=json.dumps({"success": True, "items": [1]}, ensure_ascii=False),
+        ),
+        AgentRunStep(
+            run_id=run.id,
+            session_id=run.session_id,
+            profile_id=run.profile_id,
+            step_type="tool_call",
+            status="completed",
+            order_index=2,
+            tool_name="list_wechat_mp_articles",
+            summary="读取文章列表成功",
+            input_json=json.dumps({"arguments": {"fake_id": "fake-1"}}, ensure_ascii=False),
+            output_json=json.dumps({"success": True, "count": 3}, ensure_ascii=False),
+        ),
+        AgentRunStep(
+            run_id=run.id,
+            session_id=run.session_id,
+            profile_id=run.profile_id,
+            step_type="tool_call",
+            status="completed",
+            order_index=3,
+            tool_name="download_wechat_mp_article",
+            summary="下载并导入素材库成功",
+            input_json=json.dumps({"arguments": {"format": "html"}}, ensure_ascii=False),
+            output_json=json.dumps({"success": True, "file_path": "downloads/a.html"}, ensure_ascii=False),
+        ),
+    ]
+    agent_session.add(run)
+    for step in steps:
+        agent_session.add(step)
+    await agent_session.commit()
+    return run
+
+
+@pytest.mark.asyncio
+async def test_agent_skill_draft_service_detects_and_generates_from_run(agent_session: AsyncSession, tmp_path):
+    run = await _seed_completed_skill_candidate_run(agent_session)
+    service = AgentSkillDraftService(agent_session, loader=SkillPackageLoader(roots=[tmp_path / "skills"]))
+
+    analysis = await service.inspect_run_candidate(run.id)
+    draft = await service.create_draft_from_run(run.id, name="wechat_import_workflow")
+
+    assert analysis["eligible"] is True
+    assert analysis["successful_tool_count"] == 3
+    assert draft.source_type == "agent_run"
+    assert draft.source_run_id == run.id
+    assert "search_wechat_mp_accounts" in draft.content
+    assert "source_run_id" in draft.content
+    package, diagnostics = SkillPackageLoader(roots=[tmp_path / "skills"]).validate_raw_package(draft.content)
+    assert diagnostics == ()
+    assert package.name == "wechat_import_workflow"
+
+
+@pytest.mark.asyncio
+async def test_agent_skill_draft_service_rejects_weak_run(agent_session: AsyncSession, tmp_path):
+    run = AgentRun(
+        id="weak-run",
+        user_id="default",
+        session_id="thread-weak",
+        profile_id="default-assistant",
+        status="completed",
+        objective="只查一下",
+    )
+    agent_session.add(run)
+    await agent_session.commit()
+    service = AgentSkillDraftService(agent_session, loader=SkillPackageLoader(roots=[tmp_path / "skills"]))
+
+    analysis = await service.inspect_run_candidate(run.id)
+    with pytest.raises(SkillDraftError):
+        await service.create_draft_from_run(run.id)
+
+    assert analysis["eligible"] is False
+    assert "fewer than 3 successful tool steps" in analysis["reasons"]
+
+
+@pytest.mark.asyncio
+async def test_agent_skill_draft_from_run_api(agent_session: AsyncSession, monkeypatch, tmp_path):
+    async def noop_ensure_agent_tables():
+        return None
+
+    monkeypatch.setattr("app.api.v1.agent.ensure_agent_tables", noop_ensure_agent_tables)
+    monkeypatch.setattr(SkillPackageLoader, "default_builtin_root", staticmethod(lambda: tmp_path / "skills"))
+    run = await _seed_completed_skill_candidate_run(agent_session, "api-run-skill-candidate")
+
+    inspected = await inspect_run_skill_candidate(run.id, db_session=agent_session)
+    created = await create_skill_draft_from_run(
+        run.id,
+        SkillDraftFromRunRequest(name="api_run_skill"),
+        db_session=agent_session,
+    )
+
+    assert inspected["analysis"]["eligible"] is True
+    assert created["success"] is True
+    assert created["draft"]["name"] == "api_run_skill"
+    assert created["draft"]["source_run_id"] == run.id
+
+
+@pytest.mark.asyncio
+async def test_agent_skill_run_tools_create_pending_draft(agent_session: AsyncSession, monkeypatch, tmp_path):
+    class SessionFactory:
+        async def __aenter__(self):
+            return agent_session
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    async def noop_ensure_agent_tables():
+        return None
+
+    monkeypatch.setattr("app.services.agent.tools.skill_tools.AsyncSessionLocal", lambda: SessionFactory())
+    monkeypatch.setattr("app.services.agent.tools.skill_tools.ensure_agent_tables", noop_ensure_agent_tables)
+    monkeypatch.setattr(SkillPackageLoader, "default_builtin_root", staticmethod(lambda: tmp_path / "skills"))
+    run = await _seed_completed_skill_candidate_run(agent_session, "tool-run-skill-candidate")
+
+    inspected = await inspect_agent_run_skill_candidate_tool(run.id)
+    created = await create_agent_skill_draft_from_run_tool(run.id, name="tool_run_skill")
+
+    assert inspected["success"] is True
+    assert inspected["analysis"]["eligible"] is True
+    assert created["success"] is True
+    assert created["draft"]["name"] == "tool_run_skill"
 
 
 def test_agent_tool_executor_repairs_followup_tool_arguments():
@@ -1386,6 +1840,56 @@ async def test_agent_chat_injects_default_skill_templates_into_system_prompt(age
     assert "默认 Skill 工作方法" in system_content
     assert "character_visual_card" in system_content
     assert "角色视觉卡" in system_content
+
+
+@pytest.mark.asyncio
+async def test_agent_chat_injects_slash_bundle_activation_into_context(agent_session: AsyncSession):
+    class FakeLLM:
+        def __init__(self):
+            self.calls = []
+
+        async def chat(self, **kwargs):
+            self.calls.append(kwargs)
+            return LLMGenerationResult(success=True, content="已按角色立绘工作流处理。")
+
+    profile_manager = AgentProfileManager(agent_session)
+    profile = await profile_manager.create_profile(
+        {
+            "id": "slash-bundle-agent",
+            "name": "Slash Bundle 测试智能体",
+            "allowed_tools": ["inspect_character", "preview_character_portrait_prompt"],
+            "max_steps": 1,
+        },
+    )
+    await agent_session.commit()
+
+    fake_llm = FakeLLM()
+    service = AgentService(agent_session)
+    service._llm_manager = fake_llm
+
+    result = await service.chat(
+        session_id="",
+        user_message="/character_portrait_workflow 给这个角色做立绘",
+        profile_id=profile.id,
+    )
+
+    system_content = fake_llm.calls[0]["messages"][0].content
+    assert "character_visual_card" in system_content
+    assert "portrait_prompt" in system_content
+    assert "skill_bundle_instruction" in system_content
+    assert "先补视觉卡" in system_content
+
+    run = await agent_session.get(AgentRun, result["run_id"])
+    assert run is not None
+    context = json.loads(run.context_json)
+    assert context["activated_bundle_ids"] == ["character_portrait_workflow"]
+    assert "character_visual_card" in context["activated_skill_ids"]
+
+    snapshots = (await agent_session.execute(select(AgentMemorySnapshot))).scalars().all()
+    snapshot_data = json.loads(snapshots[-1].snapshot_json)
+    assert snapshot_data["activated_bundle_ids"] == ["character_portrait_workflow"]
+    assert "character_visual_card" in snapshot_data["activated_skill_ids"]
+    assert any(item["source"] == "slash" for item in snapshot_data["routed_skills"])
 
 
 @pytest.mark.asyncio

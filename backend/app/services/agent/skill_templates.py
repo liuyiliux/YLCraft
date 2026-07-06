@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.agent import AgentSkill
+from app.services.agent.skill_loader import SkillPackageLoader
 
 
 @dataclass(frozen=True)
@@ -242,11 +243,27 @@ BUILTIN_SKILL_TEMPLATES: tuple[BuiltinSkillTemplate, ...] = (
 
 
 def builtin_skill_names() -> list[str]:
-    return [item.name for item in BUILTIN_SKILL_TEMPLATES]
+    file_names = [item.name for item in SkillPackageLoader().load_packages()]
+    fallback_names = [item.name for item in BUILTIN_SKILL_TEMPLATES]
+    return list(dict.fromkeys(file_names + fallback_names))
 
 
 async def ensure_builtin_skills(session: AsyncSession, user_id: str = "default") -> list[AgentSkill]:
     """Create or refresh built-in skill rows without resetting usage counters."""
+    packages = SkillPackageLoader().load_packages()
+    package_by_name = {item.name: item for item in packages}
+    file_templates = [
+        BuiltinSkillTemplate(
+            name=item.name,
+            description=item.description,
+            skill_type=item.skill_type,
+            content=item.content,
+        )
+        for item in packages
+    ]
+    file_names = {item.name for item in file_templates}
+    templates = file_templates + [item for item in BUILTIN_SKILL_TEMPLATES if item.name not in file_names]
+
     result = await session.execute(
         select(AgentSkill).where(
             AgentSkill.user_id == user_id,
@@ -256,19 +273,20 @@ async def ensure_builtin_skills(session: AsyncSession, user_id: str = "default")
     existing_by_name = {item.name: item for item in result.scalars().all()}
     changed = False
 
-    for template in BUILTIN_SKILL_TEMPLATES:
+    for template in templates:
         existing = existing_by_name.get(template.name)
+        is_builtin = package_by_name.get(template.name).source_type != "user" if template.name in package_by_name else True
         if existing:
             if (
                 existing.description != template.description
                 or existing.skill_type != template.skill_type
                 or existing.content != template.content
-                or not existing.is_builtin
+                or existing.is_builtin != is_builtin
             ):
                 existing.description = template.description
                 existing.skill_type = template.skill_type
                 existing.content = template.content
-                existing.is_builtin = True
+                existing.is_builtin = is_builtin
                 existing.updated_at = datetime.utcnow()
                 changed = True
             continue
@@ -279,7 +297,7 @@ async def ensure_builtin_skills(session: AsyncSession, user_id: str = "default")
             description=template.description,
             skill_type=template.skill_type,
             content=template.content,
-            is_builtin=True,
+            is_builtin=is_builtin,
         )
         session.add(skill)
         existing_by_name[template.name] = skill
@@ -291,4 +309,4 @@ async def ensure_builtin_skills(session: AsyncSession, user_id: str = "default")
             if item.id is None:
                 await session.refresh(item)
 
-    return [existing_by_name[name] for name in builtin_skill_names() if name in existing_by_name]
+    return [existing_by_name[name] for name in [item.name for item in templates] if name in existing_by_name]

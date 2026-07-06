@@ -180,6 +180,44 @@ class AgentSkillRead(AgentSkillBase):
     success_count: int
 
 
+class AgentSkillDraftBase(SQLModel):
+    user_id: str = Field(default="default", max_length=64, index=True)
+    name: str = Field(default="", max_length=100, index=True)
+    title: str = Field(default="", max_length=200)
+    description: str = Field(default="", max_length=500)
+    skill_type: str = Field(default="workflow", max_length=50)
+    content: str = Field(default="", sa_column=Column(Text))
+    metadata_json: str = Field(default="{}", sa_column=Column(Text))
+    source_type: str = Field(default="manual", max_length=50, index=True)
+    source_url: str = Field(default="", max_length=1000)
+    source_run_id: str = Field(default="", max_length=64, index=True)
+    source_step_ids_json: str = Field(default="[]", sa_column=Column(Text))
+    status: str = Field(default="pending", max_length=32, index=True)
+    target_path: str = Field(default="", max_length=1000)
+    checksum: str = Field(default="", max_length=128)
+    diagnostics_json: str = Field(default="[]", sa_column=Column(Text))
+
+
+class AgentSkillDraft(AgentSkillDraftBase, table=True):
+    __tablename__ = "agent_skill_drafts"
+
+    id: int = Field(primary_key=True, default=None)
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    reviewed_at: Optional[datetime] = Field(default=None)
+
+
+class AgentSkillDraftCreate(AgentSkillDraftBase):
+    pass
+
+
+class AgentSkillDraftRead(AgentSkillDraftBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+    reviewed_at: Optional[datetime]
+
+
 # =============================================================================
 # Agent 工具调用日志
 # =============================================================================
@@ -312,4 +350,4 @@ class AgentProfileRead(AgentProfileBase):
     updated_at: datetime
 
 
-AgentSession, AgentThread, AgentMessage, AgentContextSnapshot, AgentMemory, AgentSkill, AgentToolCall, AgentRun, AgentRunStep, AgentMemorySnapshot, AgentProfile
+AgentSession, AgentThread, AgentMessage, AgentContextSnapshot, AgentMemory, AgentSkill, AgentSkillDraft, AgentToolCall, AgentRun, AgentRunStep, AgentMemorySnapshot, AgentProfile

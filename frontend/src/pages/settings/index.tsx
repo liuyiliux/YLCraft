@@ -23,6 +23,7 @@ import {
   Col,
   Divider,
   Collapse,
+  Drawer,
 } from 'antd'
 import { App as AntApp } from 'antd'
 import {
@@ -42,11 +43,16 @@ import {
   UploadOutlined,
   DownloadOutlined,
   RocketOutlined,
+  RobotOutlined,
+  SendOutlined,
+  LinkOutlined,
 } from '@ant-design/icons'
-import { listConnectors, createConnector, updateConnector, deleteConnector, testConnector, exportConnectors, importConnectors, discoverModels, getSettings, updateSettings, listProviders, createProvider, updateProvider, deleteProvider, initDefaultProviders, getProviderDefaults, listAICapabilities } from '../../api'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { listConnectors, createConnector, updateConnector, deleteConnector, testConnector, exportConnectors, importConnectors, discoverModels, getSettings, updateSettings, listProviders, createProvider, updateProvider, deleteProvider, initDefaultProviders, getProviderDefaults, listAICapabilities, agentChat } from '../../api'
 import type { Provider, PROVIDER_OPTIONS, ConnectorTestResult, ProviderMetadata } from '../../types/api'
 import { useTheme } from '../../constants/theme'
 import { calculateAspectRatio } from '../../utils/size'
+import SkillManagementPanel from '../../components/agent/SkillManagementPanel'
 
 const { Title, Text, Paragraph } = Typography
 const { TextArea } = Input
@@ -1477,7 +1483,9 @@ function getReadableColor(color: string) {
 // ==================== 组件 ====================
 export default function SettingsPage() {
   const { theme: THEME } = useTheme()
-  const [activeTab, setActiveTab] = useState('models')
+  const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'models')
   const [providers, setProviders] = useState<Provider[]>([]) // 这里是 Connectors（具体模型）
   const [providerMetadata, setProviderMetadata] = useState<ProviderMetadata[]>([]) // 这里是 Provider 配置（服务商）
   const [filteredProviders, setFilteredProviders] = useState<Provider[]>([])
@@ -1495,11 +1503,29 @@ export default function SettingsPage() {
   const [advancedManuallyToggled, setAdvancedManuallyToggled] = useState(false)
   const [fetchingModels, setFetchingModels] = useState(false)
   const [discoveredModels, setDiscoveredModels] = useState<string[]>([])
+  const [agentDrawerOpen, setAgentDrawerOpen] = useState(false)
+  const [agentConfigInput, setAgentConfigInput] = useState('')
+  const [agentConfigSending, setAgentConfigSending] = useState(false)
+  const [agentConfigResult, setAgentConfigResult] = useState<any>(null)
   const [form] = Form.useForm()
   const { message } = AntApp.useApp()
   const selectedType = Form.useWatch('provider_type', form)
   const selectedProvider = Form.useWatch('provider', form)
   const selectedApiFormat = Form.useWatch('api_format', form)
+
+  useEffect(() => {
+    const tab = searchParams.get('tab')
+    if (tab && tab !== activeTab) {
+      setActiveTab(tab)
+    }
+  }, [activeTab, searchParams])
+
+  const handleTabChange = (key: string) => {
+    setActiveTab(key)
+    const next = new URLSearchParams(searchParams)
+    next.set('tab', key)
+    setSearchParams(next, { replace: true })
+  }
 
   // 动态 API 格式选项（根据 provider + type 组合返回）
   const getApiFormatOptions = () => {
@@ -1917,6 +1943,51 @@ export default function SettingsPage() {
     }
   }
 
+  const handleSendToConfigAgent = async () => {
+    const text = agentConfigInput.trim()
+    if (!text) {
+      message.warning('请先粘贴供应商文档、curl 示例或接口说明')
+      return
+    }
+    setAgentConfigSending(true)
+    setAgentConfigResult(null)
+    try {
+      const response = await agentChat({
+        profile_id: 'ai-config-specialist',
+        force_new_thread: true,
+        context: {
+          entry: 'settings.ai_model_config',
+          intent: 'configure_ai_provider_or_connector',
+          current_connectors: providers.map(item => ({
+            id: item.id,
+            name: item.name,
+            provider: item.provider,
+            provider_type: item.provider_type,
+            api_format: item.api_format,
+            default_model: item.default_model,
+            is_active: item.is_active,
+          })),
+        },
+        message:
+          '请根据下面的供应商规范、curl 示例或 API 文档，帮我创建或更新 YLCraft 的 Provider/AI Connector 配置。' +
+          '\n要求：先检查现有配置，不要硬编码无关供应商；如需要写入请使用工具；完成后测试连接，并总结 provider、connector、测试结果和后续需要人工确认的字段。\n\n' +
+          text,
+      }) as any
+      setAgentConfigResult(response)
+      if (response?.success === false) {
+        message.error(response?.error || '智能体配置任务失败')
+      } else {
+        message.success('已发送给 AI 模型配置专家')
+        loadProviders()
+        loadProviderMetadata()
+      }
+    } catch (e: any) {
+      message.error(e?.message || '发送给智能体失败')
+    } finally {
+      setAgentConfigSending(false)
+    }
+  }
+
   // 获取提供商对应的颜色
   const getProviderColor = (provider: string): string => {
     return PROVIDER_COLORS[provider] || THEME.textSecondary
@@ -1975,6 +2046,42 @@ export default function SettingsPage() {
     
     // 去重
     return [...new Set(urls)]
+  }
+
+  const getConnectorTestSummary = (result: ConnectorTestResult | null) => {
+    const request = result?.debug?.request || {}
+    const response = result?.debug?.response || {}
+    const headers = request.headers || {}
+    const contentType =
+      headers['content-type'] ||
+      headers['Content-Type'] ||
+      headers['CONTENT-TYPE'] ||
+      '-'
+    const bodyText = stringifyDebugValue(request.body)
+    const responseText = stringifyDebugValue(response.body || result?.debug?.exception)
+    const status = response.status_code
+    const errorHint = result?.success
+      ? '未发现错误'
+      : result?.debug?.exception
+        ? '请求异常，优先检查网络、Base URL、鉴权 Header 和超时时间。'
+        : status === 401 || status === 403
+          ? '鉴权失败，优先检查 API Key、Authorization 格式和供应商权限。'
+          : status === 404
+            ? '接口不存在，优先检查 Base URL 与 API Endpoint 是否重复或拼错。'
+            : status && status >= 500
+              ? '供应商服务端错误，建议稍后重试或检查模型名/请求体是否被平台拒绝。'
+              : '请求失败，优先查看响应体里的 error/message/code 字段。'
+    return {
+      method: request.method || '-',
+      url: request.url || '-',
+      contentType,
+      requestBytes: bodyText.length,
+      responseStatus: status ?? '-',
+      responseBytes: responseText.length,
+      latency: result?.debug?.latency_ms != null ? `${result.debug.latency_ms} ms` : '-',
+      errorHint,
+      responseExcerpt: responseText.length > 600 ? `${responseText.slice(0, 600)}...` : responseText || '-',
+    }
   }
 
   // 可拖拽调整列宽
@@ -2133,7 +2240,7 @@ export default function SettingsPage() {
 
       <Tabs
         activeKey={activeTab}
-        onChange={setActiveTab}
+        onChange={handleTabChange}
         type="card"
         size="large"
         items={[
@@ -2156,6 +2263,14 @@ export default function SettingsPage() {
                     <Space>
                       <Text strong style={{ color: THEME.textPrimary }}>AI 模型配置</Text>
                       <Badge count={filteredProviders.length} showZero={false} style={{ backgroundColor: THEME.primary }} />
+                      <Button
+                        size="small"
+                        icon={<RobotOutlined />}
+                        onClick={() => setAgentDrawerOpen(true)}
+                        style={{ borderColor: THEME.primary, color: THEME.primary }}
+                      >
+                        用智能体配置模型
+                      </Button>
                     </Space>
                     <Space wrap size={[8, 8]}>
                       <Input
@@ -2304,8 +2419,105 @@ export default function SettingsPage() {
             label: <span><DatabaseOutlined style={{ marginRight: 8 }} />存储设置</span>,
             children: <StorageSettings />,
           },
+          {
+            key: 'agent-skills',
+            label: <span><RobotOutlined style={{ marginRight: 8 }} />Agent 技能</span>,
+            children: <SkillManagementPanel />,
+          },
         ]}
       />
+
+      <Drawer
+        title={
+          <Space>
+            <RobotOutlined style={{ color: THEME.primary }} />
+            <span>AI 模型配置专家</span>
+          </Space>
+        }
+        open={agentDrawerOpen}
+        onClose={() => setAgentDrawerOpen(false)}
+        width={720}
+        styles={{ body: { background: THEME.bgPage, padding: 20 } }}
+        extra={
+          <Button
+            icon={<LinkOutlined />}
+            onClick={() => navigate('/agent')}
+          >
+            打开智能体工作室
+          </Button>
+        }
+      >
+        <Space direction="vertical" size={16} style={{ width: '100%' }}>
+          <Alert
+            type="info"
+            showIcon
+            message="把供应商文档、curl 示例或 API 说明发给智能体"
+            description="智能体会先检查现有 Provider/Connector，再按文档创建或更新配置。它不会把某个测试供应商硬塞成默认模型。"
+            style={{ background: 'rgba(0,212,255,0.05)', border: `1px solid rgba(0,212,255,0.2)` }}
+          />
+          <Card
+            size="small"
+            title="配置材料"
+            style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}` }}
+            extra={<Text type="secondary" style={{ fontSize: 12 }}>{agentConfigInput.trim().length} 字</Text>}
+          >
+            <TextArea
+              value={agentConfigInput}
+              onChange={e => setAgentConfigInput(e.target.value)}
+              autoSize={{ minRows: 12, maxRows: 22 }}
+              placeholder={[
+                '粘贴 curl 示例、接口文档或供应商规范。',
+                '建议包含：Base URL、Endpoint、鉴权 Header、请求体、响应示例、模型名、是否支持图片编辑/参考图。',
+                '如果要测试图片编辑，也可以写明 image_url 或本地 image_path 示例。',
+              ].join('\n')}
+              style={{ fontFamily: 'Consolas, Monaco, monospace' }}
+            />
+          </Card>
+          <Space style={{ width: '100%', justifyContent: 'space-between' }} align="start">
+            <Text type="secondary" style={{ fontSize: 12, maxWidth: 460 }}>
+              适合新增陌生供应商、修复非标准图片接口、接入 OpenAI-compatible 图像编辑模型。
+            </Text>
+            <Button
+              type="primary"
+              icon={<SendOutlined />}
+              loading={agentConfigSending}
+              onClick={handleSendToConfigAgent}
+            >
+              发送给智能体
+            </Button>
+          </Space>
+          {agentConfigResult && (
+            <Card
+              size="small"
+              title="本次智能体任务"
+              style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}` }}
+            >
+              <Space direction="vertical" size={10} style={{ width: '100%' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div>
+                    <Text type="secondary" style={{ fontSize: 12 }}>Run ID</Text>
+                    <div style={{ color: THEME.textPrimary, wordBreak: 'break-all' }}>
+                      {agentConfigResult.run_id || agentConfigResult.data?.run_id || '-'}
+                    </div>
+                  </div>
+                  <div>
+                    <Text type="secondary" style={{ fontSize: 12 }}>Thread ID</Text>
+                    <div style={{ color: THEME.textPrimary, wordBreak: 'break-all' }}>
+                      {agentConfigResult.thread_id || agentConfigResult.session_id || agentConfigResult.data?.thread_id || '-'}
+                    </div>
+                  </div>
+                </div>
+                <TextArea
+                  readOnly
+                  value={stringifyDebugValue(agentConfigResult.result || agentConfigResult.message || agentConfigResult)}
+                  autoSize={{ minRows: 5, maxRows: 14 }}
+                  style={{ fontFamily: 'Consolas, Monaco, monospace' }}
+                />
+              </Space>
+            </Card>
+          )}
+        </Space>
+      </Drawer>
       
       {/* 编辑/新增 Modal */}
       <Modal
@@ -2962,6 +3174,34 @@ export default function SettingsPage() {
             style={{ marginBottom: 16 }}
           />
 
+          {(() => {
+            const summary = getConnectorTestSummary(testResult)
+            return (
+              <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1fr 1fr', gap: 12, marginBottom: 16 }}>
+                <Card size="small" title="请求摘要" style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}` }}>
+                  <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                    <Text style={{ color: THEME.textPrimary }}>{summary.method}</Text>
+                    <Text type="secondary" style={{ fontSize: 12, wordBreak: 'break-all' }}>{summary.url}</Text>
+                    <Tag style={{ marginInlineStart: 0 }}>{summary.contentType}</Tag>
+                    <Text type="secondary" style={{ fontSize: 12 }}>请求体约 {summary.requestBytes} 字符</Text>
+                  </Space>
+                </Card>
+                <Card size="small" title="响应摘要" style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}` }}>
+                  <Space direction="vertical" size={4}>
+                    <Text style={{ color: THEME.textPrimary }}>状态：{summary.responseStatus}</Text>
+                    <Text style={{ color: THEME.textPrimary }}>耗时：{summary.latency}</Text>
+                    <Text type="secondary" style={{ fontSize: 12 }}>响应体约 {summary.responseBytes} 字符</Text>
+                  </Space>
+                </Card>
+                <Card size="small" title="错误诊断" style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}` }}>
+                  <Text style={{ color: testResult.success ? THEME.success : THEME.warning, fontSize: 13 }}>
+                    {summary.errorHint}
+                  </Text>
+                </Card>
+              </div>
+            )
+          })()}
+
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 16 }}>
             <Card size="small" style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}` }}>
               <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>方法</Text>
@@ -3029,7 +3269,7 @@ export default function SettingsPage() {
                       >
                         <img 
                           src={url} 
-                          alt={`Generated image ${idx + 1}`}
+                          alt={`测试生成图片 ${idx + 1}`}
                           style={{ 
                             width: '100%', 
                             maxHeight: 200, 

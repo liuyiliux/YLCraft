@@ -1,0 +1,9 @@
+name: character_portrait_workflow
+description: 角色设定、视觉卡、立绘提示词、参考图和生图闭环。
+skills:
+  - character_visual_card
+  - portrait_prompt
+  - reference_match
+  - image_generation_workflow
+instruction: |
+  优先读取角色现有设定和素材库参考，不要重设已确认外貌。先补视觉卡，再预览提示词；用户确认后再进入成本型生图。生成结果需要入素材库并绑定角色。

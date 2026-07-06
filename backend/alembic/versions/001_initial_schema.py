@@ -806,6 +806,34 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['session_id'], ['agent_sessions.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
+    op.create_table('agent_skill_drafts',
+    sa.Column('user_id', sqlmodel.sql.sqltypes.AutoString(length=64), nullable=False),
+    sa.Column('name', sqlmodel.sql.sqltypes.AutoString(length=100), nullable=False),
+    sa.Column('title', sqlmodel.sql.sqltypes.AutoString(length=200), nullable=False),
+    sa.Column('description', sqlmodel.sql.sqltypes.AutoString(length=500), nullable=False),
+    sa.Column('skill_type', sqlmodel.sql.sqltypes.AutoString(length=50), nullable=False),
+    sa.Column('content', sa.Text(), nullable=True),
+    sa.Column('metadata_json', sa.Text(), nullable=True),
+    sa.Column('source_type', sqlmodel.sql.sqltypes.AutoString(length=50), nullable=False),
+    sa.Column('source_url', sqlmodel.sql.sqltypes.AutoString(length=1000), nullable=False),
+    sa.Column('source_run_id', sqlmodel.sql.sqltypes.AutoString(length=64), nullable=False),
+    sa.Column('source_step_ids_json', sa.Text(), nullable=True),
+    sa.Column('status', sqlmodel.sql.sqltypes.AutoString(length=32), nullable=False),
+    sa.Column('target_path', sqlmodel.sql.sqltypes.AutoString(length=1000), nullable=False),
+    sa.Column('checksum', sqlmodel.sql.sqltypes.AutoString(length=128), nullable=False),
+    sa.Column('diagnostics_json', sa.Text(), nullable=True),
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('created_at', sa.DateTime(), nullable=False),
+    sa.Column('updated_at', sa.DateTime(), nullable=False),
+    sa.Column('reviewed_at', sa.DateTime(), nullable=True),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_agent_skill_drafts_created_at'), 'agent_skill_drafts', ['created_at'], unique=False)
+    op.create_index(op.f('ix_agent_skill_drafts_name'), 'agent_skill_drafts', ['name'], unique=False)
+    op.create_index(op.f('ix_agent_skill_drafts_source_run_id'), 'agent_skill_drafts', ['source_run_id'], unique=False)
+    op.create_index(op.f('ix_agent_skill_drafts_source_type'), 'agent_skill_drafts', ['source_type'], unique=False)
+    op.create_index(op.f('ix_agent_skill_drafts_status'), 'agent_skill_drafts', ['status'], unique=False)
+    op.create_index(op.f('ix_agent_skill_drafts_user_id'), 'agent_skill_drafts', ['user_id'], unique=False)
     op.create_table('ai_models',
     sa.Column('id', sa.UUID(), nullable=False),
     sa.Column('asset_node_id', sa.UUID(), nullable=False),
@@ -1044,6 +1072,13 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_ai_models_base_model'), table_name='ai_models')
     op.drop_index(op.f('ix_ai_models_asset_node_id'), table_name='ai_models')
     op.drop_table('ai_models')
+    op.drop_index(op.f('ix_agent_skill_drafts_user_id'), table_name='agent_skill_drafts')
+    op.drop_index(op.f('ix_agent_skill_drafts_status'), table_name='agent_skill_drafts')
+    op.drop_index(op.f('ix_agent_skill_drafts_source_type'), table_name='agent_skill_drafts')
+    op.drop_index(op.f('ix_agent_skill_drafts_source_run_id'), table_name='agent_skill_drafts')
+    op.drop_index(op.f('ix_agent_skill_drafts_name'), table_name='agent_skill_drafts')
+    op.drop_index(op.f('ix_agent_skill_drafts_created_at'), table_name='agent_skill_drafts')
+    op.drop_table('agent_skill_drafts')
     op.drop_table('agent_skills')
     op.drop_index(op.f('ix_agent_run_steps_tool_name'), table_name='agent_run_steps')
     op.drop_index(op.f('ix_agent_run_steps_step_type'), table_name='agent_run_steps')

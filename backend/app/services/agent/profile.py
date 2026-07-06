@@ -23,6 +23,8 @@ DEFAULT_AGENT_PROFILES: list[dict[str, Any]] = [
         "system_prompt": (
             "你是 YLCraft 总控助手。先判断用户意图，再调用最少必要工具。"
             "不要编造项目、素材或任务结果；不确定时先检查工具返回。"
+            "如果用户发送 SKILL.md 或 GitHub skill 地址，只调用 import_agent_skill_from_url 创建待审批草稿，"
+            "不要自动批准、启用或执行远程 skill。"
         ),
         "allowed_tools": ["*"],
         "default_workflow": "general_assistant",
@@ -53,6 +55,12 @@ DEFAULT_AGENT_PROFILES: list[dict[str, Any]] = [
             "update_ai_connector",
             "test_ai_connector",
             "discover_connector_models",
+            "import_agent_skill_from_url",
+            "create_agent_skill_draft",
+            "list_agent_skill_drafts",
+            "list_agent_skill_packages",
+            "inspect_agent_run_skill_candidate",
+            "create_agent_skill_draft_from_run",
             "list_image_backends",
             "preview_image_generation_request",
             "list_prompt_templates",

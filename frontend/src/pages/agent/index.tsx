@@ -7,6 +7,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Alert,
   Avatar,
@@ -56,6 +57,7 @@ import {
 } from '@ant-design/icons'
 import {
   confirmAgentRunStep,
+  createAgentSkillDraftFromRun,
   createAgentProfile,
   continueAgentRun,
   delegateAgentRun,
@@ -65,6 +67,7 @@ import {
   getAgentRun,
   getAgentRunLinkedLogs,
   getAgentSession,
+  inspectAgentRunSkillCandidate,
   listAgentRuns,
   listAgentSkills,
   listAgentProfiles,
@@ -459,6 +462,7 @@ interface AgentLinkedLogs {
 
 export default function AgentPage() {
   const { theme: THEME } = useTheme()
+  const navigate = useNavigate()
   const [profileForm] = Form.useForm()
   const [memoryForm] = Form.useForm()
 
@@ -473,6 +477,8 @@ export default function AgentPage() {
   const [currentRun, setCurrentRun] = useState<AgentRun | null>(null)
   const [threadRuns, setThreadRuns] = useState<AgentRun[]>([])
   const [linkedLogs, setLinkedLogs] = useState<AgentLinkedLogs | null>(null)
+  const [runSkillAnalysis, setRunSkillAnalysis] = useState<any>(null)
+  const [runSkillLoading, setRunSkillLoading] = useState(false)
   const [memories, setMemories] = useState<AgentMemory[]>([])
   const [skills, setSkills] = useState<AgentSkill[]>([])
   const [memoryLoadError, setMemoryLoadError] = useState('')
@@ -937,12 +943,14 @@ export default function AgentPage() {
       setReplyText('')
       setToolCalls([])
       setCurrentRun(null)
+      setRunSkillAnalysis(null)
       setLinkedLogs(null)
       if (options?.openChat !== false) setActiveTab('chat')
 
       const runs = await loadThreadRuns(sessionId)
       if (runs[0]?.id) {
         setCurrentRun(runs[0])
+        setRunSkillAnalysis(null)
         await loadRunLinkedLogs(runs[0].id)
       }
       localStorage.setItem(LAST_AGENT_THREAD_STORAGE_KEY, sessionId)
@@ -1198,6 +1206,7 @@ export default function AgentPage() {
         setMessages(prev => [...prev, { role: 'assistant', content: assistantText }])
         const run = await getAgentRun(currentRun.id)
         setCurrentRun(run)
+        setRunSkillAnalysis(null)
         setThreadRuns(prev => [run, ...prev.filter(item => item.id !== run.id)].slice(0, 12))
         await loadRunLinkedLogs(currentRun.id)
         await loadSessions()
@@ -1216,6 +1225,7 @@ export default function AgentPage() {
     }
 
     setCurrentRun(null)
+    setRunSkillAnalysis(null)
 
     try {
       const requestSessionId = currentSessionIdRef.current
@@ -1335,6 +1345,7 @@ export default function AgentPage() {
         try {
           const run = await getAgentRun(runId)
           setCurrentRun(run)
+          setRunSkillAnalysis(null)
           setThreadRuns(prev => [run, ...prev.filter(item => item.id !== run.id)].slice(0, 12))
           await loadRunLinkedLogs(runId)
         } catch (error) {
@@ -1483,6 +1494,7 @@ export default function AgentPage() {
     if (!id) return
     const run = await getAgentRun(id)
     setCurrentRun(run)
+    setRunSkillAnalysis(null)
     setThreadRuns(prev => [run, ...prev.filter(item => item.id !== run.id)].slice(0, 12))
     await loadRunLinkedLogs(id)
   }
@@ -1613,6 +1625,53 @@ export default function AgentPage() {
       message.success('Run Markdown 已下载')
     } catch (error: any) {
       message.error(`导出失败：${error.message}`)
+    }
+  }
+
+  const handleInspectRunSkillCandidate = async () => {
+    if (!currentRun) return
+    setRunSkillLoading(true)
+    try {
+      const result = await inspectAgentRunSkillCandidate(currentRun.id)
+      const analysis = result?.analysis || null
+      setRunSkillAnalysis(analysis)
+      if (analysis?.eligible) {
+        message.success('当前 Run 适合沉淀为 Skill 草稿')
+      } else {
+        message.warning(`暂不适合沉淀：${(analysis?.reasons || []).join('；') || '证据不足'}`)
+      }
+    } catch (error: any) {
+      message.error(`分析失败：${error.message}`)
+    } finally {
+      setRunSkillLoading(false)
+    }
+  }
+
+  const handleCreateSkillDraftFromRun = async () => {
+    if (!currentRun) return
+    setRunSkillLoading(true)
+    try {
+      const result = await createAgentSkillDraftFromRun(currentRun.id)
+      if (result?.success) {
+        setRunSkillAnalysis(null)
+        message.success({
+          content: (
+            <Space>
+              <span>已生成待审批 Skill 草稿：{result.draft?.name || ''}</span>
+              <Button size="small" type="link" onClick={() => navigate('/settings?tab=agent-skills')}>
+                去审批
+              </Button>
+            </Space>
+          ),
+          duration: 6,
+        })
+      } else {
+        message.error(result?.error || '生成 Skill 草稿失败')
+      }
+    } catch (error: any) {
+      message.error(`生成 Skill 草稿失败：${error.message}`)
+    } finally {
+      setRunSkillLoading(false)
     }
   }
 
@@ -2726,6 +2785,17 @@ export default function AgentPage() {
                               <Button size="small" onClick={() => handleExportRunMarkdown('download')}>
                                 下载 MD
                               </Button>
+                              <Button size="small" onClick={handleInspectRunSkillCandidate} loading={runSkillLoading}>
+                                分析 Skill
+                              </Button>
+                              <Button
+                                size="small"
+                                onClick={handleCreateSkillDraftFromRun}
+                                loading={runSkillLoading}
+                                disabled={runSkillAnalysis ? !runSkillAnalysis.eligible : currentRun.status !== 'completed'}
+                              >
+                                生成草稿
+                              </Button>
                               {currentRun.steps.some(step => step.status === 'failed' && step.step_type === 'tool_call') && (
                                 <Button size="small" onClick={() => handleRetryRunStep()} loading={loading}>
                                   重试失败
@@ -2737,6 +2807,40 @@ export default function AgentPage() {
                             </Space>
                           }
                         />
+                        {runSkillAnalysis && (
+                          <Alert
+                            type={runSkillAnalysis.eligible ? 'success' : 'warning'}
+                            showIcon
+                            message={runSkillAnalysis.eligible ? '这个 Run 可以沉淀为 Skill 草稿' : '这个 Run 暂不适合沉淀'}
+                            description={
+                              <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                                <Space wrap>
+                                  <Tag>评分 {runSkillAnalysis.score || 0}</Tag>
+                                  <Tag>成功工具 {runSkillAnalysis.successful_tool_count || 0}</Tag>
+                                  <Tag>工具种类 {(runSkillAnalysis.unique_tools || []).length}</Tag>
+                                  {(runSkillAnalysis.unique_tools || []).slice(0, 6).map((tool: string) => (
+                                    <Tag key={tool}>{tool}</Tag>
+                                  ))}
+                                </Space>
+                                {!runSkillAnalysis.eligible && (runSkillAnalysis.reasons || []).length > 0 && (
+                                  <Text type="secondary">
+                                    原因：{runSkillAnalysis.reasons.join('；')}
+                                  </Text>
+                                )}
+                                {runSkillAnalysis.eligible && (
+                                  <Space wrap>
+                                    <Text type="secondary">
+                                      点击“生成草稿”会创建待审批 SKILL.md，不会自动启用。
+                                    </Text>
+                                    <Button size="small" type="link" onClick={() => navigate('/settings?tab=agent-skills')}>
+                                      打开审批页
+                                    </Button>
+                                  </Space>
+                                )}
+                              </Space>
+                            }
+                          />
+                        )}
                         {renderLinkedLogs()}
                         <div
                           style={{

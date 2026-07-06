@@ -278,6 +278,10 @@ class ContextAssembler:
                 "default_workflow",
                 "default_skill_ids",
                 "routed_skill_ids",
+                "activated_skill_ids",
+                "activated_bundle_ids",
+                "skill_bundle_instruction",
+                "skill_activation_diagnostics",
                 "project_id",
                 "creative_project_id",
                 "default_project_id",
@@ -292,7 +296,14 @@ class ContextAssembler:
             "conversation_state": conversation_state,
             "recent_runs": recent_run_context,
             "routed_skills": [
-                {"skill_id": item.skill_id, "reason": item.reason, "score": item.score}
+                {
+                    "skill_id": item.skill_id,
+                    "reason": item.reason,
+                    "score": item.score,
+                    "source": item.source,
+                    "trigger_type": item.trigger_type,
+                    "matches": list(item.matches),
+                }
                 for item in (routed_skills or [])
             ],
         }

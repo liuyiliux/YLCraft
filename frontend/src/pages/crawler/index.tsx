@@ -2203,12 +2203,12 @@ export default function CrawlerPage() {
                                 message.warning('请先在账号中心登录微信公众号')
                                 return
                               }
-                              const res: any = await import('../../api').then(m => m.wechatMpDownloadSingle({
+                              const res: any = await wechatMpDownloadSingle({
                                 conn_id: connId,
                                 article_url: detailNote.url || '',
                                 article_title: stripHtml(detailNote.title),
                                 format: wechatDownloadFormat,
-                              }))
+                              })
                               if (res?.success) {
                                 showLocalFileSuccess(
                                   `${WECHAT_DOWNLOAD_FORMAT_LABEL[res.format || wechatDownloadFormat] || '文件'} 已下载`,

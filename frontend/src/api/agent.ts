@@ -15,7 +15,14 @@ async function parseJsonResponse(response: Response) {
     }
   }
   if (!response.ok) {
-    throw new Error(data?.detail || data?.message || `HTTP ${response.status}`)
+    const detail = data?.detail
+    const message =
+      typeof detail === 'string'
+        ? detail
+        : detail?.message || data?.message || `HTTP ${response.status}`
+    const error = new Error(message)
+    ;(error as any).diagnostics = detail?.diagnostics || data?.diagnostics || []
+    throw error
   }
   return data
 }
@@ -268,7 +275,77 @@ export const deleteAgentMemory = (key: string) =>
 export const listAgentSkills = () =>
   fetch(`${BASE}/agent/skills`).then(parseJsonResponse)
 
+export const listAgentSkillPackageIndex = () =>
+  fetch(`${BASE}/agent/skills/package-index`).then(parseJsonResponse)
+
+export const listAgentSkillPackageFiles = (skillName: string) =>
+  fetch(`${BASE}/agent/skills/packages/${encodeURIComponent(skillName)}/files`).then(parseJsonResponse)
+
+export const readAgentSkillPackageFile = (skillName: string, path = 'SKILL.md') => {
+  const sp = new URLSearchParams()
+  sp.set('path', path)
+  return fetch(`${BASE}/agent/skills/packages/${encodeURIComponent(skillName)}/files/content?${sp}`).then(parseJsonResponse)
+}
+
+export const previewAgentSkillRoute = (data: {
+  message: string
+  context?: Record<string, any>
+  allowed_tools?: string[]
+  default_skill_ids?: string[]
+  max_skills?: number
+}) =>
+  fetch(`${BASE}/agent/skills/route-preview`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  }).then(parseJsonResponse)
+
 // 发送到 Agent（其他页面调用）
+export const listAgentSkillDrafts = (status = 'pending') =>
+  fetch(`${BASE}/agent/skills/drafts?status=${encodeURIComponent(status)}`).then(parseJsonResponse)
+
+export const createAgentSkillDraft = (data: {
+  content: string
+  source_type?: string
+  source_url?: string
+  source_run_id?: string
+  source_step_ids?: number[]
+}) =>
+  fetch(`${BASE}/agent/skills/drafts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  }).then(parseJsonResponse)
+
+export const importAgentSkillDraftUrl = (url: string) =>
+  fetch(`${BASE}/agent/skills/drafts/import-url`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url }),
+  }).then(parseJsonResponse)
+
+export const approveAgentSkillDraft = (draftId: number) =>
+  fetch(`${BASE}/agent/skills/drafts/${draftId}/approve`, {
+    method: 'POST',
+  }).then(parseJsonResponse)
+
+export const rejectAgentSkillDraft = (draftId: number, reason = '') =>
+  fetch(`${BASE}/agent/skills/drafts/${draftId}/reject`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reason }),
+  }).then(parseJsonResponse)
+
+export const inspectAgentRunSkillCandidate = (runId: string) =>
+  fetch(`${BASE}/agent/runs/${encodeURIComponent(runId)}/skill-candidate`).then(parseJsonResponse)
+
+export const createAgentSkillDraftFromRun = (runId: string, data: { name?: string; title?: string } = {}) =>
+  fetch(`${BASE}/agent/runs/${encodeURIComponent(runId)}/skill-draft`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  }).then(parseJsonResponse)
+
 export const sendToAgent = (params: {
   source_page: string
   action: string

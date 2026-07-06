@@ -314,6 +314,17 @@ class AgentService:
         state["context_summary"] = "\n".join(context_parts) if context_parts else ""
         state["effective_context"] = effective_context
 
+        activation = self.skill_router.parse_activation(state["user_message"])
+        state["skill_activation"] = activation
+        route_message = activation.cleaned_message or state["user_message"]
+        state["effective_user_message"] = route_message
+        state["effective_context"]["activated_skill_ids"] = list(activation.skill_ids)
+        state["effective_context"]["activated_bundle_ids"] = list(activation.bundle_ids)
+        if activation.bundle_instruction:
+            state["effective_context"]["skill_bundle_instruction"] = activation.bundle_instruction
+        if activation.diagnostics:
+            state["effective_context"]["skill_activation_diagnostics"] = list(activation.diagnostics)
+
         state["messages"] = await self.thread_mgr.get_messages(state["thread_id"])
         state["conversation_state"] = self.context_assembler.build_conversation_state(
             state["messages"],
@@ -321,12 +332,15 @@ class AgentService:
         )
         state["effective_context"]["conversation_state"] = state["conversation_state"]
         state["routed_skills"] = self.skill_router.route(
-            message=state["user_message"],
+            message=route_message,
             context=state["effective_context"],
             allowed_tools=profile.get("allowed_tools") or [],
             default_skill_ids=state["effective_context"].get("default_skill_ids") or profile.get("default_skill_ids") or [],
+            activated_skill_ids=list(activation.skill_ids),
         )
         state["effective_context"]["routed_skill_ids"] = [item.skill_id for item in state["routed_skills"]]
+        run.context_json = json.dumps(state["effective_context"], ensure_ascii=False, default=str)
+        run.updated_at = datetime.utcnow()
         await self.thread_mgr.update_context(state["thread_id"], state["effective_context"])
         state["recent_run_context"] = await self.context_assembler.build_recent_run_context(
             state["session_id"],
@@ -345,6 +359,7 @@ class AgentService:
         )
         skill_ids = list(dict.fromkeys(
             (state["effective_context"].get("default_skill_ids") or profile.get("default_skill_ids") or [])
+            + list(activation.skill_ids)
             + [item.skill_id for item in state["routed_skills"]]
         ))
         state["memory_context"] = await self.memory_mgr.build_memory_context(
@@ -371,9 +386,22 @@ class AgentService:
                 "message_count": len(state["messages"]),
                 "conversation_state": state["conversation_state"],
                 "routed_skills": [
-                    {"skill_id": item.skill_id, "reason": item.reason, "score": item.score}
+                    {
+                        "skill_id": item.skill_id,
+                        "reason": item.reason,
+                        "score": item.score,
+                        "source": item.source,
+                        "trigger_type": item.trigger_type,
+                        "matches": list(item.matches),
+                    }
                     for item in state["routed_skills"]
                 ],
+                "skill_activation": {
+                    "cleaned_message": activation.cleaned_message,
+                    "skill_ids": list(activation.skill_ids),
+                    "bundle_ids": list(activation.bundle_ids),
+                    "diagnostics": list(activation.diagnostics),
+                },
                 "short_term_context_preview": self._summarize_text(state["short_term_context"], limit=800),
                 "recent_run_context": state["recent_run_context"],
                 "followup_resolution": state["followup_resolution"],
@@ -1321,6 +1349,19 @@ class AgentService:
                         "role_type": profile.get("role_type"),
                     },
                     "default_skill_ids": state["effective_context"].get("default_skill_ids") or profile.get("default_skill_ids") or [],
+                    "activated_skill_ids": state["effective_context"].get("activated_skill_ids") or [],
+                    "activated_bundle_ids": state["effective_context"].get("activated_bundle_ids") or [],
+                    "routed_skills": [
+                        {
+                            "skill_id": item.skill_id,
+                            "reason": item.reason,
+                            "score": item.score,
+                            "source": item.source,
+                            "trigger_type": item.trigger_type,
+                            "matches": list(item.matches),
+                        }
+                        for item in (state.get("routed_skills") or [])
+                    ],
                     "message_count": len(state.get("messages") or []),
                     "conversation_state": state.get("conversation_state") or {},
                     "recent_run_context": state.get("recent_run_context") or [],

@@ -66,7 +66,7 @@ async def init_db():
     from app.db.models.character import Character, CharacterStoryLink
     from app.db.models.live2d import Live2DModel, Live2DBone, Live2DMotion
     from app.db.models.api_key import ApiKey
-    from app.db.models.agent import AgentSession, AgentThread, AgentMessage, AgentContextSnapshot, AgentMemory, AgentSkill, AgentToolCall, AgentRun, AgentRunStep, AgentMemorySnapshot, AgentProfile
+    from app.db.models.agent import AgentSession, AgentThread, AgentMessage, AgentContextSnapshot, AgentMemory, AgentSkill, AgentSkillDraft, AgentToolCall, AgentRun, AgentRunStep, AgentMemorySnapshot, AgentProfile
     from app.db.models.platform_connection import PlatformConnection  # 统一凭证模型
     from app.db.models.ai_connector import AIConnector, AIUsageLog  # AI 连接器
     from app.db.models.platform_template import PlatformTemplate
@@ -123,7 +123,7 @@ async def ensure_agent_tables():
     This keeps the Agent page usable after code updates even when the server was
     started before the new AgentProfile model existed.
     """
-    from app.db.models.agent import AgentSession, AgentThread, AgentMessage, AgentContextSnapshot, AgentMemory, AgentSkill, AgentToolCall, AgentRun, AgentRunStep, AgentMemorySnapshot, AgentProfile
+    from app.db.models.agent import AgentSession, AgentThread, AgentMessage, AgentContextSnapshot, AgentMemory, AgentSkill, AgentSkillDraft, AgentToolCall, AgentRun, AgentRunStep, AgentMemorySnapshot, AgentProfile
 
     tables = [
         AgentSession.__table__,
@@ -132,6 +132,7 @@ async def ensure_agent_tables():
         AgentContextSnapshot.__table__,
         AgentMemory.__table__,
         AgentSkill.__table__,
+        AgentSkillDraft.__table__,
         AgentToolCall.__table__,
         AgentRun.__table__,
         AgentRunStep.__table__,

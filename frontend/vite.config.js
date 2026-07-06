@@ -33,21 +33,13 @@ export default defineConfig({
     build: {
         outDir: 'dist',
         sourcemap: false,
-        chunkSizeWarningLimit: 600,
+        chunkSizeWarningLimit: 1600,
         rollupOptions: {
             output: {
                 manualChunks: function (id) {
-                    if (id.indexOf('node_modules/antd') >= 0) {
-                        return 'antd';
-                    }
-                    if (id.indexOf('node_modules/@ant-design') >= 0) {
-                        return 'antd-icons';
-                    }
-                    if (id.indexOf('node_modules/react') >= 0) {
-                        return 'react-vendor';
-                    }
-                    if (id.indexOf('node_modules') >= 0) {
-                        return 'misc-vendor';
+                    var normalized = id.replace(/\\/g, '/');
+                    if (normalized.indexOf('node_modules') >= 0) {
+                        return 'vendor';
                     }
                 },
             },

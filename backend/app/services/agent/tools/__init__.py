@@ -90,6 +90,15 @@ from .ai_config_tools import (
     discover_connector_models,
 )
 
+from .skill_tools import (
+    import_agent_skill_from_url,
+    create_agent_skill_draft,
+    list_agent_skill_drafts,
+    list_agent_skill_packages,
+    inspect_agent_run_skill_candidate,
+    create_agent_skill_draft_from_run,
+)
+
 from .task_tools import (
     list_project_tasks,
     get_project_task,
@@ -242,6 +251,12 @@ TOOLS = [
     update_ai_connector,
     test_ai_connector,
     discover_connector_models,
+    import_agent_skill_from_url,
+    create_agent_skill_draft,
+    list_agent_skill_drafts,
+    list_agent_skill_packages,
+    inspect_agent_run_skill_candidate,
+    create_agent_skill_draft_from_run,
     list_project_tasks,
     get_project_task,
     cancel_project_task,
@@ -360,6 +375,12 @@ __all__ = [
     "update_ai_connector",
     "test_ai_connector",
     "discover_connector_models",
+    "import_agent_skill_from_url",
+    "create_agent_skill_draft",
+    "list_agent_skill_drafts",
+    "list_agent_skill_packages",
+    "inspect_agent_run_skill_candidate",
+    "create_agent_skill_draft_from_run",
     "list_project_tasks",
     "get_project_task",
     "cancel_project_task",
