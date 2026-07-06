@@ -126,3 +126,8 @@ The system SHALL expose skill package details, route decisions and pending chang
 - **WHEN** a user edits a skill package's keyword, context-key or tool triggers in the management UI
 - **THEN** the system generates a pending `SKILL.md` draft containing the updated route metadata
 - **AND** does not overwrite the active package until the draft is approved
+
+#### Scenario: Review route-rule changes
+- **WHEN** a pending `SKILL.md` draft changes route metadata
+- **THEN** the management UI highlights added and removed keywords, context keys, trigger tools and required tools
+- **AND** the user can reject the draft while refilling the editor with the draft route metadata for another revision

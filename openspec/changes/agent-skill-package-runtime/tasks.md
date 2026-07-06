@@ -64,6 +64,7 @@
 - [x] M7.5 Add pending draft review and diff approval UI.
 - [x] M7.6 Add route-rule editing UI that generates a pending `SKILL.md` draft instead of overwriting active packages.
 - [x] M7.7 Add target-skill route diagnostics that explain missing keywords, context keys and allowed tools.
+- [x] M7.8 Highlight route-rule diffs in draft review and allow rejected drafts to refill the editor.
 
 ## M8. Validation
 

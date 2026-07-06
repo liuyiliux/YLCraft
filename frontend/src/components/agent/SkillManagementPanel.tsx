@@ -149,6 +149,90 @@ function yamlInlineList(values: string[]) {
   return `[${values.map(value => JSON.stringify(value)).join(', ')}]`
 }
 
+function parseYamlListValue(value: string) {
+  const trimmed = value.trim()
+  if (!trimmed || trimmed === '[]') return []
+  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+    return trimmed
+      .slice(1, -1)
+      .split(',')
+      .map(item => item.trim().replace(/^['"]|['"]$/g, ''))
+      .filter(Boolean)
+  }
+  return [trimmed.replace(/^['"]|['"]$/g, '')].filter(Boolean)
+}
+
+function parseSkillRouteRules(content: string) {
+  const result = {
+    keywords: [] as string[],
+    context_keys: [] as string[],
+    tools: [] as string[],
+    requires_tools: [] as string[],
+  }
+  const lines = content.split(/\r?\n/)
+  let section = ''
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (trimmed === '---' && section) break
+    if (/^triggers\s*:/.test(line)) {
+      section = 'triggers'
+      continue
+    }
+    if (/^requires_tools\s*:/.test(line)) {
+      result.requires_tools.push(...parseYamlListValue(line.replace(/^requires_tools\s*:\s*/, '')))
+      section = 'requires_tools'
+      continue
+    }
+    if (section === 'triggers') {
+      const match = line.match(/^\s+(keywords|context_keys|tools)\s*:\s*(.*)$/)
+      if (match) {
+        result[match[1] as 'keywords' | 'context_keys' | 'tools'].push(...parseYamlListValue(match[2]))
+        section = `triggers.${match[1]}`
+        continue
+      }
+    }
+    if (trimmed.startsWith('- ')) {
+      const value = trimmed.slice(2).trim().replace(/^['"]|['"]$/g, '')
+      if (section === 'requires_tools') result.requires_tools.push(value)
+      if (section === 'triggers.keywords') result.keywords.push(value)
+      if (section === 'triggers.context_keys') result.context_keys.push(value)
+      if (section === 'triggers.tools') result.tools.push(value)
+      continue
+    }
+    if (/^\S/.test(line) && !/^---$/.test(trimmed)) section = ''
+  }
+  return {
+    keywords: Array.from(new Set(result.keywords.filter(Boolean))),
+    context_keys: Array.from(new Set(result.context_keys.filter(Boolean))),
+    tools: Array.from(new Set(result.tools.filter(Boolean))),
+    requires_tools: Array.from(new Set(result.requires_tools.filter(Boolean))),
+  }
+}
+
+function diffList(previous: string[], next: string[]) {
+  const before = new Set(previous)
+  const after = new Set(next)
+  return {
+    added: next.filter(item => !before.has(item)),
+    removed: previous.filter(item => !after.has(item)),
+  }
+}
+
+function buildRouteRuleDiff(currentContent: string, draftContent: string) {
+  const current = parseSkillRouteRules(currentContent)
+  const draft = parseSkillRouteRules(draftContent)
+  return {
+    current,
+    draft,
+    fields: {
+      keywords: diffList(current.keywords, draft.keywords),
+      context_keys: diffList(current.context_keys, draft.context_keys),
+      tools: diffList(current.tools, draft.tools),
+      requires_tools: diffList(current.requires_tools, draft.requires_tools),
+    },
+  }
+}
+
 function replaceSkillRouteRules(
   raw: string,
   triggers: { keywords: string[]; context_keys: string[]; tools: string[] },
@@ -232,6 +316,7 @@ export function SkillManagementPanel() {
   const [draftContent, setDraftContent] = useState('')
   const [draftLoading, setDraftLoading] = useState(false)
   const [selectedDraft, setSelectedDraft] = useState<SkillDraftItem | null>(null)
+  const [selectedDraftCurrentContent, setSelectedDraftCurrentContent] = useState('')
   const [bundleName, setBundleName] = useState('')
   const [bundleDescription, setBundleDescription] = useState('')
   const [bundleSkills, setBundleSkills] = useState<string[]>([])
@@ -265,6 +350,11 @@ export function SkillManagementPanel() {
     () => new Set(agentTools.map(tool => String(tool.name || '').trim()).filter(Boolean)),
     [agentTools],
   )
+
+  const selectedDraftRouteDiff = useMemo(() => {
+    if (!selectedDraft?.content) return null
+    return buildRouteRuleDiff(selectedDraftCurrentContent || '', selectedDraft.content)
+  }, [selectedDraft, selectedDraftCurrentContent])
 
   const filteredPackages = useMemo(() => {
     const keyword = query.trim().toLowerCase()
@@ -356,6 +446,26 @@ export function SkillManagementPanel() {
       setQuery(target.name)
     }
   }, [packages, skillParam])
+
+  useEffect(() => {
+    let cancelled = false
+    const loadCurrentDraftPackage = async () => {
+      if (!selectedDraft?.name) {
+        setSelectedDraftCurrentContent('')
+        return
+      }
+      try {
+        const content = await readAgentSkillPackageFile(selectedDraft.name, 'SKILL.md')
+        if (!cancelled) setSelectedDraftCurrentContent(content.file?.content || '')
+      } catch {
+        if (!cancelled) setSelectedDraftCurrentContent('')
+      }
+    }
+    loadCurrentDraftPackage()
+    return () => {
+      cancelled = true
+    }
+  }, [selectedDraft?.name])
 
   const handlePreviewRoute = async () => {
     setRouteLoading(true)
@@ -487,6 +597,9 @@ export function SkillManagementPanel() {
       await approveAgentSkillDraft(draft.id)
       await Promise.all([refreshDrafts(), loadIndex()])
       setSelectedDraft(null)
+      if (draft.name === routeTargetSkill) {
+        await handlePreviewRoute()
+      }
       message.success('Skill 已启用')
     } catch (err: any) {
       message.error(err?.message || '批准失败')
@@ -507,6 +620,20 @@ export function SkillManagementPanel() {
     } finally {
       setDraftLoading(false)
     }
+  }
+
+  const handleRejectDraftToEditor = async (draft: SkillDraftItem) => {
+    const parsed = parseSkillRouteRules(draft.content || '')
+    setSelectedName(draft.name)
+    setQuery(draft.name)
+    setRuleKeywords(parsed.keywords.join('\n'))
+    setRuleContextKeys(parsed.context_keys.join('\n'))
+    setRuleTools(parsed.tools)
+    setRequiredTools(parsed.requires_tools)
+    setRouteTargetSkill(draft.name)
+    setRouteAllowedTools(parsed.tools)
+    await handleRejectDraft(draft)
+    message.info('已回填到路由规则编辑区，可继续修改后重新生成草稿')
   }
 
   const handleCreateBundle = async () => {
@@ -1084,7 +1211,7 @@ export function SkillManagementPanel() {
                   title: '来源',
                   dataIndex: 'source_type',
                   width: 90,
-                  render: value => <Tag color={value === 'url' ? 'cyan' : 'default'}>{value}</Tag>,
+                  render: value => <Tag color={value === 'url' ? 'cyan' : value === 'route_rule_edit' ? 'blue' : 'default'}>{value}</Tag>,
                 },
                 {
                   title: '目标',
@@ -1122,6 +1249,29 @@ export function SkillManagementPanel() {
                 <Paragraph style={{ color: THEME.textSecondary, marginBottom: 8 }}>
                   {selectedDraft.description}
                 </Paragraph>
+                {selectedDraftRouteDiff && (
+                  <div style={{ marginBottom: 10, padding: 10, borderRadius: THEME.radiusSM, border: `1px solid ${THEME.borderLight}`, background: THEME.bgPage }}>
+                    <Space direction="vertical" size={7} style={{ width: '100%' }}>
+                      <Text strong style={{ fontSize: 13 }}>路由变更摘要</Text>
+                      {([
+                        ['keywords', '关键词'],
+                        ['context_keys', '上下文'],
+                        ['tools', '触发工具'],
+                        ['requires_tools', '必需工具'],
+                      ] as const).map(([field, label]) => {
+                        const changes = selectedDraftRouteDiff.fields[field]
+                        if (!changes.added.length && !changes.removed.length) return null
+                        return (
+                          <Space key={field} wrap size={[4, 4]}>
+                            <Text type="secondary" style={{ fontSize: 12 }}>{label}</Text>
+                            {changes.added.map(item => <Tag key={`add-${field}-${item}`} color="green">+ {item}</Tag>)}
+                            {changes.removed.map(item => <Tag key={`remove-${field}-${item}`} color="red">- {item}</Tag>)}
+                          </Space>
+                        )
+                      })}
+                    </Space>
+                  </div>
+                )}
                 {selectedDraft.source_url && (
                   <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>{selectedDraft.source_url}</Text>
                 )}
@@ -1139,6 +1289,17 @@ export function SkillManagementPanel() {
                   autoSize={{ minRows: 8, maxRows: 18 }}
                   style={{ fontFamily: 'Consolas, Monaco, monospace', fontSize: 12 }}
                 />
+                <Space style={{ marginTop: 10 }}>
+                  <Button type="primary" onClick={() => handleApproveDraft(selectedDraft)} loading={draftLoading}>
+                    批准启用
+                  </Button>
+                  <Button onClick={() => handleRejectDraftToEditor(selectedDraft)} loading={draftLoading}>
+                    回填编辑器
+                  </Button>
+                  <Button danger onClick={() => handleRejectDraft(selectedDraft)} loading={draftLoading}>
+                    拒绝
+                  </Button>
+                </Space>
               </div>
             )}
           </Col>
