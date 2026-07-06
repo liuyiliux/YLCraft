@@ -149,6 +149,41 @@ function splitRuleText(text: string) {
   ))
 }
 
+function sampleValueForContextKey(key: string) {
+  const normalized = key.toLowerCase()
+  if (normalized.includes('project')) return 'project-1'
+  if (normalized.includes('character')) return 'char-1'
+  if (normalized.includes('asset')) return 'asset-1'
+  if (normalized.includes('chapter')) return 1
+  if (normalized.includes('episode')) return 1
+  if (normalized.includes('content')) return 'content-1'
+  if (normalized.includes('provider')) return 'provider-1'
+  if (normalized.includes('model')) return 'model-1'
+  if (normalized.includes('platform')) return 'bili'
+  if (normalized.includes('task')) return 'task-1'
+  if (normalized.includes('run')) return 'run-1'
+  return `${key}_sample`
+}
+
+function buildSkillRouteExample(skill?: SkillPackageIndexItem | null) {
+  const keywords = skill?.triggers?.keywords?.filter(Boolean) || []
+  const contextKeys = skill?.triggers?.context_keys?.filter(Boolean) || []
+  const tools = skill?.triggers?.tools?.filter(Boolean) || []
+  const title = skill?.title || skill?.name || '当前 Skill'
+  const keywordText = keywords.slice(0, 3).join('、')
+  const message = keywordText
+    ? `请用${title}处理：${keywordText}`
+    : `/${skill?.name || ''} 测试这个工作流`.trim()
+  const context = Object.fromEntries(
+    contextKeys.slice(0, 8).map(key => [key, sampleValueForContextKey(key)]),
+  )
+  return {
+    message,
+    context: JSON.stringify(context, null, 2),
+    tools,
+  }
+}
+
 function yamlInlineList(values: string[]) {
   if (!values.length) return '[]'
   return `[${values.map(value => JSON.stringify(value)).join(', ')}]`
@@ -308,8 +343,8 @@ export function SkillManagementPanel() {
   const [skillMdContent, setSkillMdContent] = useState('')
   const [filePath, setFilePath] = useState('SKILL.md')
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const [routeMessage, setRouteMessage] = useState('帮我给角色生成表情包和动作姿势')
-  const [routeContext, setRouteContext] = useState('{\n  "character_id": "char-1"\n}')
+  const [routeMessage, setRouteMessage] = useState('')
+  const [routeContext, setRouteContext] = useState('{}')
   const [routeLoading, setRouteLoading] = useState(false)
   const [routeResult, setRouteResult] = useState<RoutePreviewItem[]>([])
   const [routeDiagnostic, setRouteDiagnostic] = useState<RouteDiagnostic>({})
@@ -437,12 +472,15 @@ export function SkillManagementPanel() {
 
   useEffect(() => {
     if (!selectedPackage) return
+    const example = buildSkillRouteExample(selectedPackage)
     setRuleKeywords((selectedPackage.triggers?.keywords || []).join('\n'))
     setRuleContextKeys((selectedPackage.triggers?.context_keys || []).join('\n'))
     setRuleTools(selectedPackage.triggers?.tools || [])
     setRequiredTools(selectedPackage.requires_tools || [])
     setRouteTargetSkill(selectedPackage.name)
-    setRouteAllowedTools(selectedPackage.triggers?.tools || [])
+    setRouteMessage(example.message)
+    setRouteContext(example.context)
+    setRouteAllowedTools(example.tools)
   }, [selectedPackage])
 
   useEffect(() => {
@@ -494,6 +532,33 @@ export function SkillManagementPanel() {
     } finally {
       setRouteLoading(false)
     }
+  }
+
+  const handleRouteTargetSkillChange = (name: string) => {
+    const target = packages.find(item => item.name === name)
+    setRouteTargetSkill(name)
+    if (target) {
+      const example = buildSkillRouteExample(target)
+      setRouteMessage(example.message)
+      setRouteContext(example.context)
+      setRouteAllowedTools(example.tools)
+      setSelectedName(target.name)
+      setQuery(current => current || target.name)
+    }
+    setRouteResult([])
+    setRouteDiagnostic({})
+    setRouteError('')
+  }
+
+  const handleUseSelectedSkillExample = () => {
+    const target = packages.find(item => item.name === routeTargetSkill) || selectedPackage
+    const example = buildSkillRouteExample(target)
+    setRouteMessage(example.message)
+    setRouteContext(example.context)
+    setRouteAllowedTools(example.tools)
+    setRouteResult([])
+    setRouteDiagnostic({})
+    setRouteError('')
   }
 
   const handleAddRouteMessageAsKeyword = () => {
@@ -715,7 +780,16 @@ export function SkillManagementPanel() {
   }
 
   const handleTestBundle = (bundle: SkillBundleIndexItem) => {
-    setRouteMessage(`/${bundle.name} ${routeMessage.replace(/^\/\S+\s*/, '').trim() || '测试这个工作流'}`)
+    const bundlePackages = bundle.skills
+      .map(skill => packages.find(item => item.name === skill))
+      .filter(Boolean) as SkillPackageIndexItem[]
+    const firstExample = buildSkillRouteExample(bundlePackages[0])
+    const mergedContext = Object.assign(
+      {},
+      ...bundlePackages.map(skill => parseJsonObject(buildSkillRouteExample(skill).context)),
+    )
+    setRouteMessage(`/${bundle.name} ${firstExample.message.replace(/^\/\S+\s*/, '').trim() || '测试这个工作流'}`)
+    setRouteContext(JSON.stringify(mergedContext, null, 2))
     setRouteTargetSkill(bundle.skills[0] || '')
     setRouteAllowedTools(
       Array.from(new Set(
@@ -1105,11 +1179,14 @@ export function SkillManagementPanel() {
               <Select
                 showSearch
                 value={routeTargetSkill}
-                onChange={setRouteTargetSkill}
+                onChange={handleRouteTargetSkillChange}
                 options={packages.map(item => ({ value: item.name, label: `${item.title || item.name} (${item.name})` }))}
                 placeholder="选择目标 Skill"
                 optionFilterProp="label"
               />
+              <Button size="small" onClick={handleUseSelectedSkillExample}>
+                使用该 Skill 的测试样例
+              </Button>
               <Input
                 value={routeMessage}
                 onChange={event => setRouteMessage(event.target.value)}
