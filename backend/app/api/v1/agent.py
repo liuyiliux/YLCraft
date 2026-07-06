@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import difflib
+import re
 from collections.abc import AsyncGenerator
 from datetime import datetime
 from pathlib import Path
@@ -87,6 +88,13 @@ class SkillDraftRejectRequest(BaseModel):
 class SkillDraftFromRunRequest(BaseModel):
     name: str = ""
     title: str = ""
+
+
+class SkillBundleCreateRequest(BaseModel):
+    name: str
+    description: str = ""
+    skills: list[str] = Field(default_factory=list)
+    instruction: str = ""
 
 
 class AgentProfileRequest(BaseModel):
@@ -1449,6 +1457,43 @@ async def read_skill_package_file(skill_name: str, path: str = "SKILL.md"):
         "source_path": package.source_path,
         "file": item,
     }
+
+
+@router.post("/skills/bundles", summary="创建用户 Skill Bundle")
+async def create_skill_bundle(request: SkillBundleCreateRequest):
+    name = str(request.name or "").strip().lower()
+    if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_-]{1,79}", name):
+        raise HTTPException(status_code=400, detail="Bundle name must use 2-80 ASCII letters, numbers, hyphen or underscore")
+    skills = [str(item or "").strip() for item in request.skills if str(item or "").strip()]
+    if not skills:
+        raise HTTPException(status_code=400, detail="Bundle must include at least one skill")
+    known_skills = {item["name"] for item in SkillPackageLoader().package_index()}
+    missing = [item for item in skills if item not in known_skills]
+    if missing:
+        raise HTTPException(status_code=400, detail={"message": "Bundle references unknown skills", "missing": missing})
+
+    root = SkillPackageLoader.default_builtin_root().resolve()
+    bundle_dir = (root / "user" / "bundles").resolve()
+    bundle_dir.mkdir(parents=True, exist_ok=True)
+    target = (bundle_dir / f"{name}.yaml").resolve()
+    try:
+        target.relative_to(bundle_dir)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Resolved bundle path is outside user bundle root")
+
+    description = str(request.description or "").strip() or f"用户自定义 Bundle：{name}"
+    instruction = str(request.instruction or "").strip()
+    yaml_lines = [
+        f"name: {json.dumps(name, ensure_ascii=False)}",
+        f"description: {json.dumps(description, ensure_ascii=False)}",
+        "skills:",
+        *[f"  - {json.dumps(skill, ensure_ascii=False)}" for skill in skills],
+    ]
+    if instruction:
+        yaml_lines.extend(["instruction: |", *[f"  {line}" for line in instruction.splitlines()]])
+    target.write_text("\n".join(yaml_lines).strip() + "\n", encoding="utf-8", newline="\n")
+    bundle = next((item for item in SkillPackageLoader().bundle_index() if item["name"] == name), None)
+    return {"success": True, "bundle": bundle}
 
 
 def _skill_draft_to_dict(item) -> dict:

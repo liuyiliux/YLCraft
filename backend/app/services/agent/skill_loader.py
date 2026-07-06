@@ -207,7 +207,8 @@ class SkillPackageLoader:
         for root in self.roots:
             if not root.exists():
                 continue
-            for path in sorted(root.glob(self.BUNDLE_GLOB)):
+            bundle_paths = [*root.glob(self.BUNDLE_GLOB), *root.glob("user/bundles/*.yaml")]
+            for path in sorted(bundle_paths):
                 bundle = self.load_bundle(path)
                 if bundle is not None:
                     bundles.append(bundle)

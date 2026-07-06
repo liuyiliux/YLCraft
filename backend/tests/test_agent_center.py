@@ -26,9 +26,11 @@ from app.api.v1.agent import (
     SkillRoutePreviewRequest,
     SkillDraftCreateRequest,
     SkillDraftFromRunRequest,
+    SkillBundleCreateRequest,
     ToolTestRequest,
     approve_skill_draft,
     confirm_pending_step,
+    create_skill_bundle,
     create_skill_draft,
     create_skill_draft_from_run,
     discard_memory_candidates,
@@ -938,6 +940,13 @@ def test_agent_skill_draft_service_normalizes_github_blob_url():
     assert raw_url == "https://raw.githubusercontent.com/acme/project/main/skills/example/SKILL.md"
 
 
+def test_agent_skill_draft_service_expands_github_repo_url():
+    candidates = AgentSkillDraftService._candidate_skill_urls("https://github.com/Leonxlnx/taste-skill")
+
+    assert "https://raw.githubusercontent.com/Leonxlnx/taste-skill/main/SKILL.md" in candidates
+    assert "https://raw.githubusercontent.com/Leonxlnx/taste-skill/main/skills/taste-skill/SKILL.md" in candidates
+
+
 def test_agent_skill_draft_service_rejects_private_import_url():
     with pytest.raises(SkillDraftError) as exc_info:
         AgentSkillDraftService._validate_url("http://192.168.1.10/SKILL.md")
@@ -974,7 +983,8 @@ async def test_agent_skill_draft_service_rejects_private_redirect(agent_session:
     with pytest.raises(SkillDraftError) as exc_info:
         await service.import_url("https://example.com/SKILL.md")
 
-    assert "Local skill URLs" in str(exc_info.value)
+    assert "Fetch skill URL failed" in str(exc_info.value)
+    assert any("Local skill URLs" in item for item in exc_info.value.diagnostics)
 
 
 @pytest.mark.asyncio
@@ -1145,6 +1155,27 @@ async def test_agent_skill_run_tools_create_pending_draft(agent_session: AsyncSe
     assert inspected["analysis"]["eligible"] is True
     assert created["success"] is True
     assert created["draft"]["name"] == "tool_run_skill"
+
+
+@pytest.mark.asyncio
+async def test_agent_skill_bundle_api_creates_user_bundle(monkeypatch, tmp_path):
+    monkeypatch.setattr(SkillPackageLoader, "default_builtin_root", staticmethod(lambda: tmp_path / "skills"))
+    skill_dir = tmp_path / "skills" / "creative" / "portrait_prompt"
+    skill_dir.mkdir(parents=True)
+    skill_dir.joinpath("SKILL.md").write_text(sample_skill_md("portrait_prompt"), encoding="utf-8")
+
+    response = await create_skill_bundle(
+        SkillBundleCreateRequest(
+            name="custom_portrait_flow",
+            description="自定义角色立绘流程",
+            skills=["portrait_prompt"],
+        )
+    )
+    index = await list_skill_package_index()
+
+    assert response["success"] is True
+    assert (tmp_path / "skills" / "user" / "bundles" / "custom_portrait_flow.yaml").exists()
+    assert any(item["name"] == "custom_portrait_flow" for item in index["bundles"])
 
 
 def test_agent_tool_executor_repairs_followup_tool_arguments():

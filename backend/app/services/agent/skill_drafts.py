@@ -87,15 +87,28 @@ class AgentSkillDraftService:
         return draft
 
     async def import_url(self, url: str) -> AgentSkillDraft:
-        normalized_url = self._validate_url(url)
-        content = await self._fetch_skill_markdown(normalized_url)
+        candidate_urls = self._candidate_skill_urls(url)
+        content: bytes | None = None
+        fetched_url = candidate_urls[0]
+        errors: list[str] = []
+        for candidate_url in candidate_urls:
+            try:
+                content = await self._fetch_skill_markdown(candidate_url)
+                fetched_url = candidate_url
+                break
+            except SkillDraftError as exc:
+                errors.extend(exc.diagnostics)
+            except httpx.HTTPError as exc:
+                errors.append(f"{candidate_url}: {exc}")
+        if content is None:
+            raise SkillDraftError("Fetch skill URL failed", errors or ["No candidate URL could be fetched"])
         if len(content) > self.MAX_SKILL_BYTES:
             raise SkillDraftError(f"Skill markdown is too large: {len(content)} bytes")
         try:
             text = content.decode("utf-8")
         except UnicodeDecodeError as exc:
             raise SkillDraftError("Skill markdown must be UTF-8 text") from exc
-        return await self.create_manual_draft(text, source_type="url", source_url=normalized_url)
+        return await self.create_manual_draft(text, source_type="url", source_url=fetched_url)
 
     async def _fetch_skill_markdown(self, url: str) -> bytes:
         current_url = url
@@ -512,3 +525,43 @@ class AgentSkillDraftService:
                 rest = "/".join(parts[4:])
                 return f"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{rest}"
         return url
+
+    @classmethod
+    def _candidate_skill_urls(cls, url: str) -> list[str]:
+        normalized = str(url or "").strip()
+        parsed = urlparse(normalized)
+        candidates: list[str] = []
+        if parsed.netloc.lower() == "github.com":
+            parts = parsed.path.strip("/").split("/")
+            if len(parts) >= 2:
+                owner, repo = parts[0], parts[1]
+                if "/blob/" in parsed.path:
+                    candidates.append(cls._normalize_skill_url(normalized))
+                elif len(parts) >= 4 and parts[2] == "tree":
+                    branch = parts[3]
+                    rest = "/".join(parts[4:])
+                    base = f"https://raw.githubusercontent.com/{owner}/{repo}/{branch}"
+                    candidates.append(f"{base}/{rest}/SKILL.md" if rest else f"{base}/SKILL.md")
+                elif len(parts) == 2:
+                    for branch in ("main", "master"):
+                        base = f"https://raw.githubusercontent.com/{owner}/{repo}/{branch}"
+                        candidates.extend(
+                            [
+                                f"{base}/SKILL.md",
+                                f"{base}/skills/{repo}/SKILL.md",
+                            ]
+                        )
+        candidates.append(cls._normalize_skill_url(normalized))
+        seen: set[str] = set()
+        validated: list[str] = []
+        for candidate in candidates:
+            try:
+                safe_url = cls._validate_url(candidate)
+            except SkillDraftError:
+                continue
+            if safe_url not in seen:
+                seen.add(safe_url)
+                validated.append(safe_url)
+        if not validated:
+            raise SkillDraftError("Skill URL must be http(s)")
+        return validated

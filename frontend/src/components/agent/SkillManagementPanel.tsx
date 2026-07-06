@@ -28,6 +28,7 @@ import {
 } from '@ant-design/icons'
 import {
   approveAgentSkillDraft,
+  createAgentSkillBundle,
   createAgentSkillDraft,
   importAgentSkillDraftUrl,
   listAgentSkills,
@@ -143,6 +144,10 @@ export function SkillManagementPanel() {
   const [draftContent, setDraftContent] = useState('')
   const [draftLoading, setDraftLoading] = useState(false)
   const [selectedDraft, setSelectedDraft] = useState<SkillDraftItem | null>(null)
+  const [bundleName, setBundleName] = useState('')
+  const [bundleDescription, setBundleDescription] = useState('')
+  const [bundleSkills, setBundleSkills] = useState<string[]>([])
+  const [bundleLoading, setBundleLoading] = useState(false)
 
   const selectedPackage = useMemo(
     () => packages.find(item => item.name === selectedName) || null,
@@ -228,7 +233,7 @@ export function SkillManagementPanel() {
       })
       setRouteResult(data.routes || [])
     } catch (err: any) {
-      setRouteError(err?.message || '路由预览失败，请检查上下文 JSON')
+      setRouteError(err?.message || '匹配测试失败，请检查上下文 JSON')
       setRouteResult([])
     } finally {
       setRouteLoading(false)
@@ -253,7 +258,9 @@ export function SkillManagementPanel() {
       await refreshDrafts()
       message.success('已导入为待审批草稿')
     } catch (err: any) {
-      message.error(err?.message || '导入失败')
+      const diagnostics = err?.diagnostics || err?.data?.detail?.diagnostics || err?.response?.data?.detail?.diagnostics
+      const hint = Array.isArray(diagnostics) && diagnostics.length > 0 ? diagnostics[0] : ''
+      message.error(hint || err?.message || '导入失败')
     } finally {
       setDraftLoading(false)
     }
@@ -306,48 +313,210 @@ export function SkillManagementPanel() {
     }
   }
 
+  const handleCreateBundle = async () => {
+    if (!bundleName.trim()) {
+      message.warning('请输入 Bundle 名称')
+      return
+    }
+    if (bundleSkills.length === 0) {
+      message.warning('请选择至少一个 Skill')
+      return
+    }
+    setBundleLoading(true)
+    try {
+      await createAgentSkillBundle({
+        name: bundleName.trim(),
+        description: bundleDescription.trim(),
+        skills: bundleSkills,
+      })
+      setBundleName('')
+      setBundleDescription('')
+      setBundleSkills([])
+      await loadIndex()
+      message.success('Bundle 已创建')
+    } catch (err: any) {
+      const detail = err?.data?.detail || err?.response?.data?.detail
+      message.error(detail?.message || err?.message || '创建 Bundle 失败')
+    } finally {
+      setBundleLoading(false)
+    }
+  }
+
   const metricStyle: CSSProperties = {
     padding: '12px 14px',
-    borderRadius: 8,
+    borderRadius: THEME.radiusMD,
     background: THEME.bgElevated,
     border: `1px solid ${THEME.border}`,
     minHeight: 72,
   }
 
+  const totalUsage = useMemo(
+    () => Object.values(skillMetrics).reduce((sum, item) => sum + (item.usage_count || 0), 0),
+    [skillMetrics],
+  )
+  const enabledCount = useMemo(
+    () => packages.filter(item => skillMetrics[item.name]).length,
+    [packages, skillMetrics],
+  )
+  const writeCount = useMemo(
+    () => packages.filter(item => item.risk === 'write').length,
+    [packages],
+  )
+  const readCount = Math.max(packages.length - writeCount, 0)
+
+  const panelStyle: CSSProperties = {
+    background: THEME.bgCard,
+    border: `1px solid ${THEME.border}`,
+    borderRadius: THEME.radiusLG,
+    boxShadow: THEME.shadowCard,
+    overflow: 'hidden',
+  }
+
+  const mutedPanelStyle: CSSProperties = {
+    background: THEME.bgElevated,
+    border: `1px solid ${THEME.border}`,
+    borderRadius: THEME.radiusMD,
+  }
+
+  const statItems = [
+    { label: 'Skill 包', value: packages.length, hint: `${enabledCount} 个已同步` },
+    { label: '待审批', value: drafts.length, hint: '远程导入先进入草稿' },
+    { label: 'Bundle', value: bundles.length, hint: '可组合工作流' },
+    { label: '调用记录', value: totalUsage, hint: `${readCount} read / ${writeCount} write` },
+  ]
+
   return (
-    <div>
-      <Card
-        style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}`, marginBottom: 16 }}
-        styles={{ body: { padding: 18 } }}
+    <div className="skill-management-panel">
+      <style>
+        {`
+          .skill-management-panel {
+            max-width: 1580px;
+            margin: 0 auto;
+            color: ${THEME.textPrimary};
+          }
+          .skill-management-panel .ant-card-head {
+            min-height: 56px;
+            border-bottom-color: ${THEME.border};
+          }
+          .skill-management-panel .ant-card-head-title {
+            font-weight: 700;
+          }
+          .skill-management-panel .ant-card-body {
+            padding: 24px;
+          }
+          .skill-management-panel .ant-table {
+            background: transparent;
+          }
+          .skill-management-panel .ant-table-thead > tr > th {
+            background: ${THEME.bgElevated};
+            color: ${THEME.textSecondary};
+            border-bottom-color: ${THEME.border};
+            font-size: 12px;
+            font-weight: 700;
+          }
+          .skill-management-panel .ant-table-tbody > tr > td {
+            border-bottom-color: ${THEME.borderLight};
+            transition: background ${THEME.animationDuration} ${THEME.animationEasing};
+          }
+          .skill-management-panel .ant-table-tbody > tr:hover > td {
+            background: ${THEME.primaryAlpha(0.07)} !important;
+          }
+          .skill-management-panel .ant-table-tbody > tr.skill-row-selected > td {
+            background: ${THEME.primaryAlpha(0.12)} !important;
+            border-bottom-color: ${THEME.primaryAlpha(0.24)};
+          }
+          .skill-management-panel .ant-tag {
+            border-radius: ${THEME.radiusXS};
+            font-weight: 500;
+          }
+          .skill-management-panel .ant-btn {
+            border-radius: ${THEME.radiusSM};
+          }
+          .skill-management-panel .ant-input,
+          .skill-management-panel .ant-select-selector,
+          .skill-management-panel textarea.ant-input {
+            border-radius: ${THEME.radiusSM} !important;
+          }
+          .skill-management-panel .skill-hero-layout {
+            display: grid;
+            grid-template-columns: minmax(280px, 1.4fr) minmax(360px, 1fr);
+            gap: 24px;
+            align-items: end;
+          }
+          .skill-management-panel .skill-stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 10px;
+          }
+          @media (max-width: 1280px) {
+            .skill-management-panel .skill-hero-layout {
+              grid-template-columns: 1fr;
+            }
+            .skill-management-panel .skill-stats-grid {
+              grid-template-columns: repeat(4, minmax(130px, 1fr));
+            }
+          }
+          @media (max-width: 760px) {
+            .skill-management-panel .ant-card-body {
+              padding: 16px;
+            }
+            .skill-management-panel .skill-stats-grid {
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+          }
+        `}
+      </style>
+
+      <section
+        style={{
+          ...panelStyle,
+          padding: 24,
+          marginBottom: 16,
+          background: `linear-gradient(135deg, ${THEME.primaryAlpha(0.12)} 0%, ${THEME.bgCard} 42%, ${THEME.bgCard} 100%)`,
+        }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+        <div className="skill-hero-layout">
           <div>
-            <Title level={5} style={{ color: THEME.textPrimary, marginBottom: 6 }}>
-              Agent Skill 包管理
+            <Space size={10} style={{ marginBottom: 10 }}>
+              <Tag color="cyan" style={{ marginInlineEnd: 0 }}>Agent Skills</Tag>
+              <Text type="secondary">文件化能力编排</Text>
+            </Space>
+            <Title level={3} style={{ color: THEME.textPrimary, margin: 0, letterSpacing: 0 }}>
+              Skill 包管理
             </Title>
-            <Paragraph style={{ color: THEME.textSecondary, marginBottom: 0, maxWidth: 760 }}>
-              项目工具负责执行动作，Skill 包负责定义何时使用、如何组合和如何验收。默认包来自后端文件系统，支持斜杠激活和工作流 bundle。
+            <Paragraph style={{ color: THEME.textSecondary, margin: '10px 0 0', maxWidth: 780, lineHeight: 1.7 }}>
+              用 SKILL.md 固化高频工作流，内置项目工具保持默认可用，外部 Skill 先进入草稿审批，再写入用户目录并进入 Agent 路由。
             </Paragraph>
           </div>
-          <Space>
-            <Button icon={<BranchesOutlined />} onClick={handlePreviewRoute} loading={routeLoading}>
-              预览路由
-            </Button>
-            <Button icon={<ReloadOutlined />} onClick={loadIndex} loading={loading}>
-              刷新
-            </Button>
-          </Space>
+          <div className="skill-stats-grid">
+            {statItems.map(item => (
+              <div key={item.label} style={{ ...mutedPanelStyle, padding: '14px 14px 12px' }}>
+                <Text type="secondary" style={{ fontSize: 12 }}>{item.label}</Text>
+                <div style={{ color: THEME.textPrimary, fontSize: 24, fontWeight: 760, lineHeight: '32px' }}>{item.value}</div>
+                <Text type="secondary" style={{ fontSize: 12 }}>{item.hint}</Text>
+              </div>
+            ))}
+          </div>
         </div>
-      </Card>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18 }}>
+          <Button icon={<BranchesOutlined />} onClick={handlePreviewRoute} loading={routeLoading}>
+            匹配测试
+          </Button>
+          <Button icon={<ReloadOutlined />} onClick={loadIndex} loading={loading}>
+            刷新
+          </Button>
+        </div>
+      </section>
 
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={15}>
           <Card
+            className="skill-list-card"
             title={
               <Space>
                 <FileTextOutlined />
                 <span>文件化 Skill</span>
-                <Badge count={filteredPackages.length} style={{ backgroundColor: THEME.primary }} />
+                <Badge count={filteredPackages.length} style={{ backgroundColor: THEME.primary, boxShadow: 'none' }} />
               </Space>
             }
             extra={
@@ -363,7 +532,7 @@ export function SkillManagementPanel() {
                 <Select value={category} options={categories} onChange={setCategory} style={{ width: 140 }} />
               </Space>
             }
-            style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}` }}
+            style={panelStyle}
           >
             {loading ? (
               <Skeleton active paragraph={{ rows: 8 }} />
@@ -372,10 +541,11 @@ export function SkillManagementPanel() {
             ) : (
               <Table
                 rowKey="name"
+                className="skill-table"
                 size="small"
                 dataSource={filteredPackages}
-                pagination={{ pageSize: 10, showSizeChanger: false }}
-                rowClassName={record => record.name === selectedName ? 'ant-table-row-selected' : ''}
+                pagination={{ pageSize: 10, showSizeChanger: false, size: 'small' }}
+                rowClassName={record => record.name === selectedName ? 'skill-row-selected' : ''}
                 onRow={record => ({
                   onClick: () => setSelectedName(record.name),
                   style: { cursor: 'pointer' },
@@ -387,8 +557,8 @@ export function SkillManagementPanel() {
                     width: 260,
                     render: (_: string, record) => (
                       <Space direction="vertical" size={2}>
-                        <Text strong style={{ color: THEME.textPrimary }}>{record.title || record.name}</Text>
-                        <Text code style={{ fontSize: 11 }}>{record.name}</Text>
+                        <Text strong style={{ color: THEME.textPrimary, fontSize: 14 }}>{record.title || record.name}</Text>
+                        <Text code style={{ fontSize: 11, color: THEME.textSecondary }}>{record.name}</Text>
                       </Space>
                     ),
                   },
@@ -419,7 +589,7 @@ export function SkillManagementPanel() {
                     width: 110,
                     render: (_, record) => {
                       const metric = skillMetrics[record.name]
-                      return <Tag color={metric?.is_builtin ? 'green' : 'default'}>{metric ? '文件启用' : '待同步'}</Tag>
+                      return <Tag color={metric ? 'green' : 'default'}>{metric ? '文件启用' : '待同步'}</Tag>
                     },
                   },
                   {
@@ -447,14 +617,14 @@ export function SkillManagementPanel() {
                 </Button>
               )
             }
-            style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}`, marginBottom: 16 }}
+            style={{ ...panelStyle, marginBottom: 16 }}
           >
             {!selectedPackage ? (
               <Empty description="请选择一个 Skill" />
             ) : (
               <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                <div>
-                  <Text strong style={{ color: THEME.textPrimary }}>{selectedPackage.title}</Text>
+                <div style={{ paddingBottom: 12, borderBottom: `1px solid ${THEME.borderLight}` }}>
+                  <Text strong style={{ color: THEME.textPrimary, fontSize: 16 }}>{selectedPackage.title}</Text>
                   <Paragraph style={{ color: THEME.textSecondary, marginTop: 6, marginBottom: 0 }}>
                     {selectedPackage.description}
                   </Paragraph>
@@ -465,7 +635,7 @@ export function SkillManagementPanel() {
                   <Col span={8}><div style={metricStyle}><Text type="secondary">使用</Text><div><Text>{skillMetrics[selectedPackage.name]?.usage_count || 0} 次</Text></div></div></Col>
                 </Row>
                 <div>
-                  <Text type="secondary">需要工具</Text>
+                  <Text type="secondary" style={{ fontSize: 12 }}>需要工具</Text>
                   <div style={{ marginTop: 6 }}>
                     <Space size={[4, 4]} wrap>
                       {(selectedPackage.requires_tools || []).map(tool => <Tag key={tool}>{tool}</Tag>)}
@@ -474,7 +644,7 @@ export function SkillManagementPanel() {
                   </div>
                 </div>
                 <div>
-                  <Text type="secondary">包文件</Text>
+                  <Text type="secondary" style={{ fontSize: 12 }}>包文件</Text>
                   <div style={{ marginTop: 6 }}>
                     {fileLoading ? (
                       <Skeleton active paragraph={{ rows: 2 }} />
@@ -498,7 +668,11 @@ export function SkillManagementPanel() {
             )}
           </Card>
 
-          <Card title="路由预览" style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}` }}>
+          <Card
+            title="匹配测试"
+            extra={<Text type="secondary" style={{ fontSize: 12 }}>模拟用户消息会命中哪些 Skill</Text>}
+            style={panelStyle}
+          >
             <Space direction="vertical" size={10} style={{ width: '100%' }}>
               <Input
                 value={routeMessage}
@@ -512,13 +686,13 @@ export function SkillManagementPanel() {
                 style={{ fontFamily: 'Consolas, Monaco, monospace' }}
               />
               <Button type="primary" icon={<BranchesOutlined />} onClick={handlePreviewRoute} loading={routeLoading}>
-                预览匹配
+                测试匹配
               </Button>
               {routeError && <Alert type="error" message={routeError} showIcon />}
               {routeResult.length > 0 && (
                 <Space direction="vertical" size={6} style={{ width: '100%' }}>
                   {routeResult.map(item => (
-                    <div key={item.skill_id} style={{ padding: 10, borderRadius: 8, border: `1px solid ${THEME.border}`, background: THEME.bgElevated }}>
+                    <div key={item.skill_id} style={{ padding: 12, borderRadius: THEME.radiusMD, border: `1px solid ${THEME.border}`, background: THEME.bgElevated }}>
                       <Space style={{ width: '100%', justifyContent: 'space-between' }}>
                         <Text strong>{item.skill_id}</Text>
                         <Tag color={item.source === 'package' ? 'blue' : item.source === 'slash' ? 'gold' : 'default'}>
@@ -538,6 +712,7 @@ export function SkillManagementPanel() {
       </Row>
 
       <Card
+        className="draft-review-card"
         title={
           <Space>
             <ImportOutlined />
@@ -545,7 +720,7 @@ export function SkillManagementPanel() {
             <Badge count={drafts.length} style={{ backgroundColor: THEME.primary }} />
           </Space>
         }
-        style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}`, marginTop: 16 }}
+        style={{ ...panelStyle, marginTop: 16 }}
       >
         <Alert
           type="info"
@@ -555,15 +730,18 @@ export function SkillManagementPanel() {
         />
         <Row gutter={[16, 16]}>
           <Col xs={24} lg={10}>
-            <Space direction="vertical" size={10} style={{ width: '100%' }}>
+            <Space direction="vertical" size={10} style={{ width: '100%', ...mutedPanelStyle, padding: 14 }}>
               <Input.Search
                 value={draftUrl}
                 onChange={event => setDraftUrl(event.target.value)}
                 onSearch={handleImportDraftUrl}
                 enterButton="导入 URL"
                 loading={draftLoading}
-                placeholder="https://.../SKILL.md"
+                placeholder="GitHub 仓库、blob、raw 或 SKILL.md 地址"
               />
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                支持 GitHub 仓库首页，例如 https://github.com/owner/repo，会自动尝试 raw SKILL.md。
+              </Text>
               <TextArea
                 value={draftContent}
                 onChange={event => setDraftContent(event.target.value)}
@@ -579,6 +757,7 @@ export function SkillManagementPanel() {
           <Col xs={24} lg={14}>
             <Table
               rowKey="id"
+              className="skill-table"
               size="small"
               dataSource={drafts}
               loading={draftLoading}
@@ -628,7 +807,7 @@ export function SkillManagementPanel() {
               ]}
             />
             {selectedDraft && (
-              <div style={{ marginTop: 12, padding: 12, borderRadius: 8, border: `1px solid ${THEME.border}`, background: THEME.bgElevated }}>
+              <div style={{ marginTop: 12, padding: 14, borderRadius: THEME.radiusMD, border: `1px solid ${THEME.border}`, background: THEME.bgElevated }}>
                 <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 8 }}>
                   <Text strong>{selectedDraft.title || selectedDraft.name}</Text>
                   <Space>
@@ -666,15 +845,49 @@ export function SkillManagementPanel() {
 
       <Card
         title="工作流 Bundle"
-        style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}`, marginTop: 16 }}
+        extra={<Text type="secondary" style={{ fontSize: 12 }}>内置组合和用户自定义组合都会参与斜杠激活</Text>}
+        style={{ ...panelStyle, marginTop: 16 }}
       >
+        <div style={{ ...mutedPanelStyle, padding: 14, marginBottom: 14 }}>
+          <Row gutter={[10, 10]} align="middle">
+            <Col xs={24} md={5}>
+              <Input
+                value={bundleName}
+                onChange={event => setBundleName(event.target.value)}
+                placeholder="bundle_name"
+              />
+            </Col>
+            <Col xs={24} md={7}>
+              <Input
+                value={bundleDescription}
+                onChange={event => setBundleDescription(event.target.value)}
+                placeholder="用途说明"
+              />
+            </Col>
+            <Col xs={24} md={9}>
+              <Select
+                mode="multiple"
+                value={bundleSkills}
+                onChange={setBundleSkills}
+                placeholder="选择要组合的 Skill"
+                style={{ width: '100%' }}
+                options={packages.map(item => ({ value: item.name, label: `${item.title || item.name} (${item.name})` }))}
+              />
+            </Col>
+            <Col xs={24} md={3}>
+              <Button type="primary" loading={bundleLoading} onClick={handleCreateBundle} block>
+                创建
+              </Button>
+            </Col>
+          </Row>
+        </div>
         {bundles.length === 0 ? (
           <Empty description="暂无 Bundle" />
         ) : (
           <Row gutter={[12, 12]}>
             {bundles.map(bundle => (
               <Col xs={24} md={12} xl={8} key={bundle.name}>
-                <div style={{ padding: 14, border: `1px solid ${THEME.border}`, borderRadius: 8, background: THEME.bgElevated, minHeight: 150 }}>
+                <div style={{ padding: 16, border: `1px solid ${THEME.border}`, borderRadius: THEME.radiusMD, background: THEME.bgElevated, minHeight: 150 }}>
                   <Space direction="vertical" size={8} style={{ width: '100%' }}>
                     <Text strong style={{ color: THEME.textPrimary }}>/{bundle.name}</Text>
                     <Text style={{ color: THEME.textSecondary }}>{bundle.description}</Text>
