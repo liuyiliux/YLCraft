@@ -1,4 +1,4 @@
-import { Layout, Menu, Drawer, Button, Space } from 'antd'
+import { Layout, Menu, Drawer, Button, Tag } from 'antd'
 import type { MenuProps } from 'antd'
 import { useNavigate, useLocation, Outlet } from 'react-router-dom'
 import { useState, useEffect } from 'react'
@@ -24,10 +24,27 @@ import {
 
 const { Sider, Content, Header } = Layout
 
+function navLabel(text: string, status?: '实验' | '辅助') {
+  if (!status) return text
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+      <span>{text}</span>
+      <Tag
+        color={status === '实验' ? 'orange' : 'default'}
+        style={{ marginInlineEnd: 0, fontSize: 11, lineHeight: '18px' }}
+      >
+        {status}
+      </Tag>
+    </span>
+  )
+}
+
 const MAIN_NAV: MenuProps['items'] = [
-  { key: '/', icon: <DashboardOutlined />, label: '概览' },
+  { key: '/story', icon: <BookOutlined />, label: '创作项目' },
   { key: '/assets', icon: <FolderOpenOutlined />, label: '素材库' },
-  { key: '/tasks', icon: <ThunderboltOutlined />, label: '任务管理' },
+  { key: '/download', icon: <SearchOutlined />, label: '下载' },
+  { key: '/novel-bookshelf', icon: <ReadOutlined />, label: '小说' },
+  { key: '/image-gen', icon: <PictureOutlined />, label: 'AI 图片' },
 ]
 
 const BOTTOM_NAV: MenuProps['items'] = [
@@ -36,6 +53,7 @@ const BOTTOM_NAV: MenuProps['items'] = [
 ]
 
 const menuItems: MenuProps['items'] = [
+  { key: '/', icon: <DashboardOutlined />, label: navLabel('概览', '辅助') },
   ...MAIN_NAV,
   { type: 'divider' as const },
   {
@@ -43,11 +61,10 @@ const menuItems: MenuProps['items'] = [
     icon: <SearchOutlined />,
     label: '内容采集',
     children: [
-      { key: '/crawler', label: '内容搜索' },
-      { key: '/download', label: '去水印下载' },
-      { key: '/breaker', label: '爆款拆解' },
-      { key: '/up-analytics', label: 'UP主分析' },
-      { key: '/my-data', label: '我的数据' },
+      { key: '/crawler', label: navLabel('内容搜索', '实验') },
+      { key: '/breaker', label: navLabel('爆款拆解', '实验') },
+      { key: '/up-analytics', label: navLabel('UP主分析', '实验') },
+      { key: '/my-data', label: navLabel('我的数据', '实验') },
     ],
   },
   {
@@ -55,12 +72,11 @@ const menuItems: MenuProps['items'] = [
     icon: <PictureOutlined />,
     label: 'AI 创作',
     children: [
-      { key: '/image-gen', label: '图像生成' },
-      { key: '/multi-platform-gen', label: '多平台生图' },
-      { key: '/video-gen', label: '视频生成' },
-      { key: '/platform-templates', label: '平台模板' },
-      { key: '/comfyui', label: 'ComfyUI' },
-      { key: '/agent', label: '智能体' },
+      { key: '/multi-platform-gen', label: navLabel('多平台生图', '实验') },
+      { key: '/video-gen', label: navLabel('视频生成', '实验') },
+      { key: '/platform-templates', label: navLabel('平台模板', '辅助') },
+      { key: '/comfyui', label: navLabel('ComfyUI', '实验') },
+      { key: '/agent', label: navLabel('智能体', '实验') },
     ],
   },
   {
@@ -68,12 +84,12 @@ const menuItems: MenuProps['items'] = [
     icon: <EditOutlined />,
     label: '编辑制作',
     children: [
-      { key: '/image-editor', label: '图片编辑' },
-      { key: '/clip-ops', label: '视频剪辑' },
-      { key: '/clip', label: 'AI 剪辑' },
-      { key: '/subtitle', label: '字幕提取' },
-      { key: '/bgm', label: 'BGM 配乐' },
-      { key: '/live2d', label: 'Live2D 工厂' },
+      { key: '/image-editor', label: navLabel('图片编辑', '实验') },
+      { key: '/clip-ops', label: navLabel('视频剪辑', '实验') },
+      { key: '/clip', label: navLabel('AI 剪辑', '实验') },
+      { key: '/subtitle', label: navLabel('字幕提取', '实验') },
+      { key: '/bgm', label: navLabel('BGM 配乐', '实验') },
+      { key: '/live2d', label: navLabel('Live2D 工厂', '实验') },
     ],
   },
   {
@@ -81,7 +97,6 @@ const menuItems: MenuProps['items'] = [
     icon: <BookOutlined />,
     label: '创作项目',
     children: [
-      { key: '/story', label: '项目工作台' },
       { key: '/characters', label: '角色管理' },
     ],
   },
@@ -90,10 +105,9 @@ const menuItems: MenuProps['items'] = [
     icon: <ReadOutlined />,
     label: '阅读中心',
     children: [
-      { key: '/reader', label: '本地阅读' },
+      { key: '/reader', label: navLabel('本地阅读', '辅助') },
       { key: '/novel-search', label: '小说搜索' },
-      { key: '/novel-bookshelf', label: '我的书架' },
-      { key: '/book-source', label: '书源管理' },
+      { key: '/book-source', label: navLabel('书源管理', '辅助') },
     ],
   },
   {
@@ -101,7 +115,7 @@ const menuItems: MenuProps['items'] = [
     icon: <SendOutlined />,
     label: '发布运营',
     children: [
-      { key: '/publish', label: '一键发布' },
+      { key: '/publish', label: navLabel('一键发布', '实验') },
     ],
   },
 ]

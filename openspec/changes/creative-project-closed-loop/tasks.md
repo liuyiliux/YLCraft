@@ -2,10 +2,10 @@
 
 ## Phase 0: Product reset and inventory
 
-- [ ] 1. Audit current routes and label modules as `stable`, `experimental`, `deprecated`, or `hidden`.
-- [ ] 2. Define the primary navigation: 创作项目、素材库、下载、小说、AI 图片.
-- [ ] 3. Add user-facing status hints for experimental modules so users know they are not complete production flows.
-- [ ] 4. Confirm stable integration points for download assets, novel chapters, and generated images.
+- [x] 1. Audit current routes and label modules as `stable`, `experimental`, `deprecated`, or `hidden`.
+- [x] 2. Define the primary navigation: 创作项目、素材库、下载、小说、AI 图片.
+- [x] 3. Add user-facing status hints for experimental modules so users know they are not complete production flows.
+- [x] 4. Confirm stable integration points for download assets, novel chapters, and generated images.
 
 ## Phase 1: Data model and contracts
 
@@ -100,7 +100,7 @@
 - [ ] 49. Add project ZIP export with JSON, Markdown and linked asset manifest.
 - [ ] 50. Add lightweight HTML preview for scripts or storyboard.
 - [ ] 51. Add empty, loading, error and partial-generation states across project workspace.
-- [ ] 52. Add documentation explaining the new creative loop and module status.
+- [x] 52. Add documentation explaining the new creative loop and module status.
 
 ## Phase 8: Verification
 
