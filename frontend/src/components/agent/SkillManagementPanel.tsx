@@ -10,6 +10,7 @@ import {
   Drawer,
   Empty,
   Input,
+  Popconfirm,
   Row,
   Select,
   Skeleton,
@@ -1437,7 +1438,17 @@ export function SkillManagementPanel() {
                       <Space size={4}>
                         <Button size="small" onClick={() => handleTestBundle(bundle)}>测试</Button>
                         <Button size="small" disabled={bundle.source_type !== 'user'} onClick={() => handleEditBundle(bundle)}>编辑</Button>
-                        <Button size="small" danger disabled={bundle.source_type !== 'user'} onClick={() => handleDeleteBundle(bundle)}>删除</Button>
+                        <Popconfirm
+                          title={`删除 /${bundle.name}？`}
+                          description="只会删除用户 Bundle 文件，不会删除其中的 Skill。"
+                          okText="删除"
+                          cancelText="取消"
+                          okButtonProps={{ danger: true, loading: bundleLoading }}
+                          disabled={bundle.source_type !== 'user'}
+                          onConfirm={() => handleDeleteBundle(bundle)}
+                        >
+                          <Button size="small" danger disabled={bundle.source_type !== 'user'}>删除</Button>
+                        </Popconfirm>
                       </Space>
                     </Space>
                     <Text style={{ color: THEME.textSecondary }}>{bundle.description}</Text>
