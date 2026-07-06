@@ -829,6 +829,7 @@ async def test_agent_skill_route_preview_api_returns_diagnostics():
             message="/character_portrait_workflow 帮这个角色生成立绘和表情包",
             context={"character_id": "char-1"},
             allowed_tools=["inspect_character", "preview_character_portrait_prompt"],
+            target_skill_id="portrait_prompt",
         )
     )
     routes = {item["skill_id"]: item for item in response["routes"]}
@@ -836,6 +837,30 @@ async def test_agent_skill_route_preview_api_returns_diagnostics():
     assert response["activation"]["bundle_ids"] == ["character_portrait_workflow"]
     assert routes["character_visual_card"]["source"] == "slash"
     assert routes["portrait_prompt"]["trigger_type"] == "slash"
+    assert response["diagnostic"]["target_skill_id"] == "portrait_prompt"
+    assert response["diagnostic"]["matched"] is True
+    assert response["diagnostic"]["matched_route"]["score"] == 20
+
+
+@pytest.mark.asyncio
+async def test_agent_skill_route_preview_diagnoses_unmatched_target():
+    response = await preview_skill_route(
+        SkillRoutePreviewRequest(
+            message="帮我整理素材",
+            context={},
+            allowed_tools=[],
+            target_skill_id="portrait_prompt",
+        )
+    )
+
+    diagnostic = response["diagnostic"]
+    assert diagnostic["target_skill_id"] == "portrait_prompt"
+    assert diagnostic["exists"] is True
+    assert diagnostic["matched"] is False
+    assert "character_id" in diagnostic["missing_context_keys"]
+    assert diagnostic["missing_keywords"]
+    assert diagnostic["unavailable_tools"]
+    assert diagnostic["suggestions"]
 
 
 def sample_skill_md(name: str = "user_test_skill") -> str:
@@ -1921,6 +1946,31 @@ async def test_agent_chat_injects_slash_bundle_activation_into_context(agent_ses
     assert snapshot_data["activated_bundle_ids"] == ["character_portrait_workflow"]
     assert "character_visual_card" in snapshot_data["activated_skill_ids"]
     assert any(item["source"] == "slash" for item in snapshot_data["routed_skills"])
+
+    steps = (
+        await agent_session.execute(
+            select(AgentRunStep)
+            .where(AgentRunStep.run_id == result["run_id"])
+            .order_by(AgentRunStep.order_index.asc())
+        )
+    ).scalars().all()
+    skill_step = next(step for step in steps if step.step_type == "skill_route")
+    skill_payload = json.loads(skill_step.output_json)
+    assert skill_step.summary == f"命中 {len(skill_payload['routed_skills'])} 个 Skill"
+    assert skill_payload["activated_bundle_ids"] == ["character_portrait_workflow"]
+    assert {item["skill_id"] for item in skill_payload["routed_skills"]} >= {"character_visual_card", "portrait_prompt"}
+    assert any(item["source"] == "slash" and item["score"] == 20 for item in skill_payload["routed_skills"])
+
+    skill_metrics = (
+        await agent_session.execute(
+            select(AgentSkill).where(AgentSkill.name.in_(["character_visual_card", "portrait_prompt"]))
+        )
+    ).scalars().all()
+    metrics_by_name = {item.name: item for item in skill_metrics}
+    assert metrics_by_name["character_visual_card"].usage_count == 1
+    assert metrics_by_name["character_visual_card"].success_count == 1
+    assert metrics_by_name["portrait_prompt"].usage_count == 1
+    assert metrics_by_name["portrait_prompt"].success_count == 1
 
 
 @pytest.mark.asyncio

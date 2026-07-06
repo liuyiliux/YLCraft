@@ -62,6 +62,8 @@
 - [x] M7.3 Show full `SKILL.md` and package references.
 - [x] M7.4 Add route preview: input message + context + allowed tools -> selected skills and reasons.
 - [x] M7.5 Add pending draft review and diff approval UI.
+- [x] M7.6 Add route-rule editing UI that generates a pending `SKILL.md` draft instead of overwriting active packages.
+- [x] M7.7 Add target-skill route diagnostics that explain missing keywords, context keys and allowed tools.
 
 ## M8. Validation
 

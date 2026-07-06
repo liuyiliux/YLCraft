@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   Alert,
   Badge,
@@ -31,6 +32,7 @@ import {
   createAgentSkillBundle,
   createAgentSkillDraft,
   importAgentSkillDraftUrl,
+  listAgentTools,
   listAgentSkills,
   listAgentSkillDrafts,
   listAgentSkillPackageFiles,
@@ -86,6 +88,20 @@ interface RoutePreviewItem {
   matches: string[]
 }
 
+interface RouteDiagnostic {
+  target_skill_id?: string
+  exists?: boolean
+  matched?: boolean
+  matched_route?: RoutePreviewItem | null
+  keyword_hits?: string[]
+  missing_keywords?: string[]
+  context_hits?: string[]
+  missing_context_keys?: string[]
+  tool_hits?: string[]
+  unavailable_tools?: string[]
+  suggestions?: string[]
+}
+
 interface AgentSkillMetric {
   name: string
   is_builtin?: boolean
@@ -119,26 +135,98 @@ function parseJsonObject(text: string) {
   return JSON.parse(text)
 }
 
+function splitRuleText(text: string) {
+  return Array.from(new Set(
+    text
+      .split(/[\n,，]/)
+      .map(item => item.trim())
+      .filter(Boolean),
+  ))
+}
+
+function yamlInlineList(values: string[]) {
+  if (!values.length) return '[]'
+  return `[${values.map(value => JSON.stringify(value)).join(', ')}]`
+}
+
+function replaceSkillRouteRules(
+  raw: string,
+  triggers: { keywords: string[]; context_keys: string[]; tools: string[] },
+  requiresTools: string[],
+) {
+  const text = raw.trimStart()
+  if (!text.startsWith('---')) {
+    throw new Error('SKILL.md 缺少 YAML frontmatter')
+  }
+  const lines = text.split(/\r?\n/)
+  const endIndex = lines.findIndex((line, index) => index > 0 && line.trim() === '---')
+  if (endIndex <= 0) {
+    throw new Error('SKILL.md frontmatter 没有结束分隔符')
+  }
+  const frontmatter = lines.slice(1, endIndex)
+  const body = lines.slice(endIndex)
+  let insertIndex = frontmatter.findIndex(line => /^triggers\s*:/.test(line))
+  if (insertIndex < 0) insertIndex = frontmatter.findIndex(line => /^requires_tools\s*:/.test(line))
+  if (insertIndex < 0) insertIndex = frontmatter.findIndex(line => /^risk\s*:/.test(line))
+  if (insertIndex < 0) insertIndex = frontmatter.length
+
+  const cleaned: string[] = []
+  for (let index = 0; index < frontmatter.length; index += 1) {
+    const line = frontmatter[index]
+    if (/^triggers\s*:/.test(line) || /^requires_tools\s*:/.test(line)) {
+      index += 1
+      while (index < frontmatter.length && (/^\s+/.test(frontmatter[index]) || frontmatter[index].trim().startsWith('- '))) {
+        index += 1
+      }
+      index -= 1
+      continue
+    }
+    cleaned.push(line)
+  }
+
+  const routeBlock = [
+    'triggers:',
+    `  keywords: ${yamlInlineList(triggers.keywords)}`,
+    `  context_keys: ${yamlInlineList(triggers.context_keys)}`,
+    `  tools: ${yamlInlineList(triggers.tools)}`,
+    `requires_tools: ${yamlInlineList(requiresTools)}`,
+  ]
+  const boundedInsertIndex = Math.min(insertIndex, cleaned.length)
+  const nextFrontmatter = [
+    ...cleaned.slice(0, boundedInsertIndex),
+    ...routeBlock,
+    ...cleaned.slice(boundedInsertIndex),
+  ]
+  return ['---', ...nextFrontmatter, ...body].join('\n').trimEnd() + '\n'
+}
+
 export function SkillManagementPanel() {
   const { theme: THEME } = useTheme()
   const { message } = AntApp.useApp()
+  const [searchParams] = useSearchParams()
+  const skillParam = searchParams.get('skill') || ''
   const [loading, setLoading] = useState(false)
   const [packages, setPackages] = useState<SkillPackageIndexItem[]>([])
   const [bundles, setBundles] = useState<SkillBundleIndexItem[]>([])
   const [skillMetrics, setSkillMetrics] = useState<Record<string, AgentSkillMetric>>({})
+  const [agentTools, setAgentTools] = useState<any[]>([])
   const [selectedName, setSelectedName] = useState('')
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('all')
   const [fileLoading, setFileLoading] = useState(false)
   const [files, setFiles] = useState<SkillPackageFileItem[]>([])
   const [fileContent, setFileContent] = useState('')
+  const [skillMdContent, setSkillMdContent] = useState('')
   const [filePath, setFilePath] = useState('SKILL.md')
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [routeMessage, setRouteMessage] = useState('帮我给角色生成表情包和动作姿势')
   const [routeContext, setRouteContext] = useState('{\n  "character_id": "char-1"\n}')
   const [routeLoading, setRouteLoading] = useState(false)
   const [routeResult, setRouteResult] = useState<RoutePreviewItem[]>([])
+  const [routeDiagnostic, setRouteDiagnostic] = useState<RouteDiagnostic>({})
   const [routeError, setRouteError] = useState('')
+  const [routeTargetSkill, setRouteTargetSkill] = useState('')
+  const [routeAllowedTools, setRouteAllowedTools] = useState<string[]>([])
   const [drafts, setDrafts] = useState<SkillDraftItem[]>([])
   const [draftUrl, setDraftUrl] = useState('')
   const [draftContent, setDraftContent] = useState('')
@@ -148,6 +236,11 @@ export function SkillManagementPanel() {
   const [bundleDescription, setBundleDescription] = useState('')
   const [bundleSkills, setBundleSkills] = useState<string[]>([])
   const [bundleLoading, setBundleLoading] = useState(false)
+  const [ruleKeywords, setRuleKeywords] = useState('')
+  const [ruleContextKeys, setRuleContextKeys] = useState('')
+  const [ruleTools, setRuleTools] = useState<string[]>([])
+  const [requiredTools, setRequiredTools] = useState<string[]>([])
+  const [ruleDraftLoading, setRuleDraftLoading] = useState(false)
 
   const selectedPackage = useMemo(
     () => packages.find(item => item.name === selectedName) || null,
@@ -158,6 +251,20 @@ export function SkillManagementPanel() {
     const values = Array.from(new Set(packages.map(item => item.category).filter(Boolean))).sort()
     return [{ value: 'all', label: '全部分类' }, ...values.map(value => ({ value, label: value }))]
   }, [packages])
+
+  const toolOptions = useMemo(
+    () =>
+      agentTools.map(tool => ({
+        value: tool.name,
+        label: `${tool.name}${tool.description_short || tool.description ? ` · ${tool.description_short || tool.description}` : ''}`,
+      })),
+    [agentTools],
+  )
+
+  const knownToolNames = useMemo(
+    () => new Set(agentTools.map(tool => String(tool.name || '').trim()).filter(Boolean)),
+    [agentTools],
+  )
 
   const filteredPackages = useMemo(() => {
     const keyword = query.trim().toLowerCase()
@@ -180,21 +287,27 @@ export function SkillManagementPanel() {
     try {
       const data = await listAgentSkillPackageIndex()
       const skills = await listAgentSkills()
+      const toolData = await listAgentTools()
       const draftData = await listAgentSkillDrafts('pending')
       const nextPackages = data.packages || []
       setPackages(nextPackages)
       setBundles(data.bundles || [])
       setDrafts(draftData.drafts || [])
+      setAgentTools(toolData.tools || [])
       setSkillMetrics(
         Object.fromEntries((skills || []).map((item: AgentSkillMetric) => [item.name, item])),
       )
-      setSelectedName(current => current || nextPackages[0]?.name || '')
+      setSelectedName(current => {
+        if (skillParam && nextPackages.some((item: SkillPackageIndexItem) => item.name === skillParam)) return skillParam
+        return current || nextPackages[0]?.name || ''
+      })
+      if (skillParam) setQuery(skillParam)
     } catch (err: any) {
       message.error(err?.message || '加载 Skill 包失败')
     } finally {
       setLoading(false)
     }
-  }, [message])
+  }, [message, skillParam])
 
   const loadPackageFile = useCallback(async (skillName: string, path = 'SKILL.md') => {
     if (!skillName) return
@@ -207,6 +320,9 @@ export function SkillManagementPanel() {
       setFiles(fileList.files || [])
       setFilePath(content.file?.path || path)
       setFileContent(content.file?.content || '')
+      if ((content.file?.path || path) === 'SKILL.md') {
+        setSkillMdContent(content.file?.content || '')
+      }
     } catch (err: any) {
       message.error(err?.message || '读取 Skill 文件失败')
     } finally {
@@ -222,6 +338,25 @@ export function SkillManagementPanel() {
     if (selectedName) loadPackageFile(selectedName)
   }, [loadPackageFile, selectedName])
 
+  useEffect(() => {
+    if (!selectedPackage) return
+    setRuleKeywords((selectedPackage.triggers?.keywords || []).join('\n'))
+    setRuleContextKeys((selectedPackage.triggers?.context_keys || []).join('\n'))
+    setRuleTools(selectedPackage.triggers?.tools || [])
+    setRequiredTools(selectedPackage.requires_tools || [])
+    setRouteTargetSkill(selectedPackage.name)
+    setRouteAllowedTools(selectedPackage.triggers?.tools || [])
+  }, [selectedPackage])
+
+  useEffect(() => {
+    if (!skillParam || !packages.length) return
+    const target = packages.find(item => item.name === skillParam)
+    if (target) {
+      setSelectedName(target.name)
+      setQuery(target.name)
+    }
+  }, [packages, skillParam])
+
   const handlePreviewRoute = async () => {
     setRouteLoading(true)
     setRouteError('')
@@ -229,15 +364,27 @@ export function SkillManagementPanel() {
       const data = await previewAgentSkillRoute({
         message: routeMessage,
         context: parseJsonObject(routeContext),
+        allowed_tools: routeAllowedTools,
+        target_skill_id: routeTargetSkill,
         max_skills: 8,
       })
       setRouteResult(data.routes || [])
+      setRouteDiagnostic(data.diagnostic || {})
     } catch (err: any) {
       setRouteError(err?.message || '匹配测试失败，请检查上下文 JSON')
       setRouteResult([])
+      setRouteDiagnostic({})
     } finally {
       setRouteLoading(false)
     }
+  }
+
+  const handleAddRouteMessageAsKeyword = () => {
+    const keyword = routeMessage.trim()
+    if (!keyword) return
+    const next = Array.from(new Set([...splitRuleText(ruleKeywords), keyword]))
+    setRuleKeywords(next.join('\n'))
+    message.success('已加入关键词编辑区，保存为草稿后才会生效')
   }
 
   const refreshDrafts = useCallback(async () => {
@@ -282,6 +429,55 @@ export function SkillManagementPanel() {
       message.error(err?.message || '创建草稿失败')
     } finally {
       setDraftLoading(false)
+    }
+  }
+
+  const handleCreateRuleDraft = async () => {
+    if (!selectedPackage) {
+      message.warning('请选择一个 Skill')
+      return
+    }
+    const baseContent = skillMdContent || (filePath === 'SKILL.md' ? fileContent : '')
+    if (!baseContent.trim()) {
+      message.warning('当前 Skill.md 还没有加载完成')
+      return
+    }
+    const nextKeywords = splitRuleText(ruleKeywords)
+    const nextContextKeys = splitRuleText(ruleContextKeys)
+    const unknownTriggerTools = ruleTools.filter(tool => !knownToolNames.has(tool))
+    const unknownRequiredTools = requiredTools.filter(tool => !knownToolNames.has(tool))
+    if (unknownTriggerTools.length || unknownRequiredTools.length) {
+      message.error(`工具不存在：${[...unknownTriggerTools, ...unknownRequiredTools].join('、')}`)
+      return
+    }
+    if (!nextKeywords.length && !nextContextKeys.length && !ruleTools.length) {
+      message.warning('至少保留一种触发方式：关键词、上下文 key 或工具')
+      return
+    }
+
+    setRuleDraftLoading(true)
+    try {
+      const content = replaceSkillRouteRules(
+        baseContent,
+        {
+          keywords: nextKeywords,
+          context_keys: nextContextKeys,
+          tools: ruleTools,
+        },
+        requiredTools,
+      )
+      const data = await createAgentSkillDraft({
+        content,
+        source_type: 'route_rule_edit',
+        source_url: selectedPackage.source_path,
+      })
+      setSelectedDraft(data.draft)
+      await refreshDrafts()
+      message.success('已生成规则编辑草稿，批准后才会生效')
+    } catch (err: any) {
+      message.error(err?.message || '生成规则草稿失败')
+    } finally {
+      setRuleDraftLoading(false)
     }
   }
 
@@ -643,6 +839,51 @@ export function SkillManagementPanel() {
                     </Space>
                   </div>
                 </div>
+                <div style={{ ...mutedPanelStyle, padding: 12 }}>
+                  <Space direction="vertical" size={10} style={{ width: '100%' }}>
+                    <Space style={{ justifyContent: 'space-between', width: '100%' }} align="center">
+                      <Text strong style={{ color: THEME.textPrimary }}>路由规则编辑</Text>
+                      <Button size="small" type="primary" loading={ruleDraftLoading} onClick={handleCreateRuleDraft}>
+                        保存为草稿
+                      </Button>
+                    </Space>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      只生成待审批 SKILL.md 草稿，批准后才会覆盖用户 Skill；内置 Skill 会以用户副本方式启用。
+                    </Text>
+                    <TextArea
+                      value={ruleKeywords}
+                      onChange={event => setRuleKeywords(event.target.value)}
+                      autoSize={{ minRows: 3, maxRows: 6 }}
+                      placeholder="关键词，每行一个或用逗号分隔"
+                    />
+                    <TextArea
+                      value={ruleContextKeys}
+                      onChange={event => setRuleContextKeys(event.target.value)}
+                      autoSize={{ minRows: 2, maxRows: 5 }}
+                      placeholder="上下文 key，例如 project_id / character_id"
+                    />
+                    <Select
+                      mode="multiple"
+                      allowClear
+                      showSearch
+                      value={ruleTools}
+                      onChange={setRuleTools}
+                      options={toolOptions}
+                      placeholder="会触发该 Skill 的工具"
+                      optionFilterProp="label"
+                    />
+                    <Select
+                      mode="multiple"
+                      allowClear
+                      showSearch
+                      value={requiredTools}
+                      onChange={setRequiredTools}
+                      options={toolOptions}
+                      placeholder="执行该 Skill 通常需要的工具"
+                      optionFilterProp="label"
+                    />
+                  </Space>
+                </div>
                 <div>
                   <Text type="secondary" style={{ fontSize: 12 }}>包文件</Text>
                   <div style={{ marginTop: 6 }}>
@@ -674,6 +915,14 @@ export function SkillManagementPanel() {
             style={panelStyle}
           >
             <Space direction="vertical" size={10} style={{ width: '100%' }}>
+              <Select
+                showSearch
+                value={routeTargetSkill}
+                onChange={setRouteTargetSkill}
+                options={packages.map(item => ({ value: item.name, label: `${item.title || item.name} (${item.name})` }))}
+                placeholder="选择目标 Skill"
+                optionFilterProp="label"
+              />
               <Input
                 value={routeMessage}
                 onChange={event => setRouteMessage(event.target.value)}
@@ -685,10 +934,63 @@ export function SkillManagementPanel() {
                 autoSize={{ minRows: 4, maxRows: 8 }}
                 style={{ fontFamily: 'Consolas, Monaco, monospace' }}
               />
+              <Select
+                mode="multiple"
+                allowClear
+                showSearch
+                value={routeAllowedTools}
+                onChange={setRouteAllowedTools}
+                options={toolOptions}
+                placeholder="本次测试允许的工具"
+                optionFilterProp="label"
+              />
               <Button type="primary" icon={<BranchesOutlined />} onClick={handlePreviewRoute} loading={routeLoading}>
                 测试匹配
               </Button>
               {routeError && <Alert type="error" message={routeError} showIcon />}
+              {routeDiagnostic?.target_skill_id && (
+                <Alert
+                  type={routeDiagnostic.matched ? 'success' : 'warning'}
+                  showIcon
+                  message={routeDiagnostic.matched ? `目标 Skill 已命中：${routeDiagnostic.target_skill_id}` : `目标 Skill 未命中：${routeDiagnostic.target_skill_id}`}
+                  description={
+                    <Space direction="vertical" size={7} style={{ width: '100%' }}>
+                      <Space wrap size={[4, 4]}>
+                        {(routeDiagnostic.keyword_hits || []).map(item => <Tag key={`kw-hit-${item}`} color="blue">关键词 {item}</Tag>)}
+                        {(routeDiagnostic.context_hits || []).map(item => <Tag key={`ctx-hit-${item}`} color="green">上下文 {item}</Tag>)}
+                        {(routeDiagnostic.tool_hits || []).map(item => <Tag key={`tool-hit-${item}`} color="purple">工具 {item}</Tag>)}
+                      </Space>
+                      {!routeDiagnostic.matched && (
+                        <Space direction="vertical" size={5} style={{ width: '100%' }}>
+                          {(routeDiagnostic.missing_keywords || []).length > 0 && (
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                              未命中关键词：{(routeDiagnostic.missing_keywords || []).slice(0, 8).join('、')}
+                            </Text>
+                          )}
+                          {(routeDiagnostic.missing_context_keys || []).length > 0 && (
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                              缺少上下文：{(routeDiagnostic.missing_context_keys || []).slice(0, 8).join('、')}
+                            </Text>
+                          )}
+                          {(routeDiagnostic.unavailable_tools || []).length > 0 && (
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                              未允许工具：{(routeDiagnostic.unavailable_tools || []).slice(0, 8).join('、')}
+                            </Text>
+                          )}
+                        </Space>
+                      )}
+                      {(routeDiagnostic.suggestions || []).map(item => (
+                        <Text key={item} type="secondary" style={{ fontSize: 12 }}>{item}</Text>
+                      ))}
+                      {!routeDiagnostic.matched && routeMessage.trim() && (
+                        <Button size="small" onClick={handleAddRouteMessageAsKeyword}>
+                          把本次消息加入关键词编辑区
+                        </Button>
+                      )}
+                    </Space>
+                  }
+                />
+              )}
               {routeResult.length > 0 && (
                 <Space direction="vertical" size={6} style={{ width: '100%' }}>
                   {routeResult.map(item => (

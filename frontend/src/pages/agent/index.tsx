@@ -115,6 +115,40 @@ const normalizeModelList = (value?: string[] | string) => {
     .filter(Boolean)
 }
 
+interface RoutedSkillSummary {
+  skill_id: string
+  reason?: string
+  score?: number
+  source?: string
+  trigger_type?: string
+  matches?: string[]
+}
+
+const extractRunRoutedSkills = (run?: AgentRun | null): RoutedSkillSummary[] => {
+  const byId = new Map<string, RoutedSkillSummary>()
+  ;(run?.steps || [])
+    .filter(step => step.step_type === 'skill_route')
+    .forEach(step => {
+      const routed = Array.isArray(step.output?.routed_skills) ? step.output.routed_skills : []
+      routed.forEach((item: any) => {
+        const skillId = String(item?.skill_id || '').trim()
+        if (!skillId) return
+        const current = byId.get(skillId)
+        if (!current || Number(item?.score || 0) > Number(current.score || 0)) {
+          byId.set(skillId, {
+            skill_id: skillId,
+            reason: item?.reason,
+            score: item?.score,
+            source: item?.source,
+            trigger_type: item?.trigger_type,
+            matches: Array.isArray(item?.matches) ? item.matches.map((match: any) => String(match)) : [],
+          })
+        }
+      })
+    })
+  return Array.from(byId.values()).sort((a, b) => Number(b.score || 0) - Number(a.score || 0))
+}
+
 const CATEGORY_ICONS: Record<string, React.ReactNode> = {
   creative_project: <ProjectOutlined />,
   character: <RobotOutlined />,
@@ -238,6 +272,7 @@ const EXECUTION_LOOP_STAGES = ['计划', '工具', '观察', '继续']
 const STEP_TYPE_LABELS: Record<string, string> = {
   intake: '接收请求',
   context_pack: '组装上下文',
+  skill_route: '匹配 Skill',
   llm_response: '模型响应',
   tool_call: '工具调用',
   observe: '观察结果',
@@ -303,6 +338,14 @@ const buildStepFailureAdvice = (step: AgentRunStep) => {
     advice.push('先展开“输入 / 输出”查看原始参数和返回；如果参数没问题，可以直接点“重试”。')
   }
   return advice
+}
+
+const getStepStatusColor = (status?: string) => {
+  if (status === 'failed') return 'error'
+  if (status === 'pending' || status === 'warning') return 'warning'
+  if (status === 'dismissed') return 'default'
+  if (status === 'completed') return 'success'
+  return 'default'
 }
 
 type MarkdownSegment =
@@ -620,6 +663,11 @@ export default function AgentPage() {
       progress: maxSteps ? Math.min(100, Math.round((stepCount / maxSteps) * 100)) : 0,
     }
   }, [currentRun?.steps?.length, selectedProfile?.max_steps, toolCalls.length, visibleMessages])
+
+  const currentRunRoutedSkills = useMemo(
+    () => extractRunRoutedSkills(currentRun),
+    [currentRun],
+  )
 
   const runTraceByMessageIndex = useMemo(() => {
     const map = new Map<number, AgentRun>()
@@ -1859,6 +1907,7 @@ export default function AgentPage() {
 
   const renderRunStep = (step: AgentRunStep) => {
     const memoryCandidates = Array.isArray(step.output?.candidates) ? step.output.candidates : []
+    const routedSkills = Array.isArray(step.output?.routed_skills) ? step.output.routed_skills : []
     return (
       <div
         key={step.id}
@@ -1872,7 +1921,7 @@ export default function AgentPage() {
         <Space direction="vertical" size={8} style={{ width: '100%' }}>
         <Space style={{ justifyContent: 'space-between', width: '100%' }} align="start">
           <Space wrap>
-            <Tag color={step.status === 'failed' ? 'error' : step.step_type === 'tool_call' ? 'processing' : 'default'}>
+            <Tag color={step.step_type === 'tool_call' && step.status === 'completed' ? 'processing' : getStepStatusColor(step.status)}>
               {STEP_TYPE_LABELS[step.step_type] || step.step_type}
             </Tag>
             {step.tool_name && <Tag icon={<ToolOutlined />}>{step.tool_name}</Tag>}
@@ -1901,12 +1950,42 @@ export default function AgentPage() {
                 重试
               </Button>
             )}
-            <Tag color={step.status === 'failed' ? 'error' : step.status === 'pending' ? 'warning' : 'success'}>{step.status}</Tag>
+            <Tag color={getStepStatusColor(step.status)}>{step.status}</Tag>
           </Space>
         </Space>
         <Text style={{ color: step.status === 'failed' ? '#ff4d4f' : THEME.textPrimary }}>
           {step.error || step.summary || '步骤已记录'}
         </Text>
+        {step.step_type === 'skill_route' && routedSkills.length > 0 && (
+          <div style={{ display: 'grid', gap: 8 }}>
+            {routedSkills.map((item: any) => (
+              <div
+                key={`${item.skill_id}-${item.source}-${item.reason}`}
+                style={{
+                  border: `1px solid ${THEME.borderLight}`,
+                  borderRadius: 8,
+                  padding: '8px 10px',
+                  background: THEME.bgElevated,
+                }}
+              >
+                <Space direction="vertical" size={5} style={{ width: '100%' }}>
+                  <Space wrap size={[5, 5]}>
+                    <Tag color={item.source === 'slash' ? 'purple' : item.source === 'profile' ? 'blue' : 'default'}>
+                      {item.skill_id}
+                    </Tag>
+                    <Tag>分数 {item.score ?? 0}</Tag>
+                    <Tag>{item.source || 'route'}</Tag>
+                    {item.trigger_type && <Tag>{item.trigger_type}</Tag>}
+                  </Space>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    {item.reason || '命中路由规则'}
+                    {Array.isArray(item.matches) && item.matches.length > 0 ? ` · ${item.matches.join(' / ')}` : ''}
+                  </Text>
+                </Space>
+              </div>
+            ))}
+          </div>
+        )}
         {step.status === 'failed' && (
           <Alert
             type="error"
@@ -2033,6 +2112,69 @@ export default function AgentPage() {
     )
   }
 
+  const renderRunSkillSummary = (run?: AgentRun | null, options: { compact?: boolean } = {}) => {
+    const routedSkills = extractRunRoutedSkills(run)
+    const compact = Boolean(options.compact)
+    if (!run) return null
+    if (!routedSkills.length) {
+      return (
+        <div
+          style={{
+            border: `1px dashed ${THEME.borderLight}`,
+            borderRadius: 8,
+            padding: compact ? '7px 9px' : '10px 12px',
+            background: THEME.bgPage,
+          }}
+        >
+          <Space wrap size={[6, 6]}>
+            <Text type="secondary" style={{ fontSize: 12 }}>本轮未命中 Skill</Text>
+            <Button size="small" type="link" onClick={() => navigate('/settings?tab=agent-skills')}>
+              打开匹配测试
+            </Button>
+          </Space>
+        </div>
+      )
+    }
+    return (
+      <div
+        style={{
+          border: `1px solid ${THEME.borderLight}`,
+          borderRadius: 8,
+          padding: compact ? '7px 9px' : '10px 12px',
+          background: THEME.bgElevated,
+        }}
+      >
+        <Space direction="vertical" size={compact ? 5 : 8} style={{ width: '100%' }}>
+          <Space wrap size={[6, 6]}>
+            <Text strong style={{ fontSize: compact ? 12 : 13 }}>本轮 Skill</Text>
+            <Tag color="blue">{routedSkills.length} 个</Tag>
+            {routedSkills.slice(0, compact ? 4 : 8).map(skill => (
+              <Tooltip
+                key={skill.skill_id}
+                title={`${skill.reason || '命中路由'}${skill.matches?.length ? ` · ${skill.matches.join(' / ')}` : ''}`}
+              >
+                <Tag
+                  color={skill.source === 'slash' ? 'purple' : skill.source === 'profile' ? 'blue' : 'default'}
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => navigate(`/settings?tab=agent-skills&skill=${encodeURIComponent(skill.skill_id)}`)}
+                >
+                  {skill.skill_id}
+                  {typeof skill.score === 'number' ? ` · ${skill.score}` : ''}
+                </Tag>
+              </Tooltip>
+            ))}
+            {routedSkills.length > (compact ? 4 : 8) && <Tag>+{routedSkills.length - (compact ? 4 : 8)}</Tag>}
+          </Space>
+          {!compact && (
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              点击 Skill 可跳到管理页查看 SKILL.md；分数越高越优先注入完整指令。
+            </Text>
+          )}
+        </Space>
+      </div>
+    )
+  }
+
   const renderInlineRunTrace = (run?: AgentRun | null) => {
     const targetRun = run || null
     const isCurrentTrace = !targetRun || targetRun.id === currentRun?.id
@@ -2087,6 +2229,11 @@ export default function AgentPage() {
               {isRunning ? '展开查看实时步骤' : '点击展开步骤、输入输出与错误细节'}
             </Text>
           </summary>
+          {targetRun && (
+            <div style={{ padding: '10px 12px 0' }}>
+              {renderRunSkillSummary(targetRun, { compact: true })}
+            </div>
+          )}
           <div style={{ padding: 12, display: 'grid', gap: 9 }}>
             {visibleSteps.length > 0 ? (
               visibleSteps.map(step => (
@@ -2111,7 +2258,7 @@ export default function AgentPage() {
                         : step.status === 'pending'
                           ? 'rgba(250,173,20,0.14)'
                           : THEME.primaryAlpha?.(0.12),
-                      color: step.status === 'failed' ? '#ff4d4f' : step.status === 'pending' ? '#faad14' : THEME.primary,
+                      color: step.status === 'failed' ? '#ff4d4f' : (step.status === 'pending' || step.status === 'warning') ? '#faad14' : THEME.primary,
                       fontSize: 11,
                       fontWeight: 800,
                       fontVariantNumeric: 'tabular-nums',
@@ -2125,7 +2272,7 @@ export default function AgentPage() {
                         {STEP_TYPE_LABELS[step.step_type] || step.step_type}
                       </Text>
                       {step.tool_name && <Tag icon={<ToolOutlined />}>{step.tool_name}</Tag>}
-                      <Tag color={step.status === 'failed' ? 'error' : step.status === 'pending' ? 'warning' : 'success'}>
+                      <Tag color={getStepStatusColor(step.status)}>
                         {step.status}
                       </Tag>
                       {step.duration_ms != null && step.duration_ms > 0 && (
@@ -2146,6 +2293,16 @@ export default function AgentPage() {
                       <Button size="small" style={{ marginTop: 8 }} onClick={() => handleRetryRunStep(step.id)} loading={loading}>
                         重试
                       </Button>
+                    )}
+                    {step.step_type === 'skill_route' && Array.isArray(step.output?.routed_skills) && step.output.routed_skills.length > 0 && (
+                      <Space wrap size={[4, 4]} style={{ marginTop: 7 }}>
+                        {step.output.routed_skills.slice(0, 4).map((item: any) => (
+                          <Tag key={`${item.skill_id}-${item.source}`} color={item.source === 'slash' ? 'purple' : 'default'}>
+                            {item.skill_id}
+                          </Tag>
+                        ))}
+                        {step.output.routed_skills.length > 4 && <Tag>+{step.output.routed_skills.length - 4}</Tag>}
+                      </Space>
                     )}
                     <details style={{ marginTop: 4 }}>
                       <summary style={{ cursor: 'pointer', fontSize: 12, color: THEME.textSecondary }}>
@@ -2471,6 +2628,7 @@ export default function AgentPage() {
             { label: '模型', value: selectedProfile?.model || selectedProfile?.provider || '系统默认' },
             { label: '预算', value: runStats.maxSteps ? `${runStats.maxSteps} 轮` : '-' },
             { label: '轨迹', value: currentRun ? `${runStats.stepCount} 步 · ${runStats.progress}%` : `${runStats.toolCount || 0} 步` },
+            { label: 'Skill', value: currentRun ? `${currentRunRoutedSkills.length} 命中` : `${skills.length} 可用` },
             { label: '上下文', value: activeSession?.title || sessionStatus },
           ].map(item => (
             <div key={item.label} style={statusPillStyle}>
@@ -2807,6 +2965,7 @@ export default function AgentPage() {
                             </Space>
                           }
                         />
+                        {renderRunSkillSummary(currentRun)}
                         {runSkillAnalysis && (
                           <Alert
                             type={runSkillAnalysis.eligible ? 'success' : 'warning'}

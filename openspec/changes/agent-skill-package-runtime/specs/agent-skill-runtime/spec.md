@@ -113,6 +113,16 @@ The system SHALL expose skill package details, route decisions and pending chang
 - **WHEN** the frontend sends a message/context/tool set to route preview
 - **THEN** the API returns selected skills with scores and reasons
 
+#### Scenario: Diagnose why a target skill did not match
+- **WHEN** the frontend sends a route preview request with a target skill
+- **AND** the target skill is not selected by the router
+- **THEN** the API returns diagnostics for missing keyword triggers, missing context keys, unavailable trigger tools and suggested fixes
+
 #### Scenario: Review pending skill change
 - **WHEN** a pending skill change exists
 - **THEN** the API returns enough information to display a diff and approve or reject the change
+
+#### Scenario: Edit route rules as a draft
+- **WHEN** a user edits a skill package's keyword, context-key or tool triggers in the management UI
+- **THEN** the system generates a pending `SKILL.md` draft containing the updated route metadata
+- **AND** does not overwrite the active package until the draft is approved

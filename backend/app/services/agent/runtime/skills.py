@@ -194,3 +194,81 @@ class SkillRouter:
                 add(skill_id, f"allowed_tool:{tool}", 1, source="tool_hint", trigger_type="tool_hint", matches=(tool,))
 
         return sorted(route_map.values(), key=lambda item: (-item.score, item.skill_id))[:max_skills]
+
+    def diagnose_target(
+        self,
+        target_skill_id: str,
+        message: str,
+        context: dict[str, Any] | None = None,
+        allowed_tools: list[str] | None = None,
+        routes: list[SkillRoute] | None = None,
+    ) -> dict[str, Any]:
+        target = str(target_skill_id or "").strip()
+        if not target:
+            return {}
+
+        package = self.loader.get_package(target)
+        matched_route = next((item for item in (routes or []) if item.skill_id == target), None)
+        if package is None:
+            return {
+                "target_skill_id": target,
+                "exists": False,
+                "matched": bool(matched_route),
+                "matched_route": self._route_to_dict(matched_route) if matched_route else None,
+                "suggestions": ["目标 Skill 不在文件化 Skill 包索引中。"],
+            }
+
+        text = (message or "").lower()
+        context = context or {}
+        allowed = set(allowed_tools or [])
+        keywords = list(package.triggers.get("keywords", ()))
+        context_keys = list(package.triggers.get("context_keys", ()))
+        tools = list(package.triggers.get("tools", ()))
+        keyword_hits = [item for item in keywords if item.lower() in text]
+        context_hits = [key for key in context_keys if context.get(key)]
+        tool_hits = [tool for tool in tools if "*" in allowed or tool in allowed]
+        missing_keywords = [item for item in keywords if item not in keyword_hits]
+        missing_context_keys = [key for key in context_keys if key not in context_hits]
+        unavailable_tools = [tool for tool in tools if tool not in tool_hits]
+
+        suggestions: list[str] = []
+        if matched_route:
+            suggestions.append(f"目标 Skill 已命中，当前触发方式是 {matched_route.trigger_type or 'route'}，分数 {matched_route.score}。")
+            if matched_route.score <= 2:
+                suggestions.append("当前主要靠工具弱命中；添加更明确的关键词或上下文 key 可以提高优先级。")
+        else:
+            if keywords and not keyword_hits:
+                suggestions.append("用户消息没有命中该 Skill 的关键词；可把本次测试里的稳定词加入 keywords。")
+            if context_keys and not context_hits:
+                suggestions.append("上下文没有命中该 Skill 的 context_keys；确认页面或 Agent 调用是否传入这些 key。")
+            if tools and not tool_hits:
+                suggestions.append("当前 allowed_tools 没有包含该 Skill 的触发工具；选择对应工具后再测试。")
+            if not suggestions:
+                suggestions.append("目标 Skill 没命中；请检查 slash 激活、默认 Skill 或触发规则是否被更高优先级覆盖。")
+
+        return {
+            "target_skill_id": target,
+            "exists": True,
+            "matched": bool(matched_route),
+            "matched_route": self._route_to_dict(matched_route) if matched_route else None,
+            "keyword_hits": keyword_hits,
+            "missing_keywords": missing_keywords,
+            "context_hits": context_hits,
+            "missing_context_keys": missing_context_keys,
+            "tool_hits": tool_hits,
+            "unavailable_tools": unavailable_tools,
+            "suggestions": suggestions,
+        }
+
+    @staticmethod
+    def _route_to_dict(route: SkillRoute | None) -> dict[str, Any] | None:
+        if route is None:
+            return None
+        return {
+            "skill_id": route.skill_id,
+            "reason": route.reason,
+            "score": route.score,
+            "source": route.source,
+            "trigger_type": route.trigger_type,
+            "matches": list(route.matches),
+        }

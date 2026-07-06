@@ -293,6 +293,7 @@ export const previewAgentSkillRoute = (data: {
   allowed_tools?: string[]
   default_skill_ids?: string[]
   max_skills?: number
+  target_skill_id?: string
 }) =>
   fetch(`${BASE}/agent/skills/route-preview`, {
     method: 'POST',

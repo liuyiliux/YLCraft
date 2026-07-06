@@ -67,6 +67,7 @@ class SkillRoutePreviewRequest(BaseModel):
     allowed_tools: list[str] = Field(default_factory=list)
     default_skill_ids: list[str] = Field(default_factory=list)
     max_skills: int = Field(default=8, ge=1, le=20)
+    target_skill_id: str = ""
 
 
 class SkillDraftCreateRequest(BaseModel):
@@ -1706,7 +1707,14 @@ async def preview_skill_route(request: SkillRoutePreviewRequest):
                 "matches": list(item.matches),
             }
             for item in routes
-        ]
+        ],
+        "diagnostic": router_instance.diagnose_target(
+            target_skill_id=request.target_skill_id,
+            message=activation.cleaned_message or request.message,
+            context=request.context,
+            allowed_tools=request.allowed_tools,
+            routes=routes,
+        ) if request.target_skill_id else {},
     }
 
 

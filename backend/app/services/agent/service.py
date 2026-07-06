@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models.agent import AgentMemorySnapshot, AgentRun, AgentRunStep, AgentToolCall, AgentSession
+from app.db.models.agent import AgentMemorySnapshot, AgentRun, AgentRunStep, AgentSkill, AgentToolCall, AgentSession
 from app.services.agent import tools as _agent_tools  # noqa: F401 - register tools
 from app.services.agent.context_compressor import ContextCompressor
 from app.services.agent.context_pack import build_creative_project_context_pack
@@ -338,6 +338,17 @@ class AgentService:
             default_skill_ids=state["effective_context"].get("default_skill_ids") or profile.get("default_skill_ids") or [],
             activated_skill_ids=list(activation.skill_ids),
         )
+        state["routed_skill_records"] = [
+            {
+                "skill_id": item.skill_id,
+                "reason": item.reason,
+                "score": item.score,
+                "source": item.source,
+                "trigger_type": item.trigger_type,
+                "matches": list(item.matches),
+            }
+            for item in state["routed_skills"]
+        ]
         state["effective_context"]["routed_skill_ids"] = [item.skill_id for item in state["routed_skills"]]
         run.context_json = json.dumps(state["effective_context"], ensure_ascii=False, default=str)
         run.updated_at = datetime.utcnow()
@@ -385,17 +396,7 @@ class AgentService:
                 "context_summary": state["context_summary"],
                 "message_count": len(state["messages"]),
                 "conversation_state": state["conversation_state"],
-                "routed_skills": [
-                    {
-                        "skill_id": item.skill_id,
-                        "reason": item.reason,
-                        "score": item.score,
-                        "source": item.source,
-                        "trigger_type": item.trigger_type,
-                        "matches": list(item.matches),
-                    }
-                    for item in state["routed_skills"]
-                ],
+                "routed_skills": state["routed_skill_records"],
                 "skill_activation": {
                     "cleaned_message": activation.cleaned_message,
                     "skill_ids": list(activation.skill_ids),
@@ -411,6 +412,34 @@ class AgentService:
             },
         )
         state["step_index"] += 1
+        if state["routed_skill_records"] or activation.skill_ids or activation.bundle_ids or activation.diagnostics:
+            await self._record_run_step(
+                run.id,
+                step_type="skill_route",
+                status="completed" if not activation.diagnostics else "warning",
+                session_id=state["session_id"],
+                profile_id=str(profile.get("id") or ""),
+                order_index=state["step_index"],
+                summary=(
+                    f"命中 {len(state['routed_skill_records'])} 个 Skill"
+                    if state["routed_skill_records"]
+                    else "未命中可用 Skill"
+                ),
+                input_data={
+                    "message": state["user_message"],
+                    "effective_message": route_message,
+                    "allowed_tools": profile.get("allowed_tools") or [],
+                    "default_skill_ids": state["effective_context"].get("default_skill_ids") or profile.get("default_skill_ids") or [],
+                },
+                output_data={
+                    "routed_skills": state["routed_skill_records"],
+                    "activated_skill_ids": list(activation.skill_ids),
+                    "activated_bundle_ids": list(activation.bundle_ids),
+                    "bundle_instruction": activation.bundle_instruction,
+                    "diagnostics": list(activation.diagnostics),
+                },
+            )
+            state["step_index"] += 1
 
     async def _plan_phase(self, state: dict[str, Any]) -> None:
         """Ask the LLM to answer directly or select tools."""
@@ -641,6 +670,7 @@ class AgentService:
                     "run_id": run_id,
                 },
             )
+        await self._record_skill_usage_metrics(state, success=True)
         await self._finish_run(
             state["run"],
             status="completed",
@@ -648,6 +678,7 @@ class AgentService:
                 "reply": reply,
                 "tool_call_count": len(state["tool_results"]),
                 "memory_candidates": memory_candidates,
+                "routed_skills": state.get("routed_skill_records") or [],
                 "profile": {"id": profile.get("id"), "name": profile.get("name")},
             },
         )
@@ -1536,6 +1567,41 @@ class AgentService:
                 await self.session.flush()
         except SQLAlchemyError as exc:
             logger.warning("[AgentService] _finish_run flush failed (rollback): %s", exc)
+            try:
+                if self.session.in_transaction():
+                    await self.session.rollback()
+            except Exception:  # noqa: BLE001
+                pass
+
+    async def _record_skill_usage_metrics(self, state: dict[str, Any], success: bool = True) -> None:
+        skill_ids = [
+            str(item.get("skill_id") or "").strip()
+            for item in (state.get("routed_skill_records") or [])
+            if isinstance(item, dict) and str(item.get("skill_id") or "").strip()
+        ]
+        skill_ids = list(dict.fromkeys(skill_ids))
+        if not skill_ids:
+            return
+        try:
+            result = await self.session.execute(
+                select(AgentSkill).where(
+                    AgentSkill.user_id == self.user_id,
+                    AgentSkill.name.in_(skill_ids),
+                )
+            )
+            rows = list(result.scalars().all())
+            if not rows:
+                return
+            async with self.session.begin_nested():
+                now = datetime.utcnow()
+                for skill in rows:
+                    skill.usage_count = (skill.usage_count or 0) + 1
+                    if success:
+                        skill.success_count = (skill.success_count or 0) + 1
+                    skill.updated_at = now
+                await self.session.flush()
+        except SQLAlchemyError as exc:
+            logger.warning("[AgentService] skill usage metric update skipped: %s", exc)
             try:
                 if self.session.in_transaction():
                     await self.session.rollback()
