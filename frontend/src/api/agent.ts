@@ -313,6 +313,23 @@ export const createAgentSkillBundle = (data: {
     body: JSON.stringify(data),
   }).then(parseJsonResponse)
 
+export const updateAgentSkillBundle = (name: string, data: {
+  name?: string
+  description?: string
+  skills: string[]
+  instruction?: string
+}) =>
+  fetch(`${BASE}/agent/skills/bundles/${encodeURIComponent(name)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...data, name }),
+  }).then(parseJsonResponse)
+
+export const deleteAgentSkillBundle = (name: string) =>
+  fetch(`${BASE}/agent/skills/bundles/${encodeURIComponent(name)}`, {
+    method: 'DELETE',
+  }).then(parseJsonResponse)
+
 // 发送到 Agent（其他页面调用）
 export const listAgentSkillDrafts = (status = 'pending') =>
   fetch(`${BASE}/agent/skills/drafts?status=${encodeURIComponent(status)}`).then(parseJsonResponse)

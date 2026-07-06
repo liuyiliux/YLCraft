@@ -902,6 +902,8 @@ export {
   readAgentSkillPackageFile,
   previewAgentSkillRoute,
   createAgentSkillBundle,
+  updateAgentSkillBundle,
+  deleteAgentSkillBundle,
   listAgentSkillDrafts,
   createAgentSkillDraft,
   importAgentSkillDraftUrl,

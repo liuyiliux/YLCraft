@@ -46,6 +46,7 @@
 - [x] M5.3 Add bundle YAML support for recurring workflows.
 - [x] M5.4 Expand bundles into activated skills and bundle instruction.
 - [x] M5.5 Add regression tests for slash parsing precedence.
+- [x] M5.6 Add user Bundle update/delete APIs and surface missing Skill diagnostics.
 
 ## M6. Agent-Managed Skill Drafts
 
@@ -65,6 +66,7 @@
 - [x] M7.6 Add route-rule editing UI that generates a pending `SKILL.md` draft instead of overwriting active packages.
 - [x] M7.7 Add target-skill route diagnostics that explain missing keywords, context keys and allowed tools.
 - [x] M7.8 Highlight route-rule diffs in draft review and allow rejected drafts to refill the editor.
+- [x] M7.9 Add Bundle edit/delete UI, source badges, missing Skill badges and Bundle route-test shortcut.
 
 ## M8. Validation
 

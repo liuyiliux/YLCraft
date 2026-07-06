@@ -43,6 +43,7 @@ class SkillBundle:
     skills: tuple[str, ...]
     instruction: str = ""
     source_path: str = ""
+    source_type: str = "builtin"
     diagnostics: tuple[str, ...] = ()
 
 
@@ -238,16 +239,20 @@ class SkillPackageLoader:
             skills=skills,
             instruction=str(loaded.get("instruction") or "").strip(),
             source_path=self._relative_source_path(path),
+            source_type=self._source_type_for_path(path),
         )
 
     def bundle_index(self) -> list[dict[str, Any]]:
+        known_skills = {item.name for item in self.load_packages()}
         return [
             {
                 "name": item.name,
                 "description": item.description,
                 "skills": list(item.skills),
+                "missing_skills": [skill for skill in item.skills if skill not in known_skills],
                 "instruction": item.instruction,
                 "source_path": item.source_path,
+                "source_type": item.source_type,
             }
             for item in self.load_bundles()
         ]

@@ -33,6 +33,7 @@ from app.api.v1.agent import (
     create_skill_bundle,
     create_skill_draft,
     create_skill_draft_from_run,
+    delete_skill_bundle,
     discard_memory_candidates,
     export_run_markdown,
     get_memory_view,
@@ -47,6 +48,7 @@ from app.api.v1.agent import (
     run_tool_test,
     save_memory,
     save_memory_candidates,
+    update_skill_bundle,
 )
 from app.services.agent.registry import Tool, ToolCallResult, ToolRegistry
 from app.services.agent.runtime import Planner, RunLoop, SkillRouter, ToolExecutor
@@ -1200,7 +1202,25 @@ async def test_agent_skill_bundle_api_creates_user_bundle(monkeypatch, tmp_path)
 
     assert response["success"] is True
     assert (tmp_path / "skills" / "user" / "bundles" / "custom_portrait_flow.yaml").exists()
-    assert any(item["name"] == "custom_portrait_flow" for item in index["bundles"])
+    bundle = next(item for item in index["bundles"] if item["name"] == "custom_portrait_flow")
+    assert bundle["source_type"] == "user"
+    assert bundle["missing_skills"] == []
+
+    updated = await update_skill_bundle(
+        "custom_portrait_flow",
+        SkillBundleCreateRequest(
+            name="custom_portrait_flow",
+            description="更新后的角色立绘流程",
+            skills=["portrait_prompt"],
+            instruction="先检查角色卡，再生成提示词。",
+        ),
+    )
+    assert updated["bundle"]["description"] == "更新后的角色立绘流程"
+    assert updated["bundle"]["instruction"] == "先检查角色卡，再生成提示词。"
+
+    deleted = await delete_skill_bundle("custom_portrait_flow")
+    assert deleted["success"] is True
+    assert not (tmp_path / "skills" / "user" / "bundles" / "custom_portrait_flow.yaml").exists()
 
 
 def test_agent_tool_executor_repairs_followup_tool_arguments():

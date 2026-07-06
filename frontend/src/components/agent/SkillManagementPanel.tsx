@@ -31,6 +31,7 @@ import {
   approveAgentSkillDraft,
   createAgentSkillBundle,
   createAgentSkillDraft,
+  deleteAgentSkillBundle,
   importAgentSkillDraftUrl,
   listAgentTools,
   listAgentSkills,
@@ -40,6 +41,7 @@ import {
   previewAgentSkillRoute,
   readAgentSkillPackageFile,
   rejectAgentSkillDraft,
+  updateAgentSkillBundle,
 } from '../../api'
 import { useTheme } from '../../constants/theme'
 
@@ -69,8 +71,10 @@ interface SkillBundleIndexItem {
   name: string
   description: string
   skills: string[]
+  missing_skills?: string[]
   instruction: string
   source_path: string
+  source_type?: string
 }
 
 interface SkillPackageFileItem {
@@ -319,8 +323,10 @@ export function SkillManagementPanel() {
   const [selectedDraftCurrentContent, setSelectedDraftCurrentContent] = useState('')
   const [bundleName, setBundleName] = useState('')
   const [bundleDescription, setBundleDescription] = useState('')
+  const [bundleInstruction, setBundleInstruction] = useState('')
   const [bundleSkills, setBundleSkills] = useState<string[]>([])
   const [bundleLoading, setBundleLoading] = useState(false)
+  const [editingBundleName, setEditingBundleName] = useState('')
   const [ruleKeywords, setRuleKeywords] = useState('')
   const [ruleContextKeys, setRuleContextKeys] = useState('')
   const [ruleTools, setRuleTools] = useState<string[]>([])
@@ -647,22 +653,75 @@ export function SkillManagementPanel() {
     }
     setBundleLoading(true)
     try {
-      await createAgentSkillBundle({
+      const payload = {
         name: bundleName.trim(),
         description: bundleDescription.trim(),
         skills: bundleSkills,
-      })
+        instruction: bundleInstruction.trim(),
+      }
+      if (editingBundleName) {
+        await updateAgentSkillBundle(editingBundleName, payload)
+      } else {
+        await createAgentSkillBundle(payload)
+      }
       setBundleName('')
       setBundleDescription('')
+      setBundleInstruction('')
       setBundleSkills([])
+      setEditingBundleName('')
       await loadIndex()
-      message.success('Bundle 已创建')
+      message.success(editingBundleName ? 'Bundle 已更新' : 'Bundle 已创建')
     } catch (err: any) {
       const detail = err?.data?.detail || err?.response?.data?.detail
-      message.error(detail?.message || err?.message || '创建 Bundle 失败')
+      message.error(detail?.message || err?.message || '保存 Bundle 失败')
     } finally {
       setBundleLoading(false)
     }
+  }
+
+  const handleEditBundle = (bundle: SkillBundleIndexItem) => {
+    setEditingBundleName(bundle.name)
+    setBundleName(bundle.name)
+    setBundleDescription(bundle.description || '')
+    setBundleInstruction(bundle.instruction || '')
+    setBundleSkills(bundle.skills || [])
+  }
+
+  const handleCancelBundleEdit = () => {
+    setEditingBundleName('')
+    setBundleName('')
+    setBundleDescription('')
+    setBundleInstruction('')
+    setBundleSkills([])
+  }
+
+  const handleDeleteBundle = async (bundle: SkillBundleIndexItem) => {
+    if (bundle.source_type !== 'user') {
+      message.warning('内置 Bundle 不能在页面删除')
+      return
+    }
+    setBundleLoading(true)
+    try {
+      await deleteAgentSkillBundle(bundle.name)
+      if (editingBundleName === bundle.name) handleCancelBundleEdit()
+      await loadIndex()
+      message.success('Bundle 已删除')
+    } catch (err: any) {
+      message.error(err?.message || '删除 Bundle 失败')
+    } finally {
+      setBundleLoading(false)
+    }
+  }
+
+  const handleTestBundle = (bundle: SkillBundleIndexItem) => {
+    setRouteMessage(`/${bundle.name} ${routeMessage.replace(/^\/\S+\s*/, '').trim() || '测试这个工作流'}`)
+    setRouteTargetSkill(bundle.skills[0] || '')
+    setRouteAllowedTools(
+      Array.from(new Set(
+        bundle.skills.flatMap(skill => packages.find(item => item.name === skill)?.triggers?.tools || []),
+      )),
+    )
+    message.info('已填入匹配测试，可点击“测试匹配”查看展开结果')
   }
 
   const metricStyle: CSSProperties = {
@@ -1318,6 +1377,7 @@ export function SkillManagementPanel() {
                 value={bundleName}
                 onChange={event => setBundleName(event.target.value)}
                 placeholder="bundle_name"
+                disabled={Boolean(editingBundleName)}
               />
             </Col>
             <Col xs={24} md={7}>
@@ -1339,9 +1399,25 @@ export function SkillManagementPanel() {
             </Col>
             <Col xs={24} md={3}>
               <Button type="primary" loading={bundleLoading} onClick={handleCreateBundle} block>
-                创建
+                {editingBundleName ? '更新' : '创建'}
               </Button>
             </Col>
+            <Col xs={24}>
+              <TextArea
+                value={bundleInstruction}
+                onChange={event => setBundleInstruction(event.target.value)}
+                autoSize={{ minRows: 2, maxRows: 5 }}
+                placeholder="Bundle 附加指令，可选。例如：先检查角色卡，再生成立绘提示词。"
+              />
+            </Col>
+            {editingBundleName && (
+              <Col xs={24}>
+                <Space>
+                  <Tag color="blue">正在编辑 /{editingBundleName}</Tag>
+                  <Button size="small" onClick={handleCancelBundleEdit}>取消编辑</Button>
+                </Space>
+              </Col>
+            )}
           </Row>
         </div>
         {bundles.length === 0 ? (
@@ -1352,11 +1428,27 @@ export function SkillManagementPanel() {
               <Col xs={24} md={12} xl={8} key={bundle.name}>
                 <div style={{ padding: 16, border: `1px solid ${THEME.border}`, borderRadius: THEME.radiusMD, background: THEME.bgElevated, minHeight: 150 }}>
                   <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                    <Text strong style={{ color: THEME.textPrimary }}>/{bundle.name}</Text>
+                    <Space style={{ justifyContent: 'space-between', width: '100%' }} align="start">
+                      <Space wrap size={[4, 4]}>
+                        <Text strong style={{ color: THEME.textPrimary }}>/{bundle.name}</Text>
+                        <Tag color={bundle.source_type === 'user' ? 'blue' : 'default'}>{bundle.source_type || 'builtin'}</Tag>
+                        {(bundle.missing_skills || []).length > 0 && <Tag color="error">缺失 {bundle.missing_skills?.length}</Tag>}
+                      </Space>
+                      <Space size={4}>
+                        <Button size="small" onClick={() => handleTestBundle(bundle)}>测试</Button>
+                        <Button size="small" disabled={bundle.source_type !== 'user'} onClick={() => handleEditBundle(bundle)}>编辑</Button>
+                        <Button size="small" danger disabled={bundle.source_type !== 'user'} onClick={() => handleDeleteBundle(bundle)}>删除</Button>
+                      </Space>
+                    </Space>
                     <Text style={{ color: THEME.textSecondary }}>{bundle.description}</Text>
                     <Space size={[4, 4]} wrap>
-                      {bundle.skills.map(skill => <Tag key={skill}>{skill}</Tag>)}
+                      {bundle.skills.map(skill => (
+                        <Tag key={skill} color={(bundle.missing_skills || []).includes(skill) ? 'error' : 'default'}>{skill}</Tag>
+                      ))}
                     </Space>
+                    {bundle.instruction && (
+                      <Text type="secondary" style={{ fontSize: 12, whiteSpace: 'pre-wrap' }}>{bundle.instruction}</Text>
+                    )}
                   </Space>
                 </div>
               </Col>

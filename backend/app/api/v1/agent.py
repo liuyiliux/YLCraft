@@ -1462,6 +1462,36 @@ async def read_skill_package_file(skill_name: str, path: str = "SKILL.md"):
 
 @router.post("/skills/bundles", summary="创建用户 Skill Bundle")
 async def create_skill_bundle(request: SkillBundleCreateRequest):
+    return _write_user_skill_bundle(request)
+
+
+@router.put("/skills/bundles/{bundle_name}", summary="更新用户 Skill Bundle")
+async def update_skill_bundle(bundle_name: str, request: SkillBundleCreateRequest):
+    if str(request.name or "").strip() and str(request.name or "").strip().lower() != str(bundle_name or "").strip().lower():
+        raise HTTPException(status_code=400, detail="Bundle name in path and body must match")
+    request.name = bundle_name
+    return _write_user_skill_bundle(request)
+
+
+@router.delete("/skills/bundles/{bundle_name}", summary="删除用户 Skill Bundle")
+async def delete_skill_bundle(bundle_name: str):
+    name = str(bundle_name or "").strip().lower()
+    if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_-]{1,79}", name):
+        raise HTTPException(status_code=400, detail="Bundle name must use 2-80 ASCII letters, numbers, hyphen or underscore")
+    root = SkillPackageLoader.default_builtin_root().resolve()
+    bundle_dir = (root / "user" / "bundles").resolve()
+    target = (bundle_dir / f"{name}.yaml").resolve()
+    try:
+        target.relative_to(bundle_dir)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Resolved bundle path is outside user bundle root")
+    if not target.exists():
+        raise HTTPException(status_code=404, detail="User bundle not found")
+    target.unlink()
+    return {"success": True, "name": name}
+
+
+def _write_user_skill_bundle(request: SkillBundleCreateRequest):
     name = str(request.name or "").strip().lower()
     if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_-]{1,79}", name):
         raise HTTPException(status_code=400, detail="Bundle name must use 2-80 ASCII letters, numbers, hyphen or underscore")

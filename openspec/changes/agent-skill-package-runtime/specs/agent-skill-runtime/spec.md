@@ -82,6 +82,12 @@ The system SHALL support skill bundles that expand into multiple skills plus opt
 - **THEN** the system loads the skills that exist
 - **AND** reports the skipped skill in route diagnostics
 
+#### Scenario: Manage user bundle
+- **WHEN** a user creates, updates or deletes a user Bundle
+- **THEN** the system writes only under the configured user bundle root
+- **AND** refuses to delete built-in Bundles from the management UI
+- **AND** exposes bundle source and missing Skill diagnostics in the package index
+
 ### Requirement: Agent-created skill changes require review
 
 The system SHALL stage agent-created skill writes before applying them.
