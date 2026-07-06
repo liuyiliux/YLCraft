@@ -1185,6 +1185,115 @@ async def test_agent_skill_run_tools_create_pending_draft(agent_session: AsyncSe
 
 
 @pytest.mark.asyncio
+async def test_agent_workflow_replay_context_skill_trace_and_approved_skill_routing(
+    agent_session: AsyncSession,
+    monkeypatch,
+    tmp_path,
+):
+    """Smoke the DeerFlow/Hermes-inspired loop from context to reusable skill."""
+
+    class FakeLLM:
+        def __init__(self):
+            self.calls = []
+
+        async def chat(self, **kwargs):
+            self.calls.append(kwargs)
+            return LLMGenerationResult(success=True, content="我会沿用上一轮上下文继续处理。")
+
+    profile_manager = AgentProfileManager(agent_session)
+    profile = await profile_manager.create_profile(
+        {
+            "id": "workflow-replay-agent",
+            "name": "Workflow Replay 测试智能体",
+            "allowed_tools": ["search_platform_sources"],
+            "max_steps": 3,
+        },
+    )
+    await agent_session.commit()
+
+    fake_llm = FakeLLM()
+    service = AgentService(agent_session)
+    service._llm_manager = fake_llm
+
+    first = await service.chat(
+        session_id="",
+        user_message="搜索包氏父子解说视频",
+        profile_id=profile.id,
+    )
+    second = await service.chat(
+        session_id=first["session_id"],
+        user_message="用B站技能",
+        profile_id=profile.id,
+    )
+
+    assert second["tool_calls"], "第二轮应沿用第一轮关键词并直接调用平台搜索工具"
+    tool_call = second["tool_calls"][0]
+    assert tool_call["tool_name"] == "search_platform_sources"
+    assert tool_call["result"]["arguments"]["platform"] == "bili"
+    assert tool_call["result"]["arguments"]["keyword"] == "包氏父子解说视频"
+
+    messages = (
+        await agent_session.execute(
+            select(AgentMessage)
+            .where(AgentMessage.thread_id == second["thread_id"])
+            .order_by(AgentMessage.id.asc())
+        )
+    ).scalars().all()
+    user_messages = [item.content for item in messages if item.role == "user"]
+    assistant_messages = [item.content for item in messages if item.role == "assistant"]
+    assert any("搜索包氏父子解说视频" in item for item in user_messages)
+    assert any("用B站技能" in item for item in user_messages)
+    assert assistant_messages
+
+    steps = (
+        await agent_session.execute(
+            select(AgentRunStep)
+            .where(AgentRunStep.run_id == second["run_id"])
+            .order_by(AgentRunStep.order_index.asc())
+        )
+    ).scalars().all()
+    step_types = [step.step_type for step in steps]
+    assert step_types[:3] == ["intake", "context_pack", "skill_route"]
+    assert "tool_call" in step_types
+    skill_step = next(step for step in steps if step.step_type == "skill_route")
+    skill_payload = json.loads(skill_step.output_json)
+    assert any(item["skill_id"] == "asset_search" for item in skill_payload["routed_skills"])
+
+    persisted_session = await agent_session.get(AgentSession, first["session_id"])
+    context = json.loads(persisted_session.context)
+    assert context["conversation_state"]["slots"]["keyword"] == "包氏父子解说视频"
+    assert context["conversation_state"]["slots"]["platform"] == "bili"
+
+    skill_root = tmp_path / "skills"
+
+    async def noop_ensure_agent_tables():
+        return None
+
+    monkeypatch.setattr("app.api.v1.agent.ensure_agent_tables", noop_ensure_agent_tables)
+    monkeypatch.setattr(SkillPackageLoader, "default_builtin_root", staticmethod(lambda: skill_root))
+    candidate_run = await _seed_completed_skill_candidate_run(agent_session, "workflow-replay-candidate-run")
+
+    draft_service = AgentSkillDraftService(agent_session, loader=SkillPackageLoader(roots=[skill_root]))
+    draft = await draft_service.create_draft_from_run(candidate_run.id, name="wechat_import_replay")
+    await agent_session.commit()
+
+    approved = await approve_skill_draft(draft.id, db_session=agent_session)
+    assert approved["draft"]["status"] == "approved"
+    assert (skill_root / "user" / "wechat_import_replay" / "SKILL.md").exists()
+
+    preview = await preview_skill_route(
+        SkillRoutePreviewRequest(
+            message="导入公众号文章并整理为可阅读素材",
+            context={"project_id": "project-skill-1", "platform": "wechat_mp"},
+            allowed_tools=["search_wechat_mp_accounts", "list_wechat_mp_articles", "download_wechat_mp_article"],
+            target_skill_id="wechat_import_replay",
+        )
+    )
+    assert any(item["skill_id"] == "wechat_import_replay" for item in preview["routes"])
+    assert preview["diagnostic"]["matched"] is True
+
+
+@pytest.mark.asyncio
 async def test_agent_skill_bundle_api_creates_user_bundle(monkeypatch, tmp_path):
     monkeypatch.setattr(SkillPackageLoader, "default_builtin_root", staticmethod(lambda: tmp_path / "skills"))
     skill_dir = tmp_path / "skills" / "creative" / "portrait_prompt"

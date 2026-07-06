@@ -81,3 +81,10 @@
 - [x] M9.1 Add a user/developer guide for `SKILL.md` authoring.
 - [x] M9.2 Document Bundle YAML structure and activation.
 - [x] M9.3 Document draft approval, match testing and validation commands.
+
+## M10. Workflow Replay Smoke Coverage
+
+- [x] M10.1 Verify multi-turn Agent chat preserves prior user intent in thread context.
+- [x] M10.2 Verify selected Skill trace is persisted in run steps.
+- [x] M10.3 Verify a successful run can become an approved user Skill package.
+- [x] M10.4 Verify the approved Skill routes on a similar future message.

@@ -26,6 +26,7 @@ Completed:
 - Skill management UI.
 - Route diagnostics.
 - Tests, build and OpenSpec validation for the main runtime.
+- Workflow replay smoke test covering multi-turn context, skill trace, run-to-skill draft approval and approved skill routing.
 
 ## Gaps
 
@@ -59,7 +60,7 @@ Completed:
 
 ## Next Real Feature After This
 
-After documentation is closed, the highest-value next feature is a real end-to-end "workflow replay" smoke test:
+After documentation is closed, the highest-value next feature was a real end-to-end "workflow replay" smoke test:
 
 1. Send a multi-turn Agent conversation.
 2. Verify previous messages are loaded into context.
@@ -67,3 +68,5 @@ After documentation is closed, the highest-value next feature is a real end-to-e
 4. Verify the trace displays steps in order.
 5. Convert a successful run into a draft skill.
 6. Approve the draft and confirm it routes on the next similar message.
+
+Status: implemented in `test_agent_workflow_replay_context_skill_trace_and_approved_skill_routing`.
