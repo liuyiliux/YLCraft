@@ -97,6 +97,22 @@
       ]
     },
     {
+      "name": "canvas",
+      "file": "backend/app/api/v1/canvas.py",
+      "prefix": "/api/v1/canvas",
+      "tags": [
+        "Creative Canvas"
+      ]
+    },
+    {
+      "name": "image_prompts",
+      "file": "backend/app/api/v1/image_prompts.py",
+      "prefix": "/api/v1/image-prompts",
+      "tags": [
+        "Image Prompt References"
+      ]
+    },
+    {
       "name": "tasks",
       "file": "backend/app/api/v1/tasks.py",
       "prefix": "/api/v1/tasks",
@@ -3172,6 +3188,86 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/canvas/documents",
+      "router": "canvas",
+      "prefix": "/api/v1/canvas",
+      "local_path": "/documents",
+      "tags": [
+        "Creative Canvas"
+      ],
+      "summary": "列出创作画布文档",
+      "function": "list_canvas_documents",
+      "file": "backend/app/api/v1/canvas.py",
+      "line": 71,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/canvas/documents",
+      "router": "canvas",
+      "prefix": "/api/v1/canvas",
+      "local_path": "/documents",
+      "tags": [
+        "Creative Canvas"
+      ],
+      "summary": "创建创作画布文档",
+      "function": "create_canvas_document",
+      "file": "backend/app/api/v1/canvas.py",
+      "line": 87,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/canvas/documents/{document_id}",
+      "router": "canvas",
+      "prefix": "/api/v1/canvas",
+      "local_path": "/documents/{document_id}",
+      "tags": [
+        "Creative Canvas"
+      ],
+      "summary": "获取创作画布文档",
+      "function": "get_canvas_document",
+      "file": "backend/app/api/v1/canvas.py",
+      "line": 111,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/canvas/documents/{document_id}",
+      "router": "canvas",
+      "prefix": "/api/v1/canvas",
+      "local_path": "/documents/{document_id}",
+      "tags": [
+        "Creative Canvas"
+      ],
+      "summary": "保存创作画布文档",
+      "function": "save_canvas_document",
+      "file": "backend/app/api/v1/canvas.py",
+      "line": 120,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/canvas/documents/{document_id}",
+      "router": "canvas",
+      "prefix": "/api/v1/canvas",
+      "local_path": "/documents/{document_id}",
+      "tags": [
+        "Creative Canvas"
+      ],
+      "summary": "删除创作画布文档",
+      "function": "delete_canvas_document",
+      "file": "backend/app/api/v1/canvas.py",
+      "line": 149,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/characters",
       "router": "characters",
       "prefix": "/api/v1/characters",
@@ -5348,6 +5444,86 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/image-prompts/references",
+      "router": "image_prompts",
+      "prefix": "/api/v1/image-prompts",
+      "local_path": "/references",
+      "tags": [
+        "Image Prompt References"
+      ],
+      "summary": "Search image prompt references",
+      "function": "search_image_prompt_references",
+      "file": "backend/app/api/v1/image_prompts.py",
+      "line": 41,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/image-prompts/references/{reference_id}",
+      "router": "image_prompts",
+      "prefix": "/api/v1/image-prompts",
+      "local_path": "/references/{reference_id}",
+      "tags": [
+        "Image Prompt References"
+      ],
+      "summary": "Get image prompt reference detail",
+      "function": "get_image_prompt_reference",
+      "file": "backend/app/api/v1/image_prompts.py",
+      "line": 62,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/image-prompts/references/{reference_id}/save-as-asset",
+      "router": "image_prompts",
+      "prefix": "/api/v1/image-prompts",
+      "local_path": "/references/{reference_id}/save-as-asset",
+      "tags": [
+        "Image Prompt References"
+      ],
+      "summary": "Save image prompt reference as Asset Hub text asset",
+      "function": "save_image_prompt_reference_as_asset",
+      "file": "backend/app/api/v1/image_prompts.py",
+      "line": 72,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/image-prompts/sources",
+      "router": "image_prompts",
+      "prefix": "/api/v1/image-prompts",
+      "local_path": "/sources",
+      "tags": [
+        "Image Prompt References"
+      ],
+      "summary": "List image prompt reference sources",
+      "function": "list_image_prompt_sources",
+      "file": "backend/app/api/v1/image_prompts.py",
+      "line": 21,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/image-prompts/sources/refresh",
+      "router": "image_prompts",
+      "prefix": "/api/v1/image-prompts",
+      "local_path": "/sources/refresh",
+      "tags": [
+        "Image Prompt References"
+      ],
+      "summary": "Refresh image prompt reference sources",
+      "function": "refresh_image_prompt_sources",
+      "file": "backend/app/api/v1/image_prompts.py",
+      "line": 33,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/images/backends",
       "router": "images",
       "prefix": "/api/v1/images",
@@ -5358,7 +5534,7 @@
       "summary": "可用图像后端列表",
       "function": "list_backends",
       "file": "backend/app/api/v1/images.py",
-      "line": 181,
+      "line": 305,
       "response_model": "ImageBackendsResponse",
       "include_in_schema": true
     },
@@ -5374,7 +5550,7 @@
       "summary": "生成图片",
       "function": "generate_image",
       "file": "backend/app/api/v1/images.py",
-      "line": 268,
+      "line": 392,
       "response_model": "ImageResponse",
       "include_in_schema": true
     },
@@ -5390,7 +5566,7 @@
       "summary": "批量生成多平台图片",
       "function": "batch_generate_endpoint",
       "file": "backend/app/api/v1/images.py",
-      "line": 1119,
+      "line": 1255,
       "response_model": "BatchGenerateResponse",
       "include_in_schema": true
     },
@@ -5406,7 +5582,7 @@
       "summary": "单张图片重生成",
       "function": "batch_retry_endpoint",
       "file": "backend/app/api/v1/images.py",
-      "line": 1045,
+      "line": 1181,
       "response_model": "BatchRetryResponse",
       "include_in_schema": true
     },
@@ -5422,7 +5598,7 @@
       "summary": "多主题批量生成",
       "function": "batch_topics_generate_endpoint",
       "file": "backend/app/api/v1/images.py",
-      "line": 1152,
+      "line": 1288,
       "response_model": "BatchTopicGenerateResponse",
       "include_in_schema": true
     },
@@ -5438,7 +5614,7 @@
       "summary": "多平台大纲生成",
       "function": "generate_outline_endpoint",
       "file": "backend/app/api/v1/images.py",
-      "line": 984,
+      "line": 1120,
       "response_model": "GenerateOutlineResponse",
       "include_in_schema": true
     },
@@ -5454,7 +5630,7 @@
       "summary": "可用平台/Prompt 模板列表",
       "function": "list_platform_templates",
       "file": "backend/app/api/v1/images.py",
-      "line": 862,
+      "line": 998,
       "response_model": "dict",
       "include_in_schema": true
     },
@@ -5470,7 +5646,7 @@
       "summary": "新增平台模板",
       "function": "create_platform_template",
       "file": "backend/app/api/v1/images.py",
-      "line": 893,
+      "line": 1029,
       "response_model": "dict",
       "include_in_schema": true
     },
@@ -5486,7 +5662,7 @@
       "summary": "更新平台模板",
       "function": "update_platform_template",
       "file": "backend/app/api/v1/images.py",
-      "line": 920,
+      "line": 1056,
       "response_model": "dict",
       "include_in_schema": true
     },
@@ -5502,7 +5678,7 @@
       "summary": "删除平台模板",
       "function": "delete_platform_template",
       "file": "backend/app/api/v1/images.py",
-      "line": 957,
+      "line": 1093,
       "response_model": "dict",
       "include_in_schema": true
     },
@@ -5518,7 +5694,7 @@
       "summary": "轮询图像生成任务",
       "function": "poll_image_task",
       "file": "backend/app/api/v1/images.py",
-      "line": 448,
+      "line": 581,
       "response_model": "ImageResponse",
       "include_in_schema": true
     },

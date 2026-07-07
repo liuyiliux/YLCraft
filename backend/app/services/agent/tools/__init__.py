@@ -64,6 +64,14 @@ from .image_tools import (
     poll_image_generation_task,
 )
 
+from .image_prompt_reference_tools import (
+    list_image_prompt_sources,
+    search_image_prompt_references,
+    get_image_prompt_reference,
+    refresh_image_prompt_sources,
+    save_image_prompt_reference_as_asset,
+)
+
 from .video_tools import (
     list_video_backends,
     preview_video_generation_request,
@@ -196,6 +204,17 @@ from .creative_project_tools import (
     run_creative_writer_room,
 )
 
+from .canvas_tools import (
+    list_creative_canvas_documents,
+    get_creative_canvas_document,
+    apply_creative_canvas_operations,
+    get_project_canvas,
+    save_project_canvas,
+    add_project_canvas_node,
+    connect_project_canvas_nodes,
+    apply_project_canvas_operations,
+)
+
 from .character_tools import (
     list_characters,
     inspect_character,
@@ -233,6 +252,11 @@ TOOLS = [
     preview_image_generation_request,
     generate_image_asset,
     poll_image_generation_task,
+    list_image_prompt_sources,
+    search_image_prompt_references,
+    get_image_prompt_reference,
+    refresh_image_prompt_sources,
+    save_image_prompt_reference_as_asset,
     # AI 视频工具
     list_video_backends,
     preview_video_generation_request,
@@ -318,6 +342,14 @@ TOOLS = [
     sync_creative_project_bible,
     run_creative_project_pipeline,
     run_creative_writer_room,
+    list_creative_canvas_documents,
+    get_creative_canvas_document,
+    apply_creative_canvas_operations,
+    get_project_canvas,
+    save_project_canvas,
+    add_project_canvas_node,
+    connect_project_canvas_nodes,
+    apply_project_canvas_operations,
     # 角色工具
     list_characters,
     inspect_character,
@@ -356,6 +388,11 @@ __all__ = [
     "preview_image_generation_request",
     "generate_image_asset",
     "poll_image_generation_task",
+    "list_image_prompt_sources",
+    "search_image_prompt_references",
+    "get_image_prompt_reference",
+    "refresh_image_prompt_sources",
+    "save_image_prompt_reference_as_asset",
     # AI 视频工具
     "list_video_backends",
     "preview_video_generation_request",
@@ -442,6 +479,14 @@ __all__ = [
     "sync_creative_project_bible",
     "run_creative_project_pipeline",
     "run_creative_writer_room",
+    "list_creative_canvas_documents",
+    "get_creative_canvas_document",
+    "apply_creative_canvas_operations",
+    "get_project_canvas",
+    "save_project_canvas",
+    "add_project_canvas_node",
+    "connect_project_canvas_nodes",
+    "apply_project_canvas_operations",
     # 角色工具
     "list_characters",
     "inspect_character",

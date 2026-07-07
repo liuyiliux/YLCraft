@@ -253,6 +253,18 @@ def _register_routes():
 
     # 任务管理路由
     try:
+        from app.api.v1 import canvas
+        app.include_router(canvas.router, prefix="/api/v1/canvas", tags=["Creative Canvas"])
+    except Exception as e:
+        logger.warning(f"Could not load canvas router: {e}")
+
+    try:
+        from app.api.v1 import image_prompts
+        app.include_router(image_prompts.router, prefix="/api/v1/image-prompts", tags=["Image Prompt References"])
+    except Exception as e:
+        logger.warning(f"Could not load image_prompts router: {e}")
+
+    try:
         from app.api.v1 import tasks
         app.include_router(tasks.router, prefix="/api/v1/tasks", tags=["Tasks"])
     except Exception as e:

@@ -89,6 +89,8 @@ import type {
   StoryOutlineCharacter,
 } from '../../types/api'
 import { useTheme, type ThemeColors } from '../../constants/theme'
+import { enqueueCanvasImport } from '../../components/canvas/bridge'
+import type { CanvasNode, CanvasNodeType } from '../../components/canvas/types'
 
 const { Text, Title, Paragraph } = Typography
 const { TextArea } = Input
@@ -246,6 +248,53 @@ type ProjectGraphState = {
   edges?: ProjectGraphEdge[]
   viewport?: { x?: number; y?: number; zoom?: number }
   updated_at?: string
+}
+
+function canvasTypeForGraphNode(node: ProjectGraphNode): CanvasNodeType {
+  if (node.type === 'prompt') return 'prompt'
+  if (node.type === 'asset' || node.type === 'character') return 'asset'
+  if (node.type === 'content' || node.type === 'scene' || node.type === 'chapter' || node.type === 'outline') return 'content'
+  return 'text'
+}
+
+function graphNodeToCanvasNode(node: ProjectGraphNode, project?: CreativeProject | null): CanvasNode {
+  const source = node.source || {}
+  const data = node.data || {}
+  const type = canvasTypeForGraphNode(node)
+  const prompt = source.prompt || data.image_prompt || data.prompt || ''
+  const content = data.summary || data.content || data.text || node.subtitle || node.label
+  const assetId = source.assetId || data.asset_id || data.assetId || data.portrait_node_id || ''
+  const metadata: Record<string, unknown> = {
+    projectId: project?.id || data.project_id || '',
+    projectTitle: project?.title || '',
+    contentId: source.contentId || '',
+    sourceType: source.sourceType || node.type,
+    sourceIndex: source.sourceIndex,
+    chapterNumber: source.chapterNumber,
+    graphNodeId: node.id,
+    graphNodeType: node.type,
+    graphNodeLabel: node.label,
+    rawSource: source,
+    rawData: data,
+  }
+
+  if (type === 'prompt') metadata.prompt = prompt || content
+  else if (type === 'asset') metadata.assetId = assetId
+  else metadata.content = prompt || content
+
+  if (Array.isArray(data.reference_asset_ids)) metadata.referenceAssetIds = data.reference_asset_ids
+  if (Array.isArray(data.character_ids)) metadata.characterIds = data.character_ids
+  if (Array.isArray(data.portrait_node_ids)) metadata.portraitNodeIds = data.portrait_node_ids
+
+  return {
+    id: `node-graph-${node.id}-${Date.now()}`,
+    type,
+    title: node.label,
+    position: { x: 180, y: 160 },
+    width: type === 'prompt' ? 292 : type === 'asset' ? 248 : 276,
+    height: type === 'prompt' ? 152 : 140,
+    metadata,
+  }
 }
 
 type StoryboardPanelReferencePlan = {
@@ -2179,6 +2228,21 @@ export default function StoryPage() {
     else message.warning('这个节点暂不支持直接再生成')
   }
 
+  function handleSendGraphNodeToCanvas(node: ProjectGraphNode) {
+    if (!selectedProject) return
+    enqueueCanvasImport([
+      {
+        id: `graph-import-${node.id}-${Date.now()}`,
+        projectId: selectedProject.id,
+        sourceNodeId: node.id,
+        createdAt: new Date().toISOString(),
+        node: graphNodeToCanvasNode(node, selectedProject),
+      },
+    ])
+    message.success('已发送到创作画布')
+    navigate('/canvas')
+  }
+
   async function handleGenerateChapterPlan(options: { preserveLocked?: boolean } = {}) {
     if (!selectedProject) return
     setLoadingAction('chapter_plan')
@@ -3390,6 +3454,7 @@ export default function StoryPage() {
                         onOpenNode={handleOpenGraphNode}
                         onToggleLock={handleToggleGraphNodeLock}
                         onRegenerate={handleRegenerateGraphNode}
+                        onSendToCanvas={handleSendGraphNodeToCanvas}
                         onSendImagePrompt={(node) => {
                           const prompt = node.source?.prompt || node.data?.image_prompt || ''
                           if (!prompt) {
@@ -7384,6 +7449,7 @@ function ProjectGraphTab({
   onOpenNode,
   onToggleLock,
   onRegenerate,
+  onSendToCanvas,
   onSendImagePrompt,
 }: {
   graph: ProjectGraphState
@@ -7393,6 +7459,7 @@ function ProjectGraphTab({
   onOpenNode: (node: ProjectGraphNode) => void
   onToggleLock: (node: ProjectGraphNode) => Promise<void>
   onRegenerate: (node: ProjectGraphNode) => Promise<void>
+  onSendToCanvas: (node: ProjectGraphNode) => void
   onSendImagePrompt: (node: ProjectGraphNode) => void
 }) {
   const [nodes, setNodes] = useState<ProjectGraphNode[]>(graph.nodes || [])
@@ -7542,6 +7609,7 @@ function ProjectGraphTab({
             </Space>
             <Space size={[6, 6]} wrap>
               <Button size="small" onClick={() => onOpenNode(selectedNode)}>打开来源</Button>
+              <Button size="small" icon={<BranchesOutlined />} onClick={() => onSendToCanvas(selectedNode)}>发送到画布</Button>
               {(selectedNode.type === 'chapter' || selectedNode.type === 'content') ? (
                 <Button size="small" onClick={() => onToggleLock(selectedNode)}>
                   {selectedNode.status === 'locked' ? '解除锁定' : '锁定'}

@@ -15,7 +15,9 @@ type InfiniteCanvasSurfaceProps = {
   selectedNodeIds?: string[]
   onViewportChange: (viewport: CanvasViewport) => void
   onNodesChange: (nodes: CanvasNode[]) => void
+  onNodesCommit?: (previousNodes: CanvasNode[], nextNodes: CanvasNode[]) => void
   onSelectNodes?: (nodeIds: string[]) => void
+  onDeleteSelected?: () => void
   onOpenNode?: (node: CanvasNode) => void
   renderNode: (node: CanvasNode, state: { selected: boolean; dragging: boolean }) => React.ReactNode
   height?: number | string
@@ -32,13 +34,16 @@ export default function InfiniteCanvasSurface({
   selectedNodeIds = [],
   onViewportChange,
   onNodesChange,
+  onNodesCommit,
   onSelectNodes,
+  onDeleteSelected,
   onOpenNode,
   renderNode,
   height = '100%',
 }: InfiniteCanvasSurfaceProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const viewportRef = useRef(viewport)
+  const nodesRef = useRef(nodes)
   const nodeDragRef = useRef<{
     nodeId: string
     pointerId: number
@@ -46,6 +51,18 @@ export default function InfiniteCanvasSurface({
     startClientY: number
     startX: number
     startY: number
+    startNodes: CanvasNode[]
+    latestNodes: CanvasNode[]
+  } | null>(null)
+  const resizeRef = useRef<{
+    nodeId: string
+    pointerId: number
+    startClientX: number
+    startClientY: number
+    startWidth: number
+    startHeight: number
+    startNodes: CanvasNode[]
+    latestNodes: CanvasNode[]
   } | null>(null)
   const panRef = useRef<{
     pointerId: number
@@ -64,6 +81,10 @@ export default function InfiniteCanvasSurface({
     viewportRef.current = viewport
   }, [viewport])
 
+  useEffect(() => {
+    nodesRef.current = nodes
+  }, [nodes])
+
   useEffect(
     () => () => {
       if (frameRef.current) cancelAnimationFrame(frameRef.current)
@@ -73,9 +94,15 @@ export default function InfiniteCanvasSurface({
 
   useEffect(() => {
     const down = (event: KeyboardEvent) => {
-      if (event.code !== 'Space') return
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return
-      setSpacePressed(true)
+      if (event.code === 'Space') {
+        setSpacePressed(true)
+        return
+      }
+      if ((event.key === 'Delete' || event.key === 'Backspace') && selectedNodeIds.length) {
+        event.preventDefault()
+        onDeleteSelected?.()
+      }
     }
     const up = (event: KeyboardEvent) => {
       if (event.code === 'Space') setSpacePressed(false)
@@ -86,7 +113,7 @@ export default function InfiniteCanvasSurface({
       window.removeEventListener('keydown', down)
       window.removeEventListener('keyup', up)
     }
-  }, [])
+  }, [onDeleteSelected, selectedNodeIds.length])
 
   useEffect(() => {
     const container = containerRef.current
@@ -168,8 +195,28 @@ export default function InfiniteCanvasSurface({
       startClientY: event.clientY,
       startX: node.position.x,
       startY: node.position.y,
+      startNodes: nodesRef.current,
+      latestNodes: nodesRef.current,
     }
     setDraggingNodeId(node.id)
+  }
+
+  const handleResizePointerDown = (event: React.PointerEvent<HTMLDivElement>, node: CanvasNode) => {
+    if (event.button !== 0) return
+    event.stopPropagation()
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    onSelectNodes?.([node.id])
+    resizeRef.current = {
+      nodeId: node.id,
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startWidth: node.width,
+      startHeight: node.height,
+      startNodes: nodesRef.current,
+      latestNodes: nodesRef.current,
+    }
   }
 
   useEffect(() => {
@@ -179,11 +226,32 @@ export default function InfiniteCanvasSurface({
         const current = viewportRef.current
         const dx = (event.clientX - drag.startClientX) / current.k
         const dy = (event.clientY - drag.startClientY) / current.k
-        onNodesChange(nodes.map((node) => (
+        const nextNodes = drag.startNodes.map((node) => (
           node.id === drag.nodeId
             ? { ...node, position: { x: drag.startX + dx, y: drag.startY + dy } }
             : node
-        )))
+        ))
+        drag.latestNodes = nextNodes
+        onNodesChange(nextNodes)
+        return
+      }
+
+      if (resizeRef.current) {
+        const resize = resizeRef.current
+        const current = viewportRef.current
+        const dx = (event.clientX - resize.startClientX) / current.k
+        const dy = (event.clientY - resize.startClientY) / current.k
+        const nextNodes = resize.startNodes.map((node) => (
+          node.id === resize.nodeId
+            ? {
+              ...node,
+              width: Math.max(160, Math.round(resize.startWidth + dx)),
+              height: Math.max(96, Math.round(resize.startHeight + dy)),
+            }
+            : node
+        ))
+        resize.latestNodes = nextNodes
+        onNodesChange(nextNodes)
         return
       }
 
@@ -202,8 +270,13 @@ export default function InfiniteCanvasSurface({
 
     const up = () => {
       if (nodeDragRef.current) {
+        onNodesCommit?.(nodeDragRef.current.startNodes, nodeDragRef.current.latestNodes)
         nodeDragRef.current = null
         setDraggingNodeId(null)
+      }
+      if (resizeRef.current) {
+        onNodesCommit?.(resizeRef.current.startNodes, resizeRef.current.latestNodes)
+        resizeRef.current = null
       }
       if (panRef.current) {
         if (!panRef.current.moved) onSelectNodes?.([])
@@ -218,7 +291,7 @@ export default function InfiniteCanvasSurface({
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
     }
-  }, [nodes, onNodesChange, onSelectNodes, onViewportChange, selectedNodeIds])
+  }, [onNodesChange, onNodesCommit, onSelectNodes, onViewportChange])
 
   const connectionPath = (connection: CanvasConnection) => {
     const from = nodeMap.get(connection.fromNodeId)
@@ -288,6 +361,12 @@ export default function InfiniteCanvasSurface({
         <span>{Math.round(viewport.k * 100)}%</span>
         <span>{nodes.length} 节点</span>
       </div>
+      <CanvasMinimap
+        nodes={nodes}
+        viewport={viewport}
+        containerRef={containerRef}
+        onViewportChange={onViewportChange}
+      />
       <svg
         width="100%"
         height="100%"
@@ -345,9 +424,99 @@ export default function InfiniteCanvasSurface({
             }}
           >
             {renderNode(node, { selected: selectedSet.has(node.id), dragging: draggingNodeId === node.id })}
+            {selectedSet.has(node.id) ? (
+              <div
+                data-canvas-no-drag
+                onPointerDown={(event) => handleResizePointerDown(event, node)}
+                style={resizeHandleStyle}
+              />
+            ) : null}
           </div>
         ))}
       </div>
+    </div>
+  )
+}
+
+function CanvasMinimap({
+  nodes,
+  viewport,
+  containerRef,
+  onViewportChange,
+}: {
+  nodes: CanvasNode[]
+  viewport: CanvasViewport
+  containerRef: React.RefObject<HTMLDivElement>
+  onViewportChange: (viewport: CanvasViewport) => void
+}) {
+  if (!nodes.length) return null
+
+  const minX = Math.min(...nodes.map((node) => node.position.x))
+  const minY = Math.min(...nodes.map((node) => node.position.y))
+  const maxX = Math.max(...nodes.map((node) => node.position.x + node.width))
+  const maxY = Math.max(...nodes.map((node) => node.position.y + node.height))
+  const padding = 120
+  const world = {
+    x: minX - padding,
+    y: minY - padding,
+    width: Math.max(1, maxX - minX + padding * 2),
+    height: Math.max(1, maxY - minY + padding * 2),
+  }
+  const width = 168
+  const height = 112
+  const scale = Math.min(width / world.width, height / world.height)
+  const offsetX = (width - world.width * scale) / 2
+  const offsetY = (height - world.height * scale) / 2
+  const rect = containerRef.current?.getBoundingClientRect()
+  const viewWorld = rect
+    ? {
+      x: -viewport.x / viewport.k,
+      y: -viewport.y / viewport.k,
+      width: rect.width / viewport.k,
+      height: rect.height / viewport.k,
+    }
+    : null
+
+  const jumpTo = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!rect) return
+    const box = event.currentTarget.getBoundingClientRect()
+    const worldX = (event.clientX - box.left - offsetX) / scale + world.x
+    const worldY = (event.clientY - box.top - offsetY) / scale + world.y
+    onViewportChange({
+      x: rect.width / 2 - worldX * viewport.k,
+      y: rect.height / 2 - worldY * viewport.k,
+      k: viewport.k,
+    })
+  }
+
+  return (
+    <div style={minimapStyle} data-canvas-no-zoom onPointerDown={jumpTo}>
+      <svg width={width} height={height}>
+        {nodes.map((node) => (
+          <rect
+            key={node.id}
+            x={(node.position.x - world.x) * scale + offsetX}
+            y={(node.position.y - world.y) * scale + offsetY}
+            width={Math.max(2, node.width * scale)}
+            height={Math.max(2, node.height * scale)}
+            rx={2}
+            fill="var(--primary)"
+            opacity={0.54}
+          />
+        ))}
+        {viewWorld ? (
+          <rect
+            x={(viewWorld.x - world.x) * scale + offsetX}
+            y={(viewWorld.y - world.y) * scale + offsetY}
+            width={Math.max(8, viewWorld.width * scale)}
+            height={Math.max(8, viewWorld.height * scale)}
+            fill="none"
+            stroke="var(--textPrimary)"
+            strokeWidth={1.5}
+            opacity={0.72}
+          />
+        ) : null}
+      </svg>
     </div>
   )
 }
@@ -380,4 +549,31 @@ const toolbarButtonStyle: React.CSSProperties = {
   cursor: 'pointer',
   fontSize: 12,
   padding: '2px 8px',
+}
+
+const minimapStyle: React.CSSProperties = {
+  position: 'absolute',
+  right: 12,
+  bottom: 12,
+  zIndex: 5,
+  width: 176,
+  height: 120,
+  padding: 4,
+  borderRadius: 8,
+  border: '1px solid var(--border)',
+  background: 'var(--bgCard)',
+  boxShadow: 'var(--shadowCard)',
+  cursor: 'crosshair',
+}
+
+const resizeHandleStyle: React.CSSProperties = {
+  position: 'absolute',
+  right: -5,
+  bottom: -5,
+  width: 12,
+  height: 12,
+  borderRadius: 3,
+  border: '2px solid var(--bgCard)',
+  background: 'var(--primary)',
+  cursor: 'nwse-resize',
 }

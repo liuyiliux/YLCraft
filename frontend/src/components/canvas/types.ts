@@ -36,6 +36,25 @@ export type CanvasNodeMetadata = {
   [key: string]: unknown
 }
 
+export type CanvasPort = {
+  id: string
+  label: string
+  dataType?: 'text' | 'image' | 'asset' | 'json' | 'any' | string
+  required?: boolean
+  multiple?: boolean
+  metadata?: Record<string, unknown>
+}
+
+export type CanvasResourceInput = {
+  nodeId: string
+  type: 'text' | 'image' | 'asset' | 'json'
+  title: string
+  text?: string
+  url?: string
+  assetId?: string
+  value?: unknown
+}
+
 export type CanvasNode = {
   id: string
   type: CanvasNodeType
@@ -43,6 +62,8 @@ export type CanvasNode = {
   position: { x: number; y: number }
   width: number
   height: number
+  inputs?: CanvasPort[]
+  outputs?: CanvasPort[]
   metadata?: CanvasNodeMetadata
 }
 
@@ -50,6 +71,13 @@ export type CanvasConnection = {
   id: string
   fromNodeId: string
   toNodeId: string
+  relation?: 'context' | 'sequence' | 'reference' | 'generation' | 'group' | string
+  /**
+   * Legacy optional fields. Current canvas execution resolves upstream
+   * resources from fromNodeId -> toNodeId, matching basketikun/infinite-canvas.
+   */
+  fromPortId?: string
+  toPortId?: string
   type?: 'feeds' | 'uses' | 'references' | 'generates' | 'groups' | string
   label?: string
   metadata?: Record<string, unknown>

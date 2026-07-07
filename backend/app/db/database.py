@@ -70,6 +70,8 @@ async def init_db():
     from app.db.models.platform_connection import PlatformConnection  # 统一凭证模型
     from app.db.models.ai_connector import AIConnector, AIUsageLog  # AI 连接器
     from app.db.models.platform_template import PlatformTemplate
+    from app.db.models.canvas import CanvasDocument
+    from app.db.models.image_prompt_reference import ImagePromptReference, ImagePromptSource
     from app.db.models.comfyui import WorkflowTemplate, WorkflowPreset, ComfyUITask, ComfyUINode
     from app.db.models.book_source import BookSource  # 书源表
     from app.db.models.book_source_cookie import BookSourceCookie

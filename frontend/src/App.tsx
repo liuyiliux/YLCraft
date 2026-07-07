@@ -32,6 +32,7 @@ import NovelReaderPage from './pages/novel-reader'
 import NovelBookshelfPage from './pages/novel-bookshelf'
 import BookSourcePage from './pages/book-source'
 import PlatformTemplatesPage from './pages/platform-templates'
+import PromptLibraryPage from './pages/prompt-library'
 import MultiPlatformGenPage from './pages/image-gen/MultiPlatformGen'
 import PlayerPage from './pages/player'
 import ReaderPage from './pages/reader'
@@ -91,6 +92,7 @@ export default function App() {
               <Route path="reader" element={<ReaderPage />} />
               <Route path="book-source" element={<BookSourcePage />} />
               <Route path="platform-templates" element={<PlatformTemplatesPage />} />
+              <Route path="prompt-library" element={<PromptLibraryPage />} />
               <Route path="player/assets/:assetId" element={<PlayerPage />} />
               <Route path="settings" element={<SettingsPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />

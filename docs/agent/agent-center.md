@@ -66,6 +66,7 @@ Agent Center 是 YLCraft 的项目智能体工作台。它不是单次问答页�
 - `sync_creative_project_bible`：从故事大纲同步项目圣经和世界资产卡。
 - `run_creative_project_pipeline`：运行项目流水线，生成细纲、正文、脚本、分镜、参考卡或漫画页。
 - `run_creative_writer_room`：运行小说写作室多步骤流程，适合单章正文生成、润色和评审。
+- Canvas tools use the `canvas` category. Free-form `/canvas` document tools are `list_creative_canvas_documents`, `get_creative_canvas_document`, and `apply_creative_canvas_operations`. Project relationship-graph tools are `get_project_canvas`, `save_project_canvas`, `add_project_canvas_node`, `connect_project_canvas_nodes`, and `apply_project_canvas_operations`. Write tools have `write` risk and require confirmation.
 
 如果只是检查或规划，用前三类只读工具即可；如果要保存修改或生成新内容，会进入确认步骤。
 

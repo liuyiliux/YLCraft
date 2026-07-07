@@ -12,14 +12,19 @@ import json
 import logging
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy import select
 
 from app.core.task_queue import TaskStatus, get_task_queue
+from app.db.models.asset_hub import AssetNode
 from app.services.ai import get_ai_service, AIService
 from app.services.ai.types import ImageGenerationRequest
+from app.services.asset_hub.representation_service import AssetRepresentationService
+from app.services.asset_hub.version_service import AssetVersionService
 
 router = APIRouter()
 logger = logging.getLogger("ylcraft.images")
@@ -99,6 +104,11 @@ class ImageGenerateRequest(BaseModel):
     portrait_node_ids: Optional[list[str]] = None
     portrait_version_ids: Optional[list[str]] = None
     reference_image_collection: Optional[list[dict]] = None
+    prompt_reference_id: Optional[str] = None
+    prompt_reference_source_id: Optional[str] = None
+    prompt_reference_title: Optional[str] = None
+    prompt_reference_category: Optional[str] = None
+    prompt_reference_source_url: Optional[str] = None
 
 
 def _generation_lineage_from_request(req: ImageGenerateRequest, *, extra: dict | None = None) -> dict:
@@ -114,6 +124,11 @@ def _generation_lineage_from_request(req: ImageGenerateRequest, *, extra: dict |
         "portrait_node_ids": req.portrait_node_ids or [],
         "portrait_version_ids": req.portrait_version_ids or [],
         "reference_image_collection": req.reference_image_collection or [],
+        "prompt_reference_id": req.prompt_reference_id or "",
+        "prompt_reference_source_id": req.prompt_reference_source_id or "",
+        "prompt_reference_title": req.prompt_reference_title or "",
+        "prompt_reference_category": req.prompt_reference_category or "",
+        "prompt_reference_source_url": req.prompt_reference_source_url or "",
         **(extra or {}),
     }
     return {key: value for key, value in lineage.items() if value not in (None, "", [])}
@@ -132,9 +147,118 @@ def _generation_lineage_from_payload(payload: dict, *, extra: dict | None = None
         "portrait_node_ids": payload.get("portrait_node_ids") or [],
         "portrait_version_ids": payload.get("portrait_version_ids") or [],
         "reference_image_collection": payload.get("reference_image_collection") or [],
+        "prompt_reference_id": payload.get("prompt_reference_id", ""),
+        "prompt_reference_source_id": payload.get("prompt_reference_source_id", ""),
+        "prompt_reference_title": payload.get("prompt_reference_title", ""),
+        "prompt_reference_category": payload.get("prompt_reference_category", ""),
+        "prompt_reference_source_url": payload.get("prompt_reference_source_url", ""),
         **(extra or {}),
     }
     return {key: value for key, value in lineage.items() if value not in (None, "", [])}
+
+
+def _reference_images_from_collection(collection: list[dict] | None) -> list[str]:
+    refs: list[str] = []
+    for item in collection or []:
+        if not isinstance(item, dict):
+            continue
+        value = (
+            item.get("url")
+            or item.get("image_url")
+            or item.get("src")
+            or item.get("data_url")
+            or item.get("local_path")
+            or item.get("path")
+        )
+        if value:
+            refs.append(str(value))
+    return refs
+
+
+def _looks_like_image_path(path_value: str) -> bool:
+    suffix = Path(path_value or "").suffix.lower()
+    return suffix in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
+
+
+def _is_image_representation(rep) -> bool:
+    mime_type = str(getattr(rep, "mime_type", "") or "").lower()
+    return mime_type.startswith("image/") or _looks_like_image_path(getattr(rep, "file_path", "") or "")
+
+
+async def _primary_image_path_for_asset(session, asset_id: str) -> str | None:
+    node = await session.get(AssetNode, asset_id)
+    if not node:
+        return None
+    node_meta = node.metadata_json if isinstance(node.metadata_json, dict) else {}
+    if node_meta.get("deleted_at") or str(node_meta.get("status", "")).upper() == "DELETED":
+        return None
+
+    version = await AssetVersionService(session).get_latest_version(str(node.id))
+    if not version:
+        return None
+
+    reps = await AssetRepresentationService(session).list_by_version(str(version.id))
+    for rep in reps:
+        if _is_image_representation(rep) and rep.file_path:
+            return str(rep.file_path)
+    return None
+
+
+async def _reference_images_from_asset_ids(asset_ids: list[str] | None, *, max_refs: int = 12) -> list[str]:
+    """Resolve Asset Hub IDs into local image paths for image-to-image backends."""
+    ids = [str(item or "").strip() for item in (asset_ids or []) if str(item or "").strip()]
+    if not ids:
+        return []
+
+    from app.db.database import get_async_session
+
+    refs: list[str] = []
+    async with get_async_session() as session:
+        for asset_id in ids:
+            if len(refs) >= max_refs:
+                break
+
+            primary_path = await _primary_image_path_for_asset(session, asset_id)
+            if primary_path:
+                refs.append(primary_path)
+                continue
+
+            # Reference cards can be collection/character roots whose usable images live on children.
+            try:
+                result = await session.execute(
+                    select(AssetNode)
+                    .where(AssetNode.parent_id == asset_id)
+                    .order_by(AssetNode.created_at.asc())
+                    .limit(max_refs)
+                )
+                children = list(result.scalars().all())
+            except Exception as exc:
+                logger.warning("[images] failed to resolve reference asset children for %s: %s", asset_id, exc)
+                children = []
+
+            for child in children:
+                if len(refs) >= max_refs:
+                    break
+                child_path = await _primary_image_path_for_asset(session, str(child.id))
+                if child_path:
+                    refs.append(child_path)
+    return refs
+
+
+async def _merge_reference_images(req: ImageGenerateRequest) -> list[str]:
+    refs: list[str] = []
+    seen: set[str] = set()
+    asset_refs = await _reference_images_from_asset_ids(req.reference_asset_ids)
+    for value in [
+        *(req.reference_images or []),
+        *_reference_images_from_collection(req.reference_image_collection),
+        *asset_refs,
+    ]:
+        item = str(value or "").strip()
+        if item and item not in seen:
+            seen.add(item)
+            refs.append(item)
+    return refs
 
 
 class ImageResponse(BaseModel):
@@ -276,6 +400,7 @@ async def generate_image(req: ImageGenerateRequest):
         raise HTTPException(status_code=503, detail="AIService 未初始化")
 
     try:
+        reference_images = await _merge_reference_images(req)
         img_req = ImageGenerationRequest(
             prompt=req.prompt,
             negative_prompt=req.negative_prompt or "",
@@ -291,7 +416,7 @@ async def generate_image(req: ImageGenerateRequest):
             batch_size=req.batch_size or 1,
             sampler=req.sampler or "euler",
             source_image=req.source_image or "",
-            reference_images=req.reference_images or [],
+            reference_images=reference_images,
             lora=req.lora or "",
             controlnet=req.controlnet or "",
         )
@@ -315,7 +440,7 @@ async def generate_image(req: ImageGenerateRequest):
                         "lora": req.lora or "",
                         "controlnet": req.controlnet or "",
                         "source_image": req.source_image or "",
-                        "reference_images": img_req.reference_images if img_req.reference_images else None,
+                        "reference_images": reference_images if reference_images else None,
                         "project_id": req.project_id or "",
                         "content_id": req.content_id or "",
                         "source_type": req.source_type or "",
@@ -327,6 +452,11 @@ async def generate_image(req: ImageGenerateRequest):
                         "portrait_node_ids": req.portrait_node_ids or [],
                         "portrait_version_ids": req.portrait_version_ids or [],
                         "reference_image_collection": req.reference_image_collection or [],
+                        "prompt_reference_id": req.prompt_reference_id or "",
+                        "prompt_reference_source_id": req.prompt_reference_source_id or "",
+                        "prompt_reference_title": req.prompt_reference_title or "",
+                        "prompt_reference_category": req.prompt_reference_category or "",
+                        "prompt_reference_source_url": req.prompt_reference_source_url or "",
                         "diagnostics": {
                             "external_task_id": result.task_id,
                             "provider": result.provider or req.provider or "",
@@ -399,8 +529,11 @@ async def generate_image(req: ImageGenerateRequest):
                                         "lora": req.lora or "",
                                         "controlnet": req.controlnet or "",
                                         "image_index": idx,
-                                        "reference_images_count": len(req.reference_images or []),
+                                        "reference_images_count": len(reference_images),
                                         "reference_image_collection": req.reference_image_collection or [],
+                                        "prompt_reference_id": req.prompt_reference_id or "",
+                                        "prompt_reference_source_id": req.prompt_reference_source_id or "",
+                                        "prompt_reference_title": req.prompt_reference_title or "",
                                     },
                                     lineage=_generation_lineage_from_request(req),
                                 )
@@ -576,6 +709,9 @@ async def poll_image_task(
                                             "image_index": idx,
                                             "reference_images_count": len(payload.get("reference_images") or []),
                                             "reference_image_collection": payload.get("reference_image_collection") or [],
+                                            "prompt_reference_id": payload.get("prompt_reference_id", ""),
+                                            "prompt_reference_source_id": payload.get("prompt_reference_source_id", ""),
+                                            "prompt_reference_title": payload.get("prompt_reference_title", ""),
                                         },
                                         lineage=_generation_lineage_from_payload(
                                             payload,

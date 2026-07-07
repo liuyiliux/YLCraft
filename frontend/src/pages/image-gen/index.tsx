@@ -48,8 +48,10 @@ import {
 import type { UploadFile } from 'antd/es/upload/interface'
 import { useTheme } from '../../constants/theme'
 import { getImageBackends, generateImage as generateImageApi, getImageTask, linkCreativeProjectAsset } from '../../api'
+import type { ImagePromptReference } from '../../api'
 import MultiPlatformGen from './MultiPlatformGen'
 import { useTaskPolling } from '../../hooks/useTaskPolling'
+import PromptReferencePicker, { type PromptReferenceAction } from '../../components/prompt-library/PromptReferencePicker'
 
 
 const { TextArea } = Input
@@ -145,6 +147,7 @@ interface GeneratedImage {
   local_path?: string
   asset_id?: string
   project_linked?: boolean
+  prompt_reference_title?: string
 }
 
 interface BackendInfo {
@@ -181,6 +184,7 @@ interface PendingImageTask {
   selectedModel?: string
   size: string
   projectContext: ProjectContext
+  promptReference?: ImagePromptReference | null
 }
 
 export default function ImageGenPage() {
@@ -236,6 +240,8 @@ function ImageGenSinglePage() {
   const [prompt, setPrompt] = useState('')
   const [negativePrompt, setNegativePrompt] = useState('')
   const [referenceImages, setReferenceImages] = useState<UploadFile[]>([])
+  const [promptReferencePickerOpen, setPromptReferencePickerOpen] = useState(false)
+  const [selectedPromptReference, setSelectedPromptReference] = useState<ImagePromptReference | null>(null)
 
   // 参数
   const [provider, setProvider] = useState<string>()
@@ -259,6 +265,22 @@ function ImageGenSinglePage() {
   const [previewImage, setPreviewImage] = useState<GeneratedImage | null>(null)
   const hasFetchedBackends = useRef(false)
   const hasAppliedUrlParams = useRef(false)  // 标记是否已应用 URL 参数
+
+  const applyPromptReference = (reference: ImagePromptReference, action: PromptReferenceAction) => {
+    setPrompt(current => {
+      const currentPrompt = current.trim()
+      if (action === 'append' && currentPrompt) {
+        return `${currentPrompt}\n\n${reference.prompt}`.trim()
+      }
+      return reference.prompt
+    })
+    if (reference.negative_prompt && !negativePrompt.trim()) {
+      setNegativePrompt(reference.negative_prompt)
+    }
+    setSelectedPromptReference(reference)
+    setPromptReferencePickerOpen(false)
+    message.success(action === 'append' ? '已追加 Prompt 参考' : '已替换为 Prompt 参考')
+  }
 
 
 
@@ -483,6 +505,7 @@ function ImageGenSinglePage() {
       selectedModel?: string
       size: string
       projectContext: ProjectContext
+      promptReference?: ImagePromptReference | null
     }
   ) => {
     let projectLinkOk = false
@@ -520,6 +543,10 @@ function ImageGenSinglePage() {
               negative_prompt: context.negativePrompt || '',
               provider: context.selectedModel || context.provider || '',
               size: context.size,
+              prompt_reference_id: context.promptReference?.id || '',
+              prompt_reference_source_id: context.promptReference?.source_id || '',
+              prompt_reference_title: context.promptReference?.title || '',
+              prompt_reference_category: context.promptReference?.category || '',
               generated_at: new Date().toISOString(),
             },
           })
@@ -543,6 +570,7 @@ function ImageGenSinglePage() {
         local_path: localPaths[idx] || data.local_path,
         asset_id: assetIds[idx],
         project_linked: projectLinkOk && Boolean(assetIds[idx]) && linkedAssetIds.includes(assetIds[idx]),
+        prompt_reference_title: context.promptReference?.title,
         created_at: new Date().toISOString(),
       })
     }
@@ -612,6 +640,13 @@ function ImageGenSinglePage() {
         n: batchCount,
         seed,
       }
+      if (selectedPromptReference) {
+        body.prompt_reference_id = selectedPromptReference.id
+        body.prompt_reference_source_id = selectedPromptReference.source_id
+        body.prompt_reference_title = selectedPromptReference.title
+        body.prompt_reference_category = selectedPromptReference.category || undefined
+        body.prompt_reference_source_url = selectedPromptReference.source_url || undefined
+      }
       if (projectContext.hasContext) {
         body.project_id = projectContext.projectId
         body.content_id = projectContext.contentId || undefined
@@ -673,6 +708,7 @@ function ImageGenSinglePage() {
             selectedModel,
             size,
             projectContext,
+            promptReference: selectedPromptReference,
           })
           setProgress(35)
           message.info(`图片任务已提交，任务 ID：${data.task_id}`)
@@ -686,6 +722,7 @@ function ImageGenSinglePage() {
           selectedModel,
           size,
           projectContext,
+          promptReference: selectedPromptReference,
         })
       } else {
         message.error(data.error || '生成失败')
@@ -742,9 +779,24 @@ function ImageGenSinglePage() {
 
             {/* 提示词输入 */}
             <div style={{ marginBottom: 16 }}>
-              <div style={{ marginBottom: 4, fontWeight: 500, color: '#e2e8f0' }}>
-                提示词
-              </div>
+              <Space wrap style={{ width: '100%', justifyContent: 'space-between', marginBottom: 6 }}>
+                <div style={{ fontWeight: 500, color: '#e2e8f0' }}>提示词</div>
+                <Space size={8} wrap>
+                  {selectedPromptReference ? (
+                    <Tag
+                      color="purple"
+                      closable
+                      onClose={() => setSelectedPromptReference(null)}
+                      style={{ marginInlineEnd: 0 }}
+                    >
+                      {selectedPromptReference.title}
+                    </Tag>
+                  ) : null}
+                  <Button size="small" icon={<FileTextOutlined />} onClick={() => setPromptReferencePickerOpen(true)}>
+                    Prompt 参考库
+                  </Button>
+                </Space>
+              </Space>
               <TextArea
                 placeholder="描述你想要生成的图像，例如：一个身穿红色旗袍的年轻女性，站在古老的街道上，柔和的光线..."
                 value={prompt}
@@ -1094,6 +1146,11 @@ function ImageGenSinglePage() {
           </Card>
         </Col>
       </Row>
+      <PromptReferencePicker
+        open={promptReferencePickerOpen}
+        onCancel={() => setPromptReferencePickerOpen(false)}
+        onApply={applyPromptReference}
+      />
     </div>
   )
 }

@@ -257,6 +257,31 @@ def test_agent_tool_registry_exposes_creative_project_tools():
     assert match_tool.cost_hint
 
 
+def test_agent_tool_registry_exposes_canvas_tools_with_specs():
+    tools = ToolRegistry.list_tools("canvas")
+    names = {tool.name for tool in tools}
+
+    assert {
+        "list_creative_canvas_documents",
+        "get_creative_canvas_document",
+        "apply_creative_canvas_operations",
+        "get_project_canvas",
+        "save_project_canvas",
+        "add_project_canvas_node",
+        "connect_project_canvas_nodes",
+        "apply_project_canvas_operations",
+    }.issubset(names)
+    for tool in tools:
+        assert tool.input_schema_note
+        assert tool.output_schema_note
+        assert tool.risk_level in {"read", "write"}
+        assert tool.output_type.startswith(("project_canvas_", "creative_canvas_"))
+    assert ToolRegistry.get_tool("get_project_canvas").risk_level == "read"
+    assert ToolRegistry.get_tool("apply_project_canvas_operations").risk_level == "write"
+    assert ToolRegistry.get_tool("list_creative_canvas_documents").risk_level == "read"
+    assert ToolRegistry.get_tool("apply_creative_canvas_operations").risk_level == "write"
+
+
 def test_agent_tool_registry_exposes_character_tools():
     tools = ToolRegistry.list_tools("character")
     names = {tool.name for tool in tools}
@@ -388,6 +413,29 @@ def test_agent_tool_registry_exposes_video_tools_with_specs():
     generate_tool = ToolRegistry.get_tool("generate_video_asset")
     assert generate_tool is not None
     assert generate_tool.cost_hint
+
+
+def test_agent_tool_registry_exposes_image_prompt_reference_tools_with_specs():
+    tools = ToolRegistry.list_tools("image_prompt_reference")
+    names = {tool.name for tool in tools}
+
+    assert {
+        "list_image_prompt_sources",
+        "search_image_prompt_references",
+        "get_image_prompt_reference",
+        "refresh_image_prompt_sources",
+        "save_image_prompt_reference_as_asset",
+    } <= names
+    for tool in tools:
+        assert tool.input_schema_note
+        assert tool.output_schema_note
+        assert tool.risk_level in {"read", "write"}
+        assert tool.output_type.startswith("image_prompt_")
+    assert ToolRegistry.get_tool("list_image_prompt_sources").risk_level == "read"
+    assert ToolRegistry.get_tool("search_image_prompt_references").risk_level == "read"
+    assert ToolRegistry.get_tool("get_image_prompt_reference").risk_level == "read"
+    assert ToolRegistry.get_tool("refresh_image_prompt_sources").risk_level == "write"
+    assert ToolRegistry.get_tool("save_image_prompt_reference_as_asset").risk_level == "write"
 
 
 def test_agent_tool_registry_exposes_prompt_template_tools_with_specs():

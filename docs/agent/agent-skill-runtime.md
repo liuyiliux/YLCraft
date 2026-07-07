@@ -104,6 +104,18 @@ The model context receives:
 
 This avoids dumping every skill body into every conversation.
 
+## Tool Registry Notes
+
+Agent tools are internal APIs. When a tool category, name, input, output type or risk level changes, update tests and this guide.
+
+Current image prompt reference tools:
+
+- `list_image_prompt_sources`: `read`, lists configured prompt-library sources and sync status.
+- `search_image_prompt_references`: `read`, searches synced prompt references by keyword, tag, category or source.
+- `get_image_prompt_reference`: `read`, returns the full prompt reference detail.
+- `refresh_image_prompt_sources`: `write`, refreshes one or all configured sources from remote repositories.
+- `save_image_prompt_reference_as_asset`: `write`, explicitly saves one selected reference as an Asset Hub text asset. Synced references are not imported into Asset Hub automatically.
+
 ## Slash Activation
 
 Users can force a skill:

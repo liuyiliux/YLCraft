@@ -133,6 +133,30 @@ export interface ImageGenerateRequest {
   style?: string
   n?: number
   provider?: string
+  model?: string
+  seed?: number
+  steps?: number
+  cfg_scale?: number
+  batch_size?: number
+  sampler?: string
+  source_image?: string
+  reference_images?: string[]
+  reference_asset_ids?: string[]
+  reference_image_collection?: Record<string, any>[]
+  project_id?: string
+  content_id?: string
+  source_type?: string
+  source_index?: string
+  source_title?: string
+  chapter_number?: string
+  character_ids?: string[]
+  portrait_node_ids?: string[]
+  portrait_version_ids?: string[]
+  prompt_reference_id?: string
+  prompt_reference_source_id?: string
+  prompt_reference_title?: string
+  prompt_reference_category?: string
+  prompt_reference_source_url?: string
 }
 
 export interface ImageResponse {

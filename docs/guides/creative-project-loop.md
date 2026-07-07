@@ -33,7 +33,7 @@ Current module inventory:
 |---|---|---|---|
 | 概览 | `/` | auxiliary | Dashboard and entry overview. |
 | 创作项目 | `/story` | stable | Main project workspace. |
-| 创作画布 | `/canvas` | experimental | Independent infinite canvas. Uses local browser storage in the current MVP and can reference projects/assets through node metadata. |
+| 创作画布 | `/canvas` | experimental | Independent infinite canvas. Persists through `/api/v1/canvas/documents` with local browser storage as fallback, and can reference projects/assets through node metadata. |
 | 素材库 | `/assets` | stable | Unified asset library. `/asset-hub` redirects here. |
 | 下载 | `/download` | stable | Stable import path for external media and files. |
 | 小说书架 | `/novel-bookshelf` | stable | Stable novel source and reading path. |
@@ -158,6 +158,7 @@ Current graph behavior:
 - Generated-media relationships use project asset link metadata such as `content_id`, `source_type`, `source_index`, `prompt`, `role` and `relation` when available.
 - Users can drag nodes and save the layout; saved graph state stores positions in project metadata while the actual graph still comes from project content and asset links.
 - Node actions support opening the source tab, locking chapter/content nodes, regenerating supported stages and sending prompt nodes to inline image generation, which links generated assets back to the project.
+- Node actions also support sending a factual graph node to the separate `/canvas` workspace. This creates a canvas node with project/source metadata and does not mutate the project fact represented by the relationship graph.
 
 This is not the free-form infinite canvas. The current tab is a project relationship graph: it visualizes facts and lineage already present in the project.
 
@@ -167,13 +168,19 @@ The `/canvas` route is a separate top-level creative canvas workspace. It is for
 
 Current MVP behavior:
 
-- Canvas documents are stored in browser `localStorage` under `ylcraft-canvas-documents-v1`.
+- Canvas documents are persisted through `/api/v1/canvas/documents` in `canvas_documents.document_json`; browser `localStorage` under `ylcraft-canvas-documents-v1` remains an offline/migration fallback.
 - Documents contain viewport `{ x, y, k }`, nodes, connections and metadata.
 - Supported starter nodes include text notes, Prompt, LLM, image model, platform search and asset reference.
+- Nodes can declare typed input/output capability hints, but connections are node-to-node dependency/context links rather than port-targeted variable wires.
+- Running a node resolves upstream connected nodes into text, image, asset and JSON resource inputs before calling LLM/image/search APIs.
+- Prompt-capable nodes can insert `@[node:<id>]` references for connected upstream resources; when such tokens exist, execution uses the referenced resources instead of all upstream inputs.
+- The canvas can insert Asset Hub items from the asset library as asset nodes. When a prompt, LLM or image node is selected, inserted assets are connected as upstream references.
+- Image generation nodes send selected references through canonical image API fields: `reference_images`, `reference_asset_ids` and `reference_image_collection`. The image API resolves `reference_asset_ids` to Asset Hub image representation paths, including child image nodes for collection or character roots. Provider-specific reference-image field mapping remains owned by the configured AI connector, not by canvas nodes.
 - LLM nodes can select active text connectors from `/api/v1/ai/connectors`; image nodes can select active image connectors; search nodes can select crawler platforms.
-- The canvas supports pointer-anchored wheel zoom, background/space/middle-button pan, node dragging, selection, fit-to-content and JSON copy export.
+- Running a node calls existing `/api/v1/llm/chat`, `/api/v1/images/generate` or `/api/v1/crawler/search` where applicable, and writes status, input summary, error and output values back into node metadata.
+- The canvas supports pointer-anchored wheel zoom, background/space/middle-button pan, node dragging, resize handles, selection, keyboard delete, fit-to-content, minimap navigation, undo/redo, JSON copy export and JSON import.
 
-Future behavior should move persistence to a durable backend model or project-linked canvas document table, then expose typed Agent operations.
+Agent-facing canvas tools now cover both persisted free-form `/canvas` documents and saved project relationship-graph canvas metadata. Free-form tools are `list_creative_canvas_documents`, `get_creative_canvas_document` and `apply_creative_canvas_operations`. Relationship-graph tools are `get_project_canvas`, `save_project_canvas`, `add_project_canvas_node`, `connect_project_canvas_nodes` and `apply_project_canvas_operations`; write tools use Agent `write` risk confirmation. Relationship-graph write operations are also recorded in project generation logs with `scene=agent_canvas` and `stage=canvas_operation`.
 
 ## User-Facing Status Hints
 

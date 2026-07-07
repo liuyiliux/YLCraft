@@ -120,7 +120,7 @@ flowchart TD
 
 - `/story` 页面正在从旧 Story Maker 过渡到 Creative Projects 工作台。
 - 文本生产链路包括大纲、章节规划、正文、脚本、分镜、Writer Room；`/story` 已支持结构化大纲编辑、JSON 高级编辑、章节规划保存、章节锁定、保留锁定再生成，以及从项目事实自动构建的项目关系图谱视图。
-- `/canvas` 是独立的创作画布工作台，用于自由编排文本、Prompt、LLM、生图、平台搜索和素材节点；它不是项目关系图谱，也不应成为项目事实的第二来源。画布节点可以通过 `projectId`、`contentId`、`assetId` 等 metadata 引用项目或素材。
+- `/canvas` 是独立的创作画布工作台，用于自由编排文本、Prompt、LLM、生图、平台搜索和素材节点；它不是项目关系图谱，也不应成为项目事实的第二来源。画布文档持久化在 `canvas_documents.document_json`，并保留浏览器 localStorage 作为离线/迁移兜底。画布节点可以通过 `projectId`、`contentId`、`assetId` 等 metadata 引用项目或素材。
 - 分镜和角色生图必须持久化结果，关联素材、任务和血缘。
 - 角色、背景、道具都应作为可引用参考卡参与提示词和参考图选择。
 
@@ -156,6 +156,20 @@ flowchart TD
 - 不要把能力写死到某个供应商，例如 aacc 只是一个实例，不是架构。
 - 图片生成支持 OpenAI SDK、通用 HTTP、base64、轮询、ModelScope 类请求等差异。
 
+### 4.5 生图提示词参考库
+
+生图提示词参考库不是 `PlatformTemplate`。它面向“几百/几千条生图 Prompt 案例”的同步、浏览、搜索、筛选和插入，参考 `basketikun/infinite-canvas` 的提示词库能力。当前已提供 `ImagePromptSource` / `ImagePromptReference` 持久化、GitHub 源 seed、markdown/JSON 解析、去重同步、HTTP API、Agent 工具、独立浏览页、复用 Picker，并已接入 `/canvas` Prompt/LLM/生图节点和 `/image-gen` 提示词输入区。
+
+设计边界：
+- Prompt reference 是外部案例/灵感参考，不是创作项目阶段模板。
+- Prompt reference 默认不进入 Asset Hub；只有用户显式保存为素材时才进入。
+- 用 Prompt reference 生成出的图片结果应进入 Asset Hub，并记录 prompt reference 来源到生成元数据/血缘。
+- `/canvas` 和 `/image-gen` 只是调用入口，可以选择、替换或追加参考 Prompt；选择信息写入节点 metadata 或图片生成请求，并进入生成图片的 Asset Hub lineage。
+- 后端应优先做统一同步和缓存，避免每个前端页面各自直连 GitHub。
+- 当前 API 前缀是 `/api/v1/image-prompts`；Agent 工具分类是 `image_prompt_reference`。
+
+当前 OpenSpec：`openspec/changes/image-prompt-reference-library/`。
+
 ## 5. 主要模块边界
 
 | 模块 | API 前缀 | 后端服务 | 前端页面 | 状态 |
@@ -163,12 +177,13 @@ flowchart TD
 | Agent Center | `/api/v1/agent` | `services/agent` | `/agent`、settings skill 面板 | 主体完成，持续优化体验。 |
 | Agent Skill Runtime | `/api/v1/agent/skills*` | `services/agent/skill_*` | `SkillManagementPanel` | OpenSpec 主计划完成。 |
 | 创作项目 | `/api/v1/creative-projects` | `services/creative_project` | `/story` | 仍在闭环推进。 |
-| 创作画布 | 前端 MVP，本地存储 | `frontend/src/components/canvas` | `/canvas` | 独立自由画布，已接一级菜单；后续接入持久化、Agent 操作和素材/项目插入。 |
+| 创作画布 | `/api/v1/canvas` | `frontend/src/components/canvas` | `/canvas` | 独立自由画布，已接一级菜单；支持后端持久化、素材/项目插入、节点运行和 Agent 操作。 |
 | 旧 Story Maker | `/api/v1/story` | `services/story` | `/story` 兼容入口 | 逐步迁移。 |
 | 角色 | `/api/v1/characters` | `services/character` | `/characters` | 参考图/视觉卡仍需完善。 |
 | 素材库 | `/api/v1/assets` | `services/asset` | `/assets` | 可用，需与资产中枢统一。 |
 | 资产中枢 | `/api/v1/asset-hub` | `services/asset_hub` | `/asset-hub` | 新模型方向。 |
 | AI 连接器 | `/api/v1/ai/connectors` | `services/ai`、`services/ai_connector` | `/settings` | 已支持通用配置，仍需 UX 打磨。 |
+| 生图提示词参考库 | `/api/v1/image-prompts` | `services/image_prompt_reference` | `/prompt-library`、画布 picker、图片生成 picker | 后端、Agent 工具、独立浏览页、Picker、画布/生图集成已完成；剩手动烟测。 |
 | 图片生成 | `/api/v1/images` | `services/image`、AI backends | `/image-gen` | 多后端兼容中。 |
 | 视频生成 | `/api/v1/videos` | `services/video_gen` | `/video-gen` | 基础能力。 |
 | 下载/磁力 | `/api/v1/download`、`/api/v1/torrents` | `services/download`、`services/torrent` | `/download` | 本地化方向，不做自建云缓存。 |
@@ -192,9 +207,9 @@ flowchart TD
 
 当前统计：
 
-- Router mounts: 44
-- Endpoints: 507
-- Public schema endpoints: 506
+- Router mounts: 45
+- Endpoints: 512
+- Public schema endpoints: 511
 - Hidden compatibility endpoints: 1
 
 接口变更后，AI 必须做五件事：
@@ -220,6 +235,7 @@ Agent Tool / Skill 变更按内部 API 处理：工具名称、输入输出 sche
 | `archive/drop-legacy-assets-final` | 24 | 0 | 旧资产清理计划完成并归档。 |
 | `creative-project-closed-loop` | 72 | 11 | 仍是后续业务主线。 |
 | `creative-project-optimization-roadmap` | 32 | 11 | 仍有优化任务。 |
+| `image-prompt-reference-library` | 27 | 1 | 后端模型、同步、API、Agent 工具、独立浏览页、Picker、画布和生图集成已完成；剩手动烟测。 |
 | `task-observability-diagnostics` | 25 | 1 | 少量收尾。 |
 
 ## 8. 文档更新协议

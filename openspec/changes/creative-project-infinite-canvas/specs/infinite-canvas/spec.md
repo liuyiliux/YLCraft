@@ -21,6 +21,21 @@ The system SHALL provide an infinite canvas document workspace separate from the
 - **THEN** it stores the reference in metadata such as `projectId`, `contentId` or `assetId`
 - **AND** it does not duplicate the source project fact.
 
+#### Scenario: Resolve upstream resources
+- **WHEN** the system creates a canvas node
+- **THEN** the node can declare typed `inputs` and `outputs` as capability hints
+- **AND** connections primarily store `fromNodeId`, `toNodeId` and optional relation metadata
+- **AND** later execution resolves text, image, asset and JSON inputs from upstream connected nodes.
+
+#### Scenario: Run a node
+- **WHEN** the user runs a selected canvas node
+- **THEN** the system resolves upstream connected nodes as resource inputs and prompt context
+- **AND** prompt text can use `@[node:<id>]` tokens to explicitly select upstream resources
+- **AND** image generation requests include selected reference resources as canonical `reference_images`, `reference_asset_ids` and `reference_image_collection`
+- **AND** the image API resolves `reference_asset_ids` through Asset Hub image representations before provider-specific request mapping
+- **AND** dispatches LLM, image generation and platform search nodes through the existing YLCraft APIs
+- **AND** stores execution status, errors and output values on the node metadata.
+
 ### Requirement: Infinite canvas interactions
 
 The system SHALL support common infinite canvas interactions.
@@ -41,6 +56,7 @@ The system SHALL let users send factual graph nodes into the free-form canvas.
 #### Scenario: Send graph node to canvas
 - **WHEN** the user sends a relationship graph node to the canvas
 - **THEN** the system creates a canvas node with metadata pointing back to the source project object
+- **AND** the canvas page consumes the pending import without replacing existing canvas nodes
 - **AND** the original project fact remains unchanged.
 
 ### Requirement: Agent canvas operations
@@ -51,3 +67,9 @@ The system SHALL expose typed canvas operations for Agent workflows.
 - **WHEN** an Agent wants to change the canvas
 - **THEN** it emits one or more typed operations
 - **AND** write-like operations can be reviewed before persistence.
+
+#### Scenario: Agent updates project relationship canvas metadata
+- **WHEN** an Agent reads or updates a creative project's saved relationship-graph canvas
+- **THEN** it uses `get_project_canvas`, `save_project_canvas`, `add_project_canvas_node`, `connect_project_canvas_nodes` or `apply_project_canvas_operations`
+- **AND** write operations have `write` risk and require confirmation through the Agent tool runtime
+- **AND** successful write operations are recorded in project generation logs with `scene=agent_canvas` and `stage=canvas_operation`.

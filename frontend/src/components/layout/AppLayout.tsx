@@ -11,6 +11,7 @@ import {
   SettingOutlined,
   FolderOpenOutlined,
   PictureOutlined,
+  DatabaseOutlined,
   BranchesOutlined,
   EditOutlined,
   FireOutlined,
@@ -76,6 +77,7 @@ const menuItems: MenuProps['items'] = [
     children: [
       { key: '/multi-platform-gen', label: navLabel('多平台生图', '实验') },
       { key: '/video-gen', label: navLabel('视频生成', '实验') },
+      { key: '/prompt-library', icon: <DatabaseOutlined />, label: 'Prompt 参考库' },
       { key: '/platform-templates', label: navLabel('平台模板', '辅助') },
       { key: '/comfyui', label: navLabel('ComfyUI', '实验') },
       { key: '/agent', label: navLabel('智能体', '实验') },

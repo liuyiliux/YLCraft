@@ -1367,6 +1367,96 @@ export const getCreativeProjectCanvas = (projectId: string) =>
 export const saveCreativeProjectCanvas = (projectId: string, data: Record<string, any>) =>
   request(`/creative-projects/${projectId}/canvas`, { method: 'PUT', body: JSON.stringify(data) })
 
+export const listCanvasDocuments = (params?: Record<string, any>) => {
+  const sp = new URLSearchParams()
+  if (params?.project_id) sp.set('project_id', params.project_id)
+  return request(`/canvas/documents${sp.toString() ? `?${sp}` : ''}`)
+}
+
+export const createCanvasDocument = (document: any) =>
+  request('/canvas/documents', { method: 'POST', body: JSON.stringify({ document }) })
+
+export const saveCanvasDocument = (documentId: string, document: any) =>
+  request(`/canvas/documents/${documentId}`, { method: 'PUT', body: JSON.stringify({ document }) })
+
+export const deleteCanvasDocument = (documentId: string) =>
+  request(`/canvas/documents/${documentId}`, { method: 'DELETE' })
+
+// ===== Image Prompt Reference Library =====
+
+export interface ImagePromptSource {
+  id: string
+  name: string
+  repo_url: string
+  raw_base_url: string
+  raw_path: string
+  parser: string
+  category: string
+  enabled: boolean
+  sync_status: string
+  last_synced_at?: string | null
+  error?: string
+  metadata?: Record<string, any>
+}
+
+export interface ImagePromptReference {
+  id: string
+  source_id: string
+  external_id: string
+  title: string
+  prompt: string
+  negative_prompt?: string
+  cover_url?: string
+  preview_markdown?: string
+  tags: string[]
+  category: string
+  source_url?: string
+  model_hint?: string
+  needs_reference_image?: boolean
+  language?: string
+  metadata?: Record<string, any>
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export const listImagePromptSources = (params?: { includeDisabled?: boolean }) => {
+  const sp = new URLSearchParams()
+  if (params?.includeDisabled) sp.set('include_disabled', 'true')
+  const qs = sp.toString()
+  return request(`/image-prompts/sources${qs ? `?${qs}` : ''}`)
+}
+
+export const refreshImagePromptSources = (sourceId?: string) =>
+  request('/image-prompts/sources/refresh', {
+    method: 'POST',
+    body: JSON.stringify({ source_id: sourceId || null }),
+  })
+
+export const searchImagePromptReferences = (params?: {
+  keyword?: string
+  tag?: string
+  category?: string
+  sourceId?: string
+  page?: number
+  pageSize?: number
+}) => {
+  const sp = new URLSearchParams()
+  if (params?.keyword) sp.set('keyword', params.keyword)
+  if (params?.tag) sp.set('tag', params.tag)
+  if (params?.category) sp.set('category', params.category)
+  if (params?.sourceId) sp.set('source_id', params.sourceId)
+  if (params?.page) sp.set('page', String(params.page))
+  if (params?.pageSize) sp.set('page_size', String(params.pageSize))
+  const qs = sp.toString()
+  return request(`/image-prompts/references${qs ? `?${qs}` : ''}`)
+}
+
+export const getImagePromptReference = (referenceId: string) =>
+  request(`/image-prompts/references/${encodeURIComponent(referenceId)}`)
+
+export const saveImagePromptReferenceAsAsset = (referenceId: string) =>
+  request(`/image-prompts/references/${encodeURIComponent(referenceId)}/save-as-asset`, { method: 'POST' })
+
 export const deleteCreativeProject = (projectId: string) =>
   request(`/creative-projects/${projectId}`, { method: 'DELETE' })
 
