@@ -185,6 +185,34 @@ frontend/src/
 
 ***
 
+## infinite-canvas — 开源无限画布工作台
+
+**GitHub**: <https://github.com/basketikun/infinite-canvas>
+**许可证**: AGPL-3.0
+**技术栈**: React 19 + Vite 7 + Ant Design 6 + Zustand + TanStack Query + Tailwind + lucide + motion
+
+### 核心能力
+
+- 多画布管理：同一工作区内可维护多个画布。
+- 无限画布交互：节点拖拽、缩放、平移、网格背景、视口变换。
+- 关系连线：节点间可建立连接，配合选择框、上下文菜单使用。
+- 视图辅助：小地图、导入导出、撤销重做。
+- 画布助手：Agent 不直接写 UI 状态，而是输出画布操作流。
+
+### YLCraft 可借鉴
+
+- 视口模型：`{ x, y, k }` 表示平移和缩放，所有节点放进 world layer 后统一 transform。
+- 鼠标点缩放：wheel 时以指针位置为锚点计算新视口，避免缩放后内容跳走。
+- 背景网格：按视口偏移和缩放绘制，强化空间感。
+- 节点数据模型：`id/type/title/position/width/height/metadata`，保持节点内容和布局分离。
+- Agent ops 模型：Agent 输出 `add_node`、`update_node`、`delete_node`、`connect_nodes`、`select_nodes`、`set_viewport`、`run_generation` 这类操作，前端或服务端统一 apply。
+
+### 采用边界
+
+不能直接复制源码进 YLCraft，除非项目整体接受 AGPL-3.0 传染义务。当前策略是只借鉴架构和交互模式，自行实现轻量无限画布组件。YLCraft 现有 `/story` 中的“关系图谱”不是这个自由画布，它只展示项目事实和血缘关系。
+
+***
+
 ## 其他参考项目
 
 | 项目                        | GitHub                        | 核心特点                                     |
@@ -228,4 +256,3 @@ frontend/src/
 5. **\[中] 音乐驱动剪辑**：参考 CutClaw，实现 Beat-based 自动剪辑
 6. **\[中] Cookie 自动获取**：参考 XHS\_ALL\_IN\_ONE 的二维码登录 + 浏览器获取，完善 CookieManager 适配
 7. **\[低] 剪映草稿导出**：参考 ArcReel，按集导出剪映 ZIP
-

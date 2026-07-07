@@ -8,6 +8,7 @@ import DownloadPage from './pages/download'
 import BreakerPage from './pages/breaker'
 import ClipLabPage from './pages/clip'
 import StoryPage from './pages/story'
+import CanvasPage from './pages/canvas'
 import TasksPage from './pages/tasks'
 import SettingsPage from './pages/settings'
 import AssetsPage from './pages/assets'
@@ -67,6 +68,7 @@ export default function App() {
               <Route path="breaker" element={<BreakerPage />} />
               <Route path="clip" element={<ClipLabPage />} />
               <Route path="story" element={<StoryPage />} />
+              <Route path="canvas" element={<CanvasPage />} />
               <Route path="image-gen" element={<ImageGenPage />} />
               <Route path="multi-platform-gen" element={<MultiPlatformGenPage />} />
               <Route path="video-gen" element={<VideoGenPage />} />

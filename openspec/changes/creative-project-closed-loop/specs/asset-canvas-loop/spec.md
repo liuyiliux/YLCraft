@@ -1,6 +1,6 @@
-# Asset Canvas Loop Specification
+# Asset Graph Loop Specification
 
-素材库和画布共同承担创作项目的长期记忆、关系追踪和可视化编排。
+素材库和项目关系图谱共同承担创作项目的长期记忆、关系追踪和可视化编排。
 
 ## ADDED Requirements
 
@@ -37,23 +37,23 @@ The system SHALL track relationships between projects, content items and assets.
 - **THEN** the project stores a link with role `output`
 - **AND** the relation identifies the source content item
 
-### Requirement: Canvas node graph
+### Requirement: Project relationship graph
 
-The system SHALL provide a project canvas that represents project content and assets as nodes connected by typed edges.
+The system SHALL provide a project relationship graph that represents project content and assets as nodes connected by typed edges.
 
-#### Scenario: Open project canvas
-- **WHEN** the user opens the project canvas
+#### Scenario: Open project relationship graph
+- **WHEN** the user opens the project relationship graph
 - **THEN** the system displays nodes for outline, chapters, characters, scenes, prompts and generated assets
 - **AND** edges show contains, uses, references or derived_from relationships
 
-#### Scenario: Save canvas layout
-- **WHEN** the user moves nodes on the canvas
-- **THEN** the system stores layout information in project canvas state
+#### Scenario: Save graph layout
+- **WHEN** the user moves nodes on the relationship graph
+- **THEN** the system stores layout information in project graph state
 - **AND** reopens the project with the same layout
 
-### Requirement: Canvas actions
+### Requirement: Graph actions
 
-The system SHALL expose production actions from canvas nodes.
+The system SHALL expose production actions from graph nodes.
 
 #### Scenario: Send prompt node to image generation
 - **WHEN** the user invokes image generation from a prompt node
@@ -76,7 +76,7 @@ The system SHALL integrate currently stable features into the project loop befor
 
 #### Scenario: Downloaded asset enters project
 - **WHEN** a downloaded video, image, audio or document is added to a project
-- **THEN** it appears in the project asset tab and canvas
+- **THEN** it appears in the project asset tab and relationship graph
 
 #### Scenario: Novel chapter enters project
 - **WHEN** a novel chapter is selected as project source
@@ -94,4 +94,3 @@ The system SHALL mark unfinished historical modules as experimental until they a
 - **WHEN** the user opens a module that is not part of the stable loop
 - **THEN** the UI shows that the module is experimental
 - **AND** the primary project workflow remains available without depending on it
-

@@ -9,6 +9,7 @@ The primary workflow entries are:
 | Entry | Route | Status | Role in the loop |
 |---|---|---|---|
 | 创作项目 | `/story` | stable | Project workspace for outline, chapter plan, prose, script, storyboard, comic pages, references and inline generation. |
+| 创作画布 | `/canvas` | experimental | Free-form workspace for arranging text, prompts, LLM/image model nodes, platform search and asset references. |
 | 素材库 | `/assets` | stable | Durable memory for downloaded files, generated images, references and project-linked outputs. |
 | 下载 | `/download` | stable | Import videos, images, documents and external files into the local asset system. |
 | 小说 | `/novel-bookshelf` | stable | Search, download, read and reuse novel chapters as project source material. |
@@ -32,6 +33,7 @@ Current module inventory:
 |---|---|---|---|
 | 概览 | `/` | auxiliary | Dashboard and entry overview. |
 | 创作项目 | `/story` | stable | Main project workspace. |
+| 创作画布 | `/canvas` | experimental | Independent infinite canvas. Uses local browser storage in the current MVP and can reference projects/assets through node metadata. |
 | 素材库 | `/assets` | stable | Unified asset library. `/asset-hub` redirects here. |
 | 下载 | `/download` | stable | Stable import path for external media and files. |
 | 小说书架 | `/novel-bookshelf` | stable | Stable novel source and reading path. |
@@ -47,7 +49,7 @@ Current module inventory:
 | 视频生成 | `/video-gen` | experimental | Generated videos can enter assets, but the project loop is not complete. |
 | ComfyUI | `/comfyui` | experimental | Backend-specific generation surface. |
 | 图片编辑 | `/image-editor` | experimental | Editing tool, not yet fully lineage-aware. |
-| 视频剪辑 | `/clip-ops` | experimental | Editing tool, not yet fully project-canvas aware. |
+| 视频剪辑 | `/clip-ops` | experimental | Editing tool, not yet fully project-graph aware. |
 | AI 剪辑 | `/clip` | experimental | Prototype workflow. |
 | 字幕提取 | `/subtitle` | experimental | Media utility. |
 | BGM 配乐 | `/bgm` | experimental | Media utility. |
@@ -139,23 +141,39 @@ Expected metadata:
 - image file path or URL
 - relation such as `derived_from` or `output`
 
-### Project Canvas
+### Project Graph
 
-The `/story` workspace has a project canvas tab for inspecting the creative graph without making a second source of truth.
+The `/story` workspace has a project relationship graph tab for inspecting creative-project facts without making a second source of truth.
 
 Stable handoff:
 
 ```text
-project facts -> generated canvas nodes/edges -> user-adjusted layout -> /creative-projects/{id}/canvas metadata
+project facts -> generated graph nodes/edges -> user-adjusted layout -> /creative-projects/{id}/canvas metadata
 ```
 
-Current canvas behavior:
+Current graph behavior:
 
 - Nodes are rebuilt from the current project outline, chapters, characters, stage contents, storyboard panels, image prompts and linked assets.
 - Edges represent `contains`, `uses`, `references` and `derived_from` relationships.
 - Generated-media relationships use project asset link metadata such as `content_id`, `source_type`, `source_index`, `prompt`, `role` and `relation` when available.
-- Users can drag nodes and save the layout; saved canvas state stores positions in project metadata while the actual graph still comes from project content and asset links.
+- Users can drag nodes and save the layout; saved graph state stores positions in project metadata while the actual graph still comes from project content and asset links.
 - Node actions support opening the source tab, locking chapter/content nodes, regenerating supported stages and sending prompt nodes to inline image generation, which links generated assets back to the project.
+
+This is not the free-form infinite canvas. The current tab is a project relationship graph: it visualizes facts and lineage already present in the project.
+
+### Creative Canvas
+
+The `/canvas` route is a separate top-level creative canvas workspace. It is for planning and composition, not a factual project graph.
+
+Current MVP behavior:
+
+- Canvas documents are stored in browser `localStorage` under `ylcraft-canvas-documents-v1`.
+- Documents contain viewport `{ x, y, k }`, nodes, connections and metadata.
+- Supported starter nodes include text notes, Prompt, LLM, image model, platform search and asset reference.
+- LLM nodes can select active text connectors from `/api/v1/ai/connectors`; image nodes can select active image connectors; search nodes can select crawler platforms.
+- The canvas supports pointer-anchored wheel zoom, background/space/middle-button pan, node dragging, selection, fit-to-content and JSON copy export.
+
+Future behavior should move persistence to a durable backend model or project-linked canvas document table, then expose typed Agent operations.
 
 ## User-Facing Status Hints
 
@@ -168,7 +186,7 @@ Experimental modules should be reachable, but they should not look like equal re
 
 ## Next Product Work
 
-The next high-value features after the project canvas MVP are:
+The next high-value features after the project graph MVP are:
 
 1. Ensure generated project texts can be stored or indexed as text assets.
 2. Save outline characters into the character library and link them back to the project.

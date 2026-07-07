@@ -201,7 +201,7 @@ type ReferenceImageItem = {
   role?: string
 }
 
-type ProjectCanvasNodeType =
+type ProjectGraphNodeType =
   | 'outline'
   | 'chapter'
   | 'character'
@@ -210,9 +210,9 @@ type ProjectCanvasNodeType =
   | 'prompt'
   | 'asset'
 
-type ProjectCanvasNode = {
+type ProjectGraphNode = {
   id: string
-  type: ProjectCanvasNodeType
+  type: ProjectGraphNodeType
   label: string
   subtitle?: string
   status?: string
@@ -233,7 +233,7 @@ type ProjectCanvasNode = {
   data?: Record<string, any>
 }
 
-type ProjectCanvasEdge = {
+type ProjectGraphEdge = {
   id: string
   from: string
   to: string
@@ -241,9 +241,9 @@ type ProjectCanvasEdge = {
   label?: string
 }
 
-type ProjectCanvasState = {
-  nodes?: ProjectCanvasNode[]
-  edges?: ProjectCanvasEdge[]
+type ProjectGraphState = {
+  nodes?: ProjectGraphNode[]
+  edges?: ProjectGraphEdge[]
   viewport?: { x?: number; y?: number; zoom?: number }
   updated_at?: string
 }
@@ -524,18 +524,18 @@ function normalizeChapterPlan(plan: ChapterPlan | Record<string, any>): ChapterP
   }
 }
 
-function buildCreativeProjectCanvas(params: {
+function buildCreativeProjectGraph(params: {
   project?: CreativeProject | null
   contents: ProjectContent[]
   assets: ProjectAssetLink[]
   assetDetails: Record<string, AssetSummary>
-  saved?: ProjectCanvasState | null
-}): ProjectCanvasState {
+  saved?: ProjectGraphState | null
+}): ProjectGraphState {
   const { project, contents, assets, assetDetails, saved } = params
   const savedNodes = new Map((saved?.nodes || []).map((node) => [node.id, node]))
-  const nodes: ProjectCanvasNode[] = []
-  const edges: ProjectCanvasEdge[] = []
-  const addNode = (node: ProjectCanvasNode) => {
+  const nodes: ProjectGraphNode[] = []
+  const edges: ProjectGraphEdge[] = []
+  const addNode = (node: ProjectGraphNode) => {
     const savedNode = savedNodes.get(node.id)
     nodes.push({
       ...node,
@@ -545,7 +545,7 @@ function buildCreativeProjectCanvas(params: {
       height: savedNode?.height || node.height || 92,
     })
   }
-  const addEdge = (edge: ProjectCanvasEdge) => {
+  const addEdge = (edge: ProjectGraphEdge) => {
     if (edge.from === edge.to) return
     if (edges.some((item) => item.id === edge.id)) return
     edges.push(edge)
@@ -1088,7 +1088,7 @@ export default function StoryPage() {
   const [contents, setContents] = useState<ProjectContent[]>([])
   const [projectAssets, setProjectAssets] = useState<ProjectAssetLink[]>([])
   const [assetDetails, setAssetDetails] = useState<Record<string, AssetSummary>>({})
-  const [projectCanvas, setProjectCanvas] = useState<ProjectCanvasState | null>(null)
+  const [projectGraph, setProjectGraph] = useState<ProjectGraphState | null>(null)
   const [characterDetails, setCharacterDetails] = useState<Record<string, CharacterReferenceSummary>>({})
   const [generationLogs, setGenerationLogs] = useState<ProjectGenerationLog[]>([])
   const [llmConnectors, setLlmConnectors] = useState<Provider[]>([])
@@ -1159,16 +1159,16 @@ export default function StoryPage() {
   )
   const selectedNovelAsset = novelAssets.find((asset) => asset.id === createNovelAssetId)
   const selectedNovelChapterOptions = getNovelChapterOptions(selectedNovelAsset)
-  const canvasGraph = useMemo(
+  const projectGraphView = useMemo(
     () =>
-      buildCreativeProjectCanvas({
+      buildCreativeProjectGraph({
         project: selectedProject,
         contents,
         assets: projectAssets,
         assetDetails,
-        saved: projectCanvas,
+        saved: projectGraph,
       }),
-    [selectedProject, contents, projectAssets, assetDetails, projectCanvas],
+    [selectedProject, contents, projectAssets, assetDetails, projectGraph],
   )
 
   const handleInlineGenerateImage = async (prompt: string, context: ImagePromptContext = {}) => {
@@ -1409,11 +1409,11 @@ export default function StoryPage() {
       loadContents(found.id)
       loadProjectAssets(found.id)
       loadGenerationLogs(found.id)
-      loadProjectCanvas(found.id)
+      loadProjectGraph(found.id)
     } else {
       setContents([])
       setProjectAssets([])
-      setProjectCanvas(null)
+      setProjectGraph(null)
       setGenerationLogs([])
     }
   }, [selectedId, projects])
@@ -1764,12 +1764,12 @@ export default function StoryPage() {
     }
   }
 
-  async function loadProjectCanvas(projectId: string) {
+  async function loadProjectGraph(projectId: string) {
     try {
       const response = await getCreativeProjectCanvas(projectId)
-      setProjectCanvas(response?.data || { nodes: [], edges: [] })
+      setProjectGraph(response?.data || { nodes: [], edges: [] })
     } catch {
-      setProjectCanvas({ nodes: [], edges: [] })
+      setProjectGraph({ nodes: [], edges: [] })
     }
   }
 
@@ -2115,32 +2115,32 @@ export default function StoryPage() {
     }
   }
 
-  async function handleSaveProjectCanvas(nextCanvas: ProjectCanvasState) {
+  async function handleSaveProjectGraph(nextGraph: ProjectGraphState) {
     if (!selectedProject) return
     setLoadingAction('canvas_save')
     try {
       const payload = {
-        ...nextCanvas,
+        ...nextGraph,
         updated_at: new Date().toISOString(),
       }
       const response = await saveCreativeProjectCanvas(selectedProject.id, payload)
-      setProjectCanvas(response?.data || payload)
-      message.success('画布布局已保存')
+      setProjectGraph(response?.data || payload)
+      message.success('关系图谱布局已保存')
     } catch (error: any) {
-      message.error(error?.message || '保存画布布局失败')
+      message.error(error?.message || '保存关系图谱布局失败')
     } finally {
       setLoadingAction(null)
     }
   }
 
-  function handleOpenCanvasNode(node: ProjectCanvasNode) {
+  function handleOpenGraphNode(node: ProjectGraphNode) {
     const source = node.source || {}
     if (source.chapterNumber) setActiveChapterNumber(Number(source.chapterNumber))
     if (source.tab) setActiveWorkspaceTab(source.tab)
     if (node.type === 'asset' && source.assetId) setActiveWorkspaceTab('assets')
   }
 
-  async function handleToggleCanvasNodeLock(node: ProjectCanvasNode) {
+  async function handleToggleGraphNodeLock(node: ProjectGraphNode) {
     if (node.type === 'content' && node.source?.contentId) {
       const nextLocked = node.status !== 'locked'
       await handleSaveContent(node.source.contentId, { is_locked: nextLocked })
@@ -2156,7 +2156,7 @@ export default function StoryPage() {
     }
   }
 
-  async function handleRegenerateCanvasNode(node: ProjectCanvasNode) {
+  async function handleRegenerateGraphNode(node: ProjectGraphNode) {
     const chapterNumber = Number(node.source?.chapterNumber || 0)
     const contentType = node.source?.contentType
     if (node.type === 'outline') {
@@ -3378,18 +3378,18 @@ export default function StoryPage() {
                     label: (
                       <Space>
                         <BranchesOutlined />
-                        画布
+                        关系图谱
                       </Space>
                     ),
                     children: (
-                      <ProjectCanvasTab
-                        graph={canvasGraph}
+                      <ProjectGraphTab
+                        graph={projectGraphView}
                         saving={loadingAction === 'canvas_save'}
                         generating={Boolean(loadingAction || loadingChapterAction.action || inlineImageLoadingKey)}
-                        onSave={handleSaveProjectCanvas}
-                        onOpenNode={handleOpenCanvasNode}
-                        onToggleLock={handleToggleCanvasNodeLock}
-                        onRegenerate={handleRegenerateCanvasNode}
+                        onSave={handleSaveProjectGraph}
+                        onOpenNode={handleOpenGraphNode}
+                        onToggleLock={handleToggleGraphNodeLock}
+                        onRegenerate={handleRegenerateGraphNode}
                         onSendImagePrompt={(node) => {
                           const prompt = node.source?.prompt || node.data?.image_prompt || ''
                           if (!prompt) {
@@ -3398,7 +3398,7 @@ export default function StoryPage() {
                           }
                           handleInlineGenerateImage(prompt, {
                             contentId: node.source?.contentId,
-                            sourceType: node.source?.sourceType || 'canvas_prompt',
+                            sourceType: node.source?.sourceType || 'project_graph_prompt',
                             sourceIndex: node.source?.sourceIndex,
                             sourceTitle: node.label,
                             chapterNumber: node.source?.chapterNumber,
@@ -7376,7 +7376,7 @@ function LogTextBlock({ title, value, rows }: { title: string; value: string; ro
   )
 }
 
-function ProjectCanvasTab({
+function ProjectGraphTab({
   graph,
   saving,
   generating,
@@ -7386,16 +7386,16 @@ function ProjectCanvasTab({
   onRegenerate,
   onSendImagePrompt,
 }: {
-  graph: ProjectCanvasState
+  graph: ProjectGraphState
   saving: boolean
   generating: boolean
-  onSave: (canvas: ProjectCanvasState) => Promise<void>
-  onOpenNode: (node: ProjectCanvasNode) => void
-  onToggleLock: (node: ProjectCanvasNode) => Promise<void>
-  onRegenerate: (node: ProjectCanvasNode) => Promise<void>
-  onSendImagePrompt: (node: ProjectCanvasNode) => void
+  onSave: (graph: ProjectGraphState) => Promise<void>
+  onOpenNode: (node: ProjectGraphNode) => void
+  onToggleLock: (node: ProjectGraphNode) => Promise<void>
+  onRegenerate: (node: ProjectGraphNode) => Promise<void>
+  onSendImagePrompt: (node: ProjectGraphNode) => void
 }) {
-  const [nodes, setNodes] = useState<ProjectCanvasNode[]>(graph.nodes || [])
+  const [nodes, setNodes] = useState<ProjectGraphNode[]>(graph.nodes || [])
   const [selectedId, setSelectedId] = useState<string>('')
   const [dragging, setDragging] = useState<{ id: string; offsetX: number; offsetY: number } | null>(null)
 
@@ -7418,7 +7418,7 @@ function ProjectCanvasTab({
       viewport: graph.viewport || { x: 0, y: 0, zoom: 1 },
     })
 
-  const startDrag = (event: React.MouseEvent, node: ProjectCanvasNode) => {
+  const startDrag = (event: React.MouseEvent, node: ProjectGraphNode) => {
     event.preventDefault()
     setSelectedId(node.id)
     setDragging({ id: node.id, offsetX: event.clientX - node.x, offsetY: event.clientY - node.y })
@@ -7431,7 +7431,7 @@ function ProjectCanvasTab({
     setNodes((prev) => prev.map((node) => (node.id === dragging.id ? { ...node, x: nextX, y: nextY } : node)))
   }
 
-  const edgePath = (edge: ProjectCanvasEdge) => {
+  const edgePath = (edge: ProjectGraphEdge) => {
     const from = nodeMap.get(edge.from)
     const to = nodeMap.get(edge.to)
     if (!from || !to) return ''
@@ -7454,7 +7454,7 @@ function ProjectCanvasTab({
   if (!nodes.length) {
     return (
       <div style={{ padding: 48, textAlign: 'center' }}>
-        <Empty description="暂无可绘制节点。先生成大纲、章节或关联素材后再查看画布。" />
+        <Empty description="暂无可绘制节点。先生成大纲、章节或关联素材后再查看关系图谱。" />
       </div>
     )
   }
@@ -7483,7 +7483,7 @@ function ProjectCanvasTab({
           <div style={{ position: 'relative', width, height }}>
             <svg width={width} height={height} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
               <defs>
-                <marker id="project-canvas-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <marker id="project-graph-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
                   <path d="M 0 0 L 8 4 L 0 8 z" fill="var(--textTertiary)" />
                 </marker>
               </defs>
@@ -7494,10 +7494,10 @@ function ProjectCanvasTab({
                   <path
                     key={edge.id}
                     d={path}
-                    stroke={canvasEdgeColor(edge.type)}
+                    stroke={graphEdgeColor(edge.type)}
                     strokeWidth={1.6}
                     fill="none"
-                    markerEnd="url(#project-canvas-arrow)"
+                    markerEnd="url(#project-graph-arrow)"
                     opacity={0.78}
                   />
                 )
@@ -7509,7 +7509,7 @@ function ProjectCanvasTab({
                 onMouseDown={(event) => startDrag(event, node)}
                 onDoubleClick={() => onOpenNode(node)}
                 style={{
-                  ...canvasNodeStyle(node, selectedId === node.id),
+                  ...graphNodeStyle(node, selectedId === node.id),
                   left: node.x,
                   top: node.y,
                   width: node.width || 210,
@@ -7518,7 +7518,7 @@ function ProjectCanvasTab({
               >
                 <Space direction="vertical" size={6} style={{ width: '100%' }}>
                   <Space style={{ justifyContent: 'space-between', width: '100%' }} align="start">
-                    <Tag color={canvasNodeColor(node.type)} style={{ marginInlineEnd: 0 }}>{canvasNodeLabel(node.type)}</Tag>
+                    <Tag color={graphNodeColor(node.type)} style={{ marginInlineEnd: 0 }}>{graphNodeLabel(node.type)}</Tag>
                     {node.status ? <Tag color={node.status === 'locked' ? 'green' : 'default'} style={{ marginInlineEnd: 0 }}>{node.status}</Tag> : null}
                   </Space>
                   <Text strong ellipsis={{ tooltip: node.label }}>{node.label}</Text>
@@ -7536,7 +7536,7 @@ function ProjectCanvasTab({
         {selectedNode ? (
           <Space direction="vertical" size={12} style={{ width: '100%' }}>
             <Space direction="vertical" size={4} style={{ width: '100%' }}>
-              <Tag color={canvasNodeColor(selectedNode.type)}>{canvasNodeLabel(selectedNode.type)}</Tag>
+              <Tag color={graphNodeColor(selectedNode.type)}>{graphNodeLabel(selectedNode.type)}</Tag>
               <Title level={5} style={{ margin: 0 }}>{selectedNode.label}</Title>
               <Text type="secondary">{selectedNode.subtitle || selectedNode.id}</Text>
             </Space>
@@ -7587,8 +7587,8 @@ function ProjectCanvasTab({
   )
 }
 
-function canvasNodeLabel(type: ProjectCanvasNodeType) {
-  const labels: Record<ProjectCanvasNodeType, string> = {
+function graphNodeLabel(type: ProjectGraphNodeType) {
+  const labels: Record<ProjectGraphNodeType, string> = {
     outline: '大纲',
     chapter: '章节',
     character: '角色',
@@ -7600,8 +7600,8 @@ function canvasNodeLabel(type: ProjectCanvasNodeType) {
   return labels[type] || type
 }
 
-function canvasNodeColor(type: ProjectCanvasNodeType) {
-  const colors: Record<ProjectCanvasNodeType, string> = {
+function graphNodeColor(type: ProjectGraphNodeType) {
+  const colors: Record<ProjectGraphNodeType, string> = {
     outline: 'blue',
     chapter: 'geekblue',
     character: 'cyan',
@@ -7613,8 +7613,8 @@ function canvasNodeColor(type: ProjectCanvasNodeType) {
   return colors[type] || 'default'
 }
 
-function canvasEdgeColor(type: ProjectCanvasEdge['type']) {
-  const colors: Record<ProjectCanvasEdge['type'], string> = {
+function graphEdgeColor(type: ProjectGraphEdge['type']) {
+  const colors: Record<ProjectGraphEdge['type'], string> = {
     contains: 'var(--textTertiary)',
     uses: '#7c3aed',
     references: '#0891b2',
@@ -7623,7 +7623,7 @@ function canvasEdgeColor(type: ProjectCanvasEdge['type']) {
   return colors[type] || 'var(--textTertiary)'
 }
 
-function canvasNodeStyle(node: ProjectCanvasNode, selected: boolean): React.CSSProperties {
+function graphNodeStyle(node: ProjectGraphNode, selected: boolean): React.CSSProperties {
   return {
     position: 'absolute',
     border: selected ? '2px solid var(--primary)' : '1px solid var(--borderLight)',

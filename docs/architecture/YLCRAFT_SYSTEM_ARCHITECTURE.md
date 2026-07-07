@@ -119,7 +119,8 @@ flowchart TD
 当前方向：
 
 - `/story` 页面正在从旧 Story Maker 过渡到 Creative Projects 工作台。
-- 文本生产链路包括大纲、章节规划、正文、脚本、分镜、Writer Room；`/story` 已支持结构化大纲编辑、JSON 高级编辑、章节规划保存、章节锁定、保留锁定再生成，以及从项目事实自动构建的画布视图。
+- 文本生产链路包括大纲、章节规划、正文、脚本、分镜、Writer Room；`/story` 已支持结构化大纲编辑、JSON 高级编辑、章节规划保存、章节锁定、保留锁定再生成，以及从项目事实自动构建的项目关系图谱视图。
+- `/canvas` 是独立的创作画布工作台，用于自由编排文本、Prompt、LLM、生图、平台搜索和素材节点；它不是项目关系图谱，也不应成为项目事实的第二来源。画布节点可以通过 `projectId`、`contentId`、`assetId` 等 metadata 引用项目或素材。
 - 分镜和角色生图必须持久化结果，关联素材、任务和血缘。
 - 角色、背景、道具都应作为可引用参考卡参与提示词和参考图选择。
 
@@ -162,6 +163,7 @@ flowchart TD
 | Agent Center | `/api/v1/agent` | `services/agent` | `/agent`、settings skill 面板 | 主体完成，持续优化体验。 |
 | Agent Skill Runtime | `/api/v1/agent/skills*` | `services/agent/skill_*` | `SkillManagementPanel` | OpenSpec 主计划完成。 |
 | 创作项目 | `/api/v1/creative-projects` | `services/creative_project` | `/story` | 仍在闭环推进。 |
+| 创作画布 | 前端 MVP，本地存储 | `frontend/src/components/canvas` | `/canvas` | 独立自由画布，已接一级菜单；后续接入持久化、Agent 操作和素材/项目插入。 |
 | 旧 Story Maker | `/api/v1/story` | `services/story` | `/story` 兼容入口 | 逐步迁移。 |
 | 角色 | `/api/v1/characters` | `services/character` | `/characters` | 参考图/视觉卡仍需完善。 |
 | 素材库 | `/api/v1/assets` | `services/asset` | `/assets` | 可用，需与资产中枢统一。 |

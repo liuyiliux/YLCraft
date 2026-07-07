@@ -78,12 +78,12 @@
 - [x] 37.1 Add project-level default image model selection and pass it into image generation.
 - [x] 37.2 Generate script scene, storyboard panel and comic page images inline in the project workbench, then preview them under the source prompt.
 
-## Phase 5: Canvas loop
+## Phase 5: Project relationship graph loop
 
-- [x] 38. Add project canvas tab with nodes for outline, chapters, characters, scenes, prompts and generated assets.
+- [x] 38. Add project relationship graph tab with nodes for outline, chapters, characters, scenes, prompts and generated assets.
 - [x] 39. Add edges for contains, uses, references and derived_from.
 - [x] 40. Add node actions: lock, regenerate, send to image generation, add to assets, open source.
-- [x] 41. Persist canvas layout in project metadata for MVP.
+- [x] 41. Persist graph layout in project metadata for MVP.
 - [x] 42. Use asset lineage data where available to draw generated-media relationships.
 
 ## Phase 6: Asset library integration

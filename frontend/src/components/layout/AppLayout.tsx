@@ -11,6 +11,7 @@ import {
   SettingOutlined,
   FolderOpenOutlined,
   PictureOutlined,
+  BranchesOutlined,
   EditOutlined,
   FireOutlined,
   MenuOutlined,
@@ -41,6 +42,7 @@ function navLabel(text: string, status?: '实验' | '辅助') {
 
 const MAIN_NAV: MenuProps['items'] = [
   { key: '/story', icon: <BookOutlined />, label: '创作项目' },
+  { key: '/canvas', icon: <BranchesOutlined />, label: '创作画布' },
   { key: '/assets', icon: <FolderOpenOutlined />, label: '素材库' },
   { key: '/download', icon: <SearchOutlined />, label: '下载' },
   { key: '/novel-bookshelf', icon: <ReadOutlined />, label: '小说' },
