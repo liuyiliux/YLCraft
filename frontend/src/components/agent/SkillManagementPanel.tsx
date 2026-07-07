@@ -6,7 +6,10 @@ import {
   Badge,
   Button,
   Card,
+  Collapse,
   Col,
+  Descriptions,
+  Divider,
   Drawer,
   Empty,
   Input,
@@ -799,14 +802,6 @@ export function SkillManagementPanel() {
     message.info('已填入匹配测试，可点击“测试匹配”查看展开结果')
   }
 
-  const metricStyle: CSSProperties = {
-    padding: '12px 14px',
-    borderRadius: THEME.radiusMD,
-    background: THEME.bgElevated,
-    border: `1px solid ${THEME.border}`,
-    minHeight: 72,
-  }
-
   const totalUsage = useMemo(
     () => Object.values(skillMetrics).reduce((sum, item) => sum + (item.usage_count || 0), 0),
     [skillMetrics],
@@ -1079,93 +1074,150 @@ export function SkillManagementPanel() {
             {!selectedPackage ? (
               <Empty description="请选择一个 Skill" />
             ) : (
-              <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                <div style={{ paddingBottom: 12, borderBottom: `1px solid ${THEME.borderLight}` }}>
-                  <Text strong style={{ color: THEME.textPrimary, fontSize: 16 }}>{selectedPackage.title}</Text>
-                  <Paragraph style={{ color: THEME.textSecondary, marginTop: 6, marginBottom: 0 }}>
+              <Space direction="vertical" size={0} style={{ width: '100%' }}>
+                <div style={{ marginBottom: 14 }}>
+                  <Space align="center" size={8} wrap>
+                    <Text strong style={{ fontSize: 18, color: THEME.textPrimary, lineHeight: 1.3 }}>
+                      {selectedPackage.title}
+                    </Text>
+                    <Tag color={selectedPackage.risk === 'write' ? 'orange' : selectedPackage.risk === 'network' ? 'cyan' : 'green'}>
+                      {selectedPackage.risk} · 风险
+                    </Tag>
+                  </Space>
+                  <Paragraph style={{ color: THEME.textSecondary, marginTop: 8, marginBottom: 0, lineHeight: 1.7 }}>
                     {selectedPackage.description}
                   </Paragraph>
                 </div>
-                <Row gutter={[8, 8]}>
-                  <Col span={8}><div style={metricStyle}><Text type="secondary">类型</Text><div><Tag>{selectedPackage.skill_type}</Tag></div></div></Col>
-                  <Col span={8}><div style={metricStyle}><Text type="secondary">版本</Text><div><Text>{selectedPackage.version}</Text></div></div></Col>
-                  <Col span={8}><div style={metricStyle}><Text type="secondary">使用</Text><div><Text>{skillMetrics[selectedPackage.name]?.usage_count || 0} 次</Text></div></div></Col>
-                </Row>
-                <div>
+
+                <Descriptions
+                  size="small"
+                  column={2}
+                  colon={false}
+                  items={[
+                    { key: 'type', label: '类型', children: <Tag>{selectedPackage.skill_type}</Tag> },
+                    { key: 'ver', label: '版本', children: <Text>{selectedPackage.version}</Text> },
+                    {
+                      key: 'usage',
+                      label: '使用',
+                      children: (
+                        <Text>
+                          {skillMetrics[selectedPackage.name]?.usage_count || 0} 次
+                          {' / '}
+                          {skillMetrics[selectedPackage.name]?.success_rate != null
+                            ? `${Math.round(skillMetrics[selectedPackage.name]!.success_rate * 100)}%`
+                            : '-'}
+                        </Text>
+                      ),
+                    },
+                    {
+                      key: 'state',
+                      label: '状态',
+                      children: (
+                        <Tag color={skillMetrics[selectedPackage.name] ? 'green' : 'default'}>
+                          {skillMetrics[selectedPackage.name] ? '已启用' : '待同步'}
+                        </Tag>
+                      ),
+                    },
+                  ]}
+                />
+
+                {(() => {
+                  const keywordList = selectedPackage.triggers?.keywords || []
+                  if (keywordList.length === 0) return null
+                  return (
+                    <div style={{ marginTop: 14 }}>
+                      <Text type="secondary" style={{ fontSize: 12 }}>触发关键词</Text>
+                      <div style={{ marginTop: 6 }}>
+                        <Space size={[4, 4]} wrap>
+                          {keywordList.map(value => <Tag key={value} color="blue">{value}</Tag>)}
+                        </Space>
+                      </div>
+                    </div>
+                  )
+                })()}
+
+                <Divider style={{ margin: '16px 0 12px' }} orientation="left" plain>
                   <Text type="secondary" style={{ fontSize: 12 }}>需要工具</Text>
-                  <div style={{ marginTop: 6 }}>
-                    <Space size={[4, 4]} wrap>
-                      {(selectedPackage.requires_tools || []).map(tool => <Tag key={tool}>{tool}</Tag>)}
-                      {(selectedPackage.requires_tools || []).length === 0 && <Text type="secondary">无强制工具</Text>}
-                    </Space>
-                  </div>
-                </div>
-                <div style={{ ...mutedPanelStyle, padding: 12 }}>
-                  <Space direction="vertical" size={10} style={{ width: '100%' }}>
-                    <Space style={{ justifyContent: 'space-between', width: '100%' }} align="center">
-                      <Text strong style={{ color: THEME.textPrimary }}>路由规则编辑</Text>
-                      <Button size="small" type="primary" loading={ruleDraftLoading} onClick={handleCreateRuleDraft}>
-                        保存为草稿
-                      </Button>
-                    </Space>
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                      只生成待审批 SKILL.md 草稿，批准后才会覆盖用户 Skill；内置 Skill 会以用户副本方式启用。
-                    </Text>
-                    <TextArea
-                      value={ruleKeywords}
-                      onChange={event => setRuleKeywords(event.target.value)}
-                      autoSize={{ minRows: 3, maxRows: 6 }}
-                      placeholder="关键词，每行一个或用逗号分隔"
-                    />
-                    <TextArea
-                      value={ruleContextKeys}
-                      onChange={event => setRuleContextKeys(event.target.value)}
-                      autoSize={{ minRows: 2, maxRows: 5 }}
-                      placeholder="上下文 key，例如 project_id / character_id"
-                    />
-                    <Select
-                      mode="multiple"
-                      allowClear
-                      showSearch
-                      value={ruleTools}
-                      onChange={setRuleTools}
-                      options={toolOptions}
-                      placeholder="会触发该 Skill 的工具"
-                      optionFilterProp="label"
-                    />
-                    <Select
-                      mode="multiple"
-                      allowClear
-                      showSearch
-                      value={requiredTools}
-                      onChange={setRequiredTools}
-                      options={toolOptions}
-                      placeholder="执行该 Skill 通常需要的工具"
-                      optionFilterProp="label"
-                    />
-                  </Space>
-                </div>
-                <div>
-                  <Text type="secondary" style={{ fontSize: 12 }}>包文件</Text>
-                  <div style={{ marginTop: 6 }}>
-                    {fileLoading ? (
-                      <Skeleton active paragraph={{ rows: 2 }} />
-                    ) : (
-                      <Space size={[4, 4]} wrap>
-                        {files.map(item => (
-                          <Button
-                            key={item.path}
-                            size="small"
-                            onClick={() => loadPackageFile(selectedPackage.name, item.path)}
-                            type={item.path === filePath ? 'primary' : 'default'}
-                          >
-                            {item.path}
+                </Divider>
+                <Space size={[4, 4]} wrap>
+                  {(selectedPackage.requires_tools || []).map(tool => <Tag key={tool}>{tool}</Tag>)}
+                  {(selectedPackage.requires_tools || []).length === 0 && <Text type="secondary">无强制工具</Text>}
+                </Space>
+
+                <Divider style={{ margin: '16px 0 4px' }} />
+
+                <Collapse
+                  ghost
+                  defaultActiveKey={[]}
+                  items={[
+                    {
+                      key: 'rules',
+                      label: <Text strong style={{ color: THEME.textPrimary }}>路由规则</Text>,
+                      children: (
+                        <Space direction="vertical" size={10} style={{ width: '100%' }}>
+                          <Text type="secondary" style={{ fontSize: 12 }}>
+                            只生成待审批 SKILL.md 草稿，批准后才会覆盖用户 Skill；内置 Skill 会以用户副本方式启用。
+                          </Text>
+                          <TextArea
+                            value={ruleKeywords}
+                            onChange={event => setRuleKeywords(event.target.value)}
+                            autoSize={{ minRows: 3, maxRows: 6 }}
+                            placeholder="关键词，每行一个或用逗号分隔"
+                          />
+                          <TextArea
+                            value={ruleContextKeys}
+                            onChange={event => setRuleContextKeys(event.target.value)}
+                            autoSize={{ minRows: 2, maxRows: 5 }}
+                            placeholder="上下文 key，例如 project_id / character_id"
+                          />
+                          <Select
+                            mode="multiple"
+                            allowClear
+                            showSearch
+                            value={ruleTools}
+                            onChange={setRuleTools}
+                            options={toolOptions}
+                            placeholder="会触发该 Skill 的工具"
+                            optionFilterProp="label"
+                          />
+                          <Select
+                            mode="multiple"
+                            allowClear
+                            showSearch
+                            value={requiredTools}
+                            onChange={setRequiredTools}
+                            options={toolOptions}
+                            placeholder="执行该 Skill 通常需要的工具"
+                            optionFilterProp="label"
+                          />
+                          <Button block type="primary" loading={ruleDraftLoading} onClick={handleCreateRuleDraft}>
+                            保存为草稿
                           </Button>
-                        ))}
-                      </Space>
-                    )}
-                  </div>
-                </div>
+                        </Space>
+                      ),
+                    },
+                  ]}
+                />
+
+                <Divider style={{ margin: '16px 0 12px' }} orientation="left" plain>
+                  <Text type="secondary" style={{ fontSize: 12 }}>包文件</Text>
+                </Divider>
+                {fileLoading ? (
+                  <Skeleton active paragraph={{ rows: 2 }} />
+                ) : (
+                  <Space size={[4, 4]} wrap>
+                    {files.map(item => (
+                      <Button
+                        key={item.path}
+                        size="small"
+                        onClick={() => loadPackageFile(selectedPackage.name, item.path)}
+                        type={item.path === filePath ? 'primary' : 'default'}
+                      >
+                        {item.path}
+                      </Button>
+                    ))}
+                  </Space>
+                )}
               </Space>
             )}
           </Card>
@@ -1212,6 +1264,11 @@ export function SkillManagementPanel() {
                 测试匹配
               </Button>
               {routeError && <Alert type="error" message={routeError} showIcon />}
+              {(routeDiagnostic?.target_skill_id || routeResult.length > 0) && (
+                <Divider style={{ margin: '4px 0 8px' }} orientation="left" plain>
+                  <Text type="secondary" style={{ fontSize: 12 }}>命中结果</Text>
+                </Divider>
+              )}
               {routeDiagnostic?.target_skill_id && (
                 <Alert
                   type={routeDiagnostic.matched ? 'success' : 'warning'}

@@ -281,7 +281,7 @@ B站 API 返回的游标结构：
     ],
     "total": 5,           # 课程总数
     "page": 1,            # 当前页码
-    "has_more": false     # 是否还有更多
+    "has_more": False     # 是否还有更多
 }
 ```
 

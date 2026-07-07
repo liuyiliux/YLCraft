@@ -116,7 +116,7 @@
 - [x] M10.6 新增 API 端点 `POST /agent/multi-agent/scene-simulation`：接收 project_id、scene_context、characters_of_interest、iteration_budget_per_agent，返回 pipeline_steps + candidate_version_id。
 - [x] M10.7 候选版本存储：`_store_candidate()` 输出 structured pipeline log，标记为候选而非自动最终内容。完整存储待 creative project content versioning API 支持 candidate_flag 后激活。
 - [x] M10.8 更新 creative-project-optimization-roadmap tasks.md：Phase 5 全部 5 个任务标记为完成。
-- [x] M10.9 更新 docs/agent-center.md：修复旧术语"最大工具步数"→ "迭代预算"。
+- [x] M10.9 更新 docs/agent/agent-center.md：修复旧术语"最大工具步数"→ "迭代预算"。
 - [x] M10.10 验证：50 passed 测试全绿，0 linter 错误。
 
 ## M11. DeerFlow & Hermes Runtime Hardening
@@ -193,4 +193,4 @@
 
 - [x] M11.7.1 运行测试：50 passed，0 linter 错误。
 - [x] M11.7.2 Alembic 迁移 `faf3e367bbe8` 已执行 `alembic upgrade head` 成功。
-- [x] M11.7.3 文档更新：docs/agent-center.md 新增运行时架构优化章节。
+- [x] M11.7.3 文档更新：docs/agent/agent-center.md 新增运行时架构优化章节。

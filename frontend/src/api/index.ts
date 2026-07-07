@@ -1347,11 +1347,25 @@ export const createCreativeProject = (data: {
   metadata?: Record<string, any>
 }) => request('/creative-projects', { method: 'POST', body: JSON.stringify(data) })
 
+export const createCreativeProjectFromNovel = (data: {
+  asset_id: string
+  chapter_ids?: string[]
+  chapter_indices?: number[]
+  title?: string
+  project_type?: string
+}) => request('/creative-projects/from-novel', { method: 'POST', body: JSON.stringify(data) })
+
 export const getCreativeProject = (projectId: string) =>
   request(`/creative-projects/${projectId}`)
 
 export const updateCreativeProject = (projectId: string, data: Record<string, any>) =>
   request(`/creative-projects/${projectId}`, { method: 'PATCH', body: JSON.stringify(data) })
+
+export const getCreativeProjectCanvas = (projectId: string) =>
+  request(`/creative-projects/${projectId}/canvas`)
+
+export const saveCreativeProjectCanvas = (projectId: string, data: Record<string, any>) =>
+  request(`/creative-projects/${projectId}/canvas`, { method: 'PUT', body: JSON.stringify(data) })
 
 export const deleteCreativeProject = (projectId: string) =>
   request(`/creative-projects/${projectId}`, { method: 'DELETE' })

@@ -89,7 +89,7 @@ Novel content should enter projects through novel source metadata and saved chap
 Stable handoff:
 
 ```text
-/novel-search -> /novel-bookshelf -> selected chapters -> /creative-projects/from-novel -> project content
+/novel-search -> /novel-bookshelf -> selected downloaded chapters -> /story new project from novel -> /creative-projects/from-novel -> project content
 ```
 
 Expected metadata:
@@ -99,6 +99,26 @@ Expected metadata:
 - chapter title and text
 - source type `novel`
 - generated script/storyboard content linked to the source chapter
+
+The `/story` project creation modal supports a `小说书架` source. It lists novel assets from the bookshelf, filters chapter options to locally downloaded chapters, and also accepts compact ranges such as `1-3,5` for quick selection. Undownloaded chapters should be downloaded from `/novel-bookshelf` first.
+
+### Outline And Chapter Plan Editing
+
+The `/story` workspace now treats outline and chapter planning as editable project state, not read-only AI output.
+
+Stable handoff:
+
+```text
+idea or novel source -> generated outline -> structured/manual edits -> saved outline -> chapter plan -> locked chapters -> lock-aware regeneration -> episode workbench
+```
+
+Current editor behavior:
+
+- The outline tab has structured fields for title, genre, logline, premise, worldview, conflict, story arc, tone, visual style and production notes.
+- The outline tab also has an advanced JSON editor for nested characters, locations, relationship maps and model-specific extension fields.
+- The chapter tab has an editable chapter-plan table for chapter number, title, goal, conflict, key events, focus characters and ending hook.
+- Locked chapter rows are stored with `status: "locked"` and can be preserved when regenerating the chapter plan.
+- Both editors save through the existing project update API, so `CreativeProject.outline` and `CreativeProject.chapter_plan` remain the project-level facts used by later generation stages.
 
 ### Generated Images
 
@@ -119,6 +139,24 @@ Expected metadata:
 - image file path or URL
 - relation such as `derived_from` or `output`
 
+### Project Canvas
+
+The `/story` workspace has a project canvas tab for inspecting the creative graph without making a second source of truth.
+
+Stable handoff:
+
+```text
+project facts -> generated canvas nodes/edges -> user-adjusted layout -> /creative-projects/{id}/canvas metadata
+```
+
+Current canvas behavior:
+
+- Nodes are rebuilt from the current project outline, chapters, characters, stage contents, storyboard panels, image prompts and linked assets.
+- Edges represent `contains`, `uses`, `references` and `derived_from` relationships.
+- Generated-media relationships use project asset link metadata such as `content_id`, `source_type`, `source_index`, `prompt`, `role` and `relation` when available.
+- Users can drag nodes and save the layout; saved canvas state stores positions in project metadata while the actual graph still comes from project content and asset links.
+- Node actions support opening the source tab, locking chapter/content nodes, regenerating supported stages and sending prompt nodes to inline image generation, which links generated assets back to the project.
+
 ## User-Facing Status Hints
 
 The sidebar should keep the primary loop visible at all times and label non-primary modules:
@@ -130,9 +168,10 @@ Experimental modules should be reachable, but they should not look like equal re
 
 ## Next Product Work
 
-The next high-value features after status governance are:
+The next high-value features after the project canvas MVP are:
 
-1. Complete project creation from novel and selected chapters in the frontend.
-2. Add structured outline and chapter-plan editors with lock/regenerate controls.
-3. Add project canvas nodes and edges from existing project content and asset links.
+1. Ensure generated project texts can be stored or indexed as text assets.
+2. Save outline characters into the character library and link them back to the project.
+3. Add project-aware filters and lineage display in `/assets`.
 4. Export saved project outputs as Markdown and ZIP without calling AI providers.
+5. Add full API smoke tests for idea/novel-to-project production chains.

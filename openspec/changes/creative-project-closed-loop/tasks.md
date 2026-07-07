@@ -50,9 +50,9 @@
 
 - [x] 28. Replace or wrap `/story` with a project list and project workspace.
 - [x] 29. Implement project creation from original idea.
-- [ ] 30. Implement project creation from novel and selected chapters.
-- [ ] 31. Implement story outline editor with structured form and advanced JSON editor.
-- [ ] 32. Implement chapter plan editor with generate, save, lock and regenerate controls.
+- [x] 30. Implement project creation from novel and selected chapters.
+- [x] 31. Implement story outline editor with structured form and advanced JSON editor.
+- [x] 32. Implement chapter plan editor with generate, save, lock and regenerate controls.
 - [x] 33. Implement selected chapter script generation view.
 - [x] 34. Implement storyboard draft view with panel prompts.
 - [x] 35. Implement project assets tab showing linked characters, text assets, images and videos.
@@ -80,11 +80,11 @@
 
 ## Phase 5: Canvas loop
 
-- [ ] 38. Add project canvas tab with nodes for outline, chapters, characters, scenes, prompts and generated assets.
-- [ ] 39. Add edges for contains, uses, references and derived_from.
-- [ ] 40. Add node actions: lock, regenerate, send to image generation, add to assets, open source.
-- [ ] 41. Persist canvas layout in project metadata for MVP.
-- [ ] 42. Use asset lineage data where available to draw generated-media relationships.
+- [x] 38. Add project canvas tab with nodes for outline, chapters, characters, scenes, prompts and generated assets.
+- [x] 39. Add edges for contains, uses, references and derived_from.
+- [x] 40. Add node actions: lock, regenerate, send to image generation, add to assets, open source.
+- [x] 41. Persist canvas layout in project metadata for MVP.
+- [x] 42. Use asset lineage data where available to draw generated-media relationships.
 
 ## Phase 6: Asset library integration
 

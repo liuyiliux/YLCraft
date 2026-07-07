@@ -1,0 +1,4 @@
+interface:
+  display_name: "YLCraft AI Handoff"
+  short_description: "Start and hand off YLCraft work without re-discovering the repo."
+  default_prompt: "Use $ylcraft-ai-handoff to take over current YLCraft development and prepare a clean handoff."

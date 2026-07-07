@@ -36,7 +36,7 @@
 
 - **框架**: FastAPI + Uvicorn
 - **ORM**: SQLModel（同步 + 异步）
-- **数据库**: SQLite（aiosqlite），支持同步/异步双模式
+- **数据库**: PostgreSQL 16 + pgvector（关系 + 向量 + 全文检索），支持同步/异步双模式
 - **Provider 注册表**: 统一调度 LLM / Image / Video / TTS / Live2D
 - **AI**: 多 Provider 支持（豆包 LLM/TTS、MiniMax 图生视频、Replicate SDXL、HuggingFace、Remove.bg）
 - **连接器**: AI 连接器（OpenAI 兼容协议）+ 社交媒体连接器（抖音/B站/小红书/微博/快手/Instagram/TikTok/Twitter/Threads）
@@ -131,7 +131,7 @@ MINIMAX_API_KEY=your_minimax_api_key_here
 
 ### API 密钥管理
 
-API 密钥优先从数据库读取（`backend/data/ylcraft.db`），支持前端配置页面热更新；兜底从环境变量读取。
+API 密钥优先从数据库读取（PostgreSQL `api_keys` 表，由 `ApiKeyStore` 加密存储），支持前端配置页面热更新；兜底从环境变量读取。
 
 ## 项目结构
 
@@ -167,12 +167,12 @@ YLCraft/
 │   │   ├── core/              # 核心模块（配置/任务队列/WebSocket）
 │   │   │   └── contracts/     # 类型契约
 │   │   └── db/                # 数据库层
-│   │       ├── database.py    # SQLite 同步+异步引擎
+│   │       ├── database.py    # PostgreSQL 16 同步+异步引擎（asyncpg / psycopg2）
 │   │       └── models/        # 16+ 数据模型
 │   ├── config/                # 配置文件
 │   │   ├── providers.yaml     # Provider 注册表
 │   │   └── live2d.json        # Live2D 处理模式配置
-│   ├── data/                  # 运行时数据（SQLite DB、Cookie 等）
+│   ├── data/                  # 运行时数据（Cookie、素材文件等）
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/                   # 前端应用
@@ -187,7 +187,7 @@ YLCraft/
 │   │   └── types/             # TypeScript 类型
 │   ├── package.json
 │   └── vite.config.ts
-├── docs/                       # 项目文档（3 篇主要 + 13 篇归档）
+├── docs/                       # 项目文档（DESIGN / rules / architecture / agent / platform / guides / reference）
 ├── .cnb.yml                    # CI/CD 流水线
 └── start.sh / start.bat        # 启动脚本
 ```
@@ -307,32 +307,26 @@ Live2D 工厂各环节支持本地模型和云端 API 双模式，可通过配�
 
 ## 更多文档
 
-### 主要文档
+### 核心文档
 
 | 文档 | 说明 |
 |------|------|
-| [DESIGN](docs/DESIGN.md) | 完整架构设计 v0.3.0（实现状态 ~100%） |
-| [PROGRESS](docs/PROGRESS.md) | 开发进度追踪（最后更新：2026-05-20） |
-| [FRONTEND_STYLE_GUIDE](docs/FRONTEND_STYLE_GUIDE.md) | 前端开发规范 v1.0 |
-| [BILIBILI_QRCODE_IMPL](docs/BILIBILI_QRCODE_IMPL.md) | B站二维码登录实现文档 |
+| [DESIGN](docs/DESIGN.md) | 总体设计与架构（单一事实来源：产品定位、技术栈、模块现状、文档导航） |
+| [Agent Skill Runtime](docs/agent/agent-skill-runtime.md) | Agent Skill 文件化运行时规范（加载 / 路由 / Bundle / 草稿审批） |
+| [Agent Center 使用说明](docs/agent/agent-center.md) | 智能体工作台使用指南 |
+| [B站功能指南](docs/platform/BILIBILI_GUIDE.md) | B站登录 / 下载 / 弹幕 / 评论等实现与优化清单 |
+| [多平台项目参考](docs/platform/MULTI_PLATFORM_REFERENCE.md) | 多平台采集与发布开源项目参考 |
+| [创作项目闭环](docs/guides/creative-project-loop.md) | 产品主链路与模块状态治理 |
 
-### 归档文档 (docs/archive/)
+### 规范与架构（docs/）
 
-| 文档 | 说明 |
-|------|------|
-| [START_HERE](docs/archive/START_HERE.md) | 项目交接入口 & 踩坑记录 |
-| [REF_PROJECTS](docs/archive/REF_PROJECTS.md) | 参考项目索引 |
-| [agent-platform-design](docs/archive/agent-platform-design.md) | Agent 平台设计 |
-| [architecture-image-video-backends-v2](docs/archive/architecture-image-video-backends-v2.md) | 图像/视频后端架构 |
-| [AI_GENERATION_CONFIG](docs/archive/AI_GENERATION_CONFIG.md) | AI 生成配置 |
-| [COMFYUI_DIGITAL_HUMAN_ANALYSIS](docs/archive/COMFYUI_DIGITAL_HUMAN_ANALYSIS.md) | ComfyUI 数字人分析 |
-| [comfyui-pixelle-evolution-design](docs/archive/comfyui-pixelle-evolution-design.md) | ComfyUI + Pixelle 进化设计 |
-| [cookie-acquisition-design](docs/archive/cookie-acquisition-design.md) | Cookie 获取设计 |
-| [live2d-factory-design](docs/archive/live2d-factory-design.md) | Live2D 工厂设计 |
-| [live2d-processing-mode-design](docs/archive/live2d-processing-mode-design.md) | Live2D 处理模式设计 |
-| [platforms-module-design](docs/archive/platforms-module-design.md) | 平台模块设计 |
-| [story-maker-design](docs/archive/story-maker-design.md) | Story Maker 设计 |
-| [xhs-parser-design](docs/archive/xhs-parser-design.md) | 小红书解析器设计 |
+- `rules/`：项目规范（01 项目概述 / 02 后端 / 03 前端 / 04 代码风格 / 05 快速参考 / 06 数据库设计），权威且注入为工作区规则。
+- `architecture/`：子领域架构设计（资产中枢、AI 服务层、Live2D、多平台 API 等）。
+- `devlog/`：只保留必要的最新交接记录；长期事实要回写到架构、接口或领域文档。
+- `refactor/`：重构 / 迁移计划。
+- `reference/`：外部参考与客户素材，如 `docs/reference/REF_PROJECTS.md`、`docs/reference/短剧/`（分镜脚本、立绘提示词、微短剧拆解；`.rtf`/`.docx` 二进制原样保留，`images/` 存放配图）。
+
+> 历史交接入口已并入 `docs/devlog/`；前端样式以 `docs/rules/03` 为准，进度与实现状态以 `docs/DESIGN.md` 第四节为准。
 
 ## License
 

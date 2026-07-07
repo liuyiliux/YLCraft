@@ -236,9 +236,7 @@ backend\venv_win\Scripts\python.exe -m pytest backend\tests\test_agent_center.py
 
 OpenSpec:
 
-```powershell
-openspec validate agent-skill-package-runtime --strict
-```
+`agent-skill-package-runtime` is complete and archived under `openspec/changes/archive/agent-skill-package-runtime/`. Use it for historical reference; active validation should focus on current changes unless the archived spec is restored.
 
 Frontend:
 

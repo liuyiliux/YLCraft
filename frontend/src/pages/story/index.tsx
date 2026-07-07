@@ -40,6 +40,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   agentChat,
   createCreativeProject,
+  createCreativeProjectFromNovel,
   deleteCreativeProject,
   generateCharacterPortrait,
   generateCreativeProjectChapterPlan,
@@ -49,10 +50,11 @@ import {
   generateCreativeProjectScript,
   generateCreativeProjectStoryboard,
   generateImage as generateImageApi,
-  getPlatformTemplates,
-  getImageBackends,
   getAsset,
   getCharacter,
+  getCreativeProjectCanvas,
+  getImageBackends,
+  getPlatformTemplates,
   listAssets,
   linkCreativeProjectAsset,
   listConnectors,
@@ -70,17 +72,20 @@ import {
   splitCreativeProjectComicPages,
   syncCreativeProjectBible,
   syncCreativeProjectCharacters,
+  saveCreativeProjectCanvas,
   updateCreativeProject,
   updateCreativeProjectContent,
   type PlatformTemplate,
 } from '../../api'
 import type {
   ChapterPlanItem,
+  ChapterPlan,
   CreativeProject,
   CreativeProjectGenerateResponse,
   CreativeProjectListResponse,
   CreativeProjectResponse,
   Provider,
+  StoryOutline,
   StoryOutlineCharacter,
 } from '../../types/api'
 import { useTheme, type ThemeColors } from '../../constants/theme'
@@ -93,7 +98,9 @@ type LoadingAction =
   | 'create'
   | 'rename'
   | 'outline'
+  | 'outline_save'
   | 'chapter_plan'
+  | 'chapter_plan_save'
   | 'chapter_outline'
   | 'chapter_outline_scenes'
   | 'novel_body'
@@ -103,6 +110,7 @@ type LoadingAction =
   | 'storyboard'
   | 'reference_match'
   | 'asset'
+  | 'canvas_save'
   | 'sync_characters'
   | 'project_bible'
   | 'delete_project'
@@ -191,6 +199,53 @@ type ReferenceImageItem = {
   character_id?: string
   character_name?: string
   role?: string
+}
+
+type ProjectCanvasNodeType =
+  | 'outline'
+  | 'chapter'
+  | 'character'
+  | 'content'
+  | 'scene'
+  | 'prompt'
+  | 'asset'
+
+type ProjectCanvasNode = {
+  id: string
+  type: ProjectCanvasNodeType
+  label: string
+  subtitle?: string
+  status?: string
+  x: number
+  y: number
+  width?: number
+  height?: number
+  source?: {
+    tab?: string
+    contentId?: string
+    chapterNumber?: number
+    prompt?: string
+    assetId?: string
+    contentType?: string
+    sourceType?: string
+    sourceIndex?: number | string
+  }
+  data?: Record<string, any>
+}
+
+type ProjectCanvasEdge = {
+  id: string
+  from: string
+  to: string
+  type: 'contains' | 'uses' | 'references' | 'derived_from'
+  label?: string
+}
+
+type ProjectCanvasState = {
+  nodes?: ProjectCanvasNode[]
+  edges?: ProjectCanvasEdge[]
+  viewport?: { x?: number; y?: number; zoom?: number }
+  updated_at?: string
 }
 
 type StoryboardPanelReferencePlan = {
@@ -425,6 +480,231 @@ function parseChapterRange(value: string): number[] {
       if (Number.isFinite(chapter) && chapter > 0) chapters.add(chapter)
     })
   return Array.from(chapters).sort((a, b) => a - b)
+}
+
+function linesToList(value: string): string[] {
+  return String(value || '')
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function listToLines(value: unknown): string {
+  return Array.isArray(value) ? value.filter(Boolean).join('\n') : ''
+}
+
+function isChapterLocked(item: ChapterPlanItem | Record<string, any>) {
+  return Boolean((item as any).is_locked) || item.status === 'locked'
+}
+
+function normalizeChapterItem(item: ChapterPlanItem | Record<string, any>): ChapterPlanItem {
+  const chapterNumber = Number(item.chapter_number || 1)
+  const locked = isChapterLocked(item)
+  return {
+    ...item,
+    chapter_number: Number.isFinite(chapterNumber) && chapterNumber > 0 ? chapterNumber : 1,
+    title: String(item.title || ''),
+    goal: String(item.goal || ''),
+    conflict: String(item.conflict || ''),
+    key_events: Array.isArray(item.key_events) ? item.key_events.filter(Boolean).map(String) : linesToList(String(item.key_events || '')),
+    character_focus: Array.isArray(item.character_focus)
+      ? item.character_focus.filter(Boolean).map(String)
+      : linesToList(String(item.character_focus || '')),
+    ending_hook: String(item.ending_hook || ''),
+    status: locked ? 'locked' : String(item.status || 'draft'),
+  }
+}
+
+function normalizeChapterPlan(plan: ChapterPlan | Record<string, any>): ChapterPlan {
+  const chapters = Array.isArray(plan.chapters) ? plan.chapters.map(normalizeChapterItem) : []
+  return {
+    ...plan,
+    chapter_count: Number(plan.chapter_count || chapters.length || 0),
+    chapters,
+  }
+}
+
+function buildCreativeProjectCanvas(params: {
+  project?: CreativeProject | null
+  contents: ProjectContent[]
+  assets: ProjectAssetLink[]
+  assetDetails: Record<string, AssetSummary>
+  saved?: ProjectCanvasState | null
+}): ProjectCanvasState {
+  const { project, contents, assets, assetDetails, saved } = params
+  const savedNodes = new Map((saved?.nodes || []).map((node) => [node.id, node]))
+  const nodes: ProjectCanvasNode[] = []
+  const edges: ProjectCanvasEdge[] = []
+  const addNode = (node: ProjectCanvasNode) => {
+    const savedNode = savedNodes.get(node.id)
+    nodes.push({
+      ...node,
+      x: Number(savedNode?.x ?? node.x),
+      y: Number(savedNode?.y ?? node.y),
+      width: savedNode?.width || node.width || 210,
+      height: savedNode?.height || node.height || 92,
+    })
+  }
+  const addEdge = (edge: ProjectCanvasEdge) => {
+    if (edge.from === edge.to) return
+    if (edges.some((item) => item.id === edge.id)) return
+    edges.push(edge)
+  }
+
+  if (!project) return { nodes: [], edges: [] }
+
+  const outline = project.outline || {}
+  const chapters = project.chapter_plan?.chapters || []
+  const outlineId = 'outline:root'
+  addNode({
+    id: outlineId,
+    type: 'outline',
+    label: outline.title || project.title || '故事大纲',
+    subtitle: outline.logline || outline.premise || '项目核心设定',
+    status: project.current_stage,
+    x: 40,
+    y: 180,
+    source: { tab: 'outline' },
+  })
+
+  ;(outline.characters || []).slice(0, 12).forEach((character: StoryOutlineCharacter, index: number) => {
+    const id = `character:${character.character_id || character.name || index}`
+    addNode({
+      id,
+      type: 'character',
+      label: character.name || `角色 ${index + 1}`,
+      subtitle: [character.role, character.goal || character.personality].filter(Boolean).join(' / '),
+      status: character.character_id ? 'linked' : 'draft',
+      x: 330,
+      y: 40 + index * 118,
+      source: { tab: 'outline', assetId: character.portrait_asset_id },
+      data: character as Record<string, any>,
+    })
+    addEdge({ id: `${outlineId}->${id}`, from: outlineId, to: id, type: 'contains', label: 'character' })
+  })
+
+  chapters.forEach((chapter: ChapterPlanItem, index: number) => {
+    const chapterNumber = Number(chapter.chapter_number || index + 1)
+    const chapterId = `chapter:${chapterNumber}`
+    addNode({
+      id: chapterId,
+      type: 'chapter',
+      label: chapter.title || `第 ${chapterNumber} 章`,
+      subtitle: chapter.goal || chapter.conflict || chapter.ending_hook,
+      status: isChapterLocked(chapter) ? 'locked' : chapter.status || 'draft',
+      x: 650,
+      y: 40 + index * 132,
+      source: { tab: 'episode-workbench', chapterNumber },
+      data: chapter as Record<string, any>,
+    })
+    addEdge({ id: `${outlineId}->${chapterId}`, from: outlineId, to: chapterId, type: 'contains', label: 'chapter' })
+  })
+
+  const contentTypeOrder: Record<string, number> = {
+    chapter_outline: 0,
+    novel_body: 1,
+    script: 2,
+    storyboard: 3,
+    comic_pages: 4,
+    project_bible: -1,
+    world_asset: -1,
+  }
+  const sortedContents = [...contents].sort((left, right) => {
+    const leftChapter = Number(left.chapter_number || left.episode_number || 0)
+    const rightChapter = Number(right.chapter_number || right.episode_number || 0)
+    if (leftChapter !== rightChapter) return leftChapter - rightChapter
+    return (contentTypeOrder[left.content_type] ?? 9) - (contentTypeOrder[right.content_type] ?? 9)
+  })
+
+  sortedContents.forEach((content, index) => {
+    const chapterNumber = Number(content.chapter_number || content.episode_number || 0)
+    const contentId = `content:${content.id}`
+    const contentLabel = stageLabels[content.content_type] || content.content_type
+    const column = content.content_type === 'project_bible' || content.content_type === 'world_asset' ? 1 : 4
+    addNode({
+      id: contentId,
+      type: 'content',
+      label: content.title || contentLabel,
+      subtitle: chapterNumber ? `第 ${chapterNumber} 章 / ${contentLabel} v${content.version}` : `${contentLabel} v${content.version}`,
+      status: content.is_locked ? 'locked' : 'ready',
+      x: column === 1 ? 330 : 950,
+      y: column === 1 ? 720 + index * 112 : 50 + index * 104,
+      source: { tab: content.content_type === 'novel_body' || content.content_type === 'comic_pages' ? 'script' : 'episode-workbench', contentId: content.id, chapterNumber, contentType: content.content_type },
+      data: content.data,
+    })
+    if (chapterNumber) {
+      addEdge({ id: `chapter:${chapterNumber}->${contentId}`, from: `chapter:${chapterNumber}`, to: contentId, type: 'contains', label: contentLabel })
+    } else {
+      addEdge({ id: `${outlineId}->${contentId}`, from: outlineId, to: contentId, type: 'contains', label: contentLabel })
+    }
+
+    const panels = Array.isArray(content.data?.panels) ? content.data.panels : []
+    panels.slice(0, 24).forEach((panel: any, panelIndex: number) => {
+      const panelNumber = Number(panel.panel_number || panel.page_number || panelIndex + 1)
+      const sceneId = `scene:${content.id}:${panelNumber}`
+      addNode({
+        id: sceneId,
+        type: 'scene',
+        label: panel.action || panel.scene || `镜头 ${panelNumber}`,
+        subtitle: panel.shot_type || panel.dialogue || panel.camera || '',
+        status: panel.image_url ? 'generated' : 'draft',
+        x: 1250,
+        y: 60 + (index * 3 + panelIndex) * 94,
+        source: { tab: 'episode-workbench', contentId: content.id, chapterNumber, sourceIndex: panelNumber, sourceType: 'storyboard_panel' },
+        data: panel,
+      })
+      addEdge({ id: `${contentId}->${sceneId}`, from: contentId, to: sceneId, type: 'contains', label: 'scene' })
+      if (panel.image_prompt) {
+        const promptId = `prompt:${content.id}:${panelNumber}`
+        addNode({
+          id: promptId,
+          type: 'prompt',
+          label: `生图提示 ${panelNumber}`,
+          subtitle: String(panel.image_prompt).slice(0, 90),
+          status: panel.reference_asset_ids?.length ? 'with_refs' : 'ready',
+          x: 1540,
+          y: 60 + (index * 3 + panelIndex) * 94,
+          source: { tab: 'episode-workbench', contentId: content.id, chapterNumber, prompt: panel.image_prompt, sourceIndex: panelNumber, sourceType: 'storyboard_panel' },
+          data: panel,
+        })
+        addEdge({ id: `${sceneId}->${promptId}`, from: sceneId, to: promptId, type: 'uses', label: 'prompt' })
+        ;(panel.reference_asset_ids || []).forEach((assetId: string) => {
+          addEdge({ id: `asset:${assetId}->${promptId}`, from: `asset:${assetId}`, to: promptId, type: 'references', label: 'ref' })
+        })
+      }
+    })
+  })
+
+  assets.forEach((asset, index) => {
+    const detail = assetDetails[asset.asset_id]
+    const metadata = asset.metadata || {}
+    const assetId = `asset:${asset.asset_id}`
+    addNode({
+      id: assetId,
+      type: 'asset',
+      label: detail?.title || metadata.title || asset.asset_id.slice(0, 10),
+      subtitle: [asset.role, asset.relation, detail?.type].filter(Boolean).join(' / '),
+      status: asset.relation || asset.role,
+      x: asset.role === 'output' ? 1840 : 40,
+      y: 40 + index * 112,
+      source: { tab: 'assets', assetId: asset.asset_id, contentId: asset.content_id, sourceType: metadata.source_type, sourceIndex: metadata.source_index, prompt: metadata.prompt },
+      data: { ...asset.metadata, asset_id: asset.asset_id, role: asset.role, relation: asset.relation },
+    })
+    if (asset.content_id) {
+      addEdge({ id: `content:${asset.content_id}->${assetId}`, from: `content:${asset.content_id}`, to: assetId, type: asset.relation === 'references' ? 'references' : 'derived_from', label: asset.role })
+    }
+    if (metadata.source_type && metadata.source_index !== undefined && asset.content_id) {
+      addEdge({
+        id: `prompt:${asset.content_id}:${metadata.source_index}->${assetId}`,
+        from: `prompt:${asset.content_id}:${metadata.source_index}`,
+        to: assetId,
+        type: 'derived_from',
+        label: 'generated',
+      })
+    }
+  })
+
+  return { nodes, edges, viewport: saved?.viewport || { x: 0, y: 0, zoom: 1 }, updated_at: saved?.updated_at }
 }
 
 function isPipelineStageValue(value?: string): value is PipelineStageValue {
@@ -775,6 +1055,30 @@ type ImageBackendOption = {
   reference_image_field?: string
 }
 
+function getNovelDisplayTitle(asset?: AssetSummary | null): string {
+  if (!asset) return ''
+  const meta = asset.metadata || {}
+  return String(asset.title || meta.novel_title || meta.book_title || '未命名小说')
+}
+
+function getNovelChapterOptions(asset?: AssetSummary | null) {
+  const meta = asset?.metadata || {}
+  const chapters = Array.isArray(meta.chapters) ? meta.chapters : []
+  const downloaded = Array.isArray(meta.downloaded_chapter_indices)
+    ? new Set(meta.downloaded_chapter_indices.map((item: unknown) => Number(item)))
+    : null
+  return chapters
+    .map((chapter: any, index: number) => {
+      const chapterIndex = Number(chapter?.index ?? index + 1)
+      return {
+        label: `第 ${chapterIndex} 章 ${chapter?.title || ''}`.trim(),
+        value: chapterIndex,
+        downloaded: downloaded ? downloaded.has(chapterIndex) : true,
+      }
+    })
+    .filter((item) => Number.isFinite(item.value) && item.value > 0 && item.downloaded)
+}
+
 export default function StoryPage() {
   const { theme } = useTheme()
   const navigate = useNavigate()
@@ -784,10 +1088,13 @@ export default function StoryPage() {
   const [contents, setContents] = useState<ProjectContent[]>([])
   const [projectAssets, setProjectAssets] = useState<ProjectAssetLink[]>([])
   const [assetDetails, setAssetDetails] = useState<Record<string, AssetSummary>>({})
+  const [projectCanvas, setProjectCanvas] = useState<ProjectCanvasState | null>(null)
   const [characterDetails, setCharacterDetails] = useState<Record<string, CharacterReferenceSummary>>({})
   const [generationLogs, setGenerationLogs] = useState<ProjectGenerationLog[]>([])
   const [llmConnectors, setLlmConnectors] = useState<Provider[]>([])
   const [imageBackends, setImageBackends] = useState<ImageBackendOption[]>([])
+  const [novelAssets, setNovelAssets] = useState<AssetSummary[]>([])
+  const [loadingNovelAssets, setLoadingNovelAssets] = useState(false)
   const [promptTemplates, setPromptTemplates] = useState<PlatformTemplate[]>([])
   const [selectedPromptTemplates, setSelectedPromptTemplates] = useState<Record<string, string>>({})
   const [selectedLlm, setSelectedLlm] = useState<string>('')
@@ -823,7 +1130,10 @@ export default function StoryPage() {
   const [batchStoryboardImageChapter, setBatchStoryboardImageChapter] = useState<number | null>(null)
   const [inlineImages, setInlineImages] = useState<Record<string, InlineGeneratedImage>>({})
   const [portraitGeneratingCharacter, setPortraitGeneratingCharacter] = useState<string | null>(null)
+  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState('outline')
   const [form] = Form.useForm()
+  const createSourceType = Form.useWatch('source_type', form) || 'original_idea'
+  const createNovelAssetId = Form.useWatch('novel_asset_id', form)
 
   const outline = selectedProject?.outline || {}
   const chapterPlan = selectedProject?.chapter_plan || {}
@@ -846,6 +1156,19 @@ export default function StoryPage() {
     selectedImageBackend?.support_reference_image ||
       selectedImageBackend?.capabilities?.includes('image_to_image') ||
       defaultImageModel.support_reference_image,
+  )
+  const selectedNovelAsset = novelAssets.find((asset) => asset.id === createNovelAssetId)
+  const selectedNovelChapterOptions = getNovelChapterOptions(selectedNovelAsset)
+  const canvasGraph = useMemo(
+    () =>
+      buildCreativeProjectCanvas({
+        project: selectedProject,
+        contents,
+        assets: projectAssets,
+        assetDetails,
+        saved: projectCanvas,
+      }),
+    [selectedProject, contents, projectAssets, assetDetails, projectCanvas],
   )
 
   const handleInlineGenerateImage = async (prompt: string, context: ImagePromptContext = {}) => {
@@ -1086,9 +1409,11 @@ export default function StoryPage() {
       loadContents(found.id)
       loadProjectAssets(found.id)
       loadGenerationLogs(found.id)
+      loadProjectCanvas(found.id)
     } else {
       setContents([])
       setProjectAssets([])
+      setProjectCanvas(null)
       setGenerationLogs([])
     }
   }, [selectedId, projects])
@@ -1439,15 +1764,51 @@ export default function StoryPage() {
     }
   }
 
+  async function loadProjectCanvas(projectId: string) {
+    try {
+      const response = await getCreativeProjectCanvas(projectId)
+      setProjectCanvas(response?.data || { nodes: [], edges: [] })
+    } catch {
+      setProjectCanvas({ nodes: [], edges: [] })
+    }
+  }
+
+  async function loadNovelAssets() {
+    setLoadingNovelAssets(true)
+    try {
+      const response = await listAssets({ asset_type: 'novel', page_size: 200 })
+      setNovelAssets(response?.data || [])
+    } catch (error: any) {
+      setNovelAssets([])
+      message.warning(error?.message || '加载小说书架失败')
+    } finally {
+      setLoadingNovelAssets(false)
+    }
+  }
+
   async function handleCreate(values: any) {
     setLoadingAction('create')
     try {
-      const response = (await createCreativeProject({
-        title: values.title,
-        idea: values.idea,
-        project_type: values.project_type,
-        source_type: 'original_idea',
-      })) as CreativeProjectResponse
+      let response: CreativeProjectResponse
+      if (values.source_type === 'novel') {
+        const chapterIndices = [
+          ...(Array.isArray(values.chapter_indices) ? values.chapter_indices : []),
+          ...parseChapterRange(values.chapter_range || ''),
+        ].filter((value, index, array) => Number.isFinite(value) && value > 0 && array.indexOf(value) === index)
+        response = (await createCreativeProjectFromNovel({
+          asset_id: values.novel_asset_id,
+          chapter_indices: chapterIndices,
+          title: values.title || getNovelDisplayTitle(selectedNovelAsset),
+          project_type: values.project_type,
+        })) as CreativeProjectResponse
+      } else {
+        response = (await createCreativeProject({
+          title: values.title,
+          idea: values.idea,
+          project_type: values.project_type,
+          source_type: 'original_idea',
+        })) as CreativeProjectResponse
+      }
       message.success('项目已创建')
       setCreateOpen(false)
       form.resetFields()
@@ -1718,7 +2079,107 @@ export default function StoryPage() {
     }
   }
 
-  async function handleGenerateChapterPlan() {
+  async function handleSaveOutline(nextOutline: StoryOutline) {
+    if (!selectedProject) return
+    setLoadingAction('outline_save')
+    try {
+      const response = (await updateCreativeProject(selectedProject.id, { outline: nextOutline })) as CreativeProjectResponse
+      if (response.data) {
+        setSelectedProject(response.data)
+        setProjects((prev) => prev.map((item) => (item.id === response.data.id ? response.data : item)))
+      }
+      message.success('故事大纲已保存')
+    } catch (error: any) {
+      message.error(error?.message || '保存故事大纲失败')
+    } finally {
+      setLoadingAction(null)
+    }
+  }
+
+  async function handleSaveChapterPlan(nextChapterPlan: ChapterPlan) {
+    if (!selectedProject) return
+    setLoadingAction('chapter_plan_save')
+    try {
+      const response = (await updateCreativeProject(selectedProject.id, {
+        chapter_plan: normalizeChapterPlan(nextChapterPlan),
+      })) as CreativeProjectResponse
+      if (response.data) {
+        setSelectedProject(response.data)
+        setProjects((prev) => prev.map((item) => (item.id === response.data.id ? response.data : item)))
+      }
+      message.success('章节规划已保存')
+    } catch (error: any) {
+      message.error(error?.message || '保存章节规划失败')
+    } finally {
+      setLoadingAction(null)
+    }
+  }
+
+  async function handleSaveProjectCanvas(nextCanvas: ProjectCanvasState) {
+    if (!selectedProject) return
+    setLoadingAction('canvas_save')
+    try {
+      const payload = {
+        ...nextCanvas,
+        updated_at: new Date().toISOString(),
+      }
+      const response = await saveCreativeProjectCanvas(selectedProject.id, payload)
+      setProjectCanvas(response?.data || payload)
+      message.success('画布布局已保存')
+    } catch (error: any) {
+      message.error(error?.message || '保存画布布局失败')
+    } finally {
+      setLoadingAction(null)
+    }
+  }
+
+  function handleOpenCanvasNode(node: ProjectCanvasNode) {
+    const source = node.source || {}
+    if (source.chapterNumber) setActiveChapterNumber(Number(source.chapterNumber))
+    if (source.tab) setActiveWorkspaceTab(source.tab)
+    if (node.type === 'asset' && source.assetId) setActiveWorkspaceTab('assets')
+  }
+
+  async function handleToggleCanvasNodeLock(node: ProjectCanvasNode) {
+    if (node.type === 'content' && node.source?.contentId) {
+      const nextLocked = node.status !== 'locked'
+      await handleSaveContent(node.source.contentId, { is_locked: nextLocked })
+      return
+    }
+    if (node.type === 'chapter' && node.source?.chapterNumber) {
+      const nextChapters = chapters.map((chapter: ChapterPlanItem) => {
+        if (Number(chapter.chapter_number) !== Number(node.source?.chapterNumber)) return chapter
+        const nextLocked = !isChapterLocked(chapter)
+        return { ...chapter, status: nextLocked ? 'locked' : 'draft' }
+      })
+      await handleSaveChapterPlan({ ...chapterPlan, chapter_count: nextChapters.length, chapters: nextChapters })
+    }
+  }
+
+  async function handleRegenerateCanvasNode(node: ProjectCanvasNode) {
+    const chapterNumber = Number(node.source?.chapterNumber || 0)
+    const contentType = node.source?.contentType
+    if (node.type === 'outline') {
+      await handleGenerateOutline()
+      return
+    }
+    if (node.type === 'chapter') {
+      await handleGenerateChapterPlan({ preserveLocked: true })
+      return
+    }
+    if (!chapterNumber) {
+      message.warning('这个节点暂不支持直接再生成')
+      return
+    }
+    if (contentType === 'chapter_outline') await handleGenerateChapterOutline(chapterNumber)
+    else if (contentType === 'novel_body') await handleGenerateNovelBody(chapterNumber)
+    else if (contentType === 'script') await handleGenerateScript(chapterNumber)
+    else if (contentType === 'storyboard') await handleGenerateStoryboardForChapter(chapterNumber)
+    else if (contentType === 'comic_pages') await handleSplitComicPages(chapterNumber)
+    else message.warning('这个节点暂不支持直接再生成')
+  }
+
+  async function handleGenerateChapterPlan(options: { preserveLocked?: boolean } = {}) {
     if (!selectedProject) return
     setLoadingAction('chapter_plan')
     try {
@@ -1729,7 +2190,26 @@ export default function StoryPage() {
         template_id: selectedPromptTemplates.chapter_plan || undefined,
       })) as CreativeProjectGenerateResponse
       message.success('章节规划已生成')
-      await refreshSelected(response.project || null)
+      if (options.preserveLocked && response.project) {
+        const lockedByNumber = new Map(
+          chapters
+            .filter((item: ChapterPlanItem) => isChapterLocked(item))
+            .map((item: ChapterPlanItem) => [Number(item.chapter_number), item]),
+        )
+        const generatedPlan = normalizeChapterPlan(response.project.chapter_plan || {})
+        const mergedPlan = {
+          ...generatedPlan,
+          chapters: (generatedPlan.chapters || []).map((item) => {
+            const locked = lockedByNumber.get(Number(item.chapter_number))
+            return locked ? normalizeChapterItem(locked) : item
+          }),
+        }
+        const saved = (await updateCreativeProject(selectedProject.id, { chapter_plan: mergedPlan })) as CreativeProjectResponse
+        await refreshSelected(saved.data || response.project)
+        message.success(lockedByNumber.size ? `已保留 ${lockedByNumber.size} 个锁定章节` : '没有锁定章节，已使用新规划')
+      } else {
+        await refreshSelected(response.project || null)
+      }
     } catch (error: any) {
       message.error(error?.message || '章节规划生成失败')
       await loadGenerationLogs(selectedProject.id)
@@ -2682,6 +3162,8 @@ export default function StoryPage() {
 
               <Tabs
                 style={{ padding: '0 20px 20px' }}
+                activeKey={activeWorkspaceTab}
+                onChange={setActiveWorkspaceTab}
                 items={[
                   {
                     key: 'outline',
@@ -2696,6 +3178,7 @@ export default function StoryPage() {
                         outline={outline}
                         hasOutline={hasOutline}
                         loading={loadingAction === 'outline'}
+                        saving={loadingAction === 'outline_save'}
                         syncLoading={loadingAction === 'sync_characters'}
                         templateOptions={templateOptionsByStage.outline || []}
                         selectedTemplateId={selectedPromptTemplates.outline}
@@ -2703,6 +3186,7 @@ export default function StoryPage() {
                           setSelectedPromptTemplates((prev) => ({ ...prev, outline: value }))
                         }
                         onGenerate={handleGenerateOutline}
+                        onSave={handleSaveOutline}
                         onSyncCharacters={handleSyncCharacters}
                         characterColumns={characterColumns}
                       />
@@ -2738,6 +3222,7 @@ export default function StoryPage() {
                     ),
                     children: (
                       <ChapterTab
+                        chapterPlan={chapterPlan}
                         chapters={chapters}
                         hasOutline={hasOutline}
                         hasChapterPlan={hasChapterPlan}
@@ -2772,7 +3257,9 @@ export default function StoryPage() {
                           setSelectedPromptTemplates((prev) => ({ ...prev, comic_pages: value }))
                         }
                         loading={loadingAction === 'chapter_plan'}
+                        saving={loadingAction === 'chapter_plan_save'}
                         onGenerate={handleGenerateChapterPlan}
+                        onSave={handleSaveChapterPlan}
                       />
                     ),
                   },
@@ -2887,6 +3374,44 @@ export default function StoryPage() {
                     ),
                   },
                   {
+                    key: 'canvas',
+                    label: (
+                      <Space>
+                        <BranchesOutlined />
+                        画布
+                      </Space>
+                    ),
+                    children: (
+                      <ProjectCanvasTab
+                        graph={canvasGraph}
+                        saving={loadingAction === 'canvas_save'}
+                        generating={Boolean(loadingAction || loadingChapterAction.action || inlineImageLoadingKey)}
+                        onSave={handleSaveProjectCanvas}
+                        onOpenNode={handleOpenCanvasNode}
+                        onToggleLock={handleToggleCanvasNodeLock}
+                        onRegenerate={handleRegenerateCanvasNode}
+                        onSendImagePrompt={(node) => {
+                          const prompt = node.source?.prompt || node.data?.image_prompt || ''
+                          if (!prompt) {
+                            message.warning('这个节点没有可发送的生图提示词')
+                            return
+                          }
+                          handleInlineGenerateImage(prompt, {
+                            contentId: node.source?.contentId,
+                            sourceType: node.source?.sourceType || 'canvas_prompt',
+                            sourceIndex: node.source?.sourceIndex,
+                            sourceTitle: node.label,
+                            chapterNumber: node.source?.chapterNumber,
+                            referenceAssetIds: node.data?.reference_asset_ids || [],
+                            characterIds: node.data?.character_ids || [],
+                            portraitNodeIds: node.data?.portrait_node_ids || [],
+                            portraitVersionIds: node.data?.portrait_version_ids || [],
+                          })
+                        }}
+                      />
+                    ),
+                  },
+                  {
                     key: 'assets',
                     label: (
                       <Space>
@@ -2940,6 +3465,12 @@ export default function StoryPage() {
         title="新建创作项目"
         open={createOpen}
         onCancel={() => setCreateOpen(false)}
+        afterOpenChange={(open) => {
+          if (open) {
+            form.setFieldsValue({ source_type: 'original_idea', project_type: 'short_drama' })
+            loadNovelAssets()
+          }
+        }}
         onOk={() => form.submit()}
         confirmLoading={loadingAction === 'create'}
         destroyOnClose
@@ -2947,22 +3478,95 @@ export default function StoryPage() {
         <Form
           form={form}
           layout="vertical"
-          initialValues={{ project_type: 'short_drama' }}
+          initialValues={{ source_type: 'original_idea', project_type: 'short_drama' }}
           onFinish={handleCreate}
         >
+          <Form.Item label="来源" name="source_type">
+            <Select
+              options={[
+                { label: '原创创意', value: 'original_idea' },
+                { label: '小说书架', value: 'novel' },
+              ]}
+              onChange={() => {
+                form.setFieldsValue({ novel_asset_id: undefined, chapter_indices: [], chapter_range: '' })
+              }}
+            />
+          </Form.Item>
           <Form.Item label="标题" name="title">
             <Input placeholder="可留空，生成大纲后会自动更新" />
           </Form.Item>
           <Form.Item label="项目类型" name="project_type">
             <Select options={projectTypeOptions} />
           </Form.Item>
-          <Form.Item
-            label="创意"
-            name="idea"
-            rules={[{ required: true, message: '请输入创意' }]}
-          >
-            <TextArea rows={5} placeholder="例如：短剧但是不降智" />
-          </Form.Item>
+          {createSourceType === 'novel' ? (
+            <>
+              <Form.Item
+                label="小说"
+                name="novel_asset_id"
+                rules={[{ required: true, message: '请选择小说' }]}
+              >
+                <Select
+                  showSearch
+                  loading={loadingNovelAssets}
+                  placeholder="选择已加入书架的小说"
+                  optionFilterProp="label"
+                  options={novelAssets.map((asset) => {
+                    const meta = asset.metadata || {}
+                    const downloaded = Array.isArray(meta.downloaded_chapter_indices)
+                      ? meta.downloaded_chapter_indices.length
+                      : 0
+                    const total = meta.chapter_count || meta.chapters?.length || 0
+                    return {
+                      label: `${getNovelDisplayTitle(asset)}${downloaded || total ? `（已下载 ${downloaded}/${total || '?'}）` : ''}`,
+                      value: asset.id,
+                    }
+                  })}
+                  onChange={() => form.setFieldsValue({ chapter_indices: [], chapter_range: '' })}
+                  dropdownRender={(menu) => (
+                    <>
+                      {menu}
+                      {!novelAssets.length && !loadingNovelAssets ? (
+                        <div style={{ padding: 8 }}>
+                          <Button type="link" size="small" onClick={() => navigate('/novel-bookshelf')}>
+                            去小说书架添加
+                          </Button>
+                        </div>
+                      ) : null}
+                    </>
+                  )}
+                />
+              </Form.Item>
+              <Form.Item label="已下载章节" name="chapter_indices">
+                <Select
+                  mode="multiple"
+                  allowClear
+                  placeholder={
+                    selectedNovelAsset
+                      ? selectedNovelChapterOptions.length
+                        ? '选择要导入的已下载章节；留空则使用手填范围或全部已下载章节'
+                        : '这本书暂无已下载章节，请先去书架下载'
+                      : '先选择小说'
+                  }
+                  options={selectedNovelChapterOptions}
+                  disabled={!selectedNovelAsset || !selectedNovelChapterOptions.length}
+                />
+              </Form.Item>
+              <Form.Item label="章节范围" name="chapter_range">
+                <Input placeholder="可选，例如 1-3,5；用于目录未展开或快速选择" />
+              </Form.Item>
+              <Text type="secondary">
+                只会导入已经下载到本地的章节；如果章节未下载，请先到小说书架下载。
+              </Text>
+            </>
+          ) : (
+            <Form.Item
+              label="创意"
+              name="idea"
+              rules={[{ required: true, message: '请输入创意' }]}
+            >
+              <TextArea rows={5} placeholder="例如：短剧但是不降智" />
+            </Form.Item>
+          )}
         </Form>
       </Modal>
 
@@ -3143,25 +3747,58 @@ function OutlineTab({
   outline,
   hasOutline,
   loading,
+  saving,
   syncLoading,
   templateOptions,
   selectedTemplateId,
   onTemplateChange,
   onGenerate,
+  onSave,
   onSyncCharacters,
   characterColumns,
 }: {
-  outline: any
+  outline: StoryOutline
   hasOutline: boolean
   loading: boolean
+  saving: boolean
   syncLoading: boolean
   templateOptions: TemplateOption[]
   selectedTemplateId?: string
   onTemplateChange: (value: string) => void
   onGenerate: () => void
+  onSave: (outline: StoryOutline) => Promise<void>
   onSyncCharacters: () => void
   characterColumns: any[]
 }) {
+  const [draft, setDraft] = useState<StoryOutline>(outline || {})
+  const [jsonDraft, setJsonDraft] = useState('')
+  const [jsonError, setJsonError] = useState('')
+
+  useEffect(() => {
+    setDraft(outline || {})
+    setJsonDraft(JSON.stringify(outline || {}, null, 2))
+    setJsonError('')
+  }, [outline])
+
+  const updateField = (field: keyof StoryOutline, value: any) => {
+    setDraft((prev) => ({ ...prev, [field]: value }))
+  }
+
+  const updateStoryArc = (field: keyof NonNullable<StoryOutline['story_arc']>, value: string) => {
+    setDraft((prev) => ({ ...prev, story_arc: { ...(prev.story_arc || {}), [field]: value } }))
+  }
+
+  const saveJson = async () => {
+    try {
+      const parsed = JSON.parse(jsonDraft || '{}')
+      setJsonError('')
+      setDraft(parsed)
+      await onSave(parsed)
+    } catch (error: any) {
+      setJsonError(error?.message || 'JSON 格式不正确')
+    }
+  }
+
   if (!hasOutline) {
     return (
       <div style={{ padding: 48, textAlign: 'center' }}>
@@ -3205,22 +3842,140 @@ function OutlineTab({
           <Button icon={<UserOutlined />} loading={syncLoading} onClick={onSyncCharacters}>
             同步角色库
           </Button>
+          <Button type="primary" loading={saving} onClick={() => onSave(draft)}>
+            保存大纲
+          </Button>
           <Button icon={<ReloadOutlined />} loading={loading} onClick={onGenerate}>
             重新生成
           </Button>
         </Space>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <InfoBlock title="核心前提" text={outline.premise} />
-        <InfoBlock title="世界观" text={outline.worldview} />
-        <InfoBlock title="主线冲突" text={outline.main_conflict} />
-        <InfoBlock title="观众情绪" text={outline.audience_emotion} />
-        <InfoBlock title="叙事气质" text={outline.tone} />
-        <InfoBlock title="视觉风格" text={outline.visual_style} />
-        <InfoListBlock title="卖点" items={outline.selling_points || []} />
-        <InfoListBlock title="叙事规则" items={outline.narrative_rules || []} />
-      </div>
+      <Tabs
+        items={[
+          {
+            key: 'structured',
+            label: '结构化编辑',
+            children: (
+              <Space direction="vertical" size={14} style={{ width: '100%' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(240px, 1fr) minmax(240px, 1fr)', gap: 12 }}>
+                  <EditorField label="标题">
+                    <Input value={draft.title} onChange={(event) => updateField('title', event.target.value)} />
+                  </EditorField>
+                  <EditorField label="类型">
+                    <TextArea
+                      value={listToLines(draft.genre)}
+                      onChange={(event) => updateField('genre', linesToList(event.target.value))}
+                      autoSize={{ minRows: 1, maxRows: 3 }}
+                    />
+                  </EditorField>
+                  <EditorField label="一句话卖点">
+                    <Input value={draft.logline} onChange={(event) => updateField('logline', event.target.value)} />
+                  </EditorField>
+                  <EditorField label="目标读者">
+                    <Input value={draft.target_reader} onChange={(event) => updateField('target_reader', event.target.value)} />
+                  </EditorField>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
+                  <EditorField label="核心前提">
+                    <TextArea value={draft.premise} onChange={(event) => updateField('premise', event.target.value)} autoSize={{ minRows: 4, maxRows: 9 }} />
+                  </EditorField>
+                  <EditorField label="世界观">
+                    <TextArea value={draft.worldview} onChange={(event) => updateField('worldview', event.target.value)} autoSize={{ minRows: 4, maxRows: 9 }} />
+                  </EditorField>
+                  <EditorField label="主线冲突">
+                    <TextArea value={draft.main_conflict} onChange={(event) => updateField('main_conflict', event.target.value)} autoSize={{ minRows: 4, maxRows: 9 }} />
+                  </EditorField>
+                  <EditorField label="观众情绪">
+                    <TextArea value={draft.audience_emotion} onChange={(event) => updateField('audience_emotion', event.target.value)} autoSize={{ minRows: 4, maxRows: 9 }} />
+                  </EditorField>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
+                  <EditorField label="卖点" hint="一行一条">
+                    <TextArea value={listToLines(draft.selling_points)} onChange={(event) => updateField('selling_points', linesToList(event.target.value))} autoSize={{ minRows: 4, maxRows: 8 }} />
+                  </EditorField>
+                  <EditorField label="叙事规则" hint="一行一条">
+                    <TextArea value={listToLines(draft.narrative_rules)} onChange={(event) => updateField('narrative_rules', linesToList(event.target.value))} autoSize={{ minRows: 4, maxRows: 8 }} />
+                  </EditorField>
+                  <EditorField label="主题" hint="一行一条">
+                    <TextArea value={listToLines(draft.themes)} onChange={(event) => updateField('themes', linesToList(event.target.value))} autoSize={{ minRows: 4, maxRows: 8 }} />
+                  </EditorField>
+                  <EditorField label="制作约束" hint="一行一条，会影响后续分镜/生图">
+                    <TextArea value={listToLines(draft.production_notes)} onChange={(event) => updateField('production_notes', linesToList(event.target.value))} autoSize={{ minRows: 4, maxRows: 8 }} />
+                  </EditorField>
+                </div>
+
+                <WorkbenchSection title="故事弧线">
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+                    <EditorField label="开局">
+                      <TextArea value={draft.story_arc?.beginning} onChange={(event) => updateStoryArc('beginning', event.target.value)} autoSize={{ minRows: 3, maxRows: 7 }} />
+                    </EditorField>
+                    <EditorField label="中段">
+                      <TextArea value={draft.story_arc?.middle} onChange={(event) => updateStoryArc('middle', event.target.value)} autoSize={{ minRows: 3, maxRows: 7 }} />
+                    </EditorField>
+                    <EditorField label="高潮">
+                      <TextArea value={draft.story_arc?.climax} onChange={(event) => updateStoryArc('climax', event.target.value)} autoSize={{ minRows: 3, maxRows: 7 }} />
+                    </EditorField>
+                    <EditorField label="结局方向">
+                      <TextArea value={draft.story_arc?.ending_direction} onChange={(event) => updateStoryArc('ending_direction', event.target.value)} autoSize={{ minRows: 3, maxRows: 7 }} />
+                    </EditorField>
+                  </div>
+                </WorkbenchSection>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
+                  <EditorField label="叙事气质">
+                    <TextArea value={draft.tone} onChange={(event) => updateField('tone', event.target.value)} autoSize={{ minRows: 3, maxRows: 6 }} />
+                  </EditorField>
+                  <EditorField label="视觉风格">
+                    <TextArea value={draft.visual_style} onChange={(event) => updateField('visual_style', event.target.value)} autoSize={{ minRows: 3, maxRows: 6 }} />
+                  </EditorField>
+                  <EditorField label="统一生图提示">
+                    <TextArea value={draft.image_style_prompt} onChange={(event) => updateField('image_style_prompt', event.target.value)} autoSize={{ minRows: 3, maxRows: 8 }} />
+                  </EditorField>
+                </div>
+              </Space>
+            ),
+          },
+          {
+            key: 'json',
+            label: 'JSON 高级编辑',
+            children: (
+              <Space direction="vertical" size={10} style={{ width: '100%' }}>
+                <Text type="secondary">复杂角色、场景、关系图可以在这里直接编辑完整 JSON。</Text>
+                <TextArea
+                  value={jsonDraft}
+                  onChange={(event) => setJsonDraft(event.target.value)}
+                  autoSize={{ minRows: 18, maxRows: 34 }}
+                  style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' }}
+                />
+                {jsonError ? <Text type="danger">{jsonError}</Text> : null}
+                <Space style={{ justifyContent: 'flex-end', width: '100%' }}>
+                  <Button onClick={() => setJsonDraft(JSON.stringify(draft || {}, null, 2))}>同步结构化草稿</Button>
+                  <Button type="primary" loading={saving} onClick={saveJson}>保存 JSON</Button>
+                </Space>
+              </Space>
+            ),
+          },
+          {
+            key: 'preview',
+            label: '预览',
+            children: (
+              <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <InfoBlock title="核心前提" text={draft.premise} />
+                  <InfoBlock title="世界观" text={draft.worldview} />
+                  <InfoBlock title="主线冲突" text={draft.main_conflict} />
+                  <InfoBlock title="观众情绪" text={draft.audience_emotion} />
+                  <InfoListBlock title="卖点" items={draft.selling_points || []} />
+                  <InfoListBlock title="叙事规则" items={draft.narrative_rules || []} />
+                </div>
+              </Space>
+            ),
+          },
+        ]}
+      />
 
       <div>
         <Title level={5}>角色</Title>
@@ -3228,40 +3983,9 @@ function OutlineTab({
           size="small"
           rowKey={(record: StoryOutlineCharacter, index?: number) => record.name || String(index)}
           columns={characterColumns}
-          dataSource={outline.characters || []}
+          dataSource={draft.characters || []}
           pagination={false}
         />
-      </div>
-
-      <div>
-        <Title level={5}>故事弧线</Title>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
-          <InfoBlock title="开局" text={outline.story_arc?.beginning} compact />
-          <InfoBlock title="中段" text={outline.story_arc?.middle} compact />
-          <InfoBlock title="高潮" text={outline.story_arc?.climax} compact />
-          <InfoBlock title="方向" text={outline.story_arc?.ending_direction} compact />
-        </div>
-      </div>
-
-      {outline.locations?.length ? (
-        <div>
-          <Title level={5}>核心场景</Title>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
-            {outline.locations.map((location: any, index: number) => (
-              <InfoBlock
-                key={location.name || index}
-                title={location.name || `场景 ${index + 1}`}
-                text={[location.role, location.visual_description, location.mood, location.reusable_asset_note].filter(Boolean).join('；')}
-                compact
-              />
-            ))}
-          </div>
-        </div>
-      ) : null}
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <InfoBlock title="统一生图提示" text={outline.image_style_prompt} />
-        <InfoListBlock title="制作约束" items={outline.production_notes || []} />
       </div>
     </Space>
   )
@@ -3467,7 +4191,10 @@ function sortBibleContents(items: ProjectContent[]) {
   })
 }
 
+type EditableChapterPlanItem = ChapterPlanItem & { is_locked?: boolean }
+
 function ChapterTab({
+  chapterPlan,
   chapters,
   hasOutline,
   hasChapterPlan,
@@ -3492,8 +4219,11 @@ function ChapterTab({
   selectedComicPagesTemplateId,
   onComicPagesTemplateChange,
   loading,
+  saving,
   onGenerate,
+  onSave,
 }: {
+  chapterPlan: ChapterPlan
   chapters: ChapterPlanItem[]
   hasOutline: boolean
   hasChapterPlan: boolean
@@ -3518,8 +4248,137 @@ function ChapterTab({
   selectedComicPagesTemplateId?: string
   onComicPagesTemplateChange: (value: string) => void
   loading: boolean
-  onGenerate: () => void
+  saving: boolean
+  onGenerate: (options?: { preserveLocked?: boolean }) => void
+  onSave: (chapterPlan: ChapterPlan) => Promise<void>
 }) {
+  const [rows, setRows] = useState<EditableChapterPlanItem[]>([])
+  const [jsonDraft, setJsonDraft] = useState('')
+  const [jsonError, setJsonError] = useState('')
+
+  useEffect(() => {
+    const nextRows = chapters.map((item) => ({ ...normalizeChapterItem(item), is_locked: isChapterLocked(item) }))
+    setRows(nextRows)
+    setJsonDraft(JSON.stringify(normalizeChapterPlan({ ...chapterPlan, chapters: nextRows }), null, 2))
+    setJsonError('')
+  }, [chapterPlan, chapters])
+
+  const updateRow = (index: number, patch: Partial<EditableChapterPlanItem>) => {
+    setRows((prev) => prev.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)))
+  }
+
+  const saveRows = () => onSave({ ...chapterPlan, chapter_count: rows.length, chapters: rows.map(normalizeChapterItem) })
+
+  const addRow = () => {
+    const nextNumber = rows.reduce((max, item) => Math.max(max, Number(item.chapter_number || 0)), 0) + 1
+    setRows((prev) => [
+      ...prev,
+      {
+        chapter_number: nextNumber,
+        title: `第 ${nextNumber} 章`,
+        goal: '',
+        conflict: '',
+        key_events: [],
+        character_focus: [],
+        ending_hook: '',
+        status: 'draft',
+      },
+    ])
+  }
+
+  const deleteRow = (index: number) => {
+    setRows((prev) => prev.filter((_, itemIndex) => itemIndex !== index))
+  }
+
+  const saveJson = async () => {
+    try {
+      const parsed = normalizeChapterPlan(JSON.parse(jsonDraft || '{}'))
+      setJsonError('')
+      setRows((parsed.chapters || []).map((item) => ({ ...item, is_locked: isChapterLocked(item) })))
+      await onSave(parsed)
+    } catch (error: any) {
+      setJsonError(error?.message || 'JSON 格式不正确')
+    }
+  }
+
+  const editorColumns = [
+    {
+      title: '锁',
+      width: 68,
+      render: (_: unknown, record: EditableChapterPlanItem, index: number) => (
+        <Checkbox
+          checked={isChapterLocked(record)}
+          onChange={(event) => updateRow(index, { is_locked: event.target.checked, status: event.target.checked ? 'locked' : 'draft' })}
+        />
+      ),
+    },
+    {
+      title: '章',
+      width: 90,
+      render: (_: unknown, record: EditableChapterPlanItem, index: number) => (
+        <InputNumber
+          min={1}
+          value={record.chapter_number}
+          onChange={(value) => updateRow(index, { chapter_number: Number(value || index + 1) })}
+          style={{ width: '100%' }}
+        />
+      ),
+    },
+    {
+      title: '标题 / 尾钩',
+      width: 260,
+      render: (_: unknown, record: EditableChapterPlanItem, index: number) => (
+        <Space direction="vertical" size={6} style={{ width: '100%' }}>
+          <Input value={record.title} onChange={(event) => updateRow(index, { title: event.target.value })} placeholder="章节标题" />
+          <TextArea
+            value={record.ending_hook}
+            onChange={(event) => updateRow(index, { ending_hook: event.target.value })}
+            placeholder="章末钩子"
+            autoSize={{ minRows: 2, maxRows: 4 }}
+          />
+        </Space>
+      ),
+    },
+    {
+      title: '目标 / 冲突',
+      render: (_: unknown, record: EditableChapterPlanItem, index: number) => (
+        <Space direction="vertical" size={6} style={{ width: '100%' }}>
+          <TextArea value={record.goal} onChange={(event) => updateRow(index, { goal: event.target.value })} placeholder="本章目标" autoSize={{ minRows: 2, maxRows: 5 }} />
+          <TextArea value={record.conflict} onChange={(event) => updateRow(index, { conflict: event.target.value })} placeholder="本章冲突" autoSize={{ minRows: 2, maxRows: 5 }} />
+        </Space>
+      ),
+    },
+    {
+      title: '事件 / 角色',
+      width: 300,
+      render: (_: unknown, record: EditableChapterPlanItem, index: number) => (
+        <Space direction="vertical" size={6} style={{ width: '100%' }}>
+          <TextArea
+            value={listToLines(record.key_events)}
+            onChange={(event) => updateRow(index, { key_events: linesToList(event.target.value) })}
+            placeholder="关键事件，一行一条"
+            autoSize={{ minRows: 3, maxRows: 6 }}
+          />
+          <TextArea
+            value={listToLines(record.character_focus)}
+            onChange={(event) => updateRow(index, { character_focus: linesToList(event.target.value) })}
+            placeholder="焦点角色，一行一个"
+            autoSize={{ minRows: 2, maxRows: 4 }}
+          />
+        </Space>
+      ),
+    },
+    {
+      title: '操作',
+      width: 80,
+      render: (_: unknown, __: EditableChapterPlanItem, index: number) => (
+        <Popconfirm title="删除这一章规划？" okText="删除" cancelText="取消" onConfirm={() => deleteRow(index)}>
+          <Button size="small" danger icon={<DeleteOutlined />} />
+        </Popconfirm>
+      ),
+    },
+  ]
+
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       <Space style={{ justifyContent: 'space-between', width: '100%' }}>
@@ -3549,7 +4408,7 @@ function ChapterTab({
           icon={<ThunderboltOutlined />}
           disabled={!hasOutline}
           loading={loading}
-          onClick={onGenerate}
+          onClick={() => onGenerate()}
         >
           {hasChapterPlan ? '重新生成章节' : '生成章节规划'}
         </Button>
@@ -3589,12 +4448,71 @@ function ChapterTab({
       ) : !hasChapterPlan ? (
         <Empty description="暂无章节规划" />
       ) : (
-        <Table
-          rowKey="chapter_number"
-          size="small"
-          columns={chapterColumns}
-          dataSource={chapters}
-          pagination={false}
+        <Tabs
+          items={[
+            {
+              key: 'edit',
+              label: '章节规划编辑',
+              children: (
+                <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                  <Space style={{ justifyContent: 'space-between', width: '100%' }} wrap>
+                    <Space wrap>
+                      <Tag color="blue">{rows.length} 章</Tag>
+                      <Tag color={rows.some(isChapterLocked) ? 'green' : 'default'}>锁定 {rows.filter(isChapterLocked).length}</Tag>
+                    </Space>
+                    <Space wrap>
+                      <Button icon={<PlusOutlined />} onClick={addRow}>新增章节</Button>
+                      <Button loading={loading} onClick={() => onGenerate({ preserveLocked: true })}>保留锁定再生成</Button>
+                      <Button type="primary" loading={saving} onClick={saveRows}>保存规划</Button>
+                    </Space>
+                  </Space>
+                  <Table
+                    rowKey={(record) => `${record.chapter_number}-${record.title || ''}`}
+                    size="small"
+                    columns={editorColumns}
+                    dataSource={rows}
+                    pagination={false}
+                    scroll={{ x: 1120 }}
+                  />
+                </Space>
+              ),
+            },
+            {
+              key: 'json',
+              label: 'JSON',
+              children: (
+                <Space direction="vertical" size={10} style={{ width: '100%' }}>
+                  <Text type="secondary">用于批量调整章节结构、导入外部规划或保留模型返回的扩展字段。</Text>
+                  <TextArea
+                    value={jsonDraft}
+                    onChange={(event) => setJsonDraft(event.target.value)}
+                    autoSize={{ minRows: 16, maxRows: 30 }}
+                    style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' }}
+                  />
+                  {jsonError ? <Text type="danger">{jsonError}</Text> : null}
+                  <Space style={{ justifyContent: 'flex-end', width: '100%' }}>
+                    <Button onClick={() => setJsonDraft(JSON.stringify(normalizeChapterPlan({ ...chapterPlan, chapters: rows }), null, 2))}>
+                      同步编辑表
+                    </Button>
+                    <Button type="primary" loading={saving} onClick={saveJson}>保存 JSON</Button>
+                  </Space>
+                </Space>
+              ),
+            },
+            {
+              key: 'actions',
+              label: '生产动作',
+              children: (
+                <Table
+                  rowKey="chapter_number"
+                  size="small"
+                  columns={chapterColumns}
+                  dataSource={rows}
+                  pagination={false}
+                />
+              ),
+            },
+          ]}
         />
       )}
     </Space>
@@ -6456,6 +7374,268 @@ function LogTextBlock({ title, value, rows }: { title: string; value: string; ro
       />
     </div>
   )
+}
+
+function ProjectCanvasTab({
+  graph,
+  saving,
+  generating,
+  onSave,
+  onOpenNode,
+  onToggleLock,
+  onRegenerate,
+  onSendImagePrompt,
+}: {
+  graph: ProjectCanvasState
+  saving: boolean
+  generating: boolean
+  onSave: (canvas: ProjectCanvasState) => Promise<void>
+  onOpenNode: (node: ProjectCanvasNode) => void
+  onToggleLock: (node: ProjectCanvasNode) => Promise<void>
+  onRegenerate: (node: ProjectCanvasNode) => Promise<void>
+  onSendImagePrompt: (node: ProjectCanvasNode) => void
+}) {
+  const [nodes, setNodes] = useState<ProjectCanvasNode[]>(graph.nodes || [])
+  const [selectedId, setSelectedId] = useState<string>('')
+  const [dragging, setDragging] = useState<{ id: string; offsetX: number; offsetY: number } | null>(null)
+
+  useEffect(() => {
+    setNodes(graph.nodes || [])
+    setSelectedId((current) => (graph.nodes || []).some((node) => node.id === current) ? current : graph.nodes?.[0]?.id || '')
+  }, [graph])
+
+  const nodeMap = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes])
+  const selectedNode = nodeMap.get(selectedId) || null
+  const edges = graph.edges || []
+  const width = Math.max(2200, ...nodes.map((node) => node.x + (node.width || 210) + 120), 900)
+  const height = Math.max(900, ...nodes.map((node) => node.y + (node.height || 92) + 120), 520)
+
+  const saveLayout = () =>
+    onSave({
+      ...graph,
+      nodes,
+      edges,
+      viewport: graph.viewport || { x: 0, y: 0, zoom: 1 },
+    })
+
+  const startDrag = (event: React.MouseEvent, node: ProjectCanvasNode) => {
+    event.preventDefault()
+    setSelectedId(node.id)
+    setDragging({ id: node.id, offsetX: event.clientX - node.x, offsetY: event.clientY - node.y })
+  }
+
+  const moveDrag = (event: React.MouseEvent) => {
+    if (!dragging) return
+    const nextX = Math.max(0, event.clientX - dragging.offsetX)
+    const nextY = Math.max(0, event.clientY - dragging.offsetY)
+    setNodes((prev) => prev.map((node) => (node.id === dragging.id ? { ...node, x: nextX, y: nextY } : node)))
+  }
+
+  const edgePath = (edge: ProjectCanvasEdge) => {
+    const from = nodeMap.get(edge.from)
+    const to = nodeMap.get(edge.to)
+    if (!from || !to) return ''
+    const fromX = from.x + (from.width || 210)
+    const fromY = from.y + (from.height || 92) / 2
+    const toX = to.x
+    const toY = to.y + (to.height || 92) / 2
+    const mid = Math.max(40, Math.abs(toX - fromX) / 2)
+    return `M ${fromX} ${fromY} C ${fromX + mid} ${fromY}, ${toX - mid} ${toY}, ${toX} ${toY}`
+  }
+
+  const stats = {
+    nodes: nodes.length,
+    edges: edges.length,
+    locked: nodes.filter((node) => node.status === 'locked').length,
+    prompts: nodes.filter((node) => node.type === 'prompt').length,
+    assets: nodes.filter((node) => node.type === 'asset').length,
+  }
+
+  if (!nodes.length) {
+    return (
+      <div style={{ padding: 48, textAlign: 'center' }}>
+        <Empty description="暂无可绘制节点。先生成大纲、章节或关联素材后再查看画布。" />
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 320px', gap: 12, minHeight: 620 }}>
+      <section style={{ ...panelStyle, padding: 0, overflow: 'hidden' }}>
+        <Space style={{ width: '100%', justifyContent: 'space-between', padding: 12, borderBottom: '1px solid var(--borderLight)' }} wrap>
+          <Space size={[6, 6]} wrap>
+            <Tag color="blue">{stats.nodes} 节点</Tag>
+            <Tag>{stats.edges} 连线</Tag>
+            <Tag color={stats.locked ? 'green' : 'default'}>{stats.locked} 锁定</Tag>
+            <Tag color={stats.prompts ? 'purple' : 'default'}>{stats.prompts} Prompt</Tag>
+            <Tag color={stats.assets ? 'cyan' : 'default'}>{stats.assets} 素材</Tag>
+          </Space>
+          <Space>
+            <Button loading={saving} onClick={saveLayout}>保存布局</Button>
+          </Space>
+        </Space>
+        <div
+          style={{ position: 'relative', height: 620, overflow: 'auto', background: 'var(--bgLayout)' }}
+          onMouseMove={moveDrag}
+          onMouseUp={() => setDragging(null)}
+          onMouseLeave={() => setDragging(null)}
+        >
+          <div style={{ position: 'relative', width, height }}>
+            <svg width={width} height={height} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+              <defs>
+                <marker id="project-canvas-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                  <path d="M 0 0 L 8 4 L 0 8 z" fill="var(--textTertiary)" />
+                </marker>
+              </defs>
+              {edges.map((edge) => {
+                const path = edgePath(edge)
+                if (!path) return null
+                return (
+                  <path
+                    key={edge.id}
+                    d={path}
+                    stroke={canvasEdgeColor(edge.type)}
+                    strokeWidth={1.6}
+                    fill="none"
+                    markerEnd="url(#project-canvas-arrow)"
+                    opacity={0.78}
+                  />
+                )
+              })}
+            </svg>
+            {nodes.map((node) => (
+              <div
+                key={node.id}
+                onMouseDown={(event) => startDrag(event, node)}
+                onDoubleClick={() => onOpenNode(node)}
+                style={{
+                  ...canvasNodeStyle(node, selectedId === node.id),
+                  left: node.x,
+                  top: node.y,
+                  width: node.width || 210,
+                  minHeight: node.height || 92,
+                }}
+              >
+                <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                  <Space style={{ justifyContent: 'space-between', width: '100%' }} align="start">
+                    <Tag color={canvasNodeColor(node.type)} style={{ marginInlineEnd: 0 }}>{canvasNodeLabel(node.type)}</Tag>
+                    {node.status ? <Tag color={node.status === 'locked' ? 'green' : 'default'} style={{ marginInlineEnd: 0 }}>{node.status}</Tag> : null}
+                  </Space>
+                  <Text strong ellipsis={{ tooltip: node.label }}>{node.label}</Text>
+                  <Text type="secondary" style={{ fontSize: 12 }} ellipsis={{ tooltip: node.subtitle }}>
+                    {node.subtitle || node.id}
+                  </Text>
+                </Space>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section style={{ ...panelStyle, minHeight: 620 }}>
+        {selectedNode ? (
+          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+            <Space direction="vertical" size={4} style={{ width: '100%' }}>
+              <Tag color={canvasNodeColor(selectedNode.type)}>{canvasNodeLabel(selectedNode.type)}</Tag>
+              <Title level={5} style={{ margin: 0 }}>{selectedNode.label}</Title>
+              <Text type="secondary">{selectedNode.subtitle || selectedNode.id}</Text>
+            </Space>
+            <Space size={[6, 6]} wrap>
+              <Button size="small" onClick={() => onOpenNode(selectedNode)}>打开来源</Button>
+              {(selectedNode.type === 'chapter' || selectedNode.type === 'content') ? (
+                <Button size="small" onClick={() => onToggleLock(selectedNode)}>
+                  {selectedNode.status === 'locked' ? '解除锁定' : '锁定'}
+                </Button>
+              ) : null}
+              {selectedNode.type === 'outline' || selectedNode.type === 'chapter' || selectedNode.type === 'content' ? (
+                <Button size="small" loading={generating} onClick={() => onRegenerate(selectedNode)}>再生成</Button>
+              ) : null}
+              {selectedNode.type === 'prompt' ? (
+                <Button size="small" type="primary" loading={generating} onClick={() => onSendImagePrompt(selectedNode)}>
+                  生图入库
+                </Button>
+              ) : null}
+            </Space>
+            <div>
+              <Text strong>关系</Text>
+              <Space direction="vertical" size={4} style={{ width: '100%', marginTop: 8 }}>
+                {edges
+                  .filter((edge) => edge.from === selectedNode.id || edge.to === selectedNode.id)
+                  .slice(0, 24)
+                  .map((edge) => (
+                    <Text key={edge.id} type="secondary" style={{ fontSize: 12 }}>
+                      {edge.from === selectedNode.id ? '->' : '<-'} {edge.type} {edge.label ? `/${edge.label}` : ''}
+                    </Text>
+                  ))}
+              </Space>
+            </div>
+            <div>
+              <Text strong>数据</Text>
+              <TextArea
+                rows={14}
+                value={JSON.stringify({ source: selectedNode.source, data: selectedNode.data }, null, 2)}
+                readOnly
+                style={{ marginTop: 8, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', fontSize: 12 }}
+              />
+            </div>
+          </Space>
+        ) : (
+          <Empty description="选择一个节点查看详情" />
+        )}
+      </section>
+    </div>
+  )
+}
+
+function canvasNodeLabel(type: ProjectCanvasNodeType) {
+  const labels: Record<ProjectCanvasNodeType, string> = {
+    outline: '大纲',
+    chapter: '章节',
+    character: '角色',
+    content: '内容',
+    scene: '场景',
+    prompt: 'Prompt',
+    asset: '素材',
+  }
+  return labels[type] || type
+}
+
+function canvasNodeColor(type: ProjectCanvasNodeType) {
+  const colors: Record<ProjectCanvasNodeType, string> = {
+    outline: 'blue',
+    chapter: 'geekblue',
+    character: 'cyan',
+    content: 'purple',
+    scene: 'orange',
+    prompt: 'magenta',
+    asset: 'green',
+  }
+  return colors[type] || 'default'
+}
+
+function canvasEdgeColor(type: ProjectCanvasEdge['type']) {
+  const colors: Record<ProjectCanvasEdge['type'], string> = {
+    contains: 'var(--textTertiary)',
+    uses: '#7c3aed',
+    references: '#0891b2',
+    derived_from: '#16a34a',
+  }
+  return colors[type] || 'var(--textTertiary)'
+}
+
+function canvasNodeStyle(node: ProjectCanvasNode, selected: boolean): React.CSSProperties {
+  return {
+    position: 'absolute',
+    border: selected ? '2px solid var(--primary)' : '1px solid var(--borderLight)',
+    borderRadius: 8,
+    padding: 10,
+    background: 'var(--bgElevated)',
+    boxShadow: selected ? '0 10px 30px rgba(0, 0, 0, 0.18)' : '0 6px 18px rgba(0, 0, 0, 0.08)',
+    cursor: 'grab',
+    userSelect: 'none',
+    color: 'var(--textPrimary)',
+    outline: node.type === 'prompt' ? '1px dashed rgba(168, 85, 247, 0.35)' : undefined,
+  }
 }
 
 function JsonTab({
