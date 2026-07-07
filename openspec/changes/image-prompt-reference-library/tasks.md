@@ -45,3 +45,4 @@
 - [x] 26. Frontend build passes.
 - [x] 27. OpenSpec validation passes.
 - [ ] 28. Manual smoke: sync sources, search prompts, insert into canvas, generate image, verify generated image enters Asset Hub.
+- [x] 28.1 External Chrome smoke: sync 5 prompt sources, load 879 references, replace prompt in `/image-gen`, append prompt reference in `/canvas`, and verify browser console has no errors.

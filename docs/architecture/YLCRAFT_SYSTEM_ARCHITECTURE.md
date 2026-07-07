@@ -183,7 +183,7 @@ flowchart TD
 | 素材库 | `/api/v1/assets` | `services/asset` | `/assets` | 可用，需与资产中枢统一。 |
 | 资产中枢 | `/api/v1/asset-hub` | `services/asset_hub` | `/asset-hub` | 新模型方向。 |
 | AI 连接器 | `/api/v1/ai/connectors` | `services/ai`、`services/ai_connector` | `/settings` | 已支持通用配置，仍需 UX 打磨。 |
-| 生图提示词参考库 | `/api/v1/image-prompts` | `services/image_prompt_reference` | `/prompt-library`、画布 picker、图片生成 picker | 后端、Agent 工具、独立浏览页、Picker、画布/生图集成已完成；剩手动烟测。 |
+| 生图提示词参考库 | `/api/v1/image-prompts` | `services/image_prompt_reference` | `/prompt-library`、画布 picker、图片生成 picker | 后端、Agent 工具、独立浏览页、Picker、画布/生图集成已完成；外部 Chrome 插入烟测通过，剩实际生图入库烟测。 |
 | 图片生成 | `/api/v1/images` | `services/image`、AI backends | `/image-gen` | 多后端兼容中。 |
 | 视频生成 | `/api/v1/videos` | `services/video_gen` | `/video-gen` | 基础能力。 |
 | 下载/磁力 | `/api/v1/download`、`/api/v1/torrents` | `services/download`、`services/torrent` | `/download` | 本地化方向，不做自建云缓存。 |
@@ -235,7 +235,7 @@ Agent Tool / Skill 变更按内部 API 处理：工具名称、输入输出 sche
 | `archive/drop-legacy-assets-final` | 24 | 0 | 旧资产清理计划完成并归档。 |
 | `creative-project-closed-loop` | 72 | 11 | 仍是后续业务主线。 |
 | `creative-project-optimization-roadmap` | 32 | 11 | 仍有优化任务。 |
-| `image-prompt-reference-library` | 27 | 1 | 后端模型、同步、API、Agent 工具、独立浏览页、Picker、画布和生图集成已完成；剩手动烟测。 |
+| `image-prompt-reference-library` | 28 | 1 | 后端模型、同步、API、Agent 工具、独立浏览页、Picker、画布和生图集成已完成；外部 Chrome 插入烟测通过，剩实际生图入库烟测。 |
 | `task-observability-diagnostics` | 25 | 1 | 少量收尾。 |
 
 ## 8. 文档更新协议
