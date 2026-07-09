@@ -337,9 +337,10 @@ async def list_backends():
                     continue
                 name = conn.name
                 model = conn.default_model or ''
-                capabilities = ['text_to_image']
-                if conn.support_reference_image:
-                    capabilities.append('image_to_image')
+                from app.services.ai_connector.service import infer_image_connector_capabilities
+                capabilities = infer_image_connector_capabilities(conn)
+                if not capabilities:
+                    continue
                 
                 available_models = []
                 if conn.default_params:

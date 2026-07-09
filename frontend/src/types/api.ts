@@ -29,6 +29,7 @@ export interface Provider {
   response_config?: string
   supported_sizes?: string[]
   default_params?: Record<string, any>
+  image_capabilities?: string[] | string
   support_reference_image?: boolean
   support_multiple_reference_images?: boolean
   reference_image_field?: string

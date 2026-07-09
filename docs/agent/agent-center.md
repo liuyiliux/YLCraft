@@ -109,12 +109,27 @@ Prompt 模板已经作为 `prompt_template` 分类工具接入智能体：
 
 ### AI 配置工具
 
-AI 连接器已经作为 `ai_config` 分类只读工具接入智能体：
+AI 连接器和供应商规范已经作为 `ai_config` 分类工具接入智能体：
 
 - `list_ai_connectors`：按 `llm/image/video/tts/stt/embedding` 列出当前启用的模型配置、默认模型、可用模型、能力和使用统计。
 - `get_ai_connector`：读取单个连接器的非敏感详情，包括 SDK/HTTP 模式、请求模板、响应解析、默认参数、尺寸和参考图能力。
+- `list_provider_metadata` / `get_provider_metadata`：读取已注册供应商规范，用于复用请求模板、响应解析、尺寸和参考图配置。
+- `upsert_provider_metadata`：根据用户提供的供应商文档或示例请求创建/更新供应商规范，风险等级为 `write`，属于 AI 配置助手的低风险可逆写入，会直接执行并在 Trace 中展示。
+- `create_ai_connector` / `update_ai_connector`：根据用户提供的模型、base_url、endpoint、模板和能力字段创建或修改连接器，风险等级为 `write`，属于 AI 配置助手的低风险可逆写入，会直接执行并在 Trace 中展示。图片连接器必须显式设置 `default_params.image_capabilities`：文生图为 `["text_to_image"]`，图生图/改图为 `["image_to_image"]`，同接口双能力则两者都写；endpoint 名称只作为旧数据兜底。
+- `test_ai_connector`：测试连接器连通性，读取配置并发起测试请求。
+- `discover_connector_models`：从供应商接口发现可用模型列表。
 
-这些工具不会返回 API Key，也不会触发连接测试或模型调用。推荐流程是：智能体需要选模型时先查 `list_ai_connectors`，遇到配置疑问再用 `get_ai_connector` 看非敏感详情。
+这些读取工具不会返回 API Key。推荐配置流程是：先读取或写入 provider metadata，再创建/更新 connector，最后用 `test_ai_connector` 或 `discover_connector_models` 验证。删除连接器、真实生图、视频生成等仍按 `delete` / `costly` 规则进入确认。
+
+模型配置智能体应按“先检查、再拆规范、再写入、最后验证”的顺序工作：
+
+- 配置前先调用 `list_provider_metadata` / `list_ai_connectors`；修改已有连接器前先调用 `get_ai_connector`，只改必要字段，空 `api_key` 表示保留已有密钥。
+- 从 API 文档或 curl 中拆出 `base_url`、`api_endpoint`、`provider_type`、`api_format`、`default_model`、`request_template`、`response_config`、`supported_sizes`、`default_params` 和参考图字段。不要把某个供应商的临时错误当成通用规则写死。
+- URL 必须能拼出完整请求端点，不要只停在 `https://host/v1`。OpenAI-compatible 生图通常为 `/v1/images/generations`，图片编辑/图生图通常为 `/v1/images/edits`。
+- `request_template` 是 Jinja2 JSON 模板；字符串字段优先使用 `{{ prompt_json }}`，避免多行 prompt 造成 JSON 控制字符错误。常用变量包括 `model`、`prompt`、`prompt_json`、`size`、`n`、`seed`、`response_format`、`reference_image_url`、`reference_image_base64`、`reference_image_urls`、`images`、`images_json`。
+- 参考图传递方式必须互斥：JSON 数组模式使用 `images: [{"image_url": "{{ reference_image_url }}"}]`，只设置 `reference_image_array_field=images`、清空 `reference_image_field`；multipart 本地上传模式在 `default_params` 中设置 `{"request_content_type":"multipart","multipart_image_field":"image"}`，只设置 `reference_image_field=image`、清空 `reference_image_array_field`。只有供应商文档明确要求时才使用 `images[].image`。
+- `support_reference_image` 只表示参考图如何传入，不再决定连接器属于文生图还是图生图；Agent 创建或修正图片模型时必须同时检查/写入 `image_capabilities`。
+- OpenAI-compatible base64 图片响应通常配置 `{"response_format":"base64","base64_images_path":"$.data[*].b64_json","error_path":"$.error.message"}`；返回 URL 的接口使用 `images_path`。
 
 ### 任务中心工具
 

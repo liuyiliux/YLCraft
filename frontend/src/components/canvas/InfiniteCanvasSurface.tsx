@@ -201,6 +201,21 @@ export default function InfiniteCanvasSurface({
     setDraggingNodeId(node.id)
   }
 
+  const handleNodeClick = (event: React.MouseEvent<HTMLDivElement>, node: CanvasNode) => {
+    const target = event.target instanceof Element ? event.target : null
+    if (target?.closest('[data-canvas-no-drag]')) return
+    event.stopPropagation()
+    onSelectNodes?.(event.shiftKey ? Array.from(new Set([...selectedNodeIds, node.id])) : [node.id])
+  }
+
+  const handleNodeDoubleClick = (event: React.MouseEvent<HTMLDivElement>, node: CanvasNode) => {
+    const target = event.target instanceof Element ? event.target : null
+    if (target?.closest('[data-canvas-no-drag]')) return
+    event.stopPropagation()
+    onSelectNodes?.([node.id])
+    onOpenNode?.(node)
+  }
+
   const handleResizePointerDown = (event: React.PointerEvent<HTMLDivElement>, node: CanvasNode) => {
     if (event.button !== 0) return
     event.stopPropagation()
@@ -411,8 +426,11 @@ export default function InfiniteCanvasSurface({
           <div
             key={node.id}
             data-canvas-node-id={node.id}
+            data-canvas-node-type={node.type}
+            data-canvas-node-title={node.title}
             onPointerDown={(event) => handleNodePointerDown(event, node)}
-            onDoubleClick={() => onOpenNode?.(node)}
+            onClick={(event) => handleNodeClick(event, node)}
+            onDoubleClick={(event) => handleNodeDoubleClick(event, node)}
             style={{
               position: 'absolute',
               left: node.position.x,
@@ -424,6 +442,36 @@ export default function InfiniteCanvasSurface({
             }}
           >
             {renderNode(node, { selected: selectedSet.has(node.id), dragging: draggingNodeId === node.id })}
+            <button
+              type="button"
+              data-canvas-no-drag
+              data-canvas-open-node={node.id}
+              aria-label={`配置 ${node.title}`}
+              onPointerDown={(event) => {
+                event.stopPropagation()
+                event.preventDefault()
+              }}
+              onPointerUp={(event) => {
+                event.stopPropagation()
+                event.preventDefault()
+                onSelectNodes?.([node.id])
+                onOpenNode?.(node)
+              }}
+              onMouseDown={(event) => {
+                event.stopPropagation()
+                event.preventDefault()
+                onSelectNodes?.([node.id])
+                onOpenNode?.(node)
+              }}
+              onClick={(event) => {
+                event.stopPropagation()
+                onSelectNodes?.([node.id])
+                onOpenNode?.(node)
+              }}
+              style={openNodeButtonStyle}
+            >
+              配置
+            </button>
             {selectedSet.has(node.id) ? (
               <div
                 data-canvas-no-drag
@@ -576,4 +624,20 @@ const resizeHandleStyle: React.CSSProperties = {
   border: '2px solid var(--bgCard)',
   background: 'var(--primary)',
   cursor: 'nwse-resize',
+}
+
+const openNodeButtonStyle: React.CSSProperties = {
+  position: 'absolute',
+  right: 8,
+  top: 8,
+  zIndex: 2,
+  border: '1px solid var(--border)',
+  borderRadius: 6,
+  background: 'var(--bgElevated)',
+  color: 'var(--textPrimary)',
+  cursor: 'pointer',
+  fontSize: 11,
+  lineHeight: 1,
+  padding: '5px 7px',
+  boxShadow: 'var(--shadowCard)',
 }

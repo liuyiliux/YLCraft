@@ -163,6 +163,15 @@ interface BackendInfo {
   supported_aspect_ratios: string[]  // 支持的比例列表（如 1:1, 16:9）
 }
 
+function supportsBackendCapability(backend: BackendInfo, capability: 'text_to_image' | 'image_to_image'): boolean {
+  if (backend.capabilities?.length) {
+    return backend.capabilities.includes(capability)
+  }
+  return capability === 'image_to_image'
+    ? Boolean(backend.support_reference_image)
+    : true
+}
+
 interface ProjectContext {
   projectId: string
   contentId: string
@@ -286,10 +295,10 @@ function ImageGenSinglePage() {
 
   // 按厂商分组后端（根据 mode 过滤不支持的模型）
   const { groupedBackends, vendorOptions } = useMemo(() => {
-    // 图生图模式：只保留支持 image_to_image 的后端
+    // 按当前模式过滤，避免 /images/edits 这类纯图片编辑连接器出现在文生图里。
     const filteredBackends = mode === 'img2img'
-      ? backends.filter(b => b.capabilities?.includes('image_to_image'))
-      : backends
+      ? backends.filter(b => supportsBackendCapability(b, 'image_to_image'))
+      : backends.filter(b => supportsBackendCapability(b, 'text_to_image'))
 
     const groups = filteredBackends.reduce((acc, b) => {
       const key = b.provider_label || b.provider
@@ -404,10 +413,12 @@ function ImageGenSinglePage() {
       console.log('[ImageGen] Available backends:', backends.map(b => ({ provider: b.provider_label, name: b.name, model: b.model, available: b.available_models })))
       
       // 查找包含该模型的厂商（通过 name、model 或 available_models 匹配）
-      const targetBackend = backends.find(b => 
-        b.name === modelParam || 
-        b.model === modelParam || 
-        b.available_models?.includes(modelParam)
+      const targetBackend = backends.find(b =>
+        supportsBackendCapability(b, mode === 'img2img' ? 'image_to_image' : 'text_to_image') && (
+          b.name === modelParam ||
+          b.model === modelParam ||
+          b.available_models?.includes(modelParam)
+        )
       )
       if (targetBackend) {
         console.log('[ImageGen] Found matching backend:', targetBackend.provider_label, targetBackend.name, targetBackend.model)
@@ -418,7 +429,7 @@ function ImageGenSinglePage() {
         console.log('[ImageGen] Will keep existing selection or set default')
       }
     }
-  }, [backends, searchParams])
+  }, [backends, searchParams, mode])
 
   // 切换模型时，如果当前尺寸不在支持列表中，自动切换到第一个可用尺寸
   useEffect(() => {
@@ -439,7 +450,7 @@ function ImageGenSinglePage() {
           // 只有在没有从 URL 设置模型时，才设置默认模型
           const modelParam = searchParams.get('model')
           if (!hasAppliedUrlParams.current || !modelParam) {
-            const firstBackend = data.backends[0]
+            const firstBackend = data.backends.find((b: BackendInfo) => supportsBackendCapability(b, 'text_to_image')) || data.backends[0]
             const firstVendor = firstBackend.provider_label
             console.log('[ImageGen] Setting default provider/model:', firstVendor, firstBackend.name)
             setProvider(firstVendor)

@@ -33,10 +33,10 @@ async def list_image_prompt_sources(include_disabled: bool = False) -> dict[str,
 
 @register_tool(
     name="search_image_prompt_references",
-    description="Search image prompt examples by keyword, tag, category or source.",
+    description="Search image prompt examples by keyword, model group, tag, category or source.",
     category="image_prompt_reference",
     examples=["找一些赛博朋克生图提示词", "搜索需要参考图的人像提示词"],
-    input_schema_note="keyword/tag/category/source_id are optional. page_size defaults to 10 and maxes at 50.",
+    input_schema_note="keyword/model_group/tag/category/source_id are optional. model_group can be ChatGPT, NanoBanana2 or NanoBananaPro. page_size defaults to 10 and maxes at 50.",
     output_schema_note="Returns success, total, items, tags and categories.",
     risk_level="read",
     output_type="image_prompt_reference_search_result",
@@ -47,6 +47,7 @@ async def search_image_prompt_references(
     tag: str = "",
     category: str = "",
     source_id: str = "",
+    model_group: str = "",
     page: int = 1,
     page_size: int = 10,
 ) -> dict[str, Any]:
@@ -57,6 +58,7 @@ async def search_image_prompt_references(
             tag=tag,
             category=category,
             source_id=source_id,
+            model_group=model_group,
             page=page,
             page_size=min(max(int(page_size or 10), 1), 50),
         )

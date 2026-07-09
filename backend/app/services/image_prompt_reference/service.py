@@ -5,12 +5,17 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import time
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 import httpx
-from sqlalchemy import or_
+from sqlalchemy import case, cast, func, or_, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Session, select
 
 from app.db.models.asset_hub import AssetNode, AssetType, AssetVersion
@@ -55,6 +60,7 @@ DEFAULT_IMAGE_PROMPT_SOURCES: tuple[SourceDefinition, ...] = (
         raw_path="README.zh-CN.md",
         parser="markdown_sections",
         category="awesome-gpt-image",
+        metadata={"model_group": "ChatGPT"},
     ),
     SourceDefinition(
         id="awesome-gpt4o-image-prompts",
@@ -64,7 +70,7 @@ DEFAULT_IMAGE_PROMPT_SOURCES: tuple[SourceDefinition, ...] = (
         raw_path="README.zh-CN.md",
         parser="markdown_sections",
         category="awesome-gpt4o-image-prompts",
-        metadata={"model_hint": "gpt-4o"},
+        metadata={"model_hint": "gpt-4o", "model_group": "ChatGPT"},
     ),
     SourceDefinition(
         id="youmind-gpt-image-2",
@@ -74,7 +80,7 @@ DEFAULT_IMAGE_PROMPT_SOURCES: tuple[SourceDefinition, ...] = (
         raw_path="README_zh.md",
         parser="markdown_sections",
         category="youmind-gpt-image-2",
-        metadata={"model_hint": "gpt-image-2"},
+        metadata={"model_hint": "gpt-image-2", "model_group": "ChatGPT"},
     ),
     SourceDefinition(
         id="youmind-nano-banana-pro",
@@ -84,7 +90,7 @@ DEFAULT_IMAGE_PROMPT_SOURCES: tuple[SourceDefinition, ...] = (
         raw_path="README_zh.md",
         parser="markdown_sections",
         category="youmind-nano-banana-pro",
-        metadata={"model_hint": "nano-banana-pro"},
+        metadata={"model_hint": "nano-banana-pro", "model_group": "NanoBananaPro"},
     ),
     SourceDefinition(
         id="davidwu-gpt-image2-prompts",
@@ -94,9 +100,177 @@ DEFAULT_IMAGE_PROMPT_SOURCES: tuple[SourceDefinition, ...] = (
         raw_path="prompts.json",
         parser="json_prompts",
         category="davidwu-gpt-image2-prompts",
-        metadata={"model_hint": "gpt-image-2"},
+        metadata={"model_hint": "gpt-image-2", "model_group": "ChatGPT"},
+    ),
+    SourceDefinition(
+        id="imi-chatgpt-prompts",
+        name="IMI ChatGPT Prompt Gallery",
+        repo_url="https://prompt.imi.ccwu.cc/ChatGPT/chatgpt_detail_data.json",
+        raw_base_url="https://prompt.imi.ccwu.cc/ChatGPT",
+        raw_path="chatgpt_detail_data.json",
+        parser="imi_detail_json",
+        category="imi-chatgpt",
+        metadata={"model_hint": "ChatGPT", "model_group": "ChatGPT", "media_base_url": "https://prompt.imi.ccwu.cc"},
+    ),
+    SourceDefinition(
+        id="imi-nano-banana-2-prompts",
+        name="IMI Nano Banana 2 Prompt Gallery",
+        repo_url="https://prompt.imi.ccwu.cc/Nano%20Banana%202/nano_banana_2_detail_data.json",
+        raw_base_url="https://prompt.imi.ccwu.cc/Nano%20Banana%202",
+        raw_path="nano_banana_2_detail_data.json",
+        parser="imi_detail_json",
+        category="imi-nano-banana-2",
+        metadata={"model_hint": "Nano Banana 2", "model_group": "NanoBanana2", "media_base_url": "https://prompt.imi.ccwu.cc"},
+    ),
+    SourceDefinition(
+        id="imi-nano-banana-pro-prompts",
+        name="IMI Nano Banana Pro Prompt Gallery",
+        repo_url="https://prompt.imi.ccwu.cc/Nano%20Banana%20Pro/nano_banana_pro_detail_data.json",
+        raw_base_url="https://prompt.imi.ccwu.cc/Nano%20Banana%20Pro",
+        raw_path="nano_banana_pro_detail_data.json",
+        parser="imi_detail_json",
+        category="imi-nano-banana-pro",
+        metadata={"model_hint": "Nano Banana Pro", "model_group": "NanoBananaPro", "media_base_url": "https://prompt.imi.ccwu.cc"},
     ),
 )
+
+MODEL_GROUP_SOURCE_IDS: dict[str, set[str]] = {
+    "chatgpt": {
+        "awesome-gpt-image",
+        "awesome-gpt4o-image-prompts",
+        "youmind-gpt-image-2",
+        "davidwu-gpt-image2-prompts",
+        "imi-chatgpt-prompts",
+    },
+    "nanobanana2": {"imi-nano-banana-2-prompts"},
+    "nanobananapro": {"youmind-nano-banana-pro", "imi-nano-banana-pro-prompts"},
+}
+PROMPT_TAG_PRIORITY: tuple[str, ...] = (
+    "民国",
+    "韩国风",
+    "手绘感",
+    "高细节",
+    "古典美",
+    "超写实",
+    "咖啡馆",
+    "羽毛眼",
+    "可媲包",
+    "摄影感",
+    "钩针",
+    "体育",
+    "立体",
+    "蕾丝",
+    "破损",
+    "巨鲸",
+    "少年",
+    "深海",
+    "电影感",
+    "奇遇",
+    "童绘本",
+    "手抄报",
+    "涂色卡",
+    "线稿风",
+    "寓言画",
+    "冬日村庄",
+    "雪中小屋",
+    "柔和插画",
+    "异想天开",
+    "温暖光影",
+    "灰尘",
+    "微距",
+    "引擎盖",
+    "擦拭",
+    "商业照",
+    "奢华风",
+    "高质感",
+    "光影感",
+    "编辑级",
+    "女仆装",
+    "双马尾",
+    "粉长发",
+    "少女感",
+    "三视图",
+    "设定图",
+    "细节图",
+    "参考图",
+    "金链控",
+    "俯视角",
+    "红裙女",
+    "暗夜感",
+    "韩系美女",
+    "甜蜜互动",
+    "生活摄影",
+    "户外",
+    "旅行",
+    "写实",
+    "清新",
+    "山野",
+    "明星",
+    "人像",
+    "唯美",
+    "3D风格",
+    "皮克斯风",
+    "玩具质感",
+    "影视光",
+    "立体人像",
+    "时尚",
+    "极简",
+    "卫衣",
+    "海报",
+    "模特",
+    "暖调",
+    "美妆特写",
+    "时尚大片",
+    "完美肤质",
+    "清新少女",
+    "光影人像",
+    "赛博风",
+    "机械兽",
+    "仿生学",
+    "科技感",
+    "光绘摄影",
+    "电影质感",
+    "极简奢华",
+    "琥珀光影",
+    "美食摄影",
+    "黄金时刻",
+    "温暖治愈",
+    "极致纹理",
+    "3D卡通",
+    "盲盒风",
+    "潮酷",
+    "极简风",
+    "创意海报",
+    "涂鸦",
+    "虚实结合",
+    "商业广告",
+    "电商",
+    "促销",
+    "明星脸",
+    "赤脚",
+)
+PROMPT_TAG_PRIORITY_INDEX = {tag.lower(): index for index, tag in enumerate(PROMPT_TAG_PRIORITY)}
+PROMPT_TAG_STOPWORDS = {
+    "image",
+    "chatgpt",
+    "gpt-4o",
+    "gpt-image-2",
+    "nano banana 2",
+    "nano banana pro",
+    "nano-banana-pro",
+    "nanobanana2",
+    "nanobananapro",
+    "awesome-gpt-image",
+    "awesome-gpt4o-image-prompts",
+}
+PROMPT_FACET_CACHE_TTL_SECONDS = 300
+_PROMPT_FACET_CACHE: dict[str, Any] = {"expires_at": 0.0, "tags": [], "categories": []}
+
+
+def _clear_prompt_facet_cache() -> None:
+    _PROMPT_FACET_CACHE["expires_at"] = 0.0
+    _PROMPT_FACET_CACHE["tags"] = []
+    _PROMPT_FACET_CACHE["categories"] = []
 
 
 def _utc_now() -> datetime:
@@ -140,6 +314,73 @@ def _split_tags(value: str) -> list[str]:
     return sorted({tag.strip().lower() for tag in rough if tag.strip()})
 
 
+def _normalize_model_group(value: str) -> str:
+    normalized = re.sub(r"[^a-z0-9]+", "", (value or "").lower())
+    aliases = {
+        "chatgpt": "ChatGPT",
+        "gpt4o": "ChatGPT",
+        "gptimage": "ChatGPT",
+        "gptimage2": "ChatGPT",
+        "nanobanana2": "NanoBanana2",
+        "nanobananapro": "NanoBananaPro",
+    }
+    return aliases.get(normalized, value.strip())
+
+
+def _model_group_for_source_id(source_id: str) -> str:
+    normalized = re.sub(r"[^a-z0-9]+", "", source_id.lower())
+    for group, source_ids in MODEL_GROUP_SOURCE_IDS.items():
+        if source_id in source_ids:
+            return _normalize_model_group(group)
+    return _normalize_model_group(normalized)
+
+
+def _model_group_for_reference(source_id: str, model_hint: str = "", metadata: dict[str, Any] | None = None) -> str:
+    metadata = metadata or {}
+    return (
+        _normalize_model_group(str(metadata.get("model_group") or ""))
+        or _normalize_model_group(model_hint)
+        or _model_group_for_source_id(source_id)
+    )
+
+
+def _sort_prompt_tags(tags: list[str] | tuple[str, ...]) -> list[str]:
+    unique = {str(tag).strip().lower() for tag in tags if str(tag).strip()}
+    model_tags = {"chatgpt", "gpt-4o", "gpt-image-2", "nano banana 2", "nano banana pro", "nano-banana-pro"}
+    return sorted(
+        unique,
+        key=lambda tag: (
+            3 if tag.startswith("@") else 2 if tag in model_tags else 0,
+            tag,
+        ),
+    )
+
+
+def _suggestion_tags_from_rows(rows: list[ImagePromptReference]) -> list[str]:
+    tags = [tag for row in rows for tag in (row.tags_json or []) if tag]
+    return _rank_prompt_suggestion_tags(tags)
+
+
+def _rank_prompt_suggestion_tags(tags: list[str], *, limit: int = 180) -> list[str]:
+    counter = Counter(str(tag).strip().lower() for tag in tags if str(tag).strip())
+    for tag in list(counter):
+        if tag.startswith("@") or tag in PROMPT_TAG_STOPWORDS or len(tag) > 28:
+            counter.pop(tag, None)
+    return [
+        tag
+        for tag, _count in sorted(
+            counter.items(),
+            key=lambda item: (
+                0 if item[0] in PROMPT_TAG_PRIORITY_INDEX else 1,
+                PROMPT_TAG_PRIORITY_INDEX.get(item[0], 9999),
+                -item[1],
+                len(item[0]),
+                item[0],
+            ),
+        )[:limit]
+    ]
+
+
 def _absolute_image(base_url: str, image: str) -> str:
     image = (image or "").strip()
     if not image:
@@ -147,6 +388,46 @@ def _absolute_image(base_url: str, image: str) -> str:
     if re.match(r"^https?://", image, re.I):
         return image
     return f"{base_url.rstrip('/')}/{image.lstrip('./')}"
+
+
+def image_prompt_storage_root() -> Path:
+    """Return the local cache root for prompt JSON and downloaded preview images."""
+
+    return Path(__file__).resolve().parents[3] / "storage" / "image_prompt_references"
+
+
+def image_prompt_media_root() -> Path:
+    return image_prompt_storage_root() / "media"
+
+
+def image_prompt_source_cache_path(source: ImagePromptSource) -> Path:
+    ext = Path(source.raw_path or "").suffix or ".txt"
+    return image_prompt_storage_root() / "sources" / f"{_slug(source.id, 'source')}{ext}"
+
+
+def _safe_filename(value: str, fallback: str = "image.jpg") -> str:
+    name = Path((value or "").split("?")[0]).name.strip()
+    name = re.sub(r"[^a-zA-Z0-9._-]+", "-", name).strip(".-")
+    return name or fallback
+
+
+def _cached_media_path(source_id: str, item_id: str, filename: str) -> Path:
+    return image_prompt_media_root() / _slug(source_id, "source") / _slug(item_id, "item") / _safe_filename(filename)
+
+
+def _cached_media_url(source_id: str, item_id: str, filename: str) -> str:
+    parts = [
+        quote(_slug(source_id, "source"), safe=""),
+        quote(_slug(item_id, "item"), safe=""),
+        quote(_safe_filename(filename), safe=""),
+    ]
+    return f"/api/v1/image-prompts/media/{'/'.join(parts)}"
+
+
+def _local_or_remote_image(source_id: str, item_id: str, filename: str, remote_url: str) -> str:
+    if filename and _cached_media_path(source_id, item_id, filename).is_file():
+        return _cached_media_url(source_id, item_id, filename)
+    return remote_url
 
 
 def _extract_images(base_url: str, markdown: str) -> list[str]:
@@ -206,7 +487,7 @@ def parse_markdown_prompt_references(
                     prompt=prompt,
                     cover_url=images[0] if images else "",
                     preview_markdown=_markdown_preview(images),
-                    tags=tuple(section_tags),
+                    tags=tuple(_sort_prompt_tags(section_tags)),
                     category=category,
                     source_url=repo_url,
                     model_hint=model_hint,
@@ -257,13 +538,128 @@ def parse_json_prompt_references(
                 negative_prompt=str(raw.get("negative_prompt") or ""),
                 cover_url=image,
                 preview_markdown="\n\n".join(str(part) for part in (raw.get("title_en"), raw.get("note"), f"![]({image})" if image else "") if part),
-                tags=tuple(sorted(set(tags))),
+                tags=tuple(_sort_prompt_tags(tags)),
                 category=str(raw.get("category_cn") or raw.get("category") or category),
                 source_url=str(raw.get("githubUrl") or raw.get("source_url") or repo_url),
                 model_hint=str(raw.get("model") or model_hint),
                 needs_reference_image=bool(raw.get("needs_ref") or raw.get("needs_reference_image")),
                 language="zh" if re.search(r"[\u4e00-\u9fff]", title + prompt) else "en",
                 metadata={k: v for k, v in raw.items() if k not in {"prompt", "positive_prompt"}},
+            )
+        )
+    return items
+
+
+def parse_imi_detail_prompt_references(
+    payload: str | list[dict[str, Any]],
+    *,
+    source_id: str,
+    category: str,
+    raw_base_url: str,
+    repo_url: str,
+    model_hint: str = "",
+    media_base_url: str = "",
+) -> list[ParsedPromptReference]:
+    data = json.loads(payload) if isinstance(payload, str) else payload
+    if not isinstance(data, list):
+        raise ValueError("IMI prompt source must be a list")
+
+    items: list[ParsedPromptReference] = []
+    for index, raw in enumerate(data, start=1):
+        if not isinstance(raw, dict):
+            continue
+        item_id = str(raw.get("id") or raw.get("source_id") or index).strip()
+        slug = str(raw.get("slug") or "").strip()
+        title = str(raw.get("title") or slug or f"Prompt {index}").strip()
+        prompts = raw.get("prompts") if isinstance(raw.get("prompts"), list) else []
+        prompt = str(raw.get("chinese_prompt") or raw.get("english_prompt") or "").strip()
+        if not prompt:
+            for prompt_item in prompts:
+                if isinstance(prompt_item, dict) and str(prompt_item.get("text") or "").strip():
+                    prompt = str(prompt_item.get("text") or "").strip()
+                    break
+        if not title or not prompt:
+            continue
+
+        images = raw.get("images") if isinstance(raw.get("images"), list) else []
+        image_urls: list[str] = []
+        image_meta: list[dict[str, str]] = []
+        for image_index, image in enumerate(images, start=1):
+            if not isinstance(image, dict):
+                continue
+            remote_url = str(image.get("url") or "").strip()
+            path = str(image.get("path") or "").strip()
+            filename = _safe_filename(str(image.get("filename") or Path(path).name or f"{item_id}-{image_index}.jpg"))
+            if not remote_url and path:
+                remote_url = _absolute_image(media_base_url or raw_base_url, path)
+            if not remote_url:
+                continue
+            display_url = _local_or_remote_image(source_id, item_id, filename, remote_url)
+            image_urls.append(display_url)
+            image_meta.append({"url": remote_url, "filename": filename, "path": path, "display_url": display_url})
+
+        cover_raw = str(raw.get("thumbnail") or raw.get("cover_image") or "").strip()
+        cover_remote = _absolute_image(media_base_url or raw_base_url, cover_raw) if cover_raw else ""
+        if image_meta:
+            first = image_meta[0]
+            cover_url = _local_or_remote_image(source_id, item_id, first["filename"], cover_remote or first["url"])
+        else:
+            cover_url = cover_remote
+            if cover_url:
+                image_urls.append(cover_url)
+
+        tags: list[str] = []
+        raw_tags = raw.get("tags")
+        if isinstance(raw_tags, list):
+            for tag in raw_tags:
+                if isinstance(tag, dict):
+                    value = str(tag.get("name") or tag.get("title") or tag.get("label") or "").strip()
+                else:
+                    value = str(tag or "").strip()
+                if value:
+                    tags.extend(_split_tags(value))
+        tags.extend(_split_tags(str(raw.get("model") or model_hint or "")))
+        if str(raw.get("media_type") or "").strip():
+            tags.append(str(raw.get("media_type")).strip().lower())
+        source_name = str(raw.get("source_name") or "").strip()
+        if source_name:
+            tags.append(source_name.lower())
+
+        external_raw = raw.get("source_id") or item_id or slug or index
+        external_id = f"{source_id}-{_slug(str(external_raw), str(index))}"
+        model = str(raw.get("model") or model_hint or "").strip()
+        items.append(
+            ParsedPromptReference(
+                external_id=external_id,
+                title=title,
+                prompt=prompt,
+                cover_url=cover_url,
+                preview_markdown=_markdown_preview(image_urls[:6]),
+                tags=tuple(_sort_prompt_tags(tags)),
+                category=model or category,
+                source_url=str(raw.get("detail_url") or raw.get("source_url") or repo_url),
+                model_hint=model,
+                language="zh" if re.search(r"[\u4e00-\u9fff]", title + prompt) else "en",
+                metadata={
+                    "parser": "imi_detail_json",
+                    "imi_id": item_id,
+                    "slug": slug,
+                    "source_name": source_name,
+                    "source_url": raw.get("source_url") or "",
+                    "detail_url": raw.get("detail_url") or "",
+                    "detail_api_url": raw.get("detail_api_url") or "",
+                    "media_type": raw.get("media_type") or "",
+                    "view_count": raw.get("view_count") or 0,
+                    "like_count": raw.get("like_count") or 0,
+                    "copy_count": raw.get("copy_count") or 0,
+                    "reviewed_at": raw.get("reviewed_at") or "",
+                    "remote_created_at": raw.get("remote_created_at") or raw.get("created_at") or "",
+                    "remote_updated_at": raw.get("remote_updated_at") or raw.get("updated_at") or "",
+                    "images": image_meta,
+                    "original_cover_url": cover_remote,
+                    "english_prompt": raw.get("english_prompt") or "",
+                    "chinese_prompt": raw.get("chinese_prompt") or "",
+                },
             )
         )
     return items
@@ -309,6 +705,16 @@ class ImagePromptReferenceService:
 
     def parse_source_payload(self, source: ImagePromptSource, payload: str) -> list[ParsedPromptReference]:
         model_hint = str((source.metadata_json or {}).get("model_hint") or "")
+        if source.parser == "imi_detail_json":
+            return parse_imi_detail_prompt_references(
+                payload,
+                source_id=source.id,
+                category=source.category,
+                raw_base_url=source.raw_base_url,
+                repo_url=source.repo_url,
+                model_hint=model_hint,
+                media_base_url=str((source.metadata_json or {}).get("media_base_url") or ""),
+            )
         if source.parser == "json_prompts":
             return parse_json_prompt_references(
                 payload,
@@ -373,6 +779,7 @@ class ImagePromptReferenceService:
             source.updated_at = now
             self.session.add(source)
             self.session.commit()
+            _clear_prompt_facet_cache()
             return {"success": True, "source_id": source.id, "total": len(parsed), "created": created, "updated": updated}
         except Exception as exc:
             source.sync_status = "failed"
@@ -382,24 +789,56 @@ class ImagePromptReferenceService:
             self.session.commit()
             raise
 
-    def refresh_source(self, source_id: str, *, timeout: float = 30.0) -> dict[str, Any]:
+    def refresh_source(self, source_id: str, *, timeout: float = 30.0, force_remote: bool = False) -> dict[str, Any]:
         source = self.get_source(source_id)
         if not source:
             raise ValueError(f"image prompt source not found: {source_id}")
+        cache_path = image_prompt_source_cache_path(source)
+        if cache_path.is_file() and not force_remote:
+            return {
+                **self.sync_source_payload(source, cache_path.read_text(encoding="utf-8")),
+                "cache": "local",
+                "cache_path": str(cache_path),
+            }
+
+        if not force_remote:
+            total = int(
+                self.session.exec(
+                    select(func.count(ImagePromptReference.id)).where(ImagePromptReference.source_id == source.id)
+                ).one()
+                or 0
+            )
+            return {
+                "success": True,
+                "source_id": source.id,
+                "total": total,
+                "created": 0,
+                "updated": 0,
+                "cache": "missing",
+                "skipped_remote": True,
+                "message": "local source cache is missing; enable remote update to refresh this source",
+            }
+
         url = f"{source.raw_base_url.rstrip('/')}/{source.raw_path.lstrip('/')}"
         with httpx.Client(timeout=timeout, follow_redirects=True) as client:
             response = client.get(url)
             response.raise_for_status()
-            return self.sync_source_payload(source, response.text)
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            cache_path.write_text(response.text, encoding="utf-8")
+            return {
+                **self.sync_source_payload(source, response.text),
+                "cache": "remote",
+                "cache_path": str(cache_path),
+            }
 
-    def refresh_sources(self, *, source_id: str | None = None) -> dict[str, Any]:
+    def refresh_sources(self, *, source_id: str | None = None, force_remote: bool = False) -> dict[str, Any]:
         sources = [self.get_source(source_id)] if source_id else self.list_sources()
         results: list[dict[str, Any]] = []
         for source in sources:
             if not source:
                 continue
             try:
-                results.append(self.refresh_source(source.id))
+                results.append(self.refresh_source(source.id, force_remote=force_remote))
             except Exception as exc:
                 results.append({"success": False, "source_id": source.id, "error": str(exc)})
         return {
@@ -408,6 +847,57 @@ class ImagePromptReferenceService:
             "results": results,
         }
 
+    def _global_facets(self) -> dict[str, list[str]]:
+        now = time.monotonic()
+        if now < float(_PROMPT_FACET_CACHE.get("expires_at") or 0):
+            return {
+                "tags": list(_PROMPT_FACET_CACHE.get("tags") or []),
+                "categories": list(_PROMPT_FACET_CACHE.get("categories") or []),
+            }
+        bind = self.session.get_bind()
+        dialect_name = bind.dialect.name if bind is not None else ""
+        if dialect_name == "postgresql":
+            tag_rows = self.session.exec(
+                text(
+                    """
+                    SELECT tag_value, COUNT(*) AS usage_count
+                    FROM image_prompt_references,
+                         LATERAL jsonb_array_elements_text(tags_json) AS prompt_tags(tag_value)
+                    WHERE tag_value <> ''
+                      AND tag_value NOT LIKE '@%'
+                      AND char_length(tag_value) <= 28
+                    GROUP BY tag_value
+                    ORDER BY usage_count DESC
+                    LIMIT 900
+                    """
+                )
+            ).all()
+            weighted_tags: list[str] = []
+            for row in tag_rows:
+                tag = str(row[0]).strip().lower()
+                count = int(row[1])
+                if tag and tag not in PROMPT_TAG_STOPWORDS:
+                    weighted_tags.extend([tag] * max(1, min(count, 100)))
+            tags = weighted_tags
+        else:
+            rows = list(self.session.exec(select(ImagePromptReference.tags_json)).all())
+            tags = []
+            for value in rows:
+                if isinstance(value, list):
+                    tags.extend(str(tag) for tag in value if tag)
+        categories = sorted({str(category) for category in self.session.exec(select(ImagePromptReference.category)).all() if category})
+        facets = {"tags": _rank_prompt_suggestion_tags(tags), "categories": categories}
+        _PROMPT_FACET_CACHE["tags"] = facets["tags"]
+        _PROMPT_FACET_CACHE["categories"] = facets["categories"]
+        _PROMPT_FACET_CACHE["expires_at"] = now + PROMPT_FACET_CACHE_TTL_SECONDS
+        return facets
+
+    def _suggestion_tags_for_filters(self, filters: list[Any]) -> list[str]:
+        return self._global_facets()["tags"]
+
+    def _categories_for_filters(self, filters: list[Any]) -> list[str]:
+        return self._global_facets()["categories"]
+
     def search_references(
         self,
         *,
@@ -415,40 +905,83 @@ class ImagePromptReferenceService:
         tag: str = "",
         category: str = "",
         source_id: str = "",
+        model_group: str = "",
         page: int = 1,
         page_size: int = 20,
     ) -> dict[str, Any]:
         page = max(1, int(page or 1))
         page_size = max(1, min(int(page_size or 20), 100))
-        query = select(ImagePromptReference).order_by(ImagePromptReference.updated_at.desc())
+        filters = []
         if source_id:
-            query = query.where(ImagePromptReference.source_id == source_id)
+            filters.append(ImagePromptReference.source_id == source_id)
+        elif model_group:
+            normalized_group = re.sub(r"[^a-z0-9]+", "", model_group.lower())
+            source_ids = MODEL_GROUP_SOURCE_IDS.get(normalized_group)
+            if source_ids:
+                filters.append(ImagePromptReference.source_id.in_(sorted(source_ids)))
         if category and category.lower() not in {"all", "全部"}:
-            query = query.where(ImagePromptReference.category == category)
+            filters.append(ImagePromptReference.category == category)
         if keyword:
             pattern = f"%{keyword.strip()}%"
-            query = query.where(
+            filters.append(
                 or_(
                     ImagePromptReference.title.ilike(pattern),
                     ImagePromptReference.prompt.ilike(pattern),
                     ImagePromptReference.category.ilike(pattern),
                 )
             )
-        rows = list(self.session.exec(query).all())
-        if tag:
-            normalized_tag = tag.strip().lower()
-            rows = [row for row in rows if normalized_tag in {str(item).lower() for item in (row.tags_json or [])}]
-        total = len(rows)
+        # Facet options are independent controls. Selecting model/source/tag narrows
+        # result items, but should not make the tag/category option pool jump around.
+        suggestion_filters: list[Any] = []
+        normalized_tag = tag.strip().lower() if tag else ""
+        bind = self.session.get_bind()
+        dialect_name = bind.dialect.name if bind is not None else ""
+        if normalized_tag and dialect_name == "postgresql":
+            filters.append(ImagePromptReference.tags_json.op("@>")(cast([normalized_tag], JSONB)))
+        query = select(ImagePromptReference).where(*filters)
         offset = (page - 1) * page_size
-        items = rows[offset : offset + page_size]
+        if normalized_tag and dialect_name != "postgresql":
+            rows = list(self.session.exec(query).all())
+            rows = [row for row in rows if normalized_tag in {str(item).lower() for item in (row.tags_json or [])}]
+            rows.sort(
+                key=lambda row: (
+                    0 if ((row.cover_url or "").strip() or (row.preview_markdown or "").strip()) else 1,
+                    -(row.updated_at.timestamp() if row.updated_at else 0.0),
+                )
+            )
+            total = len(rows)
+            items = rows[offset : offset + page_size]
+            categories = sorted({row.category for row in rows if row.category})
+            tags = self._suggestion_tags_for_filters(suggestion_filters)
+        else:
+            total = int(self.session.exec(select(func.count(ImagePromptReference.id)).where(*filters)).one() or 0)
+            image_first_order = case(
+                (
+                    or_(
+                        ImagePromptReference.cover_url != "",
+                        ImagePromptReference.preview_markdown != "",
+                    ),
+                    0,
+                ),
+                else_=1,
+            )
+            items = list(
+                self.session.exec(
+                    query.order_by(image_first_order, ImagePromptReference.updated_at.desc())
+                    .offset(offset)
+                    .limit(page_size)
+                ).all()
+            )
+            categories = self._categories_for_filters(suggestion_filters)
+            tags = self._suggestion_tags_for_filters(suggestion_filters)
         return {
             "success": True,
             "items": [self.reference_to_dict(row, preview=True) for row in items],
             "total": total,
             "page": page,
             "page_size": page_size,
-            "categories": sorted({row.category for row in rows if row.category}),
-            "tags": sorted({tag for row in rows for tag in (row.tags_json or []) if tag}),
+            "categories": categories,
+            "tags": tags,
         }
 
     def get_reference(self, reference_id: str) -> ImagePromptReference | None:
@@ -509,6 +1042,7 @@ class ImagePromptReferenceService:
             "last_synced_at": source.last_synced_at.isoformat() if source.last_synced_at else None,
             "error": source.error,
             "metadata": dict(source.metadata_json or {}),
+            "model_group": _model_group_for_reference(source.id, str((source.metadata_json or {}).get("model_hint") or ""), source.metadata_json or {}),
             "created_at": source.created_at.isoformat() if source.created_at else None,
             "updated_at": source.updated_at.isoformat() if source.updated_at else None,
         }
@@ -516,6 +1050,7 @@ class ImagePromptReferenceService:
     @staticmethod
     def reference_to_dict(reference: ImagePromptReference, *, preview: bool = False) -> dict[str, Any]:
         prompt = reference.prompt or ""
+        metadata = dict(reference.metadata_json or {})
         return {
             "id": reference.id,
             "source_id": reference.source_id,
@@ -525,13 +1060,24 @@ class ImagePromptReferenceService:
             "negative_prompt": reference.negative_prompt,
             "cover_url": reference.cover_url,
             "preview_markdown": reference.preview_markdown,
-            "tags": list(reference.tags_json or []),
+            "tags": _sort_prompt_tags(reference.tags_json or []),
             "category": reference.category,
             "source_url": reference.source_url,
             "model_hint": reference.model_hint,
+            "model_group": _model_group_for_reference(reference.source_id, reference.model_hint, metadata),
             "needs_reference_image": reference.needs_reference_image,
             "language": reference.language,
-            "metadata": dict(reference.metadata_json or {}),
+            "metadata": metadata,
+            "english_prompt": metadata.get("english_prompt") or "",
+            "chinese_prompt": metadata.get("chinese_prompt") or "",
+            "source_name": metadata.get("source_name") or "",
+            "detail_url": metadata.get("detail_url") or "",
+            "image_items": metadata.get("images") or [],
+            "view_count": metadata.get("view_count") or 0,
+            "like_count": metadata.get("like_count") or 0,
+            "copy_count": metadata.get("copy_count") or 0,
+            "remote_created_at": metadata.get("remote_created_at") or "",
+            "remote_updated_at": metadata.get("remote_updated_at") or "",
             "created_at": reference.created_at.isoformat() if reference.created_at else None,
             "updated_at": reference.updated_at.isoformat() if reference.updated_at else None,
         }

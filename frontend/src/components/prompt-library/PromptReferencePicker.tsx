@@ -122,8 +122,8 @@ export default function PromptReferencePicker({
           <Button onClick={onCancel}>取消</Button>
           <Button icon={<CopyOutlined />} disabled={!selected} onClick={copyPrompt}>复制</Button>
           <Button disabled={!selected} onClick={saveAsAsset}>保存为素材</Button>
-          <Button disabled={!selected} onClick={() => selected && onApply(selected, 'append')}>追加</Button>
-          <Button type="primary" disabled={!selected} onClick={() => selected && onApply(selected, 'replace')}>替换</Button>
+          <Button disabled={!selected} data-prompt-reference-action="append" onClick={() => selected && onApply(selected, 'append')}>追加</Button>
+          <Button type="primary" disabled={!selected} data-prompt-reference-action="replace" onClick={() => selected && onApply(selected, 'replace')}>替换</Button>
         </Space>
       }
       styles={{ body: { paddingTop: 12 } }}
@@ -163,6 +163,8 @@ export default function PromptReferencePicker({
             locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无 Prompt 参考" /> }}
             renderItem={(item) => (
               <List.Item
+                data-prompt-reference-id={item.id}
+                data-prompt-reference-selected={item.id === selected?.id ? 'true' : 'false'}
                 onClick={() => setSelectedId(item.id)}
                 style={{
                   cursor: 'pointer',

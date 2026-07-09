@@ -1,12 +1,18 @@
+import base64
+import io
 import json
 
 import httpx
 import pytest
 
-from app.db.models.ai_connector import AIConnector, AIProviderType
+from app.db.models.ai_connector import AIConnector, AIConnectorResponse, AIProviderType
 from app.services.ai.backends.image.generic import GenericImageBackend
 from app.services.ai.types import ImageGenerationRequest
-from app.services.ai_connector.service import AIConnectorService
+from app.services.ai_connector.service import (
+    AIConnectorService,
+    infer_image_connector_capabilities,
+    normalize_reference_image_config_values,
+)
 
 
 ASYNC_CONFIG = {
@@ -80,6 +86,101 @@ def test_generic_image_template_escapes_multiline_prompt():
     assert "普通人类皮肤" in request_body["prompt"]
 
 
+def test_ai_connector_response_redacts_api_key():
+    response = AIConnectorResponse.from_db(_aaccx_edit_connector())
+
+    assert response.api_key == ""
+    assert response.has_api_key is True
+
+
+def test_edit_connector_is_not_exposed_as_text_to_image():
+    conn = _aaccx_edit_connector()
+    conn.support_reference_image = True
+    capabilities = infer_image_connector_capabilities(conn)
+    backend = GenericImageBackend(conn, session=None)
+
+    assert capabilities == ["image_to_image"]
+    assert backend.capabilities == {"image_to_image"}
+
+
+def test_explicit_image_capabilities_override_nonstandard_endpoint_for_text_to_image():
+    conn = _aaccx_edit_connector({"image_capabilities": ["text_to_image"]})
+    conn.api_endpoint = "/vendor/custom-image-task"
+    conn.support_reference_image = True
+
+    assert infer_image_connector_capabilities(conn) == ["text_to_image"]
+
+
+def test_explicit_image_capabilities_override_nonstandard_endpoint_for_image_to_image():
+    conn = _connector()
+    conn.api_endpoint = "/vendor/custom-image-task"
+    conn.default_params = json.dumps({"image_capabilities": ["image_to_image"]})
+    conn.support_reference_image = True
+
+    assert infer_image_connector_capabilities(conn) == ["image_to_image"]
+
+
+def test_explicit_image_capabilities_accept_alias_string():
+    conn = _connector()
+    conn.default_params = json.dumps({"image_capabilities": "txt2img,img2img"})
+
+    assert infer_image_connector_capabilities(conn) == ["text_to_image", "image_to_image"]
+
+
+def test_reference_image_config_normalizes_json_array_mode():
+    config = normalize_reference_image_config_values(
+        provider_type="image",
+        default_params={},
+        support_reference_image=True,
+        support_multiple_reference_images=True,
+        reference_image_field="image",
+        reference_image_array_field="images",
+        support_vision_input=False,
+    )
+
+    assert config["support_reference_image"] is True
+    assert config["support_multiple_reference_images"] is True
+    assert config["support_vision_input"] is True
+    assert config["reference_image_field"] == ""
+    assert config["reference_image_array_field"] == "images"
+    assert "request_content_type" not in json.loads(config["default_params"] or "{}")
+
+
+def test_reference_image_config_array_mode_enables_multiple_images():
+    config = normalize_reference_image_config_values(
+        provider_type="image",
+        default_params={},
+        support_reference_image=True,
+        support_multiple_reference_images=False,
+        reference_image_field="image",
+        reference_image_array_field="images",
+        support_vision_input=False,
+    )
+
+    assert config["support_multiple_reference_images"] is True
+    assert config["reference_image_field"] == ""
+    assert config["reference_image_array_field"] == "images"
+
+
+def test_reference_image_config_normalizes_multipart_mode():
+    config = normalize_reference_image_config_values(
+        provider_type="image",
+        default_params={"request_content_type": "multipart"},
+        support_reference_image=True,
+        support_multiple_reference_images=True,
+        reference_image_field="image",
+        reference_image_array_field="images",
+        support_vision_input=False,
+    )
+
+    params = json.loads(config["default_params"])
+    assert config["support_multiple_reference_images"] is False
+    assert config["reference_image_field"] == "image"
+    assert config["reference_image_array_field"] is None
+    assert params["request_content_type"] == "multipart"
+    assert params["multipart_image_field"] == "image"
+
+
 def test_aaccx_edit_connector_builds_json_edit_request():
     service = object.__new__(AIConnectorService)
     request = service._build_test_request(
@@ -103,6 +204,62 @@ def test_aaccx_edit_connector_builds_json_edit_request():
         "response_format": "b64_json",
     }
 
+
+def test_generic_image_template_keeps_structured_reference_image_array():
+    conn = _aaccx_edit_connector()
+    conn.support_reference_image = True
+    conn.reference_image_array_field = "images"
+    conn.request_template = (
+        '{"model":"{{ model }}","prompt":{{ prompt_json }},'
+        '"images":[{"image_url":"{{ reference_image_url }}"}],'
+        '"size":"{{ size }}","response_format":"b64_json"}'
+    )
+    backend = GenericImageBackend(conn, session=None)
+
+    request_body = backend._render_request(
+        {
+            "model": "gpt-image-2",
+            "prompt": "turn it into a minimal black and white poster",
+            "size": "1024x1024",
+            "reference_images": ["data:image/png;base64,AAAA"],
+            "reference_image_url": "https://example.com/input.png",
+        }
+    )
+
+    assert request_body["images"] == [{"image_url": "https://example.com/input.png"}]
+    assert "image" not in request_body
+
+
+def test_generic_image_reference_data_url_is_compressed(tmp_path):
+    from PIL import Image
+
+    image_path = tmp_path / "large.png"
+    Image.new("RGB", (3000, 2200), (180, 40, 80)).save(image_path, format="PNG")
+    backend = GenericImageBackend(_aaccx_edit_connector(), session=None)
+
+    data_url = backend._url_to_base64(str(image_path))
+
+    assert data_url.startswith("data:image/jpeg;base64,")
+    _, payload = data_url.split(",", 1)
+    with Image.open(io.BytesIO(base64.b64decode(payload))) as image:
+        assert image.size == (1536, 1126)
+
+
+def test_generic_image_reference_input_data_url_is_compressed(tmp_path):
+    from PIL import Image
+
+    image_path = tmp_path / "large-source.png"
+    Image.new("RGB", (2600, 1800), (40, 100, 180)).save(image_path, format="PNG")
+    raw = image_path.read_bytes()
+    source_data_url = f"data:image/png;base64,{base64.b64encode(raw).decode()}"
+    backend = GenericImageBackend(_aaccx_edit_connector(), session=None)
+
+    data_url = backend._url_to_base64(source_data_url)
+
+    assert data_url.startswith("data:image/jpeg;base64,")
+    _, payload = data_url.split(",", 1)
+    with Image.open(io.BytesIO(base64.b64decode(payload))) as image:
+        assert image.size == (1536, 1063)
 
 def test_aaccx_edit_connector_builds_multipart_edit_request(tmp_path):
     image_path = tmp_path / "input.png"

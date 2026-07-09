@@ -1073,12 +1073,30 @@ interface ProviderPreset {
   response_config?: string
   default_params?: Record<string, any>
   supported_sizes?: string[]
+  image_capabilities?: string[] | string
   support_reference_image?: boolean
   support_multiple_reference_images?: boolean
   reference_image_field?: string
   reference_image_array_field?: string
   support_vision_input?: boolean
 }
+
+type ReferenceImageMode = 'none' | 'json_array' | 'field' | 'multipart'
+type ImageCapability = 'text_to_image' | 'image_to_image'
+type ImageCapabilityChoice = ImageCapability | 'both'
+
+const REFERENCE_IMAGE_MODE_OPTIONS = [
+  { value: 'json_array', label: 'JSON 数组 images[].image_url' },
+  { value: 'multipart', label: 'Multipart 本地上传 image' },
+  { value: 'field', label: '单字段/占位符' },
+  { value: 'none', label: '不使用参考图' },
+]
+
+const IMAGE_CAPABILITY_OPTIONS = [
+  { value: 'text_to_image', label: '仅文生图' },
+  { value: 'image_to_image', label: '仅图生图/改图' },
+  { value: 'both', label: '两者都支持' },
+]
 
 const MODELSCOPE_ASYNC_CONFIG = {
   request_headers: {
@@ -1113,6 +1131,150 @@ function parseJsonObject(value: any): Record<string, any> {
 
 function stringifyJson(value: any): string {
   return JSON.stringify(value || {}, null, 2)
+}
+
+function normalizeImageCapability(value: any): ImageCapability | '' {
+  const key = String(value || '').trim().toLowerCase().replace(/\s+/g, '_')
+  if (['text_to_image', 'text-to-image', 'txt2img', 'generation', 'generate', 'image_generation'].includes(key)) {
+    return 'text_to_image'
+  }
+  if (['image_to_image', 'image-to-image', 'img2img', 'edit', 'image_edit'].includes(key)) {
+    return 'image_to_image'
+  }
+  return ''
+}
+
+function parseImageCapabilities(value: any): ImageCapability[] {
+  let raw = value
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim()
+    if (!trimmed) return []
+    const single = trimmed.toLowerCase().replace(/\s+/g, '_')
+    if (['both', 'all', 'both_supported', 'text_and_image_to_image'].includes(single)) {
+      return ['text_to_image', 'image_to_image']
+    }
+    const normalizedSingle = normalizeImageCapability(trimmed)
+    if (normalizedSingle) return [normalizedSingle]
+    try {
+      raw = JSON.parse(trimmed)
+    } catch {
+      raw = trimmed.split(',')
+    }
+  }
+  if (!Array.isArray(raw)) return []
+  const found = new Set<ImageCapability>()
+  raw.forEach(item => {
+    const normalized = normalizeImageCapability(item)
+    if (normalized) found.add(normalized)
+  })
+  return (['text_to_image', 'image_to_image'] as ImageCapability[]).filter(item => found.has(item))
+}
+
+function imageCapabilityChoiceFromCapabilities(values: any): ImageCapabilityChoice {
+  const capabilities = inferImageCapabilities(values)
+  const hasText = capabilities.includes('text_to_image')
+  const hasImage = capabilities.includes('image_to_image')
+  if (hasText && hasImage) return 'both'
+  if (hasImage) return 'image_to_image'
+  return 'text_to_image'
+}
+
+function inferImageCapabilities(values: any): ImageCapability[] {
+  const defaultParams = parseJsonObject(values?.default_params)
+  const explicit = parseImageCapabilities(defaultParams.image_capabilities || defaultParams.capabilities || values?.image_capabilities)
+  if (explicit.length) return explicit
+  if (values?.provider_type !== 'image') return []
+
+  const endpoint = String(values?.api_endpoint || '').toLowerCase()
+  const mode = String(defaultParams.image_mode || defaultParams.mode || defaultParams.operation || '').toLowerCase()
+  if (endpoint.includes('/edits') || endpoint.endsWith('edits') || ['edit', 'image_edit', 'image-to-image', 'image_to_image', 'img2img'].includes(mode)) {
+    return ['image_to_image']
+  }
+  if (values?.support_reference_image) return ['text_to_image', 'image_to_image']
+  return ['text_to_image']
+}
+
+function formatImageCapabilities(values: any): string {
+  const capabilities = inferImageCapabilities(values)
+  if (!capabilities.length) return 'Not set'
+  if (capabilities.includes('text_to_image') && capabilities.includes('image_to_image')) {
+    return '两者都支持'
+  }
+  return capabilities.map(item => IMAGE_CAPABILITY_OPTIONS.find(option => option.value === item)?.label || item).join(' / ')
+}
+
+function inferReferenceImageMode(values: any): ReferenceImageMode {
+  if (!values?.support_reference_image) return 'none'
+  const defaultParams = parseJsonObject(values.default_params)
+  if (String(defaultParams.request_content_type || '').toLowerCase() === 'multipart') return 'multipart'
+  if (values.reference_image_array_field) return 'json_array'
+  if (values.reference_image_field) return 'field'
+  return 'field'
+}
+
+function getReferenceImageFormValues(values: any) {
+  const mode = inferReferenceImageMode(values)
+  const supportsReference = mode !== 'none'
+  return {
+    reference_image_mode: mode,
+    support_reference_image: supportsReference,
+    support_multiple_reference_images:
+      mode === 'multipart' || mode === 'none'
+        ? false
+        : mode === 'json_array'
+          ? values.support_multiple_reference_images !== false
+          : Boolean(values.support_multiple_reference_images),
+    reference_image_field:
+      mode === 'field' || mode === 'multipart' ? (values.reference_image_field || 'image') : '',
+    reference_image_array_field:
+      mode === 'json_array' ? (values.reference_image_array_field || 'images') : '',
+    support_vision_input:
+      values.provider_type === 'image' && supportsReference ? true : Boolean(values.support_vision_input),
+  }
+}
+
+function normalizeReferenceImageConfig(values: any) {
+  const next = { ...values }
+  const mode = (next.reference_image_mode || inferReferenceImageMode(next)) as ReferenceImageMode
+  const defaultParams = parseJsonObject(next.default_params)
+  const imageCapabilities = parseImageCapabilities(next.image_capabilities)
+  defaultParams.image_capabilities = imageCapabilities.length ? imageCapabilities : ['text_to_image']
+
+  if (mode === 'none') {
+    next.support_reference_image = false
+    next.support_multiple_reference_images = false
+    next.reference_image_field = ''
+    next.reference_image_array_field = ''
+    delete defaultParams.request_content_type
+    delete defaultParams.multipart_image_field
+  } else if (mode === 'json_array') {
+    next.support_reference_image = true
+    next.reference_image_field = ''
+    next.reference_image_array_field = next.reference_image_array_field || 'images'
+    delete defaultParams.request_content_type
+    delete defaultParams.multipart_image_field
+  } else if (mode === 'multipart') {
+    next.support_reference_image = true
+    next.support_multiple_reference_images = false
+    next.reference_image_field = next.reference_image_field || 'image'
+    next.reference_image_array_field = ''
+    defaultParams.request_content_type = 'multipart'
+    defaultParams.multipart_image_field = next.reference_image_field
+  } else {
+    next.support_reference_image = true
+    next.reference_image_field = next.reference_image_field || 'image'
+    next.reference_image_array_field = ''
+    delete defaultParams.request_content_type
+    delete defaultParams.multipart_image_field
+  }
+
+  if (next.provider_type === 'image' && next.support_reference_image) {
+    next.support_vision_input = true
+  }
+  next.default_params = stringifyJson(defaultParams)
+  delete next.image_capabilities
+  delete next.reference_image_mode
+  return next
 }
 
 function asyncConfigToFields(responseConfig: any): Record<string, any> {
@@ -1201,7 +1363,7 @@ const PROVIDER_PRESETS: Record<string, Record<string, ProviderPreset>> = {
       supported_sizes: ['1024x1024', '1792x1024', '1024x1792'],
       request_template: '{"model": "{{ model }}", "prompt": "{{ prompt }}", "n": {{ n | default(1) }}, "size": "{{ size }}"}',
       response_config: '{"images_path": "$.data[*].url", "error_path": "$.error.message"}',
-      default_params: { n: 1, quality: 'standard' },
+      default_params: { n: 1, quality: 'standard', image_capabilities: ['text_to_image'] },
     },
   },
   siliconflow: {
@@ -1221,7 +1383,7 @@ const PROVIDER_PRESETS: Record<string, Record<string, ProviderPreset>> = {
       supported_sizes: ['1024x1024', '768x1344', '1344x768'],
       request_template: '{"model": "{{ model }}", "prompt": "{{ prompt }}", "image_size": "{{ size }}", "n": {{ n | default(1) }}, "seed": {{ seed | default(-1) }}}',
       response_config: '{"images_path": "$.data[*].url", "error_path": "$.error.message"}',
-      default_params: { n: 1, size_param: 'image_size', seed_param: 'seed' },
+      default_params: { n: 1, size_param: 'image_size', seed_param: 'seed', image_capabilities: ['text_to_image', 'image_to_image'] },
       support_reference_image: true,
       reference_image_field: 'image',
     },
@@ -1235,7 +1397,7 @@ const PROVIDER_PRESETS: Record<string, Record<string, ProviderPreset>> = {
       supported_sizes: ['1024x1024'],
       request_template: '{"model": "{{ model }}", "prompt": "{{ prompt }}"}',
       response_config: stringifyJson({ async_config: MODELSCOPE_ASYNC_CONFIG }),
-      default_params: { n: 1 },
+      default_params: { n: 1, image_capabilities: ['text_to_image'] },
     },
   },
   gemini: {
@@ -1252,6 +1414,7 @@ const PROVIDER_PRESETS: Record<string, Record<string, ProviderPreset>> = {
       default_model: 'gemini-2.5-flash-image',
       available_models: ['gemini-2.5-flash-image'],
       supported_sizes: ['1024x1024'],
+      default_params: { image_capabilities: ['text_to_image', 'image_to_image'] },
       support_reference_image: true,
       support_multiple_reference_images: true,
     },
@@ -1632,10 +1795,8 @@ export default function SettingsPage() {
         response_config: preset.response_config || '',
         supported_sizes: preset.supported_sizes || [],
         default_params: preset.default_params ? JSON.stringify(preset.default_params) : '',
-        support_reference_image: preset.support_reference_image ?? false,
-        support_multiple_reference_images: preset.support_multiple_reference_images ?? false,
-        reference_image_field: preset.reference_image_field || '',
-        reference_image_array_field: preset.reference_image_array_field || '',
+        image_capabilities: imageCapabilityChoiceFromCapabilities({ ...preset, provider_type: selectedType }),
+        ...getReferenceImageFormValues({ ...preset, provider_type: selectedType }),
       })
       if (preset.response_config) {
         Object.assign(values, asyncConfigToFields(preset.response_config))
@@ -1727,12 +1888,13 @@ export default function SettingsPage() {
     setEditingProvider(provider)
     setAdvancedManuallyToggled(false)
     setDiscoveredModels([])
+    const referenceImageFormValues = getReferenceImageFormValues(provider)
     form.setFieldsValue({
       id: provider.id,
       name: provider.name,
       provider: provider.provider,
       provider_type: provider.provider_type,
-      api_key: provider.api_key || '',
+      api_key: '',
       base_url: provider.base_url || '',
       api_endpoint: provider.api_endpoint || '',
       default_model: provider.default_model || '',
@@ -1751,12 +1913,9 @@ export default function SettingsPage() {
       default_params: typeof provider.default_params === 'object' 
         ? JSON.stringify(provider.default_params) 
         : (provider.default_params || ''),
+      image_capabilities: imageCapabilityChoiceFromCapabilities(provider),
       price_per_call: provider.price_per_call ?? undefined,
-      support_reference_image: provider.support_reference_image || false,
-      support_multiple_reference_images: provider.support_multiple_reference_images || false,
-      reference_image_field: provider.reference_image_field || 'image',
-      reference_image_array_field: provider.reference_image_array_field || '',
-      support_vision_input: provider.support_vision_input || false,
+      ...referenceImageFormValues,
       test_prompt: provider.test_prompt || '',
       timeout: provider.timeout || 300,
       test_timeout: provider.test_timeout || 20,
@@ -1781,6 +1940,8 @@ export default function SettingsPage() {
       id: generatedId,
       is_active: true,
       api_format: 'custom',
+      image_capabilities: 'text_to_image',
+      reference_image_mode: 'none',
       async_enabled: false,
       async_request_headers: stringifyJson({}),
       async_poll_headers: stringifyJson({}),
@@ -1793,7 +1954,11 @@ export default function SettingsPage() {
       // 处理扩展配置字段（保持字符串格式，后端会解析 JSON）
       const processedValues = { ...values }
       
-      // 如果是掩码格式（包含 "...")，不更新 API Key
+      // 编辑已有连接器时，API Key 留空表示沿用旧值，不覆盖。
+      if (editingProvider && editingProvider.has_api_key && !String(values.api_key || '').trim()) {
+        delete processedValues.api_key
+      }
+      // 兼容旧的掩码格式（包含 "...")，不更新 API Key。
       if (editingProvider && values.api_key && values.api_key.includes('...')) {
         delete processedValues.api_key
       }
@@ -1801,6 +1966,12 @@ export default function SettingsPage() {
       // supported_sizes 需要转换为 JSON 字符串
       if (processedValues.supported_sizes && Array.isArray(processedValues.supported_sizes)) {
         processedValues.supported_sizes = JSON.stringify(processedValues.supported_sizes)
+      }
+
+      if (processedValues.provider_type === 'image') {
+        Object.assign(processedValues, normalizeReferenceImageConfig(processedValues))
+      } else {
+        delete processedValues.reference_image_mode
       }
 
       if (processedValues.provider_type === 'image' && processedValues.api_format === 'custom') {
@@ -1862,12 +2033,13 @@ export default function SettingsPage() {
     form.resetFields()
     // 自动生成标识符
     const generatedId = `connector-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
+    const referenceImageFormValues = getReferenceImageFormValues(provider)
     form.setFieldsValue({
       id: generatedId,
       name: `${provider.name} (副本)`,
       provider: provider.provider,
       provider_type: provider.provider_type,
-      api_key: provider.api_key || '',
+      api_key: '',
       base_url: provider.base_url || '',
       api_endpoint: provider.api_endpoint || '',
       default_model: provider.default_model || '',
@@ -1885,12 +2057,9 @@ export default function SettingsPage() {
       default_params: typeof provider.default_params === 'object' 
         ? JSON.stringify(provider.default_params) 
         : (provider.default_params || ''),
+      image_capabilities: imageCapabilityChoiceFromCapabilities(provider),
       price_per_call: provider.price_per_call ?? undefined,
-      support_reference_image: provider.support_reference_image || false,
-      support_multiple_reference_images: provider.support_multiple_reference_images || false,
-      reference_image_field: provider.reference_image_field || 'image',
-      reference_image_array_field: provider.reference_image_array_field || '',
-      support_vision_input: provider.support_vision_input || false,
+      ...referenceImageFormValues,
       api_format: provider.api_format || 'custom',
     })
     setModalVisible(true)
@@ -2597,10 +2766,11 @@ export default function SettingsPage() {
                             // 参考图配置
                             if (defaults.reference_image_config) {
                               const refCfg = defaults.reference_image_config
-                              if (refCfg.reference_image_field) form.setFieldValue('reference_image_field', refCfg.reference_image_field)
-                              if (refCfg.reference_image_array_field) form.setFieldValue('reference_image_array_field', refCfg.reference_image_array_field)
-                              if (refCfg.support_reference_image !== undefined) form.setFieldValue('support_reference_image', refCfg.support_reference_image)
-                              if (refCfg.support_multiple_reference_images !== undefined) form.setFieldValue('support_multiple_reference_images', refCfg.support_multiple_reference_images)
+                              form.setFieldsValue(getReferenceImageFormValues({
+                                ...form.getFieldsValue(),
+                                ...refCfg,
+                                provider_type: providerTypeVal,
+                              }))
                             }
                             // 参数转换配置
                             if (defaults.parameter_transforms) form.setFieldValue('parameter_transforms', defaults.parameter_transforms)
@@ -2912,7 +3082,7 @@ export default function SettingsPage() {
                         </div>
                       )}
 
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0 16' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0 16px' }}>
                         <Form.Item 
                           name="supported_sizes" 
                           label={<span style={{ color: THEME.textPrimary }}>支持的尺寸/比例</span>} 
@@ -2920,39 +3090,157 @@ export default function SettingsPage() {
                         >
                           <SizeConfigField />
                         </Form.Item>
-                        <Form.Item 
-                          name="reference_image_field" 
-                          label={
-                            <span style={{ color: THEME.textPrimary }}>
-                              参考图占位符
-                              <Tooltip title="逗号分隔的字段名，如 image1,image2,image。模板中需要有对应空占位符">
-                                <QuestionCircleOutlined style={{ marginLeft: 4, color: THEME.textSecondary }} />
-                              </Tooltip>
-                            </span>
-                          } 
-                          style={{ marginBottom: 8 }}
-                        >
-                          <Input placeholder="如: image1,image2,image" />
-                        </Form.Item>
-                        <Form.Item name="support_reference_image" label={<span style={{ color: THEME.textPrimary }}>支持参考图</span>} valuePropName="checked" style={{ marginBottom: 8 }}>
-                          <Switch checkedChildren="是" unCheckedChildren="否" />
-                        </Form.Item>
                       </div>
 
-                      <Form.Item
-                        name="reference_image_array_field"
-                        label={
-                          <span style={{ color: THEME.textPrimary }}>
-                            参考图数组字段
-                            <Tooltip title="所有参考图组成数组放入该字段。支持嵌套路径，如 reference.images。优先级高于占位符模式">
-                              <QuestionCircleOutlined style={{ marginLeft: 4, color: THEME.textSecondary }} />
-                            </Tooltip>
-                          </span>
-                        }
-                        style={{ marginBottom: 8 }}
-                      >
-                        <Input placeholder="如: images 或 reference.images" />
-                      </Form.Item>
+                      {selectedType === 'image' && (
+                        <div style={{ marginBottom: 12, padding: 12, border: `1px solid ${THEME.border}`, borderRadius: 6, background: 'rgba(255,255,255,0.03)' }}>
+                          <Form.Item
+                            name="image_capabilities"
+                            label={<span style={{ color: THEME.textPrimary }}>图片能力</span>}
+                            rules={[{ required: true, message: '请选择图片能力' }]}
+                            style={{ marginBottom: 8 }}
+                            extra={<span style={{ color: THEME.textSecondary, fontSize: 12 }}>显式决定这个连接器进入文生图、图生图/改图，或两个入口；接口路径只作为旧数据兜底。</span>}
+                          >
+                            <Select options={IMAGE_CAPABILITY_OPTIONS} placeholder="选择能力" />
+                          </Form.Item>
+
+                          <Form.Item
+                            name="reference_image_mode"
+                            label={<span style={{ color: THEME.textPrimary }}>参考图传递方式</span>}
+                            style={{ marginBottom: 8 }}
+                          >
+                            <Select
+                              options={REFERENCE_IMAGE_MODE_OPTIONS}
+                              onChange={(mode: ReferenceImageMode) => {
+                                if (mode === 'none') {
+                                  form.setFieldsValue({
+                                    support_reference_image: false,
+                                    support_multiple_reference_images: false,
+                                    reference_image_field: '',
+                                    reference_image_array_field: '',
+                                  })
+                                } else if (mode === 'json_array') {
+                                  form.setFieldsValue({
+                                    support_reference_image: true,
+                                    support_multiple_reference_images: true,
+                                    reference_image_field: '',
+                                    reference_image_array_field: form.getFieldValue('reference_image_array_field') || 'images',
+                                    support_vision_input: true,
+                                  })
+                                } else if (mode === 'multipart') {
+                                  form.setFieldsValue({
+                                    support_reference_image: true,
+                                    support_multiple_reference_images: false,
+                                    reference_image_field: form.getFieldValue('reference_image_field') || 'image',
+                                    reference_image_array_field: '',
+                                    support_vision_input: true,
+                                  })
+                                } else {
+                                  form.setFieldsValue({
+                                    support_reference_image: true,
+                                    reference_image_field: form.getFieldValue('reference_image_field') || 'image',
+                                    reference_image_array_field: '',
+                                    support_vision_input: true,
+                                  })
+                                }
+                              }}
+                            />
+                          </Form.Item>
+
+                          <Form.Item noStyle shouldUpdate={(prev, curr) => prev.reference_image_mode !== curr.reference_image_mode}>
+                            {({ getFieldValue }) => {
+                              const mode = getFieldValue('reference_image_mode') as ReferenceImageMode
+                              if (mode === 'json_array') {
+                                return (
+                                  <>
+                                    <Alert
+                                      type="info"
+                                      showIcon
+                                      message="JSON 图片编辑模式"
+                                      description="适合已有公网图片链接。AACCX/OpenAI-compatible 图片编辑通常使用 images: [{ image_url }]。保存时会清空“参考图占位符”；本地文件请改用 Multipart。"
+                                      style={{ marginBottom: 8 }}
+                                    />
+                                    <Form.Item
+                                      name="reference_image_array_field"
+                                      label={
+                                        <span style={{ color: THEME.textPrimary }}>
+                                          参考图数组字段
+                                          <Tooltip title="所有参考图组成数组放入该字段。常见值为 images；支持嵌套路径，如 reference.images。">
+                                            <QuestionCircleOutlined style={{ marginLeft: 4, color: THEME.textSecondary }} />
+                                          </Tooltip>
+                                        </span>
+                                      }
+                                      style={{ marginBottom: 8 }}
+                                    >
+                                      <Input placeholder="images" />
+                                    </Form.Item>
+                                  </>
+                                )
+                              }
+                              if (mode === 'multipart') {
+                                return (
+                                  <>
+                                    <Alert
+                                      type="warning"
+                                      showIcon
+                                      message="Multipart 本地上传模式"
+                                      description="适合供应商要求 -F image=@/path 的接口。保存时会写入 default_params.request_content_type=multipart，并清空参考图数组字段。"
+                                      style={{ marginBottom: 8 }}
+                                    />
+                                    <Form.Item
+                                      name="reference_image_field"
+                                      label={<span style={{ color: THEME.textPrimary }}>Multipart 图片字段</span>}
+                                      style={{ marginBottom: 8 }}
+                                    >
+                                      <Input placeholder="image" />
+                                    </Form.Item>
+                                  </>
+                                )
+                              }
+                              if (mode === 'field') {
+                                return (
+                                  <Form.Item
+                                    name="reference_image_field"
+                                    label={
+                                      <span style={{ color: THEME.textPrimary }}>
+                                        参考图占位符
+                                        <Tooltip title="逗号分隔的字段名，如 image1,image2,image。模板中需要有对应空占位符。">
+                                          <QuestionCircleOutlined style={{ marginLeft: 4, color: THEME.textSecondary }} />
+                                        </Tooltip>
+                                      </span>
+                                    }
+                                    style={{ marginBottom: 8 }}
+                                  >
+                                    <Input placeholder="如: image1,image2,image" />
+                                  </Form.Item>
+                                )
+                              }
+                              return (
+                                <Alert
+                                  type="info"
+                                  showIcon
+                                  message="当前模型不会暴露图生图能力"
+                                  description="保存时会关闭 support_reference_image，并清空参考图字段。"
+                                  style={{ marginBottom: 8 }}
+                                />
+                              )
+                            }}
+                          </Form.Item>
+
+                          <Form.Item noStyle shouldUpdate={(prev, curr) => prev.reference_image_mode !== curr.reference_image_mode}>
+                            {({ getFieldValue }) => (
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+                                <Form.Item name="support_reference_image" label={<span style={{ color: THEME.textPrimary }}>支持参考图</span>} valuePropName="checked" style={{ marginBottom: 0 }}>
+                                  <Switch checkedChildren="是" unCheckedChildren="否" disabled />
+                                </Form.Item>
+                                <Form.Item name="support_multiple_reference_images" label={<span style={{ color: THEME.textPrimary }}>多参考图</span>} valuePropName="checked" style={{ marginBottom: 0 }}>
+                                  <Switch checkedChildren="是" unCheckedChildren="否" disabled={getFieldValue('reference_image_mode') === 'multipart'} />
+                                </Form.Item>
+                              </div>
+                            )}
+                          </Form.Item>
+                        </div>
+                      )}
 
                       <Form.Item name="default_params" label={<span style={{ color: THEME.textPrimary }}>默认参数 (JSON)</span>} style={{ marginBottom: 0 }}
                         extra={<span style={{ color: THEME.textSecondary, fontSize: 12 }}>
@@ -3033,7 +3321,7 @@ export default function SettingsPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px' }}>
                 <div>
               <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>API Key</Text>
-              <div style={{ color: THEME.textPrimary, marginTop: 2, fontSize: 13 }}>{viewingProvider.api_key || <Text type="secondary" style={{ fontSize: 12 }}>未设置</Text>}</div>
+              <div style={{ color: THEME.textPrimary, marginTop: 2, fontSize: 13 }}>{viewingProvider.has_api_key ? '已设置（已隐藏）' : <Text type="secondary" style={{ fontSize: 12 }}>未设置</Text>}</div>
             </div>
                 <div>
                   <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>Base URL</Text>
@@ -3096,11 +3384,25 @@ export default function SettingsPage() {
                 )}
                 <div>
                   <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>参考图</Text>
-                  <div style={{ color: THEME.textPrimary, marginTop: 2, fontSize: 13 }}>{viewingProvider.support_reference_image ? '支持' : '不支持'}</div>
+                  <div style={{ color: THEME.textPrimary, marginTop: 2, fontSize: 13 }}>
+                    {viewingProvider.support_reference_image ? REFERENCE_IMAGE_MODE_OPTIONS.find(item => item.value === inferReferenceImageMode(viewingProvider))?.label || '支持' : '不支持'}
+                  </div>
                 </div>
-                {viewingProvider.reference_image_field && (
+                {viewingProvider.provider_type === 'image' && (
                 <div>
-                  <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>参考图字段</Text>
+                  <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>Image capabilities</Text>
+                  <div style={{ color: THEME.textPrimary, marginTop: 2, fontSize: 13 }}>{formatImageCapabilities(viewingProvider)}</div>
+                </div>
+                )}
+                {inferReferenceImageMode(viewingProvider) === 'json_array' && viewingProvider.reference_image_array_field && (
+                <div>
+                  <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>参考图数组字段</Text>
+                  <div style={{ color: THEME.textPrimary, marginTop: 2, fontSize: 13 }}>{viewingProvider.reference_image_array_field}</div>
+                </div>
+                )}
+                {['field', 'multipart'].includes(inferReferenceImageMode(viewingProvider)) && viewingProvider.reference_image_field && (
+                <div>
+                  <Text style={{ color: THEME.textSecondary, fontSize: 12 }}>{inferReferenceImageMode(viewingProvider) === 'multipart' ? 'Multipart 图片字段' : '参考图字段'}</Text>
                   <div style={{ color: THEME.textPrimary, marginTop: 2, fontSize: 13 }}>{viewingProvider.reference_image_field}</div>
                 </div>
                 )}

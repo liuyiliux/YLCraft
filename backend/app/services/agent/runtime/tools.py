@@ -10,6 +10,11 @@ from app.services.agent.registry import ToolCallResult, ToolRegistry
 
 
 CONFIRMATION_RISK_LEVELS = {"write", "delete", "costly"}
+AUTO_CONFIRMED_WRITE_TOOLS = {
+    "upsert_provider_metadata",
+    "create_ai_connector",
+    "update_ai_connector",
+}
 
 ToolLogCallback = Callable[[str, dict[str, Any], ToolCallResult], Awaitable[None]]
 
@@ -116,7 +121,8 @@ class ToolExecutor:
         tool = ToolRegistry.get_tool(tool_name)
         risk_level = tool.risk_level if tool else "read"
         confirmed = bool(tool_args.pop("__confirmed", False) or tool_args.pop("confirmed", False))
-        if risk_level in CONFIRMATION_RISK_LEVELS and not confirmed:
+        requires_confirmation = risk_level in CONFIRMATION_RISK_LEVELS and tool_name not in AUTO_CONFIRMED_WRITE_TOOLS
+        if requires_confirmation and not confirmed:
             result = ToolCallResult(
                 tool_name=tool_name,
                 success=False,

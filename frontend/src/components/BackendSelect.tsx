@@ -9,7 +9,7 @@ import type { ReactNode } from 'react'
 
 export interface BackendInfo {
   provider: string; provider_label?: string; name: string; model: string
-  available_models: string[]; support_reference_image?: boolean
+  available_models: string[]; capabilities?: string[]; support_reference_image?: boolean
   supported_sizes?: string[]; support_vision_input?: boolean
 }
 

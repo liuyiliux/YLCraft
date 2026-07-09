@@ -1397,6 +1397,7 @@ export interface ImagePromptSource {
   last_synced_at?: string | null
   error?: string
   metadata?: Record<string, any>
+  model_group?: string
 }
 
 export interface ImagePromptReference {
@@ -1412,9 +1413,20 @@ export interface ImagePromptReference {
   category: string
   source_url?: string
   model_hint?: string
+  model_group?: string
   needs_reference_image?: boolean
   language?: string
   metadata?: Record<string, any>
+  english_prompt?: string
+  chinese_prompt?: string
+  source_name?: string
+  detail_url?: string
+  image_items?: Array<Record<string, any>>
+  view_count?: number
+  like_count?: number
+  copy_count?: number
+  remote_created_at?: string
+  remote_updated_at?: string
   created_at?: string | null
   updated_at?: string | null
 }
@@ -1426,10 +1438,10 @@ export const listImagePromptSources = (params?: { includeDisabled?: boolean }) =
   return request(`/image-prompts/sources${qs ? `?${qs}` : ''}`)
 }
 
-export const refreshImagePromptSources = (sourceId?: string) =>
+export const refreshImagePromptSources = (sourceId?: string, options?: { forceRemote?: boolean }) =>
   request('/image-prompts/sources/refresh', {
     method: 'POST',
-    body: JSON.stringify({ source_id: sourceId || null }),
+    body: JSON.stringify({ source_id: sourceId || null, force_remote: Boolean(options?.forceRemote) }),
   })
 
 export const searchImagePromptReferences = (params?: {
@@ -1437,6 +1449,7 @@ export const searchImagePromptReferences = (params?: {
   tag?: string
   category?: string
   sourceId?: string
+  modelGroup?: string
   page?: number
   pageSize?: number
 }) => {
@@ -1445,6 +1458,7 @@ export const searchImagePromptReferences = (params?: {
   if (params?.tag) sp.set('tag', params.tag)
   if (params?.category) sp.set('category', params.category)
   if (params?.sourceId) sp.set('source_id', params.sourceId)
+  if (params?.modelGroup) sp.set('model_group', params.modelGroup)
   if (params?.page) sp.set('page', String(params.page))
   if (params?.pageSize) sp.set('page_size', String(params.pageSize))
   const qs = sp.toString()

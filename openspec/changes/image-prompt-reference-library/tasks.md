@@ -46,3 +46,28 @@
 - [x] 27. OpenSpec validation passes.
 - [ ] 28. Manual smoke: sync sources, search prompts, insert into canvas, generate image, verify generated image enters Asset Hub.
 - [x] 28.1 External Chrome smoke: sync 5 prompt sources, load 879 references, replace prompt in `/image-gen`, append prompt reference in `/canvas`, and verify browser console has no errors.
+
+## Phase 7: IMI Large Prompt Collections and Local Media Cache
+
+- [x] 29. Inspect IMI ChatGPT / Nano Banana 2 / Nano Banana Pro detail JSON structure.
+- [x] 30. Add IMI detail JSON source definitions and parser.
+- [x] 31. Add repeatable script to cache IMI JSON and prompt images under `backend/storage/image_prompt_references/`.
+- [x] 32. Serve cached prompt images through `/api/v1/image-prompts/media/{source_id}/{item_id}/{filename}`.
+- [x] 33. Prefer cached local media URLs when present and keep remote image URLs as fallback.
+- [x] 34. Add parser test covering cached media URL selection.
+- [x] 35. Run full IMI sync, write rows to the dev database, and verify source counts through `/api/v1/image-prompts/references`.
+- [x] 36. Expose IMI bilingual prompts and useful source/stat fields in prompt reference API responses.
+- [x] 37. Add generic media-cache script for non-IMI prompt sources.
+- [x] 38. Redesign `/prompt-library` into an image-first prompt center with top filters, compact source status and bilingual detail view.
+- [x] 38.1 Refine `/prompt-library` after screenshot review: use a compact dark hero command bar, persistent left filter panel, image-dominant gallery cards, inline loading feedback and large-image detail drawer.
+- [x] 38.2 Rework `/prompt-library` toward prompt-center browsing: centered title/search, horizontal model/tag facets, hidden source facet by default, and larger image-first gallery cards.
+- [x] 38.3 Add multi-image detail gallery switching with active thumbnail state and image index indicator.
+- [x] 38.4 Persist prompt reference source URL, model group and image items into canvas node metadata and pass source URL into canvas image-generation requests.
+- [x] 39. Make prompt source refresh local-first by default; remote source fetch requires explicit `force_remote` / UI remote-update mode.
+- [x] 40. Optimize tag filtering for PostgreSQL JSONB sources so large IMI datasets do not require full Python-side scans.
+- [x] 40.1 Use full filtered result sets for prompt tag suggestions instead of only the current page, and hide author `@handle` labels from the main tag suggestion list.
+- [x] 40.2 Add normalized model-group filtering for ChatGPT, NanoBanana2 and NanoBananaPro across IMI and GitHub prompt sources.
+- [x] 40.3 Keep model/source/tag facet option lists independent and stable; selecting one facet only changes result items, not the other facet options.
+- [x] 40.4 Replace Python-side cold facet scans with PostgreSQL JSONB tag aggregation and refine `/prompt-library` filter chips into stable prompt-center facets.
+- [x] 41. Manual smoke: use redesigned `/prompt-library` to select IMI prompts, insert into image generation, generate with `siliconflow-Kolors`, and verify generated image enters Asset Hub with prompt reference lineage. Asset Hub node verified: `a6de3951-2634-48b0-a282-eb2c3bc1d3f5`.
+- [x] 42. Follow-up smoke: use interactive canvas node selection to insert a prompt reference through the canvas picker. The canvas now exposes stable node/config/picker selectors, Patchright opens a Prompt node via `[data-canvas-open-node]`, replaces the prompt from the picker, verifies selected reference metadata/clear action, and reports 0 browser console issues.

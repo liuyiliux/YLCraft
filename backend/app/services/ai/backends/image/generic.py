@@ -8,6 +8,7 @@ YLCraft - Generic Image Backend
 from __future__ import annotations
 
 import base64
+import io
 import json
 import logging
 import mimetypes
@@ -26,6 +27,7 @@ from app.services.ai.types import (
     ImageGenerationResult,
 )
 from app.db.models.ai_connector import AIConnector
+from app.services.ai_connector.service import infer_image_connector_capabilities
 
 logger = logging.getLogger("ylcraft.generic_image_backend")
 
@@ -128,10 +130,7 @@ class GenericImageBackend(ImageBackend):
 
     @property
     def capabilities(self) -> set:
-        caps = {"text_to_image"}
-        if self.connector.support_reference_image:
-            caps.add("image_to_image")
-        return caps
+        return set(infer_image_connector_capabilities(self.connector))
 
     async def generate(self, req: ImageGenerationRequest) -> ImageGenerationResult:
         try:
@@ -580,6 +579,7 @@ class GenericImageBackend(ImageBackend):
             params["seed"] = req.seed
 
         reference_images = []
+        image_payloads = []
         image_urls = []
         if req.source_image:
             image_urls.append(req.source_image)
@@ -590,12 +590,16 @@ class GenericImageBackend(ImageBackend):
             try:
                 base64_image = self._url_to_base64(url)
                 reference_images.append(base64_image)
+                image_payloads.append(url if str(url).startswith(("http://", "https://")) else base64_image)
             except Exception as e:
                 logger.warning(f"[GenericImageBackend] 转换参考图失败: {e}")
         
         if reference_images:
             params["reference_images"] = reference_images
-            params["images"] = [{"image_url": image} for image in reference_images]
+            params["reference_image_base64"] = reference_images[0]
+            params["reference_image_url"] = image_payloads[0]
+            params["reference_image_urls"] = image_payloads
+            params["images"] = [{"image_url": image} for image in image_payloads]
             params["reference_image_field"] = self.reference_image_field
             params.setdefault("response_format", "b64_json")
 
@@ -617,7 +621,13 @@ class GenericImageBackend(ImageBackend):
         from pathlib import Path
         
         if url_or_path.startswith('data:'):
-            return url_or_path
+            try:
+                header, payload = url_or_path.split(',', 1)
+                content_type = header.split(';', 1)[0].replace('data:', '') or 'image/png'
+                return self._image_bytes_to_data_url(base64.b64decode(payload), content_type)
+            except Exception as e:
+                logger.warning('[GenericImageBackend] data URL 参考图压缩失败，使用原始 data URL: %s', e)
+                return url_or_path
         
         if url_or_path.startswith('/api/') or url_or_path.startswith('api/'):
             try:
@@ -629,7 +639,7 @@ class GenericImageBackend(ImageBackend):
                     response.raise_for_status()
                     data = response.content
                 content_type = response.headers.get('content-type', 'image/png')
-                return f"data:{content_type};base64,{base64.b64encode(data).decode()}"
+                return self._image_bytes_to_data_url(data, content_type)
             except Exception as e:
                 raise ValueError(f"通过代理下载图片失败: {e}")
         
@@ -640,7 +650,7 @@ class GenericImageBackend(ImageBackend):
                     data = f.read()
                 ext = file_path.suffix.lower().lstrip('.')
                 mime = {'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'png': 'image/png', 'gif': 'image/gif', 'webp': 'image/webp'}.get(ext, 'image/png')
-                return f"data:{mime};base64,{base64.b64encode(data).decode()}"
+                return self._image_bytes_to_data_url(data, mime)
         
         if url_or_path.startswith('http://') or url_or_path.startswith('https://'):
             try:
@@ -650,11 +660,52 @@ class GenericImageBackend(ImageBackend):
                     response.raise_for_status()
                     data = response.content
                 content_type = response.headers.get('content-type', 'image/png')
-                return f"data:{content_type};base64,{base64.b64encode(data).decode()}"
+                return self._image_bytes_to_data_url(data, content_type)
             except Exception as e:
                 raise
         
         raise ValueError(f"不支持的图片格式: {url_or_path}")
+
+    def _image_bytes_to_data_url(self, data: bytes, content_type: str = "image/png") -> str:
+        """Encode reference images as compact data URLs for JSON image-edit APIs."""
+        max_side = int(self.default_params.get("reference_image_max_side") or 1536)
+        quality = int(self.default_params.get("reference_image_quality") or 88)
+        if max_side <= 0:
+            return f"data:{content_type};base64,{base64.b64encode(data).decode()}"
+
+        try:
+            from PIL import Image
+
+            with Image.open(io.BytesIO(data)) as image:
+                image.load()
+                original_size = image.size
+                if max(original_size) > max_side:
+                    image.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
+
+                if image.mode in {"RGBA", "LA", "P"}:
+                    rgba_image = image.convert("RGBA")
+                    background = Image.new("RGB", rgba_image.size, (255, 255, 255))
+                    background.paste(rgba_image, mask=rgba_image.getchannel("A"))
+                    image = background
+                elif image.mode != "RGB":
+                    image = image.convert("RGB")
+
+                output = io.BytesIO()
+                image.save(output, format="JPEG", quality=quality, optimize=True)
+                encoded_bytes = output.getvalue()
+                if len(encoded_bytes) < len(data):
+                    logger.info(
+                        "[GenericImageBackend] 参考图已压缩 | original=%s bytes | encoded=%s bytes | size=%s->%s",
+                        len(data),
+                        len(encoded_bytes),
+                        original_size,
+                        image.size,
+                    )
+                    return f"data:image/jpeg;base64,{base64.b64encode(encoded_bytes).decode()}"
+        except Exception as e:
+            logger.warning("[GenericImageBackend] 参考图压缩失败，使用原始图片: %s", e)
+
+        return f"data:{content_type};base64,{base64.b64encode(data).decode()}"
 
     def _apply_parameter_transforms(self, params: Dict[str, Any]) -> Dict[str, Any]:
         if not self.parameter_transforms:
@@ -760,7 +811,9 @@ class GenericImageBackend(ImageBackend):
             if self.reference_image_array_field:
                 path_parts = self.reference_image_array_field.split(".")
                 if len(path_parts) == 1:
-                    request_body[self.reference_image_array_field] = reference_images
+                    existing_value = request_body.get(self.reference_image_array_field)
+                    if not self._has_reference_image_value(existing_value):
+                        request_body[self.reference_image_array_field] = reference_images
                 else:
                     current = request_body
                     for part in path_parts[:-1]:
@@ -770,16 +823,34 @@ class GenericImageBackend(ImageBackend):
                             break
                         current = current[part]
                     else:
-                        current[path_parts[-1]] = reference_images
+                        existing_value = current.get(path_parts[-1])
+                        if not self._has_reference_image_value(existing_value):
+                            current[path_parts[-1]] = reference_images
             elif self.reference_image_field:
                 reference_image_field = params.get("reference_image_field", self.reference_image_field)
                 field_names = [f.strip() for f in reference_image_field.split(",")]
                 image_field_mapping = [(field_names[i] if i < len(field_names) else field_names[-1], img) for i, img in enumerate(reference_images)]
                 self._replace_reference_image_placeholders(request_body, image_field_mapping)
-            if reference_images and ("image" not in request_body or not request_body["image"]):
+            should_add_legacy_image = not self.reference_image_array_field and not self._has_reference_image_value(request_body.get("images"))
+            if reference_images and should_add_legacy_image and ("image" not in request_body or not request_body["image"]):
                 request_body["image"] = reference_images[0]
 
         return request_body
+
+    def _has_reference_image_value(self, value: Any) -> bool:
+        if value is None:
+            return False
+        if isinstance(value, str):
+            return bool(value.strip())
+        if isinstance(value, list):
+            if not value:
+                return False
+            return any(self._has_reference_image_value(item) for item in value)
+        if isinstance(value, dict):
+            if not value:
+                return False
+            return any(self._has_reference_image_value(item) for item in value.values())
+        return True
 
     def _build_template_params(self, params: Dict[str, Any]) -> Dict[str, Any]:
         template_params = dict(params)

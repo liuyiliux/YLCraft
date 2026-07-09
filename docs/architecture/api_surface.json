@@ -5444,6 +5444,22 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/image-prompts/media/{source_id}/{item_id}/{filename}",
+      "router": "image_prompts",
+      "prefix": "/api/v1/image-prompts",
+      "local_path": "/media/{source_id}/{item_id}/{filename}",
+      "tags": [
+        "Image Prompt References"
+      ],
+      "summary": "Read cached image prompt reference media",
+      "function": "read_image_prompt_reference_media",
+      "file": "backend/app/api/v1/image_prompts.py",
+      "line": 44,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/image-prompts/references",
       "router": "image_prompts",
       "prefix": "/api/v1/image-prompts",
@@ -5454,7 +5470,7 @@
       "summary": "Search image prompt references",
       "function": "search_image_prompt_references",
       "file": "backend/app/api/v1/image_prompts.py",
-      "line": 41,
+      "line": 58,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5470,7 +5486,7 @@
       "summary": "Get image prompt reference detail",
       "function": "get_image_prompt_reference",
       "file": "backend/app/api/v1/image_prompts.py",
-      "line": 62,
+      "line": 81,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5486,7 +5502,7 @@
       "summary": "Save image prompt reference as Asset Hub text asset",
       "function": "save_image_prompt_reference_as_asset",
       "file": "backend/app/api/v1/image_prompts.py",
-      "line": 72,
+      "line": 91,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5502,7 +5518,7 @@
       "summary": "List image prompt reference sources",
       "function": "list_image_prompt_sources",
       "file": "backend/app/api/v1/image_prompts.py",
-      "line": 21,
+      "line": 24,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5518,7 +5534,7 @@
       "summary": "Refresh image prompt reference sources",
       "function": "refresh_image_prompt_sources",
       "file": "backend/app/api/v1/image_prompts.py",
-      "line": 33,
+      "line": 36,
       "response_model": "",
       "include_in_schema": true
     },

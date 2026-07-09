@@ -34,7 +34,12 @@ from app.db.models.ai_connector import (
     AIProviderType,
 )
 from app.services.agent.registry import register_tool
-from app.services.ai_connector.service import AIConnectorService, normalize_sizes_value
+from app.services.ai_connector.service import (
+    AIConnectorService,
+    infer_image_connector_capabilities,
+    normalize_reference_image_config_values,
+    normalize_sizes_value,
+)
 
 logger = logging.getLogger("ylcraft.agent.ai_config_tools")
 
@@ -83,6 +88,44 @@ def _to_json_str(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False)
 
 
+def _normalize_image_capabilities_arg(value: str | list | None) -> list[str]:
+    if not value:
+        return []
+    raw = value
+    if isinstance(value, str):
+        try:
+            raw = json.loads(value)
+        except Exception:
+            raw = [item.strip() for item in value.split(",")]
+    if not isinstance(raw, list):
+        return []
+    aliases = {
+        "text_to_image": "text_to_image",
+        "text-to-image": "text_to_image",
+        "txt2img": "text_to_image",
+        "generation": "text_to_image",
+        "generate": "text_to_image",
+        "image_to_image": "image_to_image",
+        "image-to-image": "image_to_image",
+        "img2img": "image_to_image",
+        "edit": "image_to_image",
+        "image_edit": "image_to_image",
+    }
+    found = {aliases.get(str(item or "").strip().lower().replace(" ", "_")) for item in raw}
+    found.discard(None)
+    return [cap for cap in ("text_to_image", "image_to_image") if cap in found]
+
+
+def _merge_image_capabilities(default_params: str | None, image_capabilities: str | list | None) -> str:
+    params = _loads(default_params, {})
+    if not isinstance(params, dict):
+        params = {}
+    capabilities = _normalize_image_capabilities_arg(image_capabilities)
+    if capabilities:
+        params["image_capabilities"] = capabilities
+    return json.dumps(params, ensure_ascii=False) if params else "{}"
+
+
 def _normalize_provider_type(pt: str) -> str:
     """标准化 provider_type，无效时回退 llm。"""
     if pt in VALID_PROVIDER_TYPES:
@@ -92,6 +135,7 @@ def _normalize_provider_type(pt: str) -> str:
 
 def _connector_summary(connector: AIConnector) -> dict[str, Any]:
     provider_type = getattr(connector.provider_type, "value", connector.provider_type)
+    reference_config = _connector_reference_config(connector)
     return {
         "id": connector.id,
         "name": connector.name,
@@ -108,6 +152,8 @@ def _connector_summary(connector: AIConnector) -> dict[str, Any]:
         "support_vision_input": connector.support_vision_input,
         "support_reference_image": connector.support_reference_image,
         "support_multiple_reference_images": connector.support_multiple_reference_images,
+        "image_capabilities": infer_image_connector_capabilities(connector) if provider_type == "image" else [],
+        "reference_image_mode": reference_config["reference_image_mode"],
         "supported_sizes": _loads(connector.supported_sizes, []),
         "has_api_key": bool(connector.api_key),
         "usage_count": connector.usage_count,
@@ -116,8 +162,39 @@ def _connector_summary(connector: AIConnector) -> dict[str, Any]:
     }
 
 
+def _connector_reference_config(connector: AIConnector) -> dict[str, Any]:
+    provider_type = getattr(connector.provider_type, "value", connector.provider_type)
+    normalized = normalize_reference_image_config_values(
+        provider_type=str(provider_type or ""),
+        default_params=connector.default_params,
+        support_reference_image=connector.support_reference_image,
+        support_multiple_reference_images=connector.support_multiple_reference_images,
+        reference_image_field=connector.reference_image_field,
+        reference_image_array_field=connector.reference_image_array_field,
+        support_vision_input=connector.support_vision_input,
+    )
+    default_params = _loads(normalized["default_params"], {})
+    if not normalized["support_reference_image"]:
+        mode = "none"
+    elif str(default_params.get("request_content_type") or "").lower() == "multipart":
+        mode = "multipart"
+    elif normalized["reference_image_array_field"]:
+        mode = "json_array"
+    else:
+        mode = "field"
+
+    return {
+        "reference_image_mode": mode,
+        "effective_reference_image_field": normalized["reference_image_field"],
+        "effective_reference_image_array_field": normalized["reference_image_array_field"],
+        "raw_reference_image_field": connector.reference_image_field,
+        "raw_reference_image_array_field": connector.reference_image_array_field,
+    }
+
+
 def _connector_detail(connector: AIConnector) -> dict[str, Any]:
     payload = _connector_summary(connector)
+    reference_config = _connector_reference_config(connector)
     payload.update(
         {
             "description": connector.description or "",
@@ -132,8 +209,10 @@ def _connector_detail(connector: AIConnector) -> dict[str, Any]:
             "response_config": _loads(connector.response_config, {}),
             "parameter_transforms": _loads(connector.parameter_transforms, {}),
             "request_template": connector.request_template or "",
-            "reference_image_field": connector.reference_image_field,
-            "reference_image_array_field": connector.reference_image_array_field,
+            "reference_image_field": reference_config["effective_reference_image_field"],
+            "reference_image_array_field": reference_config["effective_reference_image_array_field"],
+            "raw_reference_image_field": reference_config["raw_reference_image_field"],
+            "raw_reference_image_array_field": reference_config["raw_reference_image_array_field"],
             "embedding_type": connector.embedding_type,
             "embedding_dimension": connector.embedding_dimension,
             "normalize_embeddings": connector.normalize_embeddings,
@@ -437,7 +516,7 @@ async def upsert_provider_metadata(
     name="create_ai_connector",
     description=(
         "创建新的 AI 连接器配置。当你了解了用户的供应商规范和模型规范后，"
-        "调用此工具生成完整的连接器配置持久化到数据库。"
+        "调用此工具生成完整的连接器配置持久化到数据库。调用前应先用 list/get 工具检查是否已有同名供应商或连接器。"
         "支持配置 request_template（Jinja2 格式请求体模板）、"
         "response_config（响应 JSONPath 解析）、"
         "parameter_transforms（参数转换规则）等高级字段。"
@@ -450,10 +529,23 @@ async def upsert_provider_metadata(
     input_schema_note=(
         "name、provider、provider_type(llm/image/video/tts/stt/embedding)、"
         "default_model、api_key 为必填核心字段。"
-        "base_url、request_template、response_config 等为可选高级配置。"
-        "request_template 使用 Jinja2 语法，可用变量：{{ model }}, {{ prompt }}, {{ negative_prompt }}, {{ size }} 等。"
-        "response_config 为 JSON，包含 images_path（JSONPath）、error_path、response_format 等。"
+        "base_url 和 api_endpoint 要组成完整请求地址，不要只停在 /v1；"
+        "OpenAI-compatible 生图通常为 /v1/images/generations，图片编辑通常为 /v1/images/edits。"
+        "request_template 使用 Jinja2 语法；JSON 字符串字段优先用 {{ prompt_json }}，避免多行 prompt 破坏 JSON。"
+        "可用变量：{{ model }}, {{ prompt }}, {{ prompt_json }}, {{ negative_prompt }}, {{ size }}, {{ n }}, {{ seed }}, "
+        "{{ response_format }}, {{ reference_image_url }}, {{ reference_image_base64 }}, {{ reference_image_urls }}, {{ images }}, {{ images_json }}。"
+        "图片编辑/图生图的参考图传递方式必须互斥：公网图 JSON 常用 "
+        "{\"images\":[{\"image_url\":\"{{ reference_image_url }}\"}]}，只填 reference_image_array_field=images，"
+        "reference_image_field 留空；本地上传 multipart 则在 default_params 填 "
+        "{\"request_content_type\":\"multipart\",\"multipart_image_field\":\"image\"}，只填 reference_image_field=image，"
+        "reference_image_array_field 留空。"
+        "不要写 images[].image，除非供应商文档明确要求。"
+        "response_config 为 JSON，URL 图片用 images_path，base64 图片用 base64_images_path；"
+        "OpenAI-compatible base64 示例：{\"response_format\":\"base64\",\"base64_images_path\":\"$.data[*].b64_json\",\"error_path\":\"$.error.message\"}。"
         "supported_sizes 为 JSON 数组字符串如 '[\"1024x1024\"]'。"
+        "Image connectors MUST set explicit image_capabilities in default_params: "
+        "[\"text_to_image\"] for text-to-image, [\"image_to_image\"] for edit/img2img, "
+        "or both for shared endpoints. Endpoint names are fallback only."
     ),
     output_schema_note="返回 success、connector（包含 id 和摘要）。",
     risk_level="write",
@@ -482,10 +574,11 @@ async def create_ai_connector(
     parameter_transforms: str = "",
     supported_sizes: str = "[]",
     default_params: str = "{}",
+    image_capabilities: str = "",
     # 参考图配置
     support_reference_image: bool = False,
     support_multiple_reference_images: bool = False,
-    reference_image_field: str = "image",
+    reference_image_field: str = "",
     reference_image_array_field: str = "",
     # 视觉支持
     support_vision_input: bool = False,
@@ -533,6 +626,16 @@ async def create_ai_connector(
         else:
             sizes_raw = None
 
+        reference_config = normalize_reference_image_config_values(
+            provider_type=pt,
+            default_params=_merge_image_capabilities(default_params, image_capabilities) if pt == "image" else default_params,
+            support_reference_image=support_reference_image,
+            support_multiple_reference_images=support_multiple_reference_images,
+            reference_image_field=reference_image_field,
+            reference_image_array_field=reference_image_array_field,
+            support_vision_input=support_vision_input,
+        )
+
         conn = AIConnector(
             id=conn_id,
             name=name,
@@ -552,12 +655,12 @@ async def create_ai_connector(
             response_config=response_config or None,
             parameter_transforms=parameter_transforms or None,
             supported_sizes=sizes_raw,
-            default_params=default_params or None,
-            support_reference_image=support_reference_image,
-            support_multiple_reference_images=support_multiple_reference_images,
-            reference_image_field=reference_image_field,
-            reference_image_array_field=reference_image_array_field or None,
-            support_vision_input=support_vision_input,
+            default_params=reference_config["default_params"],
+            support_reference_image=reference_config["support_reference_image"],
+            support_multiple_reference_images=reference_config["support_multiple_reference_images"],
+            reference_image_field=reference_config["reference_image_field"],
+            reference_image_array_field=reference_config["reference_image_array_field"],
+            support_vision_input=reference_config["support_vision_input"],
             embedding_type=embedding_type or None,
             embedding_dimension=embedding_dimension or None,
             normalize_embeddings=normalize_embeddings,
@@ -585,13 +688,27 @@ async def create_ai_connector(
 
 @register_tool(
     name="update_ai_connector",
-    description="更新已有的 AI 连接器配置。可修改模型、API Key、请求模板、响应解析配置等任意字段。",
+    description=(
+        "更新已有的 AI 连接器配置。可修改模型、API Key、请求模板、响应解析配置等任意字段。"
+        "调用前应先用 get_ai_connector 读取当前详情，只传需要修改的字段，避免覆盖已有 API Key 或无关配置。"
+    ),
     category="ai_config",
     examples=["把 OpenAI 连接器的默认模型改成 gpt-4o", "更新生图连接器的 request_template"],
     input_schema_note=(
         "connector_id 必填（可通过 list_ai_connectors 获取）。"
         "只传需要修改的字段，未传字段保持不变。"
         "provider_type 可选 llm/image/video/tts/stt/embedding。"
+        "修正图片编辑/图生图时优先检查 api_endpoint、request_template、response_config、support_reference_image、"
+        "support_vision_input、reference_image_field、reference_image_array_field、default_params。"
+        "OpenAI-compatible 图片编辑 endpoint 通常是 /v1/images/edits，生图 endpoint 通常是 /v1/images/generations；"
+        "图片编辑 JSON 模板通常是 {\"model\":\"{{ model }}\",\"prompt\":{{ prompt_json }},"
+        "\"images\":[{\"image_url\":\"{{ reference_image_url }}\"}],\"size\":\"{{ size }}\",\"response_format\":\"b64_json\"}，"
+        "此时只填 reference_image_array_field=images，reference_image_field 留空；response_config 可用 {\"response_format\":\"base64\","
+        "\"base64_images_path\":\"$.data[*].b64_json\",\"error_path\":\"$.error.message\"}。"
+        "本地上传 multipart 则 default_params 填 {\"request_content_type\":\"multipart\",\"multipart_image_field\":\"image\"}，"
+        "此时只填 reference_image_field=image，reference_image_array_field 留空。"
+        "api_key 为空字符串表示不修改；只有用户明确提供新 key 时才传 api_key。"
+        "Do not rely on api_endpoint names to decide image capability; set image_capabilities explicitly."
     ),
     output_schema_note="返回 success、connector 更新后的摘要。",
     risk_level="write",
@@ -619,6 +736,7 @@ async def update_ai_connector(
     parameter_transforms: str = "",
     supported_sizes: str = "",
     default_params: str = "",
+    image_capabilities: str = "",
     support_reference_image: str = "",
     support_multiple_reference_images: str = "",
     reference_image_field: str = "",
@@ -711,9 +829,13 @@ async def update_ai_connector(
                 _apply("supported_sizes", normalize_sizes_value(supported_sizes))
         if default_params:
             _apply("default_params", default_params)
+        if image_capabilities:
+            _apply("default_params", _merge_image_capabilities(connector.default_params, image_capabilities))
 
         if support_reference_image == "true":
             _apply("support_reference_image", True)
+            if connector.provider_type == "image" and not connector.support_vision_input and not support_vision_input:
+                _apply("support_vision_input", True)
         elif support_reference_image == "false":
             _apply("support_reference_image", False)
         if support_multiple_reference_images == "true":
@@ -729,6 +851,22 @@ async def update_ai_connector(
             _apply("support_vision_input", True)
         elif support_vision_input == "false":
             _apply("support_vision_input", False)
+
+        reference_config = normalize_reference_image_config_values(
+            provider_type=str(getattr(connector.provider_type, "value", connector.provider_type) or ""),
+            default_params=connector.default_params,
+            support_reference_image=connector.support_reference_image,
+            support_multiple_reference_images=connector.support_multiple_reference_images,
+            reference_image_field=connector.reference_image_field,
+            reference_image_array_field=connector.reference_image_array_field,
+            support_vision_input=connector.support_vision_input,
+        )
+        connector.default_params = reference_config["default_params"]
+        connector.support_reference_image = reference_config["support_reference_image"]
+        connector.support_multiple_reference_images = reference_config["support_multiple_reference_images"]
+        connector.reference_image_field = reference_config["reference_image_field"]
+        connector.reference_image_array_field = reference_config["reference_image_array_field"]
+        connector.support_vision_input = reference_config["support_vision_input"]
 
         if embedding_type:
             _apply("embedding_type", embedding_type or None)

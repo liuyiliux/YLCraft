@@ -137,6 +137,16 @@ const NODE_TEMPLATES: NodeTemplate[] = [
     metadata: { status: 'ready', prompt: '' },
   },
   {
+    type: 'image',
+    title: '图片节点',
+    icon: <PictureOutlined />,
+    width: 320,
+    height: 230,
+    inputs: [{ id: 'source', label: '来源', dataType: 'image' }],
+    outputs: [{ id: 'image', label: '图片', dataType: 'image' }],
+    metadata: { imageUrl: '', prompt: '', status: 'ready' },
+  },
+  {
     type: 'image_model',
     title: '生图节点',
     icon: <PictureOutlined />,
@@ -172,6 +182,15 @@ const NODE_TEMPLATES: NodeTemplate[] = [
 
 function nowIso() {
   return new Date().toISOString()
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(reader.error || new Error('图片读取失败'))
+    reader.readAsDataURL(file)
+  })
 }
 
 function createDemoDocument(): CanvasDocument {
@@ -319,6 +338,10 @@ function nodeOutputValue(node: CanvasNode): unknown {
   const meta = node.metadata || {}
   const output = meta.output as any
   if (output !== undefined && output !== null && output !== '') return output
+  if (node.type === 'image') {
+    const url = String(meta.imageUrl || meta.previewUrl || '')
+    return url ? { url, text: meta.prompt || '', source: meta.source || 'canvas_image' } : ''
+  }
   return meta.prompt || meta.content || meta.searchKeyword || meta.assetId || ''
 }
 
@@ -508,6 +531,8 @@ export default function CanvasPage() {
   const [remoteLoaded, setRemoteLoaded] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const imageUploadInputRef = useRef<HTMLInputElement | null>(null)
+  const imageUploadTargetRef = useRef<string>('')
   const saveTimerRef = useRef<number | null>(null)
   const saveErrorShownRef = useRef(false)
 
@@ -829,6 +854,115 @@ export default function CanvasPage() {
     patchActiveDocument({ connections: [...activeDocument.connections, connection] }, { history: true })
   }
 
+  const createGenerationNodeFromSource = (sourceNode: CanvasNode) => {
+    if (!activeDocument) return
+    const template = NODE_TEMPLATES.find((item) => item.type === 'image_model')
+    if (!template) return
+    const sourceMeta = sourceNode.metadata || {}
+    const sourceText = String(sourceMeta.content || sourceMeta.prompt || sourceMeta.assetTitle || sourceNode.title || '').trim()
+    const isImageSource = sourceNode.type === 'image' || sourceNode.type === 'asset' || sourceNode.type === 'image_model'
+    const prompt = isImageSource
+      ? String(sourceMeta.prompt || '基于这张图继续生成或改图。').trim()
+      : sourceText
+    const node: CanvasNode = {
+      id: `node-image_model-${Date.now()}`,
+      type: 'image_model',
+      title: isImageSource ? '图片改图配置' : '文本生图配置',
+      position: {
+        x: sourceNode.position.x + sourceNode.width + 120,
+        y: sourceNode.position.y,
+      },
+      width: template.width,
+      height: template.height,
+      inputs: template.inputs ? clonePorts(template.inputs) : undefined,
+      outputs: template.outputs ? clonePorts(template.outputs) : undefined,
+      metadata: {
+        ...template.metadata,
+        prompt,
+        sourceNodeId: sourceNode.id,
+        sourceNodeTitle: sourceNode.title,
+        mode: isImageSource ? 'image_to_image' : 'text_to_image',
+      },
+    }
+    const connection: CanvasConnection = {
+      id: `conn-generation-${Date.now()}`,
+      fromNodeId: sourceNode.id,
+      toNodeId: node.id,
+      relation: isImageSource ? 'reference' : 'generation',
+      type: isImageSource ? 'references' : 'feeds',
+      label: isImageSource ? '参考图' : '生图提示',
+    }
+    patchActiveDocument({
+      nodes: [...activeDocument.nodes, node],
+      connections: [...activeDocument.connections, connection],
+    }, { history: true })
+    setSelectedNodeIds([node.id])
+    message.success(isImageSource ? '已创建图片改图配置节点' : '已创建文本生图配置节点')
+  }
+
+  const openImageUploadForNode = (nodeId?: string) => {
+    if (!activeDocument) return
+    const targetId = nodeId || selectedNodeIds[0] || ''
+    imageUploadTargetRef.current = targetId
+    imageUploadInputRef.current?.click()
+  }
+
+  const handleImageUpload = async (file: File) => {
+    if (!activeDocument) return
+    const dataUrl = await readFileAsDataUrl(file)
+    const targetId = imageUploadTargetRef.current
+    const targetNode = targetId ? activeDocument.nodes.find((node) => node.id === targetId) : null
+    if (targetNode?.type === 'image') {
+      patchActiveDocument({
+        nodes: activeDocument.nodes.map((node) => (
+          node.id === targetNode.id
+            ? {
+                ...node,
+                title: node.title === '图片节点' ? file.name.replace(/\.[^.]+$/, '') || node.title : node.title,
+                metadata: {
+                  ...(node.metadata || {}),
+                  imageUrl: dataUrl,
+                  fileName: file.name,
+                  source: 'local_upload',
+                  status: 'success',
+                  output: { url: dataUrl, fileName: file.name, source: 'local_upload' },
+                },
+              }
+            : node
+        )),
+      }, { history: true })
+      setSelectedNodeIds([targetNode.id])
+      message.success('图片已写入节点')
+      return
+    }
+
+    const template = NODE_TEMPLATES.find((item) => item.type === 'image')
+    if (!template) return
+    const node: CanvasNode = {
+      id: `node-image-${Date.now()}`,
+      type: 'image',
+      title: file.name.replace(/\.[^.]+$/, '') || '图片节点',
+      position: {
+        x: Math.round((180 - activeDocument.viewport.x) / activeDocument.viewport.k + activeDocument.nodes.length * 28),
+        y: Math.round((160 - activeDocument.viewport.y) / activeDocument.viewport.k + activeDocument.nodes.length * 28),
+      },
+      width: template.width,
+      height: template.height,
+      inputs: template.inputs ? clonePorts(template.inputs) : undefined,
+      outputs: template.outputs ? clonePorts(template.outputs) : undefined,
+      metadata: {
+        imageUrl: dataUrl,
+        fileName: file.name,
+        source: 'local_upload',
+        status: 'success',
+        output: { url: dataUrl, fileName: file.name, source: 'local_upload' },
+      },
+    }
+    patchActiveDocument({ nodes: [...activeDocument.nodes, node] }, { history: true })
+    setSelectedNodeIds([node.id])
+    message.success('图片已上传到画布')
+  }
+
   const updateEditingNode = (patch: Partial<CanvasNode>) => {
     if (!activeDocument || !editingNode) return
     patchActiveDocument({
@@ -847,12 +981,23 @@ export default function CanvasPage() {
     const nextPrompt = action === 'append' && currentPrompt
       ? `${currentPrompt}\n\n${reference.prompt}`.trim()
       : reference.prompt
+    const promptReferenceImages = (reference.image_items || [])
+      .map((item: Record<string, unknown>) => ({
+        url: String(item.display_url || item.local_url || item.url || item.image_url || ''),
+        filename: String(item.filename || ''),
+        source_url: String(item.url || item.image_url || ''),
+      }))
+      .filter((item) => item.url)
     updateEditingMetadata({
       prompt: nextPrompt,
       promptReferenceId: reference.id,
       promptReferenceSourceId: reference.source_id,
       promptReferenceTitle: reference.title,
       promptReferenceCategory: reference.category || '',
+      promptReferenceSourceUrl: reference.source_url || '',
+      promptReferenceModelGroup: reference.model_group || reference.model_hint || '',
+      promptReferenceSourceName: reference.source_name || '',
+      promptReferenceImages,
     })
     setPromptReferencePickerOpen(false)
     message.success(action === 'append' ? '已追加 Prompt 参考' : '已替换为 Prompt 参考')
@@ -965,6 +1110,7 @@ export default function CanvasPage() {
           prompt_reference_source_id: meta.promptReferenceSourceId || undefined,
           prompt_reference_title: meta.promptReferenceTitle || undefined,
           prompt_reference_category: meta.promptReferenceCategory || undefined,
+          prompt_reference_source_url: meta.promptReferenceSourceUrl || undefined,
           source_type: 'creative_canvas',
           source_title: node.title,
         })
@@ -972,22 +1118,66 @@ export default function CanvasPage() {
         const urls = res.urls || (res.url ? [res.url] : [])
         const localPaths = res.all_local_paths || (res.local_path ? [res.local_path] : [])
         const assetIds = res.all_asset_hub_node_ids || res.all_asset_ids || (res.asset_hub_node_id || res.asset_id ? [res.asset_hub_node_id || res.asset_id] : [])
-        patchNodeMetadata(
-          node.id,
-          {
-            status: res.status === 'pending' ? 'running' : 'success',
-            output: {
-              urls,
-              localPaths,
-              assetIds,
-              taskId: res.task_id || '',
-              raw: res,
-            },
-            error: '',
-            lastRunAt: nowIso(),
+        const output = {
+          urls,
+          localPaths,
+          assetIds,
+          taskId: res.task_id || '',
+          raw: res,
+        }
+        const imageTemplate = NODE_TEMPLATES.find((item) => item.type === 'image')
+        const resultImageNodes: CanvasNode[] = urls.slice(0, 4).map((url: string, index: number) => ({
+          id: `node-image-result-${Date.now()}-${index}`,
+          type: 'image',
+          title: urls.length > 1 ? `生成图 ${index + 1}` : '生成图片',
+          position: {
+            x: node.position.x + node.width + 110 + index * 28,
+            y: node.position.y + index * 28,
           },
-          { history: true },
-        )
+          width: imageTemplate?.width || 320,
+          height: imageTemplate?.height || 230,
+          inputs: imageTemplate?.inputs ? clonePorts(imageTemplate.inputs) : undefined,
+          outputs: imageTemplate?.outputs ? clonePorts(imageTemplate.outputs) : undefined,
+          metadata: {
+            imageUrl: url,
+            prompt,
+            source: 'canvas_generation',
+            sourceNodeId: node.id,
+            assetId: assetIds[index] || '',
+            localPath: localPaths[index] || '',
+            status: 'success',
+            output: { url, assetId: assetIds[index] || '', localPath: localPaths[index] || '', prompt },
+          },
+        }))
+        const resultConnections: CanvasConnection[] = resultImageNodes.map((imageNode, index) => ({
+          id: `conn-generated-image-${Date.now()}-${index}`,
+          fromNodeId: node.id,
+          toNodeId: imageNode.id,
+          relation: 'generation',
+          type: 'generates',
+          label: '生成图片',
+        }))
+        patchActiveDocument({
+          nodes: [
+            ...activeDocument.nodes.map((item) => (
+              item.id === node.id
+                ? {
+                    ...item,
+                    metadata: {
+                      ...(item.metadata || {}),
+                      status: (res.status === 'pending' ? 'running' : 'success') as CanvasNode['metadata']['status'],
+                      output,
+                      error: '',
+                      lastRunAt: nowIso(),
+                    },
+                  }
+                : item
+            )),
+            ...resultImageNodes,
+          ],
+          connections: [...activeDocument.connections, ...resultConnections],
+        }, { history: true })
+        if (resultImageNodes.length) setSelectedNodeIds([resultImageNodes[0].id])
         message.success(res.task_id ? '生图任务已提交' : '生图节点运行完成')
         return
       }
@@ -1099,6 +1289,17 @@ export default function CanvasPage() {
             if (file) importJson(file)
           }}
         />
+        <input
+          ref={imageUploadInputRef}
+          type="file"
+          accept="image/*"
+          style={{ display: 'none' }}
+          onChange={(event) => {
+            const file = event.target.files?.[0]
+            if (file) handleImageUpload(file)
+            event.currentTarget.value = ''
+          }}
+        />
       </section>
 
       <section style={workspaceStyle}>
@@ -1110,6 +1311,9 @@ export default function CanvasPage() {
                 {item.title}
               </Button>
             ))}
+            <Button icon={<UploadOutlined />} onClick={() => openImageUploadForNode()} style={{ justifyContent: 'flex-start' }}>
+              上传图片
+            </Button>
             <Button icon={<FolderOpenOutlined />} onClick={() => setAssetPickerOpen(true)} style={{ justifyContent: 'flex-start' }}>
               从素材库插入
             </Button>
@@ -1140,7 +1344,17 @@ export default function CanvasPage() {
           onSelectNodes={setSelectedNodeIds}
           onDeleteSelected={deleteSelectedNode}
           onOpenNode={(node) => setEditingNodeId(node.id)}
-          renderNode={(node, state) => <CanvasNodeCard node={node} document={activeDocument} selected={state.selected} />}
+          renderNode={(node, state) => (
+            <CanvasNodeCard
+              node={node}
+              document={activeDocument}
+              selected={state.selected}
+              onCreateGeneration={createGenerationNodeFromSource}
+              onUploadImage={openImageUploadForNode}
+              onRunNode={runNode}
+              onOpenNode={(target) => setEditingNodeId(target.id)}
+            />
+          )}
         />
 
         <aside style={panelStyle}>
@@ -1156,6 +1370,12 @@ export default function CanvasPage() {
               <NodeOutputInspector node={selectedNode} />
               <Space wrap>
                 <Button size="small" type="primary" icon={<ThunderboltOutlined />} onClick={() => runNode(selectedNode)}>运行</Button>
+                {selectedNode.type === 'text' || selectedNode.type === 'prompt' || selectedNode.type === 'image' || selectedNode.type === 'asset' ? (
+                  <Button size="small" icon={<PictureOutlined />} onClick={() => createGenerationNodeFromSource(selectedNode)}>生图</Button>
+                ) : null}
+                {selectedNode.type === 'image' ? (
+                  <Button size="small" icon={<UploadOutlined />} data-canvas-upload-image={selectedNode.id} onClick={() => openImageUploadForNode(selectedNode.id)}>选图片</Button>
+                ) : null}
                 <Button size="small" onClick={() => setEditingNodeId(selectedNode.id)}>配置</Button>
                 <Button size="small" icon={<FolderOpenOutlined />} onClick={() => setAssetPickerOpen(true)}>连接素材</Button>
                 <Button size="small" danger onClick={deleteSelectedNode}>删除</Button>
@@ -1203,7 +1423,7 @@ export default function CanvasPage() {
                 placeholder="写入文本内容"
               />
             ) : null}
-            {editingNode.type === 'prompt' || editingNode.type === 'image_model' || editingNode.type === 'llm' ? (
+            {editingNode.type === 'prompt' || editingNode.type === 'image_model' || editingNode.type === 'llm' || editingNode.type === 'image' ? (
               <>
                 <ReferenceInsertBar
                   node={editingNode}
@@ -1211,22 +1431,57 @@ export default function CanvasPage() {
                   onInsert={(token) => updateEditingMetadata({ prompt: appendPromptToken(String(editingNode.metadata?.prompt || ''), token) })}
                 />
                 <Space wrap style={{ width: '100%', justifyContent: 'space-between' }}>
-                  <Button size="small" icon={<FileTextOutlined />} onClick={() => setPromptReferencePickerOpen(true)}>
+                  <Button
+                    size="small"
+                    icon={<FileTextOutlined />}
+                    data-canvas-prompt-reference-picker
+                    onClick={() => setPromptReferencePickerOpen(true)}
+                  >
                     Prompt 参考库
                   </Button>
                   {editingNode.metadata?.promptReferenceTitle ? (
-                    <Tag color="purple" style={{ marginInlineEnd: 0 }}>
-                      {String(editingNode.metadata.promptReferenceTitle)}
-                    </Tag>
+                    <Space size={6} wrap data-canvas-prompt-reference-selected>
+                      <Tag color="purple" style={{ marginInlineEnd: 0 }}>
+                        {String(editingNode.metadata.promptReferenceTitle)}
+                      </Tag>
+                      {Array.isArray(editingNode.metadata.promptReferenceImages) && editingNode.metadata.promptReferenceImages.length ? (
+                        <Tag style={{ marginInlineEnd: 0 }}>{editingNode.metadata.promptReferenceImages.length} 图</Tag>
+                      ) : null}
+                      {editingNode.metadata.promptReferenceModelGroup ? (
+                        <Tag style={{ marginInlineEnd: 0 }}>{String(editingNode.metadata.promptReferenceModelGroup)}</Tag>
+                      ) : null}
+                      <Button
+                        size="small"
+                        type="link"
+                        data-canvas-prompt-reference-clear
+                        onClick={() => updateEditingMetadata({
+                          promptReferenceId: '',
+                          promptReferenceSourceId: '',
+                          promptReferenceTitle: '',
+                          promptReferenceCategory: '',
+                          promptReferenceSourceUrl: '',
+                          promptReferenceModelGroup: '',
+                          promptReferenceSourceName: '',
+                          promptReferenceImages: [],
+                        })}
+                      >
+                        清除
+                      </Button>
+                    </Space>
                   ) : null}
                 </Space>
                 <Input.TextArea
                   rows={6}
                   value={String(editingNode.metadata?.prompt || '')}
                   onChange={(event) => updateEditingMetadata({ prompt: event.target.value })}
-                  placeholder="Prompt"
+                  placeholder={editingNode.type === 'image' ? '这张图片关联的提示词，可用于图生图/改图' : 'Prompt'}
                 />
               </>
+            ) : null}
+            {editingNode.type === 'image' ? (
+              <Button icon={<UploadOutlined />} onClick={() => openImageUploadForNode(editingNode.id)}>
+                选择或替换图片
+              </Button>
             ) : null}
             {editingNode.type === 'llm' ? (
               <Select
@@ -1376,32 +1631,121 @@ export default function CanvasPage() {
   )
 }
 
-function CanvasNodeCard({ node, document, selected }: { node: CanvasNode; document: CanvasDocument; selected: boolean }) {
+function CanvasNodeCard({
+  node,
+  document,
+  selected,
+  onCreateGeneration,
+  onUploadImage,
+  onRunNode,
+  onOpenNode,
+}: {
+  node: CanvasNode
+  document: CanvasDocument
+  selected: boolean
+  onCreateGeneration: (node: CanvasNode) => void
+  onUploadImage: (nodeId?: string) => void
+  onRunNode: (node: CanvasNode) => void
+  onOpenNode: (node: CanvasNode) => void
+}) {
   const meta = node.metadata || {}
   const inputs = buildCanvasNodeInputs(node.id, document)
+  const imageUrl = String(meta.imageUrl || meta.previewUrl || (meta.output as any)?.urls?.[0] || (meta.output as any)?.url || '')
+  const isImageNode = node.type === 'image'
+  const isGenerationNode = node.type === 'image_model'
   return (
     <div
       style={{
         minHeight: node.height,
-        padding: 12,
+        padding: isImageNode && imageUrl ? 0 : 12,
         borderRadius: 8,
         border: selected ? '2px solid var(--primary)' : '1px solid var(--borderLight)',
         background: 'var(--bgCard)',
         boxShadow: selected ? 'var(--shadowElevated)' : 'var(--shadowCard)',
         color: 'var(--textPrimary)',
+        overflow: 'hidden',
       }}
     >
-      <Space direction="vertical" size={8} style={{ width: '100%' }}>
-        <Space style={{ justifyContent: 'space-between', width: '100%' }}>
-          <Tag color={nodeColor(node.type)} style={{ marginInlineEnd: 0 }}>{nodeLabel(node.type)}</Tag>
-          {meta.status ? <Tag style={{ marginInlineEnd: 0 }}>{String(meta.status)}</Tag> : null}
+      {isImageNode ? (
+        <div style={{ display: 'grid', minHeight: node.height }}>
+          {imageUrl ? (
+            <div style={{ position: 'relative', minHeight: node.height }}>
+              <img
+                src={imageUrl}
+                alt={node.title}
+                draggable={false}
+                style={{ width: '100%', height: node.height, objectFit: 'cover', display: 'block' }}
+              />
+              <div style={{ position: 'absolute', top: 8, right: 8, display: 'flex', gap: 6 }}>
+                <Button size="small" data-canvas-no-drag data-canvas-image-prompt={node.id} onClick={() => onOpenNode(node)}>提示词</Button>
+                <Button size="small" icon={<PictureOutlined />} data-canvas-no-drag data-canvas-create-generation={node.id} onClick={() => onCreateGeneration(node)}>生图</Button>
+              </div>
+              {meta.prompt ? (
+                <div style={{
+                  position: 'absolute',
+                  left: 10,
+                  right: 10,
+                  bottom: 10,
+                  padding: '6px 8px',
+                  borderRadius: 6,
+                  background: 'rgba(0,0,0,0.48)',
+                  color: '#fff',
+                  fontSize: 11,
+                  lineHeight: 1.45,
+                  maxHeight: 46,
+                  overflow: 'hidden',
+                }}>
+                  {String(meta.prompt)}
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div style={{ minHeight: node.height, display: 'grid', placeItems: 'center', color: 'var(--textSecondary)' }}>
+              <Space direction="vertical" align="center" size={8}>
+                <PictureOutlined style={{ fontSize: 28, opacity: 0.45 }} />
+                <Text type="secondary" style={{ fontSize: 12 }}>空图片节点</Text>
+                <Button size="small" icon={<UploadOutlined />} data-canvas-no-drag data-canvas-upload-image={node.id} onClick={() => onUploadImage(node.id)}>选图片</Button>
+              </Space>
+            </div>
+          )}
+        </div>
+      ) : isGenerationNode ? (
+        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+          <Space style={{ justifyContent: 'space-between', width: '100%' }}>
+            <Text strong>生成配置</Text>
+            <Space size={4}>
+              <Tag color="volcano" style={{ marginInlineEnd: 0 }}>生图</Tag>
+              <Tag style={{ marginInlineEnd: 0 }}>文本</Tag>
+            </Space>
+          </Space>
+          <NodeInputPills inputs={inputs} />
+          <Button size="small" data-canvas-no-drag data-canvas-open-composer={node.id} onClick={() => onOpenNode(node)}>组装提示词</Button>
+          <Space size={6} wrap>
+            <Tag style={{ marginInlineEnd: 0 }}>{String(meta.connectorName || meta.model || '默认生图模型')}</Tag>
+            <Tag style={{ marginInlineEnd: 0 }}>{String(meta.size || '1024x1024')}</Tag>
+          </Space>
+          <Button type="primary" size="small" icon={<ThunderboltOutlined />} data-canvas-no-drag data-canvas-run-generation={node.id} onClick={() => onRunNode(node)}>
+            开始生成
+          </Button>
         </Space>
-        <Text strong ellipsis={{ tooltip: node.title }}>{node.title}</Text>
-        <Text type="secondary" style={{ fontSize: 12 }} ellipsis={{ tooltip: nodeSummary(node) }}>
-          {nodeSummary(node)}
-        </Text>
-        <NodeInputPills inputs={inputs} />
-      </Space>
+      ) : (
+        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+          <Space style={{ justifyContent: 'space-between', width: '100%' }}>
+            <Tag color={nodeColor(node.type)} style={{ marginInlineEnd: 0 }}>{nodeLabel(node.type)}</Tag>
+            {meta.status ? <Tag style={{ marginInlineEnd: 0 }}>{String(meta.status)}</Tag> : null}
+          </Space>
+          <Text strong ellipsis={{ tooltip: node.title }}>{node.title}</Text>
+          <Text type="secondary" style={{ fontSize: 12 }} ellipsis={{ tooltip: nodeSummary(node) }}>
+            {nodeSummary(node)}
+          </Text>
+          <Space size={6} wrap>
+            <NodeInputPills inputs={inputs} />
+            {node.type === 'text' || node.type === 'prompt' ? (
+              <Button size="small" icon={<PictureOutlined />} data-canvas-no-drag data-canvas-create-generation={node.id} onClick={() => onCreateGeneration(node)}>生图</Button>
+            ) : null}
+          </Space>
+        </Space>
+      )}
     </div>
   )
 }

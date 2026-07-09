@@ -90,6 +90,163 @@ def normalize_sizes_value(value) -> str:
     return value
 
 
+def _parse_json_object(value) -> dict:
+    if not value:
+        return {}
+    if isinstance(value, dict):
+        return dict(value)
+    if not isinstance(value, str):
+        return {}
+    try:
+        parsed = json.loads(value)
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        return {}
+
+
+IMAGE_CAPABILITY_ORDER = ("text_to_image", "image_to_image")
+IMAGE_CAPABILITY_ALIASES = {
+    "text_to_image": "text_to_image",
+    "text-to-image": "text_to_image",
+    "txt2img": "text_to_image",
+    "generation": "text_to_image",
+    "generate": "text_to_image",
+    "image_generation": "text_to_image",
+    "image-to-image": "image_to_image",
+    "image_to_image": "image_to_image",
+    "img2img": "image_to_image",
+    "edit": "image_to_image",
+    "image_edit": "image_to_image",
+}
+
+
+def _parse_image_capability_values(value) -> list[str]:
+    if not value:
+        return []
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return []
+        try:
+            parsed = json.loads(stripped)
+            value = parsed
+        except Exception:
+            value = [item.strip() for item in stripped.split(",")]
+    if not isinstance(value, (list, tuple, set)):
+        return []
+
+    seen = set()
+    for item in value:
+        key = str(item or "").strip().lower().replace(" ", "_")
+        normalized = IMAGE_CAPABILITY_ALIASES.get(key)
+        if normalized:
+            seen.add(normalized)
+    return [cap for cap in IMAGE_CAPABILITY_ORDER if cap in seen]
+
+
+def explicit_image_connector_capabilities(connector: AIConnector) -> list[str]:
+    """Return user-configured image capabilities from connector default_params."""
+    default_params = _parse_json_object(getattr(connector, "default_params", None))
+    for key in ("image_capabilities", "capabilities"):
+        capabilities = _parse_image_capability_values(default_params.get(key))
+        if capabilities:
+            return capabilities
+    return []
+
+
+def normalize_reference_image_config_values(
+    *,
+    provider_type: str = "",
+    default_params=None,
+    support_reference_image: bool = False,
+    support_multiple_reference_images: bool = False,
+    reference_image_field: Optional[str] = "image",
+    reference_image_array_field: Optional[str] = None,
+    support_vision_input: bool = False,
+) -> dict:
+    """Keep reference-image modes mutually exclusive.
+
+    Supported shapes:
+    - JSON array mode: reference_image_array_field is set, reference_image_field is empty.
+    - Multipart mode: default_params.request_content_type=multipart, single upload field is set.
+    - Legacy field mode: reference_image_field is set, array field is empty.
+    """
+    params = _parse_json_object(default_params)
+    field = (reference_image_field or "").strip()
+    array_field = (reference_image_array_field or "").strip()
+    content_type = str(params.get("request_content_type") or "").strip().lower()
+
+    if not support_reference_image:
+        support_multiple_reference_images = False
+        field = ""
+        array_field = ""
+        params.pop("request_content_type", None)
+        params.pop("multipart_image_field", None)
+    elif content_type == "multipart":
+        field = field or str(params.get("multipart_image_field") or "image")
+        array_field = ""
+        support_multiple_reference_images = False
+        params["request_content_type"] = "multipart"
+        params["multipart_image_field"] = field
+    elif array_field:
+        field = ""
+        support_multiple_reference_images = True
+        params.pop("request_content_type", None)
+        params.pop("multipart_image_field", None)
+    else:
+        field = field or "image"
+        array_field = ""
+        params.pop("request_content_type", None)
+        params.pop("multipart_image_field", None)
+
+    if provider_type == "image" and support_reference_image:
+        support_vision_input = True
+
+    return {
+        "support_reference_image": bool(support_reference_image),
+        "support_multiple_reference_images": bool(support_multiple_reference_images),
+        "reference_image_field": field,
+        "reference_image_array_field": array_field or None,
+        "support_vision_input": bool(support_vision_input),
+        "default_params": json.dumps(params, ensure_ascii=False) if params or default_params else None,
+    }
+
+
+def infer_image_connector_capabilities(connector: AIConnector) -> list[str]:
+    """Resolve image connector capabilities.
+
+    Explicit configuration in default_params.image_capabilities wins. Endpoint
+    and mode inference only exists as a compatibility fallback for older data.
+    """
+    default_params = _parse_json_object(getattr(connector, "default_params", None))
+    configured = explicit_image_connector_capabilities(connector)
+    if configured:
+        return configured
+
+    endpoint = str(getattr(connector, "api_endpoint", "") or "").lower()
+    mode = str(
+        default_params.get("image_mode")
+        or default_params.get("mode")
+        or default_params.get("operation")
+        or ""
+    ).lower()
+    template = str(getattr(connector, "request_template", "") or "").lower()
+    supports_reference = bool(getattr(connector, "support_reference_image", False))
+
+    explicit_edit = mode in {"edit", "image_edit", "image-to-image", "image_to_image", "img2img"}
+    explicit_generation = mode in {"generation", "generate", "text-to-image", "text_to_image", "txt2img"}
+    edit_endpoint = "/edits" in endpoint or endpoint.endswith("edits")
+    generation_endpoint = "/generations" in endpoint or endpoint.endswith("generations")
+
+    if (explicit_edit or edit_endpoint) and not explicit_generation and not generation_endpoint:
+        return ["image_to_image"] if supports_reference else []
+
+    capabilities = ["text_to_image"]
+    if supports_reference or "reference_image" in template or "image_url" in template:
+        capabilities.append("image_to_image")
+    return capabilities
+
+
 class AIConnectorService:
     """AI 连接器服务（异步版本）"""
 
@@ -173,6 +330,15 @@ class AIConnectorService:
         logger.info(f"[AIConnector] Creating connector: name={data.name}, provider={data.provider}, type={data.provider_type}")
         # 标准化 supported_sizes（兼容 x/* 分隔符）
         supported_sizes_value = normalize_sizes_value(data.supported_sizes) if data.supported_sizes else None
+        reference_config = normalize_reference_image_config_values(
+            provider_type=data.provider_type,
+            default_params=data.default_params,
+            support_reference_image=data.support_reference_image,
+            support_multiple_reference_images=data.support_multiple_reference_images,
+            reference_image_field=data.reference_image_field,
+            reference_image_array_field=data.reference_image_array_field,
+            support_vision_input=data.support_vision_input,
+        )
         
         conn = AIConnector(
             id=str(uuid.uuid4()),
@@ -199,11 +365,11 @@ class AIConnectorService:
             response_config=data.response_config,
             parameter_transforms=data.parameter_transforms,
             supported_sizes=supported_sizes_value,
-            default_params=data.default_params,
-            support_reference_image=data.support_reference_image,
-            support_multiple_reference_images=data.support_multiple_reference_images,
-            reference_image_field=data.reference_image_field,
-            reference_image_array_field=data.reference_image_array_field,
+            default_params=reference_config["default_params"],
+            support_reference_image=reference_config["support_reference_image"],
+            support_multiple_reference_images=reference_config["support_multiple_reference_images"],
+            reference_image_field=reference_config["reference_image_field"],
+            reference_image_array_field=reference_config["reference_image_array_field"],
             test_prompt=data.test_prompt,
             timeout=data.timeout,
             test_timeout=data.test_timeout,
@@ -211,6 +377,7 @@ class AIConnectorService:
             embedding_type=data.embedding_type,
             embedding_dimension=data.embedding_dimension,
             normalize_embeddings=data.normalize_embeddings,
+            support_vision_input=reference_config["support_vision_input"],
             # API 格式
             api_format=data.api_format or "custom",
         )
@@ -306,9 +473,27 @@ class AIConnectorService:
             conn.embedding_dimension = data.embedding_dimension
         if data.normalize_embeddings is not None:
             conn.normalize_embeddings = data.normalize_embeddings
+        if data.support_vision_input is not None:
+            conn.support_vision_input = data.support_vision_input
         # API 格式
         if data.api_format is not None:
             conn.api_format = data.api_format
+
+        reference_config = normalize_reference_image_config_values(
+            provider_type=conn.provider_type,
+            default_params=conn.default_params,
+            support_reference_image=conn.support_reference_image,
+            support_multiple_reference_images=conn.support_multiple_reference_images,
+            reference_image_field=conn.reference_image_field,
+            reference_image_array_field=conn.reference_image_array_field,
+            support_vision_input=conn.support_vision_input,
+        )
+        conn.default_params = reference_config["default_params"]
+        conn.support_reference_image = reference_config["support_reference_image"]
+        conn.support_multiple_reference_images = reference_config["support_multiple_reference_images"]
+        conn.reference_image_field = reference_config["reference_image_field"]
+        conn.reference_image_array_field = reference_config["reference_image_array_field"]
+        conn.support_vision_input = reference_config["support_vision_input"]
 
         conn.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
         self.session.add(conn)

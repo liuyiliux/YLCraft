@@ -27,6 +27,7 @@
 - [x] 13.3 Add infinite-canvas style `@[node:<id>]` prompt references for connected upstream resources.
 - [x] 13.4 Send selected image/asset references as canonical image generation reference fields and collection metadata.
 - [x] 13.5 Resolve `reference_asset_ids` through Asset Hub image representations before image generation.
+- [x] 13.6 Align canvas node workflow with upstream `basketikun/infinite-canvas`: image nodes are first-class media containers, text/prompt/image/asset nodes can create linked generation config nodes, image nodes can store selectable prompt references, and successful image generation appends linked image result nodes.
 
 ## Phase 4: Project integration
 

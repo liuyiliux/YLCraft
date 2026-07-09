@@ -102,6 +102,7 @@ async def test_agent_profile_manager_creates_default_profiles(agent_session: Asy
     profile_ids = {profile.id for profile in profiles}
     assert {
         "default-assistant",
+        "ai-config-specialist",
         "creative-director",
         "novel-writer",
         "character-designer",
@@ -127,6 +128,13 @@ async def test_agent_profile_manager_creates_default_profiles(agent_session: Asy
     assert "update_character_visual_profile" in character_data["allowed_tools"]
     assert character_data["default_workflow"] == "character_visual_card"
     assert "character_visual_card" in character_data["default_skill_ids"]
+
+    ai_config = next(profile for profile in profiles if profile.id == "ai-config-specialist")
+    ai_config_data = profile_to_dict(ai_config)
+    assert "get_ai_connector" in ai_config_data["allowed_tools"]
+    assert "reference_image_url" in ai_config_data["system_prompt"]
+    assert "base64_images_path" in ai_config_data["system_prompt"]
+    assert "/v1/images/edits" in ai_config_data["system_prompt"]
 
 
 @pytest.mark.asyncio
@@ -486,6 +494,68 @@ def test_agent_tool_registry_exposes_ai_config_tools_with_specs():
     # 只读工具的 risk_level 验证
     assert ToolRegistry.get_tool("test_ai_connector").risk_level == "read"
     assert ToolRegistry.get_tool("discover_connector_models").risk_level == "read"
+
+    create_tool = ToolRegistry.get_tool("create_ai_connector")
+    update_tool = ToolRegistry.get_tool("update_ai_connector")
+    assert create_tool is not None
+    assert update_tool is not None
+    create_note = create_tool.input_schema_note
+    update_note = update_tool.input_schema_note
+    for expected in [
+        "prompt_json",
+        "reference_image_url",
+        "images_json",
+        "image_url",
+        "multipart",
+        "base64_images_path",
+        "image_capabilities",
+        "互斥",
+    ]:
+        assert expected in create_note
+    for expected in [
+        "/v1/images/edits",
+        "reference_image_array_field=images",
+        "reference_image_field 留空",
+        "multipart_image_field",
+        "image_capabilities",
+        "api_key 为空字符串表示不修改",
+    ]:
+        assert expected in update_note
+
+
+def test_agent_system_prompt_guides_ai_connector_configuration():
+    from app.services.agent.service import AGENT_SYSTEM_PROMPT
+
+    assert "list_provider_metadata / list_ai_connectors" in AGENT_SYSTEM_PROMPT
+    assert "/v1/images/generations" in AGENT_SYSTEM_PROMPT
+    assert "/v1/images/edits" in AGENT_SYSTEM_PROMPT
+    assert "{{ prompt_json }}" in AGENT_SYSTEM_PROMPT
+    assert "images=[{\"image_url\":\"{{ reference_image_url }}\"}]" in AGENT_SYSTEM_PROMPT
+    assert "参考图传递方式必须互斥" in AGENT_SYSTEM_PROMPT
+    assert "image_capabilities" in AGENT_SYSTEM_PROMPT
+    assert "base64_images_path" in AGENT_SYSTEM_PROMPT
+
+
+@pytest.mark.asyncio
+async def test_ai_config_write_tools_do_not_interrupt_for_confirmation(monkeypatch):
+    async def fake_execute_tool(tool_name, tool_args):
+        return ToolCallResult(tool_name=tool_name, success=True, result={"success": True, "arguments": tool_args})
+
+    monkeypatch.setattr(ToolRegistry, "execute_tool", fake_execute_tool)
+
+    executor = ToolExecutor()
+    result = await executor.execute_tool_call(
+        {
+            "id": "call_update_connector",
+            "name": "update_ai_connector",
+            "arguments": json.dumps({"connector_id": "conn-1", "support_reference_image": "true"}),
+        },
+        {"allowed_tools": ["*"]},
+    )
+
+    assert result.success is True
+    assert not executor.is_pending_confirmation(result)
+    assert result.result["arguments"]["support_reference_image"] == "true"
 
 
 def test_squashed_alembic_initial_schema_imports_sqlmodel():

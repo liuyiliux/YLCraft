@@ -48,6 +48,10 @@ interface BatchTopicResult {
 
 const API_BASE = '/api/v1/images'
 
+function supportsTextToImage(backend: BackendInfo): boolean {
+  return backend.capabilities?.length ? backend.capabilities.includes('text_to_image') : true
+}
+
 interface MultiPlatformGenProps {
   initialTopic?: string
   initialPlatforms?: string[]
@@ -267,7 +271,7 @@ export default function MultiPlatformGen({ initialTopic, initialPlatforms, autoG
   // 加载后端列表
   useEffect(() => {
     getImageBackends().then(data => {
-      const list: BackendInfo[] = data.backends || []
+      const list: BackendInfo[] = (data.backends || []).filter(supportsTextToImage)
       setBackends(list)
       if (list.length > 0) {
         setSelectedBackend(list[0].name)

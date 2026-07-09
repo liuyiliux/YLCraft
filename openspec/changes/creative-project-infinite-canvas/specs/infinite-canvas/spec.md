@@ -36,6 +36,17 @@ The system SHALL provide an infinite canvas document workspace separate from the
 - **AND** dispatches LLM, image generation and platform search nodes through the existing YLCraft APIs
 - **AND** stores execution status, errors and output values on the node metadata.
 
+#### Scenario: Create generation config from source node
+- **WHEN** the user clicks image generation on a text, prompt, image or asset node
+- **THEN** the system creates a linked generation configuration node near the source node
+- **AND** the connection records whether the source is prompt context or an image/reference input
+- **AND** when the generation node returns image URLs, the canvas appends image result nodes connected to the generation node.
+
+#### Scenario: Image node prompt reference
+- **WHEN** the user configures an image node
+- **THEN** the user can choose or replace the image
+- **AND** the user can attach a prompt reference to the image node for later image-to-image or edit generation.
+
 ### Requirement: Infinite canvas interactions
 
 The system SHALL support common infinite canvas interactions.

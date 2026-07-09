@@ -384,7 +384,7 @@ class AIConnectorResponse(SQLModel):
             name=conn.name,
             base_url=conn.base_url,
             api_endpoint=conn.api_endpoint,
-            api_key=conn.api_key,
+            api_key="",
             organization_id=conn.organization_id,
             default_model=conn.default_model,
             max_tokens=conn.max_tokens,

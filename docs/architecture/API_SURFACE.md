@@ -7,8 +7,8 @@
 ## Summary
 
 - Router mounts: 46
-- Endpoints: 517
-- Public schema endpoints: 516
+- Endpoints: 518
+- Public schema endpoints: 517
 - Hidden compatibility endpoints: 1
 
 ## Router Mounts
@@ -496,11 +496,12 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/image-prompts/references` | Search image prompt references | `search_image_prompt_references` | `backend/app/api/v1/image_prompts.py:41` |
-| `GET` | `/api/v1/image-prompts/references/{reference_id}` | Get image prompt reference detail | `get_image_prompt_reference` | `backend/app/api/v1/image_prompts.py:62` |
-| `POST` | `/api/v1/image-prompts/references/{reference_id}/save-as-asset` | Save image prompt reference as Asset Hub text asset | `save_image_prompt_reference_as_asset` | `backend/app/api/v1/image_prompts.py:72` |
-| `GET` | `/api/v1/image-prompts/sources` | List image prompt reference sources | `list_image_prompt_sources` | `backend/app/api/v1/image_prompts.py:21` |
-| `POST` | `/api/v1/image-prompts/sources/refresh` | Refresh image prompt reference sources | `refresh_image_prompt_sources` | `backend/app/api/v1/image_prompts.py:33` |
+| `GET` | `/api/v1/image-prompts/media/{source_id}/{item_id}/{filename}` | Read cached image prompt reference media | `read_image_prompt_reference_media` | `backend/app/api/v1/image_prompts.py:44` |
+| `GET` | `/api/v1/image-prompts/references` | Search image prompt references | `search_image_prompt_references` | `backend/app/api/v1/image_prompts.py:58` |
+| `GET` | `/api/v1/image-prompts/references/{reference_id}` | Get image prompt reference detail | `get_image_prompt_reference` | `backend/app/api/v1/image_prompts.py:81` |
+| `POST` | `/api/v1/image-prompts/references/{reference_id}/save-as-asset` | Save image prompt reference as Asset Hub text asset | `save_image_prompt_reference_as_asset` | `backend/app/api/v1/image_prompts.py:91` |
+| `GET` | `/api/v1/image-prompts/sources` | List image prompt reference sources | `list_image_prompt_sources` | `backend/app/api/v1/image_prompts.py:24` |
+| `POST` | `/api/v1/image-prompts/sources/refresh` | Refresh image prompt reference sources | `refresh_image_prompt_sources` | `backend/app/api/v1/image_prompts.py:36` |
 
 ### Images
 
