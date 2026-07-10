@@ -47,6 +47,9 @@ export type CanvasPort = {
 
 export type CanvasResourceInput = {
   nodeId: string
+  connectionId?: string
+  sourcePath?: string
+  targetPortId?: string
   type: 'text' | 'image' | 'asset' | 'json'
   title: string
   text?: string

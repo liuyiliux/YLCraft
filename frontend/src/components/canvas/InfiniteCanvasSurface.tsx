@@ -21,11 +21,29 @@ type InfiniteCanvasSurfaceProps = {
   onOpenNode?: (node: CanvasNode) => void
   renderNode: (node: CanvasNode, state: { selected: boolean; dragging: boolean }) => React.ReactNode
   height?: number | string
+  immersive?: boolean
+  showMinimap?: boolean
+  showStatusToolbar?: boolean
 }
 
 const MIN_SCALE = 0.08
 const MAX_SCALE = 4
 const GRID_SIZE = 48
+const CANVAS_INTERACTIVE_SELECTOR = [
+  '[data-canvas-no-drag]',
+  '[data-canvas-no-zoom]',
+  '[data-canvas-interactive]',
+  '.ant-modal',
+  '.ant-popover',
+  '.ant-dropdown',
+  '.ant-select-dropdown',
+  '.ant-picker-dropdown',
+  '.ant-tooltip',
+].join(',')
+
+function isCanvasInteractiveTarget(target: EventTarget | null) {
+  return target instanceof Element && Boolean(target.closest(CANVAS_INTERACTIVE_SELECTOR))
+}
 
 export default function InfiniteCanvasSurface({
   viewport,
@@ -40,6 +58,9 @@ export default function InfiniteCanvasSurface({
   onOpenNode,
   renderNode,
   height = '100%',
+  immersive = false,
+  showMinimap = true,
+  showStatusToolbar = true,
 }: InfiniteCanvasSurfaceProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const viewportRef = useRef(viewport)
@@ -137,8 +158,7 @@ export default function InfiniteCanvasSurface({
   }
 
   const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
-    const target = event.target instanceof Element ? event.target : null
-    if (target?.closest('[data-canvas-no-zoom],.ant-modal,.ant-popover,.ant-dropdown,.ant-select-dropdown')) return
+    if (isCanvasInteractiveTarget(event.target)) return
 
     const current = viewportRef.current
     const rect = containerRef.current?.getBoundingClientRect()
@@ -160,6 +180,7 @@ export default function InfiniteCanvasSurface({
   }
 
   const handleCanvasPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (isCanvasInteractiveTarget(event.target)) return
     const target = event.target instanceof Element ? event.target : null
     const isBackground = !target?.closest('[data-canvas-node-id]')
     if (!isBackground) return
@@ -182,8 +203,7 @@ export default function InfiniteCanvasSurface({
 
   const handleNodePointerDown = (event: React.PointerEvent<HTMLDivElement>, node: CanvasNode) => {
     if (event.button !== 0) return
-    const target = event.target instanceof Element ? event.target : null
-    if (target?.closest('[data-canvas-no-drag]')) return
+    if (isCanvasInteractiveTarget(event.target)) return
     event.stopPropagation()
     event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
@@ -202,15 +222,13 @@ export default function InfiniteCanvasSurface({
   }
 
   const handleNodeClick = (event: React.MouseEvent<HTMLDivElement>, node: CanvasNode) => {
-    const target = event.target instanceof Element ? event.target : null
-    if (target?.closest('[data-canvas-no-drag]')) return
+    if (isCanvasInteractiveTarget(event.target)) return
     event.stopPropagation()
     onSelectNodes?.(event.shiftKey ? Array.from(new Set([...selectedNodeIds, node.id])) : [node.id])
   }
 
   const handleNodeDoubleClick = (event: React.MouseEvent<HTMLDivElement>, node: CanvasNode) => {
-    const target = event.target instanceof Element ? event.target : null
-    if (target?.closest('[data-canvas-no-drag]')) return
+    if (isCanvasInteractiveTarget(event.target)) return
     event.stopPropagation()
     onSelectNodes?.([node.id])
     onOpenNode?.(node)
@@ -347,41 +365,59 @@ export default function InfiniteCanvasSurface({
         height,
         minHeight: 520,
         overflow: 'hidden',
-        border: '1px solid var(--border)',
-        background: 'var(--bgPage)',
+        border: immersive ? 'none' : '1px solid var(--border)',
+        borderRadius: immersive ? 0 : 8,
+        background: immersive
+          ? 'radial-gradient(circle at 30% 20%, rgba(255,255,255,0.025), transparent 34%), #12110f'
+          : 'var(--bgPage)',
         cursor: panRef.current || spacePressed ? 'grab' : 'default',
         userSelect: 'none',
       }}
     >
-      <CanvasGrid viewport={viewport} />
-      <div
-        style={{
-          position: 'absolute',
-          left: 12,
-          bottom: 12,
-          zIndex: 5,
-          display: 'flex',
-          gap: 8,
-          alignItems: 'center',
-          padding: '6px 8px',
-          borderRadius: 8,
-          border: '1px solid var(--border)',
-          background: 'var(--bgCard)',
-          color: 'var(--textSecondary)',
-          fontSize: 12,
-        }}
-        data-canvas-no-zoom
-      >
-        <button type="button" onClick={fitToContent} style={toolbarButtonStyle}>适应</button>
-        <span>{Math.round(viewport.k * 100)}%</span>
-        <span>{nodes.length} 节点</span>
-      </div>
-      <CanvasMinimap
-        nodes={nodes}
-        viewport={viewport}
-        containerRef={containerRef}
-        onViewportChange={onViewportChange}
-      />
+      <CanvasGrid viewport={viewport} immersive={immersive} />
+      {showStatusToolbar ? (
+        <div
+          style={immersive ? immersiveStatusStyle : statusToolbarStyle}
+          data-canvas-no-zoom
+        >
+          <button type="button" onClick={fitToContent} style={immersive ? immersiveToolbarButtonStyle : toolbarButtonStyle}>适应</button>
+          <input
+            aria-label="画布缩放"
+            type="range"
+            min={20}
+            max={180}
+            value={Math.round(viewport.k * 100)}
+            onChange={(event) => {
+              const nextK = Number(event.target.value) / 100
+              const rect = containerRef.current?.getBoundingClientRect()
+              if (!rect) {
+                onViewportChange({ ...viewport, k: nextK })
+                return
+              }
+              const centerX = rect.width / 2
+              const centerY = rect.height / 2
+              const worldX = (centerX - viewport.x) / viewport.k
+              const worldY = (centerY - viewport.y) / viewport.k
+              onViewportChange({
+                x: centerX - worldX * nextK,
+                y: centerY - worldY * nextK,
+                k: nextK,
+              })
+            }}
+            style={zoomRangeStyle}
+          />
+          <span>{Math.round(viewport.k * 100)}%</span>
+          <span>{nodes.length} 节点</span>
+        </div>
+      ) : null}
+      {showMinimap ? (
+        <CanvasMinimap
+          nodes={nodes}
+          viewport={viewport}
+          containerRef={containerRef}
+          onViewportChange={onViewportChange}
+        />
+      ) : null}
       <svg
         width="100%"
         height="100%"
@@ -396,7 +432,7 @@ export default function InfiniteCanvasSurface({
       >
         <defs>
           <marker id="canvas-arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
-            <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--textTertiary, var(--textSecondary))" />
+            <path d="M 0 0 L 10 5 L 0 10 z" fill={immersive ? 'rgba(232,226,216,0.58)' : 'var(--textTertiary, var(--textSecondary))'} />
           </marker>
         </defs>
         {connections.map((connection) => {
@@ -406,11 +442,11 @@ export default function InfiniteCanvasSurface({
             <path
               key={connection.id}
               d={path}
-              stroke="var(--primary)"
-              strokeWidth={2}
+              stroke={immersive ? 'rgba(232,226,216,0.58)' : 'var(--primary)'}
+              strokeWidth={immersive ? 1.6 : 2}
               fill="none"
               markerEnd="url(#canvas-arrow)"
-              opacity={0.72}
+              opacity={immersive ? 0.82 : 0.72}
             />
           )
         })}
@@ -439,39 +475,10 @@ export default function InfiniteCanvasSurface({
               minHeight: node.height,
               cursor: draggingNodeId === node.id ? 'grabbing' : 'grab',
               transform: selectedSet.has(node.id) ? 'translateY(-1px)' : undefined,
+              transition: 'transform 180ms cubic-bezier(0.16, 1, 0.3, 1)',
             }}
           >
             {renderNode(node, { selected: selectedSet.has(node.id), dragging: draggingNodeId === node.id })}
-            <button
-              type="button"
-              data-canvas-no-drag
-              data-canvas-open-node={node.id}
-              aria-label={`配置 ${node.title}`}
-              onPointerDown={(event) => {
-                event.stopPropagation()
-                event.preventDefault()
-              }}
-              onPointerUp={(event) => {
-                event.stopPropagation()
-                event.preventDefault()
-                onSelectNodes?.([node.id])
-                onOpenNode?.(node)
-              }}
-              onMouseDown={(event) => {
-                event.stopPropagation()
-                event.preventDefault()
-                onSelectNodes?.([node.id])
-                onOpenNode?.(node)
-              }}
-              onClick={(event) => {
-                event.stopPropagation()
-                onSelectNodes?.([node.id])
-                onOpenNode?.(node)
-              }}
-              style={openNodeButtonStyle}
-            >
-              配置
-            </button>
             {selectedSet.has(node.id) ? (
               <div
                 data-canvas-no-drag
@@ -569,7 +576,7 @@ function CanvasMinimap({
   )
 }
 
-function CanvasGrid({ viewport }: { viewport: CanvasViewport }) {
+function CanvasGrid({ viewport, immersive = false }: { viewport: CanvasViewport; immersive?: boolean }) {
   const size = GRID_SIZE * viewport.k
   const x = viewport.x % size
   const y = viewport.y % size
@@ -579,9 +586,11 @@ function CanvasGrid({ viewport }: { viewport: CanvasViewport }) {
         position: 'absolute',
         inset: 0,
         pointerEvents: 'none',
-        opacity: 0.45,
+        opacity: immersive ? 1 : 0.45,
         backgroundImage:
-          'linear-gradient(var(--borderLight) 1px, transparent 1px), linear-gradient(90deg, var(--borderLight) 1px, transparent 1px)',
+          immersive
+            ? 'linear-gradient(rgba(255,255,255,0.045) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.045) 1px, transparent 1px)'
+            : 'linear-gradient(var(--borderLight) 1px, transparent 1px), linear-gradient(90deg, var(--borderLight) 1px, transparent 1px)',
         backgroundSize: `${size}px ${size}px`,
         backgroundPosition: `${x}px ${y}px`,
       }}
@@ -597,6 +606,55 @@ const toolbarButtonStyle: React.CSSProperties = {
   cursor: 'pointer',
   fontSize: 12,
   padding: '2px 8px',
+}
+
+const statusToolbarStyle: React.CSSProperties = {
+  position: 'absolute',
+  left: 12,
+  bottom: 12,
+  zIndex: 5,
+  display: 'flex',
+  gap: 8,
+  alignItems: 'center',
+  padding: '6px 8px',
+  borderRadius: 8,
+  border: '1px solid var(--border)',
+  background: 'var(--bgCard)',
+  color: 'var(--textSecondary)',
+  fontSize: 12,
+}
+
+const immersiveStatusStyle: React.CSSProperties = {
+  position: 'absolute',
+  left: 20,
+  bottom: 20,
+  zIndex: 5,
+  display: 'flex',
+  gap: 10,
+  alignItems: 'center',
+  padding: '10px 12px',
+  borderRadius: 12,
+  border: '1px solid rgba(255,255,255,0.12)',
+  background: 'rgba(36,33,30,0.88)',
+  color: 'rgba(242,238,230,0.72)',
+  boxShadow: '0 18px 40px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.06)',
+  backdropFilter: 'blur(14px)',
+  fontSize: 12,
+}
+
+const immersiveToolbarButtonStyle: React.CSSProperties = {
+  border: '1px solid rgba(255,255,255,0.12)',
+  borderRadius: 9,
+  background: 'rgba(255,255,255,0.06)',
+  color: 'rgba(242,238,230,0.86)',
+  cursor: 'pointer',
+  fontSize: 12,
+  padding: '4px 9px',
+}
+
+const zoomRangeStyle: React.CSSProperties = {
+  width: 92,
+  accentColor: '#f2eee6',
 }
 
 const minimapStyle: React.CSSProperties = {
@@ -624,20 +682,4 @@ const resizeHandleStyle: React.CSSProperties = {
   border: '2px solid var(--bgCard)',
   background: 'var(--primary)',
   cursor: 'nwse-resize',
-}
-
-const openNodeButtonStyle: React.CSSProperties = {
-  position: 'absolute',
-  right: 8,
-  top: 8,
-  zIndex: 2,
-  border: '1px solid var(--border)',
-  borderRadius: 6,
-  background: 'var(--bgElevated)',
-  color: 'var(--textPrimary)',
-  cursor: 'pointer',
-  fontSize: 11,
-  lineHeight: 1,
-  padding: '5px 7px',
-  boxShadow: 'var(--shadowCard)',
 }

@@ -28,6 +28,20 @@
 - [x] 13.4 Send selected image/asset references as canonical image generation reference fields and collection metadata.
 - [x] 13.5 Resolve `reference_asset_ids` through Asset Hub image representations before image generation.
 - [x] 13.6 Align canvas node workflow with upstream `basketikun/infinite-canvas`: image nodes are first-class media containers, text/prompt/image/asset nodes can create linked generation config nodes, image nodes can store selectable prompt references, and successful image generation appends linked image result nodes.
+- [x] 13.7 Make asset insertion media-aware inside the canvas: image assets become image nodes, non-image assets stay context nodes, and only image-like assets feed image generation references.
+- [x] 13.8 Redesign the canvas chrome into an immersive workspace with floating top bars, bottom tool dock, selected-node HUD and hidden side panels.
+- [x] 13.9 Add visible node input/output variable chips on cards and selected-node HUD, including generation mode labels.
+- [x] 13.10 Add an inline image-generation composer on generation nodes with prompt editing, prompt-reference picker access, backend selection, size selection and run action.
+- [x] 13.11 Add prompt-reference entry and provenance display on image nodes, and carry prompt reference metadata through generated image result nodes.
+- [x] 13.12 Keep the selected-node HUD as a compact inspector and action surface, with the right drawer as advanced fallback only.
+- [x] 13.13 Move common editing into node cards themselves, so text, prompt, image, LLM and search nodes can be edited directly on canvas like the reference project.
+- [x] 13.14 Show latest run status, output and errors inline on node cards and selected-node HUD, with copy support.
+- [x] 13.15 Polish node-card visual hierarchy with consistent headers, calmer selected state, unified action rows and lower-noise output blocks.
+- [x] 13.16 Use `/images/backends` for canvas image-generation model choices, persist backend+model on image-generation nodes, and send both values when running nodes.
+- [x] 13.17 Add workflow-style upstream execution planning: selected-node HUD shows the dependency run plan and can run upstream nodes before the selected target, stopping on cycles, missing nodes or failed steps.
+- [x] 13.18 Keep image-generation model selection visible and stable: node-card and drawer pickers show backend/model labels, drawer edits patch the latest node metadata, and run output records the actual provider/model used.
+- [x] 13.19 Add workflow-style input mapping: each node can exclude or re-enable upstream inputs, cards/HUD show only active inputs, and runs persist an input snapshot for debugging.
+- [x] 13.20 Persist workflow-chain traces on the target node and show per-step queued/running/success/error status, input snapshots, output summaries and duration in the selected-node HUD.
 
 ## Phase 4: Project integration
 

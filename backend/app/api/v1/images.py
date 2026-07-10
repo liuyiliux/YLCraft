@@ -18,6 +18,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.task_queue import TaskStatus, get_task_queue
 from app.db.models.asset_hub import AssetNode
@@ -73,6 +74,21 @@ async def _create_generated_image_asset_hub(
         lineage=lineage,
     )
     return result.node_id
+
+
+async def _try_create_generated_image_asset_hub(*, context: str, **kwargs) -> str:
+    """Persist a generated image without leaking a failed DB transaction upstream."""
+    from app.db.database import get_async_session
+
+    try:
+        async with get_async_session() as session:
+            async with session.begin_nested():
+                return await _create_generated_image_asset_hub(session, **kwargs)
+    except SQLAlchemyError as exc:
+        logger.warning("%s: failed to save generated image to Asset Hub: %s", context, exc)
+    except Exception as exc:
+        logger.warning("%s: failed to save generated image to Asset Hub: %s", context, exc)
+    return ""
 
 
 class ImageGenerateRequest(BaseModel):
@@ -507,42 +523,36 @@ async def generate_image(req: ImageGenerateRequest):
             local_paths = result.all_local_paths or ([result.local_path] if result.local_path else [])
             if local_paths:
                 try:
-                    from app.db.database import get_async_session
-                    async with get_async_session() as session:
-                        for idx, local_path in enumerate(local_paths):
-                            urls = result.urls or ([result.url] if result.url else [])
-                            asset_hub_node_id = ""
-                            try:
-                                asset_hub_node_id = await _create_generated_image_asset_hub(
-                                    session,
-                                    image_path=str(local_path),
-                                    prompt=req.prompt,
-                                    provider=result.provider or "",
-                                    model=result.model or "",
-                                    source_url=urls[idx] if idx < len(urls) else (result.url or ""),
-                                    negative_prompt=req.negative_prompt or "",
-                                    size=req.size or "1024x1024",
-                                    seed=result.seed,
-                                    generation_params={
-                                        "steps": req.steps,
-                                        "cfg_scale": req.cfg_scale,
-                                        "sampler": req.sampler or "euler",
-                                        "lora": req.lora or "",
-                                        "controlnet": req.controlnet or "",
-                                        "image_index": idx,
-                                        "reference_images_count": len(reference_images),
-                                        "reference_image_collection": req.reference_image_collection or [],
-                                        "prompt_reference_id": req.prompt_reference_id or "",
-                                        "prompt_reference_source_id": req.prompt_reference_source_id or "",
-                                        "prompt_reference_title": req.prompt_reference_title or "",
-                                    },
-                                    lineage=_generation_lineage_from_request(req),
-                                )
-                            except Exception as hub_error:
-                                logger.warning(f"Failed to save image to Asset Hub: {hub_error}")
-                            if asset_hub_node_id:
-                                asset_hub_node_ids.append(asset_hub_node_id)
-                                asset_ids.append(asset_hub_node_id)
+                    for idx, local_path in enumerate(local_paths):
+                        urls = result.urls or ([result.url] if result.url else [])
+                        asset_hub_node_id = await _try_create_generated_image_asset_hub(
+                            context="generate_image",
+                            image_path=str(local_path),
+                            prompt=req.prompt,
+                            provider=result.provider or "",
+                            model=result.model or "",
+                            source_url=urls[idx] if idx < len(urls) else (result.url or ""),
+                            negative_prompt=req.negative_prompt or "",
+                            size=req.size or "1024x1024",
+                            seed=result.seed,
+                            generation_params={
+                                "steps": req.steps,
+                                "cfg_scale": req.cfg_scale,
+                                "sampler": req.sampler or "euler",
+                                "lora": req.lora or "",
+                                "controlnet": req.controlnet or "",
+                                "image_index": idx,
+                                "reference_images_count": len(reference_images),
+                                "reference_image_collection": req.reference_image_collection or [],
+                                "prompt_reference_id": req.prompt_reference_id or "",
+                                "prompt_reference_source_id": req.prompt_reference_source_id or "",
+                                "prompt_reference_title": req.prompt_reference_title or "",
+                            },
+                            lineage=_generation_lineage_from_request(req),
+                        )
+                        if asset_hub_node_id:
+                            asset_hub_node_ids.append(asset_hub_node_id)
+                            asset_ids.append(asset_hub_node_id)
                     logger.info(f"Image saved to asset library: {local_paths}")
                 except Exception as e:
                     logger.warning(f"Failed to save image to asset library: {e}")
@@ -678,61 +688,55 @@ async def poll_image_task(
                 local_paths = result.all_local_paths or ([result.local_path] if result.local_path else [])
                 if local_paths:
                     try:
-                        from app.db.database import get_async_session
-
                         await queue.append_event(
                             task_id,
                             "download_started",
                             "开始保存生成图片",
                             data={"file_count": len(local_paths)},
                         )
-                        async with get_async_session() as session:
-                            urls = result.urls or ([result.url] if result.url else [])
-                            for idx, local_path in enumerate(local_paths):
-                                asset_hub_node_id = ""
-                                try:
-                                    asset_hub_node_id = await _create_generated_image_asset_hub(
-                                        session,
-                                        image_path=str(local_path),
-                                        prompt=payload.get("prompt", ""),
-                                        provider=result.provider or "",
-                                        model=result.model or "",
-                                        source_url=urls[idx] if idx < len(urls) else (result.url or ""),
-                                        negative_prompt=payload.get("negative_prompt", ""),
-                                        size=payload.get("size", "1024x1024"),
-                                        seed=result.seed,
-                                        generation_params={
-                                            "steps": payload.get("steps"),
-                                            "cfg_scale": payload.get("cfg_scale"),
-                                            "sampler": payload.get("sampler", "euler"),
-                                            "lora": payload.get("lora", ""),
-                                            "controlnet": payload.get("controlnet", ""),
-                                            "image_index": idx,
-                                            "reference_images_count": len(payload.get("reference_images") or []),
-                                            "reference_image_collection": payload.get("reference_image_collection") or [],
-                                            "prompt_reference_id": payload.get("prompt_reference_id", ""),
-                                            "prompt_reference_source_id": payload.get("prompt_reference_source_id", ""),
-                                            "prompt_reference_title": payload.get("prompt_reference_title", ""),
-                                        },
-                                        lineage=_generation_lineage_from_payload(
-                                            payload,
-                                            extra={
-                                                "task_id": task_id,
-                                                "external_task_id": external_task_id,
-                                            },
-                                        ),
-                                    )
-                                except Exception as hub_error:
-                                    logger.warning(f"Failed to save async image to Asset Hub: {hub_error}")
-                                if asset_hub_node_id:
-                                    asset_hub_node_ids.append(asset_hub_node_id)
-                                    asset_ids.append(asset_hub_node_id)
-                                await queue.append_event(
-                                    task_id,
-                                    "asset_saved",
-                                    "生成图片已入素材库",
-                                    data={"asset_id": asset_hub_node_id, "asset_hub_node_id": asset_hub_node_id, "image_index": idx},
-                                )
+                        urls = result.urls or ([result.url] if result.url else [])
+                        for idx, local_path in enumerate(local_paths):
+                            asset_hub_node_id = await _try_create_generated_image_asset_hub(
+                                context="poll_image_task",
+                                image_path=str(local_path),
+                                prompt=payload.get("prompt", ""),
+                                provider=result.provider or "",
+                                model=result.model or "",
+                                source_url=urls[idx] if idx < len(urls) else (result.url or ""),
+                                negative_prompt=payload.get("negative_prompt", ""),
+                                size=payload.get("size", "1024x1024"),
+                                seed=result.seed,
+                                generation_params={
+                                    "steps": payload.get("steps"),
+                                    "cfg_scale": payload.get("cfg_scale"),
+                                    "sampler": payload.get("sampler", "euler"),
+                                    "lora": payload.get("lora", ""),
+                                    "controlnet": payload.get("controlnet", ""),
+                                    "image_index": idx,
+                                    "reference_images_count": len(payload.get("reference_images") or []),
+                                    "reference_image_collection": payload.get("reference_image_collection") or [],
+                                    "prompt_reference_id": payload.get("prompt_reference_id", ""),
+                                    "prompt_reference_source_id": payload.get("prompt_reference_source_id", ""),
+                                    "prompt_reference_title": payload.get("prompt_reference_title", ""),
+                                },
+                                lineage=_generation_lineage_from_payload(
+                                    payload,
+                                    extra={
+                                        "task_id": task_id,
+                                        "external_task_id": external_task_id,
+                                    },
+                                ),
+                            )
+                            if asset_hub_node_id:
+                                asset_hub_node_ids.append(asset_hub_node_id)
+                                asset_ids.append(asset_hub_node_id)
+                            await queue.append_event(
+                                task_id,
+                                "asset_saved",
+                                "生成图片已入素材库" if asset_hub_node_id else "生成图片入库失败，已保留生成结果",
+                                level="info" if asset_hub_node_id else "warning",
+                                data={"asset_id": asset_hub_node_id, "asset_hub_node_id": asset_hub_node_id, "image_index": idx},
+                            )
                         await queue.append_event(
                             task_id,
                             "download_done",
@@ -1185,8 +1189,6 @@ async def batch_retry_endpoint(req: BatchRetryRequest):
     复用 generate_image 逻辑，返回新的图片 URL。
     """
     from app.services.ai.types import ImageGenerationRequest
-    from app.db.database import get_async_session
-
     manager = get_ai_service()
     if not manager.is_loaded():
         raise HTTPException(status_code=503, detail="AIService 未初始化")
@@ -1207,31 +1209,24 @@ async def batch_retry_endpoint(req: BatchRetryRequest):
             # 自动入库到资产库
             asset_hub_node_id = ""
             if result.local_path:
-                try:
-                    async with get_async_session() as session:
-                        try:
-                            asset_hub_node_id = await _create_generated_image_asset_hub(
-                                session,
-                                image_path=str(result.local_path),
-                                prompt=req.prompt,
-                                provider=result.provider or "",
-                                model=result.model or "",
-                                source_url=result.url or "",
-                                size=req.size or "1024x1024",
-                                seed=result.seed,
-                                lineage={
-                                    "topic": req.topic or "",
-                                    "template_id": req.template_id or "",
-                                    "outline_title": req.outline_title or "",
-                                    "outline_copywriting": req.outline_copywriting or "",
-                                    "page_type": req.page_type or "",
-                                    "content_platform": req.platform or "",
-                                },
-                            )
-                        except Exception as hub_error:
-                            logger.warning(f"Failed to save retry image to Asset Hub: {hub_error}")
-                except Exception as e:
-                    logger.warning(f"Failed to save retry image to asset library: {e}")
+                asset_hub_node_id = await _try_create_generated_image_asset_hub(
+                    context="batch_retry_endpoint",
+                    image_path=str(result.local_path),
+                    prompt=req.prompt,
+                    provider=result.provider or "",
+                    model=result.model or "",
+                    source_url=result.url or "",
+                    size=req.size or "1024x1024",
+                    seed=result.seed,
+                    lineage={
+                        "topic": req.topic or "",
+                        "template_id": req.template_id or "",
+                        "outline_title": req.outline_title or "",
+                        "outline_copywriting": req.outline_copywriting or "",
+                        "page_type": req.page_type or "",
+                        "content_platform": req.platform or "",
+                    },
+                )
 
             return BatchRetryResponse(
                 success=True,

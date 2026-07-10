@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import Session
 
+from app.api.v1 import images as images_api
 from app.api.v1 import image_prompts as image_prompts_api
 from app.api.v1.images import (
     ImageGenerateRequest,
@@ -287,3 +291,50 @@ def test_image_generation_lineage_includes_prompt_reference_metadata():
     assert payload_lineage["prompt_reference_source_id"] == "source-2"
     assert payload_lineage["prompt_reference_title"] == "Cyber corner"
     assert payload_lineage["task_id"] == "task-1"
+
+
+@pytest.mark.asyncio
+async def test_generated_image_asset_hub_save_rolls_back_failed_transaction(monkeypatch):
+    from app.db import database
+
+    rollbacks: list[int] = []
+
+    class FakeNestedTransaction:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeSession:
+        def begin_nested(self):
+            return FakeNestedTransaction()
+
+        async def rollback(self):
+            rollbacks.append(1)
+
+    async def fail_create_asset(*args, **kwargs):
+        raise SQLAlchemyError("broken transaction")
+
+    @asynccontextmanager
+    async def fake_get_async_session():
+        session = FakeSession()
+        try:
+            yield session
+        except Exception:
+            await session.rollback()
+            raise
+
+    monkeypatch.setattr(database, "get_async_session", fake_get_async_session)
+    monkeypatch.setattr(images_api, "_create_generated_image_asset_hub", fail_create_asset)
+
+    node_id = await images_api._try_create_generated_image_asset_hub(
+        context="test",
+        image_path="generated.png",
+        prompt="demo",
+        provider="test-provider",
+        model="test-model",
+    )
+
+    assert node_id == ""
+    assert rollbacks == [1]
