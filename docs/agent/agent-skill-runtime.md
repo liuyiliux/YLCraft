@@ -108,6 +108,8 @@ This avoids dumping every skill body into every conversation.
 
 Agent tools are internal APIs. When a tool category, name, input, output type or risk level changes, update tests and this guide.
 
+Canvas tool contract: `apply_creative_canvas_operations` accepts `connect_nodes` only when the connection supplies `fromNodeId`, `fromPortId`, `toNodeId`, and `toPortId`. Invalid connection operations are skipped rather than persisted.
+
 Current image prompt reference tools:
 
 - `list_image_prompt_sources`: `read`, lists configured prompt-library sources and sync status.

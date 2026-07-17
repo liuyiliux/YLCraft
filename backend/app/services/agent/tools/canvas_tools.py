@@ -35,6 +35,9 @@ def _project_canvas_summary(canvas: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _is_runtime_canvas_connection(connection: dict[str, Any]) -> bool:
+    return all(str(connection.get(field) or "").strip() for field in ("fromNodeId", "toNodeId", "fromPortId", "toPortId"))
+
 def _creative_canvas_summary(document: dict[str, Any]) -> dict[str, Any]:
     nodes = document.get("nodes") if isinstance(document.get("nodes"), list) else []
     connections = document.get("connections") if isinstance(document.get("connections"), list) else []
@@ -190,7 +193,7 @@ async def apply_creative_canvas_operations(document_id: str, operations_json: st
             return {"success": False, "error": "canvas document not found", "document_id": document_id}
         document = _canvas_row_to_document(row)
         nodes = list(document.get("nodes") if isinstance(document.get("nodes"), list) else [])
-        connections = list(document.get("connections") if isinstance(document.get("connections"), list) else [])
+        connections = [connection for connection in (document.get("connections") if isinstance(document.get("connections"), list) else []) if isinstance(connection, dict) and _is_runtime_canvas_connection(connection)]
 
         for op in operations:
             if not isinstance(op, dict):
@@ -224,6 +227,9 @@ async def apply_creative_canvas_operations(document_id: str, operations_json: st
             elif op_name == "connect_nodes" and isinstance(op.get("connection"), dict):
                 connection = dict(op["connection"])
                 connection.setdefault("id", f"agent-conn-{uuid4().hex[:10]}")
+                if not _is_runtime_canvas_connection(connection):
+                    skipped += 1
+                    continue
                 connections.append(connection)
                 applied += 1
             elif op_name == "disconnect_nodes" and op.get("connectionId"):

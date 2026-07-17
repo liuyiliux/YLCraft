@@ -922,10 +922,12 @@ export {
 export interface CrawlerResult {
   id: string
   platform: string
+  type?: string
   title: string
   desc: string
   cover: string
   video_url: string
+  images?: string[]
   author: string
   author_id: string
   likes: number
@@ -1381,6 +1383,20 @@ export const saveCanvasDocument = (documentId: string, document: any) =>
 
 export const deleteCanvasDocument = (documentId: string) =>
   request(`/canvas/documents/${documentId}`, { method: 'DELETE' })
+
+export const saveCanvasImageAsset = (data: {
+  image_data_url: string
+  title?: string
+  canvas_document_id?: string
+  canvas_node_id?: string
+  source_node_id?: string
+  source_asset_id?: string
+  operation?: string
+  width?: number
+  height?: number
+  format?: string
+  parameters?: Record<string, unknown>
+}) => request('/canvas/assets/image', { method: 'POST', body: JSON.stringify(data) })
 
 // ===== Image Prompt Reference Library =====
 

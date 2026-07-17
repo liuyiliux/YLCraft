@@ -42,10 +42,12 @@ class CrawlerResult(BaseModel):
     """采集结果项"""
     id: str = Field(..., description="内容ID")
     platform: str = Field(..., description="平台")
+    type: str = Field("video", description="content type: video/image/article/audio")
     title: str = Field("", description="标题")
     desc: Optional[str] = Field(None, description="描述")
     cover: str = Field("", description="封面图URL")
     video_url: str = Field("", description="视频URL")
+    images: list[str] = Field(default_factory=list, description="image URL list")
     author: str = Field("", description="作者")
     author_id: str = Field("", description="作者ID")
     likes: int = Field(0, description="点赞数")
@@ -77,6 +79,19 @@ _crawler_tasks: dict[str, dict] = {}
 # =============================================================================
 # 核心服务类
 # =============================================================================
+
+def crawler_result_asset_type(result: CrawlerResult):
+    """Map crawler content semantics to the matching Asset Hub type."""
+    from app.db.models.asset_hub import AssetType
+
+    content_type = str(result.type or '').strip().lower()
+    if content_type in {'image', 'photo', 'gallery'} or (result.images and not result.video_url):
+        return AssetType.IMAGE
+    if content_type in {'article', 'note', 'text', 'post'}:
+        return AssetType.TEXT
+    if content_type in {'audio', 'music', 'podcast'}:
+        return AssetType.AUDIO
+    return AssetType.VIDEO
 
 class CrawlerService:
     """
@@ -158,6 +173,7 @@ class CrawlerService:
                     result = CrawlerResult(
                         id=item.id,
                         platform=item.platform,
+                        type=item.type,
                         title=item.title,
                         desc=item.desc if item.desc else None,
                         cover=item.cover,
@@ -367,7 +383,7 @@ class CrawlerService:
                     # 创建新素材节点。采集结果多为远端素材卡片，未必有本地文件。
                     node = await node_service.create(
                         name=result.title or "未命名素材",
-                        asset_type=AssetType.VIDEO,
+                        asset_type=crawler_result_asset_type(result),
                         thumbnail_url=result.cover or None,
                         metadata={
                             "source": "crawler",

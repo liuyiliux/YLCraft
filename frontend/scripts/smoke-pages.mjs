@@ -12,6 +12,7 @@ const pages = [
   { route: '/characters', component: 'CharactersPage', file: 'src/pages/characters/index.tsx' },
   { route: '/assets', component: 'AssetsPage', file: 'src/pages/assets/index.tsx' },
   { route: '/settings', component: 'SettingsPage', file: 'src/pages/settings/index.tsx' },
+  { route: '/canvas', component: 'CanvasPage', file: 'src/pages/canvas/index.tsx' },
 ]
 
 const app = read('src/App.tsx')
@@ -46,6 +47,12 @@ for (const needle of agentNeedles) {
   }
 }
 
+const canvas = read('src/pages/canvas/index.tsx')
+for (const needle of ['getImageTask', 'asyncTaskId', 'materializeGenerationResult', 'continueWorkflowAfterAsyncImage', 'resumeWorkflowRef', 'generationOutputImages', 'GenerationResultRail', 'CANVAS_STARTER_TEMPLATE_MENU', 'onRunWorkflow', '媒体选择节点需要先确认至少一项候选结果', "status: 'waiting'"]) {
+  if (!canvas.includes(needle)) {
+    failures.push('Canvas page missing async-generation marker: ' + needle)
+  }
+}
 const agentApi = read('src/api/agent.ts')
 for (const needle of ['getAgentRunLinkedLogs', 'memory-candidates/save', 'memory-candidates/discard']) {
   if (!agentApi.includes(needle)) {

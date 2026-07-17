@@ -7,8 +7,8 @@
 ## Summary
 
 - Router mounts: 46
-- Endpoints: 518
-- Public schema endpoints: 517
+- Endpoints: 519
+- Public schema endpoints: 518
 - Hidden compatibility endpoints: 1
 
 ## Router Mounts
@@ -378,6 +378,7 @@
 | `POST` | `/api/v1/crawler/search-enhanced` | 增强搜索（支持笔记/用户） | `search_enhanced` | `backend/app/api/v1/crawler.py:237` |
 | `GET` | `/api/v1/crawler/tasks/{task_id}` | 查询采集任务状态 | `get_task_status` | `backend/app/api/v1/crawler.py:222` |
 
+`POST /api/v1/crawler/search` 的结果应携带语义 `type`；图片集合使用 `images`，视频地址使用 `video_url`。`POST /api/v1/crawler/import` 以这些字段确定 Asset Hub 类型：图片、视频、图文和音频分别写为 `image`、`video`、`text`、`audio`。画布媒体选择复用此导入边界，不新增平行的素材写入接口。
 ### Crawler — Bilibili
 
 | Method | Path | Summary | Handler | Source |
@@ -412,11 +413,12 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/canvas/documents` | 列出创作画布文档 | `list_canvas_documents` | `backend/app/api/v1/canvas.py:71` |
-| `POST` | `/api/v1/canvas/documents` | 创建创作画布文档 | `create_canvas_document` | `backend/app/api/v1/canvas.py:87` |
-| `GET` | `/api/v1/canvas/documents/{document_id}` | 获取创作画布文档 | `get_canvas_document` | `backend/app/api/v1/canvas.py:111` |
-| `PUT` | `/api/v1/canvas/documents/{document_id}` | 保存创作画布文档 | `save_canvas_document` | `backend/app/api/v1/canvas.py:120` |
-| `DELETE` | `/api/v1/canvas/documents/{document_id}` | 删除创作画布文档 | `delete_canvas_document` | `backend/app/api/v1/canvas.py:149` |
+| `POST` | `/api/v1/canvas/assets/image` | Save processed canvas image to Asset Hub | `save_canvas_image_asset` | `backend/app/api/v1/canvas.py:333` |
+| `GET` | `/api/v1/canvas/documents` | List canvas documents | `list_canvas_documents` | `backend/app/api/v1/canvas.py:245` |
+| `POST` | `/api/v1/canvas/documents` | Create canvas document | `create_canvas_document` | `backend/app/api/v1/canvas.py:261` |
+| `GET` | `/api/v1/canvas/documents/{document_id}` | Get canvas document | `get_canvas_document` | `backend/app/api/v1/canvas.py:285` |
+| `PUT` | `/api/v1/canvas/documents/{document_id}` | Save canvas document | `save_canvas_document` | `backend/app/api/v1/canvas.py:294` |
+| `DELETE` | `/api/v1/canvas/documents/{document_id}` | Delete canvas document | `delete_canvas_document` | `backend/app/api/v1/canvas.py:323` |
 
 ### Creative Projects
 
@@ -507,17 +509,17 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/images/backends` | 可用图像后端列表 | `list_backends` | `backend/app/api/v1/images.py:305` |
-| `POST` | `/api/v1/images/generate` | 生成图片 | `generate_image` | `backend/app/api/v1/images.py:392` |
-| `POST` | `/api/v1/images/generate-batch` | 批量生成多平台图片 | `batch_generate_endpoint` | `backend/app/api/v1/images.py:1255` |
-| `POST` | `/api/v1/images/generate-batch/retry` | 单张图片重生成 | `batch_retry_endpoint` | `backend/app/api/v1/images.py:1181` |
-| `POST` | `/api/v1/images/generate-batch/topics` | 多主题批量生成 | `batch_topics_generate_endpoint` | `backend/app/api/v1/images.py:1288` |
-| `POST` | `/api/v1/images/generate-outline` | 多平台大纲生成 | `generate_outline_endpoint` | `backend/app/api/v1/images.py:1120` |
-| `GET` | `/api/v1/images/platform-templates` | 可用平台/Prompt 模板列表 | `list_platform_templates` | `backend/app/api/v1/images.py:998` |
-| `POST` | `/api/v1/images/platform-templates` | 新增平台模板 | `create_platform_template` | `backend/app/api/v1/images.py:1029` |
-| `PUT` | `/api/v1/images/platform-templates/{template_id}` | 更新平台模板 | `update_platform_template` | `backend/app/api/v1/images.py:1056` |
-| `DELETE` | `/api/v1/images/platform-templates/{template_id}` | 删除平台模板 | `delete_platform_template` | `backend/app/api/v1/images.py:1093` |
-| `GET` | `/api/v1/images/tasks/{task_id}` | 轮询图像生成任务 | `poll_image_task` | `backend/app/api/v1/images.py:581` |
+| `GET` | `/api/v1/images/backends` | 可用图像后端列表 | `list_backends` | `backend/app/api/v1/images.py:321` |
+| `POST` | `/api/v1/images/generate` | 生成图片 | `generate_image` | `backend/app/api/v1/images.py:409` |
+| `POST` | `/api/v1/images/generate-batch` | 批量生成多平台图片 | `batch_generate_endpoint` | `backend/app/api/v1/images.py:1251` |
+| `POST` | `/api/v1/images/generate-batch/retry` | 单张图片重生成 | `batch_retry_endpoint` | `backend/app/api/v1/images.py:1186` |
+| `POST` | `/api/v1/images/generate-batch/topics` | 多主题批量生成 | `batch_topics_generate_endpoint` | `backend/app/api/v1/images.py:1284` |
+| `POST` | `/api/v1/images/generate-outline` | 多平台大纲生成 | `generate_outline_endpoint` | `backend/app/api/v1/images.py:1125` |
+| `GET` | `/api/v1/images/platform-templates` | 可用平台/Prompt 模板列表 | `list_platform_templates` | `backend/app/api/v1/images.py:1003` |
+| `POST` | `/api/v1/images/platform-templates` | 新增平台模板 | `create_platform_template` | `backend/app/api/v1/images.py:1034` |
+| `PUT` | `/api/v1/images/platform-templates/{template_id}` | 更新平台模板 | `update_platform_template` | `backend/app/api/v1/images.py:1061` |
+| `DELETE` | `/api/v1/images/platform-templates/{template_id}` | 删除平台模板 | `delete_platform_template` | `backend/app/api/v1/images.py:1098` |
+| `GET` | `/api/v1/images/tasks/{task_id}` | 轮询图像生成任务 | `poll_image_task` | `backend/app/api/v1/images.py:592` |
 
 ### JianYing
 

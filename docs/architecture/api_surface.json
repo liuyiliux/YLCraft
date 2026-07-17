@@ -3187,6 +3187,22 @@
       "include_in_schema": true
     },
     {
+      "method": "POST",
+      "path": "/api/v1/canvas/assets/image",
+      "router": "canvas",
+      "prefix": "/api/v1/canvas",
+      "local_path": "/assets/image",
+      "tags": [
+        "Creative Canvas"
+      ],
+      "summary": "Save processed canvas image to Asset Hub",
+      "function": "save_canvas_image_asset",
+      "file": "backend/app/api/v1/canvas.py",
+      "line": 333,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
       "method": "GET",
       "path": "/api/v1/canvas/documents",
       "router": "canvas",
@@ -3195,10 +3211,10 @@
       "tags": [
         "Creative Canvas"
       ],
-      "summary": "列出创作画布文档",
+      "summary": "List canvas documents",
       "function": "list_canvas_documents",
       "file": "backend/app/api/v1/canvas.py",
-      "line": 71,
+      "line": 245,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3211,10 +3227,10 @@
       "tags": [
         "Creative Canvas"
       ],
-      "summary": "创建创作画布文档",
+      "summary": "Create canvas document",
       "function": "create_canvas_document",
       "file": "backend/app/api/v1/canvas.py",
-      "line": 87,
+      "line": 261,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3227,10 +3243,10 @@
       "tags": [
         "Creative Canvas"
       ],
-      "summary": "获取创作画布文档",
+      "summary": "Get canvas document",
       "function": "get_canvas_document",
       "file": "backend/app/api/v1/canvas.py",
-      "line": 111,
+      "line": 285,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3243,10 +3259,10 @@
       "tags": [
         "Creative Canvas"
       ],
-      "summary": "保存创作画布文档",
+      "summary": "Save canvas document",
       "function": "save_canvas_document",
       "file": "backend/app/api/v1/canvas.py",
-      "line": 120,
+      "line": 294,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3259,10 +3275,10 @@
       "tags": [
         "Creative Canvas"
       ],
-      "summary": "删除创作画布文档",
+      "summary": "Delete canvas document",
       "function": "delete_canvas_document",
       "file": "backend/app/api/v1/canvas.py",
-      "line": 149,
+      "line": 323,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5550,7 +5566,7 @@
       "summary": "可用图像后端列表",
       "function": "list_backends",
       "file": "backend/app/api/v1/images.py",
-      "line": 305,
+      "line": 321,
       "response_model": "ImageBackendsResponse",
       "include_in_schema": true
     },
@@ -5566,7 +5582,7 @@
       "summary": "生成图片",
       "function": "generate_image",
       "file": "backend/app/api/v1/images.py",
-      "line": 392,
+      "line": 409,
       "response_model": "ImageResponse",
       "include_in_schema": true
     },
@@ -5582,7 +5598,7 @@
       "summary": "批量生成多平台图片",
       "function": "batch_generate_endpoint",
       "file": "backend/app/api/v1/images.py",
-      "line": 1255,
+      "line": 1251,
       "response_model": "BatchGenerateResponse",
       "include_in_schema": true
     },
@@ -5598,7 +5614,7 @@
       "summary": "单张图片重生成",
       "function": "batch_retry_endpoint",
       "file": "backend/app/api/v1/images.py",
-      "line": 1181,
+      "line": 1186,
       "response_model": "BatchRetryResponse",
       "include_in_schema": true
     },
@@ -5614,7 +5630,7 @@
       "summary": "多主题批量生成",
       "function": "batch_topics_generate_endpoint",
       "file": "backend/app/api/v1/images.py",
-      "line": 1288,
+      "line": 1284,
       "response_model": "BatchTopicGenerateResponse",
       "include_in_schema": true
     },
@@ -5630,7 +5646,7 @@
       "summary": "多平台大纲生成",
       "function": "generate_outline_endpoint",
       "file": "backend/app/api/v1/images.py",
-      "line": 1120,
+      "line": 1125,
       "response_model": "GenerateOutlineResponse",
       "include_in_schema": true
     },
@@ -5646,7 +5662,7 @@
       "summary": "可用平台/Prompt 模板列表",
       "function": "list_platform_templates",
       "file": "backend/app/api/v1/images.py",
-      "line": 998,
+      "line": 1003,
       "response_model": "dict",
       "include_in_schema": true
     },
@@ -5662,7 +5678,7 @@
       "summary": "新增平台模板",
       "function": "create_platform_template",
       "file": "backend/app/api/v1/images.py",
-      "line": 1029,
+      "line": 1034,
       "response_model": "dict",
       "include_in_schema": true
     },
@@ -5678,7 +5694,7 @@
       "summary": "更新平台模板",
       "function": "update_platform_template",
       "file": "backend/app/api/v1/images.py",
-      "line": 1056,
+      "line": 1061,
       "response_model": "dict",
       "include_in_schema": true
     },
@@ -5694,7 +5710,7 @@
       "summary": "删除平台模板",
       "function": "delete_platform_template",
       "file": "backend/app/api/v1/images.py",
-      "line": 1093,
+      "line": 1098,
       "response_model": "dict",
       "include_in_schema": true
     },
@@ -5710,7 +5726,7 @@
       "summary": "轮询图像生成任务",
       "function": "poll_image_task",
       "file": "backend/app/api/v1/images.py",
-      "line": 581,
+      "line": 592,
       "response_model": "ImageResponse",
       "include_in_schema": true
     },

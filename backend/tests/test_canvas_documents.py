@@ -140,6 +140,8 @@ async def test_agent_canvas_tools_apply_operations_to_persisted_document(canvas_
                         "id": "conn-agent",
                         "fromNodeId": "node-prompt",
                         "toNodeId": "node-output",
+                        "fromPortId": "prompt",
+                        "toPortId": "context",
                         "relation": "context",
                     },
                 },
@@ -155,3 +157,117 @@ async def test_agent_canvas_tools_apply_operations_to_persisted_document(canvas_
     detail = await canvas_tools.get_creative_canvas_document("canvas-agent-1")
     assert detail["document"]["nodes"][-1]["id"] == "node-output"
     assert detail["document"]["connections"][0]["id"] == "conn-agent"
+
+def test_canvas_documents_api_rejects_connections_without_runtime_ports(canvas_client):
+    document = _document()
+    document["connections"] = [
+        {
+            "id": "conn-invalid",
+            "fromNodeId": "node-prompt",
+            "toNodeId": "node-output",
+        }
+    ]
+
+    response = canvas_client.post("/api/v1/canvas/documents", json={"document": document})
+
+    assert response.status_code == 422
+    assert "fromPortId" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_agent_canvas_tool_skips_connections_without_runtime_ports(canvas_session_factory):
+    with canvas_session_factory() as session:
+        session.add(
+            CanvasDocument(
+                id="canvas-agent-invalid-connection",
+                title="Agent canvas",
+                description="",
+                project_id=None,
+                document_json=_document("canvas-agent-invalid-connection"),
+            )
+        )
+        session.commit()
+
+    result = await canvas_tools.apply_creative_canvas_operations(
+        "canvas-agent-invalid-connection",
+        json.dumps(
+            [{
+                "op": "connect_nodes",
+                "connection": {
+                    "id": "conn-invalid",
+                    "fromNodeId": "node-prompt",
+                    "toNodeId": "node-output",
+                },
+            }]
+        ),
+    )
+
+    assert result["success"] is True
+    assert result["applied_count"] == 0
+    assert result["skipped_count"] == 1
+    assert result["summary"]["connections_count"] == 0
+@pytest.mark.asyncio
+async def test_agent_canvas_tool_cleans_existing_portless_connections(canvas_session_factory):
+    document = _document("canvas-agent-cleanup")
+    document["connections"] = [
+        {
+            "id": "conn-legacy",
+            "fromNodeId": "node-prompt",
+            "toNodeId": "node-output",
+        }
+    ]
+    with canvas_session_factory() as session:
+        session.add(
+            CanvasDocument(
+                id="canvas-agent-cleanup",
+                title="Agent canvas",
+                description="",
+                project_id=None,
+                document_json=document,
+            )
+        )
+        session.commit()
+
+    result = await canvas_tools.apply_creative_canvas_operations(
+        "canvas-agent-cleanup",
+        json.dumps([{"op": "set_viewport", "viewport": {"x": 0, "y": 0, "k": 1}}]),
+    )
+
+    assert result["success"] is True
+    assert result["summary"]["connections_count"] == 0
+
+
+def test_canvas_image_asset_save_accepts_image_payload(canvas_client, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(
+        canvas_api,
+        "_persist_canvas_image_asset",
+        lambda req: captured.update({"request": req}) or {"success": True, "data": {"asset_id": "asset-1"}},
+    )
+    data_url = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL6mQAAAABJRU5ErkJggg=="
+
+    response = canvas_client.post(
+        "/api/v1/canvas/assets/image",
+        json={
+            "image_data_url": data_url,
+            "canvas_document_id": "canvas-local-1",
+            "canvas_node_id": "node-transform",
+            "operation": "crop_square",
+            "width": 1,
+            "height": 1,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["asset_id"] == "asset-1"
+    assert captured["request"].operation == "crop_square"
+
+
+def test_canvas_image_asset_save_rejects_non_image_data(canvas_client):
+    response = canvas_client.post(
+        "/api/v1/canvas/assets/image",
+        json={"image_data_url": "data:text/plain;base64,SGVsbG8gZnJvbSBub24taW1hZ2UgcGF5bG9hZA=="},
+    )
+
+    assert response.status_code == 422
+    assert "PNG, JPEG, and WebP" in response.json()["detail"]

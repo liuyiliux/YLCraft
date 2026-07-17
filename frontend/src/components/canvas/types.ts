@@ -13,7 +13,10 @@ export type CanvasNodeType =
   | 'content'
   | 'llm'
   | 'image_model'
+  | 'image_batch'
+  | 'image_transform'
   | 'platform_search'
+  | 'media_picker'
   | 'agent_output'
   | 'group'
 
@@ -43,6 +46,31 @@ export type CanvasPort = {
   required?: boolean
   multiple?: boolean
   metadata?: Record<string, unknown>
+}
+
+export type CanvasMediaItem = {
+  id: string
+  kind: 'image' | 'video' | 'article'
+  title: string
+  url?: string
+  previewUrl?: string
+  platform?: string
+  author?: string
+  description?: string
+  sourceResultId?: string
+  metadata?: Record<string, unknown>
+}
+
+export type CanvasSearchResultEnvelope = {
+  kind: 'canvas_search_results'
+  query: string
+  platform: string
+  results: Record<string, unknown>[]
+  images: CanvasMediaItem[]
+  videos: CanvasMediaItem[]
+  articles: CanvasMediaItem[]
+  total: number
+  fetchedAt: string
 }
 
 export type CanvasResourceInput = {
@@ -76,11 +104,11 @@ export type CanvasConnection = {
   toNodeId: string
   relation?: 'context' | 'sequence' | 'reference' | 'generation' | 'group' | string
   /**
-   * Legacy optional fields. Current canvas execution resolves upstream
-   * resources from fromNodeId -> toNodeId, matching basketikun/infinite-canvas.
+   * Runtime data contract: a connection maps one declared output to one
+   * declared input. `sourcePath` in metadata may further select a nested field.
    */
-  fromPortId?: string
-  toPortId?: string
+  fromPortId: string
+  toPortId: string
   type?: 'feeds' | 'uses' | 'references' | 'generates' | 'groups' | string
   label?: string
   metadata?: Record<string, unknown>

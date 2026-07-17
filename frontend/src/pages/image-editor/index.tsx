@@ -11,6 +11,7 @@
  */
 
 import { useState, useRef, useCallback, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Card,
   Row,
@@ -66,6 +67,7 @@ import {
   readImageDataUrlInfo,
   type ImageDataUrlInfo,
 } from '../../utils/base64Image'
+import { consumeCanvasImageEditorLaunch, enqueueCanvasImageEditorResult, type CanvasImageEditorLaunch } from '../../components/canvas/bridge'
 
 const { TextArea } = Input
 
@@ -155,6 +157,8 @@ function mimeFromFormat(format: string) {
 // ======================== 主组件 ========================
 export default function ImageEditorPage() {
   const { theme: THEME } = useTheme()
+  const navigate = useNavigate()
+  const [canvasReturnTarget, setCanvasReturnTarget] = useState<CanvasImageEditorLaunch | null>(null)
 
   // ---- 图片状态 ----
   const [originalSrc, setOriginalSrc] = useState<string>('')
@@ -259,6 +263,18 @@ export default function ImageEditorPage() {
       loadImageToCanvas(originalSrc)
     }
   }, [originalSrc])
+
+  useEffect(() => {
+    const launch = consumeCanvasImageEditorLaunch()
+    if (!launch) return
+    setCanvasReturnTarget(launch)
+    setOriginalSrc(launch.imageUrl)
+    setOriginalFormat('png')
+    setProcessedGifUrl('')
+    setHistory([])
+    historyIdx.current = -1
+    message.success('Canvas image loaded into the editor.')
+  }, [])
 
   const handleUpload = async (file: File) => {
     const url = URL.createObjectURL(file)
@@ -974,6 +990,26 @@ export default function ImageEditorPage() {
     }
   }
   
+  const returnToCanvas = () => {
+    const canvas = mainCanvasRef.current
+    if (!canvas || !canvasReturnTarget) {
+      message.warning('There is no canvas editing result to return.')
+      return
+    }
+    const dataUrl = canvasToImageDataUrl(canvas, mimeFromFormat(originalFormat), 1)
+    enqueueCanvasImageEditorResult({
+      documentId: canvasReturnTarget.documentId,
+      sourceNodeId: canvasReturnTarget.sourceNodeId,
+      sourceAssetId: canvasReturnTarget.sourceAssetId,
+      sourceTitle: canvasReturnTarget.sourceTitle,
+      imageDataUrl: dataUrl,
+      width: canvas.width,
+      height: canvas.height,
+      createdAt: new Date().toISOString(),
+    })
+    navigate('/canvas')
+  }
+
   // 下载原始 GIF
   const handleDownloadOriginal = () => {
     if (originalFormat !== 'gif') {
@@ -1570,7 +1606,12 @@ export default function ImageEditorPage() {
                     {processedGifUrl && <Tag color="green">GIF 已处理</Tag>}
                   </>
                 )}
-                <Button size="small" type="primary" icon={<DownloadOutlined />} onClick={handleDownload}>
+                {canvasReturnTarget ? (
+                  <Button size="small" type="primary" icon={<PictureOutlined />} onClick={returnToCanvas}>
+                    返回画布
+                  </Button>
+                ) : null}
+                                <Button size="small" type="primary" icon={<DownloadOutlined />} onClick={handleDownload}>
                   {originalFormat === 'gif' ? '下载带水印' : '下载图片'}
                 </Button>
               </Space>

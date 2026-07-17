@@ -59,3 +59,4 @@ backend/data/cookies/
 .gitignore
 backend/.env
 backend/app/storage/images/
+.codex-temp/
