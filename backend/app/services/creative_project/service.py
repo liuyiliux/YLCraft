@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 import uuid
 from datetime import datetime
@@ -799,8 +800,12 @@ class CreativeProjectService:
     ) -> ProjectContent:
         project = self._require_project(project_id)
         step = self._normalize_writer_room_step(step)
+        # Reset the tracked generation log so a previous step's log cannot leak
+        # into this step's binding.
+        self._last_generation_log = None
         context = self._writer_room_context(
             project_id=project_id,
+            step=step,
             chapter_number=chapter_number,
             source_content_id=content_id,
             selected_text=selected_text,
@@ -835,6 +840,36 @@ class CreativeProjectService:
             model=model,
             template_meta=template_meta,
         )
+        if step == "prose_humanized":
+            source_word_count = int(context.get("source_word_count") or 0)
+            output_text = str(data.get("content") or "")
+            output_word_count = len("".join(output_text.split()))
+            minimum_word_count = math.ceil(source_word_count * 0.9)
+            # Short test fixtures and intentional micro-edits should not pay for a
+            # second provider call.  For a real chapter, retry once with an
+            # explicit correction instead of accepting a summary masquerading as
+            # a polished chapter.
+            if source_word_count >= 600 and output_word_count < minimum_word_count:
+                retry_prompt = f"""{prompt}
+
+长度复核：上一版润色稿只有约 {output_word_count} 字，低于源稿约 {source_word_count} 字的最低保留线 {minimum_word_count} 字。
+请重新输出完整正文；保留所有场景、信息和戏剧动作，扩写被压缩的段落，不要用摘要替代正文。"""
+                data = await self._generate_json(
+                    project=project,
+                    stage=step,
+                    prompt=retry_prompt,
+                    system_prompt=system_prompt,
+                    schema_model=schema_model,
+                    provider=provider,
+                    model=model,
+                    template_meta=template_meta,
+                )
+                data["length_guard"] = {
+                    "source_word_count": source_word_count,
+                    "minimum_word_count": minimum_word_count,
+                    "first_output_word_count": output_word_count,
+                    "retried": True,
+                }
         data["chapter_number"] = chapter_number
         if step == "prose_review":
             data = self._normalize_writer_room_review(data)
@@ -843,6 +878,12 @@ class CreativeProjectService:
             data["word_count"] = data.get("word_count") or len(text)
         else:
             text = self._writer_room_text(step, data)
+
+        # The final successful generation log produced by _generate_json(). If a
+        # humanization length retry occurred, the earlier short response's log
+        # is left trace-only (content_id stays null) and only this final log is
+        # bound to the candidate.
+        final_log = getattr(self, "_last_generation_log", None)
 
         content = self._create_content(
             project_id=project_id,
@@ -855,13 +896,21 @@ class CreativeProjectService:
                 "writer_room": {
                     "step": step,
                     "source_content_id": content_id or context.get("source_content_id") or "",
+                    "source_content_type": context.get("source_content_type") or "",
+                    "source_content_version": context.get("source_content_version") or 0,
+                    "source_word_count": context.get("source_word_count") or 0,
                     "instruction": instruction or "",
                     "selected_text": selected_text or "",
+                    "generation_log_id": final_log.id if final_log is not None else "",
                 },
             },
             text_content=text,
             source_content_id=content_id or context.get("source_content_id"),
         )
+        # Backfill the candidate id onto the final generation log so the
+        # front-end can match the log to exactly this candidate.
+        if final_log is not None:
+            final_log.content_id = content.id
         project.current_stage = "writer_room"
         project.updated_at = datetime.now()
         self.session.add(project)
@@ -3224,7 +3273,7 @@ class CreativeProjectService:
                 self.session.commit()
                 raise ValueError(validation_error) from repair_exc
 
-        self._log_generation(
+        log = self._log_generation(
             project_id=project.id,
             stage=stage,
             status=status,
@@ -3236,6 +3285,11 @@ class CreativeProjectService:
             normalized=normalized,
             validation_error=validation_error,
         )
+        # Track the final successful generation log so the caller (e.g. the
+        # Writer Room step) can bind it to the freshly created candidate. The
+        # log id is assigned on the Python side via default_factory, so it is
+        # available immediately without flushing the session.
+        self._last_generation_log = log
         return normalized
 
     def _default_system_prompt(self) -> str:
@@ -3623,7 +3677,7 @@ class CreativeProjectService:
         raw_response: str,
         normalized: dict[str, Any],
         validation_error: str,
-    ) -> None:
+    ) -> ProjectGenerationLog:
         log = ProjectGenerationLog(
             project_id=project_id,
             stage=stage,
@@ -3637,6 +3691,7 @@ class CreativeProjectService:
             validation_error=validation_error or "",
         )
         self.session.add(log)
+        return log
 
     def _jsonable_request_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         data = dict(payload)
@@ -4047,6 +4102,7 @@ class CreativeProjectService:
         self,
         *,
         project_id: str,
+        step: str,
         chapter_number: int,
         source_content_id: str | None = None,
         selected_text: str | None = None,
@@ -4071,7 +4127,16 @@ class CreativeProjectService:
                 current_chapter = item
                 break
 
-        prose_source = source or humanized or draft or novel_body
+        # A second humanization pass should normally return to the draft instead of
+        # repeatedly polishing its own previous output.  The latter is prone to
+        # shrinking the chapter and makes reruns look almost identical to users.
+        source_candidates = {
+            "prose_humanized": [source, draft, novel_body],
+            "prose_review": [source, humanized, draft, novel_body],
+            "prose_rewrite": [source, humanized, draft, novel_body],
+        }.get(step, [source, humanized, draft, novel_body])
+        prose_source = next((item for item in source_candidates if item is not None), None)
+        source_text = prose_source.text_content if prose_source else ""
         return {
             "outline": outline,
             "chapter_plan": chapter_plan,
@@ -4087,7 +4152,9 @@ class CreativeProjectService:
             "prose_review": loads_json(review.data_json) if review else {},
             "source_content_id": prose_source.id if prose_source else (chapter_outline.id if chapter_outline else ""),
             "source_content_type": prose_source.content_type if prose_source else (chapter_outline.content_type if chapter_outline else ""),
-            "source_text": prose_source.text_content if prose_source else "",
+            "source_content_version": prose_source.version if prose_source else (chapter_outline.version if chapter_outline else 0),
+            "source_word_count": len("".join(source_text.split())),
+            "source_text": source_text,
             "source_json": loads_json(prose_source.data_json) if prose_source else {},
             "selected_text": selected_text or "",
             "previous_context": self._previous_chapter_context(project_id, chapter_number),
@@ -4114,6 +4181,9 @@ class CreativeProjectService:
             "character_rehearsal_json": dumps_json(context.get("character_rehearsal")),
             "source_json": dumps_json(context.get("source_json")),
             "source_text": context.get("source_text") or context.get("novel_body_text") or "",
+            "source_content_type": context.get("source_content_type") or "",
+            "source_content_version": context.get("source_content_version") or 0,
+            "source_word_count": context.get("source_word_count") or 0,
             "selected_text": selected_text or context.get("selected_text") or "",
             "prose_review_json": dumps_json(context.get("prose_review")),
             "previous_context": context.get("previous_context") or "暂无",
@@ -4219,15 +4289,18 @@ class CreativeProjectService:
             return common + f"""待润色正文：
 {variables["source_text"]}
 
+来源：{variables["source_content_type"]} v{variables["source_content_version"]}，约 {variables["source_word_count"]} 字
+
 用户额外要求：
 {instruction or "无"}
 
 请作为人味润色编辑，重写正文并输出 JSON。
 要求：
-1. 保留剧情事实和角色关系，但让行文更像真人作者。
+1. 保留剧情事实、角色关系、场景顺序、有效信息和原有篇幅，不得把完整章节压缩成摘要。
 2. 删掉解释性废话，把直接情绪改成动作、停顿、视线、物件互动和对白潜台词。
 3. 改掉重复句式和万能比喻；句长要有变化，段落要有呼吸。
-4. 不要只给建议，直接输出完整润色后的正文。
+4. 除非用户明确要求增删篇幅，润色后的 content 必须保持在源稿字数的 90%-110% 之间；信息密度可以提升，但不能靠删戏压缩。
+5. 不要只给建议，直接输出完整润色后的正文。
 格式：{{"chapter_number": {chapter_number}, "title": "章节标题", "content": "完整润色正文", "word_count": 0, "continuity_notes": ["备注"]}}"""
         if step == "prose_review":
             return common + f"""待审稿正文：

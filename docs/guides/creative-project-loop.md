@@ -122,6 +122,19 @@ Current editor behavior:
 - Locked chapter rows are stored with `status: "locked"` and can be preserved when regenerating the chapter plan.
 - Both editors save through the existing project update API, so `CreativeProject.outline` and `CreativeProject.chapter_plan` remain the project-level facts used by later generation stages.
 
+### Novel Writer Room Candidates
+
+The `/story` Writer Room is a candidate-production pipeline, not an automatic overwrite path:
+
+```text
+scene beats -> character rehearsal -> prose draft -> humanized prose -> editorial review -> directed rewrite -> manual promotion
+```
+
+- `按勾选生成候选` runs exactly the selected steps again and creates new candidate versions. It never overwrites the approved `novel_body`.
+- Humanization normally takes the latest prose draft (or the approved body when no draft exists), rather than repeatedly polishing the previous humanized candidate. Its default prompt preserves story facts and targets 90%-110% of the source word count unless the user explicitly requests a length change. For source chapters of at least 600 characters, an output below that lower bound gets one automatic corrective retry instead of being accepted as an over-compressed candidate.
+- Each candidate stores its source content id/type/version and exposes per-step version selection in the Writer Room. Users can compare any candidate with the approved body before promotion.
+- `提升为正文` creates a new `novel_body` version with the candidate as its source. The previous approved body remains in history.
+
 ### Generated Images
 
 Images launched from a project prompt must return to the project and asset library.

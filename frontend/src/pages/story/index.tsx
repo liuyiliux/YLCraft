@@ -140,6 +140,7 @@ interface ProjectContent {
   episode_number?: number
   data: Record<string, any>
   text_content: string
+  source_content_id?: string
   version: number
   is_locked?: boolean
   created_at?: string
@@ -3390,6 +3391,7 @@ export default function StoryPage() {
                         chapters={chapters}
                         activeChapterNumber={activeChapterNumber}
                         onActiveChapterChange={setActiveChapterNumber}
+                        contents={contents}
                         contentForChapter={contentForChapter}
                         logs={generationLogs}
                         templateOptionsByStage={templateOptionsByStage}
@@ -6372,11 +6374,13 @@ function downloadTextFile(filename: string, text: string) {
   URL.revokeObjectURL(url)
 }
 
-function findWriterRoomLog(logs: ProjectGenerationLog[], stage: string, contentId?: string) {
-  return logs.find((log) => {
-    if (contentId && log.content_id === contentId) return true
-    return log.stage === stage
-  })
+function findWriterRoomLog(logs: ProjectGenerationLog[], content?: ProjectContent) {
+  if (!content) return undefined
+  // Only match by the stable candidate->log association. Historical candidates
+  // without a linked log return undefined so the UI can show a clear notice
+  // instead of falling back to another candidate's log by stage.
+  const logId = content.data?.writer_room?.generation_log_id
+  return logs.find((log) => log.content_id === content.id || (logId ? log.id === logId : false))
 }
 
 function reviewIssuesForContent(content?: ProjectContent): WriterRoomReviewIssue[] {
@@ -6580,6 +6584,7 @@ function WriterRoomTab({
   chapters,
   activeChapterNumber,
   onActiveChapterChange,
+  contents,
   contentForChapter,
   logs,
   templateOptionsByStage,
@@ -6599,6 +6604,7 @@ function WriterRoomTab({
   chapters: ChapterPlanItem[]
   activeChapterNumber: number
   onActiveChapterChange: (value: number) => void
+  contents: ProjectContent[]
   contentForChapter: (contentType: string, chapterNumber: number) => ProjectContent | undefined
   logs: ProjectGenerationLog[]
   templateOptionsByStage: Record<string, TemplateOption[]>
@@ -6621,11 +6627,6 @@ function WriterRoomTab({
       contentForChapter(step.value, activeChapterNumber),
     ]),
   ) as Record<string, ProjectContent | undefined>
-  const proseSource =
-    latestByStep.prose_rewrite ||
-    latestByStep.prose_humanized ||
-    latestByStep.prose_draft ||
-    contentForChapter('novel_body', activeChapterNumber)
   const canPromote = latestByStep.prose_rewrite || latestByStep.prose_humanized || latestByStep.prose_draft
   const currentNovelBody = contentForChapter('novel_body', activeChapterNumber)
   const rewriteSource =
@@ -6644,11 +6645,27 @@ function WriterRoomTab({
   ])
   const [promoteTarget, setPromoteTarget] = useState<ProjectContent | null>(null)
   const [promoteChecked, setPromoteChecked] = useState(false)
+  const [selectedContentIds, setSelectedContentIds] = useState<Record<string, string>>({})
+
+  const versionsForStep = (step: string) =>
+    contents
+      .filter(
+        (content) =>
+          content.content_type === step &&
+          Number(content.chapter_number || content.episode_number || 0) === activeChapterNumber,
+      )
+      .sort((left, right) => right.version - left.version || String(right.created_at || '').localeCompare(String(left.created_at || '')))
+
+  const sourceForStep = (step: string) => {
+    if (step === 'prose_humanized') return latestByStep.prose_draft || currentNovelBody
+    if (step === 'prose_review' || step === 'prose_rewrite') {
+      return latestByStep.prose_humanized || latestByStep.prose_draft || currentNovelBody
+    }
+    return undefined
+  }
 
   const runStep = (step: string, instruction?: string) => {
-    const sourceId = ['prose_humanized', 'prose_review', 'prose_rewrite'].includes(step)
-      ? proseSource?.id
-      : undefined
+    const sourceId = sourceForStep(step)?.id
     onRunStep(step, activeChapterNumber, sourceId, instruction)
   }
 
@@ -6686,7 +6703,7 @@ function WriterRoomTab({
 
   const writerRoomRows = writerRoomStepOptions.map((step, index) => {
     const content = latestByStep[step.value]
-    const latestLog = findWriterRoomLog(logs, step.value, content?.id)
+    const latestLog = findWriterRoomLog(logs, content)
     return {
       step,
       index,
@@ -6699,15 +6716,17 @@ function WriterRoomTab({
     }
   })
   const activeRow = writerRoomRows.find((row) => row.step.value === activeStep) || writerRoomRows[0]
-  const activeContent = activeRow?.content
-  const activeLog = activeRow?.latestLog
+  const activeStepVersions = versionsForStep(activeRow.step.value)
+  const activeContent =
+    activeStepVersions.find((content) => content.id === selectedContentIds[activeRow.step.value]) || activeRow?.content
+  const activeLog = findWriterRoomLog(logs, activeContent)
   const activePreview = writerRoomPreviewText(activeContent)
   const activeReviewIssues = activeRow?.step.value === 'prose_review' ? reviewIssuesForContent(activeContent) : []
   const activeQualitySummary = activeRow?.step.value === 'prose_review' ? qualitySummaryForContent(activeContent) : null
   const activeIsProseResult = ['prose_draft', 'prose_humanized', 'prose_rewrite'].includes(activeRow?.step.value || '')
   const completedCount = writerRoomRows.filter((row) => row.content).length
   const progressPercent = Math.round((completedCount / Math.max(writerRoomRows.length, 1)) * 100)
-  const candidateContent = canPromote
+  const candidateContent = activeIsProseResult ? activeContent : canPromote
   const nextRow = writerRoomRows[activeRow.index + 1]
   const inputLabels = writerRoomStepInputs[activeRow.step.value] || []
   const outputLabels = writerRoomStepOutputs[activeRow.step.value] || []
@@ -6783,7 +6802,7 @@ function WriterRoomTab({
               disabled={!batchSteps.length}
               onClick={() => onRunBatch(activeChapterNumber, batchSteps)}
             >
-              推荐流程
+              按勾选生成候选
             </Button>
           </Space>
         </Space>
@@ -6859,12 +6878,26 @@ function WriterRoomTab({
                   <Text strong style={{ fontSize: 17 }}>{activeRow.step.label}</Text>
                   <Tag color="processing">{activeRow.agentName}</Tag>
                   {activeContent ? <Tag color="green">v{activeContent.version}</Tag> : <Tag>未生成</Tag>}
+                  {activeStepVersions.length > 1 ? (
+                    <Select
+                      size="small"
+                      value={activeContent?.id}
+                      style={{ minWidth: 150 }}
+                      onChange={(contentId) =>
+                        setSelectedContentIds((previous) => ({ ...previous, [activeRow.step.value]: contentId }))
+                      }
+                      options={activeStepVersions.map((content) => ({
+                        value: content.id,
+                        label: `候选 v${content.version} · ${writerRoomContentWordCount(content)} 字`,
+                      }))}
+                    />
+                  ) : null}
                 </Space>
                 <Text type="secondary">{activeRow.description}</Text>
               </Space>
               <Space wrap>
                 <Button loading={loading} onClick={() => runStep(activeRow.step.value)}>
-                  {activeContent ? '重新生成' : '生成'}
+                  {activeContent ? '生成新候选' : '生成候选'}
                 </Button>
                 {activeContent && activeIsProseResult ? (
                   <Button type="primary" loading={loading} onClick={() => openPromoteDialog(activeContent)}>
@@ -6897,6 +6930,14 @@ function WriterRoomTab({
                     <Tag key={label}>{label}</Tag>
                   ))}
                 </Space>
+                {activeContent?.source_content_id ? (
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    本版来源：{(() => {
+                      const source = contents.find((content) => content.id === activeContent.source_content_id)
+                      return source ? `${writerRoomStepLabelMap[source.content_type] || source.content_type} v${source.version}` : '历史内容'
+                    })()}
+                  </Text>
+                ) : null}
               </div>
               <div style={writerRoomContextBlockStyle}>
                 <Text type="secondary">产物用途</Text>
@@ -6928,7 +6969,11 @@ function WriterRoomTab({
               onChange={(value) => onTemplateChange(activeRow.step.value, value || '')}
             />
 
-            {activeLog ? <WriterRoomLogSummary log={activeLog} /> : null}
+            {activeLog ? (
+              <WriterRoomLogSummary log={activeLog} />
+            ) : activeContent ? (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="该历史候选暂无可追溯日志" />
+            ) : null}
 
             {activeContent ? (
               <div style={writerRoomPreviewStyle}>

@@ -735,6 +735,57 @@ async def test_writer_room_run_humanizes_without_overwriting_existing_novel_body
 
 
 @pytest.mark.asyncio
+async def test_writer_room_humanization_reuses_draft_and_records_source_provenance(session: Session):
+    service = CreativeProjectService(session, ai_service=FakeAIService())
+    project = service.create_project(title="", idea="smart short drama")
+    draft = service._create_content(
+        project_id=project.id,
+        content_type="prose_draft",
+        chapter_number=1,
+        episode_number=1,
+        title="Entry",
+        data={"chapter_number": 1, "content": "Draft prose with enough detail for humanization.", "word_count": 47},
+        text_content="Draft prose with enough detail for humanization.",
+    )
+    first_humanized = service._create_content(
+        project_id=project.id,
+        content_type="prose_humanized",
+        chapter_number=1,
+        episode_number=1,
+        title="Entry",
+        data={"chapter_number": 1, "content": "An older humanized candidate that must not become the default source."},
+        text_content="An older humanized candidate that must not become the default source.",
+        source_content_id=draft.id,
+    )
+    session.commit()
+    session.refresh(draft)
+    session.refresh(first_humanized)
+
+    service.ai_service = WriterRoomAIService()
+    result = await service.run_writer_room_step(
+        project.id,
+        step="prose_humanized",
+        chapter_number=1,
+        provider="deepseek",
+        model="deepseek-v4-pro",
+    )
+
+    writer_room = loads_json(result.data_json)["writer_room"]
+    assert result.source_content_id == draft.id
+    assert writer_room["source_content_id"] == draft.id
+    assert writer_room["source_content_type"] == "prose_draft"
+    assert writer_room["source_content_version"] == draft.version
+    humanize_log = session.exec(
+        select(ProjectGenerationLog)
+        .where(ProjectGenerationLog.stage == "prose_humanized")
+        .order_by(ProjectGenerationLog.created_at.desc())
+    ).first()
+    assert humanize_log is not None
+    assert "90%-110%" in humanize_log.prompt
+    assert "来源：prose_draft" in humanize_log.prompt
+
+
+@pytest.mark.asyncio
 async def test_writer_room_review_outputs_actionable_rewrite_issue(session: Session):
     service = CreativeProjectService(session, ai_service=FakeAIService())
     project = service.create_project(title="", idea="smart short drama")
@@ -769,6 +820,130 @@ async def test_writer_room_review_outputs_actionable_rewrite_issue(session: Sess
     assert issue["problem"]
     assert issue["rewrite_instruction"] == "加强结尾钩子，保留证据链。"
     assert "钩子可加强" in data["quality_tags"]
+
+
+class HumanizationRetryAIService(FakeAIService):
+    """First humanization returns a too-short chapter (triggers the length
+    retry), the retry call returns a full-length chapter."""
+
+    async def chat(self, messages, **kwargs):
+        user_content = messages[-1].content
+        if "长度复核" in user_content:
+            content = long_test_body("Lin Zhao")
+            return self._result(
+                {
+                    "chapter_number": 1,
+                    "title": "Entry",
+                    "content": content,
+                    "word_count": len(content),
+                    "continuity_notes": ["Lin keeps the evidence."],
+                }
+            )
+        if '"prose_humanized"' in user_content or "完整润色正文" in user_content:
+            return self._result(
+                {
+                    "chapter_number": 1,
+                    "title": "Entry",
+                    "content": "Lin opened the package.",
+                    "word_count": 21,
+                    "continuity_notes": ["Short humanization."],
+                }
+            )
+        return await super().chat(messages, **kwargs)
+
+    def _result(self, content: dict) -> LLMGenerationResult:
+        return LLMGenerationResult(
+            success=True,
+            content=json.dumps(content, ensure_ascii=False),
+            provider="deepseek",
+            model="deepseek-v4-pro",
+        )
+
+
+@pytest.mark.asyncio
+async def test_writer_room_step_binds_generation_log_to_candidate(session: Session):
+    service = CreativeProjectService(session, ai_service=FakeAIService())
+    project = service.create_project(title="", idea="smart short drama")
+    await service.generate_outline(project.id)
+    await service.generate_chapter_plan(project.id, chapter_count=2)
+    await service.generate_chapter_outline(project.id, chapter_number=1)
+
+    service.ai_service = WriterRoomAIService()
+    content = await service.run_writer_room_step(
+        project.id,
+        step="scene_beats",
+        chapter_number=1,
+        provider="deepseek",
+        model="deepseek-v4-pro",
+    )
+
+    data = loads_json(content.data_json)
+    assert data["writer_room"]["generation_log_id"]
+
+    log = session.exec(select(ProjectGenerationLog).where(ProjectGenerationLog.stage == "scene_beats")).one()
+    # The final successful log is backfilled with the candidate id.
+    assert log.content_id == content.id
+    # The candidate metadata records the same stable log id.
+    assert data["writer_room"]["generation_log_id"] == log.id
+    # Exactly one log is linked to this candidate.
+    linked = session.exec(
+        select(ProjectGenerationLog).where(ProjectGenerationLog.content_id == content.id)
+    ).all()
+    assert len(linked) == 1
+
+
+@pytest.mark.asyncio
+async def test_writer_room_humanization_retry_only_binds_final_log(session: Session):
+    service = CreativeProjectService(session, ai_service=FakeAIService())
+    project = service.create_project(title="", idea="smart short drama")
+    await service.generate_outline(project.id)
+    await service.generate_chapter_plan(project.id, chapter_count=2)
+    await service.generate_chapter_outline(project.id, chapter_number=1)
+    draft = service._create_content(
+        project_id=project.id,
+        content_type="prose_draft",
+        chapter_number=1,
+        episode_number=1,
+        title="Entry",
+        data={"content": long_test_body("Lin Zhao"), "word_count": len(long_test_body("Lin Zhao"))},
+        text_content=long_test_body("Lin Zhao"),
+    )
+    session.commit()
+    session.refresh(draft)
+
+    service.ai_service = HumanizationRetryAIService()
+    humanized = await service.run_writer_room_step(
+        project.id,
+        step="prose_humanized",
+        chapter_number=1,
+        content_id=draft.id,
+        provider="deepseek",
+        model="deepseek-v4-pro",
+    )
+
+    data = loads_json(humanized.data_json)
+    final_log_id = data["writer_room"]["generation_log_id"]
+    assert final_log_id
+
+    # Only the final (retry) log is bound to the candidate.
+    linked = session.exec(
+        select(ProjectGenerationLog).where(ProjectGenerationLog.content_id == humanized.id)
+    ).all()
+    assert len(linked) == 1
+    final_log = linked[0]
+    assert final_log.id == final_log_id
+    # The final log carries the full-length humanized output, not the short one.
+    assert "压住一个随时会翻面的证词" in final_log.normalized_json
+
+    # The earlier short response's log still exists but stays trace-only.
+    short_logs = session.exec(
+        select(ProjectGenerationLog).where(
+            ProjectGenerationLog.stage == "prose_humanized",
+            ProjectGenerationLog.content_id.is_(None),
+        )
+    ).all()
+    assert len(short_logs) == 1
+    assert "Lin opened the package." in short_logs[0].normalized_json
 
 
 @pytest.mark.asyncio
