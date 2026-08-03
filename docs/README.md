@@ -34,6 +34,7 @@
 | Agent 多智能体/上下文运行时 | 已完成并归档 | `openspec/changes/archive/agent-center-multi-agent-runtime/tasks.md` |
 | 创作项目闭环 | 仍有未完成项 | `openspec/changes/creative-project-closed-loop/tasks.md` |
 | 创作项目优化路线 | 仍有未完成项 | `openspec/changes/creative-project-optimization-roadmap/tasks.md` |
+| 小说连续性事实闭环 | 已立项，待实现 | `openspec/changes/creative-project-continuity-facts/tasks.md` |
 | 任务观测诊断 | 仍有少量未完成项 | `openspec/changes/task-observability-diagnostics/tasks.md` |
 
 ## 每次开发后必须更新什么
