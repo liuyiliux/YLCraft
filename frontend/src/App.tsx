@@ -33,6 +33,7 @@ import NovelBookshelfPage from './pages/novel-bookshelf'
 import BookSourcePage from './pages/book-source'
 import PlatformTemplatesPage from './pages/platform-templates'
 import PromptLibraryPage from './pages/prompt-library'
+import InspirationPage from './pages/inspiration'
 import MultiPlatformGenPage from './pages/image-gen/MultiPlatformGen'
 import PlayerPage from './pages/player'
 import ReaderPage from './pages/reader'
@@ -85,6 +86,7 @@ export default function App() {
               <Route path="crawler" element={<CrawlerPage />} />
               <Route path="up-analytics" element={<UpAnalyticsPage />} />
               <Route path="my-data" element={<MyDataPage />} />
+              <Route path="inspiration" element={<InspirationPage />} />
               <Route path="image-editor" element={<ImageEditorPage />} />
               <Route path="novel-search" element={<NovelSearchPage />} />
               <Route path="novel-bookshelf" element={<NovelBookshelfPage />} />

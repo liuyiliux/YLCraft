@@ -49,18 +49,9 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("Database initialized")
 
-    try:
-        from app.services.novel.migration_manager import BookSourceMigrationManager
-
-        migration_session = SessionLocal()
-        try:
-            migration_result = BookSourceMigrationManager(migration_session).migrate_existing_sources()
-            if migration_result.get("migrated"):
-                logger.info(f"Book source rules migrated: {migration_result}")
-        finally:
-            migration_session.close()
-    except Exception as e:
-        logger.warning(f"Book source rule migration failed: {e}")
+    # Book-source schema/data migration is an explicit operator action. Startup
+    # must not mutate the remote database behind Alembic's back.
+    logger.info("Book source migration is disabled during startup; use the explicit migration command.")
 
     # 1.5. 种子数据：平台模板（幂等）
     try:
@@ -251,6 +242,13 @@ def _register_routes():
     except Exception as e:
         logger.warning(f"Could not load creative_projects router: {e}")
 
+    # 创作项目 → 番茄小说 发布路由（异步，与 creative-projects 同前缀）
+    try:
+        from app.api.v1 import creative_fanqie
+        app.include_router(creative_fanqie.router, prefix="/api/v1/creative-projects", tags=["Creative Projects — Fanqie"])
+    except Exception as e:
+        logger.warning(f"Could not load creative_fanqie router: {e}")
+
     # 任务管理路由
     try:
         from app.api.v1 import canvas
@@ -409,6 +407,13 @@ def _register_routes():
         app.include_router(bili_router, prefix="/api/v1/bilibili", tags=["Crawler — Bilibili"])
     except Exception as e:
         logger.warning(f"Could not load bilibili router: {e}")
+
+    # 番茄小说作家后台路由（模块化结构）
+    try:
+        from app.services.platforms.fanqie.routes import router as fanqie_router
+        app.include_router(fanqie_router, prefix="/api/v1/fanqie", tags=["Crawler — Fanqie"])
+    except Exception as e:
+        logger.warning(f"Could not load fanqie router: {e}")
 
     # Novel 小说路由
     try:

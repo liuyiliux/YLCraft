@@ -12,6 +12,15 @@ triggers:
   tools: [run_creative_writer_room]
 requires_tools: [run_creative_writer_room]
 risk: write
+creative:
+  compatible_project_types: [novel]
+  compatible_genres: ["*"]
+  stages: [prose_humanized, humanized_prose, prose_rewrite, directed_rewrite]
+  context_contribution: "用动作、感官细节、潜台词与节奏变化降低概念化表达；保持原事件顺序和人物动机。"
+  input_schema: {source_prose: string, narrative_context: string}
+  output_schema: {candidate_prose: string, source_content_id: string}
+  prohibited_mutations: [approved_novel_body, locked_project_bible, confirmed_ledger]
+  auto_apply: true
 ---
 
 # 正文去 AI 腔

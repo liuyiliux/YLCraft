@@ -115,6 +115,8 @@ async def test_agent_profile_manager_creates_default_profiles(agent_session: Asy
     creative_data = profile_to_dict(creative)
     assert creative_data["role_type"] == "orchestrator"
     assert "run_creative_project_pipeline" in creative_data["allowed_tools"]
+    assert "preview_fanqie_project_publish" in creative_data["allowed_tools"]
+    assert "publish_fanqie_project_chapter" in creative_data["allowed_tools"]
     assert creative_data["max_steps"] == 10
 
     storyboard = next(profile for profile in profiles if profile.id == "storyboard-director")
@@ -495,6 +497,50 @@ def test_agent_tool_registry_exposes_ai_config_tools_with_specs():
     assert ToolRegistry.get_tool("test_ai_connector").risk_level == "read"
     assert ToolRegistry.get_tool("discover_connector_models").risk_level == "read"
 
+
+def test_agent_tool_registry_exposes_fanqie_tools_with_safe_publish_boundary():
+    tools = ToolRegistry.list_tools("fanqie")
+    names = {tool.name for tool in tools}
+    assert {
+        "list_fanqie_my_books",
+        "get_fanqie_book_stats",
+        "get_fanqie_hot_list",
+        "preview_fanqie_project_publish",
+        "get_fanqie_project_publish_status",
+        "publish_fanqie_project_chapter",
+    } <= names
+    for tool in tools:
+        assert tool.input_schema_note
+        assert tool.output_schema_note
+        assert tool.output_type.startswith("fanqie_")
+
+    assert ToolRegistry.get_tool("preview_fanqie_project_publish").risk_level == "read"
+    publish = ToolRegistry.get_tool("publish_fanqie_project_chapter")
+    assert publish is not None
+    assert publish.risk_level == "write"
+    assert "[TEST]" in publish.input_schema_note
+
+
+@pytest.mark.asyncio
+async def test_fanqie_publish_tool_requires_runtime_confirmation(monkeypatch):
+    async def fake_execute_tool(tool_name, tool_args):
+        return ToolCallResult(tool_name=tool_name, success=True, result={"success": True, "arguments": tool_args})
+
+    monkeypatch.setattr(ToolRegistry, "execute_tool", fake_execute_tool)
+    executor = ToolExecutor()
+    tool_call = {
+        "id": "call_fanqie_publish",
+        "name": "publish_fanqie_project_chapter",
+        "arguments": json.dumps({"project_id": "project-1", "content_id": "content-1", "item_id": "test-item"}),
+    }
+    pending = await executor.execute_tool_call(tool_call, {"allowed_tools": ["*"]})
+    assert pending.success is False
+    assert executor.is_pending_confirmation(pending)
+
+    confirmed_call = {**tool_call, "arguments": json.dumps({"project_id": "project-1", "content_id": "content-1", "item_id": "test-item", "__confirmed": True})}
+    confirmed = await executor.execute_tool_call(confirmed_call, {"allowed_tools": ["*"]})
+    assert confirmed.success is True
+
     create_tool = ToolRegistry.get_tool("create_ai_connector")
     update_tool = ToolRegistry.get_tool("update_ai_connector")
     assert create_tool is not None
@@ -569,6 +615,59 @@ def test_squashed_alembic_initial_schema_imports_sqlmodel():
     spec.loader.exec_module(module)
 
     assert hasattr(module, "sqlmodel")
+
+
+def test_alembic_env_loads_the_complete_model_package_for_autogenerate():
+    from pathlib import Path
+    from sqlmodel import SQLModel
+    from app.db import models as _models  # noqa: F401
+
+    env_path = Path(__file__).resolve().parents[1] / "alembic" / "env.py"
+    source = env_path.read_text(encoding="utf-8")
+
+    assert "from app.db import models as _all_models" in source
+    assert "from app.db.models import asset_hub" not in source
+    assert {
+        "agent_threads",
+        "creative_projects",
+        "canvas_documents",
+        "image_prompt_references",
+        "project_task_records",
+    }.issubset(SQLModel.metadata.tables)
+
+
+def test_alembic_revision_graph_has_one_head_and_compiles_offline_sql():
+    from io import StringIO
+    from pathlib import Path
+
+    from alembic import command
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    backend_root = Path(__file__).resolve().parents[1]
+    config = Config(str(backend_root / "alembic.ini"))
+    config.set_main_option("script_location", str(backend_root / "alembic"))
+    script = ScriptDirectory.from_config(config)
+
+    assert len(script.get_heads()) == 1
+    output = StringIO()
+    config.output_buffer = output
+    command.upgrade(config, "head", sql=True)
+    sql = output.getvalue()
+    assert "CREATE TABLE creative_projects" in sql
+    assert "CREATE TABLE agent_threads" in sql
+    assert "CREATE TABLE canvas_documents" in sql
+    assert "CREATE TABLE image_prompt_references" in sql
+    assert "CREATE TABLE project_task_records" in sql
+    assert "CREATE TABLE project_publish_records" in sql
+    assert "008_add_project_publish_records" in sql
+
+
+@pytest.mark.asyncio
+async def test_agent_table_compatibility_hook_is_non_mutating():
+    from app.db.database import ensure_agent_tables
+
+    assert await ensure_agent_tables() is None
 
 
 @pytest.mark.asyncio

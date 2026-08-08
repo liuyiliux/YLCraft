@@ -43,6 +43,9 @@ export const listCharacters = (params?: Record<string, any>) => {
   const sp = new URLSearchParams()
   if (params?.keyword) sp.set('keyword', params.keyword)
   if (params?.source_type) sp.set('source_type', params.source_type)
+  if (params?.project_id) sp.set('project_id', params.project_id)
+  if (params?.asset_role) sp.set('asset_role', params.asset_role)
+  if (params?.source_stage) sp.set('source_stage', params.source_stage)
   if (params?.role) sp.set('role', params.role)
   if (params?.is_favorite) sp.set('is_favorite', '1')
   if (params?.page) sp.set('page', String(params.page))
@@ -721,7 +724,20 @@ export const previewXhsNote = (url: string, skip_llm = false) =>
 
 // ===== Tasks =====
 
-export const listTasks = () => request('/tasks')
+export const listTasks = (params?: {
+  project_id?: string
+  task_type?: string
+  active_only?: boolean
+  include_detail?: boolean
+}) => {
+  const qs = new URLSearchParams()
+  if (params?.project_id) qs.set('project_id', params.project_id)
+  if (params?.task_type) qs.set('task_type', params.task_type)
+  if (params?.active_only) qs.set('active_only', 'true')
+  if (params?.include_detail) qs.set('include_detail', 'true')
+  const query = qs.toString()
+  return request(`/tasks${query ? `?${query}` : ''}`)
+}
 
 export const getTask = (id: string) => request(`/tasks/${id}`)
 
@@ -1230,10 +1246,12 @@ export const markPlatformConnectionUsed = (id: string) =>
   export const publishToPlatform = (connId: string, content: {
     title: string
     body?: string
-    content_type: 'video' | 'image' | 'text' | 'article'
-    tags?: string[]
-    media?: { file_path: string; media_type: string }[]
-  }) => request(`/platforms/${connId}/publish`, {
+  content_type: 'video' | 'image' | 'text' | 'article'
+  tags?: string[]
+  media?: { file_path: string; media_type: string }[]
+  target?: { book_id: string; volume_id: string; volume_name?: string; item_id: string }
+  dry_run?: boolean
+}) => request(`/platforms/${connId}/publish`, {
     method: 'POST',
     body: JSON.stringify(content),
   })
@@ -1529,7 +1547,7 @@ export const generateCreativeProjectOutline = (
 
 export const generateCreativeProjectChapterPlan = (
   projectId: string,
-  data: { chapter_count?: number; provider?: string; model?: string; template_id?: string } = {},
+  data: { chapter_count?: number; append_existing?: boolean; provider?: string; model?: string; template_id?: string } = {},
 ) =>
   request(`/creative-projects/${projectId}/generate-chapter-plan`, {
     method: 'POST',
@@ -1608,8 +1626,15 @@ export const matchCreativeProjectReferenceAssets = (
     body: JSON.stringify(data),
   })
 
-export const listCreativeProjectContents = (projectId: string, contentType?: string) => {
-  const qs = contentType ? `?content_type=${encodeURIComponent(contentType)}` : ''
+export const listCreativeProjectContents = (
+  projectId: string,
+  contentType?: string,
+  options: { includeHistory?: boolean } = {},
+) => {
+  const params = new URLSearchParams()
+  if (contentType) params.set('content_type', contentType)
+  if (options.includeHistory) params.set('include_history', 'true')
+  const qs = params.size ? `?${params.toString()}` : ''
   return request(`/creative-projects/${projectId}/contents${qs}`)
 }
 
@@ -1630,6 +1655,146 @@ export const updateCreativeProjectContent = (
 
 export const listCreativeProjectAssets = (projectId: string) =>
   request(`/creative-projects/${projectId}/assets`)
+
+export const saveCreativeProjectContentAsAsset = (projectId: string, contentId: string) =>
+  request(`/creative-projects/${projectId}/contents/${encodeURIComponent(contentId)}/save-as-asset`, {
+    method: 'POST',
+  })
+
+export const extractCreativeProjectContinuity = (projectId: string, contentId: string) =>
+  request(`/creative-projects/${projectId}/contents/${encodeURIComponent(contentId)}/extract-continuity`, {
+    method: 'POST',
+  })
+
+export type CreativeProjectContinuityCandidate = {
+  id: string
+  project_id: string
+  source_content_id?: string
+  source_generation_log_id?: string
+  source_kind: string
+  source_fingerprint: string
+  entity_type: string
+  entity_name: string
+  claim: string
+  evidence_excerpt: string
+  evidence_anchor: { chapter_number?: number; paragraph_index?: number; [key: string]: unknown }
+  severity: 'info' | 'warning' | 'conflict' | string
+  suggested_action: string
+  target_fact_type: 'project_bible' | 'world_asset' | string
+  status: 'pending' | 'accepted' | 'ignored' | 'merged' | 'superseded' | string
+  resolved_fact_id?: string
+  resolution_note?: string
+  created_at?: string
+  updated_at?: string
+}
+
+export const listCreativeProjectContinuityCandidates = (
+  projectId: string,
+  params: { status?: string; sourceContentId?: string; limit?: number } = {},
+) => {
+  const search = new URLSearchParams()
+  if (params.status) search.set('status', params.status)
+  if (params.sourceContentId) search.set('source_content_id', params.sourceContentId)
+  if (params.limit) search.set('limit', String(params.limit))
+  const suffix = search.size ? `?${search.toString()}` : ''
+  return request(`/creative-projects/${projectId}/continuity-candidates${suffix}`)
+}
+
+export const getCreativeProjectContinuityContextSummary = (projectId: string, generationLogId?: string) =>
+  request(`/creative-projects/${projectId}/continuity-candidates/context-summary${generationLogId ? `?generation_log_id=${encodeURIComponent(generationLogId)}` : ''}`)
+
+export const getCreativeProjectNarrativeContextPreview = (projectId: string, chapterNumber: number) =>
+  request(`/creative-projects/${projectId}/narrative/context-preview?chapter_number=${chapterNumber}`)
+
+export const getCreativeProjectNarrativeHealth = (projectId: string) =>
+  request(`/creative-projects/${projectId}/narrative/health`)
+
+export const getCreativeProjectWritingPreflight = (
+  projectId: string,
+  params: { chapterNumber: number; stage: string; contentId?: string },
+) => {
+  const search = new URLSearchParams({
+    chapter_number: String(params.chapterNumber),
+    stage: params.stage,
+  })
+  if (params.contentId) search.set('content_id', params.contentId)
+  return request(`/creative-projects/${projectId}/writing-preflight?${search.toString()}`)
+}
+
+export const listCreativeProjectNarrativeRuns = (projectId: string) =>
+  request(`/creative-projects/${projectId}/narrative/runs`)
+
+export const controlCreativeProjectNarrativeRun = (
+  projectId: string,
+  runId: string,
+  action: 'pause' | 'resume' | 'retry' | 'cancel',
+) => request(`/creative-projects/${projectId}/narrative/runs/${encodeURIComponent(runId)}/${action}`, { method: 'POST' })
+
+export const configureCreativeProjectNarrativeAutopilot = (
+  projectId: string,
+  data: { enabled: boolean; chapter_numbers?: number[]; max_chapters_per_run?: number; max_consecutive_failures?: number },
+) => request(`/creative-projects/${projectId}/narrative/autopilot`, { method: 'PUT', body: JSON.stringify(data) })
+
+export const listCreativeProjectForeshadowing = (
+  projectId: string,
+  params: { statuses?: string[]; chapterNumber?: number } = {},
+) => {
+  const search = new URLSearchParams()
+  for (const status of params.statuses || []) search.append('status', status)
+  if (params.chapterNumber) search.set('chapter_number', String(params.chapterNumber))
+  const suffix = search.size ? `?${search.toString()}` : ''
+  return request(`/creative-projects/${projectId}/foreshadowing${suffix}`)
+}
+
+export const decideCreativeProjectForeshadowing = (
+  projectId: string,
+  itemId: string,
+  action: 'accept' | 'advance' | 'resolve' | 'ignore',
+  data: { note?: string; current_chapter?: number } = {},
+) => request(`/creative-projects/${projectId}/foreshadowing/${encodeURIComponent(itemId)}/${action}`, {
+  method: 'POST',
+  body: JSON.stringify(data),
+})
+
+export const getCreativeProjectNarrativeGraph = (
+  projectId: string,
+  params: { nodeTypes?: string[]; chapterNumber?: number; includePending?: boolean } = {},
+) => {
+  const search = new URLSearchParams()
+  for (const nodeType of params.nodeTypes || []) search.append('node_type', nodeType)
+  if (params.chapterNumber) search.set('chapter_number', String(params.chapterNumber))
+  if (params.includePending) search.set('include_pending', 'true')
+  const suffix = search.size ? `?${search.toString()}` : ''
+  return request(`/creative-projects/${projectId}/narrative-graph${suffix}`)
+}
+
+export const extractCreativeProjectContinuityCandidates = (
+  projectId: string,
+  contentId: string,
+  candidates: Array<Record<string, unknown>> = [],
+) => request(`/creative-projects/${projectId}/contents/${encodeURIComponent(contentId)}/continuity-candidates/extract`, {
+  method: 'POST',
+  body: JSON.stringify({ candidates }),
+})
+
+export const resolveCreativeProjectContinuityCandidate = (
+  projectId: string,
+  candidateId: string,
+  action: 'accept' | 'ignore' | 'merge',
+  data: { note?: string; merged_fact_id?: string } = {},
+) => request(`/creative-projects/${projectId}/continuity-candidates/${encodeURIComponent(candidateId)}/${action}`, {
+  method: 'POST',
+  body: JSON.stringify(data),
+})
+
+export const rewriteCreativeProjectParagraph = (
+  projectId: string,
+  contentId: string,
+  data: { paragraph_index: number; instruction: string; provider?: string; model?: string },
+) => request(`/creative-projects/${projectId}/contents/${encodeURIComponent(contentId)}/rewrite-paragraph`, {
+  method: 'POST',
+  body: JSON.stringify(data),
+})
 
 export const listCreativeProjectGenerationLogs = (
   projectId: string,
@@ -1754,6 +1919,87 @@ export const promoteCreativeProjectWriterRoomContent = (
     method: 'POST',
     body: JSON.stringify({ content_id: contentId }),
   })
+
+// ===== 创作项目 → 番茄小说 发布 API =====
+
+/** 设置项目番茄绑定（conn_id / book_id / volume_id / volume_name） */
+export const setFanqieBinding = (
+  projectId: string,
+  data: {
+    conn_id: string
+    book_id: string
+    volume_id: string
+    volume_name?: string
+  },
+) =>
+  request(`/creative-projects/${projectId}/fanqie/binding`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
+/** 读取项目番茄绑定 */
+export const getFanqieBinding = (projectId: string) =>
+  request(`/creative-projects/${projectId}/fanqie/binding`)
+
+/** 本地预检项目正文和番茄发布目标，不访问番茄远端。 */
+export const previewFanqiePublish = (
+  projectId: string,
+  params: {
+    content_id: string
+    item_id?: string
+    conn_id?: string
+    book_id?: string
+    volume_id?: string
+    volume_name?: string
+  },
+) => {
+  const query = new URLSearchParams()
+  Object.entries(params).forEach(([key, value]) => {
+    if (value) query.set(key, String(value))
+  })
+  return request(`/creative-projects/${projectId}/fanqie/publish-preflight?${query.toString()}`)
+}
+
+/** 保存章节到番茄草稿。chapters: [{content_id, item_id, chapter_number?, title?}] */
+export const publishChapterToFanqie = (
+  projectId: string,
+  data: {
+    conn_id?: string
+    book_id?: string
+    volume_id?: string
+    volume_name?: string
+    action?: 'draft'
+    chapters: Array<{
+      content_id: string
+      item_id: string
+      chapter_number?: number
+      title?: string
+    }>
+  },
+) =>
+  request(`/creative-projects/${projectId}/publish-to-fanqie`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
+/** 查询番茄发布记录 */
+export const getFanqiePublishStatus = (projectId: string, chapterNumber?: number) => {
+  const qs = new URLSearchParams()
+  if (chapterNumber != null) qs.set('chapter_number', String(chapterNumber))
+  return request(`/creative-projects/${projectId}/fanqie/publish-status${qs.toString() ? `?${qs}` : ''}`)
+}
+
+/** 获取番茄作家后台「热门故事 / 开书灵感」列表（只读，需番茄连接 cookie） */
+export const getFanqieHotList = (connId: string, hotType: number = 0) =>
+  request(`/fanqie/hot-list?conn_id=${encodeURIComponent(connId)}&hot_type=${hotType}`)
+
+/** 获取番茄作家后台「我的书籍」列表（只读，需番茄连接 cookie） */
+export const getFanqieMyBooks = (connId: string, page: number = 1, size: number = 20) =>
+  request(`/fanqie/my/books?conn_id=${encodeURIComponent(connId)}&page=${page}&size=${size}`)
+
+/** 获取番茄单本书数据统计（只读，stats_type: 1=基础数据，其它 Tab 待 Phase 3 抓包确认） */
+export const getFanqieBookStats = (connId: string, bookId: string, statsType: number = 1) =>
+  request(`/fanqie/book/${encodeURIComponent(bookId)}/stats?conn_id=${encodeURIComponent(connId)}&stats_type=${statsType}`)
 
 // ===== Novel（小说）=====
 export * from './novel'

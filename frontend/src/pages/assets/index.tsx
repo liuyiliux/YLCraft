@@ -169,6 +169,9 @@ export default function AssetsPage() {
     asset_type: '' as string,
     platform: '' as string,
     source_type: '' as string,
+    project_id: '' as string,
+    asset_role: '' as string,
+    source_stage: '' as string,
   })
   const [searchQuery, setSearchQuery] = useState('')
   const [searchMode, setSearchMode] = useState<'fuzzy' | 'hybrid'>(() => {
@@ -209,6 +212,9 @@ export default function AssetsPage() {
       if (f.asset_type) params.asset_type = f.asset_type
       if (f.platform) params.platform = f.platform
       if (f.source_type) params.source_type = f.source_type
+      if (f.project_id) params.project_id = f.project_id
+      if (f.asset_role) params.asset_role = f.asset_role
+      if (f.source_stage) params.source_stage = f.source_stage
       if (s) params.search = s
       if (selectedTagNames.length > 0) params.tags = selectedTagNames.join(',')
       const res = await listAssets(params)
@@ -251,7 +257,8 @@ export default function AssetsPage() {
   }, [selectedTagNames])
 
   const loadAssets = useCallback((p: number, s: string, f: typeof filters, mode: string) => {
-    if (mode === 'hybrid' && s) {
+    const requiresProjectAwareFilter = Boolean(f.project_id || f.asset_role || f.source_stage)
+    if (mode === 'hybrid' && s && !requiresProjectAwareFilter) {
       loadHybrid(p, s, f)
     } else {
       loadFuzzy(p, s, f)
@@ -288,12 +295,18 @@ export default function AssetsPage() {
       asset_type: params.assetTypes?.[0]?.toLowerCase() || '',
       platform: '',
       source_type: '',
+      project_id: '',
+      asset_role: '',
+      source_stage: '',
     })
     setPage(1)
     loadAssets(1, params.query, {
       asset_type: params.assetTypes?.[0]?.toLowerCase() || '',
       platform: '',
       source_type: '',
+      project_id: '',
+      asset_role: '',
+      source_stage: '',
     }, newMode)
   }, [loadAssets])
 
@@ -501,6 +514,7 @@ export default function AssetsPage() {
     const dt = (detailAsset.type || '').toUpperCase()
     const isVideo = dt === 'VIDEO' && ds === 'READY'
     const meta = detailAsset.metadata || {}
+    const projectContext = meta.project_context || {}
     const aiParams = meta.ai_params || {}
     const aiGen = isAIGenerated(detailAsset)
     const isPaidCourse = dt === 'COLLECTION' && detailAsset.platform === 'bilibili' && meta.type === 'paid_course'
@@ -633,6 +647,16 @@ export default function AssetsPage() {
                 </>
               )}
               <Descriptions.Item label="来源">{SOURCE_TYPE_LABELS[String(detailAsset.source_type || '').toLowerCase()] || detailAsset.source_type || '-'}</Descriptions.Item>
+              {projectContext.project_id && (
+                <>
+                  <Descriptions.Item label="创作项目">{projectContext.project_title || projectContext.project_id}</Descriptions.Item>
+                  <Descriptions.Item label="项目 ID">{projectContext.project_id}</Descriptions.Item>
+                  <Descriptions.Item label="来源阶段">{projectContext.source_stage || '-'}</Descriptions.Item>
+                  <Descriptions.Item label="资产角色">{projectContext.asset_role || '-'}</Descriptions.Item>
+                  {projectContext.chapter_number && <Descriptions.Item label="章节">第 {projectContext.chapter_number} 章</Descriptions.Item>}
+                  {projectContext.content_version && <Descriptions.Item label="内容版本">v{projectContext.content_version}</Descriptions.Item>}
+                </>
+              )}
               <Descriptions.Item label="创建时间">{detailAsset.created_at || '-'}</Descriptions.Item>
             </Descriptions>
 
@@ -911,6 +935,46 @@ export default function AssetsPage() {
                 </Space>
               )}
             </div>
+
+            <details style={{ marginTop: 10, color: theme.textSecondary }}>
+              <summary style={{ cursor: 'pointer', fontSize: 12, userSelect: 'none' }}>项目追溯筛选</summary>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8, alignItems: 'center' }}>
+                <input
+                  value={filters.project_id}
+                  placeholder="项目 ID"
+                  aria-label="项目 ID"
+                  onChange={e => setFilters(prev => ({ ...prev, project_id: e.target.value.trim() }))}
+                  onBlur={e => handleFilterChange('project_id', e.target.value.trim())}
+                  onKeyDown={e => { if (e.key === 'Enter') handleFilterChange('project_id', e.currentTarget.value.trim()) }}
+                  style={{ width: 220, padding: '4px 8px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bgInput)', color: 'var(--textPrimary)' }}
+                />
+                <select
+                  value={filters.asset_role}
+                  aria-label="项目资产角色"
+                  onChange={e => handleFilterChange('asset_role', e.target.value)}
+                  style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bgInput)', color: 'var(--textPrimary)' }}
+                >
+                  <option value="">全部角色</option>
+                  <option value="text">文本</option>
+                  <option value="character">角色</option>
+                  <option value="background">背景</option>
+                  <option value="reference">参考</option>
+                  <option value="output">生成结果</option>
+                </select>
+                <select
+                  value={filters.source_stage}
+                  aria-label="项目来源阶段"
+                  onChange={e => handleFilterChange('source_stage', e.target.value)}
+                  style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bgInput)', color: 'var(--textPrimary)' }}
+                >
+                  <option value="">全部阶段</option>
+                  <option value="novel_body">正文</option>
+                  <option value="script">脚本</option>
+                  <option value="storyboard">分镜</option>
+                  <option value="comic_pages">漫画页</option>
+                </select>
+              </div>
+            </details>
 
             {/* Hybrid search unavailable warning */}
             {searchMode === 'hybrid' && !loading && assets.length === 0 && searchQuery && (

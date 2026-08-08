@@ -214,3 +214,56 @@ def test_assets_api_no_longer_serves_legacy_fallback_assets():
 
     assert detail_response.status_code == 404
     assert download_response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_project_asset_context_reads_all_asset_hub_metadata_layers():
+    card = {
+        "metadata": {
+            "node_metadata": {"project_id": "project-node", "content_type": "novel_body"},
+            "lineage": {"project_title": "不应覆盖节点项目", "role": "text"},
+            "ai_params": {"chapter_number": 3, "content_version": 2},
+        }
+    }
+
+    assert assets_api._project_asset_context(card) == {
+        "project_id": "project-node",
+        "project_title": "不应覆盖节点项目",
+        "asset_role": "text",
+        "source_stage": "novel_body",
+        "content_id": "",
+        "content_version": 2,
+        "chapter_number": 3,
+    }
+
+
+def test_assets_api_passes_project_filters_to_asset_hub(monkeypatch):
+    captured = {}
+
+    async def fake_list_hub_cards(*_args, **kwargs):
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr(assets_api, "_list_asset_hub_cards", fake_list_hub_cards)
+
+    with _assets_test_client(_FakeService()) as client:
+        response = client.get(
+            "/api/v1/assets?project_id=project-1&asset_role=text&source_stage=novel_body"
+        )
+
+    assert response.status_code == 200
+    assert captured["project_id"] == "project-1"
+    assert captured["asset_role"] == "text"
+    assert captured["source_stage"] == "novel_body"
+
+
+def test_project_text_asset_defaults_to_text_role_when_link_is_not_loaded():
+    context = assets_api._project_asset_context({
+        "type": "text",
+        "metadata": {
+            "node_metadata": {"project_id": "project-1", "content_type": "script"},
+        },
+    })
+
+    assert context["asset_role"] == "text"
+    assert context["source_stage"] == "script"

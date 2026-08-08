@@ -50,6 +50,7 @@ SUPPORTED_PLATFORMS = [
     {"value": "weibo",      "label": "微博",     "icon": "message",     "color": "#ff8200",  "auth_types": ["cookie"]},
     {"value": "zhihu",      "label": "知乎",     "icon": "question",    "color": "#0066ff",  "auth_types": ["cookie"]},
     {"value": "wechat_mp",  "label": "微信公众号", "icon": "wechat",     "color": "#07C160",  "auth_types": ["qrcode"]},
+    {"value": "fanqie",     "label": "番茄小说",   "icon": "book",       "color": "#ff5a5f",  "auth_types": ["cookie"], "view": True, "publish": True, "credential": "cookie"},
     {"value": "youtube",    "label": "YouTube",   "icon": "youtube",     "color": "#ff0000",  "auth_types": ["cookie"]},
     {"value": "tiktok",     "label": "TikTok",    "icon": "tiktok",      "color": "#000000",  "auth_types": ["cookie"]},
     {"value": "twitter",    "label": "Twitter/X", "icon": "twitter",    "color": "#1da1f2",  "auth_types": ["cookie"]},
@@ -232,6 +233,74 @@ class CookieContentResponse(BaseModel):
 class CookieContentSaveRequest(BaseModel):
     """Cookie 内容保存请求"""
     content: str
+
+
+class PlatformPublishRequest(BaseModel):
+    """A platform-neutral envelope with an explicit platform target."""
+
+    title: str
+    body: str = ""
+    content_type: str = "article"
+    target: dict[str, str] = {}
+    dry_run: bool = False
+
+
+@router.post("/{conn_id}/publish", summary="通过指定平台连接发布内容")
+async def publish_content(
+    conn_id: str,
+    req: PlatformPublishRequest,
+    service: PlatformConnectionService = Depends(get_platform_service),
+):
+    """Publish through a configured connection.
+
+    Fanqie is chapter based, so an article must name the remote book, volume,
+    and already-created chapter item. ``dry_run`` validates that contract
+    without sending a remote write request.
+    """
+    conn = service.get(conn_id)
+    if not conn:
+        raise HTTPException(status_code=404, detail="平台连接不存在")
+    platform = conn.platform.value if hasattr(conn.platform, "value") else str(conn.platform)
+    if platform != PlatformType.FANQIE.value:
+        raise HTTPException(status_code=422, detail=f"通用发布暂不支持平台: {platform}")
+    if req.content_type != "article":
+        raise HTTPException(status_code=422, detail="番茄仅支持 article 类型章节正文")
+    if not conn.cookie_content:
+        raise HTTPException(status_code=400, detail="番茄连接未配置 cookie")
+    if not req.title.strip() or not req.body.strip():
+        raise HTTPException(status_code=400, detail="标题和正文不能为空")
+
+    target = req.target or {}
+    missing = [key for key in ("book_id", "volume_id", "item_id") if not str(target.get(key, "")).strip()]
+    if missing:
+        raise HTTPException(status_code=400, detail=f"番茄发布缺少目标参数: {', '.join(missing)}")
+    if req.dry_run:
+        return {
+            "success": True,
+            "dry_run": True,
+            "platform": platform,
+            "target": {key: target.get(key, "") for key in ("book_id", "volume_id", "volume_name", "item_id")},
+        }
+
+    from app.services.platforms.fanqie.client import FanqieClient
+    from app.services.platforms.fanqie.utils import FanqieError, markdown_to_fanqie_html
+    from app.services.platforms.types import ClientConfig, ClientMode
+
+    try:
+        async with FanqieClient(ClientConfig(platform="fanqie", mode=ClientMode.API, cookie=conn.cookie_content)) as client:
+            result = await client.save_draft(
+                book_id=target["book_id"],
+                volume_id=target["volume_id"],
+                volume_name=target.get("volume_name", ""),
+                item_id=target["item_id"],
+                title=req.title.strip(),
+                content_html=markdown_to_fanqie_html(req.body),
+            )
+    except FanqieError as exc:
+        raise HTTPException(status_code=502, detail=f"番茄发布失败: {exc}") from exc
+
+    service.mark_used(conn_id)
+    return {"success": True, "platform": platform, "data": result}
 
 
 @router.get("/{conn_id}/cookie-content", summary="获取 Netscape 格式 Cookie")

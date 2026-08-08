@@ -25,6 +25,10 @@ backend/venv_linux/
 # Node.js
 node_modules/
 dist/
+*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
+frontend/.cache/
 .nuxt/
 .next/
 out/
@@ -46,6 +50,7 @@ backend/app/data/settings.json
 backend/data/ylcraft.db
 frontend/.env.local
 .env.local
+.local/
 
 # Downloads
 backend/downloads/
@@ -59,4 +64,9 @@ backend/data/cookies/
 .gitignore
 backend/.env
 backend/app/storage/images/
+.workbuddy/
+*.stdout.log
+*.stderr.log
+esbuild_*.err
+frontend/dist-verify/
 .codex-temp/

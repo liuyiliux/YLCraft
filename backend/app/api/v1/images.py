@@ -22,6 +22,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.task_queue import TaskStatus, get_task_queue
 from app.db.models.asset_hub import AssetNode
+from app.db.models.creative_project import CreativeProject, ProjectAssetLink, ProjectContent
 from app.services.ai import get_ai_service, AIService
 from app.services.ai.types import ImageGenerationRequest
 from app.services.asset_hub.representation_service import AssetRepresentationService
@@ -89,6 +90,80 @@ async def _try_create_generated_image_asset_hub(*, context: str, **kwargs) -> st
     except Exception as exc:
         logger.warning("%s: failed to save generated image to Asset Hub: %s", context, exc)
     return ""
+
+
+async def _create_generated_image_artifact(
+    session,
+    *,
+    project_id: str = "",
+    content_id: str = "",
+    task_id: str = "",
+    image_index: int = 0,
+    **kwargs,
+) -> tuple[str, str]:
+    """Create one generated image and its project edge in one DB transaction.
+
+    Asset Hub is the canonical image record. A project-scoped generation is not
+    production-complete until the canonical record and the project lineage edge
+    have both been written. Non-project generations intentionally return an
+    empty link id.
+    """
+    asset_id = await _create_generated_image_asset_hub(session, **kwargs)
+    if not project_id:
+        return asset_id, ""
+
+    project = await session.get(CreativeProject, project_id)
+    if project is None:
+        raise ValueError(f"Project not found for generated image: {project_id}")
+
+    if content_id:
+        content = await session.get(ProjectContent, content_id)
+        if content is None or content.project_id != project_id:
+            raise ValueError(f"Project content not found for generated image: {content_id}")
+
+    existing = await session.execute(
+        select(ProjectAssetLink).where(
+            ProjectAssetLink.project_id == project_id,
+            ProjectAssetLink.asset_id == asset_id,
+            ProjectAssetLink.content_id == (content_id or None),
+            ProjectAssetLink.role == "generated",
+        )
+    )
+    link = existing.scalars().first()
+    if link is None:
+        link = ProjectAssetLink(
+            project_id=project_id,
+            asset_id=asset_id,
+            content_id=content_id or None,
+            role="generated",
+            relation="derived_from",
+            metadata_json=json.dumps(
+                {
+                    "source": "image_generation",
+                    "task_id": task_id,
+                    "image_index": image_index,
+                },
+                ensure_ascii=False,
+            ),
+        )
+        session.add(link)
+        await session.flush()
+    return asset_id, str(link.id)
+
+
+async def _try_create_generated_image_artifact(*, context: str, **kwargs) -> tuple[str, str]:
+    """Best-effort artifact finalization that never poisons the request session."""
+    from app.db.database import get_async_session
+
+    try:
+        async with get_async_session() as session:
+            async with session.begin_nested():
+                return await _create_generated_image_artifact(session, **kwargs)
+    except SQLAlchemyError as exc:
+        logger.warning("%s: failed to finalize generated image artifact: %s", context, exc)
+    except Exception as exc:
+        logger.warning("%s: failed to finalize generated image artifact: %s", context, exc)
+    return "", ""
 
 
 class ImageGenerateRequest(BaseModel):
@@ -520,13 +595,17 @@ async def generate_image(req: ImageGenerateRequest):
             # 自动入库到资产库，并把素材 ID 返回给前端，方便项目工作流回写关联。
             asset_ids = []
             asset_hub_node_ids = []
+            project_link_ids = []
             local_paths = result.all_local_paths or ([result.local_path] if result.local_path else [])
             if local_paths:
                 try:
                     for idx, local_path in enumerate(local_paths):
                         urls = result.urls or ([result.url] if result.url else [])
-                        asset_hub_node_id = await _try_create_generated_image_asset_hub(
+                        asset_hub_node_id, project_link_id = await _try_create_generated_image_artifact(
                             context="generate_image",
+                            project_id=req.project_id or "",
+                            content_id=req.content_id or "",
+                            image_index=idx,
                             image_path=str(local_path),
                             prompt=req.prompt,
                             provider=result.provider or "",
@@ -553,9 +632,24 @@ async def generate_image(req: ImageGenerateRequest):
                         if asset_hub_node_id:
                             asset_hub_node_ids.append(asset_hub_node_id)
                             asset_ids.append(asset_hub_node_id)
+                        if project_link_id:
+                            project_link_ids.append(project_link_id)
                     logger.info(f"Image saved to asset library: {local_paths}")
                 except Exception as e:
                     logger.warning(f"Failed to save image to asset library: {e}")
+
+            if req.project_id and (
+                not local_paths
+                or len(asset_ids) != len(local_paths)
+                or len(project_link_ids) != len(local_paths)
+            ):
+                return ImageResponse(
+                    success=False,
+                    error="Image generation completed, but asset finalization or project lineage did not complete",
+                    provider=result.provider or "",
+                    model=result.model or "",
+                    status="error",
+                )
 
             return ImageResponse(
                 success=True,
@@ -677,6 +771,7 @@ async def poll_image_task(
         if result.success and result.status == "done":
             asset_ids = []
             asset_hub_node_ids = []
+            project_link_ids = []
             if tracked_task and tracked_task.task_type == "image_generation":
                 await queue.append_event(
                     task_id,
@@ -696,8 +791,12 @@ async def poll_image_task(
                         )
                         urls = result.urls or ([result.url] if result.url else [])
                         for idx, local_path in enumerate(local_paths):
-                            asset_hub_node_id = await _try_create_generated_image_asset_hub(
+                            asset_hub_node_id, project_link_id = await _try_create_generated_image_artifact(
                                 context="poll_image_task",
+                                project_id=str(payload.get("project_id") or ""),
+                                content_id=str(payload.get("content_id") or ""),
+                                task_id=task_id,
+                                image_index=idx,
                                 image_path=str(local_path),
                                 prompt=payload.get("prompt", ""),
                                 provider=result.provider or "",
@@ -730,12 +829,19 @@ async def poll_image_task(
                             if asset_hub_node_id:
                                 asset_hub_node_ids.append(asset_hub_node_id)
                                 asset_ids.append(asset_hub_node_id)
+                            if project_link_id:
+                                project_link_ids.append(project_link_id)
                             await queue.append_event(
                                 task_id,
-                                "asset_saved",
+                                "asset_linked",
                                 "生成图片已入素材库" if asset_hub_node_id else "生成图片入库失败，已保留生成结果",
                                 level="info" if asset_hub_node_id else "warning",
-                                data={"asset_id": asset_hub_node_id, "asset_hub_node_id": asset_hub_node_id, "image_index": idx},
+                                data={
+                                    "asset_id": asset_hub_node_id,
+                                    "asset_hub_node_id": asset_hub_node_id,
+                                    "project_asset_link_id": project_link_id,
+                                    "image_index": idx,
+                                },
                             )
                         await queue.append_event(
                             task_id,
@@ -762,11 +868,44 @@ async def poll_image_task(
                 "all_asset_ids": asset_ids,
                 "asset_hub_node_id": asset_hub_node_ids[0] if asset_hub_node_ids else "",
                 "all_asset_hub_node_ids": asset_hub_node_ids,
+                "project_asset_link_ids": project_link_ids,
                 "provider": result.provider or "",
                 "model": result.model or "",
                 "diagnostics": (tracked_task.payload or {}).get("diagnostics", {}) if tracked_task else {},
             }
             if tracked_task and tracked_task.task_type == "image_generation":
+                project_id = str((tracked_task.payload or {}).get("project_id") or "")
+                finalization_ok = bool(local_paths) and len(asset_ids) == len(local_paths)
+                if project_id:
+                    finalization_ok = finalization_ok and len(project_link_ids) == len(local_paths)
+                if not finalization_ok:
+                    error = "Remote image completed, but asset finalization or project lineage did not complete"
+                    tracked_task.status = TaskStatus.FAILED
+                    tracked_task.error = error
+                    tracked_task.progress_message = error
+                    tracked_task.completed_at = time.time()
+                    await queue.append_event(
+                        task_id,
+                        "finalization_failed",
+                        error,
+                        level="error",
+                        data={
+                            "image_count": len(local_paths),
+                            "asset_count": len(asset_ids),
+                            "project_link_count": len(project_link_ids),
+                        },
+                    )
+                    await queue.update_task(tracked_task)
+                    return ImageResponse(
+                        success=False,
+                        error=error,
+                        task_id=task_id,
+                        external_task_id=result.task_id or external_task_id,
+                        provider=result.provider or "",
+                        model=result.model or "",
+                        status="error",
+                        progress=float(tracked_task.progress or 0),
+                    )
                 tracked_task.status = TaskStatus.DONE
                 tracked_task.progress = 100
                 tracked_task.progress_message = "图片生成完成"

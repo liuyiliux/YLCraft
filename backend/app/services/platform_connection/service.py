@@ -35,6 +35,9 @@ from app.services.cookies.manager import CookieManager, get_cookie_manager
 from app.services.platform_connection.bilibili import (
     extract_account_info_from_cookie as bilibili_extract_account,
 )
+from app.services.platform_connection.fanqie import (
+    extract_account_info_from_cookie as fanqie_extract_account,
+)
 
 logger = logging.getLogger("ylcraft.platform_connection")
 
@@ -482,7 +485,19 @@ class PlatformConnectionService:
                     self.session.add(conn)
                     self.session.commit()
                     return {"success": True, "message": f"Cookie有效，已提取账号: {info['account_name']}"}
-            
+
+            # 如果是番茄小说，尝试提取作家标识（只读探活 get_my_books）
+            if platform == "fanqie" and fanqie_extract_account:
+                info = fanqie_extract_account(cookie_str)
+                if info.get("account_id"):
+                    conn.account_id = info["account_id"]
+                    conn.account_name = info["account_name"]
+                    conn.account_avatar = info["account_avatar"]
+                    conn.account_url = info["account_url"]
+                    self.session.add(conn)
+                    self.session.commit()
+                    return {"success": True, "message": f"Cookie有效，已识别作家标识: {info['account_id']}"}
+
             # 如果是微信公众号，进行实际会话测试
             if platform == "wechat_mp":
                 token = conn.get_credentials().get("token", "")
@@ -508,6 +523,19 @@ class PlatformConnectionService:
                         self.session.add(conn)
                         self.session.commit()
                         return {"success": True, "message": f"自动转换后有效，已提取账号: {info['account_name']}"}
+
+                # 如果是番茄小说，尝试提取作家标识
+                if platform == "fanqie" and fanqie_extract_account:
+                    info = fanqie_extract_account(cookie_str)
+                    if info.get("account_id"):
+                        conn.account_id = info["account_id"]
+                        conn.account_name = info["account_name"]
+                        conn.account_avatar = info["account_avatar"]
+                        conn.account_url = info["account_url"]
+                        self.session.add(conn)
+                        self.session.commit()
+                        return {"success": True, "message": f"自动转换后有效，已识别作家标识: {info['account_id']}"}
+
                 return {"success": True, "message": f"自动转换后有效: {result['message']}"}
 
         return {"success": False, "message": result["message"]}

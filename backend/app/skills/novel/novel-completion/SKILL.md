@@ -12,6 +12,15 @@ triggers:
   tools: [run_creative_writer_room, list_novel_bookshelf, preview_novel_chapter]
 requires_tools: [run_creative_writer_room]
 risk: write
+creative:
+  compatible_project_types: [novel]
+  compatible_genres: ["*"]
+  stages: [novel_body, prose_draft, prose_rewrite, directed_rewrite]
+  context_contribution: "按章节契约推进场景、行动与选择；保留已确认事件和人物关系，不用总结替代戏剧过程。"
+  input_schema: {chapter_contract: object, approved_prose: string, narrative_context: string}
+  output_schema: {candidate_prose: string, source_content_id: string}
+  prohibited_mutations: [approved_novel_body, locked_project_bible, confirmed_ledger]
+  auto_apply: true
 ---
 
 # 小说正文补完

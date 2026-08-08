@@ -15,6 +15,7 @@ import {
   BranchesOutlined,
   EditOutlined,
   FireOutlined,
+  BulbOutlined,
   MenuOutlined,
   SearchOutlined,
   SendOutlined,
@@ -68,6 +69,7 @@ const menuItems: MenuProps['items'] = [
       { key: '/breaker', label: navLabel('爆款拆解', '实验') },
       { key: '/up-analytics', label: navLabel('UP主分析', '实验') },
       { key: '/my-data', label: navLabel('我的数据', '实验') },
+      { key: '/inspiration', label: navLabel('灵感广场', '实验') },
     ],
   },
   {

@@ -375,6 +375,28 @@ async def test_generic_image_async_generate_returns_pending_without_polling(monk
 
 
 @pytest.mark.asyncio
+async def test_async_generate_keeps_completed_task_pollable_without_images(monkeypatch):
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            self.headers = kwargs.get("headers") or {}
+
+        async def post(self, url, json=None):
+            return httpx.Response(200, json={"task_id": "task-123", "task_status": "SUCCEED"})
+
+        async def aclose(self):
+            return None
+
+    monkeypatch.setattr("app.services.ai.backends.image.generic.httpx.AsyncClient", FakeAsyncClient)
+    backend = GenericImageBackend(_connector(), session=None)
+
+    result = await backend.generate(ImageGenerationRequest(prompt="A golden cat"))
+
+    assert result.success is True
+    assert result.status == "pending"
+    assert result.task_id == "task-123"
+
+
+@pytest.mark.asyncio
 async def test_generic_image_async_poll_uses_configured_endpoint_and_headers(monkeypatch):
     requests = []
 

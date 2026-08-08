@@ -36,6 +36,7 @@ class PlatformType(str, enum.Enum):
     TWITTER = "twitter"      # Twitter/X
     TELEGRAM = "telegram"    # Telegram
     WECHAT_MP = "wechat_mp"  # 微信公众号
+    FANQIE = "fanqie"        # 番茄小说作家后台（cookie 发布）
 
     # AI 服务
     OPENAI = "openai"

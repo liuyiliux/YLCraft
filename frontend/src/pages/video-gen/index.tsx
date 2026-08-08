@@ -9,7 +9,7 @@
  * - 视频下载 / 入库
  */
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useWebSocket, WSTaskProgress } from '../../hooks/useWebSocket'
 import {
@@ -35,6 +35,7 @@ import {
   Timeline,
   Badge,
   Statistic,
+  Alert,
 } from 'antd'
 import {
   VideoCameraOutlined,
@@ -72,7 +73,24 @@ interface GeneratedVideo {
   resolution?: string
   seed?: number
   created_at: string
+  asset_id?: string
+  project_id?: string
+  content_id?: string
+  chapter_number?: number
+  source_type?: string
+  source_index?: string
   error?: string
+}
+
+interface ProjectVideoContext {
+  projectId?: string
+  contentId?: string
+  chapterNumber?: number
+  sourceIndex?: string
+  sourceType?: string
+  sourceTitle?: string
+  musicHint?: string
+  referenceAssetIds: string[]
 }
 
 interface BackendInfo {
@@ -86,6 +104,19 @@ export default function VideoGenPage() {
   const { theme: THEME } = useTheme()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
+  const projectContext = useMemo<ProjectVideoContext>(() => ({
+    projectId: searchParams.get('project_id') || undefined,
+    contentId: searchParams.get('content_id') || undefined,
+    chapterNumber: Number(searchParams.get('chapter_number')) || undefined,
+    sourceIndex: searchParams.get('source_index') || undefined,
+    sourceType: searchParams.get('source_type') || undefined,
+    sourceTitle: searchParams.get('source_title') || undefined,
+    musicHint: searchParams.get('music_hint') || undefined,
+    referenceAssetIds: (searchParams.get('reference_asset_ids') || '')
+      .split(',')
+      .map(value => value.trim())
+      .filter(Boolean),
+  }), [searchParams])
 
   // 生成模式
   const [mode, setMode] = useState<'text2video' | 'img2video'>('text2video')
@@ -130,12 +161,14 @@ export default function VideoGenPage() {
     const modelParam = searchParams.get('model')
     const durationParam = searchParams.get('duration')
     const aspectRatioParam = searchParams.get('aspect_ratio')
+    const generateAudioParam = searchParams.get('generate_audio')
     const referenceImageParam = searchParams.get('reference_image')
 
     if (promptParam) setPrompt(promptParam)
     if (negativePromptParam) setNegativePrompt(negativePromptParam)
     if (durationParam) setDuration(Number(durationParam))
     if (aspectRatioParam) setAspectRatio(aspectRatioParam)
+    if (generateAudioParam !== null) setGenerateAudio(generateAudioParam === 'true')
     if (referenceImageParam) {
       // 自动切换到图生视频模式并设置起始图
       setMode('img2video')
@@ -147,7 +180,8 @@ export default function VideoGenPage() {
       }
       setStartImage(refImage)
     }
-  }, [searchParams])
+    if (projectContext.referenceAssetIds.length) setMode('img2video')
+  }, [searchParams, projectContext.referenceAssetIds.length])
 
   // 当后端加载完成后，根据 URL 参数设置模型
   useEffect(() => {
@@ -292,12 +326,25 @@ export default function VideoGenPage() {
         model: selectedModel,  // 动态选择模型
         seed,
         generate_audio: generateAudio,
+        music_hint: projectContext.musicHint,
+        project_id: projectContext.projectId,
+        content_id: projectContext.contentId,
+        chapter_number: projectContext.chapterNumber,
+        source_index: projectContext.sourceIndex,
+        source_type: projectContext.sourceType,
+        source_title: projectContext.sourceTitle,
+        reference_asset_ids: projectContext.referenceAssetIds,
       }
 
       // 图生视频：首帧图片
       if (mode === 'img2video' && startImage) {
         if (startImage.originFileObj) {
-          body.start_image = URL.createObjectURL(startImage.originFileObj)
+          body.start_image = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader()
+            reader.onload = () => resolve(reader.result as string)
+            reader.onerror = reject
+            reader.readAsDataURL(startImage.originFileObj!)
+          })
         } else if (startImage.url) {
           // URL 形式的参考图（如从资产库跳转），fetch 下载后转 base64
           try {
@@ -332,11 +379,19 @@ export default function VideoGenPage() {
           local_path: data.local_path,
           prompt,
           provider: data.provider || provider || 'unknown',
-          model: 'seedance-2.0',
+          model: data.model || selectedModel || '',
           status: data.status || 'pending',
           progress: data.progress || 0,
           duration,
           seed,
+          aspect_ratio: aspectRatio,
+          resolution,
+          asset_id: data.asset_id,
+          project_id: data.project_id || projectContext.projectId,
+          content_id: data.content_id || projectContext.contentId,
+          chapter_number: projectContext.chapterNumber,
+          source_type: data.source_type || projectContext.sourceType,
+          source_index: data.source_index || projectContext.sourceIndex,
           created_at: new Date().toISOString(),
         }
 
@@ -413,6 +468,27 @@ export default function VideoGenPage() {
             }
             style={{ marginBottom: 16 }}
           >
+            {projectContext.projectId && (
+              <Alert
+                type="info"
+                showIcon
+                style={{ marginBottom: 16 }}
+                message={`来自项目${projectContext.chapterNumber ? ` · 第 ${projectContext.chapterNumber} 话` : ''}${projectContext.sourceIndex ? ` · 分镜 ${projectContext.sourceIndex}` : ''}`}
+                description={[
+                  projectContext.sourceTitle || '生成结果会自动进入素材库并回链到当前项目来源。',
+                  projectContext.musicHint ? `声音建议：${projectContext.musicHint}` : '',
+                ].filter(Boolean).join(' · ')}
+                action={
+                  <Button
+                    size="small"
+                    type="link"
+                    onClick={() => navigate(`/story?project_id=${encodeURIComponent(projectContext.projectId!)}`)}
+                  >
+                    返回项目
+                  </Button>
+                }
+              />
+            )}
             {/* 模式切换 */}
             <Tabs
               activeKey={mode}
@@ -461,6 +537,11 @@ export default function VideoGenPage() {
                   <p style={{ color: '#8b8ba8' }}>点击或拖拽上传首帧图片</p>
                   <p style={{ color: THEME.textSecondary, fontSize: 12 }}>视频将从这张图片开始生成</p>
                 </Dragger>
+                {projectContext.referenceAssetIds.length > 0 && !startImage && (
+                  <div style={{ marginTop: 8, fontSize: 12, color: THEME.textSecondary }}>
+                    已带入 {projectContext.referenceAssetIds.length} 张项目参考图，首张会作为首帧素材发送给模型。
+                  </div>
+                )}
               </div>
             )}
 
@@ -691,6 +772,14 @@ export default function VideoGenPage() {
                           >
                             {video.prompt}
                           </div>
+                          {video.project_id && (
+                            <div style={{ marginTop: 6 }}>
+                              <Tag color="blue">
+                                项目{video.chapter_number ? ` · 第 ${video.chapter_number} 话` : ''}{video.source_index ? ` · 分镜 ${video.source_index}` : ''}
+                              </Tag>
+                              {video.asset_id && <Tag color="green">已入素材库</Tag>}
+                            </div>
+                          )}
                           {video.status === 'processing' && (
                             <Progress
                               percent={video.progress}
@@ -723,6 +812,18 @@ export default function VideoGenPage() {
                                     onClick={e => { e.stopPropagation(); handleDownload(video) }}
                                   />
                                 </Tooltip>
+                                {video.project_id && (
+                                  <Tooltip title="返回项目制作台">
+                                    <Button
+                                      type="text"
+                                      icon={<VideoCameraOutlined />}
+                                      onClick={e => {
+                                        e.stopPropagation()
+                                        navigate(`/story?project_id=${encodeURIComponent(video.project_id!)}`)
+                                      }}
+                                    />
+                                  </Tooltip>
+                                )}
                               </>
                             )}
                             <Tooltip title="删除">

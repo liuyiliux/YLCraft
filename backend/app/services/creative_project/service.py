@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import logging
 import math
 import re
@@ -16,7 +17,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session, select
 
-from app.db.models.asset_hub import AssetNode
+from app.db.models.asset_hub import AssetNode, AssetType, AssetVersion
 from app.db.models.character import Character, CharacterRole, CharacterSourceType, CharacterStoryLink
 from app.db.models.creative_project import (
     CreativeProject,
@@ -24,9 +25,14 @@ from app.db.models.creative_project import (
     ProjectAssetLink,
     ProjectContent,
     ProjectGenerationLog,
+    ProjectContinuityCandidate,
+    ProjectNarrativeContextSnapshot,
+    ProjectNarrativeSnapshot,
+    ProjectForeshadowing,
 )
 from app.db.models.novel import NovelChapter
 from app.db.models.platform_template import PlatformTemplate
+from app.db.models.task import ProjectTaskRecord
 from app.services.ai.types import LLMMessage
 from app.services.creative_project.schemas import (
     ChapterOutlineScenesSchema,
@@ -34,6 +40,8 @@ from app.services.creative_project.schemas import (
     ChapterPlanSchema,
     ComicPagesSchema,
     NovelBodySchema,
+    NarrativeHealthIssueSchema,
+    ProjectNarrativeHealthSchema,
     ReferenceAssetMatchSchema,
     ShortDramaScriptSchema,
     StoryOutlineSchema,
@@ -42,23 +50,246 @@ from app.services.creative_project.schemas import (
     WriterRoomProseReviewSchema,
     WriterRoomSceneBeatsSchema,
 )
+from app.services.creative_project.semantic_recall import (
+    DisabledNarrativeSemanticRecallAdapter,
+    NarrativeRecallCandidate,
+    NarrativeRecallResult,
+    NarrativeSemanticRecallAdapter,
+)
 
 logger = logging.getLogger("ylcraft.creative_project")
 
 TModel = TypeVar("TModel", bound=BaseModel)
 
+WRITER_ROOM_STEP_ORDER = (
+    "scene_beats",
+    "character_rehearsal",
+    "prose_draft",
+    "prose_humanized",
+    "prose_review",
+    "prose_rewrite",
+)
+
+_MOJIBAKE_PRIMARY_MARKERS = ("\u00c2", "\u00c3")
+
+
+def _cjk_character_count(value: str) -> int:
+    return sum(
+        1
+        for char in value
+        if "\u3400" <= char <= "\u4dbf"
+        or "\u4e00" <= char <= "\u9fff"
+        or "\uf900" <= char <= "\ufaff"
+    )
+
+
+def repair_utf8_mojibake(value: Any, *, max_passes: int = 2) -> Any:
+    """Repair legacy UTF-8-as-Latin-1 text without touching valid CJK text.
+
+    Some early project imports decoded UTF-8 bytes as Latin-1 before saving.
+    A second save could repeat that mistake, so a value may need two passes.
+    We only accept a conversion when it restores CJK characters or removes the
+    characteristic ``\u00c2``/``\u00c3`` marker pair. This keeps ordinary text intact.
+    """
+    if isinstance(value, dict):
+        return {key: repair_utf8_mojibake(item, max_passes=max_passes) for key, item in value.items()}
+    if isinstance(value, list):
+        return [repair_utf8_mojibake(item, max_passes=max_passes) for item in value]
+    if not isinstance(value, str) or not value:
+        return value
+
+    repaired = value
+    for _ in range(max_passes):
+        try:
+            candidate = repaired.encode("latin-1").decode("utf-8")
+        except UnicodeError:
+            break
+        if candidate == repaired:
+            break
+
+        current_cjk = _cjk_character_count(repaired)
+        candidate_cjk = _cjk_character_count(candidate)
+        current_markers = sum(repaired.count(marker) for marker in _MOJIBAKE_PRIMARY_MARKERS)
+        candidate_markers = sum(candidate.count(marker) for marker in _MOJIBAKE_PRIMARY_MARKERS)
+        if candidate_cjk > current_cjk or (current_markers and candidate_markers < current_markers):
+            repaired = candidate
+            continue
+        break
+    return repaired
+
 
 def dumps_json(data: Any) -> str:
-    return json.dumps(data or {}, ensure_ascii=False)
+    return json.dumps(repair_utf8_mojibake(data or {}), ensure_ascii=False)
 
 
 def loads_json(value: str | None, fallback: Any = None) -> Any:
     if not value:
         return {} if fallback is None else fallback
     try:
-        return json.loads(value)
+        # Old imported project records may still contain UTF-8 text that was
+        # decoded as Latin-1 before it reached storage.  Normalize on every
+        # read as well as on write so those records cannot leak into the UI or
+        # later generation prompts merely because they have not been edited.
+        return repair_utf8_mojibake(json.loads(value))
     except Exception:
         return {} if fallback is None else fallback
+
+
+def normalize_chapter_plan(data: dict[str, Any] | None) -> dict[str, Any]:
+    """Derive a plan count from valid unique chapter rows.
+
+    Older projects occasionally persisted a declared ``chapter_count`` that did
+    not match the actual plan rows.  The rows are the executable contract for
+    downstream chapter work, so retain their original order/content but expose
+    a count derived from valid unique chapter numbers.  The previous declared
+    count is kept as provenance instead of being silently discarded.
+    """
+    normalized = dict(data or {})
+    chapters = normalized.get("chapters")
+    if isinstance(chapters, list):
+        legacy_count = normalized.get("chapter_count")
+        numbers: set[int] = set()
+        for item in chapters:
+            if not isinstance(item, dict):
+                continue
+            raw_number = item.get("chapter_number")
+            try:
+                chapter_number = int(raw_number)
+            except (TypeError, ValueError):
+                continue
+            if isinstance(raw_number, bool) or chapter_number <= 0:
+                continue
+            numbers.add(chapter_number)
+        normalized["chapter_count"] = len(numbers)
+        if legacy_count is not None and legacy_count != normalized["chapter_count"]:
+            normalized["legacy_chapter_count"] = legacy_count
+    return normalized
+
+
+def validate_chapter_plan(data: dict[str, Any] | None) -> None:
+    """Reject ambiguous chapter plans before they become downstream inputs.
+
+    A duplicate chapter number makes every chapter-scoped stage ambiguous:
+    generation may attach to either row and the reader can appear to have a
+    duplicate chapter.  Preserve the submitted row order, but require a unique
+    positive chapter number for every explicit row.
+    """
+    chapters = (data or {}).get("chapters") if isinstance(data, dict) else None
+    if chapters is None:
+        return
+    if not isinstance(chapters, list):
+        raise ValueError("章节规划的 chapters 必须是数组")
+
+    seen: set[int] = set()
+    duplicates: set[int] = set()
+    for index, item in enumerate(chapters, start=1):
+        if not isinstance(item, dict):
+            raise ValueError(f"第 {index} 条章节规划不是对象")
+        raw_number = item.get("chapter_number")
+        try:
+            chapter_number = int(raw_number)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"第 {index} 条章节缺少有效章节号") from exc
+        if isinstance(raw_number, bool) or chapter_number <= 0 or str(raw_number).strip() != str(chapter_number):
+            raise ValueError(f"第 {index} 条章节号必须是正整数")
+        if chapter_number in seen:
+            duplicates.add(chapter_number)
+        seen.add(chapter_number)
+
+    if duplicates:
+        numbers = ", ".join(str(number) for number in sorted(duplicates))
+        raise ValueError(f"章节号重复：第 {numbers} 章。请修改后再保存")
+
+
+def writer_room_allows_length_expansion(instruction: str | None) -> bool:
+    """Let targeted rewrites grow when the user explicitly asks for expansion."""
+    text = str(instruction or "").lower()
+    if not text:
+        return False
+    negative_markers = ("不要扩写", "不用扩写", "禁止扩写", "不扩写", "不要加长", "keep length")
+    if any(marker in text for marker in negative_markers):
+        return False
+    expansion_markers = (
+        "扩写",
+        "扩充",
+        "扩展",
+        "加长",
+        "补足",
+        "增加篇幅",
+        "目标字数",
+        "目标4000",
+        "目标 4000",
+        "目标4500",
+        "目标 4500",
+        "expand",
+        "longer",
+    )
+    return any(marker in text for marker in expansion_markers)
+
+
+def _writer_room_requested_character_bounds(instruction: str | None) -> tuple[int | None, int | None]:
+    """Extract an explicit prose length range from a Writer Room instruction."""
+    text = str(instruction or "")
+    if not text or any(marker in text.lower() for marker in ("keep length", "不要扩写", "不用扩写", "禁止扩写")):
+        return None, None
+
+    patterns = (
+        r"(?:目标|至少|不少于|扩写到|写到|达到)\s*(\d{3,5})\s*(?:(?:-|~|～|至|到)\s*(\d{3,5}))?\s*(?:个?字|个?中文字符|characters?)",
+        r"(\d{3,5})\s*(?:(?:-|~|～|至|到)\s*(\d{3,5}))?\s*(?:个?字|个?中文字符|characters?)",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if not match:
+            continue
+        lower = int(match.group(1))
+        upper = int(match.group(2)) if match.group(2) else None
+        if upper is not None and upper < lower:
+            lower, upper = upper, lower
+        if 800 <= lower <= 20000:
+            return lower, upper if upper is not None and upper <= 20000 else None
+    return None, None
+
+
+def writer_room_requested_minimum_characters(instruction: str | None) -> int | None:
+    """Extract an explicit prose length floor from a Writer Room instruction."""
+    return _writer_room_requested_character_bounds(instruction)[0]
+
+
+def writer_room_requested_maximum_characters(instruction: str | None) -> int | None:
+    """Extract an explicit prose length ceiling from a Writer Room instruction."""
+    return _writer_room_requested_character_bounds(instruction)[1]
+
+
+def writer_room_output_max_tokens(maximum_characters: int | None) -> int:
+    """Keep a requested prose range from inheriting the generic 12k token budget."""
+    if maximum_characters is None:
+        return 12000
+    # Chinese prose is close to one token per character for the configured
+    # models. Keep only a compact JSON/punctuation margin: a larger multiplier
+    # lets providers ignore a 4-5k character contract and emit 6k+ chapters.
+    return min(8000, max(3500, maximum_characters + 350))
+
+
+def writer_room_effective_instruction(
+    step: str,
+    instruction: str | None,
+    source_word_count: int = 0,
+) -> str:
+    """Supply the page/Agent default for prose without overriding explicit direction."""
+    explicit = str(instruction or "").strip()
+    if explicit or step not in {"prose_draft", "prose_humanized", "prose_rewrite"}:
+        return explicit
+
+    if source_word_count >= 4200:
+        length_target = "至少 4000 字"
+    elif source_word_count >= 3000:
+        length_target = "至少 3500 字"
+    else:
+        length_target = "至少 3000 字"
+    return (
+        f"目标 {length_target}。输出完整连载小说正文，不写提纲、设定说明或审稿意见。"
+        "用具体动作、物件互动、停顿和有潜台词的对白推进冲突；保留本章事实、人物关系和结尾钩子。"
+    )
 
 
 def _list_join(value: Any) -> str:
@@ -90,8 +321,14 @@ def _dedupe_keep_order(values: Any) -> list[str]:
 class CreativeProjectService:
     """业务编排：创作项目、阶段内容、生成日志和素材关联。"""
 
-    def __init__(self, session: Session, ai_service: Any | None = None):
+    def __init__(
+        self,
+        session: Session,
+        ai_service: Any | None = None,
+        semantic_recall_adapter: NarrativeSemanticRecallAdapter | None = None,
+    ):
         self.session = session
+        self.semantic_recall_adapter = semantic_recall_adapter or DisabledNarrativeSemanticRecallAdapter()
         if ai_service is not None:
             self.ai_service = ai_service
         else:
@@ -178,6 +415,9 @@ class CreativeProjectService:
                     meta["canvas"] = value
                     project.metadata_json = dumps_json(meta)
                 else:
+                    if key == "chapter_plan":
+                        validate_chapter_plan(value)
+                        value = normalize_chapter_plan(value)
                     setattr(project, json_fields[key], dumps_json(value))
         project.updated_at = datetime.now()
         self.session.add(project)
@@ -332,6 +572,644 @@ class CreativeProjectService:
             self.session.refresh(content)
         return created
 
+    def extract_continuity_candidates(self, project_id: str, content_id: str) -> list[ProjectContent]:
+        """Project generated continuity notes into reviewable world-asset candidates."""
+        self._require_project(project_id)
+        source = self.session.get(ProjectContent, content_id)
+        if not source or source.project_id != project_id:
+            raise ValueError("项目正文不存在")
+        source_data = loads_json(source.data_json)
+        notes = [str(note).strip() for note in (source_data.get("continuity_notes") or []) if str(note).strip()]
+        if not notes:
+            raise ValueError("当前正文没有可提取的连续性备注")
+
+        existing = self.session.exec(
+            select(ProjectContent).where(
+                ProjectContent.project_id == project_id,
+                ProjectContent.content_type == "world_asset",
+                ProjectContent.source_content_id == content_id,
+            )
+        ).all()
+        existing_by_note = {
+            str(loads_json(item.data_json).get("fact") or "").strip(): item
+            for item in existing
+        }
+        candidates: list[ProjectContent] = []
+        for index, note in enumerate(notes, start=1):
+            if note in existing_by_note:
+                candidates.append(existing_by_note[note])
+                continue
+            data = {
+                "asset_kind": "continuity_candidate",
+                "status": "candidate",
+                "fact": note,
+                "source_content_id": content_id,
+                "source_chapter": source.chapter_number or source.episode_number,
+                "review_required": True,
+            }
+            candidate = ProjectContent(
+                project_id=project_id,
+                content_type="world_asset",
+                chapter_number=source.chapter_number,
+                episode_number=source.episode_number,
+                title=f"第 {source.chapter_number or source.episode_number or ''} 章连续性候选 {index}",
+                data_json=dumps_json(data),
+                text_content=note,
+                source_content_id=content_id,
+                version=1,
+            )
+            self.session.add(candidate)
+            candidates.append(candidate)
+        self.session.commit()
+        for candidate in candidates:
+            self.session.refresh(candidate)
+        return candidates
+
+    # ------------------------------------------------------------------
+    # Continuity fact workflow (creative-project-continuity-facts)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def compute_continuity_fingerprint(
+        project_id: str,
+        source_kind: str,
+        source_content_id: str | None,
+        payload: dict[str, Any],
+    ) -> str:
+        """source-aware 候选指纹，用于去重（同一来源+同一事实只入库一次）。"""
+        anchor = payload.get("evidence_anchor") or {}
+        seed = "|".join(
+            [
+                str(project_id or ""),
+                str(source_kind or ""),
+                str(source_content_id or ""),
+                str(payload.get("entity_type") or ""),
+                str(payload.get("entity_name") or "").strip().lower(),
+                str(payload.get("claim") or "").strip().lower(),
+                str(anchor.get("chapter_number") or ""),
+                str(anchor.get("paragraph_index") or ""),
+                str((payload.get("evidence_excerpt") or "")[:120]).strip().lower(),
+            ]
+        )
+        return hashlib.sha256(seed.encode("utf-8")).hexdigest()[:16]
+
+    def list_continuity_candidates(
+        self,
+        project_id: str,
+        *,
+        status: str | None = None,
+        source_content_id: str | None = None,
+        limit: int = 200,
+    ) -> list[ProjectContinuityCandidate]:
+        self._require_project(project_id)
+        stmt = select(ProjectContinuityCandidate).where(
+            ProjectContinuityCandidate.project_id == project_id
+        )
+        if status:
+            stmt = stmt.where(ProjectContinuityCandidate.status == status)
+        if source_content_id:
+            stmt = stmt.where(
+                ProjectContinuityCandidate.source_content_id == source_content_id
+            )
+        stmt = (
+            stmt.order_by(ProjectContinuityCandidate.created_at.desc())
+            .limit(limit)
+        )
+        return list(self.session.exec(stmt).all())
+
+    def extract_continuity_candidates_v2(
+        self,
+        project_id: str,
+        content_id: str,
+        *,
+        source_kind: str = "prose_review",
+        candidates_in: list[dict[str, Any]],
+    ) -> list[ProjectContinuityCandidate]:
+        """结构化候选入库（idempotent by source fingerprint）。"""
+        self._require_project(project_id)
+        source = self.session.get(ProjectContent, content_id)
+        if not source or source.project_id != project_id:
+            raise ValueError("项目正文不存在")
+
+        if not candidates_in:
+            raise ValueError("未提供候选事实")
+
+        result: list[ProjectContinuityCandidate] = []
+        for payload in candidates_in:
+            entity_type = (
+                str(payload.get("entity_type") or "other").strip().lower() or "other"
+            )
+            entity_name = str(payload.get("entity_name") or "").strip()
+            claim = str(payload.get("claim") or "").strip()
+            excerpt = str(payload.get("evidence_excerpt") or "").strip()
+            if not claim and not excerpt:
+                continue
+
+            fingerprint = self.compute_continuity_fingerprint(
+                project_id, source_kind, content_id, payload
+            )
+            existing = self.session.exec(
+                select(ProjectContinuityCandidate).where(
+                    ProjectContinuityCandidate.project_id == project_id,
+                    ProjectContinuityCandidate.source_kind == source_kind,
+                    ProjectContinuityCandidate.source_fingerprint == fingerprint,
+                )
+            ).first()
+            if existing is not None:
+                result.append(existing)
+                continue
+
+            anchor = payload.get("evidence_anchor") or {}
+            if not isinstance(anchor, dict):
+                anchor = {}
+            candidate = ProjectContinuityCandidate(
+                project_id=project_id,
+                source_content_id=content_id,
+                source_kind=source_kind,
+                source_fingerprint=fingerprint,
+                entity_type=entity_type,
+                entity_name=entity_name,
+                claim=claim,
+                evidence_excerpt=excerpt[:480],
+                evidence_anchor_json=dumps_json(anchor),
+                severity=str(payload.get("severity") or "info").strip().lower()
+                or "info",
+                suggested_action=str(
+                    payload.get("suggested_action") or "create_fact"
+                ).strip().lower()
+                or "create_fact",
+                target_fact_type=str(
+                    payload.get("target_fact_type") or "world_asset"
+                ).strip().lower()
+                or "world_asset",
+                status="pending",
+            )
+            self.session.add(candidate)
+            self.session.flush()
+            result.append(candidate)
+
+        self.session.commit()
+        for c in result:
+            self.session.refresh(c)
+        return result
+
+    def _build_fact_from_candidate(
+        self,
+        candidate: ProjectContinuityCandidate,
+        *,
+        resolution_note: str = "",
+    ) -> ProjectContent:
+        """accept 时把候选物化为 project_bible / world_asset 内容卡（locked）。"""
+        chapter_number: int | None = None
+        if candidate.source_content_id:
+            source = self.session.get(ProjectContent, candidate.source_content_id)
+            if source and source.project_id == candidate.project_id:
+                chapter_number = source.chapter_number
+        fact_payload = {
+            "fact": candidate.claim or candidate.entity_name or candidate.evidence_excerpt,
+            "entity_type": candidate.entity_type,
+            "entity_name": candidate.entity_name,
+            "source_candidate_id": candidate.id,
+            "source_content_id": candidate.source_content_id,
+            "evidence_excerpt": candidate.evidence_excerpt,
+            "evidence_anchor": loads_json(candidate.evidence_anchor_json or "{}"),
+            "severity": candidate.severity,
+            "resolution_note": resolution_note,
+        }
+        text = candidate.claim or candidate.entity_name or candidate.evidence_excerpt
+        fact = ProjectContent(
+            project_id=candidate.project_id,
+            content_type=candidate.target_fact_type,
+            chapter_number=chapter_number,
+            title=candidate.entity_name or (candidate.claim[:60] if candidate.claim else "连续性事实"),
+            data_json=dumps_json(fact_payload),
+            text_content=text,
+            source_content_id=candidate.source_content_id,
+            version=1,
+            is_locked=True,
+        )
+        self.session.add(fact)
+        self.session.flush()
+        self.session.refresh(fact)
+        return fact
+
+    def accept_continuity_candidate(
+        self,
+        project_id: str,
+        candidate_id: str,
+        *,
+        note: str = "",
+    ) -> ProjectContinuityCandidate:
+        candidate = self.session.get(ProjectContinuityCandidate, candidate_id)
+        if not candidate or candidate.project_id != project_id:
+            raise ValueError("连续性候选不存在")
+        if candidate.status != "pending":
+            raise ValueError(f"候选状态为 {candidate.status}，不可再次确认")
+
+        fact = self._build_fact_from_candidate(candidate, resolution_note=note)
+        candidate.status = "accepted"
+        candidate.resolved_fact_id = fact.id
+        candidate.resolution_note = note
+        candidate.resolved_at = datetime.now()
+        candidate.updated_at = datetime.now()
+        self.session.add(candidate)
+        self.session.commit()
+        self.session.refresh(candidate)
+        return candidate
+
+    def ignore_continuity_candidate(
+        self,
+        project_id: str,
+        candidate_id: str,
+        *,
+        note: str = "",
+    ) -> ProjectContinuityCandidate:
+        candidate = self.session.get(ProjectContinuityCandidate, candidate_id)
+        if not candidate or candidate.project_id != project_id:
+            raise ValueError("连续性候选不存在")
+        if candidate.status != "pending":
+            raise ValueError(f"候选状态为 {candidate.status}，不可忽略")
+        candidate.status = "ignored"
+        candidate.resolution_note = note
+        candidate.resolved_at = datetime.now()
+        candidate.updated_at = datetime.now()
+        self.session.add(candidate)
+        self.session.commit()
+        self.session.refresh(candidate)
+        return candidate
+
+    def merge_continuity_candidate(
+        self,
+        project_id: str,
+        candidate_id: str,
+        *,
+        merged_fact_id: str,
+        note: str = "",
+    ) -> ProjectContinuityCandidate:
+        candidate = self.session.get(ProjectContinuityCandidate, candidate_id)
+        if not candidate or candidate.project_id != project_id:
+            raise ValueError("连续性候选不存在")
+        if candidate.status != "pending":
+            raise ValueError(f"候选状态为 {candidate.status}，不可合并")
+        if not merged_fact_id:
+            raise ValueError("merged_fact_id 不能为空")
+        fact = self.session.get(ProjectContent, merged_fact_id)
+        if not fact or fact.project_id != project_id:
+            raise ValueError("目标事实不存在或不属于本项目")
+        if fact.content_type not in {"project_bible", "world_asset"}:
+            raise ValueError("只能合并到 project_bible / world_asset 事实卡")
+
+        candidate.status = "merged"
+        candidate.resolved_fact_id = fact.id
+        candidate.resolution_note = note
+        candidate.resolved_at = datetime.now()
+        candidate.updated_at = datetime.now()
+
+        meta = loads_json(fact.data_json or "{}")
+        provenance = meta.get("provenance") or []
+        provenance.append(
+            {
+                "candidate_id": candidate.id,
+                "source_content_id": candidate.source_content_id,
+                "merged_at": datetime.now().isoformat(),
+                "note": note,
+            }
+        )
+        meta["provenance"] = provenance[-12:]
+        fact.data_json = dumps_json(meta)
+        fact.updated_at = datetime.now()
+        self.session.add(fact)
+        self.session.add(candidate)
+        self.session.commit()
+        self.session.refresh(candidate)
+        return candidate
+
+    def build_continuity_context_summary(
+        self,
+        project_id: str,
+        *,
+        generation_log_id: str | None = None,
+    ) -> dict[str, Any]:
+        """构造 context pack 的连续性事实摘要（不带完整长文本）。"""
+        contents = self.list_contents(project_id)
+        locked_counts: dict[str, int] = {"project_bible": 0, "world_asset": 0}
+        source_chapters: set[int] = set()
+        for content in contents:
+            if not content.is_locked:
+                continue
+            if content.content_type in locked_counts:
+                locked_counts[content.content_type] += 1
+            if content.chapter_number:
+                source_chapters.add(int(content.chapter_number))
+        pending_count_stmt = select(ProjectContinuityCandidate).where(
+            ProjectContinuityCandidate.project_id == project_id,
+            ProjectContinuityCandidate.status == "pending",
+        )
+        pending_count = len(list(self.session.exec(pending_count_stmt).all()))
+        locked_fact_ids = sorted(
+            c.id
+            for c in contents
+            if c.is_locked and c.content_type in {"project_bible", "world_asset"}
+        )
+        fingerprint = hashlib.sha256(
+            "|".join(locked_fact_ids).encode("utf-8")
+        ).hexdigest()[:16]
+        return {
+            "project_id": project_id,
+            "locked_fact_count": sum(locked_counts.values()),
+            "fact_types": locked_counts,
+            "source_chapters": sorted(source_chapters),
+            "pending_candidate_count": pending_count,
+            "fingerprint": fingerprint,
+        }
+
+    def check_continuity(
+        self,
+        project_id: str,
+        chapter_number: int,
+        *,
+        candidate_id: str | None = None,
+    ) -> dict[str, Any]:
+        """检查指定候选或当前章节正文与已锁定事实之间是否存在结构化冲突。
+
+        只读，不修改任何数据；返回的 conflict 项带有 contradicting_fact_id，
+        可直接用于 merge/resolve_conflict 流程。
+        """
+        self._require_project(project_id)
+
+        # 被检查对象：候选 > 当前章 novel_body > 跳过
+        candidate: ProjectContinuityCandidate | None = None
+        if candidate_id:
+            candidate = self.session.get(ProjectContinuityCandidate, candidate_id)
+            if not candidate or candidate.project_id != project_id:
+                raise ValueError("连续性候选不存在")
+            if candidate.status != "pending":
+                raise ValueError(f"候选状态为 {candidate.status}，不可检查")
+
+        checked_claims: list[str] = []
+        evidence_excerpt = ""
+        evidence_anchor: dict[str, Any] = {}
+
+        if candidate:
+            checked_claims = [
+                part for part in (candidate.claim, candidate.evidence_excerpt, candidate.entity_name) if part
+            ]
+            evidence_excerpt = candidate.evidence_excerpt
+            evidence_anchor = loads_json(candidate.evidence_anchor_json or "{}")
+        else:
+            body = self.session.exec(
+                select(ProjectContent)
+                .where(ProjectContent.project_id == project_id)
+                .where(ProjectContent.content_type == "novel_body")
+                .where(ProjectContent.chapter_number == chapter_number)
+                .order_by(ProjectContent.version.desc())
+            ).first()
+            if body and body.text_content:
+                checked_claims = [body.text_content[:600]]
+                evidence_excerpt = body.text_content[:240]
+
+        if not checked_claims:
+            return {
+                "project_id": project_id,
+                "chapter_number": chapter_number,
+                "candidate_id": candidate_id,
+                "checked_claims": [],
+                "conflicts": [],
+                "skipped": True,
+                "skip_reason": "没有可检查的候选或正文",
+            }
+
+        # 已锁定事实
+        locked_facts = self.session.exec(
+            select(ProjectContent)
+            .where(ProjectContent.project_id == project_id)
+            .where(ProjectContent.is_locked == True)  # noqa: E712
+            .where(ProjectContent.content_type.in_({"project_bible", "world_asset"}))  # type: ignore[attr-defined]
+            .order_by(ProjectContent.created_at.desc())
+            .limit(200)
+        ).all()
+
+        conflicts: list[dict[str, Any]] = []
+        text_to_check = "\n".join(checked_claims)
+
+        for fact in locked_facts:
+            fact_data = loads_json(fact.data_json or "{}")
+            fact_text = str(fact_data.get("fact") or fact_data.get("claim") or fact.text_content or "").strip()
+            if not fact_text:
+                continue
+
+            # 规则层：命名实体 / 关键词重叠 + 否定词触发的潜在冲突
+            entity_name = str(fact_data.get("entity_name") or "").strip()
+            fact_claim = str(fact_data.get("claim") or "").strip()
+
+            match_terms: list[str] = []
+            if entity_name and entity_name in text_to_check:
+                match_terms.append(entity_name)
+            elif fact_claim and fact_claim in text_to_check:
+                match_terms.append(fact_claim[:80])
+            elif fact_text and fact_text in text_to_check:
+                match_terms.append(fact_text[:80])
+
+            if not match_terms:
+                #  fallback：关键词分词命中（中文按 2-6 字滑动，英文按空格）
+                tokens = self._tokenize_for_continuity(fact_text)
+                hits = [token for token in tokens if len(token) >= 2 and token in text_to_check]
+                if hits:
+                    match_terms = hits[:3]
+
+            if not match_terms:
+                continue
+
+            # 否定 / 反义检测：事实里没否定，被检查文本里有“不/没/无”包裹同一实体
+            negation_markers = ("不是", "没有", "并未", "不曾", "无", "未", "非")
+            has_negation = any(marker in text_to_check for marker in negation_markers)
+            # 事实文本里也有否定则不视为冲突（双方同向）
+            fact_has_negation = any(marker in fact_text for marker in negation_markers)
+
+            severity = "warning"
+            reason = f"与锁定事实出现关键词重叠：{', '.join(match_terms[:3])}"
+            if has_negation and not fact_has_negation:
+                severity = "conflict"
+                reason = f"疑似否定已锁定事实：{', '.join(match_terms[:3])}"
+
+            conflicts.append(
+                {
+                    "entity_type": str(
+                        fact_data.get("entity_type") or (candidate.entity_type if candidate else "other")
+                    ),
+                    "entity_name": entity_name or (candidate.entity_name if candidate else ""),
+                    "claim": candidate.claim if candidate else fact_claim,
+                    "contradicting_fact_id": fact.id,
+                    "contradicting_fact_excerpt": fact_text[:240],
+                    "severity": severity,
+                    "suggested_action": "resolve_conflict" if severity == "conflict" else "rewrite_excerpt",
+                    "evidence_excerpt": evidence_excerpt[:240],
+                    "evidence_anchor": evidence_anchor,
+                    "reason": reason,
+                }
+            )
+
+        # 去重：同一锁定事实只保留一次
+        seen_fact_ids = set()
+        unique_conflicts = []
+        for conflict in conflicts:
+            if conflict["contradicting_fact_id"] in seen_fact_ids:
+                continue
+            seen_fact_ids.add(conflict["contradicting_fact_id"])
+            unique_conflicts.append(conflict)
+
+        return {
+            "project_id": project_id,
+            "chapter_number": chapter_number,
+            "candidate_id": candidate_id,
+            "checked_claims": checked_claims,
+            "conflicts": unique_conflicts,
+            "skipped": False,
+            "skip_reason": "",
+        }
+
+    @staticmethod
+    def _tokenize_for_continuity(text: str) -> list[str]:
+        """为连续性检查提取可能命名的片段（中文按 2-6 字，英文按空格）。"""
+        tokens: list[str] = []
+        cleaned = re.sub(r"[^\u4e00-\u9fa5a-zA-Z0-9\s]", " ", text)
+        # 英文/数字词
+        for word in cleaned.split():
+            if len(word) >= 2:
+                tokens.append(word.lower())
+        # 中文滑动窗口，优先较长词
+        chinese = re.sub(r"[^\u4e00-\u9fa5]", "", text)
+        for length in range(6, 1, -1):
+            for i in range(0, max(0, len(chinese) - length + 1)):
+                token = chinese[i : i + length]
+                if len(token) >= 2:
+                    tokens.append(token)
+        return tokens
+
+    async def rewrite_paragraph(
+        self,
+        project_id: str,
+        content_id: str,
+        paragraph_index: int,
+        instruction: str,
+        *,
+        provider: str | None = None,
+        model: str | None = None,
+    ) -> dict[str, Any]:
+        """段落级非破坏性重写：定位段落、生成候选版本、不回写原文。"""
+        self._require_project(project_id)
+        content = self.session.get(ProjectContent, content_id)
+        if not content or content.project_id != project_id:
+            raise ValueError("项目内容不存在")
+
+        source_text = content.text_content or ""
+        if not source_text.strip():
+            raise ValueError("源内容没有可重写的正文")
+
+        # 分段策略：优先按空行，否则按换行 + 最小长度合并
+        paragraphs = self._split_paragraphs(source_text)
+        if not paragraphs:
+            raise ValueError("未能从源内容解析出段落")
+
+        if paragraph_index < 0 or paragraph_index >= len(paragraphs):
+            return {
+                "content_id": content_id,
+                "project_id": project_id,
+                "source_content_id": content_id,
+                "paragraph_index": paragraph_index,
+                "original_paragraph": "",
+                "rewritten_paragraph": "",
+                "status": "anchor_not_found",
+                "anchor_not_found": True,
+                "candidate_content_id": None,
+                "instruction": instruction,
+            }
+
+        original_paragraph = paragraphs[paragraph_index]
+        context_before = "\n\n".join(paragraphs[max(0, paragraph_index - 2) : paragraph_index])
+        context_after = "\n\n".join(paragraphs[paragraph_index + 1 : paragraph_index + 3])
+
+        prompt = (
+            f"你是小说编辑。请根据用户指令，只重写第 {paragraph_index + 1} 段，"
+            "保持前后文语气、人称、节奏一致。只输出重写后的该段，不要解释。\n\n"
+            f"前文：\n{context_before}\n\n"
+            f"待重写段落：\n{original_paragraph}\n\n"
+            f"后文：\n{context_after}\n\n"
+            f"指令：{instruction}\n\n"
+            "重写后的段落："
+        )
+
+        response = await self.ai_service.chat(
+            messages=[
+                LLMMessage(role="system", content="你是一位严格的中文小说编辑，只输出修改后的段落文本，不输出 Markdown、JSON 或解释。"),
+                LLMMessage(role="user", content=prompt),
+            ],
+            provider=provider,
+            model=model,
+            temperature=0.6,
+            max_tokens=min(2048, max(512, len(original_paragraph) * 3)),
+        )
+
+        response_text = self._response_content(response) or ""
+        rewritten = response_text.strip()
+        if rewritten.startswith("```"):
+            rewritten = re.sub(r"^```[\w]*\n?|\n?```$", "", rewritten).strip()
+
+        candidate_content = self._create_content(
+            project_id=project_id,
+            content_type="prose_rewrite",
+            title=f"第 {content.chapter_number or ''} 章段落重写候选（段落 {paragraph_index + 1}）",
+            data={
+                "source_content_id": content_id,
+                "paragraph_index": paragraph_index,
+                "original_paragraph": original_paragraph,
+                "rewritten_paragraph": rewritten,
+                "instruction": instruction,
+                "provider": provider or "",
+                "model": model or "",
+                "rewritten_by": "paragraph_rewrite",
+            },
+            text_content=rewritten,
+            chapter_number=content.chapter_number,
+            episode_number=content.episode_number,
+            source_content_id=content_id,
+        )
+        self.session.commit()
+        self.session.refresh(candidate_content)
+
+        return {
+            "content_id": content_id,
+            "project_id": project_id,
+            "source_content_id": content_id,
+            "paragraph_index": paragraph_index,
+            "original_paragraph": original_paragraph,
+            "rewritten_paragraph": rewritten,
+            "status": "candidate",
+            "anchor_not_found": False,
+            "candidate_content_id": candidate_content.id,
+            "instruction": instruction,
+        }
+
+    def _split_paragraphs(self, text: str) -> list[str]:
+        """按空行优先、否则按自然换行合并短行来分段。"""
+        if not text:
+            return []
+        # 先尝试空行分段
+        by_blank = [p.strip() for p in text.split("\n\n") if p.strip()]
+        if len(by_blank) >= 2:
+            return by_blank
+        # fallback：按换行拆分并合并连续短行
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        if not lines:
+            return []
+        paragraphs: list[str] = [lines[0]]
+        for line in lines[1:]:
+            if len(line) < 40 and len(paragraphs[-1]) < 120:
+                paragraphs[-1] += line
+            else:
+                paragraphs.append(line)
+        return paragraphs
+
     # ------------------------------------------------------------------
     # Novel source
     # ------------------------------------------------------------------
@@ -450,6 +1328,7 @@ class CreativeProjectService:
         project_id: str,
         *,
         chapter_count: int = 12,
+        append_existing: bool = False,
         provider: str | None = None,
         model: str | None = None,
         template_id: str | None = None,
@@ -459,7 +1338,35 @@ class CreativeProjectService:
         if not outline:
             raise ValueError("请先生成或保存故事大纲")
 
-        default_prompt = self._chapter_plan_prompt(outline, chapter_count)
+        existing_plan = loads_json(project.chapter_plan_json)
+        existing_chapters = existing_plan.get("chapters") if isinstance(existing_plan, dict) else []
+        existing_chapters = existing_chapters if isinstance(existing_chapters, list) else []
+        validate_chapter_plan({"chapters": existing_chapters})
+        if append_existing:
+            existing_numbers = {
+                int(item.get("chapter_number") or 0)
+                for item in existing_chapters
+                if isinstance(item, dict)
+            }
+            missing_numbers = [number for number in range(1, chapter_count + 1) if number not in existing_numbers]
+            if not missing_numbers:
+                return {
+                    "chapter_count": len(existing_chapters),
+                    "chapters": existing_chapters,
+                    "appended_chapter_numbers": [],
+                }
+            if missing_numbers != list(range(min(missing_numbers), chapter_count + 1)):
+                raise ValueError("当前章节规划存在中间缺章，请先在编辑器中补齐或重新生成完整规划")
+            if not existing_chapters:
+                raise ValueError("当前没有可续写的章节规划，请使用完整生成")
+            default_prompt = self._chapter_plan_extension_prompt(
+                outline=outline,
+                existing_plan=existing_plan,
+                start_chapter=missing_numbers[0],
+                target_chapter_count=chapter_count,
+            )
+        else:
+            default_prompt = self._chapter_plan_prompt(outline, chapter_count)
         prompt, system_prompt, template_meta = self._stage_prompt(
             stage="chapter_plan",
             default_prompt=default_prompt,
@@ -469,6 +1376,7 @@ class CreativeProjectService:
                 "project_type": project.project_type,
                 "chapter_count": chapter_count,
                 "outline_json": dumps_json(outline),
+                "existing_chapter_plan_json": dumps_json(existing_plan),
             },
         )
         data = await self._generate_json(
@@ -481,6 +1389,22 @@ class CreativeProjectService:
             model=model,
             template_meta=template_meta,
         )
+        generated_chapters = data.get("chapters") or []
+        validate_chapter_plan({"chapters": generated_chapters})
+        if append_existing:
+            expected_numbers = list(range(missing_numbers[0], chapter_count + 1))
+            by_number = {
+                int(item.get("chapter_number") or 0): item
+                for item in generated_chapters
+                if isinstance(item, dict)
+            }
+            missing_generated = [number for number in expected_numbers if number not in by_number]
+            if missing_generated:
+                raise ValueError(f"续写章节规划缺少第 {', '.join(map(str, missing_generated))} 章")
+            data["chapters"] = [*existing_chapters, *[by_number[number] for number in expected_numbers]]
+            data["chapter_count"] = len(data["chapters"])
+            data["appended_chapter_numbers"] = expected_numbers
+        data = normalize_chapter_plan(data)
         if not data.get("chapter_count"):
             data["chapter_count"] = chapter_count
         project.chapter_plan_json = dumps_json(data)
@@ -515,6 +1439,8 @@ class CreativeProjectService:
             raise ValueError("请先生成故事大纲和章节规划")
 
         selected_chapter = self._chapter_plan_item(chapter_plan, chapter_number)
+        approved_prose = self._latest_content(project_id, "novel_body", chapter_number)
+        narrative_provenance = self._narrative_output_provenance(project_id, approved_prose)
         reference_assets = self._project_reference_assets(project_id)
         default_prompt = self._script_prompt(outline, chapter_plan, chapter_number, reference_assets=reference_assets)
         prompt, system_prompt, template_meta = self._stage_prompt(
@@ -528,6 +1454,8 @@ class CreativeProjectService:
                 "outline_json": dumps_json(outline),
                 "chapter_plan_json": dumps_json(chapter_plan),
                 "current_chapter_json": dumps_json(selected_chapter),
+                "approved_prose": approved_prose.text_content if approved_prose else "",
+                "narrative_provenance_json": dumps_json(narrative_provenance),
                 "reference_assets_json": dumps_json(reference_assets),
             },
         )
@@ -540,9 +1468,11 @@ class CreativeProjectService:
             provider=provider,
             model=model,
             template_meta=template_meta,
+            request_metadata={"narrative_provenance": narrative_provenance},
         )
         self._normalize_script_scene_references(data, reference_assets)
-        self._create_content(
+        data["narrative_provenance"] = narrative_provenance
+        content = self._create_content(
             project_id=project.id,
             content_type="script",
             chapter_number=chapter_number,
@@ -550,7 +1480,9 @@ class CreativeProjectService:
             title=data.get("title") or f"第 {chapter_number} 集脚本",
             data=data,
             text_content=dumps_json(data),
+            source_content_id=approved_prose.id if approved_prose else None,
         )
+        self._bind_last_generation_log_to_content(content.id)
         project.status = CreativeProjectStatus.STORYBOARDING.value
         project.current_stage = "storyboard"
         project.updated_at = datetime.now()
@@ -656,8 +1588,21 @@ class CreativeProjectService:
             raise ValueError("请先生成该章节的单话细纲")
 
         chapter_outline_data = loads_json(chapter_outline.data_json)
-        previous_context = self._previous_chapter_context(project_id, chapter_number)
-        default_prompt = self._novel_body_prompt(outline, chapter_plan, chapter_outline_data, chapter_number, previous_context)
+        context_pack = self._creative_context_pack(
+            project_id,
+            chapter_number,
+            persist=True,
+            stage="novel_body",
+            source_content_id=chapter_outline.id,
+        )
+        previous_context = context_pack["previous_context"]
+        default_prompt = self._novel_body_prompt(
+            outline,
+            chapter_plan,
+            chapter_outline_data,
+            chapter_number,
+            context_pack["text"],
+        )
         prompt, system_prompt, template_meta = self._stage_prompt(
             stage="novel_body",
             default_prompt=default_prompt,
@@ -670,6 +1615,8 @@ class CreativeProjectService:
                 "chapter_plan_json": dumps_json(chapter_plan),
                 "chapter_outline_json": dumps_json(chapter_outline_data),
                 "previous_context": previous_context,
+                "project_context_pack": context_pack["text"],
+                "locked_project_bible_context": context_pack["locked_project_bible_context"],
             },
         )
         data = await self._generate_json(
@@ -681,6 +1628,7 @@ class CreativeProjectService:
             provider=provider,
             model=model,
             template_meta=template_meta,
+            request_metadata={"creative_context": context_pack["metadata"]},
         )
         data = await self._ensure_novel_body_quality(
             project=project,
@@ -690,10 +1638,10 @@ class CreativeProjectService:
             data=data,
             provider=provider,
             model=model,
+            request_metadata={"creative_context": context_pack["metadata"]},
         )
         content = str(data.get("content") or "")
-        if not data.get("word_count"):
-            data["word_count"] = len(content)
+        data["word_count"] = len(content)
         body = self._create_content(
             project_id=project.id,
             content_type="novel_body",
@@ -733,12 +1681,21 @@ class CreativeProjectService:
         body_data = loads_json(content.data_json)
         source_outline = self.session.get(ProjectContent, content.source_content_id) if content.source_content_id else None
         outline_context = loads_json(source_outline.data_json) if source_outline else {}
+        chapter_number = content.chapter_number or content.episode_number or 1
+        context_pack = self._creative_context_pack(
+            project_id,
+            chapter_number,
+            persist=True,
+            stage="novel_body_refine",
+            source_content_id=content.id,
+        )
         default_prompt = self._refine_novel_body_prompt(
             project=project,
             content=content,
             body_data=body_data,
             outline_context=outline_context,
             instruction=instruction,
+            project_context_pack=context_pack["text"],
         )
         prompt, system_prompt, template_meta = self._stage_prompt(
             stage="novel_body_refine",
@@ -747,11 +1704,14 @@ class CreativeProjectService:
             variables={
                 "project_title": project.title,
                 "project_type": project.project_type,
-                "chapter_number": content.chapter_number or content.episode_number or 1,
+                "chapter_number": chapter_number,
                 "instruction": instruction,
                 "body_json": dumps_json(body_data),
                 "body_text": content.text_content,
                 "chapter_outline_json": dumps_json(outline_context),
+                "previous_context": context_pack["previous_context"],
+                "project_context_pack": context_pack["text"],
+                "locked_project_bible_context": context_pack["locked_project_bible_context"],
             },
         )
         data = await self._generate_json(
@@ -763,6 +1723,7 @@ class CreativeProjectService:
             provider=provider,
             model=model,
             template_meta=template_meta,
+            request_metadata={"creative_context": context_pack["metadata"]},
         )
         data = await self._ensure_novel_body_quality(
             project=project,
@@ -772,10 +1733,10 @@ class CreativeProjectService:
             data=data,
             provider=provider,
             model=model,
+            request_metadata={"creative_context": context_pack["metadata"]},
         )
         text = str(data.get("content") or "")
-        if not data.get("word_count"):
-            data["word_count"] = len(text)
+        data["word_count"] = len(text)
         content.title = data.get("title") or content.title
         content.data_json = dumps_json({**body_data, **data})
         content.text_content = text
@@ -797,6 +1758,7 @@ class CreativeProjectService:
         provider: str | None = None,
         model: str | None = None,
         template_id: str | None = None,
+        _context_pack: dict[str, Any] | None = None,
     ) -> ProjectContent:
         project = self._require_project(project_id)
         step = self._normalize_writer_room_step(step)
@@ -809,14 +1771,26 @@ class CreativeProjectService:
             chapter_number=chapter_number,
             source_content_id=content_id,
             selected_text=selected_text,
+            context_pack=_context_pack,
+        )
+        effective_instruction = writer_room_effective_instruction(
+            step,
+            instruction,
+            int(context.get("source_word_count") or 0),
         )
         schema_model = self._writer_room_schema(step)
+        requested_maximum = writer_room_requested_maximum_characters(effective_instruction)
+        prose_max_tokens = (
+            writer_room_output_max_tokens(requested_maximum)
+            if step in {"prose_draft", "prose_humanized", "prose_rewrite"} and requested_maximum is not None
+            else None
+        )
         default_prompt = self._writer_room_prompt(
             project=project,
             step=step,
             chapter_number=chapter_number,
             context=context,
-            instruction=instruction or "",
+            instruction=effective_instruction,
         )
         prompt, system_prompt, template_meta = self._stage_prompt(
             stage=step,
@@ -826,7 +1800,7 @@ class CreativeProjectService:
                 project=project,
                 chapter_number=chapter_number,
                 context=context,
-                instruction=instruction or "",
+                instruction=effective_instruction,
                 selected_text=selected_text or "",
             ),
         )
@@ -839,6 +1813,8 @@ class CreativeProjectService:
             provider=provider,
             model=model,
             template_meta=template_meta,
+            max_tokens=prose_max_tokens,
+            request_metadata={"creative_context": context.get("context_pack_metadata") or {}},
         )
         if step == "prose_humanized":
             source_word_count = int(context.get("source_word_count") or 0)
@@ -863,6 +1839,7 @@ class CreativeProjectService:
                     provider=provider,
                     model=model,
                     template_meta=template_meta,
+                    request_metadata={"creative_context": context.get("context_pack_metadata") or {}},
                 )
                 data["length_guard"] = {
                     "source_word_count": source_word_count,
@@ -870,12 +1847,70 @@ class CreativeProjectService:
                     "first_output_word_count": output_word_count,
                     "retried": True,
                 }
+        if step in {"prose_draft", "prose_humanized", "prose_rewrite"}:
+            source_word_count = int(context.get("source_word_count") or 0)
+            requested_minimum = writer_room_requested_minimum_characters(effective_instruction)
+            requested_maximum = writer_room_requested_maximum_characters(effective_instruction)
+            allows_length_expansion = (
+                step == "prose_rewrite"
+                and (
+                    writer_room_allows_length_expansion(effective_instruction)
+                    or requested_minimum is not None
+                )
+            )
+            # Candidate prose must be publishable on its own.  Rewrites and
+            # humanization are additionally bounded against their explicit
+            # source so they cannot silently turn a chapter into a summary.
+            # Explicit expansion rewrites are allowed to grow because turning a
+            # thin AI-ish draft into a fuller chapter is a first-class workflow.
+            minimum_characters = 2800
+            maximum_characters: int | None = None
+            if step in {"prose_humanized", "prose_rewrite"} and source_word_count >= 600:
+                minimum_characters = math.ceil(source_word_count * 0.88)
+                if not allows_length_expansion:
+                    maximum_characters = math.floor(source_word_count * 1.15)
+            if step == "prose_rewrite" and requested_minimum is not None:
+                minimum_characters = max(minimum_characters, requested_minimum)
+            if step == "prose_rewrite" and requested_maximum is not None:
+                maximum_characters = requested_maximum
+            data = await self._ensure_novel_body_quality(
+                project=project,
+                stage=step,
+                prompt=prompt,
+                system_prompt=system_prompt,
+                data=data,
+                provider=provider,
+                model=model,
+                request_metadata={"creative_context": context.get("context_pack_metadata") or {}},
+                minimum_characters=minimum_characters,
+                maximum_characters=maximum_characters,
+            )
         data["chapter_number"] = chapter_number
         if step == "prose_review":
             data = self._normalize_writer_room_review(data)
+            if not self._writer_room_review_has_substance(data):
+                retry_prompt = f"""{prompt}
+
+审稿结果复核：上一份 JSON 缺少可供作者执行的审稿证据，不能保存为主编审稿。
+请只重新输出完整 JSON，不要解释。必须提供至少 2 个 quality_tags、至少 2 条 ai_smell_checks，以及至少一项 strengths 或一条包含 location、problem、suggestion、rewrite_instruction 的具体 issues。所有问题都要引用或描述本稿实际段落、动作、对白或句式；不要返回空数组、泛泛评分、上一版遗留意见或“无”。
+"""
+                data = await self._generate_json(
+                    project=project,
+                    stage=step,
+                    prompt=retry_prompt,
+                    system_prompt=system_prompt,
+                    schema_model=schema_model,
+                    provider=provider,
+                    model=model,
+                    template_meta=template_meta,
+                    request_metadata={"creative_context": context.get("context_pack_metadata") or {}},
+                )
+                data = self._normalize_writer_room_review(data)
+                if not self._writer_room_review_has_substance(data):
+                    raise ValueError("主编审稿结果不完整，未生成可执行的质量意见")
         if step in {"prose_draft", "prose_humanized", "prose_rewrite"}:
             text = str(data.get("content") or "")
-            data["word_count"] = data.get("word_count") or len(text)
+            data["word_count"] = len(text)
         else:
             text = self._writer_room_text(step, data)
 
@@ -899,14 +1934,36 @@ class CreativeProjectService:
                     "source_content_type": context.get("source_content_type") or "",
                     "source_content_version": context.get("source_content_version") or 0,
                     "source_word_count": context.get("source_word_count") or 0,
-                    "instruction": instruction or "",
+                    "instruction": effective_instruction,
                     "selected_text": selected_text or "",
                     "generation_log_id": final_log.id if final_log is not None else "",
+                    "context_snapshot_id": context.get("context_snapshot_id") or "",
                 },
             },
             text_content=text,
             source_content_id=content_id or context.get("source_content_id"),
         )
+        # Flush so the new review content has a stable id before we derive
+        # continuity candidates from it.
+        self.session.flush()
+        # Writer Room editorial review may also surface continuity candidates.
+        # Persist them as pending ProjectContinuityCandidate rows keyed to this
+        # review content. A candidate-extraction failure must never roll back or
+        # block saving the review itself.
+        raw_candidates = data.get("continuity_candidates")
+        if isinstance(raw_candidates, list) and raw_candidates:
+            candidate_dicts = [item for item in raw_candidates if isinstance(item, dict)]
+            if candidate_dicts:
+                try:
+                    self.extract_continuity_candidates_v2(
+                        project_id,
+                        content.id,
+                        source_kind="prose_review",
+                        candidates_in=candidate_dicts,
+                    )
+                except ValueError:
+                    # Candidate extraction is best-effort alongside the review.
+                    pass
         # Backfill the candidate id onto the final generation log so the
         # front-end can match the log to exactly this candidate.
         if final_log is not None:
@@ -932,24 +1989,41 @@ class CreativeProjectService:
         template_id: str | None = None,
         continue_on_error: bool = True,
     ) -> dict[str, Any]:
-        normalized_steps = [self._normalize_writer_room_step(step) for step in (steps or [])]
+        requested_steps = [self._normalize_writer_room_step(step) for step in (steps or [])]
+        normalized_steps = [step for step in WRITER_ROOM_STEP_ORDER if step in requested_steps]
         if not normalized_steps:
-            normalized_steps = ["scene_beats", "character_rehearsal", "prose_draft", "prose_humanized", "prose_review"]
+            normalized_steps = list(WRITER_ROOM_STEP_ORDER[:-1])
+
+        # A batch is one deliberate writing pass. Freeze one project context
+        # before its first model call so later candidates cannot quietly alter
+        # the canon/ledger context seen by subsequent steps.
+        context_pack = self._creative_context_pack(
+            project_id,
+            chapter_number,
+            persist=True,
+            stage="writer_room_run",
+            source_content_id=content_id,
+        )
 
         results: list[dict[str, Any]] = []
         source_content_id = content_id
+        blocked_by: str | None = None
         for step in normalized_steps:
+            if blocked_by:
+                results.append({"step": step, "status": "skipped", "blocked_by": blocked_by})
+                continue
             try:
                 content = await self.run_writer_room_step(
                     project_id,
                     step=step,
                     chapter_number=chapter_number,
-                    content_id=source_content_id if step in {"prose_humanized", "prose_review", "prose_rewrite"} else content_id,
+                    content_id=source_content_id,
                     instruction=instruction,
                     selected_text=selected_text if step == "prose_rewrite" else None,
                     provider=provider,
                     model=model,
                     template_id=template_id,
+                    _context_pack=context_pack,
                 )
                 results.append({
                     "step": step,
@@ -959,22 +2033,32 @@ class CreativeProjectService:
                     "title": content.title,
                     "version": content.version,
                 })
-                if step in {"prose_draft", "prose_humanized", "prose_rewrite"}:
-                    source_content_id = content.id
+                # Every successful candidate becomes the direct source for the
+                # following selected step. This keeps partial batch runs
+                # deterministic as well: draft -> review remains valid when
+                # beats and rehearsal came from an earlier run.
+                source_content_id = content.id
             except Exception as exc:
                 results.append({"step": step, "status": "failed", "error": str(exc)})
                 if not continue_on_error:
                     raise
+                # Writer Room steps form a single candidate chain.  A later
+                # step must not silently fall back to an older source after
+                # its selected upstream candidate failed to generate.
+                blocked_by = step
 
         return {
             "project_id": project_id,
             "chapter_number": chapter_number,
+            "requested_steps": requested_steps,
+            "context_snapshot_id": context_pack.get("snapshot_id", ""),
             "steps": normalized_steps,
             "results": results,
             "summary": {
                 "total": len(results),
                 "success": len([item for item in results if item.get("status") == "success"]),
                 "failed": len([item for item in results if item.get("status") == "failed"]),
+                "skipped": len([item for item in results if item.get("status") == "skipped"]),
             },
         }
 
@@ -998,7 +2082,7 @@ class CreativeProjectService:
             "chapter_number": content.chapter_number or content.episode_number or data.get("chapter_number") or 1,
             "title": data.get("title") or content.title,
             "content": text,
-            "word_count": data.get("word_count") or len(text),
+            "word_count": len(text),
             "continuity_notes": data.get("continuity_notes") or [],
             "promoted_from_content_id": content.id,
             "promoted_from_type": content.content_type,
@@ -1132,6 +2216,7 @@ class CreativeProjectService:
 
         outline = loads_json(project.outline_json)
         script_data = loads_json(script.data_json)
+        narrative_provenance = self._narrative_output_provenance(project_id, script)
         reference_assets = self._project_reference_assets(project_id)
         character_profiles = self._project_character_production_profiles(project_id, outline)
         visual_context = self._story_visual_context(outline, reference_assets, character_profiles=character_profiles)
@@ -1157,6 +2242,7 @@ class CreativeProjectService:
                 "visual_context": visual_context,
                 "outline_json": dumps_json(outline),
                 "script_json": dumps_json(script_data),
+                "narrative_provenance_json": dumps_json(narrative_provenance),
                 "episode_number": script.episode_number or 1,
             },
         )
@@ -1169,11 +2255,13 @@ class CreativeProjectService:
             provider=provider,
             model=model,
             template_meta=template_meta,
+            request_metadata={"narrative_provenance": narrative_provenance},
         )
         self._normalize_storyboard_v2(data)
         self._inherit_storyboard_scene_references(data, script_data)
         self._enhance_storyboard_image_prompts(data, outline, reference_assets, character_profiles=character_profiles)
-        self._create_content(
+        data["narrative_provenance"] = narrative_provenance
+        content = self._create_content(
             project_id=project.id,
             content_type="storyboard",
             chapter_number=script.chapter_number,
@@ -1183,6 +2271,7 @@ class CreativeProjectService:
             text_content=dumps_json(data),
             source_content_id=script.id,
         )
+        self._bind_last_generation_log_to_content(content.id)
         project.status = CreativeProjectStatus.READY.value
         project.current_stage = "assets"
         project.updated_at = datetime.now()
@@ -1311,15 +2400,37 @@ class CreativeProjectService:
             }
             try:
                 item.update(await runner())
-                item.setdefault("status", "generated")
+                if item.get("status") in (None, "pending"):
+                    item["status"] = "generated"
             except Exception as exc:
                 item["status"] = "failed"
                 item["error"] = str(exc)
+                item["finished_at"] = datetime.now().isoformat()
+                self._record_pipeline_step_log(
+                    project_id=project_id,
+                    stage=stage,
+                    chapter_number=chapter_number,
+                    started_at=started_at,
+                    result=item,
+                    provider=provider,
+                    model=model,
+                    template_id=template_id,
+                )
                 results.append(item)
                 if not continue_on_error:
                     raise
                 return
             item["finished_at"] = datetime.now().isoformat()
+            self._record_pipeline_step_log(
+                project_id=project_id,
+                stage=stage,
+                chapter_number=chapter_number,
+                started_at=started_at,
+                result=item,
+                provider=provider,
+                model=model,
+                template_id=template_id,
+            )
             results.append(item)
 
         if "outline" in normalized_stages:
@@ -1501,17 +2612,358 @@ class CreativeProjectService:
             "results": results,
         }
 
+    def _record_pipeline_step_log(
+        self,
+        *,
+        project_id: str,
+        stage: str,
+        chapter_number: int | None,
+        started_at: datetime,
+        result: dict[str, Any],
+        provider: str | None,
+        model: str | None,
+        template_id: str | None,
+    ) -> None:
+        """Persist queue-level diagnostics without duplicating provider payloads."""
+        finished_at = datetime.now()
+        duration_ms = max(0, int((finished_at - started_at).total_seconds() * 1000))
+        request_metadata = {
+            "pipeline_step": True,
+            "chapter_number": chapter_number,
+            "template_id": template_id or "",
+            "duration_ms": duration_ms,
+        }
+        log = ProjectGenerationLog(
+            project_id=project_id,
+            scene="pipeline",
+            stage=stage,
+            provider=provider or "",
+            model=model or "",
+            status=str(result.get("status") or "failed"),
+            request_json=dumps_json(request_metadata),
+            normalized_json=dumps_json(result),
+            validation_error=str(result.get("error") or ""),
+        )
+        try:
+            self.session.add(log)
+            self.session.commit()
+        except SQLAlchemyError as exc:
+            if self.session.in_transaction():
+                self.session.rollback()
+            logger.warning("Unable to persist pipeline step log for %s: %s", stage, exc)
+
     # ------------------------------------------------------------------
     # Contents and assets
     # ------------------------------------------------------------------
 
-    def list_contents(self, project_id: str, content_type: str | None = None) -> list[ProjectContent]:
+    def list_contents(
+        self,
+        project_id: str,
+        content_type: str | None = None,
+        *,
+        latest_only: bool = True,
+    ) -> list[ProjectContent]:
+        """Return current stage outputs by default, with version history opt-in.
+
+        Every regeneration creates a new ``ProjectContent`` version.  Workspace
+        consumers should normally see the newest version for each stage and
+        chapter; returning all versions makes a regenerated chapter look like a
+        duplicate chapter.  Historical versions remain available to callers
+        that explicitly set ``latest_only=False``.
+        """
         query = select(ProjectContent).where(ProjectContent.project_id == project_id)
         if content_type:
             query = query.where(ProjectContent.content_type == content_type)
-        return self.session.exec(
+        contents = self.session.exec(
             query.order_by(ProjectContent.created_at.desc(), ProjectContent.version.desc())
         ).all()
+        if not latest_only:
+            return contents
+
+        newest_by_stage: dict[tuple[str, int | None, int | None], ProjectContent] = {}
+        for content in contents:
+            key = (content.content_type, content.chapter_number, content.episode_number)
+            current = newest_by_stage.get(key)
+            if current is None or self._is_content_newer(content, current):
+                newest_by_stage[key] = content
+        return sorted(
+            newest_by_stage.values(),
+            key=lambda item: (
+                item.chapter_number if item.chapter_number is not None else item.episode_number or 0,
+                item.content_type,
+                -item.version,
+            ),
+        )
+
+    def narrative_health(self, project_id: str) -> ProjectNarrativeHealthSchema:
+        """Report project-owned narrative data problems without mutating content.
+
+        This intentionally examines raw persisted records.  Reader and Writer
+        Room views already normalize their own reads, but operators need to see
+        stale legacy data before the narrative runtime starts deriving state.
+        """
+        project = self._require_project(project_id)
+        issues: list[NarrativeHealthIssueSchema] = []
+
+        def add_issue(
+            code: str,
+            message: str,
+            *,
+            severity: str = "warning",
+            **details: Any,
+        ) -> None:
+            issues.append(
+                NarrativeHealthIssueSchema(
+                    code=code,
+                    severity=severity,
+                    message=message,
+                    details=details,
+                )
+            )
+
+        raw_plan = self._load_json_for_health(
+            project.chapter_plan_json,
+            field="chapter_plan_json",
+            add_issue=add_issue,
+        )
+        chapters = raw_plan.get("chapters") if isinstance(raw_plan, dict) else []
+        chapters = chapters if isinstance(chapters, list) else []
+        valid_numbers: list[int] = []
+        invalid_rows: list[int] = []
+        duplicate_numbers: set[int] = set()
+        seen_numbers: set[int] = set()
+        for index, item in enumerate(chapters, start=1):
+            if not isinstance(item, dict):
+                invalid_rows.append(index)
+                continue
+            raw_number = item.get("chapter_number")
+            try:
+                number = int(raw_number)
+            except (TypeError, ValueError):
+                invalid_rows.append(index)
+                continue
+            if isinstance(raw_number, bool) or number <= 0:
+                invalid_rows.append(index)
+                continue
+            if number in seen_numbers:
+                duplicate_numbers.add(number)
+                continue
+            seen_numbers.add(number)
+            valid_numbers.append(number)
+
+        declared_count = raw_plan.get("chapter_count") if isinstance(raw_plan, dict) else None
+        if declared_count is not None and declared_count != len(valid_numbers):
+            add_issue(
+                "chapter_plan_count_mismatch",
+                "章节规划声明数量与有效章节行数量不一致",
+                declared_count=declared_count,
+                valid_chapter_count=len(valid_numbers),
+            )
+        if invalid_rows:
+            add_issue(
+                "chapter_plan_invalid_rows",
+                "章节规划存在无效章节行",
+                rows=invalid_rows,
+            )
+        if duplicate_numbers:
+            add_issue(
+                "chapter_plan_duplicate_numbers",
+                "章节规划存在重复章节号",
+                chapter_numbers=sorted(duplicate_numbers),
+            )
+        if valid_numbers:
+            expected = set(range(1, max(valid_numbers) + 1))
+            missing = sorted(expected.difference(valid_numbers))
+            if missing:
+                add_issue(
+                    "chapter_plan_gaps",
+                    "章节规划存在中间缺章",
+                    chapter_numbers=missing,
+                )
+
+        contents = self.session.exec(
+            select(ProjectContent)
+            .where(ProjectContent.project_id == project_id)
+            .order_by(ProjectContent.created_at.asc(), ProjectContent.version.asc())
+        ).all()
+        novel_bodies = [item for item in contents if item.content_type == "novel_body"]
+        grouped_bodies: dict[int, list[ProjectContent]] = {}
+        for body in novel_bodies:
+            if body.chapter_number is None or body.chapter_number <= 0:
+                add_issue(
+                    "novel_body_invalid_chapter_number",
+                    "正文存在无效章节号",
+                    content_id=body.id,
+                    chapter_number=body.chapter_number,
+                )
+                continue
+            grouped_bodies.setdefault(body.chapter_number, []).append(body)
+        for chapter_number, bodies in grouped_bodies.items():
+            latest_version = max(body.version for body in bodies)
+            latest = [body for body in bodies if body.version == latest_version]
+            if len(latest) > 1:
+                add_issue(
+                    "duplicate_latest_novel_body",
+                    "同一章节存在多个同版本的最新正式正文",
+                    chapter_number=chapter_number,
+                    content_ids=[body.id for body in latest],
+                    version=latest_version,
+                )
+        if grouped_bodies:
+            actual_body_numbers = set(grouped_bodies)
+            body_gaps = sorted(set(range(1, max(actual_body_numbers) + 1)).difference(actual_body_numbers))
+            if body_gaps:
+                add_issue(
+                    "novel_body_gaps",
+                    "已生成正文存在中间断章",
+                    chapter_numbers=body_gaps,
+                )
+        if valid_numbers:
+            missing_bodies = sorted(set(valid_numbers).difference(grouped_bodies))
+            if missing_bodies:
+                add_issue(
+                    "planned_chapters_without_novel_body",
+                    "章节规划中仍有未生成正式正文的章节",
+                    severity="info",
+                    chapter_numbers=missing_bodies,
+                )
+
+        content_by_id = {content.id: content for content in contents}
+        writer_room_types = {"scene_beats", "character_rehearsal", "prose_draft", "prose_humanized", "prose_review", "prose_rewrite"}
+        for content in contents:
+            if content.content_type not in writer_room_types or not content.source_content_id:
+                continue
+            source = content_by_id.get(content.source_content_id)
+            if source is None:
+                add_issue(
+                    "writer_room_missing_source",
+                    "Writer Room 候选缺少上游来源内容",
+                    content_id=content.id,
+                    source_content_id=content.source_content_id,
+                )
+
+        for content in contents:
+            self._report_health_encoding(content.title, "title", content.id, add_issue)
+            self._report_health_encoding(content.text_content, "text_content", content.id, add_issue)
+            self._load_json_for_health(content.data_json, field="data_json", content_id=content.id, add_issue=add_issue)
+        self._report_health_encoding(project.title, "project_title", project.id, add_issue)
+        self._load_json_for_health(project.outline_json, field="outline_json", add_issue=add_issue)
+
+        links = self.session.exec(
+            select(ProjectAssetLink).where(ProjectAssetLink.project_id == project_id)
+        ).all()
+        for link in links:
+            if not self.session.get(AssetNode, link.asset_id):
+                add_issue(
+                    "unavailable_linked_asset",
+                    "项目关联素材已不存在或不可用",
+                    asset_id=link.asset_id,
+                    link_id=link.id,
+                    content_id=link.content_id,
+                )
+
+        stale_task_count = 0
+        try:
+            task_records = self.session.exec(select(ProjectTaskRecord)).all()
+            now = datetime.now().timestamp()
+            for task in task_records:
+                payload = loads_json(task.payload_json)
+                if str(payload.get("project_id") or "") != project_id:
+                    continue
+                if task.status not in {"pending", "running"}:
+                    continue
+                if now - float(task.updated_at or task.created_at or now) >= 3600:
+                    stale_task_count += 1
+                    add_issue(
+                        "stale_async_task",
+                        "项目异步任务长时间未完成",
+                        severity="info",
+                        task_id=task.task_id,
+                        status=task.status,
+                        updated_at=task.updated_at,
+                    )
+        except SQLAlchemyError as exc:
+            logger.info("Narrative health skipped task inspection for %s: %s", project_id, exc)
+            if self.session.in_transaction():
+                self.session.rollback()
+            add_issue(
+                "task_diagnostics_unavailable",
+                "无法读取项目异步任务诊断记录",
+                severity="info",
+            )
+
+        blocking = {"chapter_plan_invalid_rows", "chapter_plan_duplicate_numbers", "duplicate_latest_novel_body"}
+        status = "blocked" if any(issue.code in blocking for issue in issues) else "attention" if issues else "healthy"
+        return ProjectNarrativeHealthSchema(
+            project_id=project_id,
+            status=status,
+            checked_at=datetime.now().isoformat(),
+            summary={
+                "chapter_plan_rows": len(chapters),
+                "valid_chapter_count": len(valid_numbers),
+                "novel_body_versions": len(novel_bodies),
+                "latest_novel_body_chapters": len(grouped_bodies),
+                "writer_room_candidates": sum(1 for item in contents if item.content_type in writer_room_types),
+                "asset_links": len(links),
+                "stale_async_tasks": stale_task_count,
+                "issue_count": len(issues),
+            },
+            issues=issues,
+        )
+
+    @staticmethod
+    def _report_health_encoding(
+        value: str | None,
+        field: str,
+        content_id: str,
+        add_issue: Any,
+    ) -> None:
+        if value and repair_utf8_mojibake(value) != value:
+            add_issue(
+                "legacy_encoding_detected",
+                "检测到可修复的旧编码文本",
+                severity="info",
+                content_id=content_id,
+                field=field,
+            )
+
+    @staticmethod
+    def _load_json_for_health(
+        value: str | None,
+        *,
+        field: str,
+        add_issue: Any,
+        content_id: str | None = None,
+    ) -> dict[str, Any]:
+        if not value:
+            return {}
+        try:
+            data = json.loads(value)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            add_issue(
+                "invalid_json",
+                "项目记录包含无法解析的 JSON",
+                content_id=content_id,
+                field=field,
+            )
+            return {}
+        if not isinstance(data, dict):
+            add_issue(
+                "invalid_json_shape",
+                "项目记录 JSON 顶层必须是对象",
+                content_id=content_id,
+                field=field,
+            )
+            return {}
+        return data
+
+    @staticmethod
+    def _is_content_newer(candidate: ProjectContent, current: ProjectContent) -> bool:
+        if candidate.version != current.version:
+            return candidate.version > current.version
+        if candidate.updated_at != current.updated_at:
+            return candidate.updated_at > current.updated_at
+        return candidate.created_at > current.created_at
 
     def update_content(
         self,
@@ -1533,7 +2985,7 @@ class CreativeProjectService:
         if data is not None:
             content.data_json = dumps_json(data)
         if text_content is not None:
-            content.text_content = text_content
+            content.text_content = repair_utf8_mojibake(text_content)
         if is_locked is not None:
             content.is_locked = is_locked
         content.updated_at = datetime.now()
@@ -1625,12 +3077,215 @@ class CreativeProjectService:
         self.session.refresh(link)
         return link
 
+    def save_content_as_text_asset(self, project_id: str, content_id: str) -> dict[str, Any]:
+        """Persist one versioned project text as a reusable Asset Hub text asset.
+
+        ProjectContent remains the authoring source of truth. The Asset Hub node
+        is a reusable/indexable projection: saving the same content again adds a
+        new AssetVersion rather than creating another node.
+        """
+        try:
+            project = self._require_project(project_id)
+            content = self.session.get(ProjectContent, content_id)
+            if not content or content.project_id != project_id:
+                raise ValueError("项目内容不存在")
+
+            payload = self._project_text_asset_payload(project, content)
+            node = None
+            text_nodes = self.session.exec(
+                select(AssetNode).where(AssetNode.asset_type == AssetType.TEXT)
+            ).all()
+            for candidate in text_nodes:
+                metadata = candidate.metadata_json or {}
+                if (
+                    str(metadata.get("source") or "") == "creative_project"
+                    and str(metadata.get("project_id") or "") == project_id
+                    and str(metadata.get("content_id") or "") == content_id
+                ):
+                    node = candidate
+                    break
+
+            now = datetime.utcnow()
+            if node is None:
+                node = AssetNode(
+                    id=str(uuid.uuid4()),
+                    name=payload["name"],
+                    asset_type=AssetType.TEXT,
+                    metadata_json=payload["metadata"],
+                    tags_json=payload["tags"],
+                    created_at=now,
+                    updated_at=now,
+                )
+                self.session.add(node)
+                version_number = 1
+            else:
+                node.name = payload["name"]
+                node.metadata_json = payload["metadata"]
+                node.tags_json = payload["tags"]
+                node.updated_at = now
+                latest_version = self.session.exec(
+                    select(func.max(AssetVersion.version_number)).where(AssetVersion.asset_node_id == node.id)
+                ).one()
+                version_number = int(latest_version or 0) + 1
+
+            version = AssetVersion(
+                id=str(uuid.uuid4()),
+                asset_node_id=node.id,
+                version_number=version_number,
+                params_json=payload["version_params"],
+                lineage_json=payload["lineage"],
+                created_at=now,
+            )
+            self.session.add(version)
+
+            link = self.session.exec(
+                select(ProjectAssetLink).where(
+                    ProjectAssetLink.project_id == project_id,
+                    ProjectAssetLink.asset_id == str(node.id),
+                    ProjectAssetLink.content_id == content_id,
+                    ProjectAssetLink.role == "text",
+                )
+            ).first()
+            if link is None:
+                link = ProjectAssetLink(
+                    project_id=project_id,
+                    asset_id=str(node.id),
+                    content_id=content_id,
+                    role="text",
+                    relation="derived_from",
+                    metadata_json=dumps_json({
+                        "content_type": content.content_type,
+                        "chapter_number": content.chapter_number or content.episode_number,
+                        "content_version": content.version,
+                        "asset_kind": "project_text",
+                    }),
+                )
+                self.session.add(link)
+
+            self.session.commit()
+            self.session.refresh(version)
+            return {
+                "success": True,
+                "asset_node_id": str(node.id),
+                "asset_version_id": str(version.id),
+                "asset_version": version_number,
+                "content_id": content.id,
+                "created_node": version_number == 1,
+            }
+        except SQLAlchemyError as exc:
+            if self.session.in_transaction():
+                self.session.rollback()
+            logger.exception("Unable to save project content as Asset Hub text asset")
+            raise ValueError(f"保存文本素材失败: {exc}") from exc
+
     def list_asset_links(self, project_id: str) -> list[ProjectAssetLink]:
         return self.session.exec(
             select(ProjectAssetLink)
             .where(ProjectAssetLink.project_id == project_id)
             .order_by(ProjectAssetLink.created_at.desc())
         ).all()
+
+    def build_project_export(self, project_id: str) -> dict[str, Any]:
+        """Return a portable, provider-free snapshot for the project ZIP export.
+
+        Asset files stay in Asset Hub. Their identifiers and lineage are exported
+        as a manifest so a large local library is never copied implicitly.
+        """
+        project = self._require_project(project_id)
+        contents = self.list_contents(project_id)
+        links = self.list_asset_links(project_id)
+
+        project_snapshot = {
+            "id": project.id,
+            "title": project.title,
+            "project_type": project.project_type,
+            "source_type": project.source_type,
+            "source_ref": loads_json(project.source_ref_json),
+            "status": project.status,
+            "current_stage": project.current_stage,
+            "outline": loads_json(project.outline_json),
+            "chapter_plan": loads_json(project.chapter_plan_json),
+            "settings": loads_json(project.settings_json),
+            "metadata": loads_json(project.metadata_json),
+            "created_at": project.created_at.isoformat() if project.created_at else None,
+            "updated_at": project.updated_at.isoformat() if project.updated_at else None,
+        }
+        content_snapshots = [
+            {
+                "id": content.id,
+                "content_type": content.content_type,
+                "chapter_number": content.chapter_number,
+                "episode_number": content.episode_number,
+                "title": content.title,
+                "data": loads_json(content.data_json),
+                "text_content": content.text_content,
+                "source_content_id": content.source_content_id,
+                "version": content.version,
+                "is_locked": content.is_locked,
+                "created_at": content.created_at.isoformat() if content.created_at else None,
+                "updated_at": content.updated_at.isoformat() if content.updated_at else None,
+            }
+            for content in contents
+        ]
+        asset_manifest = [
+            {
+                "asset_id": link.asset_id,
+                "content_id": link.content_id,
+                "role": link.role,
+                "relation": link.relation,
+                "metadata": loads_json(link.metadata_json),
+                "created_at": link.created_at.isoformat() if link.created_at else None,
+            }
+            for link in links
+        ]
+        return {
+            "format": "ylcraft-creative-project-export/v1",
+            "project": project_snapshot,
+            "contents": content_snapshots,
+            "asset_manifest": asset_manifest,
+        }
+
+    @staticmethod
+    def _project_text_asset_payload(project: CreativeProject, content: ProjectContent) -> dict[str, Any]:
+        text = str(content.text_content or loads_json(content.data_json).get("content") or "").strip()
+        if not text:
+            raise ValueError("该项目内容没有可保存的文本")
+        chapter_number = content.chapter_number or content.episode_number
+        stage_label = content.content_type.replace("_", " ")
+        name_prefix = f"第 {chapter_number} 章 " if chapter_number else ""
+        name = f"{project.title or '创作项目'} · {name_prefix}{content.title or stage_label}".strip()
+        preview = text[:500]
+        metadata = {
+            "source": "creative_project",
+            "project_id": project.id,
+            "project_title": project.title,
+            "content_id": content.id,
+            "content_type": content.content_type,
+            "content_title": content.title,
+            "chapter_number": chapter_number,
+            "content_version": content.version,
+            "text_preview": preview,
+            "character_count": len(text),
+        }
+        return {
+            "name": name,
+            "metadata": metadata,
+            "tags": _dedupe_keep_order(["创作项目", "文本", content.content_type, project.project_type]),
+            "version_params": {
+                "text_content": text,
+                "content_type": content.content_type,
+                "chapter_number": chapter_number,
+                "project_id": project.id,
+                "project_content_id": content.id,
+                "project_content_version": content.version,
+            },
+            "lineage": {
+                "source": "creative_project",
+                "project_id": project.id,
+                "content_id": content.id,
+                "source_content_id": content.source_content_id or "",
+            },
+        }
 
     def _project_reference_assets(self, project_id: str) -> list[dict[str, Any]]:
         roles = {"character", "background", "style", "world", "reference"}
@@ -2129,6 +3784,54 @@ class CreativeProjectService:
             query.order_by(ProjectContent.version.desc(), ProjectContent.created_at.desc())
         ).first()
 
+    def _narrative_output_provenance(
+        self,
+        project_id: str,
+        source: ProjectContent | None,
+    ) -> dict[str, Any]:
+        """Freeze the approved-prose version used by script and storyboard output."""
+        if source and source.project_id != project_id:
+            raise ValueError("跨项目内容不能作为叙事输出来源")
+
+        if source and source.content_type != "novel_body":
+            source_data = loads_json(source.data_json)
+            inherited = source_data.get("narrative_provenance") if isinstance(source_data, dict) else None
+            if isinstance(inherited, dict) and inherited.get("source_content_id"):
+                return dict(inherited)
+            if source.source_content_id:
+                upstream = self.session.get(ProjectContent, source.source_content_id)
+                if upstream and upstream.project_id == project_id and upstream.content_type == "novel_body":
+                    source = upstream
+
+        if not source or source.content_type != "novel_body":
+            return {"source_kind": "chapter_plan", "source_content_id": None, "source_content_version": None, "narrative_snapshot_id": None}
+
+        snapshot = self.session.exec(
+            select(ProjectNarrativeSnapshot)
+            .where(
+                ProjectNarrativeSnapshot.project_id == project_id,
+                ProjectNarrativeSnapshot.source_content_id == source.id,
+                ProjectNarrativeSnapshot.source_version == source.version,
+                ProjectNarrativeSnapshot.status == "success",
+            )
+            .order_by(ProjectNarrativeSnapshot.updated_at.desc())
+        ).first()
+        return {
+            "source_kind": "approved_prose",
+            "source_content_id": source.id,
+            "source_content_version": source.version,
+            "source_chapter_number": source.chapter_number,
+            "narrative_snapshot_id": snapshot.id if snapshot else None,
+            "narrative_snapshot_fingerprint": snapshot.source_fingerprint if snapshot else None,
+        }
+
+    def _bind_last_generation_log_to_content(self, content_id: str) -> None:
+        """Attach the generation record to its output once the content row exists."""
+        log = getattr(self, "_last_generation_log", None)
+        if isinstance(log, ProjectGenerationLog) and log.content_id is None:
+            log.content_id = content_id
+            self.session.add(log)
+
     def _latest_content_by_data_key(
         self,
         project_id: str,
@@ -2147,6 +3850,30 @@ class CreativeProjectService:
         for content in contents:
             data = loads_json(content.data_json)
             if str(data.get(key) or "") == str(value):
+                return content
+        return None
+
+    def _latest_writer_room_review_for_source(
+        self,
+        project_id: str,
+        chapter_number: int,
+        source_content_id: str,
+    ) -> ProjectContent | None:
+        """Return the newest review that actually audited the selected prose."""
+        if not source_content_id:
+            return None
+        contents = self.session.exec(
+            select(ProjectContent)
+            .where(
+                ProjectContent.project_id == project_id,
+                ProjectContent.content_type == "prose_review",
+                ProjectContent.chapter_number == chapter_number,
+            )
+            .order_by(ProjectContent.version.desc(), ProjectContent.created_at.desc())
+        ).all()
+        for content in contents:
+            writer_room = loads_json(content.data_json).get("writer_room") or {}
+            if str(writer_room.get("source_content_id") or "") == str(source_content_id):
                 return content
         return None
 
@@ -2302,6 +4029,495 @@ class CreativeProjectService:
             )
         return "\n\n".join(lines)
 
+    def _creative_context_pack(
+        self,
+        project_id: str,
+        chapter_number: int,
+        *,
+        persist: bool = False,
+        stage: str = "",
+        source_content_id: str | None = None,
+        narrative_run_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Build an auditable T0-T6 context pack from project-local canon only.
+
+        The pack deliberately does not query Agent memory, Canvas documents or
+        arbitrary Asset Hub metadata. Those systems may contain useful work,
+        but they are not novel canon until a user promotes it into project
+        content.  Callers that will invoke a model set ``persist=True`` so the
+        exact context can be inspected later through its snapshot id.
+        """
+        project = self._require_project(project_id)
+        budgets = {"T0": 6000, "T1": 2400, "T2": 1600, "T3": 1200, "T4": 3600, "T5": 1600, "T6": 1200}
+        overflow: list[dict[str, Any]] = []
+        included_sources: list[dict[str, Any]] = []
+
+        def bounded(layer: str, text: str, *, hard: bool = False) -> str:
+            value = str(text or "").strip()
+            budget = budgets[layer]
+            if len(value) <= budget:
+                return value
+            overflow.append({"layer": layer, "budget": budget, "actual": len(value), "action": "reported" if hard else "truncated"})
+            return value if hard else value[:budget]
+
+        locked_cards = self.session.exec(
+            select(ProjectContent)
+            .where(
+                ProjectContent.project_id == project_id,
+                ProjectContent.content_type.in_(["project_bible", "world_asset"]),
+                ProjectContent.is_locked == True,
+            )
+            .order_by(ProjectContent.content_type.asc(), ProjectContent.created_at.asc())
+        ).all()
+        locked_bible = bounded("T0", self._locked_project_bible_context(project_id), hard=True)
+        included_sources.extend(
+            {"id": item.id, "kind": item.content_type, "layer": "T0", "version": item.version}
+            for item in locked_cards
+        )
+
+        snapshots = self.session.exec(
+            select(ProjectNarrativeSnapshot)
+            .where(
+                ProjectNarrativeSnapshot.project_id == project_id,
+                ProjectNarrativeSnapshot.chapter_number < chapter_number,
+                ProjectNarrativeSnapshot.status == "success",
+            )
+            .order_by(ProjectNarrativeSnapshot.chapter_number.desc(), ProjectNarrativeSnapshot.updated_at.desc())
+            .limit(12)
+        ).all()
+        latest_snapshots: dict[int, ProjectNarrativeSnapshot] = {}
+        for snapshot in snapshots:
+            latest_snapshots.setdefault(snapshot.chapter_number, snapshot)
+        state_lines = [
+            f"第 {snapshot.chapter_number} 章状态：{snapshot.summary}"
+            for _, snapshot in sorted(latest_snapshots.items(), reverse=True)
+            if snapshot.summary
+        ]
+        active_state = bounded("T1", "\n".join(state_lines))
+        included_sources.extend(
+            {"id": snapshot.id, "kind": "narrative_snapshot", "layer": "T1", "chapter_number": snapshot.chapter_number}
+            for snapshot in latest_snapshots.values()
+        )
+
+        active_foreshadowing = self.session.exec(
+            select(ProjectForeshadowing)
+            .where(
+                ProjectForeshadowing.project_id == project_id,
+                ProjectForeshadowing.status.in_(["active", "advanced", "overdue"]),
+            )
+            .order_by(ProjectForeshadowing.planted_chapter.desc(), ProjectForeshadowing.created_at.desc())
+            .limit(24)
+        ).all()
+        foreshadowing_text = bounded(
+            "T2",
+            "\n".join(
+                f"[第 {item.planted_chapter} 章伏笔/{item.status}] {item.statement}"
+                for item in active_foreshadowing
+                if item.statement
+            ),
+        )
+        included_sources.extend(
+            {"id": item.id, "kind": "foreshadowing", "layer": "T2", "status": item.status}
+            for item in active_foreshadowing
+        )
+
+        chapter_plan = loads_json(project.chapter_plan_json)
+        chapter_contract = self._chapter_plan_item(chapter_plan, chapter_number)
+        chapter_contract_text = bounded("T3", dumps_json(chapter_contract) if chapter_contract else "")
+        if chapter_contract:
+            included_sources.append({"id": f"chapter-contract:{chapter_number}", "kind": "chapter_contract", "layer": "T3"})
+
+        previous_contents = self.session.exec(
+            select(ProjectContent)
+            .where(
+                ProjectContent.project_id == project_id,
+                ProjectContent.content_type == "novel_body",
+                ProjectContent.chapter_number < chapter_number,
+            )
+            .order_by(ProjectContent.chapter_number.desc(), ProjectContent.version.desc())
+            .limit(8)
+        ).all()
+        latest_previous: dict[int, ProjectContent] = {}
+        for item in previous_contents:
+            latest_previous.setdefault(int(item.chapter_number or 0), item)
+        previous_context = bounded("T4", self._previous_chapter_context(project_id, chapter_number))
+        included_sources.extend(
+            {"id": item.id, "kind": "novel_body", "layer": "T4", "chapter_number": item.chapter_number, "version": item.version}
+            for item in latest_previous.values()
+        )
+
+        # T5 is optional, but it can only recall excerpts from approved prose
+        # of this project. The shared Asset Hub embedding index is deliberately
+        # not queried here until it has a project-content adapter.
+        recall_candidates_rows = self.session.exec(
+            select(ProjectContent)
+            .where(
+                ProjectContent.project_id == project_id,
+                ProjectContent.content_type == "novel_body",
+                ProjectContent.chapter_number < chapter_number,
+            )
+            .order_by(ProjectContent.chapter_number.desc(), ProjectContent.version.desc(), ProjectContent.created_at.desc())
+        ).all()
+        recall_candidates_by_chapter: dict[int, ProjectContent] = {}
+        for item in recall_candidates_rows:
+            recall_candidates_by_chapter.setdefault(int(item.chapter_number or 0), item)
+        recall_candidates = [
+            NarrativeRecallCandidate(
+                content_id=item.id,
+                chapter_number=int(item.chapter_number or 0),
+                version=item.version,
+                text=repair_utf8_mojibake(item.text_content or ""),
+            )
+            for item in recall_candidates_by_chapter.values()
+            if item.text_content
+        ]
+        recall_query = "\n".join(
+            value
+            for value in [
+                str(chapter_contract.get("title") or "") if isinstance(chapter_contract, dict) else "",
+                str(chapter_contract.get("summary") or chapter_contract.get("goal") or "") if isinstance(chapter_contract, dict) else "",
+                str(loads_json(project.metadata_json).get("idea") or ""),
+            ]
+            if value
+        )
+        recall_status = "not_configured"
+        recall_diagnostics = ""
+        semantic_recall = ""
+        recall_sources: list[dict[str, Any]] = []
+        try:
+            recall_result = self.semantic_recall_adapter.recall(
+                project_id=project_id,
+                chapter_number=chapter_number,
+                query=recall_query,
+                candidates=recall_candidates,
+                character_budget=budgets["T5"],
+            )
+            if not isinstance(recall_result, NarrativeRecallResult):
+                raise TypeError("semantic recall adapter returned an invalid result")
+            recall_status = recall_result.status or "available"
+            recall_diagnostics = recall_result.diagnostics
+            candidate_by_id = {candidate.content_id: candidate for candidate in recall_candidates}
+            for content_id in recall_result.source_content_ids:
+                candidate = candidate_by_id.get(content_id)
+                if candidate is None:
+                    continue
+                recall_sources.append({
+                    "id": candidate.content_id,
+                    "kind": "semantic_recall",
+                    "layer": "T5",
+                    "chapter_number": candidate.chapter_number,
+                    "version": candidate.version,
+                })
+            if recall_sources:
+                semantic_recall = bounded("T5", recall_result.text)
+            elif recall_result.text:
+                recall_status = "rejected_unprovenanced"
+                recall_diagnostics = "adapter returned recall text without an approved project source"
+        except Exception as exc:
+            recall_status = "unavailable"
+            recall_diagnostics = str(exc)
+        included_sources.extend(recall_sources)
+        settings = loads_json(project.settings_json)
+        style_tags = [str(item) for item in (settings.get("style_tags") or []) if str(item).strip()]
+        outline = loads_json(project.outline_json)
+        applied_skills, skill_context, skill_diagnostics = self._creative_context_skills(
+            project=project,
+            outline=outline,
+            settings=settings,
+            stage=stage,
+        )
+        style_genre = bounded(
+            "T6",
+            "；".join(
+                part
+                for part in [
+                    f"项目类型：{project.project_type}" if project.project_type else "",
+                    f"题材：{outline.get('genre')}" if outline.get("genre") else "",
+                    f"风格：{outline.get('style') or outline.get('tone') or outline.get('visual_style')}" if (outline.get("style") or outline.get("tone") or outline.get("visual_style")) else "",
+                    f"用户风格标签：{'、'.join(style_tags)}" if style_tags else "",
+                    skill_context,
+                ]
+                if part
+            ),
+        )
+        if style_genre:
+            included_sources.append({"id": f"project-style:{project.id}", "kind": "project_style", "layer": "T6"})
+
+        layers = [
+            {"id": "T0", "label": "locked_canon", "budget": budgets["T0"], "text": locked_bible, "hard_constraint": True},
+            {"id": "T1", "label": "narrative_state", "budget": budgets["T1"], "text": active_state},
+            {"id": "T2", "label": "active_foreshadowing", "budget": budgets["T2"], "text": foreshadowing_text},
+            {"id": "T3", "label": "chapter_contract", "budget": budgets["T3"], "text": chapter_contract_text},
+            {"id": "T4", "label": "local_continuity", "budget": budgets["T4"], "text": previous_context},
+            {"id": "T5", "label": "semantic_recall", "budget": budgets["T5"], "text": semantic_recall, "status": recall_status, "diagnostics": recall_diagnostics},
+            {"id": "T6", "label": "style_genre_skills", "budget": budgets["T6"], "text": style_genre, "applied_skill_ids": [item["id"] for item in applied_skills]},
+        ]
+        sections = [
+            f"{layer['id']} {label}：\n{layer['text']}"
+            for layer, label in zip(
+                layers,
+                ["已锁定项目圣经/世界资产（不可改写）", "已确认叙事状态（承接，不得倒退）", "已激活伏笔（需要推进或回收时才使用）", "当前章节契约", "前文连续性（承接，不得与其矛盾）", "语义召回", "文风、题材和兼容技能"],
+            )
+            if layer["text"]
+        ]
+        text = "\n\n".join(sections)
+        excluded_sources = {
+            "pending_continuity_candidates": len(self.session.exec(select(ProjectContinuityCandidate).where(ProjectContinuityCandidate.project_id == project_id, ProjectContinuityCandidate.status == "pending")).all()),
+            "pending_foreshadowing": len(self.session.exec(select(ProjectForeshadowing).where(ProjectForeshadowing.project_id == project_id, ProjectForeshadowing.status == "pending_review")).all()),
+            "agent_memory": "excluded_by_contract",
+            "canvas_state": "excluded_by_contract",
+            "asset_hub_metadata": "excluded_by_contract",
+            "semantic_recall": recall_status,
+            "creative_skills": skill_diagnostics,
+        }
+        fingerprint = hashlib.sha256(text.encode("utf-8")).hexdigest()[:32] if text else ""
+        metadata = {
+            "chapter_number": chapter_number,
+            # Keep these concise compatibility fields while callers migrate to
+            # the typed `layers` / `included_source_ids` contract below.
+            "locked_bible_card_count": len(locked_cards),
+            "locked_bible_characters": len(locked_bible),
+            "previous_context_characters": len(previous_context),
+            "active_snapshot_ids": [snapshot.id for snapshot in latest_snapshots.values()],
+            "active_foreshadowing_ids": [item.id for item in active_foreshadowing],
+            "included_layers": [layer["id"] for layer in layers if layer["text"]],
+            "layers": [{key: value for key, value in layer.items() if key != "text"} | {"characters": len(layer["text"])} for layer in layers],
+            "budgets": budgets,
+            "included_source_ids": included_sources,
+            "excluded_sources": excluded_sources,
+            "applied_skill_ids": [item["id"] for item in applied_skills],
+            "applied_skills": applied_skills,
+            "overflow": overflow,
+            "fingerprint": fingerprint,
+        }
+        result = {
+            "text": text,
+            "locked_project_bible_context": locked_bible,
+            "previous_context": previous_context,
+            "metadata": metadata,
+        }
+        if persist:
+            snapshot = ProjectNarrativeContextSnapshot(
+                project_id=project_id,
+                chapter_number=chapter_number,
+                stage=stage,
+                source_content_id=source_content_id,
+                narrative_run_id=narrative_run_id,
+                context_text=text,
+                layers_json=dumps_json(layers),
+                included_sources_json=dumps_json(included_sources),
+                excluded_sources_json=dumps_json(excluded_sources),
+                budget_json=dumps_json(budgets),
+                applied_skill_ids_json=dumps_json([item["id"] for item in applied_skills]),
+                overflow_json=dumps_json(overflow),
+                fingerprint=fingerprint,
+            )
+            self.session.add(snapshot)
+            self.session.flush()
+            result["snapshot_id"] = snapshot.id
+            metadata["context_snapshot_id"] = snapshot.id
+        return result
+
+    @staticmethod
+    def _creative_context_skills(
+        *,
+        project: CreativeProject,
+        outline: dict[str, Any],
+        settings: dict[str, Any],
+        stage: str,
+    ) -> tuple[list[dict[str, Any]], str, dict[str, Any]]:
+        """Return bounded T6 contributions from declared, compatible Skill packages.
+
+        A project may pin packages with ``settings.creative_skill_ids``.  Packages
+        declaring ``creative.auto_apply`` can join only when their project type,
+        genre and generation stage are all compatible.  This keeps a general
+        Agent Skill from silently becoming a source of narrative canon.
+        """
+        selected_ids = {
+            str(item).strip()
+            for item in (settings.get("creative_skill_ids") or [])
+            if str(item).strip()
+        }
+        genre = str(outline.get("genre") or "").strip().lower()
+        normalized_stage = str(stage or "").strip().lower()
+        applied: list[dict[str, Any]] = []
+        skipped: list[dict[str, str]] = []
+        creative_package_ids: set[str] = set()
+        # Import lazily: importing ``app.services.agent`` at creative-service
+        # module initialization registers Agent tools, some of which import this
+        # service again. Skill packages are needed only while assembling T6.
+        from app.services.agent.skill_loader import SkillPackageLoader
+
+        for package in SkillPackageLoader().load_packages():
+            creative = package.creative
+            if not creative:
+                continue
+            creative_package_ids.add(package.name)
+            selected = package.name in selected_ids
+            if not selected and not creative.get("auto_apply"):
+                continue
+            compatible, reason = CreativeProjectService._is_creative_skill_compatible(
+                package, project_type=project.project_type, genre=genre, stage=normalized_stage
+            )
+            if not compatible:
+                if selected:
+                    skipped.append({"id": package.name, "reason": reason})
+                continue
+            contribution = str(creative.get("context_contribution") or "").strip()
+            if not contribution:
+                continue
+            applied.append(
+                {
+                    "id": package.name,
+                    "title": package.title,
+                    "source": "selected" if selected else "genre_compatible",
+                    "checksum": package.checksum[:16],
+                    "contribution": contribution,
+                }
+            )
+        for skill_id in sorted(selected_ids - creative_package_ids):
+            skipped.append({"id": skill_id, "reason": "not_a_creative_skill"})
+        applied.sort(key=lambda item: (item["source"] != "selected", item["id"]))
+        skipped.sort(key=lambda item: item["id"])
+        text = "\n".join(f"[{item['title']}] {item['contribution']}" for item in applied)
+        return applied, text, {"selected_ids": sorted(selected_ids), "skipped": skipped, "status": "routed"}
+
+    @staticmethod
+    def _is_creative_skill_compatible(
+        package: Any,
+        *,
+        project_type: str,
+        genre: str,
+        stage: str,
+    ) -> tuple[bool, str]:
+        creative = package.creative
+        project_types = {str(item).lower() for item in creative.get("compatible_project_types") or []}
+        genres = {str(item).lower() for item in creative.get("compatible_genres") or []}
+        stages = {str(item).lower() for item in creative.get("stages") or []}
+        stage_aliases = {
+            "prose_humanized": "humanized_prose",
+            "prose_rewrite": "directed_rewrite",
+            "novel_body_refine": "directed_rewrite",
+        }
+        normalized_stage = stage_aliases.get(stage, stage)
+        if "*" not in project_types and str(project_type or "").lower() not in project_types:
+            return False, "project_type_incompatible"
+        if "*" not in genres and genre not in genres:
+            return False, "genre_incompatible"
+        if normalized_stage and "*" not in stages and normalized_stage not in stages:
+            return False, "stage_incompatible"
+        return True, ""
+
+    def preview_narrative_context(self, project_id: str, *, chapter_number: int) -> dict[str, Any]:
+        """Return a non-persistent Context Pack V2 preview for the inspector."""
+        pack = self._creative_context_pack(project_id, chapter_number)
+        return {
+            "chapter_number": chapter_number,
+            "text": pack["text"],
+            "metadata": pack["metadata"],
+            "persisted": False,
+        }
+
+    def writing_preflight(
+        self,
+        project_id: str,
+        *,
+        chapter_number: int = 1,
+        stage: str = "novel_body",
+        content_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Explain whether a writing stage can run before a model is called."""
+        project = self._require_project(project_id)
+        normalized_stage = str(stage or "novel_body").strip().lower().replace("-", "_")
+        aliases = {
+            "body": "novel_body",
+            "novel": "novel_body",
+            "outline": "chapter_outline",
+            "prose": "novel_body",
+            "refine": "novel_body_refine",
+            "humanize": "prose_humanized",
+        }
+        normalized_stage = aliases.get(normalized_stage, normalized_stage)
+        supported_stages = {
+            "chapter_outline", "novel_body", "novel_body_refine",
+            "prose_draft", "prose_humanized", "prose_review", "prose_rewrite",
+        }
+        if normalized_stage not in supported_stages:
+            raise ValueError(f"unsupported writing preflight stage: {stage}")
+
+        outline = loads_json(project.outline_json)
+        chapter_plan = loads_json(project.chapter_plan_json)
+        chapter_item = self._chapter_plan_item(chapter_plan, chapter_number) if chapter_plan else None
+        chapter_outline = self._resolve_source_content(
+            project_id=project_id,
+            content_type="chapter_outline",
+            chapter_number=chapter_number,
+            content_id=content_id if normalized_stage == "chapter_outline" else None,
+        )
+        approved_body = self._latest_content(project_id, "novel_body", chapter_number)
+        selected_source = self.session.get(ProjectContent, content_id) if content_id else None
+        valid_selected_source = bool(
+            selected_source
+            and selected_source.project_id == project_id
+            and selected_source.content_type in {"novel_body", "prose_draft", "prose_humanized", "prose_rewrite"}
+        )
+        checks: list[dict[str, Any]] = []
+
+        def add_check(check_id: str, label: str, passed: bool, detail: str) -> None:
+            checks.append({
+                "id": check_id,
+                "label": label,
+                "status": "pass" if passed else "block",
+                "required": True,
+                "detail": detail,
+            })
+
+        add_check("story_outline", "project outline", bool(outline), "Create the project outline first.")
+        add_check("chapter_plan", "chapter plan", bool(chapter_plan and chapter_plan.get("chapters")), "Create a chapter plan first.")
+        add_check("chapter_contract", f"chapter {chapter_number} contract", bool(chapter_item), f"Add chapter {chapter_number} to the persisted chapter plan.")
+        if normalized_stage != "chapter_outline":
+            add_check("chapter_outline", f"chapter {chapter_number} outline", bool(chapter_outline), "Generate and review the chapter outline before prose.")
+        if normalized_stage in {"novel_body_refine", "prose_humanized", "prose_review", "prose_rewrite"}:
+            add_check("source_prose", f"source prose for chapter {chapter_number}", bool(approved_body or valid_selected_source), "Select an approved or candidate prose version first.")
+
+        blockers = [item for item in checks if item["status"] == "block"]
+        method_candidates = self._writing_method_candidates(project=project, outline=outline, stage=normalized_stage)
+        return {
+            "project_id": project_id,
+            "chapter_number": chapter_number,
+            "stage": normalized_stage,
+            "ready": not blockers,
+            "checks": checks,
+            "blockers": blockers,
+            "next_action": blockers[0]["detail"] if blockers else "Ready to run this stage.",
+            "source_content_id": chapter_outline.id if chapter_outline else "",
+            "method_candidates": method_candidates,
+        }
+
+    @staticmethod
+    def _writing_method_candidates(*, project: CreativeProject, outline: dict[str, Any], stage: str) -> list[dict[str, Any]]:
+        """Expose compatible creative Skills as selectable writing methods."""
+        from app.services.agent.skill_loader import SkillPackageLoader
+
+        genre = str(outline.get("genre") or "").strip().lower()
+        candidates: list[dict[str, Any]] = []
+        for package in SkillPackageLoader().load_packages():
+            if not package.creative:
+                continue
+            compatible, _reason = CreativeProjectService._is_creative_skill_compatible(
+                package, project_type=project.project_type, genre=genre, stage=stage
+            )
+            if compatible:
+                candidates.append({
+                    "id": package.name,
+                    "title": package.title,
+                    "description": package.description,
+                    "source": package.source_type,
+                    "auto_apply": bool(package.creative.get("auto_apply")),
+                    "checksum": package.checksum[:16],
+                })
+        return sorted(candidates, key=lambda item: (not item["auto_apply"], item["id"]))
+
     def _normalize_pipeline_stages(self, stages: list[str] | None) -> list[str]:
         aliases = {
             "characters": "sync_characters",
@@ -2368,9 +4584,10 @@ class CreativeProjectService:
             return explicit
         if chapter_count and chapter_count > 0:
             return list(range(1, int(chapter_count) + 1))
-        chapter_plan = loads_json(project.chapter_plan_json)
+        chapter_plan = normalize_chapter_plan(loads_json(project.chapter_plan_json))
         planned = []
-        for item in chapter_plan.get("chapters") or []:
+        chapter_rows = chapter_plan.get("chapters")
+        for item in chapter_rows or []:
             try:
                 number = int(item.get("chapter_number") or 0)
             except Exception:
@@ -2379,9 +4596,13 @@ class CreativeProjectService:
                 planned.append(number)
         if planned:
             return sorted(set(planned))
-        count = int(chapter_plan.get("chapter_count") or 0)
-        if count > 0:
-            return list(range(1, count + 1))
+        # A plan with explicit rows is authoritative even when every row is
+        # invalid.  Do not resurrect a stale declared count and generate
+        # unplanned chapters (the historical 18-vs-15 failure mode).
+        if not isinstance(chapter_rows, list):
+            count = int(chapter_plan.get("chapter_count") or 0)
+            if count > 0:
+                return list(range(1, count + 1))
         return [1]
 
     def _demo_outline(self, project: CreativeProject) -> dict[str, Any]:
@@ -3112,9 +5333,9 @@ class CreativeProjectService:
             content_type=content_type,
             chapter_number=chapter_number,
             episode_number=episode_number,
-            title=title,
+            title=repair_utf8_mojibake(title),
             data_json=dumps_json(data),
-            text_content=text_content,
+            text_content=repair_utf8_mojibake(text_content),
             source_content_id=source_content_id,
             version=int(latest or 0) + 1,
         )
@@ -3177,6 +5398,8 @@ class CreativeProjectService:
         provider: str | None,
         model: str | None,
         template_meta: dict[str, Any] | None = None,
+        max_tokens: int | None = None,
+        request_metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         system = system_prompt or self._default_system_prompt()
         request_payload = {
@@ -3188,6 +5411,10 @@ class CreativeProjectService:
         }
         if template_meta:
             request_payload["prompt_template"] = template_meta
+        if max_tokens is not None:
+            request_payload["max_tokens"] = max_tokens
+        if request_metadata:
+            request_payload.update(request_metadata)
         raw_response = ""
         normalized: dict[str, Any] = {}
         validation_error = ""
@@ -3201,13 +5428,13 @@ class CreativeProjectService:
                 provider=provider,
                 model=model,
                 temperature=0.75,
-                max_tokens=12000 if stage in {
+                max_tokens=max_tokens or (12000 if stage in {
                     "novel_body",
                     "novel_body_refine",
                     "prose_draft",
                     "prose_humanized",
                     "prose_rewrite",
-                } else 5000,
+                } else 5000),
             )
             raw_response = self._response_content(response)
             response_provider = self._response_attr(response, "provider")
@@ -3326,36 +5553,39 @@ class CreativeProjectService:
 
     def _resolve_prompt_template(self, *, stage: str, template_id: str | None) -> PlatformTemplate | None:
         try:
-            if template_id:
-                try:
-                    template_uuid = uuid.UUID(template_id)
-                except ValueError as exc:
-                    raise ValueError("Prompt 模板 ID 格式不正确") from exc
-                template = self.session.exec(
-                    select(PlatformTemplate).where(PlatformTemplate.id == template_uuid)
-                ).first()
-                if not template:
-                    raise ValueError("Prompt 模板不存在")
-                if template.template_scope != "creative_project":
-                    raise ValueError("请选择创作项目类型的 Prompt 模板")
-                if template.template_stage != stage:
-                    raise ValueError(f"Prompt 模板阶段不匹配，应选择 {stage}")
-                return template
+            # Template selection is optional. Isolate its read in a SAVEPOINT
+            # so a legacy/missing template table can never roll back content,
+            # context snapshots or generation logs staged by the caller.
+            with self.session.begin_nested():
+                if template_id:
+                    try:
+                        template_uuid = uuid.UUID(template_id)
+                    except ValueError as exc:
+                        raise ValueError("Prompt 模板 ID 格式不正确") from exc
+                    template = self.session.exec(
+                        select(PlatformTemplate).where(PlatformTemplate.id == template_uuid)
+                    ).first()
+                    if not template:
+                        raise ValueError("Prompt 模板不存在")
+                    if template.template_scope != "creative_project":
+                        raise ValueError("请选择创作项目类型的 Prompt 模板")
+                    if template.template_stage != stage:
+                        raise ValueError(f"Prompt 模板阶段不匹配，应选择 {stage}")
+                    return template
 
-            return self.session.exec(
-                select(PlatformTemplate)
-                .where(
-                    PlatformTemplate.template_scope == "creative_project",
-                    PlatformTemplate.template_stage == stage,
-                    PlatformTemplate.is_active == True,
-                )
-                .order_by(PlatformTemplate.sort_order)
-            ).first()
+                return self.session.exec(
+                    select(PlatformTemplate)
+                    .where(
+                        PlatformTemplate.template_scope == "creative_project",
+                        PlatformTemplate.template_stage == stage,
+                        PlatformTemplate.is_active == True,
+                    )
+                    .order_by(PlatformTemplate.sort_order)
+                ).first()
         except ValueError:
             raise
         except SQLAlchemyError as exc:
             logger.warning("Creative prompt template lookup skipped: %s", exc)
-            self.session.rollback()
             return None
 
     def _render_prompt_template(self, template: str, variables: dict[str, Any]) -> str:
@@ -3412,11 +5642,65 @@ class CreativeProjectService:
         allow_local_repair: bool = False,
     ) -> dict[str, Any]:
         data = self._extract_json_object(content, allow_local_repair=allow_local_repair)
+        # Some OpenAI-compatible models use `body` despite the requested
+        # `content` contract.  Flexible schemas would otherwise accept that
+        # extra key and silently persist an empty visible chapter.
+        if schema_model is NovelBodySchema and not str(data.get("content") or "").strip():
+            body = data.get("body")
+            if isinstance(body, str) and body.strip():
+                data["content"] = body.strip()
+        if schema_model is WriterRoomProseReviewSchema:
+            data = self._coerce_writer_room_review_payload(data)
         try:
             model = schema_model.model_validate(data)
         except ValidationError as exc:
             raise ValueError(str(exc)) from exc
         return model.model_dump()
+
+    def _coerce_writer_room_review_payload(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Accept common review JSON variants before the strict review schema runs."""
+        normalized = dict(data)
+
+        def as_text(value: Any) -> str:
+            if isinstance(value, dict):
+                return "；".join(
+                    f"{key}: {as_text(item)}" for key, item in value.items() if as_text(item)
+                )
+            if isinstance(value, list):
+                return "；".join(part for item in value if (part := as_text(item)))
+            return str(value or "").strip()
+
+        def as_text_list(value: Any) -> list[str]:
+            if value is None:
+                return []
+            if isinstance(value, dict):
+                return [f"{key}: {text}" for key, item in value.items() if (text := as_text(item))]
+            if not isinstance(value, list):
+                value = [value]
+            return [text for item in value if (text := as_text(item))]
+
+        for key in ("quality_tags", "ai_smell_checks", "strengths", "rewrite_plan"):
+            normalized[key] = as_text_list(normalized.get(key))
+
+        issues = normalized.get("issues")
+        if isinstance(issues, dict):
+            issues = issues.get("issues") if isinstance(issues.get("issues"), list) else [issues]
+        if not isinstance(issues, list):
+            issues = []
+        normalized["issues"] = [
+            item
+            if isinstance(item, dict)
+            else {
+                "severity": "medium",
+                "category": "审稿意见",
+                "problem": as_text(item),
+                "suggestion": as_text(item),
+                "rewrite_instruction": as_text(item),
+            }
+            for item in issues
+            if as_text(item)
+        ]
+        return normalized
 
     async def _ensure_novel_body_quality(
         self,
@@ -3428,19 +5712,51 @@ class CreativeProjectService:
         data: dict[str, Any],
         provider: str | None,
         model: str | None,
+        request_metadata: dict[str, Any] | None = None,
+        minimum_characters: int = 2800,
+        maximum_characters: int | None = None,
     ) -> dict[str, Any]:
         """Prevent short summaries or obvious repetitions from being saved as novel body."""
-        reason = self._novel_body_quality_problem(data)
+        reason = self._novel_body_quality_problem(
+            data,
+            minimum_characters=minimum_characters,
+            maximum_characters=maximum_characters,
+        )
         if not reason:
             content = str(data.get("content") or "")
-            data["word_count"] = data.get("word_count") or len(content)
+            data["word_count"] = len(content)
             return data
 
+        expanded = await self._expand_short_novel_body_candidate(
+            project=project,
+            stage=stage,
+            data=data,
+            reason=reason,
+            provider=provider,
+            model=model,
+            minimum_characters=minimum_characters,
+            maximum_characters=maximum_characters,
+            request_metadata=request_metadata,
+        )
+        if expanded:
+            expanded_reason = self._novel_body_quality_problem(
+                expanded,
+                minimum_characters=minimum_characters,
+                maximum_characters=maximum_characters,
+            )
+            if not expanded_reason:
+                content = str(expanded.get("content") or "")
+                expanded["word_count"] = len(content)
+                return expanded
+
+        target_characters = minimum_characters
+        if maximum_characters is not None:
+            target_characters = minimum_characters + (maximum_characters - minimum_characters) // 2
         repair_prompt = f"""刚才生成的小说正文质量不达标：{reason}
 
 请基于原始任务重新输出严格 JSON。重点要求：
 1. content 必须是完整小说正文，不是摘要、梗概或拆条说明。
-2. 正文至少 2800 个中文字符，目标 3000-4500 字；如果剧情接近结尾，也要写成完整场景。
+2. 正文目标约 {target_characters} 个中文字符，至少 {minimum_characters} 个中文字符{f'，且不得超过 {maximum_characters} 个中文字符' if maximum_characters else ''}；提交前自行复核篇幅。若超长，删除解释、重复信息和可替换的内心说明，保留细纲事件、动作和钩子；若过短，补一个完整推进场景，不能只加总结句。
 3. 必须覆盖单话细纲中的主要场景、冲突、反转、关键台词和结尾钩子。
 4. 禁止连续复用同一段句式、同一句口头禅或前文模板句。
 5. 要有场景动作、人物对白、心理反应、推理/决策过程和章节收束。
@@ -3468,7 +5784,7 @@ class CreativeProjectService:
             provider=provider,
             model=model,
             temperature=0.65,
-            max_tokens=8000,
+            max_tokens=writer_room_output_max_tokens(maximum_characters),
         )
         raw_response = self._response_content(response)
         response_provider = self._response_attr(response, "provider")
@@ -3477,10 +5793,48 @@ class CreativeProjectService:
             raise ValueError(self._response_error(response) or "正文质量修复失败")
         try:
             repaired = self._parse_and_validate(raw_response, NovelBodySchema, allow_local_repair=True)
+            repair_parse_mode = "json"
         except Exception as exc:
-            raise ValueError(f"正文质量修复返回不可用：{exc}") from exc
+            # Some compatible providers return the repaired chapter as plain
+            # prose or under an alias such as `text`. The first generation
+            # already accepts that response shape; quality repair must use the
+            # same compatibility path instead of discarding usable prose.
+            try:
+                repaired = self._wrap_plain_novel_body_response(raw_response, repair_prompt, NovelBodySchema)
+                repaired["chapter_number"] = int(data.get("chapter_number") or repaired.get("chapter_number") or 1)
+                repaired["title"] = str(data.get("title") or repaired.get("title") or "")
+                repaired["continuity_notes"] = data.get("continuity_notes") or repaired.get("continuity_notes") or []
+                repair_parse_mode = "plain_prose"
+            except Exception as fallback_exc:
+                raise ValueError(f"正文质量修复返回不可用：{exc}") from fallback_exc
 
-        repaired_reason = self._novel_body_quality_problem(repaired)
+        repaired_reason = self._novel_body_quality_problem(
+            repaired,
+            minimum_characters=minimum_characters,
+            maximum_characters=maximum_characters,
+        )
+        # A full repair can successfully compress an overlong chapter but land
+        # just below the lower bound. Give that repaired draft the same
+        # scene-bridge opportunity as a short first draft before rejecting it.
+        if repaired_reason.startswith("正文过短"):
+            expanded_repair = await self._expand_short_novel_body_candidate(
+                project=project,
+                stage=f"{stage}_quality_repair",
+                data=repaired,
+                reason=repaired_reason,
+                provider=provider,
+                model=model,
+                minimum_characters=minimum_characters,
+                maximum_characters=maximum_characters,
+                request_metadata=request_metadata,
+            )
+            if expanded_repair:
+                repaired = expanded_repair
+                repaired_reason = self._novel_body_quality_problem(
+                    repaired,
+                    minimum_characters=minimum_characters,
+                    maximum_characters=maximum_characters,
+                )
         self._log_generation(
             project_id=project.id,
             stage=f"{stage}_quality_repair",
@@ -3488,7 +5842,11 @@ class CreativeProjectService:
             provider=response_provider,
             model=response_model,
             prompt=repair_prompt,
-            request_payload={"stage": f"{stage}_quality_repair"},
+            request_payload={
+                "stage": f"{stage}_quality_repair",
+                "parse_mode": repair_parse_mode,
+                **(request_metadata or {}),
+            },
             raw_response=raw_response,
             normalized=repaired,
             validation_error=repaired_reason or "",
@@ -3498,13 +5856,145 @@ class CreativeProjectService:
             raise ValueError(f"正文质量仍不达标：{repaired_reason}")
         self.session.commit()
         content = str(repaired.get("content") or "")
-        repaired["word_count"] = repaired.get("word_count") or len(content)
+        repaired["word_count"] = len(content)
         return repaired
 
-    def _novel_body_quality_problem(self, data: dict[str, Any]) -> str:
+    async def _expand_short_novel_body_candidate(
+        self,
+        *,
+        project: CreativeProject,
+        stage: str,
+        data: dict[str, Any],
+        reason: str,
+        provider: str | None,
+        model: str | None,
+        minimum_characters: int,
+        maximum_characters: int | None,
+        request_metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        """Fill a missing scene instead of asking the model to reprint a whole long chapter."""
         content = str(data.get("content") or "").strip()
-        if len(content) < 2800:
+        if not reason.startswith("正文过短") or not content:
+            return None
+
+        missing = minimum_characters - len(content)
+        # A bridge is useful for one missing scene. For a near-empty response,
+        # a clean full rewrite remains more coherent than stitching fragments.
+        if missing <= 0 or missing > 2400:
+            return None
+
+        remaining_capacity = (
+            maximum_characters - len(content)
+            if maximum_characters is not None
+            else 2500
+        )
+        if remaining_capacity < missing:
+            return None
+
+        paragraphs = [paragraph.strip() for paragraph in content.splitlines() if paragraph.strip()]
+        if len(paragraphs) < 3:
+            return None
+        split_index = max(1, (len(paragraphs) * 2) // 3)
+        night_index = next(
+            (
+                index
+                for index, paragraph in enumerate(paragraphs[split_index:], start=split_index)
+                if any(marker in paragraph for marker in ("深夜", "夜里", "入夜", "夜色"))
+            ),
+            split_index,
+        )
+        before = paragraphs[:night_index]
+        after = paragraphs[night_index:]
+        prefix = "\n".join(before[-5:])[-1400:]
+        suffix = "\n".join(after[:5])[:1400]
+        requested = min(max(missing + 220, 600), 2500, remaining_capacity)
+        requested_upper = min(requested + 320, remaining_capacity)
+        prompt = f"""你是小说责任编辑，正在补齐一章已经写好的正文中缺失的一个连续场景。
+
+请只写可直接插入的中文小说段落，不要标题、编号、解释、总结或 JSON。目标 {requested} 至 {requested_upper} 个中文字符。
+这段文字必须承接“插入点之前”，再自然过渡到“插入点之后”；增加人物行动、环境阻力、物件互动、对白潜台词和一次具体选择，不能复述已写情节，不能提前解释世界规则或揭露后续谜底。
+
+插入点之前：
+{prefix}
+
+插入点之后：
+{suffix}
+"""
+        response = await self.ai_service.chat(
+            messages=[
+                LLMMessage(role="system", content=self._default_system_prompt()),
+                LLMMessage(role="user", content=prompt),
+            ],
+            provider=provider,
+            model=model,
+            temperature=0.72,
+            max_tokens=6000,
+        )
+        raw_response = self._response_content(response)
+        fragment = raw_response.strip()
+        try:
+            fragment_data = self._parse_and_validate(raw_response, NovelBodySchema, allow_local_repair=True)
+            parsed_fragment = str(fragment_data.get("content") or "").strip()
+            # NovelBodySchema intentionally accepts partial provider JSON. For
+            # a plain prose bridge that means validation yields default empty
+            # fields without raising. Keep the raw prose unless parsing gave
+            # us a real content field.
+            if parsed_fragment:
+                fragment = parsed_fragment
+        except Exception:
+            if fragment.startswith("```"):
+                fragment = fragment.strip("`").removeprefix("text").strip()
+
+        # Even a small shortfall must be repaired.  The only hard lower bound is
+        # the missing length; otherwise a candidate that is 1-599 characters
+        # short would skip the bridge and be rejected after an unnecessary full
+        # retry.
+        minimum_fragment = missing
+        status = "success" if self._response_success(response) and len(fragment) >= minimum_fragment else "failed"
+        self._log_generation(
+            project_id=project.id,
+            stage=f"{stage}_scene_expansion",
+            status=status,
+            provider=self._response_attr(response, "provider"),
+            model=self._response_attr(response, "model") or model or "",
+            prompt=prompt,
+            request_payload={
+                "stage": f"{stage}_scene_expansion",
+                "missing_characters": missing,
+                **(request_metadata or {}),
+            },
+            raw_response=raw_response,
+            normalized={"fragment": fragment, "fragment_characters": len(fragment)},
+            validation_error="" if status == "success" else "补写场景过短或调用失败",
+        )
+        self.session.commit()
+        if status != "success":
+            return None
+
+        merged = dict(data)
+        merged["content"] = "\n\n".join([*before, fragment, *after])
+        merged["word_count"] = len(merged["content"])
+        merged["length_guard"] = {
+            "strategy": "scene_expansion",
+            "original_characters": len(content),
+            "inserted_characters": len(fragment),
+            "minimum_characters": minimum_characters,
+            "maximum_characters": maximum_characters,
+        }
+        return merged
+
+    def _novel_body_quality_problem(
+        self,
+        data: dict[str, Any],
+        *,
+        minimum_characters: int = 2800,
+        maximum_characters: int | None = None,
+    ) -> str:
+        content = str(data.get("content") or "").strip()
+        if len(content) < minimum_characters:
             return f"正文过短（{len(content)} 字）"
+        if maximum_characters is not None and len(content) > maximum_characters:
+            return f"正文过长（{len(content)} 字）"
         if len(content.splitlines()) <= 2 and len(content) < 1500:
             return "正文段落过少，疑似摘要"
         paragraphs = [line.strip() for line in content.splitlines() if line.strip()]
@@ -3541,15 +6031,27 @@ class CreativeProjectService:
             if content.lower().startswith("json"):
                 content = content[4:].strip()
         title = ""
-        if content.startswith("{"):
+        json_body_fields = ("content", "body", "text", "chapter_body", "rewritten_body")
+        has_json_body_field = any(f'"{field}"' in content for field in json_body_fields)
+        if has_json_body_field:
             title = self._extract_json_string_field(content, "title") or ""
-            extracted_content = self._extract_json_string_field(content, "content")
+            extracted_content = next(
+                (
+                    value
+                    for field in json_body_fields
+                    if (
+                        value := (
+                            self._extract_loose_json_string_field(content, field)
+                            or self._extract_json_string_field(content, field)
+                        )
+                    )
+                ),
+                None,
+            )
             if extracted_content:
                 content = extracted_content.strip()
             else:
                 raise ValueError("模型返回了疑似 JSON，但无法解析为章节正文")
-        elif "{" in content and "}" in content:
-            raise ValueError("模型返回了疑似 JSON，但无法解析为章节正文")
 
         chapter_number = self._extract_json_int_field(raw_response, "chapter_number") or 1
         match = re.search(r"第\s*(\d+)\s*章", prompt or "")
@@ -3570,6 +6072,48 @@ class CreativeProjectService:
         except ValidationError as exc:
             raise ValueError(str(exc)) from exc
         return model.model_dump()
+
+    def _extract_loose_json_string_field(self, text: str, field: str) -> str | None:
+        """Recover a long JSON text field when a compatible model forgot escaping.
+
+        Long Chinese prose sometimes contains literal newlines or ASCII quotes. That
+        makes the overall response invalid JSON even though the body itself is usable.
+        A following scalar/list field is a much safer end marker than the first quote
+        inside the prose, so only use this recovery for known novel-body fields.
+        """
+        marker = f'"{field}"'
+        start = (text or "").find(marker)
+        if start < 0:
+            return None
+        colon = text.find(":", start + len(marker))
+        if colon < 0:
+            return None
+        value_start = colon + 1
+        while value_start < len(text) and text[value_start].isspace():
+            value_start += 1
+        if value_start >= len(text) or text[value_start] != '"':
+            return None
+
+        # A valid response puts these fields after content. The delimiter also
+        # survives when the model left prose newlines or inner quotes unescaped.
+        tail = re.search(
+            r',\s*"(?:word_count|continuity_notes|chapter_number|title)"\s*:',
+            text[value_start + 1 :],
+        )
+        if not tail:
+            return None
+        value_end = value_start + 1 + tail.start()
+        value = text[value_start + 1 : value_end].rstrip()
+        if value.endswith('"'):
+            value = value[:-1]
+        value = (
+            value.replace(r"\\n", "\n")
+            .replace(r"\\r", "\r")
+            .replace(r"\\t", "\t")
+            .replace(r'\\"', '"')
+            .replace(r"\\\\", "\\")
+        )
+        return value.strip() or None
 
     def _extract_json_int_field(self, text: str, field: str) -> int | None:
         match = re.search(rf'"{re.escape(field)}"\s*:\s*(\d+)', text or "")
@@ -3834,6 +6378,48 @@ class CreativeProjectService:
   ]
 }}"""
 
+    def _chapter_plan_extension_prompt(
+        self,
+        *,
+        outline: dict[str, Any],
+        existing_plan: dict[str, Any],
+        start_chapter: int,
+        target_chapter_count: int,
+    ) -> str:
+        existing_chapters = existing_plan.get("chapters") if isinstance(existing_plan, dict) else []
+        previous_chapter = existing_chapters[-1] if isinstance(existing_chapters, list) and existing_chapters else {}
+        return f"""请为下列已完成规划的故事续写第 {start_chapter}-{target_chapter_count} 章的连续规划 JSON。
+
+故事大纲：
+{dumps_json(outline)}
+
+上一章（第 {start_chapter - 1} 章，已定稿，不可改写）：
+{dumps_json(previous_chapter)}
+
+要求：
+1. 只输出第 {start_chapter} 到第 {target_chapter_count} 章，不要重写或复述已有章节。
+2. 第一章必须承接已有最后一章的 ending_hook；后续章节必须完成大纲中尚未兑现的终局、人物弧光和主题。
+3. 每章必须有明确目标、冲突、关键事件、角色焦点和结尾钩子，不能用“继续调查”一类空泛推进。
+4. chapter_number 必须依次为 {start_chapter} 到 {target_chapter_count}。
+5. 输出严格 JSON，不要 Markdown。
+
+输出格式：
+{{
+  "chapter_count": {target_chapter_count - start_chapter + 1},
+  "chapters": [
+    {{
+      "chapter_number": {start_chapter},
+      "title": "章节标题",
+      "goal": "本章叙事目标",
+      "conflict": "本章核心冲突",
+      "key_events": ["事件1", "事件2"],
+      "character_focus": ["角色名"],
+      "ending_hook": "结尾钩子",
+      "status": "planned"
+    }}
+  ]
+}}"""
+
     def _script_prompt(
         self,
         outline: dict[str, Any],
@@ -4027,7 +6613,7 @@ class CreativeProjectService:
         chapter_plan: dict[str, Any],
         chapter_outline: dict[str, Any],
         chapter_number: int,
-        previous_context: str,
+        project_context_pack: str,
     ) -> str:
         return f"""请根据单话细纲生成第 {chapter_number} 章小说正文 JSON。
 
@@ -4040,12 +6626,12 @@ class CreativeProjectService:
 当前单话细纲：
 {dumps_json(chapter_outline)}
 
-前文上下文：
-{previous_context or "暂无"}
+项目连续性上下文：
+{project_context_pack or "暂无"}
 
 要求：
 1. content 字段输出完整小说正文，不要只写摘要；目标 3000-4500 个中文字符，最低不要低于 2800 字。
-2. 正文要遵守大纲中的人物设定、视觉风格、世界规则和连续性备注。
+2. 正文要遵守大纲中的人物设定、视觉风格、世界规则和连续性备注。项目连续性上下文中的“已锁定”事实不可新增、改写或推翻；前文事件必须被承接。
 3. 保持网文/短剧改编友好的节奏：开头有钩子，中段有推进，结尾留悬念。
 4. 可以有对白、动作和心理描写，但不要输出 Markdown 标题。
 5. 保留舒适分段，每个主要场景都要展开成可阅读段落。
@@ -4106,6 +6692,7 @@ class CreativeProjectService:
         chapter_number: int,
         source_content_id: str | None = None,
         selected_text: str | None = None,
+        context_pack: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         project = self._require_project(project_id)
         outline = loads_json(project.outline_json)
@@ -4116,7 +6703,6 @@ class CreativeProjectService:
         rehearsal = self._latest_content(project_id, "character_rehearsal", chapter_number)
         draft = self._latest_content(project_id, "prose_draft", chapter_number)
         humanized = self._latest_content(project_id, "prose_humanized", chapter_number)
-        review = self._latest_content(project_id, "prose_review", chapter_number)
         source = self.session.get(ProjectContent, source_content_id) if source_content_id else None
         if source and source.project_id != project_id:
             raise ValueError("写作室源内容不属于当前项目")
@@ -4127,16 +6713,52 @@ class CreativeProjectService:
                 current_chapter = item
                 break
 
-        # A second humanization pass should normally return to the draft instead of
-        # repeatedly polishing its own previous output.  The latter is prone to
-        # shrinking the chapter and makes reruns look almost identical to users.
-        source_candidates = {
+        # Writer Room is a real candidate pipeline, not a collection of
+        # independent "latest content" lookups. Keep the direct upstream
+        # candidate as provenance, while prose-only steps still use a prose
+        # source for length guards and full-text editing.
+        upstream_candidates = {
+            "scene_beats": [source, chapter_outline],
+            "character_rehearsal": [source, scene_beats, chapter_outline],
+            "prose_draft": [source, rehearsal, scene_beats, chapter_outline],
             "prose_humanized": [source, draft, novel_body],
             "prose_review": [source, humanized, draft, novel_body],
             "prose_rewrite": [source, humanized, draft, novel_body],
-        }.get(step, [source, humanized, draft, novel_body])
-        prose_source = next((item for item in source_candidates if item is not None), None)
+        }.get(step, [source, chapter_outline])
+        upstream_source = next((item for item in upstream_candidates if item is not None), None)
+        prose_candidates = {
+            "prose_humanized": [source, draft, novel_body],
+            "prose_review": [source, humanized, draft, novel_body],
+            "prose_rewrite": [source, humanized, draft, novel_body],
+        }.get(step, [])
+        prose_source = next(
+            (
+                item
+                for item in prose_candidates
+                if item is not None and item.content_type in {"novel_body", "prose_draft", "prose_humanized", "prose_rewrite"}
+            ),
+            None,
+        )
         source_text = prose_source.text_content if prose_source else ""
+        # A rewrite must follow the review of the exact version being rewritten.
+        # Falling back to the newest chapter review can mix an old/empty candidate
+        # with a newer body and produces contradictory rewrite instructions.
+        review = (
+            self._latest_writer_room_review_for_source(
+                project_id,
+                chapter_number,
+                prose_source.id if prose_source else "",
+            )
+            if step == "prose_rewrite"
+            else self._latest_content(project_id, "prose_review", chapter_number)
+        )
+        context_pack = context_pack or self._creative_context_pack(
+            project_id,
+            chapter_number,
+            persist=True,
+            stage=f"writer_room:{step}",
+            source_content_id=source_content_id,
+        )
         return {
             "outline": outline,
             "chapter_plan": chapter_plan,
@@ -4150,14 +6772,21 @@ class CreativeProjectService:
             "prose_draft": loads_json(draft.data_json) if draft else {},
             "prose_humanized": loads_json(humanized.data_json) if humanized else {},
             "prose_review": loads_json(review.data_json) if review else {},
-            "source_content_id": prose_source.id if prose_source else (chapter_outline.id if chapter_outline else ""),
-            "source_content_type": prose_source.content_type if prose_source else (chapter_outline.content_type if chapter_outline else ""),
-            "source_content_version": prose_source.version if prose_source else (chapter_outline.version if chapter_outline else 0),
+            "source_content_id": upstream_source.id if upstream_source else "",
+            "source_content_type": upstream_source.content_type if upstream_source else "",
+            "source_content_version": upstream_source.version if upstream_source else 0,
+            "prose_source_content_id": prose_source.id if prose_source else "",
+            "prose_source_content_type": prose_source.content_type if prose_source else "",
+            "prose_source_content_version": prose_source.version if prose_source else 0,
             "source_word_count": len("".join(source_text.split())),
             "source_text": source_text,
             "source_json": loads_json(prose_source.data_json) if prose_source else {},
             "selected_text": selected_text or "",
-            "previous_context": self._previous_chapter_context(project_id, chapter_number),
+            "previous_context": context_pack["previous_context"],
+            "project_context_pack": context_pack["text"],
+            "locked_project_bible_context": context_pack["locked_project_bible_context"],
+            "context_pack_metadata": context_pack["metadata"],
+            "context_snapshot_id": context_pack.get("snapshot_id") or context_pack["metadata"].get("context_snapshot_id", ""),
         }
 
     def _writer_room_prompt_variables(
@@ -4187,6 +6816,8 @@ class CreativeProjectService:
             "selected_text": selected_text or context.get("selected_text") or "",
             "prose_review_json": dumps_json(context.get("prose_review")),
             "previous_context": context.get("previous_context") or "暂无",
+            "project_context_pack": context.get("project_context_pack") or "暂无",
+            "locked_project_bible_context": context.get("locked_project_bible_context") or "暂无",
             "instruction": instruction or "",
         }
 
@@ -4219,7 +6850,28 @@ class CreativeProjectService:
 
 前文上下文：
 {variables["previous_context"]}
+
+项目连续性上下文：
+{variables["project_context_pack"]}
+
+约束：已锁定项目事实不可改写或推翻；前文事件必须承接，不能让角色获得前文未得到的信息。
 """
+        if step in {"prose_draft", "prose_humanized", "prose_rewrite"}:
+            common += "\n\n" + self._writer_room_prose_style_contract() + "\n"
+        if step == "prose_rewrite":
+            requested_minimum = writer_room_requested_minimum_characters(instruction)
+            requested_maximum = writer_room_requested_maximum_characters(instruction)
+            if requested_minimum is not None:
+                target = requested_minimum
+                range_text = f"不少于 {requested_minimum} 个中文字符"
+                if requested_maximum is not None:
+                    target = requested_minimum + (requested_maximum - requested_minimum) // 2
+                    range_text = f"{requested_minimum}-{requested_maximum} 个中文字符"
+                common += f"""
+
+硬性篇幅契约：最终 content 必须为 {range_text}，建议先按约 {target} 个字符规划场景和段落。提交前自行检查篇幅；不足时补一个推动关系或线索的完整场景，超出时删减解释和重复信息，不能删掉细纲事件或用摘要替代正文。服务端会拒绝区间外的候选。
+"""
+
         if step == "scene_beats":
             return common + """请作为导演，把本章拆成可写正文的场景节拍 JSON。
 要求：
@@ -4308,11 +6960,16 @@ class CreativeProjectService:
 
 请作为网文主编审稿，找出正文里“不像人写”的地方并输出 JSON。
 要求：
-1. 问题必须具体到段落、场景或句式位置。
+1. 问题必须具体到段落、场景或句式位置，并在 location 或 problem 中写出本稿实际出现的短语、动作、对白或段落功能；不能用“全文”“第 X 段”“有 AI 味”这类无证据结论。
 2. 必须覆盖：节奏、逻辑、角色声音、情绪连续性、爽点/钩子、AI腔。
 3. quality_tags 输出 3-8 个短标签，例如“解释过密”“动作不足”“对白顺口”“钩子偏弱”。
 4. ai_smell_checks 必须逐项检查：直接情绪标签、泛化形容词、万能比喻、重复句式、缺少物件互动、角色声音漂移、说明替代戏剧动作。
 5. rewrite_instruction 要能直接用于下一轮重写。
+6. quality_tags、ai_smell_checks、strengths、rewrite_plan 都必须是字符串数组。不要把检查项写成对象、字典、评分表或嵌套 JSON。
+7. 只评价正文中真实存在的句子，不要把上一个版本的问题移植到本稿。系统、剧本、存在值是本书允许的设定词；只有它们替代人物行动、读起来像技术说明时才算 AI 腔。
+8. 评分校准：完整、有场景推进、人物关系和章末行动的正文以 70 分为基线；只有逻辑断裂、人物动机矛盾、关键线索凭空出现、严重重复或无法阅读才判 high。普通措辞偏好只能记为 medium/low，不能单独让全文不合格。
+9. approval_recommendation 必须明确填“建议提升”或“建议重写”，并与 overall_score 一致：70 分以上且无 high 问题才建议提升。即使建议提升，也必须写出至少两条 strengths 和两条实际检查结果，说明为什么本稿通过。
+10. 若正文确立了值得后续锁定的连续性事实（如角色固定特征/关系、地点规则、带约束的物件、关键事件结果），在 continuity_candidates 中输出，最多 5 条；没有则给空数组。每条必须含 entity_type（character/place/item/event/other）、entity_name、claim（事实断言）、evidence_excerpt（正文证据片段）、severity（info/low/medium/high）、suggested_action（create_fact/merge/ignore）、target_fact_type（world_asset/project_bible）。不要把主观评价或待修问题写成候选；候选是“已经成立、后续章节不能自相矛盾”的事实。
 格式：
 {{
   "chapter_number": {chapter_number},
@@ -4326,7 +6983,10 @@ class CreativeProjectService:
     {{"severity": "high/medium/low", "category": "AI腔/节奏/逻辑/角色声音/情绪/钩子", "location": "位置", "problem": "问题", "suggestion": "建议", "rewrite_instruction": "重写指令"}}
   ],
   "rewrite_plan": ["重写计划"],
-  "approval_recommendation": "是否建议提升为正文"
+  "approval_recommendation": "是否建议提升为正文",
+  "continuity_candidates": [
+    {{"entity_type": "character", "entity_name": "角色名", "claim": "已确立的事实断言", "evidence_excerpt": "正文证据片段", "severity": "info", "suggested_action": "create_fact", "target_fact_type": "world_asset"}}
+  ]
 }}"""
         return common + f"""待重写正文：
 {variables["source_text"]}
@@ -4354,17 +7014,20 @@ class CreativeProjectService:
             issues = []
         if not issues and isinstance(data.get("review"), dict) and isinstance(data["review"].get("issues"), list):
             issues = data["review"]["issues"]
+        chapter_review = data.get("chapter_review") if isinstance(data.get("chapter_review"), dict) else {}
+        if not issues and isinstance(chapter_review.get("issues"), list):
+            issues = chapter_review["issues"]
         issues = [item for item in issues if isinstance(item, dict)]
         normalized_issues = []
         for index, item in enumerate(issues, start=1):
             normalized_issues.append(
                 {
                     "severity": item.get("severity") or ("high" if index <= 3 else "medium"),
-                    "category": item.get("category") or item.get("type") or "AI腔",
-                    "location": item.get("location") or f"审稿问题 {index}",
-                    "problem": item.get("problem") or item.get("description") or item.get("issue") or "",
+                    "category": item.get("category") or item.get("type") or item.get("problem_type") or "AI腔",
+                    "location": item.get("location") or item.get("position") or f"审稿问题 {index}",
+                    "problem": item.get("problem") or item.get("description") or item.get("issue") or item.get("detail") or "",
                     "suggestion": item.get("suggestion") or item.get("detail") or "",
-                    "rewrite_instruction": item.get("rewrite_instruction") or item.get("suggestion") or item.get("description") or "",
+                    "rewrite_instruction": item.get("rewrite_instruction") or item.get("suggestion") or item.get("detail") or item.get("description") or "",
                 }
             )
         issues = normalized_issues
@@ -4383,7 +7046,9 @@ class CreativeProjectService:
                     problem = problem.strip(" -：: ")
                 issues.append(
                     {
-                        "severity": "high" if index <= 3 else "medium",
+                        # A checklist signal is not a verified blocking defect.
+                        # Only the editor's explicit issues may be marked high.
+                        "severity": "medium",
                         "category": "AI腔",
                         "location": location or f"AI味检查 {index}",
                         "problem": problem,
@@ -4401,8 +7066,63 @@ class CreativeProjectService:
             data["overall_score"] = max(35, 75 - high_count * 8 - max(0, len(issues) - high_count) * 4)
         if not data.get("ai_smell_score") and (checks or issues):
             data["ai_smell_score"] = min(95, 45 + len(checks or issues) * 6)
+        recommendation = str(data.get("approval_recommendation") or "").strip()
+        if recommendation and recommendation not in {"建议提升", "建议重写"}:
+            if "重写" in recommendation:
+                data["approval_recommendation"] = "建议重写"
+            elif "提升" in recommendation:
+                data["approval_recommendation"] = "建议提升"
+            else:
+                data["approval_recommendation"] = ""
+        if not str(data.get("approval_recommendation") or "").strip():
+            has_high_issue = any(str(item.get("severity") or "").lower() == "high" for item in issues)
+            has_editorial_evidence = bool(
+                issues
+                or checks
+                or [item for item in data.get("quality_tags") or [] if str(item).strip()]
+                or [item for item in data.get("strengths") or [] if str(item).strip()]
+            )
+            # The editorial contract treats a complete, readable chapter as a
+            # 70-point baseline. Medium and low style notes remain visible for
+            # a human decision, but cannot turn into a fake blocking failure.
+            # An empty JSON is not editorial evidence and must never receive
+            # that baseline or a promotion recommendation.
+            if has_editorial_evidence and not has_high_issue and int(data.get("overall_score") or 0) < 70:
+                data["overall_score"] = 70
+            data["approval_recommendation"] = (
+                "建议提升" if int(data.get("overall_score") or 0) >= 70 and not has_high_issue else "建议重写"
+            )
         data["issues"] = issues
         return data
+
+    @staticmethod
+    def _writer_room_review_has_substance(data: dict[str, Any]) -> bool:
+        """Reject empty review JSON before it can masquerade as a passing score."""
+        def nonempty_strings(value: Any) -> list[str]:
+            if not isinstance(value, list):
+                return []
+            return [str(item).strip() for item in value if str(item).strip()]
+
+        tags = nonempty_strings(data.get("quality_tags"))
+        checks = nonempty_strings(data.get("ai_smell_checks"))
+        strengths = nonempty_strings(data.get("strengths"))
+        issues = [
+            item
+            for item in data.get("issues") or []
+            if isinstance(item, dict)
+            and str(item.get("location") or "").strip()
+            and str(item.get("problem") or "").strip()
+            and str(item.get("rewrite_instruction") or item.get("suggestion") or "").strip()
+        ]
+        recommendation = str(data.get("approval_recommendation") or "").strip()
+        score = int(data.get("overall_score") or 0)
+        return (
+            score > 0
+            and recommendation in {"建议提升", "建议重写"}
+            and len(tags) >= 2
+            and len(checks) >= 2
+            and bool(strengths or issues)
+        )
 
     def _writer_room_text(self, step: str, data: dict[str, Any]) -> str:
         if step == "scene_beats":
@@ -4436,6 +7156,18 @@ class CreativeProjectService:
             return "\n".join(lines)
         return str(data.get("content") or dumps_json(data))
 
+    def _writer_room_prose_style_contract(self) -> str:
+        """Shared prose constraints for every Writer Room drafting pass."""
+        return """写作质感硬约束：
+1. 写成连载网文正文，不写提纲、审稿意见、设定说明或人物小传。每一场至少落到一个可触碰的物件、一个身体动作和一次具体选择。
+2. 场景按“人物想做什么 -> 被什么打断/阻碍 -> 怎么临场应对 -> 付出什么后果”推进；不能用一段解释替代一场戏。
+3. 对白必须互相接得住：有人打断、回避、答非所问、停顿或改口，而不是轮流发表完整观点。人物只说自己当下会说的话。
+4. 情绪优先通过手、呼吸、视线、姿势、环境和物件表现；少用“他意识到、她感到、空气仿佛、某种、无法形容”等泛化句式。
+5. 允许保留本书必要的“系统/剧本/存在值”等设定名词，但它们只能压迫人物、打断行动或带来后果；不要把代码、算法、接口、渲染、帧、模型、数据、3D打印、解剖术语写成旁白解释。
+6. 一段只做一件事：推进动作、给出反应或改变关系。每 500-800 字至少发生一次可见变化，例如证据被夺走、话被截断、立场翻转、门被推开、选择落地；不要用连续奇观或术语清单充篇幅。
+7. 不写工整口号、万能比喻或结论先行的推理报告。推理只说读者当下需要的一两步，并立刻用对手的反应、物件变化或代价验证；短句用于压力和转折，长句只服务于具体观察。
+8. 章节结尾必须让人物已经做出一个会改变下一章处境的行动或选择，而不是仅用抽象感叹收尾。"""
+
     def _writer_room_title(self, step: str, chapter_number: int) -> str:
         labels = {
             "scene_beats": "场景节拍",
@@ -4455,6 +7187,7 @@ class CreativeProjectService:
         body_data: dict[str, Any],
         outline_context: dict[str, Any],
         instruction: str,
+        project_context_pack: str,
     ) -> str:
         chapter_number = content.chapter_number or content.episode_number or body_data.get("chapter_number") or 1
         return f"""请根据用户的中文修改要求，微调第 {chapter_number} 章小说正文，并输出严格 JSON。
@@ -4464,6 +7197,9 @@ class CreativeProjectService:
 当前单话细纲：
 {dumps_json(outline_context)}
 
+项目连续性上下文：
+{project_context_pack or "暂无"}
+
 当前正文：
 {content.text_content or body_data.get("content", "")}
 
@@ -4472,7 +7208,7 @@ class CreativeProjectService:
 
 要求：
 1. 只修改正文，不要输出解释、Markdown 或代码块；如果用户没有要求压缩，目标 3000-4500 个中文字符，最低不要低于 2800 字。
-2. 保留原有主线、人物身份、连续性和重要伏笔，按照用户要求加强或压缩。
+2. 保留原有主线、人物身份、连续性和重要伏笔，按照用户要求加强或压缩；已锁定项目事实不可改写或推翻，前文事件必须承接。
 3. 如果用户要求“加强冲突/压缩对白/更爽/更细腻/更像网文”等，要落实到具体段落。
 4. 输出完整正文，不要只输出修改片段。
 5. 保留舒适分段，每个主要场景都要展开成可阅读段落。
@@ -4815,13 +7551,74 @@ class CreativeProjectService:
             panel.setdefault("panel_goal", "")
             panel.setdefault("location", "")
             panel.setdefault("camera_angle", "")
-            panel.setdefault("camera_motion", "")
+            panel["camera_motion"] = self._normalize_storyboard_camera_motion(panel.get("camera_motion"))
             panel.setdefault("blocking", "")
+            panel["duration_seconds"] = self._normalize_storyboard_duration(panel)
+            panel.setdefault("music_hint", "")
+            panel["generate_audio"] = self._normalize_storyboard_audio_flag(panel.get("generate_audio"))
+            if not str(panel.get("video_prompt") or "").strip():
+                panel["video_prompt"] = self._build_storyboard_video_prompt(panel)
             props = panel.get("props")
             if props is None:
                 panel["props"] = []
             elif not isinstance(props, list):
                 panel["props"] = [str(props)]
+
+    @staticmethod
+    def _normalize_storyboard_camera_motion(value: Any) -> str:
+        raw = str(value or "").strip()
+        if not raw:
+            return "静止"
+        normalized = raw.replace("镜头", "").replace("缓慢", "").replace("轻微", "").strip()
+        motion_map = (
+            ("环绕", "环绕"),
+            ("跟", "跟拍"),
+            ("推", "推近"),
+            ("拉", "拉远"),
+            ("摇", "摇镜"),
+            ("移", "平移"),
+            ("静", "静止"),
+            ("固定", "静止"),
+        )
+        for marker, canonical in motion_map:
+            if marker in normalized:
+                return canonical
+        return raw[:24]
+
+    @staticmethod
+    def _normalize_storyboard_duration(panel: dict[str, Any]) -> int:
+        raw = panel.get("duration_seconds", panel.get("duration", ""))
+        try:
+            duration = int(float(raw))
+        except (TypeError, ValueError):
+            shot_size = str(panel.get("shot_size") or "")
+            duration = 3 if any(marker in shot_size for marker in ("特写", "窄格")) else 5 if any(
+                marker in shot_size for marker in ("远景", "大宽格")
+            ) else 4
+        return max(3, min(duration, 6))
+
+    @staticmethod
+    def _normalize_storyboard_audio_flag(value: Any) -> bool:
+        if isinstance(value, str):
+            return value.strip().lower() in {"true", "1", "yes", "on", "是"}
+        return bool(value)
+
+    @staticmethod
+    def _build_storyboard_video_prompt(panel: dict[str, Any]) -> str:
+        subject_action = str(panel.get("action") or panel.get("panel_goal") or "人物完成当前镜头动作").strip()
+        camera_motion = str(panel.get("camera_motion") or "静止").strip()
+        shot_size = str(panel.get("shot_size") or "中景").strip()
+        camera_angle = str(panel.get("camera_angle") or "平视").strip()
+        location = str(panel.get("location") or "当前场景").strip()
+        emotion = str(panel.get("emotion") or "").strip()
+        parts = [
+            f"竖屏短剧{shot_size}{camera_angle}镜头：{subject_action}",
+            f"在{location}内以{camera_motion}完成镜头运动",
+        ]
+        if emotion:
+            parts.append(f"人物情绪保持{emotion}")
+        parts.append("动作自然连贯，保持首帧中的角色、服装、场景和光线一致，不出现字幕或新增人物")
+        return "；".join(parts)
 
     def _enhance_storyboard_image_prompts(
         self,
@@ -5075,12 +7872,15 @@ class CreativeProjectService:
 要求：
 1. 每个 panel 都要能独立用于 AI 图片生成，不能只写剧情摘要。
 2. 每个 image_prompt 必须写成镜头级漫画生图提示词，包含：角色身份、角色外貌、服装、地点道具、动作、表情、景别、镜头角度、构图、光线色调、氛围、漫画风格、画面重点和一致性要求。
-3. panels 要覆盖完整剧情节拍，建议每场至少 2-4 个 panel，远景/中景/特写/大宽格交替，避免连续同景别。
-4. dialogue_bubbles 写本格可见对白气泡，sound_effect 写拟声词或环境声，negative_prompt 写需要避免的画面问题。
-5. image_prompt 必须复用上方角色视觉档案，不允许只写“某人醒来”“递合同”等剧情短句；没有明确角色外貌时也要写身份、年龄、体型、发型、服装和稳定视觉标签。
-6. 如果项目参考素材里有 character/background/style/world/reference，请把参考意图写入 image_prompt，供后续图生图或人工关联。
-7. 保持角色外观、服装、场景和视觉风格一致。
-8. 输出严格 JSON。
+3. video_prompt 与 image_prompt 分开写：它只描述首帧之后可见的动作、镜头运动、节奏和情绪变化，不重复静态外貌清单，也不写字幕、分镜编号或模型参数。
+4. duration_seconds 必须是 3-6 的整数；特写通常 3 秒，中景 4 秒，远景/大宽格 5-6 秒。camera_motion 只使用 推近/拉远/摇镜/平移/跟拍/环绕/静止 之一。
+5. generate_audio 默认 false；只有该镜头确实需要原生环境声或音乐时才设 true，并在 music_hint 写简短声音建议。
+6. panels 要覆盖完整剧情节拍，建议每场至少 2-4 个 panel，远景/中景/特写/大宽格交替，避免连续同景别。
+7. dialogue_bubbles 写本格可见对白气泡，sound_effect 写拟声词或环境声，negative_prompt 写需要避免的画面问题。
+8. image_prompt 必须复用上方角色视觉档案，不允许只写“某人醒来”“递合同”等剧情短句；没有明确角色外貌时也要写身份、年龄、体型、发型、服装和稳定视觉标签。
+9. 如果项目参考素材里有 character/background/style/world/reference，请把参考意图写入 image_prompt，供后续图生图或人工关联。
+10. 保持角色外观、服装、场景和视觉风格一致。
+11. 输出严格 JSON。
 
 输出格式：
 {{
@@ -5094,9 +7894,11 @@ class CreativeProjectService:
       "panel_goal": "本格叙事目的",
       "location": "地点",
       "image_prompt": "生图提示词",
+      "video_prompt": "只描述可见动作、镜头运动和节奏的视频提示词",
+      "duration_seconds": 4,
       "camera_hint": "镜头",
       "camera_angle": "平视/俯视/仰视/过肩/主观视角",
-      "camera_motion": "推/拉/摇/移/静止",
+      "camera_motion": "推近/拉远/摇镜/平移/跟拍/环绕/静止",
       "shot_size": "远景/中景/特写/大宽格/窄格",
       "composition": "构图说明",
       "blocking": "角色站位和调度",
@@ -5106,6 +7908,8 @@ class CreativeProjectService:
       "props": ["关键道具"],
       "dialogue_bubbles": ["对白气泡"],
       "sound_effect": "音效字",
+      "music_hint": "可选的环境声或配乐建议",
+      "generate_audio": false,
       "negative_prompt": "避免项",
       "notes": "备注"
     }}

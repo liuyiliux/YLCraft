@@ -517,12 +517,15 @@ _CREATIVE_STORYBOARD = """请根据短剧脚本生成漫画/视频分镜 JSON。
 要求：
 1. 每个 panel 都要能独立用于 AI 图片生成，不能只写剧情摘要。
 2. 每个 image_prompt 必须写成镜头级漫画生图提示词，包含：角色身份、角色外貌、服装、地点道具、动作、表情、景别、镜头角度、构图、光线色调、氛围、漫画风格、画面重点和一致性要求。
-3. image_prompt 必须复用角色视觉档案，不允许只写“某人醒来”“递合同”等剧情短句。
-4. panels 要覆盖完整剧情节拍，每场至少 2-4 个 panel，远景/中景/特写/大宽格交替，避免连续同景别。
-5. dialogue_bubbles 写本格可见对白气泡，sound_effect 写拟声词或环境声，negative_prompt 写需要避免的画面问题。
-6. 如果项目参考素材里有 character/background/style/reference，请把参考意图写入 image_prompt。
-7. 保持角色外观、服装、场景和视觉风格一致。
-8. 输出严格 JSON。
+3. video_prompt 与 image_prompt 分开写：只描述首帧之后的动作、镜头运动、节奏和情绪变化，不能复制静态外貌清单，也不能写字幕、分镜编号或模型参数。
+4. duration_seconds 必须是 3-6 的整数；特写通常 3 秒，中景 4 秒，远景/大宽格 5-6 秒。camera_motion 只使用 推近/拉远/摇镜/平移/跟拍/环绕/静止 之一。
+5. generate_audio 默认 false；只在需要原生环境声或音乐时设 true，并在 music_hint 写简短建议。
+6. image_prompt 必须复用角色视觉档案，不允许只写“某人醒来”“递合同”等剧情短句。
+7. panels 要覆盖完整剧情节拍，每场至少 2-4 个 panel，远景/中景/特写/大宽格交替，避免连续同景别。
+8. dialogue_bubbles 写本格可见对白气泡，sound_effect 写拟声词或环境声，negative_prompt 写需要避免的画面问题。
+9. 如果项目参考素材里有 character/background/style/reference，请把参考意图写入 image_prompt。
+10. 保持角色外观、服装、场景和视觉风格一致。
+11. 输出严格 JSON。
 
 输出格式：
 {
@@ -534,7 +537,10 @@ _CREATIVE_STORYBOARD = """请根据短剧脚本生成漫画/视频分镜 JSON。
       "panel_number": 1,
       "source_scene_number": 1,
       "image_prompt": "生图提示词",
+      "video_prompt": "只描述可见动作、镜头运动和节奏的视频提示词",
+      "duration_seconds": 4,
       "camera_hint": "镜头",
+      "camera_motion": "推近/拉远/摇镜/平移/跟拍/环绕/静止",
       "shot_size": "远景/中景/特写/大宽格/窄格",
       "composition": "构图说明",
       "characters": ["角色"],
@@ -542,6 +548,8 @@ _CREATIVE_STORYBOARD = """请根据短剧脚本生成漫画/视频分镜 JSON。
       "emotion": "情绪",
       "dialogue_bubbles": ["对白气泡"],
       "sound_effect": "音效字",
+      "music_hint": "可选的环境声或配乐建议",
+      "generate_audio": false,
       "negative_prompt": "避免项",
       "notes": "备注"
     }

@@ -18,6 +18,8 @@ from app.api.v1.images import (
     _generation_lineage_from_request,
 )
 from app.db.models.image_prompt_reference import ImagePromptReference, ImagePromptSource
+from app.core.task_queue import TaskStatus, get_task_queue, init_task_queue
+from app.services.ai.types import ImageGenerationResult
 from app.services.agent.tools import image_prompt_reference_tools
 from app.services.image_prompt_reference import service as prompt_reference_service
 from app.services.image_prompt_reference.service import (
@@ -338,3 +340,67 @@ async def test_generated_image_asset_hub_save_rolls_back_failed_transaction(monk
 
     assert node_id == ""
     assert rollbacks == [1]
+
+
+@pytest.mark.asyncio
+async def test_generated_image_artifact_keeps_asset_hub_node_id_contract(monkeypatch):
+    async def create_asset(*args, **kwargs):
+        return "asset-node-1"
+
+    monkeypatch.setattr(images_api, "_create_generated_image_asset_hub", create_asset)
+
+    asset_id, link_id = await images_api._create_generated_image_artifact(
+        object(),
+        image_path="generated.png",
+        prompt="demo",
+        provider="fixture-image",
+        model="fixture-model",
+    )
+
+    assert asset_id == "asset-node-1"
+    assert link_id == ""
+
+
+@pytest.mark.asyncio
+async def test_async_project_image_is_not_done_until_asset_and_project_link_are_finalized(monkeypatch, tmp_path):
+    class FakeAIService:
+        def is_loaded(self):
+            return True
+
+        async def poll_image(self, provider, task_id):
+            return ImageGenerationResult(
+                success=True,
+                status="done",
+                task_id=task_id,
+                provider=provider or "fixture-image",
+                model="fixture-model",
+                local_path=str(tmp_path / "remote.png"),
+                all_local_paths=[str(tmp_path / "remote.png")],
+            )
+
+    async def fail_artifact(**kwargs):
+        return "", ""
+
+    monkeypatch.setattr(images_api, "get_ai_service", lambda: FakeAIService())
+    monkeypatch.setattr(images_api, "_try_create_generated_image_artifact", fail_artifact)
+    init_task_queue()
+    task = await get_task_queue().create_task(
+        "image_generation",
+        {
+            "external_task_id": "remote-1",
+            "provider": "fixture-image",
+            "project_id": "project-1",
+            "content_id": "content-1",
+            "prompt": "fixture",
+        },
+        max_retries=0,
+    )
+
+    response = await images_api.poll_image_task(task.task_id, provider=None)
+    stored = await get_task_queue().get_task(task.task_id)
+
+    assert response.success is False
+    assert response.status == "error"
+    assert stored is not None
+    assert stored.status == TaskStatus.FAILED
+    assert any(event.type == "finalization_failed" for event in stored.events)

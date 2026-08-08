@@ -93,6 +93,8 @@ DEFAULT_AGENT_PROFILES: list[dict[str, Any]] = [
         "system_prompt": (
             "你是 YLCraft 创作导演。优先使用创作项目工具读取项目、大纲、项目圣经、"
             "章节、分镜和生成日志。所有改写和生成都要保留版本，不要直接覆盖用户已确认内容。"
+            "涉及番茄发布时，先用 preview_fanqie_project_publish 校验正文与目标章节；"
+            "只有用户明确确认后，才调用 publish_fanqie_project_chapter 保存草稿，且测试必须使用独立 [TEST] 章节。"
         ),
         "allowed_tools": [
             "list_creative_projects",
@@ -176,6 +178,12 @@ DEFAULT_AGENT_PROFILES: list[dict[str, Any]] = [
             "get_platform_note_detail",
             "fetch_platform_no_watermark",
             "import_platform_results_to_assets",
+            "list_fanqie_my_books",
+            "get_fanqie_book_stats",
+            "get_fanqie_hot_list",
+            "preview_fanqie_project_publish",
+            "get_fanqie_project_publish_status",
+            "publish_fanqie_project_chapter",
         ],
         "default_workflow": "creative_project_advance",
         "default_skill_ids": ["creative_project_advance", "reference_match"],

@@ -87,3 +87,56 @@ async def test_task_detail_api_returns_diagnostics_and_events_while_list_stays_l
     assert lightweight.result is None
     assert lightweight.diagnostics is None
     assert lightweight.events is None
+
+
+@pytest.mark.asyncio
+async def test_task_list_can_filter_project_and_opt_into_payload_details():
+    init_task_queue()
+    queue = get_task_queue()
+    matching = await queue.create_task(
+        "image_generation",
+        {"project_id": "project-1", "prompt": "scene"},
+    )
+    await queue.create_task(
+        "image_generation",
+        {"project_id": "project-2", "prompt": "other"},
+    )
+    await queue.create_task("download", {"project_id": "project-1"})
+
+    filtered = await tasks_api.list_tasks(
+        project_id="project-1",
+        task_type="image_generation",
+        active_only=True,
+        include_detail=True,
+    )
+
+    assert filtered.success is True
+    assert [task.task_id for task in filtered.tasks] == [matching.task_id]
+    assert filtered.tasks[0].payload == {"project_id": "project-1", "prompt": "scene"}
+
+
+@pytest.mark.asyncio
+async def test_queue_hydrates_persisted_project_task(monkeypatch):
+    async def fake_get_task(task_id):
+        assert task_id == "persisted-task"
+        return {
+            "task_id": task_id,
+            "task_type": "image_generation",
+            "status": "running",
+            "payload": {"project_id": "project-1", "external_task_id": "remote-1"},
+            "result": {},
+            "progress": 35,
+            "progress_message": "generating",
+            "created_at": 100.0,
+            "started_at": 101.0,
+            "events": [],
+        }
+
+    monkeypatch.setattr("app.services.task_persistence.get_task", fake_get_task)
+    init_task_queue()
+    task = await get_task_queue().get_task("persisted-task")
+
+    assert task is not None
+    assert task.status.value == "running"
+    assert task.payload["external_task_id"] == "remote-1"
+    assert task.progress == 35

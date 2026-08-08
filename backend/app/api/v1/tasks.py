@@ -489,12 +489,37 @@ def _recent_asset_download_infos(include_detail: bool = False, limit: int = 30) 
 
 
 @router.get("", response_model=TaskListResponse, summary="任务列表")
-async def list_tasks():
+async def list_tasks(
+    project_id: str | None = None,
+    task_type: str | None = None,
+    active_only: bool = False,
+    include_detail: bool = False,
+):
     """
     返回所有活跃任务（内存视图）。
     当前聚合 core.task_queue 以及仍在迁移中的下载任务表。
     """
-    return TaskListResponse(success=True, tasks=_all_task_infos())
+    await get_task_queue().restore_persisted_tasks(project_id=project_id, active_only=active_only)
+    # Project filtering needs payload context even when callers did not ask to
+    # return the payload in the response.
+    tasks = _all_task_infos(include_detail=include_detail or bool(project_id))
+    if project_id:
+        tasks = [
+            task for task in tasks
+            if isinstance(task.payload, dict) and str(task.payload.get("project_id") or "") == project_id
+        ]
+    if task_type:
+        tasks = [task for task in tasks if task.task_type == task_type]
+    if active_only:
+        tasks = [task for task in tasks if task.status in {"pending", "running"}]
+    if not include_detail:
+        for task in tasks:
+            task.payload = None
+            task.result = None
+            task.diagnostics = None
+            task.events = None
+            task.error = None
+    return TaskListResponse(success=True, tasks=tasks)
 
 
 @router.get("/stats", response_model=TaskStatsResponse, summary="任务统计")

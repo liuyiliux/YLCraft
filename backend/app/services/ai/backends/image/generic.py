@@ -390,8 +390,19 @@ class GenericImageBackend(ImageBackend):
                     "status": "done",
                     "progress": 100.0,
                 }
-            # 使用普通解析作为回退
-            return None
+            # Some providers mark creation complete before the result payload
+            # is materialized. Preserve the task for the normal polling path.
+            logger.info(
+                "[GenericImageBackend] completed creation response has no images; polling task_id=%s",
+                task_id,
+            )
+            return {
+                "success": True,
+                "task_id": task_id,
+                "status": "pending",
+                "progress": 0.0,
+                "cost": 0.0,
+            }
 
         # 检查是否失败
         error_msg = self._is_async_failed(data)

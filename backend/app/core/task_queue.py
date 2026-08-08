@@ -92,6 +92,7 @@ class InMemoryTaskQueue:
         task = Task(task_id=task_id, task_type=task_type, payload=payload, max_retries=max_retries)
         async with self._lock:
             self._tasks[task_id] = task
+        await self._persist(task)
 
         # WebSocket 实时推送新任务创建
         try:
@@ -104,7 +105,10 @@ class InMemoryTaskQueue:
 
     async def get_task(self, task_id: str) -> Task | None:
         async with self._lock:
-            return self._tasks.get(task_id)
+            task = self._tasks.get(task_id)
+        if task is not None:
+            return task
+        return await self._restore_task(task_id)
 
     async def update_progress(self, task_id: str, progress: int, message: str = "") -> None:
         async with self._lock:
@@ -115,6 +119,8 @@ class InMemoryTaskQueue:
                 if task.status == TaskStatus.PENDING:
                     task.status = TaskStatus.RUNNING
                     task.started_at = time.time()
+        if task:
+            await self._persist(task)
 
         # WebSocket 实时推送进度
         try:
@@ -133,6 +139,7 @@ class InMemoryTaskQueue:
     async def update_task(self, task: Task) -> None:
         async with self._lock:
             self._tasks[task.task_id] = task
+        await self._persist(task)
 
         # WebSocket 实时推送任务状态变更
         try:
@@ -196,7 +203,77 @@ class InMemoryTaskQueue:
             diagnostics.update(_sanitize_event_value(fields))
             payload["diagnostics"] = diagnostics
             task.payload = payload
+        if task:
+            await self._persist(task)
             return diagnostics
+        return None
+
+    async def restore_persisted_tasks(self, *, project_id: str | None = None, active_only: bool = False) -> None:
+        """Hydrate durable project tasks into the in-memory execution cache."""
+        try:
+            from app.services.task_persistence import list_tasks
+
+            records = await list_tasks(project_id=project_id, active_only=active_only)
+        except Exception:
+            return
+        for record in records:
+            await self._restore_record(record)
+
+    async def _restore_task(self, task_id: str) -> Task | None:
+        try:
+            from app.services.task_persistence import get_task
+
+            record = await get_task(task_id)
+        except Exception:
+            return None
+        return await self._restore_record(record) if record else None
+
+    async def _restore_record(self, record: dict[str, Any] | None) -> Task | None:
+        if not record:
+            return None
+        try:
+            status = TaskStatus(str(record.get("status") or TaskStatus.PENDING.value))
+        except ValueError:
+            status = TaskStatus.PENDING
+        events = []
+        for item in record.get("events") or []:
+            if isinstance(item, dict):
+                try:
+                    events.append(TaskEvent(**item))
+                except TypeError:
+                    continue
+        task = Task(
+            task_id=str(record.get("task_id") or ""),
+            task_type=str(record.get("task_type") or ""),
+            payload=record.get("payload") if isinstance(record.get("payload"), dict) else {},
+            status=status,
+            progress=int(record.get("progress") or 0),
+            progress_message=str(record.get("progress_message") or ""),
+            result=record.get("result") if isinstance(record.get("result"), dict) else None,
+            error=record.get("error"),
+            created_at=float(record.get("created_at") or time.time()),
+            started_at=record.get("started_at"),
+            completed_at=record.get("completed_at"),
+            max_retries=int(record.get("max_retries") or 0),
+            events=events,
+        )
+        if not task.task_id:
+            return None
+        async with self._lock:
+            existing = self._tasks.get(task.task_id)
+            if existing is not None:
+                return existing
+            self._tasks[task.task_id] = task
+        return task
+
+    async def _persist(self, task: Task) -> None:
+        try:
+            from app.services.task_persistence import upsert_task
+
+            await upsert_task(task)
+        except Exception:
+            # Persistence must never interrupt the in-memory task workflow.
+            pass
 
 
 # 全局单例

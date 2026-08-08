@@ -88,24 +88,35 @@
 
 ## Phase 6: Asset library integration
 
-- [ ] 43. Ensure generated project texts can be stored or indexed as text assets.
+- [x] 43. Ensure generated project texts can be stored or indexed as text assets.
 - [x] 44. Ensure generated images include project id, content id, prompt and model metadata.
-- [ ] 45. Ensure characters extracted from outline can be saved to character library and linked to project.
-- [ ] 46. Add filters in `/assets` for project id, asset role and source stage.
-- [ ] 47. Add lineage display for project-generated assets.
+- [x] 45. Ensure characters extracted from outline can be saved to character library and linked to project.
+- [x] 46. Add filters in `/assets` for project id, asset role and source stage.
+- [x] 47. Add lineage display for project-generated assets.
 
 ## Phase 7: Export and polish
 
-- [ ] 48. Add Markdown export for outline, chapter plan and scripts.
-- [ ] 49. Add project ZIP export with JSON, Markdown and linked asset manifest.
-- [ ] 50. Add lightweight HTML preview for scripts or storyboard.
-- [ ] 51. Add empty, loading, error and partial-generation states across project workspace.
+- [x] 48. Add Markdown export for outline, chapter plan and scripts.
+- [x] 49. Add project ZIP export with JSON, Markdown and linked asset manifest.
+- [x] 50. Add lightweight HTML preview for scripts or storyboard.
+- [x] 51. Add empty, loading, error and partial-generation states across project workspace.
 - [x] 52. Add documentation explaining the new creative loop and module status.
 
 ## Phase 8: Verification
 
 - [x] 53. Backend tests: schema validation, JSON repair, project CRUD, novel import, asset linking.
-- [ ] 54. API tests: idea -> outline -> chapter plan -> chapter outline -> prose -> script -> storyboard -> comic pages.
-- [ ] 55. API tests: novel chapter -> project -> script draft.
+- [x] 54. API tests: idea -> outline -> chapter plan -> chapter outline -> prose -> script -> storyboard -> comic pages.
+- [x] 55. API tests: novel chapter -> project -> script draft.
 - [x] 56. Frontend build: `npm run build`.
-- [ ] 57. Manual smoke test: create project, generate outline, generate chapter plan, send storyboard prompt to image generation, verify asset link.
+- [ ] 57. Manual external-provider smoke gate: create a fresh project, generate outline and chapter plan, generate a storyboard prompt, submit it to a currently working image backend, wait for actual completion, and verify the generated Asset Hub item plus project `derived_from` lineage. Existing historical assets, mocked responses and merely pending tasks do not satisfy this gate.
+- [x] 58. Restore pending project image-generation tasks after refreshing `/story` by filtering task payloads by project and task type.
+- [x] 59. Persist project-scoped async image task context and hydrate it after an API process restart.
+- [x] 60. Make asynchronous batch storyboard generation wait and write back one panel at a time.
+- [x] 61. Make chapter-plan continuation server-owned (`append_existing`) and return only the latest stage-content version by default so regenerated versions do not appear as duplicate chapters.
+- [x] 62. Validate unique positive chapter numbers at every chapter-plan persistence/generation boundary and expose invalid plans as API validation errors.
+- [x] 63. Scope the chapter-count target control to the selected project's persisted plan to prevent cross-project target leakage.
+- [x] 64. Normalize Writer Room batch steps to dependency order and preserve the selected candidate as the first-step source for mid-pipeline batches.
+- [x] 65. Stop Writer Room batches at failed dependency boundaries by marking downstream selected steps skipped instead of generating from stale or incomplete context.
+- [x] 66. Prevent the outline workspace header from collapsing long title/logline copy under its action toolbar.
+- [x] 67. Negative-cache unavailable linked Asset Hub records in the project workspace so stale project links remain visible without repeated 404 requests.
+- [x] 68. Build a bounded, project-owned creative context pack for novel body/refinement and Writer Room prompts; inject locked bible facts and near-term continuity while recording only a fingerprinted summary in generation logs.

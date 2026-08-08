@@ -12,6 +12,15 @@ triggers:
   tools: [run_creative_writer_room]
 requires_tools: [run_creative_writer_room]
 risk: read
+creative:
+  compatible_project_types: [novel]
+  compatible_genres: ["*"]
+  stages: [prose_review]
+  context_contribution: "审阅时分别检查连续性、人物动机、节奏和可直接改写的句段；只输出建议，不将结论写入正式正文或事实台账。"
+  input_schema: {candidate_prose: string, narrative_context: string}
+  output_schema: {review: object, source_content_id: string}
+  prohibited_mutations: [approved_novel_body, locked_project_bible, confirmed_ledger, foreshadowing_status]
+  auto_apply: true
 ---
 
 # 小说正文审稿

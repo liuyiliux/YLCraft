@@ -16,8 +16,8 @@
 - [x] 6. Split project outline into editable Project Bible sections.
 - [x] 7. Add world asset roles: map, rule, faction, location, event, power-system, economy and style.
 - [x] 8. Let chapter outline generation read locked world assets and continuity notes.
-- [ ] 9. Extract new world facts and continuity deltas from generated prose.
-- [ ] 10. Show world assets in the project workspace and asset hub.
+- [x] 9. Extract new world facts and continuity deltas from generated prose.
+- [x] 10. Show world assets in the project workspace and asset hub.
 
 ## Phase 3: Storyboard Prompt V2
 
@@ -25,7 +25,7 @@
 - [x] 12. Add scene card fields for location, time, weather, props, spatial axis, character positions and movement path.
 - [x] 13. Generate detailed image prompts from role cards, scene cards, camera cards and style cards.
 - [x] 14. Add full prompt preview/copy for each storyboard panel and comic page.
-- [ ] 15. Add actions to rewrite only the image prompt without changing source story/script.
+- [x] 15. Add actions to rewrite only the image prompt without changing source story/script.
 - [x] 16. Add single-panel regeneration and batch panel generation with skip-existing behavior.
 
 ## Phase 4: Batch Production Queue
@@ -37,8 +37,8 @@
 - [x] 18. Support skip existing, overwrite, retry failed and continue from failure.
 - [x] 18.1 Expose skip-existing and continue-on-error controls in the batch production UI.
 - [x] 18.2 Add non-destructive overwrite reruns as new latest versions and retry-failed action from the latest run result.
-- [ ] 19. Persist queue step logs with provider, model, prompt template, duration and error.
-- [ ] 20. Add manual review checkpoints before expensive image generation.
+- [x] 19. Persist queue step logs with provider, model, prompt template, duration and error.
+- [x] 20. Add manual review checkpoints before expensive image generation.
 - [x] 20.1 Add storyboard reference preflight summary and warnings before batch image generation.
 
 ## Phase 5: Multi-Agent Exploration
@@ -47,19 +47,19 @@
 - [x] 22. Define director/天意 agent: theme, conflict, pacing, external events and world-rule constraints. → `divine-director` 内置 profile，输出结构化指令（冲突/节奏/世界事件/角色调度/钩子）。
 - [x] 23. Define editor agent: logic, character consistency, pacing, hook strength and imageability review. → `story-editor` 内置 profile，五维度检查（逻辑/一致性/节奏/钩子/可画面化）+ 逐条修改建议 + 全局评分。
 - [x] 24. Build MVP scene simulation: director asks role agents for reactions, editor reviews, writer turns it into scene outline. → `MultiAgentCoordinator` 服务 + `POST /agent/multi-agent/scene-simulation` API，流水线：天意导演→角色演员→编辑润色→创作导演合成。
-- [x] 25. Store simulation output as candidate chapter outline/script versions, not as automatic final content. → `_store_candidate()` 方法输出 structured pipeline log，存为候选版本不覆盖已确认内容（完整存储待 content versioning API 支持 candidate_flag 后激活）。
+- [x] 25. Store simulation output as candidate chapter outline/script versions, not as automatic final content. → 保存为独立 `scene_simulation_candidate` 内容，带 `candidate=true` / `approved=false`，不覆盖正式正文。
 
 ## Phase 6: Canvas and Traceability
 
-- [ ] 26. Add project canvas nodes for bible, world cards, character cards, scene cards, panels, prompts and images.
-- [ ] 27. Add edges for contains, uses, references, derives and revises.
-- [ ] 28. Use asset lineage where possible to show generated-image relationships.
-- [ ] 29. Add export manifest containing project JSON, prompts, linked assets and lineage.
+- [x] 26. Add project canvas nodes for bible, world cards, character cards, scene cards, panels, prompts and images.
+- [x] 27. Add edges for contains, uses, references, derives and revises.
+- [x] 28. Use asset lineage where possible to show generated-image relationships.
+- [x] 29. Add export manifest containing project JSON, prompts, linked assets and lineage.
 
 ## Verification
 
 - [x] 30. Verify a character portrait can be generated, linked and reused by a storyboard panel.
 - [x] 31. Verify a storyboard panel prompt includes character, scene, world and style context.
-- [ ] 32. Verify batch generation can skip existing images and continue after a failed panel.
+- [x] 32. Verify batch generation can skip existing images and continue after a failed panel.
 - [x] 33. Verify project bible/world assets influence chapter outline generation.
-- [ ] 34. Verify multi-agent MVP output can be saved as a candidate version without overwriting approved content.
+- [x] 34. Verify multi-agent MVP output can be saved as a candidate version without overwriting approved content.

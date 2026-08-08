@@ -6,7 +6,7 @@ import { useState, useEffect } from 'react'
 import {
   Card, Button, Select, Tag, message, Spin, Space, Row, Col,
   Typography, Tabs, Empty, Statistic, Badge, Modal, Avatar,
-  Image, Tooltip, Progress, List,
+  Image, Tooltip, Progress, List, Segmented,
 } from 'antd'
 import {
   UserOutlined, TeamOutlined, VideoCameraOutlined, HeartOutlined,
@@ -32,6 +32,7 @@ import {
 } from '../../api'
 import type { PlatformConnectionResponse } from '../../api'
 import { VideoList, FavoriteCard, VideoDetailDrawer, proxyImageUrl, formatNum } from '../../components/bilibili'
+import FanqieDataPanel from './FanqieDataPanel'
 
 const { Text, Title } = Typography
 
@@ -69,6 +70,10 @@ export default function MyDataPage() {
   const [selectedConn, setSelectedConn] = useState<string>('')
   const [loading, setLoading] = useState(false)
   const [activeTab, setActiveTab] = useState('overview')
+
+  // 平台切换（B站 / 番茄）。番茄数据走独立 FanqieDataPanel。
+  const [dataPlatform, setDataPlatform] = useState<'bilibili' | 'fanqie'>('bilibili')
+  const [fanqieConnections, setFanqieConnections] = useState<PlatformConnectionResponse[]>([])
 
   // 用户信息
   const [profile, setProfile] = useState<any>(null)
@@ -119,15 +124,26 @@ export default function MyDataPage() {
   const [courseDownloadTask, setCourseDownloadTask] = useState<any>(null)
   const [downloadingEpisodeIds, setDownloadingEpisodeIds] = useState<number[]>([])
 
-  // 加载 B站连接
+  // 加载 B站 + 番茄连接
   useEffect(() => {
     listPlatformConnections().then((res: any) => {
-      const conns = (res.connections || []).filter(
+      const conns = (res.connections || [])
+      const bili = conns.filter(
         (c: PlatformConnectionResponse) => c.platform === 'bilibili' && c.status === 'active'
       )
-      setBiliConnections(conns)
-      if (conns.length > 0 && !selectedConn) {
-        setSelectedConn(conns[0].id)
+      const fanqie = conns.filter(
+        (c: PlatformConnectionResponse) => c.platform === 'fanqie' && c.status === 'active'
+      )
+      setBiliConnections(bili)
+      setFanqieConnections(fanqie)
+      if (bili.length > 0 && !selectedConn) {
+        setSelectedConn(bili[0].id)
+      }
+      // 默认平台：有 B站先看 B站，否则切到番茄（effect 仅挂载时跑一次，不覆盖用户后续手动切换）
+      if (bili.length > 0) {
+        setDataPlatform('bilibili')
+      } else if (fanqie.length > 0) {
+        setDataPlatform('fanqie')
       }
     }).catch(() => {})
   }, [])
@@ -640,7 +656,7 @@ export default function MyDataPage() {
   }
 
   // 未登录提示
-  if (biliConnections.length === 0) {
+  if (biliConnections.length === 0 && fanqieConnections.length === 0) {
     return (
       <div style={{ padding: 20 }}>
         <Card
@@ -649,7 +665,7 @@ export default function MyDataPage() {
           <Empty
             description={
               <div>
-                <Text style={{ color: textSec }}>请先在「账号中心」添加 B站账号</Text>
+                <Text style={{ color: textSec }}>请先在「账号中心」添加 B站 或 番茄小说 账号</Text>
               </div>
             }
             image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -665,7 +681,7 @@ export default function MyDataPage() {
 
   return (
     <div style={{ padding: 20 }}>
-      {/* Page Header */}
+      {/* 共享页头：标题 + 平台切换 */}
       <Row justify="space-between" align="middle" style={{ marginBottom: 20 }}>
         <Col>
           <Title level={4} style={{ margin: 0, color: textPri }}>
@@ -676,30 +692,51 @@ export default function MyDataPage() {
           </Text>
         </Col>
         <Col>
-          <Space>
-            <Badge status="success" />
-            <Text style={{ fontSize: 12, color: textSec }}>
-              已登录 {biliConnections.length} 个账号
-            </Text>
-            <Select
-              value={selectedConn}
-              onChange={setSelectedConn}
-              style={{ width: 200 }}
-              options={biliConnections.map(c => ({
-                value: c.id,
-                label: `${c.name}${c.status === 'active' ? ' ✓' : ''}`,
-              }))}
+          {(biliConnections.length > 0 || fanqieConnections.length > 0) && (
+            <Segmented
+              value={dataPlatform}
+              onChange={(v: any) => setDataPlatform(v)}
+              options={[
+                ...(biliConnections.length > 0 ? [{ label: 'B站', value: 'bilibili' }] : []),
+                ...(fanqieConnections.length > 0 ? [{ label: '番茄小说', value: 'fanqie' }] : []),
+              ]}
             />
-            <Button
-              icon={<ReloadOutlined />}
-              onClick={handleRefresh}
-              loading={loading}
-            >
-              刷新
-            </Button>
-          </Space>
+          )}
         </Col>
       </Row>
+
+      {dataPlatform === 'bilibili' ? (
+        <>
+          {/* B站账号选择 + 刷新 */}
+          <Row justify="space-between" align="middle" style={{ marginBottom: 20 }}>
+            <Col>
+              <Text style={{ fontSize: 13, color: textSec }}>B站账号数据</Text>
+            </Col>
+            <Col>
+              <Space>
+                <Badge status="success" />
+                <Text style={{ fontSize: 12, color: textSec }}>
+                  已登录 {biliConnections.length} 个账号
+                </Text>
+                <Select
+                  value={selectedConn}
+                  onChange={setSelectedConn}
+                  style={{ width: 200 }}
+                  options={biliConnections.map(c => ({
+                    value: c.id,
+                    label: `${c.name}${c.status === 'active' ? ' ✓' : ''}`,
+                  }))}
+                />
+                <Button
+                  icon={<ReloadOutlined />}
+                  onClick={handleRefresh}
+                  loading={loading}
+                >
+                  刷新
+                </Button>
+              </Space>
+            </Col>
+          </Row>
 
       {/* 用户信息卡片 */}
       <Card
@@ -1474,6 +1511,10 @@ export default function MyDataPage() {
           )}
         </div>
       </Card>
+        </>
+      ) : (
+        <FanqieDataPanel />
+      )}
 
       {/* 收藏夹详情弹窗 */}
       <Modal

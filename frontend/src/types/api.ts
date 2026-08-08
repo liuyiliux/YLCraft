@@ -472,6 +472,35 @@ export interface CreativeProjectGenerateResponse<T = any> {
   project?: CreativeProject
 }
 
+export interface WritingPreflightCheck {
+  id: string
+  label: string
+  status: 'pass' | 'block' | string
+  required: boolean
+  detail: string
+}
+
+export interface WritingMethodCandidate {
+  id: string
+  title: string
+  description?: string
+  source?: string
+  auto_apply?: boolean
+  checksum?: string
+}
+
+export interface WritingPreflight {
+  project_id: string
+  chapter_number: number
+  stage: string
+  ready: boolean
+  checks: WritingPreflightCheck[]
+  blockers: WritingPreflightCheck[]
+  next_action: string
+  source_content_id?: string
+  method_candidates: WritingMethodCandidate[]
+}
+
 // ===== Download =====
 
 export interface VideoQuality {

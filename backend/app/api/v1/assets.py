@@ -277,6 +277,42 @@ def _type_from_representation(node: AssetNode, mime_type: str, *, node_meta: dic
     return node_type
 
 
+def _project_asset_context(card: dict) -> dict:
+    """Read project provenance from the three Asset Hub metadata layers.
+
+    Older project image paths placed fields in lineage or AI parameters while
+    text projections place them on the node.  The list endpoint needs one
+    stable view without forcing each producer to duplicate metadata.
+    """
+    metadata = _dict_value(card.get("metadata"))
+    node_meta = _dict_value(metadata.get("node_metadata"))
+    lineage = _dict_value(metadata.get("lineage"))
+    params = _dict_value(metadata.get("ai_params"))
+
+    def value(*keys: str):
+        for source in (node_meta, lineage, params):
+            for key in keys:
+                candidate = source.get(key)
+                if candidate not in (None, ""):
+                    return candidate
+        return ""
+
+    project_id = str(value("project_id"))
+    asset_role = str(value("asset_role", "role", "asset_kind"))
+    if not asset_role and project_id:
+        asset_role = "text" if str(card.get("type") or "").lower() == "text" else "output"
+
+    return {
+        "project_id": project_id,
+        "project_title": value("project_title"),
+        "asset_role": asset_role,
+        "source_stage": str(value("source_stage", "stage", "content_type", "source_type")),
+        "content_id": str(value("content_id", "project_content_id")),
+        "content_version": value("content_version", "project_content_version"),
+        "chapter_number": value("chapter_number", "episode_number"),
+    }
+
+
 async def _asset_hub_card(
     session,
     node: AssetNode,
@@ -393,6 +429,9 @@ async def _asset_hub_card(
         "metadata": metadata,
         "_sort_created_at": version.created_at or node.created_at,
     }
+    project_context = _project_asset_context(data)
+    if project_context["project_id"]:
+        metadata["project_context"] = project_context
     if include_metadata:
         data.update({
             "description": node_meta.get("description", ""),
@@ -411,6 +450,9 @@ async def _list_asset_hub_cards(
     status: Optional[str] = None,
     search: Optional[str] = None,
     tags: Optional[list[str]] = None,
+    project_id: Optional[str] = None,
+    asset_role: Optional[str] = None,
+    source_stage: Optional[str] = None,
 ) -> list[dict]:
     normalized_type = (asset_type or "").lower()
     type_map = {item.value: item for item in AssetType}
@@ -448,6 +490,13 @@ async def _list_asset_hub_cards(
         if platform and card.get("platform") != platform:
             continue
         if tag_filters and not all(_card_matches_tag_filter(card, tag) for tag in tag_filters):
+            continue
+        project_context = _project_asset_context(card)
+        if project_id and project_context["project_id"] != project_id:
+            continue
+        if asset_role and project_context["asset_role"].lower() != asset_role.lower():
+            continue
+        if source_stage and project_context["source_stage"].lower() != source_stage.lower():
             continue
         cards.append(card)
     return cards
@@ -566,6 +615,9 @@ async def list_assets(
     asset_type: Optional[str] = Query(None, description="素材类型：video/image/audio/document"),
     platform: Optional[str] = Query(None, description="平台：douyin/kuaishou/bilibili/..."),
     source_type: Optional[str] = Query(None, description="来源类型：upload/parse/ai_generated/import"),
+    project_id: Optional[str] = Query(None, description="创作项目 ID（可与其他筛选组合）"),
+    asset_role: Optional[str] = Query(None, description="项目资产角色：text/character/background/reference/..."),
+    source_stage: Optional[str] = Query(None, description="项目来源阶段：novel_body/script/storyboard/..."),
     status: Optional[str] = Query(None, description="状态：parsed/downloading/ready/error"),
     search: Optional[str] = Query(None, description="搜索标题"),
     tags: Optional[str] = Query(None, description="标签（逗号分隔）"),
@@ -588,6 +640,9 @@ async def list_assets(
             status=status.upper() if status else None,
             search=search,
             tags=tag_list,
+            project_id=project_id,
+            asset_role=asset_role,
+            source_stage=source_stage,
         )
     except Exception as exc:
         logger.warning("[assets] asset_hub merge failed: %s", exc, exc_info=True)

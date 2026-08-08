@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import io
+import json
+import re
+import zipfile
+from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.db.database import get_session
 from app.db.models.creative_project import (
@@ -14,11 +20,16 @@ from app.db.models.creative_project import (
     ProjectAssetLink,
     ProjectContent,
     ProjectGenerationLog,
+    ProjectNarrativeRun,
+    NarrativeRunStatus,
 )
 from app.services.creative_project.service import (
     CreativeProjectService,
     loads_json,
+    normalize_chapter_plan,
+    repair_utf8_mojibake,
 )
+from app.services.creative_project.narrative_runtime import ChapterAftermathPipeline, NarrativeReviewService
 
 router = APIRouter()
 
@@ -64,6 +75,7 @@ class GenerateOutlineRequest(BaseModel):
 
 class GenerateChapterPlanRequest(BaseModel):
     chapter_count: int = Field(default=12, ge=1, le=200)
+    append_existing: bool = Field(default=False, description="保留当前章节规划，只补齐到目标章节数")
     provider: str | None = None
     model: str | None = None
     template_id: str | None = None
@@ -145,6 +157,34 @@ class ProjectContentUpdateRequest(BaseModel):
     is_locked: bool | None = None
 
 
+class NarrativeAftermathRequest(BaseModel):
+    """Explicit replay trigger; it never promotes or edits prose."""
+
+    pipeline_version: str = Field(default="v1", min_length=1, max_length=32)
+
+
+class NarrativeRebuildRequest(BaseModel):
+    chapter_numbers: list[int] = Field(default_factory=list)
+
+
+class NarrativeBatchRunRequest(BaseModel):
+    chapter_numbers: list[int] = Field(default_factory=list)
+    max_cost_amount: float | None = Field(default=None, ge=0)
+    max_token_usage: int | None = Field(default=None, ge=0)
+
+
+class NarrativeAutopilotRequest(BaseModel):
+    enabled: bool = False
+    chapter_numbers: list[int] = Field(default_factory=list)
+    max_chapters_per_run: int = Field(default=3, ge=1, le=20)
+    max_consecutive_failures: int = Field(default=2, ge=1, le=5)
+
+
+class ForeshadowingDecisionRequest(BaseModel):
+    note: str = Field(default="", max_length=2000)
+    current_chapter: int | None = Field(default=None, ge=1)
+
+
 class RegenerateChapterOutlineScenesRequest(BaseModel):
     content_id: str
     provider: str | None = None
@@ -200,6 +240,176 @@ class WriterRoomPromoteRequest(BaseModel):
 
 def service(session: Session = Depends(get_session)) -> CreativeProjectService:
     return CreativeProjectService(session)
+
+
+def _serialize_narrative_run(run: ProjectNarrativeRun) -> dict[str, Any]:
+    input_data = loads_json(run.input_json, {})
+    budget = input_data.get("budget", {}) if isinstance(input_data, dict) else {}
+    return {
+        "id": run.id,
+        "project_id": run.project_id,
+        "mode": run.mode,
+        "status": run.status,
+        "pipeline_version": run.pipeline_version,
+        "target_chapters": loads_json(run.target_chapters_json, []),
+        "input": input_data,
+        "trace": loads_json(run.trace_json, []),
+        "context_snapshot_ids": loads_json(run.context_snapshot_ids_json, []),
+        "current_cursor": run.current_cursor,
+        "retry_count": run.retry_count,
+        "token_usage": run.token_usage,
+        "cost_amount": run.cost_amount,
+        "budget": budget,
+        "error_message": run.error_message,
+        "created_at": run.created_at.isoformat() if run.created_at else None,
+        "updated_at": run.updated_at.isoformat() if run.updated_at else None,
+        "started_at": run.started_at.isoformat() if run.started_at else None,
+        "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+    }
+
+
+def _execute_narrative_batch_background(project_id: str, run_id: str) -> None:
+    """Use an isolated session: request sessions cannot outlive the response."""
+    from app.db.database import SessionLocal
+
+    with SessionLocal() as session:
+        try:
+            ChapterAftermathPipeline(session).resume_batch_run(project_id, run_id)
+        except Exception:
+            # The durable run record is the source of truth. A later explicit
+            # resume can retry a pending run after provider/database recovery.
+            session.rollback()
+
+
+@router.get("/{project_id}/narrative/runs", summary="列出项目叙事运行记录")
+def list_narrative_runs(
+    project_id: str,
+    limit: int = Query(default=30, ge=1, le=100),
+    svc: CreativeProjectService = Depends(service),
+):
+    if svc.get_project(project_id) is None:
+        raise HTTPException(status_code=404, detail="创作项目不存在")
+    rows = svc.session.exec(
+        select(ProjectNarrativeRun)
+        .where(ProjectNarrativeRun.project_id == project_id)
+        .order_by(ProjectNarrativeRun.created_at.desc())
+        .limit(limit)
+    ).all()
+    return {"success": True, "data": [_serialize_narrative_run(item) for item in rows]}
+
+
+@router.post("/{project_id}/narrative/runs", summary="创建后台叙事批次运行")
+def create_narrative_batch_run(
+    project_id: str,
+    req: NarrativeBatchRunRequest,
+    background_tasks: BackgroundTasks,
+    svc: CreativeProjectService = Depends(service),
+):
+    try:
+        run = ChapterAftermathPipeline(svc.session).create_batch_run(
+            project_id,
+            chapter_numbers=req.chapter_numbers,
+            input_data={
+                "budget": {
+                    "max_cost_amount": req.max_cost_amount,
+                    "max_token_usage": req.max_token_usage,
+                    "metering": "narrative_aftermath_deterministic_zero_cost",
+                },
+            },
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    background_tasks.add_task(_execute_narrative_batch_background, project_id, run.id)
+    return {"success": True, "data": _serialize_narrative_run(run)}
+
+
+@router.put("/{project_id}/narrative/autopilot", summary="配置并启动受控叙事自动推进")
+def configure_narrative_autopilot(
+    project_id: str,
+    req: NarrativeAutopilotRequest,
+    background_tasks: BackgroundTasks,
+    svc: CreativeProjectService = Depends(service),
+):
+    project = svc.get_project(project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="创作项目不存在")
+    settings = loads_json(project.settings_json)
+    policy = {
+        "enabled": req.enabled,
+        "max_chapters_per_run": req.max_chapters_per_run,
+        "max_consecutive_failures": req.max_consecutive_failures,
+        "scope": "approved_prose_aftermath_only",
+    }
+    settings["narrative_autopilot"] = policy
+    svc.update_project(project_id, {"settings": settings})
+    if not req.enabled:
+        return {"success": True, "data": {"policy": policy, "run": None}}
+    requested = req.chapter_numbers[:req.max_chapters_per_run]
+    run = ChapterAftermathPipeline(svc.session).create_batch_run(
+        project_id,
+        chapter_numbers=requested,
+        mode="guarded_autopilot",
+        input_data={"autopilot_policy": policy},
+    )
+    background_tasks.add_task(_execute_narrative_batch_background, project_id, run.id)
+    return {"success": True, "data": {"policy": policy, "run": _serialize_narrative_run(run)}}
+
+
+@router.post("/{project_id}/narrative/runs/{run_id}/{action}", summary="控制叙事批次运行")
+def control_narrative_run(
+    project_id: str,
+    run_id: str,
+    action: str,
+    background_tasks: BackgroundTasks,
+    svc: CreativeProjectService = Depends(service),
+):
+    run = svc.session.get(ProjectNarrativeRun, run_id)
+    if run is None or run.project_id != project_id:
+        raise HTTPException(status_code=404, detail="叙事运行不存在")
+    if run.mode not in {"batch", "guarded_autopilot"}:
+        raise HTTPException(status_code=400, detail="只有批次叙事运行可以控制")
+    normalized = action.strip().lower()
+    terminal = {NarrativeRunStatus.SUCCESS.value, NarrativeRunStatus.PARTIAL.value, NarrativeRunStatus.FAILED.value, NarrativeRunStatus.CANCELLED.value}
+    if normalized == "pause":
+        if run.status != NarrativeRunStatus.RUNNING.value:
+            raise HTTPException(status_code=409, detail="只有运行中的批次可以暂停")
+        run.status = NarrativeRunStatus.PAUSED.value
+    elif normalized == "resume":
+        if run.status != NarrativeRunStatus.PAUSED.value:
+            raise HTTPException(status_code=409, detail="只有已暂停的批次可以恢复")
+        run.status = NarrativeRunStatus.PENDING.value
+        background_tasks.add_task(_execute_narrative_batch_background, project_id, run.id)
+    elif normalized == "retry":
+        if run.status not in {NarrativeRunStatus.PARTIAL.value, NarrativeRunStatus.FAILED.value}:
+            raise HTTPException(status_code=409, detail="只有部分完成或失败的批次可以重试")
+        targets = [int(item) for item in loads_json(run.target_chapters_json, []) if int(item) > 0]
+        trace = loads_json(run.trace_json, [])
+        failed_chapters = {
+            int(item.get("chapter_number"))
+            for item in trace
+            if isinstance(item, dict) and item.get("status") == "failed" and item.get("chapter_number") is not None
+        }
+        first_failed_index = next((index for index, chapter in enumerate(targets) if chapter in failed_chapters), None)
+        if first_failed_index is None:
+            raise HTTPException(status_code=409, detail="运行记录中没有可重试的失败章节")
+        run.current_cursor = first_failed_index
+        run.retry_count += 1
+        run.status = NarrativeRunStatus.PENDING.value
+        run.error_message = ""
+        run.finished_at = None
+        background_tasks.add_task(_execute_narrative_batch_background, project_id, run.id)
+    elif normalized == "cancel":
+        if run.status in terminal:
+            raise HTTPException(status_code=409, detail="终态批次不能取消")
+        run.status = NarrativeRunStatus.CANCELLED.value
+        run.finished_at = datetime.now()
+    else:
+        raise HTTPException(status_code=400, detail="操作仅支持 pause、resume、retry 或 cancel")
+    run.updated_at = datetime.now()
+    svc.session.add(run)
+    svc.session.commit()
+    svc.session.refresh(run)
+    return {"success": True, "data": _serialize_narrative_run(run)}
 
 
 @router.get("", summary="列出创作项目")
@@ -271,6 +481,201 @@ def get_project(
     return {"success": True, "data": serialize_project(project)}
 
 
+@router.get("/{project_id}/narrative/health", summary="检查小说叙事数据健康状态")
+def get_narrative_health(
+    project_id: str,
+    svc: CreativeProjectService = Depends(service),
+):
+    try:
+        return {"success": True, "data": svc.narrative_health(project_id).model_dump()}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+
+@router.get("/{project_id}/narrative/context-preview", summary="预览下一章叙事上下文包")
+def preview_narrative_context(
+    project_id: str,
+    chapter_number: int = Query(default=1, ge=1),
+    svc: CreativeProjectService = Depends(service),
+):
+    try:
+        return {
+            "success": True,
+            "data": svc.preview_narrative_context(project_id, chapter_number=chapter_number),
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+
+@router.get("/{project_id}/writing-preflight", summary="检查写作阶段前置条件")
+def get_writing_preflight(
+    project_id: str,
+    chapter_number: int = Query(default=1, ge=1),
+    stage: str = Query(default="novel_body"),
+    content_id: str | None = Query(default=None),
+    svc: CreativeProjectService = Depends(service),
+):
+    try:
+        return {"success": True, "data": svc.writing_preflight(
+            project_id, chapter_number=chapter_number, stage=stage, content_id=content_id,
+        )}
+    except ValueError as e:
+        status_code = 404 if "not found" in str(e).lower() else 400
+        raise HTTPException(status_code=status_code, detail=str(e)) from e
+
+
+@router.post("/{project_id}/contents/{content_id}/aftermath", summary="从正式正文建立叙事后处理状态")
+def run_narrative_aftermath(
+    project_id: str,
+    content_id: str,
+    req: NarrativeAftermathRequest,
+    svc: CreativeProjectService = Depends(service),
+):
+    try:
+        # The pipeline owns its derived tables but shares the request session;
+        # approved prose remains untouched if an enrichment stage is partial.
+        pipeline = ChapterAftermathPipeline(svc.session)
+        if req.pipeline_version != pipeline.pipeline_version:
+            raise ValueError(f"不支持的叙事后处理版本：{req.pipeline_version}")
+        result = pipeline.run(project_id, content_id)
+        return {"success": True, "data": result}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.post("/{project_id}/narrative/rebuild", summary="按正式章节顺序重建叙事状态")
+def rebuild_narrative_state(
+    project_id: str,
+    req: NarrativeRebuildRequest,
+    svc: CreativeProjectService = Depends(service),
+):
+    try:
+        return {
+            "success": True,
+            "data": ChapterAftermathPipeline(svc.session).rebuild(
+                project_id,
+                chapter_numbers=req.chapter_numbers,
+            ),
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.get("/{project_id}/foreshadowing", summary="列出项目伏笔台账")
+def list_foreshadowing(
+    project_id: str,
+    status: list[str] = Query(default=[]),
+    chapter_number: int | None = Query(default=None, ge=1),
+    svc: CreativeProjectService = Depends(service),
+):
+    try:
+        return {
+            "success": True,
+            "data": NarrativeReviewService(svc.session).list_foreshadowing(
+                project_id, statuses=status, chapter_number=chapter_number
+            ),
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.post("/{project_id}/foreshadowing/{item_id}/{action}", summary="确认、推进、解决或忽略伏笔")
+def decide_foreshadowing(
+    project_id: str,
+    item_id: str,
+    action: str,
+    req: ForeshadowingDecisionRequest,
+    svc: CreativeProjectService = Depends(service),
+):
+    try:
+        return {
+            "success": True,
+            "data": NarrativeReviewService(svc.session).decide_foreshadowing(
+                project_id,
+                item_id,
+                action=action,
+                note=req.note,
+                current_chapter=req.current_chapter,
+            ),
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.get("/{project_id}/narrative-graph", summary="查询项目叙事关系图谱")
+def get_narrative_graph(
+    project_id: str,
+    node_type: list[str] = Query(default=[]),
+    chapter_number: int | None = Query(default=None, ge=1),
+    include_pending: bool = Query(default=False),
+    svc: CreativeProjectService = Depends(service),
+):
+    try:
+        return {
+            "success": True,
+            "data": NarrativeReviewService(svc.session).narrative_graph(
+                project_id,
+                node_types=node_type,
+                chapter_number=chapter_number,
+                include_pending=include_pending,
+            ),
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+def _export_content_markdown(content: dict[str, Any]) -> str:
+    title = content.get("title") or content.get("content_type") or "项目内容"
+    body = str(content.get("text_content") or "").strip()
+    lines = [f"# {title}", ""]
+    if body:
+        lines.append(body)
+        lines.append("")
+    data = content.get("data") or {}
+    if data:
+        lines.extend(["## 结构化数据", "", "```json", json.dumps(data, ensure_ascii=False, indent=2), "```"])
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _export_content_filename(content: dict[str, Any], index: int) -> str:
+    content_type = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(content.get("content_type") or "content"))
+    chapter = content.get("chapter_number") or content.get("episode_number")
+    chapter_label = f"chapter-{int(chapter):03d}-" if isinstance(chapter, int) else ""
+    version = content.get("version") or 1
+    return f"contents/{index:03d}-{chapter_label}{content_type}-v{version}.md"
+
+
+@router.get("/{project_id}/export", summary="导出创作项目 ZIP")
+def export_project_zip(
+    project_id: str,
+    svc: CreativeProjectService = Depends(service),
+):
+    try:
+        export = svc.build_project_export(project_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("project.json", json.dumps(export["project"], ensure_ascii=False, indent=2))
+        archive.writestr("contents/index.json", json.dumps(export["contents"], ensure_ascii=False, indent=2))
+        archive.writestr("assets/manifest.json", json.dumps(export["asset_manifest"], ensure_ascii=False, indent=2))
+        archive.writestr(
+            "README.md",
+            "# YLCraft 创作项目导出\n\n"
+            "本包包含项目快照、所有项目内容版本的 Markdown/JSON 与关联素材血缘清单。"
+            "素材文件本体仍由 Asset Hub 管理，使用 assets/manifest.json 中的 asset_id 追溯。\n",
+        )
+        for index, content in enumerate(export["contents"], start=1):
+            archive.writestr(_export_content_filename(content, index), _export_content_markdown(content))
+    buffer.seek(0)
+    return StreamingResponse(
+        buffer,
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="ylcraft-project-export.zip"'},
+    )
+
+
 @router.patch("/{project_id}", summary="更新创作项目")
 def update_project(
     project_id: str,
@@ -278,7 +683,10 @@ def update_project(
     svc: CreativeProjectService = Depends(service),
 ):
     data = req.model_dump(exclude_unset=True)
-    project = svc.update_project(project_id, data)
+    try:
+        project = svc.update_project(project_id, data)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     if not project:
         raise HTTPException(status_code=404, detail="创作项目不存在")
     return {"success": True, "data": serialize_project(project)}
@@ -326,6 +734,19 @@ def sync_project_bible(
         raise HTTPException(status_code=400, detail=str(e)) from e
 
 
+@router.post("/{project_id}/contents/{content_id}/extract-continuity", summary="从正文提取连续性候选卡")
+def extract_continuity_candidates(
+    project_id: str,
+    content_id: str,
+    svc: CreativeProjectService = Depends(service),
+):
+    try:
+        candidates = svc.extract_continuity_candidates(project_id, content_id)
+        return {"success": True, "data": [serialize_content(item) for item in candidates]}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
 @router.post("/{project_id}/generate-outline", summary="生成故事大纲")
 async def generate_outline(
     project_id: str,
@@ -356,6 +777,7 @@ async def generate_chapter_plan(
         data = await svc.generate_chapter_plan(
             project_id,
             chapter_count=req.chapter_count,
+            append_existing=req.append_existing,
             provider=req.provider,
             model=req.model,
             template_id=req.template_id,
@@ -603,11 +1025,16 @@ async def match_reference_assets(
 def list_contents(
     project_id: str,
     content_type: str | None = None,
+    include_history: bool = False,
     svc: CreativeProjectService = Depends(service),
 ):
     if not svc.get_project(project_id):
         raise HTTPException(status_code=404, detail="创作项目不存在")
-    contents = svc.list_contents(project_id, content_type=content_type)
+    contents = svc.list_contents(
+        project_id,
+        content_type=content_type,
+        latest_only=not include_history,
+    )
     return {"success": True, "data": [serialize_content(c) for c in contents]}
 
 
@@ -745,6 +1172,18 @@ def link_project_asset(
         raise HTTPException(status_code=400, detail=str(e)) from e
 
 
+@router.post("/{project_id}/contents/{content_id}/save-as-asset", summary="保存项目文本为素材")
+def save_project_content_as_asset(
+    project_id: str,
+    content_id: str,
+    svc: CreativeProjectService = Depends(service),
+):
+    try:
+        return svc.save_content_as_text_asset(project_id, content_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
 @router.post("/{project_id}/sync-characters", summary="同步大纲角色到角色库")
 def sync_project_characters(
     project_id: str,
@@ -791,14 +1230,14 @@ def serialize_project(project: CreativeProject | None) -> dict[str, Any] | None:
         return None
     return {
         "id": project.id,
-        "title": project.title,
+        "title": repair_utf8_mojibake(project.title),
         "project_type": project.project_type,
         "source_type": project.source_type,
         "source_ref": loads_json(project.source_ref_json),
         "status": project.status,
         "current_stage": project.current_stage,
         "outline": loads_json(project.outline_json),
-        "chapter_plan": loads_json(project.chapter_plan_json),
+        "chapter_plan": normalize_chapter_plan(loads_json(project.chapter_plan_json)),
         "settings": loads_json(project.settings_json),
         "metadata": loads_json(project.metadata_json),
         "created_at": project.created_at.isoformat() if project.created_at else None,
@@ -813,9 +1252,9 @@ def serialize_content(content: ProjectContent) -> dict[str, Any]:
         "content_type": content.content_type,
         "chapter_number": content.chapter_number,
         "episode_number": content.episode_number,
-        "title": content.title,
+        "title": repair_utf8_mojibake(content.title),
         "data": loads_json(content.data_json),
-        "text_content": content.text_content,
+        "text_content": repair_utf8_mojibake(content.text_content),
         "source_content_id": content.source_content_id,
         "version": content.version,
         "is_locked": content.is_locked,
@@ -830,8 +1269,8 @@ def serialize_asset_link(link: ProjectAssetLink) -> dict[str, Any]:
         "project_id": link.project_id,
         "asset_id": link.asset_id,
         "content_id": link.content_id,
-        "role": link.role,
-        "relation": link.relation,
+        "role": repair_utf8_mojibake(link.role),
+        "relation": repair_utf8_mojibake(link.relation),
         "metadata": loads_json(link.metadata_json),
         "created_at": link.created_at.isoformat() if link.created_at else None,
     }
@@ -846,16 +1285,16 @@ def serialize_generation_log(log: ProjectGenerationLog) -> dict[str, Any]:
         "content_id": log.content_id,
         "scene": log.scene,
         "ref_id": log.ref_id,
-        "stage": log.stage,
-        "provider": log.provider,
-        "model": log.model,
+        "stage": repair_utf8_mojibake(log.stage),
+        "provider": repair_utf8_mojibake(log.provider),
+        "model": repair_utf8_mojibake(log.model),
         "status": log.status,
-        "prompt": log.prompt,
+        "prompt": repair_utf8_mojibake(log.prompt),
         "request": request,
         "prompt_template": request.get("prompt_template") if isinstance(request, dict) else None,
-        "raw_response": log.raw_response,
+        "raw_response": repair_utf8_mojibake(log.raw_response),
         "normalized": normalized,
-        "validation_error": log.validation_error,
+        "validation_error": repair_utf8_mojibake(log.validation_error),
         "created_at": log.created_at.isoformat() if log.created_at else None,
     }
 
@@ -863,21 +1302,250 @@ def serialize_generation_log(log: ProjectGenerationLog) -> dict[str, Any]:
 def serialize_character(character: Any) -> dict[str, Any]:
     return {
         "id": character.id,
-        "name": character.name,
-        "role": character.role,
-        "appearance": character.appearance,
-        "personality": character.personality,
-        "costume_hint": character.costume_hint,
+        "name": repair_utf8_mojibake(character.name),
+        "role": repair_utf8_mojibake(character.role),
+        "appearance": repair_utf8_mojibake(character.appearance),
+        "personality": repair_utf8_mojibake(character.personality),
+        "costume_hint": repair_utf8_mojibake(character.costume_hint),
         "signature_items": loads_json(getattr(character, "signature_items", "[]"), []),
         "expressions": loads_json(getattr(character, "expressions", "[]"), []),
         "poses": loads_json(getattr(character, "poses", "[]"), []),
-        "visual_consistency": getattr(character, "visual_consistency", "") or "",
-        "background": character.background,
-        "age_range": character.age_range,
+        "visual_consistency": repair_utf8_mojibake(getattr(character, "visual_consistency", "") or ""),
+        "background": repair_utf8_mojibake(character.background),
+        "age_range": repair_utf8_mojibake(character.age_range),
         "portrait_url": getattr(character, "portrait_url", "") or "",
         "portrait_asset_id": character.portrait_asset_id,
         "portrait_node_id": getattr(character, "portrait_node_id", None),
         "reference_asset_ids": loads_json(character.reference_asset_ids, []),
         "created_at": character.created_at.isoformat() if character.created_at else None,
         "updated_at": character.updated_at.isoformat() if character.updated_at else None,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Continuity fact workflow (creative-project-continuity-facts)
+# ---------------------------------------------------------------------------
+
+
+class ContinuityExtractRequest(BaseModel):
+    source_kind: str = "prose_review"
+    candidates: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ContinuityDecisionRequest(BaseModel):
+    note: str = ""
+    merged_fact_id: str | None = None
+
+
+class ContinuityCheckRequest(BaseModel):
+    candidate_id: str | None = None
+
+
+class ContinuityRewriteRequest(BaseModel):
+    paragraph_index: int = Field(..., ge=0)
+    instruction: str = Field(..., min_length=1)
+    provider: str | None = None
+    model: str | None = None
+
+
+@router.get(
+    "/{project_id}/continuity-candidates",
+    summary="列出连续性候选事实",
+)
+def list_continuity_candidates(
+    project_id: str,
+    status: str | None = Query(default=None),
+    source_content_id: str | None = Query(default=None),
+    limit: int = Query(default=200, ge=1, le=500),
+    svc: CreativeProjectService = Depends(service),
+):
+    try:
+        items = svc.list_continuity_candidates(
+            project_id,
+            status=status,
+            source_content_id=source_content_id,
+            limit=limit,
+        )
+        return {
+            "success": True,
+            "data": [serialize_continuity_candidate(item) for item in items],
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+
+@router.post(
+    "/{project_id}/contents/{content_id}/continuity-candidates/extract",
+    summary="从正文提取/入库结构化连续性候选",
+)
+def extract_continuity_candidates(
+    project_id: str,
+    content_id: str,
+    req: ContinuityExtractRequest,
+    svc: CreativeProjectService = Depends(service),
+):
+    try:
+        items = svc.extract_continuity_candidates_v2(
+            project_id,
+            content_id,
+            source_kind=req.source_kind,
+            candidates_in=req.candidates,
+        )
+        return {
+            "success": True,
+            "data": [serialize_continuity_candidate(item) for item in items],
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.post(
+    "/{project_id}/continuity-candidates/{candidate_id}/accept",
+    summary="确认候选事实，写入 locked project_bible / world_asset",
+)
+def accept_continuity_candidate(
+    project_id: str,
+    candidate_id: str,
+    req: ContinuityDecisionRequest | None = None,
+    svc: CreativeProjectService = Depends(service),
+):
+    note = (req.note if req else "") or ""
+    try:
+        item = svc.accept_continuity_candidate(
+            project_id, candidate_id, note=note
+        )
+        return {"success": True, "data": serialize_continuity_candidate(item)}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.post(
+    "/{project_id}/continuity-candidates/{candidate_id}/ignore",
+    summary="忽略候选事实",
+)
+def ignore_continuity_candidate(
+    project_id: str,
+    candidate_id: str,
+    req: ContinuityDecisionRequest | None = None,
+    svc: CreativeProjectService = Depends(service),
+):
+    note = (req.note if req else "") or ""
+    try:
+        item = svc.ignore_continuity_candidate(
+            project_id, candidate_id, note=note
+        )
+        return {"success": True, "data": serialize_continuity_candidate(item)}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.post(
+    "/{project_id}/continuity-candidates/{candidate_id}/merge",
+    summary="合并候选事实到已有 project_bible / world_asset",
+)
+def merge_continuity_candidate(
+    project_id: str,
+    candidate_id: str,
+    req: ContinuityDecisionRequest,
+    svc: CreativeProjectService = Depends(service),
+):
+    if not req.merged_fact_id:
+        raise HTTPException(status_code=400, detail="merged_fact_id 不能为空")
+    try:
+        item = svc.merge_continuity_candidate(
+            project_id,
+            candidate_id,
+            merged_fact_id=req.merged_fact_id,
+            note=req.note,
+        )
+        return {"success": True, "data": serialize_continuity_candidate(item)}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.get(
+    "/{project_id}/continuity-candidates/context-summary",
+    summary="连续性事实上下文摘要（不进模型硬约束）",
+)
+def continuity_context_summary(
+    project_id: str,
+    generation_log_id: str | None = Query(default=None),
+    svc: CreativeProjectService = Depends(service),
+):
+    try:
+        data = svc.build_continuity_context_summary(
+            project_id, generation_log_id=generation_log_id
+        )
+        return {"success": True, "data": data}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+
+@router.post(
+    "/{project_id}/chapters/{chapter_number}/check-continuity",
+    summary="跨章连续性检查（对比已锁定事实）",
+)
+def check_continuity(
+    project_id: str,
+    chapter_number: int,
+    req: ContinuityCheckRequest | None = None,
+    svc: CreativeProjectService = Depends(service),
+):
+    try:
+        data = svc.check_continuity(
+            project_id,
+            chapter_number,
+            candidate_id=(req.candidate_id if req else None),
+        )
+        return {"success": True, "data": data}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.post(
+    "/{project_id}/contents/{content_id}/rewrite-paragraph",
+    summary="段落级非破坏性重写（生成候选版本）",
+)
+async def rewrite_paragraph(
+    project_id: str,
+    content_id: str,
+    req: ContinuityRewriteRequest,
+    svc: CreativeProjectService = Depends(service),
+):
+    try:
+        data = await svc.rewrite_paragraph(
+            project_id,
+            content_id,
+            paragraph_index=req.paragraph_index,
+            instruction=req.instruction,
+            provider=req.provider,
+            model=req.model,
+        )
+        return {"success": True, "data": data}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+def serialize_continuity_candidate(item: Any) -> dict[str, Any]:
+    return {
+        "id": item.id,
+        "project_id": item.project_id,
+        "source_content_id": item.source_content_id,
+        "source_generation_log_id": item.source_generation_log_id,
+        "source_kind": item.source_kind,
+        "source_fingerprint": item.source_fingerprint,
+        "entity_type": item.entity_type,
+        "entity_name": item.entity_name,
+        "claim": item.claim,
+        "evidence_excerpt": item.evidence_excerpt,
+        "evidence_anchor": loads_json(item.evidence_anchor_json or "{}"),
+        "severity": item.severity,
+        "suggested_action": item.suggested_action,
+        "target_fact_type": item.target_fact_type,
+        "status": item.status,
+        "resolved_fact_id": item.resolved_fact_id,
+        "resolution_note": item.resolution_note,
+        "resolved_at": item.resolved_at.isoformat() if item.resolved_at else None,
+        "created_at": item.created_at.isoformat() if item.created_at else None,
+        "updated_at": item.updated_at.isoformat() if item.updated_at else None,
     }

@@ -87,6 +87,60 @@ class ChapterPlanSchema(FlexibleModel):
     chapters: list[ChapterPlanItemSchema] = Field(default_factory=list)
 
 
+class NarrativeHealthIssueSchema(FlexibleModel):
+    """One project-local data integrity finding for the narrative runtime."""
+
+    code: str
+    severity: str = "warning"
+    message: str
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class ProjectNarrativeHealthSchema(FlexibleModel):
+    """Read-only health contract used before narrative state is rebuilt."""
+
+    project_id: str
+    status: str = "healthy"
+    checked_at: str
+    summary: dict[str, int] = Field(default_factory=dict)
+    issues: list[NarrativeHealthIssueSchema] = Field(default_factory=list)
+
+
+class NarrativeEvidenceAnchorSchema(FlexibleModel):
+    paragraph_index: int | None = None
+    excerpt: str = ""
+    source_label: str = ""
+
+
+class NarrativeEventSchema(FlexibleModel):
+    event_type: str = "event"
+    title: str = ""
+    description: str = ""
+    participants: list[str] = Field(default_factory=list)
+    location: str = ""
+    timeline_order: int | None = None
+    evidence_anchor: NarrativeEvidenceAnchorSchema = Field(default_factory=NarrativeEvidenceAnchorSchema)
+
+
+class NarrativeForeshadowingSchema(FlexibleModel):
+    kind: str = "clue"
+    statement: str = ""
+    planted_chapter: int = 1
+    expected_window: dict[str, int] = Field(default_factory=dict)
+    evidence_anchor: NarrativeEvidenceAnchorSchema = Field(default_factory=NarrativeEvidenceAnchorSchema)
+
+
+class NarrativeSnapshotSchema(FlexibleModel):
+    summary: str = ""
+    character_state: list[dict[str, Any]] = Field(default_factory=list)
+    timeline_delta: list[dict[str, Any]] = Field(default_factory=list)
+    location_delta: list[dict[str, Any]] = Field(default_factory=list)
+    open_questions: list[str] = Field(default_factory=list)
+    events: list[NarrativeEventSchema] = Field(default_factory=list)
+    foreshadowing: list[NarrativeForeshadowingSchema] = Field(default_factory=list)
+    diagnostics: dict[str, Any] = Field(default_factory=dict)
+
+
 class ChapterOutlineSceneSchema(FlexibleModel):
     scene_number: int
     title: str = ""
@@ -248,6 +302,10 @@ class WriterRoomProseReviewSchema(FlexibleModel):
     issues: list[WriterRoomReviewIssueSchema] = Field(default_factory=list)
     rewrite_plan: list[str] = Field(default_factory=list)
     approval_recommendation: str = ""
+    # Editorial review may also surface continuity facts worth locking. Kept as
+    # bounded dicts (not a typed sub-model) so the schema stays forward-ref safe
+    # and the dict contract matches extract_continuity_candidates_v2.
+    continuity_candidates: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ComicPageSchema(FlexibleModel):
@@ -304,6 +362,10 @@ class StoryboardPanelSchema(FlexibleModel):
     panel_goal: str = ""
     location: str = ""
     image_prompt: str = ""
+    # image_prompt describes the still frame; video_prompt only describes the
+    # motion that happens after that frame is established.
+    video_prompt: str = ""
+    duration_seconds: int = 5
     camera_hint: str = ""
     camera_angle: str = ""
     camera_motion: str = ""
@@ -316,6 +378,8 @@ class StoryboardPanelSchema(FlexibleModel):
     props: list[str] = Field(default_factory=list)
     dialogue_bubbles: list[str] = Field(default_factory=list)
     sound_effect: str = ""
+    music_hint: str = ""
+    generate_audio: bool = False
     negative_prompt: str = ""
     character_ids: list[str] = Field(default_factory=list)
     portrait_node_ids: list[str] = Field(default_factory=list)
@@ -341,3 +405,113 @@ class ReferenceAssetMatchItemSchema(FlexibleModel):
 
 class ReferenceAssetMatchSchema(FlexibleModel):
     items: list[ReferenceAssetMatchItemSchema] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Continuity fact workflow (creative-project-continuity-facts OpenSpec)
+# ---------------------------------------------------------------------------
+
+
+class ContinuityEvidenceAnchorSchema(FlexibleModel):
+    chapter_number: int | None = None
+    paragraph_index: int | None = None
+    start_offset: int | None = None
+    end_offset: int | None = None
+    excerpt: str = ""  # 有界证据摘要；长文本回到 source_content_id
+
+
+class ContinuityCandidatePayloadSchema(FlexibleModel):
+    """单条候选事实载荷（与 design.md Contract 对齐）。"""
+
+    entity_type: str = "other"
+    entity_name: str = ""
+    claim: str = ""
+    evidence_excerpt: str = ""
+    evidence_anchor: ContinuityEvidenceAnchorSchema = Field(
+        default_factory=ContinuityEvidenceAnchorSchema
+    )
+    severity: str = "info"
+    suggested_action: str = "create_fact"
+    target_fact_type: str = "world_asset"
+
+
+class ContinuityExtractRequestSchema(FlexibleModel):
+    content_id: str
+    source_kind: str = "prose_review"
+    candidates: list[ContinuityCandidatePayloadSchema] = Field(default_factory=list)
+
+
+class ContinuityDecisionRequestSchema(FlexibleModel):
+    note: str = ""
+    merged_fact_id: str | None = None  # 仅 merge 使用
+
+
+class ContinuityCandidateSchema(FlexibleModel):
+    id: str
+    project_id: str
+    source_content_id: str | None = None
+    source_generation_log_id: str | None = None
+    source_kind: str = "prose_review"
+    source_fingerprint: str = ""
+
+    entity_type: str = "other"
+    entity_name: str = ""
+    claim: str = ""
+    evidence_excerpt: str = ""
+    evidence_anchor: dict[str, Any] = Field(default_factory=dict)
+    severity: str = "info"
+    suggested_action: str = "create_fact"
+    target_fact_type: str = "world_asset"
+
+    status: str = "pending"
+    resolved_fact_id: str | None = None
+    resolution_note: str = ""
+    resolved_at: str | None = None
+
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class ContinuityContextSummarySchema(FlexibleModel):
+    project_id: str
+    locked_fact_count: int = 0
+    fact_types: dict[str, int] = Field(default_factory=dict)
+    source_chapters: list[int] = Field(default_factory=list)
+    pending_candidate_count: int = 0
+    fingerprint: str = ""
+
+
+class ContinuityConflictSchema(FlexibleModel):
+    entity_type: str = "other"
+    entity_name: str = ""
+    claim: str = ""
+    contradicting_fact_id: str = ""
+    contradicting_fact_excerpt: str = ""
+    severity: str = "warning"
+    suggested_action: str = "resolve_conflict"
+    evidence_excerpt: str = ""
+    evidence_anchor: dict[str, Any] = Field(default_factory=dict)
+    reason: str = ""
+
+
+class ContinuityCheckResponseSchema(FlexibleModel):
+    project_id: str
+    chapter_number: int | None = None
+    candidate_id: str | None = None
+    checked_claims: list[str] = Field(default_factory=list)
+    conflicts: list[ContinuityConflictSchema] = Field(default_factory=list)
+    skipped: bool = False
+    skip_reason: str = ""
+
+
+class ContinuityRewriteResultSchema(FlexibleModel):
+    content_id: str
+    project_id: str
+    source_content_id: str
+    paragraph_index: int
+    original_paragraph: str = ""
+    rewritten_paragraph: str = ""
+    status: str = "candidate"  # candidate | anchor_not_found
+    anchor_not_found: bool = False
+    candidate_content_id: str | None = None
+    instruction: str = ""

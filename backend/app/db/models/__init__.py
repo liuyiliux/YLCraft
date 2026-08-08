@@ -5,6 +5,23 @@ from app.db.models.creative_project import (
     ProjectAssetLink,
     ProjectContent,
     ProjectGenerationLog,
+    ProjectContinuityCandidate,
+    ProjectNarrativeRun,
+    ProjectNarrativeContextSnapshot,
+    ProjectNarrativeSnapshot,
+    ProjectStoryEvent,
+    ProjectForeshadowing,
+    ProjectStyleMeasurement,
+    ContinuityCandidateStatus,
+    ContinuityCandidateSeverity,
+    ContinuityEntityType,
+    ContinuitySuggestedAction,
+    ContinuityFactTargetType,
+    NarrativeSnapshotStatus,
+    NarrativeEvidenceStatus,
+    ForeshadowingStatus,
+    NarrativeRunMode,
+    NarrativeRunStatus,
 )
 from app.db.models.canvas import CanvasDocument
 from app.db.models.image_prompt_reference import ImagePromptReference, ImagePromptSource
@@ -91,6 +108,7 @@ from app.db.models.novel import NovelChapter
 # 书源模型（阅读App兼容）
 from app.db.models.book_source import BookSource
 from app.db.models.book_source_cookie import BookSourceCookie
+from app.db.models.task import ProjectTaskRecord
 
 # 平台生成模板
 from app.db.models.platform_template import PlatformTemplate

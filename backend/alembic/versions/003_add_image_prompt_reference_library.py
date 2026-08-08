@@ -6,6 +6,7 @@ Create Date: 2026-07-07
 """
 
 from alembic import op
+from alembic import context
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
@@ -17,6 +18,27 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # Alembic creates ``alembic_version.version_num`` as VARCHAR(32) by
+    # default. This revision id is longer, so widen it before Alembic writes
+    # the next version at the end of this upgrade.
+    op.alter_column(
+        "alembic_version",
+        "version_num",
+        existing_type=sa.String(length=32),
+        type_=sa.String(length=128),
+        existing_nullable=False,
+    )
+
+    if not context.is_offline_mode():
+        existing = [
+            sa.inspect(op.get_bind()).has_table("image_prompt_sources"),
+            sa.inspect(op.get_bind()).has_table("image_prompt_references"),
+        ]
+        if any(existing):
+            if not all(existing):
+                raise RuntimeError("image prompt reference schema is partially present; reconcile it before upgrading")
+            return
+
     op.create_table(
         "image_prompt_sources",
         sa.Column("id", sa.String(length=120), nullable=False),

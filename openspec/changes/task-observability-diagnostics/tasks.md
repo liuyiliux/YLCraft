@@ -39,4 +39,4 @@
 - [x] 23. 后端 API 测试：任务详情返回 diagnostics/events。
 - [x] 24. 图片异步测试：pending/done/failed 路径均写入诊断字段和事件。
 - [x] 25. 前端构建验证：`npm run build`。
-- [ ] 26. 手动验证：ModelScope 异步生图任务在任务中心可看到远端状态、轮询次数和事件时间线。
+- [x] 26. 手动验证：ModelScope 异步生图任务在任务中心可看到远端状态、轮询次数和事件时间线。

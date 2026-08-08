@@ -19,9 +19,9 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 # SQLModel.metadata 自动收集所有 table=True 的模型
 from sqlmodel import SQLModel
 
-# 确保所有模型被导入（用于 autogenerate 检测）
-from app.db.models import asset_hub    # noqa: F401 — AssetNode, AssetVersion, ...
-from app.db.models import ai_connector # noqa: F401 — AIConnector, AIUsageLog, AIProviderMetadata
+# 确保所有 table=True 模型都注册到 SQLModel.metadata。
+# 只导入少数模型会让 --autogenerate 漏掉创作项目、Agent、画布等表。
+from app.db import models as _all_models  # noqa: F401
 
 # Alembic Config 对象
 config = context.config

@@ -87,6 +87,24 @@ Recommended fields:
 
 Keep trigger keywords specific. Generic words like "继续", "优化" or "处理" create noisy matches.
 
+### Creative Narrative Contract
+
+An Agent Skill may also declare an optional `creative` object when it is safe to contribute to a Creative Project Context Pack:
+
+```yaml
+creative:
+  compatible_project_types: [novel]
+  compatible_genres: ["*"]
+  stages: [prose_draft]
+  context_contribution: "A concise, bounded instruction for the model."
+  input_schema: {chapter_contract: object, narrative_context: string}
+  output_schema: {candidate_prose: string}
+  prohibited_mutations: [approved_novel_body, locked_project_bible, confirmed_ledger]
+  auto_apply: true
+```
+
+All fields except `auto_apply` are required when `creative` is present. The creative runtime uses only the compact `context_contribution`, never the entire Skill body. A project may explicitly select packages through `settings.creative_skill_ids`; automatic application additionally requires project type, genre and stage compatibility. The resolved IDs and checksums are stored in `ProjectNarrativeContextSnapshot`. A Skill is procedural guidance, not permission to promote prose, accept facts, activate foreshadowing, publish externally or spend generation credits.
+
 ## Routing
 
 The runtime selects skills from four signals:
@@ -117,6 +135,15 @@ Current image prompt reference tools:
 - `get_image_prompt_reference`: `read`, returns the full prompt reference detail.
 - `refresh_image_prompt_sources`: `write`, refreshes one or all configured sources from remote repositories.
 - `save_image_prompt_reference_as_asset`: `write`, explicitly saves one selected reference as an Asset Hub text asset. Synced references are not imported into Asset Hub automatically.
+
+## Fanqie Tools
+
+Fanqie tools use a configured `PlatformConnection` and never expose its cookie to the model.
+
+- `list_fanqie_my_books`, `get_fanqie_book_stats`, and `get_fanqie_hot_list` are `read` tools that call the existing author-platform read APIs.
+- `preview_fanqie_project_publish` is a local `read` preflight: it resolves the project binding, validates `novel_body`, target identifiers, and returns missing fields without contacting Fanqie.
+- `get_fanqie_project_publish_status` is a local `read` tool over `ProjectPublishRecord`.
+- `publish_fanqie_project_chapter` is a `write` tool. The Agent runtime must request confirmation before it runs. It writes only the specified `item_id`, never retries silently, and should be preceded by the preflight. Live validation must use a user-created isolated `[TEST]` chapter.
 
 ## Slash Activation
 
@@ -259,8 +286,6 @@ cd frontend
 npm.cmd run build
 ```
 
-After frontend build, restore TypeScript build cache files if they changed:
-
-```powershell
-git restore -- frontend/tsconfig.tsbuildinfo frontend/tsconfig.node.tsbuildinfo
-```
+The frontend build runs TypeScript in no-emit mode. Build caches and generated
+Vite config artifacts are ignored, so a successful build must not add tracked
+generated files to the worktree.

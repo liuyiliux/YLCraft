@@ -28,6 +28,7 @@ def _auto_discover_platforms():
         "kuaishou",
         "weibo",
         "zhihu",
+        "fanqie",
     ]
     
     for module_name in platform_modules:

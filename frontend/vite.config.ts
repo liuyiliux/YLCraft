@@ -1,8 +1,11 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import AutoImport from 'unplugin-auto-import/vite'
 
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  const apiProxyTarget = loadEnv(mode, '.', '').VITE_API_PROXY_TARGET || 'http://127.0.0.1:8000'
+
+  return {
   plugins: [
     react(),
     AutoImport({
@@ -16,13 +19,13 @@ export default defineConfig({
     allowedHosts: true,
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8000',
+        target: apiProxyTarget,
         changeOrigin: true,
         secure: false,
         ws: true,
         configure: (proxy, options) => {
           proxy.on('proxyReq', (proxyReq, req, res) => {
-            console.log(`[Proxy] ${req.method} ${req.url} -> http://127.0.0.1:8000${req.url}`);
+            console.log(`[Proxy] ${req.method} ${req.url} -> ${apiProxyTarget}${req.url}`);
           });
           proxy.on('error', (err, req, res) => {
             console.error('[Proxy Error]', err);
@@ -46,4 +49,5 @@ export default defineConfig({
       },
     },
   },
+  }
 })

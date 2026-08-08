@@ -21,6 +21,11 @@ import logging
 import time
 from typing import Any
 
+from sqlalchemy import func, select
+from sqlalchemy.exc import SQLAlchemyError
+
+from app.db.models.creative_project import ProjectContent
+
 logger = logging.getLogger("ylcraft.agent.multi_agent")
 
 # DeerFlow-inspired: max concurrent sub-agents
@@ -407,27 +412,54 @@ class MultiAgentCoordinator:
         output as a candidate (non-approved) version so the user can review later.
         """
         try:
+            if not config.project_id:
+                return None
+            session = getattr(self._svc, "session", None)
+            if session is None:
+                return None
+
             pipeline_log = {
                 "pipeline": "scene_simulation_v1",
                 "project_id": config.project_id,
+                "candidate": True,
+                "approved": False,
+                "scene_context": config.scene_context,
                 "steps": [
                     {
                         "role": s.role_label,
                         "profile_id": s.profile_id,
-                        "output_summary": str(s.output or "")[:300],
+                        "output": str(s.output or ""),
                         "duration_ms": s.duration_ms,
                     }
                     for s in slots
                 ],
             }
-            # NOTE: full storage to creative project content will be implemented
-            # when the content versioning API supports candidate_flag.
-            # For now we return the structured log for the caller to store.
-            logger.info(
-                "[MultiAgent] Candidate pipeline log ready (storage deferred): %s",
-                json.dumps(pipeline_log, ensure_ascii=False)[:200],
+            latest_version = await session.scalar(
+                select(func.max(ProjectContent.version)).where(
+                    ProjectContent.project_id == config.project_id,
+                    ProjectContent.content_type == "scene_simulation_candidate",
+                )
             )
-            return json.dumps(pipeline_log, ensure_ascii=False)
+            candidate = ProjectContent(
+                project_id=config.project_id,
+                content_type="scene_simulation_candidate",
+                title="多智能体场景推演候选",
+                data_json=json.dumps(pipeline_log, ensure_ascii=False),
+                text_content=str(slots[-1].output or "") if slots else "",
+                version=int(latest_version or 0) + 1,
+                is_locked=False,
+            )
+            session.add(candidate)
+            await session.commit()
+            await session.refresh(candidate)
+            logger.info("[MultiAgent] Candidate stored: %s", candidate.id)
+            return str(candidate.id)
+        except SQLAlchemyError as exc:
+            session = getattr(self._svc, "session", None)
+            if session is not None:
+                await session.rollback()
+            logger.warning("[MultiAgent] Could not store candidate: %s", exc)
+            return None
         except Exception as exc:
             logger.warning("[MultiAgent] Could not store candidate: %s", exc)
             return None

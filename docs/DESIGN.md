@@ -1,7 +1,9 @@
 # YLCraft — 总体设计与架构
 
 > 本文是 YLCraft 的单一事实来源：产品定位、技术栈、系统架构、模块现状与文档导航。
-> 最后更新：2026-07-07。详细子领域设计见 `docs/architecture/`，Agent 与平台接入见 `docs/agent/`、`docs/platform/`，必要交接记录见 `docs/devlog/`。
+> 最后更新：2026-08-08。详细子领域设计见 `docs/architecture/`，Agent 与平台接入见 `docs/agent/`、`docs/platform/`，必要交接记录见 `docs/devlog/`。
+
+当前交付快照：Agent/Skill Runtime、Asset Hub、独立 Canvas、提示词参考库、叙事运行时和 Story Production Desk 已进入可用主线；剩余工作主要是外部供应商/平台凭证下的真实验收和番茄接口补抓，不再把已完成的基础能力标成规划中。
 
 设计定位（Design Read）：面向内容创作者的 AI 创作平台，覆盖电商 / 摄影 / 短剧三大场景；以「素材资产中枢 + Agent Skill 运行时」为底座，把高频创作流程沉淀为可复用、可审批的 Skill。
 
@@ -146,9 +148,13 @@ graph TD
 | AI 图片生成 | 完整 | ComfyUI 工作流驱动，Prompt 模板 + 任务队列 |
 | B 站搜索 / 下载 / 登录 | 完整 | yt-dlp 下载、二维码登录、Cookie 自动获取 |
 | Agent Skill Runtime | 完整 | 2026-07 完成（OpenSpec `agent-skill-package-runtime` M0-M10 全勾） |
-| 创作项目闭环 | 部分 | `creative-project-closed-loop` 仍有 11 项未完成 |
-| 资产中枢（Asset Hub） | 规划中 | 图片 / 视频 / 音频 / 3D / 提示词统一管理，谱系 + 混合检索 |
-| Story Maker | 规划中 | 角色 / 场景 / 脚本 / 分镜 |
+| 创作项目闭环 | 部分 | 核心代码和真实 SiliconFlow 生图闭环已验证；仍留 1 项真实环境验收 |
+| 资产中枢（Asset Hub） | 完整 | 图片 / 视频 / 音频 / 文本等统一资产模型、版本、表示、谱系和项目关联已接入主线 |
+| Story / Writer Room | 部分 | 大纲、章节、正文、脚本、分镜、叙事上下文、连续性与生产工作台可用；继续收尾写作门禁验收 |
+| 独立创作画布 | 部分 | 节点、端口契约、变量连线、运行 trace、提示词/素材/生成回流可用；仍需持续打磨节点体验 |
+| 生图提示词参考库 | 完整 | IMI 三类本地优先集合、双语字段、多图、图片缓存、筛选、画布和生图集成已完成 |
+| 番茄小说接入 | 部分 | Cookie、书籍、热榜、统计、项目绑定、草稿发布及 Agent 预检/确认发布可用；作家资料/章节/收益及真实联调待补 |
+| 任务观测诊断 | 完整 | 任务诊断、事件时间线、异步生图轮询和 Asset Hub 回写可追踪 |
 | Live2D 工厂 | 规划中 | 立绘 → 分层 → 绑骨 → VTS |
 | Clip Lab | 规划中 | CutClaw / NarratoAI / MoE 三种剪辑模式 |
 | 爆款拆解 | 规划中 | 链接 → 结构 + 分镜 + 仿写提示词 |
@@ -215,7 +221,7 @@ YLCraft/
 | `docs/rules/06-数据库设计规则.md` | PostgreSQL + pgvector 建模与迁移 |
 | `docs/architecture/` | 子领域架构设计（资产中枢、AI 服务层、Live2D、多平台 API 等） |
 | `docs/agent/` | Agent 工作台与 Skill 运行时 |
-| `docs/platform/` | B 站与多平台接入参考 |
+| `docs/platform/` | B 站、番茄作家后台与多平台接入参考 |
 | `docs/guides/` | 产品闭环指南 |
 | `docs/devlog/` | 必要交接记录；长期事实必须回写到架构、接口或领域文档 |
 | `docs/refactor/` | 重构 / 迁移计划 |

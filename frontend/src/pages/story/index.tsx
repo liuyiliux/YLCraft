@@ -1,8 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  Alert,
   Badge,
   Button,
   Checkbox,
+  Collapse,
   Empty,
   Form,
   Image,
@@ -12,6 +14,7 @@ import {
   Modal,
   Popconfirm,
   Progress,
+  Segmented,
   Select,
   Skeleton,
   Space,
@@ -24,24 +27,42 @@ import {
 } from 'antd'
 import {
   BranchesOutlined,
+  CheckCircleOutlined,
+  CloudUploadOutlined,
   DeleteOutlined,
+  DownloadOutlined,
   EditOutlined,
+  ExclamationCircleOutlined,
+  EyeOutlined,
   FileTextOutlined,
+  FolderAddOutlined,
   FolderOpenOutlined,
   HistoryOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
   PictureOutlined,
   PlusOutlined,
   ReloadOutlined,
   RobotOutlined,
   ThunderboltOutlined,
   UserOutlined,
+  VideoCameraOutlined,
 } from '@ant-design/icons'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   agentChat,
   createCreativeProject,
   createCreativeProjectFromNovel,
   deleteCreativeProject,
+  extractCreativeProjectContinuity,
+  getCreativeProjectContinuityContextSummary,
+  getCreativeProjectNarrativeContextPreview,
+  getCreativeProjectNarrativeGraph,
+  getCreativeProjectNarrativeHealth,
+  getCreativeProjectWritingPreflight,
+  listCreativeProjectNarrativeRuns,
+  controlCreativeProjectNarrativeRun,
+  configureCreativeProjectNarrativeAutopilot,
   generateCharacterPortrait,
   generateCreativeProjectChapterPlan,
   generateCreativeProjectChapterOutline,
@@ -53,15 +74,19 @@ import {
   getAsset,
   getCharacter,
   getCreativeProjectCanvas,
+  getImageTask,
   getImageBackends,
   getPlatformTemplates,
   listAssets,
   linkCreativeProjectAsset,
   listConnectors,
   listCreativeProjectContents,
+  listCreativeProjectContinuityCandidates,
+  listCreativeProjectForeshadowing,
   listCreativeProjectAssets,
   listCreativeProjectGenerationLogs,
   listCreativeProjects,
+  listTasks,
   matchCreativeProjectReferenceAssets,
   promoteCreativeProjectWriterRoomContent,
   refineCreativeProjectNovelBody,
@@ -69,13 +94,18 @@ import {
   runCreativeProjectPipeline,
   runCreativeProjectWriterRoom,
   runCreativeProjectWriterRoomStep,
+  rewriteCreativeProjectParagraph,
+  resolveCreativeProjectContinuityCandidate,
+  decideCreativeProjectForeshadowing,
   splitCreativeProjectComicPages,
   syncCreativeProjectBible,
   syncCreativeProjectCharacters,
   saveCreativeProjectCanvas,
+  saveCreativeProjectContentAsAsset,
   updateCreativeProject,
   updateCreativeProjectContent,
   type PlatformTemplate,
+  type CreativeProjectContinuityCandidate,
 } from '../../api'
 import type {
   ChapterPlanItem,
@@ -87,10 +117,14 @@ import type {
   Provider,
   StoryOutline,
   StoryOutlineCharacter,
+  WritingPreflight,
+  WritingMethodCandidate,
 } from '../../types/api'
 import { useTheme, type ThemeColors } from '../../constants/theme'
 import { enqueueCanvasImport } from '../../components/canvas/bridge'
 import type { CanvasNode, CanvasNodeType } from '../../components/canvas/types'
+import { useTaskPolling } from '../../hooks/useTaskPolling'
+import FanqiePublishPanel from './FanqiePublishPanel'
 
 const { Text, Title, Paragraph } = Typography
 const { TextArea } = Input
@@ -144,6 +178,7 @@ interface ProjectContent {
   version: number
   is_locked?: boolean
   created_at?: string
+  updated_at?: string
 }
 
 interface WriterRoomReviewIssue {
@@ -177,6 +212,7 @@ type AssetSummary = {
   id: string
   title?: string
   type?: string
+  platform?: string
   thumbnail_url?: string
   cover_url?: string
   source_url?: string
@@ -249,6 +285,69 @@ type ProjectGraphState = {
   edges?: ProjectGraphEdge[]
   viewport?: { x?: number; y?: number; zoom?: number }
   updated_at?: string
+}
+
+type NarrativeContextPreview = {
+  chapter_number: number
+  text: string
+  persisted: boolean
+  metadata: {
+    context_snapshot_id?: string
+    fingerprint?: string
+    overflow?: Array<{ layer: string; budget: number; actual: number; action: string }>
+    excluded_sources?: Record<string, string | number>
+    layers?: Array<{ id: string; label: string; characters?: number; budget?: number; status?: string }>
+  }
+}
+
+type NarrativeForeshadowing = {
+  id: string
+  statement: string
+  kind: string
+  status: string
+  timing: string
+  planted_chapter: number
+  expected_window?: { start?: number; end?: number }
+  resolution_note?: string
+}
+
+type NarrativeGraphData = {
+  nodes: Array<{
+    id: string
+    type: string
+    label: string
+    confirmed: boolean
+    status?: string
+    summary?: string
+    source?: { content_id?: string; chapter_number?: number; snapshot_id?: string; foreshadowing_id?: string }
+  }>
+  edges: Array<{ id: string; type: string; source: string; target: string; confirmed: boolean }>
+  include_pending: boolean
+}
+
+type NarrativeHealth = {
+  status: 'healthy' | 'attention' | 'blocked' | string
+  summary: Record<string, number>
+  issues: Array<{
+    code: string
+    severity: 'info' | 'warning' | 'error' | string
+    message: string
+    details?: Record<string, unknown>
+  }>
+}
+
+type NarrativeRun = {
+  id: string
+  mode: string
+  status: string
+  target_chapters: number[]
+  current_cursor: number
+  trace: Array<{ chapter_number?: number; status?: string; error?: string; error_type?: string; retryable?: boolean }>
+  retry_count?: number
+  token_usage?: number
+  cost_amount?: number
+  budget?: { max_cost_amount?: number | null; max_token_usage?: number | null; metering?: string }
+  error_message?: string
 }
 
 function canvasTypeForGraphNode(node: ProjectGraphNode): CanvasNodeType {
@@ -359,6 +458,23 @@ const stageLabels: Record<string, string> = {
   script: '脚本',
   storyboard: '分镜',
   assets: '素材',
+  scene_simulation_candidate: '多智能体候选',
+}
+
+// Kept outside StoryPage so React Strict Mode's development-only remount does
+// not probe the same stale Asset Hub link twice during one page visit.
+const unavailableProjectAssetIds = new Map<string, Set<string>>()
+const projectAssetDetailRequests = new Map<string, Promise<AssetSummary | null>>()
+
+function resolveProjectAssetDetail(assetId: string): Promise<AssetSummary | null> {
+  const pendingOrResolved = projectAssetDetailRequests.get(assetId)
+  if (pendingOrResolved) return pendingOrResolved
+
+  const request = getAsset(assetId)
+    .then((response) => response?.data || null)
+    .catch(() => null)
+  projectAssetDetailRequests.set(assetId, request)
+  return request
 }
 
 const statusLabels: Record<string, string> = {
@@ -386,8 +502,15 @@ type ImagePromptContext = {
   portraitVersionIds?: string[]
 }
 
+type VideoGenerationContext = ImagePromptContext & {
+  durationSeconds?: number
+  generateAudio?: boolean
+  musicHint?: string
+}
+
 type InlineGeneratedImage = {
   assetId?: string
+  taskId?: string
   url?: string
   localPath?: string
   referenceImages?: ReferenceImageItem[]
@@ -397,6 +520,26 @@ type InlineGeneratedImage = {
   provider?: string
   model?: string
   createdAt: string
+}
+
+type PendingInlineImageTask = {
+  taskId: string
+  projectId: string
+  key: string
+  context: ImagePromptContext
+  prompt: string
+  size: string
+  provider: string
+  model: string
+  referenceLineage: {
+    referenceAssetIds: string[]
+    characterIds: string[]
+    portraitNodeIds: string[]
+    portraitVersionIds: string[]
+  }
+  referenceImageCollection: ReferenceImageItem[]
+  referenceImagesSent: number
+  referenceImagesSupported: boolean
 }
 
 type PipelineStageValue =
@@ -437,6 +580,10 @@ type PipelineResult = {
   failed?: number
   total?: number
 }
+
+type PipelineRunStatus = 'idle' | 'running' | 'success' | 'partial' | 'failed'
+
+type WorkspaceResource = 'contents' | 'assets' | 'logs' | 'graph'
 
 const pipelineStageOptions: { label: string; value: PipelineStageValue }[] = [
   { label: '大纲', value: 'outline' },
@@ -569,7 +716,7 @@ function normalizeChapterPlan(plan: ChapterPlan | Record<string, any>): ChapterP
   const chapters = Array.isArray(plan.chapters) ? plan.chapters.map(normalizeChapterItem) : []
   return {
     ...plan,
-    chapter_count: Number(plan.chapter_count || chapters.length || 0),
+    chapter_count: chapters.length || Number(plan.chapter_count || 0),
     chapters,
   }
 }
@@ -782,6 +929,27 @@ function imageContextKey(context: ImagePromptContext = {}) {
     context.sourceIndex ?? '0',
     context.chapterNumber ?? '0',
   ].join(':')
+}
+
+function normalizeStoryboardVideoDuration(value?: number) {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return 5
+  return Math.max(3, Math.min(Math.round(parsed), 6))
+}
+
+function buildStoryboardVideoFallbackPrompt(panel: Record<string, any>) {
+  const action = String(panel.action || panel.panel_goal || '人物完成当前镜头动作').trim()
+  const motion = String(panel.camera_motion || panel.camera_hint || '静止').trim()
+  const shotSize = String(panel.shot_size || '中景').trim()
+  const angle = String(panel.camera_angle || '平视').trim()
+  const location = String(panel.location || '当前场景').trim()
+  const emotion = String(panel.emotion || '').trim()
+  return [
+    `竖屏短剧${shotSize}${angle}镜头：${action}`,
+    `在${location}内以${motion}完成镜头运动`,
+    emotion ? `人物情绪保持${emotion}` : '',
+    '动作自然连贯，保持首帧中的角色、服装、场景和光线一致，不出现字幕或新增人物',
+  ].filter(Boolean).join('；')
 }
 
 function dedupeStrings(values: Array<unknown>) {
@@ -1132,15 +1300,27 @@ function getNovelChapterOptions(asset?: AssetSummary | null) {
 export default function StoryPage() {
   const { theme } = useTheme()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const [projects, setProjects] = useState<CreativeProject[]>([])
   const [selectedId, setSelectedId] = useState<string>('')
   const [selectedProject, setSelectedProject] = useState<CreativeProject | null>(null)
   const [contents, setContents] = useState<ProjectContent[]>([])
+  const [writerRoomContents, setWriterRoomContents] = useState<ProjectContent[]>([])
   const [projectAssets, setProjectAssets] = useState<ProjectAssetLink[]>([])
   const [assetDetails, setAssetDetails] = useState<Record<string, AssetSummary>>({})
+  const [unavailableAssetIds, setUnavailableAssetIds] = useState<Record<string, true>>({})
   const [projectGraph, setProjectGraph] = useState<ProjectGraphState | null>(null)
   const [characterDetails, setCharacterDetails] = useState<Record<string, CharacterReferenceSummary>>({})
   const [generationLogs, setGenerationLogs] = useState<ProjectGenerationLog[]>([])
+  const [continuityCandidates, setContinuityCandidates] = useState<CreativeProjectContinuityCandidate[]>([])
+  const [continuitySummary, setContinuitySummary] = useState<Record<string, any> | null>(null)
+  const [narrativeContext, setNarrativeContext] = useState<NarrativeContextPreview | null>(null)
+  const [foreshadowingLedger, setForeshadowingLedger] = useState<NarrativeForeshadowing[]>([])
+  const [allForeshadowingLedger, setAllForeshadowingLedger] = useState<NarrativeForeshadowing[]>([])
+  const [narrativeGraphData, setNarrativeGraphData] = useState<NarrativeGraphData | null>(null)
+  const [narrativeHealth, setNarrativeHealth] = useState<NarrativeHealth | null>(null)
+  const [narrativeRuns, setNarrativeRuns] = useState<NarrativeRun[]>([])
+  const [narrativeLoading, setNarrativeLoading] = useState(false)
   const [llmConnectors, setLlmConnectors] = useState<Provider[]>([])
   const [imageBackends, setImageBackends] = useState<ImageBackendOption[]>([])
   const [novelAssets, setNovelAssets] = useState<AssetSummary[]>([])
@@ -1151,8 +1331,11 @@ export default function StoryPage() {
   const [selectedModel, setSelectedModel] = useState<string>('')
   const [createOpen, setCreateOpen] = useState(false)
   const [renameOpen, setRenameOpen] = useState(false)
+  const [fanqieOpen, setFanqieOpen] = useState(false)
   const [renameForm] = Form.useForm()
   const [loadingAction, setLoadingAction] = useState<LoadingAction>(null)
+  const [workspaceErrors, setWorkspaceErrors] = useState<Record<string, string>>({})
+  const [projectListError, setProjectListError] = useState('')
   const [savingContentId, setSavingContentId] = useState<string | null>(null)
   const [loadingChapterAction, setLoadingChapterAction] = useState<{ action: ChapterAction; chapterNumber: number | null }>({
     action: null,
@@ -1172,11 +1355,31 @@ export default function StoryPage() {
   const [pipelineSkipExisting, setPipelineSkipExisting] = useState(true)
   const [pipelineContinueOnError, setPipelineContinueOnError] = useState(true)
   const [pipelineResult, setPipelineResult] = useState<PipelineResult | null>(null)
+  const [pipelineRunStatus, setPipelineRunStatus] = useState<PipelineRunStatus>('idle')
+  const [pipelineOpen, setPipelineOpen] = useState(false)
+  const [workspaceLoading, setWorkspaceLoading] = useState<Record<WorkspaceResource, boolean>>({
+    contents: false,
+    assets: false,
+    logs: false,
+    graph: false,
+  })
   const [activeChapterNumber, setActiveChapterNumber] = useState(1)
+  const activeChapterRestoreRef = useRef<{
+    projectId: string | null
+    restoredPersistedChapter: number | null
+    pendingLocalChapter: number | null
+  }>({ projectId: null, restoredPersistedChapter: null, pendingLocalChapter: null })
   const [projectLibraryWidth, setProjectLibraryWidth] = useState(260)
+  const [projectLibraryCollapsed, setProjectLibraryCollapsed] = useState(
+    () => window.localStorage.getItem('ylcraft:story-project-library-collapsed') === 'true',
+  )
+  const storyPageRef = useRef<HTMLDivElement>(null)
+  const [cockpitCompact, setCockpitCompact] = useState(true)
+  const [workspaceNarrow, setWorkspaceNarrow] = useState(false)
   const [workbenchWidths, setWorkbenchWidths] = useState({ outline: 360, prose: 520 })
   const [savingImageModel, setSavingImageModel] = useState(false)
   const [inlineImageLoadingKey, setInlineImageLoadingKey] = useState<string | null>(null)
+  const [pendingInlineImageTask, setPendingInlineImageTask] = useState<PendingInlineImageTask | null>(null)
   const [batchStoryboardImageChapter, setBatchStoryboardImageChapter] = useState<number | null>(null)
   const [inlineImages, setInlineImages] = useState<Record<string, InlineGeneratedImage>>({})
   const [portraitGeneratingCharacter, setPortraitGeneratingCharacter] = useState<string | null>(null)
@@ -1199,6 +1402,7 @@ export default function StoryPage() {
   const worldAssetContents = contents.filter((item) => item.content_type === 'world_asset')
 
   const activeProjectMeta = selectedProject?.metadata || {}
+  const activeProjectSettings = selectedProject?.settings || {}
   const idea = String(activeProjectMeta.idea || '')
   const defaultImageModel = activeProjectMeta.default_image_model || {}
   const selectedImageBackend = imageBackends.find((item) => item.name === defaultImageModel.name)
@@ -1209,6 +1413,14 @@ export default function StoryPage() {
   )
   const selectedNovelAsset = novelAssets.find((asset) => asset.id === createNovelAssetId)
   const selectedNovelChapterOptions = getNovelChapterOptions(selectedNovelAsset)
+  const selectedCreativeSkillIds = useMemo(
+    () =>
+      Array.isArray(activeProjectSettings.creative_skill_ids)
+        ? activeProjectSettings.creative_skill_ids.filter((item: unknown): item is string => typeof item === 'string')
+        : [],
+    [activeProjectSettings],
+  )
+
   const projectGraphView = useMemo(
     () =>
       buildCreativeProjectGraph({
@@ -1221,7 +1433,168 @@ export default function StoryPage() {
     [selectedProject, contents, projectAssets, assetDetails, projectGraph],
   )
 
-  const handleInlineGenerateImage = async (prompt: string, context: ImagePromptContext = {}) => {
+  useEffect(() => {
+    window.localStorage.setItem('ylcraft:story-project-library-collapsed', String(projectLibraryCollapsed))
+  }, [projectLibraryCollapsed])
+
+  useEffect(() => {
+    const requestedProjectId = searchParams.get('project_id')
+    if (requestedProjectId && projects.some((item) => item.id === requestedProjectId)) {
+      setSelectedId(requestedProjectId)
+    }
+  }, [projects, searchParams])
+
+  useEffect(() => {
+    const element = storyPageRef.current
+    if (!element) return
+
+    // The global navigation consumes part of the viewport. Measure the actual
+    // workbench so its three-column layout never crushes the prose workspace.
+    const update = (width: number) => {
+      setCockpitCompact(width < 1320)
+      setWorkspaceNarrow(width < 760)
+    }
+    update(element.getBoundingClientRect().width)
+    const observer = new ResizeObserver((entries) => {
+      update(entries[0]?.contentRect.width || element.getBoundingClientRect().width)
+    })
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
+
+  useEffect(() => {
+    // Target count belongs to the selected project.  Do not let a previous
+    // project's target leak into this workspace, but preserve an in-progress
+    // user edit until the persisted plan itself changes.
+    const persistedCount = chapters.length || Number(chapterPlan.chapter_count || 0)
+    setChapterCount(persistedCount > 0 ? persistedCount : 12)
+  }, [selectedProject?.id, chapters.length])
+
+  const finalizeInlineImageResult = useCallback(async (data: any, task: PendingInlineImageTask) => {
+    if (!data?.success) throw new Error(data?.error || '图片生成失败')
+
+    const urls = data.urls?.length ? data.urls : data.url ? [data.url] : []
+    const localPaths = data.all_local_paths?.length
+      ? data.all_local_paths
+      : data.local_path
+        ? [data.local_path]
+        : []
+    const assetIds = data.all_asset_hub_node_ids?.length
+      ? data.all_asset_hub_node_ids
+      : data.asset_hub_node_id
+        ? [data.asset_hub_node_id]
+        : data.all_asset_ids?.length
+          ? data.all_asset_ids
+          : data.asset_id
+            ? [data.asset_id]
+            : []
+    const assetId = assetIds[0]
+    const referenceImages = task.referenceImageCollection.map((item) => item.url)
+
+    if (assetId) {
+      try {
+        await linkCreativeProjectAsset(task.projectId, {
+          asset_id: assetId,
+          content_id: task.context.contentId || undefined,
+          role: 'output',
+          relation: 'derived_from',
+          metadata: {
+            source_type: task.context.sourceType,
+            source_index: task.context.sourceIndex,
+            source_title: task.context.sourceTitle,
+            chapter_number: task.context.chapterNumber,
+            prompt: task.prompt,
+            provider: task.provider,
+            model: task.model,
+            size: task.size,
+            reference_asset_ids: task.referenceLineage.referenceAssetIds,
+            character_ids: task.referenceLineage.characterIds,
+            portrait_node_ids: task.referenceLineage.portraitNodeIds,
+            portrait_version_ids: task.referenceLineage.portraitVersionIds,
+            reference_images: referenceImages,
+            reference_images_count: referenceImages.length,
+            reference_image_collection: task.referenceImageCollection,
+            reference_images_sent: task.referenceImagesSent,
+            reference_images_supported: task.referenceImagesSupported,
+            task_id: data.task_id || '',
+            generated_at: new Date().toISOString(),
+          },
+        })
+      } catch (error: any) {
+        message.warning(error?.message || '图片已生成，但回写项目素材失败')
+      }
+    }
+
+    setInlineImages((prev) => ({
+      ...prev,
+      [task.key]: {
+        assetId,
+        taskId: String(data.task_id || task.taskId || ''),
+        url: urls[0] || '',
+        localPath: localPaths[0] || data.local_path,
+        referenceImages: task.referenceImageCollection,
+        referenceImagesSent: task.referenceImagesSent,
+        referenceImagesSupported: task.referenceImagesSupported,
+        prompt: task.prompt,
+        provider: data.provider || task.provider,
+        model: data.model || task.model,
+        createdAt: new Date().toISOString(),
+      },
+    }))
+    await loadProjectAssets(task.projectId)
+    message.success(assetId ? '图片已生成并关联到项目素材' : '图片已生成')
+  }, [])
+
+  useTaskPolling({
+    enabled: Boolean(pendingInlineImageTask?.taskId),
+    intervalMs: 5000,
+    fetcher: useCallback(() => {
+      if (!pendingInlineImageTask) return Promise.resolve(null as any)
+      return getImageTask(pendingInlineImageTask.taskId, pendingInlineImageTask.provider)
+    }, [pendingInlineImageTask]),
+    isDone: useCallback((data: any) => data?.success && data?.status === 'done', []),
+    isFailed: useCallback((data: any) => data?.success === false || data?.status === 'error' || data?.status === 'failed', []),
+    onData: useCallback(() => undefined, []),
+    onDone: useCallback(async (data: any) => {
+      if (!pendingInlineImageTask) return
+      try {
+        await finalizeInlineImageResult(data, pendingInlineImageTask)
+      } catch (error: any) {
+        message.error(error?.message || '异步生图结果处理失败')
+      } finally {
+        setPendingInlineImageTask(null)
+        setInlineImageLoadingKey(null)
+      }
+    }, [finalizeInlineImageResult, pendingInlineImageTask]),
+    onFailed: useCallback((data: any) => {
+      message.error(data?.error || '异步生图失败')
+      setPendingInlineImageTask(null)
+      setInlineImageLoadingKey(null)
+    }, []),
+    onError: useCallback(() => undefined, []),
+  })
+
+  async function waitForInlineImageTask(task: PendingInlineImageTask) {
+    const maxAttempts = 120
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const data = await getImageTask(task.taskId, task.provider)
+      if (data?.success && data?.status === 'done') {
+        await finalizeInlineImageResult(data, task)
+        return
+      }
+      if (data?.success === false || data?.status === 'error' || data?.status === 'failed') {
+        throw new Error(data?.error || '异步生图失败')
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 5000))
+    }
+    throw new Error('异步生图等待超时，请到任务中心查看详情')
+  }
+
+  const handleInlineGenerateImage = async (
+    prompt: string,
+    context: ImagePromptContext = {},
+    options: { awaitAsync?: boolean } = {},
+  ) => {
     const trimmedPrompt = prompt.trim()
     if (!trimmedPrompt) {
       message.warning('请先填写生图提示词')
@@ -1276,6 +1649,7 @@ export default function StoryPage() {
     const supportsReferenceImages = defaultImageSupportsReferenceImages
     const requestReferenceImages = supportsReferenceImages ? referenceImages : []
 
+    let startedAsyncTask = false
     try {
       const data = await generateImageApi({
         prompt: trimmedPrompt,
@@ -1299,6 +1673,31 @@ export default function StoryPage() {
 
       if (!data?.success) {
         message.error(data?.error || '图片生成失败')
+        return
+      }
+
+      if (data.status === 'pending' && data.task_id) {
+        const pendingTask: PendingInlineImageTask = {
+          taskId: String(data.task_id),
+          projectId: selectedProject.id,
+          key,
+          context: normalizedContext,
+          prompt: trimmedPrompt,
+          size,
+          provider: data.provider || defaultImageModel.name,
+          model: data.model || defaultImageModel.model || '',
+          referenceLineage,
+          referenceImageCollection,
+          referenceImagesSent: requestReferenceImages.length,
+          referenceImagesSupported: supportsReferenceImages,
+        }
+        if (options.awaitAsync) {
+          await waitForInlineImageTask(pendingTask)
+          return
+        }
+        startedAsyncTask = true
+        setPendingInlineImageTask(pendingTask)
+        message.info(`图片任务已提交，完成后自动回写项目：${data.task_id}`)
         return
       }
 
@@ -1369,10 +1768,12 @@ export default function StoryPage() {
       }))
       await loadProjectAssets(selectedProject.id)
       message.success(assetId ? '图片已生成并关联到项目素材' : '图片已生成')
+      return true
     } catch (error: any) {
       message.error(error?.message || '图片生成失败')
+      return false
     } finally {
-      setInlineImageLoadingKey(null)
+      if (!startedAsyncTask) setInlineImageLoadingKey(null)
     }
   }
 
@@ -1455,41 +1856,157 @@ export default function StoryPage() {
   useEffect(() => {
     const found = projects.find((item) => item.id === selectedId) || null
     setSelectedProject(found)
+    const cachedUnavailableIds = found ? unavailableProjectAssetIds.get(found.id) : undefined
+    setUnavailableAssetIds(Object.fromEntries([...(cachedUnavailableIds || [])].map((id) => [id, true] as const)))
+    setWorkspaceErrors({})
+    setWorkspaceLoading({ contents: false, assets: false, logs: false, graph: false })
+    setPipelineResult(null)
+    setPipelineRunStatus('idle')
     if (found) {
+      // The previous project's links must never be rendered or resolved under
+      // the newly selected project while its workspace requests are in flight.
+      setProjectAssets([])
       loadContents(found.id)
       loadProjectAssets(found.id)
       loadGenerationLogs(found.id)
+      loadContinuityFacts(found.id)
       loadProjectGraph(found.id)
+      loadNarrativeRuntime(found.id, activeChapterNumber)
     } else {
       setContents([])
+      setWriterRoomContents([])
       setProjectAssets([])
       setProjectGraph(null)
       setGenerationLogs([])
+      setContinuityCandidates([])
+      setContinuitySummary(null)
+      setNarrativeContext(null)
+      setForeshadowingLedger([])
+      setAllForeshadowingLedger([])
+      setNarrativeGraphData(null)
+      setNarrativeHealth(null)
+      setNarrativeRuns([])
     }
   }, [selectedId, projects])
 
   useEffect(() => {
+    if (selectedProject?.id) void loadNarrativeRuntime(selectedProject.id, activeChapterNumber)
+  }, [selectedProject?.id, activeChapterNumber])
+
+  useEffect(() => {
+    setPendingInlineImageTask(null)
+    setInlineImageLoadingKey(null)
+  }, [selectedId])
+
+  useEffect(() => {
+    const projectId = selectedProject?.id
+    if (!projectId) return
+
+    let cancelled = false
+    ;(async () => {
+      try {
+        const response = await listTasks({
+          project_id: projectId,
+          task_type: 'image_generation',
+          active_only: true,
+          include_detail: true,
+        })
+        if (cancelled) return
+        const tasks = Array.isArray(response?.tasks) ? response.tasks : response?.data || []
+        const task = tasks
+          .filter((item: any) => item?.task_id && item?.payload?.project_id === projectId)
+          .sort((a: any, b: any) => String(b.created_at || '').localeCompare(String(a.created_at || '')))[0]
+        const payload = task?.payload
+        if (!task || !payload) return
+
+        const context: ImagePromptContext = {
+          contentId: payload.content_id || undefined,
+          sourceType: payload.source_type || undefined,
+          sourceIndex: payload.source_index !== undefined && payload.source_index !== '' ? payload.source_index : undefined,
+          sourceTitle: payload.source_title || undefined,
+          chapterNumber:
+            payload.chapter_number !== undefined && payload.chapter_number !== ''
+              ? Number(payload.chapter_number)
+              : undefined,
+        }
+        const referenceLineage = {
+          referenceAssetIds: Array.isArray(payload.reference_asset_ids) ? payload.reference_asset_ids : [],
+          characterIds: Array.isArray(payload.character_ids) ? payload.character_ids : [],
+          portraitNodeIds: Array.isArray(payload.portrait_node_ids) ? payload.portrait_node_ids : [],
+          portraitVersionIds: Array.isArray(payload.portrait_version_ids) ? payload.portrait_version_ids : [],
+        }
+        const referenceImageCollection = Array.isArray(payload.reference_image_collection)
+          ? payload.reference_image_collection
+          : []
+        const key = imageContextKey(context)
+        setPendingInlineImageTask({
+          taskId: String(task.task_id),
+          projectId,
+          key,
+          context,
+          prompt: String(payload.prompt || ''),
+          size: String(payload.size || '1024x1024'),
+          provider: String(payload.provider || ''),
+          model: String(payload.model || ''),
+          referenceLineage,
+          referenceImageCollection,
+          referenceImagesSent: Array.isArray(payload.reference_images) ? payload.reference_images.length : 0,
+          referenceImagesSupported: Array.isArray(payload.reference_images) && payload.reference_images.length > 0,
+        })
+        setInlineImageLoadingKey(key)
+        message.info(`已恢复未完成的生图任务：${task.task_id}`)
+      } catch {
+        // Task recovery is best effort; the project workspace remains usable.
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedProject?.id])
+
+  useEffect(() => {
+    const projectId = selectedProject?.id
+    if (!projectId) return
     const ids = Array.from(new Set(projectAssets.map((asset) => asset.asset_id).filter(Boolean)))
-    const missingIds = ids.filter((id) => !assetDetails[id])
+    const knownUnavailableIds = unavailableProjectAssetIds.get(projectId) || new Set<string>()
+    unavailableProjectAssetIds.set(projectId, knownUnavailableIds)
+    const missingIds = ids.filter((id) => !assetDetails[id] && !knownUnavailableIds.has(id))
     if (!missingIds.length) return
+
+    // Mark them before starting requests. This also prevents a render caused by
+    // another resolved asset from issuing the same in-flight request again.
+    missingIds.forEach((id) => knownUnavailableIds.add(id))
+    setUnavailableAssetIds((previous) => ({
+      ...previous,
+      ...Object.fromEntries(missingIds.map((id) => [id, true] as const)),
+    }))
 
     let cancelled = false
     ;(async () => {
       const entries = await Promise.all(
         missingIds.map(async (id) => {
-          try {
-            const response = await getAsset(id)
-            return [id, response?.data || null] as const
-          } catch {
-            return [id, null] as const
-          }
+          const asset = await resolveProjectAssetDetail(id)
+          return [id, asset] as const
         }),
       )
       if (cancelled) return
       const next: Record<string, AssetSummary> = {}
+      const resolvedIds: string[] = []
       entries.forEach(([id, asset]) => {
-        if (asset) next[id] = asset
+        if (asset) {
+          next[id] = asset
+          resolvedIds.push(id)
+          knownUnavailableIds.delete(id)
+        }
       })
+      if (resolvedIds.length) {
+        setUnavailableAssetIds((previous) => {
+          const remaining = { ...previous }
+          resolvedIds.forEach((id) => delete remaining[id])
+          return remaining
+        })
+      }
       if (Object.keys(next).length) {
         setAssetDetails((prev) => ({ ...prev, ...next }))
       }
@@ -1508,7 +2025,12 @@ export default function StoryPage() {
 
     const outputLinks = projectAssets.filter((link) => {
       const metadata = link.metadata || {}
-      return link.role === 'output' && metadata.source_type && metadata.source_index !== undefined
+      return (
+        link.role === 'output' &&
+        metadata.source !== 'video_generation' &&
+        metadata.source_type &&
+        metadata.source_index !== undefined
+      )
     })
 
     if (!outputLinks.length) {
@@ -1531,13 +2053,7 @@ export default function StoryPage() {
                 : undefined,
           }
           const key = imageContextKey(context)
-          let asset: any = null
-          try {
-            const response = await getAsset(link.asset_id)
-            asset = response?.data || null
-          } catch {
-            asset = null
-          }
+          const asset = await resolveProjectAssetDetail(link.asset_id)
           return [
             key,
             {
@@ -1575,17 +2091,102 @@ export default function StoryPage() {
   }, [selectedProject?.id, contents])
 
   useEffect(() => {
-    if (!chapters.length) return
-    const exists = chapters.some((item: ChapterPlanItem) => item.chapter_number === activeChapterNumber)
-    if (!exists) {
-      setActiveChapterNumber(chapters[0].chapter_number)
+    if (!selectedProject?.id || !chapters.length) return
+    const chapterNumbers = chapters
+      .map((item: ChapterPlanItem) => Number(item.chapter_number))
+      .filter((value) => Number.isInteger(value) && value > 0)
+    if (!chapterNumbers.length) return
+
+    const restoreState = activeChapterRestoreRef.current
+    if (restoreState.projectId !== selectedProject.id) {
+      restoreState.projectId = selectedProject.id
+      restoreState.restoredPersistedChapter = null
+      restoreState.pendingLocalChapter = null
     }
-  }, [chapters, activeChapterNumber])
+
+    const savedChapter = Number(selectedProject.metadata?.writer_room_active_chapter)
+    const hasSavedChapter = chapterNumbers.includes(savedChapter)
+
+    // A project-list refresh can arrive before the PATCH response. Keep the
+    // user's local selection until the server echoes the same persisted value.
+    if (restoreState.pendingLocalChapter !== null) {
+      if (savedChapter === restoreState.pendingLocalChapter) {
+        restoreState.restoredPersistedChapter = savedChapter
+        restoreState.pendingLocalChapter = null
+      } else if (chapterNumbers.includes(restoreState.pendingLocalChapter)) {
+        setActiveChapterNumber(restoreState.pendingLocalChapter)
+        return
+      } else {
+        restoreState.pendingLocalChapter = null
+      }
+    }
+
+    // Project details and chapter content load independently. Apply a newly
+    // hydrated saved chapter once, even when chapter data reached this effect
+    // first with incomplete project metadata.
+    if (hasSavedChapter && restoreState.restoredPersistedChapter !== savedChapter) {
+      restoreState.restoredPersistedChapter = savedChapter
+      setActiveChapterNumber(savedChapter)
+      return
+    }
+
+    if (!chapterNumbers.includes(activeChapterNumber)) {
+      setActiveChapterNumber(chapterNumbers[0])
+    }
+  }, [selectedProject?.id, selectedProject?.metadata?.writer_room_active_chapter, chapters, activeChapterNumber])
+
+  async function handleActiveChapterChange(nextChapter: number) {
+    if (!selectedProject) return
+    const chapterNumber = Number(nextChapter)
+    if (!chapters.some((item: ChapterPlanItem) => Number(item.chapter_number) === chapterNumber)) return
+
+    activeChapterRestoreRef.current.pendingLocalChapter = chapterNumber
+    setActiveChapterNumber(chapterNumber)
+    const metadata = { ...(selectedProject.metadata || {}), writer_room_active_chapter: chapterNumber }
+    try {
+      const response = (await updateCreativeProject(selectedProject.id, { metadata })) as CreativeProjectResponse
+      if (response.data) {
+        setSelectedProject(response.data)
+        setProjects((prev) => prev.map((item) => (item.id === response.data.id ? response.data : item)))
+      }
+    } catch (error: any) {
+      // The local selection remains usable; persistence can retry on the next chapter switch.
+      message.warning(error?.message || '保存当前写作章节失败')
+    }
+  }
+
+  async function handleCreativeSkillIdsChange(nextSkillIds: string[]) {
+    if (!selectedProject) return
+    const settings = {
+      ...(selectedProject.settings || {}),
+      creative_skill_ids: nextSkillIds,
+    }
+    try {
+      const response = (await updateCreativeProject(selectedProject.id, { settings })) as CreativeProjectResponse
+      if (response.data) {
+        setSelectedProject(response.data)
+        setProjects((prev) => prev.map((item) => (item.id === response.data.id ? response.data : item)))
+        message.success('已保存写作方法包')
+      }
+    } catch (error: any) {
+      message.error(error?.message || '保存写作方法包失败')
+    }
+  }
 
   const selectedProjectIndex = useMemo(
     () => projects.findIndex((item) => item.id === selectedId),
     [projects, selectedId],
   )
+
+  const retryWorkspaceLoads = () => {
+    if (!selectedProject) return
+    void Promise.all([
+      loadContents(selectedProject.id),
+      loadProjectAssets(selectedProject.id),
+      loadGenerationLogs(selectedProject.id),
+      loadProjectGraph(selectedProject.id),
+    ])
+  }
 
   const activeLlm = useMemo(
     () => llmConnectors.find((item) => item.name === selectedLlm) || null,
@@ -1633,9 +2234,7 @@ export default function StoryPage() {
       if (!chapterNumber || !item.content_type) return
       if (!grouped[item.content_type]) grouped[item.content_type] = {}
       const current = grouped[item.content_type][chapterNumber]
-      const currentVersion = current?.version || 0
-      const nextVersion = item.version || 0
-      if (!current || nextVersion > currentVersion) {
+      if (isProjectContentNewer(item, current)) {
         grouped[item.content_type][chapterNumber] = item
       }
     })
@@ -1645,10 +2244,77 @@ export default function StoryPage() {
   const contentForChapter = (contentType: string, chapterNumber: number) =>
     contentByChapter[contentType]?.[chapterNumber]
 
+  const productionStages = useMemo(() => {
+    const chapterTarget = Math.max(chapters.length, 1)
+    const countChapterOutput = (contentType: string) => Object.keys(contentByChapter[contentType] || {}).length
+    const productionComplete = ['chapter_outline', 'novel_body', 'script', 'storyboard']
+      .reduce((total, contentType) => total + countChapterOutput(contentType), 0)
+    const reviewedChapters = new Set(
+      writerRoomContents
+        .filter((item) => item.content_type === 'prose_review')
+        .map((item) => Number(item.chapter_number || item.episode_number || 0))
+        .filter(Boolean),
+    ).size
+
+    return [
+      { key: 'outline', tab: 'outline', label: '故事蓝图', hint: '大纲', complete: hasOutline ? 1 : 0, total: 1 },
+      {
+        key: 'bible',
+        tab: 'project-bible',
+        label: '项目设定',
+        hint: '圣经 / 世界',
+        complete: projectBibleContents.length || worldAssetContents.length ? 1 : 0,
+        total: 1,
+      },
+      { key: 'chapters', tab: 'chapters', label: '章节规划', hint: `${chapters.length} 话`, complete: chapters.length ? 1 : 0, total: 1 },
+      {
+        key: 'production',
+        tab: 'episode-workbench',
+        label: '单话制作',
+        hint: '细纲 / 正文 / 脚本 / 分镜',
+        complete: productionComplete,
+        total: chapterTarget * 4,
+      },
+      {
+        key: 'review',
+        tab: 'writer-room',
+        label: '写作审校',
+        hint: '候选与连续性',
+        complete: reviewedChapters,
+        total: Math.max(countChapterOutput('novel_body'), 1),
+      },
+      {
+        key: 'lineage',
+        tab: 'canvas',
+        label: '关系与交付',
+        hint: `${projectAssets.length} 个关联素材`,
+        complete: projectAssets.length ? 1 : 0,
+        total: 1,
+      },
+    ]
+  }, [
+    chapters.length,
+    contentByChapter,
+    hasOutline,
+    projectAssets.length,
+    projectBibleContents.length,
+    worldAssetContents.length,
+    writerRoomContents,
+  ])
+
   const activeChapter = useMemo(
     () => chapters.find((item: ChapterPlanItem) => item.chapter_number === activeChapterNumber) || null,
     [chapters, activeChapterNumber],
   )
+
+  const narrativeInspectorLogs = useMemo(() => {
+    const chapterContentIds = new Set(
+      contents
+        .filter((item) => Number(item.chapter_number || item.episode_number || 0) === activeChapterNumber)
+        .map((item) => item.id),
+    )
+    return generationLogs.filter((log) => log.content_id && chapterContentIds.has(log.content_id)).slice(0, 12)
+  }, [contents, generationLogs, activeChapterNumber])
 
   const isChapterActionLoading = (action: ChapterAction, chapterNumber: number) =>
     loadingChapterAction.action === action && loadingChapterAction.chapterNumber === chapterNumber
@@ -1687,12 +2353,16 @@ export default function StoryPage() {
       const response = (await listCreativeProjects({ limit: 80 })) as CreativeProjectListResponse
       const data = response.data || []
       setProjects(data)
-      const requestedId = nextSelectedId !== undefined ? nextSelectedId : selectedId
+      setProjectListError('')
+      const requestedId = nextSelectedId !== undefined
+        ? nextSelectedId
+        : searchParams.get('project_id') || selectedId
       const targetId = requestedId && data.some((item) => item.id === requestedId)
         ? requestedId
         : data[0]?.id || ''
       setSelectedId(targetId)
     } catch (error: any) {
+      setProjectListError(error?.message || '项目列表加载失败')
       message.error(error?.message || '项目列表加载失败')
     } finally {
       setLoadingAction(null)
@@ -1788,38 +2458,150 @@ export default function StoryPage() {
   }
 
   async function loadContents(projectId: string) {
+    setWorkspaceLoading((current) => ({ ...current, contents: true }))
     try {
-      const response = await listCreativeProjectContents(projectId)
+      const [response, historyResponse] = await Promise.all([
+        listCreativeProjectContents(projectId),
+        listCreativeProjectContents(projectId, undefined, { includeHistory: true }),
+      ])
       setContents(response?.data || [])
-    } catch {
+      setWriterRoomContents(historyResponse?.data || response?.data || [])
+      setWorkspaceErrors((current) => { const next = { ...current }; delete next.contents; return next })
+    } catch (error: any) {
       setContents([])
+      setWriterRoomContents([])
+      setWorkspaceErrors((current) => ({ ...current, contents: error?.message || '项目内容加载失败' }))
+    } finally {
+      setWorkspaceLoading((current) => ({ ...current, contents: false }))
     }
   }
 
   async function loadProjectAssets(projectId: string) {
+    setWorkspaceLoading((current) => ({ ...current, assets: true }))
     try {
       const response = await listCreativeProjectAssets(projectId)
       setProjectAssets(response?.data || [])
-    } catch {
+      setWorkspaceErrors((current) => { const next = { ...current }; delete next.assets; return next })
+    } catch (error: any) {
       setProjectAssets([])
+      setWorkspaceErrors((current) => ({ ...current, assets: error?.message || '项目素材关联加载失败' }))
+    } finally {
+      setWorkspaceLoading((current) => ({ ...current, assets: false }))
     }
   }
 
   async function loadGenerationLogs(projectId: string) {
+    setWorkspaceLoading((current) => ({ ...current, logs: true }))
     try {
       const response = await listCreativeProjectGenerationLogs(projectId, { limit: 80 })
       setGenerationLogs(response?.data || [])
-    } catch {
+      setWorkspaceErrors((current) => { const next = { ...current }; delete next.logs; return next })
+    } catch (error: any) {
       setGenerationLogs([])
+      setWorkspaceErrors((current) => ({ ...current, logs: error?.message || '生成日志加载失败' }))
+    } finally {
+      setWorkspaceLoading((current) => ({ ...current, logs: false }))
+    }
+  }
+
+  async function loadContinuityFacts(projectId: string) {
+    try {
+      const [candidates, summary] = await Promise.all([
+        listCreativeProjectContinuityCandidates(projectId, { limit: 200 }),
+        getCreativeProjectContinuityContextSummary(projectId),
+      ])
+      setContinuityCandidates(candidates?.data || [])
+      setContinuitySummary(summary?.data || null)
+    } catch {
+      setContinuityCandidates([])
+      setContinuitySummary(null)
+    }
+  }
+
+  async function ensureWritingPreflight(chapterNumber: number, stage: string, contentId?: string) {
+    if (!selectedProject) return false
+    try {
+      const response = await getCreativeProjectWritingPreflight(selectedProject.id, {
+        chapterNumber,
+        stage,
+        contentId,
+      })
+      const result = response?.data
+      if (result?.ready) return true
+      message.warning(result?.next_action || '当前阶段还有前置条件未完成')
+      return false
+    } catch (error: any) {
+      message.warning(error?.message || '无法检查当前写作阶段的前置条件')
+      return false
+    }
+  }
+
+  async function loadNarrativeRuntime(projectId: string, chapterNumber: number) {
+    setNarrativeLoading(true)
+    try {
+      const [context, chapterLedger, fullLedger, graph, health, runs] = await Promise.allSettled([
+        getCreativeProjectNarrativeContextPreview(projectId, chapterNumber),
+        listCreativeProjectForeshadowing(projectId, { chapterNumber }),
+        listCreativeProjectForeshadowing(projectId),
+        getCreativeProjectNarrativeGraph(projectId, { chapterNumber }),
+        getCreativeProjectNarrativeHealth(projectId),
+        listCreativeProjectNarrativeRuns(projectId),
+      ])
+      setNarrativeContext(context.status === 'fulfilled' ? context.value?.data || null : null)
+      setForeshadowingLedger(chapterLedger.status === 'fulfilled' ? chapterLedger.value?.data?.data || [] : [])
+      setAllForeshadowingLedger(fullLedger.status === 'fulfilled' ? fullLedger.value?.data?.data || [] : [])
+      setNarrativeGraphData(graph.status === 'fulfilled' ? graph.value?.data || null : null)
+      setNarrativeHealth(health.status === 'fulfilled' ? health.value?.data || null : null)
+      setNarrativeRuns(runs.status === 'fulfilled' ? runs.value?.data || [] : [])
+    } finally {
+      setNarrativeLoading(false)
+    }
+  }
+
+  async function handleNarrativeRunControl(runId: string, action: 'pause' | 'resume' | 'retry' | 'cancel') {
+    if (!selectedProject) return
+    try {
+      await controlCreativeProjectNarrativeRun(selectedProject.id, runId, action)
+      await loadNarrativeRuntime(selectedProject.id, activeChapterNumber)
+    } catch (error: any) {
+      message.error(error?.message || '叙事运行操作失败')
+    }
+  }
+
+  async function handleNarrativeAutopilot(enabled: boolean) {
+    if (!selectedProject) return
+    try {
+      await configureCreativeProjectNarrativeAutopilot(selectedProject.id, {
+        enabled,
+        chapter_numbers: [activeChapterNumber],
+      })
+      await loadNarrativeRuntime(selectedProject.id, activeChapterNumber)
+    } catch (error: any) {
+      message.error(error?.message || '受控自动推进配置失败')
+    }
+  }
+
+  async function handleForeshadowingDecision(itemId: string, action: 'accept' | 'advance' | 'resolve' | 'ignore') {
+    if (!selectedProject) return
+    try {
+      await decideCreativeProjectForeshadowing(selectedProject.id, itemId, action, { current_chapter: activeChapterNumber })
+      await loadNarrativeRuntime(selectedProject.id, activeChapterNumber)
+    } catch (error: any) {
+      message.error(error?.message || '伏笔状态更新失败')
     }
   }
 
   async function loadProjectGraph(projectId: string) {
+    setWorkspaceLoading((current) => ({ ...current, graph: true }))
     try {
       const response = await getCreativeProjectCanvas(projectId)
       setProjectGraph(response?.data || { nodes: [], edges: [] })
-    } catch {
+      setWorkspaceErrors((current) => { const next = { ...current }; delete next.graph; return next })
+    } catch (error: any) {
       setProjectGraph({ nodes: [], edges: [] })
+      setWorkspaceErrors((current) => ({ ...current, graph: error?.message || '项目关系图谱加载失败' }))
+    } finally {
+      setWorkspaceLoading((current) => ({ ...current, graph: false }))
     }
   }
 
@@ -1917,6 +2699,7 @@ export default function StoryPage() {
       setSelectedId('')
       setSelectedProject(null)
       setContents([])
+      setWriterRoomContents([])
       setProjectAssets([])
       setGenerationLogs([])
       await loadProjects()
@@ -2250,30 +3033,19 @@ export default function StoryPage() {
     try {
       const response = (await generateCreativeProjectChapterPlan(selectedProject.id, {
         chapter_count: chapterCount,
+        append_existing: Boolean(options.preserveLocked),
         provider: selectedLlm || undefined,
         model: selectedModel || undefined,
         template_id: selectedPromptTemplates.chapter_plan || undefined,
       })) as CreativeProjectGenerateResponse
-      message.success('章节规划已生成')
-      if (options.preserveLocked && response.project) {
-        const lockedByNumber = new Map(
-          chapters
-            .filter((item: ChapterPlanItem) => isChapterLocked(item))
-            .map((item: ChapterPlanItem) => [Number(item.chapter_number), item]),
-        )
-        const generatedPlan = normalizeChapterPlan(response.project.chapter_plan || {})
-        const mergedPlan = {
-          ...generatedPlan,
-          chapters: (generatedPlan.chapters || []).map((item) => {
-            const locked = lockedByNumber.get(Number(item.chapter_number))
-            return locked ? normalizeChapterItem(locked) : item
-          }),
-        }
-        const saved = (await updateCreativeProject(selectedProject.id, { chapter_plan: mergedPlan })) as CreativeProjectResponse
-        await refreshSelected(saved.data || response.project)
-        message.success(lockedByNumber.size ? `已保留 ${lockedByNumber.size} 个锁定章节` : '没有锁定章节，已使用新规划')
+      await refreshSelected(response.project || null)
+      if (options.preserveLocked) {
+        const appended = Array.isArray(response.data?.appended_chapter_numbers)
+          ? response.data.appended_chapter_numbers.length
+          : 0
+        message.success(appended ? `已保留现有规划，并续写 ${appended} 章` : '现有章节规划已保留，无需补充')
       } else {
-        await refreshSelected(response.project || null)
+        message.success('章节规划已生成')
       }
     } catch (error: any) {
       message.error(error?.message || '章节规划生成失败')
@@ -2316,6 +3088,7 @@ export default function StoryPage() {
     }
 
     setLoadingAction('pipeline')
+    setPipelineRunStatus('running')
     if (!options.retryFailed) {
       setPipelineResult(null)
     }
@@ -2336,6 +3109,7 @@ export default function StoryPage() {
       const result = response.data || null
       setPipelineResult(result)
       const { generated, skipped, failed } = getPipelineSummary(result)
+      setPipelineRunStatus(failed > 0 ? (generated > 0 || skipped > 0 ? 'partial' : 'failed') : 'success')
       message.success(`${options.retryFailed ? '失败步骤重试' : '批量生产'}完成：生成 ${generated}，跳过 ${skipped}，失败 ${failed}`)
       if (response.project) {
         await refreshSelected(response.project)
@@ -2346,6 +3120,7 @@ export default function StoryPage() {
       await loadProjectAssets(selectedProject.id)
       await loadGenerationLogs(selectedProject.id)
     } catch (error: any) {
+      setPipelineRunStatus('failed')
       message.error(error?.message || '批量生产失败')
       await loadGenerationLogs(selectedProject.id)
     } finally {
@@ -2408,6 +3183,7 @@ export default function StoryPage() {
 
   async function handleGenerateChapterOutline(chapterNumber: number) {
     if (!selectedProject) return
+    if (!(await ensureWritingPreflight(chapterNumber, 'chapter_outline'))) return
     setLoadingAction('chapter_outline')
     setLoadingChapterAction({ action: 'chapter_outline', chapterNumber })
     try {
@@ -2463,6 +3239,7 @@ export default function StoryPage() {
       message.warning('请先生成这一章的细纲')
       return
     }
+    if (!(await ensureWritingPreflight(chapterNumber, 'novel_body'))) return
     setLoadingAction('novel_body')
     setLoadingChapterAction({ action: 'novel_body', chapterNumber })
     try {
@@ -2495,6 +3272,7 @@ export default function StoryPage() {
       message.warning('请填写正文修改要求')
       return
     }
+    if (!(await ensureWritingPreflight(chapterNumber, 'novel_body_refine', novelBody.id))) return
     setLoadingAction('novel_body_refine')
     setLoadingChapterAction({ action: 'novel_body_refine', chapterNumber })
     try {
@@ -2659,7 +3437,7 @@ export default function StoryPage() {
     }
   }
 
-  async function handleRunWriterRoomBatch(chapterNumber: number, steps?: string[]) {
+  async function handleRunWriterRoomBatch(chapterNumber: number, steps?: string[], contentId?: string) {
     if (!selectedProject) return
     const runSteps = steps?.length
       ? steps
@@ -2673,12 +3451,13 @@ export default function StoryPage() {
       const response = (await runCreativeProjectWriterRoom(selectedProject.id, {
         chapter_number: chapterNumber,
         steps: runSteps,
+        content_id: contentId,
         provider: selectedLlm || undefined,
         model: selectedModel || undefined,
         continue_on_error: true,
-      })) as CreativeProjectGenerateResponse<{ summary?: { success?: number; failed?: number } }>
+      })) as CreativeProjectGenerateResponse<{ summary?: { success?: number; failed?: number; skipped?: number } }>
       const summary = response.data?.summary || {}
-      message.success(`写作室批量完成：成功 ${summary.success || 0}，失败 ${summary.failed || 0}`)
+      message.success(`写作室批量完成：成功 ${summary.success || 0}，失败 ${summary.failed || 0}，跳过 ${summary.skipped || 0}`)
       await loadContents(selectedProject.id)
       await loadGenerationLogs(selectedProject.id)
     } catch (error: any) {
@@ -2705,6 +3484,99 @@ export default function StoryPage() {
     }
   }
 
+  async function handleResolveContinuityCandidate(candidateId: string, action: 'accept' | 'ignore') {
+    if (!selectedProject) return
+    setLoadingAction('writer_room')
+    try {
+      await resolveCreativeProjectContinuityCandidate(selectedProject.id, candidateId, action)
+      message.success(action === 'accept' ? '已锁定为项目事实' : '已忽略该候选')
+      await Promise.all([loadContents(selectedProject.id), loadContinuityFacts(selectedProject.id)])
+    } catch (error: any) {
+      message.error(error?.message || '处理连续性候选失败')
+    } finally {
+      setLoadingAction(null)
+    }
+  }
+
+  async function handleRewriteParagraph(
+    contentId: string,
+    paragraphIndex: number,
+    instruction: string,
+  ) {
+    if (!selectedProject) return
+    setLoadingAction('writer_room')
+    try {
+      const response = await rewriteCreativeProjectParagraph(selectedProject.id, contentId, {
+        paragraph_index: paragraphIndex,
+        instruction,
+        provider: selectedLlm || undefined,
+        model: selectedModel || undefined,
+      })
+      if (response?.data?.anchor_not_found) {
+        message.warning('没有找到这个段落锚点，请重新选择段落')
+      } else {
+        message.success('已生成段落重写候选版本')
+      }
+      await Promise.all([loadContents(selectedProject.id), loadGenerationLogs(selectedProject.id)])
+    } catch (error: any) {
+      message.error(error?.message || '段落重写失败')
+    } finally {
+      setLoadingAction(null)
+    }
+  }
+
+  async function handleSaveContentAsAsset(contentId: string) {
+    if (!selectedProject) return
+    setLoadingAction('asset')
+    try {
+      const response = await saveCreativeProjectContentAsAsset(selectedProject.id, contentId)
+      message.success(response?.created_node ? '已保存为文本素材' : '已新增文本素材版本')
+      await loadProjectAssets(selectedProject.id)
+    } catch (error: any) {
+      message.error(error?.message || '保存文本素材失败')
+    } finally {
+      setLoadingAction(null)
+    }
+  }
+
+  async function handleExtractContinuity(contentId: string) {
+    if (!selectedProject) return
+    setLoadingAction('project_bible')
+    try {
+      const response = await extractCreativeProjectContinuity(selectedProject.id, contentId)
+      const count = response?.data?.length || 0
+      message.success(count ? `已提取 ${count} 条连续性候选卡` : '连续性候选卡已存在')
+      await loadContents(selectedProject.id)
+    } catch (error: any) {
+      message.error(error?.message || '提取连续性候选失败')
+    } finally {
+      setLoadingAction(null)
+    }
+  }
+
+  function handleOpenVideoGeneration(prompt: string, context: VideoGenerationContext = {}) {
+    if (!selectedProject) return
+    const params = new URLSearchParams({
+      prompt: prompt.trim(),
+      project_id: selectedProject.id,
+      content_id: context.contentId || '',
+      chapter_number: String(context.chapterNumber ?? activeChapterNumber),
+      source_index: context.sourceIndex !== undefined ? String(context.sourceIndex) : '',
+      source_type: context.sourceType || 'storyboard_panel',
+      source_title: context.sourceTitle || '',
+      aspect_ratio: '9:16',
+      duration: String(normalizeStoryboardVideoDuration(context.durationSeconds)),
+      generate_audio: context.generateAudio ? 'true' : 'false',
+    })
+    const referenceAssetIds = dedupeStrings([
+      ...(context.referenceAssetIds || []),
+      ...(context.portraitNodeIds || []),
+    ])
+    if (referenceAssetIds.length) params.set('reference_asset_ids', referenceAssetIds.join(','))
+    if (context.musicHint?.trim()) params.set('music_hint', context.musicHint.trim())
+    navigate(`/video-gen?${params.toString()}`)
+  }
+
   async function handleBatchGenerateStoryboardImages(chapterNumber: number) {
     const storyboard = contentForChapter('storyboard', chapterNumber)
     if (!storyboard) {
@@ -2719,6 +3591,19 @@ export default function StoryPage() {
     const panels = (storyboard.data?.panels || []).filter((panel: any) => panel?.image_prompt)
     if (!panels.length) {
       message.warning('当前分镜没有可用的生图提示词')
+      return
+    }
+    const pendingPanels = panels.filter((panel: any) => {
+      const key = imageContextKey({
+        contentId: storyboard.id,
+        sourceType: 'storyboard_panel',
+        sourceIndex: panel.panel_number,
+        chapterNumber,
+      })
+      return !inlineImages[key]
+    })
+    if (!pendingPanels.length) {
+      message.success('本话分镜图都已经生成过了')
       return
     }
     const plannedCharacterIds = dedupeStrings(
@@ -2758,6 +3643,18 @@ export default function StoryPage() {
       message.info(`本次批量生成最多会随分镜发送 ${referenceSummary.sentReferenceImages} 张参考图`)
     }
 
+    const confirmed = await new Promise<boolean>((resolve) => {
+      Modal.confirm({
+        title: '确认批量生图',
+        content: `将使用「${defaultImageModel.name}」提交 ${pendingPanels.length} 个分镜任务，最多携带 ${referenceSummary.sentReferenceImages} 张参考图。${defaultImageSupportsReferenceImages ? '' : '当前模型不会上传参考图。'}`,
+        okText: '开始生成',
+        cancelText: '返回检查',
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false),
+      })
+    })
+    if (!confirmed) return
+
     setBatchStoryboardImageChapter(chapterNumber)
     try {
       let generated = 0
@@ -2769,7 +3666,7 @@ export default function StoryPage() {
           chapterNumber,
         })
         if (inlineImages[key]) continue
-        await handleInlineGenerateImage(panel.image_prompt, {
+        const completed = await handleInlineGenerateImage(panel.image_prompt, {
           contentId: storyboard.id,
           sourceType: 'storyboard_panel',
           sourceIndex: panel.panel_number,
@@ -2779,8 +3676,8 @@ export default function StoryPage() {
           characterIds: panel.character_ids || [],
           portraitNodeIds: panel.portrait_node_ids || [],
           portraitVersionIds: panel.portrait_version_ids || [],
-        })
-        generated += 1
+        }, { awaitAsync: true })
+        if (completed) generated += 1
       }
       message.success(generated ? `已批量生成 ${generated} 张分镜图` : '本话分镜图都已经生成过了')
     } finally {
@@ -3004,20 +3901,30 @@ export default function StoryPage() {
     },
   ]
 
+  const workspaceErrorEntries = Object.entries(workspaceErrors)
+
   return (
-    <div className="story-theme-page" style={{ padding: 24, maxWidth: 1760, margin: '0 auto', color: theme.textPrimary }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, marginBottom: 20 }}>
-        <div>
-          <Title level={2} style={{ marginBottom: 4 }}>
-            创作项目
-          </Title>
-          <Text type="secondary">小说、短剧、漫画的结构化创作工作台</Text>
+    <div ref={storyPageRef} className="story-theme-page story-production-desk" style={{ padding: '18px 24px 24px', maxWidth: 1760, margin: '0 auto', color: theme.textPrimary }}>
+      <header
+        style={{
+          display: 'grid',
+          gridTemplateColumns: cockpitCompact ? 'minmax(0, 1fr)' : 'minmax(220px, 1fr) minmax(0, auto)',
+          alignItems: 'center',
+          gap: '10px 20px',
+          marginBottom: 14,
+          paddingBottom: 14,
+          borderBottom: `1px solid ${theme.borderLight}`,
+        }}
+      >
+        <div style={{ minWidth: 220 }}>
+          <Text strong style={{ fontSize: 16 }}>项目制作台</Text>
+          <Text type="secondary" style={{ display: 'block', marginTop: 2 }}>从故事设定到可追溯的内容与素材产出</Text>
         </div>
-        <Space>
+        <Space wrap size={[8, 8]} style={{ justifyContent: cockpitCompact ? 'flex-start' : 'flex-end', minWidth: 0 }}>
           <Select
             placeholder="文本模型"
             value={selectedLlm || undefined}
-            style={{ width: 220 }}
+            style={{ width: 190 }}
             options={llmConnectors.map((item) => ({
               label: `${item.name}${item.is_default ? '（默认）' : ''}`,
               value: item.name,
@@ -3031,7 +3938,7 @@ export default function StoryPage() {
           <Select
             placeholder="模型"
             value={selectedModel || undefined}
-            style={{ width: 260 }}
+            style={{ width: 210 }}
             options={modelOptions}
             onChange={setSelectedModel}
             disabled={!selectedLlm}
@@ -3041,43 +3948,47 @@ export default function StoryPage() {
             showSearch
             placeholder="默认生图模型"
             value={defaultImageModel.name || undefined}
-            style={{ width: 280 }}
+            style={{ width: 230 }}
             options={imageModelOptions}
             loading={savingImageModel}
             onChange={handleDefaultImageModelChange}
             optionFilterProp="label"
             disabled={!selectedProject}
           />
-          <Button onClick={() => navigate('/platform-templates?scope=creative_project')}>
-            模板管理
-          </Button>
-          <Button icon={<ReloadOutlined />} onClick={() => loadProjects(selectedId)}>
-            刷新
-          </Button>
-          <Popconfirm
-            title="删除当前创作项目？"
-            description="只删除项目、内容版本、日志和项目关联，不删除角色库角色或素材库资产。"
-            okText="删除"
-            cancelText="取消"
-            okButtonProps={{ danger: true, loading: loadingAction === 'delete_project' }}
-            onConfirm={handleDeleteProject}
-            disabled={!selectedProject}
-          >
-            <Button danger icon={<DeleteOutlined />} disabled={!selectedProject}>
-              删除项目
+          <Tooltip title="提示词与平台模板">
+            <Button icon={<FileTextOutlined />} onClick={() => navigate('/platform-templates?scope=creative_project')}>
+              模板
             </Button>
-          </Popconfirm>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
-            新建项目
-          </Button>
+          </Tooltip>
+          <Tooltip title="刷新项目数据">
+            <Button aria-label="刷新项目数据" icon={<ReloadOutlined />} onClick={() => loadProjects(selectedId)} />
+          </Tooltip>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>新建项目</Button>
         </Space>
-      </div>
+      </header>
+
+      {workspaceErrorEntries.length > 0 ? (
+        <Alert
+          type="error"
+          showIcon
+          message="项目工作台有数据加载失败"
+          description={workspaceErrorEntries.map(([key, value]) => `${key}: ${value}`).join('；')}
+          action={<Button size="small" onClick={retryWorkspaceLoads}>重试</Button>}
+          style={{ marginBottom: 16 }}
+        />
+      ) : null}
 
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: `${projectLibraryWidth}px 10px minmax(0, 1fr)`,
-          gap: 8,
+          gridTemplateColumns: workspaceNarrow
+            ? 'minmax(0, 1fr)'
+            : projectLibraryCollapsed
+            ? cockpitCompact ? '48px 0 minmax(0, 1fr)' : '48px 0 minmax(0, 1fr) minmax(280px, 320px)'
+            : cockpitCompact
+              ? `${projectLibraryWidth}px 10px minmax(0, 1fr)`
+              : `${projectLibraryWidth}px 10px minmax(0, 1fr) minmax(280px, 320px)`,
+          gap: workspaceNarrow ? 12 : projectLibraryCollapsed ? 6 : 8,
           alignItems: 'start',
         }}
       >
@@ -3087,21 +3998,59 @@ export default function StoryPage() {
             borderRadius: 8,
             background: theme.bgCard,
             overflow: 'hidden',
+            minHeight: projectLibraryCollapsed ? 620 : undefined,
+            display: 'flex',
+            flexDirection: 'column',
           }}
         >
-          <div style={{ padding: '14px 16px', borderBottom: `1px solid ${theme.border}` }}>
-            <Space>
-              <FolderOpenOutlined />
-              <Text strong>项目库</Text>
-              <Badge count={projects.length} showZero color="#1677ff" />
-            </Space>
+          <div
+            style={{
+              padding: projectLibraryCollapsed ? '12px 8px' : '14px 16px',
+              borderBottom: projectLibraryCollapsed ? 'none' : `1px solid ${theme.border}`,
+            }}
+          >
+            {projectLibraryCollapsed ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+                <Tooltip title="展开项目库">
+                  <Button
+                    type="text"
+                    aria-label="展开项目库"
+                    icon={<MenuUnfoldOutlined />}
+                    onClick={() => setProjectLibraryCollapsed(false)}
+                    style={{ color: theme.textPrimary }}
+                  />
+                </Tooltip>
+                <Badge count={projects.length} showZero color="#1677ff">
+                  <FolderOpenOutlined style={{ color: theme.textSecondary }} />
+                </Badge>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, width: '100%' }}>
+                <Space size={8} style={{ minWidth: 0 }}>
+                  <FolderOpenOutlined />
+                  <Text strong>项目库</Text>
+                  <Badge count={projects.length} showZero color="#1677ff" />
+                </Space>
+                <Tooltip title="折叠项目库">
+                  <Button
+                    type="text"
+                    size="small"
+                    aria-label="折叠项目库"
+                    icon={<MenuFoldOutlined />}
+                    onClick={() => setProjectLibraryCollapsed(true)}
+                    style={{ color: theme.textSecondary, flex: '0 0 auto' }}
+                  />
+                </Tooltip>
+              </div>
+            )}
           </div>
-          {loadingAction === 'projects' && !projects.length ? (
+          {!projectLibraryCollapsed && loadingAction === 'projects' && !projects.length ? (
             <div style={{ padding: 16 }}>
               <Skeleton active paragraph={{ rows: 8 }} />
             </div>
-          ) : projects.length ? (
+          ) : !projectLibraryCollapsed && projects.length ? (
             <List
+              style={{ flex: '0 1 320px', minHeight: 0, overflowY: 'auto' }}
               dataSource={projects}
               rowKey="id"
               renderItem={(item, index) => (
@@ -3135,23 +4084,49 @@ export default function StoryPage() {
                 </List.Item>
               )}
             />
-          ) : (
+          ) : !projectLibraryCollapsed && projectListError ? (
+            <div style={{ padding: 16 }}>
+              <Alert
+                type="error"
+                showIcon
+                message="项目列表加载失败"
+                description={projectListError}
+                action={<Button size="small" onClick={() => loadProjects(selectedId)}>重试</Button>}
+              />
+            </div>
+          ) : !projectLibraryCollapsed ? (
             <div style={{ padding: 24 }}>
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无项目" />
             </div>
-          )}
+          ) : null}
+          {!projectLibraryCollapsed && selectedProject ? (
+            <ChapterRail
+              theme={theme}
+              chapters={chapters}
+              activeChapterNumber={activeChapterNumber}
+              contents={contents}
+              writerRoomContents={writerRoomContents}
+              ledger={allForeshadowingLedger}
+              health={narrativeHealth}
+              onChapterChange={handleActiveChapterChange}
+            />
+          ) : null}
         </section>
 
-        <ResizeHandle
-          onMouseDown={(event) =>
-            startHorizontalResize(event, {
-              initial: projectLibraryWidth,
-              min: 190,
-              max: 360,
-              onChange: setProjectLibraryWidth,
-            })
-          }
-        />
+        {workspaceNarrow ? null : projectLibraryCollapsed ? (
+          <div />
+        ) : (
+          <ResizeHandle
+            onMouseDown={(event) =>
+              startHorizontalResize(event, {
+                initial: projectLibraryWidth,
+                min: 190,
+                max: 360,
+                onChange: setProjectLibraryWidth,
+              })
+            }
+          />
+        )}
 
         <main
           style={{
@@ -3167,8 +4142,8 @@ export default function StoryPage() {
             </div>
           ) : (
             <>
-              <div style={{ padding: 20, borderBottom: `1px solid ${theme.border}` }}>
-                <Space direction="vertical" size={8} style={{ width: '100%' }}>
+              <div style={{ padding: '20px 20px 16px', borderBottom: `1px solid ${theme.border}` }}>
+                <Space direction="vertical" size={12} style={{ width: '100%' }}>
                   <Space style={{ justifyContent: 'space-between', width: '100%' }} align="start">
                     <div>
                       <Space size={10} wrap>
@@ -3177,7 +4152,6 @@ export default function StoryPage() {
                         </Title>
                         <Button
                           size="small"
-                          type="text"
                           icon={<EditOutlined />}
                           onClick={openRenameModal}
                           loading={loadingAction === 'rename'}
@@ -3187,13 +4161,18 @@ export default function StoryPage() {
                         <Tag color="processing">{projectTypeLabel(selectedProject.project_type)}</Tag>
                         <Tag>{stageLabels[selectedProject.current_stage] || selectedProject.current_stage}</Tag>
                         <Button
-                          size="small"
                           type="primary"
                           icon={<RobotOutlined />}
                           onClick={handleAgentAdvanceProject}
                           loading={loadingAction === 'agent_advance'}
                         >
                           智能体推进
+                        </Button>
+                        <Button
+                          icon={<DownloadOutlined />}
+                          href={`/api/v1/creative-projects/${selectedProject.id}/export`}
+                        >
+                          导出项目
                         </Button>
                       </Space>
                       {idea && (
@@ -3202,28 +4181,72 @@ export default function StoryPage() {
                         </Paragraph>
                       )}
                     </div>
-                    <Text type="secondary">
-                      {selectedProjectIndex >= 0 ? `#${projects.length - selectedProjectIndex}` : ''}
-                    </Text>
+                    <Space direction="vertical" size={2} align="end">
+                      <Text type="secondary">{selectedProjectIndex >= 0 ? `项目 ${projects.length - selectedProjectIndex}` : ''}</Text>
+                      <Popconfirm
+                        title="删除当前创作项目？"
+                        description="只删除项目、内容版本、日志和项目关联，不删除角色库角色或素材库资产。"
+                        okText="删除"
+                        cancelText="取消"
+                        okButtonProps={{ danger: true, loading: loadingAction === 'delete_project' }}
+                        onConfirm={handleDeleteProject}
+                      >
+                        <Button type="text" size="small" danger icon={<DeleteOutlined />}>删除</Button>
+                      </Popconfirm>
+                    </Space>
                   </Space>
                 </Space>
               </div>
 
-              <PipelinePanel
+              <ProductionStageRail
                 theme={theme}
-                stages={pipelineStages}
-                onStagesChange={setPipelineStages}
-                chapterRange={pipelineChapters}
-                onChapterRangeChange={setPipelineChapters}
-                skipExisting={pipelineSkipExisting}
-                onSkipExistingChange={setPipelineSkipExisting}
-                continueOnError={pipelineContinueOnError}
-                onContinueOnErrorChange={setPipelineContinueOnError}
-                loading={loadingAction === 'pipeline'}
-                result={pipelineResult}
-                onRun={handleRunPipeline}
-                onRetryFailed={() => handleRunPipeline({ retryFailed: true })}
+                stages={productionStages}
+                activeTab={activeWorkspaceTab}
+                onSelect={(tab) => setActiveWorkspaceTab(tab)}
               />
+
+              <Collapse
+                ghost
+                size="small"
+                activeKey={pipelineOpen ? ['production'] : []}
+                onChange={(keys) => setPipelineOpen(keys.includes('production'))}
+                style={{ margin: '0 20px' }}
+                items={[
+                  {
+                    key: 'production',
+                    label: <Text strong>批量生产设置</Text>,
+                    extra: pipelineRunStatus !== 'idle' ? <Tag color={pipelineRunStatus === 'failed' ? 'red' : pipelineRunStatus === 'partial' ? 'orange' : 'blue'}>{pipelineRunStatus === 'running' ? '运行中' : pipelineRunStatus === 'partial' ? '部分完成' : pipelineRunStatus === 'failed' ? '失败' : '已完成'}</Tag> : <Text type="secondary">按依赖顺序补齐章节</Text>,
+                    children: (
+                      <PipelinePanel
+                        theme={theme}
+                        stages={pipelineStages}
+                        onStagesChange={setPipelineStages}
+                        chapterRange={pipelineChapters}
+                        onChapterRangeChange={setPipelineChapters}
+                        skipExisting={pipelineSkipExisting}
+                        onSkipExistingChange={setPipelineSkipExisting}
+                        continueOnError={pipelineContinueOnError}
+                        onContinueOnErrorChange={setPipelineContinueOnError}
+                        loading={loadingAction === 'pipeline'}
+                        result={pipelineResult}
+                        runStatus={pipelineRunStatus}
+                        onRun={handleRunPipeline}
+                        onRetryFailed={() => handleRunPipeline({ retryFailed: true })}
+                      />
+                    ),
+                  },
+                ]}
+              />
+
+              {Object.values(workspaceLoading).some(Boolean) ? (
+                <Alert
+                  type="info"
+                  showIcon
+                  message="正在加载项目工作台"
+                  description="内容、素材、生成日志和关系图谱正在分别同步；已有数据仍可继续查看。"
+                  style={{ margin: '16px 20px 0' }}
+                />
+              ) : null}
 
               <Tabs
                 style={{ padding: '0 20px 20px' }}
@@ -3274,6 +4297,7 @@ export default function StoryPage() {
                         savingContentId={savingContentId}
                         onSync={handleSyncProjectBible}
                         onSaveContent={handleSaveContent}
+                        onSaveAsAsset={handleSaveContentAsAsset}
                       />
                     ),
                   },
@@ -3338,9 +4362,10 @@ export default function StoryPage() {
                     ),
                     children: (
                       <EpisodeWorkbenchTab
+                        projectId={selectedProject?.id || ''}
                         chapters={chapters}
                         activeChapterNumber={activeChapterNumber}
-                        onActiveChapterChange={setActiveChapterNumber}
+                        onActiveChapterChange={handleActiveChapterChange}
                         activeChapter={activeChapter}
                         contentForChapter={contentForChapter}
                         isChapterActionLoading={isChapterActionLoading}
@@ -3360,6 +4385,10 @@ export default function StoryPage() {
                         onRegenerateChapterOutlineScenes={handleRegenerateChapterOutlineScenes}
                         onGenerateNovelBody={handleGenerateNovelBody}
                         onRefineNovelBody={handleRefineNovelBody}
+                        onSaveContentAsAsset={handleSaveContentAsAsset}
+                        onExtractContinuity={handleExtractContinuity}
+                        continuityExtracting={loadingAction === 'project_bible'}
+                        onOpenFanqiePublish={() => setFanqieOpen(true)}
                         onGenerateScript={handleGenerateScript}
                         onGenerateStoryboard={handleGenerateStoryboardForChapter}
                         onMatchReferenceAssets={handleMatchReferenceAssets}
@@ -3370,11 +4399,17 @@ export default function StoryPage() {
                         onUpdateStoryboardPanelReferences={handleUpdateStoryboardPanelReferences}
                         onLinkReferenceAsset={handleLinkAsset}
                         onSendImagePrompt={handleInlineGenerateImage}
+                        onOpenVideoGeneration={handleOpenVideoGeneration}
                         inlineImages={inlineImages}
                         inlineImageLoadingKey={inlineImageLoadingKey}
+                        pendingImageTaskKey={pendingInlineImageTask?.key}
+                        pendingImageTaskId={pendingInlineImageTask?.taskId}
                         batchStoryboardImageChapter={batchStoryboardImageChapter}
                         defaultImageModelName={defaultImageModel.name || ''}
                         defaultImageSupportsReferenceImages={defaultImageSupportsReferenceImages}
+                        selectedCreativeSkillIds={selectedCreativeSkillIds}
+                        onCreativeSkillIdsChange={handleCreativeSkillIdsChange}
+                        compact={workspaceNarrow}
                       />
                     ),
                   },
@@ -3390,8 +4425,8 @@ export default function StoryPage() {
                       <WriterRoomTab
                         chapters={chapters}
                         activeChapterNumber={activeChapterNumber}
-                        onActiveChapterChange={setActiveChapterNumber}
-                        contents={contents}
+                        onActiveChapterChange={handleActiveChapterChange}
+                        contents={writerRoomContents}
                         contentForChapter={contentForChapter}
                         logs={generationLogs}
                         templateOptionsByStage={templateOptionsByStage}
@@ -3416,6 +4451,10 @@ export default function StoryPage() {
                         onRunStep={handleRunWriterRoomStep}
                         onRunBatch={handleRunWriterRoomBatch}
                         onPromote={handlePromoteWriterRoomContent}
+                        continuityCandidates={continuityCandidates}
+                        continuitySummary={continuitySummary}
+                        onResolveContinuityCandidate={handleResolveContinuityCandidate}
+                        onRewriteParagraph={handleRewriteParagraph}
                       />
                     ),
                   },
@@ -3479,6 +4518,16 @@ export default function StoryPage() {
                     ),
                   },
                   {
+                    key: 'narrative-graph',
+                    label: (
+                      <Space>
+                        <BranchesOutlined />
+                        叙事图谱
+                      </Space>
+                    ),
+                    children: <NarrativeGraphTab graph={narrativeGraphData} chapterNumber={activeChapterNumber} />,
+                  },
+                  {
                     key: 'assets',
                     label: (
                       <Space>
@@ -3489,6 +4538,7 @@ export default function StoryPage() {
                     children: (
                       <AssetsTab
                         assets={projectAssets}
+                        unavailableAssetIds={unavailableAssetIds}
                         loading={loadingAction === 'asset'}
                         onLinkAsset={handleLinkAsset}
                       />
@@ -3526,7 +4576,65 @@ export default function StoryPage() {
             </>
           )}
         </main>
+        {!cockpitCompact && selectedProject ? (
+          <aside
+            aria-label="叙事检查器"
+            style={{
+              borderLeft: `1px solid ${theme.borderLight}`,
+              background: theme.bgCard,
+              minHeight: 620,
+              minWidth: 0,
+            }}
+          >
+            <NarrativeInspector
+              theme={theme}
+              chapterNumber={activeChapterNumber}
+              context={narrativeContext}
+              ledger={foreshadowingLedger}
+              graph={narrativeGraphData}
+              facts={[...projectBibleContents, ...worldAssetContents]}
+              continuityCandidates={continuityCandidates}
+              continuitySummary={continuitySummary}
+              logs={narrativeInspectorLogs}
+              runs={narrativeRuns}
+              loading={narrativeLoading}
+              onRefresh={() => selectedProject && loadNarrativeRuntime(selectedProject.id, activeChapterNumber)}
+              onDecision={handleForeshadowingDecision}
+              onRunControl={handleNarrativeRunControl}
+              onAutopilot={handleNarrativeAutopilot}
+              onOpenWriterRoom={() => setActiveWorkspaceTab('writer-room')}
+              onOpenFacts={() => setActiveWorkspaceTab('project-bible')}
+            />
+          </aside>
+        ) : null}
       </div>
+
+      {cockpitCompact && selectedProject ? (
+        <aside
+          aria-label="叙事检查器"
+          style={{ marginTop: 12, border: `1px solid ${theme.borderLight}`, borderRadius: 8, background: theme.bgCard }}
+        >
+          <NarrativeInspector
+            theme={theme}
+            chapterNumber={activeChapterNumber}
+            context={narrativeContext}
+            ledger={foreshadowingLedger}
+            graph={narrativeGraphData}
+            facts={[...projectBibleContents, ...worldAssetContents]}
+            continuityCandidates={continuityCandidates}
+            continuitySummary={continuitySummary}
+            logs={narrativeInspectorLogs}
+            runs={narrativeRuns}
+            loading={narrativeLoading}
+            onRefresh={() => selectedProject && loadNarrativeRuntime(selectedProject.id, activeChapterNumber)}
+            onDecision={handleForeshadowingDecision}
+            onRunControl={handleNarrativeRunControl}
+            onAutopilot={handleNarrativeAutopilot}
+            onOpenWriterRoom={() => setActiveWorkspaceTab('writer-room')}
+            onOpenFacts={() => setActiveWorkspaceTab('project-bible')}
+          />
+        </aside>
+      ) : null}
 
       <Modal
         title="新建创作项目"
@@ -3661,6 +4769,15 @@ export default function StoryPage() {
           </Form.Item>
         </Form>
       </Modal>
+
+      <FanqiePublishPanel
+        visible={fanqieOpen}
+        onClose={() => setFanqieOpen(false)}
+        projectId={selectedProject?.id || ''}
+        contentId={contentForChapter('novel_body', activeChapterNumber)?.id || ''}
+        chapterNumber={activeChapterNumber}
+        chapterTitle={contentForChapter('novel_body', activeChapterNumber)?.title}
+      />
     </div>
   )
 }
@@ -3677,6 +4794,7 @@ function PipelinePanel({
   onContinueOnErrorChange,
   loading,
   result,
+  runStatus,
   onRun,
   onRetryFailed,
 }: {
@@ -3691,6 +4809,7 @@ function PipelinePanel({
   onContinueOnErrorChange: (value: boolean) => void
   loading: boolean
   result: PipelineResult | null
+  runStatus: PipelineRunStatus
   onRun: () => void
   onRetryFailed: () => void
 }) {
@@ -3733,7 +4852,7 @@ function PipelinePanel({
   return (
     <section
       style={{
-        margin: '16px 20px 0',
+        margin: '8px 0 0',
         padding: 16,
         border: `1px solid ${theme.border}`,
         borderRadius: 8,
@@ -3759,6 +4878,31 @@ function PipelinePanel({
             </Button>
           </Space>
         </Space>
+
+        {runStatus === 'running' ? (
+          <Alert
+            type="info"
+            showIcon
+            message="批量生产进行中"
+            description="后端会按依赖顺序执行各阶段；关闭或刷新页面不会把已完成的步骤当成空结果。"
+          />
+        ) : null}
+        {runStatus === 'partial' ? (
+          <Alert
+            type="warning"
+            showIcon
+            message="批量生产部分完成"
+            description="成功和跳过的步骤已经保留，下面只需重试失败步骤，不会重复提交已完成内容。"
+          />
+        ) : null}
+        {runStatus === 'failed' ? (
+          <Alert
+            type="error"
+            showIcon
+            message="批量生产失败"
+            description="请查看步骤结果和生成日志中的具体错误；修复配置后可以只重试失败步骤。"
+          />
+        ) : null}
 
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 0.7fr) minmax(320px, 1.3fr)', gap: 12 }}>
           <Space direction="vertical" size={6}>
@@ -3807,6 +4951,99 @@ function PipelinePanel({
         ) : null}
       </Space>
     </section>
+  )
+}
+
+type ProductionStageItem = {
+  key: string
+  tab: string
+  label: string
+  hint: string
+  complete: number
+  total: number
+}
+
+function ProductionStageRail({
+  theme,
+  stages,
+  activeTab,
+  onSelect,
+}: {
+  theme: ThemeColors
+  stages: ProductionStageItem[]
+  activeTab: string
+  onSelect: (tab: string) => void
+}) {
+  return (
+    <nav
+      aria-label="项目生产阶段"
+      style={{
+        display: 'grid',
+        gridTemplateColumns: `repeat(${stages.length}, minmax(132px, 1fr))`,
+        gap: 0,
+        overflowX: 'auto',
+        borderBottom: `1px solid ${theme.borderLight}`,
+        background: theme.bgElevated,
+      }}
+    >
+      {stages.map((stage, index) => {
+        const isActive = stage.tab === activeTab
+        const isComplete = stage.complete >= stage.total
+        const ratio = Math.min(1, stage.complete / Math.max(stage.total, 1))
+        return (
+          <button
+            key={stage.key}
+            type="button"
+            onClick={() => onSelect(stage.tab)}
+            aria-current={isActive ? 'step' : undefined}
+            style={{
+              minWidth: 132,
+              padding: '13px 14px 12px',
+              border: 'none',
+              borderRight: index < stages.length - 1 ? `1px solid ${theme.borderLight}` : 'none',
+              borderBottom: isActive ? `2px solid ${theme.primary}` : '2px solid transparent',
+              background: isActive ? theme.primaryAlpha(0.1) : 'transparent',
+              color: theme.textPrimary,
+              textAlign: 'left',
+              cursor: 'pointer',
+              transition: 'background 180ms ease, transform 160ms ease',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <Text strong style={{ color: theme.textPrimary, fontSize: 13 }}>{stage.label}</Text>
+              <span
+                aria-label={`${stage.complete}/${stage.total}`}
+                style={{
+                  width: 18,
+                  height: 18,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: 4,
+                  border: `1px solid ${isComplete ? theme.primary : theme.border}`,
+                  background: isComplete ? theme.primaryAlpha(0.18) : 'transparent',
+                  color: isComplete ? theme.primary : theme.textSecondary,
+                  fontSize: 10,
+                  fontWeight: 700,
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+              >
+                {isComplete ? '✓' : index + 1}
+              </span>
+            </div>
+            <Text type="secondary" ellipsis={{ tooltip: stage.hint }} style={{ display: 'block', marginTop: 3, fontSize: 12 }}>
+              {stage.hint}
+            </Text>
+            <div style={{ height: 3, marginTop: 9, background: theme.borderLight, overflow: 'hidden' }}>
+              <div style={{ width: `${ratio * 100}%`, height: '100%', background: theme.primary, transition: 'width 220ms ease' }} />
+            </div>
+            <Text type="secondary" style={{ display: 'block', marginTop: 4, fontSize: 11, fontVariantNumeric: 'tabular-nums' }}>
+              {stage.complete}/{stage.total}
+            </Text>
+          </button>
+        )
+      })}
+    </nav>
   )
 }
 
@@ -3892,14 +5129,16 @@ function OutlineTab({
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
-        <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+        <div style={{ minWidth: 0, flex: '1 1 360px' }}>
           <Title level={4} style={{ marginBottom: 4 }}>
             {outline.title || '故事大纲'}
           </Title>
-          <Text type="secondary">{outline.logline || '未填写一句话卖点'}</Text>
+          <Text type="secondary" style={{ display: 'block', maxWidth: '72ch' }}>
+            {outline.logline || '未填写一句话卖点'}
+          </Text>
         </div>
-        <Space>
+        <Space wrap style={{ justifyContent: 'flex-end' }}>
           <PromptTemplateSelect
             value={selectedTemplateId}
             options={templateOptions}
@@ -3908,6 +5147,12 @@ function OutlineTab({
           />
           <Button icon={<UserOutlined />} loading={syncLoading} onClick={onSyncCharacters}>
             同步角色库
+          </Button>
+          <Button
+            icon={<DownloadOutlined />}
+            onClick={() => downloadTextFile(`${projectMarkdownFilename(draft.title || outline.title, 'outline')}.md`, buildOutlineMarkdown(draft))}
+          >
+            导出 Markdown
           </Button>
           <Button type="primary" loading={saving} onClick={() => onSave(draft)}>
             保存大纲
@@ -4083,6 +5328,7 @@ function ProjectBibleTab({
   savingContentId,
   onSync,
   onSaveContent,
+  onSaveAsAsset,
 }: {
   hasOutline: boolean
   bibleContents: ProjectContent[]
@@ -4094,6 +5340,7 @@ function ProjectBibleTab({
     contentId: string,
     patch: { title?: string; data?: Record<string, any>; text_content?: string; is_locked?: boolean },
   ) => Promise<void>
+  onSaveAsAsset: (contentId: string) => void
 }) {
   const lockedCount = [...bibleContents, ...worldAssets].filter((item) => item.is_locked).length
 
@@ -4140,6 +5387,7 @@ function ProjectBibleTab({
                 content={content}
                 saving={savingContentId === content.id}
                 onSaveContent={onSaveContent}
+                onSaveAsAsset={onSaveAsAsset}
               />
             ))}
           </div>
@@ -4157,6 +5405,7 @@ function ProjectBibleTab({
                 content={content}
                 saving={savingContentId === content.id}
                 onSaveContent={onSaveContent}
+                onSaveAsAsset={onSaveAsAsset}
               />
             ))}
           </div>
@@ -4172,6 +5421,7 @@ function BibleContentCard({
   content,
   saving,
   onSaveContent,
+  onSaveAsAsset,
 }: {
   content: ProjectContent
   saving: boolean
@@ -4179,6 +5429,7 @@ function BibleContentCard({
     contentId: string,
     patch: { title?: string; data?: Record<string, any>; text_content?: string; is_locked?: boolean },
   ) => Promise<void>
+  onSaveAsAsset: (contentId: string) => void
 }) {
   const [title, setTitle] = useState(content.title || '')
   const [summary, setSummary] = useState(String(content.data?.summary || ''))
@@ -4241,6 +5492,9 @@ function BibleContentCard({
           <TextArea value={details} onChange={(event) => setDetails(event.target.value)} autoSize={{ minRows: 4, maxRows: 10 }} />
         </EditorField>
         <Space style={{ justifyContent: 'flex-end', width: '100%' }}>
+          <Button icon={<FolderAddOutlined />} onClick={() => onSaveAsAsset(content.id)}>
+            存为素材
+          </Button>
           <Button type="primary" loading={saving} onClick={save}>
             保存卡片
           </Button>
@@ -4529,7 +5783,13 @@ function ChapterTab({
                     </Space>
                     <Space wrap>
                       <Button icon={<PlusOutlined />} onClick={addRow}>新增章节</Button>
-                      <Button loading={loading} onClick={() => onGenerate({ preserveLocked: true })}>保留锁定再生成</Button>
+                      <Button
+                        icon={<DownloadOutlined />}
+                        onClick={() => downloadTextFile('chapter-plan.md', buildChapterPlanMarkdown({ ...chapterPlan, chapters: rows }))}
+                      >
+                        导出 Markdown
+                      </Button>
+                      <Button loading={loading} onClick={() => onGenerate({ preserveLocked: true })}>保留现有并补齐</Button>
                       <Button type="primary" loading={saving} onClick={saveRows}>保存规划</Button>
                     </Space>
                   </Space>
@@ -4587,6 +5847,7 @@ function ChapterTab({
 }
 
 function EpisodeWorkbenchTab({
+  projectId,
   chapters,
   activeChapterNumber,
   onActiveChapterChange,
@@ -4609,6 +5870,10 @@ function EpisodeWorkbenchTab({
   onRegenerateChapterOutlineScenes,
   onGenerateNovelBody,
   onRefineNovelBody,
+  onSaveContentAsAsset,
+  onExtractContinuity,
+  continuityExtracting,
+  onOpenFanqiePublish,
   onGenerateScript,
   onGenerateStoryboard,
   onMatchReferenceAssets,
@@ -4619,12 +5884,19 @@ function EpisodeWorkbenchTab({
   onUpdateStoryboardPanelReferences,
   onLinkReferenceAsset,
   onSendImagePrompt,
+  onOpenVideoGeneration,
   inlineImages,
   inlineImageLoadingKey,
+  pendingImageTaskKey,
+  pendingImageTaskId,
   batchStoryboardImageChapter,
   defaultImageModelName,
   defaultImageSupportsReferenceImages,
+  selectedCreativeSkillIds,
+  onCreativeSkillIdsChange,
+  compact,
 }: {
+  projectId: string
   chapters: ChapterPlanItem[]
   activeChapterNumber: number
   onActiveChapterChange: (chapterNumber: number) => void
@@ -4650,6 +5922,10 @@ function EpisodeWorkbenchTab({
   onRegenerateChapterOutlineScenes: (chapterNumber: number) => void
   onGenerateNovelBody: (chapterNumber: number) => void
   onRefineNovelBody: (chapterNumber: number, instruction: string) => void
+  onSaveContentAsAsset: (contentId: string) => void
+  onExtractContinuity: (contentId: string) => void
+  continuityExtracting: boolean
+  onOpenFanqiePublish: () => void
   onGenerateScript: (chapterNumber: number) => void
   onGenerateStoryboard: (chapterNumber: number) => void
   onMatchReferenceAssets: (contentId: string) => void
@@ -4667,11 +5943,17 @@ function EpisodeWorkbenchTab({
   ) => void
   onLinkReferenceAsset: (assetId: string, role: string, metadata?: Record<string, any>) => void
   onSendImagePrompt: (prompt: string, context?: ImagePromptContext) => void
+  onOpenVideoGeneration: (prompt: string, context?: VideoGenerationContext) => void
   inlineImages: Record<string, InlineGeneratedImage>
   inlineImageLoadingKey: string | null
+  pendingImageTaskKey?: string
+  pendingImageTaskId?: string
   batchStoryboardImageChapter: number | null
   defaultImageModelName: string
   defaultImageSupportsReferenceImages: boolean
+  selectedCreativeSkillIds: string[]
+  onCreativeSkillIdsChange: (skillIds: string[]) => void
+  compact: boolean
 }) {
   const chapterOutline = contentForChapter('chapter_outline', activeChapterNumber)
   const novelBody = contentForChapter('novel_body', activeChapterNumber)
@@ -4681,6 +5963,9 @@ function EpisodeWorkbenchTab({
   const { theme } = useTheme()
   const themedWorkbenchHeaderStyle = createWorkbenchHeaderStyle(theme)
   const themedCompactBlockStyle = createCompactBlockStyle(theme)
+  const [writingStage, setWritingStage] = useState<'chapter_outline' | 'novel_body' | 'novel_body_refine'>('novel_body')
+  const [writingPreflight, setWritingPreflight] = useState<WritingPreflight | null>(null)
+  const [writingPreflightLoading, setWritingPreflightLoading] = useState(false)
   const referenceAssetOptions = useMemo(
     () =>
       projectAssets
@@ -4706,6 +5991,107 @@ function EpisodeWorkbenchTab({
   const [novelDraft, setNovelDraft] = useState('')
   const [novelRefineInstruction, setNovelRefineInstruction] = useState('')
   const [comicDrafts, setComicDrafts] = useState<any[]>([])
+  const [editingStoryboardPrompt, setEditingStoryboardPrompt] = useState<number | null>(null)
+  const [storyboardPromptDraft, setStoryboardPromptDraft] = useState('')
+  const writingStageMeta = useMemo(
+    () =>
+      ({
+        chapter_outline: {
+          label: '章节细纲',
+          hint: '检查这一话的结构、场景和推进是否齐备。',
+        },
+        novel_body: {
+          label: '正文',
+          hint: '检查这一话的细纲与正文生成前置条件。',
+        },
+        novel_body_refine: {
+          label: '正文润色',
+          hint: '检查已有正文是否适合做定向改写。',
+        },
+      }) as const,
+    [],
+  )
+  const storyboardVideoOutputs = useMemo(() => {
+    if (!storyboard?.id) return new Map<number, ProjectAssetLink[]>()
+    const outputs = new Map<number, ProjectAssetLink[]>()
+    projectAssets.forEach((link) => {
+      const metadata = link.metadata || {}
+      const panelNumber = Number(metadata.source_index)
+      if (
+        link.role !== 'output' ||
+        metadata.source !== 'video_generation' ||
+        metadata.source_type !== 'storyboard_panel' ||
+        link.content_id !== storyboard.id ||
+        !Number.isFinite(panelNumber)
+      ) {
+        return
+      }
+      outputs.set(panelNumber, [...(outputs.get(panelNumber) || []), link])
+    })
+    return outputs
+  }, [projectAssets, storyboard?.id])
+  const writingMethodOptions = useMemo(() => {
+    const merged = new Map<string, { label: string; value: string }>()
+    ;(writingPreflight?.method_candidates || []).forEach((candidate: WritingMethodCandidate) => {
+      merged.set(candidate.id, {
+        label: `${candidate.title}${candidate.auto_apply ? ' · 自动' : ''}`,
+        value: candidate.id,
+      })
+    })
+    selectedCreativeSkillIds.forEach((skillId) => {
+      if (!merged.has(skillId)) {
+        merged.set(skillId, {
+          label: `${skillId} · 已选`,
+          value: skillId,
+        })
+      }
+    })
+    return Array.from(merged.values())
+  }, [selectedCreativeSkillIds, writingPreflight?.method_candidates])
+  const selectedWritingMethods = useMemo(() => {
+    const candidateMap = new Map((writingPreflight?.method_candidates || []).map((item) => [item.id, item]))
+    return selectedCreativeSkillIds.map((skillId) => candidateMap.get(skillId)).filter(Boolean)
+  }, [selectedCreativeSkillIds, writingPreflight?.method_candidates])
+  const writingPreflightChecks = writingPreflight?.checks || []
+  const writingPreflightBlockers = writingPreflight?.blockers || []
+  const writingPreflightReady = Boolean(writingPreflight?.ready)
+
+  useEffect(() => {
+    if (!projectId) {
+      setWritingPreflight(null)
+      setWritingPreflightLoading(false)
+      return
+    }
+
+    const contentId =
+      writingStage === 'novel_body_refine'
+        ? novelBody?.id
+        : writingStage === 'chapter_outline'
+          ? chapterOutline?.id
+          : undefined
+
+    let cancelled = false
+    setWritingPreflightLoading(true)
+    ;(async () => {
+      try {
+        const response = await getCreativeProjectWritingPreflight(projectId, {
+          chapterNumber: activeChapterNumber,
+          stage: writingStage,
+          contentId,
+        })
+        if (cancelled) return
+        setWritingPreflight(response?.data || null)
+      } catch {
+        if (!cancelled) setWritingPreflight(null)
+      } finally {
+        if (!cancelled) setWritingPreflightLoading(false)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [projectId, activeChapterNumber, chapterOutline?.id, novelBody?.id, writingStage])
 
   useEffect(() => {
     setOutlineDraft({
@@ -4742,6 +6128,11 @@ function EpisodeWorkbenchTab({
   useEffect(() => {
     setNovelDraft(novelBody?.text_content || novelBody?.data?.content || '')
   }, [novelBody?.id, activeChapterNumber])
+
+  useEffect(() => {
+    setEditingStoryboardPrompt(null)
+    setStoryboardPromptDraft('')
+  }, [storyboard?.id, activeChapterNumber])
 
   useEffect(() => {
     setComicDrafts((comic?.data?.pages || []).map((page: any, index: number) => ({
@@ -4794,6 +6185,21 @@ function EpisodeWorkbenchTab({
     storyboardGeneratedCount,
     defaultImageSupportsReferenceImages,
   )
+  const episodeOutputs = [
+    { label: '细纲', ready: Boolean(chapterOutline) },
+    { label: '正文', ready: Boolean(novelBody) },
+    { label: '脚本', ready: Boolean(script) },
+    { label: '分镜', ready: Boolean(storyboard) },
+  ]
+  const nextEpisodeAction = !chapterOutline
+    ? '先完成细纲'
+    : !novelBody
+      ? '生成正文'
+      : !script
+        ? '生成脚本'
+        : !storyboard
+          ? '拆分镜'
+          : '补充参考与画面'
   const linesFromText = (value: string) =>
     String(value || '')
       .split('\n')
@@ -4821,6 +6227,7 @@ function EpisodeWorkbenchTab({
       <InlineImageResult
         image={inlineImages[key]}
         loading={inlineImageLoadingKey === key}
+        taskId={inlineImages[key]?.taskId || (pendingImageTaskKey === key ? pendingImageTaskId : undefined)}
         onPromoteReference={
           inlineImages[key]?.assetId
             ? (role) => onLinkReferenceAsset(inlineImages[key].assetId!, role, {
@@ -4839,39 +6246,160 @@ function EpisodeWorkbenchTab({
 
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
-      <div style={themedWorkbenchHeaderStyle}>
-        <div>
+      <div style={{ ...themedWorkbenchHeaderStyle, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <Space direction="vertical" size={4} style={{ minWidth: 0, flex: '1 1 280px' }}>
           <Space size={8} wrap>
-            <Title level={4} style={{ margin: 0 }}>
-              第 {activeChapterNumber} 话
-            </Title>
-            <Tag color={novelBody ? 'green' : 'default'}>{novelBody ? '已有正文' : '未正文'}</Tag>
-            <Tag color={storyboard ? 'blue' : 'default'}>{storyboard ? '已有分镜' : '未分镜'}</Tag>
-            <Tag color={comic ? 'purple' : 'default'}>{comic ? '已有漫画' : '未漫画'}</Tag>
+            <Title level={4} style={{ margin: 0 }}>第 {activeChapterNumber} 话</Title>
+            <Tag color="processing">制作单元</Tag>
+            {comic ? <Tag color="purple">漫画页已拆分</Tag> : null}
           </Space>
-          <Text type="secondary">{activeChapter?.title || '未命名章节'}</Text>
-        </div>
-        <Space size={8} wrap>
-          {chapters.map((chapter) => {
-            const isActive = chapter.chapter_number === activeChapterNumber
-            return (
-              <Button
-                key={chapter.chapter_number}
-                size="small"
-                type={isActive ? 'primary' : 'default'}
-                onClick={() => onActiveChapterChange(chapter.chapter_number)}
-              >
-                {chapter.chapter_number}
-              </Button>
-            )
-          })}
+          <Text type="secondary" ellipsis={{ tooltip: activeChapter?.title || '未命名章节' }}>
+            {activeChapter?.title || '未命名章节'} · 下一步：{nextEpisodeAction}
+          </Text>
         </Space>
+        <Select
+          aria-label="选择制作章节"
+          value={activeChapterNumber}
+          style={{ width: 240, maxWidth: '100%' }}
+          options={chapters.map((chapter) => ({
+            value: chapter.chapter_number,
+            label: `第 ${chapter.chapter_number} 话 · ${chapter.title || '未命名章节'}`,
+          }))}
+          onChange={onActiveChapterChange}
+        />
+      </div>
+
+      <WorkbenchSection
+        title="写作门禁"
+        extra={
+          <Space size={8} wrap>
+            <Tag color={writingPreflightReady ? 'green' : 'warning'}>
+              {writingPreflightReady ? '可直接生成' : '存在阻塞'}
+            </Tag>
+            <Tag>{writingStageMeta[writingStage].label}</Tag>
+          </Space>
+        }
+      >
+        <Space direction="vertical" size={10} style={{ width: '100%' }}>
+          <Alert
+            type={writingPreflightReady ? 'success' : 'warning'}
+            showIcon
+            message={writingPreflightReady ? '当前章节门禁已通过' : '当前章节还缺少前置条件'}
+            description={writingPreflightLoading ? '正在检查当前章节的写作门禁...' : writingPreflight?.next_action || '等待检查结果'}
+          />
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: compact ? 'minmax(0, 1fr)' : '180px minmax(0, 1fr)',
+              gap: 10,
+              alignItems: 'start',
+            }}
+          >
+            <Space direction="vertical" size={4} style={{ width: '100%' }}>
+              <Text strong>检查阶段</Text>
+              <Segmented
+                value={writingStage}
+                options={[
+                  { label: '章节细纲', value: 'chapter_outline' },
+                  { label: '正文', value: 'novel_body' },
+                  { label: '正文润色', value: 'novel_body_refine' },
+                ]}
+                onChange={(value) => setWritingStage(value as 'chapter_outline' | 'novel_body' | 'novel_body_refine')}
+              />
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {writingStageMeta[writingStage].hint}
+              </Text>
+            </Space>
+            <Space direction="vertical" size={4} style={{ width: '100%' }}>
+              <Text strong>方法包</Text>
+              <Select
+                mode="multiple"
+                allowClear
+                loading={writingPreflightLoading}
+                placeholder="选择项目可用的写作方法包"
+                value={selectedCreativeSkillIds}
+                options={writingMethodOptions}
+                onChange={(values) => onCreativeSkillIdsChange((values as string[]).filter(Boolean))}
+                style={{ width: '100%' }}
+                maxTagCount="responsive"
+              />
+              <Space wrap size={[6, 6]}>
+                <Tag color="blue">{selectedCreativeSkillIds.length} 个方法包已保存</Tag>
+                {selectedWritingMethods.map((item) =>
+                  item ? (
+                    <Tag key={item.id} color={item.auto_apply ? 'geekblue' : 'default'}>
+                      {item.title}
+                      {item.auto_apply ? ' · 自动' : ''}
+                    </Tag>
+                  ) : null,
+                )}
+              </Space>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                选中的方法包会写入 `settings.creative_skill_ids`，并在上下文中按兼容性进入 T6。
+              </Text>
+            </Space>
+          </div>
+          <Space wrap size={[6, 6]}>
+            {writingPreflightChecks.map((check) => (
+              <Tag key={check.id} color={check.status === 'pass' ? 'green' : 'red'}>
+                {check.label}
+              </Tag>
+            ))}
+          </Space>
+          {writingPreflightBlockers.length ? (
+            <List
+              size="small"
+              bordered={false}
+              dataSource={writingPreflightBlockers}
+              renderItem={(item) => (
+                <List.Item style={{ paddingLeft: 0, paddingRight: 0 }}>
+                  <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                    <Text strong style={{ fontSize: 12 }}>
+                      {item.label}
+                    </Text>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      {item.detail}
+                    </Text>
+                  </Space>
+                </List.Item>
+              )}
+            />
+          ) : null}
+        </Space>
+      </WorkbenchSection>
+
+      <div
+        aria-label="当前话生产状态"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(116px, 1fr))',
+          border: `1px solid ${theme.borderLight}`,
+          background: theme.bgElevated,
+        }}
+      >
+        {episodeOutputs.map((item, index) => (
+          <div
+            key={item.label}
+            style={{
+              padding: '9px 12px',
+              borderRight: index < episodeOutputs.length - 1 ? `1px solid ${theme.borderLight}` : 'none',
+              minWidth: 0,
+            }}
+          >
+            <Text type="secondary" style={{ display: 'block', fontSize: 11 }}>{item.label}</Text>
+            <Text strong style={{ color: item.ready ? theme.primary : theme.textSecondary, fontSize: 13 }}>
+              {item.ready ? '已就绪' : '待生产'}
+            </Text>
+          </div>
+        ))}
       </div>
 
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: `${columnWidths.outline}px 10px ${columnWidths.prose}px 10px minmax(320px, 1fr)`,
+          gridTemplateColumns: compact
+            ? 'minmax(0, 1fr)'
+            : `${columnWidths.outline}px 10px ${columnWidths.prose}px 10px minmax(320px, 1fr)`,
           gap: 8,
           alignItems: 'start',
         }}
@@ -5252,32 +6780,63 @@ function EpisodeWorkbenchTab({
         ) : null}
         </Space>
 
-        <ResizeHandle
-          onMouseDown={(event) =>
-            startHorizontalResize(event, {
-              initial: columnWidths.outline,
-              min: 260,
-              max: 560,
-              onChange: (value) => setColumnWidths((prev) => ({ ...prev, outline: value })),
-            })
-          }
-        />
+        {!compact ? (
+          <ResizeHandle
+            onMouseDown={(event) =>
+              startHorizontalResize(event, {
+                initial: columnWidths.outline,
+                min: 260,
+                max: 560,
+                onChange: (value) => setColumnWidths((prev) => ({ ...prev, outline: value })),
+              })
+            }
+          />
+        ) : null}
 
         <Space direction="vertical" size={12} style={{ width: '100%' }}>
         <WorkbenchSection
           title="正文"
           extra={
-            <Tooltip title={canGenerateNovel ? '' : '先生成细纲'}>
+            <Space size={8}>
+              <Tooltip title={canGenerateNovel ? '' : '先生成细纲'}>
+                <Button
+                  size="small"
+                  icon={<FileTextOutlined />}
+                  disabled={!canGenerateNovel}
+                  loading={isChapterActionLoading('novel_body', activeChapterNumber)}
+                  onClick={() => onGenerateNovelBody(activeChapterNumber)}
+                >
+                  {novelBody ? '重生成正文' : '生成正文'}
+                </Button>
+              </Tooltip>
+              {novelBody ? (
+                <Button
+                  size="small"
+                  icon={<FolderAddOutlined />}
+                  onClick={() => onSaveContentAsAsset(novelBody.id)}
+                >
+                  存为素材
+                </Button>
+              ) : null}
+              {novelBody ? (
+                <Button
+                  size="small"
+                  icon={<BranchesOutlined />}
+                  loading={continuityExtracting}
+                  onClick={() => onExtractContinuity(novelBody.id)}
+                >
+                  提取连续性
+                </Button>
+              ) : null}
               <Button
                 size="small"
-                icon={<FileTextOutlined />}
-                disabled={!canGenerateNovel}
-                loading={isChapterActionLoading('novel_body', activeChapterNumber)}
-                onClick={() => onGenerateNovelBody(activeChapterNumber)}
+                icon={<CloudUploadOutlined />}
+                disabled={!novelBody}
+                onClick={onOpenFanqiePublish}
               >
-                {novelBody ? '重生成正文' : '生成正文'}
+                保存到番茄草稿
               </Button>
-            </Tooltip>
+            </Space>
           }
         >
           {novelBody ? (
@@ -5330,16 +6889,18 @@ function EpisodeWorkbenchTab({
         </WorkbenchSection>
       </Space>
 
-      <ResizeHandle
-        onMouseDown={(event) =>
-          startHorizontalResize(event, {
-            initial: columnWidths.prose,
-            min: 360,
-            max: 760,
-            onChange: (value) => setColumnWidths((prev) => ({ ...prev, prose: value })),
-          })
-        }
-      />
+      {!compact ? (
+        <ResizeHandle
+          onMouseDown={(event) =>
+            startHorizontalResize(event, {
+              initial: columnWidths.prose,
+              min: 360,
+              max: 760,
+              onChange: (value) => setColumnWidths((prev) => ({ ...prev, prose: value })),
+            })
+          }
+        />
+      ) : null}
 
       <Space direction="vertical" size={12} style={{ width: '100%' }}>
         <ReferenceCardsPanel
@@ -5356,12 +6917,40 @@ function EpisodeWorkbenchTab({
               {script ? (
                 <Button
                   size="small"
+                  icon={<EyeOutlined />}
+                  onClick={() => openProjectTextPreview(script.title || `第 ${activeChapterNumber} 章脚本`, buildScriptMarkdown(script))}
+                >
+                  预览
+                </Button>
+              ) : null}
+              {script ? (
+                <Button
+                  size="small"
                   icon={<BranchesOutlined />}
                   loading={referenceMatching}
                   disabled={!referenceAssetOptions.length}
                   onClick={() => onMatchReferenceAssets(script.id)}
                 >
                   匹配参考卡
+                </Button>
+              ) : null}
+              {script ? (
+                <Button size="small" icon={<FolderAddOutlined />} onClick={() => onSaveContentAsAsset(script.id)}>
+                  存为素材
+                </Button>
+              ) : null}
+              {script ? (
+                <Button
+                  size="small"
+                  icon={<DownloadOutlined />}
+                  onClick={() =>
+                    downloadTextFile(
+                      `${projectMarkdownFilename(script.title || `chapter-${activeChapterNumber}`, 'script')}.md`,
+                      buildScriptMarkdown(script),
+                    )
+                  }
+                >
+                  导出脚本
                 </Button>
               ) : null}
               <Button
@@ -5471,6 +7060,13 @@ function EpisodeWorkbenchTab({
                 <>
                   <Button
                     size="small"
+                    icon={<EyeOutlined />}
+                    onClick={() => openProjectTextPreview(storyboard.title || `第 ${activeChapterNumber} 章分镜`, buildStoryboardMarkdown(storyboard))}
+                  >
+                    预览
+                  </Button>
+                  <Button
+                    size="small"
                     icon={<BranchesOutlined />}
                     loading={referenceMatching}
                     disabled={!referenceAssetOptions.length}
@@ -5514,24 +7110,51 @@ function EpisodeWorkbenchTab({
                   <Space style={{ justifyContent: 'space-between', width: '100%' }} align="start">
                     <Text strong>分镜 {panel.panel_number}</Text>
                     {panel.image_prompt ? (
-                      <Button
-                        size="small"
-                        onClick={() =>
-                          onSendImagePrompt(panel.image_prompt, {
-                            contentId: storyboard.id,
-                            sourceType: 'storyboard_panel',
-                            sourceIndex: panel.panel_number,
-                            sourceTitle: panel.action || `分镜 ${panel.panel_number}`,
-                            chapterNumber: activeChapterNumber,
-                            referenceAssetIds: panel.reference_asset_ids || [],
-                            characterIds: panel.character_ids || [],
-                            portraitNodeIds: panel.portrait_node_ids || [],
-                            portraitVersionIds: panel.portrait_version_ids || [],
-                          })
-                        }
-                      >
-                        生图
-                      </Button>
+                      <Space size={4}>
+                        <Button
+                          size="small"
+                          onClick={() =>
+                            onSendImagePrompt(panel.image_prompt, {
+                              contentId: storyboard.id,
+                              sourceType: 'storyboard_panel',
+                              sourceIndex: panel.panel_number,
+                              sourceTitle: panel.action || `分镜 ${panel.panel_number}`,
+                              chapterNumber: activeChapterNumber,
+                              referenceAssetIds: panel.reference_asset_ids || [],
+                              characterIds: panel.character_ids || [],
+                              portraitNodeIds: panel.portrait_node_ids || [],
+                              portraitVersionIds: panel.portrait_version_ids || [],
+                            })
+                          }
+                        >
+                          生图
+                        </Button>
+                        <Button
+                          size="small"
+                          icon={<VideoCameraOutlined />}
+                          onClick={() =>
+                            onOpenVideoGeneration(
+                              panel.video_prompt || buildStoryboardVideoFallbackPrompt(panel),
+                              {
+                                contentId: storyboard.id,
+                                sourceType: 'storyboard_panel',
+                                sourceIndex: panel.panel_number,
+                                sourceTitle: panel.action || `分镜 ${panel.panel_number}`,
+                                chapterNumber: activeChapterNumber,
+                                referenceAssetIds: panel.reference_asset_ids || [],
+                                characterIds: panel.character_ids || [],
+                                portraitNodeIds: panel.portrait_node_ids || [],
+                                portraitVersionIds: panel.portrait_version_ids || [],
+                                durationSeconds: panel.duration_seconds,
+                                generateAudio: panel.generate_audio === true,
+                                musicHint: panel.music_hint || '',
+                              },
+                            )
+                          }
+                        >
+                          视频
+                        </Button>
+                      </Space>
                     ) : null}
                   </Space>
                   <Text type="secondary">{panel.action || panel.image_prompt}</Text>
@@ -5548,13 +7171,54 @@ function EpisodeWorkbenchTab({
                     supportsReferenceImages={defaultImageSupportsReferenceImages}
                   />
                   {panel.image_prompt ? (
-                    <Paragraph
-                      type="secondary"
-                      ellipsis={{ rows: 3, tooltip: panel.image_prompt }}
-                      style={{ margin: '6px 0 0', fontSize: 12 }}
-                    >
-                      生图提示：{panel.image_prompt}
-                    </Paragraph>
+                    editingStoryboardPrompt === panel.panel_number ? (
+                      <Space direction="vertical" size={6} style={{ width: '100%', marginTop: 8 }}>
+                        <Input.TextArea
+                          value={storyboardPromptDraft}
+                          autoSize={{ minRows: 4, maxRows: 10 }}
+                          onChange={(event) => setStoryboardPromptDraft(event.target.value)}
+                        />
+                        <Space>
+                          <Button
+                            type="primary"
+                            size="small"
+                            loading={savingContentId === storyboard.id}
+                            disabled={!storyboardPromptDraft.trim()}
+                            onClick={() => {
+                              const nextData = {
+                                ...storyboard.data,
+                                panels: (storyboard.data?.panels || []).map((item: any) =>
+                                  Number(item.panel_number) === Number(panel.panel_number)
+                                    ? { ...item, image_prompt: storyboardPromptDraft.trim() }
+                                    : item,
+                                ),
+                              }
+                              onSaveContent(storyboard.id, { data: nextData })
+                              setEditingStoryboardPrompt(null)
+                            }}
+                          >保存提示词</Button>
+                          <Button size="small" onClick={() => setEditingStoryboardPrompt(null)}>取消</Button>
+                        </Space>
+                      </Space>
+                    ) : (
+                      <Space style={{ width: '100%', justifyContent: 'space-between', marginTop: 6 }} align="start">
+                        <Paragraph
+                          type="secondary"
+                          ellipsis={{ rows: 3, tooltip: panel.image_prompt }}
+                          style={{ margin: 0, fontSize: 12, flex: 1 }}
+                        >
+                          生图提示：{panel.image_prompt}
+                        </Paragraph>
+                        <Button
+                          size="small"
+                          type="text"
+                          onClick={() => {
+                            setStoryboardPromptDraft(panel.image_prompt || '')
+                            setEditingStoryboardPrompt(panel.panel_number)
+                          }}
+                        >改提示词</Button>
+                      </Space>
+                    )
                   ) : null}
                   <Space direction="vertical" size={4} style={{ width: '100%', marginTop: 8 }}>
                     <Text type="secondary" style={{ fontSize: 12 }}>
@@ -5583,6 +7247,10 @@ function EpisodeWorkbenchTab({
                     sourceIndex: panel.panel_number,
                     chapterNumber: activeChapterNumber,
                   })}
+                  <StoryboardVideoOutputStrip
+                    links={storyboardVideoOutputs.get(Number(panel.panel_number)) || []}
+                    assetDetails={assetDetails}
+                  />
                 </div>
               ))}
             </Space>
@@ -5768,13 +7436,86 @@ const comicStyleOptions = [
   { label: '写实短剧', value: '写实短剧剧照风格，真实室内外光线，人物表演自然，商业剧质感' },
 ]
 
+function StoryboardVideoOutputStrip({
+  links,
+  assetDetails,
+}: {
+  links: ProjectAssetLink[]
+  assetDetails: Record<string, AssetSummary>
+}) {
+  if (!links.length) return null
+
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gap: 8,
+        marginTop: 8,
+        paddingTop: 8,
+        borderTop: '1px solid var(--borderLight)',
+      }}
+    >
+      <Text strong style={{ fontSize: 12 }}>本格已生成视频 · {links.length}</Text>
+      {links.map((link) => {
+        const metadata = link.metadata || {}
+        const detail = assetDetails[link.asset_id]
+        const source = assetFileUrl(detail?.file_path || detail?.source_url || detail?.cover_url || '')
+        const duration = Number(metadata.duration)
+        return (
+          <div
+            key={link.id}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: source ? '168px minmax(0, 1fr)' : '1fr',
+              gap: 10,
+              alignItems: 'start',
+            }}
+          >
+            {source ? (
+              <video
+                controls
+                preload="metadata"
+                src={source}
+                style={{ width: 168, maxWidth: '100%', height: 96, objectFit: 'cover', borderRadius: 6, background: '#10121a' }}
+              />
+            ) : (
+              <Skeleton.Image active style={{ width: 168, height: 96 }} />
+            )}
+            <Space direction="vertical" size={4} style={{ minWidth: 0 }}>
+              <Text ellipsis={{ tooltip: detail?.title || metadata.source_title || link.asset_id }}>
+                {detail?.title || metadata.source_title || '分镜视频'}
+              </Text>
+              <Space size={4} wrap>
+                <Tag color="green">已入项目素材</Tag>
+                {(metadata.model || metadata.provider) ? <Tag>{metadata.model || metadata.provider}</Tag> : null}
+                {Number.isFinite(duration) && duration > 0 ? <Tag>{duration}s</Tag> : null}
+                {metadata.task_id ? <Tag color="blue">任务 {String(metadata.task_id).slice(0, 8)}</Tag> : null}
+              </Space>
+              <Space size={4} wrap>
+                <Button size="small" href={`/video-gen?project_id=${encodeURIComponent(link.project_id)}&content_id=${encodeURIComponent(link.content_id || '')}&source_type=storyboard_panel&source_index=${encodeURIComponent(String(metadata.source_index || ''))}`}>
+                  打开视频生成
+                </Button>
+                <Button size="small" href={`/assets?asset_id=${encodeURIComponent(link.asset_id)}`}>
+                  查看素材
+                </Button>
+              </Space>
+            </Space>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 function InlineImageResult({
   image,
   loading,
+  taskId,
   onPromoteReference,
 }: {
   image?: InlineGeneratedImage
   loading: boolean
+  taskId?: string
   onPromoteReference?: (role: string) => void
 }) {
   if (loading) {
@@ -5784,6 +7525,7 @@ function InlineImageResult({
         <Space direction="vertical" size={4}>
           <Text strong>正在生成图片</Text>
           <Text type="secondary">完成后会显示在这里，并同步关联到项目素材。</Text>
+          {taskId ? <Text type="secondary" copyable style={{ fontSize: 12 }}>任务 {taskId}</Text> : null}
         </Space>
       </div>
     )
@@ -5809,6 +7551,7 @@ function InlineImageResult({
           </Text>
           <Space size={4} wrap>
             {image.assetId ? <Tag color="green">已入项目素材</Tag> : <Tag>本次结果</Tag>}
+            {taskId ? <Tag color="blue">异步任务</Tag> : null}
             {referenceImages.length ? (
               <Tag color={image.referenceImagesSupported ? 'blue' : 'default'}>
                 参考图 {image.referenceImagesSent || 0}/{referenceImages.length}
@@ -5828,6 +7571,11 @@ function InlineImageResult({
                 onChange={(role) => onPromoteReference(role)}
               />
             </Space.Compact>
+          ) : null}
+          {taskId ? (
+            <Button size="small" href={`/tasks?task_id=${encodeURIComponent(taskId)}`}>
+              查看任务详情
+            </Button>
           ) : null}
         </Space>
       </div>
@@ -6068,9 +7816,13 @@ function ReferenceCardsPanel({
   const [role, setRole] = useState('character')
   const [label, setLabel] = useState('')
   const [characterName, setCharacterName] = useState('')
+  const [referenceFilter, setReferenceFilter] = useState('all')
   const referenceAssets = assets.filter((asset) =>
     ['character', 'background', 'style', 'world', 'reference'].includes(asset.role),
   )
+  const visibleReferenceAssets = referenceFilter === 'all'
+    ? referenceAssets
+    : referenceAssets.filter((asset) => asset.role === referenceFilter)
   const buildMetadata = (source?: AssetSummary) => ({
     label: label.trim() || source?.title || '',
     character_name: role === 'character' ? characterName.trim() || label.trim() || source?.title || '' : '',
@@ -6102,7 +7854,7 @@ function ReferenceCardsPanel({
 
   return (
     <WorkbenchSection
-      title="参考卡"
+      title="项目参考卡"
       extra={
         <Tag color={referenceAssets.length ? 'blue' : 'default'}>
           {referenceAssets.length} 个
@@ -6110,6 +7862,19 @@ function ReferenceCardsPanel({
       }
     >
       <Space direction="vertical" size={10} style={{ width: '100%' }}>
+        <Segmented
+          size="small"
+          value={referenceFilter}
+          onChange={(value) => setReferenceFilter(String(value))}
+          options={[
+            { label: `全部 ${referenceAssets.length}`, value: 'all' },
+            ...referenceRoleOptions.map((item) => ({
+              label: `${item.label.replace('参考', '')} ${referenceAssets.filter((asset) => asset.role === item.value).length}`,
+              value: item.value,
+            })),
+          ]}
+          style={{ maxWidth: '100%' }}
+        />
         <Space.Compact style={{ width: '100%' }}>
           <Input
             value={searchKeyword}
@@ -6213,14 +7978,14 @@ function ReferenceCardsPanel({
         <Text type="secondary">
           角色卡、背景和画风参考会作为漫画生成的一致性资产入口；当前先建立项目关联，后续生成提示会读取这些参考。
         </Text>
-        {referenceAssets.length ? (
+        {visibleReferenceAssets.length ? (
           <Space direction="vertical" size={8} style={{ width: '100%' }}>
-            {referenceAssets.map((asset) => (
+            {visibleReferenceAssets.map((asset) => (
               <ReferenceAssetCard key={asset.id} link={asset} asset={assetDetails[asset.asset_id]} />
             ))}
           </Space>
         ) : (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无参考卡" />
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={referenceAssets.length ? '这个分类暂无参考卡' : '暂无参考卡'} />
         )}
       </Space>
     </WorkbenchSection>
@@ -6351,6 +8116,47 @@ function sortProjectContentsForReading(items: ProjectContent[]) {
   })
 }
 
+function isProjectContentNewer(next: ProjectContent, current?: ProjectContent) {
+  if (!current) return true
+  const nextVersion = Number(next.version || 0)
+  const currentVersion = Number(current.version || 0)
+  if (nextVersion !== currentVersion) return nextVersion > currentVersion
+
+  const nextUpdated = next.updated_at ? new Date(next.updated_at).getTime() : 0
+  const currentUpdated = current.updated_at ? new Date(current.updated_at).getTime() : 0
+  if (nextUpdated !== currentUpdated) return nextUpdated > currentUpdated
+
+  const nextCreated = next.created_at ? new Date(next.created_at).getTime() : 0
+  const currentCreated = current.created_at ? new Date(current.created_at).getTime() : 0
+  return nextCreated > currentCreated
+}
+
+function projectContentChapterKey(item: ProjectContent): number | null {
+  const directValues = [item.chapter_number, item.episode_number]
+  for (const value of directValues) {
+    const number = Number(value)
+    if (Number.isInteger(number) && number > 0) return number
+  }
+
+  // Older imports can lack a normalized chapter field. Keep their historical
+  // versions out of the reader by recovering the chapter number from the title.
+  const titleMatch = String(item.title || '').match(/(?:第\s*)?(\d+)\s*[章节集话]/)
+  return titleMatch ? Number(titleMatch[1]) : null
+}
+
+function latestProjectContentsByChapter(items: ProjectContent[]) {
+  const grouped = new Map<number, ProjectContent>()
+  items.forEach((item) => {
+    const chapterNumber = projectContentChapterKey(item)
+    if (!chapterNumber) return
+    const current = grouped.get(chapterNumber)
+    if (isProjectContentNewer(item, current)) {
+      grouped.set(chapterNumber, item)
+    }
+  })
+  return sortProjectContentsForReading(Array.from(grouped.values()))
+}
+
 function textForNovelBody(body?: ProjectContent | null) {
   return String(body?.text_content || body?.data?.content || '')
 }
@@ -6360,6 +8166,135 @@ function buildNovelChapterMarkdown(body: ProjectContent) {
   const title = body.title || `第 ${chapterNumber} 章`
   const text = textForNovelBody(body)
   return `# 第 ${chapterNumber} 章 ${title}\n\n${text}`.trim() + '\n'
+}
+
+function projectMarkdownFilename(title: string | undefined, fallback: string) {
+  const normalized = String(title || '').trim().replace(/[\\/:*?"<>|]/g, '_')
+  return normalized || fallback
+}
+
+function markdownList(items: unknown) {
+  const values = Array.isArray(items) ? items : []
+  return values
+    .map((item) => String(item || '').trim())
+    .filter(Boolean)
+    .map((item) => `- ${item}`)
+    .join('\n')
+}
+
+function markdownSection(title: string, text: unknown) {
+  const value = Array.isArray(text) ? markdownList(text) : String(text || '').trim()
+  return value ? `## ${title}\n\n${value}` : ''
+}
+
+function buildOutlineMarkdown(outline: StoryOutline) {
+  const sections = [
+    `# ${outline.title || '故事大纲'}`,
+    markdownSection('一句话卖点', outline.logline),
+    markdownSection('类型', outline.genre),
+    markdownSection('核心前提', outline.premise),
+    markdownSection('世界观', outline.worldview),
+    markdownSection('主线冲突', outline.main_conflict),
+    markdownSection('目标读者', outline.target_reader),
+    markdownSection('卖点', outline.selling_points),
+    markdownSection('叙事规则', outline.narrative_rules),
+    markdownSection('主题', outline.themes),
+    markdownSection('故事弧线', [
+      outline.story_arc?.beginning ? `开局：${outline.story_arc.beginning}` : '',
+      outline.story_arc?.middle ? `中段：${outline.story_arc.middle}` : '',
+      outline.story_arc?.climax ? `高潮：${outline.story_arc.climax}` : '',
+      outline.story_arc?.ending_direction ? `结局方向：${outline.story_arc.ending_direction}` : '',
+    ]),
+    markdownSection('叙事气质', outline.tone),
+    markdownSection('视觉风格', outline.visual_style),
+    markdownSection('统一生图提示', outline.image_style_prompt),
+    markdownSection('制作约束', outline.production_notes),
+    markdownSection('角色', (outline.characters || []).map((character) => {
+      const lines = [
+        `### ${character.name || '未命名角色'}`,
+        character.role ? `- 定位：${character.role}` : '',
+        character.personality ? `- 性格：${character.personality}` : '',
+        character.background ? `- 背景：${character.background}` : '',
+        character.appearance ? `- 外貌：${character.appearance}` : '',
+      ].filter(Boolean)
+      return lines.join('\n')
+    })),
+  ]
+  return `${sections.filter(Boolean).join('\n\n')}\n`
+}
+
+function buildChapterPlanMarkdown(plan: ChapterPlan) {
+  const chapters = (plan.chapters || []).map((chapter) => {
+    const sections = [
+      `## 第 ${chapter.chapter_number || ''} 章 ${chapter.title || ''}`.trim(),
+      chapter.goal ? `**目标**：${chapter.goal}` : '',
+      chapter.conflict ? `**冲突**：${chapter.conflict}` : '',
+      markdownSection('关键事件', chapter.key_events),
+      markdownSection('焦点角色', chapter.character_focus),
+      chapter.ending_hook ? `**章末钩子**：${chapter.ending_hook}` : '',
+      chapter.status ? `**状态**：${chapter.status}` : '',
+    ]
+    return sections.filter(Boolean).join('\n\n')
+  })
+  return `# 章节规划\n\n${chapters.join('\n\n')}\n`
+}
+
+function buildScriptMarkdown(script: ProjectContent) {
+  const data = script.data || {}
+  const scenes = Array.isArray(data.scenes) ? data.scenes : []
+  const parts = [
+    `# ${script.title || `第 ${script.chapter_number || script.episode_number || ''} 章脚本`}`,
+    data.hook ? `**开头钩子**：${data.hook}` : '',
+    ...scenes.map((scene: any) => {
+      const dialogue = (scene.dialogue || [])
+        .map((line: any) => `> ${line.character ? `${line.character}：` : ''}${line.line || line}`)
+        .join('\n')
+      return [
+        `## 场景 ${scene.scene_number || ''} ${scene.location || ''}`.trim(),
+        scene.action ? `**动作**：${scene.action}` : '',
+        scene.camera_hint ? `**镜头**：${scene.camera_hint}` : '',
+        scene.emotion ? `**情绪**：${scene.emotion}` : '',
+        dialogue,
+      ].filter(Boolean).join('\n\n')
+    }),
+    data.ending_hook ? `## 结尾钩子\n\n${data.ending_hook}` : '',
+  ]
+  return `${parts.filter(Boolean).join('\n\n')}\n`
+}
+
+function buildStoryboardMarkdown(storyboard: ProjectContent) {
+  const panels = Array.isArray(storyboard.data?.panels) ? storyboard.data.panels : []
+  const parts = [
+    `# ${storyboard.title || `第 ${storyboard.chapter_number || storyboard.episode_number || ''} 章分镜`}`,
+    ...panels.map((panel: any) => [
+      `## 分镜 ${panel.panel_number || ''}`.trim(),
+      panel.action ? `**画面动作**：${panel.action}` : '',
+      panel.dialogue ? `**对白**：${panel.dialogue}` : '',
+      panel.shot_size ? `**景别**：${panel.shot_size}` : '',
+      panel.camera_angle ? `**角度**：${panel.camera_angle}` : '',
+      panel.camera_motion ? `**运镜**：${panel.camera_motion}` : '',
+      panel.image_prompt ? `**生图提示**：${panel.image_prompt}` : '',
+    ].filter(Boolean).join('\n\n')),
+  ]
+  return `${parts.filter(Boolean).join('\n\n')}\n`
+}
+
+function escapePreviewHtml(value: string) {
+  return value.replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;',
+  }[character] || character))
+}
+
+function openProjectTextPreview(title: string, markdown: string) {
+  const preview = window.open('', '_blank')
+  if (!preview) {
+    message.warning('浏览器阻止了预览窗口')
+    return
+  }
+  preview.opener = null
+  preview.document.write(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>${escapePreviewHtml(title)}</title><style>body{margin:0;background:#f5f5f3;color:#1c1c1b;font-family:ui-serif,Georgia,"Noto Serif SC",serif}.page{box-sizing:border-box;max-width:860px;margin:0 auto;padding:56px 68px;background:#fff;min-height:100vh}pre{white-space:pre-wrap;word-break:break-word;font:16px/1.8 ui-serif,Georgia,"Noto Serif SC",serif;margin:0} @media print{body{background:#fff}.page{max-width:none;padding:24px}}</style></head><body><main class="page"><pre>${escapePreviewHtml(markdown)}</pre></main></body></html>`)
+  preview.document.close()
+  preview.focus()
 }
 
 function downloadTextFile(filename: string, text: string) {
@@ -6469,6 +8404,104 @@ function writerRoomContentWordCount(content?: ProjectContent) {
   const explicit = Number(content.data?.word_count || content.data?.characters || 0)
   if (Number.isFinite(explicit) && explicit > 0) return Math.round(explicit)
   return String(content.text_content || '').replace(/\s/g, '').length
+}
+
+function splitWriterRoomParagraphs(text: string) {
+  const normalized = String(text || '').replace(/\r\n/g, '\n').trim()
+  if (!normalized) return []
+  const byBlankLine = normalized
+    .split(/\n\s*\n+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+  if (byBlankLine.length > 1) return byBlankLine
+  return normalized
+    .split('\n')
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+type ProseDiffRow = {
+  kind: 'added' | 'removed' | 'changed'
+  approved?: string
+  candidate?: string
+}
+
+function buildProseDiffRows(approvedText: string, candidateText: string): ProseDiffRow[] {
+  const approved = splitWriterRoomParagraphs(approvedText)
+  const candidate = splitWriterRoomParagraphs(candidateText)
+  const scores = Array.from({ length: approved.length + 1 }, () => Array(candidate.length + 1).fill(0) as number[])
+
+  for (let approvedIndex = approved.length - 1; approvedIndex >= 0; approvedIndex -= 1) {
+    for (let candidateIndex = candidate.length - 1; candidateIndex >= 0; candidateIndex -= 1) {
+      scores[approvedIndex][candidateIndex] = approved[approvedIndex] === candidate[candidateIndex]
+        ? scores[approvedIndex + 1][candidateIndex + 1] + 1
+        : Math.max(scores[approvedIndex + 1][candidateIndex], scores[approvedIndex][candidateIndex + 1])
+    }
+  }
+
+  const raw: Array<{ kind: 'same' | 'added' | 'removed'; text: string }> = []
+  let approvedIndex = 0
+  let candidateIndex = 0
+  while (approvedIndex < approved.length && candidateIndex < candidate.length) {
+    if (approved[approvedIndex] === candidate[candidateIndex]) {
+      raw.push({ kind: 'same', text: approved[approvedIndex] })
+      approvedIndex += 1
+      candidateIndex += 1
+    } else if (scores[approvedIndex + 1][candidateIndex] >= scores[approvedIndex][candidateIndex + 1]) {
+      raw.push({ kind: 'removed', text: approved[approvedIndex] })
+      approvedIndex += 1
+    } else {
+      raw.push({ kind: 'added', text: candidate[candidateIndex] })
+      candidateIndex += 1
+    }
+  }
+  while (approvedIndex < approved.length) raw.push({ kind: 'removed', text: approved[approvedIndex++] })
+  while (candidateIndex < candidate.length) raw.push({ kind: 'added', text: candidate[candidateIndex++] })
+
+  const rows: ProseDiffRow[] = []
+  for (let index = 0; index < raw.length; index += 1) {
+    const current = raw[index]
+    if (current.kind === 'same') continue
+    const next = raw[index + 1]
+    if (current.kind === 'removed' && next?.kind === 'added') {
+      rows.push({ kind: 'changed', approved: current.text, candidate: next.text })
+      index += 1
+      continue
+    }
+    rows.push(current.kind === 'removed'
+      ? { kind: 'removed', approved: current.text }
+      : { kind: 'added', candidate: current.text })
+  }
+  return rows
+}
+
+function ProseParagraphDiff({ approvedText, candidateText }: { approvedText: string; candidateText: string }) {
+  const rows = useMemo(() => buildProseDiffRows(approvedText, candidateText), [approvedText, candidateText])
+  if (!rows.length) {
+    return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="候选与当前正文内容一致，没有段落差异" />
+  }
+  return (
+    <div style={writerRoomDiffListStyle}>
+      <Text type="secondary" style={{ fontSize: 12 }}>仅展示 {rows.length} 处变更；未变段落已折叠。此视图只用于审阅，不会改写正文。</Text>
+      {rows.map((row, index) => (
+        <div key={`${row.kind}-${index}`} style={writerRoomDiffRowStyle}>
+          <Tag color={row.kind === 'added' ? 'green' : row.kind === 'removed' ? 'red' : 'gold'}>
+            {row.kind === 'added' ? '新增' : row.kind === 'removed' ? '删除' : '改写'}
+          </Tag>
+          <div style={writerRoomDiffColumnsStyle}>
+            <div style={{ ...writerRoomDiffTextStyle, background: row.approved ? 'rgba(207, 19, 34, 0.08)' : 'transparent' }}>
+              <Text type="secondary" style={{ fontSize: 12 }}>当前正文</Text>
+              <Text style={{ display: 'block', marginTop: 4, whiteSpace: 'pre-wrap' }}>{row.approved || '—'}</Text>
+            </div>
+            <div style={{ ...writerRoomDiffTextStyle, background: row.candidate ? 'rgba(56, 158, 13, 0.08)' : 'transparent' }}>
+              <Text type="secondary" style={{ fontSize: 12 }}>候选正文</Text>
+              <Text style={{ display: 'block', marginTop: 4, whiteSpace: 'pre-wrap' }}>{row.candidate || '—'}</Text>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 function writerRoomStepStatusColor(content?: ProjectContent, log?: ProjectGenerationLog) {
@@ -6600,6 +8633,10 @@ function WriterRoomTab({
   onRunStep,
   onRunBatch,
   onPromote,
+  continuityCandidates,
+  continuitySummary,
+  onResolveContinuityCandidate,
+  onRewriteParagraph,
 }: {
   chapters: ChapterPlanItem[]
   activeChapterNumber: number
@@ -6618,8 +8655,12 @@ function WriterRoomTab({
   onModelChange: (value: string) => void
   loading: boolean
   onRunStep: (step: string, chapterNumber: number, contentId?: string, instruction?: string, selectedText?: string) => void
-  onRunBatch: (chapterNumber: number, steps?: string[]) => void
+  onRunBatch: (chapterNumber: number, steps?: string[], contentId?: string) => void
   onPromote: (contentId: string) => void
+  continuityCandidates: CreativeProjectContinuityCandidate[]
+  continuitySummary: Record<string, any> | null
+  onResolveContinuityCandidate: (candidateId: string, action: 'accept' | 'ignore') => void
+  onRewriteParagraph: (contentId: string, paragraphIndex: number, instruction: string) => void
 }) {
   const latestByStep = Object.fromEntries(
     writerRoomStepOptions.map((step) => [
@@ -6629,12 +8670,8 @@ function WriterRoomTab({
   ) as Record<string, ProjectContent | undefined>
   const canPromote = latestByStep.prose_rewrite || latestByStep.prose_humanized || latestByStep.prose_draft
   const currentNovelBody = contentForChapter('novel_body', activeChapterNumber)
-  const rewriteSource =
-    latestByStep.prose_humanized ||
-    latestByStep.prose_draft ||
-    contentForChapter('novel_body', activeChapterNumber)
-  const [partialRewriteText, setPartialRewriteText] = useState('')
   const [partialRewriteInstruction, setPartialRewriteInstruction] = useState('压低解释，增加具体动作、物件互动和对白潜台词。')
+  const [selectedParagraphIndex, setSelectedParagraphIndex] = useState(0)
   const [activeStep, setActiveStep] = useState(writerRoomStepOptions[0].value)
   const [batchSteps, setBatchSteps] = useState<string[]>([
     'scene_beats',
@@ -6646,6 +8683,9 @@ function WriterRoomTab({
   const [promoteTarget, setPromoteTarget] = useState<ProjectContent | null>(null)
   const [promoteChecked, setPromoteChecked] = useState(false)
   const [selectedContentIds, setSelectedContentIds] = useState<Record<string, string>>({})
+  const [compareMode, setCompareMode] = useState<'side-by-side' | 'diff'>('side-by-side')
+  const lastActiveChapterRef = useRef<number | null>(null)
+  const hasAutoSelectedReadableStepRef = useRef(false)
 
   const versionsForStep = (step: string) =>
     contents
@@ -6656,13 +8696,28 @@ function WriterRoomTab({
       )
       .sort((left, right) => right.version - left.version || String(right.created_at || '').localeCompare(String(left.created_at || '')))
 
+  const selectedVersionForStep = (step: string) => {
+    const versions = versionsForStep(step)
+    return versions.find((content) => content.id === selectedContentIds[step]) || latestByStep[step]
+  }
+
+  // A user may be inspecting an older candidate on purpose. The next Writer
+  // Room action must use that visible candidate, never silently swap to the
+  // newest one of the same type.
   const sourceForStep = (step: string) => {
-    if (step === 'prose_humanized') return latestByStep.prose_draft || currentNovelBody
+    if (step === 'character_rehearsal') return selectedVersionForStep('scene_beats')
+    if (step === 'prose_draft') return selectedVersionForStep('character_rehearsal') || selectedVersionForStep('scene_beats')
+    if (step === 'prose_humanized') return selectedVersionForStep('prose_draft') || currentNovelBody
     if (step === 'prose_review' || step === 'prose_rewrite') {
-      return latestByStep.prose_humanized || latestByStep.prose_draft || currentNovelBody
+      return selectedVersionForStep('prose_humanized') || selectedVersionForStep('prose_draft') || currentNovelBody
     }
     return undefined
   }
+  const rewriteSource = sourceForStep('prose_rewrite')
+  const rewriteParagraphs = useMemo(
+    () => splitWriterRoomParagraphs(rewriteSource?.text_content || ''),
+    [rewriteSource?.text_content],
+  )
 
   const runStep = (step: string, instruction?: string) => {
     const sourceId = sourceForStep(step)?.id
@@ -6686,18 +8741,19 @@ function WriterRoomTab({
     onRunStep('prose_rewrite', activeChapterNumber, rewriteSource?.id, instruction)
   }
 
-  const runPartialRewrite = () => {
-    const selectedText = partialRewriteText.trim()
-    if (!selectedText) {
-      message.warning('请先粘贴要局部重写的正文片段')
+  const runParagraphRewrite = () => {
+    if (!rewriteSource?.id) {
+      message.warning('请先选择一个可重写的正文候选')
       return
     }
-    onRunStep(
-      'prose_rewrite',
-      activeChapterNumber,
-      rewriteSource?.id,
-      partialRewriteInstruction || '只重写选段相关段落，保持剧情事实不变。',
-      selectedText,
+    if (!rewriteParagraphs.length) {
+      message.warning('当前候选没有可定位的段落')
+      return
+    }
+    onRewriteParagraph(
+      rewriteSource.id,
+      selectedParagraphIndex,
+      partialRewriteInstruction || '只重写该段落，保留剧情事实、人物关系和前后文语气。',
     )
   }
 
@@ -6723,7 +8779,20 @@ function WriterRoomTab({
   const activePreview = writerRoomPreviewText(activeContent)
   const activeReviewIssues = activeRow?.step.value === 'prose_review' ? reviewIssuesForContent(activeContent) : []
   const activeQualitySummary = activeRow?.step.value === 'prose_review' ? qualitySummaryForContent(activeContent) : null
+  const activeContinuityCandidates = activeContent?.content_type === 'prose_review'
+    ? continuityCandidates.filter((candidate) => candidate.source_content_id === activeContent.id)
+    : []
   const activeIsProseResult = ['prose_draft', 'prose_humanized', 'prose_rewrite'].includes(activeRow?.step.value || '')
+  const preferredReadableStep = latestByStep.prose_rewrite
+    ? 'prose_rewrite'
+    : latestByStep.prose_humanized
+      ? 'prose_humanized'
+      : latestByStep.prose_draft
+        ? 'prose_draft'
+        : writerRoomStepOptions[0].value
+  const activeCandidateIsPromoted = Boolean(
+    activeIsProseResult && activeContent && currentNovelBody?.source_content_id === activeContent.id,
+  )
   const completedCount = writerRoomRows.filter((row) => row.content).length
   const progressPercent = Math.round((completedCount / Math.max(writerRoomRows.length, 1)) * 100)
   const candidateContent = activeIsProseResult ? activeContent : canPromote
@@ -6735,6 +8804,29 @@ function WriterRoomTab({
     label: step.label,
     value: step.value,
   }))
+
+  useEffect(() => {
+    if (lastActiveChapterRef.current !== activeChapterNumber) {
+      lastActiveChapterRef.current = activeChapterNumber
+      hasAutoSelectedReadableStepRef.current = preferredReadableStep !== writerRoomStepOptions[0].value
+      setSelectedContentIds({})
+      setActiveStep(preferredReadableStep)
+      return
+    }
+
+    // Content can arrive after the workbench mounts. Auto-open the first
+    // readable candidate once, but never override a deliberate step click.
+    if (!hasAutoSelectedReadableStepRef.current && preferredReadableStep !== writerRoomStepOptions[0].value) {
+      hasAutoSelectedReadableStepRef.current = true
+      setActiveStep(preferredReadableStep)
+    }
+  }, [activeChapterNumber, preferredReadableStep])
+
+  useEffect(() => {
+    if (selectedParagraphIndex >= rewriteParagraphs.length) {
+      setSelectedParagraphIndex(Math.max(0, rewriteParagraphs.length - 1))
+    }
+  }, [rewriteParagraphs.length, selectedParagraphIndex])
 
   const jumpToNextStep = () => {
     if (!nextRow) return
@@ -6800,7 +8892,13 @@ function WriterRoomTab({
               icon={<ThunderboltOutlined />}
               loading={loading}
               disabled={!batchSteps.length}
-              onClick={() => onRunBatch(activeChapterNumber, batchSteps)}
+              onClick={() => {
+                const orderedSteps = writerRoomStepOptions
+                  .map((item) => item.value)
+                  .filter((step) => batchSteps.includes(step))
+                const source = orderedSteps.length ? sourceForStep(orderedSteps[0]) : undefined
+                onRunBatch(activeChapterNumber, orderedSteps, source?.id)
+              }}
             >
               按勾选生成候选
             </Button>
@@ -6899,11 +8997,6 @@ function WriterRoomTab({
                 <Button loading={loading} onClick={() => runStep(activeRow.step.value)}>
                   {activeContent ? '生成新候选' : '生成候选'}
                 </Button>
-                {activeContent && activeIsProseResult ? (
-                  <Button type="primary" loading={loading} onClick={() => openPromoteDialog(activeContent)}>
-                    提升为正文
-                  </Button>
-                ) : null}
               </Space>
             </Space>
 
@@ -6938,6 +9031,12 @@ function WriterRoomTab({
                     })()}
                   </Text>
                 ) : null}
+                {!activeContent && sourceForStep(activeRow.step.value) ? (
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    将使用：{writerRoomStepLabelMap[sourceForStep(activeRow.step.value)?.content_type || ''] || sourceForStep(activeRow.step.value)?.content_type}
+                    {' '}v{sourceForStep(activeRow.step.value)?.version}
+                  </Text>
+                ) : null}
               </div>
               <div style={writerRoomContextBlockStyle}>
                 <Text type="secondary">产物用途</Text>
@@ -6969,6 +9068,26 @@ function WriterRoomTab({
               onChange={(value) => onTemplateChange(activeRow.step.value, value || '')}
             />
 
+            <div style={writerRoomVersionStatusStyle}>
+              <Space wrap size={[6, 6]}>
+                {activeIsProseResult ? (
+                  <Tag color={activeCandidateIsPromoted ? 'green' : 'gold'}>
+                    {activeCandidateIsPromoted ? '已提升为当前正文' : '候选稿，尚未提升'}
+                  </Tag>
+                ) : (
+                  <Tag>工作室中间产物，不是正文</Tag>
+                )}
+                {currentNovelBody ? <Tag color="blue">当前正文 v{currentNovelBody.version}</Tag> : <Tag>当前章节暂无正式正文</Tag>}
+              </Space>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {activeIsProseResult
+                  ? activeCandidateIsPromoted
+                    ? '当前预览与正文阅读区使用同一版本。'
+                    : '候选不会自动覆盖正文，请在下方对比后手动提升。'
+                  : '场景节拍、角色演绎和审稿用于下一步写作，内容与正文不同是正常的。'}
+              </Text>
+            </div>
+
             {activeLog ? (
               <WriterRoomLogSummary log={activeLog} />
             ) : activeContent ? (
@@ -6986,6 +9105,42 @@ function WriterRoomTab({
             )}
 
             {activeQualitySummary ? <WriterRoomQualitySummaryPanel summary={activeQualitySummary} /> : null}
+            {activeRow.step.value === 'prose_review' ? (
+              <div style={writerRoomContinuityStyle}>
+                <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                  <Space style={{ justifyContent: 'space-between', width: '100%' }} wrap>
+                    <Space direction="vertical" size={0}>
+                      <Text strong>连续性事实候选</Text>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        已锁定 {continuitySummary?.locked_fact_count || 0} 条事实，待确认 {continuitySummary?.pending_candidate_count || 0} 条
+                      </Text>
+                    </Space>
+                    <Tag color="blue">仅确认后进入后续上下文</Tag>
+                  </Space>
+                  {activeContinuityCandidates.length ? activeContinuityCandidates.map((candidate) => (
+                    <div key={candidate.id} style={writerRoomContinuityItemStyle}>
+                      <Space direction="vertical" size={5} style={{ width: '100%' }}>
+                        <Space wrap>
+                          <Tag color={candidate.status === 'pending' ? 'gold' : 'green'}>{candidate.status}</Tag>
+                          <Tag>{candidate.entity_type}</Tag>
+                          <Tag color="blue">{candidate.target_fact_type}</Tag>
+                          {candidate.entity_name ? <Text strong>{candidate.entity_name}</Text> : null}
+                        </Space>
+                        <Text>{candidate.claim || candidate.evidence_excerpt}</Text>
+                        {candidate.evidence_excerpt ? <Text type="secondary" style={{ fontSize: 12 }}>证据：{candidate.evidence_excerpt}</Text> : null}
+                        {candidate.status === 'pending' ? (
+                          <Space>
+                            <Button size="small" type="primary" loading={loading} onClick={() => onResolveContinuityCandidate(candidate.id, 'accept')}>确认事实</Button>
+                            <Button size="small" loading={loading} onClick={() => onResolveContinuityCandidate(candidate.id, 'ignore')}>忽略</Button>
+                          </Space>
+                        ) : null}
+                      </Space>
+                    </div>
+                  )) : <Text type="secondary">当前审稿没有提取到需要锁定的连续性事实。</Text>}
+                </Space>
+              </div>
+            ) : null}
+
             {activeReviewIssues.length ? (
               <Space direction="vertical" size={8} style={{ width: '100%' }}>
                 <Space style={{ width: '100%', justifyContent: 'space-between' }} align="center" wrap>
@@ -7021,28 +9176,47 @@ function WriterRoomTab({
       <section style={panelStyle}>
         <Space direction="vertical" size={12} style={{ width: '100%' }}>
           <Space style={{ width: '100%', justifyContent: 'space-between' }} align="center" wrap>
-            <Text strong>正文对比</Text>
-            {candidateContent ? (
-              <Button type="primary" loading={loading} onClick={() => openPromoteDialog(candidateContent)}>
-                审核并提升候选
-              </Button>
-            ) : null}
+            <Space direction="vertical" size={4}>
+              <Space wrap>
+                <Text strong>正文对比</Text>
+                {currentNovelBody ? <Tag>正式 v{currentNovelBody.version}</Tag> : <Tag>暂无正式正文</Tag>}
+                {candidateContent ? <Tag color="processing">{writerRoomStepLabelMap[candidateContent.content_type] || candidateContent.content_type} v{candidateContent.version}</Tag> : null}
+              </Space>
+              {candidateContent?.source_content_id ? <Text type="secondary" style={{ fontSize: 12 }}>候选来源已绑定到内容版本，可从上方生成日志回溯请求与响应。</Text> : null}
+            </Space>
+            <Space wrap>
+              <Segmented
+                size="small"
+                value={compareMode}
+                onChange={(value) => setCompareMode(value as 'side-by-side' | 'diff')}
+                options={[{ label: '并列阅读', value: 'side-by-side' }, { label: '仅看差异', value: 'diff' }]}
+              />
+              {candidateContent ? (
+                <Button type="primary" loading={loading} onClick={() => openPromoteDialog(candidateContent)}>
+                  审核并提升候选
+                </Button>
+              ) : null}
+            </Space>
           </Space>
           {candidateContent ? (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 360px), 1fr))', gap: 12 }}>
-              <div style={writerRoomComparePaneStyle}>
-                <Text type="secondary">当前正文</Text>
-                <Paragraph style={{ margin: '8px 0 0', whiteSpace: 'pre-wrap' }} ellipsis={{ rows: 16, expandable: true }}>
-                  {currentNovelBody?.text_content || '当前章节还没有正式正文'}
-                </Paragraph>
+            compareMode === 'diff' ? (
+              <ProseParagraphDiff approvedText={currentNovelBody?.text_content || ''} candidateText={candidateContent.text_content || ''} />
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 360px), 1fr))', gap: 12 }}>
+                <div style={writerRoomComparePaneStyle}>
+                  <Text type="secondary">当前正文</Text>
+                  <Paragraph style={{ margin: '8px 0 0', whiteSpace: 'pre-wrap' }} ellipsis={{ rows: 16, expandable: true }}>
+                    {currentNovelBody?.text_content || '当前章节还没有正式正文'}
+                  </Paragraph>
+                </div>
+                <div style={writerRoomComparePaneStyle}>
+                  <Text type="secondary">写作室候选</Text>
+                  <Paragraph style={{ margin: '8px 0 0', whiteSpace: 'pre-wrap' }} ellipsis={{ rows: 16, expandable: true }}>
+                    {candidateContent.text_content}
+                  </Paragraph>
+                </div>
               </div>
-              <div style={writerRoomComparePaneStyle}>
-                <Text type="secondary">写作室候选</Text>
-                <Paragraph style={{ margin: '8px 0 0', whiteSpace: 'pre-wrap' }} ellipsis={{ rows: 16, expandable: true }}>
-                  {candidateContent.text_content}
-                </Paragraph>
-              </div>
-            </div>
+            )
         ) : (
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有正文初稿、润色或重写结果" />
         )}
@@ -7098,15 +9272,40 @@ function WriterRoomTab({
       <section style={panelStyle}>
         <Space direction="vertical" size={10} style={{ width: '100%' }}>
           <Space direction="vertical" size={2}>
-            <Text strong>选段局部重写</Text>
-            <Text type="secondary">粘贴当前正文里不顺的一小段，只重写相关段落，并返回可提升的完整正文版本。</Text>
+            <Text strong>段落锚点重写</Text>
+            <Text type="secondary">从当前候选正文里选择一个段落，只生成新的候选版本，不覆盖正式正文。</Text>
           </Space>
-          <TextArea
-            value={partialRewriteText}
-            onChange={(event) => setPartialRewriteText(event.target.value)}
-            placeholder="粘贴需要局部重写的原文片段"
-            autoSize={{ minRows: 4, maxRows: 10 }}
+          <Select
+            value={selectedParagraphIndex}
+            onChange={(value) => setSelectedParagraphIndex(Number(value))}
+            options={rewriteParagraphs.map((paragraph, index) => ({
+              value: index,
+              label: `段落 ${index + 1} · ${paragraph.slice(0, 40) || '空段落'}`,
+            }))}
+            placeholder="选择要重写的段落"
+            disabled={!rewriteParagraphs.length}
           />
+          <div style={writerRoomParagraphListStyle}>
+            {rewriteParagraphs.length ? rewriteParagraphs.map((paragraph, index) => {
+              const isActive = index === selectedParagraphIndex
+              return (
+                <button
+                  key={`${index}-${paragraph.slice(0, 12)}`}
+                  type="button"
+                  onClick={() => setSelectedParagraphIndex(index)}
+                  style={{
+                    ...writerRoomParagraphButtonStyle,
+                    ...(isActive ? writerRoomParagraphButtonActiveStyle : {}),
+                  }}
+                >
+                  <Text strong>段落 {index + 1}</Text>
+                  <Text type="secondary" style={{ display: 'block', marginTop: 4, whiteSpace: 'pre-wrap' }}>
+                    {paragraph}
+                  </Text>
+                </button>
+              )
+            }) : <Empty description="当前候选没有可重写的段落" />}
+          </div>
           <TextArea
             value={partialRewriteInstruction}
             onChange={(event) => setPartialRewriteInstruction(event.target.value)}
@@ -7114,13 +9313,13 @@ function WriterRoomTab({
             autoSize={{ minRows: 2, maxRows: 5 }}
           />
           <Space wrap>
-            <Button type="primary" loading={loading} onClick={runPartialRewrite}>
-              生成局部重写版
+            <Button type="primary" loading={loading} onClick={runParagraphRewrite}>
+              生成新的候选版本
             </Button>
-            <Button onClick={() => setPartialRewriteText(rewriteSource?.text_content || '')}>
-              填入候选全文
+            <Button onClick={() => setSelectedParagraphIndex(0)}>
+              回到首段
             </Button>
-            <Button onClick={() => setPartialRewriteText('')}>清空选段</Button>
+            <Button onClick={() => setSelectedParagraphIndex(Math.max(0, rewriteParagraphs.length - 1))}>跳到末段</Button>
           </Space>
         </Space>
       </section>
@@ -7145,7 +9344,7 @@ function ScriptTab({
   inlineImageLoadingKey: string | null
   projectTitle?: string
 }) {
-  const sortedNovelBodies = useMemo(() => sortProjectContentsForReading(novelBodies), [novelBodies])
+  const sortedNovelBodies = useMemo(() => latestProjectContentsByChapter(novelBodies), [novelBodies])
   const sortedComicPages = useMemo(() => sortProjectContentsForReading(comicPages), [comicPages])
   const [activeReaderId, setActiveReaderId] = useState<string>('')
   const renderInlineImage = (context: ImagePromptContext) => {
@@ -7175,7 +9374,7 @@ function ScriptTab({
     }
   }, [activeReaderId, sortedNovelBodies])
 
-  if (!novelBodies.length && !comicPages.length) {
+  if (!sortedNovelBodies.length && !comicPages.length) {
     return (
       <Space direction="vertical" size={12} style={{ width: '100%', alignItems: 'center', padding: 40 }}>
         <Empty description="还没有可阅读的正文或漫画页，请先在单话工作台生成正文/漫画页" />
@@ -7189,8 +9388,8 @@ function ScriptTab({
         items={[
           {
             key: 'reader',
-            label: `正文阅读 ${novelBodies.length ? `(${novelBodies.length})` : ''}`,
-            children: novelBodies.length ? (
+            label: `正文阅读 ${sortedNovelBodies.length ? `(${sortedNovelBodies.length})` : ''}`,
+            children: sortedNovelBodies.length ? (
               <div style={readerLayoutStyle}>
                 <aside style={readerTocStyle}>
                   <Space direction="vertical" size={8} style={{ width: '100%' }}>
@@ -7484,6 +9683,550 @@ function LogTextBlock({ title, value, rows }: { title: string; value: string; ro
       />
     </div>
   )
+}
+
+function ChapterRail({
+  theme,
+  chapters,
+  activeChapterNumber,
+  contents,
+  writerRoomContents,
+  ledger,
+  health,
+  onChapterChange,
+}: {
+  theme: ThemeColors
+  chapters: ChapterPlanItem[]
+  activeChapterNumber: number
+  contents: ProjectContent[]
+  writerRoomContents: ProjectContent[]
+  ledger: NarrativeForeshadowing[]
+  health: NarrativeHealth | null
+  onChapterChange: (chapterNumber: number) => void | Promise<void>
+}) {
+  const candidateTypes = new Set(['prose_draft', 'prose_humanized', 'prose_rewrite'])
+  const healthIssuesByChapter = useMemo(() => {
+    const result = new Map<number, NarrativeHealth['issues']>()
+    for (const issue of health?.issues || []) {
+      const details = issue.details || {}
+      const values = [
+        details.chapter_number,
+        ...(Array.isArray(details.chapter_numbers) ? details.chapter_numbers : []),
+      ]
+      for (const value of values) {
+        const chapterNumber = Number(value)
+        if (!Number.isInteger(chapterNumber) || chapterNumber < 1) continue
+        result.set(chapterNumber, [...(result.get(chapterNumber) || []), issue])
+      }
+    }
+    return result
+  }, [health])
+
+  const chapterRows = useMemo(() => chapters
+    .map((chapter) => {
+      const chapterNumber = Number(chapter.chapter_number)
+      const approved = contents.some((item) => item.content_type === 'novel_body' && Number(item.chapter_number || item.episode_number) === chapterNumber)
+      const candidateCount = writerRoomContents.filter((item) => candidateTypes.has(item.content_type) && Number(item.chapter_number || item.episode_number) === chapterNumber).length
+      const reviewed = writerRoomContents.some((item) => item.content_type === 'prose_review' && Number(item.chapter_number || item.episode_number) === chapterNumber)
+      const ledgerCount = ledger.filter((item) => item.planted_chapter === chapterNumber && !['ignored', 'superseded'].includes(item.status)).length
+      const issues = healthIssuesByChapter.get(chapterNumber) || []
+      return { chapter, chapterNumber, approved, candidateCount, reviewed, ledgerCount, issues }
+    })
+    .filter((row) => Number.isInteger(row.chapterNumber) && row.chapterNumber > 0)
+    .sort((left, right) => left.chapterNumber - right.chapterNumber), [chapters, contents, writerRoomContents, ledger, healthIssuesByChapter])
+
+  const healthColor = health?.status === 'blocked' ? '#cf1322' : health?.status === 'attention' ? '#d46b08' : '#389e0d'
+  const healthLabel = health?.status === 'blocked' ? '需要处理' : health?.status === 'attention' ? '有待处理项' : '健康'
+
+  return (
+    <section style={{ marginTop: 'auto', borderTop: `1px solid ${theme.border}`, minHeight: 0 }} aria-label="章节轨">
+      <div style={{ padding: '12px 16px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+        <Space size={7}>
+          <FileTextOutlined style={{ color: theme.primary }} />
+          <Text strong>章节轨</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>{chapterRows.length}</Text>
+        </Space>
+        <Tooltip title={health ? `${healthLabel}：${health?.summary?.issue_count || 0} 项` : '正在读取健康检查'}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', color: healthColor }}>
+            {health?.status === 'healthy' ? <CheckCircleOutlined /> : <ExclamationCircleOutlined />}
+          </span>
+        </Tooltip>
+      </div>
+      {chapterRows.length ? (
+        <div style={{ maxHeight: 350, overflowY: 'auto', padding: '0 8px 10px' }}>
+          {chapterRows.map((row) => {
+            const isActive = row.chapterNumber === activeChapterNumber
+            const statusMarkers = [
+              { key: 'plan', label: '已规划', color: theme.primary, visible: true },
+              { key: 'approved', label: '正式正文', color: '#389e0d', visible: row.approved },
+              { key: 'candidate', label: `${row.candidateCount} 个正文候选`, color: '#722ed1', visible: row.candidateCount > 0 },
+              { key: 'review', label: '已有主编审稿', color: '#13a8a8', visible: row.reviewed },
+              { key: 'ledger', label: `${row.ledgerCount} 条伏笔记录`, color: '#d48806', visible: row.ledgerCount > 0 },
+              { key: 'health', label: row.issues.map((issue) => issue.message).join('；'), color: '#cf1322', visible: row.issues.length > 0 },
+            ].filter((marker) => marker.visible)
+            return (
+              <button
+                key={row.chapterNumber}
+                type="button"
+                onClick={() => void onChapterChange(row.chapterNumber)}
+                aria-current={isActive ? 'step' : undefined}
+                style={{
+                  appearance: 'none',
+                  border: 0,
+                  borderLeft: `2px solid ${isActive ? theme.primary : 'transparent'}`,
+                  background: isActive ? theme.primaryAlpha(0.1) : 'transparent',
+                  color: theme.textPrimary,
+                  cursor: 'pointer',
+                  display: 'block',
+                  padding: '9px 8px 8px 10px',
+                  textAlign: 'left',
+                  width: '100%',
+                }}
+              >
+                <div style={{ alignItems: 'baseline', display: 'flex', gap: 7, minWidth: 0 }}>
+                  <Text strong style={{ color: theme.textPrimary, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>#{row.chapterNumber}</Text>
+                  <Text ellipsis={{ tooltip: row.chapter.title }} style={{ color: theme.textPrimary, minWidth: 0 }}>{row.chapter.title || `第 ${row.chapterNumber} 章`}</Text>
+                </div>
+                <div style={{ alignItems: 'center', display: 'flex', gap: 5, marginTop: 6, minHeight: 8 }}>
+                  {statusMarkers.map((marker) => (
+                    <Tooltip key={marker.key} title={marker.label}>
+                      <span
+                        aria-label={marker.label}
+                        style={{ background: marker.color, borderRadius: '50%', display: 'inline-block', height: 6, width: 6 }}
+                      />
+                    </Tooltip>
+                  ))}
+                </div>
+              </button>
+            )
+          })}
+        </div>
+      ) : (
+        <div style={{ padding: '4px 16px 16px' }}>
+          <Text type="secondary" style={{ fontSize: 12 }}>生成章节规划后，会在这里展示写作与审阅状态。</Text>
+        </div>
+      )}
+    </section>
+  )
+}
+
+function NarrativeInspector({
+  theme,
+  chapterNumber,
+  context,
+  ledger,
+  graph,
+  facts,
+  continuityCandidates,
+  continuitySummary,
+  logs,
+  runs,
+  loading,
+  onRefresh,
+  onDecision,
+  onRunControl,
+  onAutopilot,
+  onOpenWriterRoom,
+  onOpenFacts,
+}: {
+  theme: ThemeColors
+  chapterNumber: number
+  context: NarrativeContextPreview | null
+  ledger: NarrativeForeshadowing[]
+  graph: NarrativeGraphData | null
+  facts: ProjectContent[]
+  continuityCandidates: CreativeProjectContinuityCandidate[]
+  continuitySummary: Record<string, any> | null
+  logs: ProjectGenerationLog[]
+  runs: NarrativeRun[]
+  loading: boolean
+  onRefresh: () => void
+  onDecision: (itemId: string, action: 'accept' | 'advance' | 'resolve' | 'ignore') => Promise<void>
+  onRunControl: (runId: string, action: 'pause' | 'resume' | 'retry' | 'cancel') => Promise<void>
+  onAutopilot: (enabled: boolean) => Promise<void>
+  onOpenWriterRoom: () => void
+  onOpenFacts: () => void
+}) {
+  const [activeTab, setActiveTab] = useState('context')
+  const overflow = context?.metadata?.overflow || []
+  const layers = context?.metadata?.layers || []
+  const activeLedger = ledger.filter((item) => ['active', 'advanced', 'overdue'].includes(item.status))
+  const pendingLedger = ledger.filter((item) => item.status === 'pending_review')
+  const pendingFacts = continuityCandidates.filter((candidate) => candidate.status === 'pending')
+  const lockedFacts = facts.filter((item) => item.is_locked)
+
+  return (
+    <div style={{ minWidth: 0 }}>
+      <header style={{ padding: '14px 14px 10px', borderBottom: `1px solid ${theme.border}` }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <Space size={7}>
+            <BranchesOutlined style={{ color: theme.primary }} />
+            <Text strong>叙事检查器</Text>
+          </Space>
+          <Tooltip title="刷新叙事状态">
+            <Button type="text" size="small" icon={<ReloadOutlined />} aria-label="刷新叙事状态" loading={loading} onClick={onRefresh} />
+          </Tooltip>
+        </div>
+        <Text type="secondary" style={{ display: 'block', marginTop: 4, fontSize: 12 }}>
+          第 {chapterNumber} 章
+          {context?.metadata?.fingerprint ? ` · ${context.metadata.fingerprint.slice(0, 8)}` : ''}
+        </Text>
+      </header>
+      <Tabs
+        size="small"
+        activeKey={activeTab}
+        onChange={setActiveTab}
+        tabBarStyle={{ margin: '0 12px' }}
+        items={[
+          {
+            key: 'context',
+            label: '上下文',
+            children: (
+              <div style={{ padding: '4px 14px 14px' }}>
+                {overflow.length ? (
+                  <Alert
+                    type="warning"
+                    showIcon
+                    message="锁定设定超过上下文预算"
+                    description={overflow.map((item) => `${item.layer}: ${item.actual}/${item.budget}`).join('；')}
+                    style={{ marginBottom: 12 }}
+                  />
+                ) : null}
+                {layers.length ? (
+                  <List
+                    size="small"
+                    dataSource={layers}
+                    renderItem={(layer) => (
+                      <List.Item style={{ padding: '8px 0' }}>
+                        <Space direction="vertical" size={1} style={{ width: '100%' }}>
+                          <Space size={6}>
+                            <Tag bordered={false}>{layer.id}</Tag>
+                            <Text>{contextLayerLabel(layer.label)}</Text>
+                          </Space>
+                          <Text type="secondary" style={{ fontSize: 12 }}>
+                            {layer.characters || 0}/{layer.budget || 0} 字{layer.status ? ` · ${layer.status}` : ''}
+                          </Text>
+                        </Space>
+                      </List.Item>
+                    )}
+                  />
+                ) : (
+                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无可预览上下文" />
+                )}
+              </div>
+            ),
+          },
+          {
+            key: 'review',
+            label: `审阅 ${pendingFacts.length}`,
+            children: (
+              <div style={{ padding: '4px 14px 14px' }}>
+                <Space direction="vertical" size={10} style={{ width: '100%' }}>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    待确认事实不会进入正文上下文。审稿的来源、质量意见和确认动作只在写作室中处理，避免出现两套审批入口。
+                  </Text>
+                  {pendingFacts.length ? (
+                    <List
+                      size="small"
+                      dataSource={pendingFacts.slice(0, 12)}
+                      renderItem={(candidate) => (
+                        <List.Item style={{ display: 'block', padding: '10px 0' }}>
+                          <Space direction="vertical" size={3} style={{ width: '100%' }}>
+                            <Space size={6} wrap>
+                              <Tag color="gold">待确认</Tag>
+                              <Tag>{candidate.entity_type}</Tag>
+                              {candidate.entity_name ? <Text strong>{candidate.entity_name}</Text> : null}
+                            </Space>
+                            <Text ellipsis={{ tooltip: candidate.claim }}>{candidate.claim || candidate.evidence_excerpt}</Text>
+                            {candidate.evidence_anchor?.chapter_number ? <Text type="secondary" style={{ fontSize: 12 }}>第 {candidate.evidence_anchor.chapter_number} 章证据</Text> : null}
+                          </Space>
+                        </List.Item>
+                      )}
+                    />
+                  ) : (
+                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有待确认的连续性事实" />
+                  )}
+                  <Button size="small" onClick={onOpenWriterRoom}>打开写作室审核</Button>
+                </Space>
+              </div>
+            ),
+          },
+          {
+            key: 'facts',
+            label: `事实 ${lockedFacts.length || continuitySummary?.locked_fact_count || 0}`,
+            children: (
+              <div style={{ padding: '4px 14px 14px' }}>
+                {lockedFacts.length ? (
+                  <List
+                    size="small"
+                    dataSource={lockedFacts.slice(0, 16)}
+                    renderItem={(item) => (
+                      <List.Item style={{ display: 'block', padding: '10px 0' }}>
+                        <Space direction="vertical" size={3} style={{ width: '100%' }}>
+                          <Space size={6}><Tag color={item.content_type === 'project_bible' ? 'blue' : 'cyan'}>{item.content_type === 'project_bible' ? '项目圣经' : '世界设定'}</Tag><Text ellipsis>{item.title || '未命名事实'}</Text></Space>
+                          <Text type="secondary" ellipsis={{ tooltip: writerRoomPreviewText(item, 320) }} style={{ fontSize: 12 }}>{writerRoomPreviewText(item, 320)}</Text>
+                        </Space>
+                      </List.Item>
+                    )}
+                  />
+                ) : (
+                  <Space direction="vertical" size={10} style={{ width: '100%' }}>
+                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有锁定的项目事实" />
+                    <Button size="small" onClick={onOpenFacts}>打开圣经/世界设定</Button>
+                  </Space>
+                )}
+              </div>
+            ),
+          },
+          {
+            key: 'foreshadowing',
+            label: `伏笔 ${activeLedger.length + pendingLedger.length}`,
+            children: (
+              <div style={{ padding: '4px 14px 14px' }}>
+                {ledger.length ? (
+                  <List
+                    size="small"
+                    dataSource={ledger}
+                    renderItem={(item) => (
+                      <List.Item style={{ display: 'block', padding: '10px 0' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                          <Text ellipsis style={{ maxWidth: 190 }}>{item.statement || '未命名伏笔'}</Text>
+                          <Tag color={foreshadowingColor(item.status)}>{foreshadowingLabel(item.status)}</Tag>
+                        </div>
+                        <Text type="secondary" style={{ display: 'block', margin: '4px 0 7px', fontSize: 12 }}>
+                          第 {item.planted_chapter} 章 · {timingLabel(item.timing)}
+                        </Text>
+                        <Space size={4} wrap>
+                          {item.status === 'pending_review' ? <Button size="small" onClick={() => void onDecision(item.id, 'accept')}>确认</Button> : null}
+                          {['active', 'advanced', 'overdue'].includes(item.status) ? <Button size="small" onClick={() => void onDecision(item.id, 'advance')}>推进</Button> : null}
+                          {['active', 'advanced', 'overdue'].includes(item.status) ? <Button size="small" onClick={() => void onDecision(item.id, 'resolve')}>回收</Button> : null}
+                          {['pending_review', 'active', 'advanced', 'overdue'].includes(item.status) ? <Button size="small" type="text" onClick={() => void onDecision(item.id, 'ignore')}>忽略</Button> : null}
+                        </Space>
+                      </List.Item>
+                    )}
+                  />
+                ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前章节没有伏笔记录" />}
+              </div>
+            ),
+          },
+          {
+            key: 'run',
+            label: '运行',
+            children: (
+              <div style={{ padding: '10px 14px 14px' }}>
+                <Space direction="vertical" size={10} style={{ width: '100%' }}>
+                  <Space size={6} wrap>
+                    <Tag color={context?.persisted ? 'green' : 'default'}>{context?.persisted ? '已冻结上下文' : '预览上下文'}</Tag>
+                    {context?.metadata?.context_snapshot_id ? <Text code ellipsis style={{ maxWidth: 160 }}>{context.metadata.context_snapshot_id}</Text> : null}
+                    <Text type="secondary" style={{ fontSize: 12 }}>本章日志 {logs.length}</Text>
+                  </Space>
+                  {logs.length ? (
+                    <List
+                      size="small"
+                      dataSource={logs}
+                      renderItem={(log) => (
+                        <List.Item style={{ padding: '8px 0' }}>
+                          <Space direction="vertical" size={3} style={{ width: '100%' }}>
+                            <Space size={6} wrap><Tag color={log.status === 'success' || log.status === 'success_repaired' ? 'green' : 'red'}>{log.status}</Tag><Text>{writerRoomStepLabelMap[log.stage.replace('writer_room:', '')] || stageLabels[log.stage] || log.stage}</Text></Space>
+                            <Text type="secondary" style={{ fontSize: 12 }} ellipsis>{log.model || log.provider || '未记录模型'}</Text>
+                            <WriterRoomLogSummary log={log} />
+                          </Space>
+                        </List.Item>
+                      )}
+                    />
+                  ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前章节还没有可追溯的生成运行" />}
+                  <Space size={12} style={{ marginTop: 2 }}>
+                    <Text type="secondary">叙事节点 {graph?.nodes?.length || 0}</Text>
+                    <Text type="secondary">关系 {graph?.edges?.length || 0}</Text>
+                  </Space>
+                  <div style={{ borderTop: `1px solid ${theme.borderLight}`, paddingTop: 10 }}>
+                    <Space size={6} wrap style={{ marginBottom: 8 }}>
+                      <Text type="secondary" style={{ fontSize: 12 }}>受控状态更新</Text>
+                      <Button size="small" onClick={() => void onAutopilot(true)}>处理本章</Button>
+                    </Space>
+                    {runs.length ? <List size="small" dataSource={runs.slice(0, 4)} renderItem={(run) => (
+                      <List.Item style={{ display: 'block', padding: '7px 0' }}>
+                        <Space direction="vertical" size={3} style={{ width: '100%' }}>
+                          <Space size={5} wrap>
+                            <Tag color={run.status === 'success' ? 'green' : run.status === 'failed' ? 'red' : run.status === 'paused' ? 'gold' : 'blue'}>{run.status}</Tag>
+                            <Text style={{ fontSize: 12 }}>{run.mode === 'guarded_autopilot' ? '受控推进' : run.mode === 'batch' ? '批次重建' : '章节后处理'}</Text>
+                            <Text type="secondary" style={{ fontSize: 12 }}>{run.current_cursor}/{run.target_chapters?.length || 0} 章</Text>
+                          </Space>
+                          {run.error_message ? <Text type="danger" ellipsis style={{ fontSize: 12 }}>{run.error_message}</Text> : null}
+                          <Text type="secondary" style={{ fontSize: 12 }}>重试 {run.retry_count || 0} 次 · 用量 {run.token_usage || 0} tokens · 费用 {run.cost_amount || 0}</Text>
+                          {['running', 'paused', 'pending'].includes(run.status) ? <Space size={4}>
+                            {run.status === 'running' ? <Button size="small" onClick={() => void onRunControl(run.id, 'pause')}>暂停</Button> : null}
+                            {run.status === 'paused' ? <Button size="small" onClick={() => void onRunControl(run.id, 'resume')}>继续</Button> : null}
+                            <Button size="small" type="text" danger onClick={() => void onRunControl(run.id, 'cancel')}>取消</Button>
+                          </Space> : ['partial', 'failed'].includes(run.status) ? <Button size="small" onClick={() => void onRunControl(run.id, 'retry')}>重试失败章节</Button> : null}
+                        </Space>
+                      </List.Item>
+                    )} /> : <Text type="secondary" style={{ fontSize: 12 }}>还没有叙事运行记录。</Text>}
+                  </div>
+                </Space>
+              </div>
+            ),
+          },
+        ]}
+      />
+    </div>
+  )
+}
+
+function contextLayerLabel(label: string) {
+  return ({ locked_canon: '锁定设定', narrative_state: '叙事状态', active_foreshadowing: '已确认伏笔', chapter_contract: '章节契约', local_continuity: '前文连续性', semantic_recall: '语义召回', style_genre_skills: '文风与技能' } as Record<string, string>)[label] || label
+}
+
+function foreshadowingLabel(status: string) {
+  return ({ pending_review: '待确认', active: '进行中', advanced: '已推进', resolved: '已回收', overdue: '已逾期', ignored: '已忽略', superseded: '已替换' } as Record<string, string>)[status] || status
+}
+
+function foreshadowingColor(status: string) {
+  return ({ pending_review: 'default', active: 'blue', advanced: 'cyan', resolved: 'green', overdue: 'orange', ignored: 'default', superseded: 'default' } as Record<string, string>)[status]
+}
+
+function timingLabel(timing: string) {
+  return ({ upcoming: '待推进', in_window: '回收窗口', overdue: '超过窗口', unscheduled: '未设窗口' } as Record<string, string>)[timing] || timing
+}
+
+function graphNodeTypeLabel(type: string) {
+  return ({ character: '角色', location: '地点', organization: '组织', item: '物件', event: '事件', world_rule: '规则', chapter: '章节', foreshadowing: '伏笔' } as Record<string, string>)[type] || type
+}
+
+function NarrativeGraphTab({ graph, chapterNumber }: { graph: NarrativeGraphData | null; chapterNumber: number }) {
+  const [selectedNodeId, setSelectedNodeId] = useState('')
+  const nodeTypes = ['character', 'location', 'organization', 'item', 'event', 'world_rule', 'foreshadowing', 'chapter']
+  const positionedNodes = useMemo(() => {
+    const buckets = new Map<string, NarrativeGraphData['nodes']>()
+    for (const node of graph?.nodes || []) {
+      const type = nodeTypes.includes(node.type) ? node.type : 'world_rule'
+      buckets.set(type, [...(buckets.get(type) || []), node])
+    }
+    return (graph?.nodes || []).map((node) => {
+      const type = nodeTypes.includes(node.type) ? node.type : 'world_rule'
+      const typeIndex = nodeTypes.indexOf(type)
+      const itemIndex = (buckets.get(type) || []).findIndex((item) => item.id === node.id)
+      return { ...node, x: 40 + typeIndex * 218, y: 54 + itemIndex * 116 }
+    })
+  }, [graph])
+  const nodeMap = useMemo(() => new Map(positionedNodes.map((node) => [node.id, node])), [positionedNodes])
+  const selectedNode = nodeMap.get(selectedNodeId) || positionedNodes[0] || null
+  const width = Math.max(920, nodeTypes.length * 218 + 60)
+  const height = Math.max(440, ...positionedNodes.map((node) => node.y + 104))
+
+  useEffect(() => {
+    setSelectedNodeId((current) => nodeMap.has(current) ? current : positionedNodes[0]?.id || '')
+  }, [nodeMap, positionedNodes])
+
+  if (!positionedNodes.length) {
+    return (
+      <div style={{ padding: 48, textAlign: 'center' }}>
+        <Empty description={`第 ${chapterNumber} 章还没有可视化的确认叙事关系。提升正文并完成后处理后，事件与伏笔会在这里出现。`} />
+      </div>
+    )
+  }
+
+  const edgePath = (edge: NarrativeGraphData['edges'][number]) => {
+    const source = nodeMap.get(edge.source)
+    const target = nodeMap.get(edge.target)
+    if (!source || !target) return ''
+    const fromX = source.x + 174
+    const fromY = source.y + 42
+    const toX = target.x
+    const toY = target.y + 42
+    const bend = Math.max(42, Math.abs(toX - fromX) / 2)
+    return `M ${fromX} ${fromY} C ${fromX + bend} ${fromY}, ${toX - bend} ${toY}, ${toX} ${toY}`
+  }
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 276px', gap: 12, minHeight: 560 }}>
+      <section style={{ ...panelStyle, overflow: 'hidden', padding: 0 }}>
+        <div style={{ borderBottom: '1px solid var(--borderLight)', padding: '10px 12px' }}>
+          <Space size={10} wrap>
+            <Text strong>第 {chapterNumber} 章叙事图谱</Text>
+            <Text type="secondary">{positionedNodes.length} 节点</Text>
+            <Text type="secondary">{graph?.edges.length || 0} 关系</Text>
+            <Tag color="green">只显示已确认事实</Tag>
+          </Space>
+        </div>
+        <div style={{ height: 540, overflow: 'auto', background: 'var(--bgLayout)' }}>
+          <div style={{ height, minWidth: width, position: 'relative' }}>
+            <svg width={width} height={height} style={{ inset: 0, pointerEvents: 'none', position: 'absolute' }}>
+              <defs>
+                <marker id="narrative-graph-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+                  <path d="M 0 0 L 7 3.5 L 0 7 z" fill="var(--textTertiary)" />
+                </marker>
+              </defs>
+              {(graph?.edges || []).map((edge) => {
+                const path = edgePath(edge)
+                return path ? <path key={edge.id} d={path} fill="none" markerEnd="url(#narrative-graph-arrow)" opacity={edge.confirmed ? 0.75 : 0.4} stroke="var(--textTertiary)" strokeWidth={1.4} /> : null
+              })}
+            </svg>
+            {positionedNodes.map((node) => (
+              <button
+                key={node.id}
+                type="button"
+                onClick={() => setSelectedNodeId(node.id)}
+                style={{
+                  background: selectedNode?.id === node.id ? 'var(--bgHover)' : 'var(--bgCard)',
+                  border: `1px solid ${selectedNode?.id === node.id ? 'var(--primary)' : 'var(--borderLight)'}`,
+                  borderLeft: `3px solid ${narrativeGraphNodeColor(node.type)}`,
+                  borderRadius: 6,
+                  color: 'var(--textPrimary)',
+                  cursor: 'pointer',
+                  left: node.x,
+                  minHeight: 84,
+                  padding: '8px 10px',
+                  position: 'absolute',
+                  textAlign: 'left',
+                  top: node.y,
+                  width: 174,
+                }}
+              >
+                <Space direction="vertical" size={3} style={{ width: '100%' }}>
+                  <Space size={5} wrap><Tag bordered={false} color={narrativeGraphNodeColor(node.type)}>{graphNodeTypeLabel(node.type)}</Tag>{node.status ? <Tag>{foreshadowingLabel(node.status)}</Tag> : null}</Space>
+                  <Text strong ellipsis={{ tooltip: node.label }} style={{ color: 'var(--textPrimary)' }}>{node.label}</Text>
+                  {node.summary ? <Text type="secondary" ellipsis style={{ fontSize: 12 }}>{node.summary}</Text> : null}
+                </Space>
+              </button>
+            ))}
+          </div>
+        </div>
+      </section>
+      <section style={panelStyle}>
+        {selectedNode ? (
+          <Space direction="vertical" size={10} style={{ width: '100%' }}>
+            <Space direction="vertical" size={3}>
+              <Tag color={narrativeGraphNodeColor(selectedNode.type)}>{graphNodeTypeLabel(selectedNode.type)}</Tag>
+              <Text strong>{selectedNode.label}</Text>
+              {selectedNode.summary ? <Text type="secondary">{selectedNode.summary}</Text> : null}
+            </Space>
+            <div>
+              <Text type="secondary">来源证据</Text>
+              <Space direction="vertical" size={3} style={{ display: 'flex', marginTop: 6 }}>
+                {selectedNode.source?.chapter_number ? <Text>第 {selectedNode.source.chapter_number} 章</Text> : null}
+                {selectedNode.source?.content_id ? <Text code ellipsis>{selectedNode.source.content_id}</Text> : null}
+                {selectedNode.source?.snapshot_id ? <Text code ellipsis>{selectedNode.source.snapshot_id}</Text> : null}
+                {!selectedNode.source?.content_id && !selectedNode.source?.snapshot_id ? <Text type="secondary">该节点没有额外来源标识。</Text> : null}
+              </Space>
+            </div>
+            <div>
+              <Text type="secondary">关联</Text>
+              <Space direction="vertical" size={4} style={{ display: 'flex', marginTop: 6 }}>
+                {(graph?.edges || []).filter((edge) => edge.source === selectedNode.id || edge.target === selectedNode.id).map((edge) => (
+                  <Text key={edge.id} style={{ fontSize: 12 }}>{edge.source === selectedNode.id ? '->' : '<-'} {edge.type}</Text>
+                ))}
+              </Space>
+            </div>
+          </Space>
+        ) : null}
+      </section>
+    </div>
+  )
+}
+
+function narrativeGraphNodeColor(type: string) {
+  return ({ character: 'blue', location: 'cyan', organization: 'purple', item: 'gold', event: 'green', world_rule: 'geekblue', chapter: 'default', foreshadowing: 'orange' } as Record<string, string>)[type] || 'default'
 }
 
 function ProjectGraphTab({
@@ -7786,10 +10529,12 @@ function JsonTab({
 
 function AssetsTab({
   assets,
+  unavailableAssetIds,
   loading,
   onLinkAsset,
 }: {
   assets: ProjectAssetLink[]
+  unavailableAssetIds: Record<string, true>
   loading: boolean
   onLinkAsset: (assetId: string, role: string) => void
 }) {
@@ -7839,7 +10584,17 @@ function AssetsTab({
           pagination={false}
           dataSource={assets}
           columns={[
-            { title: '素材 ID', dataIndex: 'asset_id', ellipsis: true },
+            {
+              title: '素材 ID',
+              dataIndex: 'asset_id',
+              ellipsis: true,
+              render: (assetId: string) => (
+                <Space size={6}>
+                  <Text code ellipsis style={{ maxWidth: 190 }}>{assetId}</Text>
+                  {unavailableAssetIds[assetId] ? <Tag color="warning">素材库中已不可用</Tag> : null}
+                </Space>
+              ),
+            },
             {
               title: '角色',
               dataIndex: 'role',
@@ -7998,6 +10753,34 @@ const writerRoomComparePaneStyle: React.CSSProperties = {
   minWidth: 0,
 }
 
+const writerRoomDiffListStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 8,
+  maxHeight: 720,
+  overflow: 'auto',
+  paddingRight: 4,
+}
+
+const writerRoomDiffRowStyle: React.CSSProperties = {
+  border: '1px solid var(--borderLight)',
+  borderRadius: 8,
+  padding: 10,
+  background: 'var(--bgCard)',
+}
+
+const writerRoomDiffColumnsStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))',
+  gap: 8,
+  marginTop: 8,
+}
+
+const writerRoomDiffTextStyle: React.CSSProperties = {
+  borderRadius: 6,
+  minWidth: 0,
+  padding: '8px 10px',
+}
+
 const writerRoomShellStyle: React.CSSProperties = {
   ...panelStyle,
   background: 'linear-gradient(135deg, var(--bgElevated), var(--bgCard))',
@@ -8127,6 +10910,15 @@ const writerRoomPreviewStyle: React.CSSProperties = {
   overflow: 'auto',
 }
 
+const writerRoomVersionStatusStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 6,
+  padding: '10px 12px',
+  border: '1px solid var(--borderLight)',
+  borderRadius: 8,
+  background: 'var(--bgElevated)',
+}
+
 const writerRoomPromoteSummaryStyle: React.CSSProperties = {
   display: 'grid',
   gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
@@ -8139,6 +10931,41 @@ const writerRoomIssueStyle: React.CSSProperties = {
   padding: 10,
   background: 'var(--bgCard)',
   color: 'var(--textPrimary)',
+}
+
+const writerRoomContinuityStyle: React.CSSProperties = {
+  borderTop: '1px solid var(--border-color)',
+  paddingTop: 14,
+}
+
+const writerRoomContinuityItemStyle: React.CSSProperties = {
+  border: '1px solid var(--border-color)',
+  borderRadius: 6,
+  padding: '10px 12px',
+  background: 'var(--component-background)',
+}
+
+const writerRoomParagraphListStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 8,
+  maxHeight: 320,
+  overflow: 'auto',
+  paddingRight: 4,
+}
+
+const writerRoomParagraphButtonStyle: React.CSSProperties = {
+  width: '100%',
+  textAlign: 'left',
+  border: '1px solid var(--border-color)',
+  borderRadius: 6,
+  background: 'var(--component-background)',
+  padding: '10px 12px',
+  cursor: 'pointer',
+}
+
+const writerRoomParagraphButtonActiveStyle: React.CSSProperties = {
+  borderColor: 'var(--primary)',
+  boxShadow: 'inset 3px 0 0 var(--primary)',
 }
 
 const writerRoomQualityStyle: React.CSSProperties = {

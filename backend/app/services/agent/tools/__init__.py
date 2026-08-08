@@ -204,6 +204,15 @@ from .creative_project_tools import (
     run_creative_writer_room,
 )
 
+from .fanqie_tools import (
+    list_fanqie_my_books,
+    get_fanqie_book_stats,
+    get_fanqie_hot_list,
+    preview_fanqie_project_publish,
+    get_fanqie_project_publish_status,
+    publish_fanqie_project_chapter,
+)
+
 from .canvas_tools import (
     list_creative_canvas_documents,
     get_creative_canvas_document,
@@ -342,6 +351,12 @@ TOOLS = [
     sync_creative_project_bible,
     run_creative_project_pipeline,
     run_creative_writer_room,
+    list_fanqie_my_books,
+    get_fanqie_book_stats,
+    get_fanqie_hot_list,
+    preview_fanqie_project_publish,
+    get_fanqie_project_publish_status,
+    publish_fanqie_project_chapter,
     list_creative_canvas_documents,
     get_creative_canvas_document,
     apply_creative_canvas_operations,
@@ -479,6 +494,12 @@ __all__ = [
     "sync_creative_project_bible",
     "run_creative_project_pipeline",
     "run_creative_writer_room",
+    "list_fanqie_my_books",
+    "get_fanqie_book_stats",
+    "get_fanqie_hot_list",
+    "preview_fanqie_project_publish",
+    "get_fanqie_project_publish_status",
+    "publish_fanqie_project_chapter",
     "list_creative_canvas_documents",
     "get_creative_canvas_document",
     "apply_creative_canvas_operations",

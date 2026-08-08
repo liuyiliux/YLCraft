@@ -30,6 +30,9 @@ class SkillPackage:
     triggers: dict[str, tuple[str, ...]] = field(default_factory=dict)
     requires_tools: tuple[str, ...] = ()
     risk: str = "read"
+    # Optional contract for reuse by the creative-project narrative runtime.
+    # Agent routing continues to rely on triggers; creative routing is opt-in.
+    creative: dict[str, Any] = field(default_factory=dict)
     source_type: str = "builtin"
     source_path: str = ""
     checksum: str = ""
@@ -108,6 +111,7 @@ class SkillPackageLoader:
             triggers=normalized_triggers,
             requires_tools=self._as_str_tuple(metadata.get("requires_tools")),
             risk=str(metadata.get("risk") or "read").strip(),
+            creative=self._normalize_creative_metadata(metadata.get("creative")),
             source_type=self._source_type_for_path(path),
             source_path=self._relative_source_path(path),
             checksum=checksum,
@@ -140,6 +144,7 @@ class SkillPackageLoader:
                 "triggers": {key: list(value) for key, value in item.triggers.items()},
                 "requires_tools": list(item.requires_tools),
                 "risk": item.risk,
+                "creative": item.creative,
                 "source_type": item.source_type,
                 "source_path": item.source_path,
                 "checksum": item.checksum,
@@ -307,7 +312,48 @@ class SkillPackageLoader:
         missing = [field for field in ("name", "description", "skill_type") if not str(metadata.get(field) or "").strip()]
         if missing:
             return (f"{path} missing required metadata: {', '.join(missing)}",)
+        creative = metadata.get("creative")
+        if creative is None:
+            return ()
+        if not isinstance(creative, dict):
+            return (f"{path} creative metadata must be an object",)
+        required = (
+            "compatible_project_types",
+            "compatible_genres",
+            "stages",
+            "context_contribution",
+            "input_schema",
+            "output_schema",
+            "prohibited_mutations",
+        )
+        missing_creative = [field for field in required if field not in creative]
+        if missing_creative:
+            return (f"{path} creative metadata missing fields: {', '.join(missing_creative)}",)
+        list_fields = (
+            "compatible_project_types",
+            "compatible_genres",
+            "stages",
+            "prohibited_mutations",
+        )
+        invalid_lists = [field for field in list_fields if not isinstance(creative.get(field), (list, tuple))]
+        if invalid_lists:
+            return (f"{path} creative metadata list fields invalid: {', '.join(invalid_lists)}",)
+        if not isinstance(creative.get("context_contribution"), str):
+            return (f"{path} creative.context_contribution must be a string",)
+        if not isinstance(creative.get("input_schema"), (dict, list)) or not isinstance(creative.get("output_schema"), (dict, list)):
+            return (f"{path} creative input_schema/output_schema must be objects or lists",)
         return ()
+
+    @classmethod
+    def _normalize_creative_metadata(cls, value: Any) -> dict[str, Any]:
+        if not isinstance(value, dict):
+            return {}
+        normalized = dict(value)
+        for field in ("compatible_project_types", "compatible_genres", "stages", "prohibited_mutations"):
+            normalized[field] = list(cls._as_str_tuple(normalized.get(field)))
+        normalized["context_contribution"] = str(normalized.get("context_contribution") or "").strip()
+        normalized["auto_apply"] = bool(normalized.get("auto_apply", False))
+        return normalized
 
     @staticmethod
     def _as_str_tuple(value: Any) -> tuple[str, ...]:

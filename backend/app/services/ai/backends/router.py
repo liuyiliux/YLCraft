@@ -69,7 +69,37 @@ class BackendRouter:
                 if not model and hasattr(backend, 'connector'):
                     target_model = getattr(backend.connector, 'default_model', None)
             else:
-                logger.warning(f"[Router] 未找到指定的 LLM Backend: {backend_name}")
+                # API callers historically pass either the registered connector
+                # name or its provider name. Resolve the latter only when it is
+                # unambiguous, preferring a candidate that explicitly supports
+                # the requested model.
+                provider_matches = [
+                    candidate
+                    for candidate in backends.values()
+                    if getattr(getattr(candidate, "connector", None), "provider", None) == backend_name
+                ]
+                if model and provider_matches:
+                    for candidate in provider_matches:
+                        connector = getattr(candidate, "connector", None)
+                        available_models = getattr(connector, "available_models", None)
+                        if getattr(connector, "default_model", None) == model:
+                            backend = candidate
+                            break
+                        if available_models:
+                            try:
+                                if model in json.loads(available_models):
+                                    backend = candidate
+                                    break
+                            except Exception:
+                                continue
+                if not backend and len(provider_matches) == 1:
+                    backend = provider_matches[0]
+                if backend:
+                    logger.info("[Router] 根据 provider 别名找到 LLM Backend: %s", getattr(backend, "name", backend_name))
+                    if not model and hasattr(backend, "connector"):
+                        target_model = getattr(backend.connector, "default_model", None)
+                else:
+                    logger.warning(f"[Router] 未找到指定的 LLM Backend: {backend_name}")
 
         # 2. 按模型查找
         if not backend and model:
