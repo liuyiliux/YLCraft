@@ -1119,12 +1119,7 @@ class AIConnectorService:
         masked = dict(headers or {})
         auth = masked.get("Authorization")
         if isinstance(auth, str) and auth.startswith("Bearer "):
-            token = auth[len("Bearer "):]
-            if len(token) > 12:
-                token = f"{token[:6]}...{token[-4:]}"
-            else:
-                token = "***"
-            masked["Authorization"] = f"Bearer {token}"
+            masked["Authorization"] = "Bearer ***"
         return masked
 
     # -------------------------------------------------------------------------

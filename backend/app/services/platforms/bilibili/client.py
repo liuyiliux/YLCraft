@@ -199,7 +199,7 @@ class BilibiliClient(BasePlatformClient):
 
         if self.config.cookie:
             headers["Cookie"] = self.config.cookie
-            self._log(f"_build_headers: Cookie set, len={len(self.config.cookie)}, preview={self.config.cookie[:80]!r}", "debug")
+            self._log(f"_build_headers: Cookie set, len={len(self.config.cookie)}", "debug")
         else:
             self._log(f"_build_headers: No cookie available!", "warning")
 

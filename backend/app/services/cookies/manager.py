@@ -358,7 +358,7 @@ class CookieManager:
             logger.debug("extract_raw: cookie_content is empty")
             return ""
         
-        logger.debug(f"extract_raw: input starts with={cookie_content[:80]!r}, len={len(cookie_content)}")
+        logger.debug("extract_raw: input present, len=%d", len(cookie_content))
         
         # 如果已经是 raw 格式（不包含 Netscape 标记），直接返回
         if not cookie_content.startswith("# Netscape HTTP Cookie File"):
@@ -367,7 +367,7 @@ class CookieManager:
             try:
                 netscape = self._convert_to_netscape("generic", cookie_content)
                 raw = self._netscape_to_raw(netscape)
-                logger.debug(f"extract_raw: converted to raw, len={len(raw)}, preview={raw[:80]!r}")
+                logger.debug("extract_raw: converted to raw, len=%d", len(raw))
                 return raw
             except Exception as e:
                 logger.debug(f"extract_raw: conversion failed: {e}, returning original")
@@ -376,7 +376,7 @@ class CookieManager:
         # 如果是 Netscape 格式，提取 raw
         logger.debug("extract_raw: Netscape format, extracting raw")
         raw = self._netscape_to_raw(cookie_content)
-        logger.debug(f"extract_raw: extracted raw, len={len(raw)}, preview={raw[:80]!r}")
+        logger.debug("extract_raw: extracted raw, len=%d", len(raw))
         return raw
 
     def delete_cookie(self, platform: str) -> bool:

@@ -116,7 +116,7 @@ class BilibiliQrcodeAdapter(QrcodeAdapter):
             img.save(buf, format="PNG")
             img_b64 = base64.b64encode(buf.getvalue()).decode()
 
-            logger.info(f"[BilibiliQrcode] QR generated, key={qrcode_key[:8]}...")
+            logger.info("[BilibiliQrcode] QR generated")
 
             return {
                 "qr_image_base64": f"data:image/png;base64,{img_b64}",

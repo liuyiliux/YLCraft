@@ -507,7 +507,7 @@ class WechatMPQrcodeAdapter(QrcodeAdapter):
 
         logger.info(
             f"[WechatMPQrcode] Login confirmed! "
-            f"token={token[:8] if token else 'N/A'}..., "
+            f"token_present={bool(token)}, "
             f"cookies={len(cookies_array)}, "
             f"account={account_info.get('account_name', 'N/A')}"
         )
