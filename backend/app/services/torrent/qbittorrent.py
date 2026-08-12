@@ -22,6 +22,11 @@ class QBittorrentEngine(TorrentEngine):
     async def _login(self) -> None:
         if self._logged_in:
             return
+        if not self.config.qbittorrent_password:
+            raise RuntimeError(
+                "qBittorrent credentials are not configured. "
+                "Set QBITTORRENT_USERNAME and QBITTORRENT_PASSWORD in backend/.env."
+            )
         login_path = "/api/v2/auth/login"
         try:
             response = await self._client.post(

@@ -46,22 +46,39 @@ Thumbs.db
 
 # Project specific
 backend/config/local.yaml
+backend/qidian_reader/config/cookies.json
 backend/app/data/settings.json
 backend/data/ylcraft.db
 frontend/.env.local
 .env.local
 .local/
 
+# Local credentials and certificates. Keep only documented templates in Git.
+.env
+.env.*
+!.env.example
+!*/.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+*.jks
+*.crt
+*.cer
+secrets/
+credentials/
+
 # Downloads
 backend/downloads/
 backend/storage/
 backend/backups/
+*.log
 
 .codebuddy/
 backend/migrate_assets_v2.py
 backend/data/cookies/
 .trae/
-.gitignore
 backend/.env
 backend/app/storage/images/
 .workbuddy/

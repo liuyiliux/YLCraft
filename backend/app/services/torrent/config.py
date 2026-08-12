@@ -39,7 +39,7 @@ def get_torrent_config() -> TorrentConfig:
         engine=os.getenv("TORRENT_ENGINE", "qbittorrent").strip().lower() or "qbittorrent",
         qbittorrent_url=os.getenv("QBITTORRENT_URL", "http://127.0.0.1:8080").rstrip("/"),
         qbittorrent_username=os.getenv("QBITTORRENT_USERNAME", "admin"),
-        qbittorrent_password=os.getenv("QBITTORRENT_PASSWORD", "adminadmin"),
+        qbittorrent_password=os.getenv("QBITTORRENT_PASSWORD", ""),
         download_dir=download_dir,
         max_active=int(os.getenv("TORRENT_MAX_ACTIVE", "3") or "3"),
         max_upload_bytes=int(os.getenv("TORRENT_MAX_UPLOAD_BYTES", str(2 * 1024 * 1024)) or "0"),
