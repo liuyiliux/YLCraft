@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 import uuid
 from datetime import datetime
 from typing import Any
@@ -195,12 +196,16 @@ class AgentService:
             metadata={"phase": "intake"},
         )
 
+        delegation_meta = context.get("_delegation") if isinstance(context.get("_delegation"), dict) else {}
         run = await self._create_run(
             session_id=thread.id,
             profile_id=str(profile_data.get("id") or ""),
             objective=user_message,
             context=effective_context,
             parent_run_id=parent_run_id,
+            root_run_id=str(delegation_meta.get("root_run_id") or "") or None,
+            run_kind="delegated" if parent_run_id else "primary",
+            delegation_depth=int(delegation_meta.get("delegation_depth") or 0),
         )
         if user_thread_message:
             user_thread_message.run_id = run.id
@@ -293,6 +298,8 @@ class AgentService:
         run: AgentRun = state["run"]
         profile = state["profile"]
         effective_context = state["effective_context"]
+        effective_allowed_tools = self._effective_allowed_tools(profile)
+        profile["_effective_allowed_tools"] = effective_allowed_tools
 
         # Build context summary text for injection
         context_parts: list[str] = []
@@ -340,7 +347,7 @@ class AgentService:
         state["routed_skills"] = self.skill_router.route(
             message=route_message,
             context=state["effective_context"],
-            allowed_tools=profile.get("allowed_tools") or [],
+            allowed_tools=effective_allowed_tools,
             default_skill_ids=state["effective_context"].get("default_skill_ids") or profile.get("default_skill_ids") or [],
             activated_skill_ids=list(activation.skill_ids),
         )
@@ -382,7 +389,10 @@ class AgentService:
         state["memory_context"] = await self.memory_mgr.build_memory_context(
             default_skill_ids=skill_ids
         )
-        state["tool_index_context"] = self._build_tool_index_context(profile.get("allowed_tools") or [])
+        state["tool_index_context"] = self._build_tool_index_context(
+            effective_allowed_tools,
+            excluded_tools={"delegate_agent_tasks"} if not profile.get("can_delegate") else set(),
+        )
         profile["_tool_index_context"] = state["tool_index_context"]
         await self._create_memory_snapshot(state)
         await self._create_thread_context_snapshot(state)
@@ -434,7 +444,7 @@ class AgentService:
                 input_data={
                     "message": state["user_message"],
                     "effective_message": route_message,
-                    "allowed_tools": profile.get("allowed_tools") or [],
+                    "allowed_tools": effective_allowed_tools,
                     "default_skill_ids": state["effective_context"].get("default_skill_ids") or profile.get("default_skill_ids") or [],
                 },
                 output_data={
@@ -561,9 +571,20 @@ class AgentService:
                     tool_args,
                     tool_result,
                 ),
+                runtime_callback=lambda tool_name, tool_args: self._execute_runtime_tool(
+                    state,
+                    tool_name,
+                    tool_args,
+                ),
             )
             state["tool_results"].append(result)
             pending_confirmation = self.tool_executor.is_pending_confirmation(result)
+            if (
+                result.tool_name == "delegate_agent_tasks"
+                and isinstance(result.result, dict)
+                and result.result.get("status") == "waiting_confirmation"
+            ):
+                state["delegation_waiting_confirmation"] = True
             await self._record_run_step(
                 state["run"].id,
                 step_type="tool_call",
@@ -623,6 +644,10 @@ class AgentService:
         """Persist the final answer, finish the run, and return the API payload."""
         profile = state["profile"]
         reply = state["llm_response"].get("content") or ""
+        waiting_confirmation = bool(
+            state.get("pending_confirmations") or state.get("delegation_waiting_confirmation")
+        )
+        final_status = "waiting_confirmation" if waiting_confirmation else "completed"
         await self.thread_mgr.append_message(
             state["thread_id"],
             {"role": "assistant", "content": reply},
@@ -679,13 +704,14 @@ class AgentService:
         await self._record_skill_usage_metrics(state, success=True)
         await self._finish_run(
             state["run"],
-            status="completed",
+            status=final_status,
             result={
                 "reply": reply,
                 "tool_call_count": len(state["tool_results"]),
                 "memory_candidates": memory_candidates,
                 "routed_skills": state.get("routed_skill_records") or [],
                 "profile": {"id": profile.get("id"), "name": profile.get("name")},
+                "pending_confirmations": state.get("pending_confirmations") or [],
             },
         )
         return {
@@ -695,7 +721,9 @@ class AgentService:
             "reply": reply,
             "tool_calls": [self._tool_result_to_dict(item) for item in state["tool_results"]],
             "memory_candidates": memory_candidates,
-            "done": True,
+            "done": not waiting_confirmation,
+            "status": final_status,
+            "pending_confirmations": state.get("pending_confirmations") or [],
             "profile": {
                 "id": profile.get("id"),
                 "name": profile.get("name"),
@@ -745,68 +773,110 @@ class AgentService:
         message: str,
         context: dict | None = None,
     ) -> dict[str, Any]:
-        """Run a child agent task and record the delegation on the parent run."""
-        parent_context = self._safe_json_loads(parent_run.context_json, {})
-        delegated_context = {
-            **parent_context,
-            **(context or {}),
-            "parent_run_id": parent_run.id,
-            "delegated_by_profile_id": parent_run.profile_id,
-        }
-        objective = message or f"执行来自父 run {parent_run.id} 的委派任务"
-        child_result = await self.chat(
-            session_id=parent_run.session_id,
-            user_message=objective,
-            context=delegated_context,
-            profile_id=target_profile_id,
-            parent_run_id=parent_run.id,
+        """Compatibility wrapper over the unified isolated subagent orchestrator."""
+        from sqlalchemy.orm import sessionmaker
+
+        from app.services.agent.runtime.delegation import SubagentExecutor, SubagentOrchestrator
+
+        session_factory = sessionmaker(
+            bind=self.session.bind,
+            class_=AsyncSession,
+            expire_on_commit=False,
         )
-        next_index = await self._next_run_step_index(parent_run.id)
+
+        def service_factory(child_session: AsyncSession, user_id: str) -> "AgentService":
+            child_service = AgentService(child_session, user_id=user_id)
+            child_service._llm_manager = self._llm_manager
+            return child_service
+
+        executor = SubagentExecutor(session_factory, service_factory=service_factory)
+        orchestrator = SubagentOrchestrator(self.session, executor)
+        return await orchestrator.delegate(
+            parent_run,
+            [
+                {
+                    "task_key": "compat-delegation",
+                    "profile_id": target_profile_id,
+                    "objective": message or f"执行来自父 run {parent_run.id} 的委派任务",
+                    "context": context or {},
+                }
+            ],
+        )
+
+    async def resume_from_delegation_observation(
+        self,
+        parent_run: AgentRun,
+        delegation_result: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Resume an existing parent Run after a manual delegation join."""
+        profile = profile_to_dict(await self.profile_mgr.get_profile(parent_run.profile_id))
+        profile["_effective_allowed_tools"] = self._effective_allowed_tools(profile)
+        effective_context = self._safe_json_loads(parent_run.context_json, {})
+        joined = str(delegation_result.get("joined_observation") or "").strip()
+        observation = {
+            "role": "user",
+            "content": (
+                "[子智能体汇合结果]\n"
+                f"状态: {delegation_result.get('status') or 'unknown'}\n"
+                f"{joined}\n\n"
+                "请基于这些子任务结果继续父任务；需要工具时继续调用，否则给出最终答复。"
+            ),
+        }
+        await self.thread_mgr.append_message(
+            parent_run.session_id,
+            observation,
+            run_id=parent_run.id,
+            metadata={"phase": "delegation_join_observation"},
+        )
+        messages = await self.thread_mgr.get_messages(parent_run.session_id)
+        memory_context = await self.memory_mgr.build_memory_context(
+            default_skill_ids=profile.get("default_skill_ids") or [],
+        )
+        parent_run.status = "running"
+        parent_run.finished_at = None
+        parent_run.updated_at = datetime.utcnow()
+        step_index = await self._next_run_step_index(parent_run.id)
+        llm_response = await self._call_llm(
+            messages,
+            memory_context,
+            profile,
+            context_summary="这是父 Agent 汇合子智能体结果后的续跑。",
+        )
         await self._record_run_step(
             parent_run.id,
-            step_type="delegate_subtask",
-            status="completed" if child_result.get("done") else "failed",
+            step_type="observe",
+            status="completed",
             session_id=parent_run.session_id,
             profile_id=parent_run.profile_id,
-            order_index=next_index,
-            summary=f"委派给 {target_profile_id}：{self._summarize_text(objective, 120)}",
+            order_index=step_index,
+            summary="父 Agent 已读取子智能体汇合结果并继续规划",
             input_data={
-                "target_profile_id": target_profile_id,
-                "message": objective,
-                "context": context or {},
+                "delegation_status": delegation_result.get("status"),
+                "delegation_count": len(delegation_result.get("delegations") or []),
             },
-            output_data={
-                "child_run_id": child_result.get("run_id"),
-                "reply": child_result.get("reply"),
-                "profile": child_result.get("profile"),
-            },
-            linked_objects=[
-                {
-                    "type": "agent_run",
-                    "id": child_result.get("run_id"),
-                    "relation": "child_run",
-                }
-            ] if child_result.get("run_id") else [],
-            error="" if child_result.get("done") else "委派任务未完成",
+            output_data=llm_response,
         )
-        parent_run.updated_at = datetime.utcnow()
-        try:
-            async with self.session.begin_nested():
-                await self.session.flush()
-        except SQLAlchemyError as exc:
-            logger.warning("[AgentService] _delegate_subtask flush failed (rollback): %s", exc)
-            try:
-                if self.session.in_transaction():
-                    await self.session.rollback()
-            except Exception:  # noqa: BLE001
-                pass
-        return {
-            "success": bool(child_result.get("done")),
-            "parent_run_id": parent_run.id,
-            "child_run_id": child_result.get("run_id"),
-            "target_profile_id": target_profile_id,
-            "result": child_result,
+        state = {
+            "session_id": parent_run.session_id,
+            "thread_id": parent_run.session_id,
+            "is_new_thread": False,
+            "user_message": parent_run.objective,
+            "request_context": effective_context,
+            "profile": profile,
+            "effective_context": effective_context,
+            "run": parent_run,
+            "step_index": step_index + 1,
+            "messages": messages,
+            "memory_context": memory_context,
+            "llm_response": llm_response,
+            "tool_results": [],
+            "routed_skill_records": [],
+            "context_summary": "这是父 Agent 汇合子智能体结果后的续跑。",
+            "short_term_context": "",
+            "followup_resolution": {},
         }
+        await self._tool_loop_phase(state)
+        return await self._final_phase(state)
 
     async def _call_llm(
         self,
@@ -872,8 +942,67 @@ class AgentService:
 
         return chain
 
-    def _build_tool_index_context(self, allowed_tools: list[str] | None) -> str:
-        return self.planner._build_tool_index_context(allowed_tools)
+    def _build_tool_index_context(
+        self,
+        allowed_tools: list[str] | None,
+        *,
+        excluded_tools: set[str] | None = None,
+    ) -> str:
+        return self.planner._build_tool_index_context(
+            allowed_tools,
+            excluded_tools=excluded_tools,
+        )
+
+    @staticmethod
+    def _effective_allowed_tools(profile: dict[str, Any]) -> list[str]:
+        allowed = list(profile.get("allowed_tools") or [])
+        if profile.get("can_delegate"):
+            return allowed
+        return [name for name in allowed if name != "delegate_agent_tasks"]
+
+    async def _execute_runtime_tool(
+        self,
+        state: dict[str, Any],
+        tool_name: str,
+        tool_args: dict[str, Any],
+    ) -> ToolCallResult | None:
+        if tool_name != "delegate_agent_tasks":
+            return None
+
+        started = time.perf_counter()
+        profile = state["profile"]
+        if not profile.get("can_delegate"):
+            return ToolCallResult(
+                tool_name=tool_name,
+                success=False,
+                error="当前智能体不是 Supervisor，不能委派子智能体任务",
+            )
+        try:
+            from app.db.database import AsyncSessionLocal
+            from app.services.agent.runtime.delegation import SubagentExecutor, SubagentOrchestrator
+
+            executor = SubagentExecutor(AsyncSessionLocal)
+            orchestrator = SubagentOrchestrator(self.session, executor)
+            result = await orchestrator.delegate(
+                state["run"],
+                list(tool_args.get("tasks") or []),
+                join_strategy=str(tool_args.get("join_strategy") or "all"),
+            )
+            return ToolCallResult(
+                tool_name=tool_name,
+                success=bool(result.get("success")),
+                result=result,
+                error="" if result.get("success") else str(result.get("error") or "子智能体任务未完成"),
+                duration_ms=int((time.perf_counter() - started) * 1000),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("[AgentService] delegate_agent_tasks failed")
+            return ToolCallResult(
+                tool_name=tool_name,
+                success=False,
+                error=str(exc),
+                duration_ms=int((time.perf_counter() - started) * 1000),
+            )
 
     @staticmethod
     def _role_to_provider_type(role_type: str) -> str:
@@ -1287,7 +1416,7 @@ class AgentService:
         matching tool_calls. Our current fallback parser reads JSON tool calls
         from text, so sending role=tool would break OpenAI-compatible backends.
         """
-        payload = result.result if result.success else {"error": result.error}
+        payload = result.result if result.result is not None else {"error": result.error}
         content = json.dumps(payload, ensure_ascii=False, default=str)
         tool_name = result.tool_name or self.tool_executor.tool_name_and_args(tool_call)[0]
         return {
@@ -1337,6 +1466,9 @@ class AgentService:
         objective: str,
         context: dict[str, Any],
         parent_run_id: str | None = None,
+        root_run_id: str | None = None,
+        run_kind: str = "primary",
+        delegation_depth: int = 0,
     ) -> AgentRun:
         run = AgentRun(
             id=uuid.uuid4().hex,
@@ -1344,11 +1476,16 @@ class AgentService:
             session_id=session_id,
             profile_id=profile_id,
             parent_run_id=parent_run_id,
+            root_run_id=root_run_id,
+            run_kind=run_kind,
+            delegation_depth=max(0, delegation_depth),
             status="running",
             objective=objective,
             context_json=json.dumps(context or {}, ensure_ascii=False, default=str),
             result_json="{}",
         )
+        if not run.root_run_id:
+            run.root_run_id = run.id
         try:
             async with self.session.begin_nested():
                 self.session.add(run)

@@ -218,6 +218,7 @@ When a chapter has approved prose, script generation freezes its `source_content
 - The effective `chapter_count` always comes from valid unique chapter rows. A legacy declared count is retained as `legacy_chapter_count` for investigation, but must never drive batch generation once explicit chapter rows exist.
 - The health endpoint does not repair, promote or delete content. It exists to make old project state visible before a user explicitly rebuilds narrative state in a later phase.
 - The current reader still returns one latest approved body per chapter by default; `include_history=true` remains the explicit Writer Room/history path.
+- Writer Room batch responses include persisted successful candidates in `data.results_contents`. The workbench renders them immediately, then reconciles filtered history and generation logs in the background; a failed auxiliary refresh must not clear visible candidates. The content list accepts `chapter_number`; Writer Room first reads the latest candidate per chapter, then loads version history only for the chapter being inspected.
 - The remaining `creative-project-closed-loop` image gate is an external-provider acceptance test: only a fresh project with an actually completed image task, a persisted Asset Hub item and verified `derived_from` project lineage can satisfy it. Historic assets, mocks and pending tasks do not count.
 
 ### Chapter Aftermath

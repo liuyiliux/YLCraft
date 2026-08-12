@@ -41,8 +41,12 @@ class Planner:
         short_term_context: str = "",
         followup_resolution: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        allowed_tools = profile.get("allowed_tools") or []
-        tool_index_context = profile.get("_tool_index_context") or self._build_tool_index_context(allowed_tools)
+        allowed_tools = profile.get("_effective_allowed_tools", profile.get("allowed_tools") or [])
+        excluded_tools = {"delegate_agent_tasks"} if not profile.get("can_delegate") else set()
+        tool_index_context = profile.get("_tool_index_context") or self._build_tool_index_context(
+            allowed_tools,
+            excluded_tools=excluded_tools,
+        )
         system_parts = [
             agent_system_prompt,
             f"当前智能体：{profile.get('name') or '默认智能体'}",
@@ -85,7 +89,10 @@ class Planner:
                 if message.get("role") in {"user", "assistant", "system"}
             ],
         ]
-        tools = ToolRegistry.get_openai_tools_spec(allowed_tools=allowed_tools)
+        tools = ToolRegistry.get_openai_tools_spec(
+            allowed_tools=allowed_tools,
+            excluded_tools=excluded_tools,
+        )
         providers_to_try = await self._provider_chain_builder(profile)
         last_error = None
         result = None
@@ -129,11 +136,19 @@ class Planner:
             return [data]
         return []
 
-    def _build_tool_index_context(self, allowed_tools: list[str] | None) -> str:
+    def _build_tool_index_context(
+        self,
+        allowed_tools: list[str] | None,
+        *,
+        excluded_tools: set[str] | None = None,
+    ) -> str:
         allow_all = not allowed_tools or "*" in allowed_tools
         allowed = set(allowed_tools or [])
-        tools = ToolRegistry.get_all_tools() if allow_all else [
-            tool for tool in ToolRegistry.get_all_tools() if tool.name in allowed
+        excluded = excluded_tools or set()
+        tools = [
+            tool
+            for tool in ToolRegistry.get_all_tools()
+            if tool.name not in excluded and (allow_all or tool.name in allowed)
         ]
         if not tools:
             return ""

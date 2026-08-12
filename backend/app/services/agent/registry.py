@@ -104,7 +104,12 @@ class ToolRegistry:
         return cls._categories.copy()
 
     @classmethod
-    def get_openai_tools_spec(cls, allowed_tools: list[str] | None = None, summary_mode: bool = False) -> list[dict]:
+    def get_openai_tools_spec(
+        cls,
+        allowed_tools: list[str] | None = None,
+        summary_mode: bool = False,
+        excluded_tools: set[str] | None = None,
+    ) -> list[dict]:
         """Return OpenAI-compatible tool specs with an optional allowlist.
 
         Hermes-inspired progressive disclosure: when summary_mode=True,
@@ -113,7 +118,12 @@ class ToolRegistry:
         """
         allow_all = not allowed_tools or "*" in allowed_tools
         allowed = set(allowed_tools or [])
-        tools = cls._tools.values() if allow_all else [tool for name, tool in cls._tools.items() if name in allowed]
+        excluded = excluded_tools or set()
+        tools = (
+            [tool for name, tool in cls._tools.items() if name not in excluded]
+            if allow_all
+            else [tool for name, tool in cls._tools.items() if name in allowed and name not in excluded]
+        )
         return [
             {
                 "type": "function",

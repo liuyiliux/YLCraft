@@ -87,3 +87,4 @@ backend/app/storage/images/
 esbuild_*.err
 frontend/dist-verify/
 .codex-temp/
+docs/.screenshot-candidates/

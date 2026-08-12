@@ -1,6 +1,8 @@
 # Agent Center 使用说明
 
-Agent Center 是 YLCraft 的项目智能体工作台。它不是单次问答页，而是把“智能体设定、模型、工具授权、长期记忆、默认项目、默认 Skill、运行轨迹”放在一起，方便后续把创作项目、素材库、角色库、分镜和生图流程串起来。
+Agent Center 是 YLCraft 的项目智能体工作台。默认界面只保留最近对话、消息时间线和输入框，让普通用户直接描述目标；智能体设定、模型、工具授权、长期记忆、默认项目、默认 Skill 和完整运行轨迹按需展开。
+
+执行过程不是独立的管理报表。计划、工具调用、观察、委派和确认按发生顺序出现在对话中，最终回答完成后默认折叠；需要排错或沉淀 Skill 时再打开完整轨迹。工具、记忆、连接器或执行树加载失败只影响对应辅助区域，不应清空当前对话。
 
 ## 创建或复制智能体
 
@@ -9,6 +11,8 @@ Agent Center 是 YLCraft 的项目智能体工作台。它不是单次问答页�
 3. 点击右上角设置按钮，打开“智能体设定”抽屉。
 4. 点击“复制新建”可以从当前智能体复制一份。
 5. 在 `Profile` 页签里改名称、头像标识、角色和定位说明。
+
+只有承担总控职责的 Profile 才应打开 `Supervisor：允许委派子智能体`。该能力开启后，运行时才会向模型暴露 `delegate_agent_tasks`；普通 Writer/Reviewer Worker 即使工具授权选择 `*`，也看不到且无法调用委派工具，避免递归失控。
 
 建议按职责拆智能体，而不是让一个智能体包办所有事：
 
@@ -32,7 +36,7 @@ Agent Center 是 YLCraft 的项目智能体工作台。它不是单次问答页�
 - 选择 `*` 表示允许全部工具。
 - 不选 `*` 时，只会把已勾选工具发给模型。
 - 未授权工具不会进入模型候选列表，模型即使想调用也会被后端拦截。
-- `write`、`delete`、`external`、`costly` 风险工具会先生成待确认步骤，用户确认后才执行。
+- `write`、`delete`、`costly` 风险工具会先生成待确认步骤，用户确认后才执行；普通外部读取不重复弹授权。
 
 工具卡片里会显示输入说明、输出说明、风险等级和成本提示。可以先用“测试工具”验证参数格式。
 
@@ -289,6 +293,14 @@ EPUB 生成已经作为 `ebook` 分类工具接入智能体：
 在页面中可以查看 Run Timeline、工具结果摘要、原始 JSON、关联项目/素材/任务对象。Run 也可以导出 Markdown，方便复盘和排错。
 
 ## 运行时架构优化
+
+### 当前多智能体边界
+
+Agent Center 已有统一 Supervisor/Worker 主链。带 `can_delegate=true` 的 Profile 可以调用 `delegate_agent_tasks`，一次创建最多 6 个子任务；无依赖任务按并发上限运行，带 `depends_on` 的任务按拓扑批次运行。每个子 Agent 使用独立 Thread、独立 `AsyncSession` 和独立 `AgentService`，结果汇合为父 Run 的工具 observation，随后父 `RunLoop` 会继续规划或给出最终答复。运行数据通过 `AgentRun.root_run_id/parent_run_id` 和 `AgentDelegation` 持久化，可由 `/runs/{run_id}/tree` 与 `/runs/{run_id}/delegations` 检查。
+
+运行轨迹中的“委派并续跑”是人工触发的同构入口：它仍通过 `SubagentOrchestrator` 创建子 Run，但汇合成功后会把 observation 送回原父 Run，并在同一条执行树中继续规划。API 调用方可通过 `POST /runs/{run_id}/delegate` 的 `resume_parent` 控制是否立即续跑；旧调用默认仅委派，保持兼容。
+
+边界仍需如实说明：Writer Room 当前的“角色演绎”仍是单模型结构化推演，整条链路是确定性的分阶段写作流水线；专用 `MultiAgentCoordinator` 也尚未迁移到统一运行时。子 Agent 的等待确认、确认结果和取消状态已经能向父级委派步骤传播；等待确认后的自动续跑仍由用户在轨迹中触发，避免确认接口暗中启动新一轮成本型执行。因此这些功能不能提前标成完整团队版 Writer Room。
 
 Agent Center 的运行时核心借鉴了 DeerFlow 2.0（字节跳动 Super Agent Harness 框架）和 Hermes Agent（Nous Research 自演化智能体）的成熟设计模式，在以下方面增强了可靠性和效率：
 

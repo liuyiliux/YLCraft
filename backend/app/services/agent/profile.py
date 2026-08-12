@@ -27,6 +27,7 @@ DEFAULT_AGENT_PROFILES: list[dict[str, Any]] = [
             "不要自动批准、启用或执行远程 skill。"
         ),
         "allowed_tools": ["*"],
+        "can_delegate": True,
         "default_workflow": "general_assistant",
         "default_skill_ids": [],
         "max_steps": 8,
@@ -74,6 +75,7 @@ DEFAULT_AGENT_PROFILES: list[dict[str, Any]] = [
             "list_prompt_templates",
             "get_prompt_template",
         ],
+        "can_delegate": False,
         "default_context": {
             "focus": "ai_model_configuration",
         },
@@ -97,6 +99,7 @@ DEFAULT_AGENT_PROFILES: list[dict[str, Any]] = [
             "只有用户明确确认后，才调用 publish_fanqie_project_chapter 保存草稿，且测试必须使用独立 [TEST] 章节。"
         ),
         "allowed_tools": [
+            "delegate_agent_tasks",
             "list_creative_projects",
             "inspect_creative_project",
             "sync_creative_project_bible",
@@ -185,6 +188,7 @@ DEFAULT_AGENT_PROFILES: list[dict[str, Any]] = [
             "get_fanqie_project_publish_status",
             "publish_fanqie_project_chapter",
         ],
+        "can_delegate": True,
         "default_workflow": "creative_project_advance",
         "default_skill_ids": ["creative_project_advance", "reference_match"],
         "max_steps": 10,
@@ -626,6 +630,7 @@ def profile_to_dict(profile: AgentProfile) -> dict[str, Any]:
         "provider": profile.provider,
         "model": profile.model,
         "max_steps": profile.max_steps,
+        "can_delegate": profile.can_delegate,
         "is_default": profile.is_default,
         "is_builtin": profile.is_builtin,
         "created_at": profile.created_at.isoformat() if profile.created_at else None,
@@ -657,6 +662,7 @@ class AgentProfileManager:
                     if item.get("model") and not existing.model:
                         existing.model = item.get("model", "")
                     existing.max_steps = item["max_steps"]
+                    existing.can_delegate = bool(item.get("can_delegate", False))
                     existing.updated_at = datetime.utcnow()
                     self.session.add(existing)
                 continue
@@ -676,6 +682,7 @@ class AgentProfileManager:
                 provider=item.get("provider", ""),
                 model=item.get("model", ""),
                 max_steps=item["max_steps"],
+                can_delegate=bool(item.get("can_delegate", False)),
                 is_default=item["is_default"],
                 is_builtin=True,
             )
@@ -725,6 +732,7 @@ class AgentProfileManager:
             provider=data.get("provider") or "",
             model=data.get("model") or "",
             max_steps=int(data.get("max_steps") or 8),
+            can_delegate=bool(data.get("can_delegate", False)),
             is_default=bool(data.get("is_default", False)),
             is_builtin=False,
         )
@@ -750,6 +758,7 @@ class AgentProfileManager:
             "provider",
             "model",
             "max_steps",
+            "can_delegate",
         ]
         for field in scalar_fields:
             if field in data and data[field] is not None:

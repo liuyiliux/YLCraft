@@ -114,6 +114,8 @@ from .task_tools import (
     delete_project_task,
 )
 
+from .delegation_tools import delegate_agent_tasks
+
 from .novel_tools import (
     list_novel_sources,
     list_novel_bookshelf,
@@ -294,6 +296,7 @@ TOOLS = [
     get_project_task,
     cancel_project_task,
     delete_project_task,
+    delegate_agent_tasks,
     list_novel_sources,
     list_novel_bookshelf,
     search_novel_sources,
@@ -437,6 +440,7 @@ __all__ = [
     "get_project_task",
     "cancel_project_task",
     "delete_project_task",
+    "delegate_agent_tasks",
     "list_novel_sources",
     "list_novel_bookshelf",
     "search_novel_sources",

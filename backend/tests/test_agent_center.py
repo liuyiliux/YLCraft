@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from types import SimpleNamespace
 
@@ -13,7 +14,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.task_queue import get_task_queue
-from app.db.models.agent import AgentContextSnapshot, AgentMemory, AgentMemorySnapshot, AgentMessage, AgentProfile, AgentRun, AgentRunStep, AgentSession, AgentSkill, AgentSkillDraft, AgentThread, AgentToolCall
+from app.db.models.agent import AgentContextSnapshot, AgentDelegation, AgentMemory, AgentMemorySnapshot, AgentMessage, AgentProfile, AgentRun, AgentRunStep, AgentSession, AgentSkill, AgentSkillDraft, AgentThread, AgentToolCall
 from app.db.models.ai_connector import AIConnector
 from app.db.models.creative_project import CreativeProject, ProjectContent, ProjectGenerationLog
 from app.services.agent import tools as _agent_tools  # noqa: F401 - register tools
@@ -29,6 +30,7 @@ from app.api.v1.agent import (
     SkillBundleCreateRequest,
     ToolTestRequest,
     approve_skill_draft,
+    cancel_run,
     confirm_pending_step,
     create_skill_bundle,
     create_skill_draft,
@@ -38,7 +40,9 @@ from app.api.v1.agent import (
     export_run_markdown,
     get_memory_view,
     get_run_linked_logs,
+    get_run_delegations,
     get_run_memory_snapshot,
+    get_run_tree,
     inspect_run_skill_candidate,
     list_skill_package_files,
     list_skill_package_index,
@@ -52,12 +56,21 @@ from app.api.v1.agent import (
 )
 from app.services.agent.registry import Tool, ToolCallResult, ToolRegistry
 from app.services.agent.runtime import Planner, RunLoop, SkillRouter, ToolExecutor
+from app.services.agent.runtime.delegation import (
+    DelegatedTask,
+    DelegationLimits,
+    DelegationPolicy,
+    DelegationValidationError,
+    SubagentExecutionResult,
+    SubagentOrchestrator,
+)
 from app.services.agent.skill_loader import SkillPackageLoader
 from app.services.agent.skill_drafts import AgentSkillDraftService, SkillDraftError
 from app.services.agent.tools.skill_tools import create_agent_skill_draft as create_agent_skill_draft_tool
 from app.services.agent.tools.skill_tools import create_agent_skill_draft_from_run as create_agent_skill_draft_from_run_tool
 from app.services.agent.tools.skill_tools import inspect_agent_run_skill_candidate as inspect_agent_run_skill_candidate_tool
 from app.services.agent.tools.skill_tools import list_agent_skill_drafts as list_agent_skill_drafts_tool
+from app.services.agent.tools.delegation_tools import DELEGATE_AGENT_TASKS_SCHEMA
 from app.services.agent.service import AgentService
 from app.services.agent.session.manager import SessionManager
 from app.services.agent.thread_manager import ThreadManager
@@ -81,6 +94,7 @@ async def agent_session(tmp_path):
         await conn.run_sync(AgentToolCall.__table__.create)
         await conn.run_sync(AgentRun.__table__.create)
         await conn.run_sync(AgentRunStep.__table__.create)
+        await conn.run_sync(AgentDelegation.__table__.create)
         await conn.run_sync(AgentMemorySnapshot.__table__.create)
         await conn.run_sync(CreativeProject.__table__.create)
         await conn.run_sync(ProjectContent.__table__.create)
@@ -2993,6 +3007,438 @@ async def test_agent_delegate_subtask_creates_child_run_and_parent_step(agent_se
     assert len(delegate_steps) == 1
     output = json.loads(delegate_steps[0].output_json)
     assert output["child_run_id"] == child_run.id
+
+
+def test_delegation_policy_rejects_cycles_and_depth_overflow():
+    policy = DelegationPolicy(DelegationLimits(max_depth=2))
+
+    with pytest.raises(DelegationValidationError, match="深度"):
+        policy.validate(
+            [DelegatedTask("child", "novel-writer", "续写正文")],
+            parent_depth=2,
+        )
+
+    with pytest.raises(DelegationValidationError, match="循环"):
+        policy.validate(
+            [
+                DelegatedTask("a", "novel-writer", "任务 A", depends_on=("b",)),
+                DelegatedTask("b", "quality-reviewer", "任务 B", depends_on=("a",)),
+            ],
+            parent_depth=0,
+        )
+
+
+@pytest.mark.asyncio
+async def test_subagent_orchestrator_runs_independent_tasks_in_parallel(agent_session: AsyncSession):
+    active = 0
+    peak = 0
+
+    class FakeRunner:
+        async def execute(self, task, **kwargs):
+            nonlocal active, peak
+            active += 1
+            peak = max(peak, active)
+            await asyncio.sleep(0.02)
+            active -= 1
+            return SubagentExecutionResult(
+                task_key=task.task_key,
+                profile_id=task.profile_id,
+                status="completed",
+                child_run_id=f"run-{task.task_key}",
+                child_thread_id=f"thread-{task.task_key}",
+                reply=f"{task.task_key} completed",
+                raw_result={"done": True, "run_id": f"run-{task.task_key}"},
+            )
+
+    parent = AgentRun(
+        id="parent-orchestration-run",
+        root_run_id="parent-orchestration-run",
+        run_kind="primary",
+        delegation_depth=0,
+        user_id="default",
+        session_id="thread-parent",
+        profile_id="creative-director",
+        status="completed",
+        objective="并行检查",
+        context_json=json.dumps({"project_id": "project-1", "secret": "do-not-copy"}),
+        result_json="{}",
+    )
+    agent_session.add(parent)
+    await agent_session.commit()
+
+    orchestrator = SubagentOrchestrator(agent_session, FakeRunner())
+    result = await orchestrator.delegate(
+        parent,
+        [
+            DelegatedTask("writer", "novel-writer", "检查正文"),
+            DelegatedTask("reviewer", "quality-reviewer", "检查连续性"),
+        ],
+        join_strategy="all",
+    )
+
+    assert result["success"] is True
+    assert result["summary"] == {
+        "total": 2,
+        "completed": 2,
+        "failed": 0,
+        "skipped": 0,
+        "waiting_confirmation": 0,
+        "cancelled": 0,
+    }
+    assert peak == 2
+    delegations = (
+        await agent_session.execute(
+            select(AgentDelegation).where(AgentDelegation.parent_run_id == parent.id)
+        )
+    ).scalars().all()
+    assert {item.child_run_id for item in delegations} == {"run-writer", "run-reviewer"}
+    assert all(item.status == "completed" for item in delegations)
+    step = (
+        await agent_session.execute(
+            select(AgentRunStep).where(
+                AgentRunStep.run_id == parent.id,
+                AgentRunStep.step_type == "delegate_subtask",
+            )
+        )
+    ).scalar_one()
+    assert step.status == "completed"
+    assert set(json.loads(step.output_json)["linked_runs"]) == {"run-writer", "run-reviewer"}
+
+
+def test_delegation_tool_schema_and_supervisor_visibility():
+    task_schema = DELEGATE_AGENT_TASKS_SCHEMA["properties"]["tasks"]
+    assert task_schema["minItems"] == 1
+    assert task_schema["maxItems"] == 6
+    assert task_schema["items"]["required"] == ["task_key", "profile_id", "objective"]
+    assert DELEGATE_AGENT_TASKS_SCHEMA["properties"]["join_strategy"]["enum"] == ["all", "best_effort"]
+
+    supervisor_tools = AgentService._effective_allowed_tools(
+        {"allowed_tools": ["*"], "can_delegate": True}
+    )
+    worker_tools = AgentService._effective_allowed_tools(
+        {"allowed_tools": ["*"], "can_delegate": False}
+    )
+    assert supervisor_tools == ["*"]
+    assert "delegate_agent_tasks" not in worker_tools
+
+
+@pytest.mark.asyncio
+async def test_supervisor_delegation_result_resumes_parent_loop(
+    agent_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    class FakeLLM:
+        def __init__(self):
+            self.calls = []
+
+        async def chat(self, **kwargs):
+            if kwargs.get("max_tokens") == 50:
+                return LLMGenerationResult(success=True, content="委派审校")
+            self.calls.append(kwargs)
+            if len(self.calls) == 1:
+                return LLMGenerationResult(
+                    success=True,
+                    content=(
+                        '{"tool_calls":[{"id":"delegate_1","name":"delegate_agent_tasks",'
+                        '"arguments":"{\\"tasks\\":[{\\"task_key\\":\\"review\\",'
+                        '\\"profile_id\\":\\"quality-reviewer\\",'
+                        '\\"objective\\":\\"检查连续性\\"}]}"}]}'
+                    ),
+                )
+            observed = "\n".join(str(item.content) for item in kwargs.get("messages") or [])
+            assert "审校完成：连续性正常" in observed
+            return LLMGenerationResult(success=True, content="已综合子智能体结果，连续性检查通过。")
+
+    async def fake_runtime_tool(state, tool_name, tool_args):
+        assert tool_name == "delegate_agent_tasks"
+        assert tool_args["tasks"][0]["profile_id"] == "quality-reviewer"
+        return ToolCallResult(
+            tool_name=tool_name,
+            success=True,
+            result={
+                "status": "completed",
+                "joined_observation": "审校完成：连续性正常",
+                "delegations": [],
+                "linked_runs": ["child-review-run"],
+                "summary": {"total": 1, "completed": 1, "failed": 0},
+            },
+        )
+
+    service = AgentService(agent_session)
+    fake_llm = FakeLLM()
+    service._llm_manager = fake_llm
+    monkeypatch.setattr(service, "_execute_runtime_tool", fake_runtime_tool)
+
+    result = await service.chat(
+        session_id="",
+        user_message="请委派审校并汇总结果",
+        profile_id="default-assistant",
+    )
+
+    assert result["done"] is True
+    assert result["reply"] == "已综合子智能体结果，连续性检查通过。"
+    assert len(fake_llm.calls) == 2
+    tool_names = {
+        item["function"]["name"]
+        for item in fake_llm.calls[0].get("tools") or []
+    }
+    assert "delegate_agent_tasks" in tool_names
+
+
+@pytest.mark.asyncio
+async def test_manual_delegation_observation_resumes_same_parent_run(agent_session: AsyncSession):
+    class FakeLLM:
+        async def chat(self, **kwargs):
+            observed = "\n".join(str(item.content) for item in kwargs.get("messages") or [])
+            assert "角色检查完成" in observed
+            return LLMGenerationResult(success=True, content="父智能体已汇总：角色逻辑成立。")
+
+    manager = AgentProfileManager(agent_session)
+    await manager.list_profiles()
+    thread_manager = ThreadManager(agent_session)
+    thread = await thread_manager.create_thread(title="manual resume")
+    await thread_manager.append_message(thread.id, {"role": "user", "content": "检查角色逻辑"})
+    parent = AgentRun(
+        id="manual-resume-parent",
+        root_run_id="manual-resume-parent",
+        user_id="default",
+        session_id=thread.id,
+        profile_id="default-assistant",
+        status="completed",
+        objective="检查角色逻辑",
+    )
+    agent_session.add(parent)
+    await agent_session.commit()
+
+    service = AgentService(agent_session)
+    service._llm_manager = FakeLLM()
+    result = await service.resume_from_delegation_observation(
+        parent,
+        {
+            "status": "completed",
+            "joined_observation": "角色检查完成：动机与前文一致。",
+            "delegations": [{"task_key": "character-review"}],
+        },
+    )
+    await agent_session.commit()
+
+    assert result["run_id"] == parent.id
+    assert result["reply"] == "父智能体已汇总：角色逻辑成立。"
+    await agent_session.refresh(parent)
+    assert parent.status == "completed"
+    steps = (
+        await agent_session.execute(
+            select(AgentRunStep)
+            .where(AgentRunStep.run_id == parent.id)
+            .order_by(AgentRunStep.order_index.asc())
+        )
+    ).scalars().all()
+    assert [step.step_type for step in steps] == ["observe", "final"]
+
+
+@pytest.mark.asyncio
+async def test_agent_run_tree_and_delegation_apis(
+    agent_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    async def noop_ensure_agent_tables():
+        return None
+
+    monkeypatch.setattr("app.api.v1.agent.ensure_agent_tables", noop_ensure_agent_tables)
+    root = AgentRun(
+        id="tree-root",
+        root_run_id="tree-root",
+        user_id="default",
+        session_id="tree-thread",
+        profile_id="default-assistant",
+        status="completed",
+        objective="root",
+    )
+    child = AgentRun(
+        id="tree-child",
+        root_run_id="tree-root",
+        parent_run_id="tree-root",
+        run_kind="delegated",
+        delegation_depth=1,
+        user_id="default",
+        session_id="child-thread",
+        profile_id="quality-reviewer",
+        status="completed",
+        objective="review",
+    )
+    record = AgentDelegation(
+        id="delegation-tree",
+        user_id="default",
+        root_run_id="tree-root",
+        parent_run_id="tree-root",
+        child_run_id="tree-child",
+        task_key="review",
+        target_profile_id="quality-reviewer",
+        objective="review",
+        status="completed",
+    )
+    agent_session.add_all([root, child, record])
+    await agent_session.commit()
+
+    tree = await get_run_tree("tree-child", db_session=agent_session)
+    assert tree["root_run_id"] == "tree-root"
+    assert tree["root"]["id"] == "tree-root"
+    assert tree["root"]["children"][0]["id"] == "tree-child"
+    assert tree["delegations"][0]["task_key"] == "review"
+
+    delegations = await get_run_delegations("tree-root", db_session=agent_session)
+    assert delegations["total"] == 1
+    assert delegations["delegations"][0]["child_run_id"] == "tree-child"
+
+
+@pytest.mark.asyncio
+async def test_child_confirmation_and_cancellation_propagate_to_parent_join(
+    agent_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    async def noop_ensure_agent_tables():
+        return None
+
+    async def write_handler(value: str = ""):
+        return {"success": True, "value": value}
+
+    ToolRegistry.register(
+        Tool(
+            name="agent_test_child_confirmation",
+            description="child confirmation test",
+            parameters={
+                "type": "object",
+                "properties": {"value": {"type": "string"}},
+            },
+            handler=write_handler,
+            risk_level="write",
+        )
+    )
+    monkeypatch.setattr("app.api.v1.agent.ensure_agent_tables", noop_ensure_agent_tables)
+
+    parent = AgentRun(
+        id="confirm-parent",
+        root_run_id="confirm-parent",
+        user_id="default",
+        session_id="confirm-parent-thread",
+        profile_id="default-assistant",
+        status="waiting_confirmation",
+        objective="parent",
+    )
+    child = AgentRun(
+        id="confirm-child",
+        root_run_id="confirm-parent",
+        parent_run_id="confirm-parent",
+        run_kind="delegated",
+        delegation_depth=1,
+        user_id="default",
+        session_id="confirm-child-thread",
+        profile_id="quality-reviewer",
+        status="waiting_confirmation",
+        objective="child",
+    )
+    parent_step = AgentRunStep(
+        id=9101,
+        run_id=parent.id,
+        session_id=parent.session_id,
+        profile_id=parent.profile_id,
+        step_type="delegate_subtask",
+        status="waiting_confirmation",
+        order_index=1,
+        output_json=json.dumps({"join_strategy": "all"}),
+    )
+    pending_step = AgentRunStep(
+        id=9102,
+        run_id=child.id,
+        session_id=child.session_id,
+        profile_id=child.profile_id,
+        step_type="tool_call",
+        status="pending",
+        order_index=1,
+        tool_name="agent_test_child_confirmation",
+        input_json=json.dumps(
+            {
+                "name": "agent_test_child_confirmation",
+                "arguments": {"value": "approved"},
+            }
+        ),
+    )
+    record = AgentDelegation(
+        id="confirm-delegation",
+        user_id="default",
+        root_run_id=parent.id,
+        parent_run_id=parent.id,
+        child_run_id=child.id,
+        parent_step_id=parent_step.id,
+        task_key="review",
+        target_profile_id=child.profile_id,
+        objective="child",
+        status="waiting_confirmation",
+    )
+    agent_session.add_all([parent, child, parent_step, pending_step, record])
+    await agent_session.commit()
+
+    response = await confirm_pending_step(child.id, pending_step.id, db_session=agent_session)
+    assert response["success"] is True
+    await agent_session.refresh(parent)
+    await agent_session.refresh(parent_step)
+    await agent_session.refresh(record)
+    assert parent.status == "completed"
+    assert parent_step.status == "completed"
+    assert record.status == "completed"
+    assert json.loads(parent_step.output_json)["resume_required"] is True
+
+    cancel_parent = AgentRun(
+        id="cancel-parent",
+        root_run_id="cancel-parent",
+        user_id="default",
+        session_id="cancel-parent-thread",
+        profile_id="default-assistant",
+        status="waiting_confirmation",
+        objective="parent cancel",
+    )
+    cancel_child = AgentRun(
+        id="cancel-child",
+        root_run_id="cancel-parent",
+        parent_run_id="cancel-parent",
+        run_kind="delegated",
+        delegation_depth=1,
+        user_id="default",
+        session_id="cancel-child-thread",
+        profile_id="quality-reviewer",
+        status="waiting_confirmation",
+        objective="child cancel",
+    )
+    cancel_step = AgentRunStep(
+        id=9201,
+        run_id=cancel_parent.id,
+        session_id=cancel_parent.session_id,
+        profile_id=cancel_parent.profile_id,
+        step_type="delegate_subtask",
+        status="waiting_confirmation",
+        order_index=1,
+        output_json=json.dumps({"join_strategy": "all"}),
+    )
+    cancel_record = AgentDelegation(
+        id="cancel-delegation",
+        user_id="default",
+        root_run_id=cancel_parent.id,
+        parent_run_id=cancel_parent.id,
+        child_run_id=cancel_child.id,
+        parent_step_id=cancel_step.id,
+        task_key="cancel",
+        target_profile_id=cancel_child.profile_id,
+        objective="child cancel",
+        status="waiting_confirmation",
+    )
+    agent_session.add_all([cancel_parent, cancel_child, cancel_step, cancel_record])
+    await agent_session.commit()
+
+    await cancel_run(cancel_child.id, db_session=agent_session)
+    await agent_session.refresh(cancel_parent)
+    await agent_session.refresh(cancel_record)
+    assert cancel_parent.status == "cancelled"
+    assert cancel_record.status == "cancelled"
 
 
 @pytest.mark.asyncio

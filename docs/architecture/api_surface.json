@@ -486,7 +486,7 @@
       "summary": "Agent 对话",
       "function": "chat",
       "file": "backend/app/api/v1/agent.py",
-      "line": 152,
+      "line": 154,
       "response_model": "",
       "include_in_schema": true
     },
@@ -502,7 +502,7 @@
       "summary": "获取记忆",
       "function": "get_memories",
       "file": "backend/app/api/v1/agent.py",
-      "line": 1240,
+      "line": 1462,
       "response_model": "",
       "include_in_schema": true
     },
@@ -518,7 +518,7 @@
       "summary": "保存记忆",
       "function": "save_memory",
       "file": "backend/app/api/v1/agent.py",
-      "line": 1274,
+      "line": 1496,
       "response_model": "",
       "include_in_schema": true
     },
@@ -534,7 +534,7 @@
       "summary": "获取 Hermes 风格记忆视图",
       "function": "get_memory_view",
       "file": "backend/app/api/v1/agent.py",
-      "line": 1266,
+      "line": 1488,
       "response_model": "",
       "include_in_schema": true
     },
@@ -550,7 +550,7 @@
       "summary": "删除记忆",
       "function": "delete_memory",
       "file": "backend/app/api/v1/agent.py",
-      "line": 1301,
+      "line": 1523,
       "response_model": "",
       "include_in_schema": true
     },
@@ -566,7 +566,7 @@
       "summary": "多智能体场景推演",
       "function": "run_scene_simulation",
       "file": "backend/app/api/v1/agent.py",
-      "line": 1798,
+      "line": 2020,
       "response_model": "",
       "include_in_schema": true
     },
@@ -582,7 +582,7 @@
       "summary": "智能体配置列表",
       "function": "list_profiles",
       "file": "backend/app/api/v1/agent.py",
-      "line": 198,
+      "line": 200,
       "response_model": "",
       "include_in_schema": true
     },
@@ -598,7 +598,7 @@
       "summary": "创建智能体配置",
       "function": "create_profile",
       "file": "backend/app/api/v1/agent.py",
-      "line": 207,
+      "line": 209,
       "response_model": "",
       "include_in_schema": true
     },
@@ -614,7 +614,7 @@
       "summary": "更新智能体配置",
       "function": "update_profile",
       "file": "backend/app/api/v1/agent.py",
-      "line": 220,
+      "line": 222,
       "response_model": "",
       "include_in_schema": true
     },
@@ -630,7 +630,7 @@
       "summary": "Agent 运行记录",
       "function": "list_runs",
       "file": "backend/app/api/v1/agent.py",
-      "line": 598,
+      "line": 716,
       "response_model": "",
       "include_in_schema": true
     },
@@ -646,7 +646,7 @@
       "summary": "Agent 运行详情",
       "function": "get_run_detail",
       "file": "backend/app/api/v1/agent.py",
-      "line": 616,
+      "line": 734,
       "response_model": "",
       "include_in_schema": true
     },
@@ -662,7 +662,7 @@
       "summary": "取消 Agent 运行",
       "function": "cancel_run",
       "file": "backend/app/api/v1/agent.py",
-      "line": 728,
+      "line": 918,
       "response_model": "",
       "include_in_schema": true
     },
@@ -678,7 +678,7 @@
       "summary": "获取 Run 上下文快照",
       "function": "get_context_snapshot",
       "file": "backend/app/api/v1/agent.py",
-      "line": 841,
+      "line": 1038,
       "response_model": "",
       "include_in_schema": true
     },
@@ -694,7 +694,7 @@
       "summary": "重建 Run 上下文快照",
       "function": "reconstruct_context_snapshot",
       "file": "backend/app/api/v1/agent.py",
-      "line": 752,
+      "line": 949,
       "response_model": "",
       "include_in_schema": true
     },
@@ -710,7 +710,7 @@
       "summary": "继续 Agent 运行",
       "function": "continue_run",
       "file": "backend/app/api/v1/agent.py",
-      "line": 871,
+      "line": 1068,
       "response_model": "",
       "include_in_schema": true
     },
@@ -726,7 +726,23 @@
       "summary": "委派 Agent 子任务",
       "function": "delegate_run",
       "file": "backend/app/api/v1/agent.py",
-      "line": 1068,
+      "line": 1276,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/agent/runs/{run_id}/delegations",
+      "router": "agent",
+      "prefix": "/api/v1/agent",
+      "local_path": "/runs/{run_id}/delegations",
+      "tags": [
+        "Agent"
+      ],
+      "summary": "获取 Agent Run 的子任务委派记录",
+      "function": "get_run_delegations",
+      "file": "backend/app/api/v1/agent.py",
+      "line": 748,
       "response_model": "",
       "include_in_schema": true
     },
@@ -742,7 +758,7 @@
       "summary": "导出 Agent Run Markdown",
       "function": "export_run_markdown",
       "file": "backend/app/api/v1/agent.py",
-      "line": 702,
+      "line": 892,
       "response_model": "",
       "include_in_schema": true
     },
@@ -758,7 +774,7 @@
       "summary": "Agent Run 关联日志",
       "function": "get_run_linked_logs",
       "file": "backend/app/api/v1/agent.py",
-      "line": 657,
+      "line": 847,
       "response_model": "",
       "include_in_schema": true
     },
@@ -774,7 +790,7 @@
       "summary": "获取 Agent Run 记忆快照",
       "function": "get_run_memory_snapshot",
       "file": "backend/app/api/v1/agent.py",
-      "line": 671,
+      "line": 861,
       "response_model": "",
       "include_in_schema": true
     },
@@ -790,7 +806,7 @@
       "summary": "重试 Agent 失败步骤",
       "function": "retry_run_step",
       "file": "backend/app/api/v1/agent.py",
-      "line": 897,
+      "line": 1094,
       "response_model": "",
       "include_in_schema": true
     },
@@ -806,7 +822,7 @@
       "summary": "分析 Run 是否适合沉淀为 Skill",
       "function": "inspect_run_skill_candidate",
       "file": "backend/app/api/v1/agent.py",
-      "line": 630,
+      "line": 820,
       "response_model": "",
       "include_in_schema": true
     },
@@ -822,7 +838,7 @@
       "summary": "从 Run 生成待审批 Skill 草稿",
       "function": "create_skill_draft_from_run",
       "file": "backend/app/api/v1/agent.py",
-      "line": 641,
+      "line": 831,
       "response_model": "",
       "include_in_schema": true
     },
@@ -838,7 +854,7 @@
       "summary": "确认并执行 pending 工具步骤",
       "function": "confirm_pending_step",
       "file": "backend/app/api/v1/agent.py",
-      "line": 977,
+      "line": 1174,
       "response_model": "",
       "include_in_schema": true
     },
@@ -854,7 +870,7 @@
       "summary": "丢弃待确认记忆",
       "function": "discard_memory_candidates",
       "file": "backend/app/api/v1/agent.py",
-      "line": 1374,
+      "line": 1596,
       "response_model": "",
       "include_in_schema": true
     },
@@ -870,7 +886,23 @@
       "summary": "保存待确认记忆",
       "function": "save_memory_candidates",
       "file": "backend/app/api/v1/agent.py",
-      "line": 1309,
+      "line": 1531,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/agent/runs/{run_id}/tree",
+      "router": "agent",
+      "prefix": "/api/v1/agent",
+      "local_path": "/runs/{run_id}/tree",
+      "tags": [
+        "Agent"
+      ],
+      "summary": "获取 Agent Run 执行树",
+      "function": "get_run_tree",
+      "file": "backend/app/api/v1/agent.py",
+      "line": 768,
       "response_model": "",
       "include_in_schema": true
     },
@@ -886,7 +918,7 @@
       "summary": "发送到 Agent",
       "function": "send_to_agent",
       "file": "backend/app/api/v1/agent.py",
-      "line": 1765,
+      "line": 1987,
       "response_model": "",
       "include_in_schema": true
     },
@@ -902,7 +934,7 @@
       "summary": "对话列表",
       "function": "list_sessions",
       "file": "backend/app/api/v1/agent.py",
-      "line": 236,
+      "line": 238,
       "response_model": "",
       "include_in_schema": true
     },
@@ -918,7 +950,7 @@
       "summary": "会话详情",
       "function": "get_session_detail",
       "file": "backend/app/api/v1/agent.py",
-      "line": 1097,
+      "line": 1319,
       "response_model": "",
       "include_in_schema": true
     },
@@ -934,7 +966,7 @@
       "summary": "删除对话",
       "function": "delete_session",
       "file": "backend/app/api/v1/agent.py",
-      "line": 1138,
+      "line": 1360,
       "response_model": "",
       "include_in_schema": true
     },
@@ -950,7 +982,7 @@
       "summary": "技能列表",
       "function": "list_skills",
       "file": "backend/app/api/v1/agent.py",
-      "line": 1401,
+      "line": 1623,
       "response_model": "",
       "include_in_schema": true
     },
@@ -966,7 +998,7 @@
       "summary": "创建技能",
       "function": "create_skill",
       "file": "backend/app/api/v1/agent.py",
-      "line": 1752,
+      "line": 1974,
       "response_model": "",
       "include_in_schema": true
     },
@@ -982,7 +1014,7 @@
       "summary": "创建用户 Skill Bundle",
       "function": "create_skill_bundle",
       "file": "backend/app/api/v1/agent.py",
-      "line": 1464,
+      "line": 1686,
       "response_model": "",
       "include_in_schema": true
     },
@@ -998,7 +1030,7 @@
       "summary": "更新用户 Skill Bundle",
       "function": "update_skill_bundle",
       "file": "backend/app/api/v1/agent.py",
-      "line": 1469,
+      "line": 1691,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1014,7 +1046,7 @@
       "summary": "删除用户 Skill Bundle",
       "function": "delete_skill_bundle",
       "file": "backend/app/api/v1/agent.py",
-      "line": 1477,
+      "line": 1699,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1030,7 +1062,7 @@
       "summary": "Skill 待审批草稿列表",
       "function": "list_skill_drafts",
       "file": "backend/app/api/v1/agent.py",
-      "line": 1613,
+      "line": 1835,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1046,7 +1078,7 @@
       "summary": "创建 Skill 草稿",
       "function": "create_skill_draft",
       "file": "backend/app/api/v1/agent.py",
-      "line": 1625,
+      "line": 1847,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1062,7 +1094,7 @@
       "summary": "从 URL 导入 Skill 草稿",
       "function": "import_skill_draft_url",
       "file": "backend/app/api/v1/agent.py",
-      "line": 1646,
+      "line": 1868,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1078,7 +1110,7 @@
       "summary": "读取 Skill 草稿",
       "function": "get_skill_draft",
       "file": "backend/app/api/v1/agent.py",
-      "line": 1666,
+      "line": 1888,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1094,7 +1126,7 @@
       "summary": "批准并启用 Skill 草稿",
       "function": "approve_skill_draft",
       "file": "backend/app/api/v1/agent.py",
-      "line": 1680,
+      "line": 1902,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1110,7 +1142,7 @@
       "summary": "拒绝 Skill 草稿",
       "function": "reject_skill_draft",
       "file": "backend/app/api/v1/agent.py",
-      "line": 1695,
+      "line": 1917,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1126,7 +1158,7 @@
       "summary": "文件化 Skill 包索引",
       "function": "list_skill_package_index",
       "file": "backend/app/api/v1/agent.py",
-      "line": 1423,
+      "line": 1645,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1142,7 +1174,7 @@
       "summary": "Skill 包文件列表",
       "function": "list_skill_package_files",
       "file": "backend/app/api/v1/agent.py",
-      "line": 1433,
+      "line": 1655,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1158,7 +1190,7 @@
       "summary": "读取 Skill 包文件",
       "function": "read_skill_package_file",
       "file": "backend/app/api/v1/agent.py",
-      "line": 1447,
+      "line": 1669,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1174,7 +1206,7 @@
       "summary": "Skill 路由预览",
       "function": "preview_skill_route",
       "file": "backend/app/api/v1/agent.py",
-      "line": 1711,
+      "line": 1933,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1190,7 +1222,7 @@
       "summary": "Agent Thread 列表",
       "function": "list_threads",
       "file": "backend/app/api/v1/agent.py",
-      "line": 253,
+      "line": 255,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1206,7 +1238,7 @@
       "summary": "Agent Thread 详情",
       "function": "get_thread_detail",
       "file": "backend/app/api/v1/agent.py",
-      "line": 1115,
+      "line": 1337,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1222,7 +1254,7 @@
       "summary": "删除 Agent Thread",
       "function": "delete_thread",
       "file": "backend/app/api/v1/agent.py",
-      "line": 1148,
+      "line": 1370,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1238,7 +1270,7 @@
       "summary": "可用工具列表",
       "function": "list_tools",
       "file": "backend/app/api/v1/agent.py",
-      "line": 1159,
+      "line": 1381,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1254,7 +1286,7 @@
       "summary": "测试 Agent 工具调用",
       "function": "run_tool_test",
       "file": "backend/app/api/v1/agent.py",
-      "line": 1180,
+      "line": 1402,
       "response_model": "",
       "include_in_schema": true
     },
@@ -4598,7 +4630,7 @@
       "summary": "跨项目查询生成日志",
       "function": "list_generation_logs_global",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1121,
+      "line": 1140,
       "response_model": "",
       "include_in_schema": true
     },
@@ -4662,7 +4694,7 @@
       "summary": "列出项目素材关联",
       "function": "list_project_assets",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1082,
+      "line": 1101,
       "response_model": "",
       "include_in_schema": true
     },
@@ -4678,7 +4710,7 @@
       "summary": "关联项目素材",
       "function": "link_project_asset",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1156,
+      "line": 1175,
       "response_model": "",
       "include_in_schema": true
     },
@@ -4694,7 +4726,7 @@
       "summary": "获取项目画布状态",
       "function": "get_canvas",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1205,
+      "line": 1224,
       "response_model": "",
       "include_in_schema": true
     },
@@ -4710,7 +4742,7 @@
       "summary": "保存项目画布状态",
       "function": "save_canvas",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1216,
+      "line": 1235,
       "response_model": "",
       "include_in_schema": true
     },
@@ -4726,7 +4758,7 @@
       "summary": "跨章连续性检查（对比已锁定事实）",
       "function": "check_continuity",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1488,
+      "line": 1507,
       "response_model": "",
       "include_in_schema": true
     },
@@ -4742,7 +4774,7 @@
       "summary": "列出项目阶段内容",
       "function": "list_contents",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1025,
+      "line": 1037,
       "response_model": "",
       "include_in_schema": true
     },
@@ -4758,7 +4790,7 @@
       "summary": "保存项目阶段内容",
       "function": "update_content",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1042,
+      "line": 1061,
       "response_model": "",
       "include_in_schema": true
     },
@@ -4790,7 +4822,7 @@
       "summary": "从正文提取/入库结构化连续性候选",
       "function": "extract_continuity_candidates",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1381,
+      "line": 1400,
       "response_model": "",
       "include_in_schema": true
     },
@@ -4822,7 +4854,7 @@
       "summary": "段落级非破坏性重写（生成候选版本）",
       "function": "rewrite_paragraph",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1509,
+      "line": 1528,
       "response_model": "",
       "include_in_schema": true
     },
@@ -4838,7 +4870,7 @@
       "summary": "保存项目文本为素材",
       "function": "save_project_content_as_asset",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1176,
+      "line": 1195,
       "response_model": "",
       "include_in_schema": true
     },
@@ -4854,7 +4886,7 @@
       "summary": "列出连续性候选事实",
       "function": "list_continuity_candidates",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1355,
+      "line": 1374,
       "response_model": "",
       "include_in_schema": true
     },
@@ -4870,7 +4902,7 @@
       "summary": "连续性事实上下文摘要（不进模型硬约束）",
       "function": "continuity_context_summary",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1470,
+      "line": 1489,
       "response_model": "",
       "include_in_schema": true
     },
@@ -4886,7 +4918,7 @@
       "summary": "确认候选事实，写入 locked project_bible / world_asset",
       "function": "accept_continuity_candidate",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1406,
+      "line": 1425,
       "response_model": "",
       "include_in_schema": true
     },
@@ -4902,7 +4934,7 @@
       "summary": "忽略候选事实",
       "function": "ignore_continuity_candidate",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1426,
+      "line": 1445,
       "response_model": "",
       "include_in_schema": true
     },
@@ -4918,7 +4950,7 @@
       "summary": "合并候选事实到已有 project_bible / world_asset",
       "function": "merge_continuity_candidate",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1446,
+      "line": 1465,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5142,7 +5174,7 @@
       "summary": "生成分镜草稿",
       "function": "generate_storyboard",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 988,
+      "line": 1000,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5158,7 +5190,7 @@
       "summary": "列出项目生成日志",
       "function": "list_generation_logs",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1093,
+      "line": 1112,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5174,7 +5206,7 @@
       "summary": "AI 匹配脚本/分镜参考卡",
       "function": "match_reference_assets",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1007,
+      "line": 1019,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5350,7 +5382,7 @@
       "summary": "只重生成单话细纲场景",
       "function": "regenerate_chapter_outline_scenes",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1063,
+      "line": 1082,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5382,7 +5414,7 @@
       "summary": "拆分漫画页",
       "function": "split_comic_pages",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 965,
+      "line": 977,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5398,7 +5430,7 @@
       "summary": "同步大纲角色到角色库",
       "function": "sync_project_characters",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1188,
+      "line": 1207,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5430,7 +5462,7 @@
       "summary": "Promote writer-room prose to latest novel body",
       "function": "promote_writer_room_content",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 947,
+      "line": 959,
       "response_model": "",
       "include_in_schema": true
     },

@@ -89,7 +89,7 @@ async def init_db():
         )
         return
 
-    expected = "008_add_project_publish_records"
+    expected = "009_add_agent_delegations"
     if revision == expected:
         logger.info("Database migration state is current: %s", revision)
     else:

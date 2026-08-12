@@ -938,6 +938,18 @@ async def run_writer_room(
             template_id=req.template_id,
             continue_on_error=req.continue_on_error,
         )
+        generated_ids = [
+            str(item.get("content_id"))
+            for item in data.get("results", [])
+            if item.get("status") == "success" and item.get("content_id")
+        ]
+        session = getattr(svc, "session", None)
+        data["results_contents"] = [
+            serialize_content(content)
+            for content_id in generated_ids
+            if session is not None
+            and (content := session.get(ProjectContent, content_id)) is not None
+        ]
         return {"success": True, "data": data}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
@@ -1025,6 +1037,11 @@ async def match_reference_assets(
 def list_contents(
     project_id: str,
     content_type: str | None = None,
+    content_types: str | None = Query(
+        default=None,
+        description="Comma-separated content types. Applies only when content_type is omitted.",
+    ),
+    chapter_number: int | None = Query(default=None, ge=1),
     include_history: bool = False,
     svc: CreativeProjectService = Depends(service),
 ):
@@ -1033,6 +1050,8 @@ def list_contents(
     contents = svc.list_contents(
         project_id,
         content_type=content_type,
+        content_types=[item.strip() for item in (content_types or "").split(",") if item.strip()] or None,
+        chapter_number=chapter_number,
         latest_only=not include_history,
     )
     return {"success": True, "data": [serialize_content(c) for c in contents]}

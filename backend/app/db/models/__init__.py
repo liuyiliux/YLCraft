@@ -46,6 +46,7 @@ from app.db.models.agent import (
     AgentSkillDraft, AgentSkillDraftCreate, AgentSkillDraftRead,
     AgentToolCall, AgentToolCallBase,
     AgentRun, AgentRunBase, AgentRunStep, AgentRunStepBase,
+    AgentDelegation, AgentDelegationBase,
     AgentMemorySnapshot, AgentMemorySnapshotBase,
     AgentProfile, AgentProfileCreate, AgentProfileRead,
 )

@@ -2749,6 +2749,14 @@ class HumanizationRetryAIService(FakeAIService):
         )
 
 
+def test_writer_room_prose_alias_normalizes_chapter_content():
+    payload = {"chapter_content": "A complete chapter returned under a provider alias."}
+
+    CreativeProjectService._normalize_prose_content_alias(payload)
+
+    assert payload["content"] == payload["chapter_content"]
+
+
 @pytest.mark.asyncio
 async def test_writer_room_step_binds_generation_log_to_candidate(session: Session):
     service = CreativeProjectService(session, ai_service=FakeAIService())

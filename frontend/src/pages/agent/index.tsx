@@ -65,6 +65,7 @@ import {
   exportAgentRunMarkdown,
   getAgentMemories,
   getAgentRun,
+  getAgentRunTree,
   getAgentRunLinkedLogs,
   getAgentSession,
   inspectAgentRunSkillCandidate,
@@ -87,6 +88,7 @@ import {
 import { listConnectors } from '../../api'
 import type {
   AgentMessage,
+  AgentDelegation,
   AgentMemory,
   AgentProfile,
   AgentRun,
@@ -96,6 +98,7 @@ import type {
   AgentToolCallResult,
 } from '../../types/agent'
 import { useTheme } from '../../constants/theme'
+import AgentPageErrorBoundary from '../../components/agent/AgentPageErrorBoundary'
 
 const { Text, Title, Paragraph } = Typography
 const { TextArea } = Input
@@ -503,7 +506,9 @@ interface AgentLinkedLogs {
   tasks?: any[]
 }
 
-export default function AgentPage() {
+type AgentResource = 'sessions' | 'profiles' | 'tools' | 'connectors'
+
+function AgentPageContent() {
   const { theme: THEME } = useTheme()
   const navigate = useNavigate()
   const [profileForm] = Form.useForm()
@@ -518,6 +523,12 @@ export default function AgentPage() {
   const [tools, setTools] = useState<ToolItem[]>([])
   const [toolCalls, setToolCalls] = useState<AgentToolCallResult[]>([])
   const [currentRun, setCurrentRun] = useState<AgentRun | null>(null)
+  const [runTree, setRunTree] = useState<{
+    root_run_id: string
+    runs: AgentRun[]
+    delegations: AgentDelegation[]
+    limits?: Record<string, number>
+  } | null>(null)
   const [threadRuns, setThreadRuns] = useState<AgentRun[]>([])
   const [linkedLogs, setLinkedLogs] = useState<AgentLinkedLogs | null>(null)
   const [runSkillAnalysis, setRunSkillAnalysis] = useState<any>(null)
@@ -525,6 +536,10 @@ export default function AgentPage() {
   const [memories, setMemories] = useState<AgentMemory[]>([])
   const [skills, setSkills] = useState<AgentSkill[]>([])
   const [memoryLoadError, setMemoryLoadError] = useState('')
+  const [resourceErrors, setResourceErrors] = useState<Partial<Record<AgentResource, string>>>({})
+  const [threadRestoreError, setThreadRestoreError] = useState('')
+  const [sendError, setSendError] = useState('')
+  const [failedPrompt, setFailedPrompt] = useState('')
   const [profiles, setProfiles] = useState<AgentProfile[]>([])
   const [llmConnectors, setLlmConnectors] = useState<LlmConnector[]>([])
   const [selectedProfileId, setSelectedProfileId] = useState<string>('')
@@ -549,6 +564,18 @@ export default function AgentPage() {
   const shouldAutoRestoreSessionRef = useRef(true)
   const currentSessionIdRef = useRef<string | null>(null)
   const forceNewSessionRef = useRef(false)
+
+  const setResourceError = useCallback((resource: AgentResource, error?: unknown) => {
+    setResourceErrors(current => {
+      const next = { ...current }
+      if (!error) {
+        delete next[resource]
+      } else {
+        next[resource] = error instanceof Error ? error.message : String(error)
+      }
+      return next
+    })
+  }, [])
 
   const selectedProfile = useMemo(
     () => profiles.find(item => item.id === selectedProfileId) || profiles[0],
@@ -731,13 +758,17 @@ export default function AgentPage() {
   }, [currentRun?.steps])
 
   const pageShell: CSSProperties = {
-    height: 'calc(100vh - 88px)',
-    minHeight: 680,
+    height: 'calc(100dvh - 88px)',
+    minHeight: 620,
     display: 'grid',
-    gridTemplateRows: 'auto minmax(0, 1fr)',
-    gap: 10,
+    gridTemplateRows: '52px minmax(0, 1fr)',
+    gap: 0,
     color: THEME.textPrimary,
     fontFamily: '"Geist", "SF Pro Display", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif',
+    background: THEME.bgCard,
+    border: `1px solid ${THEME.borderLight}`,
+    borderRadius: 8,
+    overflow: 'hidden',
   }
 
   const panelStyle: CSSProperties = {
@@ -745,18 +776,6 @@ export default function AgentPage() {
     border: `1px solid ${THEME.primaryAlpha?.(0.14) || THEME.borderLight}`,
     borderRadius: 10,
     boxShadow: `0 18px 42px ${THEME.primaryAlpha?.(0.075) || 'rgba(16, 80, 76, 0.075)'}`,
-  }
-
-  const quietPanelStyle: CSSProperties = {
-    background: THEME.bgCard,
-    border: `1px solid ${THEME.borderLight}`,
-    borderRadius: 10,
-  }
-
-  const insetPanelStyle: CSSProperties = {
-    background: `linear-gradient(180deg, ${THEME.bgElevated}, ${THEME.bgCard})`,
-    border: `1px solid ${THEME.borderLight}`,
-    borderRadius: 8,
   }
 
   const controlButtonStyle: CSSProperties = {
@@ -767,27 +786,22 @@ export default function AgentPage() {
   }
 
   const consoleHeaderStyle: CSSProperties = {
-    ...panelStyle,
-    padding: 14,
-    overflow: 'hidden',
-    background: `
-      radial-gradient(circle at 0% 0%, ${THEME.primaryAlpha?.(0.16) || 'rgba(22,119,255,0.16)'}, transparent 34%),
-      linear-gradient(180deg, ${THEME.bgCard}, ${THEME.bgElevated})
-    `,
-    borderBottom: `1px solid ${THEME.primaryAlpha?.(0.2) || 'rgba(22,119,255,0.2)'}`,
+    padding: '8px 12px',
+    background: THEME.bgCard,
+    borderBottom: `1px solid ${THEME.borderLight}`,
   }
 
   const headerGridStyle: CSSProperties = {
     display: 'grid',
-    gridTemplateColumns: 'minmax(320px, 1fr) minmax(420px, auto)',
+    gridTemplateColumns: 'minmax(220px, 1fr) minmax(360px, auto)',
     alignItems: 'center',
-    gap: 16,
+    gap: 12,
   }
 
   const commandBarStyle: CSSProperties = {
     display: 'grid',
-    gridTemplateColumns: 'minmax(230px, 1fr) repeat(6, auto)',
-    gap: 8,
+    gridTemplateColumns: 'minmax(190px, 260px) repeat(4, auto)',
+    gap: 6,
     justifyContent: 'end',
     alignItems: 'center',
   }
@@ -795,46 +809,23 @@ export default function AgentPage() {
   const workspaceGridStyle: CSSProperties = {
     minHeight: 0,
     display: 'grid',
-    gridTemplateColumns: '286px minmax(0, 1fr)',
-    gap: 10,
+    gridTemplateColumns: '252px minmax(0, 1fr)',
+    gap: 0,
   }
 
   const leftRailStyle: CSSProperties = {
-    ...panelStyle,
     minHeight: 0,
     overflow: 'hidden',
     display: 'grid',
     gridTemplateRows: 'auto minmax(0, 1fr) auto',
+    background: THEME.bgPage,
+    borderRight: `1px solid ${THEME.borderLight}`,
   }
 
   const railSectionStyle: CSSProperties = {
     padding: 12,
     borderBottom: `1px solid ${THEME.borderLight}`,
   }
-
-  const metricGridStyle: CSSProperties = {
-    marginTop: 10,
-    display: 'flex',
-    alignItems: 'center',
-    gap: 7,
-    flexWrap: 'wrap',
-  }
-
-  const workflowRailStyle: CSSProperties = {
-    display: 'none',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-    gap: 1,
-    borderBottom: `1px solid ${THEME.primaryAlpha?.(0.2) || THEME.borderLight}`,
-    background: THEME.borderLight,
-  }
-
-  const workflowNodeStyle = (active: boolean): CSSProperties => ({
-    background: active
-      ? `linear-gradient(180deg, ${THEME.primaryAlpha?.(0.12) || 'rgba(22,119,255,0.12)'}, ${THEME.bgCard})`
-      : THEME.bgCard,
-    padding: '10px 14px',
-    boxShadow: active ? `inset 0 -2px 0 ${THEME.primary}` : 'none',
-  })
 
   const inspectorSectionStyle: CSSProperties = {
     padding: '14px 0',
@@ -847,47 +838,41 @@ export default function AgentPage() {
     lineHeight: 1.55,
   }
 
-  const statusPillStyle: CSSProperties = {
-    display: 'inline-grid',
-    gridTemplateColumns: 'auto auto',
-    alignItems: 'baseline',
-    gap: 6,
-    minHeight: 28,
-    padding: '5px 9px',
-    borderRadius: 7,
-    border: `1px solid ${THEME.borderLight}`,
-    background: THEME.bgCard,
-  }
-
   const loadSessions = useCallback(async () => {
     try {
       const data = await listAgentThreads()
       setSessions(Array.isArray(data) ? data : [])
+      setResourceError('sessions')
     } catch (e) {
       console.error('Failed to load agent sessions', e)
       try {
         const data = await listAgentSessions()
         setSessions(Array.isArray(data) ? data : [])
+        setResourceError('sessions')
       } catch (fallbackError) {
         console.error('Failed to load legacy agent sessions', fallbackError)
+        setResourceError('sessions', fallbackError)
       }
     }
-  }, [])
+  }, [setResourceError])
 
   const loadTools = useCallback(async () => {
     try {
       const data = await listAgentTools()
       setTools(Array.isArray(data) ? data : [])
+      setResourceError('tools')
     } catch (e) {
       console.error('Failed to load agent tools', e)
+      setResourceError('tools', e)
     }
-  }, [])
+  }, [setResourceError])
 
   const loadProfiles = useCallback(async () => {
     try {
       const data = await listAgentProfiles()
       const profileList = Array.isArray(data) ? data : []
       setProfiles(profileList)
+      setResourceError('profiles')
       setSelectedProfileId(prev => {
         if (prev && profileList.some((item: AgentProfile) => item.id === prev)) return prev
         return profileList.find((item: AgentProfile) => item.is_default)?.id || profileList[0]?.id || ''
@@ -896,8 +881,9 @@ export default function AgentPage() {
       console.error('Failed to load agent profiles', e)
       setProfiles([])
       setSelectedProfileId('')
+      setResourceError('profiles', e)
     }
-  }, [])
+  }, [setResourceError])
 
   const loadLlmConnectors = useCallback(async () => {
     try {
@@ -908,11 +894,13 @@ export default function AgentPage() {
         return (a.priority || 0) - (b.priority || 0)
       })
       setLlmConnectors(sorted)
+      setResourceError('connectors')
     } catch (error) {
       console.error('Failed to load LLM connectors', error)
       setLlmConnectors([])
+      setResourceError('connectors', error)
     }
-  }, [])
+  }, [setResourceError])
 
   const loadMemories = useCallback(async () => {
     try {
@@ -937,6 +925,27 @@ export default function AgentPage() {
     }
   }, [])
 
+  useEffect(() => {
+    let cancelled = false
+    if (!currentRun?.id) {
+      setRunTree(null)
+      return () => {
+        cancelled = true
+      }
+    }
+    getAgentRunTree(currentRun.id)
+      .then(data => {
+        if (!cancelled) setRunTree(data)
+      })
+      .catch(error => {
+        console.error('Failed to load agent run tree', error)
+        if (!cancelled) setRunTree(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [currentRun?.id, currentRun?.status, currentRun?.steps?.length])
+
   const syncThreadMessages = useCallback(async (threadId: string) => {
     if (!threadId) return false
     try {
@@ -947,9 +956,11 @@ export default function AgentPage() {
         data = await getAgentSession(threadId)
       }
       setMessages(Array.isArray(data?.messages) ? data.messages : [])
+      setThreadRestoreError('')
       return true
     } catch (error) {
       console.error('Failed to sync agent thread messages', error)
+      setThreadRestoreError(error instanceof Error ? error.message : '无法恢复这段对话')
       return false
     }
   }, [])
@@ -987,7 +998,8 @@ export default function AgentPage() {
       currentSessionIdRef.current = sessionId
       forceNewSessionRef.current = false
       if (options?.closeDrawer) setSessionsOpen(false)
-      await syncThreadMessages(sessionId)
+      const restored = await syncThreadMessages(sessionId)
+      if (!restored) throw new Error('无法恢复这段对话，请重试。')
       setReplyText('')
       setToolCalls([])
       setCurrentRun(null)
@@ -1054,8 +1066,9 @@ export default function AgentPage() {
   }, [currentSessionId, loading, restoreSession, sessions])
 
   useEffect(() => {
+    if (visibleMessages.length === 0 && !replyText) return
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, replyText])
+  }, [replyText, visibleMessages.length])
 
   useEffect(() => {
     if (!profileOpen || !selectedProfile) return
@@ -1068,6 +1081,7 @@ export default function AgentPage() {
       provider: selectedProfile.provider,
       model: selectedProfile.model,
       max_steps: selectedProfile.max_steps,
+      can_delegate: selectedProfile.can_delegate,
       allowed_tools: selectedProfile.allowed_tools?.includes('*') ? ['*'] : selectedProfile.allowed_tools,
       default_context: JSON.stringify(selectedProfile.default_context || {}, null, 2),
       default_project_id: selectedProfile.default_project_id || '',
@@ -1096,19 +1110,17 @@ export default function AgentPage() {
 
   const bubbleStyle = (role: AgentMessage['role']): CSSProperties => ({
     background: role === 'user'
-      ? `linear-gradient(145deg, ${THEME.primary}, ${THEME.primaryAlpha?.(0.82) || THEME.primary})`
-      : `linear-gradient(180deg, ${THEME.bgCard}, ${THEME.bgElevated})`,
+      ? THEME.primary
+      : 'transparent',
     color: role === 'user' ? '#fff' : THEME.textPrimary,
-    border: role === 'user' ? `1px solid ${THEME.primaryAlpha?.(0.4) || THEME.primary}` : `1px solid ${THEME.borderLight}`,
-    borderRadius: role === 'user' ? '10px 10px 3px 10px' : '10px 10px 10px 3px',
-    padding: role === 'user' ? '12px 14px' : '14px 16px',
+    border: role === 'user' ? `1px solid ${THEME.primary}` : 'none',
+    borderRadius: role === 'user' ? '8px 8px 3px 8px' : 0,
+    padding: role === 'user' ? '10px 13px' : '4px 0',
     maxWidth: role === 'user' ? 'min(620px, 72%)' : 'min(880px, 86%)',
     whiteSpace: 'pre-wrap',
     wordBreak: 'break-word',
     lineHeight: 1.72,
-    boxShadow: role === 'user'
-      ? `0 12px 26px ${THEME.primaryAlpha?.(0.18) || 'rgba(22, 119, 255, 0.18)'}`
-      : `0 10px 24px ${THEME.primaryAlpha?.(0.045) || 'rgba(22, 119, 255, 0.045)'}`,
+    boxShadow: 'none',
     fontFamily: '"Geist", "SF Pro Text", "PingFang SC", system-ui, sans-serif',
   })
 
@@ -1231,8 +1243,9 @@ export default function AgentPage() {
     )
   }
 
-  const sendMessage = useCallback(async () => {
-    const text = input.trim()
+  const sendMessage = useCallback(async (overrideText?: string) => {
+    const isRetry = typeof overrideText === 'string'
+    const text = (typeof overrideText === 'string' ? overrideText : input).trim()
     if (!text || loading) return
     const pendingToolStep = currentRun?.steps?.find(step => step.status === 'pending' && step.step_type === 'tool_call')
     const isConfirmIntent = /^(确认|确认执行|同意|授权|执行|可以|继续|好的|好|是|ok|OK|yes|Yes)[。.!！\s]*$/.test(text)
@@ -1240,12 +1253,14 @@ export default function AgentPage() {
     setInput('')
     setLoading(true)
     setReplyText('')
+    setSendError('')
+    setFailedPrompt('')
     setToolCalls([])
     setLinkedLogs(null)
     setActiveTab('chat')
 
     const userMsg: AgentMessage = { role: 'user', content: text }
-    setMessages(prev => [...prev, userMsg])
+    if (!isRetry) setMessages(prev => [...prev, userMsg])
 
     if (pendingToolStep && isConfirmIntent && currentRun) {
       try {
@@ -1274,6 +1289,7 @@ export default function AgentPage() {
 
     setCurrentRun(null)
     setRunSkillAnalysis(null)
+    let streamedReply = ''
 
     try {
       const requestSessionId = currentSessionIdRef.current
@@ -1303,8 +1319,6 @@ export default function AgentPage() {
       let buffer = ''
       let sessionId = requestSessionId
       let runId = ''
-      let streamedReply = ''
-
       const handleSseLine = (line: string) => {
         if (!line.startsWith('data: ')) return
         const event = JSON.parse(line.slice(6))
@@ -1403,7 +1417,15 @@ export default function AgentPage() {
       await loadSessions()
     } catch (e: any) {
       message.error(`发送失败：${e.message}`)
-      setMessages(prev => prev.slice(0, -1))
+      setSendError(e.message || '发送失败')
+      setFailedPrompt(text)
+      if (streamedReply) {
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: `${streamedReply}\n\n> 响应在完成前中断，可在当前对话重试。`,
+        }])
+        setReplyText('')
+      }
     } finally {
       setLoading(false)
     }
@@ -1491,6 +1513,7 @@ export default function AgentPage() {
         provider: base?.provider || defaultConnector?.name || '',
         model: base?.model || defaultConnector?.default_model || defaultConnector?.model || normalizeModelList(defaultConnector?.available_models)[0] || '',
         max_steps: base?.max_steps || 8,
+        can_delegate: base?.can_delegate || false,
         is_default: !base,
       })
       if (created?.id) {
@@ -1582,11 +1605,16 @@ export default function AgentPage() {
         profile_id: delegateProfileId,
         message: delegateMessage || `请接手处理这个父任务：${currentRun.objective}`,
         context: currentRun.context || {},
+        resume_parent: true,
       })
       if (!result?.success) {
         message.warning(result?.error || '委派任务未成功完成')
       } else {
-        message.success('子智能体已完成委派任务')
+        const resumedReply = result?.parent_resume?.reply
+        if (resumedReply) {
+          setMessages(prev => [...prev, { role: 'assistant', content: resumedReply }])
+        }
+        message.success(resumedReply ? '子智能体已完成，父智能体已继续汇总' : '子智能体已完成委派任务')
       }
       setDelegateMessage('')
       await refreshRun(currentRun.id)
@@ -2501,8 +2529,8 @@ export default function AgentPage() {
 
   const renderEmptyState = () => (
     <div
+      className="agent-empty-state"
       style={{
-        height: '100%',
         minHeight: 320,
         display: 'flex',
         alignItems: 'center',
@@ -2547,97 +2575,58 @@ export default function AgentPage() {
     <div className="agent-workbench" style={pageShell}>
       <section style={consoleHeaderStyle}>
         <div style={headerGridStyle}>
-          <div style={{ display: 'grid', gridTemplateColumns: '52px minmax(0, 1fr)', alignItems: 'center', gap: 14, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
             <div
               style={{
-                width: 52,
-                height: 52,
-                borderRadius: 12,
+                width: 30,
+                height: 30,
+                borderRadius: 7,
                 display: 'grid',
                 placeItems: 'center',
                 color: '#fff',
-                background: `linear-gradient(145deg, ${THEME.primary}, ${THEME.primaryAlpha?.(0.72) || THEME.primary})`,
-                boxShadow: `0 16px 30px ${THEME.primaryAlpha?.(0.22) || 'rgba(22,119,255,0.22)'}`,
-                fontSize: 24,
+                background: THEME.primary,
+                fontSize: 15,
+                flex: '0 0 auto',
               }}
             >
               <RobotOutlined />
             </div>
             <div style={{ minWidth: 0 }}>
-              <Space size={7} wrap style={{ marginBottom: 4 }}>
-                <Title level={3} style={{ margin: 0, color: THEME.textPrimary, letterSpacing: 0, lineHeight: 1.06, fontWeight: 800 }}>
-                  智能体工作室
-                </Title>
-                <Tag color={selectedProfile ? 'success' : 'warning'}>
-                  {selectedProfile ? selectedProfile.name : '未加载配置'}
-                </Tag>
-                {selectedProfile && (
-                  <Tag>{ROLE_TYPE_LABELS[selectedProfile.role_type || 'assistant'] || selectedProfile.role_type || '通用助手'}</Tag>
-                )}
-              </Space>
-              <div style={{ color: THEME.textSecondary, lineHeight: 1.55, maxWidth: 760 }}>
-                保留对话上下文，循环计划、调用工具、观察结果并继续推进。预算是保护阈值，不是能力上限。
-              </div>
+              <Text strong style={{ display: 'block', fontSize: 15, lineHeight: 1.2 }}>智能体</Text>
+              <Text type="secondary" ellipsis style={{ display: 'block', maxWidth: 480, fontSize: 11 }}>
+                {activeSession?.title || '新对话会在首次发送后自动保存'}
+              </Text>
             </div>
           </div>
           <div style={commandBarStyle}>
             <Select
               value={selectedProfileId || undefined}
               onChange={setSelectedProfileId}
-              style={{ minWidth: 230, width: '100%' }}
+              style={{ minWidth: 190, width: '100%' }}
               placeholder="选择智能体"
               options={profiles.map(profile => ({
                 value: profile.id,
                 label: `${profile.avatar || 'Agent'} ${profile.name} · ${ROLE_TYPE_LABELS[profile.role_type || 'assistant'] || profile.role_type || '通用助手'}`,
               }))}
             />
-            <Button type="primary" icon={<ClearOutlined />} onClick={newSession} style={controlButtonStyle}>
-              新线程
-            </Button>
-            <Button icon={<PlusOutlined />} onClick={handleCreateProfile} style={controlButtonStyle}>
-              新智能体
-            </Button>
-            <Button icon={<SettingOutlined />} onClick={() => setProfileOpen(true)} style={controlButtonStyle}>
-              设定
-            </Button>
-            <Button icon={<ReloadOutlined />} onClick={reloadAll} style={controlButtonStyle}>
-              刷新
-            </Button>
-            <Badge count={sessions.length} offset={[6, 0]}>
-              <Button icon={<HistoryOutlined />} onClick={() => setSessionsOpen(true)} style={controlButtonStyle}>
-                历史
-              </Button>
-            </Badge>
-            <Button icon={<ToolOutlined />} onClick={() => setToolsOpen(true)} style={controlButtonStyle}>
-              工具
-            </Button>
+            <Tooltip title={activeTab === 'chat' ? '查看完整运行轨迹' : '返回对话'}>
+              <Button
+                aria-label={activeTab === 'chat' ? '查看完整运行轨迹' : '返回对话'}
+                icon={<HistoryOutlined />}
+                onClick={() => setActiveTab(activeTab === 'chat' ? 'tools' : 'chat')}
+                style={controlButtonStyle}
+              />
+            </Tooltip>
+            <Tooltip title="工具与权限">
+              <Button aria-label="工具与权限" icon={<ToolOutlined />} onClick={() => setToolsOpen(true)} style={controlButtonStyle} />
+            </Tooltip>
+            <Tooltip title="智能体设置">
+              <Button aria-label="智能体设置" icon={<SettingOutlined />} onClick={() => setProfileOpen(true)} style={controlButtonStyle} />
+            </Tooltip>
+            <Tooltip title="刷新工作台数据">
+              <Button aria-label="刷新工作台数据" icon={<ReloadOutlined />} onClick={reloadAll} style={controlButtonStyle} />
+            </Tooltip>
           </div>
-        </div>
-        <div style={metricGridStyle}>
-          <Button
-            size="small"
-            data-agent-trace-toggle="true"
-            aria-label="切换运行轨迹"
-            icon={<HistoryOutlined />}
-            onClick={() => setActiveTab(activeTab === 'chat' ? 'tools' : 'chat')}
-          >
-            {activeTab === 'chat' ? '轨迹' : '对话'}
-          </Button>
-          {[
-            { label: '工具', value: `${allowAllTools ? tools.length : authorizedTools.length}/${tools.length}` },
-            { label: '模型', value: selectedProfile?.model || selectedProfile?.provider || '系统默认' },
-            { label: '预算', value: runStats.maxSteps ? `${runStats.maxSteps} 轮` : '-' },
-            { label: '轨迹', value: currentRun ? `${runStats.stepCount} 步 · ${runStats.progress}%` : `${runStats.toolCount || 0} 步` },
-            { label: 'Skill', value: currentRun ? `${currentRunRoutedSkills.length} 命中` : `${skills.length} 可用` },
-            { label: '上下文', value: activeSession?.title || sessionStatus },
-          ].map(item => (
-            <div key={item.label} style={statusPillStyle}>
-              <span style={{ color: THEME.textSecondary, fontSize: 11 }}>{item.label}</span>
-              <span style={{ color: THEME.textPrimary, fontSize: 12, fontWeight: 750, maxWidth: 220, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontVariantNumeric: 'tabular-nums' }}>
-                {item.value}
-              </span>
-            </div>
-          ))}
         </div>
       </section>
 
@@ -2647,7 +2636,7 @@ export default function AgentPage() {
         <aside style={leftRailStyle}>
           <section style={railSectionStyle}>
             <Space style={{ justifyContent: 'space-between', width: '100%', marginBottom: 10 }}>
-              <Text strong style={{ fontSize: 14 }}>工作线程</Text>
+              <Text strong style={{ fontSize: 14 }}>对话</Text>
               <Badge count={sessions.length} size="small">
                 <Button size="small" icon={<HistoryOutlined />} onClick={() => setSessionsOpen(true)}>
                   全部
@@ -2655,12 +2644,17 @@ export default function AgentPage() {
               </Badge>
             </Space>
             <Button block type="primary" icon={<ClearOutlined />} onClick={newSession}>
-              新线程
+              新对话
             </Button>
           </section>
 
           <section style={{ minHeight: 0, overflow: 'auto', padding: 10 }}>
-            {sessions.length === 0 ? (
+            {resourceErrors.sessions ? (
+              <div className="agent-resource-error">
+                <Text type="secondary">对话列表加载失败</Text>
+                <Button size="small" onClick={loadSessions}>重试</Button>
+              </div>
+            ) : sessions.length === 0 ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无对话" />
             ) : (
               <div style={{ display: 'grid', gap: 8 }}>
@@ -2724,53 +2718,36 @@ export default function AgentPage() {
                 </div>
               </Space>
             ) : (
-              <Alert type="warning" showIcon message="未加载智能体" />
+              <div className="agent-resource-error">
+                <Text type="secondary">未加载智能体</Text>
+                <Button size="small" onClick={loadProfiles}>重试</Button>
+              </div>
             )}
           </section>
         </aside>
 
         <Card
           className="agent-main-panel"
-          style={{ ...panelStyle, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}
+          style={{ minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', border: 0, borderRadius: 0, boxShadow: 'none', background: THEME.bgCard }}
           styles={{ body: { padding: 0, display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 } }}
         >
-          <div
-            style={workflowRailStyle}
-          >
-            {[
-              { label: '计划', value: currentRun ? '已落库' : visibleMessages.length ? '对话中' : '待输入', active: Boolean(visibleMessages.length || currentRun) },
-              { label: '工具', value: `${allowAllTools ? tools.length : authorizedTools.length} 可用`, active: Boolean(currentRun?.steps?.some(step => step.step_type === 'tool_call') || toolCalls.length) },
-              { label: '观察', value: currentRun?.steps?.length ? `${currentRun.steps.length} 条轨迹` : `${toolCalls.length} 次返回`, active: Boolean(currentRun?.steps?.length || toolCalls.length) },
-              { label: '继续', value: loading ? '执行中' : replyText ? '整理中' : currentRun ? '可续跑' : '待开始', active: Boolean(loading || replyText || currentRun) },
-            ].map((item, index) => (
-              <div
-                key={item.label}
-                style={workflowNodeStyle(item.active)}
-              >
-                <Space size={8} align="start">
-                  <span
-                    style={{
-                      width: 22,
-                      height: 22,
-                      borderRadius: 6,
-                      display: 'inline-grid',
-                      placeItems: 'center',
-                      background: item.active ? THEME.primary : THEME.bgElevated,
-                      color: item.active ? '#fff' : THEME.textSecondary,
-                      fontSize: 12,
-                      fontWeight: 700,
-                      fontVariantNumeric: 'tabular-nums',
-                    }}
-                  >
-                    {index + 1}
-                  </span>
-                  <span style={{ minWidth: 0 }}>
-                    <div style={{ color: THEME.textSecondary, fontSize: 12 }}>{item.label}</div>
-                    <div style={{ color: THEME.textPrimary, fontSize: 14, fontWeight: 700, lineHeight: 1.25 }}>{item.value}</div>
-                  </span>
-                </Space>
-              </div>
-            ))}
+          <div className="agent-conversation-header">
+            <div style={{ minWidth: 0 }}>
+              <Text strong ellipsis style={{ display: 'block', fontSize: 14 }}>
+                {activeSession?.title || '新对话'}
+              </Text>
+              <Text type="secondary" style={{ fontSize: 11 }}>
+                {sessionStatus}{currentRun?.steps?.length ? ` · ${currentRun.steps.length} 个执行步骤` : ''}
+              </Text>
+            </div>
+            <Space size={4}>
+              <Tooltip title="新对话">
+                <Button aria-label="新对话" type="text" icon={<PlusOutlined />} onClick={newSession} />
+              </Tooltip>
+              <Tooltip title="全部对话">
+                <Button aria-label="全部对话" type="text" icon={<HistoryOutlined />} onClick={() => setSessionsOpen(true)} />
+              </Tooltip>
+            </Space>
           </div>
           <Tabs
             className="agent-main-tabs"
@@ -2793,24 +2770,34 @@ export default function AgentPage() {
                     }}
                   >
                     <div
+                      className="agent-message-scroll"
                       style={{
                         minHeight: 0,
                         overflow: 'auto',
-                        padding: '22px 24px',
-                        background: `
-                          radial-gradient(circle at 100% 0%, ${THEME.primaryAlpha?.(0.08) || 'rgba(22,119,255,0.08)'}, transparent 28%),
-                          linear-gradient(180deg, ${THEME.bgPage}, ${THEME.bgElevated})
-                        `,
+                        padding: '24px clamp(16px, 4vw, 54px)',
+                        background: THEME.bgCard,
                       }}
                     >
-                      {!selectedProfile && (
+                      {threadRestoreError && (
                         <Alert
                           type="warning"
                           showIcon
-                          style={{ marginBottom: 12 }}
-                          message="智能体配置未加载"
-                          description="如果刷新后仍为空，通常是后端还没重启，或数据库里缺少 agent_profiles 表。"
+                          closable
+                          onClose={() => setThreadRestoreError('')}
+                          style={{ marginBottom: 14 }}
+                          message="这段对话暂时无法恢复"
+                          description={threadRestoreError}
+                          action={currentSessionId ? <Button size="small" onClick={() => restoreSession(currentSessionId)}>重试</Button> : undefined}
                         />
+                      )}
+                      {!selectedProfile && (
+                        <div className="agent-message-warning">
+                          <span>
+                            <Text strong>智能体配置未加载</Text>
+                            <Text type="secondary">仍可查看已有对话；配置恢复后再发送任务。</Text>
+                          </span>
+                          <Button size="small" onClick={loadProfiles}>重试</Button>
+                        </div>
                       )}
                       {visibleMessages.length === 0 && !replyText && renderEmptyState()}
                       {visibleMessages.map((msg, index) => (
@@ -2852,66 +2839,34 @@ export default function AgentPage() {
                       className="agent-command-composer"
                       style={{
                         borderTop: `1px solid ${THEME.borderLight}`,
-                        padding: 14,
-                        background: `linear-gradient(180deg, ${THEME.bgCard}, ${THEME.bgElevated})`,
+                        padding: '12px clamp(14px, 4vw, 54px) 14px',
+                        background: THEME.bgCard,
                       }}
                     >
-                      <div
-                        style={{
-                          display: 'grid',
-                          gridTemplateColumns: 'minmax(0, 1fr) auto',
-                          gap: 10,
-                          alignItems: 'center',
-                          marginBottom: 10,
-                          padding: '8px 10px',
-                          borderRadius: 8,
-                          border: `1px solid ${THEME.borderLight}`,
-                          background: THEME.bgPage,
-                        }}
-                      >
-                        <Space wrap size={[6, 6]} style={{ minWidth: 0 }}>
-                          <Tag color={currentSessionId ? 'processing' : 'default'}>{sessionStatus}</Tag>
-                          {activeSession?.title && <Tag>{activeSession.title}</Tag>}
-                          <Tag>{visibleMessages.length} 条消息</Tag>
-                          <Tag>{selectedProfile?.model || selectedProfile?.provider || '默认模型'}</Tag>
-                          <Tag color="blue">预算 {runStats.maxSteps || 8} 轮</Tag>
-                        </Space>
-                        <Tooltip title="执行预算是单轮自动循环的保护阈值。智能体会计划、调用工具、观察结果并继续推进；不是只能回答固定几步。">
-                          <Text type="secondary" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
-                            执行循环
-                          </Text>
-                        </Tooltip>
-                      </div>
-                      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+                      {sendError && (
+                        <div className="agent-send-error">
+                          <Text type="danger" ellipsis={{ tooltip: sendError }}>发送失败：{sendError}</Text>
+                          <Button size="small" onClick={() => sendMessage(failedPrompt)} disabled={!failedPrompt || loading}>重试</Button>
+                        </div>
+                      )}
+                      <div className="agent-composer-frame">
                         <TextArea
                           value={input}
                           onChange={e => setInput(e.target.value)}
                           onKeyDown={handleKeyDown}
                           placeholder="告诉智能体要做什么。Enter 发送，Shift+Enter 换行。"
                           autoSize={{ minRows: 1, maxRows: 5 }}
-                          style={{ flex: 1, borderRadius: 9, minHeight: 38 }}
+                          variant="borderless"
+                          style={{ flex: 1, minHeight: 42, resize: 'none' }}
                           disabled={loading}
                         />
                         <Tooltip title={selectedProfile ? `使用「${selectedProfile.name}」` : '未选择智能体时会走默认后端逻辑'}>
-                          <Button type="primary" icon={<SendOutlined />} onClick={sendMessage} loading={loading} style={{ height: 38, borderRadius: 9, fontWeight: 700 }}>
-                            发送
-                          </Button>
+                          <Button aria-label="发送" type="primary" shape="circle" icon={<SendOutlined />} onClick={() => sendMessage()} loading={loading} />
                         </Tooltip>
                       </div>
-                      <Space wrap size={[6, 6]} style={{ marginTop: 8 }}>
-                        <Text type="secondary" style={{ fontSize: 12 }}>
-                          快捷：
-                        </Text>
-                        {QUICK_PROMPTS.slice(0, 2).map(prompt => (
-                          <Tag
-                            key={prompt}
-                            style={{ cursor: 'pointer', fontSize: 12 }}
-                            onClick={() => !loading && setInput(prompt)}
-                          >
-                            {prompt}
-                          </Tag>
-                        ))}
-                      </Space>
+                      <Text type="secondary" style={{ display: 'block', marginTop: 6, textAlign: 'center', fontSize: 11 }}>
+                        Enter 发送 · Shift+Enter 换行 · 确定性操作会优先交给工具执行
+                      </Text>
                     </div>
                   </div>
                 ),
@@ -3001,6 +2956,97 @@ export default function AgentPage() {
                           />
                         )}
                         {renderLinkedLogs()}
+                        {runTree && runTree.delegations.length > 0 && (
+                          <section
+                            style={{
+                              borderTop: `1px solid ${THEME.borderLight}`,
+                              borderBottom: `1px solid ${THEME.borderLight}`,
+                              padding: '12px 0',
+                              display: 'grid',
+                              gap: 10,
+                            }}
+                          >
+                            <Space style={{ width: '100%', justifyContent: 'space-between' }} align="center" wrap>
+                              <Space>
+                                <ApartmentOutlined style={{ color: THEME.primary }} />
+                                <Text strong>Agent 执行树</Text>
+                                <Tag>{runTree.runs.length} Runs</Tag>
+                                <Tag>{runTree.delegations.length} 子任务</Tag>
+                              </Space>
+                              <Space size={4} wrap>
+                                <Tag>深度 {Math.max(0, ...runTree.runs.map(run => run.delegation_depth || 0))}/{runTree.limits?.max_depth || 2}</Tag>
+                                <Tag>并发 {runTree.limits?.max_concurrency || 3}</Tag>
+                                <Tag>根预算 {runTree.delegations.length}/{runTree.limits?.max_children_per_root || 12}</Tag>
+                              </Space>
+                            </Space>
+                            <div style={{ overflowX: 'auto' }}>
+                              <div style={{ minWidth: 620, display: 'grid' }}>
+                                {runTree.delegations.map((delegation, index) => {
+                                  const childRun = runTree.runs.find(run => run.id === delegation.child_run_id)
+                                  const profile = profiles.find(item => item.id === delegation.target_profile_id)
+                                  const detail = delegation.error || String(delegation.result?.reply || '')
+                                  return (
+                                    <div
+                                      key={delegation.id}
+                                      style={{
+                                        display: 'grid',
+                                        gridTemplateColumns: '38px minmax(130px, 180px) minmax(260px, 1fr)',
+                                        gap: 10,
+                                        alignItems: 'start',
+                                        padding: '10px 8px',
+                                        borderTop: index === 0 ? 'none' : `1px solid ${THEME.borderLight}`,
+                                      }}
+                                    >
+                                      <span
+                                        style={{
+                                          width: 24,
+                                          height: 24,
+                                          display: 'grid',
+                                          placeItems: 'center',
+                                          borderRadius: 6,
+                                          background: THEME.bgElevated,
+                                          color: THEME.textSecondary,
+                                          marginLeft: Math.min((childRun?.delegation_depth || 1) - 1, 1) * 8,
+                                        }}
+                                      >
+                                        {index + 1}
+                                      </span>
+                                      <Space direction="vertical" size={2}>
+                                        <Text strong>{profile?.name || delegation.target_profile_id}</Text>
+                                        <Space size={4} wrap>
+                                          <Tag color={getStepStatusColor(delegation.status)}>{delegation.status}</Tag>
+                                          <Text type="secondary" style={{ fontSize: 11 }}>
+                                            L{childRun?.delegation_depth || 1}
+                                          </Text>
+                                        </Space>
+                                      </Space>
+                                      <Space direction="vertical" size={3} style={{ minWidth: 0 }}>
+                                        <Text>{delegation.objective}</Text>
+                                        {detail && (
+                                          <Text type={delegation.error ? 'danger' : 'secondary'} ellipsis={{ tooltip: detail }}>
+                                            {detail}
+                                          </Text>
+                                        )}
+                                        {delegation.depends_on.length > 0 && (
+                                          <Text type="secondary" style={{ fontSize: 11 }}>
+                                            依赖：{delegation.depends_on.join('、')}
+                                          </Text>
+                                        )}
+                                        <Space size={4} wrap>
+                                          <Tag>{delegation.execution_mode === 'parallel' ? '并行批次' : '顺序任务'}</Tag>
+                                          {Array.isArray(delegation.result?.linked_objects) && delegation.result.linked_objects.length > 0 && (
+                                            <Tag color="processing">{delegation.result.linked_objects.length} 个产物</Tag>
+                                          )}
+                                          {delegation.child_run_id && <Tag>Run {delegation.child_run_id.slice(0, 8)}</Tag>}
+                                        </Space>
+                                      </Space>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          </section>
+                        )}
                         <div
                           style={{
                             display: 'grid',
@@ -3057,11 +3103,11 @@ export default function AgentPage() {
                                 disabled={!delegateProfileId || !currentRun}
                                 loading={loading}
                               >
-                                委派
+                                委派并续跑
                               </Button>
                             </div>
                             <Text type="secondary" style={{ fontSize: 12 }}>
-                              子智能体会继承当前 run 的上下文，执行结果会回写到父 run 的运行轨迹中。
+                              子智能体使用独立对话和数据库 Session；结果汇合后，父智能体会在当前 Run 中继续规划并给出答复。
                             </Text>
                           </Space>
                         </div>
@@ -3829,6 +3875,13 @@ export default function AgentPage() {
                       >
                         <InputNumber min={1} max={20} style={{ width: '100%' }} />
                       </Form.Item>
+                      <Form.Item
+                        name="can_delegate"
+                        valuePropName="checked"
+                        tooltip="启用后，该智能体可以把复杂任务拆给专业子智能体并在结果汇合后继续推理。Worker 建议关闭。"
+                      >
+                        <Checkbox>Supervisor：允许委派子智能体</Checkbox>
+                      </Form.Item>
                     </Space>
                   ),
                 },
@@ -4074,5 +4127,13 @@ export default function AgentPage() {
         )}
       </Drawer>
     </div>
+  )
+}
+
+export default function AgentPage() {
+  return (
+    <AgentPageErrorBoundary>
+      <AgentPageContent />
+    </AgentPageErrorBoundary>
   )
 }

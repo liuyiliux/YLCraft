@@ -247,6 +247,9 @@ class AgentRunBase(SQLModel):
     session_id: str = Field(default="", max_length=64, index=True)
     profile_id: str = Field(default="", max_length=64, index=True)
     parent_run_id: Optional[str] = Field(default=None, max_length=64, index=True)
+    root_run_id: Optional[str] = Field(default=None, max_length=64, index=True)
+    run_kind: str = Field(default="primary", max_length=32, index=True)
+    delegation_depth: int = Field(default=0, ge=0)
     status: str = Field(default="running", max_length=32, index=True)
     objective: str = Field(default="", sa_column=Column(Text))
     context_json: str = Field(default="{}", sa_column=Column(Text))
@@ -285,6 +288,33 @@ class AgentRunStep(AgentRunStepBase, table=True):
 
     id: int = Field(primary_key=True, default=None)
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class AgentDelegationBase(SQLModel):
+    user_id: str = Field(default="default", max_length=64, index=True)
+    root_run_id: str = Field(max_length=64, foreign_key="agent_runs.id", index=True)
+    parent_run_id: str = Field(max_length=64, foreign_key="agent_runs.id", index=True)
+    child_run_id: Optional[str] = Field(default=None, max_length=64, foreign_key="agent_runs.id", index=True)
+    parent_step_id: Optional[int] = Field(default=None, foreign_key="agent_run_steps.id", index=True)
+    task_key: str = Field(default="", max_length=120, index=True)
+    target_profile_id: str = Field(max_length=64, index=True)
+    objective: str = Field(default="", sa_column=Column(Text))
+    context_json: str = Field(default="{}", sa_column=Column(Text))
+    depends_on_json: str = Field(default="[]", sa_column=Column(Text))
+    execution_mode: str = Field(default="sequential", max_length=32)
+    status: str = Field(default="pending", max_length=32, index=True)
+    result_json: str = Field(default="{}", sa_column=Column(Text))
+    error: str = Field(default="", sa_column=Column(Text))
+
+
+class AgentDelegation(AgentDelegationBase, table=True):
+    __tablename__ = "agent_delegations"
+
+    id: str = Field(primary_key=True, max_length=64)
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    started_at: Optional[datetime] = Field(default=None)
+    finished_at: Optional[datetime] = Field(default=None)
 
 
 # =============================================================================
@@ -328,6 +358,7 @@ class AgentProfileBase(SQLModel):
     provider: str = Field(default="", max_length=120)
     model: str = Field(default="", max_length=160)
     max_steps: int = Field(default=8, ge=1, le=20)
+    can_delegate: bool = Field(default=False, index=True)
     is_default: bool = Field(default=False, index=True)
     is_builtin: bool = Field(default=False, index=True)
 
@@ -350,4 +381,4 @@ class AgentProfileRead(AgentProfileBase):
     updated_at: datetime
 
 
-AgentSession, AgentThread, AgentMessage, AgentContextSnapshot, AgentMemory, AgentSkill, AgentSkillDraft, AgentToolCall, AgentRun, AgentRunStep, AgentMemorySnapshot, AgentProfile
+AgentSession, AgentThread, AgentMessage, AgentContextSnapshot, AgentMemory, AgentSkill, AgentSkillDraft, AgentToolCall, AgentRun, AgentRunStep, AgentDelegation, AgentMemorySnapshot, AgentProfile

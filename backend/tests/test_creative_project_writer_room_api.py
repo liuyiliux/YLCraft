@@ -88,6 +88,7 @@ class FakeWriterRoomService:
             source_content_id=self.rewrite.id,
         )
         self.bodies = [self.old_body]
+        self.list_calls: list[dict] = []
 
     async def run_writer_room_step(self, project_id: str, **kwargs):
         self.calls.append(("step", {"project_id": project_id, **kwargs}))
@@ -118,6 +119,10 @@ class FakeWriterRoomService:
     def get_project(self, project_id: str):
         assert project_id == self.project.id
         return self.project
+
+    def list_contents(self, project_id: str, **kwargs):
+        self.list_calls.append({"project_id": project_id, **kwargs})
+        return [self.rewrite]
 
 
 def _client(service: FakeWriterRoomService):
@@ -195,6 +200,29 @@ def test_writer_room_run_api_passes_selected_steps():
     assert payload["steps"] == ["scene_beats", "prose_review"]
     assert payload["summary"] == {"total": 2, "success": 2, "failed": 0}
     assert service.calls[0][1]["continue_on_error"] is False
+
+
+def test_contents_api_passes_candidate_filters_and_selected_chapter():
+    service = FakeWriterRoomService()
+    with _client(service) as client:
+        response = client.get(
+            "/api/v1/creative-projects/project-1/contents",
+            params={
+                "content_types": "scene_beats,prose_draft,prose_review",
+                "chapter_number": 10,
+                "include_history": "true",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["data"][0]["id"] == service.rewrite.id
+    assert service.list_calls == [{
+        "project_id": "project-1",
+        "content_type": None,
+        "content_types": ["scene_beats", "prose_draft", "prose_review"],
+        "chapter_number": 10,
+        "latest_only": False,
+    }]
 
 
 def test_writer_room_promote_api_creates_new_body_version_and_preserves_old_body():

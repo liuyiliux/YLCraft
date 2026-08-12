@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 from pydantic import BaseModel, ValidationError
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session, select
 
@@ -1816,6 +1816,8 @@ class CreativeProjectService:
             max_tokens=prose_max_tokens,
             request_metadata={"creative_context": context.get("context_pack_metadata") or {}},
         )
+        if step in {"prose_draft", "prose_humanized", "prose_rewrite"}:
+            self._normalize_prose_content_alias(data)
         if step == "prose_humanized":
             source_word_count = int(context.get("source_word_count") or 0)
             output_text = str(data.get("content") or "")
@@ -1841,6 +1843,7 @@ class CreativeProjectService:
                     template_meta=template_meta,
                     request_metadata={"creative_context": context.get("context_pack_metadata") or {}},
                 )
+                self._normalize_prose_content_alias(data)
                 data["length_guard"] = {
                     "source_word_count": source_word_count,
                     "minimum_word_count": minimum_word_count,
@@ -1872,7 +1875,14 @@ class CreativeProjectService:
             if step == "prose_rewrite" and requested_minimum is not None:
                 minimum_characters = max(minimum_characters, requested_minimum)
             if step == "prose_rewrite" and requested_maximum is not None:
-                maximum_characters = requested_maximum
+                # Providers cannot reliably hit an exact Chinese character
+                # count. Keep the requested range as the target while allowing
+                # a narrow tolerance instead of discarding an otherwise sound
+                # chapter and paying for a full retry.
+                maximum_characters = requested_maximum + min(
+                    400,
+                    max(80, math.ceil(requested_maximum * 0.08)),
+                )
             data = await self._ensure_novel_body_quality(
                 project=project,
                 stage=step,
@@ -2660,6 +2670,8 @@ class CreativeProjectService:
         self,
         project_id: str,
         content_type: str | None = None,
+        content_types: list[str] | None = None,
+        chapter_number: int | None = None,
         *,
         latest_only: bool = True,
     ) -> list[ProjectContent]:
@@ -2674,6 +2686,17 @@ class CreativeProjectService:
         query = select(ProjectContent).where(ProjectContent.project_id == project_id)
         if content_type:
             query = query.where(ProjectContent.content_type == content_type)
+        elif content_types:
+            query = query.where(ProjectContent.content_type.in_(content_types))
+        if chapter_number is not None:
+            # Older project records may only have one of the two chapter fields.
+            # Treat them as the same chapter identity at this read boundary.
+            query = query.where(
+                or_(
+                    ProjectContent.chapter_number == chapter_number,
+                    ProjectContent.episode_number == chapter_number,
+                )
+            )
         contents = self.session.exec(
             query.order_by(ProjectContent.created_at.desc(), ProjectContent.version.desc())
         ).all()
@@ -3783,6 +3806,29 @@ class CreativeProjectService:
         return self.session.exec(
             query.order_by(ProjectContent.version.desc(), ProjectContent.created_at.desc())
         ).first()
+
+    @staticmethod
+    def _normalize_prose_content_alias(data: dict[str, Any]) -> None:
+        """Normalize provider-specific prose keys before quality validation.
+
+        OpenAI-compatible providers regularly use semantic aliases despite the
+        requested schema. Keeping this normalization in one place ensures a
+        retry response is treated exactly like the first response.
+        """
+        if str(data.get("content") or "").strip():
+            return
+        for alias in (
+            "chapter_content",
+            "rewritten_content",
+            "chapter_body",
+            "rewritten_body",
+            "body",
+            "text",
+        ):
+            candidate_text = str(data.get(alias) or "").strip()
+            if candidate_text:
+                data["content"] = candidate_text
+                return
 
     def _narrative_output_provenance(
         self,

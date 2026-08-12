@@ -17,6 +17,7 @@ AUTO_CONFIRMED_WRITE_TOOLS = {
 }
 
 ToolLogCallback = Callable[[str, dict[str, Any], ToolCallResult], Awaitable[None]]
+RuntimeToolCallback = Callable[[str, dict[str, Any]], Awaitable[ToolCallResult | None]]
 
 
 class ToolExecutor:
@@ -105,9 +106,19 @@ class ToolExecutor:
         tool_call: dict[str, Any],
         profile: dict[str, Any],
         log_callback: ToolLogCallback | None = None,
+        runtime_callback: RuntimeToolCallback | None = None,
     ) -> ToolCallResult:
         tool_name, tool_args = self.tool_name_and_args(tool_call)
         allowed_tools = profile.get("allowed_tools") or []
+        if tool_name == "delegate_agent_tasks" and not profile.get("can_delegate"):
+            result = ToolCallResult(
+                tool_name=tool_name,
+                success=False,
+                error="当前智能体不是 Supervisor，不能委派子智能体任务",
+            )
+            if log_callback:
+                await log_callback(tool_name, tool_args, result)
+            return result
         if allowed_tools and "*" not in allowed_tools and tool_name not in allowed_tools:
             result = ToolCallResult(
                 tool_name=tool_name,
@@ -139,7 +150,9 @@ class ToolExecutor:
                 await log_callback(tool_name, tool_args, result)
             return result
 
-        result = await ToolRegistry.execute_tool(tool_name, tool_args)
+        result = await runtime_callback(tool_name, tool_args) if runtime_callback else None
+        if result is None:
+            result = await ToolRegistry.execute_tool(tool_name, tool_args)
         if isinstance(result.result, dict):
             result.result.setdefault("arguments", dict(tool_args))
         if result.success and isinstance(result.result, dict) and result.result.get("success") is False:

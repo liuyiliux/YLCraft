@@ -149,6 +149,12 @@ export const listAgentRuns = (params?: { thread_id?: string; session_id?: string
 export const getAgentRun = (runId: string) =>
   fetch(`${BASE}/agent/runs/${runId}`).then(parseJsonResponse)
 
+export const getAgentRunTree = (runId: string) =>
+  fetch(`${BASE}/agent/runs/${runId}/tree`).then(parseJsonResponse)
+
+export const getAgentRunDelegations = (runId: string) =>
+  fetch(`${BASE}/agent/runs/${runId}/delegations`).then(parseJsonResponse)
+
 export const getAgentRunLinkedLogs = (runId: string) =>
   fetch(`${BASE}/agent/runs/${runId}/linked-logs`).then(parseJsonResponse)
 
@@ -200,7 +206,7 @@ export const discardAgentMemoryCandidates = (runId: string, stepId: number) =>
 
 export const delegateAgentRun = (
   runId: string,
-  data: { profile_id: string; message?: string; context?: Record<string, any> },
+  data: { profile_id: string; message?: string; context?: Record<string, any>; resume_parent?: boolean },
 ) =>
   fetch(`${BASE}/agent/runs/${runId}/delegate`, {
     method: 'POST',

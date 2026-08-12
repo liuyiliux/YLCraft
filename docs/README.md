@@ -33,7 +33,9 @@
 | 主线 | 状态 | 事实来源 |
 | --- | --- | --- |
 | Agent Skill Runtime | 已完成并归档 | `openspec/changes/archive/agent-skill-package-runtime/tasks.md` |
-| Agent 多智能体/上下文运行时 | 已完成并归档 | `openspec/changes/archive/agent-center-multi-agent-runtime/tasks.md` |
+| Agent 上下文/父子 Run 基础运行时 | 已完成并归档；普通聊天仍以单 Agent 工具循环为主 | `openspec/changes/archive/agent-center-multi-agent-runtime/tasks.md` |
+| Agent Supervisor/子智能体运行时 | Phase 0-2 与执行树 UI 已完成：独立子 Session、并行/依赖委派、父续跑、确认传播、层级/预算诊断；待“委派并续跑”动作和 Writer Room team 模式 | `openspec/changes/agent-supervisor-subagent-runtime/tasks.md` |
+| Agent 对话工作台 | 进行中：已收敛为对话优先双栏、内联轨迹、局部失败恢复和页面错误边界；待接入真实后端后的多轮对话人工验收 | `openspec/changes/agent-center-conversation-workbench-redesign/tasks.md` |
 | 创作项目闭环 | 代码任务完成，仅留真实生图后端人工验收 | `openspec/changes/creative-project-closed-loop/tasks.md` |
 | 创作项目优化路线 | 已完成并归档 | `openspec/changes/archive/creative-project-optimization-roadmap/tasks.md` |
 | 小说连续性事实闭环 | 已完成并归档 | `openspec/changes/archive/creative-project-continuity-facts/tasks.md` |

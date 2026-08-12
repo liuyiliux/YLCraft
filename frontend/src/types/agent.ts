@@ -73,6 +73,9 @@ export interface AgentRun {
   session_id: string
   profile_id: string
   parent_run_id?: string | null
+  root_run_id?: string | null
+  run_kind?: 'primary' | 'delegated' | string
+  delegation_depth?: number
   status: string
   objective: string
   context: Record<string, any>
@@ -83,6 +86,28 @@ export interface AgentRun {
   started_at?: string | null
   finished_at?: string | null
   steps?: AgentRunStep[]
+  children?: AgentRun[]
+}
+
+export interface AgentDelegation {
+  id: string
+  root_run_id: string
+  parent_run_id: string
+  child_run_id?: string | null
+  parent_step_id?: number | null
+  task_key: string
+  target_profile_id: string
+  objective: string
+  context: Record<string, any>
+  depends_on: string[]
+  execution_mode: string
+  status: string
+  result: Record<string, any>
+  error: string
+  created_at: string
+  updated_at: string
+  started_at?: string | null
+  finished_at?: string | null
 }
 
 export interface AgentChatResult {
@@ -115,6 +140,7 @@ export interface AgentProfile {
   provider: string
   model: string
   max_steps: number
+  can_delegate: boolean
   is_default: boolean
   is_builtin: boolean
   created_at: string

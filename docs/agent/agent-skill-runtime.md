@@ -126,6 +126,19 @@ This avoids dumping every skill body into every conversation.
 
 Agent tools are internal APIs. When a tool category, name, input, output type or risk level changes, update tests and this guide.
 
+### Supervisor Delegation Tool
+
+`delegate_agent_tasks` 是内部 `agent_runtime` 工具，而不是领域 Skill。只有同时满足两个条件才会向模型暴露：Profile 设置 `can_delegate=true`，且工具授权包含该工具或 `*`。
+
+- Input: `tasks` (1-6 items) and `join_strategy` (`all` or `best_effort`).
+- Each task requires `task_key`, `profile_id`, and `objective`; optional `context` is bounded and `depends_on` references only task keys in the same call.
+- Independent tasks run concurrently; dependencies run in topological batches.
+- Output: durable delegation rows, linked child Run IDs, summary and `joined_observation`.
+- The output is appended to the parent as a normal observation, so the parent planner resumes instead of ending at delegation.
+- The module-level registry handler cannot execute directly because execution requires the current user, parent Run and DB session. `AgentService` injects that scoped runtime handler.
+
+This is separate from Skills: Skills explain reusable procedure; the Supervisor tool creates real child Agent executions. A Worker with `allowed_tools=["*"]` still cannot access delegation unless `can_delegate` is explicitly enabled.
+
 Canvas tool contract: `apply_creative_canvas_operations` accepts `connect_nodes` only when the connection supplies `fromNodeId`, `fromPortId`, `toNodeId`, and `toPortId`. Invalid connection operations are skipped rather than persisted.
 
 Current image prompt reference tools:

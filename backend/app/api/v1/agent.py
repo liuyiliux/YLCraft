@@ -20,7 +20,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.db.database import ensure_agent_tables, get_async_session_dependency
 from app.core.task_queue import get_task_queue, task_event_to_dict
-from app.db.models.agent import AgentContextSnapshot, AgentMemorySnapshot, AgentMessage, AgentRun, AgentRunStep, AgentThread, AgentToolCall
+from app.db.models.agent import AgentContextSnapshot, AgentDelegation, AgentMemorySnapshot, AgentMessage, AgentRun, AgentRunStep, AgentThread, AgentToolCall
 from app.db.models.creative_project import ProjectGenerationLog
 from app.services.agent import tools as _agent_tools  # noqa: F401 - register tools
 from app.services.agent.memory.manager import MemoryManager as AgentMemoryManager
@@ -112,6 +112,7 @@ class AgentProfileRequest(BaseModel):
     provider: str = ""
     model: str = ""
     max_steps: int = Field(default=8, ge=1, le=20, description="迭代预算（轮），不是步数上限，是单轮计划/工具/观察循环的保护阈值")
+    can_delegate: bool = False
     is_default: bool = False
 
 
@@ -128,6 +129,7 @@ class DelegateRunRequest(BaseModel):
     profile_id: str
     message: str = ""
     context: dict = Field(default_factory=dict)
+    resume_parent: bool = False
 
 
 class ToolTestRequest(BaseModel):
@@ -307,6 +309,9 @@ def _run_to_dict(run: AgentRun, include_steps: bool = False, steps: list[AgentRu
         "session_id": run.session_id,
         "profile_id": run.profile_id,
         "parent_run_id": run.parent_run_id,
+        "root_run_id": run.root_run_id or run.id,
+        "run_kind": run.run_kind,
+        "delegation_depth": run.delegation_depth,
         "status": run.status,
         "objective": run.objective,
         "context": _safe_json_loads(run.context_json, {}),
@@ -320,6 +325,119 @@ def _run_to_dict(run: AgentRun, include_steps: bool = False, steps: list[AgentRu
     if include_steps:
         data["steps"] = [_step_to_dict(item) for item in (steps or [])]
     return data
+
+
+def _delegation_to_dict(item: AgentDelegation) -> dict:
+    return {
+        "id": item.id,
+        "user_id": item.user_id,
+        "root_run_id": item.root_run_id,
+        "parent_run_id": item.parent_run_id,
+        "child_run_id": item.child_run_id,
+        "parent_step_id": item.parent_step_id,
+        "task_key": item.task_key,
+        "target_profile_id": item.target_profile_id,
+        "objective": item.objective,
+        "context": _safe_json_loads(item.context_json, {}),
+        "depends_on": _safe_json_loads(item.depends_on_json, []),
+        "execution_mode": item.execution_mode,
+        "status": item.status,
+        "result": _safe_json_loads(item.result_json, {}),
+        "error": item.error,
+        "created_at": item.created_at.isoformat(),
+        "updated_at": item.updated_at.isoformat(),
+        "started_at": item.started_at.isoformat() if item.started_at else None,
+        "finished_at": item.finished_at.isoformat() if item.finished_at else None,
+    }
+
+
+async def _sync_parent_delegation_state(
+    db_session,
+    child_run: AgentRun,
+    *,
+    child_status: str,
+    child_result: dict | None = None,
+    child_error: str = "",
+) -> None:
+    """Propagate a child confirmation/cancellation into its durable parent join."""
+    records_result = await db_session.execute(
+        select(AgentDelegation).where(AgentDelegation.child_run_id == child_run.id)
+    )
+    records = list(records_result.scalars().all())
+    if not records:
+        return
+
+    normalized_status = {
+        "completed": "completed",
+        "failed": "failed",
+        "cancelled": "cancelled",
+        "waiting_confirmation": "waiting_confirmation",
+    }.get(child_status, child_status or "failed")
+    now = datetime.utcnow()
+    for record in records:
+        record.status = normalized_status
+        record.result_json = json.dumps(child_result or {}, ensure_ascii=False, default=str)
+        record.error = child_error
+        record.updated_at = now
+        if normalized_status not in {"pending", "running", "waiting_confirmation"}:
+            record.finished_at = now
+        if not record.parent_step_id:
+            continue
+
+        siblings_result = await db_session.execute(
+            select(AgentDelegation)
+            .where(AgentDelegation.parent_step_id == record.parent_step_id)
+            .order_by(AgentDelegation.created_at.asc(), AgentDelegation.task_key.asc())
+        )
+        siblings = list(siblings_result.scalars().all())
+        statuses = [item.status for item in siblings]
+        completed = statuses.count("completed")
+        failed = statuses.count("failed")
+        skipped = statuses.count("skipped")
+        waiting = sum(status in {"pending", "running", "waiting_confirmation"} for status in statuses)
+        cancelled = statuses.count("cancelled")
+
+        step = await db_session.get(AgentRunStep, record.parent_step_id)
+        if not step:
+            continue
+        previous_output = _safe_json_loads(step.output_json, {})
+        join_strategy = str(previous_output.get("join_strategy") or "all")
+        if waiting:
+            join_status = "waiting_confirmation"
+        elif completed == len(siblings):
+            join_status = "completed"
+        elif completed and join_strategy == "best_effort":
+            join_status = "partial"
+        elif cancelled == len(siblings):
+            join_status = "cancelled"
+        else:
+            join_status = "failed"
+        summary = {
+            "total": len(siblings),
+            "completed": completed,
+            "failed": failed,
+            "skipped": skipped,
+            "waiting_confirmation": waiting,
+            "cancelled": cancelled,
+        }
+        previous_output.update(
+            {
+                "status": join_status,
+                "summary": summary,
+                "resume_required": join_status != "waiting_confirmation",
+                "delegations": [_delegation_to_dict(item) for item in siblings],
+            }
+        )
+        step.status = join_status
+        step.summary = f"子任务完成 {completed}/{len(siblings)}"
+        step.output_json = json.dumps(previous_output, ensure_ascii=False, default=str)
+        step.error = "一个或多个子任务失败" if join_status == "failed" else ""
+
+        parent = await db_session.get(AgentRun, record.parent_run_id)
+        if parent:
+            parent.status = "waiting_confirmation" if waiting else join_status
+            parent.error = step.error
+            parent.updated_at = now
 
 
 def _generation_log_to_dict(log: ProjectGenerationLog) -> dict:
@@ -626,6 +744,78 @@ async def get_run_detail(run_id: str, db_session=Depends(get_async_session_depen
     return _run_to_dict(run, include_steps=True, steps=steps_result.scalars().all())
 
 
+@router.get("/runs/{run_id}/delegations", summary="获取 Agent Run 的子任务委派记录")
+async def get_run_delegations(run_id: str, db_session=Depends(get_async_session_dependency)):
+    await ensure_agent_tables()
+    run = await db_session.get(AgentRun, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    result = await db_session.execute(
+        select(AgentDelegation)
+        .where(AgentDelegation.parent_run_id == run_id)
+        .order_by(AgentDelegation.created_at.asc(), AgentDelegation.task_key.asc())
+    )
+    items = list(result.scalars().all())
+    return {
+        "run_id": run_id,
+        "root_run_id": run.root_run_id or run.id,
+        "total": len(items),
+        "delegations": [_delegation_to_dict(item) for item in items],
+    }
+
+
+@router.get("/runs/{run_id}/tree", summary="获取 Agent Run 执行树")
+async def get_run_tree(run_id: str, db_session=Depends(get_async_session_dependency)):
+    await ensure_agent_tables()
+    selected = await db_session.get(AgentRun, run_id)
+    if not selected:
+        raise HTTPException(status_code=404, detail="Run not found")
+    root_run_id = selected.root_run_id or selected.id
+    runs_result = await db_session.execute(
+        select(AgentRun)
+        .where(AgentRun.user_id == selected.user_id, AgentRun.root_run_id == root_run_id)
+        .order_by(AgentRun.created_at.asc())
+    )
+    runs = list(runs_result.scalars().all())
+    if selected.id == root_run_id and not any(item.id == selected.id for item in runs):
+        runs.insert(0, selected)
+    delegations_result = await db_session.execute(
+        select(AgentDelegation)
+        .where(
+            AgentDelegation.user_id == selected.user_id,
+            AgentDelegation.root_run_id == root_run_id,
+        )
+        .order_by(AgentDelegation.created_at.asc(), AgentDelegation.task_key.asc())
+    )
+    delegations = list(delegations_result.scalars().all())
+    from app.services.agent.runtime.delegation import DelegationLimits
+
+    limits = DelegationLimits()
+
+    nodes = {item.id: {**_run_to_dict(item), "children": []} for item in runs}
+    roots: list[dict] = []
+    for item in runs:
+        node = nodes[item.id]
+        if item.parent_run_id and item.parent_run_id in nodes:
+            nodes[item.parent_run_id]["children"].append(node)
+        else:
+            roots.append(node)
+    return {
+        "selected_run_id": run_id,
+        "root_run_id": root_run_id,
+        "root": nodes.get(root_run_id) or (roots[0] if roots else None),
+        "runs": [_run_to_dict(item) for item in runs],
+        "delegations": [_delegation_to_dict(item) for item in delegations],
+        "limits": {
+            "max_depth": limits.max_depth,
+            "max_children_per_call": limits.max_children_per_call,
+            "max_concurrency": limits.max_concurrency,
+            "max_children_per_root": limits.max_children_per_root,
+            "child_timeout_seconds": limits.child_timeout_seconds,
+        },
+    }
+
+
 @router.get("/runs/{run_id}/skill-candidate", summary="分析 Run 是否适合沉淀为 Skill")
 async def inspect_run_skill_candidate(run_id: str, user_id: str = "default", db_session=Depends(get_async_session_dependency)):
     await ensure_agent_tables()
@@ -743,6 +933,13 @@ async def cancel_run(run_id: str, db_session=Depends(get_async_session_dependenc
         step_type="cancel",
         status="cancelled",
         summary="用户取消运行",
+    )
+    await _sync_parent_delegation_state(
+        db_session,
+        run,
+        child_status="cancelled",
+        child_result={"status": "cancelled"},
+        child_error=run.error,
     )
     await db_session.commit()
     return {"success": True, "run": _run_to_dict(run)}
@@ -1018,6 +1215,17 @@ async def confirm_pending_step(
     run.status = "completed" if tool_result.success else "failed"
     run.error = "" if tool_result.success else (tool_result.error or "")
     run.updated_at = datetime.utcnow()
+    await _sync_parent_delegation_state(
+        db_session,
+        run,
+        child_status=run.status,
+        child_result={
+            "tool_name": tool_name,
+            "tool_result": tool_result.result,
+            "confirmed_step_id": confirmed_step.id,
+        },
+        child_error=run.error,
+    )
     assistant_message = (
         f"已确认并执行工具 `{tool_name}`。\n\n"
         f"状态：{'成功' if tool_result.success else '失败'}\n\n"
@@ -1077,19 +1285,33 @@ async def delegate_run(
     if not request.profile_id:
         raise HTTPException(status_code=400, detail="profile_id is required")
 
-    service = AgentService(db_session, user_id=parent_run.user_id)
-    result = await service.delegate_subtask(
-        parent_run=parent_run,
-        target_profile_id=request.profile_id,
-        message=request.message or f"继续处理父任务：{parent_run.objective}",
-        context=request.context or {},
+    from app.db.database import AsyncSessionLocal
+    from app.services.agent.runtime.delegation import SubagentExecutor, SubagentOrchestrator
+
+    executor = SubagentExecutor(AsyncSessionLocal)
+    orchestrator = SubagentOrchestrator(db_session, executor)
+    result = await orchestrator.delegate(
+        parent_run,
+        [
+            {
+                "task_key": "manual-delegation",
+                "profile_id": request.profile_id,
+                "objective": request.message or f"继续处理父任务：{parent_run.objective}",
+                "context": request.context or {},
+            }
+        ],
     )
-    await db_session.commit()
+    parent_resume = None
+    if request.resume_parent and result.get("status") in {"completed", "partial"}:
+        service = AgentService(db_session, user_id=parent_run.user_id)
+        parent_resume = await service.resume_from_delegation_observation(parent_run, result)
+        await db_session.commit()
     child_run = await db_session.get(AgentRun, result.get("child_run_id")) if result.get("child_run_id") else None
     return {
         **result,
         "parent_run": _run_to_dict(parent_run),
         "child_run": _run_to_dict(child_run) if child_run else None,
+        "parent_resume": parent_resume,
     }
 
 
