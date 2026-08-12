@@ -1,58 +1,42 @@
-# YLCraft - 逸流创作平台
+# YLCraft
 
-> 面向内容创作者的逸流创作平台，覆盖电商/摄影/短剧三大垂直场景，并面向 COSER 提供 Live2D 全自动生产线。
+> 一个把创意、参考素材和 AI 生成结果沉淀为可复用资产的开源内容生产工作台。
 
-## 目标用户
+YLCraft 面向不想只停留在聊天框里的内容创作者：小说与短剧团队、摄影师、COSER、电商运营和自媒体创作者。它将素材中枢、创作项目、可视化工作流、模型配置与 Agent + Skill Runtime 连接为一个可持续使用的创作环境。
 
-| 用户类型 | 核心需求 | 代表功能 |
-|----------|----------|---------|
-| **电商运营** | 商品展示视频批量生成 | 素材库 + 混剪 + 多账号发布 |
-| **摄影工作室** | 客片精修 + 写真 MV | AI 修图 + 调色 + 写真 MV 生成 |
-| **短剧创作者** | AI 短剧/漫剧生成 | Story Maker + 角色资产 + 分镜 |
-| **COSER** | Live2D 模型全自动生产 | Live2D 工厂（立绘 → 绑骨 → VTS） |
+相比“AI 对话 + 一堆提示词文件”，YLCraft 围绕三件实际的事设计：
 
-## 核心功能
+1. **降低门槛**：用户面对项目、角色、章节、参考图和产物，而不需要先理解 Tool schema、Prompt 管线或运行记录。
+2. **直观展示**：版本、执行轨迹、生成媒体、来源证据和素材血缘在对应业务工作台里可见、可比较、可继续操作。
+3. **节省 Token**：下载、导入、格式转换、校验、批处理和持久化等确定性工作由服务与脚本完成；模型专注理解、规划和创作。
 
-| 功能 | 说明 |
-|------|------|
-| **爆款拆解** | 输入链接 → 文案结构 + 脚本分镜 + 仿写提示词 |
-| **Clip Lab** | AI 视频剪辑（CutClaw Agent / NarratoAI Pipeline / MoE 三种模式） |
-| **Story Maker** | AI 短剧漫剧生成（角色 / 场景 / 脚本 / 渲染） |
-| **Live2D 工厂** | Live2D 全自动生产线（动漫立绘 / Coser真人 / Coser转二次元 → 抠图 → 分层 → 绑骨 → VTS 导出 → 口型同步） |
-| **AI 图像/视频生成** | 多 Provider 统一调度，支持文生图/图生视频 |
-| **AI 智能助手** | Agent 模式，支持会话记忆、工具调用、任务编排 |
-| **素材采集** | 多平台素材抓取（抖音/B站/小红书/微博/知乎/快手） |
-| **小说阅读** | 书架 + 阅读器 + 多书源管理 + 换源 + SSE 流式搜索 |
-| **ComfyUI 管理** | 工作流模板管理、任务队列、预设参数 |
-| **B站二维码登录** | 扫码登录 + WebSocket 实时推送 + Cookie 自动获取 |
-| **UP主分析** | UP主数据统计 + 视频分析 + 粉丝趋势 |
-| **我的数据** | 收藏夹管理 + 合集管理 + 观看历史 |
-| **评论功能** | 评论分页加载 + 发送评论 + 排序（热度/时间）|
-| **字幕功能** | 字幕下载（SRT/ASS/VTT）+ 编辑 + 样式 + 烧录 |
+## 当前可用能力
 
-## 技术栈
+| 工作区 | 能力 |
+| --- | --- |
+| **素材中枢** | 导入、存储、检索、版本化图片、视频、音频、文本和生成结果，并保留来源与血缘。 |
+| **创作项目** | 从创意进入大纲、项目圣经、章节规划、正文、脚本、分镜、参考卡和生成媒体。 |
+| **Story Cockpit / Writer Room** | 支持场景节拍、角色演绎、正文候选、人味润色、审稿、连续性事实、伏笔和受控提升为正式正文。 |
+| **创作画布** | 独立的节点式工作流画布，编排文本、Prompt、模型、图片、平台搜索、图片处理、批量生图和类型化变量连线。 |
+| **Prompt 参考库** | 浏览本地优先缓存的双语提示词、标签、模型分组与参考图，并插入画布和生图流程。 |
+| **AI 模型配置** | 通过统一连接器配置 LLM、图像、视频、TTS、STT 与 Embedding 模型。 |
+| **智能体与 Skills** | 提供 thread 对话、上下文快照、记忆、工具轨迹、文件化 Skill 与 Supervisor 子智能体委派。 |
+| **采集与发布** | 提供平台搜索、下载与导入、任务诊断，以及已接入平台上的受控发布能力。 |
 
-### 后端
+## 产品主链路
 
-- **框架**: FastAPI + Uvicorn
-- **ORM**: SQLModel（同步 + 异步）
-- **数据库**: PostgreSQL 16 + pgvector（关系 + 向量 + 全文检索），支持同步/异步双模式
-- **Provider 注册表**: 统一调度 LLM / Image / Video / TTS / Live2D
-- **AI**: 多 Provider 支持（豆包 LLM/TTS、MiniMax 图生视频、Replicate SDXL、HuggingFace、Remove.bg）
-- **连接器**: AI 连接器（OpenAI 兼容协议）+ 社交媒体连接器（抖音/B站/小红书/微博/快手/Instagram/TikTok/Twitter/Threads）
-- **视频处理**: FFmpeg + yt-dlp
-- **语音识别**: faster-whisper
-- **任务队列**: Redis（可选）/ 内存模式自动降级
-- **实时通信**: WebSocket 广播
-
-### 前端
-
-- **框架**: React 18 + TypeScript
-- **构建工具**: Vite 5
-- **UI 库**: Ant Design 5（zh_CN 本地化）
-- **路由**: react-router-dom 6
-- **HTTP 客户端**: Axios
-- **实时通信**: WebSocket (Agent 模块)
+```mermaid
+flowchart LR
+  Idea["创意或外部参考"] --> Project["创作项目"]
+  Search["搜索 / 下载 / 导入"] --> Assets["素材中枢"]
+  Project --> Content["大纲 / 章节 / 正文 / 脚本 / 分镜"]
+  Assets --> Content
+  Content --> Generate["AI 文本 / 图片 / 视频生成"]
+  Generate --> Assets
+  Project --> Agent["Agent + Skills"]
+  Assets --> Agent
+  Agent --> Project
+```
 
 ## 快速开始
 
@@ -60,278 +44,129 @@
 
 - Python 3.10+
 - Node.js 18+
-- FFmpeg
+- PostgreSQL 16 + pgvector
+- Redis 可选。本地开发时任务队列会降级到内存模式
+- 视频与媒体工作流需要 FFmpeg
 
-### 一键启动
+### 1. 启动 PostgreSQL 与 Redis
 
-**Linux/macOS:**
-
-```bash
-chmod +x start.sh && ./start.sh
-```
-
-**Windows:**
-
-```batch
-start.bat
-```
-
-### 手动启动
+仓库中的 Compose 文件只用于启动本地基础设施：
 
 ```bash
-# 后端
+docker compose up -d postgres redis
+```
+
+其中凭证只适合本地开发。不要暴露数据库端口，也不要在共享或生产环境复用该开发密码。
+
+### 2. 配置后端
+
+```bash
+cd backend
+cp .env.example .env
+```
+
+Windows PowerShell：
+
+```powershell
+Copy-Item .env.example .env
+```
+
+编辑 `backend/.env`，填入数据库连接和准备使用的模型供应商配置。API Key、Cookie、浏览器导出文件和本地凭证必须只保存在被忽略的本地文件中。
+
+### 3. 执行迁移并启动 API
+
+```bash
 cd backend
 python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+# Linux/macOS
+source venv/bin/activate
+# Windows PowerShell
+# .\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-cp .env.example .env      # 编辑 .env 填入 API Key
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+alembic upgrade head
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
 
-# 前端
+### 4. 启动前端
+
+```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-### 访问地址
+打开 `http://localhost:3000`，或以终端实际输出的 Vite 地址为准。API 文档在 `http://127.0.0.1:8000/docs`。
 
-| 服务 | 地址 |
-|------|------|
-| 前端 | http://localhost:5173 |
-| 后端 API | http://localhost:8000 |
-| API 文档 | http://localhost:8000/docs |
-
-## 配置说明
-
-### 环境变量（`backend/.env`）
+### 可选：初始化小说阅读子模块
 
 ```bash
-# MiniMax API（图生视频）
-MINIMAX_API_KEY=your_minimax_api_key_here
-
-# Live2D 抠图（Remove.bg）
-# REMOVEBG_API_KEY=your_removebg_api_key_here
-
-# Live2D 风格转换（Replicate SDXL）
-# REPLICATE_API_KEY=your_replicate_api_key_here
-
-# Live2D 图像分割（HuggingFace）
-# HUGGINGFACE_API_KEY=your_huggingface_api_key_here
-
-# （可选）抖音 Cookie - 用于高清/私密内容解析
-# DOUYIN_COOKIE=session_id=xxx; sessionid=xxx
-
-# （可选）B站 Cookie
-# BILIBILI_COOKIE=SESSDATA=xxx; bili_jct=xxx
+git submodule update --init --recursive
 ```
 
-### Provider 注册表（`backend/config/providers.yaml`）
+## 首次使用建议
 
-定义所有 AI Provider 的模型、端点、默认值。支持 `${ENV_VAR}` 环境变量注入。系统会自动加载并注册。
+1. 进入 **设置**，添加文字或图片模型连接器。
+2. 在 **创作项目** 新建项目。
+3. 完成大纲、项目圣经与章节规划，再在单章的 **Writer Room** 中创作。
+4. 从 **素材中枢** 或 **Prompt 参考库** 加入角色和视觉参考。
+5. 生成正文、脚本、分镜或图片。只有通过项目或素材中枢持久化的产物，才会成为可追溯素材。
+6. 使用 **智能体** 执行工具化工作；写入、删除、发布和高成本动作仍要求显式确认。
 
-### API 密钥管理
+需要自由编排视觉工作流时，使用 **创作画布**。画布与项目关系图谱刻意分离：画布负责组织可复用流程，项目和素材中枢仍是业务事实与血缘的唯一来源。
 
-API 密钥优先从数据库读取（PostgreSQL `api_keys` 表，由 `ApiKeyStore` 加密存储），支持前端配置页面热更新；兜底从环境变量读取。
+## 架构速览
 
-## 项目结构
-
-```
-YLCraft/
-├── backend/                    # 后端服务
-│   ├── app/
-│   │   ├── main.py            # FastAPI 入口 & 生命周期管理（30+ API 模块）
-│   │   ├── api/v1/            # REST API 路由（30+ 模块）
-│   │   ├── services/          # 业务逻辑层
-│   │   │   ├── agent/         # AI Agent（记忆/会话/工具调用）
-│   │   │   ├── asset/         # 统一素材资产库
-│   │   │   ├── breaker/       # 爆款拆解
-│   │   │   ├── clip/          # Clip Lab（CutClaw/NarratoAI/MoE）
-│   │   │   ├── story/         # Story Maker
-│   │   │   ├── live2d/        # Live2D 工厂（抠图/分层/绑骨/VTS/口型同步）
-│   │   │   ├── llm/           # LLM Manager & Provider 注册表
-│   │   │   ├── video/         # 视频下载解析（抖音/B站/Twitter）
-│   │   │   ├── video_gen/     # AI 视频生成（MiniMax等）
-│   │   │   ├── image/         # 图像生成后端
-│   │   │   ├── comfyui/       # ComfyUI 客户端/池/工作流
-│   │   │   ├── crawler/       # 多平台素材采集
-│   │   │   ├── novel/         # 小说阅读（书架/下载/爬虫）
-│   │   │   ├── subtitle/       # 字幕提取（faster-whisper）
-│   │   │   ├── bgm/           # BGM 配乐
-│   │   │   ├── character/     # 角色管理
-│   │   │   ├── platform_connection/    # 平台连接（旧版）
-│   │   │   ├── social_media_connector/ # 社交媒体连接器（新版）
-│   │   │   └── ai_connector/  # AI 连接器管理
-│   │   ├── connectors/        # 连接器实现
-│   │   │   ├── ai/            # AI 连接器（OpenAI 兼容协议）
-│   │   │   └── social/        # 社交媒体连接器（9 平台）
-│   │   ├── core/              # 核心模块（配置/任务队列/WebSocket）
-│   │   │   └── contracts/     # 类型契约
-│   │   └── db/                # 数据库层
-│   │       ├── database.py    # PostgreSQL 16 同步+异步引擎（asyncpg / psycopg2）
-│   │       └── models/        # 16+ 数据模型
-│   ├── config/                # 配置文件
-│   │   ├── providers.yaml     # Provider 注册表
-│   │   └── live2d.json        # Live2D 处理模式配置
-│   ├── data/                  # 运行时数据（Cookie、素材文件等）
-│   ├── requirements.txt
-│   └── .env.example
-├── frontend/                   # 前端应用
-│   ├── src/
-│   │   ├── App.tsx            # 路由入口（27 页面）
-│   │   ├── pages/             # 页面组件（27 页面）
-│   │   ├── components/        # 通用组件 & Live2D 查看器
-│   │   ├── api/               # API 调用层
-│   │   ├── hooks/             # 自定义 Hooks（WebSocket）
-│   │   ├── context/           # React Context（Agent）
-│   │   ├── constants/         # 主题配置（亮/暗）
-│   │   └── types/             # TypeScript 类型
-│   ├── package.json
-│   └── vite.config.ts
-├── docs/                       # 项目文档（DESIGN / rules / architecture / agent / platform / guides / reference）
-├── .cnb.yml                    # CI/CD 流水线
-└── start.sh / start.bat        # 启动脚本
+```text
+frontend/                   React 18 + TypeScript + Vite + Ant Design
+backend/app/api/v1/         FastAPI HTTP 边界
+backend/app/services/       Agent、项目、素材、AI、画布与平台等领域服务
+backend/app/db/models/      SQLModel 数据模型
+backend/alembic/            数据库迁移
+backend/app/skills/         内置文件化 Skills
+docs/architecture/          系统与 API 的事实来源文档
+openspec/changes/           进行中与已归档的实现规格
 ```
 
-## API 模块（完整）
+- **前端**：React、TypeScript、Vite、Ant Design。
+- **后端**：FastAPI、SQLModel、PostgreSQL + pgvector、Alembic。
+- **AI 与集成**：可配置供应商连接器、适用场景下的 OpenAI 兼容协议、ComfyUI、媒体工具、平台适配器与任务诊断。
 
-| 路由前缀 | 功能 | 标签 |
-|----------|------|------|
-| `/api/v1/agent` | AI 智能助手 | Agent |
-| `/api/v1/breaker` | 爆款拆解 | Breaker |
-| `/api/v1/clip` | 视频剪辑（NarratoAI / MoE） | Clip — NarratoAI / MoE |
-| `/api/v1/clip/cutclaw` | CutClaw Agent 剪辑 | Clip — CutClaw |
-| `/api/v1/clip-ops` | 剪辑操作 | Clip Operations |
-| `/api/v1/story` | Story Maker | Story Maker |
-| `/api/v1/live2d` | Live2D 工厂 | Live2D Factory |
-| `/api/v1/images` | 图像生成 | Images |
-| `/api/v1/videos` | 视频生成 | Videos |
-| `/api/v1/tts` | TTS 语音合成 | TTS |
-| `/api/v1/llm` | LLM 调用 | LLM |
-| `/api/v1/download` | 视频下载解析 | Download |
-| `/api/v1/image-editor` | 图片编辑 | Image Editor |
-| `/api/v1/assets` | 素材资产库 | Assets |
-| `/api/v1/characters` | 角色管理 | Characters |
-| `/api/v1/comfyui` | ComfyUI 管理 | ComfyUI |
-| `/api/v1/bgm` | BGM 配乐 | BGM |
-| `/api/v1/subtitles` | 字幕管理 | Subtitles |
-| `/api/v1/crawler` | 素材采集 | Crawler |
-| `/api/v1/novels` | 小说阅读 | Novels |
-| `/api/v1/providers` | Provider 管理 | Providers |
-| `/api/v1/ai` | AI 连接器管理（新版） | AI Connectors |
-| `/api/v1/social` | 社交媒体连接器（新版） | Social Media Connectors |
-| `/api/v1/platforms` | 平台连接（旧版兼容） | Platform Connections (Legacy) |
-| `/api/v1/cookies` | Cookie 管理 | Cookies |
-| `/api/v1/tasks` | 任务管理 | Tasks |
-| `/api/v1/ws` | WebSocket 实时推送 | WebSocket |
-| `/api/v1/settings` | 系统设置 | Settings |
+## 安全与合规使用
 
-## 前端页面
+- 不要提交 `.env`、供应商密钥、Cookie、浏览器导出文件、数据库导出、生成媒体、本地备份、日志、证书或私钥。
+- 将 `backend/.env.example` 复制为本地 `.env` 使用；示例文件可提交，`.env` 已被忽略。
+- 贡献或发布前运行：
 
-| 路由 | 页面 | 说明 |
-|------|------|------|
-| `/` | Dashboard | 仪表盘 |
-| `/breaker` | 爆款拆解 | 链接解析 → 文案结构 + 仿写 |
-| `/clip` | Clip Lab | AI 视频剪辑主面板 |
-| `/clip-ops` | 剪辑操作 | 精细化剪辑调整 |
-| `/story` | Story Maker | AI 短剧/漫剧生成 |
-| `/live2d` | Live2D 工厂 | 模型生成全流程 |
-| `/image-gen` | 图像生成 | 文生图/图生图 |
-| `/video-gen` | 视频生成 | 图生视频/AI 视频 |
-| `/comfyui` | ComfyUI | 工作流管理 |
-| `/download` | 视频下载 | 多平台视频解析下载 |
-| `/assets` | 素材库 | 统一素材资产管理 |
-| `/characters` | 角色管理 | 角色资产 CRUD |
-| `/subtitle` | 字幕管理 | 提取 + 样式编辑 |
-| `/bgm` | BGM 配乐 | 内置 + 上传管理 |
-| `/agent` | AI 助手 | 智能对话 + 工具调用 |
-| `/platforms` | 平台连接 | 社交媒体绑定 |
-| `/publish` | 内容发布 | 多平台一键发布 |
-| `/crawler` | 素材采集 | 多平台自动抓取 |
-| `/novel-bookshelf` | 书架 | 小说书架管理 |
-| `/novel-search` | 小说搜索 | 多书源搜索 |
-| `/novel-reader` | 阅读器 | 在线阅读 |
-| `/image-editor` | 图片编辑 | 裁剪/滤镜/调色 |
-| `/tasks` | 任务中心 | 异步任务进度 |
-| `/settings` | 系统设置 | 全局配置 |
+  ```bash
+  python tools/audit_public_release.py
+  ```
 
-## CI/CD
+- 漏洞报告见 [SECURITY.md](SECURITY.md)，完整发布检查见 [docs/SECURITY_RELEASE.md](docs/SECURITY_RELEASE.md)。
+- 平台接入只能用于你有权使用的账号、数据和权限范围。不要在 Issue、PR 或日志中提交真实账号 Cookie。
 
-项目通过 `.cnb.yml` 配置自动构建检查流水线，在每次 push 时自动执行：
+## 文档入口
 
-- **后端检查**: 安装依赖并验证 FastAPI 应用可正常导入
-- **前端检查**: `npm ci` + `npm run build`，仅在前端文件变更时触发
+| 文档 | 用途 |
+| --- | --- |
+| [文档地图](docs/README.md) | 维护中的文档结构入口。 |
+| [系统架构](docs/architecture/YLCRAFT_SYSTEM_ARCHITECTURE.md) | 产品边界、运行时模型、数据归属和模块状态。 |
+| [API 清单](docs/architecture/API_SURFACE.md) | 当前 HTTP API 契约。 |
+| [创作项目指南](docs/guides/creative-project-loop.md) | 项目、内容、素材与生成工作流。 |
+| [智能体中心](docs/agent/agent-center.md) | 对话工作台与运行时行为。 |
+| [Agent Skill Runtime](docs/agent/agent-skill-runtime.md) | Skill 包、路由与审批契约。 |
+| [AI 协作协议](docs/AI_HANDOFF_PROTOCOL.md) | 多电脑、多 AI 协作开发规则。 |
 
-## 支持平台
+## 开发约定
 
-### 视频下载解析
+提交 PR 前至少执行：
 
-| 平台 | 支持程度 |
-|------|----------|
-| 抖音 | ✅ CDN 直链解析（多清晰度） |
-| B站 | ✅ yt-dlp |
-| Twitter/X | ✅ 内置解析器 |
+```bash
+python tools/audit_public_release.py
+cd frontend && npm run build
+```
 
-### 社交媒体连接器
+修改 API、数据模型、Agent Tool、Skill 或工作流时，应在同一改动中更新其所属 OpenSpec 与架构/API 文档。详见 [AGENTS.md](AGENTS.md)。
 
-| 平台 | 状态 |
-|------|------|
-| 抖音 | ✅ |
-| B站 | ✅ |
-| 小红书 | ✅ |
-| 微博 | ✅ |
-| 快手 | ✅ |
-| Instagram | ✅ |
-| TikTok | ✅ |
-| Twitter/X | ✅ |
-| Threads | ✅ |
+## 许可证
 
-### AI Provider
-
-| Provider | 用途 |
-|----------|------|
-| MiniMax | 图像生成 / 视频生成 |
-| Replicate (SDXL) | Live2D 风格转换 |
-| Remove.bg | Live2D 抠图 |
-| HuggingFace | Live2D 图像分割 |
-| ComfyUI | 本地/远程图像生成 |
-
-## 处理模式
-
-Live2D 工厂各环节支持本地模型和云端 API 双模式，可通过配置文件或前端界面切换：
-
-| 环节 | 本地模式 | API 模式 |
-|------|----------|----------|
-| 抠图（Rembg） | rembg 本地模型 | Remove.bg API |
-| 风格转换 | 本地 SD 模型 | Replicate SDXL API |
-| 图像分割 | 本地模型 | HuggingFace Inference API |
-
-## 更多文档
-
-### 核心文档
-
-| 文档 | 说明 |
-|------|------|
-| [DESIGN](docs/DESIGN.md) | 总体设计与架构（单一事实来源：产品定位、技术栈、模块现状、文档导航） |
-| [Agent Skill Runtime](docs/agent/agent-skill-runtime.md) | Agent Skill 文件化运行时规范（加载 / 路由 / Bundle / 草稿审批） |
-| [Agent Center 使用说明](docs/agent/agent-center.md) | 智能体工作台使用指南 |
-| [B站功能指南](docs/platform/BILIBILI_GUIDE.md) | B站登录 / 下载 / 弹幕 / 评论等实现与优化清单 |
-| [多平台项目参考](docs/platform/MULTI_PLATFORM_REFERENCE.md) | 多平台采集与发布开源项目参考 |
-| [创作项目闭环](docs/guides/creative-project-loop.md) | 产品主链路与模块状态治理 |
-
-### 规范与架构（docs/）
-
-- `rules/`：项目规范（01 项目概述 / 02 后端 / 03 前端 / 04 代码风格 / 05 快速参考 / 06 数据库设计），权威且注入为工作区规则。
-- `architecture/`：子领域架构设计（资产中枢、AI 服务层、Live2D、多平台 API 等）。
-- `devlog/`：只保留必要的最新交接记录；长期事实要回写到架构、接口或领域文档。
-- `refactor/`：重构 / 迁移计划。
-- `reference/`：外部参考与客户素材，如 `docs/reference/REF_PROJECTS.md`、`docs/reference/短剧/`（分镜脚本、立绘提示词、微短剧拆解；`.rtf`/`.docx` 二进制原样保留，`images/` 存放配图）。
-
-> 历史交接入口已并入 `docs/devlog/`；前端样式以 `docs/rules/03` 为准，进度与实现状态以 `docs/DESIGN.md` 第四节为准。
-
-## License
-
-MIT
-
-## 作者
-
-怪盗LYL
+尚未选定许可证。在添加 `LICENSE` 文件之前，仓库默认不授予开源复用许可。
