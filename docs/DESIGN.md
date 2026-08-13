@@ -1,9 +1,9 @@
 # YLCraft — 总体设计与架构
 
 > 本文是 YLCraft 的单一事实来源：产品定位、技术栈、系统架构、模块现状与文档导航。
-> 最后更新：2026-08-12。详细子领域设计见 `docs/architecture/`，Agent 与平台接入见 `docs/agent/`、`docs/platform/`，必要交接记录见 `docs/devlog/`。
+> 最后更新：2026-08-13。详细子领域设计见 `docs/architecture/`，Agent 与平台接入见 `docs/agent/`、`docs/platform/`，必要交接记录见 `docs/devlog/`。
 
-当前交付快照：Agent/Skill Runtime、Asset Hub、独立 Canvas、提示词参考库、叙事运行时和 Story Production Desk 已进入可用主线；`/story` 正在收敛为“项目总览 + 单章工作室”的显式双工作面，`/agent` 已完成“对话优先工作台”第一轮收束，避免把项目规划、章节制作、运行指标和管理配置堆在同一视图。剩余工作主要是外部供应商/平台凭证下的真实验收、番茄接口补抓、健康 Agent 后端下的多轮恢复验收，以及 Story UI 的后续分组件收束。
+当前交付快照：Agent/Skill Runtime、Asset Hub、独立 Canvas、提示词参考库、叙事运行时和 Story Production Desk 已进入可用主线；`/story` 已恢复为“项目总览 + 单章工作室”的显式双工作面，项目资料与章节生产分层展示。`/video-gen` 已具备文生/图生视频、素材库首帧、提示词模板、持久任务恢复和 Asset Hub 回流；`/model-3d` 已具备配置驱动的提交、轮询、下载与资产血缘。剩余工作主要是外部供应商/平台凭证下的真实验收、番茄接口补抓、健康 Agent 后端下的多轮恢复验收，以及 Story UI 的后续分组件收束。
 
 设计定位（Design Read）：面向内容创作者的 AI 创作平台，覆盖电商 / 摄影 / 短剧三大场景；以「素材资产中枢 + Agent Skill 运行时」为底座，把高频创作流程沉淀为可复用、可审批的 Skill。
 

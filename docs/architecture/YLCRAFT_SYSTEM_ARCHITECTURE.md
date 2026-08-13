@@ -262,7 +262,8 @@ Configured video connectors use the same explicit-contract principle: `AIConnect
 | 小说/书源 | `/api/v1/novels`、`/api/v1/book-sources` | `services/novel`、`services/reader` | `/novel-*` | 可作为创作素材源。 |
 | 任务中心 | `/api/v1/tasks` | `core/task_queue` + `video_generation_tasks` | `/tasks` | 聚合通用队列、下载任务和独立视频生成持久化记录；诊断字段、异步轮询和失败原因可见。 |
 | 字幕/BGM/剪辑 | `/subtitles`、`/bgm`、`/clip*` | 对应 services | 对应页面 | 辅助内容生产。 |
-| Live2D/3D/模型 | `/live2d`、`/3d`、`/models` | 对应 services | 对应页面 | 规划/实验能力较多。 |
+| 图转 3D 工作台 | `/api/v1/model-3d` | `services/model3d` | `/model-3d` | 配置驱动连接器、持久任务、轮询下载和 Asset Hub 血缘已落地；真实供应商 GLB 验收待完成。 |
+| Live2D/旧 3D 工具 | `/live2d`、`/3d`、`/models` | 对应 services | 对应页面 | 历史兼容与规划/实验能力；不替代独立图转 3D 工作台。 |
 
 完整接口列表见 `docs/architecture/API_SURFACE.md`。
 
@@ -318,7 +319,7 @@ Agent Tool / Skill 变更按内部 API 处理：工具名称、输入输出 sche
 | `story-video-shot-production` | 11 | 1 | 项目感知视频请求、持久任务恢复、Asset Hub 回流和分镜回写完成；仅剩真实视频供应商验收。 |
 | `ai-video-workspace` | 5 | 4 | 独立视频工作台的持久任务、刷新恢复与 Asset Hub 闭环已完成；待补供应商能力约束和真实供应商验收。 |
 | `task-observability-diagnostics` | 26 | 0 | 已完成：真实异步生图的远端任务 ID、轮询、下载、入库与事件时间线已验证。 |
-| `database-migration-convergence` | 11 | 11 | Alembic 迁移链已收敛到唯一 head `008_add_project_publish_records`；启动/Agent 请求路径的隐式 DDL 已切断，空库与旧远程形态演练通过，正式远程 PostgreSQL 已显式升级并确认 current。 |
+| `database-migration-convergence` | 11 | 11 | 启动/Agent 请求路径的隐式 DDL 已切断，空库与旧远程形态演练通过；当前 Alembic 链继续到 `011_add_model3d_generation_tasks`，为视频和图转 3D 持久任务提供显式升级路径。 |
 
 ## 8. 文档更新协议
 

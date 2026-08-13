@@ -16,4 +16,4 @@
 
 ## Phase 3: Documentation
 
-- [ ] 9. Regenerate API surface and update system architecture after the contract is verified.
+- [x] 9. Regenerate API surface and update system architecture for the implemented workspace contract.

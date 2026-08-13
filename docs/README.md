@@ -47,7 +47,9 @@
 | Story 生产台 | 已完成，已验证桌面/移动布局 | `openspec/changes/story-production-desk/tasks.md` |
 | 视频分镜生产 | 代码和项目回流完成；仅剩真实视频供应商验收 | `openspec/changes/story-video-shot-production/tasks.md` |
 | 任务观测诊断 | 已完成，事件时间线和异步生图诊断已验证 | `openspec/changes/task-observability-diagnostics/tasks.md` |
-| 数据库迁移收敛 | Alembic 已收敛到 `008`，启动和 Agent 请求路径不再隐式改 schema；空库与旧远程形态演练通过，正式远程 PostgreSQL 已显式升级并经只读诊断确认 current | `openspec/changes/database-migration-convergence/tasks.md` |
+| 数据库迁移收敛 | Alembic 迁移链当前到 `011_add_model3d_generation_tasks`；启动和 Agent 请求路径不再隐式改 schema，新增视频与图转 3D 持久任务均通过显式迁移落库 | `backend/alembic/versions/`、`openspec/changes/database-migration-convergence/tasks.md` |
+| 独立视频工作台 | 文生/图生视频、视频提示词模板、素材库首帧、持久任务恢复、任务中心聚合和 Asset Hub 回流已落地；仍待真实供应商全链路验收 | `openspec/changes/ai-video-workspace/tasks.md` |
+| 图转 3D 工作台 | 已提供配置驱动的提交、轮询、下载、Asset Hub 入库和独立页面；仍待真实供应商生成 GLB 验收 | `openspec/changes/image-to-3d-workspace/tasks.md` |
 
 ## 每次开发后必须更新什么
 
