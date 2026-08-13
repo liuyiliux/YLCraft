@@ -58,6 +58,7 @@ import {
   openFolder,
 } from '../../api'
 import { AssetVideoPlayer } from '../../components/video/AssetVideoPlayer'
+import { Model3DViewer } from '../../components/asset-hub/Model3DViewer'
 
 const { Sider, Content } = Layout
 
@@ -513,6 +514,7 @@ export default function AssetsPage() {
     const ds = (detailAsset.status || '').toUpperCase()
     const dt = (detailAsset.type || '').toUpperCase()
     const isVideo = dt === 'VIDEO' && ds === 'READY'
+    const isModel3D = dt === '3D_MODEL'
     const meta = detailAsset.metadata || {}
     const projectContext = meta.project_context || {}
     const aiParams = meta.ai_params || {}
@@ -575,7 +577,14 @@ export default function AssetsPage() {
         label: '详细信息',
         children: (
           <div>
-            {isVideo ? (
+            {isModel3D ? (
+              <div style={{ marginBottom: 16 }}>
+                <Model3DViewer
+                  modelUrl={`/api/v1/assets/${detailAsset.id}/download`}
+                  autoRotate
+                />
+              </div>
+            ) : isVideo ? (
               <div style={{ marginBottom: 16 }}>
                 <AssetVideoPlayer
                   videoSrc={`/api/v1/assets/${detailAsset.id}/stream`}

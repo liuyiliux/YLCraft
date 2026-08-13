@@ -324,6 +324,12 @@ def _register_routes():
     except Exception as e:
         logger.warning(f"Could not load model3d router: {e}")
 
+    try:
+        from app.api.v1 import model3d_workspace
+        app.include_router(model3d_workspace.router, prefix="/api/v1/model-3d", tags=["Image to 3D"])
+    except Exception as e:
+        logger.warning(f"Could not load image-to-3D workspace router: {e}")
+
     # 剪映草稿路由
     try:
         from app.api.v1 import jianying

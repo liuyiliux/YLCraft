@@ -196,7 +196,7 @@ Agent Center 的人工委派入口支持 `resume_parent`：成功汇合后把子
 
 ### 4.3.1 Story Video Shot Production
 
-`/story` is the authoritative shot-planning surface and `/video-gen` is the configured-provider execution surface. A storyboard panel owns a static `image_prompt` and a separate dynamic `video_prompt`, a normalized 3-6 second duration, normalized camera motion, explicit audio intent and optional `music_hint`. A panel can open video generation with this plan plus `project_id`, storyboard `content_id`, chapter number, panel number, source metadata and Asset Hub `reference_asset_ids`. The video API resolves those ids to local media, uses the first usable image as a first-frame fallback, and when the provider returns a local result imports it through `AssetHubFacade` before adding a `ProjectAssetLink(role=output, relation=derived_from)`. Project/video provenance includes the prompt, provider, model, task id, chapter, panel, audio plan and source reference ids. `/story` then reads these existing links back into the matching storyboard panel; it does not keep a second video list or overwrite that panel's image preview. This is intentionally not an editor timeline; asynchronous provider restart recovery and shot assembly remain follow-up work.
+`/story` is the authoritative shot-planning surface and `/video-gen` is also an independently usable configured-provider workspace. A storyboard panel owns a static `image_prompt` and a separate dynamic `video_prompt`, a normalized 3-6 second duration, normalized camera motion, explicit audio intent and optional `music_hint`. A panel can open video generation with this plan plus `project_id`, storyboard `content_id`, chapter number, panel number, source metadata and Asset Hub `reference_asset_ids`. The video API resolves those ids to local media and uses the first usable image as a first-frame fallback. Every accepted provider task is persisted in `video_generation_tasks` with its request/result context; asynchronous providers return the task id immediately, and a later `GET /api/v1/videos/tasks/{task_id}` poll finalizes the local file into Asset Hub exactly once before adding a `ProjectAssetLink(role=output, relation=derived_from)` when project provenance exists. Standalone output remains a canonical Asset Hub video asset with prompt, provider/model, duration, format, audio intent and source-reference lineage, without requiring a project. `/video-gen` restores this durable history through `GET /api/v1/videos/history`; `/story` reads project links back into the matching storyboard panel rather than keeping a second project video list or overwriting that panel's image preview. This is intentionally not an editor timeline; shot assembly remains follow-up work.
 
 ### 4.4 AI 配置
 
@@ -206,6 +206,12 @@ Agent Center 的人工委派入口支持 `resume_parent`：成功汇合后把子
 | --- | --- |
 | `AIProviderMetadata` | 供应商规范，按能力类型保存默认模型、模板、响应配置、尺寸、参考图配置。 |
 | `AIConnector` | 用户实际连接器，保存 base_url、api_key、默认模型、api_format、请求模板等。 |
+
+### 4.4.1 Standalone Image-to-3D
+
+`/model-3d` is a standalone configured-provider workspace, not a hard-coded TripoSR screen. An `AIConnector(provider_type="3d")` declares the request template and response/poll JSONPath contract. `model3d_generation_tasks` preserves each task across refreshes. On completion, the backend downloads the model locally and writes the Asset Hub three-layer record with type `3d_model`; source Asset Hub images are linked using `AssetRelation(derived_from)`. The legacy `/api/v1/3d/*` metadata/TripoSR routes remain compatible and are not the new workspace contract.
+
+Configured video connectors use the same explicit-contract principle: `AIConnector(provider_type="video", api_format="custom")` is registered as `GenericVideoBackend`, so task submission headers, request body, task ID/status/result JSONPaths and polling endpoint remain provider configuration rather than a code-level special case. `/video-gen` lists these connectors alongside built-in backends. Each video task persists sanitized provider diagnostics in its result record for submission and polling: endpoint, method, timeout, response status/excerpt, and exception type/representation. Credentials and data URIs are redacted or omitted before persistence; the workspace exposes those diagnostics from the history item.
 | `AIUsageLog` | AI 调用统计。 |
 
 设计方向：
@@ -250,11 +256,11 @@ Agent Center 的人工委派入口支持 `resume_parent`：成功汇合后把子
 | AI 连接器 | `/api/v1/ai/connectors` | `services/ai`、`services/ai_connector` | `/settings` | 已支持通用配置，仍需 UX 打磨。 |
 | 生图提示词参考库 | `/api/v1/image-prompts` | `services/image_prompt_reference` | `/prompt-library`、画布 picker、图片生成 picker | 后端、Agent 工具、独立浏览页、Picker、画布/生图集成已完成；已支持 IMI 三类大集合、双语 Prompt 字段、本地图片缓存、图片优先浏览页、多图详情切换、画布 metadata 持久化和实际生图入库血缘烟测。 |
 | 图片生成 | `/api/v1/images` | `services/image`、AI backends | `/image-gen` | 多后端和显式文生图/图生图能力配置可用；真实 provider 结果回流 Asset Hub。 |
-| 视频生成 | `/api/v1/videos` | `services/video_gen` | `/video-gen` | 支持项目/分镜来源、首帧参考、音频意图与 Asset Hub/项目回写；仅剩真实供应商验收。 |
+| 视频生成工作台 | `/api/v1/videos` | `services/ai/backends/video` + `platform_templates` | `/video-gen` | 独立文生/图生视频、模型选择、视频提示词模板和可恢复任务历史；图生视频可从 Asset Hub 选择图片作为首帧，异步结果由轮询写入 Asset Hub，项目来源额外回链分镜。 |
 | 下载/磁力 | `/api/v1/download`、`/api/v1/torrents` | `services/download`、`services/torrent` | `/download` | 本地化方向，不做自建云缓存。 |
 | 平台采集 | `/api/v1/crawler`、`/api/v1/bilibili` | `services/crawler`、`services/platforms` | `/crawler` | B 站能力较丰富。 |
 | 小说/书源 | `/api/v1/novels`、`/api/v1/book-sources` | `services/novel`、`services/reader` | `/novel-*` | 可作为创作素材源。 |
-| 任务中心 | `/api/v1/tasks` | `core/task_queue` | `/tasks` | 诊断字段、事件时间线、异步轮询和失败原因可见。 |
+| 任务中心 | `/api/v1/tasks` | `core/task_queue` + `video_generation_tasks` | `/tasks` | 聚合通用队列、下载任务和独立视频生成持久化记录；诊断字段、异步轮询和失败原因可见。 |
 | 字幕/BGM/剪辑 | `/subtitles`、`/bgm`、`/clip*` | 对应 services | 对应页面 | 辅助内容生产。 |
 | Live2D/3D/模型 | `/live2d`、`/3d`、`/models` | 对应 services | 对应页面 | 规划/实验能力较多。 |
 
@@ -309,7 +315,8 @@ Agent Tool / Skill 变更按内部 API 处理：工具名称、输入输出 sche
 | `fanqie-publisher` | 28 | 7 | Cookie、书籍、热榜、统计、项目绑定、本地发布预检、草稿发布和 Agent 工具完成；仅剩真实测试章、作家资料/章节/收益抓包与集成联调。 |
 | `image-prompt-reference-library` | 50 | 1 | 本地优先同步、双语/多图、图片缓存、筛选、画布和生图集成完成；仅剩完整人工验收。 |
 | `story-production-desk` | 9 | 0 | Story 生产台及桌面/移动布局验收完成。 |
-| `story-video-shot-production` | 11 | 1 | 项目感知视频请求、Asset Hub 回流和分镜回写完成；仅剩真实视频供应商验收。 |
+| `story-video-shot-production` | 11 | 1 | 项目感知视频请求、持久任务恢复、Asset Hub 回流和分镜回写完成；仅剩真实视频供应商验收。 |
+| `ai-video-workspace` | 5 | 4 | 独立视频工作台的持久任务、刷新恢复与 Asset Hub 闭环已完成；待补供应商能力约束和真实供应商验收。 |
 | `task-observability-diagnostics` | 26 | 0 | 已完成：真实异步生图的远端任务 ID、轮询、下载、入库与事件时间线已验证。 |
 | `database-migration-convergence` | 11 | 11 | Alembic 迁移链已收敛到唯一 head `008_add_project_publish_records`；启动/Agent 请求路径的隐式 DDL 已切断，空库与旧远程形态演练通过，正式远程 PostgreSQL 已显式升级并确认 current。 |
 

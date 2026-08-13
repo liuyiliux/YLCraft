@@ -226,6 +226,19 @@ def test_search_references_prioritizes_items_with_cover_images(prompt_session_fa
         assert data["items"][0]["cover_url"]
 
 
+def test_prompt_reference_locates_cached_reference_image(monkeypatch, tmp_path):
+    monkeypatch.setattr(prompt_reference_service, "image_prompt_storage_root", lambda: tmp_path / "prompt-cache")
+    cached = tmp_path / "prompt-cache" / "media" / "source" / "item" / "cover.png"
+    cached.parent.mkdir(parents=True)
+    cached.write_bytes(b"cached-image")
+
+    ref = ImagePromptReference(
+        id="source:item", source_id="source", external_id="item", title="Reference", prompt="A prompt",
+        metadata_json={"imi_id": "item", "images": [{"filename": "cover.png"}]},
+    )
+    assert ImagePromptReferenceService._first_cached_image(ref) == cached
+
+
 def test_refresh_source_does_not_fetch_remote_without_cache(prompt_session_factory, monkeypatch, tmp_path):
     monkeypatch.setattr(prompt_reference_service, "image_prompt_storage_root", lambda: tmp_path)
     with prompt_session_factory() as session:

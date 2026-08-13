@@ -23,4 +23,5 @@
 - [x] 8. Add focused request/data-URI tests.
 - [x] 9. Run backend tests, frontend build, API surface generation, strict OpenSpec validation and external-browser smoke.
   - 2026-08-07: focused backend tests, TypeScript/build, API surface generation, strict OpenSpec validation and `/story` page smoke passed. The external-browser smoke uses Patchright/Chrome only; do not use the Codex embedded browser.
-- [ ] 10. Verify one real configured video provider completes and its Asset Hub item appears in the originating project.
+- [x] 10. Add durable provider-task recovery through `ai-video-workspace`; a refreshed workspace can resume polling and restore project provenance before Asset Hub import.
+- [ ] 11. Verify one real configured video provider completes and its Asset Hub item appears in the originating project.

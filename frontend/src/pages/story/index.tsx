@@ -29,6 +29,7 @@ import {
   BranchesOutlined,
   CheckCircleOutlined,
   CloudUploadOutlined,
+  CopyOutlined,
   DeleteOutlined,
   DownloadOutlined,
   EditOutlined,
@@ -125,9 +126,20 @@ import { enqueueCanvasImport } from '../../components/canvas/bridge'
 import type { CanvasNode, CanvasNodeType } from '../../components/canvas/types'
 import { useTaskPolling } from '../../hooks/useTaskPolling'
 import FanqiePublishPanel from './FanqiePublishPanel'
+import StoryWorkspaceOverview from './StoryWorkspaceOverview'
 
 const { Text, Title, Paragraph } = Typography
 const { TextArea } = Input
+
+const STORY_WORKSPACE_CONTENT_TYPES = [
+  'chapter_outline',
+  'novel_body',
+  'comic_pages',
+  'script',
+  'storyboard',
+  'project_bible',
+  'world_asset',
+]
 
 type LoadingAction =
   | 'projects'
@@ -583,7 +595,7 @@ type PipelineResult = {
 
 type PipelineRunStatus = 'idle' | 'running' | 'success' | 'partial' | 'failed'
 
-type WorkspaceResource = 'contents' | 'assets' | 'logs' | 'graph'
+type WorkspaceResource = 'contents' | 'writerRoom' | 'assets' | 'logs' | 'graph'
 
 const pipelineStageOptions: { label: string; value: PipelineStageValue }[] = [
   { label: '大纲', value: 'outline' },
@@ -1306,6 +1318,7 @@ export default function StoryPage() {
   const [selectedProject, setSelectedProject] = useState<CreativeProject | null>(null)
   const [contents, setContents] = useState<ProjectContent[]>([])
   const [writerRoomContents, setWriterRoomContents] = useState<ProjectContent[]>([])
+  const writerRoomRequestRef = useRef(0)
   const [projectAssets, setProjectAssets] = useState<ProjectAssetLink[]>([])
   const [assetDetails, setAssetDetails] = useState<Record<string, AssetSummary>>({})
   const [unavailableAssetIds, setUnavailableAssetIds] = useState<Record<string, true>>({})
@@ -1359,6 +1372,7 @@ export default function StoryPage() {
   const [pipelineOpen, setPipelineOpen] = useState(false)
   const [workspaceLoading, setWorkspaceLoading] = useState<Record<WorkspaceResource, boolean>>({
     contents: false,
+    writerRoom: false,
     assets: false,
     logs: false,
     graph: false,
@@ -1384,6 +1398,13 @@ export default function StoryPage() {
   const [inlineImages, setInlineImages] = useState<Record<string, InlineGeneratedImage>>({})
   const [portraitGeneratingCharacter, setPortraitGeneratingCharacter] = useState<string | null>(null)
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState('outline')
+  const [workspaceMode, setWorkspaceMode] = useState<'overview' | 'chapter'>(() =>
+    window.localStorage.getItem('ylcraft:story-workspace-mode') === 'chapter' ? 'chapter' : 'overview',
+  )
+  const workspaceModeProjectRef = useRef<string | null>(null)
+  const [overviewDetailOpen, setOverviewDetailOpen] = useState(false)
+  const [inspectorOpen, setInspectorOpen] = useState(false)
+  const [runtimeSettingsOpen, setRuntimeSettingsOpen] = useState(false)
   const [form] = Form.useForm()
   const createSourceType = Form.useWatch('source_type', form) || 'original_idea'
   const createNovelAssetId = Form.useWatch('novel_asset_id', form)
@@ -1436,6 +1457,18 @@ export default function StoryPage() {
   useEffect(() => {
     window.localStorage.setItem('ylcraft:story-project-library-collapsed', String(projectLibraryCollapsed))
   }, [projectLibraryCollapsed])
+
+  useEffect(() => {
+    if (!selectedProject?.id) return
+    if (workspaceModeProjectRef.current !== selectedProject.id) {
+      workspaceModeProjectRef.current = selectedProject.id
+      const persistedMode = window.localStorage.getItem(`ylcraft:story-workspace-mode:${selectedProject.id}`)
+      setWorkspaceMode(persistedMode === 'chapter' ? 'chapter' : 'overview')
+      setOverviewDetailOpen(false)
+      return
+    }
+    window.localStorage.setItem(`ylcraft:story-workspace-mode:${selectedProject.id}`, workspaceMode)
+  }, [selectedProject?.id, workspaceMode])
 
   useEffect(() => {
     const requestedProjectId = searchParams.get('project_id')
@@ -1859,13 +1892,15 @@ export default function StoryPage() {
     const cachedUnavailableIds = found ? unavailableProjectAssetIds.get(found.id) : undefined
     setUnavailableAssetIds(Object.fromEntries([...(cachedUnavailableIds || [])].map((id) => [id, true] as const)))
     setWorkspaceErrors({})
-    setWorkspaceLoading({ contents: false, assets: false, logs: false, graph: false })
+    setWorkspaceLoading({ contents: false, writerRoom: false, assets: false, logs: false, graph: false })
+    writerRoomRequestRef.current += 1
     setPipelineResult(null)
     setPipelineRunStatus('idle')
     if (found) {
       // The previous project's links must never be rendered or resolved under
       // the newly selected project while its workspace requests are in flight.
       setProjectAssets([])
+      setWriterRoomContents([])
       loadContents(found.id)
       loadProjectAssets(found.id)
       loadGenerationLogs(found.id)
@@ -1892,6 +1927,11 @@ export default function StoryPage() {
   useEffect(() => {
     if (selectedProject?.id) void loadNarrativeRuntime(selectedProject.id, activeChapterNumber)
   }, [selectedProject?.id, activeChapterNumber])
+
+  useEffect(() => {
+    if (activeWorkspaceTab !== 'writer-room' || !selectedProject?.id) return
+    void loadWriterRoomContents(selectedProject.id, activeChapterNumber)
+  }, [activeWorkspaceTab, selectedProject?.id, activeChapterNumber])
 
   useEffect(() => {
     setPendingInlineImageTask(null)
@@ -2182,6 +2222,7 @@ export default function StoryPage() {
     if (!selectedProject) return
     void Promise.all([
       loadContents(selectedProject.id),
+      loadWriterRoomContents(selectedProject.id),
       loadProjectAssets(selectedProject.id),
       loadGenerationLogs(selectedProject.id),
       loadProjectGraph(selectedProject.id),
@@ -2318,6 +2359,19 @@ export default function StoryPage() {
 
   const isChapterActionLoading = (action: ChapterAction, chapterNumber: number) =>
     loadingChapterAction.action === action && loadingChapterAction.chapterNumber === chapterNumber
+
+  const openWorkspaceTab = (tab: string, mode?: 'overview' | 'chapter') => {
+    const chapterTabs = new Set(['episode-workbench', 'writer-room', 'script'])
+    const nextMode = mode || (chapterTabs.has(tab) ? 'chapter' : 'overview')
+    setActiveWorkspaceTab(tab)
+    setWorkspaceMode(nextMode)
+    if (nextMode === 'chapter') setOverviewDetailOpen(false)
+  }
+
+  const openChapterStudio = (chapterNumber: number, tab = 'episode-workbench') => {
+    handleActiveChapterChange(chapterNumber)
+    openWorkspaceTab(tab, 'chapter')
+  }
 
   function startHorizontalResize(
     event: React.MouseEvent,
@@ -2460,19 +2514,67 @@ export default function StoryPage() {
   async function loadContents(projectId: string) {
     setWorkspaceLoading((current) => ({ ...current, contents: true }))
     try {
-      const [response, historyResponse] = await Promise.all([
-        listCreativeProjectContents(projectId),
-        listCreativeProjectContents(projectId, undefined, { includeHistory: true }),
-      ])
+      const response = await listCreativeProjectContents(projectId, undefined, {
+        contentTypes: STORY_WORKSPACE_CONTENT_TYPES,
+      })
       setContents(response?.data || [])
-      setWriterRoomContents(historyResponse?.data || response?.data || [])
       setWorkspaceErrors((current) => { const next = { ...current }; delete next.contents; return next })
     } catch (error: any) {
       setContents([])
-      setWriterRoomContents([])
       setWorkspaceErrors((current) => ({ ...current, contents: error?.message || '项目内容加载失败' }))
     } finally {
       setWorkspaceLoading((current) => ({ ...current, contents: false }))
+    }
+  }
+
+  async function loadWriterRoomContents(projectId: string, chapterNumber?: number) {
+    const requestId = writerRoomRequestRef.current + 1
+    writerRoomRequestRef.current = requestId
+    setWorkspaceLoading((current) => ({ ...current, writerRoom: true }))
+    const contentTypes = writerRoomStepOptions.map((item) => item.value)
+    const mergeCandidates = (incoming: ProjectContent[]) => {
+      if (writerRoomRequestRef.current !== requestId) return
+      setWriterRoomContents((current) => {
+        const byId = new Map(current.map((item) => [item.id, item]))
+        incoming.forEach((item) => byId.set(item.id, item))
+        return Array.from(byId.values())
+      })
+    }
+    try {
+      // The inspected chapter is the user's immediate need. Load its small
+      // version history first; project-wide latest candidates can reconcile
+      // afterward without holding the workspace in an empty state.
+      if (chapterNumber) {
+        const historyResponse = await listCreativeProjectContents(projectId, undefined, {
+          includeHistory: true,
+          contentTypes,
+          chapterNumber,
+        })
+        mergeCandidates(historyResponse?.data || [])
+      }
+      if (writerRoomRequestRef.current !== requestId) return
+      setWorkspaceErrors((current) => { const next = { ...current }; delete next.writerRoom; return next })
+
+      void listCreativeProjectContents(projectId, undefined, { contentTypes })
+        .then((response) => mergeCandidates(response?.data || []))
+        .catch((error: any) => {
+          if (writerRoomRequestRef.current !== requestId) return
+          // The current chapter remains usable even when the auxiliary rail
+          // refresh fails. Surface the failure instead of turning it into an
+          // empty "not generated" state.
+          setWorkspaceErrors((current) => ({
+            ...current,
+            writerRoom: error?.message || '写作室章节轨刷新失败',
+          }))
+        })
+    } catch (error: any) {
+      if (writerRoomRequestRef.current !== requestId) return
+      // Keep already visible candidates when this auxiliary refresh fails.
+      setWorkspaceErrors((current) => ({ ...current, writerRoom: error?.message || '写作室候选加载失败' }))
+    } finally {
+      if (writerRoomRequestRef.current === requestId) {
+        setWorkspaceLoading((current) => ({ ...current, writerRoom: false }))
+      }
     }
   }
 
@@ -2968,9 +3070,15 @@ export default function StoryPage() {
 
   function handleOpenGraphNode(node: ProjectGraphNode) {
     const source = node.source || {}
-    if (source.chapterNumber) setActiveChapterNumber(Number(source.chapterNumber))
-    if (source.tab) setActiveWorkspaceTab(source.tab)
-    if (node.type === 'asset' && source.assetId) setActiveWorkspaceTab('assets')
+    if (source.chapterNumber) {
+      openChapterStudio(Number(source.chapterNumber), source.tab || 'episode-workbench')
+      return
+    }
+    if (node.type === 'asset' && source.assetId) {
+      openWorkspaceTab('assets', 'overview')
+      return
+    }
+    if (source.tab) openWorkspaceTab(source.tab)
   }
 
   async function handleToggleGraphNodeLock(node: ProjectGraphNode) {
@@ -3427,7 +3535,7 @@ export default function StoryPage() {
         selected_text: selectedText?.trim() || undefined,
       })
       message.success('写作室步骤已完成')
-      await loadContents(selectedProject.id)
+      await Promise.all([loadContents(selectedProject.id), loadWriterRoomContents(selectedProject.id, chapterNumber)])
       await loadGenerationLogs(selectedProject.id)
     } catch (error: any) {
       message.error(error?.message || '写作室步骤失败')
@@ -3455,11 +3563,20 @@ export default function StoryPage() {
         provider: selectedLlm || undefined,
         model: selectedModel || undefined,
         continue_on_error: true,
-      })) as CreativeProjectGenerateResponse<{ summary?: { success?: number; failed?: number; skipped?: number } }>
+      })) as CreativeProjectGenerateResponse<{ summary?: { success?: number; failed?: number; skipped?: number }; results_contents?: ProjectContent[] }>
       const summary = response.data?.summary || {}
       message.success(`写作室批量完成：成功 ${summary.success || 0}，失败 ${summary.failed || 0}，跳过 ${summary.skipped || 0}`)
-      await loadContents(selectedProject.id)
-      await loadGenerationLogs(selectedProject.id)
+      const generatedContents = response.data?.results_contents || []
+      if (generatedContents.length) {
+        setWriterRoomContents((current) => {
+          const byId = new Map(current.map((item) => [item.id, item]))
+          generatedContents.forEach((item) => byId.set(item.id, item))
+          return Array.from(byId.values())
+        })
+      }
+      void loadWriterRoomContents(selectedProject.id, chapterNumber)
+      void loadContents(selectedProject.id)
+      void loadGenerationLogs(selectedProject.id)
     } catch (error: any) {
       message.error(error?.message || '写作室批量失败')
       await loadGenerationLogs(selectedProject.id)
@@ -3474,7 +3591,7 @@ export default function StoryPage() {
     try {
       await promoteCreativeProjectWriterRoomContent(selectedProject.id, contentId)
       message.success('已提升为正文最新版本')
-      await loadContents(selectedProject.id)
+      await Promise.all([loadContents(selectedProject.id), loadWriterRoomContents(selectedProject.id, activeChapterNumber)])
       await loadGenerationLogs(selectedProject.id)
       await refreshSelected(selectedProject)
     } catch (error: any) {
@@ -3902,9 +4019,20 @@ export default function StoryPage() {
   ]
 
   const workspaceErrorEntries = Object.entries(workspaceErrors)
+  const overviewDetailLabels: Record<string, string> = {
+    outline: '故事蓝图',
+    'project-bible': '项目圣经与世界设定',
+    chapters: '全书章节规划',
+    canvas: '项目关系图谱',
+    'narrative-graph': '叙事图谱',
+    assets: '角色与项目素材',
+    logs: '生成与任务日志',
+    json: '高级 JSON 数据',
+  }
+  const overviewDetailLabel = overviewDetailLabels[activeWorkspaceTab] || '项目详情'
 
   return (
-    <div ref={storyPageRef} className="story-theme-page story-production-desk" style={{ padding: '18px 24px 24px', maxWidth: 1760, margin: '0 auto', color: theme.textPrimary }}>
+    <div ref={storyPageRef} className="story-theme-page story-production-desk" style={{ padding: '18px 24px 24px', maxWidth: 2400, width: '100%', margin: '0 auto', color: theme.textPrimary }}>
       <header
         style={{
           display: 'grid',
@@ -3919,9 +4047,32 @@ export default function StoryPage() {
         <div style={{ minWidth: 220 }}>
           <Text strong style={{ fontSize: 16 }}>项目制作台</Text>
           <Text type="secondary" style={{ display: 'block', marginTop: 2 }}>从故事设定到可追溯的内容与素材产出</Text>
+          {selectedProject ? (
+            <Segmented
+              size="small"
+              value={workspaceMode}
+              style={{ marginTop: 10 }}
+              options={[
+                { label: '项目总览', value: 'overview' },
+                { label: '单章工作室', value: 'chapter' },
+              ]}
+              onChange={(value) => {
+                const nextMode = value as 'overview' | 'chapter'
+                setWorkspaceMode(nextMode)
+                if (nextMode === 'overview') setOverviewDetailOpen(false)
+                if (nextMode === 'chapter' && !['episode-workbench', 'writer-room', 'script'].includes(activeWorkspaceTab)) {
+                  setActiveWorkspaceTab('episode-workbench')
+                }
+                if (nextMode === 'overview' && ['episode-workbench', 'writer-room', 'script'].includes(activeWorkspaceTab)) {
+                  setActiveWorkspaceTab('outline')
+                }
+              }}
+            />
+          ) : null}
         </div>
         <Space wrap size={[8, 8]} style={{ justifyContent: cockpitCompact ? 'flex-start' : 'flex-end', minWidth: 0 }}>
-          <Select
+          {runtimeSettingsOpen ? <>
+            <Select
             placeholder="文本模型"
             value={selectedLlm || undefined}
             style={{ width: 190 }}
@@ -3935,7 +4086,7 @@ export default function StoryPage() {
               setSelectedModel(connector?.default_model || '')
             }}
           />
-          <Select
+            <Select
             placeholder="模型"
             value={selectedModel || undefined}
             style={{ width: 210 }}
@@ -3943,7 +4094,7 @@ export default function StoryPage() {
             onChange={setSelectedModel}
             disabled={!selectedLlm}
           />
-          <Select
+            <Select
             allowClear
             showSearch
             placeholder="默认生图模型"
@@ -3953,8 +4104,14 @@ export default function StoryPage() {
             loading={savingImageModel}
             onChange={handleDefaultImageModelChange}
             optionFilterProp="label"
-            disabled={!selectedProject}
-          />
+              disabled={!selectedProject}
+            />
+            <Button type="text" size="small" onClick={() => setRuntimeSettingsOpen(false)}>收起设置</Button>
+          </> : (
+            <Button icon={<EditOutlined />} onClick={() => setRuntimeSettingsOpen(true)}>
+              运行设置
+            </Button>
+          )}
           <Tooltip title="提示词与平台模板">
             <Button icon={<FileTextOutlined />} onClick={() => navigate('/platform-templates?scope=creative_project')}>
               模板
@@ -3963,6 +4120,16 @@ export default function StoryPage() {
           <Tooltip title="刷新项目数据">
             <Button aria-label="刷新项目数据" icon={<ReloadOutlined />} onClick={() => loadProjects(selectedId)} />
           </Tooltip>
+          {selectedProject ? (
+            <Tooltip title={inspectorOpen ? '关闭上下文检查器' : '打开上下文检查器'}>
+              <Button
+                type={inspectorOpen ? 'default' : 'text'}
+                aria-label={inspectorOpen ? '关闭上下文检查器' : '打开上下文检查器'}
+                icon={<EyeOutlined />}
+                onClick={() => setInspectorOpen((open) => !open)}
+              />
+            </Tooltip>
+          ) : null}
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>新建项目</Button>
         </Space>
       </header>
@@ -4099,7 +4266,7 @@ export default function StoryPage() {
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无项目" />
             </div>
           ) : null}
-          {!projectLibraryCollapsed && selectedProject ? (
+          {!projectLibraryCollapsed && selectedProject && workspaceMode === 'chapter' ? (
             <ChapterRail
               theme={theme}
               chapters={chapters}
@@ -4142,7 +4309,7 @@ export default function StoryPage() {
             </div>
           ) : (
             <>
-              <div style={{ padding: '20px 20px 16px', borderBottom: `1px solid ${theme.border}` }}>
+              <div className={`story-project-toolbar story-project-toolbar--${workspaceMode}`} style={{ padding: '20px 20px 16px', borderBottom: `1px solid ${theme.border}` }}>
                 <Space direction="vertical" size={12} style={{ width: '100%' }}>
                   <Space style={{ justifyContent: 'space-between', width: '100%' }} align="start">
                     <div>
@@ -4198,14 +4365,42 @@ export default function StoryPage() {
                 </Space>
               </div>
 
-              <ProductionStageRail
-                theme={theme}
-                stages={productionStages}
-                activeTab={activeWorkspaceTab}
-                onSelect={(tab) => setActiveWorkspaceTab(tab)}
-              />
+              {workspaceMode === 'overview' ? (
+                <StoryWorkspaceOverview
+                  theme={theme}
+                  projectTitle={selectedProject.title}
+                  projectType={projectTypeLabel(selectedProject.project_type)}
+                  currentStage={stageLabels[selectedProject.current_stage] || selectedProject.current_stage}
+                  idea={idea}
+                  chapters={chapters}
+                  stages={productionStages}
+                  activeChapterNumber={activeChapterNumber}
+                  hasOutline={hasOutline}
+                  hasBible={Boolean(projectBibleContents.length || worldAssetContents.length)}
+                  hasChapterPlan={hasChapterPlan}
+                  assetCount={projectAssets.length}
+                  unresolvedContinuityCount={continuityCandidates.filter((item) => item.status === 'pending').length}
+                  onOpenSection={(tab) => {
+                    const chapterTab = ['episode-workbench', 'writer-room', 'script'].includes(tab)
+                    openWorkspaceTab(tab, chapterTab ? 'chapter' : 'overview')
+                    setOverviewDetailOpen(!chapterTab)
+                  }}
+                  onOpenChapter={openChapterStudio}
+                  onContinue={() => {
+                    if (chapters.length) openChapterStudio(activeChapterNumber)
+                    else openWorkspaceTab(hasOutline ? 'chapters' : 'outline', 'overview')
+                  }}
+                />
+              ) : (
+                <ProductionStageRail
+                  theme={theme}
+                  stages={productionStages}
+                  activeTab={activeWorkspaceTab}
+                  onSelect={openWorkspaceTab}
+                />
+              )}
 
-              <Collapse
+              {workspaceMode === 'overview' ? <Collapse
                 ghost
                 size="small"
                 activeKey={pipelineOpen ? ['production'] : []}
@@ -4236,7 +4431,7 @@ export default function StoryPage() {
                     ),
                   },
                 ]}
-              />
+              /> : null}
 
               {Object.values(workspaceLoading).some(Boolean) ? (
                 <Alert
@@ -4248,10 +4443,27 @@ export default function StoryPage() {
                 />
               ) : null}
 
+              <div className={`story-workspace-detail story-workspace-detail--${workspaceMode}`}>
+                {workspaceMode === 'overview' ? (
+                  <button
+                    type="button"
+                    className="story-workspace-detail__toggle"
+                    onClick={() => setOverviewDetailOpen((open) => !open)}
+                    aria-expanded={overviewDetailOpen}
+                  >
+                    <span>
+                      <Text strong>{overviewDetailLabel}</Text>
+                      <Text type="secondary">仅在需要编辑或查看完整资料时展开</Text>
+                    </span>
+                    <span>{overviewDetailOpen ? '收起' : '展开'}</span>
+                  </button>
+                ) : null}
+                <div hidden={workspaceMode === 'overview' && !overviewDetailOpen}>
               <Tabs
-                style={{ padding: '0 20px 20px' }}
+                className={`story-workspace-tabs story-workspace-tabs--${workspaceMode}`}
+                style={{ padding: workspaceMode === 'overview' ? '0 22px 22px' : '0 20px 20px' }}
                 activeKey={activeWorkspaceTab}
-                onChange={setActiveWorkspaceTab}
+                onChange={openWorkspaceTab}
                 items={[
                   {
                     key: 'outline',
@@ -4427,6 +4639,9 @@ export default function StoryPage() {
                         activeChapterNumber={activeChapterNumber}
                         onActiveChapterChange={handleActiveChapterChange}
                         contents={writerRoomContents}
+                        loadError={workspaceErrors.writerRoom}
+                        loadingContents={workspaceLoading.writerRoom}
+                        onRetryContents={() => selectedProject && loadWriterRoomContents(selectedProject.id, activeChapterNumber)}
                         contentForChapter={contentForChapter}
                         logs={generationLogs}
                         templateOptionsByStage={templateOptionsByStage}
@@ -4571,12 +4786,18 @@ export default function StoryPage() {
                       />
                     ),
                   },
-                ]}
+                ].filter((item) =>
+                  workspaceMode === 'chapter'
+                    ? ['episode-workbench', 'writer-room', 'script'].includes(item.key)
+                    : ['outline', 'project-bible', 'chapters', 'canvas', 'narrative-graph', 'assets', 'logs', 'json'].includes(item.key),
+                )}
               />
+                </div>
+              </div>
             </>
           )}
         </main>
-        {!cockpitCompact && selectedProject ? (
+        {inspectorOpen && !cockpitCompact && selectedProject ? (
           <aside
             aria-label="叙事检查器"
             style={{
@@ -4602,14 +4823,14 @@ export default function StoryPage() {
               onDecision={handleForeshadowingDecision}
               onRunControl={handleNarrativeRunControl}
               onAutopilot={handleNarrativeAutopilot}
-              onOpenWriterRoom={() => setActiveWorkspaceTab('writer-room')}
-              onOpenFacts={() => setActiveWorkspaceTab('project-bible')}
+              onOpenWriterRoom={() => openWorkspaceTab('writer-room', 'chapter')}
+              onOpenFacts={() => openWorkspaceTab('project-bible', 'overview')}
             />
           </aside>
         ) : null}
       </div>
 
-      {cockpitCompact && selectedProject ? (
+      {inspectorOpen && cockpitCompact && selectedProject ? (
         <aside
           aria-label="叙事检查器"
           style={{ marginTop: 12, border: `1px solid ${theme.borderLight}`, borderRadius: 8, background: theme.bgCard }}
@@ -4630,8 +4851,8 @@ export default function StoryPage() {
             onDecision={handleForeshadowingDecision}
             onRunControl={handleNarrativeRunControl}
             onAutopilot={handleNarrativeAutopilot}
-            onOpenWriterRoom={() => setActiveWorkspaceTab('writer-room')}
-            onOpenFacts={() => setActiveWorkspaceTab('project-bible')}
+            onOpenWriterRoom={() => openWorkspaceTab('writer-room', 'chapter')}
+            onOpenFacts={() => openWorkspaceTab('project-bible', 'overview')}
           />
         </aside>
       ) : null}
@@ -8161,6 +8382,13 @@ function textForNovelBody(body?: ProjectContent | null) {
   return String(body?.text_content || body?.data?.content || '')
 }
 
+function compactNovelReaderText(text: string) {
+  return String(text || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\n[\t ]*\n+/g, '\n')
+    .trim()
+}
+
 function buildNovelChapterMarkdown(body: ProjectContent) {
   const chapterNumber = body.chapter_number || body.episode_number || ''
   const title = body.title || `第 ${chapterNumber} 章`
@@ -8618,6 +8846,9 @@ function WriterRoomTab({
   activeChapterNumber,
   onActiveChapterChange,
   contents,
+  loadError,
+  loadingContents,
+  onRetryContents,
   contentForChapter,
   logs,
   templateOptionsByStage,
@@ -8642,6 +8873,9 @@ function WriterRoomTab({
   activeChapterNumber: number
   onActiveChapterChange: (value: number) => void
   contents: ProjectContent[]
+  loadError?: string
+  loadingContents: boolean
+  onRetryContents: () => void
   contentForChapter: (contentType: string, chapterNumber: number) => ProjectContent | undefined
   logs: ProjectGenerationLog[]
   templateOptionsByStage: Record<string, TemplateOption[]>
@@ -8662,10 +8896,18 @@ function WriterRoomTab({
   onResolveContinuityCandidate: (candidateId: string, action: 'accept' | 'ignore') => void
   onRewriteParagraph: (contentId: string, paragraphIndex: number, instruction: string) => void
 }) {
+  const latestWriterRoomForStep = (step: string) =>
+    contents
+      .filter(
+        (content) =>
+          content.content_type === step &&
+          Number(content.chapter_number || content.episode_number || 0) === activeChapterNumber,
+      )
+      .sort((left, right) => right.version - left.version || String(right.created_at || '').localeCompare(String(left.created_at || '')))[0]
   const latestByStep = Object.fromEntries(
     writerRoomStepOptions.map((step) => [
       step.value,
-      contentForChapter(step.value, activeChapterNumber),
+      latestWriterRoomForStep(step.value),
     ]),
   ) as Record<string, ProjectContent | undefined>
   const canPromote = latestByStep.prose_rewrite || latestByStep.prose_humanized || latestByStep.prose_draft
@@ -8768,7 +9010,7 @@ function WriterRoomTab({
       statusColor: writerRoomStepStatusColor(content, latestLog),
       wordCount: writerRoomContentWordCount(content),
       description: writerRoomStepDescriptions[step.value] || '',
-      agentName: writerRoomAgentNames[step.value] || '智能体',
+      agentName: writerRoomAgentNames[step.value] || '工序角色',
     }
   })
   const activeRow = writerRoomRows.find((row) => row.step.value === activeStep) || writerRoomRows[0]
@@ -8855,7 +9097,7 @@ function WriterRoomTab({
           <Space direction="vertical" size={6} style={{ maxWidth: 760 }}>
             <Space size={8} wrap>
               <Text strong style={{ fontSize: 18 }}>小说写作室</Text>
-              <Tag color="blue">多智能体流水线</Tag>
+              <Tag color="blue">分阶段写作流水线</Tag>
               <Tag>正文不自动覆盖</Tag>
             </Space>
             <Text type="secondary">
@@ -8935,7 +9177,7 @@ function WriterRoomTab({
           <Space direction="vertical" size={12} style={{ width: '100%' }}>
             <Space direction="vertical" size={2}>
               <Text strong>工序</Text>
-              <Text type="secondary">每个节点对应一个专职写作智能体。</Text>
+              <Text type="secondary">当前为单模型分阶段执行；标签表示本工序采用的编辑视角，不代表独立子智能体。</Text>
             </Space>
             <div style={writerRoomStepListStyle}>
               {writerRoomRows.map((row) => {
@@ -8945,10 +9187,7 @@ function WriterRoomTab({
                     key={row.step.value}
                     type="button"
                     onClick={() => setActiveStep(row.step.value)}
-                    style={{
-                      ...writerRoomStepButtonStyle,
-                      ...(isActive ? writerRoomStepButtonActiveStyle : {}),
-                    }}
+                    style={isActive ? writerRoomStepButtonActiveStyle : writerRoomStepButtonStyle}
                   >
                     <span style={writerRoomStepIndexStyle}>{row.index + 1}</span>
                     <span style={{ minWidth: 0, flex: 1 }}>
@@ -8970,6 +9209,16 @@ function WriterRoomTab({
 
         <section style={writerRoomMainPanelStyle}>
           <Space direction="vertical" size={14} style={{ width: '100%' }}>
+            {loadError ? (
+              <Alert
+                type="error"
+                showIcon
+                message="写作室候选加载失败"
+                description={loadError}
+                action={<Button size="small" onClick={onRetryContents}>重试读取</Button>}
+              />
+            ) : null}
+            {loadingContents && !contents.length ? <Alert type="info" showIcon message="正在读取本章写作室候选" /> : null}
             <Space style={{ justifyContent: 'space-between', width: '100%' }} align="start" wrap>
               <Space direction="vertical" size={4} style={{ maxWidth: 760 }}>
                 <Space size={8} wrap>
@@ -9466,9 +9715,24 @@ function ScriptTab({
                           >
                             导出本章
                           </Button>
+                          <Tooltip title="复制当前章节正文">
+                            <Button
+                              icon={<CopyOutlined />}
+                              onClick={async () => {
+                                try {
+                                  await navigator.clipboard.writeText(compactNovelReaderText(textForNovelBody(activeReaderBody)))
+                                  message.success('本章正文已复制')
+                                } catch {
+                                  message.error('复制失败，请检查浏览器剪贴板权限')
+                                }
+                              }}
+                            >
+                              复制本章
+                            </Button>
+                          </Tooltip>
                         </Space>
                       </Space>
-                      <Paragraph style={readerTextStyle}>{textForNovelBody(activeReaderBody)}</Paragraph>
+                      <Paragraph style={readerTextStyle}>{compactNovelReaderText(textForNovelBody(activeReaderBody))}</Paragraph>
                     </Space>
                   ) : (
                     <Empty description="还没有正文，请先在单话工作台生成正文" />
@@ -10834,7 +11098,8 @@ const writerRoomStepButtonStyle: React.CSSProperties = {
 }
 
 const writerRoomStepButtonActiveStyle: React.CSSProperties = {
-  borderColor: 'var(--primary)',
+  ...writerRoomStepButtonStyle,
+  border: '1px solid var(--primary)',
   background: 'var(--bgHover)',
   transform: 'translateX(2px)',
 }

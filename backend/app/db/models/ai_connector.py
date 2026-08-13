@@ -57,6 +57,7 @@ class AIProviderType(str, enum.Enum):
     llm = "llm"           # 大语言模型
     image = "image"       # 图像生成
     video = "video"       # 视频生成
+    model3d = "3d"         # 图生 3D
     tts = "tts"           # 文本转语音
     stt = "stt"           # 语音转文本
     embedding = "embedding"  # 嵌入模型（文本/图像向量化）
@@ -71,7 +72,7 @@ class AIConnectorBase(SQLModel):
     # 提供商类型（LLM / Image / Video / TTS / STT）
     provider_type: AIProviderType = Field(
         AIProviderType.llm,
-        description="提供商类型：llm / image / video / tts / stt"
+        description="提供商类型：llm / image / video / 3d / tts / stt"
     )
 
     # 可选配置

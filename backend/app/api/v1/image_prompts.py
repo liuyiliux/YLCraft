@@ -87,7 +87,7 @@ def get_image_prompt_reference(reference_id: str):
         return {"success": True, "data": service.reference_to_dict(reference)}
 
 
-@router.post("/references/{reference_id}/save-as-asset", summary="Save image prompt reference as Asset Hub text asset")
+@router.post("/references/{reference_id}/save-as-asset", summary="Save cached prompt reference image into Asset Hub")
 def save_image_prompt_reference_as_asset(reference_id: str):
     with SessionLocal() as session:
         service = ImagePromptReferenceService(session)

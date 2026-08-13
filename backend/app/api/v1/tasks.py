@@ -9,15 +9,18 @@ GET  /api/v1/tasks/stats — 统计概览数据
 from __future__ import annotations
 
 import logging
+import json
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import text
+from sqlalchemy import select, text
 
 from app.core.task_queue import get_task_queue, task_event_to_dict
+from app.db.database import get_async_session
+from app.db.models.task import VideoGenerationTask
 
 router = APIRouter()
 logger = logging.getLogger("ylcraft.tasks")
@@ -104,6 +107,7 @@ def _normalize_status(status: Any) -> str:
         "queued": "pending",
         "cancel": "cancelled",
         "canceled": "cancelled",
+        "error": "failed",
     }.get(value, value)
 
 
@@ -205,7 +209,46 @@ def _external_task_infos(include_detail: bool = False) -> list[TaskInfo]:
     return infos
 
 
-def _all_task_infos(include_detail: bool = False) -> list[TaskInfo]:
+async def _video_task_infos(include_detail: bool = False) -> list[TaskInfo]:
+    """Expose standalone video workspace records in the global task center."""
+    try:
+        async with get_async_session() as session:
+            rows = (await session.execute(
+                select(VideoGenerationTask).order_by(VideoGenerationTask.created_at.desc()).limit(100)
+            )).scalars().all()
+    except Exception as exc:
+        logger.debug("Failed to collect video generation tasks: %s", exc)
+        return []
+
+    infos: list[TaskInfo] = []
+    for row in rows:
+        try:
+            payload = json.loads(row.request_json or "{}")
+        except (TypeError, ValueError):
+            payload = {}
+        try:
+            result = json.loads(row.result_json or "{}")
+        except (TypeError, ValueError):
+            result = {}
+        info = TaskInfo(
+            task_id=row.task_id,
+            task_type="video_generation",
+            status=_normalize_status(row.status),
+            progress=int(row.progress or 0),
+            progress_message=row.progress_message or "",
+            created_at=_format_timestamp(row.created_at),
+            completed_at=_format_timestamp(row.completed_at),
+            duration_seconds=_duration_seconds(row),
+            payload=payload if include_detail else None,
+            result=result if include_detail else None,
+            diagnostics=(result.get("diagnostics") if isinstance(result, dict) else None) if include_detail else None,
+            error=row.error if include_detail else None,
+        )
+        infos.append(info)
+    return infos
+
+
+def _all_task_infos(include_detail: bool = False, video_infos: list[TaskInfo] | None = None) -> list[TaskInfo]:
     queue = get_task_queue()
     infos: list[TaskInfo] = []
     seen: set[str] = set()
@@ -216,6 +259,11 @@ def _all_task_infos(include_detail: bool = False) -> list[TaskInfo]:
             seen.add(info.task_id)
 
     for info in _external_task_infos(include_detail=include_detail):
+        if info.task_id not in seen:
+            infos.append(info)
+            seen.add(info.task_id)
+
+    for info in video_infos or []:
         if info.task_id not in seen:
             infos.append(info)
             seen.add(info.task_id)
@@ -502,7 +550,8 @@ async def list_tasks(
     await get_task_queue().restore_persisted_tasks(project_id=project_id, active_only=active_only)
     # Project filtering needs payload context even when callers did not ask to
     # return the payload in the response.
-    tasks = _all_task_infos(include_detail=include_detail or bool(project_id))
+    video_infos = await _video_task_infos(include_detail=include_detail or bool(project_id))
+    tasks = _all_task_infos(include_detail=include_detail or bool(project_id), video_infos=video_infos)
     if project_id:
         tasks = [
             task for task in tasks
@@ -525,7 +574,7 @@ async def list_tasks(
 @router.get("/stats", response_model=TaskStatsResponse, summary="任务统计")
 async def get_task_stats():
     """返回任务统计数据，用于 Dashboard"""
-    tasks = _all_task_infos()
+    tasks = _all_task_infos(video_infos=await _video_task_infos())
 
     total = len(tasks)
     completed = 0
@@ -603,6 +652,11 @@ async def get_task_detail(task_id: str):
     external_task = _find_external_task(task_id, include_detail=True)
     if external_task:
         return TaskDetailResponse(success=True, task=external_task)
+
+    video_tasks = await _video_task_infos(include_detail=True)
+    video_task = next((item for item in video_tasks if item.task_id == task_id), None)
+    if video_task:
+        return TaskDetailResponse(success=True, task=video_task)
 
     return TaskDetailResponse(success=False, task=None)
 

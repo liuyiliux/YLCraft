@@ -111,7 +111,7 @@ def upgrade() -> None:
     sa.Column('provider', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('name', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('api_key', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column('provider_type', sa.Enum('llm', 'image', 'video', 'tts', 'stt', 'embedding', name='aiprovidertype'), nullable=False),
+    sa.Column('provider_type', sa.Enum('llm', 'image', 'video', '3d', 'tts', 'stt', 'embedding', name='aiprovidertype'), nullable=False),
     sa.Column('base_url', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column('api_endpoint', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column('organization_id', sqlmodel.sql.sqltypes.AutoString(), nullable=True),

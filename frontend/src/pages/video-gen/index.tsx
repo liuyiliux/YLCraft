@@ -51,9 +51,11 @@ import {
   ExclamationCircleOutlined,
   InboxOutlined,
   FireOutlined,
+  FolderOpenOutlined,
 } from '@ant-design/icons'
 import type { UploadFile } from 'antd/es/upload/interface'
 import { useTheme } from '../../constants/theme'
+import { getPlatformTemplates, listAssets } from '../../api'
 
 const { TextArea } = Input
 const { Dragger } = Upload
@@ -80,6 +82,7 @@ interface GeneratedVideo {
   source_type?: string
   source_index?: string
   error?: string
+  diagnostics?: Record<string, any>
 }
 
 interface ProjectVideoContext {
@@ -99,6 +102,48 @@ interface BackendInfo {
   available_models: string[]
   capabilities: string[]
 }
+
+interface VideoTaskHistoryItem {
+  task_id: string
+  provider: string
+  model: string
+  status: string
+  prompt: string
+  progress: number
+  progress_message?: string
+  asset_id?: string
+  project_id?: string
+  content_id?: string
+  error?: string
+  created_at: number
+  request?: Record<string, any>
+  result?: Record<string, any>
+}
+
+const toGeneratedVideo = (task: VideoTaskHistoryItem): GeneratedVideo => ({
+  id: task.task_id,
+  task_id: task.task_id,
+  url: task.result?.url || '',
+  local_path: task.result?.local_path || undefined,
+  prompt: task.prompt,
+  provider: task.provider,
+  model: task.model,
+  status: task.status === 'done' ? 'done' : task.status === 'error' ? 'error' : task.status === 'processing' ? 'processing' : 'pending',
+  progress: task.progress || 0,
+  duration: Number(task.request?.duration || task.result?.duration || 5),
+  aspect_ratio: task.request?.aspect_ratio || '9:16',
+  resolution: task.request?.resolution || '720p',
+  seed: task.request?.seed ?? task.result?.seed,
+  created_at: new Date((task.created_at || Date.now() / 1000) * 1000).toISOString(),
+  asset_id: task.asset_id,
+  project_id: task.project_id || task.request?.project_id || undefined,
+  content_id: task.content_id || task.request?.content_id || undefined,
+  chapter_number: task.request?.chapter_number || undefined,
+  source_type: task.request?.source_type || undefined,
+  source_index: task.request?.source_index || undefined,
+  error: task.error || undefined,
+  diagnostics: task.result?.diagnostics,
+})
 
 export default function VideoGenPage() {
   const { theme: THEME } = useTheme()
@@ -125,6 +170,10 @@ export default function VideoGenPage() {
   const [prompt, setPrompt] = useState('')
   const [negativePrompt, setNegativePrompt] = useState('')
   const [startImage, setStartImage] = useState<UploadFile | null>(null)
+  const [promptTemplates, setPromptTemplates] = useState<any[]>([])
+  const [assetPickerOpen, setAssetPickerOpen] = useState(false)
+  const [assetOptions, setAssetOptions] = useState<any[]>([])
+  const [assetLoading, setAssetLoading] = useState(false)
 
   // 参数
   const [provider, setProvider] = useState<string>()
@@ -145,6 +194,7 @@ export default function VideoGenPage() {
 
   // 预览
   const [previewVideo, setPreviewVideo] = useState<GeneratedVideo | null>(null)
+  const [diagnosticVideo, setDiagnosticVideo] = useState<GeneratedVideo | null>(null)
 
   // 统计
   const stats = {
@@ -215,6 +265,53 @@ export default function VideoGenPage() {
       })
       .catch(() => message.error('加载后端列表失败'))
   }, [])
+
+  // The server owns generation history. Restoring it makes async jobs survive
+  // refreshes and lets completed results remain discoverable beside Asset Hub.
+  const loadHistory = useCallback(async () => {
+    try {
+      const params = new URLSearchParams({ limit: '30' })
+      if (projectContext.projectId) params.set('project_id', projectContext.projectId)
+      const response = await fetch(`/api/v1/videos/history?${params.toString()}`)
+      const data = await response.json()
+      if (data.success) {
+        setGeneratedVideos((data.data || []).map(toGeneratedVideo))
+      }
+    } catch (error) {
+      console.warn('[VideoGen] 无法恢复视频生成历史', error)
+    }
+  }, [projectContext.projectId])
+
+  useEffect(() => {
+    loadHistory()
+  }, [loadHistory])
+
+  useEffect(() => {
+    getPlatformTemplates({ template_scope: 'video_prompt' })
+      .then((data: any) => setPromptTemplates(data?.templates || []))
+      .catch(() => setPromptTemplates([]))
+  }, [])
+
+  const openAssetPicker = async () => {
+    setAssetPickerOpen(true)
+    setAssetLoading(true)
+    try {
+      const data: any = await listAssets({ asset_type: 'image', status: 'READY', page: 1, page_size: 60 })
+      setAssetOptions(data?.data || data?.assets || [])
+    } catch {
+      message.error('加载素材库图片失败')
+      setAssetOptions([])
+    } finally {
+      setAssetLoading(false)
+    }
+  }
+
+  const selectAssetAsStartImage = (asset: any) => {
+    const url = asset.thumbnail_url || asset.cover_url || `/api/v1/assets/${asset.id}/thumbnail?original=true`
+    setStartImage({ uid: String(asset.id), name: asset.name || asset.title || '素材库图片', status: 'done', url })
+    setMode('img2video')
+    setAssetPickerOpen(false)
+  }
 
   // Provider 切换时重置模型选择
   const handleProviderChange = (newProvider: string) => {
@@ -293,7 +390,16 @@ export default function VideoGenPage() {
             setGeneratedVideos(prev =>
               prev.map(v =>
                 v.task_id === task.task_id
-                  ? { ...v, status: data.status, progress: data.progress, url: data.url, local_path: data.local_path, error: data.error }
+                  ? {
+                    ...v,
+                    status: data.status,
+                    progress: data.progress,
+                    url: data.url,
+                    local_path: data.local_path,
+                    asset_id: data.asset_id || v.asset_id,
+                    error: data.error,
+                    diagnostics: data.diagnostics,
+                  }
                   : v
               )
             )
@@ -387,6 +493,7 @@ export default function VideoGenPage() {
           aspect_ratio: aspectRatio,
           resolution,
           asset_id: data.asset_id,
+          diagnostics: data.diagnostics,
           project_id: data.project_id || projectContext.projectId,
           content_id: data.content_id || projectContext.contentId,
           chapter_number: projectContext.chapterNumber,
@@ -408,6 +515,7 @@ export default function VideoGenPage() {
           message.info('任务已提交，正在生成中...')
         }
       } else {
+        await loadHistory()
         message.error(data.error || '生成失败')
       }
     } catch (e: any) {
@@ -516,6 +624,23 @@ export default function VideoGenPage() {
                   color: '#e2e8f0',
                 }}
               />
+              <Space.Compact style={{ width: '100%', marginTop: 8 }}>
+                <Select
+                  allowClear
+                  placeholder="选择视频提示词模板"
+                  style={{ flex: 1 }}
+                  notFoundContent="暂无视频模板，请先创建"
+                  options={promptTemplates.map(template => ({
+                    value: template.id,
+                    label: template.name,
+                    template: template.video_template || template.image_template || '',
+                  }))}
+                  onChange={(_value, option: any) => {
+                    if (option?.template) setPrompt(option.template)
+                  }}
+                />
+                <Button onClick={() => navigate('/platform-templates?scope=video_prompt')}>管理模板</Button>
+              </Space.Compact>
             </div>
 
             {/* 图生视频：首帧图片 */}
@@ -537,6 +662,13 @@ export default function VideoGenPage() {
                   <p style={{ color: '#8b8ba8' }}>点击或拖拽上传首帧图片</p>
                   <p style={{ color: THEME.textSecondary, fontSize: 12 }}>视频将从这张图片开始生成</p>
                 </Dragger>
+                <Button
+                  icon={<FolderOpenOutlined />}
+                  onClick={openAssetPicker}
+                  style={{ marginTop: 8 }}
+                >
+                  从素材库选择图片
+                </Button>
                 {projectContext.referenceAssetIds.length > 0 && !startImage && (
                   <div style={{ marginTop: 8, fontSize: 12, color: THEME.textSecondary }}>
                     已带入 {projectContext.referenceAssetIds.length} 张项目参考图，首张会作为首帧素材发送给模型。
@@ -544,6 +676,31 @@ export default function VideoGenPage() {
                 )}
               </div>
             )}
+
+            <Modal
+              title="选择素材库图片"
+              open={assetPickerOpen}
+              onCancel={() => setAssetPickerOpen(false)}
+              footer={null}
+              width={760}
+            >
+              <Spin spinning={assetLoading}>
+                <Row gutter={[12, 12]}>
+                  {assetOptions.map(asset => {
+                    const url = asset.thumbnail_url || asset.cover_url || `/api/v1/assets/${asset.id}/thumbnail?original=true`
+                    return (
+                      <Col span={6} key={asset.id}>
+                        <Button type="text" onClick={() => selectAssetAsStartImage(asset)} style={{ width: '100%', height: 'auto', padding: 4 }}>
+                          <Image preview={false} src={url} width="100%" height={120} style={{ objectFit: 'cover' }} />
+                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 4 }}>{asset.name || asset.title || asset.id}</div>
+                        </Button>
+                      </Col>
+                    )
+                  })}
+                </Row>
+                {!assetLoading && assetOptions.length === 0 && <Empty description="暂无图片素材" />}
+              </Spin>
+            </Modal>
 
             {/* 参数设置 */}
             <Card
@@ -777,7 +934,7 @@ export default function VideoGenPage() {
                               <Tag color="blue">
                                 项目{video.chapter_number ? ` · 第 ${video.chapter_number} 话` : ''}{video.source_index ? ` · 分镜 ${video.source_index}` : ''}
                               </Tag>
-                              {video.asset_id && <Tag color="green">已入素材库</Tag>}
+                                  {video.asset_id && <Tag color="green">已入素材库</Tag>}
                             </div>
                           )}
                           {video.status === 'processing' && (
@@ -796,6 +953,15 @@ export default function VideoGenPage() {
                         </Col>
                         <Col>
                           <Space>
+                            {video.diagnostics && (
+                              <Tooltip title="查看诊断">
+                                <Button
+                                  type="text"
+                                  icon={<SettingOutlined />}
+                                  onClick={e => { e.stopPropagation(); setDiagnosticVideo(video) }}
+                                />
+                              </Tooltip>
+                            )}
                             {video.status === 'done' && (
                               <>
                                 <Tooltip title="播放">
@@ -812,6 +978,18 @@ export default function VideoGenPage() {
                                     onClick={e => { e.stopPropagation(); handleDownload(video) }}
                                   />
                                 </Tooltip>
+                                {video.asset_id && (
+                                  <Tooltip title="在素材库中查看">
+                                    <Button
+                                      type="text"
+                                      icon={<FolderOpenOutlined />}
+                                      onClick={e => {
+                                        e.stopPropagation()
+                                        navigate(`/assets?search=${encodeURIComponent(video.prompt)}`)
+                                      }}
+                                    />
+                                  </Tooltip>
+                                )}
                                 {video.project_id && (
                                   <Tooltip title="返回项目制作台">
                                     <Button
@@ -878,6 +1056,17 @@ export default function VideoGenPage() {
             </div>
           </div>
         )}
+      </Modal>
+      <Modal
+        open={!!diagnosticVideo}
+        title="供应商调用诊断"
+        onCancel={() => setDiagnosticVideo(null)}
+        footer={null}
+        width={760}
+      >
+        <pre style={{ margin: 0, maxHeight: '60vh', overflow: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+          {JSON.stringify(diagnosticVideo?.diagnostics || {}, null, 2)}
+        </pre>
       </Modal>
     </div>
   )

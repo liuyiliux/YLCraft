@@ -75,6 +75,14 @@ const SIZE_OPTIONS = [
 const SCOPE_OPTIONS = [
   { value: 'image_platform', label: '多平台生图' },
   { value: 'creative_project', label: '创作项目 Prompt' },
+  { value: 'video_prompt', label: '视频提示词' },
+]
+
+const PROMPT_TAB_OPTIONS = [
+  { value: 'image_platform', label: '多平台生图' },
+  { value: 'creative_project', label: '创作项目 Prompt' },
+  { value: 'video_prompt', label: '视频提示词' },
+  { value: 'prompt_reference', label: '图片 Prompt 参考' },
 ]
 
 const STAGE_OPTIONS = [
@@ -461,6 +469,7 @@ export default function PlatformTemplatesPage() {
             </Text>
           </div>
           <Space>
+            <Button onClick={() => navigate('/prompt-library')}>图片 Prompt 参考库</Button>
             <Button
               type="primary"
               icon={<PlusOutlined />}
@@ -500,8 +509,14 @@ export default function PlatformTemplatesPage() {
 
       <Tabs
         activeKey={activeScope}
-        onChange={setActiveScope}
-        items={SCOPE_OPTIONS.map((item) => ({ key: item.value, label: item.label }))}
+        onChange={(key) => {
+          if (key === 'prompt_reference') {
+            navigate('/prompt-library')
+            return
+          }
+          setActiveScope(key)
+        }}
+        items={PROMPT_TAB_OPTIONS.map((item) => ({ key: item.value, label: item.label }))}
         style={{ marginBottom: 12 }}
       />
 

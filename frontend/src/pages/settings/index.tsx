@@ -192,6 +192,7 @@ const AI_TYPE_OPTIONS = [
   { value: 'llm', label: '文本 (LLM)' },
   { value: 'image', label: '图像生成' },
   { value: 'video', label: '视频生成' },
+  { value: '3d', label: '图生 3D' },
   { value: 'tts', label: '语音合成 (TTS)' },
   { value: 'stt', label: '语音识别 (STT)' },
   { value: 'embedding', label: '嵌入 (Embedding)' },
@@ -215,6 +216,12 @@ const AI_TYPE_HELP: Record<string, { title: string; description: string; focus: 
     description: '用于文生视频、图生视频和生成任务提交类接口。',
     focus: '通常需要确认接口是同步返回结果，还是先返回 task_id 再轮询。',
     detail: '通用 HTTP 模式适合接入非标准视频平台；尺寸/比例和首帧字段建议按平台文档单独配置。',
+  },
+  '3d': {
+    title: '图生 3D',
+    description: '用于把单张图片生成 GLB、GLTF 等可复用的 3D 模型。',
+    focus: '通用 HTTP 模式需明确配置任务创建、轮询与模型下载 JSONPath，不能依赖接口名称猜测能力。',
+    detail: 'Response 配置建议包含 task_id_path、status_path、model_url_path、poll_endpoint 和 done_values。生成成功后会自动写入素材库并记录源图片血缘。',
   },
   tts: {
     title: '语音合成 (TTS)',
@@ -2950,7 +2957,7 @@ export default function SettingsPage() {
             <span style={{ marginLeft: 8, color: THEME.textSecondary }}>默认: 20秒</span>
           </Form.Item>
 
-          {selectedType === 'image' || selectedType === 'video' ? (
+          {selectedType === 'image' || selectedType === 'video' || selectedType === '3d' ? (
             <Collapse
               ghost
               activeKey={
@@ -2996,6 +3003,70 @@ export default function SettingsPage() {
                           placeholder={`JSON 格式的响应配置，例如：\n{\n  "content_path": "$.choices[0].message.content",\n  "tool_calls_path": "$.choices[0].message.tool_calls[*]",\n  "tool_name_path": "$.function.name",\n  "tool_arguments_path": "$.function.arguments",\n  "finish_reason_path": "$.choices[0].finish_reason",\n  "tool_finish_reasons": ["tool_calls"]\n}`}
                         />
                       </Form.Item>
+
+                      {selectedType === 'video' && (
+                        <Alert
+                          type="info"
+                          showIcon
+                          message={<span style={{ color: '#bfdbfe', fontWeight: 600 }}>异步视频任务配置</span>}
+                          description={<span style={{ color: '#dbeafe' }}>视频通用连接器在 Response 配置顶层使用 task_id_path、status_path、video_url_path、poll_endpoint、done_values、failed_values、request_headers。不要使用图片的 async_config。</span>}
+                          action={
+                            <Space size={8}>
+                            <Button size="small" onClick={() => {
+                                form.setFieldsValue({
+                                  provider: 'dashscope',
+                                  base_url: 'https://dashscope.aliyuncs.com',
+                                  api_endpoint: '/api/v1/services/aigc/video-generation/video-synthesis',
+                                  default_model: 'wan2.7-t2v-2026-06-12',
+                                  request_template: '{"model":"{{ model }}","input":{"prompt":"{{ prompt }}"},"parameters":{"size":"{{ size }}","duration":{{ duration }},"prompt_extend":true}}',
+                                  response_config: stringifyJson({
+                                    task_id_path: '$.output.task_id',
+                                    status_path: '$.output.task_status',
+                                    video_url_path: '$.output.video_url',
+                                    error_path: '$.message',
+                                    request_headers: { 'X-DashScope-Async': 'enable' },
+                                    poll_endpoint: '/api/v1/tasks/{task_id}',
+                                    done_values: ['SUCCEEDED'],
+                                    failed_values: ['FAILED', 'CANCELED', 'UNKNOWN'],
+                                  }),
+                                  default_params: stringifyJson({ size_separator: '*', prompt_extend: true }),
+                                  timeout: 900,
+                                })
+                                message.success('已填充阿里百炼 Wan 2.7 文生视频配置，请填写 API Key 后保存')
+                              }}
+                            >
+                              填充阿里百炼 Wan 2.7
+                            </Button>
+                            <Button size="small" onClick={() => {
+                              form.setFieldsValue({
+                                provider: 'dashscope',
+                                base_url: 'https://dashscope.aliyuncs.com',
+                                api_endpoint: '/api/v1/services/aigc/video-generation/video-synthesis',
+                                default_model: 'wan2.7-i2v-2026-04-25',
+                                request_template: '{"model":"{{ model }}","input":{"prompt":"{{ prompt }}","media":[{"type":"first_frame","url":"{{ start_image }}"}]},"parameters":{"resolution":"720P","duration":{{ duration }},"prompt_extend":true}}',
+                                response_config: stringifyJson({
+                                  task_id_path: '$.output.task_id', status_path: '$.output.task_status',
+                                  video_url_path: '$.output.video_url', error_path: '$.message',
+                                  request_headers: { 'X-DashScope-Async': 'enable' },
+                                  poll_endpoint: '/api/v1/tasks/{task_id}', done_values: ['SUCCEEDED'],
+                                  failed_values: ['FAILED', 'CANCELED', 'UNKNOWN'],
+                                }),
+                                default_params: stringifyJson({ prompt_extend: true }),
+                                support_reference_image: true,
+                                timeout: 900,
+                              })
+                              message.success('已填充阿里百炼 Wan 2.7 图生视频配置，请填写 API Key 后保存')
+                            }}>填充 Wan 2.7 图生视频</Button>
+                            </Space>
+                          }
+                          style={{
+                            marginBottom: 12,
+                            background: 'rgba(37, 99, 235, 0.14)',
+                            border: '1px solid rgba(96, 165, 250, 0.55)',
+                            color: THEME.textPrimary,
+                          }}
+                        />
+                      )}
 
                       {selectedType === 'image' && (
                         <div style={{ margin: '12px 0 16px', padding: 12, border: `1px solid ${THEME.border}`, borderRadius: 6, background: THEME.bgElevated }}>

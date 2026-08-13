@@ -61,6 +61,8 @@ BACKEND_CLASS_MAP = {
     ("image", "openai_sdk_responses"): "app.services.ai.backends.image.openai_sdk.OpenAISDKImageBackend",
     ("image", "gemini"): "app.services.ai.backends.image.gemini.GeminiImageBackend",
     ("image", "custom"): "app.services.ai.backends.image.generic.GenericImageBackend",
+    # Video
+    ("video", "custom"): "app.services.ai.backends.video.generic.GenericVideoBackend",
 }
 
 # 图片类 provider 特殊路由（provider == "gemini" 时优先走 gemini backend）

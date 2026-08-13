@@ -31,3 +31,52 @@ class ProjectTaskRecord(SQLModel, table=True):
     max_retries: int = Field(default=0)
     events_json: str = Field(default="[]")
     updated_at: float = Field(default_factory=time.time, index=True)
+
+
+class VideoGenerationTask(SQLModel, table=True):
+    """Durable task ledger for the standalone AI video workspace.
+
+    Provider task ids are not enough to restore a video job: the prompt,
+    selected model, source assets and optional project lineage are also needed
+    to import a completed file into Asset Hub after a page or API restart.
+    """
+
+    __tablename__ = "video_generation_tasks"
+
+    task_id: str = Field(primary_key=True, max_length=128)
+    provider: str = Field(default="", index=True, max_length=120)
+    model: str = Field(default="", max_length=160)
+    status: str = Field(default="pending", index=True, max_length=32)
+    prompt: str = Field(default="")
+    request_json: str = Field(default="{}")
+    result_json: str = Field(default="{}")
+    asset_id: Optional[str] = Field(default=None, index=True, max_length=64)
+    project_id: Optional[str] = Field(default=None, index=True, max_length=64)
+    content_id: Optional[str] = Field(default=None, index=True, max_length=64)
+    error: Optional[str] = Field(default=None)
+    progress: int = Field(default=0)
+    progress_message: str = Field(default="")
+    created_at: float = Field(default_factory=time.time, index=True)
+    completed_at: Optional[float] = Field(default=None)
+    updated_at: float = Field(default_factory=time.time, index=True)
+
+
+class Model3DGenerationTask(SQLModel, table=True):
+    """Durable provider task and Asset Hub import state for image-to-3D."""
+
+    __tablename__ = "model3d_generation_tasks"
+
+    task_id: str = Field(primary_key=True, max_length=128)
+    provider: str = Field(default="", index=True, max_length=120)
+    model: str = Field(default="", max_length=160)
+    status: str = Field(default="pending", index=True, max_length=32)
+    prompt: str = Field(default="")
+    request_json: str = Field(default="{}")
+    result_json: str = Field(default="{}")
+    asset_id: Optional[str] = Field(default=None, index=True, max_length=64)
+    error: Optional[str] = Field(default=None)
+    progress: int = Field(default=0)
+    progress_message: str = Field(default="")
+    created_at: float = Field(default_factory=time.time, index=True)
+    completed_at: Optional[float] = Field(default=None)
+    updated_at: float = Field(default_factory=time.time, index=True)

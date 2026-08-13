@@ -38,4 +38,7 @@ The episode workbench derives completed storyboard videos from existing `Project
 
 ## Follow-up
 
-Provider-native asynchronous video task context still needs durable recovery so a process restart can finish project linkage after polling. Shot assembly and nonlinear editing remain separate work.
+Provider-native asynchronous video task context is owned by the standalone
+`ai-video-workspace` change. `VideoGenerationTask` persists source provenance,
+so a process restart can finish Asset Hub import and project linkage on a later
+poll. Shot assembly and nonlinear editing remain separate work.

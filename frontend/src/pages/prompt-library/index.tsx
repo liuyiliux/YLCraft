@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   App,
   Badge,
@@ -109,6 +110,7 @@ function promptLanguageBlocks(reference: ImagePromptReference | null) {
 export default function PromptLibraryPage() {
   const { theme: T, themeId } = useTheme()
   const { message } = App.useApp()
+  const navigate = useNavigate()
   const [sources, setSources] = useState<ImagePromptSource[]>([])
   const [library, setLibrary] = useState<LibraryState>({ items: [], total: 0, tags: [], categories: [] })
   const [keyword, setKeyword] = useState('')
@@ -242,7 +244,7 @@ export default function PromptLibraryPage() {
     try {
       const data = await saveImagePromptReferenceAsAsset(reference.id)
       if (data?.success) {
-        message.success('已加入素材库')
+        message.success(data.image_saved ? '参考图已加入素材库，可用于图生视频' : '已加入素材库')
       } else {
         message.warning(data?.error || '保存结果未知')
       }
@@ -310,6 +312,10 @@ export default function PromptLibraryPage() {
         </div>
 
         <div className="prompt-command-panel">
+          <Space wrap style={{ marginBottom: 10 }}>
+            <Button size="small" type="primary" onClick={() => navigate('/platform-templates?scope=video_prompt')}>视频提示词模板</Button>
+            <Button size="small" onClick={() => navigate('/platform-templates')}>平台/创作模板</Button>
+          </Space>
           <Input
             className="prompt-search-input"
             size="large"

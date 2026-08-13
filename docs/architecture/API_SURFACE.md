@@ -6,9 +6,9 @@
 
 ## Summary
 
-- Router mounts: 47
-- Endpoints: 550
-- Public schema endpoints: 549
+- Router mounts: 48
+- Endpoints: 555
+- Public schema endpoints: 554
 - Hidden compatibility endpoints: 1
 
 ## Router Mounts
@@ -48,6 +48,7 @@
 | `/api/v1/images` | Images | `images` | `backend/app/api/v1/images.py` |
 | `/api/v1/live2d` | Live2D Factory | `live2d` | `backend/app/api/v1/live2d.py` |
 | `/api/v1/llm` | LLM | `llm` | `backend/app/api/v1/llm.py` |
+| `/api/v1/model-3d` | Image to 3D | `model3d_workspace` | `backend/app/api/v1/model3d_workspace.py` |
 | `/api/v1/novels` | Novels | `novels` | `backend/app/api/v1/novels.py` |
 | `/api/v1/platforms` | Platform Connections | `platforms` | `backend/app/api/v1/platforms.py` |
 | `/api/v1/proxy` | Proxy | `proxy` | `backend/app/api/v1/proxy.py` |
@@ -540,6 +541,15 @@
 | `GET` | `/api/v1/image-prompts/sources` | List image prompt reference sources | `list_image_prompt_sources` | `backend/app/api/v1/image_prompts.py:24` |
 | `POST` | `/api/v1/image-prompts/sources/refresh` | Refresh image prompt reference sources | `refresh_image_prompt_sources` | `backend/app/api/v1/image_prompts.py:36` |
 
+### Image to 3D
+
+| Method | Path | Summary | Handler | Source |
+| --- | --- | --- | --- | --- |
+| `GET` | `/api/v1/model-3d/backends` | Configured image-to-3D connectors | `list_model3d_backends` | `backend/app/api/v1/model3d_workspace.py:133` |
+| `POST` | `/api/v1/model-3d/generate` | Submit configured image-to-3D task | `generate_model3d` | `backend/app/api/v1/model3d_workspace.py:143` |
+| `GET` | `/api/v1/model-3d/history` | Durable image-to-3D workspace history | `model3d_history` | `backend/app/api/v1/model3d_workspace.py:192` |
+| `GET` | `/api/v1/model-3d/tasks/{task_id}` | Poll image-to-3D task | `poll_model3d_task` | `backend/app/api/v1/model3d_workspace.py:169` |
+
 ### Images
 
 | Method | Path | Summary | Handler | Source |
@@ -826,9 +836,10 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/videos/backends` | 可用视频后端列表 | `list_backends` | `backend/app/api/v1/videos.py:143` |
-| `POST` | `/api/v1/videos/generate` | Generate video with optional project lineage | `generate_video` | `backend/app/api/v1/videos.py:170` |
-| `GET` | `/api/v1/videos/tasks/{task_id}` | 查询任务状态 | `get_task_status` | `backend/app/api/v1/videos.py:306` |
+| `GET` | `/api/v1/videos/backends` | 可用视频后端列表 | `list_backends` | `backend/app/api/v1/videos.py:281` |
+| `POST` | `/api/v1/videos/generate` | Generate video with optional project lineage | `generate_video` | `backend/app/api/v1/videos.py:308` |
+| `GET` | `/api/v1/videos/history` | 视频生成历史与待处理任务 | `list_video_tasks` | `backend/app/api/v1/videos.py:483` |
+| `GET` | `/api/v1/videos/tasks/{task_id}` | 查询任务状态 | `get_task_status` | `backend/app/api/v1/videos.py:414` |
 
 ### WebSocket
 

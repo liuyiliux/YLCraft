@@ -193,6 +193,14 @@
       ]
     },
     {
+      "name": "model3d_workspace",
+      "file": "backend/app/api/v1/model3d_workspace.py",
+      "prefix": "/api/v1/model-3d",
+      "tags": [
+        "Image to 3D"
+      ]
+    },
+    {
       "name": "jianying",
       "file": "backend/app/api/v1/jianying.py",
       "prefix": "/api/v1",
@@ -7228,6 +7236,70 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/model-3d/backends",
+      "router": "model3d_workspace",
+      "prefix": "/api/v1/model-3d",
+      "local_path": "/backends",
+      "tags": [
+        "Image to 3D"
+      ],
+      "summary": "Configured image-to-3D connectors",
+      "function": "list_model3d_backends",
+      "file": "backend/app/api/v1/model3d_workspace.py",
+      "line": 133,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/model-3d/generate",
+      "router": "model3d_workspace",
+      "prefix": "/api/v1/model-3d",
+      "local_path": "/generate",
+      "tags": [
+        "Image to 3D"
+      ],
+      "summary": "Submit configured image-to-3D task",
+      "function": "generate_model3d",
+      "file": "backend/app/api/v1/model3d_workspace.py",
+      "line": 143,
+      "response_model": "Model3DTaskResponse",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/model-3d/history",
+      "router": "model3d_workspace",
+      "prefix": "/api/v1/model-3d",
+      "local_path": "/history",
+      "tags": [
+        "Image to 3D"
+      ],
+      "summary": "Durable image-to-3D workspace history",
+      "function": "model3d_history",
+      "file": "backend/app/api/v1/model3d_workspace.py",
+      "line": 192,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/model-3d/tasks/{task_id}",
+      "router": "model3d_workspace",
+      "prefix": "/api/v1/model-3d",
+      "local_path": "/tasks/{task_id}",
+      "tags": [
+        "Image to 3D"
+      ],
+      "summary": "Poll image-to-3D task",
+      "function": "poll_model3d_task",
+      "file": "backend/app/api/v1/model3d_workspace.py",
+      "line": 169,
+      "response_model": "Model3DTaskResponse",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/models",
       "router": "models",
       "prefix": "/api/v1",
@@ -8982,7 +9054,7 @@
       "summary": "可用视频后端列表",
       "function": "list_backends",
       "file": "backend/app/api/v1/videos.py",
-      "line": 143,
+      "line": 281,
       "response_model": "VideoBackendsResponse",
       "include_in_schema": true
     },
@@ -8998,8 +9070,24 @@
       "summary": "Generate video with optional project lineage",
       "function": "generate_video",
       "file": "backend/app/api/v1/videos.py",
-      "line": 170,
+      "line": 308,
       "response_model": "VideoResponse",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/videos/history",
+      "router": "videos",
+      "prefix": "/api/v1/videos",
+      "local_path": "/history",
+      "tags": [
+        "Videos"
+      ],
+      "summary": "视频生成历史与待处理任务",
+      "function": "list_video_tasks",
+      "file": "backend/app/api/v1/videos.py",
+      "line": 483,
+      "response_model": "VideoTaskListResponse",
       "include_in_schema": true
     },
     {
@@ -9014,7 +9102,7 @@
       "summary": "查询任务状态",
       "function": "get_task_status",
       "file": "backend/app/api/v1/videos.py",
-      "line": 306,
+      "line": 414,
       "response_model": "TaskStatusResponse",
       "include_in_schema": true
     },

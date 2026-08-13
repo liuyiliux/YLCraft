@@ -146,6 +146,7 @@ class VideoGenerationRequest:
     end_image: Path | None = None
     reference_images: list[Path] | None = None
     generate_audio: bool = True
+    await_completion: bool = False
 
 
 @dataclass
@@ -165,6 +166,7 @@ class VideoGenerationResult:
     seed: int | None = None
     usage_tokens: int | None = None
     error: str = ""
+    diagnostics: dict = field(default_factory=dict)
 
 
 # ==================== Protocol 接口 ====================
@@ -259,7 +261,7 @@ def image_to_base64_data_uri(image_path: Path) -> str:
 async def download_file(url: str, output_path: Path, *, timeout: int = 120) -> None:
     """从 URL 下载文件到本地"""
     await asyncio.to_thread(output_path.parent.mkdir, parents=True, exist_ok=True)
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(trust_env=False) as client:
         async with client.stream("GET", url, timeout=timeout) as resp:
             resp.raise_for_status()
             chunks: list[bytes] = []

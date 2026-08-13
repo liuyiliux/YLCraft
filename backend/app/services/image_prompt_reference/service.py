@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import hashlib
+import mimetypes
+import shutil
 import json
 import re
 import time
@@ -18,7 +20,7 @@ from sqlalchemy import case, cast, func, or_, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Session, select
 
-from app.db.models.asset_hub import AssetNode, AssetType, AssetVersion
+from app.db.models.asset_hub import AssetNode, AssetRepresentation, AssetType, AssetVersion
 from app.db.models.image_prompt_reference import ImagePromptReference, ImagePromptSource
 
 
@@ -993,12 +995,16 @@ class ImagePromptReferenceService:
         ref = self.get_reference(reference_id)
         if not ref:
             raise ValueError(f"image prompt reference not found: {reference_id}")
+        cached_image = self._first_cached_image(ref)
+        if not cached_image:
+            raise ValueError("该 Prompt 参考没有已缓存的图片，无法加入素材库作为图生视频首帧")
         now = _utc_now()
-        node = AssetNode(
-            id=str(uuid4()),
-            name=ref.title,
-            asset_type=AssetType.TEXT,
-            thumbnail_url=ref.cover_url or None,
+        image_asset_id = str(uuid4())
+        image_node = AssetNode(
+            id=image_asset_id,
+            name=f"{ref.title} - 参考图",
+            asset_type=AssetType.IMAGE,
+            thumbnail_url=f"/api/v1/assets/{image_asset_id}/thumbnail",
             metadata_json={
                 "source": "image_prompt_reference_library",
                 "reference_id": ref.id,
@@ -1008,24 +1014,49 @@ class ImagePromptReferenceService:
                 "negative_prompt": ref.negative_prompt,
                 "model_hint": ref.model_hint,
             },
-            tags_json=list(ref.tags_json or []),
-            created_at=now,
-            updated_at=now,
+            tags_json=list(ref.tags_json or []), created_at=now, updated_at=now,
         )
-        version = AssetVersion(
-            id=str(uuid4()),
-            asset_node_id=node.id,
-            version_number=1,
-            prompt_used=ref.prompt,
-            model_used=ref.model_hint or None,
+        image_version = AssetVersion(
+            id=str(uuid4()), asset_node_id=image_asset_id, version_number=1,
+            prompt_used=ref.prompt, model_used=ref.model_hint or None,
             params_json={"reference_id": ref.id},
             lineage_json={"source": "image_prompt_reference", "reference_id": ref.id, "source_id": ref.source_id},
             created_at=now,
         )
-        self.session.add(node)
-        self.session.add(version)
+        self.session.add(image_node)
+        self.session.add(image_version)
+        # PostgreSQL can flush unrelated pending rows in an order that violates
+        # the representation foreign key, so persist the parent version first.
+        self.session.flush()
+        target_dir = Path(__file__).resolve().parents[3] / "storage" / "assets" / "prompt-references"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target = target_dir / f"{image_asset_id}{cached_image.suffix.lower() or '.jpg'}"
+        shutil.copy2(cached_image, target)
+        mime_type = mimetypes.guess_type(str(target))[0] or "image/jpeg"
+        image_representation = AssetRepresentation(
+            id=str(uuid4()), asset_version_id=str(image_version.id), file_path=str(target),
+            mime_type=mime_type, file_size=target.stat().st_size, format=target.suffix.lstrip(".") or None,
+            extra_json={"source_path": str(cached_image)},
+        )
+        self.session.add(image_representation)
         self.session.commit()
-        return {"success": True, "asset_node_id": str(node.id), "asset_version_id": str(version.id), "reference_id": ref.id}
+        return {
+            "success": True, "asset_node_id": image_asset_id, "asset_version_id": str(image_version.id),
+            "image_asset_id": image_asset_id, "reference_id": ref.id, "image_saved": True,
+        }
+
+    @staticmethod
+    def _first_cached_image(ref: ImagePromptReference) -> Path | None:
+        metadata = dict(ref.metadata_json or {})
+        images = metadata.get("images") if isinstance(metadata.get("images"), list) else []
+        for image in images:
+            if not isinstance(image, dict):
+                continue
+            filename = str(image.get("filename") or "")
+            candidate = _cached_media_path(ref.source_id, str(metadata.get("imi_id") or ref.external_id), filename)
+            if candidate.is_file():
+                return candidate
+        return None
 
     @staticmethod
     def source_to_dict(source: ImagePromptSource) -> dict[str, Any]:

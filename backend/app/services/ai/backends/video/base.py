@@ -90,7 +90,7 @@ class BaseVideoBackend(ABC):
             result = await self._generate(req)
 
             # 2. 如果任务需要轮询（异步 API）
-            if result.status == "pending" and result.task_id:
+            if req.await_completion and result.status == "pending" and result.task_id:
                 result = await self._poll_until_done(result.task_id, req)
 
             result.latency_ms = (time.perf_counter() - start) * 1000
@@ -102,14 +102,20 @@ class BaseVideoBackend(ABC):
 
         except Exception as e:
             latency_ms = (time.perf_counter() - start) * 1000
-            logger.error(f"[{self._name}] generate failed: {e}")
+            error = str(e) or repr(e) or e.__class__.__name__
+            logger.exception("[%s] generate failed: %s", self._name, error)
             return VideoGenerationResult(
                 success=False,
-                error=str(e),
+                error=error,
                 cost=self._cost_per_second * req.duration,
                 latency_ms=latency_ms,
                 provider=self._name,
                 model=self._model,
+                diagnostics={
+                    "exception_type": e.__class__.__name__,
+                    "exception_repr": repr(e),
+                    **getattr(e, "diagnostics", {}),
+                },
             )
 
     @abstractmethod

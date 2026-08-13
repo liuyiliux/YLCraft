@@ -11,6 +11,7 @@ import {
   SettingOutlined,
   FolderOpenOutlined,
   PictureOutlined,
+  UnorderedListOutlined,
   DatabaseOutlined,
   BranchesOutlined,
   EditOutlined,
@@ -49,6 +50,7 @@ const MAIN_NAV: MenuProps['items'] = [
   { key: '/download', icon: <SearchOutlined />, label: '下载' },
   { key: '/novel-bookshelf', icon: <ReadOutlined />, label: '小说' },
   { key: '/image-gen', icon: <PictureOutlined />, label: 'AI 图片' },
+  { key: '/tasks', icon: <UnorderedListOutlined />, label: '任务中心' },
 ]
 
 const BOTTOM_NAV: MenuProps['items'] = [
@@ -79,6 +81,7 @@ const menuItems: MenuProps['items'] = [
     children: [
       { key: '/multi-platform-gen', label: navLabel('多平台生图', '实验') },
       { key: '/video-gen', label: navLabel('视频生成', '实验') },
+      { key: '/model-3d', label: navLabel('图生 3D', '实验') },
       { key: '/prompt-library', icon: <DatabaseOutlined />, label: 'Prompt 参考库' },
       { key: '/platform-templates', label: navLabel('平台模板', '辅助') },
       { key: '/comfyui', label: navLabel('ComfyUI', '实验') },
