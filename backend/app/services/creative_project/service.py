@@ -5606,13 +5606,7 @@ class CreativeProjectService:
                 provider=provider,
                 model=model,
                 temperature=0.75,
-                max_tokens=max_tokens or (12000 if stage in {
-                    "novel_body",
-                    "novel_body_refine",
-                    "prose_draft",
-                    "prose_humanized",
-                    "prose_rewrite",
-                } else 12000),
+                max_tokens=max_tokens,
             )
             raw_response = self._response_content(response)
             response_provider = self._response_attr(response, "provider")
