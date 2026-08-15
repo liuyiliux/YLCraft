@@ -18,7 +18,7 @@
 - [x] 3.1 Add `ForkExecutor` (read-only parent context reference + role instructions) beside the spawn `SubagentExecutor`.
 - [x] 3.2 Add `spawn_mode` and `continuation_of` to `AgentDelegation` + Alembic migration (`012_add_team_composition_fields`).
 - [x] 3.3 Add `send_message(subagent_id, message)` continuation entry routing through the common orchestrator.
-- [ ] 3.4 Integration-test fork snapshot and continuation persistence end-to-end (requires a live child run).
+- [ ] 3.4 Integration-test fork snapshot and continuation persistence end-to-end. (Fake-backed contract tests shipped for `ForkExecutor` and `send_message`; live child-run end-to-end still requires a real DB + LLM.)
 
 ## Phase 4: Cache-Stable Tool Catalog
 
