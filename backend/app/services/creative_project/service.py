@@ -5612,7 +5612,7 @@ class CreativeProjectService:
                     "prose_draft",
                     "prose_humanized",
                     "prose_rewrite",
-                } else 5000),
+                } else 12000),
             )
             raw_response = self._response_content(response)
             response_provider = self._response_attr(response, "provider")
