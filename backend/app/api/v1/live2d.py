@@ -11,12 +11,12 @@ DELETE /api/v1/live2d/models/{id}        # 删除模型
 POST /api/v1/live2d/models/{id}/segment  # AI图像分割（自动分层）
 POST /api/v1/live2d/models/{id}/inpaint  # AI遮挡补全
 POST /api/v1/live2d/models/{id}/rig      # 自动骨骼绑定
-POST /api/v1/live2d/models/{id}/mesh     # 自动生成网格
-POST /api/v1/live2d/models/{id}/physics  # 配置物理模拟
+POST /api/v1/live2d/models/{id}/mesh     # 预留：自动生成网格（未实现）
+POST /api/v1/live2d/models/{id}/physics  # 预留：配置物理模拟（未实现）
 POST /api/v1/live2d/models/{id}/motion   # 生成待机动作
 
 # 导出
-POST /api/v1/live2d/models/{id}/export   # 导出Cubism模型
+POST /api/v1/live2d/models/{id}/export   # 导出 YLCraft 角色配置包（非 Cubism moc3）
 GET  /api/v1/live2d/models/{id}/download # 下载模型文件
 """
 from __future__ import annotations
@@ -24,6 +24,8 @@ from __future__ import annotations
 import os
 import uuid
 import json
+import mimetypes
+import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional, List
@@ -39,6 +41,7 @@ from app.db.models.live2d import (
     Live2DStyleMode
 )
 from app.db.models.api_key import ApiKey, ApiKeyStatus, ApiKeyCategory
+from app.db.models.asset_hub import AssetRepresentation, AssetVersion
 from app.core.config import ProcessingMode, get_live2d_config
 
 router = APIRouter(tags=["Live2D 工厂"])
@@ -79,6 +82,15 @@ class Live2DModelUpdateRequest(BaseModel):
     description: Optional[str] = None
     character_id: Optional[str] = None
     status: Optional[str] = None
+
+
+class Live2DModelFromAssetRequest(BaseModel):
+    """Create a Live2D draft from a locally materialized Asset Hub image."""
+    asset_id: str
+    name: str
+    description: str = ""
+    character_id: str = ""
+    style_mode: str = Live2DStyleMode.ANIME.value
 
 
 class Live2DModelResponse(BaseModel):
@@ -673,9 +685,47 @@ async def create_model(
         source_image_url=file_url,
         status=Live2DModelStatus.DRAFT.value,
         layers="[]",
-        metadata="{}",
+        extra_data="{}",
     )
 
+    async with get_session() as session:
+        session.add(model)
+        await session.commit()
+        await session.refresh(model)
+        return model_to_response(model)
+
+
+@router.post("/from-asset", summary="从素材库图片创建 Live2D 模型", response_model=Live2DModelResponse)
+async def create_from_asset(body: Live2DModelFromAssetRequest):
+    """Copy an Asset Hub image into the Live2D workspace and retain its lineage."""
+    if body.style_mode not in Live2DStyleMode.all():
+        raise HTTPException(status_code=400, detail="Invalid Live2D style mode")
+
+    async with get_session() as session:
+        source_path = (await session.execute(
+            select(AssetRepresentation.file_path)
+            .join(AssetVersion, AssetRepresentation.asset_version_id == AssetVersion.id)
+            .where(AssetVersion.asset_node_id == body.asset_id)
+            .order_by(AssetVersion.version_number.desc())
+            .limit(1)
+        )).scalar_one_or_none()
+
+    path = Path(source_path or "")
+    mime = mimetypes.guess_type(path.name)[0] or ""
+    if not path.is_file() or not mime.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Selected asset has no usable local image file")
+
+    model_id = uuid.uuid4().hex
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    suffix = path.suffix.lower() if path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"} else ".png"
+    target = UPLOAD_DIR / f"{model_id}{suffix}"
+    shutil.copyfile(path, target)
+    model = Live2DModel(
+        id=model_id, name=body.name, description=body.description, character_id=body.character_id,
+        style_mode=body.style_mode, source_image_path=str(target),
+        source_image_url=f"/uploads/live2d/{target.name}", status=Live2DModelStatus.DRAFT.value,
+        layers="[]", extra_data=json.dumps({"source_asset_id": body.asset_id, "source": "asset_hub"}),
+    )
     async with get_session() as session:
         session.add(model)
         await session.commit()
@@ -1231,12 +1281,14 @@ async def inpaint_model(model_id: str):
 @router.post("/{model_id}/rig", summary="自动骨骼绑定")
 async def rig_model(model_id: str):
     """
-    自动骨骼绑定：生成网格 + 创建骨骼 + 计算权重。
+    自动骨骼绑定：生成 YLCraft 的五官控制配置。
 
     Phase 3 实现：
     - 面部关键点检测
     - 五官骨骼绑定
-    - 生成待机动作（眨眼、呼吸）
+    - 生成待机动作配置（眨眼、呼吸）
+
+    这不是官方 Cubism 网格或 .moc3 绑定。
     """
     from pathlib import Path
     from app.services.live2d import get_rigging_service, RiggingResult
@@ -1484,30 +1536,28 @@ async def update_eye_tracking(model_id: str, body: EyeTrackingUpdateRequest):
         }
 
 
-@router.post("/{model_id}/mesh", summary="自动生成网格")
+@router.post("/{model_id}/mesh", summary="预留：自动生成网格（未实现）")
 async def generate_mesh(model_id: str):
-    """自动生成网格：根据图层轮廓自动生成三角网格。"""
+    """预留接口；尚未实现官方 Cubism 可用网格。"""
     async with get_session() as session:
         model = await session.get(Live2DModel, model_id)
 
         if not model:
             raise HTTPException(status_code=404, detail=f"模型不存在: {model_id}")
 
-        # TODO: Phase 3 实现
-        raise HTTPException(status_code=501, detail="功能开发中（Phase 3）")
+        raise HTTPException(status_code=501, detail="网格生成尚未实现；当前配置包不包含 Cubism .moc3 网格")
 
 
-@router.post("/{model_id}/physics", summary="配置物理模拟")
+@router.post("/{model_id}/physics", summary="预留：配置物理模拟（未实现）")
 async def configure_physics(model_id: str):
-    """配置物理模拟：头发/衣摆钟摆参数。"""
+    """预留接口；尚未实现可编辑的 Cubism 物理模拟。"""
     async with get_session() as session:
         model = await session.get(Live2DModel, model_id)
 
         if not model:
             raise HTTPException(status_code=404, detail=f"模型不存在: {model_id}")
 
-        # TODO: Phase 4 实现
-        raise HTTPException(status_code=501, detail="功能开发中（Phase 4）")
+        raise HTTPException(status_code=501, detail="物理模拟尚未实现；当前导出仅含 YLCraft 配置")
 
 
 @router.post("/{model_id}/motion", summary="生成待机动作")
@@ -1574,10 +1624,10 @@ async def generate_motion(model_id: str):
         }
 
 
-@router.post("/{model_id}/export", summary="导出 VTS 模型")
+@router.post("/{model_id}/export", summary="导出 YLCraft 角色配置包")
 async def export_model(model_id: str):
     """
-    导出 Cubism 模型为 VTS 格式：
+    导出 YLCraft 角色处理配置包：
     - model.json: 模型主配置
     - settings.json: VTS 特定设置
     - physics.json: 物理模拟
@@ -1585,7 +1635,8 @@ async def export_model(model_id: str):
     - textures/: 纹理图片
     - motions/: 动作文件
 
-    返回 ZIP 包下载链接。
+    返回 ZIP 包下载链接。该包不包含官方 Cubism 的 .moc3 网格，不能作为
+    Cubism 编辑器的可编辑模型或保证可被 VTube Studio 直接加载。
     """
     from app.services.live2d import export_to_vts
 
@@ -1961,15 +2012,45 @@ async def run_pipeline(model_id: str, body: Optional[PipelineRequest] = None):
             )
             raise HTTPException(status_code=500, detail=f"动作生成失败: {str(e)}")
 
-        # 步骤6: 导出模型（TODO: Phase 4 实现）
+        # 步骤6: 导出配置包。它不是官方 Cubism moc3 成品，但必须真正写入
+        # 配置归档后才允许标记为完成。
         await push_live2d_progress(
             model_id=model_id,
             progress=98,
-            message="步骤 6/6：导出模型中...",
+            message="步骤 6/6：导出角色配置包中...",
             step="pipeline_export",
         )
 
-        # 更新最终状态
+        try:
+            from app.services.live2d import export_to_vts
+
+            metadata = json.loads(model.extra_data) if model.extra_data else {}
+            rigging_data = metadata.get("rigging", {})
+            if not rigging_data:
+                raise ValueError("缺少绑骨配置，无法导出角色配置包")
+            result = export_to_vts(model_id, rigging_data, UPLOAD_DIR / model_id / "export")
+            model.model_file_path = result["zip_path"]
+            metadata["export"] = {
+                "artifact_type": "ylcraft_live2d_config_package",
+                "cubism_moc3_included": False,
+                "zip_path": result["zip_path"],
+                "completed_at": datetime.now().isoformat(),
+            }
+            model.extra_data = json.dumps(metadata)
+        except Exception as e:
+            model.status = Live2DModelStatus.ERROR.value
+            model.updated_at = datetime.now()
+            session.add(model)
+            await session.commit()
+            await push_live2d_progress(
+                model_id=model_id,
+                progress=0,
+                message=f"配置包导出失败: {str(e)}",
+                step="pipeline_export",
+                status="failed",
+            )
+            raise HTTPException(status_code=500, detail=f"配置包导出失败: {str(e)}") from e
+
         model.status = Live2DModelStatus.COMPLETED.value
         model.completed_at = datetime.now()
         model.updated_at = datetime.now()
@@ -1980,16 +2061,18 @@ async def run_pipeline(model_id: str, body: Optional[PipelineRequest] = None):
         await push_live2d_progress(
             model_id=model_id,
             progress=100,
-            message="一键生成完成！",
+            message="一键生成完成，已导出角色配置包（非 Cubism moc3）",
             step="pipeline",
             status="done",
         )
 
         return {
-            "message": "一键生成流水线执行完成",
+            "message": "一键生成流水线执行完成，已导出角色配置包（非 Cubism moc3）",
             "model_id": model_id,
             "status": model.status,
             "steps_completed": ["rembg", "style_transfer", "segment", "rig", "motion", "export"],
+            "artifact_type": "ylcraft_live2d_config_package",
+            "cubism_moc3_included": False,
         }
 
 

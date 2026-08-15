@@ -125,6 +125,7 @@ class SearchEnhancedRequest(BaseModel):
     order_sort: int = Field(0, description="排序方向：0=高到低，1=低到高（仅bili用户搜索有效）")
     filters: dict = Field(default_factory=dict, description="筛选条件")
     page: int = Field(1, description="页码", ge=1)
+    conn_id: str = Field("", description="可选的平台连接 ID；仅用于在服务端取得该连接的登录态")
 
 
 class NoteDetailResponse(BaseModel):
@@ -241,7 +242,10 @@ async def search_enhanced(req: SearchEnhancedRequest):
     - sort_by: 排序方式（各平台自定义）
     - filters: 可选筛选条件
     """
-    logger.info(f"[search_enhanced] platform={req.platform} keyword={req.keyword} type={req.search_type} sort={req.sort_by}")
+    logger.info(
+        "[search_enhanced] platform=%s keyword=%s type=%s sort=%s authenticated=%s",
+        req.platform, req.keyword, req.search_type, req.sort_by, bool(req.conn_id),
+    )
 
     # ===== 微信公众号特殊处理 =====
     if req.platform == "wechat_mp":
@@ -261,6 +265,7 @@ async def search_enhanced(req: SearchEnhancedRequest):
             order_sort=req.order_sort,
             page=req.page,
             filters=req.filters,
+            cookie=_get_conn_cookie(req.conn_id) if req.conn_id else "",
         )
 
         if not results:

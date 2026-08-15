@@ -72,18 +72,11 @@ def _get_default_settings() -> dict:
     return {
         "ffmpeg_path": None,
         "storage_type": "local",
-        "s3": {
+        "cos": {
             "bucket": "",
-            "region": "us-east-1",
-            "access_key": "",
+            "region": "ap-beijing",
+            "secret_id": "",
             "secret_key": ""
-        },
-        "oss": {
-            "bucket": "",
-            "region": "cn-hangzhou",
-            "access_key": "",
-            "secret_key": "",
-            "endpoint": ""
         }
     }
 
@@ -177,6 +170,29 @@ async def get_setting(key: str) -> str | None:
     return file_settings.get(key)
 
 
+async def get_cos_config() -> dict:
+    """读取 COS 配置（数据库 cos_* 键优先，回退到 settings.json 的 cos 段）。"""
+    db_settings = await _load_settings_from_db()
+    bucket = db_settings.get("cos_bucket") or ""
+    region = db_settings.get("cos_region") or ""
+    secret_id = db_settings.get("cos_secret_id") or ""
+    secret_key = db_settings.get("cos_secret_key") or ""
+
+    if not (bucket and secret_id and secret_key):
+        file_cos = _load_settings_from_file().get("cos") or {}
+        bucket = bucket or file_cos.get("bucket") or ""
+        region = region or file_cos.get("region") or "ap-beijing"
+        secret_id = secret_id or file_cos.get("secret_id") or ""
+        secret_key = secret_key or file_cos.get("secret_key") or ""
+
+    return {
+        "bucket": bucket,
+        "region": region or "ap-beijing",
+        "secret_id": secret_id,
+        "secret_key": secret_key,
+    }
+
+
 async def get_storage_path(key: str, default_subdir: str = "") -> Path:
     """
     获取存储路径（数据库优先，回退到默认）
@@ -219,7 +235,17 @@ async def get_all_settings():
     for key, value in db_settings.items():
         if value:  # 只覆盖非空值
             merged[key] = value
-    
+
+    # 重建嵌套 cos 对象（数据库存的是平铺 cos_* 键）
+    cos_db = {
+        "bucket": db_settings.get("cos_bucket") or "",
+        "region": db_settings.get("cos_region") or "",
+        "secret_id": db_settings.get("cos_secret_id") or "",
+        "secret_key": db_settings.get("cos_secret_key") or "",
+    }
+    if any(cos_db.values()):
+        merged["cos"] = {**merged.get("cos", {}), **cos_db}
+
     return SettingsResponse(success=True, data={"data": merged})
 
 
@@ -243,7 +269,19 @@ async def update_all_settings(req: SettingsUpdateRequest):
                     os.makedirs(path, exist_ok=True)
             # 保存到数据库
             await _save_setting_to_db(key, path or "", f"存储路径: {key}")
-    
+
+    # COS 远程对象存储：入库（平铺 cos_* 键）
+    if "cos" in patch and isinstance(patch["cos"], dict):
+        cos = patch["cos"]
+        for field, db_key in [
+            ("bucket", "cos_bucket"),
+            ("region", "cos_region"),
+            ("secret_id", "cos_secret_id"),
+            ("secret_key", "cos_secret_key"),
+        ]:
+            if field in cos:
+                await _save_setting_to_db(db_key, str(cos.get(field) or ""), f"COS {field}")
+
     return SettingsResponse(success=True, data={"data": patch})
 
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+from uuid import uuid4
 
 import httpx
 from jinja2 import Template
@@ -14,6 +15,7 @@ from app.db.models.ai_connector import AIConnector
 from app.services.ai.backends.video.base import BaseVideoBackend
 from app.services.ai.types import (
     VideoCapability,
+    VideoCapabilities,
     VideoGenerationRequest,
     VideoGenerationResult,
     download_file,
@@ -37,9 +39,6 @@ class GenericVideoBackend(BaseVideoBackend):
         self.connector = connector
         self.session = session
         self._available_models = connector.get_available_models() or [self.model]
-        self._capabilities = {VideoCapability.TEXT_TO_VIDEO}
-        if connector.support_reference_image:
-            self._capabilities.add(VideoCapability.IMAGE_TO_VIDEO)
         try:
             self.config = json.loads(connector.response_config or "{}")
         except (TypeError, ValueError):
@@ -48,10 +47,73 @@ class GenericVideoBackend(BaseVideoBackend):
             self.default_params = json.loads(connector.default_params or "{}")
         except (TypeError, ValueError):
             self.default_params = {}
+        self._video_capability_config = self.default_params.get("video_capabilities") or {}
+        if not isinstance(self._video_capability_config, dict):
+            self._video_capability_config = {}
+        self._capabilities = {VideoCapability.TEXT_TO_VIDEO}
+        if self._video_capability_config.get("text_to_video") is False:
+            self._capabilities.discard(VideoCapability.TEXT_TO_VIDEO)
+        template_supports_start_image = any(
+            variable in (connector.request_template or "")
+            for variable in ("{{ start_image", "{{ reference_image_base64", "{{ reference_image_url")
+        )
+        if (connector.support_reference_image or template_supports_start_image) and self._video_capability_config.get("image_to_video") is not False:
+            self._capabilities.add(VideoCapability.IMAGE_TO_VIDEO)
+        if self._video_capability_config.get("seed_control") is True:
+            self._capabilities.add(VideoCapability.SEED_CONTROL)
+        if self._video_capability_config.get("generate_audio") is True:
+            self._capabilities.add(VideoCapability.GENERATE_AUDIO)
 
     @property
     def available_models(self) -> list[str]:
         return self._available_models
+
+    @property
+    def video_capabilities(self) -> VideoCapabilities:
+        config = self._video_capability_config
+
+        def string_values(key: str) -> list[str]:
+            values = config.get(key) or []
+            return [str(value) for value in values] if isinstance(values, list) else []
+
+        def integer_values(key: str) -> list[int]:
+            values = config.get(key) or []
+            if not isinstance(values, list):
+                return []
+            result: list[int] = []
+            for value in values:
+                try:
+                    result.append(int(value))
+                except (TypeError, ValueError):
+                    continue
+            return result
+
+        max_duration = config.get("max_duration", 10)
+        try:
+            max_duration = int(max_duration)
+        except (TypeError, ValueError):
+            max_duration = 10
+        max_reference_images = config.get("max_reference_images", 0)
+        try:
+            max_reference_images = int(max_reference_images)
+        except (TypeError, ValueError):
+            max_reference_images = 0
+        return VideoCapabilities(
+            first_frame=VideoCapability.IMAGE_TO_VIDEO in self._capabilities,
+            last_frame=bool(config.get("last_frame", False)),
+            reference_images=bool(config.get("reference_images", False)),
+            max_reference_images=max(0, max_reference_images),
+            max_duration=max(1, max_duration),
+            supported_resolutions=string_values("resolutions"),
+            supported_aspect_ratios=string_values("aspect_ratios"),
+            supported_durations=integer_values("durations"),
+        )
+
+    @property
+    def enforce_video_capabilities(self) -> bool:
+        # Existing generic connections often predate video_capabilities. Keep
+        # their permissive request behavior until the owner declares limits.
+        return bool(self._video_capability_config)
 
     def _endpoint(self, path: str = "") -> str:
         path = path or self.connector.api_endpoint or ""
@@ -103,21 +165,64 @@ class GenericVideoBackend(BaseVideoBackend):
         return matches[0].value if matches else default
 
     @staticmethod
+    def _decode_payload(payload):
+        """Unwrap providers that return a JSON-encoded object as a JSON string."""
+        value = payload
+        for _ in range(2):
+            if not isinstance(value, str):
+                break
+            try:
+                decoded = json.loads(value)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                break
+            if decoded == value:
+                break
+            value = decoded
+        return value
+
+    @staticmethod
     def _size(resolution: str, aspect_ratio: str, separator: str = "x") -> str:
         """Translate workspace resolution/ratio controls to common API sizes."""
-        height = {"720p": 720, "1080p": 1080, "2k": 1440}.get(str(resolution).lower(), 720)
+        width, height = GenericVideoBackend._dimensions(resolution, aspect_ratio)
+        return f"{width}{separator}{height}"
+
+    @staticmethod
+    def _dimensions(resolution: str, aspect_ratio: str) -> tuple[int, int]:
+        """Return numeric dimensions for providers which do not accept a size string."""
+        height = {"480p": 480, "720p": 720, "1080p": 1080, "2k": 1440}.get(str(resolution).lower(), 720)
         ratio = str(aspect_ratio or "16:9")
         if ratio == "9:16":
-            return f"{round(height * 9 / 16)}{separator}{height}"
+            return round(height * 9 / 16), height
         if ratio == "1:1":
-            return f"{height}{separator}{height}"
-        return f"{round(height * 16 / 9)}{separator}{height}"
+            return height, height
+        if ratio == "4:3":
+            return round(height * 4 / 3), height
+        if ratio == "3:4":
+            return round(height * 3 / 4), height
+        return round(height * 16 / 9), height
+
+    @staticmethod
+    def _frame_count(duration: int, fps: int) -> int:
+        """Use the common 8n+1 video-frame contract when a provider requires it."""
+        return max(1, 8 * round(max(1, duration) * max(1, fps) / 8) + 1)
 
     def _status(self, payload, task_id: str) -> VideoGenerationResult:
-        status = str(self._find(payload, self.config.get("status_path", ""), "pending")).lower()
+        payload = self._decode_payload(payload)
+        # Some providers changed their poll schema over time. Keep the
+        # configured JSONPath authoritative, but accept the common Agnes
+        # aliases so a completed response cannot lose its playable URL.
+        status = self._find(payload, self.config.get("status_path", ""), None)
+        if status is None:
+            status = self._find(payload, "$.internal_status", None)
+        if status is None:
+            status = "pending"
+        status = str(status).lower()
         done = {str(item).lower() for item in self.config.get("done_values", ["succeeded", "completed", "done", "success"])}
         failed = {str(item).lower() for item in self.config.get("failed_values", ["failed", "error", "cancelled"])}
-        url = str(self._find(payload, self.config.get("video_url_path", ""), "") or "")
+        url = self._find(payload, self.config.get("video_url_path", ""), None)
+        if not url:
+            url = self._find(payload, "$.url", "")
+        url = str(url or "")
         error = str(self._find(payload, self.config.get("error_path", ""), "") or "")
         progress = self._find(payload, self.config.get("progress_path", ""), 0)
         try:
@@ -130,16 +235,45 @@ class GenericVideoBackend(BaseVideoBackend):
             return VideoGenerationResult(True, task_id=task_id, status="done", url=url, progress=100)
         return VideoGenerationResult(True, task_id=task_id, status="processing", progress=progress)
 
+    async def _upload_start_image_to_cos(self, start_image: Path) -> str:
+        """Upload the first-frame image to COS and return a public URL.
+
+        Only used when the connector declares ``image_requires_public_url``
+        (e.g. Agnes image-to-video needs a reachable URL, not a data URI).
+        """
+        try:
+            from app.services.cos_storage import load_cos_service
+
+            service = await load_cos_service()
+            if not service:
+                return ""
+            ext = start_image.suffix.lower() or ".png"
+            key = f"video/start/{uuid4().hex}{ext}"
+            return await service.upload_file(key, start_image)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[%s] COS upload for start image failed: %s", self.name, exc)
+            return ""
+
     async def _generate(self, req: VideoGenerationRequest) -> VideoGenerationResult:
         template = self.connector.request_template or '{"model":"{{ model }}","input":{"prompt":"{{ prompt }}"},"parameters":{}}'
+        width, height = self._dimensions(req.resolution, req.aspect_ratio)
+
+        start_image_value = image_to_base64_data_uri(req.start_image) if req.start_image else ""
+        if req.start_image and self.default_params.get("image_requires_public_url"):
+            cos_url = await self._upload_start_image_to_cos(req.start_image)
+            if cos_url:
+                start_image_value = cos_url
+
         body = json.loads(Template(template).render(
             model=req.model or self.model, prompt=req.prompt, duration=req.duration,
             aspect_ratio=req.aspect_ratio, resolution=req.resolution, seed=req.seed,
             size=self._size(req.resolution, req.aspect_ratio, str(self.default_params.get("size_separator") or "x")),
+            width=width, height=height, fps=req.fps,
+            num_frames=self._frame_count(req.duration, req.fps),
             generate_audio=req.generate_audio,
-            start_image=image_to_base64_data_uri(req.start_image) if req.start_image else "",
-            reference_image_base64=image_to_base64_data_uri(req.start_image) if req.start_image else "",
-            reference_image_url=image_to_base64_data_uri(req.start_image) if req.start_image else "",
+            start_image=start_image_value,
+            reference_image_base64=start_image_value,
+            reference_image_url=start_image_value,
             params=self.default_params,
         ))
         headers = self._headers(self.config.get("request_headers") or {})

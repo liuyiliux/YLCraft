@@ -90,6 +90,17 @@ def normalize_sizes_value(value) -> str:
     return value
 
 
+def normalize_provider_type(value: Optional[str]) -> str:
+    """Translate legacy connector type names before writing the DB enum."""
+    normalized = str(value or "llm").strip().lower()
+    return {
+        "model3d": "3d",
+        "model_3d": "3d",
+        "image_to_3d": "3d",
+        "image-to-3d": "3d",
+    }.get(normalized, normalized)
+
+
 def _parse_json_object(value) -> dict:
     if not value:
         return {}
@@ -327,11 +338,12 @@ class AIConnectorService:
 
     async def create(self, data: AIConnectorCreate) -> AIConnector:
         """创建新连接"""
-        logger.info(f"[AIConnector] Creating connector: name={data.name}, provider={data.provider}, type={data.provider_type}")
+        provider_type = normalize_provider_type(data.provider_type)
+        logger.info(f"[AIConnector] Creating connector: name={data.name}, provider={data.provider}, type={provider_type}")
         # 标准化 supported_sizes（兼容 x/* 分隔符）
         supported_sizes_value = normalize_sizes_value(data.supported_sizes) if data.supported_sizes else None
         reference_config = normalize_reference_image_config_values(
-            provider_type=data.provider_type,
+            provider_type=provider_type,
             default_params=data.default_params,
             support_reference_image=data.support_reference_image,
             support_multiple_reference_images=data.support_multiple_reference_images,
@@ -360,7 +372,7 @@ class AIConnectorService:
             priority=data.priority,
             description=data.description,
             # 扩展字段
-            provider_type=data.provider_type,
+            provider_type=provider_type,
             request_template=data.request_template,
             response_config=data.response_config,
             parameter_transforms=data.parameter_transforms,
@@ -439,7 +451,7 @@ class AIConnectorService:
             conn.provider = data.provider
         # 扩展字段
         if data.provider_type is not None:
-            conn.provider_type = data.provider_type
+            conn.provider_type = normalize_provider_type(data.provider_type)
         if data.request_template is not None:
             conn.request_template = data.request_template
         if data.response_config is not None:

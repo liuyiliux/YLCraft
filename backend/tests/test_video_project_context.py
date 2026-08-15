@@ -7,10 +7,11 @@ from app.api.v1.videos import (
     _materialize_data_uri,
     _request_context,
     _task_to_dict,
+    _validate_video_capabilities,
     list_backends,
 )
 from app.db.models.task import VideoGenerationTask
-from app.services.ai.types import MediaType, VideoCapability
+from app.services.ai.types import MediaType, VideoCapability, VideoCapabilities
 
 
 def test_video_request_keeps_project_provenance_and_false_audio_flag():
@@ -32,6 +33,38 @@ def test_video_request_keeps_project_provenance_and_false_audio_flag():
     assert request.source_type == "storyboard_panel"
     assert request.source_index == "2"
     assert request.reference_asset_ids == ["asset-1", "asset-2"]
+
+
+class _ConstrainedVideoBackend:
+    enforce_video_capabilities = True
+    capabilities = {VideoCapability.TEXT_TO_VIDEO}
+    video_capabilities = VideoCapabilities(
+        first_frame=False, max_duration=5, supported_resolutions=["720p"],
+        supported_aspect_ratios=["9:16"], supported_durations=[5],
+    )
+
+
+@pytest.mark.parametrize(("video_request", "has_start_image", "detail"), [
+    (VideoGenerateRequest(prompt="x", generate_audio=True), False, "生成音频"),
+    (VideoGenerateRequest(prompt="x", generate_audio=False, seed=1), False, "随机种子"),
+    (VideoGenerateRequest(prompt="x", generate_audio=False, resolution="1080p"), False, "分辨率"),
+    (VideoGenerateRequest(prompt="x", generate_audio=False, aspect_ratio="16:9"), False, "画幅比例"),
+    (VideoGenerateRequest(prompt="x", generate_audio=False, duration=10), False, "时长"),
+    (VideoGenerateRequest(prompt="x", generate_audio=False), True, "图生视频首帧"),
+])
+def test_video_api_rejects_declared_capability_violations(video_request, has_start_image, detail):
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException, match=detail):
+        _validate_video_capabilities(_ConstrainedVideoBackend(), video_request, has_start_image=has_start_image)
+
+
+def test_video_api_allows_declared_capability_request():
+    _validate_video_capabilities(
+        _ConstrainedVideoBackend(),
+        VideoGenerateRequest(prompt="x", duration=5, resolution="720p", aspect_ratio="9:16", generate_audio=False),
+        has_start_image=False,
+    )
 
 
 def test_video_data_uri_is_materialized_as_a_short_lived_file():
@@ -100,6 +133,17 @@ def test_video_result_payload_keeps_provider_diagnostics():
     assert payload["diagnostics"]["exception_type"] == "ReadTimeout"
 
 
+def test_video_result_payload_keeps_long_provider_task_id_separate():
+    from app.api.v1.videos import _result_payload
+    from app.services.ai.types import VideoGenerationResult
+
+    provider_task_id = "video_" + "x" * 300
+    payload = _result_payload(VideoGenerationResult(success=True), provider_task_id)
+
+    assert len("video_local_id") < 128
+    assert payload["provider_task_id"] == provider_task_id
+
+
 def test_failed_video_submission_uses_terminal_error_status():
     from app.services.ai.types import VideoGenerationResult
 
@@ -117,6 +161,10 @@ async def test_video_backends_serializes_default_backend_name(monkeypatch):
         model = "wan2.7-t2v"
         available_models = [model]
         capabilities = {VideoCapability.TEXT_TO_VIDEO}
+        video_capabilities = VideoCapabilities(
+            first_frame=False, max_duration=5, supported_resolutions=["720p"],
+            supported_aspect_ratios=["9:16"], supported_durations=[5],
+        )
 
     class Service:
         def is_loaded(self):
@@ -141,3 +189,15 @@ async def test_video_backends_serializes_default_backend_name(monkeypatch):
 
     assert response.default == "wan-video"
     assert response.backends[0].name == "wan-video"
+    assert response.backends[0].capabilities == ["text_to_video"]
+    assert response.backends[0].constraints == {
+        "enforced": True,
+        "first_frame": False,
+        "last_frame": False,
+        "reference_images": False,
+        "max_reference_images": 0,
+        "max_duration": 5,
+        "supported_resolutions": ["720p"],
+        "supported_aspect_ratios": ["9:16"],
+        "supported_durations": [5],
+    }

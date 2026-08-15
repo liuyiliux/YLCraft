@@ -20,7 +20,7 @@ from sqlalchemy import select, text
 
 from app.core.task_queue import get_task_queue, task_event_to_dict
 from app.db.database import get_async_session
-from app.db.models.task import VideoGenerationTask
+from app.db.models.task import Model3DGenerationTask, VideoGenerationTask
 
 router = APIRouter()
 logger = logging.getLogger("ylcraft.tasks")
@@ -248,7 +248,82 @@ async def _video_task_infos(include_detail: bool = False) -> list[TaskInfo]:
     return infos
 
 
-def _all_task_infos(include_detail: bool = False, video_infos: list[TaskInfo] | None = None) -> list[TaskInfo]:
+async def _model3d_task_infos(include_detail: bool = False) -> list[TaskInfo]:
+    """Expose configured image-to-3D jobs in the shared task center."""
+    try:
+        async with get_async_session() as session:
+            rows = (await session.execute(
+                select(Model3DGenerationTask).order_by(Model3DGenerationTask.created_at.desc()).limit(100)
+            )).scalars().all()
+    except Exception as exc:
+        logger.debug("Failed to collect 3D generation tasks: %s", exc)
+        return []
+
+    infos: list[TaskInfo] = []
+    for row in rows:
+        try:
+            payload = json.loads(row.request_json or "{}")
+        except (TypeError, ValueError):
+            payload = {}
+        try:
+            result = json.loads(row.result_json or "{}")
+        except (TypeError, ValueError):
+            result = {}
+        infos.append(TaskInfo(
+            task_id=row.task_id,
+            task_type="model3d_generation",
+            status=_normalize_status(row.status),
+            progress=int(row.progress or 0),
+            progress_message=row.progress_message or "",
+            created_at=_format_timestamp(row.created_at),
+            completed_at=_format_timestamp(row.completed_at),
+            duration_seconds=_duration_seconds(row),
+            payload=payload if include_detail else None,
+            result=result if include_detail else None,
+            error=row.error if include_detail else None,
+        ))
+    return infos
+
+
+async def _cancel_persistent_media_task(task_id: str) -> TaskInfo | None:
+    async with get_async_session() as session:
+        for model, task_type in ((VideoGenerationTask, "video"), (Model3DGenerationTask, "model3d")):
+            row = await session.get(model, task_id)
+            if row is None:
+                continue
+            status = _normalize_status(row.status)
+            if status in {"done", "failed", "cancelled"}:
+                return None
+            row.status = "cancelled"
+            row.progress_message = "已取消"
+            row.completed_at = datetime.now().timestamp()
+            row.updated_at = datetime.now().timestamp()
+            await session.commit()
+            if task_type == "video":
+                return next((item for item in await _video_task_infos(True) if item.task_id == task_id), None)
+            return next((item for item in await _model3d_task_infos(True) if item.task_id == task_id), None)
+    return None
+
+
+async def _delete_persistent_media_task(task_id: str) -> TaskInfo | None:
+    async with get_async_session() as session:
+        for model, task_type in ((VideoGenerationTask, "video"), (Model3DGenerationTask, "model3d")):
+            row = await session.get(model, task_id)
+            if row is None:
+                continue
+            info_list = await (_video_task_infos(True) if task_type == "video" else _model3d_task_infos(True))
+            info = next((item for item in info_list if item.task_id == task_id), None)
+            await session.delete(row)
+            await session.commit()
+            return info
+    return None
+
+
+def _all_task_infos(
+    include_detail: bool = False,
+    video_infos: list[TaskInfo] | None = None,
+    model3d_infos: list[TaskInfo] | None = None,
+) -> list[TaskInfo]:
     queue = get_task_queue()
     infos: list[TaskInfo] = []
     seen: set[str] = set()
@@ -264,6 +339,11 @@ def _all_task_infos(include_detail: bool = False, video_infos: list[TaskInfo] | 
             seen.add(info.task_id)
 
     for info in video_infos or []:
+        if info.task_id not in seen:
+            infos.append(info)
+            seen.add(info.task_id)
+
+    for info in model3d_infos or []:
         if info.task_id not in seen:
             infos.append(info)
             seen.add(info.task_id)
@@ -550,8 +630,10 @@ async def list_tasks(
     await get_task_queue().restore_persisted_tasks(project_id=project_id, active_only=active_only)
     # Project filtering needs payload context even when callers did not ask to
     # return the payload in the response.
-    video_infos = await _video_task_infos(include_detail=include_detail or bool(project_id))
-    tasks = _all_task_infos(include_detail=include_detail or bool(project_id), video_infos=video_infos)
+    detail = include_detail or bool(project_id)
+    video_infos = await _video_task_infos(include_detail=detail)
+    model3d_infos = await _model3d_task_infos(include_detail=detail)
+    tasks = _all_task_infos(include_detail=detail, video_infos=video_infos, model3d_infos=model3d_infos)
     if project_id:
         tasks = [
             task for task in tasks
@@ -574,7 +656,10 @@ async def list_tasks(
 @router.get("/stats", response_model=TaskStatsResponse, summary="任务统计")
 async def get_task_stats():
     """返回任务统计数据，用于 Dashboard"""
-    tasks = _all_task_infos(video_infos=await _video_task_infos())
+    tasks = _all_task_infos(
+        video_infos=await _video_task_infos(),
+        model3d_infos=await _model3d_task_infos(),
+    )
 
     total = len(tasks)
     completed = 0
@@ -614,7 +699,9 @@ async def get_task_stats():
                 week_count += 1
 
         task_type = task.task_type.lower()
-        if "image" in task_type:
+        if "3d" in task_type:
+            images += 1
+        elif "image" in task_type:
             images += 1
         elif "video" in task_type or task_type == "download":
             videos += 1
@@ -658,6 +745,11 @@ async def get_task_detail(task_id: str):
     if video_task:
         return TaskDetailResponse(success=True, task=video_task)
 
+    model3d_tasks = await _model3d_task_infos(include_detail=True)
+    model3d_task = next((item for item in model3d_tasks if item.task_id == task_id), None)
+    if model3d_task:
+        return TaskDetailResponse(success=True, task=model3d_task)
+
     return TaskDetailResponse(success=False, task=None)
 
 
@@ -688,6 +780,18 @@ async def cancel_task(task_id: str):
             return TaskActionResponse(success=False, message=f"任务已处于 {external_task.status} 状态，无法取消", task=external_task)
         return TaskActionResponse(success=True, message="任务已取消", task=external_task)
 
+    persistent_task = await _cancel_persistent_media_task(task_id)
+    if persistent_task:
+        return TaskActionResponse(success=True, message="任务已取消", task=persistent_task)
+
+    for info in [*(await _video_task_infos(True)), *(await _model3d_task_infos(True))]:
+        if info.task_id == task_id:
+            return TaskActionResponse(
+                success=False,
+                message=f"任务已处于 {info.status} 状态，无法取消",
+                task=info,
+            )
+
     raise HTTPException(status_code=404, detail="任务不存在")
 
 
@@ -705,5 +809,9 @@ async def delete_task(task_id: str):
     external_task = _delete_external_task(task_id)
     if external_task:
         return TaskActionResponse(success=True, message="任务已删除", task=external_task)
+
+    persistent_task = await _delete_persistent_media_task(task_id)
+    if persistent_task:
+        return TaskActionResponse(success=True, message="任务已删除", task=persistent_task)
 
     raise HTTPException(status_code=404, detail="任务不存在")

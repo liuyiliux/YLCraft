@@ -19,6 +19,7 @@ from typing import Any, Optional
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlmodel import select
 
@@ -26,9 +27,11 @@ from app.db.database import get_async_session
 from app.db.models.asset_hub import AssetRepresentation, AssetVersion
 from app.db.models.creative_project import CreativeProject, ProjectAssetLink, ProjectContent
 from app.db.models.task import VideoGenerationTask
+from app.core.ffmpeg import get_ffmpeg_service
 from app.services.asset_hub import AssetHubFacade
 from app.services.ai import get_ai_service
 from app.services.ai.types import VideoGenerationRequest
+from app.services.ai.types import VideoCapability, VideoCapabilities
 
 router = APIRouter()
 logger = logging.getLogger("ylcraft.videos")
@@ -79,6 +82,7 @@ class BackendInfo(BaseModel):
     model: str
     available_models: list[str] = []  # 支持的模型列表
     capabilities: list[str]
+    constraints: dict[str, Any] = Field(default_factory=dict)
 
 
 class VideoBackendsResponse(BaseModel):
@@ -104,6 +108,35 @@ class VideoTaskListResponse(BaseModel):
     success: bool = True
     data: list[dict[str, Any]] = Field(default_factory=list)
     total: int = 0
+
+
+def _validate_video_capabilities(
+    backend: Any,
+    request: VideoGenerateRequest,
+    *,
+    has_start_image: bool,
+) -> None:
+    """Reject only constraints explicitly enabled by the selected backend."""
+    if not getattr(backend, "enforce_video_capabilities", True):
+        return
+    capability_set = set(backend.capabilities)
+    limits = backend.video_capabilities
+    if not has_start_image and VideoCapability.TEXT_TO_VIDEO not in capability_set:
+        raise HTTPException(status_code=422, detail="当前连接器仅支持图生视频，请提供首帧图片")
+    if has_start_image and VideoCapability.IMAGE_TO_VIDEO not in capability_set:
+        raise HTTPException(status_code=422, detail="当前连接器不支持图生视频首帧")
+    if request.seed is not None and VideoCapability.SEED_CONTROL not in capability_set:
+        raise HTTPException(status_code=422, detail="当前连接器不支持随机种子")
+    if request.generate_audio is True and VideoCapability.GENERATE_AUDIO not in capability_set:
+        raise HTTPException(status_code=422, detail="当前连接器不支持生成音频")
+    if limits.supported_resolutions and (request.resolution or "720p") not in limits.supported_resolutions:
+        raise HTTPException(status_code=422, detail=f"当前连接器不支持分辨率 {(request.resolution or '720p')}")
+    if limits.supported_aspect_ratios and (request.aspect_ratio or "9:16") not in limits.supported_aspect_ratios:
+        raise HTTPException(status_code=422, detail=f"当前连接器不支持画幅比例 {(request.aspect_ratio or '9:16')}")
+    if limits.supported_durations and (request.duration or 5) not in limits.supported_durations:
+        raise HTTPException(status_code=422, detail=f"当前连接器不支持时长 {(request.duration or 5)} 秒")
+    if (request.duration or 5) > limits.max_duration:
+        raise HTTPException(status_code=422, detail=f"当前连接器最长支持 {limits.max_duration} 秒")
 
 
 async def _resolve_asset_paths(session, asset_ids: list[str]) -> dict[str, Path]:
@@ -169,8 +202,8 @@ def _request_context(req: VideoGenerateRequest, reference_asset_ids: list[str]) 
     }
 
 
-def _result_payload(result: Any) -> dict[str, Any]:
-    return {
+def _result_payload(result: Any, provider_task_id: str | None = None) -> dict[str, Any]:
+    payload = {
         "url": result.url or "",
         "local_path": str(result.video_path) if result.video_path else "",
         "duration": result.duration_seconds,
@@ -178,6 +211,9 @@ def _result_payload(result: Any) -> dict[str, Any]:
         "cost": result.cost,
         "diagnostics": getattr(result, "diagnostics", {}) or {},
     }
+    if provider_task_id:
+        payload["provider_task_id"] = provider_task_id
+    return payload
 
 
 def _task_to_dict(task: VideoGenerationTask) -> dict[str, Any]:
@@ -237,6 +273,16 @@ async def _persist_video_result(
         "source_index": context["source_index"],
         "source_title": context["source_title"],
     }
+    thumbnail_url = ""
+    try:
+        thumb_dir = Path(__file__).resolve().parents[3] / "storage" / "thumbnails"
+        thumb_dir.mkdir(parents=True, exist_ok=True)
+        thumb_path = thumb_dir / f"{result.task_id or uuid4().hex}.jpg"
+        await get_ffmpeg_service().create_thumbnail(Path(result.video_path), thumb_path, time=0.5, width=480)
+        thumbnail_url = str(thumb_path)
+    except Exception as exc:
+        logger.warning("video thumbnail failed: %s", exc)
+
     async with get_async_session() as session:
         created = await AssetHubFacade(session).create_imported_file(
             file_path=str(result.video_path),
@@ -244,6 +290,7 @@ async def _persist_video_result(
             asset_type="video",
             source="video_generation",
             source_url=result.url or "",
+            thumbnail_url=thumbnail_url or "",
             metadata=source_metadata,
             lineage={
                 "source": "video_generation",
@@ -293,11 +340,24 @@ async def list_backends():
     for key in keys:
         b = manager.get_backend(MediaType.VIDEO, key)
         if b:
+            details = getattr(b, "video_capabilities", VideoCapabilities())
             info_list.append(BackendInfo(
                 name=b.name,
                 model=b.model,
                 available_models=getattr(b, 'available_models', [b.model]),
-                capabilities=list(b.capabilities),
+                capabilities=sorted(getattr(capability, "value", str(capability)) for capability in b.capabilities),
+                constraints={
+                    "enforced": bool(getattr(b, "enforce_video_capabilities", True)),
+                    "first_frame": details.first_frame,
+                    "last_frame": details.last_frame,
+                    "reference_images": details.reference_images,
+                    "max_reference_images": details.max_reference_images,
+                    "max_duration": details.max_duration,
+                    "supported_resolutions": details.supported_resolutions,
+                    "supported_aspect_ratios": details.supported_aspect_ratios,
+                    "supported_durations": details.supported_durations,
+                    "image_requires_public_url": bool(getattr(b, "default_params", {}).get("image_requires_public_url")),
+                },
             ))
 
     default_backend = manager.get_default(MediaType.VIDEO)
@@ -335,6 +395,12 @@ async def generate_video(req: VideoGenerateRequest):
         if start_image is None and reference_paths:
             start_image = next(iter(reference_paths.values()))
 
+        from app.services.ai.types import MediaType
+        backend = manager.get_backend(MediaType.VIDEO, req.provider) if req.provider else manager.get_default(MediaType.VIDEO)
+        if backend is None:
+            raise HTTPException(status_code=404, detail="未找到指定的视频生成连接器")
+        _validate_video_capabilities(backend, req, has_start_image=start_image is not None)
+
         video_req = VideoGenerationRequest(
             prompt=req.prompt,
             duration=req.duration or 5,
@@ -352,8 +418,11 @@ async def generate_video(req: VideoGenerateRequest):
 
         # A failed submission has no provider task id, but it still needs a
         # durable local ID so the complete request/response diagnostics survive.
-        if not result.task_id:
-            result.task_id = f"video_{uuid4().hex}"
+        provider_task_id = result.task_id or ""
+        # Keep the durable/local identifier short. Provider task ids may contain
+        # encoded request metadata and exceed the task ledger's varchar(128).
+        local_task_id = f"video_{uuid4().hex}"
+        result.task_id = local_task_id
         result.provider = result.provider or req.provider or ""
         result.model = result.model or req.model or ""
 
@@ -376,7 +445,7 @@ async def generate_video(req: VideoGenerateRequest):
                 task.status = (result.status or "pending") if result.success else "error"
                 task.prompt = req.prompt
                 task.request_json = json.dumps(context, ensure_ascii=False)
-                task.result_json = json.dumps(_result_payload(result), ensure_ascii=False)
+                task.result_json = json.dumps(_result_payload(result, provider_task_id), ensure_ascii=False)
                 task.asset_id = asset_id
                 task.project_id = req.project_id or None
                 task.content_id = req.content_id or None
@@ -444,8 +513,25 @@ async def get_task_status(task_id: str, provider: Optional[str] = None):
                 status="error",
                 error="Unknown video task; submit it through the video workspace before polling.",
             )
+        if task and task.status == "cancelled":
+            return TaskStatusResponse(
+                success=True,
+                task_id=task_id,
+                status="cancelled",
+                progress=task.progress or 0,
+                progress_message=task.progress_message or "已取消",
+                asset_id=task.asset_id,
+                error=task.error,
+            )
 
-        result = await manager.poll_video(provider or (task.provider if task else None), task_id)
+        provider_task_id = task_id
+        if task:
+            try:
+                stored_result = json.loads(task.result_json or "{}")
+                provider_task_id = str(stored_result.get("provider_task_id") or task_id)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                provider_task_id = task_id
+        result = await manager.poll_video(provider or (task.provider if task else None), provider_task_id)
         if task:
             result.provider = result.provider or task.provider
             result.model = result.model or task.model
@@ -464,13 +550,14 @@ async def get_task_status(task_id: str, provider: Optional[str] = None):
                     persisted.provider = result.provider or persisted.provider
                     persisted.model = result.model or persisted.model
                     persisted.status = result.status or persisted.status
-                    persisted.result_json = json.dumps(_result_payload(result), ensure_ascii=False)
+                    persisted.result_json = json.dumps(_result_payload(result, result.task_id), ensure_ascii=False)
                     persisted.asset_id = asset_id
                     persisted.error = result.error or None
                     persisted.progress = result.progress or (100 if result.status == "done" else 0)
                     persisted.progress_message = result.progress_message or ""
                     persisted.updated_at = time.time()
                     persisted.completed_at = time.time() if result.status == "done" else persisted.completed_at
+        result.task_id = task_id
         return TaskStatusResponse(
             success=result.success,
             task_id=result.task_id,
@@ -509,3 +596,20 @@ async def list_video_tasks(
         statement = statement.order_by(VideoGenerationTask.created_at.desc()).limit(limit)
         rows = (await session.execute(statement)).scalars().all()
     return VideoTaskListResponse(data=[_task_to_dict(item) for item in rows], total=len(rows))
+
+
+@router.get("/tasks/{task_id}/file", summary="播放已下载的视频任务文件")
+async def stream_task_file(task_id: str):
+    """Serve the backend-downloaded provider result for browser playback."""
+    async with get_async_session() as session:
+        task = await session.get(VideoGenerationTask, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Video task not found")
+    try:
+        result_data = json.loads(task.result_json or "{}")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        result_data = {}
+    local_path = Path(str(result_data.get("local_path") or ""))
+    if not local_path.is_file():
+        raise HTTPException(status_code=404, detail="Video file is not ready")
+    return FileResponse(local_path, media_type="video/mp4", filename=local_path.name)

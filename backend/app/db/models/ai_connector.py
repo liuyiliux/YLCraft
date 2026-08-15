@@ -7,7 +7,7 @@ YLCraft — AI 连接器模型
 from __future__ import annotations
 
 from sqlmodel import SQLModel, Field
-from sqlalchemy import String, DateTime, Text, Boolean, Integer
+from sqlalchemy import String, DateTime, Text, Boolean, Integer, event
 from datetime import datetime, timezone
 from typing import Optional
 import json
@@ -57,7 +57,7 @@ class AIProviderType(str, enum.Enum):
     llm = "llm"           # 大语言模型
     image = "image"       # 图像生成
     video = "video"       # 视频生成
-    model3d = "3d"         # 图生 3D
+    three_d = "3d"         # 图生 3D
     tts = "tts"           # 文本转语音
     stt = "stt"           # 语音转文本
     embedding = "embedding"  # 嵌入模型（文本/图像向量化）
@@ -70,8 +70,10 @@ class AIConnectorBase(SQLModel):
     api_key: str = Field("", description="API Key")
 
     # 提供商类型（LLM / Image / Video / TTS / STT）
-    provider_type: AIProviderType = Field(
-        AIProviderType.llm,
+    # Keep this as a string: the PostgreSQL enum stores values such as `3d`,
+    # while SQLAlchemy serializes Python Enum members by name by default.
+    provider_type: str = Field(
+        "llm",
         description="提供商类型：llm / image / video / 3d / tts / stt"
     )
 
@@ -209,6 +211,17 @@ class AIConnector(AIConnectorBase, table=True):
         self.last_used = datetime.now(timezone.utc).replace(tzinfo=None)
         self.usage_count += 1
         self.total_cost += cost
+
+
+@event.listens_for(AIConnector, "before_insert")
+@event.listens_for(AIConnector, "before_update")
+def normalize_ai_connector_provider_type(_mapper, _connection, target):
+    """Normalize historical type aliases at the final ORM flush boundary."""
+    value = target.provider_type
+    if isinstance(value, str) and value.strip().lower() in {
+        "model3d", "model_3d", "image_to_3d", "image-to-3d"
+    }:
+        target.provider_type = "3d"
 
 
 class AIConnectorCreate(SQLModel):

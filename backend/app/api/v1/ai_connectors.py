@@ -40,6 +40,19 @@ logger = logging.getLogger("ylcraft.api.ai")
 
 router = APIRouter(tags=["AI Connectors"])
 
+
+def normalize_provider_type(value: Any) -> str:
+    """Map historical connector type aliases to values accepted by the database enum."""
+    if not isinstance(value, str):
+        return value
+    normalized = value.strip().lower()
+    return {
+        "model3d": "3d",
+        "model_3d": "3d",
+        "image_to_3d": "3d",
+        "image-to-3d": "3d",
+    }.get(normalized, normalized)
+
 # =============================================================================
 # 支持的 AI 提供商列表
 # =============================================================================
@@ -285,7 +298,7 @@ async def import_connectors(
                 skipped += 1
                 continue
 
-            pt = item.get("provider_type", "llm")
+            pt = normalize_provider_type(item.get("provider_type", "llm"))
             # 检查 pt 是否是有效的 AIProviderType 值，并转换为枚举
             try:
                 pt_enum = AIProviderType(pt)
@@ -1053,6 +1066,7 @@ async def create_connector(
 ):
     """创建新的 AI 连接"""
     try:
+        data.provider_type = normalize_provider_type(data.provider_type)
         conn = await service.create(data)
         reload_ai_service_after_connector_change()
         return {
@@ -1072,6 +1086,8 @@ async def update_connector(
     service: AIConnectorService = Depends(get_ai_service),
 ):
     """更新 AI 连接"""
+    if data.provider_type is not None:
+        data.provider_type = normalize_provider_type(data.provider_type)
     conn = await service.update(conn_id, data)
     if not conn:
         raise HTTPException(status_code=404, detail="连接不存在")

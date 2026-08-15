@@ -207,6 +207,181 @@ def test_assets_api_serves_asset_hub_list_detail_thumbnail_and_download(monkeypa
     assert download_response.content == b"png-bytes"
 
 
+def test_list_model_sidecar_files_lists_obj_mtl_and_texture(tmp_path):
+    (tmp_path / "model.obj").write_bytes(b"obj")
+    (tmp_path / "material.mtl").write_bytes(b"mtl")
+    (tmp_path / "tex.png").write_bytes(b"png")
+
+    files = assets_api._list_model_sidecar_files(str(tmp_path / "model.obj"), "asset-1")
+    assert {f["name"] for f in files} == {"model.obj", "material.mtl", "tex.png"}
+    assert {f["url"] for f in files} == {
+        "/api/v1/assets/asset-1/files/model.obj",
+        "/api/v1/assets/asset-1/files/material.mtl",
+        "/api/v1/assets/asset-1/files/tex.png",
+    }
+
+
+def test_list_model_sidecar_files_empty_for_single_file(tmp_path):
+    (tmp_path / "model.glb").write_bytes(b"glb")
+    assert assets_api._list_model_sidecar_files(str(tmp_path / "model.glb"), "asset-1") == []
+
+
+def test_assets_api_serves_model_sidecar_files(monkeypatch, tmp_path):
+    obj = tmp_path / "model.obj"
+    obj.write_bytes(b"obj-bytes")
+    (tmp_path / "material.mtl").write_bytes(b"mtl-bytes")
+    rep = SimpleNamespace(file_path=str(obj), mime_type="text/plain")
+
+    async def fake_hub_primary(_service, asset_id):
+        if asset_id == "hub-model-1":
+            return SimpleNamespace(), SimpleNamespace(id="version"), rep
+        return None
+
+    monkeypatch.setattr(assets_api, "_get_asset_hub_primary", fake_hub_primary)
+    monkeypatch.setattr(assets_api, "_resolve_asset_file_path", lambda value: Path(value))
+
+    with _assets_test_client(_FakeService()) as client:
+        ok = client.get("/api/v1/assets/hub-model-1/files/material.mtl")
+        missing = client.get("/api/v1/assets/hub-model-1/files/nope.mtl")
+
+    assert ok.status_code == 200
+    assert ok.content == b"mtl-bytes"
+    assert missing.status_code == 404
+
+
+def test_assets_api_upload_model3d_zip(monkeypatch, tmp_path):
+    import io
+    import zipfile
+
+    zip_buf = io.BytesIO()
+    with zipfile.ZipFile(zip_buf, "w") as archive:
+        archive.writestr("model.obj", b"obj-bytes")
+        archive.writestr("material.mtl", b"mtl-bytes")
+        archive.writestr("tex.png", b"png-bytes")
+    zip_bytes = zip_buf.getvalue()
+
+    captured: dict = {}
+
+    class FakeFacade:
+        def __init__(self, session):
+            self.session = session
+
+        async def create_imported_file(self, **kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(node_id="uploaded-model-1")
+
+    monkeypatch.setattr(assets_api, "AssetHubFacade", FakeFacade)
+    monkeypatch.setattr(assets_api, "_model3d_upload_dir", lambda: tmp_path)
+
+    with _assets_test_client(_FakeService()) as client:
+        resp = client.post(
+            "/api/v1/assets/upload-model3d",
+            files={"file": ("model.zip", zip_bytes, "application/zip")},
+            data={"title": "Test Model"},
+        )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["success"] is True
+    assert body["asset_id"] == "uploaded-model-1"
+    assert captured["file_path"].endswith("model.obj")
+    assert captured["asset_type"] == AssetType.THREE_D_MODEL
+    assert captured["title"] == "Test Model"
+
+
+def test_assets_api_upload_model3d_rejects_missing_model(monkeypatch, tmp_path):
+    import io
+    import zipfile
+
+    zip_buf = io.BytesIO()
+    with zipfile.ZipFile(zip_buf, "w") as archive:
+        archive.writestr("notes.txt", b"no model here")
+    zip_bytes = zip_buf.getvalue()
+
+    monkeypatch.setattr(assets_api, "_model3d_upload_dir", lambda: tmp_path)
+
+    with _assets_test_client(_FakeService()) as client:
+        resp = client.post(
+            "/api/v1/assets/upload-model3d",
+            files={"file": ("bad.zip", zip_bytes, "application/zip")},
+        )
+
+    assert resp.status_code == 400
+
+
+def test_assets_api_upload_generic_image(monkeypatch, tmp_path):
+    captured: dict = {}
+
+    class FakeFacade:
+        def __init__(self, session):
+            self.session = session
+
+        async def create_imported_file(self, **kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(node_id="uploaded-img-1")
+
+    monkeypatch.setattr(assets_api, "AssetHubFacade", FakeFacade)
+    monkeypatch.setattr(assets_api, "_upload_assets_dir", lambda: tmp_path)
+
+    with _assets_test_client(_FakeService()) as client:
+        resp = client.post(
+            "/api/v1/assets/upload",
+            files={"file": ("photo.png", b"png-bytes", "image/png")},
+            data={"title": "My Photo"},
+        )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["success"] is True
+    assert body["asset_id"] == "uploaded-img-1"
+    assert captured["asset_type"] == AssetType.IMAGE
+    assert captured["title"] == "My Photo"
+
+
+def test_assets_api_upload_video_sets_first_frame_thumbnail(monkeypatch, tmp_path):
+    captured: dict = {}
+
+    class FakeFacade:
+        def __init__(self, session):
+            self.session = session
+
+        async def create_imported_file(self, **kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(node_id="uploaded-vid-1")
+
+    monkeypatch.setattr(assets_api, "AssetHubFacade", FakeFacade)
+    monkeypatch.setattr(assets_api, "_upload_assets_dir", lambda: tmp_path)
+
+    async def fake_thumb(video_path):
+        return str(tmp_path / "thumb.jpg")
+
+    monkeypatch.setattr(assets_api, "_video_thumbnail_file", fake_thumb)
+
+    with _assets_test_client(_FakeService()) as client:
+        resp = client.post(
+            "/api/v1/assets/upload",
+            files={"file": ("clip.mp4", b"video-bytes", "video/mp4")},
+        )
+
+    assert resp.status_code == 200
+    assert captured["asset_type"] == AssetType.VIDEO
+    assert captured["thumbnail_url"] == str(tmp_path / "thumb.jpg")
+
+
+def test_delete_asset_file_if_exists_skips_missing_and_deletes_existing(monkeypatch, tmp_path):
+    monkeypatch.setattr(assets_api, "_asset_file_allowed_roots", lambda: [tmp_path])
+
+    # 文件已不存在时不抛错（回归：之前会 404「文件不存在」导致删不掉）
+    missing = tmp_path / "already-gone.glb"
+    assets_api._delete_asset_file_if_exists(str(missing))
+
+    # 文件存在时正常删除
+    existing = tmp_path / "model.glb"
+    existing.write_bytes(b"glb")
+    assets_api._delete_asset_file_if_exists(str(existing))
+    assert not existing.exists()
+
+
 def test_assets_api_no_longer_serves_legacy_fallback_assets():
     with _assets_test_client(_FakeService()) as client:
         detail_response = client.get("/api/v1/assets/legacy-1")

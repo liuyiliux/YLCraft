@@ -115,6 +115,23 @@ async def test_task_list_can_filter_project_and_opt_into_payload_details():
     assert filtered.tasks[0].payload == {"project_id": "project-1", "prompt": "scene"}
 
 
+def test_task_center_merges_durable_media_workspaces_without_queue_duplicates(monkeypatch):
+    init_task_queue()
+    video = tasks_api.TaskInfo(
+        task_id="video-1", task_type="video_generation", status="running", progress=30,
+        progress_message="generating", created_at="2026-08-14T10:00:00",
+    )
+    model3d = tasks_api.TaskInfo(
+        task_id="model3d-1", task_type="model3d_generation", status="done", progress=100,
+        progress_message="ready", created_at="2026-08-14T11:00:00",
+    )
+
+    merged = tasks_api._all_task_infos(video_infos=[video], model3d_infos=[model3d])
+
+    assert [task.task_id for task in merged[:2]] == ["model3d-1", "video-1"]
+    assert {task.task_type for task in merged} >= {"video_generation", "model3d_generation"}
+
+
 @pytest.mark.asyncio
 async def test_queue_hydrates_persisted_project_task(monkeypatch):
     async def fake_get_task(task_id):
@@ -140,3 +157,31 @@ async def test_queue_hydrates_persisted_project_task(monkeypatch):
     assert task.status.value == "running"
     assert task.payload["external_task_id"] == "remote-1"
     assert task.progress == 35
+
+
+@pytest.mark.asyncio
+async def test_task_center_reports_terminal_durable_task_cannot_cancel(monkeypatch):
+    init_task_queue()
+    completed = tasks_api.TaskInfo(
+        task_id="video-complete", task_type="video_generation", status="done", progress=100,
+        progress_message="ready",
+    )
+
+    async def no_persistent_cancel(task_id):
+        assert task_id == "video-complete"
+        return None
+
+    async def video_infos(include_detail=False):
+        return [completed]
+
+    async def model_infos(include_detail=False):
+        return []
+
+    monkeypatch.setattr(tasks_api, "_cancel_persistent_media_task", no_persistent_cancel)
+    monkeypatch.setattr(tasks_api, "_video_task_infos", video_infos)
+    monkeypatch.setattr(tasks_api, "_model3d_task_infos", model_infos)
+
+    response = await tasks_api.cancel_task("video-complete")
+
+    assert response.success is False
+    assert "done" in response.message

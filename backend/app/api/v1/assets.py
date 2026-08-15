@@ -16,24 +16,28 @@ POST   /api/v1/assets/tags         — 创建标签
 
 from __future__ import annotations
 
+import io
 import json
 import logging
 import mimetypes
 import os
 import tempfile
+import zipfile
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 from urllib.parse import quote
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, Depends, Query, Request
+from fastapi import APIRouter, HTTPException, Depends, Query, Request, UploadFile, File, Form
 from fastapi.responses import StreamingResponse, FileResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.db.database import get_async_session
 from app.db.models.asset_hub import AssetNode, AssetType, Tag
+from app.core.ffmpeg import get_ffmpeg_service
+from app.services.asset_hub import AssetHubFacade
 from app.services.asset_hub.node_service import AssetNodeService
 from app.services.asset_hub.representation_service import AssetRepresentationService
 from app.services.asset_hub.version_service import AssetVersionService
@@ -433,12 +437,15 @@ async def _asset_hub_card(
     if project_context["project_id"]:
         metadata["project_context"] = project_context
     if include_metadata:
+        model_files = _list_model_sidecar_files(rep.file_path, str(node.id)) if asset_type == "3d_model" else []
         data.update({
             "description": node_meta.get("description", ""),
             "file_path": rep.file_path,
             "mime_type": mime_type,
             "metadata": metadata,
         })
+        if model_files:
+            data["files"] = model_files
     return data
 
 
@@ -565,16 +572,9 @@ async def _soft_delete_asset_hub_node(
     node, _version, rep = primary
 
     if mode in {"del_file", "hard"} and rep.file_path:
-        try:
-            path = _resolve_asset_file_path(rep.file_path)
-            if path.exists():
-                path.unlink()
-        except HTTPException:
-            raise
-        except Exception as exc:
-            logger.warning("[assets] failed to delete Asset Hub file %s: %s", rep.file_path, exc)
+        _delete_asset_file_if_exists(rep.file_path)
 
-    node_meta = _dict_value(node.metadata_json)
+    node_meta = dict(_dict_value(node.metadata_json))
     node_meta["status"] = "DELETED"
     node_meta["deleted_at"] = datetime.now().isoformat()
     node_meta["delete_mode"] = mode
@@ -590,7 +590,7 @@ async def _restore_asset_hub_node(session, asset_id: str) -> bool:
     node = await session.get(AssetNode, asset_id)
     if not node:
         return False
-    node_meta = _dict_value(node.metadata_json)
+    node_meta = dict(_dict_value(node.metadata_json))
     if not (node_meta.get("deleted_at") or str(node_meta.get("status", "")).upper() == "DELETED"):
         return False
 
@@ -729,6 +729,52 @@ def _resolve_asset_file_path(path_value: str) -> Path:
     return path
 
 
+def _delete_asset_file_if_exists(path_value: str) -> None:
+    """Delete an asset file when it still exists; never raise for a missing file."""
+    if not path_value or path_value.startswith(("http://", "https://", "data:")):
+        return
+    path = Path(os.path.expandvars(os.path.expanduser(path_value))).resolve()
+    if not path.is_file():
+        return  # 文件已不存在，跳过
+
+    allowed = False
+    for root in _asset_file_allowed_roots():
+        if path == root or root in path.parents:
+            allowed = True
+            break
+    if not allowed and _is_allowed_temp_asset_path(path):
+        allowed = True
+    if not allowed:
+        logger.warning("[assets] skip deleting file outside allowed roots: %s", path)
+        return
+
+    try:
+        path.unlink()
+    except OSError as exc:
+        logger.warning("[assets] failed to delete Asset Hub file %s: %s", path, exc)
+
+
+def _list_model_sidecar_files(file_path: str, asset_id: str) -> list[dict]:
+    """List a multi-file 3D model directory (OBJ + MTL + textures) as URLs.
+
+    OBJ 模型拆成 obj + mtl + 贴图，前端 MTLLoader 需要按相对路径取配套文件。
+    单文件模型（GLB/GLTF）目录里通常只有一个文件，返回空列表即可。
+    """
+    path = Path(file_path).resolve()
+    base = path.parent
+    files: list[dict] = []
+    try:
+        for child in sorted(base.iterdir()):
+            if child.is_file():
+                files.append({
+                    "name": child.name,
+                    "url": f"/api/v1/assets/{asset_id}/files/{quote(child.name)}",
+                })
+    except OSError:
+        return []
+    return files if len(files) > 1 else []
+
+
 @router.get("/download", summary="下载/预览本地文件")
 @router.get("/file", summary="预览本地文件")
 async def download_local_asset_file(
@@ -762,6 +808,164 @@ async def download_asset(
         return _asset_hub_file_response(rep)
 
     raise HTTPException(status_code=404, detail="资产不存在")
+
+
+@router.get("/{asset_id}/files/{filename:path}", summary="下载/预览资产的配套文件")
+async def asset_sidecar_file(
+    asset_id: str,
+    filename: str,
+    session = Depends(get_asset_session),
+):
+    """Serve a sibling file of a multi-file asset (OBJ 的 mtl/贴图等).
+
+    OBJ 模型需要 obj + mtl + 贴图一起加载；该端点按文件名从主文件所在目录
+    提供配套文件，供前端 MTLLoader 以相对路径解析。
+    """
+    hub_primary = await _get_asset_hub_primary(session, asset_id)
+    if not hub_primary:
+        raise HTTPException(status_code=404, detail="资产不存在")
+    _node, _version, rep = hub_primary
+
+    base = Path(rep.file_path).resolve().parent
+    target = (base / filename).resolve()
+    if target != base and base not in target.parents:
+        raise HTTPException(status_code=403, detail="非法文件路径")
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="文件不存在")
+
+    path = _resolve_asset_file_path(str(target))
+    media_type = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
+    return FileResponse(path=str(path), media_type=media_type, filename=target.name)
+
+
+def _model3d_upload_dir() -> Path:
+    directory = Path(__file__).resolve().parents[3] / "storage" / "model3d" / "uploads"
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
+
+
+async def _import_uploaded_model(filename: str, content: bytes, title: str, session) -> dict:
+    """解包/定位上传的 3D 模型文件并写入 Asset Hub。"""
+    upload_dir = _model3d_upload_dir() / uuid4().hex
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    lower_name = filename.lower()
+    if lower_name.endswith(".zip") or content[:2] == b"PK":
+        try:
+            with zipfile.ZipFile(io.BytesIO(content)) as archive:
+                archive.extractall(upload_dir)
+        except zipfile.BadZipFile:
+            raise HTTPException(status_code=400, detail="不是有效的 ZIP 文件")
+    else:
+        ext = Path(filename).suffix.lower()
+        if ext not in {".obj", ".glb", ".gltf", ".fbx", ".usdz"}:
+            raise HTTPException(status_code=400, detail="仅支持 OBJ/GLB/GLTF/FBX/USDZ 或包含这些文件的 ZIP")
+        (upload_dir / filename).write_bytes(content)
+
+    order = {".glb": 0, ".gltf": 1, ".obj": 2, ".fbx": 3, ".usdz": 4}
+    candidates = [p for p in upload_dir.rglob("*") if p.is_file() and p.suffix.lower() in order]
+    if not candidates:
+        raise HTTPException(status_code=400, detail="压缩包内未找到 3D 模型文件（OBJ/GLB/GLTF/FBX/USDZ）")
+    candidates.sort(key=lambda p: (order[p.suffix.lower()], -p.stat().st_size))
+    model_path = candidates[0]
+
+    created = await AssetHubFacade(session).create_imported_file(
+        file_path=str(model_path),
+        title=(title or model_path.stem or "上传的 3D 模型")[:120],
+        asset_type=AssetType.THREE_D_MODEL,
+        source="upload",
+        source_url="",
+        metadata={"original_filename": filename, "upload": True},
+        tags=["upload", "3d_model"],
+    )
+    return {"success": True, "asset_id": created.node_id}
+
+
+@router.post("/upload-model3d", summary="上传 3D 模型（ZIP 或单文件）入库")
+async def upload_model3d(
+    file: UploadFile = File(...),
+    title: str = Form(""),
+    session = Depends(get_asset_session),
+):
+    """上传 OBJ/GLB/GLTF 等 3D 模型包并写入 Asset Hub。
+
+    支持 ZIP（内含 obj + mtl + 贴图）或单个模型文件。OBJ 的配套 mtl/贴图
+    会作为同级文件保留，供前端 MTLLoader 按相对路径解析。
+    """
+    filename = file.filename or "model.zip"
+    content = await file.read()
+    return await _import_uploaded_model(filename, content, title, session)
+
+
+def _upload_assets_dir() -> Path:
+    directory = Path(__file__).resolve().parents[3] / "storage" / "uploads"
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
+
+
+_UPLOAD_EXT_TO_TYPE: dict[str, AssetType] = {
+    ".png": AssetType.IMAGE, ".jpg": AssetType.IMAGE, ".jpeg": AssetType.IMAGE,
+    ".webp": AssetType.IMAGE, ".gif": AssetType.IMAGE, ".bmp": AssetType.IMAGE, ".svg": AssetType.IMAGE,
+    ".mp4": AssetType.VIDEO, ".mov": AssetType.VIDEO, ".webm": AssetType.VIDEO, ".mkv": AssetType.VIDEO,
+    ".mp3": AssetType.AUDIO, ".wav": AssetType.AUDIO, ".ogg": AssetType.AUDIO, ".flac": AssetType.AUDIO,
+    ".txt": AssetType.TEXT, ".md": AssetType.TEXT, ".json": AssetType.TEXT, ".csv": AssetType.TEXT,
+}
+
+
+async def _video_thumbnail_file(video_path: Path) -> str:
+    """用 ffmpeg 截取视频第一帧作为缩略图，失败返回空字符串。"""
+    try:
+        thumb_dir = Path(__file__).resolve().parents[3] / "storage" / "thumbnails"
+        thumb_dir.mkdir(parents=True, exist_ok=True)
+        thumb_path = thumb_dir / f"{video_path.stem}.jpg"
+        await get_ffmpeg_service().create_thumbnail(video_path, thumb_path, time=0.5, width=480)
+        return str(thumb_path)
+    except Exception as exc:
+        logger.warning("[assets] video thumbnail failed: %s", exc)
+        return ""
+
+
+@router.post("/upload", summary="本地上传素材入库")
+async def upload_asset(
+    file: UploadFile = File(...),
+    title: str = Form(""),
+    session = Depends(get_asset_session),
+):
+    """上传本地素材（图片/视频/音频/文本）入库。
+
+    3D 模型（glb/gltf/obj/fbx/usdz/zip）走 upload-model3d 的解包逻辑。
+    """
+    filename = file.filename or "upload"
+    content = await file.read()
+    ext = Path(filename).suffix.lower()
+
+    if ext in {".glb", ".gltf", ".obj", ".fbx", ".usdz", ".zip"} or content[:2] == b"PK":
+        return await _import_uploaded_model(filename, content, title, session)
+
+    asset_type = _UPLOAD_EXT_TO_TYPE.get(ext)
+    if asset_type is None:
+        raise HTTPException(status_code=400, detail=f"不支持的文件类型：{ext or '未知'}")
+
+    upload_dir = _upload_assets_dir() / uuid4().hex
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    target = upload_dir / filename
+    target.write_bytes(content)
+
+    thumbnail = ""
+    if asset_type == AssetType.VIDEO:
+        thumbnail = await _video_thumbnail_file(target)
+
+    created = await AssetHubFacade(session).create_imported_file(
+        file_path=str(target),
+        title=(title or Path(filename).stem or "上传素材")[:120],
+        asset_type=asset_type,
+        source="upload",
+        source_url="",
+        thumbnail_url=thumbnail or "",
+        metadata={"original_filename": filename, "upload": True},
+        tags=["upload", str(asset_type.value)],
+    )
+    return {"success": True, "asset_id": created.node_id}
 
 
 @router.get("/{asset_id}/stream", summary="播放资产视频文件")
@@ -1062,6 +1266,29 @@ async def _fetch_image(image_source: str, platform: str = "") -> Response:
     logger.warning(f"不支持的图片来源，返回占位图: {image_source[:100]}")
     from app.api.v1.proxy import placeholder_image_response
     return placeholder_image_response("NO IMAGE")
+
+
+@router.post("/{asset_id}/thumbnail", summary="设置资产缩略图")
+async def set_asset_thumbnail(
+    asset_id: str,
+    file: UploadFile = File(...),
+    session = Depends(get_asset_session),
+):
+    """保存前端渲染出的模型截图作为资产缩略图。"""
+    content = await file.read()
+    directory = Path(__file__).resolve().parents[3] / "storage" / "thumbnails"
+    directory.mkdir(parents=True, exist_ok=True)
+    target = directory / f"{asset_id}.png"
+    target.write_bytes(content)
+
+    node = await session.get(AssetNode, asset_id)
+    if not node:
+        raise HTTPException(status_code=404, detail="资产不存在")
+    node.thumbnail_url = str(target)
+    node.updated_at = datetime.utcnow() if hasattr(datetime, "utcnow") else datetime.now()
+    session.add(node)
+    await session.commit()
+    return {"success": True, "thumbnail_url": _hub_file_url(str(target))}
 
 
 @router.get("/{asset_id}/thumbnail", summary="代理加载封面图")

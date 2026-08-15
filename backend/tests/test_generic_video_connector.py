@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import ast
+from pathlib import Path
 
 from app.db.models.ai_connector import AIConnector
 from app.services.ai.backends.video.generic import GenericVideoBackend
-from app.services.ai.types import VideoGenerationRequest
+from app.services.ai.types import VideoCapability, VideoGenerationRequest
 
 
 def test_generic_video_connector_parses_dashscope_async_contract():
@@ -24,6 +25,64 @@ def test_generic_video_connector_parses_dashscope_async_contract():
     assert backend._size("720p", "16:9") == "1280x720"
     assert backend._size("720p", "9:16") == "405x720"
     assert backend._size("720p", "16:9", "*") == "1280*720"
+    assert backend._dimensions("1080p", "4:3") == (1440, 1080)
+    assert backend._frame_count(5, 24) == 121
+
+
+def test_generic_video_connector_exposes_declared_capability_limits():
+    connector = AIConnector(
+        id="limited-video", provider="custom", name="Limited Video", api_key="test-key",
+        provider_type="video", support_reference_image=True,
+        default_params='{"video_capabilities":{"text_to_video":false,"image_to_video":true,"seed_control":true,"generate_audio":false,"resolutions":["720p"],"aspect_ratios":["9:16"],"durations":[5],"max_duration":5}}',
+    )
+    backend = GenericVideoBackend(connector)
+
+    assert backend.enforce_video_capabilities is True
+    assert {capability.value for capability in backend.capabilities} == {"image_to_video", "seed_control"}
+    assert backend.video_capabilities.first_frame is True
+    assert backend.video_capabilities.supported_resolutions == ["720p"]
+    assert backend.video_capabilities.supported_aspect_ratios == ["9:16"]
+    assert backend.video_capabilities.supported_durations == [5]
+    assert backend.video_capabilities.max_duration == 5
+
+
+def test_legacy_generic_video_connector_remains_permissive_without_constraints():
+    backend = GenericVideoBackend(AIConnector(id="legacy-video", provider="custom", name="Legacy Video"))
+    assert backend.enforce_video_capabilities is False
+
+
+def test_legacy_template_with_start_image_remains_image_to_video_capable():
+    backend = GenericVideoBackend(AIConnector(
+        id="legacy-i2v", provider="custom", name="Legacy I2V",
+        request_template='{"input":{"image":"{{ start_image }}"}}',
+    ))
+    assert VideoCapability.IMAGE_TO_VIDEO in backend.capabilities
+
+
+def test_generic_video_unwraps_json_string_poll_response():
+    connector = AIConnector(
+        id="agnes-video", provider="agnes", name="Agnes", api_key="test-key",
+        provider_type="video", base_url="https://api.agnes-ai.cn",
+        response_config='{"status_path":"$.status","video_url_path":"$.metadata.url","done_values":["completed"]}',
+    )
+    backend = GenericVideoBackend(connector)
+    payload = '{"status":"completed","metadata":{"url":"https://example.test/video.mp4"}}'
+    result = backend._status(payload, "video-1")
+    assert result.status == "done"
+    assert result.url.endswith("video.mp4")
+
+
+def test_generic_video_accepts_agnes_top_level_url_response():
+    connector = AIConnector(
+        id="agnes-video", provider="agnes", name="Agnes", api_key="test-key",
+        provider_type="video", base_url="https://api.agnes-ai.cn",
+        response_config='{"status_path":"$.status","video_url_path":"$.metadata.url","done_values":["completed"]}',
+    )
+    backend = GenericVideoBackend(connector)
+    payload = '{"status":"completed","internal_status":"completed","url":"https://example.test/agnes.mp4"}'
+    result = backend._status(payload, "video-1")
+    assert result.status == "done"
+    assert result.url.endswith("agnes.mp4")
 
 
 def test_generic_video_diagnostics_redact_credentials_and_large_media():
@@ -44,7 +103,12 @@ def test_generic_video_diagnostics_redact_credentials_and_large_media():
 
 
 def test_generic_video_requests_bypass_environment_proxy():
-    tree = ast.parse(GenericVideoBackend.__module__ and open(GenericVideoBackend.__module__.replace(".", "/") + ".py", encoding="utf-8").read())
+    # Resolve the source file relative to this test file so the assertion
+    # works regardless of the pytest working directory (repo root or backend/).
+    source_path = Path(__file__).resolve().parents[1] / (
+        GenericVideoBackend.__module__.replace(".", "/") + ".py"
+    )
+    tree = ast.parse(source_path.read_text(encoding="utf-8"))
     clients = [node for node in ast.walk(tree) if isinstance(node, ast.Call) and getattr(node.func, "attr", "") == "AsyncClient"]
     assert len(clients) == 2
     assert all(any(keyword.arg == "trust_env" and keyword.value.value is False for keyword in node.keywords) for node in clients)

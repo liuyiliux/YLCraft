@@ -67,6 +67,11 @@ class BaseVideoBackend(ABC):
     def video_capabilities(self) -> VideoCapabilities:
         return VideoCapabilities()
 
+    @property
+    def enforce_video_capabilities(self) -> bool:
+        """Whether declared capability limits should reject incompatible requests."""
+        return True
+
     async def health_check(self) -> bool:
         """健康检查：子类可覆盖"""
         import httpx

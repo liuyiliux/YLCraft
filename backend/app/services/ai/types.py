@@ -234,6 +234,9 @@ class VideoCapabilities:
     reference_images: bool = False
     max_reference_images: int = 0
     max_duration: int = 10
+    supported_resolutions: list[str] = field(default_factory=list)
+    supported_aspect_ratios: list[str] = field(default_factory=list)
+    supported_durations: list[int] = field(default_factory=list)
 
 
 # ==================== 图片 MIME 类型映射 ====================
