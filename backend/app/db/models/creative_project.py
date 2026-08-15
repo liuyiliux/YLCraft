@@ -479,3 +479,33 @@ class ProjectStyleMeasurement(SQLModel, table=True):
     style_fingerprint: str = Field(default="", index=True)
     created_at: datetime = Field(default_factory=datetime.now, index=True)
     updated_at: datetime = Field(default_factory=datetime.now)
+
+
+class ProjectStateEntry(SQLModel, table=True):
+    """Append-only dynamic-state ledger entry for a creative project.
+
+    Records every change to mutable story state (level, attributes, skills,
+    relationships, world variables) with chapter + source provenance. The
+    current state is a fold over these entries; ``scope`` separates character
+    state (``character:<id>``) from project-global state (``world``).
+    """
+
+    __tablename__ = "project_state_entries"
+    __table_args__ = (
+        Index("ix_pse_project_scope_chapter", "project_id", "scope", "chapter_number"),
+        Index("ix_pse_project_fingerprint", "project_id", "fingerprint"),
+    )
+
+    id: str = Field(primary_key=True, default_factory=lambda: uuid.uuid4().hex)
+    project_id: str = Field(foreign_key="creative_projects.id", index=True)
+    scope: str = Field(index=True)  # "world" | "character:<id>"
+    key: str = Field(index=True)
+    op: str = Field(default="set", index=True)  # set | add | remove
+    value_json: str = Field(default="null")
+    chapter_number: int = Field(index=True)
+    source_content_id: str | None = Field(default=None, foreign_key="project_contents.id", index=True)
+    source_version: int = Field(default=1)
+    fingerprint: str = Field(default="", index=True)
+
+    created_at: datetime = Field(default_factory=datetime.now, index=True)
+    updated_at: datetime = Field(default_factory=datetime.now)

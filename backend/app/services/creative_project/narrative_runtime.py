@@ -37,6 +37,7 @@ from app.services.creative_project.schemas import (
     NarrativeSnapshotSchema,
 )
 from app.services.creative_project.service import loads_json, repair_utf8_mojibake
+from app.services.creative_project.state_ledger import StateLedger
 
 
 def _json(value: Any) -> str:
@@ -142,6 +143,26 @@ class ChapterAftermathPipeline:
             diagnostics["foreshadowing"] = str(exc)
             foreshadowing = []
             stage("foreshadowing", "failed", error=str(exc))
+
+        try:
+            state_changes = data.get("state_changes") if isinstance(data, dict) else []
+            if not isinstance(state_changes, list):
+                state_changes = []
+            if state_changes:
+                StateLedger.replace_chapter_entries(
+                    self.session,
+                    project_id,
+                    content.chapter_number,
+                    state_changes,
+                    source_content_id=content.id,
+                    source_version=content.version,
+                )
+                self.session.flush()
+            stage("state", "success", count=len(state_changes))
+        except Exception as exc:
+            stage_failed = True
+            diagnostics["state"] = str(exc)
+            stage("state", "failed", error=str(exc))
 
         try:
             measurement = self._measure_style(text)

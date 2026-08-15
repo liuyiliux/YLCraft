@@ -38,6 +38,7 @@
 | Agent 对话工作台 | 进行中：已收敛为对话优先双栏、内联轨迹、局部失败恢复和页面错误边界；待接入真实后端后的多轮对话人工验收 | `openspec/changes/agent-center-conversation-workbench-redesign/tasks.md` |
 | Agent 声明式团队组合 | 运行时已完整落地：`AgentScope` 平面隔离、团队模板 schema/loader/validator、`TeamComposer`、`spawn/fork/continuable` 三原语、缓存稳定工具目录 + `CostMeter` + 压缩溯源、内置模板、Writer Room `team` 模式（opt-in `rehearsal_mode=team`）；旧 `MultiAgentCoordinator` 硬编码逻辑已去重，`scene-sim` 团队路径已用真实 DeepSeek 端到端验收（5/5 子任务完成）；仍待 `AgentService` per-session 状态迁移与 writer-room team 真实项目验收 | `openspec/changes/agent-team-composition/tasks.md` |
 | 创作项目闭环 | 代码任务完成，仅留真实生图后端人工验收 | `openspec/changes/creative-project-closed-loop/tasks.md` |
+| 创作项目动态状态 | append-only 台账 `ProjectStateEntry`（scope 区分角色/世界、自由 JSON 键值、set/add/remove、按章溯源 + 去重）、`StateLedger` 折叠/回滚、叙事运行时抽取 `state_changes`、context pack 注入「动态状态」层；静态设定与锁定事实隔离 | `openspec/changes/creative-project-dynamic-state/tasks.md` |
 | 创作项目优化路线 | 已完成并归档 | `openspec/changes/archive/creative-project-optimization-roadmap/tasks.md` |
 | 小说连续性事实闭环 | 已完成并归档 | `openspec/changes/archive/creative-project-continuity-facts/tasks.md` |
 | 创作画布 | 已完成并归档 | `openspec/changes/archive/creative-project-infinite-canvas/tasks.md` |
@@ -48,7 +49,7 @@
 | Story 生产台 | 已完成，已验证桌面/移动布局 | `openspec/changes/story-production-desk/tasks.md` |
 | 视频分镜生产 | 代码和项目回流完成；仅剩真实视频供应商验收 | `openspec/changes/story-video-shot-production/tasks.md` |
 | 任务观测诊断 | 已完成，事件时间线和异步生图诊断已验证 | `openspec/changes/task-observability-diagnostics/tasks.md` |
-| 数据库迁移收敛 | Alembic 迁移链当前到 `011_add_model3d_generation_tasks`；启动和 Agent 请求路径不再隐式改 schema，新增视频与图转 3D 持久任务均通过显式迁移落库 | `backend/alembic/versions/`、`openspec/changes/database-migration-convergence/tasks.md` |
+| 数据库迁移收敛 | Alembic 迁移链当前到 `013_add_project_state_entries`；启动和 Agent 请求路径不再隐式改 schema，新增视频/图转 3D/动态状态持久任务均通过显式迁移落库 | `backend/alembic/versions/`、`openspec/changes/database-migration-convergence/tasks.md` |
 | 独立视频工作台 | 文生/图生视频、视频提示词模板、素材库首帧、持久任务恢复、任务中心聚合和 Asset Hub 回流已落地；模式 tab 驱动供应商/模型过滤、`video_capabilities` 能力约束、视频首帧缩略图已补齐；仍待真实供应商全链路验收 | `openspec/changes/ai-video-workspace/tasks.md` |
 | 图转 3D 工作台 | 配置驱动提交/轮询/下载、Asset Hub 入库、GLB 优先与 ZIP 解包、PreviewImageUrl 缩略图、独立页面已落地；仍待真实供应商生成 GLB 验收 | `openspec/changes/image-to-3d-workspace/tasks.md` |
 | 3D 模型查看器 | 独立全屏页、GLB/GLTF/OBJ 渲染、渲染模式（纹理/白模/线框/反照率/法线）、灯光面板、视角对齐、包围盒、拓扑角标、键盘平移已完成 | `frontend/src/components/asset-hub/Model3DViewer.tsx`、`frontend/src/pages/model3d-viewer/` |

@@ -2192,6 +2192,7 @@ class CreativeProjectService:
             "content": text,
             "word_count": len(text),
             "continuity_notes": data.get("continuity_notes") or [],
+            "state_changes": data.get("state_changes") or [],
             "promoted_from_content_id": content.id,
             "promoted_from_type": content.content_type,
         }
@@ -4173,6 +4174,26 @@ class CreativeProjectService:
             )
         return "\n\n".join(lines)
 
+    @staticmethod
+    def _dynamic_state_context_text(dynamic_state: dict[str, dict[str, Any]]) -> str:
+        """Render the folded dynamic state as a compact text block."""
+        lines: list[str] = []
+        world_state = dynamic_state.get("world") or {}
+        if world_state:
+            lines.append("【世界】")
+            for key, value in world_state.items():
+                lines.append(f"- {key}: {dumps_json(value)}")
+        for scope, state in dynamic_state.items():
+            if scope == "world" or not scope.startswith("character:"):
+                continue
+            if not state:
+                continue
+            char_label = scope.split(":", 1)[1] if ":" in scope else scope
+            lines.append(f"【角色 {char_label}】")
+            for key, value in state.items():
+                lines.append(f"- {key}: {dumps_json(value)}")
+        return "\n".join(lines)
+
     def _creative_context_pack(
         self,
         project_id: str,
@@ -4387,6 +4408,14 @@ class CreativeProjectService:
         if style_genre:
             included_sources.append({"id": f"project-style:{project.id}", "kind": "project_style", "layer": "T6"})
 
+        try:
+            from app.services.creative_project.state_ledger import StateLedger
+
+            dynamic_state = StateLedger.compute_state(self.session, project_id, up_to_chapter=chapter_number - 1)
+        except Exception:  # noqa: BLE001 — missing table / partial schema degrades to empty
+            dynamic_state = {}
+        dynamic_state_context = self._dynamic_state_context_text(dynamic_state)
+
         layers = [
             {"id": "T0", "label": "locked_canon", "budget": budgets["T0"], "text": locked_bible, "hard_constraint": True},
             {"id": "T1", "label": "narrative_state", "budget": budgets["T1"], "text": active_state},
@@ -4396,14 +4425,17 @@ class CreativeProjectService:
             {"id": "T5", "label": "semantic_recall", "budget": budgets["T5"], "text": semantic_recall, "status": recall_status, "diagnostics": recall_diagnostics},
             {"id": "T6", "label": "style_genre_skills", "budget": budgets["T6"], "text": style_genre, "applied_skill_ids": [item["id"] for item in applied_skills]},
         ]
-        sections = [
+        sections = []
+        if dynamic_state_context:
+            sections.append(f"动态状态（可随剧情更新）：\n{dynamic_state_context}")
+        sections.extend(
             f"{layer['id']} {label}：\n{layer['text']}"
             for layer, label in zip(
                 layers,
                 ["已锁定项目圣经/世界资产（不可改写）", "已确认叙事状态（承接，不得倒退）", "已激活伏笔（需要推进或回收时才使用）", "当前章节契约", "前文连续性（承接，不得与其矛盾）", "语义召回", "文风、题材和兼容技能"],
             )
             if layer["text"]
-        ]
+        )
         text = "\n\n".join(sections)
         excluded_sources = {
             "pending_continuity_candidates": len(self.session.exec(select(ProjectContinuityCandidate).where(ProjectContinuityCandidate.project_id == project_id, ProjectContinuityCandidate.status == "pending")).all()),
@@ -4438,6 +4470,8 @@ class CreativeProjectService:
             "text": text,
             "locked_project_bible_context": locked_bible,
             "previous_context": previous_context,
+            "dynamic_state_context": dynamic_state_context,
+            "dynamic_state": dynamic_state,
             "metadata": metadata,
         }
         if persist:
@@ -7080,7 +7114,8 @@ class CreativeProjectService:
 2. 开头有钩子，中段有动作推进、对白、误解或反转，结尾留悬念。
 3. 多写具体动作、物件互动、环境细节和潜台词，少写“他意识到/她感到/空气仿佛”这类泛化句。
 4. 保留舒适分段，不要 Markdown。
-格式：{{"chapter_number": {chapter_number}, "title": "章节标题", "content": "完整正文", "word_count": 0, "continuity_notes": ["备注"]}}"""
+5. 若本章导致角色或世界状态变化（升级、习得/遗忘技能、关系值增减、世界倒计时推进等），在 state_changes 中输出增量，每条含 scope（"character:<角色ID>" 或 "world"）、key（键名）、op（set/add/remove）、value（新值或增量）；没有变化则给空数组。不要改静态设定或已锁定事实。
+格式：{{"chapter_number": {chapter_number}, "title": "章节标题", "content": "完整正文", "word_count": 0, "continuity_notes": ["备注"], "state_changes": [{{"scope":"character:角色ID","key":"level","op":"add","value":1}}]}}"""
         if step == "prose_humanized":
             return common + f"""待润色正文：
 {variables["source_text"]}
@@ -7097,7 +7132,7 @@ class CreativeProjectService:
 3. 改掉重复句式和万能比喻；句长要有变化，段落要有呼吸。
 4. 除非用户明确要求增删篇幅，润色后的 content 必须保持在源稿字数的 90%-110% 之间；信息密度可以提升，但不能靠删戏压缩。
 5. 不要只给建议，直接输出完整润色后的正文。
-格式：{{"chapter_number": {chapter_number}, "title": "章节标题", "content": "完整润色正文", "word_count": 0, "continuity_notes": ["备注"]}}"""
+格式：{{"chapter_number": {chapter_number}, "title": "章节标题", "content": "完整润色正文", "word_count": 0, "continuity_notes": ["备注"], "state_changes": []}}"""
         if step == "prose_review":
             return common + f"""待审稿正文：
 {variables["source_text"]}
@@ -7150,7 +7185,7 @@ class CreativeProjectService:
 2. 优先修复 high/medium 问题。
 3. 如果提供了“局部选段”，只重写该选段相关段落，并把修好的段落替换回全文；content 仍必须输出完整正文。
 4. 输出完整正文，不要只输出片段或解释。
-格式：{{"chapter_number": {chapter_number}, "title": "章节标题", "content": "完整重写正文", "word_count": 0, "continuity_notes": ["备注"]}}"""
+格式：{{"chapter_number": {chapter_number}, "title": "章节标题", "content": "完整重写正文", "word_count": 0, "continuity_notes": ["备注"], "state_changes": []}}"""
 
     def _normalize_writer_room_review(self, data: dict[str, Any]) -> dict[str, Any]:
         issues = data.get("issues")

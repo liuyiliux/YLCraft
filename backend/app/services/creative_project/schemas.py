@@ -233,6 +233,9 @@ class NovelBodySchema(FlexibleModel):
     content: str = ""
     word_count: int = 0
     continuity_notes: list[str] = Field(default_factory=list)
+    # Structured dynamic-state deltas reported by the prose step; persisted by
+    # the narrative aftermath into the append-only state ledger.
+    state_changes: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class WriterRoomSceneBeatSchema(FlexibleModel):
