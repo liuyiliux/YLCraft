@@ -22,6 +22,7 @@ from app.services.agent.team_template import (
     TeamTemplateError,
     TeamTemplateLoader,
     TeamTemplateValidator,
+    capability_diff,
 )
 
 
@@ -105,6 +106,32 @@ def test_build_tasks_scene_sim_has_join_writer():
     assert "writer" in keys  # creative-director join role
     assert "editor" in keys
     assert "role-actor-甲" in keys
+
+
+# ---------------------------------------------------------------------------
+# Capability diff
+# ---------------------------------------------------------------------------
+
+
+def test_capability_diff_detects_tool_change():
+    before = _template([
+        {"id": "a", "profile": "p", "tools": ["x", "y"], "join": True},
+    ])
+    after = _template([
+        {"id": "a", "profile": "p", "tools": ["y", "z"], "join": True},
+    ])
+    diff = capability_diff(before, after)
+    assert "a" in diff["changed"]
+    assert diff["changed"]["a"]["before"]["tools"] == ["x", "y"]
+    assert diff["changed"]["a"]["after"]["tools"] == ["y", "z"]
+
+
+def test_capability_diff_detects_added_and_removed_roles():
+    before = _template([{"id": "a", "profile": "p", "join": True}])
+    after = _template([{"id": "a", "profile": "p", "join": True}, {"id": "b", "profile": "q"}])
+    diff = capability_diff(before, after)
+    assert "b" in diff["added"]
+    assert diff["removed"] == []
 
 
 # ---------------------------------------------------------------------------

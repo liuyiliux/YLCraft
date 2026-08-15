@@ -11,7 +11,7 @@
 - [x] 2.1 Define `TeamTemplate` / `RoleSpec` models matching the YAML schema (profile, spawn, resolve, parallel, depends_on, join, budget).
 - [x] 2.2 Implement `TeamTemplateLoader` and `TeamTemplateValidator` (dependency refs, single join, template-role requires resolve, budget caps, cycle detection).
 - [x] 2.3 Ship `writer-room-team` and `scene-sim` templates; unit-test load + validation failures (cycle, missing join, unknown spawn).
-- [ ] 2.4 Record immutable provenance and a declared capability diff per template role; route template/role capability changes through draft approval.
+- [ ] 2.4 Record immutable provenance and a declared capability diff per template role; route template/role capability changes through draft approval. (`capability_diff` + tests shipped; draft-approval routing is the remaining follow-up.)
 
 ## Phase 3: Subagent Primitives
 
@@ -31,7 +31,7 @@
 ## Phase 5: Integration
 
 - [x] 5.1 Implement `TeamComposer.run(template_id, inputs)` over `SubagentOrchestrator` (topological batches, joins, budget enforcement).
-- [ ] 5.2 Route `MultiAgentCoordinator` endpoint through the declarative composer. (`run_team` facade shipped; the `/multi-agent/scene-simulation` endpoint still uses the legacy path until compatibility tests pass.)
+- [ ] 5.2 Route `MultiAgentCoordinator` endpoint through the declarative composer. (`run_team` facade and `use_team_template` opt-in flag shipped; endpoint defaults to the legacy path until compatibility tests pass.)
 - [ ] 5.3 Wire Writer Room `team` rehearsal mode to `writer-room-team`; persist `character_rehearsal` candidate with team provenance.
 - [ ] 5.4 Remove duplicate unsafe execution logic after compatibility coverage passes.
 

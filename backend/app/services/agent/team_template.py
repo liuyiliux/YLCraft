@@ -159,6 +159,35 @@ class TeamTemplateValidator:
         return seen != len(template.roles)
 
 
+def capability_diff(before: TeamTemplate, after: TeamTemplate) -> dict[str, Any]:
+    """Compute a declared capability diff between two team template versions.
+
+    A role's ``profile``/``tools``/``skills``/``spawn`` are an authority grant;
+    this diff names what changed so the change can be routed through approval
+    instead of silently taking effect.
+    """
+    def role_caps(template: TeamTemplate) -> dict[str, dict[str, Any]]:
+        caps: dict[str, dict[str, Any]] = {}
+        for role in template.roles:
+            caps[role.id] = {
+                "profile": role.profile,
+                "tools": sorted(role.tools),
+                "skills": sorted(role.skills),
+                "spawn": role.spawn,
+            }
+        return caps
+
+    before_caps = role_caps(before)
+    after_caps = role_caps(after)
+    added = {rid: caps for rid, caps in after_caps.items() if rid not in before_caps}
+    removed = [rid for rid in before_caps if rid not in after_caps]
+    changed: dict[str, dict[str, Any]] = {}
+    for rid, caps in after_caps.items():
+        if rid in before_caps and before_caps[rid] != caps:
+            changed[rid] = {"before": before_caps[rid], "after": caps}
+    return {"added": added, "removed": removed, "changed": changed}
+
+
 class TeamTemplateLoader:
     """Load team templates from repo YAML files or inline dicts."""
 

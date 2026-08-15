@@ -2014,6 +2014,7 @@ class SceneSimulationRequest(BaseModel):
     characters_of_interest: list[str] = Field(default_factory=list, description="参与本场景的角色名称列表")
     iteration_budget_per_agent: int = Field(default=8, ge=4, le=20, description="每个智能体的迭代预算")
     store_as_candidate: bool = Field(default=True, description="是否将输出存为候选版本")
+    use_team_template: bool = Field(default=False, description="是否走声明式团队模板（scene-sim）而非旧流水线")
 
 
 @router.post("/multi-agent/scene-simulation", summary="多智能体场景推演")
@@ -2044,5 +2045,8 @@ async def run_scene_simulation(
         store_as_candidate=request.store_as_candidate,
     )
 
-    result = await coordinator.run_scene_simulation(config)
+    if request.use_team_template:
+        result = await coordinator.run_team("scene-sim", config)
+    else:
+        result = await coordinator.run_scene_simulation(config)
     return result
