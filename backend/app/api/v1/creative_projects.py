@@ -221,7 +221,7 @@ class WriterRoomStepRequest(BaseModel):
     provider: str | None = None
     model: str | None = None
     template_id: str | None = None
-    rehearsal_mode: str = Field(default="fast", description="fast | team（角色演绎团队模式）")
+    rehearsal_mode: str = Field(default="team", description="fast | team（角色演绎团队模式）")
 
 
 class WriterRoomRunRequest(BaseModel):
@@ -233,7 +233,7 @@ class WriterRoomRunRequest(BaseModel):
     provider: str | None = None
     model: str | None = None
     template_id: str | None = None
-    rehearsal_mode: str = Field(default="fast", description="fast | team（角色演绎团队模式）")
+    rehearsal_mode: str = Field(default="team", description="fast | team（角色演绎团队模式）")
     continue_on_error: bool = True
 
 

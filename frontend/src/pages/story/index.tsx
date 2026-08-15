@@ -1343,6 +1343,7 @@ export default function StoryPage() {
   const [selectedPromptTemplates, setSelectedPromptTemplates] = useState<Record<string, string>>({})
   const [selectedLlm, setSelectedLlm] = useState<string>('')
   const [selectedModel, setSelectedModel] = useState<string>('')
+  const [rehearsalMode, setRehearsalMode] = useState<'fast' | 'team'>('team')
   const [createOpen, setCreateOpen] = useState(false)
   const [renameOpen, setRenameOpen] = useState(false)
   const [fanqieOpen, setFanqieOpen] = useState(false)
@@ -3563,6 +3564,7 @@ export default function StoryPage() {
         content_id: contentId,
         provider: selectedLlm || undefined,
         model: selectedModel || undefined,
+        rehearsal_mode: rehearsalMode,
         continue_on_error: true,
       })) as CreativeProjectGenerateResponse<{ summary?: { success?: number; failed?: number; skipped?: number }; results_contents?: ProjectContent[] }>
       const summary = response.data?.summary || {}
@@ -4674,6 +4676,8 @@ export default function StoryPage() {
                         }}
                         onModelChange={setSelectedModel}
                         loading={loadingAction === 'writer_room'}
+                        rehearsalMode={rehearsalMode}
+                        onRehearsalModeChange={setRehearsalMode}
                         onRunStep={handleRunWriterRoomStep}
                         onRunBatch={handleRunWriterRoomBatch}
                         onPromote={handlePromoteWriterRoomContent}
@@ -8872,6 +8876,8 @@ function WriterRoomTab({
   onLlmChange,
   onModelChange,
   loading,
+  rehearsalMode,
+  onRehearsalModeChange,
   onRunStep,
   onRunBatch,
   onPromote,
@@ -8899,6 +8905,8 @@ function WriterRoomTab({
   onLlmChange: (value: string) => void
   onModelChange: (value: string) => void
   loading: boolean
+  rehearsalMode: 'fast' | 'team'
+  onRehearsalModeChange: (value: 'fast' | 'team') => void
   onRunStep: (step: string, chapterNumber: number, contentId?: string, instruction?: string, selectedText?: string) => void
   onRunBatch: (chapterNumber: number, steps?: string[], contentId?: string) => void
   onPromote: (contentId: string) => void
@@ -9162,6 +9170,16 @@ function WriterRoomTab({
           <Text type="secondary">已完成 {completedCount}/{writerRoomRows.length}</Text>
         </div>
         <div style={writerRoomBatchControlStyle}>
+          <Segmented
+            value={rehearsalMode}
+            onChange={(value) => onRehearsalModeChange(value as 'fast' | 'team')}
+            options={[
+              { label: '角色团队推演（每角色子智能体）', value: 'team' },
+              { label: '快速演绎（单模型）', value: 'fast' },
+            ]}
+            block
+            style={{ marginBottom: 10 }}
+          />
           <Space direction="vertical" size={6} style={{ width: '100%' }}>
             <Space style={{ width: '100%', justifyContent: 'space-between' }} align="center" wrap>
               <Text type="secondary">批量执行步骤</Text>
@@ -9188,7 +9206,7 @@ function WriterRoomTab({
           <Space direction="vertical" size={12} style={{ width: '100%' }}>
             <Space direction="vertical" size={2}>
               <Text strong>工序</Text>
-              <Text type="secondary">当前为单模型分阶段执行；标签表示本工序采用的编辑视角，不代表独立子智能体。</Text>
+              <Text type="secondary">角色演绎支持「角色团队推演」（每角色一个独立子智能体）与「快速演绎」（单模型）；其余工序为单模型分阶段执行。</Text>
             </Space>
             <div style={writerRoomStepListStyle}>
               {writerRoomRows.map((row) => {

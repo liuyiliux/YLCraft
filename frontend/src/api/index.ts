@@ -1912,6 +1912,7 @@ export const runCreativeProjectWriterRoom = (
     provider?: string
     model?: string
     template_id?: string
+    rehearsal_mode?: 'fast' | 'team'
     continue_on_error?: boolean
   } = {},
 ) =>

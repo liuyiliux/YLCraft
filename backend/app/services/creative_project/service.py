@@ -1758,7 +1758,7 @@ class CreativeProjectService:
         provider: str | None = None,
         model: str | None = None,
         template_id: str | None = None,
-        rehearsal_mode: str = "fast",
+        rehearsal_mode: str = "team",
         _context_pack: dict[str, Any] | None = None,
     ) -> ProjectContent:
         project = self._require_project(project_id)
@@ -2001,7 +2001,7 @@ class CreativeProjectService:
         provider: str | None = None,
         model: str | None = None,
         template_id: str | None = None,
-        rehearsal_mode: str = "fast",
+        rehearsal_mode: str = "team",
         continue_on_error: bool = True,
     ) -> dict[str, Any]:
         requested_steps = [self._normalize_writer_room_step(step) for step in (steps or [])]
