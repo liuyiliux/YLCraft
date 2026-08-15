@@ -108,6 +108,34 @@ def test_build_tasks_scene_sim_has_join_writer():
     assert "role-actor-甲" in keys
 
 
+class _FakeOrchestrator:
+    def __init__(self):
+        self.calls = []
+
+    async def delegate(self, parent_run, tasks, join_strategy="all"):
+        self.calls.append((parent_run, tasks, join_strategy))
+        return {"success": True, "joined_observation": "joined"}
+
+
+async def test_run_template_delegates_and_tags_result():
+    loader = TeamTemplateLoader()
+    template = loader.load("writer-room-team")
+    orchestrator = _FakeOrchestrator()
+    composer = TeamComposer(orchestrator=orchestrator)
+    parent = object()
+    result = await composer.run_template(
+        template,
+        parent,
+        inputs={"project_id": "p1", "characters": ["甲"]},
+    )
+    assert result["success"] is True
+    assert result["team_template_id"] == "writer-room-team"
+    _, tasks, strategy = orchestrator.calls[0]
+    assert strategy == "all"
+    keys = {t.task_key for t in tasks}
+    assert {"director", "editor", "role-actor-甲"} <= keys
+
+
 # ---------------------------------------------------------------------------
 # Capability diff
 # ---------------------------------------------------------------------------
