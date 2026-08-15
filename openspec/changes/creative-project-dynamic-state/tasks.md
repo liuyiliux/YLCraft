@@ -20,5 +20,5 @@
 ## Phase 4: Validation
 
 - [x] 4.1 Focused backend tests for ledger; existing creative-project suites stay green (91 tests).
-- [ ] 4.2 Update architecture doc + README status + regenerate API surface if routes change. (Docs updated below; no new HTTP routes.)
-- [ ] 4.3 Run backend tests + frontend typecheck/build.
+- [x] 4.2 Update architecture doc + README status. (No new HTTP routes, so API surface is unchanged.)
+- [x] 4.3 Run backend tests + frontend typecheck. (91 backend tests pass; `tsc --noEmit` exit 0.)
