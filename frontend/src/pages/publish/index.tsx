@@ -17,6 +17,7 @@ import {
   Alert,
   List,
   Spin,
+  Modal,
 } from 'antd'
 import {
   SendOutlined,
@@ -46,6 +47,9 @@ export default function PublishPage() {
   const [loading, setLoading] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const [selectedConn, setSelectedConn] = useState<string>('')
+  const [target, setTarget] = useState({ book_id: '', volume_id: '', volume_name: '', item_id: '' })
+  const [preflighting, setPreflighting] = useState(false)
+  const [preflightMessage, setPreflightMessage] = useState('')
 
   // 表单状态
   const [title, setTitle] = useState('')
@@ -122,8 +126,13 @@ export default function PublishPage() {
       return
     }
 
-    if (contentType === 'video' && mediaFiles.length === 0) {
-      message.warning('视频发布需要上传视频文件')
+    if (!body.trim()) {
+      message.warning('请输入章节正文')
+      return
+    }
+
+    if (!target.book_id.trim() || !target.volume_id.trim() || !target.item_id.trim()) {
+      message.warning('请填写书籍、卷和已创建的章节目标 ID')
       return
     }
 
@@ -131,13 +140,7 @@ export default function PublishPage() {
     setPublishResults([])
 
     try {
-      const result = await publishToPlatform(selectedConn, {
-        title,
-        body,
-        content_type: contentType,
-        tags,
-        media: mediaFiles.map(f => ({ file_path: f.path, media_type: f.type })),
-      })
+      const result = await publishToPlatform(selectedConn, { title, body, content_type: 'article', target })
 
       const conn = connections.find(c => c.id === selectedConn)
       const platform = supportedPlatforms.find(p => p.value === conn?.platform)
@@ -172,19 +175,40 @@ export default function PublishPage() {
     }
   }
 
+  const handlePreflight = async () => {
+    if (!selectedConn || !title.trim() || !body.trim()) {
+      message.warning('请先选择连接并填写章节标题和正文')
+      return
+    }
+    if (!target.book_id.trim() || !target.volume_id.trim() || !target.item_id.trim()) {
+      message.warning('请填写书籍、卷和已创建的章节目标 ID')
+      return
+    }
+    setPreflighting(true)
+    setPreflightMessage('')
+    try {
+      const result: any = await publishToPlatform(selectedConn, { title, body, content_type: 'article', target, dry_run: true })
+      if (result.success) {
+        setPreflightMessage('本地预检通过：正文、登录态配置和远端章节目标已具备。预检不会向平台发送内容。')
+        message.success('预检通过')
+      }
+    } catch (error: any) {
+      const detail = error?.response?.data?.detail || error?.message || '预检失败'
+      setPreflightMessage(detail)
+      message.error(detail)
+    } finally {
+      setPreflighting(false)
+    }
+  }
+
   // 获取平台支持的发布类型
   const getPlatformContentTypes = (platform: string) => {
     const p = supportedPlatforms.find(p => p.value === platform)
     if (!p) return []
 
     const types = []
-    if (p.supports_publishing) {
-      types.push({ value: 'video', label: '视频', icon: <VideoCameraOutlined /> })
-      types.push({ value: 'text', label: '纯文本', icon: <FileTextOutlined /> })
-      types.push({ value: 'image', label: '图文', icon: <PictureOutlined /> })
-      if (platform === 'bilibili') {
-        types.push({ value: 'article', label: '专栏文章', icon: <FileTextOutlined /> })
-      }
+    if (platform === 'fanqie') {
+      types.push({ value: 'article', label: '章节草稿', icon: <FileTextOutlined /> })
     }
     return types
   }
@@ -193,9 +217,9 @@ export default function PublishPage() {
     <div style={{ maxWidth: 1200 }}>
       <Title level={3} style={{ color: '#fff', marginBottom: 24 }}>
         <SendOutlined style={{ marginRight: 12 }} />
-        内容发布
+        番茄章节草稿
         <Text style={{ color: '#8b8ba8', fontSize: 14, marginLeft: 12 }}>
-          一键发布到多个社交平台
+          将已完成正文保存到指定的番茄章节草稿
         </Text>
       </Title>
 
@@ -203,11 +227,10 @@ export default function PublishPage() {
         type="info"
         showIcon
         style={{ marginBottom: 24 }}
-        message="发布说明"
+        message="保存范围"
         description={
           <Paragraph style={{ color: '#8b8ba8', marginBottom: 0 }}>
-            选择已配置的平台连接，填写内容信息，即可快速发布到对应平台。
-            支持视频、图文、纯文本、专栏文章等多种内容类型。
+            当前页面只开放已验证的番茄章节草稿保存。请先在番茄后台创建书籍、卷和章节，再填入对应目标 ID；这里不会伪装成视频或图文的一键发布。
           </Paragraph>
         }
       />
@@ -233,7 +256,7 @@ export default function PublishPage() {
                 style={{ width: '100%' }}
               >
                 {connections
-                  .filter(c => c.status === 'active')
+                  .filter(c => c.status === 'active' && c.platform === 'fanqie')
                   .map(c => {
                     const platform = supportedPlatforms.find(p => p.value === c.platform)
                     return (
@@ -249,8 +272,8 @@ export default function PublishPage() {
               {connections.filter(c => c.status === 'active').length === 0 && (
                 <Alert
                   type="warning"
-                  message="暂无活跃连接"
-                  description="请先在「平台管理」页面配置平台连接"
+                  message="暂无可用的番茄连接"
+                  description="请先在「账号中心」配置并验证番茄 Cookie"
                   style={{ marginTop: 8 }}
                 />
               )}
@@ -281,103 +304,48 @@ export default function PublishPage() {
               <Input
                 value={title}
                 onChange={e => setTitle(e.target.value)}
-                placeholder="请输入标题（最多100字）"
+                placeholder="请输入章节标题（最多100字）"
                 maxLength={100}
                 showCount
               />
             </Form.Item>
 
             {/* 正文 */}
-            <Form.Item label={<Text style={{ color: theme.textPrimary }}>正文内容</Text>}>
+            <Form.Item label={<Text style={{ color: theme.textPrimary }}>章节正文</Text>}>
               <TextArea
                 value={body}
                 onChange={e => setBody(e.target.value)}
-                placeholder="请输入正文内容..."
+                placeholder="请输入要保存到番茄草稿的章节正文..."
                 rows={6}
                 maxLength={2000}
                 showCount
               />
             </Form.Item>
 
-            {/* 标签 */}
-            <Form.Item label={<Text style={{ color: theme.textPrimary }}>标签</Text>}>
-              <Space wrap>
-                {tags.map(tag => (
-                  <Tag
-                    key={tag}
-                    closable
-                    onClose={() => removeTag(tag)}
-                    style={{ color: '#e0e0e0' }}
-                  >
-                    #{tag}
-                  </Tag>
-                ))}
-                <Input
-                  value={tagInput}
-                  onChange={e => setTagInput(e.target.value)}
-                  placeholder="输入标签"
-                  style={{ width: 120 }}
-                  onPressEnter={addTag}
-                />
-                <Button type="dashed" icon={<PlusOutlined />} onClick={addTag}>
-                  添加
-                </Button>
-              </Space>
+            <Divider orientation="left">番茄草稿目标</Divider>
+            <Form.Item label={<Text style={{ color: theme.textPrimary }}>书籍 ID</Text>} required>
+              <Input value={target.book_id} onChange={event => setTarget(current => ({ ...current, book_id: event.target.value }))} placeholder="在番茄后台创建后填入" />
             </Form.Item>
-
-            {/* 媒体文件 */}
-            {(contentType === 'video' || contentType === 'image') && (
-              <Form.Item label={<Text style={{ color: theme.textPrimary }}>媒体文件</Text>}>
-                <List
-                  size="small"
-                  dataSource={mediaFiles}
-                  renderItem={(file, index) => (
-                    <List.Item
-                      actions={[
-                        <Button
-                          type="text"
-                          danger
-                          icon={<DeleteOutlined />}
-                          onClick={() => removeMediaFile(index)}
-                        />,
-                      ]}
-                    >
-                      <Text style={{ color: '#e0e0e0' }}>
-                        {file.path} ({file.type})
-                      </Text>
-                    </List.Item>
-                  )}
-                />
-                <Button
-                  type="dashed"
-                  icon={<PlusOutlined />}
-                  onClick={addMediaFile}
-                  style={{ marginTop: 8, width: '100%' }}
-                >
-                  添加文件
-                </Button>
-                <Text type="secondary" style={{ fontSize: 12, marginTop: 4 }}>
-                  {contentType === 'video'
-                    ? '支持 MP4, AVI, MOV 格式，最多1个视频'
-                    : '支持 JPG, PNG 格式，最多9张图片'}
-                </Text>
-              </Form.Item>
-            )}
+            <Form.Item label={<Text style={{ color: theme.textPrimary }}>卷 ID</Text>} required>
+              <Input value={target.volume_id} onChange={event => setTarget(current => ({ ...current, volume_id: event.target.value }))} placeholder="在番茄后台创建后填入" />
+            </Form.Item>
+            <Form.Item label={<Text style={{ color: theme.textPrimary }}>卷名称（可选）</Text>}>
+              <Input value={target.volume_name} onChange={event => setTarget(current => ({ ...current, volume_name: event.target.value }))} />
+            </Form.Item>
+            <Form.Item label={<Text style={{ color: theme.textPrimary }}>章节 item ID</Text>} required>
+              <Input value={target.item_id} onChange={event => setTarget(current => ({ ...current, item_id: event.target.value }))} placeholder="必须是番茄后台已创建的章节" />
+            </Form.Item>
+            {preflightMessage && <Alert type={preflightMessage.startsWith('本地预检通过') ? 'success' : 'error'} showIcon message={preflightMessage} style={{ marginBottom: 16 }} />}
 
             {/* 发布按钮 */}
             <Divider />
             <Form.Item>
-              <Button
-                type="primary"
-                size="large"
-                icon={<SendOutlined />}
-                onClick={handlePublish}
-                loading={publishing}
-                disabled={!selectedConn || !title.trim()}
-                style={{ width: '100%', height: 48 }}
-              >
-                发布到平台
-              </Button>
+              <Space direction="vertical" style={{ width: '100%' }} size={10}>
+                <Button icon={<CheckCircleOutlined />} onClick={handlePreflight} loading={preflighting} block>预检草稿目标</Button>
+                <Button type="primary" size="large" icon={<SendOutlined />} onClick={handlePublish} loading={publishing} disabled={!selectedConn || !title.trim() || !body.trim()} style={{ width: '100%', height: 48 }}>
+                  保存到番茄草稿
+                </Button>
+              </Space>
             </Form.Item>
           </Form>
         </Card>

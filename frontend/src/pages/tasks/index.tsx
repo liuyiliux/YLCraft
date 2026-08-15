@@ -48,6 +48,7 @@ const TASK_TYPE_OPTIONS = [
   { label: '视频下载', value: 'download' },
   { label: '图像生成', value: 'image_generation' },
   { label: '视频生成', value: 'video_generation' },
+  { label: '图生 3D', value: 'model3d_generation' },
   { label: '视频剪辑', value: 'clip' },
 ]
 
@@ -78,6 +79,7 @@ const TYPE_COLOR_MAP: Record<string, string> = {
   download: 'green',
   image_generation: 'purple',
   video_generation: 'magenta',
+  model3d_generation: 'cyan',
   clip: 'orange',
 }
 
@@ -113,6 +115,7 @@ const ROUTE_MAP: Record<string, { path: string; label: string }> = {
   download: { path: '/assets', label: '素材库' },
   image_generation: { path: '/image-gen', label: '图像生成' },
   video_generation: { path: '/video-gen', label: '视频生成' },
+  model3d_generation: { path: '/model-3d', label: '图生 3D' },
   clip: { path: '/clip', label: 'AI 剪辑' },
 }
 

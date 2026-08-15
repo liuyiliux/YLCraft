@@ -46,6 +46,8 @@ import {
   RobotOutlined,
   SendOutlined,
   LinkOutlined,
+  ImportOutlined,
+  KeyOutlined,
 } from '@ant-design/icons'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { listConnectors, createConnector, updateConnector, deleteConnector, testConnector, exportConnectors, importConnectors, discoverModels, getSettings, updateSettings, listProviders, createProvider, updateProvider, deleteProvider, initDefaultProviders, getProviderDefaults, listAICapabilities, agentChat } from '../../api'
@@ -53,6 +55,7 @@ import type { Provider, PROVIDER_OPTIONS, ConnectorTestResult, ProviderMetadata 
 import { useTheme } from '../../constants/theme'
 import { calculateAspectRatio } from '../../utils/size'
 import SkillManagementPanel from '../../components/agent/SkillManagementPanel'
+import ProviderPresetsPage from '../provider-presets'
 
 const { Title, Text, Paragraph } = Typography
 const { TextArea } = Input
@@ -220,8 +223,8 @@ const AI_TYPE_HELP: Record<string, { title: string; description: string; focus: 
   '3d': {
     title: '图生 3D',
     description: '用于把单张图片生成 GLB、GLTF 等可复用的 3D 模型。',
-    focus: '通用 HTTP 模式需明确配置任务创建、轮询与模型下载 JSONPath，不能依赖接口名称猜测能力。',
-    detail: 'Response 配置建议包含 task_id_path、status_path、model_url_path、poll_endpoint 和 done_values。生成成功后会自动写入素材库并记录源图片血缘。',
+    focus: '使用通用 HTTP 配置：请求模板中用 image_url 或 image_data 传入参考图，并明确配置任务创建、轮询与模型下载 JSONPath。',
+    detail: 'Response 配置建议包含 task_id_path、status_path、model_url_path、poll_endpoint 和 done_values。生成成功后会自动写入素材库并记录源图片血缘；不绑定任何单一服务商。',
   },
   tts: {
     title: '语音合成 (TTS)',
@@ -280,6 +283,9 @@ function getApiFormatHelp(apiFormat?: string, type?: string) {
   }
   if (apiFormat === 'gemini_sdk') {
     return '适合 Gemini 原生图片生成接口，后端会用 google-genai SDK 处理 inlineData/base64 图片结果。'
+  }
+  if (apiFormat === 'tencent_tc3') {
+    return '腾讯云 TC3-HMAC-SHA256 签名模式（图生 3D）。在下方分别填写 SecretId 与 SecretKey，保存后合并为 SecretId:SecretKey；API 版本与地域从 Response 配置的 tencent_version / tencent_region 读取。'
   }
   if (apiFormat === 'custom') {
     return type === 'image'
@@ -1426,6 +1432,24 @@ const PROVIDER_PRESETS: Record<string, Record<string, ProviderPreset>> = {
       support_multiple_reference_images: true,
     },
   },
+  tencent: {
+    '3d': {
+      base_url: 'https://api.ai3d.cloud.tencent.com',
+      api_endpoint: '/v1/ai3d/submit',
+      default_model: '3.0',
+      available_models: ['3.0', '3.1'],
+      request_template: '{"Model":"{{ model }}"{% if image_url or image_data %},"ImageUrl":{"Url":"{{ image_url or image_data }}"}{% else %},"Prompt":"{{ prompt }}"{% endif %}}',
+      response_config: stringifyJson({
+        api_key_prefix: '', task_id_path: '$.JobId', status_path: '$.Status',
+        model_url_path: '$.ResultFile3Ds[0].Url', error_path: '$.ErrorMessage',
+        poll_endpoint: '/v1/ai3d/query', poll_method: 'POST',
+        poll_request_template: '{"JobId":"{{ task_id }}"}',
+        done_values: ['DONE'], failed_values: ['FAIL'],
+      }),
+      default_params: { generate_type: 'Normal', enable_pbr: false, result_format: 'GLB' },
+      support_reference_image: true,
+    },
+  },
   generic: {
     llm: {},
     image: {},
@@ -1442,6 +1466,7 @@ const PROVIDER_SELECT_OPTIONS = [
   { value: 'siliconflow', label: '硅基流动 (SiliconFlow)' },
   { value: 'gemini', label: 'Google Gemini' },
   { value: 'generic', label: '通用配置 (Generic)' },
+  { value: 'tencent', label: '腾讯云混元' },
 ]
 
 // Provider 颜色映射
@@ -1450,6 +1475,7 @@ const PROVIDER_COLORS: Record<string, string> = {
   'siliconflow': '#00d4aa',
   'gemini': '#4285f4',
   'generic': '#94a3b8',
+  'tencent': '#2f7cf6',
 }
 
 const TYPE_COLORS: Record<string, string> = {
@@ -1457,6 +1483,7 @@ const TYPE_COLORS: Record<string, string> = {
   image: '#a855f7',
   audio: '#f59e0b',
   video: '#ef4444',
+  '3d': '#14b8a6',
   stt: '#10b981',
 }
 
@@ -1465,6 +1492,7 @@ const TYPE_LABELS: Record<string, string> = {
   image: '图像',
   audio: '语音',
   video: '视频',
+  '3d': '图生 3D',
   stt: '识别',
   tts: '语音',
   embedding: '嵌入',
@@ -1699,6 +1727,12 @@ export default function SettingsPage() {
 
   // 动态 API 格式选项（根据 provider + type 组合返回）
   const getApiFormatOptions = () => {
+    if (selectedType === '3d') {
+      return [
+        { value: 'tencent_tc3', label: '🇨🇳 腾讯云 TC3 签名（SecretId:SecretKey）' },
+        { value: 'custom', label: '⚙️ 自定义 HTTP（图生 3D）' },
+      ]
+    }
     // Gemini 图像生成 → 使用 google-genai 原生 SDK
     if (selectedProvider === 'gemini' && selectedType === 'image') {
       return [
@@ -1728,7 +1762,9 @@ export default function SettingsPage() {
       // 检查当前值是否在可用选项中，如果不在则自动切换
       const options = getApiFormatOptions()
       if (!options.some((o: any) => o.value === current)) {
-        if (selectedProvider === 'gemini' && selectedType === 'image') {
+        if (selectedType === '3d') {
+          form.setFieldValue('api_format', selectedProvider === 'tencent' ? 'tencent_tc3' : 'custom')
+        } else if (selectedProvider === 'gemini' && selectedType === 'image') {
           form.setFieldValue('api_format', 'gemini_sdk')
         } else {
           form.setFieldValue('api_format', 'openai_sdk')
@@ -1902,6 +1938,8 @@ export default function SettingsPage() {
       provider: provider.provider,
       provider_type: provider.provider_type,
       api_key: '',
+      secret_id: '',
+      secret_key: '',
       base_url: provider.base_url || '',
       api_endpoint: provider.api_endpoint || '',
       default_model: provider.default_model || '',
@@ -1920,6 +1958,12 @@ export default function SettingsPage() {
       default_params: typeof provider.default_params === 'object' 
         ? JSON.stringify(provider.default_params) 
         : (provider.default_params || ''),
+      image_requires_public_url: (() => {
+        try {
+          const dp = typeof provider.default_params === 'object' ? provider.default_params : JSON.parse(provider.default_params || '{}')
+          return dp?.image_requires_public_url === true
+        } catch { return false }
+      })(),
       image_capabilities: imageCapabilityChoiceFromCapabilities(provider),
       price_per_call: provider.price_per_call ?? undefined,
       ...referenceImageFormValues,
@@ -1960,14 +2004,34 @@ export default function SettingsPage() {
     try {
       // 处理扩展配置字段（保持字符串格式，后端会解析 JSON）
       const processedValues = { ...values }
-      
-      // 编辑已有连接器时，API Key 留空表示沿用旧值，不覆盖。
-      if (editingProvider && editingProvider.has_api_key && !String(values.api_key || '').trim()) {
-        delete processedValues.api_key
-      }
-      // 兼容旧的掩码格式（包含 "...")，不更新 API Key。
-      if (editingProvider && values.api_key && values.api_key.includes('...')) {
-        delete processedValues.api_key
+      delete processedValues.secret_id
+      delete processedValues.secret_key
+
+      if (values.api_format === 'tencent_tc3') {
+        // 腾讯云 TC3 用 SecretId / SecretKey 两个字段填写，合并回 api_key。
+        const secretId = String(values.secret_id || '').trim()
+        const secretKey = String(values.secret_key || '').trim()
+        if (secretId || secretKey) {
+          if (!secretId || !secretKey) {
+            message.error('SecretId 与 SecretKey 需要同时填写')
+            return
+          }
+          processedValues.api_key = `${secretId}:${secretKey}`
+        } else if (!editingProvider) {
+          processedValues.api_key = ''
+        } else {
+          // 编辑且两者留空 → 沿用旧密钥
+          delete processedValues.api_key
+        }
+      } else {
+        // 编辑已有连接器时，API Key 留空表示沿用旧值，不覆盖。
+        if (editingProvider && editingProvider.has_api_key && !String(values.api_key || '').trim()) {
+          delete processedValues.api_key
+        }
+        // 兼容旧的掩码格式（包含 "...")，不更新 API Key。
+        if (editingProvider && values.api_key && values.api_key.includes('...')) {
+          delete processedValues.api_key
+        }
       }
 
       // supported_sizes 需要转换为 JSON 字符串
@@ -1984,6 +2048,17 @@ export default function SettingsPage() {
       if (processedValues.provider_type === 'image' && processedValues.api_format === 'custom') {
         processedValues.response_config = buildResponseConfigWithAsync(processedValues)
       }
+
+      // 视频图生视频：把「需公网 URL」开关合并进 default_params
+      if (processedValues.provider_type === 'video') {
+        let dp: any = {}
+        try { dp = processedValues.default_params ? JSON.parse(processedValues.default_params) : {} } catch { dp = {} }
+        if (processedValues.image_requires_public_url) dp.image_requires_public_url = true
+        else delete dp.image_requires_public_url
+        processedValues.default_params = JSON.stringify(dp)
+      }
+      delete processedValues.image_requires_public_url
+
       ASYNC_FORM_FIELDS.forEach(field => delete processedValues[field])
 
       if (editingProvider) {
@@ -2047,6 +2122,8 @@ export default function SettingsPage() {
       provider: provider.provider,
       provider_type: provider.provider_type,
       api_key: '',
+      secret_id: '',
+      secret_key: '',
       base_url: provider.base_url || '',
       api_endpoint: provider.api_endpoint || '',
       default_model: provider.default_model || '',
@@ -2064,6 +2141,12 @@ export default function SettingsPage() {
       default_params: typeof provider.default_params === 'object' 
         ? JSON.stringify(provider.default_params) 
         : (provider.default_params || ''),
+      image_requires_public_url: (() => {
+        try {
+          const dp = typeof provider.default_params === 'object' ? provider.default_params : JSON.parse(provider.default_params || '{}')
+          return dp?.image_requires_public_url === true
+        } catch { return false }
+      })(),
       image_capabilities: imageCapabilityChoiceFromCapabilities(provider),
       price_per_call: provider.price_per_call ?? undefined,
       ...referenceImageFormValues,
@@ -2581,6 +2664,11 @@ export default function SettingsPage() {
             children: <AICapabilityPanel />,
           },
           {
+            key: 'presets',
+            label: <span><ImportOutlined style={{ marginRight: 8 }} />AI 示例配置</span>,
+            children: <ProviderPresetsPage embedded />,
+          },
+          {
             key: 'video',
             label: <span><VideoCameraOutlined style={{ marginRight: 8 }} />视频处理</span>,
             children: <VideoSettings />,
@@ -2594,6 +2682,11 @@ export default function SettingsPage() {
             key: 'storage',
             label: <span><DatabaseOutlined style={{ marginRight: 8 }} />存储设置</span>,
             children: <StorageSettings />,
+          },
+          {
+            key: 'credentials',
+            label: <span><KeyOutlined style={{ marginRight: 8 }} />密钥配置</span>,
+            children: <CredentialsSettings />,
           },
           {
             key: 'agent-skills',
@@ -2817,9 +2910,37 @@ export default function SettingsPage() {
             />
           )}
 
-          <Form.Item name="api_key" label={<span style={{ color: THEME.textPrimary }}>API Key</span>}>
-            <Input.Password placeholder={editingProvider ? '留空表示不修改' : '请输入 API Key'} />
-          </Form.Item>
+          {selectedApiFormat === 'tencent_tc3' ? (
+            <>
+              <Form.Item
+                name="secret_id"
+                label={<span style={{ color: THEME.textPrimary }}>SecretId</span>}
+                extra={<span style={{ color: THEME.textSecondary, fontSize: 12 }}>腾讯云 CAM 密钥对的 SecretId（通常以 AKID 开头）。编辑时留空表示沿用旧值。</span>}
+                rules={[
+                  {
+                    validator: (_: any, value: string) => {
+                      const trimmed = String(value || '').trim()
+                      if (trimmed && trimmed.includes(':')) return Promise.reject(new Error('SecretId 应只填 SecretId，不要把 SecretKey 一起填进这里'))
+                      return Promise.resolve()
+                    },
+                  },
+                ]}
+              >
+                <Input.Password placeholder={editingProvider ? '留空表示不修改' : '例如 AKIDxxxxxxxxxxxxxxxx'} />
+              </Form.Item>
+              <Form.Item
+                name="secret_key"
+                label={<span style={{ color: THEME.textPrimary }}>SecretKey</span>}
+                extra={<span style={{ color: THEME.textSecondary, fontSize: 12 }}>腾讯云 CAM 密钥对的 SecretKey。与 SecretId 需同时填写或同时留空。</span>}
+              >
+                <Input.Password placeholder={editingProvider ? '留空表示不修改' : '请输入 SecretKey'} />
+              </Form.Item>
+            </>
+          ) : (
+            <Form.Item name="api_key" label={<span style={{ color: THEME.textPrimary }}>API Key</span>}>
+              <Input.Password placeholder={editingProvider ? '留空表示不修改' : '请输入 API Key'} />
+            </Form.Item>
+          )}
           
           <Form.Item name="base_url" label={<span style={{ color: THEME.textPrimary }}>Base URL (可选)</span>}>
             <Input placeholder="https://api.openai.com/v1" />
@@ -2913,7 +3034,7 @@ export default function SettingsPage() {
             <Form.Item name="monthly_budget" label={<span style={{ color: THEME.textPrimary }}>月度预算 (美元，可选)</span>}>
               <InputNumber min={0} step={10} style={{ width: '100%' }} placeholder="如：100" />
             </Form.Item>
-            {selectedType === 'image' || selectedType === 'video' || !selectedType ? (
+            {selectedType === 'image' || selectedType === 'video' || selectedType === '3d' || !selectedType ? (
               <Form.Item name="price_per_call" label={<span style={{ color: THEME.textPrimary }}>按次计费 (美元/次)</span>}>
                 <InputNumber min={0} step={0.0001} style={{ width: '100%' }} placeholder="如：0.002" />
               </Form.Item>
@@ -2995,21 +3116,35 @@ export default function SettingsPage() {
                         label={<span style={{ color: THEME.textPrimary }}>Response 解析配置</span>}
                         style={{ marginBottom: 8 }}
                         extra={<span style={{ color: THEME.textSecondary, fontSize: 12 }}>
-                          通用 HTTP 模式使用 JSONPath 动态提取结果；图片用 images_path / base64_images_path，LLM 工具调用可配 tool_calls_path、tool_name_path、tool_arguments_path、finish_reason_path。
+                          {selectedType === '3d'
+                            ? '图生 3D 使用顶层 JSONPath：task_id_path、status_path、model_url_path、error_path、progress_path、poll_endpoint、done_values、failed_values。'
+                            : '通用 HTTP 模式使用 JSONPath 动态提取结果；图片用 images_path / base64_images_path，LLM 工具调用可配 tool_calls_path、tool_name_path、tool_arguments_path、finish_reason_path。'}
                         </span>}
                       >
                         <TextArea 
                           rows={6} 
-                          placeholder={`JSON 格式的响应配置，例如：\n{\n  "content_path": "$.choices[0].message.content",\n  "tool_calls_path": "$.choices[0].message.tool_calls[*]",\n  "tool_name_path": "$.function.name",\n  "tool_arguments_path": "$.function.arguments",\n  "finish_reason_path": "$.choices[0].finish_reason",\n  "tool_finish_reasons": ["tool_calls"]\n}`}
+                          placeholder={selectedType === '3d'
+                            ? `JSON 格式的响应配置，例如：\n{\n  "task_id_path": "$.data.id",\n  "status_path": "$.data.status",\n  "model_url_path": "$.data.model_url",\n  "poll_endpoint": "/v1/tasks/{task_id}",\n  "done_values": ["completed"],\n  "failed_values": ["failed"]\n}`
+                            : `JSON 格式的响应配置，例如：\n{\n  "content_path": "$.choices[0].message.content",\n  "tool_calls_path": "$.choices[0].message.tool_calls[*]",\n  "tool_name_path": "$.function.name",\n  "tool_arguments_path": "$.function.arguments",\n  "finish_reason_path": "$.choices[0].finish_reason",\n  "tool_finish_reasons": ["tool_calls"]\n}`}
                         />
                       </Form.Item>
+
+                      {selectedType === '3d' && (
+                        <Alert
+                          type="info"
+                          showIcon
+                          message={<span style={{ color: THEME.textPrimary, fontWeight: 600 }}>图生 3D 通用连接器</span>}
+                          description={<span style={{ color: THEME.textSecondary }}>请求模板可使用 {`{{ model }}`}、{`{{ prompt }}`}、{`{{ image_url }}`}（上传图片 URL）或 {`{{ image_data }}`}（上传或素材库图片的 Data URI）。异步供应商必须填写轮询地址；同步返回模型 URL 的供应商只需 model_url_path。</span>}
+                          style={{ marginBottom: 12, background: 'rgba(20,184,166,0.08)', border: '1px solid rgba(45,212,191,0.45)' }}
+                        />
+                      )}
 
                       {selectedType === 'video' && (
                         <Alert
                           type="info"
                           showIcon
                           message={<span style={{ color: '#bfdbfe', fontWeight: 600 }}>异步视频任务配置</span>}
-                          description={<span style={{ color: '#dbeafe' }}>视频通用连接器在 Response 配置顶层使用 task_id_path、status_path、video_url_path、poll_endpoint、done_values、failed_values、request_headers。不要使用图片的 async_config。</span>}
+                          description={<span style={{ color: '#dbeafe' }}>视频通用连接器在 Response 配置顶层使用 task_id_path、status_path、video_url_path、poll_endpoint、done_values、failed_values、request_headers。不要使用图片的 async_config。可在默认参数中增加 video_capabilities，声明 text_to_video、image_to_video、seed_control、generate_audio、resolutions、aspect_ratios、durations、max_duration；工作台和接口会据此限制可用参数。</span>}
                           action={
                             <Space size={8}>
                             <Button size="small" onClick={() => {
@@ -3029,7 +3164,13 @@ export default function SettingsPage() {
                                     done_values: ['SUCCEEDED'],
                                     failed_values: ['FAILED', 'CANCELED', 'UNKNOWN'],
                                   }),
-                                  default_params: stringifyJson({ size_separator: '*', prompt_extend: true }),
+                                  default_params: stringifyJson({
+                                    size_separator: '*', prompt_extend: true,
+                                    video_capabilities: {
+                                      text_to_video: true, image_to_video: false, seed_control: false, generate_audio: false,
+                                      resolutions: ['720p'], aspect_ratios: ['9:16', '16:9'], durations: [5, 10], max_duration: 10,
+                                    },
+                                  }),
                                   timeout: 900,
                                 })
                                 message.success('已填充阿里百炼 Wan 2.7 文生视频配置，请填写 API Key 后保存')
@@ -3051,7 +3192,13 @@ export default function SettingsPage() {
                                   poll_endpoint: '/api/v1/tasks/{task_id}', done_values: ['SUCCEEDED'],
                                   failed_values: ['FAILED', 'CANCELED', 'UNKNOWN'],
                                 }),
-                                default_params: stringifyJson({ prompt_extend: true }),
+                                default_params: stringifyJson({
+                                  prompt_extend: true,
+                                  video_capabilities: {
+                                    text_to_video: false, image_to_video: true, seed_control: false, generate_audio: false,
+                                    resolutions: ['720p'], aspect_ratios: ['9:16', '16:9'], durations: [5, 10], max_duration: 10,
+                                  },
+                                }),
                                 support_reference_image: true,
                                 timeout: 900,
                               })
@@ -3066,6 +3213,18 @@ export default function SettingsPage() {
                             color: THEME.textPrimary,
                           }}
                         />
+                      )}
+
+                      {selectedType === 'video' && (
+                        <Form.Item
+                          name="image_requires_public_url"
+                          label={<span style={{ color: THEME.textPrimary }}>图生视频首帧需公网 URL</span>}
+                          valuePropName="checked"
+                          extra={<span style={{ color: THEME.textSecondary, fontSize: 12 }}>开启后，图生视频会把首帧图自动上传到腾讯云 COS 并生成公网链接（Agnes 等供应商不支持本地 base64 图片）。</span>}
+                          style={{ marginBottom: 12 }}
+                        >
+                          <Switch checkedChildren="是" unCheckedChildren="否" />
+                        </Form.Item>
                       )}
 
                       {selectedType === 'image' && (
@@ -3425,7 +3584,7 @@ export default function SettingsPage() {
               </div>
             </Card>
 
-            {(viewingProvider.provider_type === 'image' || viewingProvider.provider_type === 'video') && (
+            {(viewingProvider.provider_type === 'image' || viewingProvider.provider_type === 'video' || viewingProvider.provider_type === '3d') && (
             <Card size="small" style={{ background: 'rgba(168,85,247,0.05)', border: '1px solid rgba(168,85,247,0.2)', marginBottom: 12 }}>
               <Title level={5} style={{ color: '#a855f7', fontSize: 13, marginBottom: 8 }}>生成配置</Title>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px' }}>
@@ -3768,6 +3927,92 @@ function TranscribeSettings() {
   )
 }
 
+function CredentialsSettings() {
+  // 密钥配置：集中管理第三方云服务凭证，存数据库（system_settings 表）。
+  // 约定：每个服务用一组平铺键 `<provider>_<field>` 入库，前端用分区呈现。
+  // 后续新增阿里云 OSS 时，照 COS 的模式加一组 oss_bucket/oss_region/oss_access_key/oss_secret_key 即可。
+  const { theme: THEME } = useTheme()
+  const [form] = Form.useForm()
+  const [saving, setSaving] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const { message } = AntApp.useApp()
+
+  useEffect(() => {
+    getSettings()
+      .then(({ data }) => {
+        form.setFieldsValue({
+          cos_bucket: data.data.cos?.bucket || '',
+          cos_region: data.data.cos?.region || 'ap-beijing',
+          cos_secret_id: data.data.cos?.secret_id || '',
+          cos_secret_key: data.data.cos?.secret_key || '',
+        })
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [form])
+
+  const handleSave = async (values: any) => {
+    setSaving(true)
+    try {
+      const payload: any = {
+        cos: {
+          bucket: values.cos_bucket || '',
+          region: values.cos_region || 'ap-beijing',
+          secret_id: values.cos_secret_id || '',
+          secret_key: values.cos_secret_key || '',
+        },
+      }
+      await updateSettings(payload)
+      message.success('保存成功')
+    } catch (e: any) {
+      message.error('保存失败')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (loading) return <Skeleton active paragraph={{ rows: 6 }} />
+
+  return (
+    <Card style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}` }}>
+      <Title level={5} style={{ color: THEME.textPrimary }}>密钥配置</Title>
+      <Paragraph style={{ color: THEME.textSecondary, fontSize: 12, marginBottom: 16 }}>
+        集中管理接入第三方云服务的密钥。当前支持腾讯云 COS（用于需要公网 URL 的场景，例如 Agnes 图生视频上传首帧）。
+      </Paragraph>
+      <Form form={form} layout="vertical" onFinish={handleSave} style={{ marginTop: 16 }}>
+        <Divider orientation="left" style={{ color: THEME.textSecondary, fontSize: 12 }}>腾讯云 COS</Divider>
+        <Row gutter={16}>
+          <Col span={12}>
+            <Form.Item label={<span style={{ color: THEME.textPrimary }}>存储桶 Bucket</span>} name="cos_bucket">
+              <Input placeholder="ylcraft-1255992870" style={{ width: '100%' }} />
+            </Form.Item>
+          </Col>
+          <Col span={12}>
+            <Form.Item label={<span style={{ color: THEME.textPrimary }}>地域 Region</span>} name="cos_region">
+              <Input placeholder="ap-beijing" style={{ width: '100%' }} />
+            </Form.Item>
+          </Col>
+        </Row>
+        <Row gutter={16}>
+          <Col span={12}>
+            <Form.Item label={<span style={{ color: THEME.textPrimary }}>SecretId</span>} name="cos_secret_id">
+              <Input.Password placeholder="AKIDxxxxxxxx" style={{ width: '100%' }} />
+            </Form.Item>
+          </Col>
+          <Col span={12}>
+            <Form.Item label={<span style={{ color: THEME.textPrimary }}>SecretKey</span>} name="cos_secret_key">
+              <Input.Password placeholder="密钥" style={{ width: '100%' }} />
+            </Form.Item>
+          </Col>
+        </Row>
+        <Form.Item>
+          <Button type="primary" htmlType="submit" loading={saving}>保存密钥</Button>
+        </Form.Item>
+      </Form>
+    </Card>
+  )
+}
+
 function StorageSettings() {
   const { theme: THEME } = useTheme()
   const [form] = Form.useForm()
@@ -3812,7 +4057,7 @@ function StorageSettings() {
   return (
     <Card style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}` }}>
       <Title level={5} style={{ color: THEME.textPrimary }}>存储配置</Title>
-      <Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 16 }}>
+      <Paragraph style={{ color: THEME.textSecondary, fontSize: 12, marginBottom: 16 }}>
         配置为空时使用默认路径。存储路径优先级：数据库配置 &gt; 配置文件
       </Paragraph>
       <Form form={form} layout="vertical" onFinish={handleSave} style={{ marginTop: 16 }}>

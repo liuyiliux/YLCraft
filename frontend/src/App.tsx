@@ -16,6 +16,7 @@ import CharactersPage from './pages/characters'
 import ImageGenPage from './pages/image-gen'
 import VideoGenPage from './pages/video-gen'
 import Model3DPage from './pages/model-3d'
+import Model3DViewerPage from './pages/model3d-viewer'
 import ClipOpsPage from './pages/clip-ops'
 import Live2DPage from './pages/live2d'
 import SubtitlePage from './pages/subtitle'
@@ -62,6 +63,7 @@ export default function App() {
       <AntdThemeWrapper>
         <BrowserRouter>
           <Routes>
+            <Route path="/model3d-viewer/:assetId" element={<Model3DViewerPage />} />
             <Route path="/" element={<AppLayout />}>
               <Route index element={<DashboardPage />} />
               <Route path="download" element={<DownloadPage />} />
@@ -99,6 +101,7 @@ export default function App() {
               <Route path="prompt-library" element={<PromptLibraryPage />} />
               <Route path="player/assets/:assetId" element={<PlayerPage />} />
               <Route path="settings" element={<SettingsPage />} />
+              <Route path="provider-presets" element={<Navigate to="/settings?tab=presets" replace />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>
           </Routes>

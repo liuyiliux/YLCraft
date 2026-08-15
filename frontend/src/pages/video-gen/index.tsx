@@ -101,6 +101,15 @@ interface BackendInfo {
   model: string
   available_models: string[]
   capabilities: string[]
+  constraints?: {
+    enforced?: boolean
+    first_frame?: boolean
+    max_duration?: number
+    supported_resolutions?: string[]
+    supported_aspect_ratios?: string[]
+    supported_durations?: number[]
+    image_requires_public_url?: boolean
+  }
 }
 
 interface VideoTaskHistoryItem {
@@ -195,6 +204,20 @@ export default function VideoGenPage() {
   // 预览
   const [previewVideo, setPreviewVideo] = useState<GeneratedVideo | null>(null)
   const [diagnosticVideo, setDiagnosticVideo] = useState<GeneratedVideo | null>(null)
+  const selectedBackend = useMemo(() => backends.find(backend => backend.name === provider), [backends, provider])
+  const selectedCapabilities = selectedBackend?.capabilities || []
+  const selectedConstraints = selectedBackend?.constraints || {}
+  const supportsSeed = selectedCapabilities.includes('seed_control')
+  const supportsAudio = selectedCapabilities.includes('generate_audio')
+  // 按当前模式过滤 Provider：选「文生/图生」tab 后，下面只显示支持该模式的后端
+  const modeFilteredBackends = useMemo(() => {
+    const needed = mode === 'img2video' ? 'image_to_video' : 'text_to_video'
+    return backends.filter(b => (b.capabilities || []).includes(needed))
+  }, [backends, mode])
+  const resolutionOptions = selectedConstraints.supported_resolutions?.length ? selectedConstraints.supported_resolutions : ['720p', '1080p', '2k']
+  const aspectRatioOptions = selectedConstraints.supported_aspect_ratios?.length ? selectedConstraints.supported_aspect_ratios : ['9:16', '16:9', '1:1']
+  const durationOptions = selectedConstraints.supported_durations?.length ? selectedConstraints.supported_durations : []
+  const maxDuration = Math.max(3, selectedConstraints.max_duration || 10)
 
   // 统计
   const stats = {
@@ -320,7 +343,31 @@ export default function VideoGenPage() {
     if (backend?.available_models?.length > 0) {
       setSelectedModel(backend.available_models[0])
     }
+    const constraints = backend?.constraints || {}
+    const capabilities = backend?.capabilities || []
+    const resolutions = constraints.supported_resolutions?.length ? constraints.supported_resolutions : ['720p', '1080p', '2k']
+    const ratios = constraints.supported_aspect_ratios?.length ? constraints.supported_aspect_ratios : ['9:16', '16:9', '1:1']
+    const durations = constraints.supported_durations || []
+    if (!resolutions.includes(resolution)) setResolution(resolutions[0])
+    if (!ratios.includes(aspectRatio)) setAspectRatio(ratios[0])
+    if (durations.length && !durations.includes(duration)) setDuration(durations[0])
+    else if (!durations.length && duration > (constraints.max_duration || 10)) setDuration(constraints.max_duration || 10)
+    if (!capabilities.includes('image_to_video')) { setMode('text2video'); setStartImage(null) }
+    else if (!capabilities.includes('text_to_video')) setMode('img2video')
+    if (!capabilities.includes('seed_control')) setSeed(undefined)
+    if (!capabilities.includes('generate_audio')) setGenerateAudio(false)
   }
+
+  useEffect(() => {
+    if (!provider || backends.length === 0) return
+    const current = backends.find(b => b.name === provider)
+    const caps = current?.capabilities || []
+    const needed = mode === 'img2video' ? 'image_to_video' : 'text_to_video'
+    if (!caps.includes(needed)) {
+      const fallback = backends.find(b => (b.capabilities || []).includes(needed))
+      if (fallback) handleProviderChange(fallback.name)
+    }
+  }, [mode, provider, backends])
 
   // WebSocket 实时进度推送
   const handleWSProgress = useCallback((data: WSTaskProgress) => {
@@ -334,19 +381,42 @@ export default function VideoGenPage() {
   }, [])
 
   const handleWSComplete = useCallback((data: WSTaskProgress) => {
-    setGeneratedVideos(prev =>
-      prev.map(v =>
-        v.task_id === data.task_id
+    // WebSocket completion only carries status. Fetch the durable task record
+    // before marking it done so the preview receives local_path and URL.
+    void (async () => {
+      try {
+        const response = await fetch(`/api/v1/videos/tasks/${encodeURIComponent(data.task_id)}`)
+        const result = await response.json()
+        if (result.success) {
+          setGeneratedVideos(prev => prev.map(v => v.task_id === data.task_id
+            ? {
+              ...v,
+              status: result.status || 'done',
+              progress: result.progress ?? 100,
+              url: result.url || v.url,
+              local_path: result.local_path || v.local_path,
+              asset_id: result.asset_id || v.asset_id,
+              error: result.error,
+              diagnostics: result.diagnostics,
+            }
+            : v))
+        } else {
+          setGeneratedVideos(prev => prev.map(v => v.task_id === data.task_id
+            ? { ...v, status: 'done', progress: 100 }
+            : v))
+        }
+      } catch {
+        setGeneratedVideos(prev => prev.map(v => v.task_id === data.task_id
           ? { ...v, status: 'done', progress: 100 }
-          : v
+          : v))
+      }
+      message.success(
+        <span>
+          视频生成完成，<a onClick={() => navigate('/assets')}>查看资产库</a>
+        </span>,
+        5
       )
-    )
-    message.success(
-      <span>
-        视频生成完成，<a onClick={() => navigate('/assets')}>查看资产库</a>
-      </span>,
-      5
-    )
+    })()
   }, [navigate])
 
   const handleWSFailed = useCallback((data: WSTaskProgress) => {
@@ -430,8 +500,8 @@ export default function VideoGenPage() {
         aspect_ratio: aspectRatio,
         provider,
         model: selectedModel,  // 动态选择模型
-        seed,
-        generate_audio: generateAudio,
+        seed: supportsSeed ? seed : undefined,
+        generate_audio: supportsAudio ? generateAudio : false,
         music_hint: projectContext.musicHint,
         project_id: projectContext.projectId,
         content_id: projectContext.contentId,
@@ -646,6 +716,15 @@ export default function VideoGenPage() {
             {/* 图生视频：首帧图片 */}
             {mode === 'img2video' && (
               <div style={{ marginBottom: 16 }}>
+                {selectedConstraints.image_requires_public_url && (
+                  <Alert
+                    type="info"
+                    showIcon
+                    style={{ marginBottom: 8 }}
+                    message="该供应商图生视频需要公网 URL"
+                    description="首帧图片会自动上传到腾讯云 COS 并生成公网链接（Agnes 等供应商不支持本地 base64 图片）。"
+                  />
+                )}
                 <div style={{ marginBottom: 4, fontWeight: 500, color: '#e2e8f0' }}>
                   首帧图片（可选）
                 </div>
@@ -726,7 +805,7 @@ export default function VideoGenPage() {
                     value={provider}
                     onChange={handleProviderChange}
                     style={{ width: '100%' }}
-                    options={backends.map(b => ({
+                    options={modeFilteredBackends.map(b => ({
                       label: b.name,
                       value: b.name,
                     }))}
@@ -769,11 +848,7 @@ export default function VideoGenPage() {
                     value={resolution}
                     onChange={setResolution}
                     style={{ width: '100%' }}
-                    options={[
-                      { label: '720p', value: '720p' },
-                      { label: '1080p', value: '1080p' },
-                      { label: '2K', value: '2k' },
-                    ]}
+                    options={resolutionOptions.map(value => ({ label: value === '2k' ? '2K' : value, value }))}
                   />
                 </Col>
                 <Col span={12}>
@@ -784,11 +859,7 @@ export default function VideoGenPage() {
                     value={aspectRatio}
                     onChange={setAspectRatio}
                     style={{ width: '100%' }}
-                    options={[
-                      { label: '9:16（竖版）', value: '9:16' },
-                      { label: '16:9（横版）', value: '16:9' },
-                      { label: '1:1（方形）', value: '1:1' },
-                    ]}
+                    options={aspectRatioOptions.map(value => ({ label: `${value}${value === '9:16' ? '（竖版）' : value === '16:9' ? '（横版）' : value === '1:1' ? '（方形）' : ''}`, value }))}
                   />
                 </Col>
                 <Col span={12}>
@@ -796,11 +867,13 @@ export default function VideoGenPage() {
                     时长：{duration} 秒
                   </div>
                   <Slider
-                    min={3}
-                    max={10}
+                    min={durationOptions.length ? Math.min(...durationOptions) : 3}
+                    max={durationOptions.length ? Math.max(...durationOptions) : maxDuration}
+                    step={durationOptions.length ? null : 1}
                     value={duration}
                     onChange={setDuration}
-                    marks={{ 3: '3s', 5: '5s', 8: '8s', 10: '10s' }}
+                    marks={durationOptions.length ? Object.fromEntries(durationOptions.map(value => [value, `${value}s`])) : { 3: '3s', 5: '5s', 8: '8s', [maxDuration]: `${maxDuration}s` }}
+                    tooltip={{ formatter: value => `${value}s` }}
                   />
                 </Col>
                 <Col span={12}>
@@ -812,16 +885,27 @@ export default function VideoGenPage() {
                     type="number"
                     value={seed}
                     onChange={e => setSeed(e.target.value ? parseInt(e.target.value) : undefined)}
+                    disabled={!supportsSeed}
                     style={{ background: '#1e1e2e', border: '1px solid #333', color: '#e2e8f0' }}
                   />
                 </Col>
                 <Col span={12}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <span style={{ fontSize: 12, color: '#8b8ba8' }}>自动生成音频</span>
-                    <Switch checked={generateAudio} onChange={setGenerateAudio} />
+                    <Switch checked={generateAudio} onChange={setGenerateAudio} disabled={!supportsAudio} />
                   </div>
                 </Col>
               </Row>
+              {selectedBackend && !selectedConstraints.enforced && (
+                <Alert
+                  type="warning"
+                  showIcon
+                  style={{ marginTop: 12 }}
+                  message="当前连接器未声明视频能力约束"
+                  description="控件处于兼容模式。请在设置的默认参数中填写 video_capabilities，或重新填入示例配置后补充密钥，以便按供应商实际能力限制模式、尺寸、时长和可选参数。"
+                  action={<Button size="small" type="link" onClick={() => navigate('/settings?tab=ai-models')}>配置连接器</Button>}
+                />
+              )}
             </Card>
 
             {/* 生成按钮 */}
@@ -1039,7 +1123,16 @@ export default function VideoGenPage() {
         {previewVideo && (
           <div>
             <video
-              src={previewVideo.url || previewVideo.local_path}
+              src={previewVideo.local_path
+                ? `/api/v1/videos/tasks/${encodeURIComponent(previewVideo.task_id)}/file`
+                : previewVideo.url}
+              onError={(event) => {
+                // A provider URL is still usable when local materialization
+                // failed or the downloaded container is not browser-friendly.
+                if (previewVideo.url && event.currentTarget.src !== previewVideo.url) {
+                  event.currentTarget.src = previewVideo.url
+                }
+              }}
               controls
               autoPlay
               style={{ width: '100%', borderRadius: 8 }}

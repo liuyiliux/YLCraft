@@ -24,6 +24,7 @@ import type { UploadFile } from 'antd/es/upload/interface'
 import { useWebSocket, WSTaskProgress } from '../../hooks/useWebSocket'
 import { useTheme } from '../../constants/theme'
 import { Live2DViewer } from '../../components/live2d/Live2DViewer'
+import { listAssets } from '../../api'
 
 gsap.registerPlugin(ScrollTrigger)
 
@@ -82,10 +83,8 @@ const STEPS = [
   { key: 'segment', label: 'AI Layering', phase: 'Deconstruct' },
   { key: 'inpaint', label: 'Occlusion Fill', phase: 'Deconstruct' },
   { key: 'rig', label: 'Auto Rigging', phase: 'Skeleton' },
-  { key: 'mesh', label: 'Mesh Generation', phase: 'Skeleton' },
-  { key: 'physics', label: 'Physics Simulation', phase: 'Motion' },
   { key: 'motion', label: 'Idle Animation', phase: 'Motion' },
-  { key: 'export', label: 'Export Model', phase: 'Deliver' },
+  { key: 'export', label: 'Export Config Package', phase: 'Deliver' },
 ]
 
 // 处理模式映射
@@ -124,6 +123,12 @@ export interface Live2DModel {
   use_count: number
 }
 
+interface ImageAssetOption {
+  id: string
+  title?: string
+  name?: string
+}
+
 // 获取风格模式信息
 const getStyleModeInfo = (mode: string) => {
   return STYLE_MODE_OPTIONS.find(m => m.value === mode) || STYLE_MODE_OPTIONS[0]
@@ -152,6 +157,11 @@ export default function Live2DPage() {
   const [uploadProgress, setUploadProgress] = useState(0)
   const [uploadModalVisible, setUploadModalVisible] = useState(false)
   const [uploadForm] = Form.useForm()
+  const [sourceAssetId, setSourceAssetId] = useState('')
+  const [sourceAssetName, setSourceAssetName] = useState('')
+  const [assetPickerVisible, setAssetPickerVisible] = useState(false)
+  const [assetOptions, setAssetOptions] = useState<ImageAssetOption[]>([])
+  const [assetLoading, setAssetLoading] = useState(false)
 
   const [actionLoading, setActionLoading] = useState<string | null>(null)
 
@@ -580,7 +590,43 @@ export default function Live2DPage() {
   // 打开上传弹窗
   const showUploadModal = () => {
     uploadForm.resetFields()
+    setSourceAssetId('')
+    setSourceAssetName('')
     setUploadModalVisible(true)
+  }
+
+  const openAssetPicker = async () => {
+    setAssetPickerVisible(true)
+    setAssetLoading(true)
+    try {
+      const data: any = await listAssets({ asset_type: 'image', status: 'READY', page: 1, page_size: 60 })
+      setAssetOptions(data?.data || data?.assets || [])
+    } catch (error: any) {
+      message.error(error.message || '加载素材库图片失败')
+      setAssetOptions([])
+    } finally { setAssetLoading(false) }
+  }
+
+  const handleCreateFromAsset = async (values: { name: string; description?: string; style_mode: string }) => {
+    if (!sourceAssetId) return false
+    setUploading(true)
+    try {
+      const res = await fetch('/api/v1/live2d/from-asset', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...values, asset_id: sourceAssetId }),
+      })
+      if (!res.ok) {
+        const error = await res.json()
+        throw new Error(error.detail || '创建失败')
+      }
+      message.success('已从素材库创建 Live2D 草稿')
+      setUploadModalVisible(false)
+      loadModels()
+      return true
+    } catch (error: any) {
+      message.error(error.message)
+      return false
+    } finally { setUploading(false) }
   }
 
   // 处理上传
@@ -675,7 +721,7 @@ export default function Live2DPage() {
             <li>AI分层（自动分离角色部件）</li>
             <li>骨骼绑定（五官运动控制）</li>
             <li>生成待机动作（眨眼、呼吸）</li>
-            <li>导出Live2D模型</li>
+            <li>导出角色处理配置包</li>
           </ol>
           <p style={{ color: theme.warning }}>整个过程可能需要几分钟，请耐心等待...</p>
         </div>
@@ -785,7 +831,7 @@ export default function Live2DPage() {
             <span style={{ color: theme.primary, marginLeft: 6 }}>Factory</span>
           </div>
           <div style={{ color: theme.textSecondary, fontSize: 14, lineHeight: 1.6, maxWidth: 520 }}>
-            AI-powered automatic Live2D generation with COSER photo support. Upload a single image and let the pipeline handle character separation, rigging, physics simulation, and export.
+            从图片创建角色处理草稿，支持分层、五官控制和配置包导出。当前导出不是官方 Cubism 的 .moc3 可编辑模型。
           </div>
         </div>
         <Space size={12}>
@@ -882,6 +928,13 @@ export default function Live2DPage() {
         >
           Processing Pipeline
         </div>
+        <Alert
+          type="info"
+          showIcon
+          message="当前交付物为 YLCraft 配置包"
+          description="网格和物理编辑仍未实现；导出的 ZIP 仅包含处理与 VTS 配置，不能替代官方 Cubism 编辑器生成的 .moc3 模型。"
+          style={{ marginTop: 18 }}
+        />
         <div
           style={{
             display: 'flex',
@@ -1213,7 +1266,9 @@ export default function Live2DPage() {
           initialValues={{ style_mode: 'anime' }}
           onFinish={(values) => {
             const fileInput = document.querySelector('#upload-file input[type=file]') as HTMLInputElement
-            if (fileInput?.files?.[0]) {
+            if (sourceAssetId) {
+              void handleCreateFromAsset(values)
+            } else if (fileInput?.files?.[0]) {
               handleUpload(values, fileInput.files[0])
             } else {
               message.error('请选择图片文件')
@@ -1255,6 +1310,14 @@ export default function Live2DPage() {
 
           <Divider />
 
+          <Form.Item label="素材库图片">
+            <Space wrap>
+              <Button icon={<CloudUploadOutlined />} onClick={() => void openAssetPicker()}>从素材库选择</Button>
+              {sourceAssetName && <Tag closable onClose={() => { setSourceAssetId(''); setSourceAssetName('') }}>{sourceAssetName}</Tag>}
+            </Space>
+            {sourceAssetId && <Text type="secondary" style={{ display: 'block', marginTop: 8 }}>将使用素材库图片创建草稿，并保留来源关系。</Text>}
+          </Form.Item>
+
           <Form.Item label="角色图片">
             <Upload
               id="upload-file"
@@ -1262,6 +1325,8 @@ export default function Live2DPage() {
               maxCount={1}
               listType="picture-card"
               beforeUpload={(file) => {
+                setSourceAssetId('')
+                setSourceAssetName('')
                 // 验证文件类型
                 const isImage = file.type.startsWith('image/')
                 if (!isImage) {
@@ -1303,6 +1368,22 @@ export default function Live2DPage() {
       </Modal>
 
       {/* 模式切换弹窗 */}
+      <Modal open={assetPickerVisible} title="选择素材库图片" footer={null} onCancel={() => setAssetPickerVisible(false)} width={720}>
+        <Select
+          showSearch
+          loading={assetLoading}
+          style={{ width: '100%' }}
+          placeholder="选择一张已入库图片"
+          optionFilterProp="label"
+          options={assetOptions.map(asset => ({ value: asset.id, label: asset.title || asset.name || asset.id }))}
+          onChange={(value, option: any) => {
+            setSourceAssetId(value)
+            setSourceAssetName(option.label)
+            setAssetPickerVisible(false)
+          }}
+        />
+      </Modal>
+
       <Modal
         title={
           <Space>

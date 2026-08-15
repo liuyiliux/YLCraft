@@ -439,6 +439,10 @@ function getPlatformSearchConfig(pf: string): PlatformSearchConfig {
   }
 }
 
+function connectionPlatformForSearch(platform: string): string {
+  return ({ dy: 'douyin', ks: 'kuaishou', bili: 'bilibili', wb: 'weibo' } as Record<string, string>)[platform] || platform
+}
+
 /** 获取当前搜索类型的配置 */
 function getCurrentSearchTypeConfig(pf: string, st: string): SearchTypeConfig | undefined {
   const cfg = PLATFORM_SEARCH_CONFIG[pf]
@@ -580,6 +584,8 @@ export default function CrawlerPage() {
   // B站平台连接（字幕需要登录态）
   const [biliConnections, setBiliConnections] = useState<PlatformConnectionResponse[]>([])
   const [selectedBiliConn, setSelectedBiliConn] = useState<string>('')
+  const [platformConnections, setPlatformConnections] = useState<PlatformConnectionResponse[]>([])
+  const [selectedSearchConn, setSelectedSearchConn] = useState<string>('')
   const [biliHealth, setBiliHealth] = useState<BiliHealthResult | null>(null)
   const [biliHealthLoading, setBiliHealthLoading] = useState(false)
 
@@ -757,6 +763,10 @@ export default function CrawlerPage() {
   // 加载平台连接
   useEffect(() => {
     listPlatformConnections().then((res: any) => {
+      const activeConnections = (res.connections || []).filter(
+        (c: PlatformConnectionResponse) => c.status === 'active'
+      )
+      setPlatformConnections(activeConnections)
       const conns = (res.connections || []).filter(
         (c: PlatformConnectionResponse) => c.platform === 'bilibili' && c.status === 'active'
       )
@@ -775,6 +785,21 @@ export default function CrawlerPage() {
       // 静默失败，不影响主功能
     })
   }, [])
+
+  const searchConnections = useMemo(() => platformConnections.filter(
+    connection => connection.platform === connectionPlatformForSearch(platform)
+  ), [platform, platformConnections])
+  const showSearchConnectionPicker = platform !== 'bili' && platform !== 'wechat_mp' && searchConnections.length > 0
+
+  useEffect(() => {
+    if (platform === 'bili' || platform === 'wechat_mp') {
+      setSelectedSearchConn('')
+      return
+    }
+    setSelectedSearchConn(current => searchConnections.some(connection => connection.id === current)
+      ? current
+      : (searchConnections[0]?.id || ''))
+  }, [platform, searchConnections])
 
   useEffect(() => {
     setBiliHealth(null)
@@ -947,6 +972,7 @@ export default function CrawlerPage() {
         ...(platform === 'bili' && searchType === 'user' ? { order_sort: orderSort } : {}),
         filters,
         page,
+        conn_id: platform === 'bili' ? selectedBiliConn : selectedSearchConn,
       })
       setResults(data.results || [])
       setTotal(data.total || 0)
@@ -1191,7 +1217,8 @@ export default function CrawlerPage() {
       return
     }
     try {
-      const detail = await getNoteDetail(record.platform, record.id)
+      const detailConnectionId = record.platform === 'bili' ? selectedBiliConn : selectedSearchConn
+      const detail = await getNoteDetail(record.platform, record.id, detailConnectionId)
       setDetailNote(prev => prev ? { ...prev, ...detail, raw_data: detail } : null)
 
       // B站：同时获取统计数据
@@ -1488,7 +1515,7 @@ export default function CrawlerPage() {
                 options={PLATFORMS.map(p => ({ value: p.value, label: <Space size={6}>{p.icon}{p.label}</Space> }))}
               />
             </Col>
-            <Col xs={24} sm={platform === 'bili' ? 12 : 20} md={platform === 'bili' ? 14 : 21}>
+            <Col xs={24} sm={platform === 'bili' || showSearchConnectionPicker ? 12 : 20} md={platform === 'bili' || showSearchConnectionPicker ? 14 : 21}>
               <Input.Search
                 value={keyword}
                 onChange={e => setKeyword(e.target.value)}
@@ -1524,6 +1551,20 @@ export default function CrawlerPage() {
                     体检
                   </Button>
                 </div>
+              </Col>
+            )}
+            {showSearchConnectionPicker && (
+              <Col xs={24} sm={8} md={7}>
+                <Select
+                  value={selectedSearchConn || undefined}
+                  onChange={setSelectedSearchConn}
+                  placeholder={`选择${getPlatformInfo(platform).label}连接`}
+                  style={{ width: '100%' }}
+                  options={searchConnections.map(connection => ({
+                    value: connection.id,
+                    label: `${connection.name}${connection.account_name ? ` · ${connection.account_name}` : ''}`,
+                  }))}
+                />
               </Col>
             )}
           </Row>

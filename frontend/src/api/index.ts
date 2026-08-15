@@ -1015,6 +1015,7 @@ export const searchEnhanced = (params: {
   order_sort?: number
   filters?: Record<string, any>
   page?: number
+  conn_id?: string
 }) => request('/crawler/search-enhanced', { method: 'POST', body: JSON.stringify(params) })
 
 /** 获取笔记详情（无水印） */

@@ -29,6 +29,7 @@ import {
   Checkbox,
   Spin,
   List,
+  Upload,
 } from 'antd'
 import {
   ThunderboltOutlined,
@@ -42,6 +43,7 @@ import {
   FolderOpenOutlined,
   ExpandOutlined,
   ReadOutlined,
+  CloudUploadOutlined,
 } from '@ant-design/icons'
 import { SearchPanel } from '../../components/asset-hub/SearchPanel'
 import type { SearchParams } from '../../components/asset-hub/SearchPanel'
@@ -59,6 +61,7 @@ import {
 } from '../../api'
 import { AssetVideoPlayer } from '../../components/video/AssetVideoPlayer'
 import { Model3DViewer } from '../../components/asset-hub/Model3DViewer'
+import { captureModelThumbnail } from '../../utils/captureModelThumbnail'
 
 const { Sider, Content } = Layout
 
@@ -142,6 +145,15 @@ const SEARCH_HISTORY_KEY = 'ylcraft_asset_search_history'
 const LOCAL_READABLE_TYPES = new Set(['ARTICLE', 'TEXT', 'DOCUMENT', 'NOVEL'])
 const LOCAL_READABLE_EXTS = ['.html', '.htm', '.md', '.markdown', '.txt', '.text', '.epub']
 
+function dataUrlToBlob(dataUrl: string): Blob {
+  const [meta, base64] = dataUrl.split(',')
+  const mime = meta.match(/:(.*?);/)?.[1] || 'image/png'
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return new Blob([bytes], { type: mime })
+}
+
 const isLocalReadableAsset = (asset: any) => {
   const type = String(asset?.type || '').toUpperCase()
   const filePath = String(asset?.file_path || '')
@@ -191,6 +203,7 @@ export default function AssetsPage() {
   const [lineageLoading, setLineageLoading] = useState(false)
   const [playingAssetId, setPlayingAssetId] = useState<string | null>(null)
   const [playingCourseEpisodeIndex, setPlayingCourseEpisodeIndex] = useState<number | null>(null)
+  const [uploading3D, setUploading3D] = useState(false)
 
   // Tag tree (sidebar)
   const [siderCollapsed, setSiderCollapsed] = useState(false)
@@ -515,6 +528,12 @@ export default function AssetsPage() {
     const dt = (detailAsset.type || '').toUpperCase()
     const isVideo = dt === 'VIDEO' && ds === 'READY'
     const isModel3D = dt === '3D_MODEL'
+    // OBJ 模型拆成 obj + mtl + 贴图；从详情返回的 files 里挑出 obj/mtl 地址。
+    const modelFiles = Array.isArray(detailAsset.files) ? detailAsset.files : []
+    const objFile = modelFiles.find((f: any) => String(f.name || '').toLowerCase().endsWith('.obj'))
+    const mtlFile = modelFiles.find((f: any) => String(f.name || '').toLowerCase().endsWith('.mtl'))
+    const modelViewerUrl = objFile ? objFile.url : `/api/v1/assets/${detailAsset.id}/download`
+    const modelViewerMtlUrl = mtlFile ? mtlFile.url : undefined
     const meta = detailAsset.metadata || {}
     const projectContext = meta.project_context || {}
     const aiParams = meta.ai_params || {}
@@ -580,9 +599,20 @@ export default function AssetsPage() {
             {isModel3D ? (
               <div style={{ marginBottom: 16 }}>
                 <Model3DViewer
-                  modelUrl={`/api/v1/assets/${detailAsset.id}/download`}
+                  modelUrl={modelViewerUrl}
+                  mtlUrl={modelViewerMtlUrl}
                   autoRotate
+                  height={320}
+                  onFullscreen={() => navigate(`/model3d-viewer/${detailAsset.id}`)}
                 />
+                <Button
+                  type="link"
+                  icon={<ExpandOutlined />}
+                  onClick={() => navigate(`/model3d-viewer/${detailAsset.id}`)}
+                  style={{ paddingLeft: 0, marginTop: 8 }}
+                >
+                  全屏预览
+                </Button>
               </div>
             ) : isVideo ? (
               <div style={{ marginBottom: 16 }}>
@@ -855,6 +885,65 @@ export default function AssetsPage() {
     relevance_score: a.relevance_score ?? a.hybrid_score ?? undefined,
   }))
 
+  const handleUpload3D = async (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('title', file.name.replace(/\.[^.]+$/, ''))
+    setUploading3D(true)
+    try {
+      const res = await fetch('/api/v1/assets/upload-model3d', { method: 'POST', body: form })
+      const data = await res.json()
+      if (!res.ok || !data.success) throw new Error(data.detail || '上传失败')
+      message.success('3D 模型已上传入库')
+      loadAssets(page, searchQuery, filters, searchMode)
+      if (data.asset_id) void captureAndUploadThumbnail(data.asset_id)
+    } catch (e: any) {
+      message.error(e?.message || '上传失败')
+    } finally {
+      setUploading3D(false)
+    }
+  }
+
+  const captureAndUploadThumbnail = async (assetId: string) => {
+    try {
+      const res: any = await getAsset(assetId)
+      const d = res?.data
+      if (!d) return
+      const modelFiles = Array.isArray(d.files) ? d.files : []
+      const objFile = modelFiles.find((f: any) => String(f.name || '').toLowerCase().endsWith('.obj'))
+      const mtlFile = modelFiles.find((f: any) => String(f.name || '').toLowerCase().endsWith('.mtl'))
+      const modelUrl = objFile ? objFile.url : `/api/v1/assets/${assetId}/download`
+      const mtlUrl = mtlFile ? mtlFile.url : undefined
+
+      const dataUrl = await captureModelThumbnail(modelUrl, mtlUrl)
+      const blob = dataUrlToBlob(dataUrl)
+      const thumbForm = new FormData()
+      thumbForm.append('file', blob, 'thumbnail.png')
+      await fetch(`/api/v1/assets/${assetId}/thumbnail`, { method: 'POST', body: thumbForm })
+      loadAssets(page, searchQuery, filters, searchMode)
+    } catch {
+      // 截图失败不影响上传本身
+    }
+  }
+
+  const handleUploadAsset = async (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('title', file.name.replace(/\.[^.]+$/, ''))
+    setUploading3D(true)
+    try {
+      const res = await fetch('/api/v1/assets/upload', { method: 'POST', body: form })
+      const data = await res.json()
+      if (!res.ok || !data.success) throw new Error(data.detail || '上传失败')
+      message.success('素材已上传入库')
+      loadAssets(page, searchQuery, filters, searchMode)
+    } catch (e: any) {
+      message.error(e?.message || '上传失败')
+    } finally {
+      setUploading3D(false)
+    }
+  }
+
   return (
     <div style={{ height: 'calc(100vh - 64px)', display: 'flex', flexDirection: 'column' }}>
       <Layout style={{ flex: 1, background: 'transparent', overflow: 'hidden' }}>
@@ -1039,6 +1128,20 @@ export default function AssetsPage() {
           ) : (
             <Button size="small" onClick={() => setBatchMode(true)}>选择模式</Button>
           )}
+          <Upload
+            accept=".png,.jpg,.jpeg,.webp,.gif,.bmp,.svg,.mp4,.mov,.webm,.mkv,.mp3,.wav,.ogg,.flac,.txt,.md,.json,.csv"
+            showUploadList={false}
+            beforeUpload={(file) => { void handleUploadAsset(file); return false }}
+          >
+            <Button size="small" icon={<CloudUploadOutlined />} loading={uploading3D}>本地上传</Button>
+          </Upload>
+          <Upload
+            accept=".zip,.obj,.glb,.gltf,.fbx,.usdz"
+            showUploadList={false}
+            beforeUpload={(file) => { void handleUpload3D(file); return false }}
+          >
+            <Button size="small" icon={<CloudUploadOutlined />} loading={uploading3D}>上传 3D 模型</Button>
+          </Upload>
           <Button size="small" icon={<ReloadOutlined />} onClick={() => loadAssets(page, searchQuery, filters, searchMode)}>刷新</Button>
         </Space>
       </div>
