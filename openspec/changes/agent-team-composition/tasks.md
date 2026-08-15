@@ -32,8 +32,8 @@
 
 - [x] 5.1 Implement `TeamComposer.run(template_id, inputs)` over `SubagentOrchestrator` (topological batches, joins, budget enforcement).
 - [ ] 5.2 Route `MultiAgentCoordinator` endpoint through the declarative composer. (`run_team` facade and `use_team_template` opt-in flag shipped; endpoint defaults to the legacy path until compatibility tests pass.)
-- [ ] 5.3 Wire Writer Room `team` rehearsal mode to `writer-room-team`; persist `character_rehearsal` candidate with team provenance. (Seam located: branch `CreativeProjectService.run_writer_room_step` before `_generate_json` when `step == "character_rehearsal"` and `rehearsal_mode == "team"`. Remaining blockers: resolve project characters from facts, bridge the sync `SessionLocal` to an async `SubagentOrchestrator`, and live-verify the joined result persists as `character_rehearsal`.)
-- [ ] 5.4 Remove duplicate unsafe execution logic after compatibility coverage passes.
+- [x] 5.3 Wire Writer Room `team` rehearsal mode to `writer-room-team`; persist `character_rehearsal` candidate with team provenance. (Implemented as opt-in `rehearsal_mode="team"`, threaded through API `WriterRoomStepRequest`/`WriterRoomRunRequest`, tool `run_creative_writer_room`, and `run_writer_room`/`run_writer_room_step`; `_run_character_rehearsal_team` resolves characters via `sync_outline_characters` + scene-beats fallback, runs `TeamComposer` over `writer-room-team` in an async `SubagentOrchestrator`, and persists the joined observation as `character_rehearsal`. Live-verify with a real LLM still pending.)
+- [ ] 5.4 Remove duplicate unsafe execution logic after compatibility coverage passes. (Scene-simulation endpoint defaults to legacy path; `use_team_template` opt-in routes to `run_team`. Dedup is safe only after live-verifying the team path.)
 
 ## Phase 6: Validation And Closure
 

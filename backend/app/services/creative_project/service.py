@@ -1758,6 +1758,7 @@ class CreativeProjectService:
         provider: str | None = None,
         model: str | None = None,
         template_id: str | None = None,
+        rehearsal_mode: str = "fast",
         _context_pack: dict[str, Any] | None = None,
     ) -> ProjectContent:
         project = self._require_project(project_id)
@@ -1804,18 +1805,21 @@ class CreativeProjectService:
                 selected_text=selected_text or "",
             ),
         )
-        data = await self._generate_json(
-            project=project,
-            stage=step,
-            prompt=prompt,
-            system_prompt=system_prompt,
-            schema_model=schema_model,
-            provider=provider,
-            model=model,
-            template_meta=template_meta,
-            max_tokens=prose_max_tokens,
-            request_metadata={"creative_context": context.get("context_pack_metadata") or {}},
-        )
+        if step == "character_rehearsal" and rehearsal_mode == "team":
+            data = await self._run_character_rehearsal_team(project, chapter_number, context)
+        else:
+            data = await self._generate_json(
+                project=project,
+                stage=step,
+                prompt=prompt,
+                system_prompt=system_prompt,
+                schema_model=schema_model,
+                provider=provider,
+                model=model,
+                template_meta=template_meta,
+                max_tokens=prose_max_tokens,
+                request_metadata={"creative_context": context.get("context_pack_metadata") or {}},
+            )
         if step in {"prose_draft", "prose_humanized", "prose_rewrite"}:
             self._normalize_prose_content_alias(data)
         if step == "prose_humanized":
@@ -1997,6 +2001,7 @@ class CreativeProjectService:
         provider: str | None = None,
         model: str | None = None,
         template_id: str | None = None,
+        rehearsal_mode: str = "fast",
         continue_on_error: bool = True,
     ) -> dict[str, Any]:
         requested_steps = [self._normalize_writer_room_step(step) for step in (steps or [])]
@@ -2033,6 +2038,7 @@ class CreativeProjectService:
                     provider=provider,
                     model=model,
                     template_id=template_id,
+                    rehearsal_mode=rehearsal_mode,
                     _context_pack=context_pack,
                 )
                 results.append({
@@ -2070,6 +2076,98 @@ class CreativeProjectService:
                 "failed": len([item for item in results if item.get("status") == "failed"]),
                 "skipped": len([item for item in results if item.get("status") == "skipped"]),
             },
+        }
+
+    def _resolve_team_characters(self, project_id: str, context: dict[str, Any]) -> list[str]:
+        names: list[str] = []
+        try:
+            names = [
+                str(character.name).strip()
+                for character in self.sync_outline_characters(project_id)
+                if getattr(character, "name", None) and str(character.name).strip()
+            ]
+        except Exception:  # noqa: BLE001 — outline may not declare characters yet
+            names = []
+        if names:
+            return names
+        # Fallback: characters referenced by the scene beats.
+        beats = context.get("scene_beats") or {}
+        for beat in beats.get("scene_beats") or []:
+            if not isinstance(beat, dict):
+                continue
+            for name in beat.get("characters") or []:
+                if name and str(name).strip() and str(name).strip() not in names:
+                    names.append(str(name).strip())
+        return names
+
+    def _scene_context_for_team(self, context: dict[str, Any]) -> str:
+        parts: list[str] = []
+        if context.get("scene_beats"):
+            parts.append(f"场景节拍：{dumps_json(context.get('scene_beats'))}")
+        if context.get("chapter_outline"):
+            parts.append(f"章节细纲：{dumps_json(context.get('chapter_outline'))}")
+        return "\n".join(parts) or "本章场景"
+
+    async def _run_character_rehearsal_team(
+        self,
+        project: CreativeProject,
+        chapter_number: int,
+        context: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Run the declarative ``writer-room-team`` and shape it as a rehearsal candidate."""
+        characters = self._resolve_team_characters(project.id, context)
+        if not characters:
+            raise ValueError("团队演绎需要至少一个角色；请先完善故事大纲中的角色")
+
+        import uuid as _uuid
+
+        from app.db.database import AsyncSessionLocal
+        from app.db.models.agent import AgentRun
+        from app.services.agent.runtime.delegation import SubagentExecutor, SubagentOrchestrator
+        from app.services.agent.team_composer import TeamComposer
+
+        scene_context = self._scene_context_for_team(context)
+        parent_run = AgentRun(
+            id=f"wrteam_{_uuid.uuid4().hex[:24]}",
+            user_id="default",
+            session_id=f"wrteam_sess_{_uuid.uuid4().hex[:12]}",
+            profile_id="creative-director",
+            run_kind="primary",
+            status="running",
+            objective=f"第{chapter_number}章角色团队演绎",
+            context_json=dumps_json({"project_id": project.id, "chapter_number": chapter_number}),
+        )
+        async with AsyncSessionLocal() as asession:
+            asession.add(parent_run)
+            await asession.commit()
+            executor = SubagentExecutor(AsyncSessionLocal)
+            orchestrator = SubagentOrchestrator(asession, executor)
+            composer = TeamComposer(orchestrator)
+            result = await composer.run(
+                "writer-room-team",
+                parent_run,
+                inputs={
+                    "project_id": project.id,
+                    "chapter_number": chapter_number,
+                    "scene_context": scene_context,
+                    "characters": characters,
+                },
+                user_id="default",
+            )
+
+        joined = str(result.get("joined_observation") or "").strip() or "团队演绎未产出可用内容"
+        return {
+            "chapter_number": chapter_number,
+            "title": f"第{chapter_number}章角色团队演绎",
+            "rehearsal_mode": "team",
+            "root_run_id": parent_run.id,
+            "team_template_id": result.get("team_template_id") or "writer-room-team",
+            "joined_observation": joined,
+            "characters": characters,
+            "scene_rehearsals": [],
+            "character_reactions": [{"character": name, "private_goal": joined} for name in characters],
+            "usable_conflicts": [],
+            "continuity_notes": [],
         }
 
     def promote_writer_room_content(

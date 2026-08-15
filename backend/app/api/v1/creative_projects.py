@@ -220,6 +220,7 @@ class WriterRoomStepRequest(BaseModel):
     provider: str | None = None
     model: str | None = None
     template_id: str | None = None
+    rehearsal_mode: str = Field(default="fast", description="fast | team（角色演绎团队模式）")
 
 
 class WriterRoomRunRequest(BaseModel):
@@ -231,6 +232,7 @@ class WriterRoomRunRequest(BaseModel):
     provider: str | None = None
     model: str | None = None
     template_id: str | None = None
+    rehearsal_mode: str = Field(default="fast", description="fast | team（角色演绎团队模式）")
     continue_on_error: bool = True
 
 
@@ -913,6 +915,7 @@ async def run_writer_room_step(
             provider=req.provider,
             model=req.model,
             template_id=req.template_id,
+            rehearsal_mode=req.rehearsal_mode,
         )
         return {"success": True, "data": serialize_content(content)}
     except ValueError as e:
@@ -936,6 +939,7 @@ async def run_writer_room(
             provider=req.provider,
             model=req.model,
             template_id=req.template_id,
+            rehearsal_mode=req.rehearsal_mode,
             continue_on_error=req.continue_on_error,
         )
         generated_ids = [

@@ -494,6 +494,7 @@ async def run_creative_writer_room(
     steps: list[str] | None = None,
     provider: str = "",
     model: str = "",
+    rehearsal_mode: str = "fast",
     continue_on_error: bool = True,
 ):
     with SessionLocal() as session:
@@ -504,6 +505,7 @@ async def run_creative_writer_room(
             steps=steps or [],
             provider=provider or None,
             model=model or None,
+            rehearsal_mode=rehearsal_mode,
             continue_on_error=continue_on_error,
         )
         return {"success": True, "result": result}

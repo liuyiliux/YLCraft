@@ -165,6 +165,7 @@ def test_writer_room_step_api_passes_request_to_service_without_overwriting_body
             "provider": "deepseek",
             "model": "deepseek-v4-pro",
             "template_id": "template-1",
+            "rehearsal_mode": "fast",
         },
     )
 
