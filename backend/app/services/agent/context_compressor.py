@@ -97,10 +97,18 @@ class ContextCompressor:
         self._keep_last = keep_last
         self._response_budget = response_budget
         self._compress_count = 0
+        # Compression is lossy state migration, not pure efficiency: track the
+        # source span, summary version and expansion path so a caller can name
+        # which raw observations survived compression.
+        self._last_provenance: dict[str, Any] | None = None
 
     @property
     def compression_count(self) -> int:
         return self._compress_count
+
+    @property
+    def last_provenance(self) -> dict[str, Any] | None:
+        return self._last_provenance
 
     async def ensure_fits(
         self,
@@ -156,7 +164,20 @@ class ContextCompressor:
         # Build a summary of compressed messages
         summary = self._build_fast_summary(to_compress)
 
-        # Inject summary as a system message at the head of the keep list
+        # Record provenance so the compaction is traceable to the folded span.
+        self._last_provenance = {
+            "summary_version": self._compress_count,
+            "source_span": {
+                "compressed_message_count": len(to_compress),
+                "kept_message_count": len(to_keep),
+            },
+            "expansion_path": "compressed_summary",
+        }
+
+        # Inject summary as a system message at the head of the keep list.
+        # The system prompt + tool schema block that wraps these messages stays
+        # deterministic (cache-stable), so this summary only replaces the
+        # message body, not the reusable request prefix.
         compressed = [
             {"role": "system", "content": f"[对话历史摘要]\n{summary}"},
             *to_keep,

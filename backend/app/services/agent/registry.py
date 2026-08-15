@@ -85,7 +85,12 @@ class ToolRegistry:
 
     @classmethod
     def get_tool_schemas(cls) -> list[dict]:
-        """生成 LLM 可见的工具 Schema（OpenAI function calling 格式）"""
+        """生成 LLM 可见的工具 Schema（OpenAI function calling 格式）
+
+        工具按名称字典序输出，保证工具集不变时 schema 前缀字节级稳定，
+        从而命中 LLM prompt 前缀缓存（cache-stable tool catalog）。
+        """
+        ordered = sorted(cls._tools.values(), key=lambda tool: tool.name)
         return [
             {
                 "type": "function",
@@ -95,7 +100,7 @@ class ToolRegistry:
                     "parameters": tool.parameters,
                 }
             }
-            for tool in cls._tools.values()
+            for tool in ordered
         ]
 
     @classmethod
@@ -124,6 +129,7 @@ class ToolRegistry:
             if allow_all
             else [tool for name, tool in cls._tools.items() if name in allowed and name not in excluded]
         )
+        tools = sorted(tools, key=lambda tool: tool.name)
         return [
             {
                 "type": "function",

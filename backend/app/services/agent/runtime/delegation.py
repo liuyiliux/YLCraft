@@ -35,6 +35,7 @@ class DelegatedTask:
     objective: str
     context: dict[str, Any] = field(default_factory=dict)
     depends_on: tuple[str, ...] = ()
+    spawn_mode: str = "spawn"  # spawn | fork
 
     @classmethod
     def from_value(cls, value: "DelegatedTask | dict[str, Any]", index: int = 0) -> "DelegatedTask":
@@ -47,12 +48,16 @@ class DelegatedTask:
         objective = str(value.get("objective") or value.get("message") or "").strip()
         context = value.get("context") if isinstance(value.get("context"), dict) else {}
         raw_dependencies = value.get("depends_on") if isinstance(value.get("depends_on"), list) else []
+        spawn_mode = str(value.get("spawn_mode") or value.get("spawn") or "spawn").strip() or "spawn"
+        if spawn_mode not in {"spawn", "fork"}:
+            raise DelegationValidationError("spawn_mode 只支持 spawn 或 fork")
         return cls(
             task_key=task_key,
             profile_id=profile_id,
             objective=objective,
             context=context,
             depends_on=tuple(str(item).strip() for item in raw_dependencies if str(item).strip()),
+            spawn_mode=spawn_mode,
         )
 
 
@@ -306,6 +311,81 @@ class SubagentExecutor:
                 error=str(exc),
             )
 
+    async def send_message(
+        self,
+        *,
+        thread_id: str,
+        user_message: str,
+        user_id: str,
+        profile_id: str,
+        context: dict[str, Any] | None = None,
+    ) -> SubagentExecutionResult:
+        """Continue an existing child session/thread (continuable primitive)."""
+        task = DelegatedTask(task_key="continuation", profile_id=profile_id, objective=user_message)
+        try:
+            async with self.session_factory() as session:
+                if self.service_factory is None:
+                    from app.services.agent.service import AgentService
+
+                    service = AgentService(session, user_id=user_id)
+                else:
+                    service = self.service_factory(session, user_id)
+                result = await asyncio.wait_for(
+                    service.chat(
+                        session_id=thread_id,
+                        user_message=user_message,
+                        context=context or {},
+                        profile_id=profile_id,
+                        force_new_thread=False,
+                    ),
+                    timeout=self.timeout_seconds,
+                )
+                await session.commit()
+                return SubagentResultAdapter.from_agent_result(task, result)
+        except asyncio.TimeoutError:
+            return SubagentExecutionResult(
+                task_key="continuation",
+                profile_id=profile_id,
+                status="failed",
+                error=f"续跑超过 {self.timeout_seconds:g} 秒",
+            )
+        except Exception as exc:  # noqa: BLE001
+            return SubagentExecutionResult(
+                task_key="continuation",
+                profile_id=profile_id,
+                status="failed",
+                error=str(exc),
+            )
+
+
+class ForkExecutor(SubagentExecutor):
+    """fork primitive: inherit a bounded read-only reference to parent context."""
+
+    async def execute(
+        self,
+        task: DelegatedTask,
+        *,
+        user_id: str,
+        root_run_id: str,
+        parent_run_id: str,
+        delegation_depth: int,
+        context: dict[str, Any],
+    ) -> SubagentExecutionResult:
+        fork_context = dict(context or {})
+        fork_context["_fork"] = {
+            "parent_run_id": parent_run_id,
+            "root_run_id": root_run_id,
+            "read_only": True,
+        }
+        return await super().execute(
+            task,
+            user_id=user_id,
+            root_run_id=root_run_id,
+            parent_run_id=parent_run_id,
+            delegation_depth=delegation_depth,
+            context=fork_context,
+        )
+
 
 class SubagentOrchestrator:
     def __init__(
@@ -362,6 +442,7 @@ class SubagentOrchestrator:
                 context_json=json.dumps(task.context, ensure_ascii=False, default=str),
                 depends_on_json=json.dumps(list(task.depends_on), ensure_ascii=False),
                 execution_mode="parallel" if len(normalized) > 1 else "sequential",
+                spawn_mode=task.spawn_mode,
             )
             self.session.add(record)
             records[task.task_key] = record
@@ -462,6 +543,49 @@ class SubagentOrchestrator:
             "target_profile_id": first.profile_id if len(ordered_results) == 1 else None,
             "result": first.raw_result if len(ordered_results) == 1 else payload,
             **payload,
+        }
+
+    async def send_message(self, delegation_id: str, message: str, user_id: str = "") -> dict[str, Any]:
+        """Continue an existing delegation's child session (continuable primitive)."""
+        record = await self.session.get(AgentDelegation, delegation_id)
+        if not record:
+            raise DelegationValidationError(f"委派记录不存在：{delegation_id}")
+        if not record.child_run_id:
+            raise DelegationValidationError("该委派尚未产生子运行，无法续跑")
+        result_json = self._loads(record.result_json, {})
+        thread_id = str(result_json.get("thread_id") or record.child_run_id)
+        send = getattr(self.runner, "send_message", None)
+        if send is None:
+            raise DelegationValidationError("当前 runner 不支持续跑")
+        result = await send(
+            thread_id=thread_id,
+            user_message=message,
+            user_id=user_id or record.user_id,
+            profile_id=record.target_profile_id,
+            context=self._loads(record.context_json, {}),
+        )
+        continuation = {
+            "reply": result.reply,
+            "status": result.status,
+            "error": result.error,
+        }
+        record.result_json = json.dumps(
+            {**result_json, "continuation": continuation},
+            ensure_ascii=False,
+            default=str,
+        )
+        if result.child_run_id and result.child_run_id != record.child_run_id:
+            record.continuation_of = record.child_run_id
+            record.child_run_id = result.child_run_id
+        record.updated_at = datetime.utcnow()
+        await self.session.commit()
+        return {
+            "success": result.success,
+            "status": result.status,
+            "reply": result.reply,
+            "delegation_id": delegation_id,
+            "child_run_id": record.child_run_id,
+            "continuation_of": record.continuation_of,
         }
 
     async def _create_parent_step(

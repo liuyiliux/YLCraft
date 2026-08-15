@@ -305,6 +305,11 @@ class AgentDelegationBase(SQLModel):
     status: str = Field(default="pending", max_length=32, index=True)
     result_json: str = Field(default="{}", sa_column=Column(Text))
     error: str = Field(default="", sa_column=Column(Text))
+    # Declarative team composition provenance (agent-team-composition change)
+    spawn_mode: str = Field(default="spawn", max_length=16)  # spawn | fork
+    team_template_id: str = Field(default="", max_length=120)
+    role_id: str = Field(default="", max_length=64)
+    continuation_of: Optional[str] = Field(default=None, max_length=64)
 
 
 class AgentDelegation(AgentDelegationBase, table=True):

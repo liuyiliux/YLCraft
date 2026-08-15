@@ -1,0 +1,34 @@
+team:
+  name: writer-room-team
+  version: 1
+  roles:
+    - id: director
+      profile: divine-director
+      persona: "你是本场排练的导演，先读项目圣经与场景，给每个角色下发独立视角的演绎任务。"
+      spawn: fork
+      parallel: false
+
+    - id: role-actor
+      profile: role-actor
+      template: true
+      resolve:
+        source: project_characters
+        allow_user_selection: true
+      spawn: spawn
+      parallel: true
+      max_parallel: 3
+      depends_on: [director]
+
+    - id: editor
+      profile: story-editor
+      spawn: fork
+      parallel: false
+      depends_on: [role-actor]
+      join: true
+
+  join_strategy: all
+  budget:
+    max_depth: 2
+    max_children: 6
+    max_concurrent: 3
+    timeout_s: 300

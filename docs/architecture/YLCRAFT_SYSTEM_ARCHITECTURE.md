@@ -105,6 +105,8 @@ flowchart TD
 
 Agent Center 的人工委派入口支持 `resume_parent`：成功汇合后把子结果作为 observation 写回原父 Run，并继续同一个 `RunLoop`；子级等待确认后仍要求用户从轨迹显式继续，避免确认接口静默启动新一轮成本型执行。剩余边界是 Writer Room `team` 模式和把旧 `MultiAgentCoordinator` 迁移为声明式团队模板。Writer Room 的当前角色演绎仍是单次模型调用和线性候选链，不得标成真实角色子 Agent 团队。
 
+声明式团队组合（`openspec/changes/agent-team-composition`）已落地运行时骨架：`services/agent/scope.py` 用 `contextvars` 显式隔离主机平面（进程级注册表单例）与代理平面（per-session 状态）；`services/agent/team_template.py` 提供团队模板 schema、加载器与校验器（含依赖环检测）；`services/agent/team_composer.py` 把模板解析为 `DelegatedTask` 列表并经 `SubagentOrchestrator` 执行；子代理新增 `spawn`/`fork`/`continuable` 三原语（`ForkExecutor` + `SubagentOrchestrator.send_message`），`AgentDelegation` 增加 `spawn_mode`/`team_template_id`/`role_id`/`continuation_of`（迁移 `012_add_team_composition_fields`）。工具目录改为按名称字典序输出以稳定 LLM 前缀缓存，`CostMeter` 观测缓存命中率，`ContextCompressor` 记录压缩溯源（source_span/summary_version/expansion_path）。内置 `writer-room-team`、`scene-sim` 两套模板；`MultiAgentCoordinator.run_team` 已作为声明式门面。仍待：`AgentService` per-session 状态迁移、Writer Room `team` 模式接入、旧协调器去重与端到端验收。
+
 关键要求：
 
 - 新对话应创建新的 `AgentThread`，不是新建智能体 profile。

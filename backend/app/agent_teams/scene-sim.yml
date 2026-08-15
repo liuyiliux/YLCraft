@@ -1,0 +1,40 @@
+team:
+  name: scene-sim
+  version: 1
+  roles:
+    - id: director
+      profile: divine-director
+      persona: "从上帝视角拆解本场景冲突、节奏与角色调度，输出导演指令。"
+      spawn: fork
+      parallel: false
+
+    - id: role-actor
+      profile: role-actor
+      template: true
+      resolve:
+        source: project_characters
+        allow_user_selection: true
+      spawn: spawn
+      parallel: true
+      max_parallel: 3
+      depends_on: [director]
+
+    - id: editor
+      profile: story-editor
+      spawn: fork
+      parallel: false
+      depends_on: [role-actor]
+
+    - id: writer
+      profile: creative-director
+      spawn: fork
+      parallel: false
+      depends_on: [editor]
+      join: true
+
+  join_strategy: all
+  budget:
+    max_depth: 2
+    max_children: 6
+    max_concurrent: 3
+    timeout_s: 300
