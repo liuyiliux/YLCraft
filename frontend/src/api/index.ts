@@ -1895,6 +1895,7 @@ export const runCreativeProjectWriterRoomStep = (
     provider?: string
     model?: string
     template_id?: string
+    rehearsal_mode?: 'fast' | 'team'
   } = {},
 ) =>
   request(`/creative-projects/${projectId}/writer-room/step/${encodeURIComponent(step)}`, {

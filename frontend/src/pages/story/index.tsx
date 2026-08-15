@@ -93,7 +93,6 @@ import {
   refineCreativeProjectNovelBody,
   regenerateCreativeProjectChapterOutlineScenes,
   runCreativeProjectPipeline,
-  runCreativeProjectWriterRoom,
   runCreativeProjectWriterRoomStep,
   rewriteCreativeProjectParagraph,
   resolveCreativeProjectContinuityCandidate,
@@ -3552,6 +3551,7 @@ export default function StoryPage() {
         template_id: selectedPromptTemplates[step] || undefined,
         instruction: instruction?.trim() || undefined,
         selected_text: selectedText?.trim() || undefined,
+        rehearsal_mode: rehearsalMode,
       })
       message.success('写作室步骤已完成')
       await Promise.all([loadContents(selectedProject.id), loadWriterRoomContents(selectedProject.id, chapterNumber)])
@@ -3574,33 +3574,53 @@ export default function StoryPage() {
       return
     }
     setLoadingAction('writer_room')
+    let sourceContentId = contentId
+    let succeeded = 0
+    let failed = 0
     try {
-      const response = (await runCreativeProjectWriterRoom(selectedProject.id, {
-        chapter_number: chapterNumber,
-        steps: runSteps,
-        content_id: contentId,
-        provider: selectedLlm || undefined,
-        model: selectedModel || undefined,
-        rehearsal_mode: rehearsalMode,
-        continue_on_error: true,
-      })) as CreativeProjectGenerateResponse<{ summary?: { success?: number; failed?: number; skipped?: number }; results_contents?: ProjectContent[] }>
-      const summary = response.data?.summary || {}
-      message.success(`写作室批量完成：成功 ${summary.success || 0}，失败 ${summary.failed || 0}，跳过 ${summary.skipped || 0}`)
-      const generatedContents = response.data?.results_contents || []
-      if (generatedContents.length) {
-        setWriterRoomContents((current) => {
-          const byId = new Map(current.map((item) => [item.id, item]))
-          generatedContents.forEach((item) => byId.set(item.id, item))
-          return Array.from(byId.values())
-        })
+      // Run steps one request at a time so each success lands in the panel as
+      // soon as it finishes. A failed step is surfaced immediately and the loop
+      // keeps going: the next step still runs with the last successful candidate
+      // as its source instead of aborting the whole batch.
+      for (const step of runSteps) {
+        const stepLabel = writerRoomStepLabelMap[step] || step
+        try {
+          const response = await runCreativeProjectWriterRoomStep(selectedProject.id, step, {
+            chapter_number: chapterNumber,
+            content_id: sourceContentId,
+            provider: selectedLlm || undefined,
+            model: selectedModel || undefined,
+            template_id: selectedPromptTemplates[step] || undefined,
+            rehearsal_mode: rehearsalMode,
+          })
+          const content = response?.data
+          if (content?.id) {
+            sourceContentId = content.id
+            succeeded += 1
+            setWriterRoomContents((current) => {
+              const byId = new Map(current.map((item) => [item.id, item]))
+              byId.set(content.id, content)
+              return Array.from(byId.values())
+            })
+            message.success(`「${stepLabel}」已完成`)
+          } else {
+            failed += 1
+            message.error(`「${stepLabel}」未返回结果`)
+          }
+        } catch (error: any) {
+          failed += 1
+          message.error(`「${stepLabel}」失败：${error?.message || '未知错误'}`)
+        }
       }
+      if (failed) {
+        message.warning(`写作室批量结束：成功 ${succeeded}，失败 ${failed}`)
+      } else {
+        message.success(`写作室批量完成：成功 ${succeeded}`)
+      }
+    } finally {
       void loadWriterRoomContents(selectedProject.id, chapterNumber)
       void loadContents(selectedProject.id)
       void loadGenerationLogs(selectedProject.id)
-    } catch (error: any) {
-      message.error(error?.message || '写作室批量失败')
-      await loadGenerationLogs(selectedProject.id)
-    } finally {
       setLoadingAction(null)
     }
   }
