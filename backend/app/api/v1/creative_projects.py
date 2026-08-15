@@ -1088,6 +1088,10 @@ def list_contents(
     ),
     chapter_number: int | None = Query(default=None, ge=1),
     include_history: bool = False,
+    summary: bool = Query(
+        default=False,
+        description="Return only identity/version metadata without text_content or data.",
+    ),
     svc: CreativeProjectService = Depends(service),
 ):
     if not svc.get_project(project_id):
@@ -1098,8 +1102,10 @@ def list_contents(
         content_types=[item.strip() for item in (content_types or "").split(",") if item.strip()] or None,
         chapter_number=chapter_number,
         latest_only=not include_history,
+        summary_only=summary,
     )
-    return {"success": True, "data": [serialize_content(c) for c in contents]}
+    serializer = serialize_content_summary if summary else serialize_content
+    return {"success": True, "data": [serializer(c) for c in contents]}
 
 
 @router.patch("/{project_id}/contents/{content_id}", summary="保存项目阶段内容")
@@ -1320,6 +1326,26 @@ def serialize_content(content: ProjectContent) -> dict[str, Any]:
         "data": loads_json(content.data_json),
         "text_content": repair_utf8_mojibake(content.text_content),
         "source_content_id": content.source_content_id,
+        "version": content.version,
+        "is_locked": content.is_locked,
+        "created_at": content.created_at.isoformat() if content.created_at else None,
+        "updated_at": content.updated_at.isoformat() if content.updated_at else None,
+    }
+
+
+def serialize_content_summary(content: ProjectContent) -> dict[str, Any]:
+    """Lightweight projection for chapter rails and stage counters.
+
+    ``data`` and ``text_content`` are omitted on purpose: this serializer is
+    paired with a ``load_only`` query so the large payload columns are never
+    transferred from the database.
+    """
+    return {
+        "id": content.id,
+        "project_id": content.project_id,
+        "content_type": content.content_type,
+        "chapter_number": content.chapter_number,
+        "episode_number": content.episode_number,
         "version": content.version,
         "is_locked": content.is_locked,
         "created_at": content.created_at.isoformat() if content.created_at else None,

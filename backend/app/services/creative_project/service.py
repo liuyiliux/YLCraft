@@ -15,6 +15,7 @@ from typing import Any, TypeVar
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import func, or_
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import load_only
 from sqlmodel import Session, select
 
 from app.db.models.asset_hub import AssetNode, AssetType, AssetVersion
@@ -2793,6 +2794,7 @@ class CreativeProjectService:
         chapter_number: int | None = None,
         *,
         latest_only: bool = True,
+        summary_only: bool = False,
     ) -> list[ProjectContent]:
         """Return current stage outputs by default, with version history opt-in.
 
@@ -2818,6 +2820,17 @@ class CreativeProjectService:
             )
 
         dialect_name = getattr(getattr(self.session.bind, "dialect", None), "name", "")
+        summary_columns = (
+            ProjectContent.id,
+            ProjectContent.project_id,
+            ProjectContent.content_type,
+            ProjectContent.chapter_number,
+            ProjectContent.episode_number,
+            ProjectContent.version,
+            ProjectContent.is_locked,
+            ProjectContent.updated_at,
+            ProjectContent.created_at,
+        )
         if latest_only and dialect_name == "postgresql":
             # Fetch only the newest version per stage straight from PostgreSQL.
             # Writer-room projects accumulate many prose_review / prose_rewrite
@@ -2825,7 +2838,7 @@ class CreativeProjectService:
             # historical version over the wire only to discard it in Python made
             # the workspace rail take seconds on the remote DB.  DISTINCT ON
             # keeps the transfer at latest-per-stage size.
-            contents = self.session.exec(
+            statement = (
                 select(ProjectContent)
                 .where(*conditions)
                 .distinct(
@@ -2841,7 +2854,13 @@ class CreativeProjectService:
                     ProjectContent.updated_at.desc(),
                     ProjectContent.created_at.desc(),
                 )
-            ).all()
+            )
+            if summary_only:
+                # Chapter rails and stage counters only need identity/version
+                # metadata.  Avoid pulling text_content / data_json at all so
+                # the project-wide rail request stays tiny.
+                statement = statement.options(load_only(*summary_columns))
+            contents = self.session.exec(statement).all()
         else:
             contents = self.session.exec(
                 select(ProjectContent)

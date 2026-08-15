@@ -1630,13 +1630,14 @@ export const matchCreativeProjectReferenceAssets = (
 export const listCreativeProjectContents = (
   projectId: string,
   contentType?: string,
-  options: { includeHistory?: boolean; contentTypes?: string[]; chapterNumber?: number } = {},
+  options: { includeHistory?: boolean; contentTypes?: string[]; chapterNumber?: number; summary?: boolean } = {},
 ) => {
   const params = new URLSearchParams()
   if (contentType) params.set('content_type', contentType)
   if (!contentType && options.contentTypes?.length) params.set('content_types', options.contentTypes.join(','))
   if (options.chapterNumber) params.set('chapter_number', String(options.chapterNumber))
   if (options.includeHistory) params.set('include_history', 'true')
+  if (options.summary) params.set('summary', 'true')
   const qs = params.size ? `?${params.toString()}` : ''
   return request(`/creative-projects/${projectId}/contents${qs}`)
 }

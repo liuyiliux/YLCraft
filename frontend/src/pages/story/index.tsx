@@ -194,6 +194,17 @@ interface ProjectContent {
   updated_at?: string
 }
 
+interface ProjectContentSummary {
+  id: string
+  content_type: string
+  chapter_number?: number
+  episode_number?: number
+  version: number
+  is_locked?: boolean
+  created_at?: string
+  updated_at?: string
+}
+
 interface WriterRoomReviewIssue {
   category?: string
   severity?: string
@@ -1319,6 +1330,7 @@ export default function StoryPage() {
   const [selectedProject, setSelectedProject] = useState<CreativeProject | null>(null)
   const [contents, setContents] = useState<ProjectContent[]>([])
   const [writerRoomContents, setWriterRoomContents] = useState<ProjectContent[]>([])
+  const [writerRoomSummary, setWriterRoomSummary] = useState<ProjectContentSummary[]>([])
   const writerRoomRequestRef = useRef(0)
   const [projectAssets, setProjectAssets] = useState<ProjectAssetLink[]>([])
   const [assetDetails, setAssetDetails] = useState<Record<string, AssetSummary>>({})
@@ -1903,6 +1915,7 @@ export default function StoryPage() {
       // the newly selected project while its workspace requests are in flight.
       setProjectAssets([])
       setWriterRoomContents([])
+      setWriterRoomSummary([])
       loadContents(found.id)
       loadProjectAssets(found.id)
       loadGenerationLogs(found.id)
@@ -1912,6 +1925,7 @@ export default function StoryPage() {
     } else {
       setContents([])
       setWriterRoomContents([])
+      setWriterRoomSummary([])
       setProjectAssets([])
       setProjectGraph(null)
       setGenerationLogs([])
@@ -2293,7 +2307,7 @@ export default function StoryPage() {
     const productionComplete = ['chapter_outline', 'novel_body', 'script', 'storyboard']
       .reduce((total, contentType) => total + countChapterOutput(contentType), 0)
     const reviewedChapters = new Set(
-      writerRoomContents
+      writerRoomSummary
         .filter((item) => item.content_type === 'prose_review')
         .map((item) => Number(item.chapter_number || item.episode_number || 0))
         .filter(Boolean),
@@ -2342,7 +2356,7 @@ export default function StoryPage() {
     projectAssets.length,
     projectBibleContents.length,
     worldAssetContents.length,
-    writerRoomContents,
+    writerRoomSummary,
   ])
 
   const activeChapter = useMemo(
@@ -2557,8 +2571,11 @@ export default function StoryPage() {
       if (writerRoomRequestRef.current !== requestId) return
       setWorkspaceErrors((current) => { const next = { ...current }; delete next.writerRoom; return next })
 
-      void listCreativeProjectContents(projectId, undefined, { contentTypes })
-        .then((response) => mergeCandidates(response?.data || []))
+      // Project-wide stage counters power the chapter rail and overview badges.
+      // They only need identity/version metadata, so fetch the summary rail
+      // without text_content/data instead of shipping every chapter's prose.
+      void listCreativeProjectContents(projectId, undefined, { contentTypes, summary: true })
+        .then((response) => setWriterRoomSummary(response?.data || []))
         .catch((error: any) => {
           if (writerRoomRequestRef.current !== requestId) return
           // The current chapter remains usable even when the auxiliary rail
@@ -4275,7 +4292,7 @@ export default function StoryPage() {
               chapters={chapters}
               activeChapterNumber={activeChapterNumber}
               contents={contents}
-              writerRoomContents={writerRoomContents}
+              writerRoomSummary={writerRoomSummary}
               ledger={allForeshadowingLedger}
               health={narrativeHealth}
               onChapterChange={handleActiveChapterChange}
@@ -10035,7 +10052,7 @@ function ChapterRail({
   chapters,
   activeChapterNumber,
   contents,
-  writerRoomContents,
+  writerRoomSummary,
   ledger,
   health,
   onChapterChange,
@@ -10044,7 +10061,7 @@ function ChapterRail({
   chapters: ChapterPlanItem[]
   activeChapterNumber: number
   contents: ProjectContent[]
-  writerRoomContents: ProjectContent[]
+  writerRoomSummary: ProjectContentSummary[]
   ledger: NarrativeForeshadowing[]
   health: NarrativeHealth | null
   onChapterChange: (chapterNumber: number) => void | Promise<void>
@@ -10071,14 +10088,14 @@ function ChapterRail({
     .map((chapter) => {
       const chapterNumber = Number(chapter.chapter_number)
       const approved = contents.some((item) => item.content_type === 'novel_body' && Number(item.chapter_number || item.episode_number) === chapterNumber)
-      const candidateCount = writerRoomContents.filter((item) => candidateTypes.has(item.content_type) && Number(item.chapter_number || item.episode_number) === chapterNumber).length
-      const reviewed = writerRoomContents.some((item) => item.content_type === 'prose_review' && Number(item.chapter_number || item.episode_number) === chapterNumber)
+      const candidateCount = writerRoomSummary.filter((item) => candidateTypes.has(item.content_type) && Number(item.chapter_number || item.episode_number) === chapterNumber).length
+      const reviewed = writerRoomSummary.some((item) => item.content_type === 'prose_review' && Number(item.chapter_number || item.episode_number) === chapterNumber)
       const ledgerCount = ledger.filter((item) => item.planted_chapter === chapterNumber && !['ignored', 'superseded'].includes(item.status)).length
       const issues = healthIssuesByChapter.get(chapterNumber) || []
       return { chapter, chapterNumber, approved, candidateCount, reviewed, ledgerCount, issues }
     })
     .filter((row) => Number.isInteger(row.chapterNumber) && row.chapterNumber > 0)
-    .sort((left, right) => left.chapterNumber - right.chapterNumber), [chapters, contents, writerRoomContents, ledger, healthIssuesByChapter])
+    .sort((left, right) => left.chapterNumber - right.chapterNumber), [chapters, contents, writerRoomSummary, ledger, healthIssuesByChapter])
 
   const healthColor = health?.status === 'blocked' ? '#cf1322' : health?.status === 'attention' ? '#d46b08' : '#389e0d'
   const healthLabel = health?.status === 'blocked' ? '需要处理' : health?.status === 'attention' ? '有待处理项' : '健康'

@@ -223,6 +223,7 @@ def test_contents_api_passes_candidate_filters_and_selected_chapter():
         "content_types": ["scene_beats", "prose_draft", "prose_review"],
         "chapter_number": 10,
         "latest_only": False,
+        "summary_only": False,
     }]
 
 
