@@ -30,6 +30,27 @@ from app.services.ai.types import (
 
 logger = logging.getLogger("ylcraft.ai.service")
 
+
+def _coerce_message(message: LLMMessage | dict) -> LLMMessage:
+    """Normalize a chat message to an ``LLMMessage``.
+
+    Several callers (clip services, planner, subagents) pass raw OpenAI-style
+    dicts instead of ``LLMMessage`` instances.  Normalizing at this boundary
+    keeps every backend from having to defend against both shapes.
+    """
+    if isinstance(message, LLMMessage):
+        return message
+    if isinstance(message, dict):
+        return LLMMessage(
+            role=str(message.get("role") or "user"),
+            content=message.get("content") or "",
+        )
+    return LLMMessage(
+        role=str(getattr(message, "role", "user") or "user"),
+        content=getattr(message, "content", "") or "",
+    )
+
+
 # ---------------------------------------------------------------------------
 # 全局单例
 # ---------------------------------------------------------------------------
@@ -148,7 +169,8 @@ class AIService:
         backend_label = getattr(backend, 'name', 'unknown')
         logger.info("[AIService] 调用 LLM Backend: %s, 模型: %s", backend_label, target_model or 'default')
 
-        return await backend.chat(messages, model=target_model, **kwargs)
+        normalized = [_coerce_message(m) for m in messages]
+        return await backend.chat(normalized, model=target_model, **kwargs)
 
     # -------------------------------------------------------------------------
     # Image

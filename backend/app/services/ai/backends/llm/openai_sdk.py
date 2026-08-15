@@ -115,7 +115,8 @@ class OpenAISDKLLMBackend:
 
     def _load_default_params(self) -> dict:
         """Read connector default_params as a dict (accepts JSON string or dict)."""
-        raw = getattr(self.connector, "default_params", None)
+        connector = getattr(self, "connector", None)
+        raw = getattr(connector, "default_params", None) if connector is not None else None
         if isinstance(raw, dict):
             return dict(raw)
         if isinstance(raw, str) and raw.strip():
