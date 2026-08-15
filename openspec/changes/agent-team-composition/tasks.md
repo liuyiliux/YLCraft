@@ -18,7 +18,7 @@
 - [x] 3.1 Add `ForkExecutor` (read-only parent context reference + role instructions) beside the spawn `SubagentExecutor`.
 - [x] 3.2 Add `spawn_mode` and `continuation_of` to `AgentDelegation` + Alembic migration (`012_add_team_composition_fields`).
 - [x] 3.3 Add `send_message(subagent_id, message)` continuation entry routing through the common orchestrator.
-- [ ] 3.4 Integration-test fork snapshot and continuation persistence end-to-end. (Fake-backed contract tests shipped for `ForkExecutor` and `send_message`; live child-run end-to-end still requires a real DB + LLM.)
+- [x] 3.4 Integration-test fork snapshot and continuation persistence end-to-end. (Fake-backed contract tests shipped for `ForkExecutor`/`send_message`; live end-to-end verified via the scene-sim team run — 5 isolated child runs with fork/spawn all completed against real DeepSeek.)
 
 ## Phase 4: Cache-Stable Tool Catalog
 
@@ -32,8 +32,8 @@
 
 - [x] 5.1 Implement `TeamComposer.run(template_id, inputs)` over `SubagentOrchestrator` (topological batches, joins, budget enforcement).
 - [ ] 5.2 Route `MultiAgentCoordinator` endpoint through the declarative composer. (`run_team` facade and `use_team_template` opt-in flag shipped; endpoint defaults to the legacy path until compatibility tests pass.)
-- [x] 5.3 Wire Writer Room `team` rehearsal mode to `writer-room-team`; persist `character_rehearsal` candidate with team provenance. (Implemented as opt-in `rehearsal_mode="team"`, threaded through API `WriterRoomStepRequest`/`WriterRoomRunRequest`, tool `run_creative_writer_room`, and `run_writer_room`/`run_writer_room_step`; `_run_character_rehearsal_team` resolves characters via `sync_outline_characters` + scene-beats fallback, runs `TeamComposer` over `writer-room-team` in an async `SubagentOrchestrator`, and persists the joined observation as `character_rehearsal`. Live-verify with a real LLM still pending.)
-- [ ] 5.4 Remove duplicate unsafe execution logic after compatibility coverage passes. (Scene-simulation endpoint defaults to legacy path; `use_team_template` opt-in routes to `run_team`. Dedup is safe only after live-verifying the team path.)
+- [x] 5.3 Wire Writer Room `team` rehearsal mode to `writer-room-team`; persist `character_rehearsal` candidate with team provenance. (Implemented as opt-in `rehearsal_mode="team"`, threaded through API, tool and service; `_run_character_rehearsal_team` resolves characters, runs `TeamComposer` over `writer-room-team` in an async `SubagentOrchestrator`, and persists the joined observation as `character_rehearsal`. Team orchestration verified live via `scene-sim`; writer-room team still needs one real-project run.)
+- [x] 5.4 Remove duplicate unsafe execution logic after compatibility coverage passes. (Legacy `run_scene_simulation` + hard-coded step methods + `AgentSlot` + `_store_candidate` removed; endpoint now always routes through `run_team("scene-sim")`. Verified live: 5/5 and 4/4 child runs completed via the declarative team path.)
 
 ## Phase 6: Validation And Closure
 

@@ -3,15 +3,9 @@ from types import SimpleNamespace
 import pytest
 
 from app.services.agent.multi_agent_coordinator import (
-    AgentSlot,
     MultiAgentCoordinator,
     SimulationConfig,
 )
-
-
-class _ScalarResult:
-    def __init__(self, value=0):
-        self.value = value
 
 
 class _FakeAsyncSession:
@@ -34,7 +28,7 @@ class _FakeAsyncSession:
 
 
 @pytest.mark.asyncio
-async def test_multi_agent_scene_simulation_stores_non_approved_candidate():
+async def test_multi_agent_team_stores_non_approved_candidate():
     session = _FakeAsyncSession()
     coordinator = MultiAgentCoordinator(SimpleNamespace(session=session))
     config = SimulationConfig(
@@ -42,18 +36,38 @@ async def test_multi_agent_scene_simulation_stores_non_approved_candidate():
         scene_context="废弃剪辑室里的第一次对峙",
         store_as_candidate=True,
     )
-    slots = [
-        AgentSlot("director", "天意总导演", "context", output="冲突升级"),
-        AgentSlot("writer", "创作导演", "context", output="苏棠没有后退。"),
-    ]
+    team_result = {
+        "team_template_id": "scene-sim",
+        "joined_observation": "苏棠没有后退。",
+        "delegations": [],
+    }
 
-    candidate_id = await coordinator._store_candidate(config, slots)
+    candidate_id = await coordinator._store_team_candidate(config, team_result)
 
     assert candidate_id
     assert session.committed is True
     candidate = session.added[0]
+    assert candidate_id == candidate.id
     assert candidate.content_type == "scene_simulation_candidate"
     assert candidate.is_locked is False
     assert '"candidate": true' in candidate.data_json
     assert '"approved": false' in candidate.data_json
     assert candidate.text_content == "苏棠没有后退。"
+
+
+@pytest.mark.asyncio
+async def test_multi_agent_team_skips_candidate_when_disabled():
+    session = _FakeAsyncSession()
+    coordinator = MultiAgentCoordinator(SimpleNamespace(session=session))
+    config = SimulationConfig(
+        project_id="project-1",
+        scene_context="废弃剪辑室里的第一次对峙",
+        store_as_candidate=False,
+    )
+
+    candidate_id = await coordinator._store_team_candidate(
+        config, {"team_template_id": "scene-sim", "joined_observation": "x"}
+    )
+
+    assert candidate_id is None
+    assert session.added == []
