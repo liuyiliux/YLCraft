@@ -31,6 +31,7 @@ import {
   CloudUploadOutlined,
   CopyOutlined,
   DeleteOutlined,
+  DownOutlined,
   DownloadOutlined,
   EditOutlined,
   ExclamationCircleOutlined,
@@ -3577,11 +3578,12 @@ export default function StoryPage() {
     let sourceContentId = contentId
     let succeeded = 0
     let failed = 0
+    let blockedBy: string | null = null
     try {
       // Run steps one request at a time so each success lands in the panel as
-      // soon as it finishes. A failed step is surfaced immediately and the loop
-      // keeps going: the next step still runs with the last successful candidate
-      // as its source instead of aborting the whole batch.
+      // soon as it finishes.  The writer room is a linear candidate chain: when
+      // a step fails, its downstream steps would only be able to fall back to a
+      // stale candidate, so we stop the run instead of continuing with old data.
       for (const step of runSteps) {
         const stepLabel = writerRoomStepLabelMap[step] || step
         try {
@@ -3605,14 +3607,20 @@ export default function StoryPage() {
             message.success(`「${stepLabel}」已完成`)
           } else {
             failed += 1
+            blockedBy = stepLabel
             message.error(`「${stepLabel}」未返回结果`)
+            break
           }
         } catch (error: any) {
           failed += 1
+          blockedBy = stepLabel
           message.error(`「${stepLabel}」失败：${error?.message || '未知错误'}`)
+          break
         }
       }
-      if (failed) {
+      if (blockedBy) {
+        message.warning(`写作室已停止：成功 ${succeeded}，失败 ${failed}；「${blockedBy}」失败后，后续阶段不再使用旧候选继续。`)
+      } else if (failed) {
         message.warning(`写作室批量结束：成功 ${succeeded}，失败 ${failed}`)
       } else {
         message.success(`写作室批量完成：成功 ${succeeded}`)
@@ -8830,6 +8838,59 @@ function WriterRoomQualitySummaryPanel({ summary }: { summary: WriterRoomQuality
   )
 }
 
+function CharacterRehearsalCard({
+  character,
+  performance,
+  index,
+}: {
+  character: string
+  performance: string
+  index: number
+}) {
+  const [open, setOpen] = useState(index === 0)
+  const initial = (character || '?').trim().charAt(0)
+  return (
+    <div style={writerRoomTeamRoleStyle}>
+      <div
+        style={writerRoomTeamRoleHeaderStyle}
+        role="button"
+        tabIndex={0}
+        onClick={() => setOpen((value) => !value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault()
+            setOpen((value) => !value)
+          }
+        }}
+        aria-expanded={open}
+      >
+        <span style={writerRoomTeamAvatarStyle}>{initial}</span>
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <Text strong ellipsis={{ tooltip: character }} style={{ fontSize: 14, color: 'var(--textPrimary)' }}>
+            {character || `角色 ${index + 1}`}
+          </Text>
+        </span>
+        <Tag color="geekblue" style={{ fontSize: 11, marginInlineEnd: 0 }}>子智能体</Tag>
+        <DownOutlined
+          style={{
+            fontSize: 12,
+            color: 'var(--textSecondary)',
+            transition: 'transform 0.2s ease',
+            transform: open ? 'rotate(180deg)' : 'none',
+          }}
+        />
+      </div>
+      {open ? (
+        <div style={writerRoomTeamRoleBodyStyle}>
+          <Text style={{ display: 'block', whiteSpace: 'pre-wrap', lineHeight: 1.8, fontSize: 13, color: 'var(--textPrimary)' }}>
+            {performance || '该角色本轮没有产出'}
+          </Text>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function TeamRehearsalPanel({
   performances,
   joined,
@@ -8837,31 +8898,52 @@ function TeamRehearsalPanel({
   performances: Array<{ character: string; performance: string; child_run_id?: string }>
   joined?: string
 }) {
+  const [showJoined, setShowJoined] = useState(true)
   if (!performances.length) {
     return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无角色演绎产出" />
   }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {performances.map((item, index) => (
-        <div key={item.character || index} style={writerRoomTeamRoleStyle}>
-          <Space size={8} align="center" wrap>
-            <Text strong style={{ fontSize: 15 }}>{item.character || `角色 ${index + 1}`}</Text>
-            <Tag color="geekblue" style={{ fontSize: 11 }}>独立子智能体</Tag>
-          </Space>
-          <Text style={{ display: 'block', whiteSpace: 'pre-wrap', marginTop: 6, lineHeight: 1.7 }}>
-            {item.performance || '该角色本轮没有产出'}
-          </Text>
-        </div>
-      ))}
+      <div style={writerRoomTeamGridStyle}>
+        {performances.map((item, index) => (
+          <CharacterRehearsalCard
+            key={item.character || index}
+            character={item.character}
+            performance={item.performance}
+            index={index}
+          />
+        ))}
+      </div>
       {joined ? (
         <div style={writerRoomTeamJoinStyle}>
-          <Space size={6} align="center">
+          <div
+            style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}
+            role="button"
+            tabIndex={0}
+            onClick={() => setShowJoined((value) => !value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault()
+                setShowJoined((value) => !value)
+              }
+            }}
+          >
             <Text strong style={{ fontSize: 13 }}>编辑连接</Text>
             <Tag style={{ fontSize: 11 }}>汇合</Tag>
-          </Space>
-          <Paragraph ellipsis={{ rows: 6, expandable: true }} style={{ margin: '8px 0 0', whiteSpace: 'pre-wrap' }}>
-            {joined}
-          </Paragraph>
+            <DownOutlined
+              style={{
+                fontSize: 11,
+                color: 'var(--textSecondary)',
+                transition: 'transform 0.2s ease',
+                transform: showJoined ? 'rotate(180deg)' : 'none',
+              }}
+            />
+          </div>
+          {showJoined ? (
+            <Paragraph style={{ margin: '8px 0 0', whiteSpace: 'pre-wrap', lineHeight: 1.7, fontSize: 13, color: 'var(--textPrimary)' }}>
+              {joined}
+            </Paragraph>
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -11359,13 +11441,52 @@ const writerRoomQualityStyle: React.CSSProperties = {
   color: 'var(--textPrimary)',
 }
 
+const writerRoomTeamGridStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+  gap: 12,
+  alignItems: 'start',
+}
+
 const writerRoomTeamRoleStyle: React.CSSProperties = {
   border: '1px solid var(--borderLight)',
-  borderRadius: 8,
-  padding: '12px 14px',
+  borderLeft: '3px solid var(--primary)',
+  borderRadius: 10,
   background: 'var(--bgCard)',
   color: 'var(--textPrimary)',
-  boxShadow: 'inset 3px 0 0 var(--primary)',
+  overflow: 'hidden',
+  boxShadow: '0 1px 2px rgba(0, 0, 0, 0.04)',
+}
+
+const writerRoomTeamRoleHeaderStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 10,
+  padding: '12px 14px',
+  cursor: 'pointer',
+  userSelect: 'none',
+  transition: 'background 0.2s ease',
+}
+
+const writerRoomTeamAvatarStyle: React.CSSProperties = {
+  width: 28,
+  height: 28,
+  borderRadius: '50%',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  background: 'var(--bgHover)',
+  border: '1px solid var(--borderLight)',
+  color: 'var(--textPrimary)',
+  fontSize: 13,
+  fontWeight: 600,
+  flexShrink: 0,
+}
+
+const writerRoomTeamRoleBodyStyle: React.CSSProperties = {
+  padding: '4px 14px 14px',
+  borderTop: '1px solid var(--borderLight)',
+  background: 'var(--bgElevated)',
 }
 
 const writerRoomTeamJoinStyle: React.CSSProperties = {
