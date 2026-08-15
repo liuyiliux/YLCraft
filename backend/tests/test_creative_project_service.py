@@ -1924,6 +1924,7 @@ async def test_writer_room_batch_reuses_one_persisted_context_snapshot(session: 
         project.id,
         chapter_number=1,
         steps=["scene_beats", "character_rehearsal"],
+        rehearsal_mode="fast",
     )
 
     snapshot_id = result["context_snapshot_id"]
@@ -2146,6 +2147,7 @@ async def test_writer_room_run_humanizes_without_overwriting_existing_novel_body
         chapter_number=1,
         provider="deepseek",
         model="deepseek-v4-pro",
+        rehearsal_mode="fast",
     )
 
     assert result["summary"] == {"total": 5, "success": 5, "failed": 0, "skipped": 0}
@@ -2181,6 +2183,7 @@ async def test_writer_room_batch_records_the_exact_upstream_candidate_chain(sess
         chapter_number=1,
         provider="deepseek",
         model="deepseek-v4-pro",
+        rehearsal_mode="fast",
     )
 
     assert result["summary"] == {"total": 3, "success": 3, "failed": 0, "skipped": 0}
@@ -2208,6 +2211,7 @@ async def test_writer_room_batch_orders_selected_steps_before_execution(session:
         chapter_number=1,
         provider="deepseek",
         model="deepseek-v4-pro",
+        rehearsal_mode="fast",
     )
 
     assert result["requested_steps"] == ["prose_draft", "character_rehearsal", "scene_beats", "prose_draft"]

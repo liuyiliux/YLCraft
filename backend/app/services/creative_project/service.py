@@ -2155,6 +2155,22 @@ class CreativeProjectService:
                 user_id="default",
             )
 
+        # Extract each role-actor's independent output (one child per character).
+        role_actor_replies: dict[str, str] = {}
+        character_performances: list[dict[str, Any]] = []
+        for delegation in result.get("delegations") or []:
+            task_key = str(delegation.get("task_key") or "")
+            if not task_key.startswith("role-actor-"):
+                continue
+            char_name = task_key[len("role-actor-"):]
+            reply = str(delegation.get("reply") or "").strip()
+            role_actor_replies[char_name] = reply
+            character_performances.append({
+                "character": char_name,
+                "performance": reply,
+                "child_run_id": delegation.get("child_run_id") or "",
+            })
+
         joined = str(result.get("joined_observation") or "").strip() or "团队演绎未产出可用内容"
         return {
             "chapter_number": chapter_number,
@@ -2164,8 +2180,12 @@ class CreativeProjectService:
             "team_template_id": result.get("team_template_id") or "writer-room-team",
             "joined_observation": joined,
             "characters": characters,
+            "character_performances": character_performances,
             "scene_rehearsals": [],
-            "character_reactions": [{"character": name, "private_goal": joined} for name in characters],
+            "character_reactions": [
+                {"character": name, "private_goal": role_actor_replies.get(name, "")}
+                for name in characters
+            ],
             "usable_conflicts": [],
             "continuity_notes": [],
         }
