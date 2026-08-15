@@ -21,6 +21,7 @@ from app.db.models.creative_project import (
     ProjectContent,
     ProjectGenerationLog,
     ProjectNarrativeRun,
+    ProjectStateEntry,
     NarrativeRunStatus,
 )
 from app.services.creative_project.service import (
@@ -507,6 +508,46 @@ def preview_narrative_context(
         }
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
+
+
+@router.get("/{project_id}/state", summary="查看项目动态状态当前值")
+def get_project_state(
+    project_id: str,
+    svc: CreativeProjectService = Depends(service),
+):
+    """返回折叠后的当前动态状态：{scope: {key: value}}。"""
+    from app.services.creative_project.state_ledger import StateLedger
+
+    state = StateLedger.compute_state(svc.session, project_id)
+    return {"success": True, "data": state}
+
+
+@router.get("/{project_id}/state/timeline", summary="查看项目动态状态按章变化轨迹")
+def get_project_state_timeline(
+    project_id: str,
+    svc: CreativeProjectService = Depends(service),
+):
+    """返回按章有序的状态变更台账（章节即时间顺序）。"""
+    entries = svc.session.exec(
+        select(ProjectStateEntry)
+        .where(ProjectStateEntry.project_id == project_id)
+        .order_by(ProjectStateEntry.chapter_number.asc(), ProjectStateEntry.created_at.asc())
+    ).all()
+    timeline = [
+        {
+            "id": e.id,
+            "scope": e.scope,
+            "key": e.key,
+            "op": e.op,
+            "value": loads_json(e.value_json),
+            "chapter_number": e.chapter_number,
+            "source_content_id": e.source_content_id,
+            "source_version": e.source_version,
+            "created_at": e.created_at.isoformat() if e.created_at else None,
+        }
+        for e in entries
+    ]
+    return {"success": True, "data": timeline}
 
 
 @router.get("/{project_id}/writing-preflight", summary="检查写作阶段前置条件")

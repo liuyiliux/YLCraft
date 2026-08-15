@@ -1709,6 +1709,12 @@ export const getCreativeProjectContinuityContextSummary = (projectId: string, ge
 export const getCreativeProjectNarrativeContextPreview = (projectId: string, chapterNumber: number) =>
   request(`/creative-projects/${projectId}/narrative/context-preview?chapter_number=${chapterNumber}`)
 
+export const getCreativeProjectState = (projectId: string) =>
+  request(`/creative-projects/${projectId}/state`)
+
+export const getCreativeProjectStateTimeline = (projectId: string) =>
+  request(`/creative-projects/${projectId}/state/timeline`)
+
 export const getCreativeProjectNarrativeHealth = (projectId: string) =>
   request(`/creative-projects/${projectId}/narrative/health`)
 

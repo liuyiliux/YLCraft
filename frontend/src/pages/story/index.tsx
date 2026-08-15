@@ -126,6 +126,7 @@ import { enqueueCanvasImport } from '../../components/canvas/bridge'
 import type { CanvasNode, CanvasNodeType } from '../../components/canvas/types'
 import { useTaskPolling } from '../../hooks/useTaskPolling'
 import FanqiePublishPanel from './FanqiePublishPanel'
+import ProjectStatePanel from './ProjectStatePanel'
 import StoryWorkspaceOverview from './StoryWorkspaceOverview'
 
 const { Text, Title, Paragraph } = Typography
@@ -4512,6 +4513,16 @@ export default function StoryPage() {
                         onSaveAsAsset={handleSaveContentAsAsset}
                       />
                     ),
+                  },
+                  {
+                    key: 'dynamic-state',
+                    label: (
+                      <Space>
+                        <HistoryOutlined />
+                        动态状态
+                      </Space>
+                    ),
+                    children: <ProjectStatePanel projectId={selectedProject?.id || ''} />,
                   },
                   {
                     key: 'chapters',
