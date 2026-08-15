@@ -1326,7 +1326,7 @@
       "summary": "列出所有 AI 连接",
       "function": "list_connectors",
       "file": "backend/app/api/v1/ai_connectors.py",
-      "line": 142,
+      "line": 155,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1342,7 +1342,7 @@
       "summary": "创建 AI 连接",
       "function": "create_connector",
       "file": "backend/app/api/v1/ai_connectors.py",
-      "line": 1050,
+      "line": 1063,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1358,7 +1358,7 @@
       "summary": "发现可用模型",
       "function": "discover_models",
       "file": "backend/app/api/v1/ai_connectors.py",
-      "line": 910,
+      "line": 923,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1374,7 +1374,7 @@
       "summary": "导出所有 AI 连接为 JSON",
       "function": "export_connectors",
       "file": "backend/app/api/v1/ai_connectors.py",
-      "line": 191,
+      "line": 204,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1390,7 +1390,7 @@
       "summary": "从 JSON 导入 AI 连接",
       "function": "import_connectors",
       "file": "backend/app/api/v1/ai_connectors.py",
-      "line": 266,
+      "line": 279,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1406,7 +1406,7 @@
       "summary": "获取所有 Provider 元数据",
       "function": "list_providers",
       "file": "backend/app/api/v1/ai_connectors.py",
-      "line": 429,
+      "line": 442,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1422,7 +1422,7 @@
       "summary": "创建 Provider 元数据",
       "function": "create_provider",
       "file": "backend/app/api/v1/ai_connectors.py",
-      "line": 476,
+      "line": 489,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1438,7 +1438,7 @@
       "summary": "初始化默认 Provider 数据",
       "function": "init_default_providers",
       "file": "backend/app/api/v1/ai_connectors.py",
-      "line": 695,
+      "line": 708,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1454,7 +1454,7 @@
       "summary": "获取单个 Provider 元数据",
       "function": "get_provider",
       "file": "backend/app/api/v1/ai_connectors.py",
-      "line": 453,
+      "line": 466,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1470,7 +1470,7 @@
       "summary": "更新 Provider 元数据",
       "function": "update_provider",
       "file": "backend/app/api/v1/ai_connectors.py",
-      "line": 529,
+      "line": 542,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1486,7 +1486,7 @@
       "summary": "删除 Provider 元数据",
       "function": "delete_provider",
       "file": "backend/app/api/v1/ai_connectors.py",
-      "line": 586,
+      "line": 599,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1502,7 +1502,7 @@
       "summary": "获取指定类型的默认配置",
       "function": "get_provider_defaults",
       "file": "backend/app/api/v1/ai_connectors.py",
-      "line": 615,
+      "line": 628,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1518,7 +1518,7 @@
       "summary": "重新加载所有 AI 连接器配置，立即生效，无需重启",
       "function": "reload_connectors",
       "file": "backend/app/api/v1/ai_connectors.py",
-      "line": 172,
+      "line": 185,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1534,7 +1534,7 @@
       "summary": "获取支持的 AI 提供商",
       "function": "get_supported_ai_providers",
       "file": "backend/app/api/v1/ai_connectors.py",
-      "line": 133,
+      "line": 146,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1550,7 +1550,7 @@
       "summary": "获取连接详情",
       "function": "get_connector",
       "file": "backend/app/api/v1/ai_connectors.py",
-      "line": 1035,
+      "line": 1048,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1566,7 +1566,7 @@
       "summary": "更新 AI 连接",
       "function": "update_connector",
       "file": "backend/app/api/v1/ai_connectors.py",
-      "line": 1069,
+      "line": 1083,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1582,7 +1582,7 @@
       "summary": "删除 AI 连接",
       "function": "delete_connector",
       "file": "backend/app/api/v1/ai_connectors.py",
-      "line": 1087,
+      "line": 1103,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1598,7 +1598,7 @@
       "summary": "测试连接",
       "function": "test_connector",
       "file": "backend/app/api/v1/ai_connectors.py",
-      "line": 1107,
+      "line": 1123,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1614,7 +1614,7 @@
       "summary": "获取使用统计",
       "function": "get_usage_stats",
       "file": "backend/app/api/v1/ai_connectors.py",
-      "line": 1124,
+      "line": 1140,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1630,7 +1630,7 @@
       "summary": "标记为已使用",
       "function": "mark_used",
       "file": "backend/app/api/v1/ai_connectors.py",
-      "line": 1143,
+      "line": 1159,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1950,7 +1950,7 @@
       "summary": "下载/预览本地文件",
       "function": "download_local_asset_file",
       "file": "backend/app/api/v1/assets.py",
-      "line": 734,
+      "line": 780,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1966,7 +1966,7 @@
       "summary": "预览本地文件",
       "function": "download_local_asset_file",
       "file": "backend/app/api/v1/assets.py",
-      "line": 734,
+      "line": 780,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1982,7 +1982,7 @@
       "summary": "标签列表",
       "function": "list_tags",
       "file": "backend/app/api/v1/assets.py",
-      "line": 978,
+      "line": 1182,
       "response_model": "TagListResponse",
       "include_in_schema": true
     },
@@ -1998,8 +1998,40 @@
       "summary": "创建标签",
       "function": "create_tag",
       "file": "backend/app/api/v1/assets.py",
-      "line": 987,
+      "line": 1191,
       "response_model": "TagResponse",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/assets/upload",
+      "router": "assets",
+      "prefix": "/api/v1/assets",
+      "local_path": "/upload",
+      "tags": [
+        "Assets"
+      ],
+      "summary": "本地上传素材入库",
+      "function": "upload_asset",
+      "file": "backend/app/api/v1/assets.py",
+      "line": 929,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/assets/upload-model3d",
+      "router": "assets",
+      "prefix": "/api/v1/assets",
+      "local_path": "/upload-model3d",
+      "tags": [
+        "Assets"
+      ],
+      "summary": "上传 3D 模型（ZIP 或单文件）入库",
+      "function": "upload_model3d",
+      "file": "backend/app/api/v1/assets.py",
+      "line": 885,
+      "response_model": "",
       "include_in_schema": true
     },
     {
@@ -2014,7 +2046,7 @@
       "summary": "资产详情",
       "function": "get_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1103,
+      "line": 1330,
       "response_model": "AssetResponse",
       "include_in_schema": true
     },
@@ -2030,7 +2062,7 @@
       "summary": "更新资产",
       "function": "update_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1125,
+      "line": 1352,
       "response_model": "AssetResponse",
       "include_in_schema": true
     },
@@ -2046,7 +2078,7 @@
       "summary": "删除资产",
       "function": "delete_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1164,
+      "line": 1391,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2078,7 +2110,7 @@
       "summary": "下载课程章节文件",
       "function": "download_course_episode_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 944,
+      "line": 1148,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2094,7 +2126,7 @@
       "summary": "读取课程章节弹幕",
       "function": "get_course_episode_danmaku",
       "file": "backend/app/api/v1/assets.py",
-      "line": 933,
+      "line": 1137,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2110,7 +2142,7 @@
       "summary": "读取课程章节字幕",
       "function": "get_course_episode_subtitle",
       "file": "backend/app/api/v1/assets.py",
-      "line": 921,
+      "line": 1125,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2126,7 +2158,7 @@
       "summary": "播放课程章节文件",
       "function": "stream_course_episode_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 959,
+      "line": 1163,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2142,7 +2174,23 @@
       "summary": "下载资产文件",
       "function": "download_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 751,
+      "line": 797,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/assets/{asset_id}/files/{filename:path}",
+      "router": "assets",
+      "prefix": "/api/v1/assets",
+      "local_path": "/{asset_id}/files/{filename:path}",
+      "tags": [
+        "Assets"
+      ],
+      "summary": "下载/预览资产的配套文件",
+      "function": "asset_sidecar_file",
+      "file": "backend/app/api/v1/assets.py",
+      "line": 814,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2158,7 +2206,7 @@
       "summary": "恢复软删除的资产",
       "function": "restore_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1180,
+      "line": 1407,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2174,7 +2222,7 @@
       "summary": "读取资产弹幕",
       "function": "get_asset_danmaku",
       "file": "backend/app/api/v1/assets.py",
-      "line": 909,
+      "line": 1113,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2190,7 +2238,7 @@
       "summary": "读取资产字幕",
       "function": "get_asset_subtitle",
       "file": "backend/app/api/v1/assets.py",
-      "line": 896,
+      "line": 1100,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2206,7 +2254,7 @@
       "summary": "播放资产视频文件",
       "function": "stream_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 768,
+      "line": 972,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2238,7 +2286,23 @@
       "summary": "代理加载封面图",
       "function": "proxy_thumbnail",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1068,
+      "line": 1295,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/assets/{asset_id}/thumbnail",
+      "router": "assets",
+      "prefix": "/api/v1/assets",
+      "local_path": "/{asset_id}/thumbnail",
+      "tags": [
+        "Assets"
+      ],
+      "summary": "设置资产缩略图",
+      "function": "set_asset_thumbnail",
+      "file": "backend/app/api/v1/assets.py",
+      "line": 1272,
       "response_model": "",
       "include_in_schema": true
     },
@@ -4462,7 +4526,7 @@
       "summary": "批量获取无水印资源",
       "function": "fetch_no_watermark",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 360,
+      "line": 365,
       "response_model": "",
       "include_in_schema": true
     },
@@ -4478,7 +4542,7 @@
       "summary": "导入到素材库",
       "function": "import_to_assets",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 193,
+      "line": 194,
       "response_model": "ImportResponse",
       "include_in_schema": true
     },
@@ -4494,7 +4558,7 @@
       "summary": "获取笔记详情（无水印）",
       "function": "get_note_detail",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 287,
+      "line": 292,
       "response_model": "NoteDetailResponse",
       "include_in_schema": true
     },
@@ -4510,7 +4574,7 @@
       "summary": "获取采集配置选项",
       "function": "get_options",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 154,
+      "line": 155,
       "response_model": "",
       "include_in_schema": true
     },
@@ -4526,7 +4590,7 @@
       "summary": "获取支持的平台列表",
       "function": "get_platforms",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 148,
+      "line": 149,
       "response_model": "",
       "include_in_schema": true
     },
@@ -4542,7 +4606,7 @@
       "summary": "搜索视频/图文素材",
       "function": "search_materials",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 163,
+      "line": 164,
       "response_model": "SearchResponse",
       "include_in_schema": true
     },
@@ -4558,7 +4622,7 @@
       "summary": "增强搜索（支持笔记/用户）",
       "function": "search_enhanced",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 237,
+      "line": 238,
       "response_model": "SearchResponse",
       "include_in_schema": true
     },
@@ -4574,7 +4638,7 @@
       "summary": "查询采集任务状态",
       "function": "get_task_status",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 222,
+      "line": 223,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6011,7 +6075,7 @@
       "tags": [
         "Image Prompt References"
       ],
-      "summary": "Save image prompt reference as Asset Hub text asset",
+      "summary": "Save cached prompt reference image into Asset Hub",
       "function": "save_image_prompt_reference_as_asset",
       "file": "backend/app/api/v1/image_prompts.py",
       "line": 91,
@@ -6494,7 +6558,7 @@
       "summary": "列出 Live2D 模型",
       "function": "list_models",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 687,
+      "line": 737,
       "response_model": "Live2DModelListResponse",
       "include_in_schema": true
     },
@@ -6510,7 +6574,7 @@
       "summary": "创建 Live2D 模型（上传图片）",
       "function": "create_model",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 619,
+      "line": 631,
       "response_model": "Live2DModelResponse",
       "include_in_schema": true
     },
@@ -6526,7 +6590,7 @@
       "summary": "列出 API 密钥",
       "function": "list_api_keys",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 311,
+      "line": 323,
       "response_model": "ApiKeyListResponse",
       "include_in_schema": true
     },
@@ -6542,7 +6606,7 @@
       "summary": "创建 API 密钥",
       "function": "create_api_key",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 366,
+      "line": 378,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6558,7 +6622,7 @@
       "summary": "获取 API 密钥详情",
       "function": "get_api_key",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 418,
+      "line": 430,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6574,7 +6638,7 @@
       "summary": "更新 API 密钥",
       "function": "update_api_key",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 444,
+      "line": 456,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6590,7 +6654,7 @@
       "summary": "删除 API 密钥",
       "function": "delete_api_key",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 492,
+      "line": 504,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6606,7 +6670,7 @@
       "summary": "测试 API 密钥",
       "function": "test_api_key",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 507,
+      "line": 519,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6622,7 +6686,7 @@
       "summary": "获取所有批量队列",
       "function": "list_batch_queues",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 2541,
+      "line": 2624,
       "response_model": "BatchQueueListResponse",
       "include_in_schema": true
     },
@@ -6638,7 +6702,7 @@
       "summary": "创建批量处理队列",
       "function": "create_batch_queue",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 2524,
+      "line": 2607,
       "response_model": "BatchQueueResponse",
       "include_in_schema": true
     },
@@ -6654,7 +6718,7 @@
       "summary": "获取队列详情",
       "function": "get_batch_queue",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 2553,
+      "line": 2636,
       "response_model": "BatchQueueResponse",
       "include_in_schema": true
     },
@@ -6670,7 +6734,7 @@
       "summary": "删除批量队列",
       "function": "delete_batch_queue",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 2699,
+      "line": 2782,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6686,7 +6750,7 @@
       "summary": "取消批量队列",
       "function": "cancel_batch_queue",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 2684,
+      "line": 2767,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6702,7 +6766,7 @@
       "summary": "启动批量队列处理",
       "function": "start_batch_queue",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 2577,
+      "line": 2660,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6718,7 +6782,7 @@
       "summary": "获取队列统计",
       "function": "get_batch_queue_stats",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 2565,
+      "line": 2648,
       "response_model": "BatchQueueStatsResponse",
       "include_in_schema": true
     },
@@ -6734,7 +6798,7 @@
       "summary": "获取可选角色列表",
       "function": "get_characters_for_live2d",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 2225,
+      "line": 2308,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6750,7 +6814,7 @@
       "summary": "获取处理模式配置",
       "function": "get_processing_modes",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 241,
+      "line": 253,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6766,8 +6830,24 @@
       "summary": "更新处理模式配置",
       "function": "update_processing_modes",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 284,
+      "line": 296,
       "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/live2d/from-asset",
+      "router": "live2d",
+      "prefix": "/api/v1/live2d",
+      "local_path": "/from-asset",
+      "tags": [
+        "Live2D Factory"
+      ],
+      "summary": "从素材库图片创建 Live2D 模型",
+      "function": "create_from_asset",
+      "file": "backend/app/api/v1/live2d.py",
+      "line": 699,
+      "response_model": "Live2DModelResponse",
       "include_in_schema": true
     },
     {
@@ -6782,7 +6862,7 @@
       "summary": "从角色创建 Live2D 模型",
       "function": "create_from_character",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 2327,
+      "line": 2410,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6798,7 +6878,7 @@
       "summary": "获取状态选项",
       "function": "get_status_options",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 229,
+      "line": 241,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6814,7 +6894,7 @@
       "summary": "获取风格模式选项",
       "function": "get_style_options",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 221,
+      "line": 233,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6830,7 +6910,7 @@
       "summary": "获取动作预设列表",
       "function": "get_motion_presets",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 2111,
+      "line": 2194,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6846,7 +6926,7 @@
       "summary": "获取指定动作预设",
       "function": "get_motion_preset",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 2151,
+      "line": 2234,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6862,7 +6942,7 @@
       "summary": "获取 Live2D 模型详情",
       "function": "get_model",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 744,
+      "line": 794,
       "response_model": "Live2DModelResponse",
       "include_in_schema": true
     },
@@ -6878,7 +6958,7 @@
       "summary": "更新 Live2D 模型",
       "function": "update_model",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 756,
+      "line": 806,
       "response_model": "Live2DModelResponse",
       "include_in_schema": true
     },
@@ -6894,7 +6974,7 @@
       "summary": "删除 Live2D 模型",
       "function": "delete_model",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 789,
+      "line": 839,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6910,7 +6990,7 @@
       "summary": "获取模型关联的角色",
       "function": "get_model_character",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 2262,
+      "line": 2345,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6926,7 +7006,7 @@
       "summary": "下载模型文件",
       "function": "download_model",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 1657,
+      "line": 1708,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6939,10 +7019,10 @@
       "tags": [
         "Live2D Factory"
       ],
-      "summary": "导出 VTS 模型",
+      "summary": "导出 YLCraft 角色配置包",
       "function": "export_model",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 1578,
+      "line": 1628,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6958,7 +7038,7 @@
       "summary": "AI 遮挡补全",
       "function": "inpaint_model",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 1219,
+      "line": 1269,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6974,7 +7054,7 @@
       "summary": "关联角色到模型",
       "function": "link_character_to_model",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 2286,
+      "line": 2369,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6990,7 +7070,7 @@
       "summary": "获取口型动画",
       "function": "get_lip_sync",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 2083,
+      "line": 2166,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7006,7 +7086,7 @@
       "summary": "生成口型动画",
       "function": "generate_lip_sync",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 2005,
+      "line": 2088,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7019,10 +7099,10 @@
       "tags": [
         "Live2D Factory"
       ],
-      "summary": "自动生成网格",
+      "summary": "预留：自动生成网格（未实现）",
       "function": "generate_mesh",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 1488,
+      "line": 1540,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7038,7 +7118,7 @@
       "summary": "生成待机动作",
       "function": "generate_motion",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 1514,
+      "line": 1564,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7051,10 +7131,10 @@
       "tags": [
         "Live2D Factory"
       ],
-      "summary": "配置物理模拟",
+      "summary": "预留：配置物理模拟（未实现）",
       "function": "configure_physics",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 1501,
+      "line": 1552,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7070,7 +7150,7 @@
       "summary": "一键生成流水线",
       "function": "run_pipeline",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 1718,
+      "line": 1769,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7086,7 +7166,7 @@
       "summary": "应用动作预设到模型",
       "function": "apply_motion_preset",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 2180,
+      "line": 2263,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7102,7 +7182,7 @@
       "summary": "AI 抠图（去除背景）",
       "function": "rembg_model",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 810,
+      "line": 860,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7118,7 +7198,7 @@
       "summary": "自动骨骼绑定",
       "function": "rig_model",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 1232,
+      "line": 1282,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7134,7 +7214,7 @@
       "summary": "更新表情",
       "function": "update_expression",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 1404,
+      "line": 1456,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7150,7 +7230,7 @@
       "summary": "更新视线跟踪",
       "function": "update_eye_tracking",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 1450,
+      "line": 1502,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7166,7 +7246,7 @@
       "summary": "获取绑骨状态",
       "function": "get_rigging_state",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 1363,
+      "line": 1415,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7182,7 +7262,7 @@
       "summary": "AI 图像分割（自动分层）",
       "function": "segment_model",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 1081,
+      "line": 1131,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7198,7 +7278,7 @@
       "summary": "风格转换（真人转二次元）",
       "function": "style_transfer_model",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 945,
+      "line": 995,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7246,7 +7326,7 @@
       "summary": "Configured image-to-3D connectors",
       "function": "list_model3d_backends",
       "file": "backend/app/api/v1/model3d_workspace.py",
-      "line": 133,
+      "line": 182,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7262,7 +7342,7 @@
       "summary": "Submit configured image-to-3D task",
       "function": "generate_model3d",
       "file": "backend/app/api/v1/model3d_workspace.py",
-      "line": 143,
+      "line": 191,
       "response_model": "Model3DTaskResponse",
       "include_in_schema": true
     },
@@ -7278,7 +7358,7 @@
       "summary": "Durable image-to-3D workspace history",
       "function": "model3d_history",
       "file": "backend/app/api/v1/model3d_workspace.py",
-      "line": 192,
+      "line": 271,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7294,7 +7374,7 @@
       "summary": "Poll image-to-3D task",
       "function": "poll_model3d_task",
       "file": "backend/app/api/v1/model3d_workspace.py",
-      "line": 169,
+      "line": 227,
       "response_model": "Model3DTaskResponse",
       "include_in_schema": true
     },
@@ -8158,7 +8238,7 @@
       "summary": "获取系统设置",
       "function": "get_all_settings",
       "file": "backend/app/api/v1/settings.py",
-      "line": 211,
+      "line": 227,
       "response_model": "SettingsResponse",
       "include_in_schema": true
     },
@@ -8174,7 +8254,7 @@
       "summary": "批量更新设置",
       "function": "update_all_settings",
       "file": "backend/app/api/v1/settings.py",
-      "line": 227,
+      "line": 253,
       "response_model": "SettingsResponse",
       "include_in_schema": true
     },
@@ -8190,7 +8270,7 @@
       "summary": "获取下载保存路径",
       "function": "get_download_path",
       "file": "backend/app/api/v1/settings.py",
-      "line": 278,
+      "line": 316,
       "response_model": "DownloadPathResponse",
       "include_in_schema": true
     },
@@ -8206,7 +8286,7 @@
       "summary": "获取 FFmpeg 路径",
       "function": "get_ffmpeg",
       "file": "backend/app/api/v1/settings.py",
-      "line": 290,
+      "line": 328,
       "response_model": "FFmpegPathResponse",
       "include_in_schema": true
     },
@@ -8222,7 +8302,7 @@
       "summary": "获取所有存储路径",
       "function": "get_all_storage_paths",
       "file": "backend/app/api/v1/settings.py",
-      "line": 251,
+      "line": 289,
       "response_model": "StoragePathsResponse",
       "include_in_schema": true
     },
@@ -8686,7 +8766,7 @@
       "summary": "任务列表",
       "function": "list_tasks",
       "file": "backend/app/api/v1/tasks.py",
-      "line": 492,
+      "line": 620,
       "response_model": "TaskListResponse",
       "include_in_schema": true
     },
@@ -8702,7 +8782,7 @@
       "summary": "任务统计",
       "function": "get_task_stats",
       "file": "backend/app/api/v1/tasks.py",
-      "line": 526,
+      "line": 657,
       "response_model": "TaskStatsResponse",
       "include_in_schema": true
     },
@@ -8718,7 +8798,7 @@
       "summary": "任务详情",
       "function": "get_task_detail",
       "file": "backend/app/api/v1/tasks.py",
-      "line": 596,
+      "line": 732,
       "response_model": "TaskDetailResponse",
       "include_in_schema": true
     },
@@ -8734,7 +8814,7 @@
       "summary": "删除任务",
       "function": "delete_task",
       "file": "backend/app/api/v1/tasks.py",
-      "line": 641,
+      "line": 799,
       "response_model": "TaskActionResponse",
       "include_in_schema": true
     },
@@ -8750,7 +8830,7 @@
       "summary": "取消任务",
       "function": "cancel_task",
       "file": "backend/app/api/v1/tasks.py",
-      "line": 611,
+      "line": 757,
       "response_model": "TaskActionResponse",
       "include_in_schema": true
     },
@@ -9054,7 +9134,7 @@
       "summary": "可用视频后端列表",
       "function": "list_backends",
       "file": "backend/app/api/v1/videos.py",
-      "line": 281,
+      "line": 331,
       "response_model": "VideoBackendsResponse",
       "include_in_schema": true
     },
@@ -9070,7 +9150,7 @@
       "summary": "Generate video with optional project lineage",
       "function": "generate_video",
       "file": "backend/app/api/v1/videos.py",
-      "line": 308,
+      "line": 372,
       "response_model": "VideoResponse",
       "include_in_schema": true
     },
@@ -9086,7 +9166,7 @@
       "summary": "视频生成历史与待处理任务",
       "function": "list_video_tasks",
       "file": "backend/app/api/v1/videos.py",
-      "line": 483,
+      "line": 584,
       "response_model": "VideoTaskListResponse",
       "include_in_schema": true
     },
@@ -9102,8 +9182,24 @@
       "summary": "查询任务状态",
       "function": "get_task_status",
       "file": "backend/app/api/v1/videos.py",
-      "line": 414,
+      "line": 496,
       "response_model": "TaskStatusResponse",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/videos/tasks/{task_id}/file",
+      "router": "videos",
+      "prefix": "/api/v1/videos",
+      "local_path": "/tasks/{task_id}/file",
+      "tags": [
+        "Videos"
+      ],
+      "summary": "播放已下载的视频任务文件",
+      "function": "stream_task_file",
+      "file": "backend/app/api/v1/videos.py",
+      "line": 602,
+      "response_model": "",
       "include_in_schema": true
     },
     {

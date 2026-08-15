@@ -10,7 +10,7 @@
 
 ## Phase 2: Provider and capability integrity
 
-- [ ] 6. Expose provider-specific video capability constraints in the workspace and disable unsupported controls.
+- [x] 6. Expose provider-specific video capability constraints in the workspace and disable unsupported controls.
 - [ ] 7. Verify one configured real provider from submit through Asset Hub playback.
 - [ ] 8. Add focused backend/API tests and frontend external-Chrome smoke.
 

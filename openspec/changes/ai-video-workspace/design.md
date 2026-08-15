@@ -35,3 +35,18 @@ remain usable assets without requiring a project.
 ## Configured provider adapters
 
 Video workspaces load enabled `AIConnector(provider_type="video", api_format="custom")` records through `GenericVideoBackend`. The connector explicitly declares its request template and task response contract (`task_id_path`, status/result paths, request headers and polling endpoint); adding a provider must not depend on a hard-coded backend class. This permits DashScope Wan and future configured providers to appear in `/video-gen` after connector reload.
+
+When a connector declares `default_params.video_capabilities`, `/api/v1/videos/backends` returns its supported modes and constraints: text/image-to-video, seed/audio controls, resolutions, aspect ratios, durations and maximum duration. `/video-gen` disables unsupported modes and controls, then resets incompatible selections on connector change. The generation API validates the same declared constraints and returns `422` for incompatible direct requests. Older generic connectors without this optional block remain permissive until their owner explicitly describes provider limits.
+
+Agnes Video V2.0 is configured against the official China gateway
+`https://api.agnes-ai.cn` with `POST /v1/videos`, `task_id_path=$.video_id`,
+`poll_endpoint=/agnesapi?video_id={task_id}`, `status_path=$.status` and
+`video_url_path=$.metadata.url`. Generic templates expose numeric `width`,
+`height`, `fps` and `num_frames` values; the latter follows the 8n+1 frame
+contract. Agnes text-to-video can therefore use the connector directly.
+
+Agnes image-to-video accepts only a publicly reachable image URL. Asset Hub
+representations and browser uploads resolve to local paths/data URIs in the
+current workspace, so they MUST NOT be sent to Agnes as `image` until a public
+object-storage or media-proxy publishing path is configured. The connector UI
+only provides the verified text-to-video preset and states this boundary.

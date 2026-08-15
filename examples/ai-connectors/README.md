@@ -1,0 +1,15 @@
+# AI Connector Presets
+
+Public, credential-free AI connector files. In YLCraft, open `Settings`, use
+the `Import` action in AI model configuration, then edit the imported connector
+to enter your own API key. The files use the same `connectors` contract as the
+application export format.
+
+| File | Provider | Capability | Notes |
+| --- | --- | --- | --- |
+| `agnes-video-v2.json` | Agnes | Text to video | Image-to-video needs a publicly reachable image URL, so it is not enabled in the local-first preset. |
+| `dashscope-wan-2.7-video.json` | Alibaba Bailian | Text/image to video | Uses DashScope asynchronous polling; image-to-video uses the first-frame media contract. |
+| `openai-text-image.json` | OpenAI | Text + image | Standard Chat Completions and Images API examples. |
+| `siliconflow-text-image.json` | SiliconFlow | Text + image | OpenAI-compatible text plus configurable image generation. Verify the selected model's reference-image contract. |
+| `image-to-3d-generic.json` | Generic | Image to 3D | Generic HTTP task/poll contract. Replace endpoint, model, authentication headers and JSONPath values for the selected provider. |
+| `tencent-hunyuan-3d-pro.json` | Tencent Cloud | Image/text to 3D | Hunyuan 3D Pro OpenAI-compatible submit/query API. Uses raw `Authorization: sk-...` API key auth and POST polling. |

@@ -48,8 +48,11 @@
 | 视频分镜生产 | 代码和项目回流完成；仅剩真实视频供应商验收 | `openspec/changes/story-video-shot-production/tasks.md` |
 | 任务观测诊断 | 已完成，事件时间线和异步生图诊断已验证 | `openspec/changes/task-observability-diagnostics/tasks.md` |
 | 数据库迁移收敛 | Alembic 迁移链当前到 `011_add_model3d_generation_tasks`；启动和 Agent 请求路径不再隐式改 schema，新增视频与图转 3D 持久任务均通过显式迁移落库 | `backend/alembic/versions/`、`openspec/changes/database-migration-convergence/tasks.md` |
-| 独立视频工作台 | 文生/图生视频、视频提示词模板、素材库首帧、持久任务恢复、任务中心聚合和 Asset Hub 回流已落地；仍待真实供应商全链路验收 | `openspec/changes/ai-video-workspace/tasks.md` |
-| 图转 3D 工作台 | 已提供配置驱动的提交、轮询、下载、Asset Hub 入库和独立页面；仍待真实供应商生成 GLB 验收 | `openspec/changes/image-to-3d-workspace/tasks.md` |
+| 独立视频工作台 | 文生/图生视频、视频提示词模板、素材库首帧、持久任务恢复、任务中心聚合和 Asset Hub 回流已落地；模式 tab 驱动供应商/模型过滤、`video_capabilities` 能力约束、视频首帧缩略图已补齐；仍待真实供应商全链路验收 | `openspec/changes/ai-video-workspace/tasks.md` |
+| 图转 3D 工作台 | 配置驱动提交/轮询/下载、Asset Hub 入库、GLB 优先与 ZIP 解包、PreviewImageUrl 缩略图、独立页面已落地；仍待真实供应商生成 GLB 验收 | `openspec/changes/image-to-3d-workspace/tasks.md` |
+| 3D 模型查看器 | 独立全屏页、GLB/GLTF/OBJ 渲染、渲染模式（纹理/白模/线框/反照率/法线）、灯光面板、视角对齐、包围盒、拓扑角标、键盘平移已完成 | `frontend/src/components/asset-hub/Model3DViewer.tsx`、`frontend/src/pages/model3d-viewer/` |
+| 素材库上传与缩略图 | 通用本地上传（图片/视频/音频/文本/3D）、3D 模型前端渲染截图缩略图、视频第一帧缩略图、删除容错已完成 | `backend/app/api/v1/assets.py` |
+| 远程对象存储（COS） | 手写签名上传、密钥入库 `system_settings`、设置页「密钥配置」Tab、Agnes 图生视频公网 URL 已落地 | `backend/app/services/cos_storage.py` |
 
 ## 每次开发后必须更新什么
 

@@ -7,8 +7,8 @@
 ## Summary
 
 - Router mounts: 48
-- Endpoints: 555
-- Public schema endpoints: 554
+- Endpoints: 561
+- Public schema endpoints: 560
 - Hidden compatibility endpoints: 1
 
 ## Router Mounts
@@ -87,26 +87,26 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/ai/connectors` | 列出所有 AI 连接 | `list_connectors` | `backend/app/api/v1/ai_connectors.py:142` |
-| `POST` | `/api/v1/ai/connectors` | 创建 AI 连接 | `create_connector` | `backend/app/api/v1/ai_connectors.py:1050` |
-| `GET` | `/api/v1/ai/connectors/discover-models` | 发现可用模型 | `discover_models` | `backend/app/api/v1/ai_connectors.py:910` |
-| `GET` | `/api/v1/ai/connectors/export` | 导出所有 AI 连接为 JSON | `export_connectors` | `backend/app/api/v1/ai_connectors.py:191` |
-| `POST` | `/api/v1/ai/connectors/import` | 从 JSON 导入 AI 连接 | `import_connectors` | `backend/app/api/v1/ai_connectors.py:266` |
-| `GET` | `/api/v1/ai/connectors/provider-metadata` | 获取所有 Provider 元数据 | `list_providers` | `backend/app/api/v1/ai_connectors.py:429` |
-| `POST` | `/api/v1/ai/connectors/provider-metadata` | 创建 Provider 元数据 | `create_provider` | `backend/app/api/v1/ai_connectors.py:476` |
-| `POST` | `/api/v1/ai/connectors/provider-metadata/init` | 初始化默认 Provider 数据 | `init_default_providers` | `backend/app/api/v1/ai_connectors.py:695` |
-| `GET` | `/api/v1/ai/connectors/provider-metadata/{provider_id}` | 获取单个 Provider 元数据 | `get_provider` | `backend/app/api/v1/ai_connectors.py:453` |
-| `PUT` | `/api/v1/ai/connectors/provider-metadata/{provider_id}` | 更新 Provider 元数据 | `update_provider` | `backend/app/api/v1/ai_connectors.py:529` |
-| `DELETE` | `/api/v1/ai/connectors/provider-metadata/{provider_id}` | 删除 Provider 元数据 | `delete_provider` | `backend/app/api/v1/ai_connectors.py:586` |
-| `GET` | `/api/v1/ai/connectors/provider-metadata/{provider_id}/defaults/{provider_type}` | 获取指定类型的默认配置 | `get_provider_defaults` | `backend/app/api/v1/ai_connectors.py:615` |
-| `POST` | `/api/v1/ai/connectors/reload` | 重新加载所有 AI 连接器配置，立即生效，无需重启 | `reload_connectors` | `backend/app/api/v1/ai_connectors.py:172` |
-| `GET` | `/api/v1/ai/connectors/supported` | 获取支持的 AI 提供商 | `get_supported_ai_providers` | `backend/app/api/v1/ai_connectors.py:133` |
-| `GET` | `/api/v1/ai/connectors/{conn_id}` | 获取连接详情 | `get_connector` | `backend/app/api/v1/ai_connectors.py:1035` |
-| `PUT` | `/api/v1/ai/connectors/{conn_id}` | 更新 AI 连接 | `update_connector` | `backend/app/api/v1/ai_connectors.py:1069` |
-| `DELETE` | `/api/v1/ai/connectors/{conn_id}` | 删除 AI 连接 | `delete_connector` | `backend/app/api/v1/ai_connectors.py:1087` |
-| `POST` | `/api/v1/ai/connectors/{conn_id}/test` | 测试连接 | `test_connector` | `backend/app/api/v1/ai_connectors.py:1107` |
-| `GET` | `/api/v1/ai/connectors/{conn_id}/usage` | 获取使用统计 | `get_usage_stats` | `backend/app/api/v1/ai_connectors.py:1124` |
-| `POST` | `/api/v1/ai/connectors/{conn_id}/use` | 标记为已使用 | `mark_used` | `backend/app/api/v1/ai_connectors.py:1143` |
+| `GET` | `/api/v1/ai/connectors` | 列出所有 AI 连接 | `list_connectors` | `backend/app/api/v1/ai_connectors.py:155` |
+| `POST` | `/api/v1/ai/connectors` | 创建 AI 连接 | `create_connector` | `backend/app/api/v1/ai_connectors.py:1063` |
+| `GET` | `/api/v1/ai/connectors/discover-models` | 发现可用模型 | `discover_models` | `backend/app/api/v1/ai_connectors.py:923` |
+| `GET` | `/api/v1/ai/connectors/export` | 导出所有 AI 连接为 JSON | `export_connectors` | `backend/app/api/v1/ai_connectors.py:204` |
+| `POST` | `/api/v1/ai/connectors/import` | 从 JSON 导入 AI 连接 | `import_connectors` | `backend/app/api/v1/ai_connectors.py:279` |
+| `GET` | `/api/v1/ai/connectors/provider-metadata` | 获取所有 Provider 元数据 | `list_providers` | `backend/app/api/v1/ai_connectors.py:442` |
+| `POST` | `/api/v1/ai/connectors/provider-metadata` | 创建 Provider 元数据 | `create_provider` | `backend/app/api/v1/ai_connectors.py:489` |
+| `POST` | `/api/v1/ai/connectors/provider-metadata/init` | 初始化默认 Provider 数据 | `init_default_providers` | `backend/app/api/v1/ai_connectors.py:708` |
+| `GET` | `/api/v1/ai/connectors/provider-metadata/{provider_id}` | 获取单个 Provider 元数据 | `get_provider` | `backend/app/api/v1/ai_connectors.py:466` |
+| `PUT` | `/api/v1/ai/connectors/provider-metadata/{provider_id}` | 更新 Provider 元数据 | `update_provider` | `backend/app/api/v1/ai_connectors.py:542` |
+| `DELETE` | `/api/v1/ai/connectors/provider-metadata/{provider_id}` | 删除 Provider 元数据 | `delete_provider` | `backend/app/api/v1/ai_connectors.py:599` |
+| `GET` | `/api/v1/ai/connectors/provider-metadata/{provider_id}/defaults/{provider_type}` | 获取指定类型的默认配置 | `get_provider_defaults` | `backend/app/api/v1/ai_connectors.py:628` |
+| `POST` | `/api/v1/ai/connectors/reload` | 重新加载所有 AI 连接器配置，立即生效，无需重启 | `reload_connectors` | `backend/app/api/v1/ai_connectors.py:185` |
+| `GET` | `/api/v1/ai/connectors/supported` | 获取支持的 AI 提供商 | `get_supported_ai_providers` | `backend/app/api/v1/ai_connectors.py:146` |
+| `GET` | `/api/v1/ai/connectors/{conn_id}` | 获取连接详情 | `get_connector` | `backend/app/api/v1/ai_connectors.py:1048` |
+| `PUT` | `/api/v1/ai/connectors/{conn_id}` | 更新 AI 连接 | `update_connector` | `backend/app/api/v1/ai_connectors.py:1083` |
+| `DELETE` | `/api/v1/ai/connectors/{conn_id}` | 删除 AI 连接 | `delete_connector` | `backend/app/api/v1/ai_connectors.py:1103` |
+| `POST` | `/api/v1/ai/connectors/{conn_id}/test` | 测试连接 | `test_connector` | `backend/app/api/v1/ai_connectors.py:1123` |
+| `GET` | `/api/v1/ai/connectors/{conn_id}/usage` | 获取使用统计 | `get_usage_stats` | `backend/app/api/v1/ai_connectors.py:1140` |
+| `POST` | `/api/v1/ai/connectors/{conn_id}/use` | 标记为已使用 | `mark_used` | `backend/app/api/v1/ai_connectors.py:1159` |
 
 ### Agent
 
@@ -191,23 +191,27 @@
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
 | `GET` | `/api/v1/assets` | 素材资产列表 | `list_assets` | `backend/app/api/v1/assets.py:613` |
-| `GET` | `/api/v1/assets/download` | 下载/预览本地文件 | `download_local_asset_file` | `backend/app/api/v1/assets.py:734` |
-| `GET` | `/api/v1/assets/file` | 预览本地文件 | `download_local_asset_file` | `backend/app/api/v1/assets.py:734` |
-| `GET` | `/api/v1/assets/tags` | 标签列表 | `list_tags` | `backend/app/api/v1/assets.py:978` |
-| `POST` | `/api/v1/assets/tags` | 创建标签 | `create_tag` | `backend/app/api/v1/assets.py:987` |
-| `GET` | `/api/v1/assets/{asset_id}` | 资产详情 | `get_asset` | `backend/app/api/v1/assets.py:1103` |
-| `PUT` | `/api/v1/assets/{asset_id}` | 更新资产 | `update_asset` | `backend/app/api/v1/assets.py:1125` |
-| `DELETE` | `/api/v1/assets/{asset_id}` | 删除资产 | `delete_asset` | `backend/app/api/v1/assets.py:1164` |
-| `GET` | `/api/v1/assets/{asset_id}/course-episodes/{episode_index}/download` | 下载课程章节文件 | `download_course_episode_asset` | `backend/app/api/v1/assets.py:944` |
-| `GET` | `/api/v1/assets/{asset_id}/course-episodes/{episode_index}/sidecars/danmaku` | 读取课程章节弹幕 | `get_course_episode_danmaku` | `backend/app/api/v1/assets.py:933` |
-| `GET` | `/api/v1/assets/{asset_id}/course-episodes/{episode_index}/sidecars/subtitles/{subtitle_index}.vtt` | 读取课程章节字幕 | `get_course_episode_subtitle` | `backend/app/api/v1/assets.py:921` |
-| `GET` | `/api/v1/assets/{asset_id}/course-episodes/{episode_index}/stream` | 播放课程章节文件 | `stream_course_episode_asset` | `backend/app/api/v1/assets.py:959` |
-| `GET` | `/api/v1/assets/{asset_id}/download` | 下载资产文件 | `download_asset` | `backend/app/api/v1/assets.py:751` |
-| `POST` | `/api/v1/assets/{asset_id}/restore` | 恢复软删除的资产 | `restore_asset` | `backend/app/api/v1/assets.py:1180` |
-| `GET` | `/api/v1/assets/{asset_id}/sidecars/danmaku` | 读取资产弹幕 | `get_asset_danmaku` | `backend/app/api/v1/assets.py:909` |
-| `GET` | `/api/v1/assets/{asset_id}/sidecars/subtitles/{subtitle_index}.vtt` | 读取资产字幕 | `get_asset_subtitle` | `backend/app/api/v1/assets.py:896` |
-| `GET` | `/api/v1/assets/{asset_id}/stream` | 播放资产视频文件 | `stream_asset` | `backend/app/api/v1/assets.py:768` |
-| `GET` | `/api/v1/assets/{asset_id}/thumbnail` | 代理加载封面图 | `proxy_thumbnail` | `backend/app/api/v1/assets.py:1068` |
+| `GET` | `/api/v1/assets/download` | 下载/预览本地文件 | `download_local_asset_file` | `backend/app/api/v1/assets.py:780` |
+| `GET` | `/api/v1/assets/file` | 预览本地文件 | `download_local_asset_file` | `backend/app/api/v1/assets.py:780` |
+| `GET` | `/api/v1/assets/tags` | 标签列表 | `list_tags` | `backend/app/api/v1/assets.py:1182` |
+| `POST` | `/api/v1/assets/tags` | 创建标签 | `create_tag` | `backend/app/api/v1/assets.py:1191` |
+| `POST` | `/api/v1/assets/upload` | 本地上传素材入库 | `upload_asset` | `backend/app/api/v1/assets.py:929` |
+| `POST` | `/api/v1/assets/upload-model3d` | 上传 3D 模型（ZIP 或单文件）入库 | `upload_model3d` | `backend/app/api/v1/assets.py:885` |
+| `GET` | `/api/v1/assets/{asset_id}` | 资产详情 | `get_asset` | `backend/app/api/v1/assets.py:1330` |
+| `PUT` | `/api/v1/assets/{asset_id}` | 更新资产 | `update_asset` | `backend/app/api/v1/assets.py:1352` |
+| `DELETE` | `/api/v1/assets/{asset_id}` | 删除资产 | `delete_asset` | `backend/app/api/v1/assets.py:1391` |
+| `GET` | `/api/v1/assets/{asset_id}/course-episodes/{episode_index}/download` | 下载课程章节文件 | `download_course_episode_asset` | `backend/app/api/v1/assets.py:1148` |
+| `GET` | `/api/v1/assets/{asset_id}/course-episodes/{episode_index}/sidecars/danmaku` | 读取课程章节弹幕 | `get_course_episode_danmaku` | `backend/app/api/v1/assets.py:1137` |
+| `GET` | `/api/v1/assets/{asset_id}/course-episodes/{episode_index}/sidecars/subtitles/{subtitle_index}.vtt` | 读取课程章节字幕 | `get_course_episode_subtitle` | `backend/app/api/v1/assets.py:1125` |
+| `GET` | `/api/v1/assets/{asset_id}/course-episodes/{episode_index}/stream` | 播放课程章节文件 | `stream_course_episode_asset` | `backend/app/api/v1/assets.py:1163` |
+| `GET` | `/api/v1/assets/{asset_id}/download` | 下载资产文件 | `download_asset` | `backend/app/api/v1/assets.py:797` |
+| `GET` | `/api/v1/assets/{asset_id}/files/{filename:path}` | 下载/预览资产的配套文件 | `asset_sidecar_file` | `backend/app/api/v1/assets.py:814` |
+| `POST` | `/api/v1/assets/{asset_id}/restore` | 恢复软删除的资产 | `restore_asset` | `backend/app/api/v1/assets.py:1407` |
+| `GET` | `/api/v1/assets/{asset_id}/sidecars/danmaku` | 读取资产弹幕 | `get_asset_danmaku` | `backend/app/api/v1/assets.py:1113` |
+| `GET` | `/api/v1/assets/{asset_id}/sidecars/subtitles/{subtitle_index}.vtt` | 读取资产字幕 | `get_asset_subtitle` | `backend/app/api/v1/assets.py:1100` |
+| `GET` | `/api/v1/assets/{asset_id}/stream` | 播放资产视频文件 | `stream_asset` | `backend/app/api/v1/assets.py:972` |
+| `GET` | `/api/v1/assets/{asset_id}/thumbnail` | 代理加载封面图 | `proxy_thumbnail` | `backend/app/api/v1/assets.py:1295` |
+| `POST` | `/api/v1/assets/{asset_id}/thumbnail` | 设置资产缩略图 | `set_asset_thumbnail` | `backend/app/api/v1/assets.py:1272` |
 
 ### BGM
 
@@ -373,14 +377,14 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `POST` | `/api/v1/crawler/fetch-no-watermark` | 批量获取无水印资源 | `fetch_no_watermark` | `backend/app/api/v1/crawler.py:360` |
-| `POST` | `/api/v1/crawler/import` | 导入到素材库 | `import_to_assets` | `backend/app/api/v1/crawler.py:193` |
-| `GET` | `/api/v1/crawler/note-detail` | 获取笔记详情（无水印） | `get_note_detail` | `backend/app/api/v1/crawler.py:287` |
-| `GET` | `/api/v1/crawler/options` | 获取采集配置选项 | `get_options` | `backend/app/api/v1/crawler.py:154` |
-| `GET` | `/api/v1/crawler/platforms` | 获取支持的平台列表 | `get_platforms` | `backend/app/api/v1/crawler.py:148` |
-| `POST` | `/api/v1/crawler/search` | 搜索视频/图文素材 | `search_materials` | `backend/app/api/v1/crawler.py:163` |
-| `POST` | `/api/v1/crawler/search-enhanced` | 增强搜索（支持笔记/用户） | `search_enhanced` | `backend/app/api/v1/crawler.py:237` |
-| `GET` | `/api/v1/crawler/tasks/{task_id}` | 查询采集任务状态 | `get_task_status` | `backend/app/api/v1/crawler.py:222` |
+| `POST` | `/api/v1/crawler/fetch-no-watermark` | 批量获取无水印资源 | `fetch_no_watermark` | `backend/app/api/v1/crawler.py:365` |
+| `POST` | `/api/v1/crawler/import` | 导入到素材库 | `import_to_assets` | `backend/app/api/v1/crawler.py:194` |
+| `GET` | `/api/v1/crawler/note-detail` | 获取笔记详情（无水印） | `get_note_detail` | `backend/app/api/v1/crawler.py:292` |
+| `GET` | `/api/v1/crawler/options` | 获取采集配置选项 | `get_options` | `backend/app/api/v1/crawler.py:155` |
+| `GET` | `/api/v1/crawler/platforms` | 获取支持的平台列表 | `get_platforms` | `backend/app/api/v1/crawler.py:149` |
+| `POST` | `/api/v1/crawler/search` | 搜索视频/图文素材 | `search_materials` | `backend/app/api/v1/crawler.py:164` |
+| `POST` | `/api/v1/crawler/search-enhanced` | 增强搜索（支持笔记/用户） | `search_enhanced` | `backend/app/api/v1/crawler.py:238` |
+| `GET` | `/api/v1/crawler/tasks/{task_id}` | 查询采集任务状态 | `get_task_status` | `backend/app/api/v1/crawler.py:223` |
 
 ### Crawler — Bilibili
 
@@ -537,7 +541,7 @@
 | `GET` | `/api/v1/image-prompts/media/{source_id}/{item_id}/{filename}` | Read cached image prompt reference media | `read_image_prompt_reference_media` | `backend/app/api/v1/image_prompts.py:44` |
 | `GET` | `/api/v1/image-prompts/references` | Search image prompt references | `search_image_prompt_references` | `backend/app/api/v1/image_prompts.py:58` |
 | `GET` | `/api/v1/image-prompts/references/{reference_id}` | Get image prompt reference detail | `get_image_prompt_reference` | `backend/app/api/v1/image_prompts.py:81` |
-| `POST` | `/api/v1/image-prompts/references/{reference_id}/save-as-asset` | Save image prompt reference as Asset Hub text asset | `save_image_prompt_reference_as_asset` | `backend/app/api/v1/image_prompts.py:91` |
+| `POST` | `/api/v1/image-prompts/references/{reference_id}/save-as-asset` | Save cached prompt reference image into Asset Hub | `save_image_prompt_reference_as_asset` | `backend/app/api/v1/image_prompts.py:91` |
 | `GET` | `/api/v1/image-prompts/sources` | List image prompt reference sources | `list_image_prompt_sources` | `backend/app/api/v1/image_prompts.py:24` |
 | `POST` | `/api/v1/image-prompts/sources/refresh` | Refresh image prompt reference sources | `refresh_image_prompt_sources` | `backend/app/api/v1/image_prompts.py:36` |
 
@@ -545,10 +549,10 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/model-3d/backends` | Configured image-to-3D connectors | `list_model3d_backends` | `backend/app/api/v1/model3d_workspace.py:133` |
-| `POST` | `/api/v1/model-3d/generate` | Submit configured image-to-3D task | `generate_model3d` | `backend/app/api/v1/model3d_workspace.py:143` |
-| `GET` | `/api/v1/model-3d/history` | Durable image-to-3D workspace history | `model3d_history` | `backend/app/api/v1/model3d_workspace.py:192` |
-| `GET` | `/api/v1/model-3d/tasks/{task_id}` | Poll image-to-3D task | `poll_model3d_task` | `backend/app/api/v1/model3d_workspace.py:169` |
+| `GET` | `/api/v1/model-3d/backends` | Configured image-to-3D connectors | `list_model3d_backends` | `backend/app/api/v1/model3d_workspace.py:182` |
+| `POST` | `/api/v1/model-3d/generate` | Submit configured image-to-3D task | `generate_model3d` | `backend/app/api/v1/model3d_workspace.py:191` |
+| `GET` | `/api/v1/model-3d/history` | Durable image-to-3D workspace history | `model3d_history` | `backend/app/api/v1/model3d_workspace.py:271` |
+| `GET` | `/api/v1/model-3d/tasks/{task_id}` | Poll image-to-3D task | `poll_model3d_task` | `backend/app/api/v1/model3d_workspace.py:227` |
 
 ### Images
 
@@ -603,51 +607,52 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/live2d` | 列出 Live2D 模型 | `list_models` | `backend/app/api/v1/live2d.py:687` |
-| `POST` | `/api/v1/live2d` | 创建 Live2D 模型（上传图片） | `create_model` | `backend/app/api/v1/live2d.py:619` |
-| `GET` | `/api/v1/live2d/api-keys` | 列出 API 密钥 | `list_api_keys` | `backend/app/api/v1/live2d.py:311` |
-| `POST` | `/api/v1/live2d/api-keys` | 创建 API 密钥 | `create_api_key` | `backend/app/api/v1/live2d.py:366` |
-| `GET` | `/api/v1/live2d/api-keys/{key_id}` | 获取 API 密钥详情 | `get_api_key` | `backend/app/api/v1/live2d.py:418` |
-| `PUT` | `/api/v1/live2d/api-keys/{key_id}` | 更新 API 密钥 | `update_api_key` | `backend/app/api/v1/live2d.py:444` |
-| `DELETE` | `/api/v1/live2d/api-keys/{key_id}` | 删除 API 密钥 | `delete_api_key` | `backend/app/api/v1/live2d.py:492` |
-| `GET` | `/api/v1/live2d/api-keys/{key_id}/test` | 测试 API 密钥 | `test_api_key` | `backend/app/api/v1/live2d.py:507` |
-| `GET` | `/api/v1/live2d/batch` | 获取所有批量队列 | `list_batch_queues` | `backend/app/api/v1/live2d.py:2541` |
-| `POST` | `/api/v1/live2d/batch` | 创建批量处理队列 | `create_batch_queue` | `backend/app/api/v1/live2d.py:2524` |
-| `GET` | `/api/v1/live2d/batch/{queue_id}` | 获取队列详情 | `get_batch_queue` | `backend/app/api/v1/live2d.py:2553` |
-| `DELETE` | `/api/v1/live2d/batch/{queue_id}` | 删除批量队列 | `delete_batch_queue` | `backend/app/api/v1/live2d.py:2699` |
-| `POST` | `/api/v1/live2d/batch/{queue_id}/cancel` | 取消批量队列 | `cancel_batch_queue` | `backend/app/api/v1/live2d.py:2684` |
-| `POST` | `/api/v1/live2d/batch/{queue_id}/start` | 启动批量队列处理 | `start_batch_queue` | `backend/app/api/v1/live2d.py:2577` |
-| `GET` | `/api/v1/live2d/batch/{queue_id}/stats` | 获取队列统计 | `get_batch_queue_stats` | `backend/app/api/v1/live2d.py:2565` |
-| `GET` | `/api/v1/live2d/characters` | 获取可选角色列表 | `get_characters_for_live2d` | `backend/app/api/v1/live2d.py:2225` |
-| `GET` | `/api/v1/live2d/config/processing-modes` | 获取处理模式配置 | `get_processing_modes` | `backend/app/api/v1/live2d.py:241` |
-| `PUT` | `/api/v1/live2d/config/processing-modes` | 更新处理模式配置 | `update_processing_modes` | `backend/app/api/v1/live2d.py:284` |
-| `POST` | `/api/v1/live2d/from-character/{character_id}` | 从角色创建 Live2D 模型 | `create_from_character` | `backend/app/api/v1/live2d.py:2327` |
-| `GET` | `/api/v1/live2d/options/status` | 获取状态选项 | `get_status_options` | `backend/app/api/v1/live2d.py:229` |
-| `GET` | `/api/v1/live2d/options/style` | 获取风格模式选项 | `get_style_options` | `backend/app/api/v1/live2d.py:221` |
-| `GET` | `/api/v1/live2d/presets/motions` | 获取动作预设列表 | `get_motion_presets` | `backend/app/api/v1/live2d.py:2111` |
-| `GET` | `/api/v1/live2d/presets/motions/{preset_id}` | 获取指定动作预设 | `get_motion_preset` | `backend/app/api/v1/live2d.py:2151` |
-| `GET` | `/api/v1/live2d/{model_id}` | 获取 Live2D 模型详情 | `get_model` | `backend/app/api/v1/live2d.py:744` |
-| `PUT` | `/api/v1/live2d/{model_id}` | 更新 Live2D 模型 | `update_model` | `backend/app/api/v1/live2d.py:756` |
-| `DELETE` | `/api/v1/live2d/{model_id}` | 删除 Live2D 模型 | `delete_model` | `backend/app/api/v1/live2d.py:789` |
-| `GET` | `/api/v1/live2d/{model_id}/character` | 获取模型关联的角色 | `get_model_character` | `backend/app/api/v1/live2d.py:2262` |
-| `GET` | `/api/v1/live2d/{model_id}/download` | 下载模型文件 | `download_model` | `backend/app/api/v1/live2d.py:1657` |
-| `POST` | `/api/v1/live2d/{model_id}/export` | 导出 VTS 模型 | `export_model` | `backend/app/api/v1/live2d.py:1578` |
-| `POST` | `/api/v1/live2d/{model_id}/inpaint` | AI 遮挡补全 | `inpaint_model` | `backend/app/api/v1/live2d.py:1219` |
-| `POST` | `/api/v1/live2d/{model_id}/link-character` | 关联角色到模型 | `link_character_to_model` | `backend/app/api/v1/live2d.py:2286` |
-| `GET` | `/api/v1/live2d/{model_id}/lip-sync` | 获取口型动画 | `get_lip_sync` | `backend/app/api/v1/live2d.py:2083` |
-| `POST` | `/api/v1/live2d/{model_id}/lip-sync` | 生成口型动画 | `generate_lip_sync` | `backend/app/api/v1/live2d.py:2005` |
-| `POST` | `/api/v1/live2d/{model_id}/mesh` | 自动生成网格 | `generate_mesh` | `backend/app/api/v1/live2d.py:1488` |
-| `POST` | `/api/v1/live2d/{model_id}/motion` | 生成待机动作 | `generate_motion` | `backend/app/api/v1/live2d.py:1514` |
-| `POST` | `/api/v1/live2d/{model_id}/physics` | 配置物理模拟 | `configure_physics` | `backend/app/api/v1/live2d.py:1501` |
-| `POST` | `/api/v1/live2d/{model_id}/pipeline` | 一键生成流水线 | `run_pipeline` | `backend/app/api/v1/live2d.py:1718` |
-| `POST` | `/api/v1/live2d/{model_id}/presets/{preset_id}` | 应用动作预设到模型 | `apply_motion_preset` | `backend/app/api/v1/live2d.py:2180` |
-| `POST` | `/api/v1/live2d/{model_id}/rembg` | AI 抠图（去除背景） | `rembg_model` | `backend/app/api/v1/live2d.py:810` |
-| `POST` | `/api/v1/live2d/{model_id}/rig` | 自动骨骼绑定 | `rig_model` | `backend/app/api/v1/live2d.py:1232` |
-| `PUT` | `/api/v1/live2d/{model_id}/rigging/expression` | 更新表情 | `update_expression` | `backend/app/api/v1/live2d.py:1404` |
-| `PUT` | `/api/v1/live2d/{model_id}/rigging/eye-tracking` | 更新视线跟踪 | `update_eye_tracking` | `backend/app/api/v1/live2d.py:1450` |
-| `GET` | `/api/v1/live2d/{model_id}/rigging/state` | 获取绑骨状态 | `get_rigging_state` | `backend/app/api/v1/live2d.py:1363` |
-| `POST` | `/api/v1/live2d/{model_id}/segment` | AI 图像分割（自动分层） | `segment_model` | `backend/app/api/v1/live2d.py:1081` |
-| `POST` | `/api/v1/live2d/{model_id}/style-transfer` | 风格转换（真人转二次元） | `style_transfer_model` | `backend/app/api/v1/live2d.py:945` |
+| `GET` | `/api/v1/live2d` | 列出 Live2D 模型 | `list_models` | `backend/app/api/v1/live2d.py:737` |
+| `POST` | `/api/v1/live2d` | 创建 Live2D 模型（上传图片） | `create_model` | `backend/app/api/v1/live2d.py:631` |
+| `GET` | `/api/v1/live2d/api-keys` | 列出 API 密钥 | `list_api_keys` | `backend/app/api/v1/live2d.py:323` |
+| `POST` | `/api/v1/live2d/api-keys` | 创建 API 密钥 | `create_api_key` | `backend/app/api/v1/live2d.py:378` |
+| `GET` | `/api/v1/live2d/api-keys/{key_id}` | 获取 API 密钥详情 | `get_api_key` | `backend/app/api/v1/live2d.py:430` |
+| `PUT` | `/api/v1/live2d/api-keys/{key_id}` | 更新 API 密钥 | `update_api_key` | `backend/app/api/v1/live2d.py:456` |
+| `DELETE` | `/api/v1/live2d/api-keys/{key_id}` | 删除 API 密钥 | `delete_api_key` | `backend/app/api/v1/live2d.py:504` |
+| `GET` | `/api/v1/live2d/api-keys/{key_id}/test` | 测试 API 密钥 | `test_api_key` | `backend/app/api/v1/live2d.py:519` |
+| `GET` | `/api/v1/live2d/batch` | 获取所有批量队列 | `list_batch_queues` | `backend/app/api/v1/live2d.py:2624` |
+| `POST` | `/api/v1/live2d/batch` | 创建批量处理队列 | `create_batch_queue` | `backend/app/api/v1/live2d.py:2607` |
+| `GET` | `/api/v1/live2d/batch/{queue_id}` | 获取队列详情 | `get_batch_queue` | `backend/app/api/v1/live2d.py:2636` |
+| `DELETE` | `/api/v1/live2d/batch/{queue_id}` | 删除批量队列 | `delete_batch_queue` | `backend/app/api/v1/live2d.py:2782` |
+| `POST` | `/api/v1/live2d/batch/{queue_id}/cancel` | 取消批量队列 | `cancel_batch_queue` | `backend/app/api/v1/live2d.py:2767` |
+| `POST` | `/api/v1/live2d/batch/{queue_id}/start` | 启动批量队列处理 | `start_batch_queue` | `backend/app/api/v1/live2d.py:2660` |
+| `GET` | `/api/v1/live2d/batch/{queue_id}/stats` | 获取队列统计 | `get_batch_queue_stats` | `backend/app/api/v1/live2d.py:2648` |
+| `GET` | `/api/v1/live2d/characters` | 获取可选角色列表 | `get_characters_for_live2d` | `backend/app/api/v1/live2d.py:2308` |
+| `GET` | `/api/v1/live2d/config/processing-modes` | 获取处理模式配置 | `get_processing_modes` | `backend/app/api/v1/live2d.py:253` |
+| `PUT` | `/api/v1/live2d/config/processing-modes` | 更新处理模式配置 | `update_processing_modes` | `backend/app/api/v1/live2d.py:296` |
+| `POST` | `/api/v1/live2d/from-asset` | 从素材库图片创建 Live2D 模型 | `create_from_asset` | `backend/app/api/v1/live2d.py:699` |
+| `POST` | `/api/v1/live2d/from-character/{character_id}` | 从角色创建 Live2D 模型 | `create_from_character` | `backend/app/api/v1/live2d.py:2410` |
+| `GET` | `/api/v1/live2d/options/status` | 获取状态选项 | `get_status_options` | `backend/app/api/v1/live2d.py:241` |
+| `GET` | `/api/v1/live2d/options/style` | 获取风格模式选项 | `get_style_options` | `backend/app/api/v1/live2d.py:233` |
+| `GET` | `/api/v1/live2d/presets/motions` | 获取动作预设列表 | `get_motion_presets` | `backend/app/api/v1/live2d.py:2194` |
+| `GET` | `/api/v1/live2d/presets/motions/{preset_id}` | 获取指定动作预设 | `get_motion_preset` | `backend/app/api/v1/live2d.py:2234` |
+| `GET` | `/api/v1/live2d/{model_id}` | 获取 Live2D 模型详情 | `get_model` | `backend/app/api/v1/live2d.py:794` |
+| `PUT` | `/api/v1/live2d/{model_id}` | 更新 Live2D 模型 | `update_model` | `backend/app/api/v1/live2d.py:806` |
+| `DELETE` | `/api/v1/live2d/{model_id}` | 删除 Live2D 模型 | `delete_model` | `backend/app/api/v1/live2d.py:839` |
+| `GET` | `/api/v1/live2d/{model_id}/character` | 获取模型关联的角色 | `get_model_character` | `backend/app/api/v1/live2d.py:2345` |
+| `GET` | `/api/v1/live2d/{model_id}/download` | 下载模型文件 | `download_model` | `backend/app/api/v1/live2d.py:1708` |
+| `POST` | `/api/v1/live2d/{model_id}/export` | 导出 YLCraft 角色配置包 | `export_model` | `backend/app/api/v1/live2d.py:1628` |
+| `POST` | `/api/v1/live2d/{model_id}/inpaint` | AI 遮挡补全 | `inpaint_model` | `backend/app/api/v1/live2d.py:1269` |
+| `POST` | `/api/v1/live2d/{model_id}/link-character` | 关联角色到模型 | `link_character_to_model` | `backend/app/api/v1/live2d.py:2369` |
+| `GET` | `/api/v1/live2d/{model_id}/lip-sync` | 获取口型动画 | `get_lip_sync` | `backend/app/api/v1/live2d.py:2166` |
+| `POST` | `/api/v1/live2d/{model_id}/lip-sync` | 生成口型动画 | `generate_lip_sync` | `backend/app/api/v1/live2d.py:2088` |
+| `POST` | `/api/v1/live2d/{model_id}/mesh` | 预留：自动生成网格（未实现） | `generate_mesh` | `backend/app/api/v1/live2d.py:1540` |
+| `POST` | `/api/v1/live2d/{model_id}/motion` | 生成待机动作 | `generate_motion` | `backend/app/api/v1/live2d.py:1564` |
+| `POST` | `/api/v1/live2d/{model_id}/physics` | 预留：配置物理模拟（未实现） | `configure_physics` | `backend/app/api/v1/live2d.py:1552` |
+| `POST` | `/api/v1/live2d/{model_id}/pipeline` | 一键生成流水线 | `run_pipeline` | `backend/app/api/v1/live2d.py:1769` |
+| `POST` | `/api/v1/live2d/{model_id}/presets/{preset_id}` | 应用动作预设到模型 | `apply_motion_preset` | `backend/app/api/v1/live2d.py:2263` |
+| `POST` | `/api/v1/live2d/{model_id}/rembg` | AI 抠图（去除背景） | `rembg_model` | `backend/app/api/v1/live2d.py:860` |
+| `POST` | `/api/v1/live2d/{model_id}/rig` | 自动骨骼绑定 | `rig_model` | `backend/app/api/v1/live2d.py:1282` |
+| `PUT` | `/api/v1/live2d/{model_id}/rigging/expression` | 更新表情 | `update_expression` | `backend/app/api/v1/live2d.py:1456` |
+| `PUT` | `/api/v1/live2d/{model_id}/rigging/eye-tracking` | 更新视线跟踪 | `update_eye_tracking` | `backend/app/api/v1/live2d.py:1502` |
+| `GET` | `/api/v1/live2d/{model_id}/rigging/state` | 获取绑骨状态 | `get_rigging_state` | `backend/app/api/v1/live2d.py:1415` |
+| `POST` | `/api/v1/live2d/{model_id}/segment` | AI 图像分割（自动分层） | `segment_model` | `backend/app/api/v1/live2d.py:1131` |
+| `POST` | `/api/v1/live2d/{model_id}/style-transfer` | 风格转换（真人转二次元） | `style_transfer_model` | `backend/app/api/v1/live2d.py:995` |
 
 ### Models
 
@@ -742,11 +747,11 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/settings` | 获取系统设置 | `get_all_settings` | `backend/app/api/v1/settings.py:211` |
-| `PUT` | `/api/v1/settings` | 批量更新设置 | `update_all_settings` | `backend/app/api/v1/settings.py:227` |
-| `GET` | `/api/v1/settings/download-path` | 获取下载保存路径 | `get_download_path` | `backend/app/api/v1/settings.py:278` |
-| `GET` | `/api/v1/settings/ffmpeg-path` | 获取 FFmpeg 路径 | `get_ffmpeg` | `backend/app/api/v1/settings.py:290` |
-| `GET` | `/api/v1/settings/storage-paths` | 获取所有存储路径 | `get_all_storage_paths` | `backend/app/api/v1/settings.py:251` |
+| `GET` | `/api/v1/settings` | 获取系统设置 | `get_all_settings` | `backend/app/api/v1/settings.py:227` |
+| `PUT` | `/api/v1/settings` | 批量更新设置 | `update_all_settings` | `backend/app/api/v1/settings.py:253` |
+| `GET` | `/api/v1/settings/download-path` | 获取下载保存路径 | `get_download_path` | `backend/app/api/v1/settings.py:316` |
+| `GET` | `/api/v1/settings/ffmpeg-path` | 获取 FFmpeg 路径 | `get_ffmpeg` | `backend/app/api/v1/settings.py:328` |
+| `GET` | `/api/v1/settings/storage-paths` | 获取所有存储路径 | `get_all_storage_paths` | `backend/app/api/v1/settings.py:289` |
 
 ### Story Maker
 
@@ -805,11 +810,11 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/tasks` | 任务列表 | `list_tasks` | `backend/app/api/v1/tasks.py:492` |
-| `GET` | `/api/v1/tasks/stats` | 任务统计 | `get_task_stats` | `backend/app/api/v1/tasks.py:526` |
-| `GET` | `/api/v1/tasks/{task_id}` | 任务详情 | `get_task_detail` | `backend/app/api/v1/tasks.py:596` |
-| `DELETE` | `/api/v1/tasks/{task_id}` | 删除任务 | `delete_task` | `backend/app/api/v1/tasks.py:641` |
-| `POST` | `/api/v1/tasks/{task_id}/cancel` | 取消任务 | `cancel_task` | `backend/app/api/v1/tasks.py:611` |
+| `GET` | `/api/v1/tasks` | 任务列表 | `list_tasks` | `backend/app/api/v1/tasks.py:620` |
+| `GET` | `/api/v1/tasks/stats` | 任务统计 | `get_task_stats` | `backend/app/api/v1/tasks.py:657` |
+| `GET` | `/api/v1/tasks/{task_id}` | 任务详情 | `get_task_detail` | `backend/app/api/v1/tasks.py:732` |
+| `DELETE` | `/api/v1/tasks/{task_id}` | 删除任务 | `delete_task` | `backend/app/api/v1/tasks.py:799` |
+| `POST` | `/api/v1/tasks/{task_id}/cancel` | 取消任务 | `cancel_task` | `backend/app/api/v1/tasks.py:757` |
 
 ### Torrents
 
@@ -836,10 +841,11 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/videos/backends` | 可用视频后端列表 | `list_backends` | `backend/app/api/v1/videos.py:281` |
-| `POST` | `/api/v1/videos/generate` | Generate video with optional project lineage | `generate_video` | `backend/app/api/v1/videos.py:308` |
-| `GET` | `/api/v1/videos/history` | 视频生成历史与待处理任务 | `list_video_tasks` | `backend/app/api/v1/videos.py:483` |
-| `GET` | `/api/v1/videos/tasks/{task_id}` | 查询任务状态 | `get_task_status` | `backend/app/api/v1/videos.py:414` |
+| `GET` | `/api/v1/videos/backends` | 可用视频后端列表 | `list_backends` | `backend/app/api/v1/videos.py:331` |
+| `POST` | `/api/v1/videos/generate` | Generate video with optional project lineage | `generate_video` | `backend/app/api/v1/videos.py:372` |
+| `GET` | `/api/v1/videos/history` | 视频生成历史与待处理任务 | `list_video_tasks` | `backend/app/api/v1/videos.py:584` |
+| `GET` | `/api/v1/videos/tasks/{task_id}` | 查询任务状态 | `get_task_status` | `backend/app/api/v1/videos.py:496` |
+| `GET` | `/api/v1/videos/tasks/{task_id}/file` | 播放已下载的视频任务文件 | `stream_task_file` | `backend/app/api/v1/videos.py:602` |
 
 ### WebSocket
 

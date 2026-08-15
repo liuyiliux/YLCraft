@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "name": "Agnes Video V2.0",
+  "description": "Public YLCraft connector preset for Agnes Video V2.0 text-to-video. Add your own API key after import.",
+  "connectors": [
+    {
+      "id": "agnes-video-v2-text-to-video",
+      "provider": "agnes",
+      "name": "Agnes Video V2.0 Text to Video",
+      "api_key": "",
+      "provider_type": "video",
+      "base_url": "https://api.agnes-ai.cn",
+      "api_endpoint": "/v1/videos",
+      "default_model": "agnes-video-v2.0",
+      "available_models": ["agnes-video-v2.0"],
+      "is_active": true,
+      "is_default": false,
+      "priority": 100,
+      "description": "Agnes Video V2.0 asynchronous text-to-video and image-to-video. The official gateway is api.agnes-ai.cn. Image-to-video requires a publicly reachable image URL; YLCraft uploads the first frame to the configured COS bucket automatically.",
+      "request_template": "{\"model\":\"{{ model }}\",\"prompt\":\"{{ prompt }}\"{% if start_image %},\"image\":\"{{ start_image }}\",\"mode\":\"ti2vid\"{% endif %},\"height\":{{ height }},\"width\":{{ width }},\"num_frames\":{{ num_frames }},\"frame_rate\":{{ fps }}}",
+      "response_config": {
+        "task_id_path": "$.video_id",
+        "status_path": "$.status",
+        "video_url_path": "$.url",
+        "error_path": "$.error.message",
+        "poll_endpoint": "/agnesapi?video_id={task_id}",
+        "done_values": ["completed"],
+        "failed_values": ["failed", "cancelled"]
+      },
+      "default_params": {
+        "video_capabilities": {
+          "text_to_video": true,
+          "image_to_video": true,
+          "seed_control": false,
+          "generate_audio": false,
+          "resolutions": ["480p", "720p", "1080p"],
+          "aspect_ratios": ["16:9", "9:16", "1:1", "4:3", "3:4"],
+          "durations": [5, 10],
+          "max_duration": 10
+        },
+        "image_requires_public_url": true,
+        "provider_constraints": {
+          "num_frames": "8n+1, maximum 441",
+          "frame_rate": "1-60",
+          "resolution_tiers": ["480p", "720p", "1080p"],
+          "aspect_ratios": ["16:9", "9:16", "1:1", "4:3", "3:4"],
+          "image_to_video": "Requires a publicly reachable image URL; YLCraft uploads the first frame to COS."
+        }
+      },
+      "support_reference_image": true,
+      "support_multiple_reference_images": false,
+      "reference_image_field": "image",
+      "timeout": 900,
+      "test_timeout": 30,
+      "api_format": "custom"
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "name": "SiliconFlow Text and Image",
+  "description": "Public SiliconFlow presets for Qwen text and image generation.",
+  "connectors": [
+    {
+      "id": "siliconflow-qwen-text",
+      "provider": "siliconflow",
+      "name": "SiliconFlow Qwen Text",
+      "api_key": "",
+      "provider_type": "llm",
+      "base_url": "https://api.siliconflow.cn/v1",
+      "api_endpoint": "/chat/completions",
+      "default_model": "Qwen/Qwen2.5-72B-Instruct",
+      "available_models": ["Qwen/Qwen2.5-72B-Instruct", "Qwen/Qwen2-VL-72B-Instruct"],
+      "max_tokens": 8192,
+      "temperature": 0.7,
+      "is_active": true,
+      "is_default": false,
+      "priority": 100,
+      "description": "SiliconFlow OpenAI-compatible chat completion connector.",
+      "api_format": "openai_sdk"
+    },
+    {
+      "id": "siliconflow-image-generation",
+      "provider": "siliconflow",
+      "name": "SiliconFlow Image Generation",
+      "api_key": "",
+      "provider_type": "image",
+      "base_url": "https://api.siliconflow.cn/v1",
+      "api_endpoint": "/images/generations",
+      "default_model": "stabilityai/stable-diffusion-3.5-large",
+      "available_models": ["stabilityai/stable-diffusion-3.5-large", "Kwai-Kolors/Kolors"],
+      "supported_sizes": ["1024x1024", "768x1344", "1344x768"],
+      "request_template": "{\"model\":\"{{ model }}\",\"prompt\":\"{{ prompt }}\",\"image_size\":\"{{ size }}\",\"n\":1,\"seed\":{{ seed | default(-1) }}}",
+      "response_config": {"images_path": "$.images[*].url", "error_path": "$.message"},
+      "default_params": {"n": 1, "image_capabilities": ["text_to_image", "image_to_image"]},
+      "support_reference_image": true,
+      "reference_image_field": "image",
+      "is_active": true,
+      "is_default": false,
+      "priority": 100,
+      "description": "SiliconFlow image connector. Confirm the selected model's image input contract before enabling image-to-image.",
+      "api_format": "custom"
+    }
+  ]
+}

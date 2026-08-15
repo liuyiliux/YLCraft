@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "name": "图生 3D 通用 HTTP 模板",
+  "description": "配置驱动的图生 3D 异步任务示例。替换域名、模型名、请求模板与 JSONPath 后可用于任意兼容供应商；不包含 API Key。",
+  "connectors": [
+    {
+      "id": "generic-image-to-3d",
+      "provider": "generic",
+      "name": "图生 3D 通用 HTTP（示例）",
+      "provider_type": "3d",
+      "api_format": "custom",
+      "base_url": "https://api.example.com",
+      "api_endpoint": "/v1/image-to-3d",
+      "default_model": "image-to-3d-model",
+      "available_models": ["image-to-3d-model"],
+      "request_template": "{\"model\":\"{{ model }}\",\"prompt\":\"{{ prompt }}\",\"image\":\"{{ image_data }}\"}",
+      "response_config": {
+        "task_id_path": "$.data.id",
+        "status_path": "$.data.status",
+        "model_url_path": "$.data.model_url",
+        "error_path": "$.error.message",
+        "progress_path": "$.data.progress",
+        "poll_endpoint": "/v1/tasks/{task_id}",
+        "poll_interval": 10,
+        "done_values": ["completed", "succeeded"],
+        "failed_values": ["failed", "cancelled"],
+        "request_headers": {},
+        "poll_headers": {}
+      },
+      "default_params": {},
+      "support_reference_image": true,
+      "is_active": false,
+      "description": "填写真实域名、模型、认证头、请求模板和响应 JSONPath 后启用。image_data 是 Data URI；若供应商接受公网地址，使用 image_url。"
+    }
+  ]
+}

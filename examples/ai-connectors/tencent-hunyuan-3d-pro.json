@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "name": "Tencent Hunyuan 3D Pro (Tencent Cloud TC3)",
+  "description": "Tencent Cloud TC3-signed Hunyuan 3D Pro preset. Enter SecretId:SecretKey after importing.",
+  "connectors": [
+    {
+      "id": "tencent-hunyuan-3d-pro",
+      "provider": "tencent",
+      "name": "Tencent Hunyuan 3D Pro",
+      "provider_type": "3d",
+      "api_format": "tencent_tc3",
+      "base_url": "https://ai3d.tencentcloudapi.com",
+      "api_endpoint": "/",
+      "default_model": "3.0",
+      "available_models": ["3.0", "3.1"],
+      "request_template": "{\"Model\":\"{{ model }}\",\"GenerateType\":\"{{ GenerateType | default('Normal') }}\",\"EnablePBR\":{{ EnablePBR | default(false) | tojson }},\"FaceCount\":{{ FaceCount | default(500000) }}{% if (GenerateType | default('Normal')) == 'LowPoly' %},\"PolygonType\":\"{{ PolygonType | default('triangle') }}\"{% endif %},\"ResultFormat\":\"{{ ResultFormat | default('GLB') }}\"{% if image_url %},\"ImageUrl\":\"{{ image_url }}\"{% elif image_base64 %},\"ImageBase64\":\"{{ image_base64 }}\"{% else %},\"Prompt\":\"{{ prompt }}\"{% endif %}}",
+      "response_config": {
+        "api_key_prefix": "",
+        "tencent_version": "2025-05-13",
+        "tencent_region": "ap-guangzhou",
+        "tencent_submit_action": "SubmitHunyuanTo3DProJob",
+        "tencent_query_action": "QueryHunyuanTo3DProJob",
+        "task_id_path": "$.Response.JobId",
+        "status_path": "$.Response.Status",
+        "model_url_path": "$.Response.ResultFile3Ds[0].Url",
+        "result_files_path": "$.Response.ResultFile3Ds",
+        "prefer_model_type": "GLB",
+        "error_path": "$.Response.ErrorMessage",
+        "poll_endpoint": "/",
+        "poll_method": "POST",
+        "poll_request_template": "{\"JobId\":\"{{ task_id }}\"}",
+        "poll_interval": 10,
+        "done_values": ["DONE"],
+        "failed_values": ["FAIL"],
+        "request_headers": {},
+        "poll_headers": {}
+      },
+      "default_params": {
+        "GenerateType": "Normal",
+        "FaceCount": 500000,
+        "PolygonType": "triangle",
+        "EnablePBR": false,
+        "ResultFormat": "GLB"
+      },
+      "support_reference_image": true,
+      "is_active": false,
+      "description": "Supports text-to-3D, Asset Hub image-to-3D, face count, generation type, PBR material, polygon topology, and result format. Model 3.1 does not support LowPoly. API Key format: SecretId:SecretKey."
+    }
+  ]
+}

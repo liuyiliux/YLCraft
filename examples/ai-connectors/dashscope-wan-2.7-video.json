@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "name": "Alibaba Bailian Wan 2.7 Video",
+  "description": "Public YLCraft connector preset. Add your own DashScope API key after import.",
+  "connectors": [
+    {
+      "id": "dashscope-wan-2.7-text-to-video",
+      "provider": "dashscope",
+      "name": "Alibaba Bailian Wan 2.7 Text to Video",
+      "api_key": "",
+      "provider_type": "video",
+      "base_url": "https://dashscope.aliyuncs.com",
+      "api_endpoint": "/api/v1/services/aigc/video-generation/video-synthesis",
+      "default_model": "wan2.7-t2v-2026-06-12",
+      "available_models": ["wan2.7-t2v-2026-06-12"],
+      "is_active": true,
+      "is_default": false,
+      "priority": 100,
+      "description": "DashScope Wan 2.7 asynchronous text-to-video.",
+      "request_template": "{\"model\":\"{{ model }}\",\"input\":{\"prompt\":\"{{ prompt }}\"},\"parameters\":{\"size\":\"{{ size }}\",\"duration\":{{ duration }},\"prompt_extend\":true}}",
+      "response_config": {
+        "task_id_path": "$.output.task_id",
+        "status_path": "$.output.task_status",
+        "video_url_path": "$.output.video_url",
+        "error_path": "$.message",
+        "request_headers": {"X-DashScope-Async": "enable"},
+        "poll_endpoint": "/api/v1/tasks/{task_id}",
+        "done_values": ["SUCCEEDED"],
+        "failed_values": ["FAILED", "CANCELED", "UNKNOWN"]
+      },
+      "default_params": {
+        "size_separator": "*",
+        "prompt_extend": true,
+        "video_capabilities": {
+          "text_to_video": true,
+          "image_to_video": false,
+          "seed_control": false,
+          "generate_audio": false,
+          "resolutions": ["720p"],
+          "aspect_ratios": ["9:16", "16:9"],
+          "durations": [5, 10],
+          "max_duration": 10
+        }
+      },
+      "support_reference_image": false,
+      "timeout": 900,
+      "test_timeout": 30,
+      "api_format": "custom"
+    },
+    {
+      "id": "dashscope-wan-2.7-image-to-video",
+      "provider": "dashscope",
+      "name": "Alibaba Bailian Wan 2.7 Image to Video",
+      "api_key": "",
+      "provider_type": "video",
+      "base_url": "https://dashscope.aliyuncs.com",
+      "api_endpoint": "/api/v1/services/aigc/video-generation/video-synthesis",
+      "default_model": "wan2.7-i2v-2026-04-25",
+      "available_models": ["wan2.7-i2v-2026-04-25"],
+      "is_active": true,
+      "is_default": false,
+      "priority": 101,
+      "description": "DashScope Wan 2.7 asynchronous image-to-video using the first-frame media contract.",
+      "request_template": "{\"model\":\"{{ model }}\",\"input\":{\"prompt\":\"{{ prompt }}\",\"media\":[{\"type\":\"first_frame\",\"url\":\"{{ start_image }}\"}]},\"parameters\":{\"resolution\":\"720P\",\"duration\":{{ duration }},\"prompt_extend\":true}}",
+      "response_config": {
+        "task_id_path": "$.output.task_id",
+        "status_path": "$.output.task_status",
+        "video_url_path": "$.output.video_url",
+        "error_path": "$.message",
+        "request_headers": {"X-DashScope-Async": "enable"},
+        "poll_endpoint": "/api/v1/tasks/{task_id}",
+        "done_values": ["SUCCEEDED"],
+        "failed_values": ["FAILED", "CANCELED", "UNKNOWN"]
+      },
+      "default_params": {
+        "prompt_extend": true,
+        "video_capabilities": {
+          "text_to_video": false,
+          "image_to_video": true,
+          "seed_control": false,
+          "generate_audio": false,
+          "resolutions": ["720p"],
+          "aspect_ratios": ["9:16", "16:9"],
+          "durations": [5, 10],
+          "max_duration": 10
+        }
+      },
+      "support_reference_image": true,
+      "timeout": 900,
+      "test_timeout": 30,
+      "api_format": "custom"
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "name": "OpenAI Text and Image",
+  "description": "Public OpenAI-compatible presets for chat completion and image generation.",
+  "connectors": [
+    {
+      "id": "openai-text-chat",
+      "provider": "openai",
+      "name": "OpenAI GPT-4o Text",
+      "api_key": "",
+      "provider_type": "llm",
+      "base_url": "https://api.openai.com/v1",
+      "api_endpoint": "/chat/completions",
+      "default_model": "gpt-4o",
+      "available_models": ["gpt-4o", "gpt-4o-mini"],
+      "max_tokens": 4096,
+      "temperature": 0.7,
+      "is_active": true,
+      "is_default": false,
+      "priority": 100,
+      "description": "OpenAI Chat Completions text generation.",
+      "api_format": "openai_sdk"
+    },
+    {
+      "id": "openai-image-generation",
+      "provider": "openai",
+      "name": "OpenAI Image Generation",
+      "api_key": "",
+      "provider_type": "image",
+      "base_url": "https://api.openai.com/v1",
+      "api_endpoint": "/images/generations",
+      "default_model": "dall-e-3",
+      "available_models": ["dall-e-3", "dall-e-2"],
+      "supported_sizes": ["1024x1024", "1792x1024", "1024x1792"],
+      "request_template": "{\"model\":\"{{ model }}\",\"prompt\":\"{{ prompt }}\",\"n\":1,\"size\":\"{{ size }}\"}",
+      "response_config": {"images_path": "$.data[*].url", "error_path": "$.error.message"},
+      "default_params": {"n": 1, "quality": "standard", "image_capabilities": ["text_to_image"]},
+      "is_active": true,
+      "is_default": false,
+      "priority": 100,
+      "description": "OpenAI Images API text-to-image connector.",
+      "api_format": "custom"
+    }
+  ]
+}
