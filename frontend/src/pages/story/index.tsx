@@ -8793,6 +8793,44 @@ function WriterRoomQualitySummaryPanel({ summary }: { summary: WriterRoomQuality
   )
 }
 
+function TeamRehearsalPanel({
+  performances,
+  joined,
+}: {
+  performances: Array<{ character: string; performance: string; child_run_id?: string }>
+  joined?: string
+}) {
+  if (!performances.length) {
+    return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无角色演绎产出" />
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {performances.map((item, index) => (
+        <div key={item.character || index} style={writerRoomTeamRoleStyle}>
+          <Space size={8} align="center" wrap>
+            <Text strong style={{ fontSize: 15 }}>{item.character || `角色 ${index + 1}`}</Text>
+            <Tag color="geekblue" style={{ fontSize: 11 }}>独立子智能体</Tag>
+          </Space>
+          <Text style={{ display: 'block', whiteSpace: 'pre-wrap', marginTop: 6, lineHeight: 1.7 }}>
+            {item.performance || '该角色本轮没有产出'}
+          </Text>
+        </div>
+      ))}
+      {joined ? (
+        <div style={writerRoomTeamJoinStyle}>
+          <Space size={6} align="center">
+            <Text strong style={{ fontSize: 13 }}>编辑连接</Text>
+            <Tag style={{ fontSize: 11 }}>汇合</Tag>
+          </Space>
+          <Paragraph ellipsis={{ rows: 6, expandable: true }} style={{ margin: '8px 0 0', whiteSpace: 'pre-wrap' }}>
+            {joined}
+          </Paragraph>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function WriterRoomLogSummary({ log }: { log: ProjectGenerationLog }) {
   const [open, setOpen] = useState(false)
   return (
@@ -9038,6 +9076,14 @@ function WriterRoomTab({
     activeStepVersions.find((content) => content.id === selectedContentIds[activeRow.step.value]) || activeRow?.content
   const activeLog = findWriterRoomLog(logs, activeContent)
   const activePreview = writerRoomPreviewText(activeContent)
+  const activeTeamPerformances =
+    activeContent?.content_type === 'character_rehearsal'
+      ? ((activeContent.data as Record<string, any>)?.character_performances || [])
+      : []
+  const activeTeamJoined =
+    activeContent?.content_type === 'character_rehearsal'
+      ? ((activeContent.data as Record<string, any>)?.joined_observation || '')
+      : ''
   const activeReviewIssues = activeRow?.step.value === 'prose_review' ? reviewIssuesForContent(activeContent) : []
   const activeQualitySummary = activeRow?.step.value === 'prose_review' ? qualitySummaryForContent(activeContent) : null
   const activeContinuityCandidates = activeContent?.content_type === 'prose_review'
@@ -9373,11 +9419,17 @@ function WriterRoomTab({
             ) : null}
 
             {activeContent ? (
-              <div style={writerRoomPreviewStyle}>
-                <Paragraph ellipsis={{ rows: 22, expandable: true }} style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
-                  {activePreview}
-                </Paragraph>
-              </div>
+              activeTeamPerformances.length ? (
+                <div style={writerRoomPreviewStyle}>
+                  <TeamRehearsalPanel performances={activeTeamPerformances} joined={activeTeamJoined} />
+                </div>
+              ) : (
+                <div style={writerRoomPreviewStyle}>
+                  <Paragraph ellipsis={{ rows: 22, expandable: true }} style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
+                    {activePreview}
+                  </Paragraph>
+                </div>
+              )
             ) : (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前节点还没有生成结果" />
             )}
@@ -11268,6 +11320,20 @@ const writerRoomQualityStyle: React.CSSProperties = {
   padding: 10,
   background: 'var(--bgHover)',
   color: 'var(--textPrimary)',
+}
+
+const writerRoomTeamRoleStyle: React.CSSProperties = {
+  border: '1px solid var(--borderLight)',
+  borderRadius: 8,
+  padding: '12px 14px',
+  background: 'var(--bgCard)',
+  color: 'var(--textPrimary)',
+  boxShadow: 'inset 3px 0 0 var(--primary)',
+}
+
+const writerRoomTeamJoinStyle: React.CSSProperties = {
+  borderTop: '1px dashed var(--borderLight)',
+  paddingTop: 12,
 }
 
 const writerRoomLogBlockStyle: React.CSSProperties = {
