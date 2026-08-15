@@ -113,6 +113,19 @@ class OpenAISDKLLMBackend:
     def capabilities(self) -> set:
         return self._capabilities
 
+    def _load_default_params(self) -> dict:
+        """Read connector default_params as a dict (accepts JSON string or dict)."""
+        raw = getattr(self.connector, "default_params", None)
+        if isinstance(raw, dict):
+            return dict(raw)
+        if isinstance(raw, str) and raw.strip():
+            try:
+                data = json.loads(raw)
+                return data if isinstance(data, dict) else {}
+            except Exception:  # noqa: BLE001
+                return {}
+        return {}
+
     async def chat(self, messages: list[LLMMessage], **kwargs) -> LLMGenerationResult:
         """根据 api_format 自动选择 Chat Completions 或 Responses API。"""
         if self._api_format == 'openai_sdk_responses':
@@ -127,12 +140,24 @@ class OpenAISDKLLMBackend:
         tools = kwargs.get("tools")
         tool_choice = kwargs.get("tool_choice")
 
+        default_params = self._load_default_params()
+        # DeepSeek thinking-mode toggle lives under extra_body; reasoning_effort
+        # is a top-level parameter. Keep them separable so other providers are
+        # unaffected.
+        extra_body = default_params.pop("extra_body", None)
+        if "thinking" in default_params:
+            extra_body = dict(extra_body or {})
+            extra_body["thinking"] = default_params.pop("thinking")
+
         request_params = {
             "model": model,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
+        request_params.update(default_params)
+        if extra_body:
+            request_params["extra_body"] = extra_body
         if tools:
             request_params["tools"] = tools
         if tool_choice:
