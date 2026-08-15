@@ -21,9 +21,12 @@ class CostMeter:
             cached = details.get("cached_tokens")
             if isinstance(cached, (int, float)):
                 return int(cached)
-        cached = usage.get("cached_tokens")
-        if isinstance(cached, (int, float)):
-            return int(cached)
+        # OpenAI-compatible providers also expose top-level cache-hit counters;
+        # DeepSeek reports ``prompt_cache_hit_tokens`` here.
+        for key in ("prompt_cache_hit_tokens", "cached_tokens"):
+            cached = usage.get(key)
+            if isinstance(cached, (int, float)):
+                return int(cached)
         return 0
 
     @staticmethod

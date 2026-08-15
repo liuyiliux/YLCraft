@@ -257,6 +257,25 @@ def test_cost_meter_reads_flat_cached_tokens():
     assert CostMeter.cache_hit_rate(usage) == 1.0
 
 
+def test_cost_meter_reads_deepseek_cache_hit_tokens():
+    # Real DeepSeek v4 usage shape observed from a live test call.
+    usage = {
+        "prompt_tokens": 93,
+        "completion_tokens": 8,
+        "total_tokens": 101,
+        "prompt_tokens_details": {"cached_tokens": 40},
+        "prompt_cache_hit_tokens": 40,
+        "prompt_cache_miss_tokens": 53,
+    }
+    assert CostMeter.cached_prompt_tokens(usage) == 40
+    assert CostMeter.cache_hit_rate(usage) == round(40 / 93, 4)
+
+
+def test_cost_meter_reads_deepseek_top_level_when_details_absent():
+    usage = {"prompt_tokens": 93, "prompt_cache_hit_tokens": 60, "prompt_cache_miss_tokens": 33}
+    assert CostMeter.cached_prompt_tokens(usage) == 60
+
+
 def test_cost_meter_unknown_when_no_total():
     assert CostMeter.cache_hit_rate({}) is None
     assert CostMeter.cache_hit_rate(None) is None
