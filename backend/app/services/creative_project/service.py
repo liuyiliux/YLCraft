@@ -2802,34 +2802,66 @@ class CreativeProjectService:
         duplicate chapter.  Historical versions remain available to callers
         that explicitly set ``latest_only=False``.
         """
-        query = select(ProjectContent).where(ProjectContent.project_id == project_id)
+        conditions: list[Any] = [ProjectContent.project_id == project_id]
         if content_type:
-            query = query.where(ProjectContent.content_type == content_type)
+            conditions.append(ProjectContent.content_type == content_type)
         elif content_types:
-            query = query.where(ProjectContent.content_type.in_(content_types))
+            conditions.append(ProjectContent.content_type.in_(content_types))
         if chapter_number is not None:
             # Older project records may only have one of the two chapter fields.
             # Treat them as the same chapter identity at this read boundary.
-            query = query.where(
+            conditions.append(
                 or_(
                     ProjectContent.chapter_number == chapter_number,
                     ProjectContent.episode_number == chapter_number,
                 )
             )
-        contents = self.session.exec(
-            query.order_by(ProjectContent.created_at.desc(), ProjectContent.version.desc())
-        ).all()
-        if not latest_only:
-            return contents
 
-        newest_by_stage: dict[tuple[str, int | None, int | None], ProjectContent] = {}
-        for content in contents:
-            key = (content.content_type, content.chapter_number, content.episode_number)
-            current = newest_by_stage.get(key)
-            if current is None or self._is_content_newer(content, current):
-                newest_by_stage[key] = content
+        dialect_name = getattr(getattr(self.session.bind, "dialect", None), "name", "")
+        if latest_only and dialect_name == "postgresql":
+            # Fetch only the newest version per stage straight from PostgreSQL.
+            # Writer-room projects accumulate many prose_review / prose_rewrite
+            # versions, each carrying large text/data payloads; shipping every
+            # historical version over the wire only to discard it in Python made
+            # the workspace rail take seconds on the remote DB.  DISTINCT ON
+            # keeps the transfer at latest-per-stage size.
+            contents = self.session.exec(
+                select(ProjectContent)
+                .where(*conditions)
+                .distinct(
+                    ProjectContent.content_type,
+                    ProjectContent.chapter_number,
+                    ProjectContent.episode_number,
+                )
+                .order_by(
+                    ProjectContent.content_type,
+                    ProjectContent.chapter_number,
+                    ProjectContent.episode_number,
+                    ProjectContent.version.desc(),
+                    ProjectContent.updated_at.desc(),
+                    ProjectContent.created_at.desc(),
+                )
+            ).all()
+        else:
+            contents = self.session.exec(
+                select(ProjectContent)
+                .where(*conditions)
+                .order_by(ProjectContent.created_at.desc(), ProjectContent.version.desc())
+            ).all()
+            if not latest_only:
+                return contents
+            # Dialects without DISTINCT ON (SQLite in tests) fall back to the
+            # in-memory dedup that matches ``_is_content_newer`` ordering.
+            newest_by_stage: dict[tuple[str, int | None, int | None], ProjectContent] = {}
+            for content in contents:
+                key = (content.content_type, content.chapter_number, content.episode_number)
+                current = newest_by_stage.get(key)
+                if current is None or self._is_content_newer(content, current):
+                    newest_by_stage[key] = content
+            contents = list(newest_by_stage.values())
+
         return sorted(
-            newest_by_stage.values(),
+            contents,
             key=lambda item: (
                 item.chapter_number if item.chapter_number is not None else item.episode_number or 0,
                 item.content_type,
