@@ -111,7 +111,7 @@ waoowaoo ───────────→ features/ 功能模块分层
 | 视频处理 | FFmpeg + yt-dlp |
 | 语音识别 | faster-whisper |
 | 3D 处理 | trimesh + assimp（glb/fbx） |
-| 部署 | Docker Compose 单容器（PostgreSQL + Redis） |
+| 部署 | Docker Compose（PostgreSQL + Redis） |
 
 ---
 
@@ -214,7 +214,7 @@ YLCraft/
 ├── frontend/src/           # React 应用（pages / components / api / hooks / context）
 ├── docs/                   # 本文档体系（见第九节）
 ├── openspec/               # 变更提案与规格（changes / specs）
-└── docker-compose.yml      # 单容器基础设施（PostgreSQL + Redis）
+└── docker-compose.yml      # PostgreSQL + Redis
 ```
 
 ---
