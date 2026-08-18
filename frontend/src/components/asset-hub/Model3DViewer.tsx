@@ -11,6 +11,7 @@ import { Canvas, useFrame, useLoader, useThree } from '@react-three/fiber'
 import { 
   OrbitControls, 
   useGLTF, 
+  useAnimations,
   Html,
   Environment,
   ContactShadows,
@@ -32,7 +33,7 @@ import {
   BulbOutlined,
   CompassOutlined,
 } from '@ant-design/icons'
-import { Card, Button, Spin, Space, Slider, Tooltip, Empty, Descriptions, Tag, Segmented, ColorPicker } from 'antd'
+import { Card, Button, Spin, Space, Slider, Tooltip, Empty, Descriptions, Tag, Segmented, ColorPicker, Select } from 'antd'
 import * as THREE from 'three'
 import { OBJLoader, MTLLoader } from 'three-stdlib'
 
@@ -40,12 +41,25 @@ import { OBJLoader, MTLLoader } from 'three-stdlib'
 interface Model3DViewerProps {
   modelUrl?: string
   mtlUrl?: string
+  // 多模型图层模式（工作台场景）：models 提供时按图层渲染多个模型，modelUrl 忽略
+  models?: SceneModel[]
   autoRotate?: boolean
   showGrid?: boolean
   showEnvironment?: boolean
   enableControls?: boolean
   height?: number | string
   onFullscreen?: () => void
+  onModelAnimations?: (key: string, names: string[]) => void
+}
+
+// 工作台场景图层（单个模型在场景中的图层描述）
+export interface SceneModel {
+  key: string
+  name?: string
+  url: string
+  visible?: boolean
+  animationIndex?: number
+  playing?: boolean
 }
 
 type RenderMode = 'texture' | 'white' | 'wireframe' | 'albedo' | 'normal'
@@ -227,16 +241,25 @@ function GLTFModel({
   autoRotate = false,
   renderMode = 'texture',
   showBoundingBox = false,
+  animationIndex = -1,
+  playing = false,
+  visible = true,
   onLoad,
+  onAnimations,
 }: { 
   url: string
   autoRotate?: boolean
   renderMode?: RenderMode
   showBoundingBox?: boolean
+  animationIndex?: number
+  playing?: boolean
+  visible?: boolean
   onLoad?: (metadata: Asset3DMetadata) => void
+  onAnimations?: (names: string[]) => void
 }) {
-  const { scene } = useGLTF(url)
+  const { scene, animations } = useGLTF(url)
   const modelRef = useRef<THREE.Group>(null)
+  const { actions, names } = useAnimations(animations, modelRef)
   useRenderMode(scene, renderMode)
 
   const box = useMemo(() => computeModelBox(scene), [scene])
@@ -250,7 +273,27 @@ function GLTFModel({
     if (onLoad) onLoad(computeModelMetadata(scene, 'GLTF/GLB'))
   })
 
-  // 自动旋转
+  // 动画名称上报（仅当名称集合变化时）
+  const namesKey = names.join('\u0001')
+  useEffect(() => {
+    onAnimations?.(names)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [namesKey])
+
+  // 播放/切换骨骼动画：先停掉所有 clip，再播放选中项
+  useEffect(() => {
+    Object.values(actions).forEach(action => action.stop())
+    if (!playing) return
+    const clip = names[animationIndex]
+    if (clip) {
+      const action = actions[clip]
+      if (action) {
+        action.reset().fadeIn(0.2).play()
+      }
+    }
+  }, [actions, names, animationIndex, playing])
+
+  // 自动旋转（有骨骼动画时仍允许用户手动旋转视角）
   useFrame((state, delta) => {
     if (autoRotate && modelRef.current) {
       modelRef.current.rotation.y += delta * 0.5
@@ -258,7 +301,7 @@ function GLTFModel({
   })
 
   return (
-    <group position={offset}>
+    <group position={offset} visible={visible}>
       <primitive ref={modelRef} object={scene} />
       {showBoundingBox && <BoundingBox object={scene} />}
     </group>
@@ -272,6 +315,7 @@ function OBJModel({
   autoRotate = false,
   renderMode = 'texture',
   showBoundingBox = false,
+  visible = true,
   onLoad,
 }: {
   objUrl: string
@@ -279,6 +323,7 @@ function OBJModel({
   autoRotate?: boolean
   renderMode?: RenderMode
   showBoundingBox?: boolean
+  visible?: boolean
   onLoad?: (metadata: Asset3DMetadata) => void
 }) {
   const materials = useLoader(MTLLoader, mtlUrl)
@@ -307,7 +352,7 @@ function OBJModel({
   })
 
   return (
-    <group position={offset}>
+    <group position={offset} visible={visible}>
       <primitive ref={modelRef} object={obj} />
       {showBoundingBox && <BoundingBox object={obj} />}
     </group>
@@ -336,6 +381,7 @@ function LoadingPlaceholder() {
 function Scene({
   modelUrl,
   mtlUrl,
+  models,
   autoRotate,
   showGrid,
   showEnvironment,
@@ -345,9 +391,14 @@ function Scene({
   viewRequest,
   centerY = 0,
   onMetadataLoad,
+  animationIndex = -1,
+  playing = false,
+  onAnimations,
+  onModelAnimations,
 }: {
   modelUrl?: string
   mtlUrl?: string
+  models?: SceneModel[]
   autoRotate?: boolean
   showGrid?: boolean
   showEnvironment?: boolean
@@ -357,6 +408,10 @@ function Scene({
   viewRequest?: { dir: string; nonce: number }
   centerY?: number
   onMetadataLoad?: (metadata: Asset3DMetadata) => void
+  animationIndex?: number
+  playing?: boolean
+  onAnimations?: (names: string[]) => void
+  onModelAnimations?: (key: string, names: string[]) => void
 }) {
   const { camera, gl } = useThree()
   const controlsRef = useRef<any>(null)
@@ -471,27 +526,63 @@ function Scene({
       {showEnvironment && <Environment preset="studio" background={false} environmentIntensity={0.25} />}
       
       <group>
-        {modelUrl && (
-          <Suspense fallback={<LoadingPlaceholder />}>
-            {modelUrl.toLowerCase().endsWith('.obj') && mtlUrl ? (
-              <OBJModel
-                objUrl={modelUrl}
-                mtlUrl={mtlUrl}
-                autoRotate={autoRotate}
-                renderMode={renderMode}
-                showBoundingBox={showBoundingBox}
-                onLoad={onMetadataLoad}
-              />
-            ) : (
-              <GLTFModel
-                url={modelUrl}
-                autoRotate={autoRotate}
-                renderMode={renderMode}
-                showBoundingBox={showBoundingBox}
-                onLoad={onMetadataLoad}
-              />
+        {models && models.length > 0 ? (
+          // 多模型图层模式：每个图层独立渲染与显隐、动画控制
+          models.filter(model => model.visible !== false).map(model => (
+            <Suspense key={model.key} fallback={<LoadingPlaceholder />}>
+              {model.url.toLowerCase().endsWith('.obj') && mtlUrl ? (
+                <OBJModel
+                  objUrl={model.url}
+                  mtlUrl={mtlUrl}
+                  autoRotate={autoRotate}
+                  renderMode={renderMode}
+                  showBoundingBox={showBoundingBox}
+                  visible={model.visible !== false}
+                  onLoad={onMetadataLoad}
+                />
+              ) : (
+                <GLTFModel
+                  url={model.url}
+                  autoRotate={autoRotate}
+                  renderMode={renderMode}
+                  showBoundingBox={showBoundingBox}
+                  animationIndex={model.animationIndex ?? -1}
+                  playing={model.playing ?? false}
+                  visible={model.visible !== false}
+                  onLoad={onMetadataLoad}
+                  onAnimations={names => onModelAnimations?.(model.key, names)}
+                />
+              )}
+            </Suspense>
+          ))
+        ) : (
+          <>
+            {modelUrl && (
+              <Suspense fallback={<LoadingPlaceholder />}>
+                {modelUrl.toLowerCase().endsWith('.obj') && mtlUrl ? (
+                  <OBJModel
+                    objUrl={modelUrl}
+                    mtlUrl={mtlUrl}
+                    autoRotate={autoRotate}
+                    renderMode={renderMode}
+                    showBoundingBox={showBoundingBox}
+                    onLoad={onMetadataLoad}
+                  />
+                ) : (
+                  <GLTFModel
+                    url={modelUrl}
+                    autoRotate={autoRotate}
+                    renderMode={renderMode}
+                    showBoundingBox={showBoundingBox}
+                    animationIndex={animationIndex}
+                    playing={playing}
+                    onLoad={onMetadataLoad}
+                    onAnimations={onAnimations}
+                  />
+                )}
+              </Suspense>
             )}
-          </Suspense>
+          </>
         )}
       </group>
       
@@ -526,12 +617,14 @@ function Scene({
 export function Model3DViewer({
   modelUrl,
   mtlUrl,
+  models,
   autoRotate = false,
   showGrid = true,
   showEnvironment = true,
   enableControls = true,
   height = 500,
   onFullscreen,
+  onModelAnimations,
 }: Model3DViewerProps) {
   const [rotation, setRotation] = useState(0)
   const [zoom, setZoom] = useState(50)
@@ -552,8 +645,20 @@ export function Model3DViewer({
   const [viewPanelOpen, setViewPanelOpen] = useState(false)
   const [viewRequest, setViewRequest] = useState<{ dir: string; nonce: number }>({ dir: 'front', nonce: 0 })
   const containerRef = useRef<HTMLDivElement>(null)
+  const [animationNames, setAnimationNames] = useState<string[]>([])
+  const [animationIndex, setAnimationIndex] = useState(-1)
+  const [playing, setPlaying] = useState(false)
+
+  const isLayerMode = !!(models && models.length > 0)
 
   const applyView = (dir: string) => setViewRequest({ dir, nonce: Date.now() })
+
+  // 模型切换时重置动画状态
+  useEffect(() => {
+    setAnimationNames([])
+    setAnimationIndex(-1)
+    setPlaying(false)
+  }, [modelUrl])
 
   // 重置视角
   const resetView = () => {
@@ -561,7 +666,7 @@ export function Model3DViewer({
     setZoom(50)
   }
 
-  if (!modelUrl) {
+  if (!isLayerMode && !modelUrl) {
     return (
       <Card 
         title={
@@ -824,6 +929,26 @@ export function Model3DViewer({
         <Tooltip title="视角对齐">
           <Button type="text" icon={<CompassOutlined />} onClick={() => { setViewPanelOpen(v => !v); setLightPanelOpen(false); setShowControl(false) }} style={{ color: viewPanelOpen ? '#00d4ff' : '#cbd5e1' }} />
         </Tooltip>
+        {!isLayerMode && animationNames.length > 0 && (
+          <>
+            <Select
+              size="small"
+              value={animationIndex >= 0 ? animationIndex : undefined}
+              placeholder="选择动画"
+              style={{ width: 160 }}
+              options={animationNames.map((name, index) => ({ label: name, value: index }))}
+              onChange={(value) => { setAnimationIndex(Number(value)); setPlaying(true) }}
+            />
+            <Tooltip title={playing ? '暂停动画' : '播放动画'}>
+              <Button
+                type="text"
+                icon={playing ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
+                onClick={() => setPlaying(v => !v)}
+                style={{ color: playing ? '#00d4ff' : '#cbd5e1' }}
+              />
+            </Tooltip>
+          </>
+        )}
         <Tooltip title="下载模型">
           <a href={modelUrl} download target="_blank" rel="noreferrer">
             <Button type="text" icon={<DownloadOutlined />} style={{ color: '#cbd5e1' }} />
@@ -878,6 +1003,7 @@ export function Model3DViewer({
           <Scene
             modelUrl={modelUrl}
             mtlUrl={mtlUrl}
+            models={models}
             autoRotate={rotate}
             showGrid={gridVisible}
             showEnvironment={showEnvironment}
@@ -887,6 +1013,10 @@ export function Model3DViewer({
             viewRequest={viewRequest}
             centerY={metadata ? metadata.boundingBox.height / 2 : 0}
             onMetadataLoad={setMetadata}
+            animationIndex={animationIndex}
+            playing={playing}
+            onAnimations={setAnimationNames}
+            onModelAnimations={onModelAnimations}
           />
         </Canvas>
       </Model3DErrorBoundary>

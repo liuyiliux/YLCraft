@@ -7,9 +7,12 @@ import pytest
 from app.api.v1.model3d_workspace import (
     DEFAULT_POLL_INTERVAL_SECONDS,
     Model3DGenerateRequest,
+    Model3DRigRequest,
     _backend_entry,
+    _connector_capability,
     _poll_interval_seconds,
     _result_payload,
+    _rigging_flags,
     _selected_model,
     _task_dict,
 )
@@ -256,3 +259,92 @@ def test_model3d_parse_prefers_glb_when_configured():
     })
     assert result["status"] == "done"
     assert result["url"] == "https://example.test/out.glb"
+
+
+def _rigging_connector() -> AIConnector:
+    return AIConnector(
+        id="tencent-rigging", provider="tencent", name="Tencent Hunyuan Auto Rigging",
+        api_key="AKIDEXAMPLE:secret", api_format="tencent_tc3",
+        default_model="hunyuan-auto-rigging",
+        default_params='{"FileType":"GLB"}',
+        request_template='{"File3D":{"Url":"{{ image_url }}","Type":"{{ FileType | default(\'GLB\') }}"}{% if MotionType %},"MotionType":{{ MotionType }}{% endif %}}',
+        response_config=json.dumps({
+            "capability": "rigging",
+            "tencent_submit_action": "SubmitAutoRiggingJob",
+            "tencent_query_action": "DescribeAutoRiggingJob",
+            "task_id_path": "$.Response.JobId",
+            "status_path": "$.Response.Status",
+            "result_files_path": "$.Response.ResultFile3Ds",
+            "prefer_model_type": "GLB",
+            "done_values": ["DONE"],
+            "failed_values": ["FAIL"],
+        }),
+    )
+
+
+def test_rigging_request_motion_type_is_optional_and_bounded():
+    skeleton_only = Model3DRigRequest(provider="Tencent Hunyuan Auto Rigging", source_asset_id="asset-1")
+    assert skeleton_only.motion_type is None
+
+    with_motion = Model3DRigRequest(provider="Tencent Hunyuan Auto Rigging", source_asset_id="asset-1", motion_type=1)
+    assert with_motion.motion_type == 1
+
+    with pytest.raises(ValueError):
+        Model3DRigRequest(provider="Tencent Hunyuan Auto Rigging", source_asset_id="asset-1", motion_type=49)
+
+
+def test_rigging_template_omits_motion_type_for_skeleton_only():
+    backend = Model3DConnectorBackend(_rigging_connector())
+    common = {"model": "hunyuan-auto-rigging", "prompt": "",
+              "image_url": "https://example.test/model.glb", "image_data": "", "image_base64": ""}
+    body = backend._render({**backend.default_params, **common})
+    assert body == {"File3D": {"Url": "https://example.test/model.glb", "Type": "GLB"}}
+
+    rigged = backend._render({**backend.default_params, "MotionType": 12, **common})
+    assert rigged["MotionType"] == 12
+    assert rigged["File3D"]["Type"] == "GLB"
+
+
+def test_rigging_connector_declares_describe_query_action_not_query_prefix():
+    backend = Model3DConnectorBackend(_rigging_connector())
+    assert backend._tc3_action("tencent_submit_action", "SubmitHunyuanTo3DProJob") == "SubmitAutoRiggingJob"
+    assert backend._tc3_action("tencent_query_action", "QueryHunyuanTo3DProJob") == "DescribeAutoRiggingJob"
+
+
+def test_rigging_parse_maps_wait_run_done_fail_statuses():
+    backend = Model3DConnectorBackend(_rigging_connector())
+    for raw_status, expected in (("WAIT", "pending"), ("RUN", "pending"), ("DONE", "done"), ("FAIL", "error")):
+        payload = {"Response": {"Status": raw_status, "ResultFile3Ds": []}}
+        assert backend._parse(payload, fallback_task_id="job-1")["status"] == expected
+
+
+def test_connector_capability_defaults_to_generation_and_reads_rigging():
+    generation = AIConnector(id="g", provider="tencent", name="G")
+    assert _connector_capability(generation) == "generation"
+    assert _connector_capability(_rigging_connector()) == "rigging"
+
+    entry = _backend_entry(_rigging_connector())
+    assert entry["capability"] == "rigging"
+    assert _backend_entry(generation)["capability"] == "generation"
+
+
+def test_rigging_flags_derive_tags_from_extracted_metadata():
+    flags, tags = _rigging_flags({"bones": 1, "animations": ["walk"]})
+    assert flags == {"has_bones": True, "has_animations": True}
+    assert tags == ["rigged", "animated"]
+
+    flags, tags = _rigging_flags({"vertices": 100})
+    assert flags == {"has_bones": False, "has_animations": False}
+    assert tags == []
+
+
+def test_rigging_task_history_entry_exposes_kind():
+    task = Model3DGenerationTask(
+        task_id="model3d-rig-1", kind="rigging", provider="Tencent Hunyuan Auto Rigging",
+        model="hunyuan-auto-rigging", status="pending", prompt="绑骨蒙皮（仅骨骼）",
+        request_json='{"source_asset_id":"asset-1","motion_type":null}',
+        result_json='{"provider_task_id":"job-1"}', created_at=1.0,
+    )
+    serialized = _task_dict(task)
+    assert serialized["kind"] == "rigging"
+    assert serialized["request"]["source_asset_id"] == "asset-1"

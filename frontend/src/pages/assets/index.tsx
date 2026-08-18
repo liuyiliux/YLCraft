@@ -185,6 +185,7 @@ export default function AssetsPage() {
     project_id: '' as string,
     asset_role: '' as string,
     source_stage: '' as string,
+    rigging_state: '' as string,
   })
   const [searchQuery, setSearchQuery] = useState('')
   const [searchMode, setSearchMode] = useState<'fuzzy' | 'hybrid'>(() => {
@@ -230,9 +231,24 @@ export default function AssetsPage() {
       if (f.asset_role) params.asset_role = f.asset_role
       if (f.source_stage) params.source_stage = f.source_stage
       if (s) params.search = s
-      if (selectedTagNames.length > 0) params.tags = selectedTagNames.join(',')
+      const tagNames = [...selectedTagNames]
+      // 「静态」无法用 tags 表达（后端为包含语义），改为前端本地过滤；
+      // 「已绑骨 / 带动画」走后端标签过滤。
+      if (f.rigging_state && f.rigging_state !== 'static') tagNames.push(f.rigging_state)
+      if (tagNames.length > 0) params.tags = tagNames.join(',')
       const res = await listAssets(params)
-      if (res.success) { setAssets(res.data); setTotal(res.total) }
+      if (res.success) {
+        let data = res.data || []
+        if (f.rigging_state === 'static') {
+          data = data.filter((a: any) => {
+            const tags = a.tags || []
+            const nodeMeta = a.metadata?.node_metadata || {}
+            return !tags.includes('rigged') && !tags.includes('animated')
+              && !nodeMeta.has_bones && !nodeMeta.has_animations
+          })
+        }
+        setAssets(data); setTotal(res.total)
+      }
     } catch (e: any) { message.error(e.message) } finally { setLoading(false) }
   }, [pageSize, selectedTagNames])
 
@@ -312,6 +328,7 @@ export default function AssetsPage() {
       project_id: '',
       asset_role: '',
       source_stage: '',
+      rigging_state: '',
     })
     setPage(1)
     loadAssets(1, params.query, {
@@ -321,6 +338,7 @@ export default function AssetsPage() {
       project_id: '',
       asset_role: '',
       source_stage: '',
+      rigging_state: '',
     }, newMode)
   }, [loadAssets])
 
@@ -1022,6 +1040,18 @@ export default function AssetsPage() {
                   <option key={option.value} value={option.value}>{option.label}</option>
                 ))}
               </select>
+              {filters.asset_type === '3d_model' && (
+                <select
+                  value={filters.rigging_state}
+                  onChange={e => handleFilterChange('rigging_state', e.target.value)}
+                  style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bgInput)', color: 'var(--textPrimary)' }}
+                >
+                  <option value="">全部状态</option>
+                  <option value="static">静态</option>
+                  <option value="rigged">已绑骨</option>
+                  <option value="animated">带动画</option>
+                </select>
+              )}
               {selectedTagIds.length > 0 && (
                 <Space>
                   {selectedTags.map(tag => (

@@ -316,6 +316,30 @@ export function AssetGrid({
               </span>
             </div>
 
+            {/* 3D 模型绑骨/动画状态徽标 */}
+            {getType(asset) === '3D_MODEL' && (() => {
+              const nodeMeta = (asset.metadata as any)?.node_metadata || {}
+              const hasAnimations = nodeMeta.has_animations || tags.includes('animated')
+              const hasBones = nodeMeta.has_bones || tags.includes('rigged')
+              const label = hasAnimations ? '带动画' : hasBones ? '已绑骨' : '静态'
+              const color = hasAnimations ? '#722ed1' : hasBones ? '#13c2c2' : '#8b8ba8'
+              return (
+                <div style={{ 
+                  position: 'absolute', 
+                  bottom: 8, 
+                  right: 8,
+                  backgroundColor: color,
+                  padding: '2px 8px',
+                  borderRadius: 4,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                }}>
+                  <span style={{ color: '#fff', fontSize: 11 }}>{label}</span>
+                </div>
+              )
+            })()}
+
             {/* 相关度评分 */}
             {score > 0 && (
               <div style={{ 

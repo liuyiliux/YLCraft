@@ -13,3 +13,4 @@ application export format.
 | `siliconflow-text-image.json` | SiliconFlow | Text + image | OpenAI-compatible text plus configurable image generation. Verify the selected model's reference-image contract. |
 | `image-to-3d-generic.json` | Generic | Image to 3D | Generic HTTP task/poll contract. Replace endpoint, model, authentication headers and JSONPath values for the selected provider. |
 | `tencent-hunyuan-3d-pro.json` | Tencent Cloud | Image/text to 3D | Hunyuan 3D Pro OpenAI-compatible submit/query API. Uses raw `Authorization: sk-...` API key auth and POST polling. |
+| `tencent-hunyuan-rigging.json` | Tencent Cloud | 3D auto-rigging | Hunyuan auto-rigging (SubmitAutoRiggingJob/DescribeAutoRiggingJob). TC3-signed auth (`SecretId:SecretKey`). `no_model_selector=true` (no model parameter); declares `motion_types` (48 preset motions, `value`=vendor id / `label`=UI name). |
