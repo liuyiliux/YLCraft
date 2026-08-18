@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Button, Card, Col, Empty, Image, Input, InputNumber, List, message, Modal, Row, Select, Space, Switch, Tag, Typography, Upload } from 'antd'
-import { BoxPlotOutlined, CloudUploadOutlined, FolderOpenOutlined, PlayCircleOutlined } from '@ant-design/icons'
+import { ApiOutlined, BoxPlotOutlined, CloudUploadOutlined, FolderOpenOutlined, LinkOutlined, PlayCircleOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { listAssets } from '../../api'
 import { useTheme } from '../../constants/theme'
@@ -40,6 +40,8 @@ export default function Model3DPage() {
   const [assetLoading, setAssetLoading] = useState(false)
   const [assetOptions, setAssetOptions] = useState<ImageAsset[]>([])
   const [submitting, setSubmitting] = useState(false)
+  // 骨骼绑定方案（占位开关 + 跳转链接，暂不接真实调用）
+  const [riggingPlans, setRiggingPlans] = useState<Record<string, boolean>>({ api: false, unirig: false, studio: false })
 
   const selected = useMemo(() => backends.find(item => item.name === provider), [backends, provider])
   const load = async () => {
@@ -118,9 +120,34 @@ export default function Model3DPage() {
           {!backends.length && <Typography.Text type="warning">尚未配置图生 3D 连接器。前往设置新增类型为“图生 3D”的通用 HTTP 连接器。</Typography.Text>}
         </Space>
       </Card></Col>
-      <Col xs={24} lg={14}><Card title="生成队列与历史" extra={<Button type="link" onClick={() => void load()}>刷新</Button>}>
+      <Col xs={24} lg={14}>
+        <Card title="骨骼绑定方案（下一步，规划中）" style={{ marginBottom: 20 }}>
+          <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>图生 3D 产出的是静态网格，如需让角色「动起来」，可从以下三种路线中选择。当前为占位入口，暂未接入实际调用。</Typography.Text>
+          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+            {[
+              { key: 'api', icon: <ApiOutlined />, title: '接 API（腾讯混元绑骨蒙皮）', desc: '通过配置驱动连接器调用 SubmitAutoRiggingJob，输入 GLB/FBX 输出带骨骼模型，支持 48 种预设动作。', url: 'https://cloud.tencent.com/document/product/1804/131618' },
+              { key: 'unirig', icon: <BoxPlotOutlined />, title: '本地跑 UniRig', desc: '开源 MIT（Tripo + 清华），本地部署需 torch + CUDA GPU ≥ 8GB，支持 GLB/OBJ/FBX 自动生成骨架与蒙皮。', url: 'https://github.com/VAST-AI-Research/UniRig' },
+              { key: 'studio', icon: <FolderOpenOutlined />, title: '混元云端 Studio 手动 Rig', desc: '在腾讯混元 3D Studio 平台手动绑骨并导出，属于人工离线流程，无法程序化。', url: 'https://3d.hunyuan.tencent.com/' },
+            ].map(plan => (
+              <Card key={plan.key} size="small" style={{ background: 'transparent' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                  <div style={{ flex: 1 }}>
+                    <Typography.Text strong>{plan.icon} {plan.title}</Typography.Text>
+                    <Typography.Paragraph type="secondary" style={{ margin: '4px 0 0', fontSize: 12 }}>{plan.desc}</Typography.Paragraph>
+                  </div>
+                  <Space>
+                    <Switch checked={riggingPlans[plan.key]} onChange={checked => setRiggingPlans(current => ({ ...current, [plan.key]: checked }))} />
+                    <Button type="link" size="small" icon={<LinkOutlined />} href={plan.url} target="_blank" rel="noreferrer">跳转</Button>
+                  </Space>
+                </div>
+              </Card>
+            ))}
+          </Space>
+        </Card>
+        <Card title="生成队列与历史" extra={<Button type="link" onClick={() => void load()}>刷新</Button>}>
         {tasks.length ? <List dataSource={tasks} renderItem={task => <List.Item actions={[task.asset_id ? <Button key="asset" type="link" onClick={() => navigate('/assets')}>查看素材</Button> : null].filter(Boolean)}><List.Item.Meta title={<Space><span style={{ color: THEME.textPrimary }}>{task.prompt || '图生 3D 任务'}</span><Tag color={task.status === 'done' ? 'success' : task.status === 'error' ? 'error' : 'processing'}>{task.status === 'done' ? '已完成' : task.status === 'error' ? '失败' : `处理中 ${task.progress || 0}%`}</Tag></Space>} description={<span style={{ color: THEME.textSecondary }}>{task.provider} · {task.model}{task.error ? ` · ${task.error}` : task.asset_id ? ' · 已入素材库' : ''}</span>} /></List.Item>} /> : <Empty description="还没有图生 3D 任务" />}
-      </Card></Col>
+      </Card>
+      </Col>
     </Row>
     <Modal open={assetPickerOpen} title="选择素材库图片" footer={null} onCancel={() => setAssetPickerOpen(false)} width={820}>
       <List loading={assetLoading} grid={{ gutter: 12, xs: 2, sm: 3, md: 4 }} dataSource={assetOptions} locale={{ emptyText: '素材库中没有可用图片' }} renderItem={asset => {
