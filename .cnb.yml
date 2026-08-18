@@ -1,8 +1,10 @@
 $:
   vscode:
     - docker:
+        # build 使用 .ide/Dockerfile（已安装 code-server → 单容器模式）
+        # image 为构建失败时的回退镜像（cnbcool/default-dev-env 自带 code-server，仍保持单容器）
         build: .ide/Dockerfile
-        image: python:3.11-slim
+        image: cnbcool/default-dev-env:latest
       services:
         - vscode
         - docker
