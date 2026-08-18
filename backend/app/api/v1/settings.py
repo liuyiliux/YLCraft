@@ -53,8 +53,8 @@ class StoragePathsResponse(BaseModel):
 
 
 def _get_settings_path() -> Path:
-    """获取 settings.json 的路径"""
-    backend_dir = Path(__file__).parent.parent.parent
+    """获取 settings.json 的路径（backend/app/data/settings.json）"""
+    backend_dir = Path(__file__).parent.parent.parent.parent
     return backend_dir / "app" / "data" / "settings.json"
 
 
@@ -97,11 +97,11 @@ async def _load_settings_from_db() -> dict[str, str]:
         return _db_settings_cache
     
     try:
-        from app.db.database import async_session_maker
+        from app.db.database import AsyncSessionLocal
         from sqlalchemy import select
         from app.db.models.system_setting import SystemSetting
         
-        async with async_session_maker() as session:
+        async with AsyncSessionLocal() as session:
             result = await session.execute(select(SystemSetting))
             settings = result.scalars().all()
             _db_settings_cache = {s.key: s.value for s in settings}
@@ -117,11 +117,11 @@ async def _load_settings_from_db() -> dict[str, str]:
 async def _save_setting_to_db(key: str, value: str, description: str = ""):
     """保存设置到数据库"""
     try:
-        from app.db.database import async_session_maker
+        from app.db.database import AsyncSessionLocal
         from sqlalchemy import select
         from app.db.models.system_setting import SystemSetting
         
-        async with async_session_maker() as session:
+        async with AsyncSessionLocal() as session:
             result = await session.execute(
                 select(SystemSetting).where(SystemSetting.key == key)
             )
