@@ -7,7 +7,6 @@ import ThemeToggle from '../ThemeToggle'
 import {
   DashboardOutlined,
   BookOutlined,
-  ThunderboltOutlined,
   SettingOutlined,
   FolderOpenOutlined,
   PictureOutlined,
@@ -16,17 +15,14 @@ import {
   BranchesOutlined,
   EditOutlined,
   FireOutlined,
-  BulbOutlined,
   MenuOutlined,
   SearchOutlined,
   SendOutlined,
-  MenuFoldOutlined,
-  MenuUnfoldOutlined,
   ReadOutlined,
   KeyOutlined,
 } from '@ant-design/icons'
 
-const { Sider, Content, Header } = Layout
+const { Content, Header } = Layout
 
 function navLabel(text: string, status?: '实验' | '辅助') {
   if (!status) return text
@@ -127,6 +123,8 @@ const menuItems: MenuProps['items'] = [
       { key: '/publish', label: navLabel('一键发布', '实验') },
     ],
   },
+  { type: 'divider' as const },
+  ...BOTTOM_NAV,
 ]
 
 const MOBILE_BREAKPOINT = 768
@@ -152,7 +150,6 @@ export default function AppLayout() {
   const { theme: THEME, themeId } = useTheme()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(window.innerWidth < MOBILE_BREAKPOINT)
-  const [collapsed, setCollapsed] = useState(false)
 
   useEffect(() => {
     const handleResize = () => {
@@ -173,122 +170,63 @@ export default function AppLayout() {
     }
   }
 
-  const siderWidth = collapsed ? 60 : 220
-
   return (
     <Layout style={{ minHeight: '100vh', background: THEME.bgPage }}>
-      {/* ========== Desktop Sidebar ========== */}
+      {/* ========== Desktop Top Navigation ========== */}
       {!isMobile && (
-        <Sider
-          width={siderWidth}
-          collapsedWidth={60}
-          collapsible
-          collapsed={collapsed}
-          trigger={null}
-          theme={themeId === 'dawn' ? 'light' : 'dark'}
+        <Header
           style={{
-            position: 'fixed',
-            left: 0,
-            top: 0,
-            height: '100vh',
             background: THEME.bgCard,
-            borderRight: `1px solid ${THEME.border}`,
+            borderBottom: `1px solid ${THEME.border}`,
+            height: 52,
+            lineHeight: '52px',
+            padding: '0 16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            position: 'sticky',
+            top: 0,
             zIndex: 100,
-            overflow: 'hidden',
-            transition: 'width 0.2s',
           }}
         >
           {/* Logo */}
           <div
             onClick={() => navigate('/')}
             style={{
-              height: 64,
               display: 'flex',
               alignItems: 'center',
-              justifyContent: collapsed ? 'center' : 'flex-start',
-              padding: collapsed ? 0 : '0 16px',
               gap: 8,
-              borderBottom: `1px solid ${THEME.border}`,
+              flexShrink: 0,
               cursor: 'pointer',
+              paddingRight: 8,
             }}
           >
-            <FireOutlined style={{ fontSize: 22, color: THEME.coser, flexShrink: 0 }} />
-            {!collapsed && (
-              <span style={{ fontSize: 16, fontWeight: 700, color: THEME.textPrimary, letterSpacing: 1 }}>
-                YL<span style={{ color: THEME.primary }}>Craft</span>
-              </span>
-            )}
+            <FireOutlined style={{ fontSize: 20, color: THEME.coser }} />
+            <span style={{ fontSize: 15, fontWeight: 700, color: THEME.textPrimary, letterSpacing: 1 }}>
+              YL<span style={{ color: THEME.primary }}>Craft</span>
+            </span>
           </div>
 
-          {/* Main menu — scrollable */}
-          <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
-            <Menu
-              mode="inline"
-              theme={themeId === 'dawn' ? 'light' : 'dark'}
-              selectedKeys={[selectedKey]}
-              items={menuItems}
-              onClick={handleMenuClick}
-              inlineCollapsed={collapsed}
-              style={{ background: 'transparent', border: 'none' }}
-            />
-          </div>
+          {/* Horizontal main menu — overflow folds into ellipsis automatically */}
+          <Menu
+            mode="horizontal"
+            theme={themeId === 'dawn' ? 'light' : 'dark'}
+            selectedKeys={[selectedKey]}
+            items={menuItems}
+            onClick={handleMenuClick}
+            style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', lineHeight: '50px' }}
+          />
 
-          {/* Bottom menu */}
-          <div style={{ borderTop: `1px solid ${THEME.border}`, flexShrink: 0 }}>
-            <Menu
-              mode="inline"
-              theme={themeId === 'dawn' ? 'light' : 'dark'}
-              selectedKeys={[selectedKey]}
-              items={BOTTOM_NAV}
-              onClick={handleMenuClick}
-              inlineCollapsed={collapsed}
-              style={{ background: 'transparent', border: 'none' }}
-            />
-            {/* Fold button */}
-            <div
-              onClick={() => setCollapsed(!collapsed)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: collapsed ? 'center' : 'flex-end',
-                padding: collapsed ? '10px 0' : '10px 16px',
-                cursor: 'pointer',
-                color: THEME.textSecondary,
-                borderTop: `1px solid ${THEME.border}`,
-              }}
-            >
-              {collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-            </div>
-          </div>
-        </Sider>
-      )}
-
-      {/* ========== Main Content Area ========== */}
-      <Layout style={{ marginLeft: isMobile ? 0 : siderWidth, transition: 'margin-left 0.2s', minHeight: '100vh' }}>
-        {/* Header — minimalist */}
-        {!isMobile && (
-          <Header
-            style={{
-              background: THEME.bgCard,
-              borderBottom: `1px solid ${THEME.border}`,
-              height: 56,
-              lineHeight: '56px',
-              padding: '0 24px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'flex-end',
-              gap: 12,
-              position: 'sticky',
-              top: 0,
-              zIndex: 50,
-            }}
-          >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
             <ThemeToggle />
             <a href="/docs" style={{ color: THEME.textSecondary, fontSize: 13 }}>文档</a>
             <a href="/api" style={{ color: THEME.textSecondary, fontSize: 13 }}>API</a>
-          </Header>
-        )}
+          </div>
+        </Header>
+      )}
 
+      {/* ========== Main Content Area ========== */}
+      <Layout style={{ minHeight: '100vh' }}>
         {/* Mobile Header */}
         {isMobile && (
           <Header
@@ -322,9 +260,9 @@ export default function AppLayout() {
         {/* Page Content */}
         <Content
           style={{
-            padding: isMobile ? 12 : 24,
+            padding: isMobile ? 12 : 16,
             background: THEME.bgPage,
-            minHeight: isMobile ? 'calc(100vh - 52px)' : 'calc(100vh - 56px)',
+            minHeight: isMobile ? 'calc(100vh - 52px)' : 'calc(100vh - 52px)',
             overflow: 'auto',
           }}
         >
