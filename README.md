@@ -68,18 +68,15 @@ flowchart LR
 - Redis 可选。本地开发时任务队列会降级到内存模式
 - 视频与媒体工作流需要 FFmpeg
 
-### 1. 启动本地基础设施（单容器：PostgreSQL + Redis）
+### 1. 启动 PostgreSQL 与 Redis
 
-仓库中的 Compose 文件只用于启动本地基础设施，将 PostgreSQL 与 Redis 合并为单个容器，一条命令即可全部启动：
+仓库中的 Compose 文件只用于启动本地基础设施：
 
 ```bash
-docker compose up -d --build
+docker compose up -d postgres redis
 ```
 
 其中凭证只适合本地开发。不要暴露数据库端口，也不要在共享或生产环境复用该开发密码。
-
-> **注意**：这里的「单容器」指 Docker Compose 把 PostgreSQL + Redis 合并为一个容器。
-> 它和 CNB **云原生开发的单容器模式**（开发环境与 code-server 运行在同一容器）是两个不同概念，勿混淆。
 
 ### 1.1 使用 CNB 云原生开发（单容器模式）
 

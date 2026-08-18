@@ -36,11 +36,11 @@ if "%USE_REMOTE_DB%"=="yes" (
         echo [Docker] Docker Compose not found, please install Docker Desktop
         echo [Docker] Skipping database services...
     ) else (
-        echo [Docker] Building and starting single-container infra (PostgreSQL + Redis)...
-        docker compose up -d --build
+        echo [Docker] Starting PostgreSQL and Redis...
+        docker compose up -d
         echo [Docker] Waiting for PostgreSQL to be ready...
         :wait_loop
-        docker compose exec -T infra pg_isready -U ylcraft >nul 2>&1
+        docker compose exec -T postgres pg_isready -U ylcraft >nul 2>&1
         if errorlevel 1 (
             timeout /t 1 /nobreak >nul
             goto wait_loop

@@ -46,11 +46,11 @@ echo ""
 echo -e "${CYAN}[Docker]${NC} 检查 Docker Compose 服务..."
 
 if command -v docker &>/dev/null && command -v docker compose &>/dev/null; then
-    echo -e "${CYAN}[Docker]${NC} 构建并启动单容器基础设施（PostgreSQL + Redis）..."
-    docker compose up -d --build
+    echo -e "${CYAN}[Docker]${NC} 启动 PostgreSQL 和 Redis..."
+    docker compose up -d
     
     echo -e "${CYAN}[Docker]${NC} 等待 PostgreSQL 就绪..."
-    until docker compose exec -T infra pg_isready -U ylcraft &>/dev/null; do
+    until docker compose exec -T postgres pg_isready -U ylcraft &>/dev/null; do
         sleep 1
     done
     echo -e "${GREEN}[Docker]${NC} PostgreSQL 已就绪！"
