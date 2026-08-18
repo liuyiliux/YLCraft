@@ -78,6 +78,17 @@ docker compose up -d --build
 
 其中凭证只适合本地开发。不要暴露数据库端口，也不要在共享或生产环境复用该开发密码。
 
+> **注意**：这里的「单容器」指 Docker Compose 把 PostgreSQL + Redis 合并为一个容器。
+> 它和 CNB **云原生开发的单容器模式**（开发环境与 code-server 运行在同一容器）是两个不同概念，勿混淆。
+
+### 1.1 使用 CNB 云原生开发（单容器模式）
+
+仓库通过 `.cnb.yml` 的 `vscode` 事件与 `.ide/Dockerfile` 提供 CNB 云原生开发环境。
+`.ide/Dockerfile` 已安装 `code-server`，因此采用**单容器模式**启动：
+开发环境与 code-server 运行在同一容器内，既可直接使用 WebIDE，也可通过 VSCode 远程开发。
+
+点击 CNB 仓库页面的「云原生开发」按钮即可一键进入开发环境。
+
 ### 2. 配置后端
 
 ```bash
