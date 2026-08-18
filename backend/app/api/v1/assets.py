@@ -869,16 +869,41 @@ async def _import_uploaded_model(filename: str, content: bytes, title: str, sess
     candidates.sort(key=lambda p: (order[p.suffix.lower()], -p.stat().st_size))
     model_path = candidates[0]
 
+    details = await _extract_model3d_details(model_path)
+    rigging_flags, rigging_tags = _rigging_flags(details)
+
     created = await AssetHubFacade(session).create_imported_file(
         file_path=str(model_path),
         title=(title or model_path.stem or "上传的 3D 模型")[:120],
         asset_type=AssetType.THREE_D_MODEL,
         source="upload",
         source_url="",
-        metadata={"original_filename": filename, "upload": True},
-        tags=["upload", "3d_model"],
+        metadata={"original_filename": filename, "upload": True, **details, **rigging_flags},
+        tags=["upload", "3d_model", *rigging_tags],
     )
     return {"success": True, "asset_id": created.node_id}
+
+
+async def _extract_model3d_details(model_path: Path) -> dict:
+    """Best-effort server-side metadata extraction (bones/animations/vertices)."""
+    try:
+        from app.services.model3d.service import Model3DService
+        details = await Model3DService(None).extract_metadata(str(model_path))
+    except Exception as exc:
+        logger.warning("[assets] 3D metadata extraction failed for %s: %s", model_path, exc)
+        return {}
+    if not isinstance(details, dict) or details.get("error"):
+        return {}
+    return details
+
+
+def _rigging_flags(details: dict) -> tuple[dict, list[str]]:
+    """Derive skeleton/animation flags + tags from extracted model metadata."""
+    has_animations = bool(details.get("animations"))
+    has_bones = bool(details.get("bones"))
+    flags = {"has_bones": has_bones, "has_animations": has_animations}
+    tags = (["rigged"] if has_bones else []) + (["animated"] if has_animations else [])
+    return flags, tags
 
 
 @router.post("/upload-model3d", summary="上传 3D 模型（ZIP 或单文件）入库")

@@ -44,6 +44,7 @@ class VideoGenerationTask(SQLModel, table=True):
     __tablename__ = "video_generation_tasks"
 
     task_id: str = Field(primary_key=True, max_length=128)
+    kind: str = Field(default="generation", index=True, max_length=32)
     provider: str = Field(default="", index=True, max_length=120)
     model: str = Field(default="", max_length=160)
     status: str = Field(default="pending", index=True, max_length=32)
@@ -67,6 +68,7 @@ class Model3DGenerationTask(SQLModel, table=True):
     __tablename__ = "model3d_generation_tasks"
 
     task_id: str = Field(primary_key=True, max_length=128)
+    kind: str = Field(default="generation", index=True, max_length=32)
     provider: str = Field(default="", index=True, max_length=120)
     model: str = Field(default="", max_length=160)
     status: str = Field(default="pending", index=True, max_length=32)

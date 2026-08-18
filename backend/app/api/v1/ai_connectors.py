@@ -348,7 +348,7 @@ async def import_connectors(
                 provider=processed_item.get("provider", "generic"),
                 name=processed_item.get("name", "未命名"),
                 api_key=processed_item.get("api_key", ""),
-                provider_type=pt_enum,
+                provider_type=pt_enum.value,
                 base_url=processed_item.get("base_url"),
                 api_endpoint=processed_item.get("api_endpoint"),
                 organization_id=processed_item.get("organization_id"),

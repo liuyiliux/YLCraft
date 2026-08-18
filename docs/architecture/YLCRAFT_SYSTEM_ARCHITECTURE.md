@@ -214,13 +214,17 @@ Agent Center 的人工委派入口支持 `resume_parent`：成功汇合后把子
 
 `/model-3d` is a standalone configured-provider workspace, not a hard-coded provider screen. An `AIConnector(provider_type="3d")` declares the model list, generic HTTP request template, optional request/poll headers, API-key header/prefix convention, optional POST poll-body template, and response/poll JSONPath contract, plus an optional poll cadence via `response_config.poll_interval` (seconds; default 10). The model list is enforced on both the workspace page and generation API. `/backends` exposes each connector's `poll_interval`, and the workspace page polls each pending task at its provider's declared interval (the minimum across pending tasks) instead of a hard-coded timer. `model3d_generation_tasks` preserves each task across refreshes. On completion, the backend downloads the model locally and writes the Asset Hub three-layer record with type `3d_model`; source Asset Hub images are linked using `AssetRelation(derived_from)`. Because providers may return several formats, the connector can declare `result_files_path` + `prefer_model_type` (e.g. `GLB`) so the workspace picks a self-contained model over a packed archive, and the downloader unpacks ZIP archives when the result is one. An OBJ result keeps its obj + mtl + texture files together; `GET /api/v1/assets/{id}/files/{filename}` serves those siblings so the asset detail 3D viewer (OBJLoader + MTLLoader) can render them with color. The public `examples/ai-connectors/image-to-3d-generic.json` is a credential-free contract template; `tencent-hunyuan-3d-pro.json` is a credential-free Tencent Hunyuan 3D Pro preset authenticated with TC3-HMAC-SHA256 (`api_format=tencent_tc3`, key format `SecretId:SecretKey`), while the generic template uses plain custom HTTP headers. The settings connector form lists `tencent_tc3` as a first-class image-to-3D option and, for that format, collects the TC3 credentials as two separate fields — `SecretId` and `SecretKey` — then merges them into the single `api_connectors.api_key` column as `SecretId:SecretKey` on save; the TC3 backend splits them back apart at signing time. The legacy `/api/v1/3d/*` metadata/TripoSR routes remain compatible and are not the new workspace contract.
 
-### 4.4.2 3D 模型查看器与缩略图
+### 4.4.2 绑骨蒙皮（让模型动起来）
+
+`/model-3d` 工作台第二步「让模型动起来」复用同一套配置驱动连接器体系，但以 `capability="rigging"` 区分生成与绑骨两类连接器：`GET /api/v1/model-3d/backends?capability=rigging` 只返回绑骨类连接器（generation 与 rigging 分离），并在返回体透传 `motion_types`（由连接器 `response_config.motion_types` 声明的预设动作列表 `[{value, label}]`，未声明则为空数组）。`POST /api/v1/model-3d/rig` 接受 `provider`、`source_asset_id`，可选 `motion_type`（预设动作数字编号，如腾讯混元为 1-48；缺省仅绑骨无动作）与 `file_type`，创建 `kind="rigging"` 的持久任务，复用 `GET /model-3d/tasks/{id}` 轮询与 `/history?kind=rigging` 历史。预设动作的编号语义由各供应商定义：提交只传数字 `value`，中文 `label` 仅用于前端展示，动作下拉选项随所选连接器动态渲染（无声明时回退 1-48 数字占位），避免前端写死某家供应商的专属语义。绑骨结果回流 Asset Hub 时，`_rigging_flags` 从模型元数据提取 `has_bones`/`has_animations` 写入 `node_metadata` 并打 `rigged`/`animated` 标签，同时用 `AssetRelation(source)` 关联源模型（`source_asset_id` 入 `lineage`）。源模型经 `/model3d-files` 暴露公开 URL 供绑骨供应商下载。前端素材库卡片按 `has_animations` > `has_bones` > 静态 三级展示徽标，并提供「静态/已绑骨/带动画」筛选（`rigged`/`animated` 走后端标签过滤，静态为前端本地排除）；`Model3DViewer` 用 `useAnimations` 实际播放/切换骨骼动画。
+
+### 4.4.3 3D 模型查看器与缩略图
 
 `Model3DViewer` 已升级为完整查看器，并提供独立全屏页 `/model3d-viewer/:assetId`（顶层路由，不套 AppLayout 导航）。支持 GLB/GLTF 与 OBJ（OBJLoader + MTLLoader 按相对路径解析 mtl/贴图）。底部工具栏含自动旋转、渲染模式（纹理/白模/线框/反照率/法线）、地面网格、白色线框包围盒、灯光面板（射灯色值/强度、平面光强度、光照水平角/仰角）、视角对齐（前/后/左/右/顶/底 + 重新居中）、下载；左下角常驻拓扑角标（三角面/顶点数）。方向键平移视角（自实现 OrbitControls pan，规避 drei `keyEvents` 缺陷）；旋转原点固定在模型中心（模型底部贴地后中心 y = height/2）。
 
 3D 素材缩略图：图生 3D 生成结果优先用供应商 `PreviewImageUrl`（下载到 `storage/model3d/previews/` 作为 `thumbnail_url`）；本地上传的 3D 模型由前端离屏 WebGL 渲染截图（`captureModelThumbnail`）后 `POST /assets/{id}/thumbnail` 回填。素材库新增 `POST /api/v1/assets/upload-model3d`（3D 模型/ZIP 解包入库）与通用 `POST /api/v1/assets/upload`（图片/视频/音频/文本按扩展名归类；视频用 ffmpeg 截第 0.5s 帧作缩略图）；`GET /api/v1/assets/{id}/files/{filename}` 服务 OBJ 多文件配套。
 
-### 4.4.3 远程对象存储（COS）
+### 4.4.4 远程对象存储（COS）
 
 密钥统一入库 `system_settings` 表，键约定 `<provider>_<field>`（当前 COS：`cos_bucket / cos_region / cos_secret_id / cos_secret_key`），设置页新增「密钥配置」Tab 管理；本地 `settings.json` 仅作兜底，已删除未接线的 s3/oss 占位配置。`services/cos_storage.py` 手写 COS `q-sign-algorithm=sha1` 签名（无 SDK）上传对象并返回公网 URL。视频连接器声明 `default_params.image_requires_public_url` 时（如 Agnes），图生视频把首帧图自动传 COS 后以公网 URL 提交；`/api/v1/videos/backends` 暴露该标记，前端据此提示。
 
@@ -278,7 +282,7 @@ Live2D accepts uploads, character imagery and Asset Hub images as source materia
 | 小说/书源 | `/api/v1/novels`、`/api/v1/book-sources` | `services/novel`、`services/reader` | `/novel-*` | 可作为创作素材源。 |
 | 任务中心 | `/api/v1/tasks` | `core/task_queue` + 媒体任务账本 | `/tasks` | 聚合通用队列、下载、独立视频生成及图生 3D 持久化记录；可查看诊断字段与失败原因，并对未终态的独立媒体任务进行状态级取消。 |
 | 字幕/BGM/剪辑 | `/subtitles`、`/bgm`、`/clip*` | 对应 services | 对应页面 | 辅助内容生产。 |
-| 图转 3D 工作台 | `/api/v1/model-3d` | `services/model3d` | `/model-3d` | 配置驱动连接器、持久任务、轮询下载、Asset Hub 血缘、GLB 优先与 ZIP 解包、PreviewImageUrl 缩略图均已落地；真实供应商 GLB 验收待完成。 |
+| 图转 3D 工作台 | `/api/v1/model-3d` | `services/model3d` | `/model-3d` | 配置驱动连接器、持久任务、轮询下载、Asset Hub 血缘、GLB 优先与 ZIP 解包、PreviewImageUrl 缩略图均已落地；新增绑骨蒙皮（`capability=rigging` + `POST /rig`，仅绑骨/预设动作，回流打 `rigged`/`animated` 标签）；真实供应商 GLB 验收待完成。 |
 | 3D 模型查看器 | `/api/v1/assets/{id}/download`、`/files/{filename}` | `Model3DViewer` | `/assets` 详情、`/model3d-viewer/:assetId` | GLB/GLTF/OBJ 渲染、渲染模式、灯光、视角对齐、包围盒、拓扑角标、键盘平移、独立全屏页已完成。 |
 | 远程对象存储 | -（服务内部调用） | `services/cos_storage` | 设置「密钥配置」Tab | 腾讯云 COS 手写签名上传；密钥入库 `system_settings`；供 Agnes 图生视频生成公网 URL。 |
 | Live2D/旧 3D 工具 | `/live2d`、`/3d`、`/models` | 对应 services | 对应页面 | Live2D 支持上传、角色或 Asset Hub 图片创建草稿，处理配置、分层、绑骨、动作和 VTS 配置包导出；它不替代独立图转 3D 工作台，也不将当前配置包误称为官方 Cubism 编辑器产物。 |

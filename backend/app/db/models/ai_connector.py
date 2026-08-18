@@ -7,7 +7,7 @@ YLCraft — AI 连接器模型
 from __future__ import annotations
 
 from sqlmodel import SQLModel, Field
-from sqlalchemy import String, DateTime, Text, Boolean, Integer, event
+from sqlalchemy import String, DateTime, Text, Boolean, Integer, event, Enum, Column
 from datetime import datetime, timezone
 from typing import Optional
 import json
@@ -70,10 +70,19 @@ class AIConnectorBase(SQLModel):
     api_key: str = Field("", description="API Key")
 
     # 提供商类型（LLM / Image / Video / TTS / STT）
-    # Keep this as a string: the PostgreSQL enum stores values such as `3d`,
-    # while SQLAlchemy serializes Python Enum members by name by default.
+    # The PostgreSQL column is a native enum `aiprovidertype` (see migration 001).
+    # Declare it as a SQLAlchemy Enum so INSERT binds the enum value (`3d`)
+    # instead of a VARCHAR that PostgreSQL would reject.
     provider_type: str = Field(
         "llm",
+        sa_column=Column(
+            Enum(
+                AIProviderType,
+                name="aiprovidertype",
+                values_callable=lambda enum_cls: [member.value for member in enum_cls],
+            ),
+            nullable=False,
+        ),
         description="提供商类型：llm / image / video / 3d / tts / stt"
     )
 

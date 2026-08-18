@@ -512,3 +512,8 @@ uploads_dir.mkdir(parents=True, exist_ok=True)
 
 # 挂载 uploads 目录为静态文件目录
 app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
+
+# 挂载 3D 模型存储目录（绑骨蒙皮等外部 API 需要可公开访问的模型 URL）
+model3d_storage_dir = Path(__file__).parent.parent / "storage" / "model3d"
+model3d_storage_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/model3d-files", StaticFiles(directory=str(model3d_storage_dir)), name="model3d-files")

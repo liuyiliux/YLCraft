@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "name": "Tencent Hunyuan 3D Auto Rigging (Tencent Cloud TC3)",
+  "description": "Tencent Cloud TC3-signed Hunyuan 3D auto-rigging preset (SubmitAutoRiggingJob/DescribeAutoRiggingJob). Enter SecretId:SecretKey after importing. The Hunyuan rigging API has no model parameter (only File3D + MotionType), so this preset sets response_config.no_model_selector=true to hide the model dropdown in the workspace; vendors with real model variants (e.g. UniRig) should omit this flag. MotionType semantics are vendor-specific: this preset declares them under response_config.motion_types as [{value, label}] — value is the numeric id sent to the vendor, label is the Chinese name shown in the UI. Other vendors should declare their own motion_types (or omit it to fall back to generic numeric placeholders).",
+  "connectors": [
+    {
+      "id": "tencent-hunyuan-rigging",
+      "provider": "tencent",
+      "name": "Tencent Hunyuan Auto Rigging",
+      "provider_type": "3d",
+      "api_format": "tencent_tc3",
+      "base_url": "https://ai3d.tencentcloudapi.com",
+      "api_endpoint": "/",
+      "default_model": "hunyuan-auto-rigging",
+      "available_models": ["hunyuan-auto-rigging"],
+      "request_template": "{\"File3D\":{\"Url\":\"{{ image_url }}\",\"Type\":\"{{ FileType | default('GLB') }}\"}{% if MotionType %},\"MotionType\":{{ MotionType }}{% endif %}}",
+      "response_config": {
+        "capability": "rigging",
+        "no_model_selector": true,
+        "api_key_prefix": "",
+        "tencent_version": "2025-05-13",
+        "tencent_region": "ap-guangzhou",
+        "tencent_submit_action": "SubmitAutoRiggingJob",
+        "tencent_query_action": "DescribeAutoRiggingJob",
+        "task_id_path": "$.Response.JobId",
+        "status_path": "$.Response.Status",
+        "model_url_path": "$.Response.ResultFile3Ds[0].Url",
+        "result_files_path": "$.Response.ResultFile3Ds",
+        "prefer_model_type": "GLB",
+        "motion_types": [
+          {"value": 1, "label": "回旋踢"}, {"value": 2, "label": "左勾拳"}, {"value": 3, "label": "蓄力攻击"},
+          {"value": 4, "label": "蓄力出拳"}, {"value": 5, "label": "二连击打"}, {"value": 6, "label": "二连击打-2"},
+          {"value": 7, "label": "后撤"}, {"value": 8, "label": "受击"}, {"value": 9, "label": "受击-2"},
+          {"value": 10, "label": "受击-3"}, {"value": 11, "label": "受击倒地-1"}, {"value": 12, "label": "受击倒地-2"},
+          {"value": 13, "label": "落地"}, {"value": 14, "label": "沮丧"}, {"value": 15, "label": "割喉"},
+          {"value": 16, "label": "刺拳"}, {"value": 17, "label": "连续击打"}, {"value": 18, "label": "踢腿"},
+          {"value": 19, "label": "侧踢"}, {"value": 20, "label": "打太极"}, {"value": 21, "label": "后空翻"},
+          {"value": 22, "label": "蹲姿转体"}, {"value": 23, "label": "走路-1"}, {"value": 24, "label": "走路-2"},
+          {"value": 25, "label": "走路-3"}, {"value": 26, "label": "待机-1"}, {"value": 27, "label": "待机-2"},
+          {"value": 28, "label": "街舞"}, {"value": 29, "label": "扭扭舞"}, {"value": 30, "label": "左转弯"},
+          {"value": 31, "label": "右转弯"}, {"value": 32, "label": "慢跑"}, {"value": 33, "label": "慢跑-2"},
+          {"value": 34, "label": "奔跑"}, {"value": 35, "label": "冲刺跑-1"}, {"value": 36, "label": "冲刺跑-2"},
+          {"value": 37, "label": "冲刺跑-3"}, {"value": 38, "label": "原地跳-1"}, {"value": 39, "label": "滑铲"},
+          {"value": 40, "label": "向前大跳"}, {"value": 41, "label": "向前大跳-2"}, {"value": 42, "label": "跨越"},
+          {"value": 43, "label": "恐吓"}, {"value": 44, "label": "向前跌倒"}, {"value": 45, "label": "右转"},
+          {"value": 46, "label": "原地跳-2"}, {"value": 47, "label": "转身"}, {"value": 48, "label": "发送冲击波"}
+        ],
+        "error_path": "$.Response.ErrorMessage",
+        "poll_endpoint": "/",
+        "poll_method": "POST",
+        "poll_request_template": "{\"JobId\":\"{{ task_id }}\"}",
+        "poll_interval": 10,
+        "done_values": ["DONE"],
+        "failed_values": ["FAIL"],
+        "request_headers": {},
+        "poll_headers": {}
+      },
+      "default_params": {
+        "FileType": "GLB"
+      },
+      "support_reference_image": false,
+      "is_active": false,
+      "description": "Auto-rigging for humanoid 3D models (A-Pose/T-Pose, no weapons/mounts/wings). Input File3D must be a publicly reachable FBX/GLB URL (<=60MB). Omit MotionType for skeleton-only rigging, or pass MotionType 1-48 to bind one preset motion (idle/walk/run/dance etc.). Result URLs expire in 1 day; JobId expires in 24h. API Key format: SecretId:SecretKey."
+    }
+  ]
+}
