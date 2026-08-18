@@ -506,21 +506,25 @@ SQLite + chromadb 方案：              PostgreSQL + pgvector 方案：
 
 ### 5.2 Docker Compose 部署方案
 
+YLCraft 将 PostgreSQL 与 Redis 合并为**单容器**，镜像定义在 `docker/infra-single/`，仅需启动一个服务。
+
 ```yaml
 # docker-compose.yml — 在项目根目录
-version: '3.8'
 services:
-  postgres:
-    image: pgvector/pgvector:pg16      # 官方 pgvector 镜像，PostgreSQL 16
-    container_name: ylcraft-postgres
+  infra:
+    build: ./docker/infra-single
+    image: ylcraft-infra:latest
+    container_name: ylcraft-infra
     environment:
       POSTGRES_DB: ylcraft
       POSTGRES_USER: ylcraft
       POSTGRES_PASSWORD: ylcraft_dev   # 本地开发用，生产改环境变量
     ports:
       - "5432:5432"
+      - "6379:6379"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - redisdata:/data
       - ./backend/db/init.sql:/docker-entrypoint-initdb.d/init.sql  # 初始化脚本
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ylcraft"]
@@ -528,19 +532,12 @@ services:
       timeout: 5s
       retries: 5
 
-  # Redis（可选，任务队列用）
-  redis:
-    image: redis:7-alpine
-    container_name: ylcraft-redis
-    ports:
-      - "6379:6379"
-    volumes:
-      - redisdata:/data
-
 volumes:
   pgdata:
   redisdata:
 ```
+
+> 单容器 entrypoint（`docker/infra-single/docker-entrypoint.sh`）会先沿用官方 PG entrypoint 后台拉起 PostgreSQL，再将 Redis 作为前台主进程启动，确保容器信号与优雅退出正常。
 
 ```sql
 -- backend/db/init.sql — 数据库初始化脚本
@@ -672,7 +669,7 @@ pg_dump -U ylcraft -h localhost ylcraft > backup_$(date +%Y%m%d).sql
 psql -U ylcraft -h localhost ylcraft < backup_20250101.sql
 
 # 或者用 Docker
-docker exec ylcraft-postgres pg_dump -U ylcraft ylcraft > backup.sql
+docker exec ylcraft-infra pg_dump -U ylcraft ylcraft > backup.sql
 ```
 
 ### 5.7 开发体验优化
@@ -711,7 +708,7 @@ docker exec ylcraft-postgres pg_dump -U ylcraft ylcraft > backup.sql
 | **前端 3D 预览** | @react-three/fiber + @react-three/drei | React 生态，GLTF 原生支持 |
 | **前端图谱可视化** | cytoscape.js / @antv/g6 | 资产谱系 DAG 展示 |
 | **任务队列** | 现有 TaskQueue（Redis/内存双模式） | 已有，AI 标签等异步任务复用 |
-| **部署** | Docker Compose（PG + Redis） | 一键启动，`docker compose up -d` |
+| **部署** | Docker Compose 单容器（PG + Redis） | 一键启动，`docker compose up -d --build` |
 
 ---
 
@@ -911,7 +908,7 @@ class OSSFileStorage(FileStorageBackend):
 
 | 风险 | 影响 | 概率 | 解决方案 |
 |:---|:---|:---|:---|
-| **PostgreSQL 部署复杂度** | 开发者需要 Docker | 高 | `docker compose up -d` 一键启动，`start.bat` 脚本自动化 |
+| **PostgreSQL 部署复杂度** | 开发者需要 Docker | 高 | `docker compose up -d --build` 一键启动单容器，`start.bat` 脚本自动化 |
 | **pgvector 索引构建慢** | 首次建 HNSW 索引需分钟级 | 中 | 入库时先不建索引，批量导入完成后统一建 |
 | **CLIP 标签不准** | 特定领域（二次元/国风）标签质量差 | 中 | 支持手动修正 + 标签置信度显示 + 可关闭自动标签 |
 | **剪映版本兼容** | 剪映更新后 JSON 结构变化 | 高 | 解析器版本化 + 兼容性测试矩阵 + 降级策略 |
@@ -930,7 +927,7 @@ class OSSFileStorage(FileStorageBackend):
 **目标**：PostgreSQL + pgvector 跑起来，旧 SQLite 数据迁移
 
 ```
-□ 编写 docker-compose.yml（PG16 + pgvector + Redis）
+□ 编写 docker-compose.yml（单容器：PG16 + pgvector + Redis）
 □ 编写 backend/db/init.sql（CREATE EXTENSION vector）
 □ 改造 backend/app/db/database.py（SQLite → PostgreSQL 连接）
 □ 编写 SQLite → PostgreSQL 数据迁移脚本
@@ -1165,7 +1162,7 @@ target_metadata = SQLModel.metadata
 REM start.bat — 更新版
 
 echo Starting YLCraft services...
-docker compose up -d postgres redis
+docker compose up -d --build
 echo Waiting for PostgreSQL...
 timeout /t 5 /nobreak >nul
 

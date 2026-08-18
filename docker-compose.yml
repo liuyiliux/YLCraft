@@ -1,29 +1,30 @@
+# YLCraft 单容器基础设施
+# 将原本双容器（PostgreSQL + Redis）合并为单容器，仅启动一个服务。
+# 镜像由 docker/infra-single/Dockerfile 构建，同时提供 PostgreSQL 与 Redis。
+
 services:
-  postgres:
-    image: pgvector/pgvector:pg16
-    container_name: ylcraft-postgres
+  infra:
+    build: ./docker/infra-single
+    image: ylcraft-infra:latest
+    container_name: ylcraft-infra
     environment:
       POSTGRES_DB: ylcraft
       POSTGRES_USER: ylcraft
       POSTGRES_PASSWORD: ylcraft_dev
+      # 可选：如需给 Redis 加密码，取消注释并同步到后端 REDIS_URL
+      # REDIS_PASSWORD: ylcraft_dev
     ports:
       - "5432:5432"
+      - "6379:6379"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - redisdata:/data
       - ./backend/db/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ylcraft"]
       interval: 5s
       timeout: 5s
       retries: 5
-
-  redis:
-    image: redis:7-alpine
-    container_name: ylcraft-redis
-    ports:
-      - "6379:6379"
-    volumes:
-      - redisdata:/data
 
 volumes:
   pgdata:
