@@ -32,6 +32,7 @@ import {
   AppstoreOutlined,
   BulbOutlined,
   CompassOutlined,
+  WarningOutlined,
 } from '@ant-design/icons'
 import { Card, Button, Spin, Space, Slider, Tooltip, Empty, Descriptions, Tag, Segmented, ColorPicker, Select } from 'antd'
 import * as THREE from 'three'
@@ -50,6 +51,7 @@ interface Model3DViewerProps {
   height?: number | string
   onFullscreen?: () => void
   onModelAnimations?: (key: string, names: string[]) => void
+  onModelParts?: (key: string, parts: PartNode[]) => void
 }
 
 // 工作台场景图层（单个模型在场景中的图层描述）
@@ -60,6 +62,16 @@ export interface SceneModel {
   visible?: boolean
   animationIndex?: number
   playing?: boolean
+  // 部位显隐：path（骨骼/部位路径）-> 是否可见（缺省视为可见）
+  partVisibility?: Record<string, boolean>
+}
+
+// 模型部位树节点（腾讯 Hunyuan Studio 风格的部位拆分，基于骨骼层级）
+export interface PartNode {
+  name: string
+  path: string
+  childCount?: number
+  children?: PartNode[]
 }
 
 type RenderMode = 'texture' | 'white' | 'wireframe' | 'albedo' | 'normal'
@@ -105,6 +117,34 @@ class Model3DErrorBoundary extends Component<{ children: ReactNode }, { hasError
         <Card>
           <Empty description="3D 模型加载失败，文件可能不完整或格式不支持。请重新生成或删除该素材。" />
         </Card>
+      )
+    }
+    return this.props.children
+  }
+}
+
+// 图层级错误边界：场景多图层模式中单个模型损坏/不完整时，
+// 只降级该图层，不让整个 3D 视口变成错误卡片。
+class LayerErrorBoundary extends Component<{ children: ReactNode; name?: string }, { hasError: boolean }> {
+  state = { hasError: false }
+
+  static getDerivedStateFromError() {
+    return { hasError: true }
+  }
+
+  componentDidCatch(error: Error) {
+    console.warn('[Model3DViewer] layer load failed:', this.props.name, error)
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <Html center>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, color: '#f87171' }}>
+            <WarningOutlined style={{ fontSize: 22 }} />
+            <span style={{ fontSize: 12, whiteSpace: 'nowrap' }}>图层「{this.props.name || '模型'}」加载失败</span>
+          </div>
+        </Html>
       )
     }
     return this.props.children
@@ -235,6 +275,120 @@ function BoundingBox({ object }: { object: THREE.Object3D }) {
   )
 }
 
+// ==================== 部位树（骨骼层级）====================
+// 腾讯 Hunyuan Studio 风格的部位拆分：以骨骼层级为树，把网格按
+// skinWeight 最大权重归属到骨骼节点，实现"隐藏/显示某个肢体部位"。
+
+type BoneNode = { bone: THREE.Bone; name: string; children: BoneNode[]; meshes: number }
+
+function countMeshes(obj: THREE.Object3D): number {
+  let n = 0
+  obj.traverse(child => { if (child instanceof THREE.Mesh) n++ })
+  return n
+}
+
+function meshPrimaryBone(mesh: THREE.SkinnedMesh): THREE.Bone | null {
+  const geom = mesh.geometry as THREE.BufferGeometry
+  const si = geom.attributes.skinIndex as THREE.BufferAttribute | undefined
+  const sw = geom.attributes.skinWeight as THREE.BufferAttribute | undefined
+  if (!si || !sw || !mesh.skeleton?.bones?.length) return null
+  const skeleton = mesh.skeleton
+  const counts = new Map<number, number>()
+  const n = si.count
+  for (let i = 0; i < n; i++) {
+    let maxW = -Infinity
+    let maxB = -1
+    for (let j = 0; j < 4; j++) {
+      const w = sw.array[i * 4 + j] as number
+      if (w > maxW) {
+        maxW = w
+        maxB = si.array[i * 4 + j] as number
+      }
+    }
+    if (maxB >= 0 && maxB < skeleton.bones.length) {
+      counts.set(maxB, (counts.get(maxB) || 0) + 1)
+    }
+  }
+  let best: THREE.Bone | null = null
+  let bestCount = 0
+  counts.forEach((count, index) => {
+    if (count > bestCount) {
+      bestCount = count
+      best = skeleton.bones[index]
+    }
+  })
+  return best
+}
+
+// 骨骼在骨骼树中的路径（只含 bone 链，与 buildPartTree 的 path 一致）
+function primaryBonePath(mesh: THREE.SkinnedMesh): string | null {
+  const bone = meshPrimaryBone(mesh)
+  if (!bone) return null
+  const parts: string[] = []
+  let current: THREE.Object3D | null = bone
+  while (current instanceof THREE.Bone) {
+    parts.unshift(current.name || 'bone')
+    current = current.parent
+  }
+  return parts.join('/')
+}
+
+function buildPartTree(scene: THREE.Object3D): PartNode[] {
+  const map = new Map<THREE.Bone, BoneNode>()
+  const roots: THREE.Bone[] = []
+  scene.traverse(obj => {
+    if (obj instanceof THREE.SkinnedMesh) {
+      obj.skeleton.bones.forEach(bone => {
+        if (!map.has(bone)) {
+          map.set(bone, { bone, name: bone.name || 'bone', children: [], meshes: 0 })
+        }
+      })
+    }
+  })
+
+  // 无骨骼模型：退化为 scene 直接子节点（mesh/group）作为部位
+  if (map.size === 0) {
+    const nodes: PartNode[] = []
+    scene.children.forEach(child => {
+      if (child instanceof THREE.Mesh || child instanceof THREE.Group) {
+        nodes.push({ name: child.name || child.type, path: child.name || child.uuid, childCount: child instanceof THREE.Mesh ? 1 : countMeshes(child) })
+      }
+    })
+    return nodes
+  }
+
+  // 建立骨骼树：向上找最近的骨骼父节点
+  map.forEach((node, bone) => {
+    let parent: THREE.Object3D | null = bone.parent
+    while (parent && !(parent instanceof THREE.Bone)) parent = parent.parent
+    if (parent && map.has(parent as THREE.Bone)) {
+      map.get(parent as THREE.Bone)!.children.push(node)
+    } else {
+      roots.push(bone)
+    }
+  })
+
+  // 网格归属计数：每个 SkinnedMesh 计入其主骨骼
+  scene.traverse(obj => {
+    if (obj instanceof THREE.SkinnedMesh) {
+      const primary = meshPrimaryBone(obj)
+      if (primary && map.has(primary)) map.get(primary)!.meshes += 1
+    }
+  })
+
+  const convert = (bone: THREE.Bone, parentPath: string): PartNode => {
+    const node = map.get(bone)!
+    const path = parentPath ? `${parentPath}/${node.name}` : node.name
+    return {
+      name: node.name,
+      path,
+      childCount: node.meshes,
+      children: node.children.length ? node.children.map(child => convert(child.bone, path)) : undefined,
+    }
+  }
+  return roots.map(bone => convert(bone, ''))
+}
+
 // 3D 模型加载器
 function GLTFModel({ 
   url, 
@@ -246,6 +400,8 @@ function GLTFModel({
   visible = true,
   onLoad,
   onAnimations,
+  onParts,
+  partVisibility,
 }: { 
   url: string
   autoRotate?: boolean
@@ -256,6 +412,8 @@ function GLTFModel({
   visible?: boolean
   onLoad?: (metadata: Asset3DMetadata) => void
   onAnimations?: (names: string[]) => void
+  onParts?: (parts: PartNode[]) => void
+  partVisibility?: Record<string, boolean>
 }) {
   const { scene, animations } = useGLTF(url)
   const modelRef = useRef<THREE.Group>(null)
@@ -272,6 +430,26 @@ function GLTFModel({
   useState(() => {
     if (onLoad) onLoad(computeModelMetadata(scene, 'GLTF/GLB'))
   })
+
+  // 部位树上报（结构稳定时只上报一次）
+  const partTree = useMemo(() => buildPartTree(scene), [scene])
+  const partTreeKey = useMemo(() => partTree.map(node => node.path).join('\u0001'), [partTree])
+  useEffect(() => {
+    onParts?.(partTree)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [partTreeKey])
+
+  // 部位显隐：按主骨骼路径控制网格可见性；每次全量覆盖，避免缓存复用残留
+  useEffect(() => {
+    scene.traverse(child => {
+      if (child instanceof THREE.SkinnedMesh) {
+        const path = primaryBonePath(child)
+        child.visible = path ? (partVisibility?.[path] ?? true) : true
+      } else if (child instanceof THREE.Mesh) {
+        child.visible = true
+      }
+    })
+  }, [scene, partVisibility])
 
   // 动画名称上报（仅当名称集合变化时）
   const namesKey = names.join('\u0001')
@@ -395,6 +573,7 @@ function Scene({
   playing = false,
   onAnimations,
   onModelAnimations,
+  onModelParts,
 }: {
   modelUrl?: string
   mtlUrl?: string
@@ -412,6 +591,7 @@ function Scene({
   playing?: boolean
   onAnimations?: (names: string[]) => void
   onModelAnimations?: (key: string, names: string[]) => void
+  onModelParts?: (key: string, parts: PartNode[]) => void
 }) {
   const { camera, gl } = useThree()
   const controlsRef = useRef<any>(null)
@@ -527,60 +707,67 @@ function Scene({
       
       <group>
         {models && models.length > 0 ? (
-          // 多模型图层模式：每个图层独立渲染与显隐、动画控制
+          // 多模型图层模式：每个图层独立渲染与显隐、动画控制；
+          // 单图层加载失败只降级该图层，不影响其他图层和整个视口。
           models.filter(model => model.visible !== false).map(model => (
-            <Suspense key={model.key} fallback={<LoadingPlaceholder />}>
-              {model.url.toLowerCase().endsWith('.obj') && mtlUrl ? (
-                <OBJModel
-                  objUrl={model.url}
-                  mtlUrl={mtlUrl}
-                  autoRotate={autoRotate}
-                  renderMode={renderMode}
-                  showBoundingBox={showBoundingBox}
-                  visible={model.visible !== false}
-                  onLoad={onMetadataLoad}
-                />
-              ) : (
-                <GLTFModel
-                  url={model.url}
-                  autoRotate={autoRotate}
-                  renderMode={renderMode}
-                  showBoundingBox={showBoundingBox}
-                  animationIndex={model.animationIndex ?? -1}
-                  playing={model.playing ?? false}
-                  visible={model.visible !== false}
-                  onLoad={onMetadataLoad}
-                  onAnimations={names => onModelAnimations?.(model.key, names)}
-                />
-              )}
-            </Suspense>
-          ))
-        ) : (
-          <>
-            {modelUrl && (
+            <LayerErrorBoundary key={model.key} name={model.name}>
               <Suspense fallback={<LoadingPlaceholder />}>
-                {modelUrl.toLowerCase().endsWith('.obj') && mtlUrl ? (
+                {model.url.toLowerCase().endsWith('.obj') && mtlUrl ? (
                   <OBJModel
-                    objUrl={modelUrl}
+                    objUrl={model.url}
                     mtlUrl={mtlUrl}
                     autoRotate={autoRotate}
                     renderMode={renderMode}
                     showBoundingBox={showBoundingBox}
+                    visible={model.visible !== false}
                     onLoad={onMetadataLoad}
                   />
                 ) : (
                   <GLTFModel
-                    url={modelUrl}
+                    url={model.url}
                     autoRotate={autoRotate}
                     renderMode={renderMode}
                     showBoundingBox={showBoundingBox}
-                    animationIndex={animationIndex}
-                    playing={playing}
+                    animationIndex={model.animationIndex ?? -1}
+                    playing={model.playing ?? false}
+                    visible={model.visible !== false}
                     onLoad={onMetadataLoad}
-                    onAnimations={onAnimations}
+                    onAnimations={names => onModelAnimations?.(model.key, names)}
+                    onParts={parts => onModelParts?.(model.key, parts)}
+                    partVisibility={model.partVisibility}
                   />
                 )}
               </Suspense>
+            </LayerErrorBoundary>
+          ))
+        ) : (
+          <>
+            {modelUrl && (
+              <LayerErrorBoundary name={modelUrl.split('/').pop()?.split('?')[0] || '模型'}>
+                <Suspense fallback={<LoadingPlaceholder />}>
+                  {modelUrl.toLowerCase().endsWith('.obj') && mtlUrl ? (
+                    <OBJModel
+                      objUrl={modelUrl}
+                      mtlUrl={mtlUrl}
+                      autoRotate={autoRotate}
+                      renderMode={renderMode}
+                      showBoundingBox={showBoundingBox}
+                      onLoad={onMetadataLoad}
+                    />
+                  ) : (
+                    <GLTFModel
+                      url={modelUrl}
+                      autoRotate={autoRotate}
+                      renderMode={renderMode}
+                      showBoundingBox={showBoundingBox}
+                      animationIndex={animationIndex}
+                      playing={playing}
+                      onLoad={onMetadataLoad}
+                      onAnimations={onAnimations}
+                    />
+                  )}
+                </Suspense>
+              </LayerErrorBoundary>
             )}
           </>
         )}
@@ -625,6 +812,7 @@ export function Model3DViewer({
   height = 500,
   onFullscreen,
   onModelAnimations,
+  onModelParts,
 }: Model3DViewerProps) {
   const [rotation, setRotation] = useState(0)
   const [zoom, setZoom] = useState(50)
@@ -1017,6 +1205,7 @@ export function Model3DViewer({
             playing={playing}
             onAnimations={setAnimationNames}
             onModelAnimations={onModelAnimations}
+            onModelParts={onModelParts}
           />
         </Canvas>
       </Model3DErrorBoundary>
