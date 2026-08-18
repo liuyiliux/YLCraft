@@ -192,6 +192,13 @@ class Model3DConnectorBackend:
         url = self._resolve_model_url(payload, config)
         preview_url = self._resolve_preview_url(payload, config)
         error = str(self._value(payload, config.get("error_path", ""), "") or "")
+        # 兜底错误提取：腾讯等云端把错误放在 Response.Error.Message/Code，
+        # 配置的 error_path（如 $.Response.ErrorMessage）取不到时会漏判为 pending。
+        if not error:
+            for fallback in ("Response.Error.Message", "Response.Error.Code", "Error.Message", "Error.Code", "message", "error"):
+                error = str(self._value(payload, fallback, "") or "")
+                if error:
+                    break
         progress_value = self._value(payload, config.get("progress_path", ""), 0)
         try:
             progress = int(float(progress_value or 0))
@@ -203,7 +210,9 @@ class Model3DConnectorBackend:
             status = "done"
         elif raw_status in done_values:
             status = "done"
-        elif raw_status in failed_values:
+        # provider 明确返回错误（如 JobNotFound/JobNotExist）且没有结果时，
+        # 必须判为 error，否则任务会永远停留在 pending 无限轮询。
+        elif raw_status in failed_values or (error and not url):
             status = "error"
         else:
             status = "pending"

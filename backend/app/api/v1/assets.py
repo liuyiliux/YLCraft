@@ -337,7 +337,9 @@ async def _asset_hub_card(
     if node_meta.get("deleted_at") or str(node_meta.get("status", "")).upper() == "DELETED":
         return None
 
-    file_url = _hub_file_url(rep.file_path)
+    # 仅当本地文件真实存在时暴露下载地址；文件缺失（下载/同步失败）时置空，
+    # 避免前端把 zip 或过期远程地址当成可加载模型。
+    file_url = _hub_file_url(rep.file_path) if rep.file_path and Path(rep.file_path).is_file() else ""
     source = node_meta.get("source") or lineage.get("source") or params.get("source") or "asset_hub"
     source_type = node_meta.get("source_type")
     if not source_type:
@@ -419,6 +421,7 @@ async def _asset_hub_card(
         "status": status,
         "source_type": source_type,
         "source_url": node_meta.get("source_url") or lineage.get("source_url") or file_url,
+        "file_url": file_url,
         "cover_url": thumbnail_url or "",
         "thumbnail_url": thumbnail_url,
         "tags": tags,

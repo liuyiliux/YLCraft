@@ -39,6 +39,44 @@ class CosStorageService:
     def public_url(self, key: str) -> str:
         return f"{self.scheme}://{self.host}/{quote(key, safe='/')}"
 
+    def signed_url(self, key: str, expires: int = 86400) -> str:
+        """生成带 q-sign-time 的临时签名下载 URL（GET）。
+
+        与腾讯混元返回的 COS 链接同格式（q-header-list=host，签名参数
+        在 query 中不参与签名）。临时链接过期即失效，适合把模型/图片
+        短暂暴露给第三方（如绑骨接口的 File3D.Url，要求 24h 内有效）。
+        """
+        now = int(time.time())
+        start = now - 60
+        end = now + max(60, expires)
+        key_time = f"{start};{end}"
+
+        sign_key = hmac.new(
+            self.secret_key.encode("utf-8"),
+            key_time.encode("utf-8"),
+            hashlib.sha1,
+        ).hexdigest()
+
+        uri = "/" + quote(key, safe="/")
+        header_str = f"host={quote(self.host, safe='')}"
+        http_string = f"get\n{uri}\n\n{header_str}\n"
+        string_to_sign = (
+            f"sha1\n{key_time}\n{hashlib.sha1(http_string.encode('utf-8')).hexdigest()}\n"
+        )
+        signature = hmac.new(
+            sign_key.encode("utf-8"),
+            string_to_sign.encode("utf-8"),
+            hashlib.sha1,
+        ).hexdigest()
+
+        query = (
+            f"q-sign-algorithm=sha1&q-ak={self.secret_id}"
+            f"&q-sign-time={key_time}&q-key-time={key_time}"
+            f"&q-header-list=host&q-url-param-list="
+            f"&q-signature={signature}"
+        )
+        return f"{self.public_url(key)}?{query}"
+
     def _authorization(self, method: str, key: str, content_type: str, now: int) -> str:
         start = now - 60
         end = now + 3600

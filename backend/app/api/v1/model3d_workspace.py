@@ -6,6 +6,7 @@ import base64
 import binascii
 import json
 import mimetypes
+import os
 import shutil
 import time
 from pathlib import Path
@@ -22,6 +23,7 @@ from app.db.models.ai_connector import AIConnector
 from app.db.models.asset_hub import AssetRelation, AssetRepresentation, AssetType, AssetVersion, RelationType
 from app.db.models.task import Model3DGenerationTask
 from app.services.asset_hub import AssetHubFacade
+from app.services.cos_storage import load_cos_service
 from app.services.model3d.service import Model3DService
 from app.services.model3d.workspace import Model3DConnectorBackend, Model3DProviderRequestError
 
@@ -348,8 +350,11 @@ async def _resolve_rig_source(
 ) -> tuple[str, str, str | None]:
     """Return (public_model_url, file_type, source_asset_id) for a rigging job.
 
-    Tencent auto-rigging only accepts a publicly reachable FBX/GLB URL, so a
-    local asset file is copied into the statically served public directory.
+    Tencent auto-rigging only accepts a publicly reachable FBX/GLB URL. When
+    COS is configured the local model is uploaded and a time-limited signed
+    URL is returned (matches the "URL valid for 24h" requirement); otherwise
+    the file is copied into the statically served /model3d-files directory and
+    exposed via BASE_URL (falling back to the request base URL).
     """
     if source_url:
         suffix = Path(source_url.split("?", 1)[0]).suffix.lower()
@@ -370,10 +375,20 @@ async def _resolve_rig_source(
     file_type = _RIG_SOURCE_EXTENSIONS.get(path.suffix.lower())
     if not file_type:
         raise ValueError("绑骨蒙皮仅支持 GLB/FBX 模型（≤60MB，人形需 A-Pose/T-Pose）")
+
+    # 优先：COS 已配置 → 上传本地模型，返回临时签名 URL（24h 有效）
+    cos = await load_cos_service()
+    if cos:
+        key = f"model3d/rig/{source_asset_id}{path.suffix.lower()}"
+        await cos.upload_file(key, path)
+        return cos.signed_url(key, expires=86400), file_type, source_asset_id
+
+    # 回退：/model3d-files 静态目录 + BASE_URL（仅当后端公网可达时有效）
     public_path = _model3d_public_dir() / f"{source_asset_id}{path.suffix.lower()}"
     if not public_path.is_file() or public_path.stat().st_size != path.stat().st_size:
         shutil.copyfile(path, public_path)
-    return f"{base_url.rstrip('/')}/model3d-files/public/{public_path.name}", file_type, source_asset_id
+    public_base = (os.getenv("BASE_URL") or "").rstrip("/") or base_url.rstrip("/")
+    return f"{public_base}/model3d-files/public/{public_path.name}", file_type, source_asset_id
 
 
 @router.post("/rig", response_model=Model3DTaskResponse, summary="Submit auto-rigging task (skeleton-only or preset motion)")
