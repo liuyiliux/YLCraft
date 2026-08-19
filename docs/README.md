@@ -2,6 +2,11 @@
 
 本文是项目文档入口。新 AI 接手时先读这里，再按任务进入对应目录，避免反复全仓考古。
 
+## 仓库地址
+
+- GitHub：https://github.com/liuyiliux/YLCraft
+- CNB：https://cnb.cool/yiliu/YLCraft
+
 ## 必读入口
 
 | 文档 | 用途 |
