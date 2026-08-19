@@ -74,6 +74,7 @@ backend/downloads/
 backend/storage/
 backend/backups/
 *.log
+backend/tmp_*
 
 .codebuddy/
 backend/migrate_assets_v2.py

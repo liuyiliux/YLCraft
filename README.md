@@ -197,4 +197,4 @@ cd frontend && npm run build
 
 ## 许可证
 
-尚未选定许可证。在添加 `LICENSE` 文件之前，仓库默认不授予开源复用许可。
+本项目采用 [Apache License 2.0](LICENSE) 开源。你可以自由使用、修改、分发和商用，但需保留版权与许可证声明。详见 [LICENSE](LICENSE)。
