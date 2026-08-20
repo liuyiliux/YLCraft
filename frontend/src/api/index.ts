@@ -1627,6 +1627,76 @@ export const matchCreativeProjectReferenceAssets = (
     body: JSON.stringify(data),
   })
 
+export type PrevisScene = {
+  id: string
+  project_id: string
+  storyboard_content_id: string
+  panel_number: number
+  title: string
+  revision: number
+  scene: Record<string, any>
+  created_at: string
+  updated_at: string
+}
+
+export const listPrevisScenes = (params: {
+  projectId?: string
+  storyboardContentId?: string
+  panelNumber?: number
+} = {}) => {
+  const search = new URLSearchParams()
+  if (params.projectId) search.set('project_id', params.projectId)
+  if (params.storyboardContentId) search.set('storyboard_content_id', params.storyboardContentId)
+  if (params.panelNumber !== undefined) search.set('panel_number', String(params.panelNumber))
+  const query = search.toString()
+  return request(`/previs/scenes${query ? `?${query}` : ''}`) as Promise<{ success: boolean; data: PrevisScene[]; total: number }>
+}
+
+export const createPrevisScene = (data: {
+  project_id: string
+  storyboard_content_id: string
+  panel_number: number
+  title?: string
+  scene?: Record<string, any>
+}) => request('/previs/scenes', { method: 'POST', body: JSON.stringify(data) }) as Promise<{ success: boolean; data: PrevisScene }>
+
+export async function getOrCreatePrevisScene(params: {
+  projectId: string
+  storyboardContentId: string
+  panelNumber: number
+  title?: string
+}): Promise<PrevisScene> {
+  const listed = await listPrevisScenes(params)
+  if (listed.data?.[0]) return listed.data[0]
+  try {
+    const created = await createPrevisScene({
+      project_id: params.projectId,
+      storyboard_content_id: params.storyboardContentId,
+      panel_number: params.panelNumber,
+      title: params.title || `分镜 ${params.panelNumber} · 3D 预演`,
+    })
+    return created.data
+  } catch (error: any) {
+    if (error?.status !== 409) throw error
+    const retried = await listPrevisScenes(params)
+    if (!retried.data?.[0]) throw error
+    return retried.data[0]
+  }
+}
+
+export const getPrevisScene = (sceneId: string) =>
+  request(`/previs/scenes/${encodeURIComponent(sceneId)}`) as Promise<{ success: boolean; data: PrevisScene }>
+
+export const savePrevisScene = (sceneId: string, data: {
+  expected_revision: number
+  title?: string
+  scene?: Record<string, any>
+}) =>
+  request(`/previs/scenes/${encodeURIComponent(sceneId)}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  }) as Promise<{ success: boolean; data: PrevisScene }>
+
 export const listCreativeProjectContents = (
   projectId: string,
   contentType?: string,

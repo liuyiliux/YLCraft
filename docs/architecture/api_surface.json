@@ -113,6 +113,14 @@
       ]
     },
     {
+      "name": "previs",
+      "file": "backend/app/api/v1/previs.py",
+      "prefix": "/api/v1/previs",
+      "tags": [
+        "3D Director Previs"
+      ]
+    },
+    {
       "name": "image_prompts",
       "file": "backend/app/api/v1/image_prompts.py",
       "prefix": "/api/v1/image-prompts",
@@ -1918,7 +1926,7 @@
       "summary": "素材资产列表",
       "function": "list_assets",
       "file": "backend/app/api/v1/assets.py",
-      "line": 613,
+      "line": 616,
       "response_model": "AssetListResponse",
       "include_in_schema": true
     },
@@ -1950,7 +1958,7 @@
       "summary": "下载/预览本地文件",
       "function": "download_local_asset_file",
       "file": "backend/app/api/v1/assets.py",
-      "line": 780,
+      "line": 783,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1966,7 +1974,7 @@
       "summary": "预览本地文件",
       "function": "download_local_asset_file",
       "file": "backend/app/api/v1/assets.py",
-      "line": 780,
+      "line": 783,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1982,7 +1990,7 @@
       "summary": "标签列表",
       "function": "list_tags",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1207,
+      "line": 1210,
       "response_model": "TagListResponse",
       "include_in_schema": true
     },
@@ -1998,7 +2006,7 @@
       "summary": "创建标签",
       "function": "create_tag",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1216,
+      "line": 1219,
       "response_model": "TagResponse",
       "include_in_schema": true
     },
@@ -2014,7 +2022,7 @@
       "summary": "本地上传素材入库",
       "function": "upload_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 954,
+      "line": 957,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2030,7 +2038,7 @@
       "summary": "上传 3D 模型（ZIP 或单文件）入库",
       "function": "upload_model3d",
       "file": "backend/app/api/v1/assets.py",
-      "line": 910,
+      "line": 913,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2046,7 +2054,7 @@
       "summary": "资产详情",
       "function": "get_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1355,
+      "line": 1358,
       "response_model": "AssetResponse",
       "include_in_schema": true
     },
@@ -2062,7 +2070,7 @@
       "summary": "更新资产",
       "function": "update_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1377,
+      "line": 1380,
       "response_model": "AssetResponse",
       "include_in_schema": true
     },
@@ -2078,7 +2086,7 @@
       "summary": "删除资产",
       "function": "delete_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1416,
+      "line": 1419,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2110,7 +2118,7 @@
       "summary": "下载课程章节文件",
       "function": "download_course_episode_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1173,
+      "line": 1176,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2126,7 +2134,7 @@
       "summary": "读取课程章节弹幕",
       "function": "get_course_episode_danmaku",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1162,
+      "line": 1165,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2142,7 +2150,7 @@
       "summary": "读取课程章节字幕",
       "function": "get_course_episode_subtitle",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1150,
+      "line": 1153,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2158,7 +2166,7 @@
       "summary": "播放课程章节文件",
       "function": "stream_course_episode_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1188,
+      "line": 1191,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2174,7 +2182,7 @@
       "summary": "下载资产文件",
       "function": "download_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 797,
+      "line": 800,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2190,7 +2198,7 @@
       "summary": "下载/预览资产的配套文件",
       "function": "asset_sidecar_file",
       "file": "backend/app/api/v1/assets.py",
-      "line": 814,
+      "line": 817,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2206,7 +2214,7 @@
       "summary": "恢复软删除的资产",
       "function": "restore_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1432,
+      "line": 1435,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2222,7 +2230,7 @@
       "summary": "读取资产弹幕",
       "function": "get_asset_danmaku",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1138,
+      "line": 1141,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2238,7 +2246,7 @@
       "summary": "读取资产字幕",
       "function": "get_asset_subtitle",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1125,
+      "line": 1128,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2254,7 +2262,7 @@
       "summary": "播放资产视频文件",
       "function": "stream_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 997,
+      "line": 1000,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2286,7 +2294,7 @@
       "summary": "代理加载封面图",
       "function": "proxy_thumbnail",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1320,
+      "line": 1323,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2302,7 +2310,7 @@
       "summary": "设置资产缩略图",
       "function": "set_asset_thumbnail",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1297,
+      "line": 1300,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7358,7 +7366,7 @@
       "summary": "Configured 3D connectors (generation / rigging)",
       "function": "list_model3d_backends",
       "file": "backend/app/api/v1/model3d_workspace.py",
-      "line": 226,
+      "line": 229,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7374,7 +7382,7 @@
       "summary": "Submit configured image-to-3D task",
       "function": "generate_model3d",
       "file": "backend/app/api/v1/model3d_workspace.py",
-      "line": 238,
+      "line": 241,
       "response_model": "Model3DTaskResponse",
       "include_in_schema": true
     },
@@ -7390,7 +7398,7 @@
       "summary": "Durable 3D workspace history",
       "function": "model3d_history",
       "file": "backend/app/api/v1/model3d_workspace.py",
-      "line": 318,
+      "line": 321,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7406,7 +7414,7 @@
       "summary": "Submit auto-rigging task (skeleton-only or preset motion)",
       "function": "rig_model3d",
       "file": "backend/app/api/v1/model3d_workspace.py",
-      "line": 379,
+      "line": 395,
       "response_model": "Model3DTaskResponse",
       "include_in_schema": true
     },
@@ -7422,7 +7430,7 @@
       "summary": "Poll image-to-3D task",
       "function": "poll_model3d_task",
       "file": "backend/app/api/v1/model3d_workspace.py",
-      "line": 274,
+      "line": 277,
       "response_model": "Model3DTaskResponse",
       "include_in_schema": true
     },
@@ -7935,6 +7943,86 @@
       "function": "playwright_ws",
       "file": "backend/app/api/v1/cookie_acquisition.py",
       "line": 169,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/previs/scenes",
+      "router": "previs",
+      "prefix": "/api/v1/previs",
+      "local_path": "/scenes",
+      "tags": [
+        "3D Director Previs"
+      ],
+      "summary": "List previs scenes",
+      "function": "list_previs_scenes",
+      "file": "backend/app/api/v1/previs.py",
+      "line": 80,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/previs/scenes",
+      "router": "previs",
+      "prefix": "/api/v1/previs",
+      "local_path": "/scenes",
+      "tags": [
+        "3D Director Previs"
+      ],
+      "summary": "Create previs scene",
+      "function": "create_previs_scene",
+      "file": "backend/app/api/v1/previs.py",
+      "line": 98,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/previs/scenes/{scene_id}",
+      "router": "previs",
+      "prefix": "/api/v1/previs",
+      "local_path": "/scenes/{scene_id}",
+      "tags": [
+        "3D Director Previs"
+      ],
+      "summary": "Get previs scene",
+      "function": "get_previs_scene",
+      "file": "backend/app/api/v1/previs.py",
+      "line": 132,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/previs/scenes/{scene_id}",
+      "router": "previs",
+      "prefix": "/api/v1/previs",
+      "local_path": "/scenes/{scene_id}",
+      "tags": [
+        "3D Director Previs"
+      ],
+      "summary": "Save previs scene with revision check",
+      "function": "save_previs_scene",
+      "file": "backend/app/api/v1/previs.py",
+      "line": 141,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/previs/scenes/{scene_id}",
+      "router": "previs",
+      "prefix": "/api/v1/previs",
+      "local_path": "/scenes/{scene_id}",
+      "tags": [
+        "3D Director Previs"
+      ],
+      "summary": "Delete previs scene",
+      "function": "delete_previs_scene",
+      "file": "backend/app/api/v1/previs.py",
+      "line": 178,
       "response_model": "",
       "include_in_schema": true
     },

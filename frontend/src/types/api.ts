@@ -592,6 +592,7 @@ export interface Asset {
   title: string
   description?: string
   source_url: string
+  file_url?: string
   platform?: string
   author?: string
   author_url?: string

@@ -17,6 +17,7 @@ import ImageGenPage from './pages/image-gen'
 import VideoGenPage from './pages/video-gen'
 import Model3DPage from './pages/model-3d'
 import Model3DViewerPage from './pages/model3d-viewer'
+import PrevisPage from './pages/previs'
 import ClipOpsPage from './pages/clip-ops'
 import Live2DPage from './pages/live2d'
 import SubtitlePage from './pages/subtitle'
@@ -78,6 +79,7 @@ export default function App() {
               <Route path="multi-platform-gen" element={<MultiPlatformGenPage />} />
               <Route path="video-gen" element={<VideoGenPage />} />
               <Route path="model-3d" element={<Model3DPage />} />
+              <Route path="previs" element={<PrevisPage />} />
               <Route path="comfyui" element={<ComfyUIPage />} />
               <Route path="clip-ops" element={<ClipOpsPage />} />
               <Route path="live2d" element={<Live2DPage />} />

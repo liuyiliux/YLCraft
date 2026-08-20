@@ -24,6 +24,7 @@ from app.db.models.creative_project import (
     NarrativeRunStatus,
 )
 from app.db.models.canvas import CanvasDocument
+from app.db.models.previs import PrevisSceneDocument
 from app.db.models.image_prompt_reference import ImagePromptReference, ImagePromptSource
 from app.db.models.asset_hub import (
     AssetNode, AssetVersion, AssetRepresentation,
