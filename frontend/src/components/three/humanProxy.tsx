@@ -3,7 +3,8 @@
  *
  * 用胶囊/球/圆柱组合出轻量人形，参照 storyai-3d-director-desk 的
  * ProceduralMannequin（MIT）分层关节思路，但为本项目自写实现：
- * 肢体为胶囊几何体，关节为球体，肩/肘/髋/膝分层旋转应用姿势。
+ * 肢体为胶囊几何体，关节为球体，肩/肘/髋/膝分层旋转应用姿势；
+ * 头部带眼睛/鼻子/嘴等五官，手带手指/拇指，脚带脚趾，增强人偶辨识度。
  * 无外部模型文件、无版权风险；姿势只存 metadata.pose（预设 key），
  * 不承载 Story 业务状态。
  */
@@ -81,6 +82,9 @@ const D = Math.PI / 180
 
 // 参考身高：所有固定尺寸按此比例布局，实际身高通过整体 scale 缩放。
 const H = 1.7
+// 默认身体色（storyai 风格蓝），细节（眼睛/嘴）用深色
+const DEFAULT_BODY = '#4F8EF7'
+const DETAIL = '#0a1020'
 
 function deg(value?: number) {
   return (value ?? 0) * D
@@ -110,6 +114,84 @@ function Ball({ position, radius, color, name }: { position: [number, number, nu
   )
 }
 
+/** 头：主球 + 面部凸起 + 眼睛/鼻子/嘴，朝 +Z。 */
+function Head({ color, position, rotation, headR }: { color: string; position: [number, number, number]; rotation: [number, number, number]; headR: number }) {
+  const eyeY = headR * 0.16
+  const eyeX = headR * 0.24
+  const faceZ = headR * 0.52
+  const eyeZ = headR * 0.78
+  return (
+    <group position={position} rotation={rotation}>
+      <mesh name="humanoid-head">
+        <sphereGeometry args={[headR, 26, 22]} />
+        <LimbMaterial color={color} />
+      </mesh>
+      {/* 面部凸起，让头不是纯圆球 */}
+      <mesh name="humanoid-face" position={[0, -headR * 0.08, headR * 0.45]} scale={[0.74, 0.56, 0.4]}>
+        <sphereGeometry args={[headR * 0.5, 16, 12]} />
+        <LimbMaterial color={color} />
+      </mesh>
+      {/* 眼睛 */}
+      <mesh name="humanoid-left-eye" position={[-eyeX, eyeY, eyeZ]} scale={[1, 0.6, 0.35]}>
+        <sphereGeometry args={[headR * 0.14, 10, 8]} />
+        <LimbMaterial color={DETAIL} />
+      </mesh>
+      <mesh name="humanoid-right-eye" position={[eyeX, eyeY, eyeZ]} scale={[1, 0.6, 0.35]}>
+        <sphereGeometry args={[headR * 0.14, 10, 8]} />
+        <LimbMaterial color={DETAIL} />
+      </mesh>
+      {/* 鼻子 */}
+      <mesh name="humanoid-nose" position={[0, -headR * 0.02, headR * 0.88]} scale={[0.5, 0.72, 0.5]}>
+        <sphereGeometry args={[headR * 0.09, 10, 8]} />
+        <LimbMaterial color={color} />
+      </mesh>
+      {/* 嘴 */}
+      <mesh name="humanoid-mouth" position={[0, -headR * 0.24, headR * 0.8]} scale={[1, 0.55, 0.4]}>
+        <sphereGeometry args={[headR * 0.09, 10, 8]} />
+        <LimbMaterial color={DETAIL} />
+      </mesh>
+    </group>
+  )
+}
+
+/** 手：主球 + 手指 + 拇指。 */
+function Hand({ side, color, position, handR }: { side: -1 | 1; color: string; position: [number, number, number]; handR: number }) {
+  const sideName = side > 0 ? 'right' : 'left'
+  return (
+    <group position={position}>
+      <Ball position={[0, 0, 0]} radius={handR} color={color} name={`humanoid-${sideName}-hand`} />
+      {/* 手指 */}
+      <mesh name={`humanoid-${sideName}-fingers`} position={[0, -handR * 0.32, handR * 0.42]} rotation={[0.3, 0, 0]} scale={[0.6, 0.5, 0.8]}>
+        <capsuleGeometry args={[handR * 0.3, handR * 0.55, 6, 10]} />
+        <LimbMaterial color={color} />
+      </mesh>
+      {/* 拇指 */}
+      <mesh name={`humanoid-${sideName}-thumb`} position={[side * handR * 0.62, -handR * 0.12, handR * 0.18]} rotation={[0.22, 0, side * 0.5]} scale={[0.42, 0.6, 0.5]}>
+        <capsuleGeometry args={[handR * 0.24, handR * 0.5, 6, 10]} />
+        <LimbMaterial color={color} />
+      </mesh>
+    </group>
+  )
+}
+
+/** 脚：水平胶囊 + 脚趾帽。 */
+function Foot({ side, color, position, footR }: { side: -1 | 1; color: string; position: [number, number, number]; footR: number }) {
+  const sideName = side > 0 ? 'right' : 'left'
+  return (
+    <group position={position}>
+      <mesh name={`humanoid-${sideName}-foot`} rotation={[Math.PI / 2, 0, 0]}>
+        <capsuleGeometry args={[footR, footR * 1.7, 8, 12]} />
+        <LimbMaterial color={color} />
+      </mesh>
+      {/* 脚趾 */}
+      <mesh name={`humanoid-${sideName}-toe`} position={[0, -footR * 0.05, footR * 0.7]} scale={[0.85, 0.6, 0.55]}>
+        <sphereGeometry args={[footR, 12, 10]} />
+        <LimbMaterial color={color} />
+      </mesh>
+    </group>
+  )
+}
+
 /** 手臂：肩旋转 → 上臂 → 肘旋转 → 前臂 → 手。 */
 function Arm({ side, shoulderRot, elbow, color }: { side: 1 | -1; shoulderRot: [number, number, number]; elbow: number; color: string }) {
   const upperLen = 0.28
@@ -124,7 +206,7 @@ function Arm({ side, shoulderRot, elbow, color }: { side: 1 | -1; shoulderRot: [
       <group position={[0, -(upperLen + radius * 2), 0]} rotation={[0, 0, deg(elbow)]}>
         <Ball position={[0, 0, 0]} radius={0.045} color={color} name={`humanoid-${sideName}-elbow`} />
         <Cap position={[0, -(foreLen / 2 + radius * 0.9), 0]} radius={radius * 0.9} length={foreLen} color={color} name={`humanoid-${sideName}-forearm`} />
-        <Ball position={[0, -(foreLen + radius * 1.8 + handR), 0]} radius={handR} color={color} name={`humanoid-${sideName}-hand`} />
+        <Hand side={side} color={color} position={[0, -(foreLen + radius * 1.8 + handR), 0.02]} handR={handR} />
       </group>
     </group>
   )
@@ -144,16 +226,16 @@ function Leg({ side, hipRot, knee, color }: { side: 1 | -1; hipRot: [number, num
       <group position={[0, -(thighLen + radius * 2), 0]} rotation={[deg(knee), 0, 0]}>
         <Ball position={[0, 0, 0]} radius={0.052} color={color} name={`humanoid-${sideName}-knee`} />
         <Cap position={[0, -(calfLen / 2 + radius * 0.9), 0]} radius={radius * 0.9} length={calfLen} color={color} name={`humanoid-${sideName}-calf`} />
-        <Ball position={[0, -(calfLen + radius * 1.8 + footR), 0.02]} radius={footR} color={color} name={`humanoid-${sideName}-foot`} />
+        <Foot side={side} color={color} position={[0, -(calfLen + radius * 1.8 + footR), 0.02]} footR={footR} />
       </group>
     </group>
   )
 }
 
-export function ProceduralHumanProxy({ pose, color = '#6b7280', height = 1.7 }: { pose?: HumanProxyPoseKey | HumanProxyPose; color?: string; height?: number }) {
+export function ProceduralHumanProxy({ pose, color = DEFAULT_BODY, height = 1.7 }: { pose?: HumanProxyPoseKey | HumanProxyPose; color?: string; height?: number }) {
   const poseDef: HumanProxyPose =
     typeof pose === 'string' ? (HUMAN_PROXY_POSES[pose]?.pose ?? {}) : (pose ?? {})
-  const headR = 0.17
+  const headR = 0.15
   const chestR = 0.2
   const chestLen = 0.28
   const pelvisR = 0.12
@@ -167,7 +249,7 @@ export function ProceduralHumanProxy({ pose, color = '#6b7280', height = 1.7 }: 
         <cylinderGeometry args={[headR * 0.45, headR * 0.55, 0.07, 12]} />
         <LimbMaterial color={color} />
       </mesh>
-      <Ball position={[0, 1.55, 0]} radius={headR} color={color} name="humanoid-head" />
+      <Head color={color} position={[0, 1.56, 0]} rotation={[0, 0, 0]} headR={headR} />
       {/* 手臂 */}
       <Arm side={-1} shoulderRot={[deg(poseDef.leftShoulder?.[0]), deg(poseDef.leftShoulder?.[1]), deg(poseDef.leftShoulder?.[2])]} elbow={poseDef.leftElbow ?? 0} color={color} />
       <Arm side={1} shoulderRot={[deg(poseDef.rightShoulder?.[0]), deg(poseDef.rightShoulder?.[1]), deg(poseDef.rightShoulder?.[2])]} elbow={poseDef.rightElbow ?? 0} color={color} />

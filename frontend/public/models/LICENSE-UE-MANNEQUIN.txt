@@ -1,0 +1,14 @@
+UE Mannequin (retopology) — built-in previs human proxy model
+
+Source: https://sketchfab.com/3d-models/ue-mannequin-retopology-5394d9f894374a2ab7c57a21929ce4c2
+Author: William Luque (Sketchfab)
+Original distribution: https://github.com/jiguang132/storyai-3d-director-desk/blob/main/public/models/ue-mannequin-retopology.license.txt
+
+License: SKETCHFAB STANDARD LICENSE
+- Allowed in worldwide projects, all media, commercial or non-commercial, and derivative works.
+- Attribution to the original author/source must be retained.
+- The model must NOT be repackaged, resold, or redistributed on its own as a downloadable asset.
+- See https://sketchfab.com/licenses for the complete current terms.
+
+This file is used only as an in-app 3D scene primitive inside YLCraft; it is NOT
+covered by YLCraft's Apache-2.0 license.

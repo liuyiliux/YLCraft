@@ -8,6 +8,7 @@ application export format.
 | File | Provider | Capability | Notes |
 | --- | --- | --- | --- |
 | `agnes-video-v2.json` | Agnes | Text to video | Image-to-video needs a publicly reachable image URL, so it is not enabled in the local-first preset. |
+| `agnes-image.json` | Agnes | Text/image to image | Agnes Image 2.1/2.0 Flash, synchronous URL response at `data[0].url`; img2img/multi-image goes through `extra_body.image`. |
 | `dashscope-wan-2.7-video.json` | Alibaba Bailian | Text/image to video | Uses DashScope asynchronous polling; image-to-video uses the first-frame media contract. |
 | `openai-text-image.json` | OpenAI | Text + image | Standard Chat Completions and Images API examples. |
 | `siliconflow-text-image.json` | SiliconFlow | Text + image | OpenAI-compatible text plus configurable image generation. Verify the selected model's reference-image contract. |

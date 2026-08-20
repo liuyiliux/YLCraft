@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "name": "Agnes Image Flash",
+  "description": "Public YLCraft connector preset for Agnes Image 2.1/2.0 Flash text-to-image and image-to-image. Add your own API key after import.",
+  "connectors": [
+    {
+      "id": "agnes-image-21-flash",
+      "provider": "agnes",
+      "name": "Agnes Image 2.1 Flash",
+      "api_key": "",
+      "provider_type": "image",
+      "base_url": "https://api.agnes-ai.cn",
+      "api_endpoint": "/v1/images/generations",
+      "default_model": "agnes-image-2.1-flash",
+      "available_models": ["agnes-image-2.1-flash", "agnes-image-2.0-flash"],
+      "supported_sizes": ["1K", "2K", "3K", "4K"],
+      "is_active": true,
+      "is_default": false,
+      "priority": 100,
+      "description": "Agnes Image 2.1 Flash 文生图/图生图/多图合成，同步返回图片 URL（data[0].url）。图生图时把参考图数组写入 extra_body.image。",
+      "request_template": "{\"model\":\"{{ model }}\",\"prompt\":\"{{ prompt }}\",\"size\":\"{{ size }}\",\"extra_body\":{\"response_format\":\"url\"}}",
+      "response_config": {
+        "images_path": "$.data[*].url",
+        "error_path": "$.error.message"
+      },
+      "default_params": {
+        "image_capabilities": ["text_to_image", "image_to_image"],
+        "aspect_ratios": ["1:1", "3:4", "4:3", "16:9", "9:16", "2:3", "3:2", "21:9"]
+      },
+      "support_reference_image": true,
+      "support_multiple_reference_images": true,
+      "reference_image_array_field": "extra_body.image",
+      "timeout": 120,
+      "test_timeout": 30,
+      "api_format": "custom"
+    }
+  ]
+}
