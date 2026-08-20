@@ -257,6 +257,12 @@ def _register_routes():
         logger.warning(f"Could not load canvas router: {e}")
 
     try:
+        from app.api.v1 import previs
+        app.include_router(previs.router, prefix="/api/v1/previs", tags=["3D Director Previs"])
+    except Exception as e:
+        logger.warning(f"Could not load previs router: {e}")
+
+    try:
         from app.api.v1 import image_prompts
         app.include_router(image_prompts.router, prefix="/api/v1/image-prompts", tags=["Image Prompt References"])
     except Exception as e:

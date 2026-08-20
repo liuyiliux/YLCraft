@@ -31,6 +31,7 @@ import {
   CloudUploadOutlined,
   CopyOutlined,
   DeleteOutlined,
+  DeploymentUnitOutlined,
   DownOutlined,
   DownloadOutlined,
   EditOutlined,
@@ -88,6 +89,7 @@ import {
   listCreativeProjectAssets,
   listCreativeProjectGenerationLogs,
   listCreativeProjects,
+  getOrCreatePrevisScene,
   listTasks,
   matchCreativeProjectReferenceAssets,
   promoteCreativeProjectWriterRoomContent,
@@ -3719,6 +3721,21 @@ export default function StoryPage() {
     }
   }
 
+  async function handleOpenPrevis(storyboardContentId: string, panelNumber: number, title?: string) {
+    if (!selectedProject) return
+    try {
+      const scene = await getOrCreatePrevisScene({
+        projectId: selectedProject.id,
+        storyboardContentId,
+        panelNumber,
+        title,
+      })
+      navigate(`/previs?scene_id=${encodeURIComponent(scene.id)}`)
+    } catch (error: any) {
+      message.error(error?.message || '打开 3D 预演失败')
+    }
+  }
+
   function handleOpenVideoGeneration(prompt: string, context: VideoGenerationContext = {}) {
     if (!selectedProject) return
     const params = new URLSearchParams({
@@ -4670,6 +4687,7 @@ export default function StoryPage() {
                         onLinkReferenceAsset={handleLinkAsset}
                         onSendImagePrompt={handleInlineGenerateImage}
                         onOpenVideoGeneration={handleOpenVideoGeneration}
+                         onOpenPrevis={handleOpenPrevis}
                         inlineImages={inlineImages}
                         inlineImageLoadingKey={inlineImageLoadingKey}
                         pendingImageTaskKey={pendingInlineImageTask?.key}
@@ -6166,6 +6184,7 @@ function EpisodeWorkbenchTab({
   onLinkReferenceAsset,
   onSendImagePrompt,
   onOpenVideoGeneration,
+  onOpenPrevis,
   inlineImages,
   inlineImageLoadingKey,
   pendingImageTaskKey,
@@ -6225,6 +6244,7 @@ function EpisodeWorkbenchTab({
   onLinkReferenceAsset: (assetId: string, role: string, metadata?: Record<string, any>) => void
   onSendImagePrompt: (prompt: string, context?: ImagePromptContext) => void
   onOpenVideoGeneration: (prompt: string, context?: VideoGenerationContext) => void
+  onOpenPrevis: (storyboardContentId: string, panelNumber: number, title?: string) => void
   inlineImages: Record<string, InlineGeneratedImage>
   inlineImageLoadingKey: string | null
   pendingImageTaskKey?: string
@@ -7409,6 +7429,19 @@ function EpisodeWorkbenchTab({
                           }
                         >
                           生图
+                        </Button>
+                        <Button
+                          size="small"
+                          icon={<DeploymentUnitOutlined />}
+                          onClick={() =>
+                            onOpenPrevis(
+                              storyboard.id,
+                              Number(panel.panel_number),
+                              panel.action || `分镜 ${panel.panel_number} · 3D 预演`,
+                            )
+                          }
+                        >
+                          3D 预演
                         </Button>
                         <Button
                           size="small"
