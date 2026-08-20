@@ -1,0 +1,14 @@
+Vanguard (blueprint-figure) — built-in previs human proxy model
+
+Source: https://github.com/ganbo-gab/open-storyboard-canvas/blob/main/public/blueprint-figure.glb
+Open Storyboard Canvas is a MIT-licensed fork of Storyboard-Copilot by henjicc / 痕继痕迹
+(attribution retained via NOTICE); MIT terms apply to its new original code and resources
+to the extent the fork owner owns them.
+
+License: MIT (per upstream NOTICE / LICENSE)
+- Free to use, copy, modify, merge, publish, distribute, sublicense, and sell.
+- Must retain the above copyright/permission notice and upstream attribution (henjicc / Storyboard-Copilot).
+- See: https://github.com/ganbo-gab/open-storyboard-canvas/blob/main/LICENSE
+
+This file is used only as an in-app 3D scene primitive inside YLCraft; it is NOT
+covered by YLCraft's Apache-2.0 license.

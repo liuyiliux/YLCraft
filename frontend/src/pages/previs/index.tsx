@@ -92,7 +92,7 @@ function makeHumanProxyNode(): PrevisNode {
     transform: { ...DEFAULT_TRANSFORM, position: [0, 0, 0] },
     visible: true,
     locked: false,
-    metadata: { height: 1.7, pose: 'stand' },
+    metadata: { height: 1.7, pose: 'stand', proxyStyle: 'capsule' },
   }
 }
 
@@ -209,6 +209,10 @@ export default function PrevisPage() {
 
   const updateNodePose = useCallback((id: string, pose: string) => {
     mutateNodes(nodes => nodes.map(node => (node.id === id ? { ...node, metadata: { ...node.metadata, pose } } : node)))
+  }, [mutateNodes])
+
+  const updateProxyStyle = useCallback((id: string, style: string) => {
+    mutateNodes(nodes => nodes.map(node => (node.id === id ? { ...node, metadata: { ...node.metadata, proxyStyle: style } } : node)))
   }, [mutateNodes])
 
   const createStandaloneScene = useCallback(async () => {
@@ -456,14 +460,28 @@ export default function PrevisPage() {
                     {node.kind === 'human_proxy' && (
                       <Select
                         size="small"
+                        value={(node.metadata.proxyStyle as string) || 'capsule'}
+                        disabled={node.locked}
+                        onChange={style => updateProxyStyle(node.id, style)}
+                        options={[
+                          { value: 'capsule', label: '胶囊人' },
+                          { value: 'ue', label: 'UE 白模' },
+                          { value: 'vanguard', label: 'Vanguard' },
+                        ]}
+                        style={{ width: 84, flexShrink: 0 }}
+                      />
+                    )}
+                    {node.kind === 'human_proxy' && ((node.metadata.proxyStyle as string) || 'capsule') === 'capsule' && (
+                      <Select
+                        size="small"
                         value={humanProxyPoseKey(node.metadata.pose)}
                         disabled={node.locked}
                         onChange={pose => updateNodePose(node.id, pose)}
                         options={Object.entries(HUMAN_PROXY_POSES).map(([key, { label }]) => ({ value: key, label }))}
-                        style={{ width: 76, flexShrink: 0 }}
+                        style={{ width: 72, flexShrink: 0 }}
                       />
                     )}
-                    <Tag style={{ margin: 0, fontSize: 11 }}>{NODE_KIND_LABEL[node.kind]}</Tag>
+                    {node.kind !== 'human_proxy' && <Tag style={{ margin: 0, fontSize: 11 }}>{NODE_KIND_LABEL[node.kind]}</Tag>}
                     <Tooltip title={node.visible ? '隐藏' : '显示'}>
                       <Button
                         type="text"

@@ -53,9 +53,19 @@ function PrimitiveMesh({ node }: { node: PrevisNode }) {
 
 function HumanProxyMesh({ node }: { node: PrevisNode }) {
   const height = (node.metadata.height as number) || 1.7
-  const color = (node.metadata.color as string) || '#6b7280'
+  const color = node.metadata.color as string | undefined
   const pose = humanProxyPoseKey(node.metadata.pose)
+  const style = node.metadata.proxyStyle as string | undefined
+  if (style === 'ue' || style === 'vanguard') {
+    return <LocalModelMesh url={style === 'ue' ? '/models/ue-mannequin.glb' : '/models/vanguard.glb'} />
+  }
   return <ProceduralHumanProxy pose={pose} color={color} height={height} />
+}
+
+// 内置人形模型（UE 白模 / Vanguard），许可见 frontend/public/models/LICENSE-*.txt
+function LocalModelMesh({ url }: { url: string }) {
+  const { scene } = useGLTF(url)
+  return <primitive object={scene} />
 }
 
 // 单个模型加载失败时只降级该节点，不拖垮整个视口。
@@ -100,7 +110,13 @@ function NodeMesh({ node }: { node: PrevisNode }) {
   return (
     <group position={[x, y, z]} quaternion={[qx, qy, qz, qw]} scale={[sx, sy, sz]} visible={node.visible}>
       {node.kind === 'primitive' && <PrimitiveMesh node={node} />}
-      {node.kind === 'human_proxy' && <HumanProxyMesh node={node} />}
+      {node.kind === 'human_proxy' && (
+        <AssetModelErrorBoundary>
+          <Suspense fallback={null}>
+            <HumanProxyMesh node={node} />
+          </Suspense>
+        </AssetModelErrorBoundary>
+      )}
       {node.kind === 'panorama' && <PanoramaMesh node={node} />}
       {node.kind === 'asset_model' && (
         <AssetModelErrorBoundary>

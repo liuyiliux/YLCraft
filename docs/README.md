@@ -60,7 +60,7 @@
 | 独立视频工作台 | 文生/图生视频、视频提示词模板、素材库首帧、持久任务恢复、任务中心聚合和 Asset Hub 回流已落地；模式 tab 驱动供应商/模型过滤、`video_capabilities` 能力约束、视频首帧缩略图已补齐；仍待真实供应商全链路验收 | `openspec/changes/ai-video-workspace/tasks.md` |
 | 图转 3D 工作台 | 配置驱动提交/轮询/下载、Asset Hub 入库、GLB 优先与 ZIP 解包、PreviewImageUrl 缩略图、独立页面已落地；仍待真实供应商生成 GLB 验收 | `openspec/changes/image-to-3d-workspace/tasks.md` |
 | 3D 骨骼绑定与数字人 | 后端已落地：绑骨连接器（`SubmitAutoRiggingJob`/`DescribeAutoRiggingJob`）、`POST /model-3d/rig`、源模型经 COS 临时签名 URL 或 `/model3d-files` 暴露、部位树显隐与动画播放；仍待真实绑骨供应商端到端验收（需 ≤60MB 人形 GLB/FBX） | `openspec/changes/3d-rigging-digital-human/tasks.md` |
-| 3D 导演预演台 | Phase 1 已落地：`PrevisSceneDocument` 持久化（可建独立场景，无需项目）+ revision 并发保护、`/story` 分镜入口与顶级导航入口（可新建独立场景或浏览场景列表）、可复用 3D 渲染原语（`scenePrimitives`）、静态导演台节点管理（Asset Hub 模型/可摆姿势人形占位/几何体/全景背景/图层可见性/重命名/删除/锁定）、相机 CRUD（名称/位置/目标点/FOV/锁定）与导演/活动机位双视角、安全框/九宫格叠加；待相机拖拽回写、截图回流、关键帧与 Agent 阶段 | `docs/architecture/3D_DIRECTOR_PREVIS_DESIGN.md`、`openspec/changes/3d-director-previs/tasks.md` |
+| 3D 导演预演台 | Phase 1 已落地：`PrevisSceneDocument` 持久化（可建独立场景，无需项目）+ revision 并发保护、`/story` 分镜入口与顶级导航入口（可新建独立场景或浏览场景列表）、可复用 3D 渲染原语（`scenePrimitives`）、静态导演台节点管理（Asset Hub 模型/人形三样式：可摆姿势胶囊人·内置 UE 白模·Vanguard/几何体/全景背景/图层可见性/重命名/删除/锁定）、相机 CRUD（名称/位置/目标点/FOV/锁定）与导演/活动机位双视角、安全框/九宫格叠加；待相机拖拽回写、截图回流、关键帧与 Agent 阶段 | `docs/architecture/3D_DIRECTOR_PREVIS_DESIGN.md`、`openspec/changes/3d-director-previs/tasks.md` |
 | 3D 模型查看器 | 独立全屏页、GLB/GLTF/OBJ 渲染、渲染模式（纹理/白模/线框/反照率/法线）、灯光面板、视角对齐、包围盒、拓扑角标、键盘平移已完成 | `frontend/src/components/asset-hub/Model3DViewer.tsx`、`frontend/src/pages/model3d-viewer/` |
 | 素材库上传与缩略图 | 通用本地上传（图片/视频/音频/文本/3D）、3D 模型前端渲染截图缩略图、视频第一帧缩略图、删除容错已完成 | `backend/app/api/v1/assets.py` |
 | 远程对象存储（COS） | 手写签名上传、密钥入库 `system_settings`、设置页「密钥配置」Tab、Agnes 图生视频公网 URL 已落地 | `backend/app/services/cos_storage.py` |

@@ -361,3 +361,36 @@ frontend/src/
 2. 真实人形 GLB 可选 storyai UE mannequin（Sketchfab Standard 保留署名）或 Mixamo 免费角色（Adobe 条款允许商用）。
 3. costage GLB 与 awplanet 素材禁用（无许可 / Noncommercial）。
 4. 入口对齐参考项目主流：`/previs` 加顶级导航入口。
+
+***
+
+### shotblock — AI 分镜 3D 规划（浏览器，与预演台高度同向）
+
+**GitHub**: <https://github.com/shanghaicellcenter/shotblock>\
+**在线**: <https://shanghaicellcenter.github.io/shotblock/>
+
+#### 核心能力
+
+- **15-DOF 关节级人形**：9 个一键姿势预设 + 逐关节滑杆（头/躯干/肩/肘/髋/膝），姿势描述自动进提示词
+- **GLB 角色导入** + 内嵌 CC0 来源链接（poly.pizza / Kenney / Quaternius）
+- **真实镜头数学**：传感器格式 → 真实 FOV、超焦距/景深读数、构图预设（EWS…ECU/OTS/双人/POV/插入）
+- **5 机位对话覆盖生成**（master + OTS×2 + CU×2）、A/B 机位移动、关键光预设（9 种）、180°/30° 规则实时告警
+- **Animatic 播放**（24fps 时间码，WebM 导出）、6 联分镜纸导出、AI-ready 提示词（Veo 3 / Runway Gen-4 / Kling / Luma / Sora 2）
+- **一致性参考包**：每角色三视图 + 每镜帧 + 提示词 + shot-list JSON，喂给视频模型锁定形象与站位
+
+#### YLCraft 可借鉴
+
+- 程序化人形做到"关节级滑杆 + 姿势预设"是预演台 Phase 2 方向（当前是预设姿势，可加逐关节微调）
+- CC0 人形来源结论：poly.pizza / Kenney / Quaternius
+- 镜头数学、180° 规则、覆盖生成是导演台的"专业感"加分项，可与截图回流同批评估
+- 一致性参考包 = YLCraft 截图回流 + 分镜参考的成品形态
+
+***
+
+### YLCraft 内置人形模型（仓库内资产）
+
+| 文件 | 来源 | 许可 | 使用边界 |
+| --- | --- | --- | --- |
+| `frontend/public/models/ue-mannequin.glb` | Sketchfab（作者 William Luque，经 storyai 仓库） | Sketchfab Standard | 可商用、保留署名、不得单独打包转售/再分发；许可见 `frontend/public/models/LICENSE-UE-MANNEQUIN.txt` |
+| `frontend/public/models/vanguard.glb` | open-storyboard-canvas（MIT 二开 Storyboard-Copilot） | MIT | 可自由使用，保留上游署名（henjicc）；许可见 `frontend/public/models/LICENSE-VANGUARD.txt` |
+| 胶囊人（程序化） | storyai ProceduralMannequin 思路自写 | 无外部依赖 | 可摆姿势，无版权风险 |
