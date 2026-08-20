@@ -25,9 +25,10 @@ router = APIRouter()
 
 
 class PrevisSceneCreateRequest(BaseModel):
-    project_id: str = Field(..., min_length=1, max_length=80)
-    storyboard_content_id: str = Field(..., min_length=1, max_length=80)
-    panel_number: int = Field(..., ge=1)
+    # 三者齐全 = 绑定项目分镜面板的场景；三者全空 = 独立场景（先摆思路，无需项目）
+    project_id: Optional[str] = Field(default=None, min_length=1, max_length=80)
+    storyboard_content_id: Optional[str] = Field(default=None, min_length=1, max_length=80)
+    panel_number: Optional[int] = Field(default=None, ge=1)
     title: str = Field(default="3D 预演", max_length=160)
     scene: dict[str, Any] = Field(default_factory=dict)
 
@@ -65,8 +66,8 @@ def _row_to_scene(row: PrevisSceneDocument) -> dict[str, Any]:
     scene = dict(row.scene_json or {})
     return {
         "id": str(row.id),
-        "project_id": str(row.project_id),
-        "storyboard_content_id": str(row.storyboard_content_id),
+        "project_id": row.project_id or "",
+        "storyboard_content_id": row.storyboard_content_id or "",
         "panel_number": row.panel_number,
         "title": row.title,
         "revision": row.revision,
@@ -110,18 +111,20 @@ def create_previs_scene(req: PrevisSceneCreateRequest):
         updated_at=now,
     )
     with SessionLocal() as session:
-        existing = session.exec(
-            select(PrevisSceneDocument).where(
-                PrevisSceneDocument.project_id == req.project_id,
-                PrevisSceneDocument.storyboard_content_id == req.storyboard_content_id,
-                PrevisSceneDocument.panel_number == req.panel_number,
-            )
-        ).first()
-        if existing:
-            raise HTTPException(
-                status_code=409,
-                detail=f"Previs scene already exists for this storyboard panel: {existing.id}",
-            )
+        # 只有完整绑定项目分镜的场景才做去重；独立场景（三者全空）直接创建。
+        if req.project_id and req.storyboard_content_id and req.panel_number:
+            existing = session.exec(
+                select(PrevisSceneDocument).where(
+                    PrevisSceneDocument.project_id == req.project_id,
+                    PrevisSceneDocument.storyboard_content_id == req.storyboard_content_id,
+                    PrevisSceneDocument.panel_number == req.panel_number,
+                )
+            ).first()
+            if existing:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Previs scene already exists for this storyboard panel: {existing.id}",
+                )
         session.add(row)
         session.commit()
         session.refresh(row)

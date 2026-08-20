@@ -256,3 +256,108 @@ frontend/src/
 5. **\[中] 音乐驱动剪辑**：参考 CutClaw，实现 Beat-based 自动剪辑
 6. **\[中] Cookie 自动获取**：参考 XHS\_ALL\_IN\_ONE 的二维码登录 + 浏览器获取，完善 CookieManager 适配
 7. **\[低] 剪映草稿导出**：参考 ArcReel，按集导出剪映 ZIP
+
+***
+
+## 新增参考：AI 视频导演与预演工作流
+
+### updream — 3D 预演台
+
+**文章参考**: <https://hub.baai.ac.cn/view/57229>
+
+#### 核心启发
+
+- 通过 3D 预演先确定人物站位、动作路线和镜头关系，减少生成视频反复抽卡。
+- 预演不是专业 DCC 替代品，而是生成前的空间控制层。
+- “先摆空间事实，再提交生成请求”与 YLCraft 的 `PrevisSceneDocument`、Asset Hub 引用和截图回流设计一致。
+
+#### YLCraft 采用边界
+
+- 保留独立预演场景，不把空间状态塞进 `ProjectContent`、Canvas 或通用 `Model3DViewer`。
+- 先完成静态节点、相机和参考截图，再评估动态运镜与视频导出。
+- 参考其产品价值，不复制实现或供应商接口。
+
+***
+
+### Wasserman's Filmmaker Suite — AI-native 电影制作套件
+
+**GitHub**: <https://github.com/wassermanproductions/wassermans-filmmaker-suite>
+
+#### 核心能力
+
+- `ScriptBreak`：脚本拆解。
+- `Cork Board` / `Master Canvas`：参考资料和生产编排。
+- `Blockout`：基础 3D 走位与构图。
+- `Motion Previs Studio`：动态预演。
+- `Storyboard Reference Studio`：分镜参考管理。
+- `Circle Take`、`Stem Studio`、DaVinci MCP：镜头筛选、声音拆分和后期交接。
+
+#### YLCraft 可借鉴
+
+- Blockout 对应当前预演台的 `primitive` + `human_proxy` 节点。
+- Motion Previs Studio 对应后续 Phase 2 的 24fps、关键帧和播放头。
+- 把脚本、走位、参考、生成、剪辑和声音拆成可交接模块，支持阶段性验证；不做一个大而全的 DCC 页面。
+- 预演输出应该是带 provenance 的参考资产，而不是复制一份分镜事实。
+
+#### 许可边界
+
+仅借鉴公开产品形态和工作流；引入源码前必须单独核对仓库当前许可证和依赖许可。
+
+***
+
+### BigBanana AI Director — 本地 ComfyUI 视频导演链路
+
+**GitHub**: <https://github.com/shuyu-labs/BigBanana-AI-Director>
+
+#### 核心启发
+
+- 用本地 ComfyUI 承接图像/视频生成，降低云端 API 按量成本和供应商锁定。
+- 多图参考、工作流节点和导演控制结合，适合把角色、场景、构图参考一起送入生成链路。
+- 本地模型能力应是 Provider/Connector 的一种后端，不应改变项目内容和 Asset Hub 的事实边界。
+
+#### YLCraft 可借鉴
+
+- 预演截图进入现有图片/视频请求时，保留 `previs_scene_id`、`camera_id`、场景 revision 和源资产 provenance。
+- 后续可把 ComfyUI 作为配置驱动的本地 Provider 接入，不在 Story 或预演台写死工作流节点。
+- 参考图数量、尺寸和模型能力要由连接器契约约束，避免把大图或不兼容参考直接塞给供应商。
+
+#### 许可边界
+
+仅参考本地工作流和多图参考的产品思路；是否可复用源码、工作流和模型配置，以仓库许可证及各模型许可证为准。
+
+***
+
+## 新增调研：3D 预演参考项目 · 入口形态与素材许可
+
+> 调研日期：本会话。来源：GitHub 源码与 README 实际抓取核对，非摘要转述。
+
+### 入口形态对比
+
+| 项目 | 入口形态 | 进入方式 | 证据 |
+| --- | --- | --- | --- |
+| storyai-3d-director-desk | 独立顶级工作台 | 根页面即 3D 导演台（无路由嵌套、无上级业务页） | `src/App.tsx` 直接渲染 `DirectorDeskShell` |
+| awplanet | 独立桌面应用（Electron） | 独立启动，进入即项目/场景编辑器 | README |
+| kunpeng-director | 本地优先独立应用 | 独立启动，进入即 3D 白模舞台 | README |
+| open-storyboard-canvas | 画布内节点 | 在无限画布新建"导演台"节点，截图可送回画布 | README「导演台与全景」 |
+| costage | Codex MCP widget | 对话中说"打开当前项目的 CoStage"，原生 3D widget 全屏打开 | README |
+
+结论：参考项目没有把 3D 预演做成业务页的二级按钮；主流是独立顶级工作台（storyai/awplanet/kunpeng）、画布节点（open-storyboard-canvas）或 Agent 环境内嵌（costage）。YLCraft 应给 `/previs` 增加顶级导航入口，保留分镜卡片快捷入口。
+
+### 素材许可对比
+
+| 项目 | 人形素材 | 许可证 | 能否直接用于 YLCraft |
+| --- | --- | --- | --- |
+| storyai | UE 小白人 `ue-mannequin-retopology.glb`（Sketchfab，作者 William Luque）+ 程序化人形/姿势预设（纯代码） | 仓库 MIT；GLB 为 Sketchfab Standard | GLB 可下载商用但保留署名、不能单独打包转售；程序化人形/姿势代码 MIT 可直接参考复用 |
+| awplanet | 角色骨骼、物件库（几何/建筑/室内/城市/地形） | PolyForm Noncommercial 1.0.0 | 不可商用，只借鉴思路 |
+| kunpeng-director | 白模/灰模道具 + 56 类动作模板 + 28 类运镜模板 | MIT | 可复用（保留版权声明） |
+| open-storyboard-canvas | `blueprint-figure.glb`（2.1MB 蓝图人形） | MIT（二开 Storyboard-Copilot，须保留 NOTICE 署名） | 可下载（保留 NOTICE）；全景无内置 |
+| costage | 8 个真实 GLB 角色（健硕/纤细/儿童/二头身等） | 仓库无 LICENSE 文件（默认 All Rights Reserved） | 不可再分发，不建议下载使用 |
+
+背景/全景：5 个项目均无内置全景素材，都是用户导入或 AI 生成。YLCraft 走"用户导入 + 生图生成全景"，或引 CC0 图库（如 Poly Haven）。
+
+### 采用建议
+
+1. 人型占位首选程序化生成（胶囊+球+方块组合成人形，可摆姿势）——参照 storyai `ProceduralMannequin`（MIT）与 kunpeng 白模思路，无版权风险。
+2. 真实人形 GLB 可选 storyai UE mannequin（Sketchfab Standard 保留署名）或 Mixamo 免费角色（Adobe 条款允许商用）。
+3. costage GLB 与 awplanet 素材禁用（无许可 / Noncommercial）。
+4. 入口对齐参考项目主流：`/previs` 加顶级导航入口。

@@ -4,8 +4,10 @@ import {
   Dropdown,
   Empty,
   Input,
+  InputNumber,
   List,
   Modal,
+  Select,
   Space,
   Spin,
   Tag,
@@ -24,14 +26,16 @@ import {
   UnlockOutlined,
 } from '@ant-design/icons'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { getPrevisScene, listAssets, savePrevisScene, type PrevisScene } from '../../api'
+import { createPrevisScene, getPrevisScene, listAssets, listPrevisScenes, savePrevisScene, type PrevisScene } from '../../api'
 import type { Asset } from '../../types/api'
 import SceneViewport from './SceneViewport'
+import { HUMAN_PROXY_POSES, humanProxyPoseKey } from '../../components/three/humanProxy'
 import {
   DEFAULT_TRANSFORM,
   makeNodeId,
   normalizeSceneData,
   type PrevisNode,
+  type PrevisCamera,
   type PrevisNodeKind,
   type PrevisSceneData,
   type PrimitiveKind,
@@ -88,7 +92,7 @@ function makeHumanProxyNode(): PrevisNode {
     transform: { ...DEFAULT_TRANSFORM, position: [0, 0, 0] },
     visible: true,
     locked: false,
-    metadata: { height: 1.7 },
+    metadata: { height: 1.7, pose: 'stand' },
   }
 }
 
@@ -101,6 +105,17 @@ function makePanoramaNode(): PrevisNode {
     visible: true,
     locked: false,
     metadata: { color: '#1a1a2e' },
+  }
+}
+
+function makeCamera(index: number): PrevisCamera {
+  return {
+    id: `camera_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
+    name: `机位 ${index}`,
+    transform: { position: [4, 3, 6], rotation: [0, 0, 0, 1] },
+    target: [0, 0.8, 0],
+    fov: 50,
+    locked: false,
   }
 }
 
@@ -117,10 +132,20 @@ export default function PrevisPage() {
   const [modelPickerOpen, setModelPickerOpen] = useState(false)
   const [modelAssets, setModelAssets] = useState<Asset[]>([])
   const [modelLoading, setModelLoading] = useState(false)
+  const [cameraMode, setCameraMode] = useState<'director' | 'active'>('director')
+  const [sceneList, setSceneList] = useState<PrevisScene[]>([])
+  const [listLoading, setListLoading] = useState(false)
 
   useEffect(() => {
     if (!sceneId) {
-      setLoading(false)
+      setListLoading(true)
+      void listPrevisScenes({})
+        .then(response => setSceneList(response?.data || []))
+        .catch(error => message.error(error?.message || '预演场景列表加载失败'))
+        .finally(() => {
+          setListLoading(false)
+          setLoading(false)
+        })
       return
     }
     void getPrevisScene(sceneId)
@@ -133,6 +158,31 @@ export default function PrevisPage() {
   }, [sceneId])
 
   const nodes = useMemo(() => sceneData?.nodes ?? [], [sceneData])
+  const cameras = useMemo(() => sceneData?.cameras ?? [], [sceneData])
+  const activeCamera = useMemo(() => cameras.find(camera => camera.id === sceneData?.activeCameraId) || cameras[0], [cameras, sceneData?.activeCameraId])
+
+  const mutateCameras = useCallback((updater: (cameras: PrevisCamera[]) => PrevisCamera[], activeCameraId?: string) => {
+    setSceneData(prev => {
+      if (!prev) return prev
+      const next = updater(prev.cameras)
+      return { ...prev, cameras: next, activeCameraId: activeCameraId ?? (prev.activeCameraId || next[0]?.id || '') }
+    })
+    setDirty(true)
+  }, [])
+
+  const addCamera = useCallback(() => {
+    const camera = makeCamera(cameras.length + 1)
+    mutateCameras(current => [...current, camera], camera.id)
+  }, [cameras.length, mutateCameras])
+
+  const updateCamera = useCallback((id: string, patch: Partial<PrevisCamera>) => {
+    mutateCameras(current => current.map(camera => camera.id === id ? { ...camera, ...patch } : camera))
+  }, [mutateCameras])
+
+  const deleteCamera = useCallback((id: string) => {
+    const remaining = cameras.filter(camera => camera.id !== id)
+    mutateCameras(() => remaining, remaining[0]?.id || '')
+  }, [cameras, mutateCameras])
 
   const mutateNodes = useCallback((updater: (nodes: PrevisNode[]) => PrevisNode[]) => {
     setSceneData(prev => {
@@ -156,6 +206,19 @@ export default function PrevisPage() {
     () => mutateNodes(nodes => [...nodes, makePanoramaNode()]),
     [mutateNodes],
   )
+
+  const updateNodePose = useCallback((id: string, pose: string) => {
+    mutateNodes(nodes => nodes.map(node => (node.id === id ? { ...node, metadata: { ...node.metadata, pose } } : node)))
+  }, [mutateNodes])
+
+  const createStandaloneScene = useCallback(async () => {
+    try {
+      const response = await createPrevisScene({ title: '新场景' })
+      navigate(`/previs?scene_id=${encodeURIComponent(response.data.id)}`)
+    } catch (error: any) {
+      message.error(error?.message || '创建场景失败')
+    }
+  }, [navigate])
 
   const openModelPicker = useCallback(async () => {
     setModelPickerOpen(true)
@@ -254,8 +317,43 @@ export default function PrevisPage() {
   if (!sceneId || !scene || !sceneData) {
     return (
       <div style={{ maxWidth: 960, margin: '0 auto', padding: 32 }}>
-        <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/story')}>返回 Story</Button>
-        <Empty description="没有找到预演场景" style={{ marginTop: 96 }} />
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8 }}>
+          <div>
+            <Title level={4} style={{ margin: 0 }}>3D 预演台</Title>
+            <Text type="secondary">独立预演工作台：可新建独立场景先摆思路（无需项目），或从创作项目分镜面板进入自动关联。</Text>
+          </div>
+          <Space>
+            <Button type="primary" icon={<PlusOutlined />} onClick={createStandaloneScene}>新建场景</Button>
+            <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/story')}>返回 Story</Button>
+          </Space>
+        </div>
+        {listLoading ? (
+          <div style={{ minHeight: '50vh', display: 'grid', placeItems: 'center' }}><Spin /></div>
+        ) : sceneList.length === 0 ? (
+          <Empty description="还没有预演场景" style={{ marginTop: 64 }}>
+            <Button type="primary" onClick={() => navigate('/story')}>去创作项目创建分镜</Button>
+          </Empty>
+        ) : (
+          <List
+            dataSource={sceneList}
+            renderItem={item => (
+              <List.Item
+                onClick={() => navigate(`/previs?scene_id=${encodeURIComponent(item.id)}`)}
+                style={{ cursor: 'pointer' }}
+              >
+                <List.Item.Meta
+                  title={item.title || '未命名场景'}
+                  description={item.project_id
+                    ? `项目 ${item.project_id.slice(0, 8)} · 分镜 ${item.storyboard_content_id?.slice(0, 8)} · 第 ${item.panel_number} 格 · revision ${item.revision}`
+                    : `独立场景 · revision ${item.revision}`}
+                />
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  {new Date(item.updated_at).toLocaleString('zh-CN', { hour12: false })}
+                </Text>
+              </List.Item>
+            )}
+          />
+        )}
       </div>
     )
   }
@@ -303,6 +401,33 @@ export default function PrevisPage() {
             </Space>
           </div>
 
+          <div style={{ padding: 12, borderBottom: '1px solid var(--border)' }}>
+            <Space direction="vertical" size={8} style={{ width: '100%' }}>
+              <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+                <Text strong>相机</Text>
+                <Button size="small" icon={<PlusOutlined />} onClick={addCamera}>新增</Button>
+              </Space>
+              {cameras.map(camera => (
+                <div key={camera.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Button type={activeCamera?.id === camera.id ? 'primary' : 'default'} size="small" onClick={() => { setSceneData(prev => prev ? { ...prev, activeCameraId: camera.id } : prev); setDirty(true) }} style={{ flex: 1, textAlign: 'left' }}>{camera.name}</Button>
+                  <Button type="text" danger size="small" icon={<DeleteOutlined />} disabled={camera.locked} onClick={() => deleteCamera(camera.id)} />
+                </div>
+              ))}
+              {activeCamera && <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                <Input size="small" value={activeCamera.name} disabled={activeCamera.locked} onChange={event => updateCamera(activeCamera.id, { name: event.target.value })} />
+                <Text type="secondary">位置 X / Y / Z</Text>
+                <Space.Compact block>{activeCamera.transform.position.map((value, index) => <InputNumber key={index} size="small" value={value} disabled={activeCamera.locked} onChange={next => updateCamera(activeCamera.id, { transform: { ...activeCamera.transform, position: activeCamera.transform.position.map((item, itemIndex) => itemIndex === index ? Number(next ?? item) : item) as [number, number, number] } })} />)}</Space.Compact>
+                <Text type="secondary">目标点 X / Y / Z</Text>
+                <Space.Compact block>{(activeCamera.target || [0, 0, 0]).map((value, index) => <InputNumber key={index} size="small" value={value} disabled={activeCamera.locked} onChange={next => updateCamera(activeCamera.id, { target: (activeCamera.target || [0, 0, 0]).map((item, itemIndex) => itemIndex === index ? Number(next ?? item) : item) as [number, number, number] })} />)}</Space.Compact>
+                <Space><Text type="secondary">FOV</Text><InputNumber min={10} max={120} size="small" value={activeCamera.fov} disabled={activeCamera.locked} onChange={value => updateCamera(activeCamera.id, { fov: Number(value || 50) })} /></Space>
+                <Space>
+                  <Button size="small" type={cameraMode === 'director' ? 'primary' : 'default'} onClick={() => setCameraMode('director')}>导演视角</Button>
+                  <Button size="small" type={cameraMode === 'active' ? 'primary' : 'default'} onClick={() => setCameraMode('active')}>活动机位</Button>
+                </Space>
+              </Space>}
+            </Space>
+          </div>
+
           <div style={{ flex: 1, overflowY: 'auto', padding: 8 }}>
             {nodes.length === 0 ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有节点，先添加几何体或人形占位" style={{ marginTop: 40 }} />
@@ -326,8 +451,18 @@ export default function PrevisPage() {
                       value={node.name}
                       disabled={node.locked}
                       onChange={e => renameNode(node.id, e.target.value)}
-                      style={{ flex: 1 }}
+                      style={{ flex: 1, minWidth: 0 }}
                     />
+                    {node.kind === 'human_proxy' && (
+                      <Select
+                        size="small"
+                        value={humanProxyPoseKey(node.metadata.pose)}
+                        disabled={node.locked}
+                        onChange={pose => updateNodePose(node.id, pose)}
+                        options={Object.entries(HUMAN_PROXY_POSES).map(([key, { label }]) => ({ value: key, label }))}
+                        style={{ width: 76, flexShrink: 0 }}
+                      />
+                    )}
                     <Tag style={{ margin: 0, fontSize: 11 }}>{NODE_KIND_LABEL[node.kind]}</Tag>
                     <Tooltip title={node.visible ? '隐藏' : '显示'}>
                       <Button
@@ -362,7 +497,7 @@ export default function PrevisPage() {
         </div>
 
         <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
-          <SceneViewport nodes={nodes} />
+          <SceneViewport nodes={nodes} activeCamera={activeCamera} cameraMode={cameraMode} />
           <div style={{ position: 'absolute', bottom: 12, left: 12, zIndex: 10, color: 'var(--textSecondary)', fontSize: 12, pointerEvents: 'none' }}>
             节点 {nodes.length} · 拖拽旋转视角，滚轮缩放
           </div>
