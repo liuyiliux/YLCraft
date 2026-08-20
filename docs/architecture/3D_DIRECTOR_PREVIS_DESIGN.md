@@ -2,7 +2,7 @@
 
 ## 1. 状态与目标
 
-状态：设计已确认，尚未进入实现排期。
+状态：Phase 1 静态导演台已落地（见 `openspec/changes/3d-director-previs/tasks.md` 任务 6-10）：`PrevisSceneDocument` 持久化（支持独立场景创建，无需项目）+ revision 并发保护、`/story` 分镜入口与顶级导航入口、可复用 3D 渲染原语、静态节点管理（Asset Hub 模型/可摆姿势的人形占位/几何体/全景背景/图层可见性/重命名/删除/锁定）、相机 CRUD（名称/位置/目标点/FOV/锁定）与导演/活动机位双视角、安全框/九宫格只读叠加。待相机拖拽回写、截图回流、关键帧与 Agent 导演助手（Phase 1 后续 / Phase 2-3）。
 
 YLCraft 已有三块相邻能力：
 
@@ -47,7 +47,7 @@ YLCraft 已有三块相邻能力：
 
 | 数据 | 唯一事实来源 | 预演台使用方式 |
 | --- | --- | --- |
-| 项目、章节、脚本、分镜面板 | `CreativeProject` / `ProjectContent` | 预演场景绑定 `project_id`、`storyboard_content_id` 和 `panel_number`。 |
+| 项目、章节、脚本、分镜面板 | `CreativeProject` / `ProjectContent` | 预演场景可绑定 `project_id`、`storyboard_content_id` 和 `panel_number`，也可为独立场景（三者全空，先摆思路无需项目）。 |
 | 3D 模型、人物定妆、背景图、截图、视频 | Asset Hub | 场景节点仅保存 `asset_id` 和展示快照；不复制二进制。 |
 | 绑骨/动画状态 | Asset 元数据与 `Model3DGenerationTask` | 仅作为可播放、可选动作和可视化能力，不重建任务账本。 |
 | Prompt、图片/视频生成任务 | `ProjectGenerationLog` 和既有任务账本 | 截图被选择为参考时，使用既有 `ProjectAssetLink` 与生成 provenance。 |

@@ -129,3 +129,34 @@ def test_previs_scene_rejects_non_object_scene(previs_client):
         json=_create_payload(scene="not-an-object"),
     )
     assert response.status_code == 422
+
+
+def test_previs_standalone_scene_create_and_round_trip(previs_client):
+    # 独立场景：不绑定项目分镜，纯思路摆位，用于生图参考
+    response = previs_client.post(
+        "/api/v1/previs/scenes",
+        json={"title": "独立思路场景", "scene": {"fps": 24, "nodes": [], "cameras": []}},
+    )
+    assert response.status_code == 200
+    created = response.json()["data"]
+    assert created["project_id"] == ""
+    assert created["storyboard_content_id"] == ""
+    assert created["panel_number"] is None
+    assert created["revision"] == 1
+
+    get_response = previs_client.get(f"/api/v1/previs/scenes/{created['id']}")
+    assert get_response.status_code == 200
+    assert get_response.json()["data"]["title"] == "独立思路场景"
+
+
+def test_previs_standalone_scene_list_and_binding_filter(previs_client):
+    standalone = previs_client.post("/api/v1/previs/scenes", json={"title": "独立场景"}).json()["data"]
+    previs_client.post("/api/v1/previs/scenes", json=_create_payload())
+
+    all_response = previs_client.get("/api/v1/previs/scenes")
+    assert all_response.status_code == 200
+    assert any(item["id"] == standalone["id"] for item in all_response.json()["data"])
+
+    # 按项目过滤时不返回独立场景（独立场景 project_id 为空）
+    filtered = previs_client.get("/api/v1/previs/scenes?project_id=project-1")
+    assert all(item["project_id"] == "project-1" for item in filtered.json()["data"])

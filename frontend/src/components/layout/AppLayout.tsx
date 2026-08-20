@@ -20,6 +20,8 @@ import {
   SendOutlined,
   ReadOutlined,
   KeyOutlined,
+  VideoCameraOutlined,
+  TeamOutlined,
 } from '@ant-design/icons'
 
 const { Content, Header } = Layout
@@ -41,6 +43,8 @@ function navLabel(text: string, status?: '实验' | '辅助') {
 
 const MAIN_NAV: MenuProps['items'] = [
   { key: '/story', icon: <BookOutlined />, label: '创作项目' },
+  { key: '/characters', icon: <TeamOutlined />, label: '角色' },
+  { key: '/previs', icon: <VideoCameraOutlined />, label: '3D 预演' },
   { key: '/canvas', icon: <BranchesOutlined />, label: '创作画布' },
   { key: '/assets', icon: <FolderOpenOutlined />, label: '素材库' },
   { key: '/download', icon: <SearchOutlined />, label: '下载' },
@@ -95,14 +99,6 @@ const menuItems: MenuProps['items'] = [
       { key: '/subtitle', label: navLabel('字幕提取', '实验') },
       { key: '/bgm', label: navLabel('BGM 配乐', '实验') },
       { key: '/live2d', label: navLabel('Live2D 工厂', '实验') },
-    ],
-  },
-  {
-    key: 'g-story',
-    icon: <BookOutlined />,
-    label: '创作项目',
-    children: [
-      { key: '/characters', label: '角色管理' },
     ],
   },
   {

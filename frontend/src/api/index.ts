@@ -1653,9 +1653,9 @@ export const matchCreativeProjectReferenceAssets = (
 
 export type PrevisScene = {
   id: string
-  project_id: string
-  storyboard_content_id: string
-  panel_number: number
+  project_id: string | null
+  storyboard_content_id: string | null
+  panel_number: number | null
   title: string
   revision: number
   scene: Record<string, any>
@@ -1677,9 +1677,9 @@ export const listPrevisScenes = (params: {
 }
 
 export const createPrevisScene = (data: {
-  project_id: string
-  storyboard_content_id: string
-  panel_number: number
+  project_id?: string
+  storyboard_content_id?: string
+  panel_number?: number
   title?: string
   scene?: Record<string, any>
 }) => request('/previs/scenes', { method: 'POST', body: JSON.stringify(data) }) as Promise<{ success: boolean; data: PrevisScene }>

@@ -14,7 +14,7 @@
 - [x] 7. Add a 3D previs entry from `/story` storyboard panels; find or create scenes by project/content/panel identity.
 - [x] 8. Extract or extend reusable 3D scene primitives from `Model3DViewer` without moving Story business state into the generic viewer.
 - [x] 9. Implement Asset Hub model insertion, lightweight human proxies, primitives, panoramic/background references, layer visibility, rename, delete, and lock.
-- [ ] 10. Implement director view, active camera view, camera CRUD, transform/FOV controls, safe frame, and rule-of-thirds overlays.
+- [x] 10. Implement director view, active camera view, camera CRUD, transform/FOV controls, safe frame, and rule-of-thirds overlays.
 - [ ] 11. Capture the active camera to PNG/WebP, import it into Asset Hub with previs provenance, and link it to the originating storyboard panel as a selectable reference.
 - [ ] 12. Verify captured references enter the existing storyboard image/video generation request path without duplicate content, assets, or task records.
 - [ ] 13. Add desktop and narrow-screen UI validation, focused backend/frontend tests, and document the module/API changes.

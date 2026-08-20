@@ -5,11 +5,12 @@
  * 不承载 Story 业务状态；节点 transform/锁定由上层编辑器管理。
  */
 
-import { Component, Suspense, type ReactNode } from 'react'
-import { Canvas } from '@react-three/fiber'
-import { OrbitControls, Grid, ContactShadows, useGLTF } from '@react-three/drei'
+import { Component, Suspense, useEffect, type ReactNode } from 'react'
+import { Canvas, useThree } from '@react-three/fiber'
+import { OrbitControls, Grid, ContactShadows, PerspectiveCamera, useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
-import type { PrevisNode, PrimitiveKind } from './types'
+import type { PrevisCamera, PrevisNode, PrimitiveKind } from './types'
+import { ProceduralHumanProxy, humanProxyPoseKey } from '../../components/three/humanProxy'
 
 function PrimitiveMesh({ node }: { node: PrevisNode }) {
   const kind = (node.metadata.primitive as PrimitiveKind) || 'box'
@@ -52,20 +53,9 @@ function PrimitiveMesh({ node }: { node: PrevisNode }) {
 
 function HumanProxyMesh({ node }: { node: PrevisNode }) {
   const height = (node.metadata.height as number) || 1.7
-  const bodyHeight = height * 0.6
-  const headRadius = height * 0.12
-  return (
-    <group>
-      <mesh position={[0, bodyHeight / 2, 0]}>
-        <capsuleGeometry args={[headRadius * 1.2, bodyHeight, 8, 16]} />
-        <meshStandardMaterial color="#6b7280" />
-      </mesh>
-      <mesh position={[0, bodyHeight + headRadius, 0]}>
-        <sphereGeometry args={[headRadius, 32, 16]} />
-        <meshStandardMaterial color="#d1d5db" />
-      </mesh>
-    </group>
-  )
+  const color = (node.metadata.color as string) || '#6b7280'
+  const pose = humanProxyPoseKey(node.metadata.pose)
+  return <ProceduralHumanProxy pose={pose} color={color} height={height} />
 }
 
 // 单个模型加载失败时只降级该节点，不拖垮整个视口。
@@ -123,17 +113,37 @@ function NodeMesh({ node }: { node: PrevisNode }) {
   )
 }
 
-export default function SceneViewport({ nodes }: { nodes: PrevisNode[] }) {
+function CameraRig({ camera }: { camera?: PrevisCamera }) {
+  const { camera: current } = useThree()
+  useEffect(() => {
+    if (!camera) return
+    current.position.set(...camera.transform.position)
+    current.lookAt(...(camera.target || [0, 0, 0]))
+    current.updateProjectionMatrix()
+  }, [camera, current])
+  return null
+}
+
+export default function SceneViewport({ nodes, activeCamera, cameraMode = 'director' }: {
+  nodes: PrevisNode[]
+  activeCamera?: PrevisCamera
+  cameraMode?: 'director' | 'active'
+}) {
+  const position = activeCamera?.transform.position || [4, 3, 6]
+  const fov = activeCamera?.fov || 50
   return (
-    <Canvas
-      style={{ width: '100%', height: '100%' }}
-      camera={{ position: [4, 3, 6], fov: 50 }}
-      gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1 }}
-    >
+    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+      <Canvas
+        style={{ width: '100%', height: '100%' }}
+        camera={{ position, fov }}
+        gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1 }}
+      >
+      {cameraMode === 'active' && <PerspectiveCamera makeDefault position={position} fov={fov} />}
+      <CameraRig camera={cameraMode === 'active' ? activeCamera : undefined} />
       <ambientLight intensity={0.5} />
       <directionalLight position={[5, 8, 5]} intensity={1} color="#ffffff" />
 
-      <OrbitControls enableDamping dampingFactor={0.05} minDistance={0.5} maxDistance={40} />
+      {cameraMode === 'director' && <OrbitControls enableDamping dampingFactor={0.05} minDistance={0.5} maxDistance={40} />}
 
       <Grid
         args={[20, 20]}
@@ -153,6 +163,11 @@ export default function SceneViewport({ nodes }: { nodes: PrevisNode[] }) {
       {nodes.map(node => (
         <NodeMesh key={node.id} node={node} />
       ))}
-    </Canvas>
+      </Canvas>
+      {cameraMode === 'active' && <>
+        <div style={{ position: 'absolute', inset: '8% 10%', border: '1px solid rgba(255,255,255,.7)', pointerEvents: 'none' }} />
+        <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', backgroundImage: 'linear-gradient(to right, transparent 33.2%, rgba(255,255,255,.35) 33.3%, transparent 33.5%, transparent 66.5%, rgba(255,255,255,.35) 66.6%, transparent 66.8%), linear-gradient(to bottom, transparent 33.2%, rgba(255,255,255,.35) 33.3%, transparent 33.5%, transparent 66.5%, rgba(255,255,255,.35) 66.6%, transparent 66.8%)' }} />
+      </>}
+    </div>
   )
 }
