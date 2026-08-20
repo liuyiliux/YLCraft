@@ -747,6 +747,30 @@ export const cancelTask = (id: string) =>
 export const deleteTask = (id: string) =>
   request(`/tasks/${id}`, { method: 'DELETE' })
 
+// ===== Logs (平台事件日志 / 运行日志) =====
+
+export const listLogs = (params: Record<string, any> = {}) => {
+  const qs = new URLSearchParams()
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '') qs.set(k, String(v))
+  })
+  const query = qs.toString()
+  return request(`/logs${query ? `?${query}` : ''}`)
+}
+
+export const getLog = (id: string) => request(`/logs/${id}`)
+
+export const retryLog = (id: string) => request(`/logs/${id}/retry`, { method: 'POST' })
+
+export const listRuntimeLogs = (params: Record<string, any> = {}) => {
+  const qs = new URLSearchParams()
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '') qs.set(k, String(v))
+  })
+  const query = qs.toString()
+  return request(`/logs/runtime${query ? `?${query}` : ''}`)
+}
+
 // ===== Settings =====
 
 export const getSettings = () => request('/settings')

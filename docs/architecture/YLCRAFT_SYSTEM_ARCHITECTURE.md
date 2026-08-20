@@ -264,6 +264,16 @@ Live2D accepts uploads, character imagery and Asset Hub images as source materia
 
 当前 OpenSpec：`openspec/changes/image-prompt-reference-library/`。
 
+### 4.6 平台事件日志
+
+文件：`backend/app/db/models/platform_log.py`，迁移 `017_add_platform_event_logs`。
+
+| 表/模型 | 作用 |
+| --- | --- |
+| `PlatformEventLog` | 跨场景结构化审计流：image/video/model3d/llm 每次生成调用按结果（success / failed / pending）各记一条，含脱敏后的 request/response 摘要（1000 字符截断）、耗时、provider/model、`retry_payload_json` 与 `retry_of`/`retried_by` 追溯链；失败事件可经 `POST /api/v1/logs/{id}/retry` 按原载荷重发。 |
+
+与可恢复任务账本（`project_task_records` / `video_generation_tasks` / `model3d_generation_tasks`）不同，该表是只读审计流，不驱动任务恢复；图片生成此前「失败无痕」的缺口由此补上。运行日志走文件（`backend/storage/logs/app.log`，`RotatingFileHandler` 10MB×5 滚动），stdout 保留，经 `GET /api/v1/logs/runtime` 倒序 tail 读取（支持 level/关键词过滤与 before 游标）。任务中心以三 Tab（任务 / 事件日志 / 运行日志）统一查看，失败事件支持一键重发。
+
 ## 5. 主要模块边界
 
 | 模块 | API 前缀 | 后端服务 | 前端页面 | 状态 |
@@ -284,7 +294,8 @@ Live2D accepts uploads, character imagery and Asset Hub images as source materia
 | 平台采集 | `/api/v1/crawler`、`/api/v1/bilibili` | `services/crawler`、`services/platforms` | `/crawler` | 统一检索小红书、抖音、快手、B站、微博、知乎及公众号；支持详情、显式入素材库和画布媒体选择。有效的平台连接可作为服务端登录态用于搜索/详情，不向浏览器返回 Cookie；B站另提供更丰富的登录态能力。 |
 | 内容发布 | `/api/v1/platforms/{conn_id}/publish`、`/api/v1/creative-projects/{project_id}/publish-to-fanqie` | `services/platforms/fanqie` | `/publish`、项目 Story 页 | 当前通用发布页只公开已验证的番茄章节草稿保存：需指定后台已创建的书籍、卷和章节目标，并可先 dry-run 预检；视频、图文等其他平台发布尚未接通，不在 UI 中伪装为可用。 |
 | 小说/书源 | `/api/v1/novels`、`/api/v1/book-sources` | `services/novel`、`services/reader` | `/novel-*` | 可作为创作素材源。 |
-| 任务中心 | `/api/v1/tasks` | `core/task_queue` + 媒体任务账本 | `/tasks` | 聚合通用队列、下载、独立视频生成及图生 3D 持久化记录；可查看诊断字段与失败原因，并对未终态的独立媒体任务进行状态级取消。 |
+| 任务中心 | `/api/v1/tasks` | `core/task_queue` + 媒体任务账本 | `/tasks` | 聚合通用队列、下载、独立视频生成及图生 3D 持久化记录；可查看诊断字段与失败原因，并对未终态的独立媒体任务进行状态级取消。页面改为三 Tab：任务 / 事件日志 / 运行日志。 |
+| 平台事件日志 | `/api/v1/logs` | `services/platform_log` | `/tasks`（事件日志 Tab） | `platform_event_logs` 审计流：image/video/model3d/llm 生成结果统一落账（含脱敏摘要与耗时）；`GET /logs` 筛选分页、`GET /logs/{id}` 详情、`POST /logs/{id}/retry` 失败重发（`retry_payload_json` 精确还原 + `retry_of`/`retried_by` 追溯链）；`GET /logs/runtime` 读取滚动文件日志。 |
 | 字幕/BGM/剪辑 | `/subtitles`、`/bgm`、`/clip*` | 对应 services | 对应页面 | 辅助内容生产。 |
 | 图转 3D 工作台 | `/api/v1/model-3d` | `services/model3d` | `/model-3d` | 配置驱动连接器、持久任务、轮询下载、Asset Hub 血缘、GLB 优先与 ZIP 解包、PreviewImageUrl 缩略图均已落地；新增绑骨蒙皮（`capability=rigging` + `POST /rig`，仅绑骨/预设动作，回流打 `rigged`/`animated` 标签）；真实供应商 GLB 验收待完成。 |
 | 3D 模型查看器 | `/api/v1/assets/{id}/download`、`/files/{filename}` | `Model3DViewer` | `/assets` 详情、`/model3d-viewer/:assetId` | GLB/GLTF/OBJ 渲染、渲染模式、灯光、视角对齐、包围盒、拓扑角标、键盘平移、独立全屏页已完成。 |
@@ -305,9 +316,9 @@ Live2D accepts uploads, character imagery and Asset Hub images as source materia
 
 当前统计：
 
-- Router mounts: 47
-- Endpoints: 548
-- Public schema endpoints: 547
+- Router mounts: 50
+- Endpoints: 573
+- Public schema endpoints: 572
 - Hidden compatibility endpoints: 1
 
 接口变更后，AI 必须做五件事：
@@ -345,7 +356,8 @@ Agent Tool / Skill 变更按内部 API 处理：工具名称、输入输出 sche
 | `story-video-shot-production` | 11 | 1 | 项目感知视频请求、持久任务恢复、Asset Hub 回流和分镜回写完成；仅剩真实视频供应商验收。 |
 | `ai-video-workspace` | 5 | 4 | 独立视频工作台的持久任务、刷新恢复与 Asset Hub 闭环已完成；待补供应商能力约束和真实供应商验收。 |
 | `task-observability-diagnostics` | 26 | 0 | 已完成：真实异步生图的远端任务 ID、轮询、下载、入库与事件时间线已验证。 |
-| `database-migration-convergence` | 11 | 11 | 启动/Agent 请求路径的隐式 DDL 已切断，空库与旧远程形态演练通过；当前 Alembic 链继续到 `011_add_model3d_generation_tasks`，为视频和图转 3D 持久任务提供显式升级路径。 |
+| `platform-event-logging` | 28 | 3 | 任务中心三 Tab（任务/事件日志/运行日志）、`platform_event_logs` 表与 `/api/v1/logs`（列表/详情/runtime/retry）、滚动文件日志、图片生成失败落账与跨 image/video/model3d/llm 通用重发已完成；待后端单测、重发追溯链自动化测试与前端手动验收。 |
+| `database-migration-convergence` | 11 | 11 | 启动/Agent 请求路径的隐式 DDL 已切断，空库与旧远程形态演练通过；当前 Alembic 链继续到 `017_add_platform_event_logs`，为视频、图转 3D 持久任务和平台事件日志提供显式升级路径。 |
 
 ## 8. 文档更新协议
 

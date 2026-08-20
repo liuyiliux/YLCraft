@@ -16,6 +16,7 @@ load_dotenv(_env_path)
 
 import logging
 from contextlib import asynccontextmanager
+from logging.handlers import RotatingFileHandler
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -33,6 +34,23 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 logger = logging.getLogger("ylcraft")
+
+# 运行日志落盘：滚动文件日志（stdout 输出保持不变），供「运行日志」Tab 查看
+LOG_DIR = Path(__file__).parent.parent / "storage" / "logs"
+LOG_FILE = LOG_DIR / "app.log"
+LOG_MAX_BYTES = 10 * 1024 * 1024  # 10 MB per file
+LOG_BACKUP_COUNT = 5
+try:
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    _file_handler = RotatingFileHandler(
+        LOG_FILE, maxBytes=LOG_MAX_BYTES, backupCount=LOG_BACKUP_COUNT, encoding="utf-8"
+    )
+    _file_handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    )
+    logging.getLogger().addHandler(_file_handler)
+except Exception as _exc:  # 日志文件不可写不影响服务启动
+    logger.warning("Could not configure rotating file log: %s", _exc)
 
 
 # =============================================================================
@@ -273,6 +291,13 @@ def _register_routes():
         app.include_router(tasks.router, prefix="/api/v1/tasks", tags=["Tasks"])
     except Exception as e:
         logger.warning(f"Could not load tasks router: {e}")
+
+    # 平台事件日志 / 运行日志
+    try:
+        from app.api.v1 import logs
+        app.include_router(logs.router, prefix="/api/v1/logs", tags=["Logs"])
+    except Exception as e:
+        logger.warning(f"Could not load logs router: {e}")
 
     # 系统设置路由
     try:

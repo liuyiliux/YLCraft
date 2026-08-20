@@ -6,9 +6,9 @@
 
 ## Summary
 
-- Router mounts: 49
-- Endpoints: 569
-- Public schema endpoints: 568
+- Router mounts: 50
+- Endpoints: 573
+- Public schema endpoints: 572
 - Hidden compatibility endpoints: 1
 
 ## Router Mounts
@@ -48,6 +48,7 @@
 | `/api/v1/images` | Images | `images` | `backend/app/api/v1/images.py` |
 | `/api/v1/live2d` | Live2D Factory | `live2d` | `backend/app/api/v1/live2d.py` |
 | `/api/v1/llm` | LLM | `llm` | `backend/app/api/v1/llm.py` |
+| `/api/v1/logs` | Logs | `logs` | `backend/app/api/v1/logs.py` |
 | `/api/v1/model-3d` | Image to 3D | `model3d_workspace` | `backend/app/api/v1/model3d_workspace.py` |
 | `/api/v1/novels` | Novels | `novels` | `backend/app/api/v1/novels.py` |
 | `/api/v1/platforms` | Platform Connections | `platforms` | `backend/app/api/v1/platforms.py` |
@@ -562,27 +563,27 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/model-3d/backends` | Configured 3D connectors (generation / rigging) | `list_model3d_backends` | `backend/app/api/v1/model3d_workspace.py:229` |
-| `POST` | `/api/v1/model-3d/generate` | Submit configured image-to-3D task | `generate_model3d` | `backend/app/api/v1/model3d_workspace.py:241` |
-| `GET` | `/api/v1/model-3d/history` | Durable 3D workspace history | `model3d_history` | `backend/app/api/v1/model3d_workspace.py:321` |
-| `POST` | `/api/v1/model-3d/rig` | Submit auto-rigging task (skeleton-only or preset motion) | `rig_model3d` | `backend/app/api/v1/model3d_workspace.py:395` |
-| `GET` | `/api/v1/model-3d/tasks/{task_id}` | Poll image-to-3D task | `poll_model3d_task` | `backend/app/api/v1/model3d_workspace.py:277` |
+| `GET` | `/api/v1/model-3d/backends` | Configured 3D connectors (generation / rigging) | `list_model3d_backends` | `backend/app/api/v1/model3d_workspace.py:230` |
+| `POST` | `/api/v1/model-3d/generate` | Submit configured image-to-3D task | `generate_model3d` | `backend/app/api/v1/model3d_workspace.py:242` |
+| `GET` | `/api/v1/model-3d/history` | Durable 3D workspace history | `model3d_history` | `backend/app/api/v1/model3d_workspace.py:351` |
+| `POST` | `/api/v1/model-3d/rig` | Submit auto-rigging task (skeleton-only or preset motion) | `rig_model3d` | `backend/app/api/v1/model3d_workspace.py:425` |
+| `GET` | `/api/v1/model-3d/tasks/{task_id}` | Poll image-to-3D task | `poll_model3d_task` | `backend/app/api/v1/model3d_workspace.py:307` |
 
 ### Images
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/images/backends` | 可用图像后端列表 | `list_backends` | `backend/app/api/v1/images.py:396` |
-| `POST` | `/api/v1/images/generate` | 生成图片 | `generate_image` | `backend/app/api/v1/images.py:484` |
-| `POST` | `/api/v1/images/generate-batch` | 批量生成多平台图片 | `batch_generate_endpoint` | `backend/app/api/v1/images.py:1390` |
-| `POST` | `/api/v1/images/generate-batch/retry` | 单张图片重生成 | `batch_retry_endpoint` | `backend/app/api/v1/images.py:1325` |
-| `POST` | `/api/v1/images/generate-batch/topics` | 多主题批量生成 | `batch_topics_generate_endpoint` | `backend/app/api/v1/images.py:1423` |
-| `POST` | `/api/v1/images/generate-outline` | 多平台大纲生成 | `generate_outline_endpoint` | `backend/app/api/v1/images.py:1264` |
-| `GET` | `/api/v1/images/platform-templates` | 可用平台/Prompt 模板列表 | `list_platform_templates` | `backend/app/api/v1/images.py:1142` |
-| `POST` | `/api/v1/images/platform-templates` | 新增平台模板 | `create_platform_template` | `backend/app/api/v1/images.py:1173` |
-| `PUT` | `/api/v1/images/platform-templates/{template_id}` | 更新平台模板 | `update_platform_template` | `backend/app/api/v1/images.py:1200` |
-| `DELETE` | `/api/v1/images/platform-templates/{template_id}` | 删除平台模板 | `delete_platform_template` | `backend/app/api/v1/images.py:1237` |
-| `GET` | `/api/v1/images/tasks/{task_id}` | 轮询图像生成任务 | `poll_image_task` | `backend/app/api/v1/images.py:686` |
+| `GET` | `/api/v1/images/backends` | 可用图像后端列表 | `list_backends` | `backend/app/api/v1/images.py:418` |
+| `POST` | `/api/v1/images/generate` | 生成图片 | `generate_image` | `backend/app/api/v1/images.py:506` |
+| `POST` | `/api/v1/images/generate-batch` | 批量生成多平台图片 | `batch_generate_endpoint` | `backend/app/api/v1/images.py:1478` |
+| `POST` | `/api/v1/images/generate-batch/retry` | 单张图片重生成 | `batch_retry_endpoint` | `backend/app/api/v1/images.py:1413` |
+| `POST` | `/api/v1/images/generate-batch/topics` | 多主题批量生成 | `batch_topics_generate_endpoint` | `backend/app/api/v1/images.py:1511` |
+| `POST` | `/api/v1/images/generate-outline` | 多平台大纲生成 | `generate_outline_endpoint` | `backend/app/api/v1/images.py:1352` |
+| `GET` | `/api/v1/images/platform-templates` | 可用平台/Prompt 模板列表 | `list_platform_templates` | `backend/app/api/v1/images.py:1230` |
+| `POST` | `/api/v1/images/platform-templates` | 新增平台模板 | `create_platform_template` | `backend/app/api/v1/images.py:1261` |
+| `PUT` | `/api/v1/images/platform-templates/{template_id}` | 更新平台模板 | `update_platform_template` | `backend/app/api/v1/images.py:1288` |
+| `DELETE` | `/api/v1/images/platform-templates/{template_id}` | 删除平台模板 | `delete_platform_template` | `backend/app/api/v1/images.py:1325` |
+| `GET` | `/api/v1/images/tasks/{task_id}` | 轮询图像生成任务 | `poll_image_task` | `backend/app/api/v1/images.py:774` |
 
 ### JianYing
 
@@ -600,8 +601,8 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/llm/backends` | 获取可用的 LLM 后端列表 | `list_llm_backends` | `backend/app/api/v1/llm.py:55` |
-| `POST` | `/api/v1/llm/chat` | LLM 对话 | `chat` | `backend/app/api/v1/llm.py:125` |
+| `GET` | `/api/v1/llm/backends` | 获取可用的 LLM 后端列表 | `list_llm_backends` | `backend/app/api/v1/llm.py:80` |
+| `POST` | `/api/v1/llm/chat` | LLM 对话 | `chat` | `backend/app/api/v1/llm.py:150` |
 
 ### Lineage
 
@@ -667,6 +668,15 @@
 | `GET` | `/api/v1/live2d/{model_id}/rigging/state` | 获取绑骨状态 | `get_rigging_state` | `backend/app/api/v1/live2d.py:1415` |
 | `POST` | `/api/v1/live2d/{model_id}/segment` | AI 图像分割（自动分层） | `segment_model` | `backend/app/api/v1/live2d.py:1131` |
 | `POST` | `/api/v1/live2d/{model_id}/style-transfer` | 风格转换（真人转二次元） | `style_transfer_model` | `backend/app/api/v1/live2d.py:995` |
+
+### Logs
+
+| Method | Path | Summary | Handler | Source |
+| --- | --- | --- | --- | --- |
+| `GET` | `/api/v1/logs` | 事件日志列表 | `list_logs` | `backend/app/api/v1/logs.py:73` |
+| `GET` | `/api/v1/logs/runtime` | 运行日志（文件 tail） | `list_runtime_logs` | `backend/app/api/v1/logs.py:101` |
+| `GET` | `/api/v1/logs/{event_id}` | 事件日志详情 | `get_log` | `backend/app/api/v1/logs.py:128` |
+| `POST` | `/api/v1/logs/{event_id}/retry` | 失败事件重发 | `retry_log` | `backend/app/api/v1/logs.py:141` |
 
 ### Models
 
@@ -855,11 +865,11 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/videos/backends` | 可用视频后端列表 | `list_backends` | `backend/app/api/v1/videos.py:331` |
-| `POST` | `/api/v1/videos/generate` | Generate video with optional project lineage | `generate_video` | `backend/app/api/v1/videos.py:372` |
-| `GET` | `/api/v1/videos/history` | 视频生成历史与待处理任务 | `list_video_tasks` | `backend/app/api/v1/videos.py:584` |
-| `GET` | `/api/v1/videos/tasks/{task_id}` | 查询任务状态 | `get_task_status` | `backend/app/api/v1/videos.py:496` |
-| `GET` | `/api/v1/videos/tasks/{task_id}/file` | 播放已下载的视频任务文件 | `stream_task_file` | `backend/app/api/v1/videos.py:602` |
+| `GET` | `/api/v1/videos/backends` | 可用视频后端列表 | `list_backends` | `backend/app/api/v1/videos.py:353` |
+| `POST` | `/api/v1/videos/generate` | Generate video with optional project lineage | `generate_video` | `backend/app/api/v1/videos.py:394` |
+| `GET` | `/api/v1/videos/history` | 视频生成历史与待处理任务 | `list_video_tasks` | `backend/app/api/v1/videos.py:645` |
+| `GET` | `/api/v1/videos/tasks/{task_id}` | 查询任务状态 | `get_task_status` | `backend/app/api/v1/videos.py:557` |
+| `GET` | `/api/v1/videos/tasks/{task_id}/file` | 播放已下载的视频任务文件 | `stream_task_file` | `backend/app/api/v1/videos.py:663` |
 
 ### WebSocket
 

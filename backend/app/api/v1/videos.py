@@ -32,9 +32,31 @@ from app.services.asset_hub import AssetHubFacade
 from app.services.ai import get_ai_service
 from app.services.ai.types import VideoGenerationRequest
 from app.services.ai.types import VideoCapability, VideoCapabilities
+from app.services.platform_log import service as platform_log
 
 router = APIRouter()
 logger = logging.getLogger("ylcraft.videos")
+
+
+def _video_retry_payload(req: "VideoGenerateRequest") -> dict:
+    """脱敏后的完整可重放参数，供事件日志「重发」使用。"""
+    return {
+        "prompt": req.prompt,
+        "duration": req.duration,
+        "resolution": req.resolution,
+        "aspect_ratio": req.aspect_ratio,
+        "provider": req.provider or "",
+        "model": req.model or "",
+        "seed": req.seed,
+        "generate_audio": req.generate_audio,
+        "project_id": req.project_id or "",
+        "content_id": req.content_id or "",
+        "source_type": req.source_type or "",
+        "source_index": req.source_index or "",
+        "source_title": req.source_title or "",
+        "chapter_number": req.chapter_number,
+        "music_hint": req.music_hint or "",
+    }
 
 
 class VideoGenerateRequest(BaseModel):
@@ -456,6 +478,20 @@ async def generate_video(req: VideoGenerateRequest):
                 task.completed_at = time.time() if task.status in {"done", "error"} else None
 
         if not result.success:
+            await platform_log.record_event(
+                scene="video",
+                task_type="video_generation",
+                task_id=result.task_id or None,
+                level="error",
+                status="failed",
+                provider=result.provider or req.provider or "",
+                model=result.model or req.model or "",
+                message="视频生成失败",
+                error=result.error or "Video provider request failed",
+                duration_ms=result.latency_ms,
+                project_id=req.project_id or None,
+                retry_payload=_video_retry_payload(req),
+            )
             return VideoResponse(
                 success=False,
                 task_id=result.task_id,
@@ -466,6 +502,19 @@ async def generate_video(req: VideoGenerateRequest):
                 error=result.error or "Video provider request failed",
             )
 
+        await platform_log.record_event(
+            scene="video",
+            task_type="video_generation",
+            task_id=result.task_id or None,
+            level="info",
+            status="success",
+            provider=result.provider or req.provider or "",
+            model=result.model or req.model or "",
+            message="视频生成成功",
+            duration_ms=result.latency_ms,
+            project_id=req.project_id or None,
+            retry_payload=_video_retry_payload(req),
+        )
         return VideoResponse(
             success=True,
             task_id=result.task_id,
@@ -486,6 +535,18 @@ async def generate_video(req: VideoGenerateRequest):
         )
     except Exception as e:
         logger.error(f"Video generation failed: {e}")
+        await platform_log.record_event(
+            scene="video",
+            task_type="video_generation",
+            level="error",
+            status="failed",
+            provider=req.provider or "",
+            model=req.model or "",
+            message="视频生成异常",
+            error=str(e),
+            project_id=req.project_id or None,
+            retry_payload=_video_retry_payload(req),
+        )
         return VideoResponse(success=False, error=str(e))
     finally:
         if transient_start_image is not None:
