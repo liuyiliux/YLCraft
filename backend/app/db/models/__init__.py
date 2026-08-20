@@ -111,6 +111,7 @@ from app.db.models.novel import NovelChapter
 from app.db.models.book_source import BookSource
 from app.db.models.book_source_cookie import BookSourceCookie
 from app.db.models.task import ProjectTaskRecord, VideoGenerationTask, Model3DGenerationTask
+from app.db.models.platform_log import PlatformEventLog
 
 # 平台生成模板
 from app.db.models.platform_template import PlatformTemplate

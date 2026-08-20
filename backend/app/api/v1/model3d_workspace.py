@@ -26,6 +26,7 @@ from app.services.asset_hub import AssetHubFacade
 from app.services.cos_storage import load_cos_service
 from app.services.model3d.service import Model3DService
 from app.services.model3d.workspace import Model3DConnectorBackend, Model3DProviderRequestError
+from app.services.platform_log import service as platform_log
 
 router = APIRouter()
 
@@ -264,12 +265,41 @@ async def generate_model3d(req: Model3DGenerateRequest):
             task.completed_at = now
         async with get_async_session() as session:
             session.add(task)
+        await platform_log.record_event(
+            scene="model3d",
+            task_type="model3d_generation",
+            task_id=task_id,
+            level="error" if result["status"] == "error" else "info",
+            status="failed" if result["status"] == "error" else ("success" if result["status"] == "done" else "pending"),
+            provider=connector.name,
+            model=selected_model,
+            message="图转 3D 生成完成" if result["status"] == "done" else "图转 3D 任务已提交",
+            error=result.get("error"),
+            project_id=None,
+            retry_payload={"prompt": req.prompt, "provider": req.provider, "model": req.model,
+                           "source_asset_id": req.source_asset_id, "source_image": req.source_image,
+                           "options": req.options},
+        )
         return Model3DTaskResponse(task_id=task_id, status=task.status, progress=task.progress,
             provider=task.provider, model=task.model, url=result.get("url"), asset_id=task.asset_id,
             diagnostics=result.get("diagnostics") or {}, error=task.error)
     except Model3DProviderRequestError as exc:
+        await platform_log.record_event(
+            scene="model3d", task_type="model3d_generation", level="error", status="failed",
+            provider=req.provider, model=req.model, message="图转 3D 生成失败", error=str(exc),
+            retry_payload={"prompt": req.prompt, "provider": req.provider, "model": req.model,
+                           "source_asset_id": req.source_asset_id, "source_image": req.source_image,
+                           "options": req.options},
+        )
         return Model3DTaskResponse(success=False, task_id="", status="error", diagnostics=exc.diagnostics, error=str(exc))
     except Exception as exc:
+        await platform_log.record_event(
+            scene="model3d", task_type="model3d_generation", level="error", status="failed",
+            provider=req.provider, model=req.model, message="图转 3D 生成异常", error=str(exc),
+            retry_payload={"prompt": req.prompt, "provider": req.provider, "model": req.model,
+                           "source_asset_id": req.source_asset_id, "source_image": req.source_image,
+                           "options": req.options},
+        )
         return Model3DTaskResponse(success=False, task_id="", status="error", error=str(exc))
 
 
@@ -425,10 +455,39 @@ async def rig_model3d(req: Model3DRigRequest, request: Request):
             task.completed_at = now
         async with get_async_session() as session:
             session.add(task)
+        await platform_log.record_event(
+            scene="model3d",
+            task_type="model3d_generation",
+            task_id=task_id,
+            level="error" if result["status"] == "error" else "info",
+            status="failed" if result["status"] == "error" else ("success" if result["status"] == "done" else "pending"),
+            provider=connector.name,
+            model=selected_model,
+            message="图转 3D 生成完成" if result["status"] == "done" else "图转 3D 任务已提交",
+            error=result.get("error"),
+            project_id=None,
+            retry_payload={"prompt": req.prompt, "provider": req.provider, "model": req.model,
+                           "source_asset_id": req.source_asset_id, "source_image": req.source_image,
+                           "options": req.options},
+        )
         return Model3DTaskResponse(task_id=task_id, status=task.status, progress=task.progress,
             provider=task.provider, model=task.model, url=result.get("url"), asset_id=task.asset_id,
             diagnostics=result.get("diagnostics") or {}, error=task.error)
     except Model3DProviderRequestError as exc:
+        await platform_log.record_event(
+            scene="model3d", task_type="model3d_generation", level="error", status="failed",
+            provider=req.provider, model=req.model, message="图转 3D 生成失败", error=str(exc),
+            retry_payload={"prompt": req.prompt, "provider": req.provider, "model": req.model,
+                           "source_asset_id": req.source_asset_id, "source_image": req.source_image,
+                           "options": req.options},
+        )
         return Model3DTaskResponse(success=False, task_id="", status="error", diagnostics=exc.diagnostics, error=str(exc))
     except Exception as exc:
+        await platform_log.record_event(
+            scene="model3d", task_type="model3d_generation", level="error", status="failed",
+            provider=req.provider, model=req.model, message="图转 3D 生成异常", error=str(exc),
+            retry_payload={"prompt": req.prompt, "provider": req.provider, "model": req.model,
+                           "source_asset_id": req.source_asset_id, "source_image": req.source_image,
+                           "options": req.options},
+        )
         return Model3DTaskResponse(success=False, task_id="", status="error", error=str(exc))

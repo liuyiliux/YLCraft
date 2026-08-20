@@ -13,9 +13,34 @@ from pydantic import BaseModel
 
 from app.services.ai import get_ai_service, AIService
 from app.services.ai.types import LLMMessage
+from app.services.platform_log import service as platform_log
 
 router = APIRouter()
 logger = logging.getLogger("ylcraft.llm")
+
+
+async def _record_llm_platform_event(req: ChatRequest, result, *, error: str | None = None) -> None:
+    from app.services.ai.types import LLMGenerationResult
+    if result is None:
+        result = LLMGenerationResult(success=False, error=error or "")
+    await platform_log.record_event(
+        scene="llm",
+        task_type="llm_chat",
+        level="info" if result.success else "error",
+        status="success" if result.success else "failed",
+        provider=result.provider or req.provider or "",
+        model=result.model or req.model or "",
+        message="文本生成成功" if result.success else "文本生成失败",
+        error=result.error if not result.success else None,
+        duration_ms=result.latency_ms,
+        retry_payload={
+            "messages": req.messages,
+            "model": req.model or "",
+            "temperature": req.temperature,
+            "max_tokens": req.max_tokens,
+            "provider": req.provider or "",
+        },
+    )
 
 
 class ChatRequest(BaseModel):
@@ -176,6 +201,7 @@ async def chat(req: ChatRequest):
             except Exception as log_err:
                 logger.warning(f"LLM chat log write failed: {log_err}")
 
+        await _record_llm_platform_event(req, result)
         return ChatResponse(
             success=result.success,
             content=result.content,
@@ -184,4 +210,5 @@ async def chat(req: ChatRequest):
         )
     except Exception as e:
         logger.error(f"LLM chat failed: {e}")
+        await _record_llm_platform_event(req, None, error=str(e))
         return ChatResponse(success=False, error=str(e))

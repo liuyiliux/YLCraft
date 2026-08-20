@@ -137,6 +137,14 @@
       ]
     },
     {
+      "name": "logs",
+      "file": "backend/app/api/v1/logs.py",
+      "prefix": "/api/v1/logs",
+      "tags": [
+        "Logs"
+      ]
+    },
+    {
       "name": "settings",
       "file": "backend/app/api/v1/settings.py",
       "prefix": "/api/v1/settings",
@@ -6166,7 +6174,7 @@
       "summary": "可用图像后端列表",
       "function": "list_backends",
       "file": "backend/app/api/v1/images.py",
-      "line": 396,
+      "line": 418,
       "response_model": "ImageBackendsResponse",
       "include_in_schema": true
     },
@@ -6182,7 +6190,7 @@
       "summary": "生成图片",
       "function": "generate_image",
       "file": "backend/app/api/v1/images.py",
-      "line": 484,
+      "line": 506,
       "response_model": "ImageResponse",
       "include_in_schema": true
     },
@@ -6198,7 +6206,7 @@
       "summary": "批量生成多平台图片",
       "function": "batch_generate_endpoint",
       "file": "backend/app/api/v1/images.py",
-      "line": 1390,
+      "line": 1478,
       "response_model": "BatchGenerateResponse",
       "include_in_schema": true
     },
@@ -6214,7 +6222,7 @@
       "summary": "单张图片重生成",
       "function": "batch_retry_endpoint",
       "file": "backend/app/api/v1/images.py",
-      "line": 1325,
+      "line": 1413,
       "response_model": "BatchRetryResponse",
       "include_in_schema": true
     },
@@ -6230,7 +6238,7 @@
       "summary": "多主题批量生成",
       "function": "batch_topics_generate_endpoint",
       "file": "backend/app/api/v1/images.py",
-      "line": 1423,
+      "line": 1511,
       "response_model": "BatchTopicGenerateResponse",
       "include_in_schema": true
     },
@@ -6246,7 +6254,7 @@
       "summary": "多平台大纲生成",
       "function": "generate_outline_endpoint",
       "file": "backend/app/api/v1/images.py",
-      "line": 1264,
+      "line": 1352,
       "response_model": "GenerateOutlineResponse",
       "include_in_schema": true
     },
@@ -6262,7 +6270,7 @@
       "summary": "可用平台/Prompt 模板列表",
       "function": "list_platform_templates",
       "file": "backend/app/api/v1/images.py",
-      "line": 1142,
+      "line": 1230,
       "response_model": "dict",
       "include_in_schema": true
     },
@@ -6278,7 +6286,7 @@
       "summary": "新增平台模板",
       "function": "create_platform_template",
       "file": "backend/app/api/v1/images.py",
-      "line": 1173,
+      "line": 1261,
       "response_model": "dict",
       "include_in_schema": true
     },
@@ -6294,7 +6302,7 @@
       "summary": "更新平台模板",
       "function": "update_platform_template",
       "file": "backend/app/api/v1/images.py",
-      "line": 1200,
+      "line": 1288,
       "response_model": "dict",
       "include_in_schema": true
     },
@@ -6310,7 +6318,7 @@
       "summary": "删除平台模板",
       "function": "delete_platform_template",
       "file": "backend/app/api/v1/images.py",
-      "line": 1237,
+      "line": 1325,
       "response_model": "dict",
       "include_in_schema": true
     },
@@ -6326,7 +6334,7 @@
       "summary": "轮询图像生成任务",
       "function": "poll_image_task",
       "file": "backend/app/api/v1/images.py",
-      "line": 686,
+      "line": 774,
       "response_model": "ImageResponse",
       "include_in_schema": true
     },
@@ -7334,7 +7342,7 @@
       "summary": "获取可用的 LLM 后端列表",
       "function": "list_llm_backends",
       "file": "backend/app/api/v1/llm.py",
-      "line": 55,
+      "line": 80,
       "response_model": "BackendsResponse",
       "include_in_schema": true
     },
@@ -7350,8 +7358,72 @@
       "summary": "LLM 对话",
       "function": "chat",
       "file": "backend/app/api/v1/llm.py",
-      "line": 125,
+      "line": 150,
       "response_model": "ChatResponse",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/logs",
+      "router": "logs",
+      "prefix": "/api/v1/logs",
+      "local_path": "",
+      "tags": [
+        "Logs"
+      ],
+      "summary": "事件日志列表",
+      "function": "list_logs",
+      "file": "backend/app/api/v1/logs.py",
+      "line": 73,
+      "response_model": "EventListResponse",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/logs/runtime",
+      "router": "logs",
+      "prefix": "/api/v1/logs",
+      "local_path": "/runtime",
+      "tags": [
+        "Logs"
+      ],
+      "summary": "运行日志（文件 tail）",
+      "function": "list_runtime_logs",
+      "file": "backend/app/api/v1/logs.py",
+      "line": 101,
+      "response_model": "RuntimeLogResponse",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/logs/{event_id}",
+      "router": "logs",
+      "prefix": "/api/v1/logs",
+      "local_path": "/{event_id}",
+      "tags": [
+        "Logs"
+      ],
+      "summary": "事件日志详情",
+      "function": "get_log",
+      "file": "backend/app/api/v1/logs.py",
+      "line": 128,
+      "response_model": "EventDetailResponse",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/logs/{event_id}/retry",
+      "router": "logs",
+      "prefix": "/api/v1/logs",
+      "local_path": "/{event_id}/retry",
+      "tags": [
+        "Logs"
+      ],
+      "summary": "失败事件重发",
+      "function": "retry_log",
+      "file": "backend/app/api/v1/logs.py",
+      "line": 141,
+      "response_model": "RetryResponse",
       "include_in_schema": true
     },
     {
@@ -7366,7 +7438,7 @@
       "summary": "Configured 3D connectors (generation / rigging)",
       "function": "list_model3d_backends",
       "file": "backend/app/api/v1/model3d_workspace.py",
-      "line": 229,
+      "line": 230,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7382,7 +7454,7 @@
       "summary": "Submit configured image-to-3D task",
       "function": "generate_model3d",
       "file": "backend/app/api/v1/model3d_workspace.py",
-      "line": 241,
+      "line": 242,
       "response_model": "Model3DTaskResponse",
       "include_in_schema": true
     },
@@ -7398,7 +7470,7 @@
       "summary": "Durable 3D workspace history",
       "function": "model3d_history",
       "file": "backend/app/api/v1/model3d_workspace.py",
-      "line": 321,
+      "line": 351,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7414,7 +7486,7 @@
       "summary": "Submit auto-rigging task (skeleton-only or preset motion)",
       "function": "rig_model3d",
       "file": "backend/app/api/v1/model3d_workspace.py",
-      "line": 395,
+      "line": 425,
       "response_model": "Model3DTaskResponse",
       "include_in_schema": true
     },
@@ -7430,7 +7502,7 @@
       "summary": "Poll image-to-3D task",
       "function": "poll_model3d_task",
       "file": "backend/app/api/v1/model3d_workspace.py",
-      "line": 277,
+      "line": 307,
       "response_model": "Model3DTaskResponse",
       "include_in_schema": true
     },
@@ -9270,7 +9342,7 @@
       "summary": "可用视频后端列表",
       "function": "list_backends",
       "file": "backend/app/api/v1/videos.py",
-      "line": 331,
+      "line": 353,
       "response_model": "VideoBackendsResponse",
       "include_in_schema": true
     },
@@ -9286,7 +9358,7 @@
       "summary": "Generate video with optional project lineage",
       "function": "generate_video",
       "file": "backend/app/api/v1/videos.py",
-      "line": 372,
+      "line": 394,
       "response_model": "VideoResponse",
       "include_in_schema": true
     },
@@ -9302,7 +9374,7 @@
       "summary": "视频生成历史与待处理任务",
       "function": "list_video_tasks",
       "file": "backend/app/api/v1/videos.py",
-      "line": 584,
+      "line": 645,
       "response_model": "VideoTaskListResponse",
       "include_in_schema": true
     },
@@ -9318,7 +9390,7 @@
       "summary": "查询任务状态",
       "function": "get_task_status",
       "file": "backend/app/api/v1/videos.py",
-      "line": 496,
+      "line": 557,
       "response_model": "TaskStatusResponse",
       "include_in_schema": true
     },
@@ -9334,7 +9406,7 @@
       "summary": "播放已下载的视频任务文件",
       "function": "stream_task_file",
       "file": "backend/app/api/v1/videos.py",
-      "line": 602,
+      "line": 663,
       "response_model": "",
       "include_in_schema": true
     },

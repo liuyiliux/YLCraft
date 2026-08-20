@@ -27,6 +27,7 @@ from app.services.ai import get_ai_service, AIService
 from app.services.ai.types import ImageGenerationRequest
 from app.services.asset_hub.representation_service import AssetRepresentationService
 from app.services.asset_hub.version_service import AssetVersionService
+from app.services.platform_log import service as platform_log
 
 router = APIRouter()
 logger = logging.getLogger("ylcraft.images")
@@ -34,6 +35,27 @@ logger = logging.getLogger("ylcraft.images")
 
 def _utc_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _image_retry_payload(req) -> dict:
+    """脱敏后的完整可重放参数，供事件日志「重发」使用。"""
+    return {
+        "prompt": req.prompt,
+        "negative_prompt": req.negative_prompt or "",
+        "size": req.size or "1024x1024",
+        "provider": req.provider or "",
+        "model": req.model or "",
+        "seed": req.seed,
+        "steps": req.steps,
+        "cfg_scale": req.cfg_scale,
+        "sampler": req.sampler or "euler",
+        "project_id": req.project_id or "",
+        "content_id": req.content_id or "",
+        "source_type": req.source_type or "",
+        "source_index": req.source_index or "",
+        "source_title": req.source_title or "",
+        "chapter_number": req.chapter_number or "",
+    }
 
 
 def _response_excerpt(data: dict, limit: int = 1000) -> str:
@@ -580,6 +602,19 @@ async def generate_image(req: ImageGenerateRequest):
                     max(5, int(result.progress or 0)),
                     "图片生成任务已提交",
                 )
+                await platform_log.record_event(
+                    scene="image",
+                    task_type="image_generation",
+                    task_id=task.task_id,
+                    level="info",
+                    status="pending",
+                    provider=result.provider or req.provider or "",
+                    model=result.model or req.model or "",
+                    message="图片生成任务已提交",
+                    duration_ms=result.latency_ms,
+                    project_id=req.project_id or None,
+                    retry_payload=_image_retry_payload(req),
+                )
                 return ImageResponse(
                     success=True,
                     task_id=task.task_id,
@@ -643,6 +678,19 @@ async def generate_image(req: ImageGenerateRequest):
                 or len(asset_ids) != len(local_paths)
                 or len(project_link_ids) != len(local_paths)
             ):
+                await platform_log.record_event(
+                    scene="image",
+                    task_type="image_generation",
+                    level="error",
+                    status="failed",
+                    provider=result.provider or "",
+                    model=result.model or "",
+                    message="图片生成完成但素材定稿失败",
+                    error="Image generation completed, but asset finalization or project lineage did not complete",
+                    duration_ms=result.latency_ms,
+                    project_id=req.project_id or None,
+                    retry_payload=_image_retry_payload(req),
+                )
                 return ImageResponse(
                     success=False,
                     error="Image generation completed, but asset finalization or project lineage did not complete",
@@ -651,6 +699,18 @@ async def generate_image(req: ImageGenerateRequest):
                     status="error",
                 )
 
+            await platform_log.record_event(
+                scene="image",
+                task_type="image_generation",
+                level="info",
+                status="success",
+                provider=result.provider or "",
+                model=result.model or "",
+                message="图片生成成功",
+                duration_ms=result.latency_ms,
+                project_id=req.project_id or None,
+                retry_payload=_image_retry_payload(req),
+            )
             return ImageResponse(
                 success=True,
                 url=result.url,
@@ -671,6 +731,21 @@ async def generate_image(req: ImageGenerateRequest):
                 progress=result.progress,
             )
         else:
+            await platform_log.record_event(
+                scene="image",
+                task_type="image_generation",
+                level="error",
+                status="failed",
+                provider=result.provider or req.provider or "",
+                model=result.model or req.model or "",
+                message="图片生成失败",
+                error=result.error,
+                request={"prompt": req.prompt, "size": req.size, "model": req.model},
+                response={"status": result.status},
+                duration_ms=result.latency_ms,
+                project_id=req.project_id or None,
+                retry_payload=_image_retry_payload(req),
+            )
             return ImageResponse(
                 success=False,
                 error=result.error,
@@ -679,6 +754,19 @@ async def generate_image(req: ImageGenerateRequest):
             )
     except Exception as e:
         logger.error(f"Image generation failed: {e}")
+        await platform_log.record_event(
+            scene="image",
+            task_type="image_generation",
+            level="error",
+            status="failed",
+            provider=req.provider or "",
+            model=req.model or "",
+            message="图片生成异常",
+            error=str(e),
+            request={"prompt": req.prompt, "size": req.size, "model": req.model},
+            project_id=req.project_id or None,
+            retry_payload=_image_retry_payload(req),
+        )
         return ImageResponse(success=False, error=str(e), provider="")
 
 

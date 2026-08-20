@@ -16,6 +16,7 @@ import {
   Select,
   Space,
   Table,
+  Tabs,
   Tag,
   Timeline,
   Tooltip,
@@ -38,6 +39,8 @@ import { listTasks, getTask, cancelTask, deleteTask } from '../../api'
 import { useWebSocket, WSTaskProgress } from '../../hooks/useWebSocket'
 import { useTheme } from '../../constants/theme'
 import type { ColumnsType } from 'antd/es/table'
+import EventLogTab from './EventLogTab'
+import RuntimeLogTab from './RuntimeLogTab'
 
 const { Paragraph, Text } = Typography
 
@@ -453,19 +456,26 @@ export default function TasksPage() {
 
   return (
     <div>
-      <Card
-        title={
-          <span>
-            <ThunderboltOutlined style={{ marginRight: 8 }} />
-            任务管理
-            <Tag style={{ marginLeft: 12 }} color="blue">
-              {filteredTasks.length} 个任务
-            </Tag>
-            <Tag style={{ marginLeft: 4 }} color={isConnected ? 'success' : 'warning'}>
-              {isConnected ? 'WS 已连接' : 'WS 断开'}
-            </Tag>
-          </span>
-        }
+      <Tabs
+        defaultActiveKey="tasks"
+        items={[
+          {
+            key: 'tasks',
+            label: '任务',
+            children: (
+              <Card
+                title={
+                  <span>
+                    <ThunderboltOutlined style={{ marginRight: 8 }} />
+                    任务管理
+                    <Tag style={{ marginLeft: 12 }} color="blue">
+                      {filteredTasks.length} 个任务
+                    </Tag>
+                    <Tag style={{ marginLeft: 4 }} color={isConnected ? 'success' : 'warning'}>
+                      {isConnected ? 'WS 已连接' : 'WS 断开'}
+                    </Tag>
+                  </span>
+                }
         extra={
           <Space wrap={isMobile}>
             <Select
@@ -502,6 +512,20 @@ export default function TasksPage() {
           scroll={{ x: isMobile ? 700 : undefined }}
         />
       </Card>
+            ),
+          },
+          {
+            key: 'events',
+            label: '事件日志',
+            children: <EventLogTab />,
+          },
+          {
+            key: 'runtime',
+            label: '运行日志',
+            children: <RuntimeLogTab />,
+          },
+        ]}
+      />
 
       <Drawer
         rootClassName="task-detail-drawer"
