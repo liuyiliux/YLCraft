@@ -5,14 +5,13 @@
  *
  * 行为：
  * - 列出素材库图片资产（默认 asset_type=image），按是否远程来源标注
- * - 所有资产点击后均可「base64 填入」（从本地副本下载转 base64，最可靠）
+ * - 所有资产点击后均可「后端转 base64」：仅传素材 ID，由后端读取本地副本转 base64
+ *   提交给模型，前端不再 fetch 下载（素材入库时已下载过本地副本）
  * - 素材带远程 http(s) 来源 URL（如 AI 生成结果、小红书/其他渠道下载的图片）
  *   时额外提供「来源 URL 填入」，是否使用由用户自行判断
- * - 当供应商只支持公网 URL（requiresPublicUrl）且选择 base64 时，
- *   提示图片将先上传 COS 生成公网链接后提交
  *
- * 通过 onSelect 回调返回：{ url, isBase64, asset }
- *   url: data URL(base64 模式) 或 http(s) 来源 URL(来源 URL 模式)
+ * 通过 onSelect 回调返回：{ url, isBase64, asset, assetId }
+ *   url: base64 模式下为空串（由后端解析 assetId）；来源 URL 模式为 http(s) URL
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Modal, Spin, Empty, message, Tag, Button, Tooltip } from 'antd'
@@ -20,9 +19,12 @@ import { DatabaseOutlined, CloudOutlined, CloudServerOutlined } from '@ant-desig
 import { listAssets } from '../../api'
 
 export interface AssetReferencePayload {
+  /** 填入的值：base64 模式下为空串（改由后端解析），来源 URL 模式为 http(s) URL */
   url: string
   isBase64: boolean
   asset: any
+  /** 素材 ID：后端按需本地读文件转 base64，前端无需下载 */
+  assetId?: string
 }
 
 interface AssetReferencePickerProps {
@@ -42,18 +44,6 @@ const pickUrl = (asset: any): string =>
 const isRemoteSource = (asset: any): boolean =>
   Boolean(asset?.source_url && /^https?:\/\//.test(String(asset.source_url)))
 
-const toBase64 = async (url: string): Promise<string> => {
-  const resp = await fetch(url)
-  if (!resp.ok) throw new Error(`下载失败 ${resp.status}`)
-  const blob = await resp.blob()
-  return await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result as string)
-    reader.onerror = reject
-    reader.readAsDataURL(blob)
-  })
-}
-
 export default function AssetReferencePicker({
   open,
   onClose,
@@ -68,7 +58,6 @@ export default function AssetReferencePicker({
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(true)
   const [pending, setPending] = useState<any | null>(null)
-  const [converting, setConverting] = useState(false)
   const gridRef = useRef<HTMLDivElement>(null)
 
   const PAGE_SIZE = 24
@@ -121,33 +110,17 @@ export default function AssetReferencePicker({
 
   const doUseBase64 = async () => {
     if (!pending) return
-    setConverting(true)
-    try {
-      const url = pickUrl(pending) || pending.source_url
-      const dataUrl = await toBase64(url)
-      onSelect({ url: dataUrl, isBase64: true, asset: pending })
-      onClose()
-    } catch (error: any) {
-      message.error(`转为 base64 失败：${error?.message || error}`)
-    } finally {
-      setConverting(false)
-    }
+    // 方案：前端不下载图片，直接把素材 ID 交给后端，由后端本地读文件转 base64。
+    // 素材入库时已下载过本地副本，无需浏览器再 fetch 一遍。
+    onSelect({ url: '', isBase64: true, asset: pending, assetId: String(pending.id || '') })
+    onClose()
   }
 
   const handleUseBase64 = () => {
     if (!pending) return
-    if (requiresPublicUrl) {
-      Modal.confirm({
-        title: '当前供应商只支持公网 URL',
-        content:
-          '图片将先自动上传到腾讯云 COS 生成公网链接（需已配置 COS 密钥）后，再提交给模型生成。是否继续？',
-        okText: '继续',
-        cancelText: '取消',
-        onOk: doUseBase64,
-      })
-      return
-    }
-    void doUseBase64()
+    // 后端统一处理：本地路径/base64 交给模型；若供应商要求公网 URL（如 Agnes），
+    // 后端会自动上传 COS 生成公网链接后再提交，前端无需关心。
+    doUseBase64()
   }
 
   const handleUseSourceUrl = () => {
@@ -201,15 +174,9 @@ export default function AssetReferencePicker({
             以何种形式填入参考图？
           </div>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <Tooltip
-              title={
-                requiresPublicUrl
-                  ? '从本地副本下载并转为 base64，提交时自动上传 COS 生成公网链接'
-                  : '从本地副本下载图片并转为 base64 数据，兼容本地/私有化模型，最稳定'
-              }
-            >
-              <Button type="primary" loading={converting} onClick={handleUseBase64}>
-                base64 填入
+            <Tooltip title="把素材 ID 交给后端，由后端读取本地副本转为 base64 后提交给模型，前端无需再下载图片">
+              <Button type="primary" onClick={handleUseBase64}>
+                后端转 base64
               </Button>
             </Tooltip>
             {remoteSource && (

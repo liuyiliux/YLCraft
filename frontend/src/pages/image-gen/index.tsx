@@ -45,6 +45,7 @@ import {
   FileTextOutlined,
   BranchesOutlined,
   DatabaseOutlined,
+  CloseOutlined,
 } from '@ant-design/icons'
 import type { UploadFile } from 'antd/es/upload/interface'
 import { useTheme } from '../../constants/theme'
@@ -251,19 +252,25 @@ function ImageGenSinglePage() {
   const [prompt, setPrompt] = useState('')
   const [negativePrompt, setNegativePrompt] = useState('')
   const [referenceImages, setReferenceImages] = useState<UploadFile[]>([])
+  const [referenceAssetIds, setReferenceAssetIds] = useState<string[]>([])
   const [referenceUrl, setReferenceUrl] = useState('')
   const [assetPickerOpen, setAssetPickerOpen] = useState(false)
 
   const handleAssetPicked = (payload: any) => {
+    // 方案 A：素材库选图走后端本地解析，仅记录 assetId，前端不下载转 base64
     setReferenceImages((prev) => [
       ...prev,
       {
         uid: `asset-${payload.asset?.id || Date.now()}`,
         name: payload.asset?.title || '素材库图片',
         status: 'done',
-        url: payload.url,
+        url: payload.url || payload.asset?.thumbnail_url || '',
+        assetId: payload.assetId,
       } as unknown as UploadFile,
     ])
+    if (payload.assetId) {
+      setReferenceAssetIds((prev) => [...prev, payload.assetId])
+    }
   }
   const [promptReferencePickerOpen, setPromptReferencePickerOpen] = useState(false)
   const [selectedPromptReference, setSelectedPromptReference] = useState<ImagePromptReference | null>(null)
@@ -691,38 +698,45 @@ function ImageGenSinglePage() {
         body.chapter_number = projectContext.chapterNumber || undefined
       }
 
-      // 图生图模式：将图片转换为 base64 数据 URI
-      if (mode === 'img2img' && referenceImages.length > 0) {
-        body.reference_images = await Promise.all(
-          referenceImages.map(async (f) => {
-            if (f.originFileObj) {
-              // blob -> base64
-              return new Promise<string>((resolve, reject) => {
-                const reader = new FileReader()
-                reader.onload = () => resolve(reader.result as string)
-                reader.onerror = reject
-                reader.readAsDataURL(f.originFileObj!)
-              })
-            }
-            // URL 形式的参考图（如从资产库跳转），需要 fetch 下载后转 base64
-            if (f.url) {
-              try {
-                const resp = await fetch(f.url)
-                const blob = await resp.blob()
+      // 图生图模式：参考图
+      // 素材库选图（assetId）→ 交后端本地解析转 base64；上传文件/手动 URL → 前端转 base64
+      if (mode === 'img2img') {
+        if (referenceAssetIds.length > 0) {
+          body.reference_asset_ids = referenceAssetIds
+        }
+        const manualImages = referenceImages.filter((f) => !(f as any).assetId)
+        if (manualImages.length > 0) {
+          body.reference_images = await Promise.all(
+            manualImages.map(async (f) => {
+              if (f.originFileObj) {
+                // blob -> base64
                 return new Promise<string>((resolve, reject) => {
                   const reader = new FileReader()
                   reader.onload = () => resolve(reader.result as string)
                   reader.onerror = reject
-                  reader.readAsDataURL(blob)
+                  reader.readAsDataURL(f.originFileObj!)
                 })
-              } catch (e) {
-                console.error('[ImageGen] 下载参考图失败:', e)
-                return f.url
               }
-            }
-            return ''
-          })
-        )
+              // 手动 URL 参考图：需 fetch 下载后转 base64
+              if (f.url) {
+                try {
+                  const resp = await fetch(f.url)
+                  const blob = await resp.blob()
+                  return new Promise<string>((resolve, reject) => {
+                    const reader = new FileReader()
+                    reader.onload = () => resolve(reader.result as string)
+                    reader.onerror = reject
+                    reader.readAsDataURL(blob)
+                  })
+                } catch (e) {
+                  console.error('[ImageGen] 下载参考图失败:', e)
+                  return f.url
+                }
+              }
+              return ''
+            })
+          )
+        }
       }
 
       setProgress(30)
@@ -873,7 +887,12 @@ function ImageGenSinglePage() {
                   multiple
                   maxCount={3}
                   fileList={referenceImages}
-                  onChange={({ fileList }) => setReferenceImages(fileList)}
+                  showUploadList={false}
+                  onChange={({ fileList }) => {
+                    setReferenceImages(fileList)
+                    // 同步 assetId 列表（删除素材图时同步移除）
+                    setReferenceAssetIds(fileList.map((f) => (f as any).assetId).filter(Boolean))
+                  }}
                   beforeUpload={() => false}
                   style={{ background: '#1e1e2e', border: '1px dashed #444' }}
                 >
@@ -883,6 +902,69 @@ function ImageGenSinglePage() {
                   <p style={{ color: '#8b8ba8' }}>点击或拖拽上传参考图片</p>
                   <p style={{ color: '#8b8ba8', fontSize: 12 }}>支持 1-3 张参考图</p>
                 </Dragger>
+                {/* 自定义参考图列表：缩略图 + 标题 + 删除按钮（避免 Dragger 默认列表无删除入口） */}
+                {referenceImages.length > 0 && (
+                  <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {referenceImages.map((f) => {
+                      const thumbUrl = f.url || (f as any).thumbUrl || ''
+                      return (
+                        <div
+                          key={f.uid}
+                          style={{
+                            position: 'relative',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                            padding: '6px 10px',
+                            background: '#1e1e2e',
+                            border: '1px solid #333',
+                            borderRadius: 6,
+                            maxWidth: 260,
+                          }}
+                        >
+                          {thumbUrl && (
+                            <img
+                              src={thumbUrl}
+                              alt={f.name}
+                              style={{
+                                width: 36,
+                                height: 36,
+                                objectFit: 'cover',
+                                borderRadius: 4,
+                                background: '#0f0f1a',
+                              }}
+                            />
+                          )}
+                          <span
+                            title={f.name}
+                            style={{
+                              color: '#e2e8f0',
+                              fontSize: 12,
+                              maxWidth: 160,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {f.name}
+                          </span>
+                          <Button
+                            type="text"
+                            size="small"
+                            icon={<CloseOutlined />}
+                            onClick={() => {
+                              setReferenceImages((prev) => prev.filter((x) => x.uid !== f.uid))
+                              setReferenceAssetIds((prev) =>
+                                prev.filter((id) => id !== (f as any).assetId),
+                              )
+                            }}
+                            style={{ color: '#8b8ba8' }}
+                          />
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
                 <div style={{ marginTop: 12 }}>
                   <Space wrap style={{ marginBottom: 8 }}>
                     <Button
