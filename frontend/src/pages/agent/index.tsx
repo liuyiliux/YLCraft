@@ -354,6 +354,7 @@ const getStepStatusColor = (status?: string) => {
 type MarkdownSegment =
   | { type: 'text'; text: string }
   | { type: 'inline_code'; text: string }
+  | { type: 'bold'; text: string }
   | { type: 'link'; text: string; href: string }
 
 type MarkdownBlock =
@@ -362,10 +363,11 @@ type MarkdownBlock =
   | { type: 'list'; ordered: boolean; items: MarkdownSegment[][] }
   | { type: 'quote'; content: MarkdownSegment[] }
   | { type: 'code'; language?: string; code: string }
+  | { type: 'table'; header: MarkdownSegment[][]; rows: MarkdownSegment[][][] }
 
 const parseInlineMarkdown = (text: string): MarkdownSegment[] => {
   const segments: MarkdownSegment[] = []
-  const pattern = /(`([^`]+)`)|\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g
+  const pattern = /(`([^`]+)`)|(\*\*([^*]+)\*\*)|\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g
   let lastIndex = 0
   let match: RegExpExecArray | null
   while ((match = pattern.exec(text))) {
@@ -374,8 +376,10 @@ const parseInlineMarkdown = (text: string): MarkdownSegment[] => {
     }
     if (match[2] !== undefined) {
       segments.push({ type: 'inline_code', text: match[2] })
+    } else if (match[4] !== undefined) {
+      segments.push({ type: 'bold', text: match[4] })
     } else {
-      segments.push({ type: 'link', text: match[3], href: match[4] })
+      segments.push({ type: 'link', text: match[5], href: match[6] })
     }
     lastIndex = pattern.lastIndex
   }
@@ -394,6 +398,7 @@ const parseSimpleMarkdown = (source: string): MarkdownBlock[] => {
   let codeLines: string[] = []
   let codeLanguage = ''
   let inCode = false
+  let tableRows: string[] = []
 
   const flushParagraph = () => {
     if (!paragraph.length) return
@@ -408,6 +413,21 @@ const parseSimpleMarkdown = (source: string): MarkdownBlock[] => {
     listOrdered = false
   }
 
+  const isTableRow = (row: string) => /^\s*\|.+\|\s*$/.test(row)
+  const isTableDivider = (row: string) => /^\s*\|[\s:|-]+\|\s*$/.test(row)
+  const flushTable = () => {
+    if (!tableRows.length) return
+    const dataRows = tableRows.filter(row => !isTableDivider(row))
+    if (dataRows.length >= 1) {
+      const parseRow = (row: string): MarkdownSegment[][] =>
+        row.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => parseInlineMarkdown(c.trim()))
+      blocks.push({ type: 'table', header: parseRow(dataRows[0]), rows: dataRows.slice(1).map(parseRow) })
+    } else {
+      for (const row of tableRows) paragraph.push(row)
+    }
+    tableRows = []
+  }
+
   for (const line of lines) {
     const fence = line.match(/^```([\w-]*)\s*$/)
     if (fence) {
@@ -419,6 +439,7 @@ const parseSimpleMarkdown = (source: string): MarkdownBlock[] => {
       } else {
         flushParagraph()
         flushList()
+        flushTable()
         inCode = true
         codeLanguage = fence[1] || ''
       }
@@ -429,6 +450,15 @@ const parseSimpleMarkdown = (source: string): MarkdownBlock[] => {
       codeLines.push(line)
       continue
     }
+
+    if (isTableRow(line)) {
+      flushParagraph()
+      flushList()
+      tableRows.push(line)
+      continue
+    }
+
+    flushTable()
 
     if (!line.trim()) {
       flushParagraph()
@@ -470,6 +500,7 @@ const parseSimpleMarkdown = (source: string): MarkdownBlock[] => {
   if (inCode) {
     blocks.push({ type: 'code', language: codeLanguage, code: codeLines.join('\n') })
   }
+  flushTable()
   flushParagraph()
   flushList()
   return blocks
@@ -523,6 +554,12 @@ function AgentPageContent() {
   const [tools, setTools] = useState<ToolItem[]>([])
   const [toolCalls, setToolCalls] = useState<AgentToolCallResult[]>([])
   const [currentRun, setCurrentRun] = useState<AgentRun | null>(null)
+  // 当前运行中等待人工确认的步骤（工具写入/删除/消耗、记忆候选项），用于顶部显眼的确认卡片
+  const pendingToolSteps = (currentRun?.steps || []).filter(s => s.status === 'pending' && s.step_type === 'tool_call')
+  const pendingMemorySteps = (currentRun?.steps || []).filter(s => s.status === 'pending' && s.step_type === 'memory_extract')
+  // 底部状态栏：步骤/工具/耗时统计（对标 Harness 底部一行）
+  const toolSteps = (currentRun?.steps || []).filter(s => s.step_type === 'tool_call')
+  const runDurationMs = (currentRun?.steps || []).reduce((sum, s) => sum + (s.duration_ms || 0), 0)
   const [runTree, setRunTree] = useState<{
     root_run_id: string
     runs: AgentRun[]
@@ -1139,6 +1176,9 @@ function AgentPageContent() {
       if (segment.type === 'inline_code') {
         return <code key={`${segment.type}-${index}`} style={inlineCodeStyle(role)}>{segment.text}</code>
       }
+      if (segment.type === 'bold') {
+        return <strong key={`${segment.type}-${index}`} style={{ fontWeight: 750 }}>{segment.text}</strong>
+      }
       if (segment.type === 'link') {
         return (
           <a
@@ -1231,6 +1271,30 @@ function AgentPageContent() {
                 {block.language && <div style={{ color: secondaryColor, marginBottom: 6 }}>{block.language}</div>}
                 <code>{block.code}</code>
               </pre>
+            )
+          }
+          if (block.type === 'table') {
+            return (
+              <div key={`${block.type}-${index}`} style={{ overflowX: 'auto' }}>
+                <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 13, color: textColor }}>
+                  <thead>
+                    <tr>
+                      {block.header.map((cell, i) => (
+                        <th key={i} style={{ border: `1px solid ${THEME.borderLight}`, padding: '6px 10px', background: role === 'user' ? 'rgba(255,255,255,0.12)' : THEME.bgElevated, textAlign: 'left', fontWeight: 750 }}>{renderInlineMarkdown(cell, role)}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {block.rows.map((row, r) => (
+                      <tr key={r}>
+                        {row.map((cell, c) => (
+                          <td key={c} style={{ border: `1px solid ${THEME.borderLight}`, padding: '6px 10px', color: textColor }}>{renderInlineMarkdown(cell, role)}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )
           }
           return (
@@ -2778,6 +2842,45 @@ function AgentPageContent() {
                         background: THEME.bgCard,
                       }}
                     >
+                      {(pendingToolSteps.length > 0 || pendingMemorySteps.length > 0) && (
+                        <Space direction="vertical" size={10} style={{ width: '100%', marginBottom: 14 }}>
+                          <Alert
+                            type="warning"
+                            showIcon
+                            message={`有 ${pendingToolSteps.length + pendingMemorySteps.length} 个操作等待你的确认`}
+                            description="确认后才会真正执行；这些操作涉及写入、删除或模型消耗。"
+                          />
+                          {pendingToolSteps.map(step => (
+                            <div key={step.id} style={{ border: '1px solid #faad14', borderLeft: '4px solid #faad14', borderRadius: 10, padding: '12px 14px', background: 'rgba(250,173,20,0.06)' }}>
+                              <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                                <Space wrap>
+                                  <Tag color="warning">待确认</Tag>
+                                  {step.tool_name && <Tag icon={<ToolOutlined />}>{step.tool_name}</Tag>}
+                                  {step.summary && <Text type="secondary" style={{ fontSize: 12 }}>{step.summary}</Text>}
+                                </Space>
+                                <Space>
+                                  <Button type="primary" size="small" onClick={() => handleConfirmRunStep(step.id)} loading={loading}>确认执行</Button>
+                                  <Text type="secondary" style={{ fontSize: 12 }}>仅写入、删除或消耗型工具需要确认</Text>
+                                </Space>
+                              </Space>
+                            </div>
+                          ))}
+                          {pendingMemorySteps.map(step => (
+                            <div key={step.id} style={{ border: '1px solid #faad14', borderLeft: '4px solid #faad14', borderRadius: 10, padding: '12px 14px', background: 'rgba(250,173,20,0.06)' }}>
+                              <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                                <Space wrap>
+                                  <Tag color="warning">记忆候选项</Tag>
+                                  <Text>发现可保存的长期记忆</Text>
+                                </Space>
+                                <Space>
+                                  <Button type="primary" size="small" onClick={() => handleSaveMemoryCandidates(step.id)} loading={loading}>保存记忆</Button>
+                                  <Button size="small" onClick={() => handleDiscardMemoryCandidates(step.id)} loading={loading}>丢弃</Button>
+                                </Space>
+                              </Space>
+                            </div>
+                          ))}
+                        </Space>
+                      )}
                       {threadRestoreError && (
                         <Alert
                           type="warning"
@@ -2864,9 +2967,15 @@ function AgentPageContent() {
                           <Button aria-label="发送" type="primary" shape="circle" icon={<SendOutlined />} onClick={() => sendMessage()} loading={loading} />
                         </Tooltip>
                       </div>
-                      <Text type="secondary" style={{ display: 'block', marginTop: 6, textAlign: 'center', fontSize: 11 }}>
-                        Enter 发送 · Shift+Enter 换行 · 确定性操作会优先交给工具执行
-                      </Text>
+                      <div style={{ marginTop: 8, borderTop: `1px solid ${THEME.borderLight}`, paddingTop: 7, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                        <Text type="secondary" style={{ fontSize: 11 }}>Enter 发送 · Shift+Enter 换行</Text>
+                        <Space size={10} wrap>
+                          <Text type="secondary" style={{ fontSize: 11 }}>Run <span style={{ fontVariantNumeric: 'tabular-nums' }}>{currentRun?.status || '—'}</span></Text>
+                          <Text type="secondary" style={{ fontSize: 11 }}>步骤 <span style={{ fontVariantNumeric: 'tabular-nums' }}>{currentRun?.steps?.length ?? 0}</span></Text>
+                          <Text type="secondary" style={{ fontSize: 11 }}>工具 <span style={{ fontVariantNumeric: 'tabular-nums' }}>{toolSteps.length}</span></Text>
+                          <Text type="secondary" style={{ fontSize: 11 }}>耗时 <span style={{ fontVariantNumeric: 'tabular-nums' }}>{runDurationMs ? `${runDurationMs}ms` : '—'}</span></Text>
+                        </Space>
+                      </div>
                     </div>
                   </div>
                 ),
