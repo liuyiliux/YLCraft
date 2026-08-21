@@ -52,10 +52,12 @@ import {
   SearchOutlined,
   SendOutlined,
   SettingOutlined,
+  StopOutlined,
   ToolOutlined,
   VideoCameraOutlined,
 } from '@ant-design/icons'
 import {
+  cancelAgentRun,
   confirmAgentRunStep,
   createAgentSkillDraftFromRun,
   createAgentProfile,
@@ -1703,6 +1705,17 @@ function AgentPageContent() {
     }
   }
 
+  const handleStopRun = useCallback(async () => {
+    if (!currentRun || !loading) return
+    try {
+      await cancelAgentRun(currentRun.id)
+      message.info('已请求停止本轮生成')
+      setLoading(false)
+    } catch (error: any) {
+      message.error(error?.message || '停止失败')
+    }
+  }, [currentRun, loading])
+
   const handleConfirmRunStep = async (stepId: number) => {
     if (!currentRun || loading) return
     setLoading(true)
@@ -2741,10 +2754,10 @@ function AgentPageContent() {
                         cursor: 'pointer',
                       }}
                     >
-                      <Text ellipsis style={{ display: 'block', fontWeight: isActive ? 750 : 560 }}>
+                      <Text ellipsis style={{ display: 'block', fontSize: 12.5, lineHeight: 1.4, fontWeight: isActive ? 700 : 500 }}>
                         {item.title || '未命名线程'}
                       </Text>
-                      <Text type="secondary" style={{ fontSize: 11 }}>
+                      <Text type="secondary" style={{ fontSize: 10.5 }}>
                         {new Date(item.updated_at).toLocaleString('zh-CN')}
                       </Text>
                     </button>
@@ -2762,25 +2775,14 @@ function AgentPageContent() {
               </Button>
             </Space>
             {selectedProfile ? (
-              <Space align="start" style={{ width: '100%' }}>
-                <Avatar
-                  size={36}
-                  icon={<RobotOutlined />}
-                  style={{ borderRadius: 8, background: THEME.primary }}
-                >
-                  {selectedProfile.avatar}
-                </Avatar>
-                <div style={{ minWidth: 0 }}>
-                  <Text strong ellipsis style={{ display: 'block' }}>{selectedProfile.name}</Text>
-                  <Text type="secondary" style={{ fontSize: 12 }}>
-                    {selectedProfile.model || selectedProfile.provider || '默认模型'} / {runStats.maxSteps || 8} 轮
-                  </Text>
-                  <Space wrap size={[4, 4]} style={{ marginTop: 6 }}>
-                    <Tag color={allowAllTools ? 'success' : 'processing'}>{allowAllTools ? tools.length : authorizedTools.length} 工具</Tag>
-                    <Tag>{memories.length} 记忆</Tag>
-                  </Space>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Avatar size={24} icon={<RobotOutlined />} style={{ background: THEME.primary }} />
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <Text ellipsis strong style={{ display: 'block', fontSize: 13 }}>{selectedProfile.name}</Text>
+                  <Text type="secondary" style={{ fontSize: 11 }}>{selectedProfile.model || selectedProfile.provider || '默认模型'}</Text>
                 </div>
-              </Space>
+                <Tag>{memories.length} 记忆</Tag>
+              </div>
             ) : (
               <div className="agent-resource-error">
                 <Text type="secondary">未加载智能体</Text>
@@ -2914,13 +2916,9 @@ function AgentPageContent() {
                             }}
                           >
                             <Space align="end" style={{ maxWidth: '100%', flexDirection: msg.role === 'user' ? 'row-reverse' : 'row' }}>
-                              <Avatar
-                                size={28}
-                                icon={msg.role === 'user' ? undefined : <RobotOutlined />}
-                                style={{ backgroundColor: msg.role === 'user' ? THEME.primary : THEME.bgElevated, color: msg.role === 'user' ? '#fff' : THEME.primary }}
-                              >
-                                {msg.role === 'user' ? 'U' : selectedProfile?.avatar}
-                              </Avatar>
+                              {msg.role === 'assistant' && (
+                                <Avatar size={24} icon={<RobotOutlined />} style={{ backgroundColor: THEME.bgElevated, color: THEME.primary }} />
+                              )}
                               <div style={bubbleStyle(msg.role)}>{renderMarkdown(msg.content, msg.role)}</div>
                             </Space>
                           </div>
@@ -2958,14 +2956,20 @@ function AgentPageContent() {
                           onChange={e => setInput(e.target.value)}
                           onKeyDown={handleKeyDown}
                           placeholder="告诉智能体要做什么。Enter 发送，Shift+Enter 换行。"
-                          autoSize={{ minRows: 1, maxRows: 5 }}
+                          autoSize={{ minRows: 2, maxRows: 8 }}
                           variant="borderless"
-                          style={{ flex: 1, minHeight: 42, resize: 'none' }}
+                          style={{ flex: 1, minHeight: 60, resize: 'none', fontSize: 14, lineHeight: 1.5 }}
                           disabled={loading}
                         />
-                        <Tooltip title={selectedProfile ? `使用「${selectedProfile.name}」` : '未选择智能体时会走默认后端逻辑'}>
-                          <Button aria-label="发送" type="primary" shape="circle" icon={<SendOutlined />} onClick={() => sendMessage()} loading={loading} />
-                        </Tooltip>
+                        {loading ? (
+                          <Tooltip title="停止生成">
+                            <Button aria-label="停止" danger shape="circle" icon={<StopOutlined />} onClick={handleStopRun} />
+                          </Tooltip>
+                        ) : (
+                          <Tooltip title={selectedProfile ? `使用「${selectedProfile.name}」` : '未选择智能体时会走默认后端逻辑'}>
+                            <Button aria-label="发送" type="primary" shape="circle" icon={<SendOutlined />} onClick={() => sendMessage()} />
+                          </Tooltip>
+                        )}
                       </div>
                       <div style={{ marginTop: 8, borderTop: `1px solid ${THEME.borderLight}`, paddingTop: 7, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
                         <Text type="secondary" style={{ fontSize: 11 }}>Enter 发送 · Shift+Enter 换行</Text>
