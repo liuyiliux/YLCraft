@@ -126,6 +126,9 @@ class ImageGenerationResult:
     status: str = "pending"
     progress: float = 0.0
     error: str | None = None
+    # 诊断信息：供应商 URL、实际发送的请求体（已脱敏/截断）、响应摘要、HTTP 状态码等。
+    # 用于事件日志与失败排查；生产环境下大字段必须经过截断。
+    diagnostics: dict = field(default_factory=dict)
 
 
 # ==================== 视频请求/响应 ====================

@@ -96,6 +96,36 @@ def _image_log_request(req) -> dict:
     }
 
 
+def _image_log_actual_request(result, req) -> dict:
+    """事件日志「调用详情」：优先用 backend diagnostics 中实际发送给大模型供应商的请求体。
+    没有 diagnostics 时回退到 _image_log_request(req)。"""
+    actual = getattr(result, "diagnostics", None) or {}
+    body = actual.get("request_body")
+    if body:
+        return {
+            "source": "actual_to_provider",
+            "endpoint": actual.get("request_endpoint", ""),
+            "request": body,
+            "request_headers": actual.get("request_headers", {}),
+            "attempts": actual.get("attempts", 1),
+        }
+    return {"source": "frontend_to_backend", "request": _image_log_request(req)}
+
+
+def _image_log_actual_response(result, result_urls: list[str] | None = None) -> dict:
+    """事件日志「响应详情」：合并 backend diagnostics 的供应商响应摘要与本地资源 URL。"""
+    actual = getattr(result, "diagnostics", None) or {}
+    excerpt = actual.get("response_excerpt", "")
+    summary: dict = {
+        "status_code": actual.get("response_status"),
+        "excerpt": excerpt,
+        "attempts": actual.get("attempts", 1),
+    }
+    if result_urls is not None:
+        summary["asset_urls"] = result_urls
+    return summary
+
+
 def _response_excerpt(data: dict, limit: int = 1000) -> str:
     try:
         text = json.dumps(data, ensure_ascii=False)
@@ -649,8 +679,8 @@ async def generate_image(req: ImageGenerateRequest):
                     provider=result.provider or req.provider or "",
                     model=result.model or req.model or "",
                     message="图片生成任务已提交",
-                    request=_image_log_request(req),
-                    response={"status": "pending", "external_task_id": result.task_id},
+                    request=_image_log_actual_request(result, req),
+                    response=_image_log_actual_response(result, []),
                     duration_ms=result.latency_ms,
                     project_id=req.project_id or None,
                     retry_payload=_image_retry_payload(req),
@@ -727,8 +757,8 @@ async def generate_image(req: ImageGenerateRequest):
                     model=result.model or "",
                     message="图片生成完成但素材定稿失败",
                     error="Image generation completed, but asset finalization or project lineage did not complete",
-                    request=_image_log_request(req),
-                    response={"status": result.status, "urls": result.urls or ([result.url] if result.url else [])},
+                    request=_image_log_actual_request(result, req),
+                    response=_image_log_actual_response(result, result.urls or ([result.url] if result.url else [])),
                     duration_ms=result.latency_ms,
                     project_id=req.project_id or None,
                     retry_payload=_image_retry_payload(req),
@@ -749,13 +779,8 @@ async def generate_image(req: ImageGenerateRequest):
                 provider=result.provider or "",
                 model=result.model or "",
                 message="图片生成成功",
-                request=_image_log_request(req),
-                response={
-                    "status": result.status,
-                    "urls": result.urls or ([result.url] if result.url else []),
-                    "asset_ids": [str(a) for a in asset_ids] if asset_ids else [],
-                    "cost": result.cost,
-                },
+                request=_image_log_actual_request(result, req),
+                response=_image_log_actual_response(result, result.urls or ([result.url] if result.url else [])),
                 duration_ms=result.latency_ms,
                 project_id=req.project_id or None,
                 retry_payload=_image_retry_payload(req),
@@ -789,8 +814,8 @@ async def generate_image(req: ImageGenerateRequest):
                 model=result.model or req.model or "",
                 message="图片生成失败",
                 error=result.error,
-                request={"prompt": req.prompt, "size": req.size, "model": req.model},
-                response={"status": result.status},
+                request=_image_log_actual_request(result, req),
+                response=_image_log_actual_response(result),
                 duration_ms=result.latency_ms,
                 project_id=req.project_id or None,
                 retry_payload=_image_retry_payload(req),
@@ -812,7 +837,8 @@ async def generate_image(req: ImageGenerateRequest):
             model=req.model or "",
             message="图片生成异常",
             error=str(e),
-            request={"prompt": req.prompt, "size": req.size, "model": req.model},
+            request=_image_log_request(req),
+            response={"error": str(e)},
             project_id=req.project_id or None,
             retry_payload=_image_retry_payload(req),
         )

@@ -31,6 +31,26 @@ from app.services.ai_connector.service import infer_image_connector_capabilities
 
 logger = logging.getLogger("ylcraft.generic_image_backend")
 
+_SENSITIVE_HEADER_KEYS = {
+    "authorization", "x-api-key", "api-key", "apikey", "token", "x-goog-api-key",
+    "x-figma-token", "cookie", "set-cookie", "secret", "password", "proxy-authorization",
+}
+
+
+def _redact_header_value(value: Any) -> Any:
+    """对敏感请求头值脱敏：token 类只保留前缀 + 长度，非敏感值截断。"""
+    if value is None:
+        return None
+    s = str(value)
+    if not s:
+        return ""
+    if "Bearer " in s:
+        token = s.split("Bearer ", 1)[1]
+        return f"Bearer {token[:6]}…(len={len(token)})"
+    if len(s) <= 40:
+        return s[:4] + "…(redacted)"
+    return s[:4] + "…(redacted, len=" + str(len(s)) + ")"
+
 
 class GenericImageBackend(ImageBackend):
     """
@@ -137,6 +157,17 @@ class GenericImageBackend(ImageBackend):
             params = self._prepare_params(req)
             request_body = self._render_request(params)
 
+            # 诊断信息：实际发送给大模型供应商的请求/响应，供事件日志查询
+            diagnostics: dict = {
+                "provider_name": self.name,
+                "model_alias": self.model,
+                "request_body": None,        # 实际发到供应商的请求体（已脱敏截断）
+                "request_endpoint": "",       # 完整 URL
+                "response_status": None,      # HTTP 状态码
+                "response_excerpt": "",       # 响应摘要（截断）
+                "attempts": 0,                # 重试次数
+            }
+
             def truncate_base64(obj, max_len=200):
                 if isinstance(obj, dict):
                     return {k: truncate_base64(v, max_len) for k, v in obj.items()}
@@ -148,6 +179,8 @@ class GenericImageBackend(ImageBackend):
 
             safe_request_body = truncate_base64(request_body, 200)
             logger.info(f"[GENERIC IMAGE] 请求体: {json.dumps(safe_request_body, ensure_ascii=False)}")
+            # 实际发给大模型供应商的请求体（已脱敏截断），供事件日志「调用详情」使用
+            diagnostics["request_body"] = safe_request_body
 
             final_url = self.connector.base_url or ""
             if final_url:
@@ -158,6 +191,7 @@ class GenericImageBackend(ImageBackend):
                 if not api_endpoint.startswith("/"):
                     api_endpoint = "/" + api_endpoint
                 final_url = final_url + api_endpoint
+            diagnostics["request_endpoint"] = final_url
 
             max_retries = 3
             response = None
@@ -165,6 +199,7 @@ class GenericImageBackend(ImageBackend):
             extra_headers = self.async_config.get("request_headers", {}) or {}
             for attempt in range(max_retries):
                 try:
+                    diagnostics["attempts"] = attempt + 1
                     logger.info(f"[GenericImageBackend] 发送请求到 {final_url} (尝试 {attempt + 1}/{max_retries})")
                     multipart_payload = self._build_multipart_payload(request_body)
                     headers = {
@@ -173,6 +208,13 @@ class GenericImageBackend(ImageBackend):
                     }
                     if multipart_payload is None:
                         headers["Content-Type"] = "application/json"
+                    # 记录脱敏后的请求头（密钥只保留前缀+长度），供事件日志「请求头」查看
+                    diagnostics["request_headers"] = {
+                        str(k): _redact_header_value(v)
+                        if str(k).lower() in _SENSITIVE_HEADER_KEYS
+                        else (str(v)[:200] + "…(truncated)" if len(str(v)) > 200 else str(v))
+                        for k, v in headers.items()
+                    }
                     temp_client = httpx.AsyncClient(
                         headers=headers,
                         timeout=self.connector.timeout,
@@ -188,13 +230,17 @@ class GenericImageBackend(ImageBackend):
                             files=multipart_payload["files"],
                         )
                     await temp_client.aclose()
-                    
+
                     try:
                         resp_json = response.json()
                         safe_resp = truncate_base64(resp_json, 200)
                         logger.info(f"[GENERIC IMAGE] 响应状态码: {response.status_code}, 内容: {json.dumps(safe_resp, ensure_ascii=False)}")
+                        diagnostics["response_status"] = response.status_code
+                        diagnostics["response_excerpt"] = safe_resp
                     except Exception:
                         logger.info(f"[GENERIC IMAGE] 响应状态码: {response.status_code}, 内容: {response.text[:500]}")
+                        diagnostics["response_status"] = response.status_code
+                        diagnostics["response_excerpt"] = response.text[:500]
 
                     if response.status_code in [200, 201, 202]:
                         break
@@ -235,6 +281,7 @@ class GenericImageBackend(ImageBackend):
                     status="pending",
                     progress=result.get("progress", 0.0),
                     error=result.get("error"),
+                    diagnostics=diagnostics,
                 )
 
             local_path = None
@@ -290,13 +337,18 @@ class GenericImageBackend(ImageBackend):
                 status=result.get("status", "done" if result.get("success", False) else "error"),
                 progress=result.get("progress", 100.0 if result.get("success", False) else 0.0),
                 error=result.get("error"),
+                diagnostics=diagnostics,
             )
 
         except Exception as e:
             logger.error(f"图像生成失败: {e}")
             import traceback
             logger.error(traceback.format_exc())
-            return ImageGenerationResult(success=False, error=str(e), provider=self.name, model=self.model)
+            return ImageGenerationResult(
+                success=False, error=str(e),
+                provider=self.name, model=self.model,
+                diagnostics=diagnostics,
+            )
 
     # -------------------------------------------------------------------------
     # 异步轮询支持（ModelScope 等先返回 task_id 再轮询结果的 API）
