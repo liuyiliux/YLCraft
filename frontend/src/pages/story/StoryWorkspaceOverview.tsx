@@ -112,7 +112,7 @@ export default function StoryWorkspaceOverview({
             </Text>
           </div>
           <Button type="primary" icon={<PlayCircleOutlined />} onClick={onContinue}>
-            {activeChapter ? '进入工作室' : '建立蓝图'}
+            {activeChapter ? '进入工作室' : hasOutline ? '规划章节' : '建立蓝图'}
           </Button>
         </div>
       </section>
