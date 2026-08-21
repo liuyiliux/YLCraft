@@ -205,6 +205,33 @@ def _materialize_data_uri(value: str) -> tuple[Path | None, Path | None]:
     return path, path
 
 
+async def _materialize_url(value: str) -> Path:
+    """Download an http(s) or local proxy start-image URL into a short-lived local file.
+
+    用于素材库「来源 URL」输入：公网链接直接下载；本地上传/COS 代理
+    (``/api/...``) 通过 BASE_URL 拼出完整地址后下载，统一落到
+    ``storage/video_inputs``，再走「本地上传先传 COS」的原有逻辑。
+    """
+    import os
+
+    from app.services.ai.types import download_file
+
+    url = value
+    if value.startswith("/api/"):
+        base_url = os.environ.get("BASE_URL", "http://localhost:8000")
+        url = f"{base_url.rstrip('/')}{value}"
+
+    directory = Path(__file__).resolve().parents[3] / "storage" / "video_inputs"
+    directory.mkdir(parents=True, exist_ok=True)
+    suffix = Path(url.split("?", 1)[0]).suffix.lower() or ".png"
+    path = directory / f"{uuid4().hex}{suffix}"
+    try:
+        await download_file(url, path, timeout=60)
+    except Exception as exc:
+        raise ValueError(f"start_image URL 下载失败: {exc}") from exc
+    return path
+
+
 def _request_context(req: VideoGenerateRequest, reference_asset_ids: list[str]) -> dict[str, Any]:
     return {
         "prompt": req.prompt,
@@ -400,27 +427,39 @@ async def generate_video(req: VideoGenerateRequest):
     if not manager.is_loaded():
         raise HTTPException(status_code=503, detail="AIService 未初始化")
 
+    from app.services.ai.types import MediaType
+    backend = manager.get_backend(MediaType.VIDEO, req.provider) if req.provider else manager.get_default(MediaType.VIDEO)
+    if backend is None:
+        raise HTTPException(status_code=404, detail="未找到指定的视频生成连接器")
+
     transient_start_image: Path | None = None
     try:
         async with get_async_session() as session:
             reference_paths = await _resolve_asset_paths(session, req.reference_asset_ids)
 
-        start_image: Path | None = None
+        start_image: Path | str | None = None
         if req.start_image:
             start_image, transient_start_image = _materialize_data_uri(req.start_image)
             if start_image is None:
                 candidate = Path(req.start_image)
                 if candidate.is_file():
                     start_image = candidate
+                elif req.start_image.startswith(("http://", "https://")):
+                    requires_public_url = bool(getattr(backend, "default_params", {}).get("image_requires_public_url"))
+                    if requires_public_url:
+                        # 公网 URL 直接透传给供应商（如 Agnes 图生视频需要公网链接，无需下载/再传 COS）
+                        start_image = req.start_image
+                    else:
+                        transient_start_image = await _materialize_url(req.start_image)
+                        start_image = transient_start_image
+                elif req.start_image.startswith("/api/"):
+                    transient_start_image = await _materialize_url(req.start_image)
+                    start_image = transient_start_image
                 else:
                     raise ValueError("start_image must be a local path or a base64 data URI")
         if start_image is None and reference_paths:
             start_image = next(iter(reference_paths.values()))
 
-        from app.services.ai.types import MediaType
-        backend = manager.get_backend(MediaType.VIDEO, req.provider) if req.provider else manager.get_default(MediaType.VIDEO)
-        if backend is None:
-            raise HTTPException(status_code=404, detail="未找到指定的视频生成连接器")
         _validate_video_capabilities(backend, req, has_start_image=start_image is not None)
 
         video_req = VideoGenerationRequest(

@@ -584,6 +584,8 @@ class GenericImageBackend(ImageBackend):
             params["negative_prompt"] = req.negative_prompt
         if req.size:
             params["size"] = req.size
+        if getattr(req, "aspect_ratio", None):
+            params["ratio"] = req.aspect_ratio
         if req.n and req.n > 0:
             params["n"] = req.n
         if req.seed is not None:

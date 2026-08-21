@@ -866,7 +866,7 @@
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
 | `GET` | `/api/v1/videos/backends` | 可用视频后端列表 | `list_backends` | `backend/app/api/v1/videos.py:353` |
-| `POST` | `/api/v1/videos/generate` | Generate video with optional project lineage | `generate_video` | `backend/app/api/v1/videos.py:394` |
+| `POST` | `/api/v1/videos/generate` | 生成视频（`start_image` 支持 base64 data URI / 本地路径 / 素材库来源 URL） | `generate_video` | `backend/app/api/v1/videos.py:421` |
 | `GET` | `/api/v1/videos/history` | 视频生成历史与待处理任务 | `list_video_tasks` | `backend/app/api/v1/videos.py:645` |
 | `GET` | `/api/v1/videos/tasks/{task_id}` | 查询任务状态 | `get_task_status` | `backend/app/api/v1/videos.py:557` |
 | `GET` | `/api/v1/videos/tasks/{task_id}/file` | 播放已下载的视频任务文件 | `stream_task_file` | `backend/app/api/v1/videos.py:663` |

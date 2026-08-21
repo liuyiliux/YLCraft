@@ -55,7 +55,8 @@ import {
 } from '@ant-design/icons'
 import type { UploadFile } from 'antd/es/upload/interface'
 import { useTheme } from '../../constants/theme'
-import { getPlatformTemplates, listAssets } from '../../api'
+import { getPlatformTemplates } from '../../api'
+import AssetReferencePicker from '../../components/asset-reference-picker/AssetReferencePicker'
 
 const { TextArea } = Input
 const { Dragger } = Upload
@@ -181,8 +182,6 @@ export default function VideoGenPage() {
   const [startImage, setStartImage] = useState<UploadFile | null>(null)
   const [promptTemplates, setPromptTemplates] = useState<any[]>([])
   const [assetPickerOpen, setAssetPickerOpen] = useState(false)
-  const [assetOptions, setAssetOptions] = useState<any[]>([])
-  const [assetLoading, setAssetLoading] = useState(false)
 
   // 参数
   const [provider, setProvider] = useState<string>()
@@ -315,25 +314,14 @@ export default function VideoGenPage() {
       .catch(() => setPromptTemplates([]))
   }, [])
 
-  const openAssetPicker = async () => {
-    setAssetPickerOpen(true)
-    setAssetLoading(true)
-    try {
-      const data: any = await listAssets({ asset_type: 'image', status: 'READY', page: 1, page_size: 60 })
-      setAssetOptions(data?.data || data?.assets || [])
-    } catch {
-      message.error('加载素材库图片失败')
-      setAssetOptions([])
-    } finally {
-      setAssetLoading(false)
-    }
-  }
-
-  const selectAssetAsStartImage = (asset: any) => {
-    const url = asset.thumbnail_url || asset.cover_url || `/api/v1/assets/${asset.id}/thumbnail?original=true`
-    setStartImage({ uid: String(asset.id), name: asset.name || asset.title || '素材库图片', status: 'done', url })
+  const handleAssetPicked = (payload: any) => {
+    setStartImage({
+      uid: String(payload.asset?.id || Date.now()),
+      name: payload.asset?.title || payload.asset?.name || '素材库图片',
+      status: 'done',
+      url: payload.url,
+    })
     setMode('img2video')
-    setAssetPickerOpen(false)
   }
 
   // Provider 切换时重置模型选择
@@ -522,20 +510,10 @@ export default function VideoGenPage() {
             reader.readAsDataURL(startImage.originFileObj!)
           })
         } else if (startImage.url) {
-          // URL 形式的参考图（如从资产库跳转），fetch 下载后转 base64
-          try {
-            const resp = await fetch(startImage.url)
-            const blob = await resp.blob()
-            body.start_image = await new Promise<string>((resolve, reject) => {
-              const reader = new FileReader()
-              reader.onload = () => resolve(reader.result as string)
-              reader.onerror = reject
-              reader.readAsDataURL(blob)
-            })
-          } catch (e) {
-            console.error('[VideoGen] 下载首帧图片失败:', e)
-            body.start_image = startImage.url
-          }
+          // 素材库选择时组件已返回最终可填值：
+          // - base64 模式 → data URL，直接使用
+          // - 来源 URL 模式 → 直接使用来源 URL（适合接收公网链接的供应商）
+          body.start_image = startImage.url
         }
       }
 
@@ -743,7 +721,7 @@ export default function VideoGenPage() {
                 </Dragger>
                 <Button
                   icon={<FolderOpenOutlined />}
-                  onClick={openAssetPicker}
+                  onClick={() => setAssetPickerOpen(true)}
                   style={{ marginTop: 8 }}
                 >
                   从素材库选择图片
@@ -756,30 +734,12 @@ export default function VideoGenPage() {
               </div>
             )}
 
-            <Modal
-              title="选择素材库图片"
+            <AssetReferencePicker
               open={assetPickerOpen}
-              onCancel={() => setAssetPickerOpen(false)}
-              footer={null}
-              width={760}
-            >
-              <Spin spinning={assetLoading}>
-                <Row gutter={[12, 12]}>
-                  {assetOptions.map(asset => {
-                    const url = asset.thumbnail_url || asset.cover_url || `/api/v1/assets/${asset.id}/thumbnail?original=true`
-                    return (
-                      <Col span={6} key={asset.id}>
-                        <Button type="text" onClick={() => selectAssetAsStartImage(asset)} style={{ width: '100%', height: 'auto', padding: 4 }}>
-                          <Image preview={false} src={url} width="100%" height={120} style={{ objectFit: 'cover' }} />
-                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 4 }}>{asset.name || asset.title || asset.id}</div>
-                        </Button>
-                      </Col>
-                    )
-                  })}
-                </Row>
-                {!assetLoading && assetOptions.length === 0 && <Empty description="暂无图片素材" />}
-              </Spin>
-            </Modal>
+              onClose={() => setAssetPickerOpen(false)}
+              onSelect={handleAssetPicked}
+              requiresPublicUrl={Boolean(selectedConstraints.image_requires_public_url)}
+            />
 
             {/* 参数设置 */}
             <Card
