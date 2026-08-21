@@ -59,6 +59,37 @@ def _video_retry_payload(req: "VideoGenerateRequest") -> dict:
     }
 
 
+def _start_image_summary(raw: str) -> str:
+    """首帧图入参摘要：http URL 原样、base64 data URL 记类型与长度。"""
+    if not raw:
+        return ""
+    if raw.startswith("data:"):
+        prefix = raw.split(",", 1)[0] if "," in raw else "data"
+        return f"{prefix}(len={len(raw)})"
+    return raw
+
+
+def _video_log_request(req: "VideoGenerateRequest") -> dict:
+    """事件日志「调用详情」：含业务字段与首帧图/参考图来源摘要，不含图片二进制。"""
+    return {
+        "reference_asset_ids": req.reference_asset_ids or [],
+        "start_image": _start_image_summary(req.start_image or ""),
+        "prompt": req.prompt,
+        "duration": req.duration,
+        "resolution": req.resolution,
+        "aspect_ratio": req.aspect_ratio,
+        "model": req.model or "",
+        "seed": req.seed,
+        "generate_audio": req.generate_audio,
+        "music_hint": req.music_hint or "",
+        "project_id": req.project_id or "",
+        "content_id": req.content_id or "",
+        "source_type": req.source_type or "",
+        "source_index": req.source_index or "",
+        "source_title": req.source_title or "",
+    }
+
+
 class VideoGenerateRequest(BaseModel):
     prompt: str
     duration: Optional[int] = 5
@@ -527,6 +558,8 @@ async def generate_video(req: VideoGenerateRequest):
                 model=result.model or req.model or "",
                 message="视频生成失败",
                 error=result.error or "Video provider request failed",
+                request=_video_log_request(req),
+                response={"status": result.status, "error": result.error},
                 duration_ms=result.latency_ms,
                 project_id=req.project_id or None,
                 retry_payload=_video_retry_payload(req),
@@ -550,6 +583,13 @@ async def generate_video(req: VideoGenerateRequest):
             provider=result.provider or req.provider or "",
             model=result.model or req.model or "",
             message="视频生成成功",
+            request=_video_log_request(req),
+            response={
+                "status": result.status,
+                "url": result.url,
+                "cost": result.cost,
+                "asset_id": asset_id,
+            },
             duration_ms=result.latency_ms,
             project_id=req.project_id or None,
             retry_payload=_video_retry_payload(req),
@@ -583,6 +623,8 @@ async def generate_video(req: VideoGenerateRequest):
             model=req.model or "",
             message="视频生成异常",
             error=str(e),
+            request=_video_log_request(req),
+            response={"error": str(e)},
             project_id=req.project_id or None,
             retry_payload=_video_retry_payload(req),
         )

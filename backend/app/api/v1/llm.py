@@ -32,6 +32,17 @@ async def _record_llm_platform_event(req: ChatRequest, result, *, error: str | N
         model=result.model or req.model or "",
         message="文本生成成功" if result.success else "文本生成失败",
         error=result.error if not result.success else None,
+        request={
+            "messages": req.messages,
+            "model": req.model or "",
+            "temperature": req.temperature,
+            "max_tokens": req.max_tokens,
+            "provider": req.provider or "",
+        },
+        response={
+            "content": (getattr(result, "content", "") or "")[:500],
+            "usage": getattr(result, "usage", None),
+        },
         duration_ms=result.latency_ms,
         retry_payload={
             "messages": req.messages,

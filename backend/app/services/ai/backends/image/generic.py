@@ -601,9 +601,15 @@ class GenericImageBackend(ImageBackend):
         
         for url in image_urls:
             try:
-                base64_image = self._url_to_base64(url)
-                reference_images.append(base64_image)
-                image_payloads.append(url if str(url).startswith(("http://", "https://")) else base64_image)
+                if str(url).startswith(("http://", "https://")):
+                    # 公网 URL 直接透传（对齐视频后端）：供应商可直接使用远程链接，
+                    # 无需下载转 base64，避免额外下载与失败（如 Agnes extra_body.image 支持 URL）
+                    reference_images.append(url)
+                    image_payloads.append(url)
+                else:
+                    base64_image = self._url_to_base64(url)
+                    reference_images.append(base64_image)
+                    image_payloads.append(base64_image)
             except Exception as e:
                 logger.warning(f"[GenericImageBackend] 转换参考图失败: {e}")
         
@@ -647,7 +653,7 @@ class GenericImageBackend(ImageBackend):
                 import httpx, os
                 base_url = os.environ.get('BASE_URL', 'http://localhost:8000')
                 full_url = f"{base_url.rstrip('/')}/{url_or_path.lstrip('/')}" if not url_or_path.startswith('http') else url_or_path
-                with httpx.SyncClient(timeout=30.0, follow_redirects=True) as client:
+                with httpx.Client(timeout=30.0, follow_redirects=True) as client:
                     response = client.get(full_url)
                     response.raise_for_status()
                     data = response.content
@@ -668,7 +674,7 @@ class GenericImageBackend(ImageBackend):
         if url_or_path.startswith('http://') or url_or_path.startswith('https://'):
             try:
                 import httpx
-                with httpx.SyncClient(timeout=30.0, follow_redirects=True) as client:
+                with httpx.Client(timeout=30.0, follow_redirects=True) as client:
                     response = client.get(url_or_path)
                     response.raise_for_status()
                     data = response.content

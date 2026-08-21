@@ -180,6 +180,7 @@ export default function VideoGenPage() {
   const [prompt, setPrompt] = useState('')
   const [negativePrompt, setNegativePrompt] = useState('')
   const [startImage, setStartImage] = useState<UploadFile | null>(null)
+  const [startImageUrl, setStartImageUrl] = useState('')
   const [promptTemplates, setPromptTemplates] = useState<any[]>([])
   const [assetPickerOpen, setAssetPickerOpen] = useState(false)
 
@@ -315,12 +316,14 @@ export default function VideoGenPage() {
   }, [])
 
   const handleAssetPicked = (payload: any) => {
+    // 方案 A：素材库选图走后端本地解析（reference_asset_ids），前端不下载转 base64
     setStartImage({
       uid: String(payload.asset?.id || Date.now()),
       name: payload.asset?.title || payload.asset?.name || '素材库图片',
       status: 'done',
-      url: payload.url,
-    })
+      url: payload.url || payload.asset?.thumbnail_url || '',
+      assetId: payload.assetId,
+    } as any)
     setMode('img2video')
   }
 
@@ -502,7 +505,13 @@ export default function VideoGenPage() {
 
       // 图生视频：首帧图片
       if (mode === 'img2video' && startImage) {
-        if (startImage.originFileObj) {
+        if ((startImage as any).assetId) {
+          // 素材库选图：后端本地解析转 base64/路径，前端不下载
+          body.reference_asset_ids = [
+            ...(projectContext.referenceAssetIds || []),
+            (startImage as any).assetId,
+          ]
+        } else if (startImage.originFileObj) {
           body.start_image = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader()
             reader.onload = () => resolve(reader.result as string)
@@ -510,9 +519,7 @@ export default function VideoGenPage() {
             reader.readAsDataURL(startImage.originFileObj!)
           })
         } else if (startImage.url) {
-          // 素材库选择时组件已返回最终可填值：
-          // - base64 模式 → data URL，直接使用
-          // - 来源 URL 模式 → 直接使用来源 URL（适合接收公网链接的供应商）
+          // 手动 URL / 来源 URL：直接透传（公网 URL 供应商可直接使用）
           body.start_image = startImage.url
         }
       }
@@ -726,6 +733,40 @@ export default function VideoGenPage() {
                 >
                   从素材库选择图片
                 </Button>
+                <Space.Compact style={{ width: '100%', marginTop: 8 }}>
+                  <Input
+                    placeholder="粘贴图片 URL"
+                    value={startImageUrl}
+                    onChange={(e) => setStartImageUrl(e.target.value)}
+                    onPressEnter={() => {
+                      const url = startImageUrl.trim()
+                      if (!url) return
+                      setStartImage({
+                        uid: `url-${Date.now()}`,
+                        name: url.split('/').pop() || 'url-start-image',
+                        status: 'done',
+                        url,
+                      } as unknown as UploadFile)
+                      setStartImageUrl('')
+                    }}
+                  />
+                  <Button
+                    type="primary"
+                    onClick={() => {
+                      const url = startImageUrl.trim()
+                      if (!url) return
+                      setStartImage({
+                        uid: `url-${Date.now()}`,
+                        name: url.split('/').pop() || 'url-start-image',
+                        status: 'done',
+                        url,
+                      } as unknown as UploadFile)
+                      setStartImageUrl('')
+                    }}
+                  >
+                    添加 URL
+                  </Button>
+                </Space.Compact>
                 {projectContext.referenceAssetIds.length > 0 && !startImage && (
                   <div style={{ marginTop: 8, fontSize: 12, color: THEME.textSecondary }}>
                     已带入 {projectContext.referenceAssetIds.length} 张项目参考图，首张会作为首帧素材发送给模型。

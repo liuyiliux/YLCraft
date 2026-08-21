@@ -88,6 +88,27 @@ def _result_payload(result: dict[str, Any], provider_task_id: str = "") -> dict[
     return payload
 
 
+def _source_image_summary(raw: str) -> str:
+    """参考图入参摘要：http URL 原样、base64 data URL 记类型与长度。"""
+    if not raw:
+        return ""
+    if raw.startswith("data:"):
+        prefix = raw.split(",", 1)[0] if "," in raw else "data"
+        return f"{prefix}(len={len(raw)})"
+    return raw
+
+
+def _model3d_log_request(req) -> dict:
+    """事件日志「调用详情」：含描述、来源方式与参考图摘要，不含图片二进制。"""
+    return {
+        "prompt": req.prompt,
+        "model": req.model or "",
+        "source_asset_id": req.source_asset_id or "",
+        "source_image": _source_image_summary(req.source_image or ""),
+        "options": req.options or {},
+    }
+
+
 async def _resolve_source(asset_id: str | None, source_image: str | None) -> tuple[str, str, str | None]:
     if source_image:
         if source_image.startswith("data:"):
@@ -275,6 +296,9 @@ async def generate_model3d(req: Model3DGenerateRequest):
             model=selected_model,
             message="图转 3D 生成完成" if result["status"] == "done" else "图转 3D 任务已提交",
             error=result.get("error"),
+            request=_model3d_log_request(req),
+            response={"status": result.get("status"), "url": result.get("url"), "asset_id": task.asset_id},
+            duration_ms=result.get("latency_ms") or 0,
             project_id=None,
             retry_payload={"prompt": req.prompt, "provider": req.provider, "model": req.model,
                            "source_asset_id": req.source_asset_id, "source_image": req.source_image,
@@ -287,6 +311,8 @@ async def generate_model3d(req: Model3DGenerateRequest):
         await platform_log.record_event(
             scene="model3d", task_type="model3d_generation", level="error", status="failed",
             provider=req.provider, model=req.model, message="图转 3D 生成失败", error=str(exc),
+            request=_model3d_log_request(req),
+            response={"error": str(exc)},
             retry_payload={"prompt": req.prompt, "provider": req.provider, "model": req.model,
                            "source_asset_id": req.source_asset_id, "source_image": req.source_image,
                            "options": req.options},
@@ -296,6 +322,8 @@ async def generate_model3d(req: Model3DGenerateRequest):
         await platform_log.record_event(
             scene="model3d", task_type="model3d_generation", level="error", status="failed",
             provider=req.provider, model=req.model, message="图转 3D 生成异常", error=str(exc),
+            request=_model3d_log_request(req),
+            response={"error": str(exc)},
             retry_payload={"prompt": req.prompt, "provider": req.provider, "model": req.model,
                            "source_asset_id": req.source_asset_id, "source_image": req.source_image,
                            "options": req.options},
