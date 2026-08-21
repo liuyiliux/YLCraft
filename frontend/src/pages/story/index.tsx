@@ -1418,7 +1418,7 @@ export default function StoryPage() {
     window.localStorage.getItem('ylcraft:story-workspace-mode') === 'chapter' ? 'chapter' : 'overview',
   )
   const workspaceModeProjectRef = useRef<string | null>(null)
-  const [overviewDetailOpen, setOverviewDetailOpen] = useState(false)
+  const [overviewDetailOpen, setOverviewDetailOpen] = useState(true)
   const [inspectorOpen, setInspectorOpen] = useState(false)
   const [runtimeSettingsOpen, setRuntimeSettingsOpen] = useState(false)
   const [form] = Form.useForm()
@@ -4471,6 +4471,11 @@ export default function StoryPage() {
                       openWorkspaceTab(hasOutline ? 'chapters' : 'outline', 'overview')
                       // 展开详情区，让大纲/章节规划编辑器可见（否则无章节时点击无视觉变化）
                       setOverviewDetailOpen(true)
+                      if (!hasOutline) {
+                        // 有创意则自动生成故事大纲，无创意则引导先填写
+                        if (idea) void handleGenerateOutline()
+                        else message.info('已打开大纲编辑器，请先填写创意（idea）后再点击「生成故事大纲」')
+                      }
                     }
                   }}
                 />
