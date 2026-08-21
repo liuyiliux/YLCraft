@@ -14,17 +14,20 @@
       "default_model": "agnes-image-2.1-flash",
       "available_models": ["agnes-image-2.1-flash", "agnes-image-2.0-flash"],
       "supported_sizes": ["1K", "2K", "3K", "4K"],
+      "supported_aspect_ratios": ["1:1", "3:4", "4:3", "16:9", "9:16", "2:3", "3:2", "21:9"],
       "is_active": true,
       "is_default": false,
       "priority": 100,
-      "description": "Agnes Image 2.1 Flash 文生图/图生图/多图合成，同步返回图片 URL（data[0].url）。图生图时把参考图数组写入 extra_body.image。",
-      "request_template": "{\"model\":\"{{ model }}\",\"prompt\":\"{{ prompt }}\",\"size\":\"{{ size }}\",\"extra_body\":{\"response_format\":\"url\"}}",
+      "description": "Agnes Image 2.1 Flash 文生图/图生图/多图合成，同步返回图片 URL（data[0].url）。图生图时把参考图数组写入 extra_body.image；支持通过素材库/手动 URL 传入参考图。尺寸档位用 size(1K~4K)，比例用独立 ratio 字段。",
+      "request_template": "{\"model\":\"{{ model }}\",\"prompt\":\"{{ prompt }}\",\"size\":\"{{ size }}\"{% if ratio %},\"ratio\":\"{{ ratio }}\"{% endif %},\"extra_body\":{\"response_format\":\"url\"}}",
       "response_config": {
         "images_path": "$.data[*].url",
         "error_path": "$.error.message"
       },
       "default_params": {
         "image_capabilities": ["text_to_image", "image_to_image"],
+        "size": "1K",
+        "ratio": "1:1",
         "aspect_ratios": ["1:1", "3:4", "4:3", "16:9", "9:16", "2:3", "3:2", "21:9"]
       },
       "support_reference_image": true,

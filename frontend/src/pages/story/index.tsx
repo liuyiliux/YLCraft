@@ -2252,6 +2252,11 @@ export default function StoryPage() {
     [llmConnectors, selectedLlm],
   )
 
+  const llmAvailable = useMemo(
+    () => Boolean(llmConnectors.length && selectedLlm && selectedModel),
+    [llmConnectors, selectedLlm, selectedModel],
+  )
+
   const modelOptions = useMemo(() => {
     const models = activeLlm?.available_models?.length
       ? activeLlm.available_models
@@ -2731,7 +2736,7 @@ export default function StoryPage() {
   async function loadNovelAssets() {
     setLoadingNovelAssets(true)
     try {
-      const response = await listAssets({ asset_type: 'novel', page_size: 200 })
+      const response = await listAssets({ asset_type: 'novel', page_size: 100 })
       setNovelAssets(response?.data || [])
     } catch (error: any) {
       setNovelAssets([])
@@ -4392,14 +4397,23 @@ export default function StoryPage() {
                         </Button>
                         <Tag color="processing">{projectTypeLabel(selectedProject.project_type)}</Tag>
                         <Tag>{stageLabels[selectedProject.current_stage] || selectedProject.current_stage}</Tag>
-                        <Button
-                          type="primary"
-                          icon={<RobotOutlined />}
-                          onClick={handleAgentAdvanceProject}
-                          loading={loadingAction === 'agent_advance'}
+                        <Tooltip
+                          title={
+                            llmAvailable
+                              ? '由创作导演自动推进后续步骤'
+                              : '请先在设置中配置文本模型'
+                          }
                         >
-                          智能体推进
-                        </Button>
+                          <Button
+                            type="primary"
+                            icon={<RobotOutlined />}
+                            onClick={handleAgentAdvanceProject}
+                            loading={loadingAction === 'agent_advance'}
+                            disabled={!llmAvailable}
+                          >
+                            智能体推进
+                          </Button>
+                        </Tooltip>
                         <Button
                           icon={<DownloadOutlined />}
                           href={`/api/v1/creative-projects/${selectedProject.id}/export`}
@@ -4549,6 +4563,7 @@ export default function StoryPage() {
                         loading={loadingAction === 'outline'}
                         saving={loadingAction === 'outline_save'}
                         syncLoading={loadingAction === 'sync_characters'}
+                        llmAvailable={llmAvailable}
                         templateOptions={templateOptionsByStage.outline || []}
                         selectedTemplateId={selectedPromptTemplates.outline}
                         onTemplateChange={(value) =>
@@ -5356,6 +5371,7 @@ function OutlineTab({
   loading,
   saving,
   syncLoading,
+  llmAvailable,
   templateOptions,
   selectedTemplateId,
   onTemplateChange,
@@ -5369,6 +5385,7 @@ function OutlineTab({
   loading: boolean
   saving: boolean
   syncLoading: boolean
+  llmAvailable: boolean
   templateOptions: TemplateOption[]
   selectedTemplateId?: string
   onTemplateChange: (value: string) => void
@@ -5408,25 +5425,111 @@ function OutlineTab({
 
   if (!hasOutline) {
     return (
-      <div style={{ padding: 48, textAlign: 'center' }}>
-        <Empty description="暂无故事大纲" />
-        <Space style={{ marginTop: 12 }} wrap>
-          <PromptTemplateSelect
-            value={selectedTemplateId}
-            options={templateOptions}
-            placeholder="大纲模板"
-            onChange={onTemplateChange}
-          />
-          <Button
-            type="primary"
-            icon={<ThunderboltOutlined />}
-            loading={loading}
-            onClick={onGenerate}
-          >
-            生成故事大纲
-          </Button>
-        </Space>
-      </div>
+      <Space direction="vertical" size={16} style={{ width: '100%', padding: '24px 0' }}>
+        <Alert
+          message="创建故事蓝图"
+          description="可先在下方手动填写故事大纲后保存；AI 生成需要先在设置中配置文本模型。"
+          type="info"
+          showIcon
+        />
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+          <div>
+            <Title level={4} style={{ marginBottom: 4 }}>
+              新故事大纲
+            </Title>
+            <Text type="secondary">保存后可以继续补充角色、章节规划等内容。</Text>
+          </div>
+          <Space wrap style={{ justifyContent: 'flex-end' }}>
+            <PromptTemplateSelect
+              value={selectedTemplateId}
+              options={templateOptions}
+              placeholder="大纲模板"
+              onChange={onTemplateChange}
+            />
+            <Tooltip title={llmAvailable ? '' : '请先在设置中配置文本模型'}>
+              <Button
+                type="primary"
+                icon={<ThunderboltOutlined />}
+                loading={loading}
+                onClick={onGenerate}
+                disabled={!llmAvailable}
+              >
+                生成故事大纲
+              </Button>
+            </Tooltip>
+            <Button type="primary" loading={saving} onClick={() => onSave(draft)}>
+              保存大纲
+            </Button>
+          </Space>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(240px, 1fr) minmax(240px, 1fr)', gap: 12 }}>
+          <EditorField label="标题">
+            <Input value={draft.title} onChange={(event) => updateField('title', event.target.value)} />
+          </EditorField>
+          <EditorField label="类型">
+            <TextArea
+              value={listToLines(draft.genre)}
+              onChange={(event) => updateField('genre', linesToList(event.target.value))}
+              autoSize={{ minRows: 1, maxRows: 3 }}
+            />
+          </EditorField>
+          <EditorField label="一句话卖点">
+            <Input value={draft.logline} onChange={(event) => updateField('logline', event.target.value)} />
+          </EditorField>
+          <EditorField label="目标读者">
+            <Input value={draft.target_reader} onChange={(event) => updateField('target_reader', event.target.value)} />
+          </EditorField>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
+          <EditorField label="核心前提">
+            <TextArea value={draft.premise} onChange={(event) => updateField('premise', event.target.value)} autoSize={{ minRows: 4, maxRows: 9 }} />
+          </EditorField>
+          <EditorField label="世界观">
+            <TextArea value={draft.worldview} onChange={(event) => updateField('worldview', event.target.value)} autoSize={{ minRows: 4, maxRows: 9 }} />
+          </EditorField>
+          <EditorField label="主线冲突">
+            <TextArea value={draft.main_conflict} onChange={(event) => updateField('main_conflict', event.target.value)} autoSize={{ minRows: 4, maxRows: 9 }} />
+          </EditorField>
+          <EditorField label="观众情绪">
+            <TextArea value={draft.audience_emotion} onChange={(event) => updateField('audience_emotion', event.target.value)} autoSize={{ minRows: 4, maxRows: 9 }} />
+          </EditorField>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
+          <EditorField label="卖点" hint="一行一条">
+            <TextArea value={listToLines(draft.selling_points)} onChange={(event) => updateField('selling_points', linesToList(event.target.value))} autoSize={{ minRows: 4, maxRows: 8 }} />
+          </EditorField>
+          <EditorField label="叙事规则" hint="一行一条">
+            <TextArea value={listToLines(draft.narrative_rules)} onChange={(event) => updateField('narrative_rules', linesToList(event.target.value))} autoSize={{ minRows: 4, maxRows: 8 }} />
+          </EditorField>
+          <EditorField label="主题" hint="一行一条">
+            <TextArea value={listToLines(draft.themes)} onChange={(event) => updateField('themes', linesToList(event.target.value))} autoSize={{ minRows: 4, maxRows: 8 }} />
+          </EditorField>
+          <EditorField label="制作约束" hint="一行一条，会影响后续分镜/生图">
+            <TextArea value={listToLines(draft.production_notes)} onChange={(event) => updateField('production_notes', linesToList(event.target.value))} autoSize={{ minRows: 4, maxRows: 8 }} />
+          </EditorField>
+        </div>
+
+        <WorkbenchSection title="故事弧线">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+            <EditorField label="开局">
+              <TextArea value={draft.story_arc?.beginning} onChange={(event) => updateStoryArc('beginning', event.target.value)} autoSize={{ minRows: 3, maxRows: 7 }} />
+            </EditorField>
+            <EditorField label="中段">
+              <TextArea value={draft.story_arc?.middle} onChange={(event) => updateStoryArc('middle', event.target.value)} autoSize={{ minRows: 3, maxRows: 7 }} />
+            </EditorField>
+            <EditorField label="高潮">
+              <TextArea value={draft.story_arc?.climax} onChange={(event) => updateStoryArc('climax', event.target.value)} autoSize={{ minRows: 3, maxRows: 7 }} />
+            </EditorField>
+            <EditorField label="结局方向">
+              <TextArea value={draft.story_arc?.ending_direction} onChange={(event) => updateStoryArc('ending_direction', event.target.value)} autoSize={{ minRows: 3, maxRows: 7 }} />
+            </EditorField>
+          </div>
+        </WorkbenchSection>
+      </Space>
     )
   }
 

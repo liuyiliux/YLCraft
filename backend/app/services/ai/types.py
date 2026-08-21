@@ -142,7 +142,7 @@ class VideoGenerationRequest:
     provider: str = ""
     seed: int | None = None
     fps: int = 24
-    start_image: Path | None = None
+    start_image: Path | str | None = None
     end_image: Path | None = None
     reference_images: list[Path] | None = None
     generate_audio: bool = True

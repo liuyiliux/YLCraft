@@ -1,0 +1,51 @@
+{
+  "name": "Agnes Video 2.5",
+  "provider": "agnes",
+  "backend_type": "video",
+  "api_endpoint": "/v1/videos",
+  "api_key_env": "AGNES_API_KEY",
+  "auth_header": "Authorization",
+  "auth_prefix": "Bearer ",
+  "default_model": "agnes-video-2.5",
+  "models": ["agnes-video-2.5"],
+  "request_method": "POST",
+  "is_async": true,
+  "polling": {
+    "mode": "header",
+    "task_id_path": "headers.x-task-id",
+    "poll_endpoint": "/v1/videos",
+    "poll_method": "GET",
+    "status_path": "data.status",
+    "success_values": ["succeeded", "success", "completed"],
+    "failure_values": ["failed", "error"],
+    "video_url_path": "data.video_url",
+    "progress_path": "data.progress",
+    "retry_interval": 5,
+    "max_attempts": 120
+  },
+  "task_id_location": "header",
+  "response_config": {
+    "video_url_path": "data.video_url",
+    "status_path": "data.status",
+    "progress_path": "data.progress",
+    "error_path": "message"
+  },
+  "default_params": {
+    "size": "720P",
+    "seconds": "5",
+    "aspect_ratio": "16:9",
+    "cfg_scale": 0.5,
+    "mode": "t2v",
+    "n": 1
+  },
+  "request_template": "{\n  \"model\": \"{{ model }}\",\n  \"prompt\": {{ prompt_json }},\n  {% if negative_prompt %}\"negative_prompt\": {{ negative_prompt_json }},\n{% endif %}\n  \"size\": \"{{ size }}\",\n  \"aspect_ratio\": \"{{ aspect_ratio }}\",\n  \"seconds\": \"{{ seconds }}\",\n  \"cfg_scale\": {{ cfg_scale }},\n  \"mode\": \"{{ mode }}\",\n  \"n\": {{ n }}\n  {% if reference_images and reference_images|length > 0 %},\n  \"images\": [\n    {% for img in reference_images %}{{ img | tojson }}{% if not loop.last %}, {% endif %}\n    {% endfor %}\n  ]\n  {% endif %}\n}",
+  "parameter_transforms": {},
+  "supported_sizes": ["720P", "1080P"],
+  "supported_aspect_ratios": ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
+  "supported_seconds": ["3", "5", "10", "15"],
+  "capabilities": ["text_to_video", "image_to_video"],
+  "support_reference_image": true,
+  "reference_image_array_field": "images",
+  "reference_image_field": "images",
+  "notes": "Agnes Video 2.5：尺寸用 size(720P/1080P)+aspect_ratio，时长用 seconds(字符串)，图生视频用 mode=keyframe/reference + images 首尾帧。"
+}

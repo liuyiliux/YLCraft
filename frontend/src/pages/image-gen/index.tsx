@@ -44,10 +44,12 @@ import {
   InboxOutlined,
   FileTextOutlined,
   BranchesOutlined,
+  DatabaseOutlined,
 } from '@ant-design/icons'
 import type { UploadFile } from 'antd/es/upload/interface'
 import { useTheme } from '../../constants/theme'
 import { getImageBackends, generateImage as generateImageApi, getImageTask, linkCreativeProjectAsset } from '../../api'
+import AssetReferencePicker from '../../components/asset-reference-picker/AssetReferencePicker'
 import type { ImagePromptReference } from '../../api'
 import MultiPlatformGen from './MultiPlatformGen'
 import { useTaskPolling } from '../../hooks/useTaskPolling'
@@ -249,6 +251,20 @@ function ImageGenSinglePage() {
   const [prompt, setPrompt] = useState('')
   const [negativePrompt, setNegativePrompt] = useState('')
   const [referenceImages, setReferenceImages] = useState<UploadFile[]>([])
+  const [referenceUrl, setReferenceUrl] = useState('')
+  const [assetPickerOpen, setAssetPickerOpen] = useState(false)
+
+  const handleAssetPicked = (payload: any) => {
+    setReferenceImages((prev) => [
+      ...prev,
+      {
+        uid: `asset-${payload.asset?.id || Date.now()}`,
+        name: payload.asset?.title || '素材库图片',
+        status: 'done',
+        url: payload.url,
+      } as unknown as UploadFile,
+    ])
+  }
   const [promptReferencePickerOpen, setPromptReferencePickerOpen] = useState(false)
   const [selectedPromptReference, setSelectedPromptReference] = useState<ImagePromptReference | null>(null)
 
@@ -352,7 +368,7 @@ function ImageGenSinglePage() {
     if (currentBackend?.supported_aspect_ratios && currentBackend.supported_aspect_ratios.length > 0) {
       currentBackend.supported_aspect_ratios.forEach(ratio => {
         options.push({
-          label: ratio,
+          label: `比例 ${ratio}`,
           value: ratio,
         })
       })
@@ -643,13 +659,21 @@ function ImageGenSinglePage() {
     let startedAsyncTask = false
 
     try {
+      const isRatioSelection = /^\d+\s*:\s*\d+$/.test(size.trim())
       const body: any = {
         prompt,
         negative_prompt: negativePrompt || undefined,
-        size,
         provider: selectedModel,  // provider 传入部署配置名称 (name)
         n: batchCount,
         seed,
+      }
+      if (isRatioSelection) {
+        // 选中比例时作为 aspect_ratio 发送，由后端映射为 ratio 字段
+        const activeBackend = backends.find((b) => b.name === selectedModel)
+        body.aspect_ratio = size.trim()
+        body.size = activeBackend?.supported_sizes?.[0] || '1K'
+      } else {
+        body.size = size
       }
       if (selectedPromptReference) {
         body.prompt_reference_id = selectedPromptReference.id
@@ -859,6 +883,66 @@ function ImageGenSinglePage() {
                   <p style={{ color: '#8b8ba8' }}>点击或拖拽上传参考图片</p>
                   <p style={{ color: '#8b8ba8', fontSize: 12 }}>支持 1-3 张参考图</p>
                 </Dragger>
+                <div style={{ marginTop: 12 }}>
+                  <Space wrap style={{ marginBottom: 8 }}>
+                    <Button
+                      icon={<DatabaseOutlined />}
+                      onClick={() => setAssetPickerOpen(true)}
+                      disabled={referenceImages.length >= 3}
+                    >
+                      从素材库选择
+                    </Button>
+                  </Space>
+                  <Space.Compact style={{ width: '100%' }}>
+                    <Input
+                      placeholder="粘贴图片 URL（也可从素材库复制来源链接）"
+                      value={referenceUrl}
+                      onChange={(e) => setReferenceUrl(e.target.value)}
+                      onPressEnter={() => {
+                        const url = referenceUrl.trim()
+                        if (!url) return
+                        setReferenceImages((prev) => [
+                          ...prev,
+                          {
+                            uid: `url-${Date.now()}`,
+                            name: url.split('/').pop() || 'url-reference',
+                            status: 'done',
+                            url,
+                          } as unknown as UploadFile,
+                        ])
+                        setReferenceUrl('')
+                      }}
+                      style={{ background: '#1e1e2e', border: '1px solid #333', color: '#e2e8f0' }}
+                    />
+                    <Button
+                      type="primary"
+                      onClick={() => {
+                        const url = referenceUrl.trim()
+                        if (!url) return
+                        setReferenceImages((prev) => [
+                          ...prev,
+                          {
+                            uid: `url-${Date.now()}`,
+                            name: url.split('/').pop() || 'url-reference',
+                            status: 'done',
+                            url,
+                          } as unknown as UploadFile,
+                        ])
+                        setReferenceUrl('')
+                      }}
+                    >
+                      添加 URL
+                    </Button>
+                  </Space.Compact>
+                  <div style={{ marginTop: 6, fontSize: 12, color: '#8b8ba8' }}>
+                    支持通过 URL 图生图：可从素材库选择图片，或手动输入图片地址（含素材库「来源 URL」）。最多 3 张。
+                  </div>
+                </div>
+                <AssetReferencePicker
+                  open={assetPickerOpen}
+                  onClose={() => setAssetPickerOpen(false)}
+                  onSelect={handleAssetPicked}
+                />
               </div>
             )}
 
@@ -934,7 +1018,7 @@ function ImageGenSinglePage() {
                 </Col>
                 <Col span={12}>
                   <div style={{ marginBottom: 4, fontSize: 12, color: '#8b8ba8' }}>
-                    尺寸
+                    尺寸 / 比例
                     {sizeOptions.length < 5 && <Tag color="purple" style={{ marginLeft: 8, fontSize: 10 }}>模型限定</Tag>}
                   </div>
                   <Select

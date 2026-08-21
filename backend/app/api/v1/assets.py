@@ -463,32 +463,38 @@ async def _list_asset_hub_cards(
     project_id: Optional[str] = None,
     asset_role: Optional[str] = None,
     source_stage: Optional[str] = None,
-) -> list[dict]:
+    page: int = 1,
+    page_size: int = 20,
+) -> tuple[list[dict], int]:
     normalized_type = (asset_type or "").lower()
     type_map = {item.value: item for item in AssetType}
     if normalized_type == "novel":
         node_types = [AssetType.TEXT]
     elif normalized_type and normalized_type not in type_map:
-        return []
+        return [], 0
     else:
         node_types = [type_map[normalized_type]] if normalized_type else list(AssetType)
 
     node_service = AssetNodeService(session)
 
-    nodes = []
+    # 真正的数据库分页：不再一次性拉 1000 条再 Python 过滤。
+    # 对每个 node_type 分别取当前页，合并后再做业务层过滤。
+    all_nodes: list[tuple[AssetNode, AssetType]] = []
+    total = 0
     for node_type in node_types:
-        type_nodes, _ = await node_service.list_nodes(
+        type_nodes, type_total = await node_service.list_nodes(
             asset_type=node_type,
             keyword=search,
-            page=1,
-            page_size=1000,
+            page=page,
+            page_size=page_size,
         )
-        nodes.extend(type_nodes)
+        all_nodes.extend([(node, node_type) for node in type_nodes])
+        total += type_total
 
     cards: list[dict] = []
     tag_filters = [tag for tag in (tags or []) if tag]
-    for node in nodes:
-        card = await _asset_hub_card(session, node)
+    for node, node_type in all_nodes:
+        card = await _asset_hub_card(session, node, include_metadata=False)
         if not card:
             continue
         if normalized_type == "novel" and card.get("type") != "novel":
@@ -509,7 +515,7 @@ async def _list_asset_hub_cards(
         if source_stage and project_context["source_stage"].lower() != source_stage.lower():
             continue
         cards.append(card)
-    return cards
+    return cards, total
 
 
 async def _get_asset_hub_card(
@@ -633,9 +639,9 @@ async def list_assets(
     多条件分页查询资产列表。
     """
     tag_list = [t.strip() for t in tags.split(",")] if tags else None
-    
+
     try:
-        hub_cards = await _list_asset_hub_cards(
+        hub_cards, db_total = await _list_asset_hub_cards(
             session,
             asset_type=asset_type,
             platform=platform if platform else None,
@@ -646,11 +652,15 @@ async def list_assets(
             project_id=project_id,
             asset_role=asset_role,
             source_stage=source_stage,
+            page=page,
+            page_size=page_size,
         )
     except Exception as exc:
         logger.warning("[assets] asset_hub merge failed: %s", exc, exc_info=True)
-        hub_cards = []
+        hub_cards, db_total = [], 0
 
+    # 数据库层已按 created_at DESC 排序并返回当前页；后端业务过滤可能使数量略少于 page_size，
+    # 但 sort_by 自定义场景仍在此进行二次排序以兼容接口约定。
     merged = [*hub_cards]
     reverse = sort_order != "asc"
     if sort_by in {"created_at", "updated_at", "downloaded_at"}:
@@ -666,16 +676,13 @@ async def list_assets(
     else:
         merged.sort(key=lambda item: str(item.get(sort_by) or ""), reverse=reverse)
 
-    total = len(merged)
-    offset = (page - 1) * page_size
-    page_items = merged[offset: offset + page_size]
-    for item in page_items:
+    for item in merged:
         item.pop("_sort_created_at", None)
 
     return AssetListResponse(
         success=True,
-        data=page_items,
-        total=total,
+        data=merged,
+        total=db_total,
         page=page,
         page_size=page_size,
     )

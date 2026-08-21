@@ -258,11 +258,18 @@ class GenericVideoBackend(BaseVideoBackend):
         template = self.connector.request_template or '{"model":"{{ model }}","input":{"prompt":"{{ prompt }}"},"parameters":{}}'
         width, height = self._dimensions(req.resolution, req.aspect_ratio)
 
-        start_image_value = image_to_base64_data_uri(req.start_image) if req.start_image else ""
-        if req.start_image and self.default_params.get("image_requires_public_url"):
-            cos_url = await self._upload_start_image_to_cos(req.start_image)
-            if cos_url:
-                start_image_value = cos_url
+        start_image_value = ""
+        if req.start_image:
+            if isinstance(req.start_image, str) and str(req.start_image).startswith(("http://", "https://")):
+                # 公网 URL 直接透传（前端素材库「来源 URL」选择，供应商要求公网链接时无需再传 COS）
+                start_image_value = req.start_image
+            else:
+                start_path = Path(req.start_image) if isinstance(req.start_image, str) else req.start_image
+                start_image_value = image_to_base64_data_uri(start_path)
+                if self.default_params.get("image_requires_public_url"):
+                    cos_url = await self._upload_start_image_to_cos(start_path)
+                    if cos_url:
+                        start_image_value = cos_url
 
         body = json.loads(Template(template).render(
             model=req.model or self.model, prompt=req.prompt, duration=req.duration,
