@@ -43,6 +43,9 @@ out/
 # OS
 .DS_Store
 Thumbs.db
+.Trash-0/
+.Trash-*/
+*.trashinfo
 
 # Project specific
 backend/config/local.yaml
