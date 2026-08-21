@@ -4453,7 +4453,11 @@ export default function StoryPage() {
                   onOpenChapter={openChapterStudio}
                   onContinue={() => {
                     if (chapters.length) openChapterStudio(activeChapterNumber)
-                    else openWorkspaceTab(hasOutline ? 'chapters' : 'outline', 'overview')
+                    else {
+                      openWorkspaceTab(hasOutline ? 'chapters' : 'outline', 'overview')
+                      // 展开详情区，让大纲/章节规划编辑器可见（否则无章节时点击无视觉变化）
+                      setOverviewDetailOpen(true)
+                    }
                   }}
                 />
               ) : (
