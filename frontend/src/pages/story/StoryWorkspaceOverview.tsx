@@ -1,5 +1,5 @@
 import React from 'react'
-import { Button, Empty, Progress, Space, Tag, Tooltip, Typography } from 'antd'
+import { Button, Empty, Space, Tag, Tooltip, Typography } from 'antd'
 import {
   ArrowRightOutlined,
   BranchesOutlined,
@@ -153,20 +153,6 @@ export default function StoryWorkspaceOverview({
           <Button size="small" type="link" onClick={() => onOpenChapter(activeChapterNumber, 'writer-room')}>进入审校</Button>
         </section>
       ) : null}
-
-      <section className="story-overview__stage-list" aria-label="项目阶段">
-        {stages.map((stage) => {
-          const percent = stage.total ? Math.min(100, Math.round((stage.complete / stage.total) * 100)) : 0
-          return (
-            <button key={stage.key} type="button" className="story-overview__stage" onClick={() => onOpenSection(stage.tab)}>
-              <span className="story-overview__stage-name"><span>{sectionIcons[stage.tab] || <FileTextOutlined />}</span>{stage.label}</span>
-              <span className="story-overview__stage-meta">{stage.hint}</span>
-              <Progress percent={percent} showInfo={false} strokeWidth={4} />
-              <span className="story-overview__stage-count">{stage.complete}/{stage.total}</span>
-            </button>
-          )
-        })}
-      </section>
 
       <section className="story-overview__setup" aria-label="项目资料">
         {setupItems.map((item) => (
