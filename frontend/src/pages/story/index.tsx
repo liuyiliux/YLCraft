@@ -4558,7 +4558,7 @@ export default function StoryPage() {
               <Tabs
                 className={`story-workspace-tabs story-workspace-tabs--${workspaceMode}`}
                 style={{ padding: workspaceMode === 'overview' ? '0 22px 22px' : '0 20px 20px' }}
-                activeKey={activeWorkspaceTab}
+                activeKey={workspaceMode === 'chapter' && !['episode-workbench', 'writer-room', 'script'].includes(activeWorkspaceTab) ? 'episode-workbench' : activeWorkspaceTab}
                 onChange={openWorkspaceTab}
                 items={[
                   {
