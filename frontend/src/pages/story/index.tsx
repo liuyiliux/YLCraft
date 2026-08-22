@@ -4145,7 +4145,11 @@ export default function StoryPage() {
             <Space size={6} wrap>
               {productionStages.map(stage => (
                 <Tooltip key={stage.key} title={`${stage.label} · ${stage.complete}/${stage.total}`}>
-                  <Tag style={{ margin: 0, borderRadius: 999, lineHeight: '20px', padding: '0 8px', fontSize: 12 }} color={stage.complete >= stage.total ? 'success' : 'processing'}>
+                  <Tag
+                    style={{ margin: 0, borderRadius: 999, lineHeight: '20px', padding: '0 8px', fontSize: 12, cursor: 'pointer' }}
+                    color={stage.complete >= stage.total ? 'success' : 'processing'}
+                    onClick={() => openWorkspaceTab(stage.tab)}
+                  >
                     {stage.label}
                   </Tag>
                 </Tooltip>
@@ -4490,14 +4494,7 @@ export default function StoryPage() {
                     }
                   }}
                 />
-              ) : (
-                <ProductionStageRail
-                  theme={theme}
-                  stages={productionStages}
-                  activeTab={activeWorkspaceTab}
-                  onSelect={openWorkspaceTab}
-                />
-              )}
+              ) : null}
 
               {workspaceMode === 'overview' ? <Collapse
                 ghost
