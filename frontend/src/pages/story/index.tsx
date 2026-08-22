@@ -4221,10 +4221,10 @@ export default function StoryPage() {
           gridTemplateColumns: workspaceNarrow
             ? 'minmax(0, 1fr)'
             : projectLibraryCollapsed
-            ? cockpitCompact ? '48px 0 minmax(0, 1fr)' : '48px 0 minmax(0, 1fr) minmax(280px, 320px)'
+            ? cockpitCompact ? '48px 0 minmax(0, 1fr)' : '48px 0 minmax(0, 1fr) minmax(236px, 280px)'
             : cockpitCompact
               ? `${projectLibraryWidth}px 10px minmax(0, 1fr)`
-              : `${projectLibraryWidth}px 10px minmax(0, 1fr) minmax(280px, 320px)`,
+              : `${projectLibraryWidth}px 10px minmax(0, 1fr) minmax(236px, 280px)`,
           gap: workspaceNarrow ? 12 : projectLibraryCollapsed ? 6 : 8,
           alignItems: 'start',
         }}
