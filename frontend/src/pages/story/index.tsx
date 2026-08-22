@@ -7317,7 +7317,7 @@ function EpisodeWorkbenchTab({
         />
       ) : null}
 
-      <Space direction="vertical" size={12} style={{ width: '100%', minHeight: 0, overflowY: 'auto' }}>
+      <Space direction="vertical" size={12} style={{ width: '100%', minHeight: 0, alignSelf: 'start', maxHeight: '100%', overflowY: 'auto' }}>
         <ReferenceCardsPanel
           assets={projectAssets}
           assetDetails={assetDetails}
