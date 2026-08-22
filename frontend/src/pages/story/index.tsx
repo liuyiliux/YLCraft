@@ -4380,7 +4380,7 @@ export default function StoryPage() {
           ) : (
             <>
               <div className={`story-project-toolbar story-project-toolbar--${workspaceMode}`} style={{ padding: '20px 20px 16px', borderBottom: `1px solid ${theme.border}` }}>
-                <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                <Space direction="vertical" size={12} style={{ width: '100%', minHeight: 0, overflowY: 'auto' }}>
                   <Space style={{ justifyContent: 'space-between', width: '100%' }} align="start">
                     <div>
                       <Space size={10} wrap>
@@ -5182,7 +5182,7 @@ function PipelinePanel({
         background: theme.bgElevated,
       }}
     >
-      <Space direction="vertical" size={12} style={{ width: '100%' }}>
+      <Space direction="vertical" size={12} style={{ width: '100%', minHeight: 0, overflowY: 'auto' }}>
         <Space align="start" style={{ justifyContent: 'space-between', width: '100%' }} wrap>
           <div>
             <Text strong>批量生产</Text>
@@ -6186,7 +6186,7 @@ function ChapterTab({
               key: 'edit',
               label: '章节规划编辑',
               children: (
-                <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                <Space direction="vertical" size={12} style={{ width: '100%', minHeight: 0, overflowY: 'auto' }}>
                   <Space style={{ justifyContent: 'space-between', width: '100%' }} wrap>
                     <Space wrap>
                       <Tag color="blue">{rows.length} 章</Tag>
@@ -6658,7 +6658,7 @@ function EpisodeWorkbenchTab({
   }
 
   return (
-    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+    <Space direction="vertical" size={12} style={{ width: '100%', minHeight: 0, overflowY: 'auto' }}>
       <div style={{ ...themedWorkbenchHeaderStyle, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         <Space direction="vertical" size={4} style={{ minWidth: 0, flex: '1 1 280px' }}>
           <Space size={8} wrap>
@@ -6814,10 +6814,12 @@ function EpisodeWorkbenchTab({
             ? 'minmax(0, 1fr)'
             : `${columnWidths.outline}px 10px ${columnWidths.prose}px 10px minmax(320px, 1fr)`,
           gap: 8,
-          alignItems: 'start',
+          alignItems: 'stretch',
+          height: compact ? undefined : 'calc(100vh - 320px)',
+          minHeight: 640,
         }}
       >
-        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+        <Space direction="vertical" size={12} style={{ width: '100%', minHeight: 0, overflowY: 'auto' }}>
         <WorkbenchSection
           title="当前细纲"
           extra={
@@ -7206,7 +7208,7 @@ function EpisodeWorkbenchTab({
           />
         ) : null}
 
-        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+        <Space direction="vertical" size={12} style={{ width: '100%', minHeight: 0, overflowY: 'auto' }}>
         <WorkbenchSection
           title="正文"
           extra={
@@ -7315,7 +7317,7 @@ function EpisodeWorkbenchTab({
         />
       ) : null}
 
-      <Space direction="vertical" size={12} style={{ width: '100%' }}>
+      <Space direction="vertical" size={12} style={{ width: '100%', minHeight: 0, overflowY: 'auto' }}>
         <ReferenceCardsPanel
           assets={projectAssets}
           assetDetails={assetDetails}
@@ -9124,7 +9126,7 @@ function WriterRoomLogSummary({ log }: { log: ProjectGenerationLog }) {
         footer={null}
         width={920}
       >
-        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+        <Space direction="vertical" size={12} style={{ width: '100%', minHeight: 0, overflowY: 'auto' }}>
           <Space wrap>
             <Tag>{writerRoomStepLabelMap[log.stage] || log.stage}</Tag>
             <Tag color={log.status === 'success' ? 'green' : 'red'}>{log.status}</Tag>
@@ -9513,7 +9515,7 @@ function WriterRoomTab({
 
       <div style={writerRoomWorkspaceStyle}>
         <section style={writerRoomPipelineStyle}>
-          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          <Space direction="vertical" size={12} style={{ width: '100%', minHeight: 0, overflowY: 'auto' }}>
             <Space direction="vertical" size={2}>
               <Text strong>工序</Text>
               <Text type="secondary">角色演绎支持「角色团队推演」（每角色一个独立子智能体）与「快速演绎」（单模型）；其余工序为单模型分阶段执行。</Text>
@@ -9768,7 +9770,7 @@ function WriterRoomTab({
       </div>
 
       <section style={panelStyle}>
-        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+        <Space direction="vertical" size={12} style={{ width: '100%', minHeight: 0, overflowY: 'auto' }}>
           <Space style={{ width: '100%', justifyContent: 'space-between' }} align="center" wrap>
             <Space direction="vertical" size={4}>
               <Space wrap>
@@ -9830,7 +9832,7 @@ function WriterRoomTab({
         okButtonProps={{ disabled: !promoteChecked, loading }}
         width={860}
       >
-        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+        <Space direction="vertical" size={12} style={{ width: '100%', minHeight: 0, overflowY: 'auto' }}>
           <Text type="secondary">
             提升会创建新的正式正文版本，旧正文会保留为历史版本。建议先确认候选正文已经通过审稿或人工阅读。
           </Text>
@@ -10261,7 +10263,7 @@ function LogsTab({
           pagination={{ pageSize: 10 }}
           expandable={{
             expandedRowRender: (record: ProjectGenerationLog) => (
-              <Space direction="vertical" size={12} style={{ width: '100%' }}>
+              <Space direction="vertical" size={12} style={{ width: '100%', minHeight: 0, overflowY: 'auto' }}>
                 <LogTextBlock title="Prompt" value={record.prompt} rows={8} />
                 <LogTextBlock title="请求 JSON" value={JSON.stringify(record.request || {}, null, 2)} rows={6} />
                 <LogTextBlock title="原始响应" value={record.raw_response || ''} rows={8} />
@@ -10998,7 +11000,7 @@ function ProjectGraphTab({
 
       <section style={{ ...panelStyle, minHeight: 620 }}>
         {selectedNode ? (
-          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          <Space direction="vertical" size={12} style={{ width: '100%', minHeight: 0, overflowY: 'auto' }}>
             <Space direction="vertical" size={4} style={{ width: '100%' }}>
               <Tag color={graphNodeColor(selectedNode.type)}>{graphNodeLabel(selectedNode.type)}</Tag>
               <Title level={5} style={{ margin: 0 }}>{selectedNode.label}</Title>
