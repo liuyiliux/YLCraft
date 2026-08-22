@@ -6702,12 +6702,13 @@ function EpisodeWorkbenchTab({
         }
       >
         <Space direction="vertical" size={10} style={{ width: '100%' }}>
-          <Alert
-            type={writingPreflightReady ? 'success' : 'warning'}
-            showIcon
-            message={writingPreflightReady ? '当前章节门禁已通过' : '当前章节还缺少前置条件'}
-            description={writingPreflightLoading ? '正在检查当前章节的写作门禁...' : writingPreflight?.next_action || '等待检查结果'}
-          />
+          <Text type={writingPreflightReady ? 'success' : 'warning'} style={{ fontSize: 12 }}>
+            {writingPreflightLoading
+              ? '正在检查当前章节的写作门禁...'
+              : writingPreflightReady
+                ? '当前章节门禁已通过。'
+                : `当前章节还缺少前置条件：${writingPreflight?.next_action || '等待检查结果'}`}
+          </Text>
           <div
             style={{
               display: 'grid',
