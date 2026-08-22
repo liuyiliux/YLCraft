@@ -4141,6 +4141,17 @@ export default function StoryPage() {
           ) : null}
         </div>
         <Space wrap size={[8, 8]} style={{ justifyContent: cockpitCompact ? 'flex-start' : 'flex-end', minWidth: 0 }}>
+          {selectedProject ? (
+            <Space size={6} wrap>
+              {productionStages.map(stage => (
+                <Tooltip key={stage.key} title={`${stage.label} · ${stage.complete}/${stage.total}`}>
+                  <Tag style={{ margin: 0, borderRadius: 999, lineHeight: '20px', padding: '0 8px', fontSize: 12 }} color={stage.complete >= stage.total ? 'success' : 'processing'}>
+                    {stage.label}
+                  </Tag>
+                </Tooltip>
+              ))}
+            </Space>
+          ) : null}
           {runtimeSettingsOpen ? <>
             <Select
             placeholder="文本模型"
