@@ -962,9 +962,10 @@ body {
 
 .story-overview__stage-list {
   display: flex;
-  align-items: stretch;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 0;
   border-bottom: 1px solid var(--border);
-  overflow-x: auto;
 }
 
 .story-overview__stage,
@@ -979,18 +980,14 @@ body {
 }
 
 .story-overview__stage {
-  flex: 1 1 0;
-  min-width: 150px;
-  padding: 12px 14px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 3px 8px;
-  border-right: 1px solid var(--border);
+  display: inline-flex;
   align-items: center;
-}
-
-.story-overview__stage:last-child {
-  border-right: 0;
+  gap: 6px;
+  flex: none;
+  padding: 5px 12px;
+  border: 1px solid var(--borderLight);
+  border-radius: 999px;
+  background: var(--bgElevated);
 }
 
 .story-overview__stage:hover,
@@ -1002,28 +999,26 @@ body {
 .story-overview__stage-name {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-weight: 620;
-  font-size: 13px;
+  gap: 5px;
+  font-weight: 600;
+  font-size: 12px;
 }
 
 .story-overview__stage-name > span {
   color: var(--primary);
 }
 
-.story-overview__stage-meta,
-.story-overview__stage-count {
-  font-size: 11px;
-  color: var(--textSecondary);
+.story-overview__stage-meta {
+  display: none;
 }
 
 .story-overview__stage .ant-progress {
-  grid-column: 1 / -1;
-  margin: 1px 0 0;
+  display: none;
 }
 
 .story-overview__stage-count {
-  text-align: right;
+  font-size: 11px;
+  color: var(--textSecondary);
 }
 
 .story-overview__setup {
@@ -1161,9 +1156,7 @@ body {
 
 @media (max-width: 980px) {
   .story-overview__stage-list { flex-wrap: wrap; }
-  .story-overview__stage { flex: 1 1 45%; min-width: 0; }
-  .story-overview__stage:nth-child(odd) { border-right: 1px solid var(--border); }
-  .story-overview__stage:nth-child(even) { border-right: 0; }
+  .story-overview__stage { flex: none; }
 }
 
 @media (max-width: 640px) {
@@ -1172,7 +1165,7 @@ body {
   .story-overview__hero { align-items: flex-start; flex-direction: column; gap: 14px; }
   .story-overview__resume { width: 100%; min-width: 0; padding: 12px 0 0; border-left: 0; border-top: 1px solid var(--border); justify-content: space-between; }
   .story-overview__stage-list { flex-wrap: wrap; }
-  .story-overview__stage { flex: 1 1 100%; border-right: 0; }
+  .story-overview__stage { flex: none; }
   .story-overview__setup { grid-template-columns: minmax(0, 1fr); }
   .story-overview__stage, .story-overview__stage:nth-child(3n) { border-right: 0; }
   .story-overview__queue-row { padding-left: 4px; padding-right: 4px; }
