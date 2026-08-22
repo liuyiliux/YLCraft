@@ -6812,7 +6812,7 @@ function EpisodeWorkbenchTab({
           display: 'grid',
           gridTemplateColumns: compact
             ? 'minmax(0, 1fr)'
-            : `${columnWidths.outline}px 10px ${columnWidths.prose}px 10px minmax(320px, 1fr)`,
+            : `${columnWidths.outline}px 10px ${columnWidths.prose}px 10px minmax(300px, 360px)`,
           gap: 8,
           alignItems: 'stretch',
           height: compact ? undefined : 'calc(100vh - 320px)',
