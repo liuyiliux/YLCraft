@@ -253,12 +253,12 @@ export default function AppLayout() {
           </Header>
         )}
 
-        {/* Page Content */}
+        {/* Page Content — 锁定视口高度，页面内容在此固定容器内滚动，不再撑高 body */}
         <Content
           style={{
             padding: isMobile ? 12 : 16,
             background: THEME.bgPage,
-            minHeight: isMobile ? 'calc(100vh - 52px)' : 'calc(100vh - 52px)',
+            height: 'calc(100vh - 52px)',
             overflow: 'auto',
           }}
         >
