@@ -98,6 +98,9 @@ export const cleanAssetProvenance = (id: string, data: { confirm?: boolean; auth
 export const detectAssetDeepWatermark = (id: string) =>
   request(`/assets/${id}/deep-watermark-detect`, { method: 'POST' })
 
+export const removeAssetVisualWatermark = (id: string, data: { method?: string; region?: Record<string, any> } = {}) =>
+  request(`/assets/${id}/watermark-remove`, { method: 'POST', body: JSON.stringify(data) })
+
 export const updateAsset = (id: string, data: any) =>
   request(`/assets/${id}`, { method: 'PUT', body: JSON.stringify(data) })
 

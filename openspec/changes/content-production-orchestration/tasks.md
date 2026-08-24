@@ -31,6 +31,7 @@
 - [x] 17. 增加授权来源字段、原文件保护、操作日志和失败诊断。
 - [x] 17b. 增加“只读检测不清理”的合成水印审计能力（CtrlRegen/SynthID）：`POST /api/v1/assets/{asset_id}/deep-watermark-detect` 只上报检测结果、绝不修改文件；内置确定性 CtrlRegen 式鲁棒性统计检测器（纯 CPU、零 GPU/ML）；SynthID 做成可选适配器，默认跳过（配置 `YLCRAFT_SYNTHID_DETECT_ENABLED`/`PROVIDER` 才启用），避免把 GPU/ML 变成硬依赖；结果写入平台事件日志。
 - [x] 17c. 在 Writer Room 新增可选 `prose_watermark_clean` 步骤：对最终正文做统计型文本水印（Layer B）的最大努力改写扰动（同义替换/句法重组/连接词变换/句边界调整），保持事实与 90%-110% 篇幅，作为独立候选不自动提升、不进默认批量链；Agent 与前端均以显式步骤形式暴露（前端「可选」标签），配套后端单测验证可生成并提升为 `novel_body`。
+- [x] 17d. 新增显性可见水印去除（图片/视频）与视频合成水印检测：`POST /api/v1/assets/{asset_id}/watermark-remove` 接收 `method`（delogo/blur/crop）与 `region`（预设角落+inset 或 x/y/w/h），基于系统 ffmpeg（delogo/crop 滤镜）与 PIL（图片 blur 用 GaussianBlur）生成派生副本、原文件保留、带 `derived_from` 血缘并写平台事件日志；deep-watermark-detect 扩展支持视频（ffmpeg 抽帧统计检测并平均，返回 frame_count/per_frame_scores）；前端审计去水印页新增「显性可见水印去除」区块（选择水印位置与方法）；配套后端单测。
 
 ## Phase 5: 验证与文档
 

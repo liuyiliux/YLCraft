@@ -139,6 +139,34 @@ def _synthid_adapter(media_kind: str) -> dict[str, Any]:
     }
 
 
+def _sample_video_frames(source: Path, max_frames: int = 6) -> list[str]:
+    """用 ffmpeg 抽取视频若干帧到临时 PNG，供统计检测。纯 CPU、只读，失败时返回空列表。"""
+    import shutil
+    import subprocess
+    import tempfile
+
+    if not (shutil.which("ffmpeg") and shutil.which("ffprobe")):
+        return []
+    tmpdir = tempfile.mkdtemp(prefix="ylc-deepwm-")
+    out_pattern = str(Path(tmpdir) / "frame-%03d.png")
+    try:
+        subprocess.run(
+            [
+                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                "-i", str(source),
+                "-vf", f"fps={max_frames}",
+                "-frames:v", str(max_frames),
+                "-q:v", "2",
+                out_pattern,
+            ],
+            capture_output=True, text=True, check=True, timeout=120,
+        )
+        frames = sorted(str(p) for p in Path(tmpdir).glob("frame-*.png"))
+        return frames[:max_frames]
+    except Exception:  # noqa: BLE001
+        return []
+
+
 def detect_deep_watermark(path: str | Path, mime_type: str = "") -> DeepWatermarkDetectResult:
     """只读检测合成水印痕迹，绝不修改文件。"""
     source = Path(path)
@@ -186,10 +214,42 @@ def detect_deep_watermark(path: str | Path, mime_type: str = "") -> DeepWatermar
         )
 
     if suffix in {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"} or guessed.startswith("video/"):
+        # 视频：抽取若干关键帧做与图片相同的鲁棒性统计检测，汇总得分。纯 CPU、只读。
+        frames = _sample_video_frames(source, max_frames=6)
+        if frames:
+            scores: list[float] = []
+            confidences: list[float] = []
+            for frame_path in frames:
+                try:
+                    from PIL import Image
+
+                    with Image.open(frame_path) as image:
+                        image.load()
+                    sig = _image_statistical_signature(image)
+                    scores.append(float(sig["score"]))
+                    confidences.append(float(sig["confidence"]))
+                except Exception:  # noqa: BLE001
+                    continue
+            if scores:
+                stats = {
+                    "score": round(_mean(scores), 4),
+                    "confidence": round(_mean(confidences), 4),
+                    "method": "statistical-ctrlregen-like (video frame-averaged)",
+                    "frame_count": len(scores),
+                    "per_frame_scores": scores,
+                }
+                notes = [
+                    "视频抽取关键帧做 CtrlRegen 式鲁棒性统计检测并平均：只读上报合成痕迹得分，未修改文件。",
+                    "得分越高越可能带有 AI 生成/加印水印；帧采样不构成对特定供应商水印的权威判定。",
+                ]
+                return DeepWatermarkDetectResult(
+                    supported=True, media_kind="video", ctrlregen=stats,
+                    synthid=_synthid_adapter("video"), notes=notes,
+                )
         return DeepWatermarkDetectResult(
             supported=False,
             media_kind="video",
-            ctrlregen={"status": "unsupported", "reason": "视频载体未内置统计检测器。"},
+            ctrlregen={"status": "unsupported", "reason": "无法抽取视频帧，跳过统计检测。"},
             synthid=_synthid_adapter("video"),
             notes=["视频合成水印检测需要可选 ML 检测器（建议 GPU）；当前仅做只读上报，不修改文件。"],
         )
