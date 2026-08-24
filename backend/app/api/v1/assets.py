@@ -35,7 +35,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.db.database import get_async_session
-from app.db.models.asset_hub import AssetNode, AssetType, Tag, RelationType
+from app.db.models.asset_hub import AssetNode, AssetVersion, AssetRepresentation, AssetType, Tag, RelationType
 from app.core.ffmpeg import get_ffmpeg_service
 from app.core.external_api_auth import optional_external_api_key
 from app.db.models.external_api_key import ExternalApiKey
@@ -341,13 +341,17 @@ async def _asset_hub_card(
     session,
     node: AssetNode,
     include_metadata: bool = False,
+    version: Optional[AssetVersion] = None,
+    rep: Optional[AssetRepresentation] = None,
 ) -> Optional[dict]:
     version_service = AssetVersionService(session)
     rep_service = AssetRepresentationService(session)
-    version = await version_service.get_latest_version(str(node.id))
+    if version is None:
+        version = await version_service.get_latest_version(str(node.id))
     if not version:
         return None
-    rep = await rep_service.get_primary(str(version.id))
+    if rep is None:
+        rep = await rep_service.get_primary(str(version.id))
     if not rep:
         return None
 
@@ -513,8 +517,18 @@ async def _list_asset_hub_cards(
 
     cards: list[dict] = []
     tag_filters = [tag for tag in (tags or []) if tag]
+    # 批量预取最新版本与主文件表示，消除 _asset_hub_card 的 N+1 查询
+    version_service = AssetVersionService(session)
+    rep_service = AssetRepresentationService(session)
+    node_ids = [str(node.id) for node, _ in all_nodes]
+    version_by_node = await version_service.get_latest_versions(node_ids)
+    version_ids = [str(v.id) for v in version_by_node.values()]
+    rep_by_version = await rep_service.get_primaries(version_ids)
     for node, node_type in all_nodes:
-        card = await _asset_hub_card(session, node, include_metadata=False)
+        node_id = str(node.id)
+        version = version_by_node.get(node_id)
+        rep = rep_by_version.get(str(version.id)) if version else None
+        card = await _asset_hub_card(session, node, include_metadata=False, version=version, rep=rep)
         if not card:
             continue
         if normalized_type == "novel" and card.get("type") != "novel":
