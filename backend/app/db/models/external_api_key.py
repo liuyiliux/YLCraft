@@ -23,6 +23,8 @@ class ExternalApiKey(SQLModel, table=True):
     key_prefix: str = Field(default="", max_length=16)
     scope: str = Field(default="read", max_length=16, index=True)
     rate_limit_per_min: int = Field(default=60)
+    quota: int = Field(default=0, description="次数配额上限，0 表示不限")
+    quota_used: int = Field(default=0)
     active: bool = Field(default=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     last_used_at: Optional[datetime] = Field(default=None)

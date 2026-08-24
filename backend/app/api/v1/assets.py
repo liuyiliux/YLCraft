@@ -1585,6 +1585,7 @@ async def proxy_thumbnail(
 async def get_asset(
     asset_id: str,
     session = Depends(get_asset_session),
+    external_key: Optional[ExternalApiKey] = Depends(optional_external_api_key),
 ):
     hub_asset = await _get_asset_hub_card(session, asset_id, include_metadata=True)
     if hub_asset:

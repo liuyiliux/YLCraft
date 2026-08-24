@@ -20,6 +20,7 @@ class ExternalApiKeyCreateRequest(BaseModel):
     name: str = Field(default="外部 Agent", max_length=80)
     scope: str = Field(default="read", max_length=16)
     rate_limit_per_min: int = Field(default=60, ge=1, le=3600)
+    quota: int = Field(default=0, ge=0, description="次数配额上限，0 表示不限")
 
 
 def _row(r: ExternalApiKey) -> dict:
@@ -33,6 +34,8 @@ def _row(r: ExternalApiKey) -> dict:
         "created_at": r.created_at.isoformat(),
         "last_used_at": r.last_used_at.isoformat() if r.last_used_at else None,
         "use_count": r.use_count,
+        "quota": r.quota,
+        "quota_used": r.quota_used,
     }
 
 
@@ -53,6 +56,7 @@ async def create_external_api_key(body: ExternalApiKeyCreateRequest, session=Dep
         key_prefix=token[:8],
         scope=body.scope,
         rate_limit_per_min=body.rate_limit_per_min,
+        quota=body.quota,
     )
     session.add(row)
     await session.commit()

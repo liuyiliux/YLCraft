@@ -55,7 +55,13 @@ async def optional_external_api_key(
         raise HTTPException(status_code=429, detail="外部 API 请求速率超限")
     win.append(now)
 
+    is_generate = row.scope == "generate"
+    if is_generate and row.quota > 0 and row.quota_used >= row.quota:
+        raise HTTPException(status_code=403, detail="外部 API Key 次数配额已耗尽")
+
     row.use_count += 1
+    if is_generate and row.quota > 0:
+        row.quota_used += 1
     row.last_used_at = datetime.utcnow()
     session.add(row)
     await session.commit()
