@@ -38,7 +38,7 @@ flowchart LR
 
 外部 Agent 与浏览器/内部 Agent 使用同一能力层：先通过 `/api/v1/ai/capabilities` 发现平台已配置的可用模型，再通过素材上传、生成、任务、事件日志和 Asset Hub 接口完成闭环。外部 Agent 只提交业务输入、模型选择和上下文字段，不读取、不保存、不传入供应商 API Key、SecretId、SecretKey、Cookie 或 Token；凭证仅由平台设置页和服务端连接器管理。`project_id`、`content_id`、`production_profile`、`source_type`、`source_index`、`source_title` 是跨 API 的可选上下文；公网开放前必须增加正式鉴权、作用域、限流、费用和确认策略，开发环境 CORS 不构成安全边界。
 
-AI 来源标记与文件元数据清理是 Asset Hub 上的独立派生操作，不等同于平台采集的“获取无水印资源”，也不等同于图片编辑器的视觉编辑。`POST /api/v1/assets/{asset_id}/provenance-clean` 默认只返回审计预览；确认后对文本隐形/双向控制符、常见图片 EXIF/格式元数据、视频/音频容器元数据（ffmpeg `-map_metadata -1`）、PDF 核心元数据（pypdf）以及 docx 核心属性（python-docx）生成派生新文件，原文件不覆盖，新资产通过 `derived_from` 血缘回指源资产并写入平台事件日志；请求可携带 `authorized_source` 记录授权来源，`AssetNode` 新增同名字段（迁移 `019`）。其余暂不支持的格式只报告审计结果，不宣称完成清理。前端提供两处入口：素材库资产详情「清理元数据」按钮，以及独立页 `/provenance-clean`（顶部导航「元数据清理」）。
+AI 来源标记与文件元数据清理是 Asset Hub 上的独立派生操作，不等同于平台采集的“获取无水印资源”，也不等同于图片编辑器的视觉编辑。`POST /api/v1/assets/{asset_id}/provenance-clean` 默认只返回审计预览；确认后对文本隐形 Unicode（零宽/bidi/标签/非字符/空间同形字，参考 `guillaumemeyer/watermarks-remover` Layer A，同时保留 emoji 胶水与连接脚本内的合法 ZWJ/ZWNJ）、常见图片 EXIF/格式元数据（PNG/JPEG/WebP/BMP/TIFF/GIF 等）、视频/音频容器元数据（ffmpeg `-map_metadata -1`）、PDF 核心元数据（pypdf）、OOXML 核心属性（docx/xlsx/pptx 共用 `docProps/core.xml`）、OpenDocument（odt `meta.xml`）以及 EPUB（OPF 内 dc 元数据）生成派生新文件，原文件不覆盖，新资产通过 `derived_from` 血缘回指源资产并写入平台事件日志；请求可携带 `authorized_source` 记录授权来源，`AssetNode` 新增同名字段（迁移 `019`）。审计报告额外返回 `unicode_breakdown`（Layer A 按类型细分：bidi/zwj_family/tag/noncharacter/reserved_ignorable/private_use/space_homoglyph 等）。其余暂不支持的格式只报告审计结果，不宣称完成清理。前端提供两处入口：素材库资产详情「清理元数据」按钮，以及独立页 `/provenance-clean`（顶部导航「元数据清理」）。
 
 ## 2. 运行时总览
 

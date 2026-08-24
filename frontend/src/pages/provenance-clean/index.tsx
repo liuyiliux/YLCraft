@@ -75,7 +75,8 @@ export default function ProvenanceCleanPage() {
         <Title level={4} style={{ margin: 0 }}>元数据 / AI 标记清理</Title>
       </Space>
       <Text type="secondary">
-        审计并去除资产里的 EXIF/XMP/C2PA 元数据、隐形/双向控制符与容器元数据，生成不覆盖原文件的清理副本（带 derived_from 血缘）。
+        审计并去除资产里的 EXIF/XMP/C2PA 元数据、隐形 Unicode（bidi/标签/非字符等）、容器元数据与文档核心属性
+        （docx/xlsx/pptx/odt/epub/pdf、图片/音视频），生成不覆盖原文件的清理副本（带 derived_from 血缘）。
         与「图片编辑器视觉水印」「平台采集无水印下载」不同。
       </Text>
 
@@ -110,6 +111,13 @@ export default function ProvenanceCleanPage() {
                 <Descriptions.Item label="元数据键">{report.metadata_keys?.length ? report.metadata_keys.join(', ') : '—'}</Descriptions.Item>
                 <Descriptions.Item label="隐形字符">{report.invisible_character_count ?? 0}</Descriptions.Item>
                 <Descriptions.Item label="双向控制符">{report.bidi_control_count ?? 0}</Descriptions.Item>
+                {report.unicode_breakdown && Object.keys(report.unicode_breakdown).length ? (
+                  <Descriptions.Item label="Unicode 标记明细">
+                    {Object.entries(report.unicode_breakdown)
+                      .map(([k, v]) => `${k}=${v}`)
+                      .join('，')}
+                  </Descriptions.Item>
+                ) : null}
               </Descriptions>
               <Input
                 placeholder="授权来源（可选）：如 user_upload / platform_authorized"
