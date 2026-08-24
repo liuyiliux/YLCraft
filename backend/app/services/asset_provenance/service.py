@@ -13,6 +13,8 @@ TEXT_SUFFIXES = {".txt", ".md", ".json", ".csv", ".html", ".htm", ".xml", ".svg"
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}
 VIDEO_SUFFIXES = {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"}
 AUDIO_SUFFIXES = {".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg", ".opus"}
+DOCUMENT_SUFFIXES = {".pdf", ".docx"}
+_PDF_CORE_KEYS = {"author", "creator", "producer", "subject", "title", "keywords"}
 _INVISIBLE_RE = re.compile("[\\u200b\\u200c\\u200d\\ufeff\\u2060\\u2066\\u2067\\u2068\\u2069]")
 _BIDI_RE = re.compile("[\\u202a-\\u202e\\u2066-\\u2069]")
 
@@ -64,6 +66,17 @@ def inspect_file(path: str | Path, mime_type: str = "") -> ProvenanceReport:
     if suffix in AUDIO_SUFFIXES or guessed.startswith("audio/"):
         return ProvenanceReport(True, "audio", ["container-metadata"], 0, 0, True, ["音频可用 ffmpeg 去除容器元数据并生成清理副本。"])
 
+    if suffix in DOCUMENT_SUFFIXES or guessed in {"application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"}:
+        try:
+            if suffix == ".pdf" or guessed == "application/pdf":
+                keys = _pdf_metadata_keys(source)
+            else:
+                keys = _docx_metadata_keys(source)
+        except Exception as exc:
+            return ProvenanceReport(False, "document", [], 0, 0, False, [f"文档元数据读取失败：{exc}"])
+        cleanable = bool(keys)
+        return ProvenanceReport(True, "document", keys, 0, 0, cleanable, ["文档核心元数据可生成清理副本。"] if cleanable else ["文档未发现可清理的元数据字段。"])
+
     return ProvenanceReport(False, "file", [], 0, 0, False, ["当前格式暂只支持审计，不会伪装成已清理。"])
 
 
@@ -100,6 +113,13 @@ def clean_file(source_path: str | Path, target_path: str | Path) -> ProvenanceRe
             return ProvenanceReport(False, report.media_kind, [], 0, 0, False, [f"ffmpeg 清理失败：{detail}"])
         return inspect_file(target)
 
+    if report.media_kind == "document":
+        if source.suffix.lower() == ".pdf":
+            _clean_pdf(source, target)
+        else:
+            _clean_docx(source, target)
+        return inspect_file(target)
+
     from PIL import Image
 
     with Image.open(source) as image:
@@ -109,6 +129,104 @@ def clean_file(source_path: str | Path, target_path: str | Path) -> ProvenanceRe
             save_kwargs["exif"] = b""
         image.save(target, format=image_format, **save_kwargs)
     return inspect_file(target)
+
+
+def _pdf_metadata_keys(path: Path) -> list[str]:
+    from pypdf import PdfReader
+
+    reader = PdfReader(str(path))
+    keys = []
+    for k, v in (reader.metadata or {}).items():
+        key = str(k).lstrip("/").lower()
+        if key in _PDF_CORE_KEYS and (v or "").strip():
+            keys.append(key)
+    return sorted(keys)
+
+
+def _clean_pdf(source: Path, target: Path) -> None:
+    from pypdf import PdfReader, PdfWriter
+
+    reader = PdfReader(str(source))
+    writer = PdfWriter()
+    for page in reader.pages:
+        writer.add_page(page)
+    # 显式置空核心元数据字段（使用 PDF 标准键名），避免 pypdf 在保存时注入默认 Producer。
+    writer.add_metadata({f"/{key.capitalize()}": "" for key in sorted(_PDF_CORE_KEYS)})
+    with open(target, "wb") as fh:
+        writer.write(fh)
+
+
+def _docx_metadata_keys(path: Path) -> list[str]:
+    # 直接解析 docProps/core.xml，仅统计存在且非空的核心属性字段，
+    # 避免 python-docx 读取时对空字段/默认值（如 revision、description）的误报。
+    import zipfile
+    from xml.etree import ElementTree as ET
+
+    local_to_prop = {
+        "creator": "author",
+        "description": "comments",
+        "keywords": "keywords",
+        "subject": "subject",
+        "title": "title",
+        "category": "category",
+        "lastModifiedBy": "last_modified_by",
+        "revision": "revision",
+        "identifier": "identifier",
+        "version": "version",
+        "created": "created",
+        "modified": "modified",
+        "lastPrinted": "last_printed",
+        "contentStatus": "content_status",
+        "template": "template",
+    }
+    try:
+        with zipfile.ZipFile(path) as zin:
+            core_xml = zin.read("docProps/core.xml")
+    except Exception:
+        return []
+    try:
+        root = ET.fromstring(core_xml)
+    except Exception:
+        return []
+    keys: list[str] = []
+    for child in root:
+        local = child.tag.split("}")[-1]
+        prop = local_to_prop.get(local)
+        if prop is None:
+            continue
+        if (child.text or "").strip():
+            keys.append(prop)
+    return sorted(set(keys))
+
+
+def _clean_docx(source: Path, target: Path) -> None:
+    # python-docx 的 core_properties 在 save 时会重新写入 created/modified 时间戳，
+    # 因此直接在 docProps/core.xml 中删除核心属性元素，避免重新注入元数据。
+    import zipfile
+    from xml.etree import ElementTree as ET
+
+    with zipfile.ZipFile(source) as zin:
+        names = zin.namelist()
+        payloads = {name: zin.read(name) for name in names}
+    core_xml = payloads.get("docProps/core.xml", b"")
+    if core_xml:
+        try:
+            root = ET.fromstring(core_xml)
+            # 核心属性根下的所有子元素均为元数据字段，全部移除（保留空的 coreProperties 根）。
+            for child in list(root):
+                root.remove(child)
+            payloads["docProps/core.xml"] = ET.tostring(
+                root, encoding="UTF-8", xml_declaration=True
+            )
+        except Exception:
+            # 若 XML 解析失败，退化为不带元数据重建（保留内容）。
+            payloads.pop("docProps/core.xml", None)
+
+    with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as zout:
+        for name in names:
+            if name not in payloads:
+                continue
+            zout.writestr(name, payloads[name])
 
 
 class AssetProvenanceService:
