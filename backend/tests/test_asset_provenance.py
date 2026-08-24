@@ -132,3 +132,88 @@ def test_pdf_docx_extensions_are_detected_by_suffix(tmp_path: Path):
 
     assert inspect_file(pdf).media_kind == "document"
     assert inspect_file(docx).media_kind == "document"
+
+
+def test_deep_watermark_detect_is_read_only_and_reports_ctrlregen(tmp_path: Path):
+    from PIL import Image
+
+    from app.services.asset_provenance import detect_deep_watermark
+
+    source = tmp_path / "img.png"
+    Image.new("RGB", (64, 64), "#4a7bb5").save(source)
+    before = source.read_bytes()
+
+    result = detect_deep_watermark(source, "image/png")
+    assert result.supported is True
+    assert result.media_kind == "image"
+    assert "score" in result.ctrlregen
+    assert "confidence" in result.ctrlregen
+    assert result.ctrlregen["method"] == "statistical-ctrlregen-like"
+    assert result.synthid["status"] == "skipped"
+    # 只读：文件字节不变
+    assert source.read_bytes() == before
+    # 不伪装成已清理（任何 note 都不宣称能“移除”水印）
+    assert all("移除" not in n for n in result.notes)
+    # 明确只读上报
+    assert any("未修改" in n for n in result.notes)
+
+
+def test_deep_watermark_detect_image_with_noise_scores_higher(tmp_path: Path):
+    """带噪/高频内容的图应得到更高（更强嵌入痕迹）得分，验证统计检测区分度。"""
+    import random
+
+    from PIL import Image
+
+    from app.services.asset_provenance import detect_deep_watermark
+
+    flat = tmp_path / "flat.png"
+    noisy = tmp_path / "noisy.png"
+    Image.new("RGB", (64, 64), (80, 80, 80)).save(flat)
+    Image.new("RGB", (64, 64), (80, 80, 80)).save(noisy)
+    img = Image.open(noisy)
+    rnd = random.Random(42)
+    for y in range(img.height):
+        for x in range(img.width):
+            img.putpixel((x, y), (rnd.randint(0, 255), rnd.randint(0, 255), rnd.randint(0, 255)))
+    img.save(noisy)
+
+    flat_result = detect_deep_watermark(flat, "image/png")
+    noisy_result = detect_deep_watermark(noisy, "image/png")
+    assert noisy_result.ctrlregen["score"] > flat_result.ctrlregen["score"]
+
+
+def test_deep_watermark_detect_unsupported_and_synthid_skipped(tmp_path: Path):
+    from app.services.asset_provenance import detect_deep_watermark
+
+    # 文本：返回 unsupported 且不伪装
+    text = tmp_path / "note.txt"
+    text.write_text("hello", encoding="utf-8")
+    result = detect_deep_watermark(text, "text/plain")
+    assert result.supported is False
+    assert result.media_kind == "text"
+    assert result.synthid["status"] == "skipped"
+
+    # 未知格式
+    blob = tmp_path / "blob.xyz"
+    blob.write_bytes(b"data")
+    result = detect_deep_watermark(blob)
+    assert result.supported is False
+    assert result.media_kind == "unsupported"
+    assert all("不伪装" in n for n in result.notes)
+
+
+def test_deep_watermark_detect_synthid_can_be_enabled_via_env(tmp_path, monkeypatch):
+    from PIL import Image
+
+    from app.services.asset_provenance import detect_deep_watermark
+
+    monkeypatch.setenv("YLCRAFT_SYNTHID_DETECT_ENABLED", "1")
+    monkeypatch.setenv("YLCRAFT_SYNTHID_DETECT_PROVIDER", "demo-detector")
+    source = tmp_path / "img.png"
+    Image.new("RGB", (32, 32), "white").save(source)
+
+    result = detect_deep_watermark(source, "image/png")
+    assert result.synthid["status"] == "enabled"
+    assert result.synthid["provider"] == "demo-detector"
+    # 仍只读
+    assert "未修改" in " ".join(result.notes)
