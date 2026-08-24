@@ -23,8 +23,8 @@
 
 ## Phase 4: AI 来源标记与文件元数据清理
 
-- [ ] 13. 评估并锁定 `guillaumemeyer/watermarks-remover` 的许可证、版本和本地服务边界。
-- [ ] 14. 引入 `remove-ai-marks` Skill 或等效内部适配器，支持扫描、预览、生成副本和回滚。
+- [x] 13. 评估并锁定 `guillaumemeyer/watermarks-remover` 的许可证、版本和本地服务边界。
+- [x] 14. 引入 `remove-ai-marks` Skill 或等效内部适配器，支持扫描、预览、生成副本和回滚。
 - [ ] 15. 增加图片、视频、音频、文档的文件元数据/C2PA/EXIF/XMP 清理任务记录。
 - [ ] 16. 与平台采集“获取无水印资源”和图片编辑器区分导航、文案和 API。
 - [ ] 17. 增加授权来源字段、原文件保护、操作日志和失败诊断。

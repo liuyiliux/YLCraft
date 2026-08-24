@@ -1934,7 +1934,7 @@
       "summary": "素材资产列表",
       "function": "list_assets",
       "file": "backend/app/api/v1/assets.py",
-      "line": 622,
+      "line": 629,
       "response_model": "AssetListResponse",
       "include_in_schema": true
     },
@@ -1966,7 +1966,7 @@
       "summary": "下载/预览本地文件",
       "function": "download_local_asset_file",
       "file": "backend/app/api/v1/assets.py",
-      "line": 790,
+      "line": 797,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1982,7 +1982,7 @@
       "summary": "预览本地文件",
       "function": "download_local_asset_file",
       "file": "backend/app/api/v1/assets.py",
-      "line": 790,
+      "line": 797,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1998,7 +1998,7 @@
       "summary": "标签列表",
       "function": "list_tags",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1217,
+      "line": 1290,
       "response_model": "TagListResponse",
       "include_in_schema": true
     },
@@ -2014,7 +2014,7 @@
       "summary": "创建标签",
       "function": "create_tag",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1226,
+      "line": 1299,
       "response_model": "TagResponse",
       "include_in_schema": true
     },
@@ -2030,7 +2030,7 @@
       "summary": "本地上传素材入库",
       "function": "upload_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 964,
+      "line": 1037,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2046,7 +2046,7 @@
       "summary": "上传 3D 模型（ZIP 或单文件）入库",
       "function": "upload_model3d",
       "file": "backend/app/api/v1/assets.py",
-      "line": 920,
+      "line": 993,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2062,7 +2062,7 @@
       "summary": "资产详情",
       "function": "get_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1365,
+      "line": 1438,
       "response_model": "AssetResponse",
       "include_in_schema": true
     },
@@ -2078,7 +2078,7 @@
       "summary": "更新资产",
       "function": "update_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1387,
+      "line": 1460,
       "response_model": "AssetResponse",
       "include_in_schema": true
     },
@@ -2094,7 +2094,7 @@
       "summary": "删除资产",
       "function": "delete_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1426,
+      "line": 1499,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2126,7 +2126,7 @@
       "summary": "下载课程章节文件",
       "function": "download_course_episode_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1183,
+      "line": 1256,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2142,7 +2142,7 @@
       "summary": "读取课程章节弹幕",
       "function": "get_course_episode_danmaku",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1172,
+      "line": 1245,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2158,7 +2158,7 @@
       "summary": "读取课程章节字幕",
       "function": "get_course_episode_subtitle",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1160,
+      "line": 1233,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2174,7 +2174,7 @@
       "summary": "播放课程章节文件",
       "function": "stream_course_episode_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1198,
+      "line": 1271,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2190,7 +2190,7 @@
       "summary": "下载资产文件",
       "function": "download_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 807,
+      "line": 814,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2206,7 +2206,23 @@
       "summary": "下载/预览资产的配套文件",
       "function": "asset_sidecar_file",
       "file": "backend/app/api/v1/assets.py",
-      "line": 824,
+      "line": 831,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/assets/{asset_id}/provenance-clean",
+      "router": "assets",
+      "prefix": "/api/v1/assets",
+      "local_path": "/{asset_id}/provenance-clean",
+      "tags": [
+        "Assets"
+      ],
+      "summary": "审计或清理 AI 来源标记与文件元数据",
+      "function": "clean_asset_provenance",
+      "file": "backend/app/api/v1/assets.py",
+      "line": 859,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2222,7 +2238,7 @@
       "summary": "恢复软删除的资产",
       "function": "restore_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1442,
+      "line": 1515,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2238,7 +2254,7 @@
       "summary": "读取资产弹幕",
       "function": "get_asset_danmaku",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1148,
+      "line": 1221,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2254,7 +2270,7 @@
       "summary": "读取资产字幕",
       "function": "get_asset_subtitle",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1135,
+      "line": 1208,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2270,7 +2286,7 @@
       "summary": "播放资产视频文件",
       "function": "stream_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1007,
+      "line": 1080,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2302,7 +2318,7 @@
       "summary": "代理加载封面图",
       "function": "proxy_thumbnail",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1330,
+      "line": 1403,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2318,7 +2334,7 @@
       "summary": "设置资产缩略图",
       "function": "set_asset_thumbnail",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1307,
+      "line": 1380,
       "response_model": "",
       "include_in_schema": true
     },

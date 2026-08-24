@@ -62,7 +62,7 @@
 | 图转 3D 工作台 | 配置驱动提交/轮询/下载、Asset Hub 入库、GLB 优先与 ZIP 解包、PreviewImageUrl 缩略图、独立页面已落地；仍待真实供应商生成 GLB 验收 | `openspec/changes/image-to-3d-workspace/tasks.md` |
 | 3D 骨骼绑定与数字人 | 后端已落地：绑骨连接器（`SubmitAutoRiggingJob`/`DescribeAutoRiggingJob`）、`POST /model-3d/rig`、源模型经 COS 临时签名 URL 或 `/model3d-files` 暴露、部位树显隐与动画播放；仍待真实绑骨供应商端到端验收（需 ≤60MB 人形 GLB/FBX） | `openspec/changes/3d-rigging-digital-human/tasks.md` |
 | 3D 导演预演台 | Phase 1 已落地：`PrevisSceneDocument` 持久化（可建独立场景，无需项目）+ revision 并发保护、`/story` 分镜入口与顶级导航入口（可新建独立场景或浏览场景列表）、可复用 3D 渲染原语（`scenePrimitives`）、静态导演台节点管理（Asset Hub 模型/人形三样式：可摆姿势胶囊人·内置 UE 白模·Vanguard/几何体/全景背景/图层可见性/重命名/删除/锁定）、相机 CRUD（名称/位置/目标点/FOV/锁定）与导演/活动机位双视角、安全框/九宫格叠加；待相机拖拽回写、截图回流、关键帧与 Agent 阶段 | `docs/architecture/3D_DIRECTOR_PREVIS_DESIGN.md`、`openspec/changes/3d-director-previs/tasks.md` |
-| 内容生产方案与导演 Agent 编排 | Phase 1-3 已落地：声明式内容生产方案、可版本化导演计划、Skill Team 编排、依赖影响分析和局部重跑均可用；图片/视频生成会写入不含隐藏推理的视觉规划摘要，并贯通任务中心、事件日志与 Asset Hub 血缘。AI 来源标记与文件元数据清理仍待后续阶段 | `openspec/changes/content-production-orchestration/` |
+| 内容生产方案与导演 Agent 编排 | Phase 1-3 已落地；Phase 4 已锁定外部 `watermarks-remover` 的 MIT/v0.5.0 本地适配边界，并加入首个内部适配器：支持素材审计、文本/常见图片清理副本、Asset Hub `derived_from` 血缘和事件日志；更多媒体格式和平台/编辑器边界仍待完善 | `openspec/changes/content-production-orchestration/` |
 | 外部 Agent API | 已有能力发现、素材上传、生图/生视频/3D、任务、事件日志和素材详情接口；外部 Agent 仅通过平台 API 使用页面已配置的连接器，不接触供应商密钥；统一鉴权、作用域和示例文档正在推进 | `docs/guides/external-agent-api.md`、`openspec/changes/content-production-orchestration/tasks.md` |
 | 3D 模型查看器 | 独立全屏页、GLB/GLTF/OBJ 渲染、渲染模式（纹理/白模/线框/反照率/法线）、灯光面板、视角对齐、包围盒、拓扑角标、键盘平移已完成 | `frontend/src/components/asset-hub/Model3DViewer.tsx`、`frontend/src/pages/model3d-viewer/` |
 | 素材库上传与缩略图 | 通用本地上传（图片/视频/音频/文本/3D）、3D 模型前端渲染截图缩略图、视频第一帧缩略图、删除容错已完成 | `backend/app/api/v1/assets.py` |

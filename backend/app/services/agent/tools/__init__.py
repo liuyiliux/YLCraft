@@ -26,6 +26,7 @@ from .asset_tools import (
     download_asset,
     add_asset_tag,
     delete_asset,
+    clean_asset_provenance,
 )
 
 # 剪辑工具
@@ -393,6 +394,7 @@ __all__ = [
     "download_asset",
     "add_asset_tag",
     "delete_asset",
+    "clean_asset_provenance",
     # 剪辑工具
     "start_cutclaw_clip",
     "start_narrato_clip",

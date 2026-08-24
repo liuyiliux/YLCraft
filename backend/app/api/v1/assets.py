@@ -35,12 +35,15 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.db.database import get_async_session
-from app.db.models.asset_hub import AssetNode, AssetType, Tag
+from app.db.models.asset_hub import AssetNode, AssetType, Tag, RelationType
 from app.core.ffmpeg import get_ffmpeg_service
 from app.services.asset_hub import AssetHubFacade
 from app.services.asset_hub.node_service import AssetNodeService
 from app.services.asset_hub.representation_service import AssetRepresentationService
 from app.services.asset_hub.version_service import AssetVersionService
+from app.services.asset_provenance import AssetProvenanceService
+from app.services.lineage.service import LineageService
+from app.services.platform_log import service as platform_log
 
 router = APIRouter()
 logger = logging.getLogger("ylcraft.assets")
@@ -77,6 +80,10 @@ class AssetListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class AssetProvenanceRequest(BaseModel):
+    confirm: bool = Field(False, description="确认生成不覆盖原文件的派生清理副本")
 
 
 class TagResponse(BaseModel):
@@ -846,6 +853,72 @@ async def asset_sidecar_file(
     path = _resolve_asset_file_path(str(target))
     media_type = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
     return FileResponse(path=str(path), media_type=media_type, filename=target.name)
+
+
+@router.post("/{asset_id}/provenance-clean", summary="审计或清理 AI 来源标记与文件元数据")
+async def clean_asset_provenance(
+    asset_id: str,
+    request: AssetProvenanceRequest,
+    session=Depends(get_asset_session),
+):
+    """先预览审计结果；确认后生成派生副本并保留原资产。"""
+    primary = await _get_asset_hub_primary(session, asset_id)
+    if not primary:
+        raise HTTPException(status_code=404, detail="资产或文件表示不存在")
+    node, version, representation = primary
+    provenance = AssetProvenanceService(session)
+    report = await provenance.preview(asset_id, representation)
+    if not request.confirm:
+        return {"success": True, "confirmed": False, "asset_id": asset_id, "report": report}
+    if not report.get("supported"):
+        raise HTTPException(status_code=422, detail={"message": "当前格式暂只支持审计", "report": report})
+
+    output_dir = Path(__file__).resolve().parents[3] / "storage" / "derived" / "provenance-clean" / uuid4().hex
+    target, cleaned_report = await provenance.clean(node, version, representation, output_dir)
+    created = await AssetHubFacade(session).create_imported_file(
+        file_path=str(target),
+        title=f"{node.name}-清理副本",
+        asset_type=node.asset_type,
+        source="provenance_cleaning",
+        metadata={
+            "operation": "ai_provenance_and_metadata_cleaning",
+            "source_asset_id": asset_id,
+            "source_version_id": str(version.id),
+            "audit_report": report,
+            "cleaned_report": cleaned_report,
+            "original_file_path": str(representation.file_path),
+        },
+        lineage={
+            "derived_from_asset_id": asset_id,
+            "derived_from_version_id": str(version.id),
+            "operation": "provenance_cleaning",
+        },
+        tags=["derived", "provenance_cleaned"],
+    )
+    await LineageService(session).link_assets(
+        source_id=asset_id,
+        target_id=created.node_id,
+        relation_type=RelationType.DERIVED_FROM,
+        context={"operation": "provenance_cleaning", "report": cleaned_report},
+    )
+    await platform_log.record_event(
+        scene="asset_provenance",
+        task_type="provenance_cleaning",
+        task_id=created.node_id,
+        level="info",
+        status="success",
+        message="已生成 AI 来源标记与文件元数据清理副本",
+        request={"asset_id": asset_id, "operation": "provenance_cleaning"},
+        response={"derived_asset_id": created.node_id, "report": cleaned_report},
+    )
+    return {
+        "success": True,
+        "confirmed": True,
+        "asset_id": asset_id,
+        "derived_asset_id": created.node_id,
+        "report": cleaned_report,
+        "preserved_source": True,
+    }
 
 
 def _model3d_upload_dir() -> Path:
