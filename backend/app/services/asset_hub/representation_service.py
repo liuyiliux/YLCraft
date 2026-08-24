@@ -127,12 +127,12 @@ class AssetRepresentationService:
         if not version_ids:
             return {}
         result = await self.session.execute(
-            select(AssetRepresentation).where(AssetRepresentation.version_id.in_(version_ids))
+            select(AssetRepresentation).where(AssetRepresentation.asset_version_id.in_(version_ids))
         )
         reps = result.scalars().all()
         by_version: dict[str, AssetRepresentation] = {}
         for r in reps:
-            vid = str(r.version_id)
+            vid = str(r.asset_version_id)
             if vid not in by_version:
                 by_version[vid] = r
         return by_version
