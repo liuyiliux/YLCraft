@@ -9,10 +9,16 @@ from app.db.database import AsyncSessionLocal
 from app.db.models.asset_hub import AssetType
 from app.services.agent.registry import register_tool
 from app.services.asset_hub import (
+    AssetHubFacade,
     AssetNodeService,
     AssetRepresentationService,
     AssetVersionService,
 )
+from app.services.asset_provenance import AssetProvenanceService
+from app.services.lineage.service import LineageService
+from app.db.models.asset_hub import RelationType
+from pathlib import Path
+from uuid import uuid4
 
 logger = logging.getLogger("ylcraft.agent.tools.asset")
 
@@ -130,6 +136,45 @@ async def get_asset_detail(asset_id: str):
             "success": True,
             "asset": await _node_to_tool_dict(session, asset),
         }
+
+
+@register_tool(
+    name="clean_asset_provenance",
+    description="审计素材的 AI 来源标记与文件元数据，并在确认后生成不覆盖原文件的清理副本。",
+    category="asset",
+    input_schema_note="必须提供 asset_id；confirm=false 只预览，confirm=true 才会创建派生资产。当前支持文本隐形字符/双向控制符和常见图片元数据。",
+    output_schema_note="返回审计报告；确认后额外返回 derived_asset_id 和 preserved_source=true。",
+    risk_level="write",
+    output_type="asset_provenance_result",
+)
+async def clean_asset_provenance(asset_id: str, confirm: bool = False):
+    async with AsyncSessionLocal() as session:
+        node_service = AssetNodeService(session)
+        version_service = AssetVersionService(session)
+        rep_service = AssetRepresentationService(session)
+        node = await node_service.get(asset_id)
+        version = await version_service.get_latest_version(asset_id) if node else None
+        rep = await rep_service.get_primary(str(version.id)) if version else None
+        if not node or not version or not rep:
+            return {"success": False, "message": "资产没有可审计的文件表示"}
+        report = await AssetProvenanceService(session).preview(asset_id, rep)
+        if not confirm:
+            return {"success": True, "confirmed": False, "asset_id": asset_id, "report": report}
+        if not report.get("supported"):
+            return {"success": False, "message": "当前格式暂只支持审计", "report": report}
+        output_dir = Path(__file__).resolve().parents[3] / "storage" / "derived" / "provenance-clean" / uuid4().hex
+        target, cleaned_report = await AssetProvenanceService(session).clean(node, version, rep, output_dir)
+        created = await AssetHubFacade(session).create_imported_file(
+            file_path=str(target),
+            title=f"{node.name}-清理副本",
+            asset_type=node.asset_type,
+            source="provenance_cleaning",
+            metadata={"operation": "ai_provenance_and_metadata_cleaning", "source_asset_id": asset_id, "audit_report": report, "cleaned_report": cleaned_report},
+            lineage={"derived_from_asset_id": asset_id, "derived_from_version_id": str(version.id), "operation": "provenance_cleaning"},
+            tags=["derived", "provenance_cleaned"],
+        )
+        await LineageService(session).link_assets(asset_id, created.node_id, RelationType.DERIVED_FROM, {"operation": "provenance_cleaning"})
+        return {"success": True, "confirmed": True, "asset_id": asset_id, "derived_asset_id": created.node_id, "report": cleaned_report, "preserved_source": True}
 
 
 @register_tool(

@@ -164,6 +164,10 @@ Current image prompt reference tools:
 - `refresh_image_prompt_sources`: `write`, refreshes one or all configured sources from remote repositories.
 - `save_image_prompt_reference_as_asset`: `write`, explicitly saves one selected reference as an Asset Hub text asset. Synced references are not imported into Asset Hub automatically.
 
+Asset provenance tool:
+
+- `clean_asset_provenance`: `costly`, first audits an Asset Hub representation and only creates a derived copy after `confirm=true`. It preserves the source asset, records `derived_from` lineage and never claims unsupported formats or generic visual watermark inpainting were cleaned.
+
 ## Fanqie Tools
 
 Fanqie tools use a configured `PlatformConnection` and never expose its cookie to the model.
