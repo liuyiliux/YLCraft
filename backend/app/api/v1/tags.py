@@ -121,7 +121,11 @@ def _tag_to_dict(tag: Tag) -> dict:
 
 async def _virtual_tag_counts(service: TagService) -> Dict[str, int]:
     try:
-        cards = await _list_asset_hub_cards(service.session)
+        cards, _total = await _list_asset_hub_cards(
+            service.session,
+            page=1,
+            page_size=1000,
+        )
     except Exception as exc:
         logger.warning("[tags] virtual tag count failed: %s", exc, exc_info=True)
         return {}
