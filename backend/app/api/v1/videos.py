@@ -33,6 +33,7 @@ from app.services.ai import get_ai_service
 from app.services.ai.types import VideoGenerationRequest
 from app.services.ai.types import VideoCapability, VideoCapabilities
 from app.services.platform_log import service as platform_log
+from app.services.ai.visual_planning import build_visual_planning_summary
 
 router = APIRouter()
 logger = logging.getLogger("ylcraft.videos")
@@ -56,6 +57,9 @@ def _video_retry_payload(req: "VideoGenerateRequest") -> dict:
         "source_title": req.source_title or "",
         "chapter_number": req.chapter_number,
         "music_hint": req.music_hint or "",
+        "production_plan_id": req.production_plan_id or "",
+        "production_node_id": req.production_node_id or "",
+        "planning_summary": req.planning_summary or {},
     }
 
 
@@ -87,6 +91,9 @@ def _video_log_request(req: "VideoGenerateRequest") -> dict:
         "source_type": req.source_type or "",
         "source_index": req.source_index or "",
         "source_title": req.source_title or "",
+        "production_plan_id": req.production_plan_id or "",
+        "production_node_id": req.production_node_id or "",
+        "planning_summary": req.planning_summary or {},
     }
 
 
@@ -108,6 +115,12 @@ class VideoGenerateRequest(BaseModel):
     source_title: Optional[str] = None
     generate_audio: Optional[bool] = True
     music_hint: Optional[str] = None
+    production_plan_id: Optional[str] = None
+    production_node_id: Optional[str] = None
+    visual_intent: Optional[str] = None
+    style: Optional[str] = None
+    composition: Optional[str] = None
+    planning_summary: dict[str, Any] = Field(default_factory=dict)
 
 
 class VideoResponse(BaseModel):
@@ -127,6 +140,7 @@ class VideoResponse(BaseModel):
     source_type: Optional[str] = None
     source_index: Optional[str] = None
     diagnostics: dict[str, Any] = Field(default_factory=dict)
+    planning_summary: dict[str, Any] = Field(default_factory=dict)
     error: Optional[str] = None
 
 
@@ -154,6 +168,7 @@ class TaskStatusResponse(BaseModel):
     local_path: Optional[str] = None
     asset_id: Optional[str] = None
     diagnostics: dict[str, Any] = Field(default_factory=dict)
+    planning_summary: dict[str, Any] = Field(default_factory=dict)
     error: Optional[str] = None
 
 
@@ -279,6 +294,9 @@ def _request_context(req: VideoGenerateRequest, reference_asset_ids: list[str]) 
         "source_type": req.source_type or "",
         "source_index": req.source_index or "",
         "source_title": req.source_title or "",
+        "production_plan_id": req.production_plan_id or "",
+        "production_node_id": req.production_node_id or "",
+        "planning_summary": req.planning_summary or {},
     }
 
 
@@ -352,6 +370,9 @@ async def _persist_video_result(
         "source_type": context["source_type"],
         "source_index": context["source_index"],
         "source_title": context["source_title"],
+        "production_plan_id": context.get("production_plan_id", ""),
+        "production_node_id": context.get("production_node_id", ""),
+        "planning_summary": context.get("planning_summary") or {},
     }
     thumbnail_url = ""
     try:
@@ -383,6 +404,9 @@ async def _persist_video_result(
                 "content_id": context["content_id"],
                 "source_type": context["source_type"],
                 "source_index": context["source_index"],
+                "production_plan_id": context.get("production_plan_id", ""),
+                "production_node_id": context.get("production_node_id", ""),
+                "planning_summary": context.get("planning_summary") or {},
             },
             tags=["ai-generated", "video-generation", result.provider or "", result.model or ""],
         )
@@ -493,6 +517,26 @@ async def generate_video(req: VideoGenerateRequest):
 
         _validate_video_capabilities(backend, req, has_start_image=start_image is not None)
 
+        planning_summary = req.planning_summary or build_visual_planning_summary(
+            "video",
+            req.prompt,
+            provider=req.provider or "",
+            model=req.model or "",
+            expected_output=req.source_type or "generated_video",
+            reference_asset_ids=req.reference_asset_ids or list(reference_paths),
+            project_id=req.project_id or "",
+            content_id=req.content_id or "",
+            production_plan_id=req.production_plan_id or "",
+            production_node_id=req.production_node_id or "",
+            visual_intent=req.visual_intent or "",
+            style=req.style or "",
+            composition=req.composition or "",
+            aspect_ratio=req.aspect_ratio or "",
+            duration=req.duration,
+            extra={"generate_audio": req.generate_audio, "music_hint": req.music_hint or ""},
+        )
+        req.planning_summary = planning_summary
+
         video_req = VideoGenerationRequest(
             prompt=req.prompt,
             duration=req.duration or 5,
@@ -571,6 +615,7 @@ async def generate_video(req: VideoGenerateRequest):
                 provider=result.provider,
                 model=result.model,
                 diagnostics=getattr(result, "diagnostics", {}) or {},
+                planning_summary=req.planning_summary or {},
                 error=result.error or "Video provider request failed",
             )
 
@@ -611,6 +656,7 @@ async def generate_video(req: VideoGenerateRequest):
             source_type=req.source_type,
             source_index=req.source_index,
             diagnostics=getattr(result, "diagnostics", {}) or {},
+            planning_summary=req.planning_summary or {},
         )
     except Exception as e:
         logger.error(f"Video generation failed: {e}")
@@ -663,6 +709,7 @@ async def get_task_status(task_id: str, provider: Optional[str] = None):
                 progress=task.progress or 0,
                 progress_message=task.progress_message or "已取消",
                 asset_id=task.asset_id,
+                planning_summary=(json.loads(task.request_json or "{}").get("planning_summary") or {}) if task else {},
                 error=task.error,
             )
 
@@ -710,6 +757,7 @@ async def get_task_status(task_id: str, provider: Optional[str] = None):
             local_path=str(result.video_path) if result.video_path else None,
             asset_id=asset_id,
             diagnostics=getattr(result, "diagnostics", {}) or {},
+            planning_summary=(json.loads(task.request_json or "{}").get("planning_summary") or {}) if task else {},
             error=result.error,
         )
     except Exception as e:

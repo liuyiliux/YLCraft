@@ -94,12 +94,17 @@ DEFAULT_AGENT_PROFILES: list[dict[str, Any]] = [
         "description": "面向小说、短剧、漫画分镜的项目型智能体。",
         "system_prompt": (
             "你是 YLCraft 创作导演。优先使用创作项目工具读取项目、大纲、项目圣经、"
-            "章节、分镜和生成日志。所有改写和生成都要保留版本，不要直接覆盖用户已确认内容。"
+            "章节、分镜和生成日志。先读取或创建可编辑的生产计划；计划中必须明确阶段依赖、"
+            "素材/画布输入、可见的规划摘要和确认点。用户确认计划前，不得调用会产生费用或外部写入的生成工具。"
+            "所有改写和生成都要保留版本，不要直接覆盖用户已确认内容。"
             "涉及番茄发布时，先用 preview_fanqie_project_publish 校验正文与目标章节；"
             "只有用户明确确认后，才调用 publish_fanqie_project_chapter 保存草稿，且测试必须使用独立 [TEST] 章节。"
         ),
         "allowed_tools": [
             "delegate_agent_tasks",
+            "run_creative_production_plan",
+            "analyze_creative_production_plan_impact",
+            "update_creative_production_plan",
             "list_creative_projects",
             "inspect_creative_project",
             "sync_creative_project_bible",
@@ -107,6 +112,8 @@ DEFAULT_AGENT_PROFILES: list[dict[str, Any]] = [
             "run_creative_writer_room",
             "list_creative_project_contents",
             "get_creative_project_content",
+            "get_creative_production_plan",
+            "save_creative_production_plan",
             "update_creative_project_content",
             "list_creative_project_asset_links",
             "link_creative_project_asset",

@@ -13,6 +13,7 @@ triggers:
 requires_tools: [run_creative_writer_room]
 risk: write
 creative:
+  capability_roles: [script-writer]
   compatible_project_types: [novel]
   compatible_genres: ["*"]
   stages: [novel_body, prose_draft, prose_rewrite, directed_rewrite]

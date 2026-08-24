@@ -18,6 +18,19 @@ The workflow script unwraps `data` automatically for most commands.
 
 ## Core Endpoints
 
+External-agent capability and asset loop:
+
+- `GET /ai/capabilities?available_only=true`
+- `POST /assets/upload` (multipart; image/video/audio/text/3D)
+- `POST /images/generate`
+- `POST /videos/generate`
+- `POST /model-3d/generate`
+- `GET /tasks/{task_id}`
+- `GET /logs?scene=<image|video|model3d|llm>`
+- `GET /assets/{asset_id}`
+
+The capability response is authoritative for provider/model selection. Never put API keys in an external-agent prompt or persist them in project metadata.
+
 Projects:
 
 - `GET /creative-projects`
@@ -27,6 +40,8 @@ Projects:
 - `DELETE /creative-projects/{project_id}`
 - `POST /creative-projects/{project_id}/fill-demo-data`
 - `POST /creative-projects/{project_id}/sync-project-bible`
+
+Project creation accepts `production_profile`: `vertical_drama`, `storybook`, `knowledge_content`, `platform_note`, `novel_serial`, or `single_shot`.
 
 Generation:
 
@@ -49,6 +64,9 @@ Generation:
 Inspection:
 
 - `GET /creative-projects/{project_id}/contents`
+- `GET /creative-projects/{project_id}/production-plan`
+- `GET /creative-projects/{project_id}/production-plan?include_history=true`
+- `PUT /creative-projects/{project_id}/production-plan`
 - `GET /creative-projects/{project_id}/assets`
 - `GET /creative-projects/{project_id}/generation-logs`
 - `GET /creative-projects/logs/generation`
@@ -71,8 +89,64 @@ Common project content types:
 - `prose_humanized`
 - `prose_review`
 - `prose_rewrite`
+- `production_plan`
 
 Use `GET /creative-projects/{project_id}/contents?content_type=<type>` to fetch a stage.
+
+## Director Production Plan
+
+The production plan is a versioned `ProjectContent` record with `content_type=production_plan`. It holds only user-visible planning data: a production profile, editable nodes, dependency IDs, input/output Asset Hub or project-content IDs, canvas document IDs, concise planning summaries, provider/model selections, node status, and confirmation points. It must not carry hidden chain-of-thought.
+
+Read the active revision:
+
+```text
+GET /creative-projects/{project_id}/production-plan
+```
+
+Read all revisions:
+
+```text
+GET /creative-projects/{project_id}/production-plan?include_history=true
+```
+
+Save a new revision. `base_plan_id` is optional; when present it becomes the revision provenance link.
+
+```json
+PUT /creative-projects/{project_id}/production-plan
+{
+  "base_plan_id": "previous-plan-content-id",
+  "plan": {
+    "title": "四页恐怖漫画",
+    "goal": "完成四页可生成的恐怖漫画制作计划",
+    "production_profile": "storybook",
+    "status": "draft",
+    "confirmation_status": "pending",
+    "asset_ids": ["character-reference-asset-id"],
+    "nodes": [
+      {
+        "id": "story",
+        "stage": "story_seed",
+        "label": "故事与页节拍",
+        "specialist_role": "story-designer",
+        "planning_summary": {"intent": "建立会移动的肖像画"},
+        "requires_confirmation": true
+      },
+      {
+        "id": "visual",
+        "stage": "image",
+        "label": "第三页构图",
+        "specialist_role": "visual-director",
+        "depends_on": ["story"],
+        "input_asset_ids": ["character-reference-asset-id"],
+        "rerun_scope": "downstream",
+        "requires_confirmation": true
+      }
+    ]
+  }
+}
+```
+
+Saving a plan is not a paid generation, but the plan's confirmation points still govern any later costly, download, publishing, or destructive operation.
 
 ## Recommended Long-Prose Defaults
 

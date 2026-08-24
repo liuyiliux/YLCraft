@@ -13,6 +13,7 @@ triggers:
 requires_tools: [generate_chapter_outline]
 risk: read
 creative:
+  capability_roles: [story-designer]
   compatible_project_types: [novel]
   compatible_genres: ["*"]
   stages: [chapter_outline, novel_body, prose_draft, prose_rewrite, directed_rewrite]

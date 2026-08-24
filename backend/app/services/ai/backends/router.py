@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import html
 from typing import Any, Optional
 
 from app.services.ai.types import (
@@ -22,6 +23,13 @@ from app.services.ai.types import (
 )
 
 logger = logging.getLogger("ylcraft.ai.router")
+
+
+def _clean_identifier(value: Any) -> str:
+    """Normalize UI/API identifiers before matching connector names and models."""
+    if value is None:
+        return ""
+    return html.unescape(str(value)).replace("\u00a0", " ").strip()
 
 
 class BackendRouter:
@@ -56,6 +64,8 @@ class BackendRouter:
             (backend, target_model) 或 (None, None)
         """
         backend = None
+        backend_name = _clean_identifier(backend_name) or None
+        model = _clean_identifier(model) or None
         target_model = model
         backends = self._registry.get_all_backends(MediaType.LLM)
 
@@ -65,6 +75,13 @@ class BackendRouter:
         # 1. 按名称查找
         if backend_name:
             backend = backends.get(backend_name)
+            if not backend:
+                normalized_backend_name = backend_name.casefold()
+                backend = next(
+                    (candidate for name, candidate in backends.items()
+                     if _clean_identifier(name).casefold() == normalized_backend_name),
+                    None,
+                )
             if backend:
                 if not model and hasattr(backend, 'connector'):
                     target_model = getattr(backend.connector, 'default_model', None)
@@ -82,12 +99,12 @@ class BackendRouter:
                     for candidate in provider_matches:
                         connector = getattr(candidate, "connector", None)
                         available_models = getattr(connector, "available_models", None)
-                        if getattr(connector, "default_model", None) == model:
+                        if _clean_identifier(getattr(connector, "default_model", None)).casefold() == model.casefold():
                             backend = candidate
                             break
                         if available_models:
                             try:
-                                if model in json.loads(available_models):
+                                if any(_clean_identifier(item).casefold() == model.casefold() for item in json.loads(available_models)):
                                     backend = candidate
                                     break
                             except Exception:
@@ -106,7 +123,7 @@ class BackendRouter:
             for name, b in backends.items():
                 if hasattr(b, 'connector'):
                     conn = b.connector
-                    if getattr(conn, 'default_model', None) == model:
+                    if _clean_identifier(getattr(conn, 'default_model', None)).casefold() == model.casefold():
                         backend = b
                         logger.info(f"[Router] 根据 default_model 找到 LLM Backend: {name}")
                         break
@@ -114,7 +131,7 @@ class BackendRouter:
                     if available_str:
                         try:
                             available = json.loads(available_str)
-                            if model in available:
+                            if any(_clean_identifier(item).casefold() == model.casefold() for item in available):
                                 backend = b
                                 logger.info(f"[Router] 根据 available_models 找到 LLM Backend: {name}")
                                 break

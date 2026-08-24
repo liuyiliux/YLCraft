@@ -50,6 +50,19 @@ def test_resolve_llm_provider_alias_uses_model_to_disambiguate():
     assert model == "reason-v3"
 
 
+def test_resolve_llm_normalizes_html_space_and_trailing_whitespace():
+    backend = make_backend("若海-qwen3.8-27b", "openai", "qwen3.8-27b")
+    router = BackendRouter(FakeRegistry({backend.name: backend}))
+
+    resolved, model = router.resolve_llm(
+        backend_name="若海-qwen3.8-27b\u00a0",
+        model="qwen3.8-27b &#x20;",
+    )
+
+    assert resolved is backend
+    assert model == "qwen3.8-27b"
+
+
 def test_ai_service_initialize_keeps_registry_session_usable(monkeypatch):
     """The registry retains connector instances, so initialization must not expire them."""
 

@@ -192,6 +192,7 @@ async def test_video_backends_serializes_default_backend_name(monkeypatch):
     assert response.backends[0].capabilities == ["text_to_video"]
     assert response.backends[0].constraints == {
         "enforced": True,
+        "image_requires_public_url": False,
         "first_frame": False,
         "last_frame": False,
         "reference_images": False,

@@ -86,12 +86,20 @@ class TeamComposer:
                 for instance in role_instances.get(dep_id, [])
             )
             for instance in role_instances[role.id]:
+                context = dict(instance["context"])
+                if role.skills:
+                    context["default_skill_ids"] = list(
+                        dict.fromkeys(
+                            list(context.get("default_skill_ids") or []) + list(role.skills)
+                        )
+                    )
+                context["team_role_id"] = role.id
                 tasks.append(
                     DelegatedTask(
                         task_key=instance["task_key"],
                         profile_id=role.profile,
                         objective=instance["objective"],
-                        context=instance["context"],
+                        context=context,
                         depends_on=depends,
                         spawn_mode=role.spawn,
                     )

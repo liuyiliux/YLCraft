@@ -29,6 +29,7 @@ from app.db.models.creative_project import (
 from app.db.models.task import ProjectTaskRecord
 from app.db.models.novel import NovelChapter
 from app.services.creative_project.service import CreativeProjectService
+from app.services.agent import context_pack as agent_context_pack
 from tests.test_creative_project_service import FakeAIService
 
 
@@ -239,6 +240,197 @@ def test_update_project_api_rejects_duplicate_chapter_numbers(workflow_session: 
 
     assert response.status_code == 400, response.text
     assert "章节号重复" in response.json()["detail"]
+
+
+def test_production_plan_api_versions_and_keeps_project_asset_association(workflow_session: Session):
+    asset_id = str(uuid.uuid4())
+    workflow_session.add(
+        AssetNode(
+            id=asset_id,
+            name="Main character reference",
+            asset_type=AssetType.IMAGE,
+            metadata_json={},
+        )
+    )
+    workflow_session.commit()
+
+    with _client(workflow_session) as client:
+        project = _post(
+            client,
+            "",
+            {
+                "title": "Horror comic",
+                "idea": "A child finds a moving portrait.",
+                "project_type": "manga",
+                "production_profile": "storybook",
+            },
+        )["data"]
+        source = ProjectContent(
+            project_id=project["id"],
+            content_type="outline",
+            title="Story seed",
+            data_json="{}",
+        )
+        workflow_session.add(source)
+        workflow_session.commit()
+
+        first = client.put(
+            f"/api/v1/creative-projects/{project['id']}/production-plan",
+            json={
+                "plan": {
+                    "title": "Horror comic plan",
+                    "goal": "Finish a four-page horror comic.",
+                    "production_profile": "storybook",
+                    "asset_ids": [asset_id],
+                    "nodes": [
+                        {
+                            "id": "story",
+                            "stage": "story_seed",
+                            "label": "Story and page beats",
+                            "specialist_role": "story-designer",
+                            "input_content_ids": [source.id],
+                            "planning_summary": {"intent": "Set up an unsettling portrait."},
+                            "requires_confirmation": True,
+                        },
+                        {
+                            "id": "visual",
+                            "stage": "image",
+                            "label": "Plan page art",
+                            "specialist_role": "visual-director",
+                            "depends_on": ["story"],
+                            "input_asset_ids": [asset_id],
+                            "planning_summary": {"expected_output": "storyboard_frame"},
+                            "requires_confirmation": True,
+                        },
+                    ],
+                }
+            },
+        )
+        assert first.status_code == 200, first.text
+        first_plan = first.json()["data"]
+        assert first_plan["content_type"] == "production_plan"
+        assert first_plan["version"] == 1
+        assert first_plan["data"]["plan_version"] == 1
+        assert first_plan["data"]["project_id"] == project["id"]
+
+        second = client.put(
+            f"/api/v1/creative-projects/{project['id']}/production-plan",
+            json={
+                "base_plan_id": first_plan["id"],
+                "plan": {
+                    "title": "Horror comic plan",
+                    "goal": "Revise only page three composition.",
+                    "production_profile": "storybook",
+                    "asset_ids": [asset_id],
+                    "nodes": [
+                        {
+                            "id": "story",
+                            "stage": "story_seed",
+                            "label": "Story and page beats",
+                            "specialist_role": "story-designer",
+                            "input_content_ids": [source.id],
+                        },
+                        {
+                            "id": "visual",
+                            "stage": "image",
+                            "label": "Revise page three composition",
+                            "specialist_role": "visual-director",
+                            "depends_on": ["story"],
+                            "input_asset_ids": [asset_id],
+                            "rerun_scope": "downstream",
+                        },
+                    ],
+                },
+            },
+        )
+        assert second.status_code == 200, second.text
+        second_plan = second.json()["data"]
+        current = client.get(f"/api/v1/creative-projects/{project['id']}/production-plan")
+        history = client.get(f"/api/v1/creative-projects/{project['id']}/production-plan?include_history=true")
+        links = client.get(f"/api/v1/creative-projects/{project['id']}/assets")
+
+    assert second_plan["version"] == 2
+    assert second_plan["source_content_id"] == first_plan["id"]
+    assert second_plan["data"]["source_plan_id"] == first_plan["id"]
+    assert current.json()["data"]["id"] == second_plan["id"]
+    assert {item["id"] for item in history.json()["data"]} == {first_plan["id"], second_plan["id"]}
+    assert any(
+        item["asset_id"] == asset_id and item["content_id"] == second_plan["id"] and item["role"] == "production_plan"
+        for item in links.json()["data"]
+    )
+
+
+def test_production_plan_api_rejects_cycles_before_saving(workflow_session: Session):
+    with _client(workflow_session) as client:
+        project = _post(client, "", {"title": "Invalid plan", "idea": "No loops."})["data"]
+        response = client.put(
+            f"/api/v1/creative-projects/{project['id']}/production-plan",
+            json={
+                "plan": {
+                    "nodes": [
+                        {"id": "first", "depends_on": ["second"]},
+                        {"id": "second", "depends_on": ["first"]},
+                    ]
+                }
+            },
+        )
+
+    assert response.status_code == 422, response.text
+    assert "依赖不能形成循环" in response.text
+
+
+def test_agent_context_pack_includes_profile_and_visible_production_plan(
+    workflow_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    with _client(workflow_session) as client:
+        project = _post(
+            client,
+            "",
+            {
+                "title": "Storybook context",
+                "idea": "A child notices a portrait blink.",
+                "production_profile": "storybook",
+            },
+        )["data"]
+        saved = client.put(
+            f"/api/v1/creative-projects/{project['id']}/production-plan",
+            json={
+                "plan": {
+                    "title": "Visible director plan",
+                    "goal": "Plan a four-page illustrated story.",
+                    "production_profile": "storybook",
+                    "confirmation_status": "pending",
+                    "nodes": [
+                        {
+                            "id": "visual",
+                            "stage": "image",
+                            "label": "Plan the first page",
+                            "specialist_role": "visual-director",
+                            "planning_summary": {"intent": "A portrait blinks in candlelight."},
+                            "requires_confirmation": True,
+                        }
+                    ],
+                }
+            },
+        )
+        assert saved.status_code == 200, saved.text
+
+    monkeypatch.setattr(agent_context_pack, "SessionLocal", lambda: workflow_session)
+    monkeypatch.setattr(
+        "app.services.ai.get_ai_service",
+        lambda: FakeAIService(),
+    )
+    pack = agent_context_pack.build_creative_project_context_pack(project["id"])
+
+    assert pack["project"]["production_profile"]["id"] == "storybook"
+    assert pack["project"]["production_profile"]["label"]
+    assert pack["production_plan"]["content_id"] == saved.json()["data"]["id"]
+    assert pack["production_plan"]["confirmation_status"] == "pending"
+    assert pack["production_plan"]["confirmation_nodes"] == [
+        {"id": "visual", "label": "Plan the first page", "stage": "image", "status": "planned"}
+    ]
+    assert pack["production_plan"]["nodes"][0]["planning_summary"] == {"intent": "A portrait blinks in candlelight."}
 
 
 def test_narrative_health_api_reports_legacy_plan_and_missing_dependencies(workflow_session: Session):

@@ -30,8 +30,8 @@ def _from_json(value: str | None, fallback: Any) -> Any:
 
 
 def should_persist(task_type: str, payload: dict[str, Any] | None) -> bool:
-    """Persist only project-scoped async image work, not every transient task."""
-    return task_type == "image_generation" and bool((payload or {}).get("project_id"))
+    """Persist project-scoped generation work, not transient UI-only tasks."""
+    return task_type in {"image_generation", "creative_writing"} and bool((payload or {}).get("project_id"))
 
 
 async def upsert_task(task: Any) -> None:

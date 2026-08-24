@@ -4,11 +4,103 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class FlexibleModel(BaseModel):
     model_config = ConfigDict(extra="allow")
+
+
+class ProductionPlanNodeSchema(FlexibleModel):
+    """One user-visible work item in a director production plan.
+
+    This is intentionally an audit/coordination contract, not a hidden model
+    reasoning trace.  A later runner can use the IDs and dependency edges to
+    execute only the affected downstream work.
+    """
+
+    id: str = Field(min_length=1, max_length=160)
+    stage: str = Field(default="", max_length=80)
+    label: str = Field(default="", max_length=240)
+    specialist_role: str = Field(default="", max_length=80)
+    status: str = Field(default="planned", max_length=40)
+    depends_on: list[str] = Field(default_factory=list)
+    input_content_ids: list[str] = Field(default_factory=list)
+    input_asset_ids: list[str] = Field(default_factory=list)
+    canvas_document_id: str | None = Field(default=None, max_length=80)
+    output_content_ids: list[str] = Field(default_factory=list)
+    output_asset_ids: list[str] = Field(default_factory=list)
+    planning_summary: dict[str, Any] = Field(default_factory=dict)
+    provider: str = Field(default="", max_length=160)
+    model: str = Field(default="", max_length=240)
+    requires_confirmation: bool = True
+    rerun_scope: str = Field(default="node", max_length=40)
+    source_node_version: int | None = Field(default=None, ge=1)
+
+    @field_validator(
+        "depends_on",
+        "input_content_ids",
+        "input_asset_ids",
+        "output_content_ids",
+        "output_asset_ids",
+        mode="after",
+    )
+    @classmethod
+    def _deduplicate_ids(cls, values: list[str]) -> list[str]:
+        return list(dict.fromkeys(str(value).strip() for value in values if str(value).strip()))
+
+
+class ProductionPlanSchema(FlexibleModel):
+    """Versioned, editable plan persisted as ``ProjectContent``."""
+
+    schema_version: int = Field(default=1, ge=1)
+    title: str = Field(default="", max_length=240)
+    goal: str = Field(default="", max_length=4000)
+    production_profile: str = Field(default="", max_length=80)
+    status: str = Field(default="draft", max_length=40)
+    canvas_document_id: str | None = Field(default=None, max_length=80)
+    asset_ids: list[str] = Field(default_factory=list)
+    nodes: list[ProductionPlanNodeSchema] = Field(default_factory=list, max_length=200)
+    confirmation_status: str = Field(default="pending", max_length=40)
+    notes: str = Field(default="", max_length=8000)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("asset_ids", mode="after")
+    @classmethod
+    def _deduplicate_asset_ids(cls, values: list[str]) -> list[str]:
+        return list(dict.fromkeys(str(value).strip() for value in values if str(value).strip()))
+
+    @model_validator(mode="after")
+    def _validate_dependency_graph(self):
+        node_ids = [node.id for node in self.nodes]
+        if len(node_ids) != len(set(node_ids)):
+            raise ValueError("生产计划节点 id 不能重复")
+        known = set(node_ids)
+        for node in self.nodes:
+            unknown = set(node.depends_on) - known
+            if unknown:
+                raise ValueError(f"节点 {node.id} 引用了不存在的依赖：{', '.join(sorted(unknown))}")
+            if node.id in node.depends_on:
+                raise ValueError(f"节点 {node.id} 不能依赖自身")
+
+        visiting: set[str] = set()
+        visited: set[str] = set()
+        by_id = {node.id: node for node in self.nodes}
+
+        def visit(node_id: str) -> None:
+            if node_id in visited:
+                return
+            if node_id in visiting:
+                raise ValueError("生产计划节点依赖不能形成循环")
+            visiting.add(node_id)
+            for dependency_id in by_id[node_id].depends_on:
+                visit(dependency_id)
+            visiting.remove(node_id)
+            visited.add(node_id)
+
+        for node_id in node_ids:
+            visit(node_id)
+        return self
 
 
 class StoryCharacterSchema(FlexibleModel):

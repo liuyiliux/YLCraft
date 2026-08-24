@@ -16,6 +16,7 @@ from app.services.agent.cost_meter import CostMeter
 from app.services.agent.registry import Tool, ToolRegistry
 from app.services.agent.scope import AgentScope
 from app.services.agent.runtime.delegation import DelegatedTask, DelegationValidationError
+from app.services.agent.production_plan_team import ProductionPlanTeamComposer, ProductionPlanTeamError
 from app.services.agent.team_composer import TeamComposer
 from app.services.agent.team_template import (
     TeamTemplate,
@@ -106,6 +107,86 @@ def test_build_tasks_scene_sim_has_join_writer():
     assert "writer" in keys  # creative-director join role
     assert "editor" in keys
     assert "role-actor-甲" in keys
+
+
+def test_plan_team_compiles_role_skills_and_dependency_closed_slice():
+    plan = {
+        "plan_version": 3,
+        "nodes": [
+            {
+                "id": "story",
+                "label": "故事节拍",
+                "stage": "story_seed",
+                "specialist_role": "story-designer",
+            },
+            {
+                "id": "visual",
+                "label": "视觉规划",
+                "stage": "visual_plan",
+                "specialist_role": "visual-director",
+                "depends_on": ["story"],
+                "planning_summary": {"intent": "雨夜古堡"},
+                "requires_confirmation": True,
+            },
+        ],
+    }
+
+    template = ProductionPlanTeamComposer().build_template(plan, node_ids=["visual"])
+    by_id = {role.id: role for role in template.roles}
+
+    assert template.name == "production-plan-3"
+    assert set(by_id) == {"plan-story", "plan-visual"}
+    assert by_id["plan-story"].profile == "divine-director"
+    assert by_id["plan-visual"].profile == "storyboard-director"
+    assert by_id["plan-visual"].depends_on == ["plan-story"]
+    assert by_id["plan-visual"].join is True
+    assert "episode_hook_rhythm" in by_id["plan-story"].skills
+    assert {"comic_image_prompt", "reference_match"} <= set(by_id["plan-visual"].skills)
+
+    tasks = TeamComposer(orchestrator=None).build_tasks(template, {"project_id": "p1"})
+    task_by_key = {task.task_key: task for task in tasks}
+    assert "episode_hook_rhythm" in task_by_key["plan-story"].context["default_skill_ids"]
+    assert task_by_key["plan-visual"].context["team_role_id"] == "plan-visual"
+    assert "不得直接发起生成" in task_by_key["plan-visual"].objective
+
+
+def test_plan_team_rejects_unknown_node_and_oversized_dependency_slice():
+    composer = ProductionPlanTeamComposer()
+    with pytest.raises(ProductionPlanTeamError, match="节点不存在"):
+        composer.build_template({"nodes": [{"id": "story", "specialist_role": "story-designer"}]}, node_ids=["missing"])
+
+    nodes = [
+        {"id": f"n{index}", "specialist_role": "story-designer", "depends_on": [f"n{index - 1}"] if index else []}
+        for index in range(7)
+    ]
+    with pytest.raises(ProductionPlanTeamError, match="最多执行 6 个节点"):
+        composer.build_template({"nodes": nodes}, node_ids=["n6"])
+
+
+def test_plan_team_identifies_downstream_impact_and_can_reuse_upstream_outputs():
+    plan = {
+        "nodes": [
+            {"id": "story", "specialist_role": "story-designer"},
+            {"id": "board", "specialist_role": "storyboard-director", "depends_on": ["story"]},
+            {"id": "image", "specialist_role": "image-producer", "depends_on": ["board"]},
+            {"id": "caption", "specialist_role": "platform-adapter", "depends_on": ["story"]},
+        ]
+    }
+    composer = ProductionPlanTeamComposer()
+
+    assert composer.affected_nodes(plan, changed_node_ids=["board"]) == [
+        {"node_id": "board", "reason": "changed"},
+        {"node_id": "image", "reason": "depends_on:board"},
+    ]
+    template = composer.build_template(
+        plan,
+        node_ids=["board", "image"],
+        include_dependencies=False,
+    )
+    by_id = {role.id: role for role in template.roles}
+    assert set(by_id) == {"plan-board", "plan-image"}
+    assert by_id["plan-board"].depends_on == []
+    assert by_id["plan-image"].depends_on == ["plan-board"]
 
 
 class _FakeOrchestrator:

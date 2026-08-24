@@ -475,6 +475,15 @@ const projectTypeOptions = [
   { label: '混合项目', value: 'mixed' },
 ]
 
+const productionProfileOptions = [
+  { value: 'vertical_drama', label: '竖屏短剧', description: '创意 → 分集节拍 → 脚本 → 分镜 → 视频，不要求正文。', projectType: 'short_drama' },
+  { value: 'storybook', label: '故事漫画 / 童话绘本', description: '故事 → 页纲 → 角色与场景 → 分镜 → 漫画页。', projectType: 'manga' },
+  { value: 'knowledge_content', label: '科普内容', description: '主题与事实 → 内容结构 → 图文卡片或视频素材。', projectType: 'mixed' },
+  { value: 'platform_note', label: '平台图文', description: '内容完成后交给多平台生图和图片编辑器适配渠道。', projectType: 'mixed' },
+  { value: 'novel_serial', label: '小说连载', description: '完整大纲、细纲、正文和连续性检查流程。', projectType: 'novel' },
+  { value: 'single_shot', label: '单镜头 / 单页实验', description: '一句创意或一张素材快速试做一个镜头或画面。', projectType: 'mixed' },
+]
+
 const stageLabels: Record<string, string> = {
   outline: '大纲',
   chapter_plan: '章节',
@@ -2760,12 +2769,14 @@ export default function StoryPage() {
           chapter_indices: chapterIndices,
           title: values.title || getNovelDisplayTitle(selectedNovelAsset),
           project_type: values.project_type,
+          production_profile: values.production_profile,
         })) as CreativeProjectResponse
       } else {
         response = (await createCreativeProject({
           title: values.title,
           idea: values.idea,
           project_type: values.project_type,
+          production_profile: values.production_profile,
           source_type: 'original_idea',
         })) as CreativeProjectResponse
       }
@@ -4411,6 +4422,11 @@ export default function StoryPage() {
                           重命名
                         </Button>
                         <Tag color="processing">{projectTypeLabel(selectedProject.project_type)}</Tag>
+                        {selectedProject.production_profile?.label ? (
+                          <Tooltip title={selectedProject.production_profile.description}>
+                            <Tag color="cyan">方案：{selectedProject.production_profile.label}</Tag>
+                          </Tooltip>
+                        ) : null}
                         <Tag>{stageLabels[selectedProject.current_stage] || selectedProject.current_stage}</Tag>
                         <Tooltip
                           title={
@@ -4973,7 +4989,7 @@ export default function StoryPage() {
         onCancel={() => setCreateOpen(false)}
         afterOpenChange={(open) => {
           if (open) {
-            form.setFieldsValue({ source_type: 'original_idea', project_type: 'short_drama' })
+            form.setFieldsValue({ source_type: 'original_idea', project_type: 'short_drama', production_profile: 'vertical_drama' })
             loadNovelAssets()
           }
         }}
@@ -4984,7 +5000,7 @@ export default function StoryPage() {
         <Form
           form={form}
           layout="vertical"
-          initialValues={{ source_type: 'original_idea', project_type: 'short_drama' }}
+          initialValues={{ source_type: 'original_idea', project_type: 'short_drama', production_profile: 'vertical_drama' }}
           onFinish={handleCreate}
         >
           <Form.Item label="来源" name="source_type">
@@ -5001,7 +5017,26 @@ export default function StoryPage() {
           <Form.Item label="标题" name="title">
             <Input placeholder="可留空，生成大纲后会自动更新" />
           </Form.Item>
-          <Form.Item label="项目类型" name="project_type">
+          <Form.Item label="内容生产方案" name="production_profile">
+            <Select
+              options={productionProfileOptions.map((item) => ({
+                value: item.value,
+                label: item.label,
+                title: item.description,
+              }))}
+              optionRender={(option) => (
+                <div>
+                  <div>{option.data.label}</div>
+                  <Text type="secondary" style={{ fontSize: 12 }}>{option.data.title}</Text>
+                </div>
+              )}
+              onChange={(value) => {
+                const profile = productionProfileOptions.find((item) => item.value === value)
+                if (profile) form.setFieldsValue({ project_type: profile.projectType })
+              }}
+            />
+          </Form.Item>
+          <Form.Item label="项目类型" name="project_type" hidden>
             <Select options={projectTypeOptions} />
           </Form.Item>
           {createSourceType === 'novel' ? (
@@ -6677,6 +6712,19 @@ function EpisodeWorkbenchTab({
           <Text type="secondary" ellipsis={{ tooltip: activeChapter?.title || '未命名章节' }}>
             {activeChapter?.title || '未命名章节'} · 下一步：{nextEpisodeAction}
           </Text>
+          <Space size={6} wrap>
+            <Tag color={writingPreflightReady ? 'green' : 'warning'}>
+              {writingPreflightLoading ? '检查中' : writingPreflightReady ? '门禁通过' : '存在阻塞'}
+            </Tag>
+            <Tag>{writingStageMeta[writingStage].label}</Tag>
+            <Text type={writingPreflightReady ? 'success' : 'warning'} style={{ fontSize: 12 }}>
+              {writingPreflightLoading
+                ? '正在检查当前章节...'
+                : writingPreflightReady
+                  ? '当前章节可以进入生成。'
+                  : writingPreflight?.next_action || '等待检查结果'}
+            </Text>
+          </Space>
         </Space>
         <Select
           aria-label="选择制作章节"
@@ -6691,35 +6739,22 @@ function EpisodeWorkbenchTab({
       </div>
 
       <WorkbenchSection
-        title="写作门禁"
-        extra={
-          <Space size={8} wrap>
-            <Tag color={writingPreflightReady ? 'green' : 'warning'}>
-              {writingPreflightReady ? '可直接生成' : '存在阻塞'}
-            </Tag>
-            <Tag>{writingStageMeta[writingStage].label}</Tag>
-          </Space>
-        }
+        title="检查阶段与方法包"
       >
         <Space direction="vertical" size={10} style={{ width: '100%' }}>
-          <Text type={writingPreflightReady ? 'success' : 'warning'} style={{ fontSize: 12 }}>
-            {writingPreflightLoading
-              ? '正在检查当前章节的写作门禁...'
-              : writingPreflightReady
-                ? '当前章节门禁已通过。'
-                : `当前章节还缺少前置条件：${writingPreflight?.next_action || '等待检查结果'}`}
-          </Text>
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: compact ? 'minmax(0, 1fr)' : '180px minmax(0, 1fr)',
+              gridTemplateColumns: compact ? 'minmax(0, 1fr)' : 'minmax(220px, 0.44fr) minmax(280px, 1fr)',
               gap: 10,
               alignItems: 'start',
             }}
           >
             <Space direction="vertical" size={4} style={{ width: '100%' }}>
               <Text strong>检查阶段</Text>
-              <Segmented
+                <Segmented
+                  block
+                  size="small"
                 value={writingStage}
                 options={[
                   { label: '章节细纲', value: 'chapter_outline' },
@@ -6757,7 +6792,7 @@ function EpisodeWorkbenchTab({
                 )}
               </Space>
               <Text type="secondary" style={{ fontSize: 12 }}>
-                选中的方法包会写入 `settings.creative_skill_ids`，并在上下文中按兼容性进入 T6。
+                方法包是可选的写作增强：选中后会在生成前注入上下文 T6，影响节奏、对白或审稿提示；不选也可以正常生成。保存后，下一次正文/润色/Writer Room 请求会使用它。
               </Text>
             </Space>
           </div>

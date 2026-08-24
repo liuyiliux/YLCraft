@@ -12,6 +12,16 @@ triggers:
   tools: [preview_image_generation_request, generate_image_asset, poll_image_generation_task]
 requires_tools: [preview_image_generation_request, generate_image_asset]
 risk: write
+creative:
+  capability_roles: [image-producer]
+  compatible_project_types: [short_drama, novel, manga, mixed]
+  compatible_genres: ["*"]
+  stages: [image, image_set, visual_reference, platform_image]
+  context_contribution: "图片生成前保留意图、参考资产、提示词、负面提示词、供应商、模型、尺寸和预期产物；实际生成必须等待确认。"
+  input_schema: {planning_summary: object, reference_asset_ids: array, provider: string, model: string}
+  output_schema: {task_id: string, asset_ids: array, diagnostics: object}
+  prohibited_mutations: [approved_novel_body, locked_project_bible, confirmed_ledger]
+  auto_apply: false
 ---
 
 # 图片生成工作流

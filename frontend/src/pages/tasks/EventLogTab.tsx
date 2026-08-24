@@ -36,6 +36,7 @@ const SCENE_OPTIONS = [
   { label: '视频', value: 'video' },
   { label: '图转 3D', value: 'model3d' },
   { label: '文本', value: 'llm' },
+  { label: '创作写作', value: 'writing' },
 ]
 
 const LEVEL_OPTIONS = [
@@ -57,6 +58,7 @@ const SCENE_COLOR_MAP: Record<string, string> = {
   video: 'magenta',
   model3d: 'cyan',
   llm: 'blue',
+  writing: 'geekblue',
   system: 'default',
 }
 

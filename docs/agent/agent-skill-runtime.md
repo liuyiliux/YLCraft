@@ -93,6 +93,7 @@ An Agent Skill may also declare an optional `creative` object when it is safe to
 
 ```yaml
 creative:
+  capability_roles: [story-designer]
   compatible_project_types: [novel]
   compatible_genres: ["*"]
   stages: [prose_draft]
@@ -103,7 +104,7 @@ creative:
   auto_apply: true
 ```
 
-All fields except `auto_apply` are required when `creative` is present. The creative runtime uses only the compact `context_contribution`, never the entire Skill body. A project may explicitly select packages through `settings.creative_skill_ids`; automatic application additionally requires project type, genre and stage compatibility. The resolved IDs and checksums are stored in `ProjectNarrativeContextSnapshot`. A Skill is procedural guidance, not permission to promote prose, accept facts, activate foreshadowing, publish externally or spend generation credits.
+All fields except `auto_apply` are required when `creative` is present. `capability_roles` is a stable declaration such as `story-designer`, `script-writer`, `visual-director`, `character-director`, `storyboard-director`, `image-producer`, `video-producer`, `platform-adapter`, or `editorial-reviewer`; it is used for auditable Director-team selection rather than inferred from the display title. The creative runtime uses only the compact `context_contribution`, never the entire Skill body. A project may explicitly select packages through `settings.creative_skill_ids`; automatic application additionally requires project type, genre and stage compatibility. The resolved IDs and checksums are stored in `ProjectNarrativeContextSnapshot`. A Skill is procedural guidance, not permission to promote prose, accept facts, activate foreshadowing, publish externally or spend generation credits.
 
 ## Routing
 
@@ -138,6 +139,20 @@ Agent tools are internal APIs. When a tool category, name, input, output type or
 - The module-level registry handler cannot execute directly because execution requires the current user, parent Run and DB session. `AgentService` injects that scoped runtime handler.
 
 This is separate from Skills: Skills explain reusable procedure; the Supervisor tool creates real child Agent executions. A Worker with `allowed_tools=["*"]` still cannot access delegation unless `can_delegate` is explicitly enabled.
+
+### Creative Production Plan Runtime Tools
+
+`run_creative_production_plan`, `analyze_creative_production_plan_impact` and `update_creative_production_plan` are runtime-bound `creative_project` tools. Their registry handlers intentionally cannot run alone: `AgentService` supplies the active parent Run, user context and database session.
+
+- Only the `creative-director` profile can invoke them, and `project_id` must match the current Creative Project Context Pack.
+- A plan must already be saved as the project's versioned `production_plan`; the tools do not accept an arbitrary transient plan payload.
+- `run_creative_production_plan` accepts up to six explicit node IDs and compiles their dependency-closed slice through `ProductionPlanTeamComposer` into the established `TeamComposer` / `SubagentOrchestrator` path. It forwards declared Skill IDs to isolated specialist Runs and returns their normal joined observation and linked Run IDs.
+- Upstream dependencies are included by default. `include_dependencies=false` is only for an auditable local rerun after the director has established that upstream assets remain reusable.
+- `analyze_creative_production_plan_impact` returns the changed nodes and all downstream nodes in plan order, with a machine-readable reason such as `changed` or `depends_on:storyboard-page-3`.
+- `update_creative_production_plan` accepts one node and a user-confirmed local change only. It may update `label`, `planning_summary`, `provider`, `model`, `requires_confirmation` or `rerun_scope`, persists a new version, and returns downstream impact. It cannot edit hidden reasoning or trigger generation.
+- Both tool results contain a compact, user-visible plan/node summary: plan version, stage, inputs, Asset Hub IDs, planning summary, provider/model, outputs and confirmation flag. The Agent conversation and historical Run trace render that summary as a business card; raw JSON remains available only as diagnostics.
+
+The tools do not bypass the existing confirmation gate. They coordinate specialist reasoning and preserve the evidence needed for the director to create a subsequent versioned plan; generation, download, publish, deletion and other external writes stay subject to their owning tool's confirmation policy.
 
 Canvas tool contract: `apply_creative_canvas_operations` accepts `connect_nodes` only when the connection supplies `fromNodeId`, `fromPortId`, `toNodeId`, and `toPortId`. Invalid connection operations are skipped rather than persisted.
 

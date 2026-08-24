@@ -196,6 +196,7 @@ def command_create_project(args: argparse.Namespace) -> None:
         "title": args.title,
         "idea": args.idea,
         "project_type": args.project_type,
+        "production_profile": args.production_profile,
         "source_type": args.source_type,
         "settings": {},
         "metadata": {},
@@ -209,6 +210,27 @@ def command_inspect(args: argparse.Namespace) -> None:
 
 def command_contents(args: argparse.Namespace) -> None:
     print_json(list_contents(args.base_url, args.project_id, args.content_type))
+
+
+def command_plan_get(args: argparse.Namespace) -> None:
+    qs = query_string({"include_history": args.include_history})
+    print_json(unwrap(api_request(args.base_url, "GET", f"/creative-projects/{args.project_id}/production-plan{qs}")))
+
+
+def command_plan_save(args: argparse.Namespace) -> None:
+    plan_path = Path(args.plan_file)
+    try:
+        plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise ApiError(f"Cannot read plan file {plan_path}: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise ApiError(f"Plan file is not valid JSON: {exc}") from exc
+    if not isinstance(plan, dict):
+        raise ApiError("Plan JSON must be an object")
+    payload: dict[str, Any] = {"plan": plan}
+    if args.base_plan_id:
+        payload["base_plan_id"] = args.base_plan_id
+    print_json(unwrap(api_request(args.base_url, "PUT", f"/creative-projects/{args.project_id}/production-plan", payload)))
 
 
 def command_logs(args: argparse.Namespace) -> None:
@@ -409,6 +431,9 @@ def build_parser() -> argparse.ArgumentParser:
     command.add_argument("--title", default="")
     command.add_argument("--idea", default="")
     command.add_argument("--project-type", default="short_drama")
+    command.add_argument("--production-profile", default=None, choices=[
+        "vertical_drama", "storybook", "knowledge_content", "platform_note", "novel_serial", "single_shot",
+    ])
     command.add_argument("--source-type", default="original_idea")
     command.set_defaults(func=command_create_project)
 
@@ -420,6 +445,17 @@ def build_parser() -> argparse.ArgumentParser:
     command.add_argument("--project-id", required=True)
     command.add_argument("--content-type", default=None)
     command.set_defaults(func=command_contents)
+
+    command = subparsers.add_parser("plan-get", help="Read the current director plan or its revision history")
+    command.add_argument("--project-id", required=True)
+    command.add_argument("--include-history", action="store_true")
+    command.set_defaults(func=command_plan_get)
+
+    command = subparsers.add_parser("plan-save", help="Save a JSON director plan as a new revision")
+    command.add_argument("--project-id", required=True)
+    command.add_argument("--plan-file", required=True, help="Path to a JSON object matching ProductionPlanSchema")
+    command.add_argument("--base-plan-id", default=None, help="Optional explicit parent plan revision")
+    command.set_defaults(func=command_plan_save)
 
     command = subparsers.add_parser("logs")
     command.add_argument("--project-id", required=True)

@@ -19,6 +19,7 @@ from sqlalchemy.orm import load_only
 from sqlmodel import Session, select
 
 from app.db.models.asset_hub import AssetNode, AssetType, AssetVersion
+from app.db.models.canvas import CanvasDocument
 from app.db.models.character import Character, CharacterRole, CharacterSourceType, CharacterStoryLink
 from app.db.models.creative_project import (
     CreativeProject,
@@ -44,6 +45,7 @@ from app.services.creative_project.schemas import (
     NarrativeHealthIssueSchema,
     ProjectNarrativeHealthSchema,
     ReferenceAssetMatchSchema,
+    ProductionPlanSchema,
     ShortDramaScriptSchema,
     StoryOutlineSchema,
     StoryboardSchema,
@@ -57,6 +59,7 @@ from app.services.creative_project.semantic_recall import (
     NarrativeRecallResult,
     NarrativeSemanticRecallAdapter,
 )
+from app.services.creative_project.profiles import normalize_project_settings
 
 logger = logging.getLogger("ylcraft.creative_project")
 
@@ -351,17 +354,23 @@ class CreativeProjectService:
         idea: str = "",
         settings: dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
+        production_profile: str | None = None,
     ) -> CreativeProject:
         meta = dict(metadata or {})
         if idea:
             meta["idea"] = idea.strip()
+        normalized_settings = normalize_project_settings(
+            settings,
+            profile_id=production_profile,
+            project_type=project_type or "short_drama",
+        )
 
         project = CreativeProject(
             title=title.strip() or self._title_from_idea(idea),
             project_type=project_type or "short_drama",
             source_type=source_type or "original_idea",
             source_ref_json=dumps_json(source_ref or {}),
-            settings_json=dumps_json(settings or {}),
+            settings_json=dumps_json(normalized_settings),
             metadata_json=dumps_json(meta),
         )
         self.session.add(project)
@@ -1223,6 +1232,7 @@ class CreativeProjectService:
         chapter_indices: list[int] | None = None,
         title: str = "",
         project_type: str = "short_drama",
+        production_profile: str | None = None,
     ) -> CreativeProject:
         source_node = self.session.get(AssetNode, asset_id)
         if not source_node:
@@ -1265,6 +1275,7 @@ class CreativeProjectService:
             source_ref=source_ref,
             idea=idea,
             metadata=metadata,
+            production_profile=production_profile,
         )
 
     # ------------------------------------------------------------------
@@ -2785,6 +2796,134 @@ class CreativeProjectService:
     # ------------------------------------------------------------------
     # Contents and assets
     # ------------------------------------------------------------------
+
+    def get_production_plan(
+        self,
+        project_id: str,
+        *,
+        include_history: bool = False,
+    ) -> ProjectContent | None | list[ProjectContent]:
+        """Read the current director plan, optionally including old revisions."""
+        self._require_project(project_id)
+        plans = self.list_contents(
+            project_id,
+            content_type="production_plan",
+            latest_only=not include_history,
+        )
+        if include_history:
+            return plans
+        return plans[0] if plans else None
+
+    def save_production_plan(
+        self,
+        *,
+        project_id: str,
+        plan: ProductionPlanSchema | dict[str, Any],
+        base_plan_id: str | None = None,
+    ) -> ProjectContent:
+        """Append a versioned, user-editable director plan to a project.
+
+        Plans use the existing ``ProjectContent`` version stream instead of a
+        bespoke table.  This makes an edit auditable today and gives the future
+        selective-rerun runner stable upstream versions to compare against.
+        """
+        project = self._require_project(project_id)
+        try:
+            parsed = plan if isinstance(plan, ProductionPlanSchema) else ProductionPlanSchema.model_validate(plan)
+        except ValidationError as exc:
+            raise ValueError(f"生产计划格式无效：{exc.errors()[0]['msg']}") from exc
+
+        if parsed.production_profile and parsed.production_profile != loads_json(project.settings_json).get("production_profile"):
+            raise ValueError("生产计划的 production_profile 必须与项目当前方案一致")
+        if not parsed.production_profile:
+            parsed.production_profile = str(loads_json(project.settings_json).get("production_profile") or "")
+
+        if base_plan_id:
+            base = self.session.get(ProjectContent, base_plan_id)
+            if not base or base.project_id != project_id or base.content_type != "production_plan":
+                raise ValueError("生产计划基线版本不存在")
+        else:
+            current_plans = self.list_contents(
+                project_id,
+                content_type="production_plan",
+                latest_only=True,
+            )
+            base = current_plans[0] if current_plans else None
+
+        self._validate_production_plan_references(project_id, parsed)
+        payload = parsed.model_dump(exclude_none=True)
+        payload["project_id"] = project_id
+        payload["source_plan_id"] = base.id if base else ""
+        title = parsed.title or f"{project.title or '创作项目'}生产计划"
+        content = self._create_content(
+            project_id=project_id,
+            content_type="production_plan",
+            title=title,
+            data=payload,
+            text_content=parsed.goal,
+            source_content_id=base.id if base else None,
+        )
+        self.session.add(content)
+        self.session.flush()
+
+        # Keep plan references discoverable through the established project
+        # asset rail as well as inside the plan payload itself.
+        for asset_id in self._production_plan_asset_ids(parsed):
+            exists = self.session.exec(
+                select(ProjectAssetLink).where(
+                    ProjectAssetLink.project_id == project_id,
+                    ProjectAssetLink.asset_id == asset_id,
+                    ProjectAssetLink.content_id == content.id,
+                    ProjectAssetLink.role == "production_plan",
+                )
+            ).first()
+            if exists is None:
+                self.session.add(
+                    ProjectAssetLink(
+                        project_id=project_id,
+                        asset_id=asset_id,
+                        content_id=content.id,
+                        role="production_plan",
+                        relation="references",
+                        metadata_json=dumps_json({"plan_version": content.version}),
+                    )
+                )
+
+        payload["plan_version"] = content.version
+        content.data_json = dumps_json(payload)
+        self.session.add(content)
+        self.session.commit()
+        self.session.refresh(content)
+        return content
+
+    def _validate_production_plan_references(self, project_id: str, plan: ProductionPlanSchema) -> None:
+        canvas_ids = {value for value in [plan.canvas_document_id, *(node.canvas_document_id for node in plan.nodes)] if value}
+        for canvas_id in canvas_ids:
+            canvas = self.session.get(CanvasDocument, canvas_id)
+            if not canvas or canvas.project_id != project_id:
+                raise ValueError("生产计划引用的画布不存在，或不属于当前项目")
+
+        content_ids = {
+            content_id
+            for node in plan.nodes
+            for content_id in [*node.input_content_ids, *node.output_content_ids]
+        }
+        for content_id in content_ids:
+            content = self.session.get(ProjectContent, content_id)
+            if not content or content.project_id != project_id:
+                raise ValueError("生产计划引用的项目内容不存在，或不属于当前项目")
+
+        for asset_id in self._production_plan_asset_ids(plan):
+            if not self.session.get(AssetNode, asset_id):
+                raise ValueError("生产计划引用的素材不存在")
+
+    @staticmethod
+    def _production_plan_asset_ids(plan: ProductionPlanSchema) -> list[str]:
+        asset_ids = list(plan.asset_ids)
+        for node in plan.nodes:
+            asset_ids.extend(node.input_asset_ids)
+            asset_ids.extend(node.output_asset_ids)
+        return list(dict.fromkeys(asset_id for asset_id in asset_ids if asset_id))
 
     def list_contents(
         self,

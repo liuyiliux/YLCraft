@@ -12,6 +12,16 @@ triggers:
   tools: [list_video_backends, generate_video_asset, poll_video_generation_task]
 requires_tools: [generate_video_asset]
 risk: write
+creative:
+  capability_roles: [video-producer]
+  compatible_project_types: [short_drama, novel, manga, mixed]
+  compatible_genres: ["*"]
+  stages: [video, video_shot, animatic, platform_video]
+  context_contribution: "视频生成前保留镜头目的、首帧或参考资产、动作提示、时长、比例、供应商和模型；实际生成必须等待确认。"
+  input_schema: {planning_summary: object, reference_asset_ids: array, provider: string, model: string}
+  output_schema: {task_id: string, asset_ids: array, diagnostics: object}
+  prohibited_mutations: [approved_novel_body, locked_project_bible, confirmed_ledger]
+  auto_apply: false
 ---
 
 # 视频生成工作流

@@ -59,6 +59,8 @@ Agent Center 是 YLCraft 的项目智能体工作台。默认界面只保留最�
 - `list_creative_projects`：列出项目，拿到 `project_id`。
 - `inspect_creative_project`：查看项目阶段、内容数量、最近生成日志和项目圣经摘要。
 - `build_creative_project_context_pack`：构建紧凑上下文包，适合智能体理解某个项目或某一章当前状态。
+- `get_creative_production_plan`：读取当前导演生产计划或历史版本；上下文包也会携带当前方案、计划版本、节点依赖和待确认节点的轻量摘要。
+- `save_creative_production_plan`：把用户确认或修改后的可见生产计划追加为新版本，风险等级为 `write`；保存计划不启动生成，但其中的确认点必须在调用生图、生视频、3D、下载或发布前遵守。
 - `list_creative_project_contents`：列出正文、脚本、分镜、项目圣经等内容摘要，拿到 `content_id`。
 - `get_creative_project_content`：读取单条内容的完整结构化 JSON 和正文文本，用于续写、改写、拆分镜或质检。
 - `update_creative_project_content`：把智能体改写后的标题、正文、结构化 JSON 或锁定状态写回项目，风险等级为 `write`，需要确认。

@@ -245,6 +245,53 @@ async def get_creative_project_content(content_id: str, project_id: str = ""):
 
 
 @register_tool(
+    name="get_creative_production_plan",
+    description="读取创作项目当前的可编辑生产计划；可选返回版本历史，以便导演检查节点依赖、确认状态、素材和画布引用。",
+    category="creative_project",
+    examples=["读取这个项目的导演计划", "查看生产计划的历史版本"],
+    input_schema_note="必须提供 project_id；include_history=true 时返回全部历史版本。",
+    output_schema_note="返回 plan 或 plans；计划节点包含阶段、专业角色、依赖、内容/素材/画布引用、可审计规划摘要和确认点。",
+    risk_level="read",
+    output_type="creative_production_plan",
+)
+async def get_creative_production_plan(project_id: str, include_history: bool = False):
+    with SessionLocal() as session:
+        service = CreativeProjectService(session)
+        result = service.get_production_plan(project_id, include_history=include_history)
+        if include_history:
+            return {"success": True, "plans": [_content_detail(item) for item in result]}
+        return {"success": True, "plan": _content_detail(result) if result else None}
+
+
+@register_tool(
+    name="save_creative_production_plan",
+    description="将导演提出或用户修改后的结构化生产计划保存为新版本。计划只记录可见的执行摘要，不会暴露隐藏推理；保存本身不启动图片、视频或发布等消耗型动作。",
+    category="creative_project",
+    examples=["保存恐怖漫画的生产计划", "基于上一版计划只调整第三页构图节点"],
+    input_schema_note="必须提供 project_id 和 plan_json（有效 JSON 对象）；base_plan_id 可选，用于明确计划来源版本。",
+    output_schema_note="返回新 plan 版本；会校验节点依赖、项目内容、Asset Hub 素材和项目画布的归属。",
+    risk_level="write",
+    output_type="creative_production_plan_saved",
+)
+async def save_creative_production_plan(
+    project_id: str,
+    plan_json: str,
+    base_plan_id: str = "",
+):
+    plan = loads_json(plan_json, fallback=None)
+    if not isinstance(plan, dict):
+        raise ValueError("plan_json 必须是有效 JSON 对象")
+    with SessionLocal() as session:
+        service = CreativeProjectService(session)
+        content = service.save_production_plan(
+            project_id=project_id,
+            plan=plan,
+            base_plan_id=base_plan_id or None,
+        )
+        return {"success": True, "plan": _content_detail(content)}
+
+
+@register_tool(
     name="update_creative_project_content",
     description="写回一条项目内容的标题、正文文本、结构化 JSON 或锁定状态，用于保存智能体改写后的产物。",
     category="creative_project",

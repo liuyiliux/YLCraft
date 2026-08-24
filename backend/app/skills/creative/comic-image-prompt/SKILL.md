@@ -12,6 +12,16 @@ triggers:
   tools: [generate_image_asset, preview_image_generation_request]
 requires_tools: [preview_image_generation_request]
 risk: read
+creative:
+  capability_roles: [visual-director]
+  compatible_project_types: [short_drama, novel, manga, mixed]
+  compatible_genres: ["*"]
+  stages: [visual_plan, storyboard, image_prompt, image]
+  context_contribution: "把剧情目的、镜头、构图、光线、画风、负面约束和参考图用途归纳为可审计的视觉规划摘要。"
+  input_schema: {storyboard: object, character_context: string, reference_asset_ids: array}
+  output_schema: {planning_summary: object, prompt: string, negative_prompt: string}
+  prohibited_mutations: [approved_novel_body, locked_project_bible, confirmed_ledger]
+  auto_apply: false
 ---
 
 # 漫画生图提示词

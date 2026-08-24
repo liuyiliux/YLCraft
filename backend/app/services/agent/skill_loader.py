@@ -318,6 +318,7 @@ class SkillPackageLoader:
         if not isinstance(creative, dict):
             return (f"{path} creative metadata must be an object",)
         required = (
+            "capability_roles",
             "compatible_project_types",
             "compatible_genres",
             "stages",
@@ -330,6 +331,7 @@ class SkillPackageLoader:
         if missing_creative:
             return (f"{path} creative metadata missing fields: {', '.join(missing_creative)}",)
         list_fields = (
+            "capability_roles",
             "compatible_project_types",
             "compatible_genres",
             "stages",
@@ -349,7 +351,7 @@ class SkillPackageLoader:
         if not isinstance(value, dict):
             return {}
         normalized = dict(value)
-        for field in ("compatible_project_types", "compatible_genres", "stages", "prohibited_mutations"):
+        for field in ("capability_roles", "compatible_project_types", "compatible_genres", "stages", "prohibited_mutations"):
             normalized[field] = list(cls._as_str_tuple(normalized.get(field)))
         normalized["context_contribution"] = str(normalized.get("context_contribution") or "").strip()
         normalized["auto_apply"] = bool(normalized.get("auto_apply", False))

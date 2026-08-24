@@ -369,6 +369,16 @@ export interface CreativeProject {
   id: string
   title: string
   project_type: string
+  production_profile?: {
+    id: string
+    label: string
+    description: string
+    project_type: string
+    recommended_stages: string[]
+    optional_stages: string[]
+    default_outputs: string[]
+    constraints: Record<string, any>
+  } | null
   source_type: string
   source_ref: Record<string, any>
   status: string
