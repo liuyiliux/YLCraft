@@ -79,7 +79,7 @@ export default function NoteDetailPanel({ platform, noteId, connId }: NoteDetail
 
   return (
     <Card
-      title="笔记详情（无水印）"
+      title="笔记详情（平台无水印）"
       extra={
         <Space>
           <Button
@@ -109,6 +109,9 @@ export default function NoteDetailPanel({ platform, noteId, connId }: NoteDetail
 
       {detail && (
         <div>
+          <Text type="secondary" style={{ display: 'block', fontSize: 12, marginBottom: 8 }}>
+            此面板用于获取平台原片无水印资源；如需清理 AI 生成标记 / 文件元数据，请用顶部导航「元数据清理」。
+          </Text>
           <Title level={4}>{detail.title}</Title>
           <Paragraph>{detail.desc}</Paragraph>
 

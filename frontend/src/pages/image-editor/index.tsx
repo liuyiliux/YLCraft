@@ -1040,7 +1040,7 @@ export default function ImageEditorPage() {
     { key: 'ascii', label: <span><BarcodeOutlined /> 字符画</span> },
     { key: 'draw', label: <span><EditOutlined /> 画图</span> },
     { key: 'text', label: <span><FontColorsOutlined /> 文字</span> },
-    { key: 'watermark', label: <span><AimOutlined /> 水印</span> },
+    { key: 'watermark', label: <span><AimOutlined /> 视觉水印</span> },
     { key: 'base64', label: <span><CodeOutlined /> Base64</span> },
   ]
 
