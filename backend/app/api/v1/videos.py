@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, Optional
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Depends, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlmodel import select
@@ -28,6 +28,8 @@ from app.db.models.asset_hub import AssetRepresentation, AssetVersion
 from app.db.models.creative_project import CreativeProject, ProjectAssetLink, ProjectContent
 from app.db.models.task import VideoGenerationTask
 from app.core.ffmpeg import get_ffmpeg_service
+from app.core.external_api_auth import optional_external_api_key
+from app.db.models.external_api_key import ExternalApiKey
 from app.services.asset_hub import AssetHubFacade
 from app.services.ai import get_ai_service
 from app.services.ai.types import VideoGenerationRequest
@@ -473,7 +475,7 @@ async def list_backends():
 
 
 @router.post("/generate", response_model=VideoResponse, summary="Generate video with optional project lineage")
-async def generate_video(req: VideoGenerateRequest):
+async def generate_video(req: VideoGenerateRequest, external_key: Optional[ExternalApiKey] = Depends(optional_external_api_key)):
     """
     调用视频生成后端生成视频。
     自动选择默认后端或指定 provider。

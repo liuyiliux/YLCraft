@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
+from app.core.external_api_auth import optional_external_api_key
+from app.db.models.external_api_key import ExternalApiKey
 from app.services.ai import get_ai_service, AIService
 from app.services.ai.types import LLMMessage
 from app.services.platform_log import service as platform_log
@@ -158,7 +160,7 @@ async def list_llm_backends():
 
 
 @router.post("/chat", response_model=ChatResponse, summary="LLM 对话")
-async def chat(req: ChatRequest):
+async def chat(req: ChatRequest, external_key: Optional[ExternalApiKey] = Depends(optional_external_api_key)):
     """
     统一的 LLM 对话接口。
     """
