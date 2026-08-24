@@ -4595,6 +4595,7 @@ export default function StoryPage() {
                       <OutlineTab
                         outline={outline}
                         hasOutline={hasOutline}
+                        productionProfileId={selectedProject?.production_profile?.id}
                         loading={loadingAction === 'outline'}
                         saving={loadingAction === 'outline_save'}
                         syncLoading={loadingAction === 'sync_characters'}
@@ -5422,6 +5423,7 @@ function ProductionStageRail({
 function OutlineTab({
   outline,
   hasOutline,
+  productionProfileId,
   loading,
   saving,
   syncLoading,
@@ -5436,6 +5438,7 @@ function OutlineTab({
 }: {
   outline: StoryOutline
   hasOutline: boolean
+  productionProfileId?: string
   loading: boolean
   saving: boolean
   syncLoading: boolean
@@ -5449,6 +5452,8 @@ function OutlineTab({
   characterColumns: any[]
 }) {
   const [draft, setDraft] = useState<StoryOutline>(outline || {})
+  const lightweightProduction = productionProfileId === 'storybook' || productionProfileId === 'single_shot'
+  const [detailsOpen, setDetailsOpen] = useState(!lightweightProduction)
   const [jsonDraft, setJsonDraft] = useState('')
   const [jsonError, setJsonError] = useState('')
 
@@ -5481,8 +5486,10 @@ function OutlineTab({
     return (
       <Space direction="vertical" size={16} style={{ width: '100%', padding: '24px 0' }}>
         <Alert
-          message="创建故事蓝图"
-          description="可先在下方手动填写故事大纲后保存；AI 生成需要先在设置中配置文本模型。"
+          message={lightweightProduction ? '轻量故事创作' : '创建故事蓝图'}
+          description={lightweightProduction
+            ? '先填标题和一句话创意即可生成，角色、世界观和叙事规则都是可选补充。'
+            : '可先在下方手动填写故事大纲后保存；AI 生成需要先在设置中配置文本模型。'}
           type="info"
           showIcon
         />
@@ -5509,7 +5516,7 @@ function OutlineTab({
                 onClick={onGenerate}
                 disabled={!llmAvailable}
               >
-                生成故事大纲
+                {lightweightProduction ? '生成故事页纲' : '生成故事大纲'}
               </Button>
             </Tooltip>
             <Button type="primary" loading={saving} onClick={() => onSave(draft)}>
@@ -5532,11 +5539,20 @@ function OutlineTab({
           <EditorField label="一句话卖点">
             <Input value={draft.logline} onChange={(event) => updateField('logline', event.target.value)} />
           </EditorField>
-          <EditorField label="目标读者">
-            <Input value={draft.target_reader} onChange={(event) => updateField('target_reader', event.target.value)} />
-          </EditorField>
+          {lightweightProduction ? null : (
+            <EditorField label="目标读者">
+              <Input value={draft.target_reader} onChange={(event) => updateField('target_reader', event.target.value)} />
+            </EditorField>
+          )}
         </div>
 
+        {lightweightProduction ? (
+          <Button type="link" onClick={() => setDetailsOpen((open) => !open)}>
+            {detailsOpen ? '收起详细设定' : '补充详细设定（可选）'}
+          </Button>
+        ) : null}
+
+        {(!lightweightProduction || detailsOpen) ? <>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
           <EditorField label="核心前提">
             <TextArea value={draft.premise} onChange={(event) => updateField('premise', event.target.value)} autoSize={{ minRows: 4, maxRows: 9 }} />
@@ -5583,6 +5599,7 @@ function OutlineTab({
             </EditorField>
           </div>
         </WorkbenchSection>
+        </> : null}
       </Space>
     )
   }
