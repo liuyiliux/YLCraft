@@ -15,7 +15,10 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Depends, Query
+
+from app.core.external_api_auth import optional_external_api_key
+from app.db.models.external_api_key import ExternalApiKey
 from pydantic import BaseModel
 
 from app.services.platform_log import service as platform_log
@@ -84,6 +87,7 @@ async def list_logs(
     until: Optional[float] = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
+    external_key: Optional[ExternalApiKey] = Depends(optional_external_api_key),
 ):
     items, total = await platform_log.list_events(
         scene=scene,

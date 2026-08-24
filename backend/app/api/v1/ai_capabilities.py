@@ -7,9 +7,12 @@ YLCraft — AI 能力中心
 from __future__ import annotations
 
 import json
-from typing import Any, Literal
+from typing import Any, Literal, Optional
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
+
+from app.core.external_api_auth import optional_external_api_key
+from app.db.models.external_api_key import ExternalApiKey
 from pydantic import BaseModel
 from sqlalchemy import String, cast
 
@@ -136,6 +139,7 @@ def _to_capability(conn: AIConnector) -> AICapability:
 async def list_ai_capabilities(
     type: CapabilityType | None = Query(default=None, description="能力类型：llm/image/video/tts/stt/embedding"),
     available_only: bool = Query(default=False, description="只返回已启用、已配置 Key、已配置模型的能力"),
+    external_key: Optional[ExternalApiKey] = Depends(optional_external_api_key),
 ):
     with SessionLocal() as session:
         query = session.query(AIConnector)

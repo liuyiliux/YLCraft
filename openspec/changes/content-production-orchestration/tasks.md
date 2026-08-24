@@ -45,5 +45,5 @@
 - [x] 22. 固化素材中枢上传契约：外部 Agent 可通过 `POST /api/v1/assets/upload` 上传图片、视频、音频、文本和 3D 文件，并获得稳定资产 ID。
 - [x] 23. 固化生成与任务契约：外部 Agent 可调用图片/视频/3D/文本生成接口，通过任务详情、事件日志和素材血缘查询结果。
 - [x] 24. 为项目上下文建立统一字段：`project_id`、`content_id`、`production_profile`、`source_type`、`source_index` 和 `source_title`。
-- [ ] 25. 增加外部 Agent API 的鉴权、作用域、速率限制和消耗型操作确认策略；未完成前不把开发 CORS 直接视为公网安全方案。（已落地：平台级 `ExternalApiKey`（迁移 020）+ `/api/v1/external-api-keys` 管理、Bearer 校验（key_hash/active/scope）+ 每 key 滑动窗口限流，并挂到 `/images/generate`、`/videos/generate`、`/llm/chat`、`/model-3d/generate`、`/assets/upload`，支持强制开关 `YLCRAFT_EXTERNAL_API_REQUIRE_KEY=1`；待：每 key 消耗配额确认与读接口（tasks/logs/assets/{id}/capabilities）推广）
+- [ ] 25. 增加外部 Agent API 的鉴权、作用域、速率限制和消耗型操作确认策略；未完成前不把开发 CORS 直接视为公网安全方案。（已落地：平台级 `ExternalApiKey`（迁移 020）+ `/api/v1/external-api-keys` 管理（含 `quota` 次数配额，迁移 021）、Bearer 校验（key_hash/active/scope）+ 每 key 滑动窗口限流 + generate scope 消耗配额（quota_used 递增、超限 403）+ 强制开关 `YLCRAFT_EXTERNAL_API_REQUIRE_KEY=1`，覆盖 `/images/generate`、`/videos/generate`、`/llm/chat`、`/model-3d/generate`、`/assets/upload`、`/assets/{id}`、`/logs`、`/ai/capabilities`；待：`/tasks/{task_id}` 等剩余读接口与公开文档示例）
 - [x] 26. 提供外部 Agent API 示例和 OpenAPI 使用说明，覆盖“查询模型 → 上传图片 → 生图/生视频 → 轮询任务 → 读取素材”的完整闭环。
