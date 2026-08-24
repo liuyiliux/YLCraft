@@ -219,6 +219,7 @@
 | `GET` | `/api/v1/assets/{asset_id}/download` | 下载资产文件 | `download_asset` | `backend/app/api/v1/assets.py:814` |
 | `GET` | `/api/v1/assets/{asset_id}/files/{filename:path}` | 下载/预览资产的配套文件 | `asset_sidecar_file` | `backend/app/api/v1/assets.py:831` |
 | `POST` | `/api/v1/assets/{asset_id}/provenance-clean` | 审计或清理 AI 来源标记与文件元数据 | `clean_asset_provenance` | `backend/app/api/v1/assets.py:859` |
+| `POST` | `/api/v1/assets/{asset_id}/deep-watermark-detect` | 只读检测合成水印痕迹（CtrlRegen/SynthID，不修改文件） | `detect_asset_deep_watermark` | `backend/app/api/v1/assets.py:926` |
 | `POST` | `/api/v1/assets/{asset_id}/restore` | 恢复软删除的资产 | `restore_asset` | `backend/app/api/v1/assets.py:1515` |
 | `GET` | `/api/v1/assets/{asset_id}/sidecars/danmaku` | 读取资产弹幕 | `get_asset_danmaku` | `backend/app/api/v1/assets.py:1221` |
 | `GET` | `/api/v1/assets/{asset_id}/sidecars/subtitles/{subtitle_index}.vtt` | 读取资产字幕 | `get_asset_subtitle` | `backend/app/api/v1/assets.py:1208` |
