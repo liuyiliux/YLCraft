@@ -11,6 +11,8 @@ from typing import Any
 
 TEXT_SUFFIXES = {".txt", ".md", ".json", ".csv", ".html", ".htm", ".xml", ".svg"}
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}
+VIDEO_SUFFIXES = {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"}
+AUDIO_SUFFIXES = {".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg", ".opus"}
 _INVISIBLE_RE = re.compile("[\\u200b\\u200c\\u200d\\ufeff\\u2060\\u2066\\u2067\\u2068\\u2069]")
 _BIDI_RE = re.compile("[\\u202a-\\u202e\\u2066-\\u2069]")
 
@@ -57,6 +59,11 @@ def inspect_file(path: str | Path, mime_type: str = "") -> ProvenanceReport:
         except Exception as exc:
             return ProvenanceReport(False, "image", [], 0, 0, False, [f"图片元数据读取失败：{exc}"])
 
+    if suffix in VIDEO_SUFFIXES or guessed.startswith("video/"):
+        return ProvenanceReport(True, "video", ["container-metadata"], 0, 0, True, ["视频可用 ffmpeg 去除容器元数据并生成清理副本。"])
+    if suffix in AUDIO_SUFFIXES or guessed.startswith("audio/"):
+        return ProvenanceReport(True, "audio", ["container-metadata"], 0, 0, True, ["音频可用 ffmpeg 去除容器元数据并生成清理副本。"])
+
     return ProvenanceReport(False, "file", [], 0, 0, False, ["当前格式暂只支持审计，不会伪装成已清理。"])
 
 
@@ -72,6 +79,25 @@ def clean_file(source_path: str | Path, target_path: str | Path) -> ProvenanceRe
     if report.media_kind == "text":
         content = source.read_text(encoding="utf-8", errors="replace")
         target.write_text(_BIDI_RE.sub("", _INVISIBLE_RE.sub("", content)), encoding="utf-8")
+        return inspect_file(target)
+
+    if report.media_kind in {"video", "audio"}:
+        import subprocess
+
+        ffmpeg = shutil.which("ffmpeg")
+        if not ffmpeg:
+            shutil.copy2(source, target)
+            return ProvenanceReport(False, report.media_kind, [], 0, 0, False, ["未找到 ffmpeg，无法清理容器元数据。"])
+        try:
+            subprocess.run(
+                [ffmpeg, "-y", "-i", str(source), "-map_metadata", "-1", "-c", "copy", str(target)],
+                check=True,
+                capture_output=True,
+            )
+        except subprocess.CalledProcessError as exc:
+            shutil.copy2(source, target)
+            detail = (exc.stderr or b"").decode("utf-8", errors="replace")[-300:]
+            return ProvenanceReport(False, report.media_kind, [], 0, 0, False, [f"ffmpeg 清理失败：{detail}"])
         return inspect_file(target)
 
     from PIL import Image
