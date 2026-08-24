@@ -40,12 +40,29 @@ def test_image_metadata_is_removed_without_overwriting_source(tmp_path: Path):
 
 
 def test_unsupported_format_is_audit_only(tmp_path: Path):
-    source = tmp_path / "clip.mp4"
-    target = tmp_path / "clip-cleaned.mp4"
-    source.write_bytes(b"not a real video")
+    source = tmp_path / "clip.xyz"
+    target = tmp_path / "clip-cleaned.xyz"
+    source.write_bytes(b"opaque bytes")
 
-    report = inspect_file(source, "video/mp4")
+    report = inspect_file(source, "application/x-unknown")
     assert report.supported is False
     cleaned = clean_file(source, target)
     assert target.read_bytes() == source.read_bytes()
     assert cleaned.cleanable is False
+
+
+def test_video_audio_are_recognized_for_cleaning(tmp_path: Path):
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"fake")
+    audio = tmp_path / "track.mp3"
+    audio.write_bytes(b"fake")
+
+    video_report = inspect_file(video, "video/mp4")
+    assert video_report.supported is True
+    assert video_report.media_kind == "video"
+    assert video_report.cleanable is True
+
+    audio_report = inspect_file(audio, "audio/mpeg")
+    assert audio_report.supported is True
+    assert audio_report.media_kind == "audio"
+    assert audio_report.cleanable is True

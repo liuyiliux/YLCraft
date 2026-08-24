@@ -394,3 +394,18 @@ frontend/src/
 | `frontend/public/models/ue-mannequin.glb` | Sketchfab（作者 William Luque，经 storyai 仓库） | Sketchfab Standard | 可商用、保留署名、不得单独打包转售/再分发；许可见 `frontend/public/models/LICENSE-UE-MANNEQUIN.txt` |
 | `frontend/public/models/vanguard.glb` | open-storyboard-canvas（MIT 二开 Storyboard-Copilot） | MIT | 可自由使用，保留上游署名（henjicc）；许可见 `frontend/public/models/LICENSE-VANGUARD.txt` |
 | 胶囊人（程序化） | storyai ProceduralMannequin 思路自写 | 无外部依赖 | 可摆姿势，无版权风险 |
+
+***
+
+## 内容生产与去水印参考（另一条线落地）
+
+### libtv — 短剧生产平台
+
+内容生产方案（`production_profile`）与导演 Agent 编排的交互参考：阶段化生产流程、平台适配、多角色导演编排。仅借鉴产品形态与工作流，不复制实现。
+
+### guillaumemeyer/watermarks-remover
+
+**GitHub**: <https://github.com/guillaumemeyer/watermarks-remover>\
+**许可**: MIT（v0.5.0，本地服务边界见 `docs/reference/watermarks-remover.md`）
+
+AI 水印/元数据去除的开源参考。YLCraft 采用内部适配器 `remove-ai-marks` + `asset_provenance` 服务，借鉴其"扫描 → 预览 → 生成清理副本 → 回滚"交互，不依赖其推理模型；清理动作非破坏式（原文件不覆盖，派生资产 `derived_from` 回指）。
