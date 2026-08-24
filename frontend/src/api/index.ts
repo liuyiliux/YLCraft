@@ -92,6 +92,9 @@ export const listAssets = (params?: Record<string, any>) => {
 
 export const getAsset = (id: string) => request(`/assets/${id}`)
 
+export const cleanAssetProvenance = (id: string, data: { confirm?: boolean; authorized_source?: string } = {}) =>
+  request(`/assets/${id}/provenance-clean`, { method: 'POST', body: JSON.stringify(data) })
+
 export const updateAsset = (id: string, data: any) =>
   request(`/assets/${id}`, { method: 'PUT', body: JSON.stringify(data) })
 

@@ -22,6 +22,7 @@ import {
   KeyOutlined,
   VideoCameraOutlined,
   TeamOutlined,
+  SafetyCertificateOutlined,
 } from '@ant-design/icons'
 
 const { Content, Header } = Layout
@@ -47,6 +48,7 @@ const MAIN_NAV: MenuProps['items'] = [
   { key: '/previs', icon: <VideoCameraOutlined />, label: '3D 预演' },
   { key: '/canvas', icon: <BranchesOutlined />, label: '创作画布' },
   { key: '/assets', icon: <FolderOpenOutlined />, label: '素材库' },
+  { key: '/provenance-clean', icon: <SafetyCertificateOutlined />, label: '元数据清理' },
   { key: '/download', icon: <SearchOutlined />, label: '下载' },
   { key: '/novel-bookshelf', icon: <ReadOutlined />, label: '小说' },
   { key: '/image-gen', icon: <PictureOutlined />, label: 'AI 图片' },
