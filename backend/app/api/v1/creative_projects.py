@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 import re
+import time
 import zipfile
 from datetime import datetime
 from typing import Any
@@ -30,15 +31,80 @@ from app.services.creative_project.service import (
     normalize_chapter_plan,
     repair_utf8_mojibake,
 )
+from app.services.creative_project.profiles import CONTENT_PRODUCTION_PROFILES
+from app.services.creative_project.schemas import ProductionPlanSchema
 from app.services.creative_project.narrative_runtime import ChapterAftermathPipeline, NarrativeReviewService
+from app.core.task_queue import TaskStatus, get_task_queue
+from app.services.platform_log import service as platform_log
 
 router = APIRouter()
+
+
+async def _run_creative_task(task_type: str, payload: dict[str, Any], operation):
+    """Record synchronous creative generation in the shared task center."""
+    queue = get_task_queue()
+    task = await queue.create_task(task_type, payload)
+    await queue.update_progress(task.task_id, 5, f"开始{payload.get('stage_label') or '创作请求'}")
+    try:
+        result = await operation()
+        tracked = await queue.get_task(task.task_id)
+        if tracked:
+            tracked.status = TaskStatus.DONE
+            tracked.progress = 100
+            tracked.progress_message = f"{payload.get('stage_label') or '创作请求'}完成"
+            if isinstance(result, dict):
+                tracked.result = result
+            elif hasattr(result, "model_dump"):
+                tracked.result = result.model_dump()
+            elif hasattr(result, "dict"):
+                tracked.result = result.dict()
+            else:
+                tracked.result = {"value": str(result)}
+            tracked.completed_at = time.time()
+            await queue.update_task(tracked)
+        await platform_log.record_event(
+            scene="writing",
+            task_type=task_type,
+            task_id=task.task_id,
+            level="info",
+            status="success",
+            provider=str(payload.get("provider") or ""),
+            model=str(payload.get("model") or ""),
+            message=f"{payload.get('stage_label') or '创作请求'}完成",
+            request=payload,
+            response={"result_type": type(result).__name__},
+            project_id=str(payload.get("project_id") or "") or None,
+        )
+        return result
+    except Exception as exc:
+        tracked = await queue.get_task(task.task_id)
+        if tracked:
+            tracked.status = TaskStatus.FAILED
+            tracked.progress_message = f"{payload.get('stage_label') or '创作请求'}失败"
+            tracked.error = str(exc)
+            tracked.completed_at = time.time()
+            await queue.update_task(tracked)
+        await platform_log.record_event(
+            scene="writing",
+            task_type=task_type,
+            task_id=task.task_id,
+            level="error",
+            status="failed",
+            provider=str(payload.get("provider") or ""),
+            model=str(payload.get("model") or ""),
+            message=f"{payload.get('stage_label') or '创作请求'}失败",
+            error=str(exc),
+            request=payload,
+            project_id=str(payload.get("project_id") or "") or None,
+        )
+        raise
 
 
 class CreativeProjectCreateRequest(BaseModel):
     title: str = ""
     idea: str = ""
     project_type: str = "short_drama"
+    production_profile: str | None = None
     source_type: str = "original_idea"
     source_ref: dict[str, Any] = Field(default_factory=dict)
     settings: dict[str, Any] = Field(default_factory=dict)
@@ -141,6 +207,7 @@ class CreateFromNovelRequest(BaseModel):
     chapter_indices: list[int] = Field(default_factory=list)
     title: str = ""
     project_type: str = "short_drama"
+    production_profile: str | None = None
 
 
 class ProjectAssetLinkRequest(BaseModel):
@@ -156,6 +223,13 @@ class ProjectContentUpdateRequest(BaseModel):
     data: dict[str, Any] | None = None
     text_content: str | None = None
     is_locked: bool | None = None
+
+
+class ProductionPlanSaveRequest(BaseModel):
+    """Append an editable production-plan revision for the current project."""
+
+    plan: ProductionPlanSchema
+    base_plan_id: str | None = None
 
 
 class NarrativeAftermathRequest(BaseModel):
@@ -451,6 +525,7 @@ def create_project(
         source_ref=req.source_ref,
         settings=req.settings,
         metadata=req.metadata,
+        production_profile=req.production_profile,
     )
     return {"success": True, "data": serialize_project(project)}
 
@@ -467,6 +542,7 @@ def create_from_novel(
             chapter_indices=req.chapter_indices,
             title=req.title,
             project_type=req.project_type,
+            production_profile=req.production_profile,
         )
         return {"success": True, "data": serialize_project(project)}
     except ValueError as e:
@@ -482,6 +558,38 @@ def get_project(
     if not project:
         raise HTTPException(status_code=404, detail="创作项目不存在")
     return {"success": True, "data": serialize_project(project)}
+
+
+@router.get("/{project_id}/production-plan", summary="读取创作导演生产计划")
+def get_production_plan(
+    project_id: str,
+    include_history: bool = False,
+    svc: CreativeProjectService = Depends(service),
+):
+    try:
+        result = svc.get_production_plan(project_id, include_history=include_history)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    if include_history:
+        return {"success": True, "data": [serialize_content(item) for item in result]}
+    return {"success": True, "data": serialize_content(result) if result else None}
+
+
+@router.put("/{project_id}/production-plan", summary="保存创作导演生产计划新版本")
+def save_production_plan(
+    project_id: str,
+    req: ProductionPlanSaveRequest,
+    svc: CreativeProjectService = Depends(service),
+):
+    try:
+        content = svc.save_production_plan(
+            project_id=project_id,
+            plan=req.plan,
+            base_plan_id=req.base_plan_id,
+        )
+        return {"success": True, "data": serialize_content(content)}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.get("/{project_id}/narrative/health", summary="检查小说叙事数据健康状态")
@@ -797,12 +905,10 @@ async def generate_outline(
     svc: CreativeProjectService = Depends(service),
 ):
     try:
-        data = await svc.generate_outline(
-            project_id,
-            idea=req.idea,
-            provider=req.provider,
-            model=req.model,
-            template_id=req.template_id,
+        data = await _run_creative_task(
+            "creative_writing",
+            {"project_id": project_id, "stage": "outline", "stage_label": "生成故事大纲"},
+            lambda: svc.generate_outline(project_id, idea=req.idea, provider=req.provider, model=req.model, template_id=req.template_id),
         )
         project = svc.get_project(project_id)
         return {"success": True, "data": data, "project": serialize_project(project) if project else None}
@@ -817,13 +923,10 @@ async def generate_chapter_plan(
     svc: CreativeProjectService = Depends(service),
 ):
     try:
-        data = await svc.generate_chapter_plan(
-            project_id,
-            chapter_count=req.chapter_count,
-            append_existing=req.append_existing,
-            provider=req.provider,
-            model=req.model,
-            template_id=req.template_id,
+        data = await _run_creative_task(
+            "creative_writing",
+            {"project_id": project_id, "stage": "chapter_plan", "stage_label": "生成章节规划", "chapter_count": req.chapter_count},
+            lambda: svc.generate_chapter_plan(project_id, chapter_count=req.chapter_count, append_existing=req.append_existing, provider=req.provider, model=req.model, template_id=req.template_id),
         )
         project = svc.get_project(project_id)
         return {"success": True, "data": data, "project": serialize_project(project) if project else None}
@@ -865,12 +968,10 @@ async def generate_script(
     svc: CreativeProjectService = Depends(service),
 ):
     try:
-        data = await svc.generate_script(
-            project_id,
-            chapter_number=req.chapter_number,
-            provider=req.provider,
-            model=req.model,
-            template_id=req.template_id,
+        data = await _run_creative_task(
+            "creative_writing",
+            {"project_id": project_id, "stage": "script", "stage_label": "生成短剧脚本", "chapter_number": req.chapter_number},
+            lambda: svc.generate_script(project_id, chapter_number=req.chapter_number, provider=req.provider, model=req.model, template_id=req.template_id),
         )
         return {"success": True, "data": data}
     except ValueError as e:
@@ -884,12 +985,10 @@ async def generate_chapter_outline(
     svc: CreativeProjectService = Depends(service),
 ):
     try:
-        data = await svc.generate_chapter_outline(
-            project_id,
-            chapter_number=req.chapter_number,
-            provider=req.provider,
-            model=req.model,
-            template_id=req.template_id,
+        data = await _run_creative_task(
+            "creative_writing",
+            {"project_id": project_id, "stage": "chapter_outline", "stage_label": "生成单话细纲", "chapter_number": req.chapter_number},
+            lambda: svc.generate_chapter_outline(project_id, chapter_number=req.chapter_number, provider=req.provider, model=req.model, template_id=req.template_id),
         )
         project = svc.get_project(project_id)
         return {"success": True, "data": data, "project": serialize_project(project) if project else None}
@@ -904,13 +1003,10 @@ async def generate_novel_body(
     svc: CreativeProjectService = Depends(service),
 ):
     try:
-        data = await svc.generate_novel_body(
-            project_id,
-            chapter_number=req.chapter_number,
-            content_id=req.content_id,
-            provider=req.provider,
-            model=req.model,
-            template_id=req.template_id,
+        data = await _run_creative_task(
+            "creative_writing",
+            {"project_id": project_id, "stage": "novel_body", "stage_label": "生成正文", "chapter_number": req.chapter_number, "content_id": req.content_id or ""},
+            lambda: svc.generate_novel_body(project_id, chapter_number=req.chapter_number, content_id=req.content_id, provider=req.provider, model=req.model, template_id=req.template_id),
         )
         project = svc.get_project(project_id)
         return {"success": True, "data": data, "project": serialize_project(project) if project else None}
@@ -925,13 +1021,10 @@ async def refine_novel_body(
     svc: CreativeProjectService = Depends(service),
 ):
     try:
-        content = await svc.refine_novel_body(
-            project_id=project_id,
-            content_id=req.content_id,
-            instruction=req.instruction,
-            provider=req.provider,
-            model=req.model,
-            template_id=req.template_id,
+        content = await _run_creative_task(
+            "creative_writing",
+            {"project_id": project_id, "stage": "novel_body_refine", "stage_label": "正文润色", "content_id": req.content_id},
+            lambda: svc.refine_novel_body(project_id=project_id, content_id=req.content_id, instruction=req.instruction, provider=req.provider, model=req.model, template_id=req.template_id),
         )
         return {"success": True, "data": serialize_content(content)}
     except ValueError as e:
@@ -946,17 +1039,10 @@ async def run_writer_room_step(
     svc: CreativeProjectService = Depends(service),
 ):
     try:
-        content = await svc.run_writer_room_step(
-            project_id,
-            step=step,
-            chapter_number=req.chapter_number,
-            content_id=req.content_id,
-            instruction=req.instruction,
-            selected_text=req.selected_text,
-            provider=req.provider,
-            model=req.model,
-            template_id=req.template_id,
-            rehearsal_mode=req.rehearsal_mode,
+        content = await _run_creative_task(
+            "creative_writing",
+            {"project_id": project_id, "stage": f"writer_room:{step}", "stage_label": f"Writer Room · {step}", "chapter_number": req.chapter_number, "content_id": req.content_id or ""},
+            lambda: svc.run_writer_room_step(project_id, step=step, chapter_number=req.chapter_number, content_id=req.content_id, instruction=req.instruction, selected_text=req.selected_text, provider=req.provider, model=req.model, template_id=req.template_id, rehearsal_mode=req.rehearsal_mode),
         )
         return {"success": True, "data": serialize_content(content)}
     except ValueError as e:
@@ -970,18 +1056,10 @@ async def run_writer_room(
     svc: CreativeProjectService = Depends(service),
 ):
     try:
-        data = await svc.run_writer_room(
-            project_id,
-            steps=req.steps,
-            chapter_number=req.chapter_number,
-            content_id=req.content_id,
-            instruction=req.instruction,
-            selected_text=req.selected_text,
-            provider=req.provider,
-            model=req.model,
-            template_id=req.template_id,
-            rehearsal_mode=req.rehearsal_mode,
-            continue_on_error=req.continue_on_error,
+        data = await _run_creative_task(
+            "creative_writing",
+            {"project_id": project_id, "stage": "writer_room_run", "stage_label": "Writer Room 批量运行", "chapter_number": req.chapter_number, "steps": req.steps},
+            lambda: svc.run_writer_room(project_id, steps=req.steps, chapter_number=req.chapter_number, content_id=req.content_id, instruction=req.instruction, selected_text=req.selected_text, provider=req.provider, model=req.model, template_id=req.template_id, rehearsal_mode=req.rehearsal_mode, continue_on_error=req.continue_on_error),
         )
         generated_ids = [
             str(item.get("content_id"))
@@ -1298,6 +1376,9 @@ def save_canvas(
 def serialize_project(project: CreativeProject | None) -> dict[str, Any] | None:
     if project is None:
         return None
+    settings = loads_json(project.settings_json)
+    profile_id = settings.get("production_profile")
+    profile = CONTENT_PRODUCTION_PROFILES.get(profile_id) if profile_id else None
     return {
         "id": project.id,
         "title": repair_utf8_mojibake(project.title),
@@ -1308,7 +1389,8 @@ def serialize_project(project: CreativeProject | None) -> dict[str, Any] | None:
         "current_stage": project.current_stage,
         "outline": loads_json(project.outline_json),
         "chapter_plan": normalize_chapter_plan(loads_json(project.chapter_plan_json)),
-        "settings": loads_json(project.settings_json),
+        "settings": settings,
+        "production_profile": profile,
         "metadata": loads_json(project.metadata_json),
         "created_at": project.created_at.isoformat() if project.created_at else None,
         "updated_at": project.updated_at.isoformat() if project.updated_at else None,

@@ -301,7 +301,21 @@ class MemoryManager:
                 total_est_tokens += line_tokens
 
         # L3：技能索引。即使尚未高频使用，也要让智能体知道已有能力。
+        # Profile 明确声明的默认 Skill 必须稳定出现在索引前部，避免新增内置
+        # Skill 后仅因 token 截断就丢失关键能力（例如 reference_match）。
         skills = await self.list_skills()
+        selected_skills = await self.get_skills_by_ids_or_names(default_skill_ids or [])
+        selected_names = {skill.name for skill in selected_skills}
+        # These foundational capabilities are part of the default agent contract
+        # and should remain discoverable even for profiles without explicit defaults.
+        priority_names = selected_names | {"reference_match"}
+        priority_skills = [skill for skill in skills if skill.name in priority_names]
+        if priority_skills:
+            skills = [
+                *[skill for skill in selected_skills if skill in skills],
+                *[skill for skill in priority_skills if skill.name not in selected_names],
+                *[skill for skill in skills if skill.name not in priority_names],
+            ]
         if skills:
             header = "\n## 可用 Skill 索引（长期记忆）"
             parts.append(header)
@@ -314,7 +328,6 @@ class MemoryManager:
                 parts.append(line)
                 total_est_tokens += estimate_tokens(line)
 
-        selected_skills = await self.get_skills_by_ids_or_names(default_skill_ids or [])
         if selected_skills:
             header = "\n## 默认 Skill 工作方法"
             parts.append(header)

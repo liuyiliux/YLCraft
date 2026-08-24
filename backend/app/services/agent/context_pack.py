@@ -9,6 +9,7 @@ from sqlmodel import select
 from app.db.database import SessionLocal
 from app.db.models.character import Character, CharacterStoryLink
 from app.db.models.creative_project import ProjectContent, ProjectGenerationLog
+from app.services.creative_project.profiles import CONTENT_PRODUCTION_PROFILES
 from app.services.creative_project.service import CreativeProjectService, loads_json
 
 
@@ -35,6 +36,69 @@ def _content_brief(content: ProjectContent) -> dict[str, Any]:
         "version": content.version,
         "is_locked": content.is_locked,
         "summary": data.get("summary") or data.get("title") or text[:180],
+        "updated_at": content.updated_at.isoformat() if content.updated_at else None,
+    }
+
+
+def _production_plan_brief(content: ProjectContent | None) -> dict[str, Any] | None:
+    """Return the business-visible director plan state for an Agent context.
+
+    A production plan is deliberately not a scratchpad for hidden model
+    reasoning.  The context therefore carries only the user-editable plan
+    fields and bounded node summaries needed to decide the next safe action.
+    """
+    if content is None:
+        return None
+
+    data = loads_json(content.data_json)
+    nodes = list(data.get("nodes") or [])
+    confirmation_nodes = []
+    for node in nodes:
+        if not isinstance(node, dict) or not node.get("requires_confirmation"):
+            continue
+        confirmation_nodes.append(
+            {
+                "id": str(node.get("id") or ""),
+                "label": str(node.get("label") or ""),
+                "stage": str(node.get("stage") or ""),
+                "status": str(node.get("status") or "planned"),
+            }
+        )
+
+    return {
+        "content_id": content.id,
+        "version": content.version,
+        "source_plan_id": data.get("source_plan_id") or content.source_content_id or "",
+        "title": content.title,
+        "goal": (data.get("goal") or content.text_content or "")[:400],
+        "production_profile": data.get("production_profile") or "",
+        "status": data.get("status") or "draft",
+        "confirmation_status": data.get("confirmation_status") or "pending",
+        "canvas_document_id": data.get("canvas_document_id") or "",
+        "asset_ids": list(data.get("asset_ids") or [])[:24],
+        "node_count": len(nodes),
+        "confirmation_nodes": confirmation_nodes[:24],
+        "nodes": [
+            {
+                "id": str(node.get("id") or ""),
+                "stage": str(node.get("stage") or ""),
+                "label": str(node.get("label") or ""),
+                "specialist_role": str(node.get("specialist_role") or ""),
+                "status": str(node.get("status") or "planned"),
+                "depends_on": list(node.get("depends_on") or []),
+                "input_content_ids": list(node.get("input_content_ids") or []),
+                "input_asset_ids": list(node.get("input_asset_ids") or []),
+                "output_content_ids": list(node.get("output_content_ids") or []),
+                "output_asset_ids": list(node.get("output_asset_ids") or []),
+                "provider": str(node.get("provider") or ""),
+                "model": str(node.get("model") or ""),
+                "requires_confirmation": bool(node.get("requires_confirmation", True)),
+                "rerun_scope": str(node.get("rerun_scope") or "node"),
+                "planning_summary": node.get("planning_summary") if isinstance(node.get("planning_summary"), dict) else {},
+            }
+            for node in nodes[:48]
+            if isinstance(node, dict)
+        ],
         "updated_at": content.updated_at.isoformat() if content.updated_at else None,
     }
 
@@ -114,7 +178,11 @@ def build_creative_project_context_pack(
 
         outline = loads_json(project.outline_json)
         chapter_plan = loads_json(project.chapter_plan_json)
+        settings = loads_json(project.settings_json)
+        profile_id = str(settings.get("production_profile") or "")
+        profile = CONTENT_PRODUCTION_PROFILES.get(profile_id) or {}
         contents = service.list_contents(project_id)
+        production_plan = service.get_production_plan(project_id)
         assets = service.list_asset_links(project_id)
         logs, _ = service.list_generation_logs(project_id, limit=8)
 
@@ -140,11 +208,18 @@ def build_creative_project_context_pack(
                 "project_type": project.project_type,
                 "status": project.status,
                 "current_stage": project.current_stage,
+                "production_profile": {
+                    "id": profile_id,
+                    "label": profile.get("label") or "",
+                    "recommended_stages": list(profile.get("recommended_stages") or []),
+                    "optional_stages": list(profile.get("optional_stages") or []),
+                },
                 "outline_title": outline.get("title") or "",
                 "logline": outline.get("logline") or "",
                 "chapter_count": chapter_plan.get("chapter_count") or len(chapter_plan.get("chapters") or []),
             },
             "chapter_number": chapter_number,
+            "production_plan": _production_plan_brief(production_plan),
             "chapter_status": _chapter_status(contents),
             "latest_contents": list(latest_by_type.values())[:content_limit],
             "focused_contents": [_content_brief(item) for item in filtered_contents[:content_limit]],

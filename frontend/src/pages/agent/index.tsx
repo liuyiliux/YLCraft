@@ -1869,6 +1869,86 @@ function AgentPageContent() {
     }
   }
 
+  const renderProductionPlanResult = (toolName: string, value: unknown) => {
+    if (
+      !['run_creative_production_plan', 'analyze_creative_production_plan_impact'].includes(toolName)
+      || !value
+      || typeof value !== 'object'
+    ) return null
+
+    const payload = value as Record<string, any>
+    const plan = payload.production_plan as Record<string, any> | undefined
+    const nodes = Array.isArray(payload.selected_nodes)
+      ? payload.selected_nodes
+      : Array.isArray(payload.affected_nodes)
+        ? payload.affected_nodes
+        : []
+    if (!plan && nodes.length === 0) return null
+
+    const renderIds = (label: string, ids: unknown, color?: string) => {
+      const values = Array.isArray(ids) ? ids.filter(Boolean).map(String) : []
+      if (!values.length) return null
+      return (
+        <Space wrap size={[4, 4]}>
+          <Text type="secondary" style={{ fontSize: 12 }}>{label}</Text>
+          {values.map(id => <Tag key={`${label}-${id}`} color={color}>{id}</Tag>)}
+        </Space>
+      )
+    }
+
+    return (
+      <div
+        style={{
+          display: 'grid',
+          gap: 10,
+          padding: 12,
+          border: `1px solid ${THEME.primaryAlpha?.(0.28) || THEME.borderLight}`,
+          borderRadius: 8,
+          background: THEME.bgElevated,
+        }}
+      >
+        <Space wrap size={[6, 6]}>
+          <Text strong>{toolName === 'analyze_creative_production_plan_impact' ? '局部重跑影响分析' : '生产计划执行'}</Text>
+          {plan?.title && <Tag color="blue">{plan.title}</Tag>}
+          {plan?.version && <Tag>版本 {plan.version}</Tag>}
+          {plan?.status && <Tag color="processing">{plan.status}</Tag>}
+        </Space>
+        {plan?.goal && <Text type="secondary" style={{ fontSize: 12 }}>{plan.goal}</Text>}
+        {payload.rerun_hint && <Alert type="info" showIcon message="局部重跑" description={String(payload.rerun_hint)} />}
+        {nodes.map((node: Record<string, any>) => (
+          <div
+            key={node.id || node.node_id}
+            style={{ borderTop: `1px solid ${THEME.borderLight}`, paddingTop: 10, display: 'grid', gap: 7 }}
+          >
+            <Space wrap size={[5, 5]}>
+              <Text strong>{node.label || node.id || node.node_id}</Text>
+              {node.stage && <Tag color="cyan">{node.stage}</Tag>}
+              {node.specialist_role && <Tag>{node.specialist_role}</Tag>}
+              {node.status && <Tag color="processing">{node.status}</Tag>}
+              {node.reason && <Tag color={node.reason === 'changed' ? 'gold' : 'orange'}>{node.reason === 'changed' ? '直接变更' : `受 ${node.reason.replace('depends_on:', '')} 影响`}</Tag>}
+              {node.requires_confirmation && <Tag color="gold">生成前需确认</Tag>}
+            </Space>
+            {renderIds('输入内容', node.input_content_ids)}
+            {renderIds('参考素材', node.input_asset_ids, 'purple')}
+            {(node.provider || node.model) && (
+              <Text type="secondary" style={{ fontSize: 12 }}>模型：{node.provider || '-'} {node.model || ''}</Text>
+            )}
+            {node.planning_summary && Object.keys(node.planning_summary).length > 0 && (
+              <div style={{ padding: '8px 10px', borderRadius: 6, background: THEME.bgPage }}>
+                <Text type="secondary" style={{ fontSize: 12 }}>可审计规划摘要</Text>
+                <pre style={{ margin: '5px 0 0', whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: THEME.textPrimary, fontSize: 12 }}>
+                  {JSON.stringify(node.planning_summary, null, 2)}
+                </pre>
+              </div>
+            )}
+            {renderIds('输出内容', node.output_content_ids, 'green')}
+            {renderIds('输出素材', node.output_asset_ids, 'green')}
+          </div>
+        ))}
+      </div>
+    )
+  }
+
   const renderToolResult = (item: AgentToolCallResult, index: number) => (
     <div
       key={`${item.name || item.tool_name}-${index}`}
@@ -1894,6 +1974,7 @@ function AgentPageContent() {
         <Text style={{ color: item.success ? THEME.textPrimary : '#ff4d4f' }}>
           {item.error || summarizeToolResult(item.result)}
         </Text>
+        {renderProductionPlanResult(item.tool_name || item.name, item.result)}
         {item.result !== undefined && (
           <details>
             <summary style={{ cursor: 'pointer', color: THEME.textSecondary, fontSize: 12 }}>
@@ -2061,6 +2142,7 @@ function AgentPageContent() {
         <Text style={{ color: step.status === 'failed' ? '#ff4d4f' : THEME.textPrimary }}>
           {step.error || step.summary || '步骤已记录'}
         </Text>
+        {renderProductionPlanResult(step.tool_name, step.output)}
         {step.step_type === 'skill_route' && routedSkills.length > 0 && (
           <div style={{ display: 'grid', gap: 8 }}>
             {routedSkills.map((item: any) => (

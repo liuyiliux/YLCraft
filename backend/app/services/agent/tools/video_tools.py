@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from app.services.agent.registry import register_tool
+from app.services.ai.visual_planning import build_visual_planning_summary
 
 
 def _to_plain_dict(value: Any) -> dict[str, Any]:
@@ -55,11 +56,38 @@ async def preview_video_generation_request(
     start_image: str = "",
     generate_audio: bool = True,
     seed: int | None = None,
+    reference_asset_ids: list[str] | None = None,
+    project_id: str = "",
+    content_id: str = "",
+    production_plan_id: str = "",
+    production_node_id: str = "",
+    visual_intent: str = "",
+    style: str = "",
+    composition: str = "",
+    planning_summary: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if not (prompt or "").strip():
         raise ValueError("prompt 不能为空")
     duration_value = max(1, min(int(duration or 5), 30))
     start_path = Path(start_image) if start_image else None
+    visual_plan = planning_summary or build_visual_planning_summary(
+        "video",
+        prompt.strip(),
+        provider=provider or "",
+        model=model or "",
+        expected_output="generated_video",
+        reference_asset_ids=reference_asset_ids or [],
+        project_id=project_id,
+        content_id=content_id,
+        production_plan_id=production_plan_id,
+        production_node_id=production_node_id,
+        visual_intent=visual_intent,
+        style=style,
+        composition=composition,
+        aspect_ratio=aspect_ratio,
+        duration=duration_value,
+        extra={"generate_audio": bool(generate_audio)},
+    )
     return {
         "success": True,
         "normalized_request": {
@@ -73,6 +101,7 @@ async def preview_video_generation_request(
             "generate_audio": bool(generate_audio),
             "seed": seed,
         },
+        "visual_plan": visual_plan,
         "start_image_exists": bool(start_path and start_path.exists()),
         "cost_warning": "这只是预览；真正生成视频请调用 generate_video_asset，风险等级为 costly，需要用户确认。",
     }
@@ -99,6 +128,15 @@ async def generate_video_asset(
     start_image: str = "",
     generate_audio: bool = True,
     seed: int | None = None,
+    reference_asset_ids: list[str] | None = None,
+    project_id: str = "",
+    content_id: str = "",
+    production_plan_id: str = "",
+    production_node_id: str = "",
+    visual_intent: str = "",
+    style: str = "",
+    composition: str = "",
+    planning_summary: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if not (prompt or "").strip():
         raise ValueError("prompt 不能为空")
@@ -116,6 +154,15 @@ async def generate_video_asset(
         start_image=start_image or None,
         generate_audio=bool(generate_audio),
         seed=seed,
+        reference_asset_ids=reference_asset_ids or [],
+        project_id=project_id or None,
+        content_id=content_id or None,
+        production_plan_id=production_plan_id or None,
+        production_node_id=production_node_id or None,
+        visual_intent=visual_intent or None,
+        style=style or None,
+        composition=composition or None,
+        planning_summary=planning_summary or {},
     )
     response = await generate_video(request)
     return _to_plain_dict(response)

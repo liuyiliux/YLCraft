@@ -24,6 +24,7 @@ Use this skill to rebuild project context from repository facts, protect other a
 - Keep implementation and architecture/API documentation in sync when changing APIs, database fields, Agent tools, Skill routing, or UI workflows.
 - Treat Agent tools and Skills as internal APIs. If names, inputs, outputs, risk levels, authorization, or matching behavior change, update schema docs and tests in the same turn.
 - For HTTP API changes, update `docs/architecture/API_SURFACE.md` and `docs/architecture/api_surface.json`; then judge whether `docs/architecture/YLCRAFT_SYSTEM_ARCHITECTURE.md` or a domain doc also needs a semantic update.
+- For every new platform feature or HTTP API change, inspect and update affected API-facing Skills in the same turn, including their `SKILL.md`, workflow references, scripts, and focused tests. External-agent Skills call platform APIs only: provider API keys, SecretId/SecretKey, cookies, tokens, and storage credentials remain in platform settings and server-side connectors.
 - Update OpenSpec task checkboxes as work completes.
 - Prefer current code and tests over stale devlogs when facts conflict.
 - If the user asks about design quality, use the installed frontend design skills explicitly and verify structure, spacing, density, and empty states.

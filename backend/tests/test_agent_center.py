@@ -129,6 +129,8 @@ async def test_agent_profile_manager_creates_default_profiles(agent_session: Asy
     creative_data = profile_to_dict(creative)
     assert creative_data["role_type"] == "orchestrator"
     assert "run_creative_project_pipeline" in creative_data["allowed_tools"]
+    assert "run_creative_production_plan" in creative_data["allowed_tools"]
+    assert "analyze_creative_production_plan_impact" in creative_data["allowed_tools"]
     assert "preview_fanqie_project_publish" in creative_data["allowed_tools"]
     assert "publish_fanqie_project_chapter" in creative_data["allowed_tools"]
     assert creative_data["max_steps"] == 10
@@ -264,6 +266,8 @@ def test_agent_tool_registry_exposes_creative_project_tools():
     assert "build_creative_project_context_pack" in names
     assert "list_creative_project_contents" in names
     assert "get_creative_project_content" in names
+    assert "get_creative_production_plan" in names
+    assert "save_creative_production_plan" in names
     assert "update_creative_project_content" in names
     assert "list_creative_project_asset_links" in names
     assert "link_creative_project_asset" in names
@@ -279,6 +283,8 @@ def test_agent_tool_registry_exposes_creative_project_tools():
     match_tool = ToolRegistry.get_tool("match_creative_project_reference_assets")
     assert match_tool is not None
     assert match_tool.cost_hint
+    assert ToolRegistry.get_tool("get_creative_production_plan").risk_level == "read"
+    assert ToolRegistry.get_tool("save_creative_production_plan").risk_level == "write"
 
 
 def test_agent_tool_registry_exposes_canvas_tools_with_specs():
@@ -959,6 +965,28 @@ def test_agent_skill_package_loader_reads_standard_skill_md():
     assert "角色" in character_package.triggers["keywords"]
     assert "inspect_character" in character_package.requires_tools
     assert character_package.source_path.endswith("SKILL.md")
+
+
+def test_creative_skill_capability_roles_cover_director_specialists():
+    packages = {item.name: item for item in SkillPackageLoader().load_packages()}
+    roles = {
+        role
+        for package in packages.values()
+        for role in package.creative.get("capability_roles", [])
+    }
+
+    assert {
+        "story-designer",
+        "script-writer",
+        "visual-director",
+        "character-director",
+        "storyboard-director",
+        "image-producer",
+        "video-producer",
+        "platform-adapter",
+        "editorial-reviewer",
+    } <= roles
+    assert packages["platform_output_adapter"].creative["capability_roles"] == ["platform-adapter"]
 
 
 @pytest.mark.asyncio
@@ -3120,6 +3148,112 @@ def test_delegation_tool_schema_and_supervisor_visibility():
     )
     assert supervisor_tools == ["*"]
     assert "delegate_agent_tasks" not in worker_tools
+
+
+def test_production_plan_tools_are_registered_with_read_contracts():
+    for name in ("run_creative_production_plan", "analyze_creative_production_plan_impact"):
+        tool = ToolRegistry.get_tool(name)
+        assert tool is not None
+        assert tool.category == "creative_project"
+        assert tool.risk_level == "read"
+        assert tool.output_type.startswith("creative_production_plan")
+
+
+@pytest.mark.asyncio
+async def test_production_plan_runtime_requires_director_plan_and_matching_project(agent_session: AsyncSession):
+    service = AgentService(agent_session)
+    base_state = {
+        "run": SimpleNamespace(id="parent-run"),
+        "profile": {"id": "creative-director", "can_delegate": True},
+        "effective_context": {
+            "project_id": "project-1",
+            "creative_project_context": {
+                "project": {"id": "project-1"},
+                "production_plan": {"nodes": [{"id": "story", "specialist_role": "story-designer"}]},
+            },
+        },
+    }
+
+    wrong_profile = {**base_state, "profile": {"id": "default-assistant", "can_delegate": True}}
+    result = await service._execute_runtime_tool(
+        wrong_profile, "analyze_creative_production_plan_impact", {"project_id": "project-1", "changed_node_ids": ["story"]}
+    )
+    assert result is not None and not result.success
+    assert "创作导演" in result.error
+
+    result = await service._execute_runtime_tool(
+        base_state, "analyze_creative_production_plan_impact", {"project_id": "other", "changed_node_ids": ["story"]}
+    )
+    assert result is not None and not result.success
+    assert "上下文一致" in result.error
+
+    missing_plan = {**base_state, "effective_context": {"project_id": "project-1", "creative_project_context": {"project": {"id": "project-1"}}}}
+    result = await service._execute_runtime_tool(
+        missing_plan, "analyze_creative_production_plan_impact", {"project_id": "project-1", "changed_node_ids": ["story"]}
+    )
+    assert result is not None and not result.success
+    assert "没有已保存的生产计划" in result.error
+
+
+@pytest.mark.asyncio
+async def test_production_plan_runtime_returns_auditable_plan_slice(agent_session: AsyncSession, monkeypatch: pytest.MonkeyPatch):
+    class FakeTeamComposer:
+        calls = []
+
+        def __init__(self, orchestrator):
+            self.orchestrator = orchestrator
+
+        async def run_template(self, template, parent_run, *, inputs, user_id="", join_strategy=None):
+            self.calls.append((template, parent_run, inputs))
+            return {"success": True, "joined_observation": "专家结果已汇合", "linked_runs": ["child-visual"]}
+
+    monkeypatch.setattr("app.services.agent.team_composer.TeamComposer", FakeTeamComposer)
+    service = AgentService(agent_session)
+    plan = {
+        "content_id": "plan-1",
+        "title": "恐怖漫画生产计划",
+        "version": 2,
+        "status": "approved",
+        "goal": "完成 6 页竖屏恐怖漫画",
+        "nodes": [
+            {"id": "story", "label": "故事节拍", "stage": "story_seed", "specialist_role": "story-designer"},
+            {
+                "id": "visual", "label": "第 3 页构图", "stage": "visual_plan", "specialist_role": "visual-director",
+                "depends_on": ["story"], "input_asset_ids": ["asset-character"], "output_content_ids": ["content-board"],
+                "planning_summary": {"prompt": "雨夜古堡", "expected_output": "storyboard_frame"},
+                "provider": "demo-provider", "model": "demo-model", "requires_confirmation": True,
+            },
+        ],
+    }
+    state = {
+        "run": SimpleNamespace(id="parent-run"),
+        "profile": {"id": "creative-director", "can_delegate": True},
+        "effective_context": {"project_id": "project-1", "creative_project_context": {"project": {"id": "project-1"}, "production_plan": plan}},
+    }
+
+    result = await service._execute_runtime_tool(
+        state, "run_creative_production_plan", {"project_id": "project-1", "node_ids": ["visual"]}
+    )
+
+    assert result is not None and result.success
+    assert result.result["production_plan"] == {
+        "id": "plan-1", "title": "恐怖漫画生产计划", "version": 2, "status": "approved",
+        "goal": "完成 6 页竖屏恐怖漫画", "production_profile": "",
+    }
+    assert [item["id"] for item in result.result["selected_nodes"]] == ["story", "visual"]
+    visual = result.result["selected_nodes"][1]
+    assert visual["input_asset_ids"] == ["asset-character"]
+    assert visual["planning_summary"]["prompt"] == "雨夜古堡"
+    assert visual["requires_confirmation"] is True
+    assert FakeTeamComposer.calls[0][0].roles[-1].id == "plan-visual"
+
+    impact = await service._execute_runtime_tool(
+        state, "analyze_creative_production_plan_impact", {"project_id": "project-1", "changed_node_ids": ["story"]}
+    )
+    assert impact is not None and impact.success
+    assert [(item["id"], item["reason"]) for item in impact.result["affected_nodes"]] == [
+        ("story", "changed"), ("visual", "depends_on:story")
+    ]
 
 
 @pytest.mark.asyncio

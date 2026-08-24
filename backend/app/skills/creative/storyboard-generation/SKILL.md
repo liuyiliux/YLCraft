@@ -12,6 +12,16 @@ triggers:
   tools: [generate_storyboard, list_creative_project_contents, update_creative_project_content]
 requires_tools: [generate_storyboard]
 risk: write
+creative:
+  capability_roles: [storyboard-director]
+  compatible_project_types: [short_drama, novel, manga, mixed]
+  compatible_genres: ["*"]
+  stages: [page_plan, storyboard, shot_list, image_prompt]
+  context_contribution: "将章节目标拆成可拍、可画、可生成的镜头或漫画格，并保留角色、场景、画面目的和参考素材缺口。"
+  input_schema: {script_or_prose: string, chapter_context: object, character_context: array}
+  output_schema: {storyboard: object, prompt_briefs: array, reference_needs: array}
+  prohibited_mutations: [approved_novel_body, locked_project_bible, confirmed_ledger]
+  auto_apply: false
 ---
 
 # 分镜生成

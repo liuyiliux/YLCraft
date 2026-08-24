@@ -52,6 +52,7 @@ const TASK_TYPE_OPTIONS = [
   { label: '图像生成', value: 'image_generation' },
   { label: '视频生成', value: 'video_generation' },
   { label: '图生 3D', value: 'model3d_generation' },
+  { label: '创作写作', value: 'creative_writing' },
   { label: '视频剪辑', value: 'clip' },
 ]
 
@@ -83,6 +84,7 @@ const TYPE_COLOR_MAP: Record<string, string> = {
   image_generation: 'purple',
   video_generation: 'magenta',
   model3d_generation: 'cyan',
+  creative_writing: 'blue',
   clip: 'orange',
 }
 
@@ -119,6 +121,7 @@ const ROUTE_MAP: Record<string, { path: string; label: string }> = {
   image_generation: { path: '/image-gen', label: '图像生成' },
   video_generation: { path: '/video-gen', label: '视频生成' },
   model3d_generation: { path: '/model-3d', label: '图生 3D' },
+  creative_writing: { path: '/story', label: '创作项目' },
   clip: { path: '/clip', label: 'AI 剪辑' },
 }
 

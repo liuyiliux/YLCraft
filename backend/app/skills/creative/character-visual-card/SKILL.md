@@ -12,6 +12,16 @@ triggers:
   tools: [inspect_character, update_character_visual_profile, preview_character_portrait_prompt]
 requires_tools: [inspect_character]
 risk: write
+creative:
+  capability_roles: [character-director]
+  compatible_project_types: [short_drama, novel, manga, mixed]
+  compatible_genres: ["*"]
+  stages: [character_pack, character_reference, visual_reference]
+  context_contribution: "将角色身份、外貌识别点、服装、禁忌风格和已绑定参考素材整理为可复用的一致性约束。"
+  input_schema: {character_id: string, project_context: string, reference_asset_ids: array}
+  output_schema: {visual_card: object, prompt_constraints: array, reference_asset_ids: array}
+  prohibited_mutations: [approved_novel_body, locked_project_bible, confirmed_ledger]
+  auto_apply: false
 ---
 
 # 角色视觉卡

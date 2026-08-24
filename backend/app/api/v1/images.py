@@ -13,10 +13,10 @@ import logging
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -28,6 +28,7 @@ from app.services.ai.types import ImageGenerationRequest
 from app.services.asset_hub.representation_service import AssetRepresentationService
 from app.services.asset_hub.version_service import AssetVersionService
 from app.services.platform_log import service as platform_log
+from app.services.ai.visual_planning import build_visual_planning_summary
 
 router = APIRouter()
 logger = logging.getLogger("ylcraft.images")
@@ -55,6 +56,9 @@ def _image_retry_payload(req) -> dict:
         "source_index": req.source_index or "",
         "source_title": req.source_title or "",
         "chapter_number": req.chapter_number or "",
+        "planning_summary": req.planning_summary or {},
+        "production_plan_id": req.production_plan_id or "",
+        "production_node_id": req.production_node_id or "",
     }
 
 
@@ -93,6 +97,9 @@ def _image_log_request(req) -> dict:
         "source_type": req.source_type or "",
         "source_index": req.source_index or "",
         "source_title": req.source_title or "",
+        "planning_summary": req.planning_summary or {},
+        "production_plan_id": req.production_plan_id or "",
+        "production_node_id": req.production_node_id or "",
     }
 
 
@@ -290,6 +297,11 @@ class ImageGenerateRequest(BaseModel):
     prompt_reference_title: Optional[str] = None
     prompt_reference_category: Optional[str] = None
     prompt_reference_source_url: Optional[str] = None
+    production_plan_id: Optional[str] = None
+    production_node_id: Optional[str] = None
+    visual_intent: Optional[str] = None
+    composition: Optional[str] = None
+    planning_summary: dict[str, Any] = Field(default_factory=dict)
 
 
 def _generation_lineage_from_request(req: ImageGenerateRequest, *, extra: dict | None = None) -> dict:
@@ -310,6 +322,9 @@ def _generation_lineage_from_request(req: ImageGenerateRequest, *, extra: dict |
         "prompt_reference_title": req.prompt_reference_title or "",
         "prompt_reference_category": req.prompt_reference_category or "",
         "prompt_reference_source_url": req.prompt_reference_source_url or "",
+        "production_plan_id": req.production_plan_id or "",
+        "production_node_id": req.production_node_id or "",
+        "planning_summary": req.planning_summary or {},
         **(extra or {}),
     }
     return {key: value for key, value in lineage.items() if value not in (None, "", [])}
@@ -333,6 +348,9 @@ def _generation_lineage_from_payload(payload: dict, *, extra: dict | None = None
         "prompt_reference_title": payload.get("prompt_reference_title", ""),
         "prompt_reference_category": payload.get("prompt_reference_category", ""),
         "prompt_reference_source_url": payload.get("prompt_reference_source_url", ""),
+        "production_plan_id": payload.get("production_plan_id", ""),
+        "production_node_id": payload.get("production_node_id", ""),
+        "planning_summary": payload.get("planning_summary") or {},
         **(extra or {}),
     }
     return {key: value for key, value in lineage.items() if value not in (None, "", [])}
@@ -460,6 +478,7 @@ class ImageResponse(BaseModel):
     model: str = ""
     status: str = "pending"
     progress: float = 0.0
+    planning_summary: dict[str, Any] = Field(default_factory=dict)
     error: Optional[str] = None
 
 
@@ -583,6 +602,23 @@ async def generate_image(req: ImageGenerateRequest):
 
     try:
         reference_images = await _merge_reference_images(req)
+        planning_summary = req.planning_summary or build_visual_planning_summary(
+            "image",
+            req.prompt,
+            negative_prompt=req.negative_prompt or "",
+            provider=req.provider or "",
+            model=req.model or "",
+            expected_output=req.source_type or "generated_image",
+            reference_asset_ids=req.reference_asset_ids or [],
+            project_id=req.project_id or "",
+            content_id=req.content_id or "",
+            production_plan_id=req.production_plan_id or "",
+            production_node_id=req.production_node_id or "",
+            visual_intent=req.visual_intent or "",
+            composition=req.composition or "",
+            aspect_ratio=req.size or "",
+        )
+        req.planning_summary = planning_summary
         img_req = ImageGenerationRequest(
             prompt=req.prompt,
             negative_prompt=req.negative_prompt or "",
@@ -639,6 +675,9 @@ async def generate_image(req: ImageGenerateRequest):
                         "prompt_reference_title": req.prompt_reference_title or "",
                         "prompt_reference_category": req.prompt_reference_category or "",
                         "prompt_reference_source_url": req.prompt_reference_source_url or "",
+                        "production_plan_id": req.production_plan_id or "",
+                        "production_node_id": req.production_node_id or "",
+                        "planning_summary": planning_summary,
                         "diagnostics": {
                             "external_task_id": result.task_id,
                             "provider": result.provider or req.provider or "",
@@ -695,6 +734,7 @@ async def generate_image(req: ImageGenerateRequest):
                     model=result.model or "",
                     status="pending",
                     progress=result.progress,
+                    planning_summary=planning_summary,
                 )
 
             # 自动入库到资产库，并把素材 ID 返回给前端，方便项目工作流回写关联。
@@ -731,6 +771,7 @@ async def generate_image(req: ImageGenerateRequest):
                                 "prompt_reference_id": req.prompt_reference_id or "",
                                 "prompt_reference_source_id": req.prompt_reference_source_id or "",
                                 "prompt_reference_title": req.prompt_reference_title or "",
+                                "planning_summary": planning_summary,
                             },
                             lineage=_generation_lineage_from_request(req),
                         )
@@ -803,6 +844,7 @@ async def generate_image(req: ImageGenerateRequest):
                 model=result.model or "",
                 status=result.status,
                 progress=result.progress,
+                planning_summary=planning_summary,
             )
         else:
             await platform_log.record_event(
@@ -979,7 +1021,8 @@ async def poll_image_task(
                                     "reference_image_collection": payload.get("reference_image_collection") or [],
                                     "prompt_reference_id": payload.get("prompt_reference_id", ""),
                                     "prompt_reference_source_id": payload.get("prompt_reference_source_id", ""),
-                                    "prompt_reference_title": payload.get("prompt_reference_title", ""),
+                                "prompt_reference_title": payload.get("prompt_reference_title", ""),
+                                "planning_summary": payload.get("planning_summary") or {},
                                 },
                                 lineage=_generation_lineage_from_payload(
                                     payload,

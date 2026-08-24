@@ -5,7 +5,7 @@ description: Drive YLCraft creative-project workflows through the local API. Use
 
 # YLCraft Creative Workflow
 
-Use this skill when a request is about producing or continuing a YLCraft creative project: novel planning, character cards, chapter outlines, prose chapters, short-drama scripts, comic pages, storyboards, reference assets, or production logs.
+Use this skill when a request is about producing or continuing a YLCraft creative project: novel planning, character cards, chapter outlines, prose chapters, short-drama scripts, comic pages, storyboards, reference assets, production profiles, or production logs. It is also the repo's reusable API-facing workflow for external agents; prefer stable HTTP IDs over direct database writes.
 
 ## Default Approach
 
@@ -26,6 +26,7 @@ Use `scripts/creative_project_workflow.py` for repeatable operations:
 ```bash
 python .agents/skills/ylcraft-creative-workflow/scripts/creative_project_workflow.py list-projects
 python .agents/skills/ylcraft-creative-workflow/scripts/creative_project_workflow.py inspect --project-id <id>
+python .agents/skills/ylcraft-creative-workflow/scripts/creative_project_workflow.py plan-get --project-id <id>
 python .agents/skills/ylcraft-creative-workflow/scripts/creative_project_workflow.py export-novel --project-id <id> --out exports/novel.md
 ```
 
@@ -38,6 +39,30 @@ model=deepseek-v4-pro
 
 For batch operations, pass chapter ranges such as `1`, `1,3,5`, or `1-6`.
 
+## Production Profiles
+
+When creating a project, choose a `production_profile` instead of assuming every project needs prose:
+
+- `vertical_drama`: outline → chapter plan → chapter outline → script → storyboard → video
+- `storybook`: outline → page/chapter plan → script → storyboard → comic pages; prose is optional
+- `knowledge_content`: topic/facts → script → storyboard → image/layout
+- `platform_note`: content → multi-platform image generation → image editor/layout
+- `novel_serial`: outline → chapter plan → chapter outline → novel body → review
+- `single_shot`: idea or source asset → image/video experiment
+
+The profile is stored in project settings and does not disable independent image, video, 3D, upload, or image-editor APIs.
+
+## Director Plans
+
+Before an Agent or an external workflow starts a multi-stage production run, read or create the project's versioned production plan. It is an editable, business-visible dependency graph: stages, specialist role, input/output content and Asset Hub IDs, canvas links, planning summaries, provider/model choices, and confirmation points. It is not hidden reasoning.
+
+```bash
+python .agents/skills/ylcraft-creative-workflow/scripts/creative_project_workflow.py plan-get --project-id <id>
+python .agents/skills/ylcraft-creative-workflow/scripts/creative_project_workflow.py plan-save --project-id <id> --plan-file plans/horror-comic.json
+```
+
+Saving a plan creates a new `production_plan` content version. It is a `write` operation but is not itself a paid generation. Do not submit image, video, 3D, download, or publishing actions until the user has confirmed the relevant plan node; retain the previous plan ID as `--base-plan-id` when revising a known version.
+
 ## Production Order
 
 For a new or incomplete project, run stages in this order:
@@ -47,8 +72,8 @@ For a new or incomplete project, run stages in this order:
 3. Sync outline characters into the character library.
 4. Generate chapter plan.
 5. Generate chapter outlines.
-6. Generate novel正文.
-7. Generate short-drama scripts.
+6. Generate novel正文 only for `novel_serial` or when explicitly requested.
+7. Generate short-drama scripts when the selected profile requires them.
 8. Generate storyboards from scripts.
 9. Match reference assets before image generation.
 10. Split comic pages from storyboards when comic output is needed.
@@ -63,6 +88,8 @@ python .agents/skills/ylcraft-creative-workflow/scripts/creative_project_workflo
 ```
 
 Do not start expensive image generation until the story text, script, reference-card matching, and user intent are clear.
+
+For an external-agent handoff, first call `GET /api/v1/ai/capabilities?available_only=true`, upload references with `POST /api/v1/assets/upload`, then call the image/video/3D generation API and poll the task endpoint. Preserve `project_id`, `content_id`, `production_profile`, `source_type`, `source_index`, and `source_title` whenever available.
 
 For the backend-orchestrated version, prefer:
 

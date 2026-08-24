@@ -967,7 +967,12 @@ class AgentService:
         tool_name: str,
         tool_args: dict[str, Any],
     ) -> ToolCallResult | None:
-        if tool_name != "delegate_agent_tasks":
+        if tool_name not in {
+            "delegate_agent_tasks",
+            "run_creative_production_plan",
+            "analyze_creative_production_plan_impact",
+            "update_creative_production_plan",
+        }:
             return None
 
         started = time.perf_counter()
@@ -981,14 +986,147 @@ class AgentService:
         try:
             from app.db.database import AsyncSessionLocal
             from app.services.agent.runtime.delegation import SubagentExecutor, SubagentOrchestrator
+            from app.services.agent.team_composer import TeamComposer
 
             executor = SubagentExecutor(AsyncSessionLocal)
             orchestrator = SubagentOrchestrator(self.session, executor)
-            result = await orchestrator.delegate(
-                state["run"],
-                list(tool_args.get("tasks") or []),
-                join_strategy=str(tool_args.get("join_strategy") or "all"),
-            )
+            if tool_name == "delegate_agent_tasks":
+                result = await orchestrator.delegate(
+                    state["run"],
+                    list(tool_args.get("tasks") or []),
+                    join_strategy=str(tool_args.get("join_strategy") or "all"),
+                )
+            else:
+                from app.services.agent.production_plan_team import ProductionPlanTeamComposer
+
+                creative_context = state["effective_context"].get("creative_project_context") or {}
+                plan = creative_context.get("production_plan") or {}
+                context_project_id = str(
+                    creative_context.get("project", {}).get("id")
+                    or state["effective_context"].get("project_id")
+                    or state["effective_context"].get("creative_project_id")
+                    or ""
+                )
+                requested_project_id = str(tool_args.get("project_id") or "").strip()
+                if profile.get("id") != "creative-director":
+                    raise ValueError("只有创作导演可以编排生产计划团队")
+                if not plan or not isinstance(plan.get("nodes"), list):
+                    raise ValueError("当前上下文没有已保存的生产计划；请先读取或保存计划")
+                if not requested_project_id or requested_project_id != context_project_id:
+                    raise ValueError("project_id 必须与当前创作项目上下文一致")
+                plan_composer = ProductionPlanTeamComposer()
+                plan_meta = self._production_plan_result_meta(plan)
+                if tool_name == "update_creative_production_plan":
+                    node_id = str(tool_args.get("node_id") or "").strip()
+                    changes = tool_args.get("changes") or {}
+                    reason = str(tool_args.get("reason") or "").strip()
+                    if not node_id or not isinstance(changes, dict) or not reason:
+                        raise ValueError("node_id、changes 和 reason 不能为空")
+                    allowed_changes = {
+                        "label",
+                        "planning_summary",
+                        "provider",
+                        "model",
+                        "requires_confirmation",
+                        "rerun_scope",
+                    }
+                    unknown = set(changes) - allowed_changes
+                    if unknown:
+                        raise ValueError(f"不允许修改生产计划字段：{', '.join(sorted(unknown))}")
+                    raw_nodes = plan.get("nodes") if isinstance(plan.get("nodes"), list) else []
+                    target = next((item for item in raw_nodes if isinstance(item, dict) and str(item.get("id")) == node_id), None)
+                    if target is None:
+                        raise ValueError(f"生产计划节点不存在：{node_id}")
+                    old_plan_id = str(plan.get("content_id") or "")
+                    updated_plan = dict(plan)
+                    updated_plan.pop("content_id", None)
+                    updated_plan.pop("version", None)
+                    updated_plan.pop("plan_version", None)
+                    updated_nodes = [dict(item) if isinstance(item, dict) else item for item in raw_nodes]
+                    for item in updated_nodes:
+                        if isinstance(item, dict) and str(item.get("id")) == node_id:
+                            item.update(changes)
+                            item["source_node_version"] = int(item.get("source_node_version") or 1)
+                    updated_plan["nodes"] = updated_nodes
+                    updated_plan.setdefault("metadata", {})
+                    if isinstance(updated_plan["metadata"], dict):
+                        updated_plan["metadata"] = {
+                            **updated_plan["metadata"],
+                            "last_local_edit": {"node_id": node_id, "reason": reason},
+                        }
+                    from app.db.database import SessionLocal
+                    from app.services.creative_project.service import CreativeProjectService
+
+                    with SessionLocal() as sync_session:
+                        saved = CreativeProjectService(sync_session).save_production_plan(
+                            project_id=requested_project_id,
+                            plan=updated_plan,
+                            base_plan_id=old_plan_id or None,
+                        )
+                    affected_nodes = plan_composer.affected_nodes(
+                        {**updated_plan, "nodes": updated_nodes},
+                        changed_node_ids=[node_id],
+                    )
+                    result = {
+                        "success": True,
+                        "production_plan_id": str(saved.id),
+                        "plan_version": saved.version,
+                        "changed_node_ids": [node_id],
+                        "reason": reason,
+                        "production_plan": self._production_plan_result_meta({**updated_plan, "content_id": saved.id, "version": saved.version}),
+                        "affected_nodes": self._production_plan_node_summaries(
+                            {**updated_plan, "nodes": updated_nodes}, affected_nodes,
+                        ),
+                        "rerun_hint": "已保存为新版本；实际生成仍需用户确认，可用 run_creative_production_plan 只重跑受影响节点。",
+                    }
+                elif tool_name == "analyze_creative_production_plan_impact":
+                    changed_node_ids = list(tool_args.get("changed_node_ids") or [])
+                    affected_nodes = plan_composer.affected_nodes(
+                        plan,
+                        changed_node_ids=changed_node_ids,
+                    )
+                    result = {
+                        "success": True,
+                        "production_plan_id": str(plan.get("content_id") or ""),
+                        "plan_version": plan.get("version") or plan.get("plan_version"),
+                        "changed_node_ids": changed_node_ids,
+                        "production_plan": plan_meta,
+                        "affected_nodes": self._production_plan_node_summaries(
+                            plan,
+                            affected_nodes,
+                        ),
+                        "rerun_hint": "确认上游产物可复用后，可用 run_creative_production_plan 传入受影响节点并设置 include_dependencies=false。",
+                    }
+                else:
+                    node_ids = list(tool_args.get("node_ids") or [])
+                    include_dependencies = bool(tool_args.get("include_dependencies", True))
+                    template = plan_composer.build_template(
+                        plan,
+                        node_ids=node_ids,
+                        include_dependencies=include_dependencies,
+                    )
+                    result = await TeamComposer(orchestrator).run_template(
+                        template,
+                        state["run"],
+                        inputs={
+                            "project_id": requested_project_id,
+                            "context": {
+                                "creative_project_context": creative_context,
+                                "production_plan": plan,
+                                "production_plan_node_ids": node_ids,
+                                "production_plan_include_dependencies": include_dependencies,
+                            },
+                        },
+                    )
+                    result["production_plan_id"] = str(plan.get("content_id") or "")
+                    result["production_plan_node_ids"] = node_ids
+                    result["include_dependencies"] = include_dependencies
+                    result["production_plan"] = plan_meta
+                    selected_role_ids = {role.id for role in template.roles}
+                    result["selected_nodes"] = self._production_plan_node_summaries(
+                        plan,
+                        selected_role_ids=selected_role_ids,
+                    )
             return ToolCallResult(
                 tool_name=tool_name,
                 success=bool(result.get("success")),
@@ -997,13 +1135,74 @@ class AgentService:
                 duration_ms=int((time.perf_counter() - started) * 1000),
             )
         except Exception as exc:  # noqa: BLE001
-            logger.exception("[AgentService] delegate_agent_tasks failed")
+            logger.exception("[AgentService] %s failed", tool_name)
             return ToolCallResult(
                 tool_name=tool_name,
                 success=False,
                 error=str(exc),
                 duration_ms=int((time.perf_counter() - started) * 1000),
             )
+
+    @staticmethod
+    def _production_plan_result_meta(plan: dict[str, Any]) -> dict[str, Any]:
+        """Return small user-visible plan metadata for Agent tool observations."""
+        return {
+            "id": str(plan.get("content_id") or ""),
+            "title": str(plan.get("title") or "未命名生产计划"),
+            "version": plan.get("version") or plan.get("plan_version"),
+            "status": str(plan.get("status") or "planned"),
+            "goal": str(plan.get("goal") or ""),
+            "production_profile": str(plan.get("production_profile") or ""),
+        }
+
+    @staticmethod
+    def _production_plan_node_summaries(
+        plan: dict[str, Any],
+        affected_nodes: list[dict[str, str]] | None = None,
+        *,
+        selected_role_ids: set[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Keep production-plan tool output auditable without returning full context."""
+        from app.services.agent.production_plan_team import ProductionPlanTeamComposer
+
+        reasons = {
+            str(item.get("node_id") or ""): str(item.get("reason") or "")
+            for item in affected_nodes or []
+        }
+        result: list[dict[str, Any]] = []
+        for raw_node in plan.get("nodes") if isinstance(plan.get("nodes"), list) else []:
+            if not isinstance(raw_node, dict):
+                continue
+            node_id = str(raw_node.get("id") or "").strip()
+            if not node_id:
+                continue
+            role_id = ProductionPlanTeamComposer._role_id(node_id)
+            if reasons:
+                if node_id not in reasons:
+                    continue
+            elif selected_role_ids is not None and role_id not in selected_role_ids:
+                continue
+            result.append(
+                {
+                    "id": node_id,
+                    "label": str(raw_node.get("label") or node_id),
+                    "stage": str(raw_node.get("stage") or ""),
+                    "specialist_role": str(raw_node.get("specialist_role") or ""),
+                    "status": str(raw_node.get("status") or "planned"),
+                    "reason": reasons.get(node_id, ""),
+                    "input_content_ids": list(raw_node.get("input_content_ids") or []),
+                    "input_asset_ids": list(raw_node.get("input_asset_ids") or []),
+                    "output_content_ids": list(raw_node.get("output_content_ids") or []),
+                    "output_asset_ids": list(raw_node.get("output_asset_ids") or []),
+                    "planning_summary": raw_node.get("planning_summary")
+                    if isinstance(raw_node.get("planning_summary"), dict)
+                    else {},
+                    "provider": str(raw_node.get("provider") or ""),
+                    "model": str(raw_node.get("model") or ""),
+                    "requires_confirmation": bool(raw_node.get("requires_confirmation", True)),
+                }
+            )
+        return result
 
     @staticmethod
     def _role_to_provider_type(role_type: str) -> str:

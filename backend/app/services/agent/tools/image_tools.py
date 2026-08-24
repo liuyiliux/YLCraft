@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.services.agent.registry import register_tool
+from app.services.ai.visual_planning import build_visual_planning_summary
 
 
 def _to_plain_dict(value: Any) -> dict[str, Any]:
@@ -78,6 +79,11 @@ async def preview_image_generation_request(
     reference_asset_ids: list[str] | None = None,
     character_ids: list[str] | None = None,
     portrait_node_ids: list[str] | None = None,
+    production_plan_id: str = "",
+    production_node_id: str = "",
+    visual_intent: str = "",
+    composition: str = "",
+    planning_summary: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if not (prompt or "").strip():
         raise ValueError("prompt 不能为空")
@@ -103,10 +109,29 @@ async def preview_image_generation_request(
         "reference_asset_ids": reference_asset_ids or [],
         "character_ids": character_ids or [],
         "portrait_node_ids": portrait_node_ids or [],
+        "production_plan_id": production_plan_id,
+        "production_node_id": production_node_id,
     }
+    visual_plan = planning_summary or build_visual_planning_summary(
+        "image",
+        prompt.strip(),
+        negative_prompt=negative_prompt or "",
+        provider=provider or "",
+        model=model or "",
+        expected_output=source_type or "generated_image",
+        reference_asset_ids=reference_asset_ids or [],
+        project_id=project_id,
+        content_id=content_id,
+        production_plan_id=production_plan_id,
+        production_node_id=production_node_id,
+        visual_intent=visual_intent,
+        composition=composition,
+        aspect_ratio=size,
+    )
     return {
         "success": True,
         "normalized_request": normalized,
+        "visual_plan": visual_plan,
         "reference_image_count": len(reference_images or []),
         "lineage_hint": {key: value for key, value in lineage_hint.items() if value not in ("", [], None)},
         "cost_warning": "这只是预览；真正生图请调用 generate_image_asset，风险等级为 costly，需要用户确认。",
@@ -154,6 +179,11 @@ async def generate_image_asset(
     character_ids: list[str] | None = None,
     portrait_node_ids: list[str] | None = None,
     portrait_version_ids: list[str] | None = None,
+    production_plan_id: str = "",
+    production_node_id: str = "",
+    visual_intent: str = "",
+    composition: str = "",
+    planning_summary: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if not (prompt or "").strip():
         raise ValueError("prompt 不能为空")
@@ -183,6 +213,11 @@ async def generate_image_asset(
         character_ids=character_ids or [],
         portrait_node_ids=portrait_node_ids or [],
         portrait_version_ids=portrait_version_ids or [],
+        production_plan_id=production_plan_id or None,
+        production_node_id=production_node_id or None,
+        visual_intent=visual_intent or None,
+        composition=composition or None,
+        planning_summary=planning_summary or {},
     )
     response = await generate_image(request)
     return _to_plain_dict(response)

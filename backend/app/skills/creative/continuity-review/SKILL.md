@@ -12,6 +12,16 @@ triggers:
   tools: [inspect_creative_project, list_creative_project_contents]
 requires_tools: [inspect_creative_project]
 risk: read
+creative:
+  capability_roles: [editorial-reviewer]
+  compatible_project_types: [short_drama, novel, manga, mixed]
+  compatible_genres: ["*"]
+  stages: [prose_review, script_review, storyboard_review, pre_publish_review]
+  context_contribution: "按人物、因果、设定、伏笔和视觉一致性检查候选内容，输出有证据的风险和最小修复建议。"
+  input_schema: {candidate_content: string, project_context: string, asset_context: array}
+  output_schema: {issues: array, severity: string, repair_plan: array}
+  prohibited_mutations: [approved_novel_body, locked_project_bible, confirmed_ledger]
+  auto_apply: false
 ---
 
 # 连续性检查

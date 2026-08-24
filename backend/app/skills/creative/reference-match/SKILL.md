@@ -12,6 +12,16 @@ triggers:
   tools: [match_creative_project_reference_assets, search_assets, semantic_search_assets]
 requires_tools: [match_creative_project_reference_assets]
 risk: read
+creative:
+  capability_roles: [visual-director]
+  compatible_project_types: [short_drama, novel, manga, mixed]
+  compatible_genres: ["*"]
+  stages: [character_reference, visual_plan, storyboard, image, video]
+  context_contribution: "为角色脸、服装、背景、道具和画风优先匹配项目内已有资产，并明确每个资产在生成中的约束用途。"
+  input_schema: {project_id: string, shot_context: string, required_elements: array}
+  output_schema: {reference_matches: array, missing_reference_types: array}
+  prohibited_mutations: [approved_novel_body, locked_project_bible, confirmed_ledger]
+  auto_apply: false
 ---
 
 # 参考图匹配

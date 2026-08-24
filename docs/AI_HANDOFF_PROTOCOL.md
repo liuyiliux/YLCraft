@@ -40,6 +40,7 @@ rg --files docs openspec .agents README.md AGENTS.md 2>$null | Sort-Object
 
 - 每完成一个 OpenSpec 子任务，就勾选对应 `tasks.md`。
 - 新增接口、工具、Skill、数据库字段时，在同一轮补总架构、接口清单或对应专题文档。
+- 每次新增平台功能或新增/修改 HTTP API，都检查并更新受影响的 API-facing Skill（`SKILL.md`、流程参考、调用脚本及测试）；外部 Agent 只能调用平台 API，不应管理或接触供应商密钥。
 - 修 bug 时记录：现象、根因、修复点、验证命令。
 - UI 改动要记录结构变化，不只写“优化样式”。
 - 不要把一次性聊天结论当文档，结论要落到 `docs/` 或 OpenSpec。
@@ -61,6 +62,7 @@ Agent Tool / Skill 也按“内部接口”处理：
 - 输入参数、输出结构、risk level、授权策略、匹配规则、工具名称变化，都必须更新工具 schema、测试和 `docs/agent/agent-skill-runtime.md`。
 - 不要只为某个平台写特例；通用能力要沉淀成通用工具或 Skill，再由平台适配层实现差异。
 - Skill 文件是过程能力，不存一次性用户事实；上下文和记忆仍以 Agent thread/message/memory 为事实来源。
+- API-facing Skill 使用能力发现和稳定业务 API；它不得要求、记录或传递供应商 API Key、SecretId、SecretKey、Cookie、Token 或对象存储凭证。此类凭证只由平台设置页与服务端连接器管理。
 
 ## 5. 交接文档模板
 

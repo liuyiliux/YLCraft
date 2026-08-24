@@ -34,6 +34,10 @@ flowchart LR
 - 执行证据与最终结果在业务时间线中直观展示，完整技术轨迹按需展开。
 - 确定性操作采用 script/service-first 路由，避免用 LLM 重复做检索、搬运、转换和校验，控制 Token 与成本。
 
+内容生产方案是项目编排层的声明式配置，保存在 `CreativeProject.settings_json.production_profile`；它只描述推荐阶段、可选阶段、输出和约束，不取代独立的文本、图片、视频、3D、图片编辑或多平台生图工作台。旧项目按 `project_type` 自动映射到默认方案，新项目可以在创建时选择短剧、故事漫画/童话绘本、科普、平台图文、小说或单镜头实验。导演的可编辑生产计划复用版本化 `ProjectContent(content_type=production_plan)`，通过 `GET/PUT /api/v1/creative-projects/{project_id}/production-plan` 读取和追加版本，并关联项目内容、Asset Hub 素材与创作画布；计划只保存面向用户的阶段、依赖、规划摘要、确认点和版本来源，不保存隐藏推理。Agent Context Pack 会带上当前方案和受限计划摘要，供导演先规划再请求用户确认；导演可把明确选择的计划节点编译为 `TeamComposer` 团队、汇合独立专家 Run，并以依赖分析支持局部重跑，也可通过受限的 `update_creative_production_plan` 工具修改节点的业务可见字段后追加新版本。图片和视频在请求前生成受限、可审计的 `planning_summary`，仅记录意图、提示词、风格、构图、比例、镜头/时长、来源资产、计划节点和预期产物，主动剔除隐藏推理；该摘要随请求进入异步任务、平台事件日志、结果与 Asset Hub 血缘。对话与历史 Run 轨迹会显示计划版本、节点、输入/输出资产、规划摘要、模型和确认点；所有实际生成、下载、发布与删除仍由现有确认机制执行。
+
+外部 Agent 与浏览器/内部 Agent 使用同一能力层：先通过 `/api/v1/ai/capabilities` 发现平台已配置的可用模型，再通过素材上传、生成、任务、事件日志和 Asset Hub 接口完成闭环。外部 Agent 只提交业务输入、模型选择和上下文字段，不读取、不保存、不传入供应商 API Key、SecretId、SecretKey、Cookie 或 Token；凭证仅由平台设置页和服务端连接器管理。`project_id`、`content_id`、`production_profile`、`source_type`、`source_index`、`source_title` 是跨 API 的可选上下文；公网开放前必须增加正式鉴权、作用域、限流、费用和确认策略，开发环境 CORS 不构成安全边界。
+
 ## 2. 运行时总览
 
 后端入口是 `backend/app/main.py`，应用启动时完成：
@@ -246,6 +250,12 @@ Live2D accepts uploads, character imagery and Asset Hub images as source materia
 
 3D 导演预演台是项目分镜的空间预演层，不是第二个 Story 页面、素材库或自由画布。`PrevisSceneDocument`（迁移 `016_add_previs_scene_documents`）可绑定一个项目分镜面板（`project_id` + `storyboard_content_id` + `panel_number`），也可作为独立场景创建（三者全空，先摆思路无需项目；迁移 `018_allow_standalone_previs_scenes` 放开三列可空），`scene_json` 保存节点/相机/关键帧/设置，`revision` 用于并发保护。`/api/v1/previs/scenes` 提供列表/创建/读取/保存/删除；保存必须携带 `expected_revision`，与当前 `revision` 不一致时返回 409 和当前版本，避免过期编辑器或 Agent 静默覆盖人工机位调整。Story 单话工作台的每个分镜卡片提供「3D 预演」入口，前端先按项目/分镜内容/panel 查询，空缺时创建场景，随后进入 `/previs?scene_id=...` 的场景工作台。工作台已支持静态导演台的基础节点管理：从 Asset Hub 插入 3D 模型（`asset_model`，仅存 `asset_id` 与可加载模型 URL，不复制二进制）、轻量人形占位（`human_proxy`）、基础几何体（`primitive`：立方体/球体/圆柱/平面）、全景背景（`panorama`，内表面球体），以及图层可见性、重命名、删除和锁定；节点 transform 存四元数旋转，`locked` 是业务数据。可复用的 3D 渲染原语（渲染模式、包围盒、模型元数据、部位树、材质辅助）已从 `Model3DViewer` 提取到 `frontend/src/components/three/scenePrimitives.tsx`，供通用查看器与预演台共用；该模块只放无业务状态的底层原语，不承载 Story 分镜、节点 transform、锁定、相机或关键帧。相机 CRUD（名称/位置/目标点/FOV/锁定）与导演/活动机位双视角已落地：活动机位按位置/目标点/FOV 渲染并隐藏轨道控制器，安全框与九宫格为只读叠加，不参与场景保存；相机仍存于 `scene_json.cameras`，切换由 `activeCameraId` 表达，随 revision CAS 一并保存；`/previs` 已加入顶级导航入口，无 `scene_id` 时显示独立场景列表工作台（按更新时间列出全部预演场景，可直接打开；从分镜卡片进入仍自动定位对应场景）。人形占位（`human_proxy`）支持三种样式：程序化胶囊人（`frontend/src/components/three/humanProxy.tsx`，参照 storyai ProceduralMannequin 的 MIT 思路自写，6 种姿势预设存 `metadata.pose`）、内置 UE 白模（`/models/ue-mannequin.glb`，Sketchfab Standard）与 Vanguard（`/models/vanguard.glb`，MIT），样式存 `metadata.proxyStyle`；内置模型许可见 `frontend/public/models/LICENSE-*.txt`。人形占位（`human_proxy`）为程序化胶囊人（`frontend/src/components/three/humanProxy.tsx`，参照 storyai ProceduralMannequin 的 MIT 思路自写），支持 6 种姿势预设存于 `metadata.pose`，无外部模型依赖。截图回流仍按设计走 Asset Hub 图片 + `ProjectAssetLink` + 分镜面板参考字段，尚未实现。设计边界与分期见 `docs/architecture/3D_DIRECTOR_PREVIS_DESIGN.md`。
 
+### 4.4.6 内容生产方案与导演 Agent 编排
+
+内容生产方案把竖屏短剧、故事漫画/童话绘本、科普、平台图文、小说和单镜头实验的阶段、输入、产物和确认点收敛为项目可编辑计划；方案记录在 `CreativeProject.settings_json`，计划记录为 `ProjectContent(content_type="production_plan")`，并以受限摘要进入 Agent Context Pack。它不要求所有项目先写正文，独立的生图、生视频、画布、素材库和平台适配能力仍可单独使用，所有产物再经 Asset Hub、任务中心和血缘回流项目。
+
+导演 Agent 复用既有 Agent Runtime、`TeamComposer` 和 `SubagentOrchestrator`，不建立平行 Agent 系统。创意 Skill 的 `creative.capability_roles` 是稳定、可审计的选角契约：`story-designer`、`script-writer`、`visual-director`、`character-director`、`storyboard-director`、`image-producer`、`video-producer`、`platform-adapter`、`editorial-reviewer`。团队编排按计划节点的 specialist role 选择这些声明，而非从 Skill 名称、展示名或页面文案推断。只有 `creative-director` 可调用运行时工具 `run_creative_production_plan` 与 `analyze_creative_production_plan_impact`，并且必须提供与当前 Context Pack 相同的项目 ID 及已保存计划。前者一次最多执行六个显式选择节点，默认补齐上游依赖；只有已确认上游产物可复用时才允许以 `include_dependencies=false` 局部重跑。后者按计划顺序返回直接变更及所有下游受影响节点和原因，导演据此修改并保存新的版本化计划。各专家保留独立 Run、输入、输出和状态，再由导演 Run 汇合为 observation；对话工具卡和历史 Run 步骤均把计划版本、输入内容/素材、规划摘要、供应商/模型、预期输出、实际产物和确认点作为业务信息展示，完整诊断 JSON 按需展开。生成、下载、发布、删除等消耗型或外部写入动作必须经过用户确认。
+
 ### 4.5 生图提示词参考库
 
 生图提示词参考库不是 `PlatformTemplate`。它面向“几百/几千条生图 Prompt 案例”的同步、浏览、搜索、筛选和插入，参考 `basketikun/infinite-canvas` 的提示词库能力。当前已提供 `ImagePromptSource` / `ImagePromptReference` 持久化、GitHub 源 seed、markdown/JSON/IMI detail JSON 解析、去重同步、HTTP API、Agent 工具、独立浏览页、复用 Picker，并已接入 `/canvas` Prompt/LLM/生图节点和 `/image-gen` 提示词输入区。
@@ -329,7 +339,7 @@ Live2D accepts uploads, character imagery and Asset Hub images as source materia
 4. 人工检查接口语义：生成清单只能说明“有什么路由”，不能说明“为什么这样设计”。
 5. 如果接口影响模块职责、数据流、前端工作流或 Agent 可调用能力，同步更新本文对应章节、领域文档和 OpenSpec task。
 
-Agent Tool / Skill 变更按内部 API 处理：工具名称、输入输出 schema、risk level、授权策略、匹配规则变化时，必须同步测试、`docs/agent/agent-skill-runtime.md` 和必要的总架构说明。
+Agent Tool / Skill 变更按内部 API 处理：工具名称、输入输出 schema、risk level、授权策略、匹配规则变化时，必须同步测试、`docs/agent/agent-skill-runtime.md` 和必要的总架构说明。每次新增平台功能或新增/修改 HTTP API 时，还必须检查并更新受影响的 API-facing Skill（至少是 `.agents/skills/ylcraft-creative-workflow/` 的 `SKILL.md`、流程参考或脚本）；外部 Agent 的 Skill 只能描述 API 调用与业务参数，不能要求或暴露平台供应商凭证。
 
 ## 7. OpenSpec 当前状态
 

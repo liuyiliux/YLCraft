@@ -1386,6 +1386,7 @@ export const createCreativeProject = (data: {
   title?: string
   idea?: string
   project_type?: string
+  production_profile?: string
   source_type?: string
   source_ref?: Record<string, any>
   settings?: Record<string, any>
@@ -1398,6 +1399,7 @@ export const createCreativeProjectFromNovel = (data: {
   chapter_indices?: number[]
   title?: string
   project_type?: string
+  production_profile?: string
 }) => request('/creative-projects/from-novel', { method: 'POST', body: JSON.stringify(data) })
 
 export const getCreativeProject = (projectId: string) =>

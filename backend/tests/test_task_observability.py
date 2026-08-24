@@ -2,6 +2,12 @@ import pytest
 
 from app.api.v1 import tasks as tasks_api
 from app.core.task_queue import InMemoryTaskQueue, MAX_TASK_EVENTS, get_task_queue, init_task_queue
+from app.services.task_persistence import should_persist
+
+
+def test_project_writing_tasks_are_persisted():
+    assert should_persist("creative_writing", {"project_id": "project-1"}) is True
+    assert should_persist("creative_writing", {}) is False
 
 
 @pytest.mark.asyncio

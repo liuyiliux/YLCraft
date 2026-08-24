@@ -10,6 +10,7 @@ POST /api/v1/logs/{id}/retry — 失败事件重发（按场景重放原请求�
 from __future__ import annotations
 
 import logging
+import re
 import time
 from pathlib import Path
 from typing import Any, Optional
@@ -46,6 +47,8 @@ class EventDetailResponse(BaseModel):
 class RuntimeLogLine(BaseModel):
     timestamp: str = ""
     level: str = ""
+    module: str = ""
+    module_key: str = ""
     name: str = ""
     message: str = ""
 
@@ -100,6 +103,7 @@ async def list_logs(
 @router.get("/runtime", response_model=RuntimeLogResponse, summary="运行日志（文件 tail）")
 async def list_runtime_logs(
     level: Optional[str] = None,
+    module: Optional[str] = None,
     q: Optional[str] = None,
     limit: int = Query(200, ge=1, le=2000),
     before: Optional[str] = None,
@@ -114,6 +118,8 @@ async def list_runtime_logs(
     for raw in lines:
         parsed = _parse_runtime_line(raw)
         if level and parsed.level.lower() != level.lower():
+            continue
+        if module and parsed.module_key.lower() != module.lower():
             continue
         if q and q.lower() not in parsed.message.lower() and q.lower() not in parsed.name.lower():
             continue
@@ -267,17 +273,112 @@ def _filter_fields(payload: dict[str, Any], dataclass_type: Any) -> dict[str, An
 
 
 def _parse_runtime_line(raw: str) -> RuntimeLogLine:
-    # 格式: "2026-08-20 16:00:00,000 LEVEL name: message"
-    line = RuntimeLogLine(message=raw)
-    parts = raw.split(" ", 3)
-    if len(parts) >= 3:
-        line.timestamp = f"{parts[0]} {parts[1].rstrip(',')}"
-        line.level = parts[2]
-        rest = parts[3] if len(parts) == 4 else ""
-        if ": " in rest:
-            name, message = rest.split(": ", 1)
-            line.name = name
-            line.message = message
-        else:
-            line.name = rest
+    # 只把标准日志头中的 logger 识别为模块，避免 JSON/template 内的 ": " 被误判。
+    line = RuntimeLogLine(message=raw, module="系统", module_key="system")
+    match = re.match(r"^(\S+\s+\S+)\s+(DEBUG|INFO|WARNING|ERROR|CRITICAL)\s+([A-Za-z_][\w.-]*)(?::\s?(.*))?$", raw)
+    if match:
+        line.timestamp = match.group(1).replace(",", ".")
+        line.level = match.group(2)
+        line.name = match.group(3)
+        line.message = match.group(4) or ""
+        line.module_key, line.module = _business_module(line.name, line.message)
     return line
+
+
+def _business_module(name: str, message: str) -> tuple[str, str]:
+    text = f"{name} {message}".lower()
+    def has(*terms: str) -> bool:
+        return any(term in text for term in terms)
+
+    # 创作项目按生产阶段拆分，方便定位“哪一步”失败。
+    if "正文" in message or "novel_body" in text or "refine-novel-body" in text:
+        return "creative_project_body", "创作项目-正文"
+    if "细纲" in message or "chapter-outline" in text or "chapter_plan" in text:
+        return "creative_project_detail_outline", "创作项目-细纲"
+    if "大纲" in message or "outline" in text:
+        return "creative_project_outline", "创作项目-大纲"
+    if "script" in text or "剧本" in message:
+        return "creative_project_script", "创作项目-剧本"
+    if has("storyboard", "分镜"):
+        return "creative_project_storyboard", "创作项目-分镜"
+    if "creative_projects" in name or "creative_project" in name:
+        return "creative_project", "创作项目"
+
+    # AI 生成与模型基础设施。
+    if has("model3d", "3d", "图转3d"):
+        return "ai_3d", "AI生3D"
+    if has("video", "视频"):
+        return "ai_video", "AI生视频"
+    if has("image", "图片", "生图"):
+        return "ai_image", "AI生图"
+    if has("llm", "chat", "文本生成"):
+        return "ai_text", "AI文本"
+    if "ai.service" in name:
+        return "ai_text", "AI文本"
+    if has("tts", "语音合成"):
+        return "ai_tts", "AI语音"
+    if has("stt", "whisper", "语音识别"):
+        return "ai_stt", "AI语音识别"
+    if has("comfyui"):
+        return "comfyui", "ComfyUI工作流"
+    if has("connector", "registry", "provider"):
+        return "model_config", "模型配置"
+
+    # 资产、提示词与创作辅助。
+    if has("asset_hub", "assets", "素材库", "资产"):
+        return "asset_hub", "素材库-资产中枢"
+    if has("lineage", "血缘"):
+        return "asset_lineage", "素材库-资产血缘"
+    if has("prompt_reference", "image_prompt", "prompt-library", "提示词"):
+        return "prompt_library", "提示词库"
+    if has("previs", "导演台", "预演"):
+        return "previs", "3D预演"
+
+    # 下载、采集、小说与平台能力。
+    if has("download", "下载", "torrent"):
+        return "download", "下载中心"
+    if has("crawler", "采集", "search"):
+        return "crawler", "素材采集"
+    if has("bilibili", "b站"):
+        return "bilibili", "哔哩哔哩"
+    if has("fanqie", "番茄"):
+        return "fanqie", "番茄创作"
+    if has("wechat_mp", "公众号", "微信"):
+        return "wechat", "微信内容"
+    if has("up_analytics", "my_data", "creator_data", "创作者数据"):
+        return "creator_data", "创作者数据中心"
+    if has("novel", "book_source", "bookshelf", "reader", "ebook", "小说"):
+        return "novel", "小说阅读与书源"
+
+    # 生产工具与工作台。
+    if has("live2d"):
+        return "live2d", "Live2D工厂"
+    if has("cutclaw", "narrato", "moe", "clip", "jianying", "剪辑"):
+        return "clip", "AI剪辑"
+    if has("subtitle", "字幕"):
+        return "subtitle", "字幕工具"
+    if has("bgm", "音乐"):
+        return "bgm", "BGM音乐"
+    if has("breaker", "爆款拆解"):
+        return "breaker", "爆款拆解"
+    if has("canvas", "画布"):
+        return "canvas", "创作画布"
+    if has("agent", "skill", "智能体"):
+        return "agent", "Agent智能体"
+    if has("export", "导出"):
+        return "export", "导出中心"
+
+    # 运行与账号管理。
+    if has("account", "cookie", "登录"):
+        return "account", "账号与登录"
+    if has("task", "任务"):
+        return "task", "任务中心"
+    if has("platform_log", "logs", "运行日志"):
+        return "logs", "日志中心"
+    if has("settings", "设置"):
+        return "settings", "系统设置"
+    if name.startswith("httpx"):
+        return "http", "外部接口"
+    if name.startswith("ylcraft"):
+        return "ylcraft", "系统服务"
+    return name or "system", name or "系统"

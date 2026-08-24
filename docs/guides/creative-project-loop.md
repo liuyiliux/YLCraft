@@ -146,6 +146,14 @@ Current editor behavior:
 - Batch production stays available under `批量生产设置`. Collapsing it only changes visual density; selected stages, chapter range, retry and prior result state are preserved.
 - In a narrow workspace, the project library and episode columns stack vertically. The production desk does not compress fixed-width writing panels into unreadable columns or show resize separators that cannot be used on touch screens.
 - The episode header uses the persisted active chapter and exposes an explicit chapter selector. It surfaces the current outline, prose, script and storyboard readiness so the next production action is visible before entering an editor.
+
+### Director Production Plan
+
+Projects may select a production profile such as vertical drama, storybook/comic, knowledge content, platform post, novel serial or single shot. The profile recommends stages but does not require a novel body before standalone image, video, 3D, canvas, Asset Hub or multi-platform workflows can be used.
+
+The Director Agent keeps the user-editable plan as versioned `production_plan` project content. After the user has reviewed the plan, it can delegate a selected, dependency-closed group of up to six stages to the existing specialist Agent runtime. Each specialist has a separate Run; the director receives a joined observation rather than a hidden parallel workflow. Changing a node can first run an impact analysis to list every downstream stage that needs attention. When prior upstream outputs remain usable, the director can locally rerun only that affected slice and then save the revised plan as the next project-content version.
+
+In the Agent conversation and saved Run trace, production-plan actions show the selected stage, input content and Asset Hub IDs, planning summary, provider/model, output IDs and any confirmation point. This is the reviewable planning evidence, not hidden model reasoning. Actual image/video generation, download, publishing and deletion remain controlled by their existing confirmation gates and still return their results through tasks, event logs and Asset Hub lineage.
 - Project reference cards remain `ProjectAssetLink` records. The episode drawer only filters their existing roles (character, background, style, world and general reference); it does not duplicate asset metadata or create a second asset collection.
 
 ### Novel Writer Room Candidates

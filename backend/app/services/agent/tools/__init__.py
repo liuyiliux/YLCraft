@@ -115,6 +115,11 @@ from .task_tools import (
 )
 
 from .delegation_tools import delegate_agent_tasks
+from .production_plan_tools import (
+    analyze_creative_production_plan_impact,
+    run_creative_production_plan,
+    update_creative_production_plan,
+)
 
 from .novel_tools import (
     list_novel_sources,
@@ -195,6 +200,8 @@ from .creative_project_tools import (
     build_creative_project_context_pack_tool,
     list_creative_project_contents,
     get_creative_project_content,
+    get_creative_production_plan,
+    save_creative_production_plan,
     update_creative_project_content,
     list_creative_project_asset_links,
     link_creative_project_asset,
@@ -345,6 +352,8 @@ TOOLS = [
     build_creative_project_context_pack_tool,
     list_creative_project_contents,
     get_creative_project_content,
+    get_creative_production_plan,
+    save_creative_production_plan,
     update_creative_project_content,
     list_creative_project_asset_links,
     link_creative_project_asset,
@@ -441,6 +450,9 @@ __all__ = [
     "cancel_project_task",
     "delete_project_task",
     "delegate_agent_tasks",
+    "run_creative_production_plan",
+    "analyze_creative_production_plan_impact",
+    "update_creative_production_plan",
     "list_novel_sources",
     "list_novel_bookshelf",
     "search_novel_sources",
@@ -489,6 +501,8 @@ __all__ = [
     "build_creative_project_context_pack_tool",
     "list_creative_project_contents",
     "get_creative_project_content",
+    "get_creative_production_plan",
+    "save_creative_production_plan",
     "update_creative_project_content",
     "list_creative_project_asset_links",
     "link_creative_project_asset",

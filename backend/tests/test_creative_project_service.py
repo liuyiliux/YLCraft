@@ -162,7 +162,10 @@ def test_project_export_keeps_content_versions_and_asset_lineage(session: Sessio
 
     assert exported["format"] == "ylcraft-creative-project-export/v1"
     assert exported["project"]["id"] == project.id
-    assert exported["project"]["settings"] == {"tone": "quiet"}
+    settings = exported["project"]["settings"]
+    assert settings["tone"] == "quiet"
+    assert settings["production_profile"] == "vertical_drama"
+    assert settings["production_profile_version"] == 1
     assert {content["id"] for content in exported["contents"]} == {first.id, rewrite.id}
     candidate = next(content for content in exported["contents"] if content["id"] == rewrite.id)
     assert candidate["source_content_id"] == first.id
