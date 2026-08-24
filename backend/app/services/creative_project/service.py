@@ -28,9 +28,14 @@ from app.db.models.creative_project import (
     ProjectContent,
     ProjectGenerationLog,
     ProjectContinuityCandidate,
+    ProjectPublishRecord,
+    ProjectNarrativeRun,
     ProjectNarrativeContextSnapshot,
     ProjectNarrativeSnapshot,
+    ProjectStoryEvent,
     ProjectForeshadowing,
+    ProjectStyleMeasurement,
+    ProjectStateEntry,
 )
 from app.db.models.novel import NovelChapter
 from app.db.models.platform_template import PlatformTemplate
@@ -477,6 +482,16 @@ class CreativeProjectService:
         }
 
         for model, key, predicate in [
+            # 先删可能引用其他被删行的子记录，再删更底层，避免外键冲突
+            (ProjectNarrativeSnapshot, "narrative_snapshots", ProjectNarrativeSnapshot.project_id == project_id),
+            (ProjectNarrativeContextSnapshot, "narrative_contexts", ProjectNarrativeContextSnapshot.project_id == project_id),
+            (ProjectStateEntry, "state_entries", ProjectStateEntry.project_id == project_id),
+            (ProjectStoryEvent, "story_events", ProjectStoryEvent.project_id == project_id),
+            (ProjectContinuityCandidate, "continuity_candidates", ProjectContinuityCandidate.project_id == project_id),
+            (ProjectStyleMeasurement, "style_measurements", ProjectStyleMeasurement.project_id == project_id),
+            (ProjectForeshadowing, "foreshadowing", ProjectForeshadowing.project_id == project_id),
+            (ProjectNarrativeRun, "narrative_runs", ProjectNarrativeRun.project_id == project_id),
+            (ProjectPublishRecord, "publish_records", ProjectPublishRecord.project_id == project_id),
             (ProjectAssetLink, "asset_links", ProjectAssetLink.project_id == project_id),
             (ProjectGenerationLog, "generation_logs", ProjectGenerationLog.project_id == project_id),
             (ProjectContent, "contents", ProjectContent.project_id == project_id),
