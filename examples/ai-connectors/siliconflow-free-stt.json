@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "name": "SiliconFlow Free STT",
+  "description": "Public SiliconFlow preset for the free speech-to-text (ASR) model XingChenAGI/XingChenGSR-V1.0 via the audio-transcriptions API. Add your own API key after import.",
+  "connectors": [
+    {
+      "id": "siliconflow-xingchen-gsr-v1-stt",
+      "provider": "siliconflow",
+      "name": "SiliconFlow XingChen GSR v1（免费语音识别）",
+      "api_key": "",
+      "provider_type": "stt",
+      "base_url": "https://api.siliconflow.cn/v1",
+      "api_endpoint": "/audio/transcriptions",
+      "default_model": "XingChenAGI/XingChenGSR-V1.0",
+      "available_models": ["XingChenAGI/XingChenGSR-V1.0"],
+      "is_active": true,
+      "is_default": false,
+      "priority": 100,
+      "description": "SiliconFlow 免费语音转文本（ASR）模型，走 /v1/audio/transcriptions 接口：multipart 上传音频文件（file 字段）并携带 model 参数，响应返回 { \"text\": \"...\" }。默认模型 XingChenAGI/XingChenGSR-V1.0 为官方免费档位，适合本地视频/字幕转录场景。",
+      "api_format": "custom",
+      "request_template": "{\"model\":\"{{ model }}\",\"file\":\"{{ audio_file }}\"}",
+      "response_config": {
+        "text_path": "$.text",
+        "error_path": "$.message"
+      },
+      "default_params": {
+        "language": "auto",
+        "request_content_type": "multipart",
+        "multipart_audio_field": "file"
+      },
+      "timeout": 120,
+      "test_timeout": 30
+    }
+  ]
+}
