@@ -84,6 +84,7 @@ class AssetListResponse(BaseModel):
 
 class AssetProvenanceRequest(BaseModel):
     confirm: bool = Field(False, description="确认生成不覆盖原文件的派生清理副本")
+    authorized_source: Optional[str] = Field(None, max_length=64, description="清理副本的授权来源标记")
 
 
 class TagResponse(BaseModel):
@@ -887,6 +888,7 @@ async def clean_asset_provenance(
             "audit_report": report,
             "cleaned_report": cleaned_report,
             "original_file_path": str(representation.file_path),
+            "authorized_source": request.authorized_source or "",
         },
         lineage={
             "derived_from_asset_id": asset_id,
