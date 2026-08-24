@@ -122,6 +122,21 @@ class AssetRepresentationService:
         reps = await self.list_by_version(version_id)
         return reps[0] if reps else None
 
+    async def get_primaries(self, version_ids: list[str]) -> dict[str, AssetRepresentation]:
+        """批量获取多个版本的主文件表示（一次 IN 查询，消除 N+1）。"""
+        if not version_ids:
+            return {}
+        result = await self.session.execute(
+            select(AssetRepresentation).where(AssetRepresentation.version_id.in_(version_ids))
+        )
+        reps = result.scalars().all()
+        by_version: dict[str, AssetRepresentation] = {}
+        for r in reps:
+            vid = str(r.version_id)
+            if vid not in by_version:
+                by_version[vid] = r
+        return by_version
+
     # -------------------------------------------------------------------------
     # 工具
     # -------------------------------------------------------------------------

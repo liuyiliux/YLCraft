@@ -163,6 +163,21 @@ class AssetVersionService:
         )
         return result.scalar_one_or_none()
 
+    async def get_latest_versions(self, asset_node_ids: list[str]) -> dict[str, AssetVersion]:
+        """批量获取多个资产节点的最新版本（一次 IN 查询，消除 N+1）。"""
+        if not asset_node_ids:
+            return {}
+        result = await self.session.execute(
+            select(AssetVersion).where(AssetVersion.asset_node_id.in_(asset_node_ids))
+        )
+        versions = result.scalars().all()
+        latest: dict[str, AssetVersion] = {}
+        for v in versions:
+            nid = str(v.asset_node_id)
+            if nid not in latest or v.version_number > latest[nid].version_number:
+                latest[nid] = v
+        return latest
+
     async def get_version_by_number(
         self, asset_node_id: str, version_number: int
     ) -> Optional[AssetVersion]:
