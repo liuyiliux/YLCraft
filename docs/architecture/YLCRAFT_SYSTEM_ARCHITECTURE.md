@@ -40,6 +40,8 @@ flowchart LR
 
 AI 来源标记与文件元数据清理是 Asset Hub 上的独立派生操作，不等同于平台采集的“获取无水印资源”，也不等同于图片编辑器的视觉编辑。`POST /api/v1/assets/{asset_id}/provenance-clean` 默认只返回审计预览；确认后对文本隐形 Unicode（零宽/bidi/标签/非字符/空间同形字，参考 `guillaumemeyer/watermarks-remover` Layer A，同时保留 emoji 胶水与连接脚本内的合法 ZWJ/ZWNJ）、常见图片 EXIF/格式元数据（PNG/JPEG/WebP/BMP/TIFF/GIF 等）、视频/音频容器元数据（ffmpeg `-map_metadata -1`）、PDF 核心元数据（pypdf）、OOXML 核心属性（docx/xlsx/pptx 共用 `docProps/core.xml`）、OpenDocument（odt `meta.xml`）以及 EPUB（OPF 内 dc 元数据）生成派生新文件，原文件不覆盖，新资产通过 `derived_from` 血缘回指源资产并写入平台事件日志；请求可携带 `authorized_source` 记录授权来源，`AssetNode` 新增同名字段（迁移 `019`）。审计报告额外返回 `unicode_breakdown`（Layer A 按类型细分：bidi/zwj_family/tag/noncharacter/reserved_ignorable/private_use/space_homoglyph 等）。其余暂不支持的格式只报告审计结果，不宣称完成清理。前端提供两处入口：素材库资产详情「清理元数据」按钮，以及独立页 `/provenance-clean`（顶部导航「元数据清理」）。
 
+合成水印（像素/信号层面，如 Google CtrlRegen / SynthID）属只读审计能力，不做“移除”：`POST /api/v1/assets/{asset_id}/deep-watermark-detect` 只上报检测结果、绝不修改文件。实现上内置一个确定性的 CtrlRegen 式鲁棒性统计检测器（纯 CPU、零 GPU/ML，对图像计算多尺度灰度/频域统计指纹得到 0~1 合成痕迹得分与置信度）；SynthID 检测需运行训练过的神经网络分类器（图片/音频/视频建议 GPU），因此做成可选适配器——默认跳过，仅当显式配置 `YLCRAFT_SYNTHID_DETECT_ENABLED=1` 与 `YLCRAFT_SYNTHID_DETECT_PROVIDER` 时才上报 enabled，避免把 GPU/ML 变成硬依赖。检测结果同时写入平台事件日志（scene=`asset_provenance`，task_type=`deep_watermark_detect`）。文本统计型水印的“最大努力扰动改写”是写作室可选步骤 `prose_watermark_clean`，与本检测无关。
+
 ## 2. 运行时总览
 
 后端入口是 `backend/app/main.py`，应用启动时完成：

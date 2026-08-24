@@ -29,6 +29,7 @@
 - [x] 27. 复刻 `watermarks-remover` Layer A 与文档/图片覆盖：扩展文本隐形 Unicode（bidi/标签/非字符/空间同形字）清理并保留 emoji 胶水与合法 ZWJ/ZWNJ；新增文档 xlsx/pptx/odt/epub；新增图片 gif；审计报告增加 `unicode_breakdown`。
 - [ ] 16. 与平台采集“获取无水印资源”和图片编辑器区分导航、文案和 API。
 - [x] 17. 增加授权来源字段、原文件保护、操作日志和失败诊断。
+- [x] 17b. 增加“只读检测不清理”的合成水印审计能力（CtrlRegen/SynthID）：`POST /api/v1/assets/{asset_id}/deep-watermark-detect` 只上报检测结果、绝不修改文件；内置确定性 CtrlRegen 式鲁棒性统计检测器（纯 CPU、零 GPU/ML）；SynthID 做成可选适配器，默认跳过（配置 `YLCRAFT_SYNTHID_DETECT_ENABLED`/`PROVIDER` 才启用），避免把 GPU/ML 变成硬依赖；结果写入平台事件日志。
 
 ## Phase 5: 验证与文档
 
