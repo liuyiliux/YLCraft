@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Optional
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Depends, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import String, cast
 from sqlmodel import select
@@ -22,6 +22,8 @@ from app.db.database import get_async_session
 from app.db.models.ai_connector import AIConnector
 from app.db.models.asset_hub import AssetRelation, AssetRepresentation, AssetType, AssetVersion, RelationType
 from app.db.models.task import Model3DGenerationTask
+from app.core.external_api_auth import optional_external_api_key
+from app.db.models.external_api_key import ExternalApiKey
 from app.services.asset_hub import AssetHubFacade
 from app.services.cos_storage import load_cos_service
 from app.services.model3d.service import Model3DService
@@ -260,7 +262,7 @@ async def list_model3d_backends(capability: Optional[str] = Query(default=None))
 
 
 @router.post("/generate", response_model=Model3DTaskResponse, summary="Submit configured image-to-3D task")
-async def generate_model3d(req: Model3DGenerateRequest):
+async def generate_model3d(req: Model3DGenerateRequest, external_key: Optional[ExternalApiKey] = Depends(optional_external_api_key)):
     try:
         source_data, source_url, source_asset_id = await _resolve_source(req.source_asset_id, req.source_image)
         if not (source_data or source_url or req.prompt.strip()):

@@ -37,6 +37,8 @@ from sqlalchemy import select
 from app.db.database import get_async_session
 from app.db.models.asset_hub import AssetNode, AssetType, Tag, RelationType
 from app.core.ffmpeg import get_ffmpeg_service
+from app.core.external_api_auth import optional_external_api_key
+from app.db.models.external_api_key import ExternalApiKey
 from app.services.asset_hub import AssetHubFacade
 from app.services.asset_hub.node_service import AssetNodeService
 from app.services.asset_hub.representation_service import AssetRepresentationService
@@ -1168,6 +1170,7 @@ async def upload_asset(
     file: UploadFile = File(...),
     title: str = Form(""),
     session = Depends(get_asset_session),
+    external_key: Optional[ExternalApiKey] = Depends(optional_external_api_key),
 ):
     """上传本地素材（图片/视频/音频/文本）入库。
 

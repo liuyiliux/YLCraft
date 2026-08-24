@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import time
 from collections import defaultdict, deque
 from datetime import datetime
@@ -12,6 +13,9 @@ from sqlmodel import select
 
 from app.db.database import get_async_session_dependency
 from app.db.models.external_api_key import ExternalApiKey
+
+# 生产环境置 1 可对挂了校验依赖的路径强制要求 key（无 key 或未带 key 返回 401）。
+_REQUIRE_KEY = os.getenv("YLCRAFT_EXTERNAL_API_REQUIRE_KEY", "") == "1"
 
 
 def hash_external_key(token: str) -> str:
@@ -33,6 +37,8 @@ async def optional_external_api_key(
     """
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
+        if _REQUIRE_KEY:
+            raise HTTPException(status_code=401, detail="需要外部 API Key（YLCRAFT_EXTERNAL_API_REQUIRE_KEY=1）")
         return None
     token = auth[7:]
     row = (await session.exec(
