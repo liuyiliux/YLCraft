@@ -2228,6 +2228,22 @@
     },
     {
       "method": "POST",
+      "path": "/api/v1/assets/{asset_id}/deep-watermark-detect",
+      "router": "assets",
+      "prefix": "/api/v1/assets",
+      "local_path": "/{asset_id}/deep-watermark-detect",
+      "tags": [
+        "Assets"
+      ],
+      "summary": "只读检测合成水印痕迹（CtrlRegen/SynthID，不修改文件）",
+      "function": "detect_asset_deep_watermark",
+      "file": "backend/app/api/v1/assets.py",
+      "line": 926,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
       "path": "/api/v1/assets/{asset_id}/restore",
       "router": "assets",
       "prefix": "/api/v1/assets",

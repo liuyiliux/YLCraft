@@ -132,3 +132,287 @@ def test_pdf_docx_extensions_are_detected_by_suffix(tmp_path: Path):
 
     assert inspect_file(pdf).media_kind == "document"
     assert inspect_file(docx).media_kind == "document"
+
+
+def _write_zip_container(path: Path, payloads: dict[str, bytes]) -> None:
+    """构造一个最小 zip 容器（docx/xlsx/pptx/odt/epub 共用）。"""
+    import zipfile
+
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+        for name, data in payloads.items():
+            z.writestr(name, data)
+
+
+def test_layer_a_unicode_scrub_is_comprehensive(tmp_path: Path):
+    """Layer A 应覆盖远超早期实现的隐形/bidi/标签/非字符/空间同形字。"""
+    # 组合各类隐形载体：零宽、bidi、软连字符、标签字符、非字符、保留可忽略符、私有用途、空间同形字
+    source = tmp_path / "mixed.txt"
+    target = tmp_path / "mixed-cleaned.txt"
+    text = "a\u200b\u202e\u00ad\U000E0001\ufdd0\u2065\ue000\ue000\uff1c\u3000b"
+    # 注意：U+FF1C 是全角小于号（空间/全角同形字），此处用私有用例验证
+    source.write_text(text, encoding="utf-8")
+
+    cleaned = clean_file(source, target)
+    assert source.read_text(encoding="utf-8") == text  # 源文件不动
+    assert cleaned.cleanable is False, cleaned.unicode_breakdown
+    # 隐形载体应被清除，普通 ASCII 保留
+    out = target.read_text(encoding="utf-8")
+    assert "a" in out and "b" in out
+
+
+def test_layer_a_preserves_emoji_glue_and_script_joiners(tmp_path: Path):
+    """emoji ZWJ/VS 序列、以及合法连接脚本内的 ZWJ 不应被误删。"""
+    from app.services.asset_provenance.service import _clean_text_layer_a
+
+    cleaned, counts = _clean_text_layer_a("👨\u200d👩\u200d👧")
+    assert "👨\u200d👩" in cleaned  # 家庭 emoji 序列保留
+    assert counts == {}
+
+    cleaned, counts = _clean_text_layer_a("❤\ufe0f")
+    assert cleaned == "❤\ufe0f"
+
+    # 波斯语正交 ZWJ 保留
+    cleaned, counts = _clean_text_layer_a("می\u200cروم")
+    assert "می\u200cروم" in cleaned
+
+
+def test_layer_a_normalizes_space_homoglyphs(tmp_path: Path):
+    """空间同形字应归一化为普通空格，并计入 breakdown。"""
+    from app.services.asset_provenance.service import _clean_text_layer_a
+
+    cleaned, counts = _clean_text_layer_a("a\u3000b\u00a0c")
+    assert cleaned == "a b c"
+    assert counts.get("space_homoglyph") == 2
+
+
+def test_xlsx_metadata_is_removed(tmp_path: Path):
+    import openpyxl
+
+    source = tmp_path / "book.xlsx"
+    target = tmp_path / "book-cleaned.xlsx"
+    wb = openpyxl.Workbook()
+    wb.active["A1"] = "hello"
+    wb.properties.creator = "SomeAuthor"
+    wb.properties.title = "MySheet"
+    wb.save(str(source))
+
+    report = inspect_file(
+        source, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    assert report.media_kind == "document"
+    assert report.cleanable is True
+    assert "author" in report.metadata_keys
+
+    cleaned = clean_file(source, target)
+    assert cleaned.cleanable is False, cleaned.metadata_keys
+    assert "author" not in inspect_file(target).metadata_keys
+    assert openpyxl.load_workbook(target).active["A1"].value == "hello"
+
+
+def test_pptx_metadata_is_removed(tmp_path: Path):
+    from pptx import Presentation
+
+    source = tmp_path / "deck.pptx"
+    target = tmp_path / "deck-cleaned.pptx"
+    prs = Presentation()
+    prs.slides.add_slide(prs.slide_layouts[0])
+    prs.core_properties.author = "SomeAuthor"
+    prs.save(str(source))
+
+    report = inspect_file(
+        source, "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    )
+    assert report.media_kind == "document"
+    assert report.cleanable is True
+
+    cleaned = clean_file(source, target)
+    assert cleaned.cleanable is False, cleaned.metadata_keys
+    assert "author" not in inspect_file(target).metadata_keys
+
+
+def test_odt_metadata_is_removed(tmp_path: Path):
+    import zipfile
+    from xml.etree import ElementTree as ET
+
+    source = tmp_path / "doc.odt"
+    meta = (
+        '<?xml version="1.0"?>'
+        '<office:document-meta xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" '
+        'xmlns:dc="http://purl.org/dc/elements/1.1/" '
+        'xmlns:meta="urn:oasis:names:tc:opendocument:xmlns:meta:1.0">'
+        "<office:meta><dc:creator>SomeAuthor</dc:creator><dc:title>MyDoc</dc:title>"
+        "<meta:generator>Writer</meta:generator></office:meta></office:document-meta>"
+    )
+    _write_zip_container(
+        source,
+        {
+            "mimetype": b"application/vnd.oasis.opendocument.text",
+            "content.xml": b'<?xml version="1.0"?><office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"/>',
+            "meta.xml": meta.encode(),
+        },
+    )
+
+    report = inspect_file(source, "application/vnd.oasis.opendocument.text")
+    assert report.media_kind == "document"
+    assert report.cleanable is True
+    assert "creator" in report.metadata_keys
+
+    target = tmp_path / "doc-cleaned.odt"
+    cleaned = clean_file(source, target)
+    assert cleaned.cleanable is False, cleaned.metadata_keys
+    with zipfile.ZipFile(target) as z:
+        root = ET.fromstring(z.read("meta.xml"))
+        creators = [
+            e for e in root.iter()
+            if "purl.org/dc" in e.tag and e.tag.split("}")[-1] == "creator"
+        ]
+        assert not creators
+
+
+def test_epub_metadata_is_removed(tmp_path: Path):
+    import zipfile
+    from xml.etree import ElementTree as ET
+
+    source = tmp_path / "book.epub"
+    opf = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<package xmlns="http://www.idpf.org/2007/opf" '
+        'xmlns:dc="http://purl.org/dc/elements/1.1/" version="3.0">'
+        "<metadata><dc:title>MyBook</dc:title><dc:creator>SomeAuthor</dc:creator></metadata>"
+        "<manifest/><spine/></package>"
+    )
+    container = (
+        '<?xml version="1.0"?>'
+        '<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
+        '<rootfiles><rootfile full-path="OEBPS/content.opf" '
+        'media-type="application/oebps-package+xml"/></rootfiles></container>'
+    )
+    _write_zip_container(
+        source,
+        {"META-INF/container.xml": container.encode(), "OEBPS/content.opf": opf.encode()},
+    )
+
+    report = inspect_file(source, "application/epub+zip")
+    assert report.media_kind == "document"
+    assert report.cleanable is True
+    assert "creator" in report.metadata_keys and "title" in report.metadata_keys
+
+    target = tmp_path / "book-cleaned.epub"
+    cleaned = clean_file(source, target)
+    assert cleaned.cleanable is False, cleaned.metadata_keys
+    with zipfile.ZipFile(target) as z:
+        root = ET.fromstring(z.read("OEBPS/content.opf"))
+        dc = [e for e in root.iter() if "purl.org/dc/elements" in e.tag]
+        assert not dc
+
+
+def test_gif_comment_metadata_is_removed(tmp_path: Path):
+    from PIL import Image
+
+    source = tmp_path / "anim.gif"
+    target = tmp_path / "anim-cleaned.gif"
+    im = Image.new("P", (4, 4))
+    im.info["comment"] = b"gen"
+    im.save(source, format="GIF")
+
+    report = inspect_file(source, "image/gif")
+    assert report.media_kind == "image"
+    assert report.cleanable is True
+    assert "comment" in report.metadata_keys
+
+    cleaned = clean_file(source, target)
+    assert cleaned.cleanable is False, cleaned.metadata_keys
+    assert "comment" not in inspect_file(target).metadata_keys
+
+
+def test_new_document_and_image_extensions_by_suffix(tmp_path: Path):
+    for name in ["a.xlsx", "a.pptx", "a.odt", "a.epub", "a.gif", "a.avif"]:
+        p = tmp_path / name
+        p.write_bytes(b"PK" if name.endswith((".xlsx", ".pptx", ".epub")) else b"data")
+        report = inspect_file(p)
+        assert report.media_kind in {"document", "image"}, (name, report.media_kind)
+
+
+def test_deep_watermark_detect_is_read_only_and_reports_ctrlregen(tmp_path: Path):
+    from PIL import Image
+
+    from app.services.asset_provenance import detect_deep_watermark
+
+    source = tmp_path / "img.png"
+    Image.new("RGB", (64, 64), "#4a7bb5").save(source)
+    before = source.read_bytes()
+
+    result = detect_deep_watermark(source, "image/png")
+    assert result.supported is True
+    assert result.media_kind == "image"
+    assert "score" in result.ctrlregen
+    assert "confidence" in result.ctrlregen
+    assert result.ctrlregen["method"] == "statistical-ctrlregen-like"
+    assert result.synthid["status"] == "skipped"
+    # 只读：文件字节不变
+    assert source.read_bytes() == before
+    # 不伪装成已清理（任何 note 都不宣称能“移除”水印）
+    assert all("移除" not in n for n in result.notes)
+    # 明确只读上报
+    assert any("未修改" in n for n in result.notes)
+
+
+def test_deep_watermark_detect_image_with_noise_scores_higher(tmp_path: Path):
+    """带噪/高频内容的图应得到更高（更强嵌入痕迹）得分，验证统计检测区分度。"""
+    import random
+
+    from PIL import Image
+
+    from app.services.asset_provenance import detect_deep_watermark
+
+    flat = tmp_path / "flat.png"
+    noisy = tmp_path / "noisy.png"
+    Image.new("RGB", (64, 64), (80, 80, 80)).save(flat)
+    Image.new("RGB", (64, 64), (80, 80, 80)).save(noisy)
+    img = Image.open(noisy)
+    rnd = random.Random(42)
+    for y in range(img.height):
+        for x in range(img.width):
+            img.putpixel((x, y), (rnd.randint(0, 255), rnd.randint(0, 255), rnd.randint(0, 255)))
+    img.save(noisy)
+
+    flat_result = detect_deep_watermark(flat, "image/png")
+    noisy_result = detect_deep_watermark(noisy, "image/png")
+    assert noisy_result.ctrlregen["score"] > flat_result.ctrlregen["score"]
+
+
+def test_deep_watermark_detect_unsupported_and_synthid_skipped(tmp_path: Path):
+    from app.services.asset_provenance import detect_deep_watermark
+
+    # 文本：返回 unsupported 且不伪装
+    text = tmp_path / "note.txt"
+    text.write_text("hello", encoding="utf-8")
+    result = detect_deep_watermark(text, "text/plain")
+    assert result.supported is False
+    assert result.media_kind == "text"
+    assert result.synthid["status"] == "skipped"
+
+    # 未知格式
+    blob = tmp_path / "blob.xyz"
+    blob.write_bytes(b"data")
+    result = detect_deep_watermark(blob)
+    assert result.supported is False
+    assert result.media_kind == "unsupported"
+    assert all("不伪装" in n for n in result.notes)
+
+
+def test_deep_watermark_detect_synthid_can_be_enabled_via_env(tmp_path, monkeypatch):
+    from PIL import Image
+
+    from app.services.asset_provenance import detect_deep_watermark
+
+    monkeypatch.setenv("YLCRAFT_SYNTHID_DETECT_ENABLED", "1")
+    monkeypatch.setenv("YLCRAFT_SYNTHID_DETECT_PROVIDER", "demo-detector")
+    source = tmp_path / "img.png"
+    Image.new("RGB", (32, 32), "white").save(source)
+
+    result = detect_deep_watermark(source, "image/png")
+    assert result.synthid["status"] == "enabled"
+    assert result.synthid["provider"] == "demo-detector"
+    # 仍只读
+    assert "未修改" in " ".join(result.notes)
