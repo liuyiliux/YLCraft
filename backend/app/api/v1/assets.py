@@ -41,7 +41,7 @@ from app.services.asset_hub import AssetHubFacade
 from app.services.asset_hub.node_service import AssetNodeService
 from app.services.asset_hub.representation_service import AssetRepresentationService
 from app.services.asset_hub.version_service import AssetVersionService
-from app.services.asset_provenance import AssetProvenanceService
+from app.services.asset_provenance import AssetProvenanceService, detect_deep_watermark_dict
 from app.services.lineage.service import LineageService
 from app.services.platform_log import service as platform_log
 
@@ -920,6 +920,43 @@ async def clean_asset_provenance(
         "derived_asset_id": created.node_id,
         "report": cleaned_report,
         "preserved_source": True,
+    }
+
+
+@router.post(
+    "/{asset_id}/deep-watermark-detect",
+    summary="只读检测合成水印痕迹（CtrlRegen/SynthID，不修改文件）",
+)
+async def detect_asset_deep_watermark(
+    asset_id: str,
+    session=Depends(get_asset_session),
+):
+    """只读审计：对资产做合成水印（CtrlRegen/SynthID）检测上报，绝不修改文件。
+
+    与 provenance-clean 不同：本端点只读，不生成派生副本、不清理任何内容，
+    也绝不宣称能“移除”像素/波形隐写水印。
+    """
+    primary = await _get_asset_hub_primary(session, asset_id)
+    if not primary:
+        raise HTTPException(status_code=404, detail="资产或文件表示不存在")
+    _, _, representation = primary
+    result = detect_deep_watermark_dict(
+        representation.file_path, representation.mime_type
+    )
+    await platform_log.record_event(
+        scene="asset_provenance",
+        task_type="deep_watermark_detect",
+        level="info",
+        status="success" if result.get("supported") else "info",
+        message="已执行只读合成水印检测",
+        request={"asset_id": asset_id, "operation": "deep_watermark_detect"},
+        response={"media_kind": result.get("media_kind"), "supported": result.get("supported")},
+    )
+    return {
+        "success": True,
+        "asset_id": asset_id,
+        "read_only": True,
+        "report": result,
     }
 
 
