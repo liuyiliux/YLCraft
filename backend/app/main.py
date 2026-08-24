@@ -480,6 +480,13 @@ def _register_routes():
     except Exception as e:
         logger.warning(f"Could not load ai_connectors router: {e}")
 
+    # 外部 Agent API Key 管理
+    try:
+        from app.api.v1 import external_api_keys
+        app.include_router(external_api_keys.router, prefix="/api/v1/external-api-keys", tags=["External API Keys"])
+    except Exception as e:
+        logger.warning(f"Could not load external_api_keys router: {e}")
+
     try:
         from app.api.v1 import ai_capabilities
         app.include_router(ai_capabilities.router, prefix="/api/v1/ai", tags=["AI Capabilities"])

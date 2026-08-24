@@ -20,9 +20,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.core.external_api_auth import optional_external_api_key
 from app.core.task_queue import TaskStatus, get_task_queue
 from app.db.models.asset_hub import AssetNode
 from app.db.models.creative_project import CreativeProject, ProjectAssetLink, ProjectContent
+from app.db.models.external_api_key import ExternalApiKey
 from app.services.ai import get_ai_service, AIService
 from app.services.ai.types import ImageGenerationRequest
 from app.services.asset_hub.representation_service import AssetRepresentationService
@@ -590,7 +592,10 @@ async def list_backends():
 
 
 @router.post("/generate", response_model=ImageResponse, summary="生成图片")
-async def generate_image(req: ImageGenerateRequest):
+async def generate_image(
+    req: ImageGenerateRequest,
+    external_key: Optional[ExternalApiKey] = Depends(optional_external_api_key),
+):
     """
     调用图像生成后端生成图片。
     自动选择默认后端或指定 provider。
