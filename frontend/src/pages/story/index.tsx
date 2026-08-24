@@ -644,6 +644,7 @@ const writerRoomStepOptions = [
   { label: '人味润色', value: 'prose_humanized' },
   { label: '主编审稿', value: 'prose_review' },
   { label: '定向重写', value: 'prose_rewrite' },
+  { label: '去水印改写', value: 'prose_watermark_clean', optional: true },
 ]
 
 const writerRoomStepLabelMap = Object.fromEntries(writerRoomStepOptions.map((item) => [item.value, item.label]))
@@ -655,6 +656,7 @@ const writerRoomStepDescriptions: Record<string, string> = {
   prose_humanized: '压低解释感，补动作、物件互动、停顿和潜台词。',
   prose_review: '主编审稿，给出 AI 味、逻辑、节奏和可执行改法。',
   prose_rewrite: '按审稿意见或选段要求生成新的候选正文。',
+  prose_watermark_clean: '对正文做统计型文本水印的最大努力改写扰动（同义替换/句法重组/连接词变换），保留事实与篇幅。',
 }
 
 const writerRoomAgentNames: Record<string, string> = {
@@ -664,6 +666,7 @@ const writerRoomAgentNames: Record<string, string> = {
   prose_humanized: '润色师',
   prose_review: '主编',
   prose_rewrite: '改稿师',
+  prose_watermark_clean: '水印清洗员',
 }
 
 const writerRoomStepInputs: Record<string, string[]> = {
@@ -673,6 +676,7 @@ const writerRoomStepInputs: Record<string, string[]> = {
   prose_humanized: ['正文初稿或候选正文', '用户额外要求'],
   prose_review: ['正文候选', '大纲与连续性上下文'],
   prose_rewrite: ['正文候选', '主编审稿意见', '用户选段或要求'],
+  prose_watermark_clean: ['最终正文候选', '用户额外要求'],
 }
 
 const writerRoomStepOutputs: Record<string, string[]> = {
@@ -682,6 +686,7 @@ const writerRoomStepOutputs: Record<string, string[]> = {
   prose_humanized: ['更自然的正文候选'],
   prose_review: ['质量标签', 'AI味检查', '可执行重写指令'],
   prose_rewrite: ['可提升为正式正文的候选版本'],
+  prose_watermark_clean: ['可提升为正式正文的扰动改写版'],
 }
 
 const writerRoomStepNextHints: Record<string, string> = {
@@ -691,6 +696,7 @@ const writerRoomStepNextHints: Record<string, string> = {
   prose_humanized: '润色后进入“主编审稿”，检查逻辑、节奏、AI腔和角色声音。',
   prose_review: '审稿后可以按单条意见重写，也可以应用全部意见生成定向重写版。',
   prose_rewrite: '确认效果后再提升为正式正文，旧正文会作为历史版本保留。',
+  prose_watermark_clean: '确认扰动改写效果后再提升为正式正文；该步骤可选，默认不在批量流程里。',
 }
 
 function parseChapterRange(value: string): number[] {
@@ -9579,6 +9585,9 @@ function WriterRoomTab({
                       <span style={writerRoomStepTitleStyle}>
                         <Badge color={row.statusColor} />
                         <Text strong>{row.step.label}</Text>
+                        {(row.step as { optional?: boolean })?.optional ? (
+                          <Tag color="orange" style={{ marginLeft: 6 }}>可选</Tag>
+                        ) : null}
                         <Tag style={{ marginLeft: 'auto' }}>{row.agentName}</Tag>
                       </span>
                       <Text type="secondary" style={{ display: 'block', fontSize: 12, marginTop: 4 }}>
