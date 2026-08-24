@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 from pydantic import BaseModel, ValidationError
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, delete as sa_delete
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import load_only
 from sqlmodel import Session, select
@@ -482,7 +482,7 @@ class CreativeProjectService:
         }
 
         for model, key, predicate in [
-            # 先删可能引用其他被删行的子记录，再删更底层，避免外键冲突
+            # 先删可能引用其他被删行的子记录，再删更底层，保证外键顺序
             (ProjectNarrativeSnapshot, "narrative_snapshots", ProjectNarrativeSnapshot.project_id == project_id),
             (ProjectNarrativeContextSnapshot, "narrative_contexts", ProjectNarrativeContextSnapshot.project_id == project_id),
             (ProjectStateEntry, "state_entries", ProjectStateEntry.project_id == project_id),
@@ -499,10 +499,10 @@ class CreativeProjectService:
         ]:
             rows = self.session.exec(select(model).where(predicate)).all()
             stats[key] = len(rows)
-            for row in rows:
-                self.session.delete(row)
+            if rows:
+                self.session.exec(sa_delete(model).where(predicate))
 
-        self.session.delete(project)
+        self.session.exec(sa_delete(CreativeProject).where(CreativeProject.id == project_id))
         self.session.commit()
         return stats
 
