@@ -527,7 +527,7 @@ async def run_creative_project_pipeline(
 
 @register_tool(
     name="run_creative_writer_room",
-    description="运行小说写作室分阶段候选链，例如 scene_beats、character_rehearsal、prose_draft、prose_humanized、prose_review。",
+    description="运行小说写作室分阶段候选链，例如 scene_beats、character_rehearsal、prose_draft、prose_humanized、prose_review、prose_rewrite；可选 prose_watermark_clean（去水印改写）仅在显式列出时执行。",
     category="creative_project",
     input_schema_note="必须提供 project_id 和 chapter_number；steps 可为空表示默认流程。",
     output_schema_note="返回 result，包含写作室各步骤产物；会写入 project_contents 和日志。",

@@ -72,7 +72,30 @@ WRITER_ROOM_STEP_ORDER = (
     "prose_humanized",
     "prose_review",
     "prose_rewrite",
+    # Optional Layer B statistical-text-watermark clean pass. Only runs when
+    # explicitly requested: it rewrites the final prose via semantic
+    # perturbation (synonym / syntactic / connector / boundary adjustments), so
+    # it deliberately stays out of the default candidate chain.
+    "prose_watermark_clean",
 )
+
+# Default chain used when no explicit steps are requested. Kept identical to the
+# original pre-watermark chain: the watermark-clean pass is always opt-in.
+DEFAULT_WRITER_ROOM_STEPS = (
+    "scene_beats",
+    "character_rehearsal",
+    "prose_draft",
+    "prose_humanized",
+    "prose_review",
+)
+
+# Prose passes that output a full novel-body candidate (schema + length/quality
+# guards + promotable to novel_body).
+PROSE_WRITER_ROOM_STEPS = {"prose_draft", "prose_humanized", "prose_rewrite", "prose_watermark_clean"}
+
+# Prose passes that must stay bounded against their explicit prose source so a
+# candidate cannot silently collapse a full chapter into a summary.
+BOUNDED_PROSE_WRITER_ROOM_STEPS = {"prose_humanized", "prose_rewrite", "prose_watermark_clean"}
 
 _MOJIBAKE_PRIMARY_MARKERS = ("\u00c2", "\u00c3")
 
@@ -281,7 +304,7 @@ def writer_room_effective_instruction(
 ) -> str:
     """Supply the page/Agent default for prose without overriding explicit direction."""
     explicit = str(instruction or "").strip()
-    if explicit or step not in {"prose_draft", "prose_humanized", "prose_rewrite"}:
+    if explicit or step not in PROSE_WRITER_ROOM_STEPS:
         return explicit
 
     if source_word_count >= 4200:
@@ -1795,7 +1818,7 @@ class CreativeProjectService:
         requested_maximum = writer_room_requested_maximum_characters(effective_instruction)
         prose_max_tokens = (
             writer_room_output_max_tokens(requested_maximum)
-            if step in {"prose_draft", "prose_humanized", "prose_rewrite"} and requested_maximum is not None
+            if step in PROSE_WRITER_ROOM_STEPS and requested_maximum is not None
             else None
         )
         default_prompt = self._writer_room_prompt(
@@ -1832,7 +1855,7 @@ class CreativeProjectService:
                 max_tokens=prose_max_tokens,
                 request_metadata={"creative_context": context.get("context_pack_metadata") or {}},
             )
-        if step in {"prose_draft", "prose_humanized", "prose_rewrite"}:
+        if step in PROSE_WRITER_ROOM_STEPS:
             self._normalize_prose_content_alias(data)
         if step == "prose_humanized":
             source_word_count = int(context.get("source_word_count") or 0)
@@ -1866,7 +1889,7 @@ class CreativeProjectService:
                     "first_output_word_count": output_word_count,
                     "retried": True,
                 }
-        if step in {"prose_draft", "prose_humanized", "prose_rewrite"}:
+        if step in PROSE_WRITER_ROOM_STEPS:
             source_word_count = int(context.get("source_word_count") or 0)
             requested_minimum = writer_room_requested_minimum_characters(effective_instruction)
             requested_maximum = writer_room_requested_maximum_characters(effective_instruction)
@@ -1884,7 +1907,7 @@ class CreativeProjectService:
             # thin AI-ish draft into a fuller chapter is a first-class workflow.
             minimum_characters = 2800
             maximum_characters: int | None = None
-            if step in {"prose_humanized", "prose_rewrite"} and source_word_count >= 600:
+            if step in BOUNDED_PROSE_WRITER_ROOM_STEPS and source_word_count >= 600:
                 minimum_characters = math.ceil(source_word_count * 0.88)
                 if not allows_length_expansion:
                     maximum_characters = math.floor(source_word_count * 1.15)
@@ -1934,7 +1957,7 @@ class CreativeProjectService:
                 data = self._normalize_writer_room_review(data)
                 if not self._writer_room_review_has_substance(data):
                     raise ValueError("主编审稿结果不完整，未生成可执行的质量意见")
-        if step in {"prose_draft", "prose_humanized", "prose_rewrite"}:
+        if step in PROSE_WRITER_ROOM_STEPS:
             text = str(data.get("content") or "")
             data["word_count"] = len(text)
         else:
@@ -2019,7 +2042,7 @@ class CreativeProjectService:
         requested_steps = [self._normalize_writer_room_step(step) for step in (steps or [])]
         normalized_steps = [step for step in WRITER_ROOM_STEP_ORDER if step in requested_steps]
         if not normalized_steps:
-            normalized_steps = list(WRITER_ROOM_STEP_ORDER[:-1])
+            normalized_steps = list(DEFAULT_WRITER_ROOM_STEPS)
 
         # A batch is one deliberate writing pass. Freeze one project context
         # before its first model call so later candidates cannot quietly alter
@@ -2212,8 +2235,8 @@ class CreativeProjectService:
         content = self.session.get(ProjectContent, content_id)
         if not content or content.project_id != project_id:
             raise ValueError("写作室内容不存在")
-        if content.content_type not in {"prose_draft", "prose_humanized", "prose_rewrite"}:
-            raise ValueError("只有正文草稿、人味润色或重写结果可以提升为正文")
+        if content.content_type not in PROSE_WRITER_ROOM_STEPS:
+            raise ValueError("只有正文草稿、人味润色、定向重写或去水印改写结果可以提升为正文")
         data = loads_json(content.data_json)
         text = str(data.get("content") or content.text_content or "")
         if not text.strip():
@@ -3161,7 +3184,7 @@ class CreativeProjectService:
                 )
 
         content_by_id = {content.id: content for content in contents}
-        writer_room_types = {"scene_beats", "character_rehearsal", "prose_draft", "prose_humanized", "prose_review", "prose_rewrite"}
+        writer_room_types = {"scene_beats", "character_rehearsal", "prose_draft", "prose_humanized", "prose_review", "prose_rewrite", "prose_watermark_clean"}
         for content in contents:
             if content.content_type not in writer_room_types or not content.source_content_id:
                 continue
@@ -7043,6 +7066,9 @@ class CreativeProjectService:
             "prose-review": "prose_review",
             "rewrite": "prose_rewrite",
             "prose-rewrite": "prose_rewrite",
+            "watermark_clean": "prose_watermark_clean",
+            "watermark-clean": "prose_watermark_clean",
+            "watermark_cleaner": "prose_watermark_clean",
         }
         normalized = aliases.get(str(step or "").strip(), str(step or "").strip())
         allowed = {
@@ -7052,6 +7078,7 @@ class CreativeProjectService:
             "prose_humanized",
             "prose_review",
             "prose_rewrite",
+            "prose_watermark_clean",
         }
         if normalized not in allowed:
             raise ValueError(f"不支持的写作室步骤: {step}")
@@ -7106,18 +7133,20 @@ class CreativeProjectService:
             "prose_humanized": [source, draft, novel_body],
             "prose_review": [source, humanized, draft, novel_body],
             "prose_rewrite": [source, humanized, draft, novel_body],
+            "prose_watermark_clean": [source, humanized, draft, novel_body],
         }.get(step, [source, chapter_outline])
         upstream_source = next((item for item in upstream_candidates if item is not None), None)
         prose_candidates = {
             "prose_humanized": [source, draft, novel_body],
             "prose_review": [source, humanized, draft, novel_body],
             "prose_rewrite": [source, humanized, draft, novel_body],
+            "prose_watermark_clean": [source, humanized, draft, novel_body],
         }.get(step, [])
         prose_source = next(
             (
                 item
                 for item in prose_candidates
-                if item is not None and item.content_type in {"novel_body", "prose_draft", "prose_humanized", "prose_rewrite"}
+                if item is not None and item.content_type in {"novel_body", "prose_draft", "prose_humanized", "prose_rewrite", "prose_watermark_clean"}
             ),
             None,
         )
@@ -7238,7 +7267,7 @@ class CreativeProjectService:
 
 约束：已锁定项目事实不可改写或推翻；前文事件必须承接，不能让角色获得前文未得到的信息。
 """
-        if step in {"prose_draft", "prose_humanized", "prose_rewrite"}:
+        if step in PROSE_WRITER_ROOM_STEPS:
             common += "\n\n" + self._writer_room_prose_style_contract() + "\n"
         if step == "prose_rewrite":
             requested_minimum = writer_room_requested_minimum_characters(instruction)
@@ -7371,6 +7400,31 @@ class CreativeProjectService:
     {{"entity_type": "character", "entity_name": "角色名", "claim": "已确立的事实断言", "evidence_excerpt": "正文证据片段", "severity": "info", "suggested_action": "create_fact", "target_fact_type": "world_asset"}}
   ]
 }}"""
+        if step == "prose_watermark_clean":
+            return common + f"""待改写正文：
+{variables["source_text"]}
+
+来源：{variables["source_content_type"]} v{variables["source_content_version"]}，约 {variables["source_word_count"]} 字
+
+用户额外要求：
+{instruction or "无"}
+
+请作为文本水印清洗员，对这份正文做“统计型文本水印”的最大努力改写扰动，并输出 JSON。
+
+目标：在不改变剧情事实、人物关系、场景顺序、信息量与结尾钩子的前提下，通过以下语义级改写让文本统计特征发生扰动，从而对冲依赖 token 采样偏置 / 句法统计 / 连接词频率的文本水印：
+1. 同义替换：把高频词、惯用短语换成语义等价但形态不同的说法（如“感到/觉得/只觉得/心里一沉”等轮换），但要贴合语体与人物声音，不能变成生硬词典替换。
+2. 句法重组：主动/被动互换、状语前后调换、长句拆分、短句合并，改变句子边界与句长分布。
+3. 连接词与过渡变换：把“然而/但是/却/可”等逻辑连接词有度地换用，调整段落衔接与过渡词频率。
+4. 句子边界调整：对白、停顿、动作的切分方式重新编排，改变句子长度曲线。
+
+硬约束：
+1. 这是“改写扰动”，不是“删减/压缩/扩写”。不得删除任何剧情事件、对白要点或细节；不得新增与本章无关的新事件。
+2. 事实必须严格保持：人物关系、线索、环境、时间顺序、前文承接全部不变。
+3. 篇幅保持在源稿字数的 90%-110% 之间；服务端会按此复核。
+4. 文本必须仍是可读、可出版的完整正文，不能为了扰动而写成病句或翻译腔。
+5. 如果正文本身不含可被统计水印锚定的特征（例如已是纯手写风格），也要做轻微改写扰动作为例行清洗，但不要为了制造差异而牺牲质量。
+6. 不要只给建议，直接输出完整改写后的正文。
+格式：{{"chapter_number": {chapter_number}, "title": "章节标题", "content": "完整改写正文", "word_count": 0, "continuity_notes": ["备注"], "state_changes": []}}"""
         return common + f"""待重写正文：
 {variables["source_text"]}
 
@@ -7559,6 +7613,7 @@ class CreativeProjectService:
             "prose_humanized": "人味润色",
             "prose_review": "主编审稿",
             "prose_rewrite": "定向重写",
+            "prose_watermark_clean": "去水印改写",
         }
         return f"第 {chapter_number} 章{labels.get(step, step)}"
 
