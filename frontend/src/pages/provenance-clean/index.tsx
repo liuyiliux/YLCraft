@@ -7,8 +7,8 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { Alert, Button, Card, Descriptions, Input, Select, Space, Spin, Typography, message } from 'antd'
-import { ClearOutlined, SafetyCertificateOutlined } from '@ant-design/icons'
-import { cleanAssetProvenance, listAssets } from '../../api'
+import { ClearOutlined, RadarChartOutlined, SafetyCertificateOutlined } from '@ant-design/icons'
+import { cleanAssetProvenance, detectAssetDeepWatermark, listAssets } from '../../api'
 
 const { Title, Text } = Typography
 
@@ -17,7 +17,9 @@ export default function ProvenanceCleanPage() {
   const [assetsLoading, setAssetsLoading] = useState(false)
   const [assetId, setAssetId] = useState('')
   const [report, setReport] = useState<any>(null)
+  const [deepReport, setDeepReport] = useState<any>(null)
   const [loading, setLoading] = useState(false)
+  const [deepLoading, setDeepLoading] = useState(false)
   const [authorized, setAuthorized] = useState('')
 
   const loadAssetOptions = useCallback(async () => {
@@ -37,9 +39,10 @@ export default function ProvenanceCleanPage() {
   }, [loadAssetOptions])
 
   const audit = useCallback(async (id: string) => {
-    if (!id) { setReport(null); return }
+    if (!id) { setReport(null); setDeepReport(null); return }
     setLoading(true)
     setReport(null)
+    setDeepReport(null)
     try {
       const res: any = await cleanAssetProvenance(id, {})
       if (res?.success) setReport(res.report)
@@ -49,6 +52,20 @@ export default function ProvenanceCleanPage() {
       setLoading(false)
     }
   }, [])
+
+  const detectDeep = useCallback(async () => {
+    if (!assetId) return
+    setDeepLoading(true)
+    setDeepReport(null)
+    try {
+      const res: any = await detectAssetDeepWatermark(assetId)
+      if (res?.success) setDeepReport(res.report)
+    } catch (error: any) {
+      message.error(error?.message || '深度水印检测失败')
+    } finally {
+      setDeepLoading(false)
+    }
+  }, [assetId])
 
   const clean = useCallback(async () => {
     if (!assetId) return
@@ -125,7 +142,36 @@ export default function ProvenanceCleanPage() {
               >
                 生成清理副本
               </Button>
+              <Button
+                icon={<RadarChartOutlined />}
+                loading={deepLoading}
+                onClick={detectDeep}
+              >
+                只读检测合成水印（CtrlRegen/SynthID）
+              </Button>
             </Space>
+          ) : null}
+
+          {deepReport ? (
+            <Card size="small" style={{ marginTop: 4 }} title="深度水印检测（只读，不修改文件）">
+              <Alert
+                type="info"
+                showIcon
+                message={deepReport.supported ? `载体：${deepReport.media_kind}` : `当前载体（${deepReport.media_kind}）暂只支持只读审计`}
+                description={deepReport.notes?.length ? deepReport.notes.join('；') : undefined}
+              />
+              <Descriptions column={1} size="small" bordered style={{ marginTop: 12 }}>
+                <Descriptions.Item label="CtrlRegen 统计得分">{deepReport.ctrlregen?.score ?? '—'}</Descriptions.Item>
+                <Descriptions.Item label="置信度">{deepReport.ctrlregen?.confidence ?? '—'}</Descriptions.Item>
+                <Descriptions.Item label="SynthID">
+                  {deepReport.synthid?.status === 'enabled'
+                    ? `已启用（${deepReport.synthid?.provider}）`
+                    : deepReport.synthid?.status === 'skipped'
+                      ? '未启用（默认跳过，不引入 GPU/ML 硬依赖）'
+                      : deepReport.synthid?.status ?? '—'}
+                </Descriptions.Item>
+              </Descriptions>
+            </Card>
           ) : null}
         </Space>
       </Card>
