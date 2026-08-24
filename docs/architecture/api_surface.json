@@ -1934,7 +1934,7 @@
       "summary": "素材资产列表",
       "function": "list_assets",
       "file": "backend/app/api/v1/assets.py",
-      "line": 629,
+      "line": 640,
       "response_model": "AssetListResponse",
       "include_in_schema": true
     },
@@ -1966,7 +1966,7 @@
       "summary": "下载/预览本地文件",
       "function": "download_local_asset_file",
       "file": "backend/app/api/v1/assets.py",
-      "line": 797,
+      "line": 808,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1982,7 +1982,7 @@
       "summary": "预览本地文件",
       "function": "download_local_asset_file",
       "file": "backend/app/api/v1/assets.py",
-      "line": 797,
+      "line": 808,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1998,7 +1998,7 @@
       "summary": "标签列表",
       "function": "list_tags",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1290,
+      "line": 1420,
       "response_model": "TagListResponse",
       "include_in_schema": true
     },
@@ -2014,7 +2014,7 @@
       "summary": "创建标签",
       "function": "create_tag",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1299,
+      "line": 1429,
       "response_model": "TagResponse",
       "include_in_schema": true
     },
@@ -2030,7 +2030,7 @@
       "summary": "本地上传素材入库",
       "function": "upload_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1037,
+      "line": 1167,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2046,7 +2046,7 @@
       "summary": "上传 3D 模型（ZIP 或单文件）入库",
       "function": "upload_model3d",
       "file": "backend/app/api/v1/assets.py",
-      "line": 993,
+      "line": 1123,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2062,7 +2062,7 @@
       "summary": "资产详情",
       "function": "get_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1438,
+      "line": 1568,
       "response_model": "AssetResponse",
       "include_in_schema": true
     },
@@ -2078,7 +2078,7 @@
       "summary": "更新资产",
       "function": "update_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1460,
+      "line": 1590,
       "response_model": "AssetResponse",
       "include_in_schema": true
     },
@@ -2094,7 +2094,7 @@
       "summary": "删除资产",
       "function": "delete_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1499,
+      "line": 1629,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2126,7 +2126,7 @@
       "summary": "下载课程章节文件",
       "function": "download_course_episode_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1256,
+      "line": 1386,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2142,7 +2142,7 @@
       "summary": "读取课程章节弹幕",
       "function": "get_course_episode_danmaku",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1245,
+      "line": 1375,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2158,7 +2158,7 @@
       "summary": "读取课程章节字幕",
       "function": "get_course_episode_subtitle",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1233,
+      "line": 1363,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2174,55 +2174,7 @@
       "summary": "播放课程章节文件",
       "function": "stream_course_episode_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1271,
-      "response_model": "",
-      "include_in_schema": true
-    },
-    {
-      "method": "GET",
-      "path": "/api/v1/assets/{asset_id}/download",
-      "router": "assets",
-      "prefix": "/api/v1/assets",
-      "local_path": "/{asset_id}/download",
-      "tags": [
-        "Assets"
-      ],
-      "summary": "下载资产文件",
-      "function": "download_asset",
-      "file": "backend/app/api/v1/assets.py",
-      "line": 814,
-      "response_model": "",
-      "include_in_schema": true
-    },
-    {
-      "method": "GET",
-      "path": "/api/v1/assets/{asset_id}/files/{filename:path}",
-      "router": "assets",
-      "prefix": "/api/v1/assets",
-      "local_path": "/{asset_id}/files/{filename:path}",
-      "tags": [
-        "Assets"
-      ],
-      "summary": "下载/预览资产的配套文件",
-      "function": "asset_sidecar_file",
-      "file": "backend/app/api/v1/assets.py",
-      "line": 831,
-      "response_model": "",
-      "include_in_schema": true
-    },
-    {
-      "method": "POST",
-      "path": "/api/v1/assets/{asset_id}/provenance-clean",
-      "router": "assets",
-      "prefix": "/api/v1/assets",
-      "local_path": "/{asset_id}/provenance-clean",
-      "tags": [
-        "Assets"
-      ],
-      "summary": "审计或清理 AI 来源标记与文件元数据",
-      "function": "clean_asset_provenance",
-      "file": "backend/app/api/v1/assets.py",
-      "line": 859,
+      "line": 1401,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2238,7 +2190,55 @@
       "summary": "只读检测合成水印痕迹（CtrlRegen/SynthID，不修改文件）",
       "function": "detect_asset_deep_watermark",
       "file": "backend/app/api/v1/assets.py",
-      "line": 926,
+      "line": 940,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/assets/{asset_id}/download",
+      "router": "assets",
+      "prefix": "/api/v1/assets",
+      "local_path": "/{asset_id}/download",
+      "tags": [
+        "Assets"
+      ],
+      "summary": "下载资产文件",
+      "function": "download_asset",
+      "file": "backend/app/api/v1/assets.py",
+      "line": 825,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/assets/{asset_id}/files/{filename:path}",
+      "router": "assets",
+      "prefix": "/api/v1/assets",
+      "local_path": "/{asset_id}/files/{filename:path}",
+      "tags": [
+        "Assets"
+      ],
+      "summary": "下载/预览资产的配套文件",
+      "function": "asset_sidecar_file",
+      "file": "backend/app/api/v1/assets.py",
+      "line": 842,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/assets/{asset_id}/provenance-clean",
+      "router": "assets",
+      "prefix": "/api/v1/assets",
+      "local_path": "/{asset_id}/provenance-clean",
+      "tags": [
+        "Assets"
+      ],
+      "summary": "审计或清理 AI 来源标记与文件元数据",
+      "function": "clean_asset_provenance",
+      "file": "backend/app/api/v1/assets.py",
+      "line": 870,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2254,7 +2254,7 @@
       "summary": "恢复软删除的资产",
       "function": "restore_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1515,
+      "line": 1645,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2270,7 +2270,7 @@
       "summary": "读取资产弹幕",
       "function": "get_asset_danmaku",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1221,
+      "line": 1351,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2286,7 +2286,7 @@
       "summary": "读取资产字幕",
       "function": "get_asset_subtitle",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1208,
+      "line": 1338,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2302,7 +2302,7 @@
       "summary": "播放资产视频文件",
       "function": "stream_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1080,
+      "line": 1210,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2334,7 +2334,7 @@
       "summary": "代理加载封面图",
       "function": "proxy_thumbnail",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1403,
+      "line": 1533,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2350,7 +2350,23 @@
       "summary": "设置资产缩略图",
       "function": "set_asset_thumbnail",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1380,
+      "line": 1510,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/assets/{asset_id}/watermark-remove",
+      "router": "assets",
+      "prefix": "/api/v1/assets",
+      "local_path": "/{asset_id}/watermark-remove",
+      "tags": [
+        "Assets"
+      ],
+      "summary": "去除显性可见水印并生成派生副本（图片/视频，不覆盖原文件）",
+      "function": "remove_asset_visual_watermark",
+      "file": "backend/app/api/v1/assets.py",
+      "line": 977,
       "response_model": "",
       "include_in_schema": true
     },

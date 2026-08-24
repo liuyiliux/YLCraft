@@ -416,3 +416,67 @@ def test_deep_watermark_detect_synthid_can_be_enabled_via_env(tmp_path, monkeypa
     assert result.synthid["provider"] == "demo-detector"
     # 仍只读
     assert "未修改" in " ".join(result.notes)
+
+
+def test_deep_watermark_detect_video_samples_frames_and_scores(tmp_path):
+    """视频显性水印检测：抽取关键帧做统计检测，返回平均分，仍只读。"""
+    import shutil
+    import subprocess
+
+    if not (shutil.which("ffmpeg") and shutil.which("ffprobe")):
+        return  # 环境缺 ffmpeg 时跳过
+
+    from app.services.asset_provenance import detect_deep_watermark
+
+    video = tmp_path / "clip.mp4"
+    subprocess.run(
+        ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+         "-f", "lavfi", "-i", "testsrc2=size=160x120:rate=5", "-t", "0.6", str(video)],
+        check=True, capture_output=True,
+    )
+    before = video.read_bytes()
+    result = detect_deep_watermark(video, "video/mp4")
+    assert result.supported is True
+    assert result.media_kind == "video"
+    assert result.ctrlregen["method"].startswith("statistical-ctrlregen-like")
+    assert result.ctrlregen["frame_count"] > 0
+    assert video.read_bytes() == before  # 只读
+    assert any("未修改" in n for n in result.notes)
+
+
+def test_visual_watermark_remove_image_delogo_and_preserve_source(tmp_path):
+    """图片 delogo：生成派生副本，源文件不被修改。"""
+    import shutil
+    import subprocess
+
+    if not (shutil.which("ffmpeg") and shutil.which("ffprobe")):
+        return
+
+    from app.services.asset_provenance.visual_watermark import remove_visual_watermark_dict
+
+    src = tmp_path / "wm.png"
+    subprocess.run(
+        ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+         "-f", "lavfi", "-i", "color=c=blue:s=320x240:d=1", "-frames:v", "1", str(src)],
+        check=True, capture_output=True,
+    )
+    before = src.read_bytes()
+    result = remove_visual_watermark_dict(src, region={"corner": "top_right", "inset": 4}, method="delogo")
+    assert result["supported"] is True
+    assert result["media_kind"] == "image"
+    assert result["method"] == "delogo"
+    assert result["output_path"] and Path(result["output_path"]).exists()
+    assert src.read_bytes() == before  # 源文件保留
+    assert any("未被修改" in n for n in result["notes"])
+
+
+def test_visual_watermark_remove_unsupported_format(tmp_path):
+    """不支持格式：只报告，不伪装成已去除。"""
+    from app.services.asset_provenance.visual_watermark import remove_visual_watermark_dict
+
+    blob = tmp_path / "blob.xyz"
+    blob.write_bytes(b"data")
+    result = remove_visual_watermark_dict(blob, region={"corner": "top_right"}, method="delogo")
+    assert result["supported"] is False
+    assert result["media_kind"] == "unsupported"
+    assert result["output_path"] == ""

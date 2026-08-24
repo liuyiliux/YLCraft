@@ -6,9 +6,9 @@
  * 与图片编辑器「视觉水印」、平台采集「无水印下载」是不同能力。
  */
 import { useCallback, useEffect, useState } from 'react'
-import { Alert, Button, Card, Descriptions, Input, Select, Space, Spin, Typography, message } from 'antd'
-import { ClearOutlined, RadarChartOutlined, SafetyCertificateOutlined } from '@ant-design/icons'
-import { cleanAssetProvenance, detectAssetDeepWatermark, listAssets } from '../../api'
+import { Alert, Button, Card, Descriptions, Input, Radio, Select, Space, Spin, Typography, message } from 'antd'
+import { ClearOutlined, DeleteOutlined, RadarChartOutlined, SafetyCertificateOutlined } from '@ant-design/icons'
+import { cleanAssetProvenance, detectAssetDeepWatermark, listAssets, removeAssetVisualWatermark } from '../../api'
 
 const { Title, Text } = Typography
 
@@ -21,6 +21,9 @@ export default function ProvenanceCleanPage() {
   const [loading, setLoading] = useState(false)
   const [deepLoading, setDeepLoading] = useState(false)
   const [authorized, setAuthorized] = useState('')
+  const [wmMethod, setWmMethod] = useState('delogo')
+  const [wmCorner, setWmCorner] = useState('top_right')
+  const [wmRemoving, setWmRemoving] = useState(false)
 
   const loadAssetOptions = useCallback(async () => {
     setAssetsLoading(true)
@@ -85,16 +88,34 @@ export default function ProvenanceCleanPage() {
     }
   }, [assetId, authorized])
 
+  const removeWm = useCallback(async () => {
+    if (!assetId) return
+    setWmRemoving(true)
+    try {
+      const res: any = await removeAssetVisualWatermark(assetId, {
+        method: wmMethod,
+        region: { corner: wmCorner, inset: 0 },
+      })
+      if (res?.success) {
+        message.success(`已生成去水印副本（原资产保留）：${res.derived_asset_id}`)
+      }
+    } catch (error: any) {
+      message.error(error?.message || '去水印失败')
+    } finally {
+      setWmRemoving(false)
+    }
+  }, [assetId, wmMethod, wmCorner])
+
   return (
     <div style={{ maxWidth: 860, margin: '0 auto', padding: 24 }}>
       <Space align="center" style={{ marginBottom: 6 }}>
         <SafetyCertificateOutlined style={{ fontSize: 22, color: 'var(--primary)' }} />
-        <Title level={4} style={{ margin: 0 }}>元数据 / AI 标记清理</Title>
+        <Title level={4} style={{ margin: 0 }}>素材审计与去水印</Title>
       </Space>
       <Text type="secondary">
-        审计并去除资产里的 EXIF/XMP/C2PA 元数据、隐形 Unicode（bidi/标签/非字符等）、容器元数据与文档核心属性
-        （docx/xlsx/pptx/odt/epub/pdf、图片/音视频），生成不覆盖原文件的清理副本（带 derived_from 血缘）。
-        与「图片编辑器视觉水印」「平台采集无水印下载」不同。
+        一站式处理素材：① 审计/去除隐形 AI 来源标记与文件元数据（EXIF/XMP/C2PA、隐形 Unicode、容器元数据、
+        文档核心属性），② 只读检测合成水印痕迹，③ 去除画面上肉眼可见的显性水印（图片/视频）。
+        全部生成不覆盖原文件的派生副本（带 derived_from 血缘），适合短剧等成片场景消除影响观感的水印。
       </Text>
 
       <Card style={{ marginTop: 16 }}>
@@ -181,6 +202,55 @@ export default function ProvenanceCleanPage() {
               </Descriptions>
             </Card>
           ) : null}
+
+          <Card size="small" title="显性可见水印去除（图片/视频）" style={{ marginTop: 4 }}>
+            <Alert
+              type="info"
+              showIcon
+              message="去除画面上肉眼可见的水印（角落 logo、文字、台标），生成不覆盖原文件的派生副本"
+              description="适合短剧等成片场景消除影响观感的水印。选择水印所在位置与方法后点击去除。"
+            />
+            <Space direction="vertical" size={12} style={{ width: '100%', marginTop: 12 }}>
+              <div>
+                <Text strong>水印位置</Text>
+                <Radio.Group
+                  style={{ marginLeft: 12 }}
+                  value={wmCorner}
+                  onChange={(e) => setWmCorner(e.target.value)}
+                >
+                  <Radio.Button value="top_left">左上</Radio.Button>
+                  <Radio.Button value="top_right">右上</Radio.Button>
+                  <Radio.Button value="bottom_left">左下</Radio.Button>
+                  <Radio.Button value="bottom_right">右下</Radio.Button>
+                  <Radio.Button value="top">顶部</Radio.Button>
+                  <Radio.Button value="bottom">底部</Radio.Button>
+                  <Radio.Button value="center">居中</Radio.Button>
+                </Radio.Group>
+              </div>
+              <div>
+                <Text strong>去除方法</Text>
+                <Radio.Group
+                  style={{ marginLeft: 12 }}
+                  value={wmMethod}
+                  onChange={(e) => setWmMethod(e.target.value)}
+                >
+                  <Radio.Button value="delogo">插值填充（推荐·静态logo）</Radio.Button>
+                  <Radio.Button value="blur">区域模糊（半透明水印）</Radio.Button>
+                  <Radio.Button value="crop">裁剪边缘（贴边水印）</Radio.Button>
+                </Radio.Group>
+              </div>
+              <Button
+                type="primary"
+                danger
+                icon={<DeleteOutlined />}
+                disabled={!assetId}
+                loading={wmRemoving}
+                onClick={removeWm}
+              >
+                去除显性水印并生成副本
+              </Button>
+            </Space>
+          </Card>
         </Space>
       </Card>
     </div>
