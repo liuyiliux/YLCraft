@@ -1956,7 +1956,7 @@ def test_context_pack_routes_declared_creative_skills_by_project_type_and_stage(
     assert {item["id"] for item in prose_skills} == {"novel_completion"}
     assert prose_skills[0]["source"] == "genre_compatible"
     assert prose_pack["metadata"]["excluded_sources"]["creative_skills"]["skipped"] == [
-        {"id": "comic_image_prompt", "reason": "not_a_creative_skill"},
+        {"id": "comic_image_prompt", "reason": "stage_incompatible"},
         {"id": "prose_humanize", "reason": "stage_incompatible"},
     ]
 
