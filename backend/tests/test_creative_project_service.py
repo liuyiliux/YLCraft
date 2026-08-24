@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import uuid
 from types import SimpleNamespace
 
@@ -576,6 +577,58 @@ async def test_writer_room_persists_actual_character_count_not_model_claim(sessi
     )
 
     assert loads_json(content.data_json)["word_count"] == len(body)
+
+
+async def test_writer_room_watermark_clean_is_optional_and_promotable(session: Session):
+    """Layer B watermark-clean must be opt-in, produce a prose candidate, and be promotable."""
+    from app.services.creative_project.service import DEFAULT_WRITER_ROOM_STEPS, WRITER_ROOM_STEP_ORDER
+
+    # The optional step is registered but deliberately excluded from the default chain.
+    assert "prose_watermark_clean" in WRITER_ROOM_STEP_ORDER
+    assert "prose_watermark_clean" not in DEFAULT_WRITER_ROOM_STEPS
+
+    body = long_test_body("Watermark")
+    service = CreativeProjectService(session, ai_service=FakeAIService())
+    # _normalize_writer_room_step accepts the new step and its alias.
+    assert service._normalize_writer_room_step("watermark_clean") == "prose_watermark_clean"
+
+    project = service.create_project(title="", idea="watermark clean")
+    service.update_project(project.id, {"outline": {"title": "W", "characters": []}})
+    service.update_project(
+        project.id,
+        {"chapter_plan": {"chapter_count": 1, "chapters": [{"chapter_number": 1, "title": "W"}]}},
+    )
+    draft = service._create_content(
+        project_id=project.id,
+        content_type="prose_draft",
+        chapter_number=1,
+        episode_number=1,
+        title="W",
+        data={"chapter_number": 1, "title": "W", "content": body},
+        text_content=body,
+    )
+
+    content = await service.run_writer_room_step(
+        project.id,
+        step="prose_watermark_clean",
+        chapter_number=1,
+        content_id=draft.id,
+        provider="fake",
+        model="fake-model",
+    )
+
+    assert content.content_type == "prose_watermark_clean"
+    assert content.source_content_id == draft.id
+    data = loads_json(content.data_json)
+    assert data["content"].strip()
+    # The watermark step keeps the same prose source; the guard only rejects
+    # collapses below 88% of the source word count.
+    assert len(data["content"]) >= (len(body) * 88) // 100
+
+    promoted = service.promote_writer_room_content(project.id, content_id=content.id)
+    assert promoted.content_type == "novel_body"
+    assert promoted.source_content_id == content.id
+    assert promoted.text_content.strip()
 
 
 def test_writer_room_review_normalizes_nested_chapter_review(session: Session):
