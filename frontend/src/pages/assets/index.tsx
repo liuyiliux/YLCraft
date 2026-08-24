@@ -21,6 +21,7 @@ import {
   Modal,
   Descriptions,
   Image,
+  Input,
   Tag,
   Tooltip,
   Layout,
@@ -55,6 +56,7 @@ import {
   deleteAsset,
   restoreAsset,
   getAsset,
+  cleanAssetProvenance,
   hybridSearch,
   getAssetLineage,
   openFolder,
@@ -205,6 +207,11 @@ export default function AssetsPage() {
   const [playingAssetId, setPlayingAssetId] = useState<string | null>(null)
   const [playingCourseEpisodeIndex, setPlayingCourseEpisodeIndex] = useState<number | null>(null)
   const [uploading3D, setUploading3D] = useState(false)
+  // AI 来源标记 / 元数据清理
+  const [provenanceAsset, setProvenanceAsset] = useState<any>(null)
+  const [provenanceReport, setProvenanceReport] = useState<any>(null)
+  const [provenanceLoading, setProvenanceLoading] = useState(false)
+  const [provenanceAuthorized, setProvenanceAuthorized] = useState('')
 
   // Tag tree (sidebar)
   const [siderCollapsed, setSiderCollapsed] = useState(false)
@@ -384,6 +391,40 @@ export default function AssetsPage() {
       // Keep list-level asset data if detail fetch fails.
     }
   }, [])
+
+  // ---- AI 来源标记 / 元数据清理 ----
+  const openCleanProvenance = useCallback(async (asset: any) => {
+    setProvenanceAsset(asset)
+    setProvenanceReport(null)
+    setProvenanceAuthorized('')
+    setProvenanceLoading(true)
+    try {
+      const res = await cleanAssetProvenance(asset.id, {})
+      if (res?.success) setProvenanceReport(res.report)
+    } catch (error: any) {
+      message.error(error?.message || '审计失败')
+    } finally {
+      setProvenanceLoading(false)
+    }
+  }, [])
+
+  const confirmCleanProvenance = useCallback(async () => {
+    if (!provenanceAsset) return
+    setProvenanceLoading(true)
+    try {
+      const res = await cleanAssetProvenance(provenanceAsset.id, { confirm: true, authorized_source: provenanceAuthorized })
+      if (res?.success) {
+        message.success('已生成清理副本，并保留原资产')
+        setProvenanceAsset(null)
+        setProvenanceReport(null)
+        loadAssets(page, searchQuery, filters, searchMode)
+      }
+    } catch (error: any) {
+      message.error(error?.message || '清理失败')
+    } finally {
+      setProvenanceLoading(false)
+    }
+  }, [provenanceAsset, provenanceAuthorized, loadAssets, page, searchQuery, filters, searchMode])
 
   // Load lineage when tab changes
   const handleLineageTab = useCallback(async () => {
@@ -1182,10 +1223,46 @@ export default function AssetsPage() {
         onClose={() => { setDetailDrawerOpen(false); setLineageData(null); setPlayingCourseEpisodeIndex(null) }}
         width={480}
         title={detailAsset?.title || '资产详情'}
+        extra={
+          <Button size="small" icon={<ReloadOutlined />} onClick={() => openCleanProvenance(detailAsset)}>
+            清理元数据
+          </Button>
+        }
         destroyOnClose={false}
       >
         {renderDetailContent()}
       </Drawer>
+
+      {/* AI 来源标记 / 元数据清理弹窗 */}
+      <Modal
+        open={!!provenanceAsset}
+        title={`清理元数据 / AI 标记 — ${provenanceAsset?.title || provenanceAsset?.name || ''}`}
+        onCancel={() => { setProvenanceAsset(null); setProvenanceReport(null) }}
+        confirmLoading={provenanceLoading}
+        onOk={confirmCleanProvenance}
+        okText="生成清理副本"
+        okButtonProps={{ disabled: !provenanceReport?.cleanable }}
+      >
+        {provenanceLoading ? (
+          <Spin />
+        ) : provenanceReport ? (
+          <Space direction="vertical" size={8} style={{ width: '100%' }}>
+            <Alert
+              type={provenanceReport.cleanable ? 'warning' : 'info'}
+              showIcon
+              message={provenanceReport.cleanable ? '可生成清理副本（不覆盖原文件）' : '当前文件没有可清理的元数据或标记'}
+              description={provenanceReport.notes?.length ? provenanceReport.notes.join('；') : undefined}
+            />
+            <Descriptions column={1} size="small">
+              <Descriptions.Item label="类型">{provenanceReport.media_kind}</Descriptions.Item>
+              <Descriptions.Item label="元数据键">{provenanceReport.metadata_keys?.length ? provenanceReport.metadata_keys.join(', ') : '—'}</Descriptions.Item>
+              <Descriptions.Item label="隐形字符">{provenanceReport.invisible_character_count ?? 0}</Descriptions.Item>
+              <Descriptions.Item label="双向控制符">{provenanceReport.bidi_control_count ?? 0}</Descriptions.Item>
+            </Descriptions>
+            <Input placeholder="授权来源（可选）：如 user_upload / platform_authorized" value={provenanceAuthorized} onChange={e => setProvenanceAuthorized(e.target.value)} />
+          </Space>
+        ) : null}
+      </Modal>
 
       {/* Delete confirm modal */}
       <Modal
