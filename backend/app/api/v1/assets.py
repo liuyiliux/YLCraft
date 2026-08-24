@@ -42,6 +42,7 @@ from app.services.asset_hub.node_service import AssetNodeService
 from app.services.asset_hub.representation_service import AssetRepresentationService
 from app.services.asset_hub.version_service import AssetVersionService
 from app.services.asset_provenance import AssetProvenanceService, detect_deep_watermark_dict
+from app.services.asset_provenance.visual_watermark import remove_visual_watermark_dict
 from app.services.lineage.service import LineageService
 from app.services.platform_log import service as platform_log
 
@@ -85,6 +86,15 @@ class AssetListResponse(BaseModel):
 class AssetProvenanceRequest(BaseModel):
     confirm: bool = Field(False, description="确认生成不覆盖原文件的派生清理副本")
     authorized_source: Optional[str] = Field(None, max_length=64, description="清理副本的授权来源标记")
+
+
+class WatermarkRemoveRequest(BaseModel):
+    """显性可见水印去除请求。"""
+    method: str = Field("delogo", description="去除方法: delogo / blur / crop")
+    region: dict = Field(
+        default_factory=lambda: {"corner": "top_right", "inset": 0},
+        description="水印区域：corner(top_left/top_right/bottom_left/bottom_right/top/bottom/center)+inset，或 x/y/w/h 像素坐标",
+    )
 
 
 class TagResponse(BaseModel):
@@ -957,6 +967,87 @@ async def detect_asset_deep_watermark(
         "asset_id": asset_id,
         "read_only": True,
         "report": result,
+    }
+
+
+@router.post(
+    "/{asset_id}/watermark-remove",
+    summary="去除显性可见水印并生成派生副本（图片/视频，不覆盖原文件）",
+)
+async def remove_asset_visual_watermark(
+    asset_id: str,
+    request: WatermarkRemoveRequest,
+    session=Depends(get_asset_session),
+):
+    """对图片/视频画面上的显性可见水印（角落 logo、文字、台标等）做去除，生成派生副本。
+
+    与 provenance-clean（隐形/元数据清理）、deep-watermark-detect（只读合成水印检测）不同：
+    本端点处理的是**画面上肉眼可见**的水印，目的是在短剧等成片里消除影响观感的水印。
+    源文件始终保留，产物带 `derived_from` 血缘。
+    """
+    primary = await _get_asset_hub_primary(session, asset_id)
+    if not primary:
+        raise HTTPException(status_code=404, detail="资产或文件表示不存在")
+    node, version, representation = primary
+
+    result = remove_visual_watermark_dict(
+        representation.file_path, region=request.region, method=request.method
+    )
+    if not result.get("supported") or not result.get("output_path"):
+        detail = result.get("notes", ["去除失败"])[0] if result.get("notes") else "去除失败"
+        raise HTTPException(status_code=422, detail={"message": detail, "result": result})
+
+    output_path = result["output_path"]
+    output_dir = Path(output_path).resolve().parent
+    output_dir.mkdir(parents=True, exist_ok=True)
+    target = Path(output_path)
+
+    created = await AssetHubFacade(session).create_imported_file(
+        file_path=str(target),
+        title=f"{node.name}-去水印",
+        asset_type=node.asset_type,
+        source="visual_watermark_removal",
+        metadata={
+            "operation": "visual_watermark_removal",
+            "source_asset_id": asset_id,
+            "source_version_id": str(version.id),
+            "watermark_method": result["method"],
+            "watermark_region": result["region"],
+            "media_kind": result["media_kind"],
+            "original_file_path": str(representation.file_path),
+        },
+        lineage={
+            "derived_from_asset_id": asset_id,
+            "derived_from_version_id": str(version.id),
+            "operation": "visual_watermark_removal",
+        },
+        tags=["derived", "watermark_removed"],
+    )
+    await LineageService(session).link_assets(
+        source_id=asset_id,
+        target_id=created.node_id,
+        relation_type=RelationType.DERIVED_FROM,
+        context={"operation": "visual_watermark_removal", "result": result},
+    )
+    await platform_log.record_event(
+        scene="asset_provenance",
+        task_type="visual_watermark_removal",
+        task_id=created.node_id,
+        level="info",
+        status="success",
+        message="已生成显性水印去除副本（原资产保留）",
+        request={"asset_id": asset_id, "operation": "visual_watermark_removal", "method": request.method, "region": request.region},
+        response={"derived_asset_id": created.node_id, "media_kind": result.get("media_kind"), "method": result.get("method")},
+    )
+    return {
+        "success": True,
+        "asset_id": asset_id,
+        "derived_asset_id": created.node_id,
+        "method": result["method"],
+        "region": result["region"],
+        "media_kind": result["media_kind"],
+        "preserved_source": True,
+        "notes": result.get("notes", []),
     }
 
 
