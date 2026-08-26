@@ -245,6 +245,78 @@ PLATFORM_TEMPLATE_SEEDS = [
 ]
 
 
+VIDEO_PROMPT_TEMPLATE_SEEDS = [
+    {
+        "platform": "video_portrait_motion",
+        "name": "人物电影感运镜",
+        "template_scope": "video_prompt",
+        "template_stage": "video",
+        "description": "适合人物短镜头：保留主体一致性，只描述表演、镜头与氛围变化。",
+        "system_template": "",
+        "outline_template": "",
+        "image_template": "",
+        "page_structure": {},
+        "variables": {},
+        "video_template": "人物保持自然外貌与服装，微微转头看向镜头，表情从平静变为浅笑，发丝和衣角被微风轻轻吹动。镜头缓慢推进，浅景深，电影级柔和侧光，动作连贯稳定。",
+        "default_size": "720x1280",
+        "is_active": True,
+        "sort_order": 21,
+        "id": "8b36c131-a1e6-475b-83ef-b0480e8a1501",
+    },
+    {
+        "platform": "video_product_showcase",
+        "name": "产品展示转场",
+        "template_scope": "video_prompt",
+        "template_stage": "video",
+        "description": "适合商品、道具和产品特写：控制节奏，避免画面中出现文字或额外品牌。",
+        "system_template": "",
+        "outline_template": "",
+        "image_template": "",
+        "page_structure": {},
+        "variables": {},
+        "video_template": "产品保持外观、材质和比例一致，镜头从近景缓慢环绕到三分之二侧面，柔和高光掠过表面细节，背景干净克制，节奏高级稳定，不出现文字、Logo 或额外物体。",
+        "default_size": "720x1280",
+        "is_active": True,
+        "sort_order": 22,
+        "id": "a96f7bb2-05c5-4f45-862a-7685380b060f",
+    },
+    {
+        "platform": "video_landscape_atmosphere",
+        "name": "风景氛围延展",
+        "template_scope": "video_prompt",
+        "template_stage": "video",
+        "description": "适合静态场景图延展为氛围镜头，突出自然环境的层次变化。",
+        "system_template": "",
+        "outline_template": "",
+        "image_template": "",
+        "page_structure": {},
+        "variables": {},
+        "video_template": "场景主体和空间结构保持一致，云层缓慢移动，环境光逐渐变化，前景细节随微风轻轻摇曳。镜头平稳缓慢横移，纵深感清晰，电影氛围，自然真实，无突兀变形。",
+        "default_size": "1280x720",
+        "is_active": True,
+        "sort_order": 23,
+        "id": "43bd7cc5-f234-47b0-9294-3a71d7a52908",
+    },
+    {
+        "platform": "video_story_reveal",
+        "name": "剧情悬念揭示",
+        "template_scope": "video_prompt",
+        "template_stage": "video",
+        "description": "适合短剧和漫画分镜：通过人物反应与镜头推进建立悬念。",
+        "system_template": "",
+        "outline_template": "",
+        "image_template": "",
+        "page_structure": {},
+        "variables": {},
+        "video_template": "人物先停顿片刻，再缓慢抬眼望向画面外，神情出现克制的惊讶。环境保持安静，远处光影轻微变化。镜头由中景缓慢推进到近景，节奏压迫但不过度夸张，人物外观和场景连续一致。",
+        "default_size": "720x1280",
+        "is_active": True,
+        "sort_order": 24,
+        "id": "51fa14e4-8039-4cf4-8d02-e0d8fcf39a04",
+    },
+]
+
+
 _CREATIVE_SYSTEM = """你是资深网文主编、漫画脚本统筹和长篇连载策划。
 你必须输出严格 JSON，不要输出 Markdown、解释、代码块或 JSON 以外的文字。
 规划要服务后续逐话正文创作和漫画分镜生成，必须具体、可执行、前后连续。"""
@@ -863,14 +935,14 @@ CREATIVE_PROJECT_TEMPLATE_SEEDS = [
 
 
 async def seed_platform_templates(session):
-    """一次性种子数据写入（强制更新：已存在则更新）"""
+    """首次启动补齐内置模板；绝不覆盖数据库中已有模板。"""
     import logging
     from sqlmodel import select
     from app.db.models.platform_template import PlatformTemplate
     
     logger = logging.getLogger("ylcraft.seed.platform_templates")
     
-    for raw_seed in [*PLATFORM_TEMPLATE_SEEDS, *CREATIVE_PROJECT_TEMPLATE_SEEDS]:
+    for raw_seed in [*PLATFORM_TEMPLATE_SEEDS, *VIDEO_PROMPT_TEMPLATE_SEEDS, *CREATIVE_PROJECT_TEMPLATE_SEEDS]:
         seed = dict(raw_seed)
         seed.setdefault("template_scope", "image_platform")
         seed.setdefault("template_stage", "platform")
@@ -881,28 +953,15 @@ async def seed_platform_templates(session):
             select(PlatformTemplate).where(PlatformTemplate.platform == seed["platform"])
         )).scalars().first()
         if existing:
-            # 只更新业务字段，不要覆盖 id、created_at、updated_at
-            existing.name = seed["name"]
-            existing.template_scope = seed["template_scope"]
-            existing.template_stage = seed["template_stage"]
-            existing.description = seed["description"]
-            existing.system_template = seed["system_template"]
-            existing.outline_template = seed["outline_template"]
-            existing.image_template = seed["image_template"]
-            existing.page_structure = seed["page_structure"]
-            existing.variables = seed["variables"]
-            existing.video_template = seed["video_template"]
-            existing.default_size = seed["default_size"]
-            existing.is_active = seed["is_active"]
-            existing.sort_order = seed["sort_order"]
-            logger.info(f"Updated platform template: {seed['platform']}")
-        else:
-            tmpl = PlatformTemplate(**seed)
-            session.add(tmpl)
-            logger.info(f"Seeded platform template: {seed['platform']}")
+            logger.debug("Platform template already exists, keeping database value: %s", seed["platform"])
+            continue
+
+        tmpl = PlatformTemplate(**seed)
+        session.add(tmpl)
+        logger.info(f"Seeded platform template: {seed['platform']}")
     
     await session.commit()
     logger.info(
         "Platform templates seed complete (%s templates)",
-        len(PLATFORM_TEMPLATE_SEEDS) + len(CREATIVE_PROJECT_TEMPLATE_SEEDS),
+        len(PLATFORM_TEMPLATE_SEEDS) + len(VIDEO_PROMPT_TEMPLATE_SEEDS) + len(CREATIVE_PROJECT_TEMPLATE_SEEDS),
     )

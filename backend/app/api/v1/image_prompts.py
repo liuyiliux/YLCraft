@@ -20,6 +20,19 @@ class RefreshImagePromptSourcesRequest(BaseModel):
     force_remote: bool = False
 
 
+class CreateUserImagePromptReferenceRequest(BaseModel):
+    prompt: str
+    title: str = ""
+    negative_prompt: str = ""
+    provider: str = ""
+    model: str = ""
+    asset_id: str = ""
+    generation_mode: str = "text_to_image"
+    size: str = ""
+    seed: int | None = None
+    tags: list[str] = []
+
+
 @router.get("/sources", summary="List image prompt reference sources")
 def list_image_prompt_sources(include_disabled: bool = False):
     with SessionLocal() as session:
@@ -85,6 +98,17 @@ def get_image_prompt_reference(reference_id: str):
         if not reference:
             raise HTTPException(status_code=404, detail="image prompt reference not found")
         return {"success": True, "data": service.reference_to_dict(reference)}
+
+
+@router.post("/references", summary="Save a generated image prompt into the user prompt library")
+def create_user_image_prompt_reference(req: CreateUserImagePromptReferenceRequest):
+    with SessionLocal() as session:
+        service = ImagePromptReferenceService(session)
+        try:
+            reference, created, sample_added = service.create_user_reference(**req.model_dump())
+            return {"success": True, "created": created, "sample_added": sample_added, "data": service.reference_to_dict(reference)}
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/references/{reference_id}/save-as-asset", summary="Save cached prompt reference image into Asset Hub")

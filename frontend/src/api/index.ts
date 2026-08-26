@@ -1402,6 +1402,8 @@ export const createCreativeProject = (data: {
   metadata?: Record<string, any>
 }) => request('/creative-projects', { method: 'POST', body: JSON.stringify(data) })
 
+export const listCreativeProjectProfiles = () => request('/creative-projects/profiles')
+
 export const createCreativeProjectFromNovel = (data: {
   asset_id: string
   chapter_ids?: string[]
@@ -1495,6 +1497,8 @@ export interface ImagePromptReference {
   view_count?: number
   like_count?: number
   copy_count?: number
+  generation_examples?: Array<Record<string, any>>
+  model_variants?: Array<{ provider?: string; model?: string; count?: number }>
   remote_created_at?: string
   remote_updated_at?: string
   created_at?: string | null
@@ -1537,6 +1541,19 @@ export const searchImagePromptReferences = (params?: {
 
 export const getImagePromptReference = (referenceId: string) =>
   request(`/image-prompts/references/${encodeURIComponent(referenceId)}`)
+
+export const createUserImagePromptReference = (data: {
+  prompt: string
+  title?: string
+  negative_prompt?: string
+  provider?: string
+  model?: string
+  asset_id?: string
+  generation_mode?: 'text_to_image' | 'image_to_image'
+  size?: string
+  seed?: number
+  tags?: string[]
+}) => request('/image-prompts/references', { method: 'POST', body: JSON.stringify(data) })
 
 export const saveImagePromptReferenceAsAsset = (referenceId: string) =>
   request(`/image-prompts/references/${encodeURIComponent(referenceId)}/save-as-asset`, { method: 'POST' })
@@ -1761,6 +1778,21 @@ export const updateCreativeProjectContent = (
     method: 'PATCH',
     body: JSON.stringify(data),
   })
+
+export const saveCreativeProjectContentPackage = (
+  projectId: string,
+  packageData: Record<string, any>,
+  sourceContentId?: string,
+) =>
+  request(`/creative-projects/${projectId}/content-package`, {
+    method: 'PUT',
+    body: JSON.stringify({ package: packageData, source_content_id: sourceContentId }),
+  })
+
+export const planCreativeProjectContentPackage = (
+  projectId: string,
+  data: { topic: string; brief?: string; item_count?: number; prompt_only?: boolean; provider?: string; model?: string },
+) => request(`/creative-projects/${projectId}/content-package/plan`, { method: 'POST', body: JSON.stringify(data) })
 
 export const listCreativeProjectAssets = (projectId: string) =>
   request(`/creative-projects/${projectId}/assets`)

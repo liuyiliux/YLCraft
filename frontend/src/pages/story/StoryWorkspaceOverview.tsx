@@ -8,6 +8,7 @@ import {
   FolderOpenOutlined,
   PlayCircleOutlined,
   ThunderboltOutlined,
+  PictureOutlined,
 } from '@ant-design/icons'
 import type { ThemeColors } from '../../constants/theme'
 
@@ -46,6 +47,9 @@ type Props = {
   onOpenSection: (tab: string) => void
   onOpenChapter: (chapterNumber: number, tab?: string) => void
   onContinue: () => void
+  productionFamily?: 'narrative' | 'content_package'
+  packageType?: string | null
+  packageData?: Record<string, any> | null
 }
 
 const sectionIcons: Record<string, React.ReactNode> = {
@@ -54,6 +58,15 @@ const sectionIcons: Record<string, React.ReactNode> = {
   chapters: <FileTextOutlined />,
   canvas: <BranchesOutlined />,
   assets: <FolderOpenOutlined />,
+}
+
+const packageTypeLabels: Record<string, string> = {
+  page_book: '绘本 / 漫画页',
+  knowledge_cards: '科普知识卡',
+  article_package: '公众号文章包',
+  social_carousel: '小红书轮播',
+  shot_list: '短视频镜头表',
+  single_media: '单图 / 单镜头',
 }
 
 function chapterReadiness(chapter: StoryWorkspaceChapter, index: number, activeChapterNumber: number) {
@@ -80,8 +93,87 @@ export default function StoryWorkspaceOverview({
   onOpenSection,
   onOpenChapter,
   onContinue,
+  productionFamily = 'narrative',
+  packageType,
+  packageData,
 }: Props) {
   const [decisionEvidenceOpen, setDecisionEvidenceOpen] = React.useState(false)
+  const isContentPackage = productionFamily === 'content_package'
+  const packageItems = Array.isArray(packageData?.items) ? packageData.items : []
+  const packageTitle = String(packageData?.title || projectTitle)
+  const packageTopic = String(packageData?.topic || idea || '')
+  const packageBrief = String(packageData?.brief || '一次生成内容卡片、图片提示词，再按需批量生成媒体。')
+  const isKnowledgeCards = packageType === 'knowledge_cards'
+  const knowledgeItems = isKnowledgeCards ? packageItems.filter((item: any) => item?.fact || item?.source || item?.source_url) : []
+  const packageStatus = packageData?.status === 'failed' ? '上次生成失败，可重新开始' : packageItems.length ? `${packageItems.length} 个内容单元` : '尚未生成内容包'
+
+  if (isContentPackage) {
+    return (
+      <div className="story-overview" style={{ padding: '22px 22px 8px' }}>
+        <section className="story-overview__hero" style={{ borderBottom: `1px solid ${theme.border}`, paddingBottom: 20 }}>
+          <div style={{ minWidth: 0 }}>
+            <Space size={8} wrap>
+              <Tag color="cyan">{packageTypeLabels[packageType || ''] || '内容包'}</Tag>
+              <Text type="secondary">轻量工作流</Text>
+            </Space>
+            <Title level={2} style={{ margin: '9px 0 4px', fontSize: 24 }}>{packageTitle}</Title>
+            <Text type="secondary" ellipsis={{ tooltip: packageTopic }} style={{ display: 'block', maxWidth: 760 }}>
+              {packageTopic || '输入一个主题，生成可编辑的页面、知识卡或平台内容。'}
+            </Text>
+          </div>
+          <div className="story-overview__resume">
+            <div>
+              <Text type="secondary">内容包状态</Text>
+              <Text strong style={{ display: 'block', marginTop: 3 }}>{packageStatus}</Text>
+            </div>
+            <Button type="primary" icon={<ThunderboltOutlined />} onClick={onContinue}>
+              {packageItems.length ? '继续编辑内容包' : '一次生成内容包'}
+            </Button>
+          </div>
+        </section>
+
+        <section className="story-overview__decision" aria-label="内容包说明">
+          <div>
+            <Text strong>不需要先写正文或项目圣经</Text>
+            <Text type="secondary" style={{ display: 'block', marginTop: 2 }}>{packageBrief}</Text>
+          </div>
+          <Tag icon={<PictureOutlined />} color="processing">提示词可单独生成图片</Tag>
+        </section>
+
+        <section className="story-overview__setup" aria-label="内容包状态">
+          {[
+            { label: '主题输入', description: packageTopic ? '已提供主题或来源' : '等待主题', ready: Boolean(packageTopic) },
+            { label: '内容单元', description: packageItems.length ? `${packageItems.length} 个页面 / 卡片 / 镜头` : '生成后可逐项编辑', ready: packageItems.length > 0 },
+            { label: '图片提示词', description: packageItems.some((item: any) => item?.image_prompt) ? '已生成，可批量生图' : '随内容包一起生成', ready: packageItems.some((item: any) => item?.image_prompt) },
+            ...(isKnowledgeCards ? [{ label: '事实来源', description: knowledgeItems.length === packageItems.length && packageItems.length > 0 ? '每张卡都有事实或来源' : '仍有卡片缺少事实来源', ready: knowledgeItems.length === packageItems.length && packageItems.length > 0 }] : []),
+            { label: '输出适配', description: '可导出素材包或适配平台', ready: Array.isArray(packageData?.outputs) && packageData.outputs.length > 0 },
+          ].map((item) => (
+            <div key={item.label} className="story-overview__setup-item" style={{ cursor: 'default' }}>
+              <span><PictureOutlined /></span>
+              <span><Text strong>{item.label}</Text><Text type="secondary">{item.description}</Text></span>
+              {item.ready ? <CheckCircleOutlined style={{ color: theme.primary }} /> : <Text type="secondary">待生成</Text>}
+            </div>
+          ))}
+        </section>
+
+        {packageItems.length ? (
+          <section className="story-overview__queue" aria-label="内容单元预览">
+            <div className="story-overview__queue-header"><Text strong>内容单元</Text><Text type="secondary">每个单元可独立编辑和重试</Text></div>
+            {packageItems.slice(0, 8).map((item: any, index: number) => (
+              <div key={String(item?.id || item?.item_id || index)} className="story-overview__queue-row" style={{ cursor: 'default' }}>
+                <span className="story-overview__chapter-number">{String(item?.index || index + 1).padStart(2, '0')}</span>
+                <span className="story-overview__chapter-copy"><Text strong>{item?.title || `内容单元 ${index + 1}`}</Text><Text type="secondary" ellipsis>{item?.text || item?.fact || item?.image_prompt || '尚未填写内容'}</Text></span>
+                <Tag color={item?.status === 'failed' ? 'error' : item?.status === 'succeeded' ? 'success' : 'default'}>{item?.status || '草稿'}</Tag>
+              </div>
+            ))}
+          </section>
+        ) : (
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有内容单元，点击上方按钮开始一次生成" />
+        )}
+      </div>
+    )
+  }
+
   const activeChapter = chapters.find((chapter) => chapter.chapter_number === activeChapterNumber) || chapters[0]
   const nextStage = stages.find((stage) => stage.complete < stage.total) || stages[stages.length - 1]
   const setupItems = [

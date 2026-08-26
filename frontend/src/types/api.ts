@@ -378,6 +378,12 @@ export interface CreativeProject {
     optional_stages: string[]
     default_outputs: string[]
     constraints: Record<string, any>
+    production_family?: 'narrative' | 'content_package'
+    package_type?: string | null
+    required_inputs?: string[]
+    optional_inputs?: string[]
+    planning_unit?: string
+    output_adapters?: string[]
   } | null
   source_type: string
   source_ref: Record<string, any>
@@ -389,6 +395,33 @@ export interface CreativeProject {
   metadata: Record<string, any>
   created_at?: string
   updated_at?: string
+}
+
+export interface ContentPackageItem {
+  id?: string
+  index?: number
+  title?: string
+  text?: string
+  fact?: string
+  source?: string
+  source_url?: string
+  image_prompt?: string
+  video_prompt?: string
+  status?: string
+  asset_ids?: string[]
+  source_refs?: Array<Record<string, any>>
+  image_url?: string
+}
+
+export interface ContentPackageData {
+  package_type?: string
+  title?: string
+  topic?: string
+  brief?: string
+  items?: ContentPackageItem[]
+  outputs?: Array<Record<string, any>>
+  source_context?: Record<string, any>
+  profile_id?: string
 }
 
 export interface StoryOutline {

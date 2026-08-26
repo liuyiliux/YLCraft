@@ -105,6 +105,20 @@ def _image_log_request(req) -> dict:
     }
 
 
+def _asset_generation_params(req: "ImageGenerateRequest") -> dict[str, Any]:
+    """Keep Asset Hub metadata to supported, explicitly submitted controls.
+
+    Sampling steps and sampler names are internal legacy defaults, not a
+    current product capability, so they must never be persisted as asset facts.
+    """
+    explicit_fields = getattr(req, "model_fields_set", set())
+    return {
+        key: getattr(req, key)
+        for key in ("cfg_scale", "lora", "controlnet")
+        if key in explicit_fields and getattr(req, key) not in (None, "")
+    }
+
+
 def _image_log_actual_request(result, req) -> dict:
     """事件日志「调用详情」：优先用 backend diagnostics 中实际发送给大模型供应商的请求体。
     没有 diagnostics 时回退到 _image_log_request(req)。"""
@@ -607,6 +621,7 @@ async def generate_image(
 
     try:
         reference_images = await _merge_reference_images(req)
+        requested_generation_params = _asset_generation_params(req)
         planning_summary = req.planning_summary or build_visual_planning_summary(
             "image",
             req.prompt,
@@ -657,11 +672,7 @@ async def generate_image(
                         "prompt": req.prompt,
                         "negative_prompt": req.negative_prompt or "",
                         "size": req.size or "1024x1024",
-                        "steps": req.steps,
-                        "cfg_scale": req.cfg_scale,
-                        "sampler": req.sampler or "euler",
-                        "lora": req.lora or "",
-                        "controlnet": req.controlnet or "",
+                        **requested_generation_params,
                         "source_image": req.source_image or "",
                         "reference_images": reference_images if reference_images else None,
                         "project_id": req.project_id or "",
@@ -765,11 +776,7 @@ async def generate_image(
                             size=req.size or "1024x1024",
                             seed=result.seed,
                             generation_params={
-                                "steps": req.steps,
-                                "cfg_scale": req.cfg_scale,
-                                "sampler": req.sampler or "euler",
-                                "lora": req.lora or "",
-                                "controlnet": req.controlnet or "",
+                                **requested_generation_params,
                                 "image_index": idx,
                                 "reference_images_count": len(reference_images),
                                 "reference_image_collection": req.reference_image_collection or [],
@@ -1016,11 +1023,11 @@ async def poll_image_task(
                                 size=payload.get("size", "1024x1024"),
                                 seed=result.seed,
                                 generation_params={
-                                    "steps": payload.get("steps"),
-                                    "cfg_scale": payload.get("cfg_scale"),
-                                    "sampler": payload.get("sampler", "euler"),
-                                    "lora": payload.get("lora", ""),
-                                    "controlnet": payload.get("controlnet", ""),
+                                    **{
+                                        key: payload[key]
+                                        for key in ("cfg_scale", "lora", "controlnet")
+                                        if payload.get(key) not in (None, "")
+                                    },
                                     "image_index": idx,
                                     "reference_images_count": len(payload.get("reference_images") or []),
                                     "reference_image_collection": payload.get("reference_image_collection") or [],

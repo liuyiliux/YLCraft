@@ -225,6 +225,22 @@ class ProjectContentUpdateRequest(BaseModel):
     is_locked: bool | None = None
 
 
+class ContentPackageSaveRequest(BaseModel):
+    """Save a versioned lightweight package owned by one project."""
+
+    package: dict[str, Any]
+    source_content_id: str | None = None
+
+
+class ContentPackagePlanRequest(BaseModel):
+    topic: str = ""
+    brief: str = ""
+    item_count: int = Field(default=12, ge=1, le=80)
+    prompt_only: bool = False
+    provider: str | None = None
+    model: str | None = None
+
+
 class ProductionPlanSaveRequest(BaseModel):
     """Append an editable production-plan revision for the current project."""
 
@@ -528,6 +544,22 @@ def create_project(
         production_profile=req.production_profile,
     )
     return {"success": True, "data": serialize_project(project)}
+
+
+@router.get("/profiles", summary="列出内容生产方案")
+def list_production_profiles():
+    """Return the declarative profile catalog used by project creation UIs."""
+
+    return {
+        "success": True,
+        "data": [
+            {
+                "id": profile_id,
+                **profile,
+            }
+            for profile_id, profile in CONTENT_PRODUCTION_PROFILES.items()
+        ],
+    }
 
 
 @router.post("/from-novel", summary="从小说章节创建创作项目")
@@ -1201,6 +1233,51 @@ def update_content(
             data=req.data,
             text_content=req.text_content,
             is_locked=req.is_locked,
+        )
+        return {"success": True, "data": serialize_content(content)}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.put("/{project_id}/content-package", summary="保存项目内容包版本")
+def save_content_package(
+    project_id: str,
+    req: ContentPackageSaveRequest,
+    svc: CreativeProjectService = Depends(service),
+):
+    try:
+        content = svc.save_content_package(
+            project_id=project_id,
+            package=req.package,
+            source_content_id=req.source_content_id,
+        )
+        return {"success": True, "data": serialize_content(content)}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.post("/{project_id}/content-package/plan", summary="一次生成项目内容包")
+async def plan_content_package(
+    project_id: str,
+    req: ContentPackagePlanRequest,
+    svc: CreativeProjectService = Depends(service),
+):
+    try:
+        content = await _run_creative_task(
+            "creative_writing",
+            {
+                "project_id": project_id,
+                "stage": "content_package",
+                "stage_label": "生成内容包",
+                "provider": req.provider or "",
+                "model": req.model or "",
+                "item_count": req.item_count,
+                "prompt_only": req.prompt_only,
+            },
+            lambda: svc.generate_content_package(
+                project_id, topic=req.topic, brief=req.brief, item_count=req.item_count,
+                prompt_only=req.prompt_only, provider=req.provider, model=req.model,
+            ),
         )
         return {"success": True, "data": serialize_content(content)}
     except ValueError as e:

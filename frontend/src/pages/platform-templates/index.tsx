@@ -465,7 +465,7 @@ export default function PlatformTemplatesPage() {
                 display: 'block',
               }}
             >
-              配置多平台生图模板，以及创作项目的大纲、章节、脚本和分镜 Prompt
+              配置多平台生图、视频提示词，以及创作项目的大纲、章节、脚本和分镜 Prompt
             </Text>
           </div>
           <Space>
@@ -545,7 +545,9 @@ export default function PlatformTemplatesPage() {
                     暂无模板
                   </Text>
                   <Text style={{ color: T.textSecondary, fontSize: 12 }}>
-                    请先在系统中初始化模板数据
+                    {activeScope === 'video_prompt'
+                      ? '可点击“新建”手工创建，或在成功视频任务中保存为视频提示词模板。'
+                      : '可点击“新建”创建模板；内置预设会在后端启动时同步到数据库。'}
                   </Text>
                 </div>
               }

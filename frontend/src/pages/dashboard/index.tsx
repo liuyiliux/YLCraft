@@ -127,7 +127,7 @@ export default function DashboardPage() {
                 <Button
                   type="primary"
                   icon={<RocketOutlined />}
-                  onClick={() => navigate('/image-gen')}
+                  onClick={() => navigate('/story')}
                   style={{ background: THEME.gradientCreative, border: 'none', fontWeight: 600, borderRadius: THEME.radiusSM, padding: '4px 22px', height: 38, fontSize: 14 }}
                 >
                   开始创作

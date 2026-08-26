@@ -46,10 +46,11 @@ import {
   BranchesOutlined,
   DatabaseOutlined,
   CloseOutlined,
+  SaveOutlined,
 } from '@ant-design/icons'
 import type { UploadFile } from 'antd/es/upload/interface'
 import { useTheme } from '../../constants/theme'
-import { getImageBackends, generateImage as generateImageApi, getImageTask, linkCreativeProjectAsset } from '../../api'
+import { createUserImagePromptReference, getImageBackends, generateImage as generateImageApi, getImageTask, linkCreativeProjectAsset } from '../../api'
 import AssetReferencePicker from '../../components/asset-reference-picker/AssetReferencePicker'
 import type { ImagePromptReference } from '../../api'
 import MultiPlatformGen from './MultiPlatformGen'
@@ -146,6 +147,9 @@ interface GeneratedImage {
   provider: string
   model: string
   seed?: number
+  negative_prompt?: string
+  generation_mode?: 'text_to_image' | 'image_to_image'
+  size?: string
   created_at: string
   local_path?: string
   asset_id?: string
@@ -289,6 +293,7 @@ function ImageGenSinglePage() {
 
   // 结果
   const [generatedImages, setGeneratedImages] = useState<GeneratedImage[]>([])
+  const [savedPromptImageIds, setSavedPromptImageIds] = useState<Set<string>>(new Set())
   const [backends, setBackends] = useState<BackendInfo[]>([])
   const [defaultBackend, setDefaultBackend] = useState<string>()
   const [lastProjectLinkStatus, setLastProjectLinkStatus] = useState<'idle' | 'success' | 'error'>('idle')
@@ -601,6 +606,9 @@ function ImageGenSinglePage() {
         prompt: context.prompt,
         provider: data.provider || context.provider || 'unknown',
         model: context.selectedModel || data.model || '',
+        negative_prompt: context.negativePrompt || '',
+        generation_mode: mode === 'img2img' ? 'image_to_image' : 'text_to_image',
+        size: context.size,
         local_path: localPaths[idx] || data.local_path,
         asset_id: assetIds[idx],
         project_linked: projectLinkOk && Boolean(assetIds[idx]) && linkedAssetIds.includes(assetIds[idx]),
@@ -618,7 +626,7 @@ function ImageGenSinglePage() {
       </span>,
       5
     )
-  }, [navigate])
+  }, [mode, navigate])
 
   useTaskPolling({
     enabled: Boolean(pendingTask?.taskId),
@@ -799,6 +807,31 @@ function ImageGenSinglePage() {
   const handleCopyPrompt = (text: string) => {
     navigator.clipboard.writeText(text)
     message.success('已复制到剪贴板')
+  }
+
+  const saveGeneratedImagePrompt = async (image: GeneratedImage) => {
+    try {
+      const response = await createUserImagePromptReference({
+        title: `${image.provider || '图片'} · ${image.prompt.slice(0, 22) || '已保存提示词'}`,
+        prompt: image.prompt,
+        negative_prompt: image.negative_prompt || '',
+        provider: image.provider,
+        model: image.model,
+        asset_id: image.asset_id || '',
+        generation_mode: image.generation_mode || 'text_to_image',
+        size: image.size || '',
+        seed: image.seed,
+        tags: ['AI生成'],
+      })
+      if (!response?.success) {
+        message.error(response?.error || '保存图片提示词失败')
+        return
+      }
+      setSavedPromptImageIds((current) => new Set(current).add(image.id))
+      message.success(response.created ? '已保存到“我的生图提示词”' : '已合并为现有提示词的新生成样例')
+    } catch (error: any) {
+      message.error(error?.message || '保存图片提示词失败')
+    }
   }
 
   return (
@@ -1282,6 +1315,16 @@ function ImageGenSinglePage() {
                         <Tooltip title="复制提示词" key="copy">
                           <CopyOutlined style={{ color: THEME.textSecondary }} onClick={() => handleCopyPrompt(img.prompt)} />
                         </Tooltip>,
+                        <Button
+                          key="save-prompt"
+                          type="text"
+                          size="small"
+                          icon={<SaveOutlined />}
+                          disabled={savedPromptImageIds.has(img.id)}
+                          onClick={() => void saveGeneratedImagePrompt(img)}
+                        >
+                          {savedPromptImageIds.has(img.id) ? '已保存' : '保存提示词'}
+                        </Button>,
                         <Tooltip title="删除" key="delete">
                           <DeleteOutlined
                             style={{ color: THEME.textSecondary }}

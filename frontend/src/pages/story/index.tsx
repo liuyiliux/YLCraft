@@ -105,6 +105,8 @@ import {
   syncCreativeProjectCharacters,
   saveCreativeProjectCanvas,
   saveCreativeProjectContentAsAsset,
+  saveCreativeProjectContentPackage,
+  planCreativeProjectContentPackage,
   updateCreativeProject,
   updateCreativeProjectContent,
   type PlatformTemplate,
@@ -140,6 +142,7 @@ const STORY_WORKSPACE_CONTENT_TYPES = [
   'comic_pages',
   'script',
   'storyboard',
+  'content_package',
   'project_bible',
   'world_asset',
 ]
@@ -476,12 +479,12 @@ const projectTypeOptions = [
 ]
 
 const productionProfileOptions = [
-  { value: 'vertical_drama', label: '竖屏短剧', description: '创意 → 分集节拍 → 脚本 → 分镜 → 视频，不要求正文。', projectType: 'short_drama' },
-  { value: 'storybook', label: '故事漫画 / 童话绘本', description: '故事 → 页纲 → 角色与场景 → 分镜 → 漫画页。', projectType: 'manga' },
-  { value: 'knowledge_content', label: '科普内容', description: '主题与事实 → 内容结构 → 图文卡片或视频素材。', projectType: 'mixed' },
-  { value: 'platform_note', label: '平台图文', description: '内容完成后交给多平台生图和图片编辑器适配渠道。', projectType: 'mixed' },
-  { value: 'novel_serial', label: '小说连载', description: '完整大纲、细纲、正文和连续性检查流程。', projectType: 'novel' },
-  { value: 'single_shot', label: '单镜头 / 单页实验', description: '一句创意或一张素材快速试做一个镜头或画面。', projectType: 'mixed' },
+  { value: 'vertical_drama', label: '竖屏短剧', description: '创意 → 分集节拍 → 脚本 → 分镜 → 视频，不要求正文。', projectType: 'short_drama', family: 'narrative' },
+  { value: 'storybook', label: '故事漫画 / 童话绘本', description: '主题 → 页面 / 图片提示词 → 批量生图，不需要正文或世界观。', projectType: 'manga', family: 'content_package' },
+  { value: 'knowledge_content', label: '科普内容', description: '主题 → 知识卡 / 图片提示词 → 批量生图，不需要章节。', projectType: 'mixed', family: 'content_package' },
+  { value: 'platform_note', label: '平台图文', description: '主题或素材 → 文章包 → 平台适配，不需要完整故事线。', projectType: 'mixed', family: 'content_package' },
+  { value: 'novel_serial', label: '小说连载', description: '完整大纲、细纲、正文和连续性检查流程。', projectType: 'novel', family: 'narrative' },
+  { value: 'single_shot', label: '单镜头 / 单页实验', description: '一句创意或一张素材快速试做一个镜头或画面。', projectType: 'mixed', family: 'content_package' },
 ]
 
 const stageLabels: Record<string, string> = {
@@ -1376,7 +1379,11 @@ export default function StoryPage() {
   const [createOpen, setCreateOpen] = useState(false)
   const [renameOpen, setRenameOpen] = useState(false)
   const [fanqieOpen, setFanqieOpen] = useState(false)
+  const [contentPackageOpen, setContentPackageOpen] = useState(false)
+  const [pendingContentPackageProjectId, setPendingContentPackageProjectId] = useState('')
+  const [contentPackageBatchRunning, setContentPackageBatchRunning] = useState(false)
   const [renameForm] = Form.useForm()
+  const [contentPackageForm] = Form.useForm()
   const [loadingAction, setLoadingAction] = useState<LoadingAction>(null)
   const [workspaceErrors, setWorkspaceErrors] = useState<Record<string, string>>({})
   const [projectListError, setProjectListError] = useState('')
@@ -1438,6 +1445,7 @@ export default function StoryPage() {
   const [runtimeSettingsOpen, setRuntimeSettingsOpen] = useState(false)
   const [form] = Form.useForm()
   const createSourceType = Form.useWatch('source_type', form) || 'original_idea'
+  const createProductionProfile = Form.useWatch('production_profile', form) || 'vertical_drama'
   const createNovelAssetId = Form.useWatch('novel_asset_id', form)
 
   const outline = selectedProject?.outline || {}
@@ -1452,6 +1460,11 @@ export default function StoryPage() {
   const storyboards = contents.filter((item) => item.content_type === 'storyboard')
   const projectBibleContents = contents.filter((item) => item.content_type === 'project_bible')
   const worldAssetContents = contents.filter((item) => item.content_type === 'world_asset')
+  const contentPackageContent = contents
+    .filter((item) => item.content_type === 'content_package')
+    .sort((left, right) => right.version - left.version)[0]
+  const contentPackageData = contentPackageContent?.data || null
+  const isContentPackageProject = selectedProject?.production_profile?.production_family === 'content_package'
 
   const activeProjectMeta = selectedProject?.metadata || {}
   const activeProjectSettings = selectedProject?.settings || {}
@@ -1464,6 +1477,8 @@ export default function StoryPage() {
       defaultImageModel.support_reference_image,
   )
   const selectedNovelAsset = novelAssets.find((asset) => asset.id === createNovelAssetId)
+  const createProfile = productionProfileOptions.find((item) => item.value === createProductionProfile)
+  const createIsContentPackage = createProfile?.family === 'content_package'
   const selectedNovelChapterOptions = getNovelChapterOptions(selectedNovelAsset)
   const selectedCreativeSkillIds = useMemo(
     () =>
@@ -1607,6 +1622,7 @@ export default function StoryPage() {
     }))
     await loadProjectAssets(task.projectId)
     message.success(assetId ? '图片已生成并关联到项目素材' : '图片已生成')
+    return { assetId: assetId || '', url: urls[0] || '', localPath: localPaths[0] || data.local_path || '' }
   }, [])
 
   useTaskPolling({
@@ -1643,8 +1659,7 @@ export default function StoryPage() {
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       const data = await getImageTask(task.taskId, task.provider)
       if (data?.success && data?.status === 'done') {
-        await finalizeInlineImageResult(data, task)
-        return
+        return finalizeInlineImageResult(data, task)
       }
       if (data?.success === false || data?.status === 'error' || data?.status === 'failed') {
         throw new Error(data?.error || '异步生图失败')
@@ -1756,15 +1771,13 @@ export default function StoryPage() {
           referenceImagesSupported: supportsReferenceImages,
         }
         if (options.awaitAsync) {
-          await waitForInlineImageTask(pendingTask)
-          return
+          return waitForInlineImageTask(pendingTask)
         }
         startedAsyncTask = true
         setPendingInlineImageTask(pendingTask)
         message.info(`图片任务已提交，完成后自动回写项目：${data.task_id}`)
-        return
+        return { taskId: String(data.task_id), pending: true }
       }
-
       const urls = data.urls?.length ? data.urls : data.url ? [data.url] : []
       const localPaths = data.all_local_paths?.length
         ? data.all_local_paths
@@ -1832,7 +1845,7 @@ export default function StoryPage() {
       }))
       await loadProjectAssets(selectedProject.id)
       message.success(assetId ? '图片已生成并关联到项目素材' : '图片已生成')
-      return true
+      return { assetId: assetId || '', url: urls[0] || '', localPath: localPaths[0] || data.local_path || '' }
     } catch (error: any) {
       message.error(error?.message || '图片生成失败')
       return false
@@ -2784,11 +2797,15 @@ export default function StoryPage() {
           project_type: values.project_type,
           production_profile: values.production_profile,
           source_type: 'original_idea',
+          metadata: values.creation_brief ? { creation_brief: values.creation_brief } : undefined,
         })) as CreativeProjectResponse
       }
       message.success('项目已创建')
       setCreateOpen(false)
       form.resetFields()
+      if (response.data.production_profile?.production_family === 'content_package') {
+        setPendingContentPackageProjectId(response.data.id)
+      }
       await loadProjects(response.data.id)
     } catch (error: any) {
       message.error(error?.message || '创建失败')
@@ -2796,6 +2813,12 @@ export default function StoryPage() {
       setLoadingAction(null)
     }
   }
+
+  useEffect(() => {
+    if (!pendingContentPackageProjectId || selectedProject?.id !== pendingContentPackageProjectId) return
+    setPendingContentPackageProjectId('')
+    openContentPackageEditor()
+  }, [pendingContentPackageProjectId, selectedProject?.id])
 
   // 打开重命名弹窗，并把当前项目名预填到表单
   function openRenameModal() {
@@ -2900,6 +2923,156 @@ export default function StoryPage() {
       message.error(error?.message || '保存失败')
     } finally {
       setSavingContentId(null)
+    }
+  }
+
+  function openContentPackageEditor() {
+    if (!selectedProject || !isContentPackageProject) return
+    const existing = contentPackageData || {}
+    contentPackageForm.setFieldsValue({
+      title: existing.title || selectedProject.title,
+      topic: existing.topic || idea || selectedProject.title,
+      brief: existing.brief || String(selectedProject.metadata?.creation_brief || ''),
+      items: Array.isArray(existing.items) && existing.items.length
+        ? existing.items
+        : [{ title: '', text: '', fact: '', source: '', source_url: '', image_prompt: '' }],
+    })
+    setContentPackageOpen(true)
+  }
+
+  async function handleSaveContentPackage(values: any) {
+    if (!selectedProject) return
+    setLoadingAction('create')
+    try {
+      await saveCreativeProjectContentPackage(
+        selectedProject.id,
+        {
+          package_type: selectedProject.production_profile?.package_type,
+          title: values.title,
+          topic: values.topic,
+          brief: values.brief,
+          items: (values.items || []).map((item: any, index: number) => ({
+            ...item,
+            id: item.id || `item-${index + 1}`,
+            index: index + 1,
+            status: item.status || 'draft',
+          })),
+        },
+        contentPackageContent?.id,
+      )
+      message.success('内容包已保存为新版本')
+      setContentPackageOpen(false)
+      await loadContents(selectedProject.id)
+    } catch (error: any) {
+      message.error(error?.message || '保存内容包失败')
+    } finally {
+      setLoadingAction(null)
+    }
+  }
+
+  async function handlePlanContentPackage() {
+    if (!selectedProject || !isContentPackageProject) return
+    const values = contentPackageForm.getFieldsValue()
+    if (!String(values.topic || '').trim()) {
+      message.warning('请先填写主题')
+      return
+    }
+    setLoadingAction('create')
+    try {
+      const response: any = await planCreativeProjectContentPackage(selectedProject.id, {
+        topic: String(values.topic).trim(),
+        brief: String(values.brief || ''),
+        item_count: Math.max(1, Math.min(Number(values.item_count || 12), 80)),
+        prompt_only: Boolean(values.prompt_only),
+      })
+      const generated = response?.data?.data || response?.data || {}
+      contentPackageForm.setFieldsValue({
+        title: generated.title || values.title || selectedProject.title,
+        topic: generated.topic || values.topic,
+        brief: generated.brief || values.brief || '',
+        items: Array.isArray(generated.items) ? generated.items : [],
+      })
+      await loadContents(selectedProject.id)
+      message.success('内容包已生成并保存，可继续编辑')
+    } catch (error: any) {
+      message.error(error?.message || '生成内容包失败')
+    } finally {
+      setLoadingAction(null)
+    }
+  }
+
+  async function handleGenerateContentPackageImage(index: number, fieldName: number) {
+    if (!selectedProject) return
+    const item = contentPackageForm.getFieldValue(['items', fieldName]) || {}
+    const prompt = String(item.image_prompt || '').trim()
+    if (!prompt) {
+      message.warning('请先填写图片提示词')
+      return
+    }
+    await handleInlineGenerateImage(prompt, {
+      contentId: contentPackageContent?.id,
+      sourceType: 'content_package',
+      sourceIndex: index,
+      sourceTitle: String(item.title || `内容单元 ${index + 1}`),
+    }, { awaitAsync: true })
+  }
+
+  async function handleBatchGenerateContentPackageImages() {
+    if (!selectedProject || !contentPackageContent) return
+    const values = contentPackageForm.getFieldsValue(true)
+    const items = Array.isArray(values.items) ? values.items : []
+    const targets = items
+      .map((item: any, index: number) => ({ item, index }))
+      .filter(({ item }: any) => String(item?.image_prompt || '').trim())
+    if (!targets.length) {
+      message.warning('当前内容包没有可用的图片提示词')
+      return
+    }
+    setContentPackageBatchRunning(true)
+    let generated = 0
+    let failed = 0
+    try {
+      for (const { item, index } of targets) {
+        contentPackageForm.setFieldValue(['items', index, 'status'], 'generating')
+        try {
+          const result: any = await handleInlineGenerateImage(String(item.image_prompt).trim(), {
+            contentId: contentPackageContent.id,
+            sourceType: 'content_package',
+            sourceIndex: index,
+            sourceTitle: String(item.title || `内容单元 ${index + 1}`),
+          }, { awaitAsync: true })
+          contentPackageForm.setFieldValue(['items', index, 'status'], result?.assetId ? 'succeeded' : 'ready')
+          if (result?.assetId) {
+            contentPackageForm.setFieldValue(['items', index, 'asset_ids'], [result.assetId])
+            contentPackageForm.setFieldValue(['items', index, 'image_url'], result.url || '')
+          }
+          generated += result?.assetId ? 1 : 0
+        } catch (error: any) {
+          contentPackageForm.setFieldValue(['items', index, 'status'], 'failed')
+          failed += 1
+          message.error(`${item.title || `第 ${index + 1} 项`}：${error?.message || '生图失败'}`)
+        }
+      }
+      const latest = contentPackageForm.getFieldsValue(true)
+      await saveCreativeProjectContentPackage(
+        selectedProject.id,
+        {
+          package_type: selectedProject.production_profile?.package_type,
+          title: latest.title,
+          topic: latest.topic,
+          brief: latest.brief,
+          items: (latest.items || []).map((item: any, index: number) => ({
+            ...item,
+            id: item.id || `item-${index + 1}`,
+            index: index + 1,
+          })),
+        },
+        contentPackageContent.id,
+      )
+      await loadContents(selectedProject.id)
+      message.success(`批量生图完成：成功 ${generated}，失败 ${failed}`)
+    } finally {
+      setContentPackageBatchRunning(false)
     }
   }
 
@@ -4502,8 +4675,13 @@ export default function StoryPage() {
                     setOverviewDetailOpen(!chapterTab)
                   }}
                   onOpenChapter={openChapterStudio}
+                  productionFamily={selectedProject.production_profile?.production_family || 'narrative'}
+                  packageType={selectedProject.production_profile?.package_type}
+                  packageData={contentPackageData}
                   onContinue={() => {
-                    if (chapters.length) openChapterStudio(activeChapterNumber)
+                    if (isContentPackageProject) {
+                      openContentPackageEditor()
+                    } else if (chapters.length) openChapterStudio(activeChapterNumber)
                     else {
                       openWorkspaceTab(hasOutline ? 'chapters' : 'outline', 'overview')
                       // 展开详情区，让大纲/章节规划编辑器可见（否则无章节时点击无视觉变化）
@@ -4518,7 +4696,7 @@ export default function StoryPage() {
                 />
               ) : null}
 
-              {workspaceMode === 'overview' ? <Collapse
+              {workspaceMode === 'overview' && !isContentPackageProject ? <Collapse
                 ghost
                 size="small"
                 activeKey={pipelineOpen ? ['production'] : []}
@@ -4561,7 +4739,7 @@ export default function StoryPage() {
                 />
               ) : null}
 
-              <div className={`story-workspace-detail story-workspace-detail--${workspaceMode}`}>
+              {!isContentPackageProject ? <div className={`story-workspace-detail story-workspace-detail--${workspaceMode}`}>
                 {workspaceMode === 'overview' ? (
                   <button
                     type="button"
@@ -4926,7 +5104,7 @@ export default function StoryPage() {
                 )}
               />
                 </div>
-              </div>
+              </div> : null}
             </>
           )}
         </main>
@@ -4992,6 +5170,7 @@ export default function StoryPage() {
 
       <Modal
         title="新建创作项目"
+        className="creative-project-create-modal"
         open={createOpen}
         onCancel={() => setCreateOpen(false)}
         afterOpenChange={(open) => {
@@ -5002,7 +5181,7 @@ export default function StoryPage() {
         }}
         onOk={() => form.submit()}
         confirmLoading={loadingAction === 'create'}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form
           form={form}
@@ -5026,6 +5205,7 @@ export default function StoryPage() {
           </Form.Item>
           <Form.Item label="内容生产方案" name="production_profile">
             <Select
+              classNames={{ popup: { root: 'creative-project-profile-dropdown' } }}
               options={productionProfileOptions.map((item) => ({
                 value: item.value,
                 label: item.label,
@@ -5039,14 +5219,19 @@ export default function StoryPage() {
               )}
               onChange={(value) => {
                 const profile = productionProfileOptions.find((item) => item.value === value)
-                if (profile) form.setFieldsValue({ project_type: profile.projectType })
+                if (profile) {
+                  form.setFieldsValue({
+                    project_type: profile.projectType,
+                    source_type: profile.family === 'content_package' ? 'original_idea' : form.getFieldValue('source_type'),
+                  })
+                }
               }}
             />
           </Form.Item>
           <Form.Item label="项目类型" name="project_type" hidden>
             <Select options={projectTypeOptions} />
           </Form.Item>
-          {createSourceType === 'novel' ? (
+          {createSourceType === 'novel' && !createIsContentPackage ? (
             <>
               <Form.Item
                 label="小说"
@@ -5106,6 +5291,20 @@ export default function StoryPage() {
                 只会导入已经下载到本地的章节；如果章节未下载，请先到小说书架下载。
               </Text>
             </>
+          ) : createIsContentPackage ? (
+            <>
+              <Form.Item
+                label="主题"
+                name="idea"
+                rules={[{ required: true, message: '请输入主题' }]}
+                extra="创建后会直接生成或编辑页面、知识卡和图片提示词，不需要先填写大纲、圣经或正文。"
+              >
+                <TextArea rows={4} placeholder="例如：给儿童介绍十二生肖；或：一个在雨夜寻找丢失玩偶的恐怖漫画" />
+              </Form.Item>
+              <Form.Item label="补充说明（可选）" name="creation_brief">
+                <TextArea rows={2} placeholder="例如：水彩绘本风、共 12 页、适合 6-8 岁儿童；也可以创建后再补充" />
+              </Form.Item>
+            </>
           ) : (
             <Form.Item
               label="创意"
@@ -5124,7 +5323,7 @@ export default function StoryPage() {
         onCancel={() => setRenameOpen(false)}
         onOk={() => renameForm.submit()}
         confirmLoading={loadingAction === 'rename'}
-        destroyOnClose
+        destroyOnHidden
         okText="保存"
         cancelText="取消"
       >
@@ -5140,6 +5339,85 @@ export default function StoryPage() {
           >
             <Input placeholder="请输入新的项目名称" maxLength={80} allowClear />
           </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title={selectedProject?.production_profile?.package_type === 'knowledge_cards' ? '编辑科普内容包' : '编辑绘本 / 漫画内容包'}
+        open={contentPackageOpen}
+        onCancel={() => setContentPackageOpen(false)}
+        onOk={() => contentPackageForm.submit()}
+        confirmLoading={loadingAction === 'create'}
+        okText="保存内容包"
+        width={860}
+        destroyOnHidden
+      >
+        <Form form={contentPackageForm} layout="vertical" onFinish={handleSaveContentPackage}>
+          <Form.Item label="标题" name="title" rules={[{ required: true, message: '请输入标题' }]}>
+            <Input maxLength={100} />
+          </Form.Item>
+          <Form.Item label="主题" name="topic" rules={[{ required: true, message: '请输入主题' }]}>
+            <Input placeholder="例如：给儿童介绍十二生肖" maxLength={500} />
+          </Form.Item>
+          <Form.Item label="简介 / 导语" name="brief">
+            <TextArea rows={3} placeholder="可选，保存后会显示在概览中" maxLength={2000} />
+          </Form.Item>
+          <Space wrap style={{ marginBottom: 12 }}>
+            <Form.Item label="生成数量" name="item_count" initialValue={12} style={{ marginBottom: 0 }}>
+              <InputNumber min={1} max={80} />
+            </Form.Item>
+            <Form.Item name="prompt_only" valuePropName="checked" initialValue={false} style={{ marginBottom: 0, paddingTop: 30 }}>
+              <Checkbox>只生成图片提示词</Checkbox>
+            </Form.Item>
+            <Button icon={<RobotOutlined />} onClick={() => void handlePlanContentPackage()} loading={loadingAction === 'create'} style={{ marginTop: 30 }}>
+              AI 一次生成
+            </Button>
+            <Button icon={<PictureOutlined />} onClick={() => void handleBatchGenerateContentPackageImages()} loading={contentPackageBatchRunning} style={{ marginTop: 30 }}>
+              批量生成图片
+            </Button>
+          </Space>
+          <Form.List name="items">
+            {(fields, { add, remove }) => (
+              <Space direction="vertical" size={10} style={{ width: '100%' }}>
+                <Space style={{ justifyContent: 'space-between', width: '100%' }}>
+                  <Text strong>页面 / 内容卡</Text>
+                  <Button size="small" icon={<PlusOutlined />} onClick={() => add({ title: '', text: '', fact: '', source: '', source_url: '', image_prompt: '' })}>添加内容单元</Button>
+                </Space>
+                {fields.map((field, index) => (
+                  <div key={field.key} style={{ border: `1px solid ${theme.borderLight}`, borderRadius: 6, padding: 12, background: theme.bgElevated }}>
+                    <Space style={{ justifyContent: 'space-between', width: '100%', marginBottom: 8 }}>
+                      <Text strong>第 {index + 1} 项</Text>
+                      <Button type="text" danger size="small" icon={<DeleteOutlined />} onClick={() => remove(field.name)} disabled={fields.length === 1} />
+                    </Space>
+                    <Form.Item label="标题" name={[field.name, 'title']} style={{ marginBottom: 8 }}><Input placeholder="例如：鼠" /></Form.Item>
+                    <Form.Item label="文字内容" name={[field.name, 'text']} style={{ marginBottom: 8 }}><TextArea rows={2} placeholder="页面文字或知识卡说明，可留空只生成提示词" /></Form.Item>
+                    {selectedProject?.production_profile?.package_type === 'knowledge_cards' ? (
+                      <>
+                        <Form.Item label="知识事实" name={[field.name, 'fact']} style={{ marginBottom: 8 }}><TextArea rows={2} placeholder="可核验的事实表述，避免把推测写成结论" /></Form.Item>
+                        <Form.Item label="来源说明" name={[field.name, 'source']} style={{ marginBottom: 8 }}><Input placeholder="例如：中国国家博物馆、百科资料" /></Form.Item>
+                        <Form.Item label="来源链接" name={[field.name, 'source_url']} style={{ marginBottom: 8 }}><Input placeholder="可选，填写公开网页链接" /></Form.Item>
+                      </>
+                    ) : null}
+                    <Form.Item label="图片提示词" name={[field.name, 'image_prompt']} style={{ marginBottom: 8 }}>
+                      <TextArea rows={2} placeholder="可直接用于 AI 生图" />
+                    </Form.Item>
+                    <Button
+                      size="small"
+                      icon={<PictureOutlined />}
+                      loading={inlineImageLoadingKey === imageContextKey({
+                        contentId: contentPackageContent?.id,
+                        sourceType: 'content_package',
+                        sourceIndex: index,
+                      })}
+                      onClick={() => void handleGenerateContentPackageImage(index, field.name)}
+                    >
+                      生成图片
+                    </Button>
+                  </div>
+                ))}
+              </Space>
+            )}
+          </Form.List>
         </Form>
       </Modal>
 

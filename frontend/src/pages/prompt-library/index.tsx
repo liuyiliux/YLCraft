@@ -272,6 +272,25 @@ export default function PromptLibraryPage() {
     }
   }
 
+  const bootstrapPublicReferences = async () => {
+    setRefreshing(true)
+    try {
+      const data = await refreshImagePromptSources(undefined, { forceRemote: true })
+      if (data?.success) {
+        message.success('公开提示词已同步到本地')
+      } else {
+        message.warning('部分公开来源同步失败，可稍后重试')
+      }
+      await loadSources()
+      setPage(1)
+      await loadReferences(1)
+    } catch (error: any) {
+      message.error(error?.message || '同步公开提示词失败')
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
   return (
     <div
       className="prompt-library-page"
@@ -545,14 +564,20 @@ export default function PromptLibraryPage() {
               image={Empty.PRESENTED_IMAGE_SIMPLE}
               description={
                 <Space direction="vertical" size={8}>
-                  <Text>没有匹配的提示词</Text>
-                  <Text type="secondary">换个关键词，或清空模型和标签筛选。</Text>
-                  <Button
-                    icon={<ReloadOutlined />}
-                    onClick={resetFilters}
-                  >
-                    清空筛选
-                  </Button>
+                  <Text>{sources.length && !activeFilterText.length ? '本地还没有提示词案例' : '没有匹配的提示词'}</Text>
+                  {sources.length && !activeFilterText.length ? (
+                    <>
+                      <Text type="secondary">同步已内置的公开来源后，会写入当前本机的提示词参考库。</Text>
+                      <Button type="primary" icon={<ReloadOutlined />} loading={refreshing} onClick={bootstrapPublicReferences}>
+                        同步公开提示词
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Text type="secondary">换个关键词，或清空模型和标签筛选。</Text>
+                      <Button icon={<ReloadOutlined />} onClick={resetFilters}>清空筛选</Button>
+                    </>
+                  )}
                 </Space>
               }
             />
@@ -617,6 +642,7 @@ export default function PromptLibraryPage() {
                 <Tag color="blue">{activeReference.model_group || activeReference.model_hint || activeReference.category || 'prompt'}</Tag>
                 {activeReference.source_name ? <Tag>{activeReference.source_name}</Tag> : null}
                 {activeReference.image_items?.length ? <Tag>{activeReference.image_items.length} 张图</Tag> : null}
+                {activeReference.generation_examples?.length ? <Tag color="green">{activeReference.generation_examples.length} 个生成样例</Tag> : null}
                 {activeReference.view_count ? <Tag>浏览 {activeReference.view_count}</Tag> : null}
                 {activeReference.copy_count ? <Tag>复制 {activeReference.copy_count}</Tag> : null}
               </Space>
@@ -639,6 +665,19 @@ export default function PromptLibraryPage() {
                 <section className="prompt-block">
                   <Text strong>Negative Prompt</Text>
                   <pre>{activeReference.negative_prompt}</pre>
+                </section>
+              ) : null}
+
+              {activeReference.model_variants?.length ? (
+                <section className="prompt-block">
+                  <Text strong>已验证模型</Text>
+                  <Space size={[6, 6]} wrap style={{ marginTop: 8 }}>
+                    {activeReference.model_variants.map((variant, index) => (
+                      <Tag key={`${variant.provider}-${variant.model}-${index}`} color="purple">
+                        {[variant.provider, variant.model].filter(Boolean).join(' · ') || '未记录模型'} · {variant.count || 0} 个样例
+                      </Tag>
+                    ))}
+                  </Space>
                 </section>
               ) : null}
 
