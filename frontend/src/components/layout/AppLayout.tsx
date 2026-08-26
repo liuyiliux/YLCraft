@@ -44,14 +44,7 @@ function navLabel(text: string, status?: '实验' | '辅助') {
 
 const MAIN_NAV: MenuProps['items'] = [
   { key: '/story', icon: <BookOutlined />, label: '创作项目' },
-  { key: '/characters', icon: <TeamOutlined />, label: '角色' },
-  { key: '/previs', icon: <VideoCameraOutlined />, label: '3D 预演' },
-  { key: '/canvas', icon: <BranchesOutlined />, label: '创作画布' },
   { key: '/assets', icon: <FolderOpenOutlined />, label: '素材库' },
-  { key: '/provenance-clean', icon: <SafetyCertificateOutlined />, label: '审计去水印' },
-  { key: '/download', icon: <SearchOutlined />, label: '下载' },
-  { key: '/novel-bookshelf', icon: <ReadOutlined />, label: '小说' },
-  { key: '/image-gen', icon: <PictureOutlined />, label: 'AI 图片' },
   { key: '/tasks', icon: <UnorderedListOutlined />, label: '任务中心' },
 ]
 
@@ -65,15 +58,27 @@ const menuItems: MenuProps['items'] = [
   ...MAIN_NAV,
   { type: 'divider' as const },
   {
+    key: 'g-creative-workspace',
+    icon: <BranchesOutlined />,
+    label: '创作工作台',
+    children: [
+      { key: '/characters', icon: <TeamOutlined />, label: '角色' },
+      { key: '/previs', icon: <VideoCameraOutlined />, label: '3D 预演' },
+      { key: '/canvas', icon: <BranchesOutlined />, label: '创作画布' },
+    ],
+  },
+  {
     key: 'g-acquisition',
     icon: <SearchOutlined />,
-    label: '内容采集',
+    label: '采集与下载',
     children: [
       { key: '/crawler', label: navLabel('内容搜索', '实验') },
+      { key: '/download', label: '下载' },
       { key: '/breaker', label: navLabel('爆款拆解', '实验') },
       { key: '/up-analytics', label: navLabel('UP主分析', '实验') },
       { key: '/my-data', label: navLabel('我的数据', '实验') },
       { key: '/inspiration', label: navLabel('灵感广场', '实验') },
+      { key: '/provenance-clean', icon: <SafetyCertificateOutlined />, label: '审计去水印' },
     ],
   },
   {
@@ -81,6 +86,7 @@ const menuItems: MenuProps['items'] = [
     icon: <PictureOutlined />,
     label: 'AI 创作',
     children: [
+      { key: '/image-gen', icon: <PictureOutlined />, label: 'AI 图片' },
       { key: '/multi-platform-gen', label: navLabel('多平台生图', '实验') },
       { key: '/video-gen', label: navLabel('视频生成', '实验') },
       { key: '/model-3d', label: navLabel('图生 3D', '实验') },
@@ -110,6 +116,7 @@ const menuItems: MenuProps['items'] = [
     children: [
       { key: '/reader', label: navLabel('本地阅读', '辅助') },
       { key: '/novel-search', label: '小说搜索' },
+      { key: '/novel-bookshelf', label: '小说书架' },
       { key: '/book-source', label: navLabel('书源管理', '辅助') },
     ],
   },

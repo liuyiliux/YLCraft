@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.api.v1.images import ImageGenerateRequest, _image_log_request
+from app.api.v1.images import ImageGenerateRequest, _asset_generation_params, _image_log_request
 from app.api.v1.videos import VideoGenerateRequest, _request_context, _video_log_request
 from app.services.ai.visual_planning import build_visual_planning_summary
 
@@ -35,6 +35,13 @@ def test_image_request_and_event_log_keep_visual_plan_context():
     logged = _image_log_request(request)
     assert logged["planning_summary"]["intent"] == "建立恐怖感"
     assert logged["production_node_id"] == "node-1"
+
+
+def test_asset_generation_metadata_omits_legacy_sampling_defaults():
+    assert _asset_generation_params(ImageGenerateRequest(prompt="雨夜古堡")) == {}
+
+    explicit = ImageGenerateRequest(prompt="雨夜古堡", steps=28, sampler="dpmpp_2m")
+    assert _asset_generation_params(explicit) == {}
 
 
 def test_video_request_context_and_event_log_keep_visual_plan_context():

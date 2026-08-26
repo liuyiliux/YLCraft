@@ -153,6 +153,37 @@ body {
   color: var(--textSecondary) !important;
 }
 
+/* 新建创作项目：方案说明在暗色主题下保持可读 */
+.creative-project-create-modal .ant-form-item-label > label {
+  color: var(--textPrimary) !important;
+}
+
+.creative-project-create-modal .ant-input::placeholder,
+.creative-project-create-modal .ant-input-affix-wrapper input::placeholder,
+.creative-project-create-modal .ant-select-selection-placeholder {
+  color: var(--textSecondary) !important;
+  opacity: 0.9 !important;
+}
+
+.creative-project-profile-dropdown .ant-select-item-option-content {
+  color: var(--textPrimary) !important;
+}
+
+.creative-project-profile-dropdown .ant-select-item-option-content .ant-typography-secondary {
+  color: var(--textSecondary) !important;
+  opacity: 1 !important;
+}
+
+.creative-project-profile-dropdown .ant-select-item-option-active,
+.creative-project-profile-dropdown .ant-select-item-option-selected {
+  color: var(--textPrimary) !important;
+}
+
+.creative-project-profile-dropdown .ant-select-item-option-active .ant-typography-secondary,
+.creative-project-profile-dropdown .ant-select-item-option-selected .ant-typography-secondary {
+  color: var(--textPrimary) !important;
+}
+
 /* 消息提示 */
 .ant-message-notice-content {
   background: var(--bgCard) !important;

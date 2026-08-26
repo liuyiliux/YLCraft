@@ -11,6 +11,26 @@ class FlexibleModel(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class ContentPackageItemSchema(FlexibleModel):
+    id: str = Field(default="", max_length=160)
+    index: int = Field(default=1, ge=1)
+    title: str = Field(default="", max_length=240)
+    text: str = Field(default="", max_length=12000)
+    fact: str = Field(default="", max_length=4000)
+    source: str = Field(default="", max_length=1000)
+    source_url: str = Field(default="", max_length=2000)
+    image_prompt: str = Field(default="", max_length=12000)
+    video_prompt: str = Field(default="", max_length=12000)
+    status: str = Field(default="ready", max_length=40)
+
+
+class ContentPackagePlanSchema(FlexibleModel):
+    title: str = Field(default="", max_length=240)
+    topic: str = Field(default="", max_length=2000)
+    brief: str = Field(default="", max_length=12000)
+    items: list[ContentPackageItemSchema] = Field(default_factory=list, max_length=80)
+
+
 class ProductionPlanNodeSchema(FlexibleModel):
     """One user-visible work item in a director production plan.
 

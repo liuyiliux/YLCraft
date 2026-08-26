@@ -3143,8 +3143,8 @@ export default function SettingsPage() {
                         <Alert
                           type="info"
                           showIcon
-                          message={<span style={{ color: '#bfdbfe', fontWeight: 600 }}>异步视频任务配置</span>}
-                          description={<span style={{ color: '#dbeafe' }}>视频通用连接器在 Response 配置顶层使用 task_id_path、status_path、video_url_path、poll_endpoint、done_values、failed_values、request_headers。不要使用图片的 async_config。可在默认参数中增加 video_capabilities，声明 text_to_video、image_to_video、seed_control、generate_audio、resolutions、aspect_ratios、durations、max_duration；工作台和接口会据此限制可用参数。</span>}
+                          message={<span style={{ color: THEME.textPrimary, fontWeight: 600 }}>异步视频任务配置</span>}
+                          description={<span style={{ color: THEME.textSecondary }}>视频通用连接器在 Response 配置顶层使用 task_id_path、status_path、video_url_path、poll_endpoint、done_values、failed_values、request_headers。不要使用图片的 async_config。可在默认参数中增加 video_capabilities，声明 text_to_video、image_to_video、seed_control、generate_audio、resolutions、aspect_ratios、durations、max_duration；工作台和接口会据此限制可用参数。</span>}
                           action={
                             <Space size={8}>
                             <Button size="small" onClick={() => {

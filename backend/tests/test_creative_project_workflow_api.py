@@ -242,6 +242,61 @@ def test_update_project_api_rejects_duplicate_chapter_numbers(workflow_session: 
     assert "章节号重复" in response.json()["detail"]
 
 
+def test_content_package_api_versions_and_rejects_narrative_projects(workflow_session: Session):
+    with _client(workflow_session) as client:
+        picture_book = _post(
+            client,
+            "",
+            {
+                "title": "十二生肖绘本",
+                "idea": "给儿童介绍十二生肖",
+                "project_type": "manga",
+                "production_profile": "storybook",
+            },
+        )["data"]
+        first = client.put(
+            f"/api/v1/creative-projects/{picture_book['id']}/content-package",
+            json={
+                "package": {
+                    "topic": "十二生肖",
+                    "title": "十二生肖绘本",
+                    "items": [{"title": "鼠", "text": "十二生肖之首", "fact": "鼠在十二生肖中排第一", "source": "民俗资料", "source_url": "https://example.com/zodiac", "image_prompt": "儿童绘本里的小老鼠"}],
+                }
+            },
+        )
+        assert first.status_code == 200, first.text
+        first_data = first.json()["data"]
+        assert first_data["content_type"] == "content_package"
+        assert first_data["version"] == 1
+        assert first_data["data"]["package_type"] == "page_book"
+        assert first_data["data"]["items"][0]["id"] == "item-1"
+        assert first_data["data"]["items"][0]["fact"] == "鼠在十二生肖中排第一"
+        assert first_data["data"]["items"][0]["source"] == "民俗资料"
+
+        second = client.put(
+            f"/api/v1/creative-projects/{picture_book['id']}/content-package",
+            json={
+                "source_content_id": first_data["id"],
+                "package": {
+                    "topic": "十二生肖",
+                    "items": [{"id": "rat", "index": 1, "title": "鼠", "status": "ready"}],
+                },
+            },
+        )
+        assert second.status_code == 200, second.text
+        assert second.json()["data"]["version"] == 2
+        assert second.json()["data"]["source_content_id"] == first_data["id"]
+
+        novel = _post(client, "", {"title": "小说", "idea": "一个故事", "production_profile": "novel_serial"})["data"]
+        rejected = client.put(
+            f"/api/v1/creative-projects/{novel['id']}/content-package",
+            json={"package": {"topic": "一个故事"}},
+        )
+
+    assert rejected.status_code == 400
+    assert "不是内容包方案" in rejected.json()["detail"]
+
+
 def test_production_plan_api_versions_and_keeps_project_asset_association(workflow_session: Session):
     asset_id = str(uuid.uuid4())
     workflow_session.add(

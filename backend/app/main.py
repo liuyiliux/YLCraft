@@ -71,16 +71,6 @@ async def lifespan(app: FastAPI):
     # must not mutate the remote database behind Alembic's back.
     logger.info("Book source migration is disabled during startup; use the explicit migration command.")
 
-    # 1.5. 种子数据：平台模板（幂等）
-    try:
-        from app.services.ai.platform_templates_seed import seed_platform_templates
-        from app.db.database import get_async_session
-        async with get_async_session() as seed_session:
-            await seed_platform_templates(seed_session)
-        logger.info("Platform templates seeded")
-    except Exception as e:
-        logger.warning(f"Platform templates seed failed: {e}")
-
     # 2. 初始化任务队列（自动检测 Redis 可用性）
     from app.core.task_queue import get_queue_mode
     queue = get_task_queue()

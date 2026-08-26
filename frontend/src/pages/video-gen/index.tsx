@@ -52,10 +52,11 @@ import {
   InboxOutlined,
   FireOutlined,
   FolderOpenOutlined,
+  SaveOutlined,
 } from '@ant-design/icons'
 import type { UploadFile } from 'antd/es/upload/interface'
 import { useTheme } from '../../constants/theme'
-import { getPlatformTemplates } from '../../api'
+import { createPlatformTemplate, getPlatformTemplates } from '../../api'
 import AssetReferencePicker from '../../components/asset-reference-picker/AssetReferencePicker'
 
 const { TextArea } = Input
@@ -204,6 +205,7 @@ export default function VideoGenPage() {
   // 预览
   const [previewVideo, setPreviewVideo] = useState<GeneratedVideo | null>(null)
   const [diagnosticVideo, setDiagnosticVideo] = useState<GeneratedVideo | null>(null)
+  const [savedPromptTaskIds, setSavedPromptTaskIds] = useState<Set<string>>(new Set())
   const selectedBackend = useMemo(() => backends.find(backend => backend.name === provider), [backends, provider])
   const selectedCapabilities = selectedBackend?.capabilities || []
   const selectedConstraints = selectedBackend?.constraints || {}
@@ -589,6 +591,49 @@ export default function VideoGenPage() {
     }
   }
 
+  const saveVideoPromptTemplate = async (video: GeneratedVideo) => {
+    const savedKey = `video_saved_${video.task_id.replace(/[^a-zA-Z0-9_-]/g, '_').slice(-48)}`
+    try {
+      const response = await createPlatformTemplate({
+        platform: savedKey,
+        name: `${video.provider || '视频'} · ${video.prompt.slice(0, 22) || '已保存提示词'}`,
+        template_scope: 'video_prompt',
+        template_stage: 'video',
+        description: `来自已完成的视频生成；供应商：${video.provider || '未记录'}；模型：${video.model || '未记录'}。`,
+        system_template: '',
+        outline_template: '',
+        image_template: '',
+        page_structure: {},
+        variables: {
+          source_task_id: video.task_id,
+          source_provider: video.provider || '',
+          source_model: video.model || '',
+          source_asset_id: video.asset_id || '',
+        },
+        video_template: video.prompt,
+        default_size: video.resolution || '1024x1024',
+        is_active: true,
+        sort_order: 0,
+      })
+      if (!response?.success) {
+        message.error(response?.error || '保存视频提示词失败')
+        return
+      }
+      setSavedPromptTaskIds((current) => new Set(current).add(video.task_id))
+      if (response.template) {
+        setPromptTemplates((current) => [response.template, ...current.filter((item) => item.id !== response.template.id)])
+      }
+      message.success('已保存到视频提示词模板')
+    } catch (error: any) {
+      if (String(error?.message || '').includes('已存在')) {
+        setSavedPromptTaskIds((current) => new Set(current).add(video.task_id))
+        message.info('这条视频提示词已保存')
+        return
+      }
+      message.error(error?.message || '保存视频提示词失败')
+    }
+  }
+
   // 状态图标
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -682,6 +727,8 @@ export default function VideoGenPage() {
               <Space.Compact style={{ width: '100%', marginTop: 8 }}>
                 <Select
                   allowClear
+                  showSearch
+                  optionFilterProp="label"
                   placeholder="选择视频提示词模板"
                   style={{ flex: 1 }}
                   notFoundContent="暂无视频模板，请先创建"
@@ -1063,6 +1110,17 @@ export default function VideoGenPage() {
                                     onClick={e => { e.stopPropagation(); handleDownload(video) }}
                                   />
                                 </Tooltip>
+                                <Tooltip title={savedPromptTaskIds.has(video.task_id) ? '已保存为视频提示词模板' : '保存为视频提示词模板'}>
+                                  <Button
+                                    type="text"
+                                    icon={<SaveOutlined />}
+                                    disabled={savedPromptTaskIds.has(video.task_id)}
+                                    onClick={e => {
+                                      e.stopPropagation()
+                                      saveVideoPromptTemplate(video)
+                                    }}
+                                  />
+                                </Tooltip>
                                 {video.asset_id && (
                                   <Tooltip title="在素材库中查看">
                                     <Button
@@ -1147,6 +1205,16 @@ export default function VideoGenPage() {
                 </span>
               </Space>
               <div style={{ marginTop: 8, color: THEME.textPrompt }}>{previewVideo.prompt}</div>
+              <div style={{ marginTop: 10 }}>
+                <Button
+                  size="small"
+                  icon={<SaveOutlined />}
+                  disabled={savedPromptTaskIds.has(previewVideo.task_id)}
+                  onClick={() => saveVideoPromptTemplate(previewVideo)}
+                >
+                  {savedPromptTaskIds.has(previewVideo.task_id) ? '已保存为视频提示词模板' : '保存为视频提示词模板'}
+                </Button>
+              </div>
             </div>
           </div>
         )}

@@ -45,6 +45,7 @@ import {
   ExpandOutlined,
   ReadOutlined,
   CloudUploadOutlined,
+  SaveOutlined,
 } from '@ant-design/icons'
 import { SearchPanel } from '../../components/asset-hub/SearchPanel'
 import type { SearchParams } from '../../components/asset-hub/SearchPanel'
@@ -60,6 +61,7 @@ import {
   hybridSearch,
   getAssetLineage,
   openFolder,
+  createUserImagePromptReference,
 } from '../../api'
 import { AssetVideoPlayer } from '../../components/video/AssetVideoPlayer'
 import { Model3DViewer } from '../../components/asset-hub/Model3DViewer'
@@ -212,6 +214,7 @@ export default function AssetsPage() {
   const [provenanceReport, setProvenanceReport] = useState<any>(null)
   const [provenanceLoading, setProvenanceLoading] = useState(false)
   const [provenanceAuthorized, setProvenanceAuthorized] = useState('')
+  const [savedPromptAssetIds, setSavedPromptAssetIds] = useState<Set<string>>(() => new Set())
 
   // Tag tree (sidebar)
   const [siderCollapsed, setSiderCollapsed] = useState(false)
@@ -580,6 +583,39 @@ export default function AssetsPage() {
     }
   }
 
+  const saveAssetPrompt = async (asset: any) => {
+    const metadata = asset?.metadata || (asset?.metadata_json ? JSON.parse(asset.metadata_json) : {}) || {}
+    const aiParams = metadata.ai_params || {}
+    const prompt = String(metadata.prompt || aiParams.prompt || '').trim()
+    if (!prompt) {
+      message.warning('该素材没有可保存的图片提示词')
+      return
+    }
+
+    try {
+      const response = await createUserImagePromptReference({
+        title: `${aiParams.provider || metadata.provider || '图片'} · ${prompt.slice(0, 22) || '已保存提示词'}`,
+        prompt,
+        negative_prompt: String(metadata.negative_prompt || aiParams.negative_prompt || ''),
+        provider: String(aiParams.provider || metadata.provider || ''),
+        model: String(aiParams.model || metadata.model || ''),
+        asset_id: String(asset.id || ''),
+        generation_mode: aiParams.reference_images_count ? 'image_to_image' : 'text_to_image',
+        size: String(aiParams.size || metadata.size || ''),
+        seed: aiParams.seed,
+        tags: ['AI生成'],
+      })
+      if (!response?.success) {
+        message.error(response?.error || '保存图片提示词失败')
+        return
+      }
+      setSavedPromptAssetIds((current) => new Set(current).add(asset.id))
+      message.success(response.created ? '已保存到“我的生图提示词”' : '已合并为现有提示词的新生成样例')
+    } catch (error: any) {
+      message.error(error?.message || '保存图片提示词失败')
+    }
+  }
+
   // ---- Detail drawer content ----
   const renderDetailContent = () => {
     if (!detailAsset) return null
@@ -726,6 +762,16 @@ export default function AssetsPage() {
               {!isPaidCourse && !localReadable && (
                 <Button icon={<ThunderboltOutlined />} onClick={(e) => handleJumpToGenerator(detailAsset, e)}>
                   {aiGen ? '再次生成' : '跳转解析'}
+                </Button>
+              )}
+              {aiGen && meta.prompt && (
+                <Button
+                  icon={<SaveOutlined />}
+                  style={{ marginLeft: 8 }}
+                  disabled={savedPromptAssetIds.has(detailAsset.id)}
+                  onClick={() => void saveAssetPrompt(detailAsset)}
+                >
+                  {savedPromptAssetIds.has(detailAsset.id) ? '已保存提示词' : '保存提示词'}
                 </Button>
               )}
             </div>
@@ -879,8 +925,6 @@ export default function AssetsPage() {
                 {meta.provider && <Descriptions.Item label="提供商">{meta.provider}</Descriptions.Item>}
                 {aiParams.seed !== undefined && <Descriptions.Item label="种子">{aiParams.seed}</Descriptions.Item>}
                 {aiParams.size && <Descriptions.Item label="尺寸">{aiParams.size}</Descriptions.Item>}
-                {aiParams.steps && <Descriptions.Item label="采样步数">{aiParams.steps}</Descriptions.Item>}
-                {aiParams.sampler && <Descriptions.Item label="采样器">{aiParams.sampler}</Descriptions.Item>}
                 {aiParams.lora && <Descriptions.Item label="LoRA">{aiParams.lora}</Descriptions.Item>}
               </Descriptions>
             )}

@@ -1,0 +1,64 @@
+"""seed built-in platform and prompt templates once through Alembic
+
+Revision ID: 022_seed_platform_prompt_templates
+Revises: 021_add_external_api_key_quota
+"""
+
+from __future__ import annotations
+
+import uuid
+
+from alembic import op
+import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
+
+from app.services.ai.platform_templates_seed import (
+    CREATIVE_PROJECT_TEMPLATE_SEEDS,
+    PLATFORM_TEMPLATE_SEEDS,
+    VIDEO_PROMPT_TEMPLATE_SEEDS,
+)
+
+
+revision = "022_seed_platform_prompt_templates"
+down_revision = "021_add_external_api_key_quota"
+branch_labels = None
+depends_on = None
+
+
+def upgrade() -> None:
+    """Insert only missing built-ins; database values remain the source of truth."""
+    bind = op.get_bind()
+    templates = sa.table(
+        "platform_templates",
+        sa.column("id", sa.UUID()),
+        sa.column("platform", sa.String()),
+        sa.column("name", sa.String()),
+        sa.column("template_scope", sa.String()),
+        sa.column("template_stage", sa.String()),
+        sa.column("description", sa.String()),
+        sa.column("system_template", sa.Text()),
+        sa.column("outline_template", sa.String()),
+        sa.column("image_template", sa.String()),
+        sa.column("page_structure", postgresql.JSONB()),
+        sa.column("variables", postgresql.JSONB()),
+        sa.column("video_template", sa.String()),
+        sa.column("default_size", sa.String()),
+        sa.column("is_active", sa.Boolean()),
+        sa.column("sort_order", sa.Integer()),
+    )
+
+    for raw in [*PLATFORM_TEMPLATE_SEEDS, *VIDEO_PROMPT_TEMPLATE_SEEDS, *CREATIVE_PROJECT_TEMPLATE_SEEDS]:
+        if bind.execute(
+            sa.text("SELECT 1 FROM platform_templates WHERE platform = :platform"),
+            {"platform": raw["platform"]},
+        ).first():
+            continue
+        seed = dict(raw)
+        seed["id"] = uuid.UUID(str(seed["id"]))
+        bind.execute(templates.insert().values(**seed))
+
+
+def downgrade() -> None:
+    # Seed data may have been edited by a user after upgrade, so downgrading
+    # schema revisions must not delete those database-owned templates.
+    pass

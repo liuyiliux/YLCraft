@@ -6,15 +6,19 @@
  * 与图片编辑器「视觉水印」、平台采集「无水印下载」是不同能力。
  */
 import { useCallback, useEffect, useState } from 'react'
-import { Alert, Button, Card, Descriptions, Input, Radio, Select, Space, Spin, Typography, message } from 'antd'
-import { ClearOutlined, DeleteOutlined, RadarChartOutlined, SafetyCertificateOutlined } from '@ant-design/icons'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Alert, Button, Card, Descriptions, Input, Radio, Select, Space, Spin, Typography, Upload, message } from 'antd'
+import { ClearOutlined, CloudUploadOutlined, DeleteOutlined, FolderOpenOutlined, RadarChartOutlined, SafetyCertificateOutlined } from '@ant-design/icons'
 import { cleanAssetProvenance, detectAssetDeepWatermark, listAssets, removeAssetVisualWatermark } from '../../api'
 
 const { Title, Text } = Typography
 
 export default function ProvenanceCleanPage() {
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const [assets, setAssets] = useState<any[]>([])
   const [assetsLoading, setAssetsLoading] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const [assetId, setAssetId] = useState('')
   const [report, setReport] = useState<any>(null)
   const [deepReport, setDeepReport] = useState<any>(null)
@@ -28,10 +32,11 @@ export default function ProvenanceCleanPage() {
   const loadAssetOptions = useCallback(async () => {
     setAssetsLoading(true)
     try {
-      const res: any = await listAssets({ page_size: 200 })
-      setAssets(res?.data || [])
-    } catch {
+      const res: any = await listAssets({ page_size: 100 })
+      setAssets(res?.data || res?.items || [])
+    } catch (error: any) {
       setAssets([])
+      message.error(error?.message || '读取素材库失败')
     } finally {
       setAssetsLoading(false)
     }
@@ -55,6 +60,36 @@ export default function ProvenanceCleanPage() {
       setLoading(false)
     }
   }, [])
+
+  useEffect(() => {
+    const requestedAssetId = searchParams.get('asset_id')
+    if (!requestedAssetId || !assets.some((asset) => asset.id === requestedAssetId)) return
+    setAssetId(requestedAssetId)
+    void audit(requestedAssetId)
+  }, [assets, audit, searchParams])
+
+  const uploadAuditAsset = useCallback(async (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('title', file.name.replace(/\.[^.]+$/, ''))
+    setUploading(true)
+    try {
+      const response = await fetch('/api/v1/assets/upload', { method: 'POST', body: form })
+      const data = await response.json()
+      if (!response.ok || !data?.success || !data?.asset_id) {
+        throw new Error(data?.detail || data?.error || '上传入库失败')
+      }
+      await loadAssetOptions()
+      setAssetId(data.asset_id)
+      await audit(data.asset_id)
+      message.success('素材已上传入库并开始审计')
+    } catch (error: any) {
+      message.error(error?.message || '上传入库失败')
+    } finally {
+      setUploading(false)
+    }
+    return false
+  }, [audit, loadAssetOptions])
 
   const detectDeep = useCallback(async () => {
     if (!assetId) return
@@ -120,6 +155,19 @@ export default function ProvenanceCleanPage() {
 
       <Card style={{ marginTop: 16 }}>
         <Space direction="vertical" size={16} style={{ width: '100%' }}>
+          <Space wrap>
+            <Upload
+              accept="image/*,video/*,audio/*,.txt,.md,.pdf,.doc,.docx,.xlsx,.pptx"
+              showUploadList={false}
+              beforeUpload={(file) => {
+                void uploadAuditAsset(file)
+                return false
+              }}
+            >
+              <Button icon={<CloudUploadOutlined />} loading={uploading}>上传并入素材库</Button>
+            </Upload>
+            <Button icon={<FolderOpenOutlined />} onClick={() => navigate('/assets')}>打开素材库</Button>
+          </Space>
           <Select
             showSearch
             placeholder="选择要审计的素材（名称搜索）"
@@ -133,6 +181,9 @@ export default function ProvenanceCleanPage() {
             optionFilterProp="label"
             onChange={(id) => { setAssetId(id); audit(id) }}
           />
+          {!assetsLoading && assets.length === 0 && (
+            <Alert type="info" showIcon message="素材库暂时没有可审计素材" description="可以直接上传文件入素材库，或先到素材库添加已有素材。" />
+          )}
 
           {loading ? (
             <div style={{ display: 'grid', placeItems: 'center', padding: 24 }}><Spin /></div>

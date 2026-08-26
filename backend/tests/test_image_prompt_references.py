@@ -203,6 +203,46 @@ def test_image_prompt_reference_api_search_and_detail(prompt_client, prompt_sess
     assert group_response.json()["items"][0]["model_group"] == "ChatGPT"
 
 
+def test_image_prompt_reference_api_saves_generated_image_prompt(prompt_client):
+    response = prompt_client.post(
+        "/api/v1/image-prompts/references",
+        json={
+            "title": "Agnes 人物海报",
+            "prompt": "A cinematic portrait with a teal rim light.",
+            "provider": "Agnes Image",
+            "model": "agnes-image-v2",
+            "asset_id": "asset-demo",
+            "tags": ["人物", "电影感"],
+        },
+    )
+    assert response.status_code == 200
+    reference = response.json()["data"]
+    assert reference["source_id"] == "ylcraft-my-image-prompts"
+    assert reference["metadata"]["provider"] == "Agnes Image"
+    assert reference["metadata"]["asset_id"] == "asset-demo"
+
+    merged = prompt_client.post(
+        "/api/v1/image-prompts/references",
+        json={
+            "prompt": "A cinematic portrait with a teal rim light.",
+            "provider": "Agnes Image",
+            "model": "agnes-image-v3",
+            "asset_id": "asset-second",
+            "generation_mode": "image_to_image",
+            "size": "1024x1024",
+        },
+    )
+    assert merged.status_code == 200
+    assert merged.json()["created"] is False
+    assert merged.json()["sample_added"] is True
+    assert len(merged.json()["data"]["generation_examples"]) == 2
+    assert len(merged.json()["data"]["model_variants"]) == 2
+
+    searched = prompt_client.get("/api/v1/image-prompts/references", params={"source_id": "ylcraft-my-image-prompts"})
+    assert searched.status_code == 200
+    assert searched.json()["total"] == 1
+
+
 def test_search_references_prioritizes_items_with_cover_images(prompt_session_factory):
     with prompt_session_factory() as session:
         service = ImagePromptReferenceService(session)

@@ -45,6 +45,7 @@ from app.services.creative_project.schemas import (
     ChapterOutlineScenesSchema,
     ChapterOutlineSchema,
     ChapterPlanSchema,
+    ContentPackagePlanSchema,
     ComicPagesSchema,
     NovelBodySchema,
     NarrativeHealthIssueSchema,
@@ -64,7 +65,7 @@ from app.services.creative_project.semantic_recall import (
     NarrativeRecallResult,
     NarrativeSemanticRecallAdapter,
 )
-from app.services.creative_project.profiles import normalize_project_settings
+from app.services.creative_project.profiles import normalize_project_settings, validate_profile_inputs
 
 logger = logging.getLogger("ylcraft.creative_project")
 
@@ -3363,6 +3364,171 @@ class CreativeProjectService:
         self.session.commit()
         self.session.refresh(content)
         return content
+
+    def save_content_package(
+        self,
+        *,
+        project_id: str,
+        package: dict[str, Any],
+        source_content_id: str | None = None,
+    ) -> ProjectContent:
+        """Append a content-package revision without mutating older packages.
+
+        Packages deliberately share ``ProjectContent`` with story outputs so
+        project export, Asset Hub links, task provenance, and version history
+        remain on one durable path.
+        """
+
+        project = self._require_project(project_id)
+        settings = loads_json(project.settings_json)
+        profile_id = str(settings.get("production_profile") or "")
+        source_context = package.get("source_context") or {}
+        validated = validate_profile_inputs(
+            profile_id,
+            project_type=project.project_type,
+            topic=package.get("topic"),
+            source_assets=source_context.get("asset_ids"),
+            source_links=source_context.get("source_links"),
+        )
+        profile = validated["profile"]
+        if profile.get("production_family") != "content_package":
+            raise ValueError("当前项目不是内容包方案，不能保存内容包")
+
+        expected_type = str(profile.get("package_type") or "")
+        package_type = str(package.get("package_type") or expected_type).strip()
+        if package_type != expected_type:
+            raise ValueError("内容包类型与当前内容生产方案不一致")
+
+        items = package.get("items") or []
+        if not isinstance(items, list):
+            raise ValueError("内容包 items 必须是数组")
+        normalized_items: list[dict[str, Any]] = []
+        for index, item in enumerate(items, start=1):
+            if not isinstance(item, dict):
+                raise ValueError("内容包 item 必须是对象")
+            stable_id = str(item.get("id") or item.get("item_id") or f"item-{index}").strip()
+            normalized_items.append({
+                **item,
+                "id": stable_id,
+                "index": int(item.get("index") or index),
+                "status": str(item.get("status") or "draft"),
+                "asset_ids": list(item.get("asset_ids") or []),
+                "source_refs": list(item.get("source_refs") or []),
+            })
+
+        prior: ProjectContent | None = None
+        if source_content_id:
+            prior = self.session.get(ProjectContent, source_content_id)
+            if not prior or prior.project_id != project_id or prior.content_type != "content_package":
+                raise ValueError("内容包来源版本不存在")
+        else:
+            prior = self.session.exec(
+                select(ProjectContent)
+                .where(ProjectContent.project_id == project_id, ProjectContent.content_type == "content_package")
+                .order_by(ProjectContent.version.desc(), ProjectContent.updated_at.desc())
+            ).first()
+
+        payload = {
+            **package,
+            "package_type": package_type,
+            "topic": validated["topic"],
+            "items": normalized_items,
+            "outputs": list(package.get("outputs") or []),
+            "source_context": source_context,
+            "profile_id": profile["id"],
+        }
+        title = str(payload.get("title") or project.title or payload["topic"] or "未命名内容包")
+        content = self._create_content(
+            project_id=project_id,
+            content_type="content_package",
+            title=title,
+            data=payload,
+            text_content=str(payload.get("brief") or ""),
+            source_content_id=prior.id if prior else None,
+        )
+        self.session.commit()
+        self.session.refresh(content)
+        return content
+
+    async def generate_content_package(
+        self,
+        project_id: str,
+        *,
+        topic: str = "",
+        brief: str = "",
+        item_count: int = 12,
+        prompt_only: bool = False,
+        provider: str | None = None,
+        model: str | None = None,
+    ) -> ProjectContent:
+        """Plan one lightweight package instead of entering the narrative pipeline."""
+
+        project = self._require_project(project_id)
+        profile_id = str(loads_json(project.settings_json).get("production_profile") or "")
+        validated = validate_profile_inputs(profile_id, project_type=project.project_type, topic=topic)
+        profile = validated["profile"]
+        if profile.get("production_family") != "content_package":
+            raise ValueError("当前项目不是内容包方案，不能生成内容包")
+        package_type = str(profile.get("package_type") or "")
+        count = max(1, min(int(item_count or 12), 80))
+        mode_instruction = (
+            "只生成每项标题与 image_prompt；text 必须为空字符串。"
+            if prompt_only
+            else "每项给出简洁、可直接展示的 text 与可直接用于生图的 image_prompt。"
+        )
+        knowledge_instruction = (
+            (
+                "这是科普知识卡；只生成提示词时 fact、source、source_url 也必须为空字符串，"
+                "否则每项必须填写 fact（可核验的事实表述）、source（来源名称或来源说明）和 source_url（没有链接时为空字符串）；"
+            )
+            if package_type == "knowledge_cards"
+            else "非科普内容包的 fact、source、source_url 必须为空字符串。"
+        )
+        kind_label = {
+            "page_book": "绘本或漫画页面",
+            "knowledge_cards": "科普知识卡",
+            "article_package": "文章内容单元",
+            "social_carousel": "图文轮播卡",
+            "single_media": "单个媒体创意",
+        }.get(package_type, "内容单元")
+        prompt = (
+            f"为主题《{validated['topic']}》规划 {count} 个{kind_label}。\n"
+            f"补充要求：{brief.strip() or '面向普通读者，内容准确、清楚、可执行。'}\n"
+            f"{mode_instruction}\n"
+            f"{knowledge_instruction}\n"
+            "严格输出 JSON 对象：title、topic、brief、items。items 中每项含 index、title、text、fact、source、source_url、image_prompt、video_prompt、status；"
+            "不要输出 Markdown 或解释。"
+        )
+        data = await self._generate_json(
+            project=project,
+            stage="content_package",
+            prompt=prompt,
+            system_prompt=(
+                "你是内容策划与视觉提示词专家。输出简明、可编辑的中文内容包 JSON；"
+                "不要要求世界观、章节、正文或隐藏推理。"
+            ),
+            schema_model=ContentPackagePlanSchema,
+            provider=provider,
+            model=model,
+            request_metadata={"package_type": package_type, "prompt_only": prompt_only},
+        )
+        data["package_type"] = package_type
+        data["topic"] = str(data.get("topic") or validated["topic"])
+        data["brief"] = str(data.get("brief") or brief)
+        data["items"] = [
+            {
+                **item,
+                "id": str(item.get("id") or f"item-{index}"),
+                "index": index,
+                "status": str(item.get("status") or "ready"),
+                "text": "" if prompt_only else str(item.get("text") or ""),
+                "fact": "" if prompt_only else str(item.get("fact") or ""),
+                "source": "" if prompt_only else str(item.get("source") or ""),
+                "source_url": "" if prompt_only else str(item.get("source_url") or ""),
+            }
+            for index, item in enumerate(data.get("items") or [], start=1)
+        ]
+        return self.save_content_package(project_id=project_id, package=data)
 
     async def regenerate_chapter_outline_scenes(
         self,

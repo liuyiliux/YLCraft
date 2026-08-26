@@ -57,7 +57,7 @@
 | 视频分镜生产 | 代码和项目回流完成；仅剩真实视频供应商验收 | `openspec/changes/story-video-shot-production/tasks.md` |
 | 任务观测诊断 | 已完成，事件时间线和异步生图诊断已验证 | `openspec/changes/task-observability-diagnostics/tasks.md` |
 | 全平台事件日志 | 进行中：任务中心改三 Tab（任务/事件日志/运行日志）；新建 `platform_event_logs` 表 + `/api/v1/logs`（含 `/runtime`）查询；后端补滚动文件日志；同步修复图片生成失败不落账 | `openspec/changes/platform-event-logging/tasks.md` |
-| 数据库迁移收敛 | Alembic 迁移链当前到 `018_allow_standalone_previs_scenes`（017 平台事件日志、018 预演独立场景已应用远程库）；启动和 Agent 请求路径不再隐式改 schema，新增视频/图转 3D/动态状态/平台事件日志/预演持久任务均通过显式迁移落库 | `backend/alembic/versions/`、`openspec/changes/database-migration-convergence/tasks.md` |
+| 数据库迁移收敛 | Alembic 迁移链当前到 `023_remove_legacy_asset_sampling_metadata`；启动和 Agent 请求路径不再隐式改 schema，新增视频/图转 3D/动态状态/平台事件日志/预演持久任务均通过显式迁移落库。`023` 会移除历史素材 AI 参数中并非供应商实际返回的采样步数与采样器默认值。 | `backend/alembic/versions/`、`openspec/changes/database-migration-convergence/tasks.md` |
 | 独立视频工作台 | 文生/图生视频、视频提示词模板、素材库首帧、持久任务恢复、任务中心聚合和 Asset Hub 回流已落地；模式 tab 驱动供应商/模型过滤、`video_capabilities` 能力约束、视频首帧缩略图已补齐；仍待真实供应商全链路验收 | `openspec/changes/ai-video-workspace/tasks.md` |
 | 图转 3D 工作台 | 配置驱动提交/轮询/下载、Asset Hub 入库、GLB 优先与 ZIP 解包、PreviewImageUrl 缩略图、独立页面已落地；仍待真实供应商生成 GLB 验收 | `openspec/changes/image-to-3d-workspace/tasks.md` |
 | 3D 骨骼绑定与数字人 | 后端已落地：绑骨连接器（`SubmitAutoRiggingJob`/`DescribeAutoRiggingJob`）、`POST /model-3d/rig`、源模型经 COS 临时签名 URL 或 `/model3d-files` 暴露、部位树显隐与动画播放；仍待真实绑骨供应商端到端验收（需 ≤60MB 人形 GLB/FBX） | `openspec/changes/3d-rigging-digital-human/tasks.md` |

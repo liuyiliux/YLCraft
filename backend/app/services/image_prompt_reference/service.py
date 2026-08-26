@@ -136,6 +136,17 @@ DEFAULT_IMAGE_PROMPT_SOURCES: tuple[SourceDefinition, ...] = (
     ),
 )
 
+USER_IMAGE_PROMPT_SOURCE = SourceDefinition(
+    id="ylcraft-my-image-prompts",
+    name="我的生图提示词",
+    repo_url="",
+    raw_base_url="",
+    raw_path="",
+    parser="manual",
+    category="我的生图提示词",
+    metadata={"source_kind": "user_generated"},
+)
+
 MODEL_GROUP_SOURCE_IDS: dict[str, set[str]] = {
     "chatgpt": {
         "awesome-gpt-image",
@@ -273,6 +284,19 @@ def _clear_prompt_facet_cache() -> None:
     _PROMPT_FACET_CACHE["expires_at"] = 0.0
     _PROMPT_FACET_CACHE["tags"] = []
     _PROMPT_FACET_CACHE["categories"] = []
+
+
+def _model_variants_from_examples(examples: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    variants: dict[tuple[str, str], int] = {}
+    for example in examples:
+        if not isinstance(example, dict):
+            continue
+        key = (str(example.get("provider") or ""), str(example.get("model") or ""))
+        variants[key] = variants.get(key, 0) + 1
+    return [
+        {"provider": provider, "model": model, "count": count}
+        for (provider, model), count in sorted(variants.items())
+    ]
 
 
 def _utc_now() -> datetime:
@@ -676,7 +700,7 @@ class ImagePromptReferenceService:
     def seed_sources(self) -> list[ImagePromptSource]:
         rows: list[ImagePromptSource] = []
         now = _utc_now()
-        for definition in DEFAULT_IMAGE_PROMPT_SOURCES:
+        for definition in [*DEFAULT_IMAGE_PROMPT_SOURCES, USER_IMAGE_PROMPT_SOURCE]:
             row = self.session.get(ImagePromptSource, definition.id)
             if row is None:
                 row = ImagePromptSource(id=definition.id, created_at=now)
@@ -795,6 +819,14 @@ class ImagePromptReferenceService:
         source = self.get_source(source_id)
         if not source:
             raise ValueError(f"image prompt source not found: {source_id}")
+        if source.parser == "manual":
+            total = int(
+                self.session.exec(
+                    select(func.count(ImagePromptReference.id)).where(ImagePromptReference.source_id == source.id)
+                ).one()
+                or 0
+            )
+            return {"success": True, "source_id": source.id, "total": total, "created": 0, "updated": 0, "cache": "database"}
         cache_path = image_prompt_source_cache_path(source)
         if cache_path.is_file() and not force_remote:
             return {
@@ -848,6 +880,93 @@ class ImagePromptReferenceService:
             "total_sources": len(results),
             "results": results,
         }
+
+    def create_user_reference(
+        self,
+        *,
+        prompt: str,
+        title: str = "",
+        negative_prompt: str = "",
+        provider: str = "",
+        model: str = "",
+        asset_id: str = "",
+        generation_mode: str = "text_to_image",
+        size: str = "",
+        seed: int | None = None,
+        tags: list[str] | None = None,
+    ) -> tuple[ImagePromptReference, bool, bool]:
+        prompt = (prompt or "").strip()
+        if not prompt:
+            raise ValueError("提示词不能为空")
+        self.seed_sources()
+        from uuid import uuid4
+
+        now = _utc_now()
+        sample = {
+            "provider": (provider or "").strip(),
+            "model": (model or "").strip(),
+            "asset_id": (asset_id or "").strip(),
+            "generation_mode": (generation_mode or "text_to_image").strip(),
+            "size": (size or "").strip(),
+            "seed": seed,
+            "saved_at": now.isoformat(),
+        }
+        existing = self.session.exec(
+            select(ImagePromptReference).where(
+                ImagePromptReference.source_id == USER_IMAGE_PROMPT_SOURCE.id,
+                ImagePromptReference.prompt == prompt,
+                ImagePromptReference.negative_prompt == (negative_prompt or "").strip(),
+            )
+        ).first()
+        if existing:
+            metadata = dict(existing.metadata_json or {})
+            examples = metadata.get("generation_examples") if isinstance(metadata.get("generation_examples"), list) else []
+            sample_key = sample["asset_id"] or "|".join(str(sample.get(key) or "") for key in ("provider", "model", "generation_mode", "size", "seed"))
+            known_keys = {
+                item.get("asset_id") or "|".join(str(item.get(key) or "") for key in ("provider", "model", "generation_mode", "size", "seed"))
+                for item in examples
+                if isinstance(item, dict)
+            }
+            if sample_key not in known_keys:
+                examples.append(sample)
+            metadata["generation_examples"] = examples[-50:]
+            metadata["example_count"] = len(examples)
+            metadata["model_variants"] = _model_variants_from_examples(examples)
+            existing.metadata_json = metadata
+            existing.updated_at = now
+            self.session.add(existing)
+            self.session.commit()
+            return existing, False, sample_key not in known_keys
+
+        external_id = uuid4().hex
+        reference = ImagePromptReference(
+            id=f"{USER_IMAGE_PROMPT_SOURCE.id}:{external_id}",
+            source_id=USER_IMAGE_PROMPT_SOURCE.id,
+            external_id=external_id,
+            title=(title or prompt[:48] or "我的生图提示词").strip()[:255],
+            prompt=prompt,
+            negative_prompt=(negative_prompt or "").strip(),
+            tags_json=_sort_prompt_tags([*(tags or []), "我的提示词"]),
+            category=USER_IMAGE_PROMPT_SOURCE.category,
+            model_hint=sample["model"],
+            language="zh" if re.search(r"[\u4e00-\u9fff]", prompt) else "en",
+            metadata_json={
+                "source_name": USER_IMAGE_PROMPT_SOURCE.name,
+                "source_kind": "generated_image",
+                "provider": sample["provider"],
+                "model": sample["model"],
+                "asset_id": sample["asset_id"],
+                "generation_examples": [sample],
+                "example_count": 1,
+                "model_variants": _model_variants_from_examples([sample]),
+            },
+            created_at=now,
+            updated_at=now,
+        )
+        self.session.add(reference)
+        self.session.commit()
+        _clear_prompt_facet_cache()
+        return reference, True, True
 
     def _global_facets(self) -> dict[str, list[str]]:
         now = time.monotonic()
@@ -1107,6 +1226,8 @@ class ImagePromptReferenceService:
             "view_count": metadata.get("view_count") or 0,
             "like_count": metadata.get("like_count") or 0,
             "copy_count": metadata.get("copy_count") or 0,
+            "generation_examples": metadata.get("generation_examples") or [],
+            "model_variants": metadata.get("model_variants") or [],
             "remote_created_at": metadata.get("remote_created_at") or "",
             "remote_updated_at": metadata.get("remote_updated_at") or "",
             "created_at": reference.created_at.isoformat() if reference.created_at else None,
