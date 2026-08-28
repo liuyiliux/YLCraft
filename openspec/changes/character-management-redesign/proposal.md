@@ -37,7 +37,7 @@ YLCraft 当前角色管理页面（`frontend/src/pages/characters/index.tsx`，�
 - 不实现全自动小说角色拆分（那是 Skill 层的事，本变更聚焦 UI 与关系建模）。
 - 不重构 Asset Hub 或立绘生成链路，只新增一个预设和关联 UI。
 - 不实现多角色画风一致性批量出图（需要生图供应商支持参考图，另作议题）。
-- 不把角色管理做成独立的全屏工作台（当前抽屉 + 列表布局可渐进升级）。
+- 不新增独立的全屏路由（`/characters/fullscreen/:id`）：全屏在 AppLayout 内通过 Header 隐藏实现，保持路由结构单一。（修正：原定「不做全屏工作台」，产品确认后升级为工作区 + 全屏切换。）
 - 不引入外部图库（如 d3）；关系图谱用内联 SVG 或项目已有依赖。
 
 ## Success Criteria

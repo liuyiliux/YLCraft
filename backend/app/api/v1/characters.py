@@ -182,6 +182,7 @@ async def list_characters(
     keyword: str | None = Query(None, description="搜索角色名称"),
     source_type: str | None = Query(None, description="来源类型过滤，如 ai_generated"),
     workflow_source: str | None = Query(None, description="流程来源过滤：extract / character_first / asset_import"),
+    extract_origin: str | None = Query(None, description="提取来源过滤：uploaded_novel / imported_novel / original_outline"),
     role: str | None = Query(None, description="角色定位过滤"),
     tag: str | None = Query(None, description="自定义标签过滤"),
     is_favorite: bool | None = Query(None, description="仅收藏"),
@@ -203,15 +204,17 @@ async def list_characters(
             keyword=keyword,
             source_type=source_type,
             workflow_source=workflow_source,
+            extract_origin=extract_origin,
             role=role,
             tag=tag,
             is_favorite=is_favorite,
             page=page,
             page_size=page_size,
         )
+        origins = await service.extract_origins_for([c.id for c in items])
         return {
             "success": True,
-            "data": [service.to_response(c) for c in items],
+            "data": [service.to_response(c, extract_origins=origins) for c in items],
             "total": total,
             "page": page,
             "page_size": page_size,
@@ -297,6 +300,20 @@ async def get_workflow_sources():
         CharacterWorkflowSource.UNKNOWN.value: "未标记",
     }
     return {"success": True, "data": [{"value": value, "label": labels[value]} for value in labels]}
+
+
+@router.get("/meta/extract-origins", summary="获取角色提取来源元数据")
+async def get_extract_origins():
+    """小说/正文提取链路的细分来源。
+
+    - ``uploaded_novel``：用户上传的外来小说文本，角色字段有原文依据
+    - ``imported_novel``：小说书架/搜索导入的外来小说，角色字段有原文依据
+    - ``original_outline``：项目原创大纲，角色字段由 LLM 生成，标记为 AI 推断
+    """
+    from app.services.character.provenance import EXTRACT_ORIGIN_LABELS
+
+    order = ["uploaded_novel", "imported_novel", "original_outline", "unknown"]
+    return {"success": True, "data": [{"value": value, "label": EXTRACT_ORIGIN_LABELS[value]} for value in order]}
 
 
 @router.post("/{character_id}/tags", summary="添加自定义标签")
@@ -476,7 +493,8 @@ async def get_character(character_id: str):
         character = await service.get_by_id(character_id)
         if not character:
             raise HTTPException(status_code=404, detail="角色不存在")
-        data = service.to_response(character)
+        origins = await service.extract_origins_for([character.id])
+        data = service.to_response(character, extract_origins=origins)
         data["world_usages"] = await service.list_world_usages(character_id)
         return {"success": True, "data": data}
 

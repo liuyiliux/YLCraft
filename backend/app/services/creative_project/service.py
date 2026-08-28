@@ -20,7 +20,7 @@ from sqlmodel import Session, select
 
 from app.db.models.asset_hub import AssetNode, AssetType, AssetVersion
 from app.db.models.canvas import CanvasDocument
-from app.db.models.character import Character, CharacterRole, CharacterSourceType, CharacterStoryLink
+from app.db.models.character import Character, CharacterRole, CharacterSourceType, CharacterStoryLink, CharacterWorkflowSource
 from app.db.models.creative_project import (
     CreativeProject,
     CreativeProjectStatus,
@@ -58,6 +58,11 @@ from app.services.creative_project.schemas import (
     WriterRoomCharacterRehearsalSchema,
     WriterRoomProseReviewSchema,
     WriterRoomSceneBeatsSchema,
+)
+from app.services.character.provenance import (
+    build_field_sources,
+    merge_field_sources,
+    resolve_extract_origin,
 )
 from app.services.creative_project.semantic_recall import (
     DisabledNarrativeSemanticRecallAdapter,
@@ -4218,6 +4223,9 @@ class CreativeProjectService:
             global_by_name = {item.name: item for item in global_characters if item.name}
         existing_links_by_character_id = {link.character_id: link for link in existing_links}
         world_name = self._project_world_name(project)
+        # 角色提取来源：外来文本（上传/导入小说）有原文依据；原创大纲是 AI 推断
+        extract_origin = resolve_extract_origin(project)
+        field_source = build_field_sources(extract_origin)
 
         synced: list[Character] = []
         changed = False
@@ -4233,8 +4241,11 @@ class CreativeProjectService:
                 character = Character(
                     name=name,
                     role=self._character_role(raw_character.get("role")),
-                    workflow_source="extract",
+                    workflow_source=CharacterWorkflowSource.EXTRACT.value,
                     source_types=dumps_json([CharacterSourceType.AI_GENERATED.value]),
+                    field_sources_json=dumps_json(
+                        merge_field_sources({}, raw_character, source=field_source)
+                    ),
                     appearance=str(raw_character.get("appearance") or raw_character.get("image_prompt") or ""),
                     costume_hint=str(raw_character.get("costume_hint") or ""),
                     signature_items=dumps_json(self._character_list(raw_character, "signature_items", "visual_tags")),
@@ -4269,6 +4280,13 @@ class CreativeProjectService:
                 character.age_range = character.age_range or str(raw_character.get("age_range") or "")
                 if raw_character.get("portrait_asset_id") and not character.portrait_asset_id:
                     character.portrait_asset_id = str(raw_character.get("portrait_asset_id"))
+                character.field_sources_json = dumps_json(
+                    merge_field_sources(
+                        character.field_sources_json,
+                        raw_character,
+                        source=field_source,
+                    )
+                )
 
             link = existing_links_by_character_id.get(character.id)
             if link is None:
@@ -4278,6 +4296,8 @@ class CreativeProjectService:
                 character.use_count = (character.use_count or 0) + 1
                 character.last_used_at = datetime.now()
             link.world_name = link.world_name or world_name
+            if not link.extract_origin or link.extract_origin == "unknown":
+                link.extract_origin = extract_origin
             link.usage_role = link.usage_role or self._character_role(raw_character.get("role"))
             link.local_identity = link.local_identity or str(raw_character.get("identity") or raw_character.get("role") or "")
             link.local_faction = link.local_faction or str(raw_character.get("faction") or raw_character.get("organization") or "")
