@@ -38,6 +38,24 @@ def test_identity_board_prompt_contains_reference_layout_rules():
     assert "脸部崩坏" in result["negative_prompt"]
 
 
+def test_character_sheet_16_9_prompt_has_director_friendly_layout():
+    character = SimpleNamespace(
+        name="设定板角色",
+        role="supporting",
+        appearance="短发",
+        costume_hint="风衣",
+        signature_items='["吊坠"]',
+        expressions='["冷静"]',
+        poses='[]',
+        visual_consistency="发型和吊坠保持一致",
+    )
+    result = build_portrait_prompt(character=character, preset="character_sheet_16_9")
+    assert result["preset"] == "character_sheet_16_9"
+    assert "左侧约 34%" in result["prompt"]
+    assert "正面/侧面/背面三视图" in result["prompt"]
+    assert "不要生成大段说明文字" in result["prompt"]
+
+
 def test_prompt_builder_accepts_visual_profile_overrides():
     character = SimpleNamespace(
         name="测试角色",

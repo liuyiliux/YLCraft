@@ -10,8 +10,27 @@ from typing import Any, Optional
 from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models.character import Character, CharacterStoryLink, CharacterRole
+from app.db.models.character import Character, CharacterStoryLink, CharacterRelationship, CharacterRole
 from app.db.models.creative_project import CreativeProject
+
+
+def _json_list(value: Any) -> list[Any]:
+    """Return a stable list for legacy JSON array columns.
+
+    Older records occasionally contain `{}` or malformed JSON in fields that
+    are now consumed as arrays by the Story and character workspaces.
+    """
+    if not value:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except (TypeError, ValueError):
+            return []
+        return parsed if isinstance(parsed, list) else []
+    return []
 
 
 class CharacterService:
@@ -22,6 +41,7 @@ class CharacterService:
         self,
         keyword: str | None = None,
         source_type: str | None = None,
+        workflow_source: str | None = None,
         role: str | None = None,
         tag: str | None = None,
         is_favorite: bool | None = None,
@@ -37,6 +57,8 @@ class CharacterService:
             query = query.where(Character.is_favorite == True)
         if source_type:
             query = query.where(Character.source_types.contains(source_type))
+        if workflow_source:
+            query = query.where(Character.workflow_source == workflow_source)
 
         query = query.offset((page - 1) * page_size).limit(page_size)
         result = await self.session.exec(query)
@@ -62,6 +84,8 @@ class CharacterService:
         for api_field, model_field in _BIBLE_FIELD_MAP.items():
             if api_field in kwargs and kwargs[api_field] is not None:
                 kwargs[model_field] = json.dumps(kwargs.pop(api_field), ensure_ascii=False)
+        if "field_sources" in kwargs and kwargs["field_sources"] is not None:
+            kwargs["field_sources_json"] = json.dumps(kwargs.pop("field_sources"), ensure_ascii=False)
         character = Character(**kwargs)
         self.session.add(character)
         await self.session.flush()
@@ -79,6 +103,8 @@ class CharacterService:
         for api_field, model_field in _BIBLE_FIELD_MAP.items():
             if api_field in kwargs and kwargs[api_field] is not None:
                 kwargs[model_field] = json.dumps(kwargs.pop(api_field), ensure_ascii=False)
+        if "field_sources" in kwargs and kwargs["field_sources"] is not None:
+            kwargs["field_sources_json"] = json.dumps(kwargs.pop("field_sources"), ensure_ascii=False)
         for key, value in kwargs.items():
             if value is not None and hasattr(character, key):
                 setattr(character, key, value)
@@ -99,7 +125,7 @@ class CharacterService:
         character = await self.get_by_id(character_id)
         if not character:
             return None
-        tags = json.loads(character.tags) if character.tags else []
+        tags = _json_list(character.tags)
         if tag not in tags:
             tags.append(tag)
             character.tags = json.dumps(tags, ensure_ascii=False)
@@ -111,7 +137,7 @@ class CharacterService:
         character = await self.get_by_id(character_id)
         if not character:
             return None
-        tags = json.loads(character.tags) if character.tags else []
+        tags = _json_list(character.tags)
         if tag in tags:
             tags.remove(tag)
             character.tags = json.dumps(tags, ensure_ascii=False)
@@ -124,7 +150,7 @@ class CharacterService:
         characters = result.all()
         all_tags = set()
         for c in characters:
-            tags = json.loads(c.tags) if c.tags else []
+            tags = _json_list(c.tags)
             for t in tags:
                 all_tags.add(t)
         return sorted(all_tags)
@@ -245,13 +271,87 @@ class CharacterService:
         await self.session.flush()
         return True
 
+    async def list_relationships(self, character_id: str) -> list[CharacterRelationship]:
+        result = await self.session.exec(select(CharacterRelationship).where(
+            (CharacterRelationship.character_id == character_id) |
+            (CharacterRelationship.related_character_id == character_id)
+        ))
+        return result.all()
+
+    async def create_relationship(self, character_id: str, **kwargs) -> CharacterRelationship:
+        if not await self.get_by_id(character_id) or not await self.get_by_id(kwargs.get("related_character_id", "")):
+            raise ValueError("角色或关联角色不存在")
+        if character_id == kwargs["related_character_id"]:
+            raise ValueError("不能与自身建立关系")
+        item = CharacterRelationship(character_id=character_id, **kwargs)
+        self.session.add(item)
+        await self.session.flush()
+        await self.session.refresh(item)
+        return item
+
+    async def update_relationship(self, character_id: str, relationship_id: str, **kwargs) -> Optional[CharacterRelationship]:
+        result = await self.session.exec(select(CharacterRelationship).where(
+            CharacterRelationship.id == relationship_id,
+            CharacterRelationship.character_id == character_id,
+        ))
+        item = result.first()
+        if not item:
+            return None
+        if kwargs.get("related_character_id") and not await self.get_by_id(kwargs["related_character_id"]):
+            raise ValueError("关联角色不存在")
+        for key, value in kwargs.items():
+            if hasattr(item, key):
+                setattr(item, key, value)
+        item.updated_at = datetime.now()
+        await self.session.flush()
+        await self.session.refresh(item)
+        return item
+
+    async def delete_relationship(self, character_id: str, relationship_id: str) -> bool:
+        result = await self.session.exec(select(CharacterRelationship).where(
+            CharacterRelationship.id == relationship_id,
+            CharacterRelationship.character_id == character_id,
+        ))
+        item = result.first()
+        if not item:
+            return False
+        await self.session.delete(item)
+        await self.session.flush()
+        return True
+
+    def relationship_to_response(self, item: CharacterRelationship) -> dict[str, Any]:
+        return {"id": item.id, "character_id": item.character_id, "related_character_id": item.related_character_id,
+                "relation_type": item.relation_type or "", "relation_note": item.relation_note or "",
+                "source": item.source or "", "is_directed": bool(item.is_directed),
+                "created_at": str(item.created_at), "updated_at": str(item.updated_at)}
+
+    def build_prompt_pack(self, character: Character) -> dict[str, Any]:
+        data = self.to_response(character)
+        visual = ", ".join(filter(None, [data["appearance"], data["costume_hint"], *data["signature_items"]]))
+        identity = data.get("identity") if isinstance(data.get("identity"), dict) else {}
+        motivation = data.get("motivation") if isinstance(data.get("motivation"), dict) else {}
+        speech = data.get("speech") if isinstance(data.get("speech"), dict) else {}
+        behavior = data.get("behavior") if isinstance(data.get("behavior"), dict) else {}
+        stable = "；".join(filter(None, [
+            f"身份：{identity.get('logline') or identity.get('position') or ''}",
+            f"性格：{data.get('personality') or ''}",
+            f"动机：{motivation.get('desire') or motivation.get('core_desire') or ''}",
+            f"说话方式：{speech.get('tone') or speech.get('style') or ''}",
+            f"行为边界：{behavior.get('never_do') or behavior.get('boundary') or ''}",
+        ]))
+        return {"character_id": character.id, "name": character.name,
+                "image_prompt": f"{character.name}，{visual}，{stable}，单人角色立绘，五官清晰，服装与标志物保持一致，适合作为后续分镜参考图".strip("，"),
+                "character_sheet_prompt": f"{character.name}角色设定图，{visual}，{stable}，正面、侧面、背面三视图，白色背景，分区展示服装、发型和标志物，保持同一人物面部一致".strip("，"),
+                "voice_prompt": f"角色{character.name}的音色与说话方式：{json.dumps(data['speech'], ensure_ascii=False)}",
+                "character_json": data}
+
     def to_response(self, character: Character) -> dict:
-        tags = json.loads(character.tags) if character.tags else []
-        source_types = json.loads(character.source_types) if character.source_types else []
-        reference_asset_ids = json.loads(character.reference_asset_ids) if character.reference_asset_ids else []
-        signature_items = json.loads(character.signature_items) if character.signature_items else []
-        expressions = json.loads(character.expressions) if character.expressions else []
-        poses = json.loads(character.poses) if character.poses else []
+        tags = _json_list(character.tags)
+        source_types = _json_list(character.source_types)
+        reference_asset_ids = _json_list(character.reference_asset_ids)
+        signature_items = _json_list(character.signature_items)
+        expressions = _json_list(character.expressions)
+        poses = _json_list(character.poses)
 
         role_labels = {
             "protagonist": "主角",
@@ -272,6 +372,13 @@ class CharacterService:
             "id": character.id,
             "name": character.name,
             "role": character.role,
+            "workflow_source": getattr(character, "workflow_source", "unknown") or "unknown",
+            "workflow_source_label": {
+                "extract": "小说/正文提取",
+                "character_first": "角色先行",
+                "asset_import": "素材库导入",
+                "unknown": "未标记",
+            }.get(getattr(character, "workflow_source", "unknown") or "unknown", "未标记"),
             "role_label": role_labels.get(character.role, character.role),
             "source_types": source_types,
             "source_type_labels": [source_type_labels.get(st, st) for st in source_types],
@@ -290,6 +397,7 @@ class CharacterService:
             "behavior": _loads_json(getattr(character, "behavior_json", "{}"), {}),
             "ability": _loads_json(getattr(character, "ability_json", "{}"), {}),
             "arc": _loads_json(getattr(character, "arc_json", "{}"), {}),
+            "field_sources": _loads_json(getattr(character, "field_sources_json", "{}"), {}),
             "tags": tags,
             "portrait_url": character.portrait_url or "",
             "portrait_asset_id": character.portrait_asset_id or "",

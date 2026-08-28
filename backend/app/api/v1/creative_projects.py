@@ -109,6 +109,7 @@ class CreativeProjectCreateRequest(BaseModel):
     source_ref: dict[str, Any] = Field(default_factory=dict)
     settings: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    character_id: str | None = Field(default=None, description="可选：创建后立即绑定的角色 ID，并写入初始项目大纲")
 
 
 class CreativeProjectUpdateRequest(BaseModel):
@@ -542,6 +543,7 @@ def create_project(
         settings=req.settings,
         metadata=req.metadata,
         production_profile=req.production_profile,
+        character_id=req.character_id,
     )
     return {"success": True, "data": serialize_project(project)}
 

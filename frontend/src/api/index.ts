@@ -1400,6 +1400,7 @@ export const createCreativeProject = (data: {
   source_ref?: Record<string, any>
   settings?: Record<string, any>
   metadata?: Record<string, any>
+  character_id?: string
 }) => request('/creative-projects', { method: 'POST', body: JSON.stringify(data) })
 
 export const listCreativeProjectProfiles = () => request('/creative-projects/profiles')
@@ -1582,6 +1583,7 @@ export const generateCharacterPortrait = (
     model?: string
     size?: string
     n?: number
+    reference_images?: string[]
   },
 ) =>
   request(`/characters/${characterId}/portrait/generate`, {

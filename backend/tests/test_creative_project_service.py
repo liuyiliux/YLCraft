@@ -3140,6 +3140,38 @@ def test_link_asset_records_project_relationship(session: Session):
     assert link.asset_id == "asset-1"
 
 
+def test_create_project_can_seed_character_link_and_outline(session: Session):
+    service = CreativeProjectService(session, ai_service=FakeAIService())
+    character = Character(
+        name="顾南枝",
+        role="protagonist",
+        appearance="银灰短发",
+        personality="克制",
+        costume_hint="深色风衣",
+        identity_json=json.dumps({"logline": "失忆调查员"}, ensure_ascii=False),
+    )
+    session.add(character)
+    session.commit()
+    session.refresh(character)
+
+    project = service.create_project(
+        title="角色先行项目",
+        idea="围绕顾南枝展开一段调查",
+        character_id=character.id,
+    )
+
+    link = session.exec(
+        select(CharacterStoryLink).where(
+            CharacterStoryLink.story_id == project.id,
+            CharacterStoryLink.character_id == character.id,
+        )
+    ).one()
+    seeded = loads_json(project.outline_json)
+    assert link.usage_role == "项目主角色"
+    assert seeded["characters"][0]["character_id"] == character.id
+    assert seeded["characters"][0]["appearance"] == "银灰短发"
+
+
 def test_sync_outline_characters_creates_library_records_and_project_links(session: Session):
     service = CreativeProjectService(session, ai_service=FakeAIService())
     project = service.create_project(title="角色同步", idea="character sync")

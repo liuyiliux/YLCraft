@@ -12,7 +12,7 @@ import CanvasPage from './pages/canvas'
 import TasksPage from './pages/tasks'
 import SettingsPage from './pages/settings'
 import AssetsPage from './pages/assets'
-import CharactersPage from './pages/characters'
+import CharacterDetailPage, { CharacterWorkspaceEntry } from './pages/character-detail'
 import ImageGenPage from './pages/image-gen'
 import VideoGenPage from './pages/video-gen'
 import Model3DPage from './pages/model-3d'
@@ -71,7 +71,10 @@ export default function App() {
               <Route path="download" element={<DownloadPage />} />
               <Route path="assets" element={<AssetsPage />} />
               <Route path="asset-hub" element={<Navigate to="/assets" replace />} />
-              <Route path="characters" element={<CharactersPage />} />
+              <Route path="characters" element={<CharacterWorkspaceEntry />} />
+              <Route path="characters/new" element={<CharacterDetailPage />} />
+              <Route path="characters/:characterId" element={<CharacterDetailPage />} />
+              <Route path="characters/manage" element={<Navigate to="/characters" replace />} />
               <Route path="breaker" element={<BreakerPage />} />
               <Route path="clip" element={<ClipLabPage />} />
               <Route path="story" element={<StoryPage />} />

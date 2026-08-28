@@ -33,7 +33,7 @@ from app.db.models.asset_hub import (
     Tag, AssetTagLink,
     AIModel,
 )
-from app.db.models.character import Character, CharacterStoryLink, CharacterSourceType, CharacterRole
+from app.db.models.character import Character, CharacterStoryLink, CharacterRelationship, CharacterSourceType, CharacterRole
 from app.db.models.story import Story, StoryCharacterPortrait, StoryStatus, StoryStyle
 from app.db.models.live2d import Live2DModel, Live2DBone, Live2DMotion, Live2DModelStatus
 from app.db.models.api_key import ApiKey, ApiKeyStatus, ApiKeyCategory

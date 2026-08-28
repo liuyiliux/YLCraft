@@ -24,6 +24,8 @@ flowchart LR
   agent --> project
 ```
 
+角色管理支持两类互补流程：`extract`（从小说/正文提取角色，保留原文依据与字段来源）和 `character-first`（先独立创建角色、完善设定与参考图，再选择性回流 Story/生产线）。后者不要求先完成正文、大纲或圣经；角色页本身是可独立使用的角色设定集工作区。`/characters` 现在直接进入角色工作区：默认打开首个角色，左侧固定角色列表、搜索、来源/定位/收藏筛选，右侧为 `/characters/:characterId` 报告式详情（视觉中心、参考图/设定图、Bible、关系与 Prompt 资产包）；角色库为空时进入 `/characters/new` 创建弹窗，创建后进入真实详情。角色详情可直接新建/编辑角色、选择立绘版本设为身份基准图、将版本加入或移出参考图集合（移除只解除角色引用，不删除素材库原图），参考图选择器支持素材库搜索并区分素材库图片与历史立绘版本；版本卡可独立预览并展开查看生成 Prompt、负面 Prompt 和参数，主视图与参考图集合在视觉上明确分栏；生图请求固定采用当前身份基准图及已确认参考图集合，临时版本预览不会被隐式带入；Story 生产线中的角色立绘生成也会复用同一组角色参考图，并把结果回写项目大纲和 Asset Hub 血缘；生成故事大纲时会保留项目已绑定角色的确认字段，不会被新一轮 LLM 大纲覆盖；生图 Prompt 可在选定 LLM 下优化，优化结果仅回填待确认输入框，不会隐式创建资产；并从已关联的创作项目直接回到 Story 生产线。“以此角色新建项目”会预填创意，项目创建后立即把完整角色卡写入项目大纲并建立角色项目关联，后续大纲、角色演绎、分镜和生图无需再次手动同步。世界使用配置会保留项目内别名、阵营、状态、局部 Prompt 标签、OOC/出模约束和 Bible/视觉覆盖。关系图谱也已在详情页内以内联 SVG 展示，节点可直接切换角色；旧 `/characters/manage` 仅保留兼容重定向，不再提供第二套角色编辑页面。
+
 设计原则：
 
 - 素材库和创作项目是中转层，其他功能围绕它们串起来。
@@ -45,6 +47,9 @@ AI 来源标记与文件元数据清理是 Asset Hub 上的独立派生操作，
 显性可见水印去除是 Asset Hub 上的独立派生操作，针对**画面上肉眼可见**的水印（角落 logo、文字、台标等），目的是在短剧等成片场景消除影响观感的水印：`POST /api/v1/assets/{asset_id}/watermark-remove` 接收 `method`（`delogo` 插值填充 / `blur` 区域模糊 / `crop` 裁剪边缘）与 `region`（预设角落 `top_left/top_right/bottom_left/bottom_right/top/bottom/center` + `inset` 边距，或 `x/y/w/h` 像素坐标），基于系统 ffmpeg（`delogo` / `crop` 滤镜）与 PIL（图片 `blur` 用 `GaussianBlur`）生成派生副本，原文件始终保留，产物带 `derived_from` 血缘并写入平台事件日志（task_type=`visual_watermark_removal`）。本能力与 provenance-clean（隐形/元数据清理）、deep-watermark-detect（只读合成水印检测）互补且互不混淆：它**只处理可见视觉水印**，绝不宣称能移除像素/波形隐写水印。
 
 ## 2. 运行时总览
+
+角色先行创建项目时，`POST /api/v1/creative-projects` 可携带 `character_id`。服务层会在同一创建流程建立 `CharacterStoryLink`，并将完整角色卡写入初始大纲；后续大纲生成会保护已绑定角色字段，项目内角色生图继续复用身份基准图、参考图集合并回写 Asset Hub 与项目血缘。
+角色卡还记录 `workflow_source`（`extract` / `character_first` / `asset_import` / `unknown`），用于区分小说提取、独立创建和素材导入流程；角色工作区可按该来源筛选，项目同步创建的角色默认标记为 `extract`。
 
 后端入口是 `backend/app/main.py`，应用启动时完成：
 
@@ -258,6 +263,8 @@ Live2D accepts uploads, character imagery and Asset Hub images as source materia
 
 ### 4.4.6 内容生产方案与导演 Agent 编排
 
+入口规则：内容包方案（绘本/漫画、科普、平台图文、单镜头）统一从主题或素材进入轻量工作台，不强制正文、大纲或圣经；叙事方案（竖屏短剧、小说）保留“一句话创意 → 大纲 → 角色同步/详情 → 细纲 → 角色演绎 → 正文/脚本/分镜”的完整链路。
+
 内容生产方案把竖屏短剧、故事漫画/童话绘本、科普、平台图文、小说和单镜头实验的阶段、输入、产物和确认点收敛为项目可编辑计划；方案记录在 `CreativeProject.settings_json`，计划记录为 `ProjectContent(content_type="production_plan")`，并以受限摘要进入 Agent Context Pack。它不要求所有项目先写正文，独立的生图、生视频、画布、素材库和平台适配能力仍可单独使用，所有产物再经 Asset Hub、任务中心和血缘回流项目。
 
 导演 Agent 复用既有 Agent Runtime、`TeamComposer` 和 `SubagentOrchestrator`，不建立平行 Agent 系统。创意 Skill 的 `creative.capability_roles` 是稳定、可审计的选角契约：`story-designer`、`script-writer`、`visual-director`、`character-director`、`storyboard-director`、`image-producer`、`video-producer`、`platform-adapter`、`editorial-reviewer`。团队编排按计划节点的 specialist role 选择这些声明，而非从 Skill 名称、展示名或页面文案推断。只有 `creative-director` 可调用运行时工具 `run_creative_production_plan` 与 `analyze_creative_production_plan_impact`，并且必须提供与当前 Context Pack 相同的项目 ID 及已保存计划。前者一次最多执行六个显式选择节点，默认补齐上游依赖；只有已确认上游产物可复用时才允许以 `include_dependencies=false` 局部重跑。后者按计划顺序返回直接变更及所有下游受影响节点和原因，导演据此修改并保存新的版本化计划。各专家保留独立 Run、输入、输出和状态，再由导演 Run 汇合为 observation；对话工具卡和历史 Run 步骤均把计划版本、输入内容/素材、规划摘要、供应商/模型、预期输出、实际产物和确认点作为业务信息展示，完整诊断 JSON 按需展开。生成、下载、发布、删除等消耗型或外部写入动作必须经过用户确认。
@@ -300,7 +307,7 @@ Live2D accepts uploads, character imagery and Asset Hub images as source materia
 | 创作项目 / Writer Room | `/api/v1/creative-projects` | `services/creative_project` | `/story` | 核心闭环、叙事运行时和 Story Cockpit 已可用；候选读取采用“项目最新 + 当前章历史”并有独立错误恢复，仍待外部视觉验收。 |
 | 创作画布 | `/api/v1/canvas` | `frontend/src/components/canvas` | `/canvas` | 独立自由画布，已接一级菜单；支持后端持久化、沉浸式工具 Dock、节点卡片内联编辑、节点输出内联可见、选中节点检查器 HUD、输入/输出变量可视化、生图节点内联 composer、图片节点 Prompt reference 入口与 provenance 传递、素材/项目插入、节点运行、Agent 操作、文本/图片到生成配置节点的派生链路、媒体类型感知的素材节点，以及生成结果回写图片节点。 |
 | 旧 Story Maker | `/api/v1/story` | `services/story` | `/story` 兼容入口 | 历史兼容入口，新增能力优先走 creative-projects。 |
-| 角色 | `/api/v1/characters` | `services/character` | `/characters` | 参考图/视觉卡仍需完善。 |
+| 角色 | `/api/v1/characters` | `services/character` | `/characters` | 已支持字段来源标记、角色关系 CRUD/关系图谱、确定性 Prompt 资产包；新角色工作区提供主视图/参考图、立绘版本、编辑/新建弹窗与生产线回流，旧 `/characters/manage` 仅兼容重定向。 |
 | 素材库 | `/api/v1/assets` | `services/asset` | `/assets` | Asset Hub 统一入口；支持按项目、资产角色和来源阶段追溯项目产物，详情展示归一化项目血缘。 |
 | 资产中枢 | `/api/v1/asset-hub` | `services/asset_hub` | `/asset-hub` | 当前资产事实来源；旧 assets 接口保留兼容。 |
 | AI 连接器 | `/api/v1/ai/connectors` | `services/ai`、`services/ai_connector` | `/settings` | 已支持通用配置，仍需 UX 打磨。 |

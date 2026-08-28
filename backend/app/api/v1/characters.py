@@ -26,12 +26,13 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
+from sqlmodel import select
 
 from app.db.database import get_async_session
 from app.db.models.creative_project import ProjectGenerationLog
 from app.services.character.service import CharacterService
 from app.services.creative_project.service import dumps_json
-from app.db.models.character import CharacterSourceType, CharacterRole
+from app.db.models.character import CharacterSourceType, CharacterRole, CharacterRelationship, Character, CharacterWorkflowSource
 
 router = APIRouter()
 
@@ -74,6 +75,7 @@ logger = logging.getLogger("ylcraft.characters")
 class CharacterCreateRequest(BaseModel):
     name: str = Field(..., description="角色名称")
     role: str = Field(default=CharacterRole.SUPPORTING, description="角色定位")
+    workflow_source: str = Field(default=CharacterWorkflowSource.CHARACTER_FIRST.value, description="流程来源：extract / character_first / asset_import")
     source_types: list[str] = Field(
         default=[],
         description=f"来源类型，可选值：{CharacterSourceType.all()}",
@@ -97,11 +99,13 @@ class CharacterCreateRequest(BaseModel):
     portrait_url: str = Field(default="", description="立绘图片 URL")
     portrait_asset_id: str = Field(default="", description="关联素材资产 ID（立绘）")
     reference_asset_ids: list[str] = Field(default=[], description="关联素材资产 ID（参考视频/图片）")
+    field_sources: dict[str, str] = Field(default={}, description="字段来源标记")
 
 
 class CharacterUpdateRequest(BaseModel):
     name: str | None = None
     role: str | None = None
+    workflow_source: str | None = None
     source_types: list[str] | None = None
     appearance: str | None = None
     personality: str | None = None
@@ -122,6 +126,16 @@ class CharacterUpdateRequest(BaseModel):
     portrait_url: str | None = None
     portrait_asset_id: str | None = None
     reference_asset_ids: list[str] | None = None
+    field_sources: dict[str, str] | None = None
+    is_frozen: bool | None = Field(None, description="是否冻结角色外观设定")
+
+
+class CharacterRelationshipRequest(BaseModel):
+    related_character_id: str
+    relation_type: str = ""
+    relation_note: str = ""
+    source: str = ""
+    is_directed: bool = False
 
 
 class AddTagRequest(BaseModel):
@@ -167,6 +181,7 @@ class CharacterWorldUsageUpdateRequest(BaseModel):
 async def list_characters(
     keyword: str | None = Query(None, description="搜索角色名称"),
     source_type: str | None = Query(None, description="来源类型过滤，如 ai_generated"),
+    workflow_source: str | None = Query(None, description="流程来源过滤：extract / character_first / asset_import"),
     role: str | None = Query(None, description="角色定位过滤"),
     tag: str | None = Query(None, description="自定义标签过滤"),
     is_favorite: bool | None = Query(None, description="仅收藏"),
@@ -187,6 +202,7 @@ async def list_characters(
         items, total = await service.list(
             keyword=keyword,
             source_type=source_type,
+            workflow_source=workflow_source,
             role=role,
             tag=tag,
             is_favorite=is_favorite,
@@ -210,6 +226,7 @@ async def create_character(req: CharacterCreateRequest):
         character = await service.create(
             name=req.name,
             role=req.role,
+            workflow_source=req.workflow_source,
             source_types=req.source_types,
             appearance=req.appearance,
             personality=req.personality,
@@ -230,6 +247,8 @@ async def create_character(req: CharacterCreateRequest):
             portrait_url=req.portrait_url,
             portrait_asset_id=req.portrait_asset_id,
             reference_asset_ids=req.reference_asset_ids,
+            field_sources=req.field_sources,
+            is_frozen=req.is_frozen,
         )
         return {"success": True, "data": service.to_response(character)}
 
@@ -267,6 +286,17 @@ async def get_roles():
             {"value": CharacterRole.EXTRA, "label": "路人"},
         ],
     }
+
+
+@router.get("/meta/workflow-sources", summary="获取角色流程来源元数据")
+async def get_workflow_sources():
+    labels = {
+        CharacterWorkflowSource.EXTRACT.value: "小说/正文提取",
+        CharacterWorkflowSource.CHARACTER_FIRST.value: "角色先行",
+        CharacterWorkflowSource.ASSET_IMPORT.value: "素材库导入",
+        CharacterWorkflowSource.UNKNOWN.value: "未标记",
+    }
+    return {"success": True, "data": [{"value": value, "label": labels[value]} for value in labels]}
 
 
 @router.post("/{character_id}/tags", summary="添加自定义标签")
@@ -374,6 +404,70 @@ async def delete_character_world_usage(character_id: str, usage_id: str):
         return {"success": True}
 
 
+@router.get("/relationships/graph", summary="获取角色关系图谱")
+async def get_character_relationship_graph():
+    async with get_async_session() as session:
+        characters = (await session.exec(select(Character))).all()
+        relationships = (await session.exec(select(CharacterRelationship))).all()
+        return {"success": True, "data": {
+            "nodes": [{"id": c.id, "name": c.name, "role": c.role} for c in characters],
+            "edges": [CharacterService(session).relationship_to_response(r) for r in relationships],
+        }}
+
+
+@router.get("/{character_id}/relationships", summary="列出角色关系")
+async def list_character_relationships(character_id: str):
+    async with get_async_session() as session:
+        service = CharacterService(session)
+        if not await service.get_by_id(character_id):
+            raise HTTPException(status_code=404, detail="角色不存在")
+        items = await service.list_relationships(character_id)
+        return {"success": True, "data": [service.relationship_to_response(item) for item in items]}
+
+
+@router.post("/{character_id}/relationships", summary="创建角色关系")
+async def create_character_relationship(character_id: str, req: CharacterRelationshipRequest):
+    async with get_async_session() as session:
+        service = CharacterService(session)
+        try:
+            item = await service.create_relationship(character_id, **req.model_dump())
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"success": True, "data": service.relationship_to_response(item)}
+
+
+@router.put("/{character_id}/relationships/{relationship_id}", summary="更新角色关系")
+async def update_character_relationship(character_id: str, relationship_id: str, req: CharacterRelationshipRequest):
+    async with get_async_session() as session:
+        service = CharacterService(session)
+        try:
+            item = await service.update_relationship(character_id, relationship_id, **req.model_dump())
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        if not item:
+            raise HTTPException(status_code=404, detail="关系不存在")
+        return {"success": True, "data": service.relationship_to_response(item)}
+
+
+@router.delete("/{character_id}/relationships/{relationship_id}", summary="删除角色关系")
+async def delete_character_relationship(character_id: str, relationship_id: str):
+    async with get_async_session() as session:
+        service = CharacterService(session)
+        if not await service.delete_relationship(character_id, relationship_id):
+            raise HTTPException(status_code=404, detail="关系不存在")
+        return {"success": True}
+
+
+@router.get("/{character_id}/prompt-pack", summary="生成角色 Prompt 资产包")
+async def get_character_prompt_pack(character_id: str):
+    async with get_async_session() as session:
+        service = CharacterService(session)
+        character = await service.get_by_id(character_id)
+        if not character:
+            raise HTTPException(status_code=404, detail="角色不存在")
+        return {"success": True, "data": service.build_prompt_pack(character)}
+
+
 @router.get("/{character_id}", summary="获取角色详情")
 async def get_character(character_id: str):
     """获取单个角色的完整信息"""
@@ -408,6 +502,7 @@ async def update_character(character_id: str, req: CharacterUpdateRequest):
             character_id=character_id,
             name=req.name,
             role=req.role,
+            workflow_source=req.workflow_source,
             source_types=req.source_types,
             appearance=req.appearance,
             personality=req.personality,
@@ -428,6 +523,7 @@ async def update_character(character_id: str, req: CharacterUpdateRequest):
             portrait_url=req.portrait_url,
             portrait_asset_id=req.portrait_asset_id,
             reference_asset_ids=req.reference_asset_ids,
+            field_sources=req.field_sources,
         )
         return {"success": True, "data": service.to_response(updated)}
 
@@ -603,6 +699,21 @@ async def list_character_portrait_versions(character_id: str):
         if not node:
             return {"success": True, "data": {"node_id": str(character.portrait_node_id), "versions": []}}
 
+        # The character visual profile is the source of truth for the current
+        # identity image. Representation flags are kept for backwards
+        # compatibility, but historical rows may contain stale/multiple flags.
+        try:
+            identity_payload = json.loads(character.identity_json or "{}")
+        except Exception:
+            identity_payload = {}
+        if not isinstance(identity_payload, dict):
+            identity_payload = {}
+        visual_profile = identity_payload.get("visual_profile")
+        if not isinstance(visual_profile, dict):
+            visual_profile = {}
+        identity_version_id = str(visual_profile.get("identity_reference_version_id") or "")
+        identity_representation_id = str(visual_profile.get("identity_reference_representation_id") or "")
+
         result = await session.execute(
             select(AssetVersion)
             .where(AssetVersion.asset_node_id == str(node.id))
@@ -625,8 +736,24 @@ async def list_character_portrait_versions(character_id: str):
         for version in versions:
             rep = reps_by_version.get(str(version.id))
             rep_extra = dict(rep.extra_json or {}) if rep else {}
-            image_url = rep_extra.get("url") or (rep.file_path if rep else "") or ""
+            # Asset Hub representations may only have a local filesystem path.
+            # Never expose that path to the browser as an <img> source; route it
+            # through the authenticated asset download endpoint instead.
+            raw_image_url = rep_extra.get("url") or (rep.file_path if rep else "") or ""
+            image_url = raw_image_url
+            if image_url and not image_url.startswith(("/api/", "http://", "https://", "data:")):
+                image_url = f"/api/v1/assets/download?path={quote(image_url)}"
             params = dict(version.params_json or {})
+            is_identity_version = bool(identity_version_id and identity_version_id == str(version.id))
+            is_identity_representation = bool(rep and identity_representation_id and identity_representation_id == str(rep.id))
+            is_legacy_main = bool(
+                not identity_version_id
+                and (
+                    rep_extra.get("is_main")
+                    or (raw_image_url and raw_image_url == character.portrait_url)
+                    or (image_url and image_url == character.portrait_url)
+                )
+            )
             payload.append(
                 {
                     "id": str(version.id),
@@ -642,7 +769,7 @@ async def list_character_portrait_versions(character_id: str):
                     "representation_id": str(rep.id) if rep else None,
                     "width": rep.width if rep else None,
                     "height": rep.height if rep else None,
-                    "is_main": bool(rep_extra.get("is_main")) or bool(image_url and image_url == character.portrait_url),
+                    "is_main": is_identity_version or is_identity_representation or is_legacy_main,
                     "params": params,
                 }
             )
