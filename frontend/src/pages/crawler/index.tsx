@@ -2994,7 +2994,7 @@ export default function CrawlerPage() {
         onCancel={() => setEpubModalOpen(false)}
         footer={null}
         width={480}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form
           layout="vertical"

@@ -815,7 +815,7 @@ function TorrentDownloadPanel() {
           ),
         ] : null}
         width={860}
-        destroyOnClose
+        destroyOnHidden
         onCancel={() => setPreview(null)}
       >
         {preview && (

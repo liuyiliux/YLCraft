@@ -164,7 +164,7 @@ export default function LocalDocumentPicker({
       onCancel={onCancel}
       footer={null}
       width={760}
-      destroyOnClose
+      destroyOnHidden
     >
       <div className="document-picker">
         <div className="document-picker-root">

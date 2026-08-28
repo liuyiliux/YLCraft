@@ -312,7 +312,7 @@ export default function InspirationPage() {
         confirmLoading={converting}
         okText="创建并前往创作"
         cancelText="取消"
-        destroyOnClose
+        destroyOnHidden
       >
         {convertItem ? (
           <Form form={form} layout="vertical">

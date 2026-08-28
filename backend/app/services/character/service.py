@@ -5,7 +5,8 @@ YLCraft — 角色服务层
 from __future__ import annotations
 
 import json
-from typing import Any, Optional
+from datetime import datetime
+from typing import Any, Optional, cast
 
 from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -296,25 +297,58 @@ class CharacterService:
         await self.session.flush()
         return True
 
-    async def list_relationships(self, character_id: str) -> list[CharacterRelationship]:
-        result = await self.session.exec(select(CharacterRelationship).where(
-            (CharacterRelationship.character_id == character_id) |
-            (CharacterRelationship.related_character_id == character_id)
-        ))
-        return result.all()
-
-    async def create_relationship(self, character_id: str, **kwargs) -> CharacterRelationship:
-        if not await self.get_by_id(character_id) or not await self.get_by_id(kwargs.get("related_character_id", "")):
+    async def create_relationship(
+        self,
+        character_id: str,
+        *,
+        related_character_id: str,
+        relation_type: str = "",
+        relation_note: str = "",
+        source: str = "",
+        is_directed: bool = False,
+        world_usage_id: str | None = None,
+        timeline_phase: str = "",
+        chapter_number: int | None = None,
+        **kwargs,
+    ) -> CharacterRelationship:
+        """创建角色关系，支持世界/时间维度。"""
+        if not await self.get_by_id(character_id) or not await self.get_by_id(related_character_id):
             raise ValueError("角色或关联角色不存在")
-        if character_id == kwargs["related_character_id"]:
+        if character_id == related_character_id:
             raise ValueError("不能与自身建立关系")
-        item = CharacterRelationship(character_id=character_id, **kwargs)
+        # 如果指定了世界使用ID，验证该世界使用确实属于当前角色
+        if world_usage_id:
+            link_result = await self.session.exec(
+                select(CharacterStoryLink).where(
+                    CharacterStoryLink.id == world_usage_id,
+                    CharacterStoryLink.character_id == character_id,
+                )
+            )
+            if not link_result.first():
+                raise ValueError("指定的世界使用记录不存在或不属于当前角色")
+        item = CharacterRelationship(
+            character_id=character_id,
+            related_character_id=related_character_id,
+            relation_type=relation_type,
+            relation_note=relation_note,
+            source=source,
+            is_directed=is_directed,
+            world_usage_id=world_usage_id or None,
+            timeline_phase=timeline_phase or "",
+            chapter_number=chapter_number,
+        )
         self.session.add(item)
         await self.session.flush()
         await self.session.refresh(item)
         return item
 
-    async def update_relationship(self, character_id: str, relationship_id: str, **kwargs) -> Optional[CharacterRelationship]:
+    async def update_relationship(
+        self,
+        character_id: str,
+        relationship_id: str,
+        **kwargs,
+    ) -> Optional[CharacterRelationship]:
+        """更新角色关系，支持世界/时间维度。"""
         result = await self.session.exec(select(CharacterRelationship).where(
             CharacterRelationship.id == relationship_id,
             CharacterRelationship.character_id == character_id,
@@ -324,9 +358,23 @@ class CharacterService:
             return None
         if kwargs.get("related_character_id") and not await self.get_by_id(kwargs["related_character_id"]):
             raise ValueError("关联角色不存在")
+        # 如果指定了世界使用ID，验证该世界使用确实属于当前角色
+        if "world_usage_id" in kwargs and kwargs["world_usage_id"]:
+            link_result = await self.session.exec(
+                select(CharacterStoryLink).where(
+                    CharacterStoryLink.id == kwargs["world_usage_id"],
+                    CharacterStoryLink.character_id == character_id,
+                )
+            )
+            if not link_result.first():
+                raise ValueError("指定的世界使用记录不存在或不属于当前角色")
+        allowed_fields = {
+            "related_character_id", "relation_type", "relation_note", "source", "is_directed",
+            "world_usage_id", "timeline_phase", "chapter_number",
+        }
         for key, value in kwargs.items():
-            if hasattr(item, key):
-                setattr(item, key, value)
+            if key in allowed_fields and hasattr(item, key):
+                setattr(item, key, value if value is not None else (None if key in {"world_usage_id", "chapter_number"} else ""))
         item.updated_at = datetime.now()
         await self.session.flush()
         await self.session.refresh(item)
@@ -344,11 +392,56 @@ class CharacterService:
         await self.session.flush()
         return True
 
-    def relationship_to_response(self, item: CharacterRelationship) -> dict[str, Any]:
-        return {"id": item.id, "character_id": item.character_id, "related_character_id": item.related_character_id,
-                "relation_type": item.relation_type or "", "relation_note": item.relation_note or "",
-                "source": item.source or "", "is_directed": bool(item.is_directed),
-                "created_at": str(item.created_at), "updated_at": str(item.updated_at)}
+    async def list_relationships(
+        self,
+        character_id: str,
+        *,
+        world_usage_id: str | None = None,
+    ) -> list[CharacterRelationship]:
+        """列出角色关系，支持按世界/项目筛选。"""
+        query = select(CharacterRelationship).where(
+            (CharacterRelationship.character_id == character_id) |
+            (CharacterRelationship.related_character_id == character_id)
+        )
+        if world_usage_id is not None:
+            if world_usage_id == "":
+                # 仅全局关系（world_usage_id IS NULL）
+                query = query.where(CharacterRelationship.world_usage_id.is_(None))
+            elif world_usage_id:
+                # 指定世界关系 + 全局关系
+                query = query.where(
+                    (CharacterRelationship.world_usage_id == world_usage_id) |
+                    (CharacterRelationship.world_usage_id.is_(None))
+                )
+        result = await self.session.exec(query)
+        return list(result.all())
+
+    def relationship_to_response(
+        self,
+        item: CharacterRelationship,
+        *,
+        related_character: Character | None = None,
+        world_usage: CharacterStoryLink | None = None,
+        project: CreativeProject | None = None,
+    ) -> dict[str, Any]:
+        """将关系模型转换为API响应，支持预加载关联角色和世界信息。"""
+        return {
+            "id": item.id,
+            "character_id": item.character_id,
+            "related_character_id": item.related_character_id,
+            "related_character_name": related_character.name if related_character else "",
+            "relation_type": item.relation_type or "",
+            "relation_note": item.relation_note or "",
+            "source": item.source or "",
+            "is_directed": bool(item.is_directed),
+            # 世界/时间维度
+            "world_usage_id": item.world_usage_id or None,
+            "world_name": (world_usage.world_name if world_usage else None) or (project.title if project else None),
+            "timeline_phase": item.timeline_phase or "",
+            "chapter_number": item.chapter_number,
+            "created_at": str(item.created_at),
+            "updated_at": str(item.updated_at),
+        }
 
     def build_prompt_pack(self, character: Character) -> dict[str, Any]:
         data = self.to_response(character)
@@ -507,9 +600,6 @@ class CharacterService:
             "linked_at": str(link.linked_at) if link.linked_at else None,
             "updated_at": str(link.updated_at) if link.updated_at else None,
         }
-
-
-from datetime import datetime
 
 
 # 用户可在角色工作区直接编辑、需要标记为「用户填写」的字段

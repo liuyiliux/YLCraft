@@ -100,6 +100,7 @@ class CharacterCreateRequest(BaseModel):
     portrait_asset_id: str = Field(default="", description="关联素材资产 ID（立绘）")
     reference_asset_ids: list[str] = Field(default=[], description="关联素材资产 ID（参考视频/图片）")
     field_sources: dict[str, str] = Field(default={}, description="字段来源标记")
+    is_frozen: bool | None = Field(default=False, description="是否冻结角色外观设定")
 
 
 class CharacterUpdateRequest(BaseModel):
@@ -131,11 +132,15 @@ class CharacterUpdateRequest(BaseModel):
 
 
 class CharacterRelationshipRequest(BaseModel):
+    """角色关系创建/更新请求，支持世界和时间维度。"""
     related_character_id: str
     relation_type: str = ""
     relation_note: str = ""
     source: str = ""
     is_directed: bool = False
+    world_usage_id: str | None = Field(default=None, description="归属的世界使用ID，不填表示全局关系")
+    timeline_phase: str = Field(default="", description="时间阶段：前期/中期/后期/回忆/未来等")
+    chapter_number: int | None = Field(default=None, description="小说中关系变化的章节号")
 
 
 class AddTagRequest(BaseModel):
@@ -422,24 +427,107 @@ async def delete_character_world_usage(character_id: str, usage_id: str):
 
 
 @router.get("/relationships/graph", summary="获取角色关系图谱")
-async def get_character_relationship_graph():
+async def get_character_relationship_graph(
+    world_usage_id: str | None = Query(None, description="按世界筛选，留空显示全部"),
+):
+    """获取角色关系图谱数据，支持按世界筛选。"""
     async with get_async_session() as session:
+        service = CharacterService(session)
         characters = (await session.exec(select(Character))).all()
-        relationships = (await session.exec(select(CharacterRelationship))).all()
+        char_map = {c.id: c for c in characters}
+
+        # 预加载世界使用和项目信息
+        from app.db.models.character import CharacterStoryLink
+        world_links = (await session.exec(select(CharacterStoryLink))).all()
+        world_map = {w.id: w for w in world_links}
+        project_ids = [w.story_id for w in world_links if w.story_id]
+        projects_by_id: dict[str, CreativeProject] = {}
+        if project_ids:
+            proj_result = await session.exec(select(CreativeProject).where(CreativeProject.id.in_(list(set(project_ids)))))
+            projects_by_id = {p.id: p for p in proj_result.all()}
+
+        rel_query = select(CharacterRelationship)
+        if world_usage_id is not None:
+            if world_usage_id == "":
+                rel_query = rel_query.where(CharacterRelationship.world_usage_id.is_(None))
+            elif world_usage_id:
+                rel_query = rel_query.where(
+                    (CharacterRelationship.world_usage_id == world_usage_id) |
+                    (CharacterRelationship.world_usage_id.is_(None))
+                )
+        relationships = (await session.exec(rel_query)).all()
+        edges = []
+        for r in relationships:
+            related_char = char_map.get(r.related_character_id) or char_map.get(r.character_id)
+            world = world_map.get(r.world_usage_id) if r.world_usage_id else None
+            project = projects_by_id.get(world.story_id) if world and world.story_id else None
+            edges.append(service.relationship_to_response(r, related_character=related_char, world_usage=world, project=project))
+
         return {"success": True, "data": {
-            "nodes": [{"id": c.id, "name": c.name, "role": c.role} for c in characters],
-            "edges": [CharacterService(session).relationship_to_response(r) for r in relationships],
+            "nodes": [{"id": c.id, "name": c.name, "role": c.role, "portrait_url": c.portrait_url} for c in characters],
+            "edges": edges,
         }}
 
 
 @router.get("/{character_id}/relationships", summary="列出角色关系")
-async def list_character_relationships(character_id: str):
+async def list_character_relationships(
+    character_id: str,
+    world_usage_id: str | None = Query(None, description="按世界筛选：空值=全部，空字符串=仅全局，具体ID=该世界+全局"),
+):
+    """列出指定角色的所有关系，支持按世界/项目筛选。"""
     async with get_async_session() as session:
         service = CharacterService(session)
         if not await service.get_by_id(character_id):
             raise HTTPException(status_code=404, detail="角色不存在")
-        items = await service.list_relationships(character_id)
-        return {"success": True, "data": [service.relationship_to_response(item) for item in items]}
+
+        items = await service.list_relationships(character_id, world_usage_id=world_usage_id)
+
+        # 预加载关联角色名称（关系是双向的：对方可能在 character_id 或 related_character_id）
+        related_ids = set()
+        world_usage_ids = set()
+        for item in items:
+            # 双向关系：如果 related_character_id 是当前角色，那对方就是 character_id
+            other_id = item.related_character_id if item.related_character_id != character_id else item.character_id
+            related_ids.add(other_id)
+            if item.world_usage_id:
+                world_usage_ids.add(item.world_usage_id)
+
+        # 批量加载关联角色
+        from app.db.models.character import CharacterStoryLink
+        related_chars: dict[str, Character] = {}
+        if related_ids:
+            char_result = await session.exec(select(Character).where(Character.id.in_(list(related_ids))))
+            related_chars = {c.id: c for c in char_result.all()}
+
+        # 批量加载世界使用和项目
+        world_map: dict[str, CharacterStoryLink] = {}
+        projects_by_id: dict[str, CreativeProject] = {}
+        if world_usage_ids:
+            world_result = await session.exec(select(CharacterStoryLink).where(CharacterStoryLink.id.in_(list(world_usage_ids))))
+            world_map = {w.id: w for w in world_result.all()}
+            story_ids = [w.story_id for w in world_map.values() if w.story_id]
+            if story_ids:
+                proj_result = await session.exec(select(CreativeProject).where(CreativeProject.id.in_(list(set(story_ids)))))
+                projects_by_id = {p.id: p for p in proj_result.all()}
+
+        response_data = []
+        for item in items:
+            # 确定对方角色ID（处理双向关系）
+            other_id = item.related_character_id if item.related_character_id != character_id else item.character_id
+            related_char = related_chars.get(other_id)
+            world = world_map.get(item.world_usage_id) if item.world_usage_id else None
+            project = projects_by_id.get(world.story_id) if world and world.story_id else None
+            # 构造响应，确保 related_character_id 始终指向对方
+            resp = service.relationship_to_response(
+                item,
+                related_character=related_char,
+                world_usage=world,
+                project=project,
+            )
+            # 统一让 related_character_id 指向对方角色，方便前端使用
+            resp["related_character_id"] = other_id
+            response_data.append(resp)
+        return {"success": True, "data": response_data}
 
 
 @router.post("/{character_id}/relationships", summary="创建角色关系")

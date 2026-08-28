@@ -1345,7 +1345,7 @@ function AddAccountDrawer({
       width={420}
       open={open}
       onClose={onClose}
-      destroyOnClose
+      destroyOnHidden
       styles={{
         header: { background: theme.bgCard, borderBottom: `1px solid ${theme.border}` },
         body: { background: theme.bgPage, padding: 24 },

@@ -1272,7 +1272,7 @@ export default function AssetsPage() {
             清理元数据
           </Button>
         }
-        destroyOnClose={false}
+        destroyOnHidden={false}
       >
         {renderDetailContent()}
       </Drawer>

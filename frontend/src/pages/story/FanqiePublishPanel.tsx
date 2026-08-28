@@ -196,7 +196,7 @@ export default function FanqiePublishPanel({
       okText="保存草稿"
       confirmLoading={publishing}
       width={580}
-      destroyOnClose
+      destroyOnHidden
     >
       <Spin spinning={loadingBinding}>
         <Alert

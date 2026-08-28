@@ -1,0 +1,56 @@
+diff --git a/node_modules/antd/es/typography/Base/Ellipsis.js b/node_modules/antd/es/typography/Base/Ellipsis.js
+index 4e26cb9..2219d05 100644
+--- a/node_modules/antd/es/typography/Base/Ellipsis.js
++++ b/node_modules/antd/es/typography/Base/Ellipsis.js
+@@ -13,9 +13,10 @@ const MeasureText = /*#__PURE__*/React.forwardRef(({
+   React.useImperativeHandle(ref, () => ({
+     isExceed: () => {
+       const span = spanRef.current;
++      if (!span) return false;
+       return span.scrollHeight > span.clientHeight;
+     },
+-    getHeight: () => spanRef.current.clientHeight
++    getHeight: () => (spanRef.current ? spanRef.current.clientHeight : 0)
+   }));
+   return /*#__PURE__*/React.createElement("span", {
+     "aria-hidden": true,
+diff --git a/node_modules/antd/es/typography/Base/util.js b/node_modules/antd/es/typography/Base/util.js
+index e6f8a3b..4a214bb 100644
+--- a/node_modules/antd/es/typography/Base/util.js
++++ b/node_modules/antd/es/typography/Base/util.js
+@@ -17,6 +17,7 @@ export function getNode(dom, defaultNode, needDom) {
+  * - https://github.com/ant-design/ant-design/issues/50414
+  */
+ export function isEleEllipsis(ele) {
++  if (!ele) return false;
+   // Create a new div to get the size
+   const childDiv = document.createElement('em');
+   ele.appendChild(childDiv);
+diff --git a/node_modules/antd/lib/typography/Base/Ellipsis.js b/node_modules/antd/lib/typography/Base/Ellipsis.js
+index d51297a..7ce5be3 100644
+--- a/node_modules/antd/lib/typography/Base/Ellipsis.js
++++ b/node_modules/antd/lib/typography/Base/Ellipsis.js
+@@ -20,9 +20,10 @@ const MeasureText = /*#__PURE__*/React.forwardRef(({
+   React.useImperativeHandle(ref, () => ({
+     isExceed: () => {
+       const span = spanRef.current;
++      if (!span) return false;
+       return span.scrollHeight > span.clientHeight;
+     },
+-    getHeight: () => spanRef.current.clientHeight
++    getHeight: () => (spanRef.current ? spanRef.current.clientHeight : 0)
+   }));
+   return /*#__PURE__*/React.createElement("span", {
+     "aria-hidden": true,
+diff --git a/node_modules/antd/lib/typography/Base/util.js b/node_modules/antd/lib/typography/Base/util.js
+index 5e84ac5..54aee3e 100644
+--- a/node_modules/antd/lib/typography/Base/util.js
++++ b/node_modules/antd/lib/typography/Base/util.js
+@@ -26,6 +26,7 @@ function getNode(dom, defaultNode, needDom) {
+  * - https://github.com/ant-design/ant-design/issues/50414
+  */
+ function isEleEllipsis(ele) {
++  if (!ele) return false;
+   // Create a new div to get the size
+   const childDiv = document.createElement('em');
+   ele.appendChild(childDiv);

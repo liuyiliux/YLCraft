@@ -180,7 +180,7 @@ export default function ProxySnifferCard({
       onCancel={() => { if (running) handleStop(); onClose() }}
       width={760}
       footer={null}
-      destroyOnClose
+      destroyOnHidden
     >
       {/* 操作区 */}
       <div style={{ marginBottom: 16 }}>
