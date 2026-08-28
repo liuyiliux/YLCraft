@@ -1443,7 +1443,8 @@ export default function StoryPage() {
   const workspaceModeProjectRef = useRef<string | null>(null)
   const [overviewDetailOpen, setOverviewDetailOpen] = useState(true)
   const [inspectorOpen, setInspectorOpen] = useState(false)
-  const [runtimeSettingsOpen, setRuntimeSettingsOpen] = useState(false)
+  // 默认展开运行设置：项目顶部四个下拉/标签全部可见
+  const [runtimeSettingsOpen, setRuntimeSettingsOpen] = useState(true)
   const [form] = Form.useForm()
   const createSourceType = Form.useWatch('source_type', form) || 'original_idea'
   const createProductionProfile = Form.useWatch('production_profile', form) || 'vertical_drama'
@@ -1516,6 +1517,41 @@ export default function StoryPage() {
     }
     window.localStorage.setItem(`ylcraft:story-workspace-mode:${selectedProject.id}`, workspaceMode)
   }, [selectedProject?.id, workspaceMode])
+
+  // 切换项目时，从项目 metadata 恢复顶部"文本模型 / 模型"选择
+  // 流程：selectedProject 切换 -> 清空 + 标记"待恢复" -> 等 connectors 加载完 -> 回填
+  // 之后用户手动改 onChange 时也会通过 persistChatModel 写回 metadata，无需再恢复。
+  const chatModelRestoredRef = useRef<string>('')
+  useEffect(() => {
+    if (!selectedProject) return
+    if (chatModelRestoredRef.current === selectedProject.id) {
+      // 当前项目已恢复过，跳过
+      return
+    }
+    if (llmConnectors.length === 0) {
+      // connectors 还没就绪
+      return
+    }
+    chatModelRestoredRef.current = selectedProject.id
+    const meta = selectedProject.metadata || {}
+    const persistedProvider = meta.default_chat_provider as string | undefined
+    const persistedModel = meta.default_chat_model as string | undefined
+    if (persistedProvider && llmConnectors.some((c) => c.name === persistedProvider)) {
+      setSelectedLlm(persistedProvider)
+      setSelectedModel(persistedModel || '')
+      return
+    }
+    // 项目没持久化，使用系统默认连接器
+    const def = llmConnectors.find((c) => c.is_default)
+      || [...llmConnectors].sort((a, b) => (a.priority || 0) - (b.priority || 0))[0]
+    if (def) {
+      setSelectedLlm(def.name)
+      setSelectedModel(def.default_model || '')
+    } else {
+      setSelectedLlm('')
+      setSelectedModel('')
+    }
+  }, [selectedProject?.id, llmConnectors])
 
   useEffect(() => {
     const requestedProjectId = searchParams.get('project_id')
@@ -2515,6 +2551,26 @@ export default function StoryPage() {
       setImageBackends((response?.backends || []) as ImageBackendOption[])
     } catch {
       setImageBackends([])
+    }
+  }
+
+  // 持久化：项目顶部"文本模型 / 模型"选择会写入项目 metadata，
+  // 刷新页面后能恢复（与默认生图模型一致的处理方式）。
+  async function persistChatModel(provider: string, model: string) {
+    if (!selectedProject) return
+    const nextMeta = {
+      ...(selectedProject.metadata || {}),
+      default_chat_provider: provider,
+      default_chat_model: model,
+    }
+    try {
+      const response = (await updateCreativeProject(selectedProject.id, { metadata: nextMeta })) as CreativeProjectResponse
+      if (response.data) {
+        setSelectedProject(response.data)
+        setProjects((prev) => prev.map((item) => (item.id === response.data.id ? response.data : item)))
+      }
+    } catch (error: any) {
+      message.error(error?.message || '保存文本模型失败')
     }
   }
 
@@ -4391,8 +4447,11 @@ export default function StoryPage() {
             }))}
             onChange={(value) => {
               const connector = llmConnectors.find((item) => item.name === value)
+              const nextModel = connector?.default_model || ''
               setSelectedLlm(value)
-              setSelectedModel(connector?.default_model || '')
+              setSelectedModel(nextModel)
+              // 写入项目 metadata，刷新后能恢复
+              persistChatModel(value, nextModel)
             }}
           />
             <Select
@@ -4400,7 +4459,12 @@ export default function StoryPage() {
             value={selectedModel || undefined}
             style={{ width: 210 }}
             options={modelOptions}
-            onChange={setSelectedModel}
+            onChange={(value) => {
+              setSelectedModel(value)
+              if (selectedLlm) {
+                persistChatModel(selectedLlm, value)
+              }
+            }}
             disabled={!selectedLlm}
           />
             <Select

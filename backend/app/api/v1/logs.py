@@ -24,6 +24,9 @@ from pydantic import BaseModel
 from app.services.platform_log import service as platform_log
 from app.services.ai import get_ai_service
 from app.services.ai.types import ImageGenerationRequest, VideoGenerationRequest
+from app.db.models.creative_project import ProjectGenerationLog
+from app.db.database import get_session
+from app.services.creative_project.service import loads_json
 import dataclasses
 
 router = APIRouter()
@@ -140,6 +143,41 @@ async def get_log(event_id: str):
     if item is None:
         raise HTTPException(status_code=404, detail="事件不存在")
     return EventDetailResponse(item=item)
+
+
+class GenerationLogResponse(BaseModel):
+    success: bool = True
+    generation_log: dict[str, Any] | None = None
+
+
+@router.get("/{event_id}/generation", response_model=GenerationLogResponse, summary="事件的 LLM 完整生成日志")
+async def get_log_generation(event_id: str):
+    """按事件 id 找到关联的 ProjectGenerationLog，返回完整 prompt/raw_response/normalized。
+
+    generation_log_id 记录在事件 retry_payload_json 中（由 creative writing
+    任务在 record_event 时写入）。
+    """
+    item = await platform_log.get_event(event_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="事件不存在")
+
+    retry_payload = item.get("retry_payload") or {}
+    generation_log_id = retry_payload.get("generation_log_id")
+    if not generation_log_id:
+        return GenerationLogResponse(success=True, generation_log=None)
+
+    try:
+        with next(get_session()) as session:
+            log = session.get(ProjectGenerationLog, generation_log_id)
+            if log is None:
+                return GenerationLogResponse(success=True, generation_log=None)
+            # 复用 creative_projects 的序列化（含 prompt/raw_response/normalized + 乱码修复）
+            from app.api.v1.creative_projects import serialize_generation_log
+
+            return GenerationLogResponse(success=True, generation_log=serialize_generation_log(log))
+    except Exception as exc:
+        logger.warning("Could not load generation log for event %s: %s", event_id, exc)
+        return GenerationLogResponse(success=True, generation_log=None)
 
 
 # ---------------------------------------------------------------------------

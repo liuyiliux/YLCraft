@@ -6213,6 +6213,10 @@ class CreativeProjectService:
         # log id is assigned on the Python side via default_factory, so it is
         # available immediately without flushing the session.
         self._last_generation_log = log
+        # 让调用方（endpoint / Writer Room）能从返回值里拿到 log id，
+        # 方便在 platform_event 日志里追加 LLM 详细信息。
+        if isinstance(normalized, dict):
+            normalized["__generation_log_id__"] = log.id
         return normalized
 
     def _default_system_prompt(self) -> str:

@@ -40,6 +40,54 @@ from app.services.platform_log import service as platform_log
 router = APIRouter()
 
 
+def _truncate_for_summary(value: str | None, limit: int = 1000) -> str:
+    if not value:
+        return ""
+    if len(value) <= limit:
+        return value
+    return value[:limit] + f"... (truncated, total {len(value)} chars)"
+
+
+def _build_llm_event_extra(generation_log_id: str | None) -> dict[str, Any]:
+    """从 ProjectGenerationLog 读出 prompt/raw_response/normalized 等，
+    写进 platform_event 的 request/response/retry_payload_json，让用户在
+    事件详情里能看到完整 LLM 请求与返回。
+
+    返回字段会赋给 record_event 的 request（与 payload 合并）、response、
+    以及 retry_payload_json（除 retry 字段外附加 generation_log_id）。
+    """
+    if not generation_log_id:
+        return {}
+    try:
+        with next(get_session()) as session:
+            log = session.get(ProjectGenerationLog, generation_log_id)
+            if not log:
+                return {}
+            req_json = loads_json(log.request_json) if log.request_json else {}
+            prompt_text = log.prompt or ""
+            raw = log.raw_response or ""
+            normalized = loads_json(log.normalized_json) if log.normalized_json else {}
+            return {
+                "request_extra": {
+                    "messages": req_json.get("messages") if isinstance(req_json, dict) else None,
+                    "params": req_json.get("params") if isinstance(req_json, dict) else None,
+                    "template_id": req_json.get("template_id") if isinstance(req_json, dict) else None,
+                    "prompt": prompt_text,
+                    "raw_response_preview": _truncate_for_summary(raw, 1500),
+                    "normalized_keys": list(normalized.keys()) if isinstance(normalized, dict) else None,
+                },
+                "response": {
+                    "raw_response": raw,
+                    "raw_response_preview": _truncate_for_summary(raw, 1500),
+                    "normalized": normalized,
+                    "validation_error": log.validation_error,
+                },
+                "generation_log_id": generation_log_id,
+            }
+    except Exception as e:  # noqa: BLE001
+        return {"generation_lookup_error": str(e)}
+
+
 async def _run_creative_task(task_type: str, payload: dict[str, Any], operation):
     """Record synchronous creative generation in the shared task center."""
     queue = get_task_queue()
@@ -62,6 +110,20 @@ async def _run_creative_task(task_type: str, payload: dict[str, Any], operation)
                 tracked.result = {"value": str(result)}
             tracked.completed_at = time.time()
             await queue.update_task(tracked)
+        # 把 service 留下的 __generation_log_id__ 提出来，并查出 LLM 详细
+        log_id = None
+        if isinstance(result, dict):
+            log_id = result.pop("__generation_log_id__", None)
+        extra = _build_llm_event_extra(log_id)
+        event_request = dict(payload)
+        if extra.get("request_extra"):
+            event_request["llm_detail"] = extra["request_extra"]
+        event_response: dict[str, Any] = {"result_type": type(result).__name__}
+        if extra.get("response"):
+            event_response = {**event_response, **extra["response"]}
+        retry_payload = {**(payload.get("retry_payload") or {})}
+        if extra.get("generation_log_id"):
+            retry_payload["generation_log_id"] = extra["generation_log_id"]
         await platform_log.record_event(
             scene="writing",
             task_type=task_type,
@@ -71,9 +133,10 @@ async def _run_creative_task(task_type: str, payload: dict[str, Any], operation)
             provider=str(payload.get("provider") or ""),
             model=str(payload.get("model") or ""),
             message=f"{payload.get('stage_label') or '创作请求'}完成",
-            request=payload,
-            response={"result_type": type(result).__name__},
+            request=event_request,
+            response=event_response,
             project_id=str(payload.get("project_id") or "") or None,
+            retry_payload=retry_payload,
         )
         return result
     except Exception as exc:
@@ -84,6 +147,25 @@ async def _run_creative_task(task_type: str, payload: dict[str, Any], operation)
             tracked.error = str(exc)
             tracked.completed_at = time.time()
             await queue.update_task(tracked)
+        # 失败时也尝试把 service 的 _last_generation_log 关联进来，便于排查
+        retry_payload = {**(payload.get("retry_payload") or {})}
+        try:
+            from app.services.creative_project.service import CreativeProjectService  # noqa
+            # 找最近一次成功的 generation log（同一 project + stage 上一条）
+            project_id = str(payload.get("project_id") or "")
+            stage = str(payload.get("stage") or "")
+            if project_id and stage:
+                with next(get_session()) as session:
+                    log = session.exec(
+                        select(ProjectGenerationLog)
+                        .where(ProjectGenerationLog.project_id == project_id)
+                        .where(ProjectGenerationLog.stage == stage)
+                        .order_by(ProjectGenerationLog.created_at.desc())
+                    ).first()
+                    if log:
+                        retry_payload["generation_log_id"] = log.id
+        except Exception:  # noqa: BLE001
+            pass
         await platform_log.record_event(
             scene="writing",
             task_type=task_type,
@@ -96,6 +178,7 @@ async def _run_creative_task(task_type: str, payload: dict[str, Any], operation)
             error=str(exc),
             request=payload,
             project_id=str(payload.get("project_id") or "") or None,
+            retry_payload=retry_payload,
         )
         raise
 
