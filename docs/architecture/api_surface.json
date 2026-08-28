@@ -3494,7 +3494,23 @@
       "summary": "创建角色",
       "function": "create_character",
       "file": "backend/app/api/v1/characters.py",
-      "line": 222,
+      "line": 225,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/characters/meta/extract-origins",
+      "router": "characters",
+      "prefix": "/api/v1/characters",
+      "local_path": "/meta/extract-origins",
+      "tags": [
+        "Characters"
+      ],
+      "summary": "获取角色提取来源元数据",
+      "function": "get_extract_origins",
+      "file": "backend/app/api/v1/characters.py",
+      "line": 306,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3510,7 +3526,7 @@
       "summary": "获取角色定位元数据",
       "function": "get_roles",
       "file": "backend/app/api/v1/characters.py",
-      "line": 278,
+      "line": 281,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3526,7 +3542,7 @@
       "summary": "获取来源类型元数据",
       "function": "get_source_types",
       "file": "backend/app/api/v1/characters.py",
-      "line": 266,
+      "line": 269,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3542,7 +3558,7 @@
       "summary": "获取角色流程来源元数据",
       "function": "get_workflow_sources",
       "file": "backend/app/api/v1/characters.py",
-      "line": 292,
+      "line": 295,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3558,7 +3574,7 @@
       "summary": "获取角色关系图谱",
       "function": "get_character_relationship_graph",
       "file": "backend/app/api/v1/characters.py",
-      "line": 408,
+      "line": 425,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3574,7 +3590,7 @@
       "summary": "获取所有自定义标签",
       "function": "get_all_character_tags",
       "file": "backend/app/api/v1/characters.py",
-      "line": 257,
+      "line": 260,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3590,7 +3606,7 @@
       "summary": "获取角色详情",
       "function": "get_character",
       "file": "backend/app/api/v1/characters.py",
-      "line": 472,
+      "line": 489,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3606,7 +3622,7 @@
       "summary": "更新角色",
       "function": "update_character",
       "file": "backend/app/api/v1/characters.py",
-      "line": 485,
+      "line": 503,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3622,7 +3638,7 @@
       "summary": "删除角色",
       "function": "delete_character",
       "file": "backend/app/api/v1/characters.py",
-      "line": 532,
+      "line": 550,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3638,7 +3654,7 @@
       "summary": "AI 补全角色信息",
       "function": "enrich_character",
       "file": "backend/app/api/v1/characters.py",
-      "line": 1244,
+      "line": 1287,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3654,7 +3670,7 @@
       "summary": "切换收藏状态",
       "function": "toggle_favorite",
       "file": "backend/app/api/v1/characters.py",
-      "line": 325,
+      "line": 342,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3670,7 +3686,7 @@
       "summary": "关联到故事项目",
       "function": "link_story",
       "file": "backend/app/api/v1/characters.py",
-      "line": 340,
+      "line": 357,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3686,7 +3702,7 @@
       "summary": "AI 生成角色立绘（资产中枢版）",
       "function": "generate_character_portrait",
       "file": "backend/app/api/v1/characters.py",
-      "line": 1367,
+      "line": 1410,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3702,7 +3718,7 @@
       "summary": "预览角色立绘提示词",
       "function": "preview_character_portrait_prompt",
       "file": "backend/app/api/v1/characters.py",
-      "line": 659,
+      "line": 677,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3718,7 +3734,7 @@
       "summary": "列出角色立绘九宫格切片子素材",
       "function": "list_character_portrait_slices",
       "file": "backend/app/api/v1/characters.py",
-      "line": 860,
+      "line": 903,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3734,7 +3750,7 @@
       "summary": "将现有立绘升级到资产中枢",
       "function": "upgrade_portrait_to_asset_hub",
       "file": "backend/app/api/v1/characters.py",
-      "line": 1643,
+      "line": 1686,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3750,7 +3766,7 @@
       "summary": "列出角色立绘版本",
       "function": "list_character_portrait_versions",
       "file": "backend/app/api/v1/characters.py",
-      "line": 685,
+      "line": 703,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3766,7 +3782,7 @@
       "summary": "设置角色主立绘版本",
       "function": "set_character_main_portrait_version",
       "file": "backend/app/api/v1/characters.py",
-      "line": 758,
+      "line": 801,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3782,7 +3798,7 @@
       "summary": "将九宫格立绘版本切成可复用子素材",
       "function": "slice_character_portrait_grid",
       "file": "backend/app/api/v1/characters.py",
-      "line": 952,
+      "line": 995,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3798,7 +3814,7 @@
       "summary": "生成角色 Prompt 资产包",
       "function": "get_character_prompt_pack",
       "file": "backend/app/api/v1/characters.py",
-      "line": 462,
+      "line": 479,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3814,7 +3830,7 @@
       "summary": "列出角色关系",
       "function": "list_character_relationships",
       "file": "backend/app/api/v1/characters.py",
-      "line": 419,
+      "line": 436,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3830,7 +3846,7 @@
       "summary": "创建角色关系",
       "function": "create_character_relationship",
       "file": "backend/app/api/v1/characters.py",
-      "line": 429,
+      "line": 446,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3846,7 +3862,7 @@
       "summary": "更新角色关系",
       "function": "update_character_relationship",
       "file": "backend/app/api/v1/characters.py",
-      "line": 440,
+      "line": 457,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3862,7 +3878,7 @@
       "summary": "删除角色关系",
       "function": "delete_character_relationship",
       "file": "backend/app/api/v1/characters.py",
-      "line": 453,
+      "line": 470,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3878,7 +3894,7 @@
       "summary": "添加自定义标签",
       "function": "add_character_tag",
       "file": "backend/app/api/v1/characters.py",
-      "line": 303,
+      "line": 320,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3894,7 +3910,7 @@
       "summary": "移除自定义标签",
       "function": "remove_character_tag",
       "file": "backend/app/api/v1/characters.py",
-      "line": 314,
+      "line": 331,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3910,7 +3926,7 @@
       "summary": "列出角色在不同世界/项目中的使用",
       "function": "list_character_world_usages",
       "file": "backend/app/api/v1/characters.py",
-      "line": 368,
+      "line": 385,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3926,7 +3942,7 @@
       "summary": "更新角色世界使用配置",
       "function": "update_character_world_usage",
       "file": "backend/app/api/v1/characters.py",
-      "line": 378,
+      "line": 395,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3942,7 +3958,7 @@
       "summary": "移除角色世界使用关系",
       "function": "delete_character_world_usage",
       "file": "backend/app/api/v1/characters.py",
-      "line": 395,
+      "line": 412,
       "response_model": "",
       "include_in_schema": true
     },

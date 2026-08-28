@@ -74,7 +74,6 @@ export default function App() {
               <Route path="characters" element={<CharacterWorkspaceEntry />} />
               <Route path="characters/new" element={<CharacterDetailPage />} />
               <Route path="characters/:characterId" element={<CharacterDetailPage />} />
-              <Route path="characters/manage" element={<Navigate to="/characters" replace />} />
               <Route path="breaker" element={<BreakerPage />} />
               <Route path="clip" element={<ClipLabPage />} />
               <Route path="story" element={<StoryPage />} />
