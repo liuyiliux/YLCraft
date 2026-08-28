@@ -54,7 +54,18 @@
 - [x] 2A.1 明确“小说提取角色（extract）”与“角色先行再演绎（character-first）”为两类不同入口，不共享强制正文/大纲门禁
 - [x] 2A.2 在角色页提供流程来源标识和切换：从小说/正文提取、独立创建角色、从素材库导入（新增 `workflow_source` 字段、元数据接口、详情标识和列表筛选）
 - [x] 2A.3 角色先行流程可直接进入角色设定、参考图、关系和 Prompt 资产包，再选择性回流 Story/生产线
-- [ ] 2A.4 小说提取流程保留原文依据与字段来源，提取结果可转为可复用角色卡
+- [x] 2A.4 小说提取流程保留原文依据与字段来源，提取结果可转为可复用角色卡
+  - 2A.4.1 `sync_outline_characters` 同步时写入 `field_sources`（外来文本 → `original`，原创大纲 → `ai_inferred`）
+  - 2A.4.2 提取来源细分 `extract_origin`：`uploaded_novel` / `imported_novel` / `original_outline`，落在 `character_story_links`（迁移 `027`）
+  - 2A.4.3 用户在工作区手填字段标 `user_edited`，同步流程只补空缺不覆盖已有来源
+  - 2A.4.4 角色列表/详情新增提取来源筛选、标签与 `GET /api/v1/characters/meta/extract-origins` 元数据
+
+## Phase 2B: 角色工作区视图增强
+
+- [x] 2B.1 删除 `/characters/manage` 兼容重定向路由（旧页面已不存在，无需兜底）
+- [x] 2B.2 角色工作区全屏切换（方案 B）：AppLayout 内隐藏 Header、内容区占满视口、Esc 退出、路由切换自动恢复，不新增路由
+- [x] 2B.3 世界视角切换条：基准设定 + 各项目/世界 Tab，切换后展示有效 Bible、服装覆盖与视觉覆盖
+- [x] 2B.4 覆盖差异提示卡：明确列出别名、阵营、本世界身份、服装覆盖、局部 Prompt 标签、OOC/出模约束与覆盖字段名
 
 ## Phase 3: 关系图谱
 
@@ -69,11 +80,11 @@
 - [x] 4.1 新增 `character_sheet_16_9` portrait 预设（提示词模板：左 34% 半身像 + 右三视图 + 细节条，白底/分区光照/面部一致性约束；保留 `identity_board_16_9` 兼容别名）
 - [x] 4.2 设定图生成结果入 Asset Hub（复用现有 `portrait/generate` 链路）
 - [x] 4.3 Prompt 资产包面板（出图提示词/设定图提示词/音色提示词/JSON，全部带复制按钮；默认输出中文可直接使用模板）
-- [ ] 4.4 字段来源标记徽标渲染（`（推断）`/`(inferred)`/原文）
+- [x] 4.4 字段来源标记徽标渲染（原文 / AI 推断 / 用户填写 / 本世界覆盖）
 
 ## Phase 5: 验证与文档
 
-- [x] 5.1 后端 focused 测试（关系、prompt-pack、字段来源、项目角色先行回流与预设）
+- [x] 5.1 后端 focused 测试（关系、prompt-pack、字段来源、项目角色先行回流与预设、提取来源细分 `tests/test_character_provenance.py`）
 - [ ] 5.2 前端浏览器验收（角色册列表、独立角色页、关系图谱、Prompt 面板）
 - [x] 5.3 更新 `docs/architecture/API_SURFACE.md` + `api_surface.json`
 - [x] 5.4 更新 `docs/architecture/YLCRAFT_SYSTEM_ARCHITECTURE.md`（新增关系模型与角色先行创建项目描述）

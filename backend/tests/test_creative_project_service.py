@@ -3209,6 +3209,109 @@ def test_sync_outline_characters_creates_library_records_and_project_links(sessi
     assert loads_json(project.outline_json)["characters"][0]["character_id"] == character.id
 
 
+def test_sync_outline_characters_marks_original_outline_as_ai_inferred(session: Session):
+    service = CreativeProjectService(session, ai_service=FakeAIService())
+    project = service.create_project(title="原创大纲同步", idea="original idea", source_type="original_idea")
+    project.outline_json = json.dumps(
+        {
+            "characters": [
+                {
+                    "name": "沈知夏",
+                    "role": "主角",
+                    "appearance": "黑色短发，风衣",
+                    "personality": "冷静执拗",
+                }
+            ]
+        },
+        ensure_ascii=False,
+    )
+    session.add(project)
+    session.commit()
+
+    character = service.sync_outline_characters(project.id)[0]
+    sources = loads_json(character.field_sources_json)
+
+    assert character.workflow_source == "extract"
+    assert sources["appearance"] == "ai_inferred"
+    assert sources["personality"] == "ai_inferred"
+    link = session.exec(
+        select(CharacterStoryLink).where(
+            CharacterStoryLink.story_id == project.id,
+            CharacterStoryLink.character_id == character.id,
+        )
+    ).one()
+    assert link.extract_origin == "original_outline"
+
+
+def test_sync_outline_characters_marks_novel_extract_as_original(session: Session):
+    service = CreativeProjectService(session, ai_service=FakeAIService())
+    project = service.create_project(
+        title="小说提取同步",
+        idea="novel extract",
+        source_type="novel",
+        source_ref={"asset_id": "asset-1", "source": "novel_bookshelf", "source_name": "起点"},
+    )
+    project.outline_json = json.dumps(
+        {
+            "characters": [
+                {
+                    "name": "萧然",
+                    "role": "主角",
+                    "appearance": "银灰短发",
+                    "background": "失忆调查员",
+                }
+            ]
+        },
+        ensure_ascii=False,
+    )
+    session.add(project)
+    session.commit()
+
+    character = service.sync_outline_characters(project.id)[0]
+    sources = loads_json(character.field_sources_json)
+
+    assert character.workflow_source == "extract"
+    assert sources["appearance"] == "original"
+    assert sources["background"] == "original"
+    link = session.exec(
+        select(CharacterStoryLink).where(
+            CharacterStoryLink.story_id == project.id,
+            CharacterStoryLink.character_id == character.id,
+        )
+    ).one()
+    assert link.extract_origin == "imported_novel"
+
+
+def test_sync_outline_characters_keeps_existing_field_sources(session: Session):
+    service = CreativeProjectService(session, ai_service=FakeAIService())
+    project = service.create_project(
+        title="来源保护",
+        idea="keep sources",
+        source_type="novel",
+        source_ref={"asset_id": "asset-2"},
+    )
+    project.outline_json = json.dumps(
+        {"characters": [{"name": "顾南枝", "appearance": "银灰短发", "personality": "克制"}]},
+        ensure_ascii=False,
+    )
+    session.add(project)
+    session.commit()
+    existing = Character(
+        name="顾南枝",
+        appearance="用户手填的外观",
+        field_sources_json=json.dumps({"appearance": "user_edited"}, ensure_ascii=False),
+    )
+    session.add(existing)
+    session.commit()
+
+    character = service.sync_outline_characters(project.id)[0]
+    sources = loads_json(character.field_sources_json)
+
+    assert character.appearance == "用户手填的外观"
+    assert sources["appearance"] == "user_edited"
+    assert sources["personality"] == "original"
+
+
 def test_project_text_asset_payload_keeps_project_content_lineage(session: Session):
     service = CreativeProjectService(session, ai_service=FakeAIService())
     project = service.create_project(title="文本素材", idea="asset projection")

@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.character import Character, CharacterStoryLink, CharacterRelationship, CharacterRole
 from app.db.models.creative_project import CreativeProject
+from app.services.character.provenance import extract_origin_label, loads_json_mapping, mark_user_edited
 
 
 def _json_list(value: Any) -> list[Any]:
@@ -45,6 +46,7 @@ class CharacterService:
         role: str | None = None,
         tag: str | None = None,
         is_favorite: bool | None = None,
+        extract_origin: str | None = None,
         page: int = 1,
         page_size: int = 20,
     ):
@@ -59,6 +61,17 @@ class CharacterService:
             query = query.where(Character.source_types.contains(source_type))
         if workflow_source:
             query = query.where(Character.workflow_source == workflow_source)
+        if extract_origin:
+            # 提取来源是「角色 × 项目」维度的标记，需要按关联的 world usage 过滤
+            link_result = await self.session.exec(
+                select(CharacterStoryLink.character_id).where(
+                    CharacterStoryLink.extract_origin == extract_origin
+                )
+            )
+            character_ids = [row for row in link_result.all() if row]
+            if not character_ids:
+                return [], 0
+            query = query.where(Character.id.in_(character_ids))
 
         query = query.offset((page - 1) * page_size).limit(page_size)
         result = await self.session.exec(query)
@@ -105,6 +118,18 @@ class CharacterService:
                 kwargs[model_field] = json.dumps(kwargs.pop(api_field), ensure_ascii=False)
         if "field_sources" in kwargs and kwargs["field_sources"] is not None:
             kwargs["field_sources_json"] = json.dumps(kwargs.pop("field_sources"), ensure_ascii=False)
+        else:
+            # 用户在角色工作区保存的设定字段标记为 user_edited，覆盖提取/推断来源
+            edited = [
+                field
+                for field in _USER_EDITABLE_PROVENANCE_FIELDS
+                if kwargs.get(field) is not None
+            ]
+            if edited:
+                kwargs["field_sources_json"] = json.dumps(
+                    mark_user_edited(character.field_sources_json, edited),
+                    ensure_ascii=False,
+                )
         for key, value in kwargs.items():
             if value is not None and hasattr(character, key):
                 setattr(character, key, value)
@@ -345,7 +370,47 @@ class CharacterService:
                 "voice_prompt": f"角色{character.name}的音色与说话方式：{json.dumps(data['speech'], ensure_ascii=False)}",
                 "character_json": data}
 
-    def to_response(self, character: Character) -> dict:
+    async def extract_origins_for(self, character_ids: list[str]) -> dict[str, list[str]]:
+        """Batch-load distinct extract origins keyed by character id.
+
+        Returns ``{character_id: [origin, ...]}``. Async on purpose: ``to_response``
+        is sync and shared by many helpers, so callers opt in when they need the
+        provenance tags.
+        """
+        clean_ids = [str(value) for value in character_ids if str(value)]
+        if not clean_ids:
+            return {}
+        try:
+            result = await self.session.exec(
+                select(CharacterStoryLink.character_id, CharacterStoryLink.extract_origin).where(
+                    CharacterStoryLink.character_id.in_(clean_ids)
+                )
+            )
+            rows = result.all()
+        except Exception:  # pragma: no cover - provenance is best-effort
+            return {}
+
+        origins: dict[str, list[str]] = {}
+        for row in rows:
+            # SQLAlchemy Row 支持下标访问，但不是 tuple 实例
+            try:
+                character_id = str(row[0] or "")
+                value = str(row[1] or "").strip()
+            except (TypeError, IndexError, KeyError):
+                continue
+            if not character_id or not value or value == "unknown":
+                continue
+            bucket = origins.setdefault(character_id, [])
+            if value not in bucket:
+                bucket.append(value)
+        return origins
+
+    def to_response(
+        self,
+        character: Character,
+        *,
+        extract_origins: dict[str, list[str]] | None = None,
+    ) -> dict:
         tags = _json_list(character.tags)
         source_types = _json_list(character.source_types)
         reference_asset_ids = _json_list(character.reference_asset_ids)
@@ -379,6 +444,7 @@ class CharacterService:
                 "asset_import": "素材库导入",
                 "unknown": "未标记",
             }.get(getattr(character, "workflow_source", "unknown") or "unknown", "未标记"),
+            "extract_origins": extract_origins.get(character.id, []) if extract_origins else [],
             "role_label": role_labels.get(character.role, character.role),
             "source_types": source_types,
             "source_type_labels": [source_type_labels.get(st, st) for st in source_types],
@@ -436,6 +502,8 @@ class CharacterService:
             "off_model_notes": link.off_model_notes or "",
             "bible_overrides": _loads_json(link.bible_overrides_json, {}),
             "visual_overrides": _loads_json(link.visual_overrides_json, {}),
+            "extract_origin": getattr(link, "extract_origin", "") or "unknown",
+            "extract_origin_label": extract_origin_label(getattr(link, "extract_origin", "") or "unknown"),
             "linked_at": str(link.linked_at) if link.linked_at else None,
             "updated_at": str(link.updated_at) if link.updated_at else None,
         }
@@ -443,6 +511,22 @@ class CharacterService:
 
 from datetime import datetime
 
+
+# 用户可在角色工作区直接编辑、需要标记为「用户填写」的字段
+_USER_EDITABLE_PROVENANCE_FIELDS = (
+    "appearance",
+    "costume_hint",
+    "personality",
+    "background",
+    "age_range",
+    "visual_consistency",
+    "identity",
+    "motivation",
+    "speech",
+    "behavior",
+    "ability",
+    "arc",
+)
 
 _BIBLE_FIELD_MAP = {
     "identity": "identity_json",

@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Alert, Avatar, Button, Card, Col, Collapse, Empty, Image, Input, Modal, Popconfirm, Row, Select, Space, Spin, Tabs, Tag, Typography, message } from 'antd'
-import { ArrowLeftOutlined, ArrowRightOutlined, BranchesOutlined, CopyOutlined, DatabaseOutlined, DeleteOutlined, EditOutlined, PictureOutlined, PlusOutlined, SearchOutlined, StarFilled, StarOutlined, UserOutlined } from '@ant-design/icons'
+import { ArrowLeftOutlined, ArrowRightOutlined, BranchesOutlined, CopyOutlined, DatabaseOutlined, DeleteOutlined, EditOutlined, FullscreenExitOutlined, FullscreenOutlined, GlobalOutlined, PictureOutlined, PlusOutlined, SearchOutlined, StarFilled, StarOutlined, UserOutlined } from '@ant-design/icons'
 import { useTheme } from '../../constants/theme'
+import { useFullscreenWorkspace } from '../../components/layout/AppLayout'
 import { chat } from '../../api'
 
 const { Title, Text, Paragraph } = Typography
@@ -42,6 +43,12 @@ const WORKFLOW_SOURCE_OPTIONS = [
   { value: 'asset_import', label: '素材库导入' },
   { value: 'unknown', label: '未标记' },
 ]
+const EXTRACT_ORIGIN_OPTIONS = [
+  { value: 'uploaded_novel', label: '上传小说提取' },
+  { value: 'imported_novel', label: '外来小说导入' },
+  { value: 'original_outline', label: '原创大纲（AI 推断）' },
+  { value: 'unknown', label: '未标记' },
+]
 
 export function CharacterWorkspaceEntry() {
   const navigate = useNavigate()
@@ -65,18 +72,158 @@ const getJson = async (url: string) => {
 function fieldSourceMeta(source: unknown): { label: string; color: string } | null {
   const normalized = String(source || '').trim().toLowerCase()
   if (!normalized) return null
+  if (['user_edited', 'user', 'manual', '用户', '手填'].some((value) => normalized.includes(value))) return { label: '用户填写', color: 'blue' }
   if (['original', 'source', 'novel', '原文', '原始'].some((value) => normalized.includes(value))) return { label: '原文', color: 'green' }
   if (['ai_inferred', 'inferred', 'ai', '推断', '推测'].some((value) => normalized.includes(value))) return { label: 'AI 推断', color: 'gold' }
-  if (['user', 'manual', '用户', '手填'].some((value) => normalized.includes(value))) return { label: '用户填写', color: 'blue' }
+  if (['unset', '未设置'].some((value) => normalized.includes(value))) return { label: '未设置', color: 'default' }
   return { label: String(source), color: 'default' }
 }
 
-function Field({ label, value, theme, source }: { label: string; value: any; theme: any; source?: unknown }) {
+const EXTRACT_ORIGIN_LABELS: Record<string, string> = {
+  uploaded_novel: '上传小说提取',
+  imported_novel: '外来小说导入',
+  original_outline: '原创大纲（AI 推断）',
+  unknown: '未标记',
+}
+
+function extractOriginLabel(origin: unknown): string {
+  return EXTRACT_ORIGIN_LABELS[String(origin || '').trim()] || '未标记'
+}
+
+function Field({ label, value, theme, source, overridden }: { label: string; value: any; theme: any; source?: unknown; overridden?: boolean }) {
   const sourceMeta = fieldSourceMeta(source)
   return <div style={{ padding: '12px 0', borderBottom: `1px solid ${theme.borderLight}` }}>
-    <Space size={6} align="center"><Text style={{ color: theme.textSecondary, fontSize: 12 }}>{label}</Text>{sourceMeta ? <Tag color={sourceMeta.color} style={{ marginInlineEnd: 0, fontSize: 10, lineHeight: '18px' }}>{sourceMeta.label}</Tag> : null}</Space>
+    <Space size={6} align="center" wrap>
+      <Text style={{ color: theme.textSecondary, fontSize: 12 }}>{label}</Text>
+      {sourceMeta ? <Tag color={sourceMeta.color} style={{ marginInlineEnd: 0, fontSize: 10, lineHeight: '18px' }}>{sourceMeta.label}</Tag> : null}
+      {overridden ? <Tag color="cyan" style={{ marginInlineEnd: 0, fontSize: 10, lineHeight: '18px' }}>本世界覆盖</Tag> : null}
+    </Space>
     <Paragraph style={{ color: value ? theme.textPrimary : theme.textDisabled, margin: '4px 0 0', whiteSpace: 'pre-wrap' }}>{displayValue(value) || '未设置'}</Paragraph>
   </div>
+}
+
+/**
+ * 世界切换条：角色是全局基准设定，但在不同创作项目/世界中可以有别名、阵营、服装、
+ * OOC/出模约束和 Bible/视觉覆盖。切换后工作区展示的是「基准 + 该世界覆盖」的有效设定。
+ */
+function WorldSwitcher({
+  worlds,
+  activeId,
+  onChange,
+  theme,
+}: {
+  worlds: any[]
+  activeId: string
+  onChange: (value: string) => void
+  theme: any
+}) {
+  if (!worlds.length) return null
+  const tabs: { key: string; label: string; title: string }[] = [
+    { key: '', label: '基准设定', title: '角色库中的全局设定，不含任何世界覆盖' },
+    ...worlds.map((item: any) => ({
+      key: String(item.id),
+      label: String(item.world_name || item.project_title || '未命名世界').slice(0, 12),
+      title: [item.world_name || item.project_title, item.local_alias, item.usage_role].filter(Boolean).join(' · '),
+    })),
+  ]
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+      <Space size={6}>
+        <GlobalOutlined style={{ color: theme.textSecondary }} />
+        <Text style={{ color: theme.textSecondary, fontSize: 12 }}>世界视角</Text>
+      </Space>
+      {tabs.map((tab) => {
+        const selected = String(activeId) === tab.key
+        return (
+          <button
+            key={tab.key || '__base__'}
+            type="button"
+            title={tab.title}
+            onClick={() => onChange(tab.key)}
+            style={{
+              border: `1px solid ${selected ? theme.primary : theme.borderLight}`,
+              background: selected ? theme.primaryAlpha(0.14) : 'transparent',
+              color: selected ? theme.primary : theme.textSecondary,
+              borderRadius: 999,
+              padding: '3px 12px',
+              fontSize: 12,
+              cursor: 'pointer',
+              maxWidth: 190,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {tab.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+/**
+ * 覆盖差异卡：切换世界后，明确列出该世界改写了哪些设定，避免「为什么和我填的不一样」。
+ */
+function WorldOverrideNotice({ world, theme }: { world: any; theme: any }) {
+  if (!world) return null
+  const rows: [string, any][] = [
+    ['别名 / 代号', world.local_alias],
+    ['阵营 / 派系', world.local_faction],
+    ['本世界身份', world.local_identity],
+    ['服装覆盖', world.local_costume],
+    ['局部 Prompt 标签', Array.isArray(world.local_prompt_tags) ? world.local_prompt_tags : []],
+    ['OOC 约束', world.ooc_notes],
+    ['出模约束', world.off_model_notes],
+  ]
+  const overrideKeys = Object.keys(world.bible_overrides || {}).length
+    ? Object.keys(world.bible_overrides)
+    : []
+  const visualKeys = Object.keys(world.visual_overrides || {})
+  const hasAny = rows.some(([, value]) => displayValue(value).trim()) || overrideKeys.length > 0 || visualKeys.length > 0
+  if (!hasAny) return null
+  return (
+    <div
+      style={{
+        border: `1px solid ${theme.borderLight}`,
+        borderLeft: `3px solid ${theme.primary}`,
+        borderRadius: 8,
+        background: theme.bgElevated,
+        padding: '10px 12px',
+        marginBottom: 12,
+      }}
+    >
+      <Space size={6} wrap>
+        <Text strong style={{ color: theme.textPrimary, fontSize: 13 }}>
+          {world.world_name || world.project_title || '未命名世界'}
+        </Text>
+        {world.usage_role ? <Tag color="cyan" style={{ marginInlineEnd: 0 }}>{world.usage_role}</Tag> : null}
+        {world.local_status ? <Tag color={world.local_status === 'active' ? 'green' : 'default'} style={{ marginInlineEnd: 0 }}>{world.local_status}</Tag> : null}
+      </Space>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '6px 18px', marginTop: 8 }}>
+        {rows
+          .filter(([, value]) => displayValue(value).trim())
+          .map(([label, value]) => (
+            <div key={label}>
+              <Text style={{ color: theme.textSecondary, fontSize: 11 }}>{label}</Text>
+              <Paragraph style={{ color: theme.textPrimary, margin: '2px 0 0', fontSize: 12, whiteSpace: 'pre-wrap' }}>
+                {displayValue(value)}
+              </Paragraph>
+            </div>
+          ))}
+      </div>
+      {overrideKeys.length > 0 ? (
+        <Text style={{ color: theme.textSecondary, fontSize: 11, display: 'block', marginTop: 6 }}>
+          Bible 覆盖字段：{overrideKeys.join('、')}
+        </Text>
+      ) : null}
+      {visualKeys.length > 0 ? (
+        <Text style={{ color: theme.textSecondary, fontSize: 11, display: 'block', marginTop: 2 }}>
+          视觉覆盖字段：{visualKeys.join('、')}
+        </Text>
+      ) : null}
+    </div>
+  )
 }
 
 function RelationshipGraph({ graph, theme, onOpen }: { graph: any; theme: any; onOpen: (id: string) => void }) {
@@ -150,8 +297,11 @@ export default function CharacterDetailPage() {
   const [characterRole, setCharacterRole] = useState<string>()
   const [characterSource, setCharacterSource] = useState<string>()
   const [characterWorkflowSource, setCharacterWorkflowSource] = useState<string>()
+  const [characterExtractOrigin, setCharacterExtractOrigin] = useState<string>()
   const [favoritesOnly, setFavoritesOnly] = useState(false)
   const [tagInput, setTagInput] = useState('')
+  const [activeWorldId, setActiveWorldId] = useState('')
+  const { fullscreen: workspaceFullscreen, toggleFullscreen: toggleWorkspaceFullscreen } = useFullscreenWorkspace()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -192,7 +342,9 @@ export default function CharacterDetailPage() {
       setRelationships(relationRes.data || [])
       setRelationshipGraph({ ...(graphRes.data || graphRes), focus_id: characterId })
       setCharacters(charactersRes.data?.items || charactersRes.items || charactersRes.data || [])
-      setWorldUsages(worldsRes.data || worldsRes.items || [])
+      const loadedWorldUsages = worldsRes.data || worldsRes.items || []
+      setWorldUsages(loadedWorldUsages)
+      setActiveWorldId((current) => current && loadedWorldUsages.some((item: any) => String(item.id) === String(current)) ? current : '')
       setPortraitVersions(versionsRes.data?.versions || [])
       setPortraitSlices(slicesRes.data?.items || [])
       setPortraitLogs(logsRes.data || logsRes.items || [])
@@ -205,6 +357,14 @@ export default function CharacterDetailPage() {
       if (mainVersion) setSelectedVersionId(String(mainVersion.id))
     }).catch((e) => setError(e.message || '角色加载失败')).finally(() => setLoading(false))
   }, [characterId])
+  useEffect(() => {
+    if (!workspaceFullscreen) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') toggleWorkspaceFullscreen()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [workspaceFullscreen, toggleWorkspaceFullscreen])
   useEffect(() => {
     getJson('/api/v1/images/backends').then((result) => {
       const items = result.backends || result.data || []
@@ -240,6 +400,23 @@ export default function CharacterDetailPage() {
     return Array.from(new Set((profile.reference_image_urls || []).map((url: any) => browserAssetUrl(url)).filter((url: string) => Boolean(url) && url !== main)))
   }, [character])
   const visualImages = useMemo(() => Array.from(new Set([mainVisualUrl, ...referenceImages].filter(Boolean))), [mainVisualUrl, referenceImages])
+
+  // ---- 世界切换：同一角色在不同项目/世界下的差异化设定 ----
+  const activeWorld = useMemo(
+    () => worldUsages.find((item: any) => String(item.id) === String(activeWorldId)) || null,
+    [worldUsages, activeWorldId],
+  )
+  const mergeOverride = (base: any, overrides: any) => {
+    if (!overrides || typeof overrides !== 'object') return base
+    if (!base || typeof base !== 'object') return { ...overrides }
+    return { ...base, ...overrides }
+  }
+  const effectiveIdentity = useMemo(() => mergeOverride(character?.identity || {}, activeWorld?.bible_overrides?.identity || activeWorld?.bible_overrides), [character, activeWorld])
+  const effectiveMotivation = useMemo(() => mergeOverride(character?.motivation || {}, activeWorld?.bible_overrides?.motivation), [character, activeWorld])
+  const effectiveSpeech = useMemo(() => mergeOverride(character?.speech || {}, activeWorld?.bible_overrides?.speech), [character, activeWorld])
+  const effectiveBehavior = useMemo(() => mergeOverride(character?.behavior || {}, activeWorld?.bible_overrides?.behavior), [character, activeWorld])
+  const effectiveCostume = activeWorld?.local_costume || character?.costume_hint || ''
+  const effectiveVisualOverrides = activeWorld?.visual_overrides || {}
   const restoreMainVisual = () => {
     setSelectedVisualUrl(canonicalMainVisualUrl)
     setSelectedVersionId('')
@@ -250,9 +427,11 @@ export default function CharacterDetailPage() {
     const roleMatch = !characterRole || item.role === characterRole
     const sourceMatch = !characterSource || (item.source_types || []).includes(characterSource)
     const workflowMatch = !characterWorkflowSource || (item.workflow_source || 'unknown') === characterWorkflowSource
+    const origins: string[] = Array.isArray(item.extract_origins) ? item.extract_origins : []
+    const originMatch = !characterExtractOrigin || origins.includes(characterExtractOrigin)
     const favoriteMatch = !favoritesOnly || Boolean(item.is_favorite)
-    return keywordMatch && roleMatch && sourceMatch && workflowMatch && favoriteMatch
-  }), [characters, characterKeyword, characterRole, characterSource, characterWorkflowSource, favoritesOnly])
+    return keywordMatch && roleMatch && sourceMatch && workflowMatch && originMatch && favoriteMatch
+  }), [characters, characterKeyword, characterRole, characterSource, characterWorkflowSource, characterExtractOrigin, favoritesOnly])
 
   if (loading) return <div style={{ minHeight: '70vh', display: 'grid', placeItems: 'center' }}><Spin size="large" /></div>
   if (error || !character) return <div style={{ padding: 32 }}><Alert type="error" message={error || '角色不存在'} showIcon /><Button style={{ marginTop: 16 }} icon={<ArrowLeftOutlined />} onClick={() => navigate('/characters')}>返回角色库</Button></div>
@@ -556,9 +735,9 @@ export default function CharacterDetailPage() {
     if (title === '切片记录') return <Image.PreviewGroup><div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 10 }}>{values.map((item, index) => { const url = item.image_url || item.url || item.file_path; return <div key={item.id || index} style={{ background: theme.bgElevated, border: `1px solid ${theme.borderLight}`, padding: 8, borderRadius: 6 }}>{url ? <Image src={url} width="100%" height={110} style={{ objectFit: 'cover' }} /> : <div style={{ height: 110, display: 'grid', placeItems: 'center' }}><PictureOutlined /></div>}<Text style={{ color: theme.textSecondary, fontSize: 11, display: 'block', marginTop: 5 }}>{item.label || item.name || `切片 ${index + 1}`}</Text></div> })}</div></Image.PreviewGroup>
     return <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>{values.map((value, index) => <div key={index} style={{ background: theme.bgElevated, border: `1px solid ${theme.borderLight}`, padding: 12, borderRadius: 6 }}><Text style={{ color: theme.textSecondary, fontSize: 11 }}>记录 {index + 1}</Text><Paragraph style={{ color: theme.textPrimary, margin: '6px 0 0', whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: 12 }}>{displayValue(value)}</Paragraph></div>)}</div>
   }
-  return <div style={{ minHeight: '100%', background: theme.bgPage, padding: 18 }}>
-    <style>{`.character-detail-shell{max-width:1600px;margin:0 auto;display:grid;grid-template-columns:260px minmax(0,1fr);gap:18px;align-items:start}.character-detail-sidebar{position:sticky;top:18px;min-height:calc(100vh - 36px);max-height:calc(100vh - 36px);overflow:hidden}.character-detail-sidebar-list{max-height:calc(100vh - 170px);overflow-y:auto;padding-right:3px}.character-report-hero{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(260px,.85fr);gap:18px}.character-report-media{display:grid;grid-template-columns:minmax(220px,.9fr) minmax(0,1.4fr);gap:10px;min-height:470px}.character-report-lower{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:28px}.character-report-prompts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.character-report-details{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 28px}.character-report-details details{border-bottom:1px solid rgba(255,255,255,.1);padding:12px 0}.character-report-details summary{cursor:pointer;color:var(--character-text-primary,#e4e4e7);font-weight:600}.character-report-details details[open] summary{color:#22d3ee}.character-report-details-content{padding-top:10px}.character-portrait-controls{display:grid;grid-template-columns:190px 180px 150px 150px minmax(0,1fr) auto;gap:10px;align-items:end}@media(max-width:1100px){.character-portrait-controls{grid-template-columns:repeat(3,minmax(0,1fr))}.character-portrait-controls>*:nth-child(5){grid-column:1 / -1}.character-portrait-controls>*:nth-child(6){grid-column:1 / -1}}@media(max-width:900px){.character-detail-shell{display:block}.character-detail-sidebar{position:static;min-height:0;max-height:none;margin-bottom:16px}.character-detail-sidebar-list{max-height:320px}.character-report-hero,.character-report-lower,.character-report-details{display:block}.character-report-hero>div+div{border-left:0!important;border-top:1px solid rgba(255,255,255,.1);padding:18px 0 0!important;margin-top:18px}.character-report-media{grid-template-columns:1fr;min-height:0}.character-report-prompts{grid-template-columns:1fr}.character-portrait-controls{grid-template-columns:1fr}.character-portrait-controls>*{grid-column:auto!important}}`}</style>
-    <div className="character-detail-shell">
+  return <div style={{ minHeight: '100%', background: theme.bgPage, padding: workspaceFullscreen ? 14 : 18 }}>
+    <style>{`.character-detail-shell{max-width:1600px;margin:0 auto;display:grid;grid-template-columns:260px minmax(0,1fr);gap:18px;align-items:start}.character-detail-sidebar{position:sticky;top:18px;min-height:calc(100vh - 36px);max-height:calc(100vh - 36px);overflow:hidden}.character-detail-sidebar-list{max-height:calc(100vh - 170px);overflow-y:auto;padding-right:3px}.character-detail-shell.is-fullscreen{max-width:2200px}.character-detail-shell.is-fullscreen .character-detail-sidebar{top:0;min-height:calc(100vh - 28px);max-height:calc(100vh - 28px)}.character-detail-shell.is-fullscreen .character-detail-sidebar-list{max-height:calc(100vh - 152px)}.character-report-hero{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(260px,.85fr);gap:18px}.character-report-media{display:grid;grid-template-columns:minmax(220px,.9fr) minmax(0,1.4fr);gap:10px;min-height:470px}.character-report-lower{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:28px}.character-report-prompts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.character-report-details{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 28px}.character-report-details details{border-bottom:1px solid rgba(255,255,255,.1);padding:12px 0}.character-report-details summary{cursor:pointer;color:var(--character-text-primary,#e4e4e7);font-weight:600}.character-report-details details[open] summary{color:#22d3ee}.character-report-details-content{padding-top:10px}.character-portrait-controls{display:grid;grid-template-columns:190px 180px 150px 150px minmax(0,1fr) auto;gap:10px;align-items:end}@media(max-width:1100px){.character-portrait-controls{grid-template-columns:repeat(3,minmax(0,1fr))}.character-portrait-controls>*:nth-child(5){grid-column:1 / -1}.character-portrait-controls>*:nth-child(6){grid-column:1 / -1}}@media(max-width:900px){.character-detail-shell{display:block}.character-detail-sidebar{position:static;min-height:0;max-height:none;margin-bottom:16px}.character-detail-sidebar-list{max-height:320px}.character-report-hero,.character-report-lower,.character-report-details{display:block}.character-report-hero>div+div{border-left:0!important;border-top:1px solid rgba(255,255,255,.1);padding:18px 0 0!important;margin-top:18px}.character-report-media{grid-template-columns:1fr;min-height:0}.character-report-prompts{grid-template-columns:1fr}.character-portrait-controls{grid-template-columns:1fr}.character-portrait-controls>*{grid-column:auto!important}}`}</style>
+    <div className={workspaceFullscreen ? 'character-detail-shell is-fullscreen' : 'character-detail-shell'}>
       <aside className="character-detail-sidebar" style={{ background: theme.bgCard, border: `1px solid ${theme.borderLight}`, borderRadius: 10, padding: 14 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}><Text strong style={{ color: theme.textPrimary }}>角色列表</Text><Button size="small" type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建</Button></div>
         <Space direction="vertical" size={8} style={{ width: '100%' }}>
@@ -566,6 +745,7 @@ export default function CharacterDetailPage() {
           <Select size="small" allowClear placeholder="全部定位" value={characterRole} onChange={setCharacterRole} options={ROLE_OPTIONS} style={{ width: '100%' }} />
            <Select size="small" allowClear placeholder="全部来源" value={characterSource} onChange={setCharacterSource} options={SOURCE_OPTIONS} style={{ width: '100%' }} />
            <Select size="small" allowClear placeholder="全部流程" value={characterWorkflowSource} onChange={setCharacterWorkflowSource} options={WORKFLOW_SOURCE_OPTIONS} style={{ width: '100%' }} />
+           <Select size="small" allowClear placeholder="全部提取来源" value={characterExtractOrigin} onChange={setCharacterExtractOrigin} options={EXTRACT_ORIGIN_OPTIONS} style={{ width: '100%' }} />
           <Button size="small" type={favoritesOnly ? 'primary' : 'default'} onClick={() => setFavoritesOnly((value) => !value)} block>仅收藏</Button>
         </Space>
         <div className="character-detail-sidebar-list" style={{ marginTop: 14 }}>
@@ -582,8 +762,8 @@ export default function CharacterDetailPage() {
         <Text style={{ color: theme.textSecondary }}>角色设定集 / {character.name}</Text>
       </Space>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 }}>
-         <div><Title level={2} style={{ color: theme.textPrimary, margin: 0 }}>{character.name}</Title><Space size={6}><Text style={{ color: theme.textSecondary }}>{character.role_label || character.role || '角色'} · 设定集报告</Text><Tag color="blue">{character.workflow_source_label || '未标记'}</Tag></Space></div>
-        <Space wrap><Select size="small" value={enrichProvider || undefined} placeholder="AI 补全供应商" style={{ width: 190 }} onChange={(value) => { setEnrichProvider(value); const backend = llmBackends.find((item) => (item.name || item.provider) === value); setEnrichModel(backend?.default_model || backend?.model || backend?.available_models?.[0] || '') }} options={llmBackends.map((item) => ({ value: item.name || item.provider, label: item.provider_label || item.name || item.provider }))} /><Select size="small" value={enrichModel || undefined} placeholder="AI 补全模型" style={{ width: 180 }} onChange={setEnrichModel} options={Array.from(new Set((llmBackends.find((item) => (item.name || item.provider) === enrichProvider)?.available_models || [llmBackends.find((item) => (item.name || item.provider) === enrichProvider)?.default_model]).filter(Boolean))).map((value) => ({ value, label: value }))} /><Button loading={aiBusy} onClick={() => enrichCharacter('fill_missing')}>AI 补全</Button><Button loading={aiBusy} onClick={() => enrichCharacter('rewrite')}>统一重写</Button><Button loading={aiBusy} onClick={generatePortrait} icon={<PictureOutlined />}>生成主立绘</Button><Button icon={<PlusOutlined />} onClick={() => navigate(`/story?new=1&character_id=${encodeURIComponent(character.id)}`)}>以此角色新建项目</Button><Button icon={<ArrowRightOutlined />} onClick={() => navigate(worldUsages[0]?.story_id || worldUsages[0]?.project_id ? `/story?project_id=${encodeURIComponent(worldUsages[0].story_id || worldUsages[0].project_id)}` : '/story')}>进入创作项目</Button><Button icon={<BranchesOutlined />} onClick={() => document.getElementById('character-relationship-graph')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>关系图谱</Button>{character.portrait_url && !character.portrait_node_id && <Button icon={<DatabaseOutlined />} onClick={upgradePortrait}>升级到资产中枢</Button>}<Button onClick={toggleFrozen}>{character.is_frozen ? '解冻角色' : '冻结角色'}</Button><Button icon={character.is_favorite ? <StarFilled style={{ color: '#f59e0b' }} /> : <StarOutlined />} onClick={toggleFavorite}>{character.is_favorite ? '取消收藏' : '收藏'}</Button><Popconfirm title="确认删除此角色？" onConfirm={deleteCharacter} okText="删除" cancelText="取消"><Button danger icon={<DeleteOutlined />}>删除</Button></Popconfirm><Button type="primary" icon={<EditOutlined />} onClick={openEdit}>编辑角色</Button></Space>
+         <div><Title level={2} style={{ color: theme.textPrimary, margin: 0 }}>{character.name}</Title><Space size={6}><Text style={{ color: theme.textSecondary }}>{character.role_label || character.role || '角色'} · 设定集报告</Text><Tag color="blue">{character.workflow_source_label || '未标记'}</Tag>{(character.extract_origins || []).map((origin: string) => <Tag key={origin} color={origin === 'original_outline' ? 'gold' : 'green'}>{extractOriginLabel(origin)}</Tag>)}{!(character.extract_origins || []).length && character.workflow_source === 'extract' ? <Tag color="default">未标记提取来源</Tag> : null}</Space></div>
+        <Space wrap><Button icon={workspaceFullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />} onClick={toggleWorkspaceFullscreen}>{workspaceFullscreen ? '退出全屏' : '全屏工作区'}</Button><Select size="small" value={enrichProvider || undefined} placeholder="AI 补全供应商" style={{ width: 190 }} onChange={(value) => { setEnrichProvider(value); const backend = llmBackends.find((item) => (item.name || item.provider) === value); setEnrichModel(backend?.default_model || backend?.model || backend?.available_models?.[0] || '') }} options={llmBackends.map((item) => ({ value: item.name || item.provider, label: item.provider_label || item.name || item.provider }))} /><Select size="small" value={enrichModel || undefined} placeholder="AI 补全模型" style={{ width: 180 }} onChange={setEnrichModel} options={Array.from(new Set((llmBackends.find((item) => (item.name || item.provider) === enrichProvider)?.available_models || [llmBackends.find((item) => (item.name || item.provider) === enrichProvider)?.default_model]).filter(Boolean))).map((value) => ({ value, label: value }))} /><Button loading={aiBusy} onClick={() => enrichCharacter('fill_missing')}>AI 补全</Button><Button loading={aiBusy} onClick={() => enrichCharacter('rewrite')}>统一重写</Button><Button loading={aiBusy} onClick={generatePortrait} icon={<PictureOutlined />}>生成主立绘</Button><Button icon={<PlusOutlined />} onClick={() => navigate(`/story?new=1&character_id=${encodeURIComponent(character.id)}`)}>以此角色新建项目</Button><Button icon={<ArrowRightOutlined />} onClick={() => navigate(worldUsages[0]?.story_id || worldUsages[0]?.project_id ? `/story?project_id=${encodeURIComponent(worldUsages[0].story_id || worldUsages[0].project_id)}` : '/story')}>进入创作项目</Button><Button icon={<BranchesOutlined />} onClick={() => document.getElementById('character-relationship-graph')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>关系图谱</Button>{character.portrait_url && !character.portrait_node_id && <Button icon={<DatabaseOutlined />} onClick={upgradePortrait}>升级到资产中枢</Button>}<Button onClick={toggleFrozen}>{character.is_frozen ? '解冻角色' : '冻结角色'}</Button><Button icon={character.is_favorite ? <StarFilled style={{ color: '#f59e0b' }} /> : <StarOutlined />} onClick={toggleFavorite}>{character.is_favorite ? '取消收藏' : '收藏'}</Button><Popconfirm title="确认删除此角色？" onConfirm={deleteCharacter} okText="删除" cancelText="取消"><Button danger icon={<DeleteOutlined />}>删除</Button></Popconfirm><Button type="primary" icon={<EditOutlined />} onClick={openEdit}>编辑角色</Button></Space>
       </div>
 
       <section className="character-portrait-controls" style={{ marginBottom: 14, padding: '12px 14px', background: theme.bgCard, borderBottom: `1px solid ${theme.borderLight}` }}>
@@ -596,6 +776,16 @@ export default function CharacterDetailPage() {
         <Space><Button loading={promptPreviewLoading} onClick={previewPortraitPrompt}>预览 Prompt</Button><Button loading={promptOptimizing} onClick={optimizePortraitPrompt}>AI 优化</Button><Button loading={aiBusy} onClick={() => setPortraitPrompt(displayValue(pack?.image_prompt || ''))}>载入提示词</Button></Space>
       </section>
 
+      <section style={{ padding: '12px 16px', marginBottom: 12, background: theme.bgCard, border: `1px solid ${theme.borderLight}`, borderRadius: 8 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: activeWorld || worldUsages.length ? 10 : 0 }}>
+          <Text strong style={{ color: theme.textPrimary, fontSize: 15 }}>世界视角</Text>
+          <Text style={{ color: theme.textSecondary, fontSize: 12 }}>角色是全局基准；切到某个项目后展示「基准 + 该项目覆盖」的有效设定</Text>
+        </div>
+        <WorldSwitcher worlds={worldUsages} activeId={activeWorldId} onChange={setActiveWorldId} theme={theme} />
+        <WorldOverrideNotice world={activeWorld} theme={theme} />
+        {!worldUsages.length ? <Text style={{ color: theme.textSecondary, fontSize: 12 }}>该角色还没有加入任何项目/世界，添加世界使用后可在这里切换视角。</Text> : null}
+      </section>
+
       <section className="character-report-hero" style={{ background: theme.bgCard, borderTop: `1px solid ${theme.borderLight}`, borderBottom: `1px solid ${theme.borderLight}`, padding: 18 }}>
         <div style={{ minWidth: 0 }}>
            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}><Space size={10}><Text strong style={{ color: theme.textPrimary, fontSize: 15 }}>角色视觉参考</Text><Text style={{ color: theme.textSecondary, fontSize: 12 }}>主视图是身份基准；参考图用于辅助一致性，不会覆盖主视图</Text></Space><Button size="small" icon={<PictureOutlined />} onClick={openReferencePicker}>从素材库加入</Button></div>
@@ -605,17 +795,21 @@ export default function CharacterDetailPage() {
           </div>
         </div>
         <div style={{ borderLeft: `1px solid ${theme.borderLight}`, paddingLeft: 18 }}>
-          <Text strong style={{ color: theme.textPrimary, fontSize: 15 }}>角色 Bible</Text>
-          <Field label="身份" value={identity.logline || identity.position || identity.organization} theme={theme} source={character.field_sources?.identity || character.field_sources?.logline} />
-          <Field label="核心欲望" value={motivation.desire || motivation.core_desire} theme={theme} source={character.field_sources?.motivation} />
-          <Field label="深层恐惧" value={motivation.fear || motivation.deep_fear} theme={theme} source={character.field_sources?.motivation} />
-          <Field label="说话方式" value={speech.tone || speech.style || speech.catchphrase} theme={theme} source={character.field_sources?.speech} />
-          <Field label="行为底线" value={behavior.never_do || behavior.boundary || behavior.ooc_boundary} theme={theme} source={character.field_sources?.behavior} />
+          <Space size={6} style={{ marginBottom: 4 }}>
+            <Text strong style={{ color: theme.textPrimary, fontSize: 15 }}>角色 Bible</Text>
+            {activeWorld ? <Tag color="cyan" style={{ marginInlineEnd: 0 }}>{activeWorld.world_name || activeWorld.project_title || '当前世界'}</Tag> : null}
+          </Space>
+          <Field label="身份" value={effectiveIdentity.logline || effectiveIdentity.position || effectiveIdentity.organization} theme={theme} source={character.field_sources?.identity || character.field_sources?.logline} overridden={Boolean(activeWorld?.bible_overrides?.identity || activeWorld?.bible_overrides?.logline)} />
+          <Field label="核心欲望" value={effectiveMotivation.desire || effectiveMotivation.core_desire} theme={theme} source={character.field_sources?.motivation} overridden={Boolean(activeWorld?.bible_overrides?.motivation)} />
+          <Field label="深层恐惧" value={effectiveMotivation.fear || effectiveMotivation.deep_fear} theme={theme} source={character.field_sources?.motivation} overridden={Boolean(activeWorld?.bible_overrides?.motivation)} />
+          <Field label="说话方式" value={effectiveSpeech.tone || effectiveSpeech.style || effectiveSpeech.catchphrase} theme={theme} source={character.field_sources?.speech} overridden={Boolean(activeWorld?.bible_overrides?.speech)} />
+          <Field label="行为底线" value={effectiveBehavior.never_do || effectiveBehavior.boundary || effectiveBehavior.ooc_boundary} theme={theme} source={character.field_sources?.behavior} overridden={Boolean(activeWorld?.bible_overrides?.behavior)} />
+          {Object.keys(effectiveVisualOverrides).length ? <Field label="视觉覆盖" value={effectiveVisualOverrides} theme={theme} source="世界覆盖" /> : null}
         </div>
       </section>
 
       <section className="character-report-lower" style={{ padding: '22px 4px', borderBottom: `1px solid ${theme.borderLight}` }}>
-        <div><Text strong style={{ color: theme.textPrimary, fontSize: 15 }}>人物摘要</Text><div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18, marginTop: 8 }}><Field label="外观" value={character.appearance} theme={theme} source={character.field_sources?.appearance} /><Field label="服装" value={character.costume_hint} theme={theme} source={character.field_sources?.costume_hint} /><Field label="性格" value={character.personality} theme={theme} source={character.field_sources?.personality} /><Field label="背景" value={character.background} theme={theme} source={character.field_sources?.background} /></div></div>
+        <div><Text strong style={{ color: theme.textPrimary, fontSize: 15 }}>人物摘要</Text><div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18, marginTop: 8 }}><Field label="外观" value={character.appearance} theme={theme} source={character.field_sources?.appearance} /><Field label="服装" value={effectiveCostume} theme={theme} source={character.field_sources?.costume_hint} overridden={Boolean(activeWorld?.local_costume)} /><Field label="性格" value={character.personality} theme={theme} source={character.field_sources?.personality} /><Field label="背景" value={character.background} theme={theme} source={character.field_sources?.background} /></div></div>
         <div><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><Text strong style={{ color: theme.textPrimary, fontSize: 15 }}>关系</Text><Button size="small" icon={<PlusOutlined />} onClick={() => { setEditingRelation(null); setRelationForm({ related_character_id: '', relation_type: '', relation_note: '', is_directed: false }); setRelationModalOpen(true) }}>添加关系</Button></div>{relationships.length ? relationships.map((item) => <div key={item.id} style={{ padding: '10px 0', borderBottom: `1px solid ${theme.borderLight}`, display: 'flex', gap: 8, alignItems: 'flex-start' }}><div style={{ minWidth: 0, flex: 1 }}><Text style={{ color: theme.textPrimary }}>{relationTarget(item)}</Text><Tag color="cyan" style={{ marginLeft: 8 }}>{item.relation_type || '关系'}</Tag>{item.relation_note && <Paragraph style={{ color: theme.textSecondary, margin: '4px 0 0' }}>{item.relation_note}</Paragraph>}</div><Space size={2}><Button type="text" size="small" onClick={() => editRelation(item)}>编辑</Button><Popconfirm title="删除这条关系？" onConfirm={() => removeRelation(item)}><Button type="text" danger size="small" icon={<DeleteOutlined />} /></Popconfirm></Space></div>) : <div style={{ paddingTop: 12 }}><Text style={{ color: theme.textSecondary }}>暂无关系</Text></div>}</div>
       </section>
       <section style={{ padding: '16px 4px', borderBottom: `1px solid ${theme.borderLight}` }}>
@@ -636,7 +830,7 @@ export default function CharacterDetailPage() {
           ['能力设定', character.ability || {}],
           ['角色弧光', character.arc || {}],
           ['视觉一致性', { 外观: character.appearance, 服装提示: character.costume_hint, 一致性要求: character.visual_consistency, 标志物: character.signature_items, 表情: character.expressions, 姿态: character.poses }],
-          ['来源与使用', { 来源类型: character.source_type_labels || character.source_types, 标签: character.tags, 年龄范围: character.age_range, 世界使用: character.world_usages?.map((item: any) => item.project_title || item.story_id) }],
+          ['来源与使用', { 来源类型: character.source_type_labels || character.source_types, 标签: character.tags, 年龄范围: character.age_range, 流程来源: character.workflow_source_label, 提取来源: (character.extract_origins || []).map((origin: string) => extractOriginLabel(origin)), 世界使用: (worldUsages || []).map((item: any) => `${item.world_name || item.project_title || item.story_id}（${extractOriginLabel(item.extract_origin)}）`) }],
         ].map(([title, values]) => <details key={title as string}><summary>{title as string}</summary><div className="character-report-details-content">{Object.entries((values || {}) as Record<string, any>).map(([label, value]) => <Field key={label} label={label} value={value} theme={theme} source={character.field_sources?.[label]} />)}</div></details>)}
       </section>
       <section className="character-report-details" style={{ borderTop: `1px solid ${theme.borderLight}`, marginTop: 18 }}>
@@ -654,7 +848,7 @@ export default function CharacterDetailPage() {
       </section>
       <section style={{ marginTop: 18, borderTop: `1px solid ${theme.borderLight}`, padding: '18px 4px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}><Text strong style={{ color: theme.textPrimary, fontSize: 15 }}>世界使用</Text><Button size="small" icon={<PlusOutlined />} onClick={() => setWorldModalOpen(true)}>添加世界</Button></div>
-        {worldUsages.length ? <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 10 }}>{worldUsages.map((item: any) => <div key={item.id} style={{ background: theme.bgCard, border: `1px solid ${theme.borderLight}`, padding: 12, borderRadius: 6 }}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><Text strong style={{ color: theme.textPrimary }}>{item.world_name || item.project_title || '未命名世界'}</Text><Space size={2}><Button type="text" size="small" onClick={() => openWorldEdit(item)}>编辑</Button><Popconfirm title="移除这条世界使用？" onConfirm={() => removeWorldUsage(item.id)}><Button type="text" danger size="small" icon={<DeleteOutlined />} /></Popconfirm></Space></div><Text style={{ color: theme.textSecondary, fontSize: 12 }}>{item.usage_role || '未设置角色职责'}</Text>{item.local_identity && <Paragraph style={{ color: theme.textPrimary, margin: '8px 0 0' }}>{item.local_identity}</Paragraph>}{item.local_costume && <Text style={{ color: theme.textSecondary, fontSize: 12 }}>服装覆盖：{item.local_costume}</Text>}{(item.story_id || item.project_id) && <Button type="link" size="small" icon={<ArrowRightOutlined />} onClick={() => navigate(`/story?project_id=${encodeURIComponent(item.story_id || item.project_id)}`)} style={{ padding: '6px 0 0' }}>打开项目生产线</Button>}</div>)}</div> : <Text style={{ color: theme.textSecondary }}>暂无世界使用记录</Text>}
+        {worldUsages.length ? <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 10 }}>{worldUsages.map((item: any) => <div key={item.id} style={{ background: theme.bgCard, border: `1px solid ${theme.borderLight}`, padding: 12, borderRadius: 6 }}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><Text strong style={{ color: theme.textPrimary }}>{item.world_name || item.project_title || '未命名世界'}</Text><Space size={2}><Button type="text" size="small" onClick={() => openWorldEdit(item)}>编辑</Button><Popconfirm title="移除这条世界使用？" onConfirm={() => removeWorldUsage(item.id)}><Button type="text" danger size="small" icon={<DeleteOutlined />} /></Popconfirm></Space></div><Space size={4} wrap style={{ marginTop: 4 }}><Text style={{ color: theme.textSecondary, fontSize: 12 }}>{item.usage_role || '未设置角色职责'}</Text>{item.extract_origin && item.extract_origin !== 'unknown' ? <Tag color={item.extract_origin === 'original_outline' ? 'gold' : 'green'} style={{ marginInlineEnd: 0, fontSize: 10, lineHeight: '18px' }}>{extractOriginLabel(item.extract_origin)}</Tag> : null}</Space>{item.local_identity && <Paragraph style={{ color: theme.textPrimary, margin: '8px 0 0' }}>{item.local_identity}</Paragraph>}{item.local_costume && <Text style={{ color: theme.textSecondary, fontSize: 12 }}>服装覆盖：{item.local_costume}</Text>}{(item.story_id || item.project_id) && <Button type="link" size="small" icon={<ArrowRightOutlined />} onClick={() => navigate(`/story?project_id=${encodeURIComponent(item.story_id || item.project_id)}`)} style={{ padding: '6px 0 0' }}>打开项目生产线</Button>}</div>)}</div> : <Text style={{ color: theme.textSecondary }}>暂无世界使用记录</Text>}
       </section>
       <Modal open={editOpen} title={editMode === 'edit' ? `编辑角色 · ${character.name}` : '新建角色'} width={860} onCancel={() => setEditOpen(false)} confirmLoading={editSaving} onOk={saveEdit} okText={editMode === 'edit' ? '保存修改' : '创建角色'}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
