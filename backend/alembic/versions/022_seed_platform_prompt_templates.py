@@ -54,6 +54,12 @@ def upgrade() -> None:
         ).first():
             continue
         seed = dict(raw)
+        # Keep defaults in sync with seed_platform_templates() at runtime.
+        seed.setdefault("template_scope", "image_platform")
+        seed.setdefault("template_stage", "platform")
+        seed.setdefault("description", None)
+        seed.setdefault("system_template", "")
+        seed.setdefault("variables", {})
         seed["id"] = uuid.UUID(str(seed["id"]))
         bind.execute(templates.insert().values(**seed))
 

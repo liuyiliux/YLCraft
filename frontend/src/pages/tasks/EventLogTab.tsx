@@ -13,6 +13,7 @@ import {
   Input,
   Select,
   Space,
+  Spin,
   Table,
   Tag,
   Typography,
@@ -24,7 +25,7 @@ import {
   FileSearchOutlined,
 } from '@ant-design/icons'
 import { useState, useEffect, useCallback } from 'react'
-import { listLogs, getLog, retryLog } from '../../api'
+import { listLogs, getLog, getLogGeneration, retryLog } from '../../api'
 import { useTheme } from '../../constants/theme'
 import type { ColumnsType } from 'antd/es/table'
 
@@ -108,6 +109,20 @@ interface EventLogItem {
   retry_payload?: Record<string, any>
 }
 
+interface GenerationLog {
+  id: string
+  stage?: string
+  provider?: string
+  model?: string
+  status?: string
+  prompt?: string
+  request?: Record<string, any>
+  raw_response?: string
+  normalized?: Record<string, any> | null
+  validation_error?: string
+  created_at?: string
+}
+
 export default function EventLogTab() {
   const { theme: THEME } = useTheme()
   const [items, setItems] = useState<EventLogItem[]>([])
@@ -124,6 +139,8 @@ export default function EventLogTab() {
   const [detailLoading, setDetailLoading] = useState(false)
   const [selected, setSelected] = useState<EventLogItem | null>(null)
   const [retrying, setRetrying] = useState(false)
+  const [generationLog, setGenerationLog] = useState<GenerationLog | null>(null)
+  const [generationLoading, setGenerationLoading] = useState(false)
 
   const load = useCallback(async (p = page, ps = pageSize) => {
     setLoading(true)
@@ -149,6 +166,7 @@ export default function EventLogTab() {
   const handleViewDetail = async (id: string) => {
     setDetailOpen(true)
     setDetailLoading(true)
+    setGenerationLog(null)
     try {
       const res = await getLog(id)
       if (res.success && res.item) {
@@ -156,6 +174,19 @@ export default function EventLogTab() {
       } else {
         message.warning('事件不存在')
         setDetailOpen(false)
+        return
+      }
+      // 写作类事件附带拉取完整 LLM 生成日志（prompt / raw_response / normalized）
+      setGenerationLoading(true)
+      try {
+        const gen = await getLogGeneration(id)
+        if (gen?.success && gen.generation_log) {
+          setGenerationLog(gen.generation_log as GenerationLog)
+        }
+      } catch {
+        // 无关联日志时静默跳过
+      } finally {
+        setGenerationLoading(false)
       }
     } catch {
       message.error('获取事件详情失败')
@@ -406,6 +437,118 @@ export default function EventLogTab() {
                   {selected.response_summary}
                 </Paragraph>
               </Card>
+            )}
+
+            {generationLoading && (
+              <Card size="small" style={{ textAlign: 'center' }}>
+                <Spin size="small" /> <Text type="secondary" style={{ fontSize: 12 }}>加载 LLM 完整日志…</Text>
+              </Card>
+            )}
+
+            {generationLog && (
+              <>
+                <Card
+                  size="small"
+                  title={
+                    <Space>
+                      <span>LLM 完整日志</span>
+                      {generationLog.stage && <Tag>{generationLog.stage}</Tag>}
+                      {generationLog.model && <Tag color="blue">{generationLog.model}</Tag>}
+                    </Space>
+                  }
+                  style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}` }}
+                >
+                  <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                    {generationLog.prompt && (
+                      <div>
+                        <Text strong style={{ fontSize: 12 }}>Prompt（完整提示词）</Text>
+                        <Paragraph
+                          copyable
+                          ellipsis={{ rows: 8, expandable: true, symbol: '展开全文' }}
+                          style={{
+                            marginBottom: 0,
+                            marginTop: 6,
+                            fontFamily: 'monospace',
+                            fontSize: 12,
+                            whiteSpace: 'pre-wrap',
+                            background: THEME.bgContainer,
+                            padding: 8,
+                            borderRadius: 4,
+                          }}
+                        >
+                          {generationLog.prompt}
+                        </Paragraph>
+                      </div>
+                    )}
+
+                    {generationLog.raw_response && (
+                      <div>
+                        <Text strong style={{ fontSize: 12 }}>模型原始返回</Text>
+                        <Paragraph
+                          copyable
+                          ellipsis={{ rows: 8, expandable: true, symbol: '展开全文' }}
+                          style={{
+                            marginBottom: 0,
+                            marginTop: 6,
+                            fontFamily: 'monospace',
+                            fontSize: 12,
+                            whiteSpace: 'pre-wrap',
+                            background: THEME.bgContainer,
+                            padding: 8,
+                            borderRadius: 4,
+                          }}
+                        >
+                          {generationLog.raw_response}
+                        </Paragraph>
+                      </div>
+                    )}
+
+                    {generationLog.normalized && Object.keys(generationLog.normalized).length > 0 && (
+                      <div>
+                        <Text strong style={{ fontSize: 12 }}>结构化结果（normalized）</Text>
+                        <Paragraph
+                          copyable
+                          ellipsis={{ rows: 6, expandable: true, symbol: '展开全文' }}
+                          style={{
+                            marginBottom: 0,
+                            marginTop: 6,
+                            fontFamily: 'monospace',
+                            fontSize: 12,
+                            whiteSpace: 'pre-wrap',
+                            background: THEME.bgContainer,
+                            padding: 8,
+                            borderRadius: 4,
+                          }}
+                        >
+                          {JSON.stringify(generationLog.normalized, null, 2)}
+                        </Paragraph>
+                      </div>
+                    )}
+
+                    {generationLog.validation_error && (
+                      <div>
+                        <Text strong type="danger" style={{ fontSize: 12 }}>校验错误</Text>
+                        <Paragraph
+                          copyable
+                          style={{
+                            marginBottom: 0,
+                            marginTop: 6,
+                            fontFamily: 'monospace',
+                            fontSize: 12,
+                            whiteSpace: 'pre-wrap',
+                            color: '#ff4d4f',
+                          }}
+                        >
+                          {generationLog.validation_error}
+                        </Paragraph>
+                      </div>
+                    )}
+                  </Space>
+                </Card>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  提示：对比多次生成的 Prompt 差异（如角色设定 / 灵感输入 / 随机性参数），可排查"主角相同 / 故事趋同"问题。
+                </Text>
+              </>
             )}
           </Space>
         )}

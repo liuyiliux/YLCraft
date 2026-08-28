@@ -769,6 +769,9 @@ export const listLogs = (params: Record<string, any> = {}) => {
 
 export const getLog = (id: string) => request(`/logs/${id}`)
 
+/** 按事件 id 拉取关联的 LLM 完整生成日志（prompt / raw_response / normalized） */
+export const getLogGeneration = (id: string) => request(`/logs/${id}/generation`)
+
 export const retryLog = (id: string) => request(`/logs/${id}/retry`, { method: 'POST' })
 
 export const listRuntimeLogs = (params: Record<string, any> = {}) => {

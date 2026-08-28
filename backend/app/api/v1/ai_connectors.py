@@ -415,6 +415,15 @@ async def import_connectors(
             errors.append(f"第 {idx + 1} 项 ({item.get('id', '未知')}) 导入失败: {str(e)}")
             failed += 1  # 改为 failed，不是 skipped
 
+    # JSON 导入可能新增/更新了多个 Connector，必须让 AIService 重新加载
+    # BackendRegistry，否则项目里按 backend_name 找不到新导入的模型。
+    if imported or updated:
+        try:
+            reload_ai_service_after_connector_change()
+        except Exception as e:
+            logger.exception(f"[AIConnector] 导入后刷新 AIService 失败: {e}")
+            errors.append(f"刷新 AIService 失败: {str(e)}")
+
     return {
         "success": True,
         "imported": imported,
