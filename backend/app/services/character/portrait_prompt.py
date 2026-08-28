@@ -13,6 +13,7 @@ PORTRAIT_PRESETS = {
     "headshot_icon",
     "key_visual",
     "multi_view_sheet",
+    "character_sheet_16_9",
     "identity_board_16_9",
     "expression_pack",
     "expression_grid_3x3",
@@ -30,6 +31,7 @@ PRESET_ALIASES = {
     "portrait": "headshot_icon",
     "hero": "key_visual",
     "identity_board": "identity_board_16_9",
+    "character_sheet": "character_sheet_16_9",
     "expression_grid": "expression_grid_3x3",
     "pose_grid": "pose_grid_3x3",
 }
@@ -86,6 +88,14 @@ PRESET_NEGATIVE_CONSTRAINTS = {
         "角色重叠",
         "姿态合并",
         "跨区遮挡",
+    ],
+    "character_sheet_16_9": [
+        "文字乱码",
+        "密集说明文字",
+        "角色重叠",
+        "姿态合并",
+        "跨区遮挡",
+        "三视图比例不一致",
     ],
     "expression_pack": [
         "全身图",
@@ -323,6 +333,17 @@ def _preset_prompt(preset: str, character: Any, profile: dict[str, Any], style: 
             f"典型表情缩略预览最多 3 个：{'、'.join(profile['expression_set'][:3])}。",
             "局部细节最多 3-5 个，例如发丝、衣领、吊坠、疤痕、武器或标志配饰。",
             "版面干净、有层级、有留白；不要把完整三视图、九宫格表情、大段背景文案塞进身份板。",
+        ]
+    elif preset == "character_sheet_16_9":
+        intent = [
+            "输出 16:9 角色设定板 Character Sheet，左侧约 34% 放半身主立绘，右侧放正面/侧面/背面三视图与少量细节条。",
+            "角色设定板用于企划、编剧、导演和后续生图快速查阅；所有视图必须保持同一张脸、发型、服装结构和身体比例。",
+            "右侧三视图采用中性站姿，视图之间留出清晰间隔，不重叠、不遮挡、不裁切头脚。",
+            "底部或侧边只放少量视觉细节缩略图，例如发丝、衣领、吊坠、疤痕、武器或标志配饰。",
+            "不要生成大段说明文字；如需文字标签，由系统后续在页面或导出时叠加。",
+            f"典型表情缩略预览最多 3 个：{'、'.join(profile['expression_set'][:3])}。",
+            "局部细节最多 3-5 个，例如发丝、衣领、吊坠、疤痕、武器或标志配饰。",
+            "纯白或浅灰背景，分区光照，版面干净有层级；不要塞入九宫格表情或大段背景文案。",
         ]
     elif preset == "expression_pack":
         intent = [

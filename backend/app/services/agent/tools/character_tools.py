@@ -91,7 +91,7 @@ async def inspect_character(character_id: str):
     description="根据角色卡和视觉卡预览立绘/九宫格/关键视觉生图提示词，不实际调用生图模型。",
     category="character",
     examples=["生成导演角色的九宫格动作提示词", "预览主角立绘提示词", "用二次元国漫风格输出提示词"],
-    input_schema_note="必须提供 character_id；preset 支持 main_portrait/headshot_icon/multi_view_sheet/pose_grid_3x3/expression_grid_3x3/key_visual；visual_profile/style_override/negative_override 可选。",
+    input_schema_note="必须提供 character_id；preset 支持 main_portrait/headshot_icon/multi_view_sheet/character_sheet_16_9/identity_board_16_9/pose_grid_3x3/expression_grid_3x3/key_visual；visual_profile/style_override/negative_override 可选。",
     output_schema_note="返回 prompt、negative_prompt、visual_profile_snapshot、preset、prompt_template_version；不会写入数据库也不会消耗生图额度。",
     risk_level="read",
     output_type="character_portrait_prompt",

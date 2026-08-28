@@ -1377,6 +1377,7 @@ export default function StoryPage() {
   const [selectedModel, setSelectedModel] = useState<string>('')
   const [rehearsalMode, setRehearsalMode] = useState<'fast' | 'team'>('team')
   const [createOpen, setCreateOpen] = useState(false)
+  const characterCreateHandledRef = useRef(false)
   const [renameOpen, setRenameOpen] = useState(false)
   const [fanqieOpen, setFanqieOpen] = useState(false)
   const [contentPackageOpen, setContentPackageOpen] = useState(false)
@@ -1522,6 +1523,23 @@ export default function StoryPage() {
       setSelectedId(requestedProjectId)
     }
   }, [projects, searchParams])
+
+  useEffect(() => {
+    if (characterCreateHandledRef.current || searchParams.get('new') !== '1') return
+    const requestedCharacterId = searchParams.get('character_id')
+    if (!requestedCharacterId) return
+    characterCreateHandledRef.current = true
+    fetch(`/api/v1/characters/${encodeURIComponent(requestedCharacterId)}`, { headers: { Accept: 'application/json' } })
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error('角色加载失败')))
+      .then((result) => {
+        const character = result.data || result
+        const identity = character.identity || {}
+        const idea = `${character.name || '角色'}：${character.appearance || character.personality || '围绕该角色展开一个新故事'}`
+        form.setFieldsValue({ source_type: 'original_idea', project_type: 'short_drama', production_profile: 'vertical_drama', title: character.name ? `${character.name}的新故事` : '', idea, creation_brief: `已有角色设定：${JSON.stringify({ identity, motivation: character.motivation || {}, speech: character.speech || {}, behavior: character.behavior || {} }, null, 2)}` })
+        setCreateOpen(true)
+      })
+      .catch((error: any) => message.error(error?.message || '无法读取角色设定'))
+  }, [form, searchParams])
 
   useEffect(() => {
     const element = storyPageRef.current
@@ -2795,9 +2813,10 @@ export default function StoryPage() {
           title: values.title,
           idea: values.idea,
           project_type: values.project_type,
-          production_profile: values.production_profile,
-          source_type: 'original_idea',
-          metadata: values.creation_brief ? { creation_brief: values.creation_brief } : undefined,
+           production_profile: values.production_profile,
+           source_type: 'original_idea',
+           character_id: searchParams.get('character_id') || undefined,
+           metadata: values.creation_brief ? { creation_brief: values.creation_brief } : undefined,
         })) as CreativeProjectResponse
       }
       message.success('项目已创建')
@@ -3161,12 +3180,17 @@ export default function StoryPage() {
     try {
       const prompt = buildProjectCharacterPortraitPrompt(record)
       const size = defaultImageModel.default_size || '1024x1024'
+      const loadedCharacters = await loadCharacterDetailsForIds([record.character_id])
+      const referenceImages = dedupeReferenceImageItems(
+        getCharacterReferenceItems(loadedCharacters[record.character_id] || characterDetails[record.character_id]),
+      ).map((item) => item.url).filter(Boolean)
       const response = await generateCharacterPortrait(record.character_id, {
         prompt,
         provider: defaultImageModel.name,
         model: defaultImageModel.model || undefined,
         size,
         n: 1,
+        reference_images: referenceImages,
       })
       const nodeId = response?.data?.node_id
       if (nodeId) {
@@ -4259,12 +4283,22 @@ export default function StoryPage() {
           ) : (
             <Text type="secondary">未绑定立绘</Text>
           )}
-          {record.image_prompt ? (
-            <Text type="secondary" ellipsis={{ tooltip: record.image_prompt }}>
-              有角色图提示词
-            </Text>
-          ) : null}
-          <Button
+           {record.image_prompt ? (
+             <Text type="secondary" ellipsis={{ tooltip: record.image_prompt }}>
+               有角色图提示词
+             </Text>
+           ) : null}
+           {record.character_id ? (
+             <Button
+               size="small"
+               type="link"
+               style={{ padding: 0, alignSelf: 'flex-start' }}
+               onClick={() => navigate(`/characters/${encodeURIComponent(record.character_id as string)}`)}
+             >
+               打开角色详情
+             </Button>
+           ) : null}
+           <Button
             size="small"
             icon={<PictureOutlined />}
             disabled={!record.character_id || !defaultImageModel.name}
@@ -5175,7 +5209,10 @@ export default function StoryPage() {
         onCancel={() => setCreateOpen(false)}
         afterOpenChange={(open) => {
           if (open) {
-            form.setFieldsValue({ source_type: 'original_idea', project_type: 'short_drama', production_profile: 'vertical_drama' })
+            const current = form.getFieldsValue()
+            if (!current.idea && !current.title) {
+              form.setFieldsValue({ source_type: 'original_idea', project_type: 'short_drama', production_profile: 'vertical_drama' })
+            }
             loadNovelAssets()
           }
         }}
@@ -5730,7 +5767,10 @@ function OutlineTab({
   characterColumns: any[]
 }) {
   const [draft, setDraft] = useState<StoryOutline>(outline || {})
-  const lightweightProduction = productionProfileId === 'storybook' || productionProfileId === 'single_shot'
+  // Content-package workflows (storybook, knowledge cards, platform notes,
+  // single-shot) start from a topic/material and must not expose the full
+  // novel-style outline gate. Narrative workflows keep the complete path.
+  const lightweightProduction = productionProfileOptions.some((option) => option.value === productionProfileId && option.family === 'content_package')
   const [detailsOpen, setDetailsOpen] = useState(!lightweightProduction)
   const [jsonDraft, setJsonDraft] = useState('')
   const [jsonError, setJsonError] = useState('')
@@ -11221,6 +11261,7 @@ function ProjectGraphTab({
   const nodeMap = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes])
   const selectedNode = nodeMap.get(selectedId) || null
   const edges = graph.edges || []
+  const selectedEdgeIds = useMemo(() => new Set(edges.filter((edge) => edge.from === selectedId || edge.to === selectedId).map((edge) => edge.id)), [edges, selectedId])
   const width = Math.max(2200, ...nodes.map((node) => node.x + (node.width || 210) + 120), 900)
   const height = Math.max(900, ...nodes.map((node) => node.y + (node.height || 92) + 120), 520)
 
@@ -11289,7 +11330,7 @@ function ProjectGraphTab({
           </Space>
         </Space>
         <div
-          style={{ position: 'relative', height: 620, overflow: 'auto', background: 'var(--bgLayout)' }}
+          style={{ position: 'relative', height: 620, overflow: 'auto', backgroundColor: 'var(--bgLayout)', backgroundImage: 'linear-gradient(var(--borderLight) 1px, transparent 1px), linear-gradient(90deg, var(--borderLight) 1px, transparent 1px)', backgroundSize: '32px 32px' }}
           onMouseMove={moveDrag}
           onMouseUp={() => setDragging(null)}
           onMouseLeave={() => setDragging(null)}
@@ -11309,10 +11350,10 @@ function ProjectGraphTab({
                     key={edge.id}
                     d={path}
                     stroke={graphEdgeColor(edge.type)}
-                    strokeWidth={1.6}
+                    strokeWidth={selectedEdgeIds.has(edge.id) ? 2.8 : 1.6}
                     fill="none"
                     markerEnd="url(#project-graph-arrow)"
-                    opacity={0.78}
+                    opacity={selectedId ? (selectedEdgeIds.has(edge.id) ? 1 : 0.24) : 0.78}
                   />
                 )
               })}

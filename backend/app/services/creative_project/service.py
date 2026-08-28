@@ -384,6 +384,7 @@ class CreativeProjectService:
         settings: dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
         production_profile: str | None = None,
+        character_id: str | None = None,
     ) -> CreativeProject:
         meta = dict(metadata or {})
         if idea:
@@ -403,6 +404,32 @@ class CreativeProjectService:
             metadata_json=dumps_json(meta),
         )
         self.session.add(project)
+        self.session.flush()
+        self.session.refresh(project)
+        if character_id:
+            character = self.session.get(Character, str(character_id))
+            if character:
+                existing_link = self.session.exec(
+                    select(CharacterStoryLink).where(
+                        CharacterStoryLink.story_id == project.id,
+                        CharacterStoryLink.character_id == character.id,
+                    )
+                ).first()
+                if existing_link is None:
+                    self.session.add(
+                        CharacterStoryLink(
+                            character_id=character.id,
+                            story_id=project.id,
+                            world_name=project.title,
+                            usage_role="项目主角色",
+                        )
+                    )
+                    character.use_count = (character.use_count or 0) + 1
+                    character.last_used_at = datetime.now()
+                seeded_outline = self._preserve_linked_characters_in_outline(project.id, {})
+                project.outline_json = dumps_json(seeded_outline)
+                project.updated_at = datetime.now()
+                self.session.add(project)
         self.session.commit()
         self.session.refresh(project)
         return project
@@ -1357,6 +1384,11 @@ class CreativeProjectService:
             model=model,
             template_meta=template_meta,
         )
+        # A character-first project may already contain confirmed character
+        # cards before the first outline is generated.  Preserve those cards
+        # when the LLM returns a fresh outline; otherwise the generated outline
+        # can silently replace the user's visual identity and references.
+        data = self._preserve_linked_characters_in_outline(project.id, data)
         project.outline_json = dumps_json(data)
         project.title = data.get("title") or project.title
         project.status = CreativeProjectStatus.PLANNING.value
@@ -1373,6 +1405,63 @@ class CreativeProjectService:
         self.session.commit()
         self.session.refresh(project)
         return data
+
+    def _preserve_linked_characters_in_outline(
+        self,
+        project_id: str,
+        outline: dict[str, Any],
+    ) -> dict[str, Any]:
+        if not isinstance(outline, dict):
+            return outline
+        links = self.session.exec(
+            select(CharacterStoryLink).where(CharacterStoryLink.story_id == project_id)
+        ).all()
+        if not links:
+            return outline
+        character_ids = [link.character_id for link in links if link.character_id]
+        characters = self.session.exec(
+            select(Character).where(Character.id.in_(character_ids))
+        ).all() if character_ids else []
+        characters_by_id = {str(item.id): item for item in characters}
+        current = [item for item in (outline.get("characters") or []) if isinstance(item, dict)]
+        by_id = {str(item.get("character_id")): item for item in current if item.get("character_id")}
+        by_name = {str(item.get("name") or "").strip(): item for item in current if str(item.get("name") or "").strip()}
+
+        for link in links:
+            character = characters_by_id.get(str(link.character_id))
+            if not character:
+                continue
+            identity = loads_json(character.identity_json, {})
+            motivation = loads_json(character.motivation_json, {})
+            speech = loads_json(character.speech_json, {})
+            behavior = loads_json(character.behavior_json, {})
+            target = by_id.get(str(character.id)) or by_name.get(character.name)
+            if target is None:
+                target = {"name": character.name}
+                current.append(target)
+            target.update({
+                "character_id": str(character.id),
+                "name": character.name,
+                "role": character.role,
+                "appearance": character.appearance or target.get("appearance", ""),
+                "personality": character.personality or target.get("personality", ""),
+                "costume_hint": character.costume_hint or target.get("costume_hint", ""),
+                "background": character.background or target.get("background", ""),
+                "age_range": character.age_range or target.get("age_range", ""),
+                "visual_consistency": character.visual_consistency or target.get("visual_consistency", ""),
+                "signature_items": loads_json(character.signature_items, []) or target.get("signature_items", []),
+                "expressions": loads_json(character.expressions, []) or target.get("expressions", []),
+                "poses": loads_json(character.poses, []) or target.get("poses", []),
+                "portrait_asset_id": character.portrait_asset_id or target.get("portrait_asset_id", ""),
+                "reference_asset_ids": loads_json(character.reference_asset_ids, []) or target.get("reference_asset_ids", []),
+                "identity": identity or target.get("identity", {}),
+                "motivation": motivation or target.get("motivation", {}),
+                "speech": speech or target.get("speech", {}),
+                "behavior": behavior or target.get("behavior", {}),
+            })
+            by_id[str(character.id)] = target
+            by_name[character.name] = target
+        return {**outline, "characters": current}
 
     async def generate_chapter_plan(
         self,
@@ -4144,6 +4233,7 @@ class CreativeProjectService:
                 character = Character(
                     name=name,
                     role=self._character_role(raw_character.get("role")),
+                    workflow_source="extract",
                     source_types=dumps_json([CharacterSourceType.AI_GENERATED.value]),
                     appearance=str(raw_character.get("appearance") or raw_character.get("image_prompt") or ""),
                     costume_hint=str(raw_character.get("costume_hint") or ""),

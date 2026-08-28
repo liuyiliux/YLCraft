@@ -44,6 +44,14 @@ class CharacterRole(str, Enum):
     EXTRA = "extra"
 
 
+class CharacterWorkflowSource(str, Enum):
+    """How a reusable character card entered YLCraft."""
+    EXTRACT = "extract"
+    CHARACTER_FIRST = "character_first"
+    ASSET_IMPORT = "asset_import"
+    UNKNOWN = "unknown"
+
+
 class Character(SQLModel, table=True):
     """角色主表"""
     __tablename__ = "characters"
@@ -51,6 +59,7 @@ class Character(SQLModel, table=True):
     id: str = Field(primary_key=True, default_factory=lambda: uuid.uuid4().hex)
     name: str = Field(default="", index=True)
     role: str = Field(default=CharacterRole.SUPPORTING.value)
+    workflow_source: str = Field(default=CharacterWorkflowSource.UNKNOWN.value, index=True, description="角色进入系统的流程来源")
 
     # 来源标签（JSON 数组存储）
     source_types: str = Field(default="[]")
@@ -75,6 +84,7 @@ class Character(SQLModel, table=True):
     behavior_json: str = Field(default="{}", description="行为与 OOC 边界：习惯、应激反应、底线、绝不会做的事")
     ability_json: str = Field(default="{}", description="能力体系：技能、短板、限制、代价、知识特长等")
     arc_json: str = Field(default="{}", description="人物弧光：前中后期变化、高光、退场、剧情雷点")
+    field_sources_json: str = Field(default="{}", description="字段来源标记：original / ai_inferred / unset")
 
     # 立绘
     portrait_url: str = Field(default="", description="立绘图片 URL")
@@ -124,4 +134,19 @@ class CharacterStoryLink(SQLModel, table=True):
     bible_overrides_json: str = Field(default="{}")
     visual_overrides_json: str = Field(default="{}")
     linked_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+
+
+class CharacterRelationship(SQLModel, table=True):
+    """角色之间的显式关系，供角色册与关系图谱复用。"""
+    __tablename__ = "character_relationships"
+
+    id: str = Field(primary_key=True, default_factory=lambda: uuid.uuid4().hex)
+    character_id: str = Field(foreign_key="characters.id", index=True)
+    related_character_id: str = Field(foreign_key="characters.id", index=True)
+    relation_type: str = Field(default="", index=True)
+    relation_note: str = Field(default="")
+    source: str = Field(default="")
+    is_directed: bool = Field(default=False)
+    created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
