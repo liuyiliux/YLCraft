@@ -1786,7 +1786,7 @@ const BookSourcePage: React.FC = () => {
         title={debugSource ? `书源调试：${debugSource.book_source_name}` : '书源调试'}
         width={1180}
         onCancel={handleCloseDebugModal}
-        destroyOnClose={false}
+        destroyOnHidden={false}
         footer={[
           <Button key="close" onClick={handleCloseDebugModal}>
             关闭

@@ -65,7 +65,7 @@ export default function EpubCreatorModal({
       onCancel={onClose}
       footer={null}
       width={520}
-      destroyOnClose
+      destroyOnHidden
     >
       <Form
         layout="vertical"

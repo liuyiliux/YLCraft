@@ -1554,7 +1554,7 @@ export default function MyDataPage() {
         }}
         footer={null}
         width={800}
-        destroyOnClose
+        destroyOnHidden
       >
         {courseDetailLoading ? (
           <div style={{ textAlign: 'center', padding: 40 }}>

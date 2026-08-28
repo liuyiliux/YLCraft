@@ -35,6 +35,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger("ylcraft")
 
+# 抑制 watchfiles 热重载的频繁 INFO 日志（"N change detected"）
+logging.getLogger("watchfiles.main").setLevel(logging.WARNING)
+logging.getLogger("watchfiles").setLevel(logging.WARNING)
+# 抑制 uvicorn 访问日志中过于冗长的部分（可选）
+# logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+
 # 运行日志落盘：滚动文件日志（stdout 输出保持不变），供「运行日志」Tab 查看
 LOG_DIR = Path(__file__).parent.parent / "storage" / "logs"
 LOG_FILE = LOG_DIR / "app.log"

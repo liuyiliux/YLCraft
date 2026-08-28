@@ -471,7 +471,7 @@ export default function EventLogTab() {
                             fontFamily: 'monospace',
                             fontSize: 12,
                             whiteSpace: 'pre-wrap',
-                            background: THEME.bgContainer,
+                            background: THEME.bgCard,
                             padding: 8,
                             borderRadius: 4,
                           }}
@@ -493,7 +493,7 @@ export default function EventLogTab() {
                             fontFamily: 'monospace',
                             fontSize: 12,
                             whiteSpace: 'pre-wrap',
-                            background: THEME.bgContainer,
+                            background: THEME.bgCard,
                             padding: 8,
                             borderRadius: 4,
                           }}
@@ -515,7 +515,7 @@ export default function EventLogTab() {
                             fontFamily: 'monospace',
                             fontSize: 12,
                             whiteSpace: 'pre-wrap',
-                            background: THEME.bgContainer,
+                            background: THEME.bgCard,
                             padding: 8,
                             borderRadius: 4,
                           }}

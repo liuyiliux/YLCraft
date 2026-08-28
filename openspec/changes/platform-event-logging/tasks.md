@@ -49,11 +49,11 @@
 
 ## Phase 9: 验证
 
-- [ ] 24. 后端单测：`record_event` 入库、脱敏屏蔽 api_key/Authorization、截断超长摘要。
+- [x] 24. 后端单测：`record_event` 入库、脱敏屏蔽 api_key/Authorization、截断超长摘要。（`backend/tests/test_platform_log_service.py`，7 例）
 - [x] 25. 后端 API 测试：`GET /logs` 筛选分页、`GET /logs/{id}` 详情、`GET /logs/runtime` 过滤翻页、`POST /logs/{id}/retry` 追溯链。（已手动验证列表/详情/runtime）
 - [x] 26. 图片失败路径测试：构造 provider 失败，断言 `platform_event_logs` 有 `status=failed` 记录。（已通过真实失败验证）
 - [x] 27. 运行日志测试：写入一条 ERROR 日志，断言 `/logs/runtime` 能读到且 level 过滤生效。（已手动验证）
-- [ ] 28. 重发测试：对一条 failed 事件调用 retry，断言产生新事件且 retry_of/retried_by 正确。
-- [x] 29. 前端构建验证：`cd frontend && npm run build`。（已通过）
+- [x] 28. 重发测试：对一条 failed 事件调用 retry，断言产生新事件且 retry_of/retried_by 正确。（`backend/tests/test_logs_retry_chain.py`，5 例：成功/失败重放均建链，404/409/400 拒绝路径不触发重放）
+- [x] 29. 前端构建验证：`cd frontend && npm run build`。（此前勾选但未真实通过：`EventLogTab.tsx` 三处 `THEME.bgContainer` 字段不存在导致 `tsc --noEmit` 失败；已改为 `THEME.bgCard`，现已真实构建通过）
 - [ ] 30. 手动验证：用失效 base_url/Key 触发一次生图失败，确认「事件日志」Tab 看到 error、「运行日志」Tab 看到原始输出、详情可点「重发」。
 - [x] 31. 更新 `docs/architecture/API_SURFACE.md` 与 `api_surface.json`（新增 `/api/v1/logs`、`/api/v1/logs/runtime`、`/api/v1/logs/{id}/retry`）。（已通过 generate_api_surface.py 同步）

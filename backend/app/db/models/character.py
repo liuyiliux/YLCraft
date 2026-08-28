@@ -143,7 +143,14 @@ class CharacterStoryLink(SQLModel, table=True):
 
 
 class CharacterRelationship(SQLModel, table=True):
-    """角色之间的显式关系，供角色册与关系图谱复用。"""
+    """角色之间的显式关系，供角色册与关系图谱复用。
+
+    支持按世界/项目和时间阶段区分关系：
+    - world_usage_id 为 NULL 时表示全局关系（所有世界通用）
+    - world_usage_id 指向 character_story_links.id 时表示该世界/项目下的特定关系
+    - timeline_phase 标记时间阶段（前期/中期/后期/回忆等）
+    - chapter_number 标记小说中关系变化的章节
+    """
     __tablename__ = "character_relationships"
 
     id: str = Field(primary_key=True, default_factory=lambda: uuid.uuid4().hex)
@@ -153,5 +160,11 @@ class CharacterRelationship(SQLModel, table=True):
     relation_note: str = Field(default="")
     source: str = Field(default="")
     is_directed: bool = Field(default=False)
+
+    # 世界/时间维度
+    world_usage_id: Optional[str] = Field(default=None, index=True, description="关联的世界使用ID（character_story_links.id），NULL表示全局关系")
+    timeline_phase: str = Field(default="", index=True, description="时间线阶段：前期/中期/后期/回忆/未来等")
+    chapter_number: Optional[int] = Field(default=None, description="小说中关系变化的章节号")
+
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
