@@ -133,6 +133,11 @@ class CharacterStoryLink(SQLModel, table=True):
     off_model_notes: str = Field(default="")
     bible_overrides_json: str = Field(default="{}")
     visual_overrides_json: str = Field(default="{}")
+    extract_origin: str = Field(
+        default="unknown",
+        index=True,
+        description="角色在该项目中的提取来源：uploaded_novel / imported_novel / original_outline",
+    )
     linked_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
 

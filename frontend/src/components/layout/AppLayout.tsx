@@ -1,7 +1,7 @@
 import { Layout, Menu, Drawer, Button, Tag } from 'antd'
 import type { MenuProps } from 'antd'
 import { useNavigate, useLocation, Outlet } from 'react-router-dom'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, createContext, useContext, useMemo, useCallback, ReactNode } from 'react'
 import { useTheme } from '../../constants/theme'
 import ThemeToggle from '../ThemeToggle'
 import {
@@ -149,12 +149,45 @@ function findSelectedKey(items: MenuProps['items'], pathname: string): string {
   return '/'
 }
 
+/** 全屏工作区上下文：页面可请求隐藏 AppLayout 的 Header，占满视口（不新增路由）。 */
+interface FullscreenContextValue {
+  fullscreen: boolean
+  setFullscreen: (value: boolean) => void
+  toggleFullscreen: () => void
+}
+
+const FullscreenContext = createContext<FullscreenContextValue | null>(null)
+
+export function FullscreenProvider({ children }: { children: ReactNode }) {
+  const [fullscreen, setFullscreen] = useState(false)
+  const toggleFullscreen = useCallback(() => setFullscreen((value) => !value), [])
+  const value = useMemo(() => ({ fullscreen, setFullscreen, toggleFullscreen }), [fullscreen, toggleFullscreen])
+  return <FullscreenContext.Provider value={value}>{children}</FullscreenContext.Provider>
+}
+
+export function useFullscreenWorkspace() {
+  const ctx = useContext(FullscreenContext)
+  if (!ctx) {
+    return { fullscreen: false, setFullscreen: () => {}, toggleFullscreen: () => {} }
+  }
+  return ctx
+}
+
 export default function AppLayout() {
+  return (
+    <FullscreenProvider>
+      <AppLayoutShell />
+    </FullscreenProvider>
+  )
+}
+
+function AppLayoutShell() {
   const navigate = useNavigate()
   const location = useLocation()
   const { theme: THEME, themeId } = useTheme()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(window.innerWidth < MOBILE_BREAKPOINT)
+  const { fullscreen, setFullscreen } = useFullscreenWorkspace()
 
   useEffect(() => {
     const handleResize = () => {
@@ -168,6 +201,11 @@ export default function AppLayout() {
 
   const selectedKey = findSelectedKey(menuItems, location.pathname)
 
+  // 路由切换后自动退出全屏，避免离开角色工作区后仍隐藏 Header
+  useEffect(() => {
+    if (fullscreen) setFullscreen(false)
+  }, [location.pathname])
+
   const handleMenuClick: MenuProps['onClick'] = ({ key }) => {
     if (key.startsWith('/')) {
       navigate(key)
@@ -175,10 +213,12 @@ export default function AppLayout() {
     }
   }
 
+  const chromeVisible = !fullscreen
+
   return (
     <Layout style={{ minHeight: '100vh', background: THEME.bgPage }}>
       {/* ========== Desktop Top Navigation ========== */}
-      {!isMobile && (
+      {!isMobile && chromeVisible && (
         <Header
           style={{
             background: THEME.bgCard,
@@ -233,7 +273,7 @@ export default function AppLayout() {
       {/* ========== Main Content Area ========== */}
       <Layout style={{ minHeight: '100vh' }}>
         {/* Mobile Header */}
-        {isMobile && (
+        {isMobile && chromeVisible && (
           <Header
             style={{
               background: THEME.bgCard,
@@ -265,9 +305,9 @@ export default function AppLayout() {
         {/* Page Content — 锁定视口高度，页面内容在此固定容器内滚动，不再撑高 body */}
         <Content
           style={{
-            padding: isMobile ? 12 : 16,
+            padding: fullscreen ? 0 : isMobile ? 12 : 16,
             background: THEME.bgPage,
-            height: 'calc(100vh - 52px)',
+            height: fullscreen ? '100vh' : 'calc(100vh - 52px)',
             overflow: 'auto',
           }}
         >

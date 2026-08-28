@@ -9,7 +9,7 @@ const read = (path) => readFileSync(resolve(root, path), 'utf8')
 const pages = [
   { route: '/agent', component: 'AgentPage', file: 'src/pages/agent/index.tsx' },
   { route: '/story', component: 'StoryPage', file: 'src/pages/story/index.tsx' },
-  { route: '/characters', component: 'CharactersPage', file: 'src/pages/characters/index.tsx' },
+  { route: '/characters', component: 'CharacterWorkspaceEntry', file: 'src/pages/character-detail/index.tsx' },
   { route: '/assets', component: 'AssetsPage', file: 'src/pages/assets/index.tsx' },
   { route: '/settings', component: 'SettingsPage', file: 'src/pages/settings/index.tsx' },
   { route: '/canvas', component: 'CanvasPage', file: 'src/pages/canvas/index.tsx' },
