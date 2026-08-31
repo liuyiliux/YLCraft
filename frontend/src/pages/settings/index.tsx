@@ -4031,9 +4031,6 @@ function StorageSettings() {
           video_gen_path: data.data.video_gen_path || '',
           reference_image_path: data.data.reference_image_path || '',
           upload_path: data.data.upload_path || '',
-          // 兼容旧配置
-          download_path: data.data.download_path || '',
-          media_storage_path: data.data.media_storage_path || '',
         })
       })
       .catch(() => {})

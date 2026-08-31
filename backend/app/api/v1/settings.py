@@ -11,13 +11,13 @@ GET  /api/v1/settings/storage-paths — 获取所有存储路径
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.core.config import ensure_download_path, get_ffmpeg_path
+from app.core.config import get_ffmpeg_path
+from app.services.asset_file_resolver import is_absolute_storage_path, project_root, resolve_storage_path
 
 router = APIRouter()
 
@@ -197,7 +197,7 @@ async def get_storage_path(key: str, default_subdir: str = "") -> Path:
     """
     获取存储路径（数据库优先，回退到项目内默认子目录）。
 
-    支持相对项目根的路径（如 backend/storage/images），也兼容旧绝对路径。
+    只接受相对项目根的路径（如 backend/storage/images）。
 
     Args:
         key: 存储路径配置键 (video_download_path, image_gen_path, etc.)
@@ -206,15 +206,13 @@ async def get_storage_path(key: str, default_subdir: str = "") -> Path:
     Returns:
         Path: 有效的存储路径
     """
-    from app.services.asset_file_resolver import project_root, resolve_storage_path
-
     configured_path = await get_setting(key)
-    if configured_path:
+    if configured_path and not is_absolute_storage_path(configured_path):
         try:
             path = resolve_storage_path(configured_path)
         except (OSError, ValueError):
-            path = Path(configured_path)
-        if path.exists():
+            path = None
+        if path and path.exists():
             return path
 
     # 最终回退到项目根下的 backend/storage/ 目录
@@ -242,6 +240,17 @@ async def get_all_settings():
         if value:  # 只覆盖非空值
             merged[key] = value
 
+    for key, default_path in _STORAGE_SUBDIRS.items():
+        configured = str(merged.get(key) or "").strip()
+        if configured and not is_absolute_storage_path(configured):
+            try:
+                resolve_storage_path(configured).relative_to(project_root())
+                merged[key] = Path(configured).as_posix()
+                continue
+            except (OSError, ValueError):
+                pass
+        merged[key] = default_path
+
     # 重建嵌套 cos 对象（数据库存的是平铺 cos_* 键）
     cos_db = {
         "bucket": db_settings.get("cos_bucket") or "",
@@ -268,13 +277,21 @@ async def update_all_settings(req: SettingsUpdateRequest):
     
     for key in storage_keys:
         if key in patch:
-            path = patch[key]
-            if isinstance(path, str):
-                path = path.strip()
-                if path:
-                    os.makedirs(path, exist_ok=True)
-            # 保存到数据库
-            await _save_setting_to_db(key, path or "", f"存储路径: {key}")
+            raw_path = patch[key]
+            if not isinstance(raw_path, str):
+                raise HTTPException(status_code=400, detail=f"{key} 必须是项目根相对路径")
+            path = raw_path.strip()
+            if path:
+                if is_absolute_storage_path(path):
+                    raise HTTPException(status_code=400, detail=f"{key} 必须使用项目根相对路径")
+                try:
+                    resolved = resolve_storage_path(path)
+                    resolved.relative_to(project_root())
+                except (OSError, ValueError):
+                    raise HTTPException(status_code=400, detail=f"{key} 路径必须位于项目根目录内")
+                resolved.mkdir(parents=True, exist_ok=True)
+                path = Path(path).as_posix()
+            await _save_setting_to_db(key, path, f"存储路径: {key}")
 
     # COS 远程对象存储：入库（平铺 cos_* 键）
     if "cos" in patch and isinstance(patch["cos"], dict):
@@ -317,10 +334,15 @@ async def get_all_storage_paths():
 
     result = {}
     for key in storage_keys:
-        if key in db_settings and db_settings[key]:
-            result[key] = db_settings[key]
-        else:
-            result[key] = _STORAGE_SUBDIRS.get(key, "storage")
+        configured = str(db_settings.get(key) or "").strip()
+        if configured and not is_absolute_storage_path(configured):
+            try:
+                resolve_storage_path(configured).relative_to(project_root())
+                result[key] = Path(configured).as_posix()
+                continue
+            except (OSError, ValueError):
+                pass
+        result[key] = _STORAGE_SUBDIRS.get(key, "storage")
 
     return StoragePathsResponse(success=True, data=result)
 
@@ -328,13 +350,8 @@ async def get_all_storage_paths():
 @router.get("/download-path", response_model=DownloadPathResponse, summary="获取下载保存路径")
 async def get_download_path():
     """返回当前下载保存路径"""
-    path = await get_setting("video_download_path")
-    
-    if path and Path(path).exists():
-        return DownloadPathResponse(path=path)
-    
-    p = ensure_download_path()
-    return DownloadPathResponse(path=str(p))
+    path = await get_storage_path("video_download_path", _STORAGE_SUBDIRS["video_download_path"])
+    return DownloadPathResponse(path=path.relative_to(project_root()).as_posix())
 
 
 @router.get("/ffmpeg-path", response_model=FFmpegPathResponse, summary="获取 FFmpeg 路径")
