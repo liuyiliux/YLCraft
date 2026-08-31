@@ -563,7 +563,12 @@ def ensure_download_path(platform: str = "") -> Path:
             with open(settings_path, "r", encoding="utf-8") as f:
                 configured = json.load(f).get("video_download_path")
             if configured:
-                download_dir = Path(configured)
+                configured_path = Path(configured).expanduser()
+                download_dir = (
+                    configured_path
+                    if configured_path.is_absolute()
+                    else (backend_dir.parent / configured_path).resolve()
+                )
     except Exception:
         download_dir = backend_dir / "downloads"
     if platform:

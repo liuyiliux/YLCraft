@@ -9,6 +9,8 @@ from app.services import asset_file_resolver
 async def test_storage_settings_are_resolved_from_project_root(monkeypatch, tmp_path):
     monkeypatch.setattr(settings_api, "project_root", lambda: tmp_path)
     monkeypatch.setattr(asset_file_resolver, "project_root", lambda: tmp_path)
+    monkeypatch.setattr(settings_api, "_load_settings_from_file", lambda: {})
+    monkeypatch.setattr(settings_api, "_save_settings_to_file", lambda settings: None)
     saved = {}
 
     async def save_setting(key, value, description=""):
