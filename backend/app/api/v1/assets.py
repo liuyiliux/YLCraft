@@ -45,6 +45,7 @@ from app.services.asset_hub.representation_service import AssetRepresentationSer
 from app.services.asset_hub.version_service import AssetVersionService
 from app.services.asset_provenance import AssetProvenanceService, detect_deep_watermark_dict
 from app.services.asset_provenance.visual_watermark import remove_visual_watermark_dict
+from app.services.asset_file_resolver import resolve_storage_path, to_asset_download_url, to_storage_path
 from app.services.lineage.service import LineageService
 from app.services.platform_log import service as platform_log
 
@@ -130,7 +131,7 @@ def _hub_file_url(path_or_url: str) -> str:
         return ""
     if path_or_url.startswith(("/api/", "http://", "https://", "data:")):
         return path_or_url
-    return f"/api/v1/assets/download?path={quote(path_or_url)}"
+    return to_asset_download_url(path_or_url)
 
 
 def _resolution_label(width: Optional[int], height: Optional[int]) -> Optional[str]:
@@ -363,7 +364,8 @@ async def _asset_hub_card(
 
     # 仅当本地文件真实存在时暴露下载地址；文件缺失（下载/同步失败）时置空，
     # 避免前端把 zip 或过期远程地址当成可加载模型。
-    file_url = _hub_file_url(rep.file_path) if rep.file_path and Path(rep.file_path).is_file() else ""
+    rep_path = resolve_storage_path(rep.file_path) if rep.file_path else None
+    file_url = _hub_file_url(rep.file_path) if rep_path and rep_path.is_file() else ""
     source = node_meta.get("source") or lineage.get("source") or params.get("source") or "asset_hub"
     source_type = node_meta.get("source_type")
     if not source_type:
@@ -376,7 +378,7 @@ async def _asset_hub_card(
         or "asset-hub"
     )
     model = version.model_used or params.get("model") or ""
-    title = node.name or (version.prompt_used or Path(rep.file_path).stem or "Asset Hub Asset")[:80]
+    title = node.name or (version.prompt_used or (rep_path.stem if rep_path else "") or "Asset Hub Asset")[:80]
     tags = _list_value(node.tags_json)
     if _asset_type_value(node.asset_type) == AssetType.CHARACTER.value and "character_portrait" not in tags:
         tags.append("character_portrait")
@@ -824,7 +826,7 @@ def _list_model_sidecar_files(file_path: str, asset_id: str) -> list[dict]:
     OBJ 模型拆成 obj + mtl + 贴图，前端 MTLLoader 需要按相对路径取配套文件。
     单文件模型（GLB/GLTF）目录里通常只有一个文件，返回空列表即可。
     """
-    path = Path(file_path).resolve()
+    path = resolve_storage_path(file_path)
     base = path.parent
     files: list[dict] = []
     try:
@@ -890,14 +892,14 @@ async def asset_sidecar_file(
         raise HTTPException(status_code=404, detail="资产不存在")
     _node, _version, rep = hub_primary
 
-    base = Path(rep.file_path).resolve().parent
+    base = resolve_storage_path(rep.file_path).parent
     target = (base / filename).resolve()
     if target != base and base not in target.parents:
         raise HTTPException(status_code=403, detail="非法文件路径")
     if not target.is_file():
         raise HTTPException(status_code=404, detail="文件不存在")
 
-    path = _resolve_asset_file_path(str(target))
+    path = _resolve_asset_file_path(to_storage_path(target))
     media_type = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
     return FileResponse(path=str(path), media_type=media_type, filename=target.name)
 

@@ -143,7 +143,7 @@ class AssetHubFacade:
     ) -> AssetHubCreateResult:
         """Create a character portrait node or append a new portrait version."""
 
-        file_ref = local_path or portrait_url
+        file_ref = to_storage_path(local_path) if local_path else _normalize_file_reference(portrait_url)
         mime_type, file_size, width, height, fmt = _image_file_metadata(
             local_path=local_path,
             url=portrait_url,
@@ -163,7 +163,11 @@ class AssetHubFacade:
 
         portrait_node_id = getattr(character, "portrait_node_id", None)
         node = await self.node_service.get(str(portrait_node_id)) if portrait_node_id else None
-        thumbnail_url = portrait_url or local_path or None
+        thumbnail_url = (
+            _normalize_asset_url(portrait_url)
+            if portrait_url
+            else (to_asset_download_url(local_path) if local_path else None)
+        )
 
         if node is None:
             node = await self.node_service.create(
@@ -216,8 +220,8 @@ class AssetHubFacade:
             height=height,
             format=fmt,
             extra={
-                "url": portrait_url,
-                "local_path": local_path,
+                "url": _normalize_asset_url(portrait_url),
+                "local_path": to_storage_path(local_path) if local_path else "",
                 "legacy_asset_id": legacy_asset_id,
                 "source": source,
                 "upgraded_from": upgraded_from,
@@ -270,10 +274,14 @@ class AssetHubFacade:
             key: value for key, value in lineage_data.items() if value not in (None, "")
         }
 
+        normalized_thumbnail_url = thumbnail_url
+        if normalized_thumbnail_url and not normalized_thumbnail_url.startswith(("/api/", "http://", "https://", "data:")):
+            normalized_thumbnail_url = to_asset_download_url(normalized_thumbnail_url)
+
         node = await self.node_service.create(
             name=(title or path.stem or "Imported file")[:120],
             asset_type=node_type,
-            thumbnail_url=thumbnail_url or None,
+            thumbnail_url=normalized_thumbnail_url or None,
             metadata=meta,
             tags=[source, *(tags or [])],
         )
@@ -297,7 +305,7 @@ class AssetHubFacade:
                 "source": source,
                 "source_url": source_url,
                 "legacy_asset_id": legacy_asset_id,
-                "thumbnail_url": thumbnail_url,
+                "thumbnail_url": normalized_thumbnail_url or "",
             },
         )
 
@@ -319,6 +327,18 @@ def _image_dimensions(path: Path) -> tuple[int | None, int | None]:
             return image.size
     except Exception:
         return None, None
+
+
+def _normalize_file_reference(value: str) -> str:
+    if not value or value.startswith(("/api/", "http://", "https://", "data:")):
+        return value
+    return to_storage_path(value)
+
+
+def _normalize_asset_url(value: str) -> str:
+    if not value or value.startswith(("/api/", "http://", "https://", "data:")):
+        return value
+    return to_asset_download_url(value)
 
 
 def _image_file_metadata(
