@@ -3516,6 +3516,22 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/characters/duplicate-candidates",
+      "router": "characters",
+      "prefix": "/api/v1/characters",
+      "local_path": "/duplicate-candidates",
+      "tags": [
+        "Characters"
+      ],
+      "summary": "查询角色重复候选",
+      "function": "get_duplicate_candidates",
+      "file": "backend/app/api/v1/characters.py",
+      "line": 381,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/characters/meta/extract-origins",
       "router": "characters",
       "prefix": "/api/v1/characters",
@@ -3526,7 +3542,7 @@
       "summary": "获取角色提取来源元数据",
       "function": "get_extract_origins",
       "file": "backend/app/api/v1/characters.py",
-      "line": 359,
+      "line": 367,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3542,7 +3558,7 @@
       "summary": "获取角色定位元数据",
       "function": "get_roles",
       "file": "backend/app/api/v1/characters.py",
-      "line": 334,
+      "line": 342,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3558,7 +3574,7 @@
       "summary": "获取来源类型元数据",
       "function": "get_source_types",
       "file": "backend/app/api/v1/characters.py",
-      "line": 322,
+      "line": 330,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3574,7 +3590,7 @@
       "summary": "获取角色流程来源元数据",
       "function": "get_workflow_sources",
       "file": "backend/app/api/v1/characters.py",
-      "line": 348,
+      "line": 356,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3590,7 +3606,7 @@
       "summary": "获取角色关系图谱",
       "function": "get_character_relationship_graph",
       "file": "backend/app/api/v1/characters.py",
-      "line": 561,
+      "line": 588,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3606,7 +3622,7 @@
       "summary": "获取所有自定义标签",
       "function": "get_all_character_tags",
       "file": "backend/app/api/v1/characters.py",
-      "line": 313,
+      "line": 321,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3622,7 +3638,7 @@
       "summary": "获取角色详情",
       "function": "get_character",
       "file": "backend/app/api/v1/characters.py",
-      "line": 708,
+      "line": 735,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3638,7 +3654,7 @@
       "summary": "更新角色",
       "function": "update_character",
       "file": "backend/app/api/v1/characters.py",
-      "line": 722,
+      "line": 749,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3654,7 +3670,7 @@
       "summary": "删除角色",
       "function": "delete_character",
       "file": "backend/app/api/v1/characters.py",
-      "line": 769,
+      "line": 796,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3670,7 +3686,7 @@
       "summary": "AI 补全角色信息",
       "function": "enrich_character",
       "file": "backend/app/api/v1/characters.py",
-      "line": 1534,
+      "line": 1561,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3686,7 +3702,7 @@
       "summary": "切换收藏状态",
       "function": "toggle_favorite",
       "file": "backend/app/api/v1/characters.py",
-      "line": 395,
+      "line": 422,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3702,7 +3718,7 @@
       "summary": "关联到故事项目",
       "function": "link_story",
       "file": "backend/app/api/v1/characters.py",
-      "line": 410,
+      "line": 437,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3718,7 +3734,7 @@
       "summary": "AI 生成角色立绘（资产中枢版）",
       "function": "generate_character_portrait",
       "file": "backend/app/api/v1/characters.py",
-      "line": 1694,
+      "line": 1721,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3734,7 +3750,7 @@
       "summary": "预览角色立绘提示词",
       "function": "preview_character_portrait_prompt",
       "file": "backend/app/api/v1/characters.py",
-      "line": 904,
+      "line": 931,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3750,7 +3766,7 @@
       "summary": "列出角色立绘九宫格切片子素材",
       "function": "list_character_portrait_slices",
       "file": "backend/app/api/v1/characters.py",
-      "line": 1150,
+      "line": 1177,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3766,7 +3782,7 @@
       "summary": "将现有立绘升级到资产中枢",
       "function": "upgrade_portrait_to_asset_hub",
       "file": "backend/app/api/v1/characters.py",
-      "line": 2018,
+      "line": 2045,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3782,7 +3798,7 @@
       "summary": "列出角色立绘版本",
       "function": "list_character_portrait_versions",
       "file": "backend/app/api/v1/characters.py",
-      "line": 931,
+      "line": 958,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3798,7 +3814,7 @@
       "summary": "设置角色主立绘版本",
       "function": "set_character_main_portrait_version",
       "file": "backend/app/api/v1/characters.py",
-      "line": 1039,
+      "line": 1066,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3814,7 +3830,7 @@
       "summary": "将九宫格立绘版本切成可复用子素材",
       "function": "slice_character_portrait_grid",
       "file": "backend/app/api/v1/characters.py",
-      "line": 1242,
+      "line": 1269,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3830,7 +3846,7 @@
       "summary": "生成角色 Prompt 资产包",
       "function": "get_character_prompt_pack",
       "file": "backend/app/api/v1/characters.py",
-      "line": 698,
+      "line": 725,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3846,7 +3862,7 @@
       "summary": "列出角色关系",
       "function": "list_character_relationships",
       "file": "backend/app/api/v1/characters.py",
-      "line": 604,
+      "line": 631,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3862,7 +3878,7 @@
       "summary": "创建角色关系",
       "function": "create_character_relationship",
       "file": "backend/app/api/v1/characters.py",
-      "line": 665,
+      "line": 692,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3878,7 +3894,7 @@
       "summary": "更新角色关系",
       "function": "update_character_relationship",
       "file": "backend/app/api/v1/characters.py",
-      "line": 676,
+      "line": 703,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3894,7 +3910,7 @@
       "summary": "删除角色关系",
       "function": "delete_character_relationship",
       "file": "backend/app/api/v1/characters.py",
-      "line": 689,
+      "line": 716,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3910,7 +3926,7 @@
       "summary": "获取角色在剧情中的状态变化轨迹",
       "function": "get_character_state_timeline",
       "file": "backend/app/api/v1/characters.py",
-      "line": 478,
+      "line": 505,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3926,7 +3942,7 @@
       "summary": "添加自定义标签",
       "function": "add_character_tag",
       "file": "backend/app/api/v1/characters.py",
-      "line": 373,
+      "line": 400,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3942,7 +3958,7 @@
       "summary": "移除自定义标签",
       "function": "remove_character_tag",
       "file": "backend/app/api/v1/characters.py",
-      "line": 384,
+      "line": 411,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3958,7 +3974,7 @@
       "summary": "列出角色在不同世界/项目中的使用",
       "function": "list_character_world_usages",
       "file": "backend/app/api/v1/characters.py",
-      "line": 438,
+      "line": 465,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3974,7 +3990,7 @@
       "summary": "更新角色世界使用配置",
       "function": "update_character_world_usage",
       "file": "backend/app/api/v1/characters.py",
-      "line": 448,
+      "line": 475,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3990,7 +4006,7 @@
       "summary": "移除角色世界使用关系",
       "function": "delete_character_world_usage",
       "file": "backend/app/api/v1/characters.py",
-      "line": 465,
+      "line": 492,
       "response_model": "",
       "include_in_schema": true
     },
@@ -4886,7 +4902,7 @@
       "summary": "列出创作项目",
       "function": "list_projects",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 600,
+      "line": 604,
       "response_model": "",
       "include_in_schema": true
     },
@@ -4902,7 +4918,7 @@
       "summary": "创建创作项目",
       "function": "create_project",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 623,
+      "line": 627,
       "response_model": "",
       "include_in_schema": true
     },
@@ -4918,7 +4934,7 @@
       "summary": "从小说章节创建创作项目",
       "function": "create_from_novel",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 658,
+      "line": 662,
       "response_model": "",
       "include_in_schema": true
     },
@@ -4934,7 +4950,7 @@
       "summary": "跨项目查询生成日志",
       "function": "list_generation_logs_global",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1462,
+      "line": 1467,
       "response_model": "",
       "include_in_schema": true
     },
@@ -4950,7 +4966,7 @@
       "summary": "列出内容生产方案",
       "function": "list_production_profiles",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 642,
+      "line": 646,
       "response_model": "",
       "include_in_schema": true
     },
@@ -4966,7 +4982,7 @@
       "summary": "获取创作项目详情",
       "function": "get_project",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 701,
+      "line": 706,
       "response_model": "",
       "include_in_schema": true
     },
@@ -4982,7 +4998,7 @@
       "summary": "更新创作项目",
       "function": "update_project",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 979,
+      "line": 984,
       "response_model": "",
       "include_in_schema": true
     },
@@ -4998,7 +5014,7 @@
       "summary": "删除创作项目",
       "function": "delete_project",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 995,
+      "line": 1000,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5014,7 +5030,7 @@
       "summary": "列出项目素材关联",
       "function": "list_project_assets",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1423,
+      "line": 1428,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5030,7 +5046,7 @@
       "summary": "关联项目素材",
       "function": "link_project_asset",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1497,
+      "line": 1502,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5046,7 +5062,7 @@
       "summary": "获取项目画布状态",
       "function": "get_canvas",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1546,
+      "line": 1551,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5062,7 +5078,7 @@
       "summary": "保存项目画布状态",
       "function": "save_canvas",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1557,
+      "line": 1562,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5078,7 +5094,7 @@
       "summary": "跨章连续性检查（对比已锁定事实）",
       "function": "check_continuity",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1853,
+      "line": 1858,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5094,7 +5110,7 @@
       "summary": "保存项目内容包版本",
       "function": "save_content_package",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1359,
+      "line": 1364,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5110,7 +5126,7 @@
       "summary": "一次生成项目内容包",
       "function": "plan_content_package",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1376,
+      "line": 1381,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5126,7 +5142,7 @@
       "summary": "列出项目阶段内容",
       "function": "list_contents",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1308,
+      "line": 1313,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5142,7 +5158,7 @@
       "summary": "保存项目阶段内容",
       "function": "update_content",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1338,
+      "line": 1343,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5158,7 +5174,7 @@
       "summary": "从正式正文建立叙事后处理状态",
       "function": "run_narrative_aftermath",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 827,
+      "line": 832,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5174,7 +5190,7 @@
       "summary": "从正文提取/入库结构化连续性候选",
       "function": "extract_continuity_candidates",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1746,
+      "line": 1751,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5190,7 +5206,7 @@
       "summary": "从正文提取连续性候选卡",
       "function": "extract_continuity_candidates",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1037,
+      "line": 1042,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5206,7 +5222,7 @@
       "summary": "段落级非破坏性重写（生成候选版本）",
       "function": "rewrite_paragraph",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1874,
+      "line": 1879,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5222,7 +5238,7 @@
       "summary": "保存项目文本为素材",
       "function": "save_project_content_as_asset",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1517,
+      "line": 1522,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5238,7 +5254,7 @@
       "summary": "列出连续性候选事实",
       "function": "list_continuity_candidates",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1720,
+      "line": 1725,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5254,7 +5270,7 @@
       "summary": "连续性事实上下文摘要（不进模型硬约束）",
       "function": "continuity_context_summary",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1835,
+      "line": 1840,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5270,7 +5286,7 @@
       "summary": "确认候选事实，写入 locked project_bible / world_asset",
       "function": "accept_continuity_candidate",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1771,
+      "line": 1776,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5286,7 +5302,7 @@
       "summary": "忽略候选事实",
       "function": "ignore_continuity_candidate",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1791,
+      "line": 1796,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5302,7 +5318,7 @@
       "summary": "合并候选事实到已有 project_bible / world_asset",
       "function": "merge_continuity_candidate",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1811,
+      "line": 1816,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5318,7 +5334,7 @@
       "summary": "导出创作项目 ZIP",
       "function": "export_project_zip",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 948,
+      "line": 953,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5334,7 +5350,7 @@
       "summary": "两趟提取项目/小说角色",
       "function": "extract_project_characters",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 677,
+      "line": 681,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5414,7 +5430,7 @@
       "summary": "为创作项目补充示例大纲、正文、脚本和分镜",
       "function": "fill_demo_data",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1007,
+      "line": 1012,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5430,7 +5446,7 @@
       "summary": "列出项目伏笔台账",
       "function": "list_foreshadowing",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 864,
+      "line": 869,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5446,7 +5462,7 @@
       "summary": "确认、推进、解决或忽略伏笔",
       "function": "decide_foreshadowing",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 882,
+      "line": 887,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5462,7 +5478,7 @@
       "summary": "生成单话细纲",
       "function": "generate_chapter_outline",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1130,
+      "line": 1135,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5478,7 +5494,7 @@
       "summary": "生成章节规划",
       "function": "generate_chapter_plan",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1068,
+      "line": 1073,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5494,7 +5510,7 @@
       "summary": "生成章节正文",
       "function": "generate_novel_body",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1148,
+      "line": 1153,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5510,7 +5526,7 @@
       "summary": "生成故事大纲",
       "function": "generate_outline",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1050,
+      "line": 1055,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5526,7 +5542,7 @@
       "summary": "生成短剧脚本",
       "function": "generate_script",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1113,
+      "line": 1118,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5542,7 +5558,7 @@
       "summary": "生成分镜草稿",
       "function": "generate_storyboard",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1271,
+      "line": 1276,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5558,7 +5574,7 @@
       "summary": "列出项目生成日志",
       "function": "list_generation_logs",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1434,
+      "line": 1439,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5574,7 +5590,7 @@
       "summary": "AI 匹配脚本/分镜参考卡",
       "function": "match_reference_assets",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1290,
+      "line": 1295,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5590,7 +5606,7 @@
       "summary": "查询项目叙事关系图谱",
       "function": "get_narrative_graph",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 905,
+      "line": 910,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5606,7 +5622,7 @@
       "summary": "配置并启动受控叙事自动推进",
       "function": "configure_narrative_autopilot",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 511,
+      "line": 515,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5622,7 +5638,7 @@
       "summary": "预览下一章叙事上下文包",
       "function": "preview_narrative_context",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 755,
+      "line": 760,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5638,7 +5654,7 @@
       "summary": "检查小说叙事数据健康状态",
       "function": "get_narrative_health",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 744,
+      "line": 749,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5654,7 +5670,7 @@
       "summary": "按正式章节顺序重建叙事状态",
       "function": "rebuild_narrative_state",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 846,
+      "line": 851,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5670,7 +5686,7 @@
       "summary": "列出项目叙事运行记录",
       "function": "list_narrative_runs",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 469,
+      "line": 473,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5686,7 +5702,7 @@
       "summary": "创建后台叙事批次运行",
       "function": "create_narrative_batch_run",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 486,
+      "line": 490,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5702,7 +5718,7 @@
       "summary": "控制叙事批次运行",
       "function": "control_narrative_run",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 543,
+      "line": 547,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5718,7 +5734,7 @@
       "summary": "读取创作导演生产计划",
       "function": "get_production_plan",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 712,
+      "line": 717,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5734,7 +5750,7 @@
       "summary": "保存创作导演生产计划新版本",
       "function": "save_production_plan",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 727,
+      "line": 732,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5766,7 +5782,7 @@
       "summary": "按中文要求微调章节正文",
       "function": "refine_novel_body",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1166,
+      "line": 1171,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5782,7 +5798,7 @@
       "summary": "只重生成单话细纲场景",
       "function": "regenerate_chapter_outline_scenes",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1404,
+      "line": 1409,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5798,7 +5814,7 @@
       "summary": "Run creative project production pipeline",
       "function": "run_pipeline",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1086,
+      "line": 1091,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5814,7 +5830,7 @@
       "summary": "拆分漫画页",
       "function": "split_comic_pages",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1248,
+      "line": 1253,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5830,7 +5846,7 @@
       "summary": "查看项目动态状态当前值",
       "function": "get_project_state",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 770,
+      "line": 775,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5846,7 +5862,7 @@
       "summary": "查看项目动态状态按章变化轨迹",
       "function": "get_project_state_timeline",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 782,
+      "line": 787,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5862,7 +5878,7 @@
       "summary": "同步大纲角色到角色库",
       "function": "sync_project_characters",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1529,
+      "line": 1534,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5878,7 +5894,7 @@
       "summary": "从故事大纲同步项目圣经和世界资产",
       "function": "sync_project_bible",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1024,
+      "line": 1029,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5894,7 +5910,7 @@
       "summary": "Promote writer-room prose to latest novel body",
       "function": "promote_writer_room_content",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1230,
+      "line": 1235,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5910,7 +5926,7 @@
       "summary": "Run selected novel writer-room steps",
       "function": "run_writer_room",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1201,
+      "line": 1206,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5926,7 +5942,7 @@
       "summary": "Run one novel writer-room step",
       "function": "run_writer_room_step",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 1183,
+      "line": 1188,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5942,7 +5958,7 @@
       "summary": "检查写作阶段前置条件",
       "function": "get_writing_preflight",
       "file": "backend/app/api/v1/creative_projects.py",
-      "line": 810,
+      "line": 815,
       "response_model": "",
       "include_in_schema": true
     },

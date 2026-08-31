@@ -47,6 +47,7 @@
 | Agent 工作台 UI 改造 | 已落地：markdown 表格/加粗渲染、总控助手提示词禁 emoji、确认显眼化（顶部待确认卡片+横幅）、底部运行状态栏、空态引导；待左栏会话状态点/顶栏精简与真实对话验收 | `openspec/changes/agent-workbench-ui-redesign/tasks.md` |
 | Agent 声明式团队组合 | 运行时已完整落地：`AgentScope` 平面隔离、团队模板 schema/loader/validator、`TeamComposer`、`spawn/fork/continuable` 三原语、缓存稳定工具目录 + `CostMeter` + 压缩溯源、内置模板、Writer Room `team` 模式（opt-in `rehearsal_mode=team`）；旧 `MultiAgentCoordinator` 硬编码逻辑已去重，`scene-sim` 团队路径已用真实 DeepSeek 端到端验收（5/5 子任务完成）；仍待 `AgentService` per-session 状态迁移与 writer-room team 真实项目验收 | `openspec/changes/agent-team-composition/tasks.md` |
 | 创作项目闭环 | 角色提取、角色库同步、项目回流、正文上下文注入和真人/Agent 双入口已完成；仅留真实生图后端人工验收 | `openspec/changes/creative-project-closed-loop/tasks.md` |
+| 小说源资产世界项目 | OpenSpec 探索中：TXT/书架来源快照、完本/连载版本、混合检索、多领域设定候选、完本改编/续写/同人分支；尚未进入实现 | `openspec/changes/novel-source-world-project/specs/novel-world-project/tasks.md` |
 | 创作项目动态状态 | append-only 台账 `ProjectStateEntry`（scope 区分角色/世界、自由 JSON 键值、set/add/remove、按章溯源 + 去重）、`StateLedger` 折叠/回滚、叙事运行时抽取 `state_changes`、context pack 注入「动态状态」层；静态设定与锁定事实隔离 | `openspec/changes/creative-project-dynamic-state/tasks.md` |
 | 创作项目优化路线 | 已完成并归档 | `openspec/changes/archive/creative-project-optimization-roadmap/tasks.md` |
 | 小说连续性事实闭环 | 已完成并归档 | `openspec/changes/archive/creative-project-continuity-facts/tasks.md` |

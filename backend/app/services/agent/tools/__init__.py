@@ -236,6 +236,7 @@ from .canvas_tools import (
 
 from .character_tools import (
     list_characters,
+    find_character_duplicate_candidates,
     inspect_character,
     preview_character_portrait_prompt,
     update_character_visual_profile,
@@ -530,6 +531,7 @@ __all__ = [
     "apply_project_canvas_operations",
     # 角色工具
     "list_characters",
+    "find_character_duplicate_candidates",
     "inspect_character",
     "preview_character_portrait_prompt",
     "update_character_visual_profile",

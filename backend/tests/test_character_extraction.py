@@ -4,8 +4,9 @@ from sqlalchemy.orm import sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.services.character.service import CharacterService
-from app.services.creative_project.service import CreativeProjectService
+from app.services.creative_project.service import CHARACTER_SOURCE_MAX_CHARS, CreativeProjectService
 from app.db.models.character import Character, CharacterStoryLink
+from app.db.models.novel import NovelChapter
 
 
 def test_character_rosters_merge_exact_aliases_and_keep_verbatim_evidence():
@@ -49,6 +50,63 @@ def test_extracted_card_drops_quotes_not_found_in_source_and_maps_bible_sections
     assert card["behavior"] == {"boundary": "不伤害无辜者"}
     assert card["arc"] == {"start_state": "逃避"}
     assert card["extraction_notes"] == "总在记录细节"
+
+
+def test_novel_character_source_reads_selected_chapters_in_order(tmp_path):
+    service = CreativeProjectService.__new__(CreativeProjectService)
+    first_path = tmp_path / "chapter-1.txt"
+    second_path = tmp_path / "chapter-2.txt"
+    first_path.write_text("第一章 林默在门口留下录音笔。", encoding="utf-8")
+    second_path.write_text("第二章 林岚在码头等他。", encoding="utf-8")
+    chapters = [
+        NovelChapter(asset_id="asset-1", chapter_index=2, chapter_title="第二章", content_path=str(second_path)),
+        NovelChapter(asset_id="asset-1", chapter_index=1, chapter_title="第一章", content_path=str(first_path)),
+    ]
+    service._select_novel_chapters = lambda **kwargs: sorted(chapters, key=lambda item: item.chapter_index)
+
+    source = service._read_project_novel_chapters({
+        "asset_id": "asset-1",
+        "chapter_ids": ["chapter-1", "chapter-2"],
+        "chapter_indices": [1, 2],
+    })
+
+    assert source.index("第一章") < source.index("第二章")
+    assert "林默" in source
+    assert "林岚" in source
+
+
+def test_novel_character_source_caps_heading_and_body_total(tmp_path):
+    service = CreativeProjectService.__new__(CreativeProjectService)
+    path = tmp_path / "large-chapter.txt"
+    path.write_text("林默" + ("正文" * CHARACTER_SOURCE_MAX_CHARS), encoding="utf-8")
+    chapter = NovelChapter(
+        asset_id="asset-1",
+        chapter_index=1,
+        chapter_title="第一章",
+        content_path=str(path),
+    )
+    service._select_novel_chapters = lambda **kwargs: [chapter]
+
+    source = service._read_project_novel_chapters({
+        "asset_id": "asset-1",
+        "chapter_ids": [chapter.id],
+    })
+
+    assert "林默" in source
+    assert len(source) <= CHARACTER_SOURCE_MAX_CHARS
+
+
+def test_novel_character_source_falls_back_to_saved_sample_when_chapters_unavailable():
+    service = CreativeProjectService.__new__(CreativeProjectService)
+    service.session = type("Session", (), {"get": lambda self, model, key: None})()
+    service._select_novel_chapters = lambda **kwargs: []
+    project = type("Project", (), {
+        "metadata_json": '{"source_sample":"节选中的林默"}',
+        "source_ref_json": '{"asset_id":"asset-1","chapter_ids":["missing"]}',
+        "outline_json": "{}",
+    })()
+
+    assert service._project_character_source_text(project) == "节选中的林默"
 
 
 @pytest.mark.asyncio

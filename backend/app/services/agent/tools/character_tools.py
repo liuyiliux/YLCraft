@@ -66,6 +66,37 @@ async def list_characters(
 
 
 @register_tool(
+    name="find_character_duplicate_candidates",
+    description="按角色名或别名查询角色库中的重复候选，供创建或同步前人工/智能体判断是否复用；不会自动合并或创建角色。",
+    category="character",
+    examples=["创建林默前先查角色库是否已有同名角色", "查一下这个角色名是否命中已有别名"],
+    input_schema_note="必须提供 name；exclude_id 编辑已有角色时可传；limit 可选。",
+    output_schema_note="返回 candidates；每项含 id/name/match_type/reasons/project_usages。decision=manual_review_required 时必须明确选择后再写入。",
+    risk_level="read",
+    output_type="character_duplicate_candidates",
+)
+async def find_character_duplicate_candidates(
+    name: str,
+    exclude_id: str = "",
+    limit: int = 20,
+):
+    async with get_async_session() as session:
+        service = CharacterService(session)
+        candidates = await service.find_duplicate_candidates(
+            name,
+            exclude_id=exclude_id or None,
+            limit=max(1, min(int(limit or 20), 100)),
+        )
+        return {
+            "success": True,
+            "name": name,
+            "candidates": candidates,
+            "has_candidates": bool(candidates),
+            "decision": "manual_review_required" if candidates else "no_candidate",
+        }
+
+
+@register_tool(
     name="inspect_character",
     description="读取角色完整设定、视觉卡、立绘节点、参考素材和项目/世界使用情况。",
     category="character",

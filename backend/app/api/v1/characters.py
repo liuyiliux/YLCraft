@@ -279,6 +279,7 @@ async def create_character(req: CharacterCreateRequest):
     """创建新角色"""
     async with get_async_session() as session:
         service = CharacterService(session)
+        duplicate_candidates = await service.find_duplicate_candidates(req.name)
         character = await service.create(
             name=req.name,
             role=req.role,
@@ -299,6 +300,8 @@ async def create_character(req: CharacterCreateRequest):
             behavior=req.behavior,
             ability=req.ability,
             arc=req.arc,
+            voice=req.voice,
+            voice_asset_id=req.voice_asset_id,
             tags=req.tags,
             portrait_url=req.portrait_url,
             portrait_asset_id=req.portrait_asset_id,
@@ -306,7 +309,12 @@ async def create_character(req: CharacterCreateRequest):
             field_sources=req.field_sources,
             is_frozen=req.is_frozen,
         )
-        return {"success": True, "data": service.to_response(character)}
+        return {
+            "success": True,
+            "data": service.to_response(character),
+            "duplicate_candidates": duplicate_candidates,
+            "duplicate_warning": bool(duplicate_candidates),
+        }
 
 
 @router.get("/tags/all", summary="获取所有自定义标签")
@@ -367,6 +375,25 @@ async def get_extract_origins():
 
     order = ["uploaded_novel", "imported_novel", "original_outline", "unknown"]
     return {"success": True, "data": [{"value": value, "label": EXTRACT_ORIGIN_LABELS[value]} for value in order]}
+
+
+@router.get("/duplicate-candidates", summary="查询角色重复候选")
+async def get_duplicate_candidates(
+    name: str = Query(..., min_length=1, description="待检查的角色名称或别名"),
+    exclude_id: str | None = Query(None, description="编辑角色时排除当前角色 ID"),
+    limit: int = Query(20, ge=1, le=100, description="最多返回候选数量"),
+):
+    """Return candidates for review; this endpoint never merges or blocks creation."""
+    async with get_async_session() as session:
+        service = CharacterService(session)
+        candidates = await service.find_duplicate_candidates(name, exclude_id=exclude_id, limit=limit)
+        return {
+            "success": True,
+            "name": name,
+            "candidates": candidates,
+            "has_candidates": bool(candidates),
+            "decision": "manual_review_required" if candidates else "no_candidate",
+        }
 
 
 @router.post("/{character_id}/tags", summary="添加自定义标签")
