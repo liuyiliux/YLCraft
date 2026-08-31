@@ -318,6 +318,7 @@ def test_agent_tool_registry_exposes_character_tools():
 
     assert {
         "list_characters",
+        "find_character_duplicate_candidates",
         "inspect_character",
         "preview_character_portrait_prompt",
         "update_character_visual_profile",

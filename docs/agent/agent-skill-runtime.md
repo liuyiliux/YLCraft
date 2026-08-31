@@ -168,6 +168,7 @@ Creative character extraction tool:
 
 - `extract_creative_project_characters`: `costly`, runs the two-pass novel character workflow. The first call should use `apply=false` and return `characters`, aliases, source evidence and merge candidates for review. After the user confirms, pass the returned `characters` back with `apply=true`; this writes the reviewed cards to the project outline, global character library and project link without rerunning the model. Evidence is server-validated against the project source text.
 - `list_characters`: `read`, supports keyword, role, exact tag, favorite and pagination filters; the returned `total` is calculated from the same filter set as the page.
+- `find_character_duplicate_candidates`: `read`, checks a proposed character name or alias against global names and project-scoped aliases. It returns `match_type`, `reasons`, and `project_usages`; it never merges, blocks, or creates a character. Agents should call it before creating or syncing a reusable card and request an explicit reuse/new-card decision when candidates exist.
 
 Asset provenance tool:
 

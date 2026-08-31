@@ -95,6 +95,7 @@
 - [x] 45.2 Make preview confirmation deterministic: apply the reviewed cards without a second model call, validate evidence server-side, and keep the Agent tool preview-first contract.
 - [x] 45.3 Auto-sync outline characters after successful outline generation and preserve project/global character links idempotently.
 - [x] 45.4 Keep unmatched outline characters during extraction apply, reject empty apply payloads, and fix character-library filter semantics/counts.
+- [x] 45.5 Add human- and Agent-facing duplicate candidate checks for character creation and reuse without implicit cross-project merges.
 - [x] 46. Add filters in `/assets` for project id, asset role and source stage.
 - [x] 47. Add lineage display for project-generated assets.
 

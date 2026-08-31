@@ -55,6 +55,12 @@ export const listCharacters = (params?: Record<string, any>) => {
 
 export const getCharacter = (id: string) => request(`/characters/${id}`)
 
+export const findCharacterDuplicateCandidates = (name: string, excludeId?: string, limit = 20) => {
+  const sp = new URLSearchParams({ name, limit: String(limit) })
+  if (excludeId) sp.set('exclude_id', excludeId)
+  return request(`/characters/duplicate-candidates?${sp}`)
+}
+
 export const createCharacter = (data: any) =>
   request('/characters', { method: 'POST', body: JSON.stringify(data) })
 

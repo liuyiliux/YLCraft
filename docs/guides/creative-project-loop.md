@@ -105,6 +105,8 @@ Expected metadata:
 
 The `/story` project creation modal supports a `小说书架` source. It lists novel assets from the bookshelf, filters chapter options to locally downloaded chapters, and also accepts compact ranges such as `1-3,5` for quick selection. Undownloaded chapters should be downloaded from `/novel-bookshelf` first.
 
+Project creation stores a short `source_sample` (up to about 8,000 characters) for outline generation. Character extraction does not stop at that sample: it resolves the selected `chapter_ids`/`chapter_indices` from `source_ref_json`, reads the downloaded chapter files in order, and uses up to 120,000 characters as the extraction source. If selected chapter files are unavailable, it falls back to the saved sample and then the source asset text. This boundary is shared by the human UI and Agent API.
+
 ### Outline And Chapter Plan Editing
 
 The `/story` workspace now treats outline and chapter planning as editable project state, not read-only AI output.
@@ -129,8 +131,11 @@ idea or novel source -> generated outline -> structured/manual edits -> saved ou
 
 - 真人用户可以在 `/characters` 先创建并维护角色，再从角色进入 Story 新建项目；项目创建会立即建立 `CharacterStoryLink` 并把完整角色卡写入初始大纲。
 - 从导入小说、上传正文或项目来源文本提取角色时，Story 大纲页和 API 使用两趟流程：第一趟分块扫描姓名、别名、观察记录和逐字证据；第二趟生成 YLCraft 角色设定字段。默认只返回预览，用户确认后才写入。
+- 小说项目创建时保存的 `source_sample` 只服务于大纲生成；角色提取会按项目来源引用读取已选章节全文，按章节顺序分块，最多使用 120,000 字符，章节文件不可用时才回退到节选。真人和 Agent 共享这套来源边界。
+- 提取预览同时返回 `duplicate_candidates`，提示当前项目之外可能可复用的全局角色；它与原文内部的 `merge_candidates` 分开，均只提供审阅依据，不自动合并。
 - 预览确认会把审核后的 `characters` 原样带回 `apply=true`，不会重复调用模型；服务端会再次过滤不存在于原文的证据。写入是增量合并，不会删除本次未识别的既有项目角色，项目关联和全局角色复用按角色 ID 保持幂等。
 - AI Agent 使用 `extract_creative_project_characters` 遵循相同契约：先 `apply=false`，向用户展示角色卡、证据和合并候选；确认后再带回卡片执行写入。该工具标记为 `costly`，写入动作仍受 Agent 确认门禁约束。
+- 新建全局角色卡前，真人界面和 Agent 都可调用重复候选检查。候选会区分完全同名、名称包含和项目别名命中，并展示已有项目/世界使用情况；系统不会自动合并，出现候选时必须由用户或 Agent 明确选择复用已有角色或创建独立角色卡。
 - 大纲生成成功后会自动同步大纲角色；角色库筛选支持关键词、角色定位、标签、收藏、流程来源、提取来源和分页，返回总数与当前筛选一致。
 
 角色设定分为全局基准和项目/世界覆盖。`Character` 保存可复用的 YLCraft 角色卡，`CharacterStoryLink` 保存本世界别名、身份、阵营、服装、OOC/视觉约束，以及 `aliases_json`、`evidence_json`、`extraction_notes` 等提取溯源。用户在角色工作区编辑的字段标记为 `user_edited`，同步流程不会用 AI 提取结果覆盖。

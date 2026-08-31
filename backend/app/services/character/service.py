@@ -5,6 +5,8 @@ YLCraft — 角色服务层
 from __future__ import annotations
 
 import json
+import re
+import unicodedata
 from datetime import datetime
 from typing import Any, Optional, cast
 
@@ -94,6 +96,108 @@ class CharacterService:
     async def get_by_id(self, character_id: str) -> Optional[Character]:
         result = await self.session.exec(select(Character).where(Character.id == character_id))
         return result.first()
+
+    async def find_duplicate_candidates(
+        self,
+        name: str,
+        *,
+        exclude_id: str | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        """Find reusable-card candidates without deciding that two people are equal.
+
+        Character names are global, while aliases are project-scoped.  The
+        result deliberately exposes evidence and project usage so a human or
+        Agent can choose between reusing a card and creating a new one.
+        """
+        query_name = _normalize_character_name(name)
+        if not query_name:
+            return []
+
+        result = await self.session.exec(select(Character))
+        characters = [item for item in result.all() if not exclude_id or item.id != exclude_id]
+        if not characters:
+            return []
+
+        links_by_character: dict[str, list[CharacterStoryLink]] = {}
+        link_result = await self.session.exec(select(CharacterStoryLink))
+        for link in link_result.all():
+            links_by_character.setdefault(link.character_id, []).append(link)
+
+        projects_by_id: dict[str, CreativeProject] = {}
+        project_ids = {link.story_id for links in links_by_character.values() for link in links if link.story_id}
+        if project_ids:
+            try:
+                project_result = await self.session.exec(
+                    select(CreativeProject).where(CreativeProject.id.in_(list(project_ids)))
+                )
+                projects_by_id = {item.id: item for item in project_result.all()}
+            except Exception:
+                # Character-only consumers/tests may not have the project table.
+                projects_by_id = {}
+
+        candidates: list[tuple[int, dict[str, Any]]] = []
+        for character in characters:
+            character_name = str(character.name or "").strip()
+            normalized_character_name = _normalize_character_name(character_name)
+            if not normalized_character_name:
+                continue
+
+            reasons: list[str] = []
+            match_type = ""
+            if normalized_character_name == query_name:
+                match_type = "exact_name"
+                reasons.append("角色名完全一致")
+            elif query_name in normalized_character_name or normalized_character_name in query_name:
+                match_type = "name_contains"
+                reasons.append("角色名存在包含关系")
+
+            matched_aliases: list[str] = []
+            for link in links_by_character.get(character.id, []):
+                aliases = _json_list(getattr(link, "aliases_json", "[]"))
+                for alias in aliases:
+                    alias_text = str(alias or "").strip()
+                    normalized_alias = _normalize_character_name(alias_text)
+                    if normalized_alias and (normalized_alias == query_name or normalized_alias in query_name or query_name in normalized_alias):
+                        matched_aliases.append(alias_text)
+            if matched_aliases:
+                match_type = "alias_match" if not match_type else match_type
+                reasons.append(f"别名命中：{'、'.join(dict.fromkeys(matched_aliases))}")
+
+            if not reasons:
+                continue
+            if match_type == "exact_name" and matched_aliases:
+                match_type = "exact_name_and_alias"
+
+            usages = []
+            for link in links_by_character.get(character.id, []):
+                project = projects_by_id.get(link.story_id)
+                usages.append({
+                    "project_id": link.story_id,
+                    "project_title": project.title if project else "",
+                    "world_id": link.world_id or "",
+                    "world_name": link.world_name or (project.title if project else ""),
+                    "extract_origin": getattr(link, "extract_origin", "unknown") or "unknown",
+                })
+            data = self.to_response(character)
+            candidates.append((
+                0 if match_type.startswith("exact") else 1 if match_type == "alias_match" else 2,
+                {
+                    "id": character.id,
+                    "name": character_name,
+                    "match_type": match_type,
+                    "reasons": reasons,
+                    "role": data.get("role"),
+                    "role_label": data.get("role_label"),
+                    "workflow_source": data.get("workflow_source"),
+                    "portrait_url": data.get("portrait_url"),
+                    "is_frozen": data.get("is_frozen"),
+                    "project_usages": usages,
+                },
+            ))
+
+        candidates.sort(key=lambda item: (item[0], item[1]["name"], item[1]["id"]))
+        return [item[1] for item in candidates[: max(1, min(int(limit or 20), 100))]]
 
     async def create(self, **kwargs) -> Character:
         # Convert list fields to JSON strings
@@ -644,3 +748,9 @@ def _loads_json(value: str, fallback: Any) -> Any:
         return json.loads(value) if value else fallback
     except Exception:
         return fallback
+
+
+def _normalize_character_name(value: Any) -> str:
+    """Normalize names for conservative comparison, without changing stored data."""
+    text = unicodedata.normalize("NFKC", str(value or "")).casefold()
+    return re.sub(r"[\s\u3000\-_/·•·.,，。:：()（）【】\[\]{}]+", "", text)

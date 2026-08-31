@@ -192,7 +192,7 @@ async def inspect_creative_project(project_id: str):
     category="creative_project",
     examples=["从这个小说项目提取角色并先给我预览", "提取项目角色，确认后写入角色库"],
     input_schema_note="必须提供 project_id；apply=false 只返回预览、归并候选和证据；确认后再传 apply=true。provider/model/max_characters 可选。",
-    output_schema_note="返回 project_id、chunks、merge_candidates、characters、applied_characters；characters 使用 YLCraft 角色设定字段并包含 aliases/evidence。",
+    output_schema_note="返回 project_id、chunks、merge_candidates、duplicate_candidates、characters、applied_characters；characters 使用 YLCraft 角色设定字段并包含 aliases/evidence。duplicate_candidates 是跨项目候选，必须人工确认，不会自动合并。",
     risk_level="costly",
     output_type="creative_project_character_extraction",
     cost_hint="会按文本分块执行角色扫描和角色卡生成，apply=true 还会写入项目大纲、角色库和项目关联。",

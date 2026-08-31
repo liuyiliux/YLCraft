@@ -736,7 +736,7 @@ export default function CharacterDetailPage() {
     setEditForm({ name: '', role: 'supporting', workflow_source: 'character_first', source_types: 'ai_generated', appearance: '', costume_hint: '', personality: '', background: '', age_range: '', visual_consistency: '', signature_items: '', expressions: '', poses: '', tags: '', identity: '{}', motivation: '{}', speech: '{}', behavior: '{}', ability: '{}', arc: '{}', voice: '{}', voice_asset_id: '' })
     setEditOpen(true)
   }
-  const saveEdit = async () => {
+  const saveEdit = async (allowDuplicate = false) => {
     // 新建模式下 character 为空属正常，只有编辑已有角色才需要它
     if (editMode === 'edit' && !character) return
     setEditSaving(true)
@@ -744,6 +744,24 @@ export default function CharacterDetailPage() {
       const parseJson = (value: string) => { try { return value?.trim() ? JSON.parse(value) : {} } catch { throw new Error('身份、动机等 JSON 字段格式不正确') } }
       const payload = {
         name: editForm.name, role: editForm.role, workflow_source: editForm.workflow_source || 'unknown', source_types: String(editForm.source_types || '').split(/[,，]/).map((item) => item.trim()).filter(Boolean), appearance: editForm.appearance, personality: editForm.personality, costume_hint: editForm.costume_hint, background: editForm.background, age_range: editForm.age_range, visual_consistency: editForm.visual_consistency, signature_items: String(editForm.signature_items || '').split(/[,，]/).map((item) => item.trim()).filter(Boolean), expressions: String(editForm.expressions || '').split(/[,，]/).map((item) => item.trim()).filter(Boolean), poses: String(editForm.poses || '').split(/[,，]/).map((item) => item.trim()).filter(Boolean), tags: String(editForm.tags || '').split(/[,，]/).map((item) => item.trim()).filter(Boolean), identity: { ...parseJson(editForm.identity), visual_profile: parseJson(editForm.visual_profile) }, motivation: parseJson(editForm.motivation), speech: parseJson(editForm.speech), behavior: parseJson(editForm.behavior), ability: parseJson(editForm.ability), arc: parseJson(editForm.arc), voice: parseJson(editForm.voice || '{}'), voice_asset_id: editForm.voice_asset_id || '',
+      }
+      if (editMode === 'create' && !allowDuplicate && editForm.name.trim()) {
+        const duplicateQuery = new URLSearchParams({ name: editForm.name.trim(), limit: '8' })
+        const duplicateResponse = await fetch(`/api/v1/characters/duplicate-candidates?${duplicateQuery.toString()}`, { headers: { Accept: 'application/json' } })
+        const duplicateResult = await duplicateResponse.json().catch(() => null)
+        const candidates = duplicateResult?.candidates || []
+        if (duplicateResponse.ok && candidates.length) {
+          setEditSaving(false)
+          Modal.confirm({
+            title: '发现相似角色，仍要新建吗？',
+            width: 560,
+            content: <div>{candidates.slice(0, 5).map((item: any) => <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}><Button size="small" onClick={() => { Modal.destroyAll(); navigate(`/characters/${item.id}`) }}>打开已有卡</Button><div><strong>{item.name}</strong><span style={{ marginLeft: 8, color: '#6b7280' }}>{(item.reasons || []).join('；')}</span>{item.project_usages?.length ? <div style={{ color: '#9ca3af', fontSize: 12 }}>已用于：{item.project_usages.map((usage: any) => usage.project_title || usage.project_id).join('、')}</div> : null}</div></div>)}<div style={{ marginTop: 12, color: '#6b7280' }}>系统不会自动合并。打开已有卡可直接复用；确认“仍然新建”才会创建独立角色卡。</div></div>,
+            okText: '仍然新建',
+            cancelText: '返回修改',
+            onOk: () => saveEdit(true),
+          })
+          return
+        }
       }
       const response = await fetch(editMode === 'edit' ? `/api/v1/characters/${character.id}` : '/api/v1/characters', { method: editMode === 'edit' ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(payload) })
       // 先读文本再解析，避免 response.json() 失败后二次读流报 body stream already read
@@ -1654,7 +1672,7 @@ export default function CharacterDetailPage() {
       )}
 
       {/* 新建角色时 character 为空，编辑弹窗必须能独立渲染 */}
-      <Modal open={editOpen} title={editMode === 'edit' ? `编辑角色 · ${character?.name}` : '新建角色'} width={860} onCancel={() => setEditOpen(false)} confirmLoading={editSaving} onOk={saveEdit} okText={editMode === 'edit' ? '保存修改' : '创建角色'}>
+      <Modal open={editOpen} title={editMode === 'edit' ? `编辑角色 · ${character?.name}` : '新建角色'} width={860} onCancel={() => setEditOpen(false)} confirmLoading={editSaving} onOk={() => saveEdit()} okText={editMode === 'edit' ? '保存修改' : '创建角色'}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
            <div><Text style={{ display: 'block', marginBottom: 4 }}>角色定位</Text><Select style={{ width: '100%' }} value={editForm.role} onChange={(value) => setEditForm((form) => ({ ...form, role: value }))} options={ROLE_OPTIONS} /></div>
            <div><Text style={{ display: 'block', marginBottom: 4 }}>流程来源</Text><Select style={{ width: '100%' }} value={editForm.workflow_source || 'unknown'} onChange={(value) => setEditForm((form) => ({ ...form, workflow_source: value }))} options={WORKFLOW_SOURCE_OPTIONS} /></div>

@@ -78,6 +78,10 @@ logger = logging.getLogger("ylcraft.creative_project")
 
 TModel = TypeVar("TModel", bound=BaseModel)
 
+# Character extraction needs more context than outline generation, but should
+# still have a predictable upper bound for model requests.
+CHARACTER_SOURCE_MAX_CHARS = 120_000
+
 WRITER_ROOM_STEP_ORDER = (
     "scene_beats",
     "character_rehearsal",
@@ -1434,6 +1438,7 @@ class CreativeProjectService:
 
         if apply and not cards:
             raise ValueError("没有可写入的角色卡，请先检查提取结果")
+        duplicate_candidates = self._find_extraction_duplicate_candidates(project_id, cards)
         applied = self._apply_extracted_character_cards(project, cards) if apply else []
         return {
             "project_id": project_id,
@@ -1442,6 +1447,7 @@ class CreativeProjectService:
             "chunks": len(chunks),
             "truncated": len(chunks) >= 24,
             "merge_candidates": merge_candidates,
+            "duplicate_candidates": duplicate_candidates,
             "characters": cards,
             "applied": bool(apply),
             "applied_characters": [self._character_extract_summary(item) for item in applied],
@@ -1449,10 +1455,12 @@ class CreativeProjectService:
 
     def _project_character_source_text(self, project: CreativeProject) -> str:
         metadata = loads_json(project.metadata_json)
-        sample = str(metadata.get("source_sample") or "").strip()
-        if sample:
-            return sample
         source_ref = loads_json(project.source_ref_json)
+        if isinstance(source_ref, dict):
+            chapter_source = self._read_project_novel_chapters(source_ref)
+            if chapter_source:
+                return chapter_source
+
         asset_id = str(source_ref.get("asset_id") or "") if isinstance(source_ref, dict) else ""
         if asset_id:
             node = self.session.get(AssetNode, asset_id)
@@ -1460,9 +1468,55 @@ class CreativeProjectService:
             for key in ("content_path", "file_path", "source_path"):
                 path = str(node_meta.get(key) or "")
                 if path and Path(path).is_file():
-                    return Path(path).read_text(encoding="utf-8", errors="ignore")
+                    return Path(path).read_text(encoding="utf-8", errors="ignore")[:CHARACTER_SOURCE_MAX_CHARS]
+
+        # Older imports and unavailable chapter files retain a short sample so
+        # the extraction flow remains usable instead of failing silently.
+        sample = str(metadata.get("source_sample") or "").strip()
+        if sample:
+            return sample
         outline = loads_json(project.outline_json)
         return self._outline_text(outline) if outline else ""
+
+    def _read_project_novel_chapters(self, source_ref: dict[str, Any]) -> str:
+        """Read the selected local chapter files in source order.
+
+        The chapter references are persisted when a project is imported. We
+        deliberately use those references instead of scanning the whole asset,
+        so an agent and a human receive the same selected-source boundary.
+        """
+        asset_id = str(source_ref.get("asset_id") or "").strip()
+        chapter_ids = [str(value) for value in (source_ref.get("chapter_ids") or []) if value]
+        chapter_indices = [int(value) for value in (source_ref.get("chapter_indices") or []) if str(value).lstrip("-").isdigit()]
+        if not asset_id or (not chapter_ids and not chapter_indices):
+            return ""
+
+        chapters = self._select_novel_chapters(
+            asset_id=asset_id,
+            chapter_ids=chapter_ids,
+            chapter_indices=chapter_indices,
+        )
+        sections: list[str] = []
+        total_chars = 0
+        for chapter in chapters:
+            path = Path(chapter.content_path) if chapter.content_path else None
+            if not path or not path.is_file():
+                continue
+            body = path.read_text(encoding="utf-8", errors="ignore").strip()
+            if not body:
+                continue
+            remaining = CHARACTER_SOURCE_MAX_CHARS - total_chars
+            if remaining <= 0:
+                break
+            title = str(chapter.chapter_title or f"第{chapter.chapter_index}章").strip()
+            heading = f"# {title}\n"
+            body = body[: max(0, remaining - len(heading))]
+            if not body:
+                break
+            section = f"{heading}{body}"
+            sections.append(section)
+            total_chars += len(section)
+        return "\n\n".join(sections)
 
     def _split_character_source(self, text: str, *, max_chars: int, max_chunks: int) -> list[str]:
         paragraphs = [part.strip() for part in re.split(r"\n\s*\n|\r\n", text) if part.strip()]
@@ -1533,6 +1587,62 @@ class CreativeProjectService:
 
     def _character_extract_summary(self, character: Character) -> dict[str, Any]:
         return {"id": character.id, "name": character.name, "role": character.role}
+
+    def _find_extraction_duplicate_candidates(
+        self,
+        project_id: str,
+        cards: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Expose cross-project reuse candidates while keeping merge explicit."""
+        names = [str(card.get("name") or "").strip() for card in cards if isinstance(card, dict)]
+        names = list(dict.fromkeys(name for name in names if name))
+        if not names or not hasattr(self, "session"):
+            return []
+        linked_ids = {
+            link.character_id
+            for link in self.session.exec(select(CharacterStoryLink).where(CharacterStoryLink.story_id == project_id)).all()
+        }
+        existing = self.session.exec(select(Character)).all()
+        links = self.session.exec(select(CharacterStoryLink)).all()
+        links_by_character: dict[str, list[CharacterStoryLink]] = {}
+        for link in links:
+            links_by_character.setdefault(link.character_id, []).append(link)
+        result: list[dict[str, Any]] = []
+        for name in names:
+            normalized = re.sub(r"[\s\u3000\-_/·•·.,，。:：()（）【】\[\]{}]+", "", name).casefold()
+            candidates = []
+            for character in existing:
+                if character.id in linked_ids:
+                    continue
+                candidate_name = str(character.name or "").strip()
+                candidate_normalized = re.sub(r"[\s\u3000\-_/·•·.,，。:：()（）【】\[\]{}]+", "", candidate_name).casefold()
+                if not normalized or not candidate_normalized:
+                    continue
+                if candidate_normalized == normalized:
+                    match_type = "exact_name"
+                    reason = "全局角色名完全一致"
+                elif normalized in candidate_normalized or candidate_normalized in normalized:
+                    match_type = "name_contains"
+                    reason = "全局角色名存在包含关系"
+                else:
+                    alias_hit = next((
+                        str(alias).strip()
+                        for link in links_by_character.get(character.id, [])
+                        for alias in loads_json(getattr(link, "aliases_json", "[]"), [])
+                        if str(alias).strip() and (
+                            re.sub(r"[\s\u3000\-_/·•·.,，。:：()（）【】\[\]{}]+", "", str(alias)).casefold() == normalized
+                            or normalized in re.sub(r"[\s\u3000\-_/·•·.,，。:：()（）【】\[\]{}]+", "", str(alias)).casefold()
+                            or re.sub(r"[\s\u3000\-_/·•·.,，。:：()（）【】\[\]{}]+", "", str(alias)).casefold() in normalized
+                        )
+                    ), "")
+                    if not alias_hit:
+                        continue
+                    match_type = "alias_match"
+                    reason = f"项目别名命中：{alias_hit}"
+                candidates.append({"id": character.id, "name": candidate_name, "match_type": match_type, "reason": reason})
+            if candidates:
+                result.append({"source_name": name, "candidates": candidates[:20], "decision": "manual_review_required"})
+        return result
 
     def _apply_extracted_character_cards(self, project: CreativeProject, cards: list[dict[str, Any]]) -> list[Character]:
         outline = loads_json(project.outline_json)
