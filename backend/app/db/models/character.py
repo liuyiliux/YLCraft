@@ -94,6 +94,10 @@ class Character(SQLModel, table=True):
     # 关联的参考素材
     reference_asset_ids: str = Field(default="[]", description="关联素材资产 ID 列表（JSON）")
 
+    # 音色与语音：speech_json 管"怎么说"，这里管"用什么声音说"（对接 TTS / 音频素材）
+    voice_json: str = Field(default="{}", description="音色设定：provider/voiceId/音色/音高/语速/口音/情绪/参考提示")
+    voice_asset_id: str = Field(default="", description="关联语音素材 AssetNode ID（参考音/样音）")
+
     # 自定义标签（JSON 数组）
     tags: str = Field(default="[]")
 
@@ -138,6 +142,9 @@ class CharacterStoryLink(SQLModel, table=True):
         index=True,
         description="角色在该项目中的提取来源：uploaded_novel / imported_novel / original_outline",
     )
+    aliases_json: str = Field(default="[]", description="该项目/原文中的角色别名与称谓（JSON 数组）")
+    evidence_json: str = Field(default="[]", description="该项目/原文中的逐字证据片段（JSON 数组）")
+    extraction_notes: str = Field(default="", description="角色提取阶段汇总的观察记录，供复核与智能体继续处理")
     linked_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
 

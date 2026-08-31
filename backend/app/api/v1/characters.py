@@ -18,7 +18,9 @@ from __future__ import annotations
 
 import logging
 import json
+import os
 import re
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -29,12 +31,54 @@ from pydantic import BaseModel, Field
 from sqlmodel import select
 
 from app.db.database import get_async_session
-from app.db.models.creative_project import ProjectGenerationLog
+from app.db.models.creative_project import CreativeProject, ProjectGenerationLog, ProjectStateEntry
 from app.services.character.service import CharacterService
-from app.services.creative_project.service import dumps_json
+from app.services.platform_log import service as platform_log
+from app.services.creative_project.service import dumps_json, loads_json
 from app.db.models.character import CharacterSourceType, CharacterRole, CharacterRelationship, Character, CharacterWorkflowSource
 
 router = APIRouter()
+
+
+def _portrait_event_payload(
+    character: Character,
+    req: PortraitGenerateRequest,
+    prompt: str,
+    negative_prompt: str,
+    preset: str,
+) -> dict:
+    """角色立绘生图的事件请求摘要，保留角色溯源信息。"""
+    return {
+        "character_id": character.id,
+        "character_name": character.name,
+        "preset": preset,
+        "prompt": prompt,
+        "negative_prompt": negative_prompt,
+        "size": req.size or "",
+        "n": req.n or 1,
+        "reference_images_count": len(req.reference_images or []),
+        "reference_images": req.reference_images or [],
+    }
+
+
+def _portrait_retry_payload(
+    req: PortraitGenerateRequest,
+    prompt: str,
+    negative_prompt: str,
+) -> dict:
+    """失败重发所需的原始生图参数，字段与 ImageGenerationRequest 对齐。
+
+    重发只重新出图，不会回写角色或资产中枢。
+    """
+    return {
+        "prompt": prompt,
+        "negative_prompt": negative_prompt,
+        "size": req.size or "1024x1024",
+        "n": req.n or 1,
+        "provider": req.provider or "",
+        "model": req.model or "",
+        "reference_images": list(req.reference_images or []),
+    }
 
 
 async def _write_project_generation_log(session, **kwargs) -> ProjectGenerationLog:
@@ -95,6 +139,8 @@ class CharacterCreateRequest(BaseModel):
     behavior: dict[str, Any] = Field(default={}, description="Character Bible: 行为/OOC 边界")
     ability: dict[str, Any] = Field(default={}, description="Character Bible: 能力短板限制")
     arc: dict[str, Any] = Field(default={}, description="Character Bible: 人物弧光")
+    voice: dict[str, Any] = Field(default={}, description="音色设定：provider/voiceId/音色/音高/语速/口音/情绪/参考提示")
+    voice_asset_id: str = Field(default="", description="关联语音素材 AssetNode ID（参考音/样音）")
     tags: list[str] = Field(default=[], description="自定义标签")
     portrait_url: str = Field(default="", description="立绘图片 URL")
     portrait_asset_id: str = Field(default="", description="关联素材资产 ID（立绘）")
@@ -123,6 +169,8 @@ class CharacterUpdateRequest(BaseModel):
     behavior: dict[str, Any] | None = None
     ability: dict[str, Any] | None = None
     arc: dict[str, Any] | None = None
+    voice: dict[str, Any] | None = None
+    voice_asset_id: str | None = None
     tags: list[str] | None = None
     portrait_url: str | None = None
     portrait_asset_id: str | None = None
@@ -426,6 +474,89 @@ async def delete_character_world_usage(character_id: str, usage_id: str):
         return {"success": True}
 
 
+@router.get("/{character_id}/state-timeline", summary="获取角色在剧情中的状态变化轨迹")
+async def get_character_state_timeline(
+    character_id: str,
+    project_id: str | None = Query(None, description="按项目筛选，留空返回该角色在所有项目中的轨迹"),
+):
+    """返回角色状态随章节演变的台账。
+
+    数据来自 ProjectStateEntry（scope = "character:<id>"），由 narrative_runtime
+    在正文写完后由 AI 提取 state_changes 自动写入。这里按章节分组并 fold 出每章
+    结束时的累积状态快照，供角色详情页画「剧情演变」时间轴。
+    """
+    async with get_async_session() as session:
+        service = CharacterService(session)
+        character = await service.get_by_id(character_id)
+        if not character:
+            raise HTTPException(status_code=404, detail="角色不存在")
+
+        scope = f"character:{character_id}"
+        stmt = select(ProjectStateEntry).where(ProjectStateEntry.scope == scope)
+        if project_id:
+            stmt = stmt.where(ProjectStateEntry.project_id == project_id)
+        stmt = stmt.order_by(ProjectStateEntry.chapter_number.asc(), ProjectStateEntry.created_at.asc())
+        rows = (await session.execute(stmt)).scalars().all()
+
+        chapters: dict[int, list[dict]] = {}
+        for e in rows:
+            chapters.setdefault(int(e.chapter_number or 0), []).append(
+                {
+                    "id": e.id,
+                    "key": e.key,
+                    "op": e.op,
+                    "value": loads_json(e.value_json),
+                    "project_id": e.project_id,
+                    "chapter_number": int(e.chapter_number or 0),
+                    "source_content_id": e.source_content_id,
+                    "created_at": e.created_at.isoformat() if e.created_at else None,
+                }
+            )
+
+        # fold：按章节顺序累积，得到每章结束时的状态快照
+        snapshot: dict[str, Any] = {}
+        timeline = []
+        for chapter in sorted(chapters):
+            for item in chapters[chapter]:
+                key = item["key"]
+                value = item["value"]
+                if item["op"] == "set":
+                    snapshot[key] = value
+                elif item["op"] == "add":
+                    cur = snapshot.get(key)
+                    if isinstance(cur, list):
+                        if value not in cur:
+                            snapshot[key] = cur + [value]
+                    elif cur is None:
+                        snapshot[key] = [value]
+                    else:
+                        snapshot[key] = [cur, value]
+                elif item["op"] == "remove":
+                    cur = snapshot.get(key)
+                    if isinstance(cur, list) and value in cur:
+                        snapshot[key] = [v for v in cur if v != value]
+                    else:
+                        snapshot.pop(key, None)
+            timeline.append(
+                {
+                    "chapter_number": chapter,
+                    "entries": chapters[chapter],
+                    "snapshot_after": json.loads(json.dumps(snapshot, ensure_ascii=False, default=str)),
+                }
+            )
+
+        return {
+            "success": True,
+            "data": {
+                "character_id": character_id,
+                "scope": scope,
+                "total_entries": len(rows),
+                "timeline": timeline,
+                "current_state": snapshot,
+            },
+        }
+
+
 @router.get("/relationships/graph", summary="获取角色关系图谱")
 async def get_character_relationship_graph(
     world_usage_id: str | None = Query(None, description="按世界筛选，留空显示全部"),
@@ -666,6 +797,7 @@ class PortraitGenerateRequest(BaseModel):
 
 class PortraitPromptPreviewRequest(BaseModel):
     preset: Optional[str] = Field("main_portrait", description="立绘预设")
+    prompt_override: Optional[str] = Field(default="", description="提示词覆盖（留空则按角色设定自动生成）")
     visual_profile: dict[str, Any] | None = Field(default=None, description="视觉卡覆盖字段")
     style_override: str = Field(default="", description="画风覆盖")
     negative_override: str = Field(default="", description="负向约束覆盖")
@@ -673,7 +805,7 @@ class PortraitPromptPreviewRequest(BaseModel):
 
 
 class PortraitGridSliceRequest(BaseModel):
-    grid_type: str = Field("auto", description="auto/expression/pose")
+    grid_type: str = Field("auto", description="auto/expression/pose/turnaround")
     rows: int = Field(3, ge=1, le=6, description="网格行数")
     cols: int = Field(3, ge=1, le=6, description="网格列数")
     overwrite_existing: bool = Field(False, description="是否重复切片并创建新子素材")
@@ -733,9 +865,11 @@ def _resolve_local_representation_path(rep) -> Path | None:
 
 def _infer_grid_type(requested: str, preset: str) -> str:
     value = (requested or "auto").strip().lower()
-    if value in {"expression", "pose"}:
+    if value in {"expression", "pose", "turnaround"}:
         return value
     preset_value = (preset or "").lower()
+    if "multi_view" in preset_value or "turnaround" in preset_value:
+        return "turnaround"
     if "pose" in preset_value or "action" in preset_value:
         return "pose"
     return "expression"
@@ -744,7 +878,12 @@ def _infer_grid_type(requested: str, preset: str) -> str:
 def _grid_slice_label(grid_type: str, index: int) -> str:
     expression_labels = ["中性", "微笑", "大笑", "惊讶", "愤怒", "悲伤", "害羞", "思考", "坚定"]
     pose_labels = ["正面站姿", "侧身站姿", "背面回头", "抱臂", "行走", "奔跑", "坐姿", "战斗准备", "特写动作"]
-    labels = pose_labels if grid_type == "pose" else expression_labels
+    # turnaround 为三视图模型表，按 正面/侧面/背面 顺序切分
+    turnaround_labels = ["正面", "侧面", "背面", "3/4 侧面", "背侧 3/4", "俯视", "仰视", "面部特写", "全身"]
+    if grid_type == "turnaround":
+        labels = turnaround_labels
+    else:
+        labels = pose_labels if grid_type == "pose" else expression_labels
     if 0 <= index < len(labels):
         return labels[index]
     return f"{grid_type}-{index + 1}"
@@ -774,6 +913,7 @@ async def preview_character_portrait_prompt(character_id: str, req: PortraitProm
             data = build_portrait_prompt(
                 character=character,
                 preset=req.preset,
+                prompt_override=req.prompt_override or None,
                 visual_profile=req.visual_profile,
                 style_override=req.style_override,
                 negative_override=req.negative_override,
@@ -845,7 +985,17 @@ async def list_character_portrait_versions(character_id: str):
             # Asset Hub representations may only have a local filesystem path.
             # Never expose that path to the browser as an <img> source; route it
             # through the authenticated asset download endpoint instead.
-            raw_image_url = rep_extra.get("url") or (rep.file_path if rep else "") or ""
+            # 远端图床 URL 会过期，本地已落盘的文件才是稳定来源。
+            # 仅当本地文件真实存在时才优先本地，否则仍回退到远端地址兜底。
+            candidate_file = rep.file_path if rep else ""
+            if (
+                candidate_file
+                and not str(candidate_file).startswith(("http://", "https://", "data:"))
+                and os.path.exists(str(candidate_file))
+            ):
+                raw_image_url = candidate_file
+            else:
+                raw_image_url = rep_extra.get("url") or candidate_file or ""
             image_url = raw_image_url
             if image_url and not image_url.startswith(("/api/", "http://", "https://", "data:")):
                 image_url = f"/api/v1/assets/download?path={quote(image_url)}"
@@ -930,7 +1080,16 @@ async def set_character_main_portrait_version(character_id: str, version_id: str
         version.params_json = params
 
         selected_extra = dict(selected_rep.extra_json or {})
-        portrait_url = selected_extra.get("url") or selected_rep.file_path
+        # 同 versions 读取侧：本地文件存在时优先本地，远端图床地址仅作兜底。
+        _candidate = selected_rep.file_path or ""
+        if (
+            _candidate
+            and not str(_candidate).startswith(("http://", "https://", "data:"))
+            and os.path.exists(str(_candidate))
+        ):
+            portrait_url = _local_file_url(str(_candidate))
+        else:
+            portrait_url = selected_extra.get("url") or _candidate
         character.portrait_url = portrait_url
         identity = {}
         try:
@@ -1406,6 +1565,7 @@ async def enrich_character(character_id: str, req: CharacterEnrichRequest):
             "model": req.model,
             "context": req.context,
         }
+        enrich_started = time.time()
         result = await manager.chat(
             [
                 LLMMessage(role="system", content="你是严格输出 JSON 的角色设定师。"),
@@ -1416,6 +1576,18 @@ async def enrich_character(character_id: str, req: CharacterEnrichRequest):
             temperature=0.4,
         )
         if not result.success:
+            await platform_log.record_event(
+                scene="llm",
+                task_type="llm_chat",
+                level="error",
+                status="failed",
+                provider=result.provider or req.provider or "",
+                model=result.model or req.model or "",
+                message=f"角色 AI 补全失败：{character.name}",
+                error=result.error or "",
+                request=log_request_payload,
+                duration_ms=int((time.time() - enrich_started) * 1000),
+            )
             await _write_project_generation_log_committed(
                 scene="character_portrait",
                 ref_id=str(character.id),
@@ -1433,6 +1605,19 @@ async def enrich_character(character_id: str, req: CharacterEnrichRequest):
         try:
             proposal = parse_character_enrichment_response(result.content)
         except Exception as e:
+            await platform_log.record_event(
+                scene="llm",
+                task_type="llm_chat",
+                level="error",
+                status="failed",
+                provider=result.provider or req.provider or "",
+                model=result.model or req.model or "",
+                message=f"角色 AI 补全返回解析失败：{character.name}",
+                error=f"parse_error: {e}",
+                request=log_request_payload,
+                response=result.content or "",
+                duration_ms=int((time.time() - enrich_started) * 1000),
+            )
             await _write_project_generation_log_committed(
                 scene="character_portrait",
                 ref_id=str(character.id),
@@ -1457,6 +1642,17 @@ async def enrich_character(character_id: str, req: CharacterEnrichRequest):
             await session.flush()
             updated = service.to_response(updated_character) if updated_character else None
 
+        await platform_log.record_event(
+            scene="llm",
+            task_type="llm_chat",
+            level="info",
+            status="success",
+            provider=result.provider or req.provider or "",
+            model=result.model or req.model or "",
+            message=f"角色 AI 补全成功：{character.name}（{mode}）",
+            request=log_request_payload,
+            duration_ms=int((time.time() - enrich_started) * 1000),
+        )
         await _write_project_generation_log(
             session,
             scene="character_portrait",
@@ -1546,10 +1742,27 @@ async def generate_character_portrait(character_id: str, req: PortraitGenerateRe
             reference_images=req.reference_images or [],
         )
 
+        started = time.time()
         try:
             result = await manager.generate_image(img_req)
         except Exception as e:
             logger.exception(f"[portrait/generate] generate_image failed: {e}")
+            # 写入平台事件日志：任务中心与事件日志 Tab 读的是 platform_event_logs，
+            # 只写 ProjectGenerationLog 会导致角色生图在任务中心不可见。
+            await platform_log.record_event(
+                scene="image",
+                task_type="character_portrait",
+                level="error",
+                status="failed",
+                provider=req.provider or "",
+                model=req.model or "",
+                message=f"角色立绘生成失败：{character.name}",
+                error=str(e),
+                ref_id=character.id,
+                request=_portrait_event_payload(character, req, prompt, negative_prompt, prompt_bundle["preset"]),
+                duration_ms=int((time.time() - started) * 1000),
+                retry_payload=_portrait_retry_payload(req, prompt, negative_prompt),
+            )
             # 写入失败日志
             try:
                 await _write_project_generation_log(
@@ -1582,6 +1795,20 @@ async def generate_character_portrait(character_id: str, req: PortraitGenerateRe
             raise HTTPException(status_code=500, detail=f"生图失败: {e}")
 
         if not result.success:
+            await platform_log.record_event(
+                scene="image",
+                task_type="character_portrait",
+                level="error",
+                status="failed",
+                provider=result.provider or req.provider or "",
+                model=result.model or req.model or "",
+                message=f"角色立绘生成失败：{character.name}",
+                error=result.error or "",
+                ref_id=character.id,
+                request=_portrait_event_payload(character, req, prompt, negative_prompt, prompt_bundle["preset"]),
+                duration_ms=int((time.time() - started) * 1000),
+                retry_payload=_portrait_retry_payload(req, prompt, negative_prompt),
+            )
             # 写入失败日志
             try:
                 await _write_project_generation_log(
@@ -1621,8 +1848,10 @@ async def generate_character_portrait(character_id: str, req: PortraitGenerateRe
         if not urls and not local_paths:
             raise HTTPException(status_code=500, detail="生图成功但未返回图片")
 
-        url = urls[0] if urls else ""
         local_path = local_paths[0] if local_paths else ""
+        # 供应商返回的 URL 多为临时图床，会过期失效。只要本地已落盘就优先使用本地路径，
+        # 远端地址仅作为无本地文件时的兜底（并记入 extra 留档）。
+        url = _local_file_url(local_path) if local_path else (urls[0] if urls else "")
 
         # 3. 写入资产中枢
         try:
@@ -1693,7 +1922,22 @@ async def generate_character_portrait(character_id: str, req: PortraitGenerateRe
             await session.flush()
             await session.refresh(character)
 
-            # 5. 写入成功日志
+            # 5. 写入平台事件日志：任务中心与事件日志 Tab 的数据源
+            await platform_log.record_event(
+                scene="image",
+                task_type="character_portrait",
+                level="info",
+                status="success",
+                provider=result.provider or req.provider or "",
+                model=result.model or req.model or "",
+                message=f"角色立绘生成成功：{character.name}",
+                ref_id=character.id,
+                request=_portrait_event_payload(character, req, prompt, negative_prompt, prompt_bundle["preset"]),
+                response={"url": url, "node_id": asset_hub_result.node_id},
+                duration_ms=int((time.time() - started) * 1000),
+            )
+
+            # 6. 写入成功日志
             try:
                 await _write_project_generation_log(
                     session,

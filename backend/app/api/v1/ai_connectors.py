@@ -115,27 +115,25 @@ async def get_ai_service():
         yield AIConnectorService(session)
 
 
-def reload_ai_service_after_connector_change() -> None:
-    """连接器配置变更后刷新全局 AIService（后台线程执行，不阻塞 API 响应）。
+async def reload_ai_service_after_connector_change() -> None:
+    """连接器配置变更后同步刷新全局 AIService。
 
-    避免全量 Backend 重新初始化阻塞编辑保存请求的返回。
+    写库成功后必须等待注册表重建完成再返回，否则紧接着发起的请求仍可能
+    命中旧的模型能力和 API Key。阻塞式初始化在线程中执行，避免阻塞事件循环。
     """
-    import threading
+    import asyncio
 
-    def _reload_in_background():
+    def _reload_sync():
+        session = next(get_session())
         try:
-            session = next(get_session())
-            try:
-                AIService.initialize(session=session)
-            finally:
-                close = getattr(session, "close", None)
-                if callable(close):
-                    close()
-            logger.info("[AI Connectors] 配置变更后已刷新 AIService")
-        except Exception as e:
-            logger.warning(f"[AI Connectors] 配置变更后刷新 AIService 失败: {e}")
+            AIService.initialize(session=session)
+        finally:
+            close = getattr(session, "close", None)
+            if callable(close):
+                close()
 
-    threading.Thread(target=_reload_in_background, daemon=True).start()
+    await asyncio.to_thread(_reload_sync)
+    logger.info("[AI Connectors] 配置变更后已刷新 AIService")
 
 
 # =============================================================================
@@ -419,7 +417,7 @@ async def import_connectors(
     # BackendRegistry，否则项目里按 backend_name 找不到新导入的模型。
     if imported or updated:
         try:
-            reload_ai_service_after_connector_change()
+            await reload_ai_service_after_connector_change()
         except Exception as e:
             logger.exception(f"[AIConnector] 导入后刷新 AIService 失败: {e}")
             errors.append(f"刷新 AIService 失败: {str(e)}")
@@ -1077,7 +1075,7 @@ async def create_connector(
     try:
         data.provider_type = normalize_provider_type(data.provider_type)
         conn = await service.create(data)
-        reload_ai_service_after_connector_change()
+        await reload_ai_service_after_connector_change()
         return {
             "success": True,
             "connector": AIConnectorResponse.from_db(conn),
@@ -1100,7 +1098,7 @@ async def update_connector(
     conn = await service.update(conn_id, data)
     if not conn:
         raise HTTPException(status_code=404, detail="连接不存在")
-    reload_ai_service_after_connector_change()
+    await reload_ai_service_after_connector_change()
     return {
         "success": True,
         "connector": AIConnectorResponse.from_db(conn),
@@ -1117,7 +1115,7 @@ async def delete_connector(
     ok = await service.delete(conn_id)
     if not ok:
         raise HTTPException(status_code=404, detail="连接不存在")
-    reload_ai_service_after_connector_change()
+    await reload_ai_service_after_connector_change()
     return {
         "success": True,
         "message": "删除成功",

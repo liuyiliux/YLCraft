@@ -179,7 +179,9 @@ def normalize_reference_image_config_values(
 
     Supported shapes:
     - JSON array mode: reference_image_array_field is set, reference_image_field is empty.
-    - Multipart mode: default_params.request_content_type=multipart, single upload field is set.
+    - Multipart mode: default_params.request_content_type=multipart, upload field is set.
+      Multiple images are sent by repeating the same field, so
+      support_multiple_reference_images is kept as declared by the connector.
     - Legacy field mode: reference_image_field is set, array field is empty.
     """
     params = _parse_json_object(default_params)
@@ -196,7 +198,8 @@ def normalize_reference_image_config_values(
     elif content_type == "multipart":
         field = field or str(params.get("multipart_image_field") or "image")
         array_field = ""
-        support_multiple_reference_images = False
+        # multipart 通过重复提交同名字段表达多图，网关按提交顺序解释为图 1、图 2……，
+        # 因此多图能力以连接器声明为准，不再强制关闭。
         params["request_content_type"] = "multipart"
         params["multipart_image_field"] = field
     elif array_field:

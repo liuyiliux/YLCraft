@@ -56,6 +56,7 @@ async def record_event(
     response: Any = None,
     duration_ms: int = 0,
     project_id: Optional[str] = None,
+    ref_id: Optional[str] = None,
     retry_payload: Any = None,
     retry_of: Optional[str] = None,
 ) -> Optional[str]:
@@ -65,6 +66,7 @@ async def record_event(
         id=event_id,
         scene=scene,
         task_type=task_type,
+        ref_id=ref_id,
         task_id=task_id,
         level=level,
         status=status,
@@ -100,6 +102,7 @@ async def list_events(
     status: Optional[str] = None,
     task_type: Optional[str] = None,
     project_id: Optional[str] = None,
+    ref_id: Optional[str] = None,
     q: Optional[str] = None,
     since: Optional[float] = None,
     until: Optional[float] = None,
@@ -122,6 +125,8 @@ async def list_events(
                 query = query.where(PlatformEventLog.task_type == task_type)
             if project_id:
                 query = query.where(PlatformEventLog.project_id == project_id)
+            if ref_id:
+                query = query.where(PlatformEventLog.ref_id == ref_id)
             if since is not None:
                 query = query.where(PlatformEventLog.created_at >= since)
             if until is not None:
@@ -182,6 +187,7 @@ def _event_to_dict(row: PlatformEventLog, *, include_summary: bool) -> dict[str,
         "error": row.error,
         "duration_ms": row.duration_ms,
         "project_id": row.project_id,
+        "ref_id": row.ref_id,
         "retry_of": row.retry_of,
         "retried_by": row.retried_by,
         "created_at": row.created_at,

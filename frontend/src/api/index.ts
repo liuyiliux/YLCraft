@@ -2005,6 +2005,18 @@ export const syncCreativeProjectCharacters = (projectId: string) =>
     method: 'POST',
   })
 
+export const extractCreativeProjectCharacters = (projectId: string, data: {
+  provider?: string
+  model?: string
+  max_characters?: number
+  apply?: boolean
+  cards?: Array<Record<string, any>>
+} = {}) =>
+  request(`/creative-projects/${projectId}/extract-characters`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
 export const runCreativeProjectPipeline = (
   projectId: string,
   data: {

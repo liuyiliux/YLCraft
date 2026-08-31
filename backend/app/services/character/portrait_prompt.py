@@ -21,6 +21,7 @@ PORTRAIT_PRESETS = {
     "pose_grid_3x3",
     "transparent_or_white_background",
     "expression_pose_sheet",
+    "item_sheet",
 }
 
 PRESET_ALIASES = {
@@ -79,6 +80,14 @@ PRESET_NEGATIVE_CONSTRAINTS = {
         "正侧背不一致",
         "比例漂移",
         "隐藏四肢",
+    ],
+    "item_sheet": [
+        "出现人物",
+        "道具重叠",
+        "道具缺失",
+        "材质错乱",
+        "尺寸比例漂移",
+        "场景背景",
     ],
     "identity_board_16_9": [
         "文字乱码",
@@ -265,6 +274,7 @@ def build_portrait_prompt(
     *,
     character: Any,
     preset: str | None = "main_portrait",
+    prompt_override: str | None = None,
     visual_profile: dict[str, Any] | None = None,
     style_override: str = "",
     negative_override: str = "",
@@ -273,7 +283,11 @@ def build_portrait_prompt(
     selected_preset = normalize_preset(preset)
     snapshot = synthesize_visual_profile(character, visual_profile)
     style = (style_override or snapshot.get("style") or "高质量角色设定图，干净线条，专业角色设计").strip()
-    prompt = _preset_prompt(selected_preset, character, snapshot, style)
+
+    if prompt_override and prompt_override.strip():
+        prompt = prompt_override.strip()
+    else:
+        prompt = _preset_prompt(selected_preset, character, snapshot, style)
     negative_prompt = "，".join(
         _dedupe_strings(
             [
@@ -414,6 +428,17 @@ def _preset_prompt(preset: str, character: Any, profile: dict[str, Any], style: 
             f"表情包含：{'、'.join(profile['expression_set'])}。",
             f"姿态包含：{'、'.join(profile['pose_set'])}。",
             "同一套服装与身体比例贯穿所有样本，避免脸部漂移、衣服漂移和新增配饰。",
+        ]
+    elif preset == "item_sheet":
+        item_focus = "、".join(profile["signature_items"]) or "角色代表道具"
+        accessory_focus = "、".join(profile["accessories"])
+        intent = [
+            "输出角色道具与标志物设定板 Item Sheet，作为美术建模和作画参考。",
+            f"核心道具必须包含：{item_focus}。",
+            f"配饰参考：{accessory_focus}。" if accessory_focus else "",
+            "每件道具单独成图、互不重叠，给出正面与 3/4 侧面两个角度，清楚展示结构、材质、固有色、尺寸比例和做旧磨损状态。",
+            "纯白背景，画面中不出现人物、场景、文字和水印；道具之间留出明确空隙，不裁切边缘。",
+            "道具的材质质感、配色和装饰语言必须与角色服装保持一致。",
         ]
     else:
         intent = [

@@ -26,6 +26,9 @@ flowchart LR
 
 角色管理支持两类互补流程：`extract`（从小说/正文提取角色，保留原文依据与字段来源）和 `character-first`（先独立创建角色、完善设定与参考图，再选择性回流 Story/生产线）。后者不要求先完成正文、大纲或圣经；角色页本身是可独立使用的角色设定集工作区。`/characters` 现在直接进入角色工作区：默认打开首个角色，左侧固定角色列表、搜索、来源/定位/收藏筛选，右侧为 `/characters/:characterId` 报告式详情（视觉中心、参考图/设定图、Bible、关系与 Prompt 资产包）；角色库为空时进入 `/characters/new` 创建弹窗，创建后进入真实详情。角色详情可直接新建/编辑角色、选择立绘版本设为身份基准图、将版本加入或移出参考图集合（移除只解除角色引用，不删除素材库原图），参考图选择器支持素材库搜索并区分素材库图片与历史立绘版本；版本卡可独立预览并展开查看生成 Prompt、负面 Prompt 和参数，主视图与参考图集合在视觉上明确分栏；生图请求固定采用当前身份基准图及已确认参考图集合，临时版本预览不会被隐式带入；Story 生产线中的角色立绘生成也会复用同一组角色参考图，并把结果回写项目大纲和 Asset Hub 血缘；生成故事大纲时会保留项目已绑定角色的确认字段，不会被新一轮 LLM 大纲覆盖；生图 Prompt 可在选定 LLM 下优化，优化结果仅回填待确认输入框，不会隐式创建资产；并从已关联的创作项目直接回到 Story 生产线。“以此角色新建项目”会预填创意，项目创建后立即把完整角色卡写入项目大纲并建立角色项目关联，后续大纲、角色演绎、分镜和生图无需再次手动同步。世界使用配置会保留项目内别名、阵营、状态、局部 Prompt 标签、OOC/出模约束和 Bible/视觉覆盖。关系图谱也已在详情页内以内联 SVG 展示，节点可直接切换角色；角色工作区支持「全屏工作区」切换（AppLayout 内隐藏 Header，不新增路由，Esc 退出，切路由自动恢复），并新增「世界视角」切换条：角色库是全局基准设定，切到某个项目/世界后展示「基准 + 该项目覆盖」的有效 Bible（identity/motivation/speech/behavior）、服装覆盖和视觉覆盖，并在覆盖字段上标注「本世界覆盖」。提取来源细分为 `uploaded_novel`（上传小说）、`imported_novel`（外来小说导入）和 `original_outline`（原创大纲）；前两者有原文依据，字段来源标 `original`，原创大纲由 LLM 生成，标 `ai_inferred`；用户在工作区手填的字段标 `user_edited` 且不会被同步流程覆盖。`extract_origin` 记录在 `character_story_links` 上（角色 × 项目维度），可按来源筛选角色。`characters/manage` 兼容路由已删除，不再保留重定向。
 
+小说/来源正文的角色提取走两趟流程：第一趟按段落分块，只扫描原文角色名、别名、观察记录和逐字引文；服务层按名称/别名归并，并把包含名冲突作为人工合并候选；第二趟再把每个角色映射为 `identity`、`motivation`、`speech`、`behavior`、`ability`、`arc` 等 YLCraft 设定字段。`POST /api/v1/creative-projects/{project_id}/extract-characters` 默认只预览，真人用户或 Agent 审核后可把预览返回的 `characters` 原样带回 `apply=true`，服务端只重新校验证据是否存在于来源文本，不重复调用模型。写入同时更新项目大纲、全局角色库和 `CharacterStoryLink`，保存 `aliases_json`、`evidence_json`、`extraction_notes`；按全局角色名复用已有角色，项目关联按角色 ID 幂等。大纲生成成功后会自动执行一次角色同步，使原创项目也能立即在角色库看到角色。
+小说/来源正文的角色提取走两趟流程：第一趟按段落分块，只扫描原文角色名、别名、观察记录和逐字引文；服务层按名称/别名归并，并把包含名冲突作为人工合并候选；第二趟再把每个角色映射为 `identity`、`motivation`、`speech`、`behavior`、`ability`、`arc` 等 YLCraft 设定字段。`POST /api/v1/creative-projects/{project_id}/extract-characters` 默认只预览，真人用户或 Agent 审核后可把预览返回的 `characters` 原样带回 `apply=true`，服务端只重新校验证据是否存在于来源文本，不重复调用模型。写入同时更新项目大纲、全局角色库和 `CharacterStoryLink`，保存 `aliases_json`、`evidence_json`、`extraction_notes`；按全局角色名复用已有角色，项目关联按角色 ID 幂等。提取写入采用增量合并，未被本次来源识别的既有大纲角色不会被删除；空提取结果也不能覆盖项目角色。大纲生成成功后会自动执行一次角色同步，使原创项目也能立即在角色库看到角色。
+
 设计原则：
 
 - 素材库和创作项目是中转层，其他功能围绕它们串起来。
@@ -237,7 +240,9 @@ Agent Center 的人工委派入口支持 `resume_parent`：成功汇合后把子
 
 `Model3DViewer` 已升级为完整查看器，并提供独立全屏页 `/model3d-viewer/:assetId`（顶层路由，不套 AppLayout 导航）。支持 GLB/GLTF 与 OBJ（OBJLoader + MTLLoader 按相对路径解析 mtl/贴图）。底部工具栏含自动旋转、渲染模式（纹理/白模/线框/反照率/法线）、地面网格、白色线框包围盒、灯光面板（射灯色值/强度、平面光强度、光照水平角/仰角）、视角对齐（前/后/左/右/顶/底 + 重新居中）、下载；左下角常驻拓扑角标（三角面/顶点数）。方向键平移视角（自实现 OrbitControls pan，规避 drei `keyEvents` 缺陷）；旋转原点固定在模型中心（模型底部贴地后中心 y = height/2）。
 
-3D 素材缩略图：图生 3D 生成结果优先用供应商 `PreviewImageUrl`（下载到 `storage/model3d/previews/` 作为 `thumbnail_url`）；本地上传的 3D 模型由前端离屏 WebGL 渲染截图（`captureModelThumbnail`）后 `POST /assets/{id}/thumbnail` 回填。素材库新增 `POST /api/v1/assets/upload-model3d`（3D 模型/ZIP 解包入库）与通用 `POST /api/v1/assets/upload`（图片/视频/音频/文本按扩展名归类；视频用 ffmpeg 截第 0.5s 帧作缩略图）；`GET /api/v1/assets/{id}/files/{filename}` 服务 OBJ 多文件配套。
+3D 素材缩略图：图生 3D 生成结果优先用供应商 `PreviewImageUrl`（下载到 `storage/model3d/previews/` 作为 `thumbnail_url`）；本地上传的 3D 模型由前端离屏 WebGL 渲染截图（`captureModelThumbnail`）后 `POST /assets/{id}/thumbnail` 回填。素材库新增 `POST /api/v1/assets/upload-model3d`（3D 模型/ZIP 解包入库）与通用 `POST /api/v1/assets/upload`（图片/视频/音频/文本按扩展名归类；视频用 ffmpeg 截第 0.5s 帧作缩略图）；`GET /api/v1/assets/{id}/files/{filename}` 服务 OBJ 多文件配套。图生 3D 的参考图查询 `asset_type=image` 同时覆盖 IMAGE 节点和带图片表示的 CHARACTER 节点，因此角色主立绘可以直接作为素材库参考图；角色节点仍保留角色详情与版本血缘，列表卡片按实际 MIME 类型归一为 image。跨类型查询（如 `asset_type=image` 同时命中 IMAGE 与 CHARACTER）不再采用「每类各取一页」的分页方式：先按当前页累计条数取候选，合并后统一按创建时间倒序再切片，避免单页条数翻倍、翻页重复或漏项；同时按卡片实际类型兜底过滤，非图片主表示的节点不会混进图片列表。
+
+角色立绘生图的参考图处理：角色的 `identity_reference_url` / `reference_image_urls` 通常存的是平台内部地址（`/api/v1/assets/download?path=...`），生图后端通过 `app/services/asset_file_resolver.py` 直接读取本机文件，不再走 HTTP 回环下载——此前该下载会超时，异常被吞掉后参考图整批丢失，最终发出没有参考图的图生图请求并被网关以 `images[].image_url is required` 拒绝。图生图（`request_content_type=multipart`）按勾选顺序重复提交 `image` 文件字段，网关按图 1、图 2…… 解释；连接器 `support_multiple_reference_images` 决定提交全部勾选图还是仅第一张，归一化逻辑不再在 multipart 模式下强制关闭多图。参考图全部不可用时直接失败，不再退化成网关不接受的 JSON `image` 数组。角色详情页提供文生图/图生图模式切换，供应商下拉按 `capabilities`（`text_to_image` / `image_to_image`）过滤，参考图可逐张勾选，顺序即提交顺序。角色链路的落账分两层：立绘生成与 AI 补全除写 `project_generation_logs`（角色详情「生图日志」面板）外，还写 `platform_event_logs`（复用 `scene=image` / `scene=llm` 与既有 `task_type`，保证任务中心可见且失败可经 `/api/v1/logs/{id}/retry` 重发）；立绘切片是本地图像处理、不调用外部供应商，只写 `project_generation_logs`。
 
 ### 4.4.4 远程对象存储（COS）
 
@@ -304,10 +309,10 @@ Live2D accepts uploads, character imagery and Asset Hub images as source materia
 | --- | --- | --- | --- | --- |
 | Agent Center | `/api/v1/agent` | `services/agent` | `/agent`、settings skill 面板 | 主体完成，持续优化体验。 |
 | Agent Skill Runtime | `/api/v1/agent/skills*` | `services/agent/skill_*` | `SkillManagementPanel` | OpenSpec 主计划完成。 |
-| 创作项目 / Writer Room | `/api/v1/creative-projects` | `services/creative_project` | `/story` | 核心闭环、叙事运行时和 Story Cockpit 已可用；候选读取采用“项目最新 + 当前章历史”并有独立错误恢复，仍待外部视觉验收。 |
+| 创作项目 / Writer Room | `/api/v1/creative-projects` | `services/creative_project` | `/story` | 核心闭环、叙事运行时和 Story Cockpit 已可用；角色提取/同步/项目回流和角色设定上下文注入已完成；候选读取采用“项目最新 + 当前章历史”并有独立错误恢复，仍待外部视觉验收。 |
 | 创作画布 | `/api/v1/canvas` | `frontend/src/components/canvas` | `/canvas` | 独立自由画布，已接一级菜单；支持后端持久化、沉浸式工具 Dock、节点卡片内联编辑、节点输出内联可见、选中节点检查器 HUD、输入/输出变量可视化、生图节点内联 composer、图片节点 Prompt reference 入口与 provenance 传递、素材/项目插入、节点运行、Agent 操作、文本/图片到生成配置节点的派生链路、媒体类型感知的素材节点，以及生成结果回写图片节点。 |
 | 旧 Story Maker | `/api/v1/story` | `services/story` | `/story` 兼容入口 | 历史兼容入口，新增能力优先走 creative-projects。 |
-| 角色 | `/api/v1/characters` | `services/character` | `/characters` | 已支持字段来源标记（original / ai_inferred / user_edited）、提取来源细分（上传/导入/原创大纲）、角色关系 CRUD/关系图谱、确定性 Prompt 资产包；新角色工作区提供主视图/参考图、立绘版本、编辑/新建弹窗、全屏切换、世界视角切换与生产线回流；`/characters/manage` 已删除。 |
+| 角色 | `/api/v1/characters` | `services/character` | `/characters` | 已支持字段来源标记（original / ai_inferred / user_edited）、提取来源细分（上传/导入/原创大纲）、角色关系 CRUD/关系图谱、确定性 Prompt 资产包；新角色工作区提供主视图/参考图、立绘版本、编辑/新建弹窗、全屏切换、世界视角切换与生产线回流；小说提取采用两趟扫描/设定卡流程，支持预览确认、原文证据、别名归并候选、增量合并和 Agent 工具；角色库筛选总数与筛选条件一致；`/characters/manage` 已删除。 |
 | 素材库 | `/api/v1/assets` | `services/asset` | `/assets` | Asset Hub 统一入口；支持按项目、资产角色和来源阶段追溯项目产物，详情展示归一化项目血缘。 |
 | 资产中枢 | `/api/v1/asset-hub` | `services/asset_hub` | `/asset-hub` | 当前资产事实来源；旧 assets 接口保留兼容。 |
 | AI 连接器 | `/api/v1/ai/connectors` | `services/ai`、`services/ai_connector` | `/settings` | 已支持通用配置，仍需 UX 打磨。 |
@@ -357,6 +362,8 @@ Agent Tool / Skill 变更按内部 API 处理：工具名称、输入输出 sche
 
 ## 7. OpenSpec 当前状态
 
+状态更新时间：2026-08-31。角色专项改造已完成代码、数据库迁移、focused 回归和真人/Agent 临时项目 E2E；当前未完成项仍是独立的真实供应商生图验收，不阻塞角色提取、角色库或项目正文链路。
+
 | Change | Done | Pending | 说明 |
 | --- | ---: | ---: | --- |
 | `archive/agent-skill-package-runtime` | 56 | 0 | Skill Runtime 主计划完成并归档。 |
@@ -368,7 +375,7 @@ Agent Tool / Skill 变更按内部 API 处理：工具名称、输入输出 sche
 | `archive/creative-character-portrait-system` | 62 | 0 | 角色立绘主计划完成并归档，仍可体验优化。 |
 | `archive/creative-novel-writer-room` | 52 | 0 | Writer Room 任务清单完成并归档。 |
 | `archive/drop-legacy-assets-final` | 24 | 0 | 旧资产清理计划完成并归档。 |
-| `creative-project-closed-loop` | 93 | 1 | 代码交付完成；仅保留真实可用生图后端的人工闭环验收，不能以模拟或旧任务替代。 |
+| `creative-project-closed-loop` | 97 | 1 | 角色提取/同步/项目回流和真人/Agent 双入口已完成；仅保留真实可用生图后端的人工闭环验收，不能以模拟或旧任务替代。 |
 | `archive/creative-project-optimization-roadmap` | 43 | 0 | 创作项目优化路线完成并归档。 |
 | `archive/creative-project-continuity-facts` | 20 | 0 | 连续性候选、锁定事实、上下文摘要、冲突检查和段落候选重写完成并归档。 |
 | `archive/creative-project-infinite-canvas` | 89 | 0 | 独立创作画布、端口契约、运行 trace、素材/提示词集成完成并归档。 |

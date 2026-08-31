@@ -29,6 +29,19 @@ from app.services.ai.types import (
 logger = logging.getLogger("ylcraft.openai_sdk_image")
 
 
+def _read_image_size(data: bytes) -> str:
+    """读取图片字节流的像素尺寸，用于核对供应商是否遵守请求的 size。"""
+    try:
+        from io import BytesIO
+
+        from PIL import Image
+
+        with Image.open(BytesIO(data)) as img:
+            return f"{img.width}x{img.height}"
+    except Exception:
+        return "unknown"
+
+
 class OpenAISDKImageBackend:
     """Image backend powered by openai.AsyncOpenAI.images.generate."""
 
@@ -90,6 +103,15 @@ class OpenAISDKImageBackend:
 
             response = await self._client.images.generate(**params)
             latency_ms = (time.perf_counter() - start_time) * 1000
+
+            # 诊断：记录供应商实际返回的尺寸，用于排查 size 不生效问题
+            for img in response.data:
+                w, h = getattr(img, "width", None), getattr(img, "height", None)
+                if w and h:
+                    logger.info(
+                        "[OpenAISDK-Image] response dimensions: %dx%d | requested=%s | model=%s",
+                        w, h, size, model,
+                    )
 
             urls = [img.url for img in response.data if getattr(img, "url", None)]
             b64_images = [img.b64_json for img in response.data if getattr(img, "b64_json", None)]
@@ -218,7 +240,11 @@ class OpenAISDKImageBackend:
                 resp.raise_for_status()
                 local_path.write_bytes(resp.content)
 
-            logger.info("[OpenAISDK-Image] saved: %s", local_path)
+            logger.info(
+                "[OpenAISDK-Image] saved: %s | 实际尺寸=%s",
+                local_path,
+                _read_image_size(resp.content),
+            )
             return str(local_path)
         except Exception as e:
             logger.error("[OpenAISDK-Image] download failed url=%s: %s", url, e)
@@ -249,8 +275,13 @@ class OpenAISDKImageBackend:
             )
             filename = f"{timestamp}_{safe_prompt}_{index}{ext}"
             local_path = self._save_dir / filename
-            local_path.write_bytes(base64.b64decode(data))
-            logger.info("[OpenAISDK-Image] base64 image saved: %s", local_path)
+            decoded = base64.b64decode(data)
+            local_path.write_bytes(decoded)
+            logger.info(
+                "[OpenAISDK-Image] base64 image saved: %s | 实际尺寸=%s",
+                local_path,
+                _read_image_size(decoded),
+            )
             return str(local_path)
         except Exception as e:
             logger.error("[OpenAISDK-Image] save base64 image failed: %s", e)

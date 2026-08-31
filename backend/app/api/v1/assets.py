@@ -32,7 +32,7 @@ from uuid import uuid4
 from fastapi import APIRouter, HTTPException, Depends, Query, Request, UploadFile, File, Form
 from fastapi.responses import StreamingResponse, FileResponse, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, func
 
 from app.db.database import get_async_session
 from app.db.models.asset_hub import AssetNode, AssetVersion, AssetRepresentation, AssetType, Tag, RelationType
@@ -496,21 +496,32 @@ async def _list_asset_hub_cards(
         node_types = [AssetType.TEXT]
     elif normalized_type and normalized_type not in type_map:
         return [], 0
+    elif normalized_type == AssetType.IMAGE.value:
+        # Character portraits are stored on CHARACTER nodes so their versions
+        # and identity metadata stay attached to the character. Their primary
+        # representation is still an image and must be selectable anywhere an
+        # image reference is requested (for example image-to-3D).
+        node_types = [AssetType.IMAGE, AssetType.CHARACTER]
     else:
         node_types = [type_map[normalized_type]] if normalized_type else list(AssetType)
 
     node_service = AssetNodeService(session)
 
     # 真正的数据库分页：不再一次性拉 1000 条再 Python 过滤。
-    # 对每个 node_type 分别取当前页，合并后再做业务层过滤。
+    # 单类型时直接由数据库取当前页；多类型（如 image 同时命中 IMAGE 与 CHARACTER）时
+    # 数据库无法跨类型统一排序，改为取「当前页累计条数」的候选，合并排序后再切片，
+    # 避免每类各取一页导致单页条数翻倍、翻页重复或漏项。
+    is_multi_type = len(node_types) > 1
+    candidate_page = 1 if is_multi_type else page
+    candidate_size = page * page_size if is_multi_type else page_size
     all_nodes: list[tuple[AssetNode, AssetType]] = []
     total = 0
     for node_type in node_types:
         type_nodes, type_total = await node_service.list_nodes(
             asset_type=node_type,
             keyword=search,
-            page=page,
-            page_size=page_size,
+            page=candidate_page,
+            page_size=candidate_size,
         )
         all_nodes.extend([(node, node_type) for node in type_nodes])
         total += type_total
@@ -531,7 +542,9 @@ async def _list_asset_hub_cards(
         card = await _asset_hub_card(session, node, include_metadata=False, version=version, rep=rep)
         if not card:
             continue
-        if normalized_type == "novel" and card.get("type") != "novel":
+        # 合并类型查询时按主表示的真实类型兜底：角色节点的主表示可能是非图片文件，
+        # 请求 type=image 时不应把这类节点混进图片列表。
+        if normalized_type in ("novel", "image") and card.get("type") != normalized_type:
             continue
         if status and str(card.get("status") or "").upper() != status.upper():
             continue
@@ -549,6 +562,16 @@ async def _list_asset_hub_cards(
         if source_stage and project_context["source_stage"].lower() != source_stage.lower():
             continue
         cards.append(card)
+
+    if is_multi_type:
+        # 跨类型合并后统一按创建时间倒序再取当前页，保证与单类型查询的分页语义一致
+        def _card_sort_key(item: dict) -> str:
+            value = item.get("_sort_created_at") or ""
+            return value.isoformat() if isinstance(value, datetime) else str(value)
+
+        cards.sort(key=_card_sort_key, reverse=True)
+        cards = cards[(page - 1) * page_size : page * page_size]
+
     return cards, total
 
 
@@ -1641,6 +1664,66 @@ async def update_asset(
 class DeleteRequest(BaseModel):
     mode: str = Field("soft", description="删除模式：soft=软删除 / del_file=删文件+软删记录 / hard=永久删除")
     restore: bool = Field(False, description="恢复已软删除的资产")
+
+
+@router.delete("/versions/{version_id}", summary="删除单个资产版本")
+async def delete_asset_version(
+    version_id: str,
+    mode: str = Query("soft", description="soft=仅删记录 / del_file=删文件+记录"),
+    session = Depends(get_asset_session),
+):
+    """
+    删除资产节点下的某一个版本（而不是整个资产）。
+
+    与 DELETE /assets/:id 的区别：
+      - 后者按节点删除，会把该节点下所有版本一起干掉；
+      - 这里只删指定版本，其它版本保留。
+
+    保护的两种情况：
+      - 该版本被标记为主视图（rep.extra_json.is_main）→ 拒绝，需先切换主视图
+      - 该版本是节点的唯一版本 → 拒绝，避免留下无版本的空节点
+    """
+    if mode not in {"soft", "del_file"}:
+        raise HTTPException(status_code=400, detail="不支持的删除模式")
+
+    version = await AssetVersionService(session).get(version_id)
+    if not version:
+        raise HTTPException(status_code=404, detail="版本不存在")
+
+    # 唯一版本保护：删掉会留下没有版本的空节点
+    total = (
+        await session.execute(
+            select(func.count(AssetVersion.id)).where(
+                AssetVersion.asset_node_id == version.asset_node_id
+            )
+        )
+    ).scalar_one()
+    if total <= 1:
+        raise HTTPException(status_code=400, detail="不允许删除资产的唯一版本")
+
+    rep_service = AssetRepresentationService(session)
+    reps = await rep_service.list_by_version(str(version.id))
+
+    # 主视图保护
+    for rep in reps:
+        if (rep.extra_json or {}).get("is_main"):
+            raise HTTPException(status_code=400, detail="不能删除主视图版本，请先切换主视图")
+
+    file_paths: list[str] = []
+    for rep in reps:
+        if rep.file_path:
+            file_paths.append(str(rep.file_path))
+        await rep_service.delete(str(rep.id))
+
+    await session.delete(version)
+    await session.flush()
+
+    if mode == "del_file":
+        for path in file_paths:
+            _delete_asset_file_if_exists(path)
+
+    await session.commit()
+    return {"success": True, "message": f"版本已删除（mode={mode}）"}
 
 
 @router.delete("/{asset_id}", summary="删除资产")

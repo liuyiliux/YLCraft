@@ -33,6 +33,9 @@ class PlatformEventLog(SQLModel, table=True):
     response_summary: str = Field(default="")
     duration_ms: int = Field(default=0)
     project_id: Optional[str] = Field(default=None, index=True, max_length=64)
+    # 业务资源关联 ID（如 character_id / asset_node_id）。
+    # 角色等非项目场景没有 project_id，需要按 ref_id 精确过滤出某一条资源的事件流。
+    ref_id: Optional[str] = Field(default=None, index=True, max_length=64)
     retry_payload_json: str = Field(default="{}")
     retry_of: Optional[str] = Field(default=None, index=True, max_length=64)
     retried_by: Optional[str] = Field(default=None, index=True, max_length=64)

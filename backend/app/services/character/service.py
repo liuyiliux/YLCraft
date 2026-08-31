@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Any, Optional, cast
 
 from sqlmodel import select
+from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.character import Character, CharacterStoryLink, CharacterRelationship, CharacterRole
@@ -56,12 +57,17 @@ class CharacterService:
             query = query.where(Character.name.contains(keyword))
         if role:
             query = query.where(Character.role == role)
-        if is_favorite:
-            query = query.where(Character.is_favorite == True)
+        if is_favorite is not None:
+            query = query.where(Character.is_favorite == is_favorite)
         if source_type:
-            query = query.where(Character.source_types.contains(source_type))
+            query = query.where(Character.source_types.contains(f'"{source_type}"'))
         if workflow_source:
             query = query.where(Character.workflow_source == workflow_source)
+        if tag:
+            # JSON arrays are stored as text for compatibility with legacy
+            # databases. Quoting the value avoids matching a substring in a
+            # different tag (for example, "hero" inside "anti-hero").
+            query = query.where(Character.tags.contains(f'"{tag}"'))
         if extract_origin:
             # 提取来源是「角色 × 项目」维度的标记，需要按关联的 world usage 过滤
             link_result = await self.session.exec(
@@ -74,15 +80,14 @@ class CharacterService:
                 return [], 0
             query = query.where(Character.id.in_(character_ids))
 
+        count_result = await self.session.exec(
+            select(func.count()).select_from(query.subquery())
+        )
+        total = int(count_result.one() or 0)
+
         query = query.offset((page - 1) * page_size).limit(page_size)
         result = await self.session.exec(query)
         characters = result.all()
-
-        count_query = select(Character)
-        if keyword:
-            count_query = count_query.where(Character.name.contains(keyword))
-        count_result = await self.session.exec(count_query)
-        total = len(count_result.all())
 
         return characters, total
 
@@ -556,6 +561,8 @@ class CharacterService:
             "behavior": _loads_json(getattr(character, "behavior_json", "{}"), {}),
             "ability": _loads_json(getattr(character, "ability_json", "{}"), {}),
             "arc": _loads_json(getattr(character, "arc_json", "{}"), {}),
+            "voice": _loads_json(getattr(character, "voice_json", "{}"), {}),
+            "voice_asset_id": getattr(character, "voice_asset_id", "") or "",
             "field_sources": _loads_json(getattr(character, "field_sources_json", "{}"), {}),
             "tags": tags,
             "portrait_url": character.portrait_url or "",
@@ -595,6 +602,9 @@ class CharacterService:
             "off_model_notes": link.off_model_notes or "",
             "bible_overrides": _loads_json(link.bible_overrides_json, {}),
             "visual_overrides": _loads_json(link.visual_overrides_json, {}),
+            "aliases": _loads_json(getattr(link, "aliases_json", "[]"), []),
+            "evidence": _loads_json(getattr(link, "evidence_json", "[]"), []),
+            "extraction_notes": getattr(link, "extraction_notes", "") or "",
             "extract_origin": getattr(link, "extract_origin", "") or "unknown",
             "extract_origin_label": extract_origin_label(getattr(link, "extract_origin", "") or "unknown"),
             "linked_at": str(link.linked_at) if link.linked_at else None,
@@ -625,6 +635,7 @@ _BIBLE_FIELD_MAP = {
     "behavior": "behavior_json",
     "ability": "ability_json",
     "arc": "arc_json",
+    "voice": "voice_json",
 }
 
 

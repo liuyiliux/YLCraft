@@ -123,6 +123,18 @@ Stable handoff:
 idea or novel source -> generated outline -> structured/manual edits -> saved outline -> chapter plan -> preserve existing and append a tail when needed -> episode workbench
 ```
 
+### Character Workflow
+
+角色有两条可互相回流的入口：
+
+- 真人用户可以在 `/characters` 先创建并维护角色，再从角色进入 Story 新建项目；项目创建会立即建立 `CharacterStoryLink` 并把完整角色卡写入初始大纲。
+- 从导入小说、上传正文或项目来源文本提取角色时，Story 大纲页和 API 使用两趟流程：第一趟分块扫描姓名、别名、观察记录和逐字证据；第二趟生成 YLCraft 角色设定字段。默认只返回预览，用户确认后才写入。
+- 预览确认会把审核后的 `characters` 原样带回 `apply=true`，不会重复调用模型；服务端会再次过滤不存在于原文的证据。写入是增量合并，不会删除本次未识别的既有项目角色，项目关联和全局角色复用按角色 ID 保持幂等。
+- AI Agent 使用 `extract_creative_project_characters` 遵循相同契约：先 `apply=false`，向用户展示角色卡、证据和合并候选；确认后再带回卡片执行写入。该工具标记为 `costly`，写入动作仍受 Agent 确认门禁约束。
+- 大纲生成成功后会自动同步大纲角色；角色库筛选支持关键词、角色定位、标签、收藏、流程来源、提取来源和分页，返回总数与当前筛选一致。
+
+角色设定分为全局基准和项目/世界覆盖。`Character` 保存可复用的 YLCraft 角色卡，`CharacterStoryLink` 保存本世界别名、身份、阵营、服装、OOC/视觉约束，以及 `aliases_json`、`evidence_json`、`extraction_notes` 等提取溯源。用户在角色工作区编辑的字段标记为 `user_edited`，同步流程不会用 AI 提取结果覆盖。
+
 Current editor behavior:
 
 - The outline tab has structured fields for title, genre, logline, premise, worldview, conflict, story arc, tone, visual style and production notes.

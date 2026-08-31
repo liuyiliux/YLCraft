@@ -17,7 +17,22 @@ def test_relationship_response_is_stable():
     service = CharacterService.__new__(CharacterService)
     relationship = CharacterRelationship(id="r1", character_id="c1", related_character_id="c2", relation_type="盟友", relation_note="共同调查", source="原文", is_directed=True)
     data = service.relationship_to_response(relationship)
-    assert data == {"id": "r1", "character_id": "c1", "related_character_id": "c2", "relation_type": "盟友", "relation_note": "共同调查", "source": "原文", "is_directed": True, "created_at": str(relationship.created_at), "updated_at": str(relationship.updated_at)}
+    assert data == {
+        "id": "r1",
+        "character_id": "c1",
+        "related_character_id": "c2",
+        "related_character_name": "",
+        "relation_type": "盟友",
+        "relation_note": "共同调查",
+        "source": "原文",
+        "is_directed": True,
+        "world_usage_id": None,
+        "world_name": None,
+        "timeline_phase": "",
+        "chapter_number": None,
+        "created_at": str(relationship.created_at),
+        "updated_at": str(relationship.updated_at),
+    }
 
 
 def test_character_response_normalizes_legacy_object_array_fields():
