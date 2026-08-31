@@ -224,6 +224,17 @@ class GenerateOutlineRequest(BaseModel):
     template_id: str | None = None
 
 
+class ExtractCharactersRequest(BaseModel):
+    provider: str | None = None
+    model: str | None = None
+    max_characters: int = Field(default=30, ge=1, le=30)
+    apply: bool = Field(default=False, description="是否将预览结果写入角色库和项目大纲")
+    cards: list[dict[str, Any]] | None = Field(
+        default=None,
+        description="确认写入时可传回预览返回的 characters，避免重新调用模型",
+    )
+
+
 class GenerateChapterPlanRequest(BaseModel):
     chapter_count: int = Field(default=12, ge=1, le=200)
     append_existing: bool = Field(default=False, description="保留当前章节规划，只补齐到目标章节数")
@@ -662,6 +673,31 @@ def create_from_novel(
             production_profile=req.production_profile,
         )
         return {"success": True, "data": serialize_project(project)}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.post("/{project_id}/extract-characters", summary="两趟提取项目/小说角色")
+async def extract_project_characters(
+    project_id: str,
+    req: ExtractCharactersRequest,
+    svc: CreativeProjectService = Depends(service),
+):
+    """Scan source text, merge aliases, then build YLCraft character cards.
+
+    ``apply=false`` is the human review path. Agent callers can set
+    ``apply=true`` after inspecting the returned cards and merge candidates.
+    """
+    try:
+        data = await svc.extract_character_cards(
+            project_id,
+            provider=req.provider,
+            model=req.model,
+            max_characters=req.max_characters,
+            apply=req.apply,
+            cards=req.cards,
+        )
+        return {"success": True, "data": data}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 

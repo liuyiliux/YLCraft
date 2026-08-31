@@ -1,6 +1,7 @@
 import base64
 import io
 import json
+from urllib.parse import quote
 
 import httpx
 import pytest
@@ -174,9 +175,29 @@ def test_reference_image_config_normalizes_multipart_mode():
     )
 
     params = json.loads(config["default_params"])
-    assert config["support_multiple_reference_images"] is False
+    # multipart 以重复同名字段表达多图，声明的多图能力应被保留
+    assert config["support_multiple_reference_images"] is True
     assert config["reference_image_field"] == "image"
     assert config["reference_image_array_field"] is None
+    assert params["request_content_type"] == "multipart"
+    assert params["multipart_image_field"] == "image"
+
+
+def test_reference_image_config_multipart_mode_keeps_single_image_declaration():
+    """声明不支持多图时，multipart 模式不应擅自开启多图。"""
+    config = normalize_reference_image_config_values(
+        provider_type="image",
+        default_params={"request_content_type": "multipart"},
+        support_reference_image=True,
+        support_multiple_reference_images=False,
+        reference_image_field="image",
+        reference_image_array_field=None,
+        support_vision_input=False,
+    )
+
+    params = json.loads(config["default_params"])
+    assert config["support_multiple_reference_images"] is False
+    assert config["reference_image_field"] == "image"
     assert params["request_content_type"] == "multipart"
     assert params["multipart_image_field"] == "image"
 
@@ -332,7 +353,147 @@ async def test_generic_image_backend_sends_multipart_edit_request(monkeypatch, t
     assert requests[0]["data"]["model"] == "gpt-image-2"
     assert requests[0]["data"]["response_format"] == "b64_json"
     assert "Content-Type" not in requests[0]["headers"]
-    assert requests[0]["files"]["image"][0] == "image.png"
+    # multipart 多图使用重复的同名字段：[(field, (filename, bytes, mime)), ...]
+    assert requests[0]["files"][0][0] == "image"
+    assert requests[0]["files"][0][1][0] == "image.png"
+
+
+@pytest.mark.asyncio
+async def test_generic_image_multipart_downloads_remote_reference_images(monkeypatch):
+    """multipart 图生图必须提交真实文件字段，远程 URL 要先下载成字节再按序重复上传。"""
+    requests = []
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            self.headers = kwargs.get("headers") or {}
+
+        async def post(self, url, json=None, data=None, files=None):
+            requests.append({"url": url, "json": json, "data": data, "files": files})
+            return httpx.Response(200, json={"data": [{"b64_json": "aGVsbG8="}]})
+
+        async def aclose(self):
+            return None
+
+    monkeypatch.setattr("app.services.ai.backends.image.generic.httpx.AsyncClient", FakeAsyncClient)
+    connector = _aaccx_edit_connector({"request_content_type": "multipart", "multipart_image_field": "image"})
+    connector.support_reference_image = True
+    connector.support_multiple_reference_images = True
+    backend = GenericImageBackend(connector, session=None)
+
+    downloaded: list[str] = []
+
+    def fake_download(url: str, timeout: float = 30.0):
+        downloaded.append(url)
+        # 与 httpx files 元组一致：(文件名, 字节, MIME)
+        return url.rsplit("/", 1)[-1], b"IMG", "image/png"
+
+    monkeypatch.setattr(backend, "_download_multipart_image", fake_download)
+
+    result = await backend.generate(
+        ImageGenerationRequest(
+            prompt="以图1为主体，采用图2的配色",
+            reference_images=["https://cdn.example.com/a.png", "https://cdn.example.com/b.png"],
+            size="1024x1024",
+        )
+    )
+
+    assert result.success is True
+    # 网关按提交顺序把重复字段解释为图 1、图 2
+    assert downloaded == ["https://cdn.example.com/a.png", "https://cdn.example.com/b.png"]
+    assert requests[0]["json"] is None
+    assert [item[0] for item in requests[0]["files"]] == ["image", "image"]
+    assert [item[1][0] for item in requests[0]["files"]] == ["a.png", "b.png"]
+    # 参考图不应再作为普通表单字段出现
+    assert "image" not in requests[0]["data"]
+
+
+@pytest.mark.asyncio
+async def test_generic_image_multipart_reads_platform_file_without_http(monkeypatch, tmp_path):
+    """平台内部 /api/v1/assets/download 地址直接读本机文件，不再走 HTTP 回环下载。"""
+    requests = []
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            self.headers = kwargs.get("headers") or {}
+
+        async def post(self, url, json=None, data=None, files=None):
+            requests.append({"url": url, "json": json, "data": data, "files": files})
+            return httpx.Response(200, json={"data": [{"b64_json": "aGVsbG8="}]})
+
+        async def aclose(self):
+            return None
+
+    monkeypatch.setattr("app.services.ai.backends.image.generic.httpx.AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(
+        "app.services.asset_file_resolver.allowed_asset_roots",
+        lambda: [tmp_path],
+    )
+
+    png_bytes = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    )
+    image_file = tmp_path / "local-reference.png"
+    image_file.write_bytes(png_bytes)
+
+    def fail_http_client(*args, **kwargs):
+        raise AssertionError("本机平台地址不应发起 HTTP 下载")
+
+    monkeypatch.setattr(httpx, "Client", fail_http_client)
+
+    connector = _aaccx_edit_connector({"request_content_type": "multipart", "multipart_image_field": "image"})
+    connector.support_reference_image = True
+    connector.support_multiple_reference_images = True
+    backend = GenericImageBackend(connector, session=None)
+
+    result = await backend.generate(
+        ImageGenerationRequest(
+            prompt="保留人物外观",
+            reference_images=[f"/api/v1/assets/download?path={quote(str(image_file))}"],
+            size="1024x1024",
+        )
+    )
+
+    assert result.success is True
+    assert requests[0]["json"] is None
+    # 文件内容来自本机文件，而不是被超时的 HTTP 下载吞掉
+    assert requests[0]["files"][0][1][1] == png_bytes
+
+
+@pytest.mark.asyncio
+async def test_generic_image_multipart_fails_when_reference_unavailable(monkeypatch):
+    """参考图全部取不到时直接失败，不再退化成网关不接受的 JSON image 数组。"""
+    requests = []
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            self.headers = kwargs.get("headers") or {}
+
+        async def post(self, url, json=None, data=None, files=None):
+            requests.append({"url": url, "json": json})
+            return httpx.Response(200, json={"data": [{"b64_json": "aGVsbG8="}]})
+
+        async def aclose(self):
+            return None
+
+    monkeypatch.setattr("app.services.ai.backends.image.generic.httpx.AsyncClient", FakeAsyncClient)
+    connector = _aaccx_edit_connector({"request_content_type": "multipart", "multipart_image_field": "image"})
+    connector.support_reference_image = True
+    connector.support_multiple_reference_images = True
+    backend = GenericImageBackend(connector, session=None)
+    monkeypatch.setattr(backend, "_download_multipart_image", lambda url, timeout=30.0: None)
+
+    result = await backend.generate(
+        ImageGenerationRequest(
+            prompt="改成水彩风格",
+            reference_images=["https://cdn.example.com/gone.png"],
+            size="1024x1024",
+        )
+    )
+
+    assert result.success is False
+    assert "缺少可用参考图文件" in (result.error or "")
+    # 不能退化成网关不接受的 JSON image 数组
+    assert requests == []
 
 
 @pytest.mark.asyncio

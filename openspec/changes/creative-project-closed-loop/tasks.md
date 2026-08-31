@@ -91,6 +91,10 @@
 - [x] 43. Ensure generated project texts can be stored or indexed as text assets.
 - [x] 44. Ensure generated images include project id, content id, prompt and model metadata.
 - [x] 45. Ensure characters extracted from outline can be saved to character library and linked to project.
+- [x] 45.1 Add two-pass source character extraction with aliases, verbatim evidence, merge candidates and YLCraft Bible mapping.
+- [x] 45.2 Make preview confirmation deterministic: apply the reviewed cards without a second model call, validate evidence server-side, and keep the Agent tool preview-first contract.
+- [x] 45.3 Auto-sync outline characters after successful outline generation and preserve project/global character links idempotently.
+- [x] 45.4 Keep unmatched outline characters during extraction apply, reject empty apply payloads, and fix character-library filter semantics/counts.
 - [x] 46. Add filters in `/assets` for project id, asset role and source stage.
 - [x] 47. Add lineage display for project-generated assets.
 

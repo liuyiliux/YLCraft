@@ -34,6 +34,11 @@
 - [x] 15. `model3d_workspace.py` 3D 生成成功与失败路径各补一条平台事件。
 - [x] 16. `llm.py` 文本生成复用现有落账点，追加 `scene=llm` 平台事件。
 
+## Phase 6A: 角色链路落账
+
+- [x] 16A.1 `characters.py` 角色立绘生成（`POST /characters/{id}/portrait/generate`）成功/失败/异常三条路径补平台事件。复用 `scene=image` + `task_type=image_generation`（不新增 scene：`POST /logs/{id}/retry` 只识别 image/video/llm），message 带角色名，失败存 `retry_payload` 以支持重发（重发只重新出图，不回写角色）。
+- [x] 16A.2 角色 AI 补全（`character_enrich_*`）三条路径（供应商失败 / 返回解析失败 / 成功）补 `scene=llm` + `task_type=llm_chat` 平台事件。立绘切片（`portrait_grid_slice`）是本地图像处理、不调用外部供应商，按「平台事件记录供应商调用」的定位保持只写 `ProjectGenerationLog`。
+
 ## Phase 7: 前端任务中心改三 Tab
 
 - [x] 17. `pages/tasks/index.tsx` 改为 Tabs 容器：Tab1「任务」保留现有全部逻辑与数据源。

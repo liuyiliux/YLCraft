@@ -28,6 +28,7 @@ from app.services.ai.types import (
 )
 from app.db.models.ai_connector import AIConnector
 from app.services.ai_connector.service import infer_image_connector_capabilities
+from app.services.asset_file_resolver import resolve_asset_file_from_url
 
 logger = logging.getLogger("ylcraft.generic_image_backend")
 
@@ -197,11 +198,22 @@ class GenericImageBackend(ImageBackend):
             response = None
             # 异步模式额外请求头（如 ModelScope 的 X-ModelScope-Async-Mode）
             extra_headers = self.async_config.get("request_headers", {}) or {}
+            # multipart 参考图只取决于图片本身是否可取，与网络重试无关；
+            # 放在重试循环外，避免图片不可用时重复下载三次。
+            requires_reference = bool(
+                getattr(req, "source_image", None) or getattr(req, "reference_images", None)
+            )
+            try:
+                multipart_payload = self._build_multipart_payload(
+                    request_body, require_image=requires_reference
+                )
+            except ValueError as e:
+                logger.error("[GenericImageBackend] multipart 参考图不可用: %s", e)
+                raise
             for attempt in range(max_retries):
                 try:
                     diagnostics["attempts"] = attempt + 1
                     logger.info(f"[GenericImageBackend] 发送请求到 {final_url} (尝试 {attempt + 1}/{max_retries})")
-                    multipart_payload = self._build_multipart_payload(request_body)
                     headers = {
                         "Authorization": f"Bearer {self.connector.api_key}",
                         **extra_headers,
@@ -701,9 +713,15 @@ class GenericImageBackend(ImageBackend):
                 return url_or_path
         
         if url_or_path.startswith('/api/') or url_or_path.startswith('api/'):
+            # 平台内部地址指向本机文件，直接读取，不再走 HTTP 回环下载
+            local_file = resolve_asset_file_from_url(url_or_path)
+            if local_file is not None:
+                data = local_file.read_bytes()
+                content_type = mimetypes.guess_type(str(local_file))[0] or 'image/png'
+                return self._image_bytes_to_data_url(data, content_type)
             try:
                 import httpx, os
-                base_url = os.environ.get('BASE_URL', 'http://localhost:8000')
+                base_url = os.environ.get('BASE_URL', 'http://127.0.0.1:8000')
                 full_url = f"{base_url.rstrip('/')}/{url_or_path.lstrip('/')}" if not url_or_path.startswith('http') else url_or_path
                 with httpx.Client(timeout=30.0, follow_redirects=True) as client:
                     response = client.get(full_url)
@@ -788,14 +806,29 @@ class GenericImageBackend(ImageBackend):
                 transformed[key] = template.render(**params)
         return transformed
 
-    def _build_multipart_payload(self, request_body: Dict[str, Any]) -> dict | None:
+    def _build_multipart_payload(
+        self,
+        request_body: Dict[str, Any],
+        require_image: bool = False,
+    ) -> dict | None:
+        """构造 multipart 请求载荷。
+
+        Args:
+            request_body: 渲染后的请求体
+            require_image: 是否强制要求参考图文件。图生图为 True，一张参考图
+                都没有时直接失败，避免发出网关会以 images[].image_url is required 拒绝的空请求
+
+        Raises:
+            ValueError: 要求参考图但没有一张可用时
+        """
         content_type = str(self.default_params.get("request_content_type") or "").lower()
         if content_type != "multipart":
             return None
 
         image_field = str(self.default_params.get("multipart_image_field") or "image")
         image_value = request_body.get(image_field) or request_body.get("image")
-        if not image_value:
+        image_values = image_value if isinstance(image_value, list) else ([image_value] if image_value else [])
+        if not image_values:
             images = request_body.get("images")
             if isinstance(images, list) and images:
                 first = images[0]
@@ -803,10 +836,41 @@ class GenericImageBackend(ImageBackend):
                     image_value = first.get("image_url") or first.get("url") or first.get("image")
                 elif isinstance(first, str):
                     image_value = first
-        if not isinstance(image_value, str) or image_value.startswith(("http://", "https://")):
+                if image_value:
+                    image_values = image_value if isinstance(image_value, list) else [image_value]
+        if not image_values:
+            if require_image:
+                raise ValueError(
+                    "图生图请求没有可用参考图：参考图下载或解码失败，"
+                    "请检查图片地址是否可访问，或在生图面板重新选择参考图"
+                )
             return None
-
-        file_bytes, file_name, mime_type = self._decode_multipart_image(image_value)
+        files = []
+        failed: list[str] = []
+        for image_value in image_values:
+            if not isinstance(image_value, str):
+                failed.append(repr(image_value)[:80])
+                continue
+            try:
+                if image_value.startswith(("http://", "https://", "/api/", "api/")):
+                    # multipart 图生图必须提交真实文件字段：网关不会替客户端抓取 URL，
+                    # 因此远程地址和平台内部路径都要先下载成字节再作为重复字段上传。
+                    downloaded = self._download_multipart_image(image_value)
+                    if downloaded is None:
+                        failed.append(image_value[:80])
+                        continue
+                    files.append((image_field, downloaded))
+                else:
+                    file_bytes, file_name, mime_type = self._decode_multipart_image(image_value)
+                    files.append((image_field, (file_name, file_bytes, mime_type)))
+            except Exception as e:
+                failed.append(f"{image_value[:60]} -> {e}")
+        if not files:
+            raise ValueError(
+                "multipart 图生图缺少可用参考图文件（远程地址下载失败或格式不支持）: " + "; ".join(failed)
+            )
+        if failed:
+            logger.warning("[GenericImageBackend] 部分参考图未进入 multipart 请求: %s", failed)
         data = {
             key: str(value)
             for key, value in request_body.items()
@@ -814,7 +878,7 @@ class GenericImageBackend(ImageBackend):
         }
         return {
             "data": data,
-            "files": {image_field: (file_name, file_bytes, mime_type)},
+            "files": files,
         }
 
     def _decode_multipart_image(self, image_value: str) -> tuple[bytes, str, str]:
@@ -830,6 +894,54 @@ class GenericImageBackend(ImageBackend):
             return path.read_bytes(), path.name, mime_type
 
         raise ValueError(f"Multipart image value must be a data URL or local path: {image_value[:80]}")
+
+    def _download_multipart_image(self, url: str, timeout: float = 30.0) -> tuple[bytes, str, str] | None:
+        """把远程或平台内部图片地址下载为 multipart 文件字节。
+
+        multipart 图生图要求提交真实文件字段，网关不会替客户端抓取 URL，
+        所以公网地址和 `/api/...` 内部路径都要先下载再上传。
+
+        Args:
+            url: 图片地址，支持 http(s) 绝对地址与 `/api/...` 平台内部路径
+            timeout: 下载超时秒数
+
+        Returns:
+            tuple[str, bytes, str] | None: (文件名, 文件字节, MIME 类型)，下载失败返回 None
+        """
+        import os
+        from urllib.parse import urlparse
+
+        import httpx
+
+        # 平台内部地址指向本机文件，直接读取，不再走 HTTP 回环下载
+        local_file = resolve_asset_file_from_url(url)
+        if local_file is not None:
+            content = local_file.read_bytes()
+            mime_type = mimetypes.guess_type(str(local_file))[0] or "image/png"
+            return local_file.name, content, mime_type
+
+        full_url = url
+        if url.startswith(("api/", "/api/")):
+            base_url = os.environ.get("BASE_URL", "http://localhost:8000")
+            full_url = f"{base_url.rstrip('/')}/{url.lstrip('/')}"
+
+        try:
+            with httpx.Client(timeout=timeout, follow_redirects=True) as client:
+                response = client.get(full_url)
+                response.raise_for_status()
+            content = response.content
+            mime_type = (response.headers.get("content-type") or "image/png").split(";")[0].strip() or "image/png"
+        except Exception as e:
+            logger.warning("[GenericImageBackend] 下载 multipart 参考图失败: %s", e)
+            return None
+
+        if not content:
+            logger.warning("[GenericImageBackend] 下载 multipart 参考图为空: %s", full_url)
+            return None
+
+        file_name = Path(urlparse(full_url).path).name or f"image{self._ext_from_output_format(mime_type)}"
+        # 返回顺序与 httpx 的 files 元组一致：(文件名, 字节, MIME)
+        return file_name, content, mime_type
 
     def _render_request(self, params: Dict[str, Any]) -> Dict[str, Any]:
         if not self.request_template:
@@ -879,7 +991,15 @@ class GenericImageBackend(ImageBackend):
 
         reference_images = params.get("reference_images", [])
         if reference_images:
-            if self.reference_image_array_field:
+            is_multipart = str(self.default_params.get("request_content_type") or "").lower() == "multipart"
+            if is_multipart:
+                # 网关把重复提交的 image 字段按顺序解释为图 1、图 2……；
+                # 连接器声明不支持多图时只提交第一张，避免网关按多图处理或报错。
+                multipart_images = (
+                    reference_images if self.support_multiple_reference_images else reference_images[:1]
+                )
+                request_body[self.reference_image_field or "image"] = multipart_images
+            if not is_multipart and self.reference_image_array_field:
                 path_parts = self.reference_image_array_field.split(".")
                 if len(path_parts) == 1:
                     existing_value = request_body.get(self.reference_image_array_field)

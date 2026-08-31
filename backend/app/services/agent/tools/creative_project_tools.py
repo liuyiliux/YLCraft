@@ -187,6 +187,38 @@ async def inspect_creative_project(project_id: str):
 
 
 @register_tool(
+    name="extract_creative_project_characters",
+    description="从项目小说/来源正文中分两趟提取角色：先扫描姓名、别名、观察记录和逐字证据，再生成 YLCraft 角色设定卡。默认只预览，不写入角色库。",
+    category="creative_project",
+    examples=["从这个小说项目提取角色并先给我预览", "提取项目角色，确认后写入角色库"],
+    input_schema_note="必须提供 project_id；apply=false 只返回预览、归并候选和证据；确认后再传 apply=true。provider/model/max_characters 可选。",
+    output_schema_note="返回 project_id、chunks、merge_candidates、characters、applied_characters；characters 使用 YLCraft 角色设定字段并包含 aliases/evidence。",
+    risk_level="costly",
+    output_type="creative_project_character_extraction",
+    cost_hint="会按文本分块执行角色扫描和角色卡生成，apply=true 还会写入项目大纲、角色库和项目关联。",
+)
+async def extract_creative_project_characters(
+    project_id: str,
+    provider: str = "",
+    model: str = "",
+    max_characters: int = 30,
+    apply: bool = False,
+    cards: list[dict[str, Any]] | None = None,
+):
+    with SessionLocal() as session:
+        service = CreativeProjectService(session)
+        result = await service.extract_character_cards(
+            project_id,
+            provider=provider or None,
+            model=model or None,
+            max_characters=max(1, min(int(max_characters or 30), 30)),
+            apply=bool(apply),
+            cards=cards,
+        )
+        return {"success": True, "result": result}
+
+
+@register_tool(
     name="build_creative_project_context_pack",
     description="为智能体构建紧凑的创作项目上下文包，包含项目概览、章节状态、角色摘要、参考素材、最近日志和缺口。",
     category="creative_project",

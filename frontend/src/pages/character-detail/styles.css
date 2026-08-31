@@ -1,0 +1,728 @@
+/* ============================================================================
+ * 角色详情工作区样式
+ *
+ * 颜色一律走 theme.tsx 注入到 :root 的 CSS 变量（--bgCard / --textPrimary /
+ * --borderLight / --primary 等），不硬编码色值，以同时适配深海、月光、晨曦三套主题。
+ * 注意：晨曦是亮色主题，任何写死的 rgba(255,255,255,.x) 白线在该主题下都会消失。
+ *
+ * 圆角沿用页面既有卡片的 6px 体系（不在主题 token 内，且跨主题无差异）。
+ * ==========================================================================*/
+
+/* ---------- 通用空态 ---------- */
+.cd-empty {
+  color: var(--textSecondary);
+  font-size: 12px;
+}
+
+/* ============================================================================
+ * 设定字段渲染器 FieldRenderer
+ * ==========================================================================*/
+.cd-field {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--borderLight);
+}
+
+.cd-field-block {
+  border-bottom: 1px solid var(--borderLight);
+}
+
+.cd-field-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cd-field-label {
+  color: var(--textSecondary);
+  font-size: 12px;
+}
+
+.cd-field-tag {
+  margin-inline-end: 0;
+  font-size: 10px;
+  line-height: 18px;
+}
+
+.cd-field-empty {
+  color: var(--textDisabled);
+  margin: 4px 0 0;
+}
+
+/* ============================================================================
+ * 视觉档案分组卡片 VisualProfilePanel
+ * ==========================================================================*/
+.cd-vp {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 8px;
+}
+
+/* 分组网格：容器变窄自动降列，无需媒体查询 */
+.cd-vp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+}
+
+.cd-vp-card {
+  background: var(--bgCard);
+  border: 1px solid var(--borderLight);
+  border-radius: 6px;
+  padding: 10px 12px 12px;
+  min-width: 0;
+}
+
+.cd-vp-card-title {
+  color: var(--textSecondary);
+  font-size: 12px;
+  font-weight: 500;
+  padding-bottom: 6px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--borderLight);
+}
+
+.cd-vp-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* 字段行：标签固定宽度，值占满剩余空间，避免长标签挤压正文 */
+.cd-vp-field {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.cd-vp-field-label {
+  color: var(--textSecondary);
+  font-size: 12px;
+  line-height: 20px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cd-vp-field-value {
+  min-width: 0;
+  color: var(--textPrimary);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+/* 超长值默认折叠两行 */
+.cd-vp-field-value p.cd-vp-clamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+.cd-vp-field-value p {
+  word-break: break-word;
+  margin: 0;
+}
+
+.cd-vp-toggle {
+  margin-top: 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--primary);
+  font-size: 11px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.cd-vp-toggle:hover {
+  color: var(--primaryHover);
+}
+
+.cd-vp-toggle:focus-visible {
+  outline: 1px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* ---------- 参考图缩略图 ---------- */
+.cd-vp-refs {
+  min-width: 0;
+}
+
+.cd-vp-thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cd-vp-thumb {
+  width: 64px;
+  height: 64px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--borderLight);
+  background: var(--bgElevated);
+  flex: 0 0 auto;
+  transition: border-color var(--animationDuration, 300ms) var(--animationEasing, ease);
+}
+
+.cd-vp-thumb:hover {
+  border-color: var(--primary);
+}
+
+.cd-vp-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* ---------- 元数据（ID 类，弱化展示） ---------- */
+.cd-vp-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+
+.cd-vp-meta-item {
+  color: var(--textSecondary);
+  font-size: 11px;
+}
+
+/* ============================================================================
+ * 通用键值网格 KeyValueGrid
+ * ==========================================================================*/
+.cd-kv-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.cd-kv-row {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.cd-kv-key {
+  color: var(--textSecondary);
+  font-size: 12px;
+  line-height: 20px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cd-kv-value {
+  min-width: 0;
+  color: var(--textPrimary);
+  font-size: 12px;
+  line-height: 20px;
+  word-break: break-word;
+}
+
+.cd-kv-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.cd-kv-tag {
+  margin-inline-end: 0;
+  font-size: 11px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cd-kv-link {
+  color: var(--primary);
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.cd-kv-link:hover {
+  color: var(--primaryHover);
+}
+
+.cd-kv-text {
+  color: var(--textPrimary);
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+/* ============================================================================
+ * 左侧角色列表项
+ * 选中态用左侧 2px 主色竖条标识，比单纯背景色更明确；
+ * 无立绘时以角色名首字占位，比通用人形图标更具辨识度。
+ * ==========================================================================*/
+.cd-char-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 6px;
+  margin-bottom: 3px;
+  text-align: left;
+  border: 0;
+  border-left: 2px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--textPrimary);
+  cursor: pointer;
+  transition: background var(--animationDuration, 300ms) var(--animationEasing, ease);
+}
+
+.cd-char-item:hover {
+  background: var(--bgHover);
+}
+
+.cd-char-item.is-active {
+  background: var(--bgHover);
+  border-left-color: var(--primary);
+}
+
+.cd-char-item:focus-visible {
+  outline: 1px solid var(--primary);
+  outline-offset: -1px;
+}
+
+.cd-char-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: var(--bgElevated);
+  flex: 0 0 auto;
+}
+
+.cd-char-avatar-empty {
+  display: grid;
+  place-items: center;
+  color: var(--textSecondary);
+  font-size: 14px;
+  font-weight: 600;
+  border: 1px solid var(--borderLight);
+}
+
+.cd-char-meta {
+  min-width: 0;
+  flex: 1;
+}
+
+.cd-char-name,
+.cd-char-sub {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cd-char-sub {
+  color: var(--textSecondary);
+  font-size: 11px;
+}
+
+.cd-char-flags {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.cd-char-star {
+  color: var(--warning);
+  font-size: 11px;
+}
+
+.cd-char-tag {
+  margin-inline-end: 0;
+  font-size: 10px;
+  line-height: 16px;
+}
+
+/* ============================================================================
+ * 立绘版本缩略图条
+ * 小尺寸横向滚动，点击切换主视图（不弹窗），选中态用主色边框标识。
+ * ==========================================================================*/
+.cd-version-strip {
+  scrollbar-width: thin;
+  scrollbar-color: var(--borderLight) transparent;
+}
+
+.cd-version-thumb {
+  flex-shrink: 0;
+  width: 56px;
+  border: 2px solid var(--borderLight);
+  border-radius: 6px;
+  padding: 3px;
+  background: var(--bgElevated);
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+  display: flex;
+  flex-direction: column;
+}
+
+.cd-version-thumb:hover {
+  border-color: var(--textSecondary);
+}
+
+.cd-version-thumb.is-active {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+.cd-version-thumb:focus-visible {
+  outline: 1px solid var(--primary);
+  outline-offset: 1px;
+}
+
+.cd-version-thumb-img {
+  aspect-ratio: 2 / 3;
+  background: var(--bgPage);
+  border-radius: 3px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+}
+
+.cd-version-thumb-img img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.cd-version-thumb-label {
+  font-size: 10px;
+  text-align: center;
+  line-height: 1.2;
+  margin-top: 2px;
+  color: var(--textSecondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cd-version-thumb.is-active .cd-version-thumb-label {
+  color: var(--primary);
+}
+
+/* ============================================================================
+ * 视图矩阵单元格
+ * 三视图 / 道具 / 表情 / 姿态共用的缩略格，点击后在主视图区预览。
+ * 统一 contain 以免裁掉设定图的手脚与道具边缘。
+ * ==========================================================================*/
+.cd-view-cell {
+  position: relative;
+  aspect-ratio: 3 / 4;
+  border: 1px solid var(--borderLight);
+  border-radius: 5px;
+  padding: 0;
+  background: var(--bgPage);
+  overflow: hidden;
+  cursor: pointer;
+  display: block;
+  transition: border-color .15s, box-shadow .15s;
+}
+
+.cd-view-cell img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.cd-view-cell:hover {
+  border-color: var(--textSecondary);
+}
+
+.cd-view-cell.is-active {
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+
+.cd-view-cell:focus-visible {
+  outline: 1px solid var(--primary);
+  outline-offset: 1px;
+}
+
+.cd-view-cell-label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  font-size: 10px;
+  line-height: 1.3;
+  padding: 1px 3px;
+  text-align: center;
+  color: var(--textSecondary);
+  background: color-mix(in srgb, var(--bgPage) 82%, transparent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cd-view-cell.is-active .cd-view-cell-label {
+  color: var(--primary);
+}
+
+/* 「设为当前世界专属」入口，默认隐藏，hover 单元格时浮现以免干扰缩略图 */
+.cd-view-cell-pin {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  font-size: 11px;
+  line-height: 1;
+  padding: 2px 3px;
+  border-radius: 3px;
+  color: var(--textSecondary);
+  background: color-mix(in srgb, var(--bgPage) 80%, transparent);
+  opacity: 0;
+  transition: opacity .15s, color .15s;
+}
+
+.cd-view-cell:hover .cd-view-cell-pin {
+  opacity: 1;
+}
+
+.cd-view-cell-pin:hover {
+  color: var(--primary);
+}
+
+/* ============================================================================
+ * 视觉中心区三段布局
+ * 主视图 / 视图矩阵 / Bible 横向铺满，避免宽屏右侧留白；窄屏回退为换行堆叠。
+ * ==========================================================================*/
+.cd-hero-main {
+  flex: 1.35;
+  min-width: 0;
+  max-width: 660px;
+}
+
+.cd-hero-matrix {
+  flex: 1;
+  min-width: 200px;
+  border-left: 1px solid var(--borderLight);
+  padding-left: 18px;
+}
+
+.cd-hero-bible {
+  flex: 0 0 320px;
+  border-left: 1px solid var(--borderLight);
+  padding-left: 18px;
+}
+
+@media (max-width: 1180px) {
+  .character-report-hero .flex-row {
+    flex-wrap: wrap;
+  }
+
+  .cd-hero-main {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+
+  .cd-hero-matrix,
+  .cd-hero-bible {
+    flex: 1 1 280px;
+    border-left: none;
+    padding-left: 0;
+  }
+}
+
+/* ============================================================================
+ * 响应式：窄屏强制单列
+ * ==========================================================================*/
+@media (max-width: 768px) {
+  .cd-vp-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cd-vp-field,
+  .cd-kv-row {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+
+  .cd-vp-thumbs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+}
+
+/* ============================================================================
+ * 页面布局（原内联于 index.tsx 的 <style> 标签，已迁移至此）
+ *
+ * 迁移时一并修正了以下跨主题缺陷：
+ *   - rgba(255,255,255,.1) 白线 → var(--borderLight)（原写法在晨曦亮色主题下不可见）
+ *   - #22d3ee 硬编码青色 → var(--primary)（原写法在月光/晨曦主题下与主题色不符）
+ *   - var(--character-text-primary) → var(--textPrimary)（原变量名未被注入，
+ *     始终回退到 #e4e4e7 浅色，在亮色主题下白底浅字不可读）
+ * ==========================================================================*/
+.character-detail-shell {
+  max-width: 1600px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.character-detail-sidebar {
+  position: sticky;
+  top: 18px;
+  min-height: calc(100vh - 36px);
+  max-height: calc(100vh - 36px);
+  overflow: hidden;
+}
+
+.character-detail-sidebar-list {
+  max-height: calc(100vh - 170px);
+  overflow-y: auto;
+  padding-right: 3px;
+}
+
+.character-detail-shell.is-fullscreen {
+  max-width: 2200px;
+}
+
+.character-detail-shell.is-fullscreen .character-detail-sidebar {
+  top: 0;
+  min-height: calc(100vh - 28px);
+  max-height: calc(100vh - 28px);
+}
+
+.character-detail-shell.is-fullscreen .character-detail-sidebar-list {
+  max-height: calc(100vh - 152px);
+}
+
+.character-report-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.character-report-hero > .flex-row {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+.character-report-media {
+  display: flex;
+  gap: 12px;
+  min-height: 470px;
+  flex: 1;
+}
+
+.character-report-lower {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 28px;
+}
+
+.character-report-prompts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.character-report-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 28px;
+}
+
+.character-report-details details {
+  border-bottom: 1px solid var(--borderLight);
+  padding: 12px 0;
+}
+
+.character-report-details summary {
+  cursor: pointer;
+  color: var(--textPrimary);
+  font-weight: 600;
+}
+
+.character-report-details details[open] summary {
+  color: var(--primary);
+}
+
+.character-report-details-content {
+  padding-top: 10px;
+}
+
+.character-portrait-controls {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 生图控件网格：容器变窄自动降列 */
+.character-portrait-controls #portrait-controls-content:not(:empty) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+  align-items: end;
+  margin-top: 10px;
+}
+
+@media (max-width: 1100px) {
+  .character-portrait-controls #portrait-controls-content:not(:empty) {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: end;
+  }
+}
+
+@media (max-width: 900px) {
+  .character-detail-shell {
+    display: block;
+  }
+
+  .character-detail-sidebar {
+    position: static;
+    min-height: 0;
+    max-height: none;
+    margin-bottom: 16px;
+  }
+
+  .character-detail-sidebar-list {
+    max-height: 320px;
+  }
+
+  .character-report-hero,
+  .character-report-lower,
+  .character-report-details {
+    display: block;
+  }
+
+  .character-report-hero > div + div {
+    border-left: 0 !important;
+    border-top: 1px solid var(--borderLight);
+    padding: 18px 0 0 !important;
+    margin-top: 18px;
+  }
+
+  .character-report-media {
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .character-report-prompts {
+    grid-template-columns: 1fr;
+  }
+
+  .character-portrait-controls #portrait-controls-content:not(:empty) {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+}

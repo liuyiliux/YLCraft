@@ -146,6 +146,32 @@ class StoryCharacterSchema(FlexibleModel):
     character_id: str = ""
 
 
+class CharacterRosterItemSchema(FlexibleModel):
+    """First-pass novel scan: observations only, no invented character bible."""
+
+    name: str = ""
+    aliases: list[str] = Field(default_factory=list)
+    note: str = ""
+    quotes: list[str] = Field(default_factory=list)
+
+
+class CharacterRosterSchema(FlexibleModel):
+    characters: list[CharacterRosterItemSchema] = Field(default_factory=list)
+
+
+class CharacterExtractionCardSchema(StoryCharacterSchema):
+    """Second-pass card mapped to YLCraft's canonical character fields."""
+
+    aliases: list[str] = Field(default_factory=list)
+    evidence: list[str] = Field(default_factory=list)
+    identity: dict[str, Any] = Field(default_factory=dict)
+    motivation: dict[str, Any] = Field(default_factory=dict)
+    speech_profile: dict[str, Any] = Field(default_factory=dict)
+    behavior_profile: dict[str, Any] = Field(default_factory=dict)
+    ability: dict[str, Any] = Field(default_factory=dict)
+    arc_profile: dict[str, Any] = Field(default_factory=dict)
+
+
 class StoryArcSchema(FlexibleModel):
     beginning: str = ""
     middle: str = ""

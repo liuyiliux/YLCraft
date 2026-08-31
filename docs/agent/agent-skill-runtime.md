@@ -164,6 +164,11 @@ Current image prompt reference tools:
 - `refresh_image_prompt_sources`: `write`, refreshes one or all configured sources from remote repositories.
 - `save_image_prompt_reference_as_asset`: `write`, explicitly saves one selected reference as an Asset Hub text asset. Synced references are not imported into Asset Hub automatically.
 
+Creative character extraction tool:
+
+- `extract_creative_project_characters`: `costly`, runs the two-pass novel character workflow. The first call should use `apply=false` and return `characters`, aliases, source evidence and merge candidates for review. After the user confirms, pass the returned `characters` back with `apply=true`; this writes the reviewed cards to the project outline, global character library and project link without rerunning the model. Evidence is server-validated against the project source text.
+- `list_characters`: `read`, supports keyword, role, exact tag, favorite and pagination filters; the returned `total` is calculated from the same filter set as the page.
+
 Asset provenance tool:
 
 - `clean_asset_provenance`: `costly`, first audits an Asset Hub representation and only creates a derived copy after `confirm=true`. It preserves the source asset, records `derived_from` lineage and never claims unsupported formats or generic visual watermark inpainting were cleaned.

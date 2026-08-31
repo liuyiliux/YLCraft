@@ -71,6 +71,7 @@ import {
   generateCreativeProjectChapterOutline,
   generateCreativeProjectNovelBody,
   generateCreativeProjectOutline,
+  extractCreativeProjectCharacters,
   generateCreativeProjectScript,
   generateCreativeProjectStoryboard,
   generateImage as generateImageApi,
@@ -1377,6 +1378,9 @@ export default function StoryPage() {
   const [selectedModel, setSelectedModel] = useState<string>('')
   const [rehearsalMode, setRehearsalMode] = useState<'fast' | 'team'>('team')
   const [createOpen, setCreateOpen] = useState(false)
+  const [characterExtractionOpen, setCharacterExtractionOpen] = useState(false)
+  const [characterExtractionLoading, setCharacterExtractionLoading] = useState(false)
+  const [characterExtractionResult, setCharacterExtractionResult] = useState<any | null>(null)
   const characterCreateHandledRef = useRef(false)
   const [renameOpen, setRenameOpen] = useState(false)
   const [fanqieOpen, setFanqieOpen] = useState(false)
@@ -3184,6 +3188,31 @@ export default function StoryPage() {
     }
   }
 
+  async function handleExtractCharacters(apply = false) {
+    if (!selectedProject) return
+    setCharacterExtractionLoading(true)
+    try {
+      const response: any = await extractCreativeProjectCharacters(selectedProject.id, {
+        provider: selectedLlm || undefined,
+        model: selectedModel || undefined,
+        apply,
+        cards: apply ? (characterExtractionResult?.characters || undefined) : undefined,
+      })
+      const result = response.data || response.result || response
+      setCharacterExtractionResult(result)
+      setCharacterExtractionOpen(true)
+      if (apply) {
+        message.success(`已写入 ${result.applied_characters?.length || 0} 个角色`)
+        await refreshSelected(selectedProject)
+        await loadProjectAssets(selectedProject.id)
+      }
+    } catch (error: any) {
+      message.error(error?.message || '提取角色失败')
+    } finally {
+      setCharacterExtractionLoading(false)
+    }
+  }
+
   async function handleSyncProjectBible(overwrite = false) {
     if (!selectedProject) return
     setLoadingAction('project_bible')
@@ -4875,6 +4904,7 @@ export default function StoryPage() {
                         loading={loadingAction === 'outline'}
                         saving={loadingAction === 'outline_save'}
                         syncLoading={loadingAction === 'sync_characters'}
+                        extractLoading={characterExtractionLoading}
                         llmAvailable={llmAvailable}
                         templateOptions={templateOptionsByStage.outline || []}
                         selectedTemplateId={selectedPromptTemplates.outline}
@@ -4884,6 +4914,7 @@ export default function StoryPage() {
                         onGenerate={handleGenerateOutline}
                         onSave={handleSaveOutline}
                         onSyncCharacters={handleSyncCharacters}
+                        onExtractCharacters={() => void handleExtractCharacters(false)}
                         characterColumns={characterColumns}
                       />
                     ),
@@ -5444,6 +5475,57 @@ export default function StoryPage() {
       </Modal>
 
       <Modal
+        title="角色提取预览"
+        open={characterExtractionOpen}
+        onCancel={() => setCharacterExtractionOpen(false)}
+        width={900}
+        footer={characterExtractionResult?.applied ? null : [
+          <Button key="cancel" onClick={() => setCharacterExtractionOpen(false)}>取消</Button>,
+          <Button key="apply" type="primary" loading={characterExtractionLoading} onClick={() => void handleExtractCharacters(true)}>
+            确认写入角色库
+          </Button>,
+        ]}
+        destroyOnHidden
+      >
+        {characterExtractionResult ? (
+          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+            <Alert
+              type="info"
+              showIcon
+              message={`已扫描 ${characterExtractionResult.chunks || 0} 个文本块，识别 ${characterExtractionResult.characters?.length || 0} 个角色`}
+              description="第一轮负责角色归并和证据，第二轮生成角色设定。确认写入后会同步项目大纲、角色库和项目关联。"
+            />
+            {(characterExtractionResult.merge_candidates || []).length ? (
+              <Alert
+                type="warning"
+                showIcon
+                message="有需要人工确认的同名/包含名候选"
+                description={characterExtractionResult.merge_candidates.map((item: any) => `${item.left} / ${item.right}`).join('；')}
+              />
+            ) : null}
+            <List
+              size="small"
+              bordered
+              dataSource={characterExtractionResult.characters || []}
+              renderItem={(item: any) => (
+                <List.Item>
+                  <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                    <Space wrap>
+                      <Text strong>{item.name}</Text>
+                      {(item.aliases || []).map((alias: string) => <Tag key={alias}>{alias}</Tag>)}
+                      <Tag color="blue">证据 {item.evidence?.length || 0}</Tag>
+                    </Space>
+                    <Text type="secondary">{item.oneLiner || item.personality || item.extraction_notes || '暂无摘要'}</Text>
+                    {item.evidence?.length ? <Text code>{item.evidence[0]}</Text> : null}
+                  </Space>
+                </List.Item>
+              )}
+            />
+          </Space>
+        ) : <Skeleton active />}
+      </Modal>
+
+      <Modal
         title={selectedProject?.production_profile?.package_type === 'knowledge_cards' ? '编辑科普内容包' : '编辑绘本 / 漫画内容包'}
         open={contentPackageOpen}
         onCancel={() => setContentPackageOpen(false)}
@@ -5806,6 +5888,7 @@ function OutlineTab({
   loading,
   saving,
   syncLoading,
+  extractLoading,
   llmAvailable,
   templateOptions,
   selectedTemplateId,
@@ -5813,6 +5896,7 @@ function OutlineTab({
   onGenerate,
   onSave,
   onSyncCharacters,
+  onExtractCharacters,
   characterColumns,
 }: {
   outline: StoryOutline
@@ -5821,6 +5905,7 @@ function OutlineTab({
   loading: boolean
   saving: boolean
   syncLoading: boolean
+  extractLoading: boolean
   llmAvailable: boolean
   templateOptions: TemplateOption[]
   selectedTemplateId?: string
@@ -5828,6 +5913,7 @@ function OutlineTab({
   onGenerate: () => void
   onSave: (outline: StoryOutline) => Promise<void>
   onSyncCharacters: () => void
+  onExtractCharacters: () => void
   characterColumns: any[]
 }) {
   const [draft, setDraft] = useState<StoryOutline>(outline || {})
@@ -6006,6 +6092,9 @@ function OutlineTab({
           />
           <Button icon={<UserOutlined />} loading={syncLoading} onClick={onSyncCharacters}>
             同步角色库
+          </Button>
+          <Button icon={<RobotOutlined />} loading={extractLoading} onClick={onExtractCharacters}>
+            提取角色并预览
           </Button>
           <Button
             icon={<DownloadOutlined />}

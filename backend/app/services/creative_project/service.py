@@ -54,6 +54,8 @@ from app.services.creative_project.schemas import (
     ProductionPlanSchema,
     ShortDramaScriptSchema,
     StoryOutlineSchema,
+    CharacterExtractionCardSchema,
+    CharacterRosterSchema,
     StoryboardSchema,
     WriterRoomCharacterRehearsalSchema,
     WriterRoomProseReviewSchema,
@@ -431,6 +433,7 @@ class CreativeProjectService:
                     )
                     character.use_count = (character.use_count or 0) + 1
                     character.last_used_at = datetime.now()
+                self.session.flush()
                 seeded_outline = self._preserve_linked_characters_in_outline(project.id, {})
                 project.outline_json = dumps_json(seeded_outline)
                 project.updated_at = datetime.now()
@@ -1353,6 +1356,208 @@ class CreativeProjectService:
     # Generation
     # ------------------------------------------------------------------
 
+    async def extract_character_cards(
+        self,
+        project_id: str,
+        *,
+        provider: str | None = None,
+        model: str | None = None,
+        max_characters: int = 30,
+        apply: bool = False,
+        cards: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """Extract source characters in two passes and optionally persist them.
+
+        The first pass only records names, aliases, observations and verbatim
+        evidence. The second pass maps those observations into YLCraft's
+        canonical Character Bible fields. Preview mode is read-only; apply mode
+        reuses the existing project/name reconciliation and is idempotent.
+        """
+        project = self._require_project(project_id)
+        source_text = self._project_character_source_text(project)
+        if not source_text.strip():
+            raise ValueError("项目没有可供提取角色的小说正文或来源节选")
+
+        chunks = self._split_character_source(source_text, max_chars=9000, max_chunks=24)
+        merge_candidates: list[dict[str, str]] = []
+        if cards is not None:
+            # The human/agent confirmation step writes back exactly what was
+            # previewed.  Revalidate evidence against source text, but do not
+            # spend another model call or silently replace the reviewed card.
+            cards = [
+                self._normalize_extracted_character_card(
+                    item,
+                    {
+                        "name": item.get("name", ""),
+                        "aliases": item.get("aliases") or [],
+                        "note": item.get("extraction_notes") or "",
+                        "quotes": item.get("evidence") or [],
+                    },
+                    source_text,
+                )
+                for item in cards
+                if isinstance(item, dict) and str(item.get("name") or "").strip()
+            ][: max(1, min(int(max_characters or 30), 30))]
+        else:
+            rosters: list[dict[str, Any]] = []
+            for index, chunk in enumerate(chunks, 1):
+                roster = await self._generate_json(
+                    project=project,
+                    stage="character_roster_pass",
+                    prompt=self._character_roster_prompt(project, chunk, index, len(chunks)),
+                    system_prompt="你是小说编辑的角色扫描器。只输出严格 JSON，不补写原文没有的角色。",
+                    schema_model=CharacterRosterSchema,
+                    provider=provider,
+                    model=model,
+                    max_tokens=3500,
+                    request_metadata={"pass": 1, "chunk_index": index, "chunk_count": len(chunks)},
+                )
+                rosters.extend(roster.get("characters") or [])
+
+            merged, merge_candidates = self._merge_character_rosters(rosters)
+            merged = merged[: max(1, min(int(max_characters or 30), 30))]
+            names = [item["name"] for item in merged if item.get("name")]
+            cards = []
+            for roster in merged:
+                card = await self._generate_json(
+                    project=project,
+                    stage="character_profile_pass",
+                    prompt=self._character_profile_prompt(project, roster, names),
+                    system_prompt="你是角色设定师。只输出严格 JSON，并把结果映射到 YLCraft 角色设定字段。",
+                    schema_model=CharacterExtractionCardSchema,
+                    provider=provider,
+                    model=model,
+                    max_tokens=5000,
+                    request_metadata={"pass": 2, "character_name": roster.get("name", "")},
+                )
+                cards.append(self._normalize_extracted_character_card(card, roster, source_text))
+
+        if apply and not cards:
+            raise ValueError("没有可写入的角色卡，请先检查提取结果")
+        applied = self._apply_extracted_character_cards(project, cards) if apply else []
+        return {
+            "project_id": project_id,
+            "source_type": project.source_type,
+            "extract_origin": resolve_extract_origin(project),
+            "chunks": len(chunks),
+            "truncated": len(chunks) >= 24,
+            "merge_candidates": merge_candidates,
+            "characters": cards,
+            "applied": bool(apply),
+            "applied_characters": [self._character_extract_summary(item) for item in applied],
+        }
+
+    def _project_character_source_text(self, project: CreativeProject) -> str:
+        metadata = loads_json(project.metadata_json)
+        sample = str(metadata.get("source_sample") or "").strip()
+        if sample:
+            return sample
+        source_ref = loads_json(project.source_ref_json)
+        asset_id = str(source_ref.get("asset_id") or "") if isinstance(source_ref, dict) else ""
+        if asset_id:
+            node = self.session.get(AssetNode, asset_id)
+            node_meta = node.metadata_json if node and isinstance(node.metadata_json, dict) else {}
+            for key in ("content_path", "file_path", "source_path"):
+                path = str(node_meta.get(key) or "")
+                if path and Path(path).is_file():
+                    return Path(path).read_text(encoding="utf-8", errors="ignore")
+        outline = loads_json(project.outline_json)
+        return self._outline_text(outline) if outline else ""
+
+    def _split_character_source(self, text: str, *, max_chars: int, max_chunks: int) -> list[str]:
+        paragraphs = [part.strip() for part in re.split(r"\n\s*\n|\r\n", text) if part.strip()]
+        chunks: list[str] = []
+        current = ""
+        for paragraph in paragraphs or [text.strip()]:
+            if current and len(current) + len(paragraph) + 2 > max_chars:
+                chunks.append(current)
+                current = ""
+            current = f"{current}\n\n{paragraph}".strip()
+        if current:
+            chunks.append(current)
+        return chunks[:max_chunks]
+
+    def _character_roster_prompt(self, project: CreativeProject, chunk: str, index: int, count: int) -> str:
+        return f"""作品：{project.title}\n这是原文第 {index}/{count} 个片段。\n\n只从下面原文扫描角色，不要生成角色设定：\n{chunk}\n\n输出 JSON：{{\"characters\":[{{\"name\":\"原文最常用称呼\",\"aliases\":[\"别名/称谓\"],\"note\":\"密集记录外貌、说话、行动和与他人的关系\",\"quotes\":[\"逐字复制的原文片段\"]}}]}}\n规则：地名、组织和旁观叙述者不算角色；无名但明确行动的独立人物可用描述性名称；引文必须逐字复制，不能翻译、拼接或改写。"""
+
+    def _character_profile_prompt(self, project: CreativeProject, roster: dict[str, Any], other_names: list[str]) -> str:
+        return f"""作品：{project.title}\n角色：{roster.get('name', '')}\n别名：{dumps_json(roster.get('aliases') or [])}\n观察记录：{roster.get('note', '')}\n可引用原文（只能从这里复制 evidence）：{dumps_json(roster.get('quotes') or [])}\n同批其他角色：{dumps_json([name for name in other_names if name != roster.get('name')])}\n\n请输出 YLCraft 角色设定 JSON，字段包括：name、aliases、role、age_range、appearance、costume_hint、personality、background、goal、arc、visual_tags、signature_items、expressions、poses、visual_consistency、voice、image_prompt、negative_prompt、identity、motivation、speech_profile、behavior_profile、ability、arc_profile、evidence。\n\n要求：所有设定以观察记录为基础，无法确定时明确写“（推断）”；evidence 只能逐字复制可引用原文；image_prompt 使用英文且不写人名、别名、作品名，明确年代、地域、族裔/面部特征、服装和个体辨识点；保持与同批其他角色的外观和声线差异。"""
+
+    def _merge_character_rosters(self, rosters: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+        merged: list[dict[str, Any]] = []
+        lookup: dict[str, dict[str, Any]] = {}
+        for raw in rosters:
+            if not isinstance(raw, dict):
+                continue
+            name = str(raw.get("name") or "").strip()
+            if not name:
+                continue
+            aliases = [str(value).strip() for value in raw.get("aliases") or [] if str(value).strip()]
+            target = next((lookup.get(key) for key in {name, *aliases} if lookup.get(key)), None)
+            if target is None:
+                target = {"name": name, "aliases": [], "note": "", "quotes": [], "mention_count": 0}
+                merged.append(target)
+            target["aliases"] = list(dict.fromkeys([*target.get("aliases", []), *aliases, *([name] if name != target["name"] else [])]))
+            target["note"] = "；".join(filter(None, [target.get("note", ""), str(raw.get("note") or "").strip()]))
+            target["quotes"] = list(dict.fromkeys([*target.get("quotes", []), *[str(q).strip() for q in raw.get("quotes") or [] if str(q).strip()]]))
+            target["mention_count"] = int(target.get("mention_count") or 0) + 1
+            for key in {name, *aliases}:
+                lookup[key] = target
+        names = [item["name"] for item in merged]
+        candidates = [
+            {"left": left, "right": right, "reason": "名字包含关系，需人工确认是否同一人"}
+            for index, left in enumerate(names)
+            for right in names[index + 1:]
+            if left != right and (left in right or right in left)
+        ]
+        merged.sort(key=lambda item: (-int(item.get("mention_count") or 0), item.get("name", "")))
+        return merged, candidates
+
+    def _normalize_extracted_character_card(self, card: dict[str, Any], roster: dict[str, Any], source_text: str) -> dict[str, Any]:
+        card = dict(card)
+        card["name"] = str(card.get("name") or roster.get("name") or "").strip()
+        card["aliases"] = list(dict.fromkeys([*roster.get("aliases", []), *card.get("aliases", [])]))
+        card["evidence"] = list(dict.fromkeys([
+            quote for quote in [*roster.get("quotes", []), *card.get("evidence", [])]
+            if quote and quote in source_text
+        ]))
+        card["identity"] = {**(card.get("identity") or {})}
+        card["motivation"] = {**(card.get("motivation") or {})}
+        card["speech"] = {**(card.get("speech") or {}), **(card.get("speech_profile") or {})}
+        card["behavior"] = {**(card.get("behavior") or {}), **(card.get("behavior_profile") or {})}
+        card["arc"] = {**(card.get("arc_profile") or {})}
+        card["extraction_notes"] = str(roster.get("note") or "")
+        for key in ("speech_profile", "behavior_profile", "arc_profile"):
+            card.pop(key, None)
+        return card
+
+    def _character_extract_summary(self, character: Character) -> dict[str, Any]:
+        return {"id": character.id, "name": character.name, "role": character.role}
+
+    def _apply_extracted_character_cards(self, project: CreativeProject, cards: list[dict[str, Any]]) -> list[Character]:
+        outline = loads_json(project.outline_json)
+        existing = [item for item in (outline.get("characters") or []) if isinstance(item, dict)]
+        by_id = {str(item.get("character_id")): item for item in existing if item.get("character_id")}
+        by_name = {str(item.get("name") or "").strip(): item for item in existing if str(item.get("name") or "").strip()}
+        merged = list(existing)
+        for card in cards:
+            name = str(card.get("name") or "").strip()
+            target = by_id.get(str(card.get("character_id"))) if card.get("character_id") else None
+            target = target or by_name.get(name)
+            if target is None:
+                target = {}
+                merged.insert(0, target)
+            target.update(card)
+            if name:
+                by_name[name] = target
+            if card.get("character_id"):
+                by_id[str(card["character_id"])] = target
+        outline["characters"] = merged
+        project.outline_json = dumps_json(outline)
+        project.updated_at = datetime.now()
+        self.session.add(project)
+        return self.sync_outline_characters(project.id)
+
     async def generate_outline(
         self,
         project_id: str,
@@ -1409,6 +1614,11 @@ class CreativeProjectService:
         )
         self.session.commit()
         self.session.refresh(project)
+        try:
+            self.sync_outline_characters(project_id)
+        except ValueError:
+            # Some outline generations legitimately contain no characters yet.
+            pass
         return data
 
     def _preserve_linked_characters_in_outline(
@@ -1440,6 +1650,8 @@ class CreativeProjectService:
             motivation = loads_json(character.motivation_json, {})
             speech = loads_json(character.speech_json, {})
             behavior = loads_json(character.behavior_json, {})
+            ability = loads_json(character.ability_json, {})
+            arc = loads_json(character.arc_json, {})
             target = by_id.get(str(character.id)) or by_name.get(character.name)
             if target is None:
                 target = {"name": character.name}
@@ -1463,6 +1675,8 @@ class CreativeProjectService:
                 "motivation": motivation or target.get("motivation", {}),
                 "speech": speech or target.get("speech", {}),
                 "behavior": behavior or target.get("behavior", {}),
+                "ability": ability or target.get("ability", {}),
+                "arc": arc or target.get("arc", {}),
             })
             by_id[str(character.id)] = target
             by_name[character.name] = target
@@ -1650,12 +1864,17 @@ class CreativeProjectService:
         if not outline or not chapter_plan:
             raise ValueError("请先生成故事大纲和章节规划")
 
+        # 角色可能是大纲生成之后才关联的，先增量并入大纲，细纲才能用到它们
+        self.merge_linked_characters_into_outline(project_id)
+        outline = loads_json(project.outline_json)
+
         current_chapter = self._chapter_plan_item(chapter_plan, chapter_number)
         if not current_chapter:
             raise ValueError(f"章节规划中找不到第 {chapter_number} 章")
 
         previous_context = self._previous_chapter_context(project_id, chapter_number)
         project_bible_context = self._locked_project_bible_context(project.id)
+        character_cards = self._character_cards_text(project_id, outline)
         default_prompt = self._chapter_outline_prompt(
             outline,
             chapter_plan,
@@ -1677,8 +1896,10 @@ class CreativeProjectService:
                 "current_chapter_json": dumps_json(current_chapter),
                 "previous_context": previous_context,
                 "project_bible_context": project_bible_context,
+                "project_characters": character_cards,
             },
         )
+        prompt = self._append_character_cards(prompt, character_cards)
         data = await self._generate_json(
             project=project,
             stage="chapter_outline",
@@ -1733,6 +1954,9 @@ class CreativeProjectService:
             raise ValueError("请先生成该章节的单话细纲")
 
         chapter_outline_data = loads_json(chapter_outline.data_json)
+        # 同上：先并入角色库角色，再构建上下文与提示词
+        self.merge_linked_characters_into_outline(project_id)
+        outline = loads_json(project.outline_json)
         context_pack = self._creative_context_pack(
             project_id,
             chapter_number,
@@ -1741,6 +1965,8 @@ class CreativeProjectService:
             source_content_id=chapter_outline.id,
         )
         previous_context = context_pack["previous_context"]
+        character_cards = self._character_cards_text(project_id, outline)
+        logger.info("[char-cards] stage=novel_body project=%s len=%d", project_id, len(character_cards))
         default_prompt = self._novel_body_prompt(
             outline,
             chapter_plan,
@@ -1762,8 +1988,10 @@ class CreativeProjectService:
                 "previous_context": previous_context,
                 "project_context_pack": context_pack["text"],
                 "locked_project_bible_context": context_pack["locked_project_bible_context"],
+                "project_characters": character_cards,
             },
         )
+        prompt = self._append_character_cards(prompt, character_cards)
         data = await self._generate_json(
             project=project,
             stage="novel_body",
@@ -4255,6 +4483,12 @@ class CreativeProjectService:
                     personality=str(raw_character.get("personality") or ""),
                     background=str(raw_character.get("background") or raw_character.get("arc") or ""),
                     age_range=str(raw_character.get("age_range") or ""),
+                    identity_json=dumps_json(raw_character.get("identity") or {}),
+                    motivation_json=dumps_json(raw_character.get("motivation") or {}),
+                    speech_json=dumps_json(raw_character.get("speech") or {}),
+                    behavior_json=dumps_json(raw_character.get("behavior") or {}),
+                    ability_json=dumps_json(raw_character.get("ability") or {}),
+                    arc_json=dumps_json(raw_character.get("arc") or {}),
                     portrait_asset_id=str(raw_character.get("portrait_asset_id") or ""),
                     reference_asset_ids=dumps_json(raw_character.get("reference_asset_ids") or []),
                     tags=dumps_json(["创作项目", project.project_type]),
@@ -4278,6 +4512,10 @@ class CreativeProjectService:
                 character.personality = character.personality or str(raw_character.get("personality") or "")
                 character.background = character.background or str(raw_character.get("background") or raw_character.get("arc") or "")
                 character.age_range = character.age_range or str(raw_character.get("age_range") or "")
+                for json_field in ("identity", "motivation", "speech", "behavior", "ability", "arc"):
+                    value = raw_character.get(json_field)
+                    if isinstance(value, dict) and value and not loads_json(getattr(character, f"{json_field}_json"), {}):
+                        setattr(character, f"{json_field}_json", dumps_json(value))
                 if raw_character.get("portrait_asset_id") and not character.portrait_asset_id:
                     character.portrait_asset_id = str(raw_character.get("portrait_asset_id"))
                 character.field_sources_json = dumps_json(
@@ -4306,6 +4544,9 @@ class CreativeProjectService:
                 link.local_prompt_tags = dumps_json(self._character_list(raw_character, "visual_tags", "signature_items"))
             link.ooc_notes = link.ooc_notes or str(raw_character.get("ooc_notes") or raw_character.get("behavior_boundary") or "")
             link.off_model_notes = link.off_model_notes or str(raw_character.get("off_model_notes") or raw_character.get("visual_consistency") or "")
+            link.aliases_json = dumps_json(list(dict.fromkeys([str(v).strip() for v in raw_character.get("aliases") or [] if str(v).strip()])))
+            link.evidence_json = dumps_json(list(dict.fromkeys([str(v).strip() for v in raw_character.get("evidence") or [] if str(v).strip()])))
+            link.extraction_notes = link.extraction_notes or str(raw_character.get("extraction_notes") or "")
             link.updated_at = datetime.now()
 
             if raw_character.get("character_id") != character.id:
@@ -8065,6 +8306,116 @@ class CreativeProjectService:
 
         return profiles
 
+    def _character_cards_text(
+        self,
+        project_id: str,
+        outline: dict[str, Any],
+        limit: int = 12,
+    ) -> str:
+        """把项目关联角色的设定卡渲染成模型可读的文本块。
+
+        角色库是用户在角色页维护的权威设定，但细纲/正文生成原先只看大纲，
+        于是「建了角色却进不了正文」——正文里出现的是大纲阶段模型临时起的名字。
+        这里把角色库设定（含世界覆盖：别名、本世界服装、行为底线）显式喂给模型。
+        """
+        fields = (
+            ("usage_role", "定位"),
+            ("local_alias", "别名"),
+            ("local_identity", "身份"),
+            ("local_faction", "阵营"),
+            ("appearance", "外貌"),
+            ("costume", "服装"),
+            ("signature_items", "标志物"),
+            ("speech", "说话方式"),
+            ("motivation", "欲望/恐惧"),
+            ("ooc_rules", "行为底线"),
+            ("visual_consistency", "一致性"),
+        )
+        profiles = self._project_character_production_profiles(project_id, outline)
+        lines: list[str] = []
+        for item in profiles[:limit]:
+            name = str(item.get("name") or "").strip()
+            if not name:
+                continue
+            # 有 character_id 的来自角色库（用户在角色页维护），其余是大纲里的临时角色
+            source = "角色库" if str(item.get("character_id") or "").strip() else "大纲"
+            parts = [f"来源：{source}"]
+            for key, label in fields:
+                value = str(item.get(key) or "").strip()
+                if value:
+                    parts.append(f"{label}：{value}")
+            lines.append(f"- {name}（" + "；".join(parts) + "）")
+        return "\n".join(lines)
+
+    def merge_linked_characters_into_outline(self, project_id: str) -> int:
+        """把角色库里已关联本项目的角色增量并入大纲 characters。
+
+        只追加缺失角色，绝不删除或改写大纲里已有的角色，避免推翻用户已确认的
+        世界观与剧情。角色库角色置顶，让后续细纲/正文优先看到它们。
+        返回新增角色数。
+        """
+        project = self._require_project(project_id)
+        outline = loads_json(project.outline_json)
+        if not isinstance(outline, dict):
+            return 0
+        profiles = self._project_character_production_profiles(project_id, outline)
+        linked = [p for p in profiles if str(p.get("character_id") or "").strip()]
+        if not linked:
+            return 0
+
+        current = [c for c in (outline.get("characters") or []) if isinstance(c, dict)]
+        known_names = {str(c.get("name") or "").strip() for c in current}
+        known_ids = {str(c.get("character_id") or "").strip() for c in current if c.get("character_id")}
+
+        added: list[dict[str, Any]] = []
+        for profile in linked:
+            character_id = str(profile.get("character_id") or "").strip()
+            name = str(profile.get("name") or "").strip()
+            if not name or character_id in known_ids or name in known_names:
+                continue
+            entry = {
+                "name": name,
+                "character_id": character_id,
+                "role": profile.get("usage_role") or "",
+                "identity_brief": profile.get("local_identity") or "",
+                "appearance": profile.get("appearance") or "",
+                "costume_hint": profile.get("costume") or "",
+                "signature_items": profile.get("signature_items") or "",
+            }
+            added.append({k: v for k, v in entry.items() if v})
+            known_names.add(name)
+
+        if not added:
+            return 0
+        outline["characters"] = added + current
+        project.outline_json = dumps_json(outline)
+        self.session.add(project)
+        self.session.commit()
+        self.session.refresh(project)
+        return len(added)
+
+    CHARACTER_CARD_APPENDIX = """
+
+本项目角色设定（角色库，权威来源）：
+{cards}
+
+角色使用约束：
+1. 来源为“角色库”的角色是用户在角色页维护的权威设定，优先级高于来源为“大纲”的角色。
+2. 若角色库中存在定位含“protagonist/主角”的角色，本章主角必须是它，不得改由大纲里的临时角色顶替。
+3. 严禁为角色库角色改名、替换成另一个名字，或改写其外貌、服装、标志物、说话方式与行为底线。
+4. 角色库角色在本章如需缺席，可在 summary 中说明，但不得因此引入新的主角。"""
+
+    def _append_character_cards(self, prompt: str, character_cards: str) -> str:
+        """把角色设定卡追加到最终 prompt 末尾。
+
+        之所以追加而不是写进 default_prompt：stage 一旦命中数据库里的
+        creative_project 模板，default_prompt 会被整体丢弃，只有追加能保证
+        角色设定无论走模板还是默认提示词都一定送达模型。
+        """
+        if not character_cards:
+            return prompt
+        return prompt + self.CHARACTER_CARD_APPENDIX.format(cards=character_cards)
+
     def _character_production_profile(
         self,
         character: Character,
@@ -8078,6 +8429,14 @@ class CreativeProjectService:
         behavior = loads_json(getattr(character, "behavior_json", "{}"), {})
         ability = loads_json(getattr(character, "ability_json", "{}"), {})
         arc = loads_json(getattr(character, "arc_json", "{}"), {})
+        # Older cards may store a Bible section as plain text rather than a
+        # JSON object. Keep the production context path backward compatible.
+        identity = identity if isinstance(identity, dict) else {}
+        motivation = motivation if isinstance(motivation, dict) else {}
+        speech = speech if isinstance(speech, dict) else {}
+        behavior = behavior if isinstance(behavior, dict) else {}
+        ability = ability if isinstance(ability, dict) else {}
+        arc = arc if isinstance(arc, dict) else {}
         visual_profile = identity.get("visual_profile") if isinstance(identity.get("visual_profile"), dict) else {}
         visual_overrides = loads_json(getattr(link, "visual_overrides_json", "{}"), {})
         bible_overrides = loads_json(getattr(link, "bible_overrides_json", "{}"), {})
