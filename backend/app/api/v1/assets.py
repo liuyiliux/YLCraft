@@ -750,37 +750,34 @@ async def list_assets(
 # ---------------------------------------------------------------------------
 
 def _asset_file_allowed_roots() -> list[Path]:
-    from app.core.config import ensure_download_path
+    """允许访问的资产根目录。
 
-    backend_dir = Path(__file__).resolve().parents[3]
-    project_dir = backend_dir.parent
-    roots = [
-        backend_dir / "app" / "storage",
-        backend_dir / "storage",
-        backend_dir / "downloads",
-        backend_dir / "uploads",
-        project_dir / "storage",
-        project_dir / "downloads",
-        project_dir / "uploads",
-        ensure_download_path(),
-    ]
-    return [root.resolve() for root in roots if root]
+    唯一实现在 `services/asset_file_resolver.py`，这里只做转发，避免 API 层
+    和服务层各维护一份白名单、改动时出现规则漂移。
+    """
+    from app.services.asset_file_resolver import allowed_asset_roots
+
+    return allowed_asset_roots()
 
 
 def _is_allowed_temp_asset_path(path: Path) -> bool:
-    temp_root = Path(tempfile.gettempdir()).resolve()
-    allowed_prefixes = ("ylcraft_uploads", "narrato_out_", "moe_out_", "cutclaw_out_")
-    for parent in (path, *path.parents):
-        if parent.parent == temp_root and parent.name.startswith(allowed_prefixes):
-            return True
-    return False
+    from app.services.asset_file_resolver import is_allowed_temp_path
+
+    return is_allowed_temp_path(path)
 
 
 def _resolve_asset_file_path(path_value: str) -> Path:
     if not path_value or path_value.startswith(("http://", "https://", "data:")):
         raise HTTPException(status_code=400, detail="不支持的本地文件路径")
 
-    path = Path(os.path.expandvars(os.path.expanduser(path_value))).resolve()
+    from app.services.asset_file_resolver import resolve_storage_path
+
+    try:
+        # 相对路径按当前项目根解析：多机器共享同一数据库时，各自还原到本机文件
+        path = resolve_storage_path(path_value)
+    except (OSError, ValueError):
+        raise HTTPException(status_code=404, detail="文件不存在")
+
     if not path.is_file():
         raise HTTPException(status_code=404, detail="文件不存在")
 

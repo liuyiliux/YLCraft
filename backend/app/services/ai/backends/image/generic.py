@@ -1208,7 +1208,9 @@ class GenericImageBackend(ImageBackend):
 
     @staticmethod
     def _local_file_url(path: str) -> str:
-        return f"/api/v1/assets/download?path={quote(path, safe='')}"
+        from app.services.asset_file_resolver import to_asset_download_url
+
+        return to_asset_download_url(path)
 
     async def _download_image(self, url: str, prompt: str) -> Optional[Path]:
         try:

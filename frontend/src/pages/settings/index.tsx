@@ -4064,31 +4064,31 @@ function StorageSettings() {
         <Row gutter={16}>
           <Col span={12}>
             <Form.Item label={<span style={{ color: THEME.textPrimary }}>内容下载根目录</span>} name="video_download_path" extra={<span style={{ color: THEME.textSecondary, fontSize: 11 }}>公众号文章、平台视频和本地阅读器的默认下载根目录；文件会按平台或来源保存到子目录</span>}>
-              <Input placeholder="/workspace/backend/downloads" style={{ width: '100%' }} />
+              <Input placeholder="backend/downloads" style={{ width: '100%' }} />
             </Form.Item>
           </Col>
           <Col span={12}>
             <Form.Item label={<span style={{ color: THEME.textPrimary }}>AI 图片生成</span>} name="image_gen_path" extra={<span style={{ color: THEME.textSecondary, fontSize: 11 }}>文生图、图生图生成的图片保存路径</span>}>
-              <Input placeholder="/workspace/backend/storage/images" style={{ width: '100%' }} />
+              <Input placeholder="backend/storage/images" style={{ width: '100%' }} />
             </Form.Item>
           </Col>
         </Row>
         <Row gutter={16}>
           <Col span={12}>
             <Form.Item label={<span style={{ color: THEME.textPrimary }}>AI 视频生成</span>} name="video_gen_path" extra={<span style={{ color: THEME.textSecondary, fontSize: 11 }}>AI视频生成保存路径</span>}>
-              <Input placeholder="/workspace/backend/storage/videos" style={{ width: '100%' }} />
+              <Input placeholder="backend/storage/videos" style={{ width: '100%' }} />
             </Form.Item>
           </Col>
           <Col span={12}>
             <Form.Item label={<span style={{ color: THEME.textPrimary }}>参考图存储</span>} name="reference_image_path" extra={<span style={{ color: THEME.textSecondary, fontSize: 11 }}>图生图参考图保存路径</span>}>
-              <Input placeholder="/workspace/backend/storage/reference_images" style={{ width: '100%' }} />
+              <Input placeholder="backend/storage/reference_images" style={{ width: '100%' }} />
             </Form.Item>
           </Col>
         </Row>
         <Row gutter={16}>
           <Col span={12}>
             <Form.Item label={<span style={{ color: THEME.textPrimary }}>本地上传</span>} name="upload_path" extra={<span style={{ color: THEME.textSecondary, fontSize: 11 }}>素材库本地上传文件保存路径</span>}>
-              <Input placeholder="/workspace/backend/storage/uploads" style={{ width: '100%' }} />
+              <Input placeholder="backend/storage/uploads" style={{ width: '100%' }} />
             </Form.Item>
           </Col>
         </Row>

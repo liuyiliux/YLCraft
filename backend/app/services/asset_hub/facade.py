@@ -15,6 +15,10 @@ from urllib.parse import parse_qs, urlparse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.asset_hub import AssetType
+from app.services.asset_file_resolver import (
+    to_asset_download_url,
+    to_storage_path,
+)
 from app.services.asset_hub.node_service import AssetNodeService
 from app.services.asset_hub.representation_service import AssetRepresentationService
 from app.services.asset_hub.version_service import AssetVersionService
@@ -79,7 +83,7 @@ class AssetHubFacade:
         node = await self.node_service.create(
             name=(prompt or path.stem or "Generated image")[:120],
             asset_type=AssetType.IMAGE,
-            thumbnail_url=str(path),
+            thumbnail_url=to_asset_download_url(path),
             metadata={
                 "source": "image_generation",
                 "provider": provider,
@@ -99,7 +103,7 @@ class AssetHubFacade:
         )
         rep = await self.rep_service.create(
             asset_version_id=str(version.id),
-            file_path=str(path),
+            file_path=to_storage_path(path),
             mime_type=mime_type,
             file_size=file_size,
             width=width,
@@ -282,7 +286,7 @@ class AssetHubFacade:
         )
         rep = await self.rep_service.create(
             asset_version_id=str(version.id),
-            file_path=str(path),
+            file_path=to_storage_path(path),
             mime_type=mime_type,
             file_size=file_size,
             width=_optional_int(meta.get("width")),
