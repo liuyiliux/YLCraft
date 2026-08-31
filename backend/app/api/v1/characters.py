@@ -33,6 +33,7 @@ from sqlmodel import select
 from app.db.database import get_async_session
 from app.db.models.creative_project import CreativeProject, ProjectGenerationLog, ProjectStateEntry
 from app.services.character.service import CharacterService
+from app.services.asset_file_resolver import to_asset_download_url, to_storage_path
 from app.services.platform_log import service as platform_log
 from app.services.creative_project.service import dumps_json, loads_json
 from app.db.models.character import CharacterSourceType, CharacterRole, CharacterRelationship, Character, CharacterWorkflowSource
@@ -870,6 +871,8 @@ def _decode_asset_download_path(value: str) -> str:
 
 
 def _resolve_local_representation_path(rep) -> Path | None:
+    from app.services.asset_file_resolver import resolve_asset_file_from_url
+
     candidates = []
     extra = dict(getattr(rep, "extra_json", None) or {})
     for key in ("local_path", "file_path", "path"):
@@ -884,8 +887,8 @@ def _resolve_local_representation_path(rep) -> Path | None:
         decoded = _decode_asset_download_path(candidate)
         if not decoded:
             continue
-        path = Path(decoded).expanduser()
-        if path.exists() and path.is_file():
+        path = resolve_asset_file_from_url(decoded)
+        if path:
             return path
     return None
 
@@ -1420,7 +1423,7 @@ async def slice_character_portrait_grid(
                             name=f"{character.name}-{label}",
                             asset_type=AssetType.IMAGE,
                             parent_id=portrait_node_id,
-                            thumbnail_url=str(crop_path),
+                            thumbnail_url=to_asset_download_url(crop_path),
                             metadata=metadata,
                             tags=[
                                 "角色立绘",
@@ -1454,7 +1457,7 @@ async def slice_character_portrait_grid(
                         )
                         child_rep = await rep_service.create(
                             asset_version_id=str(child_version.id),
-                            file_path=str(crop_path),
+                            file_path=to_storage_path(crop_path),
                             mime_type="image/png",
                             file_size=file_size,
                             width=crop.width,
@@ -1462,8 +1465,8 @@ async def slice_character_portrait_grid(
                             format="png",
                             extra={
                                 **metadata,
-                                "local_path": str(crop_path),
-                                "url": str(crop_path),
+                                "local_path": to_storage_path(crop_path),
+                                "url": to_asset_download_url(crop_path),
                             },
                         )
                         await version_service.link_versions(
@@ -1482,7 +1485,7 @@ async def slice_character_portrait_grid(
                                 "node_id": str(child_node.id),
                                 "version_id": str(child_version.id),
                                 "representation_id": str(child_rep.id),
-                                "file_path": str(crop_path),
+                                "file_path": to_storage_path(crop_path),
                                 "label": label,
                                 "index": index + 1,
                                 "row": row + 1,

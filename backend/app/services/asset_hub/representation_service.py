@@ -16,6 +16,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.asset_hub import AssetRepresentation, AssetVersion
+from app.services.asset_file_resolver import to_storage_path
 
 logger = logging.getLogger("ylcraft.asset_hub.representation")
 
@@ -61,16 +62,17 @@ class AssetRepresentationService:
         if not version:
             raise ValueError(f"AssetVersion {asset_version_id} 不存在")
 
+        stored_path = to_storage_path(file_path)
         rep = AssetRepresentation(
             id=str(uuid4()),
             asset_version_id=asset_version_id,
-            file_path=file_path,
+            file_path=stored_path,
             mime_type=mime_type,
             file_size=file_size,
             width=width,
             height=height,
             duration=duration,
-            format=format or self._guess_format(file_path, mime_type),
+            format=format or self._guess_format(stored_path, mime_type),
             extra_json=extra or {},
         )
         self.session.add(rep)
@@ -83,7 +85,7 @@ class AssetRepresentationService:
 
         logger.info(
             f"[AssetRepresentationService] created | id={rep.id} | "
-            f"version={asset_version_id} | path={file_path}"
+            f"version={asset_version_id} | path={stored_path}"
         )
         return rep
 

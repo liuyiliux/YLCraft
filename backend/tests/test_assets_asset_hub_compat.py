@@ -171,7 +171,7 @@ def test_assets_api_serves_asset_hub_list_detail_thumbnail_and_download(monkeypa
     rep = SimpleNamespace(file_path=str(hub_file), mime_type="image/png")
 
     async def fake_list_hub_cards(*_args, **_kwargs):
-        return [hub_card]
+        return [hub_card], 1
 
     async def fake_hub_card(_service, asset_id, include_metadata=True):
         return hub_card if asset_id == "hub-node-1" else None
