@@ -195,24 +195,30 @@ async def get_cos_config() -> dict:
 
 async def get_storage_path(key: str, default_subdir: str = "") -> Path:
     """
-    获取存储路径（数据库优先，回退到默认）
-    
+    获取存储路径（数据库优先，回退到项目内默认子目录）。
+
+    支持相对项目根的路径（如 backend/storage/images），也兼容旧绝对路径。
+
     Args:
         key: 存储路径配置键 (video_download_path, image_gen_path, etc.)
         default_subdir: 默认子目录
-    
+
     Returns:
         Path: 有效的存储路径
     """
-    # 尝试从数据库/配置获取
+    from app.services.asset_file_resolver import project_root, resolve_storage_path
+
     configured_path = await get_setting(key)
-    
-    if configured_path and Path(configured_path).exists():
-        return Path(configured_path)
-    
-    # 最终回退到 storage/ 目录
-    backend_dir = Path(__file__).parent.parent.parent.parent
-    storage_dir = backend_dir / "storage"
+    if configured_path:
+        try:
+            path = resolve_storage_path(configured_path)
+        except (OSError, ValueError):
+            path = Path(configured_path)
+        if path.exists():
+            return path
+
+    # 最终回退到项目根下的 backend/storage/ 目录
+    storage_dir = project_root() / "backend" / "storage"
     if default_subdir:
         storage_dir = storage_dir / default_subdir
     storage_dir.mkdir(parents=True, exist_ok=True)
@@ -285,30 +291,37 @@ async def update_all_settings(req: SettingsUpdateRequest):
     return SettingsResponse(success=True, data={"data": patch})
 
 
+# 各存储路径的默认子目录（相对于项目根）。
+# 统一使用相对路径：多机器共享同一数据库时，各机器按自己的项目根还原。
+_STORAGE_SUBDIRS: dict[str, str] = {
+    "video_download_path": "downloads",
+    "image_gen_path": "storage/images",
+    "video_gen_path": "storage/videos",
+    "reference_image_path": "storage/reference_images",
+    "upload_path": "storage/uploads",
+}
+
+
 @router.get("/storage-paths", response_model=StoragePathsResponse, summary="获取所有存储路径")
 async def get_all_storage_paths():
-    """返回所有存储路径配置"""
+    """返回所有存储路径配置。数据库配置优先；未配置时返回相对项目根的默认子目录。"""
     db_settings = await _load_settings_from_db()
-    file_settings = _load_settings_from_file()
-    
+
     storage_keys = [
         "video_download_path",
-        "image_gen_path", 
+        "image_gen_path",
         "video_gen_path",
         "reference_image_path",
         "upload_path",
     ]
-    
+
     result = {}
     for key in storage_keys:
-        # 数据库优先
         if key in db_settings and db_settings[key]:
             result[key] = db_settings[key]
         else:
-            # 默认路径
-            backend_dir = Path(__file__).parent.parent.parent.parent
-            result[key] = str(backend_dir / "storage")
-    
+            result[key] = _STORAGE_SUBDIRS.get(key, "storage")
+
     return StoragePathsResponse(success=True, data=result)
 
 

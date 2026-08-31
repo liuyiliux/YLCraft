@@ -218,6 +218,19 @@ Agent Center 的人工委派入口支持 `resume_parent`：成功汇合后把子
 
 注意：当前仓库里同时存在旧素材接口 `/api/v1/assets` 和新资产中枢 `/api/v1/asset-hub`。新闭环应优先考虑资产中枢模型，但兼容旧素材页和下载链路。
 
+### 4.3.0 存储路径约定（跨机器可移植）
+
+多台机器可以共享同一个远程数据库，但生成的文件留在各自本地。因此本地文件一律保存**相对项目根的路径**，读取时由 `backend/app/services/asset_file_resolver.py` 按当前部署的项目根还原：
+
+| 字段 | 消费方 | 存储形态 |
+| --- | --- | --- |
+| `asset_representations.file_path` | 服务端内部 | `backend/app/storage/images/x.png` |
+| `asset_nodes.thumbnail_url`、`characters.portrait_url` | 前端直接当图片地址 | `/api/v1/assets/download?path=backend%2Fapp%2Fstorage%2Fimages%2Fx.png` |
+
+区别来自前端：素材库、播放器、3D 工作台、故事工作台会把 `thumbnail_url` / `portrait_url` 直接当 URL 渲染而不做二次包装，所以这类字段必须保持 `/api/...` 形态，只把 `path` 参数改写成相对路径。写入侧用 `to_storage_path` / `to_asset_download_url`，读取侧用 `resolve_storage_path`；绝对路径仍然兼容，便于历史数据逐步迁移。下载目录、临时目录等项目外的路径保持绝对路径，避免跨机器指向不存在的目录。
+
+白名单只有一份实现：API 层 `_asset_file_allowed_roots` 转发到服务层 `allowed_asset_roots`，两处不再各维护一套规则。
+
 ### 4.3.1 Story Video Shot Production
 
 `/story` is the authoritative shot-planning surface and `/video-gen` is also an independently usable configured-provider workspace. A storyboard panel owns a static `image_prompt` and a separate dynamic `video_prompt`, a normalized 3-6 second duration, normalized camera motion, explicit audio intent and optional `music_hint`. A panel can open video generation with this plan plus `project_id`, storyboard `content_id`, chapter number, panel number, source metadata and Asset Hub `reference_asset_ids`. The video API resolves those ids to local media and uses the first usable image as a first-frame fallback. Every accepted provider task is persisted in `video_generation_tasks` with its request/result context; asynchronous providers return the task id immediately, and a later `GET /api/v1/videos/tasks/{task_id}` poll finalizes the local file into Asset Hub exactly once before adding a `ProjectAssetLink(role=output, relation=derived_from)` when project provenance exists. Standalone output remains a canonical Asset Hub video asset with prompt, provider/model, duration, format, audio intent and source-reference lineage, without requiring a project. `/video-gen` restores this durable history through `GET /api/v1/videos/history`; `/story` reads project links back into the matching storyboard panel rather than keeping a second project video list or overwriting that panel's image preview. This is intentionally not an editor timeline; shot assembly remains follow-up work.

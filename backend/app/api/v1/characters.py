@@ -917,11 +917,18 @@ def _grid_slice_label(grid_type: str, index: int) -> str:
 
 
 def _local_file_url(path_or_url: str) -> str:
+    """本地文件 → 平台内部下载地址。
+
+    path 参数使用相对项目根的路径，多机器共享同一数据库时各自还原到本机文件；
+    项目外的文件保持绝对路径，避免跨机器指向不存在的路径。
+    """
     if not path_or_url:
         return ""
     if path_or_url.startswith(("/api/", "http://", "https://", "data:")):
         return path_or_url
-    return f"/api/v1/assets/download?path={quote(path_or_url)}"
+    from app.services.asset_file_resolver import to_asset_download_url
+
+    return to_asset_download_url(path_or_url)
 
 
 @router.post(

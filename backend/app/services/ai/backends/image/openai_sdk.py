@@ -340,7 +340,9 @@ class OpenAISDKImageBackend:
 
     @staticmethod
     def _local_file_url(path: str) -> str:
-        return f"/api/v1/assets/download?path={quote(path, safe='')}"
+        from app.services.asset_file_resolver import to_asset_download_url
+
+        return to_asset_download_url(path)
 
     @staticmethod
     def _safe_log_params(params: Dict[str, Any]) -> Dict[str, Any]:
