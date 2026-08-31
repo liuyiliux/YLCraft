@@ -268,6 +268,7 @@ async def get_all_settings():
 async def update_all_settings(req: SettingsUpdateRequest):
     """批量更新设置"""
     patch = req.patch
+    file_settings = _load_settings_from_file()
     
     # 处理存储路径
     storage_keys = [
@@ -292,6 +293,11 @@ async def update_all_settings(req: SettingsUpdateRequest):
                 resolved.mkdir(parents=True, exist_ok=True)
                 path = Path(path).as_posix()
             await _save_setting_to_db(key, path, f"存储路径: {key}")
+            file_settings[key] = path
+
+    # 同步本地配置镜像，供无法异步查询数据库的下载/后台任务读取。
+    if any(key in patch for key in storage_keys):
+        _save_settings_to_file(file_settings)
 
     # COS 远程对象存储：入库（平铺 cos_* 键）
     if "cos" in patch and isinstance(patch["cos"], dict):
