@@ -3,6 +3,7 @@ import {
   Alert,
   Badge,
   Button,
+  Card,
   Checkbox,
   Collapse,
   Empty,
@@ -113,7 +114,13 @@ import {
   type PlatformTemplate,
   type CreativeProjectContinuityCandidate,
 } from '../../api'
-import { startProjectWorldExtraction } from '../../api/novelSource'
+import {
+  startProjectWorldExtraction,
+  listProjectWorldEntities,
+  listProjectWorldEntityRelations,
+  type WorldEntity,
+  type WorldEntityRelation,
+} from '../../api/novelSource'
 import type {
   ChapterPlanItem,
   ChapterPlan,
@@ -4950,6 +4957,7 @@ export default function StoryPage() {
                     ),
                     children: (
                       <ProjectBibleTab
+                        projectId={selectedProject?.id || ''}
                         hasOutline={hasOutline}
                         bibleContents={projectBibleContents}
                         worldAssets={worldAssetContents}
@@ -6291,6 +6299,7 @@ const worldAssetRoleLabels: Record<string, string> = {
 }
 
 function ProjectBibleTab({
+  projectId,
   hasOutline,
   bibleContents,
   worldAssets,
@@ -6301,6 +6310,7 @@ function ProjectBibleTab({
   onSaveContent,
   onSaveAsAsset,
 }: {
+  projectId: string
   hasOutline: boolean
   bibleContents: ProjectContent[]
   worldAssets: ProjectContent[]
@@ -6315,6 +6325,58 @@ function ProjectBibleTab({
   onSaveAsAsset: (contentId: string) => void
 }) {
   const lockedCount = [...bibleContents, ...worldAssets].filter((item) => item.is_locked).length
+
+  // 类型化世界设定（按域展示：地点/势力/角色/经济/规则/时间线/术语表/力量体系/物种/事件/物品）
+  const [worldEntities, setWorldEntities] = useState<WorldEntity[]>([])
+  const [worldRelations, setWorldRelations] = useState<WorldEntityRelation[]>([])
+  const [worldLoading, setWorldLoading] = useState(false)
+
+  useEffect(() => {
+    if (!projectId) {
+      setWorldEntities([])
+      setWorldRelations([])
+      return
+    }
+    setWorldLoading(true)
+    Promise.all([
+      listProjectWorldEntities(projectId).catch(() => []),
+      listProjectWorldEntityRelations(projectId).catch(() => []),
+    ])
+      .then(([entities, relations]) => {
+        setWorldEntities(entities)
+        setWorldRelations(relations)
+      })
+      .finally(() => setWorldLoading(false))
+  }, [projectId])
+
+  const entitiesByType = useMemo(() => {
+    const map: Record<string, WorldEntity[]> = {}
+    for (const entity of worldEntities) {
+      const key = entity.entity_type || entity.domain || '其他'
+      ;(map[key] ||= []).push(entity)
+    }
+    return map
+  }, [worldEntities])
+
+  const entityNameById = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const entity of worldEntities) map[entity.id] = entity.name
+    return map
+  }, [worldEntities])
+
+  const entityTypeLabels: Record<string, string> = {
+    character: '角色',
+    place: '地点',
+    faction: '势力',
+    event: '事件',
+    timeline_event: '时间线',
+    world_rule: '世界规则',
+    power_system: '力量体系',
+    economy: '经济',
+    species: '物种',
+    item: '物品',
+    glossary: '术语表',
+  }
 
   if (!hasOutline) {
     return (
@@ -6392,6 +6454,84 @@ function ProjectBibleTab({
           </div>
         ) : (
           <Empty description="暂无世界资产卡，可先从大纲补齐" />
+        )}
+      </WorkbenchSection>
+
+      <WorkbenchSection
+        title="世界设定（按域）"
+        extra={
+          <Space>
+            {worldEntities.length ? (
+              <Tag color="blue">{worldEntities.length} 个实体 / {worldRelations.length} 条关系</Tag>
+            ) : null}
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              类型化世界提取产物，按域分组展示
+            </Text>
+          </Space>
+        }
+      >
+        {worldLoading ? (
+          <div style={{ padding: 24, textAlign: 'center' }}>
+            <Text type="secondary">加载中...</Text>
+          </div>
+        ) : worldEntities.length === 0 ? (
+          <Empty description="尚未生成世界设定候选。点上方「生成世界设定候选」一键产出（推荐用 qwen3.8-27b 等中文模型）。" />
+        ) : (
+          <Space direction="vertical" size={20} style={{ width: '100%' }}>
+            {Object.entries(entitiesByType).map(([type, items]) => (
+              <div key={type}>
+                <Text strong style={{ fontSize: 14 }}>
+                  {entityTypeLabels[type] || type}（{items.length}）
+                </Text>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+                    gap: 12,
+                    marginTop: 8,
+                  }}
+                >
+                  {items.map((entity) => (
+                    <Card size="small" key={entity.id} title={<Text strong>{entity.name}</Text>}>
+                      {entity.summary && (
+                        <Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 8 }}>
+                          {entity.summary}
+                        </Paragraph>
+                      )}
+                      {Object.keys(entity.attributes || {}).length > 0 && (
+                        <div style={{ fontSize: 11, color: 'rgba(0,0,0,0.65)' }}>
+                          {Object.entries(entity.attributes)
+                            .slice(0, 5)
+                            .map(([key, value]) => (
+                              <div key={key} style={{ marginBottom: 2 }}>
+                                <Text type="secondary">{key}：</Text>
+                                {String(value).slice(0, 80)}
+                              </div>
+                            ))}
+                        </div>
+                      )}
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            ))}
+
+            {worldRelations.length > 0 && (
+              <div>
+                <Text strong style={{ fontSize: 14 }}>实体关系（{worldRelations.length}）</Text>
+                <Space direction="vertical" size={4} style={{ marginTop: 8, width: '100%' }}>
+                  {worldRelations.map((relation) => (
+                    <div key={relation.id} style={{ fontSize: 12 }}>
+                      {entityNameById[relation.source_entity_id] || '?'}
+                      <Tag color="blue" style={{ marginInline: 6 }}>{relation.relation_type}</Tag>
+                      {entityNameById[relation.target_entity_id] || '?'}
+                      {relation.note && <Text type="secondary" style={{ marginLeft: 6 }}>（{relation.note}）</Text>}
+                    </div>
+                  ))}
+                </Space>
+              </div>
+            )}
+          </Space>
         )}
       </WorkbenchSection>
     </Space>
