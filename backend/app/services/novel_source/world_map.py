@@ -325,7 +325,13 @@ def build_map_visual_prompt(document: WorldMapDocument, *, style: str = "") -> s
     if route_descs:
         parts.append("通行路线：" + "、".join(route_descs) + "。")
 
-    parts.append("俯视视角、手绘奇幻地图风格、清晰的地名标注、比例尺与罗盘、自然地形过渡。")
+    parts.append(
+        "以小说世界观地图的经典样式绘制：羊皮纸/古旧卷轴质感，手绘奇幻插画风格"
+        "（参照《魔戒》中土地图的观感），包含山脉、森林、河流、海岸线等自然地形，"
+        "城市与据点用图例图标标注、地名用艺术字体书写，区域用虚线或色块边界区分，"
+        "右下角配比例尺与罗盘玫瑰，重要路线用虚线标出。俯视视角，画面构图完整，"
+        "地名清晰可读。"
+    )
     if style and str(style).strip():
         parts.append(f"风格：{str(style).strip()}。")
     return "".join(parts)

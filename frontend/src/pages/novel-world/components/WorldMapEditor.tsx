@@ -3,7 +3,7 @@ import { Alert, Button, Card, Collapse, Empty, Input, message, Modal, Select, Sp
 import { DeleteOutlined, EnvironmentOutlined, EyeOutlined, PictureOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import { MapContainer, Marker, Polyline, Polygon, useMap } from 'react-leaflet'
+import { MapContainer, Marker, Polyline, Polygon, Popup, useMap } from 'react-leaflet'
 import {
   createWorldMap,
   createWorldMapFromProjectPlaces,
@@ -170,6 +170,8 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
       })
       setLastVisual(result)
       message.success(`已生成地图视觉成图${result.node_id ? '并写入素材库' : ''}`)
+      // 成图自动作为参考底图铺满，地点标记直接叠在上面（WorldAnvil 式交互）。
+      if (result.url) setBaseMapUrl(result.url)
       // 重新加载文档，让 visuals 引用记录（含 revision CAS 回写）可见。
       await refresh(doc.id)
     } catch (error) {
@@ -482,7 +484,21 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
                       })
                     },
                   }}
-                />
+                >
+                  <Popup>
+                    <div style={{ minWidth: 140, maxWidth: 240 }}>
+                      <strong>{node.name || '未命名'}</strong>
+                      {node.kind && (
+                        <div style={{ fontSize: 12, color: '#8c8c8c', marginTop: 2 }}>{node.kind}</div>
+                      )}
+                      {node.description && (
+                        <div style={{ fontSize: 12, marginTop: 6, whiteSpace: 'pre-wrap' }}>
+                          {node.description}
+                        </div>
+                      )}
+                    </div>
+                  </Popup>
+                </Marker>
               ))}
             </MapContainer>
           </div>
