@@ -134,19 +134,41 @@ class WorldMapService:
         nodes = [item for item in (data.get("nodes") or []) if isinstance(item, dict)]
         existing_names = {str(item.get("name") or "").strip() for item in nodes}
         added: list[dict[str, Any]] = []
-        cols = 5
-        for index, place in enumerate(places):
+        # 环形/径向散布：N≤1 居中，N≤3 小弧，N≥4 围圆心排开
+        # （避免之前 5 个点挤在 y=15 一行的情况）。
+        import math
+        total = sum(1 for place in places
+                    if str(place.name or "").strip() and str(place.name or "").strip() not in existing_names)
+        angles: list[float] = []
+        if total <= 1:
+            angles = [math.pi / 2]  # 单点居中
+        elif total <= 3:
+            radius = 18
+            step = math.pi / 2  # 在下方半圆均分
+            start = math.pi / 2 - step * (total - 1) / 2
+            for i in range(total):
+                angles.append(start + step * i)
+        else:
+            radius = min(38, 18 + total * 2)
+            for i in range(total):
+                # 起点 12 点钟方向，均匀环布（-π/2 偏移让首点朝上）
+                angles.append(-math.pi / 2 + 2 * math.pi * i / total)
+
+        idx = 0
+        for place in places:
             name = str(place.name or "").strip()
             if not name or name in existing_names:
                 continue
             attributes = loads_json(place.attributes_json, {})
+            angle = angles[idx]
+            idx += 1
             added.append(
                 {
-                    "id": f"{place.id[:8]}-{index}",
+                    "id": f"{place.id[:8]}-{idx - 1}",
                     "name": name,
                     "kind": str(attributes.get("kind") or "地点")[:20],
-                    "x": 15 + (index % cols) * 18,
-                    "y": 15 + (index // cols) * 18,
+                    "x": round(50 + radius * math.cos(angle), 1),
+                    "y": round(50 + radius * math.sin(angle), 1),
                     "region_id": None,
                     "description": str(place.summary or "")[:200],
                 }
