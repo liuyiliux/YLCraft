@@ -1533,6 +1533,62 @@ def test_build_map_visual_prompt_from_structured_map(session):
     assert "空白图" in build_map_visual_prompt(empty)
 
 
+def test_create_map_from_project_places_generates_nodes(session, storage):
+    """确认写入的地点实体可一键转成地图据点初稿，且幂等不重复。"""
+    from app.services.creative_project.service import CreativeProjectService
+    from app.services.novel_source.contracts import normalize_entity_name
+    from app.services.novel_source.world_map import WorldMapService
+
+    project = CreativeProjectService(session, ai_service=FakeWorldAI()).create_project(
+        title="雨夜旧账",
+        project_type="novel",
+        source_type="original_idea",
+        idea="雨夜旧账",
+    )
+    for name in ("徐家老宅与茅屋", "田间与村口", "龙二赌坊"):
+        session.add(
+            WorldEntity(
+                project_id=project.id,
+                domain="location",
+                entity_type="place",
+                name=name,
+                normalized_key=normalize_entity_name(name),
+                summary=f"{name} 的摘要描述。",
+                attributes_json="{}",
+                evidence_json="[]",
+                fact_layer="project",
+                is_locked=True,
+            )
+        )
+    session.commit()
+
+    service = WorldMapService(session)
+    document = service.create_map_from_project_places(project.id)
+    data = json.loads(document.map_json)
+    assert len(data["nodes"]) == 3
+    assert {node["name"] for node in data["nodes"]} == {"徐家老宅与茅屋", "田间与村口", "龙二赌坊"}
+    assert data["nodes"][0]["description"] == "徐家老宅与茅屋 的摘要描述。"
+
+    # 幂等：地点已在地图上时再次调用抛错，而不是重复追加。
+    with pytest.raises(ValueError):
+        service.create_map_from_project_places(project.id)
+
+
+def test_create_map_from_project_places_without_places_raises(session, storage):
+    """没有地点实体时给出可读错误。"""
+    from app.services.creative_project.service import CreativeProjectService
+    from app.services.novel_source.world_map import WorldMapService
+
+    project = CreativeProjectService(session, ai_service=FakeWorldAI()).create_project(
+        title="无地点项目",
+        project_type="novel",
+        source_type="original_idea",
+        idea="x",
+    )
+    with pytest.raises(ValueError):
+        WorldMapService(session).create_map_from_project_places(project.id)
+
+
 def test_world_map_visual_prompt_preview_endpoint(tmp_path):
     """地图生图支持先预览 prompt 再生成，不消耗生图配额。"""
     from fastapi import FastAPI

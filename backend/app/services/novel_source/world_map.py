@@ -96,6 +96,75 @@ class WorldMapService:
         self.session.delete(document)
         self.session.commit()
 
+    def create_map_from_project_places(self, project_id: str) -> WorldMapDocument:
+        """把项目的地点实体（world_entities.entity_type=place）转成地图据点初稿。
+
+        已有地图时把未出现的地点追加进最新一张，避免重复；没有地图则新建一张。
+        只写入结构化节点（名字/摘要），具体坐标由用户拖拽精修。
+        """
+        from app.db.models.novel_source import WorldEntity
+
+        places = self.session.exec(
+            select(WorldEntity)
+            .where(
+                WorldEntity.project_id == project_id,
+                WorldEntity.entity_type == "place",
+            )
+            .order_by(WorldEntity.name)
+        ).all()
+        if not places:
+            raise ValueError("该项目还没有地点实体，请先在世界提取中确认写入地点")
+
+        existing = self.list_maps(project_id=project_id, limit=1)
+        if existing:
+            document = existing[0]
+            data = loads_json(document.map_json, DEFAULT_MAP_JSON)
+        else:
+            document = WorldMapDocument(
+                title="世界地图",
+                project_id=project_id,
+                map_json=dumps_json(DEFAULT_MAP_JSON),
+                revision=1,
+            )
+            self.session.add(document)
+            data = DEFAULT_MAP_JSON
+        if not isinstance(data, dict):
+            data = DEFAULT_MAP_JSON
+
+        nodes = [item for item in (data.get("nodes") or []) if isinstance(item, dict)]
+        existing_names = {str(item.get("name") or "").strip() for item in nodes}
+        added: list[dict[str, Any]] = []
+        cols = 5
+        for index, place in enumerate(places):
+            name = str(place.name or "").strip()
+            if not name or name in existing_names:
+                continue
+            attributes = loads_json(place.attributes_json, {})
+            added.append(
+                {
+                    "id": f"{place.id[:8]}-{index}",
+                    "name": name,
+                    "kind": str(attributes.get("kind") or "地点")[:20],
+                    "x": 15 + (index % cols) * 18,
+                    "y": 15 + (index // cols) * 18,
+                    "region_id": None,
+                    "description": str(place.summary or "")[:200],
+                }
+            )
+        if not added:
+            raise ValueError("地点实体都已在地图上，无需重复生成")
+
+        nodes.extend(added)
+        data = dict(data)
+        data["nodes"] = nodes
+        document.map_json = dumps_json(data)
+        document.revision = int(document.revision or 1) + 1
+        document.updated_at = datetime.now()
+        self.session.add(document)
+        self.session.commit()
+        self.session.refresh(document)
+        return document
+
 
 def serialize_map(document: WorldMapDocument) -> dict[str, Any]:
     return {
