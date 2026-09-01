@@ -1,0 +1,875 @@
+"""小说来源与世界提取 API。
+
+真人用户和 Agent 走同一套契约：先预览（候选 + 证据），再显式确认写入项目。
+提取接口默认不写项目事实，``apply`` 是独立且幂等的收口动作。
+"""
+
+from __future__ import annotations
+
+import logging
+from datetime import datetime
+from typing import Any
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import Response
+from pydantic import BaseModel, Field
+from sqlmodel import Session
+
+from app.db.database import get_session
+from app.db.models.novel_source import (
+    NovelSourceChapter,
+    NovelSourceSnapshot,
+    NovelTextChunk,
+    WorldEntity,
+    WorldEntityRelation,
+    WorldExtractionRun,
+    WorldFactCandidate,
+)
+from app.services.ai.service import get_ai_service
+from app.services.ai.types import ImageGenerationRequest
+from app.services.creative_project.service import loads_json
+from app.services.novel_source.contracts import DETECTABLE_DOMAINS, EXTRACTABLE_DOMAINS
+from app.services.novel_source.extraction import WorldExtractionService
+from app.services.novel_source.service import NovelSourceService
+from app.services.novel_source.world_map import (
+    WorldMapService,
+    build_map_visual_prompt,
+    render_map_svg,
+    serialize_map,
+)
+
+router = APIRouter()
+logger = logging.getLogger("ylcraft.novel_sources_api")
+
+MAX_TXT_BYTES = 30 * 1024 * 1024
+ALLOWED_TXT_SUFFIXES = (".txt", ".text", ".md")
+
+
+class ImportBookshelfRequest(BaseModel):
+    title: str = ""
+    author: str = ""
+    source_status: str = "serial"
+    project_id: str | None = None
+    source_asset_id: str | None = None
+    chapters: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class SyncChaptersRequest(BaseModel):
+    chapters: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class DomainPlanRequest(BaseModel):
+    provider: str | None = None
+    model: str | None = None
+    requested_domains: list[str] | None = None
+    sample_chunks: int = 6
+
+
+class ExtractRequest(BaseModel):
+    domains: list[str] | None = None
+    domain_plan: list[dict[str, Any]] | None = None
+    project_id: str | None = None
+    provider: str | None = None
+    model: str | None = None
+    mode: str = "full"
+    max_chunks: int = 60
+
+
+class IndexChunksRequest(BaseModel):
+    provider: str | None = None
+    max_chunks: int = 2000
+
+
+class SearchChunksRequest(BaseModel):
+    query: str
+    query_embedding: list[float] | None = None
+    top_k: int = 10
+    with_neighbors: int = 0
+
+
+class CandidateDecision(BaseModel):
+    candidate_id: str
+    action: str = "accept"
+    note: str = ""
+    merge_into: str = ""
+
+
+class DecideRequest(BaseModel):
+    decisions: list[CandidateDecision] = Field(default_factory=list)
+
+
+class ApplyRequest(BaseModel):
+    project_id: str | None = None
+
+
+class DeriveProjectRequest(BaseModel):
+    derivation_kind: str = "continuation"
+    title: str = ""
+    project_type: str = "novel"
+
+
+class ContradictionRequest(BaseModel):
+    provider: str | None = None
+    model: str | None = None
+
+
+class AffectedFactsRequest(BaseModel):
+    verdicts: list[dict[str, Any]] | None = None
+
+
+class WorldMapCreateRequest(BaseModel):
+    title: str = "世界地图"
+    project_id: str | None = None
+    snapshot_id: str | None = None
+    map_json: dict[str, Any] | None = None
+
+
+class WorldMapUpdateRequest(BaseModel):
+    title: str = ""
+    map_json: dict[str, Any] = Field(default_factory=dict)
+    expected_revision: int = 1
+
+
+class WorldMapVisualRequest(BaseModel):
+    prompt: str = Field(default="", description="提示词（留空则按结构化地图自动生成）")
+    negative_prompt: str = Field(default="", description="负向提示词")
+    provider: str = Field(default="", description="指定生图后端（image backend name）")
+    model: str = Field(default="", description="动态指定模型名（控制花费）")
+    size: str = Field(default="1024x1024", description="图片尺寸")
+    n: int = Field(default=1, description="生成数量（>1 时取首张）")
+    style: str = Field(default="", description="画风（如水墨、写实）")
+    reference_images: list[str] = Field(default_factory=list, description="参考图 URL/base64 列表")
+    save_to_asset_hub: bool = Field(default=True, description="是否入资产中枢（素材库）")
+
+
+class WorldMapVisualPromptRequest(BaseModel):
+    style_override: str = Field(default="", description="画风覆盖")
+    prompt_override: str = Field(default="", description="提示词覆盖（留空则按结构化地图自动生成）")
+
+
+def source_service(session: Session = Depends(get_session)) -> NovelSourceService:
+    return NovelSourceService(session)
+
+
+def extraction_service(session: Session = Depends(get_session)) -> WorldExtractionService:
+    return WorldExtractionService(session)
+
+
+def _require_snapshot(service: NovelSourceService, snapshot_id: str) -> NovelSourceSnapshot:
+    snapshot = service.get_snapshot(snapshot_id)
+    if not snapshot:
+        raise HTTPException(status_code=404, detail="来源快照不存在")
+    return snapshot
+
+
+def _require_run(service: WorldExtractionService, run_id: str) -> WorldExtractionRun:
+    run = service.get_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="提取运行不存在")
+    return run
+
+
+def serialize_snapshot(snapshot: NovelSourceSnapshot) -> dict[str, Any]:
+    return {
+        "id": snapshot.id,
+        "title": snapshot.title,
+        "author": snapshot.author,
+        "source_kind": snapshot.source_kind,
+        "source_status": snapshot.source_status,
+        "project_id": snapshot.project_id,
+        "source_asset_id": snapshot.source_asset_id,
+        "checksum": snapshot.checksum,
+        "encoding": snapshot.encoding,
+        "revision": snapshot.revision,
+        "parent_snapshot_id": snapshot.parent_snapshot_id,
+        "chapter_count": snapshot.chapter_count,
+        "char_count": snapshot.char_count,
+        "last_chapter_ordinal": snapshot.last_chapter_ordinal,
+        "indexing_status": snapshot.indexing_status,
+        "metadata": loads_json(snapshot.metadata_json, {}),
+        "created_at": snapshot.created_at.isoformat() if snapshot.created_at else None,
+        "updated_at": snapshot.updated_at.isoformat() if snapshot.updated_at else None,
+    }
+
+
+def serialize_chapter(chapter: NovelSourceChapter) -> dict[str, Any]:
+    return {
+        "id": chapter.id,
+        "ordinal": chapter.ordinal,
+        "title": chapter.title,
+        "start_offset": chapter.start_offset,
+        "end_offset": chapter.end_offset,
+        "char_count": chapter.char_count,
+        "source_chapter_id": chapter.source_chapter_id,
+    }
+
+
+def serialize_chunk(chunk: NovelTextChunk, *, include_content: bool = True) -> dict[str, Any]:
+    payload = {
+        "id": chunk.id,
+        "ordinal": chunk.ordinal,
+        "chapter_id": chunk.chapter_id,
+        "start_offset": chunk.start_offset,
+        "end_offset": chunk.end_offset,
+        "content_hash": chunk.content_hash,
+        "embedding_model": chunk.embedding_model,
+        "embedding_status": chunk.embedding_status,
+    }
+    if include_content:
+        payload["content"] = chunk.content
+    return payload
+
+
+def serialize_run(run: WorldExtractionRun) -> dict[str, Any]:
+    return {
+        "id": run.id,
+        "snapshot_id": run.snapshot_id,
+        "project_id": run.project_id,
+        "mode": run.mode,
+        "status": run.status,
+        "pipeline_version": run.pipeline_version,
+        "domains": loads_json(run.domains_json, []),
+        "checkpoint": loads_json(run.checkpoint_json, {}),
+        "trace": loads_json(run.trace_json, []),
+        "diagnostics": loads_json(run.diagnostics_json, {}),
+        "provider": run.provider,
+        "model": run.model,
+        "created_at": run.created_at.isoformat() if run.created_at else None,
+        "updated_at": run.updated_at.isoformat() if run.updated_at else None,
+    }
+
+
+def serialize_candidate(candidate: WorldFactCandidate) -> dict[str, Any]:
+    return {
+        "id": candidate.id,
+        "run_id": candidate.run_id,
+        "last_run_id": candidate.last_run_id,
+        "snapshot_id": candidate.snapshot_id,
+        "project_id": candidate.project_id,
+        "domain": candidate.domain,
+        "entity_name": candidate.entity_name,
+        "payload": loads_json(candidate.payload_json, {}),
+        "evidence": loads_json(candidate.evidence_json, []),
+        "confidence": candidate.confidence,
+        "origin": candidate.origin,
+        "status": candidate.status,
+        "target_entity_type": candidate.target_entity_type,
+        "target_entity_id": candidate.target_entity_id,
+        "review_note": candidate.review_note,
+        "created_at": candidate.created_at.isoformat() if candidate.created_at else None,
+        "updated_at": candidate.updated_at.isoformat() if candidate.updated_at else None,
+    }
+
+
+def serialize_world_entity(entity: WorldEntity) -> dict[str, Any]:
+    return {
+        "id": entity.id,
+        "project_id": entity.project_id,
+        "snapshot_id": entity.snapshot_id,
+        "domain": entity.domain,
+        "entity_type": entity.entity_type,
+        "name": entity.name,
+        "summary": entity.summary,
+        "attributes": loads_json(entity.attributes_json, {}),
+        "evidence": loads_json(entity.evidence_json, []),
+        "fact_layer": entity.fact_layer,
+        "source_candidate_id": entity.source_candidate_id,
+        "is_locked": entity.is_locked,
+        "updated_at": entity.updated_at.isoformat() if entity.updated_at else None,
+    }
+
+
+def serialize_world_entity_relation(relation: WorldEntityRelation) -> dict[str, Any]:
+    return {
+        "id": relation.id,
+        "project_id": relation.project_id,
+        "source_entity_id": relation.source_entity_id,
+        "target_entity_id": relation.target_entity_id,
+        "relation_type": relation.relation_type,
+        "note": relation.note,
+        "evidence": loads_json(relation.evidence_json, []),
+        "is_directed": relation.is_directed,
+    }
+
+
+@router.post("/api/v1/novel-sources/import-txt", summary="导入本地 TXT 为来源快照")
+async def import_txt(
+    file: UploadFile = File(...),
+    title: str = Form(""),
+    author: str = Form(""),
+    source_status: str = Form("unknown"),
+    project_id: str | None = Form(None),
+    source_asset_id: str | None = Form(None),
+    svc: NovelSourceService = Depends(source_service),
+):
+    """上传 TXT 并生成快照、章节和文本块。
+
+    只保存原文与归一化正文，不改写内容；完本/连载状态由调用方声明。
+    """
+    name = file.filename or "novel.txt"
+    if not name.lower().endswith(ALLOWED_TXT_SUFFIXES):
+        raise HTTPException(status_code=400, detail="只支持 .txt / .text / .md 文本导入")
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="上传文件为空")
+    if len(raw) > MAX_TXT_BYTES:
+        raise HTTPException(status_code=413, detail="TXT 文件超过 30MB 上限")
+    try:
+        snapshot = svc.import_txt(
+            raw=raw,
+            file_name=name,
+            title=title,
+            author=author,
+            source_status=source_status,
+            project_id=project_id,
+            source_asset_id=source_asset_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"success": True, "data": serialize_snapshot(snapshot)}
+
+
+@router.post("/api/v1/novel-sources/import-bookshelf", summary="导入书架章节为来源快照")
+def import_bookshelf(
+    req: ImportBookshelfRequest,
+    svc: NovelSourceService = Depends(source_service),
+):
+    """把书架选定章节落到与 TXT 相同的快照契约。"""
+    try:
+        snapshot = svc.import_bookshelf(
+            title=req.title,
+            author=req.author,
+            chapters=req.chapters,
+            source_status=req.source_status,
+            project_id=req.project_id,
+            source_asset_id=req.source_asset_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"success": True, "data": serialize_snapshot(snapshot)}
+
+
+@router.get("/api/v1/novel-sources", summary="列出来源快照")
+def list_snapshots(
+    project_id: str | None = Query(None),
+    source_kind: str | None = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    svc: NovelSourceService = Depends(source_service),
+):
+    snapshots = svc.list_snapshots(project_id=project_id, source_kind=source_kind, limit=limit)
+    return {"success": True, "data": [serialize_snapshot(item) for item in snapshots]}
+
+
+@router.get("/api/v1/novel-sources/domains", summary="列出可检测的世界模块")
+def list_domains():
+    """返回模块清单与当前已实现提取的模块，供前端和 Agent 发现能力。"""
+    from app.services.novel_source.contracts import BASIC_DOMAINS
+
+    return {
+        "success": True,
+        "data": {
+            "detectable": list(DETECTABLE_DOMAINS),
+            "extractable": list(EXTRACTABLE_DOMAINS),
+            "basic": list(BASIC_DOMAINS),
+        },
+    }
+
+
+@router.get("/api/v1/novel-sources/{snapshot_id}", summary="获取来源快照详情")
+def get_snapshot(snapshot_id: str, svc: NovelSourceService = Depends(source_service)):
+    return {"success": True, "data": serialize_snapshot(_require_snapshot(svc, snapshot_id))}
+
+
+@router.get("/api/v1/novel-sources/{snapshot_id}/chapters", summary="列出快照章节")
+def list_chapters(
+    snapshot_id: str,
+    limit: int = Query(200, ge=1, le=2000),
+    svc: NovelSourceService = Depends(source_service),
+):
+    _require_snapshot(svc, snapshot_id)
+    chapters = svc.list_chapters(snapshot_id)[:limit]
+    return {"success": True, "data": [serialize_chapter(item) for item in chapters]}
+
+
+@router.get("/api/v1/novel-sources/{snapshot_id}/chunks", summary="列出快照文本块")
+def list_chunks(
+    snapshot_id: str,
+    after_ordinal: int | None = Query(None),
+    include_content: bool = Query(True),
+    limit: int = Query(200, ge=1, le=2000),
+    svc: NovelSourceService = Depends(source_service),
+):
+    _require_snapshot(svc, snapshot_id)
+    chunks = svc.list_chunks(snapshot_id, after_ordinal=after_ordinal, limit=limit)
+    return {
+        "success": True,
+        "data": [serialize_chunk(item, include_content=include_content) for item in chunks],
+    }
+
+
+@router.post("/api/v1/novel-sources/{snapshot_id}/chunks/index", summary="为小说文本块建立向量索引")
+async def index_chunks(
+    snapshot_id: str,
+    req: IndexChunksRequest,
+    svc: NovelSourceService = Depends(source_service),
+):
+    """建立可选向量索引；失败块保留为 failed，来源仍可走精确检索。"""
+    _require_snapshot(svc, snapshot_id)
+    from app.db.database import AsyncSessionLocal
+    from app.services.embedding.service import EmbeddingService
+
+    async with AsyncSessionLocal() as embedding_session:
+        embedding_service = EmbeddingService(embedding_session, provider_name=req.provider)
+        chunks = svc.list_chunks(snapshot_id, limit=max(1, min(req.max_chunks, 2000)))
+        texts = [chunk.content for chunk in chunks]
+
+        async def embedder(values):
+            return await embedding_service.embed_texts(values)
+
+        result = await svc.index_chunk_embeddings(
+            snapshot_id,
+            embedder=embedder,
+            model_name=await embedding_service._get_effective_text_model_name(),
+            max_chunks=req.max_chunks,
+        )
+    return {"success": True, "data": result}
+
+
+@router.post("/api/v1/novel-sources/{snapshot_id}/chunks/search", summary="混合检索小说文本块")
+async def search_chunks(
+    snapshot_id: str,
+    req: SearchChunksRequest,
+    svc: NovelSourceService = Depends(source_service),
+):
+    """返回精确/向量混合召回结果，并保留章节和字符偏移。"""
+    _require_snapshot(svc, snapshot_id)
+    results = svc.search_chunks(
+        snapshot_id,
+        req.query,
+        query_embedding=req.query_embedding,
+        top_k=req.top_k,
+        with_neighbors=req.with_neighbors,
+    )
+    return {"success": True, "data": results}
+
+
+@router.post("/api/v1/novel-sources/{snapshot_id}/plan", summary="逐模块判断世界设定是否存在")
+async def plan_domains(
+    snapshot_id: str,
+    req: DomainPlanRequest,
+    svc: WorldExtractionService = Depends(extraction_service),
+):
+    """AI 只建议，不代劳：返回每域 detected/not_detected/uncertain 及理由。
+
+    用户或 Agent 可逐域启用、关闭或改写后，把 ``domains`` 原样带回提取接口。
+    """
+    try:
+        plan = await svc.plan_domains(
+            snapshot_id,
+            provider=req.provider,
+            model=req.model,
+            requested_domains=req.requested_domains,
+            sample_chunks=req.sample_chunks,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"success": True, "data": plan}
+
+
+@router.post("/api/v1/novel-sources/{snapshot_id}/extract", summary="按模块提取世界候选")
+async def extract_world(
+    snapshot_id: str,
+    req: ExtractRequest,
+    svc: WorldExtractionService = Depends(extraction_service),
+):
+    """提取并落为待确认候选，不写项目事实。
+
+    返回 run_id 与每域状态；单个域失败只让整体变 partial。
+    """
+    try:
+        result = await svc.extract(
+            snapshot_id,
+            domains=req.domains,
+            domain_plan=req.domain_plan,
+            project_id=req.project_id,
+            provider=req.provider,
+            model=req.model,
+            mode=req.mode,
+            max_chunks=req.max_chunks,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"success": True, "data": result}
+
+
+@router.post("/api/v1/novel-sources/{snapshot_id}/derive", summary="从完本来源创建派生项目")
+def derive_project(
+    snapshot_id: str,
+    req: DeriveProjectRequest,
+    svc: WorldExtractionService = Depends(extraction_service),
+):
+    """创建改编/续写/同人派生项目。
+
+    原作正典（已确认世界事实与角色关联）复制进新项目并标记为只读参考层；
+    来源快照保持只读，新项目后续写入构成派生层。
+    """
+    _require_snapshot(svc, snapshot_id)
+    try:
+        result = svc.derive_project(
+            snapshot_id,
+            derivation_kind=req.derivation_kind,
+            title=req.title,
+            project_type=req.project_type,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"success": True, "data": result}
+
+
+@router.post("/api/v1/novel-sources/{snapshot_id}/sync", summary="连载来源追加新章节")
+def sync_chapters(
+    snapshot_id: str,
+    req: SyncChaptersRequest,
+    svc: NovelSourceService = Depends(source_service),
+):
+    """只追加新章节和新文本块，已导入章节与既有证据锚点保持不变。"""
+    try:
+        snapshot = svc.append_bookshelf_chapters(snapshot_id, chapters=req.chapters)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"success": True, "data": serialize_snapshot(snapshot)}
+
+
+@router.get("/api/v1/world-extraction-runs/{run_id}", summary="获取提取运行状态")
+def get_run(run_id: str, svc: WorldExtractionService = Depends(extraction_service)):
+    return {"success": True, "data": serialize_run(_require_run(svc, run_id))}
+
+
+@router.get("/api/v1/world-extraction-runs/{run_id}/candidates", summary="预览提取候选与证据")
+def list_candidates(
+    run_id: str,
+    domain: str | None = Query(None),
+    status: str | None = Query(None),
+    limit: int = Query(200, ge=1, le=1000),
+    svc: WorldExtractionService = Depends(extraction_service),
+):
+    """候选预览：每条都带逐字原文证据与文本块锚点。"""
+    _require_run(svc, run_id)
+    candidates = svc.list_candidates(run_id, domain=domain, status=status, limit=limit)
+    return {"success": True, "data": [serialize_candidate(item) for item in candidates]}
+
+
+@router.get("/api/v1/world-extraction-runs/{run_id}/reconcile", summary="跨域调和候选提示")
+def reconcile_run(run_id: str, svc: WorldExtractionService = Depends(extraction_service)):
+    """确定性找出跨模块重复、别名交叉、证据重叠与时序问题。
+
+    只读提示，不调用模型，也不会自动合并或删除候选；取舍仍由真人或 Agent 决策。
+    """
+    _require_run(svc, run_id)
+    return {"success": True, "data": svc.reconcile_run(run_id)}
+
+
+@router.post("/api/v1/world-extraction-runs/{run_id}/contradictions", summary="判断重复候选是否同一实体或矛盾")
+async def detect_contradictions(
+    run_id: str,
+    req: ContradictionRequest,
+    svc: WorldExtractionService = Depends(extraction_service),
+):
+    """对调和发现的重复组做语义判断，只作审阅提示，不自动合并。"""
+    _require_run(svc, run_id)
+    try:
+        result = await svc.detect_contradictions(
+            run_id, provider=req.provider, model=req.model
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"success": True, "data": result}
+
+
+@router.post("/api/v1/world-extraction-runs/{run_id}/affected-facts", summary="把合并/矛盾结论传播到已写事实")
+def propagate_affected_facts(
+    run_id: str,
+    req: AffectedFactsRequest,
+    svc: WorldExtractionService = Depends(extraction_service),
+):
+    """把已写入的 world_asset 事实标记为待复核。
+
+    候选被 merge 或判定为冲突后，其此前写入的事实可能不完整或不可信；
+    这里只打 ``review_required`` 标记并附原因，不改写事实内容。
+    """
+    _require_run(svc, run_id)
+    try:
+        result = svc.propagate_affected_facts(run_id, verdicts=req.verdicts)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"success": True, "data": result}
+
+
+@router.post("/api/v1/world-extraction-runs/{run_id}/candidates/decide", summary="标记候选为接受或忽略")
+def decide_candidates(
+    run_id: str,
+    req: DecideRequest,
+    svc: WorldExtractionService = Depends(extraction_service),
+):
+    """决策只改候选状态，不写项目事实。"""
+    _require_run(svc, run_id)
+    result = svc.decide_candidates(
+        run_id,
+        [item.model_dump() for item in req.decisions],
+    )
+    return {"success": True, "data": result}
+
+
+@router.post("/api/v1/world-extraction-runs/{run_id}/apply", summary="确认候选并写入项目")
+async def apply_run(
+    run_id: str,
+    req: ApplyRequest,
+    svc: WorldExtractionService = Depends(extraction_service),
+):
+    """把已接受的候选写入项目：角色进角色库，其余进锁定的 world_asset 事实卡。
+
+    未携带 project_id 时按来源快照自动创建一个世界项目。
+    """
+    _require_run(svc, run_id)
+    try:
+        result = await svc.apply_run(run_id, project_id=req.project_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"success": True, "data": result}
+
+
+@router.get("/api/v1/projects/{project_id}/world-entities", summary="列出项目类型化世界实体")
+def list_project_world_entities(
+    project_id: str,
+    domain: str | None = Query(None),
+    entity_type: str | None = Query(None),
+    limit: int = Query(200, ge=1, le=1000),
+    svc: WorldExtractionService = Depends(extraction_service),
+):
+    """确认写入后物化的独立实体（势力/地点/物种/事件/力量体系/物品等）。"""
+    entities = svc.list_world_entities(
+        project_id, domain=domain, entity_type=entity_type, limit=limit
+    )
+    return {"success": True, "data": [serialize_world_entity(item) for item in entities]}
+
+
+@router.get("/api/v1/projects/{project_id}/world-entity-relations", summary="列出项目类型化实体关系")
+def list_project_world_entity_relations(
+    project_id: str,
+    limit: int = Query(500, ge=1, le=2000),
+    svc: WorldExtractionService = Depends(extraction_service),
+):
+    """复杂实体间的类型化关系（势力敌对/地盘、事件发生地、物种栖息地等）。"""
+    relations = svc.list_world_entity_relations(project_id, limit=limit)
+    return {"success": True, "data": [serialize_world_entity_relation(item) for item in relations]}
+
+
+def map_service(session: Session = Depends(get_session)) -> WorldMapService:
+    return WorldMapService(session)
+
+
+@router.get("/api/v1/world-maps", summary="列出世界地图文档")
+def list_world_maps(
+    project_id: str | None = Query(None),
+    snapshot_id: str | None = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    svc: WorldMapService = Depends(map_service),
+):
+    documents = svc.list_maps(project_id=project_id, snapshot_id=snapshot_id, limit=limit)
+    return {"success": True, "data": [serialize_map(item) for item in documents]}
+
+
+@router.post("/api/v1/world-maps", summary="创建世界地图文档")
+def create_world_map(req: WorldMapCreateRequest, svc: WorldMapService = Depends(map_service)):
+    document = svc.create_map(
+        title=req.title,
+        project_id=req.project_id,
+        snapshot_id=req.snapshot_id,
+        map_json=req.map_json,
+    )
+    return {"success": True, "data": serialize_map(document)}
+
+
+@router.get("/api/v1/world-maps/{map_id}", summary="获取世界地图文档")
+def get_world_map(map_id: str, svc: WorldMapService = Depends(map_service)):
+    document = svc.get_map(map_id)
+    if not document:
+        raise HTTPException(status_code=404, detail="地图文档不存在")
+    return {"success": True, "data": serialize_map(document)}
+
+
+@router.put("/api/v1/world-maps/{map_id}", summary="保存世界地图（revision CAS）")
+def update_world_map(
+    map_id: str, req: WorldMapUpdateRequest, svc: WorldMapService = Depends(map_service)
+):
+    try:
+        document = svc.update_map(
+            map_id,
+            map_json=req.map_json,
+            expected_revision=req.expected_revision,
+            title=req.title,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"success": True, "data": serialize_map(document)}
+
+
+@router.get("/api/v1/world-maps/{map_id}/render", summary="渲染世界地图为 SVG")
+def render_world_map(map_id: str, svc: WorldMapService = Depends(map_service)):
+    """把结构化地图确定性地渲染为 SVG。
+
+    本地渲染，不调用模型也不依赖外部生图供应商；前端用 ``<img>`` 引用即可。
+    """
+    document = svc.get_map(map_id)
+    if not document:
+        raise HTTPException(status_code=404, detail="地图文档不存在")
+    return Response(content=render_map_svg(document), media_type="image/svg+xml")
+
+
+@router.post(
+    "/api/v1/world-maps/{map_id}/generate-visual/prompt-preview",
+    summary="预览地图生图提示词",
+)
+def preview_world_map_visual_prompt(
+    map_id: str,
+    req: WorldMapVisualPromptRequest,
+    svc: WorldMapService = Depends(map_service),
+):
+    """先预览再生成：把结构化地图转成生图 prompt，不消耗生图配额。"""
+    document = svc.get_map(map_id)
+    if not document:
+        raise HTTPException(status_code=404, detail="地图文档不存在")
+    prompt = (req.prompt_override or "").strip() or build_map_visual_prompt(
+        document, style=req.style_override
+    )
+    return {"success": True, "data": {"map_id": map_id, "prompt": prompt}}
+
+
+@router.post("/api/v1/world-maps/{map_id}/generate-visual", summary="用生图模型生成地图视觉成图")
+async def generate_world_map_visual(
+    map_id: str,
+    req: WorldMapVisualRequest,
+    svc: WorldMapService = Depends(map_service),
+):
+    """把结构化地图转成生图 prompt，调用已配置的生图 Provider 生成视觉成图并入库。
+
+    生成成图是派生的视觉资产，不是地图真相来源；结构化 ``map_json`` 仍是正典，
+    成图只以引用形式记在 ``map_json.visuals`` 里。需要先在 AI 连接器配置
+    ``provider_type=image`` 的 Provider 并初始化 AIService。
+    """
+    from app.db.database import get_async_session
+    from app.services.asset_hub import AssetHubFacade
+
+    document = svc.get_map(map_id)
+    if not document:
+        raise HTTPException(status_code=404, detail="地图文档不存在")
+
+    manager = get_ai_service()
+    if not manager.is_loaded():
+        raise HTTPException(status_code=503, detail="AIService 未初始化，请先在 AI 连接器配置生图 Provider")
+
+    prompt = (req.prompt or "").strip() or build_map_visual_prompt(document, style=req.style)
+    result = await manager.generate_image(
+        ImageGenerationRequest(
+            prompt=prompt,
+            negative_prompt=req.negative_prompt or "",
+            size=req.size or "1024x1024",
+            n=req.n or 1,
+            style=req.style or "",
+            provider=req.provider or "",
+            model=req.model or "",
+            reference_images=req.reference_images or [],
+        )
+    )
+    if not result.success:
+        raise HTTPException(status_code=502, detail=f"生图失败: {result.error or 'unknown error'}")
+
+    urls = result.urls or ([result.url] if result.url else [])
+    local_paths = result.all_local_paths or ([result.local_path] if result.local_path else [])
+    if not urls and not local_paths:
+        raise HTTPException(status_code=500, detail="生图成功但未返回图片")
+
+    local_path = local_paths[0] if local_paths else ""
+    # 供应商返回的 URL 多为临时图床会过期，本地已落盘时优先用本地路径。
+    url = urls[0] if urls else local_path
+
+    node_id = ""
+    if req.save_to_asset_hub:
+        try:
+            async with get_async_session() as session:
+                created = await AssetHubFacade(session).create_generated_image(
+                    file_path=local_path or url,
+                    prompt=prompt,
+                    provider=result.provider or req.provider or "",
+                    model=result.model or req.model or "",
+                    source_url=url,
+                    negative_prompt=req.negative_prompt or "",
+                    size=req.size or "",
+                    seed=result.seed,
+                    generation_params={
+                        "style": req.style or "",
+                        "reference_images_count": len(req.reference_images or []),
+                    },
+                    lineage={
+                        "source": "world_map_visual",
+                        "map_id": map_id,
+                        "map_title": str(document.title or ""),
+                    },
+                    tags=["world_map_visual", *(["style:" + req.style] if req.style else [])],
+                )
+                node_id = created.node_id
+        except Exception as exc:  # 生图本身已成功，入库失败不回滚成图。
+            logger.warning("world map visual asset hub sync failed: %s", exc)
+
+    # 成图只作为派生引用记回地图，不改结构化空间关系。
+    data = loads_json(document.map_json, {})
+    if isinstance(data, dict):
+        visuals = data.get("visuals")
+        if not isinstance(visuals, list):
+            visuals = []
+        visuals.append(
+            {
+                "url": url,
+                "local_path": local_path,
+                "node_id": node_id,
+                "provider": result.provider or req.provider or "",
+                "model": result.model or req.model or "",
+                "style": req.style or "",
+                "prompt": prompt,
+                "created_at": datetime.now().isoformat(),
+            }
+        )
+        data["visuals"] = visuals
+        try:
+            svc.update_map(
+                map_id,
+                map_json=data,
+                expected_revision=int(document.revision or 1),
+            )
+        except ValueError:
+            # 并发已被他人编辑时，放弃回写引用，不影响已生成的成图。
+            logger.warning("world map visual reference not persisted (revision conflict)")
+
+    return {
+        "success": True,
+        "data": {
+            "map_id": map_id,
+            "prompt": prompt,
+            "url": url,
+            "local_path": local_path,
+            "node_id": node_id,
+            "provider": result.provider,
+            "model": result.model,
+            "task_id": result.task_id,
+            "status": result.status,
+        },
+    }
+
+
+@router.delete("/api/v1/world-maps/{map_id}", summary="删除世界地图文档")
+def delete_world_map(map_id: str, svc: WorldMapService = Depends(map_service)):
+    try:
+        svc.delete_map(map_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"success": True, "data": {"id": map_id}}

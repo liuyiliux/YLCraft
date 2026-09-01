@@ -105,6 +105,14 @@
       ]
     },
     {
+      "name": "novel_sources",
+      "file": "backend/app/api/v1/novel_sources.py",
+      "prefix": "",
+      "tags": [
+        "Novel Sources"
+      ]
+    },
+    {
       "name": "canvas",
       "file": "backend/app/api/v1/canvas.py",
       "prefix": "/api/v1/canvas",
@@ -1942,7 +1950,7 @@
       "summary": "素材资产列表",
       "function": "list_assets",
       "file": "backend/app/api/v1/assets.py",
-      "line": 679,
+      "line": 681,
       "response_model": "AssetListResponse",
       "include_in_schema": true
     },
@@ -1974,7 +1982,7 @@
       "summary": "下载/预览本地文件",
       "function": "download_local_asset_file",
       "file": "backend/app/api/v1/assets.py",
-      "line": 847,
+      "line": 846,
       "response_model": "",
       "include_in_schema": true
     },
@@ -1990,7 +1998,7 @@
       "summary": "预览本地文件",
       "function": "download_local_asset_file",
       "file": "backend/app/api/v1/assets.py",
-      "line": 847,
+      "line": 846,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2006,7 +2014,7 @@
       "summary": "标签列表",
       "function": "list_tags",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1460,
+      "line": 1459,
       "response_model": "TagListResponse",
       "include_in_schema": true
     },
@@ -2022,7 +2030,7 @@
       "summary": "创建标签",
       "function": "create_tag",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1469,
+      "line": 1468,
       "response_model": "TagResponse",
       "include_in_schema": true
     },
@@ -2038,7 +2046,7 @@
       "summary": "本地上传素材入库",
       "function": "upload_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1206,
+      "line": 1205,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2054,7 +2062,7 @@
       "summary": "上传 3D 模型（ZIP 或单文件）入库",
       "function": "upload_model3d",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1162,
+      "line": 1161,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2070,7 +2078,7 @@
       "summary": "删除单个资产版本",
       "function": "delete_asset_version",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1670,
+      "line": 1669,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2086,7 +2094,7 @@
       "summary": "资产详情",
       "function": "get_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1608,
+      "line": 1607,
       "response_model": "AssetResponse",
       "include_in_schema": true
     },
@@ -2102,7 +2110,7 @@
       "summary": "更新资产",
       "function": "update_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1631,
+      "line": 1630,
       "response_model": "AssetResponse",
       "include_in_schema": true
     },
@@ -2118,7 +2126,7 @@
       "summary": "删除资产",
       "function": "delete_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1730,
+      "line": 1729,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2150,7 +2158,7 @@
       "summary": "下载课程章节文件",
       "function": "download_course_episode_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1426,
+      "line": 1425,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2166,7 +2174,7 @@
       "summary": "读取课程章节弹幕",
       "function": "get_course_episode_danmaku",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1415,
+      "line": 1414,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2182,7 +2190,7 @@
       "summary": "读取课程章节字幕",
       "function": "get_course_episode_subtitle",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1403,
+      "line": 1402,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2198,7 +2206,7 @@
       "summary": "播放课程章节文件",
       "function": "stream_course_episode_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1441,
+      "line": 1440,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2214,7 +2222,7 @@
       "summary": "只读检测合成水印痕迹（CtrlRegen/SynthID，不修改文件）",
       "function": "detect_asset_deep_watermark",
       "file": "backend/app/api/v1/assets.py",
-      "line": 979,
+      "line": 978,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2230,7 +2238,7 @@
       "summary": "下载资产文件",
       "function": "download_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 864,
+      "line": 863,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2246,7 +2254,7 @@
       "summary": "下载/预览资产的配套文件",
       "function": "asset_sidecar_file",
       "file": "backend/app/api/v1/assets.py",
-      "line": 881,
+      "line": 880,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2262,7 +2270,7 @@
       "summary": "审计或清理 AI 来源标记与文件元数据",
       "function": "clean_asset_provenance",
       "file": "backend/app/api/v1/assets.py",
-      "line": 909,
+      "line": 908,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2278,7 +2286,7 @@
       "summary": "恢复软删除的资产",
       "function": "restore_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1746,
+      "line": 1745,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2294,7 +2302,7 @@
       "summary": "读取资产弹幕",
       "function": "get_asset_danmaku",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1391,
+      "line": 1390,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2310,7 +2318,7 @@
       "summary": "读取资产字幕",
       "function": "get_asset_subtitle",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1378,
+      "line": 1377,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2326,7 +2334,7 @@
       "summary": "播放资产视频文件",
       "function": "stream_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1250,
+      "line": 1249,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2358,7 +2366,7 @@
       "summary": "代理加载封面图",
       "function": "proxy_thumbnail",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1573,
+      "line": 1572,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2374,7 +2382,7 @@
       "summary": "设置资产缩略图",
       "function": "set_asset_thumbnail",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1550,
+      "line": 1549,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2390,7 +2398,7 @@
       "summary": "去除显性可见水印并生成派生副本（图片/视频，不覆盖原文件）",
       "function": "remove_asset_visual_watermark",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1016,
+      "line": 1015,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3494,7 +3502,7 @@
       "summary": "列出角色",
       "function": "list_characters",
       "file": "backend/app/api/v1/characters.py",
-      "line": 234,
+      "line": 235,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3510,7 +3518,7 @@
       "summary": "创建角色",
       "function": "create_character",
       "file": "backend/app/api/v1/characters.py",
-      "line": 278,
+      "line": 279,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3526,7 +3534,7 @@
       "summary": "查询角色重复候选",
       "function": "get_duplicate_candidates",
       "file": "backend/app/api/v1/characters.py",
-      "line": 381,
+      "line": 382,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3542,7 +3550,7 @@
       "summary": "获取角色提取来源元数据",
       "function": "get_extract_origins",
       "file": "backend/app/api/v1/characters.py",
-      "line": 367,
+      "line": 368,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3558,7 +3566,7 @@
       "summary": "获取角色定位元数据",
       "function": "get_roles",
       "file": "backend/app/api/v1/characters.py",
-      "line": 342,
+      "line": 343,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3574,7 +3582,7 @@
       "summary": "获取来源类型元数据",
       "function": "get_source_types",
       "file": "backend/app/api/v1/characters.py",
-      "line": 330,
+      "line": 331,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3590,7 +3598,7 @@
       "summary": "获取角色流程来源元数据",
       "function": "get_workflow_sources",
       "file": "backend/app/api/v1/characters.py",
-      "line": 356,
+      "line": 357,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3606,7 +3614,7 @@
       "summary": "获取角色关系图谱",
       "function": "get_character_relationship_graph",
       "file": "backend/app/api/v1/characters.py",
-      "line": 588,
+      "line": 589,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3622,7 +3630,7 @@
       "summary": "获取所有自定义标签",
       "function": "get_all_character_tags",
       "file": "backend/app/api/v1/characters.py",
-      "line": 321,
+      "line": 322,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3638,7 +3646,7 @@
       "summary": "获取角色详情",
       "function": "get_character",
       "file": "backend/app/api/v1/characters.py",
-      "line": 735,
+      "line": 736,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3654,7 +3662,7 @@
       "summary": "更新角色",
       "function": "update_character",
       "file": "backend/app/api/v1/characters.py",
-      "line": 749,
+      "line": 750,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3670,7 +3678,7 @@
       "summary": "删除角色",
       "function": "delete_character",
       "file": "backend/app/api/v1/characters.py",
-      "line": 796,
+      "line": 797,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3686,7 +3694,7 @@
       "summary": "AI 补全角色信息",
       "function": "enrich_character",
       "file": "backend/app/api/v1/characters.py",
-      "line": 1561,
+      "line": 1571,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3702,7 +3710,7 @@
       "summary": "切换收藏状态",
       "function": "toggle_favorite",
       "file": "backend/app/api/v1/characters.py",
-      "line": 422,
+      "line": 423,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3718,7 +3726,7 @@
       "summary": "关联到故事项目",
       "function": "link_story",
       "file": "backend/app/api/v1/characters.py",
-      "line": 437,
+      "line": 438,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3734,7 +3742,7 @@
       "summary": "AI 生成角色立绘（资产中枢版）",
       "function": "generate_character_portrait",
       "file": "backend/app/api/v1/characters.py",
-      "line": 1721,
+      "line": 1731,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3750,7 +3758,7 @@
       "summary": "预览角色立绘提示词",
       "function": "preview_character_portrait_prompt",
       "file": "backend/app/api/v1/characters.py",
-      "line": 931,
+      "line": 941,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3766,7 +3774,7 @@
       "summary": "列出角色立绘九宫格切片子素材",
       "function": "list_character_portrait_slices",
       "file": "backend/app/api/v1/characters.py",
-      "line": 1177,
+      "line": 1187,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3782,7 +3790,7 @@
       "summary": "将现有立绘升级到资产中枢",
       "function": "upgrade_portrait_to_asset_hub",
       "file": "backend/app/api/v1/characters.py",
-      "line": 2045,
+      "line": 2055,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3798,7 +3806,7 @@
       "summary": "列出角色立绘版本",
       "function": "list_character_portrait_versions",
       "file": "backend/app/api/v1/characters.py",
-      "line": 958,
+      "line": 968,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3814,7 +3822,7 @@
       "summary": "设置角色主立绘版本",
       "function": "set_character_main_portrait_version",
       "file": "backend/app/api/v1/characters.py",
-      "line": 1066,
+      "line": 1076,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3830,7 +3838,7 @@
       "summary": "将九宫格立绘版本切成可复用子素材",
       "function": "slice_character_portrait_grid",
       "file": "backend/app/api/v1/characters.py",
-      "line": 1269,
+      "line": 1279,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3846,7 +3854,7 @@
       "summary": "生成角色 Prompt 资产包",
       "function": "get_character_prompt_pack",
       "file": "backend/app/api/v1/characters.py",
-      "line": 725,
+      "line": 726,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3862,7 +3870,7 @@
       "summary": "列出角色关系",
       "function": "list_character_relationships",
       "file": "backend/app/api/v1/characters.py",
-      "line": 631,
+      "line": 632,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3878,7 +3886,7 @@
       "summary": "创建角色关系",
       "function": "create_character_relationship",
       "file": "backend/app/api/v1/characters.py",
-      "line": 692,
+      "line": 693,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3894,7 +3902,7 @@
       "summary": "更新角色关系",
       "function": "update_character_relationship",
       "file": "backend/app/api/v1/characters.py",
-      "line": 703,
+      "line": 704,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3910,7 +3918,7 @@
       "summary": "删除角色关系",
       "function": "delete_character_relationship",
       "file": "backend/app/api/v1/characters.py",
-      "line": 716,
+      "line": 717,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3926,7 +3934,7 @@
       "summary": "获取角色在剧情中的状态变化轨迹",
       "function": "get_character_state_timeline",
       "file": "backend/app/api/v1/characters.py",
-      "line": 505,
+      "line": 506,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3942,7 +3950,7 @@
       "summary": "添加自定义标签",
       "function": "add_character_tag",
       "file": "backend/app/api/v1/characters.py",
-      "line": 400,
+      "line": 401,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3958,7 +3966,7 @@
       "summary": "移除自定义标签",
       "function": "remove_character_tag",
       "file": "backend/app/api/v1/characters.py",
-      "line": 411,
+      "line": 412,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3974,7 +3982,7 @@
       "summary": "列出角色在不同世界/项目中的使用",
       "function": "list_character_world_usages",
       "file": "backend/app/api/v1/characters.py",
-      "line": 465,
+      "line": 466,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3990,7 +3998,7 @@
       "summary": "更新角色世界使用配置",
       "function": "update_character_world_usage",
       "file": "backend/app/api/v1/characters.py",
-      "line": 475,
+      "line": 476,
       "response_model": "",
       "include_in_schema": true
     },
@@ -4006,7 +4014,7 @@
       "summary": "移除角色世界使用关系",
       "function": "delete_character_world_usage",
       "file": "backend/app/api/v1/characters.py",
-      "line": 492,
+      "line": 493,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8059,6 +8067,214 @@
       "include_in_schema": true
     },
     {
+      "method": "GET",
+      "path": "/api/v1/novel-sources",
+      "router": "novel_sources",
+      "prefix": "",
+      "local_path": "/api/v1/novel-sources",
+      "tags": [
+        "Novel Sources"
+      ],
+      "summary": "列出来源快照",
+      "function": "list_snapshots",
+      "file": "backend/app/api/v1/novel_sources.py",
+      "line": 297,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/novel-sources/domains",
+      "router": "novel_sources",
+      "prefix": "",
+      "local_path": "/api/v1/novel-sources/domains",
+      "tags": [
+        "Novel Sources"
+      ],
+      "summary": "列出可检测的世界模块",
+      "function": "list_domains",
+      "file": "backend/app/api/v1/novel_sources.py",
+      "line": 308,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/novel-sources/import-bookshelf",
+      "router": "novel_sources",
+      "prefix": "",
+      "local_path": "/api/v1/novel-sources/import-bookshelf",
+      "tags": [
+        "Novel Sources"
+      ],
+      "summary": "导入书架章节为来源快照",
+      "function": "import_bookshelf",
+      "file": "backend/app/api/v1/novel_sources.py",
+      "line": 277,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/novel-sources/import-txt",
+      "router": "novel_sources",
+      "prefix": "",
+      "local_path": "/api/v1/novel-sources/import-txt",
+      "tags": [
+        "Novel Sources"
+      ],
+      "summary": "导入本地 TXT 为来源快照",
+      "function": "import_txt",
+      "file": "backend/app/api/v1/novel_sources.py",
+      "line": 240,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/novel-sources/{snapshot_id}",
+      "router": "novel_sources",
+      "prefix": "",
+      "local_path": "/api/v1/novel-sources/{snapshot_id}",
+      "tags": [
+        "Novel Sources"
+      ],
+      "summary": "获取来源快照详情",
+      "function": "get_snapshot",
+      "file": "backend/app/api/v1/novel_sources.py",
+      "line": 323,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/novel-sources/{snapshot_id}/chapters",
+      "router": "novel_sources",
+      "prefix": "",
+      "local_path": "/api/v1/novel-sources/{snapshot_id}/chapters",
+      "tags": [
+        "Novel Sources"
+      ],
+      "summary": "列出快照章节",
+      "function": "list_chapters",
+      "file": "backend/app/api/v1/novel_sources.py",
+      "line": 328,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/novel-sources/{snapshot_id}/chunks",
+      "router": "novel_sources",
+      "prefix": "",
+      "local_path": "/api/v1/novel-sources/{snapshot_id}/chunks",
+      "tags": [
+        "Novel Sources"
+      ],
+      "summary": "列出快照文本块",
+      "function": "list_chunks",
+      "file": "backend/app/api/v1/novel_sources.py",
+      "line": 339,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/novel-sources/{snapshot_id}/chunks/index",
+      "router": "novel_sources",
+      "prefix": "",
+      "local_path": "/api/v1/novel-sources/{snapshot_id}/chunks/index",
+      "tags": [
+        "Novel Sources"
+      ],
+      "summary": "为小说文本块建立向量索引",
+      "function": "index_chunks",
+      "file": "backend/app/api/v1/novel_sources.py",
+      "line": 355,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/novel-sources/{snapshot_id}/chunks/search",
+      "router": "novel_sources",
+      "prefix": "",
+      "local_path": "/api/v1/novel-sources/{snapshot_id}/chunks/search",
+      "tags": [
+        "Novel Sources"
+      ],
+      "summary": "混合检索小说文本块",
+      "function": "search_chunks",
+      "file": "backend/app/api/v1/novel_sources.py",
+      "line": 383,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/novel-sources/{snapshot_id}/derive",
+      "router": "novel_sources",
+      "prefix": "",
+      "local_path": "/api/v1/novel-sources/{snapshot_id}/derive",
+      "tags": [
+        "Novel Sources"
+      ],
+      "summary": "从完本来源创建派生项目",
+      "function": "derive_project",
+      "file": "backend/app/api/v1/novel_sources.py",
+      "line": 450,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/novel-sources/{snapshot_id}/extract",
+      "router": "novel_sources",
+      "prefix": "",
+      "local_path": "/api/v1/novel-sources/{snapshot_id}/extract",
+      "tags": [
+        "Novel Sources"
+      ],
+      "summary": "按模块提取世界候选",
+      "function": "extract_world",
+      "file": "backend/app/api/v1/novel_sources.py",
+      "line": 424,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/novel-sources/{snapshot_id}/plan",
+      "router": "novel_sources",
+      "prefix": "",
+      "local_path": "/api/v1/novel-sources/{snapshot_id}/plan",
+      "tags": [
+        "Novel Sources"
+      ],
+      "summary": "逐模块判断世界设定是否存在",
+      "function": "plan_domains",
+      "file": "backend/app/api/v1/novel_sources.py",
+      "line": 401,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/novel-sources/{snapshot_id}/sync",
+      "router": "novel_sources",
+      "prefix": "",
+      "local_path": "/api/v1/novel-sources/{snapshot_id}/sync",
+      "tags": [
+        "Novel Sources"
+      ],
+      "summary": "连载来源追加新章节",
+      "function": "sync_chapters",
+      "file": "backend/app/api/v1/novel_sources.py",
+      "line": 474,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
       "method": "POST",
       "path": "/api/v1/novels/add-to-bookshelf",
       "router": "novels",
@@ -8854,7 +9070,7 @@
       "summary": "获取系统设置",
       "function": "get_all_settings",
       "file": "backend/app/api/v1/settings.py",
-      "line": 227,
+      "line": 231,
       "response_model": "SettingsResponse",
       "include_in_schema": true
     },
@@ -8870,7 +9086,7 @@
       "summary": "批量更新设置",
       "function": "update_all_settings",
       "file": "backend/app/api/v1/settings.py",
-      "line": 253,
+      "line": 268,
       "response_model": "SettingsResponse",
       "include_in_schema": true
     },
@@ -8886,7 +9102,7 @@
       "summary": "获取下载保存路径",
       "function": "get_download_path",
       "file": "backend/app/api/v1/settings.py",
-      "line": 316,
+      "line": 359,
       "response_model": "DownloadPathResponse",
       "include_in_schema": true
     },
@@ -8902,7 +9118,7 @@
       "summary": "获取 FFmpeg 路径",
       "function": "get_ffmpeg",
       "file": "backend/app/api/v1/settings.py",
-      "line": 328,
+      "line": 366,
       "response_model": "FFmpegPathResponse",
       "include_in_schema": true
     },
@@ -8918,7 +9134,7 @@
       "summary": "获取所有存储路径",
       "function": "get_all_storage_paths",
       "file": "backend/app/api/v1/settings.py",
-      "line": 289,
+      "line": 330,
       "response_model": "StoragePathsResponse",
       "include_in_schema": true
     },
@@ -9944,6 +10160,214 @@
       "file": "backend/app/api/v1/wechat_mp.py",
       "line": 189,
       "response_model": "SearchAccountsResponse",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/world-extraction-runs/{run_id}",
+      "router": "novel_sources",
+      "prefix": "",
+      "local_path": "/api/v1/world-extraction-runs/{run_id}",
+      "tags": [
+        "Novel Sources"
+      ],
+      "summary": "获取提取运行状态",
+      "function": "get_run",
+      "file": "backend/app/api/v1/novel_sources.py",
+      "line": 488,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/world-extraction-runs/{run_id}/affected-facts",
+      "router": "novel_sources",
+      "prefix": "",
+      "local_path": "/api/v1/world-extraction-runs/{run_id}/affected-facts",
+      "tags": [
+        "Novel Sources"
+      ],
+      "summary": "把合并/矛盾结论传播到已写事实",
+      "function": "propagate_affected_facts",
+      "file": "backend/app/api/v1/novel_sources.py",
+      "line": 534,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/world-extraction-runs/{run_id}/apply",
+      "router": "novel_sources",
+      "prefix": "",
+      "local_path": "/api/v1/world-extraction-runs/{run_id}/apply",
+      "tags": [
+        "Novel Sources"
+      ],
+      "summary": "确认候选并写入项目",
+      "function": "apply_run",
+      "file": "backend/app/api/v1/novel_sources.py",
+      "line": 568,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/world-extraction-runs/{run_id}/candidates",
+      "router": "novel_sources",
+      "prefix": "",
+      "local_path": "/api/v1/world-extraction-runs/{run_id}/candidates",
+      "tags": [
+        "Novel Sources"
+      ],
+      "summary": "预览提取候选与证据",
+      "function": "list_candidates",
+      "file": "backend/app/api/v1/novel_sources.py",
+      "line": 493,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/world-extraction-runs/{run_id}/candidates/decide",
+      "router": "novel_sources",
+      "prefix": "",
+      "local_path": "/api/v1/world-extraction-runs/{run_id}/candidates/decide",
+      "tags": [
+        "Novel Sources"
+      ],
+      "summary": "标记候选为接受或忽略",
+      "function": "decide_candidates",
+      "file": "backend/app/api/v1/novel_sources.py",
+      "line": 553,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/world-extraction-runs/{run_id}/contradictions",
+      "router": "novel_sources",
+      "prefix": "",
+      "local_path": "/api/v1/world-extraction-runs/{run_id}/contradictions",
+      "tags": [
+        "Novel Sources"
+      ],
+      "summary": "判断重复候选是否同一实体或矛盾",
+      "function": "detect_contradictions",
+      "file": "backend/app/api/v1/novel_sources.py",
+      "line": 517,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/world-extraction-runs/{run_id}/reconcile",
+      "router": "novel_sources",
+      "prefix": "",
+      "local_path": "/api/v1/world-extraction-runs/{run_id}/reconcile",
+      "tags": [
+        "Novel Sources"
+      ],
+      "summary": "跨域调和候选提示",
+      "function": "reconcile_run",
+      "file": "backend/app/api/v1/novel_sources.py",
+      "line": 507,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/world-maps",
+      "router": "novel_sources",
+      "prefix": "",
+      "local_path": "/api/v1/world-maps",
+      "tags": [
+        "Novel Sources"
+      ],
+      "summary": "列出世界地图文档",
+      "function": "list_world_maps",
+      "file": "backend/app/api/v1/novel_sources.py",
+      "line": 590,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/world-maps",
+      "router": "novel_sources",
+      "prefix": "",
+      "local_path": "/api/v1/world-maps",
+      "tags": [
+        "Novel Sources"
+      ],
+      "summary": "创建世界地图文档",
+      "function": "create_world_map",
+      "file": "backend/app/api/v1/novel_sources.py",
+      "line": 601,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/world-maps/{map_id}",
+      "router": "novel_sources",
+      "prefix": "",
+      "local_path": "/api/v1/world-maps/{map_id}",
+      "tags": [
+        "Novel Sources"
+      ],
+      "summary": "获取世界地图文档",
+      "function": "get_world_map",
+      "file": "backend/app/api/v1/novel_sources.py",
+      "line": 612,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/world-maps/{map_id}",
+      "router": "novel_sources",
+      "prefix": "",
+      "local_path": "/api/v1/world-maps/{map_id}",
+      "tags": [
+        "Novel Sources"
+      ],
+      "summary": "保存世界地图（revision CAS）",
+      "function": "update_world_map",
+      "file": "backend/app/api/v1/novel_sources.py",
+      "line": 620,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/world-maps/{map_id}",
+      "router": "novel_sources",
+      "prefix": "",
+      "local_path": "/api/v1/world-maps/{map_id}",
+      "tags": [
+        "Novel Sources"
+      ],
+      "summary": "删除世界地图文档",
+      "function": "delete_world_map",
+      "file": "backend/app/api/v1/novel_sources.py",
+      "line": 648,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/world-maps/{map_id}/render",
+      "router": "novel_sources",
+      "prefix": "",
+      "local_path": "/api/v1/world-maps/{map_id}/render",
+      "tags": [
+        "Novel Sources"
+      ],
+      "summary": "渲染世界地图为 SVG",
+      "function": "render_world_map",
+      "file": "backend/app/api/v1/novel_sources.py",
+      "line": 636,
+      "response_model": "",
       "include_in_schema": true
     },
     {

@@ -263,6 +263,13 @@ def _register_routes():
     except Exception as e:
         logger.warning(f"Could not load creative_fanqie router: {e}")
 
+    # 小说来源 → 世界项目提取路由
+    try:
+        from app.api.v1 import novel_sources
+        app.include_router(novel_sources.router, tags=["Novel Sources"])
+    except Exception as e:
+        logger.warning(f"Could not load novel_sources router: {e}")
+
     # 任务管理路由
     try:
         from app.api.v1 import canvas

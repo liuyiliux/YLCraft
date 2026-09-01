@@ -30,7 +30,11 @@ flowchart LR
 
 小说/来源正文的角色提取走两趟流程：第一趟按段落分块，只扫描原文角色名、别名、观察记录和逐字引文；服务层按名称/别名归并，并把包含名冲突作为人工合并候选；第二趟再把每个角色映射为 `identity`、`motivation`、`speech`、`behavior`、`ability`、`arc` 等 YLCraft 设定字段。`POST /api/v1/creative-projects/{project_id}/extract-characters` 默认只预览，真人用户或 Agent 审核后可把预览返回的 `characters` 原样带回 `apply=true`，服务端只重新校验证据是否存在于来源文本，不重复调用模型。写入同时更新项目大纲、全局角色库和 `CharacterStoryLink`，保存 `aliases_json`、`evidence_json`、`extraction_notes`；按全局角色名复用已有角色，项目关联按角色 ID 幂等。提取写入采用增量合并，未被本次来源识别的既有大纲角色不会被删除；空提取结果也不能覆盖项目角色。大纲生成成功后会自动执行一次角色同步，使原创项目也能立即在角色库看到角色。
 
-小说导入的长期方向是“小说源资产 -> 世界项目”：TXT 上传、小说搜索和书架章节统一落为只读来源快照，章节/文本块保留顺序、偏移和证据锚点，向量索引只负责语义召回，角色名、别名、时间线和原文证据仍使用精确检索。所有项目先提供基础设定层，包括角色、关系、地点、剧情时间线、相关规则/物品、未决问题和动态状态；AI 在创建项目或识别来源时，只根据文本信号建议需要开启的扩展域，并说明理由和成本，用户或 Agent 可接受、修改或关闭，不强制贴 genre 标签。扩展域包括物种生态、历史大事件、地图地理、势力政治、经济金融、力量/科技、文化宗教语言、物品资源、家族谱系和制作圣经等。事实分为原文观察、提取草稿、已确认正典、派生内容/动态状态；只有歧义、冲突或推断内容进入 candidate，不把全部提取数据都称为候选。后续章节通过增量证据和版本追加扩展世界，不重建或复制整套设定。完本来源可创建改编、续写或同人派生项目；连载来源以增量快照和 checkpoint 更新，原作来源始终只读。当前规格与分阶段任务见 `openspec/changes/novel-source-world-project/`，尚未进入实现阶段。
+小说导入的长期方向是“小说源资产 -> 世界项目”：TXT 上传、小说搜索和书架章节统一落为只读来源快照，章节/文本块保留顺序、偏移和证据锚点，向量索引只负责语义召回，角色名、别名、时间线和原文证据仍使用精确检索。所有项目先提供基础设定层，包括角色、关系、地点、剧情时间线、相关规则/物品、未决问题和动态状态；AI 在创建项目或识别来源时，只根据文本信号建议需要开启的扩展域，并说明理由和成本，用户或 Agent 可接受、修改或关闭，不强制贴 genre 标签。扩展域包括物种生态、历史大事件、地图地理、势力政治、经济金融、力量/科技、文化宗教语言、物品资源、家族谱系和制作圣经等。事实分为原文观察、提取草稿、已确认正典、派生内容/动态状态；只有歧义、冲突或推断内容进入 candidate，不把全部提取数据都称为候选。后续章节通过增量证据和版本追加扩展世界，不重建或复制整套设定。完本来源可创建改编、续写或同人派生项目；连载来源以增量快照和 checkpoint 更新，原作来源始终只读。当前规格与分阶段任务见 `openspec/changes/novel-source-world-project/`。
+
+该主线已进入实现阶段，首个最小闭环是「来源快照 → 文本块 → 模块判断 → 提取 → 证据预览 → 确认写入」，落在 `backend/app/services/novel_source/` 与 `backend/app/api/v1/novel_sources.py`：TXT 上传和书架章节统一落为只读 `NovelSourceSnapshot`，章节与 `NovelTextChunk` 保存相对整篇正文的稳定字符偏移；来源文件根目录由设置项 `novel_source_path` 控制，未配置时使用 `storage/novel_sources`，真人设置页和 Agent/API 导入走同一目录契约。AI 只对十二个模块逐域给出 `detected / not_detected / uncertain / user_requested`，不使用整体题材开关。已实现提取通道的是十一个域：角色、地点、势力、历史事件四个基础域，以及世界规则、力量/科技体系、经济/金融、物种、物品/资源、术语表、剧情时间线七个扩展域；扩展域复用与基础域完全相同的证据校验、候选去重和写入通道。地图模块不做候选提取（地理实体的文字设定由地点模块承载），而是由独立的 `WorldMapDocument`（迁移 `035`）承载结构化空间关系——区域、据点、路线分别表达层级、位置与连通，走 `/api/v1/world-maps` 的 revision CAS 写入；`GET /world-maps/{id}/render` 把它确定性渲染为 SVG（本地渲染、含 XML 转义，不调用模型也不依赖外部生图供应商）；地图 AI 生图风格化对齐角色立绘接入范式：`POST /world-maps/{id}/generate-visual/prompt-preview` 先预览 prompt，`POST /world-maps/{id}/generate-visual` 可选 provider/model/size/negative/reference，复用既有生图链路（`AIService.generate_image` → `BackendRouter`）生成成图并调 `AssetHubFacade.create_generated_image` 入资产中枢，成图只以引用形式记在 `map_json.visuals`，仍是派生的视觉资产、`map_json` 空间关系才是正典。`/novel-world` 内置基于 Leaflet（CRS.Simple 平面坐标系）的世界地图工作台：拖拽节点改坐标、滚轮缩放/平移、按所属区域着色、上传手绘/AI 底图作为参考层、区域节点围成势力范围多边形。每条提取结果必须带能逐字回溯到正文的引文，校验不通过的引文会被丢弃，完全没有证据的条目不进入候选。候选先预览再由真人或 Agent 逐条 accept/ignore，确认后角色走既有角色库通道（`Character` + `CharacterStoryLink` + `CharacterRelationship`），其余域写入锁定的 `ProjectContent(content_type="world_asset")`。确认写入还会把复杂实体（势力/地点/物种/事件/力量体系/物品等）物化为类型化独立实体 `WorldEntity`（迁移 `037`，幂等 upsert，与事实卡并存——事实卡仍是锁定正典的权威载体），并从 payload 显式关系字段物化类型化关系 `WorldEntityRelation`（势力敌对/地盘、地点归属、事件发生地、物种栖息地等）；`GET /projects/{id}/world-entities` 与 `/world-entity-relations` 提供结构化查询，派生项目同步复制实体/关系并标记 `source_canon`。单个域失败只让 `WorldExtractionRun` 变成 `partial`，不影响其他域候选。
+
+小说文本块支持可选 embedding 索引：`POST /api/v1/novel-sources/{snapshot_id}/chunks/index` 使用现有 EmbeddingService 写入按模型标记的向量，并在 PostgreSQL + 默认 384 维模型下同时写入 `embedding_vec vector(384)` 列（迁移 `036`，仅 PG 执行）。`POST /chunks/search` 返回精确 + 向量混合召回结果，并携带章节与字符偏移；`with_neighbors` 可为每条命中附带前后相邻块作为上下文邻居。检索时，PostgreSQL + 384 维查询向量走 pgvector 数据库级近邻（`<=>` 排序取候选集后再混合打分），其它环境回退精确 + JSON 向量混合；向量不可用时自动退回精确检索。`/novel-world` 真人页面已暴露「建立索引」与「检索证据」入口（来源卡片右侧建索引，模块判断下方为证据检索卡片），`index_novel_source_chunks` 与 `search_novel_source_chunks` 两个 Agent 工具与真人共用同一服务层。
 
 设计原则：
 
@@ -202,6 +206,30 @@ Agent Center 的人工委派入口支持 `resume_parent`：成功汇合后把子
 - 分镜和角色生图必须持久化结果，关联素材、任务和血缘。
 - 角色、背景、道具都应作为可引用参考卡参与提示词和参考图选择。
 
+### 4.2.1 小说源资产与世界提取
+
+文件：`backend/app/db/models/novel_source.py`，迁移 `032_add_novel_source_world`，服务在 `backend/app/services/novel_source/`。
+
+| 表/模型 | 作用 |
+| --- | --- |
+| `NovelSourceSnapshot` | 只读来源快照：TXT 导入或书架章节导入的统一产物，记录校验和、编码、完本/连载状态、revision、父快照与处理游标。 |
+| `NovelSourceChapter` | 快照内章节，保存相对整篇正文的稳定字符区间，书架来源另存 `source_chapter_id`。 |
+| `NovelTextChunk` | 提取与检索的最小文本单元，按章节顺序编号并保存偏移与内容哈希。 |
+| `WorldExtractionRun` | 一次提取运行，按域记录检测结论、执行状态、条目数、checkpoint 游标与失败诊断。 |
+| `WorldFactCandidate` | 待确认世界事实候选，带域、规范化名、去重指纹、结构化载荷、证据锚点与审阅状态。 |
+| `WorldMapDocument` | 结构化世界地图（迁移 `035`）：区域/据点/路线的空间关系，`revision` 做并发保护。 |
+
+边界与规则：
+
+- 来源内容只读。连载来源用 `append_bookshelf_chapters` 追加新章节和新文本块，已导入章节的偏移与既有证据锚点保持不变。
+- 证据必须指向具体文本块和字符偏移。模型返回的引文不能逐字在正文中找到时一律丢弃；完全没有有效证据的条目不落候选。
+- 模块检测是提取规划，不是正典事实。AI 只给每域 `detected / not_detected / uncertain`，用户显式指定时标 `user_requested`；未实现提取通道的域可以被检测但不产生候选。
+- 候选与确认分离。`decide_candidates` 支持 accept / ignore / merge 三种决策，只改候选状态，`apply_run` 才写项目：merge 把源候选的证据、别名与设定并入 `merge_into` 指向的目标候选，源候选进入 `merged` 终态。角色域复用既有角色提取写入通道（`Character` + `CharacterStoryLink`，别名与逐字证据回写到 link），其余域写入 `is_locked=True` 的 `ProjectContent(content_type="world_asset")`。
+- 单域失败只让运行变 `partial`，其他域候选照常保留；运行记录 checkpoint，供后续增量提取续跑。
+- 增量提取（`mode=delta`）从最近一次运行的 checkpoint 游标开始，只把新文本块交给模型；已存在的候选不会被重复生成，新证据和字段并回同一条候选并回写 `last_run_id`，被用户忽略的候选保持忽略。`list_candidates` 同时匹配 `run_id` 与 `last_run_id`，因此增量运行的审阅界面能看到「本次产生或更新」的全部条目。
+- 跨域调和（`GET /world-extraction-runs/{run_id}/reconcile` 与 `reconcile_world_extraction_run` 工具）是审阅前的确定性检查：按规范化名与别名归并找出跨模块重名与别名交叉，按证据锚点找出被多条候选共用的同一段原文，把历史事件的中文相对时间（「三年前」「十载前」）解析成可排序偏移。它不调用模型、不自动合并或删除候选。语义矛盾检测（`POST /world-extraction-runs/{run_id}/contradictions` 与 `detect_world_extraction_contradictions` 工具）在此基础上逐组调用模型判断：同一实体且一致（consistent，可 merge）、同一实体但矛盾（conflicting，需 resolve）、还是同名不同实体（distinct，保留）。受影响事实传播（`POST /world-extraction-runs/{run_id}/affected-facts` 与 `propagate_affected_world_facts` 工具）把合并与冲突结论传播到**已写入**的 `world_asset`：只打 `review_required` 标记并附原因，不改写事实内容。
+- 完本来源可创建派生项目（`POST /novel-sources/{snapshot_id}/derive` 与 `derive_project_from_novel_source` 工具，模式为改编/续写/同人）：只复制带该 `snapshot_id` 溯源的已确认世界事实与角色项目关联，并标记 `fact_layer=source_canon`（锁定只读）；原项目后来手工添加的事实、角色或其他来源内容不会被误带入。来源快照始终只读，新项目后续写入不带该标记，与原作正典分层。连载来源不支持派生，只走增量同步。Context Pack 的 T0 层会把 `source_canon` 卡单独标注为「原作正典·只读」并声明创作不得与之矛盾、可在其上延展，与本项目自己的设定分层注入。
+
 ### 4.3 资产中枢
 
 文件：`backend/app/db/models/asset_hub.py`
@@ -339,6 +367,7 @@ Live2D accepts uploads, character imagery and Asset Hub images as source materia
 | 平台采集 | `/api/v1/crawler`、`/api/v1/bilibili` | `services/crawler`、`services/platforms` | `/crawler` | 统一检索小红书、抖音、快手、B站、微博、知乎及公众号；支持详情、显式入素材库和画布媒体选择。有效的平台连接可作为服务端登录态用于搜索/详情，不向浏览器返回 Cookie；B站另提供更丰富的登录态能力。 |
 | 内容发布 | `/api/v1/platforms/{conn_id}/publish`、`/api/v1/creative-projects/{project_id}/publish-to-fanqie` | `services/platforms/fanqie` | `/publish`、项目 Story 页 | 当前通用发布页只公开已验证的番茄章节草稿保存：需指定后台已创建的书籍、卷和章节目标，并可先 dry-run 预检；视频、图文等其他平台发布尚未接通，不在 UI 中伪装为可用。 |
 | 小说/书源 | `/api/v1/novels`、`/api/v1/book-sources` | `services/novel`、`services/reader` | `/novel-*` | 可作为创作素材源。 |
+| 小说来源 → 世界提取 | `/api/v1/novel-sources`、`/api/v1/world-extraction-runs`、`/api/v1/world-maps`、`/api/v1/projects/{id}/world-entities` | `services/novel_source` | `/novel-world` | 最小闭环已可用并已扩展：TXT/书架导入、章节与文本块、逐域模块检测、十一个域提取（角色/地点/势力/历史事件/世界规则/力量体系/经济/物种/物品/术语表/剧情时间线）、证据预览与确认写入项目；可选向量索引与混合检索（PostgreSQL 下 pgvector 近邻）、跨域调和与语义矛盾检测、完本来源派生项目（改编/续写/同人，原作正典只读分层）、结构化世界地图编辑（区域/据点/路线 + SVG 预览）、类型化独立实体与关系（`world_entities`/`world_entity_relations`）已接入页面和 Agent 工具。 |
 | 任务中心 | `/api/v1/tasks` | `core/task_queue` + 媒体任务账本 | `/tasks` | 聚合通用队列、下载、独立视频生成及图生 3D 持久化记录；可查看诊断字段与失败原因，并对未终态的独立媒体任务进行状态级取消。页面改为三 Tab：任务 / 事件日志 / 运行日志。 |
 | 平台事件日志 | `/api/v1/logs` | `services/platform_log` | `/tasks`（事件日志 Tab） | `platform_event_logs` 审计流：image/video/model3d/llm 生成结果统一落账（含脱敏摘要与耗时）；`GET /logs` 筛选分页、`GET /logs/{id}` 详情、`POST /logs/{id}/retry` 失败重发（`retry_payload_json` 精确还原 + `retry_of`/`retried_by` 追溯链）；`GET /logs/runtime` 读取滚动文件日志。 |
 | 字幕/BGM/剪辑 | `/subtitles`、`/bgm`、`/clip*` | 对应 services | 对应页面 | 辅助内容生产。 |
@@ -361,9 +390,9 @@ Live2D accepts uploads, character imagery and Asset Hub images as source materia
 
 当前统计：
 
-- Router mounts: 50
-- Endpoints: 573
-- Public schema endpoints: 572
+- Router mounts: 52
+- Endpoints: 612
+- Public schema endpoints: 611
 - Hidden compatibility endpoints: 1
 
 接口变更后，AI 必须做五件事：
@@ -405,6 +434,7 @@ Agent Tool / Skill 变更按内部 API 处理：工具名称、输入输出 sche
 | `task-observability-diagnostics` | 26 | 0 | 已完成：真实异步生图的远端任务 ID、轮询、下载、入库与事件时间线已验证。 |
 | `platform-event-logging` | 28 | 3 | 任务中心三 Tab（任务/事件日志/运行日志）、`platform_event_logs` 表与 `/api/v1/logs`（列表/详情/runtime/retry）、滚动文件日志、图片生成失败落账与跨 image/video/model3d/llm 通用重发已完成；待后端单测、重发追溯链自动化测试与前端手动验收。 |
 | `database-migration-convergence` | 11 | 11 | 启动/Agent 请求路径的隐式 DDL 已切断，空库与旧远程形态演练通过；当前 Alembic 链继续到 `017_add_platform_event_logs`，为视频、图转 3D 持久任务和平台事件日志提供显式升级路径。 |
+| `novel-source-world-project` | 38 | 1 | 最小闭环已落地并扩展：来源快照/章节/文本块/提取运行/世界候选/世界地图/类型化实体/类型化关系八张表（迁移 `032`/`037`）、TXT 与书架导入、逐域模块检测、十一个域提取与证据校验、候选预览与确认写入；可选向量索引与混合检索（含邻域扩展，PostgreSQL 下走 pgvector 数据库级近邻、其它回退 JSON 向量混合）、跨域调和与语义矛盾检测、受影响事实传播、候选 merge、完本来源派生项目（原作正典 `source_canon` 只读分层，Context Pack T0 已分层注入）、类型化独立实体与关系（`WorldEntity`/`WorldEntityRelation`，含派生复制）、Leaflet 世界地图工作台与 SVG 渲染、地图 AI 生图风格化（结构化地图 → prompt → 生图链路）、连载增量变更展示已完成并接入 `/novel-world` 与 14 个 Agent 工具。待办：真实浏览器/Agent E2E 验收。 |
 
 ## 8. 文档更新协议
 

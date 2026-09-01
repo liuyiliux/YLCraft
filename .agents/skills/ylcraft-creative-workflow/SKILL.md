@@ -99,4 +99,4 @@ python .agents/skills/ylcraft-creative-workflow/scripts/creative_project_workflo
 
 ## References
 
-Read `references/api-workflows.md` when you need endpoint details, content type names, or recommended command examples.
+Read `references/api-workflows.md` when you need endpoint details, content type names, or recommended command examples. It also covers the novel-source world-extraction loop (import → per-domain detection → evidence-validated extraction → reconcile → apply) and completed-source derivation into adaptation/continuation/fan-work projects.

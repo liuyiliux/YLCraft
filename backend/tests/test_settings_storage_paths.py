@@ -20,11 +20,12 @@ async def test_storage_settings_are_resolved_from_project_root(monkeypatch, tmp_
 
     await settings_api.update_all_settings(
         settings_api.SettingsUpdateRequest(
-            patch={"image_gen_path": "backend\\storage\\images"}
+            patch={"image_gen_path": "backend\\storage\\images", "novel_source_path": "backend\\storage\\novels"}
         )
     )
 
     assert saved["image_gen_path"] == "backend/storage/images"
+    assert saved["novel_source_path"] == "backend/storage/novels"
     assert (tmp_path / "backend" / "storage" / "images").is_dir()
 
 
