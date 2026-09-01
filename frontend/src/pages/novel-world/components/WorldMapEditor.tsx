@@ -1,23 +1,29 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, Button, Card, Collapse, Empty, Input, message, Select, Space, Tag, Typography, Upload } from 'antd'
-import { DeleteOutlined, EnvironmentOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons'
+import { useEffect, useMemo, useState } from 'react'
+import { Alert, Button, Card, Collapse, Empty, Input, message, Modal, Select, Space, Tag, Typography, Upload } from 'antd'
+import { DeleteOutlined, EnvironmentOutlined, EyeOutlined, PictureOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { MapContainer, Marker, Polyline, Polygon, useMap } from 'react-leaflet'
 import {
   createWorldMap,
   deleteWorldMap,
+  generateWorldMapVisual,
   getWorldMap,
+  listWorldMapImageBackends,
   listWorldMaps,
+  previewWorldMapVisualPrompt,
   updateWorldMap,
   type WorldMapData,
   type WorldMapDocument,
+  type WorldMapImageBackend,
   type WorldMapNode,
   type WorldMapRegion,
   type WorldMapRoute,
+  type WorldMapVisual,
+  type WorldMapVisualResult,
 } from '../../../api/novelSource'
 
-const { Text } = Typography
+const { Paragraph, Text } = Typography
 
 const newId = () => Math.random().toString(36).slice(2, 10)
 
@@ -96,6 +102,81 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(false)
   const [baseMapUrl, setBaseMapUrl] = useState<string | null>(null)
+
+  // ---- AI 生图（对齐角色立绘：选后端/模型、预览 prompt、入素材库） ----
+  const [imageBackends, setImageBackends] = useState<WorldMapImageBackend[]>([])
+  const [visualProvider, setVisualProvider] = useState('')
+  const [visualModel, setVisualModel] = useState('')
+  const [visualSize, setVisualSize] = useState('1024x1024')
+  const [visualStyle, setVisualStyle] = useState('')
+  const [visualPromptOverride, setVisualPromptOverride] = useState('')
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const [previewPrompt, setPreviewPrompt] = useState('')
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [generating, setGenerating] = useState(false)
+  const [lastVisual, setLastVisual] = useState<WorldMapVisualResult | null>(null)
+
+  useEffect(() => {
+    listWorldMapImageBackends()
+      .then((backends) => {
+        setImageBackends(backends)
+        if (!visualProvider && backends.length) {
+          setVisualProvider(backends[0].name)
+          setVisualModel(backends[0].available_models?.[0] || backends[0].model || '')
+        }
+      })
+      .catch(() => setImageBackends([]))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const activeBackend = useMemo(
+    () => imageBackends.find((item) => item.name === visualProvider) ?? null,
+    [imageBackends, visualProvider],
+  )
+  const visualSizeOptions = useMemo(() => {
+    const supported = activeBackend?.supported_sizes?.filter(Boolean) ?? []
+    return supported.length ? supported : ['1024x1024', '768x1024', '1024x768']
+  }, [activeBackend])
+
+  const previewVisualPrompt = async () => {
+    if (!doc) return
+    setPreviewLoading(true)
+    try {
+      const result = await previewWorldMapVisualPrompt(doc.id, {
+        style_override: visualStyle || undefined,
+        prompt_override: visualPromptOverride || undefined,
+      })
+      setPreviewPrompt(result.prompt)
+      setPreviewOpen(true)
+    } catch (error) {
+      message.error((error as Error).message)
+    } finally {
+      setPreviewLoading(false)
+    }
+  }
+
+  const doGenerateVisual = async () => {
+    if (!doc) return
+    setGenerating(true)
+    try {
+      const result = await generateWorldMapVisual(doc.id, {
+        prompt: visualPromptOverride || undefined,
+        provider: visualProvider || undefined,
+        model: visualModel || undefined,
+        size: visualSize || '1024x1024',
+        style: visualStyle || undefined,
+        save_to_asset_hub: true,
+      })
+      setLastVisual(result)
+      message.success(`已生成地图视觉成图${result.node_id ? '并写入素材库' : ''}`)
+      // 重新加载文档，让 visuals 引用记录（含 revision CAS 回写）可见。
+      await refresh(doc.id)
+    } catch (error) {
+      message.error((error as Error).message)
+    } finally {
+      setGenerating(false)
+    }
+  }
 
   const refresh = async (selectId?: string) => {
     setLoading(true)
@@ -556,6 +637,143 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
               </Text>
             </div>
           </Card>
+
+          <Card size="small" title="AI 生图风格化（派生视觉资产）" style={{ background: '#fafafa' }}>
+            <Space direction="vertical" style={{ width: '100%' }} size="middle">
+              <Space wrap>
+                <Select
+                  placeholder="生图后端"
+                  style={{ width: 190 }}
+                  value={visualProvider || undefined}
+                  loading={!imageBackends.length}
+                  onChange={(value) => {
+                    const backend = imageBackends.find((item) => item.name === value)
+                    setVisualProvider(value)
+                    setVisualModel(backend?.available_models?.[0] || backend?.model || '')
+                  }}
+                  options={imageBackends.map((item) => ({
+                    value: item.name,
+                    label: item.provider_label ? `${item.provider_label} · ${item.name}` : item.name,
+                  }))}
+                />
+                <Select
+                  placeholder="模型"
+                  style={{ width: 200 }}
+                  value={visualModel || undefined}
+                  onChange={setVisualModel}
+                  options={(activeBackend?.available_models?.length
+                    ? activeBackend.available_models
+                    : [activeBackend?.model || '']
+                  )
+                    .filter(Boolean)
+                    .map((item) => ({ value: item, label: item }))}
+                />
+                <Select
+                  placeholder="尺寸"
+                  style={{ width: 130 }}
+                  value={visualSize}
+                  onChange={setVisualSize}
+                  options={visualSizeOptions.map((item) => ({ value: item, label: item }))}
+                />
+                <Input
+                  placeholder="画风（如水墨、写实）"
+                  style={{ width: 140 }}
+                  value={visualStyle}
+                  onChange={(e) => setVisualStyle(e.target.value)}
+                />
+                <Button size="small" icon={<EyeOutlined />} loading={previewLoading} disabled={!doc} onClick={previewVisualPrompt}>
+                  预览 Prompt
+                </Button>
+                <Button size="small" type="primary" icon={<PictureOutlined />} loading={generating} disabled={!doc} onClick={doGenerateVisual}>
+                  生成视觉成图
+                </Button>
+              </Space>
+              <Input.TextArea
+                rows={2}
+                placeholder="可选：覆盖提示词（留空按结构化地图自动生成，包含区域/地点/路线）"
+                value={visualPromptOverride}
+                onChange={(e) => setVisualPromptOverride(e.target.value)}
+              />
+              {!imageBackends.length && (
+                <Alert type="warning" showIcon message="未检测到生图后端：请先在「AI 连接器」配置 provider_type=image 的 Provider。" />
+              )}
+              {lastVisual && (
+                <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                  {lastVisual.url && (
+                    <img
+                      src={lastVisual.url}
+                      alt="地图视觉成图"
+                      style={{ maxWidth: 320, width: '100%', border: '1px solid #e5e7eb', borderRadius: 6 }}
+                    />
+                  )}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      最近生成 · {lastVisual.provider || '—'} · {lastVisual.model || '—'} · {lastVisual.status}
+                    </Text>
+                    {lastVisual.node_id && (
+                      <div>
+                        <Text type="secondary" style={{ fontSize: 12 }} copyable={{ text: lastVisual.node_id }}>
+                          素材库节点：{lastVisual.node_id}
+                        </Text>
+                      </div>
+                    )}
+                    <Paragraph style={{ fontSize: 12, whiteSpace: 'pre-wrap', marginBottom: 0 }}>{lastVisual.prompt}</Paragraph>
+                  </div>
+                </div>
+              )}
+            </Space>
+          </Card>
+
+          {doc.map.visuals?.length ? (
+            <Card size="small" title={`视觉成图历史（${doc.map.visuals.length}）`} style={{ background: '#fafafa' }}>
+              <Space wrap>
+                {doc.map.visuals.map((visual, index) => (
+                  <div key={index} style={{ width: 168, textAlign: 'center' }}>
+                    {visual.url && (
+                      <img
+                        src={visual.url}
+                        alt={`成图 ${index + 1}`}
+                        style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', border: '1px solid #e5e7eb', borderRadius: 6 }}
+                      />
+                    )}
+                    <div>
+                      <Text type="secondary" style={{ fontSize: 11 }}>
+                        {visual.provider || 'unknown'} · {visual.model || '—'}
+                      </Text>
+                    </div>
+                    <div>
+                      <Text type="secondary" style={{ fontSize: 11 }}>
+                        {visual.style ? `风格：${visual.style} ` : ''}
+                        {visual.created_at ? new Date(visual.created_at).toLocaleDateString() : ''}
+                      </Text>
+                    </div>
+                    {visual.node_id && (
+                      <div>
+                        <Text type="secondary" style={{ fontSize: 11 }} copyable={{ text: visual.node_id }}>
+                          素材库
+                        </Text>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </Space>
+            </Card>
+          ) : null}
+
+          <Modal
+            title="地图生图 Prompt 预览"
+            open={previewOpen}
+            footer={null}
+            width={640}
+            onCancel={() => setPreviewOpen(false)}
+          >
+            <Paragraph
+              style={{ whiteSpace: 'pre-wrap', background: '#f5f5f5', padding: 12, borderRadius: 6 }}
+              copyable
+            >
+              {previewPrompt || '暂无'}
+            </Paragraph>
+          </Modal>
         </Space>
       )}
     </Card>

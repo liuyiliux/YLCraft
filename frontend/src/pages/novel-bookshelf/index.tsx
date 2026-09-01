@@ -28,9 +28,10 @@ import {
   Typography,
 } from 'antd'
 const { Text } = Typography
-import { BookOutlined, ReadOutlined, DeleteOutlined, DownloadOutlined, CloudDownloadOutlined, MoreOutlined } from '@ant-design/icons'
+import { BookOutlined, ReadOutlined, DeleteOutlined, DownloadOutlined, CloudDownloadOutlined, MoreOutlined, RobotOutlined } from '@ant-design/icons'
 import { listAssets, deleteAsset } from '../../api'
-import { downloadChapters, addToBookshelf } from '../../api/novel'
+import { downloadChapters, addToBookshelf, getChapterContent } from '../../api/novel'
+import { importBookshelf } from '../../api/novelSource'
 
 export default function NovelBookshelfPage() {
   const navigate = useNavigate()
@@ -40,6 +41,7 @@ export default function NovelBookshelfPage() {
   const pageSize = 12
   const [total, setTotal] = useState(0)
   const [search, setSearch] = useState('')
+  const [extractingWorld, setExtractingWorld] = useState<string | null>(null)
 
   // 加载小说列表（包含 status=bookshelf 的记录，不仅仅是 ready）
   const loadNovels = async () => {
@@ -152,6 +154,53 @@ export default function NovelBookshelfPage() {
     }
   }
 
+  /** 一键提取世界：抓取章节正文 → 导入来源快照 → 跳到世界提取工作台 */
+  const handleExtractWorld = async (asset: any, e?: React.MouseEvent) => {
+    e?.stopPropagation()
+    const meta = asset.metadata || {}
+    const chapters = meta.chapters || []
+    if (!chapters.length) {
+      message.warning('该书没有章节数据，请先下载或在线阅读后再提取')
+      return
+    }
+    setExtractingWorld(asset.id)
+    try {
+      const targetChapters = chapters.slice(0, 50)
+      message.info(`正在抓取《${asset.title}》章节正文（最多 ${targetChapters.length} 章）...`)
+      const loaded: { title: string; content: string }[] = []
+      for (const chapter of targetChapters) {
+        try {
+          const res = await getChapterContent({
+            chapter_url: chapter.url,
+            source_id: meta.source_id || '',
+            book_url: meta.book_url || asset.source_url || '',
+          })
+          const content = res?.data?.content
+          if (content && content.trim()) {
+            loaded.push({ title: chapter.title || `第${chapter.index}章`, content })
+          }
+        } catch {
+          // 单章抓取失败跳过，不影响其余章节
+        }
+      }
+      if (!loaded.length) {
+        throw new Error('未能抓取到任何章节正文，请确认该书可在线阅读')
+      }
+      const snapshot = await importBookshelf({
+        title: asset.title || meta.novel_title || '未命名小说',
+        author: meta.author || asset.author || '',
+        source_status: 'completed',
+        chapters: loaded,
+      })
+      message.success(`已导入 ${loaded.length} 章为来源快照，正在打开世界提取`)
+      navigate(`/novel-world?snapshot_id=${encodeURIComponent(snapshot.id)}`)
+    } catch (err: any) {
+      message.error(err?.message || '提取世界失败')
+    } finally {
+      setExtractingWorld(null)
+    }
+  }
+
   return (
     <div>
       {/* 顶部工具栏 */}
@@ -256,6 +305,15 @@ export default function NovelBookshelfPage() {
                       actions={[
                         <Tooltip title="继续阅读" key="read">
                           <ReadOutlined onClick={() => handleContinueReading(novel)} />
+                        </Tooltip>,
+                        <Tooltip title="提取世界设定（导入来源快照 → 逐域提取）" key="world">
+                          <Button
+                            type="text"
+                            size="small"
+                            loading={extractingWorld === novel.id}
+                            icon={<RobotOutlined />}
+                            onClick={(e: any) => void handleExtractWorld(novel, e)}
+                          />
                         </Tooltip>,
                         ...(pi.isFullyDownloaded ? [] : [
                           <Tooltip title="下载全本" key="download">

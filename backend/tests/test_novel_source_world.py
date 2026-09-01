@@ -1682,3 +1682,244 @@ async def test_plan_does_not_extract_not_detected_domains(session, storage):
     assert "map" not in ran_domains
     # 只有真正推荐的、可提取的域才执行。
     assert "character" in ran_domains
+
+
+# ---------------------------------------------------------------------------
+# 多来源入口：从创作项目大纲启动世界提取、从来源快照创建项目
+# ---------------------------------------------------------------------------
+
+OUTLINE_FOR_WORLD = {
+    "title": "雨夜旧账",
+    "premise": "少年林昭在雨夜回到故乡，发现沈家商路已断。",
+    "worldview": "北境以银关钞为通行货币，霜岭的誓言不可违背。",
+    "characters": [
+        {"name": "林昭", "role": "主角", "appearance": "年轻人，背着旧伞。"},
+        {"name": "沈青砚", "role": "沈家当家", "personality": "在灯下翻账册。"},
+    ],
+    "locations": [
+        {"name": "沈家", "role": "家族宅院", "visual_description": "木门小院。"},
+        {"name": "北岭", "role": "山岭", "visual_description": "来客出发地。"},
+    ],
+}
+
+OUTLINE_WORLD_ITEMS = {
+    "character": [
+        {
+            "name": "林昭",
+            "aliases": [],
+            "summary": "主角",
+            "attributes": {"role": "主角"},
+            "quotes": ["少年林昭在雨夜回到故乡"],
+            "confidence": 0.8,
+        },
+        {
+            "name": "沈青砚",
+            "aliases": [],
+            "summary": "沈家当家",
+            "attributes": {"role": "当家"},
+            "quotes": ["在灯下翻账册"],
+            "confidence": 0.8,
+        },
+    ],
+    "location": [
+        {
+            "name": "沈家",
+            "aliases": [],
+            "summary": "家族宅院",
+            "attributes": {"kind": "宅院"},
+            "quotes": ["木门小院"],
+            "confidence": 0.8,
+        },
+        {
+            "name": "北岭",
+            "aliases": [],
+            "summary": "山岭",
+            "attributes": {"kind": "山岭"},
+            "quotes": ["来客出发地"],
+            "confidence": 0.8,
+        },
+    ],
+}
+
+
+def test_serialize_outline_as_source_text_keeps_quotes():
+    """大纲序列化为来源文本时保留各字段原文，供证据校验逐字回溯。"""
+    from app.api.v1.novel_sources import serialize_outline_as_source_text
+
+    text = serialize_outline_as_source_text(OUTLINE_FOR_WORLD)
+    assert "少年林昭在雨夜回到故乡" in text
+    assert "在灯下翻账册" in text
+    assert "木门小院" in text
+    assert "来客出发地" in text
+    assert "【世界观】" in text
+
+
+@pytest.mark.asyncio
+async def test_start_world_extraction_from_outline_creates_snapshot(tmp_path, monkeypatch):
+    """从创作项目大纲启动世界提取：建来源快照并产出候选，快照绑定项目。"""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from app.api.v1 import novel_sources as novel_sources_api
+    from app.db.database import get_session
+    from app.db.models.creative_project import CreativeProject, ProjectContent
+    from app.db.models.novel_source import (
+        NovelSourceChapter,
+        NovelSourceSnapshot,
+        NovelTextChunk,
+        WorldExtractionRun,
+        WorldFactCandidate,
+    )
+    from app.services.creative_project.service import CreativeProjectService, dumps_json
+
+    monkeypatch.setattr(source_module, "STORAGE_ROOT", tmp_path / "novel_sources")
+
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'world.db'}", connect_args={"check_same_thread": False}
+    )
+    for table in (
+        CreativeProject.__table__,
+        ProjectContent.__table__,
+        NovelSourceSnapshot.__table__,
+        NovelSourceChapter.__table__,
+        NovelTextChunk.__table__,
+        WorldExtractionRun.__table__,
+        WorldFactCandidate.__table__,
+        Character.__table__,
+        CharacterStoryLink.__table__,
+    ):
+        table.create(engine)
+    factory = sessionmaker(class_=Session, bind=engine, expire_on_commit=False)
+
+    with factory() as seed:
+        project = CreativeProjectService(seed, ai_service=FakeWorldAI()).create_project(
+            title="雨夜旧账",
+            project_type="novel",
+            source_type="original_idea",
+            idea="雨夜旧账",
+        )
+        project.outline_json = dumps_json(OUTLINE_FOR_WORLD)
+        seed.add(project)
+        seed.commit()
+        project_id = project.id
+
+    app = FastAPI()
+    app.include_router(novel_sources_api.router)
+
+    def _override_session():
+        with factory() as db:
+            yield db
+
+    def _override_extraction_service():
+        return WorldExtractionService(factory(), ai_service=FakeWorldAI(items=OUTLINE_WORLD_ITEMS))
+
+    app.dependency_overrides[get_session] = _override_session
+    app.dependency_overrides[novel_sources_api.extraction_service] = _override_extraction_service
+    client = TestClient(app)
+
+    try:
+        # 不传 domains 时默认提取全部可提取域，而不是报「没有可提取的世界模块」。
+        response = client.post(
+            f"/api/v1/creative-projects/{project_id}/world-extraction/start",
+            json={},
+        )
+        assert response.status_code == 200, response.text
+        data = response.json()["data"]
+        assert data["run_id"]
+        assert data["candidate_count"] >= 1
+        with factory() as check:
+            snapshot = check.get(NovelSourceSnapshot, data["snapshot_id"])
+            assert snapshot is not None
+            assert snapshot.project_id == project_id
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_from_novel_source_creates_and_binds_project(tmp_path, monkeypatch):
+    """from-novel-source：从来源快照创建并绑定世界项目，重复调用幂等。"""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from app.api.v1 import novel_sources as novel_sources_api
+    from app.db.database import get_session
+    from app.db.models.creative_project import CreativeProject, ProjectContent
+    from app.db.models.novel_source import (
+        NovelSourceChapter,
+        NovelSourceSnapshot,
+        NovelTextChunk,
+        WorldExtractionRun,
+        WorldFactCandidate,
+    )
+    from app.services.creative_project.service import loads_json
+
+    monkeypatch.setattr(source_module, "STORAGE_ROOT", tmp_path / "novel_sources")
+
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'world.db'}", connect_args={"check_same_thread": False}
+    )
+    for table in (
+        CreativeProject.__table__,
+        ProjectContent.__table__,
+        NovelSourceSnapshot.__table__,
+        NovelSourceChapter.__table__,
+        NovelTextChunk.__table__,
+        WorldExtractionRun.__table__,
+        WorldFactCandidate.__table__,
+        Character.__table__,
+        CharacterStoryLink.__table__,
+    ):
+        table.create(engine)
+    factory = sessionmaker(class_=Session, bind=engine, expire_on_commit=False)
+
+    with factory() as seed:
+        snapshot = NovelSourceService(seed).import_txt(
+            raw="第一章 雨夜\n林昭推开木门。\n".encode("utf-8"),
+            file_name="sample.txt",
+            title="雨夜旧账",
+        )
+        snapshot_id = snapshot.id
+
+    app = FastAPI()
+    app.include_router(novel_sources_api.router)
+
+    def _override_session():
+        with factory() as db:
+            yield db
+
+    def _override_extraction_service():
+        return WorldExtractionService(factory(), ai_service=FakeWorldAI())
+
+    app.dependency_overrides[get_session] = _override_session
+    app.dependency_overrides[novel_sources_api.extraction_service] = _override_extraction_service
+    client = TestClient(app)
+
+    try:
+        response = client.post(
+            "/api/v1/creative-projects/from-novel-source",
+            json={"snapshot_id": snapshot_id},
+        )
+        assert response.status_code == 200, response.text
+        project_id = response.json()["data"]["project_id"]
+
+        # 幂等：再次调用返回同一项目。
+        response = client.post(
+            "/api/v1/creative-projects/from-novel-source",
+            json={"snapshot_id": snapshot_id},
+        )
+        assert response.status_code == 200
+        assert response.json()["data"]["project_id"] == project_id
+        assert response.json()["data"]["reused"] is True
+
+        with factory() as check:
+            snapshot = check.get(NovelSourceSnapshot, snapshot_id)
+            assert snapshot.project_id == project_id
+            project = check.get(CreativeProject, project_id)
+            assert project is not None
+            assert loads_json(project.source_ref_json).get("novel_snapshot_id") == snapshot_id
+    finally:
+        engine.dispose()

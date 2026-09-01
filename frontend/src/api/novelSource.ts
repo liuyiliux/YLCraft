@@ -462,6 +462,19 @@ export interface WorldMapData {
   regions: WorldMapRegion[]
   nodes: WorldMapNode[]
   routes: WorldMapRoute[]
+  /** AI 生图生成的派生视觉资产（只记引用，不是地图正典）。 */
+  visuals?: WorldMapVisual[]
+}
+
+export interface WorldMapVisual {
+  url: string
+  local_path: string
+  node_id: string
+  provider: string
+  model: string
+  style: string
+  prompt: string
+  created_at: string
 }
 
 export interface WorldMapDocument {
@@ -473,6 +486,23 @@ export interface WorldMapDocument {
   revision: number
   created_at: string | null
   updated_at: string | null
+}
+
+export interface WorldMapVisualResult {
+  map_id: string
+  prompt: string
+  url: string
+  local_path: string
+  node_id: string
+  provider: string
+  model: string
+  task_id: string
+  status: string
+}
+
+/** 获取一次世界提取运行的完整状态（用于从 run_id 恢复审阅上下文）。 */
+export function getExtractionRun(runId: string): Promise<ExtractResult> {
+  return request<ExtractResult>(`/world-extraction-runs/${runId}`)
 }
 
 export function listWorldMaps(params: { project_id?: string; snapshot_id?: string } = {}): Promise<WorldMapDocument[]> {
@@ -505,4 +535,81 @@ export function updateWorldMap(
 
 export function deleteWorldMap(mapId: string): Promise<{ id: string }> {
   return jsonRequest<{ id: string }>(`/world-maps/${mapId}`, 'DELETE')
+}
+
+/** 从已导入的来源快照创建并绑定世界项目（design API from-novel-source）。 */
+export function createProjectFromNovelSource(payload: {
+  snapshot_id: string
+  title?: string
+  project_type?: string
+}): Promise<{ project_id: string; reused: boolean }> {
+  return jsonRequest('/creative-projects/from-novel-source', 'POST', payload)
+}
+
+/** 从创作项目大纲启动逐域世界提取，产出待确认候选。 */
+export function startProjectWorldExtraction(
+  projectId: string,
+  payload: {
+    provider?: string
+    model?: string
+    domains?: string[]
+    force_reimport?: boolean
+  } = {},
+): Promise<{
+  project_id: string
+  snapshot_id: string
+  run_id: string
+  candidate_count: number
+  status: string
+}> {
+  return jsonRequest(`/creative-projects/${projectId}/world-extraction/start`, 'POST', payload)
+}
+
+/** 地图 AI 生图：先预览提示词，不消耗生图配额。 */
+export function previewWorldMapVisualPrompt(
+  mapId: string,
+  payload: { style_override?: string; prompt_override?: string } = {},
+): Promise<{ map_id: string; prompt: string }> {
+  return jsonRequest(`/world-maps/${mapId}/generate-visual/prompt-preview`, 'POST', payload)
+}
+
+/** 地图 AI 生图：生成视觉成图并（默认）入资产中枢。 */
+export function generateWorldMapVisual(
+  mapId: string,
+  payload: {
+    prompt?: string
+    negative_prompt?: string
+    provider?: string
+    model?: string
+    size?: string
+    n?: number
+    style?: string
+    reference_images?: string[]
+    save_to_asset_hub?: boolean
+  },
+): Promise<WorldMapVisualResult> {
+  return jsonRequest(`/world-maps/${mapId}/generate-visual`, 'POST', payload)
+}
+
+/** 可用的图像生成后端（对齐角色立绘：name 作为 provider，available_models 供选模型）。 */
+export interface WorldMapImageBackend {
+  provider: string
+  provider_label: string
+  name: string
+  model: string
+  available_models: string[]
+  capabilities: string[]
+  support_reference_image: boolean
+  supported_sizes: string[]
+}
+
+export async function listWorldMapImageBackends(): Promise<WorldMapImageBackend[]> {
+  const response = await fetch(`${BASE}/images/backends`, {
+    headers: { Accept: 'application/json' },
+  })
+  const body = await response.json()
+  if (!response.ok) {
+    throw new Error((body as { detail?: string }).detail || `请求失败（${response.status}）`)
+  }
+  return (body as { backends?: WorldMapImageBackend[] }).backends ?? []
 }

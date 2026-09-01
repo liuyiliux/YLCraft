@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Alert,
   Button,
@@ -34,6 +34,7 @@ import {
   deriveProject,
   detectContradictions,
   extractWorld,
+  getExtractionRun,
   getSnapshot,
   importTxt,
   indexChunks,
@@ -151,6 +152,32 @@ export default function NovelWorldPage() {
     setReconcile(null)
     setContradictions(null)
   }
+
+  // 支持从其它入口带上下文进入：?snapshot_id=xxx&run_id=xxx 自动加载快照与候选审阅。
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const snapshotId = params.get('snapshot_id')
+    const runId = params.get('run_id')
+    refreshSnapshots().then(async () => {
+      if (snapshotId) {
+        await selectSnapshot(snapshotId)
+      }
+      if (runId) {
+        try {
+          const run = await getExtractionRun(runId)
+          if (run.snapshot_id && run.snapshot_id !== snapshotId) {
+            await selectSnapshot(run.snapshot_id)
+          }
+          setExtractResult(run)
+          await loadCandidates(runId)
+          await loadReconcile(runId)
+        } catch (error) {
+          message.error((error as Error).message)
+        }
+      }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const doImport = async (file: File, sourceStatus: string) => {
     setImporting(true)

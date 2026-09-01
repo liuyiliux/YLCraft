@@ -113,6 +113,7 @@ import {
   type PlatformTemplate,
   type CreativeProjectContinuityCandidate,
 } from '../../api'
+import { startProjectWorldExtraction } from '../../api/novelSource'
 import type {
   ChapterPlanItem,
   ChapterPlan,
@@ -168,6 +169,7 @@ type LoadingAction =
   | 'canvas_save'
   | 'sync_characters'
   | 'project_bible'
+  | 'world_extract'
   | 'delete_project'
   | 'portrait_generate'
   | 'pipeline'
@@ -3229,6 +3231,25 @@ export default function StoryPage() {
     }
   }
 
+  const handleExtractWorld = async () => {
+    if (!selectedProject) return
+    setLoadingAction('world_extract')
+    try {
+      const result = await startProjectWorldExtraction(selectedProject.id, {
+        model: selectedModel || undefined,
+      })
+      if (!result.run_id) {
+        throw new Error(result.status || '提取未返回运行')
+      }
+      message.success(`已生成 ${result.candidate_count} 条世界设定候选，正在打开审阅`)
+      window.location.href = `/novel-world?snapshot_id=${encodeURIComponent(result.snapshot_id)}&run_id=${encodeURIComponent(result.run_id)}`
+    } catch (error: any) {
+      message.error(error?.message || '生成世界设定候选失败')
+    } finally {
+      setLoadingAction(null)
+    }
+  }
+
   function buildProjectCharacterPortraitPrompt(record: StoryOutlineCharacter) {
     const parts = [
       '单人角色立绘，完整角色设定图，适合作为后续漫画/短剧分镜的一致性参考图。',
@@ -4932,9 +4953,10 @@ export default function StoryPage() {
                         hasOutline={hasOutline}
                         bibleContents={projectBibleContents}
                         worldAssets={worldAssetContents}
-                        loading={loadingAction === 'project_bible'}
+                        loading={loadingAction === 'project_bible' || loadingAction === 'world_extract'}
                         savingContentId={savingContentId}
                         onSync={handleSyncProjectBible}
+                        onExtractWorld={handleExtractWorld}
                         onSaveContent={handleSaveContent}
                         onSaveAsAsset={handleSaveContentAsAsset}
                       />
@@ -6275,6 +6297,7 @@ function ProjectBibleTab({
   loading,
   savingContentId,
   onSync,
+  onExtractWorld,
   onSaveContent,
   onSaveAsAsset,
 }: {
@@ -6284,6 +6307,7 @@ function ProjectBibleTab({
   loading: boolean
   savingContentId: string | null
   onSync: (overwrite?: boolean) => void
+  onExtractWorld: () => void
   onSaveContent: (
     contentId: string,
     patch: { title?: string; data?: Record<string, any>; text_content?: string; is_locked?: boolean },
@@ -6307,6 +6331,15 @@ function ProjectBibleTab({
         extra={
           <Space wrap>
             <Tag color={lockedCount ? 'green' : 'default'}>已锁定 {lockedCount}</Tag>
+            <Button
+              type="primary"
+              icon={<RobotOutlined />}
+              loading={loading}
+              onClick={onExtractWorld}
+              title="按逐域检测生成带证据锚点的世界设定候选，到世界提取工作台审阅确认后写入本项目"
+            >
+              生成世界设定候选
+            </Button>
             <Button icon={<ReloadOutlined />} loading={loading} onClick={() => onSync(false)}>
               从大纲补齐
             </Button>
