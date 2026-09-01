@@ -589,6 +589,31 @@ export function listProjectWorldEntityRelations(
   return request<WorldEntityRelation[]>(`/projects/${projectId}/world-entity-relations`)
 }
 
+/** 项目世界知识聚合视图：角色/实体/关系/事实卡/地图/来源快照一屏返回。 */
+export interface WorldKnowledge {
+  project_id: string
+  title: string
+  characters: { character_id: string; name: string; role: string; aliases: string[]; evidence: unknown[]; world_name: string; extract_origin: string }[]
+  entities: WorldEntity[]
+  relations: {
+    source_entity_id: string
+    source_name: string
+    relation_type: string
+    target_entity_id: string
+    target_name: string
+    note: string
+    is_directed: boolean
+  }[]
+  facts: { id: string; title: string; domain: string; summary: string; is_locked: boolean }[]
+  maps: { id: string; title: string; revision: number; node_count: number }[]
+  snapshots: { id: string; title: string; source_kind: string; source_status: string; char_count: number; indexing_status: string }[]
+  counts: { characters: number; entities: number; relations: number; facts: number; maps: number; snapshots: number }
+}
+
+export function getProjectWorldKnowledge(projectId: string): Promise<WorldKnowledge> {
+  return request<WorldKnowledge>(`/creative-projects/${projectId}/world-knowledge`)
+}
+
 /** 从已导入的来源快照创建并绑定世界项目（design API from-novel-source）。 */
 export function createProjectFromNovelSource(payload: {
   snapshot_id: string
