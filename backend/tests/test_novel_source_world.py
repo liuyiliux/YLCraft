@@ -1574,6 +1574,52 @@ def test_create_map_from_project_places_generates_nodes(session, storage):
         service.create_map_from_project_places(project.id)
 
 
+def test_create_map_from_project_places_uses_radial_layout(session, storage):
+    """5 个及以上地点应径向展开（避免挤在中下方一行的丑陋布局）。"""
+    from app.services.creative_project.service import CreativeProjectService
+    from app.services.novel_source.contracts import normalize_entity_name
+    from app.services.novel_source.world_map import WorldMapService
+
+    project = CreativeProjectService(session, ai_service=FakeWorldAI()).create_project(
+        title="五地项目",
+        project_type="novel",
+        source_type="original_idea",
+        idea="x",
+    )
+    place_names = [
+        "徐家老宅与茅屋", "田间与村口", "龙二赌坊", "县医院与卫生所", "二喜建筑工地",
+    ]
+    for name in place_names:
+        session.add(
+            WorldEntity(
+                project_id=project.id,
+                domain="location",
+                entity_type="place",
+                name=name,
+                normalized_key=normalize_entity_name(name),
+                summary=f"{name} 摘要",
+                attributes_json="{}",
+                evidence_json="[]",
+                fact_layer="project",
+                is_locked=True,
+            )
+        )
+    session.commit()
+
+    document = WorldMapService(session).create_map_from_project_places(project.id)
+    data = json.loads(document.map_json)
+    coords = [(node["x"], node["y"]) for node in data["nodes"]]
+    assert len(coords) == 5
+    # 坐标必须在 0-100 范围内
+    for x, y in coords:
+        assert 0 <= x <= 100 and 0 <= y <= 100
+    # 5 个点应围圆心分布（不是排成水平线）：x 应有 ≥4 个不同值，y 至少 2 个（圆周 y 必然重复）
+    unique_x = {round(x, 1) for x, _ in coords}
+    unique_y = {round(y, 1) for _, y in coords}
+    assert len(unique_x) >= 4, f"5 个点 x 坐标过于集中: {coords}"
+    assert len(unique_y) >= 2, f"5 个点 y 坐标全在同一水平线: {coords}"
+
+
 def test_create_map_from_project_places_without_places_raises(session, storage):
     """没有地点实体时给出可读错误。"""
     from app.services.creative_project.service import CreativeProjectService
