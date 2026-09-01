@@ -6,6 +6,7 @@ import 'leaflet/dist/leaflet.css'
 import { MapContainer, Marker, Polyline, Polygon, useMap } from 'react-leaflet'
 import {
   createWorldMap,
+  createWorldMapFromProjectPlaces,
   deleteWorldMap,
   generateWorldMapVisual,
   getWorldMap,
@@ -255,6 +256,24 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
     }
   }
 
+  const [generatingFromPlaces, setGeneratingFromPlaces] = useState(false)
+  const doGenerateFromPlaces = async () => {
+    if (!projectId) {
+      message.warning('需要先有项目（确认写入世界设定后才有地点实体）')
+      return
+    }
+    setGeneratingFromPlaces(true)
+    try {
+      const document = await createWorldMapFromProjectPlaces(projectId)
+      message.success(`已从地点实体生成地图初稿（${document.map.nodes?.length ?? 0} 个据点）`)
+      await refresh(document.id)
+    } catch (error) {
+      message.error((error as Error).message)
+    } finally {
+      setGeneratingFromPlaces(false)
+    }
+  }
+
   const updateRegion = (id: string, patch: Partial<WorldMapRegion>) =>
     setDraft((prev) => ({ ...prev, regions: prev.regions.map((r) => (r.id === id ? { ...r, ...patch } : r)) }))
   const updateNode = (id: string, patch: Partial<WorldMapNode>) =>
@@ -342,6 +361,16 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
           </Button>
           <Button size="small" danger icon={<DeleteOutlined />} disabled={!doc} onClick={doDelete}>
             删除
+          </Button>
+          <Button
+            size="small"
+            icon={<EnvironmentOutlined />}
+            loading={generatingFromPlaces}
+            disabled={!projectId}
+            onClick={doGenerateFromPlaces}
+            title="把确认写入的地点实体（world_entities.entity_type=place）自动转成地图据点"
+          >
+            从地点实体生成
           </Button>
         </Space>
       }

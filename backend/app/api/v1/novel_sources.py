@@ -878,6 +878,22 @@ def create_world_map(req: WorldMapCreateRequest, svc: WorldMapService = Depends(
     return {"success": True, "data": serialize_map(document)}
 
 
+@router.post("/api/v1/projects/{project_id}/world-maps/from-places", summary="从地点实体生成地图初稿")
+def create_world_map_from_project_places(
+    project_id: str,
+    svc: WorldMapService = Depends(map_service),
+):
+    """把确认写入的地点实体转成地图据点初稿，已有地图时追加、无地图时新建。
+
+    坐标是自动排布的占位，之后在地图工作台拖拽精修即可。
+    """
+    try:
+        document = svc.create_map_from_project_places(project_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"success": True, "data": serialize_map(document)}
+
+
 @router.get("/api/v1/world-maps/{map_id}", summary="获取世界地图文档")
 def get_world_map(map_id: str, svc: WorldMapService = Depends(map_service)):
     document = svc.get_map(map_id)

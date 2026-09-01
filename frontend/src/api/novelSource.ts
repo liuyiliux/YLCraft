@@ -505,6 +505,11 @@ export function getExtractionRun(runId: string): Promise<ExtractResult> {
   return request<ExtractResult>(`/world-extraction-runs/${runId}`)
 }
 
+/** 从确认写入的地点实体生成地图据点初稿（已有地图时追加，无地图时新建）。 */
+export function createWorldMapFromProjectPlaces(projectId: string): Promise<WorldMapDocument> {
+  return jsonRequest<WorldMapDocument>(`/projects/${projectId}/world-maps/from-places`, 'POST')
+}
+
 export function listWorldMaps(params: { project_id?: string; snapshot_id?: string } = {}): Promise<WorldMapDocument[]> {
   const search = new URLSearchParams()
   if (params.project_id) search.set('project_id', params.project_id)
