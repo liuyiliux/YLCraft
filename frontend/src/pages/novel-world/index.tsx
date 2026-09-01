@@ -114,6 +114,8 @@ export default function NovelWorldPage() {
   const [applyResult, setApplyResult] = useState<ApplyResult | null>(null)
   const [loadingCandidates, setLoadingCandidates] = useState(false)
   const [model, setModel] = useState('')
+  // 从 URL 参数进入时携带的项目上下文（?project_id= 用于地图工作台定位）。
+  const [urlProjectId, setUrlProjectId] = useState<string | null>(null)
 
   const [indexing, setIndexing] = useState(false)
   const [indexResult, setIndexResult] = useState<ChunkIndexResult | null>(null)
@@ -153,11 +155,13 @@ export default function NovelWorldPage() {
     setContradictions(null)
   }
 
-  // 支持从其它入口带上下文进入：?snapshot_id=xxx&run_id=xxx 自动加载快照与候选审阅。
+  // 支持从其它入口带上下文进入：?snapshot_id=xxx&run_id=xxx&project_id=xxx 自动加载。
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const snapshotId = params.get('snapshot_id')
     const runId = params.get('run_id')
+    const projectId = params.get('project_id')
+    if (projectId) setUrlProjectId(projectId)
     refreshSnapshots().then(async () => {
       if (snapshotId) {
         await selectSnapshot(snapshotId)
@@ -955,7 +959,7 @@ export default function NovelWorldPage() {
       )}
 
       <WorldMapEditor
-        projectId={applyResult?.project_id ?? snapshot?.project_id ?? null}
+        projectId={applyResult?.project_id ?? snapshot?.project_id ?? urlProjectId}
         snapshotId={snapshot?.id ?? null}
       />
 
