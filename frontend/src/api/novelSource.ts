@@ -537,6 +537,53 @@ export function deleteWorldMap(mapId: string): Promise<{ id: string }> {
   return jsonRequest<{ id: string }>(`/world-maps/${mapId}`, 'DELETE')
 }
 
+/** 类型化世界实体：来自 world-extraction 确认写入的实体索引。 */
+export interface WorldEntity {
+  id: string
+  project_id: string | null
+  snapshot_id: string | null
+  domain: string
+  entity_type: string
+  name: string
+  summary: string
+  attributes: Record<string, unknown>
+  evidence: { chunk_id?: string; quote?: string; start_offset?: number; end_offset?: number; [k: string]: unknown }[]
+  fact_layer: string
+  source_candidate_id: string | null
+  is_locked: boolean
+  updated_at: string | null
+}
+
+/** 复杂实体间的类型化关系（不含角色相关，角色关系走 CharacterRelationship）。 */
+export interface WorldEntityRelation {
+  id: string
+  project_id: string
+  source_entity_id: string
+  target_entity_id: string
+  relation_type: string
+  note: string
+  evidence: { chunk_id?: string; quote?: string; [k: string]: unknown }[]
+  is_directed: boolean
+  created_at: string | null
+}
+
+export function listProjectWorldEntities(
+  projectId: string,
+  options: { domain?: string; entity_type?: string } = {},
+): Promise<WorldEntity[]> {
+  const search = new URLSearchParams()
+  if (options.domain) search.set('domain', options.domain)
+  if (options.entity_type) search.set('entity_type', options.entity_type)
+  const query = search.toString() ? `?${search.toString()}` : ''
+  return request<WorldEntity[]>(`/projects/${projectId}/world-entities${query}`)
+}
+
+export function listProjectWorldEntityRelations(
+  projectId: string,
+): Promise<WorldEntityRelation[]> {
+  return request<WorldEntityRelation[]>(`/projects/${projectId}/world-entity-relations`)
+}
+
 /** 从已导入的来源快照创建并绑定世界项目（design API from-novel-source）。 */
 export function createProjectFromNovelSource(payload: {
   snapshot_id: string
