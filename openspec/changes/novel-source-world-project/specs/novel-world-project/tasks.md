@@ -112,7 +112,7 @@
   - _Done: `POST /novel-sources/{snapshot_id}/sync` 与 `sync_novel_source_chapters` 工具可用；`/novel-world` 连载来源提供「追加章节」入口（按「第X章」标题行拆分粘贴文本）；增量提取后在候选预览区区分「本次新增/更新」，并显示新增与更新计数。_
 - [x] 21. Add structured world map editor/viewer and optional derived visual map generation.
   - _Requirement: 4, 5_
-  - _Done: `WorldMapDocument`（迁移 `035`）承载区域/据点/路线的结构化空间关系，`/api/v1/world-maps` 提供 CRUD（revision CAS）。`/novel-world` 内置基于 Leaflet（CRS.Simple 平面坐标系）的世界地图工作台：拖拽节点改坐标、滚轮缩放、平移、按所属区域着色、上传手绘/AI 底图作为参考层、区域节点围成势力范围多边形。`GET /world-maps/{id}/render` 把它确定性渲染为可导出的 SVG（含 XML 转义）。地图 AI 生图风格化已对齐角色立绘的接入范式并接好前端：`POST /world-maps/{id}/generate-visual/prompt-preview` 先预览 prompt（`build_map_visual_prompt`，区域/地点/路线/风格），`POST /world-maps/{id}/generate-visual` 可选 provider/model/size/negative/reference（与立绘一致的选模型方式），复用既有生图链路（`AIService.generate_image` → `BackendRouter`，需在 AI 连接器配置 image Provider）生成视觉成图，并调 `AssetHubFacade.create_generated_image` 入资产中枢（素材库）。世界地图工作台内置「AI 生图风格化」卡片：生图后端/模型/尺寸选择（来自 `/api/v1/images/backends`）、画风输入、提示词覆盖、`预览 Prompt` 弹窗、`生成视觉成图` 按钮、最近成图与历史缩略图（含素材库 node_id，可复制）。成图只以引用形式记在 `map_json.visuals`，仍是派生的视觉资产、`map_json` 空间关系才是正典。_
+  - _Done: `WorldMapDocument`（迁移 `035`）承载区域/据点/路线的结构化空间关系，`/api/v1/world-maps` 提供 CRUD（revision CAS）。`/novel-world` 内置基于 Leaflet（CRS.Simple 平面坐标系）的世界地图工作台：拖拽节点改坐标、滚轮缩放、平移、按所属区域着色、上传手绘/AI 底图作为参考层、区域节点围成势力范围多边形。`GET /world-maps/{id}/render` 把它确定性渲染为可导出的 SVG（含 XML 转义）。地图 AI 生图风格化已对齐角色立绘的接入范式并接好前端：`POST /world-maps/{id}/generate-visual/prompt-preview` 先预览 prompt（`build_map_visual_prompt`，区域/地点/路线/风格），`POST /world-maps/{id}/generate-visual` 可选 provider/model/size/negative/reference（与立绘一致的选模型方式），复用既有生图链路（`AIService.generate_image` → `BackendRouter`，需在 AI 连接器配置 image Provider）生成视觉成图，并调 `AssetHubFacade.create_generated_image` 入资产中枢（素材库）。世界地图工作台内置「AI 生图风格化」卡片：生图后端/模型/尺寸选择（来自 `/api/v1/images/backends`）、画风输入、提示词覆盖、`预览 Prompt` 弹窗、`生成视觉成图` 按钮、最近成图与历史缩略图（含素材库 node_id，可复制）。成图只以引用形式记在 `map_json.visuals`，仍是派生的视觉资产、`map_json` 空间关系才是正典。`POST /projects/{id}/world-maps/from-places` 可把确认写入的地点实体（`world_entities.entity_type=place`）一键转成地图据点初稿（已有地图只追加未出现地点、无地图新建，幂等），工作台在无地图时也提供显眼的「从地点实体生成地图」按钮。_
 - [x] 21.1 Add setting workspace UI with the basic layer always available and independently detected domains lazy-loaded.
   - _Requirement: 10_
   - _Done: `/novel-world` 的模块判断区即逐域检测 + 逐域勾选的工作区：基础层始终展示，扩展域按检测结果独立懒加载，可单独启用/关闭。_
@@ -121,7 +121,7 @@
 
 - [x] 22. Add human UI for source import, extraction domain selection, progress, evidence preview and confirmation.
   - _Requirement: 1, 4, 5_
-  - _Done: 多来源入口共用同一套提取/审阅/写入管线——`/novel-world` 提供 TXT 导入、模块检测、提取、证据预览、调和/矛盾检测、建立索引/检索证据、追加章节、派生项目与结构化地图编辑的完整闭环；`/story` 项目详情「圣经/世界」页新增「生成世界设定候选」（把大纲序列化为来源文本 → 逐域提取 → 跳转 `/novel-world?run_id=` 审阅确认后写回本项目）；小说书架页每本书新增「提取世界」（抓取章节正文 → 导入来源快照 → 跳转 `/novel-world?snapshot_id=`）；`/novel-world` 支持 URL 参数自动加载快照与候选审阅上下文。_
+  - _Done: 多来源入口共用同一套提取/审阅/写入管线——`/novel-world` 提供 TXT 导入、模块检测、提取、证据预览、调和/矛盾检测、建立索引/检索证据、追加章节、派生项目与结构化地图编辑的完整闭环；`/story` 项目详情「圣经/世界」页新增「生成世界设定候选」（把大纲序列化为来源文本 → 逐域提取 → 跳转 `/novel-world?run_id=` 审阅确认后写回本项目）；小说书架页每本书新增「提取世界」（抓取章节正文 → 导入来源快照 → 跳转 `/novel-world?snapshot_id=`）；`/novel-world` 支持 URL 参数自动加载快照与候选审阅上下文；`/story` 项目页「圣经/世界」新增「世界设定（按域）」展示（实体/关系）与「打开世界地图工作台」直达入口。`GET /creative-projects/{id}/world-knowledge` 提供项目世界知识聚合视图（角色/实体/关系/事实卡/地图/来源快照，供 Agent 与上下文打包）。_
 - [x] 23. Add Agent tools for source inspection, extraction preview, candidate decisions and source sync.
   - _Requirement: 8_
   - _Done: 已接入 14 个 `novel_source` 分类工具（列出/查看快照、模块检测、提取预览、连载同步、候选预览、决策、确认写入、建立索引、检索证据、跨域调和、语义矛盾检测、受影响事实传播、派生项目），与真人 `/novel-world` 共用同一服务层。_
@@ -136,7 +136,7 @@
   - _Done: 旧 `/api/v1/novels`、`/api/v1/creative-projects/{id}/extract-characters` 等接口未删除，新层 `/api/v1/novel-sources` 独立并存，不破坏旧链路；design 的 `POST /creative-projects/from-novel-source` 已落地，作为 `/from-novel` 的迁移目标。_
 - [x] 26. Add tests for TXT/bookshelf parity, completed/serial snapshots, chunk provenance, vector fallback, domain partial failure and derivative isolation.
   - _Requirement: 1, 2, 3, 6, 7, 9_
-  - _Done: `test_novel_source_world.py`（35 例）覆盖 TXT 稳定偏移、模块检测、十一个域提取与证据校验、单域失败隔离、按域增量游标、决策/merge/写入、连载增量同步、向量索引与回退、派生隔离、跨域调和与矛盾检测、受影响事实传播、结构化地图 CRUD/CAS 与 SVG 渲染、profile-aware 规划。_
+  - _Done: `test_novel_source_world.py`（44 例）覆盖 TXT 稳定偏移、模块检测、十一个域提取与证据校验、单域失败隔离、按域增量游标、决策/merge/写入、连载增量同步、向量索引与回退、派生隔离、跨域调和与矛盾检测、受影响事实传播、结构化地图 CRUD/CAS 与 SVG 渲染、profile-aware 规划、多来源入口（大纲→世界提取、from-novel-source 建项目）、世界知识聚合、地图从地点实体生成。_
 - [x] 27. Update API surface, architecture, creative workflow guide and database migration docs.
   - _Requirement: 1, 3, 8_
 - [ ] 28. Validate with human UI and Agent API E2E flows using temporary local fixtures; never use real user/remote novel data for tests.

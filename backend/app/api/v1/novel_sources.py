@@ -16,7 +16,8 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
 from app.db.database import get_session
-from app.db.models.creative_project import CreativeProject
+from app.db.models.character import Character, CharacterStoryLink
+from app.db.models.creative_project import CreativeProject, ProjectContent
 from app.db.models.novel_source import (
     NovelSourceChapter,
     NovelSourceSnapshot,
@@ -25,6 +26,7 @@ from app.db.models.novel_source import (
     WorldEntityRelation,
     WorldExtractionRun,
     WorldFactCandidate,
+    WorldMapDocument,
 )
 from app.services.ai.service import get_ai_service
 from app.services.ai.types import ImageGenerationRequest
@@ -850,6 +852,135 @@ def list_project_world_entity_relations(
     """复杂实体间的类型化关系（势力敌对/地盘、事件发生地、物种栖息地等）。"""
     relations = svc.list_world_entity_relations(project_id, limit=limit)
     return {"success": True, "data": [serialize_world_entity_relation(item) for item in relations]}
+
+
+@router.get("/api/v1/creative-projects/{project_id}/world-knowledge", summary="聚合项目世界知识")
+def get_project_world_knowledge(
+    project_id: str,
+    session: Session = Depends(get_session),
+):
+    """项目世界知识的统一聚合视图（design API world-knowledge）。
+
+    供 Agent/上下文一次取全：角色（项目关联）、类型化实体（按域）、
+    实体关系、锁定事实卡、地图文档与来源快照。任意子集为空不影响返回。
+    """
+    project = session.get(CreativeProject, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="创作项目不存在")
+
+    entities = session.exec(
+        select(WorldEntity)
+        .where(WorldEntity.project_id == project_id)
+        .order_by(WorldEntity.entity_type, WorldEntity.name)
+    ).all()
+    relations = session.exec(
+        select(WorldEntityRelation).where(WorldEntityRelation.project_id == project_id)
+    ).all()
+    facts = session.exec(
+        select(ProjectContent)
+        .where(
+            ProjectContent.project_id == project_id,
+            ProjectContent.content_type == "world_asset",
+        )
+        .order_by(ProjectContent.title)
+    ).all()
+    maps = session.exec(
+        select(WorldMapDocument)
+        .where(WorldMapDocument.project_id == project_id)
+        .order_by(WorldMapDocument.updated_at.desc())
+    ).all()
+    snapshots = session.exec(
+        select(NovelSourceSnapshot)
+        .where(NovelSourceSnapshot.project_id == project_id)
+        .order_by(NovelSourceSnapshot.created_at.desc())
+    ).all()
+    links = session.exec(
+        select(CharacterStoryLink).where(CharacterStoryLink.story_id == project_id)
+    ).all()
+
+    characters: list[dict[str, Any]] = []
+    for link in links:
+        character = session.get(Character, str(link.character_id))
+        if not character:
+            continue
+        characters.append(
+            {
+                "character_id": character.id,
+                "name": character.name,
+                "role": character.role,
+                "aliases": loads_json(link.aliases_json, []),
+                "evidence": loads_json(link.evidence_json, []),
+                "world_name": link.world_name,
+                "extract_origin": link.extract_origin,
+            }
+        )
+
+    entity_by_id = {entity.id: entity for entity in entities}
+    relations_view = [
+        {
+            "source_entity_id": item.source_entity_id,
+            "source_name": entity_by_id.get(item.source_entity_id).name
+            if item.source_entity_id in entity_by_id
+            else item.source_entity_id,
+            "relation_type": item.relation_type,
+            "target_entity_id": item.target_entity_id,
+            "target_name": entity_by_id.get(item.target_entity_id).name
+            if item.target_entity_id in entity_by_id
+            else item.target_entity_id,
+            "note": item.note,
+            "is_directed": item.is_directed,
+        }
+        for item in relations
+    ]
+
+    return {
+        "success": True,
+        "data": {
+            "project_id": project_id,
+            "title": project.title,
+            "characters": characters,
+            "entities": [serialize_world_entity(item) for item in entities],
+            "relations": relations_view,
+            "facts": [
+                {
+                    "id": item.id,
+                    "title": item.title,
+                    "domain": (loads_json(item.data_json, {}).get("domain") or ""),
+                    "summary": item.text_content,
+                    "is_locked": item.is_locked,
+                }
+                for item in facts
+            ],
+            "maps": [
+                {
+                    "id": item.id,
+                    "title": item.title,
+                    "revision": item.revision,
+                    "node_count": len(loads_json(item.map_json, {}).get("nodes") or []),
+                }
+                for item in maps
+            ],
+            "snapshots": [
+                {
+                    "id": item.id,
+                    "title": item.title,
+                    "source_kind": item.source_kind,
+                    "source_status": item.source_status,
+                    "char_count": item.char_count,
+                    "indexing_status": item.indexing_status,
+                }
+                for item in snapshots
+            ],
+            "counts": {
+                "characters": len(characters),
+                "entities": len(entities),
+                "relations": len(relations),
+                "facts": len(facts),
+                "maps": len(maps),
+                "snapshots": len(snapshots),
+            },
+        },
+    }
 
 
 def map_service(session: Session = Depends(get_session)) -> WorldMapService:

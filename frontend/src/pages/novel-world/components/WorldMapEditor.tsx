@@ -376,7 +376,24 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
       }
     >
       {!doc ? (
-        <Empty description="暂无地图，点击「新建」创建一个结构化世界地图" />
+        <Space direction="vertical" align="center" style={{ width: '100%', paddingTop: 24 }}>
+          <Empty description="暂无地图。可直接点「新建」手绘，或把已确认的地点实体一键转成地图据点" />
+          <Button
+            type="primary"
+            icon={<EnvironmentOutlined />}
+            loading={generatingFromPlaces}
+            disabled={!projectId}
+            onClick={doGenerateFromPlaces}
+            title="把确认写入的地点实体（world_entities.entity_type=place）自动转成地图据点"
+          >
+            从地点实体生成地图
+          </Button>
+          {!projectId && (
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              需要先有项目（确认写入世界设定后才有地点实体），可从创作项目页的「打开世界地图工作台」进入
+            </Text>
+          )}
+        </Space>
       ) : (
         <Space direction="vertical" style={{ width: '100%' }} size="middle">
           <Alert

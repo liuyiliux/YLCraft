@@ -1979,3 +1979,156 @@ async def test_from_novel_source_creates_and_binds_project(tmp_path, monkeypatch
             assert loads_json(project.source_ref_json).get("novel_snapshot_id") == snapshot_id
     finally:
         engine.dispose()
+
+
+def test_world_knowledge_aggregates_project_world(tmp_path, monkeypatch):
+    """world-knowledge 聚合角色/实体/关系/事实卡/地图，任一子集为空不影响返回。"""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from app.api.v1 import novel_sources as novel_sources_api
+    from app.db.database import get_session
+    from app.db.models.character import Character, CharacterStoryLink
+    from app.db.models.creative_project import CreativeProject, ProjectContent
+    from app.db.models.novel_source import (
+        NovelSourceChapter,
+        NovelSourceSnapshot,
+        NovelTextChunk,
+        WorldEntity,
+        WorldEntityRelation,
+        WorldExtractionRun,
+        WorldFactCandidate,
+        WorldMapDocument,
+    )
+    from app.services.creative_project.service import CreativeProjectService, dumps_json
+    from app.services.novel_source.contracts import normalize_entity_name
+
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'world.db'}", connect_args={"check_same_thread": False}
+    )
+    for table in (
+        CreativeProject.__table__,
+        ProjectContent.__table__,
+        NovelSourceSnapshot.__table__,
+        NovelSourceChapter.__table__,
+        NovelTextChunk.__table__,
+        WorldExtractionRun.__table__,
+        WorldFactCandidate.__table__,
+        Character.__table__,
+        CharacterStoryLink.__table__,
+        WorldMapDocument.__table__,
+        WorldEntity.__table__,
+        WorldEntityRelation.__table__,
+    ):
+        table.create(engine)
+    factory = sessionmaker(class_=Session, bind=engine, expire_on_commit=False)
+
+    with factory() as seed:
+        project = CreativeProjectService(seed, ai_service=FakeWorldAI()).create_project(
+            title="雨夜旧账",
+            project_type="novel",
+            source_type="original_idea",
+            idea="x",
+        )
+        project_id = project.id
+
+        character = Character(name="福贵", role="protagonist")
+        seed.add(character)
+        seed.flush()
+        seed.add(
+            CharacterStoryLink(
+                character_id=character.id,
+                story_id=project_id,
+                world_id=project_id,
+                aliases_json=json.dumps(["福贵"], ensure_ascii=False),
+                evidence_json=json.dumps(["福贵是主角"], ensure_ascii=False),
+                extract_origin="outline",
+            )
+        )
+        place_a = WorldEntity(
+            project_id=project_id,
+            domain="location",
+            entity_type="place",
+            name="徐家老宅与茅屋",
+            normalized_key=normalize_entity_name("徐家老宅与茅屋"),
+            summary="村东头的土坯房。",
+            attributes_json="{}",
+            evidence_json="[]",
+            fact_layer="project",
+            is_locked=True,
+        )
+        place_b = WorldEntity(
+            project_id=project_id,
+            domain="location",
+            entity_type="place",
+            name="龙二赌坊",
+            normalized_key=normalize_entity_name("龙二赌坊"),
+            summary="镇上的赌坊。",
+            attributes_json="{}",
+            evidence_json="[]",
+            fact_layer="project",
+            is_locked=True,
+        )
+        seed.add_all([place_a, place_b])
+        seed.flush()
+        seed.add(
+            WorldEntityRelation(
+                project_id=project_id,
+                source_entity_id=place_a.id,
+                target_entity_id=place_b.id,
+                relation_type="rival",
+                note="赌债",
+                evidence_json="[]",
+                is_directed=False,
+            )
+        )
+        seed.add(
+            ProjectContent(
+                project_id=project_id,
+                content_type="world_asset",
+                title="徐家",
+                data_json=dumps_json({"domain": "faction"}),
+                text_content="徐家是故事核心家庭势力。",
+                is_locked=True,
+            )
+        )
+        seed.add(
+            WorldMapDocument(
+                project_id=project_id,
+                title="世界地图",
+                map_json=dumps_json({"regions": [], "nodes": [{"id": "n1", "name": "二喜建筑工地"}], "routes": []}),
+            )
+        )
+        seed.commit()
+
+    app = FastAPI()
+    app.include_router(novel_sources_api.router)
+
+    def _override_session():
+        with factory() as db:
+            yield db
+
+    app.dependency_overrides[get_session] = _override_session
+    client = TestClient(app)
+
+    try:
+        response = client.get(f"/api/v1/creative-projects/{project_id}/world-knowledge")
+        assert response.status_code == 200, response.text
+        data = response.json()["data"]
+        assert data["title"] == "雨夜旧账"
+        assert data["counts"] == {
+            "characters": 1,
+            "entities": 2,
+            "relations": 1,
+            "facts": 1,
+            "maps": 1,
+            "snapshots": 0,
+        }
+        assert data["characters"][0]["name"] == "福贵"
+        assert data["relations"][0]["source_name"] == "徐家老宅与茅屋"
+        assert data["relations"][0]["relation_type"] == "rival"
+        assert data["maps"][0]["node_count"] == 1
+    finally:
+        engine.dispose()
