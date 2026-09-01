@@ -36,6 +36,7 @@ import {
   DownOutlined,
   DownloadOutlined,
   EditOutlined,
+  EnvironmentOutlined,
   ExclamationCircleOutlined,
   EyeOutlined,
   FileTextOutlined,
@@ -6460,10 +6461,20 @@ function ProjectBibleTab({
       <WorkbenchSection
         title="世界设定（按域）"
         extra={
-          <Space>
+          <Space wrap>
             {worldEntities.length ? (
               <Tag color="blue">{worldEntities.length} 个实体 / {worldRelations.length} 条关系</Tag>
             ) : null}
+            <Button
+              size="small"
+              icon={<EnvironmentOutlined />}
+              disabled={!projectId}
+              onClick={() => {
+                window.location.href = `/novel-world?project_id=${encodeURIComponent(projectId)}`
+              }}
+            >
+              打开世界地图工作台
+            </Button>
             <Text type="secondary" style={{ fontSize: 12 }}>
               类型化世界提取产物，按域分组展示
             </Text>
