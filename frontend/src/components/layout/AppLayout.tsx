@@ -56,6 +56,7 @@ const BOTTOM_NAV: MenuProps['items'] = [
 const menuItems: MenuProps['items'] = [
   { key: '/', icon: <DashboardOutlined />, label: navLabel('概览', '辅助') },
   ...MAIN_NAV,
+  { key: '/novel-world', icon: <FireOutlined />, label: navLabel('小说世界提取', '实验') },
   { type: 'divider' as const },
   {
     key: 'g-creative-workspace',
@@ -117,7 +118,6 @@ const menuItems: MenuProps['items'] = [
       { key: '/reader', label: navLabel('本地阅读', '辅助') },
       { key: '/novel-search', label: '小说搜索' },
       { key: '/novel-bookshelf', label: '小说书架' },
-      { key: '/novel-world', label: '小说世界提取' },
       { key: '/book-source', label: navLabel('书源管理', '辅助') },
     ],
   },

@@ -13,9 +13,10 @@ from typing import Any
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.db.database import get_session
+from app.db.models.creative_project import CreativeProject
 from app.db.models.novel_source import (
     NovelSourceChapter,
     NovelSourceSnapshot,
@@ -37,6 +38,17 @@ from app.services.novel_source.world_map import (
     render_map_svg,
     serialize_map,
 )
+
+def _local_file_url(path_or_url: str) -> str:
+    """本地文件 → 平台内部下载地址（与角色立绘一致，本地已落盘的成图优先展示）。"""
+    if not path_or_url:
+        return ""
+    if path_or_url.startswith(("/api/", "http://", "https://", "data:")):
+        return path_or_url
+    from app.services.asset_file_resolver import to_asset_download_url
+
+    return to_asset_download_url(path_or_url)
+
 
 router = APIRouter()
 logger = logging.getLogger("ylcraft.novel_sources_api")
@@ -145,6 +157,93 @@ class WorldMapVisualRequest(BaseModel):
 class WorldMapVisualPromptRequest(BaseModel):
     style_override: str = Field(default="", description="画风覆盖")
     prompt_override: str = Field(default="", description="提示词覆盖（留空则按结构化地图自动生成）")
+
+
+class ProjectWorldExtractionStartRequest(BaseModel):
+    provider: str | None = None
+    model: str | None = None
+    domains: list[str] | None = None
+    force_reimport: bool = Field(default=False, description="是否忽略已绑定的来源快照，重新导入")
+
+
+class CreateProjectFromNovelSourceRequest(BaseModel):
+    snapshot_id: str
+    title: str = ""
+    project_type: str = "novel"
+
+
+def serialize_outline_as_source_text(outline: dict[str, Any]) -> str:
+    """把创作项目大纲序列化为可回溯的来源文本，供逐域世界提取管线使用。
+
+    每个字段带【节】标记，AI 提取时引用的引文必须逐字落在该文本中，
+    从而通过证据校验（与小说来源一致）。
+    """
+    lines: list[str] = []
+
+    def add(section: str, value: Any) -> None:
+        if value in (None, "", [], {}):
+            return
+        lines.append(f"【{section}】")
+        if isinstance(value, str):
+            lines.append(value)
+        elif isinstance(value, list):
+            lines.extend(str(item) for item in value if str(item).strip())
+        elif isinstance(value, dict):
+            for key, item in value.items():
+                if item not in (None, ""):
+                    lines.append(f"{key}：{item}")
+
+    add("题材", outline.get("genre"))
+    add("故事前提", outline.get("premise"))
+    add("一句话梗概", outline.get("logline"))
+    add("卖点", outline.get("selling_points"))
+    add("目标读者", outline.get("target_reader"))
+    add("受众情绪", outline.get("audience_emotion"))
+    add("基调", outline.get("tone"))
+    add("世界观", outline.get("worldview"))
+    add("叙事规则", outline.get("narrative_rules"))
+    add("核心冲突", outline.get("main_conflict"))
+    add("主题", outline.get("themes"))
+
+    character_fields = (
+        ("name", "姓名"), ("role", "定位"), ("age_range", "年龄"), ("appearance", "外貌"),
+        ("costume_hint", "服装"), ("personality", "性格"), ("background", "背景"),
+        ("goal", "目标"), ("arc", "弧光"), ("voice", "音色"),
+    )
+    for index, character in enumerate(outline.get("characters") or [], start=1):
+        if not isinstance(character, dict):
+            continue
+        lines.append(f"【角色 {index}】")
+        for key, label in character_fields:
+            value = character.get(key)
+            if value not in (None, ""):
+                lines.append(f"{label}：{value}")
+
+    location_fields = (
+        ("name", "名称"), ("role", "作用"), ("visual_description", "外观"),
+        ("mood", "氛围"), ("reusable_asset_note", "复用备注"),
+    )
+    for index, location in enumerate(outline.get("locations") or [], start=1):
+        if not isinstance(location, dict):
+            continue
+        lines.append(f"【地点 {index}】")
+        for key, label in location_fields:
+            value = location.get(key)
+            if value not in (None, ""):
+                lines.append(f"{label}：{value}")
+
+    add("关系图谱", outline.get("relationship_map"))
+    story_arc = outline.get("story_arc")
+    if isinstance(story_arc, dict):
+        add("故事开端", story_arc.get("beginning"))
+        add("故事中段", story_arc.get("middle"))
+        add("高潮", story_arc.get("climax"))
+        add("结局方向", story_arc.get("ending_direction"))
+    add("视觉风格", outline.get("visual_style"))
+    add("生图风格提示", outline.get("image_style_prompt"))
+    add("制作备注", outline.get("production_notes"))
+
+    return "\n".join(line for line in lines if line.strip())
 
 
 def source_service(session: Session = Depends(get_session)) -> NovelSourceService:
@@ -638,6 +737,95 @@ async def apply_run(
     return {"success": True, "data": result}
 
 
+@router.post("/api/v1/creative-projects/from-novel-source", summary="从来源快照创建世界项目")
+def create_project_from_novel_source(
+    req: CreateProjectFromNovelSourceRequest,
+    svc: WorldExtractionService = Depends(extraction_service),
+):
+    """从已导入的来源快照创建并绑定世界项目（design API ``from-novel-source``）。
+
+    幂等：快照已绑定项目时直接返回既有项目。创建后可在 /novel-world 里
+    对同一来源继续提取/审阅，或在该项目里追加世界设定。
+    """
+    snapshot = svc.sources.get_snapshot(req.snapshot_id)
+    if not snapshot:
+        raise HTTPException(status_code=404, detail="来源快照不存在")
+    if snapshot.project_id:
+        return {"success": True, "data": {"project_id": snapshot.project_id, "reused": True}}
+
+    from app.services.creative_project.service import CreativeProjectService
+
+    creative = CreativeProjectService(svc.session, ai_service=svc.ai_service)
+    project = creative.create_project(
+        title=(req.title or "").strip() or f"{snapshot.title or '未命名小说'} 世界项目",
+        project_type=req.project_type or "novel",
+        source_type="novel",
+        source_ref={"novel_snapshot_id": snapshot.id},
+        idea=f"基于来源《{snapshot.title or '未命名小说'}》建立世界设定",
+        metadata={"novel_snapshot_id": snapshot.id},
+    )
+    snapshot.project_id = project.id
+    snapshot.updated_at = datetime.now()
+    svc.session.add(snapshot)
+    svc.session.commit()
+    return {"success": True, "data": {"project_id": project.id, "reused": False}}
+
+
+@router.post("/api/v1/creative-projects/{project_id}/world-extraction/start", summary="从项目内容启动世界提取")
+async def start_project_world_extraction(
+    project_id: str,
+    req: ProjectWorldExtractionStartRequest,
+    svc: WorldExtractionService = Depends(extraction_service),
+):
+    """把创作项目大纲序列化为来源文本，启动逐域世界提取，产出待确认候选。
+
+    与小说来源共用同一套提取/证据/候选管线；候选在 /novel-world 审阅确认后
+    apply 回本项目。项目已绑定来源快照时复用（可用 ``force_reimport`` 重来）。
+    """
+    project = svc.session.get(CreativeProject, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="创作项目不存在")
+
+    snapshot = None
+    if not req.force_reimport:
+        snapshot = svc.session.exec(
+            select(NovelSourceSnapshot)
+            .where(NovelSourceSnapshot.project_id == project_id)
+            .order_by(NovelSourceSnapshot.created_at.desc())
+        ).first()
+
+    if snapshot is None:
+        outline = loads_json(project.outline_json, {})
+        text = serialize_outline_as_source_text(outline if isinstance(outline, dict) else {})
+        if not text.strip():
+            raise HTTPException(status_code=400, detail="项目还没有大纲内容，请先生成故事大纲")
+        snapshot = svc.sources.import_txt(
+            raw=text.encode("utf-8"),
+            file_name=f"outline-{project_id}.txt",
+            title=f"{project.title or '未命名'} 世界设定",
+            source_status="completed",
+            project_id=project_id,
+        )
+
+    result = await svc.extract(
+        snapshot.id,
+        domains=req.domains or list(EXTRACTABLE_DOMAINS),
+        project_id=project_id,
+        provider=req.provider,
+        model=req.model,
+    )
+    return {
+        "success": True,
+        "data": {
+            "project_id": project_id,
+            "snapshot_id": snapshot.id,
+            "run_id": result.get("run_id", ""),
+            "candidate_count": int(result.get("candidate_count", 0)),
+            "status": result.get("status", ""),
+        },
+    }
+
+
 @router.get("/api/v1/projects/{project_id}/world-entities", summary="列出项目类型化世界实体")
 def list_project_world_entities(
     project_id: str,
@@ -790,8 +978,8 @@ async def generate_world_map_visual(
         raise HTTPException(status_code=500, detail="生图成功但未返回图片")
 
     local_path = local_paths[0] if local_paths else ""
-    # 供应商返回的 URL 多为临时图床会过期，本地已落盘时优先用本地路径。
-    url = urls[0] if urls else local_path
+    # 供应商返回的 URL 多为临时图床会过期，本地已落盘时优先转成平台内部下载地址。
+    url = _local_file_url(local_path) if local_path else (urls[0] if urls else "")
 
     node_id = ""
     if req.save_to_asset_hub:
