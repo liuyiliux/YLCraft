@@ -36,7 +36,7 @@
 
 ## 当前主线状态
 
-最近更新：2026-08-31。角色主线已从“能同步”推进到“可审阅、可追溯、可回流”：小说提取保留原文证据，真人和 Agent 均先预览后确认，确认不重复调用模型；角色库筛选、项目增量合并和正文角色上下文已完成。
+最近更新：2026-09-01。角色主线已从“能同步”推进到“可审阅、可追溯、可回流”：小说提取保留原文证据，真人和 Agent 均先预览后确认，确认不重复调用模型；角色库筛选、项目增量合并和正文角色上下文已完成。小说来源世界项目本轮补齐了可选向量索引与混合检索的真人/Agent 入口，并把提取域从四域扩展到八域（新增世界规则、力量/科技体系、经济/金融、物种），扩展域复用与基础域同一条证据校验与写入通道。
 
 | 主线 | 状态 | 事实来源 |
 | --- | --- | --- |
@@ -47,7 +47,7 @@
 | Agent 工作台 UI 改造 | 已落地：markdown 表格/加粗渲染、总控助手提示词禁 emoji、确认显眼化（顶部待确认卡片+横幅）、底部运行状态栏、空态引导；待左栏会话状态点/顶栏精简与真实对话验收 | `openspec/changes/agent-workbench-ui-redesign/tasks.md` |
 | Agent 声明式团队组合 | 运行时已完整落地：`AgentScope` 平面隔离、团队模板 schema/loader/validator、`TeamComposer`、`spawn/fork/continuable` 三原语、缓存稳定工具目录 + `CostMeter` + 压缩溯源、内置模板、Writer Room `team` 模式（opt-in `rehearsal_mode=team`）；旧 `MultiAgentCoordinator` 硬编码逻辑已去重，`scene-sim` 团队路径已用真实 DeepSeek 端到端验收（5/5 子任务完成）；仍待 `AgentService` per-session 状态迁移与 writer-room team 真实项目验收 | `openspec/changes/agent-team-composition/tasks.md` |
 | 创作项目闭环 | 角色提取、角色库同步、项目回流、正文上下文注入和真人/Agent 双入口已完成；仅留真实生图后端人工验收 | `openspec/changes/creative-project-closed-loop/tasks.md` |
-| 小说源资产世界项目 | OpenSpec 探索中：TXT/书架来源快照、完本/连载版本、混合检索、多领域设定候选、完本改编/续写/同人分支；尚未进入实现 | `openspec/changes/novel-source-world-project/specs/novel-world-project/tasks.md` |
+| 小说源资产世界项目 | 最小闭环与增量链路已落地：TXT/书架来源快照、章节与稳定偏移文本块、逐域模块检测、十一个域（角色/地点/势力/历史事件/世界规则/力量体系/经济/物种/物品/术语表/剧情时间线）提取、证据预览与确认写入项目，以及连载同步（含追加章节 UI）+ 按游标增量提取（新证据并回既有候选，不重建世界，增量变更区分展示）；可选向量索引与混合检索（PostgreSQL 下走 pgvector 数据库级近邻、其它回退 JSON 向量混合，含邻域扩展）、跨域调和与语义矛盾检测、受影响事实传播、候选 merge、完本来源派生项目（改编/续写/同人，原作正典 `source_canon` 只读分层，Context Pack T0 已分层注入）已完成，类型化独立实体与关系（`world_entities`/`world_entity_relations`，含派生复制）也已落地，真人 `/novel-world` 与 14 个 Agent 工具共用同一服务层。世界地图工作台基于 Leaflet（CRS.Simple）实现拖拽/缩放/平移/底图上传/势力范围多边形，保留 SVG 导出，并可用生图链路生成视觉成图（对齐角色立绘接入：选 provider/model/size、`prompt-preview` 先看提示词、成图入资产中枢，成图只是派生视觉资产，`map_json` 空间关系才是正典）。剩余：真实浏览器/Agent E2E 验收 | `docs/architecture/YLCRAFT_SYSTEM_ARCHITECTURE.md` §4.2.1、`docs/agent/agent-center.md`、`openspec/changes/novel-source-world-project/specs/novel-world-project/tasks.md` |
 | 创作项目动态状态 | append-only 台账 `ProjectStateEntry`（scope 区分角色/世界、自由 JSON 键值、set/add/remove、按章溯源 + 去重）、`StateLedger` 折叠/回滚、叙事运行时抽取 `state_changes`、context pack 注入「动态状态」层；静态设定与锁定事实隔离 | `openspec/changes/creative-project-dynamic-state/tasks.md` |
 | 创作项目优化路线 | 已完成并归档 | `openspec/changes/archive/creative-project-optimization-roadmap/tasks.md` |
 | 小说连续性事实闭环 | 已完成并归档 | `openspec/changes/archive/creative-project-continuity-facts/tasks.md` |
@@ -60,7 +60,7 @@
 | 视频分镜生产 | 代码和项目回流完成；仅剩真实视频供应商验收 | `openspec/changes/story-video-shot-production/tasks.md` |
 | 任务观测诊断 | 已完成，事件时间线和异步生图诊断已验证 | `openspec/changes/task-observability-diagnostics/tasks.md` |
 | 全平台事件日志 | 进行中：任务中心改三 Tab（任务/事件日志/运行日志）；新建 `platform_event_logs` 表 + `/api/v1/logs`（含 `/runtime`）查询；后端补滚动文件日志；同步修复图片生成失败不落账 | `openspec/changes/platform-event-logging/tasks.md` |
-| 数据库迁移收敛 | Alembic 迁移链当前到 `031_add_character_extraction_evidence`；启动和 Agent 请求路径不再隐式改 schema，角色提取证据、视频/图转 3D/动态状态/平台事件日志/预演持久任务均通过显式迁移落库。`023` 会移除历史素材 AI 参数中并非供应商实际返回的采样步数与采样器默认值。 | `backend/alembic/versions/`、`openspec/changes/database-migration-convergence/tasks.md` |
+| 数据库迁移收敛 | Alembic 迁移链当前到 `035_add_world_map_documents`；启动和 Agent 请求路径不再隐式改 schema，角色提取证据、视频/图转 3D/动态状态/平台事件日志、小说来源世界提取、块级向量召回和结构化世界地图均通过显式迁移落库。`023` 会移除历史素材 AI 参数中并非供应商实际返回的采样步数与采样器默认值。 | `backend/alembic/versions/`、`openspec/changes/database-migration-convergence/tasks.md` |
 | 独立视频工作台 | 文生/图生视频、视频提示词模板、素材库首帧、持久任务恢复、任务中心聚合和 Asset Hub 回流已落地；模式 tab 驱动供应商/模型过滤、`video_capabilities` 能力约束、视频首帧缩略图已补齐；仍待真实供应商全链路验收 | `openspec/changes/ai-video-workspace/tasks.md` |
 | 图转 3D 工作台 | 配置驱动提交/轮询/下载、Asset Hub 入库、GLB 优先与 ZIP 解包、PreviewImageUrl 缩略图、独立页面已落地；仍待真实供应商生成 GLB 验收 | `openspec/changes/image-to-3d-workspace/tasks.md` |
 | 3D 骨骼绑定与数字人 | 后端已落地：绑骨连接器（`SubmitAutoRiggingJob`/`DescribeAutoRiggingJob`）、`POST /model-3d/rig`、源模型经 COS 临时签名 URL 或 `/model3d-files` 暴露、部位树显隐与动画播放；仍待真实绑骨供应商端到端验收（需 ≤60MB 人形 GLB/FBX） | `openspec/changes/3d-rigging-digital-human/tasks.md` |

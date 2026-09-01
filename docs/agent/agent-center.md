@@ -160,6 +160,25 @@ AI 连接器和供应商规范已经作为 `ai_config` 分类工具接入智能�
 
 推荐流程是：先 `list_novel_bookshelf` 查本地已有小说；没有合适素材时，经确认后 `search_novel_sources`，再 `get_novel_catalog` 和 `preview_novel_chapter` 判断是否适合拆成短剧/漫画项目。
 
+小说来源 → 世界提取作为 `novel_source` 分类工具接入，与真人 `/novel-world` 页面走同一套预览-确认契约：
+
+- `list_novel_source_snapshots`：列出已导入的来源快照（TXT/书架），只读本地。
+- `inspect_novel_source_snapshot`：查看快照章节与可提取/可检测的世界模块。
+- `plan_novel_source_domains`：AI 逐模块判断存在性（detected/not_detected/uncertain），风险 `costly`，只检测不提取。
+- `extract_novel_source_world`：按选定模块提取候选（角色/地点/势力/历史事件），风险 `costly`，只预览不写项目事实；`mode=delta` 时从上次游标只处理新文本块并把新证据并回既有候选。
+- `sync_novel_source_chapters`：为连载快照追加新章节和新文本块，风险 `write`，只追加不重建。
+- `list_world_extraction_candidates`：预览候选与逐字证据（同时覆盖本次运行产生或更新的条目）。
+- `decide_world_extraction_candidates`：接受/忽略/合并候选，风险 `write`，只改候选状态；`merge` 用 `merge_into` 把重复候选的证据与设定并入目标，源候选进入 `merged` 终态。
+- `apply_world_extraction_run`：唯一写入点，把已接受候选写入角色库和锁定的 `world_asset` 事实卡，风险 `write`。
+- `index_novel_source_chunks`：为快照文本块建立可选向量索引，风险 `costly`，失败块保留为 `failed`，来源仍可走精确检索。
+- `search_novel_source_chunks`：按查询词做精确/向量混合召回，只读，返回文本块、字符偏移与原文，用于证据复核或提取前定位上下文。
+- `reconcile_world_extraction_run`：确定性检查候选的跨模块重名、别名交叉、证据重叠与时序问题，只读提示，不自动合并；向用户汇报冲突时应逐条说明并请其决策。
+- `detect_world_extraction_contradictions`：对重复组做语义判断（同一实体一致 / 同一实体矛盾 / 不同实体），风险 `costly`，会调用一次模型；只给建议（merge / resolve / keep_separate），不自动合并。
+- `propagate_affected_world_facts`：把合并与冲突结论传播到已写入的 `world_asset`，只打 `review_required` 标记并附原因，风险 `write`，不改写事实内容；可传入上一步的 verdicts 附带矛盾原因。
+- `derive_project_from_novel_source`：从完本来源创建改编/续写/同人派生项目，风险 `write`；原作正典（已确认世界事实与角色关联）复制进新项目并标记只读参考层。连载来源不支持，应引导用户用增量同步。
+
+推荐流程：`list_novel_source_snapshots` → `inspect_novel_source_snapshot` → 可选 `index_novel_source_chunks`（长篇来源建议先建索引）→ `plan_novel_source_domains`（向用户说明每域判断与成本）→ `extract_novel_source_world` → `reconcile_world_extraction_run`（复核冲突）→ `list_world_extraction_candidates`（预览证据）；审阅中可用 `search_novel_source_chunks` 复核原文。连载更新时先 `sync_novel_source_chapters`，再用 `mode=delta` 增量提取，避免重建整套世界；完本来源要开新篇时，经用户确认后用 `derive_project_from_novel_source` 创建改编/续写/同人项目。提取默认不写项目，`apply` 前必须先经用户确认。
+
 ### 下载解析工具
 
 下载入口已经作为 `download` 分类工具接入智能体：

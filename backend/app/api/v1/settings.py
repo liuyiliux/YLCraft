@@ -273,7 +273,7 @@ async def update_all_settings(req: SettingsUpdateRequest):
     # 处理存储路径
     storage_keys = [
         "video_download_path", "image_gen_path", "video_gen_path",
-        "reference_image_path", "upload_path"
+        "reference_image_path", "upload_path", "novel_source_path"
     ]
     
     for key in storage_keys:
@@ -322,6 +322,7 @@ _STORAGE_SUBDIRS: dict[str, str] = {
     "video_gen_path": "storage/videos",
     "reference_image_path": "storage/reference_images",
     "upload_path": "storage/uploads",
+    "novel_source_path": "storage/novel_sources",
 }
 
 
@@ -336,6 +337,7 @@ async def get_all_storage_paths():
         "video_gen_path",
         "reference_image_path",
         "upload_path",
+        "novel_source_path",
     ]
 
     result = {}

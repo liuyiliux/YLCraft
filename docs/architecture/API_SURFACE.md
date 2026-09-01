@@ -6,15 +6,16 @@
 
 ## Summary
 
-- Router mounts: 51
-- Endpoints: 598
-- Public schema endpoints: 597
+- Router mounts: 52
+- Endpoints: 624
+- Public schema endpoints: 623
 - Hidden compatibility endpoints: 1
 
 ## Router Mounts
 
 | Prefix | Tags | Router | Source |
 | --- | --- | --- | --- |
+| `` | Novel Sources | `novel_sources` | `backend/app/api/v1/novel_sources.py` |
 | `/api/v1` | Tags | `tags` | `backend/app/api/v1/tags.py` |
 | `/api/v1` | Search | `search` | `backend/app/api/v1/search.py` |
 | `/api/v1` | Lineage | `lineage` | `backend/app/api/v1/lineage.py` |
@@ -203,32 +204,32 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/assets` | 素材资产列表 | `list_assets` | `backend/app/api/v1/assets.py:679` |
-| `GET` | `/api/v1/assets/download` | 下载/预览本地文件 | `download_local_asset_file` | `backend/app/api/v1/assets.py:847` |
-| `GET` | `/api/v1/assets/file` | 预览本地文件 | `download_local_asset_file` | `backend/app/api/v1/assets.py:847` |
-| `GET` | `/api/v1/assets/tags` | 标签列表 | `list_tags` | `backend/app/api/v1/assets.py:1460` |
-| `POST` | `/api/v1/assets/tags` | 创建标签 | `create_tag` | `backend/app/api/v1/assets.py:1469` |
-| `POST` | `/api/v1/assets/upload` | 本地上传素材入库 | `upload_asset` | `backend/app/api/v1/assets.py:1206` |
-| `POST` | `/api/v1/assets/upload-model3d` | 上传 3D 模型（ZIP 或单文件）入库 | `upload_model3d` | `backend/app/api/v1/assets.py:1162` |
-| `DELETE` | `/api/v1/assets/versions/{version_id}` | 删除单个资产版本 | `delete_asset_version` | `backend/app/api/v1/assets.py:1670` |
-| `GET` | `/api/v1/assets/{asset_id}` | 资产详情 | `get_asset` | `backend/app/api/v1/assets.py:1608` |
-| `PUT` | `/api/v1/assets/{asset_id}` | 更新资产 | `update_asset` | `backend/app/api/v1/assets.py:1631` |
-| `DELETE` | `/api/v1/assets/{asset_id}` | 删除资产 | `delete_asset` | `backend/app/api/v1/assets.py:1730` |
-| `GET` | `/api/v1/assets/{asset_id}/course-episodes/{episode_index}/download` | 下载课程章节文件 | `download_course_episode_asset` | `backend/app/api/v1/assets.py:1426` |
-| `GET` | `/api/v1/assets/{asset_id}/course-episodes/{episode_index}/sidecars/danmaku` | 读取课程章节弹幕 | `get_course_episode_danmaku` | `backend/app/api/v1/assets.py:1415` |
-| `GET` | `/api/v1/assets/{asset_id}/course-episodes/{episode_index}/sidecars/subtitles/{subtitle_index}.vtt` | 读取课程章节字幕 | `get_course_episode_subtitle` | `backend/app/api/v1/assets.py:1403` |
-| `GET` | `/api/v1/assets/{asset_id}/course-episodes/{episode_index}/stream` | 播放课程章节文件 | `stream_course_episode_asset` | `backend/app/api/v1/assets.py:1441` |
-| `POST` | `/api/v1/assets/{asset_id}/deep-watermark-detect` | 只读检测合成水印痕迹（CtrlRegen/SynthID，不修改文件） | `detect_asset_deep_watermark` | `backend/app/api/v1/assets.py:979` |
-| `GET` | `/api/v1/assets/{asset_id}/download` | 下载资产文件 | `download_asset` | `backend/app/api/v1/assets.py:864` |
-| `GET` | `/api/v1/assets/{asset_id}/files/{filename:path}` | 下载/预览资产的配套文件 | `asset_sidecar_file` | `backend/app/api/v1/assets.py:881` |
-| `POST` | `/api/v1/assets/{asset_id}/provenance-clean` | 审计或清理 AI 来源标记与文件元数据 | `clean_asset_provenance` | `backend/app/api/v1/assets.py:909` |
-| `POST` | `/api/v1/assets/{asset_id}/restore` | 恢复软删除的资产 | `restore_asset` | `backend/app/api/v1/assets.py:1746` |
-| `GET` | `/api/v1/assets/{asset_id}/sidecars/danmaku` | 读取资产弹幕 | `get_asset_danmaku` | `backend/app/api/v1/assets.py:1391` |
-| `GET` | `/api/v1/assets/{asset_id}/sidecars/subtitles/{subtitle_index}.vtt` | 读取资产字幕 | `get_asset_subtitle` | `backend/app/api/v1/assets.py:1378` |
-| `GET` | `/api/v1/assets/{asset_id}/stream` | 播放资产视频文件 | `stream_asset` | `backend/app/api/v1/assets.py:1250` |
-| `GET` | `/api/v1/assets/{asset_id}/thumbnail` | 代理加载封面图 | `proxy_thumbnail` | `backend/app/api/v1/assets.py:1573` |
-| `POST` | `/api/v1/assets/{asset_id}/thumbnail` | 设置资产缩略图 | `set_asset_thumbnail` | `backend/app/api/v1/assets.py:1550` |
-| `POST` | `/api/v1/assets/{asset_id}/watermark-remove` | 去除显性可见水印并生成派生副本（图片/视频，不覆盖原文件） | `remove_asset_visual_watermark` | `backend/app/api/v1/assets.py:1016` |
+| `GET` | `/api/v1/assets` | 素材资产列表 | `list_assets` | `backend/app/api/v1/assets.py:681` |
+| `GET` | `/api/v1/assets/download` | 下载/预览本地文件 | `download_local_asset_file` | `backend/app/api/v1/assets.py:846` |
+| `GET` | `/api/v1/assets/file` | 预览本地文件 | `download_local_asset_file` | `backend/app/api/v1/assets.py:846` |
+| `GET` | `/api/v1/assets/tags` | 标签列表 | `list_tags` | `backend/app/api/v1/assets.py:1459` |
+| `POST` | `/api/v1/assets/tags` | 创建标签 | `create_tag` | `backend/app/api/v1/assets.py:1468` |
+| `POST` | `/api/v1/assets/upload` | 本地上传素材入库 | `upload_asset` | `backend/app/api/v1/assets.py:1205` |
+| `POST` | `/api/v1/assets/upload-model3d` | 上传 3D 模型（ZIP 或单文件）入库 | `upload_model3d` | `backend/app/api/v1/assets.py:1161` |
+| `DELETE` | `/api/v1/assets/versions/{version_id}` | 删除单个资产版本 | `delete_asset_version` | `backend/app/api/v1/assets.py:1669` |
+| `GET` | `/api/v1/assets/{asset_id}` | 资产详情 | `get_asset` | `backend/app/api/v1/assets.py:1607` |
+| `PUT` | `/api/v1/assets/{asset_id}` | 更新资产 | `update_asset` | `backend/app/api/v1/assets.py:1630` |
+| `DELETE` | `/api/v1/assets/{asset_id}` | 删除资产 | `delete_asset` | `backend/app/api/v1/assets.py:1729` |
+| `GET` | `/api/v1/assets/{asset_id}/course-episodes/{episode_index}/download` | 下载课程章节文件 | `download_course_episode_asset` | `backend/app/api/v1/assets.py:1425` |
+| `GET` | `/api/v1/assets/{asset_id}/course-episodes/{episode_index}/sidecars/danmaku` | 读取课程章节弹幕 | `get_course_episode_danmaku` | `backend/app/api/v1/assets.py:1414` |
+| `GET` | `/api/v1/assets/{asset_id}/course-episodes/{episode_index}/sidecars/subtitles/{subtitle_index}.vtt` | 读取课程章节字幕 | `get_course_episode_subtitle` | `backend/app/api/v1/assets.py:1402` |
+| `GET` | `/api/v1/assets/{asset_id}/course-episodes/{episode_index}/stream` | 播放课程章节文件 | `stream_course_episode_asset` | `backend/app/api/v1/assets.py:1440` |
+| `POST` | `/api/v1/assets/{asset_id}/deep-watermark-detect` | 只读检测合成水印痕迹（CtrlRegen/SynthID，不修改文件） | `detect_asset_deep_watermark` | `backend/app/api/v1/assets.py:978` |
+| `GET` | `/api/v1/assets/{asset_id}/download` | 下载资产文件 | `download_asset` | `backend/app/api/v1/assets.py:863` |
+| `GET` | `/api/v1/assets/{asset_id}/files/{filename:path}` | 下载/预览资产的配套文件 | `asset_sidecar_file` | `backend/app/api/v1/assets.py:880` |
+| `POST` | `/api/v1/assets/{asset_id}/provenance-clean` | 审计或清理 AI 来源标记与文件元数据 | `clean_asset_provenance` | `backend/app/api/v1/assets.py:908` |
+| `POST` | `/api/v1/assets/{asset_id}/restore` | 恢复软删除的资产 | `restore_asset` | `backend/app/api/v1/assets.py:1745` |
+| `GET` | `/api/v1/assets/{asset_id}/sidecars/danmaku` | 读取资产弹幕 | `get_asset_danmaku` | `backend/app/api/v1/assets.py:1390` |
+| `GET` | `/api/v1/assets/{asset_id}/sidecars/subtitles/{subtitle_index}.vtt` | 读取资产字幕 | `get_asset_subtitle` | `backend/app/api/v1/assets.py:1377` |
+| `GET` | `/api/v1/assets/{asset_id}/stream` | 播放资产视频文件 | `stream_asset` | `backend/app/api/v1/assets.py:1249` |
+| `GET` | `/api/v1/assets/{asset_id}/thumbnail` | 代理加载封面图 | `proxy_thumbnail` | `backend/app/api/v1/assets.py:1572` |
+| `POST` | `/api/v1/assets/{asset_id}/thumbnail` | 设置资产缩略图 | `set_asset_thumbnail` | `backend/app/api/v1/assets.py:1549` |
+| `POST` | `/api/v1/assets/{asset_id}/watermark-remove` | 去除显性可见水印并生成派生副本（图片/视频，不覆盖原文件） | `remove_asset_visual_watermark` | `backend/app/api/v1/assets.py:1015` |
 
 ### BGM
 
@@ -286,39 +287,39 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/characters` | 列出角色 | `list_characters` | `backend/app/api/v1/characters.py:234` |
-| `POST` | `/api/v1/characters` | 创建角色 | `create_character` | `backend/app/api/v1/characters.py:278` |
-| `GET` | `/api/v1/characters/duplicate-candidates` | 查询角色重复候选 | `get_duplicate_candidates` | `backend/app/api/v1/characters.py:381` |
-| `GET` | `/api/v1/characters/meta/extract-origins` | 获取角色提取来源元数据 | `get_extract_origins` | `backend/app/api/v1/characters.py:367` |
-| `GET` | `/api/v1/characters/meta/roles` | 获取角色定位元数据 | `get_roles` | `backend/app/api/v1/characters.py:342` |
-| `GET` | `/api/v1/characters/meta/source-types` | 获取来源类型元数据 | `get_source_types` | `backend/app/api/v1/characters.py:330` |
-| `GET` | `/api/v1/characters/meta/workflow-sources` | 获取角色流程来源元数据 | `get_workflow_sources` | `backend/app/api/v1/characters.py:356` |
-| `GET` | `/api/v1/characters/relationships/graph` | 获取角色关系图谱 | `get_character_relationship_graph` | `backend/app/api/v1/characters.py:588` |
-| `GET` | `/api/v1/characters/tags/all` | 获取所有自定义标签 | `get_all_character_tags` | `backend/app/api/v1/characters.py:321` |
-| `GET` | `/api/v1/characters/{character_id}` | 获取角色详情 | `get_character` | `backend/app/api/v1/characters.py:735` |
-| `PUT` | `/api/v1/characters/{character_id}` | 更新角色 | `update_character` | `backend/app/api/v1/characters.py:749` |
-| `DELETE` | `/api/v1/characters/{character_id}` | 删除角色 | `delete_character` | `backend/app/api/v1/characters.py:796` |
-| `POST` | `/api/v1/characters/{character_id}/enrich` | AI 补全角色信息 | `enrich_character` | `backend/app/api/v1/characters.py:1561` |
-| `POST` | `/api/v1/characters/{character_id}/favorite` | 切换收藏状态 | `toggle_favorite` | `backend/app/api/v1/characters.py:422` |
-| `POST` | `/api/v1/characters/{character_id}/link-story` | 关联到故事项目 | `link_story` | `backend/app/api/v1/characters.py:437` |
-| `POST` | `/api/v1/characters/{character_id}/portrait/generate` | AI 生成角色立绘（资产中枢版） | `generate_character_portrait` | `backend/app/api/v1/characters.py:1721` |
-| `POST` | `/api/v1/characters/{character_id}/portrait/prompt-preview` | 预览角色立绘提示词 | `preview_character_portrait_prompt` | `backend/app/api/v1/characters.py:931` |
-| `GET` | `/api/v1/characters/{character_id}/portrait/slices` | 列出角色立绘九宫格切片子素材 | `list_character_portrait_slices` | `backend/app/api/v1/characters.py:1177` |
-| `POST` | `/api/v1/characters/{character_id}/portrait/upgrade` | 将现有立绘升级到资产中枢 | `upgrade_portrait_to_asset_hub` | `backend/app/api/v1/characters.py:2045` |
-| `GET` | `/api/v1/characters/{character_id}/portrait/versions` | 列出角色立绘版本 | `list_character_portrait_versions` | `backend/app/api/v1/characters.py:958` |
-| `POST` | `/api/v1/characters/{character_id}/portrait/versions/{version_id}/set-main` | 设置角色主立绘版本 | `set_character_main_portrait_version` | `backend/app/api/v1/characters.py:1066` |
-| `POST` | `/api/v1/characters/{character_id}/portrait/versions/{version_id}/slice-grid` | 将九宫格立绘版本切成可复用子素材 | `slice_character_portrait_grid` | `backend/app/api/v1/characters.py:1269` |
-| `GET` | `/api/v1/characters/{character_id}/prompt-pack` | 生成角色 Prompt 资产包 | `get_character_prompt_pack` | `backend/app/api/v1/characters.py:725` |
-| `GET` | `/api/v1/characters/{character_id}/relationships` | 列出角色关系 | `list_character_relationships` | `backend/app/api/v1/characters.py:631` |
-| `POST` | `/api/v1/characters/{character_id}/relationships` | 创建角色关系 | `create_character_relationship` | `backend/app/api/v1/characters.py:692` |
-| `PUT` | `/api/v1/characters/{character_id}/relationships/{relationship_id}` | 更新角色关系 | `update_character_relationship` | `backend/app/api/v1/characters.py:703` |
-| `DELETE` | `/api/v1/characters/{character_id}/relationships/{relationship_id}` | 删除角色关系 | `delete_character_relationship` | `backend/app/api/v1/characters.py:716` |
-| `GET` | `/api/v1/characters/{character_id}/state-timeline` | 获取角色在剧情中的状态变化轨迹 | `get_character_state_timeline` | `backend/app/api/v1/characters.py:505` |
-| `POST` | `/api/v1/characters/{character_id}/tags` | 添加自定义标签 | `add_character_tag` | `backend/app/api/v1/characters.py:400` |
-| `DELETE` | `/api/v1/characters/{character_id}/tags/{tag}` | 移除自定义标签 | `remove_character_tag` | `backend/app/api/v1/characters.py:411` |
-| `GET` | `/api/v1/characters/{character_id}/world-usages` | 列出角色在不同世界/项目中的使用 | `list_character_world_usages` | `backend/app/api/v1/characters.py:465` |
-| `PUT` | `/api/v1/characters/{character_id}/world-usages/{usage_id}` | 更新角色世界使用配置 | `update_character_world_usage` | `backend/app/api/v1/characters.py:475` |
-| `DELETE` | `/api/v1/characters/{character_id}/world-usages/{usage_id}` | 移除角色世界使用关系 | `delete_character_world_usage` | `backend/app/api/v1/characters.py:492` |
+| `GET` | `/api/v1/characters` | 列出角色 | `list_characters` | `backend/app/api/v1/characters.py:235` |
+| `POST` | `/api/v1/characters` | 创建角色 | `create_character` | `backend/app/api/v1/characters.py:279` |
+| `GET` | `/api/v1/characters/duplicate-candidates` | 查询角色重复候选 | `get_duplicate_candidates` | `backend/app/api/v1/characters.py:382` |
+| `GET` | `/api/v1/characters/meta/extract-origins` | 获取角色提取来源元数据 | `get_extract_origins` | `backend/app/api/v1/characters.py:368` |
+| `GET` | `/api/v1/characters/meta/roles` | 获取角色定位元数据 | `get_roles` | `backend/app/api/v1/characters.py:343` |
+| `GET` | `/api/v1/characters/meta/source-types` | 获取来源类型元数据 | `get_source_types` | `backend/app/api/v1/characters.py:331` |
+| `GET` | `/api/v1/characters/meta/workflow-sources` | 获取角色流程来源元数据 | `get_workflow_sources` | `backend/app/api/v1/characters.py:357` |
+| `GET` | `/api/v1/characters/relationships/graph` | 获取角色关系图谱 | `get_character_relationship_graph` | `backend/app/api/v1/characters.py:589` |
+| `GET` | `/api/v1/characters/tags/all` | 获取所有自定义标签 | `get_all_character_tags` | `backend/app/api/v1/characters.py:322` |
+| `GET` | `/api/v1/characters/{character_id}` | 获取角色详情 | `get_character` | `backend/app/api/v1/characters.py:736` |
+| `PUT` | `/api/v1/characters/{character_id}` | 更新角色 | `update_character` | `backend/app/api/v1/characters.py:750` |
+| `DELETE` | `/api/v1/characters/{character_id}` | 删除角色 | `delete_character` | `backend/app/api/v1/characters.py:797` |
+| `POST` | `/api/v1/characters/{character_id}/enrich` | AI 补全角色信息 | `enrich_character` | `backend/app/api/v1/characters.py:1571` |
+| `POST` | `/api/v1/characters/{character_id}/favorite` | 切换收藏状态 | `toggle_favorite` | `backend/app/api/v1/characters.py:423` |
+| `POST` | `/api/v1/characters/{character_id}/link-story` | 关联到故事项目 | `link_story` | `backend/app/api/v1/characters.py:438` |
+| `POST` | `/api/v1/characters/{character_id}/portrait/generate` | AI 生成角色立绘（资产中枢版） | `generate_character_portrait` | `backend/app/api/v1/characters.py:1731` |
+| `POST` | `/api/v1/characters/{character_id}/portrait/prompt-preview` | 预览角色立绘提示词 | `preview_character_portrait_prompt` | `backend/app/api/v1/characters.py:941` |
+| `GET` | `/api/v1/characters/{character_id}/portrait/slices` | 列出角色立绘九宫格切片子素材 | `list_character_portrait_slices` | `backend/app/api/v1/characters.py:1187` |
+| `POST` | `/api/v1/characters/{character_id}/portrait/upgrade` | 将现有立绘升级到资产中枢 | `upgrade_portrait_to_asset_hub` | `backend/app/api/v1/characters.py:2055` |
+| `GET` | `/api/v1/characters/{character_id}/portrait/versions` | 列出角色立绘版本 | `list_character_portrait_versions` | `backend/app/api/v1/characters.py:968` |
+| `POST` | `/api/v1/characters/{character_id}/portrait/versions/{version_id}/set-main` | 设置角色主立绘版本 | `set_character_main_portrait_version` | `backend/app/api/v1/characters.py:1076` |
+| `POST` | `/api/v1/characters/{character_id}/portrait/versions/{version_id}/slice-grid` | 将九宫格立绘版本切成可复用子素材 | `slice_character_portrait_grid` | `backend/app/api/v1/characters.py:1279` |
+| `GET` | `/api/v1/characters/{character_id}/prompt-pack` | 生成角色 Prompt 资产包 | `get_character_prompt_pack` | `backend/app/api/v1/characters.py:726` |
+| `GET` | `/api/v1/characters/{character_id}/relationships` | 列出角色关系 | `list_character_relationships` | `backend/app/api/v1/characters.py:632` |
+| `POST` | `/api/v1/characters/{character_id}/relationships` | 创建角色关系 | `create_character_relationship` | `backend/app/api/v1/characters.py:693` |
+| `PUT` | `/api/v1/characters/{character_id}/relationships/{relationship_id}` | 更新角色关系 | `update_character_relationship` | `backend/app/api/v1/characters.py:704` |
+| `DELETE` | `/api/v1/characters/{character_id}/relationships/{relationship_id}` | 删除角色关系 | `delete_character_relationship` | `backend/app/api/v1/characters.py:717` |
+| `GET` | `/api/v1/characters/{character_id}/state-timeline` | 获取角色在剧情中的状态变化轨迹 | `get_character_state_timeline` | `backend/app/api/v1/characters.py:506` |
+| `POST` | `/api/v1/characters/{character_id}/tags` | 添加自定义标签 | `add_character_tag` | `backend/app/api/v1/characters.py:401` |
+| `DELETE` | `/api/v1/characters/{character_id}/tags/{tag}` | 移除自定义标签 | `remove_character_tag` | `backend/app/api/v1/characters.py:412` |
+| `GET` | `/api/v1/characters/{character_id}/world-usages` | 列出角色在不同世界/项目中的使用 | `list_character_world_usages` | `backend/app/api/v1/characters.py:466` |
+| `PUT` | `/api/v1/characters/{character_id}/world-usages/{usage_id}` | 更新角色世界使用配置 | `update_character_world_usage` | `backend/app/api/v1/characters.py:476` |
+| `DELETE` | `/api/v1/characters/{character_id}/world-usages/{usage_id}` | 移除角色世界使用关系 | `delete_character_world_usage` | `backend/app/api/v1/characters.py:493` |
 
 ### Clip Operations
 
@@ -727,6 +728,37 @@
 | `DELETE` | `/api/v1/models/{model_id}` | - | `delete_model` | `backend/app/api/v1/models.py:324` |
 | `PUT` | `/api/v1/models/{model_id}/trigger-words` | - | `update_trigger_words` | `backend/app/api/v1/models.py:304` |
 
+### Novel Sources
+
+| Method | Path | Summary | Handler | Source |
+| --- | --- | --- | --- | --- |
+| `GET` | `/api/v1/novel-sources` | 列出来源快照 | `list_snapshots` | `backend/app/api/v1/novel_sources.py:297` |
+| `GET` | `/api/v1/novel-sources/domains` | 列出可检测的世界模块 | `list_domains` | `backend/app/api/v1/novel_sources.py:308` |
+| `POST` | `/api/v1/novel-sources/import-bookshelf` | 导入书架章节为来源快照 | `import_bookshelf` | `backend/app/api/v1/novel_sources.py:277` |
+| `POST` | `/api/v1/novel-sources/import-txt` | 导入本地 TXT 为来源快照 | `import_txt` | `backend/app/api/v1/novel_sources.py:240` |
+| `GET` | `/api/v1/novel-sources/{snapshot_id}` | 获取来源快照详情 | `get_snapshot` | `backend/app/api/v1/novel_sources.py:323` |
+| `GET` | `/api/v1/novel-sources/{snapshot_id}/chapters` | 列出快照章节 | `list_chapters` | `backend/app/api/v1/novel_sources.py:328` |
+| `GET` | `/api/v1/novel-sources/{snapshot_id}/chunks` | 列出快照文本块 | `list_chunks` | `backend/app/api/v1/novel_sources.py:339` |
+| `POST` | `/api/v1/novel-sources/{snapshot_id}/chunks/index` | 为小说文本块建立向量索引 | `index_chunks` | `backend/app/api/v1/novel_sources.py:355` |
+| `POST` | `/api/v1/novel-sources/{snapshot_id}/chunks/search` | 混合检索小说文本块 | `search_chunks` | `backend/app/api/v1/novel_sources.py:383` |
+| `POST` | `/api/v1/novel-sources/{snapshot_id}/derive` | 从完本来源创建派生项目 | `derive_project` | `backend/app/api/v1/novel_sources.py:450` |
+| `POST` | `/api/v1/novel-sources/{snapshot_id}/extract` | 按模块提取世界候选 | `extract_world` | `backend/app/api/v1/novel_sources.py:424` |
+| `POST` | `/api/v1/novel-sources/{snapshot_id}/plan` | 逐模块判断世界设定是否存在 | `plan_domains` | `backend/app/api/v1/novel_sources.py:401` |
+| `POST` | `/api/v1/novel-sources/{snapshot_id}/sync` | 连载来源追加新章节 | `sync_chapters` | `backend/app/api/v1/novel_sources.py:474` |
+| `GET` | `/api/v1/world-extraction-runs/{run_id}` | 获取提取运行状态 | `get_run` | `backend/app/api/v1/novel_sources.py:488` |
+| `POST` | `/api/v1/world-extraction-runs/{run_id}/affected-facts` | 把合并/矛盾结论传播到已写事实 | `propagate_affected_facts` | `backend/app/api/v1/novel_sources.py:534` |
+| `POST` | `/api/v1/world-extraction-runs/{run_id}/apply` | 确认候选并写入项目 | `apply_run` | `backend/app/api/v1/novel_sources.py:568` |
+| `GET` | `/api/v1/world-extraction-runs/{run_id}/candidates` | 预览提取候选与证据 | `list_candidates` | `backend/app/api/v1/novel_sources.py:493` |
+| `POST` | `/api/v1/world-extraction-runs/{run_id}/candidates/decide` | 标记候选为接受或忽略 | `decide_candidates` | `backend/app/api/v1/novel_sources.py:553` |
+| `POST` | `/api/v1/world-extraction-runs/{run_id}/contradictions` | 判断重复候选是否同一实体或矛盾 | `detect_contradictions` | `backend/app/api/v1/novel_sources.py:517` |
+| `GET` | `/api/v1/world-extraction-runs/{run_id}/reconcile` | 跨域调和候选提示 | `reconcile_run` | `backend/app/api/v1/novel_sources.py:507` |
+| `GET` | `/api/v1/world-maps` | 列出世界地图文档 | `list_world_maps` | `backend/app/api/v1/novel_sources.py:590` |
+| `POST` | `/api/v1/world-maps` | 创建世界地图文档 | `create_world_map` | `backend/app/api/v1/novel_sources.py:601` |
+| `GET` | `/api/v1/world-maps/{map_id}` | 获取世界地图文档 | `get_world_map` | `backend/app/api/v1/novel_sources.py:612` |
+| `PUT` | `/api/v1/world-maps/{map_id}` | 保存世界地图（revision CAS） | `update_world_map` | `backend/app/api/v1/novel_sources.py:620` |
+| `DELETE` | `/api/v1/world-maps/{map_id}` | 删除世界地图文档 | `delete_world_map` | `backend/app/api/v1/novel_sources.py:648` |
+| `GET` | `/api/v1/world-maps/{map_id}/render` | 渲染世界地图为 SVG | `render_world_map` | `backend/app/api/v1/novel_sources.py:636` |
+
 ### Novels
 
 | Method | Path | Summary | Handler | Source |
@@ -802,11 +834,11 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/settings` | 获取系统设置 | `get_all_settings` | `backend/app/api/v1/settings.py:227` |
-| `PUT` | `/api/v1/settings` | 批量更新设置 | `update_all_settings` | `backend/app/api/v1/settings.py:253` |
-| `GET` | `/api/v1/settings/download-path` | 获取下载保存路径 | `get_download_path` | `backend/app/api/v1/settings.py:316` |
-| `GET` | `/api/v1/settings/ffmpeg-path` | 获取 FFmpeg 路径 | `get_ffmpeg` | `backend/app/api/v1/settings.py:328` |
-| `GET` | `/api/v1/settings/storage-paths` | 获取所有存储路径 | `get_all_storage_paths` | `backend/app/api/v1/settings.py:289` |
+| `GET` | `/api/v1/settings` | 获取系统设置 | `get_all_settings` | `backend/app/api/v1/settings.py:231` |
+| `PUT` | `/api/v1/settings` | 批量更新设置 | `update_all_settings` | `backend/app/api/v1/settings.py:268` |
+| `GET` | `/api/v1/settings/download-path` | 获取下载保存路径 | `get_download_path` | `backend/app/api/v1/settings.py:359` |
+| `GET` | `/api/v1/settings/ffmpeg-path` | 获取 FFmpeg 路径 | `get_ffmpeg` | `backend/app/api/v1/settings.py:366` |
+| `GET` | `/api/v1/settings/storage-paths` | 获取所有存储路径 | `get_all_storage_paths` | `backend/app/api/v1/settings.py:330` |
 
 ### Story Maker
 

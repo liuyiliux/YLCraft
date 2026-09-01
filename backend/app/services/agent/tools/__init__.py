@@ -242,6 +242,23 @@ from .character_tools import (
     update_character_visual_profile,
 )
 
+from .novel_source_tools import (
+    list_novel_source_snapshots,
+    inspect_novel_source_snapshot,
+    plan_novel_source_domains,
+    extract_novel_source_world,
+    list_world_extraction_candidates,
+    decide_world_extraction_candidates,
+    apply_world_extraction_run,
+    sync_novel_source_chapters,
+    index_novel_source_chunks,
+    search_novel_source_chunks,
+    reconcile_world_extraction_run,
+    derive_project_from_novel_source,
+    detect_world_extraction_contradictions,
+    propagate_affected_world_facts,
+)
+
 # 工具列表（用于批量注册）
 TOOLS = [
     # 素材工具
@@ -384,6 +401,21 @@ TOOLS = [
     inspect_character,
     preview_character_portrait_prompt,
     update_character_visual_profile,
+    # 小说来源 → 世界提取工具
+    list_novel_source_snapshots,
+    inspect_novel_source_snapshot,
+    plan_novel_source_domains,
+    extract_novel_source_world,
+    list_world_extraction_candidates,
+    decide_world_extraction_candidates,
+    apply_world_extraction_run,
+    sync_novel_source_chapters,
+    index_novel_source_chunks,
+    search_novel_source_chunks,
+    reconcile_world_extraction_run,
+    derive_project_from_novel_source,
+    detect_world_extraction_contradictions,
+    propagate_affected_world_facts,
 ]
 
 __all__ = [
@@ -535,6 +567,21 @@ __all__ = [
     "inspect_character",
     "preview_character_portrait_prompt",
     "update_character_visual_profile",
+    # 小说来源 → 世界提取工具
+    "list_novel_source_snapshots",
+    "inspect_novel_source_snapshot",
+    "plan_novel_source_domains",
+    "extract_novel_source_world",
+    "list_world_extraction_candidates",
+    "decide_world_extraction_candidates",
+    "apply_world_extraction_run",
+    "sync_novel_source_chapters",
+    "index_novel_source_chunks",
+    "search_novel_source_chunks",
+    "reconcile_world_extraction_run",
+    "derive_project_from_novel_source",
+    "detect_world_extraction_contradictions",
+    "propagate_affected_world_facts",
     # 工具列表
     "TOOLS",
 ]

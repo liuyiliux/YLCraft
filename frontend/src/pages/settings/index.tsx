@@ -4031,6 +4031,7 @@ function StorageSettings() {
           video_gen_path: data.data.video_gen_path || '',
           reference_image_path: data.data.reference_image_path || '',
           upload_path: data.data.upload_path || '',
+          novel_source_path: data.data.novel_source_path || '',
         })
       })
       .catch(() => {})
@@ -4086,6 +4087,11 @@ function StorageSettings() {
           <Col span={12}>
             <Form.Item label={<span style={{ color: THEME.textPrimary }}>本地上传</span>} name="upload_path" extra={<span style={{ color: THEME.textSecondary, fontSize: 11 }}>素材库本地上传文件保存路径</span>}>
               <Input placeholder="backend/storage/uploads" style={{ width: '100%' }} />
+            </Form.Item>
+          </Col>
+          <Col span={12}>
+            <Form.Item label={<span style={{ color: THEME.textPrimary }}>小说来源</span>} name="novel_source_path" extra={<span style={{ color: THEME.textSecondary, fontSize: 11 }}>TXT 与书架导入的原文、章节和文本块保存路径</span>}>
+              <Input placeholder="backend/storage/novel_sources" style={{ width: '100%' }} />
             </Form.Item>
           </Col>
         </Row>

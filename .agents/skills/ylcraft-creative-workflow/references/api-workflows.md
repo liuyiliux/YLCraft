@@ -72,6 +72,30 @@ Inspection:
 - `GET /creative-projects/logs/generation`
 - `GET /creative-projects/{project_id}/canvas`
 
+## Novel Source → World Project
+
+Novel-source world extraction builds a world project from an imported novel. All extraction APIs preview first; `apply` is the only write into a project.
+
+- `POST /novel-sources/import-txt` (multipart), `POST /novel-sources/import-bookshelf`
+- `GET /novel-sources`, `GET /novel-sources/{snapshot_id}`
+- `GET /novel-sources/domains` — detectable vs extractable world modules
+- `POST /novel-sources/{snapshot_id}/plan` — per-module AI detection (costly)
+- `POST /novel-sources/{snapshot_id}/extract` — extract candidates for chosen domains (`mode=delta` continues from the last checkpoint)
+- `GET /world-extraction-runs/{run_id}/candidates`, `POST /world-extraction-runs/{run_id}/candidates/decide`
+- `GET /world-extraction-runs/{run_id}/reconcile` — deterministic duplicate/alias/evidence-overlap/timeline hints (read-only)
+- `POST /world-extraction-runs/{run_id}/apply` — the single write point (characters go to the character library, other domains become locked `world_asset` facts)
+- `POST /novel-sources/{snapshot_id}/chunks/index` then `POST /novel-sources/{snapshot_id}/chunks/search` — optional vector index and hybrid retrieval
+- `POST /novel-sources/{snapshot_id}/derive` — completed sources only; creates an adaptation/continuation/fan-work project and copies confirmed source facts as a read-only `fact_layer=source_canon` layer
+- `POST /novel-sources/{snapshot_id}/sync` — serial sources only; append new chapters without rebuilding
+
+Structured world maps are separate editable documents (not extraction candidates):
+
+- `GET /world-maps?project_id=...` — list maps
+- `POST /world-maps` — create a map (`title`, optional `project_id`/`snapshot_id`, `map_json` with `regions`/`nodes`/`routes`)
+- `GET /world-maps/{map_id}`, `PUT /world-maps/{map_id}` (revision CAS), `DELETE /world-maps/{map_id}`
+
+Rules: candidates are preview-only until decided and applied; `reconcile` never merges anything; never pass real user/remote novel text to external services outside these APIs.
+
 ## Content Types
 
 Common project content types:

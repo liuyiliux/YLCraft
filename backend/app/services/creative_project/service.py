@@ -5029,11 +5029,17 @@ class CreativeProjectService:
             .order_by(ProjectContent.content_type.asc(), ProjectContent.created_at.asc())
         ).all()
         lines: list[str] = []
+        source_canon_count = 0
         for content in contents:
             data = loads_json(content.data_json)
             summary = data.get("summary") or ""
             details = data.get("details") or ""
             role = data.get("role") or content.content_type
+            # 派生项目里从原作复制的正典单独标注，与本项目自己的设定分层。
+            is_source_canon = data.get("fact_layer") == "source_canon"
+            if is_source_canon:
+                source_canon_count += 1
+                role = f"原作正典·只读 {role}"
             text = content.text_content or self._bible_card_text(data)
             lines.append(
                 "\n".join(
@@ -5046,6 +5052,12 @@ class CreativeProjectService:
                     ]
                     if part
                 )
+            )
+        if source_canon_count:
+            lines.insert(
+                0,
+                f"注意：以下 {source_canon_count} 条标注为「原作正典·只读」的事实来自派生所依据的原作，"
+                "创作时不得与之矛盾，但可以在其基础上延展；其余条目是本项目自己的设定。",
             )
         return "\n\n".join(lines)
 
