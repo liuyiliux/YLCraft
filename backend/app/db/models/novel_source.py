@@ -18,7 +18,7 @@ import uuid
 from datetime import datetime
 from enum import Enum
 
-from sqlalchemy import Index
+from sqlalchemy import Index, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 
@@ -59,6 +59,17 @@ class SnapshotIndexingStatus(str, Enum):
     INDEXED = "indexed"
     SKIPPED = "skipped"
     FAILED = "failed"
+
+
+class ExtractionRunKind(str, Enum):
+    """运行种类：从原文提取 vs 无原文的 AI 生成。
+
+    两者共用同一张运行表与游标/诊断机制（Decision D-3），只在语义上隔离：
+    生成运行不产出证据，候选统一标记 ``ai_draft``。
+    """
+
+    EXTRACT = "extract"
+    GENERATE = "generate"
 
 
 class ExtractionRunMode(str, Enum):
@@ -107,13 +118,16 @@ class CandidateStatus(str, Enum):
 
 
 class CandidateOrigin(str, Enum):
-    """字段来源：原文直接陈述 vs 模型推断。
+    """字段来源：原文直接陈述 vs 模型推断 vs 无原文的 AI 创作。
 
     与角色库的字段来源语义保持一致，推断内容必须显式标记并进入候选。
+    ``ai_draft`` 来自生成链路（没有原文可引用）：**不得为其伪造证据锚点**，
+    UI 需与「原文可考」（``original``）明确区分。
     """
 
     ORIGINAL = "original"
     AI_INFERRED = "ai_inferred"
+    AI_DRAFT = "ai_draft"
 
 
 class NovelSourceSnapshot(SQLModel, table=True):
@@ -234,6 +248,8 @@ class WorldExtractionRun(SQLModel, table=True):
         default=None, foreign_key="creative_projects.id", index=True
     )
 
+    # extract=从原文提取（有证据）；generate=无原文的 AI 生成（候选标记 ai_draft）
+    kind: str = Field(default=ExtractionRunKind.EXTRACT.value, index=True)
     mode: str = Field(default=ExtractionRunMode.FULL.value, index=True)
     status: str = Field(default=ExtractionRunStatus.PENDING.value, index=True)
     pipeline_version: str = Field(default="v1", index=True)
@@ -397,3 +413,83 @@ class WorldEntityRelation(SQLModel, table=True):
     evidence_json: str = Field(default="[]")
     is_directed: bool = Field(default=False)
     created_at: datetime = Field(default_factory=datetime.now, index=True)
+
+
+class DomainDefinitionSource(str, Enum):
+    """世界模块定义的来源。
+
+    ``builtin_override`` 覆盖内置域；``custom`` 用户新建；``ai_suggested`` 由 AI 在
+    生成/补充时建议，默认不启用，需用户确认后转为 ``custom``。
+    """
+
+    BUILTIN_OVERRIDE = "builtin_override"
+    CUSTOM = "custom"
+    AI_SUGGESTED = "ai_suggested"
+
+
+class WorldDomainDefinition(SQLModel, table=True):
+    """项目级世界模块定义：覆盖内置域，或新增自定义域。
+
+    内置域（``contracts.DOMAIN_SPECS``）提供稳定默认值；每个项目在此基础上可以：
+
+    - 覆盖 ``label`` / ``prompt_hint``（留空表示沿用内置）
+    - 在内置属性之外**追加**字段（内置字段不可删除，只能扩展，保证既有数据可解析）
+    - 禁用某个内置域（``is_enabled=False``）
+    - 新增自定义域（赛博朋克的「义体改造」、修仙的「灵脉品级」等）
+
+    自定义域的实体仍写入 ``world_entities``，``entity_type`` 取本表值（空则用 domain_key），
+    因此新增域不需要任何新表。
+    """
+
+    __tablename__ = "world_domain_definitions"
+    __table_args__ = (
+        UniqueConstraint("project_id", "domain_key", name="ux_world_domain_definitions_project_key"),
+        Index("ix_world_domain_definitions_project_source", "project_id", "source"),
+    )
+
+    id: str = Field(primary_key=True, default_factory=lambda: uuid.uuid4().hex)
+    project_id: str = Field(foreign_key="creative_projects.id", index=True)
+
+    domain_key: str = Field(index=True)
+    label: str = Field(default="")  # 覆盖内置展示名；空表示沿用
+    entity_type: str = Field(default="")  # 自定义域的实体类型；空表示用 domain_key
+    # 相对内置属性**追加**的字段；内置字段不可删除，只能扩展。
+    extra_attributes_json: str = Field(default="[]")
+    prompt_hint: str = Field(default="")  # 覆盖内置提取提示；空表示沿用
+    is_enabled: bool = Field(default=True, index=True)
+    source: str = Field(default=DomainDefinitionSource.CUSTOM.value, index=True)
+
+    created_at: datetime = Field(default_factory=datetime.now, index=True)
+    updated_at: datetime = Field(default_factory=datetime.now)
+
+
+class WorldBuildingTemplate(SQLModel, table=True):
+    """项目级世界构建模板：层次策略 + 每档提示词，全部可编辑。
+
+    层次（layers）由项目决定：叫「世界/大陆/国家/城市」还是别的、有几层、
+    甚至完全不分层都由数据决定，**不写死枚举**。内置模板（``is_builtin``）
+    作为种子提供起点，项目可复制后修改；``project_id`` 为空即内置模板。
+    """
+
+    __tablename__ = "world_building_templates"
+    __table_args__ = (
+        Index("ix_world_building_templates_project_default", "project_id", "is_default"),
+    )
+
+    id: str = Field(primary_key=True, default_factory=lambda: uuid.uuid4().hex)
+    # 空表示内置种子模板，非空为项目私有模板。
+    project_id: str | None = Field(
+        default=None, foreign_key="creative_projects.id", index=True
+    )
+
+    name: str = Field(default="")
+    # 层次策略，如 ["世界", "大陆", "国家", "地区", "地点"]
+    layers_json: str = Field(default="[]")
+    # 每档提示词：{draft_world, expand_domain, expand_entity}
+    prompts_json: str = Field(default="{}")
+
+    is_default: bool = Field(default=False, index=True)  # 项目默认使用的模板
+    is_builtin: bool = Field(default=False, index=True)  # 内置种子模板（只读语义）
+
+    created_at: datetime = Field(default_factory=datetime.now, index=True)
+    updated_at: datetime = Field(default_factory=datetime.now)

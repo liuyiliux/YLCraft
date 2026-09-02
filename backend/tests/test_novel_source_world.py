@@ -25,6 +25,8 @@ from app.db.models.novel_source import (
     NovelSourceChapter,
     NovelSourceSnapshot,
     NovelTextChunk,
+    WorldBuildingTemplate,
+    WorldDomainDefinition,
     WorldEntity,
     WorldEntityRelation,
     WorldExtractionRun,
@@ -330,6 +332,8 @@ def session():
         WorldMapDocument.__table__,
         WorldEntity.__table__,
         WorldEntityRelation.__table__,
+        WorldDomainDefinition.__table__,
+        WorldBuildingTemplate.__table__,
     ):
         table.create(engine)
     with Session(engine) as session:
@@ -1922,7 +1926,8 @@ async def test_start_world_extraction_from_outline_creates_snapshot(tmp_path, mo
     client = TestClient(app)
 
     try:
-        # 不传 domains 时默认提取全部可提取域，而不是报「没有可提取的世界模块」。
+        # 该入口（大纲→整套世界设定）有意默认跑全部可提取域；
+        # 其它入口不指定模块时由服务层回落到基础层，两者都不得报「没有可提取的世界模块」。
         response = client.post(
             f"/api/v1/creative-projects/{project_id}/world-extraction/start",
             json={},
@@ -2178,3 +2183,423 @@ def test_world_knowledge_aggregates_project_world(tmp_path, monkeypatch):
         assert data["maps"][0]["node_count"] == 1
     finally:
         engine.dispose()
+
+
+def test_resolve_domains_falls_back_to_basic_layer(session):
+    """未指定域、也没有检测结果时回落到基础层，而不是让调用方无从下手。"""
+    service = WorldExtractionService(session, ai_service=FakeWorldAI())
+
+    # 两者都为空：回落到基础层（角色/地点/势力/历史事件）。
+    assert service._resolve_domains(None, None) == [
+        "character",
+        "location",
+        "faction",
+        "historical_event",
+    ]
+
+    # 显式关闭了所有模块的 plan：尊重用户意图，不偷偷补跑。
+    plan = [
+        {"domain": "character", "status": "not_detected", "enabled": False},
+        {"domain": "species", "status": "not_detected", "enabled": False},
+    ]
+    assert service._resolve_domains(None, plan) == []
+
+    # 检测到一个扩展域时只跑它，不叠加基础层。
+    detected = [{"domain": "species", "status": "user_requested", "enabled": True}]
+    assert service._resolve_domains(None, detected) == ["species"]
+
+    # 显式 domains 优先。
+    assert service._resolve_domains(["location"], None) == ["location"]
+
+
+@pytest.mark.asyncio
+async def test_extract_without_domains_runs_basic_layer(session, storage):
+    """不传 domains / domain_plan 时按基础层跑通，而不是报「没有可提取的世界模块」。"""
+    snapshot = _import_sample(session)
+    service = WorldExtractionService(session, ai_service=FakeWorldAI())
+
+    result = await service.extract(snapshot.id)
+
+    assert result["status"] == "success"
+    assert result["candidate_count"] == 5
+    candidates = service.list_candidates(result["run_id"])
+    assert {item.domain for item in candidates} == {
+        "character",
+        "location",
+        "faction",
+        "historical_event",
+    }
+
+
+def test_create_map_from_project_places_single_place_centers_node(session, storage):
+    """只有一个地点实体时不再 500：单点居中生成，坐标仍在 0-100 内。"""
+    from app.services.creative_project.service import CreativeProjectService
+    from app.services.novel_source.contracts import normalize_entity_name
+    from app.services.novel_source.world_map import WorldMapService
+
+    project = CreativeProjectService(session, ai_service=FakeWorldAI()).create_project(
+        title="单点项目",
+        project_type="novel",
+        source_type="original_idea",
+        idea="x",
+    )
+    name = "徐家老宅"
+    session.add(
+        WorldEntity(
+            project_id=project.id,
+            domain="location",
+            entity_type="place",
+            name=name,
+            normalized_key=normalize_entity_name(name),
+            summary=f"{name} 的摘要。",
+            attributes_json="{}",
+            evidence_json="[]",
+            fact_layer="project",
+            is_locked=True,
+        )
+    )
+    session.commit()
+
+    document = WorldMapService(session).create_map_from_project_places(project.id)
+    data = json.loads(document.map_json)
+    assert len(data["nodes"]) == 1
+    node = data["nodes"][0]
+    assert node["name"] == name
+    # 回归防线：该分支曾漏设 radius，导致 NameError 直接 500。
+    assert node["x"] == 50 and node["y"] == 50
+    assert 0 <= node["x"] <= 100 and 0 <= node["y"] <= 100
+
+
+def test_build_map_visual_prompt_does_not_hardcode_fantasy_style(session):
+    """画风不再写死：现实题材套「羊皮纸·中土奇幻」会严重违和。"""
+    from app.services.novel_source.world_map import WorldMapService, build_map_visual_prompt
+
+    service = WorldMapService(session)
+    document = service.create_map(
+        title="徐家村地图",
+        map_json={
+            "regions": [{"id": "r1", "name": "徐家村", "kind": "村落"}],
+            "nodes": [
+                {"id": "n1", "name": "村口", "kind": "场景", "x": 30, "y": 60, "region_id": "r1"}
+            ],
+            "routes": [],
+        },
+    )
+
+    plain = build_map_visual_prompt(document)
+    # 结构化内容照常进入 prompt。
+    assert "徐家村地图" in plain
+    assert "徐家村" in plain and "村口" in plain
+    # 但不再硬编码奇幻画风。
+    for banned in ("羊皮纸", "魔戒", "奇幻", "幻想"):
+        assert banned not in plain, f"prompt 仍残留硬编码画风：{banned}"
+    # 未指定风格时明确交给视觉基准/参考图自适应。
+    assert "视觉基准" in plain
+
+    styled = build_map_visual_prompt(document, style="写实乡村")
+    assert "写实乡村" in styled
+    for banned in ("羊皮纸", "魔戒", "奇幻"):
+        assert banned not in styled
+
+
+def _seed_project_with_places(session, title, places):
+    """建项目并写入若干地点实体，返回 (project_id, {name: place})。"""
+    from app.services.creative_project.service import CreativeProjectService
+    from app.services.novel_source.contracts import normalize_entity_name
+
+    project = CreativeProjectService(session, ai_service=FakeWorldAI()).create_project(
+        title=title,
+        project_type="novel",
+        source_type="original_idea",
+        idea=title,
+    )
+    created = {}
+    for name, summary, evidence in places:
+        place = WorldEntity(
+            project_id=project.id,
+            domain="location",
+            entity_type="place",
+            name=name,
+            normalized_key=normalize_entity_name(name),
+            summary=summary,
+            attributes_json="{}",
+            evidence_json=json.dumps(evidence, ensure_ascii=False),
+            fact_layer="project",
+            is_locked=True,
+        )
+        session.add(place)
+        created[name] = place
+    session.commit()
+    return project.id, created
+
+
+def test_from_places_nodes_reference_entities_not_copies(session, storage):
+    """据点引用地点实体（entity_id）：实体改名后按 id 判重，不重复生成据点。"""
+    from app.services.novel_source.world_map import WorldMapService
+
+    project_id, places = _seed_project_with_places(
+        session,
+        "引用项目",
+        [("龙二赌坊", "福贵输光家产的地方。", [{"chunk_id": "c1", "quote": "福贵押上了最后的地契。"}])],
+    )
+
+    service = WorldMapService(session)
+    document = service.create_map_from_project_places(project_id)
+    data = json.loads(document.map_json)
+    assert len(data["nodes"]) == 1
+    # 引用而不是复制：据点持有实体指针，正典仍在 world_entities。
+    assert data["nodes"][0]["entity_id"] == places["龙二赌坊"].id
+
+    # 实体改名后再次生成：按 entity_id 判重，不产生第二个据点。
+    place = places["龙二赌坊"]
+    place.name = "龙二赌场"
+    session.add(place)
+    session.commit()
+    with pytest.raises(ValueError):
+        service.create_map_from_project_places(project_id)
+    data = json.loads(service.get_map(document.id).map_json)
+    assert len(data["nodes"]) == 1
+    assert data["nodes"][0]["entity_id"] == place.id
+
+
+def test_resolve_nodes_with_entities_returns_evidence_and_relations(session, storage):
+    """据点可回查实体：摘要/证据/关系；游离标记被标记出来而不是当正典。"""
+    from app.db.models.novel_source import WorldEntityRelation
+    from app.services.novel_source.world_map import WorldMapService
+
+    project_id, places = _seed_project_with_places(
+        session,
+        "解析项目",
+        [
+            ("龙二赌坊", "福贵输光家产的地方。", [{"chunk_id": "c1", "quote": "福贵押上了最后的地契。"}]),
+            ("镇上", "徐家村外的集镇。", []),
+        ],
+    )
+    session.add(
+        WorldEntityRelation(
+            project_id=project_id,
+            source_entity_id=places["龙二赌坊"].id,
+            target_entity_id=places["镇上"].id,
+            relation_type="located_in",
+            note="赌坊在镇上",
+            evidence_json="[]",
+            is_directed=True,
+        )
+    )
+    session.commit()
+
+    service = WorldMapService(session)
+    document = service.create_map_from_project_places(project_id)
+    resolved = service.resolve_nodes_with_entities(document.id)
+
+    by_name = {row["node"]["name"]: row for row in resolved["nodes"]}
+    assert set(by_name) == {"龙二赌坊", "镇上"}
+    row = by_name["龙二赌坊"]
+    assert row["entity_id"] == places["龙二赌坊"].id
+    assert row["entity"]["summary"] == "福贵输光家产的地方。"
+    # 证据锚点来自实体，不复制进 map_json。
+    assert row["entity"]["evidence"] == [{"chunk_id": "c1", "quote": "福贵押上了最后的地契。"}]
+    assert any(rel["relation_type"] == "located_in" for rel in row["relations"])
+    assert resolved["orphan_node_ids"] == []
+
+    # 手工造一个没有 entity_id 的据点：应被识别为游离标记。
+    data = json.loads(document.map_json)
+    data["nodes"].append({"id": "free-1", "name": "无主据点", "kind": "地点", "x": 10, "y": 10})
+    document = service.update_map(
+        document.id, map_json=data, expected_revision=document.revision
+    )
+    resolved = service.resolve_nodes_with_entities(document.id)
+    assert resolved["orphan_node_ids"] == ["free-1"]
+
+
+def test_build_map_export_includes_entity_references(session, storage):
+    """导出的点位 JSON 带 entity_id / evidence，confidence 暂缺（OQ-01）。"""
+    from app.services.novel_source.world_map import WorldMapService, build_map_export
+
+    project_id, places = _seed_project_with_places(
+        session,
+        "导出项目",
+        [("徐家老宅", "福贵与家珍的家。", [{"chunk_id": "c1", "quote": "那间老屋，土墙黑瓦。"}])],
+    )
+
+    service = WorldMapService(session)
+    document = service.create_map_from_project_places(project_id)
+    resolved = service.resolve_nodes_with_entities(document.id)
+    exported = build_map_export(document, resolved)
+
+    assert exported["map"]["map_id"] == document.id
+    assert len(exported["nodes"]) == 1
+    node = exported["nodes"][0]
+    assert node["entity_id"] == places["徐家老宅"].id
+    assert node["evidence"] == [{"chunk_id": "c1", "quote": "那间老屋，土墙黑瓦。"}]
+    # OQ-01：实体层还没有置信度字段，暂不伪造。
+    assert node["confidence"] is None
+
+
+def test_build_map_export_includes_data_driven_layers(session, storage):
+    """空间层由地图数据自定义（不写死天界/冥界枚举），导出随 layers 与 node.layer 带上。"""
+    from app.services.novel_source.world_map import WorldMapService, build_map_export
+
+    service = WorldMapService(session)
+    document = service.create_map(
+        title="三层世界",
+        map_json={
+            "layers": [{"id": "l-main", "name": "人间"}, {"id": "l-sea", "name": "归墟"}],
+            "regions": [],
+            "nodes": [
+                {"id": "n1", "name": "长安", "kind": "城池", "x": 30, "y": 40, "layer": "l-main"},
+                {"id": "n2", "name": "海底龙宫", "kind": "据点", "x": 60, "y": 80, "layer": "l-sea"},
+            ],
+            "routes": [],
+        },
+    )
+
+    exported = build_map_export(document)
+
+    # 层集合完全由数据决定：这里叫「人间/归墟」，别的项目可以叫任何名字，也可以没有。
+    assert [item["name"] for item in exported["layers"]] == ["人间", "归墟"]
+    by_name = {item["name"]: item for item in exported["nodes"]}
+    assert by_name["长安"]["layer"] == "l-main"
+    assert by_name["海底龙宫"]["layer"] == "l-sea"
+
+
+def _project_id(session, title):
+    from app.services.creative_project.service import CreativeProjectService
+
+    project = CreativeProjectService(session, ai_service=FakeWorldAI()).create_project(
+        title=title, project_type="novel", source_type="original_idea", idea=title
+    )
+    return project.id
+
+
+def test_project_can_extend_builtin_domain_attributes(session, storage):
+    """项目可给内置模块改展示名并追加属性字段；内置字段不可删除。"""
+    from app.services.novel_source.world_domains import WorldDomainService
+
+    project_id = _project_id(session, "可扩展世界")
+    service = WorldDomainService(session)
+    service.upsert_definition(
+        project_id, "species", label="族群", extra_attributes=["义体改造等级"]
+    )
+
+    domains = {item["key"]: item for item in service.list_domains(project_id)}
+    species = domains["species"]
+    assert species["label"] == "族群"
+    assert species["source"] == "builtin_override"
+    assert species["is_builtin"] is True
+    # 内置字段仍在（既有 attributes_json 保持可解析），追加字段排在后面。
+    assert species["builtin_attributes"] == [
+        "kind",
+        "traits",
+        "habitat",
+        "lifespan",
+        "relations",
+        "abilities",
+    ]
+    assert "义体改造等级" in species["attributes"]
+
+    # 解析结果供提取/生成使用：内置 + 项目追加。
+    specs = {spec.key: spec for spec in service.resolve_specs(project_id)}
+    assert specs["species"].label == "族群"
+    assert "义体改造等级" in specs["species"].attributes
+
+
+def test_project_can_add_custom_domains_and_ai_suggestions_need_confirmation(
+    session, storage
+):
+    """自定义模块直接生效；AI 建议的模块需确认后才参与提取。"""
+    from app.services.novel_source.world_domains import WorldDomainService
+
+    project_id = _project_id(session, "赛博世界")
+    service = WorldDomainService(session)
+    service.upsert_definition(
+        project_id,
+        "cyberware",
+        label="义体改造",
+        entity_type="cyberware",
+        extra_attributes=["等级", "副作用", "供应商"],
+    )
+
+    domains = {item["key"]: item for item in service.list_domains(project_id)}
+    custom = domains["cyberware"]
+    assert custom["is_builtin"] is False
+    assert custom["entity_type"] == "cyberware"
+    assert custom["attributes"] == ["等级", "副作用", "供应商"]
+    specs = {spec.key: spec for spec in service.resolve_specs(project_id)}
+    assert specs["cyberware"].entity_type == "cyberware"
+
+    # AI 建议的模块落库但不参与提取，确认（转 custom）后才生效。
+    service.upsert_definition(
+        project_id, "灵脉", label="灵脉品级", extra_attributes=["品级"], source="ai_suggested"
+    )
+    assert "灵脉" not in {spec.key for spec in service.resolve_specs(project_id)}
+    service.upsert_definition(project_id, "灵脉", label="灵脉品级", source="custom")
+    assert "灵脉" in {spec.key for spec in service.resolve_specs(project_id)}
+
+
+def test_builtin_domain_can_be_disabled_and_reset(session, storage):
+    """项目可禁用不需要的内置模块，也可重置回默认。"""
+    from app.services.novel_source.world_domains import WorldDomainService
+
+    project_id = _project_id(session, "精简世界")
+    service = WorldDomainService(session)
+
+    service.upsert_definition(project_id, "glossary", is_enabled=False)
+    assert "glossary" not in {spec.key for spec in service.resolve_specs(project_id)}
+
+    service.reset_definition(project_id, "glossary")
+    assert "glossary" in {spec.key for spec in service.resolve_specs(project_id)}
+
+
+@pytest.mark.asyncio
+async def test_extraction_runs_default_to_extract_kind(session, storage):
+    """运行记录默认是从原文提取；生成运行复用同一张表，只改 kind（Decision D-3）。"""
+    snapshot = _import_sample(session)
+    service = WorldExtractionService(session, ai_service=FakeWorldAI())
+
+    result = await service.extract(snapshot.id, domains=["location"])
+    run = service.get_run(result["run_id"])
+
+    assert run.kind == "extract"
+    assert run.mode == "full"
+
+
+def test_world_building_template_layers_are_data_driven(session, storage):
+    """模板的层次策略由数据决定（不写死枚举），项目可自定义（Decision D-1）。"""
+    from app.db.models.novel_source import WorldBuildingTemplate
+
+    project_id = _project_id(session, "模板项目")
+    template = WorldBuildingTemplate(
+        project_id=project_id,
+        name="现代地理层级",
+        layers_json=json.dumps(["世界", "国家", "省/州", "城市"], ensure_ascii=False),
+        prompts_json=json.dumps(
+            {"draft_world": "按层次 {layers} 从粗到细搭建世界骨架。"}, ensure_ascii=False
+        ),
+        is_default=True,
+    )
+    session.add(template)
+    session.commit()
+
+    stored = session.get(WorldBuildingTemplate, template.id)
+    # 层次叫什么、有几层都由项目数据决定，代码里不存这些名字。
+    assert json.loads(stored.layers_json) == ["世界", "国家", "省/州", "城市"]
+    assert "{layers}" in json.loads(stored.prompts_json)["draft_world"]
+    assert stored.is_default is True
+    assert stored.is_builtin is False
+
+
+def test_religion_language_culture_ecology_domains_exist():
+    """宗教/语言/文化/生态是通用世界观维度，已内置为可提取模块。"""
+    from app.services.novel_source.contracts import get_domain
+
+    for key, attrs in (
+        ("religion", "deities"),
+        ("language", "script"),
+        ("culture", "customs"),
+        ("ecology", "terrain"),
+    ):
+        spec = get_domain(key)
+        assert spec is not None, f"缺少内置模块：{key}"
+        assert spec.extractable is True
+        assert attrs in spec.attributes

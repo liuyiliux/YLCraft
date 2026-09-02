@@ -9,12 +9,16 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlmodel import Session, select
+from sqlalchemy import or_
+from sqlmodel import Session, col, select
 
 from app.db.models.novel_source import WorldMapDocument
 from app.services.creative_project.service import dumps_json, loads_json
 
-DEFAULT_MAP_JSON = {"regions": [], "nodes": [], "routes": []}
+# 空间层（layers）由项目/世界观自定义（叫「主世界/天界/冥界」还是别的、有几层、
+# 甚至完全不分层都由数据决定），不写死枚举：``layers`` 缺省或为空时视为单层地图，
+# 节点 ``layer`` 为空即未分层。
+DEFAULT_MAP_JSON = {"regions": [], "nodes": [], "routes": [], "layers": []}
 
 
 class WorldMapService:
@@ -132,14 +136,30 @@ class WorldMapService:
             data = DEFAULT_MAP_JSON
 
         nodes = [item for item in (data.get("nodes") or []) if isinstance(item, dict)]
+        # 实体为中心：优先按 entity_id 判重（地点实体改名后不会重复生成据点），
+        # 历史据点没有 entity_id 时回退到名称匹配。
+        existing_entity_ids = {
+            str(item.get("entity_id") or "").strip()
+            for item in nodes
+            if str(item.get("entity_id") or "").strip()
+        }
         existing_names = {str(item.get("name") or "").strip() for item in nodes}
+
+        def _is_new_place(place: Any) -> bool:
+            name = str(place.name or "").strip()
+            if not name:
+                return False
+            if place.id in existing_entity_ids:
+                return False
+            return name not in existing_names
+
         added: list[dict[str, Any]] = []
         # 环形/径向散布：N≤1 居中，N≤3 小弧，N≥4 围圆心排开
         # （避免之前 5 个点挤在 y=15 一行的情况）。
         import math
-        total = sum(1 for place in places
-                    if str(place.name or "").strip() and str(place.name or "").strip() not in existing_names)
+        total = sum(1 for place in places if _is_new_place(place))
         angles: list[float] = []
+        radius = 0.0  # 单点居中使用；其余分支按数量设置
         if total <= 1:
             angles = [math.pi / 2]  # 单点居中
         elif total <= 3:
@@ -156,23 +176,29 @@ class WorldMapService:
 
         idx = 0
         for place in places:
-            name = str(place.name or "").strip()
-            if not name or name in existing_names:
+            if not _is_new_place(place):
                 continue
+            name = str(place.name or "").strip()
             attributes = loads_json(place.attributes_json, {})
             angle = angles[idx]
-            idx += 1
             added.append(
                 {
-                    "id": f"{place.id[:8]}-{idx - 1}",
+                    "id": f"{place.id[:8]}-{idx}",
+                    # 引用地点实体而不是复制事实：正典仍在 world_entities /
+                    # world_asset，地图只持有空间位置与实体指针。
+                    "entity_id": place.id,
                     "name": name,
                     "kind": str(attributes.get("kind") or "地点")[:20],
                     "x": round(50 + radius * math.cos(angle), 1),
                     "y": round(50 + radius * math.sin(angle), 1),
                     "region_id": None,
+                    # 未分层：空间层由用户在层管理里按世界观自定义后归入。
+                    "layer": None,
+                    # 摘要快照只用于离线渲染与导出，不是事实来源。
                     "description": str(place.summary or "")[:200],
                 }
             )
+            idx += 1
         if not added:
             raise ValueError("地点实体都已在地图上，无需重复生成")
 
@@ -186,6 +212,166 @@ class WorldMapService:
         self.session.commit()
         self.session.refresh(document)
         return document
+
+    def resolve_nodes_with_entities(self, map_id: str) -> dict[str, Any]:
+        """把地图据点与地点实体关联起来：引用不复制，实体信息按需回查。
+
+        返回每个据点的 ``node`` / ``entity`` / ``relations``。没有 ``entity_id``
+        或实体已不存在的据点 ``entity`` 为 ``None``——那是「游离标记」，
+        前端应提示去关联实体，而不是把它当作正典。
+        """
+        from app.db.models.novel_source import WorldEntity, WorldEntityRelation
+
+        document = self.session.get(WorldMapDocument, map_id)
+        if not document:
+            raise ValueError("地图文档不存在")
+
+        data = loads_json(document.map_json, DEFAULT_MAP_JSON)
+        if not isinstance(data, dict):
+            data = DEFAULT_MAP_JSON
+        nodes = [item for item in (data.get("nodes") or []) if isinstance(item, dict)]
+
+        entity_ids = [
+            str(item.get("entity_id") or "").strip()
+            for item in nodes
+            if str(item.get("entity_id") or "").strip()
+        ]
+        entities: dict[str, Any] = {}
+        relations: dict[str, list[Any]] = {}
+        if entity_ids:
+            for row in self.session.exec(
+                select(WorldEntity).where(col(WorldEntity.id).in_(entity_ids))
+            ).all():
+                entities[row.id] = row
+            for rel in self.session.exec(
+                select(WorldEntityRelation).where(
+                    or_(
+                        col(WorldEntityRelation.source_entity_id).in_(entity_ids),
+                        col(WorldEntityRelation.target_entity_id).in_(entity_ids),
+                    )
+                )
+            ).all():
+                relations.setdefault(rel.source_entity_id, []).append(rel)
+                if rel.target_entity_id != rel.source_entity_id:
+                    relations.setdefault(rel.target_entity_id, []).append(rel)
+
+        items: list[dict[str, Any]] = []
+        orphans: list[str] = []
+        for node in nodes:
+            entity_id = str(node.get("entity_id") or "").strip()
+            entity = entities.get(entity_id)
+            if not entity:
+                orphans.append(str(node.get("id") or ""))
+            items.append(
+                {
+                    "node": node,
+                    "entity_id": entity_id or None,
+                    "entity": serialize_entity_ref(entity) if entity else None,
+                    "relations": [
+                        serialize_relation_ref(rel) for rel in relations.get(entity_id, [])
+                    ],
+                }
+            )
+
+        return {
+            "map_id": document.id,
+            "title": document.title,
+            "revision": document.revision,
+            "nodes": items,
+            "orphan_node_ids": orphans,
+        }
+
+
+def build_map_export(
+    document: WorldMapDocument,
+    resolved: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """结构化导出：据点带 ``entity_id`` / ``evidence``，供外部工具与备份使用。
+
+    导出的是「结构化点位数据」，不是图片：空间关系 + 实体引用 + 证据锚点。
+    ``confidence`` 暂无来源（实体层还没有置信度字段），恒为 ``None``（OQ-01）。
+    """
+    data = loads_json(document.map_json, DEFAULT_MAP_JSON)
+    if not isinstance(data, dict):
+        data = DEFAULT_MAP_JSON
+
+    by_node_id: dict[str, dict[str, Any]] = {}
+    for row in (resolved or {}).get("nodes") or []:
+        node = row.get("node") or {}
+        by_node_id[str(node.get("id") or "")] = row
+
+    nodes: list[dict[str, Any]] = []
+    for raw in [item for item in (data.get("nodes") or []) if isinstance(item, dict)]:
+        row = by_node_id.get(str(raw.get("id") or "")) or {}
+        entity = row.get("entity") or {}
+        nodes.append(
+            {
+                "id": raw.get("id"),
+                "name": raw.get("name"),
+                "kind": raw.get("kind"),
+                "x": raw.get("x"),
+                "y": raw.get("y"),
+                "region_id": raw.get("region_id"),
+                # 空间层引用：层集合由地图数据自定义（layers），节点 layer 为空即未分层。
+                "layer": raw.get("layer"),
+                # 实体引用：正典不在地图里，这里只存指针。
+                "entity_id": raw.get("entity_id") or entity.get("id"),
+                "description": raw.get("description") or "",
+                "evidence": entity.get("evidence") or [],
+                "confidence": None,  # OQ-01：实体层暂无置信度字段
+                "relations": row.get("relations") or [],
+            }
+        )
+
+    return {
+        "map": {
+            "map_id": document.id,
+            "title": document.title,
+            "revision": document.revision,
+        },
+        # 空间层定义随导出带上（数据驱动，不写死枚举）。
+        "layers": [
+            item for item in (data.get("layers") or []) if isinstance(item, dict)
+        ],
+        "nodes": nodes,
+        "regions": [
+            item for item in (data.get("regions") or []) if isinstance(item, dict)
+        ],
+        "routes": [item for item in (data.get("routes") or []) if isinstance(item, dict)],
+        "notes": ["confidence 待实体层补置信度字段（OQ-01），当前恒为 null"],
+    }
+
+
+def serialize_entity_ref(entity: Any) -> dict[str, Any]:
+    """地图侧的实体引用视图。
+
+    只暴露详情面板与导出需要的字段，不复制事实本身：正典仍在
+    ``world_entities`` / ``world_asset``，地图侧按需回查。
+    """
+    return {
+        "id": entity.id,
+        "name": entity.name,
+        "domain": entity.domain,
+        "entity_type": entity.entity_type,
+        "summary": entity.summary,
+        "attributes": loads_json(entity.attributes_json, {}),
+        "evidence": loads_json(entity.evidence_json, []),
+        "fact_layer": entity.fact_layer,
+        "is_locked": entity.is_locked,
+    }
+
+
+def serialize_relation_ref(relation: Any) -> dict[str, Any]:
+    """地图侧的实体关系视图（类型化关系，供详情面板展示关联）。"""
+    return {
+        "id": relation.id,
+        "source_entity_id": relation.source_entity_id,
+        "target_entity_id": relation.target_entity_id,
+        "relation_type": relation.relation_type,
+        "note": relation.note,
+        "evidence": loads_json(relation.evidence_json, []),
+        "is_directed": relation.is_directed,
+    }
 
 
 def serialize_map(document: WorldMapDocument) -> dict[str, Any]:
@@ -302,7 +488,7 @@ def build_map_visual_prompt(document: WorldMapDocument, *, style: str = "") -> s
         if node_id and name:
             node_name_by_id[node_id] = name
 
-    parts: list[str] = [f"一张幻想世界地图，标题「{str(document.title or '世界地图')}」。"]
+    parts: list[str] = [f"一张世界地图，标题「{str(document.title or '世界地图')}」。"]
 
     region_names = [
         str(region.get("name") or "").strip()
@@ -325,13 +511,17 @@ def build_map_visual_prompt(document: WorldMapDocument, *, style: str = "") -> s
     if route_descs:
         parts.append("通行路线：" + "、".join(route_descs) + "。")
 
+    # 只描述空间结构与画面可读性，不再写死画风：
+    # 现实题材（乡村/都市/科幻）套「羊皮纸·中土奇幻」会严重违和，
+    # 画风交给风格预设与项目视觉基准（参考图）决定。
     parts.append(
-        "以小说世界观地图的经典样式绘制：羊皮纸/古旧卷轴质感，手绘奇幻插画风格"
-        "（参照《魔戒》中土地图的观感），包含山脉、森林、河流、海岸线等自然地形，"
-        "城市与据点用图例图标标注、地名用艺术字体书写，区域用虚线或色块边界区分，"
-        "右下角配比例尺与罗盘玫瑰，重要路线用虚线标出。俯视视角，画面构图完整，"
-        "地名清晰可读。"
+        "俯视视角的地图制图，呈现上述区域与地点的相对方位和连通关系，"
+        "包含山脉、森林、河流、海岸线等自然地形，城市与据点用图例图标标注，"
+        "区域用虚线或色块边界区分，右下角配比例尺与罗盘玫瑰，重要路线用虚线标出。"
+        "俯视视角，画面构图完整，地名清晰可读。"
     )
     if style and str(style).strip():
         parts.append(f"风格：{str(style).strip()}。")
+    else:
+        parts.append("不指定画风：按项目视觉基准（参考图）自适应，无参考图时采用克制的写实地图风格。")
     return "".join(parts)

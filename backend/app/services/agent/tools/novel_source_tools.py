@@ -136,7 +136,7 @@ async def plan_novel_source_domains(
     description="按选定模块从来源快照提取世界事实候选（角色/地点/势力/历史事件），默认只预览，不写项目事实。",
     category="novel_source",
     examples=["从这部小说提取角色、地点和势力，先给我预览", "提取这部小说的历史事件"],
-    input_schema_note="必须提供 snapshot_id；domains 传要提取的模块（默认按 plan 的 detected/user_requested 模块）；provider/model 可选；mode=full|delta。",
+    input_schema_note="必须提供 snapshot_id；domains 传要提取的模块（默认按 plan 的 detected/user_requested 模块；既无 domains 也无 plan 时回落到基础层：角色/地点/势力/历史事件）；provider/model 可选；mode=full|delta。",
     output_schema_note="返回 run_id/status/mode/domains（每域 run_state/items/error）/candidate_count/failures。候选需经 list_world_extraction_candidates 查看证据。",
     risk_level="costly",
     output_type="novel_source_world_extraction",

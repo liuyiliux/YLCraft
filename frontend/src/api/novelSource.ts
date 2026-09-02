@@ -439,6 +439,12 @@ export interface WorldMapRegion {
   description: string
 }
 
+/** 空间层（位面）：由项目/世界观自定义（名称与数量不写死）；缺省时视为单层地图。 */
+export interface WorldMapLayer {
+  id: string
+  name: string
+}
+
 export interface WorldMapNode {
   id: string
   name: string
@@ -447,6 +453,10 @@ export interface WorldMapNode {
   y: number
   region_id?: string | null
   description: string
+  /** 引用的地点实体 id：正典在 world_entities，地图只存指针（引用不复制）。 */
+  entity_id?: string | null
+  /** 所属空间层 id（引用 map_json.layers，为空即未分层）。 */
+  layer?: string | null
 }
 
 export interface WorldMapRoute {
@@ -459,6 +469,8 @@ export interface WorldMapRoute {
 }
 
 export interface WorldMapData {
+  /** 空间层定义（数据驱动，不写死）；缺省或为空时为单层地图。 */
+  layers?: WorldMapLayer[]
   regions: WorldMapRegion[]
   nodes: WorldMapNode[]
   routes: WorldMapRoute[]
@@ -498,6 +510,72 @@ export interface WorldMapVisualResult {
   model: string
   task_id: string
   status: string
+}
+
+/** 证据锚点：逐字原文 + 章节/块定位（实体与关系共用形状）。 */
+export interface WorldMapEvidence {
+  chunk_id?: string
+  quote?: string
+  [k: string]: unknown
+}
+
+/** 据点 → 实体解析结果：引用不复制，实体信息按需回查。 */
+export interface WorldMapNodeEntity {
+  node: WorldMapNode
+  entity_id: string | null
+  entity: {
+    id: string
+    name: string
+    domain: string
+    entity_type: string
+    summary: string
+    attributes: Record<string, unknown>
+    evidence: WorldMapEvidence[]
+    fact_layer: string
+    is_locked: boolean
+  } | null
+  relations: {
+    id: string
+    source_entity_id: string
+    target_entity_id: string
+    relation_type: string
+    note: string
+    evidence: WorldMapEvidence[]
+    is_directed: boolean
+  }[]
+}
+
+export interface WorldMapEntitiesResult {
+  map_id: string
+  title: string
+  revision: number
+  nodes: WorldMapNodeEntity[]
+  /** 游离标记：没有关联实体（或实体已不存在）的据点 id，UI 应提示去关联。 */
+  orphan_node_ids: string[]
+}
+
+/** 结构化点位导出：空间关系 + 实体引用 + 证据锚点，不是图片。 */
+export interface WorldMapExportResult {
+  map: { map_id: string; title: string; revision: number }
+  nodes: (WorldMapNode & {
+    entity_id: string | null
+    evidence: WorldMapEvidence[]
+    confidence: unknown
+    relations: WorldMapNodeEntity['relations']
+  })[]
+  regions: WorldMapRegion[]
+  routes: WorldMapRoute[]
+  notes: string[]
+}
+
+/** 解析地图据点关联的实体、证据与关系（游离标记以 orphan_node_ids 标出）。 */
+export function resolveWorldMapEntities(mapId: string): Promise<WorldMapEntitiesResult> {
+  return request<WorldMapEntitiesResult>(`/world-maps/${mapId}/entities`)
+}
+
+/** 导出结构化点位 JSON（含 entity_id / evidence；confidence 待实体层补字段）。 */
+export function exportWorldMapPoints(mapId: string): Promise<WorldMapExportResult> {
+  return request<WorldMapExportResult>(`/world-maps/${mapId}/export?format=json`)
 }
 
 /** 获取一次世界提取运行的完整状态（用于从 run_id 恢复审阅上下文）。 */

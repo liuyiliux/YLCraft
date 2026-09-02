@@ -7,8 +7,8 @@
 ## Summary
 
 - Router mounts: 52
-- Endpoints: 624
-- Public schema endpoints: 623
+- Endpoints: 637
+- Public schema endpoints: 636
 - Hidden compatibility endpoints: 1
 
 ## Router Mounts
@@ -732,32 +732,45 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/novel-sources` | 列出来源快照 | `list_snapshots` | `backend/app/api/v1/novel_sources.py:297` |
-| `GET` | `/api/v1/novel-sources/domains` | 列出可检测的世界模块 | `list_domains` | `backend/app/api/v1/novel_sources.py:308` |
-| `POST` | `/api/v1/novel-sources/import-bookshelf` | 导入书架章节为来源快照 | `import_bookshelf` | `backend/app/api/v1/novel_sources.py:277` |
-| `POST` | `/api/v1/novel-sources/import-txt` | 导入本地 TXT 为来源快照 | `import_txt` | `backend/app/api/v1/novel_sources.py:240` |
-| `GET` | `/api/v1/novel-sources/{snapshot_id}` | 获取来源快照详情 | `get_snapshot` | `backend/app/api/v1/novel_sources.py:323` |
-| `GET` | `/api/v1/novel-sources/{snapshot_id}/chapters` | 列出快照章节 | `list_chapters` | `backend/app/api/v1/novel_sources.py:328` |
-| `GET` | `/api/v1/novel-sources/{snapshot_id}/chunks` | 列出快照文本块 | `list_chunks` | `backend/app/api/v1/novel_sources.py:339` |
-| `POST` | `/api/v1/novel-sources/{snapshot_id}/chunks/index` | 为小说文本块建立向量索引 | `index_chunks` | `backend/app/api/v1/novel_sources.py:355` |
-| `POST` | `/api/v1/novel-sources/{snapshot_id}/chunks/search` | 混合检索小说文本块 | `search_chunks` | `backend/app/api/v1/novel_sources.py:383` |
-| `POST` | `/api/v1/novel-sources/{snapshot_id}/derive` | 从完本来源创建派生项目 | `derive_project` | `backend/app/api/v1/novel_sources.py:450` |
-| `POST` | `/api/v1/novel-sources/{snapshot_id}/extract` | 按模块提取世界候选 | `extract_world` | `backend/app/api/v1/novel_sources.py:424` |
-| `POST` | `/api/v1/novel-sources/{snapshot_id}/plan` | 逐模块判断世界设定是否存在 | `plan_domains` | `backend/app/api/v1/novel_sources.py:401` |
-| `POST` | `/api/v1/novel-sources/{snapshot_id}/sync` | 连载来源追加新章节 | `sync_chapters` | `backend/app/api/v1/novel_sources.py:474` |
-| `GET` | `/api/v1/world-extraction-runs/{run_id}` | 获取提取运行状态 | `get_run` | `backend/app/api/v1/novel_sources.py:488` |
-| `POST` | `/api/v1/world-extraction-runs/{run_id}/affected-facts` | 把合并/矛盾结论传播到已写事实 | `propagate_affected_facts` | `backend/app/api/v1/novel_sources.py:534` |
-| `POST` | `/api/v1/world-extraction-runs/{run_id}/apply` | 确认候选并写入项目 | `apply_run` | `backend/app/api/v1/novel_sources.py:568` |
-| `GET` | `/api/v1/world-extraction-runs/{run_id}/candidates` | 预览提取候选与证据 | `list_candidates` | `backend/app/api/v1/novel_sources.py:493` |
-| `POST` | `/api/v1/world-extraction-runs/{run_id}/candidates/decide` | 标记候选为接受或忽略 | `decide_candidates` | `backend/app/api/v1/novel_sources.py:553` |
-| `POST` | `/api/v1/world-extraction-runs/{run_id}/contradictions` | 判断重复候选是否同一实体或矛盾 | `detect_contradictions` | `backend/app/api/v1/novel_sources.py:517` |
-| `GET` | `/api/v1/world-extraction-runs/{run_id}/reconcile` | 跨域调和候选提示 | `reconcile_run` | `backend/app/api/v1/novel_sources.py:507` |
-| `GET` | `/api/v1/world-maps` | 列出世界地图文档 | `list_world_maps` | `backend/app/api/v1/novel_sources.py:590` |
-| `POST` | `/api/v1/world-maps` | 创建世界地图文档 | `create_world_map` | `backend/app/api/v1/novel_sources.py:601` |
-| `GET` | `/api/v1/world-maps/{map_id}` | 获取世界地图文档 | `get_world_map` | `backend/app/api/v1/novel_sources.py:612` |
-| `PUT` | `/api/v1/world-maps/{map_id}` | 保存世界地图（revision CAS） | `update_world_map` | `backend/app/api/v1/novel_sources.py:620` |
-| `DELETE` | `/api/v1/world-maps/{map_id}` | 删除世界地图文档 | `delete_world_map` | `backend/app/api/v1/novel_sources.py:648` |
-| `GET` | `/api/v1/world-maps/{map_id}/render` | 渲染世界地图为 SVG | `render_world_map` | `backend/app/api/v1/novel_sources.py:636` |
+| `POST` | `/api/v1/creative-projects/from-novel-source` | 从来源快照创建世界项目 | `create_project_from_novel_source` | `backend/app/api/v1/novel_sources.py:762` |
+| `POST` | `/api/v1/creative-projects/{project_id}/world-extraction/start` | 从项目内容启动世界提取 | `start_project_world_extraction` | `backend/app/api/v1/novel_sources.py:796` |
+| `GET` | `/api/v1/creative-projects/{project_id}/world-knowledge` | 聚合项目世界知识 | `get_project_world_knowledge` | `backend/app/api/v1/novel_sources.py:881` |
+| `GET` | `/api/v1/novel-sources` | 列出来源快照 | `list_snapshots` | `backend/app/api/v1/novel_sources.py:473` |
+| `GET` | `/api/v1/novel-sources/domains` | 列出可检测的世界模块 | `list_domains` | `backend/app/api/v1/novel_sources.py:484` |
+| `POST` | `/api/v1/novel-sources/import-bookshelf` | 导入书架章节为来源快照 | `import_bookshelf` | `backend/app/api/v1/novel_sources.py:453` |
+| `POST` | `/api/v1/novel-sources/import-txt` | 导入本地 TXT 为来源快照 | `import_txt` | `backend/app/api/v1/novel_sources.py:416` |
+| `GET` | `/api/v1/novel-sources/{snapshot_id}` | 获取来源快照详情 | `get_snapshot` | `backend/app/api/v1/novel_sources.py:499` |
+| `GET` | `/api/v1/novel-sources/{snapshot_id}/chapters` | 列出快照章节 | `list_chapters` | `backend/app/api/v1/novel_sources.py:504` |
+| `GET` | `/api/v1/novel-sources/{snapshot_id}/chunks` | 列出快照文本块 | `list_chunks` | `backend/app/api/v1/novel_sources.py:515` |
+| `POST` | `/api/v1/novel-sources/{snapshot_id}/chunks/index` | 为小说文本块建立向量索引 | `index_chunks` | `backend/app/api/v1/novel_sources.py:531` |
+| `POST` | `/api/v1/novel-sources/{snapshot_id}/chunks/search` | 混合检索小说文本块 | `search_chunks` | `backend/app/api/v1/novel_sources.py:559` |
+| `POST` | `/api/v1/novel-sources/{snapshot_id}/derive` | 从完本来源创建派生项目 | `derive_project` | `backend/app/api/v1/novel_sources.py:626` |
+| `POST` | `/api/v1/novel-sources/{snapshot_id}/extract` | 按模块提取世界候选 | `extract_world` | `backend/app/api/v1/novel_sources.py:600` |
+| `POST` | `/api/v1/novel-sources/{snapshot_id}/plan` | 逐模块判断世界设定是否存在 | `plan_domains` | `backend/app/api/v1/novel_sources.py:577` |
+| `POST` | `/api/v1/novel-sources/{snapshot_id}/sync` | 连载来源追加新章节 | `sync_chapters` | `backend/app/api/v1/novel_sources.py:650` |
+| `GET` | `/api/v1/projects/{project_id}/world-domains` | 列出项目世界模块（内置 + 项目扩展） | `list_project_world_domains` | `backend/app/api/v1/novel_sources.py:1033` |
+| `PUT` | `/api/v1/projects/{project_id}/world-domains/{domain_key}` | 新增或更新项目世界模块定义 | `upsert_project_world_domain` | `backend/app/api/v1/novel_sources.py:1048` |
+| `DELETE` | `/api/v1/projects/{project_id}/world-domains/{domain_key}` | 重置项目世界模块定义（内置恢复默认，自定义移除） | `reset_project_world_domain` | `backend/app/api/v1/novel_sources.py:1079` |
+| `GET` | `/api/v1/projects/{project_id}/world-entities` | 列出项目类型化世界实体 | `list_project_world_entities` | `backend/app/api/v1/novel_sources.py:855` |
+| `GET` | `/api/v1/projects/{project_id}/world-entity-relations` | 列出项目类型化实体关系 | `list_project_world_entity_relations` | `backend/app/api/v1/novel_sources.py:870` |
+| `POST` | `/api/v1/projects/{project_id}/world-maps/from-places` | 从地点实体生成地图初稿 | `create_world_map_from_project_places` | `backend/app/api/v1/novel_sources.py:1109` |
+| `GET` | `/api/v1/world-extraction-runs/{run_id}` | 获取提取运行状态 | `get_run` | `backend/app/api/v1/novel_sources.py:664` |
+| `POST` | `/api/v1/world-extraction-runs/{run_id}/affected-facts` | 把合并/矛盾结论传播到已写事实 | `propagate_affected_facts` | `backend/app/api/v1/novel_sources.py:710` |
+| `POST` | `/api/v1/world-extraction-runs/{run_id}/apply` | 确认候选并写入项目 | `apply_run` | `backend/app/api/v1/novel_sources.py:744` |
+| `GET` | `/api/v1/world-extraction-runs/{run_id}/candidates` | 预览提取候选与证据 | `list_candidates` | `backend/app/api/v1/novel_sources.py:669` |
+| `POST` | `/api/v1/world-extraction-runs/{run_id}/candidates/decide` | 标记候选为接受或忽略 | `decide_candidates` | `backend/app/api/v1/novel_sources.py:729` |
+| `POST` | `/api/v1/world-extraction-runs/{run_id}/contradictions` | 判断重复候选是否同一实体或矛盾 | `detect_contradictions` | `backend/app/api/v1/novel_sources.py:693` |
+| `GET` | `/api/v1/world-extraction-runs/{run_id}/reconcile` | 跨域调和候选提示 | `reconcile_run` | `backend/app/api/v1/novel_sources.py:683` |
+| `GET` | `/api/v1/world-maps` | 列出世界地图文档 | `list_world_maps` | `backend/app/api/v1/novel_sources.py:1087` |
+| `POST` | `/api/v1/world-maps` | 创建世界地图文档 | `create_world_map` | `backend/app/api/v1/novel_sources.py:1098` |
+| `GET` | `/api/v1/world-maps/{map_id}` | 获取世界地图文档 | `get_world_map` | `backend/app/api/v1/novel_sources.py:1125` |
+| `PUT` | `/api/v1/world-maps/{map_id}` | 保存世界地图（revision CAS） | `update_world_map` | `backend/app/api/v1/novel_sources.py:1133` |
+| `DELETE` | `/api/v1/world-maps/{map_id}` | 删除世界地图文档 | `delete_world_map` | `backend/app/api/v1/novel_sources.py:1341` |
+| `GET` | `/api/v1/world-maps/{map_id}/entities` | 解析地图据点关联的实体与证据 | `resolve_world_map_entities` | `backend/app/api/v1/novel_sources.py:1163` |
+| `GET` | `/api/v1/world-maps/{map_id}/export` | 导出世界地图（结构化点位 JSON / SVG） | `export_world_map` | `backend/app/api/v1/novel_sources.py:1181` |
+| `POST` | `/api/v1/world-maps/{map_id}/generate-visual` | 用生图模型生成地图视觉成图 | `generate_world_map_visual` | `backend/app/api/v1/novel_sources.py:1220` |
+| `POST` | `/api/v1/world-maps/{map_id}/generate-visual/prompt-preview` | 预览地图生图提示词 | `preview_world_map_visual_prompt` | `backend/app/api/v1/novel_sources.py:1204` |
+| `GET` | `/api/v1/world-maps/{map_id}/render` | 渲染世界地图为 SVG | `render_world_map` | `backend/app/api/v1/novel_sources.py:1149` |
 
 ### Novels
 

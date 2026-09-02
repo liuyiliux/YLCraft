@@ -116,6 +116,27 @@
 - [x] 21.1 Add setting workspace UI with the basic layer always available and independently detected domains lazy-loaded.
   - _Requirement: 10_
   - _Done: `/novel-world` 的模块判断区即逐域检测 + 逐域勾选的工作区：基础层始终展示，扩展域按检测结果独立懒加载，可单独启用/关闭。_
+- [x] 21.5 Make world domains and attributes extensible per project (阶段 A 底座).
+  - Domains and their attribute schemas must not be hardcoded: a project can override built-in
+    labels/prompts, append fields, disable modules and add custom modules; AI-suggested modules
+    need user confirmation before taking part in extraction.
+  - _Requirement: 4, 10_
+  - _Done: 新增 `world_domain_definitions` 表（迁移 `038`）承载项目级定义，`source` 区分 `builtin_override`/`custom`/`ai_suggested`；内置字段**只可追加不可删除**（保证既有 `attributes_json` 始终可解析），内置模块可禁用与重置回默认，自定义模块实体仍写 `world_entities`（`entity_type` 取定义值，无需新表）。新增 `WorldDomainService`（`list_domains`/`resolve_specs`/`upsert_definition`/`reset_definition`）与 `GET|PUT|DELETE /api/v1/projects/{id}/world-domains[/{key}]`。补齐 proposal 提及但此前未实现的四个通用内置模块：`religion`（宗教/信仰）、`language`（语言/文字）、`culture`（文化/习俗）、`ecology`（生态/地理）。AI 建议的模块落库后默认不参与提取，需转 `custom` 并启用。后续 AI 渐进生成（`draft_world`/`expand_domain`/`expand_entity` + 提示词可编辑 + preview）拆为独立 change。测试 57 例全绿（新增 4 例），alembic 单 head。_
+- [x] 21.4 Make map space layers data-driven and demote generated visuals (阶段 2).
+  - Space layers (位面) must not be a hardcoded enum: each project defines its own layer
+    set (any names, any count, or none); generated visuals must not auto-fill the base map.
+  - _Requirement: 4, 5_
+  - _Done: `map_json.layers` 由项目自定义（缺省或为空视为单层地图，节点 `layer` 为空即未分层，零迁移）；`create_map_from_project_places` 新据点标记未分层，由用户按世界观归层；导出 JSON 随 `layers` 与 `node.layer` 输出。前端：据点编辑区新增「空间层」面板（增/删/改名，删层不删据点、据点转未分层），节点行可选所属层，画布据点/路线/区域多边形按层过滤（「全部/各层/未分层」tabs，未定义层时不显示切换）。同时移除 `doGenerateVisual` 中成图自动铺满底图的评审否决行为，改为在最近成图与历史缩略图上手动「设为底图（参考层）」，并标注派生资产语义。后端 53 例全绿（新增 `test_build_map_export_includes_data_driven_layers`），tsc 全量通过。_
+- [x] 21.3 Make map nodes reference place entities instead of copying facts (阶段 1 正典化).
+  - Nodes carry `entity_id`; resolution returns entity summary, evidence and typed relations;
+    orphan nodes must be surfaced instead of being treated as canon; export returns structured points.
+  - _Requirement: 4, 5, 8_
+  - _Done: `create_map_from_project_places` 生成的据点写入 `entity_id`（引用 `world_entities.id`，`description` 降级为仅用于离线渲染/导出的摘要快照），并改为按 `entity_id` 判重（实体改名不再重复生成据点，历史无 `entity_id` 的节点回退名称匹配）；新增 `WorldMapService.resolve_nodes_with_entities` 与 `GET /world-maps/{id}/entities`（返回 node/entity/relations，并用 `orphan_node_ids` 标出游离标记）；新增 `GET /world-maps/{id}/export?format=json|svg`，json 带 `entity_id/evidence/relations`，`confidence` 恒为 null（OQ-01：实体层暂无置信度字段，不伪造），svg 复用确定性渲染。前端接入：`WorldMapNode` 增加 `entity_id`，地图工作台加载后回查据点实体（Popup 与据点编辑区展示来源实体摘要与证据锚点，游离/实体缺失以 Tag 区分），工具栏新增「导出点位 JSON」下载结构化点位数据；API 层新增 `resolveWorldMapEntities`/`exportWorldMapPoints`，tsc 全量类型检查通过。测试 52 例全绿（新增 3 例）。_
+- [x] 21.2 Fix map workbench corrections found in review (阶段 0 纠偏).
+  - Single-place `from-places` must not 500; the visual prompt must not hardcode a fantasy style;
+    extraction without domains/domain_plan must fall back to the basic layer.
+  - _Requirement: 4, 5_
+  - _Done: `create_map_from_project_places` 单点分支补 `radius` 初始化（此前该分支漏设 `radius`，NameError 直接 500，现单点居中生成）；`build_map_visual_prompt` 移除「羊皮纸/古旧卷轴·中土奇幻」硬编码画风段，改为题材中立的构图描述，未指定风格时明确交给视觉基准/参考图自适应；`_resolve_domains` 在既无 `domains` 也无 `domain_plan` 时回落到 `BASIC_DOMAINS`（显式 plan 全部关闭时仍尊重用户意图，不偷偷补跑），Agent 工具 `extract_novel_source_world` 的 `input_schema_note` 与 `docs/agent/agent-center.md` 已同步。测试 `test_novel_source_world.py` 49 例全绿（新增 4 例锁住这三处回归）。_
 
 ## Phase 5: Human and Agent workflows
 

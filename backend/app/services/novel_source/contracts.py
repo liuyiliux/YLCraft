@@ -24,6 +24,10 @@ DOMAIN_ECONOMY = "economy"
 DOMAIN_SPECIES = "species"
 DOMAIN_ITEM = "item"
 DOMAIN_GLOSSARY = "glossary"
+DOMAIN_RELIGION = "religion"
+DOMAIN_LANGUAGE = "language"
+DOMAIN_CULTURE = "culture"
+DOMAIN_ECOLOGY = "ecology"
 DOMAIN_MAP = "map"
 
 
@@ -183,6 +187,54 @@ DOMAIN_SPECS: tuple[DomainSpec, ...] = (
             "普通词汇、地名、人名、势力名分别归入对应模块，不在此重复。"
         ),
         attributes=("kind", "definition", "related_domains"),
+    ),
+    DomainSpec(
+        key=DOMAIN_RELIGION,
+        label="宗教/信仰",
+        basic=False,
+        extractable=True,
+        entity_type="religion",
+        prompt_hint=(
+            "只收录原文明确出现的信仰体系、神灵、教义、戒律、仪式与宗教组织，"
+            "包含信众范围与社会影响。只出现「天啊」这类感叹而没有信仰体系的不算。"
+        ),
+        attributes=("kind", "deities", "doctrines", "rituals", "institutions", "followers", "taboos"),
+    ),
+    DomainSpec(
+        key=DOMAIN_LANGUAGE,
+        label="语言/文字",
+        basic=False,
+        extractable=True,
+        entity_type="language",
+        prompt_hint=(
+            "只收录原文明确出现的语言、文字、书写系统与方言，包含使用族群与差异。"
+            "笼统说「听不懂的话」而没有具体名称或特征的不算。"
+        ),
+        attributes=("kind", "script", "speakers", "dialects", "sample_terms", "related_languages"),
+    ),
+    DomainSpec(
+        key=DOMAIN_CULTURE,
+        label="文化/习俗",
+        basic=False,
+        extractable=True,
+        entity_type="culture",
+        prompt_hint=(
+            "只收录原文明确描写的风俗、礼节、节庆、审美、饮食与禁忌等文化实践，"
+            "包含承载该文化的群体。抽象价值观若无具体习俗支撑不算。"
+        ),
+        attributes=("kind", "customs", "values", "arts", "festivals", "taboos", "dress"),
+    ),
+    DomainSpec(
+        key=DOMAIN_ECOLOGY,
+        label="生态/地理",
+        basic=False,
+        extractable=True,
+        entity_type="ecology",
+        prompt_hint=(
+            "只收录原文明确描写的自然环境：气候、地形、植被、动物、资源与自然灾害，"
+            "及其对聚居与生计的影响。具体地点归入「地点」，本域承载环境本身。"
+        ),
+        attributes=("kind", "climate", "terrain", "flora", "fauna", "resources", "hazards"),
     ),
     DomainSpec(
         key=DOMAIN_MAP,

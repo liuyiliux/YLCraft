@@ -165,7 +165,7 @@ AI 连接器和供应商规范已经作为 `ai_config` 分类工具接入智能�
 - `list_novel_source_snapshots`：列出已导入的来源快照（TXT/书架），只读本地。
 - `inspect_novel_source_snapshot`：查看快照章节与可提取/可检测的世界模块。
 - `plan_novel_source_domains`：AI 逐模块判断存在性（detected/not_detected/uncertain），风险 `costly`，只检测不提取。
-- `extract_novel_source_world`：按选定模块提取候选（角色/地点/势力/历史事件），风险 `costly`，只预览不写项目事实；`mode=delta` 时从上次游标只处理新文本块并把新证据并回既有候选。
+- `extract_novel_source_world`：按选定模块提取候选（角色/地点/势力/历史事件），风险 `costly`，只预览不写项目事实；未指定 `domains` 且没有检测结果时回落到基础层（角色/地点/势力/历史事件），扩展模块需先 `plan_novel_source_domains` 检测后显式启用；`mode=delta` 时从上次游标只处理新文本块并把新证据并回既有候选。
 - `sync_novel_source_chapters`：为连载快照追加新章节和新文本块，风险 `write`，只追加不重建。
 - `list_world_extraction_candidates`：预览候选与逐字证据（同时覆盖本次运行产生或更新的条目）。
 - `decide_world_extraction_candidates`：接受/忽略/合并候选，风险 `write`，只改候选状态；`merge` 用 `merge_into` 把重复候选的证据与设定并入目标，源候选进入 `merged` 终态。
