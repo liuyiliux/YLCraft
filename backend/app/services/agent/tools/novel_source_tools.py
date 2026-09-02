@@ -11,11 +11,13 @@ from __future__ import annotations
 from typing import Any
 
 from app.db.database import SessionLocal
+from app.db.models.novel_source import DomainDefinitionSource
 from app.services.agent.registry import register_tool
 from app.services.creative_project.service import loads_json
 from app.services.novel_source.contracts import DETECTABLE_DOMAINS, EXTRACTABLE_DOMAINS
 from app.services.novel_source.extraction import WorldExtractionService
 from app.services.novel_source.service import NovelSourceService
+from app.services.novel_source.world_generation import WorldGenerationService
 
 
 def _snapshot_summary(snapshot: Any) -> dict[str, Any]:
@@ -164,6 +166,245 @@ async def extract_novel_source_world(
         except ValueError as exc:
             return {"success": False, "error": str(exc)}
         return {"success": True, "extraction": result}
+
+
+@register_tool(
+    name="expand_world_domain",
+    description="按层次策略 AI 细化一整个世界设定模块（异步提交，返回 task_id）。",
+    category="novel_source",
+    examples=["细化地点模块，补充镇上的地点", "把势力这个域补全"],
+    input_schema_note="必须提供 project_id 与 domain（该模块须已启用）；hint 为本次补充要求；limit 限制新增条目数（1-40）。",
+    output_schema_note="返回 task_id/status/domain/poll。轮询复用既有任务工具 get_project_task(task_id)；完成后 result 含 run_id 与候选数，再到 /novel-world 审阅确认后才写入正典。",
+    risk_level="costly",
+    output_type="world_domain_expansion_task",
+    cost_hint="整个模块一次细化、多次模型调用；提交后立即返回不阻塞，需轮询结果。",
+)
+async def expand_world_domain(
+    project_id: str,
+    domain: str,
+    hint: str = "",
+    template_id: str = "",
+    prompt_override: str = "",
+    limit: int = 12,
+    provider: str = "",
+    model: str = "",
+) -> dict[str, Any]:
+    import asyncio
+
+    from app.core.task_queue import get_task_queue
+
+    session = SessionLocal()
+    try:
+        from app.api.v1.novel_sources import (
+            WorldDomainExpansionRequest,
+            _run_domain_expansion_task,
+        )
+
+        service = WorldGenerationService(session)
+        if domain not in {spec.key for spec in service.domains.resolve_specs(project_id)}:
+            return {"success": False, "error": f"模块未启用或不存在：{domain}"}
+
+        queue = get_task_queue()
+        task = await queue.create_task(
+            task_type="world_domain_expansion",
+            payload={"project_id": project_id, "domain": domain, "stage_label": f"细化{domain}模块"},
+        )
+        req = WorldDomainExpansionRequest(
+            domain=domain,
+            template_id=template_id,
+            prompt_override=prompt_override,
+            hint=hint,
+            limit=limit,
+            provider=provider,
+            model=model,
+        )
+        asyncio.create_task(_run_domain_expansion_task(task.task_id, project_id, req))
+        return {
+            "success": True,
+            "task_id": task.task_id,
+            "status": "pending",
+            "domain": domain,
+            "poll_tool": "get_project_task",
+        }
+    except ValueError as exc:
+        return {"success": False, "error": str(exc)}
+    finally:
+        session.close()
+
+
+@register_tool(
+    name="manage_world_building_template",
+    description="管理世界构建模板（层次策略 + 每档提示词）：list / draft / save / delete。",
+    category="novel_source",
+    examples=[
+        "列出项目的世界构建模板",
+        "帮我起草一个面向「力量/科技体系」的世界构建模板草案（先不保存）",
+        "保存一个「世界>国家>城市」的细化模板",
+        "删除刚才那个模板",
+    ],
+    input_schema_note="action 取 list（只需 project_id）/ draft（提供可选 domain 与 hint，返回草案不落库）/ save（提供 name、layers[]、可选 prompts、可选 template_id 用于更新；保存前应先 draft 或由用户确认草案）/ delete（需 template_id）。",
+    output_schema_note="list 返回 templates[]（含 layers/prompts/is_builtin）；draft 返回 {name,layers,prompts,note} 草案（不落库，须再调 save 才保存）；save 返回保存的模板；delete 返回结果。内置模板只读，save 更新内置会被拒绝。",
+    risk_level="write",
+    output_type="world_building_template_result",
+    cost_hint="save/delete/list 不调用模型；draft 调用一次模型产出草案且不落库。",
+)
+async def manage_world_building_template(
+    project_id: str,
+    action: str = "list",
+    template_id: str = "",
+    name: str = "",
+    layers: list[str] | None = None,
+    prompts: dict[str, Any] | None = None,
+    is_default: bool = False,
+    domain: str = "",
+    hint: str = "",
+) -> dict[str, Any]:
+    with SessionLocal() as session:
+        service = WorldGenerationService(session)
+        try:
+            if action == "delete":
+                if not template_id:
+                    return {"success": False, "error": "delete 需要 template_id"}
+                service.delete_template(project_id, template_id)
+                return {"success": True, "deleted": template_id}
+            if action == "draft":
+                draft = await service.draft_template(
+                    project_id, domain=domain, hint=hint
+                )
+                return {"success": True, "draft": draft}
+            if action == "save":
+                row = service.upsert_template(
+                    project_id,
+                    template_id=template_id,
+                    name=name,
+                    layers=layers or [],
+                    prompts=prompts or {},
+                    is_default=is_default,
+                )
+                return {"success": True, "template": service._serialize_template(row)}
+            return {"success": True, "templates": service.list_templates(project_id)}
+        except ValueError as exc:
+            return {"success": False, "error": str(exc)}
+
+
+@register_tool(
+    name="list_world_building_suggestions",
+    description="列出 AI 提出、但尚未确认的结构建议（新模块与新字段），这些建议默认不生效。",
+    category="novel_source",
+    examples=["看看 AI 建议了哪些新模块或新字段", "有没有待确认的世界结构建议"],
+    input_schema_note="必须提供 project_id。",
+    output_schema_note="返回 domains（建议的新模块：key/label/attributes/reason）与 fields（建议的新字段：domain/field/reason）。建议未确认前不参与任何提取与生成。",
+    risk_level="read",
+    output_type="world_building_suggestions",
+    cost_hint="只读查询，不调用模型。",
+)
+async def list_world_building_suggestions(project_id: str) -> dict[str, Any]:
+    with SessionLocal() as session:
+        service = WorldDomainService(session)
+        return {"success": True, "suggestions": service.pending_suggestions(project_id)}
+
+
+@register_tool(
+    name="resolve_world_field_suggestion",
+    description="确认或忽略一个 AI 建议的新字段（确认后写入该模块的属性契约，忽略后不再提示）。",
+    category="novel_source",
+    examples=["采纳「气候带」这个字段建议", "忽略「风向」字段建议"],
+    input_schema_note="必须提供 project_id、domain 与 field；action 取 confirm 或 ignore。",
+    output_schema_note="返回 domain/field/state（confirmed 或 ignored）。确认只追加字段，内置字段不受影响。",
+    risk_level="write",
+    output_type="world_field_suggestion_resolution",
+    cost_hint="只改项目级模块定义，不调用模型。",
+)
+async def resolve_world_field_suggestion(
+    project_id: str,
+    domain: str,
+    field: str,
+    action: str = "confirm",
+) -> dict[str, Any]:
+    with SessionLocal() as session:
+        service = WorldDomainService(session)
+        try:
+            if action == "ignore":
+                service.ignore_suggested_field(project_id, domain, field)
+                state = "ignored"
+            else:
+                service.confirm_suggested_field(project_id, domain, field)
+                state = "confirmed"
+        except ValueError as exc:
+            return {"success": False, "error": str(exc)}
+        return {"success": True, "resolution": {"domain": domain, "field": field, "state": state}}
+
+
+@register_tool(
+    name="resolve_world_domain_suggestion",
+    description="确认或忽略一个 AI 建议的新模块（确认后启用并参与提取，忽略后移除建议）。",
+    category="novel_source",
+    examples=["启用 AI 建议的「地下势力」模块", "忽略这个新模块建议"],
+    input_schema_note="必须提供 project_id 与 domain_key；action 取 confirm 或 ignore。",
+    output_schema_note="返回 domain_key/state（confirmed 或 ignored）。",
+    risk_level="write",
+    output_type="world_domain_suggestion_resolution",
+    cost_hint="只改项目级模块定义，不调用模型。",
+)
+async def resolve_world_domain_suggestion(
+    project_id: str,
+    domain_key: str,
+    action: str = "confirm",
+) -> dict[str, Any]:
+    with SessionLocal() as session:
+        service = WorldDomainService(session)
+        try:
+            if action == "ignore":
+                service.reset_definition(project_id, domain_key)
+                state = "ignored"
+            else:
+                service.upsert_definition(
+                    project_id,
+                    domain_key,
+                    is_enabled=True,
+                    source=DomainDefinitionSource.CUSTOM.value,
+                )
+                state = "confirmed"
+        except ValueError as exc:
+            return {"success": False, "error": str(exc)}
+        return {"success": True, "resolution": {"domain_key": domain_key, "state": state}}
+
+
+@register_tool(
+    name="expand_world_entity_attributes",
+    description="AI 按模块属性契约补充一个世界实体的字段（生成链路：产出 ai_draft 候选，需确认后写入，不伪造证据）。",
+    category="novel_source",
+    examples=["把「龙二赌坊」的 region 和 significance 补上", "补充这个地点的设定字段"],
+    input_schema_note="必须提供 project_id、entity_id 与 fields；fields 必须属于该模块的属性契约，契约外的字段请用返回值里的 suggested_fields 提议；template_id/prompt_override/provider/model 可选。",
+    output_schema_note="返回 run_id/candidate_id/fields/values/origin=ai_draft 以及 suggested_fields/suggested_domains。建议的新字段或新模块默认不启用，需用户确认后才参与提取。",
+    risk_level="costly",
+    output_type="world_entity_expansion",
+    cost_hint="按实体一次调用模型；只补勾选字段，预览提示词不消耗配额。",
+)
+async def expand_world_entity_attributes(
+    project_id: str,
+    entity_id: str,
+    fields: list[str],
+    template_id: str = "",
+    prompt_override: str = "",
+    provider: str = "",
+    model: str = "",
+) -> dict[str, Any]:
+    with SessionLocal() as session:
+        service = WorldGenerationService(session)
+        try:
+            result = await service.expand_entity(
+                project_id,
+                entity_id,
+                fields=fields,
+                template_id=template_id or None,
+                prompt_override=prompt_override,
+                provider=provider or None,
+                model=model or None,
+            )
+        except ValueError as exc:
+            return {"success": False, "error": str(exc)}
+        return {"success": True, "expansion": result}
 
 
 @register_tool(

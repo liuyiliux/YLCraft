@@ -568,6 +568,239 @@ export interface WorldMapExportResult {
   notes: string[]
 }
 
+/** 项目世界模块（内置 + 项目扩展的属性契约）。 */
+export interface WorldDomainSpec {
+  key: string
+  label: string
+  entity_type: string
+  attributes: string[]
+  builtin_attributes: string[]
+  is_builtin: boolean
+  is_enabled: boolean
+  source: string
+  prompt_hint: string
+}
+
+export interface WorldDomainsResult {
+  domains: WorldDomainSpec[]
+}
+
+/** 写入项目级模块定义的结果。 */
+export interface WorldDomainDefinition {
+  key: string
+  label: string
+  entity_type: string
+  extra_attributes: string[]
+  prompt_hint: string
+  is_enabled: boolean
+  source: string
+}
+
+/** 列出项目世界模块（含属性契约），用于「补充哪些字段」。 */
+export function listProjectWorldDomains(projectId: string): Promise<WorldDomainsResult> {
+  return request<WorldDomainsResult>(`/projects/${projectId}/world-domains`)
+}
+
+/** 世界构建模板：层次策略 + 每档提示词（名称与层数由数据决定）。 */
+export interface WorldBuildingTemplate {
+  id: string
+  name: string
+  layers: string[]
+  prompts: Record<string, string>
+  is_default: boolean
+  is_builtin: boolean
+}
+
+export function listWorldTemplates(
+  projectId: string,
+): Promise<{ templates: WorldBuildingTemplate[] }> {
+  return request<{ templates: WorldBuildingTemplate[] }>(`/projects/${projectId}/world-templates`)
+}
+
+export function upsertWorldTemplate(
+  projectId: string,
+  payload: {
+    template_id?: string
+    name?: string
+    layers?: string[]
+    prompts?: Record<string, string>
+    is_default?: boolean
+  },
+): Promise<WorldBuildingTemplate> {
+  return jsonRequest<WorldBuildingTemplate>(
+    `/projects/${projectId}/world-templates`,
+    'POST',
+    payload,
+  )
+}
+
+export function deleteWorldTemplate(
+  projectId: string,
+  templateId: string,
+): Promise<{ project_id: string; template_id: string }> {
+  return jsonRequest(`/projects/${projectId}/world-templates/${templateId}`, 'DELETE')
+}
+
+/** AI 起草的模板草案（只回显、不落库，确认后走 upsertWorldTemplate 保存）。 */
+export interface WorldTemplateDraft {
+  name: string
+  layers: string[]
+  prompts: Record<string, string>
+  note?: string
+}
+
+export function draftWorldTemplate(
+  projectId: string,
+  payload: { domain?: string; hint?: string },
+): Promise<WorldTemplateDraft> {
+  return jsonRequest<WorldTemplateDraft>(
+    `/projects/${projectId}/world-templates/draft`,
+    'POST',
+    payload,
+  )
+}
+
+/** 域级细化提交结果（异步：返回 task_id，用既有任务中心轮询）。 */
+export interface WorldDomainExpansionTask {
+  task_id: string
+  status: string
+  domain: string
+  poll: string
+}
+
+export function expandWorldDomain(
+  projectId: string,
+  payload: {
+    domain: string
+    hint?: string
+    template_id?: string
+    prompt_override?: string
+    limit?: number
+    provider?: string
+    model?: string
+  },
+): Promise<WorldDomainExpansionTask> {
+  return jsonRequest<WorldDomainExpansionTask>(
+    `/projects/${projectId}/world-generation/expand-domain`,
+    'POST',
+    payload,
+  )
+}
+
+/** 待确认的 AI 结构建议（模块级 + 字段级）：不会自动成为 schema。 */
+export interface WorldBuildingSuggestions {
+  domains: { key: string; label: string; attributes: string[]; reason: string; state: string }[]
+  fields: { domain: string; domain_label: string; field: string; reason: string; state: string }[]
+}
+
+export function listWorldBuildingSuggestions(projectId: string): Promise<WorldBuildingSuggestions> {
+  return request<WorldBuildingSuggestions>(`/projects/${projectId}/world-generation/suggestions`)
+}
+
+/** 确认字段建议：写入该模块的属性契约。 */
+export function confirmSuggestedField(
+  projectId: string,
+  payload: { domain: string; field: string },
+): Promise<{ domain: string; field: string; state: string }> {
+  return jsonRequest(
+    `/projects/${projectId}/world-generation/suggestions/fields/confirm`,
+    'POST',
+    payload,
+  )
+}
+
+/** 忽略字段建议：不再重复提示。 */
+export function ignoreSuggestedField(
+  projectId: string,
+  payload: { domain: string; field: string },
+): Promise<{ domain: string; field: string; state: string }> {
+  return jsonRequest(
+    `/projects/${projectId}/world-generation/suggestions/fields/ignore`,
+    'POST',
+    payload,
+  )
+}
+
+/** 确认模块建议（转 custom 并启用）或覆盖内置模块。 */
+export function upsertProjectWorldDomain(
+  projectId: string,
+  domainKey: string,
+  payload: {
+    label?: string
+    entity_type?: string
+    extra_attributes?: string[]
+    prompt_hint?: string
+    is_enabled?: boolean
+    source?: string
+  },
+): Promise<WorldDomainDefinition> {
+  return jsonRequest<WorldDomainDefinition>(
+    `/projects/${projectId}/world-domains/${domainKey}`,
+    'PUT',
+    payload,
+  )
+}
+
+/** 忽略模块建议：移除建议（内置模块则恢复默认）。 */
+export function resetProjectWorldDomain(
+  projectId: string,
+  domainKey: string,
+): Promise<{ project_id: string; domain_key: string }> {
+  return jsonRequest(`/projects/${projectId}/world-domains/${domainKey}`, 'DELETE')
+}
+
+/** AI 补充实体属性的预览（只返回提示词，不调用模型）。 */
+export interface EntityExpansionPreview {
+  entity_id: string
+  entity: string
+  domain: string
+  fields: string[]
+  prompt: string
+}
+
+export function previewEntityExpansion(
+  projectId: string,
+  payload: { entity_id: string; fields: string[]; template_id?: string; prompt_override?: string },
+): Promise<EntityExpansionPreview> {
+  return jsonRequest<EntityExpansionPreview>(
+    `/projects/${projectId}/world-generation/expand-entity/preview`,
+    'POST',
+    payload,
+  )
+}
+
+/** AI 补充实体属性的结果（产出 ai_draft 候选，需审阅确认后写入）。 */
+export interface EntityExpansionResult {
+  run_id: string
+  candidate_id: string
+  entity_id: string
+  entity: string
+  domain: string
+  fields: string[]
+  values: Record<string, unknown>
+  origin: string
+  suggested_fields: { domain: string; field: string; reason: string }[]
+  suggested_domains: { key: string; label: string; attributes: string[]; state: string }[]
+}
+
+export function expandEntityAttributes(
+  projectId: string,
+  payload: {
+    entity_id: string
+    fields: string[]
+    template_id?: string
+    prompt_override?: string
+    provider?: string
+    model?: string
+  },
+): Promise<EntityExpansionResult> {
+  return jsonRequest<EntityExpansionResult>(
+    `/projects/${projectId}/world-generation/expand-entity`,
+    'POST',
+    payload,
+  )
+}
+
 /** 解析地图据点关联的实体、证据与关系（游离标记以 orphan_node_ids 标出）。 */
 export function resolveWorldMapEntities(mapId: string): Promise<WorldMapEntitiesResult> {
   return request<WorldMapEntitiesResult>(`/world-maps/${mapId}/entities`)

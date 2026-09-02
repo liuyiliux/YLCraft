@@ -10,7 +10,18 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+import time
+
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+)
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
@@ -19,6 +30,7 @@ from app.db.database import get_session
 from app.db.models.character import Character, CharacterStoryLink
 from app.db.models.creative_project import CreativeProject, ProjectContent
 from app.db.models.novel_source import (
+    CandidateOrigin,
     NovelSourceChapter,
     NovelSourceSnapshot,
     NovelTextChunk,
@@ -36,6 +48,7 @@ from app.services.novel_source.contracts import DETECTABLE_DOMAINS, EXTRACTABLE_
 from app.services.novel_source.extraction import WorldExtractionService
 from app.services.novel_source.service import NovelSourceService
 from app.services.novel_source.world_domains import WorldDomainService
+from app.services.novel_source.world_generation import WorldGenerationService
 from app.services.novel_source.world_map import (
     WorldMapService,
     build_map_export,
@@ -836,6 +849,9 @@ async def start_project_world_extraction(
         # 到基础层（角色/地点/势力/历史事件），避免扩展模块产生空候选噪声。
         domains=req.domains or list(EXTRACTABLE_DOMAINS),
         project_id=project_id,
+        # 来源性质：这里的「原文」是项目大纲，不是某部真实作品——候选标记 outline，
+        # 让 UI 能说明「依据来自你的大纲」，而不是伪装成原著出处。
+        candidate_origin=CandidateOrigin.OUTLINE.value,
         provider=req.provider,
         model=req.model,
     )
@@ -1014,6 +1030,42 @@ def domain_service(session: Session = Depends(get_session)) -> WorldDomainServic
     return WorldDomainService(session)
 
 
+def generation_service(session: Session = Depends(get_session)) -> WorldGenerationService:
+    return WorldGenerationService(session)
+
+
+class SuggestedFieldActionRequest(BaseModel):
+    """确认或忽略一个 AI 建议的字段。"""
+
+    domain: str = Field(description="目标模块 key")
+    field: str = Field(description="字段名")
+
+
+class WorldDomainExpansionRequest(BaseModel):
+    """按层次策略细化一个模块（异步执行，返回 task_id）。"""
+
+    domain: str = Field(description="目标模块 key（须已启用）")
+    template_id: str = Field(default="", description="世界构建模板 id")
+    prompt_override: str = Field(default="", description="单次覆盖提示词")
+    hint: str = Field(default="", description="本次细化的补充要求（写进提示词 {hint}）")
+    limit: int = Field(default=12, description="本次最多新增条目数（1-40）")
+    provider: str = Field(default="")
+    model: str = Field(default="")
+
+
+class WorldEntityExpansionRequest(BaseModel):
+    """按域属性契约补充一个实体的字段（生成链路）。"""
+
+    entity_id: str = Field(description="目标实体 id（world_entities.id）")
+    fields: list[str] = Field(
+        default_factory=list, description="待补充字段，必须属于该模块的属性契约"
+    )
+    template_id: str = Field(default="", description="使用的世界构建模板 id（留空用默认提示词）")
+    prompt_override: str = Field(default="", description="单次覆盖提示词（留空用模板/默认）")
+    provider: str = Field(default="")
+    model: str = Field(default="")
+
+
 def _serialize_domain_definition(row: WorldDomainDefinition) -> dict[str, Any]:
     return {
         "key": row.domain_key,
@@ -1024,6 +1076,290 @@ def _serialize_domain_definition(row: WorldDomainDefinition) -> dict[str, Any]:
         "is_enabled": row.is_enabled,
         "source": row.source,
     }
+
+
+class WorldTemplateUpsertRequest(BaseModel):
+    """新建或更新世界构建模板（层次策略 + 每档提示词）。"""
+
+    template_id: str = Field(default="", description="留空为新建")
+    name: str = Field(default="")
+    layers: list[str] = Field(default_factory=list, description="层次策略，名称与层数由项目决定")
+    prompts: dict[str, Any] = Field(
+        default_factory=dict,
+        description="每档提示词：{draft_world, expand_domain, expand_entity}",
+    )
+    is_default: bool = Field(default=False, description="设为该项目默认模板")
+
+
+@router.get(
+    "/api/v1/projects/{project_id}/world-templates",
+    summary="列出世界构建模板（内置种子 + 项目私有）",
+)
+def list_world_templates(
+    project_id: str, svc: WorldGenerationService = Depends(generation_service)
+):
+    """模板承载层次策略与提示词：层次叫什么、有几层由项目数据决定，不写死在代码里。"""
+    return {"success": True, "data": {"templates": svc.list_templates(project_id)}}
+
+
+@router.post(
+    "/api/v1/projects/{project_id}/world-templates",
+    summary="新建或更新世界构建模板",
+)
+def upsert_world_template(
+    project_id: str,
+    req: WorldTemplateUpsertRequest,
+    svc: WorldGenerationService = Depends(generation_service),
+):
+    try:
+        row = svc.upsert_template(
+            project_id,
+            template_id=req.template_id,
+            name=req.name,
+            layers=req.layers,
+            prompts=req.prompts,
+            is_default=req.is_default,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"success": True, "data": svc._serialize_template(row)}
+
+
+@router.delete(
+    "/api/v1/projects/{project_id}/world-templates/{template_id}",
+    summary="删除项目私有模板（内置模板不可删）",
+)
+def delete_world_template(
+    project_id: str,
+    template_id: str,
+    svc: WorldGenerationService = Depends(generation_service),
+):
+    svc.delete_template(project_id, template_id)
+    return {"success": True, "data": {"project_id": project_id, "template_id": template_id}}
+
+
+class WorldTemplateDraftRequest(BaseModel):
+    """让 AI 按项目已启用模块与补充要求起草一份模板草案（不落库）。"""
+
+    domain: str = Field(default="", description="重点服务的模块 key（可选，须已启用）")
+    hint: str = Field(default="", description="对层次策略与提示词的补充要求")
+    provider: str = Field(default="")
+    model: str = Field(default="")
+
+
+@router.post(
+    "/api/v1/projects/{project_id}/world-templates/draft",
+    summary="AI 起草世界构建模板草案（不落库，确认后再保存）",
+)
+async def draft_world_template(
+    project_id: str,
+    req: WorldTemplateDraftRequest,
+    svc: WorldGenerationService = Depends(generation_service),
+):
+    """让 LLM 参考项目已启用模块起草 {name, layers, prompts} 草案。
+
+    草案只是回显预览，需用户/智能体确认后走 ``POST /world-templates`` 保存（R4 纪律）。
+    """
+    try:
+        draft = await svc.draft_template(
+            project_id,
+            domain=req.domain,
+            hint=req.hint,
+            provider=req.provider or None,
+            model=req.model or None,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"success": True, "data": draft}
+
+
+@router.post(
+    "/api/v1/projects/{project_id}/world-generation/expand-entity/preview",
+    summary="预览实体属性补充的提示词（不调用模型）",
+)
+def preview_entity_expansion(
+    project_id: str,
+    req: WorldEntityExpansionRequest,
+    svc: WorldGenerationService = Depends(generation_service),
+):
+    """生成前先看提示词：不消耗配额，可据此调整模板或单次覆盖（R4）。"""
+    try:
+        preview = svc.preview_entity_expansion(
+            project_id,
+            req.entity_id,
+            fields=req.fields,
+            template_id=req.template_id or None,
+            prompt_override=req.prompt_override,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"success": True, "data": preview}
+
+
+async def _run_domain_expansion_task(task_id: str, project_id: str, req: WorldDomainExpansionRequest):
+    """后台执行域级细化：进度写既有任务中心，业务状态落在 WorldExtractionRun。
+
+    任务中心（内存队列 + ProjectTaskRecord）负责进度展示与通知；真正的可靠状态源是
+    数据库中的运行记录——进程重启后任务执行不会恢复，但已落库的运行与候选不会丢。
+    """
+    from app.core.task_queue import TaskStatus, get_task_queue
+
+    queue = get_task_queue()
+    try:
+        await queue.update_progress(task_id, 10, "正在准备域级细化")
+        with SessionLocal() as session:
+            service = WorldGenerationService(session)
+            result = await service.expand_domain(
+                project_id,
+                req.domain,
+                template_id=req.template_id or None,
+                prompt_override=req.prompt_override,
+                hint=req.hint,
+                limit=req.limit,
+                provider=req.provider or None,
+                model=req.model or None,
+            )
+        tracked = await queue.get_task(task_id)
+        if tracked:
+            tracked.status = TaskStatus.DONE
+            tracked.progress = 100
+            tracked.progress_message = f"已产出 {result['candidate_count']} 条候选，去审阅确认"
+            tracked.result = result
+            tracked.completed_at = time.time()
+            await queue.update_task(tracked)
+    except Exception as exc:  # noqa: BLE001 - 异步任务必须收敛异常到任务状态
+        tracked = await queue.get_task(task_id)
+        if tracked:
+            tracked.status = TaskStatus.FAILED
+            tracked.progress = 100
+            tracked.progress_message = "域级细化失败"
+            tracked.error = str(exc)[:500]
+            tracked.completed_at = time.time()
+            await queue.update_task(tracked)
+
+
+@router.post(
+    "/api/v1/projects/{project_id}/world-generation/expand-domain",
+    summary="AI 域级细化（异步，接入既有任务中心）",
+)
+async def expand_domain_attributes(
+    project_id: str,
+    req: WorldDomainExpansionRequest,
+    background: BackgroundTasks,
+    session: Session = Depends(get_session),
+):
+    """按层次策略细化整个模块（成本高于单实体补充，故异步执行）。
+
+    返回 ``task_id``，用既有 ``GET /api/v1/tasks/{task_id}`` 轮询进度（任务中心可见、
+    支持 WebSocket 推送）；完成后 ``result`` 含 ``run_id`` 与候选数，再到
+    ``/novel-world?run_id=`` 审阅确认。
+    """
+    from app.core.task_queue import get_task_queue
+
+    svc = WorldGenerationService(session)
+    specs = {spec.key for spec in svc.domains.resolve_specs(project_id)}
+    if req.domain not in specs:
+        raise HTTPException(status_code=400, detail=f"模块未启用或不存在：{req.domain}")
+
+    queue = get_task_queue()
+    task = await queue.create_task(
+        task_type="world_domain_expansion",
+        payload={
+            "project_id": project_id,
+            "domain": req.domain,
+            "stage_label": f"细化{req.domain}模块",
+        },
+    )
+    background.add_task(_run_domain_expansion_task, task.task_id, project_id, req)
+    return {
+        "success": True,
+        "data": {
+            "task_id": task.task_id,
+            "status": "pending",
+            "domain": req.domain,
+            "poll": f"/api/v1/tasks/{task.task_id}",
+        },
+    }
+
+
+@router.post(
+    "/api/v1/projects/{project_id}/world-generation/expand-entity",
+    summary="AI 补充实体属性（产出 ai_draft 候选，需确认后写入）",
+)
+async def expand_entity_attributes(
+    project_id: str,
+    req: WorldEntityExpansionRequest,
+    svc: WorldGenerationService = Depends(generation_service),
+):
+    """按域属性契约补齐勾选的字段。
+
+    - 只回写勾选且在契约内的字段，不覆盖已填内容（R3 / D-4）
+    - 产出的是**候选**（`origin=ai_draft`、无证据），需确认后由 `apply` 写入，不直接改正典
+    - 模型提出的新字段/新模块只作为建议落库，默认不启用（R7 / 梯子原则 I2）
+    """
+    try:
+        result = await svc.expand_entity(
+            project_id,
+            req.entity_id,
+            fields=req.fields,
+            template_id=req.template_id or None,
+            prompt_override=req.prompt_override,
+            provider=req.provider or None,
+            model=req.model or None,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"success": True, "data": result}
+
+
+@router.get(
+    "/api/v1/projects/{project_id}/world-generation/suggestions",
+    summary="列出待确认的 AI 结构建议（模块 + 字段）",
+)
+def list_world_building_suggestions(
+    project_id: str, svc: WorldDomainService = Depends(domain_service)
+):
+    """AI 建议的结构变更在此可见、可确认——**不会自动成为 schema**（梯子原则 I2）。
+
+    - ``domains``：AI 建议的新模块（落库为 ``ai_suggested``、默认未启用）
+    - ``fields``：AI 建议的新字段（尚未进入任何模块的属性契约）
+
+    确认：模块用 ``PUT /world-domains/{key}``（``source=custom``、``is_enabled=true``）；
+    字段用下方的确认端点。忽略：模块用 ``DELETE``，字段用忽略端点。
+    """
+    return {"success": True, "data": svc.pending_suggestions(project_id)}
+
+
+@router.post(
+    "/api/v1/projects/{project_id}/world-generation/suggestions/fields/confirm",
+    summary="确认字段建议（写入模块属性契约）",
+)
+def confirm_suggested_field(
+    project_id: str,
+    req: SuggestedFieldActionRequest,
+    svc: WorldDomainService = Depends(domain_service),
+):
+    try:
+        svc.confirm_suggested_field(project_id, req.domain, req.field)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"success": True, "data": {"domain": req.domain, "field": req.field, "state": "confirmed"}}
+
+
+@router.post(
+    "/api/v1/projects/{project_id}/world-generation/suggestions/fields/ignore",
+    summary="忽略字段建议（不再重复提示）",
+)
+def ignore_suggested_field(
+    project_id: str,
+    req: SuggestedFieldActionRequest,
+    svc: WorldDomainService = Depends(domain_service),
+):
+    try:
+        svc.ignore_suggested_field(project_id, req.domain, req.field)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"success": True, "data": {"domain": req.domain, "field": req.field, "state": "ignored"}}
 
 
 @router.get(

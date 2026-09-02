@@ -377,6 +377,12 @@ def test_novel_source_agent_tools_are_registered():
         "derive_project_from_novel_source",
         "detect_world_extraction_contradictions",
         "propagate_affected_world_facts",
+        "expand_world_entity_attributes",
+        "expand_world_domain",
+        "manage_world_building_template",
+        "list_world_building_suggestions",
+        "resolve_world_field_suggestion",
+        "resolve_world_domain_suggestion",
     }
     assert ToolRegistry.get_tool("list_novel_source_snapshots").risk_level == "read"
     assert ToolRegistry.get_tool("plan_novel_source_domains").risk_level == "costly"
@@ -2587,6 +2593,539 @@ def test_world_building_template_layers_are_data_driven(session, storage):
     assert "{layers}" in json.loads(stored.prompts_json)["draft_world"]
     assert stored.is_default is True
     assert stored.is_builtin is False
+
+
+class FakeGenerationAI(FakeWorldAI):
+    """按 prompt 形态返回生成结果（schema-guided），不访问真实模型。"""
+
+    def __init__(
+        self,
+        *,
+        attributes=None,
+        suggested_fields=None,
+        suggested_domains=None,
+        domain_items=None,
+    ):
+        super().__init__()
+        self.generated_attributes = attributes or {}
+        self.suggested_fields = suggested_fields or []
+        self.suggested_domains = suggested_domains or []
+        # 域级细化的产出形状：items[].entity（区别于实体补充的 attributes 填充）
+        self.domain_items = (
+            domain_items
+            if domain_items is not None
+            else [{"entity": "青石巷", "attributes": {"kind": "街区", "region": "镇上"}}]
+        )
+
+    async def chat(self, messages, **kwargs):
+        prompt = messages[-1].content
+        self.prompts.append(prompt)
+        if '"domains":[' in prompt:
+            return LLMGenerationResult(
+                success=True,
+                content=json.dumps(self._detection_payload(), ensure_ascii=False),
+                provider="fake",
+                model="fake-model",
+            )
+        if "按层次策略细化" in prompt:
+            payload = {
+                "items": self.domain_items,
+                "suggested_fields": self.suggested_fields,
+                "suggested_domains": self.suggested_domains,
+            }
+            return LLMGenerationResult(
+                success=True,
+                content=json.dumps(payload, ensure_ascii=False),
+                provider="fake",
+                model="fake-model",
+            )
+        if "待补充字段" in prompt:
+            payload = {
+                "items": [{"entity": "", "attributes": self.generated_attributes}],
+                "suggested_fields": self.suggested_fields,
+                "suggested_domains": self.suggested_domains,
+            }
+            return LLMGenerationResult(
+                success=True,
+                content=json.dumps(payload, ensure_ascii=False),
+                provider="fake",
+                model="fake-model",
+            )
+        return await super().chat(messages, **kwargs)
+
+
+@pytest.mark.asyncio
+async def test_expand_entity_produces_ai_draft_candidate_without_evidence(
+    session, storage
+):
+    """AI 补充属性：只写勾选字段，产出无证据的 ai_draft 候选（生成/提取语义隔离）。"""
+    from app.services.novel_source.world_generation import WorldGenerationService
+
+    project_id, places = _seed_project_with_places(
+        session, "生成项目", [("龙二赌坊", "福贵输光家产的地方。", [])]
+    )
+    ai = FakeGenerationAI(
+        attributes={"region": "徐家村东头", "significance": "福贵输光家产的地方"}
+    )
+    service = WorldGenerationService(session, ai_service=ai)
+
+    result = await service.expand_entity(
+        project_id, places["龙二赌坊"].id, fields=["region", "significance"]
+    )
+
+    candidate = session.get(WorldFactCandidate, result["candidate_id"])
+    assert candidate.origin == "ai_draft"
+    # 生成链路没有原文可引用：绝不伪造证据锚点。
+    assert json.loads(candidate.evidence_json) == []
+    assert candidate.snapshot_id is None
+    attributes = json.loads(candidate.payload_json)["attributes"]
+    assert attributes["region"] == "徐家村东头"
+    assert attributes["significance"] == "福贵输光家产的地方"
+    # 没勾选的字段不写，已填内容不被覆盖。
+    assert "first_appearance" not in attributes
+
+    run = session.get(WorldExtractionRun, result["run_id"])
+    assert run.kind == "generate"
+    assert run.snapshot_id is None
+
+
+@pytest.mark.asyncio
+async def test_expand_entity_suggestions_need_confirmation(session, storage):
+    """AI 建议的新字段/新模块不自动成为 schema（梯子原则 I2 / R7）。"""
+    from app.services.novel_source.world_domains import WorldDomainService
+    from app.services.novel_source.world_generation import WorldGenerationService
+
+    project_id, places = _seed_project_with_places(
+        session, "建议项目", [("龙二赌坊", "赌坊。", [])]
+    )
+    ai = FakeGenerationAI(
+        attributes={"region": "镇上"},
+        suggested_fields=[
+            {"domain": "location", "field": "气候带", "reason": "现有字段无法表达环境"}
+        ],
+        suggested_domains=[
+            {
+                "key": "underworld",
+                "label": "地下势力",
+                "attributes": ["层级", "庇护范围"],
+                "reason": "这个世界观需要独立的地下势力维度",
+            }
+        ],
+    )
+    service = WorldGenerationService(session, ai_service=ai)
+    result = await service.expand_entity(
+        project_id, places["龙二赌坊"].id, fields=["region"]
+    )
+
+    assert result["suggested_fields"][0]["field"] == "气候带"
+    assert result["suggested_domains"][0]["state"] == "pending_confirmation"
+
+    domains = WorldDomainService(session)
+    rows = {row["key"]: row for row in domains.list_domains(project_id)}
+    assert rows["underworld"]["source"] == "ai_suggested"
+    assert rows["underworld"]["is_enabled"] is False
+    # 过闸：确认前不参与提取/生成
+    assert "underworld" not in {spec.key for spec in domains.resolve_specs(project_id)}
+
+
+def test_preview_entity_expansion_does_not_call_model(session, storage):
+    """预览提示词：不调用模型、不消耗配额（R4）。"""
+    from app.services.novel_source.world_generation import WorldGenerationService
+
+    project_id, places = _seed_project_with_places(
+        session, "预览项目", [("龙二赌坊", "赌坊。", [])]
+    )
+    ai = FakeGenerationAI(attributes={})
+    service = WorldGenerationService(session, ai_service=ai)
+
+    preview = service.preview_entity_expansion(
+        project_id, places["龙二赌坊"].id, fields=["region"]
+    )
+
+    assert ai.prompts == []
+    assert "龙二赌坊" in preview["prompt"]
+    assert "region" in preview["prompt"]
+
+
+@pytest.mark.asyncio
+async def test_expand_entity_rejects_fields_outside_schema(session, storage):
+    """契约外的字段拒绝生成：想加结构必须走建议通道，而不是偷偷写值。"""
+    from app.services.novel_source.world_generation import WorldGenerationService
+
+    project_id, places = _seed_project_with_places(
+        session, "越界项目", [("龙二赌坊", "赌坊。", [])]
+    )
+    service = WorldGenerationService(session, ai_service=FakeGenerationAI(attributes={}))
+    with pytest.raises(ValueError):
+        await service.expand_entity(
+            project_id, places["龙二赌坊"].id, fields=["不存在的字段"]
+        )
+
+
+def test_outline_sourced_candidates_are_marked_outline_not_original(tmp_path):
+    """来源为项目大纲时，候选标记 outline：证据指向大纲，不得伪装成原著出处。"""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from sqlmodel import select
+
+    from app.api.v1 import novel_sources as novel_sources_api
+    from app.db.database import get_session
+    from app.db.models.creative_project import CreativeProject
+    from app.services.creative_project.service import CreativeProjectService, dumps_json
+
+    # TestClient 会在独立线程处理请求，文件型 SQLite 并放开同线程限制。
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'outline-world.db'}",
+        connect_args={"check_same_thread": False},
+    )
+    for table in (
+        CreativeProject.__table__,
+        NovelSourceSnapshot.__table__,
+        NovelSourceChapter.__table__,
+        NovelTextChunk.__table__,
+        WorldExtractionRun.__table__,
+        WorldFactCandidate.__table__,
+        WorldDomainDefinition.__table__,
+    ):
+        table.create(engine)
+    factory = sessionmaker(class_=Session, bind=engine, expire_on_commit=False)
+
+    with factory() as seed:
+        project = CreativeProjectService(seed, ai_service=FakeWorldAI()).create_project(
+            title="大纲项目", project_type="novel", source_type="original_idea", idea="x"
+        )
+        project.outline_json = dumps_json(OUTLINE_FOR_WORLD)
+        seed.add(project)
+        seed.commit()
+        project_id = project.id
+
+    app = FastAPI()
+    app.include_router(novel_sources_api.router)
+
+    def _override_session():
+        with factory() as db:
+            yield db
+
+    def _override_extraction_service():
+        return WorldExtractionService(factory(), ai_service=FakeWorldAI(items=OUTLINE_WORLD_ITEMS))
+
+    app.dependency_overrides[get_session] = _override_session
+    app.dependency_overrides[novel_sources_api.extraction_service] = _override_extraction_service
+    client = TestClient(app)
+
+    try:
+        response = client.post(f"/api/v1/creative-projects/{project_id}/world-extraction/start", json={})
+        assert response.status_code == 200, response.text
+        run_id = response.json()["data"]["run_id"]
+
+        with factory() as check:
+            candidates = check.exec(
+                select(WorldFactCandidate).where(WorldFactCandidate.run_id == run_id)
+            ).all()
+            assert candidates, "应当产出候选"
+            origins = {item.origin for item in candidates}
+            # 大纲来源：不是 original（原著可考），也不是 ai_draft（无原文）
+            assert "original" not in origins
+            assert origins <= {"outline", "ai_inferred"}
+            assert "outline" in origins
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_pending_suggestions_gate_confirm_and_ignore(session, storage):
+    """结构建议必须过闸：列得出、确认才入契约、忽略后不再提示。"""
+    from app.services.novel_source.world_domains import WorldDomainService
+    from app.services.novel_source.world_generation import WorldGenerationService
+
+    project_id, places = _seed_project_with_places(
+        session, "过闸项目", [("龙二赌坊", "赌坊。", [])]
+    )
+    domains = WorldDomainService(session)
+    ai = FakeGenerationAI(
+        attributes={"region": "镇上"},
+        suggested_fields=[
+            {"domain": "location", "field": "气候带", "reason": "现有字段无法表达环境"}
+        ],
+        suggested_domains=[
+            {"key": "underworld", "label": "地下势力", "attributes": ["层级"]}
+        ],
+    )
+    await WorldGenerationService(session, ai_service=ai).expand_entity(
+        project_id, places["龙二赌坊"].id, fields=["region"]
+    )
+
+    pending = domains.pending_suggestions(project_id)
+    assert [item["key"] for item in pending["domains"]] == ["underworld"]
+    assert [(item["domain"], item["field"]) for item in pending["fields"]] == [
+        ("location", "气候带")
+    ]
+    # 建议未确认时，绝不出现在生效的域契约里
+    assert "underworld" not in {spec.key for spec in domains.resolve_specs(project_id)}
+    assert "气候带" not in list(
+        next(spec for spec in domains.resolve_specs(project_id) if spec.key == "location").attributes
+    )
+
+    # 确认模块建议：转 custom 并启用
+    domains.upsert_definition(
+        project_id,
+        "underworld",
+        label="地下势力",
+        extra_attributes=["层级"],
+        source="custom",
+        is_enabled=True,
+    )
+    assert "underworld" in {spec.key for spec in domains.resolve_specs(project_id)}
+    assert domains.pending_suggestions(project_id)["domains"] == []
+
+    # 确认字段建议：写入 location 的属性契约
+    domains.confirm_suggested_field(project_id, "location", "气候带")
+    location_spec = next(
+        spec for spec in domains.resolve_specs(project_id) if spec.key == "location"
+    )
+    assert "气候带" in list(location_spec.attributes)
+    assert "aliases" in list(location_spec.attributes)  # 内置字段仍在
+    assert domains.pending_suggestions(project_id)["fields"] == []
+
+    # 忽略字段建议：不再重复提示
+    domains.ignore_suggested_field(project_id, "location", "风向")
+    ignored = [
+        row
+        for row in domains.list_domains(project_id)
+        if row["key"] == "location"
+    ]
+    assert ignored, "location 应有项目级定义"
+    # 风向不在建议列表（被忽略），也不在属性契约
+    assert domains.pending_suggestions(project_id)["fields"] == []
+    assert "风向" not in list(
+        next(spec for spec in domains.resolve_specs(project_id) if spec.key == "location").attributes
+    )
+
+
+@pytest.mark.asyncio
+async def test_expand_domain_creates_domain_level_ai_draft_candidates(session, storage):
+    """域级细化：按层次策略产出该域多条候选，全部标记 ai_draft 且无伪造证据。"""
+    from app.services.novel_source.world_generation import WorldGenerationService
+
+    project_id, _places = _seed_project_with_places(
+        session, "域级项目", [("龙二赌坊", "赌坊。", [])]
+    )
+    ai = FakeGenerationAI(
+        attributes={"kind": "街区", "region": "镇上"},
+    )
+    service = WorldGenerationService(session, ai_service=ai)
+
+    result = await service.expand_domain(project_id, "location", hint="补充镇上的地点")
+
+    assert result["candidate_count"] >= 1
+    assert result["origin"] == "ai_draft"
+    assert result["domain"] == "location"
+
+    candidates = session.exec(
+        select(WorldFactCandidate).where(WorldFactCandidate.run_id == result["run_id"])
+    ).all()
+    assert candidates, "应当落库候选"
+    for candidate in candidates:
+        assert candidate.origin == "ai_draft"
+        assert json.loads(candidate.evidence_json) == []  # 生成链路不伪造证据
+        assert candidate.snapshot_id is None
+
+    run = session.get(WorldExtractionRun, result["run_id"])
+    assert run.kind == "generate"
+    assert run.status == "success"
+
+
+def test_domain_expansion_task_type_is_persisted():
+    """域级细化接入既有任务中心：任务类型必须可持久化（否则重启后轮询不到）。"""
+    from app.services.task_persistence import PERSISTED_TASK_TYPES, should_persist
+
+    assert "world_domain_expansion" in PERSISTED_TASK_TYPES
+    assert should_persist("world_domain_expansion", {"project_id": "p1"}) is True
+    # 沿用既有规则：没有 project_id 的任务不持久化
+    assert should_persist("world_domain_expansion", {}) is False
+    # 既有类型不受影响
+    assert should_persist("image_generation", {"project_id": "p1"}) is True
+
+
+def test_templates_are_data_driven_and_builtin_readonly(session, storage):
+    """模板层次与提示词由数据决定；内置模板只读，项目模板可改可删。"""
+    from app.services.novel_source.world_generation import WorldGenerationService
+
+    project_id = _project_id(session, "模板管理项目")
+    service = WorldGenerationService(session)
+
+    created = service.upsert_template(
+        project_id,
+        name="现代地理层级",
+        layers=["世界", "国家", "省/州", "城市"],
+        prompts={"expand_domain": "按层次 {layers} 细化，已有：{known}。要求：{hint}"},
+        is_default=True,
+    )
+    templates = service.list_templates(project_id)
+    own = [item for item in templates if item["id"] == created.id]
+    assert own and own[0]["layers"] == ["世界", "国家", "省/州", "城市"]
+    assert own[0]["is_default"] is True
+    assert own[0]["is_builtin"] is False
+
+    # 改层次名称与层数：完全由数据决定
+    updated = service.upsert_template(
+        project_id,
+        template_id=created.id,
+        name="双层结构",
+        layers=["地表", "地下"],
+    )
+    assert updated.layers_json and json.loads(updated.layers_json) == ["地表", "地下"]
+
+    # 内置模板（project_id 为空）只读
+    builtin = WorldBuildingTemplate(
+        project_id=None,
+        name="内置·洋葱模型",
+        layers_json=json.dumps(["世界", "地区", "地点"], ensure_ascii=False),
+        is_builtin=True,
+    )
+    session.add(builtin)
+    session.commit()
+    with pytest.raises(ValueError):
+        service.upsert_template(project_id, template_id=builtin.id, name="试图改名")
+    service.delete_template(project_id, builtin.id)  # 内置模板删不掉
+    assert any(item["is_builtin"] for item in service.list_templates(project_id))
+
+    # 项目私有模板可删
+    service.delete_template(project_id, created.id)
+    assert not [item for item in service.list_templates(project_id) if item["id"] == created.id]
+
+
+class DraftTemplateAI(FakeWorldAI):
+    """模板 AI 起草：按模板起草契约返回草案 JSON，不访问真实模型。"""
+
+    def __init__(self):
+        super().__init__()
+        self.payload = {
+            "name": "位面→大陆层级",
+            "layers": ["多元宇宙", "位面", "大陆", "城邦"],
+            "prompts": {
+                "expand_domain": "按层次 {layers} 细化「{domain}」，已有：{known}，补充要求：{hint}。",
+                "expand_entity": "为实体 {entity} 补字段：{fields}。",
+            },
+            "note": "面向多大陆位面的通用细化模板",
+        }
+
+    async def chat(self, messages, **kwargs):
+        prompt = messages[-1].content
+        self.prompts.append(prompt)
+        return LLMGenerationResult(
+            success=True,
+            content=json.dumps(self.payload, ensure_ascii=False),
+            provider="fake",
+            model="fake-model",
+        )
+
+
+@pytest.mark.asyncio
+async def test_draft_template_returns_draft_without_persisting(session, storage):
+    """模板 AI 起草：按项目已启用模块起草草案，不落库（须确认后再 save，R4 纪律）。"""
+    from app.services.novel_source.world_generation import WorldGenerationService
+
+    project_id = _project_id(session, "起草项目")
+    ai = DraftTemplateAI()
+    service = WorldGenerationService(session, ai_service=ai)
+
+    draft = await service.draft_template(
+        project_id, domain="power_system", hint="仙侠力量分层"
+    )
+
+    assert draft["name"] == "位面→大陆层级"
+    assert draft["layers"] == ["多元宇宙", "位面", "大陆", "城邦"]
+    assert "expand_domain" in draft["prompts"]
+    assert draft["prompts"]["expand_domain"]  # 提示词非空
+    # 关键：草案不落库——list 仍然为空，用户确认后才走 upsert。
+    assert service.list_templates(project_id) == []
+    # 上下文应带上项目已启用模块（含力量/科技体系）与用户补充要求。
+    joined = "\n".join(ai.prompts)
+    assert "力量/科技体系" in joined
+    assert "仙侠力量分层" in joined
+    assert "power_system" in joined
+
+
+@pytest.mark.asyncio
+async def test_draft_template_rejects_unknown_focus_domain(session, storage):
+    """起草时若指定的 focus 模块未启用/不存在，直接拒绝而不调用模型。"""
+    from app.services.novel_source.world_generation import WorldGenerationService
+
+    project_id = _project_id(session, "起草失败项目")
+    service = WorldGenerationService(session, ai_service=DraftTemplateAI())
+    with pytest.raises(ValueError, match="未启用或不存在"):
+        await service.draft_template(project_id, domain="ghost_world")
+
+
+def test_export_keeps_custom_fields_and_layer_across_schema_evolution(session, storage):
+    """解析性保证：schema 演进（追加字段 + 空间层）后，导出仍含全部字段，旧数据不丢。"""
+    from app.services.novel_source.world_domains import WorldDomainService
+    from app.services.novel_source.world_generation import WorldGenerationService
+    from app.services.novel_source.world_map import WorldMapService, build_map_export
+
+    project_id, places = _seed_project_with_places(
+        session, "演进项目", [("龙二赌坊", "赌坊。", [])]
+    )
+    # 先给 location 追加自定义字段，模拟 schema 演进
+    WorldDomainService(session).upsert_definition(
+        project_id, "location", extra_attributes=["气候带"], source="custom"
+    )
+
+    service = WorldMapService(session)
+    document = service.create_map_from_project_places(project_id)
+    data = json.loads(document.map_json)
+    data["layers"] = [{"id": "l1", "name": "主世界"}]
+    data["nodes"][0]["layer"] = "l1"
+    data["nodes"][0]["attributes"] = {"climate": "温带季风", "custom_note": "自定义字段"}
+    document = service.update_map(document.id, map_json=data, expected_revision=document.revision)
+
+    exported = build_map_export(document)
+
+    assert [item["name"] for item in exported["layers"]] == ["主世界"]
+    node = exported["nodes"][0]
+    assert node["layer"] == "l1"
+    assert node["entity_id"] == places["龙二赌坊"].id
+    assert node["evidence"] == []
+
+
+def test_context_pack_marks_ai_draft_and_outline_sources(session, storage):
+    """上下文打包必须区分来源：AI 创作与大纲依据不得混同于原文事实。"""
+    from app.db.models.creative_project import ProjectContent
+    from app.services.creative_project.service import CreativeProjectService, dumps_json
+
+    project = CreativeProjectService(session, ai_service=FakeWorldAI()).create_project(
+        title="来源标注项目", project_type="novel", source_type="original_idea", idea="x"
+    )
+    service = CreativeProjectService(session, ai_service=FakeWorldAI())
+
+    def _add(title: str, data: dict) -> None:
+        session.add(
+            ProjectContent(
+                project_id=project.id,
+                content_type="world_asset",
+                title=title,
+                data_json=dumps_json(data),
+                text_content=title,
+                is_locked=True,
+            )
+        )
+
+    _add("原文事实", {"summary": "来自真实原文", "role": "rule"})
+    _add("AI 创作设定", {"summary": "AI 补充", "role": "rule", "field_sources": {"origin": "ai_draft"}})
+    _add("大纲设定", {"summary": "大纲推导", "role": "rule", "source": "outline"})
+    session.commit()
+
+    context = service._locked_project_bible_context(project.id)
+
+    assert "AI 创作（无原文证据）" in context
+    assert "依据项目大纲" in context
+    # 顶部必须有总体说明，否则模型不知道这些标注的含义
+    assert "可据写作需要调整或推翻" in context
+    assert "不要当成出版过的原文" in context
 
 
 def test_religion_language_culture_ecology_domains_exist():

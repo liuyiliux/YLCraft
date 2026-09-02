@@ -166,6 +166,14 @@ AI 连接器和供应商规范已经作为 `ai_config` 分类工具接入智能�
 - `inspect_novel_source_snapshot`：查看快照章节与可提取/可检测的世界模块。
 - `plan_novel_source_domains`：AI 逐模块判断存在性（detected/not_detected/uncertain），风险 `costly`，只检测不提取。
 - `extract_novel_source_world`：按选定模块提取候选（角色/地点/势力/历史事件），风险 `costly`，只预览不写项目事实；未指定 `domains` 且没有检测结果时回落到基础层（角色/地点/势力/历史事件），扩展模块需先 `plan_novel_source_domains` 检测后显式启用；`mode=delta` 时从上次游标只处理新文本块并把新证据并回既有候选。
+- `expand_world_entity_attributes`：AI 按模块属性契约补充一个世界实体的字段，风险 `costly`，只补勾选字段、不覆盖已有内容；产出 `origin=ai_draft` 候选（无原文证据、**不伪造**），需确认后由 `apply` 写入正典。契约外的字段与新增模块只作为 `suggested_fields`/`suggested_domains` 返回，默认不启用，需用户确认后才参与提取。
+- `expand_world_domain`：按层次策略 AI 细化**整个模块**，风险 `costly`，**异步提交**并返回 `task_id`；轮询复用既有 `get_project_task(task_id)`（任务中心统一管理、可在任务中心页与 `cancel_project_task` 查看/取消）。完成后 `result` 含 `run_id` 与候选数，仍需到 `/novel-world` 审阅确认才写入正典。
+- `list_world_building_suggestions`：列出 AI 提出但**尚未确认**的结构建议（新模块与新字段），风险 `read`，不调用模型；未确认的建议不参与任何提取与生成。
+- `resolve_world_field_suggestion`：确认或忽略一个建议字段，风险 `write`；确认后写入该模块的属性契约（只追加、内置字段不动），忽略后不再重复提示。
+- `resolve_world_domain_suggestion`：确认或忽略一个建议模块，风险 `write`；确认后启用并参与提取，忽略后移除该建议。
+- `manage_world_building_template`：管理世界构建模板（层次策略 + 每档提示词），风险 `write`；`action=list` 只读；`save` 保存模板（内置模板只读，save 更新内置会被拒绝；`template_id` 留空即新建项目私有模板）；`delete` 删除项目私有模板；`action=draft` 让 AI 按项目已启用模块与补充要求起草一份 `{name,layers,prompts,note}` 草案（会调用一次模型、消耗配额），**草案不落库**，需再显式 `save` 才保存——与真人「AI 起草 → 确认后保存」是同一纪律。
+
+> 结构变更必须过闸：智能体可以**查看与转达**建议，但确认与否应由用户决定——智能体不得自行批准自己提出的建议。
 - `sync_novel_source_chapters`：为连载快照追加新章节和新文本块，风险 `write`，只追加不重建。
 - `list_world_extraction_candidates`：预览候选与逐字证据（同时覆盖本次运行产生或更新的条目）。
 - `decide_world_extraction_candidates`：接受/忽略/合并候选，风险 `write`，只改候选状态；`merge` 用 `merge_into` 把重复候选的证据与设定并入目标，源候选进入 `merged` 终态。

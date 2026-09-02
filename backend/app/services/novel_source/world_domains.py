@@ -39,6 +39,22 @@ def _extra_attributes(row: WorldDomainDefinition | None) -> list[str]:
     return [str(item).strip() for item in raw if str(item).strip()]
 
 
+def _ignored_suggestions(row: WorldDomainDefinition | None) -> list[str]:
+    """被用户忽略的 AI 建议字段。"""
+    if not row:
+        return []
+    raw = loads_json(row.ignored_suggestions_json, [])
+    if not isinstance(raw, list):
+        return []
+    return [str(item).strip() for item in raw if str(item).strip()]
+
+
+def _dump_list(values: list[str]) -> str:
+    return json.dumps(
+        [str(item).strip() for item in values if str(item).strip()], ensure_ascii=False
+    )
+
+
 class WorldDomainService:
     """解析并维护项目级世界模块定义。"""
 
@@ -140,6 +156,128 @@ class WorldDomainService:
                 )
             )
         return specs
+
+    def pending_suggestions(self, project_id: str) -> dict[str, Any]:
+        """聚合待确认的 AI 结构建议（模块级 + 字段级）。
+
+        模块级：``world_domain_definitions`` 中 ``source=ai_suggested`` 且未启用的定义。
+        字段级：该项目最近生成运行 ``diagnostics_json.suggested_fields`` 中，既不在
+        属性契约内、也未被忽略的字段。
+
+        确认与忽略复用既有 ``upsert_definition`` / ``reset_definition``，不新增并行通道。
+        """
+        from app.db.models.novel_source import WorldExtractionRun
+
+        domain_items: list[dict[str, Any]] = []
+        for row in self._definitions(project_id).values():
+            if row.source != DomainDefinitionSource.AI_SUGGESTED.value or row.is_enabled:
+                continue
+            domain_items.append(
+                {
+                    "key": row.domain_key,
+                    "label": row.label or row.domain_key,
+                    "attributes": _extra_attributes(row),
+                    "reason": row.prompt_hint,
+                    "state": "pending_confirmation",
+                }
+            )
+
+        specs = {spec.key: spec for spec in self.resolve_specs(project_id)}
+        definitions = self._definitions(project_id)
+        field_items: list[dict[str, Any]] = []
+        seen: set[tuple[str, str]] = set()
+        runs = self.session.exec(
+            select(WorldExtractionRun)
+            .where(
+                WorldExtractionRun.project_id == project_id,
+                WorldExtractionRun.kind == "generate",
+            )
+            .order_by(WorldExtractionRun.created_at.desc())
+        ).all()
+        for run in runs:
+            diagnostics = loads_json(run.diagnostics_json, {})
+            if not isinstance(diagnostics, dict):
+                continue
+            for item in diagnostics.get("suggested_fields") or []:
+                if not isinstance(item, dict):
+                    continue
+                domain = str(item.get("domain") or "").strip()
+                field = str(item.get("field") or "").strip()
+                if not domain or not field or (domain, field) in seen:
+                    continue
+                seen.add((domain, field))
+                spec = specs.get(domain)
+                row = definitions.get(domain)
+                contract = list(spec.attributes) if spec else []
+                extra = _extra_attributes(row)
+                if field in contract or field in extra:
+                    continue  # 已确认进契约
+                ignored = _ignored_suggestions(row)
+                if field in ignored:
+                    continue  # 用户已忽略
+                field_items.append(
+                    {
+                        "domain": domain,
+                        "domain_label": (spec.label if spec else domain),
+                        "field": field,
+                        "reason": str(item.get("reason") or "")[:300],
+                        "state": "pending_confirmation",
+                    }
+                )
+
+        return {"domains": domain_items, "fields": field_items}
+
+    def confirm_suggested_field(self, project_id: str, domain_key: str, field: str) -> None:
+        """确认字段建议：写入该模块的属性契约（只追加，内置字段不动）。"""
+        field = str(field or "").strip()
+        if not field:
+            raise ValueError("字段名不能为空")
+        specs = {spec.key: spec for spec in self.resolve_specs(project_id)}
+        spec = specs.get(domain_key)
+        if spec is None:
+            raise ValueError(f"模块未启用或不存在：{domain_key}")
+        if field in list(spec.attributes):
+            return  # 已在契约内，幂等
+        row = self._definitions(project_id).get(domain_key)
+        extra = [item for item in _extra_attributes(row) if item != field]
+        extra.append(field)
+        ignored = [item for item in _ignored_suggestions(row) if item != field]
+        ignored_json = _dump_list(ignored)
+        self.upsert_definition(
+            project_id,
+            domain_key,
+            extra_attributes=extra,
+            source=DomainDefinitionSource.CUSTOM.value,
+        )
+        # upsert 会重新落库，忽略清单需随后写回（保持与 extra 一致）。
+        if row is not None:
+            row.ignored_suggestions_json = ignored_json
+            self.session.add(row)
+            self.session.commit()
+
+    def ignore_suggested_field(self, project_id: str, domain_key: str, field: str) -> None:
+        """忽略字段建议：记入忽略清单，不再重复提示。"""
+        field = str(field or "").strip()
+        if not field:
+            raise ValueError("字段名不能为空")
+        row = self._definitions(project_id).get(domain_key)
+        if row is None:
+            # 该模块还没有项目级定义，建一条只记录忽略项的定义（不启用）。
+            ignored = [field]
+            self.upsert_definition(
+                project_id,
+                domain_key,
+                is_enabled=False,
+                source=DomainDefinitionSource.AI_SUGGESTED.value,
+            )
+            row = self._definitions(project_id).get(domain_key)
+        else:
+            ignored = [item for item in _ignored_suggestions(row) if item != field]
+            ignored.append(field)
+        if row is not None:
+            row.ignored_suggestions_json = _dump_list(ignored)
+            self.session.add(row)
+            self.session.commit()
 
     def upsert_definition(
         self,
