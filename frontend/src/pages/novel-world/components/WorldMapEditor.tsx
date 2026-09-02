@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Card, Collapse, Empty, Input, message, Modal, Select, Space, Tag, Typography, Upload } from 'antd'
+import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Alert, Button, Card, Collapse, Empty, Input, message, Modal, Radio, Select, Space, Tag, Typography, Upload } from 'antd'
 import { DeleteOutlined, EnvironmentOutlined, EyeOutlined, PictureOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -8,16 +8,19 @@ import {
   createWorldMap,
   createWorldMapFromProjectPlaces,
   deleteWorldMap,
+  exportWorldMapPoints,
   generateWorldMapVisual,
   getWorldMap,
   listWorldMapImageBackends,
   listWorldMaps,
   previewWorldMapVisualPrompt,
+  resolveWorldMapEntities,
   updateWorldMap,
   type WorldMapData,
   type WorldMapDocument,
   type WorldMapImageBackend,
   type WorldMapNode,
+  type WorldMapNodeEntity,
   type WorldMapRegion,
   type WorldMapRoute,
   type WorldMapVisual,
@@ -116,6 +119,11 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
   const [previewLoading, setPreviewLoading] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [lastVisual, setLastVisual] = useState<WorldMapVisualResult | null>(null)
+  // 实体为中心：据点回查来源实体/证据/关系（引用不复制，信息按需加载）。
+  const [entityRows, setEntityRows] = useState<WorldMapNodeEntity[]>([])
+  const [orphanNodeIds, setOrphanNodeIds] = useState<string[]>([])
+  // 空间层切换（数据驱动）：null = 全部；'__none__' = 未分层。层集合来自地图数据，不写死。
+  const [activeLayer, setActiveLayer] = useState<string | null>(null)
 
   useEffect(() => {
     listWorldMapImageBackends()
@@ -169,9 +177,11 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
         save_to_asset_hub: true,
       })
       setLastVisual(result)
-      message.success(`已生成地图视觉成图${result.node_id ? '并写入素材库' : ''}`)
-      // 成图自动作为参考底图铺满，地点标记直接叠在上面（WorldAnvil 式交互）。
-      if (result.url) setBaseMapUrl(result.url)
+      // 评审结论：成图只是派生视觉资产，不自动铺满底图、不与标记位置绑定；
+      // 用户需要时在成图上手动「设为底图」，标记永远叠在结构化画布上。
+      message.success(
+        `已生成地图视觉成图${result.node_id ? '并写入素材库' : ''}（派生资产，可手动「设为底图」）`,
+      )
       // 重新加载文档，让 visuals 引用记录（含 revision CAS 回写）可见。
       await refresh(doc.id)
     } catch (error) {
@@ -192,6 +202,16 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
         setDoc(detail)
         setDraft(detail.map)
         setTitle(detail.title)
+        // 据点回查来源实体/证据/关系；旧数据或端点不可用时静默降级为无实体信息。
+        resolveWorldMapEntities(detail.id)
+          .then((resolved) => {
+            setEntityRows(resolved.nodes)
+            setOrphanNodeIds(resolved.orphan_node_ids)
+          })
+          .catch(() => {
+            setEntityRows([])
+            setOrphanNodeIds([])
+          })
       }
     } catch (error) {
       message.error((error as Error).message)
@@ -276,6 +296,24 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
     }
   }
 
+  // 导出结构化点位 JSON：空间关系 + 实体引用 + 证据锚点（不是图片）。
+  const doExportPoints = async () => {
+    if (!doc) return
+    try {
+      const data = await exportWorldMapPoints(doc.id)
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${doc.title || 'world-map'}-points.json`
+      link.click()
+      URL.revokeObjectURL(url)
+      message.success('已导出结构化点位 JSON（含 entity_id / evidence）')
+    } catch (error) {
+      message.error((error as Error).message)
+    }
+  }
+
   const updateRegion = (id: string, patch: Partial<WorldMapRegion>) =>
     setDraft((prev) => ({ ...prev, regions: prev.regions.map((r) => (r.id === id ? { ...r, ...patch } : r)) }))
   const updateNode = (id: string, patch: Partial<WorldMapNode>) =>
@@ -322,6 +360,28 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
     () => new Map(draft.regions.map((r, idx) => [r.id, idx])),
     [draft.regions],
   )
+  const entityByNodeId = useMemo(() => {
+    const index = new Map<string, WorldMapNodeEntity>()
+    entityRows.forEach((row) => index.set(row.node.id, row))
+    return index
+  }, [entityRows])
+
+  // 空间层：数据驱动的位面切换。没有定义层时表现为单层地图（不显示 tabs）。
+  const hasLayers = (draft.layers?.length ?? 0) > 0
+  const layerTabs = useMemo(() => {
+    if (!hasLayers) return []
+    const tabs = [{ value: '__all__', label: '全部' }]
+    tabs.push(...(draft.layers ?? []).map((l) => ({ value: l.id, label: l.name })))
+    if (draft.nodes.some((n) => !n.layer)) tabs.push({ value: '__none__', label: '未分层' })
+    return tabs
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasLayers, draft.layers, draft.nodes])
+  const visibleNodes = useMemo(() => {
+    if (!hasLayers || !activeLayer || activeLayer === '__all__') return draft.nodes
+    if (activeLayer === '__none__') return draft.nodes.filter((n) => !n.layer)
+    return draft.nodes.filter((n) => n.layer === activeLayer)
+  }, [hasLayers, activeLayer, draft.nodes])
+  const visibleNodeIds = useMemo(() => new Set(visibleNodes.map((n) => n.id)), [visibleNodes])
 
   const onUploadBaseMap = (file: File) => {
     const reader = new FileReader()
@@ -374,6 +434,14 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
           >
             从地点实体生成
           </Button>
+          <Button
+            size="small"
+            disabled={!doc}
+            onClick={doExportPoints}
+            title="导出结构化点位数据（含 entity_id 与证据锚点，不是图片）"
+          >
+            导出点位 JSON
+          </Button>
         </Space>
       }
     >
@@ -404,6 +472,16 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
             message="Leaflet 工作台：拖拽节点改坐标；滚轮缩放、平移；可上传手绘或 AI 底图作为参考层。服务端 SVG 渲染与 revision CAS 保存保留。"
           />
 
+          {layerTabs.length > 0 && (
+            <Radio.Group
+              size="small"
+              optionType="button"
+              value={activeLayer ?? '__all__'}
+              onChange={(e) => setActiveLayer(e.target.value === '__all__' ? null : e.target.value)}
+              options={layerTabs}
+            />
+          )}
+
           <div
             style={{
               height: 520,
@@ -429,6 +507,7 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
                 const from = draft.nodes.find((n) => n.id === route.from)
                 const to = draft.nodes.find((n) => n.id === route.to)
                 if (!from || !to) return null
+                if (!visibleNodeIds.has(from.id) || !visibleNodeIds.has(to.id)) return null
                 return (
                   <Polyline
                     key={route.id}
@@ -446,7 +525,7 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
               })}
               {draft.regions.map((region) => {
                 // 区域多边形：用属于该区域的节点围成凸包；不足三个节点则隐藏。
-                const points = draft.nodes.filter((n) => n.region_id === region.id)
+                const points = visibleNodes.filter((n) => n.region_id === region.id)
                 if (points.length < 3) return null
                 const center = {
                   x: points.reduce((acc, p) => acc + p.x, 0) / points.length,
@@ -469,7 +548,7 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
                   />
                 )
               })}
-              {draft.nodes.map((node) => (
+              {visibleNodes.map((node) => (
                 <Marker
                   key={node.id}
                   position={[node.y, node.x]}
@@ -486,11 +565,39 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
                   }}
                 >
                   <Popup>
-                    <div style={{ minWidth: 140, maxWidth: 240 }}>
+                    <div style={{ minWidth: 160, maxWidth: 260 }}>
                       <strong>{node.name || '未命名'}</strong>
                       {node.kind && (
                         <div style={{ fontSize: 12, color: '#8c8c8c', marginTop: 2 }}>{node.kind}</div>
                       )}
+                      {(() => {
+                        const row = entityByNodeId.get(node.id)
+                        if (row?.entity) {
+                          return (
+                            <div style={{ fontSize: 12, marginTop: 6 }}>
+                              <div style={{ color: '#1677ff' }}>来源实体：{row.entity.name}</div>
+                              {row.entity.summary && (
+                                <div style={{ color: '#595959', marginTop: 2, whiteSpace: 'pre-wrap' }}>
+                                  {row.entity.summary}
+                                </div>
+                              )}
+                              {row.entity.evidence.length > 0 && (
+                                <div style={{ color: '#8c8c8c', marginTop: 2 }}>
+                                  {row.entity.evidence.length} 条原文证据（详见据点编辑区）
+                                </div>
+                              )}
+                            </div>
+                          )
+                        }
+                        if (orphanNodeIds.includes(node.id)) {
+                          return (
+                            <div style={{ fontSize: 12, color: '#fa8c16', marginTop: 6 }}>
+                              游离标记：未关联地点实体（正典应在 world_entities）
+                            </div>
+                          )
+                        }
+                        return null
+                      })()}
                       {node.description && (
                         <div style={{ fontSize: 12, marginTop: 6, whiteSpace: 'pre-wrap' }}>
                           {node.description}
@@ -520,6 +627,65 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
           <Collapse
             defaultActiveKey={['regions', 'nodes', 'routes']}
             items={[
+              {
+                key: 'layers',
+                label: `空间层（${draft.layers?.length ?? 0}）`,
+                children: (
+                  <Space direction="vertical" style={{ width: '100%' }}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      空间层由项目世界观自定义（叫「天界」「幽域」还是别的、有几层、甚至完全不分层都由你决定）；
+                      据点按层归组，画布可按层过滤。不定义层即为单层地图。
+                    </Text>
+                    {(draft.layers ?? []).map((layer) => (
+                      <Space key={layer.id} wrap>
+                        <Input
+                          style={{ width: 160 }}
+                          placeholder="层名称"
+                          value={layer.name}
+                          onChange={(e) =>
+                            setDraft((prev) => ({
+                              ...prev,
+                              layers: (prev.layers ?? []).map((l) =>
+                                l.id === layer.id ? { ...l, name: e.target.value } : l,
+                              ),
+                            }))
+                          }
+                        />
+                        <Button
+                          size="small"
+                          danger
+                          icon={<DeleteOutlined />}
+                          title="删除该层（层内据点变为未分层，不删除据点）"
+                          onClick={() =>
+                            setDraft((prev) => ({
+                              ...prev,
+                              layers: (prev.layers ?? []).filter((l) => l.id !== layer.id),
+                              nodes: prev.nodes.map((n) =>
+                                n.layer === layer.id ? { ...n, layer: null } : n,
+                              ),
+                            }))
+                          }
+                        />
+                      </Space>
+                    ))}
+                    <Button
+                      size="small"
+                      icon={<PlusOutlined />}
+                      onClick={() =>
+                        setDraft((prev) => ({
+                          ...prev,
+                          layers: [
+                            ...(prev.layers ?? []),
+                            { id: newId(), name: `空间层 ${(prev.layers?.length ?? 0) + 1}` },
+                          ],
+                        }))
+                      }
+                    >
+                      添加空间层
+                    </Button>
+                  </Space>
+                ),
+              },
               {
                 key: 'regions',
                 label: `区域（${draft.regions.length}）`,
@@ -578,7 +744,8 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
                 children: (
                   <Space direction="vertical" style={{ width: '100%' }}>
                     {draft.nodes.map((node) => (
-                      <Space key={node.id} wrap>
+                      <Fragment key={node.id}>
+                      <Space wrap>
                         <Input
                           style={{ width: 120 }}
                           placeholder="名称"
@@ -613,6 +780,23 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
                           onChange={(value) => updateNode(node.id, { region_id: value ?? null })}
                           options={regionOptions}
                         />
+                        <Select
+                          style={{ width: 110 }}
+                          placeholder="空间层"
+                          allowClear
+                          value={node.layer ?? undefined}
+                          onChange={(value) => updateNode(node.id, { layer: value ?? null })}
+                          options={(draft.layers ?? []).map((l) => ({ value: l.id, label: l.name }))}
+                        />
+                        {node.entity_id ? (
+                          entityByNodeId.get(node.id)?.entity ? (
+                            <Tag color="blue">已关联实体</Tag>
+                          ) : (
+                            <Tag color="orange">实体缺失</Tag>
+                          )
+                        ) : (
+                          <Tag>游离</Tag>
+                        )}
                         <Button
                           size="small"
                           danger
@@ -625,6 +809,27 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
                           }
                         />
                       </Space>
+                      {(() => {
+                        const row = entityByNodeId.get(node.id)
+                        if (!row?.entity) return null
+                        return (
+                          <div style={{ fontSize: 12, color: '#595959', paddingLeft: 4 }}>
+                            <div>
+                              来源实体：{row.entity.name}
+                              {row.entity.is_locked ? '（已锁定正典）' : ''}
+                            </div>
+                            {row.entity.evidence.slice(0, 3).map((ev, i) => (
+                              <div key={i} style={{ color: '#8c8c8c' }}>
+                                「{ev.quote || '（无引文）'}」{ev.chunk_id ? `（${ev.chunk_id}）` : ''}
+                              </div>
+                            ))}
+                            {row.entity.evidence.length > 3 && (
+                              <div style={{ color: '#8c8c8c' }}>…共 {row.entity.evidence.length} 条证据</div>
+                            )}
+                          </div>
+                        )
+                      })()}
+                      </Fragment>
                     ))}
                     <Button size="small" icon={<PlusOutlined />} onClick={addNode}>
                       添加据点
@@ -780,6 +985,16 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
                       </div>
                     )}
                     <Paragraph style={{ fontSize: 12, whiteSpace: 'pre-wrap', marginBottom: 0 }}>{lastVisual.prompt}</Paragraph>
+                    {lastVisual.url && (
+                      <Button
+                        size="small"
+                        style={{ marginTop: 6 }}
+                        onClick={() => setBaseMapUrl(lastVisual.url)}
+                        title="派生资产：仅作为低优先级参考层显示，不写入地图事实、不叠加标记"
+                      >
+                        设为底图（参考层）
+                      </Button>
+                    )}
                   </div>
                 </div>
               )}
@@ -815,6 +1030,16 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
                           素材库
                         </Text>
                       </div>
+                    )}
+                    {visual.url && (
+                      <Button
+                        size="small"
+                        style={{ marginTop: 4 }}
+                        onClick={() => setBaseMapUrl(visual.url)}
+                        title="派生资产：仅作为参考层显示，不写入地图事实"
+                      >
+                        设为底图
+                      </Button>
                     )}
                   </div>
                 ))}

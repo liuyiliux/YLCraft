@@ -49,6 +49,7 @@ from app.services.creative_project.service import (
     loads_json,
 )
 from app.services.novel_source.contracts import (
+    BASIC_DOMAINS,
     CONTRADICTION_CONFLICTING,
     DETECTABLE_DOMAINS,
     DETECTION_UNCERTAIN,
@@ -409,7 +410,12 @@ class WorldExtractionService:
         domains: list[str] | None,
         domain_plan: list[dict[str, Any]] | None,
     ) -> list[str]:
-        """从显式 domains 或检测结果里挑出真正可提取的域。"""
+        """从显式 domains 或检测结果里挑出真正可提取的域。
+
+        两者都未提供时回落到基础层（角色/地点/势力/历史事件），避免出现
+        “没传参数就报没有可提取模块”的死路；显式给了 ``domain_plan`` 却一个
+        都没选中时，尊重用户关闭所有模块的意图，不偷偷补跑。
+        """
         requested: list[str] = []
         if domains:
             for value in domains:
@@ -432,6 +438,12 @@ class WorldExtractionService:
                 DomainDetectionState.USER_REQUESTED.value,
             }:
                 if key not in requested:
+                    requested.append(key)
+        if not requested and not domain_plan:
+            # 既没指定域也没有检测结果：回落到基础层，而不是让调用方无从下手。
+            for key in BASIC_DOMAINS:
+                spec = get_domain(key)
+                if spec and spec.extractable and key not in requested:
                     requested.append(key)
         return requested
 

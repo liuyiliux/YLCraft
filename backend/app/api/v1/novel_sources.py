@@ -22,6 +22,7 @@ from app.db.models.novel_source import (
     NovelSourceChapter,
     NovelSourceSnapshot,
     NovelTextChunk,
+    WorldDomainDefinition,
     WorldEntity,
     WorldEntityRelation,
     WorldExtractionRun,
@@ -34,8 +35,10 @@ from app.services.creative_project.service import loads_json
 from app.services.novel_source.contracts import DETECTABLE_DOMAINS, EXTRACTABLE_DOMAINS
 from app.services.novel_source.extraction import WorldExtractionService
 from app.services.novel_source.service import NovelSourceService
+from app.services.novel_source.world_domains import WorldDomainService
 from app.services.novel_source.world_map import (
     WorldMapService,
+    build_map_export,
     build_map_visual_prompt,
     render_map_svg,
     serialize_map,
@@ -142,6 +145,22 @@ class WorldMapUpdateRequest(BaseModel):
     title: str = ""
     map_json: dict[str, Any] = Field(default_factory=dict)
     expected_revision: int = 1
+
+
+class WorldDomainUpsertRequest(BaseModel):
+    """项目级世界模块定义：覆盖内置模块，或新增自定义模块。"""
+
+    label: str = Field(default="", description="展示名（留空沿用内置）")
+    entity_type: str = Field(default="", description="自定义模块的实体类型（内置模块不可改）")
+    extra_attributes: list[str] = Field(
+        default_factory=list, description="追加的属性字段（内置字段不可删除）"
+    )
+    prompt_hint: str = Field(default="", description="提取提示（留空沿用内置）")
+    is_enabled: bool = Field(default=True, description="是否启用该模块")
+    source: str = Field(
+        default="",
+        description="来源：builtin_override / custom / ai_suggested（留空自动判定）",
+    )
 
 
 class WorldMapVisualRequest(BaseModel):
@@ -811,6 +830,10 @@ async def start_project_world_extraction(
 
     result = await svc.extract(
         snapshot.id,
+        # 有意的产品选择：本入口是「从大纲一次性生成整套世界设定候选」，大纲文本短、
+        # 一次性，用户期待连世界观/力量体系/经济等扩展设定一起看到，所以默认跑全部
+        # 可提取模块。其它入口（小说来源提取、Agent 工具）不指定模块时由服务层回落
+        # 到基础层（角色/地点/势力/历史事件），避免扩展模块产生空候选噪声。
         domains=req.domains or list(EXTRACTABLE_DOMAINS),
         project_id=project_id,
         provider=req.provider,
@@ -987,6 +1010,79 @@ def map_service(session: Session = Depends(get_session)) -> WorldMapService:
     return WorldMapService(session)
 
 
+def domain_service(session: Session = Depends(get_session)) -> WorldDomainService:
+    return WorldDomainService(session)
+
+
+def _serialize_domain_definition(row: WorldDomainDefinition) -> dict[str, Any]:
+    return {
+        "key": row.domain_key,
+        "label": row.label,
+        "entity_type": row.entity_type,
+        "extra_attributes": loads_json(row.extra_attributes_json, []),
+        "prompt_hint": row.prompt_hint,
+        "is_enabled": row.is_enabled,
+        "source": row.source,
+    }
+
+
+@router.get(
+    "/api/v1/projects/{project_id}/world-domains",
+    summary="列出项目世界模块（内置 + 项目扩展）",
+)
+def list_project_world_domains(
+    project_id: str, svc: WorldDomainService = Depends(domain_service)
+):
+    """世界模块随项目演化：内置模块提供默认值，项目可覆盖、扩展字段、禁用或新增模块。
+
+    ``attributes`` 为「内置字段 + 项目追加字段」，``builtin_attributes`` 标出哪些是内置的
+    （内置字段不可删除，保证既有 ``attributes_json`` 始终可解析）。
+    """
+    return {"success": True, "data": {"domains": svc.list_domains(project_id)}}
+
+
+@router.put(
+    "/api/v1/projects/{project_id}/world-domains/{domain_key}",
+    summary="新增或更新项目世界模块定义",
+)
+def upsert_project_world_domain(
+    project_id: str,
+    domain_key: str,
+    req: WorldDomainUpsertRequest,
+    svc: WorldDomainService = Depends(domain_service),
+):
+    """覆盖内置模块（改展示名/提示词、追加字段、禁用），或新增自定义模块。
+
+    自定义模块的实体写入 ``world_entities``，``entity_type`` 取本定义值，无需新表。
+    AI 建议的模块以 ``source=ai_suggested`` 落库，默认不参与提取，需用户确认后启用。
+    """
+    try:
+        row = svc.upsert_definition(
+            project_id,
+            domain_key,
+            label=req.label,
+            entity_type=req.entity_type,
+            extra_attributes=req.extra_attributes,
+            prompt_hint=req.prompt_hint,
+            is_enabled=req.is_enabled,
+            source=req.source or None,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"success": True, "data": _serialize_domain_definition(row)}
+
+
+@router.delete(
+    "/api/v1/projects/{project_id}/world-domains/{domain_key}",
+    summary="重置项目世界模块定义（内置恢复默认，自定义移除）",
+)
+def reset_project_world_domain(
+    project_id: str, domain_key: str, svc: WorldDomainService = Depends(domain_service)
+):
+    svc.reset_definition(project_id, domain_key)
+    return {"success": True, "data": {"project_id": project_id, "domain_key": domain_key}}
+
+
 @router.get("/api/v1/world-maps", summary="列出世界地图文档")
 def list_world_maps(
     project_id: str | None = Query(None),
@@ -1059,6 +1155,46 @@ def render_world_map(map_id: str, svc: WorldMapService = Depends(map_service)):
     if not document:
         raise HTTPException(status_code=404, detail="地图文档不存在")
     return Response(content=render_map_svg(document), media_type="image/svg+xml")
+
+
+@router.get(
+    "/api/v1/world-maps/{map_id}/entities", summary="解析地图据点关联的实体与证据"
+)
+def resolve_world_map_entities(
+    map_id: str, svc: WorldMapService = Depends(map_service)
+):
+    """把地图据点与地点实体关联起来：引用不复制，实体信息按需回查。
+
+    游离标记（没有 ``entity_id`` 或实体已不存在）的 ``entity`` 为 ``null``，
+    前端应提示去关联实体，而不是把它当作正典。
+    """
+    try:
+        resolved = svc.resolve_nodes_with_entities(map_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"success": True, "data": resolved}
+
+
+@router.get(
+    "/api/v1/world-maps/{map_id}/export", summary="导出世界地图（结构化点位 JSON / SVG）"
+)
+def export_world_map(
+    map_id: str,
+    fmt: str = Query("json", alias="format", pattern="^(json|svg)$"),
+    svc: WorldMapService = Depends(map_service),
+):
+    """导出结构化点位数据或 SVG。
+
+    ``format=json`` 返回带 ``entity_id`` / ``evidence`` 的结构化点位数据（不是图片）；
+    ``format=svg`` 复用确定性渲染，返回 SVG 文本。
+    """
+    document = svc.get_map(map_id)
+    if not document:
+        raise HTTPException(status_code=404, detail="地图文档不存在")
+    if fmt == "svg":
+        return Response(content=render_map_svg(document), media_type="image/svg+xml")
+    resolved = svc.resolve_nodes_with_entities(map_id)
+    return {"success": True, "data": build_map_export(document, resolved)}
 
 
 @router.post(
