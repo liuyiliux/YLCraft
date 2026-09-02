@@ -5030,6 +5030,8 @@ class CreativeProjectService:
         ).all()
         lines: list[str] = []
         source_canon_count = 0
+        ai_draft_count = 0
+        outline_count = 0
         for content in contents:
             data = loads_json(content.data_json)
             summary = data.get("summary") or ""
@@ -5040,6 +5042,22 @@ class CreativeProjectService:
             if is_source_canon:
                 source_canon_count += 1
                 role = f"原作正典·只读 {role}"
+            # 生成链路（无原文证据）与大纲来源必须与「原文可考」区分，
+            # 否则模型会把 AI 创作或大纲推导当成有出处的事实。
+            # 来源标记有三处写法：写入管线用 field_sources.origin，
+            # 大纲同步的资产卡用 source，实体侧可能直接写 origin。
+            origin = str(
+                (data.get("field_sources") or {}).get("origin")
+                or data.get("origin")
+                or data.get("source")
+                or ""
+            ).strip()
+            if origin == "ai_draft":
+                ai_draft_count += 1
+                role = f"AI 创作（无原文证据） {role}"
+            elif origin == "outline":
+                outline_count += 1
+                role = f"依据项目大纲 {role}"
             text = content.text_content or self._bible_card_text(data)
             lines.append(
                 "\n".join(
@@ -5059,6 +5077,18 @@ class CreativeProjectService:
                 f"注意：以下 {source_canon_count} 条标注为「原作正典·只读」的事实来自派生所依据的原作，"
                 "创作时不得与之矛盾，但可以在其基础上延展；其余条目是本项目自己的设定。",
             )
+        if ai_draft_count or outline_count:
+            notes = []
+            if ai_draft_count:
+                notes.append(
+                    f"{ai_draft_count} 条标注「AI 创作（无原文证据）」，是 AI 生成或补充的设定，"
+                    "没有原文出处，可据写作需要调整或推翻"
+                )
+            if outline_count:
+                notes.append(
+                    f"{outline_count} 条标注「依据项目大纲」，证据来自本项目大纲而非真实作品，不要当成出版过的原文"
+                )
+            lines.insert(0, "注意：" + "；".join(notes) + "。")
         return "\n\n".join(lines)
 
     @staticmethod

@@ -29,9 +29,14 @@ def _from_json(value: str | None, fallback: Any) -> Any:
         return fallback
 
 
+#: 需要持久化的任务类型：项目级生成工作（进程重启后仍可在任务中心看到并恢复轮询）。
+#: ``world_domain_expansion`` 为 AI 渐进世界构建的域级细化（异步，按 task_id 轮询）。
+PERSISTED_TASK_TYPES = {"image_generation", "creative_writing", "world_domain_expansion"}
+
+
 def should_persist(task_type: str, payload: dict[str, Any] | None) -> bool:
     """Persist project-scoped generation work, not transient UI-only tasks."""
-    return task_type in {"image_generation", "creative_writing"} and bool((payload or {}).get("project_id"))
+    return task_type in PERSISTED_TASK_TYPES and bool((payload or {}).get("project_id"))
 
 
 async def upsert_task(task: Any) -> None:

@@ -4958,7 +4958,7 @@
       "summary": "从来源快照创建世界项目",
       "function": "create_project_from_novel_source",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 762,
+      "line": 775,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5934,7 +5934,7 @@
       "summary": "从项目内容启动世界提取",
       "function": "start_project_world_extraction",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 796,
+      "line": 809,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5950,7 +5950,7 @@
       "summary": "聚合项目世界知识",
       "function": "get_project_world_knowledge",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 881,
+      "line": 897,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8126,7 +8126,7 @@
       "summary": "列出来源快照",
       "function": "list_snapshots",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 473,
+      "line": 486,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8142,7 +8142,7 @@
       "summary": "列出可检测的世界模块",
       "function": "list_domains",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 484,
+      "line": 497,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8158,7 +8158,7 @@
       "summary": "导入书架章节为来源快照",
       "function": "import_bookshelf",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 453,
+      "line": 466,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8174,7 +8174,7 @@
       "summary": "导入本地 TXT 为来源快照",
       "function": "import_txt",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 416,
+      "line": 429,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8190,7 +8190,7 @@
       "summary": "获取来源快照详情",
       "function": "get_snapshot",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 499,
+      "line": 512,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8206,7 +8206,7 @@
       "summary": "列出快照章节",
       "function": "list_chapters",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 504,
+      "line": 517,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8222,7 +8222,7 @@
       "summary": "列出快照文本块",
       "function": "list_chunks",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 515,
+      "line": 528,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8238,7 +8238,7 @@
       "summary": "为小说文本块建立向量索引",
       "function": "index_chunks",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 531,
+      "line": 544,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8254,7 +8254,7 @@
       "summary": "混合检索小说文本块",
       "function": "search_chunks",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 559,
+      "line": 572,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8270,7 +8270,7 @@
       "summary": "从完本来源创建派生项目",
       "function": "derive_project",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 626,
+      "line": 639,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8286,7 +8286,7 @@
       "summary": "按模块提取世界候选",
       "function": "extract_world",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 600,
+      "line": 613,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8302,7 +8302,7 @@
       "summary": "逐模块判断世界设定是否存在",
       "function": "plan_domains",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 577,
+      "line": 590,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8318,7 +8318,7 @@
       "summary": "连载来源追加新章节",
       "function": "sync_chapters",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 650,
+      "line": 663,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8782,7 +8782,7 @@
       "summary": "列出项目世界模块（内置 + 项目扩展）",
       "function": "list_project_world_domains",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1033,
+      "line": 1369,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8798,7 +8798,7 @@
       "summary": "新增或更新项目世界模块定义",
       "function": "upsert_project_world_domain",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1048,
+      "line": 1384,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8814,7 +8814,7 @@
       "summary": "重置项目世界模块定义（内置恢复默认，自定义移除）",
       "function": "reset_project_world_domain",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1079,
+      "line": 1415,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8830,7 +8830,7 @@
       "summary": "列出项目类型化世界实体",
       "function": "list_project_world_entities",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 855,
+      "line": 871,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8846,7 +8846,103 @@
       "summary": "列出项目类型化实体关系",
       "function": "list_project_world_entity_relations",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 870,
+      "line": 886,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{project_id}/world-generation/expand-domain",
+      "router": "novel_sources",
+      "prefix": "",
+      "local_path": "/api/v1/projects/{project_id}/world-generation/expand-domain",
+      "tags": [
+        "Novel Sources"
+      ],
+      "summary": "AI 域级细化（异步，接入既有任务中心）",
+      "function": "expand_domain_attributes",
+      "file": "backend/app/api/v1/novel_sources.py",
+      "line": 1245,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{project_id}/world-generation/expand-entity",
+      "router": "novel_sources",
+      "prefix": "",
+      "local_path": "/api/v1/projects/{project_id}/world-generation/expand-entity",
+      "tags": [
+        "Novel Sources"
+      ],
+      "summary": "AI 补充实体属性（产出 ai_draft 候选，需确认后写入）",
+      "function": "expand_entity_attributes",
+      "file": "backend/app/api/v1/novel_sources.py",
+      "line": 1289,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{project_id}/world-generation/expand-entity/preview",
+      "router": "novel_sources",
+      "prefix": "",
+      "local_path": "/api/v1/projects/{project_id}/world-generation/expand-entity/preview",
+      "tags": [
+        "Novel Sources"
+      ],
+      "summary": "预览实体属性补充的提示词（不调用模型）",
+      "function": "preview_entity_expansion",
+      "file": "backend/app/api/v1/novel_sources.py",
+      "line": 1180,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{project_id}/world-generation/suggestions",
+      "router": "novel_sources",
+      "prefix": "",
+      "local_path": "/api/v1/projects/{project_id}/world-generation/suggestions",
+      "tags": [
+        "Novel Sources"
+      ],
+      "summary": "列出待确认的 AI 结构建议（模块 + 字段）",
+      "function": "list_world_building_suggestions",
+      "file": "backend/app/api/v1/novel_sources.py",
+      "line": 1319,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{project_id}/world-generation/suggestions/fields/confirm",
+      "router": "novel_sources",
+      "prefix": "",
+      "local_path": "/api/v1/projects/{project_id}/world-generation/suggestions/fields/confirm",
+      "tags": [
+        "Novel Sources"
+      ],
+      "summary": "确认字段建议（写入模块属性契约）",
+      "function": "confirm_suggested_field",
+      "file": "backend/app/api/v1/novel_sources.py",
+      "line": 1337,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{project_id}/world-generation/suggestions/fields/ignore",
+      "router": "novel_sources",
+      "prefix": "",
+      "local_path": "/api/v1/projects/{project_id}/world-generation/suggestions/fields/ignore",
+      "tags": [
+        "Novel Sources"
+      ],
+      "summary": "忽略字段建议（不再重复提示）",
+      "function": "ignore_suggested_field",
+      "file": "backend/app/api/v1/novel_sources.py",
+      "line": 1353,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8862,7 +8958,71 @@
       "summary": "从地点实体生成地图初稿",
       "function": "create_world_map_from_project_places",
       "file": "backend/app/api/v1/novel_sources.py",
+      "line": 1445,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{project_id}/world-templates",
+      "router": "novel_sources",
+      "prefix": "",
+      "local_path": "/api/v1/projects/{project_id}/world-templates",
+      "tags": [
+        "Novel Sources"
+      ],
+      "summary": "列出世界构建模板（内置种子 + 项目私有）",
+      "function": "list_world_templates",
+      "file": "backend/app/api/v1/novel_sources.py",
+      "line": 1098,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{project_id}/world-templates",
+      "router": "novel_sources",
+      "prefix": "",
+      "local_path": "/api/v1/projects/{project_id}/world-templates",
+      "tags": [
+        "Novel Sources"
+      ],
+      "summary": "新建或更新世界构建模板",
+      "function": "upsert_world_template",
+      "file": "backend/app/api/v1/novel_sources.py",
       "line": 1109,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{project_id}/world-templates/draft",
+      "router": "novel_sources",
+      "prefix": "",
+      "local_path": "/api/v1/projects/{project_id}/world-templates/draft",
+      "tags": [
+        "Novel Sources"
+      ],
+      "summary": "AI 起草世界构建模板草案（不落库，确认后再保存）",
+      "function": "draft_world_template",
+      "file": "backend/app/api/v1/novel_sources.py",
+      "line": 1154,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/projects/{project_id}/world-templates/{template_id}",
+      "router": "novel_sources",
+      "prefix": "",
+      "local_path": "/api/v1/projects/{project_id}/world-templates/{template_id}",
+      "tags": [
+        "Novel Sources"
+      ],
+      "summary": "删除项目私有模板（内置模板不可删）",
+      "function": "delete_world_template",
+      "file": "backend/app/api/v1/novel_sources.py",
+      "line": 1132,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10318,7 +10478,7 @@
       "summary": "获取提取运行状态",
       "function": "get_run",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 664,
+      "line": 677,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10334,7 +10494,7 @@
       "summary": "把合并/矛盾结论传播到已写事实",
       "function": "propagate_affected_facts",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 710,
+      "line": 723,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10350,7 +10510,7 @@
       "summary": "确认候选并写入项目",
       "function": "apply_run",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 744,
+      "line": 757,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10366,7 +10526,7 @@
       "summary": "预览提取候选与证据",
       "function": "list_candidates",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 669,
+      "line": 682,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10382,7 +10542,7 @@
       "summary": "标记候选为接受或忽略",
       "function": "decide_candidates",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 729,
+      "line": 742,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10398,7 +10558,7 @@
       "summary": "判断重复候选是否同一实体或矛盾",
       "function": "detect_contradictions",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 693,
+      "line": 706,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10414,7 +10574,7 @@
       "summary": "跨域调和候选提示",
       "function": "reconcile_run",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 683,
+      "line": 696,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10430,7 +10590,7 @@
       "summary": "列出世界地图文档",
       "function": "list_world_maps",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1087,
+      "line": 1423,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10446,7 +10606,7 @@
       "summary": "创建世界地图文档",
       "function": "create_world_map",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1098,
+      "line": 1434,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10462,7 +10622,7 @@
       "summary": "获取世界地图文档",
       "function": "get_world_map",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1125,
+      "line": 1461,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10478,7 +10638,7 @@
       "summary": "保存世界地图（revision CAS）",
       "function": "update_world_map",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1133,
+      "line": 1469,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10494,7 +10654,7 @@
       "summary": "删除世界地图文档",
       "function": "delete_world_map",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1341,
+      "line": 1677,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10510,7 +10670,7 @@
       "summary": "解析地图据点关联的实体与证据",
       "function": "resolve_world_map_entities",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1163,
+      "line": 1499,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10526,7 +10686,7 @@
       "summary": "导出世界地图（结构化点位 JSON / SVG）",
       "function": "export_world_map",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1181,
+      "line": 1517,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10542,7 +10702,7 @@
       "summary": "用生图模型生成地图视觉成图",
       "function": "generate_world_map_visual",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1220,
+      "line": 1556,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10558,7 +10718,7 @@
       "summary": "预览地图生图提示词",
       "function": "preview_world_map_visual_prompt",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1204,
+      "line": 1540,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10574,7 +10734,7 @@
       "summary": "渲染世界地图为 SVG",
       "function": "render_world_map",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1149,
+      "line": 1485,
       "response_model": "",
       "include_in_schema": true
     },

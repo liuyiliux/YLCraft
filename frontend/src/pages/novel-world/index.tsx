@@ -17,6 +17,7 @@ import {
   Steps,
   Table,
   Tag,
+  Tooltip,
   Typography,
   Upload,
 } from 'antd'
@@ -76,6 +77,9 @@ const STATUS_COLOR: Record<string, string> = {
 const ORIGIN_LABEL: Record<string, string> = {
   original: '原文陈述',
   ai_inferred: '模型推断',
+  ai_draft: 'AI 创作',
+  // 证据逐字命中项目大纲，而不是某部真实作品：不能显示成「原文陈述」。
+  outline: '来自大纲',
 }
 
 const CHAPTER_HEADING = /^\s*第[0-9零一二两三四五六七八九十百千万]+[章节卷回][^\n]*$/
@@ -413,11 +417,17 @@ export default function NovelWorldPage() {
       title: '来源',
       dataIndex: 'origin',
       key: 'origin',
-      render: (value: string) => (
-        <Tag color={value === 'original' ? 'green' : 'orange'}>
-          {ORIGIN_LABEL[value] ?? value}
-        </Tag>
-      ),
+      render: (value: string) => {
+        const label = ORIGIN_LABEL[value] ?? value
+        if (value === 'outline') {
+          return (
+            <Tooltip title="证据逐字命中你的项目大纲：可回溯，但不是某部真实作品的原文">
+              <Tag color="blue">{label}</Tag>
+            </Tooltip>
+          )
+        }
+        return <Tag color={value === 'original' ? 'green' : 'orange'}>{label}</Tag>
+      },
     },
     {
       title: '置信度',

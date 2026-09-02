@@ -123,11 +123,16 @@ class CandidateOrigin(str, Enum):
     与角色库的字段来源语义保持一致，推断内容必须显式标记并进入候选。
     ``ai_draft`` 来自生成链路（没有原文可引用）：**不得为其伪造证据锚点**，
     UI 需与「原文可考」（``original``）明确区分。
+
+    ``outline`` 的原文是**项目大纲/蓝图**（用户确认过，但由 AI 生成）：证据锚点逐字
+    命中大纲文本，因此「可回溯」但**不等于原著出处**。UI 需说明「依据来自你的大纲」，
+    避免用户误以为该设定出自某部真实作品。
     """
 
     ORIGINAL = "original"
     AI_INFERRED = "ai_inferred"
     AI_DRAFT = "ai_draft"
+    OUTLINE = "outline"
 
 
 class NovelSourceSnapshot(SQLModel, table=True):
@@ -243,7 +248,10 @@ class WorldExtractionRun(SQLModel, table=True):
     __tablename__ = "world_extraction_runs"
 
     id: str = Field(primary_key=True, default_factory=lambda: uuid.uuid4().hex)
-    snapshot_id: str = Field(foreign_key="novel_source_snapshots.id", index=True)
+    # 生成运行（kind=generate）没有来源快照，故可空（迁移 040）。
+    snapshot_id: str | None = Field(
+        default=None, foreign_key="novel_source_snapshots.id", index=True
+    )
     project_id: str | None = Field(
         default=None, foreign_key="creative_projects.id", index=True
     )
@@ -287,7 +295,10 @@ class WorldFactCandidate(SQLModel, table=True):
 
     id: str = Field(primary_key=True, default_factory=lambda: uuid.uuid4().hex)
     run_id: str = Field(foreign_key="world_extraction_runs.id", index=True)
-    snapshot_id: str = Field(foreign_key="novel_source_snapshots.id", index=True)
+    # 生成链路产出的候选没有来源快照，故可空（迁移 040）。
+    snapshot_id: str | None = Field(
+        default=None, foreign_key="novel_source_snapshots.id", index=True
+    )
     project_id: str | None = Field(
         default=None, foreign_key="creative_projects.id", index=True
     )
@@ -455,6 +466,8 @@ class WorldDomainDefinition(SQLModel, table=True):
     entity_type: str = Field(default="")  # 自定义域的实体类型；空表示用 domain_key
     # 相对内置属性**追加**的字段；内置字段不可删除，只能扩展。
     extra_attributes_json: str = Field(default="[]")
+    # 被用户忽略的 AI 建议字段（不再重复提示）。
+    ignored_suggestions_json: str = Field(default="[]")
     prompt_hint: str = Field(default="")  # 覆盖内置提取提示；空表示沿用
     is_enabled: bool = Field(default=True, index=True)
     source: str = Field(default=DomainDefinitionSource.CUSTOM.value, index=True)

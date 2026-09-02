@@ -34,6 +34,7 @@ import {
   ThunderboltOutlined,
 } from '@ant-design/icons'
 import { useTheme } from '../../constants/theme'
+import WorldBuildingTemplates from './WorldBuildingTemplates'
 import {
   getPlatformTemplates,
   createPlatformTemplate,
@@ -83,6 +84,7 @@ const PROMPT_TAB_OPTIONS = [
   { value: 'creative_project', label: '创作项目 Prompt' },
   { value: 'video_prompt', label: '视频提示词' },
   { value: 'prompt_reference', label: '图片 Prompt 参考' },
+  { value: 'world_building', label: '世界构建' },
 ]
 
 const STAGE_OPTIONS = [
@@ -106,6 +108,7 @@ export default function PlatformTemplatesPage() {
   const [form] = Form.useForm()
 
   const loadTemplates = async () => {
+    if (activeScope === 'world_building') return // 世界构建模板走独立面板
     setLoading(true)
     try {
       const res = await getPlatformTemplates({ template_scope: activeScope })
@@ -123,6 +126,7 @@ export default function PlatformTemplatesPage() {
 
   useEffect(() => {
     setSearchParams({ scope: activeScope })
+    if (activeScope === 'world_building') return
     loadTemplates()
   }, [activeScope])
 
@@ -465,44 +469,54 @@ export default function PlatformTemplatesPage() {
                 display: 'block',
               }}
             >
-              配置多平台生图、视频提示词，以及创作项目的大纲、章节、脚本和分镜 Prompt
+              {activeScope === 'world_building'
+                ? '管理 AI 世界构建模板：内置种子只读，项目模板可查看/编辑，支持 AI 起草后保存'
+                : '配置多平台生图、视频提示词，以及创作项目的大纲、章节、脚本和分镜 Prompt'}
             </Text>
           </div>
           <Space>
             <Button onClick={() => navigate('/prompt-library')}>图片 Prompt 参考库</Button>
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              onClick={handleCreate}
-              style={{
-                borderRadius: T.radiusLG,
-                fontWeight: 500,
-              }}
-            >
-              新建
-            </Button>
-            <Button
-              icon={<ReloadOutlined />}
-              onClick={loadTemplates}
-              loading={loading}
-              style={{
-                borderRadius: T.radiusLG,
-                borderColor: T.border,
-                color: T.textSecondary,
-                fontWeight: 500,
-                transition: `all ${T.animationDuration} ${T.animationEasing}`,
-              }}
-              onMouseEnter={e => {
-                (e.currentTarget as HTMLElement).style.borderColor = T.primary
-                ;(e.currentTarget as HTMLElement).style.color = T.primary
-              }}
-              onMouseLeave={e => {
-                (e.currentTarget as HTMLElement).style.borderColor = T.border
-                ;(e.currentTarget as HTMLElement).style.color = T.textSecondary
-              }}
-            >
-              刷新
-            </Button>
+            {activeScope === 'world_building' ? (
+              <Button type="primary" onClick={() => setActiveScope('creative_project')}>
+                返回创作项目 Prompt
+              </Button>
+            ) : (
+              <>
+                <Button
+                  type="primary"
+                  icon={<PlusOutlined />}
+                  onClick={handleCreate}
+                  style={{
+                    borderRadius: T.radiusLG,
+                    fontWeight: 500,
+                  }}
+                >
+                  新建
+                </Button>
+                <Button
+                  icon={<ReloadOutlined />}
+                  onClick={loadTemplates}
+                  loading={loading}
+                  style={{
+                    borderRadius: T.radiusLG,
+                    borderColor: T.border,
+                    color: T.textSecondary,
+                    fontWeight: 500,
+                    transition: `all ${T.animationDuration} ${T.animationEasing}`,
+                  }}
+                  onMouseEnter={e => {
+                    (e.currentTarget as HTMLElement).style.borderColor = T.primary
+                    ;(e.currentTarget as HTMLElement).style.color = T.primary
+                  }}
+                  onMouseLeave={e => {
+                    (e.currentTarget as HTMLElement).style.borderColor = T.border
+                    ;(e.currentTarget as HTMLElement).style.color = T.textSecondary
+                  }}
+                >
+                  刷新
+                </Button>
+              </>
+            )}
           </Space>
         </Row>
       </div>
@@ -520,17 +534,20 @@ export default function PlatformTemplatesPage() {
         style={{ marginBottom: 12 }}
       />
 
-      {/* Table Card */}
-      <Card
-        style={{
-          background: T.bgCard,
-          border: `1px solid ${T.border}`,
-          borderRadius: T.radiusXL,
-          boxShadow: T.shadowCard,
-          overflow: 'hidden',
-        }}
-        styles={{ body: { padding: 0 } }}
-      >
+      {/* Table Card：世界构建模板按项目管理，其余为平台/创作 Prompt 模板 */}
+      {activeScope === 'world_building' ? (
+        <WorldBuildingTemplates />
+      ) : (
+        <Card
+          style={{
+            background: T.bgCard,
+            border: `1px solid ${T.border}`,
+            borderRadius: T.radiusXL,
+            boxShadow: T.shadowCard,
+            overflow: 'hidden',
+          }}
+          styles={{ body: { padding: 0 } }}
+        >
         {loading && templates.length === 0 ? (
           <div style={{ padding: 24 }}>
             <Skeleton active paragraph={{ rows: 6 }} />
@@ -566,6 +583,7 @@ export default function PlatformTemplatesPage() {
           />
         )}
       </Card>
+      )}
 
       {/* Edit Modal */}
       <Modal

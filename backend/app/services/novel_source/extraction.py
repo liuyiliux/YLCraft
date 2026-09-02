@@ -268,10 +268,15 @@ class WorldExtractionService:
         model: str | None = None,
         mode: str = ExtractionRunMode.FULL.value,
         max_chunks: int = DEFAULT_MAX_CHUNKS,
+        candidate_origin: str = CandidateOrigin.ORIGINAL.value,
     ) -> dict[str, Any]:
         """按域提取世界事实并落为待确认候选。
 
         任一域失败只让整体变 ``partial``，其他域的候选照常保留。
+
+        ``candidate_origin`` 声明**本运行来源的性质**：真实原文为 ``original``；
+        来源由项目大纲序列化而来时为 ``outline``——证据仍逐字命中，但命中对象是
+        大纲文本而非原著，UI 必须据此说明「依据来自你的大纲」。
         """
         snapshot = self._require_snapshot(snapshot_id)
         requested = self._resolve_domains(domains, domain_plan)
@@ -347,6 +352,7 @@ class WorldExtractionService:
                     source_text=source_text,
                     chunks=chunks,
                     delta=run_mode == ExtractionRunMode.DELTA.value,
+                    source_origin=candidate_origin,
                 )
                 plan_state["run_state"] = DomainRunState.DRAFT.value
                 plan_state["items"] = created
@@ -537,6 +543,7 @@ class WorldExtractionService:
         source_text: str,
         chunks: list[NovelTextChunk],
         delta: bool = False,
+        source_origin: str = CandidateOrigin.ORIGINAL.value,
     ) -> tuple[int, int]:
         existing = self._active_candidates(snapshot.id, domain)
         created = 0
@@ -563,10 +570,12 @@ class WorldExtractionService:
                     updated += 1 if self._append_evidence(current, run.id, evidence, item) else 0
                 continue
 
+            # 推断内容一律标记 ai_inferred；其余按本次运行的来源性质：
+            # 真实原文为 original，来源为项目大纲时为 outline（证据指向大纲，不是原著）。
             origin = (
                 CandidateOrigin.AI_INFERRED.value
                 if item.uncertain or item.confidence < 0.7
-                else CandidateOrigin.ORIGINAL.value
+                else source_origin
             )
             candidate = WorldFactCandidate(
                 run_id=run.id,
