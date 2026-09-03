@@ -66,3 +66,15 @@ export function BackendSelect({
     />
   )
 }
+
+/** 按能力过滤后端；未声明能力（空数组）不过滤（与角色立绘同一规则）。 */
+export function filterBackendsByCapability<T extends { capabilities?: string[] }>(
+  backends: T[],
+  capability?: string,
+): T[] {
+  if (!capability) return backends
+  return backends.filter(item => {
+    const caps = Array.isArray(item?.capabilities) ? item.capabilities : []
+    return !caps.length || caps.includes(capability)
+  })
+}

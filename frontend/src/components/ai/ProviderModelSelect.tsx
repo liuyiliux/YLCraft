@@ -8,6 +8,7 @@
  * - 供应商切换自动带出默认模型。
  */
 import { Select, Space } from 'antd'
+import { BackendSelect, filterBackendsByCapability, type BackendInfo } from '../BackendSelect'
 
 export interface BackendLike {
   name?: string
@@ -23,16 +24,7 @@ export function backendKey(item: BackendLike): string {
   return item.name || item.provider || ''
 }
 
-export function filterBackendsByCapability(
-  backends: BackendLike[],
-  capability?: string,
-): BackendLike[] {
-  if (!capability) return backends
-  return backends.filter((item) => {
-    const caps = Array.isArray(item?.capabilities) ? item.capabilities : []
-    return !caps.length || caps.includes(capability)
-  })
-}
+export { filterBackendsByCapability }
 
 interface Props {
   backends: BackendLike[]
@@ -75,11 +67,9 @@ export default function ProviderModelSelect({
 
   return (
     <Space wrap size={6}>
-      <Select
-        size={size}
-        style={{ width: providerWidth }}
-        placeholder={providerPlaceholder}
-        value={provider || undefined}
+      <BackendSelect
+        backends={options as BackendInfo[]}
+        value={provider}
         onChange={(value) => {
           const backend = options.find((item) => backendKey(item) === value) ?? null
           onProviderChange(value, backend)
@@ -87,10 +77,9 @@ export default function ProviderModelSelect({
             backend?.default_model || backend?.model || backend?.available_models?.[0] || ''
           if (next) onModelChange(next)
         }}
-        options={options.map((item) => ({
-          value: backendKey(item),
-          label: item.provider_label || item.name || item.provider || backendKey(item),
-        }))}
+        size={size}
+        placeholder={providerPlaceholder}
+        style={{ width: providerWidth }}
       />
       <Select
         size={size}

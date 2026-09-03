@@ -31,8 +31,9 @@ import {
   type WorldMapVisual,
   type WorldMapVisualResult,
 } from '../../../api/novelSource'
-import { listConnectors } from '../../../api'
 import ProviderModelSelect, { filterBackendsByCapability } from '../../../components/ai/ProviderModelSelect'
+import EvidenceList from '../../../components/world/EvidenceList'
+import useLlmConnectors from '../../../hooks/useLlmConnectors'
 
 const { Paragraph, Text } = Typography
 
@@ -163,10 +164,14 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
   const [visualUploadRefs, setVisualUploadRefs] = useState<string[]>([])
   // AI 视觉稿抽屉：成图是派生资产，降权到抽屉里多稿生成、手动设为底图。
   const [visualDrawerOpen, setVisualDrawerOpen] = useState(false)
-  // 优化提示词用的 LLM 连接器（与立绘同源：/ai/connectors?provider_type=llm）。
-  const [llmBackends, setLlmBackends] = useState<any[]>([])
-  const [llmProvider, setLlmProvider] = useState('')
-  const [llmModel, setLlmModel] = useState('')
+  // 优化提示词用的 LLM 连接器（公共 hook：拉取 + 默认模型回退）。
+  const {
+    backends: llmBackends,
+    provider: llmProvider,
+    model: llmModel,
+    setProvider: setLlmProvider,
+    setModel: setLlmModel,
+  } = useLlmConnectors()
 
   useEffect(() => {
     listWorldMapImageBackends()
@@ -178,21 +183,6 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
         }
       })
       .catch(() => setImageBackends([]))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  useEffect(() => {
-    listConnectors({ provider_type: 'llm', active_only: true })
-      .then((resp: any) => {
-        const items = (resp?.connectors || resp?.data || resp?.items || []) as any[]
-        setLlmBackends(items)
-        const first = items[0]
-        if (first && !llmProvider) {
-          setLlmProvider(first.name || first.provider || '')
-          setLlmModel(first.default_model || first.model || first.available_models?.[0] || '')
-        }
-      })
-      .catch(() => setLlmBackends([]))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -1037,9 +1027,7 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
                     {row?.entity && row.entity.evidence.length > 0 && (
                       <div style={{ fontSize: 12, color: '#8c8c8c' }}>
                         <div>证据锚点（{row.entity.evidence.length} 条）：</div>
-                        {row.entity.evidence.slice(0, 3).map((ev, i) => (
-                          <div key={i}>「{ev.quote || '（无引文）'}」{ev.chunk_id ? `（${ev.chunk_id}）` : ''}</div>
-                        ))}
+                        <EvidenceList items={row.entity.evidence} max={3} />
                       </div>
                     )}
                     <Input
@@ -1649,14 +1637,7 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
                               来源实体：{row.entity.name}
                               {row.entity.is_locked ? '（已锁定正典）' : ''}
                             </div>
-                            {row.entity.evidence.slice(0, 3).map((ev, i) => (
-                              <div key={i} style={{ color: '#8c8c8c' }}>
-                                「{ev.quote || '（无引文）'}」{ev.chunk_id ? `（${ev.chunk_id}）` : ''}
-                              </div>
-                            ))}
-                            {row.entity.evidence.length > 3 && (
-                              <div style={{ color: '#8c8c8c' }}>…共 {row.entity.evidence.length} 条证据</div>
-                            )}
+                            <EvidenceList items={row.entity.evidence} max={3} />
                           </div>
                         )
                       })()}
