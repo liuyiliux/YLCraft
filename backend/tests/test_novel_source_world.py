@@ -1571,6 +1571,8 @@ def test_map_visual_prompt_carries_coordinate_convention(session):
     assert "走向" in prompt
     # 明确禁止按名称里的南/北/东/西猜位置。
     assert "不要按名称里的「南/北/东/西」猜测位置" in prompt
+    # 地形不写死：未在描述中出现的山河海岸不应被强加（现实题材适配）。
+    assert "不要凭空添加" in prompt
 
 
 def test_create_map_from_project_places_generates_nodes(session, storage):
