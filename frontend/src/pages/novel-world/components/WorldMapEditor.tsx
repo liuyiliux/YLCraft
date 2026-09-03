@@ -701,68 +701,75 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
             message="Leaflet 工作台：拖拽节点改坐标；滚轮缩放、平移；可上传手绘或 AI 底图作为参考层。服务端 SVG 渲染与 revision CAS 保存保留。"
           />
 
-          <Card size="small" style={{ background: '#fafafa' }} styles={{ body: { padding: '8px 12px' } }}>
-            <Space wrap size={[12, 8]}>
-              <Space size={6} wrap>
-                <Text strong style={{ fontSize: 12 }}>图层</Text>
-                <Tag.CheckableTag checked={showNodes} onChange={(checked) => setShowNodes(checked)}>
-                  据点 {draft.nodes.length}
-                </Tag.CheckableTag>
-                <Tag.CheckableTag checked={showRegions} onChange={(checked) => setShowRegions(checked)}>
-                  区域 {draft.regions.length}
-                </Tag.CheckableTag>
-                <Tag.CheckableTag checked={showRoutes} onChange={(checked) => setShowRoutes(checked)}>
-                  路线 {draft.routes.length}
-                </Tag.CheckableTag>
-                <Tag.CheckableTag
-                  checked={showBaseMap}
-                  onChange={(checked) => setShowBaseMap(checked)}
-                  disabled={!baseMapUrl}
-                >
-                  底图参考
-                </Tag.CheckableTag>
-              </Space>
-              <Select
-                allowClear
-                placeholder="据点类型"
-                style={{ width: 120 }}
-                value={kindFilter || undefined}
-                onChange={(value) => setKindFilter(value || '')}
-                options={KIND_OPTIONS.node.map((kind) => ({ value: kind, label: kind }))}
-              />
-              {layerTabs.length > 0 && (
-                <Space size={6} wrap>
-                  <Text strong style={{ fontSize: 12 }}>
-                    位面
-                  </Text>
-                  <Radio.Group
-                    size="small"
-                    optionType="button"
-                    value={activeLayer ?? '__all__'}
-                    onChange={(e) =>
-                      setActiveLayer(e.target.value === '__all__' ? null : e.target.value)
-                    }
-                    options={layerTabs}
-                  />
-                </Space>
-              )}
-              <Upload accept="image/*" showUploadList={false} beforeUpload={onUploadBaseMap}>
-                <Button size="small" icon={<PictureOutlined />}>
-                  上传底图参考
-                </Button>
-              </Upload>
-              {baseMapUrl && (
-                <Button size="small" onClick={() => setBaseMapUrl(null)}>
-                  移除底图
-                </Button>
-              )}
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                坐标 0-100；标记永远叠在结构化画布上，AI 底图只是可开关的参考层，不写入事实。
-              </Text>
-            </Space>
-          </Card>
-
           <div style={{ display: 'flex', gap: 12, alignItems: 'stretch' }}>
+            <aside style={{ width: 230, flexShrink: 0 }}>
+              <Card
+                size="small"
+                title="图层"
+                style={{ background: '#fafafa', height: '100%' }}
+                styles={{ body: { padding: '10px 12px' } }}
+              >
+                <Space direction="vertical" size={10} style={{ width: '100%' }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                    <Tag.CheckableTag checked={showNodes} onChange={(checked) => setShowNodes(checked)}>
+                      据点 {draft.nodes.length}
+                    </Tag.CheckableTag>
+                    <Tag.CheckableTag checked={showRegions} onChange={(checked) => setShowRegions(checked)}>
+                      区域 {draft.regions.length}
+                    </Tag.CheckableTag>
+                    <Tag.CheckableTag checked={showRoutes} onChange={(checked) => setShowRoutes(checked)}>
+                      路线 {draft.routes.length}
+                    </Tag.CheckableTag>
+                    <Tag.CheckableTag
+                      checked={showBaseMap}
+                      onChange={(checked) => setShowBaseMap(checked)}
+                      disabled={!baseMapUrl}
+                    >
+                      底图参考
+                    </Tag.CheckableTag>
+                  </div>
+                  <Select
+                    allowClear
+                    size="small"
+                    placeholder="据点类型"
+                    style={{ width: '100%' }}
+                    value={kindFilter || undefined}
+                    onChange={(value) => setKindFilter(value || '')}
+                    options={KIND_OPTIONS.node.map((kind) => ({ value: kind, label: kind }))}
+                  />
+                  {layerTabs.length > 0 && (
+                    <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                      <Text strong style={{ fontSize: 12 }}>
+                        位面
+                      </Text>
+                      <Radio.Group
+                        size="small"
+                        optionType="button"
+                        style={{ display: 'flex', flexWrap: 'wrap' }}
+                        value={activeLayer ?? '__all__'}
+                        onChange={(e) =>
+                          setActiveLayer(e.target.value === '__all__' ? null : e.target.value)
+                        }
+                        options={layerTabs}
+                      />
+                    </Space>
+                  )}
+                  <Upload accept="image/*" showUploadList={false} beforeUpload={onUploadBaseMap}>
+                    <Button size="small" block icon={<PictureOutlined />}>
+                      上传底图参考
+                    </Button>
+                  </Upload>
+                  {baseMapUrl && (
+                    <Button size="small" block onClick={() => setBaseMapUrl(null)}>
+                      移除底图
+                    </Button>
+                  )}
+                  <Text type="secondary" style={{ fontSize: 11 }}>
+                    坐标 0-100；标记永远叠在结构化画布上，AI 底图只是可开关的参考层，不写入事实。
+                  </Text>
+                </Space>
+              </Card>
+            </aside>
             <div
               style={{
                 flex: 1,

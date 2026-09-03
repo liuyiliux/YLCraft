@@ -498,101 +498,106 @@ export default function NovelWorldPage() {
       <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
         <aside style={{ width: 280, flexShrink: 0 }}>
           <Card
+            size="small"
             title="1. 来源快照"
-        style={{ marginBottom: 16 }}
-        extra={
-          snapshot ? (
-            <Space>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                索引：
-                {snapshot.indexing_status === 'indexed'
-                  ? '已建立'
-                  : snapshot.indexing_status === 'pending'
-                    ? '未开始'
-                    : snapshot.indexing_status === 'skipped'
-                      ? '已跳过'
-                      : snapshot.indexing_status}
-              </Text>
-              <Button loading={indexing} onClick={doIndex}>
-                建立索引
-              </Button>
-            </Space>
-          ) : null
-        }
-      >
-        <Space direction="vertical" style={{ width: '100%' }}>
-          <Space wrap>
-            <Upload
-              showUploadList={false}
-              accept=".txt,.text,.md"
-              customRequest={({ file }) => {
-                doImport(file as File, 'unknown')
-              }}
-            >
-              <Button icon={<InboxOutlined />} loading={importing}>
-                上传 TXT
-              </Button>
-            </Upload>
-            <Select
-              placeholder="选择已有来源快照"
-              style={{ minWidth: 320 }}
-              value={snapshot?.id}
-              onChange={selectSnapshot}
-              onDropdownVisibleChange={(open) => {
-                if (open) refreshSnapshots()
-              }}
-              options={snapshots.map((item) => ({
-                value: item.id,
-                label: `${item.title}（${item.chapter_count} 章 · ${item.source_kind === 'txt' ? 'TXT' : '书架'}）`,
-              }))}
-            />
-            <Button onClick={refreshSnapshots}>刷新</Button>
-          </Space>
-          {snapshot && (
-            <Descriptions size="small" column={4}>
-              <Descriptions.Item label="标题">{snapshot.title}</Descriptions.Item>
-              <Descriptions.Item label="作者">{snapshot.author || '未知'}</Descriptions.Item>
-              <Descriptions.Item label="章节">{snapshot.chapter_count}</Descriptions.Item>
-              <Descriptions.Item label="字数">{snapshot.char_count}</Descriptions.Item>
-              <Descriptions.Item label="状态">
-                {snapshot.source_status === 'completed' ? '完本' : snapshot.source_status === 'serial' ? '连载' : '未知'}
-              </Descriptions.Item>
-              <Descriptions.Item label="编码">{snapshot.encoding}</Descriptions.Item>
-            </Descriptions>
-          )}
-          {snapshot?.source_status === 'completed' && (
-            <Space wrap>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                完本来源可开派生项目：原作已确认事实与角色作为只读参考层带入，新写入与原作分层。
-              </Text>
+            style={{ marginBottom: 16 }}
+          >
+            <Space direction="vertical" style={{ width: '100%' }} size={10}>
               <Select
-                size="small"
-                style={{ width: 120 }}
-                value={derivationKind}
-                onChange={(value: DerivationKind) => setDerivationKind(value)}
-                options={[
-                  { value: 'continuation', label: '续写项目' },
-                  { value: 'adaptation', label: '改编项目' },
-                  { value: 'fan_work', label: '同人项目' },
-                ]}
+                placeholder="选择已有来源快照"
+                style={{ width: '100%' }}
+                value={snapshot?.id}
+                onChange={selectSnapshot}
+                onDropdownVisibleChange={(open) => {
+                  if (open) refreshSnapshots()
+                }}
+                options={snapshots.map((item) => ({
+                  value: item.id,
+                  label: `${item.title}（${item.chapter_count} 章 · ${item.source_kind === 'txt' ? 'TXT' : '书架'}）`,
+                }))}
               />
-              <Button size="small" loading={deriving} onClick={doDerive}>
-                创建派生项目
-              </Button>
+              <Space wrap>
+                <Upload
+                  showUploadList={false}
+                  accept=".txt,.text,.md"
+                  customRequest={({ file }) => {
+                    doImport(file as File, 'unknown')
+                  }}
+                >
+                  <Button size="small" icon={<InboxOutlined />} loading={importing}>
+                    上传 TXT
+                  </Button>
+                </Upload>
+                <Button size="small" onClick={refreshSnapshots}>
+                  刷新
+                </Button>
+              </Space>
+              {snapshot && (
+                <div style={{ fontSize: 12, color: '#595959', lineHeight: 1.8 }}>
+                  <div style={{ color: '#1f2329', fontWeight: 600 }}>{snapshot.title}</div>
+                  <div>
+                    {snapshot.author || '未知'} · {snapshot.chapter_count} 章 · {snapshot.char_count} 字 ·{' '}
+                    {snapshot.source_status === 'completed'
+                      ? '完本'
+                      : snapshot.source_status === 'serial'
+                        ? '连载'
+                        : '未知'}{' '}
+                    · {snapshot.encoding}
+                  </div>
+                  <div>
+                    索引：
+                    {snapshot.indexing_status === 'indexed'
+                      ? '已建立'
+                      : snapshot.indexing_status === 'pending'
+                        ? '未开始'
+                        : snapshot.indexing_status === 'skipped'
+                          ? '已跳过'
+                          : snapshot.indexing_status}
+                    <Button
+                      type="link"
+                      size="small"
+                      loading={indexing}
+                      onClick={doIndex}
+                      style={{ padding: 0, marginLeft: 6 }}
+                    >
+                      建立索引
+                    </Button>
+                  </div>
+                </div>
+              )}
+              {snapshot?.source_status === 'completed' && (
+                <div style={{ fontSize: 12, color: '#8c8c8c' }}>
+                  完本来源可开派生项目：原作已确认事实与角色作为只读参考层带入，新写入与原作分层。
+                  <Space wrap style={{ marginTop: 6 }}>
+                    <Select
+                      size="small"
+                      style={{ width: 110 }}
+                      value={derivationKind}
+                      onChange={(value: DerivationKind) => setDerivationKind(value)}
+                      options={[
+                        { value: 'continuation', label: '续写项目' },
+                        { value: 'adaptation', label: '改编项目' },
+                        { value: 'fan_work', label: '同人项目' },
+                      ]}
+                    />
+                    <Button size="small" loading={deriving} onClick={doDerive}>
+                      创建派生项目
+                    </Button>
+                  </Space>
+                </div>
+              )}
+              {snapshot?.source_status === 'serial' && (
+                <div style={{ fontSize: 12, color: '#8c8c8c' }}>
+                  连载来源可追加新章节；已导入章节与既有证据锚点保持不变。
+                  <div style={{ marginTop: 6 }}>
+                    <Button size="small" onClick={() => setSyncOpen(true)}>
+                      追加章节
+                    </Button>
+                  </div>
+                </div>
+              )}
             </Space>
-          )}
-          {snapshot?.source_status === 'serial' && (
-            <Space wrap>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                连载来源可追加新章节；已导入章节与既有证据锚点保持不变。
-              </Text>
-              <Button size="small" onClick={() => setSyncOpen(true)}>
-                追加章节
-              </Button>
-            </Space>
-          )}
-        </Space>
-      </Card>
+          </Card>
           <Card
             title="2. 模块判断"
         style={{ marginBottom: 16 }}
@@ -605,107 +610,85 @@ export default function NovelWorldPage() {
         {!plan ? (
           <Empty description="先导入来源，再让 AI 逐模块判断是否存在可提取内容" />
         ) : (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <Space direction="vertical" style={{ width: '100%' }} size={10}>
             <Alert
               type="info"
               showIcon
-              message="不使用整体题材开关：每个模块独立给出存在性判断，你可逐个勾选要提取的模块。"
+              message="每个模块独立判断，逐个勾选要提取的模块（悬停状态看理由）。"
             />
-            <Table
-              size="small"
-              rowKey="key"
-              pagination={false}
-              dataSource={domainsByGroup.extractable}
-              columns={[
-                {
-                  title: '启用',
-                  key: 'enabled',
-                  width: 60,
-                  render: (_, record) => (
-                    <Checkbox
-                      checked={enabled.includes(record.domain)}
-                      onChange={(e) =>
-                        setEnabled((prev) =>
-                          e.target.checked
-                            ? [...prev, record.domain]
-                            : prev.filter((item) => item !== record.domain),
-                        )
-                      }
-                    />
-                  ),
-                },
-                { title: '模块', dataIndex: 'label', key: 'label', width: 110 },
-                {
-                  title: '判断',
-                  dataIndex: 'status',
-                  key: 'status',
-                  width: 100,
-                  render: (value: string) => (
-                    <Tag color={STATUS_COLOR[value]}>{STATUS_LABEL[value] ?? value}</Tag>
-                  ),
-                },
-                { title: '理由', dataIndex: 'reason', key: 'reason' },
-                {
-                  title: '信号',
-                  dataIndex: 'signals',
-                  key: 'signals',
-                  render: (v: string[]) => (v ?? []).map((s) => <Tag key={s}>{s}</Tag>),
-                },
-              ]}
-            />
-            {domainsByGroup.detectOnly.length > 0 && (
-              <>
-                <Divider style={{ margin: '8px 0' }} />
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  以下模块仅检测、暂不提取：{domainsByGroup.detectOnly.map((item) => item.label).join('、')}
-                </Text>
-              </>
-            )}
-            <Space wrap>
-              <Text>AI 选择：</Text>
-              <Select
-                size="small"
-                style={{ width: 200 }}
-                placeholder="LLM 供应商"
-                value={provider || undefined}
-                onChange={(value) => {
-                  setProvider(value)
-                  const backend = llmBackends.find(
-                    (item: any) => (item.name || item.provider) === value,
-                  )
-                  setModel(
-                    backend?.default_model || backend?.model || backend?.available_models?.[0] || '',
-                  )
-                }}
-                options={llmBackends.map((item: any) => ({
-                  value: item.name || item.provider,
-                  label: item.provider_label || item.name || item.provider,
-                }))}
-              />
-              <Select
-                size="small"
-                style={{ width: 220 }}
-                placeholder="模型（留空用默认）"
-                value={model || undefined}
-                onChange={setModel}
-                allowClear
-                options={Array.from(
-                  new Set(
-                    (() => {
-                      const backend = llmBackends.find(
-                        (item: any) => (item.name || item.provider) === provider,
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {domainsByGroup.extractable.map((item) => (
+                <div key={item.domain} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Checkbox
+                    checked={enabled.includes(item.domain)}
+                    onChange={(e) =>
+                      setEnabled((prev) =>
+                        e.target.checked
+                          ? [...prev, item.domain]
+                          : prev.filter((id) => id !== item.domain),
                       )
-                      return backend?.available_models?.length
-                        ? backend.available_models
-                        : [backend?.default_model || backend?.model || '']
-                    })().filter(Boolean) as string[],
-                  ),
-                ).map((value) => ({ value, label: value }))}
-              />
-              <Button type="primary" disabled={!enabled.length} loading={extracting} onClick={doExtract}>
-                提取所选模块
-              </Button>
-            </Space>
+                    }
+                  />
+                  <Text style={{ fontSize: 12, flex: 1 }}>{item.label}</Text>
+                  <Tooltip title={item.reason}>
+                    <Tag color={STATUS_COLOR[item.status]} style={{ marginInlineEnd: 0 }}>
+                      {STATUS_LABEL[item.status] ?? item.status}
+                    </Tag>
+                  </Tooltip>
+                </div>
+              ))}
+            </div>
+            {domainsByGroup.detectOnly.length > 0 && (
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                仅检测、暂不提取：{domainsByGroup.detectOnly.map((item) => item.label).join('、')}
+              </Text>
+            )}
+            <Divider style={{ margin: '4px 0' }} />
+            <Text strong style={{ fontSize: 12 }}>
+              AI 选择
+            </Text>
+            <Select
+              size="small"
+              style={{ width: '100%' }}
+              placeholder="LLM 供应商"
+              value={provider || undefined}
+              onChange={(value) => {
+                setProvider(value)
+                const backend = llmBackends.find(
+                  (item: any) => (item.name || item.provider) === value,
+                )
+                setModel(
+                  backend?.default_model || backend?.model || backend?.available_models?.[0] || '',
+                )
+              }}
+              options={llmBackends.map((item: any) => ({
+                value: item.name || item.provider,
+                label: item.provider_label || item.name || item.provider,
+              }))}
+            />
+            <Select
+              size="small"
+              style={{ width: '100%' }}
+              placeholder="模型（留空用默认）"
+              value={model || undefined}
+              onChange={setModel}
+              allowClear
+              options={Array.from(
+                new Set(
+                  (() => {
+                    const backend = llmBackends.find(
+                      (item: any) => (item.name || item.provider) === provider,
+                    )
+                    return backend?.available_models?.length
+                      ? backend.available_models
+                      : [backend?.default_model || backend?.model || '']
+                  })().filter(Boolean) as string[],
+                ),
+              ).map((value) => ({ value, label: value }))}
+            />
+            <Button type="primary" block disabled={!enabled.length} loading={extracting} onClick={doExtract}>
+              提取所选模块{enabled.length ? `（${enabled.length}）` : ''}
+            </Button>
           </Space>
         )}
       </Card>
