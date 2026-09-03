@@ -33,6 +33,8 @@ import {
 } from '../../../api/novelSource'
 import ProviderModelSelect, { filterBackendsByCapability } from '../../../components/ai/ProviderModelSelect'
 import EvidenceList from '../../../components/world/EvidenceList'
+import ExportModal from '../../../components/world/ExportModal'
+import VersionModal from '../../../components/world/VersionModal'
 import useLlmConnectors from '../../../hooks/useLlmConnectors'
 
 const { Paragraph, Text } = Typography
@@ -1713,170 +1715,33 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
           </Drawer>
 
 
-          <Modal
-            title={`版本历史${doc ? ` · 当前 v${doc.revision}` : ''}`}
+          <VersionModal
             open={versionsOpen}
-            footer={null}
-            width={780}
-            onCancel={() => setVersionsOpen(false)}
-          >
-            <Space direction="vertical" size={12} style={{ width: '100%' }}>
-              <Table
-                size="small"
-                rowKey="revision"
-                loading={revisionsLoading}
-                dataSource={revisions}
-                pagination={false}
-                columns={[
-                  {
-                    title: '版本',
-                    dataIndex: 'revision',
-                    key: 'revision',
-                    width: 70,
-                    render: (value: number) => `v${value}`,
-                  },
-                  {
-                    title: '时间',
-                    dataIndex: 'created_at',
-                    key: 'created_at',
-                    width: 150,
-                    render: (value: string | null) =>
-                      value ? new Date(value).toLocaleString() : '—',
-                  },
-                  {
-                    title: '操作者',
-                    dataIndex: 'operator',
-                    key: 'operator',
-                    width: 120,
-                    render: (value: string) => value || '—',
-                  },
-                  { title: '摘要', dataIndex: 'summary', key: 'summary' },
-                  {
-                    title: '对比',
-                    key: 'compare',
-                    width: 120,
-                    render: (_: unknown, row: WorldMapRevisionItem) => (
-                      <Space size={4}>
-                        <Button
-                          size="small"
-                          type={compareA === row.revision ? 'primary' : 'default'}
-                          onClick={() => setCompareA(row.revision)}
-                        >
-                          A
-                        </Button>
-                        <Button
-                          size="small"
-                          type={compareB === row.revision ? 'primary' : 'default'}
-                          onClick={() => setCompareB(row.revision)}
-                        >
-                          B
-                        </Button>
-                      </Space>
-                    ),
-                  },
-                  {
-                    title: '操作',
-                    key: 'act',
-                    width: 90,
-                    render: (_: unknown, row: WorldMapRevisionItem) => (
-                      <Popconfirm
-                        title={`回滚到 v${row.revision}？（产生新版本，不改写历史）`}
-                        okText="回滚"
-                        cancelText="取消"
-                        onConfirm={() => doRollback(row.revision)}
-                      >
-                        <Button
-                          size="small"
-                          danger
-                          loading={rollingBack === row.revision}
-                          disabled={row.revision === doc?.revision}
-                        >
-                          回滚
-                        </Button>
-                      </Popconfirm>
-                    ),
-                  },
-                ]}
-              />
-              <Space wrap>
-                <Button
-                  size="small"
-                  disabled={compareA == null || compareB == null || compareA === compareB}
-                  loading={comparing}
-                  onClick={runCompare}
-                >
-                  对比 A / B
-                </Button>
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  先点 A、B 选择两个版本再对比（无先后限制）；回滚会以历史快照产生新版本，历史链不被改写。
-                </Text>
-              </Space>
-              {compareResult.length > 0 && (
-                <div
-                  style={{
-                    background: '#f5f5f5',
-                    padding: 12,
-                    borderRadius: 6,
-                    fontSize: 12,
-                    whiteSpace: 'pre-wrap',
-                  }}
-                >
-                  {compareResult.map((line, index) => (
-                    <div key={index}>{line}</div>
-                  ))}
-                </div>
-              )}
-            </Space>
-          </Modal>
+            onClose={() => setVersionsOpen(false)}
+            currentRevision={doc?.revision}
+            revisions={revisions}
+            loading={revisionsLoading}
+            compareA={compareA}
+            compareB={compareB}
+            onPickA={setCompareA}
+            onPickB={setCompareB}
+            onCompare={runCompare}
+            comparing={comparing}
+            compareResult={compareResult}
+            onRollback={doRollback}
+            rollingBack={rollingBack}
+          />
 
-          <Modal
-            title="导出地图"
+          <ExportModal
             open={exportOpen}
-            footer={null}
-            width={720}
-            onCancel={() => setExportOpen(false)}
-          >
-            <Space direction="vertical" size={12} style={{ width: '100%' }}>
-              <Space wrap>
-                <Button
-                  size="small"
-                  onClick={() => window.open(`/api/v1/world-maps/${doc.id}/render`, '_blank')}
-                >
-                  下载 SVG（矢量）
-                </Button>
-                <Button size="small" onClick={downloadPng}>
-                  下载 PNG（1600×1200）
-                </Button>
-                <Button size="small" loading={exportLoading} onClick={previewExportJson}>
-                  生成点位 JSON 预览
-                </Button>
-                <Button size="small" type="primary" disabled={!exportPreview} onClick={doExportPoints}>
-                  下载点位 JSON
-                </Button>
-              </Space>
-              {exportPreview && (
-                <Paragraph
-                  style={{
-                    whiteSpace: 'pre-wrap',
-                    background: '#f5f5f5',
-                    padding: 12,
-                    borderRadius: 6,
-                    maxHeight: 320,
-                    overflow: 'auto',
-                    fontFamily: 'ui-monospace, Consolas, monospace',
-                    fontSize: 12,
-                    marginBottom: 0,
-                  }}
-                  copyable
-                >
-                  {exportPreview}
-                </Paragraph>
-              )}
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                点位 JSON 含 entity_id 与证据锚点（结构化正典，可回写/备份）；SVG / PNG 是服务端确定性渲染的派生图。
-              </Text>
-            </Space>
-          </Modal>
+            onClose={() => setExportOpen(false)}
+            mapId={doc?.id}
+            onDownloadPng={downloadPng}
+            onPreviewJson={previewExportJson}
+            onDownloadJson={doExportPoints}
+            exportingJson={exportLoading}
+            jsonPreview={exportPreview}
+          />
 
           <Modal
             title="地图生图 Prompt 预览 / AI 优化"
