@@ -11,7 +11,7 @@ from pathlib import Path
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.db.models.novel_source import WorldMapDocument, WorldMapRevision
 from app.services.agent.registry import ToolRegistry
@@ -318,6 +318,145 @@ def test_world_map_generate_resolves_asset_reference_ids(tmp_path, monkeypatch):
         )
         assert generated["success"] is True
         assert captured["reference_images"] == ["storage/generated/asset-1.png"]
+    finally:
+        engine.dispose()
+
+
+def test_project_visual_baseline_is_single_and_injected(tmp_path, monkeypatch):
+    """项目视觉基准：一个项目只保留一张（重设即替换），并在生图时自动注入参考图。"""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from app.db.models.creative_project import CreativeProject, ProjectAssetLink
+    from app.services.creative_project.visual_baseline import (
+        VisualBaselineService,
+        resolve_visual_baseline_asset_ids,
+    )
+
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'baseline.db'}", connect_args={"check_same_thread": False}
+    )
+    CreativeProject.__table__.create(engine)
+    ProjectAssetLink.__table__.create(engine)
+    factory = sessionmaker(class_=Session, bind=engine, expire_on_commit=False)
+    try:
+        with factory() as session:
+            project = CreativeProject(
+                id="proj-1", title="视觉基准测试", project_type="novel", status="active"
+            )
+            session.add(project)
+            session.commit()
+
+            service = VisualBaselineService(session)
+            assert resolve_visual_baseline_asset_ids(session, "proj-1") == []
+
+            first = service.set_baseline("proj-1", "asset-a")
+            assert first.asset_id == "asset-a"
+            assert resolve_visual_baseline_asset_ids(session, "proj-1") == ["asset-a"]
+
+            # 重设即替换：不应出现两张基准
+            second = service.set_baseline("proj-1", "asset-b")
+            assert second.asset_id == "asset-b"
+            rows = session.exec(
+                select(ProjectAssetLink).where(
+                    ProjectAssetLink.project_id == "proj-1",
+                    ProjectAssetLink.role == "visual_baseline",
+                )
+            ).all()
+            assert len(rows) == 1
+            assert rows[0].asset_id == "asset-b"
+
+            # 其它 role 的关联不受影响
+            session.add(
+                ProjectAssetLink(
+                    id="other-1",
+                    project_id="proj-1",
+                    asset_id="asset-ref",
+                    role="reference",
+                )
+            )
+            session.commit()
+            assert resolve_visual_baseline_asset_ids(session, "proj-1") == ["asset-b"]
+
+            service.clear("proj-1")
+            assert resolve_visual_baseline_asset_ids(session, "proj-1") == []
+            assert (
+                len(
+                    session.exec(
+                        select(ProjectAssetLink).where(
+                            ProjectAssetLink.project_id == "proj-1",
+                            ProjectAssetLink.role == "reference",
+                        )
+                    ).all()
+                )
+                == 1
+            )
+    finally:
+        engine.dispose()
+
+
+def test_world_map_generate_injects_project_visual_baseline(tmp_path, monkeypatch):
+    """设了项目视觉基准后，地图所属项目的生图会自动带上它作为参考图。"""
+    from app.services.agent.tools import world_map_tools
+    from app.services.novel_source import world_map_visual
+
+    captured: dict = {}
+
+    class _FakeResult:
+        success = True
+        urls = ["https://example.com/map.png"]
+        all_local_paths = []
+        local_path = ""
+        url = "https://example.com/map.png"
+        provider = "fake"
+        model = "fake-model"
+        task_id = "task-1"
+        status = "succeeded"
+        seed = None
+
+    class _FakeAI:
+        def is_loaded(self):
+            return True
+
+        async def generate_image(self, request):
+            captured["reference_images"] = list(request.reference_images)
+            return _FakeResult()
+
+    monkeypatch.setattr(world_map_visual, "get_ai_service", lambda: _FakeAI())
+
+    # 捕获合并后的参考图入参（含自动注入的项目基准）
+    async def _fake_merge(reference_images=None, reference_asset_ids=None):
+        captured["asset_ids"] = list(reference_asset_ids or [])
+        return ["storage/baseline.png"]
+
+    monkeypatch.setattr(world_map_visual, "merge_reference_images", _fake_merge)
+    monkeypatch.setattr(
+        world_map_visual,
+        "resolve_visual_baseline_asset_ids",
+        lambda session, project_id: ["baseline-asset"] if project_id else [],
+    )
+
+    engine, factory, session_local = _make_env(tmp_path, "baseline-inject.db")
+    world_map_tools.SessionLocal = session_local
+    try:
+        with factory() as session:
+            from app.services.novel_source.world_map import WorldMapService
+
+            document = WorldMapService(session).create_map(
+                title="北境舆图", map_json=SAMPLE_MAP, project_id="proj-1"
+            )
+            map_id = document.id
+
+        import asyncio
+
+        generated = asyncio.run(
+            world_map_tools.generate_world_map_visual_tool(
+                map_id, reference_asset_ids=["explicit-asset"], save_to_asset_hub=False
+            )
+        )
+        assert generated["success"] is True
+        # 显式传的在前，项目基准自动追加在后
+        assert captured["asset_ids"] == ["explicit-asset", "baseline-asset"]
     finally:
         engine.dispose()
 
