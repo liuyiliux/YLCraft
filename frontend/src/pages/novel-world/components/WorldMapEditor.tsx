@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Card, Collapse, Drawer, Empty, Input, message, Modal, Popconfirm, Radio, Select, Space, Table, Tag, Typography, Upload } from 'antd'
+import { Alert, Badge, Button, Card, Collapse, Drawer, Empty, Input, message, Modal, Popconfirm, Radio, Select, Space, Table, Tag, Typography, Upload } from 'antd'
 import { DeleteOutlined, EnvironmentOutlined, EyeOutlined, HistoryOutlined, PictureOutlined, PlusOutlined, SaveOutlined, ThunderboltOutlined } from '@ant-design/icons'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -203,6 +203,11 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
     () => llmBackends.find((item) => (item.name || item.provider) === llmProvider) ?? null,
     [llmBackends, llmProvider],
   )
+  // 草稿脏标记：draft 与已保存文档不一致即视为有未保存更改（保存/切换后自动复位）。
+  const dirty = useMemo(() => {
+    if (!doc) return false
+    return JSON.stringify(draft) !== JSON.stringify(doc.map)
+  }, [draft, doc])
 
   const previewVisualPrompt = async () => {
     if (!doc) return
@@ -640,9 +645,18 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
           <Button size="small" icon={<PlusOutlined />} onClick={doCreate}>
             新建
           </Button>
-          <Button size="small" type="primary" icon={<SaveOutlined />} loading={saving} disabled={!doc} onClick={doSave}>
-            保存
-          </Button>
+          <Badge dot={dirty} title={dirty ? '有未保存更改' : undefined}>
+            <Button
+              size="small"
+              type="primary"
+              icon={<SaveOutlined />}
+              loading={saving}
+              disabled={!doc}
+              onClick={doSave}
+            >
+              保存{dirty ? '（有未保存更改）' : ''}
+            </Button>
+          </Badge>
           <Button size="small" danger icon={<DeleteOutlined />} disabled={!doc} onClick={doDelete}>
             删除
           </Button>
@@ -1330,6 +1344,24 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
             width={720}
             open={dataDrawerOpen}
             onClose={() => setDataDrawerOpen(false)}
+            footer={
+              <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  {dirty
+                    ? '有未保存更改：保存后才写入地图并生成版本历史，刷新前请先保存。'
+                    : '所有更改已保存。'}
+                </Text>
+                <Button
+                  type="primary"
+                  icon={<SaveOutlined />}
+                  loading={saving}
+                  disabled={!doc || !dirty}
+                  onClick={doSave}
+                >
+                  保存更改
+                </Button>
+              </Space>
+            }
           >
           <Text type="secondary" style={{ fontSize: 12 }}>
             数据管理（批量编辑）：空间层 / 区域 / 据点 / 路线，默认收起；单个据点的查看与编辑建议用画布点选右栏。
