@@ -57,7 +57,6 @@ import {
   type WorldCandidate,
 } from '../../api/novelSource'
 import { listConnectors } from '../../api'
-import WorldMapEditor from './components/WorldMapEditor'
 
 const { Title, Text, Paragraph } = Typography
 
@@ -122,8 +121,6 @@ export default function NovelWorldPage() {
   // LLM 连接器（与立绘同源：/ai/connectors?provider_type=llm）
   const [provider, setProvider] = useState('')
   const [llmBackends, setLlmBackends] = useState<any[]>([])
-  // 从 URL 参数进入时携带的项目上下文（?project_id= 用于地图工作台定位）。
-  const [urlProjectId, setUrlProjectId] = useState<string | null>(null)
 
   const [indexing, setIndexing] = useState(false)
   const [indexResult, setIndexResult] = useState<ChunkIndexResult | null>(null)
@@ -169,7 +166,6 @@ export default function NovelWorldPage() {
     const snapshotId = params.get('snapshot_id')
     const runId = params.get('run_id')
     const projectId = params.get('project_id')
-    if (projectId) setUrlProjectId(projectId)
     refreshSnapshots().then(async () => {
       if (snapshotId) {
         await selectSnapshot(snapshotId)
@@ -597,9 +593,6 @@ export default function NovelWorldPage() {
           )}
         </Space>
       </Card>
-        </aside>
-
-        <div style={{ flex: 1, minWidth: 0 }}>
           <Card
             title="2. 模块判断"
         style={{ marginBottom: 16 }}
@@ -716,7 +709,9 @@ export default function NovelWorldPage() {
           </Space>
         )}
       </Card>
+      </aside>
 
+      <div style={{ flex: 1, minWidth: 0 }}>
       <Card
         title="检索原文证据"
         style={{ marginBottom: 16 }}
@@ -1033,11 +1028,6 @@ export default function NovelWorldPage() {
           </Space>
         </Card>
       )}
-
-      <WorldMapEditor
-        projectId={applyResult?.project_id ?? snapshot?.project_id ?? urlProjectId}
-        snapshotId={snapshot?.id ?? null}
-      />
 
       <Modal
         title="追加连载章节"
