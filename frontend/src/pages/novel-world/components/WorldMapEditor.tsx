@@ -63,7 +63,23 @@ interface Props {
 export default function WorldMapEditor({ projectId, snapshotId }: Props) {
   const [maps, setMaps] = useState<WorldMapDocument[]>([])
   const [doc, setDoc] = useState<WorldMapDocument | null>(null)
-  const [draft, setDraft] = useState<WorldMapData>(EMPTY_MAP)
+  const [draft, setDraftState] = useState<WorldMapData>(EMPTY_MAP)
+  // 草稿脏标记：编辑动作显式置脏，加载/保存/切换地图时复位。
+  // 不再用 JSON.stringify 全量比对——大地图上每次渲染都序列化整份 draft 会白烧 CPU。
+  const [dirty, setDirty] = useState(false)
+  // 所有草稿写入都经过这里：编辑即置脏。
+  const setDraft = useCallback(
+    (value: WorldMapData | ((prev: WorldMapData) => WorldMapData)) => {
+      setDraftState(value)
+      setDirty(true)
+    },
+    [],
+  )
+  // 加载 / 保存 / 删除后的草稿与服务端一致，复位脏标记。
+  const resetDraft = useCallback((value: WorldMapData) => {
+    setDraftState(value)
+    setDirty(false)
+  }, [])
   const [title, setTitle] = useState('世界地图')
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -148,11 +164,8 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
     const supported = activeBackend?.supported_sizes?.filter(Boolean) ?? []
     return supported.length ? supported : ['1024x1024', '768x1024', '1024x768']
   }, [activeBackend])
-  // 草稿脏标记：draft 与已保存文档不一致即视为有未保存更改（保存/切换后自动复位）。
-  const dirty = useMemo(() => {
-    if (!doc) return false
-    return JSON.stringify(draft) !== JSON.stringify(doc.map)
-  }, [draft, doc])
+  // 标题与图层改动同样属于未保存编辑。
+  const markDirty = useCallback(() => setDirty(true), [])
   // 按生成模式过滤生图后端：图生图 image_to_image，文生图 text_to_image（与立绘同一规则）。
   const visibleImageBackends = useMemo(
     () =>
@@ -261,7 +274,7 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
       if (target) {
         const detail = await getWorldMap(target)
         setDoc(detail)
-        setDraft(detail.map)
+        resetDraft(detail.map)
         setTitle(detail.title)
         // 据点回查来源实体/证据/关系；旧数据或端点不可用时静默降级为无实体信息。
         resolveWorldMapEntities(detail.id)
@@ -311,7 +324,7 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
         expected_revision: doc.revision,
       })
       setDoc(updated)
-      setDraft(updated.map)
+      resetDraft(updated.map)
       message.success('已保存')
     } catch (error) {
       const msg = (error as Error).message
@@ -331,7 +344,7 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
     try {
       await deleteWorldMap(doc.id)
       setDoc(null)
-      setDraft(EMPTY_MAP)
+      resetDraft(EMPTY_MAP)
       message.success('已删除')
       await refresh()
     } catch (error) {
@@ -623,7 +636,10 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
             placeholder="地图标题"
             style={{ width: 160 }}
             value={title}
-            onChange={(e) => setTitle(e.target.value)}
+            onChange={(e) => {
+              setTitle(e.target.value)
+              markDirty()
+            }}
           />
           <Button size="small" icon={<PlusOutlined />} onClick={doCreate}>
             新建
