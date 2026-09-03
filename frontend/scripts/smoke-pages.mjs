@@ -13,6 +13,8 @@ const pages = [
   { route: '/assets', component: 'AssetsPage', file: 'src/pages/assets/index.tsx' },
   { route: '/settings', component: 'SettingsPage', file: 'src/pages/settings/index.tsx' },
   { route: '/canvas', component: 'CanvasPage', file: 'src/pages/canvas/index.tsx' },
+  { route: '/novel-world', component: 'NovelWorldPage', file: 'src/pages/novel-world/index.tsx' },
+  { route: '/world-map', component: 'WorldMapPage', file: 'src/pages/world-map/index.tsx' },
 ]
 
 const app = read('src/App.tsx')
@@ -57,6 +59,36 @@ const agentApi = read('src/api/agent.ts')
 for (const needle of ['getAgentRunLinkedLogs', 'memory-candidates/save', 'memory-candidates/discard']) {
   if (!agentApi.includes(needle)) {
     failures.push(`Agent API missing smoke marker: ${needle}`)
+  }
+}
+
+const novelWorld = read('src/pages/novel-world/index.tsx')
+for (const needle of ['小说世界提取', 'AI 判断模块', '提取所选模块', '检索原文证据']) {
+  if (!novelWorld.includes(needle)) {
+    failures.push(`Novel world page missing smoke marker: ${needle}`)
+  }
+}
+
+const worldMap = read('src/pages/novel-world/components/WorldMapEditor.tsx')
+for (const needle of [
+  '世界地图工作台',
+  'LayerPanel',
+  'NodeDetailPanel',
+  'VisualDrawer',
+  'BatchDrawer',
+  'ExportModal',
+  'VersionModal',
+  '导出 SVG / PNG / 点位 JSON',
+]) {
+  if (!worldMap.includes(needle)) {
+    failures.push(`World map editor missing smoke marker: ${needle}`)
+  }
+}
+
+const mapPanels = read('src/components/world/DataPanel.tsx')
+for (const needle of ['批量管理（编辑）', '新增据点', '新增区域', '新增路线']) {
+  if (!mapPanels.includes(needle)) {
+    failures.push(`Map data panel missing smoke marker: ${needle}`)
   }
 }
 
