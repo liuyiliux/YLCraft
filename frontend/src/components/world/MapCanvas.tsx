@@ -7,6 +7,7 @@
  */
 import { useEffect } from 'react'
 import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
 import { MapContainer, Marker, Polyline, Polygon, Popup, useMap } from 'react-leaflet'
 import type {
   WorldMapNode,
