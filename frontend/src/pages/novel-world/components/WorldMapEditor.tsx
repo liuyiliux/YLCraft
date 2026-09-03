@@ -130,6 +130,7 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
   const [dataDrawerOpen, setDataDrawerOpen] = useState(false)
   // 生图模式（对齐立绘）：文生图不携带参考图，图生图按勾选顺序携带参考图。
   const [visualMode, setVisualMode] = useState<'text2img' | 'img2img'>('text2img')
+  const [visualAssetIds, setVisualAssetIds] = useState<string[]>([])
   const [visualRefUrls, setVisualRefUrls] = useState<string[]>([])
   const [visualUploadRefs, setVisualUploadRefs] = useState<string[]>([])
   // AI 视觉稿抽屉：成图是派生资产，降权到抽屉里多稿生成、手动设为底图。
@@ -243,7 +244,10 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
         model: visualModel || undefined,
         size: visualSize || '1024x1024',
         style: visualStyle || undefined,
-        // 图生图：按勾选/上传顺序携带参考图；文生图不携带（与立绘同一语义）。
+        // 图生图：已入素材库的成图按节点 ID 引用（服务端解析为最新版本），
+        // 未入库/上传的按 URL/base64 兜底；文生图不携带（与立绘同一语义）。
+        reference_asset_ids:
+          visualMode === 'img2img' ? [...visualAssetIds].filter(Boolean) : undefined,
         reference_images:
           visualMode === 'img2img'
             ? [...visualRefUrls, ...visualUploadRefs].filter(Boolean)
@@ -846,6 +850,12 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
             sizeOptions={visualSizeOptions}
             onSizeChange={setVisualSize}
             historyVisuals={doc?.map.visuals || []}
+            refAssetIds={visualAssetIds}
+            onToggleRefAsset={(nodeId) =>
+              setVisualAssetIds((prev) =>
+                prev.includes(nodeId) ? prev.filter((n) => n !== nodeId) : [...prev, nodeId],
+              )
+            }
             refUrls={visualRefUrls}
             onToggleRefUrl={(url) =>
               setVisualRefUrls((prev) =>

@@ -12,7 +12,6 @@ import json
 import logging
 import time
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Depends, Query
@@ -22,13 +21,11 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.external_api_auth import optional_external_api_key
 from app.core.task_queue import TaskStatus, get_task_queue
-from app.db.models.asset_hub import AssetNode
 from app.db.models.creative_project import CreativeProject, ProjectAssetLink, ProjectContent
 from app.db.models.external_api_key import ExternalApiKey
 from app.services.ai import get_ai_service, AIService
 from app.services.ai.types import ImageGenerationRequest
-from app.services.asset_hub.representation_service import AssetRepresentationService
-from app.services.asset_hub.version_service import AssetVersionService
+from app.services.asset_hub.reference_resolver import merge_reference_images
 from app.services.platform_log import service as platform_log
 from app.services.ai.visual_planning import build_visual_planning_summary
 
@@ -372,108 +369,13 @@ def _generation_lineage_from_payload(payload: dict, *, extra: dict | None = None
     return {key: value for key, value in lineage.items() if value not in (None, "", [])}
 
 
-def _reference_images_from_collection(collection: list[dict] | None) -> list[str]:
-    refs: list[str] = []
-    for item in collection or []:
-        if not isinstance(item, dict):
-            continue
-        value = (
-            item.get("url")
-            or item.get("image_url")
-            or item.get("src")
-            or item.get("data_url")
-            or item.get("local_path")
-            or item.get("path")
-        )
-        if value:
-            refs.append(str(value))
-    return refs
-
-
-def _looks_like_image_path(path_value: str) -> bool:
-    suffix = Path(path_value or "").suffix.lower()
-    return suffix in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
-
-
-def _is_image_representation(rep) -> bool:
-    mime_type = str(getattr(rep, "mime_type", "") or "").lower()
-    return mime_type.startswith("image/") or _looks_like_image_path(getattr(rep, "file_path", "") or "")
-
-
-async def _primary_image_path_for_asset(session, asset_id: str) -> str | None:
-    node = await session.get(AssetNode, asset_id)
-    if not node:
-        return None
-    node_meta = node.metadata_json if isinstance(node.metadata_json, dict) else {}
-    if node_meta.get("deleted_at") or str(node_meta.get("status", "")).upper() == "DELETED":
-        return None
-
-    version = await AssetVersionService(session).get_latest_version(str(node.id))
-    if not version:
-        return None
-
-    reps = await AssetRepresentationService(session).list_by_version(str(version.id))
-    for rep in reps:
-        if _is_image_representation(rep) and rep.file_path:
-            return str(rep.file_path)
-    return None
-
-
-async def _reference_images_from_asset_ids(asset_ids: list[str] | None, *, max_refs: int = 12) -> list[str]:
-    """Resolve Asset Hub IDs into local image paths for image-to-image backends."""
-    ids = [str(item or "").strip() for item in (asset_ids or []) if str(item or "").strip()]
-    if not ids:
-        return []
-
-    from app.db.database import get_async_session
-
-    refs: list[str] = []
-    async with get_async_session() as session:
-        for asset_id in ids:
-            if len(refs) >= max_refs:
-                break
-
-            primary_path = await _primary_image_path_for_asset(session, asset_id)
-            if primary_path:
-                refs.append(primary_path)
-                continue
-
-            # Reference cards can be collection/character roots whose usable images live on children.
-            try:
-                result = await session.execute(
-                    select(AssetNode)
-                    .where(AssetNode.parent_id == asset_id)
-                    .order_by(AssetNode.created_at.asc())
-                    .limit(max_refs)
-                )
-                children = list(result.scalars().all())
-            except Exception as exc:
-                logger.warning("[images] failed to resolve reference asset children for %s: %s", asset_id, exc)
-                children = []
-
-            for child in children:
-                if len(refs) >= max_refs:
-                    break
-                child_path = await _primary_image_path_for_asset(session, str(child.id))
-                if child_path:
-                    refs.append(child_path)
-    return refs
-
-
 async def _merge_reference_images(req: ImageGenerateRequest) -> list[str]:
-    refs: list[str] = []
-    seen: set[str] = set()
-    asset_refs = await _reference_images_from_asset_ids(req.reference_asset_ids)
-    for value in [
-        *(req.reference_images or []),
-        *_reference_images_from_collection(req.reference_image_collection),
-        *asset_refs,
-    ]:
-        item = str(value or "").strip()
-        if item and item not in seen:
-            seen.add(item)
-            refs.append(item)
-    return refs
+    """参考图合并：素材库 ID 的解析统一走 asset_hub 的共用解析器。"""
+    return await merge_reference_images(
+        reference_images=req.reference_images,
+        reference_asset_ids=req.reference_asset_ids,
+        reference_image_collection=req.reference_image_collection,
+    )
 
 
 class ImageResponse(BaseModel):

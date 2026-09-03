@@ -314,7 +314,7 @@ async def optimize_world_map_visual_prompt_tool(
     description="用生图模型生成地图视觉成图：成图是派生资产，只回写引用，不改动结构化空间关系。",
     category="novel_source",
     examples=["给这张地图生成一张视觉成图", "按优化后的提示词出图"],
-    input_schema_note="map_id 必填；prompt 为空时从结构化数据生成（可传上一步 optimized_prompt）；style/negative_prompt/size/n/provider/model/reference_images 可选；save_to_asset_hub 默认 true。消耗生图配额，属于写操作。",
+    input_schema_note="map_id 必填；prompt 为空时从结构化数据生成（可传上一步 optimized_prompt）；style/negative_prompt/size/n/provider/model 可选；参考图优先传 reference_asset_ids（素材库节点 ID，服务端解析为最新版本图片路径），reference_images（URL/base64）仅作兜底；save_to_asset_hub 默认 true。消耗生图配额，属于写操作。",
     output_schema_note="返回 url/local_path/node_id/provider/model 与实际使用的 prompt；成图不会自动铺为底图。",
     risk_level="write",
     output_type="world_map_visual",
@@ -328,6 +328,7 @@ async def generate_world_map_visual_tool(
     n: int = 1,
     provider: str = "",
     model: str = "",
+    reference_asset_ids: list[str] | None = None,
     reference_images: list[str] | None = None,
     save_to_asset_hub: bool = True,
 ) -> dict[str, Any]:
@@ -347,6 +348,7 @@ async def generate_world_map_visual_tool(
                 n=n or 1,
                 provider=provider,
                 model=model,
+                reference_asset_ids=list(reference_asset_ids or []),
                 reference_images=list(reference_images or []),
                 save_to_asset_hub=save_to_asset_hub,
             )
