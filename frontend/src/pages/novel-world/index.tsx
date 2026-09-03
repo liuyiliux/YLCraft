@@ -346,9 +346,9 @@ export default function NovelWorldPage() {
     setIndexing(true)
     setIndexResult(null)
     try {
+      // 索引只走 embedding provider（IndexChunksRequest 不接受 model）。
       const result = await indexChunks(snapshot.id, {
         provider: provider || undefined,
-        model: model || undefined,
       })
       setIndexResult(result)
       message.success(`索引完成：${result.indexed}/${result.total} 块已向量化`)
