@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Card, Collapse, Empty, Input, message, Modal, Radio, Select, Space, Tag, Typography, Upload } from 'antd'
+import { Alert, Button, Card, Collapse, Drawer, Empty, Input, message, Modal, Radio, Select, Space, Tag, Typography, Upload } from 'antd'
 import { DeleteOutlined, EnvironmentOutlined, EyeOutlined, PictureOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -134,6 +134,8 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
   const [showRoutes, setShowRoutes] = useState(true)
   const [showBaseMap, setShowBaseMap] = useState(true)
   const [kindFilter, setKindFilter] = useState('')
+  // AI 视觉稿抽屉：成图是派生资产，降权到抽屉里多稿生成、手动设为底图。
+  const [visualDrawerOpen, setVisualDrawerOpen] = useState(false)
 
   useEffect(() => {
     listWorldMapImageBackends()
@@ -986,147 +988,172 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
             </div>
           </Card>
 
-          <Card size="small" title="AI 生图风格化（派生视觉资产）" style={{ background: '#fafafa' }}>
-            <Space direction="vertical" style={{ width: '100%' }} size="middle">
-              <Space wrap>
-                <Select
-                  placeholder="生图后端"
-                  style={{ width: 190 }}
-                  value={visualProvider || undefined}
-                  loading={!imageBackends.length}
-                  onChange={(value) => {
-                    const backend = imageBackends.find((item) => item.name === value)
-                    setVisualProvider(value)
-                    setVisualModel(backend?.available_models?.[0] || backend?.model || '')
-                  }}
-                  options={imageBackends.map((item) => ({
-                    value: item.name,
-                    label: item.provider_label ? `${item.provider_label} · ${item.name}` : item.name,
-                  }))}
-                />
-                <Select
-                  placeholder="模型"
-                  style={{ width: 200 }}
-                  value={visualModel || undefined}
-                  onChange={setVisualModel}
-                  options={(activeBackend?.available_models?.length
-                    ? activeBackend.available_models
-                    : [activeBackend?.model || '']
-                  )
-                    .filter(Boolean)
-                    .map((item) => ({ value: item, label: item }))}
-                />
-                <Select
-                  placeholder="尺寸"
-                  style={{ width: 130 }}
-                  value={visualSize}
-                  onChange={setVisualSize}
-                  options={visualSizeOptions.map((item) => ({ value: item, label: item }))}
-                />
-                <Input
-                  placeholder="画风（如水墨、写实）"
-                  style={{ width: 140 }}
-                  value={visualStyle}
-                  onChange={(e) => setVisualStyle(e.target.value)}
-                />
-                <Button size="small" icon={<EyeOutlined />} loading={previewLoading} disabled={!doc} onClick={previewVisualPrompt}>
-                  预览 Prompt
-                </Button>
-                <Button size="small" type="primary" icon={<PictureOutlined />} loading={generating} disabled={!doc} onClick={doGenerateVisual}>
-                  生成视觉成图
-                </Button>
-              </Space>
-              <Input.TextArea
-                rows={2}
-                placeholder="可选：覆盖提示词（留空按结构化地图自动生成，包含区域/地点/路线）"
-                value={visualPromptOverride}
-                onChange={(e) => setVisualPromptOverride(e.target.value)}
-              />
-              {!imageBackends.length && (
-                <Alert type="warning" showIcon message="未检测到生图后端：请先在「AI 连接器」配置 provider_type=image 的 Provider。" />
-              )}
-              {lastVisual && (
-                <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-                  {lastVisual.url && (
-                    <img
-                      src={lastVisual.url}
-                      alt="地图视觉成图"
-                      style={{ maxWidth: 320, width: '100%', border: '1px solid #e5e7eb', borderRadius: 6 }}
-                    />
-                  )}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                      最近生成 · {lastVisual.provider || '—'} · {lastVisual.model || '—'} · {lastVisual.status}
-                    </Text>
-                    {lastVisual.node_id && (
-                      <div>
-                        <Text type="secondary" style={{ fontSize: 12 }} copyable={{ text: lastVisual.node_id }}>
-                          素材库节点：{lastVisual.node_id}
-                        </Text>
-                      </div>
-                    )}
-                    <Paragraph style={{ fontSize: 12, whiteSpace: 'pre-wrap', marginBottom: 0 }}>{lastVisual.prompt}</Paragraph>
-                    {lastVisual.url && (
-                      <Button
-                        size="small"
-                        style={{ marginTop: 6 }}
-                        onClick={() => setBaseMapUrl(lastVisual.url)}
-                        title="派生资产：仅作为低优先级参考层显示，不写入地图事实、不叠加标记"
-                      >
-                        设为底图（参考层）
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              )}
-            </Space>
-          </Card>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <Button
+              type="primary"
+              size="small"
+              icon={<PictureOutlined />}
+              disabled={!doc}
+              onClick={() => setVisualDrawerOpen(true)}
+            >
+              AI 视觉稿{doc.map.visuals?.length ? `（${doc.map.visuals.length}）` : ''}
+            </Button>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              成图是派生视觉资产：抽屉里多稿生成、手动「设为底图」，不自动铺满画布、不写入事实。
+            </Text>
+          </div>
 
-          {doc.map.visuals?.length ? (
-            <Card size="small" title={`视觉成图历史（${doc.map.visuals.length}）`} style={{ background: '#fafafa' }}>
-              <Space wrap>
-                {doc.map.visuals.map((visual, index) => (
-                  <div key={index} style={{ width: 168, textAlign: 'center' }}>
-                    {visual.url && (
-                      <img
-                        src={visual.url}
-                        alt={`成图 ${index + 1}`}
-                        style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', border: '1px solid #e5e7eb', borderRadius: 6 }}
-                      />
-                    )}
-                    <div>
-                      <Text type="secondary" style={{ fontSize: 11 }}>
-                        {visual.provider || 'unknown'} · {visual.model || '—'}
-                      </Text>
-                    </div>
-                    <div>
-                      <Text type="secondary" style={{ fontSize: 11 }}>
-                        {visual.style ? `风格：${visual.style} ` : ''}
-                        {visual.created_at ? new Date(visual.created_at).toLocaleDateString() : ''}
-                      </Text>
-                    </div>
-                    {visual.node_id && (
-                      <div>
-                        <Text type="secondary" style={{ fontSize: 11 }} copyable={{ text: visual.node_id }}>
-                          素材库
+          <Drawer
+            title="AI 视觉稿（派生视觉资产 · 不影响结构化地图）"
+            placement="right"
+            width={480}
+            open={visualDrawerOpen}
+            onClose={() => setVisualDrawerOpen(false)}
+          >
+            <Space direction="vertical" style={{ width: '100%' }} size="middle">
+              <Card size="small" title="生成地图视觉成图" style={{ background: '#fafafa' }}>
+                <Space direction="vertical" style={{ width: '100%' }} size="middle">
+                  <Space wrap>
+                    <Select
+                      placeholder="生图后端"
+                      style={{ width: 170 }}
+                      value={visualProvider || undefined}
+                      loading={!imageBackends.length}
+                      onChange={(value) => {
+                        const backend = imageBackends.find((item) => item.name === value)
+                        setVisualProvider(value)
+                        setVisualModel(backend?.available_models?.[0] || backend?.model || '')
+                      }}
+                      options={imageBackends.map((item) => ({
+                        value: item.name,
+                        label: item.provider_label ? `${item.provider_label} · ${item.name}` : item.name,
+                      }))}
+                    />
+                    <Select
+                      placeholder="模型"
+                      style={{ width: 200 }}
+                      value={visualModel || undefined}
+                      onChange={setVisualModel}
+                      options={(activeBackend?.available_models?.length
+                        ? activeBackend.available_models
+                        : [activeBackend?.model || '']
+                      )
+                        .filter(Boolean)
+                        .map((item) => ({ value: item, label: item }))}
+                    />
+                    <Select
+                      placeholder="尺寸"
+                      style={{ width: 130 }}
+                      value={visualSize}
+                      onChange={setVisualSize}
+                      options={visualSizeOptions.map((item) => ({ value: item, label: item }))}
+                    />
+                    <Input
+                      placeholder="画风（如水墨、写实）"
+                      style={{ width: 160 }}
+                      value={visualStyle}
+                      onChange={(e) => setVisualStyle(e.target.value)}
+                    />
+                    <Button size="small" icon={<EyeOutlined />} loading={previewLoading} disabled={!doc} onClick={previewVisualPrompt}>
+                      预览 Prompt
+                    </Button>
+                    <Button size="small" type="primary" icon={<PictureOutlined />} loading={generating} disabled={!doc} onClick={doGenerateVisual}>
+                      生成视觉成图
+                    </Button>
+                  </Space>
+                  <Input.TextArea
+                    rows={3}
+                    placeholder="可选：覆盖提示词（留空按结构化地图自动生成，含坐标/方位/区域/路线）"
+                    value={visualPromptOverride}
+                    onChange={(e) => setVisualPromptOverride(e.target.value)}
+                  />
+                  {!imageBackends.length && (
+                    <Alert type="warning" showIcon message="未检测到生图后端：请先在「AI 连接器」配置 provider_type=image 的 Provider。" />
+                  )}
+                  {lastVisual && (
+                    <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                      {lastVisual.url && (
+                        <img
+                          src={lastVisual.url}
+                          alt="地图视觉成图"
+                          style={{ maxWidth: 260, width: '100%', border: '1px solid #e5e7eb', borderRadius: 6 }}
+                        />
+                      )}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          最近生成 · {lastVisual.provider || '—'} · {lastVisual.model || '—'} · {lastVisual.status}
                         </Text>
+                        {lastVisual.node_id && (
+                          <div>
+                            <Text type="secondary" style={{ fontSize: 12 }} copyable={{ text: lastVisual.node_id }}>
+                              素材库节点：{lastVisual.node_id}
+                            </Text>
+                          </div>
+                        )}
+                        <Paragraph style={{ fontSize: 12, whiteSpace: 'pre-wrap', marginBottom: 0 }}>{lastVisual.prompt}</Paragraph>
+                        {lastVisual.url && (
+                          <Button
+                            size="small"
+                            style={{ marginTop: 6 }}
+                            onClick={() => setBaseMapUrl(lastVisual.url)}
+                            title="派生资产：仅作为参考层显示，不写入地图事实、不叠加标记"
+                          >
+                            设为底图（参考层）
+                          </Button>
+                        )}
                       </div>
-                    )}
-                    {visual.url && (
-                      <Button
-                        size="small"
-                        style={{ marginTop: 4 }}
-                        onClick={() => setBaseMapUrl(visual.url)}
-                        title="派生资产：仅作为参考层显示，不写入地图事实"
-                      >
-                        设为底图
-                      </Button>
-                    )}
-                  </div>
-                ))}
-              </Space>
-            </Card>
-          ) : null}
+                    </div>
+                  )}
+                </Space>
+              </Card>
+
+              {doc.map.visuals?.length ? (
+                <Card size="small" title={`视觉成图历史（${doc.map.visuals.length}）`} style={{ background: '#fafafa' }}>
+                  <Space wrap>
+                    {doc.map.visuals.map((visual, index) => (
+                      <div key={index} style={{ width: 168, textAlign: 'center' }}>
+                        {visual.url && (
+                          <img
+                            src={visual.url}
+                            alt={`成图 ${index + 1}`}
+                            style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', border: '1px solid #e5e7eb', borderRadius: 6 }}
+                          />
+                        )}
+                        <div>
+                          <Text type="secondary" style={{ fontSize: 11 }}>
+                            {visual.provider || 'unknown'} · {visual.model || '—'}
+                          </Text>
+                        </div>
+                        <div>
+                          <Text type="secondary" style={{ fontSize: 11 }}>
+                            {visual.style ? `风格：${visual.style} ` : ''}
+                            {visual.created_at ? new Date(visual.created_at).toLocaleDateString() : ''}
+                          </Text>
+                        </div>
+                        {visual.node_id && (
+                          <div>
+                            <Text type="secondary" style={{ fontSize: 11 }} copyable={{ text: visual.node_id }}>
+                              素材库
+                            </Text>
+                          </div>
+                        )}
+                        {visual.url && (
+                          <Button
+                            size="small"
+                            style={{ marginTop: 4 }}
+                            onClick={() => setBaseMapUrl(visual.url)}
+                            title="派生资产：仅作为参考层显示，不写入地图事实"
+                          >
+                            设为底图
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                  </Space>
+                </Card>
+              ) : null}
+            </Space>
+          </Drawer>
 
           <Modal
             title="地图生图 Prompt 预览 / AI 优化"
