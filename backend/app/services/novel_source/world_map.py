@@ -467,11 +467,57 @@ def _escape(value: str) -> str:
     )
 
 
+def _coordinate_band(x: float, y: float) -> str:
+    """把 0-100 画布坐标折叠成低粒度方位短语，供提示词描述相对位置。"""
+    row = (
+        "地图顶部" if y < 20
+        else "地图上部" if y < 42
+        else "地图中部" if y <= 58
+        else "地图下部" if y < 80
+        else "地图底部"
+    )
+    col = (
+        "左侧" if x < 20
+        else "偏左" if x < 42
+        else "正中" if x <= 58
+        else "偏右" if x < 80
+        else "右侧"
+    )
+    return f"{row}、{col}"
+
+
+def _route_heading(
+    start: tuple[float, float], end: tuple[float, float]
+) -> str:
+    """按两节点坐标给出路线走向的方位词（用于提示词）。
+
+    x 向右增大、y 向下增大、画面顶部为北：终点相对起点在下方即更靠南。
+    """
+    sx, sy = start
+    ex, ey = end
+    dx, dy = ex - sx, ey - sy
+    if abs(dx) < 12 and abs(dy) < 12:
+        return "短距相接"
+    if abs(dx) < 12:
+        return "北向" if dy < 0 else "南向"
+    if abs(dy) < 12:
+        return "东向" if dx > 0 else "西向"
+    if dx > 0 and dy < 0:
+        return "东北"
+    if dx > 0 and dy > 0:
+        return "东南"
+    if dx < 0 and dy < 0:
+        return "西北"
+    return "西南"
+
+
 def build_map_visual_prompt(document: WorldMapDocument, *, style: str = "") -> str:
     """把结构化地图确定性转成生图 prompt（不调用模型）。
 
     生成成图只是派生的视觉资产，不是地图真相来源；结构化 ``map_json`` 才是正典。
     本函数只做「结构化数据 → 自然语言描述」的稳定转换，便于单测与可复现。
+    提示词会写清坐标约定并为每个地点标注 (x,y) 与方位带，避免模型自由脑补
+    相对位置导致「南北颠倒」。
     """
     data = loads_json(document.map_json, DEFAULT_MAP_JSON)
     if not isinstance(data, dict):
@@ -480,15 +526,55 @@ def build_map_visual_prompt(document: WorldMapDocument, *, style: str = "") -> s
     nodes = [item for item in (data.get("nodes") or []) if isinstance(item, dict)]
     routes = [item for item in (data.get("routes") or []) if isinstance(item, dict)]
     regions = [item for item in (data.get("regions") or []) if isinstance(item, dict)]
+    layer_rows = [item for item in (data.get("layers") or []) if isinstance(item, dict)]
 
-    node_name_by_id: dict[str, str] = {}
-    for node in nodes:
-        node_id = str(node.get("id") or "")
+    region_name_by_id: dict[str, str] = {}
+    for region in regions:
+        region_name_by_id[str(region.get("id") or "")] = str(region.get("name") or "").strip()
+    layer_name_by_id: dict[str, str] = {}
+    for layer in layer_rows:
+        layer_name_by_id[str(layer.get("id") or "")] = str(layer.get("name") or "").strip()
+
+    def coords(node: dict[str, Any]) -> tuple[float, float] | None:
+        try:
+            return float(node.get("x")), float(node.get("y"))
+        except (TypeError, ValueError):
+            return None
+
+    # 统一坐标约定：x 向右增大、y 向下增大、画面顶部为北。
+    parts: list[str] = [
+        f"一张世界地图，标题「{str(document.title or '世界地图')}」。",
+        "坐标系约定：画布坐标 (x,y) 均取 0-100，x 向右增大、y 向下增大，画面顶部为北"
+        "（y 值越小越靠上/越靠北）。下方每个地点的 (x,y) 标注即其应在画面上放置的位置："
+        "y≈80 的地点必须明显画在 y≈20 地点的下方，地名与图标不得脱离该相对布局，"
+        "不要按名称里的「南/北/东/西」猜测位置。",
+    ]
+
+    named_nodes = [
+        node for node in nodes
+        if str(node.get("name") or "").strip() and coords(node) is not None
+    ]
+    # 按 y（上下）为主、x（左右）为次的顺序列出，方便模型理解上下层级。
+    ordered = sorted(named_nodes, key=lambda node: (coords(node)[1], coords(node)[0]))
+
+    node_lines: list[str] = []
+    for node in ordered:
+        px, py = coords(node) or (0.0, 0.0)
         name = str(node.get("name") or "").strip()
-        if node_id and name:
-            node_name_by_id[node_id] = name
-
-    parts: list[str] = [f"一张世界地图，标题「{str(document.title or '世界地图')}」。"]
+        line = f"「{name}」(x={px:.0f}, y={py:.0f})：位于{_coordinate_band(px, py)}"
+        region_id = str(node.get("region_id") or "")
+        if region_id and region_name_by_id.get(region_id):
+            line += f"，属区域「{region_name_by_id[region_id]}」"
+        layer_id = str(node.get("layer") or "")
+        if layer_id and layer_name_by_id.get(layer_id):
+            line += f"，属位面「{layer_name_by_id[layer_id]}」"
+        summary = str(node.get("description") or "").strip()
+        if summary:
+            line += f"；{summary[:40]}"
+        node_lines.append(line)
+    if node_lines:
+        parts.append("图上需要放置的地点（严格按标注坐标决定相对位置）：")
+        parts.extend(node_lines)
 
     region_names = [
         str(region.get("name") or "").strip()
@@ -496,20 +582,25 @@ def build_map_visual_prompt(document: WorldMapDocument, *, style: str = "") -> s
         if str(region.get("name") or "").strip()
     ]
     if region_names:
-        parts.append("包含区域：" + "、".join(region_names) + "。")
-
-    node_names = [name for name in node_name_by_id.values()]
-    if node_names:
-        parts.append("重要地点：" + "、".join(node_names) + "。")
+        parts.append("区域划分：" + "、".join(region_names) + "。")
 
     route_descs: list[str] = []
     for route in routes:
-        start = node_name_by_id.get(str(route.get("from") or "")) or str(route.get("from") or "").strip()
-        end = node_name_by_id.get(str(route.get("to") or "")) or str(route.get("to") or "").strip()
-        if start and end:
-            route_descs.append(f"{start}—{end}")
+        from_id = str(route.get("from") or "").strip()
+        to_id = str(route.get("to") or "").strip()
+        start_node = next(
+            (n for n in named_nodes if str(n.get("id") or "") == from_id), None
+        )
+        end_node = next((n for n in named_nodes if str(n.get("id") or "") == to_id), None)
+        start_name = str(start_node.get("name") or "") if start_node else (from_id or "起点")
+        end_name = str(end_node.get("name") or "") if end_node else (to_id or "终点")
+        if start_node and end_node:
+            heading = _route_heading(coords(start_node), coords(end_node))
+            route_descs.append(f"{start_name}→{end_name}（走向{heading}）")
+        else:
+            route_descs.append(f"{start_name}—{end_name}")
     if route_descs:
-        parts.append("通行路线：" + "、".join(route_descs) + "。")
+        parts.append("通行路线：" + "、".join(route_descs) + "，连线不得穿过无关地点。")
 
     # 只描述空间结构与画面可读性，不再写死画风：
     # 现实题材（乡村/都市/科幻）套「羊皮纸·中土奇幻」会严重违和，
@@ -517,8 +608,8 @@ def build_map_visual_prompt(document: WorldMapDocument, *, style: str = "") -> s
     parts.append(
         "俯视视角的地图制图，呈现上述区域与地点的相对方位和连通关系，"
         "包含山脉、森林、河流、海岸线等自然地形，城市与据点用图例图标标注，"
-        "区域用虚线或色块边界区分，右下角配比例尺与罗盘玫瑰，重要路线用虚线标出。"
-        "俯视视角，画面构图完整，地名清晰可读。"
+        "区域用虚线或色块边界区分，右下角配比例尺与罗盘玫瑰（北在上），"
+        "重要路线用虚线标出。俯视视角，画面构图完整，地名清晰可读。"
     )
     if style and str(style).strip():
         parts.append(f"风格：{str(style).strip()}。")

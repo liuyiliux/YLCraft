@@ -13,6 +13,7 @@ import {
   getWorldMap,
   listWorldMapImageBackends,
   listWorldMaps,
+  optimizeWorldMapVisualPrompt,
   previewWorldMapVisualPrompt,
   resolveWorldMapEntities,
   updateWorldMap,
@@ -117,6 +118,9 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewPrompt, setPreviewPrompt] = useState('')
   const [previewLoading, setPreviewLoading] = useState(false)
+  const [optimizingPrompt, setOptimizingPrompt] = useState(false)
+  const [optimizeFocus, setOptimizeFocus] = useState('')
+  const [optimizePair, setOptimizePair] = useState<{ original: string; optimized: string } | null>(null)
   const [generating, setGenerating] = useState(false)
   const [lastVisual, setLastVisual] = useState<WorldMapVisualResult | null>(null)
   // 实体为中心：据点回查来源实体/证据/关系（引用不复制，信息按需加载）。
@@ -156,6 +160,7 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
         prompt_override: visualPromptOverride || undefined,
       })
       setPreviewPrompt(result.prompt)
+      setOptimizePair(null)
       setPreviewOpen(true)
     } catch (error) {
       message.error((error as Error).message)
@@ -164,12 +169,38 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
     }
   }
 
-  const doGenerateVisual = async () => {
+  const doOptimizePrompt = async () => {
+    if (!doc) return
+    if (!previewPrompt.trim()) {
+      message.warning('请先预览提示词，再交给 AI 优化')
+      return
+    }
+    setOptimizingPrompt(true)
+    try {
+      const result = await optimizeWorldMapVisualPrompt(doc.id, {
+        prompt: previewPrompt || undefined,
+        style: visualStyle || undefined,
+        focus: optimizeFocus.trim() || undefined,
+        provider: visualProvider || undefined,
+        model: visualModel || undefined,
+      })
+      setOptimizePair({ original: result.prompt, optimized: result.optimized_prompt })
+      setPreviewPrompt(result.optimized_prompt)
+      setOptimizeFocus('')
+      message.success('AI 已优化提示词（未生成图），确认后即可生图')
+    } catch (error) {
+      message.error((error as Error).message)
+    } finally {
+      setOptimizingPrompt(false)
+    }
+  }
+
+  const doGenerateVisual = async (overridePrompt?: string) => {
     if (!doc) return
     setGenerating(true)
     try {
       const result = await generateWorldMapVisual(doc.id, {
-        prompt: visualPromptOverride || undefined,
+        prompt: (overridePrompt ?? visualPromptOverride) || undefined,
         provider: visualProvider || undefined,
         model: visualModel || undefined,
         size: visualSize || '1024x1024',
@@ -1048,18 +1079,84 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
           ) : null}
 
           <Modal
-            title="地图生图 Prompt 预览"
+            title="地图生图 Prompt 预览 / AI 优化"
             open={previewOpen}
-            footer={null}
-            width={640}
+            width={680}
             onCancel={() => setPreviewOpen(false)}
+            footer={[
+              <Button key="cancel" size="small" onClick={() => setPreviewOpen(false)}>
+                关闭
+              </Button>,
+              <Button
+                key="optimize"
+                size="small"
+                icon={<EyeOutlined />}
+                loading={optimizingPrompt}
+                disabled={!previewPrompt.trim()}
+                onClick={doOptimizePrompt}
+              >
+                AI 优化此提示词
+              </Button>,
+              <Button
+                key="restore"
+                size="small"
+                disabled={!optimizePair}
+                onClick={() => {
+                  if (optimizePair) {
+                    setPreviewPrompt(optimizePair.original)
+                    setOptimizePair(null)
+                  }
+                }}
+              >
+                恢复原始版本
+              </Button>,
+              <Button
+                key="gen"
+                type="primary"
+                size="small"
+                icon={<PictureOutlined />}
+                loading={generating}
+                disabled={!previewPrompt.trim()}
+                onClick={() => {
+                  if (optimizePair) {
+                    setVisualPromptOverride(previewPrompt)
+                  }
+                  setPreviewOpen(false)
+                  doGenerateVisual(previewPrompt)
+                }}
+              >
+                用当前提示词生成
+              </Button>,
+            ]}
           >
-            <Paragraph
-              style={{ whiteSpace: 'pre-wrap', background: '#f5f5f5', padding: 12, borderRadius: 6 }}
-              copyable
-            >
-              {previewPrompt || '暂无'}
-            </Paragraph>
+            <Space direction="vertical" size={8} style={{ width: '100%' }}>
+              <Input
+                size="small"
+                allowClear
+                placeholder="AI 优化要求（可选）：如「地形起伏更写实、别让文字互相遮挡、罗盘在右下」"
+                value={optimizeFocus}
+                onChange={(e) => setOptimizeFocus(e.target.value)}
+              />
+              {optimizePair && (
+                <Alert
+                  type="success"
+                  showIcon
+                  message="当前为 AI 优化版本；点「恢复原始版本」可回退到结构化生成结果。"
+                />
+              )}
+              <Paragraph
+                style={{
+                  whiteSpace: 'pre-wrap',
+                  background: '#f5f5f5',
+                  padding: 12,
+                  borderRadius: 6,
+                  marginBottom: 0,
+                }}
+                copyable
+              >
+                {previewPrompt || '暂无'}
+              </Paragraph>
+            </Space>
           </Modal>
         </Space>
       )}

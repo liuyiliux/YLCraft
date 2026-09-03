@@ -1535,12 +1535,42 @@ def test_build_map_visual_prompt_from_structured_map(session):
     assert "北境舆图" in prompt
     assert "雪原" in prompt and "北岭" in prompt
     assert "霜岭关" in prompt and "北岭城" in prompt
-    assert "霜岭关—北岭城" in prompt
+    # 路线按坐标给走向：北岭城 (y=70) 在霜岭关 (y=20) 下方 → 走向东南。
+    assert "霜岭关→北岭城（走向东南）" in prompt
     assert "水墨" in prompt
 
     # 空地图也能生成兜底 prompt，不抛错。
     empty = service.create_map(title="空白图", map_json={"regions": [], "nodes": [], "routes": []})
     assert "空白图" in build_map_visual_prompt(empty)
+
+
+def test_map_visual_prompt_carries_coordinate_convention(session):
+    """提示词必须携带坐标约定与每个节点的 (x,y) 方位，防止模型脑补导致南北颠倒。"""
+    from app.services.novel_source.world_map import WorldMapService, build_map_visual_prompt
+
+    service = WorldMapService(session)
+    document = service.create_map(
+        title="方位校验图",
+        map_json={
+            "nodes": [
+                {"id": "north", "name": "北山哨塔", "x": 60, "y": 10, "description": "雪山高处"},
+                {"id": "center", "name": "南村", "x": 40, "y": 90},
+            ],
+            "regions": [],
+            "routes": [{"id": "r1", "name": "山路", "from": "north", "to": "center"}],
+        },
+    )
+    prompt = build_map_visual_prompt(document)
+    # 坐标系约定写进提示词：y 向下增大、画面顶部为北。
+    assert "画面顶部为北" in prompt
+    assert "y 值越小越靠上" in prompt
+    # 每个地点带 (x,y) 标注与相对方位。
+    assert "北山哨塔" in prompt and "(x=60, y=10)" in prompt
+    assert "南村" in prompt and "(x=40, y=90)" in prompt
+    # 路线按坐标给出走向（南村 y=90 在下，走向为南）。
+    assert "走向" in prompt
+    # 明确禁止按名称里的南/北/东/西猜位置。
+    assert "不要按名称里的「南/北/东/西」猜测位置" in prompt
 
 
 def test_create_map_from_project_places_generates_nodes(session, storage):
