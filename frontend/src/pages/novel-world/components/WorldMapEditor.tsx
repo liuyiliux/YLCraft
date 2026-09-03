@@ -36,6 +36,7 @@ import EvidenceList from '../../../components/world/EvidenceList'
 import DataPanel from '../../../components/world/DataPanel'
 import ExportModal from '../../../components/world/ExportModal'
 import LayerPanel from '../../../components/world/LayerPanel'
+import NodeDetailPanel from '../../../components/world/NodeDetailPanel'
 import VersionModal from '../../../components/world/VersionModal'
 import useLlmConnectors from '../../../hooks/useLlmConnectors'
 
@@ -908,140 +909,22 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
             </div>
 
             {/* 右栏：选中据点详情/编辑（结构化数据是正典；实体信息引用不复制） */}
-            <div
-              style={{
-                width: 300,
-                flexShrink: 0,
-                border: '1px solid #d9d9d9',
-                borderRadius: 6,
-                background: '#fafafa',
-                padding: 12,
-                overflow: 'auto',
-                maxHeight: 520,
+            <NodeDetailPanel
+              node={selectedNodeId ? draft.nodes.find((n) => n.id === selectedNodeId) ?? null : null}
+              entityRow={selectedNodeId ? entityByNodeId.get(selectedNodeId) ?? null : null}
+              kindOptions={KIND_OPTIONS.node}
+              regionOptions={regionOptions}
+              layerOptions={(draft.layers ?? []).map((l) => ({ value: l.id, label: l.name }))}
+              onUpdate={(nodeId, patch) => updateNode(nodeId, patch)}
+              onDelete={(nodeId) => {
+                setDraft((prev) => ({
+                  ...prev,
+                  nodes: prev.nodes.filter((n) => n.id !== nodeId),
+                }))
+                setSelectedNodeId(null)
               }}
-            >
-              {(() => {
-                const node = selectedNodeId ? draft.nodes.find((n) => n.id === selectedNodeId) : null
-                if (!node) {
-                  return (
-                    <Empty
-                      image={Empty.PRESENTED_IMAGE_SIMPLE}
-                      description="点击地图上的据点查看详情并就地编辑"
-                      style={{ marginTop: 120 }}
-                    />
-                  )
-                }
-                const row = entityByNodeId.get(node.id)
-                return (
-                  <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                    <Space wrap>
-                      <Text strong>{node.name || '未命名'}</Text>
-                      {node.entity_id ? (
-                        row?.entity ? (
-                          <Tag color="blue">已关联实体</Tag>
-                        ) : (
-                          <Tag color="orange">实体缺失</Tag>
-                        )
-                      ) : (
-                        <Tag>游离</Tag>
-                      )}
-                    </Space>
-                    {row?.entity && (
-                      <Text type="secondary" style={{ fontSize: 12 }}>
-                        来源实体：{row.entity.name}
-                        {row.entity.is_locked ? '（已锁定正典）' : ''}
-                      </Text>
-                    )}
-                    {row?.entity?.summary && (
-                      <Paragraph style={{ fontSize: 12, whiteSpace: 'pre-wrap', marginBottom: 0 }}>
-                        {row.entity.summary}
-                      </Paragraph>
-                    )}
-                    {row?.entity && row.entity.evidence.length > 0 && (
-                      <div style={{ fontSize: 12, color: '#8c8c8c' }}>
-                        <div>证据锚点（{row.entity.evidence.length} 条）：</div>
-                        <EvidenceList items={row.entity.evidence} max={3} />
-                      </div>
-                    )}
-                    <Input
-                      size="small"
-                      placeholder="名称"
-                      value={node.name}
-                      onChange={(e) => updateNode(node.id, { name: e.target.value })}
-                    />
-                    <Space wrap size={6}>
-                      <Select
-                        size="small"
-                        style={{ width: 92 }}
-                        value={node.kind}
-                        onChange={(value) => updateNode(node.id, { kind: value })}
-                        options={KIND_OPTIONS.node.map((kind) => ({ value: kind, label: kind }))}
-                      />
-                      <Input
-                        size="small"
-                        style={{ width: 62 }}
-                        type="number"
-                        placeholder="x"
-                        value={node.x}
-                        onChange={(e) => updateNode(node.id, { x: Number(e.target.value) || 0 })}
-                      />
-                      <Input
-                        size="small"
-                        style={{ width: 62 }}
-                        type="number"
-                        placeholder="y"
-                        value={node.y}
-                        onChange={(e) => updateNode(node.id, { y: Number(e.target.value) || 0 })}
-                      />
-                    </Space>
-                    <Select
-                      size="small"
-                      style={{ width: '100%' }}
-                      placeholder="所属区域"
-                      allowClear
-                      value={node.region_id ?? undefined}
-                      onChange={(value) => updateNode(node.id, { region_id: value ?? null })}
-                      options={regionOptions}
-                    />
-                    <Select
-                      size="small"
-                      style={{ width: '100%' }}
-                      placeholder="空间层"
-                      allowClear
-                      value={node.layer ?? undefined}
-                      onChange={(value) => updateNode(node.id, { layer: value ?? null })}
-                      options={(draft.layers ?? []).map((l) => ({ value: l.id, label: l.name }))}
-                    />
-                    <Input.TextArea
-                      rows={2}
-                      size="small"
-                      placeholder="描述（会进入 AI 生图提示词）"
-                      value={node.description || ''}
-                      onChange={(e) => updateNode(node.id, { description: e.target.value })}
-                    />
-                    <Space>
-                      <Button
-                        size="small"
-                        danger
-                        icon={<DeleteOutlined />}
-                        onClick={() => {
-                          setDraft((prev) => ({
-                            ...prev,
-                            nodes: prev.nodes.filter((n) => n.id !== node.id),
-                          }))
-                          setSelectedNodeId(null)
-                        }}
-                      >
-                        删除据点
-                      </Button>
-                      <Button size="small" onClick={() => setSelectedNodeId(null)}>
-                        关闭
-                      </Button>
-                    </Space>
-                  </Space>
-                )
-              })()}
-            </div>
+              onClose={() => setSelectedNodeId(null)}
+            />
           </div>
 
 
