@@ -258,6 +258,20 @@ from .novel_source_tools import (
     detect_world_extraction_contradictions,
     propagate_affected_world_facts,
 )
+from .world_map_tools import (
+    list_world_maps,
+    get_world_map,
+    create_world_map,
+    save_world_map,
+    render_world_map_svg,
+    export_world_map_points,
+    resolve_world_map_entities,
+    build_world_map_visual_prompt_tool,
+    optimize_world_map_visual_prompt_tool,
+    generate_world_map_visual_tool,
+    list_world_map_revisions,
+    rollback_world_map,
+)
 
 # 工具列表（用于批量注册）
 TOOLS = [
@@ -416,6 +430,19 @@ TOOLS = [
     derive_project_from_novel_source,
     detect_world_extraction_contradictions,
     propagate_affected_world_facts,
+    # 世界地图工具
+    list_world_maps,
+    get_world_map,
+    create_world_map,
+    save_world_map,
+    render_world_map_svg,
+    export_world_map_points,
+    resolve_world_map_entities,
+    build_world_map_visual_prompt_tool,
+    optimize_world_map_visual_prompt_tool,
+    generate_world_map_visual_tool,
+    list_world_map_revisions,
+    rollback_world_map,
 ]
 
 __all__ = [
@@ -582,6 +609,19 @@ __all__ = [
     "derive_project_from_novel_source",
     "detect_world_extraction_contradictions",
     "propagate_affected_world_facts",
+    # 世界地图工具
+    "list_world_maps",
+    "get_world_map",
+    "create_world_map",
+    "save_world_map",
+    "render_world_map_svg",
+    "export_world_map_points",
+    "resolve_world_map_entities",
+    "build_world_map_visual_prompt_tool",
+    "optimize_world_map_visual_prompt_tool",
+    "generate_world_map_visual_tool",
+    "list_world_map_revisions",
+    "rollback_world_map",
     # 工具列表
     "TOOLS",
 ]
