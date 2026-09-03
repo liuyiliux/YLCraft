@@ -135,6 +135,12 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
   const [showRoutes, setShowRoutes] = useState(true)
   const [showBaseMap, setShowBaseMap] = useState(true)
   const [kindFilter, setKindFilter] = useState('')
+  // 选中对象详情（右栏）：点选画布据点后展示实体摘要/证据并支持就地编辑。
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
+  // 导出模态：SVG / PNG / 点位 JSON 预览。
+  const [exportOpen, setExportOpen] = useState(false)
+  const [exportPreview, setExportPreview] = useState('')
+  const [exportLoading, setExportLoading] = useState(false)
   // AI 视觉稿抽屉：成图是派生资产，降权到抽屉里多稿生成、手动设为底图。
   const [visualDrawerOpen, setVisualDrawerOpen] = useState(false)
   // 优化提示词用的 LLM 连接器（与立绘同源：/ai/connectors?provider_type=llm）。
@@ -459,6 +465,61 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
     return false // 阻止 antd Upload 自动上传
   }
 
+  // PNG 导出：服务端 /render 出 SVG，前端 raster 化下载（OQ-02：复用服务端渲染，不新增后端）。
+  const downloadPng = async () => {
+    if (!doc) return
+    try {
+      const res = await fetch(`/api/v1/world-maps/${doc.id}/render`)
+      if (!res.ok) throw new Error(`SVG 渲染失败（${res.status}）`)
+      const svgText = await res.text()
+      const svgUrl = URL.createObjectURL(new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' }))
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        canvas.width = 1600
+        canvas.height = 1200
+        const ctx = canvas.getContext('2d')
+        if (ctx) {
+          ctx.fillStyle = '#ffffff'
+          ctx.fillRect(0, 0, canvas.width, canvas.height)
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+        }
+        canvas.toBlob((pngBlob) => {
+          if (!pngBlob) {
+            message.error('PNG 转换失败')
+            return
+          }
+          const link = document.createElement('a')
+          link.href = URL.createObjectURL(pngBlob)
+          link.download = `${title || 'world-map'}.png`
+          link.click()
+          URL.revokeObjectURL(link.href)
+        }, 'image/png')
+        URL.revokeObjectURL(svgUrl)
+      }
+      img.onerror = () => {
+        message.error('PNG 转换失败')
+        URL.revokeObjectURL(svgUrl)
+      }
+      img.src = svgUrl
+    } catch (error: any) {
+      message.error(error?.message || '导出 PNG 失败')
+    }
+  }
+
+  const previewExportJson = async () => {
+    if (!doc) return
+    setExportLoading(true)
+    try {
+      const data = await exportWorldMapPoints(doc.id)
+      setExportPreview(JSON.stringify(data, null, 2))
+    } catch (error: any) {
+      message.error(error?.message || '生成点位 JSON 失败')
+    } finally {
+      setExportLoading(false)
+    }
+  }
+
   return (
     <Card
       title={
@@ -506,10 +567,10 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
           <Button
             size="small"
             disabled={!doc}
-            onClick={doExportPoints}
-            title="导出结构化点位数据（含 entity_id 与证据锚点，不是图片）"
+            onClick={() => setExportOpen(true)}
+            title="导出 SVG / PNG / 点位 JSON（含 entity_id 与证据锚点）"
           >
-            导出点位 JSON
+            导出
           </Button>
         </Space>
       }
@@ -602,15 +663,18 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
             </Space>
           </Card>
 
-          <div
-            style={{
-              height: 520,
-              border: '1px solid #d9d9d9',
-              borderRadius: 6,
-              overflow: 'hidden',
-              background: '#fafafa',
-            }}
-          >
+          <div style={{ display: 'flex', gap: 12, alignItems: 'stretch' }}>
+            <div
+              style={{
+                flex: 1,
+                minWidth: 0,
+                height: 520,
+                border: '1px solid #d9d9d9',
+                borderRadius: 6,
+                overflow: 'hidden',
+                background: '#fafafa',
+              }}
+            >
             <MapContainer
               crs={L.CRS.Simple}
               bounds={MAP_BOUNDS}
@@ -676,6 +740,7 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
                   icon={nodeIcon(node.name, regionColor(node.region_id, regionOrder))}
                   draggable
                   eventHandlers={{
+                    click: () => setSelectedNodeId(node.id),
                     dragend: (event) => {
                       const { lat, lng } = event.target.getLatLng()
                       updateNode(node.id, {
@@ -729,6 +794,145 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
                 </Marker>
               ))}
             </MapContainer>
+            </div>
+
+            {/* 右栏：选中据点详情/编辑（结构化数据是正典；实体信息引用不复制） */}
+            <div
+              style={{
+                width: 300,
+                flexShrink: 0,
+                border: '1px solid #d9d9d9',
+                borderRadius: 6,
+                background: '#fafafa',
+                padding: 12,
+                overflow: 'auto',
+                maxHeight: 520,
+              }}
+            >
+              {(() => {
+                const node = selectedNodeId ? draft.nodes.find((n) => n.id === selectedNodeId) : null
+                if (!node) {
+                  return (
+                    <Empty
+                      image={Empty.PRESENTED_IMAGE_SIMPLE}
+                      description="点击地图上的据点查看详情并就地编辑"
+                      style={{ marginTop: 120 }}
+                    />
+                  )
+                }
+                const row = entityByNodeId.get(node.id)
+                return (
+                  <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                    <Space wrap>
+                      <Text strong>{node.name || '未命名'}</Text>
+                      {node.entity_id ? (
+                        row?.entity ? (
+                          <Tag color="blue">已关联实体</Tag>
+                        ) : (
+                          <Tag color="orange">实体缺失</Tag>
+                        )
+                      ) : (
+                        <Tag>游离</Tag>
+                      )}
+                    </Space>
+                    {row?.entity && (
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        来源实体：{row.entity.name}
+                        {row.entity.is_locked ? '（已锁定正典）' : ''}
+                      </Text>
+                    )}
+                    {row?.entity?.summary && (
+                      <Paragraph style={{ fontSize: 12, whiteSpace: 'pre-wrap', marginBottom: 0 }}>
+                        {row.entity.summary}
+                      </Paragraph>
+                    )}
+                    {row?.entity && row.entity.evidence.length > 0 && (
+                      <div style={{ fontSize: 12, color: '#8c8c8c' }}>
+                        <div>证据锚点（{row.entity.evidence.length} 条）：</div>
+                        {row.entity.evidence.slice(0, 3).map((ev, i) => (
+                          <div key={i}>「{ev.quote || '（无引文）'}」{ev.chunk_id ? `（${ev.chunk_id}）` : ''}</div>
+                        ))}
+                      </div>
+                    )}
+                    <Input
+                      size="small"
+                      placeholder="名称"
+                      value={node.name}
+                      onChange={(e) => updateNode(node.id, { name: e.target.value })}
+                    />
+                    <Space wrap size={6}>
+                      <Select
+                        size="small"
+                        style={{ width: 92 }}
+                        value={node.kind}
+                        onChange={(value) => updateNode(node.id, { kind: value })}
+                        options={KIND_OPTIONS.node.map((kind) => ({ value: kind, label: kind }))}
+                      />
+                      <Input
+                        size="small"
+                        style={{ width: 62 }}
+                        type="number"
+                        placeholder="x"
+                        value={node.x}
+                        onChange={(e) => updateNode(node.id, { x: Number(e.target.value) || 0 })}
+                      />
+                      <Input
+                        size="small"
+                        style={{ width: 62 }}
+                        type="number"
+                        placeholder="y"
+                        value={node.y}
+                        onChange={(e) => updateNode(node.id, { y: Number(e.target.value) || 0 })}
+                      />
+                    </Space>
+                    <Select
+                      size="small"
+                      style={{ width: '100%' }}
+                      placeholder="所属区域"
+                      allowClear
+                      value={node.region_id ?? undefined}
+                      onChange={(value) => updateNode(node.id, { region_id: value ?? null })}
+                      options={regionOptions}
+                    />
+                    <Select
+                      size="small"
+                      style={{ width: '100%' }}
+                      placeholder="空间层"
+                      allowClear
+                      value={node.layer ?? undefined}
+                      onChange={(value) => updateNode(node.id, { layer: value ?? null })}
+                      options={(draft.layers ?? []).map((l) => ({ value: l.id, label: l.name }))}
+                    />
+                    <Input.TextArea
+                      rows={2}
+                      size="small"
+                      placeholder="描述（会进入 AI 生图提示词）"
+                      value={node.description || ''}
+                      onChange={(e) => updateNode(node.id, { description: e.target.value })}
+                    />
+                    <Space>
+                      <Button
+                        size="small"
+                        danger
+                        icon={<DeleteOutlined />}
+                        onClick={() => {
+                          setDraft((prev) => ({
+                            ...prev,
+                            nodes: prev.nodes.filter((n) => n.id !== node.id),
+                          }))
+                          setSelectedNodeId(null)
+                        }}
+                      >
+                        删除据点
+                      </Button>
+                      <Button size="small" onClick={() => setSelectedNodeId(null)}>
+                        关闭
+                      </Button>
+                    </Space>
+                  </Space>
+                )
+              })()}
+            </div>
           </div>
 
           <Collapse
@@ -1229,6 +1433,55 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
               ) : null}
             </Space>
           </Drawer>
+
+          <Modal
+            title="导出地图"
+            open={exportOpen}
+            footer={null}
+            width={720}
+            onCancel={() => setExportOpen(false)}
+          >
+            <Space direction="vertical" size={12} style={{ width: '100%' }}>
+              <Space wrap>
+                <Button
+                  size="small"
+                  onClick={() => window.open(`/api/v1/world-maps/${doc.id}/render`, '_blank')}
+                >
+                  下载 SVG（矢量）
+                </Button>
+                <Button size="small" onClick={downloadPng}>
+                  下载 PNG（1600×1200）
+                </Button>
+                <Button size="small" loading={exportLoading} onClick={previewExportJson}>
+                  生成点位 JSON 预览
+                </Button>
+                <Button size="small" type="primary" disabled={!exportPreview} onClick={doExportPoints}>
+                  下载点位 JSON
+                </Button>
+              </Space>
+              {exportPreview && (
+                <Paragraph
+                  style={{
+                    whiteSpace: 'pre-wrap',
+                    background: '#f5f5f5',
+                    padding: 12,
+                    borderRadius: 6,
+                    maxHeight: 320,
+                    overflow: 'auto',
+                    fontFamily: 'ui-monospace, Consolas, monospace',
+                    fontSize: 12,
+                    marginBottom: 0,
+                  }}
+                  copyable
+                >
+                  {exportPreview}
+                </Paragraph>
+              )}
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                点位 JSON 含 entity_id 与证据锚点（结构化正典，可回写/备份）；SVG / PNG 是服务端确定性渲染的派生图。
+              </Text>
+            </Space>
+          </Modal>
 
           <Modal
             title="地图生图 Prompt 预览 / AI 优化"
