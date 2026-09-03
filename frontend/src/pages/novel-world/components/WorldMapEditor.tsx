@@ -936,8 +936,12 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
             </div>
           </div>
 
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            数据管理（批量编辑）：空间层 / 区域 / 据点 / 路线，默认收起；单个据点的查看与编辑建议用画布点选右栏。
+          </Text>
+
           <Collapse
-            defaultActiveKey={['regions', 'nodes', 'routes']}
+            defaultActiveKey={[]}
             items={[
               {
                 key: 'layers',
@@ -1109,6 +1113,12 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
                         ) : (
                           <Tag>游离</Tag>
                         )}
+                        <Button
+                          size="small"
+                          icon={<EnvironmentOutlined />}
+                          title="在地图上选中该据点（右栏查看详情）"
+                          onClick={() => setSelectedNodeId(node.id)}
+                        />
                         <Button
                           size="small"
                           danger
