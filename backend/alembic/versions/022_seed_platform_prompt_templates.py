@@ -28,6 +28,12 @@ depends_on = None
 def upgrade() -> None:
     """Insert only missing built-ins; database values remain the source of truth."""
     bind = op.get_bind()
+    # 离线模式（`alembic upgrade --sql`）没有真实连接：SELECT 会返回 None，
+    # 且 SQLAlchemy 无法为 JSONB 字面量生成渲染（非 ASCII 直接 CompileError）。
+    # 因此离线只输出 DDL，种子数据交给运行时的 seed_platform_templates() 保证；
+    # 在线升级行为不变（按 platform 查重后插入）。
+    if getattr(op.get_context(), "as_sql", False):
+        return
     templates = sa.table(
         "platform_templates",
         sa.column("id", sa.UUID()),
