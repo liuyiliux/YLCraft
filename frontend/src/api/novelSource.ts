@@ -979,6 +979,24 @@ export function generateWorldMapVisual(
   return jsonRequest(`/world-maps/${mapId}/generate-visual`, 'POST', payload)
 }
 
+/** 地图 AI 生图：用 LLM 优化提示词（只改写提示词、不生成图，需预览确认后再生图）。 */
+export function optimizeWorldMapVisualPrompt(
+  mapId: string,
+  payload: {
+    prompt?: string
+    style?: string
+    focus?: string
+    provider?: string
+    model?: string
+  } = {},
+): Promise<{ map_id: string; prompt: string; optimized_prompt: string }> {
+  return jsonRequest(
+    `/world-maps/${mapId}/generate-visual/prompt-optimize`,
+    'POST',
+    payload,
+  )
+}
+
 /** 可用的图像生成后端（对齐角色立绘：name 作为 provider，available_models 供选模型）。 */
 export interface WorldMapImageBackend {
   provider: string

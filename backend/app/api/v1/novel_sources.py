@@ -42,7 +42,7 @@ from app.db.models.novel_source import (
     WorldMapDocument,
 )
 from app.services.ai.service import get_ai_service
-from app.services.ai.types import ImageGenerationRequest
+from app.services.ai.types import ImageGenerationRequest, LLMMessage
 from app.services.creative_project.service import loads_json
 from app.services.novel_source.contracts import DETECTABLE_DOMAINS, EXTRACTABLE_DOMAINS
 from app.services.novel_source.extraction import WorldExtractionService
@@ -191,6 +191,16 @@ class WorldMapVisualRequest(BaseModel):
 class WorldMapVisualPromptRequest(BaseModel):
     style_override: str = Field(default="", description="画风覆盖")
     prompt_override: str = Field(default="", description="提示词覆盖（留空则按结构化地图自动生成）")
+
+
+class WorldMapVisualOptimizeRequest(BaseModel):
+    """用 LLM 润色地图生图提示词（只改写提示词、不生成图、不落库）。"""
+
+    prompt: str = Field(default="", description="待优化提示词（留空则先按结构化地图生成）")
+    style: str = Field(default="", description="风格要求")
+    focus: str = Field(default="", description="希望强调或修正的画面要点（可选）")
+    provider: str = Field(default="")
+    model: str = Field(default="")
 
 
 class ProjectWorldExtractionStartRequest(BaseModel):
@@ -1550,6 +1560,67 @@ def preview_world_map_visual_prompt(
         document, style=req.style_override
     )
     return {"success": True, "data": {"map_id": map_id, "prompt": prompt}}
+
+
+WORLD_MAP_PROMPT_OPTIMIZE_SYSTEM = (
+    "你是世界地图视觉提示词优化助手。把用户给的地图提示词改写成对图像模型更友好、"
+    "且严格忠于原始地点/区域/坐标关系的中文描述。不得增删或改动任何地名、区域归属与"
+    "坐标约束，不得虚构地点。只输出改写后的提示词正文，不要解释、不要代码块。"
+)
+
+
+@router.post(
+    "/api/v1/world-maps/{map_id}/generate-visual/prompt-optimize",
+    summary="AI 优化地图生图提示词（只改写，不生成图）",
+)
+async def optimize_world_map_visual_prompt(
+    map_id: str,
+    req: WorldMapVisualOptimizeRequest,
+    svc: WorldMapService = Depends(map_service),
+):
+    """用 LLM 润色生图 prompt（保留结构化事实与坐标方位），返回优化文本供确认后再生图。
+
+    只改写提示词、不生成图、不落库；消耗一次 LLM 文本配额（R4 预览纪律）。
+    """
+    document = svc.get_map(map_id)
+    if not document:
+        raise HTTPException(status_code=404, detail="地图文档不存在")
+    raw = (req.prompt or "").strip() or build_map_visual_prompt(document, style=req.style)
+    ai = get_ai_service()
+    if not ai.is_loaded():
+        raise HTTPException(status_code=503, detail="AIService 未初始化，请先配置 LLM Provider")
+    focus = str(req.focus or "").strip()
+    focus_line = f"希望强调或修正：{focus}。" if focus else "无额外强调项。"
+    user_text = (
+        "原始地图提示词：\n"
+        f"{raw}\n\n"
+        f"{focus_line}\n\n"
+        "优化要求：\n"
+        "1. 保留所有地点名称、坐标约束 (x,y) 与相对方位、区域划分、通行路线走向。\n"
+        "2. 增强对图像模型友好的构图、景深、光影、材质与文字标签清晰度描述。\n"
+        "3. 中文输出，地图标题与地名一律用原文。\n"
+        "4. 只输出优化后的提示词正文。"
+    )
+    response = await ai.chat(
+        messages=[
+            LLMMessage(role="system", content=WORLD_MAP_PROMPT_OPTIMIZE_SYSTEM),
+            LLMMessage(role="user", content=user_text),
+        ],
+        provider=req.provider or None,
+        model=req.model or None,
+        temperature=0.7,
+        max_tokens=1800,
+    )
+    success = getattr(response, "success", True)
+    if success is False:
+        raise HTTPException(status_code=502, detail=getattr(response, "error", "") or "LLM 优化失败")
+    optimized = str(getattr(response, "content", "") or "").strip()
+    if not optimized:
+        raise HTTPException(status_code=502, detail="LLM 未返回优化结果")
+    return {
+        "success": True,
+        "data": {"map_id": map_id, "prompt": raw, "optimized_prompt": optimized},
+    }
 
 
 @router.post("/api/v1/world-maps/{map_id}/generate-visual", summary="用生图模型生成地图视觉成图")
