@@ -593,8 +593,8 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
         { key: 'routes', label: '路线' },
       ]
       for (const kind of kinds) {
-        const oldRows = (a[kind] || []) as any[]
-        const newRows = (b[kind] || []) as any[]
+        const oldRows = (a[kind.key] || []) as any[]
+        const newRows = (b[kind.key] || []) as any[]
         const oldIds = new Set(oldRows.map((r) => String(r.id)))
         const newIds = new Set(newRows.map((r) => String(r.id)))
         const added = [...newIds].filter((id) => !oldIds.has(id))
@@ -603,12 +603,12 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
           String((rows.find((r) => String(r.id) === id) || {}).name || id)
         if (added.length || removed.length) {
           lines.push(
-            `${kind === 'nodes' ? '据点' : kind === 'regions' ? '区域' : '路线'}：新增 ${
-              added.map((id) => nameOf(id, newRows)).join('、') || '—'
-            }；移除 ${removed.map((id) => nameOf(id, oldRows)).join('、') || '—'}`,
+            `${kind.label}：新增 ${added.map((id) => nameOf(id, newRows)).join('、') || '—'}；移除 ${
+              removed.map((id) => nameOf(id, oldRows)).join('、') || '—'
+            }`,
           )
         } else {
-          lines.push(`${kind === 'nodes' ? '据点' : kind === 'regions' ? '区域' : '路线'}：无增删`)
+          lines.push(`${kind.label}：无增删`)
         }
       }
       setCompareResult(lines)
@@ -756,8 +756,14 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
                     </Tag.CheckableTag>
                     <Tag.CheckableTag
                       checked={showBaseMap}
-                      onChange={(checked) => setShowBaseMap(checked)}
-                      disabled={!baseMapUrl}
+                      onChange={(checked) => {
+                        if (!baseMapUrl) {
+                          message.info('先在下方上传底图，再切换参考层显隐')
+                          return
+                        }
+                        setShowBaseMap(checked)
+                      }}
+                      style={baseMapUrl ? undefined : { opacity: 0.45 }}
                     >
                       底图参考
                     </Tag.CheckableTag>
@@ -1261,6 +1267,7 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
                       )}
                     </div>
                   )}
+                  <Space wrap>
                     <Input
                       placeholder="画风（如水墨、写实）"
                       style={{ width: 160 }}
@@ -1280,7 +1287,7 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
                     >
                       AI 优化
                     </Button>
-                    <Button size="small" type="primary" icon={<PictureOutlined />} loading={generating} disabled={!doc} onClick={doGenerateVisual}>
+                    <Button size="small" type="primary" icon={<PictureOutlined />} loading={generating} disabled={!doc} onClick={() => doGenerateVisual()}>
                       生成视觉成图
                     </Button>
                   </Space>
