@@ -479,7 +479,7 @@ export default function NovelWorldPage() {
   ]
 
   return (
-    <div style={{ maxWidth: 1080, margin: '0 auto', padding: 24 }}>
+    <div style={{ padding: 24 }}>
       <Title level={3} style={{ marginBottom: 4 }}>
         小说世界提取
       </Title>
@@ -499,8 +499,10 @@ export default function NovelWorldPage() {
         style={{ marginBottom: 24 }}
       />
 
-      <Card
-        title="1. 来源快照"
+      <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+        <aside style={{ width: 280, flexShrink: 0 }}>
+          <Card
+            title="1. 来源快照"
         style={{ marginBottom: 16 }}
         extra={
           snapshot ? (
@@ -595,9 +597,11 @@ export default function NovelWorldPage() {
           )}
         </Space>
       </Card>
+        </aside>
 
-      <Card
-        title="2. 模块判断"
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <Card
+            title="2. 模块判断"
         style={{ marginBottom: 16 }}
         extra={
           <Button type="primary" disabled={!snapshot} loading={planning} onClick={doPlan}>
@@ -1058,6 +1062,8 @@ export default function NovelWorldPage() {
           placeholder={'第二章 旧账\n沈青砚在灯下翻账册……\n\n第三章 雪原\n……'}
         />
       </Modal>
+        </div>
+      </div>
     </div>
   )
 }
