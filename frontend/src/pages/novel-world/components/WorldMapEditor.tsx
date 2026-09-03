@@ -703,6 +703,7 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
 
           <div style={{ display: 'flex', gap: 12, alignItems: 'stretch' }}>
             <aside style={{ width: 230, flexShrink: 0 }}>
+              <Space direction="vertical" size={12} style={{ width: '100%' }}>
               <Card
                 size="small"
                 title="图层"
@@ -769,6 +770,41 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
                   </Text>
                 </Space>
               </Card>
+              <Card
+                size="small"
+                title="数据"
+                style={{ background: '#fafafa' }}
+                styles={{ body: { padding: '10px 12px' } }}
+              >
+                <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                  <Text style={{ fontSize: 12 }}>
+                    {draft.nodes.length} 据点 · {draft.regions.length} 区域 · {draft.routes.length} 路线
+                  </Text>
+                  {doc && (
+                    <Text type="secondary" style={{ fontSize: 11 }}>
+                      当前 revision v{doc.revision}
+                    </Text>
+                  )}
+                  <div style={{ fontSize: 11, color: '#8c8c8c', lineHeight: 1.9 }}>
+                    <div>● 据点（圆点标记 / 已关联实体）</div>
+                    <div>◇ 区域（成员据点围合）</div>
+                    <div>— 路线（连通路径）</div>
+                    <div>▨ 底图参考层（派生视觉）</div>
+                  </div>
+                  <Space wrap size={4}>
+                    <Button size="small" onClick={addNode}>
+                      新增据点
+                    </Button>
+                    <Button size="small" onClick={addRegion}>
+                      新增区域
+                    </Button>
+                    <Button size="small" onClick={addRoute}>
+                      新增路线
+                    </Button>
+                  </Space>
+                </Space>
+              </Card>
+              </Space>
             </aside>
             <div
               style={{
