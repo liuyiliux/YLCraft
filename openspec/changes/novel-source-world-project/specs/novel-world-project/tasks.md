@@ -162,3 +162,11 @@
   - _Requirement: 1, 3, 8_
 - [ ] 28. Validate with human UI and Agent API E2E flows using temporary local fixtures; never use real user/remote novel data for tests.
   - _Requirement: 5, 8, 9_
+
+## Phase 7: 世界地图工作台 v2 增强（原型对齐增量，2026-09-03）
+
+- [x] 29. AI 视觉稿方位修复与 AI 优化提示词。
+  - _Done: `build_map_visual_prompt` 写明坐标系约定（x 向右、y 向下、画面顶部为北），为每个地点标注 (x,y)/方位带/区域·位面归属，路线按坐标给走向，并明确禁止按名称里的南/北/东/西猜位置——修复生成图南北颠倒；新增 `POST /world-maps/{map_id}/generate-visual/prompt-optimize`（LLM 润色提示词、保留结构化事实、只改写不落库）；Prompt 预览弹窗支持「AI 优化 / 恢复原始版本 / 采用并生成」。测试 73 例全绿（新增坐标约定回归 1 例）。_
+- [x] 30. 图层面板与视觉稿抽屉化。
+  - _Done: `WorldMapEditor` 新增统一图层面板（据点/区域/路线/底图参考图层开关 + 据点类型筛选 + 位面切换 + 底图上传/移除，均只影响显示）；「AI 生图 + 成图历史」收进右侧 Drawer（手动「设为底图」才作为参考层），不自动铺满画布、不叠加标记、不写入结构化事实。_
+- [ ] 31. 地图区三栏精排（图层面板窄列居左 + 画布居中 + 右侧选中对象详情/编辑面板）与导出扩展（PNG / 点位 JSON 预览）——待真实浏览器目检后精调；28 的 E2E 验收一并覆盖。
