@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Card, Collapse, Drawer, Empty, Input, message, Modal, Radio, Select, Space, Tag, Typography, Upload } from 'antd'
-import { DeleteOutlined, EnvironmentOutlined, EyeOutlined, PictureOutlined, PlusOutlined, SaveOutlined, ThunderboltOutlined } from '@ant-design/icons'
+import { Alert, Button, Card, Collapse, Drawer, Empty, Input, message, Modal, Popconfirm, Radio, Select, Space, Table, Tag, Typography, Upload } from 'antd'
+import { DeleteOutlined, EnvironmentOutlined, EyeOutlined, HistoryOutlined, PictureOutlined, PlusOutlined, SaveOutlined, ThunderboltOutlined } from '@ant-design/icons'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { MapContainer, Marker, Polyline, Polygon, Popup, useMap } from 'react-leaflet'
@@ -11,13 +11,17 @@ import {
   exportWorldMapPoints,
   generateWorldMapVisual,
   getWorldMap,
+  getWorldMapRevision,
   listWorldMapImageBackends,
+  listWorldMapRevisions,
   listWorldMaps,
   optimizeWorldMapVisualPrompt,
   previewWorldMapVisualPrompt,
   resolveWorldMapEntities,
+  rollbackWorldMap,
   updateWorldMap,
   type WorldMapData,
+  type WorldMapRevisionItem,
   type WorldMapDocument,
   type WorldMapImageBackend,
   type WorldMapNode,
@@ -141,6 +145,15 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
   const [exportOpen, setExportOpen] = useState(false)
   const [exportPreview, setExportPreview] = useState('')
   const [exportLoading, setExportLoading] = useState(false)
+  // 版本历史模态：列表 / 两版对比 / 回滚（append-only）。
+  const [versionsOpen, setVersionsOpen] = useState(false)
+  const [revisions, setRevisions] = useState<WorldMapRevisionItem[]>([])
+  const [revisionsLoading, setRevisionsLoading] = useState(false)
+  const [compareA, setCompareA] = useState<number | null>(null)
+  const [compareB, setCompareB] = useState<number | null>(null)
+  const [comparing, setComparing] = useState(false)
+  const [compareResult, setCompareResult] = useState<string[]>([])
+  const [rollingBack, setRollingBack] = useState<number | null>(null)
   // AI 视觉稿抽屉：成图是派生资产，降权到抽屉里多稿生成、手动设为底图。
   const [visualDrawerOpen, setVisualDrawerOpen] = useState(false)
   // 优化提示词用的 LLM 连接器（与立绘同源：/ai/connectors?provider_type=llm）。
@@ -521,6 +534,82 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
     }
   }
 
+  // 版本历史：列表 / 两版对比 / 回滚（回滚 = 以历史快照产生新 revision，不改写历史）。
+  const openVersions = async () => {
+    if (!doc) return
+    setVersionsOpen(true)
+    setRevisionsLoading(true)
+    setCompareA(null)
+    setCompareB(null)
+    setCompareResult([])
+    try {
+      const res = await listWorldMapRevisions(doc.id)
+      setRevisions(res.revisions || [])
+    } catch (error: any) {
+      message.error(error?.message || '版本历史加载失败')
+    } finally {
+      setRevisionsLoading(false)
+    }
+  }
+
+  const runCompare = async () => {
+    if (!doc || compareA == null || compareB == null || compareA === compareB) return
+    setComparing(true)
+    try {
+      const [ra, rb] = await Promise.all([
+        getWorldMapRevision(doc.id, compareA),
+        getWorldMapRevision(doc.id, compareB),
+      ])
+      const a = (ra.map_json || {}) as WorldMapData
+      const b = (rb.map_json || {}) as WorldMapData
+      const lines: string[] = []
+      const kinds: { key: 'nodes' | 'regions' | 'routes'; label: string }[] = [
+        { key: 'nodes', label: '据点' },
+        { key: 'regions', label: '区域' },
+        { key: 'routes', label: '路线' },
+      ]
+      for (const kind of kinds) {
+        const oldRows = (a[kind] || []) as any[]
+        const newRows = (b[kind] || []) as any[]
+        const oldIds = new Set(oldRows.map((r) => String(r.id)))
+        const newIds = new Set(newRows.map((r) => String(r.id)))
+        const added = [...newIds].filter((id) => !oldIds.has(id))
+        const removed = [...oldIds].filter((id) => !newIds.has(id))
+        const nameOf = (id: string, rows: any[]) =>
+          String((rows.find((r) => String(r.id) === id) || {}).name || id)
+        if (added.length || removed.length) {
+          lines.push(
+            `${kind === 'nodes' ? '据点' : kind === 'regions' ? '区域' : '路线'}：新增 ${
+              added.map((id) => nameOf(id, newRows)).join('、') || '—'
+            }；移除 ${removed.map((id) => nameOf(id, oldRows)).join('、') || '—'}`,
+          )
+        } else {
+          lines.push(`${kind === 'nodes' ? '据点' : kind === 'regions' ? '区域' : '路线'}：无增删`)
+        }
+      }
+      setCompareResult(lines)
+    } catch (error: any) {
+      message.error(error?.message || '版本对比失败')
+    } finally {
+      setComparing(false)
+    }
+  }
+
+  const doRollback = async (revision: number) => {
+    if (!doc) return
+    setRollingBack(revision)
+    try {
+      await rollbackWorldMap(doc.id, { revision })
+      message.success(`已回滚到 v${revision}（产生新版本，历史不被改写）`)
+      await refresh(doc.id)
+      await openVersions()
+    } catch (error: any) {
+      message.error(error?.message || '回滚失败')
+    } finally {
+      setRollingBack(null)
+    }
+  }
+
   return (
     <Card
       title={
@@ -572,6 +661,15 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
             title="导出 SVG / PNG / 点位 JSON（含 entity_id 与证据锚点）"
           >
             导出
+          </Button>
+          <Button
+            size="small"
+            icon={<HistoryOutlined />}
+            disabled={!doc}
+            onClick={openVersions}
+            title="版本历史：列表 / 两版对比 / 回滚（产生新版本，不改写历史）"
+          >
+            版本
           </Button>
         </Space>
       }
@@ -1454,6 +1552,122 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
               ) : null}
             </Space>
           </Drawer>
+
+          <Modal
+            title={`版本历史${doc ? ` · 当前 v${doc.revision}` : ''}`}
+            open={versionsOpen}
+            footer={null}
+            width={780}
+            onCancel={() => setVersionsOpen(false)}
+          >
+            <Space direction="vertical" size={12} style={{ width: '100%' }}>
+              <Table
+                size="small"
+                rowKey="revision"
+                loading={revisionsLoading}
+                dataSource={revisions}
+                pagination={false}
+                columns={[
+                  {
+                    title: '版本',
+                    dataIndex: 'revision',
+                    key: 'revision',
+                    width: 70,
+                    render: (value: number) => `v${value}`,
+                  },
+                  {
+                    title: '时间',
+                    dataIndex: 'created_at',
+                    key: 'created_at',
+                    width: 150,
+                    render: (value: string | null) =>
+                      value ? new Date(value).toLocaleString() : '—',
+                  },
+                  {
+                    title: '操作者',
+                    dataIndex: 'operator',
+                    key: 'operator',
+                    width: 120,
+                    render: (value: string) => value || '—',
+                  },
+                  { title: '摘要', dataIndex: 'summary', key: 'summary' },
+                  {
+                    title: '对比',
+                    key: 'compare',
+                    width: 120,
+                    render: (_: unknown, row: WorldMapRevisionItem) => (
+                      <Space size={4}>
+                        <Button
+                          size="small"
+                          type={compareA === row.revision ? 'primary' : 'default'}
+                          onClick={() => setCompareA(row.revision)}
+                        >
+                          A
+                        </Button>
+                        <Button
+                          size="small"
+                          type={compareB === row.revision ? 'primary' : 'default'}
+                          onClick={() => setCompareB(row.revision)}
+                        >
+                          B
+                        </Button>
+                      </Space>
+                    ),
+                  },
+                  {
+                    title: '操作',
+                    key: 'act',
+                    width: 90,
+                    render: (_: unknown, row: WorldMapRevisionItem) => (
+                      <Popconfirm
+                        title={`回滚到 v${row.revision}？（产生新版本，不改写历史）`}
+                        okText="回滚"
+                        cancelText="取消"
+                        onConfirm={() => doRollback(row.revision)}
+                      >
+                        <Button
+                          size="small"
+                          danger
+                          loading={rollingBack === row.revision}
+                          disabled={row.revision === doc?.revision}
+                        >
+                          回滚
+                        </Button>
+                      </Popconfirm>
+                    ),
+                  },
+                ]}
+              />
+              <Space wrap>
+                <Button
+                  size="small"
+                  disabled={compareA == null || compareB == null || compareA === compareB}
+                  loading={comparing}
+                  onClick={runCompare}
+                >
+                  对比 A / B
+                </Button>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  先点 A、B 选择两个版本再对比（无先后限制）；回滚会以历史快照产生新版本，历史链不被改写。
+                </Text>
+              </Space>
+              {compareResult.length > 0 && (
+                <div
+                  style={{
+                    background: '#f5f5f5',
+                    padding: 12,
+                    borderRadius: 6,
+                    fontSize: 12,
+                    whiteSpace: 'pre-wrap',
+                  }}
+                >
+                  {compareResult.map((line, index) => (
+                    <div key={index}>{line}</div>
+                  ))}
+                </div>
+              )}
+            </Space>
+          </Modal>
 
           <Modal
             title="导出地图"

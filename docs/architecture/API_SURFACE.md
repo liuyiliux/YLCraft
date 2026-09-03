@@ -7,8 +7,8 @@
 ## Summary
 
 - Router mounts: 52
-- Endpoints: 648
-- Public schema endpoints: 647
+- Endpoints: 651
+- Public schema endpoints: 650
 - Hidden compatibility endpoints: 1
 
 ## Router Mounts
@@ -782,6 +782,9 @@
 | `POST` | `/api/v1/world-maps/{map_id}/generate-visual/prompt-optimize` | AI 优化地图生图提示词（只改写，不生成图） | `optimize_world_map_visual_prompt` | `backend/app/api/v1/novel_sources.py:1576` |
 | `POST` | `/api/v1/world-maps/{map_id}/generate-visual/prompt-preview` | 预览地图生图提示词 | `preview_world_map_visual_prompt` | `backend/app/api/v1/novel_sources.py:1550` |
 | `GET` | `/api/v1/world-maps/{map_id}/render` | 渲染世界地图为 SVG | `render_world_map` | `backend/app/api/v1/novel_sources.py:1495` |
+| `GET` | `/api/v1/world-maps/{map_id}/revisions` | 地图版本历史列表 | `list_world_map_revisions` | `backend/app/api/v1/novel_sources.py:1772` |
+| `GET` | `/api/v1/world-maps/{map_id}/revisions/{revision}` | 读取指定版本快照 | `get_world_map_revision` | `backend/app/api/v1/novel_sources.py:1790` |
+| `POST` | `/api/v1/world-maps/{map_id}/rollback` | 回滚地图到指定版本（append-only：产生新 revision） | `rollback_world_map` | `backend/app/api/v1/novel_sources.py:1810` |
 
 ### Novels
 

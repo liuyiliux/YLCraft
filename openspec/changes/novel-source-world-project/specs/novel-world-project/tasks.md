@@ -171,4 +171,5 @@
   - _Done: `WorldMapEditor` 新增统一图层面板（据点/区域/路线/底图参考图层开关 + 据点类型筛选 + 位面切换 + 底图上传/移除，均只影响显示）；「AI 生图 + 成图历史」收进右侧 Drawer（手动「设为底图」才作为参考层），不自动铺满画布、不叠加标记、不写入结构化事实。_
 - [x] 31. 地图区三栏布局与导出扩展（PNG / 点位 JSON 预览）。
   - _Done: 画布改为「图层面板条 + 画布 + 右栏」三段：点击标记在右栏 300px 面板展示选中据点详情（来源实体摘要/证据锚点/关联状态）并就地编辑名称/类型/坐标/区域/空间层/描述（描述会进入生图提示词），支持删除据点与引导空态。顶栏「导出点位 JSON」升级为「导出」模态：下载 SVG（服务端 /render）、下载 PNG（前端把 /render SVG raster 化为 1600×1200，复用服务端渲染不新增后端，OQ-02）、点位 JSON 预览（等宽 + 复制）与下载。_
-- [ ] 32. 版本历史列表 / 两版对比 / 回滚（SCN-05）：当前仅 revision 号，需后端新增地图历史留存（迁移），待设计后实施；真实浏览器目检与 E2E 验收合并到任务 28。
+- [x] 32. 版本历史列表 / 两版对比 / 回滚（SCN-05）。
+  - _Done: 新表 `world_map_revisions`（迁移 042，append-only）：create 落 v1 初始快照、每次 update_map CAS 通过后落新 revision 快照（operator/summary 含区域/据点/路线计数）；删除地图时同步清理历史。服务层 `list_revisions / get_revision / rollback`（回滚 = 以历史快照为内容走 update_map 产生**新** revision，operator 标注 `rollback:vN`，历史链不被改写）。API：`GET /world-maps/{id}/revisions`、`GET .../revisions/{revision}`（含 map_json 供对比）、`POST .../rollback`。前端顶栏「版本」按钮 → 模态：revision 列表（时间/操作者/摘要）、A/B 两版对比（据点/区域/路线 增删按名称列出）、Popconfirm 回滚并刷新。测试 74 例全绿（新增版本历史/回滚回归 1 例）；alembic 单 head 042；API 面 651 端点。真实浏览器目检合并到任务 28。_
