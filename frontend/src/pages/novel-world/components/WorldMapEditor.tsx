@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
-import { Alert, Badge, Button, Card, Collapse, Drawer, Empty, Input, message, Modal, Popconfirm, Radio, Select, Space, Table, Tag, Typography, Upload } from 'antd'
+import { Alert, Badge, Button, Card, Collapse, Drawer, Empty, Input, message, Modal, Popconfirm, Radio, Segmented, Select, Space, Table, Tag, Typography, Upload } from 'antd'
 import { DeleteOutlined, EnvironmentOutlined, EyeOutlined, HistoryOutlined, PictureOutlined, PlusOutlined, SaveOutlined, ThunderboltOutlined } from '@ant-design/icons'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -32,6 +32,7 @@ import {
   type WorldMapVisualResult,
 } from '../../../api/novelSource'
 import { listConnectors } from '../../../api'
+import ProviderModelSelect, { filterBackendsByCapability } from '../../../components/ai/ProviderModelSelect'
 
 const { Paragraph, Text } = Typography
 
@@ -156,6 +157,10 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
   const [rollingBack, setRollingBack] = useState<number | null>(null)
   // 批量管理抽屉：空间层/区域/据点/路线的行编辑收进抽屉，不再占据页面底部。
   const [dataDrawerOpen, setDataDrawerOpen] = useState(false)
+  // 生图模式（对齐立绘）：文生图不携带参考图，图生图按勾选顺序携带参考图。
+  const [visualMode, setVisualMode] = useState<'text2img' | 'img2img'>('text2img')
+  const [visualRefUrls, setVisualRefUrls] = useState<string[]>([])
+  const [visualUploadRefs, setVisualUploadRefs] = useState<string[]>([])
   // AI 视觉稿抽屉：成图是派生资产，降权到抽屉里多稿生成、手动设为底图。
   const [visualDrawerOpen, setVisualDrawerOpen] = useState(false)
   // 优化提示词用的 LLM 连接器（与立绘同源：/ai/connectors?provider_type=llm）。
@@ -199,15 +204,32 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
     const supported = activeBackend?.supported_sizes?.filter(Boolean) ?? []
     return supported.length ? supported : ['1024x1024', '768x1024', '1024x768']
   }, [activeBackend])
-  const activeLlmBackend = useMemo(
-    () => llmBackends.find((item) => (item.name || item.provider) === llmProvider) ?? null,
-    [llmBackends, llmProvider],
-  )
   // 草稿脏标记：draft 与已保存文档不一致即视为有未保存更改（保存/切换后自动复位）。
   const dirty = useMemo(() => {
     if (!doc) return false
     return JSON.stringify(draft) !== JSON.stringify(doc.map)
   }, [draft, doc])
+  // 按生成模式过滤生图后端：图生图 image_to_image，文生图 text_to_image（与立绘同一规则）。
+  const visibleImageBackends = useMemo(
+    () =>
+      filterBackendsByCapability(
+        imageBackends,
+        visualMode === 'img2img' ? 'image_to_image' : 'text_to_image',
+      ),
+    [imageBackends, visualMode],
+  )
+
+  useEffect(() => {
+    if (!visibleImageBackends.length) return
+    const matched = visibleImageBackends.some(
+      (item) => (item.name || item.provider) === visualProvider,
+    )
+    if (matched) return
+    const first: any = visibleImageBackends[0]
+    setVisualProvider(first.name || first.provider || '')
+    setVisualModel(first.model || first.available_models?.[0] || '')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleImageBackends])
 
   const previewVisualPrompt = async () => {
     if (!doc) return
@@ -264,6 +286,11 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
         model: visualModel || undefined,
         size: visualSize || '1024x1024',
         style: visualStyle || undefined,
+        // 图生图：按勾选/上传顺序携带参考图；文生图不携带（与立绘同一语义）。
+        reference_images:
+          visualMode === 'img2img'
+            ? [...visualRefUrls, ...visualUploadRefs].filter(Boolean)
+            : undefined,
         save_to_asset_hub: true,
       })
       setLastVisual(result)
@@ -1135,41 +1162,117 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
             <Space direction="vertical" style={{ width: '100%' }} size="middle">
               <Card size="small" title="生成地图视觉成图" style={{ background: '#fafafa' }}>
                 <Space direction="vertical" style={{ width: '100%' }} size="middle">
-                  <Space wrap>
-                    <Select
-                      placeholder="生图后端"
-                      style={{ width: 170 }}
-                      value={visualProvider || undefined}
-                      loading={!imageBackends.length}
-                      onChange={(value) => {
-                        const backend = imageBackends.find((item) => item.name === value)
-                        setVisualProvider(value)
-                        setVisualModel(backend?.available_models?.[0] || backend?.model || '')
-                      }}
-                      options={imageBackends.map((item) => ({
-                        value: item.name,
-                        label: item.provider_label ? `${item.provider_label} · ${item.name}` : item.name,
-                      }))}
-                    />
-                    <Select
-                      placeholder="模型"
-                      style={{ width: 200 }}
-                      value={visualModel || undefined}
-                      onChange={setVisualModel}
-                      options={(activeBackend?.available_models?.length
-                        ? activeBackend.available_models
-                        : [activeBackend?.model || '']
-                      )
-                        .filter(Boolean)
-                        .map((item) => ({ value: item, label: item }))}
-                    />
-                    <Select
+                  <Segmented
+                    value={visualMode}
+                    onChange={(value) => setVisualMode(value as 'text2img' | 'img2img')}
+                    options={[
+                      { value: 'text2img', label: '文生图' },
+                      { value: 'img2img', label: '图生图（携带参考图）' },
+                    ]}
+                  />
+                  <ProviderModelSelect
+                    backends={visibleImageBackends}
+                    provider={visualProvider}
+                    model={visualModel}
+                    onProviderChange={setVisualProvider}
+                    onModelChange={setVisualModel}
+                    size="small"
+                    providerPlaceholder="生图后端"
+                    providerWidth={170}
+                    modelWidth={200}
+                  />
+                  <Select
                       placeholder="尺寸"
                       style={{ width: 130 }}
                       value={visualSize}
                       onChange={setVisualSize}
                       options={visualSizeOptions.map((item) => ({ value: item, label: item }))}
                     />
+                  {visualMode === 'img2img' && (
+                    <div style={{ fontSize: 12 }}>
+                      <Text strong style={{ fontSize: 12 }}>
+                        参考图（勾选历史成图或上传，按顺序作为图 1、图 2…）
+                      </Text>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 6 }}>
+                        {(doc?.map.visuals || [])
+                          .filter((v) => v.url)
+                          .map((v) => {
+                            const checked = visualRefUrls.includes(v.url as string)
+                            return (
+                              <div
+                                key={v.url}
+                                onClick={() =>
+                                  setVisualRefUrls((prev) =>
+                                    prev.includes(v.url as string)
+                                      ? prev.filter((u) => u !== v.url)
+                                      : [...prev, v.url as string],
+                                  )
+                                }
+                                style={{
+                                  width: 72,
+                                  cursor: 'pointer',
+                                  position: 'relative',
+                                  border: checked ? '2px solid #1677ff' : '1px solid #d9d9d9',
+                                  borderRadius: 6,
+                                  overflow: 'hidden',
+                                }}
+                              >
+                                <img
+                                  src={v.url as string}
+                                  alt=""
+                                  style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', display: 'block' }}
+                                />
+                                {checked && (
+                                  <Tag
+                                    color="blue"
+                                    style={{ position: 'absolute', top: 2, left: 2, marginInlineEnd: 0, fontSize: 10, lineHeight: '16px' }}
+                                  >
+                                    参考
+                                  </Tag>
+                                )}
+                              </div>
+                            )
+                          })}
+                        <Upload
+                          accept="image/*"
+                          showUploadList={false}
+                          beforeUpload={(file) => {
+                            const reader = new FileReader()
+                            reader.onload = () => {
+                              if (typeof reader.result === 'string') {
+                                setVisualUploadRefs((prev) => [...prev, reader.result as string])
+                              }
+                            }
+                            reader.readAsDataURL(file)
+                            return false
+                          }}
+                        >
+                          <Button size="small">+ 上传参考图</Button>
+                        </Upload>
+                      </div>
+                      {visualUploadRefs.length > 0 && (
+                        <Space wrap style={{ marginTop: 6 }}>
+                          {visualUploadRefs.map((url, index) => (
+                            <div key={index} style={{ position: 'relative', width: 72 }}>
+                              <img
+                                src={url}
+                                alt=""
+                                style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: 6, display: 'block' }}
+                              />
+                              <Button
+                                size="small"
+                                danger
+                                style={{ position: 'absolute', top: 2, right: 2, padding: 0, minWidth: 18, height: 18 }}
+                                onClick={() => setVisualUploadRefs((prev) => prev.filter((_, i) => i !== index))}
+                              >
+                                ×
+                              </Button>
+                            </div>
+                          ))}
+                        </Space>
+                      )}
+                    </div>
+                  )}
                     <Input
                       placeholder="画风（如水墨、写实）"
                       style={{ width: 160 }}
@@ -1194,38 +1297,17 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
                     </Button>
                   </Space>
                   <Space wrap size={6}>
-                    <Select
+                    <ProviderModelSelect
+                      backends={llmBackends}
+                      provider={llmProvider}
+                      model={llmModel}
+                      onProviderChange={setLlmProvider}
+                      onModelChange={setLlmModel}
                       size="small"
-                      placeholder="优化用 LLM 供应商"
-                      style={{ width: 170 }}
-                      value={llmProvider || undefined}
-                      onChange={(value) => {
-                        setLlmProvider(value)
-                        const backend = llmBackends.find(
-                          (item) => (item.name || item.provider) === value,
-                        )
-                        setLlmModel(
-                          backend?.default_model || backend?.model || backend?.available_models?.[0] || '',
-                        )
-                      }}
-                      options={llmBackends.map((item) => ({
-                        value: item.name || item.provider,
-                        label: item.provider_label || item.name || item.provider,
-                      }))}
-                    />
-                    <Select
-                      size="small"
-                      placeholder="优化用模型"
-                      style={{ width: 170 }}
-                      value={llmModel || undefined}
-                      onChange={setLlmModel}
-                      options={Array.from(
-                        new Set(
-                          (activeLlmBackend?.available_models || [
-                            activeLlmBackend?.default_model || activeLlmBackend?.model || '',
-                          ]).filter(Boolean) as string[],
-                        ),
-                      ).map((value) => ({ value, label: value }))}
+                      providerPlaceholder="优化用 LLM 供应商"
+                      modelPlaceholder="优化用模型"
+                      providerWidth={170}
+                      modelWidth={170}
                     />
                     <Button
                       size="small"
