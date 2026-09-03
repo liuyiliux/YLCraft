@@ -41,8 +41,10 @@ from app.db.models.novel_source import (
     WorldFactCandidate,
     WorldMapDocument,
 )
-from app.services.ai.service import get_ai_service
-from app.services.ai.types import ImageGenerationRequest, LLMMessage
+from app.services.novel_source.world_map_visual import (
+    generate_map_visual,
+    optimize_map_visual_prompt,
+)
 from app.services.creative_project.service import loads_json
 from app.services.novel_source.contracts import DETECTABLE_DOMAINS, EXTRACTABLE_DOMAINS
 from app.services.novel_source.extraction import WorldExtractionService
@@ -1562,13 +1564,6 @@ def preview_world_map_visual_prompt(
     return {"success": True, "data": {"map_id": map_id, "prompt": prompt}}
 
 
-WORLD_MAP_PROMPT_OPTIMIZE_SYSTEM = (
-    "你是世界地图视觉提示词优化助手。把用户给的地图提示词改写成对图像模型更友好、"
-    "且严格忠于原始地点/区域/坐标关系的中文描述。不得增删或改动任何地名、区域归属与"
-    "坐标约束，不得虚构地点。只输出改写后的提示词正文，不要解释、不要代码块。"
-)
-
-
 @router.post(
     "/api/v1/world-maps/{map_id}/generate-visual/prompt-optimize",
     summary="AI 优化地图生图提示词（只改写，不生成图）",
@@ -1585,41 +1580,25 @@ async def optimize_world_map_visual_prompt(
     document = svc.get_map(map_id)
     if not document:
         raise HTTPException(status_code=404, detail="地图文档不存在")
-    raw = (req.prompt or "").strip() or build_map_visual_prompt(document, style=req.style)
-    ai = get_ai_service()
-    if not ai.is_loaded():
-        raise HTTPException(status_code=503, detail="AIService 未初始化，请先配置 LLM Provider")
-    focus = str(req.focus or "").strip()
-    focus_line = f"希望强调或修正：{focus}。" if focus else "无额外强调项。"
-    user_text = (
-        "原始地图提示词：\n"
-        f"{raw}\n\n"
-        f"{focus_line}\n\n"
-        "优化要求：\n"
-        "1. 保留所有地点名称、坐标约束 (x,y) 与相对方位、区域划分、通行路线走向。\n"
-        "2. 增强对图像模型友好的构图、景深、光影、材质与文字标签清晰度描述。\n"
-        "3. 中文输出，地图标题与地名一律用原文。\n"
-        "4. 只输出优化后的提示词正文。"
-    )
-    response = await ai.chat(
-        messages=[
-            LLMMessage(role="system", content=WORLD_MAP_PROMPT_OPTIMIZE_SYSTEM),
-            LLMMessage(role="user", content=user_text),
-        ],
-        provider=req.provider or None,
-        model=req.model or None,
-        temperature=0.7,
-        max_tokens=1800,
-    )
-    success = getattr(response, "success", True)
-    if success is False:
-        raise HTTPException(status_code=502, detail=getattr(response, "error", "") or "LLM 优化失败")
-    optimized = str(getattr(response, "content", "") or "").strip()
-    if not optimized:
-        raise HTTPException(status_code=502, detail="LLM 未返回优化结果")
+    try:
+        optimized_result = await optimize_map_visual_prompt(
+            document,
+            prompt=req.prompt or "",
+            style=req.style or "",
+            focus=req.focus or "",
+            provider=req.provider or "",
+            model=req.model or "",
+        )
+    except RuntimeError as exc:
+        status = 503 if "未初始化" in str(exc) else 502
+        raise HTTPException(status_code=status, detail=str(exc)) from exc
     return {
         "success": True,
-        "data": {"map_id": map_id, "prompt": raw, "optimized_prompt": optimized},
+        "data": {
+            "map_id": map_id,
+            "prompt": optimized_result["prompt"],
+            "optimized_prompt": optimized_result["optimized_prompt"],
+        },
     }
 
 
@@ -1635,113 +1614,27 @@ async def generate_world_map_visual(
     成图只以引用形式记在 ``map_json.visuals`` 里。需要先在 AI 连接器配置
     ``provider_type=image`` 的 Provider 并初始化 AIService。
     """
-    from app.db.database import get_async_session
-    from app.services.asset_hub import AssetHubFacade
-
     document = svc.get_map(map_id)
     if not document:
         raise HTTPException(status_code=404, detail="地图文档不存在")
-
-    manager = get_ai_service()
-    if not manager.is_loaded():
-        raise HTTPException(status_code=503, detail="AIService 未初始化，请先在 AI 连接器配置生图 Provider")
-
-    prompt = (req.prompt or "").strip() or build_map_visual_prompt(document, style=req.style)
-    result = await manager.generate_image(
-        ImageGenerationRequest(
-            prompt=prompt,
+    try:
+        generated = await generate_map_visual(
+            svc.session,
+            document,
+            prompt=req.prompt or "",
+            style=req.style or "",
             negative_prompt=req.negative_prompt or "",
             size=req.size or "1024x1024",
             n=req.n or 1,
-            style=req.style or "",
             provider=req.provider or "",
             model=req.model or "",
             reference_images=req.reference_images or [],
+            save_to_asset_hub=req.save_to_asset_hub,
         )
-    )
-    if not result.success:
-        raise HTTPException(status_code=502, detail=f"生图失败: {result.error or 'unknown error'}")
-
-    urls = result.urls or ([result.url] if result.url else [])
-    local_paths = result.all_local_paths or ([result.local_path] if result.local_path else [])
-    if not urls and not local_paths:
-        raise HTTPException(status_code=500, detail="生图成功但未返回图片")
-
-    local_path = local_paths[0] if local_paths else ""
-    # 供应商返回的 URL 多为临时图床会过期，本地已落盘时优先转成平台内部下载地址。
-    url = _local_file_url(local_path) if local_path else (urls[0] if urls else "")
-
-    node_id = ""
-    if req.save_to_asset_hub:
-        try:
-            async with get_async_session() as session:
-                created = await AssetHubFacade(session).create_generated_image(
-                    file_path=local_path or url,
-                    prompt=prompt,
-                    provider=result.provider or req.provider or "",
-                    model=result.model or req.model or "",
-                    source_url=url,
-                    negative_prompt=req.negative_prompt or "",
-                    size=req.size or "",
-                    seed=result.seed,
-                    generation_params={
-                        "style": req.style or "",
-                        "reference_images_count": len(req.reference_images or []),
-                    },
-                    lineage={
-                        "source": "world_map_visual",
-                        "map_id": map_id,
-                        "map_title": str(document.title or ""),
-                    },
-                    tags=["world_map_visual", *(["style:" + req.style] if req.style else [])],
-                )
-                node_id = created.node_id
-        except Exception as exc:  # 生图本身已成功，入库失败不回滚成图。
-            logger.warning("world map visual asset hub sync failed: %s", exc)
-
-    # 成图只作为派生引用记回地图，不改结构化空间关系。
-    data = loads_json(document.map_json, {})
-    if isinstance(data, dict):
-        visuals = data.get("visuals")
-        if not isinstance(visuals, list):
-            visuals = []
-        visuals.append(
-            {
-                "url": url,
-                "local_path": local_path,
-                "node_id": node_id,
-                "provider": result.provider or req.provider or "",
-                "model": result.model or req.model or "",
-                "style": req.style or "",
-                "prompt": prompt,
-                "created_at": datetime.now().isoformat(),
-            }
-        )
-        data["visuals"] = visuals
-        try:
-            svc.update_map(
-                map_id,
-                map_json=data,
-                expected_revision=int(document.revision or 1),
-            )
-        except ValueError:
-            # 并发已被他人编辑时，放弃回写引用，不影响已生成的成图。
-            logger.warning("world map visual reference not persisted (revision conflict)")
-
-    return {
-        "success": True,
-        "data": {
-            "map_id": map_id,
-            "prompt": prompt,
-            "url": url,
-            "local_path": local_path,
-            "node_id": node_id,
-            "provider": result.provider,
-            "model": result.model,
-            "task_id": result.task_id,
-            "status": result.status,
-        },
-    }
+    except RuntimeError as exc:
+        status = 503 if "未初始化" in str(exc) else 500 if "未返回图片" in str(exc) else 502
+        raise HTTPException(status_code=status, detail=str(exc)) from exc
+    return {"success": True, "data": {"map_id": map_id, **generated}}
 
 
 @router.delete("/api/v1/world-maps/{map_id}", summary="删除世界地图文档")
