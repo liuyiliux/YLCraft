@@ -10755,6 +10755,54 @@
       "include_in_schema": true
     },
     {
+      "method": "GET",
+      "path": "/api/v1/world-maps/{map_id}/revisions",
+      "router": "novel_sources",
+      "prefix": "",
+      "local_path": "/api/v1/world-maps/{map_id}/revisions",
+      "tags": [
+        "Novel Sources"
+      ],
+      "summary": "地图版本历史列表",
+      "function": "list_world_map_revisions",
+      "file": "backend/app/api/v1/novel_sources.py",
+      "line": 1772,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/world-maps/{map_id}/revisions/{revision}",
+      "router": "novel_sources",
+      "prefix": "",
+      "local_path": "/api/v1/world-maps/{map_id}/revisions/{revision}",
+      "tags": [
+        "Novel Sources"
+      ],
+      "summary": "读取指定版本快照",
+      "function": "get_world_map_revision",
+      "file": "backend/app/api/v1/novel_sources.py",
+      "line": 1790,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/world-maps/{map_id}/rollback",
+      "router": "novel_sources",
+      "prefix": "",
+      "local_path": "/api/v1/world-maps/{map_id}/rollback",
+      "tags": [
+        "Novel Sources"
+      ],
+      "summary": "回滚地图到指定版本（append-only：产生新 revision）",
+      "function": "rollback_world_map",
+      "file": "backend/app/api/v1/novel_sources.py",
+      "line": 1810,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
       "method": "WEBSOCKET",
       "path": "/api/v1/ws",
       "router": "ws",

@@ -32,6 +32,7 @@ from app.db.models.novel_source import (
     WorldExtractionRun,
     WorldFactCandidate,
     WorldMapDocument,
+    WorldMapRevision,
 )
 from app.services.ai.types import LLMGenerationResult
 from app.services.novel_source import service as source_module
@@ -330,6 +331,7 @@ def session():
         WorldExtractionRun.__table__,
         WorldFactCandidate.__table__,
         WorldMapDocument.__table__,
+        WorldMapRevision.__table__,
         WorldEntity.__table__,
         WorldEntityRelation.__table__,
         WorldDomainDefinition.__table__,
@@ -1575,6 +1577,61 @@ def test_map_visual_prompt_carries_coordinate_convention(session):
     assert "不要凭空添加" in prompt
 
 
+def test_world_map_revision_history_and_rollback(session):
+    """版本历史（SCN-05）：保存落 append-only 快照；回滚产生新 revision 而不改写历史。"""
+    from app.services.novel_source.world_map import WorldMapService
+
+    service = WorldMapService(session)
+    doc = service.create_map(
+        title="历史图",
+        map_json={
+            "regions": [],
+            "nodes": [{"id": "n1", "name": "A", "x": 10, "y": 10}],
+            "routes": [],
+        },
+    )
+    service.update_map(
+        doc.id,
+        map_json={
+            "regions": [],
+            "nodes": [
+                {"id": "n1", "name": "A", "x": 50, "y": 50},
+                {"id": "n2", "name": "B", "x": 20, "y": 20},
+            ],
+            "routes": [],
+        },
+        expected_revision=doc.revision,
+        operator="tester",
+    )
+
+    revisions = service.list_revisions(doc.id)
+    assert [row.revision for row in revisions] == [2, 1]
+    assert revisions[0].operator == "tester"
+    assert "据点 2" in revisions[0].summary
+    # v1 是 create 落的初始快照，列表从 v1 开始。
+    assert revisions[1].revision == 1
+
+    # 回滚到 v1：产生 revision=3，内容等于 v1；历史链保持 [3, 2, 1]。
+    rolled = service.rollback(doc.id, 1)
+    assert rolled.revision == 3
+    rolled_data = json.loads(rolled.map_json)
+    assert [node["name"] for node in rolled_data["nodes"]] == ["A"]
+
+    revisions = service.list_revisions(doc.id)
+    assert [row.revision for row in revisions] == [3, 2, 1]
+    # 未显式给 operator 时标注回滚来源。
+    assert revisions[0].operator == "rollback:v1"
+
+    # 任意历史版可读取完整快照（两版对比的数据源）。
+    detail = service.get_revision(doc.id, 2)
+    assert detail is not None
+    assert len(json.loads(detail.map_json)["nodes"]) == 2
+
+    # 不存在的历史版本回滚报错。
+    with pytest.raises(ValueError, match="历史版本不存在"):
+        service.rollback(doc.id, 99)
+
+
 def test_create_map_from_project_places_generates_nodes(session, storage):
     """确认写入的地点实体可一键转成地图据点初稿，且幂等不重复。"""
     from app.services.creative_project.service import CreativeProjectService
@@ -1686,7 +1743,7 @@ def test_world_map_visual_prompt_preview_endpoint(tmp_path):
 
     from app.api.v1 import novel_sources as novel_sources_api
     from app.db.database import get_session
-    from app.db.models.novel_source import WorldMapDocument
+    from app.db.models.novel_source import WorldMapDocument, WorldMapRevision
     from app.services.novel_source.world_map import WorldMapService
 
     # TestClient 在独立线程运行 ASGI 应用，用文件型库并放开同线程限制。
@@ -1694,6 +1751,7 @@ def test_world_map_visual_prompt_preview_endpoint(tmp_path):
         f"sqlite:///{tmp_path / 'maps.db'}", connect_args={"check_same_thread": False}
     )
     WorldMapDocument.__table__.create(engine)
+    WorldMapRevision.__table__.create(engine)
     factory = sessionmaker(class_=Session, bind=engine, expire_on_commit=False)
 
     with factory() as seed_session:

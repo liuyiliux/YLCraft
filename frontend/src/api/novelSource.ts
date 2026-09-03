@@ -997,6 +997,38 @@ export function optimizeWorldMapVisualPrompt(
   )
 }
 
+/** 地图版本历史（SCN-05）：每次保存落 append-only 快照，回滚产生新 revision。 */
+export interface WorldMapRevisionItem {
+  id: string
+  map_id: string
+  revision: number
+  title: string
+  operator: string
+  summary: string
+  created_at: string | null
+  map_json?: WorldMapData
+}
+
+export function listWorldMapRevisions(
+  mapId: string,
+): Promise<{ map_id: string; current_revision: number; revisions: WorldMapRevisionItem[] }> {
+  return request(`/world-maps/${mapId}/revisions`)
+}
+
+export function getWorldMapRevision(
+  mapId: string,
+  revision: number,
+): Promise<WorldMapRevisionItem> {
+  return request(`/world-maps/${mapId}/revisions/${revision}`)
+}
+
+export function rollbackWorldMap(
+  mapId: string,
+  payload: { revision: number; operator?: string },
+): Promise<WorldMapDocument> {
+  return jsonRequest(`/world-maps/${mapId}/rollback`, 'POST', payload)
+}
+
 /** 可用的图像生成后端（对齐角色立绘：name 作为 provider，available_models 供选模型）。 */
 export interface WorldMapImageBackend {
   provider: string

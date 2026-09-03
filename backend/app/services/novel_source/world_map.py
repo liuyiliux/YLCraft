@@ -12,13 +12,22 @@ from typing import Any
 from sqlalchemy import or_
 from sqlmodel import Session, col, select
 
-from app.db.models.novel_source import WorldMapDocument
+from app.db.models.novel_source import WorldMapDocument, WorldMapRevision
 from app.services.creative_project.service import dumps_json, loads_json
 
 # 空间层（layers）由项目/世界观自定义（叫「主世界/天界/冥界」还是别的、有几层、
 # 甚至完全不分层都由数据决定），不写死枚举：``layers`` 缺省或为空时视为单层地图，
 # 节点 ``layer`` 为空即未分层。
 DEFAULT_MAP_JSON = {"regions": [], "nodes": [], "routes": [], "layers": []}
+
+
+def _map_summary(data: dict[str, Any]) -> str:
+    """版本摘要：区域/据点/路线计数，供历史列表与对比。"""
+    return (
+        f"区域 {len(data.get('regions') or [])} · "
+        f"据点 {len(data.get('nodes') or [])} · "
+        f"路线 {len(data.get('routes') or [])}"
+    )
 
 
 class WorldMapService:
@@ -54,6 +63,7 @@ class WorldMapService:
         project_id: str | None = None,
         snapshot_id: str | None = None,
         map_json: dict[str, Any] | None = None,
+        operator: str = "",
     ) -> WorldMapDocument:
         document = WorldMapDocument(
             title=(title or "").strip() or "世界地图",
@@ -63,6 +73,18 @@ class WorldMapService:
             revision=1,
         )
         self.session.add(document)
+        self.session.flush()
+        # 初版也落历史快照：版本列表从 v1 开始，任意两版可对比。
+        self.session.add(
+            WorldMapRevision(
+                map_id=document.id,
+                revision=1,
+                title=document.title,
+                map_json=document.map_json,
+                operator=operator or "",
+                summary=_map_summary(loads_json(document.map_json, DEFAULT_MAP_JSON)),
+            )
+        )
         self.session.commit()
         self.session.refresh(document)
         return document
@@ -74,8 +96,12 @@ class WorldMapService:
         map_json: dict[str, Any],
         expected_revision: int,
         title: str = "",
+        operator: str = "",
     ) -> WorldMapDocument:
-        """按 revision 做 CAS 更新；版本不一致时抛错，避免覆盖他人编辑。"""
+        """按 revision 做 CAS 更新；版本不一致时抛错，避免覆盖他人编辑。
+
+        成功后落一条 append-only 历史快照（版本列表 / 对比 / 回滚的数据源）。
+        """
         document = self.session.get(WorldMapDocument, map_id)
         if not document:
             raise ValueError("地图文档不存在")
@@ -89,6 +115,16 @@ class WorldMapService:
         document.revision = int(document.revision or 1) + 1
         document.updated_at = datetime.now()
         self.session.add(document)
+        self.session.add(
+            WorldMapRevision(
+                map_id=map_id,
+                revision=document.revision,
+                title=document.title,
+                map_json=document.map_json,
+                operator=operator or "",
+                summary=_map_summary(map_json or {}),
+            )
+        )
         self.session.commit()
         self.session.refresh(document)
         return document
@@ -97,8 +133,45 @@ class WorldMapService:
         document = self.session.get(WorldMapDocument, map_id)
         if not document:
             raise ValueError("地图文档不存在")
+        # 地图删除时同步清理历史快照，避免孤儿行。
+        for row in self.list_revisions(map_id, limit=500):
+            self.session.delete(row)
         self.session.delete(document)
         self.session.commit()
+
+    def list_revisions(self, map_id: str, *, limit: int = 100) -> list[WorldMapRevision]:
+        statement = (
+            select(WorldMapRevision)
+            .where(WorldMapRevision.map_id == map_id)
+            .order_by(WorldMapRevision.revision.desc())  # type: ignore[attr-defined]
+            .limit(max(1, min(int(limit or 100), 500)))
+        )
+        return list(self.session.exec(statement).all())
+
+    def get_revision(self, map_id: str, revision: int) -> WorldMapRevision | None:
+        statement = select(WorldMapRevision).where(
+            WorldMapRevision.map_id == map_id,
+            WorldMapRevision.revision == int(revision or 0),
+        )
+        return self.session.exec(statement).first()
+
+    def rollback(
+        self, map_id: str, revision: int, *, operator: str = ""
+    ) -> WorldMapDocument:
+        """回滚到指定历史版本：以快照为内容产生**新的** revision 保存（不改写历史）。"""
+        target = self.get_revision(map_id, revision)
+        if not target:
+            raise ValueError(f"历史版本不存在：v{revision}")
+        document = self.get_map(map_id)
+        if not document:
+            raise ValueError("地图文档不存在")
+        return self.update_map(
+            map_id,
+            map_json=loads_json(target.map_json, DEFAULT_MAP_JSON),
+            expected_revision=int(document.revision or 1),
+            title=target.title or "",
+            operator=operator or f"rollback:v{target.revision}",
+        )
 
     def create_map_from_project_places(self, project_id: str) -> WorldMapDocument:
         """把项目的地点实体（world_entities.entity_type=place）转成地图据点初稿。

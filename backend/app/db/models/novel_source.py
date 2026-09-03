@@ -356,6 +356,26 @@ class WorldMapDocument(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.now)
 
 
+class WorldMapRevision(SQLModel, table=True):
+    """世界地图历史快照（append-only，SCN-05）。
+
+    每次成功保存（create / update_map CAS 通过）落一条快照；回滚 = 以历史快照
+    为内容再产生一次**新的** revision 保存，历史链不被改写。
+    """
+
+    __tablename__ = "world_map_revisions"
+
+    id: str = Field(primary_key=True, default_factory=lambda: uuid.uuid4().hex)
+    map_id: str = Field(foreign_key="world_map_documents.id", index=True)
+    revision: int = Field(index=True)
+    title: str = Field(default="")
+    map_json: str = Field(default="{}")
+    operator: str = Field(default="")
+    summary: str = Field(default="")
+
+    created_at: datetime = Field(default_factory=datetime.now, index=True)
+
+
 class WorldEntity(SQLModel, table=True):
     """独立世界实体层：把已确认候选物化为类型化实体，供关系图谱与结构化查询。
 

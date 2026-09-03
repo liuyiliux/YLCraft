@@ -1751,3 +1751,69 @@ def delete_world_map(map_id: str, svc: WorldMapService = Depends(map_service)):
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {"success": True, "data": {"id": map_id}}
+
+
+def _serialize_map_revision(row: Any, *, include_json: bool = False) -> dict[str, Any]:
+    data: dict[str, Any] = {
+        "id": row.id,
+        "map_id": row.map_id,
+        "revision": row.revision,
+        "title": row.title,
+        "operator": row.operator,
+        "summary": row.summary,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+    }
+    if include_json:
+        data["map_json"] = loads_json(row.map_json, {})
+    return data
+
+
+@router.get("/api/v1/world-maps/{map_id}/revisions", summary="地图版本历史列表")
+def list_world_map_revisions(
+    map_id: str, svc: WorldMapService = Depends(map_service)
+):
+    document = svc.get_map(map_id)
+    if not document:
+        raise HTTPException(status_code=404, detail="地图文档不存在")
+    revisions = svc.list_revisions(map_id)
+    return {
+        "success": True,
+        "data": {
+            "map_id": map_id,
+            "current_revision": document.revision,
+            "revisions": [_serialize_map_revision(row) for row in revisions],
+        },
+    }
+
+
+@router.get("/api/v1/world-maps/{map_id}/revisions/{revision}", summary="读取指定版本快照")
+def get_world_map_revision(
+    map_id: str, revision: int, svc: WorldMapService = Depends(map_service)
+):
+    row = svc.get_revision(map_id, revision)
+    if not row:
+        raise HTTPException(status_code=404, detail=f"历史版本不存在：v{revision}")
+    return {"success": True, "data": _serialize_map_revision(row, include_json=True)}
+
+
+class WorldMapRollbackRequest(BaseModel):
+    """回滚到指定历史版本（产生新 revision，不改写历史链）。"""
+
+    revision: int = Field(description="目标历史版本号")
+    operator: str = Field(default="", description="操作者标识（可选）")
+
+
+@router.post(
+    "/api/v1/world-maps/{map_id}/rollback",
+    summary="回滚地图到指定版本（append-only：产生新 revision）",
+)
+def rollback_world_map(
+    map_id: str,
+    req: WorldMapRollbackRequest,
+    svc: WorldMapService = Depends(map_service),
+):
+    try:
+        document = svc.rollback(map_id, req.revision, operator=req.operator or "")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"success": True, "data": serialize_map(document)}
