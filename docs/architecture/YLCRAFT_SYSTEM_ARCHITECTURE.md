@@ -230,6 +230,25 @@ Agent Center 的人工委派入口支持 `resume_parent`：成功汇合后把子
 - 跨域调和（`GET /world-extraction-runs/{run_id}/reconcile` 与 `reconcile_world_extraction_run` 工具）是审阅前的确定性检查：按规范化名与别名归并找出跨模块重名与别名交叉，按证据锚点找出被多条候选共用的同一段原文，把历史事件的中文相对时间（「三年前」「十载前」）解析成可排序偏移。它不调用模型、不自动合并或删除候选。语义矛盾检测（`POST /world-extraction-runs/{run_id}/contradictions` 与 `detect_world_extraction_contradictions` 工具）在此基础上逐组调用模型判断：同一实体且一致（consistent，可 merge）、同一实体但矛盾（conflicting，需 resolve）、还是同名不同实体（distinct，保留）。受影响事实传播（`POST /world-extraction-runs/{run_id}/affected-facts` 与 `propagate_affected_world_facts` 工具）把合并与冲突结论传播到**已写入**的 `world_asset`：只打 `review_required` 标记并附原因，不改写事实内容。
 - 完本来源可创建派生项目（`POST /novel-sources/{snapshot_id}/derive` 与 `derive_project_from_novel_source` 工具，模式为改编/续写/同人）：只复制带该 `snapshot_id` 溯源的已确认世界事实与角色项目关联，并标记 `fact_layer=source_canon`（锁定只读）；原项目后来手工添加的事实、角色或其他来源内容不会被误带入。来源快照始终只读，新项目后续写入不带该标记，与原作正典分层。连载来源不支持派生，只走增量同步。Context Pack 的 T0 层会把 `source_canon` 卡单独标注为「原作正典·只读」并声明创作不得与之矛盾、可在其上延展，与本项目自己的设定分层注入。
 
+### 4.2.2 AI 渐进式世界构建（无原文生成，与提取语义隔离）
+
+与提取链路（§4.2.1）并列且语义隔离：提取「有原文 → 逐字证据校验 → 无证据丢弃」；生成「无原文 → **不产出证据、不伪造** → `origin=ai_draft`」并沿用同一「先候选后确认」纪律，AI 只踩平台梯子（`world_domain_definitions` 迁移 `038` + `WorldDomainService`）加内容，想加结构只能经 `suggested_fields` / `suggested_domains` 提议且默认不启用。运行复用 `WorldExtractionRun`（迁移 `039` 加 `kind=extract/generate`、迁移 `040` 放开 `snapshot_id` 可空，生成运行 `kind=generate`、无快照）。OpenSpec：`openspec/changes/ai-progressive-world-building/`。
+
+| 表/模型 | 作用 |
+| --- | --- |
+| `WorldDomainDefinition`（迁移 `038`/`041`） | 模块扩展底座：内置域可追加 `extra_attributes` / 改 label；AI 建议的模块以 `source=ai_suggested` 且 `is_enabled=False` 落库，确认后才参与提取/生成；字段级忽略建议存 `ignored_suggestions_json`。 |
+| `WorldBuildingTemplate`（迁移 `039`） | 世界构建模板：`layers_json` 层次策略（名称与层数由项目数据决定）+ `prompts_json` 每档提示词；`project_id` 为空即内置种子（只读），项目私有模板可建/改/删/设默认。 |
+
+生成动作（`WorldGenerationService`，文件 `backend/app/services/novel_source/world_generation.py`，真人页面与 Agent 工具共用同一服务层）：
+
+- `expand_entity`：给单实体按模块属性契约补**勾选**字段，不覆盖已填内容，产出 `ai_draft` 候选去 `/novel-world` 审阅确认；`draft_world`（大纲 → 全域骨架）不另做，由既有「大纲 → 逐域提取 → 审阅确认」链路承担（任务 5）。
+- `expand_domain`：按模板层次策略批量细化整个模块，成本高故**异步**提交并接入既有任务中心（`ProjectTaskRecord`，不新建任务协议），完成后携 `run_id` 跳审阅。
+- `prompt-preview`：所有生成动作执行前可预览最终提示词，不调用模型、不消耗配额（R4）。
+- 模板 AI 起草：`POST /projects/{id}/world-templates/draft` 与工具 `manage_world_building_template` 的 `action=draft` 按项目已启用模块与补充要求起草 `{name,layers,prompts,note}`，**草案不落库**，确认后走 upsert 保存（与真人「AI 起草 → 确认保存」同一纪律）。
+- 统一管理入口：`/story`「世界设定（按域）→ AI 细化本模块」弹窗内嵌编辑；`/platform-templates`「世界构建」Tab 集中查看/编辑（内置只读，编辑时自动复制为项目私有）。
+- Agent 工具（category `novel_source`）：`expand_world_entity_attributes` / `expand_world_domain`（异步，轮询复用任务工具）/ `manage_world_building_template`（list/save/delete/draft）/ `list_world_building_suggestions` / `resolve_world_field_suggestion` / `resolve_world_domain_suggestion`，且「不得自行批准自己提出的建议」。
+- 来源标注：候选与上下文打包区分 `original / ai_inferred / outline / ai_draft`——「AI 创作（无原文证据）」与「依据项目大纲」不得混同于真实作品原文（任务 9）。
+
 ### 4.3 资产中枢
 
 文件：`backend/app/db/models/asset_hub.py`
