@@ -57,6 +57,7 @@ import {
   type WorldCandidate,
 } from '../../api/novelSource'
 import { listConnectors } from '../../api'
+import EvidenceList from '../../components/world/EvidenceList'
 
 const { Title, Text, Paragraph } = Typography
 
@@ -948,17 +949,7 @@ export default function NovelWorldPage() {
                     ]}
                     expandable={{
                       expandedRowRender: (record) => (
-                        <div>
-                          {record.evidence.map((ev) => (
-                            <Alert
-                              key={`${ev.chunk_id}-${ev.start_offset}`}
-                              type="success"
-                              style={{ marginBottom: 4 }}
-                              message={`第 ${ev.chapter_ordinal ?? '?'} 章 · 块 ${ev.chunk_ordinal}`}
-                              description={ev.quote}
-                            />
-                          ))}
-                        </div>
+                        <EvidenceList items={record.evidence} variant="alert" />
                       ),
                     }}
                   />
