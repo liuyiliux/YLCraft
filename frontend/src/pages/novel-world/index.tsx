@@ -56,6 +56,7 @@ import {
   type ReconcileReport,
   type WorldCandidate,
 } from '../../api/novelSource'
+import { listConnectors } from '../../api'
 import WorldMapEditor from './components/WorldMapEditor'
 
 const { Title, Text, Paragraph } = Typography
@@ -118,6 +119,9 @@ export default function NovelWorldPage() {
   const [applyResult, setApplyResult] = useState<ApplyResult | null>(null)
   const [loadingCandidates, setLoadingCandidates] = useState(false)
   const [model, setModel] = useState('')
+  // LLM 连接器（与立绘同源：/ai/connectors?provider_type=llm）
+  const [provider, setProvider] = useState('')
+  const [llmBackends, setLlmBackends] = useState<any[]>([])
   // 从 URL 参数进入时携带的项目上下文（?project_id= 用于地图工作台定位）。
   const [urlProjectId, setUrlProjectId] = useState<string | null>(null)
 
@@ -187,6 +191,21 @@ export default function NovelWorldPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  useEffect(() => {
+    listConnectors({ provider_type: 'llm', active_only: true })
+      .then((resp: any) => {
+        const items = (resp?.connectors || resp?.data || resp?.items || []) as any[]
+        setLlmBackends(items)
+        const first = items[0]
+        if (first && !provider) {
+          setProvider(first.name || first.provider || '')
+          setModel(first.default_model || first.model || first.available_models?.[0] || '')
+        }
+      })
+      .catch(() => setLlmBackends([]))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const doImport = async (file: File, sourceStatus: string) => {
     setImporting(true)
     try {
@@ -208,7 +227,10 @@ export default function NovelWorldPage() {
     if (!snapshot) return
     setPlanning(true)
     try {
-      const result = await planDomains(snapshot.id, { model: model || undefined })
+      const result = await planDomains(snapshot.id, {
+        provider: provider || undefined,
+        model: model || undefined,
+      })
       setPlan(result)
       setEnabled(result.recommended)
       setExtractResult(null)
@@ -228,6 +250,7 @@ export default function NovelWorldPage() {
       const result = await extractWorld(snapshot.id, {
         domains: enabled,
         domain_plan: plan?.domains,
+        provider: provider || undefined,
         model: model || undefined,
       })
       setExtractResult(result)
@@ -275,7 +298,10 @@ export default function NovelWorldPage() {
     setDetecting(true)
     try {
       setContradictions(
-        await detectContradictions(extractResult.run_id, { model: model || undefined }),
+        await detectContradictions(extractResult.run_id, {
+          provider: provider || undefined,
+          model: model || undefined,
+        }),
       )
     } catch (error) {
       message.error((error as Error).message)
@@ -323,7 +349,10 @@ export default function NovelWorldPage() {
     setIndexing(true)
     setIndexResult(null)
     try {
-      const result = await indexChunks(snapshot.id, { provider: model || undefined })
+      const result = await indexChunks(snapshot.id, {
+        provider: provider || undefined,
+        model: model || undefined,
+      })
       setIndexResult(result)
       message.success(`索引完成：${result.indexed}/${result.total} 块已向量化`)
       await selectSnapshot(snapshot.id)
@@ -635,13 +664,46 @@ export default function NovelWorldPage() {
                 </Text>
               </>
             )}
-            <Space>
-              <Text>模型：</Text>
-              <Input
-                style={{ width: 260 }}
-                placeholder="留空使用默认模型"
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
+            <Space wrap>
+              <Text>AI 选择：</Text>
+              <Select
+                size="small"
+                style={{ width: 200 }}
+                placeholder="LLM 供应商"
+                value={provider || undefined}
+                onChange={(value) => {
+                  setProvider(value)
+                  const backend = llmBackends.find(
+                    (item: any) => (item.name || item.provider) === value,
+                  )
+                  setModel(
+                    backend?.default_model || backend?.model || backend?.available_models?.[0] || '',
+                  )
+                }}
+                options={llmBackends.map((item: any) => ({
+                  value: item.name || item.provider,
+                  label: item.provider_label || item.name || item.provider,
+                }))}
+              />
+              <Select
+                size="small"
+                style={{ width: 220 }}
+                placeholder="模型（留空用默认）"
+                value={model || undefined}
+                onChange={setModel}
+                allowClear
+                options={Array.from(
+                  new Set(
+                    (() => {
+                      const backend = llmBackends.find(
+                        (item: any) => (item.name || item.provider) === provider,
+                      )
+                      return backend?.available_models?.length
+                        ? backend.available_models
+                        : [backend?.default_model || backend?.model || '']
+                    })().filter(Boolean) as string[],
+                  ),
+                ).map((value) => ({ value, label: value }))}
               />
               <Button type="primary" disabled={!enabled.length} loading={extracting} onClick={doExtract}>
                 提取所选模块

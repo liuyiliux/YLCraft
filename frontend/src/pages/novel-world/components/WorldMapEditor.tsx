@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Alert, Button, Card, Collapse, Drawer, Empty, Input, message, Modal, Radio, Select, Space, Tag, Typography, Upload } from 'antd'
-import { DeleteOutlined, EnvironmentOutlined, EyeOutlined, PictureOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons'
+import { DeleteOutlined, EnvironmentOutlined, EyeOutlined, PictureOutlined, PlusOutlined, SaveOutlined, ThunderboltOutlined } from '@ant-design/icons'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { MapContainer, Marker, Polyline, Polygon, Popup, useMap } from 'react-leaflet'
@@ -225,6 +225,7 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
       setOptimizePair({ original: result.prompt, optimized: result.optimized_prompt })
       setPreviewPrompt(result.optimized_prompt)
       setOptimizeFocus('')
+      setPreviewOpen(true)
       message.success('AI 已优化提示词（未生成图），确认后即可生图')
     } catch (error) {
       message.error((error as Error).message)
@@ -1284,6 +1285,16 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
                     />
                     <Button size="small" icon={<EyeOutlined />} loading={previewLoading} disabled={!doc} onClick={previewVisualPrompt}>
                       预览 Prompt
+                    </Button>
+                    <Button
+                      size="small"
+                      icon={<ThunderboltOutlined />}
+                      loading={optimizingPrompt}
+                      disabled={!doc || !llmBackends.length}
+                      onClick={doOptimizePrompt}
+                      title="AI 优化：润色当前预览提示词（保留坐标/方位/区域/路线）"
+                    >
+                      AI 优化
                     </Button>
                     <Button size="small" type="primary" icon={<PictureOutlined />} loading={generating} disabled={!doc} onClick={doGenerateVisual}>
                       生成视觉成图
