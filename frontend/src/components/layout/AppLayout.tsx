@@ -14,6 +14,7 @@ import {
   DatabaseOutlined,
   BranchesOutlined,
   EditOutlined,
+  EnvironmentOutlined,
   FireOutlined,
   MenuOutlined,
   SearchOutlined,
@@ -57,6 +58,7 @@ const menuItems: MenuProps['items'] = [
   { key: '/', icon: <DashboardOutlined />, label: navLabel('概览', '辅助') },
   ...MAIN_NAV,
   { key: '/novel-world', icon: <FireOutlined />, label: navLabel('小说世界提取', '实验') },
+  { key: '/world-map', icon: <EnvironmentOutlined />, label: navLabel('世界地图', '辅助') },
   { type: 'divider' as const },
   {
     key: 'g-creative-workspace',
