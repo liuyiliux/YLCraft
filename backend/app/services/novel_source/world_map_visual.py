@@ -23,6 +23,7 @@ from app.services.ai.types import ImageGenerationRequest, LLMMessage
 from app.services.asset_hub import AssetHubFacade
 from app.services.asset_hub.reference_resolver import merge_reference_images
 from app.services.creative_project.service import loads_json
+from app.services.creative_project.visual_baseline import resolve_visual_baseline_asset_ids
 from app.services.novel_source.world_map import (
     WorldMapDocument,
     WorldMapService,
@@ -129,9 +130,12 @@ async def generate_map_visual(
         raise RuntimeError("AIService 未初始化，请先在 AI 连接器配置生图 Provider")
 
     resolved_prompt = resolve_prompt(document, prompt=prompt, style=style)
+    # 项目视觉基准自动注入：页面与 Agent 都无需各自记得传，没设置也不阻塞生图。
+    baseline_ids = resolve_visual_baseline_asset_ids(session, document.project_id)
     resolved_references = await merge_reference_images(
         reference_images=list(reference_images or []),
-        reference_asset_ids=list(reference_asset_ids or []),
+        # 调用方显式指定的参考图在前，项目基准在后，去重后不会重复占位。
+        reference_asset_ids=[*list(reference_asset_ids or []), *baseline_ids],
     )
     result = await manager.generate_image(
         ImageGenerationRequest(

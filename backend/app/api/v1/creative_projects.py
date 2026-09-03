@@ -34,6 +34,10 @@ from app.services.creative_project.service import (
 from app.services.creative_project.profiles import CONTENT_PRODUCTION_PROFILES
 from app.services.creative_project.schemas import ProductionPlanSchema
 from app.services.creative_project.narrative_runtime import ChapterAftermathPipeline, NarrativeReviewService
+from app.services.creative_project.visual_baseline import (
+    VisualBaselineService,
+    serialize_visual_baseline,
+)
 from app.core.task_queue import TaskStatus, get_task_queue
 from app.services.platform_log import service as platform_log
 
@@ -1433,6 +1437,34 @@ def list_project_assets(
         raise HTTPException(status_code=404, detail="创作项目不存在")
     links = svc.list_asset_links(project_id)
     return {"success": True, "data": [serialize_asset_link(link) for link in links]}
+
+
+class VisualBaselineRequest(BaseModel):
+    asset_id: str = Field(..., description="素材库节点 ID（项目视觉基准图）")
+
+
+@router.get("/{project_id}/visual-baseline", summary="读取项目视觉基准")
+def get_visual_baseline(project_id: str, db: Session = Depends(get_session)):
+    """视觉基准是项目级的一张基准图，生图时自动作为参考图注入。"""
+    link = VisualBaselineService(db).get(project_id)
+    return {"success": True, "data": serialize_visual_baseline(link) if link else None}
+
+
+@router.put("/{project_id}/visual-baseline", summary="设置项目视觉基准（一个项目一张，重设即替换）")
+def set_visual_baseline(
+    project_id: str, req: VisualBaselineRequest, db: Session = Depends(get_session)
+):
+    try:
+        link = VisualBaselineService(db).set_baseline(project_id, req.asset_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"success": True, "data": serialize_visual_baseline(link)}
+
+
+@router.delete("/{project_id}/visual-baseline", summary="清除项目视觉基准")
+def clear_visual_baseline(project_id: str, db: Session = Depends(get_session)):
+    VisualBaselineService(db).clear(project_id)
+    return {"success": True, "data": {"project_id": project_id}}
 
 
 @router.get("/{project_id}/generation-logs", summary="列出项目生成日志")
