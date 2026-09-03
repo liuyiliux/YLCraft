@@ -27,6 +27,7 @@ import {
   type WorldMapVisual,
   type WorldMapVisualResult,
 } from '../../../api/novelSource'
+import { listConnectors } from '../../../api'
 
 const { Paragraph, Text } = Typography
 
@@ -136,6 +137,10 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
   const [kindFilter, setKindFilter] = useState('')
   // AI 视觉稿抽屉：成图是派生资产，降权到抽屉里多稿生成、手动设为底图。
   const [visualDrawerOpen, setVisualDrawerOpen] = useState(false)
+  // 优化提示词用的 LLM 连接器（与立绘同源：/ai/connectors?provider_type=llm）。
+  const [llmBackends, setLlmBackends] = useState<any[]>([])
+  const [llmProvider, setLlmProvider] = useState('')
+  const [llmModel, setLlmModel] = useState('')
 
   useEffect(() => {
     listWorldMapImageBackends()
@@ -150,6 +155,21 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  useEffect(() => {
+    listConnectors({ provider_type: 'llm', active_only: true })
+      .then((resp: any) => {
+        const items = (resp?.connectors || resp?.data || resp?.items || []) as any[]
+        setLlmBackends(items)
+        const first = items[0]
+        if (first && !llmProvider) {
+          setLlmProvider(first.name || first.provider || '')
+          setLlmModel(first.default_model || first.model || first.available_models?.[0] || '')
+        }
+      })
+      .catch(() => setLlmBackends([]))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const activeBackend = useMemo(
     () => imageBackends.find((item) => item.name === visualProvider) ?? null,
     [imageBackends, visualProvider],
@@ -158,6 +178,10 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
     const supported = activeBackend?.supported_sizes?.filter(Boolean) ?? []
     return supported.length ? supported : ['1024x1024', '768x1024', '1024x768']
   }, [activeBackend])
+  const activeLlmBackend = useMemo(
+    () => llmBackends.find((item) => (item.name || item.provider) === llmProvider) ?? null,
+    [llmBackends, llmProvider],
+  )
 
   const previewVisualPrompt = async () => {
     if (!doc) return
@@ -189,8 +213,8 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
         prompt: previewPrompt || undefined,
         style: visualStyle || undefined,
         focus: optimizeFocus.trim() || undefined,
-        provider: visualProvider || undefined,
-        model: visualModel || undefined,
+        provider: llmProvider || undefined,
+        model: llmModel || undefined,
       })
       setOptimizePair({ original: result.prompt, optimized: result.optimized_prompt })
       setPreviewPrompt(result.optimized_prompt)
@@ -1059,6 +1083,57 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
                     </Button>
                     <Button size="small" type="primary" icon={<PictureOutlined />} loading={generating} disabled={!doc} onClick={doGenerateVisual}>
                       生成视觉成图
+                    </Button>
+                  </Space>
+                  <Space wrap size={6}>
+                    <Select
+                      size="small"
+                      placeholder="优化用 LLM 供应商"
+                      style={{ width: 170 }}
+                      value={llmProvider || undefined}
+                      onChange={(value) => {
+                        setLlmProvider(value)
+                        const backend = llmBackends.find(
+                          (item) => (item.name || item.provider) === value,
+                        )
+                        setLlmModel(
+                          backend?.default_model || backend?.model || backend?.available_models?.[0] || '',
+                        )
+                      }}
+                      options={llmBackends.map((item) => ({
+                        value: item.name || item.provider,
+                        label: item.provider_label || item.name || item.provider,
+                      }))}
+                    />
+                    <Select
+                      size="small"
+                      placeholder="优化用模型"
+                      style={{ width: 170 }}
+                      value={llmModel || undefined}
+                      onChange={setLlmModel}
+                      options={Array.from(
+                        new Set(
+                          (activeLlmBackend?.available_models || [
+                            activeLlmBackend?.default_model || activeLlmBackend?.model || '',
+                          ]).filter(Boolean) as string[],
+                        ),
+                      ).map((value) => ({ value, label: value }))}
+                    />
+                    <Button
+                      size="small"
+                      onClick={() => {
+                        const latest =
+                          lastVisual?.prompt ||
+                          doc?.map.visuals?.[(doc.map.visuals?.length ?? 1) - 1]?.prompt
+                        if (latest) {
+                          setVisualPromptOverride(latest)
+                          message.success('已载入最近一次成图 Prompt，可继续编辑')
+                        } else {
+                          message.info('暂无历史成图 Prompt')
+                        }
+                      }}
+                    >
+                      载入上次成图 Prompt
                     </Button>
                   </Space>
                   <Input.TextArea
