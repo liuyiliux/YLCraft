@@ -187,6 +187,25 @@ AI 连接器和供应商规范已经作为 `ai_config` 分类工具接入智能�
 
 推荐流程：`list_novel_source_snapshots` → `inspect_novel_source_snapshot` → 可选 `index_novel_source_chunks`（长篇来源建议先建索引）→ `plan_novel_source_domains`（向用户说明每域判断与成本）→ `extract_novel_source_world` → `reconcile_world_extraction_run`（复核冲突）→ `list_world_extraction_candidates`（预览证据）；审阅中可用 `search_novel_source_chunks` 复核原文。连载更新时先 `sync_novel_source_chapters`，再用 `mode=delta` 增量提取，避免重建整套世界；完本来源要开新篇时，经用户确认后用 `derive_project_from_novel_source` 创建改编/续写/同人项目。提取默认不写项目，`apply` 前必须先经用户确认。
 
+### 世界地图工具
+
+地图工具与真人 `/world-map` 工作台共用同一 service 层，因此规则完全一致：结构化 `map_json`（区域/据点/路线/空间层）是正典，成图与提示词润色都是**派生**动作。
+
+- `list_world_maps`：列出地图文档（可按项目或来源快照过滤），返回版本号与各要素计数，读取到的 `revision` 是后续写操作必填的 CAS 依据，风险 `read`。
+- `get_world_map`：读取单张地图的完整结构化内容与版本号，风险 `read`。
+- `create_world_map`：新建地图（可传初始 `map_json`，或 `clone_project_places=true` 从项目地点实体克隆），风险 `write`；初版为 v1 并落 v1 历史快照。
+- `save_world_map`：按 `expected_revision` 做 CAS 保存，版本不一致时返回当前版本并拒绝，风险 `write`；成功后落一条 append-only 历史快照。
+- `render_world_map_svg`：确定性渲染 SVG，不调用模型、不消耗配额，风险 `read`；超长时截断并标记 `truncated`。
+- `export_world_map_points`：导出结构化点位 JSON（含 `entity_id` 与原文证据），不是图片，风险 `read`。
+- `resolve_world_map_entities`：解析据点关联的地点实体与证据，并给出 `orphan_node_ids`；游离标记（无 `entity_id` 或实体已不存在）不是正典，应提示关联实体而不是当作事实，风险 `read`。
+- `build_world_map_visual_prompt`：从结构化数据确定性生成生图提示词（含坐标与方位约定），不消耗配额，风险 `read`。
+- `optimize_world_map_visual_prompt`：用 LLM 润色提示词，保留全部地名、坐标约束与方位，只改写表达，风险 `read`；**不落库、不生成图**，只消耗一次文本配额。
+- `generate_world_map_visual`：按提示词生成视觉成图并入素材中枢，风险 `write`；成图只以引用形式记回 `map_json.visuals`，不自动铺为底图、不叠加标记、不改空间关系，并发冲突时放弃回写而不回滚成图。
+- `list_world_map_revisions`：列出历史版本（倒序），传 `revision` 时返回该版完整内容，风险 `read`。
+- `rollback_world_map`：回滚到历史版本，风险 `write`；以旧快照为内容产生**新**版本，历史链不被改写，需先校验 `expected_revision` 与当前版本一致。
+
+推荐流程：`list_world_maps` → `get_world_map` → `build_world_map_visual_prompt`（先看提示词是否表达准确）→ 需要润色时 `optimize_world_map_visual_prompt` → 经用户确认后 `generate_world_map_visual` → 用 `save_world_map` 保存结构化改动。成图与底图是派生资产，不得据此断言地理事实；要断言事实应读 `map_json` 或 `resolve_world_map_entities` 的实体证据。
+
 ### 下载解析工具
 
 下载入口已经作为 `download` 分类工具接入智能体：
