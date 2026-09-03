@@ -40,6 +40,8 @@ interface Props {
   sizeOptions: string[]
   onSizeChange: (size: string) => void
   historyVisuals: WorldMapVisual[]
+  refAssetIds: string[]
+  onToggleRefAsset: (nodeId: string) => void
   refUrls: string[]
   onToggleRefUrl: (url: string) => void
   uploadRefs: string[]
@@ -80,6 +82,8 @@ export default function VisualDrawer({
   sizeOptions,
   onSizeChange,
   historyVisuals,
+  refAssetIds,
+  onToggleRefAsset,
   refUrls,
   onToggleRefUrl,
   uploadRefs,
@@ -153,11 +157,18 @@ export default function VisualDrawer({
                     .filter((v) => v.url)
                     .map((v) => {
                       const url = v.url as string
-                      const checked = refUrls.includes(url)
+                      // 已入素材库的成图按节点 ID 引用（服务端解析为最新版本），避免传 url/base64。
+                      const isAssetRef = Boolean(v.node_id)
+                      const checked = isAssetRef
+                        ? refAssetIds.includes(v.node_id as string)
+                        : refUrls.includes(url)
+                      const onToggle = () =>
+                        isAssetRef ? onToggleRefAsset(v.node_id as string) : onToggleRefUrl(url)
                       return (
                         <div
                           key={url}
-                          onClick={() => onToggleRefUrl(url)}
+                          onClick={onToggle}
+                          title={isAssetRef ? '素材库引用（节点 ID）' : 'URL 兜底引用'}
                           style={{
                             width: 72,
                             cursor: 'pointer',
@@ -184,7 +195,21 @@ export default function VisualDrawer({
                                 lineHeight: '16px',
                               }}
                             >
-                              参考
+                              {isAssetRef ? '素材库·参考' : '参考'}
+                            </Tag>
+                          )}
+                          {isAssetRef && !checked && (
+                            <Tag
+                              style={{
+                                position: 'absolute',
+                                top: 2,
+                                left: 2,
+                                marginInlineEnd: 0,
+                                fontSize: 10,
+                                lineHeight: '16px',
+                              }}
+                            >
+                              素材库
                             </Tag>
                           )}
                         </div>

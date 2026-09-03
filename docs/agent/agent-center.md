@@ -200,7 +200,7 @@ AI 连接器和供应商规范已经作为 `ai_config` 分类工具接入智能�
 - `resolve_world_map_entities`：解析据点关联的地点实体与证据，并给出 `orphan_node_ids`；游离标记（无 `entity_id` 或实体已不存在）不是正典，应提示关联实体而不是当作事实，风险 `read`。
 - `build_world_map_visual_prompt`：从结构化数据确定性生成生图提示词（含坐标与方位约定），不消耗配额，风险 `read`。
 - `optimize_world_map_visual_prompt`：用 LLM 润色提示词，保留全部地名、坐标约束与方位，只改写表达，风险 `read`；**不落库、不生成图**，只消耗一次文本配额。
-- `generate_world_map_visual`：按提示词生成视觉成图并入素材中枢，风险 `write`；成图只以引用形式记回 `map_json.visuals`，不自动铺为底图、不叠加标记、不改空间关系，并发冲突时放弃回写而不回滚成图。
+- `generate_world_map_visual`：按提示词生成视觉成图并入素材中枢，风险 `write`；参考图优先传 `reference_asset_ids`（素材库节点 ID，服务端解析为最新版本图片路径，与 AI 图片链路同一套解析器），`reference_images`（URL/base64）仅作兜底，两者合并去重；成图只以引用形式记回 `map_json.visuals`，不自动铺为底图、不叠加标记、不改空间关系，并发冲突时放弃回写而不回滚成图。
 - `list_world_map_revisions`：列出历史版本（倒序），传 `revision` 时返回该版完整内容，风险 `read`。
 - `rollback_world_map`：回滚到历史版本，风险 `write`；以旧快照为内容产生**新**版本，历史链不被改写，需先校验 `expected_revision` 与当前版本一致。
 

@@ -186,7 +186,13 @@ class WorldMapVisualRequest(BaseModel):
     size: str = Field(default="1024x1024", description="图片尺寸")
     n: int = Field(default=1, description="生成数量（>1 时取首张）")
     style: str = Field(default="", description="画风（如水墨、写实）")
-    reference_images: list[str] = Field(default_factory=list, description="参考图 URL/base64 列表")
+    reference_asset_ids: list[str] = Field(
+        default_factory=list,
+        description="参考图素材库节点 ID 列表（推荐：服务端解析为最新版本的本地图片路径）",
+    )
+    reference_images: list[str] = Field(
+        default_factory=list, description="参考图 URL/base64 列表（兜底，与素材库 ID 合并去重）"
+    )
     save_to_asset_hub: bool = Field(default=True, description="是否入资产中枢（素材库）")
 
 
@@ -1215,6 +1221,7 @@ async def _run_domain_expansion_task(task_id: str, project_id: str, req: WorldDo
     数据库中的运行记录——进程重启后任务执行不会恢复，但已落库的运行与候选不会丢。
     """
     from app.core.task_queue import TaskStatus, get_task_queue
+    from app.db.database import SessionLocal
 
     queue = get_task_queue()
     try:
@@ -1629,6 +1636,7 @@ async def generate_world_map_visual(
             provider=req.provider or "",
             model=req.model or "",
             reference_images=req.reference_images or [],
+            reference_asset_ids=req.reference_asset_ids or [],
             save_to_asset_hub=req.save_to_asset_hub,
         )
     except RuntimeError as exc:

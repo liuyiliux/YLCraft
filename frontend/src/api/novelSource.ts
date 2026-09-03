@@ -972,6 +972,7 @@ export function generateWorldMapVisual(
     size?: string
     n?: number
     style?: string
+    reference_asset_ids?: string[]
     reference_images?: string[]
     save_to_asset_hub?: boolean
   },

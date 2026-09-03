@@ -21,6 +21,7 @@ from app.db.database import get_async_session
 from app.services.ai.service import get_ai_service
 from app.services.ai.types import ImageGenerationRequest, LLMMessage
 from app.services.asset_hub import AssetHubFacade
+from app.services.asset_hub.reference_resolver import merge_reference_images
 from app.services.creative_project.service import loads_json
 from app.services.novel_source.world_map import (
     WorldMapDocument,
@@ -115,14 +116,23 @@ async def generate_map_visual(
     provider: str = "",
     model: str = "",
     reference_images: list[str] | None = None,
+    reference_asset_ids: list[str] | None = None,
     save_to_asset_hub: bool = True,
 ) -> dict[str, Any]:
-    """调用生图 Provider 生成地图视觉成图，并按需入资产中枢、回写引用。"""
+    """调用生图 Provider 生成地图视觉成图，并按需入资产中枢、回写引用。
+
+    参考图优先传**素材库 ID**（稳定引用，服务端解析为本地图片路径），
+    与 AI 图片链路同一套解析器；直接的 URL/base64 作为兜底保留。
+    """
     manager = get_ai_service()
     if not manager.is_loaded():
         raise RuntimeError("AIService 未初始化，请先在 AI 连接器配置生图 Provider")
 
     resolved_prompt = resolve_prompt(document, prompt=prompt, style=style)
+    resolved_references = await merge_reference_images(
+        reference_images=list(reference_images or []),
+        reference_asset_ids=list(reference_asset_ids or []),
+    )
     result = await manager.generate_image(
         ImageGenerationRequest(
             prompt=resolved_prompt,
@@ -132,7 +142,7 @@ async def generate_map_visual(
             style=style or "",
             provider=provider or "",
             model=model or "",
-            reference_images=list(reference_images or []),
+            reference_images=resolved_references,
         )
     )
     if not result.success:

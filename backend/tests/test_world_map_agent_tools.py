@@ -262,6 +262,66 @@ def test_world_map_generate_visual_only_appends_reference(tmp_path, monkeypatch)
         engine.dispose()
 
 
+def test_world_map_generate_resolves_asset_reference_ids(tmp_path, monkeypatch):
+    """reference_asset_ids 应被解析为本地图片路径并进入生图请求，而非原样透传 base64。"""
+    from app.services.agent.tools import world_map_tools
+    from app.services.novel_source import world_map_visual
+
+    captured: dict = {}
+
+    class _FakeResult:
+        success = True
+        urls = ["https://example.com/map.png"]
+        all_local_paths = []
+        local_path = ""
+        url = "https://example.com/map.png"
+        provider = "fake"
+        model = "fake-model"
+        task_id = "task-1"
+        status = "succeeded"
+        seed = None
+
+    class _FakeAI:
+        def is_loaded(self):
+            return True
+
+        async def generate_image(self, request):
+            captured["reference_images"] = list(request.reference_images)
+            return _FakeResult()
+
+    monkeypatch.setattr(world_map_visual, "get_ai_service", lambda: _FakeAI())
+    # 素材库 ID → 本地路径的解析收敛在共用解析器；这里只验证接线，不真正查库。
+    async def _fake_resolve(**kwargs):
+        return ["storage/generated/asset-1.png"]
+
+    monkeypatch.setattr(world_map_visual, "merge_reference_images", _fake_resolve)
+
+    engine, factory, session_local = _make_env(tmp_path, "asset-refs.db")
+    world_map_tools.SessionLocal = session_local
+    try:
+        with factory() as session:
+            from app.services.novel_source.world_map import WorldMapService
+
+            document = WorldMapService(session).create_map(
+                title="北境舆图", map_json=SAMPLE_MAP
+            )
+            map_id = document.id
+
+        import asyncio
+
+        generated = asyncio.run(
+            world_map_tools.generate_world_map_visual_tool(
+                map_id,
+                reference_asset_ids=["asset-1", "asset-2"],
+                save_to_asset_hub=False,
+            )
+        )
+        assert generated["success"] is True
+        assert captured["reference_images"] == ["storage/generated/asset-1.png"]
+    finally:
+        engine.dispose()
+
+
 def test_world_map_revisions_and_rollback_are_append_only(tmp_path):
     """版本历史 append-only：回滚以旧快照为内容产生新版本，历史链不被改写。"""
     from app.services.agent.tools import world_map_tools
