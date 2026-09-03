@@ -128,6 +128,12 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
   const [orphanNodeIds, setOrphanNodeIds] = useState<string[]>([])
   // 空间层切换（数据驱动）：null = 全部；'__none__' = 未分层。层集合来自地图数据，不写死。
   const [activeLayer, setActiveLayer] = useState<string | null>(null)
+  // 图层面板：图层开关 + 据点类型筛选 + 底图参考层开关（结构化数据始终是正典，开关只影响显示）。
+  const [showNodes, setShowNodes] = useState(true)
+  const [showRegions, setShowRegions] = useState(true)
+  const [showRoutes, setShowRoutes] = useState(true)
+  const [showBaseMap, setShowBaseMap] = useState(true)
+  const [kindFilter, setKindFilter] = useState('')
 
   useEffect(() => {
     listWorldMapImageBackends()
@@ -408,10 +414,16 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasLayers, draft.layers, draft.nodes])
   const visibleNodes = useMemo(() => {
-    if (!hasLayers || !activeLayer || activeLayer === '__all__') return draft.nodes
-    if (activeLayer === '__none__') return draft.nodes.filter((n) => !n.layer)
-    return draft.nodes.filter((n) => n.layer === activeLayer)
-  }, [hasLayers, activeLayer, draft.nodes])
+    let base = draft.nodes
+    if (hasLayers && activeLayer && activeLayer !== '__all__') {
+      base =
+        activeLayer === '__none__'
+          ? base.filter((n) => !n.layer)
+          : base.filter((n) => n.layer === activeLayer)
+    }
+    if (kindFilter) base = base.filter((n) => n.kind === kindFilter)
+    return base
+  }, [hasLayers, activeLayer, draft.nodes, kindFilter])
   const visibleNodeIds = useMemo(() => new Set(visibleNodes.map((n) => n.id)), [visibleNodes])
 
   const onUploadBaseMap = (file: File) => {
@@ -503,15 +515,66 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
             message="Leaflet 工作台：拖拽节点改坐标；滚轮缩放、平移；可上传手绘或 AI 底图作为参考层。服务端 SVG 渲染与 revision CAS 保存保留。"
           />
 
-          {layerTabs.length > 0 && (
-            <Radio.Group
-              size="small"
-              optionType="button"
-              value={activeLayer ?? '__all__'}
-              onChange={(e) => setActiveLayer(e.target.value === '__all__' ? null : e.target.value)}
-              options={layerTabs}
-            />
-          )}
+          <Card size="small" style={{ background: '#fafafa' }} styles={{ body: { padding: '8px 12px' } }}>
+            <Space wrap size={[12, 8]}>
+              <Space size={6} wrap>
+                <Text strong style={{ fontSize: 12 }}>图层</Text>
+                <Tag.CheckableTag checked={showNodes} onChange={(checked) => setShowNodes(checked)}>
+                  据点 {draft.nodes.length}
+                </Tag.CheckableTag>
+                <Tag.CheckableTag checked={showRegions} onChange={(checked) => setShowRegions(checked)}>
+                  区域 {draft.regions.length}
+                </Tag.CheckableTag>
+                <Tag.CheckableTag checked={showRoutes} onChange={(checked) => setShowRoutes(checked)}>
+                  路线 {draft.routes.length}
+                </Tag.CheckableTag>
+                <Tag.CheckableTag
+                  checked={showBaseMap}
+                  onChange={(checked) => setShowBaseMap(checked)}
+                  disabled={!baseMapUrl}
+                >
+                  底图参考
+                </Tag.CheckableTag>
+              </Space>
+              <Select
+                allowClear
+                placeholder="据点类型"
+                style={{ width: 120 }}
+                value={kindFilter || undefined}
+                onChange={(value) => setKindFilter(value || '')}
+                options={KIND_OPTIONS.node.map((kind) => ({ value: kind, label: kind }))}
+              />
+              {layerTabs.length > 0 && (
+                <Space size={6} wrap>
+                  <Text strong style={{ fontSize: 12 }}>
+                    位面
+                  </Text>
+                  <Radio.Group
+                    size="small"
+                    optionType="button"
+                    value={activeLayer ?? '__all__'}
+                    onChange={(e) =>
+                      setActiveLayer(e.target.value === '__all__' ? null : e.target.value)
+                    }
+                    options={layerTabs}
+                  />
+                </Space>
+              )}
+              <Upload accept="image/*" showUploadList={false} beforeUpload={onUploadBaseMap}>
+                <Button size="small" icon={<PictureOutlined />}>
+                  上传底图参考
+                </Button>
+              </Upload>
+              {baseMapUrl && (
+                <Button size="small" onClick={() => setBaseMapUrl(null)}>
+                  移除底图
+                </Button>
+              )}
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                坐标 0-100；标记永远叠在结构化画布上，AI 底图只是可开关的参考层，不写入事实。
+              </Text>
+            </Space>
+          </Card>
 
           <div
             style={{
@@ -533,11 +596,11 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
               attributionControl={false}
             >
               <FitToBounds nodes={draft.nodes} />
-              {baseMapUrl && <MapImageOverlay url={baseMapUrl} />}
+              {showBaseMap && baseMapUrl && <MapImageOverlay url={baseMapUrl} />}
               {draft.routes.map((route) => {
                 const from = draft.nodes.find((n) => n.id === route.from)
                 const to = draft.nodes.find((n) => n.id === route.to)
-                if (!from || !to) return null
+                if (!from || !to || !showRoutes) return null
                 if (!visibleNodeIds.has(from.id) || !visibleNodeIds.has(to.id)) return null
                 return (
                   <Polyline
@@ -557,7 +620,7 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
               {draft.regions.map((region) => {
                 // 区域多边形：用属于该区域的节点围成凸包；不足三个节点则隐藏。
                 const points = visibleNodes.filter((n) => n.region_id === region.id)
-                if (points.length < 3) return null
+                if (!showRegions || points.length < 3) return null
                 const center = {
                   x: points.reduce((acc, p) => acc + p.x, 0) / points.length,
                   y: points.reduce((acc, p) => acc + p.y, 0) / points.length,
@@ -579,7 +642,8 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
                   />
                 )
               })}
-              {visibleNodes.map((node) => (
+              {showNodes &&
+                visibleNodes.map((node) => (
                 <Marker
                   key={node.id}
                   position={[node.y, node.x]}
@@ -640,20 +704,6 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
               ))}
             </MapContainer>
           </div>
-
-          <Space wrap>
-            <Upload accept="image/*" showUploadList={false} beforeUpload={onUploadBaseMap}>
-              <Button size="small">上传底图参考</Button>
-            </Upload>
-            {baseMapUrl && (
-              <Button size="small" onClick={() => setBaseMapUrl(null)}>
-                移除底图
-              </Button>
-            )}
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              坐标范围 0-100；可上传手绘/AI 地图作为参考层（不会写入事实）。
-            </Text>
-          </Space>
 
           <Collapse
             defaultActiveKey={['regions', 'nodes', 'routes']}
