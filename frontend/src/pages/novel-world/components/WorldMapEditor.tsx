@@ -33,7 +33,9 @@ import {
 } from '../../../api/novelSource'
 import ProviderModelSelect, { filterBackendsByCapability } from '../../../components/ai/ProviderModelSelect'
 import EvidenceList from '../../../components/world/EvidenceList'
+import DataPanel from '../../../components/world/DataPanel'
 import ExportModal from '../../../components/world/ExportModal'
+import LayerPanel from '../../../components/world/LayerPanel'
 import VersionModal from '../../../components/world/VersionModal'
 import useLlmConnectors from '../../../hooks/useLlmConnectors'
 
@@ -739,115 +741,38 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
           <div style={{ display: 'flex', gap: 12, alignItems: 'stretch' }}>
             <aside style={{ width: 230, flexShrink: 0 }}>
               <Space direction="vertical" size={12} style={{ width: '100%' }}>
-              <Card
-                size="small"
-                title="图层"
-                style={{ background: '#fafafa', height: '100%' }}
-                styles={{ body: { padding: '10px 12px' } }}
-              >
-                <Space direction="vertical" size={10} style={{ width: '100%' }}>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                    <Tag.CheckableTag checked={showNodes} onChange={(checked) => setShowNodes(checked)}>
-                      据点 {draft.nodes.length}
-                    </Tag.CheckableTag>
-                    <Tag.CheckableTag checked={showRegions} onChange={(checked) => setShowRegions(checked)}>
-                      区域 {draft.regions.length}
-                    </Tag.CheckableTag>
-                    <Tag.CheckableTag checked={showRoutes} onChange={(checked) => setShowRoutes(checked)}>
-                      路线 {draft.routes.length}
-                    </Tag.CheckableTag>
-                    <Tag.CheckableTag
-                      checked={showBaseMap}
-                      onChange={(checked) => {
-                        if (!baseMapUrl) {
-                          message.info('先在下方上传底图，再切换参考层显隐')
-                          return
-                        }
-                        setShowBaseMap(checked)
-                      }}
-                      style={baseMapUrl ? undefined : { opacity: 0.45 }}
-                    >
-                      底图参考
-                    </Tag.CheckableTag>
-                  </div>
-                  <Select
-                    allowClear
-                    size="small"
-                    placeholder="据点类型"
-                    style={{ width: '100%' }}
-                    value={kindFilter || undefined}
-                    onChange={(value) => setKindFilter(value || '')}
-                    options={KIND_OPTIONS.node.map((kind) => ({ value: kind, label: kind }))}
-                  />
-                  {layerTabs.length > 0 && (
-                    <Space direction="vertical" size={4} style={{ width: '100%' }}>
-                      <Text strong style={{ fontSize: 12 }}>
-                        位面
-                      </Text>
-                      <Radio.Group
-                        size="small"
-                        optionType="button"
-                        style={{ display: 'flex', flexWrap: 'wrap' }}
-                        value={activeLayer ?? '__all__'}
-                        onChange={(e) =>
-                          setActiveLayer(e.target.value === '__all__' ? null : e.target.value)
-                        }
-                        options={layerTabs}
-                      />
-                    </Space>
-                  )}
-                  <Upload accept="image/*" showUploadList={false} beforeUpload={onUploadBaseMap}>
-                    <Button size="small" block icon={<PictureOutlined />}>
-                      上传底图参考
-                    </Button>
-                  </Upload>
-                  {baseMapUrl && (
-                    <Button size="small" block onClick={() => setBaseMapUrl(null)}>
-                      移除底图
-                    </Button>
-                  )}
-                  <Text type="secondary" style={{ fontSize: 11 }}>
-                    坐标 0-100；标记永远叠在结构化画布上，AI 底图只是可开关的参考层，不写入事实。
-                  </Text>
-                </Space>
-              </Card>
-              <Card
-                size="small"
-                title="数据"
-                style={{ background: '#fafafa' }}
-                styles={{ body: { padding: '10px 12px' } }}
-              >
-                <Space direction="vertical" size={6} style={{ width: '100%' }}>
-                  <Text style={{ fontSize: 12 }}>
-                    {draft.nodes.length} 据点 · {draft.regions.length} 区域 · {draft.routes.length} 路线
-                  </Text>
-                  {doc && (
-                    <Text type="secondary" style={{ fontSize: 11 }}>
-                      当前 revision v{doc.revision}
-                    </Text>
-                  )}
-                  <div style={{ fontSize: 11, color: '#8c8c8c', lineHeight: 1.9 }}>
-                    <div>● 据点（圆点标记 / 已关联实体）</div>
-                    <div>◇ 区域（成员据点围合）</div>
-                    <div>— 路线（连通路径）</div>
-                    <div>▨ 底图参考层（派生视觉）</div>
-                  </div>
-                  <Space wrap size={4}>
-                    <Button size="small" onClick={addNode}>
-                      新增据点
-                    </Button>
-                    <Button size="small" onClick={addRegion}>
-                      新增区域
-                    </Button>
-                    <Button size="small" onClick={addRoute}>
-                      新增路线
-                    </Button>
-                  </Space>
-                  <Button size="small" block onClick={() => setDataDrawerOpen(true)}>
-                    批量管理（编辑）
-                  </Button>
-                </Space>
-              </Card>
+                <LayerPanel
+                  showNodes={showNodes}
+                  showRegions={showRegions}
+                  showRoutes={showRoutes}
+                  showBaseMap={showBaseMap}
+                  onToggleNodes={setShowNodes}
+                  onToggleRegions={setShowRegions}
+                  onToggleRoutes={setShowRoutes}
+                  onToggleBaseMap={setShowBaseMap}
+                  nodeCount={draft.nodes.length}
+                  regionCount={draft.regions.length}
+                  routeCount={draft.routes.length}
+                  kindOptions={KIND_OPTIONS.node}
+                  kindFilter={kindFilter}
+                  onKindFilterChange={setKindFilter}
+                  layerTabs={layerTabs}
+                  activeLayer={activeLayer ?? '__all__'}
+                  onLayerChange={(value) => setActiveLayer(value === '__all__' ? null : value)}
+                  onUploadBaseMap={(file) => onUploadBaseMap(file)}
+                  baseMapUrl={baseMapUrl}
+                  onRemoveBaseMap={() => setBaseMapUrl(null)}
+                />
+                <DataPanel
+                  nodeCount={draft.nodes.length}
+                  regionCount={draft.regions.length}
+                  routeCount={draft.routes.length}
+                  revision={doc?.revision}
+                  onAddNode={addNode}
+                  onAddRegion={addRegion}
+                  onAddRoute={addRoute}
+                  onOpenBatch={() => setDataDrawerOpen(true)}
+                />
               </Space>
             </aside>
             <div
