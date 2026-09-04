@@ -16,6 +16,18 @@ import type {
   WorldMapRegion,
   WorldMapRoute,
 } from '../../api/novelSource'
+import {
+  DEFAULT_SHAPE_PARAMS,
+  NATURE_IMAGERY,
+  SETTLEMENT_FORMS,
+  STRUCTURE_FORMS,
+  expandRegionShape,
+  hashSeed,
+  type NatureImagery,
+  type RegionShapeParams,
+  type SettlementForm,
+  type StructureForm,
+} from '../../utils/regionShape'
 
 const MAP_BOUNDS = L.latLngBounds([
   [0, 0],
@@ -29,8 +41,7 @@ const MAP_BOUNDS = L.latLngBounds([
 const REGION_HUES = ['#7c9c6f', '#c9a86a', '#7fa8c4', '#b5794f', '#8fa3ad', '#b08fa8']
 /** 底图参考层透明度（样式规范 §6.3：固定 .18，不可调）。 */
 const BASEMAP_OPACITY = 0.18
-/** 区域疆界：淡晕填充 + 虚线（势力范围感，而非实色占领块）。 */
-const REGION_FILL_OPACITY = 0.08
+/** 区域疆界虚线（父区域用；子区域用实线，见 regionPathStyle）。 */
 const REGION_DASH = '6 4'
 /** 路线按类型的手绘线型与配色。 */
 interface RouteStyle {
@@ -155,6 +166,97 @@ function ZoomWatcher({ onChange }: { onChange: (zoom: number) => void }) {
     }
   }, [map, onChange])
   return null
+}
+
+/** 把（可能来自 AI/后端的）参数收敛回受控词表，越界回退默认值，避免脏数据把形状算崩。 */
+function normalizeShapeParams(
+  shape: WorldMapRegion['shape'] | null | undefined,
+): RegionShapeParams {
+  const params = (shape?.params ?? {}) as Record<string, unknown>
+  const text = (value: unknown) => (typeof value === 'string' ? value : '')
+  const natureRaw = text(params.nature)
+  const settlementRaw = text(params.settlement)
+  const structureRaw = text(params.structure)
+  const scaleRaw = text(params.scale)
+  const nature = (NATURE_IMAGERY as readonly string[]).includes(natureRaw)
+    ? (natureRaw as NatureImagery)
+    : DEFAULT_SHAPE_PARAMS.nature
+  const settlement = (SETTLEMENT_FORMS as readonly string[]).includes(settlementRaw)
+    ? (settlementRaw as SettlementForm)
+    : DEFAULT_SHAPE_PARAMS.settlement
+  const structure = (STRUCTURE_FORMS as readonly string[]).includes(structureRaw)
+    ? (structureRaw as StructureForm)
+    : ''
+  const scale = (['小', '中', '大'] as const).includes(scaleRaw as '小' | '中' | '大')
+    ? (scaleRaw as '小' | '中' | '大')
+    : DEFAULT_SHAPE_PARAMS.scale
+  const irregularity =
+    typeof params.irregularity === 'number' && Number.isFinite(params.irregularity)
+      ? Math.max(0, Math.min(1, params.irregularity))
+      : DEFAULT_SHAPE_PARAMS.irregularity
+  return { nature, settlement, structure, scale, irregularity }
+}
+
+/**
+ * 取区域的顶点：优先用已保存的形状；没有则按区域 id 派生 seed **在内存中临时生成**，
+ * 保证老数据/未生成形状的区域也不会变空白——但这只是显示层兜底，不写回数据。
+ */
+function resolveRegionVertices(
+  region: WorldMapRegion,
+  members: WorldMapNode[],
+): [number, number][] {
+  const stored = region.shape?.vertices
+  if (stored && stored.length >= 3) return stored
+  const seed = typeof region.shape?.seed === 'number' ? region.shape.seed : hashSeed(region.id)
+  return expandRegionShape(
+    members.map((node) => ({ x: node.x, y: node.y })),
+    normalizeShapeParams(region.shape),
+    seed,
+  )
+}
+
+/** 按 parent_id 链算层级深度（带环检测，最多 8 层）。 */
+function computeRegionDepths(regions: WorldMapRegion[]): Map<string, number> {
+  const byId = new Map(regions.map((region) => [region.id, region]))
+  const depths = new Map<string, number>()
+  const resolve = (id: string): number => {
+    const cached = depths.get(id)
+    if (cached !== undefined) return cached
+    const region = byId.get(id)
+    if (!region?.parent_id || region.parent_id === id) {
+      depths.set(id, 0)
+      return 0
+    }
+    // 环检测：把当前 id 先占位，避免无限递归。
+    depths.set(id, 0)
+    const seen = new Set<string>([id])
+    let cursor = byId.get(region.parent_id)
+    let depth = 1
+    while (cursor?.parent_id && !seen.has(cursor.parent_id) && depth < 8) {
+      seen.add(cursor.id)
+      cursor = byId.get(cursor.parent_id)
+      depth += 1
+    }
+    depths.set(id, depth)
+    return depth
+  }
+  for (const region of regions) resolve(region.id)
+  return depths
+}
+
+/**
+ * 层级视觉：父区域像"疆域"（填充淡、粗虚线），子区域像"聚落"（填充实、细实线）；
+ * 越深越实，选中提亮。深度由 parent_id 链自动算出，不限层数。
+ */
+function regionPathStyle(depth: number, color: string, selected: boolean) {
+  const baseFill = depth === 0 ? 0.06 : Math.min(0.18, 0.1 + (depth - 1) * 0.02)
+  return {
+    color: selected ? 'var(--p-accent)' : color,
+    fillColor: color,
+    fillOpacity: Math.min(0.26, baseFill + (selected ? 0.08 : 0)),
+    weight: selected ? 1.6 : depth === 0 ? 1.2 : 1,
+    dashArray: selected || depth > 0 ? undefined : REGION_DASH,
+  }
 }
 
 /** 缩放百分比：以 zoom 0（世界铺满画布）为 100%。 */
@@ -332,6 +434,13 @@ export default function MapCanvas({
   const [zoom, setZoom] = useState(0)
   // 缩小看全图时隐去据点名（只留区域名），放大到阈值以上才显示，避免标签互相压盖。
   const showNodeLabels = zoom >= LABEL_ZOOM_THRESHOLD
+  // 层级深度：由 parent_id 链算出，决定填充/边界的视觉权重（不限层数）。
+  const regionDepths = useMemo(() => computeRegionDepths(regions), [regions])
+  // 选中据点时，它所属的区域一并提亮（"我现在在看哪个地方"）。
+  const selectedRegionId = useMemo(() => {
+    if (!selectedNodeId) return null
+    return nodes.find((node) => node.id === selectedNodeId)?.region_id ?? null
+  }, [nodes, selectedNodeId])
 
   // 图层全部关闭时空画布也要说明原因，而不是让人以为地图是坏的。
   const allLayersHidden = !showNodes && !showRegions && !showRoutes && !(showBaseMap && baseMapUrl)
@@ -384,42 +493,31 @@ export default function MapCanvas({
         })}
 
       {showRegions &&
-        regions.map((region) => {
-          // 区域多边形：用属于该区域的节点围成凸包；不足三个节点则隐藏。
-          const points = visibleNodes.filter((n) => n.region_id === region.id)
-          if (points.length < 3) return null
-          const center = {
-            x: points.reduce((acc, p) => acc + p.x, 0) / points.length,
-            y: points.reduce((acc, p) => acc + p.y, 0) / points.length,
-          }
-          const ring: L.LatLngTuple[] = points.map((p) => {
-            const dx = p.x - center.x
-            const dy = p.y - center.y
-            const radius = Math.max(6, Math.hypot(dx, dy) + 4)
-            const angle = Math.atan2(dy, dx)
-            return [center.y + Math.sin(angle) * radius, center.x + Math.cos(angle) * radius]
-          })
-          ring.push(ring[0])
-          const color = regionColor(region.id, regionOrder)
-          return (
-            <Polygon
-              key={region.id}
-              positions={ring}
-              pathOptions={{
-                color,
-                fillColor: color,
-                fillOpacity: REGION_FILL_OPACITY,
-                weight: 1.2,
-                dashArray: REGION_DASH,
-              }}
-            >
-              {/* 区域名常驻：缩小时据点名隐去，只剩区域名提供定位（小说扉页地图的读法）。 */}
-              <Tooltip permanent direction="center" className="wm-region-label">
-                {region.name || '未命名区域'}
-              </Tooltip>
-            </Polygon>
-          )
-        })}
+        // 父区域先画、子区域后画，保证嵌套时子区域压在父区域之上。
+        [...regions]
+          .sort((a, b) => (regionDepths.get(a.id) ?? 0) - (regionDepths.get(b.id) ?? 0))
+          .map((region) => {
+            // 区域是独立几何：优先用已保存的形状；没有则按 id 派生 seed 临时生成（不写库）。
+            const members = visibleNodes.filter((n) => n.region_id === region.id)
+            if (!members.length && !region.shape?.vertices?.length) return null
+            const vertices = resolveRegionVertices(region, members)
+            if (vertices.length < 3) return null
+            const color = regionColor(region.id, regionOrder)
+            const depth = regionDepths.get(region.id) ?? 0
+            const selected = selectedRegionId === region.id
+            return (
+              <Polygon
+                key={region.id}
+                positions={vertices}
+                pathOptions={regionPathStyle(depth, color, selected)}
+              >
+                {/* 区域名常驻：缩小时据点名隐去，只剩区域名提供定位（小说扉页地图的读法）。 */}
+                <Tooltip permanent direction="center" className="wm-region-label">
+                  {region.name || '未命名区域'}
+                </Tooltip>
+              </Polygon>
+            )
+          })}
 
       {showNodes &&
         visibleNodes.map((node) => (
