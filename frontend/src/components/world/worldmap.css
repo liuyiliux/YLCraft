@@ -207,6 +207,30 @@
     0 1px 2px var(--p-paper);
 }
 
+/* 区域名：衬线、字距拉开，常驻（小说扉页地图的读法），不抢据点标签 */
+.wm-region-label.leaflet-tooltip {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  color: var(--p-ink);
+  font-family: var(--p-font-serif);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  opacity: 0.7;
+  white-space: nowrap;
+  text-shadow:
+    -1px 0 2px var(--p-paper),
+    1px 0 2px var(--p-paper),
+    0 -1px 2px var(--p-paper),
+    0 1px 2px var(--p-paper);
+}
+
+.wm-region-label.leaflet-tooltip::before {
+  display: none;
+}
+
 /* 选中：主色环 + 外发光（主色只用于交互反馈，不用于区域填充） */
 .wm-node-selected svg {
   filter: drop-shadow(0 0 0 2px var(--p-accent)) drop-shadow(0 0 6px var(--p-accent));
@@ -249,6 +273,21 @@
 
 .wm-zoombar button:hover {
   background: color-mix(in srgb, var(--p-ink) 8%, transparent);
+}
+
+/* 标签分级提示：缩小时说明"据点名去哪了" */
+.wm-lod-hint {
+  position: absolute;
+  left: 8px;
+  top: 38px;
+  z-index: 500;
+  font-size: 11px;
+  color: var(--p-ink);
+  opacity: 0.6;
+  background: color-mix(in srgb, var(--p-paper) 80%, transparent);
+  padding: 1px 6px;
+  border-radius: var(--p-radius-pill);
+  pointer-events: none;
 }
 
 .wm-zoom-value {

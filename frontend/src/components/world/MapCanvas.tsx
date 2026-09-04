@@ -9,7 +9,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import { MapContainer, Marker, Polyline, Polygon, Popup, useMap } from 'react-leaflet'
+import { MapContainer, Marker, Polyline, Polygon, Popup, Tooltip, useMap } from 'react-leaflet'
 import type {
   WorldMapNode,
   WorldMapNodeEntity,
@@ -97,17 +97,25 @@ export function regionColor(regionId: string | null | undefined, regionOrder: Ma
   return REGION_HUES[index % REGION_HUES.length]
 }
 
-/** 据点标记：地物图标 + 文学化地名标签（样式规范 §6.3）。 */
-function nodeIcon(name: string, kind: string, color: string, selected: boolean) {
+/** 据点标记：地物图标 + 文学化地名标签（样式规范 §6.3）；标签按缩放级别显隐。 */
+function nodeIcon(
+  name: string,
+  kind: string,
+  color: string,
+  selected: boolean,
+  withLabel: boolean,
+) {
   const svg = NODE_ICONS[kind] || NODE_ICONS.其它
+  const label =
+    withLabel || selected
+      ? `<span class="wm-node-label">${(name || '未命名').replace(/[<>&]/g, '')}</span>`
+      : ''
   return L.divIcon({
     className: '',
-    html: `<div class="wm-node${selected ? ' wm-node-selected' : ''}" style="--node-color:${color}">${svg}<span class="wm-node-label">${
-      (name || '未命名').replace(/[<>&]/g, '')
-    }</span></div>`,
+    html: `<div class="wm-node${selected ? ' wm-node-selected' : ''}" style="--node-color:${color}">${svg}${label}</div>`,
     // 锚点落在图标中心偏下，标签自然挂在图标下方。
-    iconSize: [96, 40],
-    iconAnchor: [48, 20],
+    iconSize: withLabel || selected ? [96, 40] : [24, 24],
+    iconAnchor: withLabel || selected ? [48, 20] : [12, 12],
   })
 }
 
@@ -126,6 +134,26 @@ function FitToBounds({ nodes }: { nodes: WorldMapNode[] }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodes.map((n) => n.id).join(',')])
+  return null
+}
+
+/**
+ * 标签分级（LOD，借鉴 Azgaar）：缩放较小时只留区域名提供定位，缩放够了才显示据点名，
+ * 避免一屏几十个地名糊成一团。zoom 0 = 世界铺满画布，每 +1 放大一倍。
+ */
+const LABEL_ZOOM_THRESHOLD = 1
+
+/** 把当前 zoom 提到 MapCanvas，供图标按级别重渲染。 */
+function ZoomWatcher({ onChange }: { onChange: (zoom: number) => void }) {
+  const map = useMap()
+  useEffect(() => {
+    onChange(map.getZoom())
+    const sync = () => onChange(map.getZoom())
+    map.on('zoomend', sync)
+    return () => {
+      map.off('zoomend', sync)
+    }
+  }, [map, onChange])
   return null
 }
 
@@ -174,6 +202,9 @@ function CanvasOverlays({
           </svg>
         </button>
       </div>
+      {zoom < LABEL_ZOOM_THRESHOLD && (
+        <div className="wm-lod-hint">放大以显示据点名（当前仅显示区域名）</div>
+      )}
       <div className="wm-compass" title="上为北" aria-hidden="true">
         <svg viewBox="0 0 48 48" width="40" height="40">
           <circle cx="24" cy="24" r="21" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.35" />
@@ -298,6 +329,10 @@ export default function MapCanvas({
   onMoveNode,
   emptyState,
 }: Props) {
+  const [zoom, setZoom] = useState(0)
+  // 缩小看全图时隐去据点名（只留区域名），放大到阈值以上才显示，避免标签互相压盖。
+  const showNodeLabels = zoom >= LABEL_ZOOM_THRESHOLD
+
   // 图层全部关闭时空画布也要说明原因，而不是让人以为地图是坏的。
   const allLayersHidden = !showNodes && !showRegions && !showRoutes && !(showBaseMap && baseMapUrl)
   const canvasEmpty = emptyState
@@ -321,6 +356,7 @@ export default function MapCanvas({
       attributionControl={false}
     >
       <FitToBounds nodes={nodes} />
+      <ZoomWatcher onChange={setZoom} />
       <CanvasOverlays empty={canvasEmpty} />
       <CoordinateReadout />
       {showBaseMap && baseMapUrl && <MapImageOverlay url={baseMapUrl} />}
@@ -376,7 +412,12 @@ export default function MapCanvas({
                 weight: 1.2,
                 dashArray: REGION_DASH,
               }}
-            />
+            >
+              {/* 区域名常驻：缩小时据点名隐去，只剩区域名提供定位（小说扉页地图的读法）。 */}
+              <Tooltip permanent direction="center" className="wm-region-label">
+                {region.name || '未命名区域'}
+              </Tooltip>
+            </Polygon>
           )
         })}
 
@@ -390,6 +431,7 @@ export default function MapCanvas({
               node.kind || '',
               regionColor(node.region_id, regionOrder),
               selectedNodeId === node.id,
+              showNodeLabels,
             )}
             draggable
             eventHandlers={{
