@@ -16,13 +16,20 @@
   --p-success: #52c41a;
   --p-warn: #fa8c16;
 
-  /* 区域/节点区分色（沿用存量 REGION_HUES，与既有视觉资产一致） */
-  --p-region-1: #1677ff;
-  --p-region-2: #52c41a;
-  --p-region-3: #fa8c16;
-  --p-region-4: #eb2f96;
-  --p-region-5: #722ed1;
-  --p-region-6: #13c2c2;
+  /* 区域/势力区分色：地形与纸色系（低饱和，避免读作"军事占领区"） */
+  --p-region-1: #7c9c6f;
+  --p-region-2: #c9a86a;
+  --p-region-3: #7fa8c4;
+  --p-region-4: #b5794f;
+  --p-region-5: #8fa3ad;
+  --p-region-6: #b08fa8;
+
+  /* 纸色令牌：画布像摊开的一张纸，与页面冷灰底区分 */
+  --p-paper: #faf6ef;
+  --p-ink: #3d3529;
+
+  /* 文学化地名标签字体（衬线，地图集观感） */
+  --p-font-serif: 'Songti SC', 'Noto Serif SC', 'Source Han Serif SC', serif;
 
   /* 画布内的派生层：底图永远低透明、不与标记争层级 */
   --p-basemap-opacity: 0.18;
@@ -47,6 +54,9 @@
 }
 
 .worldmap-scope[data-theme='dark'] {
+  --p-paper: #232019;
+  --p-ink: #e8e2d6;
+
   --p-bg: #14161a;
   --p-surface: #1e2227;
   --p-fg: #e8e9ec;
@@ -59,6 +69,35 @@
 
   --p-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3);
   --p-shadow-overlay: 0 6px 16px rgba(0, 0, 0, 0.5);
+}
+
+/* ---- 外壳：让 antd Card 退化为透明容器，视觉主体交给面板卡片与画布 ----
+   这样页面底 --p-bg 能真正露出来，形成「冷灰底 + 白色面板」的工作台观感，
+   而不必改动 400 行 JSX 的包裹结构。 */
+
+/* 只作用于工作台最外层卡片（.wm-shell）：内部的小卡片仍保持白底层次。 */
+.worldmap-scope .wm-shell {
+  background: transparent;
+  box-shadow: none;
+}
+
+.worldmap-scope .wm-shell > .ant-card-body {
+  padding: 12px;
+}
+
+.worldmap-scope .wm-shell > .ant-card-head {
+  min-height: 56px;
+  padding: 0 16px;
+  background: var(--p-surface);
+  border-bottom: 1px solid var(--p-border);
+  border-radius: var(--p-radius-surface) var(--p-radius-surface) 0 0;
+}
+
+.worldmap-scope .wm-shell > .ant-card-head .ant-card-head-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--p-fg);
+  padding: 12px 0;
 }
 
 /* ---- 骨架：三栏工作台 ---- */
@@ -96,6 +135,20 @@
   padding: 12px;
 }
 
+/* 面板内的区块标题：统一 12px 次级，避免 antd Card 标题抢层级 */
+.wm-panel .ant-card-head {
+  min-height: 36px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+.wm-panel .ant-card-head-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--p-muted);
+  padding: 8px 0;
+}
+
 .wm-panel-left {
   width: 260px;
   flex: 0 0 260px;
@@ -108,14 +161,75 @@
   overflow-y: auto;
 }
 
+/* 画布：纸色底 + 淡淡坐标网（每 10 单位），像摊开的一张小说扉页地图 */
 .wm-canvas {
   flex: 1;
   min-width: 0;
-  height: 520px;
-  background: var(--p-surface);
+  min-height: 520px;
+  height: auto;
+  background-color: var(--p-paper);
+  background-image:
+    linear-gradient(to right, color-mix(in srgb, var(--p-ink) 6%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--p-ink) 6%, transparent) 1px, transparent 1px);
+  background-size: 10% 10%;
   border: 1px solid var(--p-border);
   border-radius: var(--p-radius-surface);
   overflow: hidden;
+}
+
+/* ---- 据点：地物图标 + 文学化地名标签（不是胶囊按钮） ---- */
+
+.wm-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  color: var(--node-color, var(--p-ink));
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.18));
+}
+
+.wm-node svg {
+  display: block;
+}
+
+.wm-node-label {
+  font-family: var(--p-font-serif);
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 600;
+  color: var(--p-ink);
+  white-space: nowrap;
+  /* 纸色描边：压在路线/色块上仍可读 */
+  text-shadow:
+    -1px 0 2px var(--p-paper),
+    1px 0 2px var(--p-paper),
+    0 -1px 2px var(--p-paper),
+    0 1px 2px var(--p-paper);
+}
+
+/* 选中：主色环 + 外发光（主色只用于交互反馈，不用于区域填充） */
+.wm-node-selected svg {
+  filter: drop-shadow(0 0 0 2px var(--p-accent)) drop-shadow(0 0 6px var(--p-accent));
+}
+
+.wm-node-selected .wm-node-label {
+  color: var(--p-accent);
+}
+
+/* 画布右下角坐标读数 */
+.wm-coord-readout {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 500;
+  padding: 2px 8px;
+  font-family: var(--p-font-mono);
+  font-size: 12px;
+  color: var(--p-ink);
+  background: color-mix(in srgb, var(--p-paper) 85%, transparent);
+  border: 1px solid var(--p-border);
+  border-radius: var(--p-radius-pill);
+  pointer-events: none;
 }
 
 /* ---- 文本层级 ---- */

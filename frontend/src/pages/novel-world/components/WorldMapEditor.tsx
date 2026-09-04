@@ -693,6 +693,7 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
 
   return (
     <Card
+      className="wm-shell"
       title={
         <Space>
           <EnvironmentOutlined />
