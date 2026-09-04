@@ -7,6 +7,7 @@
  */
 import {
   Alert,
+  AutoComplete,
   Button,
   Card,
   Drawer,
@@ -25,6 +26,19 @@ import type { WorldMapVisual, WorldMapVisualResult } from '../../api/novelSource
 const { Text, Paragraph } = Typography
 
 export type VisualMode = 'text2img' | 'img2img'
+
+/**
+ * 画风预设：替代原来的自由文本框单一输入（原型反模式第 5 条）。
+ * 留空 = 自适应：后端提示词会声明「按项目视觉基准（参考图）自适应，
+ * 无参考图时采用克制的写实地图风格」，这与后端 build_map_visual_prompt 一致。
+ */
+const STYLE_PRESETS = [
+  { value: '写实乡村', label: '写实乡村' },
+  { value: '古风手绘', label: '古风手绘' },
+  { value: '简约线稿', label: '简约线稿' },
+  { value: '水墨', label: '水墨' },
+  { value: '羊皮纸古地图', label: '羊皮纸古地图' },
+]
 
 interface Props {
   open: boolean
@@ -49,6 +63,9 @@ interface Props {
   onRemoveUploadRef: (index: number) => void
   style: string
   onStyleChange: (style: string) => void
+  baselineAssetId?: string | null
+  onOpenBaselinePicker: () => void
+  onClearBaseline: () => void
   promptOverride: string
   onPromptOverrideChange: (value: string) => void
   onPreview: () => void
@@ -91,6 +108,9 @@ export default function VisualDrawer({
   onRemoveUploadRef,
   style,
   onStyleChange,
+  baselineAssetId,
+  onOpenBaselinePicker,
+  onClearBaseline,
   promptOverride,
   onPromptOverrideChange,
   onPreview,
@@ -268,12 +288,31 @@ export default function VisualDrawer({
             )}
 
             <Space wrap>
-              <Input
-                placeholder="画风（如水墨、写实）"
-                style={{ width: 160 }}
+              <AutoComplete
+                placeholder="画风（留空=按视觉基准自适应）"
+                style={{ width: 200 }}
                 value={style}
-                onChange={(e) => onStyleChange(e.target.value)}
+                onChange={onStyleChange}
+                options={STYLE_PRESETS}
+                allowClear
               />
+              {baselineAssetId ? (
+                <Space size={4}>
+                  <Tag color="blue" style={{ marginInlineEnd: 0 }}>
+                    视觉基准已设置
+                  </Tag>
+                  <Button size="small" type="link" onClick={onOpenBaselinePicker}>
+                    更换
+                  </Button>
+                  <Button size="small" type="link" onClick={onClearBaseline}>
+                    清除
+                  </Button>
+                </Space>
+              ) : (
+                <Button size="small" onClick={onOpenBaselinePicker}>
+                  选择视觉基准
+                </Button>
+              )}
               <Button size="small" icon={<EyeOutlined />} loading={previewLoading} onClick={onPreview}>
                 预览 Prompt
               </Button>

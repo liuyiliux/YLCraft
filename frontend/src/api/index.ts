@@ -98,6 +98,21 @@ export const listAssets = (params?: Record<string, any>) => {
 
 export const getAsset = (id: string) => request(`/assets/${id}`)
 
+// ===== Project visual baseline =====
+// 视觉基准是项目级的一张基准图，生图时由服务端自动注入为参考图。
+
+export const getVisualBaseline = (projectId: string) =>
+  request(`/creative-projects/${projectId}/visual-baseline`)
+
+export const setVisualBaseline = (projectId: string, assetId: string) =>
+  request(`/creative-projects/${projectId}/visual-baseline`, {
+    method: 'PUT',
+    body: JSON.stringify({ asset_id: assetId }),
+  })
+
+export const clearVisualBaseline = (projectId: string) =>
+  request(`/creative-projects/${projectId}/visual-baseline`, { method: 'DELETE' })
+
 export const cleanAssetProvenance = (id: string, data: { confirm?: boolean; authorized_source?: string } = {}) =>
   request(`/assets/${id}/provenance-clean`, { method: 'POST', body: JSON.stringify(data) })
 

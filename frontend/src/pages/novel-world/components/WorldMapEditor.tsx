@@ -2,6 +2,15 @@ import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Alert, Badge, Button, Card, Collapse, Drawer, Empty, Input, message, Modal, Popconfirm, Radio, Segmented, Select, Space, Table, Tag, Typography, Upload } from 'antd'
 import { DeleteOutlined, EnvironmentOutlined, EyeOutlined, HistoryOutlined, PictureOutlined, PlusOutlined, SaveOutlined, ThunderboltOutlined } from '@ant-design/icons'
 import MapCanvas from '../../../components/world/MapCanvas'
+import BaselinePickerModal, {
+  type BaselineCandidate,
+} from '../../../components/world/BaselinePickerModal'
+import {
+  clearVisualBaseline,
+  getVisualBaseline,
+  listAssets,
+  setVisualBaseline,
+} from '../../../api'
 import {
   createWorldMap,
   createWorldMapFromProjectPlaces,
@@ -135,6 +144,12 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
   const [visualUploadRefs, setVisualUploadRefs] = useState<string[]>([])
   // AI 视觉稿抽屉：成图是派生资产，降权到抽屉里多稿生成、手动设为底图。
   const [visualDrawerOpen, setVisualDrawerOpen] = useState(false)
+  // 项目视觉基准：项目级基准图，生图时由服务端自动注入为参考图（不写回地图数据）。
+  const [baselineAssetId, setBaselineAssetId] = useState<string | null>(null)
+  const [baselinePickerOpen, setBaselinePickerOpen] = useState(false)
+  const [baselineCandidates, setBaselineCandidates] = useState<BaselineCandidate[]>([])
+  const [baselineLoading, setBaselineLoading] = useState(false)
+  const [baselineSearch, setBaselineSearch] = useState('')
   // 优化提示词用的 LLM 连接器（公共 hook：拉取 + 默认模型回退）。
   const {
     backends: llmBackends,
@@ -302,6 +317,65 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
     refresh()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, snapshotId])
+
+  // 视觉基准是项目级设置：随项目变化重新读取，未绑定项目时置空。
+  useEffect(() => {
+    if (!projectId) {
+      setBaselineAssetId(null)
+      return
+    }
+    getVisualBaseline(projectId)
+      .then((res: any) => setBaselineAssetId(res?.data?.asset_id ?? null))
+      .catch(() => setBaselineAssetId(null))
+  }, [projectId])
+
+  const loadBaselineCandidates = async (search = '') => {
+    setBaselineLoading(true)
+    try {
+      const res: any = await listAssets({
+        asset_type: 'image',
+        page: 1,
+        page_size: 48,
+        ...(search.trim() ? { search: search.trim() } : {}),
+      })
+      setBaselineCandidates(res?.data ?? res?.items ?? [])
+    } catch {
+      setBaselineCandidates([])
+    } finally {
+      setBaselineLoading(false)
+    }
+  }
+
+  const openBaselinePicker = async () => {
+    setBaselinePickerOpen(true)
+    await loadBaselineCandidates(baselineSearch)
+  }
+
+  const pickBaseline = async (asset: BaselineCandidate) => {
+    if (!projectId) {
+      message.warning('视觉基准按项目保存：请先选择或绑定一个创作项目')
+      return
+    }
+    try {
+      await setVisualBaseline(projectId, asset.id)
+      setBaselineAssetId(asset.id)
+      setBaselinePickerOpen(false)
+      message.success('已设为项目视觉基准（生图时自动作为参考图注入）')
+    } catch (error) {
+      message.error((error as Error).message)
+    }
+  }
+
+  const clearBaseline = async () => {
+    if (!projectId) return
+    try {
+      await clearVisualBaseline(projectId)
+      setBaselineAssetId(null)
+      message.success('已清除项目视觉基准')
+    } catch (error) {
+      message.error((error as Error).message)
+    }
+  }
 
   const doCreate = async () => {
     try {
@@ -869,6 +943,9 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
             }
             style={visualStyle}
             onStyleChange={setVisualStyle}
+            baselineAssetId={baselineAssetId}
+            onOpenBaselinePicker={openBaselinePicker}
+            onClearBaseline={clearBaseline}
             promptOverride={visualPromptOverride}
             onPromptOverrideChange={setVisualPromptOverride}
             onPreview={previewVisualPrompt}
@@ -980,6 +1057,18 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
             onDownloadJson={doExportPoints}
             exportingJson={exportLoading}
             jsonPreview={exportPreview}
+          />
+
+          <BaselinePickerModal
+            open={baselinePickerOpen}
+            onClose={() => setBaselinePickerOpen(false)}
+            candidates={baselineCandidates}
+            loading={baselineLoading}
+            search={baselineSearch}
+            onSearchChange={setBaselineSearch}
+            onSearch={() => loadBaselineCandidates(baselineSearch)}
+            onPick={pickBaseline}
+            currentAssetId={baselineAssetId}
           />
 
           <Modal
