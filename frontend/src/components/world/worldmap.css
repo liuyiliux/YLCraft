@@ -260,6 +260,58 @@
   opacity: 0.8;
 }
 
+/* 画布空态：居中，说清「为什么空 + 去哪做第一件事」 */
+.wm-canvas-empty {
+  position: absolute;
+  inset: 0;
+  z-index: 480;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 24px;
+  text-align: center;
+  color: var(--p-ink);
+  /* 空态要压在纸纹网格上但不挡住底下的缩放条/罗盘交互 */
+  pointer-events: none;
+}
+
+.wm-canvas-empty svg {
+  opacity: 0.45;
+  margin-bottom: 4px;
+}
+
+.wm-canvas-empty-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--p-fg);
+}
+
+.wm-canvas-empty-hint {
+  max-width: 320px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--p-muted);
+}
+
+.wm-canvas-empty-action {
+  margin-top: 6px;
+  height: 32px;
+  padding: 0 14px;
+  font-size: 13px;
+  color: #fff;
+  background: var(--p-accent);
+  border: none;
+  border-radius: var(--p-radius-control);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.wm-canvas-empty-action:hover {
+  filter: brightness(1.05);
+}
+
 /* 左下角罗盘玫瑰：小说地图的标配装饰，纯静态且不拦截交互 */
 .wm-compass {
   position: absolute;
