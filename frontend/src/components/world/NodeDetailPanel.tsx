@@ -42,7 +42,8 @@ export default function NodeDetailPanel({
       style={{
         width: 300,
         flexShrink: 0,
-        border: '1px solid var(--p-border)',        borderRadius: 6,
+        border: '1px solid var(--p-border)',
+        borderRadius: 6,
         background: 'var(--p-surface)',
         padding: 12,
         overflow: 'auto',
@@ -57,6 +58,38 @@ export default function NodeDetailPanel({
         />
       ) : (
         <Space direction="vertical" size={8} style={{ width: '100%' }}>
+          {/* 游离/缺失都不是正典：明确告诉用户事实应该落在 world_entities，而不是画布上的一个点。 */}
+          {!node.entity_id && (
+            <div
+              style={{
+                fontSize: 12,
+                lineHeight: '18px',
+                color: 'var(--p-warn)',
+                background: 'color-mix(in srgb, var(--p-warn) 10%, transparent)',
+                border: '1px solid color-mix(in srgb, var(--p-warn) 35%, transparent)',
+                borderRadius: 6,
+                padding: '6px 8px',
+              }}
+            >
+              游离标记：未关联地点实体。正典应写在 world_entities，画布只引用
+              ——请在小说世界提取中确认该地点，或在此处删除这个点。
+            </div>
+          )}
+          {node.entity_id && !entityRow?.entity && (
+            <div
+              style={{
+                fontSize: 12,
+                lineHeight: '18px',
+                color: 'var(--p-warn)',
+                background: 'color-mix(in srgb, var(--p-warn) 10%, transparent)',
+                border: '1px solid color-mix(in srgb, var(--p-warn) 35%, transparent)',
+                borderRadius: 6,
+                padding: '6px 8px',
+              }}
+            >
+              引用的实体已不存在：这个点仍保留坐标，但已失去文字依据，请重新关联或删除。
+            </div>
+          )}
           <Space wrap>
             <Text strong>{node.name || '未命名'}</Text>
             {node.entity_id ? (

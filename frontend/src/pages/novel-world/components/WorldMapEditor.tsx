@@ -182,6 +182,8 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
   }, [activeBackend])
   // 标题与图层改动同样属于未保存编辑。
   const markDirty = useCallback(() => setDirty(true), [])
+
+
   // 按生成模式过滤生图后端：图生图 image_to_image，文生图 text_to_image（与立绘同一规则）。
   const visibleImageBackends = useMemo(
     () =>
@@ -541,6 +543,35 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
   }, [hasLayers, activeLayer, draft.nodes, kindFilter])
   const visibleNodeIds = useMemo(() => new Set(visibleNodes.map((n) => n.id)), [visibleNodes])
 
+  // 画布空态：说清「为什么空 + 去哪做第一件事」，而不是留一片白。
+  const canvasEmptyState = useMemo(() => {
+    if (visibleNodes.length > 0) return null
+    const filtered = Boolean(activeLayer && activeLayer !== '__all__') || Boolean(kindFilter)
+    if (draft.nodes.length === 0) {
+      return {
+        title: '这张地图还没有据点',
+        hint: '据点是结构化空间正典的起点：可以从已确认的地点实体生成，也可以手动新建。',
+        actionLabel: projectId ? '从地点实体生成' : '新建据点',
+        onAction: projectId ? doGenerateFromPlaces : addNode,
+      }
+    }
+    return {
+      // 有据点但被位面/类型筛掉了：给一键清除筛选的出口。
+      title: filtered ? '当前位面/筛选下没有据点' : '这张地图还没有据点',
+      hint: filtered
+        ? '所选位面或类型下暂无据点：可以清除筛选查看全部，或切到该位面后新建据点。'
+        : '据点是结构化空间正典的起点：可以从已确认的地点实体生成，也可以手动新建。',
+      actionLabel: filtered ? '清除筛选' : '新建据点',
+      onAction: filtered
+        ? () => {
+            setActiveLayer(null)
+            setKindFilter('')
+          }
+        : addNode,
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleNodes.length, draft.nodes.length, activeLayer, kindFilter, projectId])
+
   const onUploadBaseMap = (file: File) => {
     const reader = new FileReader()
     reader.onload = () => setBaseMapUrl(typeof reader.result === 'string' ? reader.result : null)
@@ -855,6 +886,7 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
               selectedNodeId={selectedNodeId}
               onSelectNode={setSelectedNodeId}
               onMoveNode={(nodeId, x, y) => updateNode(nodeId, { x, y })}
+              emptyState={canvasEmptyState}
             />
             </div>
 

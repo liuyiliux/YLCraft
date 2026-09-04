@@ -138,7 +138,11 @@ function zoomPercent(zoom: number): number {
  * 画布叠加层：左上缩放工具条 + 左下罗盘玫瑰。
  * 用 Portal 挂到画布容器上，交给 React 管理生命周期，避免手写 DOM 与事件清理。
  */
-function CanvasOverlays() {
+function CanvasOverlays({
+  empty,
+}: {
+  empty: { title: string; hint: string; actionLabel?: string; onAction?: () => void } | null
+}) {
   const map = useMap()
   const [host, setHost] = useState<HTMLElement | null>(null)
   const [zoom, setZoom] = useState(0)
@@ -182,6 +186,21 @@ function CanvasOverlays() {
           </text>
         </svg>
       </div>
+      {empty && (
+        <div className="wm-canvas-empty">
+          <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" strokeWidth="1.4">
+            <path d="M9 4 3 6.5v13L9 17l6 2.5 6-2.5v-13L15 6.5z" />
+            <path d="M9 4v13M15 6.5v13" />
+          </svg>
+          <div className="wm-canvas-empty-title">{empty.title}</div>
+          <div className="wm-canvas-empty-hint">{empty.hint}</div>
+          {empty.actionLabel && (
+            <button type="button" className="wm-canvas-empty-action" onClick={empty.onAction}>
+              {empty.actionLabel}
+            </button>
+          )}
+        </div>
+      )}
     </>,
     host,
   )
@@ -253,6 +272,11 @@ interface Props {
   selectedNodeId?: string | null
   onSelectNode: (nodeId: string) => void
   onMoveNode: (nodeId: string, x: number, y: number) => void
+  /**
+   * 画布空态：由父组件判断"为什么空 + 去哪做第一件事"。
+   * 留空时若图层被全部关闭，画布仍会给出「图层全关」提示。
+   */
+  emptyState?: { title: string; hint: string; actionLabel?: string; onAction?: () => void } | null
 }
 
 export default function MapCanvas({
@@ -272,7 +296,19 @@ export default function MapCanvas({
   selectedNodeId,
   onSelectNode,
   onMoveNode,
+  emptyState,
 }: Props) {
+  // 图层全部关闭时空画布也要说明原因，而不是让人以为地图是坏的。
+  const allLayersHidden = !showNodes && !showRegions && !showRoutes && !(showBaseMap && baseMapUrl)
+  const canvasEmpty = emptyState
+    ? emptyState
+    : allLayersHidden
+      ? {
+          title: '所有图层都已关闭',
+          hint: '在左侧图层面板打开「据点 / 区域 / 路线 / 底图」中的任意一项即可显示内容。',
+        }
+      : null
+
   return (
     <MapContainer
       crs={L.CRS.Simple}
@@ -285,7 +321,7 @@ export default function MapCanvas({
       attributionControl={false}
     >
       <FitToBounds nodes={nodes} />
-      <CanvasOverlays />
+      <CanvasOverlays empty={canvasEmpty} />
       <CoordinateReadout />
       {showBaseMap && baseMapUrl && <MapImageOverlay url={baseMapUrl} />}
 
