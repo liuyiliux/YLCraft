@@ -177,6 +177,40 @@
   overflow: hidden;
 }
 
+/* ---- 画布主题：纸张 / 水墨 / 夜晚 —— 每套只换纸墨与滤镜，不改布局 ----
+   主题作用于画布整体（filter 同时影响底图与标记），与页面的浅深模式互相独立。 */
+
+/* 水墨：微微去饱和 + 提对比，纸面加斜向纹理，像宣纸上的墨稿 */
+.wm-canvas[data-canvas-theme='ink'] {
+  --p-paper: #f6f4ef;
+  --p-ink: #2f2a24;
+  filter: saturate(0.82) contrast(1.06);
+  background-image:
+    repeating-linear-gradient(45deg, rgba(47, 42, 36, 0.035) 0 2px, transparent 2px 5px),
+    linear-gradient(to right, color-mix(in srgb, var(--p-ink) 6%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--p-ink) 6%, transparent) 1px, transparent 1px);
+}
+
+/* 夜晚：深色纸 + 冷墨，低饱和，适合暗色环境下的长时间编辑 */
+.wm-canvas[data-canvas-theme='night'] {
+  --p-paper: #1d222b;
+  --p-ink: #dfe6f0;
+  filter: saturate(0.9) brightness(0.98);
+  background-image:
+    linear-gradient(to right, color-mix(in srgb, var(--p-ink) 7%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--p-ink) 7%, transparent) 1px, transparent 1px);
+}
+
+/* 夜晚主题下罗盘/读数/空态的墨色随之反转（它们继承 --p-ink） */
+.wm-canvas[data-canvas-theme='night'] .wm-node-label,
+.wm-canvas[data-canvas-theme='night'] .wm-region-label.leaflet-tooltip {
+  text-shadow:
+    -1px 0 2px var(--p-paper),
+    1px 0 2px var(--p-paper),
+    0 -1px 2px var(--p-paper),
+    0 1px 2px var(--p-paper);
+}
+
 /* ---- 据点：地物图标 + 文学化地名标签（不是胶囊按钮） ---- */
 
 .wm-node {

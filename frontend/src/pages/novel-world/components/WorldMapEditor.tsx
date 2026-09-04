@@ -42,7 +42,10 @@ import ProviderModelSelect, { filterBackendsByCapability } from '../../../compon
 import EvidenceList from '../../../components/world/EvidenceList'
 import DataPanel from '../../../components/world/DataPanel'
 import ExportModal from '../../../components/world/ExportModal'
-import LayerPanel from '../../../components/world/LayerPanel'
+import LayerPanel, {
+  type CanvasTheme,
+  type ViewPreset,
+} from '../../../components/world/LayerPanel'
 import NodeDetailPanel from '../../../components/world/NodeDetailPanel'
 import VersionModal from '../../../components/world/VersionModal'
 import VisualDrawer from '../../../components/world/VisualDrawer'
@@ -100,6 +103,9 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
   const [visualModel, setVisualModel] = useState('')
   const [visualSize, setVisualSize] = useState('1024x1024')
   const [visualStyle, setVisualStyle] = useState('')
+  // 画布主题（纸张/水墨/夜晚）与视图预设（政治/自然/纯结构）：都只影响显示，不改数据。
+  const [canvasTheme, setCanvasTheme] = useState<CanvasTheme>('paper')
+  const [viewPreset, setViewPreset] = useState<ViewPreset>('political')
   const [visualPromptOverride, setVisualPromptOverride] = useState('')
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewPrompt, setPreviewPrompt] = useState('')
@@ -543,6 +549,35 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
   }, [hasLayers, activeLayer, draft.nodes, kindFilter])
   const visibleNodeIds = useMemo(() => new Set(visibleNodes.map((n) => n.id)), [visibleNodes])
 
+  // 视图预设：只改图层开关组合，不改数据；用户之后仍可单独微调某一个开关。
+  const applyViewPreset = (preset: ViewPreset) => {
+    setViewPreset(preset)
+    if (preset === 'political') {
+      setShowNodes(true)
+      setShowRegions(true)
+      setShowRoutes(true)
+      setShowBaseMap(false)
+    } else if (preset === 'physical') {
+      setShowNodes(true)
+      setShowRegions(false)
+      setShowRoutes(false)
+      setShowBaseMap(true)
+    } else {
+      setShowNodes(true)
+      setShowRegions(true)
+      setShowRoutes(false)
+      setShowBaseMap(false)
+    }
+  }
+
+  // 画风预设与画布主题联动：选了水墨/夜晚这类"观感词"，画布也跟着换纸墨，
+  // 让用户看到的底稿与即将生成的成图气质一致（生图提示词与画布主题双用）。
+  const applyVisualStyle = (next: string) => {
+    setVisualStyle(next)
+    if (next === '水墨') setCanvasTheme('ink')
+    else if (next === '羊皮纸古地图') setCanvasTheme('paper')
+  }
+
   // 画布空态：说清「为什么空 + 去哪做第一件事」，而不是留一片白。
   const canvasEmptyState = useMemo(() => {
     if (visibleNodes.length > 0) return null
@@ -855,6 +890,10 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
                     color: regionColor(region.id, regionOrder),
                     count: draft.nodes.filter((n) => n.region_id === region.id).length,
                   }))}
+                  viewPreset={viewPreset}
+                  onViewPresetChange={applyViewPreset}
+                  canvasTheme={canvasTheme}
+                  onCanvasThemeChange={setCanvasTheme}
                 />
                 <DataPanel
                   nodeCount={draft.nodes.length}
@@ -868,7 +907,7 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
                 />
               </Space>
             </aside>
-            <div className="wm-canvas">
+            <div className="wm-canvas" data-canvas-theme={canvasTheme}>
             <MapCanvas
               nodes={draft.nodes}
               visibleNodes={visibleNodes}
