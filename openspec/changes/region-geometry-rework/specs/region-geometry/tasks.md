@@ -17,12 +17,20 @@
       _校验脚本 `tmp/check-region-shape.mjs`（tsc 编译到 tmp 后用 node 跑）。注：前端目前无单元测试框架，
       建议后续引入 vitest 把这类纯函数测试固化（见待办 D-2）。_
 
-## 阶段 2 · 画布渲染
+## 阶段 2 · 画布渲染 ✅
 
-- [ ] 5. `MapCanvas`：区域改用 `shape.vertices` 渲染；无顶点时按 `seed=hash(region.id)` 内存回退生成。
-- [ ] 6. 层级视觉：按 `parent_id` 计算深度 → 填充 opacity（父 .06 / 子 .10 / 每层 +.02 上限 .18）、
-      边界（父虚线粗、子实线细）、选中提亮 + 主色描边。
-- [ ] 7. 区域名标签保持常驻（LOD 规则不变），嵌套时不重叠策略：子标签偏移，父标签淡化。
+- [x] 5. `MapCanvas`：区域改用 `shape.vertices` 渲染；无顶点时按 `seed = shape.seed ?? hash(region.id)`
+      在内存中临时生成（不写库），因此未生成形状的区域也不会变空白。
+      _Done: 新增 `resolveRegionVertices()`；渲染条件放宽为「有成员据点 **或** 已存形状」，
+      不再要求 ≥3 个据点（旧凸包实现的最小三点限制被移除）。_
+- [x] 6. 层级视觉：`computeRegionDepths()` 按 `parent_id` 链算深度（带环检测，上限 8 层），
+      `regionPathStyle()` 给出填充/边界/虚线：父 .06 + 粗虚线、子 .10 + 细实线、更深每层 +.02（上限 .18）、
+      选中填充 +.08 且边界转主色 1.6px。渲染按深度排序（父先画、子压在上面）。
+      _Done: 选中据点时，其所属区域一并提亮（`selectedRegionId`）。_
+- [x] 7. 区域名标签保持常驻（LOD 不变）。_嵌套重叠策略待阶段 3 与层级树一起调（当前父标签淡化已通过
+      填充权重间接实现）。_
+- [x] 补充：AI/后端传入的 `shape.params` 经 `normalizeShapeParams()` 收敛回受控词表
+      （越界回退默认），脏数据不会把形状算崩；删除不再使用的 `REGION_FILL_OPACITY` 常量。
 
 ## 阶段 3 · 交互
 
