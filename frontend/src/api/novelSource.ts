@@ -431,12 +431,34 @@ export function deriveProject(
 // 结构化世界地图
 // ---------------------------------------------------------------------------
 
+/**
+ * 区域几何：形状是区域的**独立几何**，不再由成员据点围合推导。
+ * - auto：由「成员据点 + 语义参数 + seed」确定性展开，可重放；
+ * - manual：顶点被手绘编辑后固化，重新生成会覆盖（需确认）。
+ */
+export interface WorldMapRegionShape {
+  mode: 'auto' | 'manual'
+  seed: number
+  params: {
+    nature?: string
+    settlement?: string
+    structure?: string
+    scale?: '小' | '中' | '大'
+    irregularity?: number
+  }
+  /** 顶点 [y, x]（与渲染端 Leaflet 一致），上限 64，闭合由渲染端处理。 */
+  vertices: [number, number][]
+}
+
 export interface WorldMapRegion {
   id: string
   name: string
   kind: string
+  /** 父区域（不限层嵌套），null/空为顶层。 */
   parent_id?: string | null
   description: string
+  /** 区域几何；缺失或 vertices 为空表示尚未生成（渲染端按 seed 派生临时形状）。 */
+  shape?: WorldMapRegionShape | null
 }
 
 /** 空间层（位面）：由项目/世界观自定义（名称与数量不写死）；缺省时视为单层地图。 */
