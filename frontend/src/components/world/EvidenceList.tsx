@@ -27,7 +27,7 @@ export default function EvidenceList({ items, max, variant = 'compact', emptyTex
   const rows = items || []
   const shown = max ? rows.slice(0, max) : rows
   if (!shown.length) {
-    return emptyText ? <div style={{ color: '#8c8c8c' }}>{emptyText}</div> : null
+    return emptyText ? <div style={{ color: 'var(--p-muted)' }}>{emptyText}</div> : null
   }
 
   if (variant === 'alert') {
@@ -49,12 +49,12 @@ export default function EvidenceList({ items, max, variant = 'compact', emptyTex
   return (
     <div>
       {shown.map((ev, i) => (
-        <div key={i} style={{ color: '#8c8c8c' }}>
+        <div key={i} style={{ color: 'var(--p-muted)' }}>
           「{ev.quote || '（无引文）'}」{ev.chunk_id ? `（${ev.chunk_id}）` : ''}
         </div>
       ))}
       {max && rows.length > max && (
-        <div style={{ color: '#8c8c8c' }}>…共 {rows.length} 条证据</div>
+        <div style={{ color: 'var(--p-muted)' }}>…共 {rows.length} 条证据</div>
       )}
     </div>
   )

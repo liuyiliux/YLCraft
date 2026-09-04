@@ -138,7 +138,7 @@ export default function VisualDrawer({
       onClose={onClose}
     >
       <Space direction="vertical" style={{ width: '100%' }} size="middle">
-        <Card size="small" title="生成地图视觉成图" style={{ background: '#fafafa' }}>
+        <Card size="small" title="生成地图视觉成图" style={{ background: 'var(--p-surface)' }}>
           <Space direction="vertical" style={{ width: '100%' }} size="middle">
             <Segmented
               value={mode}
@@ -193,7 +193,7 @@ export default function VisualDrawer({
                             width: 72,
                             cursor: 'pointer',
                             position: 'relative',
-                            border: checked ? '2px solid #1677ff' : '1px solid #d9d9d9',
+                            border: checked ? '2px solid var(--p-accent)' : '1px solid var(--p-border)',
                             borderRadius: 6,
                             overflow: 'hidden',
                           }}
@@ -377,7 +377,7 @@ export default function VisualDrawer({
                     style={{
                       maxWidth: 260,
                       width: '100%',
-                      border: '1px solid #e5e7eb',
+                      border: '1px solid var(--p-border)',
                       borderRadius: 6,
                     }}
                   />
@@ -417,7 +417,7 @@ export default function VisualDrawer({
           <Card
             size="small"
             title={`视觉成图历史（${historyVisuals.length}）`}
-            style={{ background: '#fafafa' }}
+            style={{ background: 'var(--p-surface)' }}
           >
             <Space wrap>
               {historyVisuals.map((visual, index) => (
@@ -430,7 +430,7 @@ export default function VisualDrawer({
                         width: '100%',
                         aspectRatio: '1',
                         objectFit: 'cover',
-                        border: '1px solid #e5e7eb',
+                        border: '1px solid var(--p-border)',
                         borderRadius: 6,
                       }}
                     />

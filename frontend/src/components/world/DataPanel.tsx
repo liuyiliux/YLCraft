@@ -31,7 +31,7 @@ export default function DataPanel({
     <Card
       size="small"
       title="数据"
-      style={{ background: '#fafafa' }}
+      style={{ background: 'var(--p-surface)' }}
       styles={{ body: { padding: '10px 12px' } }}
     >
       <Space direction="vertical" size={6} style={{ width: '100%' }}>
@@ -43,7 +43,7 @@ export default function DataPanel({
             当前 revision v{revision}
           </Text>
         ) : null}
-        <div style={{ fontSize: 11, color: '#8c8c8c', lineHeight: 1.9 }}>
+        <div style={{ fontSize: 11, color: 'var(--p-muted)', lineHeight: 1.9 }}>
           <div>● 据点（圆点标记 / 已关联实体）</div>
           <div>◇ 区域（成员据点围合）</div>
           <div>— 路线（连通路径）</div>

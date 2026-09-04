@@ -20,7 +20,14 @@ const MAP_BOUNDS = L.latLngBounds([
   [0, 0],
   [100, 100],
 ])
+/** 区域/节点区分色，与 CSS 令牌 --p-region-* 一致（Leaflet 需要具体色值）。 */
 const REGION_HUES = ['#1677ff', '#52c41a', '#fa8c16', '#eb2f96', '#722ed1', '#13c2c2']
+/** 底图参考层透明度（样式规范 §6.3：固定 .18，不可调）。 */
+const BASEMAP_OPACITY = 0.18
+/** 区域多边形填充透明度。 */
+const REGION_FILL_OPACITY = 0.12
+/** 路线连线色（中性灰蓝，不与区域色争层级）。 */
+const ROUTE_COLOR = '#94a3b8'
 
 function regionColor(regionId: string | null | undefined, regionOrder: Map<string, number>): string {
   if (!regionId) return REGION_HUES[0]
@@ -60,7 +67,11 @@ function MapImageOverlay({ url }: { url: string }) {
   const map = useMap()
   useEffect(() => {
     if (!url) return
-    const overlay = L.imageOverlay(url, MAP_BOUNDS, { opacity: 0.6, interactive: false })
+    // 底图只是可选参考层：低透明、不可交互，永远不与结构化标记争层级（样式规范 §6.3）。
+    const overlay = L.imageOverlay(url, MAP_BOUNDS, {
+      opacity: BASEMAP_OPACITY,
+      interactive: false,
+    })
     overlay.addTo(map)
     return () => {
       overlay.remove()
@@ -134,7 +145,7 @@ export default function MapCanvas({
                 [to.y, to.x],
               ]}
               pathOptions={{
-                color: '#94a3b8',
+                color: ROUTE_COLOR,
                 weight: 2,
                 dashArray: route.kind === '边界' ? '4 4' : undefined,
               }}
@@ -164,7 +175,12 @@ export default function MapCanvas({
             <Polygon
               key={region.id}
               positions={ring}
-              pathOptions={{ color, fillColor: color, fillOpacity: 0.12, weight: 1.5 }}
+              pathOptions={{
+                color,
+                fillColor: color,
+                fillOpacity: REGION_FILL_OPACITY,
+                weight: 1.5,
+              }}
             />
           )
         })}
@@ -192,21 +208,21 @@ export default function MapCanvas({
               <div style={{ minWidth: 160, maxWidth: 260 }}>
                 <strong>{node.name || '未命名'}</strong>
                 {node.kind && (
-                  <div style={{ fontSize: 12, color: '#8c8c8c', marginTop: 2 }}>{node.kind}</div>
+                  <div style={{ fontSize: 12, color: 'var(--p-muted)', marginTop: 2 }}>{node.kind}</div>
                 )}
                 {(() => {
                   const row = entityByNodeId.get(node.id)
                   if (row?.entity) {
                     return (
                       <div style={{ fontSize: 12, marginTop: 6 }}>
-                        <div style={{ color: '#1677ff' }}>来源实体：{row.entity.name}</div>
+                        <div style={{ color: 'var(--p-accent)' }}>来源实体：{row.entity.name}</div>
                         {row.entity.summary && (
-                          <div style={{ color: '#595959', marginTop: 2, whiteSpace: 'pre-wrap' }}>
+                          <div style={{ color: 'var(--p-fg)', marginTop: 2, whiteSpace: 'pre-wrap' }}>
                             {row.entity.summary}
                           </div>
                         )}
                         {row.entity.evidence.length > 0 && (
-                          <div style={{ color: '#8c8c8c', marginTop: 2 }}>
+                          <div style={{ color: 'var(--p-muted)', marginTop: 2 }}>
                             {row.entity.evidence.length} 条原文证据（详见据点编辑区）
                           </div>
                         )}
@@ -215,7 +231,7 @@ export default function MapCanvas({
                   }
                   if (orphanNodeIds.includes(node.id)) {
                     return (
-                      <div style={{ fontSize: 12, color: '#fa8c16', marginTop: 6 }}>
+                      <div style={{ fontSize: 12, color: 'var(--p-warn)', marginTop: 6 }}>
                         游离标记：未关联地点实体（正典应在 world_entities）
                       </div>
                     )
@@ -228,7 +244,7 @@ export default function MapCanvas({
                   </div>
                 )}
                 {selectedNodeId === node.id && (
-                  <div style={{ fontSize: 12, color: '#1677ff', marginTop: 6 }}>
+                  <div style={{ fontSize: 12, color: 'var(--p-accent)', marginTop: 6 }}>
                     已在右栏打开，可直接编辑
                   </div>
                 )}

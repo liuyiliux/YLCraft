@@ -99,10 +99,10 @@ export default function BaselinePickerModal({
                   title={asset.name || asset.id}
                   style={{
                     cursor: 'pointer',
-                    border: selected ? '2px solid #1677ff' : '1px solid #d9d9d9',
+                    border: selected ? '2px solid var(--p-accent)' : '1px solid var(--p-border)',
                     borderRadius: 6,
                     overflow: 'hidden',
-                    background: '#fff',
+                    background: 'var(--p-surface)',
                   }}
                 >
                   <img
@@ -113,14 +113,14 @@ export default function BaselinePickerModal({
                       aspectRatio: '1',
                       objectFit: 'cover',
                       display: 'block',
-                      background: '#fafafa',
+                      background: 'var(--p-surface)',
                     }}
                   />
                   <div
                     style={{
                       fontSize: 11,
                       padding: '4px 6px',
-                      color: selected ? '#1677ff' : '#595959',
+                      color: selected ? 'var(--p-accent)' : 'var(--p-muted)',
                       whiteSpace: 'nowrap',
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',

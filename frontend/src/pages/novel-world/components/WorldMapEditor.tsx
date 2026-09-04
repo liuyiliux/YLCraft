@@ -701,7 +701,7 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
         </Space>
       }
       extra={
-        <Space wrap>
+        <Space wrap className="wm-topbar-actions">
           <Select
             placeholder="选择地图"
             style={{ width: 200 }}
@@ -794,8 +794,8 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
             message="Leaflet 工作台：拖拽节点改坐标；滚轮缩放、平移；可上传手绘或 AI 底图作为参考层。服务端 SVG 渲染与 revision CAS 保存保留。"
           />
 
-          <div style={{ display: 'flex', gap: 12, alignItems: 'stretch' }}>
-            <aside style={{ width: 230, flexShrink: 0 }}>
+          <div className="wm-body">
+            <aside className="wm-panel wm-panel-left">
               <Space direction="vertical" size={12} style={{ width: '100%' }}>
                 <LayerPanel
                   showNodes={showNodes}
@@ -831,17 +831,7 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
                 />
               </Space>
             </aside>
-            <div
-              style={{
-                flex: 1,
-                minWidth: 0,
-                height: 520,
-                border: '1px solid #d9d9d9',
-                borderRadius: 6,
-                overflow: 'hidden',
-                background: '#fafafa',
-              }}
-            >
+            <div className="wm-canvas">
             <MapCanvas
               nodes={draft.nodes}
               visibleNodes={visibleNodes}
@@ -863,6 +853,7 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
             </div>
 
             {/* 右栏：选中据点详情/编辑（结构化数据是正典；实体信息引用不复制） */}
+            <div className="wm-panel wm-panel-right">
             <NodeDetailPanel
               node={selectedNodeId ? draft.nodes.find((n) => n.id === selectedNodeId) ?? null : null}
               entityRow={selectedNodeId ? entityByNodeId.get(selectedNodeId) ?? null : null}
@@ -879,6 +870,7 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
               }}
               onClose={() => setSelectedNodeId(null)}
             />
+            </div>
           </div>
 
 
