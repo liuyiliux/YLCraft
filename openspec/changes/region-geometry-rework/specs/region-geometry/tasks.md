@@ -60,5 +60,8 @@
   AI/Agent 只产出**语义参数**（受控词表 + seed + 面积感 + 不规则度），顶点一律由
   `frontend/src/utils/regionShape.ts` 展开。理由：单一实现、零双份维护、天然一致，
   且实时预览与参数微调都在前端完成。任务 15（Python 复刻）取消。
-- **D-2 前端单元测试框架（待办）**：前端目前无任何单测框架（只有 `smoke:pages` 脚本），
-  本次算法校验用「tsc 编译到 tmp + node 断言」临时方案。建议引入 vitest 固化纯函数测试。
+- **D-2 前端单元测试框架（已完成）**：引入 **vitest 1.6.0**（与项目 vite 5 匹配；最新版会因 peer
+  冲突装不上，不追新）。`npm test` / `npm run test:watch`；首个测试文件
+  `src/utils/regionShape.test.ts` 覆盖 9 项（确定性、seed 差异、顶点上限全组合、坐标裁剪、
+  无据点可用、面积感递增、**据点必被包住**、极端参数 60 seed、hashSeed 稳定）。
+  后续纯函数（导出、坐标换算等）都应补测试。
