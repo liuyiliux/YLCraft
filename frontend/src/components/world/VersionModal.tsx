@@ -141,7 +141,7 @@ export default function VersionModal({
         {compareResult.length > 0 && (
           <div
             style={{
-              background: '#f5f5f5',
+              background: 'var(--p-bg)',
               padding: 12,
               borderRadius: 6,
               fontSize: 12,

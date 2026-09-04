@@ -52,7 +52,7 @@ export default function ExportModal({
           <Paragraph
             style={{
               whiteSpace: 'pre-wrap',
-              background: '#f5f5f5',
+              background: 'var(--p-bg)',
               padding: 12,
               borderRadius: 6,
               maxHeight: 320,

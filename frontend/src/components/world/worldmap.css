@@ -1,0 +1,194 @@
+/**
+ * 世界地图工作台的样式令牌与基础布局类。
+ *
+ * 规格来源：docs/design/world-map-workbench-style.md（改样式前先改文档）。
+ * 令牌作用域限定在 .worldmap-scope 内，避免污染其它页面；深色模式只换令牌，不改布局。
+ */
+
+.worldmap-scope {
+  --p-bg: #f5f7fa;
+  --p-surface: #ffffff;
+  --p-fg: #1f2329;
+  --p-muted: #5f6b7a;
+  --p-border: #e2e6ec;
+  --p-accent: #1677ff;
+  --p-danger: #ff4d4f;
+  --p-success: #52c41a;
+  --p-warn: #fa8c16;
+
+  /* 区域/节点区分色（沿用存量 REGION_HUES，与既有视觉资产一致） */
+  --p-region-1: #1677ff;
+  --p-region-2: #52c41a;
+  --p-region-3: #fa8c16;
+  --p-region-4: #eb2f96;
+  --p-region-5: #722ed1;
+  --p-region-6: #13c2c2;
+
+  /* 画布内的派生层：底图永远低透明、不与标记争层级 */
+  --p-basemap-opacity: 0.18;
+  --p-region-fill-opacity: 0.12;
+  --p-route-color: #94a3b8;
+
+  --p-radius-control: 6px;
+  --p-radius-surface: 8px;
+  --p-radius-pill: 999px;
+
+  --p-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --p-shadow-overlay: 0 6px 16px rgba(0, 0, 0, 0.08);
+
+  --p-font: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --p-font-mono: ui-monospace, SFMono-Regular, 'Cascadia Mono', Consolas, monospace;
+
+  background: var(--p-bg);
+  color: var(--p-fg);
+  font-family: var(--p-font);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.worldmap-scope[data-theme='dark'] {
+  --p-bg: #14161a;
+  --p-surface: #1e2227;
+  --p-fg: #e8e9ec;
+  --p-muted: #9aa3b0;
+  --p-border: #333a43;
+  --p-accent: #3c8cff;
+  --p-danger: #ff7a7c;
+  --p-success: #6bd04d;
+  --p-warn: #ffa940;
+
+  --p-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --p-shadow-overlay: 0 6px 16px rgba(0, 0, 0, 0.5);
+}
+
+/* ---- 骨架：三栏工作台 ---- */
+
+.wm-topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 56px;
+  padding: 8px 16px;
+  background: var(--p-surface);
+  border-bottom: 1px solid var(--p-border);
+}
+
+/* 顶栏动作区（挂在 Card 头部内，规范控件间距与换行） */
+.wm-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.wm-body {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  padding: 12px;
+}
+
+.wm-panel {
+  background: var(--p-surface);
+  border: 1px solid var(--p-border);
+  border-radius: var(--p-radius-control);
+  box-shadow: var(--p-shadow-card);
+  padding: 12px;
+}
+
+.wm-panel-left {
+  width: 260px;
+  flex: 0 0 260px;
+  overflow-y: auto;
+}
+
+.wm-panel-right {
+  width: 320px;
+  flex: 0 0 320px;
+  overflow-y: auto;
+}
+
+.wm-canvas {
+  flex: 1;
+  min-width: 0;
+  height: 520px;
+  background: var(--p-surface);
+  border: 1px solid var(--p-border);
+  border-radius: var(--p-radius-surface);
+  overflow: hidden;
+}
+
+/* ---- 文本层级 ---- */
+
+.wm-title {
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 600;
+  color: var(--p-fg);
+}
+
+.wm-muted {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--p-muted);
+}
+
+.wm-mono {
+  font-family: var(--p-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- 图例与色点 ---- */
+
+.wm-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--p-radius-pill);
+  display: inline-block;
+  flex: 0 0 auto;
+}
+
+/* ---- 空态 ---- */
+
+.wm-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 32px 16px;
+  text-align: center;
+}
+
+/* ---- 焦点可见（键盘可达性） ---- */
+
+.worldmap-scope button:focus-visible,
+.worldmap-scope input:focus-visible,
+.worldmap-scope select:focus-visible,
+.worldmap-scope [tabindex]:focus-visible {
+  outline: 2px solid var(--p-accent);
+  outline-offset: 2px;
+}
+
+/* ---- 响应式：<1024 右详情折抽屉，<768 左图层收起 ---- */
+
+@media (max-width: 1024px) {
+  .wm-panel-right {
+    display: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .wm-body {
+    flex-direction: column;
+    padding: 8px;
+  }
+  .wm-panel-left {
+    width: 100%;
+    flex: none;
+    max-height: 220px;
+  }
+  .wm-canvas {
+    height: 420px;
+  }
+}

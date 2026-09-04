@@ -42,9 +42,8 @@ export default function NodeDetailPanel({
       style={{
         width: 300,
         flexShrink: 0,
-        border: '1px solid #d9d9d9',
-        borderRadius: 6,
-        background: '#fafafa',
+        border: '1px solid var(--p-border)',        borderRadius: 6,
+        background: 'var(--p-surface)',
         padding: 12,
         overflow: 'auto',
         maxHeight: 520,
@@ -82,7 +81,7 @@ export default function NodeDetailPanel({
             </Paragraph>
           )}
           {entityRow?.entity && entityRow.entity.evidence.length > 0 && (
-            <div style={{ fontSize: 12, color: '#8c8c8c' }}>
+            <div style={{ fontSize: 12, color: 'var(--p-muted)' }}>
               <div>证据锚点（{entityRow.entity.evidence.length} 条）：</div>
               <EvidenceList items={entityRow.entity.evidence} max={3} />
             </div>

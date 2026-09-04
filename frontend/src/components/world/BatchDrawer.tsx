@@ -260,7 +260,7 @@ export default function BatchDrawer({
                       const row = getEntityRow(node.id)
                       if (!row?.entity) return null
                       return (
-                        <div style={{ fontSize: 12, color: '#595959', paddingLeft: 4 }}>
+                        <div style={{ fontSize: 12, color: 'var(--p-muted)', paddingLeft: 4 }}>
                           <div>
                             来源实体：{row.entity.name}
                             {row.entity.is_locked ? '（已锁定正典）' : ''}

@@ -61,7 +61,7 @@ export default function LayerPanel({
     <Card
       size="small"
       title="图层"
-      style={{ background: '#fafafa', height: '100%' }}
+      style={{ background: 'var(--p-surface)', height: '100%' }}
       styles={{ body: { padding: '10px 12px' } }}
     >
       <Space direction="vertical" size={10} style={{ width: '100%' }}>
