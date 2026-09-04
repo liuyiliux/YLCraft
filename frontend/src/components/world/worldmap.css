@@ -216,6 +216,66 @@
   color: var(--p-accent);
 }
 
+/* 左上角缩放工具条（纸感：半透明纸底 + 细边，不用 antd 实心按钮） */
+.wm-zoombar {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  background: color-mix(in srgb, var(--p-paper) 88%, transparent);
+  border: 1px solid var(--p-border);
+  border-radius: var(--p-radius-control);
+  box-shadow: var(--p-shadow-card);
+}
+
+.wm-zoombar button {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--p-ink);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.wm-zoombar button:hover {
+  background: color-mix(in srgb, var(--p-ink) 8%, transparent);
+}
+
+.wm-zoom-value {
+  min-width: 44px;
+  text-align: center;
+  font-family: var(--p-font-mono);
+  font-size: 11px;
+  color: var(--p-ink);
+  opacity: 0.8;
+}
+
+/* 左下角罗盘玫瑰：小说地图的标配装饰，纯静态且不拦截交互 */
+.wm-compass {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  z-index: 500;
+  color: var(--p-ink);
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+/* 已有自定义缩放条，隐藏 Leaflet 原生控件避免重复 */
+.worldmap-scope .leaflet-control-zoom {
+  display: none;
+}
+
 /* 画布右下角坐标读数 */
 .wm-coord-readout {
   position: absolute;

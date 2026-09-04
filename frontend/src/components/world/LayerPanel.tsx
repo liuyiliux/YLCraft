@@ -33,6 +33,8 @@ interface Props {
   onUploadBaseMap: (file: File) => void
   baseMapUrl: string | null
   onRemoveBaseMap: () => void
+  /** 图例：区域色与画布同源（MapCanvas 的地形色板），避免面板与画布不同色。 */
+  legendItems: { name: string; color: string; count: number }[]
 }
 
 export default function LayerPanel({
@@ -56,6 +58,7 @@ export default function LayerPanel({
   onUploadBaseMap,
   baseMapUrl,
   onRemoveBaseMap,
+  legendItems,
 }: Props) {
   return (
     <Card
@@ -126,6 +129,20 @@ export default function LayerPanel({
           <Button size="small" block onClick={onRemoveBaseMap}>
             移除底图
           </Button>
+        )}
+        {legendItems.length > 0 && (
+          <Space direction="vertical" size={4} style={{ width: '100%' }}>
+            <Text strong style={{ fontSize: 12 }}>
+              图例
+            </Text>
+            {legendItems.map((item) => (
+              <div key={item.name} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span className="wm-dot" style={{ background: item.color }} />
+                <span style={{ fontSize: 12, color: 'var(--p-fg)' }}>{item.name}</span>
+                <span style={{ fontSize: 11, color: 'var(--p-muted)' }}>{item.count}</span>
+              </div>
+            ))}
+          </Space>
         )}
         <Text type="secondary" style={{ fontSize: 11 }}>
           坐标 0-100；标记永远叠在结构化画布上，AI 底图只是可开关的参考层，不写入事实。

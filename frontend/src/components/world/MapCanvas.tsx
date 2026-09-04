@@ -5,7 +5,8 @@
  * 路线连线，据点可拖拽改坐标（写回 draft，需显式保存才入库）。
  * 底图参考层只是低优先级叠加，永远盖在结构化标记之下、不写回正典。
  */
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { MapContainer, Marker, Polyline, Polygon, Popup, useMap } from 'react-leaflet'
@@ -89,7 +90,8 @@ function curveThrough(from: [number, number], to: [number, number]): [number, nu
   return points
 }
 
-function regionColor(regionId: string | null | undefined, regionOrder: Map<string, number>): string {
+/** 供面板/图例复用，保证与画布上的区域色完全一致。 */
+export function regionColor(regionId: string | null | undefined, regionOrder: Map<string, number>): string {
   if (!regionId) return REGION_HUES[0]
   const index = regionOrder.get(regionId) ?? 0
   return REGION_HUES[index % REGION_HUES.length]
@@ -125,6 +127,64 @@ function FitToBounds({ nodes }: { nodes: WorldMapNode[] }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodes.map((n) => n.id).join(',')])
   return null
+}
+
+/** 缩放百分比：以 zoom 0（世界铺满画布）为 100%。 */
+function zoomPercent(zoom: number): number {
+  return Math.round(Math.pow(2, zoom) * 100)
+}
+
+/**
+ * 画布叠加层：左上缩放工具条 + 左下罗盘玫瑰。
+ * 用 Portal 挂到画布容器上，交给 React 管理生命周期，避免手写 DOM 与事件清理。
+ */
+function CanvasOverlays() {
+  const map = useMap()
+  const [host, setHost] = useState<HTMLElement | null>(null)
+  const [zoom, setZoom] = useState(0)
+
+  useEffect(() => {
+    setHost(map.getContainer().parentElement)
+    setZoom(map.getZoom())
+    const syncZoom = () => setZoom(map.getZoom())
+    map.on('zoomend', syncZoom)
+    return () => {
+      map.off('zoomend', syncZoom)
+    }
+  }, [map])
+
+  if (!host) return null
+  return createPortal(
+    <>
+      <div className="wm-zoombar">
+        <button type="button" title="缩小" onClick={() => map.zoomOut()}>
+          −
+        </button>
+        <span className="wm-zoom-value">{zoomPercent(zoom)}%</span>
+        <button type="button" title="放大" onClick={() => map.zoomIn()}>
+          +
+        </button>
+        <button type="button" title="适应窗口" onClick={() => map.fitBounds(MAP_BOUNDS)}>
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
+          </svg>
+        </button>
+      </div>
+      <div className="wm-compass" title="上为北" aria-hidden="true">
+        <svg viewBox="0 0 48 48" width="40" height="40">
+          <circle cx="24" cy="24" r="21" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.35" />
+          <circle cx="24" cy="24" r="16" fill="none" stroke="currentColor" strokeWidth="0.8" opacity="0.2" />
+          <path d="M24 6 28 24 24 20 20 24z" fill="currentColor" opacity="0.85" />
+          <path d="M24 42 20 24 24 28 28 24z" fill="currentColor" opacity="0.3" />
+          <path d="M24 3v6M24 39v6M3 24h6M39 24h6" stroke="currentColor" strokeWidth="1" opacity="0.45" />
+          <text x="24" y="16" textAnchor="middle" fontSize="9" fontWeight="700" fill="currentColor">
+            N
+          </text>
+        </svg>
+      </div>
+    </>,
+    host,
+  )
 }
 
 /** 右下角坐标读数：让"0-100 平面坐标"对用户可见（与 /render SVG 同一坐标系）。 */
@@ -225,6 +285,7 @@ export default function MapCanvas({
       attributionControl={false}
     >
       <FitToBounds nodes={nodes} />
+      <CanvasOverlays />
       <CoordinateReadout />
       {showBaseMap && baseMapUrl && <MapImageOverlay url={baseMapUrl} />}
 

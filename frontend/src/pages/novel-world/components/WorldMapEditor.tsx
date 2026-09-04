@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Alert, Badge, Button, Card, Collapse, Drawer, Empty, Input, message, Modal, Popconfirm, Radio, Segmented, Select, Space, Table, Tag, Typography, Upload } from 'antd'
 import { DeleteOutlined, EnvironmentOutlined, EyeOutlined, HistoryOutlined, PictureOutlined, PlusOutlined, SaveOutlined, ThunderboltOutlined } from '@ant-design/icons'
-import MapCanvas from '../../../components/world/MapCanvas'
+import MapCanvas, { regionColor } from '../../../components/world/MapCanvas'
 import BaselinePickerModal, {
   type BaselineCandidate,
 } from '../../../components/world/BaselinePickerModal'
@@ -819,6 +819,11 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
                   onUploadBaseMap={(file) => onUploadBaseMap(file)}
                   baseMapUrl={baseMapUrl}
                   onRemoveBaseMap={() => setBaseMapUrl(null)}
+                  legendItems={draft.regions.map((region) => ({
+                    name: region.name || '未命名区域',
+                    color: regionColor(region.id, regionOrder),
+                    count: draft.nodes.filter((n) => n.region_id === region.id).length,
+                  }))}
                 />
                 <DataPanel
                   nodeCount={draft.nodes.length}
