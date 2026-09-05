@@ -256,6 +256,11 @@
   background: var(--p-accent);
 }
 
+/* 顶点编辑中的区域轮廓：十字光标提示「双击边加点」 */
+.wm-region-editing {
+  cursor: crosshair;
+}
+
 /* 区域名：衬线、字距拉开，常驻（小说扉页地图的读法），不抢据点标签 */
 .wm-region-label.leaflet-tooltip {
   background: transparent;

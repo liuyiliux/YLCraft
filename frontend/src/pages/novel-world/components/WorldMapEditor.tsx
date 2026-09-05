@@ -14,8 +14,11 @@ import {
 import {
   expandRegionShape,
   hashSeed,
+  MAX_SHAPE_VERTICES,
   normalizeShapeParams,
+  pointInPolygon,
 } from '../../../utils/regionShape'
+import { canReparent } from '../../../utils/regionHierarchy'
 import {
   createWorldMap,
   createWorldMapFromProjectPlaces,
@@ -479,8 +482,17 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
     }
   }
 
-  const updateRegion = (id: string, patch: Partial<WorldMapRegion>) =>
+  const updateRegion = (id: string, patch: Partial<WorldMapRegion>) => {
+    // 父区域变更先过成环/深度校验：层级就是 parent_id 本身，不能让环进 draft。
+    if ('parent_id' in patch) {
+      const check = canReparent(draft.regions, id, patch.parent_id ?? null)
+      if (!check.ok) {
+        message.warning(check.reason || '该父区域选择不合法')
+        return
+      }
+    }
     setDraft((prev) => ({ ...prev, regions: prev.regions.map((r) => (r.id === id ? { ...r, ...patch } : r)) }))
+  }
   const updateNode = (id: string, patch: Partial<WorldMapNode>) =>
     setDraft((prev) => ({ ...prev, nodes: prev.nodes.map((n) => (n.id === id ? { ...n, ...patch } : n)) }))
   const updateRoute = (id: string, patch: Partial<WorldMapRoute>) =>
@@ -554,6 +566,20 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
   }, [hasLayers, activeLayer, draft.nodes, kindFilter])
   const visibleNodeIds = useMemo(() => new Set(visibleNodes.map((n) => n.id)), [visibleNodes])
 
+  // 据点越界：引用为准、位置仅提示——不自动改 region_id，只把「点在形状外」亮出来。
+  // 区域未生成形状时无从判定，不警告（临时兜底形状不是正典）。
+  const outOfBoundsNodes = useMemo(() => {
+    const verticesByRegion = new Map(
+      draft.regions.map((region) => [region.id, region.shape?.vertices ?? null] as const),
+    )
+    return draft.nodes.filter((node) => {
+      if (!node.region_id) return false
+      const vertices = verticesByRegion.get(node.region_id)
+      if (!vertices || vertices.length < 3) return false
+      return !pointInPolygon(node.x, node.y, vertices)
+    })
+  }, [draft.nodes, draft.regions])
+
   /**
    * 生成/重新生成区域形状：形状由「成员据点 + 语义参数 + seed」确定性展开。
    * 写入 draft（需显式保存才入库）；已经手绘过的区域重新生成要先确认，避免覆盖用户的手工调整。
@@ -611,6 +637,41 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
         const vertices = region.shape.vertices.map((vertex, i) =>
           i === index ? ([y, x] as [number, number]) : vertex,
         )
+        return { ...region, shape: { ...region.shape, mode: 'manual', vertices } }
+      }),
+    }))
+  }
+
+  // 双击边加点：插到最近边之后；顶点数到上限就拒绝（形状算法的硬约束）。
+  const addRegionVertex = (regionId: string, index: number, x: number, y: number) => {
+    const region = draft.regions.find((r) => r.id === regionId)
+    if ((region?.shape?.vertices?.length ?? 0) >= MAX_SHAPE_VERTICES) {
+      message.warning(`顶点数已达上限 ${MAX_SHAPE_VERTICES}，请先删减`)
+      return
+    }
+    setDraft((prev) => ({
+      ...prev,
+      regions: prev.regions.map((region) => {
+        if (region.id !== regionId || !region.shape) return region
+        const vertices = [...(region.shape.vertices ?? [])]
+        vertices.splice(Math.max(0, Math.min(index, vertices.length)), 0, [y, x] as [number, number])
+        return { ...region, shape: { ...region.shape, mode: 'manual', vertices } }
+      }),
+    }))
+  }
+
+  // 右键删点：至少保留 3 个顶点（少于 3 不成多边形）。
+  const removeRegionVertex = (regionId: string, index: number) => {
+    const region = draft.regions.find((r) => r.id === regionId)
+    if ((region?.shape?.vertices?.length ?? 0) <= 3) {
+      message.warning('区域轮廓至少需要 3 个顶点')
+      return
+    }
+    setDraft((prev) => ({
+      ...prev,
+      regions: prev.regions.map((region) => {
+        if (region.id !== regionId || !region.shape) return region
+        const vertices = (region.shape.vertices ?? []).filter((_, i) => i !== index)
         return { ...region, shape: { ...region.shape, mode: 'manual', vertices } }
       }),
     }))
@@ -928,6 +989,18 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
             message="Leaflet 工作台：拖拽节点改坐标；滚轮缩放、平移；可上传手绘或 AI 底图作为参考层。服务端 SVG 渲染与 revision CAS 保存保留。"
           />
 
+          {outOfBoundsNodes.length > 0 && (
+            <Alert
+              type="warning"
+              showIcon
+              message={`${outOfBoundsNodes.length} 个据点落在所属区域形状之外（归属引用保持不变）：${outOfBoundsNodes
+                .slice(0, 4)
+                .map((node) => `「${node.name || '未命名'}」`)
+                .join('')}${outOfBoundsNodes.length > 4 ? `等 ${outOfBoundsNodes.length} 个` : ''}`}
+              description="可拖动据点回区域内、重新生成或编辑区域形状，也可在据点详情里改所属区域。"
+            />
+          )}
+
           <div className="wm-body">
             <aside className="wm-panel wm-panel-left">
               <Space direction="vertical" size={12} style={{ width: '100%' }}>
@@ -970,6 +1043,7 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
                   regions={draft.regions.map((region) => ({
                     id: region.id,
                     name: region.name,
+                    parentId: region.parent_id ?? null,
                     hasShape: Boolean(region.shape?.vertices?.length),
                     vertexCount: region.shape?.vertices?.length ?? 0,
                     mode: region.shape?.mode ?? null,
@@ -982,6 +1056,10 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
                   onGenerateShape={handleGenerateShape}
                   onRegenerateShape={handleRegenerateShape}
                   onEditShape={toggleEditShape}
+                  onSetParent={(regionId, parentId) => updateRegion(regionId, { parent_id: parentId })}
+                  canSelectParent={(regionId, candidateId) =>
+                    canReparent(draft.regions, regionId, candidateId).ok
+                  }
                 />
               </Space>
             </aside>
@@ -1006,6 +1084,8 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
               emptyState={canvasEmptyState}
               editingRegionId={editingRegionId}
               onMoveVertex={updateRegionVertex}
+              onAddVertex={addRegionVertex}
+              onRemoveVertex={removeRegionVertex}
             />
             </div>
 
@@ -1017,6 +1097,9 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
               kindOptions={KIND_OPTIONS.node}
               regionOptions={regionOptions}
               layerOptions={(draft.layers ?? []).map((l) => ({ value: l.id, label: l.name }))}
+              outsideRegion={
+                selectedNodeId ? outOfBoundsNodes.some((node) => node.id === selectedNodeId) : false
+              }
               onUpdate={(nodeId, patch) => updateNode(nodeId, patch)}
               onDelete={(nodeId) => {
                 setDraft((prev) => ({
