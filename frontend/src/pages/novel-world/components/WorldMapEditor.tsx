@@ -1307,6 +1307,9 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
             layerOptions={(draft.layers ?? []).map((l) => ({ value: l.id, label: l.name }))}
             getEntityRow={(nodeId) => entityByNodeId.get(nodeId) ?? null}
             onUpdateRegion={(id, patch) => updateRegion(id, patch)}
+            canSelectParent={(regionId, candidateId) =>
+              canReparent(draft.regions, regionId, candidateId).ok
+            }
             onUpdateNode={(id, patch) => updateNode(id, patch)}
             onUpdateRoute={(id, patch) => updateRoute(id, patch)}
             onAddLayer={() =>
