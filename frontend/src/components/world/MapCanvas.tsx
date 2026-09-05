@@ -18,15 +18,9 @@ import type {
 } from '../../api/novelSource'
 import {
   DEFAULT_SHAPE_PARAMS,
-  NATURE_IMAGERY,
-  SETTLEMENT_FORMS,
-  STRUCTURE_FORMS,
   expandRegionShape,
   hashSeed,
-  type NatureImagery,
-  type RegionShapeParams,
-  type SettlementForm,
-  type StructureForm,
+  normalizeShapeParams,
 } from '../../utils/regionShape'
 
 const MAP_BOUNDS = L.latLngBounds([
@@ -168,35 +162,6 @@ function ZoomWatcher({ onChange }: { onChange: (zoom: number) => void }) {
   return null
 }
 
-/** 把（可能来自 AI/后端的）参数收敛回受控词表，越界回退默认值，避免脏数据把形状算崩。 */
-function normalizeShapeParams(
-  shape: WorldMapRegion['shape'] | null | undefined,
-): RegionShapeParams {
-  const params = (shape?.params ?? {}) as Record<string, unknown>
-  const text = (value: unknown) => (typeof value === 'string' ? value : '')
-  const natureRaw = text(params.nature)
-  const settlementRaw = text(params.settlement)
-  const structureRaw = text(params.structure)
-  const scaleRaw = text(params.scale)
-  const nature = (NATURE_IMAGERY as readonly string[]).includes(natureRaw)
-    ? (natureRaw as NatureImagery)
-    : DEFAULT_SHAPE_PARAMS.nature
-  const settlement = (SETTLEMENT_FORMS as readonly string[]).includes(settlementRaw)
-    ? (settlementRaw as SettlementForm)
-    : DEFAULT_SHAPE_PARAMS.settlement
-  const structure = (STRUCTURE_FORMS as readonly string[]).includes(structureRaw)
-    ? (structureRaw as StructureForm)
-    : ''
-  const scale = (['小', '中', '大'] as const).includes(scaleRaw as '小' | '中' | '大')
-    ? (scaleRaw as '小' | '中' | '大')
-    : DEFAULT_SHAPE_PARAMS.scale
-  const irregularity =
-    typeof params.irregularity === 'number' && Number.isFinite(params.irregularity)
-      ? Math.max(0, Math.min(1, params.irregularity))
-      : DEFAULT_SHAPE_PARAMS.irregularity
-  return { nature, settlement, structure, scale, irregularity }
-}
-
 /**
  * 取区域的顶点：优先用已保存的形状；没有则按区域 id 派生 seed **在内存中临时生成**，
  * 保证老数据/未生成形状的区域也不会变空白——但这只是显示层兜底，不写回数据。
@@ -257,6 +222,16 @@ function regionPathStyle(depth: number, color: string, selected: boolean) {
     weight: selected ? 1.6 : depth === 0 ? 1.2 : 1,
     dashArray: selected || depth > 0 ? undefined : REGION_DASH,
   }
+}
+
+/** 顶点编辑手柄：小方块，主色描边，拖动即改轮廓。 */
+function vertexHandleIcon() {
+  return L.divIcon({
+    className: '',
+    html: '<div class="wm-vertex-handle"></div>',
+    iconSize: [10, 10],
+    iconAnchor: [5, 5],
+  })
 }
 
 /** 缩放百分比：以 zoom 0（世界铺满画布）为 100%。 */
@@ -410,6 +385,9 @@ interface Props {
    * 留空时若图层被全部关闭，画布仍会给出「图层全关」提示。
    */
   emptyState?: { title: string; hint: string; actionLabel?: string; onAction?: () => void } | null
+  /** 正在编辑顶点的区域（拖动顶点即固化为手绘）。 */
+  editingRegionId?: string | null
+  onMoveVertex?: (regionId: string, index: number, x: number, y: number) => void
 }
 
 export default function MapCanvas({
@@ -430,6 +408,8 @@ export default function MapCanvas({
   onSelectNode,
   onMoveNode,
   emptyState,
+  editingRegionId,
+  onMoveVertex,
 }: Props) {
   const [zoom, setZoom] = useState(0)
   // 缩小看全图时隐去据点名（只留区域名），放大到阈值以上才显示，避免标签互相压盖。
@@ -518,6 +498,34 @@ export default function MapCanvas({
               </Polygon>
             )
           })}
+
+      {/* 顶点编辑手柄：只在编辑某个区域时出现，拖动手柄即改轮廓（父组件写回并固化 manual） */}
+      {editingRegionId &&
+        editingRegionId === regions.find((r) => r.id === editingRegionId)?.id &&
+        (() => {
+          const region = regions.find((r) => r.id === editingRegionId)
+          const vertices = region?.shape?.vertices ?? []
+          if (!region || vertices.length < 3) return null
+          return vertices.map(([lat, lng], index) => (
+            <Marker
+              key={`${region.id}-vertex-${index}`}
+              position={[lat, lng]}
+              icon={vertexHandleIcon()}
+              draggable
+              eventHandlers={{
+                dragend: (event) => {
+                  const { lat: nextLat, lng: nextLng } = event.target.getLatLng()
+                  onMoveVertex?.(
+                    region.id,
+                    index,
+                    Math.round(Math.max(0, Math.min(100, nextLng))),
+                    Math.round(Math.max(0, Math.min(100, nextLat))),
+                  )
+                },
+              }}
+            />
+          ))
+        })()}
 
       {showNodes &&
         visibleNodes.map((node) => (
