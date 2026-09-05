@@ -343,7 +343,11 @@ async def delete_node(
     service: AssetNodeService = Depends(get_node_service),
 ):
     """删除资产节点"""
-    ok = await service.delete(node_id, cascade=cascade)
+    try:
+        ok = await service.delete(node_id, cascade=cascade)
+    except ValueError as exc:
+        # 如「存在子节点需 cascade」：给可操作的 400，而不是裸 500
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not ok:
         raise HTTPException(status_code=404, detail="资产节点不存在")
     return {"success": True, "message": "已删除"}

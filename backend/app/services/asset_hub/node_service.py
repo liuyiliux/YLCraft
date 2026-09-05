@@ -8,7 +8,9 @@ Node 支持父子层级（如角色的不同装扮），并维护与标签的多
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
@@ -16,9 +18,14 @@ from sqlalchemy import select, func, or_, cast, String, text, type_coerce
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.asset_hub import (
+    AIModel,
+    AssetEmbedding,
     AssetNode,
+    AssetRelation,
+    AssetRepresentation,
     AssetType,
     AssetTagLink,
+    AssetVersion,
     Tag,
 )
 
@@ -141,30 +148,76 @@ class AssetNodeService:
 
     async def delete(self, node_id: str, cascade: bool = False) -> bool:
         """
-        删除节点。
+        删除节点（引用行级联清理）。
 
         Args:
             cascade: 是否级联删除子节点
+
+        顺序纪律：先删引用行（表示 → 版本 → 向量/关系/标签/AI 模型）并 flush，
+        再删主行——这些表对 ``asset_nodes`` 的外键都是 NO ACTION，而主/子表之间
+        没有 relationship()，UoW 的跨表删除顺序不可靠（PG 实测会先发主行 DELETE）。
         """
         node = await self.session.get(AssetNode, node_id)
         if not node:
             return False
 
-        if cascade:
-            children = await self.list_children(node_id)
-            for child in children:
-                await self.delete(child.id, cascade=True)
+        children = await self.list_children(node_id)
+        if children and not cascade:
+            raise ValueError("该节点存在子节点：请使用 cascade=true 级联删除")
+        for child in children:
+            await self.delete(child.id, cascade=True)
 
-        # 删除标签关联
-        links = await self.session.execute(
-            select(AssetTagLink).where(AssetTagLink.asset_node_id == node_id)
-        )
-        for link in links.scalars().all():
-            await self.session.delete(link)
+        # 版本与其文件表示（表示挂在版本上，必须先删）
+        versions = (
+            await self.session.execute(
+                select(AssetVersion).where(AssetVersion.asset_node_id == node_id)
+            )
+        ).scalars().all()
+        version_ids = [version.id for version in versions]
+        if version_ids:
+            representations = (
+                await self.session.execute(
+                    select(AssetRepresentation).where(
+                        AssetRepresentation.asset_version_id.in_(version_ids)
+                    )
+                )
+            ).scalars().all()
+            for rep in representations:
+                self._remove_file_quietly(rep.file_path)
+                await self.session.delete(rep)
 
+        # 节点的直接引用行：向量 / 标签 / AI 模型 / 关系（双向）
+        for model, field in (
+            (AssetVersion, "asset_node_id"),
+            (AssetEmbedding, "asset_node_id"),
+            (AssetTagLink, "asset_node_id"),
+            (AIModel, "asset_node_id"),
+            (AssetRelation, "source_id"),
+            (AssetRelation, "target_id"),
+        ):
+            rows = (
+                await self.session.execute(
+                    select(model).where(getattr(model, field) == node_id)
+                )
+            ).scalars().all()
+            for row in rows:
+                await self.session.delete(row)
+
+        # 引用行删除先落库，再删主行
+        await self.session.flush()
         await self.session.delete(node)
         await self.session.flush()
         return True
+
+    @staticmethod
+    def _remove_file_quietly(file_path: str) -> None:
+        """尽力删除磁盘文件；失败只记日志，不阻塞行删除。"""
+        try:
+            path = Path(file_path)
+            if path.exists():
+                path.unlink()
+        except OSError as exc:
+            logger.warning("删除资产文件失败（忽略）：%s（%s）", file_path, exc)
 
     # -------------------------------------------------------------------------
     # 查询

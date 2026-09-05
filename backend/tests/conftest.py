@@ -11,6 +11,8 @@ from pgvector.sqlalchemy import Vector
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.db.models.asset_hub import (
+    AIModel,
+    AssetEmbedding,
     AssetNode,
     AssetRelation,
     AssetRepresentation,
@@ -72,7 +74,9 @@ async def isolated_asset_hub_database(request, tmp_path, monkeypatch):
         AssetNode.__table__,
         AssetVersion.__table__,
         AssetRepresentation.__table__,
+        AssetEmbedding.__table__,
         AssetRelation.__table__,
+        AIModel.__table__,
         Tag.__table__,
         AssetTagLink.__table__,
     )
