@@ -193,6 +193,9 @@ class WorldMapService:
         # 地图删除时同步清理历史快照，避免孤儿行。
         for row in self.list_revisions(map_id, limit=500):
             self.session.delete(row)
+        # 先把子行删除落库再删主行：没有 relationship() 时 UoW 的跨表删除顺序
+        # 不可靠（PG 实测主表 DELETE 先发，触发 FK NO ACTION 违约 → 删除 500）。
+        self.session.flush()
         self.session.delete(document)
         self.session.commit()
 

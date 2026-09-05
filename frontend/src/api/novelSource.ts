@@ -875,6 +875,33 @@ export function deleteWorldMap(mapId: string): Promise<{ id: string }> {
   return jsonRequest<{ id: string }>(`/world-maps/${mapId}`, 'DELETE')
 }
 
+/** AI 推断的区域形状语义参数（服务端只产参数与 seed，不含顶点——顶点由前端展开，决策 D-1）。 */
+export interface RegionShapeParamsResult {
+  map_id: string
+  region_id: string
+  name: string
+  params: Record<string, unknown>
+  seed: number
+  /** 越界回退默认的字段名（提示用户 LLM 给了词表外的值）。 */
+  fallbacks: string[]
+  source: 'explicit' | 'llm'
+  vertices: unknown[]
+  note: string
+}
+
+/** 让 AI（LLM）从区域与成员据点描述推断形状语义参数；预览不落库，写入走前端草稿 + 显式保存。 */
+export function generateRegionShapeParams(
+  mapId: string,
+  regionId: string,
+  payload: { params?: Record<string, unknown>; seed?: number; provider?: string; model?: string } = {},
+): Promise<RegionShapeParamsResult> {
+  return jsonRequest<RegionShapeParamsResult>(
+    `/world-maps/${mapId}/regions/${regionId}/shape/generate`,
+    'POST',
+    payload,
+  )
+}
+
 /** 类型化世界实体：来自 world-extraction 确认写入的实体索引。 */
 export interface WorldEntity {
   id: string

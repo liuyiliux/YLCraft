@@ -24,6 +24,7 @@ import {
   createWorldMapFromProjectPlaces,
   deleteWorldMap,
   exportWorldMapPoints,
+  generateRegionShapeParams,
   generateWorldMapVisual,
   getWorldMap,
   getWorldMapRevision,
@@ -610,6 +611,61 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
 
   const handleGenerateShape = (regionId: string) => generateRegionShape(regionId, false)
 
+  // AI 推断形状参数：调 shape/generate 端点拿语义参数与 seed，再由前端确定性展开顶点
+  // （决策 D-1：服务端不产几何）。写 draft 不自动入库；手绘区域先确认覆盖。
+  const [aiShapingRegionId, setAiShapingRegionId] = useState<string | null>(null)
+  const handleAiShape = async (regionId: string) => {
+    if (!doc) return
+    // AI 推断走服务端：区域必须已入库（显式保存是既有纪律，不静默代存）。
+    const persisted = (doc.map.regions ?? []).some((r) => r.id === regionId)
+    if (!persisted) {
+      message.warning('该区域还未保存到服务器：请先点「保存」入库，再使用 AI 推断')
+      return
+    }
+    const region = draft.regions.find((r) => r.id === regionId)
+    if (region?.shape?.mode === 'manual') {
+      Modal.confirm({
+        title: 'AI 推断会覆盖手绘顶点',
+        content: '这个区域的轮廓被手工调整过，AI 参数重算将丢失这些调整（可用版本历史找回）。',
+        okText: '覆盖并 AI 生成',
+        cancelText: '取消',
+        onOk: () => doAiShape(regionId),
+      })
+      return
+    }
+    await doAiShape(regionId)
+  }
+  const doAiShape = async (regionId: string) => {
+    if (!doc) return
+    setAiShapingRegionId(regionId)
+    try {
+      const result = await generateRegionShapeParams(doc.id, regionId)
+      const members = draft.nodes.filter((n) => n.region_id === regionId)
+      const params = normalizeShapeParams({ params: result.params })
+      const seed = typeof result.seed === 'number' ? result.seed : hashSeed(regionId)
+      const vertices = expandRegionShape(
+        members.map((n) => ({ x: n.x, y: n.y })),
+        params,
+        seed,
+      )
+      setDraft((prev) => ({
+        ...prev,
+        regions: prev.regions.map((r) =>
+          r.id === regionId ? { ...r, shape: { mode: 'auto' as const, seed, params, vertices } } : r,
+        ),
+      }))
+      message.success(
+        result.fallbacks.length
+          ? `AI 已推断形状参数（${result.fallbacks.join('、')} 越界已回退默认），记得保存`
+          : 'AI 已推断形状参数，记得保存',
+      )
+    } catch (error) {
+      message.error((error as Error).message)
+    } finally {
+      setAiShapingRegionId(null)
+    }
+  }
+
   const handleRegenerateShape = (regionId: string) => {
     const region = draft.regions.find((r) => r.id === regionId)
     if (region?.shape?.mode === 'manual') {
@@ -1058,6 +1114,8 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
                   onGenerateShape={handleGenerateShape}
                   onRegenerateShape={handleRegenerateShape}
                   onEditShape={toggleEditShape}
+                  onAiShape={handleAiShape}
+                  aiLoadingRegionId={aiShapingRegionId}
                   onSetParent={(regionId, parentId) => updateRegion(regionId, { parent_id: parentId })}
                   canSelectParent={(regionId, candidateId) =>
                     canReparent(draft.regions, regionId, candidateId).ok
