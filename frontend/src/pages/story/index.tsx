@@ -153,6 +153,7 @@ import type {
   WritingMethodCandidate,
 } from '../../types/api'
 import { useTheme, type ThemeColors } from '../../constants/theme'
+import { worldFieldLabel, worldFieldValueText } from '../../utils/worldFieldLabels'
 import { enqueueCanvasImport } from '../../components/canvas/bridge'
 import type { CanvasNode, CanvasNodeType } from '../../components/canvas/types'
 import { useTaskPolling } from '../../hooks/useTaskPolling'
@@ -6824,7 +6825,9 @@ function ProjectBibleTab({
                     <Tag color="blue">新模块</Tag>
                     <Text style={{ fontSize: 12 }}>
                       {item.label || item.key}
-                      {item.attributes?.length ? `（${item.attributes.join('、')}）` : ''}
+                      {item.attributes?.length
+                        ? `（${item.attributes.map((field) => worldFieldLabel(field)).join('、')}）`
+                        : ''}
                     </Text>
                     {item.reason && (
                       <Text type="secondary" style={{ fontSize: 11 }}>
@@ -6934,13 +6937,14 @@ function ProjectBibleTab({
                         </Paragraph>
                       )}
                       {Object.keys(entity.attributes || {}).length > 0 && (
-                        <div style={{ fontSize: 11, color: 'rgba(0,0,0,0.65)' }}>
-                          {Object.entries(entity.attributes)
+                        <div style={{ fontSize: 11 }}>
+                          {Object.entries(entity.attributes || {})
+                            .filter(([, value]) => worldFieldValueText(value))
                             .slice(0, 5)
                             .map(([key, value]) => (
-                              <div key={key} style={{ marginBottom: 2 }}>
-                                <Text type="secondary">{key}：</Text>
-                                {String(value).slice(0, 80)}
+                              <div key={key} style={{ marginBottom: 2 }} title={key}>
+                                <Text type="secondary">{worldFieldLabel(key)}：</Text>
+                                {worldFieldValueText(value).slice(0, 80)}
                               </div>
                             ))}
                         </div>
@@ -7146,7 +7150,7 @@ function ProjectBibleTab({
                         )
                       }
                     >
-                      {field}
+                      {worldFieldLabel(field)}
                       {expandEntity.attributes?.[field] ? '（已填）' : ''}
                     </Tag.CheckableTag>
                   ))
