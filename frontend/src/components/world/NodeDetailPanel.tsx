@@ -22,6 +22,8 @@ interface Props {
   kindOptions: string[]
   regionOptions: RegionOption[]
   layerOptions: RegionOption[]
+  /** 据点落在所属区域形状之外（引用不变，只提示；区域未生成形状时不判定）。 */
+  outsideRegion?: boolean
   onUpdate: (nodeId: string, patch: Record<string, unknown>) => void
   onDelete: (nodeId: string) => void
   onClose: () => void
@@ -33,6 +35,7 @@ export default function NodeDetailPanel({
   kindOptions,
   regionOptions,
   layerOptions,
+  outsideRegion,
   onUpdate,
   onDelete,
   onClose,
@@ -88,6 +91,22 @@ export default function NodeDetailPanel({
               }}
             >
               引用的实体已不存在：这个点仍保留坐标，但已失去文字依据，请重新关联或删除。
+            </div>
+          )}
+          {outsideRegion && (
+            <div
+              style={{
+                fontSize: 12,
+                lineHeight: '18px',
+                color: 'var(--p-warn)',
+                background: 'color-mix(in srgb, var(--p-warn) 10%, transparent)',
+                border: '1px solid color-mix(in srgb, var(--p-warn) 35%, transparent)',
+                borderRadius: 6,
+                padding: '6px 8px',
+              }}
+            >
+              据点落在所属区域形状之外：归属以 region_id 引用为准，不会自动改动；
+              可拖动据点回区域内，或重新生成 / 编辑区域形状。
             </div>
           )}
           <Space wrap>

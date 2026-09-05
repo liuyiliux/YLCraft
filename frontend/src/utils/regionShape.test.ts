@@ -14,6 +14,8 @@ import {
   STRUCTURE_FORMS,
   expandRegionShape,
   hashSeed,
+  nearestEdgeIndex,
+  pointInPolygon,
   type RegionShapeParams,
   type ShapeScale,
 } from './regionShape'
@@ -134,5 +136,72 @@ describe('区域形状展开', () => {
   it('hashSeed 稳定且能区分不同区域', () => {
     expect(hashSeed('r1')).toBe(hashSeed('r1'))
     expect(hashSeed('r1')).not.toBe(hashSeed('r2'))
+  })
+})
+
+describe('据点越界判定（pointInPolygon）', () => {
+  // 顶点按存储约定 [y, x]；下面是 (x: 0-10, y: 0-10) 的正方形。
+  const square: [number, number][] = [
+    [0, 0],
+    [0, 10],
+    [10, 10],
+    [10, 0],
+  ]
+
+  it('形状内的据点判定为在内', () => {
+    expect(pointInPolygon(5, 5, square)).toBe(true)
+  })
+
+  it('形状外的据点判定为在外', () => {
+    expect(pointInPolygon(15, 5, square)).toBe(false)
+    expect(pointInPolygon(-1, -1, square)).toBe(false)
+  })
+
+  it('顶点与边界视为在内（贴着城墙不算越界）', () => {
+    expect(pointInPolygon(0, 0, square)).toBe(true)
+    expect(pointInPolygon(5, 0, square)).toBe(true)
+  })
+
+  it('凹多边形同样正确（凹口内的点不算在内）', () => {
+    // (x, y) 平面：上边 x 40-60 处向下凹到 y=40 的"凹"字形，转成 [y, x] 存储。
+    const notched: [number, number][] = [
+      [10, 10],
+      [10, 40],
+      [40, 40],
+      [40, 60],
+      [10, 60],
+      [10, 90],
+      [90, 90],
+      [90, 10],
+    ]
+    expect(pointInPolygon(50, 70, notched)).toBe(true) // 凹口下方主体内
+    expect(pointInPolygon(50, 20, notched)).toBe(false) // 凹口内
+    expect(pointInPolygon(20, 20, notched)).toBe(true) // 左侧主体内
+  })
+})
+
+describe('双击边加点定位（nearestEdgeIndex）', () => {
+  const square: [number, number][] = [
+    [0, 0],
+    [0, 10],
+    [10, 10],
+    [10, 0],
+  ]
+  // (x, y) 平面四边：0→1 是 y=0 的下边，1→2 是 x=10 的右边，2→3 是 y=10 的上边，3→0 是 x=0 的左边。
+
+  it('靠近哪条边就返回哪条边', () => {
+    expect(nearestEdgeIndex(5, -1, square)).toBe(0) // 下边外
+    expect(nearestEdgeIndex(11, 5, square)).toBe(1) // 右边外
+    expect(nearestEdgeIndex(5, 11, square)).toBe(2) // 上边外
+    expect(nearestEdgeIndex(-1, 5, square)).toBe(3) // 左边外
+  })
+
+  it('形状内的点也能找到最近边（点击落在边上时同样可加点）', () => {
+    expect(nearestEdgeIndex(9.2, 5, square)).toBe(1)
+  })
+
+  it('退化输入不抛错', () => {
+    expect(nearestEdgeIndex(0, 0, [])).toBe(0)
+    expect(nearestEdgeIndex(0, 0, [[1, 1]])).toBe(0)
   })
 })

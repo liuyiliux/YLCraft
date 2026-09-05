@@ -411,3 +411,69 @@ function finalize(points: ShapePoint[]): [number, number][] {
   const simplified = simplify(points, MAX_SHAPE_VERTICES)
   return simplified.map((p) => [clamp(p.y), clamp(p.x)] as [number, number])
 }
+
+/**
+ * 射线法（PNPOLY）：据点是否落在区域形状内。
+ * 顶点约定与存储一致：`[y, x]`（Leaflet lat/lng 序），查询点用画布坐标 (x, y)。
+ * 落在边界上视为在内——据点贴着城墙不算越界（越界警告只针对明确在外面）。
+ * 凹多边形同样正确：区域轮廓本来就是凹的。
+ */
+export function pointInPolygon(x: number, y: number, vertices: [number, number][]): boolean {
+  const n = vertices.length
+  if (n < 3) return false
+  for (let i = 0; i < n; i += 1) {
+    const [y1, x1] = vertices[i]
+    const [y2, x2] = vertices[(i + 1) % n]
+    if (pointOnSegment(x, y, x1, y1, x2, y2)) return true
+  }
+  let inside = false
+  for (let i = 0, j = n - 1; i < n; j = i, i += 1) {
+    const [yi, xi] = vertices[i]
+    const [yj, xj] = vertices[j]
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) {
+      inside = !inside
+    }
+  }
+  return inside
+}
+
+/** 点到线段距离 ≈ 0（含端点）→ 在线段上。 */
+function pointOnSegment(px: number, py: number, x1: number, y1: number, x2: number, y2: number): boolean {
+  const length = Math.hypot(x2 - x1, y2 - y1)
+  if (length === 0) return Math.hypot(px - x1, py - y1) < 1e-9
+  const cross = (x2 - x1) * (py - y1) - (y2 - y1) * (px - x1)
+  if (Math.abs(cross) / length > 1e-7) return false
+  const dot = (px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)
+  return dot >= -1e-9 && dot <= length * length + 1e-9
+}
+
+/** 点到线段的距离（双击边加点时找"点在哪条边上"）。 */
+function distanceToSegment(px: number, py: number, x1: number, y1: number, x2: number, y2: number): number {
+  const dx = x2 - x1
+  const dy = y2 - y1
+  const lengthSq = dx * dx + dy * dy
+  if (lengthSq === 0) return Math.hypot(px - x1, py - y1)
+  const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / lengthSq))
+  return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy))
+}
+
+/**
+ * 双击加点定位：查询点离哪条边最近，返回该边起点顶点下标
+ * （新顶点应插到返回值 + 1 的位置；最后一条边是闭合边，插入位置 = 顶点数）。
+ */
+export function nearestEdgeIndex(x: number, y: number, vertices: [number, number][]): number {
+  const n = vertices.length
+  if (n < 2) return 0
+  let best = 0
+  let bestDist = Infinity
+  for (let i = 0; i < n; i += 1) {
+    const [y1, x1] = vertices[i]
+    const [y2, x2] = vertices[(i + 1) % n]
+    const dist = distanceToSegment(x, y, x1, y1, x2, y2)
+    if (dist < bestDist) {
+      bestDist = dist
+      best = i
+    }
+  }
+  return best
+}

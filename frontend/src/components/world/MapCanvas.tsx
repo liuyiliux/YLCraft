@@ -1,11 +1,12 @@
 /**
- * 地图画布：Leaflet 结构化视图（区域围合 / 路线 / 可拖拽据点标记 / 底图参考层）。
+ * 地图画布：Leaflet 结构化视图（区域形状 / 路线 / 可拖拽据点标记 / 底图参考层）。
  *
- * 渲染由父组件的 draft 派生：区域是多边形围合（成员据点 ≥3 个才显示），
+ * 渲染由父组件的 draft 派生：区域按独立形状（或内存兜底形状）显示，
  * 路线连线，据点可拖拽改坐标（写回 draft，需显式保存才入库）。
+ * 顶点编辑态：拖动手柄微调、双击边加点、右键顶点删点，改动写回 draft。
  * 底图参考层只是低优先级叠加，永远盖在结构化标记之下、不写回正典。
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -20,8 +21,10 @@ import {
   DEFAULT_SHAPE_PARAMS,
   expandRegionShape,
   hashSeed,
+  nearestEdgeIndex,
   normalizeShapeParams,
 } from '../../utils/regionShape'
+import { computeRegionDepths } from '../../utils/regionHierarchy'
 
 const MAP_BOUNDS = L.latLngBounds([
   [0, 0],
@@ -180,35 +183,6 @@ function resolveRegionVertices(
   )
 }
 
-/** 按 parent_id 链算层级深度（带环检测，最多 8 层）。 */
-function computeRegionDepths(regions: WorldMapRegion[]): Map<string, number> {
-  const byId = new Map(regions.map((region) => [region.id, region]))
-  const depths = new Map<string, number>()
-  const resolve = (id: string): number => {
-    const cached = depths.get(id)
-    if (cached !== undefined) return cached
-    const region = byId.get(id)
-    if (!region?.parent_id || region.parent_id === id) {
-      depths.set(id, 0)
-      return 0
-    }
-    // 环检测：把当前 id 先占位，避免无限递归。
-    depths.set(id, 0)
-    const seen = new Set<string>([id])
-    let cursor = byId.get(region.parent_id)
-    let depth = 1
-    while (cursor?.parent_id && !seen.has(cursor.parent_id) && depth < 8) {
-      seen.add(cursor.id)
-      cursor = byId.get(cursor.parent_id)
-      depth += 1
-    }
-    depths.set(id, depth)
-    return depth
-  }
-  for (const region of regions) resolve(region.id)
-  return depths
-}
-
 /**
  * 层级视觉：父区域像"疆域"（填充淡、粗虚线），子区域像"聚落"（填充实、细实线）；
  * 越深越实，选中提亮。深度由 parent_id 链自动算出，不限层数。
@@ -224,14 +198,27 @@ function regionPathStyle(depth: number, color: string, selected: boolean) {
   }
 }
 
-/** 顶点编辑手柄：小方块，主色描边，拖动即改轮廓。 */
+/** 顶点编辑手柄：小方块，主色描边，拖动微调 / 右键删除。 */
 function vertexHandleIcon() {
   return L.divIcon({
     className: '',
-    html: '<div class="wm-vertex-handle"></div>',
+    html: '<div class="wm-vertex-handle" title="拖动微调轮廓 · 右键删除此顶点"></div>',
     iconSize: [10, 10],
     iconAnchor: [5, 5],
   })
+}
+
+/** 顶点编辑时关掉地图的双击缩放：双击留给「在边上加点」，两个手势不能抢同一个操作。 */
+function DoubleClickZoomGuard({ active }: { active: boolean }) {
+  const map = useMap()
+  useEffect(() => {
+    if (!active) return
+    map.doubleClickZoom.disable()
+    return () => {
+      map.doubleClickZoom.enable()
+    }
+  }, [active, map])
+  return null
 }
 
 /** 缩放百分比：以 zoom 0（世界铺满画布）为 100%。 */
@@ -385,9 +372,13 @@ interface Props {
    * 留空时若图层被全部关闭，画布仍会给出「图层全关」提示。
    */
   emptyState?: { title: string; hint: string; actionLabel?: string; onAction?: () => void } | null
-  /** 正在编辑顶点的区域（拖动顶点即固化为手绘）。 */
+  /** 正在编辑顶点的区域：拖动/加点/删点都会把形状固化为手绘。 */
   editingRegionId?: string | null
   onMoveVertex?: (regionId: string, index: number, x: number, y: number) => void
+  /** 双击边加点：index 为插入位置（最近边终点的下一位）。 */
+  onAddVertex?: (regionId: string, index: number, x: number, y: number) => void
+  /** 右键顶点删点；是否允许删（至少留 3 个顶点）由父组件校验。 */
+  onRemoveVertex?: (regionId: string, index: number) => void
 }
 
 export default function MapCanvas({
@@ -410,6 +401,8 @@ export default function MapCanvas({
   emptyState,
   editingRegionId,
   onMoveVertex,
+  onAddVertex,
+  onRemoveVertex,
 }: Props) {
   const [zoom, setZoom] = useState(0)
   // 缩小看全图时隐去据点名（只留区域名），放大到阈值以上才显示，避免标签互相压盖。
@@ -446,6 +439,7 @@ export default function MapCanvas({
     >
       <FitToBounds nodes={nodes} />
       <ZoomWatcher onChange={setZoom} />
+      <DoubleClickZoomGuard active={Boolean(editingRegionId)} />
       <CanvasOverlays empty={canvasEmpty} />
       <CoordinateReadout />
       {showBaseMap && baseMapUrl && <MapImageOverlay url={baseMapUrl} />}
@@ -485,11 +479,30 @@ export default function MapCanvas({
             const color = regionColor(region.id, regionOrder)
             const depth = regionDepths.get(region.id) ?? 0
             const selected = selectedRegionId === region.id
+            const editing = editingRegionId === region.id
             return (
               <Polygon
                 key={region.id}
                 positions={vertices}
-                pathOptions={regionPathStyle(depth, color, selected)}
+                pathOptions={{
+                  ...regionPathStyle(depth, color, selected),
+                  // 编辑态给十字光标：告诉用户这个轮廓现在可以双击加点。
+                  ...(editing ? { className: 'wm-region-editing' } : {}),
+                }}
+                eventHandlers={
+                  editing
+                    ? {
+                        dblclick: (event: L.LeafletMouseEvent) => {
+                          // 只有已入库形状能编辑（临时兜底形状没有顶点可改）。
+                          if (!region.shape?.vertices?.length) return
+                          const x = Math.max(0, Math.min(100, event.latlng.lng))
+                          const y = Math.max(0, Math.min(100, event.latlng.lat))
+                          const edge = nearestEdgeIndex(x, y, region.shape.vertices)
+                          onAddVertex?.(region.id, edge + 1, Math.round(x), Math.round(y))
+                        },
+                      }
+                    : undefined
+                }
               >
                 {/* 区域名常驻：缩小时据点名隐去，只剩区域名提供定位（小说扉页地图的读法）。 */}
                 <Tooltip permanent direction="center" className="wm-region-label">
@@ -521,6 +534,9 @@ export default function MapCanvas({
                     Math.round(Math.max(0, Math.min(100, nextLng))),
                     Math.round(Math.max(0, Math.min(100, nextLat))),
                   )
+                },
+                contextmenu: () => {
+                  onRemoveVertex?.(region.id, index)
                 },
               }}
             />
