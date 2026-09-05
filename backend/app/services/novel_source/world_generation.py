@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from datetime import datetime
 from typing import Any
@@ -38,6 +39,8 @@ from app.db.models.novel_source import (
     WorldFactCandidate,
 )
 from app.services.ai.service import get_ai_service
+
+logger = logging.getLogger(__name__)
 from app.services.ai.types import LLMMessage
 from app.services.creative_project.service import dumps_json, loads_json
 from app.services.novel_source.world_domains import WorldDomainService
@@ -288,8 +291,16 @@ class WorldGenerationService:
                 if key in picked and str(value).strip():
                     values[key] = str(value).strip()[:500]
         if not values:
+            # 把模型实际产出记进诊断：连接器返回空/格式漂移时可从运行详情直接定位
+            output_head = json.dumps(data, ensure_ascii=False, default=str)[:400]
+            logger.warning(
+                "expand_entity 未产出可用字段值：project=%s entity=%s model=%s output=%s",
+                project_id, entity_id, model or provider or "default", output_head,
+            )
             run.status = ExtractionRunStatus.FAILED.value
-            run.diagnostics_json = dumps_json({"error": "模型没有产出任何可用字段值"})
+            run.diagnostics_json = dumps_json(
+                {"error": "模型没有产出任何可用字段值", "model_output_head": output_head}
+            )
             run.updated_at = datetime.now()
             self.session.add(run)
             self.session.commit()
