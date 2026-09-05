@@ -10,9 +10,16 @@ from uuid import uuid4
 
 from app.db.database import AsyncSessionLocal
 from app.db.models.asset_hub import (
+    AssetEmbedding,
     AssetNode,
+    AssetRelation,
+    AssetRepresentation,
+    AssetTagLink,
     AssetType,
+    AssetVersion,
+    RelationType,
 )
+from app.services.asset_hub.node_service import AssetNodeService
 
 
 @pytest_asyncio.fixture
@@ -149,6 +156,71 @@ async def test_asset_node_update(db_session):
 
     assert asset.name == "updated_name"
     assert asset.metadata_json == {"updated": True}
+
+
+@pytest.mark.asyncio
+async def test_node_service_delete_cleans_referencing_rows(db_session):
+    """删除回归：delete() 必须按外键依赖清理引用行（表示→版本→向量/关系/标签）再删主行。
+
+    背景：这些表对 asset_nodes 的 FK 都是 NO ACTION 且没有 relationship()，
+    PG 上 UoW 会先发主行 DELETE → IntegrityError（与 world_map delete_map 同款问题）。
+    """
+    node = AssetNode(id=str(uuid4()), name="cascade_target", asset_type=AssetType.IMAGE)
+    related = AssetNode(id=str(uuid4()), name="related_node", asset_type=AssetType.IMAGE)
+    version = AssetVersion(id=str(uuid4()), asset_node_id=node.id, version_number=1)
+    rep = AssetRepresentation(
+        id=str(uuid4()),
+        asset_version_id=version.id,
+        file_path="/tmp/ylcraft-test-nonexistent.png",
+        mime_type="image/png",
+        file_size=1,
+    )
+    embedding = AssetEmbedding(id=str(uuid4()), asset_node_id=node.id, embedding=[0.1, 0.2])
+    relation = AssetRelation(
+        id=str(uuid4()),
+        source_id=node.id,
+        target_id=related.id,
+        relation_type=RelationType.DERIVED_FROM,
+    )
+    db_session.add_all([node, related, version, rep, embedding, relation])
+    await db_session.commit()
+
+    service = AssetNodeService(db_session)
+    deleted = await service.delete(node.id)
+    assert deleted is True
+
+    assert await db_session.get(AssetNode, node.id) is None
+    assert await db_session.get(AssetVersion, version.id) is None
+    assert await db_session.get(AssetRepresentation, rep.id) is None
+    assert await db_session.get(AssetEmbedding, embedding.id) is None
+    assert await db_session.get(AssetRelation, relation.id) is None
+    # 无关节点与其关系不受影响
+    assert await db_session.get(AssetNode, related.id) is not None
+
+
+@pytest.mark.asyncio
+async def test_node_service_delete_requires_cascade_for_children(db_session):
+    """有子节点且未开 cascade：给可操作的 ValueError（端点转 400），不留下孤儿。"""
+    parent = AssetNode(id=str(uuid4()), name="parent", asset_type=AssetType.IMAGE)
+    child = AssetNode(
+        id=str(uuid4()),
+        name="child",
+        asset_type=AssetType.IMAGE,
+        parent_id=parent.id,
+    )
+    db_session.add_all([parent, child])
+    await db_session.commit()
+
+    service = AssetNodeService(db_session)
+    try:
+        await service.delete(parent.id)
+        raised = False
+    except ValueError as exc:
+        raised = True
+        assert "cascade" in str(exc)
+    assert raised, "存在子节点时应拒绝删除"
+    # 拒绝后主行仍在
+    assert await db_session.get(AssetNode, parent.id) is not None
 
 
 @pytest.mark.asyncio
