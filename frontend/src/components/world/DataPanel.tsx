@@ -6,9 +6,20 @@
  * 成环/超深校验在父组件的写入口（canReparent），这里只把不合法选项置灰。
  */
 import { useMemo, useState } from 'react'
-import { Button, Card, Empty, Select, Space, Tag, Typography } from 'antd'
+import { Button, Card, Empty, Select, Slider, Space, Tag, Typography } from 'antd'
 import { DownOutlined, RightOutlined } from '@ant-design/icons'
 import { regionDisplayOrder } from '../../utils/regionHierarchy'
+import {
+  DEFAULT_SHAPE_PARAMS,
+  NATURE_IMAGERY,
+  SETTLEMENT_FORMS,
+  STRUCTURE_FORMS,
+  type NatureImagery,
+  type RegionShapeParams,
+  type SettlementForm,
+  type ShapeScale,
+  type StructureForm,
+} from '../../utils/regionShape'
 
 const { Text } = Typography
 
@@ -22,6 +33,8 @@ export interface RegionRow {
   vertexCount: number
   /** manual = 顶点被手绘编辑过（重新生成会覆盖，需确认）。 */
   mode: 'auto' | 'manual' | null
+  /** 已归一化的形状语义参数（无 shape 时为 null，编辑器按默认参数起）。 */
+  params: RegionShapeParams | null
 }
 
 interface Props {
@@ -41,9 +54,88 @@ interface Props {
   /** AI（LLM）推断形状参数并展开写入草稿；手绘区域由父组件先确认覆盖。 */
   onAiShape?: (regionId: string) => void
   aiLoadingRegionId?: string | null
+  /** 调整形状语义参数（即时重算轮廓写草稿；手绘覆盖确认在父组件）。 */
+  onRegionParamsChange?: (regionId: string, params: RegionShapeParams) => void
   /** 设置父区域；合法性由父组件校验（这里只置灰会成环/超深的选项）。 */
   onSetParent: (regionId: string, parentId: string | null) => void
   canSelectParent?: (regionId: string, candidateId: string) => boolean
+}
+
+/** 区域形状语义参数编辑器：受控词表下拉 + 面积感分段 + 不规则度滑杆。 */
+function RegionParamEditor({
+  params,
+  manual,
+  onChange,
+}: {
+  params: RegionShapeParams
+  manual: boolean
+  onChange: (next: RegionShapeParams) => void
+}) {
+  const labelStyle = { fontSize: 10, color: 'var(--p-muted)', lineHeight: '14px' }
+  return (
+    <div style={{ marginTop: 4, paddingLeft: 20, display: 'grid', gap: 4 }}>
+      {manual ? (
+        <div style={{ fontSize: 10, color: 'var(--p-warn)' }}>
+          手绘轮廓：调整参数会覆盖手绘顶点（需确认）
+        </div>
+      ) : null}
+      <div>
+        <div style={labelStyle}>地形意象</div>
+        <Select
+          size="small"
+          style={{ width: '100%' }}
+          value={params.nature}
+          onChange={(value) => onChange({ ...params, nature: value as NatureImagery })}
+          options={NATURE_IMAGERY.map((item) => ({ value: item, label: item }))}
+        />
+      </div>
+      <div>
+        <div style={labelStyle}>聚落形态</div>
+        <Select
+          size="small"
+          style={{ width: '100%' }}
+          value={params.settlement}
+          onChange={(value) => onChange({ ...params, settlement: value as SettlementForm })}
+          options={SETTLEMENT_FORMS.map((item) => ({ value: item, label: item }))}
+        />
+      </div>
+      <div>
+        <div style={labelStyle}>人工构筑（可无）</div>
+        <Select
+          size="small"
+          style={{ width: '100%' }}
+          value={params.structure || ''}
+          onChange={(value) =>
+            onChange({ ...params, structure: (value || '') as StructureForm | '' })
+          }
+          options={[{ value: '', label: '无' }, ...STRUCTURE_FORMS.map((item) => ({ value: item, label: item }))]}
+        />
+      </div>
+      <div>
+        <div style={labelStyle}>面积感</div>
+        <Select
+          size="small"
+          style={{ width: '100%' }}
+          value={params.scale}
+          onChange={(value) => onChange({ ...params, scale: value as ShapeScale })}
+          options={(['小', '中', '大'] as ShapeScale[]).map((item) => ({ value: item, label: item }))}
+        />
+      </div>
+      <div>
+        <div style={labelStyle}>不规则度 {params.irregularity.toFixed(2)}</div>
+        <Slider
+          min={0}
+          max={1}
+          step={0.05}
+          value={params.irregularity}
+          onChange={(value) => onChange({ ...params, irregularity: value })}
+        />
+      </div>
+      <div style={{ fontSize: 10, color: 'var(--p-muted)' }}>
+        改动即时重算轮廓（写草稿，需保存入库）；换随机轮廓用「重新生成」。
+      </div>
+    </div>
+  )
 }
 
 export default function DataPanel({
@@ -62,11 +154,21 @@ export default function DataPanel({
   onEditShape,
   onAiShape,
   aiLoadingRegionId,
+  onRegionParamsChange,
   onSetParent,
   canSelectParent,
 }: Props) {
   // 折叠状态只关显示：收起的区域其子树整段隐藏（树序保证子行紧跟父行）。
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set())
+  // 参数编辑器展开状态（与层级折叠互不影响）。
+  const [paramEditorIds, setParamEditorIds] = useState<Set<string>>(new Set())
+  const toggleParamEditor = (id: string) =>
+    setParamEditorIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
   const toggleCollapsed = (id: string) =>
     setCollapsedIds((prev) => {
       const next = new Set(prev)
@@ -213,6 +315,16 @@ export default function DataPanel({
                         ? `${region.vertexCount} 顶点${region.mode === 'manual' ? ' · 手绘' : ''}`
                         : '未生成'}
                     </div>
+                    {onRegionParamsChange && (
+                      <Button
+                        size="small"
+                        type="link"
+                        style={{ padding: 0, fontSize: 10, height: 'auto' }}
+                        onClick={() => toggleParamEditor(region.id)}
+                      >
+                        {paramEditorIds.has(region.id) ? '收起参数' : '参数'}
+                      </Button>
+                    )}
                     <Select
                       size="small"
                       style={{ flex: 1, minWidth: 0, fontSize: 11 }}
@@ -232,6 +344,13 @@ export default function DataPanel({
                       popupMatchSelectWidth={false}
                     />
                   </div>
+                  {onRegionParamsChange && paramEditorIds.has(region.id) && (
+                    <RegionParamEditor
+                      params={region.params ?? DEFAULT_SHAPE_PARAMS}
+                      manual={region.mode === 'manual'}
+                      onChange={(next) => onRegionParamsChange(region.id, next)}
+                    />
+                  )}
                 </div>
               )
             })

@@ -17,6 +17,7 @@ import {
   MAX_SHAPE_VERTICES,
   normalizeShapeParams,
   pointInPolygon,
+  type RegionShapeParams,
 } from '../../../utils/regionShape'
 import { canReparent } from '../../../utils/regionHierarchy'
 import {
@@ -584,32 +585,65 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
   }, [draft.nodes, draft.regions])
 
   /**
+   * 应用形状语义参数：以成员据点 + 参数 + seed 确定性展开顶点写 draft（mode auto）。
+   * seed 不给时沿用区域既有 seed（缺省按 id 派生），保证"改一个参数"只动该参数的效果。
+   */
+  const applyShapeParams = (regionId: string, params: RegionShapeParams, seed?: number) => {
+    setDraft((prev) => {
+      const region = prev.regions.find((r) => r.id === regionId)
+      if (!region) return prev
+      const members = prev.nodes.filter((n) => n.region_id === regionId)
+      const nextSeed = seed ?? region.shape?.seed ?? hashSeed(regionId)
+      const vertices = expandRegionShape(
+        members.map((n) => ({ x: n.x, y: n.y })),
+        params,
+        nextSeed,
+      )
+      return {
+        ...prev,
+        regions: prev.regions.map((r) =>
+          r.id === regionId ? { ...r, shape: { mode: 'auto' as const, seed: nextSeed, params, vertices } } : r,
+        ),
+      }
+    })
+  }
+
+  /**
    * 生成/重新生成区域形状：形状由「成员据点 + 语义参数 + seed」确定性展开。
    * 写入 draft（需显式保存才入库）；已经手绘过的区域重新生成要先确认，避免覆盖用户的手工调整。
    */
   const generateRegionShape = (regionId: string, reseed = false) => {
     const region = draft.regions.find((r) => r.id === regionId)
     if (!region) return
-    const members = draft.nodes.filter((n) => n.region_id === regionId)
     const params = normalizeShapeParams(region.shape)
     const seed = reseed
       ? Math.floor(Math.random() * 2 ** 31)
       : (region.shape?.seed ?? hashSeed(regionId))
-    const vertices = expandRegionShape(
-      members.map((n) => ({ x: n.x, y: n.y })),
-      params,
-      seed,
-    )
-    setDraft((prev) => ({
-      ...prev,
-      regions: prev.regions.map((r) =>
-        r.id === regionId ? { ...r, shape: { mode: 'auto', seed, params, vertices } } : r,
-      ),
-    }))
+    applyShapeParams(regionId, params, seed)
     message.success(reseed ? '已重新生成形状（可再点一次换一个）' : '已生成形状，记得保存')
   }
 
   const handleGenerateShape = (regionId: string) => generateRegionShape(regionId, false)
+
+  // 参数编辑：改动即时重算轮廓。手绘区域第一次改动前确认覆盖（本次编辑会话内不再问）。
+  const [paramsConfirmed, setParamsConfirmed] = useState<Set<string>>(new Set())
+  const handleRegionParamsChange = (regionId: string, params: RegionShapeParams) => {
+    const region = draft.regions.find((r) => r.id === regionId)
+    if (region?.shape?.mode === 'manual' && !paramsConfirmed.has(regionId)) {
+      Modal.confirm({
+        title: '调整参数会覆盖手绘顶点',
+        content: '这个区域的轮廓被手工调整过，参数重算将丢失这些调整（可用版本历史找回）。确认后本次编辑会话内不再询问。',
+        okText: '覆盖并重算',
+        cancelText: '取消',
+        onOk: () => {
+          setParamsConfirmed((prev) => new Set(prev).add(regionId))
+          applyShapeParams(regionId, params)
+        },
+      })
+      return
+    }
+    applyShapeParams(regionId, params)
+  }
 
   // AI 推断形状参数：调 shape/generate 端点拿语义参数与 seed，再由前端确定性展开顶点
   // （决策 D-1：服务端不产几何）。写 draft 不自动入库；手绘区域先确认覆盖。
@@ -1105,6 +1139,7 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
                     hasShape: Boolean(region.shape?.vertices?.length),
                     vertexCount: region.shape?.vertices?.length ?? 0,
                     mode: region.shape?.mode ?? null,
+                    params: region.shape ? normalizeShapeParams(region.shape) : null,
                   }))}
                   editingRegionId={editingRegionId}
                   onAddNode={addNode}
@@ -1116,6 +1151,7 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
                   onEditShape={toggleEditShape}
                   onAiShape={handleAiShape}
                   aiLoadingRegionId={aiShapingRegionId}
+                  onRegionParamsChange={handleRegionParamsChange}
                   onSetParent={(regionId, parentId) => updateRegion(regionId, { parent_id: parentId })}
                   canSelectParent={(regionId, candidateId) =>
                     canReparent(draft.regions, regionId, candidateId).ok
