@@ -432,6 +432,55 @@ def test_map_export_carries_region_shape(tmp_path):
     assert region["parent_id"] is None
 
 
+def test_delete_map_removes_revisions_before_document(tmp_path):
+    """删除回归：主表与历史快照都没有 relationship()，UoW 的跨表删除顺序不可靠
+    （PG 实测 `DELETE world_map_documents` 先发 → FK NO ACTION 违约，删除接口 500）。
+    sqlite 默认不强制外键，所以这里显式开启 PRAGMA foreign_keys 复现同一约束。
+    """
+    from sqlalchemy import event, select as sa_select
+
+    from app.db.models.creative_project import CreativeProject
+    from app.db.models.novel_source import NovelSourceSnapshot
+
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'delete-fk.db'}", connect_args={"check_same_thread": False}
+    )
+
+    @event.listens_for(engine, "connect")
+    def _enable_sqlite_fk(dbapi_connection, _record):
+        dbapi_connection.execute("PRAGMA foreign_keys=ON")
+
+    # foreign_keys=ON 要求被引用的父表存在（world_map_documents 引项目与来源快照）
+    CreativeProject.__table__.create(engine)
+    NovelSourceSnapshot.__table__.create(engine)
+    WorldMapDocument.__table__.create(engine)
+    WorldMapRevision.__table__.create(engine)
+    factory = sessionmaker(class_=Session, bind=engine, expire_on_commit=False)
+    try:
+        with factory() as session:
+            document = WorldMapService(session).create_map(
+                title="删除回归", map_json={"regions": [], "nodes": [], "routes": []}
+            )
+            map_id = document.id
+        # 产生第二条历史快照，确保删除面对的是多行子表
+        with factory() as session:
+            WorldMapService(session).update_map(
+                map_id,
+                map_json={"regions": [], "nodes": [{"id": "n1"}], "routes": []},
+                expected_revision=1,
+            )
+        with factory() as session:
+            WorldMapService(session).delete_map(map_id)
+        with factory() as session:
+            assert session.get(WorldMapDocument, map_id) is None
+            leftover = session.exec(
+                sa_select(WorldMapRevision).where(WorldMapRevision.map_id == map_id)
+            ).all()
+            assert leftover == []
+    finally:
+        engine.dispose()
+
+
 @pytest.mark.parametrize(
     "raw,expected",
     [

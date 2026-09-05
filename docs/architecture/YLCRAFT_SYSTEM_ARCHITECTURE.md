@@ -48,7 +48,7 @@ flowchart LR
 成环/自指/超深由 `frontend/src/utils/regionHierarchy.ts` 的 `canReparent` 在写入口统一拦截；
 顶点编辑支持拖动、双击边加点、右键删点（改动固化为 `manual`）；据点落在所属区域形状外时，
 画布与详情面板给警告条——归属以引用为准，不自动改 `region_id`。
-阶段 4（后端与 Agent）：写入库路径对 `map_json` 做宽松清理（`sanitize_map_json`：区域顶点收敛为 `[y,x]` 数字对并裁剪 0-100、截断 ≤64，`parent_id` 只收 None/字符串，未知字段原样保留）；`POST /world-maps/{map_id}/regions/{region_id}/shape/generate` 显式参数直接校验、未给时由 LLM 从区域与成员据点描述推断（受控词表约束、越界回退 + 记日志），**只返回语义参数与 seed、不含顶点**（预览不落库，写入仍走 revision CAS）；Agent 工具 `generate_region_shape`（write：写参数 + CAS，手绘区域需 `overwrite=true`）与 `list_region_shape_presets`（read）；服务端 SVG `/render` 画已入库的区域多边形（父淡子艳、无顶点的区域跳过——服务端不实现几何），点位 JSON 导出随区域原样携带 `shape`。
+阶段 4（后端与 Agent）：写入库路径对 `map_json` 做宽松清理（`sanitize_map_json`：区域顶点收敛为 `[y,x]` 数字对并裁剪 0-100、截断 ≤64，`parent_id` 只收 None/字符串，未知字段原样保留）；`POST /world-maps/{map_id}/regions/{region_id}/shape/generate` 显式参数直接校验、未给时由 LLM 从区域与成员据点描述推断（受控词表约束、越界回退 + 记日志），**只返回语义参数与 seed、不含顶点**（预览不落库，写入仍走 revision CAS）；真人画布区域行有「AI」推断入口（区域需先保存入库，manual 区域先确认覆盖）；Agent 工具 `generate_region_shape`（write：写参数 + CAS，手绘区域需 `overwrite=true`）与 `list_region_shape_presets`（read）；服务端 SVG `/render` 画已入库的区域多边形（父淡子艳、无顶点的区域跳过——服务端不实现几何），点位 JSON 导出随区域原样携带 `shape`。
 规格见 `openspec/changes/archive/region-geometry-rework/`（已完成归档），需求见
 `.ai-sdd/requirements/region-geometry-rework/discover-2026-09-04.md`。
 

@@ -38,6 +38,9 @@ interface Props {
   onGenerateShape: (regionId: string) => void
   onRegenerateShape: (regionId: string) => void
   onEditShape: (regionId: string) => void
+  /** AI（LLM）推断形状参数并展开写入草稿；手绘区域由父组件先确认覆盖。 */
+  onAiShape?: (regionId: string) => void
+  aiLoadingRegionId?: string | null
   /** 设置父区域；合法性由父组件校验（这里只置灰会成环/超深的选项）。 */
   onSetParent: (regionId: string, parentId: string | null) => void
   canSelectParent?: (regionId: string, candidateId: string) => boolean
@@ -57,6 +60,8 @@ export default function DataPanel({
   onGenerateShape,
   onRegenerateShape,
   onEditShape,
+  onAiShape,
+  aiLoadingRegionId,
   onSetParent,
   canSelectParent,
 }: Props) {
@@ -173,6 +178,18 @@ export default function DataPanel({
                     ) : (
                       <Button size="small" type="link" onClick={() => onGenerateShape(region.id)}>
                         生成
+                      </Button>
+                    )}
+                    {onAiShape && (
+                      <Button
+                        size="small"
+                        type="link"
+                        loading={aiLoadingRegionId === region.id}
+                        disabled={aiLoadingRegionId !== null && aiLoadingRegionId !== region.id}
+                        title="让 AI 根据区域与成员据点描述推断形状参数（消耗一次 LLM 文本配额）"
+                        onClick={() => onAiShape(region.id)}
+                      >
+                        AI
                       </Button>
                     )}
                     <Button

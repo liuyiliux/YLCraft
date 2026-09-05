@@ -76,6 +76,23 @@
 - **归档**：变更移入 `openspec/changes/archive/region-geometry-rework/`，架构文档/代码注释/devlog
   引用已同步改为归档路径。
 
+### 9. 后续增强批次（第五批）：AI 入口接通 + 浏览器 E2E + 删除 500 修复
+
+- **真人画布接通 AI 推断**：区域行新增「AI」按钮 → `POST .../shape/generate`（LLM 推断语义参数）
+  → 前端按 (成员据点, params, seed) 确定性展开写 draft（需显式保存）。守卫：区域未入库时提示
+  先保存（E2E 中实测发现对草稿区域调用会 404「区域不存在」）；manual 区域先确认覆盖。
+- **浏览器 E2E（IAB 真实前后端）**：新建地图 → 建区域/据点 → 生成形状（45 顶点）→ 顶点编辑
+  （45 手柄渲染）→ 保存 → AI 推断（LLM 29s 返回，词表外 `nature/settlement` 正确回退 + 记日志，
+  顶点 63→48 变化即证据）→ 保存 v4 → 删除。测试数据已全部清理（库中 0 张地图）。
+- **E2E 发现并修复删除 500（潜在缺陷）**：`delete_map` 依赖 UoW 跨表删除顺序，但主/子表之间
+  没有 relationship() 时顺序不可靠——PG 实测 `DELETE world_map_documents` 先发，FK（NO ACTION）
+  违约 → 删除接口必 500；sqlite 不强制外键所以测试从未暴露。修复：子行删除后显式 `flush()` 再删
+  主行；回归测试用 `PRAGMA foreign_keys=ON` 复现同一约束（`test_delete_map_removes_revisions_
+  before_document`）。修复已在运行中的 PG 实例验证（探针图删除 200；8000 实例带 --reload 自动生效）。
+  **同类隐患**：`asset_hub/node_service.py` 删节点时 link→node 同款顺序依赖（有 flush 但在主行
+  删除之后），后续批次排查。
+- 验证：前端 tsc + vitest 32/32 + 冒烟；后端 pytest 95/95。
+
 ## 二、区域几何重构：为什么要改（这是语义错误，不是样式问题）
 
 用户原话：*"福贵的村子是个区域，但福贵的房子不是区域的角——我们会把它设为区域的角，
