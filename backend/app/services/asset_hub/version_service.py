@@ -12,10 +12,18 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
+from pathlib import Path
+
 from sqlalchemy import select, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models.asset_hub import AssetNode, AssetVersion, AssetRelation, RelationType
+from app.db.models.asset_hub import (
+    AssetNode,
+    AssetRelation,
+    AssetRepresentation,
+    AssetVersion,
+    RelationType,
+)
 
 logger = logging.getLogger("ylcraft.asset_hub.version")
 
@@ -115,6 +123,25 @@ class AssetVersionService:
         )
         if count_result.scalar_one() <= 1:
             raise ValueError("不允许删除资产的唯一版本")
+
+        # 先删版本名下的文件表示（FK：asset_representations.version_id，NO ACTION）
+        # 并尽力清除磁盘文件；表示删除落库后再删版本，否则 PG 上违约 500。
+        reps = (
+            await self.session.execute(
+                select(AssetRepresentation).where(
+                    AssetRepresentation.asset_version_id == version_id
+                )
+            )
+        ).scalars().all()
+        for rep in reps:
+            try:
+                path = Path(rep.file_path)
+                if path.exists():
+                    path.unlink()
+            except OSError as exc:
+                logger.warning("删除资产文件失败（忽略）：%s（%s）", rep.file_path, exc)
+            await self.session.delete(rep)
+        await self.session.flush()
 
         await self.session.delete(version)
         await self.session.flush()

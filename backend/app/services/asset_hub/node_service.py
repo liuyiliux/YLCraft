@@ -185,6 +185,8 @@ class AssetNodeService:
             for rep in representations:
                 self._remove_file_quietly(rep.file_path)
                 await self.session.delete(rep)
+            # 表示删除先落库，再删版本（FK：asset_representations.version_id）
+            await self.session.flush()
 
         # 节点的直接引用行：向量 / 标签 / AI 模型 / 关系（双向）
         for model, field in (

@@ -132,22 +132,27 @@ class TagService:
         if not tag:
             return False
 
+        children = await self.get_descendants(tag_id)
+        # asset_tag_links.tag_id 对 tags 是 NO ACTION 外键：所有将被删除的标签
+        # （自身 + 级联时的后代）的关联行必须先清，否则 PG 上违约 500。
+        doomed_ids = [tag_id]
+        if cascade:
+            doomed_ids.extend(child.id for child in children)
+        links = await self.session.execute(
+            select(AssetTagLink).where(AssetTagLink.tag_id.in_(doomed_ids))
+        )
+        for link in links.scalars().all():
+            await self.session.delete(link)
+        # 关联行删除先落库：无 relationship() 时 UoW 的跨表删除顺序不可靠，
+        # tags 的 DELETE 可能先于 asset_tag_links 发出（PG FK NO ACTION 违约 → 500）。
+        await self.session.flush()
+
         if cascade:
             # 删除所有子标签
-            children = await self.get_descendants(tag_id)
             for child in children:
                 await self.session.delete(child)
-
-            # 删除所有关联的 AssetTagLink
-            links = await self.session.execute(
-                select(AssetTagLink).where(AssetTagLink.tag_id == tag_id)
-            )
-            for link in links.scalars().all():
-                await self.session.delete(link)
-
         else:
             # 子标签变为根标签
-            children = await self.get_descendants(tag_id)
             for child in children:
                 child.parent_id = None
                 child.level = 0

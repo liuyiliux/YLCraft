@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 from pydantic import BaseModel, ValidationError
-from sqlalchemy import func, or_, delete as sa_delete
+from sqlalchemy import func, or_, delete as sa_delete, update as sa_update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import load_only
 from sqlmodel import Session, select
@@ -38,7 +38,18 @@ from app.db.models.creative_project import (
     ProjectStateEntry,
 )
 from app.db.models.novel import NovelChapter
+from app.db.models.novel_source import (
+    NovelSourceSnapshot,
+    WorldBuildingTemplate,
+    WorldDomainDefinition,
+    WorldEntity,
+    WorldEntityRelation,
+    WorldExtractionRun,
+    WorldFactCandidate,
+    WorldMapDocument,
+)
 from app.db.models.platform_template import PlatformTemplate
+from app.db.models.previs import PrevisSceneDocument
 from app.db.models.task import ProjectTaskRecord
 from app.services.ai.types import LLMMessage
 from app.services.creative_project.schemas import (
@@ -508,6 +519,13 @@ class CreativeProjectService:
 
         Characters and asset library nodes are deliberately kept. The project only owns
         content versions, project links, generation logs and story-character links.
+
+        外键顺序纪律：所有引用 ``creative_projects.id`` 的表必须先解除引用——
+        - 可脱离项目独立存在的（来源快照/提取运行/候选/地图/画布/预演场景）：
+          ``project_id`` 置空（保留数据，回到"未绑定项目"状态）；
+        - 项目本地的世界数据（实体/关系/域定义/构建模板，NOT NULL FK）：
+          按 依赖序 删除（关系 → 实体 → 域定义 → 模板）。
+        漏掉任何一张都会在 PG 上触发 FK（NO ACTION）违约 → 删除项目 500。
         """
         project = self.get_project(project_id)
         if not project:
@@ -518,9 +536,45 @@ class CreativeProjectService:
             "asset_links": 0,
             "generation_logs": 0,
             "character_links": 0,
+            "world_entities": 0,
+            "world_relations": 0,
+            "domain_definitions": 0,
+            "world_templates": 0,
+            "detached_records": 0,
             "projects": 1,
         }
 
+        # 1) 可脱离存在的记录：解除项目引用（不删数据）
+        detached = 0
+        for model in (
+            NovelSourceSnapshot,
+            WorldExtractionRun,
+            WorldFactCandidate,
+            WorldMapDocument,
+            CanvasDocument,
+            PrevisSceneDocument,
+        ):
+            result = self.session.exec(
+                sa_update(model)
+                .where(model.project_id == project_id)  # type: ignore[attr-defined]
+                .values(project_id=None)
+            )
+            detached += getattr(result, "rowcount", 0) or 0
+        stats["detached_records"] = detached
+
+        # 2) 项目本地的世界数据：按依赖序删除（关系 → 实体 → 域定义 → 模板）
+        for model, key, predicate in [
+            (WorldEntityRelation, "world_relations", WorldEntityRelation.project_id == project_id),
+            (WorldEntity, "world_entities", WorldEntity.project_id == project_id),
+            (WorldDomainDefinition, "domain_definitions", WorldDomainDefinition.project_id == project_id),
+            (WorldBuildingTemplate, "world_templates", WorldBuildingTemplate.project_id == project_id),
+        ]:
+            rows = self.session.exec(select(model).where(predicate)).all()
+            stats[key] = len(rows)
+            if rows:
+                self.session.exec(sa_delete(model).where(predicate))
+
+        # 3) 项目内容与链接（既有清单，先子后父）
         for model, key, predicate in [
             # 先删可能引用其他被删行的子记录，再删更底层，保证外键顺序
             (ProjectNarrativeSnapshot, "narrative_snapshots", ProjectNarrativeSnapshot.project_id == project_id),
