@@ -203,8 +203,10 @@ AI 连接器和供应商规范已经作为 `ai_config` 分类工具接入智能�
 - `generate_world_map_visual`：按提示词生成视觉成图并入素材中枢，风险 `write`；参考图优先传 `reference_asset_ids`（素材库节点 ID，服务端解析为最新版本图片路径，与 AI 图片链路同一套解析器），`reference_images`（URL/base64）仅作兜底，两者合并去重；成图只以引用形式记回 `map_json.visuals`，不自动铺为底图、不叠加标记、不改空间关系，并发冲突时放弃回写而不回滚成图。
 - `list_world_map_revisions`：列出历史版本（倒序），传 `revision` 时返回该版完整内容，风险 `read`。
 - `rollback_world_map`：回滚到历史版本，风险 `write`；以旧快照为内容产生**新**版本，历史链不被改写，需先校验 `expected_revision` 与当前版本一致。
+- `list_region_shape_presets`：列出区域形状的受控词表（自然意象 8 / 聚落形态 6 / 人工构筑 3 / 面积感 3 / 不规则度 0~1）与默认值，风险 `read`。
+- `generate_region_shape`：为区域生成形状**语义参数**并写入地图（CAS 落历史），风险 `write`；显式 `params` 直接校验，未给时由 LLM 从区域与成员据点描述推断，越界值回退默认并记录。**只写 `mode/seed/params`，不产生顶点**——几何由前端 `regionShape.ts` 按参数确定性展开（决策 D-1，后端与 Agent 不实现几何）。手绘（`manual`）区域默认拒绝覆盖，需显式 `overwrite=true`（旧顶点可从版本历史找回）。
 
-推荐流程：`list_world_maps` → `get_world_map` → `build_world_map_visual_prompt`（先看提示词是否表达准确）→ 需要润色时 `optimize_world_map_visual_prompt` → 经用户确认后 `generate_world_map_visual` → 用 `save_world_map` 保存结构化改动。成图与底图是派生资产，不得据此断言地理事实；要断言事实应读 `map_json` 或 `resolve_world_map_entities` 的实体证据。
+推荐流程：`list_world_maps` → `get_world_map` → `build_world_map_visual_prompt`（先看提示词是否表达准确）→ 需要润色时 `optimize_world_map_visual_prompt` → 经用户确认后 `generate_world_map_visual` → 用 `save_world_map` 保存结构化改动。为区域生成轮廓时：`list_region_shape_presets` 选词 → `generate_region_shape` 写入参数（或显式传词表内 `params` 免调模型）→ 前端画布按参数展开显示、用户显式保存后顶点入库。成图与底图是派生资产，不得据此断言地理事实；要断言事实应读 `map_json` 或 `resolve_world_map_entities` 的实体证据。
 
 ### 下载解析工具
 

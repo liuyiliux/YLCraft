@@ -7,8 +7,9 @@ service layer, so Agent and真人 never keep two copies of the rules:
 - 成图与提示词润色是**派生**动作：成图只回写引用，不自动进底图、不叠标记；
 - 提示词优化只改写文本，不落库、不生成图（消耗一次 LLM 文本配额）。
 
-写作纪律：除 ``create/save/rollback/generate`` 外都是 read；写工具要求显式
-传入 expected_revision，避免静默覆盖他人编辑。
+写作纪律：除 ``create/save/rollback`` 与两个 generate（成图 / 区域形状参数）外都是
+read；写工具要求显式传入 expected_revision（区域形状生成内部读取当前版本做 CAS），
+避免静默覆盖他人编辑。
 """
 
 from __future__ import annotations
@@ -27,6 +28,11 @@ from app.services.novel_source.world_map import (
     build_map_visual_prompt,
     render_map_svg,
     serialize_map,
+)
+from app.services.novel_source.world_map_shape import (
+    generate_region_shape_params,
+    set_region_shape,
+    shape_presets,
 )
 from app.services.novel_source.world_map_visual import (
     generate_map_visual,
@@ -355,6 +361,84 @@ async def generate_world_map_visual_tool(
         except RuntimeError as exc:
             return {"success": False, "error": str(exc)}
         return {"success": True, "map_id": map_id, **generated}
+
+
+@register_tool(
+    name="list_region_shape_presets",
+    description="列出区域形状的受控词表（自然意象/聚落形态/人工构筑/面积感/不规则度）与默认值，供选择 generate_region_shape 的参数。",
+    category="novel_source",
+    examples=["区域形状有哪些参数可选", "看看形状词表"],
+    input_schema_note="无入参。",
+    output_schema_note="返回 nature/settlement/structure/scale 词表、irregularity 范围与默认参数。",
+    risk_level="read",
+    output_type="region_shape_presets",
+)
+def list_region_shape_presets() -> dict[str, Any]:
+    presets = shape_presets()
+    return {"success": True, **presets}
+
+
+@register_tool(
+    name="generate_region_shape",
+    description=(
+        "为区域生成形状语义参数并写入地图：显式 params 直接校验，未给时由 LLM 从区域与"
+        "成员据点描述推断（受控词表，越界回退并记录）。只写 mode/seed/params，"
+        "不产生顶点——顶点由前端按 (成员据点, params, seed) 确定性展开（决策 D-1，"
+        "本工具不实现几何）。手绘（manual）区域默认拒绝覆盖，需 overwrite=true。"
+    ),
+    category="novel_source",
+    examples=["给徐家村生成区域形状", "把北岭画成山地形态的区域"],
+    input_schema_note=(
+        "map_id 与 region_id 必填；params 可选（缺省时调 LLM 推断，消耗一次文本配额）；"
+        "seed 缺省按区域 id 稳定派生；overwrite=true 才能覆盖手绘区域（旧顶点可从版本历史找回）。"
+    ),
+    output_schema_note="返回 params/seed/fallbacks/source 与写入后的 revision；不含顶点。",
+    risk_level="write",
+    output_type="region_shape_generation",
+)
+async def generate_region_shape(
+    map_id: str,
+    region_id: str,
+    params: dict[str, Any] | None = None,
+    seed: int = 0,
+    overwrite: bool = False,
+    provider: str = "",
+    model: str = "",
+    operator: str = "agent",
+) -> dict[str, Any]:
+    with SessionLocal() as session:
+        try:
+            preview = await generate_region_shape_params(
+                session,
+                map_id,
+                region_id,
+                params=params,
+                seed=seed or None,
+                provider=provider,
+                model=model,
+            )
+            document = set_region_shape(
+                session,
+                map_id,
+                region_id,
+                params=preview["params"],
+                seed=preview["seed"],
+                overwrite=overwrite,
+                operator=operator or "agent",
+            )
+        except (ValueError, RuntimeError) as exc:
+            return {"success": False, "error": str(exc)}
+        return {
+            "success": True,
+            "map_id": map_id,
+            "region_id": region_id,
+            "params": preview["params"],
+            "seed": preview["seed"],
+            "fallbacks": preview["fallbacks"],
+            "source": preview["source"],
+            "revision": document.revision,
+            "note": "顶点由前端展开显示；用户在画布显式保存时顶点才随 map_json 入库",
+        }
 
 
 @register_tool(

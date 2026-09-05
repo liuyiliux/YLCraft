@@ -48,6 +48,23 @@
 - 验证：tsc 双配置 0 错误、vitest **27/27**（新增 18 项：越界 4 / 最近边 3 / 层级 11）、
   页面冒烟通过、vite build 通过。
 
+### 7. 阶段 4：后端与 Agent（第三批接手后完成）
+
+纪律不变（决策 D-1）：**后端与 Agent 不实现几何**，只产/校验/存语义参数。
+
+- **宽松清理**：`world_map.py` 新增 `sanitize_map_json`，create/update/from-places 写路径统一过一道
+  （顶点收敛 `[y,x]` 数字对、0-100 裁剪、≤64 截断；`parent_id` 收 None/字符串；未知字段原样保留）。
+- **端点**：`POST /world-maps/{map_id}/regions/{region_id}/shape/generate`——显式参数直接校验；
+  未给时 LLM 从「区域名 + 据点描述 + 项目题材」推断，受控词表约束（越界回退默认 + 记日志 +
+  返回 `fallbacks`）。**预览不落库**，响应不含顶点；seed 缺省按区域 id FNV-1a 派生（与前端同算法）。
+- **Agent 工具**：`generate_region_shape`（write，写 `mode/seed/params` + CAS，手绘区域需
+  `overwrite=true`）、`list_region_shape_presets`（read，词表总览）。工具共 12 → 14。
+- **SVG `/render`**：画已入库区域多边形（父淡子艳、深度按 parent_id 链算且成环安全，
+  无顶点区域跳过）；点位 JSON 导出随区域原样携带 `shape`。
+- 新模块 `backend/app/services/novel_source/world_map_shape.py`（词表/校验/LLM 推断/落库）；
+  新测试 `backend/tests/test_world_map_shape.py`（13 项）+ 原 19 项地图工具测试全绿。
+- 文档：API_SURFACE.md + api_surface.json（脚本同步）、agent-center.md（14 工具）、架构文档区域几何小节。
+
 ## 二、区域几何重构：为什么要改（这是语义错误，不是样式问题）
 
 用户原话：*"福贵的村子是个区域，但福贵的房子不是区域的角——我们会把它设为区域的角，
@@ -95,9 +112,9 @@ AI/Agent 只产语义参数，顶点一律由 `frontend/src/utils/regionShape.ts
 | 1 数据与算法地基 | ✅ 形状展开算法 + 类型 + 回归测试 |
 | 2 画布渲染 | ✅ 画真形状 + 层级视觉 + 未生成形状的内存兜底 |
 | 3 交互 | ✅ 生成/重新生成/拖顶点/双击加点/右键删点 + 层级树与父区域校验 + 越界警告条 |
-| 4 后端与 Agent | ❌ 未开始 |
+| 4 后端与 Agent | ✅ 宽松清理 + shape/generate 端点（只产语义参数）+ 2 个 Agent 工具 + SVG 新几何 |
 | 5 据点 20 种 + 图标 | ❌ 未开始 |
-| 6 清库与文档 | ❌ 未开始（架构文档已更新，本文件即交接） |
+| 6 清库与文档 | ❌ 未开始（清库是破坏性操作，执行前必须再确认） |
 
 **推送状态（2026-09-05 第二批更新）**：CNB（`origin`，cnb.cool）已同步到 `ea2989d5`；
 **GitHub 仍落后**——直连持续被重置，代理可用后 `git push github main` 一次推完。
@@ -121,7 +138,7 @@ AI/Agent 只产语义参数，顶点一律由 `frontend/src/utils/regionShape.ts
 
 ## 六、下一步建议（按顺序）
 
-1. 阶段 4：后端形状参数校验 + AI 语义推断端点（`POST /world-maps/{id}/regions/{rid}/shape/generate`）
-   + Agent 工具（`generate_region_shape`、`list_region_shape_presets`，只产语义参数）。
-2. 阶段 5：据点 kind 扩到 20 种 + 图标。
-3. 阶段 6：清库脚本（确认后执行）+ 文档收尾。
+1. 阶段 5：据点 kind 扩到 20 种 + 图标（`KIND_OPTIONS.node` + `NODE_ICONS`，前端改动，
+   改完跑 `npm test` + 页面冒烟；若涉及据点选择 UI 可顺带接 `shape/generate` 端点做"AI 推断参数"入口）。
+2. 阶段 6：清库脚本（幂等，删除 `world_maps` + `world_map_revisions`，执行前打印数量并**再向用户确认**）
+   + 文档收尾（样式规范层级视觉表与 20 图标、spec §8 验收自检）。

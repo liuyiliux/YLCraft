@@ -20,6 +20,63 @@ from app.services.creative_project.service import dumps_json, loads_json
 # 节点 ``layer`` 为空即未分层。
 DEFAULT_MAP_JSON = {"regions": [], "nodes": [], "routes": [], "layers": []}
 
+# 区域顶点硬上限：与前端 regionShape.ts 一致（决策 D-1：几何由前端唯一实现，
+# 后端只做宽松校验，不展开顶点）。
+MAX_SHAPE_VERTICES = 64
+
+
+def sanitize_map_json(data: dict[str, Any] | None) -> dict[str, Any]:
+    """入库前的宽松校验：只收敛会破坏渲染/前端算法的结构，未知字段原样保留。
+
+    - 区域 ``shape.vertices``：收敛为 ``[y, x]`` 数字对、坐标夹到 0-100、截断到上限，
+      非法项丢弃；``shape`` 其它字段与区域的未知字段一律不动；
+    - ``parent_id``：只接受 ``None`` 或字符串，其余归 ``None``；
+    - 节点/路线/空间层原样透传（它们自有既有语义，不在此处校验）。
+    """
+    if not isinstance(data, dict):
+        return dict(DEFAULT_MAP_JSON)
+    cleaned = dict(data)
+    regions = cleaned.get("regions")
+    if isinstance(regions, list):
+        safe_regions: list[Any] = []
+        for region in regions:
+            if not isinstance(region, dict):
+                safe_regions.append(region)
+                continue
+            region = dict(region)
+            parent_id = region.get("parent_id")
+            if parent_id is not None and not isinstance(parent_id, str):
+                region["parent_id"] = None
+            shape = region.get("shape")
+            if isinstance(shape, dict):
+                shape = dict(shape)
+                shape["vertices"] = _sanitize_vertices(shape.get("vertices"))
+                region["shape"] = shape
+            else:
+                # shape 不是对象（脏数据）：丢掉，前端会按"未生成形状"兜底显示。
+                region.pop("shape", None)
+            safe_regions.append(region)
+        cleaned["regions"] = safe_regions
+    return cleaned
+
+
+def _sanitize_vertices(raw: Any) -> list[list[float]]:
+    """顶点收敛：``[y, x]`` 数字对、0-100 裁剪、截断到上限；非法项直接丢弃。"""
+    if not isinstance(raw, list):
+        return []
+    vertices: list[list[float]] = []
+    for item in raw:
+        if isinstance(item, (list, tuple)) and len(item) == 2:
+            try:
+                y = max(0.0, min(100.0, float(item[0])))
+                x = max(0.0, min(100.0, float(item[1])))
+            except (TypeError, ValueError):
+                continue
+            vertices.append([y, x])
+            if len(vertices) >= MAX_SHAPE_VERTICES:
+                break
+    return vertices
+
 
 def _map_summary(data: dict[str, Any]) -> str:
     """版本摘要：区域/据点/路线计数，供历史列表与对比。"""
@@ -69,7 +126,7 @@ class WorldMapService:
             title=(title or "").strip() or "世界地图",
             project_id=project_id or None,
             snapshot_id=snapshot_id or None,
-            map_json=dumps_json(map_json or DEFAULT_MAP_JSON),
+            map_json=dumps_json(sanitize_map_json(map_json or DEFAULT_MAP_JSON)),
             revision=1,
         )
         self.session.add(document)
@@ -109,7 +166,7 @@ class WorldMapService:
             raise ValueError(
                 f"地图已被修改，当前版本为 {document.revision}，请刷新后重试"
             )
-        document.map_json = dumps_json(map_json or DEFAULT_MAP_JSON)
+        document.map_json = dumps_json(sanitize_map_json(map_json or DEFAULT_MAP_JSON))
         if title and title.strip():
             document.title = title.strip()
         document.revision = int(document.revision or 1) + 1
@@ -278,7 +335,7 @@ class WorldMapService:
         nodes.extend(added)
         data = dict(data)
         data["nodes"] = nodes
-        document.map_json = dumps_json(data)
+        document.map_json = dumps_json(sanitize_map_json(data))
         document.revision = int(document.revision or 1) + 1
         document.updated_at = datetime.now()
         self.session.add(document)
@@ -468,8 +525,10 @@ SVG_HEIGHT = 600
 def render_map_svg(document: WorldMapDocument) -> str:
     """把结构化地图确定性地渲染为 SVG。
 
-    本地渲染，不调用模型也不依赖外部生图供应商：据点为圆点与名称，
-    路线为连线，所属区域不同的据点用不同色相区分。空地图返回空白画布。
+    本地渲染，不调用模型也不依赖外部生图供应商：区域按已入库形状画多边形
+    （父淡子艳；无顶点的区域跳过——几何由前端展开，服务端不实现，决策 D-1），
+    据点为圆点与名称，路线为连线，所属区域不同的据点用不同色相区分。
+    空地图返回空白画布。
     """
     data = loads_json(document.map_json, DEFAULT_MAP_JSON)
     if not isinstance(data, dict):
@@ -502,6 +561,46 @@ def render_map_svg(document: WorldMapDocument) -> str:
         '<rect width="100%" height="100%" fill="#ffffff"/>',
         f'<text x="16" y="28" font-size="16" fill="#1f2937">{_escape(str(document.title or "世界地图"))}</text>',
     ]
+
+    # 区域多边形垫在最底层：父区域先画（淡/虚线），子区域后画（实一点），嵌套不遮名。
+    depths = _region_depths(regions)
+    for region in sorted(regions, key=lambda item: depths.get(str(item.get("id") or ""), 0)):
+        region_id = str(region.get("id") or "")
+        shape = region.get("shape")
+        vertices = shape.get("vertices") if isinstance(shape, dict) else None
+        if not isinstance(vertices, list) or len(vertices) < 3:
+            continue
+        projected: list[tuple[float, float]] = []
+        for pair in vertices:
+            if isinstance(pair, (list, tuple)) and len(pair) == 2:
+                try:
+                    projected.append(
+                        (
+                            project(pair[1], SVG_WIDTH / 100),
+                            project(pair[0], SVG_HEIGHT / 100),
+                        )
+                    )
+                except (TypeError, ValueError):
+                    continue
+        if len(projected) < 3:
+            continue
+        color = hues[region_order.get(region_id, 0) % len(hues)]
+        depth = depths.get(region_id, 0)
+        fill_opacity = 0.06 if depth == 0 else min(0.18, 0.10 + (depth - 1) * 0.02)
+        dash = ' stroke-dasharray="6 4"' if depth == 0 else ""
+        points_text = " ".join(f"{x:.1f},{y:.1f}" for x, y in projected)
+        parts.append(
+            f'<polygon points="{points_text}" fill="{color}" fill-opacity="{fill_opacity}" '
+            f'stroke="{color}" stroke-width="1.2"{dash}/>'
+        )
+        name = str(region.get("name") or "").strip()
+        if name:
+            center_x = sum(x for x, _ in projected) / len(projected)
+            center_y = sum(y for _, y in projected) / len(projected)
+            parts.append(
+                f'<text x="{center_x:.1f}" y="{center_y:.1f}" font-size="11" fill="#334155" '
+                f'opacity="0.75" text-anchor="middle">{_escape(name)}</text>'
+            )
 
     for route in routes:
         start = positions.get(str(route.get("from") or ""))
@@ -538,6 +637,31 @@ def _escape(value: str) -> str:
         .replace(">", "&gt;")
         .replace('"', "&quot;")
     )
+
+
+def _region_depths(regions: list[dict[str, Any]]) -> dict[str, int]:
+    """按 parent_id 链算区域层级深度（与前端语义一致：断链/成环安全，封顶 8 层）。"""
+    by_id = {str(region.get("id") or ""): region for region in regions}
+    depths: dict[str, int] = {}
+    for region in regions:
+        region_id = str(region.get("id") or "")
+        if not region_id:
+            continue
+        depth = 0
+        seen = {region_id}
+        cursor: dict[str, Any] | None = region
+        while cursor is not None and depth < 8:
+            parent_id = cursor.get("parent_id")
+            if not parent_id or parent_id in seen:
+                break
+            parent = by_id.get(str(parent_id))
+            if parent is None:
+                break
+            seen.add(str(parent_id))
+            cursor = parent
+            depth += 1
+        depths[region_id] = depth
+    return depths
 
 
 def _coordinate_band(x: float, y: float) -> str:
