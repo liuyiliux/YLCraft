@@ -154,6 +154,8 @@ import type {
 } from '../../types/api'
 import { useTheme, type ThemeColors } from '../../constants/theme'
 import { worldFieldLabel, worldFieldValueText } from '../../utils/worldFieldLabels'
+import ProviderModelSelect from '../../components/ai/ProviderModelSelect'
+import useLlmConnectors from '../../hooks/useLlmConnectors'
 import { enqueueCanvasImport } from '../../components/canvas/bridge'
 import type { CanvasNode, CanvasNodeType } from '../../components/canvas/types'
 import { useTaskPolling } from '../../hooks/useTaskPolling'
@@ -6409,6 +6411,14 @@ function ProjectBibleTab({
   const [expandPreview, setExpandPreview] = useState('')
   const [expandLoading, setExpandLoading] = useState(false)
   const [domainSpecs, setDomainSpecs] = useState<Record<string, string[]>>({})
+  // 生成时就地选 AI（供应商/模型）：与生成后的优化同一套连接器，默认取首个可用项。
+  const {
+    backends: llmBackends,
+    provider: expandProvider,
+    model: expandModel,
+    setProvider: setExpandProvider,
+    setModel: setExpandModel,
+  } = useLlmConnectors()
 
   const attributesFor = (entity: WorldEntity): string[] => {
     const contract = domainSpecs[entity.domain] || []
@@ -6659,6 +6669,8 @@ function ProjectBibleTab({
         domain: domainTaskTarget,
         hint: domainHint || undefined,
         template_id: templateId || undefined,
+        provider: expandProvider || undefined,
+        model: expandModel || undefined,
       })
       setDomainTask(task)
       await pollDomainTask(task.task_id)
@@ -6680,6 +6692,8 @@ function ProjectBibleTab({
         entity_id: expandEntity.id,
         fields: expandFields,
         prompt_override: expandPrompt || undefined,
+        provider: expandProvider || undefined,
+        model: expandModel || undefined,
       })
       message.success('已生成补充候选，正在打开审阅')
       setExpandEntity(null)
@@ -7102,6 +7116,20 @@ function ProjectBibleTab({
             placeholder="补充要求（可选）：例如「只补充镇上和码头的地点」「势力要体现彼此敌对关系」"
             disabled={domainSubmitting}
           />
+          <div>
+            <Text strong style={{ fontSize: 13 }}>
+              AI 模型（生成时就地选择）
+            </Text>
+            <div style={{ marginTop: 6 }}>
+              <ProviderModelSelect
+                backends={llmBackends}
+                provider={expandProvider}
+                model={expandModel}
+                onProviderChange={setExpandProvider}
+                onModelChange={setExpandModel}
+              />
+            </div>
+          </div>
           {domainSubmitting && (
             <div>
               <Progress
@@ -7159,6 +7187,20 @@ function ProjectBibleTab({
                     该模块暂无属性契约，可先在「世界模块」里追加字段
                   </Text>
                 )}
+              </div>
+            </div>
+            <div>
+              <Text strong style={{ fontSize: 13 }}>
+                AI 模型（生成时就地选择）
+              </Text>
+              <div style={{ marginTop: 6 }}>
+                <ProviderModelSelect
+                  backends={llmBackends}
+                  provider={expandProvider}
+                  model={expandModel}
+                  onProviderChange={setExpandProvider}
+                  onModelChange={setExpandModel}
+                />
               </div>
             </div>
             <div>
