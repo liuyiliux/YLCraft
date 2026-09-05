@@ -6410,6 +6410,7 @@ function ProjectBibleTab({
   const [expandPrompt, setExpandPrompt] = useState('')
   const [expandPreview, setExpandPreview] = useState('')
   const [expandLoading, setExpandLoading] = useState(false)
+  const [expandElapsed, setExpandElapsed] = useState(0)
   const [domainSpecs, setDomainSpecs] = useState<Record<string, string[]>>({})
   // 生成时就地选 AI（供应商/模型）：与生成后的优化同一套连接器，默认取首个可用项。
   const {
@@ -6687,6 +6688,13 @@ function ProjectBibleTab({
       return
     }
     setExpandLoading(true)
+    // 同步接口：LLM 通常需要 20-60 秒。Modal 的 loading 态只有一个转圈按钮，
+    // 这里在弹窗里放显式的进度提示，让等待"有刻度、可预期"，而不是像卡死。
+    const startedAt = Date.now()
+    const timer = setInterval(() => {
+      const seconds = Math.round((Date.now() - startedAt) / 1000)
+      setExpandElapsed(seconds)
+    }, 1000)
     try {
       const result = await expandEntityAttributes(projectId, {
         entity_id: expandEntity.id,
@@ -6701,6 +6709,8 @@ function ProjectBibleTab({
     } catch (error: any) {
       message.error(error?.message || '补充属性失败')
     } finally {
+      clearInterval(timer)
+      setExpandElapsed(0)
       setExpandLoading(false)
     }
   }
@@ -7224,6 +7234,14 @@ function ProjectBibleTab({
                 预览提示词（不消耗配额）
               </Button>
             </div>
+            {expandLoading && (
+              <Alert
+                type="info"
+                showIcon
+                message={`正在生成候选，已用时 ${expandElapsed} 秒…`}
+                description={`已选模型：${expandProvider || '默认'} / ${expandModel || '默认'}。LLM 生成通常需要 20–60 秒，期间请勿关闭弹窗。`}
+              />
+            )}
             {expandPreview && (
               <div
                 style={{
