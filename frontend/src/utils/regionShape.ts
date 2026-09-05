@@ -1,7 +1,7 @@
 /**
  * 区域形状展开：把「成员据点 + 语义参数 + seed」确定性地展开成有机多边形。
  *
- * 设计纪律（规格见 openspec/changes/region-geometry-rework/specs/region-geometry/spec.md）：
+ * 设计纪律（规格见 openspec/changes/archive/region-geometry-rework/specs/region-geometry/spec.md（已完成归档））：
  * - **确定性**：同一 (据点, params, seed) 必须产出完全一致的顶点，才能进版本历史与对比；
  * - **可控**：形状由结构化数据（据点）与语义参数驱动，不是随机世界生成——
  *   AI/Agent 只产出语义参数，几何始终由这里展开；

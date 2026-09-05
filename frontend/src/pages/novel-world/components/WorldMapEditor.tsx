@@ -47,6 +47,7 @@ import {
   type WorldMapVisualResult,
 } from '../../../api/novelSource'
 import ProviderModelSelect, { filterBackendsByCapability } from '../../../components/ai/ProviderModelSelect'
+import { DEFAULT_NODE_KIND, NODE_KINDS } from '../../../utils/nodeKinds'
 import EvidenceList from '../../../components/world/EvidenceList'
 import DataPanel from '../../../components/world/DataPanel'
 import ExportModal from '../../../components/world/ExportModal'
@@ -66,9 +67,10 @@ const newId = () => Math.random().toString(36).slice(2, 10)
 
 const EMPTY_MAP: WorldMapData = { regions: [], nodes: [], routes: [] }
 
+// 据点 kind：21 种（20 内容 + 兜底），图标与筛选统一来自 utils/nodeKinds（阶段 5）。
 const KIND_OPTIONS = {
   region: ['山脉', '平原', '水域', '城池', '国家', '其他'],
-  node: ['据点', '城池', '关隘', '场景', '其他'],
+  node: NODE_KINDS,
   route: ['道路', '水路', '商路', '边界', '其他'],
 }
 
@@ -511,7 +513,7 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
         {
           id: newId(),
           name: '',
-          kind: '据点',
+          kind: DEFAULT_NODE_KIND,
           x: 20 + (prev.nodes.length % 8) * 10,
           y: 20 + (prev.nodes.length % 8) * 5,
           region_id: null,

@@ -394,6 +394,44 @@ def test_agent_tools_region_shape(tmp_path, monkeypatch):
         engine.dispose()
 
 
+def test_map_export_carries_region_shape(tmp_path):
+    """验收 7 前半：点位 JSON 导出随区域原样携带 shape（含顶点与语义参数）。"""
+    from app.services.novel_source.world_map import build_map_export
+
+    engine, factory, _session_local = _make_env(tmp_path, "export.db")
+    try:
+        with factory() as session:
+            document = WorldMapService(session).create_map(
+                title="导出测试",
+                map_json={
+                    "regions": [
+                        {
+                            "id": "r1",
+                            "name": "徐家村",
+                            "parent_id": None,
+                            "shape": {
+                                "mode": "manual",
+                                "seed": 7,
+                                "params": {"nature": "河谷", "scale": "小"},
+                                "vertices": [[10, 10], [10, 40], [40, 40], [40, 10]],
+                            },
+                        }
+                    ],
+                    "nodes": [],
+                    "routes": [],
+                },
+            )
+            exported = build_map_export(document)
+    finally:
+        engine.dispose()
+
+    region = exported["regions"][0]
+    assert region["shape"]["mode"] == "manual"
+    assert region["shape"]["params"]["nature"] == "河谷"
+    assert len(region["shape"]["vertices"]) == 4
+    assert region["parent_id"] is None
+
+
 @pytest.mark.parametrize(
     "raw,expected",
     [
