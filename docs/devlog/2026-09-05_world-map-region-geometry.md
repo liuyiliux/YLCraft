@@ -99,7 +99,8 @@ AI/Agent 只产语义参数，顶点一律由 `frontend/src/utils/regionShape.ts
 | 5 据点 20 种 + 图标 | ❌ 未开始 |
 | 6 清库与文档 | ❌ 未开始（架构文档已更新，本文件即交接） |
 
-**当前未推送**：本地领先 github/main 若干提交（push 持续被网络重置，代理打开后一次推完）。
+**推送状态（2026-09-05 第二批更新）**：CNB（`origin`，cnb.cool）已同步到 `ea2989d5`；
+**GitHub 仍落后**——直连持续被重置，代理可用后 `git push github main` 一次推完。
 
 ## 五、接手者必须知道的坑
 
