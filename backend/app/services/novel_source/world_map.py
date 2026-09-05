@@ -557,7 +557,17 @@ def render_map_svg(document: WorldMapDocument) -> str:
         )
 
     region_order = {str(region.get("id") or ""): index for index, region in enumerate(regions)}
-    hues = ["#1677ff", "#52c41a", "#fa8c16", "#eb2f96", "#722ed1", "#13c2c2"]
+    # 地形色系：与前端画布 REGION_HUES 一致（样式规范 §3「地形色不用 UI 原色」——
+    # 高饱和色块在地图语境里会被读成军事占领区）。改动须与 MapCanvas 两侧同步。
+    hues = ["#7c9c6f", "#c9a86a", "#7fa8c4", "#b5794f", "#8fa3ad", "#b08fa8"]
+    # 路线手绘线型与配色：与前端画布 ROUTE_STYLES 一致。
+    route_styles = {
+        "道路": ("#b5794f", None),
+        "水路": ("#7fa8c4", "6 3"),
+        "商路": ("#c9a86a", "2 4"),
+        "边界": ("#8fa3ad", "8 6"),
+    }
+    default_route = ("#b5794f", None)
 
     parts: list[str] = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{SVG_WIDTH}" height="{SVG_HEIGHT}" viewBox="0 0 {SVG_WIDTH} {SVG_HEIGHT}">',
@@ -610,9 +620,11 @@ def render_map_svg(document: WorldMapDocument) -> str:
         end = positions.get(str(route.get("to") or ""))
         if not start or not end:
             continue
+        color, dash = route_styles.get(str(route.get("kind") or ""), default_route)
+        dash_attr = f' stroke-dasharray="{dash}"' if dash else ""
         parts.append(
             f'<line x1="{start[0]:.1f}" y1="{start[1]:.1f}" x2="{end[0]:.1f}" y2="{end[1]:.1f}" '
-            'stroke="#94a3b8" stroke-width="2"/>'
+            f'stroke="{color}" stroke-width="1.8" stroke-linecap="round"{dash_attr}/>'
         )
 
     for node in nodes:
