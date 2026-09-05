@@ -64,6 +64,7 @@ async def isolated_asset_hub_database(request, tmp_path, monkeypatch):
         "tests.test_asset_hub_relation",
         "tests.test_asset_hub_tags",
         "tests.test_asset_hub_version",
+        "tests.test_service_delete_cascades",
     }
     if request.module.__name__ not in database_modules:
         yield

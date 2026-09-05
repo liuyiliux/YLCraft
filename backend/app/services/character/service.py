@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Any, Optional, cast
 
 from sqlmodel import select
-from sqlalchemy import func
+from sqlalchemy import func, or_, delete as sa_delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.character import Character, CharacterStoryLink, CharacterRelationship, CharacterRole
@@ -252,6 +252,16 @@ class CharacterService:
         character = await self.get_by_id(character_id)
         if not character:
             return False
+        # 先清双向关系：character_relationships 对 characters 有 NO ACTION 外键，
+        # 不先删会在 PG 上触发 FK 违约（删除角色 500）。
+        await self.session.execute(
+            sa_delete(CharacterRelationship).where(
+                or_(
+                    CharacterRelationship.character_id == character_id,
+                    CharacterRelationship.related_character_id == character_id,
+                )
+            )
+        )
         await self.session.delete(character)
         await self.session.flush()
         return True

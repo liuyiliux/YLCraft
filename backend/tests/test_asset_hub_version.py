@@ -189,6 +189,35 @@ async def test_version_with_representations(db_session, test_asset):
 
 
 @pytest.mark.asyncio
+async def test_version_delete_cleans_representations(db_session, test_asset):
+    """删除回归：删版本必须先清其文件表示（asset_representations.version_id FK）。"""
+    from app.db.models.asset_hub import AssetRepresentation, AssetVersion
+    from app.services.asset_hub.version_service import AssetVersionService
+
+    version = AssetVersion(
+        id=str(uuid4()), asset_node_id=test_asset.id, version_number=99
+    )
+    rep = AssetRepresentation(
+        id=str(uuid4()),
+        asset_version_id=version.id,
+        file_path="/tmp/ylcraft-delete-probe.png",
+        mime_type="image/png",
+        file_size=1,
+    )
+    # 保证不是唯一版本（服务拒绝删除唯一版本）
+    base = AssetVersion(id=str(uuid4()), asset_node_id=test_asset.id, version_number=1)
+    db_session.add_all([base, version, rep])
+    await db_session.commit()
+
+    service = AssetVersionService(db_session)
+    assert await service.delete(version.id) is True
+    await db_session.commit()
+
+    assert await db_session.get(AssetVersion, version.id) is None
+    assert await db_session.get(AssetRepresentation, rep.id) is None
+
+
+@pytest.mark.asyncio
 async def test_version_number_auto_increment(db_session, test_asset):
     """测试版本号自动递增逻辑"""
     # 获取当前最大版本号
