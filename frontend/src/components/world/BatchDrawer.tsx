@@ -31,6 +31,8 @@ interface Props {
   layerOptions: BatchOption[]
   getEntityRow: (nodeId: string) => WorldMapNodeEntity | null
   onUpdateRegion: (regionId: string, patch: Record<string, unknown>) => void
+  /** 父区域候选合法性（成环/超深置灰）；与 DataPanel 同一校验入口。 */
+  canSelectParent?: (regionId: string, candidateId: string) => boolean
   onUpdateNode: (nodeId: string, patch: Record<string, unknown>) => void
   onUpdateRoute: (routeId: string, patch: Record<string, unknown>) => void
   onAddLayer: () => void
@@ -59,6 +61,7 @@ export default function BatchDrawer({
   layerOptions,
   getEntityRow,
   onUpdateRegion,
+  canSelectParent,
   onUpdateNode,
   onUpdateRoute,
   onAddLayer,
@@ -162,7 +165,14 @@ export default function BatchDrawer({
                       allowClear
                       value={region.parent_id ?? undefined}
                       onChange={(value) => onUpdateRegion(region.id, { parent_id: value ?? null })}
-                      options={regionOptions.filter((o) => o.value !== region.id)}
+                      options={regionOptions
+                        .filter((o) => o.value !== region.id)
+                        .map((o) => ({
+                          ...o,
+                          disabled: canSelectParent
+                            ? !canSelectParent(region.id, String(o.value))
+                            : false,
+                        }))}
                     />
                     <Input
                       style={{ width: 220 }}
