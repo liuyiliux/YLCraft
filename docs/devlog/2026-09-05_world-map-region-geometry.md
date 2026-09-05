@@ -65,6 +65,17 @@
   新测试 `backend/tests/test_world_map_shape.py`（13 项）+ 原 19 项地图工具测试全绿。
 - 文档：API_SURFACE.md + api_surface.json（脚本同步）、agent-center.md（14 工具）、架构文档区域几何小节。
 
+### 8. 阶段 5 + 6 收尾（第四批，变更完成并归档）
+
+- **阶段 5**：`utils/nodeKinds.ts` 单一数据源——20 内容 kind + 兜底「其他」（21 选项，规格分组之和；
+  「20 种」计内容 kind），21 个 Lucide 风格图标 + 旧 kind 别名兜底；`WorldMapEditor` 选项/默认值
+  （新建默认 `村落`）与筛选接入；测试 5 项（全绿：前端 vitest 32/32、tsc ×2、冒烟）。
+- **阶段 6**：清库脚本 `backend/scripts/cleanup_world_maps.py`（与应用同库、先报数量、yes/--yes 确认、
+  幂等）**已执行**：删 1 张地图 + 3 条历史快照，复跑空表无事发生；样式规范补层级视觉表与图标映射；
+  README 清除最后一处「势力范围多边形」旧语义；spec §8 九条验收全部通过（证据记录在 tasks.md）。
+- **归档**：变更移入 `openspec/changes/archive/region-geometry-rework/`，架构文档/代码注释/devlog
+  引用已同步改为归档路径。
+
 ## 二、区域几何重构：为什么要改（这是语义错误，不是样式问题）
 
 用户原话：*"福贵的村子是个区域，但福贵的房子不是区域的角——我们会把它设为区域的角，
@@ -105,7 +116,7 @@
 AI/Agent 只产语义参数，顶点一律由 `frontend/src/utils/regionShape.ts` 展开——
 单一实现、零双份维护、天然一致。
 
-## 四、进度（详细勾选在 `openspec/changes/region-geometry-rework/specs/region-geometry/tasks.md`）
+## 四、进度（详细勾选在 `openspec/changes/archive/region-geometry-rework/specs/region-geometry/tasks.md`，已完成归档）
 
 | 阶段 | 状态 |
 |---|---|
@@ -113,8 +124,8 @@ AI/Agent 只产语义参数，顶点一律由 `frontend/src/utils/regionShape.ts
 | 2 画布渲染 | ✅ 画真形状 + 层级视觉 + 未生成形状的内存兜底 |
 | 3 交互 | ✅ 生成/重新生成/拖顶点/双击加点/右键删点 + 层级树与父区域校验 + 越界警告条 |
 | 4 后端与 Agent | ✅ 宽松清理 + shape/generate 端点（只产语义参数）+ 2 个 Agent 工具 + SVG 新几何 |
-| 5 据点 20 种 + 图标 | ❌ 未开始 |
-| 6 清库与文档 | ❌ 未开始（清库是破坏性操作，执行前必须再确认） |
+| 5 据点 20 种 + 图标 | ✅ 21 选项（20 内容 + 兜底）+ 21 图标，nodeKinds 纯模块 + 测试 |
+| 6 清库与文档 | ✅ 清库脚本已执行（1 地图 + 3 快照删除，幂等验证）；文档收尾 + §8 九条验收自检通过；变更已归档 |
 
 **推送状态（2026-09-05 第二批更新）**：CNB（`origin`，cnb.cool）已同步到 `ea2989d5`；
 **GitHub 仍落后**——直连持续被重置，代理可用后 `git push github main` 一次推完。
@@ -136,9 +147,10 @@ AI/Agent 只产语义参数，顶点一律由 `frontend/src/utils/regionShape.ts
    文件里不写 `import { useCallback } from 'react'` 也能编译——这不是丢导入，别"修复"它，
    也别因此怀疑 tsc 没跑对。项目 `tsc` 是 `strict: false`。
 
-## 六、下一步建议（按顺序）
+## 六、下一步建议
 
-1. 阶段 5：据点 kind 扩到 20 种 + 图标（`KIND_OPTIONS.node` + `NODE_ICONS`，前端改动，
-   改完跑 `npm test` + 页面冒烟；若涉及据点选择 UI 可顺带接 `shape/generate` 端点做"AI 推断参数"入口）。
-2. 阶段 6：清库脚本（幂等，删除 `world_maps` + `world_map_revisions`，执行前打印数量并**再向用户确认**）
-   + 文档收尾（样式规范层级视觉表与 20 图标、spec §8 验收自检）。
+本变更（region-geometry-rework）已全部完成并归档，无未竟阶段。可选的后续增强（非本变更范围）：
+
+1. 真人画布接 `shape/generate` 端点做「AI 推断形状参数」按钮（端点与工具已就绪，前端未接 UI）。
+2. 地图工作台真实浏览器 E2E 验收（对齐小说源世界项目主线的遗留项）。
+3. GitHub 积压提交待代理可用后一次推完（见五-坑 6）。

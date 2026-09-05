@@ -56,21 +56,10 @@ const ROUTE_STYLES: Record<string, RouteStyle> = {
 const DEFAULT_ROUTE_STYLE: RouteStyle = { color: '#b5794f', weight: 1.6 }
 
 /**
- * 据点地物图标（24×24 内联 SVG，currentColor 描边 + 淡填充）。
- * 按 kind 取形：村落小屋 / 城墙塔楼 / 门楼关隘 / 林木场景 —— 让据点读作"小说里的地方"，
- * 而不是地图上的部队番号。
+ * 据点地物图标：数据与图标统一收在 utils/nodeKinds.ts（样式规范 §6.3 / §7），
+ * 让据点读作"小说里的地方"，而不是地图上的部队番号。
  */
-const NODE_ICONS: Record<string, string> = {
-  据点: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M4 11 12 5l8 6" fill="currentColor" fill-opacity="0.18"/><path d="M6.5 11v7h11v-7"/><path d="M10.5 18v-4h3v4"/></svg>',
-  城池:
-    '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M3 9h18v10H3z" fill="currentColor" fill-opacity="0.16"/><path d="M3 9V7h3v2M9 9V7h3v2M15 9V7h3v2M21 9V7h-3v2"/><path d="M3 13h18"/><path d="M11 19v-4h2v4"/></svg>',
-  关隘:
-    '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M5 20V9l3-4h8l3 4v11z" fill="currentColor" fill-opacity="0.16"/><path d="M9 20v-6a3 3 0 0 1 6 0v6"/><path d="M5 12h14"/></svg>',
-  场景:
-    '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M12 4c3.6 0 6.5 2.9 6.5 6.5 0 1.2-.3 2.3-.9 3.3H6.4a6.5 6.5 0 0 1 5.6-9.8z" fill="currentColor" fill-opacity="0.18"/><path d="M12 14v6"/><path d="M9 20h6"/></svg>',
-  其它:
-    '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5" fill="currentColor" fill-opacity="0.3"/></svg>',
-}
+import { nodeIconSvg } from '../../utils/nodeKinds'
 
 /** 二次贝塞尔采样：把直线读成手绘曲线（小说地图的路线不是直尺画的）。 */
 function curveThrough(from: [number, number], to: [number, number]): [number, number][] {
@@ -113,7 +102,7 @@ function nodeIcon(
   selected: boolean,
   withLabel: boolean,
 ) {
-  const svg = NODE_ICONS[kind] || NODE_ICONS.其它
+  const svg = nodeIconSvg(kind)
   const label =
     withLabel || selected
       ? `<span class="wm-node-label">${(name || '未命名').replace(/[<>&]/g, '')}</span>`

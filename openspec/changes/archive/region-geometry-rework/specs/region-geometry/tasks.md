@@ -77,17 +77,43 @@
       深度按 parent_id 链算、断链/成环安全封顶 8；无顶点区域跳过）、区域名标签在顶点均值处；
       导出 `build_map_export` 的 `regions` 本就原样透传，`shape` 随之带出。_
 
-## 阶段 5 · 据点类型与图标
+## 阶段 5 · 据点类型与图标 ✅
 
-- [ ] 18. `KIND_OPTIONS.node` 扩到 20 种（聚落/军事/交通/人文/自然/兜底）。
-- [ ] 19. `NODE_ICONS` 补齐 20 个内联 SVG（Lucide 风格），未知 kind 回退「其他」。
+- [x] 18. `KIND_OPTIONS.node` 扩到 20 种（聚落/军事/交通/人文/自然/兜底）。
+      _Done: 新增纯模块 `utils/nodeKinds.ts` 作单一数据源：20 内容 kind
+      （聚落 4：村落/城镇/都城/庄园；军事 3：城池/关隘/战场；交通 4：港口/渡口/桥梁/驿站；
+      人文 5：集市/神殿/塔楼/废墟/陵墓；自然 4：山峰/森林/湖泊/矿场）+ 兜底「其他」= 21 选项
+      （规格 §6 分组清单之和；「20 种」计内容 kind）。`WorldMapEditor` 的选项/新建默认值
+      （默认 `村落`）与图层筛选全部接入。_
+- [x] 19. `NODE_ICONS` 补齐 20 个内联 SVG（Lucide 风格），未知 kind 回退「其他」。
+      _Done: 21 个图标（24×24、`stroke-width:1.75`、`currentColor`、淡填充、禁 emoji）+ 旧数据
+      别名（据点→村落、场景、其它→其他）；`nodeIconSvg()` 统一兜底。
+      测试 `utils/nodeKinds.test.ts` 5 项：数量/唯一性、全覆盖、回退、风格约束、默认值。_
 
-## 阶段 6 · 数据清理与收尾
+## 阶段 6 · 数据清理与收尾 ✅
 
-- [ ] 20. 一次性清库脚本（幂等）：删除 `world_maps` + `world_map_revisions`，执行前打印数量并确认。
-- [ ] 21. 文档：架构文档（区域几何语义 + 层级）、样式规范（层级视觉表、20 图标）、
+- [x] 20. 一次性清库脚本（幂等）：删除 `world_maps` + `world_map_revisions`，执行前打印数量并确认。
+      _Done: `backend/scripts/cleanup_world_maps.py`（加载 backend/.env 与应用同库；
+      打印两表行数 → 交互输入 yes 或 `--yes` 才执行；空表无事发生）。
+      已执行：`world_maps` 1 行、`world_map_revisions` 3 行删除；复跑验证幂等（空表无事发生）。
+      本地遗留空文件 `backend/ylcraft.db`（无表）未动，与配置库无关。_
+- [x] 21. 文档：架构文档（区域几何语义 + 层级）、样式规范（层级视觉表、20 图标）、
       `docs/agent/agent-center.md`（新工具）。
-- [ ] 22. 逐条对照 `spec.md` §8 验收标准自检。
+      _Done: 架构文档「区域几何」小节覆盖阶段 1-4 全部语义（阶段 4 补齐）；样式规范 §6.3
+      改为层级视觉表 + 21 kind 说明、§7 补地物图标语义映射；agent-center.md 已在阶段 4 补
+      两个工具（14 工具）；`docs/README.md` 清除残留的「势力范围多边形」旧语义并更新最近状态。_
+- [x] 22. 逐条对照 `spec.md` §8 验收标准自检。
+      _Done（2026-09-05，证据如下）_：
+      1. 同 (据点, params, seed) 两次生成一致 — vitest「同一组参数与 seed 必须产出完全一致的形状」。
+      2. 顶点 ≤64 — vitest「任何形态组合下顶点数都不超过上限」（全词表组合）+ 后端 `sanitize_map_json` 截断。
+      3. 据点移动后 auto 重算形状随之变化 / manual 不变 — 生成以成员据点坐标为输入（面积感、
+         据点必被包住测试）；manual 渲染始终用已存顶点，重算需确认。
+      4. 手绘后 `mode=manual`，重新生成有覆盖确认 — 拖/加/删顶点均固化 manual；`Modal.confirm` 提示。
+      5. 三层嵌套渲染 — `regionHierarchy` 深度/树序测试 + SVG 渲染测试（父 .06 虚线先画、子 .10 实线后画）。
+      6. 据点越界警告且 `region_id` 未变 — `pointInPolygon` 测试 + 画布警告条/详情框（引用不改）。
+      7. 导出 JSON 含 `shape`、`/render` 用新几何 — `build_map_export` 携带 shape 测试 + SVG polygon 测试。
+      8. Agent 与真人同一链路 — 同用 `generate_region_shape_params`（同一词表校验与推断 service）。
+      9. 21 选项均有图标、未知回退 — `nodeKinds` 测试（全覆盖 + 回退 + 风格约束）。
 
 ## 决策记录
 
