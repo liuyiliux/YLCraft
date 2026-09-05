@@ -21,12 +21,14 @@ function opColor(op: string) {
   return 'blue'
 }
 
+import { worldFieldLabel, worldFieldValueText } from '../../utils/worldFieldLabels'
+
 function renderValue(value: unknown) {
   if (value === null || value === undefined) return '∅'
   if (typeof value === 'string') return value
-  return JSON.stringify(value)
+  // 数组/对象转正文（顿号连接），避免 JSON 串直接糊在界面上
+  return worldFieldValueText(value)
 }
-
 export default function ProjectStatePanel({ projectId }: { projectId: string }) {
   const [state, setState] = useState<Record<string, Record<string, unknown>>>({})
   const [timeline, setTimeline] = useState<StateEntry[]>([])
@@ -70,8 +72,8 @@ export default function ProjectStatePanel({ projectId }: { projectId: string }) 
                 </Typography.Text>
                 <div style={{ marginTop: 6 }}>
                   {Object.entries(kv || {}).map(([key, value]) => (
-                    <Tag key={key} color="blue">
-                      {key}: {renderValue(value)}
+                    <Tag key={key} color="blue" title={key}>
+                      {worldFieldLabel(key)}: {renderValue(value)}
                     </Tag>
                   ))}
                 </div>
@@ -96,8 +98,8 @@ export default function ProjectStatePanel({ projectId }: { projectId: string }) 
                       children: (
                         <span>
                           <Tag color={opColor(entry.op)}>{entry.op}</Tag>
-                          <Typography.Text code>
-                            {entry.scope} / {entry.key}
+                          <Typography.Text code title={entry.key}>
+                            {entry.scope} / {worldFieldLabel(entry.key)}
                           </Typography.Text>
                           {' → '}
                           {renderValue(entry.value)}
