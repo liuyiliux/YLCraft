@@ -394,6 +394,9 @@ def test_novel_source_agent_tools_are_registered():
         "generate_world_map_visual",
         "list_world_map_revisions",
         "rollback_world_map",
+        # 区域形状（阶段 4：AI/Agent 只产语义参数，顶点由前端展开）
+        "generate_region_shape",
+        "list_region_shape_presets",
         "manage_world_building_template",
         "list_world_building_suggestions",
         "resolve_world_field_suggestion",

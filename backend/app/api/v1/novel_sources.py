@@ -58,6 +58,11 @@ from app.services.novel_source.world_map import (
     render_map_svg,
     serialize_map,
 )
+from app.services.novel_source.world_map_shape import (
+    generate_region_shape_params,
+    shape_presets,
+)
+
 
 def _local_file_url(path_or_url: str) -> str:
     """本地文件 → 平台内部下载地址（与角色立绘一致，本地已落盘的成图优先展示）。"""
@@ -199,6 +204,29 @@ class WorldMapVisualRequest(BaseModel):
 class WorldMapVisualPromptRequest(BaseModel):
     style_override: str = Field(default="", description="画风覆盖")
     prompt_override: str = Field(default="", description="提示词覆盖（留空则按结构化地图自动生成）")
+
+
+class RegionShapeParamsRequest(BaseModel):
+    """区域形状语义参数（受控词表；越界值由服务端回退默认并记录）。"""
+
+    nature: str = Field(default="", description="自然意象（平原/森林/山地/丘陵/湿地/荒漠/河谷/海岸）")
+    settlement: str = Field(default="", description="聚落形态（圆形寨子/带状街区/散点村落/环山聚落/方形城邑/沿河狭长）")
+    structure: str = Field(default="", description="人工构筑（城墙方形/要塞星形/港口半岛；空 = 无）")
+    scale: str = Field(default="", description="面积感（小/中/大）")
+    irregularity: float | None = Field(default=None, description="不规则度 0~1")
+
+
+class RegionShapeGenerateRequest(BaseModel):
+    """生成区域形状语义参数。
+
+    给 ``params`` 时直接校验返回（不调模型）；不给则由 LLM 从区域与据点描述推断。
+    只返回语义参数与 seed，**不含顶点**——几何由前端按参数确定性展开（决策 D-1）。
+    """
+
+    params: RegionShapeParamsRequest | None = Field(default=None, description="显式语义参数（缺省字段回退默认）")
+    seed: int | None = Field(default=None, description="形状种子；缺省按区域 id 稳定派生")
+    provider: str = Field(default="", description="指定 LLM 后端（推断参数时用）")
+    model: str = Field(default="", description="动态指定模型名")
 
 
 class WorldMapVisualOptimizeRequest(BaseModel):
@@ -1498,6 +1526,39 @@ def update_world_map(
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"success": True, "data": serialize_map(document)}
+
+
+@router.post(
+    "/api/v1/world-maps/{map_id}/regions/{region_id}/shape/generate",
+    summary="生成区域形状语义参数（预览，不落库）",
+)
+async def generate_region_shape(
+    map_id: str,
+    region_id: str,
+    req: RegionShapeGenerateRequest,
+    svc: WorldMapService = Depends(map_service),
+):
+    """显式参数直接校验返回；未给时由 LLM 推断（受控词表约束，越界回退 + 记日志）。
+
+    返回语义参数与 seed，**不含顶点**：几何由前端 ``regionShape.ts`` 按
+    (成员据点, params, seed) 确定性展开预览，写入仍走既有 revision CAS 保存
+    （决策 D-1：几何由前端唯一实现，后端不展开顶点）。
+    """
+    try:
+        payload = await generate_region_shape_params(
+            svc.session,
+            map_id,
+            region_id,
+            params=req.params.model_dump() if req.params else None,
+            seed=req.seed,
+            provider=req.provider,
+            model=req.model,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"success": True, "data": payload}
 
 
 @router.get("/api/v1/world-maps/{map_id}/render", summary="渲染世界地图为 SVG")

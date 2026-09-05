@@ -48,7 +48,7 @@ SAMPLE_MAP = {
 
 
 def test_world_map_tools_registered_with_risk_levels():
-    """12 个地图工具都应注册，且写工具标记 write。"""
+    """14 个地图工具都应注册，且写工具标记 write。"""
     import app.services.agent.tools  # noqa: F401  触发注册
 
     expected_read = {
@@ -60,12 +60,14 @@ def test_world_map_tools_registered_with_risk_levels():
         "build_world_map_visual_prompt",
         "optimize_world_map_visual_prompt",
         "list_world_map_revisions",
+        "list_region_shape_presets",
     }
     expected_write = {
         "create_world_map",
         "save_world_map",
         "generate_world_map_visual",
         "rollback_world_map",
+        "generate_region_shape",
     }
     for name in expected_read | expected_write:
         tool = ToolRegistry.get_tool(name)

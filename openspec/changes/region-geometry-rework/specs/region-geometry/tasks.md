@@ -51,15 +51,31 @@
       据点详情面板警告框。区域未生成形状时不判定（临时兜底形状不是正典）。
       _Done: `pointInPolygon` 射线法纯函数（凹多边形正确、边界视为在内），有测试。_
 
-## 阶段 4 · 后端与 Agent
+## 阶段 4 · 后端与 Agent ✅
 
-- [ ] 13. 后端区域结构校验与序列化支持 `shape` / `parent_id`（宽松校验，未知字段保留）。
-- [ ] 14. 端点 `POST /api/v1/world-maps/{map_id}/regions/{region_id}/shape/generate`：
-      显式参数直接展开；未给时由 LLM 推断并以受控词表约束输出（越界回退 + 记日志）。
-- [ ] 15. 展开算法服务端实现（与前端同一套规则，Python 版）或前端唯一实现 + 后端仅存结果（待定，见决策 D-1）。
-- [ ] 16. Agent 工具：`generate_region_shape`（write）、`list_region_shape_presets`（read），
+- [x] 13. 后端区域结构校验与序列化支持 `shape` / `parent_id`（宽松校验，未知字段保留）。
+      _Done: `world_map.py` 新增 `sanitize_map_json`，create/update/from-places 写入库路径统一过一道：
+      区域顶点收敛 `[y,x]` 数字对、0-100 裁剪、截断 ≤64（`MAX_SHAPE_VERTICES`）、非法项丢弃；
+      `parent_id` 只收 None/字符串；`shape` 非对象则丢弃（前端按"未生成"兜底）；
+      区域未知字段与节点/路线/空间层原样透传。_
+- [x] 14. 端点 `POST /api/v1/world-maps/{map_id}/regions/{region_id}/shape/generate`：
+      显式参数直接校验返回（越界回退默认 + 记录 `fallbacks`）；未给时由 LLM 从
+      「区域名 + 成员据点描述 + 项目题材（title/project_type，尽力而为）」推断，
+      以受控词表约束输出（JSON 围栏/闲话容忍，解析失败报错）。
+      _Done: 按 D-1 **只返回语义参数 + seed、不含顶点**（顶点由前端展开预览），预览不落库；
+      seed 缺省按区域 id 做 FNV-1a 稳定派生（与前端 `hashSeed` 同算法）。
+      实现：`services/novel_source/world_map_shape.py` + `api/v1/novel_sources.py`。_
+- [x] 15. ~~展开算法服务端实现（Python 版）~~ **取消**（决策 D-1 已定稿：几何由前端唯一实现）。
+      服务端 `/render` 与导出只消费**已入库**顶点，不做参数展开。
+- [x] 16. Agent 工具：`generate_region_shape`（write）、`list_region_shape_presets`（read），
       与真人共用 service；测试覆盖参数校验与词表越界回退。
-- [ ] 17. 导出与 `/render`：SVG 使用新几何；点位 JSON 增加 `shape` 字段。
+      _Done: 工具写 `mode/seed/params`（顶点留空，前端展开显示）并走 CAS 落历史快照；
+      手绘（manual）区域默认拒绝覆盖，`overwrite=true` 放行；LLM 推断消耗一次文本配额。
+      测试：`tests/test_world_map_shape.py`（词表回退 / 落库 / 手绘保护 / LLM 推断 / 预设词表）。_
+- [x] 17. 导出与 `/render`：SVG 使用新几何；点位 JSON 增加 `shape` 字段。
+      _Done: `render_map_svg` 画已入库区域多边形（父淡子艳：父 .06 虚线、更深 .10+.02/层，
+      深度按 parent_id 链算、断链/成环安全封顶 8；无顶点区域跳过）、区域名标签在顶点均值处；
+      导出 `build_map_export` 的 `regions` 本就原样透传，`shape` 随之带出。_
 
 ## 阶段 5 · 据点类型与图标
 
