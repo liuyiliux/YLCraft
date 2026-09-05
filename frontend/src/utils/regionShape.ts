@@ -76,6 +76,39 @@ export function mulberry32(seed: number): () => number {
   }
 }
 
+/**
+ * 把外部（AI / 后端 / 存储）传入的语义参数收敛回受控词表：
+ * 不在词表内的值一律回退默认，避免脏数据把形状算崩。
+ */
+export function normalizeShapeParams(
+  shape: { params?: unknown } | null | undefined,
+): RegionShapeParams {
+  const params = (shape?.params ?? {}) as Record<string, unknown>
+  const text = (value: unknown) => (typeof value === 'string' ? value : '')
+  const natureRaw = text(params.nature)
+  const settlementRaw = text(params.settlement)
+  const structureRaw = text(params.structure)
+  const scaleRaw = text(params.scale)
+  return {
+    nature: (NATURE_IMAGERY as readonly string[]).includes(natureRaw)
+      ? (natureRaw as NatureImagery)
+      : DEFAULT_SHAPE_PARAMS.nature,
+    settlement: (SETTLEMENT_FORMS as readonly string[]).includes(settlementRaw)
+      ? (settlementRaw as SettlementForm)
+      : DEFAULT_SHAPE_PARAMS.settlement,
+    structure: (STRUCTURE_FORMS as readonly string[]).includes(structureRaw)
+      ? (structureRaw as StructureForm)
+      : '',
+    scale: (['小', '中', '大'] as const).includes(scaleRaw as '小' | '中' | '大')
+      ? (scaleRaw as '小' | '中' | '大')
+      : DEFAULT_SHAPE_PARAMS.scale,
+    irregularity:
+      typeof params.irregularity === 'number' && Number.isFinite(params.irregularity)
+        ? Math.max(0, Math.min(1, params.irregularity))
+        : DEFAULT_SHAPE_PARAMS.irregularity,
+  }
+}
+
 /** 由文本派生稳定 seed（区域无 seed 时按 id 派生，保证每次打开形状一致）。 */
 export function hashSeed(text: string): number {
   let hash = 2166136261

@@ -36,6 +36,18 @@ flowchart LR
 
 - 世界地图工作台：结构化地图的正典仍是 `WorldMapDocument.map_json`（区域/据点/路线/空间层），真人入口为独立路由 `/world-map`（顶栏「世界观 → 世界地图」二级菜单），`/novel-world` 只承担来源提取与候选审阅，不再内嵌地图。前端工作台按「左图层/数据面板 + 中画布 + 右选中详情」三栏组织，AI 视觉稿与批量编辑收进右侧抽屉：成图是派生资产，只可手动「设为底图」成为可开关参考层，不自动铺底、不叠标记、不写回正典；左栏面板与抽屉由 `components/world/` 下的 `LayerPanel / DataPanel / NodeDetailPanel / VisualDrawer / BatchDrawer / ExportModal / VersionModal` 组成，地图状态与写入逻辑仍集中在 `WorldMapEditor`（保存走 revision CAS，需显式保存才入库）。版本历史为 append-only：每次保存落 `world_map_revisions` 快照（迁移 `042`），`GET /world-maps/{id}/revisions`、`GET .../revisions/{revision}`、`POST .../rollback` 供真人页面使用，回滚以历史快照为内容产生**新** revision，历史链不被改写。生图提示词由结构化数据确定性生成并写明坐标约定（x 向右、y 向下、画面顶部为北、据点带 (x,y) 与方位带），可经 `POST /world-maps/{id}/generate-visual/prompt-optimize` 用 LLM 润色，只改写提示词、不落库、需确认后才生图。**项目视觉基准**：项目级的一张基准图，落地为 `project_asset_links` 中 `role="visual_baseline"` 的一条关联（不新增表、不复制文件，只引用素材库节点），由 `services/creative_project/visual_baseline.py` 维护，一个项目只保留一张（重设即替换），端点为 `GET/PUT/DELETE /api/v1/creative-projects/{project_id}/visual-baseline`。生图链路**自动注入**它作为参考图，因此页面与 Agent 无需各自传参，没设置也不阻塞生图。画风由「风格预设 + 视觉基准」决定，不再依赖自由文本框。
 
+**区域几何（正典语义，重要）**：区域是**有形状的地理范围**，据点是区域内的一个位置——
+形状是区域的**独立几何**，**不再由成员据点围合推导**（旧实现把"福贵的房子"当成"村子的城墙角"，
+且据点一动形状就变形、凸包画不出凹形）。区域新增 `shape`（`mode: auto|manual`、`seed`、
+语义参数、顶点 ≤64）与 `parent_id`（不限层嵌套，靠 `parent_id` 链算层级深度，带环检测）。
+形状由「成员据点 + 语义参数 + seed」经 `frontend/src/utils/regionShape.ts` **确定性展开**
+（可控生成，同参数同 seed 必得同形状，可重放）；手绘编辑顶点后固化为 `manual`，
+重新生成需确认覆盖。**几何由前端唯一实现**——AI/Agent 只产出语义参数（受控词表：
+自然意象 8 × 聚落形态 6 × 人工构筑 3+），后端与 Agent 不实现几何，避免两份实现漂移。
+渲染按层级深度自动算视觉权重（父区域淡虚线如疆域、子区域实线如聚落，选中提亮）。
+规格见 `openspec/changes/region-geometry-rework/`，需求见
+`.ai-sdd/requirements/region-geometry-rework/discover-2026-09-04.md`。
+
 生图的参考图与 AI 图片链路共用 `services/asset_hub/reference_resolver.py`：调用方优先传**素材库节点 ID**（`reference_asset_ids`），服务端解析为该节点最新版本的本地图片路径，URL/base64 仅作兜底，两者合并去重；解析后的真实数量写入资产中枢血缘参数 `reference_images_count`。
 
 小说文本块支持可选 embedding 索引：`POST /api/v1/novel-sources/{snapshot_id}/chunks/index` 使用现有 EmbeddingService 写入按模型标记的向量，并在 PostgreSQL + 默认 384 维模型下同时写入 `embedding_vec vector(384)` 列（迁移 `036`，仅 PG 执行）。`POST /chunks/search` 返回精确 + 向量混合召回结果，并携带章节与字符偏移；`with_neighbors` 可为每条命中附带前后相邻块作为上下文邻居。检索时，PostgreSQL + 384 维查询向量走 pgvector 数据库级近邻（`<=>` 排序取候选集后再混合打分），其它环境回退精确 + JSON 向量混合；向量不可用时自动退回精确检索。`/novel-world` 真人页面已暴露「建立索引」与「检索证据」入口（来源卡片右侧建索引，模块判断下方为证据检索卡片），`index_novel_source_chunks` 与 `search_novel_source_chunks` 两个 Agent 工具与真人共用同一服务层。

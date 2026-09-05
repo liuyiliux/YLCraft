@@ -12,6 +12,11 @@ import {
   setVisualBaseline,
 } from '../../../api'
 import {
+  expandRegionShape,
+  hashSeed,
+  normalizeShapeParams,
+} from '../../../utils/regionShape'
+import {
   createWorldMap,
   createWorldMapFromProjectPlaces,
   deleteWorldMap,
@@ -549,6 +554,68 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
   }, [hasLayers, activeLayer, draft.nodes, kindFilter])
   const visibleNodeIds = useMemo(() => new Set(visibleNodes.map((n) => n.id)), [visibleNodes])
 
+  /**
+   * 生成/重新生成区域形状：形状由「成员据点 + 语义参数 + seed」确定性展开。
+   * 写入 draft（需显式保存才入库）；已经手绘过的区域重新生成要先确认，避免覆盖用户的手工调整。
+   */
+  const generateRegionShape = (regionId: string, reseed = false) => {
+    const region = draft.regions.find((r) => r.id === regionId)
+    if (!region) return
+    const members = draft.nodes.filter((n) => n.region_id === regionId)
+    const params = normalizeShapeParams(region.shape)
+    const seed = reseed
+      ? Math.floor(Math.random() * 2 ** 31)
+      : (region.shape?.seed ?? hashSeed(regionId))
+    const vertices = expandRegionShape(
+      members.map((n) => ({ x: n.x, y: n.y })),
+      params,
+      seed,
+    )
+    setDraft((prev) => ({
+      ...prev,
+      regions: prev.regions.map((r) =>
+        r.id === regionId ? { ...r, shape: { mode: 'auto', seed, params, vertices } } : r,
+      ),
+    }))
+    message.success(reseed ? '已重新生成形状（可再点一次换一个）' : '已生成形状，记得保存')
+  }
+
+  const handleGenerateShape = (regionId: string) => generateRegionShape(regionId, false)
+
+  const handleRegenerateShape = (regionId: string) => {
+    const region = draft.regions.find((r) => r.id === regionId)
+    if (region?.shape?.mode === 'manual') {
+      Modal.confirm({
+        title: '重新生成会覆盖手绘顶点',
+        content: '这个区域的轮廓被手工调整过，重新生成将丢失这些调整（可用版本历史找回）。',
+        okText: '覆盖并重新生成',
+        cancelText: '取消',
+        onOk: () => generateRegionShape(regionId, true),
+      })
+      return
+    }
+    generateRegionShape(regionId, true)
+  }
+
+  // 顶点编辑：拖动顶点即固化为手绘（manual），避免之后被自动重算悄悄覆盖。
+  const [editingRegionId, setEditingRegionId] = useState<string | null>(null)
+
+  const toggleEditShape = (regionId: string) =>
+    setEditingRegionId((prev) => (prev === regionId ? null : regionId))
+
+  const updateRegionVertex = (regionId: string, index: number, x: number, y: number) => {
+    setDraft((prev) => ({
+      ...prev,
+      regions: prev.regions.map((region) => {
+        if (region.id !== regionId || !region.shape?.vertices?.length) return region
+        const vertices = region.shape.vertices.map((vertex, i) =>
+          i === index ? ([y, x] as [number, number]) : vertex,
+        )
+        return { ...region, shape: { ...region.shape, mode: 'manual', vertices } }
+      }),
+    }))
+  }
+
   // 视图预设：只改图层开关组合，不改数据；用户之后仍可单独微调某一个开关。
   const applyViewPreset = (preset: ViewPreset) => {
     setViewPreset(preset)
@@ -900,10 +967,21 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
                   regionCount={draft.regions.length}
                   routeCount={draft.routes.length}
                   revision={doc?.revision}
+                  regions={draft.regions.map((region) => ({
+                    id: region.id,
+                    name: region.name,
+                    hasShape: Boolean(region.shape?.vertices?.length),
+                    vertexCount: region.shape?.vertices?.length ?? 0,
+                    mode: region.shape?.mode ?? null,
+                  }))}
+                  editingRegionId={editingRegionId}
                   onAddNode={addNode}
                   onAddRegion={addRegion}
                   onAddRoute={addRoute}
                   onOpenBatch={() => setDataDrawerOpen(true)}
+                  onGenerateShape={handleGenerateShape}
+                  onRegenerateShape={handleRegenerateShape}
+                  onEditShape={toggleEditShape}
                 />
               </Space>
             </aside>
@@ -926,6 +1004,8 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
               onSelectNode={setSelectedNodeId}
               onMoveNode={(nodeId, x, y) => updateNode(nodeId, { x, y })}
               emptyState={canvasEmptyState}
+              editingRegionId={editingRegionId}
+              onMoveVertex={updateRegionVertex}
             />
             </div>
 
