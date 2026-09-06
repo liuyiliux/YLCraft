@@ -213,12 +213,30 @@ class WorldGenerationService:
         if not prompt:
             prompt = DEFAULT_EXPAND_ENTITY_PROMPT
 
+        output_example = json.dumps(
+            {
+                "items": [
+                    {
+                        "entity": entity.name or "",
+                        "attributes": {
+                            field: f"（{field} 的具体设定值，必须填写）" for field in fields
+                        },
+                    }
+                ],
+                "suggested_fields": [],
+                "suggested_domains": [],
+            },
+            ensure_ascii=False,
+        )
         return (
             prompt.replace("{entity}", entity.name or "")
             .replace("{domain}", (spec.label if spec else entity.domain) or "")
             .replace("{fields}", "、".join(fields))
             .replace("{known}", known_text)
             .replace("{layers}", " → ".join(layers) if layers else "（未定义层次）")
+            + "\n\n输出 JSON 示例（结构必须一致；attributes 必须覆盖全部待补充字段"
+            "并给出具体值，不要输出空数组）：\n"
+            + output_example
         )
 
     def preview_entity_expansion(
@@ -563,11 +581,31 @@ class WorldGenerationService:
             prompt = DEFAULT_EXPAND_DOMAIN_PROMPT
 
         known_text = "、".join(known_names[:60]) or "（暂无）"
+        contract_fields = list(getattr(spec, "attributes", None) or [])
+        output_example = json.dumps(
+            {
+                "items": [
+                    {
+                        "entity": f"（新的{spec.label}条目名）",
+                        "attributes": {
+                            field: f"（{field} 的具体设定值，必须填写）"
+                            for field in contract_fields
+                        },
+                    }
+                ],
+                "suggested_fields": [],
+                "suggested_domains": [],
+            },
+            ensure_ascii=False,
+        )
         return (
             prompt.replace("{domain}", (spec.label if spec else "") or "")
             .replace("{layers}", " → ".join(layers) if layers else "（未定义层次）")
             .replace("{known}", known_text)
             .replace("{hint}", hint or "无")
+            + "\n\n输出 JSON 示例（结构必须一致；items 给出若干新条目，"
+            "attributes 覆盖契约字段并给出具体值，不要输出空数组）：\n"
+            + output_example
         )
 
     async def expand_domain(
