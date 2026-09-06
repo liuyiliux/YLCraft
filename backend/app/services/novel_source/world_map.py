@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 from typing import Any
 
@@ -269,6 +270,39 @@ class WorldMapService:
             data = DEFAULT_MAP_JSON
 
         nodes = [item for item in (data.get("nodes") or []) if isinstance(item, dict)]
+        regions = [item for item in (data.get("regions") or []) if isinstance(item, dict)]
+        # 区域按名字复用：地点实体的 region 属性（世界提取时 AI 从原文提炼的
+        # 「所属区域」）直接对应一张地图区域，重跑不会重复建同名区域。
+        region_id_by_name: dict[str, str] = {}
+        for region in regions:
+            name = str(region.get("name") or "").strip()
+            region_id = str(region.get("id") or "").strip()
+            if name and region_id and name not in region_id_by_name:
+                region_id_by_name[name] = region_id
+        regions_changed = False
+
+        def _resolve_region_id(region_name: Any) -> str | None:
+            """按 region 属性名取区域 id，没有就新建；地点没填区域则返回 None。"""
+            nonlocal regions_changed
+            name = str(region_name or "").strip()
+            if not name:
+                return None
+            if name in region_id_by_name:
+                return region_id_by_name[name]
+            region = {
+                "id": uuid.uuid4().hex,
+                "name": name[:40],
+                "kind": "区域",
+                "parent_id": None,
+                "description": "",
+                # 标记来源：由地点实体的 region 属性自动建，形状留给后续生成/手绘。
+                "source": "place_region",
+            }
+            regions.append(region)
+            region_id_by_name[name] = region["id"]
+            regions_changed = True
+            return region["id"]
+
         # 实体为中心：优先按 entity_id 判重（地点实体改名后不会重复生成据点），
         # 历史据点没有 entity_id 时回退到名称匹配。
         existing_entity_ids = {
@@ -324,7 +358,7 @@ class WorldMapService:
                     "kind": str(attributes.get("kind") or "地点")[:20],
                     "x": round(50 + radius * math.cos(angle), 1),
                     "y": round(50 + radius * math.sin(angle), 1),
-                    "region_id": None,
+                    "region_id": _resolve_region_id(attributes.get("region")),
                     # 未分层：空间层由用户在层管理里按世界观自定义后归入。
                     "layer": None,
                     # 摘要快照只用于离线渲染与导出，不是事实来源。
@@ -332,16 +366,47 @@ class WorldMapService:
                 }
             )
             idx += 1
-        if not added:
+
+        # 已在地图上、但还没归区的据点：按其实体的 region 属性补齐归属。
+        # 这样「先建图后补区域」或「重跑建图」都能补上区域，且不重建据点（保留精修坐标）。
+        place_by_id = {str(place.id): place for place in places}
+        nodes_changed = False
+        for node in nodes:
+            if str(node.get("region_id") or "").strip():
+                continue
+            place = place_by_id.get(str(node.get("entity_id") or "").strip())
+            if place is None:
+                continue
+            node_attributes = loads_json(place.attributes_json, {})
+            region_id = _resolve_region_id(node_attributes.get("region"))
+            if region_id:
+                node["region_id"] = region_id
+                nodes_changed = True
+
+        if not added and not nodes_changed and not regions_changed:
             raise ValueError("地点实体都已在地图上，无需重复生成")
 
         nodes.extend(added)
         data = dict(data)
         data["nodes"] = nodes
+        data["regions"] = regions
         document.map_json = dumps_json(sanitize_map_json(data))
-        document.revision = int(document.revision or 1) + 1
+        # 新建的初稿就是 v1（此前会直接跳到 v2，v1 从未存在，初稿无法回滚）；
+        # 已有地图才递增版本。
+        document.revision = int(document.revision or 1) + 1 if existing else 1
         document.updated_at = datetime.now()
         self.session.add(document)
+        # 变更同样落历史快照：初稿与补区域后都能在版本列表里回溯、回滚。
+        self.session.add(
+            WorldMapRevision(
+                map_id=document.id,
+                revision=int(document.revision or 1),
+                title=document.title,
+                map_json=document.map_json,
+                operator="from-places",
+                summary=_map_summary(data),
+            )
+        )
         self.session.commit()
         self.session.refresh(document)
         return document

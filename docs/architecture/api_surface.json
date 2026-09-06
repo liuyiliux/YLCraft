@@ -9003,7 +9003,7 @@
       "tags": [
         "Novel Sources"
       ],
-      "summary": "从地点实体生成地图初稿",
+      "summary": "从地点实体生成地图初稿（按 place 的 region 属性自动建区域并归类，已有据点按 region 补齐归属；落版本快照）",
       "function": "create_world_map_from_project_places",
       "file": "backend/app/api/v1/novel_sources.py",
       "line": 1492,

@@ -849,6 +849,72 @@ async def test_apply_materializes_typed_entities_and_relations(session, storage)
             assert target.name == "北岭"
 
 
+REGION_RELATION_ITEMS = {
+    "location": [
+        {
+            "name": "雪原",
+            "aliases": [],
+            "summary": "霜黎族世代栖息的雪原。",
+            "attributes": {"kind": "地域", "region": "北境"},
+            "quotes": ["雪原上住着霜黎族"],
+            "confidence": 0.8,
+        },
+        {
+            "name": "北岭",
+            "aliases": ["北岭一带"],
+            "summary": "雪原牧民聚居的山岭。",
+            "attributes": {"kind": "山岭", "region": "北境"},
+            "quotes": ["与北岭的牧民世代通好"],
+            "confidence": 0.8,
+        },
+    ],
+}
+
+
+@pytest.mark.asyncio
+async def test_apply_materializes_region_entity_without_matching_place(session, storage):
+    """地点 region 值没有同名地点时，补建 region 实体并连 part_of（区域不是据点）。"""
+    snapshot = NovelSourceService(session).import_txt(
+        raw=EXTENDED_SAMPLE_TEXT.encode("utf-8"),
+        file_name="region-relation.txt",
+        title="福贵",
+        source_status="completed",
+    )
+    service = WorldExtractionService(
+        session, ai_service=FakeWorldAI(items=REGION_RELATION_ITEMS)
+    )
+    result = await service.extract(snapshot.id, domains=["location"])
+    candidates = service.list_candidates(result["run_id"])
+    service.decide_candidates(
+        result["run_id"],
+        [{"candidate_id": item.id, "action": "accept"} for item in candidates],
+    )
+    applied = await service.apply_run(result["run_id"])
+
+    assert applied["world_relations_written"] == 2
+
+    entities = session.exec(
+        select(WorldEntity).where(WorldEntity.project_id == applied["project_id"])
+    ).all()
+    # 区域被物化成 region 实体，而不是硬塞成地点；同名区域复用，不重复建。
+    assert {item.name for item in entities if item.entity_type == "region"} == {"北境"}
+    assert {item.name for item in entities if item.entity_type == "place"} == {"雪原", "北岭"}
+
+    relations = session.exec(
+        select(WorldEntityRelation).where(
+            WorldEntityRelation.project_id == applied["project_id"]
+        )
+    ).all()
+    assert {item.relation_type for item in relations} == {"part_of"}
+    by_id = {item.id: item for item in entities}
+    for relation in relations:
+        source = by_id[relation.source_entity_id]
+        target = by_id[relation.target_entity_id]
+        assert source.entity_type == "place"
+        assert target.entity_type == "region"
+        assert (source.name, target.name) in {("雪原", "北境"), ("北岭", "北境")}
+
+
 @pytest.mark.asyncio
 async def test_extract_keeps_other_domains_when_one_fails(session, storage):
     class BrokenAI(FakeWorldAI):
@@ -1687,6 +1753,158 @@ def test_create_map_from_project_places_generates_nodes(session, storage):
     # 幂等：地点已在地图上时再次调用抛错，而不是重复追加。
     with pytest.raises(ValueError):
         service.create_map_from_project_places(project.id)
+
+
+def test_create_map_from_project_places_builds_regions(session, storage):
+    """地点实体的 region 属性（世界提取产出）应自动转成地图区域并归类据点。"""
+    from app.services.creative_project.service import CreativeProjectService
+    from app.services.novel_source.contracts import normalize_entity_name
+    from app.services.novel_source.world_map import WorldMapService
+
+    project = CreativeProjectService(session, ai_service=FakeWorldAI()).create_project(
+        title="区域归属",
+        project_type="novel",
+        source_type="original_idea",
+        idea="区域归属",
+    )
+    region_of_place = {
+        "徐家老宅与茅屋": "村东头",
+        "县医院与卫生所": "县城",
+        "龙二赌坊": "镇上",
+    }
+    for name, region in region_of_place.items():
+        session.add(
+            WorldEntity(
+                project_id=project.id,
+                domain="location",
+                entity_type="place",
+                name=name,
+                normalized_key=normalize_entity_name(name),
+                summary=f"{name} 的摘要描述。",
+                attributes_json=json.dumps({"region": region}, ensure_ascii=False),
+                evidence_json="[]",
+                fact_layer="project",
+                is_locked=True,
+            )
+        )
+    session.commit()
+
+    service = WorldMapService(session)
+    document = service.create_map_from_project_places(project.id)
+    data = json.loads(document.map_json)
+    assert {region["name"] for region in data["regions"]} == {"村东头", "县城", "镇上"}
+    region_id_by_name = {region["name"]: region["id"] for region in data["regions"]}
+    for node in data["nodes"]:
+        assert node["region_id"] == region_id_by_name[region_of_place[node["name"]]]
+
+    # 区域与归属都已就位：再次调用判定无需重复生成。
+    with pytest.raises(ValueError):
+        service.create_map_from_project_places(project.id)
+
+
+def test_create_map_from_project_places_backfills_region(session, storage):
+    """先建图、后补 region 属性的据点：重跑应补齐归属，且不重建据点（保留精修坐标）。"""
+    from app.services.creative_project.service import CreativeProjectService
+    from app.services.novel_source.contracts import normalize_entity_name
+    from app.services.novel_source.world_map import WorldMapService
+
+    project = CreativeProjectService(session, ai_service=FakeWorldAI()).create_project(
+        title="补区域",
+        project_type="novel",
+        source_type="original_idea",
+        idea="补区域",
+    )
+    place = WorldEntity(
+        project_id=project.id,
+        domain="location",
+        entity_type="place",
+        name="二喜建筑工地",
+        normalized_key=normalize_entity_name("二喜建筑工地"),
+        summary="工地摘要。",
+        attributes_json="{}",
+        evidence_json="[]",
+        fact_layer="project",
+        is_locked=True,
+    )
+    session.add(place)
+    session.commit()
+
+    service = WorldMapService(session)
+    first = json.loads(service.create_map_from_project_places(project.id).map_json)
+    assert first["regions"] == []
+    assert first["nodes"][0]["region_id"] is None
+    node_id = first["nodes"][0]["id"]
+
+    # 提取侧补齐了 region 属性（等价于重新提取/人工补录），重跑只补区域。
+    place.attributes_json = json.dumps({"region": "县城边"}, ensure_ascii=False)
+    session.add(place)
+    session.commit()
+
+    second = json.loads(service.create_map_from_project_places(project.id).map_json)
+    assert [region["name"] for region in second["regions"]] == ["县城边"]
+    assert second["nodes"][0]["id"] == node_id  # 据点未被重建
+    assert second["nodes"][0]["region_id"] == second["regions"][0]["id"]
+
+
+def test_create_map_from_project_places_writes_revision_snapshot(session, storage):
+    """from-places 也要落版本快照：初稿是 v1，后续追加递增到 v2。"""
+    from sqlmodel import select
+
+    from app.services.creative_project.service import CreativeProjectService
+    from app.services.novel_source.contracts import normalize_entity_name
+    from app.services.novel_source.world_map import WorldMapService
+
+    project = CreativeProjectService(session, ai_service=FakeWorldAI()).create_project(
+        title="版本快照",
+        project_type="novel",
+        source_type="original_idea",
+        idea="版本快照",
+    )
+    session.add(
+        WorldEntity(
+            project_id=project.id,
+            domain="location",
+            entity_type="place",
+            name="二喜建筑工地",
+            normalized_key=normalize_entity_name("二喜建筑工地"),
+            summary="工地摘要。",
+            attributes_json=json.dumps({"region": "县城边"}, ensure_ascii=False),
+            evidence_json="[]",
+            fact_layer="project",
+            is_locked=True,
+        )
+    )
+    session.commit()
+
+    service = WorldMapService(session)
+    document = service.create_map_from_project_places(project.id)
+    assert document.revision == 1
+    revisions = session.exec(
+        select(WorldMapRevision).where(WorldMapRevision.map_id == document.id)
+    ).all()
+    assert [row.revision for row in revisions] == [1]
+
+    session.add(
+        WorldEntity(
+            project_id=project.id,
+            domain="location",
+            entity_type="place",
+            name="龙二赌坊",
+            normalized_key=normalize_entity_name("龙二赌坊"),
+            summary="赌坊摘要。",
+            attributes_json=json.dumps({"region": "镇上"}, ensure_ascii=False),
+            evidence_json="[]",
+            fact_layer="project",
+            is_locked=True,
+        )
+    )
+    session.commit()
+    document = service.create_map_from_project_places(project.id)
+    assert document.revision == 2
+    revisions = session.exec(
+        select(WorldMapRevision).where(WorldMapRevision.map_id == document.id)
+    ).all()
+    assert sorted(row.revision for row in revisions) == [1, 2]
 
 
 def test_create_map_from_project_places_uses_radial_layout(session, storage):
