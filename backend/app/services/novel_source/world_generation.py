@@ -46,13 +46,14 @@ from app.services.creative_project.service import dumps_json, loads_json
 from app.services.novel_source.world_domains import WorldDomainService
 
 DEFAULT_EXPAND_DOMAIN_PROMPT = (
-    "按层次策略细化「{domain}」这个设定模块。\n\n"
+    "按层次策略细化「{domain}」这个设定模块（创作任务：产出的候选由人工审阅确认）。\n\n"
     "层次：{layers}\n"
     "已有条目：{known}\n"
     "补充要求：{hint}\n\n"
     "要求：\n"
     "1. 只补充尚未出现、且对该世界观有实际作用的条目，不要重复已有条目。\n"
-    "2. 每个条目给出名称与字段值（字段按该模块的属性契约），名称用原文用词。\n"
+    "2. 每个条目给出名称与字段值（字段按该模块的属性契约），名称优先用原文用词，"
+    "原文没有的按语境合理创作，不要返回空条目。\n"
     "3. 严格 JSON，符合给定 schema。\n"
     "4. 若现有字段无法表达关键设定，用 suggested_fields 提出新字段名与原因。"
 )
@@ -63,18 +64,21 @@ GENERATION_SYSTEM_PROMPT = (
 )
 
 DEFAULT_EXPAND_ENTITY_PROMPT = (
-    "为世界观实体补充设定字段。\n\n"
+    "为世界观实体扩写设定字段。这是 AI 渐进式世界构建的创作任务：产出的是候选"
+    "（标记 ai_draft，由人工审阅确认），因此允许并鼓励基于语境合理创作。\n\n"
     "实体：{entity}\n"
     "所属模块：{domain}\n"
     "层次：{layers}\n"
     "已知信息：{known}\n"
     "待补充字段：{fields}\n\n"
     "要求：\n"
-    "1. 只输出待补充字段的值；无法确定时留空字符串，不要编造。\n"
-    "2. 严格 JSON，符合给定 schema 的字段结构。\n"
-    "3. 不要输出证据、注释或解释性文字。\n"
-    "4. 若现有字段无法表达该实体的关键设定，用 suggested_fields 提出新字段名与原因，"
-    "不要塞进已有字段，也不要改动已有字段的值。"
+    "1. 对每个待补充字段给出具体、可用的设定值：结合实体名称、已知信息与作品语境"
+    "合理创作，不要因为原文没有提及而留空、返回空 items 或拒绝回答。\n"
+    "2. 值要具体可读（短语或一两句话），不要复述字段名、不要输出空占位。\n"
+    "3. 严格 JSON，符合给定 schema 的字段结构。\n"
+    "4. 不要输出证据、注释或解释性文字；涉及原文引用必须逐字，不得伪造引文。\n"
+    "5. 若某个待补充字段与该实体确实完全无关，改用 suggested_fields 提议更合适的"
+    "字段名与原因；不要塞进已有字段，也不要改动已有字段的值。"
 )
 
 TEMPLATE_DRAFT_SYSTEM_PROMPT = (
