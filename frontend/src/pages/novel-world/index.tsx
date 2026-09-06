@@ -58,6 +58,7 @@ import {
 } from '../../api/novelSource'
 import { listConnectors } from '../../api'
 import EvidenceList from '../../components/world/EvidenceList'
+import { worldDomainLabel } from '../../utils/worldFieldLabels'
 
 const { Title, Text, Paragraph } = Typography
 
@@ -912,16 +913,36 @@ export default function NovelWorldPage() {
               </>
             )}
             <Collapse
-              items={extractResult.domains.map((item) => ({
-                key: item.domain,
-                label: `${item.label}（${item.items} 条）`,
-                children: (
-                  <Table
-                    size="small"
-                    rowKey="id"
-                    pagination={false}
-                    loading={loadingCandidates}
-                    dataSource={candidates.filter((c) => c.domain === item.domain)}
+              items={(() => {
+                // 提取运行带域状态（含 label/条数）；生成型运行（AI 补充/细化）的
+                // domains 为空数组——此时按候选自身的 domain 聚合出分组，候选才可见。
+                const domainRows =
+                  extractResult.domains.length > 0
+                    ? extractResult.domains.map((item) => ({
+                        domain: item.domain,
+                        label: item.label,
+                        items: item.items,
+                      }))
+                    : Array.from(
+                        candidates.reduce((map, item) => {
+                          map.set(item.domain, (map.get(item.domain) ?? 0) + 1)
+                          return map
+                        }, new Map<string, number>()),
+                      ).map(([domain, count]) => ({
+                        domain,
+                        label: worldDomainLabel(domain),
+                        items: count,
+                      }))
+                return domainRows.map((item) => ({
+                  key: item.domain,
+                  label: `${item.label}（${item.items} 条）`,
+                  children: (
+                    <Table
+                      size="small"
+                      rowKey="id"
+                      pagination={false}
+                      loading={loadingCandidates}
+                      dataSource={candidates.filter((c) => c.domain === item.domain)}
                     columns={[
                       ...candidateColumns,
                       {
@@ -954,7 +975,8 @@ export default function NovelWorldPage() {
                     }}
                   />
                 ),
-              }))}
+              }))
+            })()}
             />
             <Space>
               <Button disabled={!pending.length} loading={deciding} onClick={doDecide}>
