@@ -101,6 +101,31 @@ export function worldFieldLabel(key: string): string {
   return key.replace(/_/g, ' ').trim() || key
 }
 
+/** 世界模块 key → 中文名（与 backend contracts.py 的 DOMAIN_SPECS 对应）。 */
+const WORLD_DOMAIN_LABELS: Record<string, string> = {
+  character: '角色',
+  location: '地点',
+  faction: '势力',
+  historical_event: '历史事件',
+  timeline: '剧情时间线',
+  world_rule: '世界规则',
+  power_system: '力量/科技体系',
+  economy: '经济/金融',
+  species: '物种',
+  item: '物品/资源',
+  glossary: '术语表',
+  religion: '宗教/信仰',
+  language: '语言/文字',
+  culture: '文化/习俗',
+  ecology: '生态/地理',
+  map: '地图',
+}
+
+/** 模块 key 的中文名；未知 key（自定义模块）原样返回。 */
+export function worldDomainLabel(key: string): string {
+  return WORLD_DOMAIN_LABELS[key] ?? key
+}
+
 /** 单个值 → 人类可读文本：字符串原样，布尔是/否，其他 JSON 紧凑串。 */
 function scalarToText(value: unknown): string {
   if (value === null || value === undefined) return ''
