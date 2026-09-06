@@ -203,6 +203,9 @@ async def transcribe_audio(audio_path: str, api_key: str | None = None) -> str:
     if not api_key:
         return ""
 
+    started = time.perf_counter()
+    error: str | None = None
+    text = ""
     try:
         async with httpx.AsyncClient(timeout=120.0) as client:
             with open(audio_path, "rb") as f:
@@ -217,11 +220,32 @@ async def transcribe_audio(audio_path: str, api_key: str | None = None) -> str:
 
             if response.status_code == 200:
                 result = response.json()
-                return result.get("text", "")
-    except Exception:
-        pass
+                text = result.get("text", "")
+            else:
+                error = f"HTTP {response.status_code}"
+    except Exception as exc:
+        error = str(exc)
 
-    return ""
+    # STT 直连第三方且不经 AIService，自动收口覆盖不到，这里单独落事件
+    # （此前异常被完全吞掉，失败无声无息）。
+    try:
+        from app.services.platform_log.service import record_event
+
+        await record_event(
+            scene="stt",
+            task_type="stt_transcribe",
+            level="error" if error else "info",
+            status="failed" if error else "success",
+            provider="siliconflow",
+            model="FunAudioLLM/SenseVoiceSmall",
+            message="音频转写失败" if error else "音频转写成功",
+            error=error,
+            duration_ms=int((time.perf_counter() - started) * 1000),
+        )
+    except Exception:  # 记录失败不能影响转写结果
+        logger.debug("[Breaker] 事件日志写入失败（已忽略）", exc_info=True)
+
+    return text
 
 
 async def extract_key_frames(

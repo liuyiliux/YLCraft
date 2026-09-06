@@ -13,6 +13,7 @@ from typing import Any
 import time
 
 from app.services.platform_log import service as platform_log
+from app.services.ai.service import ai_call_context
 
 from fastapi import (
     APIRouter,
@@ -1800,16 +1801,25 @@ async def generate_region_shape(
     (成员据点, params, seed) 确定性展开预览，写入仍走既有 revision CAS 保存
     （决策 D-1：几何由前端唯一实现，后端不展开顶点）。
     """
+    # 只为给事件日志补上项目/地图身份；文档不存在时后续调用同样会抛 404。
+    document = svc.get_map(map_id)
     try:
-        payload = await generate_region_shape_params(
-            svc.session,
-            map_id,
-            region_id,
-            params=req.params.model_dump() if req.params else None,
-            seed=req.seed,
-            provider=req.provider,
-            model=req.model,
-        )
+        with ai_call_context(
+            project_id=document.project_id if document else None,
+            ref_id=map_id,
+            scene="world_map",
+            task_type="region_shape",
+            label="区域形状参数推断",
+        ):
+            payload = await generate_region_shape_params(
+                svc.session,
+                map_id,
+                region_id,
+                params=req.params.model_dump() if req.params else None,
+                seed=req.seed,
+                provider=req.provider,
+                model=req.model,
+            )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RuntimeError as exc:
@@ -1905,14 +1915,21 @@ async def optimize_world_map_visual_prompt(
     if not document:
         raise HTTPException(status_code=404, detail="地图文档不存在")
     try:
-        optimized_result = await optimize_map_visual_prompt(
-            document,
-            prompt=req.prompt or "",
-            style=req.style or "",
-            focus=req.focus or "",
-            provider=req.provider or "",
-            model=req.model or "",
-        )
+        with ai_call_context(
+            project_id=document.project_id,
+            ref_id=map_id,
+            scene="world_map",
+            task_type="map_visual_prompt_optimize",
+            label="地图生图提示词优化",
+        ):
+            optimized_result = await optimize_map_visual_prompt(
+                document,
+                prompt=req.prompt or "",
+                style=req.style or "",
+                focus=req.focus or "",
+                provider=req.provider or "",
+                model=req.model or "",
+            )
     except RuntimeError as exc:
         status = 503 if "未初始化" in str(exc) else 502
         raise HTTPException(status_code=status, detail=str(exc)) from exc
@@ -1942,20 +1959,28 @@ async def generate_world_map_visual(
     if not document:
         raise HTTPException(status_code=404, detail="地图文档不存在")
     try:
-        generated = await generate_map_visual(
-            svc.session,
-            document,
-            prompt=req.prompt or "",
-            style=req.style or "",
-            negative_prompt=req.negative_prompt or "",
-            size=req.size or "1024x1024",
-            n=req.n or 1,
-            provider=req.provider or "",
-            model=req.model or "",
-            reference_images=req.reference_images or [],
-            reference_asset_ids=req.reference_asset_ids or [],
-            save_to_asset_hub=req.save_to_asset_hub,
-        )
+        # 事件上下文：AIService 会自动落一条调用事件，带上项目/地图身份便于检索。
+        with ai_call_context(
+            project_id=document.project_id,
+            ref_id=map_id,
+            scene="world_map",
+            task_type="map_visual",
+            label="地图视觉成图",
+        ):
+            generated = await generate_map_visual(
+                svc.session,
+                document,
+                prompt=req.prompt or "",
+                style=req.style or "",
+                negative_prompt=req.negative_prompt or "",
+                size=req.size or "1024x1024",
+                n=req.n or 1,
+                provider=req.provider or "",
+                model=req.model or "",
+                reference_images=req.reference_images or [],
+                reference_asset_ids=req.reference_asset_ids or [],
+                save_to_asset_hub=req.save_to_asset_hub,
+            )
     except RuntimeError as exc:
         status = 503 if "未初始化" in str(exc) else 500 if "未返回图片" in str(exc) else 502
         raise HTTPException(status_code=status, detail=str(exc)) from exc

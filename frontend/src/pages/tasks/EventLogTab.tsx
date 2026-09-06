@@ -31,6 +31,8 @@ import type { ColumnsType } from 'antd/es/table'
 
 const { Paragraph, Text } = Typography
 
+// 场景清单要与后端 record_event 的 scene 取值保持一致：
+// 后端新增场景时这里必须同步，否则用户在筛选下拉里找不到对应事件。
 const SCENE_OPTIONS = [
   { label: '全部场景', value: '' },
   { label: '图片', value: 'image' },
@@ -38,7 +40,36 @@ const SCENE_OPTIONS = [
   { label: '图转 3D', value: 'model3d' },
   { label: '文本', value: 'llm' },
   { label: '创作写作', value: 'writing' },
+  { label: '角色立绘', value: 'character_portrait' },
+  { label: '世界提取', value: 'world_extraction' },
+  { label: '世界生成', value: 'world_generation' },
+  { label: '世界地图', value: 'world_map' },
+  { label: '资产谱系', value: 'asset_provenance' },
+  { label: '流水线', value: 'pipeline' },
+  { label: 'Agent 画布', value: 'agent_canvas' },
+  { label: '嵌入', value: 'embedding' },
+  { label: '语音转写', value: 'stt' },
+  { label: '系统', value: 'system' },
 ]
+
+/** 场景的中文展示名（未知场景原样显示，不至于丢信息）。 */
+const SCENE_LABEL_MAP: Record<string, string> = {
+  image: '图片',
+  video: '视频',
+  model3d: '图转 3D',
+  llm: '文本',
+  writing: '创作写作',
+  character_portrait: '角色立绘',
+  world_extraction: '世界提取',
+  world_generation: '世界生成',
+  world_map: '世界地图',
+  asset_provenance: '资产谱系',
+  pipeline: '流水线',
+  agent_canvas: 'Agent 画布',
+  embedding: '嵌入',
+  stt: '语音转写',
+  system: '系统',
+}
 
 const LEVEL_OPTIONS = [
   { label: '全部级别', value: '' },
@@ -60,6 +91,15 @@ const SCENE_COLOR_MAP: Record<string, string> = {
   model3d: 'cyan',
   llm: 'blue',
   writing: 'geekblue',
+  character_portrait: 'pink',
+  world_extraction: 'green',
+  world_generation: 'lime',
+  world_map: 'gold',
+  asset_provenance: 'volcano',
+  pipeline: 'orange',
+  agent_canvas: 'geekblue',
+  embedding: 'default',
+  stt: 'default',
   system: 'default',
 }
 
@@ -228,7 +268,9 @@ export default function EventLogTab() {
       dataIndex: 'scene',
       key: 'scene',
       width: 90,
-      render: (s: string) => <Tag color={SCENE_COLOR_MAP[s] || 'default'}>{s}</Tag>,
+      render: (s: string) => (
+        <Tag color={SCENE_COLOR_MAP[s] || 'default'}>{SCENE_LABEL_MAP[s] || s}</Tag>
+      ),
     },
     {
       title: '级别',

@@ -229,6 +229,23 @@ class EmbeddingService:
                 return await self._call_openai_api(text, api_base, api_key, config.get("model"))
         except Exception as e:
             logger.error(f"[EmbeddingService] API call failed: {e}, falling back to local")
+            # 嵌入不走 AIService（直连 provider），自动收口覆盖不到，这里单独落事件。
+            # 成功不记：逐条调用量太大，成功态由本地日志承载；失败才需要排障线索。
+            try:
+                from app.services.platform_log.service import record_event
+
+                await record_event(
+                    scene="embedding",
+                    task_type="embedding",
+                    level="error",
+                    status="failed",
+                    provider=provider or "",
+                    model=str(config.get("model") or ""),
+                    message="嵌入调用失败，已回退本地模型",
+                    error=str(e),
+                )
+            except Exception:  # 记录失败不能打断嵌入流程
+                logger.debug("[EmbeddingService] 事件日志写入失败（已忽略）", exc_info=True)
             return await self.embed_text_local(text)
 
     async def _call_qwen_api(self, text: str, api_base: str, api_key: str, model: str = "Qwen/Qwen3-Embedding-8B") -> Optional[List[float]]:
