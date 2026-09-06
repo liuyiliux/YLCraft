@@ -625,6 +625,27 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
 
   const handleGenerateShape = (regionId: string) => generateRegionShape(regionId, false)
 
+  /**
+   * 批量生成区域形状：只给"还没有形状"的区域生成，已生成或手绘过的一律不动，
+   * 避免覆盖用户精调过的轮廓（想换形状用各区域的「重新生成」）。
+   */
+  const handleGenerateAllShapes = () => {
+    const targets = draft.regions.filter((region) => !region.shape?.vertices?.length)
+    if (!targets.length) {
+      message.info('所有区域都已有形状；想换轮廓请用各区域的「重新生成」')
+      return
+    }
+    for (const region of targets) {
+      applyShapeParams(
+        region.id,
+        normalizeShapeParams(region.shape),
+        region.shape?.seed ?? hashSeed(region.id),
+      )
+    }
+    markDirty()
+    message.success(`已为 ${targets.length} 个区域生成形状（草稿，记得保存）`)
+  }
+
   // 参数编辑：改动即时重算轮廓。手绘区域第一次改动前确认覆盖（本次编辑会话内不再问）。
   const [paramsConfirmed, setParamsConfirmed] = useState<Set<string>>(new Set())
   const handleRegionParamsChange = (regionId: string, params: RegionShapeParams) => {
@@ -1033,6 +1054,14 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
             title="把确认写入的地点实体（world_entities.entity_type=place）自动转成地图据点"
           >
             从地点实体生成
+          </Button>
+          <Button
+            size="small"
+            disabled={!doc || !draft.regions.length}
+            onClick={handleGenerateAllShapes}
+            title="给所有还没形状的区域一次性生成轮廓（已生成或手绘过的不会动）"
+          >
+            生成全部形状
           </Button>
           <Button
             size="small"

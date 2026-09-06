@@ -91,6 +91,12 @@ RELATION_HINTS: dict[str, tuple[tuple[str, str, str], ...]] = {
     "world_rule": (("enforced_by", "enforced_by", "faction"),),
 }
 
+#: 目标实体缺失时允许按名字补建「区域型」实体的关系字段：(domain, attribute_field)。
+#: 区域名（如「县城」「村东头」）通常不会被原文当作地点收录，找不到同名 place 实体，
+#: 关系就只能静默丢弃；这里补一个 entity_type="region" 的实体承载它——
+#: 区域不是地点，from-places 只取 place，不会被当成据点生成到地图上。
+REGION_ENTITY_FIELDS: frozenset[tuple[str, str]] = frozenset({("location", "region")})
+
 
 def _as_name_list(value: Any) -> list[str]:
     """把关系字段值归一化成实体名列表（支持单个字符串与列表）。"""
@@ -110,6 +116,9 @@ class WorldExtractionService:
     def __init__(self, session: Session, ai_service: Any | None = None):
         self.session = session
         self.sources = NovelSourceService(session)
+        # 一次运行中每次真实 LLM 调用的明细：端点据此把实际 prompt 与模型原始
+        # 输出落进事件日志。服务实例按请求/任务新建，天然按次清零。
+        self.last_llm_calls: list[dict[str, Any]] = []
         if ai_service is not None:
             self.ai_service = ai_service
         else:
@@ -1744,6 +1753,40 @@ class WorldExtractionService:
         self.session.refresh(entity)
         return entity.id
 
+    def _upsert_region_entity(
+        self,
+        project_id: str,
+        name: str,
+        index: dict[tuple[str, str], str],
+    ) -> str:
+        """取/建一个 region 实体承载区域名（如「县城」「村东头」）。
+
+        区域不是地点，entity_type 用 ``region``：from-places 只取 ``place``，
+        不会把区域当成据点生成到地图上。同名区域在 index 里复用，不重复建。
+        """
+        key = normalize_entity_name(name)
+        existing = index.get(("region", key))
+        if existing:
+            return existing
+        entity = WorldEntity(
+            project_id=project_id,
+            domain="location",
+            entity_type="region",
+            name=str(name or "").strip(),
+            normalized_key=key,
+            summary="",
+            attributes_json="{}",
+            evidence_json="[]",
+            fact_layer="project",
+            is_locked=True,
+        )
+        self.session.add(entity)
+        self.session.flush()
+        index[("region", key)] = entity.id
+        # 兼容按 domain 解析目标的关系字段；已有同名地点时不覆盖。
+        index.setdefault(("location", key), entity.id)
+        return entity.id
+
     def _materialize_relations(
         self,
         accepted: list[WorldFactCandidate],
@@ -1788,6 +1831,9 @@ class WorldExtractionService:
                     target_id = index.get((target_type, key)) or index.get(
                         (candidate.domain, key)
                     )
+                    if not target_id and (candidate.domain, field_name) in REGION_ENTITY_FIELDS:
+                        # 区域名没有对应地点实体：补建 region 实体承载，关系才不至于静默丢弃。
+                        target_id = self._upsert_region_entity(project_id, name, index)
                     if not target_id or target_id == source_id:
                         continue
                     dedupe = (source_id, target_id, relation_type)
@@ -1991,6 +2037,17 @@ class WorldExtractionService:
             raw = _response_content(response)
             if not raw.strip():
                 raise ValueError("LLM 两次返回空内容（连接器可能异常）：请稍后重试或更换模型")
+        # 事件日志明细：按调用累积实际 prompt 与模型原始输出（一次运行多个域多次调用）。
+        # 放重试之后记录，保证落的是最终生效的那次模型输出。
+        self.last_llm_calls.append(
+            {
+                "prompt": prompt[:12000],
+                "raw": raw[:12000],
+                "provider": provider or "default",
+                "model": model or "default",
+                "empty": False,
+            }
+        )
         data = _extract_json_object(raw)
         try:
             return schema_model.model_validate(data).model_dump()

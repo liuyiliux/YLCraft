@@ -762,7 +762,7 @@
 | `GET` | `/api/v1/projects/{project_id}/world-generation/suggestions` | 列出待确认的 AI 结构建议（模块 + 字段） | `list_world_building_suggestions` | `backend/app/api/v1/novel_sources.py:1366` |
 | `POST` | `/api/v1/projects/{project_id}/world-generation/suggestions/fields/confirm` | 确认字段建议（写入模块属性契约） | `confirm_suggested_field` | `backend/app/api/v1/novel_sources.py:1384` |
 | `POST` | `/api/v1/projects/{project_id}/world-generation/suggestions/fields/ignore` | 忽略字段建议（不再重复提示） | `ignore_suggested_field` | `backend/app/api/v1/novel_sources.py:1400` |
-| `POST` | `/api/v1/projects/{project_id}/world-maps/from-places` | 从地点实体生成地图初稿 | `create_world_map_from_project_places` | `backend/app/api/v1/novel_sources.py:1492` |
+| `POST` | `/api/v1/projects/{project_id}/world-maps/from-places` | 从地点实体生成地图初稿（按 place 的 region 属性自动建区域并归类，已有据点按 region 补齐归属；落版本快照） | `create_world_map_from_project_places` | `backend/app/api/v1/novel_sources.py:1492` |
 | `GET` | `/api/v1/projects/{project_id}/world-templates` | 列出世界构建模板（内置种子 + 项目私有） | `list_world_templates` | `backend/app/api/v1/novel_sources.py:1144` |
 | `POST` | `/api/v1/projects/{project_id}/world-templates` | 新建或更新世界构建模板 | `upsert_world_template` | `backend/app/api/v1/novel_sources.py:1155` |
 | `POST` | `/api/v1/projects/{project_id}/world-templates/draft` | AI 起草世界构建模板草案（不落库，确认后再保存） | `draft_world_template` | `backend/app/api/v1/novel_sources.py:1200` |
