@@ -416,6 +416,9 @@ def serialize_run(run: WorldExtractionRun) -> dict[str, Any]:
             ]
     return {
         "id": run.id,
+        # 前端 ExtractResult 契约用 run_id（从提取启动响应进来时天然存在；
+        # 深链 ?run_id= 加载走本序列化，必须同样带上，否则决策/写入打到 undefined）
+        "run_id": run.id,
         "snapshot_id": run.snapshot_id,
         "project_id": run.project_id,
         "kind": run.kind,
