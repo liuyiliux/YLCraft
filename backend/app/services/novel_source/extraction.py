@@ -211,7 +211,6 @@ class WorldExtractionService:
             schema_model=DomainDetectionSchema,
             provider=provider,
             model=model,
-            max_tokens=2500,
         )
         raw_items = data.get("domains") or []
         by_domain: dict[str, dict[str, Any]] = {}
@@ -475,7 +474,6 @@ class WorldExtractionService:
                 schema_model=DomainExtractionSchema,
                 provider=provider,
                 model=model,
-                max_tokens=4000,
             )
             for raw in data.get("items") or []:
                 if not isinstance(raw, dict):
@@ -1050,7 +1048,6 @@ class WorldExtractionService:
             schema_model=ContradictionVerdictSchema,
             provider=provider,
             model=model,
-            max_tokens=400,
         )
         verdict = str(data.get("verdict") or "").strip()
         if verdict not in VALID_CONTRADICTION_VERDICTS:
@@ -1960,19 +1957,22 @@ class WorldExtractionService:
         schema_model: type[TModel],
         provider: str | None,
         model: str | None,
-        max_tokens: int,
+        max_tokens: int | None = None,
     ) -> dict[str, Any]:
         messages = [
             LLMMessage(role="system", content=system_prompt),
             LLMMessage(role="user", content=prompt),
         ]
-        response = await self.ai_service.chat(
-            messages=messages,
-            provider=provider,
-            model=model,
-            temperature=0.2,
-            max_tokens=max_tokens,
-        )
+        chat_kwargs: dict[str, Any] = {
+            "provider": provider,
+            "model": model,
+            "temperature": 0.2,
+        }
+        if max_tokens:
+            # 只在显式给出时才传：推理模型（deepseek-v4/qwen3.8 等）的思考与回答共享
+            # max_tokens，硬编码小值会让回答被截成空——缺省走连接器配置的默认值。
+            chat_kwargs["max_tokens"] = max_tokens
+        response = await self.ai_service.chat(messages=messages, **chat_kwargs)
         if not _response_success(response):
             raise ValueError(_response_error(response) or "LLM 生成失败")
         raw = _response_content(response)
@@ -1983,13 +1983,9 @@ class WorldExtractionService:
                 "LLM 返回空内容，自动重试一次：provider=%s model=%s",
                 provider or "default", model or "default",
             )
-            response = await self.ai_service.chat(
-                messages=messages,
-                provider=provider,
-                model=model,
-                temperature=0.5,
-                max_tokens=max_tokens,
-            )
+            retry_kwargs = dict(chat_kwargs)
+            retry_kwargs["temperature"] = 0.5
+            response = await self.ai_service.chat(messages=messages, **retry_kwargs)
             if not _response_success(response):
                 raise ValueError(_response_error(response) or "LLM 生成失败")
             raw = _response_content(response)

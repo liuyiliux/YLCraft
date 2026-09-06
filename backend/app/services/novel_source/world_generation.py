@@ -832,6 +832,9 @@ class WorldGenerationService:
     async def _generate(
         self, prompt: str, *, provider: str | None, model: str | None
     ) -> dict[str, Any]:
+        # 不传 max_tokens：推理模型（deepseek-v4/qwen3.8 等）的思考与回答共享
+        # max_tokens，硬编码小值会让回答被截成空——交给连接器配置的默认值
+        # （设置 → AI 连接器里可调），缺失时由 GenericLLM 落到 4096。
         messages = [
             LLMMessage(role="system", content=GENERATION_SYSTEM_PROMPT),
             LLMMessage(role="user", content=prompt),
@@ -841,15 +844,13 @@ class WorldGenerationService:
             provider=provider,
             model=model,
             temperature=0.4,
-            max_tokens=2000,
         )
         success = getattr(response, "success", True)
         if success is False:
             raise ValueError(getattr(response, "error", "") or "LLM 生成失败")
         raw = getattr(response, "content", None) or ""
         if not raw.strip():
-            # 部分连接器偶发「200 但空内容」（实测 deepseek/中转站间歇出现）：
-            # 同参自动重试一次，仍为空才判失败——对用户表现为一次正常生成。
+            # 部分连接器偶发「200 但空内容」：同参自动重试一次，仍为空才判失败。
             logger.warning(
                 "LLM 返回空内容，自动重试一次：provider=%s model=%s",
                 provider or "default", model or "default",
@@ -859,7 +860,6 @@ class WorldGenerationService:
                 provider=provider,
                 model=model,
                 temperature=0.7,
-                max_tokens=2000,
             )
             if getattr(response, "success", True) is False:
                 raise ValueError(getattr(response, "error", "") or "LLM 生成失败")
