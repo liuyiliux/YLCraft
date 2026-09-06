@@ -91,6 +91,21 @@ AI 来源标记与文件元数据清理是 Asset Hub 上的独立派生操作，
 6. 注册 `/api/v1/...` 路由。
 7. 挂载 `/uploads` 静态文件。
 
+**AI 调用与事件日志收口（可观测性）**：所有 AI 调用必须走 `AIService` 的三个入口
+（`chat` / `generate_image` / `generate_video`，`backend/app/services/ai/service.py`），
+由入口统一落平台事件日志（`platform_event_logs`，经 `services/platform_log/service.py:record_event`）：
+记录 scene（llm / image / video，可被调用方覆盖）、provider、model、耗时、成功或失败与错误；
+`BackendRouter` 内部的多后端降级只算一次调用。业务身份（`project_id`、`ref_id`、自定义场景与标题）
+由调用方用 `ai_call_context(...)` 注入；端点已自行写业务事件时用 `suppress_auto_event=True`
+抑制，避免重复记账；写日志失败一律 best-effort，不打断 AI 调用本身。
+此前事件日志只在各端点手写，未手写的路径（世界地图生图、批量生图、agent 工具、Live2D 等）
+完全不可观测——新增 AI 路径时不要回到手写模式。
+
+直连 provider、不经 `AIService` 的路径（如 `services/embedding`、breaker 的 STT）必须自行补记事件，
+否则该路径不可观测。任务记录与事件日志是两套：任务需端点显式 `create_task`，且 task_type 命中
+`PERSISTED_TASK_TYPES` 白名单、payload 带 `project_id` 才会落 `project_task_records`
+（`services/task_persistence.py`），否则进程重启即丢。
+
 前端入口在 `frontend/src`，主要分层：
 
 | 层 | 目录 | 职责 |

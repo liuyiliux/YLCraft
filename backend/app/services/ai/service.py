@@ -15,8 +15,11 @@ YLCraft — AI 服务编排层
 
 from __future__ import annotations
 
+import contextvars
 import logging
-from typing import Optional
+import time
+from contextlib import contextmanager
+from typing import Any, Iterator, Optional
 
 from app.services.ai.types import (
     LLMMessage,
@@ -29,6 +32,130 @@ from app.services.ai.types import (
 )
 
 logger = logging.getLogger("ylcraft.ai.service")
+
+# ---------------------------------------------------------------------------
+# 调用上下文与统一事件收口
+#
+# 事件日志此前只在各端点手写（images/videos/model3d/llm 等约 43 处），
+# 任何没手写的路径（世界地图 AI 生图、批量生图、agent 工具、Live2D 等）
+# 就完全不可观测。这里把记录下沉到 AIService 三个必经入口：
+# 语义最完整（能拿到 scene/provider/model/耗时/错误），且 Router 内部
+# 的多次降级只算一次调用。业务身份（project_id / ref_id / 自定义场景）
+# 由调用方用 ai_call_context 注入。
+# ---------------------------------------------------------------------------
+
+_ai_call_context: contextvars.ContextVar[dict[str, Any]] = contextvars.ContextVar(
+    "ylcraft_ai_call_context", default={}
+)
+
+#: 请求/响应摘要的字符上限：只为排障留线索，不是事实来源（正典在实体/资产里）。
+_EVENT_SUMMARY_CHARS = 2000
+
+
+@contextmanager
+def ai_call_context(
+    *,
+    project_id: str | None = None,
+    ref_id: str | None = None,
+    task_id: str | None = None,
+    scene: str | None = None,
+    task_type: str | None = None,
+    label: str = "",
+    suppress_auto_event: bool = False,
+) -> Iterator[None]:
+    """给当前上下文里的 AI 调用注入业务身份，自动落事件日志时一并带上。
+
+    Args:
+        project_id: 关联项目（决定事件能否出现在项目视图里）
+        ref_id: 关联业务对象（角色 id、地图 id 等）
+        scene / task_type: 覆盖默认技术场景归类
+        label: 事件标题，缺省用「<task_type> 成功/失败」
+        suppress_auto_event: 端点自己已写业务事件时置 True，避免重复记账
+    """
+    token = _ai_call_context.set(
+        {
+            "project_id": project_id,
+            "ref_id": ref_id,
+            "task_id": task_id,
+            "scene": scene,
+            "task_type": task_type,
+            "label": label,
+            "suppress_auto_event": suppress_auto_event,
+        }
+    )
+    try:
+        yield
+    finally:
+        _ai_call_context.reset(token)
+
+
+def _summarize_messages(messages: Any) -> str:
+    """把消息列表压成可排障的摘要（角色 + 截断内容）。"""
+    if not isinstance(messages, (list, tuple)):
+        return ""
+    parts: list[str] = []
+    for item in messages:
+        role = getattr(item, "role", None) or (
+            item.get("role") if isinstance(item, dict) else "user"
+        )
+        content = getattr(item, "content", None)
+        if content is None and isinstance(item, dict):
+            content = item.get("content")
+        parts.append(f"[{role}] {str(content or '')[:_EVENT_SUMMARY_CHARS]}")
+    return "\n".join(parts)[:_EVENT_SUMMARY_CHARS]
+
+
+def _summarize_result(result: Any) -> str:
+    """生成结果的摘要：文本取内容，图片/视频取 URL 或任务 id。"""
+    if result is None:
+        return ""
+    content = getattr(result, "content", None)
+    if content:
+        return str(content)[:_EVENT_SUMMARY_CHARS]
+    for attr in ("images", "urls", "video_url", "task_id", "remote_task_id"):
+        value = getattr(result, attr, None)
+        if value:
+            return f"{attr}={str(value)[:_EVENT_SUMMARY_CHARS]}"
+    return ""
+
+
+async def _emit_call_event(
+    *,
+    scene: str,
+    task_type: str,
+    provider: str = "",
+    model: str = "",
+    ok: bool,
+    error: str | None = None,
+    duration_ms: int = 0,
+    request_text: str = "",
+    response_text: str = "",
+) -> None:
+    """把一次 AI 调用落到平台事件日志（best-effort，失败绝不影响调用本身）。"""
+    ctx = _ai_call_context.get() or {}
+    if ctx.get("suppress_auto_event"):
+        return
+    try:
+        from app.services.platform_log.service import record_event
+
+        await record_event(
+            scene=ctx.get("scene") or scene,
+            task_type=ctx.get("task_type") or task_type,
+            task_id=ctx.get("task_id"),
+            level="info" if ok else "error",
+            status="success" if ok else "failed",
+            provider=provider or "",
+            model=model or "",
+            message=ctx.get("label") or (f"{task_type} 成功" if ok else f"{task_type} 失败"),
+            error=error,
+            request={"prompt": request_text} if request_text else None,
+            response={"output": response_text} if response_text else None,
+            duration_ms=duration_ms,
+            project_id=ctx.get("project_id"),
+            ref_id=ctx.get("ref_id"),
+        )
+    except Exception:  # pragma: no cover - 记录失败不能打断 AI 调用
+        logger.debug("[AIService] 事件日志写入失败（已忽略）", exc_info=True)
 
 
 def _coerce_message(message: LLMMessage | dict) -> LLMMessage:
@@ -153,15 +280,27 @@ class AIService:
         if not backend_name and 'provider' in kwargs:
             backend_name = kwargs.pop('provider')
 
+        started = time.perf_counter()
         backend, target_model = self._router.resolve_llm(
             backend_name=backend_name,
             model=model,
         )
 
         if not backend:
+            error = f"No available LLM Backend. Backend: {backend_name}, Model: {model}"
+            await _emit_call_event(
+                scene="llm",
+                task_type="llm_chat",
+                provider=str(backend_name or ""),
+                model=model or "",
+                ok=False,
+                error=error,
+                duration_ms=int((time.perf_counter() - started) * 1000),
+                request_text=_summarize_messages(messages),
+            )
             return LLMGenerationResult(
                 success=False,
-                error=f"No available LLM Backend. Backend: {backend_name}, Model: {model}",
+                error=error,
                 model=model or "",
                 provider="",
             )
@@ -170,7 +309,34 @@ class AIService:
         logger.info("[AIService] 调用 LLM Backend: %s, 模型: %s", backend_label, target_model or 'default')
 
         normalized = [_coerce_message(m) for m in messages]
-        return await backend.chat(normalized, model=target_model, **kwargs)
+        request_text = _summarize_messages(normalized)
+        try:
+            result = await backend.chat(normalized, model=target_model, **kwargs)
+        except Exception as exc:
+            # 异常照旧向上抛，只补一条失败事件，保证排障有迹可循。
+            await _emit_call_event(
+                scene="llm",
+                task_type="llm_chat",
+                provider=backend_label,
+                model=target_model or "",
+                ok=False,
+                error=str(exc),
+                duration_ms=int((time.perf_counter() - started) * 1000),
+                request_text=request_text,
+            )
+            raise
+        await _emit_call_event(
+            scene="llm",
+            task_type="llm_chat",
+            provider=getattr(result, "provider", "") or backend_label,
+            model=getattr(result, "model", "") or (target_model or ""),
+            ok=bool(getattr(result, "success", True)),
+            error=getattr(result, "error", None) or None,
+            duration_ms=int((time.perf_counter() - started) * 1000),
+            request_text=request_text,
+            response_text=_summarize_result(result),
+        )
+        return result
 
     # -------------------------------------------------------------------------
     # Image
@@ -179,11 +345,23 @@ class AIService:
     async def generate_image(self, req: ImageGenerationRequest) -> ImageGenerationResult:
         """生成图片"""
         logger.info("[AIService] 图片生成请求: provider=%s, model=%s", req.provider, req.model)
+        started = time.perf_counter()
         result = await self._router.resolve_image(req)
         if result.success:
             logger.info("[AIService] 图片生成成功: provider=%s", result.provider)
         else:
             logger.warning("[AIService] 图片生成失败: %s", result.error)
+        await _emit_call_event(
+            scene="image",
+            task_type="image_generation",
+            provider=getattr(result, "provider", "") or (req.provider or ""),
+            model=getattr(result, "model", "") or (req.model or ""),
+            ok=bool(result.success),
+            error=result.error or None,
+            duration_ms=int((time.perf_counter() - started) * 1000),
+            request_text=str(getattr(req, "prompt", "") or "")[:_EVENT_SUMMARY_CHARS],
+            response_text=_summarize_result(result),
+        )
         return result
 
     # -------------------------------------------------------------------------
@@ -193,11 +371,23 @@ class AIService:
     async def generate_video(self, req: VideoGenerationRequest) -> VideoGenerationResult:
         """生成视频"""
         logger.info("[AIService] 视频生成请求: provider=%s", req.provider)
+        started = time.perf_counter()
         result = await self._router.resolve_video(req)
         if result.success:
             logger.info("[AIService] 视频生成成功: provider=%s", result.provider)
         else:
             logger.warning("[AIService] 视频生成失败: %s", result.error)
+        await _emit_call_event(
+            scene="video",
+            task_type="video_generation",
+            provider=getattr(result, "provider", "") or (req.provider or ""),
+            model=getattr(result, "model", "") or (getattr(req, "model", "") or ""),
+            ok=bool(result.success),
+            error=result.error or None,
+            duration_ms=int((time.perf_counter() - started) * 1000),
+            request_text=str(getattr(req, "prompt", "") or "")[:_EVENT_SUMMARY_CHARS],
+            response_text=_summarize_result(result),
+        )
         return result
 
     async def poll_video(self, provider: str | None, task_id: str) -> VideoGenerationResult:
