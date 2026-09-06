@@ -1348,6 +1348,7 @@ async def _run_domain_expansion_task(task_id: str, project_id: str, req: WorldDo
     from app.core.task_queue import TaskStatus, get_task_queue
     from app.db.database import SessionLocal
 
+    started = time.time()
     queue = get_task_queue()
     try:
         await queue.update_progress(task_id, 10, "正在准备域级细化")
@@ -1381,6 +1382,7 @@ async def _run_domain_expansion_task(task_id: str, project_id: str, req: WorldDo
             message=f"域级细化：{result['candidate_count']} 条候选",
             request={"domain": req.domain, "hint": req.hint, "limit": req.limit},
             response={"run_id": result.get("run_id", ""), "candidate_count": result["candidate_count"]},
+            duration_ms=int((time.time() - started) * 1000),
             project_id=project_id,
             task_id=task_id,
             ref_id=result.get("run_id", ""),
@@ -1404,6 +1406,7 @@ async def _run_domain_expansion_task(task_id: str, project_id: str, req: WorldDo
             message="域级细化失败",
             error=str(exc)[:500],
             request={"domain": req.domain, "hint": req.hint, "limit": req.limit},
+            duration_ms=int((time.time() - started) * 1000),
             project_id=project_id,
             task_id=task_id,
         )
