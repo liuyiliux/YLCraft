@@ -1962,11 +1962,12 @@ class WorldExtractionService:
         model: str | None,
         max_tokens: int,
     ) -> dict[str, Any]:
+        messages = [
+            LLMMessage(role="system", content=system_prompt),
+            LLMMessage(role="user", content=prompt),
+        ]
         response = await self.ai_service.chat(
-            messages=[
-                LLMMessage(role="system", content=system_prompt),
-                LLMMessage(role="user", content=prompt),
-            ],
+            messages=messages,
             provider=provider,
             model=model,
             temperature=0.2,
@@ -1975,6 +1976,25 @@ class WorldExtractionService:
         if not _response_success(response):
             raise ValueError(_response_error(response) or "LLM 生成失败")
         raw = _response_content(response)
+        if not raw.strip():
+            # 部分连接器偶发「200 但空内容」（实测 deepseek/中转站间歇出现）：
+            # 同参自动重试一次（温度微升），仍为空才记为域失败。
+            logger.warning(
+                "LLM 返回空内容，自动重试一次：provider=%s model=%s",
+                provider or "default", model or "default",
+            )
+            response = await self.ai_service.chat(
+                messages=messages,
+                provider=provider,
+                model=model,
+                temperature=0.5,
+                max_tokens=max_tokens,
+            )
+            if not _response_success(response):
+                raise ValueError(_response_error(response) or "LLM 生成失败")
+            raw = _response_content(response)
+            if not raw.strip():
+                raise ValueError("LLM 两次返回空内容（连接器可能异常）：请稍后重试或更换模型")
         data = _extract_json_object(raw)
         try:
             return schema_model.model_validate(data).model_dump()
