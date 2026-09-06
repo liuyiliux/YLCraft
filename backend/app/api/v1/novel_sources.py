@@ -12,6 +12,8 @@ from typing import Any
 
 import time
 
+from app.services.platform_log import service as platform_log
+
 from fastapi import (
     APIRouter,
     BackgroundTasks,
@@ -906,19 +908,69 @@ async def start_project_world_extraction(
             project_id=project_id,
         )
 
-    result = await svc.extract(
-        snapshot.id,
-        # 有意的产品选择：本入口是「从大纲一次性生成整套世界设定候选」，大纲文本短、
-        # 一次性，用户期待连世界观/力量体系/经济等扩展设定一起看到，所以默认跑全部
-        # 可提取模块。其它入口（小说来源提取、Agent 工具）不指定模块时由服务层回落
-        # 到基础层（角色/地点/势力/历史事件），避免扩展模块产生空候选噪声。
-        domains=req.domains or list(EXTRACTABLE_DOMAINS),
+    started = time.time()
+    try:
+        result = await svc.extract(
+            snapshot.id,
+            # 有意的产品选择：本入口是「从大纲一次性生成整套世界设定候选」，大纲文本短、
+            # 一次性，用户期待连世界观/力量体系/经济等扩展设定一起看到，所以默认跑全部
+            # 可提取模块。其它入口（小说来源提取、Agent 工具）不指定模块时由服务层回落
+            # 到基础层（角色/地点/势力/历史事件），避免扩展模块产生空候选噪声。
+            domains=req.domains or list(EXTRACTABLE_DOMAINS),
+            project_id=project_id,
+            # 来源性质：这里的「原文」是项目大纲，不是某部真实作品——候选标记 outline，
+            # 让 UI 能说明「依据来自你的大纲」，而不是伪装成原著出处。
+            candidate_origin=CandidateOrigin.OUTLINE.value,
+            provider=req.provider,
+            model=req.model,
+        )
+    except ValueError as exc:  # 输入问题（如无大纲）：记录后保持 400 语义
+        await platform_log.record_event(
+            scene="world_extraction",
+            task_type="project_outline_extract",
+            level="warning",
+            status="failed",
+            provider=req.provider or "",
+            model=req.model or "",
+            message="项目大纲世界提取失败（输入问题）",
+            error=str(exc)[:500],
+            request={"domains": req.domains or "all"},
+            duration_ms=int((time.time() - started) * 1000),
+            project_id=project_id,
+        )
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - 连接器/未知错误：记录后保持 500
+        await platform_log.record_event(
+            scene="world_extraction",
+            task_type="project_outline_extract",
+            level="error",
+            status="failed",
+            provider=req.provider or "",
+            model=req.model or "",
+            message="项目大纲世界提取失败",
+            error=str(exc)[:500],
+            request={"domains": req.domains or "all", "snapshot_id": snapshot.id},
+            duration_ms=int((time.time() - started) * 1000),
+            project_id=project_id,
+        )
+        raise
+    await platform_log.record_event(
+        scene="world_extraction",
+        task_type="project_outline_extract",
+        level="info",
+        status=str(result.get("status") or "success"),
+        provider=req.provider or "",
+        model=req.model or "",
+        message=f"项目大纲世界提取：{result.get('candidate_count', 0)} 条候选",
+        request={"domains": req.domains or "all", "snapshot_id": snapshot.id},
+        response={
+            "run_id": result.get("run_id", ""),
+            "candidate_count": result.get("candidate_count", 0),
+            "status": result.get("status", ""),
+        },
+        duration_ms=int((time.time() - started) * 1000),
         project_id=project_id,
-        # 来源性质：这里的「原文」是项目大纲，不是某部真实作品——候选标记 outline，
-        # 让 UI 能说明「依据来自你的大纲」，而不是伪装成原著出处。
-        candidate_origin=CandidateOrigin.OUTLINE.value,
-        provider=req.provider,
-        model=req.model,
+        ref_id=result.get("run_id", ""),
     )
     return {
         "success": True,
@@ -1225,6 +1277,7 @@ async def draft_world_template(
 
     草案只是回显预览，需用户/智能体确认后走 ``POST /world-templates`` 保存（R4 纪律）。
     """
+    started = time.time()
     try:
         draft = await svc.draft_template(
             project_id,
@@ -1234,7 +1287,32 @@ async def draft_world_template(
             model=req.model or None,
         )
     except ValueError as exc:
+        await platform_log.record_event(
+            scene="world_generation",
+            task_type="template_draft",
+            level="warning",
+            status="failed",
+            provider=req.provider or "",
+            model=req.model or "",
+            message="世界构建模板起草失败",
+            error=str(exc)[:500],
+            request={"domain": req.domain, "hint": req.hint},
+            duration_ms=int((time.time() - started) * 1000),
+            project_id=project_id,
+        )
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await platform_log.record_event(
+        scene="world_generation",
+        task_type="template_draft",
+        level="info",
+        status="success",
+        provider=req.provider or "",
+        model=req.model or "",
+        message=f"模板草案已生成：{draft.get('name') or req.domain}",
+        request={"domain": req.domain, "hint": req.hint},
+        duration_ms=int((time.time() - started) * 1000),
+        project_id=project_id,
+    )
     return {"success": True, "data": draft}
 
 
@@ -1293,6 +1371,20 @@ async def _run_domain_expansion_task(task_id: str, project_id: str, req: WorldDo
             tracked.result = result
             tracked.completed_at = time.time()
             await queue.update_task(tracked)
+        await platform_log.record_event(
+            scene="world_generation",
+            task_type="expand_domain",
+            level="info",
+            status="success",
+            provider=req.provider or "",
+            model=req.model or "",
+            message=f"域级细化：{result['candidate_count']} 条候选",
+            request={"domain": req.domain, "hint": req.hint, "limit": req.limit},
+            response={"run_id": result.get("run_id", ""), "candidate_count": result["candidate_count"]},
+            project_id=project_id,
+            task_id=task_id,
+            ref_id=result.get("run_id", ""),
+        )
     except Exception as exc:  # noqa: BLE001 - 异步任务必须收敛异常到任务状态
         tracked = await queue.get_task(task_id)
         if tracked:
@@ -1302,6 +1394,19 @@ async def _run_domain_expansion_task(task_id: str, project_id: str, req: WorldDo
             tracked.error = str(exc)[:500]
             tracked.completed_at = time.time()
             await queue.update_task(tracked)
+        await platform_log.record_event(
+            scene="world_generation",
+            task_type="expand_domain",
+            level="error",
+            status="failed",
+            provider=req.provider or "",
+            model=req.model or "",
+            message="域级细化失败",
+            error=str(exc)[:500],
+            request={"domain": req.domain, "hint": req.hint, "limit": req.limit},
+            project_id=project_id,
+            task_id=task_id,
+        )
 
 
 @router.post(
@@ -1363,6 +1468,7 @@ async def expand_entity_attributes(
     - 产出的是**候选**（`origin=ai_draft`、无证据），需确认后由 `apply` 写入，不直接改正典
     - 模型提出的新字段/新模块只作为建议落库，默认不启用（R7 / 梯子原则 I2）
     """
+    started = time.time()
     try:
         result = await svc.expand_entity(
             project_id,
@@ -1373,8 +1479,50 @@ async def expand_entity_attributes(
             provider=req.provider or None,
             model=req.model or None,
         )
-    except ValueError as exc:
+    except ValueError as exc:  # 输入/契约问题：记录后保持 400 语义
+        await platform_log.record_event(
+            scene="world_generation",
+            task_type="expand_entity",
+            level="warning",
+            status="failed",
+            provider=req.provider or "",
+            model=req.model or "",
+            message="实体属性补充失败（输入或契约问题）",
+            error=str(exc)[:500],
+            request={"entity_id": req.entity_id, "fields": req.fields},
+            duration_ms=int((time.time() - started) * 1000),
+            project_id=project_id,
+        )
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - 连接器/未知错误：记录后保持 500
+        await platform_log.record_event(
+            scene="world_generation",
+            task_type="expand_entity",
+            level="error",
+            status="failed",
+            provider=req.provider or "",
+            model=req.model or "",
+            message="实体属性补充失败",
+            error=str(exc)[:500],
+            request={"entity_id": req.entity_id, "fields": req.fields},
+            duration_ms=int((time.time() - started) * 1000),
+            project_id=project_id,
+        )
+        raise
+    await platform_log.record_event(
+        scene="world_generation",
+        task_type="expand_entity",
+        level="info",
+        status="success",
+        provider=req.provider or "",
+        model=req.model or "",
+        message=f"实体属性补充：{len(result.get('fields', []))} 个字段候选",
+        request={"entity_id": req.entity_id, "fields": req.fields},
+        response={"run_id": result.get("run_id", ""), "fields": result.get("fields", [])},
+        duration_ms=int((time.time() - started) * 1000),
+        project_id=project_id,
+        ref_id=result.get("run_id", ""),
+    )
     return {"success": True, "data": result}
 
 
