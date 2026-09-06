@@ -726,12 +726,20 @@ class WorldGenerationService:
         run.trace_json = dumps_json(
             [{"action": "expand_domain", "domain": domain, "items": len(created)}]
         )
+        output_head = json.dumps(data, ensure_ascii=False, default=str)[:400]
+        if not created:
+            # 空产出也把模型实际输出记进诊断：区分「模型偷懒返回空」与「全部重复被过滤」
+            logger.warning(
+                "expand_domain 未创建条目：project=%s domain=%s model=%s output=%s",
+                project_id, domain, model or provider or "default", output_head,
+            )
         run.diagnostics_json = dumps_json(
             {
                 "domain": domain,
                 "created": created,
                 "suggested_fields": suggested_fields,
                 "suggested_domains": suggested_domains,
+                "model_output_head": output_head,
             }
         )
         run.updated_at = datetime.now()
@@ -824,11 +832,12 @@ class WorldGenerationService:
     async def _generate(
         self, prompt: str, *, provider: str | None, model: str | None
     ) -> dict[str, Any]:
+        messages = [
+            LLMMessage(role="system", content=GENERATION_SYSTEM_PROMPT),
+            LLMMessage(role="user", content=prompt),
+        ]
         response = await self._ensure_ai().chat(
-            messages=[
-                LLMMessage(role="system", content=GENERATION_SYSTEM_PROMPT),
-                LLMMessage(role="user", content=prompt),
-            ],
+            messages=messages,
             provider=provider,
             model=model,
             temperature=0.4,
@@ -838,6 +847,27 @@ class WorldGenerationService:
         if success is False:
             raise ValueError(getattr(response, "error", "") or "LLM 生成失败")
         raw = getattr(response, "content", None) or ""
+        if not raw.strip():
+            # 部分连接器偶发「200 但空内容」（实测 deepseek/中转站间歇出现）：
+            # 同参自动重试一次，仍为空才判失败——对用户表现为一次正常生成。
+            logger.warning(
+                "LLM 返回空内容，自动重试一次：provider=%s model=%s",
+                provider or "default", model or "default",
+            )
+            response = await self._ensure_ai().chat(
+                messages=messages,
+                provider=provider,
+                model=model,
+                temperature=0.7,
+                max_tokens=2000,
+            )
+            if getattr(response, "success", True) is False:
+                raise ValueError(getattr(response, "error", "") or "LLM 生成失败")
+            raw = getattr(response, "content", None) or ""
+            if not raw.strip():
+                raise ValueError(
+                    "LLM 两次返回空内容（连接器可能异常）：请稍后重试或更换模型"
+                )
         data = _extract_json_object(raw)
         try:
             return WorldGenerationSchema.model_validate(data).model_dump()
