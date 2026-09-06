@@ -783,7 +783,7 @@ export default function NovelWorldPage() {
           }
         >
           <Space direction="vertical" style={{ width: '100%' }}>
-            {extractResult.failures.length > 0 && (
+            {(extractResult.failures || []).length > 0 && (
               <Alert
                 type="warning"
                 showIcon
@@ -795,7 +795,7 @@ export default function NovelWorldPage() {
               <Alert
                 type="info"
                 showIcon
-                message={`增量提取：本次新增 ${extractResult.candidate_count} 条候选，更新 ${extractResult.updated_count} 条既有候选的证据`}
+                message={`增量提取：本次新增 ${extractResult.candidate_count ?? 0} 条候选，更新 ${extractResult.updated_count ?? 0} 条既有候选的证据`}
               />
             )}
             {reconcile && (

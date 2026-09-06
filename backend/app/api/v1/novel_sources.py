@@ -400,14 +400,30 @@ def serialize_chunk(chunk: NovelTextChunk, *, include_content: bool = True) -> d
 
 
 def serialize_run(run: WorldExtractionRun) -> dict[str, Any]:
+    domains = loads_json(run.domains_json, [])
+    # 深链（?run_id=）打开审阅时前端需要 failures：从域状态与诊断推导，
+    # 覆盖两类来源——逐域提取失败、生成型运行的整体失败（diagnostics.error）。
+    failures = [
+        {"domain": str(item.get("domain")), "error": str(item.get("error") or "")}
+        for item in domains
+        if isinstance(item, dict) and item.get("error")
+    ]
+    if not failures and run.status == "failed":
+        diagnostics = loads_json(run.diagnostics_json, {})
+        if diagnostics.get("error"):
+            failures = [
+                {"domain": str(run.kind or "run"), "error": str(diagnostics["error"])[:300]}
+            ]
     return {
         "id": run.id,
         "snapshot_id": run.snapshot_id,
         "project_id": run.project_id,
+        "kind": run.kind,
         "mode": run.mode,
         "status": run.status,
         "pipeline_version": run.pipeline_version,
-        "domains": loads_json(run.domains_json, []),
+        "domains": domains,
+        "failures": failures,
         "checkpoint": loads_json(run.checkpoint_json, {}),
         "trace": loads_json(run.trace_json, []),
         "diagnostics": loads_json(run.diagnostics_json, {}),
