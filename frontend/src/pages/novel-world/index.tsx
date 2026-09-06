@@ -609,6 +609,54 @@ export default function NovelWorldPage() {
           </Button>
         }
       >
+        {/* AI 选择前置：点「AI 判断模块」/「提取」之前就能看到并改用哪个模型
+            （与两次调用共用同一组 provider/model 状态，不再藏在判断结果里） */}
+        <div style={{ marginBottom: 12 }}>
+          <Text strong style={{ fontSize: 12 }}>
+            AI 选择
+          </Text>
+          <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+            <Select
+              size="small"
+              style={{ width: '50%' }}
+              placeholder="LLM 供应商"
+              value={provider || undefined}
+              onChange={(value) => {
+                setProvider(value)
+                const backend = llmBackends.find(
+                  (item: any) => (item.name || item.provider) === value,
+                )
+                setModel(
+                  backend?.default_model || backend?.model || backend?.available_models?.[0] || '',
+                )
+              }}
+              options={llmBackends.map((item: any) => ({
+                value: item.name || item.provider,
+                label: item.provider_label || item.name || item.provider,
+              }))}
+            />
+            <Select
+              size="small"
+              style={{ width: '50%' }}
+              placeholder="模型（留空用默认）"
+              value={model || undefined}
+              onChange={setModel}
+              allowClear
+              options={Array.from(
+                new Set(
+                  (() => {
+                    const backend = llmBackends.find(
+                      (item: any) => (item.name || item.provider) === provider,
+                    )
+                    return backend?.available_models?.length
+                      ? backend.available_models
+                      : [backend?.default_model || backend?.model || '']
+                  })().filter(Boolean) as string[],
+                ),
+              ).map((value) => ({ value, label: value }))}
+            />
+          </div>
+        </div>
         {!plan ? (
           <Empty description="先导入来源，再让 AI 逐模块判断是否存在可提取内容" />
         ) : (
@@ -646,48 +694,6 @@ export default function NovelWorldPage() {
               </Text>
             )}
             <Divider style={{ margin: '4px 0' }} />
-            <Text strong style={{ fontSize: 12 }}>
-              AI 选择
-            </Text>
-            <Select
-              size="small"
-              style={{ width: '100%' }}
-              placeholder="LLM 供应商"
-              value={provider || undefined}
-              onChange={(value) => {
-                setProvider(value)
-                const backend = llmBackends.find(
-                  (item: any) => (item.name || item.provider) === value,
-                )
-                setModel(
-                  backend?.default_model || backend?.model || backend?.available_models?.[0] || '',
-                )
-              }}
-              options={llmBackends.map((item: any) => ({
-                value: item.name || item.provider,
-                label: item.provider_label || item.name || item.provider,
-              }))}
-            />
-            <Select
-              size="small"
-              style={{ width: '100%' }}
-              placeholder="模型（留空用默认）"
-              value={model || undefined}
-              onChange={setModel}
-              allowClear
-              options={Array.from(
-                new Set(
-                  (() => {
-                    const backend = llmBackends.find(
-                      (item: any) => (item.name || item.provider) === provider,
-                    )
-                    return backend?.available_models?.length
-                      ? backend.available_models
-                      : [backend?.default_model || backend?.model || '']
-                  })().filter(Boolean) as string[],
-                ),
-              ).map((value) => ({ value, label: value }))}
-            />
             <Button type="primary" block disabled={!enabled.length} loading={extracting} onClick={doExtract}>
               提取所选模块{enabled.length ? `（${enabled.length}）` : ''}
             </Button>
