@@ -663,6 +663,9 @@ async def plan_domains(
 
     用户或 Agent 可逐域启用、关闭或改写后，把 ``domains`` 原样带回提取接口。
     """
+    snapshot = svc.session.get(NovelSourceSnapshot, snapshot_id)
+    project_id = snapshot.project_id if snapshot else None
+    started = time.time()
     try:
         plan = await svc.plan_domains(
             snapshot_id,
@@ -672,7 +675,40 @@ async def plan_domains(
             sample_chunks=req.sample_chunks,
         )
     except ValueError as exc:
+        await platform_log.record_event(
+            scene="world_extraction",
+            task_type="plan_domains",
+            level="warning",
+            status="failed",
+            provider=req.provider or "",
+            model=req.model or "",
+            message="AI 模块判断失败",
+            error=str(exc)[:500],
+            request={
+                "snapshot_id": snapshot_id,
+                "llm_calls": getattr(svc, "last_llm_calls", []),
+            },
+            duration_ms=int((time.time() - started) * 1000),
+            project_id=project_id,
+        )
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await platform_log.record_event(
+        scene="world_extraction",
+        task_type="plan_domains",
+        level="info",
+        status="success",
+        provider=req.provider or "",
+        model=req.model or "",
+        message=f"AI 模块判断：{len(plan.get('domains') or [])} 个模块",
+        request={"snapshot_id": snapshot_id},
+        response={
+            "plan": plan,
+            # 详细请求/返回：判断调用的实际 prompt 与模型原始输出
+            "llm_calls": getattr(svc, "last_llm_calls", []),
+        },
+        duration_ms=int((time.time() - started) * 1000),
+        project_id=project_id,
+    )
     return {"success": True, "data": plan}
 
 
@@ -934,7 +970,10 @@ async def start_project_world_extraction(
             model=req.model or "",
             message="项目大纲世界提取失败（输入问题）",
             error=str(exc)[:500],
-            request={"domains": req.domains or "all"},
+            request={
+                "domains": req.domains or "all",
+                "llm_calls": getattr(svc, "last_llm_calls", []),
+            },
             duration_ms=int((time.time() - started) * 1000),
             project_id=project_id,
         )
@@ -949,7 +988,11 @@ async def start_project_world_extraction(
             model=req.model or "",
             message="项目大纲世界提取失败",
             error=str(exc)[:500],
-            request={"domains": req.domains or "all", "snapshot_id": snapshot.id},
+            request={
+                "domains": req.domains or "all",
+                "snapshot_id": snapshot.id,
+                "llm_calls": getattr(svc, "last_llm_calls", []),
+            },
             duration_ms=int((time.time() - started) * 1000),
             project_id=project_id,
         )
@@ -967,6 +1010,8 @@ async def start_project_world_extraction(
             "run_id": result.get("run_id", ""),
             "candidate_count": result.get("candidate_count", 0),
             "status": result.get("status", ""),
+            # 详细请求/返回：每次域调用的实际 prompt 与模型原始输出
+            "llm_calls": getattr(svc, "last_llm_calls", []),
         },
         duration_ms=int((time.time() - started) * 1000),
         project_id=project_id,
@@ -1296,7 +1341,12 @@ async def draft_world_template(
             model=req.model or "",
             message="世界构建模板起草失败",
             error=str(exc)[:500],
-            request={"domain": req.domain, "hint": req.hint},
+            request={
+                "domain": req.domain,
+                "hint": req.hint,
+                "llm_prompt": getattr(svc, "last_llm_meta", {}).get("prompt", ""),
+            },
+            response={"llm_raw": getattr(svc, "last_llm_meta", {}).get("raw", "")},
             duration_ms=int((time.time() - started) * 1000),
             project_id=project_id,
         )
@@ -1309,7 +1359,12 @@ async def draft_world_template(
         provider=req.provider or "",
         model=req.model or "",
         message=f"模板草案已生成：{draft.get('name') or req.domain}",
-        request={"domain": req.domain, "hint": req.hint},
+        request={
+            "domain": req.domain,
+            "hint": req.hint,
+            "llm_prompt": getattr(svc, "last_llm_meta", {}).get("prompt", ""),
+        },
+        response={"llm_raw": getattr(svc, "last_llm_meta", {}).get("raw", "")},
         duration_ms=int((time.time() - started) * 1000),
         project_id=project_id,
     )
@@ -1380,8 +1435,17 @@ async def _run_domain_expansion_task(task_id: str, project_id: str, req: WorldDo
             provider=req.provider or "",
             model=req.model or "",
             message=f"域级细化：{result['candidate_count']} 条候选",
-            request={"domain": req.domain, "hint": req.hint, "limit": req.limit},
-            response={"run_id": result.get("run_id", ""), "candidate_count": result["candidate_count"]},
+            request={
+                "domain": req.domain,
+                "hint": req.hint,
+                "limit": req.limit,
+                "llm_prompt": getattr(service, "last_llm_meta", {}).get("prompt", ""),
+            },
+            response={
+                "run_id": result.get("run_id", ""),
+                "candidate_count": result["candidate_count"],
+                "llm_raw": getattr(service, "last_llm_meta", {}).get("raw", ""),
+            },
             duration_ms=int((time.time() - started) * 1000),
             project_id=project_id,
             task_id=task_id,
@@ -1405,7 +1469,12 @@ async def _run_domain_expansion_task(task_id: str, project_id: str, req: WorldDo
             model=req.model or "",
             message="域级细化失败",
             error=str(exc)[:500],
-            request={"domain": req.domain, "hint": req.hint, "limit": req.limit},
+            request={
+                "domain": req.domain,
+                "hint": req.hint,
+                "limit": req.limit,
+                "llm_prompt": getattr(service, "last_llm_meta", {}).get("prompt", ""),
+            },
             duration_ms=int((time.time() - started) * 1000),
             project_id=project_id,
             task_id=task_id,
@@ -1492,7 +1561,11 @@ async def expand_entity_attributes(
             model=req.model or "",
             message="实体属性补充失败（输入或契约问题）",
             error=str(exc)[:500],
-            request={"entity_id": req.entity_id, "fields": req.fields},
+            request={
+                "entity_id": req.entity_id,
+                "fields": req.fields,
+                "llm_prompt": getattr(svc, "last_llm_meta", {}).get("prompt", ""),
+            },
             duration_ms=int((time.time() - started) * 1000),
             project_id=project_id,
         )
@@ -1507,7 +1580,12 @@ async def expand_entity_attributes(
             model=req.model or "",
             message="实体属性补充失败",
             error=str(exc)[:500],
-            request={"entity_id": req.entity_id, "fields": req.fields},
+            request={
+                "entity_id": req.entity_id,
+                "fields": req.fields,
+                "llm_prompt": getattr(svc, "last_llm_meta", {}).get("prompt", ""),
+            },
+            response={"llm_raw": getattr(svc, "last_llm_meta", {}).get("raw", "")},
             duration_ms=int((time.time() - started) * 1000),
             project_id=project_id,
         )
@@ -1520,8 +1598,16 @@ async def expand_entity_attributes(
         provider=req.provider or "",
         model=req.model or "",
         message=f"实体属性补充：{len(result.get('fields', []))} 个字段候选",
-        request={"entity_id": req.entity_id, "fields": req.fields},
-        response={"run_id": result.get("run_id", ""), "fields": result.get("fields", [])},
+        request={
+            "entity_id": req.entity_id,
+            "fields": req.fields,
+            "llm_prompt": getattr(svc, "last_llm_meta", {}).get("prompt", ""),
+        },
+        response={
+            "run_id": result.get("run_id", ""),
+            "fields": result.get("fields", []),
+            "llm_raw": getattr(svc, "last_llm_meta", {}).get("raw", ""),
+        },
         duration_ms=int((time.time() - started) * 1000),
         project_id=project_id,
         ref_id=result.get("run_id", ""),
