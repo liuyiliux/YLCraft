@@ -177,6 +177,9 @@ class WorldGenerationService:
         # 避免在未初始化 AI 服务时连这些只读操作都用不了。
         self.ai_service = ai_service
         self.domains = WorldDomainService(session)
+        # 最近一次真实 LLM 调用的明细：端点/后台任务据此把实际 prompt 与
+        # 模型原始输出落进事件日志（每次真实调用前都会重置）。
+        self.last_llm_meta: dict[str, Any] | None = None
 
     def _ensure_ai(self) -> Any:
         if self.ai_service is None:
@@ -510,6 +513,14 @@ class WorldGenerationService:
             .replace("{focus}", focus)
             .replace("{hint}", hint or "无")
         )
+        # 事件日志明细：draft 不走 _generate，这里独立记录实际 prompt 与原始输出。
+        self.last_llm_meta = {
+            "provider": provider or "default",
+            "model": model or "default",
+            "prompt": prompt[:12000],
+            "raw": "",
+            "attempts": 1,
+        }
         response = await self._ensure_ai().chat(
             messages=[
                 LLMMessage(role="system", content=TEMPLATE_DRAFT_SYSTEM_PROMPT),
@@ -524,6 +535,7 @@ class WorldGenerationService:
         if success is False:
             raise ValueError(getattr(response, "error", "") or "LLM 生成失败")
         raw = getattr(response, "content", None) or ""
+        self.last_llm_meta["raw"] = raw[:12000]
         data = _extract_json_object(raw)
         try:
             draft = DraftTemplateSchema.model_validate(data).model_dump()
@@ -839,6 +851,14 @@ class WorldGenerationService:
             LLMMessage(role="system", content=GENERATION_SYSTEM_PROMPT),
             LLMMessage(role="user", content=prompt),
         ]
+        # 事件日志明细：暂存实际 prompt 与模型原始输出，由端点落进事件记录
+        self.last_llm_meta = {
+            "provider": provider or "default",
+            "model": model or "default",
+            "prompt": prompt[:12000],
+            "raw": "",
+            "attempts": 0,
+        }
         response = await self._ensure_ai().chat(
             messages=messages,
             provider=provider,
@@ -849,6 +869,8 @@ class WorldGenerationService:
         if success is False:
             raise ValueError(getattr(response, "error", "") or "LLM 生成失败")
         raw = getattr(response, "content", None) or ""
+        self.last_llm_meta["attempts"] = 1
+        self.last_llm_meta["raw"] = raw[:12000]
         if not raw.strip():
             # 部分连接器偶发「200 但空内容」：同参自动重试一次，仍为空才判失败。
             logger.warning(
@@ -864,6 +886,8 @@ class WorldGenerationService:
             if getattr(response, "success", True) is False:
                 raise ValueError(getattr(response, "error", "") or "LLM 生成失败")
             raw = getattr(response, "content", None) or ""
+            self.last_llm_meta["attempts"] = 2
+            self.last_llm_meta["raw"] = raw[:12000]
             if not raw.strip():
                 raise ValueError(
                     "LLM 两次返回空内容（连接器可能异常）：请稍后重试或更换模型"
