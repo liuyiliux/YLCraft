@@ -771,6 +771,50 @@ def test_writer_room_review_accepts_evidenced_promotion(session: Session):
     assert service._writer_room_review_has_substance(review)
 
 
+def test_writer_room_prose_contract_allows_literary_devices_but_preserves_scene_rules(session: Session):
+    service = CreativeProjectService(session, ai_service=FakeAIService())
+
+    contract = service._writer_room_prose_style_contract()
+
+    assert "AI" in contract
+    assert "90%-110%" not in contract
+    assert "去 AI 腔" in contract
+    assert "不要为了制造不规则而故意写病句" in contract
+    assert "T6" not in contract
+
+
+def test_writer_room_review_prompt_requires_evidence_and_exceptions(session: Session):
+    service = CreativeProjectService(session, ai_service=FakeAIService())
+    project = CreativeProject(
+        title="Prompt contract",
+        project_type="novel",
+        status="draft",
+    )
+
+    prompt = service._writer_room_prompt(
+        project=project,
+        step="prose_review",
+        chapter_number=1,
+        context={
+            "outline": {},
+            "chapter_plan": {},
+            "chapter_outline": {},
+            "previous_context": "",
+            "project_context_pack": "",
+            "source_text": "他推开门，屋里没人。",
+            "source_content_type": "prose_draft",
+            "source_content_version": 1,
+            "source_word_count": 10,
+            "prose_review": {},
+        },
+        instruction="",
+    )
+
+    assert "ai_smell_checks" in prompt
+    assert "issues" in prompt
+    assert "rewrite_plan" in prompt
+
+
 @pytest.mark.asyncio
 async def test_scene_expansion_keeps_plain_prose_when_schema_defaults_are_empty(session: Session):
     class PlainBridgeAIService:

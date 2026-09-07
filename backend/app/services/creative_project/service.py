@@ -84,6 +84,7 @@ from app.services.creative_project.semantic_recall import (
     NarrativeSemanticRecallAdapter,
 )
 from app.services.creative_project.profiles import normalize_project_settings, validate_profile_inputs
+from app.services.creative_project.writing_style import WritingStyleService
 
 logger = logging.getLogger("ylcraft.creative_project")
 
@@ -5362,6 +5363,44 @@ class CreativeProjectService:
             settings=settings,
             stage=stage,
         )
+        applied_style_profiles: list[dict[str, Any]] = []
+        style_profile_context = ""
+        style_profile_diagnostics: dict[str, Any] = {"status": "not_configured", "profiles": []}
+        try:
+            applied_style_profiles = WritingStyleService(self.session).runtime_profiles(
+                project_id, stage=stage
+            )
+            if applied_style_profiles:
+                style_blocks = []
+                for profile in applied_style_profiles:
+                    contract = profile.get("prompt_contract") or {}
+                    rules = [str(item).strip() for item in (contract.get("rules") or []) if str(item).strip()]
+                    examples = [str(item).strip() for item in (contract.get("new_examples") or []) if str(item).strip()]
+                    block = (
+                        f"[风格档案 {profile['name']} v{profile['version']} / 强度 {profile['intensity']} / "
+                        f"checksum {profile['checksum'][:16]}]\n"
+                        + "\n".join(f"- {rule}" for rule in rules[:24])
+                    )
+                    if examples:
+                        block += "\n新造示例（只观察机制，不复用句子）：\n" + "\n".join(
+                            f"- {example}" for example in examples[:4]
+                        )
+                    style_blocks.append(block)
+                style_profile_context = "\n".join(style_blocks)
+                style_profile_diagnostics = {
+                    "status": "routed",
+                    "profiles": [
+                        {
+                            "id": item["id"],
+                            "version": item["version"],
+                            "checksum": item["checksum"],
+                            "intensity": item["intensity"],
+                        }
+                        for item in applied_style_profiles
+                    ],
+                }
+        except Exception as exc:  # missing migration must not block legacy writing
+            style_profile_diagnostics = {"status": "unavailable", "error": str(exc)}
         style_genre = bounded(
             "T6",
             "；".join(
@@ -5372,12 +5411,24 @@ class CreativeProjectService:
                     f"风格：{outline.get('style') or outline.get('tone') or outline.get('visual_style')}" if (outline.get("style") or outline.get("tone") or outline.get("visual_style")) else "",
                     f"用户风格标签：{'、'.join(style_tags)}" if style_tags else "",
                     skill_context,
+                    style_profile_context,
                 ]
                 if part
             ),
         )
         if style_genre:
             included_sources.append({"id": f"project-style:{project.id}", "kind": "project_style", "layer": "T6"})
+        included_sources.extend(
+            {
+                "id": item["id"],
+                "kind": "writing_style_profile",
+                "layer": "T6",
+                "version": item["version"],
+                "checksum": item["checksum"],
+                "intensity": item["intensity"],
+            }
+            for item in applied_style_profiles
+        )
 
         try:
             from app.services.creative_project.state_ledger import StateLedger
@@ -5394,7 +5445,22 @@ class CreativeProjectService:
             {"id": "T3", "label": "chapter_contract", "budget": budgets["T3"], "text": chapter_contract_text},
             {"id": "T4", "label": "local_continuity", "budget": budgets["T4"], "text": previous_context},
             {"id": "T5", "label": "semantic_recall", "budget": budgets["T5"], "text": semantic_recall, "status": recall_status, "diagnostics": recall_diagnostics},
-            {"id": "T6", "label": "style_genre_skills", "budget": budgets["T6"], "text": style_genre, "applied_skill_ids": [item["id"] for item in applied_skills]},
+            {
+                "id": "T6",
+                "label": "style_genre_skills",
+                "budget": budgets["T6"],
+                "text": style_genre,
+                "applied_skill_ids": [item["id"] for item in applied_skills],
+                "applied_style_profiles": [
+                    {
+                        "id": item["id"],
+                        "version": item["version"],
+                        "checksum": item["checksum"],
+                        "intensity": item["intensity"],
+                    }
+                    for item in applied_style_profiles
+                ],
+            },
         ]
         sections = []
         if dynamic_state_context:
@@ -5416,6 +5482,7 @@ class CreativeProjectService:
             "asset_hub_metadata": "excluded_by_contract",
             "semantic_recall": recall_status,
             "creative_skills": skill_diagnostics,
+            "writing_style_profiles": style_profile_diagnostics,
         }
         fingerprint = hashlib.sha256(text.encode("utf-8")).hexdigest()[:32] if text else ""
         metadata = {
@@ -5434,6 +5501,16 @@ class CreativeProjectService:
             "excluded_sources": excluded_sources,
             "applied_skill_ids": [item["id"] for item in applied_skills],
             "applied_skills": applied_skills,
+            "applied_style_profiles": [
+                {
+                    "id": item["id"],
+                    "version": item["version"],
+                    "checksum": item["checksum"],
+                    "intensity": item["intensity"],
+                }
+                for item in applied_style_profiles
+            ],
+            "writing_style_profiles": style_profile_diagnostics,
             "overflow": overflow,
             "fingerprint": fingerprint,
         }
@@ -8117,13 +8194,15 @@ class CreativeProjectService:
 1. 问题必须具体到段落、场景或句式位置，并在 location 或 problem 中写出本稿实际出现的短语、动作、对白或段落功能；不能用“全文”“第 X 段”“有 AI 味”这类无证据结论。
 2. 必须覆盖：节奏、逻辑、角色声音、情绪连续性、爽点/钩子、AI腔。
 3. quality_tags 输出 3-8 个短标签，例如“解释过密”“动作不足”“对白顺口”“钩子偏弱”。
-4. ai_smell_checks 必须逐项检查：直接情绪标签、泛化形容词、万能比喻、重复句式、缺少物件互动、角色声音漂移、说明替代戏剧动作。
-5. rewrite_instruction 要能直接用于下一轮重写。
-6. quality_tags、ai_smell_checks、strengths、rewrite_plan 都必须是字符串数组。不要把检查项写成对象、字典、评分表或嵌套 JSON。
-7. 只评价正文中真实存在的句子，不要把上一个版本的问题移植到本稿。系统、剧本、存在值是本书允许的设定词；只有它们替代人物行动、读起来像技术说明时才算 AI 腔。
-8. 评分校准：完整、有场景推进、人物关系和章末行动的正文以 70 分为基线；只有逻辑断裂、人物动机矛盾、关键线索凭空出现、严重重复或无法阅读才判 high。普通措辞偏好只能记为 medium/low，不能单独让全文不合格。
-9. approval_recommendation 必须明确填“建议提升”或“建议重写”，并与 overall_score 一致：70 分以上且无 high 问题才建议提升。即使建议提升，也必须写出至少两条 strengths 和两条实际检查结果，说明为什么本稿通过。
-10. 若正文确立了值得后续锁定的连续性事实（如角色固定特征/关系、地点规则、带约束的物件、关键事件结果），在 continuity_candidates 中输出，最多 5 条；没有则给空数组。每条必须含 entity_type（character/place/item/event/other）、entity_name、claim（事实断言）、evidence_excerpt（正文证据片段）、severity（info/low/medium/high）、suggested_action（create_fact/merge/ignore）、target_fact_type（world_asset/project_bible）。不要把主观评价或待修问题写成候选；候选是“已经成立、后续章节不能自相矛盾”的事实。
+4. ai_smell_checks 必须逐项检查：直接情绪标签、泛化形容词、万能比喻、重复句式、缺少物件互动、角色声音漂移、说明替代戏剧动作、机械连接词或强行总结。每项都必须给出“通过”或指出正文证据；不要凭空制造问题。
+5. 对 AI 腔的判断要区分三类：正文中可定位的事实、基于多处证据的风格判断、编辑偏好。只有前两类可以进入 issues，编辑偏好只能放在低严重度的 rewrite_plan。
+6. 不要机械禁止排比、三段式、短句、感叹、比喻或“不是……而是……”。只有当它们在本稿中重复、替代行动、造成工整模板感，或与当前角色/场景不匹配时才指出。
+7. rewrite_instruction 要能直接用于下一轮重写。
+8. quality_tags、ai_smell_checks、strengths、rewrite_plan 都必须是字符串数组。不要把检查项写成对象、字典、评分表或嵌套 JSON。
+9. 只评价正文中真实存在的句子，不要把上一个版本的问题移植到本稿。系统、剧本、存在值是本书允许的设定词；只有它们替代人物行动、读起来像技术说明时才算 AI 腔。
+10. 评分校准：完整、有场景推进、人物关系和章末行动的正文以 70 分为基线；只有逻辑断裂、人物动机矛盾、关键线索凭空出现、严重重复或无法阅读才判 high。普通措辞偏好只能记为 medium/low，不能单独让全文不合格。
+11. approval_recommendation 必须明确填“建议提升”或“建议重写”，并与 overall_score 一致：70 分以上且无 high 问题才建议提升。即使建议提升，也必须写出至少两条 strengths 和两条实际检查结果，说明为什么本稿通过。
+12. 若正文确立了值得后续锁定的连续性事实（如角色固定特征/关系、地点规则、带约束的物件、关键事件结果），在 continuity_candidates 中输出，最多 5 条；没有则给空数组。每条必须含 entity_type（character/place/item/event/other）、entity_name、claim（事实断言）、evidence_excerpt（正文证据片段）、severity（info/low/medium/high）、suggested_action（create_fact/merge/ignore）、target_fact_type（world_asset/project_bible）。不要把主观评价或待修问题写成候选；候选是“已经成立、后续章节不能自相矛盾”的事实。
 格式：
 {{
   "chapter_number": {chapter_number},
@@ -8345,7 +8424,8 @@ class CreativeProjectService:
 5. 允许保留本书必要的“系统/剧本/存在值”等设定名词，但它们只能压迫人物、打断行动或带来后果；不要把代码、算法、接口、渲染、帧、模型、数据、3D打印、解剖术语写成旁白解释。
 6. 一段只做一件事：推进动作、给出反应或改变关系。每 500-800 字至少发生一次可见变化，例如证据被夺走、话被截断、立场翻转、门被推开、选择落地；不要用连续奇观或术语清单充篇幅。
 7. 不写工整口号、万能比喻或结论先行的推理报告。推理只说读者当下需要的一两步，并立刻用对手的反应、物件变化或代价验证；短句用于压力和转折，长句只服务于具体观察。
-8. 章节结尾必须让人物已经做出一个会改变下一章处境的行动或选择，而不是仅用抽象感叹收尾。"""
+8. 不把“去 AI 腔”理解为逐句换同义词，也不要为了制造不规则而故意写病句。先保证人物目标、冲突、事实和动作成立，再调整解释密度、句长曲线和修辞重复。
+9. 章节结尾必须让人物已经做出一个会改变下一章处境的行动或选择，而不是仅用抽象感叹收尾。"""
 
     def _writer_room_title(self, step: str, chapter_number: int) -> str:
         labels = {
