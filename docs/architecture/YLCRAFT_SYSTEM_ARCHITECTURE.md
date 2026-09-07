@@ -102,9 +102,15 @@ AI 来源标记与文件元数据清理是 Asset Hub 上的独立派生操作，
 完全不可观测——新增 AI 路径时不要回到手写模式。
 
 直连 provider、不经 `AIService` 的路径（如 `services/embedding`、breaker 的 STT）必须自行补记事件，
-否则该路径不可观测。任务记录与事件日志是两套：任务需端点显式 `create_task`，且 task_type 命中
-`PERSISTED_TASK_TYPES` 白名单、payload 带 `project_id` 才会落 `project_task_records`
-（`services/task_persistence.py`），否则进程重启即丢。
+否则该路径不可观测。
+
+**任务记录（任务中心）与事件日志是两套**，不能指望自动收口：任务需要业务粒度（一次"地图成图"
+算一条，而不是每次模型调用一条），高频 chat 若自动建任务会把任务中心冲垮。长耗时的 AI 操作
+用 `ai_task(...)` 上下文（`services/ai/tracking.py`）一次完成「建任务 → 记开始 → 完成或失败 →
+进度与诊断」；记账失败一律 best-effort，不影响业务。任务要落 `project_task_records` 需同时满足：
+task_type 命中 `PERSISTED_TASK_TYPES` 白名单、payload 带 `project_id`（`services/task_persistence.py`），
+否则只存内存、进程重启即失——不落库时会打日志说明原因，新增任务类型记得登记白名单并同步前端
+`TASK_TYPE_OPTIONS`。
 
 前端入口在 `frontend/src`，主要分层：
 

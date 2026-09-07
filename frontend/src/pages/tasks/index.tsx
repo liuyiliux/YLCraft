@@ -54,6 +54,8 @@ const TASK_TYPE_OPTIONS = [
   { label: '图生 3D', value: 'model3d_generation' },
   { label: '创作写作', value: 'creative_writing' },
   { label: '视频剪辑', value: 'clip' },
+  { label: '地图成图', value: 'world_map_visual' },
+  { label: '世界域细化', value: 'world_domain_expansion' },
 ]
 
 // 任务状态颜色映射
@@ -86,6 +88,8 @@ const TYPE_COLOR_MAP: Record<string, string> = {
   model3d_generation: 'cyan',
   creative_writing: 'blue',
   clip: 'orange',
+  world_map_visual: 'gold',
+  world_domain_expansion: 'green',
 }
 
 interface TaskItem {
@@ -123,6 +127,8 @@ const ROUTE_MAP: Record<string, { path: string; label: string }> = {
   model3d_generation: { path: '/model-3d', label: '图生 3D' },
   creative_writing: { path: '/story', label: '创作项目' },
   clip: { path: '/clip', label: 'AI 剪辑' },
+  world_map_visual: { path: '/world-map', label: '世界地图' },
+  world_domain_expansion: { path: '/novel-world', label: '世界提取' },
 }
 
 function getTypeLabel(type: string) {

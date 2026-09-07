@@ -76,7 +76,23 @@ Live2D 等未手写记录的路径**立即进入事件日志**。
 4. **任务中心与事件日志仍是两套**：自动收口只解决事件日志；任务记录仍需端点显式
    `create_task`，且 task_type 要在 `PERSISTED_TASK_TYPES` 白名单内。
 
-## 五、后续候选
+## 五、补记：任务中心兜底（同日第二轮）
+
+事件日志收口只解决了"审计"那一半，任务中心那一半仍缺。本轮补上：
+
+- 新增 `services/ai/tracking.py` 的 `ai_task(...)` async 上下文：一次完成
+  「建任务 → 记开始 → 完成或失败 → 进度与诊断」，记账失败 best-effort 不打断业务。
+  **不放到 AIService 自动收口**：任务需要业务粒度，chat 之类高频调用自动建任务会冲垮任务中心。
+- `world_map_visual` 登记进 `PERSISTED_TASK_TYPES`，地图成图端点接入 `ai_task`，
+  任务同时带上 `task_id`（事件日志与任务中心可互跳）。
+- `should_persist` 不再静默返回 False：不落库时打日志说明原因（类型未登记 / 缺 project_id），
+  此前表现为"任务凭空消失"且无从排查。
+- 前端任务中心补全类型选项与中文标签（`world_map_visual`、`world_domain_expansion`）、
+  配色与跳转路由（成图 → `/world-map`，域细化 → `/novel-world`）。
+- 新增 `tests/test_ai_task_tracking.py`（4 项）：成功置 done 且带 result、
+  失败置 failed 且异常原样抛出、带 project_id 才落库、白名单规则。
+
+## 六、后续候选
 
 - 清理端点层重复 `record_event`（约 43 处）
 - 视频/3D 的自有 Task 表接入任务中心聚合（`tasks.py:_all_task_infos`）

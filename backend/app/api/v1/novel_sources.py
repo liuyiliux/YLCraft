@@ -14,6 +14,7 @@ import time
 
 from app.services.platform_log import service as platform_log
 from app.services.ai.service import ai_call_context
+from app.services.ai.tracking import ai_task
 
 from fastapi import (
     APIRouter,
@@ -1959,12 +1960,19 @@ async def generate_world_map_visual(
     if not document:
         raise HTTPException(status_code=404, detail="地图文档不存在")
     try:
+        # 任务中心：成图是长耗时操作，建一条任务让进度与失败可见（重启后仍可查）。
         # 事件上下文：AIService 会自动落一条调用事件，带上项目/地图身份便于检索。
-        with ai_call_context(
+        async with ai_task(
+            "world_map_visual",
+            project_id=document.project_id,
+            title="地图视觉成图",
+            payload={"map_id": map_id},
+        ) as task, ai_call_context(
             project_id=document.project_id,
             ref_id=map_id,
             scene="world_map",
             task_type="map_visual",
+            task_id=task["task_id"],
             label="地图视觉成图",
         ):
             generated = await generate_map_visual(
@@ -1981,6 +1989,10 @@ async def generate_world_map_visual(
                 reference_asset_ids=req.reference_asset_ids or [],
                 save_to_asset_hub=req.save_to_asset_hub,
             )
+            task["result"] = {
+                "map_id": map_id,
+                "images": len(generated.get("images") or []) if isinstance(generated, dict) else 0,
+            }
     except RuntimeError as exc:
         status = 503 if "未初始化" in str(exc) else 500 if "未返回图片" in str(exc) else 502
         raise HTTPException(status_code=status, detail=str(exc)) from exc
