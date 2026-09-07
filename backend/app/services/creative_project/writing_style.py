@@ -216,6 +216,107 @@ def parse_style_json(raw: str) -> dict[str, Any]:
     return data
 
 
+# ---------------------------------------------------------------------------
+# 来源材料泄漏检查（OpenSpec 任务 11）
+#
+# 风格档案只许描述"怎么写"，不许带出"写了什么"。这里做三层检查：
+#   1) 来源专名/禁用词污染 → 违规
+#   2) 与来源样本的长片段重合（复述原文）→ 违规
+#   3) 新造示例与来源样本的 n-gram 重合率偏高 → 告警（供审核人判断）
+# 违规不阻止落草稿（便于查看与修正），但**阻止进入审核与激活**——
+# 闸门放在 review/activate，与"确认边界"一致。
+# ---------------------------------------------------------------------------
+
+MATERIAL_NGRAM = 12
+SIMILARITY_NGRAM = 8
+SIMILARITY_WARN_RATIO = 0.12
+
+
+def _profile_texts(profile: dict[str, Any]) -> list[tuple[str, str]]:
+    """列出需要检查来源材料泄漏的（位置, 文本）。"""
+    normalized = canonical_profile_payload(profile)
+    texts: list[tuple[str, str]] = []
+    for name, dimension in (normalized.get("dimensions") or {}).items():
+        texts.append((f"dimensions.{name}.value", str(dimension.get("value") or "")))
+        texts.append(
+            (f"dimensions.{name}.evidence_summary", str(dimension.get("evidence_summary") or ""))
+        )
+    for index, example in enumerate(normalized.get("new_examples") or []):
+        texts.append((f"new_examples[{index}]", str(example)))
+    for index, item in enumerate(normalized.get("anti_template_constraints") or []):
+        texts.append((f"anti_template_constraints[{index}]", str(item)))
+    return [(location, text) for location, text in texts if text.strip()]
+
+
+def _ngrams(text: str, size: int) -> set[str]:
+    cleaned = re.sub(r"\s+", "", str(text or ""))
+    return {cleaned[i : i + size] for i in range(0, max(0, len(cleaned) - size + 1))}
+
+
+def inspect_style_material(
+    profile: dict[str, Any],
+    *,
+    source_terms: list[str] | None = None,
+    source_samples: list[str] | None = None,
+) -> dict[str, Any]:
+    """检查风格档案是否带出来源材料（专名、原句、过高相似）。
+
+    Args:
+        profile: 待检查的档案内容
+        source_terms: 来源专名/禁用词（作品名、作者名、角色名等），出现在档案里即为违规
+        source_samples: 来源样本原文，用于长片段重合与相似度判定
+
+    Returns:
+        ``{"ok": bool, "violations": [...], "warnings": [...]}``。
+        ``ok=False`` 表示存在违规，不得审核或激活。
+    """
+    normalized = canonical_profile_payload(profile)
+    violations: list[dict[str, Any]] = []
+    warnings: list[dict[str, Any]] = []
+    terms = [str(term).strip() for term in (source_terms or []) if str(term).strip()]
+    samples = [str(sample) for sample in (source_samples or []) if str(sample).strip()]
+
+    # 1) 来源专名/禁用词污染
+    for location, text in _profile_texts(normalized):
+        for term in terms:
+            if term and term in text:
+                violations.append({"type": "source_term", "location": location, "term": term})
+
+    # 2) 与来源样本的长片段重合（连续 MATERIAL_NGRAM 字雷同 = 复述原文）
+    long_grams: set[str] = set()
+    for sample in samples:
+        long_grams |= _ngrams(sample, MATERIAL_NGRAM)
+    if long_grams:
+        for location, text in _profile_texts(normalized):
+            for gram in _ngrams(text, MATERIAL_NGRAM):
+                if gram in long_grams:
+                    violations.append(
+                        {"type": "verbatim_overlap", "location": location, "excerpt": gram}
+                    )
+                    break
+
+    # 3) 新造示例与来源样本的相似度（只告警：短句天然会有常用词组重合）
+    short_grams: set[str] = set()
+    for sample in samples:
+        short_grams |= _ngrams(sample, SIMILARITY_NGRAM)
+    if short_grams:
+        for index, example in enumerate(normalized.get("new_examples") or []):
+            grams = _ngrams(example, SIMILARITY_NGRAM)
+            if not grams:
+                continue
+            ratio = len(grams & short_grams) / len(grams)
+            if ratio >= SIMILARITY_WARN_RATIO:
+                warnings.append(
+                    {
+                        "type": "example_similarity",
+                        "location": f"new_examples[{index}]",
+                        "ratio": round(ratio, 3),
+                    }
+                )
+
+    return {"ok": not violations, "violations": violations[:20], "warnings": warnings[:20]}
+
+
 class WritingStyleService:
     def __init__(self, session: Session):
         self.session = session
@@ -287,7 +388,21 @@ class WritingStyleService:
         contract = build_prompt_contract(normalized)
         item.profile_json = _json(normalized)
         item.prompt_contract_json = _json(contract)
+        # 编辑后重算来源材料检查：改内容可能引入专名或原句，闸门要跟着更新。
+        try:
+            stored_provenance = json.loads(item.provenance_json or "{}")
+        except (TypeError, ValueError):
+            stored_provenance = {}
         if provenance is not None:
+            stored_provenance = dict(provenance)
+        if isinstance(stored_provenance, dict) and (
+            stored_provenance.get("source_terms") or stored_provenance.get("material_check")
+        ):
+            stored_provenance["material_check"] = inspect_style_material(
+                normalized, source_terms=list(stored_provenance.get("source_terms") or [])
+            )
+            item.provenance_json = _json(stored_provenance)
+        elif provenance is not None:
             item.provenance_json = _json(provenance)
         item.checksum = profile_checksum(normalized, contract)
         item.version += 1
@@ -298,11 +413,34 @@ class WritingStyleService:
         self.session.refresh(item)
         return item
 
+    def _material_gate(self, item: WritingStyleProfile) -> None:
+        """来源材料闸门：带出原文片段或来源专名的档案不得进入生效链路。"""
+        provenance = json.loads(item.provenance_json or "{}")
+        if not isinstance(provenance, dict):
+            return
+        check = provenance.get("material_check")
+        if not isinstance(check, dict):
+            # 手工创建的档案没有提取检查记录：用留存的来源专名现算一次。
+            terms = provenance.get("source_terms")
+            if not terms:
+                return
+            check = inspect_style_material(
+                json.loads(item.profile_json or "{}"), source_terms=list(terms)
+            )
+        if check.get("ok") is False:
+            found = check.get("violations") or []
+            first = found[0] if found else {}
+            where = str(first.get("location") or "")
+            if first.get("type") == "source_term":
+                raise ValueError(f"风格档案带出来源专名「{first.get('term')}」（{where}），请改写后再审核")
+            raise ValueError(f"风格档案存在与来源原文雷同的片段（{where}），请改写后再审核")
+
     def review(self, profile_id: str) -> WritingStyleProfile:
         item = self._require(profile_id)
         if item.status != WritingStyleProfileStatus.DRAFT.value:
             raise ValueError("只有草稿可以提交审核")
         self._validate_checksum(item)
+        self._material_gate(item)
         contract = json.loads(item.prompt_contract_json or "{}")
         if not contract.get("rules") and not contract.get("new_examples"):
             raise ValueError("风格档案至少需要一个表达规则或新造示例")
@@ -318,6 +456,7 @@ class WritingStyleService:
         if item.status != WritingStyleProfileStatus.REVIEWED.value:
             raise ValueError("风格档案必须先审核后激活")
         self._validate_checksum(item)
+        self._material_gate(item)
         item.status = WritingStyleProfileStatus.ACTIVE.value
         item.updated_at = datetime.now()
         self.session.add(item)
@@ -500,16 +639,25 @@ class WritingStyleService:
                         "measurement_keys": measurement_keys,
                     }
 
+        profile_payload = {
+            "version": 1,
+            "dimensions": dimensions,
+            "new_examples": data.get("new_examples") or [],
+            "anti_template_constraints": data.get("anti_template_constraints") or [],
+            "prohibited_source_material": data.get("prohibited_source_material") or [],
+        }
+        source_terms = [
+            term
+            for term in (str(snapshot.title or "").strip(), str(snapshot.author or "").strip())
+            if term
+        ]
+        material_check = inspect_style_material(
+            profile_payload, source_terms=source_terms, source_samples=samples
+        )
         return self.create_profile(
             name=name or f"{str(snapshot.title or '来源')} 风格草稿",
             description="从来源快照自动提取的表达机制草稿，需审核后激活。",
-            profile={
-                "version": 1,
-                "dimensions": dimensions,
-                "new_examples": data.get("new_examples") or [],
-                "anti_template_constraints": data.get("anti_template_constraints") or [],
-                "prohibited_source_material": data.get("prohibited_source_material") or [],
-            },
+            profile=profile_payload,
             owner_id=owner_id,
             source_type=WritingStyleProfileSourceType.EXTRACTED_FROM_SOURCE.value,
             source_snapshot_id=snapshot_id,
@@ -523,6 +671,9 @@ class WritingStyleService:
                 "provider": provider or "",
                 "model": model or "",
                 "extracted_at": datetime.now().isoformat(timespec="seconds"),
+                # 来源专名留存：后续编辑与审核时用它复核是否带出来源材料。
+                "source_terms": source_terms,
+                "material_check": material_check,
             },
         )
 
