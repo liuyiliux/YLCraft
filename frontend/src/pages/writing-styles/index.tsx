@@ -1,0 +1,515 @@
+/**
+ * 写作风格档案工作台。
+ *
+ * 与后端同一套服务层：提取只出草稿，审核、激活、绑定是分离的步骤，
+ * 每一步都要人工确认——界面刻意不提供"一键生效"。
+ */
+
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  Button,
+  Card,
+  Descriptions,
+  Empty,
+  Form,
+  Input,
+  Modal,
+  Select,
+  Space,
+  Table,
+  Tag,
+  Tabs,
+  Typography,
+  message,
+} from 'antd'
+import { useTheme } from '../../constants/theme'
+import {
+  activateWritingStyleProfile,
+  archiveWritingStyleProfile,
+  exportWritingStyleMarkdown,
+  extractWritingStyleFromSource,
+  getWritingStyleProfile,
+  importWritingStyleMarkdown,
+  listCreativeProjects,
+  listWritingStyleProfiles,
+  reviewProseStyleDeviation,
+  reviewWritingStyleProfile,
+} from '../../api'
+import { listSnapshots } from '../../api/novelSource'
+
+const { Paragraph, Text } = Typography
+
+const STATUS_COLOR: Record<string, string> = {
+  draft: 'default',
+  reviewed: 'blue',
+  active: 'green',
+  archived: 'warning',
+}
+
+const STATUS_LABEL: Record<string, string> = {
+  draft: '草稿',
+  reviewed: '已审核',
+  active: '已激活',
+  archived: '已归档',
+}
+
+interface ProfileRow {
+  id: string
+  name: string
+  status: string
+  source_type: string
+  version: number
+  description?: string
+  source_snapshot_id?: string | null
+  updated_at?: string
+}
+
+function parseList(payload: any): ProfileRow[] {
+  const rows = payload?.data ?? payload?.profiles ?? []
+  return Array.isArray(rows) ? rows : []
+}
+
+export default function WritingStylesPage() {
+  const { theme } = useTheme()
+  const [rows, setRows] = useState<ProfileRow[]>([])
+  const [loading, setLoading] = useState(false)
+  const [statusFilter, setStatusFilter] = useState<string>('')
+  const [detail, setDetail] = useState<any>(null)
+  const [detailOpen, setDetailOpen] = useState(false)
+
+  const [snapshots, setSnapshots] = useState<any[]>([])
+  const [projects, setProjects] = useState<any[]>([])
+  const [extractOpen, setExtractOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
+  const [extractForm] = Form.useForm()
+  const [importForm] = Form.useForm()
+
+  const [deviationText, setDeviationText] = useState('')
+  const [deviationProject, setDeviationProject] = useState<string>('')
+  const [deviation, setDeviation] = useState<any>(null)
+
+  const refresh = useCallback(async () => {
+    setLoading(true)
+    try {
+      const payload = await listWritingStyleProfiles(statusFilter ? { status: statusFilter } : {})
+      setRows(parseList(payload))
+    } catch (error: any) {
+      message.error(error?.message || '加载风格档案失败')
+    } finally {
+      setLoading(false)
+    }
+  }, [statusFilter])
+
+  useEffect(() => {
+    refresh()
+    // 来源快照与项目只在打开弹窗时需要，预先加载一次即可。
+    Promise.all([
+      listSnapshots().catch(() => []),
+      listCreativeProjects({ limit: 100 }).catch(() => ({ data: [] })),
+    ]).then(([snapPayload, projectPayload]: [any, any]) => {
+      setSnapshots(Array.isArray(snapPayload) ? snapPayload : snapPayload?.data || [])
+      setProjects(projectPayload?.data || [])
+    })
+  }, [refresh])
+
+  const openDetail = async (id: string) => {
+    try {
+      const payload = await getWritingStyleProfile(id)
+      setDetail(payload?.data ?? payload)
+      setDetailOpen(true)
+    } catch (error: any) {
+      message.error(error?.message || '读取档案失败')
+    }
+  }
+
+  const runAction = async (id: string, kind: 'review' | 'activate' | 'archive') => {
+    try {
+      if (kind === 'review') await reviewWritingStyleProfile(id)
+      if (kind === 'activate') await activateWritingStyleProfile(id)
+      if (kind === 'archive') await archiveWritingStyleProfile(id)
+      const labels = { review: '已提交审核', activate: '已激活', archive: '已归档' }
+      message.success(labels[kind])
+      refresh()
+      if (detail?.id === id) {
+        const payload = await getWritingStyleProfile(id)
+        setDetail(payload?.data ?? payload)
+      }
+    } catch (error: any) {
+      message.error(error?.message || '操作失败')
+    }
+  }
+
+  const submitExtract = async () => {
+    const values = await extractForm.validateFields()
+    try {
+      const payload = await extractWritingStyleFromSource({
+        snapshot_id: values.snapshot_id,
+        name: values.name || '',
+        provider: values.provider || '',
+        model: values.model || '',
+      })
+      message.success('已生成风格草稿（draft），审核后才能激活')
+      setExtractOpen(false)
+      extractForm.resetFields()
+      refresh()
+      const created = payload?.data ?? payload
+      if (created?.id) openDetail(created.id)
+    } catch (error: any) {
+      message.error(error?.message || '提取失败')
+    }
+  }
+
+  const submitImport = async () => {
+    const values = await importForm.validateFields()
+    try {
+      const payload = await importWritingStyleMarkdown({
+        markdown: values.markdown,
+        name: values.name || '',
+        source_terms: (values.source_terms || '').split(/[、,，]/).map((t: string) => t.trim()).filter(Boolean),
+      })
+      message.success('已导入为草稿（draft），审核后才能激活')
+      setImportOpen(false)
+      importForm.resetFields()
+      refresh()
+      const created = payload?.data ?? payload
+      if (created?.id) openDetail(created.id)
+    } catch (error: any) {
+      message.error(error?.message || '导入失败')
+    }
+  }
+
+  const exportMarkdown = async (id: string) => {
+    try {
+      const payload = await exportWritingStyleMarkdown(id)
+      const markdown = payload?.markdown ?? ''
+      await navigator.clipboard?.writeText(markdown)
+      message.success('Markdown 已复制到剪贴板')
+    } catch (error: any) {
+      message.error(error?.message || '导出失败')
+    }
+  }
+
+  const runDeviation = async () => {
+    if (!deviationProject || !deviationText.trim()) {
+      message.warning('请选择项目并粘贴要审阅的正文')
+      return
+    }
+    try {
+      const payload = await reviewProseStyleDeviation({
+        project_id: deviationProject,
+        text: deviationText,
+      })
+      setDeviation(payload)
+    } catch (error: any) {
+      message.error(error?.message || '审阅失败')
+    }
+  }
+
+  const columns = useMemo(
+    () => [
+      { title: '名称', dataIndex: 'name', key: 'name' },
+      {
+        title: '状态',
+        dataIndex: 'status',
+        key: 'status',
+        width: 100,
+        render: (status: string) => (
+          <Tag color={STATUS_COLOR[status] || 'default'}>{STATUS_LABEL[status] || status}</Tag>
+        ),
+      },
+      { title: '来源类型', dataIndex: 'source_type', key: 'source_type', width: 160 },
+      { title: '版本', dataIndex: 'version', key: 'version', width: 70 },
+      {
+        title: '操作',
+        key: 'actions',
+        width: 300,
+        render: (_: any, row: ProfileRow) => (
+          <Space size="small" wrap>
+            <Button size="small" onClick={() => openDetail(row.id)}>
+              详情
+            </Button>
+            <Button
+              size="small"
+              disabled={row.status !== 'draft'}
+              onClick={() => runAction(row.id, 'review')}
+            >
+              审核
+            </Button>
+            <Button
+              size="small"
+              type="primary"
+              disabled={row.status !== 'reviewed'}
+              onClick={() => runAction(row.id, 'activate')}
+            >
+              激活
+            </Button>
+            <Button size="small" onClick={() => exportMarkdown(row.id)}>
+              导出
+            </Button>
+          </Space>
+        ),
+      },
+    ],
+    [detail]
+  )
+
+  return (
+    <div style={{ padding: 24, color: theme.textPrimary }}>
+      <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+        <Card
+          title="写作风格档案"
+          extra={
+            <Space wrap>
+              <Select
+                allowClear
+                placeholder="状态筛选"
+                style={{ width: 140 }}
+                value={statusFilter || undefined}
+                onChange={(value) => setStatusFilter(value || '')}
+                options={[
+                  { label: '草稿', value: 'draft' },
+                  { label: '已审核', value: 'reviewed' },
+                  { label: '已激活', value: 'active' },
+                  { label: '已归档', value: 'archived' },
+                ]}
+              />
+              <Button onClick={refresh}>刷新</Button>
+              <Button onClick={() => setImportOpen(true)}>导入 Markdown</Button>
+              <Button type="primary" onClick={() => setExtractOpen(true)}>
+                从来源提取
+              </Button>
+            </Space>
+          }
+        >
+          <Text type="secondary">
+            风格只描述“怎么写”的抽象表达机制，不承载剧情与设定。提取出来的恒为草稿，
+            必须审核、激活后再绑定到项目才会影响写作。
+          </Text>
+          <Table
+            style={{ marginTop: 12 }}
+            rowKey="id"
+            size="small"
+            loading={loading}
+            dataSource={rows}
+            columns={columns}
+            locale={{ emptyText: <Empty description="还没有风格档案，先从来源提取或导入 Markdown" /> }}
+          />
+        </Card>
+
+        <Card title="正文偏差审阅（只报告，不改正文）">
+          <Space direction="vertical" style={{ width: '100%' }} size="middle">
+            <Space wrap>
+              <Select
+                placeholder="选择项目"
+                style={{ width: 240 }}
+                value={deviationProject || undefined}
+                onChange={setDeviationProject}
+                options={projects.map((item: any) => ({ label: item.title || item.id, value: item.id }))}
+              />
+              <Button onClick={runDeviation}>审阅偏差</Button>
+            </Space>
+            <Input.TextArea
+              rows={4}
+              value={deviationText}
+              onChange={(e) => setDeviationText(e.target.value)}
+              placeholder="粘贴要审阅的正文"
+            />
+            {deviation && (
+              <div>
+                {deviation.bound === false ? (
+                  <Text type="secondary">{deviation.message || '该项目没有已激活的风格档案'}</Text>
+                ) : (
+                  (deviation.reports || []).map((report: any) => (
+                    <Card key={report.profile_id} size="small" style={{ marginBottom: 8 }}>
+                      <Descriptions size="small" column={1} title={report.profile_name}>
+                        {report.metrics?.map((metric: any) => (
+                          <Descriptions.Item
+                            key={metric.metric}
+                            label={`${metric.metric}${
+                              metric.severity === 'unknown' ? '' : `（${metric.severity}）`
+                            }`}
+                          >
+                            实测 {metric.actual}
+                            {metric.expected ? ` / 基线 ${metric.expected}` : ' / 无基线'}
+                            {metric.deviation_ratio !== null &&
+                            metric.deviation_ratio !== undefined
+                              ? ` · 偏差 ${metric.deviation_ratio}`
+                              : ''}
+                          </Descriptions.Item>
+                        ))}
+                      </Descriptions>
+                      {report.constraints?.length > 0 && (
+                        <Paragraph style={{ marginBottom: 0 }}>
+                          <Text type="secondary">需人工核对的约束：</Text>
+                          {report.constraints.join('；')}
+                        </Paragraph>
+                      )}
+                    </Card>
+                  ))
+                )}
+              </div>
+            )}
+          </Space>
+        </Card>
+      </Space>
+
+      <Modal
+        title="从来源快照提取风格草稿"
+        open={extractOpen}
+        onCancel={() => setExtractOpen(false)}
+        onOk={submitExtract}
+        okText="提取（产出草稿）"
+      >
+        <Form form={extractForm} layout="vertical">
+          <Form.Item
+            name="snapshot_id"
+            label="来源快照"
+            rules={[{ required: true, message: '请选择来源快照' }]}
+          >
+            <Select
+              placeholder="选择已导入的小说来源"
+              options={snapshots.map((item: any) => ({
+                label: `${item.title || '未命名'}（${item.source_kind || 'txt'} · ${item.chapter_count || 0} 章）`,
+                value: item.id,
+              }))}
+            />
+          </Form.Item>
+          <Form.Item name="name" label="档案名称">
+            <Input placeholder="留空则按来源标题自动生成" />
+          </Form.Item>
+          <Space>
+            <Form.Item name="provider" label="Provider">
+              <Input placeholder="可选" style={{ width: 160 }} />
+            </Form.Item>
+            <Form.Item name="model" label="模型">
+              <Input placeholder="可选" style={{ width: 200 }} />
+            </Form.Item>
+          </Space>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="导入 Markdown Skill 草稿"
+        open={importOpen}
+        onCancel={() => setImportOpen(false)}
+        onOk={submitImport}
+        okText="导入（产出草稿）"
+        width={720}
+      >
+        <Form form={importForm} layout="vertical">
+          <Form.Item name="name" label="档案名称">
+            <Input placeholder="留空则用 Markdown 中的 name" />
+          </Form.Item>
+          <Form.Item name="source_terms" label="来源专名（用于污染检查，顿号分隔）">
+            <Input placeholder="如：活着、余华" />
+          </Form.Item>
+          <Form.Item
+            name="markdown"
+            label="Markdown 内容"
+            rules={[{ required: true, message: '请粘贴 Markdown' }]}
+          >
+            <Input.TextArea rows={10} placeholder="粘贴风格档案 Markdown" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="风格档案详情"
+        open={detailOpen}
+        onCancel={() => setDetailOpen(false)}
+        footer={[
+          <Button key="close" onClick={() => setDetailOpen(false)}>
+            关闭
+          </Button>,
+          <Button
+            key="archive"
+            disabled={detail?.status === 'archived'}
+            onClick={() => detail && runAction(detail.id, 'archive')}
+          >
+            归档
+          </Button>,
+        ]}
+        width={860}
+      >
+        {detail && <ProfileDetail profile={detail} />}
+      </Modal>
+    </div>
+  )
+}
+
+function ProfileDetail({ profile }: { profile: any }) {
+  const dimensions = profile.profile?.dimensions || profile.dimensions || {}
+  const provenance = profile.provenance || {}
+  const check = provenance.material_check
+  const items = [
+    {
+      key: 'dimensions',
+      label: `表达机制（${Object.keys(dimensions).length}）`,
+      children: (
+        <Space direction="vertical" style={{ width: '100%' }}>
+          {Object.entries(dimensions).map(([name, value]: [string, any]) => (
+            <Card key={name} size="small" title={name}>
+              <div>{value.value || '-'}</div>
+              {value.evidence_summary && (
+                <Text type="secondary">依据：{value.evidence_summary}</Text>
+              )}
+              {value.confidence ? (
+                <div>
+                  <Text type="secondary">置信度：{value.confidence}</Text>
+                </div>
+              ) : null}
+            </Card>
+          ))}
+          {Object.keys(dimensions).length === 0 && <Text type="secondary">暂无维度</Text>}
+        </Space>
+      ),
+    },
+    {
+      key: 'constraints',
+      label: '约束与示例',
+      children: (
+        <Space direction="vertical" style={{ width: '100%' }}>
+          <div>
+            <Text strong>新造示例：</Text>
+            {(profile.profile?.new_examples || []).join(' / ') || '-'}
+          </div>
+          <div>
+            <Text strong>反模板约束：</Text>
+            {(profile.profile?.anti_template_constraints || []).join(' / ') || '-'}
+          </div>
+          <div>
+            <Text strong>禁止带出的来源特征：</Text>
+            {(profile.profile?.prohibited_source_material || []).join(' / ') || '-'}
+          </div>
+        </Space>
+      ),
+    },
+    {
+      key: 'provenance',
+      label: '溯源与检查',
+      children: (
+        <Descriptions size="small" column={1}>
+          <Descriptions.Item label="状态">{STATUS_LABEL[profile.status] || profile.status}</Descriptions.Item>
+          <Descriptions.Item label="来源类型">{profile.source_type}</Descriptions.Item>
+          <Descriptions.Item label="来源快照">{profile.source_snapshot_id || '-'}</Descriptions.Item>
+          <Descriptions.Item label="样本字数">{provenance.sample_chars ?? '-'}</Descriptions.Item>
+          <Descriptions.Item label="材料检查">
+            {check ? (
+              check.ok ? (
+                <Tag color="green">无来源材料泄漏</Tag>
+              ) : (
+                <Tag color="red">存在违规，需改写后才能审核</Tag>
+              )
+            ) : (
+              '-'
+            )}
+          </Descriptions.Item>
+          <Descriptions.Item label="校验和">
+            <Text code>{profile.checksum}</Text>
+          </Descriptions.Item>
+        </Descriptions>
+      ),
+    },
+  ]
+  return <Tabs items={items} />
+}

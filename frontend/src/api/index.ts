@@ -804,6 +804,63 @@ export const listRuntimeLogs = (params: Record<string, any> = {}) => {
   return request(`/logs/runtime${query ? `?${query}` : ''}`)
 }
 
+// ===== Writing style profiles =====
+
+/** 列出写作风格档案（status 可选 draft/reviewed/active/archived）。 */
+export const listWritingStyleProfiles = (params: { owner_id?: string; status?: string } = {}) => {
+  const qs = new URLSearchParams()
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '') qs.set(k, String(v))
+  })
+  const query = qs.toString()
+  return request(`/writing-styles${query ? `?${query}` : ''}`)
+}
+
+export const getWritingStyleProfile = (id: string) => request(`/writing-styles/${id}`)
+
+export const reviewWritingStyleProfile = (id: string) =>
+  request(`/writing-styles/${id}/review`, { method: 'POST' })
+
+export const activateWritingStyleProfile = (id: string) =>
+  request(`/writing-styles/${id}/activate`, { method: 'POST' })
+
+export const archiveWritingStyleProfile = (id: string) =>
+  request(`/writing-styles/${id}/archive`, { method: 'POST' })
+
+/** 从来源快照提取风格草稿（恒为 draft，不自动激活）。 */
+export const extractWritingStyleFromSource = (payload: {
+  snapshot_id: string
+  name?: string
+  owner_id?: string
+  provider?: string
+  model?: string
+}) => request('/writing-styles/extract-from-source', {
+  method: 'POST',
+  body: JSON.stringify(payload),
+})
+
+export const exportWritingStyleMarkdown = (id: string) => request(`/writing-styles/${id}/export`)
+
+export const importWritingStyleMarkdown = (payload: {
+  markdown: string
+  name?: string
+  owner_id?: string
+  source_terms?: string[]
+}) => request('/writing-styles/import', {
+  method: 'POST',
+  body: JSON.stringify(payload),
+})
+
+/** 审阅正文与已激活风格档案的偏差（只报告，不改正文）。 */
+export const reviewProseStyleDeviation = (payload: {
+  project_id: string
+  text: string
+  stage?: string
+}) => request('/writing-styles/review-deviation', {
+  method: 'POST',
+  body: JSON.stringify(payload),
+})
+
 // ===== Settings =====
 
 export const getSettings = () => request('/settings')

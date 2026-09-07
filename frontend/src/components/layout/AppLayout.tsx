@@ -24,6 +24,7 @@ import {
   VideoCameraOutlined,
   TeamOutlined,
   SafetyCertificateOutlined,
+  FontSizeOutlined,
 } from '@ant-design/icons'
 
 const { Content, Header } = Layout
@@ -64,6 +65,7 @@ const menuItems: MenuProps['items'] = [
     children: [
       { key: '/novel-world', icon: <FireOutlined />, label: navLabel('小说世界提取', '实验') },
       { key: '/world-map', icon: <EnvironmentOutlined />, label: navLabel('世界地图', '辅助') },
+      { key: '/writing-styles', icon: <FontSizeOutlined />, label: navLabel('写作风格', '实验') },
     ],
   },
   { type: 'divider' as const },

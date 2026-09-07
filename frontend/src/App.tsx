@@ -36,6 +36,7 @@ import NovelReaderPage from './pages/novel-reader'
 import NovelBookshelfPage from './pages/novel-bookshelf'
 import NovelWorldPage from './pages/novel-world'
 import WorldMapPage from './pages/world-map'
+import WritingStylesPage from './pages/writing-styles'
 import BookSourcePage from './pages/book-source'
 import PlatformTemplatesPage from './pages/platform-templates'
 import PromptLibraryPage from './pages/prompt-library'
@@ -103,6 +104,7 @@ export default function App() {
               <Route path="novel-search" element={<NovelSearchPage />} />
               <Route path="novel-bookshelf" element={<NovelBookshelfPage />} />
               <Route path="novel-world" element={<NovelWorldPage />} />
+              <Route path="writing-styles" element={<WritingStylesPage />} />
               <Route path="world-map" element={<WorldMapPage />} />
               <Route path="novel-reader/:id" element={<NovelReaderPage />} />
               <Route path="reader" element={<ReaderPage />} />
