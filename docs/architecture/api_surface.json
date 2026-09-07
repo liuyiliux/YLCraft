@@ -97,6 +97,14 @@
       ]
     },
     {
+      "name": "writing_styles",
+      "file": "backend/app/api/v1/writing_styles.py",
+      "prefix": "/api/v1/writing-styles",
+      "tags": [
+        "Writing Styles"
+      ]
+    },
+    {
       "name": "creative_fanqie",
       "file": "backend/app/api/v1/creative_fanqie.py",
       "prefix": "/api/v1/creative-projects",
@@ -1758,7 +1766,7 @@
       "summary": "子节点列表",
       "function": "list_node_children",
       "file": "backend/app/api/v1/asset_hub.py",
-      "line": 353,
+      "line": 357,
       "response_model": "AssetNodeListResponse",
       "include_in_schema": true
     },
@@ -1774,7 +1782,7 @@
       "summary": "批量添加标签",
       "function": "add_node_tags",
       "file": "backend/app/api/v1/asset_hub.py",
-      "line": 367,
+      "line": 371,
       "response_model": "Dict[str, Any]",
       "include_in_schema": true
     },
@@ -1790,7 +1798,7 @@
       "summary": "资产版本列表",
       "function": "list_versions",
       "file": "backend/app/api/v1/asset_hub.py",
-      "line": 390,
+      "line": 394,
       "response_model": "AssetVersionListResponse",
       "include_in_schema": true
     },
@@ -1806,7 +1814,7 @@
       "summary": "创建资产版本",
       "function": "create_version",
       "file": "backend/app/api/v1/asset_hub.py",
-      "line": 414,
+      "line": 418,
       "response_model": "Dict[str, Any]",
       "include_in_schema": true
     },
@@ -1822,7 +1830,7 @@
       "summary": "删除文件表示",
       "function": "delete_representation",
       "file": "backend/app/api/v1/asset_hub.py",
-      "line": 522,
+      "line": 526,
       "response_model": "Dict[str, Any]",
       "include_in_schema": true
     },
@@ -1838,7 +1846,7 @@
       "summary": "初始化默认标签树",
       "function": "seed_default_tags",
       "file": "backend/app/api/v1/asset_hub.py",
-      "line": 578,
+      "line": 582,
       "response_model": "Dict[str, Any]",
       "include_in_schema": true
     },
@@ -1854,7 +1862,7 @@
       "summary": "按类型统计",
       "function": "get_type_counts",
       "file": "backend/app/api/v1/asset_hub.py",
-      "line": 537,
+      "line": 541,
       "response_model": "AssetTypeStatsResponse",
       "include_in_schema": true
     },
@@ -1886,7 +1894,7 @@
       "summary": "版本详情",
       "function": "get_version",
       "file": "backend/app/api/v1/asset_hub.py",
-      "line": 439,
+      "line": 443,
       "response_model": "Dict[str, Any]",
       "include_in_schema": true
     },
@@ -1902,7 +1910,7 @@
       "summary": "删除版本",
       "function": "delete_version",
       "file": "backend/app/api/v1/asset_hub.py",
-      "line": 454,
+      "line": 458,
       "response_model": "Dict[str, Any]",
       "include_in_schema": true
     },
@@ -1918,7 +1926,7 @@
       "summary": "版本文件列表",
       "function": "list_representations",
       "file": "backend/app/api/v1/asset_hub.py",
-      "line": 477,
+      "line": 481,
       "response_model": "AssetRepresentationListResponse",
       "include_in_schema": true
     },
@@ -1934,7 +1942,7 @@
       "summary": "创建文件表示",
       "function": "create_representation",
       "file": "backend/app/api/v1/asset_hub.py",
-      "line": 494,
+      "line": 498,
       "response_model": "Dict[str, Any]",
       "include_in_schema": true
     },
@@ -4958,7 +4966,7 @@
       "summary": "从来源快照创建世界项目",
       "function": "create_project_from_novel_source",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 821,
+      "line": 880,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5982,7 +5990,7 @@
       "summary": "从项目内容启动世界提取",
       "function": "start_project_world_extraction",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 855,
+      "line": 914,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5998,7 +6006,7 @@
       "summary": "聚合项目世界知识",
       "function": "get_project_world_knowledge",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 943,
+      "line": 1061,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8174,7 +8182,7 @@
       "summary": "列出来源快照",
       "function": "list_snapshots",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 532,
+      "line": 555,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8190,7 +8198,7 @@
       "summary": "列出可检测的世界模块",
       "function": "list_domains",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 543,
+      "line": 566,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8206,7 +8214,7 @@
       "summary": "导入书架章节为来源快照",
       "function": "import_bookshelf",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 512,
+      "line": 535,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8222,7 +8230,7 @@
       "summary": "导入本地 TXT 为来源快照",
       "function": "import_txt",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 475,
+      "line": 498,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8238,7 +8246,7 @@
       "summary": "获取来源快照详情",
       "function": "get_snapshot",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 558,
+      "line": 581,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8254,7 +8262,7 @@
       "summary": "列出快照章节",
       "function": "list_chapters",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 563,
+      "line": 586,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8270,7 +8278,7 @@
       "summary": "列出快照文本块",
       "function": "list_chunks",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 574,
+      "line": 597,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8286,7 +8294,7 @@
       "summary": "为小说文本块建立向量索引",
       "function": "index_chunks",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 590,
+      "line": 613,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8302,7 +8310,7 @@
       "summary": "混合检索小说文本块",
       "function": "search_chunks",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 618,
+      "line": 641,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8318,7 +8326,7 @@
       "summary": "从完本来源创建派生项目",
       "function": "derive_project",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 685,
+      "line": 744,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8334,7 +8342,7 @@
       "summary": "按模块提取世界候选",
       "function": "extract_world",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 659,
+      "line": 718,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8350,7 +8358,7 @@
       "summary": "逐模块判断世界设定是否存在",
       "function": "plan_domains",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 636,
+      "line": 659,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8366,7 +8374,7 @@
       "summary": "连载来源追加新章节",
       "function": "sync_chapters",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 709,
+      "line": 768,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8830,7 +8838,7 @@
       "summary": "列出项目世界模块（内置 + 项目扩展）",
       "function": "list_project_world_domains",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1416,
+      "line": 1674,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8846,7 +8854,7 @@
       "summary": "新增或更新项目世界模块定义",
       "function": "upsert_project_world_domain",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1431,
+      "line": 1689,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8862,7 +8870,7 @@
       "summary": "重置项目世界模块定义（内置恢复默认，自定义移除）",
       "function": "reset_project_world_domain",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1462,
+      "line": 1720,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8878,7 +8886,7 @@
       "summary": "列出项目类型化世界实体",
       "function": "list_project_world_entities",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 917,
+      "line": 1035,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8894,7 +8902,7 @@
       "summary": "列出项目类型化实体关系",
       "function": "list_project_world_entity_relations",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 932,
+      "line": 1050,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8910,7 +8918,7 @@
       "summary": "AI 域级细化（异步，接入既有任务中心）",
       "function": "expand_domain_attributes",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1292,
+      "line": 1490,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8926,7 +8934,7 @@
       "summary": "AI 补充实体属性（产出 ai_draft 候选，需确认后写入）",
       "function": "expand_entity_attributes",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1336,
+      "line": 1534,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8942,7 +8950,7 @@
       "summary": "预览实体属性补充的提示词（不调用模型）",
       "function": "preview_entity_expansion",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1226,
+      "line": 1380,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8958,7 +8966,7 @@
       "summary": "列出待确认的 AI 结构建议（模块 + 字段）",
       "function": "list_world_building_suggestions",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1366,
+      "line": 1624,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8974,7 +8982,7 @@
       "summary": "确认字段建议（写入模块属性契约）",
       "function": "confirm_suggested_field",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1384,
+      "line": 1642,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8990,7 +8998,7 @@
       "summary": "忽略字段建议（不再重复提示）",
       "function": "ignore_suggested_field",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1400,
+      "line": 1658,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9003,10 +9011,10 @@
       "tags": [
         "Novel Sources"
       ],
-      "summary": "从地点实体生成地图初稿（按 place 的 region 属性自动建区域并归类，已有据点按 region 补齐归属；落版本快照）",
+      "summary": "从地点实体生成地图初稿",
       "function": "create_world_map_from_project_places",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1492,
+      "line": 1750,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9022,7 +9030,7 @@
       "summary": "列出世界构建模板（内置种子 + 项目私有）",
       "function": "list_world_templates",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1144,
+      "line": 1262,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9038,7 +9046,7 @@
       "summary": "新建或更新世界构建模板",
       "function": "upsert_world_template",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1155,
+      "line": 1273,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9054,7 +9062,7 @@
       "summary": "AI 起草世界构建模板草案（不落库，确认后再保存）",
       "function": "draft_world_template",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1200,
+      "line": 1318,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9070,7 +9078,7 @@
       "summary": "删除项目私有模板（内置模板不可删）",
       "function": "delete_world_template",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1178,
+      "line": 1296,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10526,7 +10534,7 @@
       "summary": "获取提取运行状态",
       "function": "get_run",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 723,
+      "line": 782,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10542,7 +10550,7 @@
       "summary": "把合并/矛盾结论传播到已写事实",
       "function": "propagate_affected_facts",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 769,
+      "line": 828,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10558,7 +10566,7 @@
       "summary": "确认候选并写入项目",
       "function": "apply_run",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 803,
+      "line": 862,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10574,7 +10582,7 @@
       "summary": "预览提取候选与证据",
       "function": "list_candidates",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 728,
+      "line": 787,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10590,7 +10598,7 @@
       "summary": "标记候选为接受或忽略",
       "function": "decide_candidates",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 788,
+      "line": 847,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10606,7 +10614,7 @@
       "summary": "判断重复候选是否同一实体或矛盾",
       "function": "detect_contradictions",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 752,
+      "line": 811,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10622,7 +10630,7 @@
       "summary": "跨域调和候选提示",
       "function": "reconcile_run",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 742,
+      "line": 801,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10638,7 +10646,7 @@
       "summary": "列出世界地图文档",
       "function": "list_world_maps",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1470,
+      "line": 1728,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10654,7 +10662,7 @@
       "summary": "创建世界地图文档",
       "function": "create_world_map",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1481,
+      "line": 1739,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10670,7 +10678,7 @@
       "summary": "获取世界地图文档",
       "function": "get_world_map",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1508,
+      "line": 1766,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10686,7 +10694,7 @@
       "summary": "保存世界地图（revision CAS）",
       "function": "update_world_map",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1516,
+      "line": 1774,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10702,7 +10710,7 @@
       "summary": "删除世界地图文档",
       "function": "delete_world_map",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1710,
+      "line": 2003,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10718,7 +10726,7 @@
       "summary": "解析地图据点关联的实体与证据",
       "function": "resolve_world_map_entities",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1579,
+      "line": 1846,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10734,7 +10742,7 @@
       "summary": "导出世界地图（结构化点位 JSON / SVG）",
       "function": "export_world_map",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1597,
+      "line": 1864,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10750,7 +10758,7 @@
       "summary": "用生图模型生成地图视觉成图",
       "function": "generate_world_map_visual",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1674,
+      "line": 1948,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10766,7 +10774,7 @@
       "summary": "AI 优化地图生图提示词（只改写，不生成图）",
       "function": "optimize_world_map_visual_prompt",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1639,
+      "line": 1906,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10782,7 +10790,7 @@
       "summary": "预览地图生图提示词",
       "function": "preview_world_map_visual_prompt",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1620,
+      "line": 1887,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10798,7 +10806,7 @@
       "summary": "生成区域形状语义参数（预览，不落库）",
       "function": "generate_region_shape",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1535,
+      "line": 1793,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10814,7 +10822,7 @@
       "summary": "渲染世界地图为 SVG",
       "function": "render_world_map",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1565,
+      "line": 1832,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10830,7 +10838,7 @@
       "summary": "地图版本历史列表",
       "function": "list_world_map_revisions",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1734,
+      "line": 2027,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10846,7 +10854,7 @@
       "summary": "读取指定版本快照",
       "function": "get_world_map_revision",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1752,
+      "line": 2045,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10862,7 +10870,183 @@
       "summary": "回滚地图到指定版本（append-only：产生新 revision）",
       "function": "rollback_world_map",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1772,
+      "line": 2065,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/writing-styles",
+      "router": "writing_styles",
+      "prefix": "/api/v1/writing-styles",
+      "local_path": "",
+      "tags": [
+        "Writing Styles"
+      ],
+      "summary": "列出写作风格档案",
+      "function": "list_style_profiles",
+      "file": "backend/app/api/v1/writing_styles.py",
+      "line": 57,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/writing-styles",
+      "router": "writing_styles",
+      "prefix": "/api/v1/writing-styles",
+      "local_path": "",
+      "tags": [
+        "Writing Styles"
+      ],
+      "summary": "创建写作风格档案草稿",
+      "function": "create_style_profile",
+      "file": "backend/app/api/v1/writing_styles.py",
+      "line": 69,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/writing-styles/extract-from-source",
+      "router": "writing_styles",
+      "prefix": "/api/v1/writing-styles",
+      "local_path": "/extract-from-source",
+      "tags": [
+        "Writing Styles"
+      ],
+      "summary": "从来源快照提取风格档案草稿（只出 draft，不自动激活）",
+      "function": "extract_style_from_source",
+      "file": "backend/app/api/v1/writing_styles.py",
+      "line": 151,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/writing-styles/projects/{project_id}",
+      "router": "writing_styles",
+      "prefix": "/api/v1/writing-styles",
+      "local_path": "/projects/{project_id}",
+      "tags": [
+        "Writing Styles"
+      ],
+      "summary": "获取项目绑定的写作风格",
+      "function": "list_project_style_profiles",
+      "file": "backend/app/api/v1/writing_styles.py",
+      "line": 78,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/writing-styles/projects/{project_id}",
+      "router": "writing_styles",
+      "prefix": "/api/v1/writing-styles",
+      "local_path": "/projects/{project_id}",
+      "tags": [
+        "Writing Styles"
+      ],
+      "summary": "绑定写作风格到项目",
+      "function": "bind_project_style",
+      "file": "backend/app/api/v1/writing_styles.py",
+      "line": 86,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/writing-styles/projects/{project_id}/{profile_id}",
+      "router": "writing_styles",
+      "prefix": "/api/v1/writing-styles",
+      "local_path": "/projects/{project_id}/{profile_id}",
+      "tags": [
+        "Writing Styles"
+      ],
+      "summary": "解绑项目写作风格",
+      "function": "unbind_project_style",
+      "file": "backend/app/api/v1/writing_styles.py",
+      "line": 95,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/writing-styles/{profile_id}",
+      "router": "writing_styles",
+      "prefix": "/api/v1/writing-styles",
+      "local_path": "/{profile_id}",
+      "tags": [
+        "Writing Styles"
+      ],
+      "summary": "获取写作风格档案",
+      "function": "get_style_profile",
+      "file": "backend/app/api/v1/writing_styles.py",
+      "line": 101,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/writing-styles/{profile_id}",
+      "router": "writing_styles",
+      "prefix": "/api/v1/writing-styles",
+      "local_path": "/{profile_id}",
+      "tags": [
+        "Writing Styles"
+      ],
+      "summary": "编辑写作风格档案草稿",
+      "function": "update_style_profile",
+      "file": "backend/app/api/v1/writing_styles.py",
+      "line": 109,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/writing-styles/{profile_id}/activate",
+      "router": "writing_styles",
+      "prefix": "/api/v1/writing-styles",
+      "local_path": "/{profile_id}/activate",
+      "tags": [
+        "Writing Styles"
+      ],
+      "summary": "激活写作风格档案",
+      "function": "activate_style_profile",
+      "file": "backend/app/api/v1/writing_styles.py",
+      "line": 126,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/writing-styles/{profile_id}/archive",
+      "router": "writing_styles",
+      "prefix": "/api/v1/writing-styles",
+      "local_path": "/{profile_id}/archive",
+      "tags": [
+        "Writing Styles"
+      ],
+      "summary": "归档写作风格档案",
+      "function": "archive_style_profile",
+      "file": "backend/app/api/v1/writing_styles.py",
+      "line": 134,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/writing-styles/{profile_id}/review",
+      "router": "writing_styles",
+      "prefix": "/api/v1/writing-styles",
+      "local_path": "/{profile_id}/review",
+      "tags": [
+        "Writing Styles"
+      ],
+      "summary": "审核写作风格档案",
+      "function": "review_style_profile",
+      "file": "backend/app/api/v1/writing_styles.py",
+      "line": 118,
       "response_model": "",
       "include_in_schema": true
     },

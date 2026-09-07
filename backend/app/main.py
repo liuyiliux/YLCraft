@@ -256,6 +256,12 @@ def _register_routes():
     except Exception as e:
         logger.warning(f"Could not load creative_projects router: {e}")
 
+    try:
+        from app.api.v1 import writing_styles
+        app.include_router(writing_styles.router, prefix="/api/v1/writing-styles", tags=["Writing Styles"])
+    except Exception as e:
+        logger.warning(f"Could not load writing_styles router: {e}")
+
     # 创作项目 → 番茄小说 发布路由（异步，与 creative-projects 同前缀）
     try:
         from app.api.v1 import creative_fanqie

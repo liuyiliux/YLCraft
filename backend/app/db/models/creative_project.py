@@ -481,6 +481,76 @@ class ProjectStyleMeasurement(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.now)
 
 
+class WritingStyleProfileStatus(str, Enum):
+    DRAFT = "draft"
+    REVIEWED = "reviewed"
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+
+
+class WritingStyleProfileSourceType(str, Enum):
+    USER_DEFINED = "user_defined"
+    EXTRACTED_FROM_SOURCE = "extracted_from_source"
+    AGENT_DRAFT = "agent_draft"
+    BUILTIN = "builtin"
+
+
+class ProjectWritingStyleLink(SQLModel, table=True):
+    """项目当前使用的写作风格档案绑定。
+
+    风格绑定属于运行时选择，不会把风格内容复制进项目正典或正文。
+    """
+
+    __tablename__ = "project_writing_style_links"
+    __table_args__ = (
+        Index("ux_project_writing_style_link", "project_id", "style_profile_id", unique=True),
+        Index("ix_project_writing_style_link_runtime", "project_id", "enabled", "priority"),
+    )
+
+    id: str = Field(primary_key=True, default_factory=lambda: uuid.uuid4().hex)
+    project_id: str = Field(foreign_key="creative_projects.id", index=True)
+    style_profile_id: str = Field(foreign_key="writing_style_profiles.id", index=True)
+    enabled: bool = Field(default=True, index=True)
+    priority: int = Field(default=100, index=True)
+    intensity: str = Field(default="balanced", index=True)
+    stage_scope_json: str = Field(default="[]")
+    dimension_overrides_json: str = Field(default="{}")
+    created_at: datetime = Field(default_factory=datetime.now, index=True)
+    updated_at: datetime = Field(default_factory=datetime.now)
+
+
+class WritingStyleProfile(SQLModel, table=True):
+    """可复用、可审计的抽象写作风格档案。
+
+    只保存表达机制和新造示例，不保存来源小说正文、剧情、角色或世界设定。
+    """
+
+    __tablename__ = "writing_style_profiles"
+    __table_args__ = (
+        Index("ix_writing_style_profiles_owner_status", "owner_id", "status"),
+        Index("ix_writing_style_profiles_source", "source_snapshot_id", "source_sample_hash"),
+    )
+
+    id: str = Field(primary_key=True, default_factory=lambda: uuid.uuid4().hex)
+    owner_id: str = Field(default="default", index=True)
+    name: str = Field(default="", index=True)
+    description: str = Field(default="")
+    source_type: str = Field(default=WritingStyleProfileSourceType.USER_DEFINED.value, index=True)
+    source_snapshot_id: str | None = Field(default=None, index=True)
+    source_sample_hash: str = Field(default="", index=True)
+    status: str = Field(default=WritingStyleProfileStatus.DRAFT.value, index=True)
+    version: int = Field(default=1, index=True)
+    profile_json: str = Field(default="{}")
+    prompt_contract_json: str = Field(default="{}")
+    provenance_json: str = Field(default="{}")
+    checksum: str = Field(default="", index=True)
+    created_at: datetime = Field(default_factory=datetime.now, index=True)
+    updated_at: datetime = Field(default_factory=datetime.now)
+
+    class Config:
+        use_enum_values = True
+
+
 class ProjectStateEntry(SQLModel, table=True):
     """Append-only dynamic-state ledger entry for a creative project.
 
