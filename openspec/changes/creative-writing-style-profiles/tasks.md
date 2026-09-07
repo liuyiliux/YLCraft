@@ -18,7 +18,7 @@
 
 ## Phase 3: Quality and safeguards
 
-- [ ] 11. Add similarity/prohibited-material checks and source-name contamination checks.
+- [x] 11. Add similarity/prohibited-material checks and source-name contamination checks.（`inspect_style_material` 三层检查：来源专名/禁用词污染、与来源样本连续 12 字重合（复述原文）→ 违规；新造示例与样本 8-gram 重合率 ≥0.12 → 告警。提取时把 `source_terms` 与检查结果写入 provenance 便于溯源；闸门放在 `review` / `activate`（`_material_gate`），违规档案可以留在草稿里查看与修正，但无法进入生效链路；`update_draft` 编辑后自动重算闸门。测试 7 例）
 - [ ] 12. Add style deviation review after prose generation.
 - [ ] 13. Add human and Agent E2E coverage, including complete, serial and derived projects.
 - [ ] 14. Update architecture, API surface, creative workflow and Agent docs.

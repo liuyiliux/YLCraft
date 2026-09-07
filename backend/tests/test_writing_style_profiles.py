@@ -22,6 +22,7 @@ from app.services.creative_project.service import CreativeProjectService
 from app.services.creative_project.writing_style import (
     WritingStyleService,
     aggregate_sample_measurements,
+    inspect_style_material,
     measure_text_sample,
     parse_style_json,
 )
@@ -271,6 +272,110 @@ async def test_extract_draft_from_source_rejects_bad_source(session, monkeypatch
     session.commit()
     with pytest.raises(ValueError, match="还没有可分析的文本块"):
         await service.extract_draft_from_source(snapshot_id=empty.id)
+
+
+# ---------------------------------------------------------------------------
+# 来源材料泄漏检查（OpenSpec 任务 11）
+# ---------------------------------------------------------------------------
+
+def test_inspect_style_material_flags_source_terms():
+    profile = {
+        "dimensions": {"语体": {"value": "类似《活着》那种克制的白描", "confidence": 0.9}}
+    }
+    result = inspect_style_material(profile, source_terms=["活着", "余华"])
+    assert result["ok"] is False
+    assert result["violations"][0]["type"] == "source_term"
+    assert result["violations"][0]["term"] == "活着"
+    assert result["violations"][0]["location"] == "dimensions.语体.value"
+
+
+def test_inspect_style_material_flags_verbatim_overlap():
+    sample = (
+        "福贵牵着那头老牛慢慢走过田埂，夕阳把两个影子拉得很长，谁也不说话，就这样一直走到天黑。"
+    )
+    profile = {
+        "dimensions": {
+            "节奏": {"value": "句子像“福贵牵着那头老牛慢慢走过田埂”这样缓缓推进"}
+        }
+    }
+    result = inspect_style_material(profile, source_samples=[sample])
+    assert result["ok"] is False
+    assert any(item["type"] == "verbatim_overlap" for item in result["violations"])
+
+
+def test_inspect_style_material_warns_on_example_similarity():
+    sample = "他推开那扇木门，灶台上的碗还留着剩饭，屋里没有人。"
+    # 新造示例借用了来源的连续词组，但短于长片段阈值：只告警、不阻断
+    example = "推开那扇木门，灶台冰凉"
+    result = inspect_style_material(
+        {"new_examples": [example], "dimensions": {}}, source_samples=[sample]
+    )
+    assert result["ok"] is True
+    assert result["violations"] == []
+    assert any(item["type"] == "example_similarity" for item in result["warnings"])
+
+
+def test_inspect_style_material_accepts_clean_profile():
+    profile = {
+        "dimensions": {
+            "句式长度与节奏": {"value": "短句推进，长句收束，句间留白", "confidence": 0.8}
+        },
+        "new_examples": ["门开着，屋里没有人。"],
+    }
+    result = inspect_style_material(
+        profile,
+        source_terms=["活着"],
+        source_samples=["福贵牵着老牛走过田埂，天很热，牛走得慢。"],
+    )
+    assert result["ok"] is True
+    assert result["violations"] == []
+
+
+def test_review_rejects_profile_with_source_contamination(session):
+    service = WritingStyleService(session)
+    item = service.create_profile(
+        name="带专名的风格",
+        profile={"dimensions": {"语体": {"value": "余华式的冷峻"}}},
+        provenance={"source_terms": ["余华"]},
+    )
+    with pytest.raises(ValueError, match="来源专名"):
+        service.review(item.id)
+
+
+def test_update_draft_recomputes_material_check(session):
+    service = WritingStyleService(session)
+    item = service.create_profile(
+        name="干净风格",
+        profile={"dimensions": {"语体": {"value": "短句与留白"}}},
+        provenance={"source_terms": ["活着"]},
+    )
+    assert service.review(item.id).status == "reviewed"
+
+    # 编辑时把来源专名写进来：闸门随内容重算，编辑后回到草稿，提交审核应被拒绝。
+    edited = service.update_draft(
+        item.id, profile={"dimensions": {"语体": {"value": "《活着》式的短句"}}}
+    )
+    assert edited.status == "draft"
+    check = json.loads(edited.provenance_json)["material_check"]
+    assert check["ok"] is False
+    with pytest.raises(ValueError, match="来源专名"):
+        service.review(item.id)
+
+
+async def test_extracted_draft_records_material_check(
+    session, snapshot_with_chunks, monkeypatch
+):
+    fake = _StubStyleAI()
+    monkeypatch.setattr(
+        "app.services.ai.get_ai_service",
+        lambda: fake,
+        raising=False,
+    )
+    service = WritingStyleService(session)
+    item = await service.extract_draft_from_source(snapshot_id=snapshot_with_chunks.id)
+    provenance = json.loads(item.provenance_json)
+    assert provenance["source_terms"] == ["活着", "余华"]
+    assert provenance["material_check"]["ok"] is True
 
 
 async def test_extract_draft_from_source_surfaces_model_failure(
