@@ -30,13 +30,36 @@ def _from_json(value: str | None, fallback: Any) -> Any:
 
 
 #: 需要持久化的任务类型：项目级生成工作（进程重启后仍可在任务中心看到并恢复轮询）。
-#: ``world_domain_expansion`` 为 AI 渐进世界构建的域级细化（异步，按 task_id 轮询）。
-PERSISTED_TASK_TYPES = {"image_generation", "creative_writing", "world_domain_expansion"}
+#: ``world_domain_expansion`` 为 AI 渐进世界构建的域级细化（异步，按 task_id 轮询）；
+#: ``world_map_visual`` 为世界地图 AI 视觉成图（同步长任务，失败需要留痕）。
+PERSISTED_TASK_TYPES = {
+    "image_generation",
+    "creative_writing",
+    "world_domain_expansion",
+    "world_map_visual",
+}
 
 
 def should_persist(task_type: str, payload: dict[str, Any] | None) -> bool:
-    """Persist project-scoped generation work, not transient UI-only tasks."""
-    return task_type in PERSISTED_TASK_TYPES and bool((payload or {}).get("project_id"))
+    """Persist project-scoped generation work, not transient UI-only tasks.
+
+    不落库时说明原因：此前静默返回 False，新增任务类型忘了登记白名单
+    （或忘了带 project_id）时表现为"任务凭空消失"，无从排查。
+    """
+    if task_type not in PERSISTED_TASK_TYPES:
+        logger.info(
+            "任务类型 %s 不在持久化白名单内，只存内存（重启即失）；"
+            "确需持久化请登记 PERSISTED_TASK_TYPES",
+            task_type,
+        )
+        return False
+    if not bool((payload or {}).get("project_id")):
+        logger.info(
+            "任务 %s 缺少 project_id，只存内存（重启即失）；建任务时请带上项目归属",
+            task_type,
+        )
+        return False
+    return True
 
 
 async def upsert_task(task: Any) -> None:
