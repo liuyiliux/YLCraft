@@ -62,3 +62,16 @@
 - [x] 29. 前端构建验证：`cd frontend && npm run build`。（此前勾选但未真实通过：`EventLogTab.tsx` 三处 `THEME.bgContainer` 字段不存在导致 `tsc --noEmit` 失败；已改为 `THEME.bgCard`，现已真实构建通过）
 - [ ] 30. 手动验证：用失效 base_url/Key 触发一次生图失败，确认「事件日志」Tab 看到 error、「运行日志」Tab 看到原始输出、详情可点「重发」。
 - [x] 31. 更新 `docs/architecture/API_SURFACE.md` 与 `api_surface.json`（新增 `/api/v1/logs`、`/api/v1/logs/runtime`、`/api/v1/logs/{id}/retry`）。（已通过 generate_api_surface.py 同步）
+
+## Phase 10: AI 调用统一收口（2026-09-07）
+
+背景：事件日志此前只在端点手写，未手写的路径完全不可观测（详见
+`docs/research/research_report_task_event_logging_coverage.md`）。本阶段把记录下沉到 AI 层。
+
+- [x] 32. `services/ai/service.py` 三个入口（`chat` / `generate_image` / `generate_video`）统一写 `platform_event_logs`：记录 scene（llm/image/video）、provider、model、耗时、成功或失败与错误、请求响应摘要（各截断 2000 字）；`BackendRouter` 内部多后端降级只算一次调用。（`backend/tests/test_ai_service_event_logging.py`，6 例）
+- [x] 33. 新增 `ai_call_context(...)`：调用方注入 `project_id` / `ref_id` / 自定义场景与标题，支持 `suppress_auto_event=True` 抑制端点已有的手写记录；写日志 best-effort，不打断 AI 调用。
+- [x] 34. `chat` 补 try/except：异常照旧抛出但先落失败事件；无可用 backend 也记一条失败事件（此前两者都无任何痕迹）。
+- [x] 35. 世界地图链路（`generate-visual`、`prompt-optimize`、`regions/{id}/shape/generate`）用 `ai_call_context` 注入 `project_id` + `ref_id=map_id`，归入 `scene="world_map"`。
+- [x] 36. 直连 provider、不经 `AIService` 的绕过点自补事件：`services/embedding` 失败落事件（成功不记，避免逐条刷屏）、`services/breaker` 的 STT 补成功/失败事件（此前 `except: pass` 把异常完全吞掉）。
+- [x] 37. 前端 `EventLogTab.tsx` 场景选项补全到后端在用全集（原 5 个 → 13 个，含 world_extraction / world_generation / world_map / character_portrait / asset_provenance / pipeline / agent_canvas / embedding / stt），并加中文标签与配色、未知场景兜底显示原值。
+- [ ] 38. 清理端点层重复 `record_event`（约 43 处），消除过渡期双写，让 `record_event` 退化为业务语义补充。

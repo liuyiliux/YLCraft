@@ -36,6 +36,18 @@ flowchart LR
 
 - 世界地图工作台：结构化地图的正典仍是 `WorldMapDocument.map_json`（区域/据点/路线/空间层），真人入口为独立路由 `/world-map`（顶栏「世界观 → 世界地图」二级菜单），`/novel-world` 只承担来源提取与候选审阅，不再内嵌地图。前端工作台按「左图层/数据面板 + 中画布 + 右选中详情」三栏组织，AI 视觉稿与批量编辑收进右侧抽屉：成图是派生资产，只可手动「设为底图」成为可开关参考层，不自动铺底、不叠标记、不写回正典；左栏面板与抽屉由 `components/world/` 下的 `LayerPanel / DataPanel / NodeDetailPanel / VisualDrawer / BatchDrawer / ExportModal / VersionModal` 组成，地图状态与写入逻辑仍集中在 `WorldMapEditor`（保存走 revision CAS，需显式保存才入库）。版本历史为 append-only：每次保存落 `world_map_revisions` 快照（迁移 `042`），`GET /world-maps/{id}/revisions`、`GET .../revisions/{revision}`、`POST .../rollback` 供真人页面使用，回滚以历史快照为内容产生**新** revision，历史链不被改写。生图提示词由结构化数据确定性生成并写明坐标约定（x 向右、y 向下、画面顶部为北、据点带 (x,y) 与方位带），可经 `POST /world-maps/{id}/generate-visual/prompt-optimize` 用 LLM 润色，只改写提示词、不落库、需确认后才生图。**项目视觉基准**：项目级的一张基准图，落地为 `project_asset_links` 中 `role="visual_baseline"` 的一条关联（不新增表、不复制文件，只引用素材库节点），由 `services/creative_project/visual_baseline.py` 维护，一个项目只保留一张（重设即替换），端点为 `GET/PUT/DELETE /api/v1/creative-projects/{project_id}/visual-baseline`。生图链路**自动注入**它作为参考图，因此页面与 Agent 无需各自传参，没设置也不阻塞生图。画风由「风格预设 + 视觉基准」决定，不再依赖自由文本框。
 
+**据点生成与区域归属（2026-09-06 补充）**：`POST /projects/{project_id}/world-maps/from-places`
+把确认写入的地点实体（`world_entities.entity_type=place`）转成地图据点，并**按地点实体的 `region`
+属性自动建区域并归类**——该属性是世界提取时 AI 从原文提炼的「所属区域」（如"县城""村东头"），
+此前被写死为 `region_id=None` 完全浪费。已在地图上但没归区的据点，重跑时按实体 `region` 补齐归属，
+**不重建据点**（保留用户精修过的坐标）；重复判定放宽为"新据点 / 补了归属 / 建了区域任一即算变更"。
+新建的初稿就是 v1 并落 `world_map_revisions` 快照（此前直接跳到 v2 且无快照，初稿无法回滚）。
+注意 AI 提炼的区域粒度可能偏碎（"县城"与"县城边"相邻），区域名可改，也可用 `parent_id` 挂父子层级。
+提取侧另有对应修复：`location` 域的 `region` 值找不到同名地点时，补建 `entity_type="region"` 实体
+承载区域名并连 `part_of` 关系（区域不是 `place`，不会被 from-places 当成据点生成）。
+真人入口 `/world-map` 顶部带**项目选择器**（该页只从 URL 读 `project_id`，从侧边栏直接进入时
+所有需要项目的按钮都是禁用的）；左栏提供「生成全部形状」，只给没有形状的区域生成，不覆盖手绘。
+
 **区域几何（正典语义，重要）**：区域是**有形状的地理范围**，据点是区域内的一个位置——
 形状是区域的**独立几何**，**不再由成员据点围合推导**（旧实现把"福贵的房子"当成"村子的城墙角"，
 且据点一动形状就变形、凸包画不出凹形）。区域新增 `shape`（`mode: auto|manual`、`seed`、
