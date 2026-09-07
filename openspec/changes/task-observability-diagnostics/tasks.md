@@ -40,3 +40,16 @@
 - [x] 24. 图片异步测试：pending/done/failed 路径均写入诊断字段和事件。
 - [x] 25. 前端构建验证：`npm run build`。
 - [x] 26. 手动验证：ModelScope 异步生图任务在任务中心可看到远端状态、轮询次数和事件时间线。
+
+## Phase 6: 任务记录兜底（2026-09-07）
+
+背景：任务记录与事件日志是两套。事件已由 `AIService` 统一收口，但任务仍需业务粒度
+（不能自动收口，否则高频 chat 会冲垮任务中心），此前完全靠端点手写，地图生图整段漏写。
+
+- [x] 27. 新增 `services/ai/tracking.py` 的 `ai_task(...)` async 上下文：一次完成「建任务 → 记开始 → 完成或失败 → 进度与诊断」；记账失败 best-effort，不打断业务。
+- [x] 28. `world_map_visual` 登记进 `PERSISTED_TASK_TYPES`，世界地图视觉成图端点接入 `ai_task`，并把 `task_id` 带进 `ai_call_context`（事件日志与任务中心可互跳）。
+- [x] 29. `should_persist` 不再静默返回 False：不落库时打日志说明原因（类型未登记白名单 / 缺 `project_id`），此前表现为任务凭空消失且无从排查。
+- [x] 30. 前端任务中心补全类型选项、中文标签、配色与跳转路由（`world_map_visual` → `/world-map`、`world_domain_expansion` → `/novel-world`）。
+- [x] 31. 后端单测（`backend/tests/test_ai_task_tracking.py`，4 例）：成功置 done 且带 result、失败置 failed 且异常原样抛出、带 `project_id` 才落库、白名单规则。
+- [ ] 32. 视频（`VideoGenerationTask`）与 3D（`Model3DGenerationTask`）自有 Task 表接入 `/api/v1/tasks` 聚合，使二者出现在任务中心且重试入口统一。
+- [ ] 33. Live2D 与 Agent 工具触发的 AI 操作补任务记录（事件已由收口覆盖）。

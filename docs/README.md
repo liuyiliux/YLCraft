@@ -31,12 +31,15 @@
 | `docs/refactor/` | 重构、迁移、清理计划。 | 计划完成后把长期结论回写到架构或领域文档。 |
 | `docs/devlog/` | 必要的阶段性交接。 | 只在跨电脑/长任务切换时写，文件名用 `YYYY-MM-DD_topic.md`。 |
 | `docs/reference/` | 外部参考资料、客户素材、二进制样例。 | 不作为当前实现事实来源。 |
+| `docs/research/` | 专题调研产出：排查计划与结论报告（如任务/事件记录覆盖梳理）。 | 结论要回写到架构或领域文档，这里保留完整推导过程。 |
 
 平台接入入口：`docs/platform/BILIBILI_GUIDE.md`、`docs/platform/FANQIE_GUIDE.md`；其余跨平台对比资料仍在 `docs/platform/MULTI_PLATFORM_REFERENCE.md`。
 
 ## 当前主线状态
 
-最近更新：2026-09-05。世界地图区域几何重构完成并归档（openspec/changes/archive/region-geometry-rework）：区域为独立形状（语义参数 + seed 前端确定性展开，20 种据点 kind + 图标），据点/Agent 工具/清库收尾；小说提取保留原文证据，真人和 Agent 均先预览后确认，确认不重复调用模型；角色库筛选、项目增量合并和正文角色上下文已完成。小说来源世界项目可选向量索引与混合检索、提取域扩展到八域（世界规则/力量体系/经济/物种）同走一条证据校验与写入通道；AI 渐进式世界构建已完成：expand_entity / expand_domain 生成链路与提取语义隔离（ai_draft 候选无证据、结构建议默认不启用需确认）、世界构建模板项目级自定义与 AI 起草、`/platform-templates`「世界构建」统一管理入口。
+最近更新：2026-09-07。可观测性收口：事件日志从「各端点手写」下沉到 `AIService` 三个入口统一记录（`ai_call_context` 注入业务身份），补齐地图生图、批量生图、agent 工具、Live2D 与两个直连绕过点（embedding / STT）；任务侧新增 `ai_task` 封装与持久化白名单不静默丢弃，世界地图成图进任务中心（完整排查见 `docs/research/research_report_task_event_logging_coverage.md`）。世界地图据点链路打通：`from-places` 按地点实体 `region` 属性自动建区域并归类、已有据点重跑补齐归属、初稿版本快照修正、工作台独立页加项目选择器与「生成全部形状」；提取侧 `region` 无同名地点时补建 `region` 实体并连 `part_of`。
+
+上一轮（2026-09-05）：世界地图区域几何重构完成并归档（openspec/changes/archive/region-geometry-rework）：区域为独立形状（语义参数 + seed 前端确定性展开，20 种据点 kind + 图标），据点/Agent 工具/清库收尾；小说提取保留原文证据，真人和 Agent 均先预览后确认，确认不重复调用模型；角色库筛选、项目增量合并和正文角色上下文已完成。小说来源世界项目可选向量索引与混合检索、提取域扩展到八域（世界规则/力量体系/经济/物种）同走一条证据校验与写入通道；AI 渐进式世界构建已完成：expand_entity / expand_domain 生成链路与提取语义隔离（ai_draft 候选无证据、结构建议默认不启用需确认）、世界构建模板项目级自定义与 AI 起草、`/platform-templates`「世界构建」统一管理入口。
 
 | 主线 | 状态 | 事实来源 |
 | --- | --- | --- |
@@ -59,8 +62,8 @@
 | 提示词参考库 | 本地优先同步、双语/多图、图片缓存、筛选、画布和生图集成完成；仅剩完整人工验收 | `openspec/changes/image-prompt-reference-library/tasks.md` |
 | Story 生产台 | 已完成，已验证桌面/移动布局 | `openspec/changes/story-production-desk/tasks.md` |
 | 视频分镜生产 | 代码和项目回流完成；仅剩真实视频供应商验收 | `openspec/changes/story-video-shot-production/tasks.md` |
-| 任务观测诊断 | 已完成，事件时间线和异步生图诊断已验证 | `openspec/changes/task-observability-diagnostics/tasks.md` |
-| 全平台事件日志 | 进行中：任务中心改三 Tab（任务/事件日志/运行日志）；新建 `platform_event_logs` 表 + `/api/v1/logs`（含 `/runtime`）查询；后端补滚动文件日志；同步修复图片生成失败不落账 | `openspec/changes/platform-event-logging/tasks.md` |
+| 任务观测诊断 | 已完成，事件时间线和异步生图诊断已验证；另补 AI 操作统一任务记账 `ai_task(...)`（`services/ai/tracking.py`）与持久化白名单不静默丢弃（不落库打日志说明原因），世界地图成图（`world_map_visual`）已登记白名单并进任务中心 | `openspec/changes/task-observability-diagnostics/tasks.md` |
+| 全平台事件日志 | 三 Tab（任务/事件日志/运行日志）、`platform_event_logs` 表与 `/api/v1/logs`、滚动文件日志、失败重发均已落地；**事件记录已下沉到 `AIService` 三个入口统一收口**（`chat`/`generate_image`/`generate_video`，`ai_call_context` 注入 `project_id`/`ref_id`，支持 `suppress_auto_event`），此前只靠端点手写导致地图生图、批量生图、agent 工具、Live2D 完全不可观测；直连绕过点（embedding、breaker STT）已自补事件；前端场景选项补全到后端在用的全部 scene。剩余：端点层约 43 处重复 `record_event` 待清理、视频/3D 自有 Task 表待接入任务中心 | `openspec/changes/platform-event-logging/tasks.md`、`docs/research/research_report_task_event_logging_coverage.md` |
 | 数据库迁移收敛 | Alembic 迁移链当前到 `035_add_world_map_documents`；启动和 Agent 请求路径不再隐式改 schema，角色提取证据、视频/图转 3D/动态状态/平台事件日志、小说来源世界提取、块级向量召回和结构化世界地图均通过显式迁移落库。`023` 会移除历史素材 AI 参数中并非供应商实际返回的采样步数与采样器默认值。 | `backend/alembic/versions/`、`openspec/changes/database-migration-convergence/tasks.md` |
 | 独立视频工作台 | 文生/图生视频、视频提示词模板、素材库首帧、持久任务恢复、任务中心聚合和 Asset Hub 回流已落地；模式 tab 驱动供应商/模型过滤、`video_capabilities` 能力约束、视频首帧缩略图已补齐；仍待真实供应商全链路验收 | `openspec/changes/ai-video-workspace/tasks.md` |
 | 图转 3D 工作台 | 配置驱动提交/轮询/下载、Asset Hub 入库、GLB 优先与 ZIP 解包、PreviewImageUrl 缩略图、独立页面已落地；仍待真实供应商生成 GLB 验收 | `openspec/changes/image-to-3d-workspace/tasks.md` |
