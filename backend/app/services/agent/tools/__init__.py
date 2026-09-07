@@ -223,6 +223,9 @@ from .writing_style_tools import (
     bind_project_writing_style,
     unbind_project_writing_style,
     archive_writing_style_profile,
+    export_writing_style_skill,
+    import_writing_style_skill,
+    review_prose_style_deviation,
 )
 
 from .fanqie_tools import (
@@ -415,6 +418,9 @@ TOOLS = [
     bind_project_writing_style,
     unbind_project_writing_style,
     archive_writing_style_profile,
+    export_writing_style_skill,
+    import_writing_style_skill,
+    review_prose_style_deviation,
     list_fanqie_my_books,
     get_fanqie_book_stats,
     get_fanqie_hot_list,
@@ -601,6 +607,9 @@ __all__ = [
     "bind_project_writing_style",
     "unbind_project_writing_style",
     "archive_writing_style_profile",
+    "export_writing_style_skill",
+    "import_writing_style_skill",
+    "review_prose_style_deviation",
     "list_fanqie_my_books",
     "get_fanqie_book_stats",
     "get_fanqie_hot_list",

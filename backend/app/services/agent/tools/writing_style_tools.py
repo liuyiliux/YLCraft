@@ -208,6 +208,79 @@ def unbind_project_writing_style(project_id: str, profile_id: str) -> dict[str, 
 
 
 @register_tool(
+    name="export_writing_style_skill",
+    description="把风格档案导出为 Markdown Skill 草稿（互操作格式，可版本管理与人工编辑）。",
+    category="creative_project",
+    examples=["把这份风格导出成 Markdown", "给我这个风格的 Skill 文件"],
+    input_schema_note="profile_id 必填。只读，不改档案。",
+    output_schema_note="返回 markdown 文本（含 frontmatter 元信息、表达机制维度、新造示例与约束）。",
+    risk_level="read",
+    output_type="writing_style_markdown",
+)
+def export_writing_style_skill(profile_id: str) -> dict[str, Any]:
+    with SessionLocal() as session:
+        try:
+            markdown = WritingStyleService(session).export_skill_markdown(profile_id)
+        except ValueError as exc:
+            return {"success": False, "error": str(exc)}
+        return {"success": True, "profile_id": profile_id, "markdown": markdown}
+
+
+@register_tool(
+    name="import_writing_style_skill",
+    description=(
+        "从 Markdown Skill 草稿导入风格档案：解析后产出 draft，"
+        "**同样要做来源材料检查**，不是免检通道。"
+    ),
+    category="creative_project",
+    examples=["导入这份风格 Skill", "把这个 Markdown 变成风格档案"],
+    input_schema_note="markdown 必填；name/owner_id 可选；source_terms 可传来源专名用于污染检查。",
+    output_schema_note="返回导入的 draft 档案；需再审核与激活。",
+    risk_level="write",
+    output_type="writing_style_profile_detail",
+)
+def import_writing_style_skill(
+    markdown: str,
+    name: str = "",
+    owner_id: str = "default",
+    source_terms: list[str] | None = None,
+) -> dict[str, Any]:
+    with SessionLocal() as session:
+        try:
+            item = WritingStyleService(session).import_skill_markdown(
+                markdown, name=name, owner_id=owner_id, source_terms=source_terms
+            )
+        except ValueError as exc:
+            return {"success": False, "error": str(exc)}
+        return {"success": True, "profile": serialize_style_profile(item)}
+
+
+@register_tool(
+    name="review_prose_style_deviation",
+    description=(
+        "审阅一段正文与项目已激活风格档案的偏差：给出实测指标与基线偏差、"
+        "需人工核对的约束。**只报告，绝不改写正文或档案**。"
+    ),
+    category="creative_project",
+    examples=["看看这段正文有没有跑偏风格", "检查这章是不是太不像设定的口吻"],
+    input_schema_note="project_id 与 text 必填；stage 可限定生效阶段。不消耗配额。",
+    output_schema_note="返回 reports；每项含 metrics（actual/expected/deviation_ratio/severity）与约束提醒。",
+    risk_level="read",
+    output_type="writing_style_deviation_report",
+)
+def review_prose_style_deviation(
+    project_id: str, text: str, stage: str = ""
+) -> dict[str, Any]:
+    with SessionLocal() as session:
+        return {
+            "success": True,
+            **WritingStyleService(session).review_prose_deviation(
+                project_id, text, stage=stage
+            ),
+        }
+
+
+@register_tool(
     name="archive_writing_style_profile",
     description="归档风格档案（archived）：不再参与激活与绑定，历史绑定保留。",
     category="creative_project",

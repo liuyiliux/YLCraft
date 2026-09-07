@@ -317,6 +317,249 @@ def inspect_style_material(
     return {"ok": not violations, "violations": violations[:20], "warnings": warnings[:20]}
 
 
+# ---------------------------------------------------------------------------
+# Markdown Skill 导入导出（OpenSpec 任务 10）
+#
+# 互操作格式：对外是人人可读可改的 Markdown，对内档案仍是唯一事实来源。
+# 导入一律产出 draft 并走同一套材料检查，不因"从文件来的"就跳过闸门。
+# ---------------------------------------------------------------------------
+
+SKILL_TYPE = "writing_style_profile"
+SKILL_HEADING_DIMENSIONS = "表达机制维度"
+SKILL_HEADING_EXAMPLES = "新造示例"
+SKILL_HEADING_CONSTRAINTS = "反模板约束"
+SKILL_HEADING_PROHIBITED = "禁止带出的来源特征"
+
+
+def export_style_profile_markdown(
+    profile: dict[str, Any],
+    *,
+    name: str = "",
+    description: str = "",
+    meta: dict[str, Any] | None = None,
+) -> str:
+    """把风格档案导出为 Markdown Skill 草稿（可版本库管理、可人工编辑）。"""
+    normalized = canonical_profile_payload(profile)
+    frontmatter = [f"name: {_clean(name, limit=160) or '未命名风格'}", f"type: {SKILL_TYPE}"]
+    for key, value in (meta or {}).items():
+        cleaned = _clean(value, limit=200)
+        if cleaned:
+            frontmatter.append(f"{key}: {cleaned}")
+
+    lines = ["---", *frontmatter, "---", "", f"# {_clean(name, limit=160) or '未命名风格'}", ""]
+    if description:
+        lines += [f"> {_clean(description)}", ""]
+
+    lines += [f"## {SKILL_HEADING_DIMENSIONS}", ""]
+    for dimension_name, dimension in (normalized.get("dimensions") or {}).items():
+        lines.append(f"- **{dimension_name}**：{dimension.get('value') or ''}")
+        confidence = dimension.get("confidence")
+        if confidence:
+            lines.append(f"  - 置信度：{confidence}")
+        if dimension.get("evidence_summary"):
+            lines.append(f"  - 依据：{dimension['evidence_summary']}")
+        if dimension.get("measurement_keys"):
+            lines.append(f"  - 引用测量：{'、'.join(dimension['measurement_keys'])}")
+    lines.append("")
+
+    for heading, key in (
+        (SKILL_HEADING_EXAMPLES, "new_examples"),
+        (SKILL_HEADING_CONSTRAINTS, "anti_template_constraints"),
+        (SKILL_HEADING_PROHIBITED, "prohibited_source_material"),
+    ):
+        items = normalized.get(key) or []
+        if not items:
+            continue
+        lines += [f"## {heading}", ""]
+        lines += [f"- {item}" for item in items]
+        lines.append("")
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def parse_style_profile_markdown(text: str) -> dict[str, Any]:
+    """解析 Markdown Skill 草稿为 ``{name, description, profile, meta}``。
+
+    容错优先：frontmatter、标题层级、子项缩进都允许多种写法；解析不到的部分
+    留空交给人工补，不抛异常（只有完全不像风格档案时才报错）。
+    """
+    raw = str(text or "")
+    meta: dict[str, Any] = {}
+    body = raw
+    if raw.lstrip().startswith("---"):
+        parts = raw.lstrip().split("---", 2)
+        if len(parts) >= 3:
+            for line in parts[1].splitlines():
+                if ":" in line:
+                    key, value = line.split(":", 1)
+                    meta[key.strip()] = value.strip()
+            body = parts[2]
+
+    name = str(meta.get("name") or "").strip()
+    description = ""
+    dimensions: dict[str, Any] = {}
+    examples: list[str] = []
+    constraints: list[str] = []
+    prohibited: list[str] = []
+    section = ""
+
+    for line in body.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("# "):
+            if not name:
+                name = stripped[2:].strip()
+            section = ""
+            continue
+        if stripped.startswith("## "):
+            section = stripped[3:].strip()
+            continue
+        if stripped.startswith("> "):
+            description = (description + " " + stripped[2:].strip()).strip()
+            continue
+
+        item = re.sub(r"^[-*]\s*", "", stripped)
+        if not item:
+            continue
+        if section == SKILL_HEADING_DIMENSIONS:
+            # 主项："- **维度名**：描述"；子项：缩进的「- 置信度：0.8」
+            if line.startswith(" ") or line.startswith("\t"):
+                match = re.match(r"^(置信度|依据|引用测量)：(.+)$", item)
+                if match and dimensions:
+                    last = next(reversed(dimensions))
+                    kind, value = match.group(1), match.group(2).strip()
+                    if kind == "置信度":
+                        try:
+                            dimensions[last]["confidence"] = float(value)
+                        except ValueError:
+                            pass
+                    elif kind == "依据":
+                        dimensions[last]["evidence_summary"] = value
+                    else:
+                        dimensions[last]["measurement_keys"] = [
+                            part.strip() for part in re.split(r"[、,，]", value) if part.strip()
+                        ]
+                continue
+            match = re.match(r"^\*\*(.+?)\*\*[：:](.*)$", item)
+            if not match:
+                match = re.match(r"^(.+?)[：:](.*)$", item)
+            if match:
+                dimensions[match.group(1).strip()] = {
+                    "value": match.group(2).strip(),
+                    "confidence": 0.0,
+                    "evidence_summary": "",
+                    "measurement_keys": [],
+                }
+            continue
+        if section == SKILL_HEADING_EXAMPLES:
+            examples.append(item)
+        elif section == SKILL_HEADING_CONSTRAINTS:
+            constraints.append(item)
+        elif section == SKILL_HEADING_PROHIBITED:
+            prohibited.append(item)
+
+    if not dimensions and not constraints:
+        raise ValueError("Markdown 里没有解析到表达机制维度或反模板约束")
+
+    version = 1
+    try:
+        version = int(meta.get("version") or 1)
+    except ValueError:
+        version = 1
+
+    return {
+        "name": name,
+        "description": description,
+        "profile": {
+            "version": version,
+            "dimensions": dimensions,
+            "new_examples": examples,
+            "anti_template_constraints": constraints,
+            "prohibited_source_material": prohibited,
+        },
+        "meta": meta,
+    }
+
+
+# ---------------------------------------------------------------------------
+# 生成后风格偏差审阅（OpenSpec 任务 12）
+#
+# 只做"测量 + 提示"，绝不自动改写正文：风格是软约束，偏离多少由人决定。
+# 判定用确定性测量（与提取侧同一套指标），不把审美判断伪装成精确分数。
+# ---------------------------------------------------------------------------
+
+#: 相对偏差阈值：超过 warn 提示，超过 off 视为明显偏离。
+DEVIATION_WARN_RATIO = 0.35
+DEVIATION_OFF_RATIO = 0.75
+
+#: 参与偏差比对的指标（与 measure_text_sample 的输出键对应）。
+DEVIATION_METRICS = (
+    "avg_sentence_chars",
+    "avg_paragraph_chars",
+    "dialogue_mark_ratio",
+    "punctuation_ratio",
+    "type_token_ratio",
+)
+
+
+def measure_style_deviation(
+    text: str,
+    profile: dict[str, Any],
+    *,
+    baseline: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """比对生成正文与风格档案声明的表达机制，给出可复核的偏差报告。
+
+    Args:
+        text: 待审阅的正文
+        profile: 风格档案内容（取其反模板约束与禁止项作为人工核对提醒）
+        baseline: 期望指标基线（通常是提取时的来源测量），缺失时只报实测值
+
+    Returns:
+        ``{"ok": bool, "metrics": [...], "constraints": [...], "prohibited": [...]}``；
+        ``ok=False`` 表示至少一项指标明显偏离（severity=off）。
+    """
+    normalized = canonical_profile_payload(profile)
+    actual = measure_text_sample(text)
+    metrics: list[dict[str, Any]] = []
+    off_count = 0
+
+    for key in DEVIATION_METRICS:
+        measured = float(actual.get(key) or 0.0)
+        entry: dict[str, Any] = {"metric": key, "actual": measured}
+        expected_value = (baseline or {}).get(key)
+        if isinstance(expected_value, (int, float)) and float(expected_value) > 0:
+            expected = float(expected_value)
+            ratio = abs(measured - expected) / expected
+            severity = "ok"
+            if ratio >= DEVIATION_OFF_RATIO:
+                severity = "off"
+                off_count += 1
+            elif ratio >= DEVIATION_WARN_RATIO:
+                severity = "warn"
+            entry.update(
+                {
+                    "expected": round(expected, 4),
+                    "deviation_ratio": round(ratio, 3),
+                    "severity": severity,
+                }
+            )
+        else:
+            entry.update({"expected": None, "deviation_ratio": None, "severity": "unknown"})
+        metrics.append(entry)
+
+    return {
+        "ok": off_count == 0,
+        "off_count": off_count,
+        "metrics": metrics,
+        # 约束与禁止项不做自动判定：短文本本就无法可靠匹配，只提醒审核人逐条看。
+        "constraints": normalized.get("anti_template_constraints") or [],
+        "prohibited_source_material": normalized.get("prohibited_source_material") or [],
+        "dimensions": sorted((normalized.get("dimensions") or {}).keys()),
+    }
+
+
 class WritingStyleService:
     def __init__(self, session: Session):
         self.session = session
@@ -412,6 +655,50 @@ class WritingStyleService:
         self.session.commit()
         self.session.refresh(item)
         return item
+
+    def export_skill_markdown(self, profile_id: str) -> str:
+        """导出档案为 Markdown Skill 草稿（互操作格式，可版本管理与人工编辑）。"""
+        item = self._require(profile_id)
+        return export_style_profile_markdown(
+            json.loads(item.profile_json or "{}"),
+            name=item.name,
+            description=item.description,
+            meta={
+                "version": item.version,
+                "source_type": item.source_type,
+                "checksum": item.checksum,
+            },
+        )
+
+    def import_skill_markdown(
+        self,
+        markdown: str,
+        *,
+        name: str = "",
+        owner_id: str = "default",
+        source_terms: list[str] | None = None,
+    ) -> WritingStyleProfile:
+        """从 Markdown Skill 草稿导入档案：一律产出 draft，并跑同一套材料检查。
+
+        导入不是免检通道：解析出的内容同样要做来源专名与原文片段检查，
+        结果写进 provenance，闸门仍在 review / activate。
+        """
+        parsed = parse_style_profile_markdown(markdown)
+        terms = [str(term).strip() for term in (source_terms or []) if str(term).strip()]
+        check = inspect_style_material(parsed["profile"], source_terms=terms)
+        return self.create_profile(
+            name=name or parsed["name"] or "导入的风格档案",
+            description=parsed["description"] or "从 Markdown Skill 导入，需审核后激活。",
+            profile=parsed["profile"],
+            owner_id=owner_id,
+            source_type=WritingStyleProfileSourceType.AGENT_DRAFT.value,
+            provenance={
+                "import_format": "markdown_skill",
+                "source_terms": terms,
+                "material_check": check,
+                "imported_at": datetime.now().isoformat(timespec="seconds"),
+            },
+        )
 
     def _material_gate(self, item: WritingStyleProfile) -> None:
         """来源材料闸门：带出原文片段或来源专名的档案不得进入生效链路。"""
@@ -549,6 +836,62 @@ class WritingStyleService:
                 "prompt_contract": contract,
             })
         return result
+
+    def review_prose_deviation(
+        self, project_id: str, text: str, *, stage: str = ""
+    ) -> dict[str, Any]:
+        """正文生成后的风格偏差审阅：只给测量与提醒，**不改写正文**。
+
+        风格是软约束，偏离多少由人判断——这里不自动重写、不自动改档案，
+        只把"实测指标 vs 档案基线"和需要人工逐条核对的约束摆出来。
+        """
+        links = self.session.exec(
+            select(ProjectWritingStyleLink)
+            .where(
+                ProjectWritingStyleLink.project_id == project_id,
+                ProjectWritingStyleLink.enabled == True,  # noqa: E712
+            )
+            .order_by(ProjectWritingStyleLink.priority.asc(), ProjectWritingStyleLink.created_at.asc())
+        ).all()
+
+        reports: list[dict[str, Any]] = []
+        for link in links:
+            profile = self.get(link.style_profile_id)
+            if not profile or profile.status != WritingStyleProfileStatus.ACTIVE.value:
+                continue
+            scope = json.loads(link.stage_scope_json or "[]")
+            if stage and scope and stage not in scope and "*" not in scope:
+                continue
+            baseline: dict[str, Any] | None = None
+            provenance = json.loads(profile.provenance_json or "{}")
+            if isinstance(provenance, dict):
+                measurements = provenance.get("measurements")
+                baseline = measurements if isinstance(measurements, dict) else None
+            report = measure_style_deviation(
+                text, json.loads(profile.profile_json or "{}"), baseline=baseline
+            )
+            reports.append(
+                {
+                    "profile_id": profile.id,
+                    "profile_name": profile.name,
+                    "intensity": link.intensity,
+                    **report,
+                }
+            )
+
+        if not reports:
+            return {
+                "success": True,
+                "bound": False,
+                "message": "该项目没有已激活的风格档案，跳过偏差审阅",
+                "reports": [],
+            }
+        return {
+            "success": True,
+            "bound": True,
+            "ok": all(item["ok"] for item in reports),
+            "reports": reports,
+        }
 
     async def extract_draft_from_source(
         self,

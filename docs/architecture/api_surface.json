@@ -10918,7 +10918,23 @@
       "summary": "从来源快照提取风格档案草稿（只出 draft，不自动激活）",
       "function": "extract_style_from_source",
       "file": "backend/app/api/v1/writing_styles.py",
-      "line": 151,
+      "line": 200,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/writing-styles/import",
+      "router": "writing_styles",
+      "prefix": "/api/v1/writing-styles",
+      "local_path": "/import",
+      "tags": [
+        "Writing Styles"
+      ],
+      "summary": "从 Markdown Skill 草稿导入风格档案（恒为 draft）",
+      "function": "import_style_profile",
+      "file": "backend/app/api/v1/writing_styles.py",
+      "line": 176,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10967,6 +10983,22 @@
       "function": "unbind_project_style",
       "file": "backend/app/api/v1/writing_styles.py",
       "line": 95,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/writing-styles/review-deviation",
+      "router": "writing_styles",
+      "prefix": "/api/v1/writing-styles",
+      "local_path": "/review-deviation",
+      "tags": [
+        "Writing Styles"
+      ],
+      "summary": "审阅正文与已激活风格档案的偏差（只报告，不改正文）",
+      "function": "review_prose_deviation",
+      "file": "backend/app/api/v1/writing_styles.py",
+      "line": 148,
       "response_model": "",
       "include_in_schema": true
     },
@@ -11031,6 +11063,22 @@
       "function": "archive_style_profile",
       "file": "backend/app/api/v1/writing_styles.py",
       "line": 134,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/writing-styles/{profile_id}/export",
+      "router": "writing_styles",
+      "prefix": "/api/v1/writing-styles",
+      "local_path": "/{profile_id}/export",
+      "tags": [
+        "Writing Styles"
+      ],
+      "summary": "导出风格档案为 Markdown Skill 草稿",
+      "function": "export_style_profile",
+      "file": "backend/app/api/v1/writing_styles.py",
+      "line": 166,
       "response_model": "",
       "include_in_schema": true
     },

@@ -138,6 +138,55 @@ def archive_style_profile(profile_id: str, db: Session = Depends(get_session)):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+class StyleDeviationReviewRequest(BaseModel):
+    project_id: str
+    text: str
+    stage: str = ""
+
+
+@router.post("/review-deviation", summary="审阅正文与已激活风格档案的偏差（只报告，不改正文）")
+def review_prose_deviation(
+    req: StyleDeviationReviewRequest, db: Session = Depends(get_session)
+):
+    """风格是软约束：这里只给实测指标与基线偏差，以及需要人工核对的约束，不自动改写。"""
+    return {
+        "success": True,
+        **_service(db).review_prose_deviation(req.project_id, req.text, stage=req.stage),
+    }
+
+
+class StyleProfileImportRequest(BaseModel):
+    markdown: str
+    name: str = ""
+    owner_id: str = "default"
+    source_terms: list[str] = Field(default_factory=list)
+
+
+@router.get("/{profile_id}/export", summary="导出风格档案为 Markdown Skill 草稿")
+def export_style_profile(profile_id: str, db: Session = Depends(get_session)):
+    """互操作出口：对外是人人可读的 Markdown，对内档案仍是唯一事实来源。"""
+    try:
+        markdown = _service(db).export_skill_markdown(profile_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"success": True, "profile_id": profile_id, "markdown": markdown}
+
+
+@router.post("/import", summary="从 Markdown Skill 草稿导入风格档案（恒为 draft）")
+def import_style_profile(req: StyleProfileImportRequest, db: Session = Depends(get_session)):
+    """导入不是免检通道：解析后同样跑来源材料检查，审核闸门照旧。"""
+    try:
+        item = _service(db).import_skill_markdown(
+            req.markdown,
+            name=req.name,
+            owner_id=req.owner_id,
+            source_terms=req.source_terms or None,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"success": True, "data": serialize_style_profile(item)}
+
+
 class StyleProfileExtractRequest(BaseModel):
     snapshot_id: str
     name: str = ""
