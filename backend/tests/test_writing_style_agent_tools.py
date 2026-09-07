@@ -48,7 +48,12 @@ def test_writing_style_tools_registered_with_risk_levels():
     """8 个风格工具都应注册：2 个只读，6 个写。"""
     import app.services.agent.tools  # noqa: F401  触发注册
 
-    read_tools = {"list_writing_style_profiles", "get_writing_style_profile"}
+    read_tools = {
+        "list_writing_style_profiles",
+        "get_writing_style_profile",
+        "export_writing_style_skill",
+        "review_prose_style_deviation",
+    }
     write_tools = {
         "extract_writing_style_from_source",
         "review_writing_style_profile",
@@ -56,6 +61,7 @@ def test_writing_style_tools_registered_with_risk_levels():
         "bind_project_writing_style",
         "unbind_project_writing_style",
         "archive_writing_style_profile",
+        "import_writing_style_skill",
     }
     for name in read_tools | write_tools:
         tool = ToolRegistry.get_tool(name)

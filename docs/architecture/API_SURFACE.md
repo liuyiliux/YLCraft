@@ -7,8 +7,8 @@
 ## Summary
 
 - Router mounts: 53
-- Endpoints: 666
-- Public schema endpoints: 665
+- Endpoints: 669
+- Public schema endpoints: 668
 - Hidden compatibility endpoints: 1
 
 ## Router Mounts
@@ -992,14 +992,17 @@
 | --- | --- | --- | --- | --- |
 | `GET` | `/api/v1/writing-styles` | 列出写作风格档案 | `list_style_profiles` | `backend/app/api/v1/writing_styles.py:57` |
 | `POST` | `/api/v1/writing-styles` | 创建写作风格档案草稿 | `create_style_profile` | `backend/app/api/v1/writing_styles.py:69` |
-| `POST` | `/api/v1/writing-styles/extract-from-source` | 从来源快照提取风格档案草稿（只出 draft，不自动激活） | `extract_style_from_source` | `backend/app/api/v1/writing_styles.py:151` |
+| `POST` | `/api/v1/writing-styles/extract-from-source` | 从来源快照提取风格档案草稿（只出 draft，不自动激活） | `extract_style_from_source` | `backend/app/api/v1/writing_styles.py:200` |
+| `POST` | `/api/v1/writing-styles/import` | 从 Markdown Skill 草稿导入风格档案（恒为 draft） | `import_style_profile` | `backend/app/api/v1/writing_styles.py:176` |
 | `GET` | `/api/v1/writing-styles/projects/{project_id}` | 获取项目绑定的写作风格 | `list_project_style_profiles` | `backend/app/api/v1/writing_styles.py:78` |
 | `POST` | `/api/v1/writing-styles/projects/{project_id}` | 绑定写作风格到项目 | `bind_project_style` | `backend/app/api/v1/writing_styles.py:86` |
 | `DELETE` | `/api/v1/writing-styles/projects/{project_id}/{profile_id}` | 解绑项目写作风格 | `unbind_project_style` | `backend/app/api/v1/writing_styles.py:95` |
+| `POST` | `/api/v1/writing-styles/review-deviation` | 审阅正文与已激活风格档案的偏差（只报告，不改正文） | `review_prose_deviation` | `backend/app/api/v1/writing_styles.py:148` |
 | `GET` | `/api/v1/writing-styles/{profile_id}` | 获取写作风格档案 | `get_style_profile` | `backend/app/api/v1/writing_styles.py:101` |
 | `PUT` | `/api/v1/writing-styles/{profile_id}` | 编辑写作风格档案草稿 | `update_style_profile` | `backend/app/api/v1/writing_styles.py:109` |
 | `POST` | `/api/v1/writing-styles/{profile_id}/activate` | 激活写作风格档案 | `activate_style_profile` | `backend/app/api/v1/writing_styles.py:126` |
 | `POST` | `/api/v1/writing-styles/{profile_id}/archive` | 归档写作风格档案 | `archive_style_profile` | `backend/app/api/v1/writing_styles.py:134` |
+| `GET` | `/api/v1/writing-styles/{profile_id}/export` | 导出风格档案为 Markdown Skill 草稿 | `export_style_profile` | `backend/app/api/v1/writing_styles.py:166` |
 | `POST` | `/api/v1/writing-styles/{profile_id}/review` | 审核写作风格档案 | `review_style_profile` | `backend/app/api/v1/writing_styles.py:118` |
 
 ## Update Rules

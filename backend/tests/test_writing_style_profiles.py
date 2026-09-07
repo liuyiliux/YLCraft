@@ -22,9 +22,12 @@ from app.services.creative_project.service import CreativeProjectService
 from app.services.creative_project.writing_style import (
     WritingStyleService,
     aggregate_sample_measurements,
+    export_style_profile_markdown,
     inspect_style_material,
+    measure_style_deviation,
     measure_text_sample,
     parse_style_json,
+    parse_style_profile_markdown,
 )
 from tests.test_creative_project_service import FakeAIService
 
@@ -376,6 +379,125 @@ async def test_extracted_draft_records_material_check(
     provenance = json.loads(item.provenance_json)
     assert provenance["source_terms"] == ["活着", "余华"]
     assert provenance["material_check"]["ok"] is True
+
+
+# ---------------------------------------------------------------------------
+# Markdown Skill 导入导出（OpenSpec 任务 10）
+# ---------------------------------------------------------------------------
+
+def test_markdown_roundtrip_keeps_dimensions_and_constraints():
+    profile = {
+        "dimensions": {
+            "句式长度与节奏": {
+                "value": "短句推进",
+                "confidence": 0.8,
+                "evidence_summary": "平均句长偏低",
+                "measurement_keys": ["avg_sentence_chars"],
+            }
+        },
+        "new_examples": ["门开着，屋里没有人。"],
+        "anti_template_constraints": ["避免三段式排比开头"],
+        "prohibited_source_material": ["禁止带出角色原名"],
+    }
+    markdown = export_style_profile_markdown(
+        profile, name="冷峻白描", description="克制、少形容", meta={"version": 2}
+    )
+    assert "type: writing_style_profile" in markdown
+    assert "## 表达机制维度" in markdown
+
+    parsed = parse_style_profile_markdown(markdown)
+    assert parsed["name"] == "冷峻白描"
+    assert parsed["profile"]["dimensions"]["句式长度与节奏"]["value"] == "短句推进"
+    assert parsed["profile"]["dimensions"]["句式长度与节奏"]["confidence"] == 0.8
+    assert parsed["profile"]["dimensions"]["句式长度与节奏"]["measurement_keys"] == [
+        "avg_sentence_chars"
+    ]
+    assert parsed["profile"]["new_examples"] == ["门开着，屋里没有人。"]
+    assert parsed["profile"]["anti_template_constraints"] == ["避免三段式排比开头"]
+    assert parsed["profile"]["prohibited_source_material"] == ["禁止带出角色原名"]
+    assert parsed["meta"]["version"] == "2"
+
+
+def test_parse_markdown_rejects_unrelated_document():
+    with pytest.raises(ValueError, match="没有解析到表达机制维度"):
+        parse_style_profile_markdown("# 随便一篇笔记\n\n今天天气不错。\n")
+
+
+def test_import_markdown_creates_draft_and_runs_material_check(session):
+    service = WritingStyleService(session)
+    markdown = export_style_profile_markdown(
+        {"dimensions": {"语体": {"value": "白描，少修饰"}}}, name="干净导入"
+    )
+    item = service.import_skill_markdown(markdown, source_terms=["活着"])
+    assert item.status == "draft"
+    assert item.source_type == "agent_draft"
+    provenance = json.loads(item.provenance_json)
+    assert provenance["import_format"] == "markdown_skill"
+    assert provenance["material_check"]["ok"] is True
+
+    # 导入不是免检通道：带来源专名的内容会被闸门拦住
+    dirty = export_style_profile_markdown(
+        {"dimensions": {"语体": {"value": "余华式的冷峻"}}}, name="脏导入"
+    )
+    dirty_item = service.import_skill_markdown(dirty, source_terms=["余华"])
+    with pytest.raises(ValueError, match="来源专名"):
+        service.review(dirty_item.id)
+
+
+# ---------------------------------------------------------------------------
+# 生成后风格偏差审阅（OpenSpec 任务 12）
+# ---------------------------------------------------------------------------
+
+def test_measure_style_deviation_without_baseline_reports_only_actual():
+    report = measure_style_deviation("他推开门。屋里没人。", {"dimensions": {}})
+    assert report["ok"] is True
+    assert all(item["severity"] == "unknown" for item in report["metrics"])
+    assert any(item["metric"] == "avg_sentence_chars" for item in report["metrics"])
+
+
+def test_measure_style_deviation_flags_off_and_warn():
+    profile = {"anti_template_constraints": ["避免三段式排比开头"]}
+    # 以一段短句正文的实测值作为基线（自洽参照，避免用拍脑袋的阈值）
+    fitted = "他推开门。屋里没人。\n\n“来了？”她问。\n\n他点头。" * 4
+    baseline = measure_text_sample(fitted)
+
+    # 同一段正文对照自身基线：不应判偏离
+    same = measure_style_deviation(fitted, profile, baseline=baseline)
+    assert same["ok"] is True
+    assert same["off_count"] == 0
+
+    # 换成大段长句：句长指标明显偏离
+    long_text = "他把那扇沉重的木门缓缓推开，屋里的空气像是很久没有流动过一样，闷得人发慌。" * 3
+    report = measure_style_deviation(long_text, profile, baseline=baseline)
+    severities = {item["metric"]: item["severity"] for item in report["metrics"]}
+    assert severities["avg_sentence_chars"] == "off"
+    assert report["ok"] is False
+    assert report["constraints"] == ["避免三段式排比开头"]
+
+
+def test_review_prose_deviation_uses_bound_profile(session):
+    service = WritingStyleService(session)
+    project = CreativeProject(title="项目", project_type="novel", source_type="original_idea")
+    session.add(project)
+    session.commit()
+
+    # 未绑定风格：跳过审阅而不是报错
+    skipped = service.review_prose_deviation(project.id, "随便一段正文。")
+    assert skipped["bound"] is False
+
+    item = service.create_profile(
+        name="短句风格",
+        profile={"dimensions": {"句式": {"value": "短句"}}},
+        provenance={"measurements": {"avg_sentence_chars": 8.0}},
+    )
+    service.review(item.id)
+    service.activate(item.id)
+    service.bind(project.id, item.id, stage_scope=[])
+
+    report = service.review_prose_deviation(project.id, "他推开门，屋里没有人，只有风声从窗缝里挤进来。")
+    assert report["bound"] is True
+    assert len(report["reports"]) == 1
+    assert report["reports"][0]["profile_name"] == "短句风格"
 
 
 async def test_extract_draft_from_source_surfaces_model_failure(
