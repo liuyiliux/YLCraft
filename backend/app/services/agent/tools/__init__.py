@@ -214,6 +214,17 @@ from .creative_project_tools import (
     run_creative_writer_room,
 )
 
+from .writing_style_tools import (
+    list_writing_style_profiles,
+    get_writing_style_profile,
+    extract_writing_style_from_source,
+    review_writing_style_profile,
+    activate_writing_style_profile,
+    bind_project_writing_style,
+    unbind_project_writing_style,
+    archive_writing_style_profile,
+)
+
 from .fanqie_tools import (
     list_fanqie_my_books,
     get_fanqie_book_stats,
@@ -396,6 +407,14 @@ TOOLS = [
     sync_creative_project_bible,
     run_creative_project_pipeline,
     run_creative_writer_room,
+    list_writing_style_profiles,
+    get_writing_style_profile,
+    extract_writing_style_from_source,
+    review_writing_style_profile,
+    activate_writing_style_profile,
+    bind_project_writing_style,
+    unbind_project_writing_style,
+    archive_writing_style_profile,
     list_fanqie_my_books,
     get_fanqie_book_stats,
     get_fanqie_hot_list,
@@ -574,6 +593,14 @@ __all__ = [
     "sync_creative_project_bible",
     "run_creative_project_pipeline",
     "run_creative_writer_room",
+    "list_writing_style_profiles",
+    "get_writing_style_profile",
+    "extract_writing_style_from_source",
+    "review_writing_style_profile",
+    "activate_writing_style_profile",
+    "bind_project_writing_style",
+    "unbind_project_writing_style",
+    "archive_writing_style_profile",
     "list_fanqie_my_books",
     "get_fanqie_book_stats",
     "get_fanqie_hot_list",

@@ -12,7 +12,7 @@
 ## Phase 2: API and Agent parity
 
 - [x] 7. Add HTTP preview/review/activation/bind endpoints and regenerate API surface.
-- [ ] 8. Add Agent tools using the same service layer and confirmation boundary.
+- [x] 8. Add Agent tools using the same service layer and confirmation boundary.（`backend/app/services/agent/tools/writing_style_tools.py` 新增 8 个工具：list/get 为 `read`，extract/review/activate/bind/unbind/archive 为 `write`；全部调用同一 `WritingStyleService`，提取只出 draft、激活与绑定是分离步骤，与真人 API 边界一致。已注册进 `tools/__init__.py` 的 TOOLS 与 `__all__`，文档见 `docs/agent/agent-center.md`「写作风格档案工具」；测试 `backend/tests/test_writing_style_agent_tools.py`，4 例）
 - [x] 9. Add Context Pack T6 profile injection with stage scope, intensity and checksum.
 - [ ] 10. Add profile import/export as validated Markdown Skill drafts.
 

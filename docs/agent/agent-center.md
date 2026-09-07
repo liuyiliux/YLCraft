@@ -208,6 +208,21 @@ AI 连接器和供应商规范已经作为 `ai_config` 分类工具接入智能�
 
 推荐流程：`list_world_maps` → `get_world_map` → `build_world_map_visual_prompt`（先看提示词是否表达准确）→ 需要润色时 `optimize_world_map_visual_prompt` → 经用户确认后 `generate_world_map_visual` → 用 `save_world_map` 保存结构化改动。为区域生成轮廓时：`list_region_shape_presets` 选词 → `generate_region_shape` 写入参数（或显式传词表内 `params` 免调模型）→ 前端画布按参数展开显示、用户显式保存后顶点入库。成图与底图是派生资产，不得据此断言地理事实；要断言事实应读 `map_json` 或 `resolve_world_map_entities` 的实体证据。
 
+### 写作风格档案工具
+
+风格档案工具与真人 `/api/v1/writing-styles` 共用同一 `WritingStyleService`，因此生命周期与确认边界完全一致：风格只描述"怎么写"的抽象表达机制，不承载"写了什么"。
+
+- `list_writing_style_profiles`：列出风格档案（可按 `status` 过滤），风险 `read`。
+- `get_writing_style_profile`：读取档案详情（维度、溯源、校验和），供人工或 Agent 审核，风险 `read`。
+- `extract_writing_style_from_source`：从来源快照提取风格**草稿**，风险 `write`；本地测量聚合 + 有界样本（≤12000 字 / 40 块）抽象分析，样本分析完即弃，只留 hash、测量指标与字符偏移，**不落来源正文、不复制原句与专名**。产出恒为 `draft`，**绝不自动激活**。
+- `review_writing_style_profile`：`draft → reviewed`，风险 `write`。
+- `activate_writing_style_profile`：`reviewed → active`，风险 `write`；未审核的草稿会被拒绝。
+- `bind_project_writing_style`：把已激活档案绑定到项目（可设 `intensity`/`stage_scope`/`priority`），风险 `write`；只作为 Context Pack **T6** 注入，不覆盖 T0-T5 正典、动态状态、章节契约与正文，也不把风格内容复制进项目。
+- `unbind_project_writing_style`：解除绑定，风险 `write`。
+- `archive_writing_style_profile`：归档档案，风险 `write`。
+
+推荐流程：`list_novel_source_snapshots` 选来源 → `extract_writing_style_from_source` 出草稿 → `get_writing_style_profile` 与用户一起看维度是否合理 → `review_writing_style_profile` → `activate_writing_style_profile` → `bind_project_writing_style`。**每一步都要用户确认**：提取不会自动激活，激活不会自动绑定，绑定不会改写任何已有正文。
+
 ### 下载解析工具
 
 下载入口已经作为 `download` 分类工具接入智能体：
