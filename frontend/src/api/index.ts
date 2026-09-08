@@ -851,6 +851,28 @@ export const importWritingStyleMarkdown = (payload: {
   body: JSON.stringify(payload),
 })
 
+/** 项目当前绑定的风格档案（只返回已激活的）。 */
+export const listProjectWritingStyles = (projectId: string, stage = '') =>
+  request(`/writing-styles/projects/${projectId}${stage ? `?stage=${encodeURIComponent(stage)}` : ''}`)
+
+export const bindProjectWritingStyle = (
+  projectId: string,
+  payload: {
+    profile_id: string
+    intensity?: string
+    stage_scope?: string[]
+    dimension_overrides?: Record<string, any>
+    priority?: number
+  },
+) =>
+  request(`/writing-styles/projects/${projectId}`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+
+export const unbindProjectWritingStyle = (projectId: string, profileId: string) =>
+  request(`/writing-styles/projects/${projectId}/${profileId}`, { method: 'DELETE' })
+
 /** 审阅正文与已激活风格档案的偏差（只报告，不改正文）。 */
 export const reviewProseStyleDeviation = (payload: {
   project_id: string
