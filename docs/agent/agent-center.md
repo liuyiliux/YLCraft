@@ -214,6 +214,7 @@ AI 连接器和供应商规范已经作为 `ai_config` 分类工具接入智能�
 
 - `list_writing_style_profiles`：列出风格档案（可按 `status` 过滤），风险 `read`。
 - `get_writing_style_profile`：读取档案详情（维度、溯源、校验和），供人工或 Agent 审核，风险 `read`。
+- `list_writing_style_projects`：反向查询绑定了该档案的项目（风格 → 项目），风险 `read`；解绑或归档前用它确认影响范围，生效中的排前面。
 - `extract_writing_style_from_source`：从来源快照提取风格**草稿**，风险 `write`；本地测量聚合 + 有界样本（≤12000 字 / 40 块）抽象分析，样本分析完即弃，只留 hash、测量指标与字符偏移，**不落来源正文、不复制原句与专名**。产出恒为 `draft`，**绝不自动激活**。
 - `review_writing_style_profile`：`draft → reviewed`，风险 `write`。
 - `activate_writing_style_profile`：`reviewed → active`，风险 `write`；未审核的草稿会被拒绝。

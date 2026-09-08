@@ -32,6 +32,7 @@ import {
   getWritingStyleProfile,
   importWritingStyleMarkdown,
   listCreativeProjects,
+  listProfileBoundProjects,
   listProjectWritingStyles,
   listWritingStyleProfiles,
   reviewProseStyleDeviation,
@@ -446,6 +447,7 @@ function BindingPanel({ profile, projects }: { profile: any; projects: any[] }) 
   const [stageScope, setStageScope] = useState<string[]>([])
   const [priority, setPriority] = useState<number>(100)
   const [bound, setBound] = useState<any[]>([])
+  const [boundProjects, setBoundProjects] = useState<any[]>([])
   const [busy, setBusy] = useState(false)
 
   const loadBound = useCallback(async (pid: string) => {
@@ -465,6 +467,21 @@ function BindingPanel({ profile, projects }: { profile: any; projects: any[] }) 
     loadBound(projectId)
   }, [projectId, loadBound])
 
+  // 反向视角：这个档案被绑到了哪些项目（解绑或归档前看影响范围）。
+  const refreshBoundProjects = useCallback(async () => {
+    if (!profile?.id) return
+    try {
+      const payload = await listProfileBoundProjects(profile.id)
+      setBoundProjects(payload?.data || [])
+    } catch {
+      setBoundProjects([])
+    }
+  }, [profile?.id])
+
+  useEffect(() => {
+    refreshBoundProjects()
+  }, [refreshBoundProjects])
+
   const isBound = bound.some((item: any) => item.id === profile.id)
 
   const doBind = async () => {
@@ -482,6 +499,7 @@ function BindingPanel({ profile, projects }: { profile: any; projects: any[] }) 
       })
       message.success('已绑定到项目')
       await loadBound(projectId)
+      await refreshBoundProjects()
     } catch (error: any) {
       message.error(error?.message || '绑定失败')
     } finally {
@@ -495,6 +513,7 @@ function BindingPanel({ profile, projects }: { profile: any; projects: any[] }) 
       await unbindProjectWritingStyle(projectId, profile.id)
       message.success('已解绑')
       await loadBound(projectId)
+      await refreshBoundProjects()
     } catch (error: any) {
       message.error(error?.message || '解绑失败')
     } finally {
@@ -541,6 +560,46 @@ function BindingPanel({ profile, projects }: { profile: any; projects: any[] }) 
           解绑
         </Button>
       </Space>
+      <div>
+        <Text strong>已绑定到：</Text>
+        {boundProjects.length === 0 ? (
+          <div>
+            <Text type="secondary">暂无项目使用该风格</Text>
+          </div>
+        ) : (
+          boundProjects.map((row: any) => (
+            <div
+              key={row.project_id}
+              style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}
+            >
+              <Tag color={row.enabled ? 'green' : 'default'}>
+                {row.project_title || row.project_id}
+              </Tag>
+              <Text type="secondary">
+                {row.intensity}
+                {row.stage_scope?.length ? ` · ${row.stage_scope.join('、')}` : ' · 全阶段'}
+              </Text>
+              <Button
+                size="small"
+                danger
+                disabled={busy}
+                onClick={async () => {
+                  try {
+                    await unbindProjectWritingStyle(row.project_id, profile.id)
+                    message.success('已解绑')
+                    await loadBound(projectId)
+                    await refreshBoundProjects()
+                  } catch (error: any) {
+                    message.error(error?.message || '解绑失败')
+                  }
+                }}
+              >
+                解绑
+              </Button>
+            </div>
+          ))
+        )}
+      </div>
       {projectId && (
         <div>
           <Text strong>该项目当前生效的风格：</Text>

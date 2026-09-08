@@ -1020,6 +1020,36 @@ class WritingStyleService:
             },
         )
 
+    def list_projects_by_profile(self, profile_id: str) -> list[dict[str, Any]]:
+        """反向查询：这个档案被绑到了哪些项目。
+
+        正向接口（``runtime_profiles``）是"项目 → 风格"，管理视角还需要
+        "风格 → 项目"：解绑前能看清影响范围，避免误停在用的档案。
+        """
+        from app.db.models.creative_project import CreativeProject
+
+        links = self.session.exec(
+            select(ProjectWritingStyleLink).where(
+                ProjectWritingStyleLink.style_profile_id == profile_id
+            )
+        ).all()
+        rows: list[dict[str, Any]] = []
+        for link in links:
+            project = self.session.get(CreativeProject, link.project_id)
+            rows.append(
+                {
+                    "project_id": link.project_id,
+                    "project_title": str(getattr(project, "title", "") or "") if project else "",
+                    "enabled": bool(link.enabled),
+                    "intensity": link.intensity,
+                    "stage_scope": json.loads(link.stage_scope_json or "[]"),
+                    "priority": link.priority,
+                }
+            )
+        # 生效中的排前面，其次按优先级与项目名，便于一眼看到影响范围。
+        rows.sort(key=lambda row: (not row["enabled"], -int(row["priority"] or 0), row["project_title"]))
+        return rows
+
     def _require(self, profile_id: str) -> WritingStyleProfile:
         item = self.get(profile_id)
         if not item:

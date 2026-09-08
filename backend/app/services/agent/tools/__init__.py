@@ -217,6 +217,7 @@ from .creative_project_tools import (
 from .writing_style_tools import (
     list_writing_style_profiles,
     get_writing_style_profile,
+    list_writing_style_projects,
     extract_writing_style_from_source,
     review_writing_style_profile,
     activate_writing_style_profile,
@@ -412,6 +413,7 @@ TOOLS = [
     run_creative_writer_room,
     list_writing_style_profiles,
     get_writing_style_profile,
+    list_writing_style_projects,
     extract_writing_style_from_source,
     review_writing_style_profile,
     activate_writing_style_profile,
@@ -601,6 +603,7 @@ __all__ = [
     "run_creative_writer_room",
     "list_writing_style_profiles",
     "get_writing_style_profile",
+    "list_writing_style_projects",
     "extract_writing_style_from_source",
     "review_writing_style_profile",
     "activate_writing_style_profile",

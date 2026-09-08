@@ -10918,7 +10918,7 @@
       "summary": "从来源快照提取风格档案草稿（只出 draft，不自动激活）",
       "function": "extract_style_from_source",
       "file": "backend/app/api/v1/writing_styles.py",
-      "line": 200,
+      "line": 208,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10934,7 +10934,7 @@
       "summary": "从 Markdown Skill 草稿导入风格档案（恒为 draft）",
       "function": "import_style_profile",
       "file": "backend/app/api/v1/writing_styles.py",
-      "line": 176,
+      "line": 184,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10950,7 +10950,7 @@
       "summary": "获取项目绑定的写作风格",
       "function": "list_project_style_profiles",
       "file": "backend/app/api/v1/writing_styles.py",
-      "line": 78,
+      "line": 86,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10966,7 +10966,7 @@
       "summary": "绑定写作风格到项目",
       "function": "bind_project_style",
       "file": "backend/app/api/v1/writing_styles.py",
-      "line": 86,
+      "line": 94,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10982,7 +10982,7 @@
       "summary": "解绑项目写作风格",
       "function": "unbind_project_style",
       "file": "backend/app/api/v1/writing_styles.py",
-      "line": 95,
+      "line": 103,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10998,7 +10998,7 @@
       "summary": "审阅正文与已激活风格档案的偏差（只报告，不改正文）",
       "function": "review_prose_deviation",
       "file": "backend/app/api/v1/writing_styles.py",
-      "line": 148,
+      "line": 156,
       "response_model": "",
       "include_in_schema": true
     },
@@ -11014,7 +11014,7 @@
       "summary": "获取写作风格档案",
       "function": "get_style_profile",
       "file": "backend/app/api/v1/writing_styles.py",
-      "line": 101,
+      "line": 109,
       "response_model": "",
       "include_in_schema": true
     },
@@ -11030,7 +11030,7 @@
       "summary": "编辑写作风格档案草稿",
       "function": "update_style_profile",
       "file": "backend/app/api/v1/writing_styles.py",
-      "line": 109,
+      "line": 117,
       "response_model": "",
       "include_in_schema": true
     },
@@ -11046,7 +11046,7 @@
       "summary": "激活写作风格档案",
       "function": "activate_style_profile",
       "file": "backend/app/api/v1/writing_styles.py",
-      "line": 126,
+      "line": 134,
       "response_model": "",
       "include_in_schema": true
     },
@@ -11062,7 +11062,7 @@
       "summary": "归档写作风格档案",
       "function": "archive_style_profile",
       "file": "backend/app/api/v1/writing_styles.py",
-      "line": 134,
+      "line": 142,
       "response_model": "",
       "include_in_schema": true
     },
@@ -11078,7 +11078,23 @@
       "summary": "导出风格档案为 Markdown Skill 草稿",
       "function": "export_style_profile",
       "file": "backend/app/api/v1/writing_styles.py",
-      "line": 166,
+      "line": 174,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/writing-styles/{profile_id}/projects",
+      "router": "writing_styles",
+      "prefix": "/api/v1/writing-styles",
+      "local_path": "/{profile_id}/projects",
+      "tags": [
+        "Writing Styles"
+      ],
+      "summary": "列出绑定了该风格档案的项目",
+      "function": "list_profile_projects",
+      "file": "backend/app/api/v1/writing_styles.py",
+      "line": 78,
       "response_model": "",
       "include_in_schema": true
     },
@@ -11094,7 +11110,7 @@
       "summary": "审核写作风格档案",
       "function": "review_style_profile",
       "file": "backend/app/api/v1/writing_styles.py",
-      "line": 118,
+      "line": 126,
       "response_model": "",
       "include_in_schema": true
     },
