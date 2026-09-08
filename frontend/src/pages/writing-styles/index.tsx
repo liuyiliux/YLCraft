@@ -26,14 +26,17 @@ import { useTheme } from '../../constants/theme'
 import {
   activateWritingStyleProfile,
   archiveWritingStyleProfile,
+  bindProjectWritingStyle,
   exportWritingStyleMarkdown,
   extractWritingStyleFromSource,
   getWritingStyleProfile,
   importWritingStyleMarkdown,
   listCreativeProjects,
+  listProjectWritingStyles,
   listWritingStyleProfiles,
   reviewProseStyleDeviation,
   reviewWritingStyleProfile,
+  unbindProjectWritingStyle,
 } from '../../api'
 import { listSnapshots } from '../../api/novelSource'
 
@@ -431,13 +434,139 @@ export default function WritingStylesPage() {
         ]}
         width={860}
       >
-        {detail && <ProfileDetail profile={detail} />}
+        {detail && <ProfileDetail profile={detail} projects={projects} />}
       </Modal>
     </div>
   )
 }
 
-function ProfileDetail({ profile }: { profile: any }) {
+function BindingPanel({ profile, projects }: { profile: any; projects: any[] }) {
+  const [projectId, setProjectId] = useState<string>('')
+  const [intensity, setIntensity] = useState<string>('balanced')
+  const [stageScope, setStageScope] = useState<string[]>([])
+  const [priority, setPriority] = useState<number>(100)
+  const [bound, setBound] = useState<any[]>([])
+  const [busy, setBusy] = useState(false)
+
+  const loadBound = useCallback(async (pid: string) => {
+    if (!pid) {
+      setBound([])
+      return
+    }
+    try {
+      const payload = await listProjectWritingStyles(pid)
+      setBound(payload?.data || payload || [])
+    } catch {
+      setBound([])
+    }
+  }, [])
+
+  useEffect(() => {
+    loadBound(projectId)
+  }, [projectId, loadBound])
+
+  const isBound = bound.some((item: any) => item.id === profile.id)
+
+  const doBind = async () => {
+    if (!projectId) {
+      message.warning('先选择项目')
+      return
+    }
+    setBusy(true)
+    try {
+      await bindProjectWritingStyle(projectId, {
+        profile_id: profile.id,
+        intensity,
+        stage_scope: stageScope,
+        priority,
+      })
+      message.success('已绑定到项目')
+      await loadBound(projectId)
+    } catch (error: any) {
+      message.error(error?.message || '绑定失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const doUnbind = async () => {
+    setBusy(true)
+    try {
+      await unbindProjectWritingStyle(projectId, profile.id)
+      message.success('已解绑')
+      await loadBound(projectId)
+    } catch (error: any) {
+      message.error(error?.message || '解绑失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Space direction="vertical" style={{ width: '100%' }} size="middle">
+      <Text type="secondary">
+        绑定后该风格才会影响项目写作：只作为 Context Pack T6 注入，不覆盖正典、动态状态与正文。
+      </Text>
+      <Space wrap>
+        <Select
+          placeholder="选择项目"
+          style={{ width: 240 }}
+          value={projectId || undefined}
+          onChange={setProjectId}
+          options={projects.map((item: any) => ({ label: item.title || item.id, value: item.id }))}
+        />
+        <Select
+          value={intensity}
+          onChange={setIntensity}
+          style={{ width: 120 }}
+          options={[
+            { label: '轻微', value: 'subtle' },
+            { label: '适中', value: 'balanced' },
+            { label: '强烈', value: 'strong' },
+          ]}
+        />
+        <Select
+          mode="tags"
+          placeholder="生效阶段（可留空表示全阶段）"
+          style={{ width: 260 }}
+          value={stageScope}
+          onChange={setStageScope}
+        />
+      </Space>
+      <Space wrap>
+        <Button type="primary" loading={busy} disabled={isBound} onClick={doBind}>
+          {isBound ? '已绑定' : '绑定到项目'}
+        </Button>
+        <Button danger loading={busy} disabled={!isBound} onClick={doUnbind}>
+          解绑
+        </Button>
+      </Space>
+      {projectId && (
+        <div>
+          <Text strong>该项目当前生效的风格：</Text>
+          {bound.length === 0 ? (
+            <div>
+              <Text type="secondary">暂无（只有已激活的档案会生效）</Text>
+            </div>
+          ) : (
+            bound.map((item: any) => (
+              <div key={item.id}>
+                <Tag color={item.id === profile.id ? 'green' : 'default'}>
+                  {item.name} · {item.intensity}
+                </Tag>
+                {item.stage_scope?.length ? (
+                  <Text type="secondary">阶段：{item.stage_scope.join('、')}</Text>
+                ) : null}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </Space>
+  )
+}
+
+function ProfileDetail({ profile, projects }: { profile: any; projects: any[] }) {
   const dimensions = profile.profile?.dimensions || profile.dimensions || {}
   const provenance = profile.provenance || {}
   const check = provenance.material_check
@@ -483,6 +612,11 @@ function ProfileDetail({ profile }: { profile: any }) {
           </div>
         </Space>
       ),
+    },
+    {
+      key: 'binding',
+      label: '项目绑定',
+      children: <BindingPanel profile={profile} projects={projects} />,
     },
     {
       key: 'provenance',
