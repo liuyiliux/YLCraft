@@ -20,6 +20,7 @@ import {
   Tag,
   Tabs,
   Typography,
+  Upload,
   message,
 } from 'antd'
 import { useTheme } from '../../constants/theme'
@@ -39,7 +40,7 @@ import {
   reviewWritingStyleProfile,
   unbindProjectWritingStyle,
 } from '../../api'
-import { listSnapshots } from '../../api/novelSource'
+import { listSnapshots, importTxt } from '../../api/novelSource'
 
 const { Paragraph, Text } = Typography
 
@@ -85,6 +86,7 @@ export default function WritingStylesPage() {
   const [projects, setProjects] = useState<any[]>([])
   const [extractOpen, setExtractOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
+  const [uploadingTxt, setUploadingTxt] = useState(false)
   const [extractForm] = Form.useForm()
   const [importForm] = Form.useForm()
 
@@ -141,6 +143,26 @@ export default function WritingStylesPage() {
     } catch (error: any) {
       message.error(error?.message || '操作失败')
     }
+  }
+
+  // 本地 TXT 小说一步到位：先转成来源快照，填进下拉，用户点「提取」即可。
+  const handleTxtUpload = async (file: File) => {
+    setUploadingTxt(true)
+    try {
+      const created = await importTxt(file, {
+        title: file.name.replace(/\.(txt|text|md)$/i, ''),
+      })
+      setSnapshots((prev) => [created, ...(prev || [])])
+      extractForm.setFieldsValue({ snapshot_id: created.id })
+      message.success(
+        `《${created.title || '未命名'}》已导入为来源快照，点「提取（产出草稿）」继续`
+      )
+    } catch (error: any) {
+      message.error(error?.message || 'TXT 导入失败')
+    } finally {
+      setUploadingTxt(false)
+    }
+    return false // 阻止 antd Upload 自动上传
   }
 
   const submitExtract = async () => {
@@ -368,7 +390,7 @@ export default function WritingStylesPage() {
           <Form.Item
             name="snapshot_id"
             label="来源快照"
-            rules={[{ required: true, message: '请选择来源快照' }]}
+            rules={[{ required: true, message: '请选择来源快照或上传 TXT' }]}
           >
             <Select
               placeholder="选择已导入的小说来源"
@@ -378,6 +400,9 @@ export default function WritingStylesPage() {
               }))}
             />
           </Form.Item>
+          <Upload accept=".txt,.text,.md" showUploadList={false} beforeUpload={handleTxtUpload}>
+            <Button loading={uploadingTxt}>没有？上传本地 TXT 小说，自动转为来源快照</Button>
+          </Upload>
           <Form.Item name="name" label="档案名称">
             <Input placeholder="留空则按来源标题自动生成" />
           </Form.Item>
