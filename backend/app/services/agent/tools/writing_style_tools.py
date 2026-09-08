@@ -100,6 +100,28 @@ async def extract_writing_style_from_source(
 
 
 @register_tool(
+    name="list_writing_style_projects",
+    description=(
+        "列出绑定了某个风格档案的项目（反向查询：风格 → 项目），"
+        "用于解绑或归档前确认影响范围。"
+    ),
+    category="creative_project",
+    examples=["这个风格被哪些项目用了", "解绑前看看影响范围"],
+    input_schema_note="profile_id 必填。只读。",
+    output_schema_note="返回 projects；每项含 project_id/project_title/enabled/intensity/stage_scope/priority，生效中的排前面。",
+    risk_level="read",
+    output_type="writing_style_project_list",
+)
+def list_writing_style_projects(profile_id: str) -> dict[str, Any]:
+    with SessionLocal() as session:
+        service = WritingStyleService(session)
+        if not service.get(profile_id):
+            return {"success": False, "error": "风格档案不存在"}
+        rows = service.list_projects_by_profile(profile_id)
+        return {"success": True, "total": len(rows), "projects": rows}
+
+
+@register_tool(
     name="review_writing_style_profile",
     description="审核风格档案草稿（draft → reviewed）：确认其表达机制可用，仍不会生效。",
     category="creative_project",

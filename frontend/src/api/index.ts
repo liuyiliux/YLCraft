@@ -851,6 +851,10 @@ export const importWritingStyleMarkdown = (payload: {
   body: JSON.stringify(payload),
 })
 
+/** 反向查询：绑定了该风格档案的项目（解绑或归档前确认影响范围）。 */
+export const listProfileBoundProjects = (profileId: string) =>
+  request(`/writing-styles/${profileId}/projects`)
+
 /** 项目当前绑定的风格档案（只返回已激活的）。 */
 export const listProjectWritingStyles = (projectId: string, stage = '') =>
   request(`/writing-styles/projects/${projectId}${stage ? `?stage=${encodeURIComponent(stage)}` : ''}`)

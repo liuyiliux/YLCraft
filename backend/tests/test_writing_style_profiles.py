@@ -500,6 +500,42 @@ def test_review_prose_deviation_uses_bound_profile(session):
     assert report["reports"][0]["profile_name"] == "短句风格"
 
 
+def test_list_projects_by_profile_shows_impact_scope(session):
+    """反向查询（风格 → 项目）：解绑或归档前能看清影响范围。"""
+    service = WritingStyleService(session)
+    projects = []
+    for title in ("甲项目", "乙项目"):
+        project = CreativeProject(title=title, project_type="novel", source_type="original_idea")
+        session.add(project)
+        projects.append(project)
+    session.commit()
+
+    item = service.create_profile(
+        name="冷峻白描", profile={"dimensions": {"语体": {"value": "白描"}}}
+    )
+    # 未激活不能绑定
+    with pytest.raises(ValueError):
+        service.bind(projects[0].id, item.id)
+    service.review(item.id)
+    service.activate(item.id)
+
+    assert service.list_projects_by_profile(item.id) == []
+    service.bind(projects[0].id, item.id, intensity="strong", priority=200)
+    service.bind(projects[1].id, item.id, intensity="subtle", priority=50)
+
+    rows = service.list_projects_by_profile(item.id)
+    assert len(rows) == 2
+    # 生效中按优先级排序：甲项目（strong/200）在前
+    assert rows[0]["project_title"] == "甲项目"
+    assert rows[0]["intensity"] == "strong"
+    assert rows[0]["enabled"] is True
+    assert rows[1]["project_title"] == "乙项目"
+
+    # 未绑定的档案查不到东西，不报错
+    other = service.create_profile(name="另一个", profile={"dimensions": {}})
+    assert service.list_projects_by_profile(other.id) == []
+
+
 async def test_extract_draft_from_source_surfaces_model_failure(
     session, snapshot_with_chunks, monkeypatch
 ):

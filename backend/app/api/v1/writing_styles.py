@@ -74,6 +74,14 @@ def create_style_profile(req: StyleProfileCreateRequest, db: Session = Depends(g
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.get("/{profile_id}/projects", summary="列出绑定了该风格档案的项目")
+def list_profile_projects(profile_id: str, db: Session = Depends(get_session)):
+    """反向查询（风格 → 项目）：解绑或归档前先看影响范围。"""
+    if not _service(db).get(profile_id):
+        raise HTTPException(status_code=404, detail="风格档案不存在")
+    return {"success": True, "data": _service(db).list_projects_by_profile(profile_id)}
+
+
 @router.get("/projects/{project_id}", summary="获取项目绑定的写作风格")
 def list_project_style_profiles(project_id: str, stage: str = "", db: Session = Depends(get_session)):
     try:
