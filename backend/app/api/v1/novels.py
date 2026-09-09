@@ -12,6 +12,7 @@ import asyncio
 import logging
 import os
 import re
+import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -600,24 +601,59 @@ async def download_chapters(
         downloader = NovelDownloader()
 
         def do_download():
-            result = asyncio.run(
-                downloader.download_chapters(
-                    book_title=req.book_title,
-                    author=req.author,
-                    chapters=req.chapters,
-                    site=req.site,
-                )
-            )
+            started = time.time()
+            error: str | None = None
+            result: Dict[str, Any] = {}
             try:
-                asset_id = asyncio.run(_persist_download_result(req, result))
-                logger.info(
-                    "[NovelDownload] persisted to Asset Hub | title=%s | asset_id=%s | chapters=%s",
-                    req.book_title,
-                    asset_id,
-                    len(req.chapters),
+                result = asyncio.run(
+                    downloader.download_chapters(
+                        book_title=req.book_title,
+                        author=req.author,
+                        chapters=req.chapters,
+                        site=req.site,
+                    )
+                )
+            except Exception as exc:
+                error = str(exc)
+                logger.exception("novel download failed")
+
+            if not error:
+                try:
+                    asset_id = asyncio.run(_persist_download_result(req, result))
+                    logger.info(
+                        "[NovelDownload] persisted to Asset Hub | title=%s | asset_id=%s | chapters=%s",
+                        req.book_title,
+                        asset_id,
+                        len(req.chapters),
+                    )
+                except Exception as persist_exc:
+                    error = f"下载完成但书架写入失败：{persist_exc}"
+                    logger.exception("persist novel download failed")
+
+            # 后台线程不走 AIService，事件收口覆盖不到，这里单独落事件：
+            # 此前小说下载完全不可观测——用户只能看到"已开始后台下载"，成败无处可查。
+            try:
+                from app.services.platform_log.service import record_event
+
+                asyncio.run(
+                    record_event(
+                        scene="download",
+                        task_type="novel_download",
+                        level="error" if error else "info",
+                        status="failed" if error else "success",
+                        provider=str(req.site or ""),
+                        message=(
+                            f"小说下载失败：{req.book_title}"
+                            if error
+                            else f"小说下载完成：{req.book_title}（{len(req.chapters)} 章）"
+                        ),
+                        error=error,
+                        duration_ms=int((time.time() - started) * 1000),
+                        response={"file_path": str(result.get("file_path") or "")} if result else None,
+                    )
                 )
             except Exception:
-                logger.exception("persist novel download failed")
+                logger.debug("[NovelDownload] 事件日志写入失败（已忽略）", exc_info=True)
 
         background_tasks.add_task(do_download)
 

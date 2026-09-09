@@ -49,6 +49,7 @@ const SCENE_OPTIONS = [
   { label: 'Agent 画布', value: 'agent_canvas' },
   { label: '嵌入', value: 'embedding' },
   { label: '语音转写', value: 'stt' },
+  { label: '下载', value: 'download' },
   { label: '系统', value: 'system' },
 ]
 
@@ -68,6 +69,7 @@ const SCENE_LABEL_MAP: Record<string, string> = {
   agent_canvas: 'Agent 画布',
   embedding: '嵌入',
   stt: '语音转写',
+  download: '下载',
   system: '系统',
 }
 
