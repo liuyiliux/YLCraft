@@ -29,7 +29,7 @@ import {
 } from 'antd'
 const { Text } = Typography
 import { BookOutlined, ReadOutlined, DeleteOutlined, DownloadOutlined, CloudDownloadOutlined, MoreOutlined, RobotOutlined, StopOutlined } from '@ant-design/icons'
-import { listAssets, deleteAsset } from '../../api'
+import { listAssets, deleteAsset, getTask } from '../../api'
 import { downloadChapters, addToBookshelf, getChapterContent, cancelNovelDownload } from '../../api/novel'
 import { importBookshelf } from '../../api/novelSource'
 
@@ -123,8 +123,46 @@ export default function NovelBookshelfPage() {
     }
   }
 
-  // 正在下载的书的 task_id（用于显示"停止"）
+  // 正在下载的书的 task_id（用于显示"停止"）与实时进度
   const [downloadTasks, setDownloadTasks] = useState<Record<string, string>>({})
+  const [downloadProgress, setDownloadProgress] = useState<Record<string, { percent: number; message: string }>>({})
+
+  // 下载中：每 2 秒拉一次任务进度，书架卡片就能看到实时进度
+  // （书架本身的进度来自 downloaded_chapter_indices，要下载完成才更新）。
+  useEffect(() => {
+    const ids = Object.keys(downloadTasks)
+    if (!ids.length) return
+    let cancelled = false
+    const timer = setInterval(async () => {
+      const next: Record<string, { percent: number; message: string }> = {}
+      for (const [assetId, taskId] of Object.entries(downloadTasks)) {
+        try {
+          const res = await getTask(taskId)
+          const task = res?.data || res
+          next[assetId] = {
+            percent: Number(task?.progress || 0),
+            message: task?.progress_message || '',
+          }
+          if (task?.status && ['done', 'completed', 'succeeded', 'failed', 'cancelled'].includes(task.status)) {
+            // 任务已结束：清掉占位，按钮回到"下载全本"
+            setDownloadTasks((prev) => {
+              const copy = { ...prev }
+              delete copy[assetId]
+              return copy
+            })
+            setTimeout(loadNovels, 500)
+          }
+        } catch {
+          /* 单次拉取失败不影响轮询 */
+        }
+      }
+      if (!cancelled) setDownloadProgress(next)
+    }, 2000)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+  }, [downloadTasks])
 
   /** 停止下载 */
   const handleStopDownload = async (asset: any, e?: React.MouseEvent) => {
@@ -370,6 +408,18 @@ export default function NovelBookshelfPage() {
                               作者：{meta.author || novel.author || '未知'}
                             </div>
                             
+                            {/* 下载中的实时进度（来自任务中心，秒级刷新） */}
+                            {downloadProgress[novel.id] && (
+                              <div style={{ marginTop: 8 }}>
+                                <Progress
+                                  percent={downloadProgress[novel.id].percent}
+                                  size="small"
+                                  status="active"
+                                  format={() => downloadProgress[novel.id].message || '下载中'}
+                                />
+                              </div>
+                            )}
+
                             {/* 阅读进度 */}
                             {pi.totalChapters > 0 && (
                               <div style={{ marginTop: 8 }}>

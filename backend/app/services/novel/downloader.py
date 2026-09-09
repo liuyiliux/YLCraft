@@ -16,6 +16,9 @@ from app.services.novel.crawler import get_crawler
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 UPLOAD_DIR = BASE_DIR / "uploads"
 
+#: 连续失败多少章就熔断（站点反爬时不必再逐章请求，快速给出真实原因）。
+CONSECUTIVE_FAILURE_LIMIT = 15
+
 
 class NovelDownloader:
     """小说下载器"""
@@ -80,14 +83,17 @@ class NovelDownloader:
         completed = 0
         semaphore = asyncio.Semaphore(max(1, int(concurrency or 1)))
         lock = asyncio.Lock()
+        # 连续失败熔断：站点反爬（如起点 403）时每章都发一次请求毫无意义，
+        # 与其让用户干等几百章，不如快速中止并报出真实原因。
+        state = {"consecutive_failures": 0, "first_error": None, "aborted": False}
 
         async def _one(chapter: dict):
             nonlocal completed
-            if _stopped():
+            if _stopped() or state["aborted"]:
                 return chapter, None
             try:
                 async with semaphore:
-                    if _stopped():
+                    if _stopped() or state["aborted"]:
                         return chapter, None
                     content = await _fetch(chapter['url'])
                     if content:
@@ -110,9 +116,26 @@ class NovelDownloader:
                         await asyncio.sleep(delay)
             except Exception as e:
                 print(f"下载章节失败: {chapter['title']} - {e}")
+                if state["first_error"] is None:
+                    state["first_error"] = f"{type(e).__name__}: {e}"
                 result = None
 
             async with lock:
+                # 连续失败到阈值就熔断：后续章节不再请求，直接判为未下载。
+                if result is None:
+                    state["consecutive_failures"] += 1
+                    if (
+                        state["consecutive_failures"] >= CONSECUTIVE_FAILURE_LIMIT
+                        and not _stopped()
+                    ):
+                        state["aborted"] = True
+                        if state["first_error"] is None:
+                            state["first_error"] = (
+                                f"连续 {state['consecutive_failures']} 章抓取为空"
+                                "（站点可能拒绝访问或书源规则不匹配）"
+                            )
+                else:
+                    state["consecutive_failures"] = 0
                 completed += 1
                 if progress_callback:
                     try:
@@ -129,6 +152,7 @@ class NovelDownloader:
                 failed.append(chapter)
         success.sort(key=lambda item: int(item.get('index') or 0))
         failed.sort(key=lambda item: int(item.get('index') or 0))
+        # 熔断时未抓的章节不能算"失败"（它们根本没请求过），单独用 aborted 表达。
 
         # 生成合并文件
         merged_path = os.path.join(book_dir, f"{safe_title}_全集.txt")
@@ -141,6 +165,10 @@ class NovelDownloader:
             'total_chapters': total,
             'success_count': len(success),
             'failed_count': len(failed),
+            # 熔断与首个错误：让调用方能报出真实原因（如 403 反爬），
+            # 而不是含糊的"全部失败"。
+            'aborted': bool(state["aborted"]),
+            'first_error': state["first_error"],
         }
     
     async def _merge_chapters(self, book_dir: str, output_path: str, book_title: str, author: str):
