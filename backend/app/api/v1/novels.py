@@ -13,6 +13,7 @@ import logging
 import os
 import re
 import time
+import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -602,6 +603,23 @@ async def download_chapters(
 
         def do_download():
             started = time.time()
+            # 开始即落事件：几百章的大书要下载很久，点完就该能在事件日志看到"进行中"；
+            # 与完成/失败事件共用同一个 trace_id，方便前后对照。
+            trace_id = uuid.uuid4().hex[:12]
+            try:
+                from app.services.platform_log.service import record_event
+
+                asyncio.run(
+                    record_event(
+                        scene="download",
+                        task_type="novel_download",
+                        task_id=trace_id,
+                        status="pending",
+                        message=f"小说下载开始：{req.book_title}（{len(req.chapters)} 章）",
+                    )
+                )
+            except Exception:
+                logger.debug("[NovelDownload] 开始事件写入失败（已忽略）", exc_info=True)
             error: str | None = None
             result: Dict[str, Any] = {}
             try:
@@ -639,6 +657,7 @@ async def download_chapters(
                     record_event(
                         scene="download",
                         task_type="novel_download",
+                        task_id=trace_id,
                         level="error" if error else "info",
                         status="failed" if error else "success",
                         provider=str(req.site or ""),

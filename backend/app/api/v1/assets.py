@@ -494,8 +494,12 @@ async def _list_asset_hub_cards(
 ) -> tuple[list[dict], int]:
     normalized_type = (asset_type or "").lower()
     type_map = {item.value: item for item in AssetType}
+    require_metadata_keys = None
     if normalized_type == "novel":
         node_types = [AssetType.TEXT]
+        # 书架只收"真小说"（下载/书架流程创建，metadata 带 book_url 或 chapters），
+        # 素材库里的普通文本/文档不能混进来——否则 total 与卡片数对不上（8 本只显示 1 张）。
+        require_metadata_keys = ["book_url", "chapters"]
     elif normalized_type and normalized_type not in type_map:
         return [], 0
     elif normalized_type == AssetType.IMAGE.value:
@@ -522,6 +526,7 @@ async def _list_asset_hub_cards(
         type_nodes, type_total = await node_service.list_nodes(
             asset_type=node_type,
             keyword=search,
+            require_metadata_keys=require_metadata_keys,
             page=candidate_page,
             page_size=candidate_size,
         )
