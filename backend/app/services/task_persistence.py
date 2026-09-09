@@ -39,6 +39,11 @@ PERSISTED_TASK_TYPES = {
     "world_map_visual",
 }
 
+#: 不挂项目、但仍需留痕的任务类型。这类任务没有 project_id（小说下载属于
+#: 书架资产，不归属创作项目），若也要求 project_id 就永远落不了库：
+#: 进程一重启任务即从任务中心消失，用户看不到下载结果与失败原因。
+PERSISTED_STANDALONE_TASK_TYPES = frozenset({"novel_download"})
+
 
 def should_persist(task_type: str, payload: dict[str, Any] | None) -> bool:
     """Persist project-scoped generation work, not transient UI-only tasks.
@@ -46,6 +51,8 @@ def should_persist(task_type: str, payload: dict[str, Any] | None) -> bool:
     不落库时说明原因：此前静默返回 False，新增任务类型忘了登记白名单
     （或忘了带 project_id）时表现为"任务凭空消失"，无从排查。
     """
+    if task_type in PERSISTED_STANDALONE_TASK_TYPES:
+        return True
     if task_type not in PERSISTED_TASK_TYPES:
         logger.info(
             "任务类型 %s 不在持久化白名单内，只存内存（重启即失）；"
