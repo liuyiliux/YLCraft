@@ -231,6 +231,7 @@ class AssetNodeService:
         parent_id: Optional[str] = None,
         tag_ids: Optional[List[str]] = None,
         keyword: Optional[str] = None,
+        require_metadata_keys: Optional[List[str]] = None,
         include_children: bool = True,
         page: int = 1,
         page_size: int = 20,
@@ -274,6 +275,17 @@ class AssetNodeService:
         if keyword:
             where_parts.append("name ILIKE :keyword")
             params["keyword"] = f"%{keyword}%"
+
+        # 要求 metadata_json 至少存在某些非空键（如小说要求 book_url/chapters）。
+        # 用于区分"真小说"与素材库里的普通文本：count 与分页查询共用本条件，
+        # 避免 total 与列表条数口径不一致（书架显示 8 本却只有 1 张卡的根因）。
+        if require_metadata_keys:
+            key_clauses = []
+            for i, meta_key in enumerate(require_metadata_keys):
+                param = f"require_meta_{i}"
+                params[param] = meta_key
+                key_clauses.append(f"coalesce(metadata_json->>:{param}, '') <> ''")
+            where_parts.append("(" + " OR ".join(key_clauses) + ")")
 
         # 标签过滤（AND 关系）
         if tag_ids:
