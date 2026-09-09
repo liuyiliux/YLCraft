@@ -640,65 +640,74 @@ async def download_chapters(
     try:
         downloader = NovelDownloader()
 
-        def do_download():
-            started = time.time()
-            # 开始即落事件：几百章的大书要下载很久，点完就该能在事件日志看到"进行中"；
-            # 与完成/失败事件共用同一个 trace_id，方便前后对照。
-            trace_id = uuid.uuid4().hex[:12]
-            try:
-                from app.services.platform_log.service import record_event
+        trace_id = uuid.uuid4().hex[:12]
 
-                asyncio.run(
-                    record_event(
-                        scene="download",
-                        task_type="novel_download",
-                        task_id=trace_id,
-                        status="pending",
-                        message=f"小说下载开始：{req.book_title}（{len(req.chapters)} 章）",
-                    )
+        # 开始事件在主事件循环里 await：asyncpg 连接池绑定主 loop，后台线程另起
+        # 事件循环复用它会报 "Future attached to a different loop"（事件根本写不进库）。
+        try:
+            from app.services.platform_log.service import record_event
+
+            await record_event(
+                scene="download",
+                task_type="novel_download",
+                task_id=trace_id,
+                status="pending",
+                message=f"小说下载开始：{req.book_title}（{len(req.chapters)} 章）",
+            )
+        except Exception:
+            logger.debug("[NovelDownload] 开始事件写入失败（已忽略）", exc_info=True)
+
+        def _sync_download() -> Dict[str, Any]:
+            """阻塞的抓取放进线程执行，避免拖慢主事件循环。
+
+            这里的 asyncio.run 只服务于 downloader 的 aiofiles，不触碰 asyncpg 连接池。
+            """
+            downloader = NovelDownloader()
+
+            async def _runner() -> Dict[str, Any]:
+                async def fetch_via_source(url: str) -> Optional[str]:
+                    """用书源规则抓正文（与在线阅读同一通道），硬编码爬虫只作兜底。"""
+                    with SessionLocal() as session:
+                        manager = BookSourceManager(session)
+                        source = manager.get_source(req.site) if req.site else None
+                        if source is None:
+                            for item in manager.sources:
+                                if item.bookSourceUrl and req.book_url.startswith(
+                                    item.bookSourceUrl.rstrip("/")
+                                ):
+                                    source = item
+                                    break
+                        if source is None:
+                            source = next(
+                                (item for item in manager.sources if item.enabled_by_user), None
+                            )
+                        if source is None:
+                            return None
+                        return await manager.get_chapter_content(source, url)
+
+                return await downloader.download_chapters(
+                    book_title=req.book_title,
+                    author=req.author,
+                    chapters=req.chapters,
+                    site=req.site,
+                    content_fetcher=fetch_via_source,
                 )
-            except Exception:
-                logger.debug("[NovelDownload] 开始事件写入失败（已忽略）", exc_info=True)
+
+            return asyncio.run(_runner())
+
+        async def run_download() -> None:
+            started = time.time()
             error: str | None = None
             result: Dict[str, Any] = {}
-
-            async def fetch_via_source(url: str) -> Optional[str]:
-                """用书源规则抓正文（与在线阅读同一通道），硬编码爬虫只作兜底。"""
-                with SessionLocal() as session:
-                    manager = BookSourceManager(session)
-                    source = manager.get_source(req.site) if req.site else None
-                    if source is None:
-                        for item in manager.sources:
-                            if item.bookSourceUrl and req.book_url.startswith(
-                                item.bookSourceUrl.rstrip("/")
-                            ):
-                                source = item
-                                break
-                    if source is None:
-                        source = next(
-                            (item for item in manager.sources if item.enabled_by_user), None
-                        )
-                    if source is None:
-                        return None
-                    return await manager.get_chapter_content(source, url)
-
             try:
-                result = asyncio.run(
-                    downloader.download_chapters(
-                        book_title=req.book_title,
-                        author=req.author,
-                        chapters=req.chapters,
-                        site=req.site,
-                        content_fetcher=fetch_via_source,
-                    )
-                )
+                result = await asyncio.to_thread(_sync_download)
             except Exception as exc:
                 error = str(exc)
                 logger.exception("novel download failed")
 
             if not error:
                 try:
-                    asset_id = asyncio.run(_persist_download_result(req, result))
+                    asset_id = await _persist_download_result(req, result)
                     logger.info(
                         "[NovelDownload] persisted to Asset Hub | title=%s | asset_id=%s | chapters=%s",
                         req.book_title,
@@ -709,8 +718,8 @@ async def download_chapters(
                     error = f"下载完成但书架写入失败：{persist_exc}"
                     logger.exception("persist novel download failed")
 
-            # 后台线程不走 AIService，事件收口覆盖不到，这里单独落事件：
-            # 此前小说下载完全不可观测，且"完成（494 章）"掩盖了实际全部抓取失败的事实。
+            # 完成/失败事件同样在主事件循环里 await 落库：另起循环会跨 loop 报错，
+            # 且"完成（N 章）"不能掩盖实际全部抓取失败的事实。
             success_count = int((result or {}).get("success_count") or 0)
             failed_count = int((result or {}).get("failed_count") or 0)
             try:
@@ -731,29 +740,26 @@ async def download_chapters(
                         f"小说下载完成：{req.book_title}"
                         f"（成功 {success_count} 章 / 失败 {failed_count} 章）"
                     )
-                asyncio.run(
-                    record_event(
-                        scene="download",
-                        task_type="novel_download",
-                        task_id=trace_id,
-                        level=event_level,
-                        status=event_status,
-                        provider=str(req.site or ""),
-                        message=event_message,
-                        error=error,
-                        duration_ms=int((time.time() - started) * 1000),
-                        response={
-                            "success_count": success_count,
-                            "failed_count": failed_count,
-                            "file_path": str((result or {}).get("file_path") or ""),
-                        }
-                        or None,
-                    )
+                await record_event(
+                    scene="download",
+                    task_type="novel_download",
+                    task_id=trace_id,
+                    level=event_level,
+                    status=event_status,
+                    provider=str(req.site or ""),
+                    message=event_message,
+                    error=error,
+                    duration_ms=int((time.time() - started) * 1000),
+                    response={
+                        "success_count": success_count,
+                        "failed_count": failed_count,
+                        "file_path": str((result or {}).get("file_path") or ""),
+                    },
                 )
             except Exception:
                 logger.debug("[NovelDownload] 事件日志写入失败（已忽略）", exc_info=True)
 
-        background_tasks.add_task(do_download)
+        background_tasks.add_task(run_download)
 
         mode_msg = "全文" if len(req.chapters) > 5 else f"{len(req.chapters)} 个章节"
         action = "更新" if req.asset_id else "创建"
