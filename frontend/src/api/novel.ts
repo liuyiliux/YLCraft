@@ -246,11 +246,15 @@ export async function getChapterContent(params: {
   chapter_url: string
   source_id?: string
   book_url?: string
+  book_title?: string
+  chapter_index?: number
 }): Promise<{ success: boolean; data?: { content: string; source_name: string } }> {
   const sp = new URLSearchParams()
   sp.set('chapter_url', params.chapter_url)
   if (params.source_id) sp.set('source_id', params.source_id)
   if (params.book_url) sp.set('book_url', params.book_url)
+  if (params.book_title) sp.set('book_title', params.book_title)
+  if (params.chapter_index) sp.set('chapter_index', String(params.chapter_index))
   return request(`/novels/chapter-content?${sp}`)
 }
 
