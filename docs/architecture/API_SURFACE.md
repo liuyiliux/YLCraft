@@ -7,8 +7,8 @@
 ## Summary
 
 - Router mounts: 53
-- Endpoints: 671
-- Public schema endpoints: 670
+- Endpoints: 672
+- Public schema endpoints: 671
 - Hidden compatibility endpoints: 1
 
 ## Router Mounts
@@ -795,15 +795,16 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `POST` | `/api/v1/novels/add-to-bookshelf` | - | `add_to_bookshelf` | `backend/app/api/v1/novels.py:522` |
-| `GET` | `/api/v1/novels/bookshelf-item/{asset_id}` | - | `get_bookshelf_item` | `backend/app/api/v1/novels.py:615` |
-| `GET` | `/api/v1/novels/catalog` | - | `get_catalog` | `backend/app/api/v1/novels.py:480` |
-| `GET` | `/api/v1/novels/chapter-content` | - | `get_chapter_content` | `backend/app/api/v1/novels.py:542` |
-| `POST` | `/api/v1/novels/download-chapters` | - | `download_chapters` | `backend/app/api/v1/novels.py:636` |
-| `GET` | `/api/v1/novels/local-chapter` | - | `get_local_chapter` | `backend/app/api/v1/novels.py:586` |
-| `GET` | `/api/v1/novels/search` | - | `search_novels` | `backend/app/api/v1/novels.py:457` |
-| `GET` | `/api/v1/novels/source-catalog` | - | `get_source_catalog` | `backend/app/api/v1/novels.py:786` |
-| `GET` | `/api/v1/novels/sources` | - | `get_sources` | `backend/app/api/v1/novels.py:769` |
+| `POST` | `/api/v1/novels/add-to-bookshelf` | - | `add_to_bookshelf` | `backend/app/api/v1/novels.py:539` |
+| `GET` | `/api/v1/novels/bookshelf-item/{asset_id}` | - | `get_bookshelf_item` | `backend/app/api/v1/novels.py:632` |
+| `GET` | `/api/v1/novels/catalog` | - | `get_catalog` | `backend/app/api/v1/novels.py:497` |
+| `GET` | `/api/v1/novels/chapter-content` | - | `get_chapter_content` | `backend/app/api/v1/novels.py:559` |
+| `POST` | `/api/v1/novels/download-chapters` | - | `download_chapters` | `backend/app/api/v1/novels.py:653` |
+| `POST` | `/api/v1/novels/download-tasks/{task_id}/cancel` | 停止小说下载任务 | `cancel_novel_download` | `backend/app/api/v1/novels.py:873` |
+| `GET` | `/api/v1/novels/local-chapter` | - | `get_local_chapter` | `backend/app/api/v1/novels.py:603` |
+| `GET` | `/api/v1/novels/search` | - | `search_novels` | `backend/app/api/v1/novels.py:474` |
+| `GET` | `/api/v1/novels/source-catalog` | - | `get_source_catalog` | `backend/app/api/v1/novels.py:910` |
+| `GET` | `/api/v1/novels/sources` | - | `get_sources` | `backend/app/api/v1/novels.py:893` |
 
 ### Platform Connections
 

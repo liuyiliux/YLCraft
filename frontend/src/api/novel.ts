@@ -181,7 +181,18 @@ export async function downloadChapters(data: {
   })
   // 后端该端点直接返回 {success, message}，没有 data 字段——回退到整个响应，
   // 避免调用方读到 undefined（"下载失败: Cannot read properties of undefined"）。
+  if (res?.detail) {
+    // 409：同一本书已经在下载中，不要把报错吞成"已开始下载"。
+    throw new Error(res.detail)
+  }
   return res.data ?? res
+}
+
+/** 停止小说下载任务 */
+export async function cancelNovelDownload(taskId: string): Promise<any> {
+  const res = await request(`/novels/download-tasks/${taskId}/cancel`, { method: 'POST' })
+  if (res?.detail) throw new Error(res.detail)
+  return res
 }
 
 /**
