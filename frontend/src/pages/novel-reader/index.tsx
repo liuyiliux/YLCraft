@@ -234,6 +234,8 @@ export default function NovelReaderPage() {
         chapter_url: chapter.url,
         source_id: selectedSourceId,
         book_url: bookUrl,
+        book_title: bookItem?.title || asset?.title || '',
+        chapter_index: chapter.index || chapterIdx + 1,
       })
 
       if (res.success && res.data?.content) {
