@@ -86,6 +86,8 @@ class InMemoryTaskQueue:
     def __init__(self):
         self._tasks: dict[str, Task] = {}
         self._lock = asyncio.Lock()
+        # 启动对账只做一次：把上次进程残留的进行中任务收尾（见 _mark_interrupted）。
+        self._startup_reconciled = False
 
     async def create_task(self, task_type: str, payload: dict, max_retries: int = 2) -> Task:
         task_id = str(uuid.uuid4())[:12]
@@ -216,8 +218,17 @@ class InMemoryTaskQueue:
             records = await list_tasks(project_id=project_id, active_only=active_only)
         except Exception:
             return
+        # 首次恢复即启动对账：进程重启后残留的 pending/running 任务不会再推进
+        # （协程已随进程消失），不收尾就会在任务中心一直显示"运行中"且进度不动。
+        first_run = not self._startup_reconciled
+        self._startup_reconciled = True
         for record in records:
-            await self._restore_record(record)
+            task = await self._restore_record(record)
+            if first_run and task is not None and task.status in (
+                TaskStatus.PENDING,
+                TaskStatus.RUNNING,
+            ):
+                await self._mark_interrupted(task)
 
     async def _restore_task(self, task_id: str) -> Task | None:
         try:
@@ -265,6 +276,19 @@ class InMemoryTaskQueue:
                 return existing
             self._tasks[task.task_id] = task
         return task
+
+    async def _mark_interrupted(self, task: Task) -> None:
+        """把重启后残留的进行中任务收尾为「已中断」，避免永远转圈。"""
+        task.status = TaskStatus.FAILED
+        task.error = "任务因服务重启而中断，请重新发起"
+        task.progress_message = "服务重启，任务中断"
+        task.completed_at = time.time()
+        try:
+            await self.update_task(task)
+        except Exception:
+            # 写库失败也要保证内存里是终态，否则界面依旧显示运行中。
+            async with self._lock:
+                self._tasks[task.task_id] = task
 
     async def _persist(self, task: Task) -> None:
         try:
