@@ -32,7 +32,7 @@ from app.services.asset_hub import (
 )
 from app.services.novel.book_source_manager import BookSourceManager
 from app.services.novel.crawler import get_crawler
-from app.services.novel.downloader import NovelDownloader
+from app.services.novel.downloader import NovelDownloader, read_local_chapter
 
 router = APIRouter(tags=["novels"])
 logger = logging.getLogger("ylcraft.api.novels")
@@ -543,9 +543,19 @@ async def get_chapter_content(
     chapter_url: str = Query(..., description="章节 URL"),
     source_id: str = Query("", description="书源 ID"),
     book_url: str = Query("", description="书籍 URL"),
+    book_title: str = Query("", description="书名：已下载全本时优先读本地章节"),
+    chapter_index: int = Query(0, description="章节序号（从 1 起）：配合 book_title 定位本地文件"),
     db: Session = Depends(get_db),
 ):
     try:
+        # 本地优先：已下载的书直接读本地章节文件，省一次网络抓取（离线也能读）。
+        local_content = read_local_chapter(book_title, chapter_index)
+        if local_content:
+            return {
+                "success": True,
+                "data": {"content": local_content, "source_name": "本地已下载"},
+            }
+
         manager = BookSourceManager(db)
         source = None
         if source_id:
@@ -570,6 +580,35 @@ async def get_chapter_content(
     except Exception as exc:
         logger.exception("get_chapter_content failed")
         raise HTTPException(status_code=500, detail=f"获取章节内容失败: {exc}")
+
+
+@router.get("/local-chapter")
+async def get_local_chapter(
+    id: str = Query(..., description="书架资产 ID"),
+    chapter_index: int = Query(..., description="章节序号（从 1 起）"),
+):
+    """读取已下载书籍的本地章节（阅读器本地模式）。
+
+    书已下载全本时，阅读器走这里而不是网络抓取——离线可读、不依赖书源可用性。
+    """
+    try:
+        async with AsyncSessionLocal() as session:
+            node = await _resolve_novel_node(session, asset_id=id)
+            if not node:
+                raise HTTPException(status_code=404, detail="书籍不存在")
+            book_title = node.name or str(_node_metadata(node).get("title") or "")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    content = read_local_chapter(book_title, chapter_index)
+    if not content:
+        return {
+            "success": False,
+            "error": f"本地没有第 {chapter_index} 章的文件（可能未下载或下载失败）",
+        }
+    return {"success": True, "data": {"content": content, "source_name": "本地已下载"}}
 
 
 @router.get("/bookshelf-item/{asset_id}")
@@ -622,6 +661,27 @@ async def download_chapters(
                 logger.debug("[NovelDownload] 开始事件写入失败（已忽略）", exc_info=True)
             error: str | None = None
             result: Dict[str, Any] = {}
+
+            async def fetch_via_source(url: str) -> Optional[str]:
+                """用书源规则抓正文（与在线阅读同一通道），硬编码爬虫只作兜底。"""
+                with SessionLocal() as session:
+                    manager = BookSourceManager(session)
+                    source = manager.get_source(req.site) if req.site else None
+                    if source is None:
+                        for item in manager.sources:
+                            if item.bookSourceUrl and req.book_url.startswith(
+                                item.bookSourceUrl.rstrip("/")
+                            ):
+                                source = item
+                                break
+                    if source is None:
+                        source = next(
+                            (item for item in manager.sources if item.enabled_by_user), None
+                        )
+                    if source is None:
+                        return None
+                    return await manager.get_chapter_content(source, url)
+
             try:
                 result = asyncio.run(
                     downloader.download_chapters(
@@ -629,6 +689,7 @@ async def download_chapters(
                         author=req.author,
                         chapters=req.chapters,
                         site=req.site,
+                        content_fetcher=fetch_via_source,
                     )
                 )
             except Exception as exc:
@@ -649,26 +710,44 @@ async def download_chapters(
                     logger.exception("persist novel download failed")
 
             # 后台线程不走 AIService，事件收口覆盖不到，这里单独落事件：
-            # 此前小说下载完全不可观测——用户只能看到"已开始后台下载"，成败无处可查。
+            # 此前小说下载完全不可观测，且"完成（494 章）"掩盖了实际全部抓取失败的事实。
+            success_count = int((result or {}).get("success_count") or 0)
+            failed_count = int((result or {}).get("failed_count") or 0)
             try:
                 from app.services.platform_log.service import record_event
 
+                if error:
+                    event_status, event_level = "failed", "error"
+                    event_message = f"小说下载失败：{req.book_title}（{error}）"
+                elif success_count == 0:
+                    event_status, event_level = "failed", "error"
+                    event_message = (
+                        f"小说下载失败：{req.book_title}"
+                        f"（{failed_count} 章全部抓取失败，书源可能失效或站点反爬，请换书源重试）"
+                    )
+                else:
+                    event_status, event_level = "success", "info"
+                    event_message = (
+                        f"小说下载完成：{req.book_title}"
+                        f"（成功 {success_count} 章 / 失败 {failed_count} 章）"
+                    )
                 asyncio.run(
                     record_event(
                         scene="download",
                         task_type="novel_download",
                         task_id=trace_id,
-                        level="error" if error else "info",
-                        status="failed" if error else "success",
+                        level=event_level,
+                        status=event_status,
                         provider=str(req.site or ""),
-                        message=(
-                            f"小说下载失败：{req.book_title}"
-                            if error
-                            else f"小说下载完成：{req.book_title}（{len(req.chapters)} 章）"
-                        ),
+                        message=event_message,
                         error=error,
                         duration_ms=int((time.time() - started) * 1000),
-                        response={"file_path": str(result.get("file_path") or "")} if result else None,
+                        response={
+                            "success_count": success_count,
+                            "failed_count": failed_count,
+                            "file_path": str((result or {}).get("file_path") or ""),
+                        }
+                        or None,
                     )
                 )
             except Exception:

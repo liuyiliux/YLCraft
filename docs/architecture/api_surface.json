@@ -1958,7 +1958,7 @@
       "summary": "素材资产列表",
       "function": "list_assets",
       "file": "backend/app/api/v1/assets.py",
-      "line": 681,
+      "line": 686,
       "response_model": "AssetListResponse",
       "include_in_schema": true
     },
@@ -1990,7 +1990,7 @@
       "summary": "下载/预览本地文件",
       "function": "download_local_asset_file",
       "file": "backend/app/api/v1/assets.py",
-      "line": 846,
+      "line": 851,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2006,7 +2006,7 @@
       "summary": "预览本地文件",
       "function": "download_local_asset_file",
       "file": "backend/app/api/v1/assets.py",
-      "line": 846,
+      "line": 851,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2022,7 +2022,7 @@
       "summary": "标签列表",
       "function": "list_tags",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1459,
+      "line": 1464,
       "response_model": "TagListResponse",
       "include_in_schema": true
     },
@@ -2038,7 +2038,7 @@
       "summary": "创建标签",
       "function": "create_tag",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1468,
+      "line": 1473,
       "response_model": "TagResponse",
       "include_in_schema": true
     },
@@ -2054,7 +2054,7 @@
       "summary": "本地上传素材入库",
       "function": "upload_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1205,
+      "line": 1210,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2070,7 +2070,7 @@
       "summary": "上传 3D 模型（ZIP 或单文件）入库",
       "function": "upload_model3d",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1161,
+      "line": 1166,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2086,7 +2086,7 @@
       "summary": "删除单个资产版本",
       "function": "delete_asset_version",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1669,
+      "line": 1674,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2102,7 +2102,7 @@
       "summary": "资产详情",
       "function": "get_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1607,
+      "line": 1612,
       "response_model": "AssetResponse",
       "include_in_schema": true
     },
@@ -2118,7 +2118,7 @@
       "summary": "更新资产",
       "function": "update_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1630,
+      "line": 1635,
       "response_model": "AssetResponse",
       "include_in_schema": true
     },
@@ -2134,7 +2134,7 @@
       "summary": "删除资产",
       "function": "delete_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1729,
+      "line": 1734,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2166,7 +2166,7 @@
       "summary": "下载课程章节文件",
       "function": "download_course_episode_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1425,
+      "line": 1430,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2182,7 +2182,7 @@
       "summary": "读取课程章节弹幕",
       "function": "get_course_episode_danmaku",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1414,
+      "line": 1419,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2198,7 +2198,7 @@
       "summary": "读取课程章节字幕",
       "function": "get_course_episode_subtitle",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1402,
+      "line": 1407,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2214,7 +2214,7 @@
       "summary": "播放课程章节文件",
       "function": "stream_course_episode_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1440,
+      "line": 1445,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2230,7 +2230,7 @@
       "summary": "只读检测合成水印痕迹（CtrlRegen/SynthID，不修改文件）",
       "function": "detect_asset_deep_watermark",
       "file": "backend/app/api/v1/assets.py",
-      "line": 978,
+      "line": 983,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2246,7 +2246,7 @@
       "summary": "下载资产文件",
       "function": "download_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 863,
+      "line": 868,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2262,7 +2262,7 @@
       "summary": "下载/预览资产的配套文件",
       "function": "asset_sidecar_file",
       "file": "backend/app/api/v1/assets.py",
-      "line": 880,
+      "line": 885,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2278,7 +2278,7 @@
       "summary": "审计或清理 AI 来源标记与文件元数据",
       "function": "clean_asset_provenance",
       "file": "backend/app/api/v1/assets.py",
-      "line": 908,
+      "line": 913,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2294,7 +2294,7 @@
       "summary": "恢复软删除的资产",
       "function": "restore_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1745,
+      "line": 1750,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2310,7 +2310,7 @@
       "summary": "读取资产弹幕",
       "function": "get_asset_danmaku",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1390,
+      "line": 1395,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2326,7 +2326,7 @@
       "summary": "读取资产字幕",
       "function": "get_asset_subtitle",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1377,
+      "line": 1382,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2342,7 +2342,7 @@
       "summary": "播放资产视频文件",
       "function": "stream_asset",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1249,
+      "line": 1254,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2374,7 +2374,7 @@
       "summary": "代理加载封面图",
       "function": "proxy_thumbnail",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1572,
+      "line": 1577,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2390,7 +2390,7 @@
       "summary": "设置资产缩略图",
       "function": "set_asset_thumbnail",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1549,
+      "line": 1554,
       "response_model": "",
       "include_in_schema": true
     },
@@ -2406,7 +2406,7 @@
       "summary": "去除显性可见水印并生成派生副本（图片/视频，不覆盖原文件）",
       "function": "remove_asset_visual_watermark",
       "file": "backend/app/api/v1/assets.py",
-      "line": 1015,
+      "line": 1020,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8390,7 +8390,7 @@
       "summary": "",
       "function": "add_to_bookshelf",
       "file": "backend/app/api/v1/novels.py",
-      "line": 521,
+      "line": 522,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8406,7 +8406,7 @@
       "summary": "",
       "function": "get_bookshelf_item",
       "file": "backend/app/api/v1/novels.py",
-      "line": 575,
+      "line": 615,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8422,7 +8422,7 @@
       "summary": "",
       "function": "get_catalog",
       "file": "backend/app/api/v1/novels.py",
-      "line": 479,
+      "line": 480,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8438,7 +8438,7 @@
       "summary": "",
       "function": "get_chapter_content",
       "file": "backend/app/api/v1/novels.py",
-      "line": 541,
+      "line": 542,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8454,7 +8454,23 @@
       "summary": "",
       "function": "download_chapters",
       "file": "backend/app/api/v1/novels.py",
-      "line": 596,
+      "line": 636,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/novels/local-chapter",
+      "router": "novels",
+      "prefix": "/api/v1/novels",
+      "local_path": "/local-chapter",
+      "tags": [
+        "Novels"
+      ],
+      "summary": "",
+      "function": "get_local_chapter",
+      "file": "backend/app/api/v1/novels.py",
+      "line": 586,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8470,7 +8486,7 @@
       "summary": "",
       "function": "search_novels",
       "file": "backend/app/api/v1/novels.py",
-      "line": 456,
+      "line": 457,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8486,7 +8502,7 @@
       "summary": "",
       "function": "get_source_catalog",
       "file": "backend/app/api/v1/novels.py",
-      "line": 688,
+      "line": 786,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8502,7 +8518,7 @@
       "summary": "",
       "function": "get_sources",
       "file": "backend/app/api/v1/novels.py",
-      "line": 671,
+      "line": 769,
       "response_model": "",
       "include_in_schema": true
     },

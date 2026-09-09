@@ -31,21 +31,33 @@ class NovelDownloader:
         chapters: list[dict],
         site: str = 'biqigecn',
         progress_callback: Optional[Callable] = None,
+        content_fetcher: Optional[Callable] = None,
     ) -> dict:
         """
         下载指定章节
-        
+
         Args:
             book_title: 书名
             author: 作者
             chapters: 章节列表 [{'index': 1, 'title': '...', 'url': '...'}]
             site: 站点名称
             progress_callback: 进度回调函数
-            
+            content_fetcher: 可选的 async 正文获取器 (url) -> str|None。
+                优先于硬编码 crawler 使用——书源规则与在线阅读同一通道；
+                硬编码爬虫对未适配站点（如起点）必然抓空，导致全军覆没。
+
         Returns:
             {'success': [...], 'failed': [...], 'file_path': '...'}
         """
         crawler = get_crawler(site)
+
+        async def _fetch(url: str) -> Optional[str]:
+            if content_fetcher is not None:
+                try:
+                    return await content_fetcher(url)
+                except Exception:
+                    return None
+            return crawler.download_chapter(url)
         
         # 创建书名目录
         safe_title = self._safe_filename(book_title)
@@ -59,7 +71,7 @@ class NovelDownloader:
         
         for idx, chapter in enumerate(chapters, 1):
             try:
-                content = crawler.download_chapter(chapter['url'])
+                content = await _fetch(chapter['url'])
                 
                 if content:
                     # 保存章节
@@ -125,3 +137,30 @@ class NovelDownloader:
         safe = re.sub(r'[<>:"/\\|?*]', '_', name)
         # 限制长度
         return safe[:100]
+
+
+def read_local_chapter(book_title: str, chapter_index: Optional[int]) -> Optional[str]:
+    """已下载全本时优先读本地章节文件，避免重复走网络。
+
+    章节文件命名 ``NNNN_标题.txt``（NNNN 为 4 位章节序号，从 1 起），首行是 ``# 标题``。
+    找不到书目录或章节文件时返回 None，由调用方回退到在线抓取。
+    """
+    if not book_title or not chapter_index:
+        return None
+    safe_title = NovelDownloader()._safe_filename(str(book_title))
+    book_dir = UPLOAD_DIR / 'novels' / safe_title
+    if not book_dir.is_dir():
+        return None
+    matches = sorted(book_dir.glob(f'{int(chapter_index):04d}_*.txt'))
+    if not matches:
+        return None
+    try:
+        text = matches[0].read_text(encoding='utf-8')
+    except OSError:
+        return None
+    lines = text.splitlines()
+    if lines and lines[0].startswith('# '):
+        lines = lines[1:]
+    content = '\n'.join(lines).strip()
+    return content or None
+
