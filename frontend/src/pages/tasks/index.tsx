@@ -56,6 +56,7 @@ const TASK_TYPE_OPTIONS = [
   { label: '视频剪辑', value: 'clip' },
   { label: '地图成图', value: 'world_map_visual' },
   { label: '世界域细化', value: 'world_domain_expansion' },
+  { label: '小说下载', value: 'novel_download' },
 ]
 
 // 任务状态颜色映射
@@ -90,6 +91,7 @@ const TYPE_COLOR_MAP: Record<string, string> = {
   clip: 'orange',
   world_map_visual: 'gold',
   world_domain_expansion: 'green',
+  novel_download: 'cyan',
 }
 
 interface TaskItem {

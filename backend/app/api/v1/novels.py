@@ -825,9 +825,18 @@ async def download_chapters(
                     )
                 elif success_count == 0:
                     event_status, event_level = "failed", "error"
+                    # 带上首个真实错误（如 403 反爬），别让用户只看到"全部失败"。
+                    first_error = str((result or {}).get("first_error") or "")
+                    hint = (
+                        f"，首个错误：{first_error[:150]}"
+                        if first_error
+                        else "，书源可能失效，请换书源重试"
+                    )
+                    aborted = bool((result or {}).get("aborted"))
                     event_message = (
                         f"小说下载失败：{req.book_title}"
-                        f"（{failed_count} 章全部抓取失败，书源可能失效或站点反爬，请换书源重试）"
+                        f"（{failed_count} 章抓取失败{hint}"
+                        f"{'；已熔断停止后续章节' if aborted else ''}）"
                     )
                 else:
                     event_status, event_level = "success", "info"
