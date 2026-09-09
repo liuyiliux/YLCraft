@@ -179,7 +179,9 @@ export async function downloadChapters(data: {
     method: 'POST',
     body: JSON.stringify(data),
   })
-  return res.data
+  // 后端该端点直接返回 {success, message}，没有 data 字段——回退到整个响应，
+  // 避免调用方读到 undefined（"下载失败: Cannot read properties of undefined"）。
+  return res.data ?? res
 }
 
 /**
