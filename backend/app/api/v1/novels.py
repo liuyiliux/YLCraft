@@ -12,6 +12,7 @@ import asyncio
 import logging
 import os
 import re
+import threading
 import time
 import uuid
 from datetime import datetime
@@ -22,6 +23,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.core.task_queue import get_task_queue
 from app.db.database import AsyncSessionLocal, SessionLocal
 from app.db.models.asset_hub import AssetNode, AssetType
 from app.db.models.novel import NovelChapter
@@ -46,6 +48,21 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+# ---------------------------------------------------------------------------
+# 小说下载的运行保护
+#
+# 几百章的串行下载会把线程池与连接池占满、拖垮整个服务（实测后端会停止响应）。
+# 这里做三件事：同一本书同时只允许一个下载任务；抓取并发可控；任务可取消。
+# ---------------------------------------------------------------------------
+
+#: book_key -> {"task_id", "stop_event", "title"}，仅登记进行中的任务。
+_ACTIVE_DOWNLOADS: Dict[str, Dict[str, Any]] = {}
+_ACTIVE_DOWNLOADS_LOCK = asyncio.Lock()
+
+#: 章节抓取并发度：太高会被站点判定为爬虫，太低则几百章要跑很久。
+NOVEL_DOWNLOAD_CONCURRENCY = int(os.getenv("NOVEL_DOWNLOAD_CONCURRENCY", "3") or 3)
 
 
 class DownloadChaptersRequest(BaseModel):
@@ -638,9 +655,38 @@ async def download_chapters(
     background_tasks: BackgroundTasks,
 ):
     try:
+        # 同一本书同时只允许一个下载任务：重复点击会叠加出多个几百章的任务，
+        # 把线程池与连接池吃光（实测会让整个后端停止响应）。
+        book_key = str(req.asset_id or req.book_url or req.book_title or "").strip()
+        async with _ACTIVE_DOWNLOADS_LOCK:
+            running = _ACTIVE_DOWNLOADS.get(book_key)
+        if running:
+            raise HTTPException(
+                status_code=409,
+                detail=f"《{req.book_title}》正在下载中（任务 {running['task_id']}），请等待完成或先停止",
+            )
+
+        queue = get_task_queue()
+        task = await queue.create_task(
+            task_type="novel_download",
+            payload={
+                "book_title": req.book_title,
+                "book_url": req.book_url,
+                "asset_id": req.asset_id or "",
+                "total": len(req.chapters),
+            },
+        )
+        stop_event = threading.Event()
+        async with _ACTIVE_DOWNLOADS_LOCK:
+            _ACTIVE_DOWNLOADS[book_key] = {
+                "task_id": task.task_id,
+                "stop_event": stop_event,
+                "title": req.book_title,
+            }
+
         downloader = NovelDownloader()
 
-        trace_id = uuid.uuid4().hex[:12]
+        trace_id = task.task_id
 
         # 开始事件在主事件循环里 await：asyncpg 连接池绑定主 loop，后台线程另起
         # 事件循环复用它会报 "Future attached to a different loop"（事件根本写不进库）。
@@ -656,6 +702,8 @@ async def download_chapters(
             )
         except Exception:
             logger.debug("[NovelDownload] 开始事件写入失败（已忽略）", exc_info=True)
+
+        progress_state: Dict[str, int] = {"done": 0, "total": len(req.chapters), "failed": 0}
 
         def _sync_download() -> Dict[str, Any]:
             """阻塞的抓取放进线程执行，避免拖慢主事件循环。
@@ -685,12 +733,23 @@ async def download_chapters(
                             return None
                         return await manager.get_chapter_content(source, url)
 
+                async def on_progress(done: int, total: int, title: str, ok: bool) -> None:
+                    """只写共享状态：进度由主事件循环的 pump 协程读走并更新任务。"""
+                    progress_state["done"] = int(done)
+                    progress_state["total"] = int(total)
+                    if not ok:
+                        progress_state["failed"] = int(progress_state.get("failed") or 0) + 1
+
                 return await downloader.download_chapters(
                     book_title=req.book_title,
                     author=req.author,
                     chapters=req.chapters,
                     site=req.site,
                     content_fetcher=fetch_via_source,
+                    concurrency=NOVEL_DOWNLOAD_CONCURRENCY,
+                    delay=0.5,
+                    stop_event=stop_event,
+                    progress_callback=on_progress,
                 )
 
             return asyncio.run(_runner())
@@ -699,11 +758,42 @@ async def download_chapters(
             started = time.time()
             error: str | None = None
             result: Dict[str, Any] = {}
+            finished = asyncio.Event()
+
+            async def pump_progress() -> None:
+                """主事件循环里定期上报进度——抓取本身在线程，不会阻塞这里。"""
+                while not finished.is_set():
+                    await asyncio.sleep(1)
+                    done = int(progress_state.get("done") or 0)
+                    total = int(progress_state.get("total") or len(req.chapters) or 1)
+                    failed_now = int(progress_state.get("failed") or 0)
+                    percent = min(99, int(done / total * 100)) if total else 0
+                    try:
+                        await queue.update_progress(
+                            task.task_id,
+                            percent,
+                            f"{done}/{total} 章"
+                            + (f"，失败 {failed_now}" if failed_now else ""),
+                        )
+                    except Exception:
+                        pass
+
+            pump = asyncio.create_task(pump_progress())
             try:
-                result = await asyncio.to_thread(_sync_download)
-            except Exception as exc:
-                error = str(exc)
-                logger.exception("novel download failed")
+                try:
+                    result = await asyncio.to_thread(_sync_download)
+                except Exception as exc:
+                    error = str(exc)
+                    logger.exception("novel download failed")
+            finally:
+                # 无论成败都要收尾：停掉进度协程、释放该书的下载占位。
+                finished.set()
+                try:
+                    await asyncio.wait_for(pump, timeout=3)
+                except Exception:
+                    pump.cancel()
+                async with _ACTIVE_DOWNLOADS_LOCK:
+                    _ACTIVE_DOWNLOADS.pop(book_key, None)
 
             if not error:
                 try:
@@ -728,6 +818,11 @@ async def download_chapters(
                 if error:
                     event_status, event_level = "failed", "error"
                     event_message = f"小说下载失败：{req.book_title}（{error}）"
+                elif stop_event.is_set():
+                    event_status, event_level = "cancelled", "info"
+                    event_message = (
+                        f"小说下载已取消：{req.book_title}（已完成 {success_count} 章）"
+                    )
                 elif success_count == 0:
                     event_status, event_level = "failed", "error"
                     event_message = (
@@ -766,9 +861,32 @@ async def download_chapters(
         return {
             "success": True,
             "message": f"已开始下载{mode_msg}，{action}书架记录，请稍后查看",
+            "task_id": task.task_id,
         }
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post("/download-tasks/{task_id}/cancel", summary="停止小说下载任务")
+async def cancel_novel_download(task_id: str):
+    """请求停止下载：正在抓取的章节会尽快收尾，已下载的章节保留。"""
+    for key, item in list(_ACTIVE_DOWNLOADS.items()):
+        if item.get("task_id") == task_id:
+            item["stop_event"].set()
+            try:
+                await get_task_queue().append_event(
+                    task_id, "cancelled", "已请求停止，等待当前章节收尾"
+                )
+            except Exception:
+                pass
+            return {
+                "success": True,
+                "message": "已请求停止，正在抓取的章节会尽快结束",
+                "task_id": task_id,
+            }
+    raise HTTPException(status_code=404, detail="任务不存在或已结束")
 
 
 @router.get("/sources")

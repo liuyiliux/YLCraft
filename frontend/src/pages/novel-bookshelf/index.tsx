@@ -28,9 +28,9 @@ import {
   Typography,
 } from 'antd'
 const { Text } = Typography
-import { BookOutlined, ReadOutlined, DeleteOutlined, DownloadOutlined, CloudDownloadOutlined, MoreOutlined, RobotOutlined } from '@ant-design/icons'
+import { BookOutlined, ReadOutlined, DeleteOutlined, DownloadOutlined, CloudDownloadOutlined, MoreOutlined, RobotOutlined, StopOutlined } from '@ant-design/icons'
 import { listAssets, deleteAsset } from '../../api'
-import { downloadChapters, addToBookshelf, getChapterContent } from '../../api/novel'
+import { downloadChapters, addToBookshelf, getChapterContent, cancelNovelDownload } from '../../api/novel'
 import { importBookshelf } from '../../api/novelSource'
 
 export default function NovelBookshelfPage() {
@@ -123,6 +123,28 @@ export default function NovelBookshelfPage() {
     }
   }
 
+  // 正在下载的书的 task_id（用于显示"停止"）
+  const [downloadTasks, setDownloadTasks] = useState<Record<string, string>>({})
+
+  /** 停止下载 */
+  const handleStopDownload = async (asset: any, e?: React.MouseEvent) => {
+    e?.stopPropagation()
+    const taskId = downloadTasks[asset.id]
+    if (!taskId) return
+    try {
+      await cancelNovelDownload(taskId)
+      message.success('已请求停止，正在抓取的章节会尽快结束')
+    } catch (err: any) {
+      message.warning(err?.message || '停止失败（任务可能已结束）')
+    }
+    setDownloadTasks((prev) => {
+      const next = { ...prev }
+      delete next[asset.id]
+      return next
+    })
+    setTimeout(loadNovels, 1500)
+  }
+
   /** 下载全本 */
   const handleDownloadAll = async (asset: any, e?: React.MouseEvent) => {
     e?.stopPropagation()
@@ -138,7 +160,7 @@ export default function NovelBookshelfPage() {
     try {
       message.info(`开始下载《${asset.title}》共 ${chapters.length} 章...`)
       
-      await downloadChapters({
+      const res = await downloadChapters({
         book_url: meta.book_url || asset.source_url || '',
         book_title: asset.title,
         author: meta.author || asset.author || '',
@@ -146,8 +168,12 @@ export default function NovelBookshelfPage() {
         site: meta.source_id || '',
         asset_id: asset.id,
       })
-      
-      message.success('已开始后台下载')
+
+      const taskId = (res as any)?.task_id
+      if (taskId) {
+        setDownloadTasks((prev) => ({ ...prev, [asset.id]: taskId }))
+      }
+      message.success(taskId ? `已开始下载（任务 ${taskId}）` : '已开始后台下载')
       setTimeout(loadNovels, 2000)
     } catch (err: any) {
       message.error('下载失败: ' + err.message)
@@ -315,7 +341,17 @@ export default function NovelBookshelfPage() {
                             onClick={(e: any) => void handleExtractWorld(novel, e)}
                           />
                         </Tooltip>,
-                        ...(pi.isFullyDownloaded ? [] : [
+                        ...(pi.isFullyDownloaded ? [] : downloadTasks[novel.id] ? [
+                          <Tooltip title="停止下载" key="stop">
+                            <Button
+                              type="text"
+                              size="small"
+                              danger
+                              icon={<StopOutlined />}
+                              onClick={(e: any) => handleStopDownload(novel, e)}
+                            />
+                          </Tooltip>
+                        ] : [
                           <Tooltip title="下载全本" key="download">
                             <CloudDownloadOutlined onClick={(e: any) => handleDownloadAll(novel, e)} />
                           </Tooltip>

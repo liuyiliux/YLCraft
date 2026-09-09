@@ -32,6 +32,9 @@ class NovelDownloader:
         site: str = 'biqigecn',
         progress_callback: Optional[Callable] = None,
         content_fetcher: Optional[Callable] = None,
+        concurrency: int = 3,
+        delay: float = 0.5,
+        stop_event: Optional[Any] = None,
     ) -> dict:
         """
         下载指定章节
@@ -45,6 +48,10 @@ class NovelDownloader:
             content_fetcher: 可选的 async 正文获取器 (url) -> str|None。
                 优先于硬编码 crawler 使用——书源规则与在线阅读同一通道；
                 硬编码爬虫对未适配站点（如起点）必然抓空，导致全军覆没。
+            concurrency: 并发抓取数（默认 3）。串行抓几百章会把线程池和连接池占满、
+                拖垮整个服务；并发又要克制，太高会被站点判定为爬虫。
+            delay: 单章抓取后的间隔秒数，默认 0.5。
+            stop_event: threading.Event，置位后停止后续章节（支持取消）。
 
         Returns:
             {'success': [...], 'failed': [...], 'file_path': '...'}
@@ -58,48 +65,71 @@ class NovelDownloader:
                 except Exception:
                     return None
             return crawler.download_chapter(url)
-        
+
+        def _stopped() -> bool:
+            return bool(stop_event is not None and stop_event.is_set())
+
         # 创建书名目录
         safe_title = self._safe_filename(book_title)
         book_dir = os.path.join(self.output_dir, safe_title)
         os.makedirs(book_dir, exist_ok=True)
-        
-        # 下载章节
-        success = []
-        failed = []
+
+        success: list = []
+        failed: list = []
         total = len(chapters)
-        
-        for idx, chapter in enumerate(chapters, 1):
+        completed = 0
+        semaphore = asyncio.Semaphore(max(1, int(concurrency or 1)))
+        lock = asyncio.Lock()
+
+        async def _one(chapter: dict):
+            nonlocal completed
+            if _stopped():
+                return chapter, None
             try:
-                content = await _fetch(chapter['url'])
-                
-                if content:
-                    # 保存章节
-                    file_path = os.path.join(book_dir, f"{chapter['index']:04d}_{self._safe_filename(chapter['title'])}.txt")
-                    async with aiofiles.open(file_path, 'w', encoding='utf-8') as f:
-                        await f.write(f"# {chapter['title']}\n\n")
-                        await f.write(content)
-                        await f.write('\n')
-                    
-                    success.append({
-                        'index': chapter['index'],
-                        'title': chapter['title'],
-                        'file_path': file_path,
-                    })
-                else:
-                    failed.append(chapter)
-                
-                # 进度回调
-                if progress_callback:
-                    await progress_callback(idx, total, chapter['title'], content is not None)
-                
-                # 避免请求过快
-                await asyncio.sleep(0.5)
-                
+                async with semaphore:
+                    if _stopped():
+                        return chapter, None
+                    content = await _fetch(chapter['url'])
+                    if content:
+                        file_path = os.path.join(
+                            book_dir,
+                            f"{chapter['index']:04d}_{self._safe_filename(chapter['title'])}.txt",
+                        )
+                        async with aiofiles.open(file_path, 'w', encoding='utf-8') as f:
+                            await f.write(f"# {chapter['title']}\n\n")
+                            await f.write(content)
+                            await f.write('\n')
+                        result = {
+                            'index': chapter['index'],
+                            'title': chapter['title'],
+                            'file_path': file_path,
+                        }
+                    else:
+                        result = None
+                    if delay:
+                        await asyncio.sleep(delay)
             except Exception as e:
                 print(f"下载章节失败: {chapter['title']} - {e}")
+                result = None
+
+            async with lock:
+                completed += 1
+                if progress_callback:
+                    try:
+                        await progress_callback(completed, total, chapter['title'], result is not None)
+                    except Exception:
+                        pass
+            return chapter, result
+
+        pairs = await asyncio.gather(*[_one(ch) for ch in chapters])
+        for chapter, result in pairs:
+            if result:
+                success.append(result)
+            elif not _stopped():
                 failed.append(chapter)
-        
+        success.sort(key=lambda item: int(item.get('index') or 0))
+        failed.sort(key=lambda item: int(item.get('index') or 0))
+
         # 生成合并文件
         merged_path = os.path.join(book_dir, f"{safe_title}_全集.txt")
         await self._merge_chapters(book_dir, merged_path, book_title, author)

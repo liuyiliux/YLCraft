@@ -8390,7 +8390,7 @@
       "summary": "",
       "function": "add_to_bookshelf",
       "file": "backend/app/api/v1/novels.py",
-      "line": 522,
+      "line": 539,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8406,7 +8406,7 @@
       "summary": "",
       "function": "get_bookshelf_item",
       "file": "backend/app/api/v1/novels.py",
-      "line": 615,
+      "line": 632,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8422,7 +8422,7 @@
       "summary": "",
       "function": "get_catalog",
       "file": "backend/app/api/v1/novels.py",
-      "line": 480,
+      "line": 497,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8438,7 +8438,7 @@
       "summary": "",
       "function": "get_chapter_content",
       "file": "backend/app/api/v1/novels.py",
-      "line": 542,
+      "line": 559,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8454,7 +8454,23 @@
       "summary": "",
       "function": "download_chapters",
       "file": "backend/app/api/v1/novels.py",
-      "line": 636,
+      "line": 653,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/novels/download-tasks/{task_id}/cancel",
+      "router": "novels",
+      "prefix": "/api/v1/novels",
+      "local_path": "/download-tasks/{task_id}/cancel",
+      "tags": [
+        "Novels"
+      ],
+      "summary": "停止小说下载任务",
+      "function": "cancel_novel_download",
+      "file": "backend/app/api/v1/novels.py",
+      "line": 873,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8470,7 +8486,7 @@
       "summary": "",
       "function": "get_local_chapter",
       "file": "backend/app/api/v1/novels.py",
-      "line": 586,
+      "line": 603,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8486,7 +8502,7 @@
       "summary": "",
       "function": "search_novels",
       "file": "backend/app/api/v1/novels.py",
-      "line": 457,
+      "line": 474,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8502,7 +8518,7 @@
       "summary": "",
       "function": "get_source_catalog",
       "file": "backend/app/api/v1/novels.py",
-      "line": 786,
+      "line": 910,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8518,7 +8534,7 @@
       "summary": "",
       "function": "get_sources",
       "file": "backend/app/api/v1/novels.py",
-      "line": 769,
+      "line": 893,
       "response_model": "",
       "include_in_schema": true
     },
