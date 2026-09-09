@@ -76,6 +76,8 @@ credentials/
 backend/downloads/
 backend/storage/
 backend/backups/
+# 运行时上传的用户内容（小说等），不进仓库
+backend/app/uploads/
 *.log
 backend/tmp_*
 

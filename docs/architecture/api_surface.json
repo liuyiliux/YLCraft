@@ -8390,7 +8390,7 @@
       "summary": "",
       "function": "add_to_bookshelf",
       "file": "backend/app/api/v1/novels.py",
-      "line": 520,
+      "line": 521,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8406,7 +8406,7 @@
       "summary": "",
       "function": "get_bookshelf_item",
       "file": "backend/app/api/v1/novels.py",
-      "line": 574,
+      "line": 575,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8422,7 +8422,7 @@
       "summary": "",
       "function": "get_catalog",
       "file": "backend/app/api/v1/novels.py",
-      "line": 478,
+      "line": 479,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8438,7 +8438,7 @@
       "summary": "",
       "function": "get_chapter_content",
       "file": "backend/app/api/v1/novels.py",
-      "line": 540,
+      "line": 541,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8454,7 +8454,7 @@
       "summary": "",
       "function": "download_chapters",
       "file": "backend/app/api/v1/novels.py",
-      "line": 595,
+      "line": 596,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8470,7 +8470,7 @@
       "summary": "",
       "function": "search_novels",
       "file": "backend/app/api/v1/novels.py",
-      "line": 455,
+      "line": 456,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8486,7 +8486,7 @@
       "summary": "",
       "function": "get_source_catalog",
       "file": "backend/app/api/v1/novels.py",
-      "line": 652,
+      "line": 688,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8502,7 +8502,7 @@
       "summary": "",
       "function": "get_sources",
       "file": "backend/app/api/v1/novels.py",
-      "line": 635,
+      "line": 671,
       "response_model": "",
       "include_in_schema": true
     },

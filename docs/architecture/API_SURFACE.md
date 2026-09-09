@@ -795,14 +795,14 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `POST` | `/api/v1/novels/add-to-bookshelf` | - | `add_to_bookshelf` | `backend/app/api/v1/novels.py:520` |
-| `GET` | `/api/v1/novels/bookshelf-item/{asset_id}` | - | `get_bookshelf_item` | `backend/app/api/v1/novels.py:574` |
-| `GET` | `/api/v1/novels/catalog` | - | `get_catalog` | `backend/app/api/v1/novels.py:478` |
-| `GET` | `/api/v1/novels/chapter-content` | - | `get_chapter_content` | `backend/app/api/v1/novels.py:540` |
-| `POST` | `/api/v1/novels/download-chapters` | - | `download_chapters` | `backend/app/api/v1/novels.py:595` |
-| `GET` | `/api/v1/novels/search` | - | `search_novels` | `backend/app/api/v1/novels.py:455` |
-| `GET` | `/api/v1/novels/source-catalog` | - | `get_source_catalog` | `backend/app/api/v1/novels.py:652` |
-| `GET` | `/api/v1/novels/sources` | - | `get_sources` | `backend/app/api/v1/novels.py:635` |
+| `POST` | `/api/v1/novels/add-to-bookshelf` | - | `add_to_bookshelf` | `backend/app/api/v1/novels.py:521` |
+| `GET` | `/api/v1/novels/bookshelf-item/{asset_id}` | - | `get_bookshelf_item` | `backend/app/api/v1/novels.py:575` |
+| `GET` | `/api/v1/novels/catalog` | - | `get_catalog` | `backend/app/api/v1/novels.py:479` |
+| `GET` | `/api/v1/novels/chapter-content` | - | `get_chapter_content` | `backend/app/api/v1/novels.py:541` |
+| `POST` | `/api/v1/novels/download-chapters` | - | `download_chapters` | `backend/app/api/v1/novels.py:596` |
+| `GET` | `/api/v1/novels/search` | - | `search_novels` | `backend/app/api/v1/novels.py:456` |
+| `GET` | `/api/v1/novels/source-catalog` | - | `get_source_catalog` | `backend/app/api/v1/novels.py:688` |
+| `GET` | `/api/v1/novels/sources` | - | `get_sources` | `backend/app/api/v1/novels.py:671` |
 
 ### Platform Connections
 
