@@ -24,6 +24,7 @@ from app.core.task_queue import TaskStatus, get_task_queue
 from app.db.models.creative_project import CreativeProject, ProjectAssetLink, ProjectContent
 from app.db.models.external_api_key import ExternalApiKey
 from app.services.ai import get_ai_service, AIService
+from app.services.ai.service import ai_call_context
 from app.services.ai.types import ImageGenerationRequest
 from app.services.asset_hub.reference_resolver import merge_reference_images
 from app.services.platform_log import service as platform_log
@@ -560,7 +561,16 @@ async def generate_image(
             lora=req.lora or "",
             controlnet=req.controlnet or "",
         )
-        result = await manager.generate_image(img_req)
+        # 事件日志由 AIService 收口统一记录（成功/失败/异常），这里只补业务身份与重发负载；
+        # 业务语义事件（任务已提交、素材定稿失败）仍由本端点单独记录。
+        with ai_call_context(
+            scene="image",
+            task_type="image_generation",
+            label="图片生成",
+            project_id=req.project_id or None,
+            retry_payload=_image_retry_payload(req),
+        ):
+            result = await manager.generate_image(img_req)
 
         if result.success:
             if result.task_id and result.status == "pending":
@@ -726,20 +736,6 @@ async def generate_image(
                     status="error",
                 )
 
-            await platform_log.record_event(
-                scene="image",
-                task_type="image_generation",
-                level="info",
-                status="success",
-                provider=result.provider or "",
-                model=result.model or "",
-                message="图片生成成功",
-                request=_image_log_actual_request(result, req),
-                response=_image_log_actual_response(result, result.urls or ([result.url] if result.url else [])),
-                duration_ms=result.latency_ms,
-                project_id=req.project_id or None,
-                retry_payload=_image_retry_payload(req),
-            )
             return ImageResponse(
                 success=True,
                 url=result.url,
@@ -761,21 +757,6 @@ async def generate_image(
                 planning_summary=planning_summary,
             )
         else:
-            await platform_log.record_event(
-                scene="image",
-                task_type="image_generation",
-                level="error",
-                status="failed",
-                provider=result.provider or req.provider or "",
-                model=result.model or req.model or "",
-                message="图片生成失败",
-                error=result.error,
-                request=_image_log_actual_request(result, req),
-                response=_image_log_actual_response(result),
-                duration_ms=result.latency_ms,
-                project_id=req.project_id or None,
-                retry_payload=_image_retry_payload(req),
-            )
             return ImageResponse(
                 success=False,
                 error=result.error,
@@ -783,21 +764,8 @@ async def generate_image(
                 status=result.status,
             )
     except Exception as e:
+        # 失败事件已由 AIService 收口记录（含异常），这里不再重复写。
         logger.error(f"Image generation failed: {e}")
-        await platform_log.record_event(
-            scene="image",
-            task_type="image_generation",
-            level="error",
-            status="failed",
-            provider=req.provider or "",
-            model=req.model or "",
-            message="图片生成异常",
-            error=str(e),
-            request=_image_log_request(req),
-            response={"error": str(e)},
-            project_id=req.project_id or None,
-            retry_payload=_image_retry_payload(req),
-        )
         return ImageResponse(success=False, error=str(e), provider="")
 
 

@@ -1571,6 +1571,7 @@ async def slice_character_portrait_grid(
 async def enrich_character(character_id: str, req: CharacterEnrichRequest):
     from app.db.models.character import Character
     from app.services.ai import get_ai_service
+    from app.services.ai.service import ai_call_context
     from app.services.ai.types import LLMMessage
     from app.services.character.enrichment import (
         build_character_enrichment_prompt,
@@ -1603,28 +1604,24 @@ async def enrich_character(character_id: str, req: CharacterEnrichRequest):
             "context": req.context,
         }
         enrich_started = time.time()
-        result = await manager.chat(
-            [
-                LLMMessage(role="system", content="你是严格输出 JSON 的角色设定师。"),
-                LLMMessage(role="user", content=prompt),
-            ],
-            backend_name=req.provider,
-            model=req.model,
-            temperature=0.4,
-        )
-        if not result.success:
-            await platform_log.record_event(
-                scene="llm",
-                task_type="llm_chat",
-                level="error",
-                status="failed",
-                provider=result.provider or req.provider or "",
-                model=result.model or req.model or "",
-                message=f"角色 AI 补全失败：{character.name}",
-                error=result.error or "",
-                request=log_request_payload,
-                duration_ms=int((time.time() - enrich_started) * 1000),
+        # 调用本身的成败事件由 AIService 收口记录；这里只补角色身份，
+        # 便于在事件日志里按角色检索（解析失败另行记录，那是业务语义）。
+        with ai_call_context(
+            scene="llm",
+            task_type="llm_chat",
+            label=f"角色 AI 补全：{character.name}",
+            ref_id=str(character.id),
+        ):
+            result = await manager.chat(
+                [
+                    LLMMessage(role="system", content="你是严格输出 JSON 的角色设定师。"),
+                    LLMMessage(role="user", content=prompt),
+                ],
+                backend_name=req.provider,
+                model=req.model,
+                temperature=0.4,
             )
+        if not result.success:
             await _write_project_generation_log_committed(
                 scene="character_portrait",
                 ref_id=str(character.id),
@@ -1679,17 +1676,7 @@ async def enrich_character(character_id: str, req: CharacterEnrichRequest):
             await session.flush()
             updated = service.to_response(updated_character) if updated_character else None
 
-        await platform_log.record_event(
-            scene="llm",
-            task_type="llm_chat",
-            level="info",
-            status="success",
-            provider=result.provider or req.provider or "",
-            model=result.model or req.model or "",
-            message=f"角色 AI 补全成功：{character.name}（{mode}）",
-            request=log_request_payload,
-            duration_ms=int((time.time() - enrich_started) * 1000),
-        )
+        # 成功事件已由 AIService 收口记录，这里不再重复写。
         await _write_project_generation_log(
             session,
             scene="character_portrait",
@@ -1739,6 +1726,7 @@ async def generate_character_portrait(character_id: str, req: PortraitGenerateRe
     注意：不会调用旧版 /images/generate 端点（避免双入库旧版 Asset 表）。
     """
     from app.services.ai import get_ai_service
+    from app.services.ai.service import ai_call_context
     from app.services.ai.types import ImageGenerationRequest
     from app.services.asset_hub import AssetHubFacade
     from app.db.models.character import Character
@@ -1780,27 +1768,20 @@ async def generate_character_portrait(character_id: str, req: PortraitGenerateRe
         )
 
         started = time.time()
-        try:
-            result = await manager.generate_image(img_req)
-        except Exception as e:
-            logger.exception(f"[portrait/generate] generate_image failed: {e}")
-            # 写入平台事件日志：任务中心与事件日志 Tab 读的是 platform_event_logs，
-            # 只写 ProjectGenerationLog 会导致角色生图在任务中心不可见。
-            await platform_log.record_event(
-                scene="image",
-                task_type="character_portrait",
-                level="error",
-                status="failed",
-                provider=req.provider or "",
-                model=req.model or "",
-                message=f"角色立绘生成失败：{character.name}",
-                error=str(e),
-                ref_id=character.id,
-                request=_portrait_event_payload(character, req, prompt, negative_prompt, prompt_bundle["preset"]),
-                duration_ms=int((time.time() - started) * 1000),
-                retry_payload=_portrait_retry_payload(req, prompt, negative_prompt),
-            )
-            # 写入失败日志
+        # 事件日志（含异常）由 AIService 收口记录，这里只补角色身份与重发负载；
+        # ProjectGenerationLog 是另一套业务日志，照旧写。
+        with ai_call_context(
+            scene="image",
+            task_type="character_portrait",
+            label=f"角色立绘：{character.name}",
+            ref_id=character.id,
+            retry_payload=_portrait_retry_payload(req, prompt, negative_prompt),
+        ):
+            try:
+                result = await manager.generate_image(img_req)
+            except Exception as e:
+                logger.exception(f"[portrait/generate] generate_image failed: {e}")
+                # 写入失败日志
             try:
                 await _write_project_generation_log(
                     session,
@@ -1832,20 +1813,7 @@ async def generate_character_portrait(character_id: str, req: PortraitGenerateRe
             raise HTTPException(status_code=500, detail=f"生图失败: {e}")
 
         if not result.success:
-            await platform_log.record_event(
-                scene="image",
-                task_type="character_portrait",
-                level="error",
-                status="failed",
-                provider=result.provider or req.provider or "",
-                model=result.model or req.model or "",
-                message=f"角色立绘生成失败：{character.name}",
-                error=result.error or "",
-                ref_id=character.id,
-                request=_portrait_event_payload(character, req, prompt, negative_prompt, prompt_bundle["preset"]),
-                duration_ms=int((time.time() - started) * 1000),
-                retry_payload=_portrait_retry_payload(req, prompt, negative_prompt),
-            )
+            # 失败事件已由 AIService 收口记录，这里不再重复写。
             # 写入失败日志
             try:
                 await _write_project_generation_log(
@@ -1959,20 +1927,7 @@ async def generate_character_portrait(character_id: str, req: PortraitGenerateRe
             await session.flush()
             await session.refresh(character)
 
-            # 5. 写入平台事件日志：任务中心与事件日志 Tab 的数据源
-            await platform_log.record_event(
-                scene="image",
-                task_type="character_portrait",
-                level="info",
-                status="success",
-                provider=result.provider or req.provider or "",
-                model=result.model or req.model or "",
-                message=f"角色立绘生成成功：{character.name}",
-                ref_id=character.id,
-                request=_portrait_event_payload(character, req, prompt, negative_prompt, prompt_bundle["preset"]),
-                response={"url": url, "node_id": asset_hub_result.node_id},
-                duration_ms=int((time.time() - started) * 1000),
-            )
+            # 5. 平台事件日志已由 AIService 收口记录（成功事件），此处不重复写。
 
             # 6. 写入成功日志
             try:

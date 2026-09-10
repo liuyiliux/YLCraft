@@ -96,11 +96,12 @@ async def test_record_event_redacts_credentials_in_retry_payload(captured):
 
 @pytest.mark.asyncio
 async def test_record_event_truncates_long_summaries(captured):
+    # 输入要长于 MAX_SUMMARY_LENGTH，才能验证截断保护仍然生效。
     await platform_log.record_event(
         scene="llm",
         status="failed",
-        error="E" * 5000,
-        response={"blob": "x" * 5000},
+        error="E" * (platform_log.MAX_SUMMARY_LENGTH + 5000),
+        response={"blob": "x" * (platform_log.MAX_SUMMARY_LENGTH + 5000)},
     )
 
     row = captured.added[0]

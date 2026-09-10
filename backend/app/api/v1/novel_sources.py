@@ -669,13 +669,15 @@ async def plan_domains(
     project_id = snapshot.project_id if snapshot else None
     started = time.time()
     try:
-        plan = await svc.plan_domains(
-            snapshot_id,
-            provider=req.provider,
-            model=req.model,
-            requested_domains=req.requested_domains,
-            sample_chunks=req.sample_chunks,
-        )
+        # 本端点自己写业务事件（含"多少个模块"等业务语义），抑制收口自动记账避免双写。
+        with ai_call_context(project_id=project_id, suppress_auto_event=True):
+            plan = await svc.plan_domains(
+                snapshot_id,
+                provider=req.provider,
+                model=req.model,
+                requested_domains=req.requested_domains,
+                sample_chunks=req.sample_chunks,
+            )
     except ValueError as exc:
         await platform_log.record_event(
             scene="world_extraction",
@@ -948,20 +950,22 @@ async def start_project_world_extraction(
 
     started = time.time()
     try:
-        result = await svc.extract(
-            snapshot.id,
-            # 有意的产品选择：本入口是「从大纲一次性生成整套世界设定候选」，大纲文本短、
-            # 一次性，用户期待连世界观/力量体系/经济等扩展设定一起看到，所以默认跑全部
-            # 可提取模块。其它入口（小说来源提取、Agent 工具）不指定模块时由服务层回落
-            # 到基础层（角色/地点/势力/历史事件），避免扩展模块产生空候选噪声。
-            domains=req.domains or list(EXTRACTABLE_DOMAINS),
-            project_id=project_id,
-            # 来源性质：这里的「原文」是项目大纲，不是某部真实作品——候选标记 outline，
-            # 让 UI 能说明「依据来自你的大纲」，而不是伪装成原著出处。
-            candidate_origin=CandidateOrigin.OUTLINE.value,
-            provider=req.provider,
-            model=req.model,
-        )
+        # 本端点自己写业务事件（含候选数等业务语义），抑制收口自动记账避免双写。
+        with ai_call_context(project_id=project_id, suppress_auto_event=True):
+            result = await svc.extract(
+                snapshot.id,
+                # 有意的产品选择：本入口是「从大纲一次性生成整套世界设定候选」，大纲文本
+                # 短、一次性，用户期待连世界观/力量体系/经济等扩展设定一起看到，所以默认
+                # 跑全部可提取模块。其它入口（小说来源提取、Agent 工具）不指定模块时由
+                # 服务层回落到基础层（角色/地点/势力/历史事件），避免扩展模块空候选噪声。
+                domains=req.domains or list(EXTRACTABLE_DOMAINS),
+                project_id=project_id,
+                # 来源性质：这里的「原文」是项目大纲，不是某部真实作品——候选标记 outline，
+                # 让 UI 能说明「依据来自你的大纲」，而不是伪装成原著出处。
+                candidate_origin=CandidateOrigin.OUTLINE.value,
+                provider=req.provider,
+                model=req.model,
+            )
     except ValueError as exc:  # 输入问题（如无大纲）：记录后保持 400 语义
         await platform_log.record_event(
             scene="world_extraction",
@@ -1326,13 +1330,15 @@ async def draft_world_template(
     """
     started = time.time()
     try:
-        draft = await svc.draft_template(
-            project_id,
-            domain=req.domain,
-            hint=req.hint,
-            provider=req.provider or None,
-            model=req.model or None,
-        )
+        # 本端点自己写业务事件（模板草案等业务语义），抑制收口自动记账避免双写。
+        with ai_call_context(project_id=project_id, suppress_auto_event=True):
+            draft = await svc.draft_template(
+                project_id,
+                domain=req.domain,
+                hint=req.hint,
+                provider=req.provider or None,
+                model=req.model or None,
+            )
     except ValueError as exc:
         await platform_log.record_event(
             scene="world_generation",
@@ -1411,16 +1417,18 @@ async def _run_domain_expansion_task(task_id: str, project_id: str, req: WorldDo
         await queue.update_progress(task_id, 10, "正在准备域级细化")
         with SessionLocal() as session:
             service = WorldGenerationService(session)
-            result = await service.expand_domain(
-                project_id,
-                req.domain,
-                template_id=req.template_id or None,
-                prompt_override=req.prompt_override,
-                hint=req.hint,
-                limit=req.limit,
-                provider=req.provider or None,
-                model=req.model or None,
-            )
+            # 本端点自己写业务事件（候选数等业务语义），抑制收口自动记账避免双写。
+            with ai_call_context(project_id=project_id, suppress_auto_event=True):
+                result = await service.expand_domain(
+                    project_id,
+                    req.domain,
+                    template_id=req.template_id or None,
+                    prompt_override=req.prompt_override,
+                    hint=req.hint,
+                    limit=req.limit,
+                    provider=req.provider or None,
+                    model=req.model or None,
+                )
         tracked = await queue.get_task(task_id)
         if tracked:
             tracked.status = TaskStatus.DONE
@@ -1544,15 +1552,17 @@ async def expand_entity_attributes(
     """
     started = time.time()
     try:
-        result = await svc.expand_entity(
-            project_id,
-            req.entity_id,
-            fields=req.fields,
-            template_id=req.template_id or None,
-            prompt_override=req.prompt_override,
-            provider=req.provider or None,
-            model=req.model or None,
-        )
+        # 本端点自己写业务事件（补充字段等业务语义），抑制收口自动记账避免双写。
+        with ai_call_context(project_id=project_id, suppress_auto_event=True):
+            result = await svc.expand_entity(
+                project_id,
+                req.entity_id,
+                fields=req.fields,
+                template_id=req.template_id or None,
+                prompt_override=req.prompt_override,
+                provider=req.provider or None,
+                model=req.model or None,
+            )
     except ValueError as exc:  # 输入/契约问题：记录后保持 400 语义
         await platform_log.record_event(
             scene="world_generation",
