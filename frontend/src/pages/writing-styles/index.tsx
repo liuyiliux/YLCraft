@@ -85,10 +85,13 @@ export default function WritingStylesPage() {
   const [snapshots, setSnapshots] = useState<any[]>([])
   const [projects, setProjects] = useState<any[]>([])
   const [extractOpen, setExtractOpen] = useState(false)
+  const [extracting, setExtracting] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   const [uploadingTxt, setUploadingTxt] = useState(false)
+  const [llmBackends, setLlmBackends] = useState<any[]>([])
   const [extractForm] = Form.useForm()
   const [importForm] = Form.useForm()
+  const extractProvider = Form.useWatch('provider', extractForm)
 
   const [deviationText, setDeviationText] = useState('')
   const [deviationProject, setDeviationProject] = useState<string>('')
@@ -165,8 +168,30 @@ export default function WritingStylesPage() {
     return false // 阻止 antd Upload 自动上传
   }
 
+  // 提取弹窗的 Provider/模型下拉：从 AI 连接器配置读可用的 LLM，不再让用户手填。
+  useEffect(() => {
+    fetch('/api/v1/ai/connectors?provider_type=llm&active_only=true')
+      .then((res) => res.json())
+      .then((result) => setLlmBackends(result?.connectors || result?.data || result?.items || []))
+      .catch(() => setLlmBackends([]))
+  }, [])
+
+  // 打开弹窗时预填第一个可用供应商与其默认模型。
+  useEffect(() => {
+    if (extractOpen && llmBackends.length && !extractForm.getFieldValue('provider')) {
+      const first = llmBackends[0]
+      extractForm.setFieldsValue({
+        provider: first.name || first.provider || '',
+        model:
+          first.default_model || first.model || first.available_models?.[0] || undefined,
+      })
+    }
+  }, [extractOpen, llmBackends, extractForm])
+
   const submitExtract = async () => {
+    if (extracting) return
     const values = await extractForm.validateFields()
+    setExtracting(true)
     try {
       const payload = await extractWritingStyleFromSource({
         snapshot_id: values.snapshot_id,
@@ -182,6 +207,9 @@ export default function WritingStylesPage() {
       if (created?.id) openDetail(created.id)
     } catch (error: any) {
       message.error(error?.message || '提取失败')
+    } finally {
+      // 提取是同步长任务（后端等 LLM 跑完才返回），不锁住按钮就能并发触发多次。
+      setExtracting(false)
     }
   }
 
@@ -382,9 +410,15 @@ export default function WritingStylesPage() {
       <Modal
         title="从来源快照提取风格草稿"
         open={extractOpen}
-        onCancel={() => setExtractOpen(false)}
+        onCancel={() => {
+          if (!extracting) setExtractOpen(false)
+        }}
         onOk={submitExtract}
-        okText="提取（产出草稿）"
+        okText={extracting ? '提取中…' : '提取（产出草稿）'}
+        confirmLoading={extracting}
+        cancelButtonProps={{ disabled: extracting }}
+        closable={!extracting}
+        maskClosable={!extracting}
       >
         <Form form={extractForm} layout="vertical">
           <Form.Item
@@ -408,10 +442,53 @@ export default function WritingStylesPage() {
           </Form.Item>
           <Space>
             <Form.Item name="provider" label="Provider">
-              <Input placeholder="可选" style={{ width: 160 }} />
+              <Select
+                placeholder="选择供应商"
+                allowClear
+                showSearch
+                style={{ width: 200 }}
+                options={llmBackends.map((item: any) => ({
+                  value: item.name || item.provider,
+                  label: item.provider_label || item.name || item.provider,
+                }))}
+                onChange={(value) => {
+                  // 切换供应商时模型跟着换成该供应商的默认/可用模型。
+                  const backend = llmBackends.find(
+                    (item: any) => (item.name || item.provider) === value
+                  )
+                  extractForm.setFieldsValue({
+                    model:
+                      backend?.default_model ||
+                      backend?.model ||
+                      backend?.available_models?.[0] ||
+                      undefined,
+                  })
+                }}
+              />
             </Form.Item>
             <Form.Item name="model" label="模型">
-              <Input placeholder="可选" style={{ width: 200 }} />
+              <Select
+                placeholder={extractProvider ? '选择模型' : '先选 Provider'}
+                allowClear
+                showSearch
+                style={{ width: 240 }}
+                options={(() => {
+                  const backend = llmBackends.find(
+                    (item: any) => (item.name || item.provider) === extractProvider
+                  )
+                  // 多数连接器没配 available_models，只有 default_model——并入选项，别让下拉空着。
+                  const models = Array.from(
+                    new Set(
+                      [
+                        ...(backend?.available_models || []),
+                        backend?.default_model,
+                        backend?.model,
+                      ].filter(Boolean)
+                    )
+                  )
+                  return models.map((model) => ({ value: model, label: model }))
+                })()}
+              />
             </Form.Item>
           </Space>
         </Form>
