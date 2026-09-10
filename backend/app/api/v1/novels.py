@@ -352,7 +352,18 @@ async def _upsert_bookshelf_node(req: AddToBookshelfRequest) -> str:
 
 async def _persist_download_result(req: DownloadChaptersRequest, result: Dict[str, Any]) -> str:
     file_path = str(result.get("file_path") or "")
-    chapter_indices = _chapter_indices(req.chapters)
+    # 只把真正抓到的章节记为已下载：此前按 req.chapters 全量记账，熔断或部分失败
+    # 时未下到的章节也被标成"已下载"，阅读器本地落空只能回退网络，看着像没下载。
+    success_items = result.get("success")
+    if success_items is None:
+        # 兼容没有 success 明细的旧调用路径。
+        chapter_indices = _chapter_indices(req.chapters)
+    else:
+        chapter_indices = [
+            int(item.get("index"))
+            for item in success_items
+            if item.get("index") is not None
+        ]
 
     async with AsyncSessionLocal() as session:
         node = await _resolve_novel_node(session, asset_id=req.asset_id or "", book_url=req.book_url)
@@ -795,7 +806,9 @@ async def download_chapters(
                 async with _ACTIVE_DOWNLOADS_LOCK:
                     _ACTIVE_DOWNLOADS.pop(book_key, None)
 
-            if not error:
+            # 成败都落库：取消或中途报错时已抓到的章节不该丢，书架与阅读器
+            # 能立刻用上这部分成果（此前只有"无异常"才写，一取消就全丢）。
+            if result:
                 try:
                     asset_id = await _persist_download_result(req, result)
                     logger.info(

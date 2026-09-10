@@ -184,11 +184,13 @@ export default function NovelReaderPage() {
         return
       }
 
-      // 判断该章节是否已下载
+      // 本地优先：只要这本书下过（索引非空）就先试本地文件。
+      // 不能按「该章 index 是否在索引里」判断——索引要下载全部结束才持久化，
+      // 下载进行中已落盘的章节会被误判成未下载、白跑一次网络抓取。
       const downloadedIndices = bookItem?.downloaded_chapter_indices || asset?.metadata?.downloaded_chapter_indices || []
-      const isDownloaded = downloadedIndices.includes(chapter.index)
-      
-      if (isDownloaded) {
+      const hasLocalCopy = downloadedIndices.length > 0
+
+      if (hasLocalCopy) {
         // 已下载：从本地文件读取（TODO: 后续对接本地文件服务端点）
         setReadMode('local')
         
@@ -208,9 +210,9 @@ export default function NovelReaderPage() {
           console.warn('本地文件加载失败，回退到在线模式', e)
         }
         
-        // 本地读取失败，显示提示
-        setContent(`# ${chapter.title}\n\n（本地文件暂不可用，正在切换为在线阅读...）`)
-        setTimeout(() => loadOnlineContent(chapter, chapterIdx), 500)
+        // 该章本地还没下到（部分下载时的常态）：直接转在线，不闪"本地不可用"提示。
+        setReadMode('online')
+        await loadOnlineContent(chapter, chapterIdx)
         return
       }
 
