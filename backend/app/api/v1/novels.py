@@ -639,6 +639,62 @@ async def get_local_chapter(
     return {"success": True, "data": {"content": content, "source_name": "本地已下载"}}
 
 
+@router.post("/local-sync")
+async def sync_local_chapters(id: str = Query(..., description="书架资产 ID")):
+    """按磁盘上真实存在的章节文件重算「已下载章节」索引。
+
+    下载被中断、进程重启或中途取消时，索引会落后于磁盘：书架显示 0 章、
+    阅读器误判"未下载"而走网络抓取。这里扫盘对齐一次，无需重新下载。
+    """
+    try:
+        from app.services.novel.downloader import UPLOAD_DIR
+
+        async with AsyncSessionLocal() as session:
+            node = await _resolve_novel_node(session, asset_id=id)
+            if not node:
+                raise HTTPException(status_code=404, detail="书籍不存在")
+            metadata = _node_metadata(node)
+            book_title = node.name or str(metadata.get("title") or "")
+            safe_title = NovelDownloader()._safe_filename(str(book_title))
+            book_dir = UPLOAD_DIR / "novels" / safe_title
+            disk_indices = {
+                int(path.name.split("_", 1)[0])
+                for path in book_dir.glob("*_*.txt")
+                if path.name.split("_", 1)[0].isdigit()
+            } if book_dir.is_dir() else set()
+            if not disk_indices:
+                return {
+                    "success": False,
+                    "error": f"本地没有找到《{book_title}》的章节文件，无需对齐（需要先下载）",
+                }
+
+            chapter_count = int(metadata.get("chapter_count") or len(metadata.get("chapters") or []) or 0)
+            metadata["downloaded_chapters"] = sorted(disk_indices)
+            metadata["downloaded_chapter_indices"] = sorted(disk_indices)
+            metadata["status"] = (
+                "ready" if chapter_count and len(disk_indices) >= chapter_count else "partial"
+            )
+            metadata["last_local_sync"] = datetime.now().isoformat()
+            # metadata_json 是 JSONB 列，直接给 dict（与 _persist_download_result 一致）。
+            node.metadata_json = metadata
+            session.add(node)
+            await session.commit()
+            return {
+                "success": True,
+                "data": {
+                    "asset_id": id,
+                    "downloaded": len(disk_indices),
+                    "chapter_count": chapter_count,
+                    "status": metadata["status"],
+                },
+            }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("sync_local_chapters failed")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 @router.get("/bookshelf-item/{asset_id}")
 async def get_bookshelf_item(asset_id: str):
     try:

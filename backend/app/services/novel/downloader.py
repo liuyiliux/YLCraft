@@ -95,6 +95,31 @@ class NovelDownloader:
                 async with semaphore:
                     if _stopped() or state["aborted"]:
                         return chapter, None
+                    # 断点续下：本地已有该章就不再走网络，补下载只抓真正缺的
+                    # （下载被中断/取消后重下，否则会重复抓几百章还可能再撞反爬）。
+                    existing = sorted(
+                        Path(book_dir).glob(f"{int(chapter['index']):04d}_*.txt")
+                    )
+                    if existing:
+                        result = {
+                            'index': chapter['index'],
+                            'title': chapter['title'],
+                            'file_path': str(existing[0]),
+                            'from_local': True,
+                        }
+                        if delay:
+                            await asyncio.sleep(min(delay, 0.05))
+                        async with lock:
+                            state["consecutive_failures"] = 0
+                            completed += 1
+                            if progress_callback:
+                                try:
+                                    await progress_callback(
+                                        completed, total, chapter['title'], True
+                                    )
+                                except Exception:
+                                    pass
+                        return chapter, result
                     content = await _fetch(chapter['url'])
                     if content:
                         file_path = os.path.join(
