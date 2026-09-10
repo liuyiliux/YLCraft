@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { App, Button, Empty, Image, Input, List, Modal, Select, Space, Tag, Typography } from 'antd'
 import { CopyOutlined, FileTextOutlined, SearchOutlined } from '@ant-design/icons'
 import {
+  getImagePromptReference,
   saveImagePromptReferenceAsAsset,
   searchImagePromptReferences,
   type ImagePromptReference,
@@ -65,6 +66,37 @@ export default function PromptReferencePicker({
     [selectedId, state.items],
   )
 
+  // 搜索接口返回的 prompt 是 360 字预览（后端 preview=True），直接拿来展示/插入
+  // 会得到残缺提示词。选中后补拉详情拿全文，面板、复制、应用统一用 active。
+  const [detail, setDetail] = useState<ImagePromptReference | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+
+  useEffect(() => {
+    const id = selected?.id
+    if (!open || !id) {
+      setDetail(null)
+      return
+    }
+    let cancelled = false
+    setDetailLoading(true)
+    getImagePromptReference(id)
+      .then((payload) => {
+        if (!cancelled) setDetail((payload?.data ?? payload) as ImagePromptReference)
+      })
+      .catch(() => {
+        if (!cancelled) setDetail(null)
+      })
+      .finally(() => {
+        if (!cancelled) setDetailLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [open, selected?.id])
+
+  // 详情到位且与当前选中项一致时用全文，否则退回列表项（避免串到别的条目）。
+  const active = detail && selected && detail.id === selected.id ? detail : selected
+
   const loadReferences = async () => {
     setLoading(true)
     try {
@@ -94,8 +126,8 @@ export default function PromptReferencePicker({
   }, [open, keyword, category, tag])
 
   const copyPrompt = async () => {
-    if (!selected?.prompt) return
-    await navigator.clipboard.writeText(selected.prompt)
+    if (!active?.prompt) return
+    await navigator.clipboard.writeText(active.prompt)
     message.success('已复制 Prompt')
   }
 
@@ -120,10 +152,24 @@ export default function PromptReferencePicker({
       footer={
         <Space>
           <Button onClick={onCancel}>取消</Button>
-          <Button icon={<CopyOutlined />} disabled={!selected} onClick={copyPrompt}>复制</Button>
+          <Button icon={<CopyOutlined />} disabled={!active} onClick={copyPrompt}>复制</Button>
           <Button disabled={!selected} onClick={saveAsAsset}>保存为素材</Button>
-          <Button disabled={!selected} data-prompt-reference-action="append" onClick={() => selected && onApply(selected, 'append')}>追加</Button>
-          <Button type="primary" disabled={!selected} data-prompt-reference-action="replace" onClick={() => selected && onApply(selected, 'replace')}>替换</Button>
+          {/* 详情还在加载时不能应用：否则又会把 360 字预览插进去。 */}
+          <Button
+            disabled={!active || detailLoading}
+            data-prompt-reference-action="append"
+            onClick={() => active && onApply(active, 'append')}
+          >
+            追加
+          </Button>
+          <Button
+            type="primary"
+            disabled={!active || detailLoading}
+            data-prompt-reference-action="replace"
+            onClick={() => active && onApply(active, 'replace')}
+          >
+            替换
+          </Button>
         </Space>
       }
       styles={{ body: { paddingTop: 12 } }}
@@ -215,6 +261,7 @@ export default function PromptReferencePicker({
                 {selected.needs_reference_image ? <Tag color="orange">参考图</Tag> : null}
               </Space>
               <Text strong>{selected.title}</Text>
+              {/* 展示全文（详情加载中先用预览，加载完自动换成完整提示词）。 */}
               <Paragraph
                 style={{
                   margin: 0,
@@ -227,7 +274,7 @@ export default function PromptReferencePicker({
                   overflow: 'auto',
                 }}
               >
-                {selected.prompt}
+                {detailLoading ? '正在加载完整提示词…' : (active?.prompt || '')}
               </Paragraph>
               <Space size={4} wrap>
                 {(selected.tags || []).map((itemTag) => <Tag key={itemTag}>{itemTag}</Tag>)}
