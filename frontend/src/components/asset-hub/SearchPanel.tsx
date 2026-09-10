@@ -30,6 +30,10 @@ interface SearchPanelProps {
   defaultParams?: Partial<SearchParams>
   searchHistory?: string[]
   onHistoryClick?: (keyword: string) => void
+  /** 删除单条历史（由调用方负责持久化，组件本身不持有存储） */
+  onHistoryRemove?: (keyword: string) => void
+  /** 清空全部历史 */
+  onHistoryClear?: () => void
 }
 
 const ASSET_TYPES = [
@@ -50,7 +54,14 @@ const ASSET_TYPES = [
   { value: 'COLLECTION', label: '集合' },
 ]
 
-export function SearchPanel({ onSearch, defaultParams, searchHistory = [], onHistoryClick }: SearchPanelProps) {
+export function SearchPanel({
+  onSearch,
+  defaultParams,
+  searchHistory = [],
+  onHistoryClick,
+  onHistoryRemove,
+  onHistoryClear,
+}: SearchPanelProps) {
   const [query, setQuery] = useState(defaultParams?.query || '')
   const [tagIds, setTagIds] = useState(defaultParams?.tagIds || [])
   const [assetTypes, setAssetTypes] = useState(defaultParams?.assetTypes || [])
@@ -146,16 +157,34 @@ export function SearchPanel({ onSearch, defaultParams, searchHistory = [], onHis
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
             <HistoryOutlined style={{ color: '#8b8ba8' }} />
             <span style={{ color: '#8b8ba8', fontSize: 12 }}>搜索历史</span>
+            {onHistoryClear && (
+              <Button
+                type="link"
+                size="small"
+                danger
+                onClick={onHistoryClear}
+                style={{ padding: 0, height: 'auto', fontSize: 12 }}
+              >
+                清空
+              </Button>
+            )}
           </div>
           <Space wrap>
-            {searchHistory.map((keyword, index) => (
-              <Button
-                key={index}
-                type="text"
+            {searchHistory.map((keyword) => (
+              <Tag
+                key={keyword}
+                style={{ cursor: 'pointer', marginInlineEnd: 0 }}
                 onClick={() => handleHistoryClickLocal(keyword)}
+                // 有关闭能力时才显示 ×：关闭按钮要阻止冒泡，否则会顺手触发一次搜索。
+                closable={Boolean(onHistoryRemove)}
+                onClose={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  onHistoryRemove?.(keyword)
+                }}
               >
                 {keyword}
-              </Button>
+              </Tag>
             ))}
           </Space>
         </div>
