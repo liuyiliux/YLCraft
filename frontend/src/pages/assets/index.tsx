@@ -311,6 +311,21 @@ export default function AssetsPage() {
   }, [page])
 
   // ---- Search handlers ----
+  /** 删除单条搜索历史（同步写入 localStorage，刷新后不会再出现） */
+  const handleHistoryRemove = useCallback((keyword: string) => {
+    setSearchHistory(prev => {
+      const next = prev.filter(item => item !== keyword)
+      try { localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(next)) } catch {}
+      return next
+    })
+  }, [])
+
+  /** 清空搜索历史 */
+  const handleHistoryClear = useCallback(() => {
+    setSearchHistory([])
+    try { localStorage.setItem(SEARCH_HISTORY_KEY, '[]') } catch {}
+  }, [])
+
   const handleSearch = useCallback((params: SearchParams) => {
     setSearchQuery(params.query)
     const newMode = params.mode
@@ -1088,6 +1103,8 @@ export default function AssetsPage() {
               defaultParams={{ query: searchQuery, mode: searchMode }}
               searchHistory={searchHistory}
               onHistoryClick={handleHistoryClick}
+              onHistoryRemove={handleHistoryRemove}
+              onHistoryClear={handleHistoryClear}
             />
 
             {/* Quick filters */}
