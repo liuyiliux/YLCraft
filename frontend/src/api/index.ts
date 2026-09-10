@@ -692,6 +692,15 @@ export const getImageTask = (taskId: string, provider?: string) => {
 
 export const getImageBackends = () => request('/images/backends')
 
+/** 用 LLM 优化生图提示词（只润色文字，不生图） */
+export const optimizeImagePrompt = (data: {
+  prompt: string
+  instruction?: string
+  provider?: string
+  model?: string
+}) =>
+  request('/images/optimize-prompt', { method: 'POST', body: JSON.stringify(data) })
+
 // ===== Platform Templates（平台模板）=====
 
 export interface PlatformTemplate {
