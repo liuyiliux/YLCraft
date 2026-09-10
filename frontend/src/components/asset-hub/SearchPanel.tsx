@@ -11,8 +11,8 @@
  */
 
 import { useState, useCallback } from 'react'
-import { Input, Select, Slider, Tag, Button, Card, Space, Divider, Radio } from 'antd'
-import { SearchOutlined, FilterOutlined, SettingOutlined, CloseOutlined, HistoryOutlined, StarOutlined } from '@ant-design/icons'
+import { Input, Select, Slider, Button, Card, Space, Divider, Radio } from 'antd'
+import { SearchOutlined, FilterOutlined, SettingOutlined, CloseOutlined, HistoryOutlined, StarOutlined, DeleteOutlined } from '@ant-design/icons'
 import { TagSelector } from './TagSelector'
 
 export interface SearchParams {
@@ -169,22 +169,44 @@ export function SearchPanel({
               </Button>
             )}
           </div>
-          <Space wrap>
+          <Space wrap size={[8, 8]}>
             {searchHistory.map((keyword) => (
-              <Tag
+              <span
                 key={keyword}
-                style={{ cursor: 'pointer', marginInlineEnd: 0 }}
-                onClick={() => handleHistoryClickLocal(keyword)}
-                // 有关闭能力时才显示 ×：关闭按钮要阻止冒泡，否则会顺手触发一次搜索。
-                closable={Boolean(onHistoryRemove)}
-                onClose={(event) => {
-                  event.preventDefault()
-                  event.stopPropagation()
-                  onHistoryRemove?.(keyword)
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 2,
+                  padding: '2px 4px 2px 8px',
+                  borderRadius: 6,
+                  border: '1px solid var(--border, #333)',
+                  background: 'var(--bgElevated, rgba(255, 255, 255, 0.04))',
                 }}
               >
-                {keyword}
-              </Tag>
+                <Button
+                  type="text"
+                  size="small"
+                  style={{ padding: 0, height: 'auto', fontSize: 12 }}
+                  onClick={() => handleHistoryClickLocal(keyword)}
+                >
+                  {keyword}
+                </Button>
+                {onHistoryRemove ? (
+                  <Button
+                    type="text"
+                    size="small"
+                    danger
+                    icon={<DeleteOutlined />}
+                    title="删除这条搜索历史"
+                    // 阻止冒泡：删一条时不能顺手触发一次搜索。
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      onHistoryRemove(keyword)
+                    }}
+                    style={{ padding: 0, width: 20, height: 20, minWidth: 20 }}
+                  />
+                ) : null}
+              </span>
             ))}
           </Space>
         </div>
