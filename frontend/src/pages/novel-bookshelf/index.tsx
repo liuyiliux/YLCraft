@@ -29,7 +29,7 @@ import {
 } from 'antd'
 const { Text } = Typography
 import { BookOutlined, ReadOutlined, DeleteOutlined, DownloadOutlined, CloudDownloadOutlined, MoreOutlined, RobotOutlined, StopOutlined } from '@ant-design/icons'
-import { listAssets, deleteAsset, getTask } from '../../api'
+import { listAssets, deleteAsset, getTask, listTasks } from '../../api'
 import { downloadChapters, addToBookshelf, getChapterContent, cancelNovelDownload } from '../../api/novel'
 import { importBookshelf } from '../../api/novelSource'
 
@@ -126,6 +126,38 @@ export default function NovelBookshelfPage() {
   // 正在下载的书的 task_id（用于显示"停止"）与实时进度
   const [downloadTasks, setDownloadTasks] = useState<Record<string, string>>({})
   const [downloadProgress, setDownloadProgress] = useState<Record<string, { percent: number; message: string }>>({})
+
+  // 发现运行中的下载任务：页面可能在任务开始之后才打开/刷新（点下载按钮的
+  // 那次 setDownloadTasks 早已丢失），这里按任务中心的 payload.asset_id 重新对上，
+  // 实时进度条与停止按钮才不会"消失"。
+  useEffect(() => {
+    let cancelled = false
+    const sync = async () => {
+      try {
+        const res = await listTasks({ task_type: 'novel_download', include_detail: true })
+        const tasks: any[] = res?.tasks || []
+        if (cancelled) return
+        const next: Record<string, string> = {}
+        for (const t of tasks) {
+          const assetId = String(t.payload?.asset_id || '')
+          if (assetId && ['pending', 'running'].includes(String(t.status))) {
+            next[assetId] = t.task_id
+          }
+        }
+        if (Object.keys(next).length) {
+          setDownloadTasks((prev) => ({ ...prev, ...next }))
+        }
+      } catch {
+        /* 任务中心不可达时静默，不打扰书架浏览 */
+      }
+    }
+    sync()
+    const timer = setInterval(sync, 5000)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+  }, [])
 
   // 下载中：每 2 秒拉一次任务进度，书架卡片就能看到实时进度
   // （书架本身的进度来自 downloaded_chapter_indices，要下载完成才更新）。
