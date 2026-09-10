@@ -50,7 +50,7 @@ import {
 } from '@ant-design/icons'
 import type { UploadFile } from 'antd/es/upload/interface'
 import { useTheme } from '../../constants/theme'
-import { createUserImagePromptReference, getImageBackends, generateImage as generateImageApi, getImageTask, linkCreativeProjectAsset } from '../../api'
+import { createUserImagePromptReference, getImageBackends, generateImage as generateImageApi, getImageTask, linkCreativeProjectAsset, optimizeImagePrompt } from '../../api'
 import AssetReferencePicker from '../../components/asset-reference-picker/AssetReferencePicker'
 import type { ImagePromptReference } from '../../api'
 import MultiPlatformGen from './MultiPlatformGen'
@@ -317,6 +317,75 @@ function ImageGenSinglePage() {
     setSelectedPromptReference(reference)
     setPromptReferencePickerOpen(false)
     message.success(action === 'append' ? '已追加 Prompt 参考' : '已替换为 Prompt 参考')
+  }
+
+  // ===== AI 优化提示词 =====
+  const [optimizeOpen, setOptimizeOpen] = useState(false)
+  const [optimizeInstruction, setOptimizeInstruction] = useState('')
+  const [optimizeResult, setOptimizeResult] = useState('')
+  const [optimizing, setOptimizing] = useState(false)
+  const [llmBackends, setLlmBackends] = useState<any[]>([])
+  const [optimizeProvider, setOptimizeProvider] = useState<string>('')
+  const [optimizeModel, setOptimizeModel] = useState<string>('')
+
+  // 优化用的是 LLM，不是生图后端：单独拉一份可用的文本模型列表。
+  useEffect(() => {
+    if (!optimizeOpen) return
+    fetch('/api/v1/ai/connectors?provider_type=llm&active_only=true')
+      .then(res => res.json())
+      .then(result => {
+        const items = result?.connectors || result?.data || result?.items || []
+        setLlmBackends(items)
+        if (items.length && !optimizeProvider) {
+          const first = items[0]
+          setOptimizeProvider(first.name || first.provider || '')
+          setOptimizeModel(
+            first.default_model || first.model || first.available_models?.[0] || '',
+          )
+        }
+      })
+      .catch(() => setLlmBackends([]))
+  }, [optimizeOpen, optimizeProvider])
+
+  const openOptimize = () => {
+    if (!prompt.trim()) {
+      message.warning('请先填写提示词，再让 AI 优化')
+      return
+    }
+    setOptimizeResult('')
+    setOptimizeInstruction('')
+    setOptimizeOpen(true)
+  }
+
+  const runOptimize = async () => {
+    if (optimizing) return
+    setOptimizing(true)
+    try {
+      const res: any = await optimizeImagePrompt({
+        prompt,
+        instruction: optimizeInstruction,
+        provider: optimizeProvider || undefined,
+        model: optimizeModel || undefined,
+      })
+      const data = res?.data ?? res
+      if (data?.success && data?.optimized_prompt) {
+        setOptimizeResult(data.optimized_prompt)
+        message.success('已生成优化后的提示词')
+      } else {
+        message.error(data?.error || '优化失败')
+      }
+    } catch (error: any) {
+      message.error(error?.message || '优化失败')
+    } finally {
+      setOptimizing(false)
+    }
+  }
+
+  const applyOptimized = () => {
+    if (!optimizeResult.trim()) return
+    setPrompt(optimizeResult.trim())
+    setOptimizeOpen(false)
+    message.success('已应用优化后的提示词')
   }
 
 
@@ -877,6 +946,9 @@ function ImageGenSinglePage() {
                   <Button size="small" icon={<FileTextOutlined />} onClick={() => setPromptReferencePickerOpen(true)}>
                     Prompt 参考库
                   </Button>
+                  <Button size="small" icon={<ThunderboltOutlined />} onClick={openOptimize}>
+                    AI 优化
+                  </Button>
                 </Space>
               </Space>
               <TextArea
@@ -1371,6 +1443,89 @@ function ImageGenSinglePage() {
         onCancel={() => setPromptReferencePickerOpen(false)}
         onApply={applyPromptReference}
       />
+
+      <Modal
+        title="AI 优化提示词"
+        open={optimizeOpen}
+        onCancel={() => !optimizing && setOptimizeOpen(false)}
+        width={720}
+        okText={optimizeResult ? '重新优化' : '开始优化'}
+        confirmLoading={optimizing}
+        onOk={runOptimize}
+        cancelText="关闭"
+        footer={[
+          <Button key="close" onClick={() => setOptimizeOpen(false)} disabled={optimizing}>关闭</Button>,
+          <Button key="run" type="default" loading={optimizing} onClick={runOptimize}>
+            {optimizeResult ? '重新优化' : '开始优化'}
+          </Button>,
+          <Button key="apply" type="primary" disabled={!optimizeResult.trim()} onClick={applyOptimized}>
+            应用到提示词
+          </Button>,
+        ]}
+      >
+        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          <div>
+            <div style={{ marginBottom: 4, fontSize: 12, opacity: 0.75 }}>修改描述（可选）</div>
+            <TextArea
+              rows={2}
+              value={optimizeInstruction}
+              onChange={e => setOptimizeInstruction(e.target.value)}
+              placeholder="例如：改成雨天夜晚、用广角镜头、去掉文字元素、更偏胶片质感"
+            />
+          </div>
+          <Space wrap>
+            <Select
+              placeholder="选择 LLM"
+              style={{ width: 220 }}
+              value={optimizeProvider || undefined}
+              onChange={(value) => {
+                setOptimizeProvider(value)
+                const backend = llmBackends.find((item: any) => (item.name || item.provider) === value)
+                setOptimizeModel(
+                  backend?.default_model || backend?.model || backend?.available_models?.[0] || '',
+                )
+              }}
+              options={llmBackends.map((item: any) => ({
+                value: item.name || item.provider,
+                label: item.provider_label || item.name || item.provider,
+              }))}
+            />
+            <Select
+              placeholder="选择模型"
+              style={{ width: 240 }}
+              value={optimizeModel || undefined}
+              onChange={setOptimizeModel}
+              options={(() => {
+                const backend = llmBackends.find(
+                  (item: any) => (item.name || item.provider) === optimizeProvider,
+                )
+                const models = Array.from(
+                  new Set(
+                    [
+                      ...(backend?.available_models || []),
+                      backend?.default_model,
+                      backend?.model,
+                    ].filter(Boolean),
+                  ),
+                )
+                return models.map((model) => ({ value: model, label: model }))
+              })()}
+            />
+          </Space>
+          {optimizeResult ? (
+            <div>
+              <div style={{ marginBottom: 4, fontSize: 12, opacity: 0.75 }}>
+                优化结果（可编辑后应用）
+              </div>
+              <TextArea
+                rows={8}
+                value={optimizeResult}
+                onChange={e => setOptimizeResult(e.target.value)}
+              />
+            </div>
+          ) : null}
+        </Space>
+      </Modal>
     </div>
   )
 }

@@ -508,6 +508,48 @@ async def list_backends():
         )
 
 
+class ImagePromptOptimizeRequest(BaseModel):
+    prompt: str
+    instruction: Optional[str] = None  # 单独的修改描述，如"改成雨天、加广角"
+    provider: Optional[str] = None     # 用于优化的 LLM（不填走默认后端）
+    model: Optional[str] = None
+
+
+class ImagePromptOptimizeResponse(BaseModel):
+    success: bool = True
+    prompt: str = ""
+    optimized_prompt: str = ""
+    error: Optional[str] = None
+
+
+@router.post(
+    "/optimize-prompt",
+    response_model=ImagePromptOptimizeResponse,
+    summary="用 LLM 优化生图提示词",
+)
+async def optimize_prompt(req: ImagePromptOptimizeRequest):
+    """把朴素描述改写成图像模型友好的提示词；只润色文字，不生成图片。"""
+    try:
+        from app.services.ai.prompt_optimize import optimize_image_prompt
+
+        result = await optimize_image_prompt(
+            prompt=req.prompt,
+            instruction=req.instruction or "",
+            provider=req.provider or "",
+            model=req.model or "",
+        )
+        return ImagePromptOptimizeResponse(
+            success=True,
+            prompt=result["prompt"],
+            optimized_prompt=result["optimized_prompt"],
+        )
+    except (ValueError, RuntimeError) as exc:
+        return ImagePromptOptimizeResponse(success=False, error=str(exc))
+    except Exception as exc:
+        logger.exception("optimize image prompt failed")
+        return ImagePromptOptimizeResponse(success=False, error=f"提示词优化失败: {exc}")
+
+
 @router.post("/generate", response_model=ImageResponse, summary="生成图片")
 async def generate_image(
     req: ImageGenerateRequest,
