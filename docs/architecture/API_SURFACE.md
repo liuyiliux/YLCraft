@@ -7,8 +7,8 @@
 ## Summary
 
 - Router mounts: 53
-- Endpoints: 672
-- Public schema endpoints: 671
+- Endpoints: 674
+- Public schema endpoints: 673
 - Hidden compatibility endpoints: 1
 
 ## Router Mounts
@@ -303,10 +303,10 @@
 | `POST` | `/api/v1/characters/{character_id}/enrich` | AI 补全角色信息 | `enrich_character` | `backend/app/api/v1/characters.py:1571` |
 | `POST` | `/api/v1/characters/{character_id}/favorite` | 切换收藏状态 | `toggle_favorite` | `backend/app/api/v1/characters.py:423` |
 | `POST` | `/api/v1/characters/{character_id}/link-story` | 关联到故事项目 | `link_story` | `backend/app/api/v1/characters.py:438` |
-| `POST` | `/api/v1/characters/{character_id}/portrait/generate` | AI 生成角色立绘（资产中枢版） | `generate_character_portrait` | `backend/app/api/v1/characters.py:1731` |
+| `POST` | `/api/v1/characters/{character_id}/portrait/generate` | AI 生成角色立绘（资产中枢版） | `generate_character_portrait` | `backend/app/api/v1/characters.py:1718` |
 | `POST` | `/api/v1/characters/{character_id}/portrait/prompt-preview` | 预览角色立绘提示词 | `preview_character_portrait_prompt` | `backend/app/api/v1/characters.py:941` |
 | `GET` | `/api/v1/characters/{character_id}/portrait/slices` | 列出角色立绘九宫格切片子素材 | `list_character_portrait_slices` | `backend/app/api/v1/characters.py:1187` |
-| `POST` | `/api/v1/characters/{character_id}/portrait/upgrade` | 将现有立绘升级到资产中枢 | `upgrade_portrait_to_asset_hub` | `backend/app/api/v1/characters.py:2055` |
+| `POST` | `/api/v1/characters/{character_id}/portrait/upgrade` | 将现有立绘升级到资产中枢 | `upgrade_portrait_to_asset_hub` | `backend/app/api/v1/characters.py:2010` |
 | `GET` | `/api/v1/characters/{character_id}/portrait/versions` | 列出角色立绘版本 | `list_character_portrait_versions` | `backend/app/api/v1/characters.py:968` |
 | `POST` | `/api/v1/characters/{character_id}/portrait/versions/{version_id}/set-main` | 设置角色主立绘版本 | `set_character_main_portrait_version` | `backend/app/api/v1/characters.py:1076` |
 | `POST` | `/api/v1/characters/{character_id}/portrait/versions/{version_id}/slice-grid` | 将九宫格立绘版本切成可复用子素材 | `slice_character_portrait_grid` | `backend/app/api/v1/characters.py:1279` |
@@ -608,17 +608,18 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/images/backends` | 可用图像后端列表 | `list_backends` | `backend/app/api/v1/images.py:423` |
-| `POST` | `/api/v1/images/generate` | 生成图片 | `generate_image` | `backend/app/api/v1/images.py:511` |
-| `POST` | `/api/v1/images/generate-batch` | 批量生成多平台图片 | `batch_generate_endpoint` | `backend/app/api/v1/images.py:1510` |
-| `POST` | `/api/v1/images/generate-batch/retry` | 单张图片重生成 | `batch_retry_endpoint` | `backend/app/api/v1/images.py:1445` |
-| `POST` | `/api/v1/images/generate-batch/topics` | 多主题批量生成 | `batch_topics_generate_endpoint` | `backend/app/api/v1/images.py:1543` |
-| `POST` | `/api/v1/images/generate-outline` | 多平台大纲生成 | `generate_outline_endpoint` | `backend/app/api/v1/images.py:1384` |
-| `GET` | `/api/v1/images/platform-templates` | 可用平台/Prompt 模板列表 | `list_platform_templates` | `backend/app/api/v1/images.py:1262` |
-| `POST` | `/api/v1/images/platform-templates` | 新增平台模板 | `create_platform_template` | `backend/app/api/v1/images.py:1293` |
-| `PUT` | `/api/v1/images/platform-templates/{template_id}` | 更新平台模板 | `update_platform_template` | `backend/app/api/v1/images.py:1320` |
-| `DELETE` | `/api/v1/images/platform-templates/{template_id}` | 删除平台模板 | `delete_platform_template` | `backend/app/api/v1/images.py:1357` |
-| `GET` | `/api/v1/images/tasks/{task_id}` | 轮询图像生成任务 | `poll_image_task` | `backend/app/api/v1/images.py:805` |
+| `GET` | `/api/v1/images/backends` | 可用图像后端列表 | `list_backends` | `backend/app/api/v1/images.py:424` |
+| `POST` | `/api/v1/images/generate` | 生成图片 | `generate_image` | `backend/app/api/v1/images.py:554` |
+| `POST` | `/api/v1/images/generate-batch` | 批量生成多平台图片 | `batch_generate_endpoint` | `backend/app/api/v1/images.py:1520` |
+| `POST` | `/api/v1/images/generate-batch/retry` | 单张图片重生成 | `batch_retry_endpoint` | `backend/app/api/v1/images.py:1455` |
+| `POST` | `/api/v1/images/generate-batch/topics` | 多主题批量生成 | `batch_topics_generate_endpoint` | `backend/app/api/v1/images.py:1553` |
+| `POST` | `/api/v1/images/generate-outline` | 多平台大纲生成 | `generate_outline_endpoint` | `backend/app/api/v1/images.py:1394` |
+| `POST` | `/api/v1/images/optimize-prompt` | 用 LLM 优化生图提示词 | `optimize_prompt` | `backend/app/api/v1/images.py:530` |
+| `GET` | `/api/v1/images/platform-templates` | 可用平台/Prompt 模板列表 | `list_platform_templates` | `backend/app/api/v1/images.py:1272` |
+| `POST` | `/api/v1/images/platform-templates` | 新增平台模板 | `create_platform_template` | `backend/app/api/v1/images.py:1303` |
+| `PUT` | `/api/v1/images/platform-templates/{template_id}` | 更新平台模板 | `update_platform_template` | `backend/app/api/v1/images.py:1330` |
+| `DELETE` | `/api/v1/images/platform-templates/{template_id}` | 删除平台模板 | `delete_platform_template` | `backend/app/api/v1/images.py:1367` |
+| `GET` | `/api/v1/images/tasks/{task_id}` | 轮询图像生成任务 | `poll_image_task` | `backend/app/api/v1/images.py:815` |
 
 ### JianYing
 
@@ -636,8 +637,8 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/llm/backends` | 获取可用的 LLM 后端列表 | `list_llm_backends` | `backend/app/api/v1/llm.py:93` |
-| `POST` | `/api/v1/llm/chat` | LLM 对话 | `chat` | `backend/app/api/v1/llm.py:163` |
+| `GET` | `/api/v1/llm/backends` | 获取可用的 LLM 后端列表 | `list_llm_backends` | `backend/app/api/v1/llm.py:58` |
+| `POST` | `/api/v1/llm/chat` | LLM 对话 | `chat` | `backend/app/api/v1/llm.py:128` |
 
 ### Lineage
 
@@ -736,9 +737,9 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `POST` | `/api/v1/creative-projects/from-novel-source` | 从来源快照创建世界项目 | `create_project_from_novel_source` | `backend/app/api/v1/novel_sources.py:880` |
-| `POST` | `/api/v1/creative-projects/{project_id}/world-extraction/start` | 从项目内容启动世界提取 | `start_project_world_extraction` | `backend/app/api/v1/novel_sources.py:914` |
-| `GET` | `/api/v1/creative-projects/{project_id}/world-knowledge` | 聚合项目世界知识 | `get_project_world_knowledge` | `backend/app/api/v1/novel_sources.py:1061` |
+| `POST` | `/api/v1/creative-projects/from-novel-source` | 从来源快照创建世界项目 | `create_project_from_novel_source` | `backend/app/api/v1/novel_sources.py:882` |
+| `POST` | `/api/v1/creative-projects/{project_id}/world-extraction/start` | 从项目内容启动世界提取 | `start_project_world_extraction` | `backend/app/api/v1/novel_sources.py:916` |
+| `GET` | `/api/v1/creative-projects/{project_id}/world-knowledge` | 聚合项目世界知识 | `get_project_world_knowledge` | `backend/app/api/v1/novel_sources.py:1065` |
 | `GET` | `/api/v1/novel-sources` | 列出来源快照 | `list_snapshots` | `backend/app/api/v1/novel_sources.py:555` |
 | `GET` | `/api/v1/novel-sources/domains` | 列出可检测的世界模块 | `list_domains` | `backend/app/api/v1/novel_sources.py:566` |
 | `POST` | `/api/v1/novel-sources/import-bookshelf` | 导入书架章节为来源快照 | `import_bookshelf` | `backend/app/api/v1/novel_sources.py:535` |
@@ -748,63 +749,64 @@
 | `GET` | `/api/v1/novel-sources/{snapshot_id}/chunks` | 列出快照文本块 | `list_chunks` | `backend/app/api/v1/novel_sources.py:597` |
 | `POST` | `/api/v1/novel-sources/{snapshot_id}/chunks/index` | 为小说文本块建立向量索引 | `index_chunks` | `backend/app/api/v1/novel_sources.py:613` |
 | `POST` | `/api/v1/novel-sources/{snapshot_id}/chunks/search` | 混合检索小说文本块 | `search_chunks` | `backend/app/api/v1/novel_sources.py:641` |
-| `POST` | `/api/v1/novel-sources/{snapshot_id}/derive` | 从完本来源创建派生项目 | `derive_project` | `backend/app/api/v1/novel_sources.py:744` |
-| `POST` | `/api/v1/novel-sources/{snapshot_id}/extract` | 按模块提取世界候选 | `extract_world` | `backend/app/api/v1/novel_sources.py:718` |
+| `POST` | `/api/v1/novel-sources/{snapshot_id}/derive` | 从完本来源创建派生项目 | `derive_project` | `backend/app/api/v1/novel_sources.py:746` |
+| `POST` | `/api/v1/novel-sources/{snapshot_id}/extract` | 按模块提取世界候选 | `extract_world` | `backend/app/api/v1/novel_sources.py:720` |
 | `POST` | `/api/v1/novel-sources/{snapshot_id}/plan` | 逐模块判断世界设定是否存在 | `plan_domains` | `backend/app/api/v1/novel_sources.py:659` |
-| `POST` | `/api/v1/novel-sources/{snapshot_id}/sync` | 连载来源追加新章节 | `sync_chapters` | `backend/app/api/v1/novel_sources.py:768` |
-| `GET` | `/api/v1/projects/{project_id}/world-domains` | 列出项目世界模块（内置 + 项目扩展） | `list_project_world_domains` | `backend/app/api/v1/novel_sources.py:1674` |
-| `PUT` | `/api/v1/projects/{project_id}/world-domains/{domain_key}` | 新增或更新项目世界模块定义 | `upsert_project_world_domain` | `backend/app/api/v1/novel_sources.py:1689` |
-| `DELETE` | `/api/v1/projects/{project_id}/world-domains/{domain_key}` | 重置项目世界模块定义（内置恢复默认，自定义移除） | `reset_project_world_domain` | `backend/app/api/v1/novel_sources.py:1720` |
-| `GET` | `/api/v1/projects/{project_id}/world-entities` | 列出项目类型化世界实体 | `list_project_world_entities` | `backend/app/api/v1/novel_sources.py:1035` |
-| `GET` | `/api/v1/projects/{project_id}/world-entity-relations` | 列出项目类型化实体关系 | `list_project_world_entity_relations` | `backend/app/api/v1/novel_sources.py:1050` |
-| `POST` | `/api/v1/projects/{project_id}/world-generation/expand-domain` | AI 域级细化（异步，接入既有任务中心） | `expand_domain_attributes` | `backend/app/api/v1/novel_sources.py:1490` |
-| `POST` | `/api/v1/projects/{project_id}/world-generation/expand-entity` | AI 补充实体属性（产出 ai_draft 候选，需确认后写入） | `expand_entity_attributes` | `backend/app/api/v1/novel_sources.py:1534` |
-| `POST` | `/api/v1/projects/{project_id}/world-generation/expand-entity/preview` | 预览实体属性补充的提示词（不调用模型） | `preview_entity_expansion` | `backend/app/api/v1/novel_sources.py:1380` |
-| `GET` | `/api/v1/projects/{project_id}/world-generation/suggestions` | 列出待确认的 AI 结构建议（模块 + 字段） | `list_world_building_suggestions` | `backend/app/api/v1/novel_sources.py:1624` |
-| `POST` | `/api/v1/projects/{project_id}/world-generation/suggestions/fields/confirm` | 确认字段建议（写入模块属性契约） | `confirm_suggested_field` | `backend/app/api/v1/novel_sources.py:1642` |
-| `POST` | `/api/v1/projects/{project_id}/world-generation/suggestions/fields/ignore` | 忽略字段建议（不再重复提示） | `ignore_suggested_field` | `backend/app/api/v1/novel_sources.py:1658` |
-| `POST` | `/api/v1/projects/{project_id}/world-maps/from-places` | 从地点实体生成地图初稿 | `create_world_map_from_project_places` | `backend/app/api/v1/novel_sources.py:1750` |
-| `GET` | `/api/v1/projects/{project_id}/world-templates` | 列出世界构建模板（内置种子 + 项目私有） | `list_world_templates` | `backend/app/api/v1/novel_sources.py:1262` |
-| `POST` | `/api/v1/projects/{project_id}/world-templates` | 新建或更新世界构建模板 | `upsert_world_template` | `backend/app/api/v1/novel_sources.py:1273` |
-| `POST` | `/api/v1/projects/{project_id}/world-templates/draft` | AI 起草世界构建模板草案（不落库，确认后再保存） | `draft_world_template` | `backend/app/api/v1/novel_sources.py:1318` |
-| `DELETE` | `/api/v1/projects/{project_id}/world-templates/{template_id}` | 删除项目私有模板（内置模板不可删） | `delete_world_template` | `backend/app/api/v1/novel_sources.py:1296` |
-| `GET` | `/api/v1/world-extraction-runs/{run_id}` | 获取提取运行状态 | `get_run` | `backend/app/api/v1/novel_sources.py:782` |
-| `POST` | `/api/v1/world-extraction-runs/{run_id}/affected-facts` | 把合并/矛盾结论传播到已写事实 | `propagate_affected_facts` | `backend/app/api/v1/novel_sources.py:828` |
-| `POST` | `/api/v1/world-extraction-runs/{run_id}/apply` | 确认候选并写入项目 | `apply_run` | `backend/app/api/v1/novel_sources.py:862` |
-| `GET` | `/api/v1/world-extraction-runs/{run_id}/candidates` | 预览提取候选与证据 | `list_candidates` | `backend/app/api/v1/novel_sources.py:787` |
-| `POST` | `/api/v1/world-extraction-runs/{run_id}/candidates/decide` | 标记候选为接受或忽略 | `decide_candidates` | `backend/app/api/v1/novel_sources.py:847` |
-| `POST` | `/api/v1/world-extraction-runs/{run_id}/contradictions` | 判断重复候选是否同一实体或矛盾 | `detect_contradictions` | `backend/app/api/v1/novel_sources.py:811` |
-| `GET` | `/api/v1/world-extraction-runs/{run_id}/reconcile` | 跨域调和候选提示 | `reconcile_run` | `backend/app/api/v1/novel_sources.py:801` |
-| `GET` | `/api/v1/world-maps` | 列出世界地图文档 | `list_world_maps` | `backend/app/api/v1/novel_sources.py:1728` |
-| `POST` | `/api/v1/world-maps` | 创建世界地图文档 | `create_world_map` | `backend/app/api/v1/novel_sources.py:1739` |
-| `GET` | `/api/v1/world-maps/{map_id}` | 获取世界地图文档 | `get_world_map` | `backend/app/api/v1/novel_sources.py:1766` |
-| `PUT` | `/api/v1/world-maps/{map_id}` | 保存世界地图（revision CAS） | `update_world_map` | `backend/app/api/v1/novel_sources.py:1774` |
-| `DELETE` | `/api/v1/world-maps/{map_id}` | 删除世界地图文档 | `delete_world_map` | `backend/app/api/v1/novel_sources.py:2003` |
-| `GET` | `/api/v1/world-maps/{map_id}/entities` | 解析地图据点关联的实体与证据 | `resolve_world_map_entities` | `backend/app/api/v1/novel_sources.py:1846` |
-| `GET` | `/api/v1/world-maps/{map_id}/export` | 导出世界地图（结构化点位 JSON / SVG） | `export_world_map` | `backend/app/api/v1/novel_sources.py:1864` |
-| `POST` | `/api/v1/world-maps/{map_id}/generate-visual` | 用生图模型生成地图视觉成图 | `generate_world_map_visual` | `backend/app/api/v1/novel_sources.py:1948` |
-| `POST` | `/api/v1/world-maps/{map_id}/generate-visual/prompt-optimize` | AI 优化地图生图提示词（只改写，不生成图） | `optimize_world_map_visual_prompt` | `backend/app/api/v1/novel_sources.py:1906` |
-| `POST` | `/api/v1/world-maps/{map_id}/generate-visual/prompt-preview` | 预览地图生图提示词 | `preview_world_map_visual_prompt` | `backend/app/api/v1/novel_sources.py:1887` |
-| `POST` | `/api/v1/world-maps/{map_id}/regions/{region_id}/shape/generate` | 生成区域形状语义参数（预览，不落库） | `generate_region_shape` | `backend/app/api/v1/novel_sources.py:1793` |
-| `GET` | `/api/v1/world-maps/{map_id}/render` | 渲染世界地图为 SVG | `render_world_map` | `backend/app/api/v1/novel_sources.py:1832` |
-| `GET` | `/api/v1/world-maps/{map_id}/revisions` | 地图版本历史列表 | `list_world_map_revisions` | `backend/app/api/v1/novel_sources.py:2027` |
-| `GET` | `/api/v1/world-maps/{map_id}/revisions/{revision}` | 读取指定版本快照 | `get_world_map_revision` | `backend/app/api/v1/novel_sources.py:2045` |
-| `POST` | `/api/v1/world-maps/{map_id}/rollback` | 回滚地图到指定版本（append-only：产生新 revision） | `rollback_world_map` | `backend/app/api/v1/novel_sources.py:2065` |
+| `POST` | `/api/v1/novel-sources/{snapshot_id}/sync` | 连载来源追加新章节 | `sync_chapters` | `backend/app/api/v1/novel_sources.py:770` |
+| `GET` | `/api/v1/projects/{project_id}/world-domains` | 列出项目世界模块（内置 + 项目扩展） | `list_project_world_domains` | `backend/app/api/v1/novel_sources.py:1684` |
+| `PUT` | `/api/v1/projects/{project_id}/world-domains/{domain_key}` | 新增或更新项目世界模块定义 | `upsert_project_world_domain` | `backend/app/api/v1/novel_sources.py:1699` |
+| `DELETE` | `/api/v1/projects/{project_id}/world-domains/{domain_key}` | 重置项目世界模块定义（内置恢复默认，自定义移除） | `reset_project_world_domain` | `backend/app/api/v1/novel_sources.py:1730` |
+| `GET` | `/api/v1/projects/{project_id}/world-entities` | 列出项目类型化世界实体 | `list_project_world_entities` | `backend/app/api/v1/novel_sources.py:1039` |
+| `GET` | `/api/v1/projects/{project_id}/world-entity-relations` | 列出项目类型化实体关系 | `list_project_world_entity_relations` | `backend/app/api/v1/novel_sources.py:1054` |
+| `POST` | `/api/v1/projects/{project_id}/world-generation/expand-domain` | AI 域级细化（异步，接入既有任务中心） | `expand_domain_attributes` | `backend/app/api/v1/novel_sources.py:1498` |
+| `POST` | `/api/v1/projects/{project_id}/world-generation/expand-entity` | AI 补充实体属性（产出 ai_draft 候选，需确认后写入） | `expand_entity_attributes` | `backend/app/api/v1/novel_sources.py:1542` |
+| `POST` | `/api/v1/projects/{project_id}/world-generation/expand-entity/preview` | 预览实体属性补充的提示词（不调用模型） | `preview_entity_expansion` | `backend/app/api/v1/novel_sources.py:1386` |
+| `GET` | `/api/v1/projects/{project_id}/world-generation/suggestions` | 列出待确认的 AI 结构建议（模块 + 字段） | `list_world_building_suggestions` | `backend/app/api/v1/novel_sources.py:1634` |
+| `POST` | `/api/v1/projects/{project_id}/world-generation/suggestions/fields/confirm` | 确认字段建议（写入模块属性契约） | `confirm_suggested_field` | `backend/app/api/v1/novel_sources.py:1652` |
+| `POST` | `/api/v1/projects/{project_id}/world-generation/suggestions/fields/ignore` | 忽略字段建议（不再重复提示） | `ignore_suggested_field` | `backend/app/api/v1/novel_sources.py:1668` |
+| `POST` | `/api/v1/projects/{project_id}/world-maps/from-places` | 从地点实体生成地图初稿 | `create_world_map_from_project_places` | `backend/app/api/v1/novel_sources.py:1760` |
+| `GET` | `/api/v1/projects/{project_id}/world-templates` | 列出世界构建模板（内置种子 + 项目私有） | `list_world_templates` | `backend/app/api/v1/novel_sources.py:1266` |
+| `POST` | `/api/v1/projects/{project_id}/world-templates` | 新建或更新世界构建模板 | `upsert_world_template` | `backend/app/api/v1/novel_sources.py:1277` |
+| `POST` | `/api/v1/projects/{project_id}/world-templates/draft` | AI 起草世界构建模板草案（不落库，确认后再保存） | `draft_world_template` | `backend/app/api/v1/novel_sources.py:1322` |
+| `DELETE` | `/api/v1/projects/{project_id}/world-templates/{template_id}` | 删除项目私有模板（内置模板不可删） | `delete_world_template` | `backend/app/api/v1/novel_sources.py:1300` |
+| `GET` | `/api/v1/world-extraction-runs/{run_id}` | 获取提取运行状态 | `get_run` | `backend/app/api/v1/novel_sources.py:784` |
+| `POST` | `/api/v1/world-extraction-runs/{run_id}/affected-facts` | 把合并/矛盾结论传播到已写事实 | `propagate_affected_facts` | `backend/app/api/v1/novel_sources.py:830` |
+| `POST` | `/api/v1/world-extraction-runs/{run_id}/apply` | 确认候选并写入项目 | `apply_run` | `backend/app/api/v1/novel_sources.py:864` |
+| `GET` | `/api/v1/world-extraction-runs/{run_id}/candidates` | 预览提取候选与证据 | `list_candidates` | `backend/app/api/v1/novel_sources.py:789` |
+| `POST` | `/api/v1/world-extraction-runs/{run_id}/candidates/decide` | 标记候选为接受或忽略 | `decide_candidates` | `backend/app/api/v1/novel_sources.py:849` |
+| `POST` | `/api/v1/world-extraction-runs/{run_id}/contradictions` | 判断重复候选是否同一实体或矛盾 | `detect_contradictions` | `backend/app/api/v1/novel_sources.py:813` |
+| `GET` | `/api/v1/world-extraction-runs/{run_id}/reconcile` | 跨域调和候选提示 | `reconcile_run` | `backend/app/api/v1/novel_sources.py:803` |
+| `GET` | `/api/v1/world-maps` | 列出世界地图文档 | `list_world_maps` | `backend/app/api/v1/novel_sources.py:1738` |
+| `POST` | `/api/v1/world-maps` | 创建世界地图文档 | `create_world_map` | `backend/app/api/v1/novel_sources.py:1749` |
+| `GET` | `/api/v1/world-maps/{map_id}` | 获取世界地图文档 | `get_world_map` | `backend/app/api/v1/novel_sources.py:1776` |
+| `PUT` | `/api/v1/world-maps/{map_id}` | 保存世界地图（revision CAS） | `update_world_map` | `backend/app/api/v1/novel_sources.py:1784` |
+| `DELETE` | `/api/v1/world-maps/{map_id}` | 删除世界地图文档 | `delete_world_map` | `backend/app/api/v1/novel_sources.py:2013` |
+| `GET` | `/api/v1/world-maps/{map_id}/entities` | 解析地图据点关联的实体与证据 | `resolve_world_map_entities` | `backend/app/api/v1/novel_sources.py:1856` |
+| `GET` | `/api/v1/world-maps/{map_id}/export` | 导出世界地图（结构化点位 JSON / SVG） | `export_world_map` | `backend/app/api/v1/novel_sources.py:1874` |
+| `POST` | `/api/v1/world-maps/{map_id}/generate-visual` | 用生图模型生成地图视觉成图 | `generate_world_map_visual` | `backend/app/api/v1/novel_sources.py:1958` |
+| `POST` | `/api/v1/world-maps/{map_id}/generate-visual/prompt-optimize` | AI 优化地图生图提示词（只改写，不生成图） | `optimize_world_map_visual_prompt` | `backend/app/api/v1/novel_sources.py:1916` |
+| `POST` | `/api/v1/world-maps/{map_id}/generate-visual/prompt-preview` | 预览地图生图提示词 | `preview_world_map_visual_prompt` | `backend/app/api/v1/novel_sources.py:1897` |
+| `POST` | `/api/v1/world-maps/{map_id}/regions/{region_id}/shape/generate` | 生成区域形状语义参数（预览，不落库） | `generate_region_shape` | `backend/app/api/v1/novel_sources.py:1803` |
+| `GET` | `/api/v1/world-maps/{map_id}/render` | 渲染世界地图为 SVG | `render_world_map` | `backend/app/api/v1/novel_sources.py:1842` |
+| `GET` | `/api/v1/world-maps/{map_id}/revisions` | 地图版本历史列表 | `list_world_map_revisions` | `backend/app/api/v1/novel_sources.py:2037` |
+| `GET` | `/api/v1/world-maps/{map_id}/revisions/{revision}` | 读取指定版本快照 | `get_world_map_revision` | `backend/app/api/v1/novel_sources.py:2055` |
+| `POST` | `/api/v1/world-maps/{map_id}/rollback` | 回滚地图到指定版本（append-only：产生新 revision） | `rollback_world_map` | `backend/app/api/v1/novel_sources.py:2075` |
 
 ### Novels
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `POST` | `/api/v1/novels/add-to-bookshelf` | - | `add_to_bookshelf` | `backend/app/api/v1/novels.py:539` |
-| `GET` | `/api/v1/novels/bookshelf-item/{asset_id}` | - | `get_bookshelf_item` | `backend/app/api/v1/novels.py:632` |
-| `GET` | `/api/v1/novels/catalog` | - | `get_catalog` | `backend/app/api/v1/novels.py:497` |
-| `GET` | `/api/v1/novels/chapter-content` | - | `get_chapter_content` | `backend/app/api/v1/novels.py:559` |
-| `POST` | `/api/v1/novels/download-chapters` | - | `download_chapters` | `backend/app/api/v1/novels.py:653` |
-| `POST` | `/api/v1/novels/download-tasks/{task_id}/cancel` | 停止小说下载任务 | `cancel_novel_download` | `backend/app/api/v1/novels.py:873` |
-| `GET` | `/api/v1/novels/local-chapter` | - | `get_local_chapter` | `backend/app/api/v1/novels.py:603` |
-| `GET` | `/api/v1/novels/search` | - | `search_novels` | `backend/app/api/v1/novels.py:474` |
-| `GET` | `/api/v1/novels/source-catalog` | - | `get_source_catalog` | `backend/app/api/v1/novels.py:910` |
-| `GET` | `/api/v1/novels/sources` | - | `get_sources` | `backend/app/api/v1/novels.py:893` |
+| `POST` | `/api/v1/novels/add-to-bookshelf` | - | `add_to_bookshelf` | `backend/app/api/v1/novels.py:550` |
+| `GET` | `/api/v1/novels/bookshelf-item/{asset_id}` | - | `get_bookshelf_item` | `backend/app/api/v1/novels.py:699` |
+| `GET` | `/api/v1/novels/catalog` | - | `get_catalog` | `backend/app/api/v1/novels.py:508` |
+| `GET` | `/api/v1/novels/chapter-content` | - | `get_chapter_content` | `backend/app/api/v1/novels.py:570` |
+| `POST` | `/api/v1/novels/download-chapters` | - | `download_chapters` | `backend/app/api/v1/novels.py:720` |
+| `POST` | `/api/v1/novels/download-tasks/{task_id}/cancel` | 停止小说下载任务 | `cancel_novel_download` | `backend/app/api/v1/novels.py:951` |
+| `GET` | `/api/v1/novels/local-chapter` | - | `get_local_chapter` | `backend/app/api/v1/novels.py:614` |
+| `POST` | `/api/v1/novels/local-sync` | - | `sync_local_chapters` | `backend/app/api/v1/novels.py:643` |
+| `GET` | `/api/v1/novels/search` | - | `search_novels` | `backend/app/api/v1/novels.py:485` |
+| `GET` | `/api/v1/novels/source-catalog` | - | `get_source_catalog` | `backend/app/api/v1/novels.py:988` |
+| `GET` | `/api/v1/novels/sources` | - | `get_sources` | `backend/app/api/v1/novels.py:971` |
 
 ### Platform Connections
 
@@ -964,9 +966,9 @@
 | --- | --- | --- | --- | --- |
 | `GET` | `/api/v1/videos/backends` | 可用视频后端列表 | `list_backends` | `backend/app/api/v1/videos.py:437` |
 | `POST` | `/api/v1/videos/generate` | Generate video with optional project lineage | `generate_video` | `backend/app/api/v1/videos.py:478` |
-| `GET` | `/api/v1/videos/history` | 视频生成历史与待处理任务 | `list_video_tasks` | `backend/app/api/v1/videos.py:776` |
-| `GET` | `/api/v1/videos/tasks/{task_id}` | 查询任务状态 | `get_task_status` | `backend/app/api/v1/videos.py:686` |
-| `GET` | `/api/v1/videos/tasks/{task_id}/file` | 播放已下载的视频任务文件 | `stream_task_file` | `backend/app/api/v1/videos.py:794` |
+| `GET` | `/api/v1/videos/history` | 视频生成历史与待处理任务 | `list_video_tasks` | `backend/app/api/v1/videos.py:735` |
+| `GET` | `/api/v1/videos/tasks/{task_id}` | 查询任务状态 | `get_task_status` | `backend/app/api/v1/videos.py:645` |
+| `GET` | `/api/v1/videos/tasks/{task_id}/file` | 播放已下载的视频任务文件 | `stream_task_file` | `backend/app/api/v1/videos.py:753` |
 
 ### WebSocket
 
