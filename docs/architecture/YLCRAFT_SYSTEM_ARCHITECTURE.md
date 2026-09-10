@@ -134,13 +134,21 @@ AI 来源标记与文件元数据清理是 Asset Hub 上的独立派生操作，
 直连 provider、不经 `AIService` 的路径（如 `services/embedding`、breaker 的 STT）必须自行补记事件，
 否则该路径不可观测。
 
+**提示词优化（只润色文字，不生成产物）**：`services/ai/prompt_optimize.py:optimize_image_prompt`
+把朴素描述改写成图像模型友好的提示词（构图/光影/材质/风格/画质），可带独立的修改描述，
+只输出优化后正文、不生图不落库，经 `POST /api/v1/images/optimize-prompt` 暴露给生图页；
+与地图生图提示词优化（`world_map_visual.optimize_map_visual_prompt`，需保留地名与坐标约束）同构但面向通用文生图。
+
 **任务记录（任务中心）与事件日志是两套**，不能指望自动收口：任务需要业务粒度（一次"地图成图"
 算一条，而不是每次模型调用一条），高频 chat 若自动建任务会把任务中心冲垮。长耗时的 AI 操作
 用 `ai_task(...)` 上下文（`services/ai/tracking.py`）一次完成「建任务 → 记开始 → 完成或失败 →
 进度与诊断」；记账失败一律 best-effort，不影响业务。任务要落 `project_task_records` 需同时满足：
 task_type 命中 `PERSISTED_TASK_TYPES` 白名单、payload 带 `project_id`（`services/task_persistence.py`），
 否则只存内存、进程重启即失——不落库时会打日志说明原因，新增任务类型记得登记白名单并同步前端
-`TASK_TYPE_OPTIONS`。
+`TASK_TYPE_OPTIONS`。不挂创作项目的任务（如小说下载 `novel_download`，属于书架资产）走
+`PERSISTED_STANDALONE_TASK_TYPES` 单独放行，否则因没有 `project_id` 永远落不了库、重启即"凭空消失"。
+进程重启后首次恢复持久化任务时会对账：把残留的 `pending`/`running` 收尾为「服务重启，任务中断」，
+避免任务中心里出现永远转圈、进度不动的僵尸任务。
 
 前端入口在 `frontend/src`，主要分层：
 
@@ -456,7 +464,7 @@ Live2D accepts uploads, character imagery and Asset Hub images as source materia
 | 下载/磁力 | `/api/v1/download`、`/api/v1/torrents` | `services/download`、`services/torrent` | `/download` | 本地化方向，不做自建云缓存。 |
 | 平台采集 | `/api/v1/crawler`、`/api/v1/bilibili` | `services/crawler`、`services/platforms` | `/crawler` | 统一检索小红书、抖音、快手、B站、微博、知乎及公众号；支持详情、显式入素材库和画布媒体选择。有效的平台连接可作为服务端登录态用于搜索/详情，不向浏览器返回 Cookie；B站另提供更丰富的登录态能力。 |
 | 内容发布 | `/api/v1/platforms/{conn_id}/publish`、`/api/v1/creative-projects/{project_id}/publish-to-fanqie` | `services/platforms/fanqie` | `/publish`、项目 Story 页 | 当前通用发布页只公开已验证的番茄章节草稿保存：需指定后台已创建的书籍、卷和章节目标，并可先 dry-run 预检；视频、图文等其他平台发布尚未接通，不在 UI 中伪装为可用。 |
-| 小说/书源 | `/api/v1/novels`、`/api/v1/book-sources` | `services/novel`、`services/reader` | `/novel-*` | 可作为创作素材源。 |
+| 小说/书源 | `/api/v1/novels`、`/api/v1/book-sources` | `services/novel`、`services/reader` | `/novel-*` | 可作为创作素材源。全本下载已任务化（`novel_download`，落 `project_task_records` 并可在任务中心停止）：本地章节目录是事实来源，重下会**跳过已有章节**（断点续下，只抓缺失的）；已下载索引按**实际成功**的章节记账，熔断或失败不虚报，可用 `POST /novels/local-sync` 按磁盘文件重算索引（下载被中断、进程重启后无需重下）；抓取连续失败到阈值即熔断并上报首个真实错误（如反爬 403），不再让用户干等几百章；阅读器本地优先，本地没有该章才回退在线。 |
 | 小说来源 → 世界提取 | `/api/v1/novel-sources`、`/api/v1/world-extraction-runs`、`/api/v1/world-maps`、`/api/v1/projects/{id}/world-entities`、`/api/v1/creative-projects/from-novel-source`、`/api/v1/creative-projects/{id}/world-extraction/start` | `services/novel_source` | `/novel-world`、`/story`（圣经/世界 → 生成世界设定候选）、`/novel-bookshelf`（每本小说提取世界） | 多来源入口共用同一套逐域提取/证据/候选/写入管线：TXT 上传、书架章节导入、创作项目大纲（`world-extraction/start` 序列化大纲为来源文本）、来源快照直接建项目（`from-novel-source`）；十一个域提取、证据预览与确认写入项目；可选向量索引与混合检索（PostgreSQL 下 pgvector 近邻）、跨域调和与语义矛盾检测、完本来源派生项目（改编/续写/同人，原作正典只读分层）、结构化世界地图编辑（区域/据点/路线 + SVG 预览）、类型化独立实体与关系（`world_entities`/`world_entity_relations`）已接入页面和 Agent 工具。 |
 | 任务中心 | `/api/v1/tasks` | `core/task_queue` + 媒体任务账本 | `/tasks` | 聚合通用队列、下载、独立视频生成及图生 3D 持久化记录；可查看诊断字段与失败原因，并对未终态的独立媒体任务进行状态级取消。页面改为三 Tab：任务 / 事件日志 / 运行日志。 |
 | 平台事件日志 | `/api/v1/logs` | `services/platform_log` | `/tasks`（事件日志 Tab） | `platform_event_logs` 审计流：image/video/model3d/llm 生成结果统一落账（含脱敏摘要与耗时）；`GET /logs` 筛选分页、`GET /logs/{id}` 详情、`POST /logs/{id}/retry` 失败重发（`retry_payload_json` 精确还原 + `retry_of`/`retried_by` 追溯链）；`GET /logs/runtime` 读取滚动文件日志。 |
@@ -519,12 +527,12 @@ Agent Tool / Skill 变更按内部 API 处理：工具名称、输入输出 sche
 | `fanqie-publisher` | 28 | 7 | Cookie、书籍、热榜、统计、项目绑定、本地发布预检、草稿发布和 Agent 工具完成；仅剩真实测试章、作家资料/章节/收益抓包与集成联调。 |
 | `image-prompt-reference-library` | 50 | 1 | 本地优先同步、双语/多图、图片缓存、筛选、画布和生图集成完成；仅剩完整人工验收。 |
 | `story-production-desk` | 9 | 0 | Story 生产台及桌面/移动布局验收完成。 |
-| `story-video-shot-production` | 11 | 1 | 项目感知视频请求、持久任务恢复、Asset Hub 回流和分镜回写完成；仅剩真实视频供应商验收。 |
-| `ai-video-workspace` | 5 | 4 | 独立视频工作台的持久任务、刷新恢复与 Asset Hub 闭环已完成；待补供应商能力约束和真实供应商验收。 |
-| `task-observability-diagnostics` | 26 | 0 | 已完成：真实异步生图的远端任务 ID、轮询、下载、入库与事件时间线已验证。 |
-| `platform-event-logging` | 28 | 3 | 任务中心三 Tab（任务/事件日志/运行日志）、`platform_event_logs` 表与 `/api/v1/logs`（列表/详情/runtime/retry）、滚动文件日志、图片生成失败落账与跨 image/video/model3d/llm 通用重发已完成；待后端单测、重发追溯链自动化测试与前端手动验收。 |
+| `story-video-shot-production` | 12 | 1 | 项目感知视频请求、持久任务恢复、Asset Hub 回流和分镜回写完成；仅剩真实视频供应商验收。 |
+| `ai-video-workspace` | 7 | 2 | 独立视频工作台的持久任务、刷新恢复与 Asset Hub 闭环已完成；待补供应商能力约束和真实供应商验收。 |
+| `task-observability-diagnostics` | 31 | 2 | 任务诊断基础、详情抽屉诊断/事件时间线、图片异步生图接入已完成；待视频（`VideoGenerationTask`）与 3D（`Model3DGenerationTask`）自有 Task 表接入 `/api/v1/tasks` 聚合，以及 Live2D/Agent 工具触发的 AI 操作补任务记录（事件已由 AIService 收口覆盖）。 |
+| `platform-event-logging` | 39 | 1 | 任务中心三 Tab（任务/事件日志/运行日志）、`platform_event_logs` 表与 `/api/v1/logs`（列表/详情/runtime/retry）、滚动文件日志、图片生成失败落账与跨 image/video/model3d/llm 通用重发已完成；调用类事件已统一收口到 `AIService` 三个入口，端点层与收口重复的 12 处手写 `record_event` 已删除（`ai_call_context` 承载 `project_id`/`ref_id`/`scene`/`task_type`/`retry_payload`，端点自写业务事件时可用 `suppress_auto_event` 抑制）。仅剩用失效凭证触发一次失败、验证三个 Tab 联动与重发的手动验收。 |
 | `database-migration-convergence` | 11 | 11 | 启动/Agent 请求路径的隐式 DDL 已切断，空库与旧远程形态演练通过；当前 Alembic 链继续到 `017_add_platform_event_logs`，为视频、图转 3D 持久任务和平台事件日志提供显式升级路径。 |
-| `novel-source-world-project` | 38 | 1 | 最小闭环已落地并扩展：来源快照/章节/文本块/提取运行/世界候选/世界地图/类型化实体/类型化关系八张表（迁移 `032`/`037`）、多来源入口（TXT 上传、书架章节导入、创作项目大纲 `world-extraction/start`、来源快照直接建项目 `from-novel-source`）、逐域模块检测、十一个域提取与证据校验、候选预览与确认写入；可选向量索引与混合检索（含邻域扩展，PostgreSQL 下走 pgvector 数据库级近邻、其它回退 JSON 向量混合）、跨域调和与语义矛盾检测、受影响事实传播、候选 merge、完本来源派生项目（原作正典 `source_canon` 只读分层，Context Pack T0 已分层注入）、类型化独立实体与关系（`WorldEntity`/`WorldEntityRelation`，含派生复制）、Leaflet 世界地图工作台与 SVG 渲染、地图 AI 生图风格化（结构化地图 → prompt → 生图链路）、连载增量变更展示已完成并接入 `/novel-world`、`/story`、`/novel-bookshelf` 与 14 个 Agent 工具。待办：真实浏览器/Agent E2E 验收。 |
+| `novel-source-world-project` | 49 | 1 | 最小闭环已落地并扩展：来源快照/章节/文本块/提取运行/世界候选/世界地图/类型化实体/类型化关系八张表（迁移 `032`/`037`）、多来源入口（TXT 上传、书架章节导入、创作项目大纲 `world-extraction/start`、来源快照直接建项目 `from-novel-source`）、逐域模块检测、十一个域提取与证据校验、候选预览与确认写入；可选向量索引与混合检索（含邻域扩展，PostgreSQL 下走 pgvector 数据库级近邻、其它回退 JSON 向量混合）、跨域调和与语义矛盾检测、受影响事实传播、候选 merge、完本来源派生项目（原作正典 `source_canon` 只读分层，Context Pack T0 已分层注入）、类型化独立实体与关系（`WorldEntity`/`WorldEntityRelation`，含派生复制）、Leaflet 世界地图工作台与 SVG 渲染、地图 AI 生图风格化（结构化地图 → prompt → 生图链路）、连载增量变更展示已完成并接入 `/novel-world`、`/story`、`/novel-bookshelf` 与 14 个 Agent 工具。待办：真实浏览器/Agent E2E 验收。 |
 
 ## 8. 文档更新协议
 

@@ -3750,7 +3750,7 @@
       "summary": "AI 生成角色立绘（资产中枢版）",
       "function": "generate_character_portrait",
       "file": "backend/app/api/v1/characters.py",
-      "line": 1731,
+      "line": 1718,
       "response_model": "",
       "include_in_schema": true
     },
@@ -3798,7 +3798,7 @@
       "summary": "将现有立绘升级到资产中枢",
       "function": "upgrade_portrait_to_asset_hub",
       "file": "backend/app/api/v1/characters.py",
-      "line": 2055,
+      "line": 2010,
       "response_model": "",
       "include_in_schema": true
     },
@@ -4966,7 +4966,7 @@
       "summary": "从来源快照创建世界项目",
       "function": "create_project_from_novel_source",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 880,
+      "line": 882,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5990,7 +5990,7 @@
       "summary": "从项目内容启动世界提取",
       "function": "start_project_world_extraction",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 914,
+      "line": 916,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6006,7 +6006,7 @@
       "summary": "聚合项目世界知识",
       "function": "get_project_world_knowledge",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1061,
+      "line": 1065,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6678,7 +6678,7 @@
       "summary": "可用图像后端列表",
       "function": "list_backends",
       "file": "backend/app/api/v1/images.py",
-      "line": 423,
+      "line": 424,
       "response_model": "ImageBackendsResponse",
       "include_in_schema": true
     },
@@ -6694,7 +6694,7 @@
       "summary": "生成图片",
       "function": "generate_image",
       "file": "backend/app/api/v1/images.py",
-      "line": 511,
+      "line": 554,
       "response_model": "ImageResponse",
       "include_in_schema": true
     },
@@ -6710,7 +6710,7 @@
       "summary": "批量生成多平台图片",
       "function": "batch_generate_endpoint",
       "file": "backend/app/api/v1/images.py",
-      "line": 1510,
+      "line": 1520,
       "response_model": "BatchGenerateResponse",
       "include_in_schema": true
     },
@@ -6726,7 +6726,7 @@
       "summary": "单张图片重生成",
       "function": "batch_retry_endpoint",
       "file": "backend/app/api/v1/images.py",
-      "line": 1445,
+      "line": 1455,
       "response_model": "BatchRetryResponse",
       "include_in_schema": true
     },
@@ -6742,7 +6742,7 @@
       "summary": "多主题批量生成",
       "function": "batch_topics_generate_endpoint",
       "file": "backend/app/api/v1/images.py",
-      "line": 1543,
+      "line": 1553,
       "response_model": "BatchTopicGenerateResponse",
       "include_in_schema": true
     },
@@ -6758,8 +6758,24 @@
       "summary": "多平台大纲生成",
       "function": "generate_outline_endpoint",
       "file": "backend/app/api/v1/images.py",
-      "line": 1384,
+      "line": 1394,
       "response_model": "GenerateOutlineResponse",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/images/optimize-prompt",
+      "router": "images",
+      "prefix": "/api/v1/images",
+      "local_path": "/optimize-prompt",
+      "tags": [
+        "Images"
+      ],
+      "summary": "用 LLM 优化生图提示词",
+      "function": "optimize_prompt",
+      "file": "backend/app/api/v1/images.py",
+      "line": 530,
+      "response_model": "ImagePromptOptimizeResponse",
       "include_in_schema": true
     },
     {
@@ -6774,7 +6790,7 @@
       "summary": "可用平台/Prompt 模板列表",
       "function": "list_platform_templates",
       "file": "backend/app/api/v1/images.py",
-      "line": 1262,
+      "line": 1272,
       "response_model": "dict",
       "include_in_schema": true
     },
@@ -6790,7 +6806,7 @@
       "summary": "新增平台模板",
       "function": "create_platform_template",
       "file": "backend/app/api/v1/images.py",
-      "line": 1293,
+      "line": 1303,
       "response_model": "dict",
       "include_in_schema": true
     },
@@ -6806,7 +6822,7 @@
       "summary": "更新平台模板",
       "function": "update_platform_template",
       "file": "backend/app/api/v1/images.py",
-      "line": 1320,
+      "line": 1330,
       "response_model": "dict",
       "include_in_schema": true
     },
@@ -6822,7 +6838,7 @@
       "summary": "删除平台模板",
       "function": "delete_platform_template",
       "file": "backend/app/api/v1/images.py",
-      "line": 1357,
+      "line": 1367,
       "response_model": "dict",
       "include_in_schema": true
     },
@@ -6838,7 +6854,7 @@
       "summary": "轮询图像生成任务",
       "function": "poll_image_task",
       "file": "backend/app/api/v1/images.py",
-      "line": 805,
+      "line": 815,
       "response_model": "ImageResponse",
       "include_in_schema": true
     },
@@ -7846,7 +7862,7 @@
       "summary": "获取可用的 LLM 后端列表",
       "function": "list_llm_backends",
       "file": "backend/app/api/v1/llm.py",
-      "line": 93,
+      "line": 58,
       "response_model": "BackendsResponse",
       "include_in_schema": true
     },
@@ -7862,7 +7878,7 @@
       "summary": "LLM 对话",
       "function": "chat",
       "file": "backend/app/api/v1/llm.py",
-      "line": 163,
+      "line": 128,
       "response_model": "ChatResponse",
       "include_in_schema": true
     },
@@ -8326,7 +8342,7 @@
       "summary": "从完本来源创建派生项目",
       "function": "derive_project",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 744,
+      "line": 746,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8342,7 +8358,7 @@
       "summary": "按模块提取世界候选",
       "function": "extract_world",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 718,
+      "line": 720,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8374,7 +8390,7 @@
       "summary": "连载来源追加新章节",
       "function": "sync_chapters",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 768,
+      "line": 770,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8390,7 +8406,7 @@
       "summary": "",
       "function": "add_to_bookshelf",
       "file": "backend/app/api/v1/novels.py",
-      "line": 539,
+      "line": 550,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8406,7 +8422,7 @@
       "summary": "",
       "function": "get_bookshelf_item",
       "file": "backend/app/api/v1/novels.py",
-      "line": 632,
+      "line": 699,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8422,7 +8438,7 @@
       "summary": "",
       "function": "get_catalog",
       "file": "backend/app/api/v1/novels.py",
-      "line": 497,
+      "line": 508,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8438,7 +8454,7 @@
       "summary": "",
       "function": "get_chapter_content",
       "file": "backend/app/api/v1/novels.py",
-      "line": 559,
+      "line": 570,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8454,7 +8470,7 @@
       "summary": "",
       "function": "download_chapters",
       "file": "backend/app/api/v1/novels.py",
-      "line": 653,
+      "line": 720,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8470,7 +8486,7 @@
       "summary": "停止小说下载任务",
       "function": "cancel_novel_download",
       "file": "backend/app/api/v1/novels.py",
-      "line": 873,
+      "line": 951,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8486,7 +8502,23 @@
       "summary": "",
       "function": "get_local_chapter",
       "file": "backend/app/api/v1/novels.py",
-      "line": 603,
+      "line": 614,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/novels/local-sync",
+      "router": "novels",
+      "prefix": "/api/v1/novels",
+      "local_path": "/local-sync",
+      "tags": [
+        "Novels"
+      ],
+      "summary": "",
+      "function": "sync_local_chapters",
+      "file": "backend/app/api/v1/novels.py",
+      "line": 643,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8502,7 +8534,7 @@
       "summary": "",
       "function": "search_novels",
       "file": "backend/app/api/v1/novels.py",
-      "line": 474,
+      "line": 485,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8518,7 +8550,7 @@
       "summary": "",
       "function": "get_source_catalog",
       "file": "backend/app/api/v1/novels.py",
-      "line": 910,
+      "line": 988,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8534,7 +8566,7 @@
       "summary": "",
       "function": "get_sources",
       "file": "backend/app/api/v1/novels.py",
-      "line": 893,
+      "line": 971,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8870,7 +8902,7 @@
       "summary": "列出项目世界模块（内置 + 项目扩展）",
       "function": "list_project_world_domains",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1674,
+      "line": 1684,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8886,7 +8918,7 @@
       "summary": "新增或更新项目世界模块定义",
       "function": "upsert_project_world_domain",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1689,
+      "line": 1699,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8902,7 +8934,7 @@
       "summary": "重置项目世界模块定义（内置恢复默认，自定义移除）",
       "function": "reset_project_world_domain",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1720,
+      "line": 1730,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8918,7 +8950,7 @@
       "summary": "列出项目类型化世界实体",
       "function": "list_project_world_entities",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1035,
+      "line": 1039,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8934,7 +8966,7 @@
       "summary": "列出项目类型化实体关系",
       "function": "list_project_world_entity_relations",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1050,
+      "line": 1054,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8950,7 +8982,7 @@
       "summary": "AI 域级细化（异步，接入既有任务中心）",
       "function": "expand_domain_attributes",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1490,
+      "line": 1498,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8966,7 +8998,7 @@
       "summary": "AI 补充实体属性（产出 ai_draft 候选，需确认后写入）",
       "function": "expand_entity_attributes",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1534,
+      "line": 1542,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8982,7 +9014,7 @@
       "summary": "预览实体属性补充的提示词（不调用模型）",
       "function": "preview_entity_expansion",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1380,
+      "line": 1386,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8998,7 +9030,7 @@
       "summary": "列出待确认的 AI 结构建议（模块 + 字段）",
       "function": "list_world_building_suggestions",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1624,
+      "line": 1634,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9014,7 +9046,7 @@
       "summary": "确认字段建议（写入模块属性契约）",
       "function": "confirm_suggested_field",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1642,
+      "line": 1652,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9030,7 +9062,7 @@
       "summary": "忽略字段建议（不再重复提示）",
       "function": "ignore_suggested_field",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1658,
+      "line": 1668,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9046,7 +9078,7 @@
       "summary": "从地点实体生成地图初稿",
       "function": "create_world_map_from_project_places",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1750,
+      "line": 1760,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9062,7 +9094,7 @@
       "summary": "列出世界构建模板（内置种子 + 项目私有）",
       "function": "list_world_templates",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1262,
+      "line": 1266,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9078,7 +9110,7 @@
       "summary": "新建或更新世界构建模板",
       "function": "upsert_world_template",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1273,
+      "line": 1277,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9094,7 +9126,7 @@
       "summary": "AI 起草世界构建模板草案（不落库，确认后再保存）",
       "function": "draft_world_template",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1318,
+      "line": 1322,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9110,7 +9142,7 @@
       "summary": "删除项目私有模板（内置模板不可删）",
       "function": "delete_world_template",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1296,
+      "line": 1300,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10390,7 +10422,7 @@
       "summary": "视频生成历史与待处理任务",
       "function": "list_video_tasks",
       "file": "backend/app/api/v1/videos.py",
-      "line": 776,
+      "line": 735,
       "response_model": "VideoTaskListResponse",
       "include_in_schema": true
     },
@@ -10406,7 +10438,7 @@
       "summary": "查询任务状态",
       "function": "get_task_status",
       "file": "backend/app/api/v1/videos.py",
-      "line": 686,
+      "line": 645,
       "response_model": "TaskStatusResponse",
       "include_in_schema": true
     },
@@ -10422,7 +10454,7 @@
       "summary": "播放已下载的视频任务文件",
       "function": "stream_task_file",
       "file": "backend/app/api/v1/videos.py",
-      "line": 794,
+      "line": 753,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10566,7 +10598,7 @@
       "summary": "获取提取运行状态",
       "function": "get_run",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 782,
+      "line": 784,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10582,7 +10614,7 @@
       "summary": "把合并/矛盾结论传播到已写事实",
       "function": "propagate_affected_facts",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 828,
+      "line": 830,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10598,7 +10630,7 @@
       "summary": "确认候选并写入项目",
       "function": "apply_run",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 862,
+      "line": 864,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10614,7 +10646,7 @@
       "summary": "预览提取候选与证据",
       "function": "list_candidates",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 787,
+      "line": 789,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10630,7 +10662,7 @@
       "summary": "标记候选为接受或忽略",
       "function": "decide_candidates",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 847,
+      "line": 849,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10646,7 +10678,7 @@
       "summary": "判断重复候选是否同一实体或矛盾",
       "function": "detect_contradictions",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 811,
+      "line": 813,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10662,7 +10694,7 @@
       "summary": "跨域调和候选提示",
       "function": "reconcile_run",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 801,
+      "line": 803,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10678,7 +10710,7 @@
       "summary": "列出世界地图文档",
       "function": "list_world_maps",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1728,
+      "line": 1738,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10694,7 +10726,7 @@
       "summary": "创建世界地图文档",
       "function": "create_world_map",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1739,
+      "line": 1749,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10710,7 +10742,7 @@
       "summary": "获取世界地图文档",
       "function": "get_world_map",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1766,
+      "line": 1776,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10726,7 +10758,7 @@
       "summary": "保存世界地图（revision CAS）",
       "function": "update_world_map",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1774,
+      "line": 1784,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10742,7 +10774,7 @@
       "summary": "删除世界地图文档",
       "function": "delete_world_map",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 2003,
+      "line": 2013,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10758,7 +10790,7 @@
       "summary": "解析地图据点关联的实体与证据",
       "function": "resolve_world_map_entities",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1846,
+      "line": 1856,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10774,7 +10806,7 @@
       "summary": "导出世界地图（结构化点位 JSON / SVG）",
       "function": "export_world_map",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1864,
+      "line": 1874,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10790,7 +10822,7 @@
       "summary": "用生图模型生成地图视觉成图",
       "function": "generate_world_map_visual",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1948,
+      "line": 1958,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10806,7 +10838,7 @@
       "summary": "AI 优化地图生图提示词（只改写，不生成图）",
       "function": "optimize_world_map_visual_prompt",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1906,
+      "line": 1916,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10822,7 +10854,7 @@
       "summary": "预览地图生图提示词",
       "function": "preview_world_map_visual_prompt",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1887,
+      "line": 1897,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10838,7 +10870,7 @@
       "summary": "生成区域形状语义参数（预览，不落库）",
       "function": "generate_region_shape",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1793,
+      "line": 1803,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10854,7 +10886,7 @@
       "summary": "渲染世界地图为 SVG",
       "function": "render_world_map",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 1832,
+      "line": 1842,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10870,7 +10902,7 @@
       "summary": "地图版本历史列表",
       "function": "list_world_map_revisions",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 2027,
+      "line": 2037,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10886,7 +10918,7 @@
       "summary": "读取指定版本快照",
       "function": "get_world_map_revision",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 2045,
+      "line": 2055,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10902,7 +10934,7 @@
       "summary": "回滚地图到指定版本（append-only：产生新 revision）",
       "function": "rollback_world_map",
       "file": "backend/app/api/v1/novel_sources.py",
-      "line": 2065,
+      "line": 2075,
       "response_model": "",
       "include_in_schema": true
     },
