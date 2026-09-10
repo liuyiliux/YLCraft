@@ -34,7 +34,7 @@ from app.services.asset_hub import AssetHubFacade
 from app.services.ai import get_ai_service
 from app.services.ai.types import VideoGenerationRequest
 from app.services.ai.types import VideoCapability, VideoCapabilities
-from app.services.platform_log import service as platform_log
+from app.services.ai.service import ai_call_context
 from app.services.ai.visual_planning import build_visual_planning_summary
 
 router = APIRouter()
@@ -552,7 +552,15 @@ async def generate_video(req: VideoGenerateRequest, external_key: Optional[Exter
             reference_images=list(reference_paths.values()) or None,
             await_completion=False,
         )
-        result = await manager.generate_video(video_req)
+        # 事件日志由 AIService 收口统一记录（成功/失败/异常），这里只补业务身份与重发负载。
+        with ai_call_context(
+            scene="video",
+            task_type="video_generation",
+            label="视频生成",
+            project_id=req.project_id or None,
+            retry_payload=_video_retry_payload(req),
+        ):
+            result = await manager.generate_video(video_req)
 
         # A failed submission has no provider task id, but it still needs a
         # durable local ID so the complete request/response diagnostics survive.
@@ -594,22 +602,6 @@ async def generate_video(req: VideoGenerateRequest, external_key: Optional[Exter
                 task.completed_at = time.time() if task.status in {"done", "error"} else None
 
         if not result.success:
-            await platform_log.record_event(
-                scene="video",
-                task_type="video_generation",
-                task_id=result.task_id or None,
-                level="error",
-                status="failed",
-                provider=result.provider or req.provider or "",
-                model=result.model or req.model or "",
-                message="视频生成失败",
-                error=result.error or "Video provider request failed",
-                request=_video_log_request(req),
-                response={"status": result.status, "error": result.error},
-                duration_ms=result.latency_ms,
-                project_id=req.project_id or None,
-                retry_payload=_video_retry_payload(req),
-            )
             return VideoResponse(
                 success=False,
                 task_id=result.task_id,
@@ -621,26 +613,6 @@ async def generate_video(req: VideoGenerateRequest, external_key: Optional[Exter
                 error=result.error or "Video provider request failed",
             )
 
-        await platform_log.record_event(
-            scene="video",
-            task_type="video_generation",
-            task_id=result.task_id or None,
-            level="info",
-            status="success",
-            provider=result.provider or req.provider or "",
-            model=result.model or req.model or "",
-            message="视频生成成功",
-            request=_video_log_request(req),
-            response={
-                "status": result.status,
-                "url": result.url,
-                "cost": result.cost,
-                "asset_id": asset_id,
-            },
-            duration_ms=result.latency_ms,
-            project_id=req.project_id or None,
-            retry_payload=_video_retry_payload(req),
-        )
         return VideoResponse(
             success=True,
             task_id=result.task_id,
@@ -661,21 +633,8 @@ async def generate_video(req: VideoGenerateRequest, external_key: Optional[Exter
             planning_summary=req.planning_summary or {},
         )
     except Exception as e:
+        # 失败事件已由 AIService 收口记录（含异常），这里不再重复写。
         logger.error(f"Video generation failed: {e}")
-        await platform_log.record_event(
-            scene="video",
-            task_type="video_generation",
-            level="error",
-            status="failed",
-            provider=req.provider or "",
-            model=req.model or "",
-            message="视频生成异常",
-            error=str(e),
-            request=_video_log_request(req),
-            response={"error": str(e)},
-            project_id=req.project_id or None,
-            retry_payload=_video_retry_payload(req),
-        )
         return VideoResponse(success=False, error=str(e))
     finally:
         if transient_start_image is not None:

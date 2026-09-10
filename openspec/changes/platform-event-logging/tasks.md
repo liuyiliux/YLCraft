@@ -74,4 +74,4 @@
 - [x] 35. 世界地图链路（`generate-visual`、`prompt-optimize`、`regions/{id}/shape/generate`）用 `ai_call_context` 注入 `project_id` + `ref_id=map_id`，归入 `scene="world_map"`。
 - [x] 36. 直连 provider、不经 `AIService` 的绕过点自补事件：`services/embedding` 失败落事件（成功不记，避免逐条刷屏）、`services/breaker` 的 STT 补成功/失败事件（此前 `except: pass` 把异常完全吞掉）。
 - [x] 37. 前端 `EventLogTab.tsx` 场景选项补全到后端在用全集（原 5 个 → 13 个，含 world_extraction / world_generation / world_map / character_portrait / asset_provenance / pipeline / agent_canvas / embedding / stt），并加中文标签与配色、未知场景兜底显示原值。
-- [ ] 38. 清理端点层重复 `record_event`（约 43 处），消除过渡期双写，让 `record_event` 退化为业务语义补充。
+- [x] 38. 清理端点层重复 `record_event`（约 43 处），消除过渡期双写，让 `record_event` 退化为业务语义补充。（已落地：调用类事件下沉到 `AIService` 三个入口统一记录，端点层删掉 llm 1 处 / videos 3 处 / images 3 处 / characters 5 处共 12 处重复记账；`ai_call_context` 支持注入 `project_id`/`ref_id`/`scene`/`task_type`/`label`/`retry_payload` 以保留业务身份与重发能力，并可用 `suppress_auto_event` 让端点自写业务事件时抑制自动记账（novel_sources 12 处走此路径）。保留项：业务语义事件（assets 谱系、创作阶段、重发、小说下载、世界提取/生成的业务事件）与不走 AIService 的旁路（model3d 直连 httpx、breaker STT、embedding）的唯一记录。）

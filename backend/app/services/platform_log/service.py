@@ -21,7 +21,9 @@ from app.db.models.platform_log import PlatformEventLog
 
 logger = logging.getLogger("ylcraft.platform_log")
 
-MAX_SUMMARY_LENGTH = 60000  # 世界提取等场景需要落完整 prompt 与模型原始输出
+#: 摘要上限：世界提取等场景要落完整 prompt 与模型原始输出，取值偏大以便排障；
+#: 但仍要保留截断保护（超长照样截断），避免把整本书正文塞进事件日志。
+MAX_SUMMARY_LENGTH = 20000
 
 
 def _truncate(value: Any) -> str:

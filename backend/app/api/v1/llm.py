@@ -14,46 +14,11 @@ from pydantic import BaseModel
 from app.core.external_api_auth import optional_external_api_key
 from app.db.models.external_api_key import ExternalApiKey
 from app.services.ai import get_ai_service, AIService
+from app.services.ai.service import ai_call_context
 from app.services.ai.types import LLMMessage
-from app.services.platform_log import service as platform_log
 
 router = APIRouter()
 logger = logging.getLogger("ylcraft.llm")
-
-
-async def _record_llm_platform_event(req: ChatRequest, result, *, error: str | None = None) -> None:
-    from app.services.ai.types import LLMGenerationResult
-    if result is None:
-        result = LLMGenerationResult(success=False, error=error or "")
-    await platform_log.record_event(
-        scene="llm",
-        task_type="llm_chat",
-        level="info" if result.success else "error",
-        status="success" if result.success else "failed",
-        provider=result.provider or req.provider or "",
-        model=result.model or req.model or "",
-        message="文本生成成功" if result.success else "文本生成失败",
-        error=result.error if not result.success else None,
-        request={
-            "messages": req.messages,
-            "model": req.model or "",
-            "temperature": req.temperature,
-            "max_tokens": req.max_tokens,
-            "provider": req.provider or "",
-        },
-        response={
-            "content": (getattr(result, "content", "") or "")[:500],
-            "usage": getattr(result, "usage", None),
-        },
-        duration_ms=result.latency_ms,
-        retry_payload={
-            "messages": req.messages,
-            "model": req.model or "",
-            "temperature": req.temperature,
-            "max_tokens": req.max_tokens,
-            "provider": req.provider or "",
-        },
-    )
 
 
 class ChatRequest(BaseModel):
@@ -168,18 +133,33 @@ async def chat(req: ChatRequest, external_key: Optional[ExternalApiKey] = Depend
     if not manager.is_loaded():
         raise HTTPException(status_code=503, detail="AIService 未初始化")
 
+    # 事件日志由 AIService 收口统一记录（含成功/失败/异常），这里只补重发负载。
+    retry_payload = {
+        "messages": req.messages,
+        "model": req.model or "",
+        "temperature": req.temperature,
+        "max_tokens": req.max_tokens,
+        "provider": req.provider or "",
+    }
     try:
         llm_messages = [
             LLMMessage(role=m["role"], content=m["content"])
             for m in req.messages
         ]
-        result = await manager.chat(
-            messages=llm_messages,
-            provider=req.provider,
-            model=req.model,
-            temperature=req.temperature,
-            max_tokens=req.max_tokens,
-        )
+        with ai_call_context(
+            scene="llm",
+            task_type="llm_chat",
+            label="文本生成",
+            ref_id=req.log_ref_id,
+            retry_payload=retry_payload,
+        ):
+            result = await manager.chat(
+                messages=llm_messages,
+                provider=req.provider,
+                model=req.model,
+                temperature=req.temperature,
+                max_tokens=req.max_tokens,
+            )
 
         if req.log_scene or req.log_stage or req.log_ref_id:
             try:
@@ -214,7 +194,6 @@ async def chat(req: ChatRequest, external_key: Optional[ExternalApiKey] = Depend
             except Exception as log_err:
                 logger.warning(f"LLM chat log write failed: {log_err}")
 
-        await _record_llm_platform_event(req, result)
         return ChatResponse(
             success=result.success,
             content=result.content,
@@ -222,6 +201,6 @@ async def chat(req: ChatRequest, external_key: Optional[ExternalApiKey] = Depend
             error=result.error,
         )
     except Exception as e:
+        # 失败事件已由 AIService 收口记录（含异常），这里不再重复写。
         logger.error(f"LLM chat failed: {e}")
-        await _record_llm_platform_event(req, None, error=str(e))
         return ChatResponse(success=False, error=str(e))

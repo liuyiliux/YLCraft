@@ -61,6 +61,7 @@ def ai_call_context(
     scene: str | None = None,
     task_type: str | None = None,
     label: str = "",
+    retry_payload: dict[str, Any] | None = None,
     suppress_auto_event: bool = False,
 ) -> Iterator[None]:
     """给当前上下文里的 AI 调用注入业务身份，自动落事件日志时一并带上。
@@ -70,6 +71,8 @@ def ai_call_context(
         ref_id: 关联业务对象（角色 id、地图 id 等）
         scene / task_type: 覆盖默认技术场景归类
         label: 事件标题，缺省用「<task_type> 成功/失败」
+        retry_payload: 事件日志「重发」所需的原始请求负载。端点层删掉手写
+            record_event 后，重发能力靠这里兜住——缺了它重发会失效。
         suppress_auto_event: 端点自己已写业务事件时置 True，避免重复记账
     """
     token = _ai_call_context.set(
@@ -80,6 +83,7 @@ def ai_call_context(
             "scene": scene,
             "task_type": task_type,
             "label": label,
+            "retry_payload": retry_payload,
             "suppress_auto_event": suppress_auto_event,
         }
     )
@@ -153,6 +157,7 @@ async def _emit_call_event(
             duration_ms=duration_ms,
             project_id=ctx.get("project_id"),
             ref_id=ctx.get("ref_id"),
+            retry_payload=ctx.get("retry_payload"),
         )
     except Exception:  # pragma: no cover - 记录失败不能打断 AI 调用
         logger.debug("[AIService] 事件日志写入失败（已忽略）", exc_info=True)
@@ -346,7 +351,21 @@ class AIService:
         """生成图片"""
         logger.info("[AIService] 图片生成请求: provider=%s, model=%s", req.provider, req.model)
         started = time.perf_counter()
-        result = await self._router.resolve_image(req)
+        try:
+            result = await self._router.resolve_image(req)
+        except Exception as exc:
+            # 异常照旧向上抛，只补一条失败事件——端点层的"生成异常"记录因此可以删掉。
+            await _emit_call_event(
+                scene="image",
+                task_type="image_generation",
+                provider=str(req.provider or ""),
+                model=str(req.model or ""),
+                ok=False,
+                error=str(exc),
+                duration_ms=int((time.perf_counter() - started) * 1000),
+                request_text=str(getattr(req, "prompt", "") or "")[:_EVENT_SUMMARY_CHARS],
+            )
+            raise
         if result.success:
             logger.info("[AIService] 图片生成成功: provider=%s", result.provider)
         else:
@@ -372,7 +391,20 @@ class AIService:
         """生成视频"""
         logger.info("[AIService] 视频生成请求: provider=%s", req.provider)
         started = time.perf_counter()
-        result = await self._router.resolve_video(req)
+        try:
+            result = await self._router.resolve_video(req)
+        except Exception as exc:
+            await _emit_call_event(
+                scene="video",
+                task_type="video_generation",
+                provider=str(req.provider or ""),
+                model=str(getattr(req, "model", "") or ""),
+                ok=False,
+                error=str(exc),
+                duration_ms=int((time.perf_counter() - started) * 1000),
+                request_text=str(getattr(req, "prompt", "") or "")[:_EVENT_SUMMARY_CHARS],
+            )
+            raise
         if result.success:
             logger.info("[AIService] 视频生成成功: provider=%s", result.provider)
         else:
