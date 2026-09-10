@@ -58,6 +58,15 @@ const STATUS_LABEL: Record<string, string> = {
   archived: '已归档',
 }
 
+// 来源类型的中文展示（与后端 WritingStyleProfileSourceType 枚举一一对应；
+// 未知取值原样显示，避免丢信息）。
+const SOURCE_TYPE_LABEL: Record<string, string> = {
+  user_defined: '人工定义',
+  extracted_from_source: '来源提取',
+  agent_draft: 'Agent 起草',
+  builtin: '内置',
+}
+
 interface ProfileRow {
   id: string
   name: string
@@ -271,7 +280,13 @@ export default function WritingStylesPage() {
           <Tag color={STATUS_COLOR[status] || 'default'}>{STATUS_LABEL[status] || status}</Tag>
         ),
       },
-      { title: '来源类型', dataIndex: 'source_type', key: 'source_type', width: 160 },
+      {
+        title: '来源类型',
+        dataIndex: 'source_type',
+        key: 'source_type',
+        width: 160,
+        render: (value: string) => SOURCE_TYPE_LABEL[value] || value,
+      },
       { title: '版本', dataIndex: 'version', key: 'version', width: 70 },
       {
         title: '操作',
@@ -785,7 +800,9 @@ function ProfileDetail({ profile, projects }: { profile: any; projects: any[] })
       children: (
         <Descriptions size="small" column={1}>
           <Descriptions.Item label="状态">{STATUS_LABEL[profile.status] || profile.status}</Descriptions.Item>
-          <Descriptions.Item label="来源类型">{profile.source_type}</Descriptions.Item>
+          <Descriptions.Item label="来源类型">
+            {SOURCE_TYPE_LABEL[profile.source_type] || profile.source_type}
+          </Descriptions.Item>
           <Descriptions.Item label="来源快照">{profile.source_snapshot_id || '-'}</Descriptions.Item>
           <Descriptions.Item label="样本字数">{provenance.sample_chars ?? '-'}</Descriptions.Item>
           <Descriptions.Item label="材料检查">
