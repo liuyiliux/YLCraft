@@ -37,7 +37,25 @@
 列表/搜索接口常用 `preview=True` 截断长文本（如提示词截到 360 字），**展示全文或插入正文前必须取详情**，
 否则会把残缺内容写进业务（曾导致生图提示词残缺）。
 
-## 6. 文档同步协议
+## 6. 失败链路的可观测性验收口径
+
+回归失败链路时，四项都要成立（缺一即为观测缺口）：
+
+1. **事件日志可见**：`GET /api/v1/logs?scene=<scene>&status=failed` 能查到该失败事件，
+   详情含 `provider` / `model` / `error` / `retry_payload`。
+2. **运行日志含原始输出**：`GET /api/v1/logs/runtime` 能看到 provider/SDK 原始错误
+   （如 `[ERROR] [OpenAISDK-Image] OpenAI API error: ...` 与 `[WARNING] [AIService] …失败`）。
+3. **可重发**：`POST /api/v1/logs/{id}/retry` 可达并产生新事件。
+4. **追溯链闭合**：新事件 `retry_of` → 原事件，原事件 `retried_by` → 新事件。
+
+实现要点：
+- 脱敏复用同一个函数（`app.core.task_queue._sanitize_event_value`），平台侧另有
+  `_sanitize_payload`：脱敏 `retry_payload` 但**保留业务字段**（prompt/messages/lineage），
+  否则重发会还原不出原请求。
+- 事件摘要长度上限 `MAX_SUMMARY_LENGTH`（20000）：既能保留完整 prompt 与模型原始输出，
+  又不会把整本书正文塞进事件表。
+
+## 7. 文档同步协议
 
 - 新增/改语义 API → 跑 `backend/venv_win/Scripts/python.exe tools/generate_api_surface.py` 重新生成
   `docs/architecture/API_SURFACE.md` 与 `api_surface.json`（勿手改）。

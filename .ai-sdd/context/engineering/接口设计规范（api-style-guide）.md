@@ -28,6 +28,11 @@
 | `GET /api/v1/logs/{id}/generation` | 按事件取完整 LLM 生成日志 |
 | `GET /api/v1/logs/runtime` | 读取滚动文件日志（支持 level/关键词/before 游标） |
 
+**响应结构差异（易踩）**：`GET /logs` 列表项字段在**顶层**（`id`/`scene`/`task_type`/`provider`/`model`/`message`/`error`/`duration_ms`/`retry_of`/`retried_by`/`created_at`）；
+而 `GET /logs/{id}` 是 `{"success": true, "item": {...}}` —— 详情的 `request_summary`/`response_summary`/`retry_payload` 都嵌在 `item` 里，不要按 `data` 取。
+
+**重发边界**：`POST /logs/{id}/retry` 只支持 `image` / `video` / `llm` 三类 scene；非 `failed` 返回 409，缺 `retry_payload` 返回 400；重发成功或失败都会写一条新事件并用 `retry_of` 指回原事件，原事件 `retried_by` 指向新事件。
+
 ## 4. 文档同步（强制）
 
 新增/修改/删除接口后必须执行：

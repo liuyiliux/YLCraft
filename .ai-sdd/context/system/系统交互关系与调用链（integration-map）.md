@@ -39,6 +39,25 @@ flowchart TD
 
 前端任务中心三 Tab：任务（本接口）/ 事件日志（`/api/v1/logs`）/ 运行日志（`/api/v1/logs/runtime`）。
 
+## 3.1 运行日志（进程日志）链路
+
+```mermaid
+flowchart LR
+  A[任意模块 logger.*] --> B[main.py:19 RotatingFileHandler]
+  B --> C[storage/logs/app.log]
+  C -->|10MB 滚动| D[app.log.1 / app.log.2 …]
+  C --> E[GET /api/v1/logs/runtime 倒序 tail]
+  E --> F[任务中心「运行日志」Tab]
+  A -.同时.-> G[stdout 控制台]
+```
+
+- 落盘配置：`backend/app/main.py:19` 的 `RotatingFileHandler`（10MB 滚动、保留若干份），
+  实际产物在 `backend/storage/logs/app.log[.N]`。
+- 读取：`GET /api/v1/logs/runtime` 倒序 tail，支持 level / 关键词过滤与 `before` 游标。
+- 定位差异：**事件日志**是业务审计流（表 `platform_event_logs`，带重发参数）；
+  **运行日志**是进程输出（文件），排障时含 provider/SDK 原始错误（如
+  `[ERROR] [OpenAISDK-Image] OpenAI API error: ...`），但不驱动任何业务恢复。
+
 ## 4. 前端入口
 
 | 页面 | 路径 | 说明 |
