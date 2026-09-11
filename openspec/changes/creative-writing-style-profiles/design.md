@@ -75,6 +75,17 @@ The JSON profile is organized into:
 Every dimension has `value`, `confidence`, `evidence_summary` and optional
 `measurement_keys`. Rules are short and executable. They are not free-form essays.
 
+## Lifecycle
+
+`draft -> reviewed -> active -> archived`, and `archived -> draft` on restore.
+
+Archiving is a reversible retirement rather than a deletion: it removes the profile
+from runtime selection while keeping existing bindings attached (they simply stop
+taking effect). Restoring returns the profile to `draft` and must never jump straight
+back to `reviewed` or `active`, because the material gate has to re-run. Human and
+Agent clients expose the same reversal, so an Agent that archived a profile can undo
+it without a human round trip.
+
 ## Runtime contract
 
 The Context Pack remains authoritative. T0-T5 carry canon, state, chapter contract,
@@ -93,6 +104,13 @@ version and checksum used. A profile is never silently selected from a source na
 Recommended intensity values are `subtle`, `balanced` and `strong`. The UI and Agent
 API may disable individual dimensions, for example applying rhythm to prose but not
 dialogue.
+
+As implemented, intensity is a real injection weight rather than a label: it caps how
+much of the contract reaches the prompt (8 / 16 / 24 expression rules and 1 / 2 / 4
+new examples) and is surfaced as a two-character tag on the header line. T6 has a fixed
+budget shared with project Skills, so intensity must never be expressed by adding extra
+prompt lines — writing it longer would push style rules out of the budget and look like
+"the profile was bound but no rules were injected".
 
 ## Human and Agent parity
 

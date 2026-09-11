@@ -10,24 +10,27 @@
 # load_policy: always / stage-start / stage-end / on-demand
 # triggers: on-demand 的强制路由提示（中文业务说法、代码符号均算命中）
 #
-# 本文件由 context-bootstrap(document-ingest) 于 2026-09-11 建立，
+# 本文件由 context-bootstrap(document-ingest) 于 2026-09-11 建立。
 # 首批知识来源：openspec/changes/task-observability-diagnostics 的 harvest 报告
 # （.ai-sdd/requirements/task-observability-diagnostics/harvest-2026-09-11.md）。
+# 2026-09-11 追加：openspec/changes/creative-writing-style-profiles 的 harvest 报告
+# （.ai-sdd/requirements/creative-writing-style-profiles/harvest-2026-09-11.md）。
 # 权威替代：docs/architecture/YLCRAFT_SYSTEM_ARCHITECTURE.md（项目架构总纲）。
 
 # 业务知识
 
 - path: business/领域术语与业务对象（domain-glossary）.md
-  summary: "任务与观测领域的术语：任务账本、三层观测视图、任务诊断字段、事件收口、业务语义事件"
+  summary: "任务与观测领域术语（任务账本、三层观测视图、任务诊断字段、事件收口、业务语义事件）；写作风格档案领域术语（风格档案、三层模型、有界样本、表达式契约、绑定强度、归档可逆）"
   scope: all
   stage: [proposal, specs, design]
   load_policy: on-demand
   triggers:
     - "需求涉及任务、事件日志、运行日志、任务中心、可观测性"
     - "需要区分'任务记录'与'事件日志'、'收口事件'与'业务语义事件'"
+    - "需求涉及写作风格、风格档案、风格提取、风格绑定"
 
 - path: business/业务规则与核验体系（business-rules）.md
-  summary: "任务落库白名单规则、启动对账、事件/任务重试边界、事件敏感字段与长度约束"
+  summary: "任务落库白名单规则、启动对账、事件/任务重试边界、事件敏感字段与长度约束；写作风格档案生命周期、材料闸门与泄漏阈值、强度注入量"
   scope: all
   stage: [specs, design, tasks]
   load_policy: on-demand
@@ -35,11 +38,13 @@
     - "涉及任务是否需要持久化、project_id 归属、任务重启恢复"
     - "涉及失败重试、事件重发、可重放参数"
     - "涉及事件日志内容约束（脱敏、截断、条数上限）"
+    - "涉及风格档案生命周期（草稿/审核/激活/归档/取消归档）"
+    - "涉及来源材料泄漏检查、导入 Skill 的免检边界"
 
 # 数据知识
 
 - path: data/核心数据模型（data-model）/
-  summary: "任务账本三套表与日志两套表的分工、字段含义、可重放参数位置"
+  summary: "任务账本三套表与日志两套表的分工、字段含义、可重放参数位置；写作风格档案与项目绑定两张表的字段语义与边界"
   scope: all
   stage: [proposal, specs, design, tasks, apply]
   load_policy: on-demand
@@ -47,20 +52,22 @@
     - "涉及 project_task_records、video_generation_tasks、model3d_generation_tasks"
     - "涉及 platform_event_logs、project_generation_logs"
     - "需要判断某状态/参数应该落在任务表还是日志表"
+    - "涉及 writing_style_profiles、project_writing_style_links"
 
 - path: data/枚举值字典（enum-dictionary）.md
-  summary: "事件 scene 取值、任务持久化白名单、任务与事件状态枚举"
+  summary: "事件 scene 取值、任务持久化白名单、任务与事件状态枚举、写作风格档案状态与强度枚举"
   scope: all
   stage: [design, tasks, apply]
   load_policy: on-demand
   triggers:
     - "涉及 scene / task_type / status / level 等取值"
     - "需要避免自行编造枚举值（前端筛选下拉需与后端同步）"
+    - "涉及 style profile status、source_type、intensity 取值"
 
 # 工程约束
 
 - path: engineering/设计约束（design-conventions）.md
-  summary: "AI 调用双层观测模式、任务不能自动收口、重试复用业务端点、前端选项同步、函数直调的坑"
+  summary: "AI 调用双层观测模式、任务不能自动收口、重试复用业务端点、前端选项同步、函数直调的坑；写作风格 T6 预算与纯函数注入、人机边界对等、TOOLS 注册表判定"
   scope: all
   stage: [design, tasks, apply]
   load_policy: on-demand
@@ -68,15 +75,18 @@
     - "设计涉及新增 AI 调用、生成操作、异步任务或可观测性"
     - "需要判断是否该记事件、是否该建任务、失败后如何重试"
     - "实现需要直接调用其他端点函数（如 await generate_video(req)）"
+    - "涉及写作风格注入、T6 层预算、Context Pack 组装"
+    - "需要判断 AI 能力是否在真人 UI 与 Agent 工具两侧都有对应入口"
 
 - path: engineering/接口设计规范（api-style-guide）.md
-  summary: "本项目 API 约定：统一 /api/v1 前缀、路由文件落点、请求模型、错误语义与文档同步流程"
+  summary: "本项目 API 约定：统一 /api/v1 前缀、路由文件落点、请求模型、错误语义与文档同步流程；写作风格档案端点与 Agent 工具"
   scope: all
   stage: [design, tasks, apply]
   load_policy: on-demand
   triggers:
     - "新增/修改后端接口或前端调用"
     - "需要同步 docs/architecture/API_SURFACE.md 与 api_surface.json"
+    - "涉及 writing-styles 端点或写作风格 Agent 工具"
 
 # 系统知识
 
