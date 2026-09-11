@@ -1781,36 +1781,39 @@ async def generate_character_portrait(character_id: str, req: PortraitGenerateRe
                 result = await manager.generate_image(img_req)
             except Exception as e:
                 logger.exception(f"[portrait/generate] generate_image failed: {e}")
-                # 写入失败日志
-            try:
-                await _write_project_generation_log(
-                    session,
-                    scene="character_portrait",
-                    ref_id=character.id,
-                    stage="generate_image",
-                    status="failed",
-                    provider=req.provider or "",
-                    model=req.model or "",
-                    prompt=prompt,
-                    request_payload={
-                        "character_id": character.id,
-                        "character_name": character.name,
-                        "size": req.size,
-                        "n": req.n,
-                        "negative_prompt": negative_prompt,
-                        "reference_images_count": len(req.reference_images or []),
-                        "reference_images": req.reference_images or [],
-                        "provider": req.provider,
-                        "model": req.model,
-                        "preset": prompt_bundle["preset"],
-                    },
-                    raw_response=str(e),
-                    validation_error=type(e).__name__,
-                )
-                await session.flush()
-            except Exception as log_err:
-                logger.warning(f"[portrait/generate] log write failed: {log_err}")
-            raise HTTPException(status_code=500, detail=f"生图失败: {e}")
+                # 写入失败日志。注意：以下 try 与 raise **必须留在 except 块内**——
+                # Python 3 会在 except 块结束时删除 `e`，缩进错误会让 str(e) 抛
+                # UnboundLocalError，从而掩盖真正的生图异常（曾导致只看到 500 而看不到
+                # 原始的 "Connection error"）。
+                try:
+                    await _write_project_generation_log(
+                        session,
+                        scene="character_portrait",
+                        ref_id=character.id,
+                        stage="generate_image",
+                        status="failed",
+                        provider=req.provider or "",
+                        model=req.model or "",
+                        prompt=prompt,
+                        request_payload={
+                            "character_id": character.id,
+                            "character_name": character.name,
+                            "size": req.size,
+                            "n": req.n,
+                            "negative_prompt": negative_prompt,
+                            "reference_images_count": len(req.reference_images or []),
+                            "reference_images": req.reference_images or [],
+                            "provider": req.provider,
+                            "model": req.model,
+                            "preset": prompt_bundle["preset"],
+                        },
+                        raw_response=str(e),
+                        validation_error=type(e).__name__,
+                    )
+                    await session.flush()
+                except Exception as log_err:
+                    logger.warning(f"[portrait/generate] log write failed: {log_err}")
+                raise HTTPException(status_code=500, detail=f"生图失败: {e}")
 
         if not result.success:
             # 失败事件已由 AIService 收口记录，这里不再重复写。
