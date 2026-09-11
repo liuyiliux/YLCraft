@@ -42,7 +42,7 @@ PERSISTED_TASK_TYPES = {
 #: 不挂项目、但仍需留痕的任务类型。这类任务没有 project_id（小说下载属于
 #: 书架资产，不归属创作项目），若也要求 project_id 就永远落不了库：
 #: 进程一重启任务即从任务中心消失，用户看不到下载结果与失败原因。
-PERSISTED_STANDALONE_TASK_TYPES = frozenset({"novel_download"})
+PERSISTED_STANDALONE_TASK_TYPES = frozenset({"novel_download", "live2d_processing"})
 
 
 def should_persist(task_type: str, payload: dict[str, Any] | None) -> bool:

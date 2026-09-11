@@ -795,6 +795,133 @@ async def cancel_task(task_id: str):
     raise HTTPException(status_code=404, detail="任务不存在")
 
 
+class TaskRetryResponse(BaseModel):
+    success: bool = True
+    message: str = ""
+    task_type: str = ""
+    task_id: str | None = None  # 重试产生的新任务 id
+    url: str | None = None
+    asset_id: str | None = None
+    error: str | None = None
+
+
+def _load_json(raw: Any) -> dict[str, Any]:
+    try:
+        value = json.loads(raw or "{}")
+        return value if isinstance(value, dict) else {}
+    except (TypeError, ValueError):
+        return {}
+
+
+@router.post("/{task_id}/retry", response_model=TaskRetryResponse, summary="重试失败任务")
+async def retry_task(task_id: str):
+    """按原参数重新提交失败或取消的独立媒体任务。
+
+    统一入口：任务中心看到失败任务即可重试，不必再去事件日志 Tab 找对应事件。
+    视频与图转 3D 的完整可重放参数保存在各自任务账本的 `request_json`；
+    重试直接复用各自的生成端点，因此资产入库、项目关联、事件与任务记录的行为
+    与用户手动重新生成完全一致（会生成一条新任务，原任务保留可追溯）。
+    图片类任务的重发在事件日志（`/api/v1/logs/{id}/retry`）已支持。
+    """
+    # 先按 task_type 判断（通用队列任务 id 是 uuid，前缀不可靠）；外部账本再按前缀兜底。
+    queue = get_task_queue()
+    tracked = await queue.get_task(task_id)
+    task_type = str(getattr(tracked, "task_type", "") or "")
+    if not task_type:
+        if task_id.startswith("video_"):
+            task_type = "video_generation"
+        elif task_id.startswith("model3d_"):
+            task_type = "model3d_generation"
+        elif task_id.startswith("image_"):
+            task_type = "image_generation"
+
+    if task_type == "video_generation":
+        from app.api.v1.videos import VideoGenerateRequest, generate_video
+
+        async with get_async_session() as session:
+            row = await session.get(VideoGenerationTask, task_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="视频任务不存在")
+        ctx = _load_json(row.request_json)
+        request = VideoGenerateRequest(
+            prompt=row.prompt or ctx.get("prompt") or "",
+            duration=ctx.get("duration") or 5,
+            resolution=ctx.get("resolution") or "720p",
+            aspect_ratio=ctx.get("aspect_ratio") or "9:16",
+            provider=row.provider or None,
+            model=row.model or None,
+            seed=ctx.get("seed"),
+            generate_audio=ctx.get("generate_audio", True),
+            music_hint=ctx.get("music_hint") or None,
+            reference_asset_ids=ctx.get("reference_asset_ids") or [],
+            project_id=ctx.get("project_id") or None,
+            content_id=ctx.get("content_id") or None,
+            chapter_number=ctx.get("chapter_number"),
+            source_type=ctx.get("source_type") or None,
+            source_index=ctx.get("source_index") or None,
+            source_title=ctx.get("source_title") or None,
+            production_plan_id=ctx.get("production_plan_id") or None,
+            production_node_id=ctx.get("production_node_id") or None,
+            planning_summary=ctx.get("planning_summary") or {},
+        )
+        response = await generate_video(request, external_key=None)
+        ok = bool(getattr(response, "success", False))
+        return TaskRetryResponse(
+            success=ok,
+            message="已重新提交视频生成" if ok else "重试失败",
+            task_type="video_generation",
+            task_id=getattr(response, "task_id", None),
+            url=getattr(response, "url", None),
+            asset_id=getattr(response, "asset_id", None) or None,
+            error=None if ok else (getattr(response, "error", None) or "视频生成失败"),
+        )
+
+    if task_type == "model3d_generation":
+        from app.api.v1.model3d_workspace import Model3DGenerateRequest, generate_model3d
+
+        async with get_async_session() as session:
+            row = await session.get(Model3DGenerationTask, task_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="图转 3D 任务不存在")
+        if (row.kind or "generation") != "generation":
+            return TaskRetryResponse(
+                success=False,
+                message="绑骨任务请在工作台重新发起（暂不支持一键重试）",
+                task_type="model3d_generation",
+            )
+        ctx = _load_json(row.request_json)
+        request = Model3DGenerateRequest(
+            prompt=row.prompt or ctx.get("title") or "",
+            provider=row.provider or "",
+            model=row.model or "",
+            source_asset_id=ctx.get("source_asset_id"),
+            options=ctx.get("options") or {},
+        )
+        response = await generate_model3d(request, external_key=None)
+        ok = bool(getattr(response, "success", False))
+        return TaskRetryResponse(
+            success=ok,
+            message="已重新提交图转 3D" if ok else "重试失败",
+            task_type="model3d_generation",
+            task_id=getattr(response, "task_id", None),
+            url=getattr(response, "url", None),
+            asset_id=getattr(response, "asset_id", None) or None,
+            error=None if ok else (getattr(response, "error", None) or "图转 3D 失败"),
+        )
+
+    if task_type == "image_generation":
+        return TaskRetryResponse(
+            success=False,
+            message="图片任务请在「事件日志」Tab 对失败事件点「重发」（那里保留了完整的可重放参数）",
+            task_type="image_generation",
+        )
+
+    return TaskRetryResponse(
+        success=False,
+        message="该任务类型暂不支持一键重试，请在对应工作台重新发起",
+    )
+
+
 @router.delete("/{task_id}", response_model=TaskActionResponse, summary="删除任务")
 async def delete_task(task_id: str):
     """从当前内存任务视图中删除任务。"""

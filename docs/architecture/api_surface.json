@@ -7126,7 +7126,7 @@
       "summary": "列出 Live2D 模型",
       "function": "list_models",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 737,
+      "line": 738,
       "response_model": "Live2DModelListResponse",
       "include_in_schema": true
     },
@@ -7142,7 +7142,7 @@
       "summary": "创建 Live2D 模型（上传图片）",
       "function": "create_model",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 631,
+      "line": 632,
       "response_model": "Live2DModelResponse",
       "include_in_schema": true
     },
@@ -7158,7 +7158,7 @@
       "summary": "列出 API 密钥",
       "function": "list_api_keys",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 323,
+      "line": 324,
       "response_model": "ApiKeyListResponse",
       "include_in_schema": true
     },
@@ -7174,7 +7174,7 @@
       "summary": "创建 API 密钥",
       "function": "create_api_key",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 378,
+      "line": 379,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7190,7 +7190,7 @@
       "summary": "获取 API 密钥详情",
       "function": "get_api_key",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 430,
+      "line": 431,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7206,7 +7206,7 @@
       "summary": "更新 API 密钥",
       "function": "update_api_key",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 456,
+      "line": 457,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7222,7 +7222,7 @@
       "summary": "删除 API 密钥",
       "function": "delete_api_key",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 504,
+      "line": 505,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7238,7 +7238,7 @@
       "summary": "测试 API 密钥",
       "function": "test_api_key",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 519,
+      "line": 520,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7254,7 +7254,7 @@
       "summary": "获取所有批量队列",
       "function": "list_batch_queues",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 2624,
+      "line": 2652,
       "response_model": "BatchQueueListResponse",
       "include_in_schema": true
     },
@@ -7270,7 +7270,7 @@
       "summary": "创建批量处理队列",
       "function": "create_batch_queue",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 2607,
+      "line": 2635,
       "response_model": "BatchQueueResponse",
       "include_in_schema": true
     },
@@ -7286,7 +7286,7 @@
       "summary": "获取队列详情",
       "function": "get_batch_queue",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 2636,
+      "line": 2664,
       "response_model": "BatchQueueResponse",
       "include_in_schema": true
     },
@@ -7302,7 +7302,7 @@
       "summary": "删除批量队列",
       "function": "delete_batch_queue",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 2782,
+      "line": 2810,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7318,7 +7318,7 @@
       "summary": "取消批量队列",
       "function": "cancel_batch_queue",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 2767,
+      "line": 2795,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7334,7 +7334,7 @@
       "summary": "启动批量队列处理",
       "function": "start_batch_queue",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 2660,
+      "line": 2688,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7350,7 +7350,7 @@
       "summary": "获取队列统计",
       "function": "get_batch_queue_stats",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 2648,
+      "line": 2676,
       "response_model": "BatchQueueStatsResponse",
       "include_in_schema": true
     },
@@ -7366,7 +7366,7 @@
       "summary": "获取可选角色列表",
       "function": "get_characters_for_live2d",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 2308,
+      "line": 2336,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7382,7 +7382,7 @@
       "summary": "获取处理模式配置",
       "function": "get_processing_modes",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 253,
+      "line": 254,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7398,7 +7398,7 @@
       "summary": "更新处理模式配置",
       "function": "update_processing_modes",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 296,
+      "line": 297,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7414,7 +7414,7 @@
       "summary": "从素材库图片创建 Live2D 模型",
       "function": "create_from_asset",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 699,
+      "line": 700,
       "response_model": "Live2DModelResponse",
       "include_in_schema": true
     },
@@ -7430,7 +7430,7 @@
       "summary": "从角色创建 Live2D 模型",
       "function": "create_from_character",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 2410,
+      "line": 2438,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7446,7 +7446,7 @@
       "summary": "获取状态选项",
       "function": "get_status_options",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 241,
+      "line": 242,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7462,7 +7462,7 @@
       "summary": "获取风格模式选项",
       "function": "get_style_options",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 233,
+      "line": 234,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7478,7 +7478,7 @@
       "summary": "获取动作预设列表",
       "function": "get_motion_presets",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 2194,
+      "line": 2222,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7494,7 +7494,7 @@
       "summary": "获取指定动作预设",
       "function": "get_motion_preset",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 2234,
+      "line": 2262,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7510,7 +7510,7 @@
       "summary": "获取 Live2D 模型详情",
       "function": "get_model",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 794,
+      "line": 795,
       "response_model": "Live2DModelResponse",
       "include_in_schema": true
     },
@@ -7526,7 +7526,7 @@
       "summary": "更新 Live2D 模型",
       "function": "update_model",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 806,
+      "line": 807,
       "response_model": "Live2DModelResponse",
       "include_in_schema": true
     },
@@ -7542,7 +7542,7 @@
       "summary": "删除 Live2D 模型",
       "function": "delete_model",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 839,
+      "line": 840,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7558,7 +7558,7 @@
       "summary": "获取模型关联的角色",
       "function": "get_model_character",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 2345,
+      "line": 2373,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7574,7 +7574,7 @@
       "summary": "下载模型文件",
       "function": "download_model",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 1708,
+      "line": 1736,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7590,7 +7590,7 @@
       "summary": "导出 YLCraft 角色配置包",
       "function": "export_model",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 1628,
+      "line": 1656,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7606,7 +7606,7 @@
       "summary": "AI 遮挡补全",
       "function": "inpaint_model",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 1269,
+      "line": 1297,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7622,7 +7622,7 @@
       "summary": "关联角色到模型",
       "function": "link_character_to_model",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 2369,
+      "line": 2397,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7638,7 +7638,7 @@
       "summary": "获取口型动画",
       "function": "get_lip_sync",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 2166,
+      "line": 2194,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7654,7 +7654,7 @@
       "summary": "生成口型动画",
       "function": "generate_lip_sync",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 2088,
+      "line": 2116,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7670,7 +7670,7 @@
       "summary": "预留：自动生成网格（未实现）",
       "function": "generate_mesh",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 1540,
+      "line": 1568,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7686,7 +7686,7 @@
       "summary": "生成待机动作",
       "function": "generate_motion",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 1564,
+      "line": 1592,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7702,7 +7702,7 @@
       "summary": "预留：配置物理模拟（未实现）",
       "function": "configure_physics",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 1552,
+      "line": 1580,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7718,7 +7718,7 @@
       "summary": "一键生成流水线",
       "function": "run_pipeline",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 1769,
+      "line": 1797,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7734,7 +7734,7 @@
       "summary": "应用动作预设到模型",
       "function": "apply_motion_preset",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 2263,
+      "line": 2291,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7750,7 +7750,7 @@
       "summary": "AI 抠图（去除背景）",
       "function": "rembg_model",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 860,
+      "line": 861,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7766,7 +7766,7 @@
       "summary": "自动骨骼绑定",
       "function": "rig_model",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 1282,
+      "line": 1310,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7782,7 +7782,7 @@
       "summary": "更新表情",
       "function": "update_expression",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 1456,
+      "line": 1484,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7798,7 +7798,7 @@
       "summary": "更新视线跟踪",
       "function": "update_eye_tracking",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 1502,
+      "line": 1530,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7814,7 +7814,7 @@
       "summary": "获取绑骨状态",
       "function": "get_rigging_state",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 1415,
+      "line": 1443,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7830,7 +7830,7 @@
       "summary": "AI 图像分割（自动分层）",
       "function": "segment_model",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 1131,
+      "line": 1149,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7846,7 +7846,7 @@
       "summary": "风格转换（真人转二次元）",
       "function": "style_transfer_model",
       "file": "backend/app/api/v1/live2d.py",
-      "line": 995,
+      "line": 1003,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10070,7 +10070,7 @@
       "summary": "删除任务",
       "function": "delete_task",
       "file": "backend/app/api/v1/tasks.py",
-      "line": 799,
+      "line": 926,
       "response_model": "TaskActionResponse",
       "include_in_schema": true
     },
@@ -10088,6 +10088,22 @@
       "file": "backend/app/api/v1/tasks.py",
       "line": 757,
       "response_model": "TaskActionResponse",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tasks/{task_id}/retry",
+      "router": "tasks",
+      "prefix": "/api/v1/tasks",
+      "local_path": "/{task_id}/retry",
+      "tags": [
+        "Tasks"
+      ],
+      "summary": "重试失败任务",
+      "function": "retry_task",
+      "file": "backend/app/api/v1/tasks.py",
+      "line": 817,
+      "response_model": "TaskRetryResponse",
       "include_in_schema": true
     },
     {

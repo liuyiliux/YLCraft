@@ -40,6 +40,7 @@ from app.db.models.live2d import (
     Live2DModel, Live2DModelStatus, Live2DModelStatus,
     Live2DStyleMode
 )
+from app.services.ai.tracking import ai_task
 from app.db.models.api_key import ApiKey, ApiKeyStatus, ApiKeyCategory
 from app.db.models.asset_hub import AssetRepresentation, AssetVersion
 from app.core.config import ProcessingMode, get_live2d_config
@@ -939,11 +940,18 @@ async def rembg_model(
             output_dir = UPLOAD_DIR / model_id
             output_dir.mkdir(parents=True, exist_ok=True)
 
-            result = await service.remove_background_file(
-                input_path=model.source_image_path,
-                output_path=output_dir / "rembg.png",
-                return_mask=True,
-            )
+            # 任务中心可见：Live2D 处理是长耗时 AI 操作，此前只有 WS 推送（刷新即失）。
+            async with ai_task(
+                "live2d_processing",
+                title=f"Live2D 抠图：{model.name}",
+                payload={"model_id": model_id, "step": "rembg", "mode": mode},
+            ) as task:
+                result = await service.remove_background_file(
+                    input_path=model.source_image_path,
+                    output_path=output_dir / "rembg.png",
+                    return_mask=True,
+                )
+                task["result"] = {"step": "rembg", "result_path": result["result_path"]}
 
             # 更新模型记录
             model.processed_image_path = result["result_path"]
@@ -1074,10 +1082,20 @@ async def style_transfer_model(
             output_dir = UPLOAD_DIR / model_id
             output_dir.mkdir(parents=True, exist_ok=True)
 
-            result = await service.transfer_style_file(
-                input_path=input_path,
-                output_path=output_dir / "anime_style.png",
-            )
+            # 任务中心可见（同上）：风格转换同样是长耗时 AI 操作。
+            async with ai_task(
+                "live2d_processing",
+                title=f"Live2D 风格转换：{model.name}",
+                payload={"model_id": model_id, "step": "style_transfer", "mode": mode},
+            ) as task:
+                result = await service.transfer_style_file(
+                    input_path=input_path,
+                    output_path=output_dir / "anime_style.png",
+                )
+                task["result"] = {
+                    "step": "style_transfer",
+                    "result_path": result["result_path"],
+                }
 
             # 更新模型记录
             model.processed_image_path = result["result_path"]
@@ -1212,11 +1230,21 @@ async def segment_model(
             output_dir = UPLOAD_DIR / model_id / "segments"
             output_dir.mkdir(parents=True, exist_ok=True)
 
-            result = await service.segment_file(
-                input_path=input_path,
-                output_dir=output_dir,
-                save_layers=True,
-            )
+            # 任务中心可见（同上）：AI 分层是长耗时操作。
+            async with ai_task(
+                "live2d_processing",
+                title=f"Live2D 分层：{model.name}",
+                payload={"model_id": model_id, "step": "segment", "mode": mode},
+            ) as task:
+                result = await service.segment_file(
+                    input_path=input_path,
+                    output_dir=output_dir,
+                    save_layers=True,
+                )
+                task["result"] = {
+                    "step": "segment",
+                    "layer_count": len(result.get("layers") or []),
+                }
 
             # 更新模型记录
             model.layers = json.dumps(result["layers"])

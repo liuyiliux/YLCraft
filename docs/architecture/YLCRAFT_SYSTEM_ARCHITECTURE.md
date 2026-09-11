@@ -150,6 +150,12 @@ task_type 命中 `PERSISTED_TASK_TYPES` 白名单、payload 带 `project_id`（`
 进程重启后首次恢复持久化任务时会对账：把残留的 `pending`/`running` 收尾为「服务重启，任务中断」，
 避免任务中心里出现永远转圈、进度不动的僵尸任务。
 
+**统一重试入口**：`POST /api/v1/tasks/{task_id}/retry` 让任务中心可直接重试失败/取消的任务——
+视频与图转 3D 读各自账本的 `request_json` 重建参数后复用生成端点重提交（资产入库、事件与新任务
+的行为与手动重新生成一致），绑骨任务与图片任务分别指引到工作台与事件日志 Tab（后者带完整可重放参数）。
+Live2D 的抠图、风格转换与 AI 分层用 `ai_task("live2d_processing")` 记录任务，此前这些长耗时操作
+只有 WebSocket 推送、刷新即失。
+
 前端入口在 `frontend/src`，主要分层：
 
 | 层 | 目录 | 职责 |
@@ -529,7 +535,7 @@ Agent Tool / Skill 变更按内部 API 处理：工具名称、输入输出 sche
 | `story-production-desk` | 9 | 0 | Story 生产台及桌面/移动布局验收完成。 |
 | `story-video-shot-production` | 12 | 1 | 项目感知视频请求、持久任务恢复、Asset Hub 回流和分镜回写完成；仅剩真实视频供应商验收。 |
 | `ai-video-workspace` | 7 | 2 | 独立视频工作台的持久任务、刷新恢复与 Asset Hub 闭环已完成；待补供应商能力约束和真实供应商验收。 |
-| `task-observability-diagnostics` | 31 | 2 | 任务诊断基础、详情抽屉诊断/事件时间线、图片异步生图接入已完成；待视频（`VideoGenerationTask`）与 3D（`Model3DGenerationTask`）自有 Task 表接入 `/api/v1/tasks` 聚合，以及 Live2D/Agent 工具触发的 AI 操作补任务记录（事件已由 AIService 收口覆盖）。 |
+| `task-observability-diagnostics` | 33 | 0 | 已完成：任务诊断基础与详情事件时间线、图片异步生图接入、视频/3D 自有任务账本接入 `/api/v1/tasks` 聚合，统一重试入口 `POST /api/v1/tasks/{task_id}/retry`（视频/图转 3D 按账本 `request_json` 原参数重提交），Live2D 抠图/风格转换/分层补任务记录（`live2d_processing` 可持久化）。 |
 | `platform-event-logging` | 39 | 1 | 任务中心三 Tab（任务/事件日志/运行日志）、`platform_event_logs` 表与 `/api/v1/logs`（列表/详情/runtime/retry）、滚动文件日志、图片生成失败落账与跨 image/video/model3d/llm 通用重发已完成；调用类事件已统一收口到 `AIService` 三个入口，端点层与收口重复的 12 处手写 `record_event` 已删除（`ai_call_context` 承载 `project_id`/`ref_id`/`scene`/`task_type`/`retry_payload`，端点自写业务事件时可用 `suppress_auto_event` 抑制）。仅剩用失效凭证触发一次失败、验证三个 Tab 联动与重发的手动验收。 |
 | `database-migration-convergence` | 11 | 11 | 启动/Agent 请求路径的隐式 DDL 已切断，空库与旧远程形态演练通过；当前 Alembic 链继续到 `017_add_platform_event_logs`，为视频、图转 3D 持久任务和平台事件日志提供显式升级路径。 |
 | `novel-source-world-project` | 49 | 1 | 最小闭环已落地并扩展：来源快照/章节/文本块/提取运行/世界候选/世界地图/类型化实体/类型化关系八张表（迁移 `032`/`037`）、多来源入口（TXT 上传、书架章节导入、创作项目大纲 `world-extraction/start`、来源快照直接建项目 `from-novel-source`）、逐域模块检测、十一个域提取与证据校验、候选预览与确认写入；可选向量索引与混合检索（含邻域扩展，PostgreSQL 下走 pgvector 数据库级近邻、其它回退 JSON 向量混合）、跨域调和与语义矛盾检测、受影响事实传播、候选 merge、完本来源派生项目（原作正典 `source_canon` 只读分层，Context Pack T0 已分层注入）、类型化独立实体与关系（`WorldEntity`/`WorldEntityRelation`，含派生复制）、Leaflet 世界地图工作台与 SVG 渲染、地图 AI 生图风格化（结构化地图 → prompt → 生图链路）、连载增量变更展示已完成并接入 `/novel-world`、`/story`、`/novel-bookshelf` 与 14 个 Agent 工具。待办：真实浏览器/Agent E2E 验收。 |

@@ -35,7 +35,7 @@ import {
 } from '@ant-design/icons'
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { listTasks, getTask, cancelTask, deleteTask } from '../../api'
+import { listTasks, getTask, cancelTask, deleteTask, retryTask } from '../../api'
 import { useWebSocket, WSTaskProgress } from '../../hooks/useWebSocket'
 import { useTheme } from '../../constants/theme'
 import type { ColumnsType } from 'antd/es/table'
@@ -57,6 +57,7 @@ const TASK_TYPE_OPTIONS = [
   { label: '地图成图', value: 'world_map_visual' },
   { label: '世界域细化', value: 'world_domain_expansion' },
   { label: '小说下载', value: 'novel_download' },
+  { label: 'Live2D 处理', value: 'live2d_processing' },
 ]
 
 // 任务状态颜色映射
@@ -92,6 +93,7 @@ const TYPE_COLOR_MAP: Record<string, string> = {
   world_map_visual: 'gold',
   world_domain_expansion: 'green',
   novel_download: 'cyan',
+  live2d_processing: 'purple',
 }
 
 interface TaskItem {
@@ -188,6 +190,7 @@ export default function TasksPage() {
   const [searchParams] = useSearchParams()
   const { theme: THEME } = useTheme()
   const [tasks, setTasks] = useState<TaskItem[]>([])
+  const [retryingId, setRetryingId] = useState('')
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
 
   useEffect(() => {
@@ -293,6 +296,28 @@ export default function TasksPage() {
       loadTasks()
     } catch {
       message.error('取消任务失败')
+    }
+  }
+
+  /** 只有自有任务账本（视频 / 图转 3D）的失败或取消任务能一键重试。 */
+  const canRetry = (task: TaskItem) =>
+    ['failed', 'cancelled'].includes(String(task.status)) &&
+    (task.task_id.startsWith('video_') || task.task_id.startsWith('model3d_'))
+
+  const handleRetry = async (taskId: string) => {
+    setRetryingId(taskId)
+    try {
+      const res: any = await retryTask(taskId)
+      if (res?.success === false) {
+        message.warning(res.message || '重试失败')
+      } else {
+        message.success(res?.message || '已重新提交')
+      }
+      loadTasks()
+    } catch (error: any) {
+      message.error(error?.message || '重试失败')
+    } finally {
+      setRetryingId('')
     }
   }
 
@@ -442,6 +467,18 @@ export default function TasksPage() {
               onClick={() => handleViewDetail(record.task_id)}
             />
           </Tooltip>
+          {/* 失败/取消的独立媒体任务可按原参数重试（视频、图转 3D） */}
+          {canRetry(record) && (
+            <Tooltip title="按原参数重试">
+              <Button
+                type="link"
+                size="small"
+                icon={<ReloadOutlined />}
+                loading={retryingId === record.task_id}
+                onClick={() => handleRetry(record.task_id)}
+              />
+            </Tooltip>
+          )}
           {['pending', 'running'].includes(record.status) && (
             <Tooltip title="取消任务">
               <Popconfirm
