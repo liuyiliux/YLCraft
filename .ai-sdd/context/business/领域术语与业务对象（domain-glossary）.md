@@ -97,3 +97,18 @@
 | **运行时 DDL** | 应用代码里的 `create_all` / `table.create` / `ALTER TABLE`，与 Alembic revision 相对立 | design.md |
 | **元数据漂移** | 线上库实际 schema 与当前 SQLModel metadata 的差异（本项目审计出 177 处，含已废弃 legacy 表与历史 default/nullable/index 差异） | design.md |
 | **一次性演练库** | 由 `template0` 建出的临时 PostgreSQL，验证迁移链后在 `finally` 中销毁，绝不触碰生产库 | 任务 #5 / #10 |
+
+
+## 创作项目动态状态
+
+<!-- 来源：openspec/changes/creative-project-dynamic-state，导入日期：2026-09-12 -->
+
+| 术语 | 定义 | 证据 |
+|---|---|---|
+| **动态状态** | 随剧情推进而变化的设定值（角色等级、技能、关系、世界倒计时），与"静态设定"相对 | design.md §5 |
+| **append-only 台账** | `ProjectStateEntry` 只追加不改写；每次变化落一条，历史可追溯 | design.md §1 |
+| **`StateLedger`** | 纯服务（无 HTTP、可单测）：折叠计算、去重、按章回滚 | `state_ledger.py:75` |
+| **scope** | 状态归属：`world`（世界级）或 `character:<id>`（角色级） | design.md §1 |
+| **`state_as_of`** | `compute_state(up_to_chapter=N)`，按章回滚查看历史状态 | `state_ledger.py:196` |
+
+**核心取向**：内容不设 schema，信封必设 schema —— `value_json` 自由，但归属/作用域/操作/章节/溯源字段都有约束。

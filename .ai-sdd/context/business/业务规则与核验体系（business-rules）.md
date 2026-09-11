@@ -124,3 +124,17 @@
 | **升级前必须备份并记录 `alembic current`** | 远程库升级前先备份并留存当前 revision |
 | **迁移测试只用一次性数据库** | 迁移测试**不得**连接或改动配置中的远程库 |
 | **部署完成判据三合一** | `alembic current` 到位 + 针对性 API 检查 + 启动日志确认 head 且未触发兼容 DDL |
+
+
+## 12. 创作项目动态状态规则
+
+<!-- 来源：openspec/changes/creative-project-dynamic-state，导入日期：2026-09-12 -->
+
+| 规则 | 内容 |
+|---|---|
+| **内容不设 schema，信封必设 schema** | `value_json` 自由 JSON（标量/列表/对象），但 `project_id`/`scope`/`key`/`op`/`chapter_number`/溯源字段都有约束 |
+| **append-only + fingerprint 去重** | `fingerprint = sha256(project:scope:key:op:value:chapter:source)`；已存在则跳过，重批也不产生重复 |
+| **折叠语义** | `set` → 覆盖；`add` → 数值 `+`、列表 `union`（去重）；`remove` → 数值 `-`、列表 `差集`、标量删键 |
+| **折叠顺序确定** | 按 `(chapter_number, created_at)` 折叠，保证同章多次重批结果稳定 |
+| **章节重批用 supersede** | 先删该章旧条目再落新条目 |
+| **隔离原则** | 静态设定（`Character` 性别/外貌/性格/能力、`CharacterStoryLink` 项目覆盖）**不碰**；锁定事实（`project_bible`/`world_asset` 且 `is_locked`）**不碰**，继续只读注入；动态状态**只**进 `ProjectStateEntry` |

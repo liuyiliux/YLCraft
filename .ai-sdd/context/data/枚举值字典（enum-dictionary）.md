@@ -86,3 +86,11 @@
 <!-- 来源：openspec/changes/creative-project-writing-guardrails，导入日期：2026-09-12 -->
 
 - **check 状态**：`pass` / `block`（`ready` = 无 blocker）
+
+
+## 9. 创作项目动态状态
+
+<!-- 来源：openspec/changes/creative-project-dynamic-state，导入日期：2026-09-12 -->
+
+- **`scope`**：`world` / `character:<id>`
+- **`op`**：`set`（覆盖）/ `add`（数值加、列表并集）/ `remove`（数值减、列表差集、标量删键）
