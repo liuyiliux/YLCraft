@@ -59,6 +59,13 @@ const STATUS_LABEL: Record<string, string> = {
   archived: '已归档',
 }
 
+// 绑定强度（对应后端 ALLOWED_INTENSITIES；未知取值原样显示，不丢信息）。
+const INTENSITY_LABEL: Record<string, string> = {
+  subtle: '轻微',
+  balanced: '适中',
+  strong: '强烈',
+}
+
 // 来源类型的中文展示（与后端 WritingStyleProfileSourceType 枚举一一对应；
 // 未知取值原样显示，避免丢信息）。
 const SOURCE_TYPE_LABEL: Record<string, string> = {
@@ -714,7 +721,7 @@ function BindingPanel({ profile, projects }: { profile: any; projects: any[] }) 
                 {row.project_title || row.project_id}
               </Tag>
               <Text type="secondary">
-                {row.intensity}
+                {INTENSITY_LABEL[row.intensity] || row.intensity}
                 {row.stage_scope?.length ? ` · ${row.stage_scope.join('、')}` : ' · 全阶段'}
               </Text>
               <Button
@@ -749,7 +756,7 @@ function BindingPanel({ profile, projects }: { profile: any; projects: any[] }) 
             bound.map((item: any) => (
               <div key={item.id}>
                 <Tag color={item.id === profile.id ? 'green' : 'default'}>
-                  {item.name} · {item.intensity}
+                  {item.name} · {INTENSITY_LABEL[item.intensity] || item.intensity}
                 </Tag>
                 {item.stage_scope?.length ? (
                   <Text type="secondary">阶段：{item.stage_scope.join('、')}</Text>
