@@ -158,3 +158,13 @@
 4. **只读诊断优先**：`tools/check_migration_state.py` 只读 `alembic_version`、报本地 head、对密码脱敏，**不**调用 upgrade/stamp/create_all/DDL。结果非 current 是"备份与演练的依据"，不是"可以改远程库的许可"。
 5. **元数据漂移数字要谨慎解读**：全量比较报 177 处差异的同时，revision 003–007 引入的十张表其实都已存在且与代码一致。大差异**不等于**远程 schema 未收敛——其中大量是已废弃 legacy 表与历史 default/nullable 漂移。
 6. **禁止 `stamp head` 假收敛**：`stamp` 会掩盖真实缺表。远程库只能显式 `alembic upgrade head`，不删表、不重置、不重写数据。
+
+
+### 9.7 创作项目动态状态
+
+<!-- 来源：openspec/changes/creative-project-dynamic-state，导入日期：2026-09-12 -->
+
+1. **状态更新走"LLM 输出字段"而非工具调用**：`prose_review` 的 JSON 输出新增 `state_changes`（与 `continuity_candidates` 并列），由 `ChapterAftermathPipeline` 的 `state` 阶段确定性读取并落账。**正文 prompt 零改动、新增零工具**——避免创作主链路塞入工具调用导致的延迟与不确定性。
+2. **纯服务优先**：`StateLedger` 不依赖 HTTP 与请求上下文，用 fake session 即可单测折叠/去重/回滚。新增"计算型"能力时先问能否做成纯服务。
+3. **注入必须分层且预算有界**：`dynamic_state` 只全量注入 `world` 与**当前章出场的角色**；未出场角色的长尾交给既有 T5 语义召回，不做全量塞入。
+4. **无新 HTTP 路由时不改 API surface**：判断是否需要更新 API surface 的依据是**路由是否变化**，不是功能是否变化。

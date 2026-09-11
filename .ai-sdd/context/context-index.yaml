@@ -20,7 +20,7 @@
 # 业务知识
 
 - path: business/领域术语与业务对象（domain-glossary）.md
-  summary: "任务与观测领域术语（任务账本、三层观测视图、任务诊断字段、事件收口、业务语义事件）；写作风格档案领域术语（风格档案、三层模型、有界样本、表达式契约、绑定强度、归档可逆）；Agent 工作台前端术语（三区布局、顶部控制栏、待确认横幅 vs 确认卡片、遥测条、thread.status 与 run 级状态的区别）；世界构建术语（梯子原则、域与域契约、层次策略、三档生成动作、CandidateOrigin、世界构建模板）；制作台术语（制作台、阶段轨、渲染时计算的完成度）"
+  summary: "任务与观测领域术语（任务账本、三层观测视图、任务诊断字段、事件收口、业务语义事件）；写作风格档案领域术语（风格档案、三层模型、有界样本、表达式契约、绑定强度、归档可逆）；Agent 工作台前端术语（三区布局、顶部控制栏、待确认横幅 vs 确认卡片、遥测条、thread.status 与 run 级状态的区别）；世界构建术语（梯子原则、域与域契约、层次策略、三档生成动作、CandidateOrigin、世界构建模板）；制作台术语（制作台、阶段轨、渲染时计算的完成度）；动态状态术语（append-only 台账、StateLedger、scope、state_as_of）"
   scope: all
   stage: [proposal, specs, design]
   load_policy: on-demand
@@ -32,7 +32,7 @@
     - "涉及世界设定、域定义、expand_domain/expand_entity、CandidateOrigin"
 
 - path: business/业务规则与核验体系（business-rules）.md
-  summary: "任务落库白名单规则、启动对账、事件/任务重试边界、事件敏感字段与长度约束；写作风格档案生命周期、材料闸门与泄漏阈值、强度注入量；Agent 工作台规则（顶栏写回配置、拒绝=取消运行、有数据才显示、缺失 --、卡片收敛例外、按类名折叠）；世界构建规则（结构过闸、不伪造证据、apply 唯一写入、内置字段只增不删、契约外转建议、幂等指纹）；写作前置检查规则（preflight 只读、返回契约固定、生成方法权威、opt-in 方法包默认不生效）；制作台规则（不持久化派生阶段状态、六条完成度定义、计数仅作指示、批量生产非破坏性收纳）；数据库迁移安全规则（升级是运维动作、运行时 DDL 须有归宿、先备份、迁移测试只用一次性库）"
+  summary: "任务落库白名单规则、启动对账、事件/任务重试边界、事件敏感字段与长度约束；写作风格档案生命周期、材料闸门与泄漏阈值、强度注入量；Agent 工作台规则（顶栏写回配置、拒绝=取消运行、有数据才显示、缺失 --、卡片收敛例外、按类名折叠）；世界构建规则（结构过闸、不伪造证据、apply 唯一写入、内置字段只增不删、契约外转建议、幂等指纹）；写作前置检查规则（preflight 只读、返回契约固定、生成方法权威、opt-in 方法包默认不生效）；制作台规则（不持久化派生阶段状态、六条完成度定义、计数仅作指示、批量生产非破坏性收纳）；数据库迁移安全规则（升级是运维动作、运行时 DDL 须有归宿、先备份、迁移测试只用一次性库）；创作项目动态状态规则（内容自由信封有 schema、append-only 去重、折叠语义、隔离原则）"
   scope: all
   stage: [specs, design, tasks]
   load_policy: on-demand
@@ -48,6 +48,7 @@
     - "涉及写作前置检查、writing-preflight、Creative Skill 方法包"
     - "涉及 /story 制作台、阶段轨、阶段完成度"
     - "涉及 Alembic 迁移、建表改表、schema 变更、部署前备份升级"
+    - "涉及创作项目动态状态、随章节变化的角色/世界状态"
 
 # 数据知识
 
@@ -65,7 +66,7 @@
     - "涉及 world_domain_definitions、world_building_templates、world_fact_candidates"
 
 - path: data/枚举值字典（enum-dictionary）.md
-  summary: "事件 scene 取值、任务持久化白名单、任务与事件状态枚举、写作风格档案状态与强度枚举、AgentThread.status 取值域与智能体 default_workflow 七档、CandidateOrigin 与 run.kind、内置域 15 个、preflight check 的 pass/block"
+  summary: "事件 scene 取值、任务持久化白名单、任务与事件状态枚举、写作风格档案状态与强度枚举、AgentThread.status 取值域与智能体 default_workflow 七档、CandidateOrigin 与 run.kind、内置域 15 个、preflight check 的 pass/block、动态状态的 scope 与 op"
   scope: all
   stage: [design, tasks, apply]
   load_policy: on-demand
@@ -79,7 +80,7 @@
 # 工程约束
 
 - path: engineering/设计约束（design-conventions）.md
-  summary: "AI 调用双层观测模式、任务不能自动收口、重试复用业务端点、前端选项同步、函数直调的坑；写作风格 T6 预算与纯函数注入、人机边界对等、TOOLS 注册表判定；Agent 工作台前端约束（窄屏禁用 nth-child、tabular-nums 非等宽、JSX 注释、!important 覆盖、勾选项审计）；世界构建约束（复用管线半段、origin 放候选级、schema 边界前移、同步判据、design 可能滞后于 tasks）；Creative Skill 约定与检索陷阱（Select-String 不递归子目录）；派生状态优先渲染时计算、/story 实现已迁至 components/；数据库迁移约束（version_num 长度、仅运行时建表、env.py 全量导入、禁止 stamp）"
+  summary: "AI 调用双层观测模式、任务不能自动收口、重试复用业务端点、前端选项同步、函数直调的坑；写作风格 T6 预算与纯函数注入、人机边界对等、TOOLS 注册表判定；Agent 工作台前端约束（窄屏禁用 nth-child、tabular-nums 非等宽、JSX 注释、!important 覆盖、勾选项审计）；世界构建约束（复用管线半段、origin 放候选级、schema 边界前移、同步判据、design 可能滞后于 tasks）；Creative Skill 约定与检索陷阱（Select-String 不递归子目录）；派生状态优先渲染时计算、/story 实现已迁至 components/；数据库迁移约束（version_num 长度、仅运行时建表、env.py 全量导入、禁止 stamp）；动态状态约束（LLM 输出字段驱动、纯服务优先、注入分层、无新路由不改 API surface）"
   scope: all
   stage: [design, tasks, apply]
   load_policy: on-demand
@@ -94,6 +95,7 @@
     - "新增或修改 Creative Skill 方法包、判断某阶段能否生成"
     - "需要新增进度/完成类字段（先判断能否渲染时计算）"
     - "需要新增运行时 create_all / ALTER TABLE 或改动迁移链"
+    - "需要新增随剧情变化的状态类数据"
 
 - path: engineering/接口设计规范（api-style-guide）.md
   summary: "本项目 API 约定：统一 /api/v1 前缀、路由文件落点、请求模型、错误语义与文档同步流程；写作风格档案端点与 Agent 工具；Agent 运行与确认接口（step confirm、记忆 save/discard、run cancel、threads 返回字段）；世界构建接口（world-domains CRUD、expand-entity 与 preview、expand-domain 与对应 Agent 工具）；写作前置检查（GET /writing-preflight，UI 与 Agent 共用契约）"
