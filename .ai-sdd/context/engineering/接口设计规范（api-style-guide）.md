@@ -103,3 +103,20 @@ backend/venv_win/Scripts/python.exe tools/generate_api_surface.py
 | `GET /api/v1/creative-projects/{project_id}/writing-preflight?chapter=&stage=&source=` | 只读，无副作用；返回 `{success, data}`，data 含 `stage`/`chapter_number`/`checks`/`ready`/`blockers`/`next_action`/source id/`methods`。前端封装 `getCreativeProjectWritingPreflight`（`src/api/index.ts:1984`） |
 
 **同一契约两用**：真人 UI 在按钮启用前调用以禁用或标注被阻塞动作；Agent 用同一份契约解释并修复被阻塞的工作流。不要让前端另写一套"能不能点"的判断，否则两侧对阻塞原因的解释会不一致。
+
+
+## 7. 创作项目叙事运行时接口
+
+<!-- 来源：openspec/changes/creative-project-narrative-runtime，导入日期：2026-09-12 -->
+
+| 接口 | 用途 |
+|---|---|
+| `GET /creative-projects/{id}/narrative/health` | 检查小说叙事数据健康状态 |
+| `POST /creative-projects/{id}/contents/{content_id}/aftermath` | 由**一个正式 `novel_body` 版本**创建派生状态，按源内容/版本指纹幂等 |
+| `GET /creative-projects/{id}/narrative/snapshots` | 列出快照 |
+| `GET /creative-projects/{id}/narrative/context-preview` | 预览下一章叙事上下文包 |
+| `GET /creative-projects/{id}/foreshadowing`（+ `/{id}/accept\|ignore\|resolve`） | 伏笔台账与处置 |
+| `GET /creative-projects/{id}/narrative-graph` | 叙事图谱（**只读** `ProjectStoryEvent`、已确认事实、已确认台账行） |
+| `GET\|POST /creative-projects/{id}/narrative/runs`（+ `/{run_id}/{action}`） | 叙事运行创建、列表与 pause/resume/cancel |
+
+- **新增路由必须同步**：API surface 重新生成、前端客户端类型、架构文档与聚焦测试。
