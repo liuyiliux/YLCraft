@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 
 import pytest
-from sqlmodel import Session, create_engine
+from sqlmodel import Session, create_engine, select
 
 from app.db.models.creative_project import (
     CreativeProject,
@@ -562,3 +562,138 @@ async def test_extract_draft_from_source_rejects_unparsable_model_output(
     service = WritingStyleService(session)
     with pytest.raises(ValueError, match="缺少 JSON 对象"):
         await service.extract_draft_from_source(snapshot_id=snapshot_with_chunks.id)
+
+
+# ---------------------------------------------------------------------------
+# E2E：归档 → 取消归档 生命周期，以及强度对 T6 注入的真实影响（任务 13）
+# ---------------------------------------------------------------------------
+
+
+def _rich_profile(dimension_count: int = 12) -> dict:
+    """规则条数足够的档案，用于观察强度对注入量的影响。"""
+    return {
+        "dimensions": {
+            f"维度{i}": {"value": f"规则{i}", "confidence": 0.8} for i in range(dimension_count)
+        },
+        "new_examples": [f"示例{i}。" for i in range(4)],
+    }
+
+
+def _ready_profile(session: Session, project_id: str, *, intensity: str = "balanced"):
+    """建一个已审核已激活、并绑定到项目的档案。"""
+    service = WritingStyleService(session)
+    item = service.create_profile(name="E2E 风格", profile=_profile())
+    service.review(item.id)
+    service.activate(item.id)
+    service.bind(project_id, item.id, intensity=intensity, stage_scope=["novel_body"])
+    return item
+
+
+def test_archived_profile_restores_to_draft_and_binding_stays_inactive(session: Session):
+    """归档不是删除：取消归档回到草稿，绑定保留但必须重走审核激活才生效。"""
+    project_service = CreativeProjectService(session, ai_service=FakeAIService())
+    project = project_service.create_project(title="E2E 归档", project_type="novel")
+    service = WritingStyleService(session)
+    item = _ready_profile(session, project.id)
+
+    assert [p["id"] for p in service.runtime_profiles(project.id, stage="novel_body")] == [item.id]
+
+    service.archive(item.id)
+    assert service.get(item.id).status == "archived"
+    # 归档即失效，但绑定关系保留（不替用户删绑定）
+    assert service.runtime_profiles(project.id, stage="novel_body") == []
+    links = session.exec(
+        select(ProjectWritingStyleLink).where(ProjectWritingStyleLink.project_id == project.id)
+    ).all()
+    assert len(links) == 1
+
+    restored = service.restore(item.id)
+    assert restored.status == "draft"  # 只回草稿，不跳到 reviewed/active
+    assert service.runtime_profiles(project.id, stage="novel_body") == []  # 取消归档 ≠ 重新生效
+
+    service.review(item.id)
+    service.activate(item.id)
+    assert [p["id"] for p in service.runtime_profiles(project.id, stage="novel_body")] == [item.id]
+
+
+def test_restore_leaves_non_archived_profiles_untouched(session: Session):
+    """对非归档档案调用 restore 是幂等的，不会把 reviewed 打回草稿。"""
+    service = WritingStyleService(session)
+    item = service.create_profile(name="草稿态", profile=_profile())
+    assert service.restore(item.id).status == "draft"
+
+    service.review(item.id)
+    assert service.restore(item.id).status == "reviewed"
+
+
+@pytest.mark.parametrize("intensity,tag", [("subtle", "参考"), ("balanced", "贴合"), ("strong", "严格")])
+def test_binding_intensity_reaches_t6_with_its_tag(session: Session, intensity: str, tag: str):
+    """强度必须真的进到 T6 注入文本里（而不只是写在绑定记录上）。"""
+    project_service = CreativeProjectService(session, ai_service=FakeAIService())
+    project = project_service.create_project(title="E2E 强度", project_type="novel")
+    _ready_profile(session, project.id, intensity=intensity)
+
+    pack = project_service._creative_context_pack(project.id, 1, stage="novel_body")
+    assert f"强度 {intensity}({tag})" in pack["text"]
+
+
+def test_stronger_intensity_injects_more_rules_through_context_pack(session: Session):
+    """同一条档案：强度越高，进入 T6 的表达规则与示例越多。
+
+    规则文本形如 `- 维度名：值`（见 build_prompt_contract），示例在「新造示例」之后，
+    所以按该分隔切开分别计数——只数固定前缀会永远得 0。
+    """
+    from app.services.creative_project.writing_style import INTENSITY_POLICY
+
+    project_service = CreativeProjectService(session, ai_service=FakeAIService())
+    project = project_service.create_project(title="E2E 规则数", project_type="novel")
+    service = WritingStyleService(session)
+
+    rules: dict[str, int] = {}
+    examples: dict[str, int] = {}
+    for intensity in ("subtle", "balanced", "strong"):
+        item = service.create_profile(
+            name=f"量-{intensity}", profile=_rich_profile(dimension_count=12)
+        )
+        service.review(item.id)
+        service.activate(item.id)
+        service.bind(project.id, item.id, intensity=intensity, stage_scope=["novel_body"])
+        text = project_service._creative_context_pack(project.id, 1, stage="novel_body")["text"]
+        block = text.split("[风格档案", 1)[-1]
+        head, _sep, tail = block.partition("新造示例")
+        rules[intensity] = head.count("\n- ")
+        examples[intensity] = tail.count("\n- ")
+        service.unbind(project.id, item.id)
+
+    # 示例条数严格按策略走：1 / 2 / 4
+    for intensity in ("subtle", "balanced", "strong"):
+        assert examples[intensity] == INTENSITY_POLICY[intensity]["max_examples"]
+    # 规则条数随强度单调不减，且轻微强度也必须真的注入
+    assert rules["subtle"] > 0
+    assert rules["subtle"] < rules["balanced"]
+    assert rules["balanced"] <= rules["strong"]
+
+
+@pytest.mark.parametrize(
+    "project_type",
+    ["short_drama", "novel", "manga"],
+)
+def test_lifecycle_holds_across_project_shapes(session: Session, project_type: str):
+    """一次性短剧 / 连载小说 / 页式绘本三种形态走同一绑定与生效路径。
+
+    服务层的 runtime_profiles 只按 project_id 与 stage 解析，没有项目形态分支，
+    因此从来源小说派生的项目复用同一路径，无需单独实现。
+    """
+    project_service = CreativeProjectService(session, ai_service=FakeAIService())
+    project = project_service.create_project(title=f"E2E {project_type}", project_type=project_type)
+    service = WritingStyleService(session)
+    item = _ready_profile(session, project.id)
+
+    assert [p["id"] for p in service.runtime_profiles(project.id, stage="novel_body")] == [item.id]
+
+    service.archive(item.id)
+    assert service.runtime_profiles(project.id, stage="novel_body") == []
+    service.restore(item.id)
+    service.review(item.id)
+    service.activate(item.id)
+    assert [p["id"] for p in service.runtime_profiles(project.id, stage="novel_body")] == [item.id]

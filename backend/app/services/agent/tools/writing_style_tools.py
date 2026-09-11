@@ -320,3 +320,28 @@ def archive_writing_style_profile(profile_id: str) -> dict[str, Any]:
         except ValueError as exc:
             return {"success": False, "error": str(exc)}
         return {"success": True, "profile": serialize_style_profile(item)}
+
+
+@register_tool(
+    name="restore_writing_style_profile",
+    description=(
+        "取消归档：把已归档的风格档案恢复为草稿（archived → draft）。"
+        "只恢复到草稿，不会直接跳到已审核或已激活——审核与激活的闸门必须保留，"
+        "取消归档不等于重新生效；恢复后仍需 review_writing_style_profile 与 "
+        "activate_writing_style_profile，再 bind_project_writing_style 才会影响写作。"
+    ),
+    category="creative_project",
+    examples=["把这份归档的风格恢复一下", "这个风格我还想继续用"],
+    input_schema_note="profile_id 必填；非归档状态的档案会原样返回。",
+    output_schema_note="返回恢复后的档案（status=draft）。",
+    risk_level="write",
+    output_type="creative_writing_style_profile_detail",
+)
+def restore_writing_style_profile(profile_id: str) -> dict[str, Any]:
+    with SessionLocal() as session:
+        service = WritingStyleService(session)
+        try:
+            item = service.restore(profile_id)
+        except ValueError as exc:
+            return {"success": False, "error": str(exc)}
+        return {"success": True, "profile": serialize_style_profile(item)}
