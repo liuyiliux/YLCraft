@@ -63,3 +63,17 @@ backend/venv_win/Scripts/python.exe tools/generate_api_surface.py
 
 - 前端调用统一在 `frontend/src/api/index.ts` 导出（如 `restoreWritingStyleProfile(id)`），路径与后端逐字一致。
 - Agent 侧同名能力在 `backend/app/services/agent/tools/writing_style_tools.py`（共 **13** 个工具：5 只读 / 8 写入），与 HTTP **共用同一服务层** `WritingStyleService`，确认边界必须一致。
+
+## 7. Agent 运行与确认接口
+
+<!-- 来源：openspec/changes/agent-workbench-ui-redesign，导入日期：2026-09-12 -->
+
+| 接口 | 关键约定 |
+|---|---|
+| `POST /agent/runs/{run_id}/steps/{step_id}/confirm` | 确认并执行 pending 工具步骤；前端 `confirmAgentRunStep(runId, stepId)` |
+| `POST /agent/runs/{run_id}/steps/{step_id}/memory-candidates/save` 与 `/discard` | 记忆候选的保存与丢弃——**这一对是完整的确认/拒绝** |
+| `POST /agent/runs/{run_id}/cancel` | 取消整个运行；当前被「拒绝工具确认」复用（后端无 step 级 reject） |
+| `GET /agent/threads` | 返回 `id / thread_id / session_id / title / status / active_profile_id / created_at / updated_at`。**`status` 与 `active_profile_id` 此前前端未声明而被丢弃** |
+| `updateAgentProfile(profileId, patch)` | 前端可直接改 `model` / `default_workflow` 并持久化；顶部控制栏依赖它 |
+
+注意：`/agent/threads` 的 `status` 取值域实际仅 `active` / `archived`（`archived` 已被列表过滤），见枚举字典。

@@ -56,3 +56,17 @@
 | 导入不是免检通道 | Markdown Skill 导入同样产出 `draft` 并跑同一套材料检查 | tasks #10 |
 | 强度决定注入量 | `subtle` / `balanced` / `strong` 分别注入最多 **8 / 16 / 24** 条规则与 **1 / 2 / 4** 个新造示例，注入块标题标注两字标签（参考 / 贴合 / 严格） | `INTENSITY_POLICY`、本轮实现 |
 | 风格审阅只报告 | `review_prose_deviation` 比对实测与基线，severity 阈值 warn 0.35 / off 0.75；**绝不改写正文或档案**（风格是软约束，偏离多少由人决定） | tasks #12 |
+
+## 7. Agent 工作台规则
+
+<!-- 来源：openspec/changes/agent-workbench-ui-redesign，导入日期：2026-09-12 -->
+
+| 规则 | 内容 | 证据 |
+|---|---|---|
+| 顶栏模型/工作流写回配置 | 顶栏的「模型」与「默认工作流」**直接写回当前智能体配置**（`updateAgentProfile`），不是本次请求的临时参数——run 载荷不含 model/mode 字段，而这两项决定运行时行为。UI 须给出「已保存到智能体配置」反馈 | `applyProfileSetting` |
+| 拒绝工具确认 = 取消整个运行 | 后端**无 step 级 reject 端点**，「拒绝」复用 `cancelAgentRun`；必须用二次确认写明后果（"后端暂不支持只跳过这一步，拒绝会取消当前整个运行"） | `handleRejectRunStep` + `Popconfirm` |
+| 会话状态点「有数据才显示」 | 只在状态可知时渲染状态点；无数据**不渲染**，不用默认值或推测值冒充 | 左栏会话列表 |
+| 遥测缺失显示 `--` | 缺失显示 ASCII 双连字符 `--`（不是中文破折号 `—`）；无 run 时「步骤」「工具」也显示 `--` 而非 0 | 底部遥测条 |
+| 卡片收敛的四类例外 | 优先用 `borderTop` 分隔线 + 留白替代带边框卡片；**保留边框**：① 页面外壳 ② Markdown 表格单元格 ③ 选中态（左栏 section / 工具授权 / 会话激活）④ 错误与待确认隔离。虚线占位区亦保留 | design §4 |
+| 窄屏折叠按类名不按序号 | ≤820px 折叠次要控件用 `.agent-rail-optional` 类名，**不要**用 `:nth-child(n)` | `index.css` |
+| 缓存区 opt-in | cache 命中率 / 首 token 均值依赖 provider usage 数据，数据不可用时**整个区块不渲染**（代码中不存在即为正确状态） | design §3.4 / §5 |

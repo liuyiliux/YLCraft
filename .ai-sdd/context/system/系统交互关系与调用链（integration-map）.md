@@ -64,3 +64,19 @@ flowchart LR
 |---|---|---|
 | 任务中心 | `/tasks` | 三 Tab；失败任务可取消/删除/重试；详情含诊断与事件时间线 |
 | 事件日志 | `/tasks`（事件日志 Tab） | 场景筛选（需与后端 scene 同步）、详情、重发、运行日志 |
+
+
+## Agent 确认与拒绝链路
+
+<!-- 来源：openspec/changes/agent-workbench-ui-redesign，导入日期：2026-09-12 -->
+
+| 意图 | 调用 | 说明 |
+|---|---|---|
+| 确认工具步骤 | `POST /agent/runs/{run_id}/steps/{step_id}/confirm` | 确认后真正执行；随后 `refreshRun` 刷新 |
+| 保存记忆候选 | `.../steps/{step_id}/memory-candidates/save` | 写入长期记忆 |
+| 丢弃记忆候选 | `.../steps/{step_id}/memory-candidates/discard` | 不入库 |
+| **拒绝工具步骤** | `POST /agent/runs/{run_id}/cancel` | 后端**无 step 级 reject**；拒绝 = 取消整个运行，UI 必须二次确认告知 |
+
+前端入口集中在 `frontend/src/pages/agent/index.tsx`：`handleConfirmRunStep` /
+`handleSaveMemoryCandidates` / `handleDiscardMemoryCandidates` / `handleRejectRunStep`。
+待确认提示分两层：顶部控制栏下方的**横幅**（计数 + 定位）与消息列顶部的**确认卡片**（承载按钮）。
