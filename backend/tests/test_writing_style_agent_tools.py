@@ -45,12 +45,13 @@ def env(tmp_path):
 
 
 def test_writing_style_tools_registered_with_risk_levels():
-    """8 个风格工具都应注册：2 个只读，6 个写。"""
+    """13 个风格工具都应注册：5 个只读，8 个写。"""
     import app.services.agent.tools  # noqa: F401  触发注册
 
     read_tools = {
         "list_writing_style_profiles",
         "get_writing_style_profile",
+        "list_writing_style_projects",
         "export_writing_style_skill",
         "review_prose_style_deviation",
     }
@@ -61,6 +62,7 @@ def test_writing_style_tools_registered_with_risk_levels():
         "bind_project_writing_style",
         "unbind_project_writing_style",
         "archive_writing_style_profile",
+        "restore_writing_style_profile",
         "import_writing_style_skill",
     }
     for name in read_tools | write_tools:
@@ -199,3 +201,47 @@ def test_extract_tool_reports_missing_snapshot(env):
     )
     assert result["success"] is False
     assert "来源快照不存在" in result["error"]
+
+
+def test_agent_can_undo_its_own_archive(env):
+    """Agent 能归档就必须能撤销归档，否则归档等于删除。
+
+    恢复到草稿、不跳级；绑定保留但要重走审核与激活才生效。
+    """
+    from app.services.agent.tools import writing_style_tools
+    from app.services.creative_project.writing_style import WritingStyleService
+
+    writing_style_tools.SessionLocal = env[2]
+    with env[2]() as session:
+        service = WritingStyleService(session)
+        project = CreativeProject(title="Agent 归档", project_type="novel")
+        session.add(project)
+        session.flush()
+        item = service.create_profile(
+            name="待归档", profile={"dimensions": {"语体": {"value": "白描"}}}
+        )
+        service.review(item.id)
+        service.activate(item.id)
+        service.bind(project.id, item.id, stage_scope=["novel_body"])
+        project_id, profile_id = project.id, item.id
+
+    archived = writing_style_tools.archive_writing_style_profile(profile_id)
+    assert archived["success"] is True
+    assert archived["profile"]["status"] == "archived"
+
+    restored = writing_style_tools.restore_writing_style_profile(profile_id)
+    assert restored["success"] is True
+    assert restored["profile"]["status"] == "draft"  # 只回草稿，不跳级
+
+    with env[2]() as session:
+        service = WritingStyleService(session)
+        # 绑定关系保留，但取消归档不等于重新生效
+        assert service.runtime_profiles(project_id, stage="novel_body") == []
+        service.review(profile_id)
+        service.activate(profile_id)
+        assert [
+            p["id"] for p in service.runtime_profiles(project_id, stage="novel_body")
+        ] == [profile_id]
+
+    # 未知 id 给出明确错误，而不是静默成功
+    assert writing_style_tools.restore_writing_style_profile("missing")["success"] is False

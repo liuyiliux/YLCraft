@@ -220,9 +220,14 @@ AI 连接器和供应商规范已经作为 `ai_config` 分类工具接入智能�
 - `activate_writing_style_profile`：`reviewed → active`，风险 `write`；未审核的草稿会被拒绝。
 - `bind_project_writing_style`：把已激活档案绑定到项目（可设 `intensity`/`stage_scope`/`priority`），风险 `write`；只作为 Context Pack **T6** 注入，不覆盖 T0-T5 正典、动态状态、章节契约与正文，也不把风格内容复制进项目。
 - `unbind_project_writing_style`：解除绑定，风险 `write`。
-- `archive_writing_style_profile`：归档档案，风险 `write`。
+- `archive_writing_style_profile`：归档档案，风险 `write`；档案下线但**绑定关系保留**（归档后自动不生效，不会替你删绑定）。
+- `restore_writing_style_profile`：取消归档（`archived → draft`），风险 `write`；**只恢复到草稿**，不直接跳到已审核或已激活——审核与激活的闸门必须保留，取消归档不等于重新生效。
 
 推荐流程：`list_novel_source_snapshots` 选来源 → `extract_writing_style_from_source` 出草稿 → `get_writing_style_profile` 与用户一起看维度是否合理 → `review_writing_style_profile` → `activate_writing_style_profile` → `bind_project_writing_style`。**每一步都要用户确认**：提取不会自动激活，激活不会自动绑定，绑定不会改写任何已有正文。
+
+不再使用时，先 `list_writing_style_projects` 确认影响范围再 `unbind_project_writing_style`；若选择 `archive_writing_style_profile`，绑定会自动失效但关系保留，误归档可用 `restore_writing_style_profile` 找回（需重新审核与激活）。
+
+绑定强度 `subtle`/`balanced`/`strong` **不是标签而是真实注入力度**：分别注入最多 **8 / 16 / 24** 条表达规则与 **1 / 2 / 4** 个新造示例，并在注入块标题标注「参考 / 贴合 / 严格」。档案规则条数较多时，只有 `strong` 才会全量注入。**约束**：T6 层总预算 1200 字符且与项目 Skill 包共用，所以强度标签只占两个字、不额外占行。
 
 ### 下载解析工具
 

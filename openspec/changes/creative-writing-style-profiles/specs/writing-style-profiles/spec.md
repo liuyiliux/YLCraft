@@ -56,3 +56,29 @@ ban ordinary literary devices.
 - **WHEN** multiple passages use abstract summary in place of visible choices or
   consequences
 - **THEN** the review SHALL report locations and an executable rewrite instruction.
+
+### Requirement: Archiving is reversible and does not bypass the gates
+
+Archiving SHALL be a reversible state rather than a terminal deletion, and restoring
+SHALL NOT skip the review and activation gates.
+
+#### Scenario: An archived profile needs to be used again
+
+- **WHEN** a user or Agent restores an archived profile
+- **THEN** the profile SHALL return to `draft`
+- **AND** it SHALL NOT become `reviewed` or `active` in the same step
+- **AND** existing project bindings SHALL remain attached but stay inactive until the
+  profile is reviewed and activated again.
+
+### Requirement: Binding intensity has a measurable effect
+
+The bound intensity SHALL change how much of the profile actually reaches the prompt,
+within the shared context budget.
+
+#### Scenario: The same profile is bound at different intensities
+
+- **WHEN** a project binds an active profile as `subtle`, `balanced` or `strong`
+- **THEN** the number of injected expression rules and new examples SHALL differ
+  accordingly
+- **AND** the injection SHALL stay inside the T6 budget shared with project Skills,
+  so intensity must not be expressed by adding extra prompt lines.
