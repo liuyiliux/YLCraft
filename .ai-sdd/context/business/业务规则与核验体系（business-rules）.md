@@ -138,3 +138,30 @@
 | **折叠顺序确定** | 按 `(chapter_number, created_at)` 折叠，保证同章多次重批结果稳定 |
 | **章节重批用 supersede** | 先删该章旧条目再落新条目 |
 | **隔离原则** | 静态设定（`Character` 性别/外貌/性格/能力、`CharacterStoryLink` 项目覆盖）**不碰**；锁定事实（`project_bible`/`world_asset` 且 `is_locked`）**不碰**，继续只读注入；动态状态**只**进 `ProjectStateEntry` |
+
+
+## 13. 创作项目叙事运行时规则
+
+<!-- 来源：openspec/changes/creative-project-narrative-runtime，导入日期：2026-09-12 -->
+
+| 规则 | 内容 |
+|---|---|
+| **正典 vs 提案分界（核心）** | 只有 `novel_body`（人工 promote）与**锁定**的 `project_bible`/`world_asset` 可作**硬约束**进入生成；快照是有界状态（仅能由**源版本重放**改变）；事件/伏笔是软状态（仅显式动作或确定性重放可改状态）；**判定候选永不自动接受**；Writer Room 候选、Canvas/资产/Agent 线程数据默认**不进**上下文 |
+| **派生状态必须可溯源** | 快照/事件/台账行**始终**带 `project_id` / `source_content_id` / `source_version` / `chapter_number` / 源指纹 / 抽取与运行溯源 |
+| **源版本替换用 supersede 而非销毁** | 新版已批准正文**取代**旧版派生的状态，旧状态仍保留可查 |
+| **Aftermath 幂等** | 幂等键 = `source_content_id + source_fingerprint + pipeline_version`；仅在 `novel_body` 创建或**显式重放**后调度 |
+| **失败隔离** | 富化失败**不影响已批准正文的有效性**；运行标记 `partial` 并列出可重试的失败阶段 |
+| **重放必须用同一源版本** | 绝不"因为有同号章节就顺手用最新章" |
+| **待决候选不得泄漏** | 待决候选、未批准台账行、agent 记忆、游离 canvas 数据**永不进入 T0–T5**；当前候选可作为"重写来源"显式提供，但**必须标注为候选而非正典** |
+
+
+## 14. Agent 工作台信息架构规则
+
+<!-- 来源：openspec/changes/agent-center-conversation-workbench-redesign，导入日期：2026-09-12 -->
+
+| 规则 | 内容 |
+|---|---|
+| **主任务优先** | 管理信息不得淹没主任务；高级能力（工具测试、Profile 编辑、运行树）**不删除、只降低默认层级** |
+| **辅助能力失败不阻塞聊天** | 线程、Profile、工具、记忆、模型、运行详情各有**局部** loading / error / retry；**不因辅助接口失败而整页报错** |
+| **恢复失败必须显式** | 线程恢复失败要明确告知，且**不得创建重复会话** |
+| **保留部分产出** | 请求失败时保留**已流式产出的部分输出**与重试入口，不清空 |

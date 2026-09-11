@@ -168,3 +168,20 @@
 2. **纯服务优先**：`StateLedger` 不依赖 HTTP 与请求上下文，用 fake session 即可单测折叠/去重/回滚。新增"计算型"能力时先问能否做成纯服务。
 3. **注入必须分层且预算有界**：`dynamic_state` 只全量注入 `world` 与**当前章出场的角色**；未出场角色的长尾交给既有 T5 语义召回，不做全量塞入。
 4. **无新 HTTP 路由时不改 API surface**：判断是否需要更新 API surface 的依据是**路由是否变化**，不是功能是否变化。
+
+
+### 9.8 创作项目叙事运行时
+
+<!-- 来源：openspec/changes/creative-project-narrative-runtime，导入日期：2026-09-12 -->
+
+1. **T0 永不静默截断**：超出时**必须显式报 `context_overflow`**，而不是悄悄丢掉一部分锁定正典。T1–T6 走预算制，并**记录被纳入/排除的源 ID 与原因**。
+2. **异步生图不能"让正文运行成功"**：图像生成是**外部生产任务**，只有**任务真正完成且 Asset Hub 谱系回写已校验**后，才算生产运行成功。（2026-09-12 实测补充：`generate-storyboard` 只产出文字分镜草稿、**不产生生图任务**，该闸门在实测中未被触发。）
+3. **熔断器触发条件**：反复供应商失败、上下文溢出、结构化输出非法、预算超限、质量底线持续不达标；**恢复必须显式用户动作**，不自动重试。
+
+
+### 9.9 Agent 工作台信息架构约束
+
+<!-- 来源：openspec/changes/agent-center-conversation-workbench-redesign，导入日期：2026-09-12 -->
+
+1. **三条产品约束**（写入架构约束）：① **低门槛**——降低普通人操作门槛；② **结果可视**——直观呈现过程与产物；③ **脚本优先**——确定性操作交给脚本与服务，减少模型调用与 Token 消耗。YLCraft 的价值不是"堆更多配置"。
+2. **Agent 页面的 Markdown 是手写解析器，不是第三方库**：`parseInlineMarkdown` + `parseSimpleMarkdown`（`pages/agent/index.tsx:357-395`）自己产出 `MarkdownBlock`（paragraph / heading / list / quote / table）。排查 Agent 消息渲染问题时**不要去找 `react-markdown`**。

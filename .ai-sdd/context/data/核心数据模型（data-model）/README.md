@@ -12,6 +12,7 @@
 | `Agent 运行数据模型（agent-run-model）.md` | Agent 运行域四张表/实体的字段**可得性**与关联缺口（哪些看似有、实际取不到） |
 | `世界构建数据模型（world-building-model）.md` | 世界构建域 5 张表的字段语义，重点是来源/启用状态如何影响"AI 能看到什么、能改什么" |
 | `创作项目动态状态（dynamic-state-model）.md` | `ProjectStateEntry` 台账的字段语义、折叠/去重/回滚设计与"该落这里还是角色表"的边界 |
+| `叙事运行时（narrative-runtime-model）.md` | 叙事快照/事件/伏笔/风格测量四张表的字段与溯源，以及"谁能进生成上下文"的正典 vs 提案分界 |
 
 ## 加载建议
 

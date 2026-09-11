@@ -94,3 +94,13 @@
 
 - **`scope`**：`world` / `character:<id>`
 - **`op`**：`set`（覆盖）/ `add`（数值加、列表并集）/ `remove`（数值减、列表差集、标量删键）
+
+
+## 10. 创作项目叙事运行时
+
+<!-- 来源：openspec/changes/creative-project-narrative-runtime，导入日期：2026-09-12 -->
+
+- **`ProjectNarrativeSnapshot.status`**：`success` / `partial` / `failed` / `superseded`
+- **`ProjectForeshadowing.kind`**：`clue` / `promise` / `object` / `relationship` / `rule`
+- **`ProjectForeshadowing.status`**：`pending_review` / `active` / `advanced` / `resolved` / `overdue` / `ignored` / `superseded`
+- **叙事运行模式**：`manual` / `batch` / `guarded_autopilot`（**只**推进到候选生成、审阅与 aftermath，在 promote、事实接受、台账激活与发布之前停下）

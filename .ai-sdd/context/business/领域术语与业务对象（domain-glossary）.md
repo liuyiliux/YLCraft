@@ -112,3 +112,34 @@
 | **`state_as_of`** | `compute_state(up_to_chapter=N)`，按章回滚查看历史状态 | `state_ledger.py:196` |
 
 **核心取向**：内容不设 schema，信封必设 schema —— `value_json` 自由，但归属/作用域/操作/章节/溯源字段都有约束。
+
+
+## 创作项目叙事运行时
+
+<!-- 来源：openspec/changes/creative-project-narrative-runtime，导入日期：2026-09-12 -->
+
+| 术语 | 定义 | 证据 |
+|---|---|---|
+| **叙事运行时** | **项目级**子系统：把已批准正文转为持久叙事状态，再为下一章装配有界上下文。**不替代** Writer Room / Asset Hub / Agent Runtime / Canvas | design.md「Product Boundary」 |
+| **`ProjectNarrativeSnapshot`** | 每个已批准正文版本一份**当前**快照，历史快照保留；含 `context_fingerprint` | design.md「Data Model」 |
+| **`ProjectStoryEvent`** | 归一化事件：类型/参与者/地点/时间线序/章节溯源/证据锚点 | design.md「Data Model」 |
+| **`ProjectForeshadowing`** | 伏笔台账：`kind` / 埋设章 / 预期窗口 / 状态 / 证据锚点 | design.md「Data Model」 |
+| **`ProjectStyleMeasurement`** | 风格测量：篇幅、对话占比、句法节奏、说明性估计、张力分、声线相似度 | design.md「Data Model」 |
+| **`ProjectNarrativeRun`** | 手动/批次/自动驾驶运行状态；**沿用既有任务/trace 约定** | design.md「Data Model」 |
+| **Context Pack V2 七层（T0–T6）** | T0 锁定正典 / T1 活跃叙事状态 / T2 活跃伏笔 / T3 章节契约 / T4 局部连贯 / T5 语义召回 / T6 风格与题材 | design.md「Context Pack V2」 |
+
+**与动态状态的分工**：`ProjectStateEntry`（动态状态台账）管"角色等级/技能/关系/倒计时"这类**自由键值**；
+叙事运行时的快照与事件管"本章发生了什么"这类**带证据锚点的结构化叙事事实**。两者都进 Context Pack，但层次不同。
+
+
+## Agent 工作台：对话优先信息架构
+
+<!-- 来源：openspec/changes/agent-center-conversation-workbench-redesign，导入日期：2026-09-12 -->
+
+| 术语 | 定义 | 证据 |
+|---|---|---|
+| **对话优先信息架构（conversation-first）** | `/agent` 主界面收敛为「对话列表 + 对话正文 + 输入框」；智能体选择降为**紧凑上下文控件**；工具/记忆/配置/完整轨迹**按需打开**；计划、工具调用、观察、委派、确认**按发生顺序内联**进消息流，完成后默认折叠 | proposal.md「What Changes」 |
+| **执行证据内联** | 与"顶部控制栏 + 独立面板"相反：执行过程内联到消息流而非集中堆放 | tasks #6 |
+
+> 注：`/agent` 的**布局骨架**（三区布局、顶部控制栏、待确认横幅 vs 确认卡片、遥测条）见本文件「Agent 工作台前端」节，
+> 那里记录的是同族 change `agent-workbench-ui-redesign` 的结论；本节只补**信息架构取向**。
