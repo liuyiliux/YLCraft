@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import pytest_asyncio
-from sqlalchemy import JSON, String, select
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy import JSON, select
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.orm import sessionmaker
 from pgvector.sqlalchemy import Vector
@@ -85,6 +85,11 @@ async def isolated_asset_hub_database(request, tmp_path, monkeypatch):
     for table in tables:
         for column in table.columns:
             original_types[column] = column.type
+            # 说明：UUID 列已改用跨方言的 GUID（见 app/db/types.py），
+            # Python 侧统一吃 str，SQLite 落 CHAR(36)，因此这里**不再**替换 UUID 列。
+            # 此前用「临时把列类型改成 String(36)」绕过，会让"替换前已编译过的语句"
+            # 继续用旧类型（Uuid 的 value.hex），表现为单独跑通过、与其它模块一起跑失败。
+            # JSONB / Vector 在 SQLite 上没有对应实现，仍需临时降级为 JSON。
             if column.name in {
                 "metadata_json",
                 "tags_json",
@@ -94,16 +99,6 @@ async def isolated_asset_hub_database(request, tmp_path, monkeypatch):
                 "extra_json",
             } or isinstance(column.type, JSONB):
                 column.type = JSON()
-            elif column.name in {
-                "id",
-                "parent_id",
-                "asset_node_id",
-                "asset_version_id",
-                "source_id",
-                "target_id",
-                "tag_id",
-            } or isinstance(column.type, UUID):
-                column.type = String(36)
             elif isinstance(column.type, Vector):
                 column.type = JSON()
 

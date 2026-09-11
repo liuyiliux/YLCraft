@@ -26,7 +26,7 @@ from app.services.creative_project.writing_style import (
     input_schema_note="owner_id 默认 default；status 可选 draft/reviewed/active/archived。只读。",
     output_schema_note="返回 profiles；每项含 id/name/status/source_type/version/checksum。",
     risk_level="read",
-    output_type="writing_style_profile_list",
+    output_type="creative_writing_style_profile_list",
 )
 def list_writing_style_profiles(owner_id: str = "default", status: str = "") -> dict[str, Any]:
     with SessionLocal() as session:
@@ -46,7 +46,7 @@ def list_writing_style_profiles(owner_id: str = "default", status: str = "") -> 
     input_schema_note="profile_id 必填。只读。",
     output_schema_note="返回档案详情：dimensions/new_examples/anti_template_constraints/provenance/checksum/status。",
     risk_level="read",
-    output_type="writing_style_profile_detail",
+    output_type="creative_writing_style_profile_detail",
 )
 def get_writing_style_profile(profile_id: str) -> dict[str, Any]:
     with SessionLocal() as session:
@@ -71,7 +71,7 @@ def get_writing_style_profile(profile_id: str) -> dict[str, Any]:
     ),
     output_schema_note="返回 draft 档案（含 dimensions 与 provenance）；需再调用 review 与 activate。",
     risk_level="write",
-    output_type="writing_style_profile_detail",
+    output_type="creative_writing_style_profile_detail",
 )
 async def extract_writing_style_from_source(
     snapshot_id: str,
@@ -110,7 +110,7 @@ async def extract_writing_style_from_source(
     input_schema_note="profile_id 必填。只读。",
     output_schema_note="返回 projects；每项含 project_id/project_title/enabled/intensity/stage_scope/priority，生效中的排前面。",
     risk_level="read",
-    output_type="writing_style_project_list",
+    output_type="creative_writing_style_project_list",
 )
 def list_writing_style_projects(profile_id: str) -> dict[str, Any]:
     with SessionLocal() as session:
@@ -129,7 +129,7 @@ def list_writing_style_projects(profile_id: str) -> dict[str, Any]:
     input_schema_note="profile_id 必填。只改状态，不绑定项目。",
     output_schema_note="返回审核后的档案（status=reviewed）。",
     risk_level="write",
-    output_type="writing_style_profile_detail",
+    output_type="creative_writing_style_profile_detail",
 )
 def review_writing_style_profile(profile_id: str) -> dict[str, Any]:
     with SessionLocal() as session:
@@ -152,7 +152,7 @@ def review_writing_style_profile(profile_id: str) -> dict[str, Any]:
     input_schema_note="profile_id 必填；未审核的草稿会被拒绝。",
     output_schema_note="返回激活后的档案（status=active）。",
     risk_level="write",
-    output_type="writing_style_profile_detail",
+    output_type="creative_writing_style_profile_detail",
 )
 def activate_writing_style_profile(profile_id: str) -> dict[str, Any]:
     with SessionLocal() as session:
@@ -178,7 +178,7 @@ def activate_writing_style_profile(profile_id: str) -> dict[str, Any]:
     ),
     output_schema_note="返回绑定关系；风格内容不会被复制进项目正典。",
     risk_level="write",
-    output_type="writing_style_link",
+    output_type="creative_writing_style_link",
 )
 def bind_project_writing_style(
     project_id: str,
@@ -217,7 +217,7 @@ def bind_project_writing_style(
     input_schema_note="project_id 与 profile_id 必填。",
     output_schema_note="返回解绑结果。",
     risk_level="write",
-    output_type="writing_style_unbind_result",
+    output_type="creative_writing_style_unbind_result",
 )
 def unbind_project_writing_style(project_id: str, profile_id: str) -> dict[str, Any]:
     with SessionLocal() as session:
@@ -237,7 +237,7 @@ def unbind_project_writing_style(project_id: str, profile_id: str) -> dict[str, 
     input_schema_note="profile_id 必填。只读，不改档案。",
     output_schema_note="返回 markdown 文本（含 frontmatter 元信息、表达机制维度、新造示例与约束）。",
     risk_level="read",
-    output_type="writing_style_markdown",
+    output_type="creative_writing_style_markdown",
 )
 def export_writing_style_skill(profile_id: str) -> dict[str, Any]:
     with SessionLocal() as session:
@@ -259,7 +259,7 @@ def export_writing_style_skill(profile_id: str) -> dict[str, Any]:
     input_schema_note="markdown 必填；name/owner_id 可选；source_terms 可传来源专名用于污染检查。",
     output_schema_note="返回导入的 draft 档案；需再审核与激活。",
     risk_level="write",
-    output_type="writing_style_profile_detail",
+    output_type="creative_writing_style_profile_detail",
 )
 def import_writing_style_skill(
     markdown: str,
@@ -288,7 +288,7 @@ def import_writing_style_skill(
     input_schema_note="project_id 与 text 必填；stage 可限定生效阶段。不消耗配额。",
     output_schema_note="返回 reports；每项含 metrics（actual/expected/deviation_ratio/severity）与约束提醒。",
     risk_level="read",
-    output_type="writing_style_deviation_report",
+    output_type="creative_writing_style_deviation_report",
 )
 def review_prose_style_deviation(
     project_id: str, text: str, stage: str = ""
@@ -310,7 +310,7 @@ def review_prose_style_deviation(
     input_schema_note="profile_id 必填。",
     output_schema_note="返回归档后的档案（status=archived）。",
     risk_level="write",
-    output_type="writing_style_profile_detail",
+    output_type="creative_writing_style_profile_detail",
 )
 def archive_writing_style_profile(profile_id: str) -> dict[str, Any]:
     with SessionLocal() as session:
