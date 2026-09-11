@@ -10998,7 +10998,7 @@
       "summary": "从来源快照提取风格档案草稿（只出 draft，不自动激活）",
       "function": "extract_style_from_source",
       "file": "backend/app/api/v1/writing_styles.py",
-      "line": 208,
+      "line": 216,
       "response_model": "",
       "include_in_schema": true
     },
@@ -11014,7 +11014,7 @@
       "summary": "从 Markdown Skill 草稿导入风格档案（恒为 draft）",
       "function": "import_style_profile",
       "file": "backend/app/api/v1/writing_styles.py",
-      "line": 184,
+      "line": 192,
       "response_model": "",
       "include_in_schema": true
     },
@@ -11078,7 +11078,7 @@
       "summary": "审阅正文与已激活风格档案的偏差（只报告，不改正文）",
       "function": "review_prose_deviation",
       "file": "backend/app/api/v1/writing_styles.py",
-      "line": 156,
+      "line": 164,
       "response_model": "",
       "include_in_schema": true
     },
@@ -11158,7 +11158,7 @@
       "summary": "导出风格档案为 Markdown Skill 草稿",
       "function": "export_style_profile",
       "file": "backend/app/api/v1/writing_styles.py",
-      "line": 174,
+      "line": 182,
       "response_model": "",
       "include_in_schema": true
     },
@@ -11175,6 +11175,22 @@
       "function": "list_profile_projects",
       "file": "backend/app/api/v1/writing_styles.py",
       "line": 78,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/writing-styles/{profile_id}/restore",
+      "router": "writing_styles",
+      "prefix": "/api/v1/writing-styles",
+      "local_path": "/{profile_id}/restore",
+      "tags": [
+        "Writing Styles"
+      ],
+      "summary": "取消归档（恢复为草稿）",
+      "function": "restore_style_profile",
+      "file": "backend/app/api/v1/writing_styles.py",
+      "line": 150,
       "response_model": "",
       "include_in_schema": true
     },

@@ -30,6 +30,16 @@ export type StoryWorkspaceChapter = {
   status?: string
 }
 
+/** 总览里的"最近活动"条目：由项目生成日志映射而来，只做展示。 */
+export type StoryWorkspaceActivity = {
+  id: string
+  stageLabel: string
+  statusLabel: string
+  statusColor: string
+  model?: string
+  timeLabel: string
+}
+
 type Props = {
   theme: ThemeColors
   projectTitle: string
@@ -50,6 +60,7 @@ type Props = {
   productionFamily?: 'narrative' | 'content_package'
   packageType?: string | null
   packageData?: Record<string, any> | null
+  recentActivities?: StoryWorkspaceActivity[]
 }
 
 const sectionIcons: Record<string, React.ReactNode> = {
@@ -96,6 +107,7 @@ export default function StoryWorkspaceOverview({
   productionFamily = 'narrative',
   packageType,
   packageData,
+  recentActivities,
 }: Props) {
   const [decisionEvidenceOpen, setDecisionEvidenceOpen] = React.useState(false)
   const isContentPackage = productionFamily === 'content_package'
@@ -269,6 +281,39 @@ export default function StoryWorkspaceOverview({
             </button>
           )
         }) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="先建立章节规划，生产队列会在这里出现" />}
+      </section>
+
+      <section aria-label="最近活动" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+          <Text strong>最近活动</Text>
+          <Button size="small" type="link" onClick={() => onOpenSection('logs')}>
+            查看全部日志
+          </Button>
+        </div>
+        {recentActivities?.length ? recentActivities.map((item) => (
+          <div
+            key={item.id}
+            style={{
+              display: 'flex',
+              gap: 8,
+              alignItems: 'center',
+              padding: '6px 0',
+              borderTop: `1px solid ${theme.borderLight}`,
+            }}
+          >
+            <Tag color={item.statusColor} style={{ margin: 0 }}>{item.statusLabel}</Tag>
+            <Text style={{ flex: 1, minWidth: 0 }} ellipsis>{item.stageLabel}</Text>
+            {item.model ? (
+              <Text type="secondary" style={{ fontSize: 12, maxWidth: 160 }} ellipsis>{item.model}</Text>
+            ) : null}
+            <Text type="secondary" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{item.timeLabel}</Text>
+          </div>
+        )) : (
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description="暂无生成活动，生成大纲或正文后会出现在这里"
+          />
+        )}
       </section>
     </div>
   )

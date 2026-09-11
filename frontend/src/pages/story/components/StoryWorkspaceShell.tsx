@@ -224,6 +224,20 @@ export function StoryWorkspaceShell({ ctx }: { ctx: StoryPageContext }) {
     writerRoomSummary,
   } = ctx
 
+  // "最近活动"：取项目生成日志里最近的几条（时间倒序），阶段与状态转成中文展示。
+  // 数据来自已在 ctx 里的 generationLogs，无新增请求。
+  const recentActivities = [...(generationLogs || [])]
+    .sort((a: any, b: any) => String(b.created_at || '').localeCompare(String(a.created_at || '')))
+    .slice(0, 6)
+    .map((log: any) => ({
+      id: log.id,
+      stageLabel: stageLabels[log.stage] || log.stage || '生成',
+      statusLabel: log.status === 'success' ? '成功' : log.status === 'failed' ? '失败' : (log.status || '未知'),
+      statusColor: log.status === 'success' ? 'success' : log.status === 'failed' ? 'error' : 'default',
+      model: log.model || log.provider,
+      timeLabel: String(log.created_at || '').replace('T', ' ').slice(5, 16),
+    }))
+
   return (
     <div ref={storyPageRef} className="story-theme-page story-production-desk" style={{ padding: '18px 24px 24px', maxWidth: 2400, width: '100%', margin: '0 auto', color: theme.textPrimary }}>
       <header
@@ -619,6 +633,7 @@ export function StoryWorkspaceShell({ ctx }: { ctx: StoryPageContext }) {
                   productionFamily={selectedProject.production_profile?.production_family || 'narrative'}
                   packageType={selectedProject.production_profile?.package_type}
                   packageData={contentPackageData}
+                  recentActivities={recentActivities}
                   onContinue={() => {
                     if (isContentPackageProject) {
                       openContentPackageEditor()
