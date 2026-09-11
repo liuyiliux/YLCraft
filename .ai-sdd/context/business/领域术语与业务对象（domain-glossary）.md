@@ -1,6 +1,6 @@
 # 领域术语与业务对象
 
-来源：`openspec/changes/task-observability-diagnostics`（proposal/specs/design/tasks）与其实现代码。
+来源：`task-observability-diagnostics`（proposal/specs/design/tasks）与其实现代码；写作风格档案部分来自 `creative-writing-style-profiles`。
 最后更新：2026-09-11。
 
 ## 观测与任务
@@ -20,3 +20,18 @@
 
 - **任务 ≠ 事件**：任务是"可恢复的业务单元"，事件是"只读审计流"。同一次操作通常 1 条任务 + 1~N 条事件。
 - **图片任务**与**视频/3D 任务**的账本不同：前者进通用队列（含 `project_task_records` 持久化），后者进各自自有表并聚合进任务中心列表。
+
+## 写作风格档案
+
+<!-- 来源：openspec/changes/creative-writing-style-profiles，导入日期：2026-09-11 -->
+
+| 术语 | 定义 | 证据 |
+|---|---|---|
+| **写作风格档案（WritingStyleProfile）** | 从测量与模型分析中提炼的、可审核/可版本化/可审计的**抽象表达机制**对象；只描述"怎么写"，**不承载"写了什么"** | design.md「Product model」 |
+| **风格三层模型** | ① `ProjectStyleMeasurement`：某正文版本的观测证据，**不可直接当提示词**；② `WritingStyleProfile`：可审核抽象（规则/置信度/溯源/版权边界）；③ `ProjectWritingStyleLink`：运行时选择（项目+阶段+强度），**不是档案本身** | design.md L5-12 |
+| **来源快照与有界样本** | 从 `NovelSourceSnapshot` 取有界样本（≤12000 字 / 40 块）做**本地确定性测量聚合**（句长/段落/对话占比/标点密度/字词多样性，按字数加权）再交 LLM 提炼抽象机制；样本分析完即弃，档案只留 hash、测量指标与字符偏移 | tasks #6 |
+| **表达式契约（prompt_contract）** | 可注入的有界集合：`rules`（每维一行 `维度名：值` + 反模板约束，上限 40 条）、`new_examples`（新造示例，非原文摘抄）、`prohibited_source_material` | `build_prompt_contract` |
+| **绑定强度（intensity）** | 绑定时的注入力度档位，**不是标签**：决定进入提示词的规则与示例条数 | design.md L93-95、本轮实现 |
+| **归档可逆** | 归档是"下线"而非删除：退出运行时选择，但**绑定关系保留**（自动失效）；取消归档回到草稿 | 本轮实现 |
+
+**边界**：档案只能注入 Context Pack 的 **T6** 层（表达机制），不得覆盖 T0-T5 正典、动态状态、章节契约与已批准正文，也不得把风格内容复制进项目。

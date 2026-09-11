@@ -1,6 +1,6 @@
 # 枚举值字典（任务与观测域）
 
-来源：全量 `record_event(scene=...)` 扫描 + 前端筛选下拉 + 任务白名单代码。最后更新：2026-09-11。
+来源：全量 `record_event(scene=...)` 扫描 + 前端筛选下拉 + 任务白名单代码；§5 写作风格档案来自 `creative-writing-style-profiles`。最后更新：2026-09-11。
 **规则：不要自行编造新取值；新增枚举必须同步前端筛选项。**
 
 ## 1. 事件 scene（16 个实际在用）
@@ -47,3 +47,13 @@
 
 - 3D 任务 `kind`：`generation`（图转 3D）、`rigging`（绑骨）
 - 资产谱系操作：`delogo`（插值填充）/ `blur`（区域模糊）/ `crop`（裁剪边缘）
+
+## 5. 写作风格档案
+
+<!-- 来源：openspec/changes/creative-writing-style-profiles，导入日期：2026-09-11 -->
+
+| 枚举 | 取值 | 备注 |
+|---|---|---|
+| 档案状态（`status`） | `draft` / `reviewed` / `active` / `archived` | 归档态禁用"激活"，需先 `restore` 回草稿 |
+| 档案来源类型（`source_type`） | `user_defined` / `extracted_from_source` / `agent_draft` / `builtin` | — |
+| 绑定强度（`intensity`） | `subtle` / `balanced` / `strong` | **同一枚举、三处文案不同，勿混用**：前端列表显示"轻微 / 适中 / 强烈"；注入块标题写"参考 / 贴合 / 严格" |

@@ -1,6 +1,6 @@
 # 接口设计规范（YLCraft）
 
-来源：本项目现有路由与文档同步流程。最后更新：2026-09-11。
+来源：本项目现有路由与文档同步流程；§6 写作风格档案接口来自 `creative-writing-style-profiles`。最后更新：2026-09-11。
 
 ## 1. 落点与命名
 
@@ -49,3 +49,17 @@ backend/venv_win/Scripts/python.exe tools/generate_api_surface.py
 
 - 外部 Agent 走 `/api/v1/ai/capabilities` 发现能力，凭证仅由平台侧连接器管理，不接受调用方传入 Key。
 - `optional_external_api_key` 用于外部 API Key 可选的端点；内部直接函数调用时须显式传 `None`（见设计约束 §3）。
+
+## 6. 写作风格档案接口
+
+<!-- 来源：openspec/changes/creative-writing-style-profiles，导入日期：2026-09-11 -->
+
+| 接口 | 用途 |
+|---|---|
+| `POST /api/v1/writing-styles/{profile_id}/restore` | 取消归档（恢复为草稿）；成功返回 `{success: true, data: <档案>}`，非法状态抛 `ValueError` → 400 |
+| `GET /api/v1/writing-styles/{id}/export` | 导出为 Markdown Skill 草稿（互操作格式：frontmatter + 维度 + 新造示例 + 约束） |
+| `POST /api/v1/writing-styles/import` | 由 Markdown Skill 导入；**恒产 `draft`**，同样跑材料检查（导入不是免检通道） |
+| `POST /api/v1/writing-styles/review-deviation` | 生成后偏差审阅；取项目**已绑定且 active** 档案，未绑定则跳过而不报错 |
+
+- 前端调用统一在 `frontend/src/api/index.ts` 导出（如 `restoreWritingStyleProfile(id)`），路径与后端逐字一致。
+- Agent 侧同名能力在 `backend/app/services/agent/tools/writing_style_tools.py`（共 **13** 个工具：5 只读 / 8 写入），与 HTTP **共用同一服务层** `WritingStyleService`，确认边界必须一致。

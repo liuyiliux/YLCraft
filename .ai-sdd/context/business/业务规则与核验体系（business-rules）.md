@@ -1,6 +1,6 @@
 # 业务规则与核验体系
 
-来源：`task-observability-diagnostics` 实现与其代码。最后更新：2026-09-11。
+来源：`task-observability-diagnostics` 实现与其代码；§6 写作风格档案规则来自 `creative-writing-style-profiles`。最后更新：2026-09-11。
 
 ## 1. 任务持久化规则
 
@@ -41,3 +41,18 @@
 - **前端任务类型下拉必须与后端白名单同步**：`TASK_TYPE_OPTIONS` 缺项会让用户筛不到任务（曾出现 `novel_download` / `world_map_visual` 漏配）。
 - **`GET /api/v1/tasks` 是轻量接口**：默认不返回 `payload/result/diagnostics`；传 `project_id` 时会隐式启用 detail 以完成过滤，但**不会**把 payload 返回给调用方（除非显式 `include_detail=true`）。
 - **列表接口的 prompt 可能是预览值**：提示词类列表用 `preview=True` 截断（如 360 字），需要全文必须取详情（曾导致插入生图框的提示词残缺）。
+
+## 6. 写作风格档案规则
+
+<!-- 来源：openspec/changes/creative-writing-style-profiles，导入日期：2026-09-11 -->
+
+| 规则 | 内容 | 证据 |
+|---|---|---|
+| 生命周期 | `draft → reviewed → active → archived`；`restore` 使 `archived → draft`，**绝不直接跳到 reviewed/active**（材料闸门必须重跑） | design.md「Lifecycle」、`api/v1/writing_styles.py` |
+| 归档 ≠ 删除 | 归档后不再进入运行时选择，但 `project_writing_style_links` 记录保留；取消归档后也不自动生效，需重新 review + activate | 测试用例（归档→恢复→重走闸门） |
+| 提取恒为草稿 | 提取**绝不自动激活**；激活与绑定是分离步骤，且 `activate` 只接受 `reviewed` | tasks #6 |
+| 材料闸门位置 | 泄漏/合规闸门放在 `review` 与 `activate`；**违规档案可留在草稿里查看与修正，但进不了生效链路**；编辑草稿后闸门自动重算 | tasks #11 |
+| 泄漏判定阈值 | ① 来源专名/禁用词污染；② 与来源样本**连续 12 字重合**（复述原文）→ 判违规；③ 新造示例与样本 **8-gram 重合率 ≥ 0.12** → 仅告警 | tasks #11 |
+| 导入不是免检通道 | Markdown Skill 导入同样产出 `draft` 并跑同一套材料检查 | tasks #10 |
+| 强度决定注入量 | `subtle` / `balanced` / `strong` 分别注入最多 **8 / 16 / 24** 条规则与 **1 / 2 / 4** 个新造示例，注入块标题标注两字标签（参考 / 贴合 / 严格） | `INTENSITY_POLICY`、本轮实现 |
+| 风格审阅只报告 | `review_prose_deviation` 比对实测与基线，severity 阈值 warn 0.35 / off 0.75；**绝不改写正文或档案**（风格是软约束，偏离多少由人决定） | tasks #12 |

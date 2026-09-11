@@ -1,6 +1,6 @@
 # 设计约束（AI 调用 / 任务 / 观测）
 
-来源：`platform-event-logging`、`task-observability-diagnostics` 实现与踩坑。最后更新：2026-09-11。
+来源：`platform-event-logging`、`task-observability-diagnostics` 实现与踩坑；§8 写作风格档案来自 `creative-writing-style-profiles`。最后更新：2026-09-11。
 
 ## 1. AI 调用必须走 `AIService` 三个入口
 
@@ -61,3 +61,24 @@
   `docs/architecture/API_SURFACE.md` 与 `api_surface.json`（勿手改）。
 - 模块边界变化 → 更新 `docs/architecture/YLCRAFT_SYSTEM_ARCHITECTURE.md` 第 5 节；
   数据模型变化 → 第 4 节；阶段性交接 → `docs/devlog/YYYY-MM-DD_topic.md`。
+
+## 8. 写作风格档案
+
+<!-- 来源：openspec/changes/creative-writing-style-profiles，导入日期：2026-09-11 -->
+
+### 8.1 工程约束
+
+1. **T6 层预算 1200 字符，且与项目 Skill 包共用**：强度标签只占两个字、**不额外占行**。把强度说明写长会把风格规则挤出预算，表现为"明明绑定了风格却没注入规则"——这是最容易被误判成 bug 的约束。
+2. **注入块必须由纯函数生成**：`build_style_prompt_block` 负责拼装（纯函数便于单测），端与服务不各写一份，避免强度/标签行为漂移。
+3. **风格是 T6 的唯一职责**：只能注入表达机制，**不得覆盖 T0-T5 正典、动态状态、章节契约与已批准正文**，也不得把风格内容复制进项目字段。
+4. **人机边界必须一一对等**：真人 HTTP 与 Agent 工具共用 `WritingStyleService`。本轮踩坑：Agent 有 `archive` 却缺 `restore`，等于"能归档不能撤销"，实际把归档变成删除——**新增状态流转时 HTTP 与 Agent 工具要同时补**。
+5. **`TOOLS` 是函数列表，不是"名字 → 工具"字典**：判断某工具是否注册应比对 `tools/__init__.py` 的 `__all__` 或 `ToolRegistry.get_tool(name)`；写成 `'名字' in TOOLS` 恒为 `False`（本轮据此得出过"注册失败"的错误结论）。新增工具需在 `__init__.py` **三处**同时登记：导入块 / `TOOLS` 列表 / `__all__`（`__all__` 是带引号的字符串写法）。
+
+### 8.2 设计决策
+
+| 决策 | 理由 | 被否决的方案 |
+|---|---|---|
+| 先内部集成，再经混合模式开放外部 Agent | 内部服务掌握来源访问、存储、校验、激活与运行时注入，一致性与可审计性最好 | **外部 Agent 直连** —— 会绕过溯源/确认/版权控制并造成 schema 漂移 |
+| 风格是软约束，只报告偏离 | 偏离多少由人决定，自动改写会破坏人工创作主导权 | 按偏差分数自动回改正文/档案 |
+| 提取 / 激活 / 绑定三步分离且每步需确认 | 防止"提取即生效"，保证人始终在环 | 提取后自动激活并绑定 |
+| 反模板审查证据驱动 | 机械禁用三段式/排比/短句会误伤正常文学手法 | 黑名单式"三段式即 AI 味" |
