@@ -70,3 +70,12 @@
   `storyboard_reference_match`（分镜参考匹配）、`asset_curation`（素材整理）、`quality_review`（质量检查）。
 - **会话状态点四态与配色**：运行中（主色）/ 待确认（`#faad14`）/ 完成（`#52c41a`）/ 失败（`#ff4d4f`）。
   **仅当前会话可得全四态**，其它会话无 run 级状态数据。
+
+
+## 7. 世界构建
+
+<!-- 来源：openspec/changes/ai-progressive-world-building，导入日期：2026-09-12 -->
+
+- **`CandidateOrigin`**：`original`（真实原文）/ `outline`（项目大纲）/ `ai_draft`（AI 创作、无原文）/ `ai_inferred`（模型推断）
+- **`WorldExtractionRun.kind`**：`extract` / `generate`
+- **内置域 15 个**（含 `religion` / `language` / `culture` / `ecology`），定义于 `contracts.py :: DOMAIN_SPECS`

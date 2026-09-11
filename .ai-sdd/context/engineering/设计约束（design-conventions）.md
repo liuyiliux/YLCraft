@@ -115,3 +115,14 @@
 | 缺数据时不伪造 UI 状态 | 会话状态点只渲染可知状态、Token/成本显示 `--`；用默认值冒充会让用户误判 | 用 `updated_at` 反推状态、用 0 代替缺失 |
 | 拒绝复用 `cancelAgentRun` 并明确告知后果 | 后端无 step reject；与其不做（规格缺一块）或新增后端（超范围），不如复用现有能力并把差异讲清楚 | 新增 step reject 端点 / 留缺口不实现 |
 | 卡片收敛保留四类边框例外 | design §4 明确"仅层级需要时才用卡片"；外壳、表格、选中态、错误隔离都需要边框表达层级或状态 | 一律去边框（表格与选中态失去可读性） |
+
+
+### 9.3 世界构建
+
+<!-- 来源：openspec/changes/ai-progressive-world-building，导入日期：2026-09-12 -->
+
+1. **复用既有管线的"审阅/写入"半段，只新增"生成"半段**：`WorldExtractionRun` 已有 `domains_json`/`checkpoint_json`/`trace_json`/`diagnostics_json`/`status` 与局部失败语义，`WorldFactCandidate` 已有 `payload_json`/`evidence_json`/`origin`/`status` 与审阅流。新建一套会复制这些机制并制造双份游标语义。
+2. **来源性质放在候选级 `origin`，不要放证据上**：放证据上会导致"同一条候选混有多种来源"时无法表达；放 UI 上会导致导出、上下文打包、Agent 返回全部失真。
+3. **把"AI 能改什么"的边界前移到响应 schema**：`WorldGenerationSchema` 同时声明 `items` 与 `suggested_*`，模型无法靠"多返回一个字段"偷偷改结构。
+4. **同步 vs 异步的判据**：单实体、单次模型调用、`max_tokens=2000`，耗时与既有 `extract` 同量级；`expand_domain` 与未来多域生成需重新评估。
+5. **design.md 可能滞后于 tasks.md**：本次审计一度以为 `expand_domain` 未实现（design 的 API 表标"待实现"），实际代码已落地且任务有 `_Done:` 证据。**判断"做没做"以代码与 tasks 的 `_Done:` 为准。**
