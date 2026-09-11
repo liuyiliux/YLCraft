@@ -10,7 +10,7 @@
 ## Phase 1: Confirmation affordance (highest value)
 
 - [x] 4. Add an always-visible "pending confirmation" banner in the top rail that appears only when a run has pending approve/reject steps, with an exact count and a focus/scroll action.（**修正此前的勾选失真**：原实现把横幅渲染在**消息列顶部**而非顶部 rail，且**没有**定位动作。现移入顶部控制栏下方——与 design §3.1「底下一个待确认横幅」一致——显示准确条数，并新增「定位到确认卡片」按钮（切回对话页签后滚动到确认卡片）。消息列里重复的 Alert 已移除，可操作的确认卡片仍保留在消息列顶部。）
-- [x] 5. Promote the pending tool-step and memory-candidate confirmation into a prominent `warning`-colored card (approve + reject / save + discard) rendered at the top of the message column, instead of being buried inside step cards.
+- [x] 5. Promote the pending tool-step and memory-candidate confirmation into a prominent `warning`-colored card (approve + reject / save + discard) rendered at the top of the message column, instead of being buried inside step cards.（**修正此前的勾选失真**：记忆候选卡的 `保存记忆` / `丢弃` 已完整，但**工具确认卡只有「确认执行」，缺「拒绝」**。后端**没有** step 级 reject 端点——只有 `confirm`、记忆 `save`/`discard` 与运行级 `cancel`。因此按「拒绝 = 取消整个运行」实现（`handleRejectRunStep` → `cancelAgentRun`），并用 `Popconfirm` 二次确认明确告知后果：描述为「后端暂不支持只跳过这一步，拒绝会取消当前整个运行」，主按钮为「仍要拒绝并取消运行」。真正的「只跳过这一步、运行继续」需要后端新增 step 级 reject 端点，属后续 change。）
 - [x] 6. Show the tool name and key argument summary in the confirmation card so the user knows what will run before approving.
 - [x] 7. Keep the composer usable and the current messages visible while a confirmation is pending; make the confirm/reject affordance reachable without expanding raw JSON.
 
