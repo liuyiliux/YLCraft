@@ -166,6 +166,7 @@ import type { AssetSummary, ChapterAction, CharacterReferenceSummary, EditableCh
 import { comicPreviewGridStyle, comicPreviewPageStyle, createCompactBlockStyle, createResizeHandleLineStyle, createResizeHandleStyle, createWorkbenchHeaderStyle, graphNodeStyle, inlineImageShellStyle, panelStyle, readerLayoutStyle, readerPanelStyle, readerTextStyle, readerTocButtonActiveStyle, readerTocButtonStyle, readerTocListStyle, readerTocStyle, referenceAssetCardStyle, referenceAssetPlaceholderStyle, writerRoomBatchControlStyle, writerRoomComparePaneStyle, writerRoomContextBlockStyle, writerRoomContextGridStyle, writerRoomContinuityItemStyle, writerRoomContinuityStyle, writerRoomDiffColumnsStyle, writerRoomDiffListStyle, writerRoomDiffRowStyle, writerRoomDiffTextStyle, writerRoomIssueStyle, writerRoomLogBlockStyle, writerRoomMainPanelStyle, writerRoomMetricGridStyle, writerRoomMetricStyle, writerRoomParagraphButtonActiveStyle, writerRoomParagraphButtonStyle, writerRoomParagraphListStyle, writerRoomPipelineStyle, writerRoomPreviewStyle, writerRoomProgressStyle, writerRoomPromoteSummaryStyle, writerRoomQualityStyle, writerRoomShellStyle, writerRoomStepButtonActiveStyle, writerRoomStepButtonStyle, writerRoomStepIndexStyle, writerRoomStepListStyle, writerRoomStepTitleStyle, writerRoomTeamAvatarStyle, writerRoomTeamGridStyle, writerRoomTeamJoinStyle, writerRoomTeamRoleBodyStyle, writerRoomTeamRoleHeaderStyle, writerRoomTeamRoleStyle, writerRoomVersionStatusStyle, writerRoomWorkspaceStyle } from './styles'
 import { STORY_WORKSPACE_CONTENT_TYPES, assetFileUrl, buildChapterPlanMarkdown, buildCreativeProjectGraph, buildNovelChapterMarkdown, buildOutlineMarkdown, buildProseDiffRows, buildScriptMarkdown, buildStoryboardMarkdown, buildStoryboardPanelReferencePlan, buildStoryboardReferenceSummary, buildStoryboardVideoFallbackPrompt, canvasTypeForGraphNode, collectStoryboardCharacterIds, comicStyleOptions, compactNovelReaderText, contextLayerLabel, dedupeProjectAssetLinks, dedupeReferenceImageItems, dedupeStrings, downloadTextFile, escapePreviewHtml, findWriterRoomLog, foreshadowingColor, foreshadowingLabel, getCharacterReferenceItems, getNovelChapterOptions, getNovelDisplayTitle, getPipelineFailedRows, getPipelineSummary, graphEdgeColor, graphNodeColor, graphNodeLabel, graphNodeToCanvasNode, graphNodeTypeLabel, imageContextKey, isChapterLocked, isPipelineStageValue, isProjectContentNewer, latestProjectContentsByChapter, linesToList, listToLines, markdownList, markdownSection, narrativeGraphNodeColor, normalizeChapterItem, normalizeChapterPlan, normalizeCharacterReference, normalizeStoryboardVideoDuration, openProjectTextPreview, parseChapterRange, pipelineStageLabels, pipelineStageOptions, portraitNodeToReferenceItem, productionProfileOptions, projectAssetDetailRequests, projectAssetToReferenceItem, projectContentChapterKey, projectMarkdownFilename, projectTypeLabel, projectTypeOptions, qualitySummaryForContent, referenceRoleOptions, resolveProjectAssetDetail, reviewIssuesForContent, selectReferenceAssetsForPrompt, sortBibleContents, sortProjectContentsForReading, splitWriterRoomParagraphs, stageLabels, statusLabels, textForNovelBody, timingLabel, unavailableProjectAssetIds, worldAssetRoleLabels, writerRoomAgentNames, writerRoomContentWordCount, writerRoomIssueSeverityColor, writerRoomPreviewText, writerRoomStepDescriptions, writerRoomStepInputs, writerRoomStepLabelMap, writerRoomStepNextHints, writerRoomStepOptions, writerRoomStepOutputs, writerRoomStepStatusColor } from './utils'
 import { EditorField, InfoBlock, InfoListBlock, LogTextBlock, PromptTemplateSelect, ResizeHandle, WorkbenchSection } from './components/common'
+import { useStoryLayout } from './hooks/useStoryLayout'
 import { InlineImageResult, ReferenceAssetCard, ReferenceAssetPreviewStrip, ReferenceCardsPanel, StoryboardReferenceDiagnostics, StoryboardReferencePreflight, StoryboardVideoOutputStrip } from './components/storyboard-parts'
 import { CharacterRehearsalCard, ProseParagraphDiff, TeamRehearsalPanel, WriterRoomLogSummary, WriterRoomQualitySummaryPanel } from './components/writer-room-parts'
 import { BibleContentCard, ProjectBibleTab } from './components/bible'
@@ -344,10 +345,6 @@ export default function StoryPage() {
   )
 
   useEffect(() => {
-    window.localStorage.setItem('ylcraft:story-project-library-collapsed', String(projectLibraryCollapsed))
-  }, [projectLibraryCollapsed])
-
-  useEffect(() => {
     if (!selectedProject?.id) return
     if (workspaceModeProjectRef.current !== selectedProject.id) {
       workspaceModeProjectRef.current = selectedProject.id
@@ -417,24 +414,6 @@ export default function StoryPage() {
       })
       .catch((error: any) => message.error(error?.message || '无法读取角色设定'))
   }, [form, searchParams])
-
-  useEffect(() => {
-    const element = storyPageRef.current
-    if (!element) return
-
-    // The global navigation consumes part of the viewport. Measure the actual
-    // workbench so its three-column layout never crushes the prose workspace.
-    const update = (width: number) => {
-      setCockpitCompact(width < 1320)
-      setWorkspaceNarrow(width < 760)
-    }
-    update(element.getBoundingClientRect().width)
-    const observer = new ResizeObserver((entries) => {
-      update(entries[0]?.contentRect.width || element.getBoundingClientRect().width)
-    })
-    observer.observe(element)
-    return () => observer.disconnect()
-  }, [])
 
   useEffect(() => {
     // Target count belongs to the selected project.  Do not let a previous
