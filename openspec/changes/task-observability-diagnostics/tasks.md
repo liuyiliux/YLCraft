@@ -51,5 +51,5 @@
 - [x] 29. `should_persist` 不再静默返回 False：不落库时打日志说明原因（类型未登记白名单 / 缺 `project_id`），此前表现为任务凭空消失且无从排查。
 - [x] 30. 前端任务中心补全类型选项、中文标签、配色与跳转路由（`world_map_visual` → `/world-map`、`world_domain_expansion` → `/novel-world`）。
 - [x] 31. 后端单测（`backend/tests/test_ai_task_tracking.py`，4 例）：成功置 done 且带 result、失败置 failed 且异常原样抛出、带 `project_id` 才落库、白名单规则。
-- [ ] 32. 视频（`VideoGenerationTask`）与 3D（`Model3DGenerationTask`）自有 Task 表接入 `/api/v1/tasks` 聚合，使二者出现在任务中心且重试入口统一。
-- [ ] 33. Live2D 与 Agent 工具触发的 AI 操作补任务记录（事件已由收口覆盖）。
+- [x] 32. 视频（`VideoGenerationTask`）与 3D（`Model3DGenerationTask`）自有 Task 表接入 `/api/v1/tasks` 聚合，使二者出现在任务中心且重试入口统一。（已落地：聚合此前已在 `_all_task_infos` 完成；本轮补统一重试入口 `POST /api/v1/tasks/{task_id}/retry`——按 `task_type` 分派，视频/图转 3D 读各自账本的 `request_json` 重建参数后复用生成端点重提交（资产入库/事件/新任务行为与手动生成一致），绑骨任务明确拒绝并指引工作台，图片任务指引去事件日志 Tab 重发；前端任务列表对失败/取消的 video_/model3d_ 任务显示「重试」按钮。已验证：未知任务与图片任务给出明确提示，视频/3D 各 3 条真实任务参数可无损重建。）
+- [x] 33. Live2D 与 Agent 工具触发的 AI 操作补任务记录（事件已由收口覆盖）。（已落地：Live2D 抠图/风格转换/AI 分层三个端点用 `ai_task("live2d_processing")` 包裹，`live2d_processing` 登记进 `PERSISTED_STANDALONE_TASK_TYPES`（不挂项目也能落库），前端任务中心补类型选项与配色；Agent 的生图/视频/3D 工具经各自端点提交，异步任务本就在任务中心可见，不再重复建任务。Live2D 批量流水线端点仍走既有 batch_queue，未额外包任务。）

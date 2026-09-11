@@ -780,6 +780,9 @@ export const listTasks = (params?: {
 
 export const getTask = (id: string) => request(`/tasks/${id}`)
 
+/** 按原参数重试失败/取消的独立媒体任务（视频、图转 3D） */
+export const retryTask = (id: string) => request(`/tasks/${id}/retry`, { method: 'POST' })
+
 export const cancelTask = (id: string) =>
   request(`/tasks/${id}/cancel`, { method: 'POST' })
 

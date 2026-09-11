@@ -7,8 +7,8 @@
 ## Summary
 
 - Router mounts: 53
-- Endpoints: 674
-- Public schema endpoints: 673
+- Endpoints: 675
+- Public schema endpoints: 674
 - Hidden compatibility endpoints: 1
 
 ## Router Mounts
@@ -658,52 +658,52 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/live2d` | 列出 Live2D 模型 | `list_models` | `backend/app/api/v1/live2d.py:737` |
-| `POST` | `/api/v1/live2d` | 创建 Live2D 模型（上传图片） | `create_model` | `backend/app/api/v1/live2d.py:631` |
-| `GET` | `/api/v1/live2d/api-keys` | 列出 API 密钥 | `list_api_keys` | `backend/app/api/v1/live2d.py:323` |
-| `POST` | `/api/v1/live2d/api-keys` | 创建 API 密钥 | `create_api_key` | `backend/app/api/v1/live2d.py:378` |
-| `GET` | `/api/v1/live2d/api-keys/{key_id}` | 获取 API 密钥详情 | `get_api_key` | `backend/app/api/v1/live2d.py:430` |
-| `PUT` | `/api/v1/live2d/api-keys/{key_id}` | 更新 API 密钥 | `update_api_key` | `backend/app/api/v1/live2d.py:456` |
-| `DELETE` | `/api/v1/live2d/api-keys/{key_id}` | 删除 API 密钥 | `delete_api_key` | `backend/app/api/v1/live2d.py:504` |
-| `GET` | `/api/v1/live2d/api-keys/{key_id}/test` | 测试 API 密钥 | `test_api_key` | `backend/app/api/v1/live2d.py:519` |
-| `GET` | `/api/v1/live2d/batch` | 获取所有批量队列 | `list_batch_queues` | `backend/app/api/v1/live2d.py:2624` |
-| `POST` | `/api/v1/live2d/batch` | 创建批量处理队列 | `create_batch_queue` | `backend/app/api/v1/live2d.py:2607` |
-| `GET` | `/api/v1/live2d/batch/{queue_id}` | 获取队列详情 | `get_batch_queue` | `backend/app/api/v1/live2d.py:2636` |
-| `DELETE` | `/api/v1/live2d/batch/{queue_id}` | 删除批量队列 | `delete_batch_queue` | `backend/app/api/v1/live2d.py:2782` |
-| `POST` | `/api/v1/live2d/batch/{queue_id}/cancel` | 取消批量队列 | `cancel_batch_queue` | `backend/app/api/v1/live2d.py:2767` |
-| `POST` | `/api/v1/live2d/batch/{queue_id}/start` | 启动批量队列处理 | `start_batch_queue` | `backend/app/api/v1/live2d.py:2660` |
-| `GET` | `/api/v1/live2d/batch/{queue_id}/stats` | 获取队列统计 | `get_batch_queue_stats` | `backend/app/api/v1/live2d.py:2648` |
-| `GET` | `/api/v1/live2d/characters` | 获取可选角色列表 | `get_characters_for_live2d` | `backend/app/api/v1/live2d.py:2308` |
-| `GET` | `/api/v1/live2d/config/processing-modes` | 获取处理模式配置 | `get_processing_modes` | `backend/app/api/v1/live2d.py:253` |
-| `PUT` | `/api/v1/live2d/config/processing-modes` | 更新处理模式配置 | `update_processing_modes` | `backend/app/api/v1/live2d.py:296` |
-| `POST` | `/api/v1/live2d/from-asset` | 从素材库图片创建 Live2D 模型 | `create_from_asset` | `backend/app/api/v1/live2d.py:699` |
-| `POST` | `/api/v1/live2d/from-character/{character_id}` | 从角色创建 Live2D 模型 | `create_from_character` | `backend/app/api/v1/live2d.py:2410` |
-| `GET` | `/api/v1/live2d/options/status` | 获取状态选项 | `get_status_options` | `backend/app/api/v1/live2d.py:241` |
-| `GET` | `/api/v1/live2d/options/style` | 获取风格模式选项 | `get_style_options` | `backend/app/api/v1/live2d.py:233` |
-| `GET` | `/api/v1/live2d/presets/motions` | 获取动作预设列表 | `get_motion_presets` | `backend/app/api/v1/live2d.py:2194` |
-| `GET` | `/api/v1/live2d/presets/motions/{preset_id}` | 获取指定动作预设 | `get_motion_preset` | `backend/app/api/v1/live2d.py:2234` |
-| `GET` | `/api/v1/live2d/{model_id}` | 获取 Live2D 模型详情 | `get_model` | `backend/app/api/v1/live2d.py:794` |
-| `PUT` | `/api/v1/live2d/{model_id}` | 更新 Live2D 模型 | `update_model` | `backend/app/api/v1/live2d.py:806` |
-| `DELETE` | `/api/v1/live2d/{model_id}` | 删除 Live2D 模型 | `delete_model` | `backend/app/api/v1/live2d.py:839` |
-| `GET` | `/api/v1/live2d/{model_id}/character` | 获取模型关联的角色 | `get_model_character` | `backend/app/api/v1/live2d.py:2345` |
-| `GET` | `/api/v1/live2d/{model_id}/download` | 下载模型文件 | `download_model` | `backend/app/api/v1/live2d.py:1708` |
-| `POST` | `/api/v1/live2d/{model_id}/export` | 导出 YLCraft 角色配置包 | `export_model` | `backend/app/api/v1/live2d.py:1628` |
-| `POST` | `/api/v1/live2d/{model_id}/inpaint` | AI 遮挡补全 | `inpaint_model` | `backend/app/api/v1/live2d.py:1269` |
-| `POST` | `/api/v1/live2d/{model_id}/link-character` | 关联角色到模型 | `link_character_to_model` | `backend/app/api/v1/live2d.py:2369` |
-| `GET` | `/api/v1/live2d/{model_id}/lip-sync` | 获取口型动画 | `get_lip_sync` | `backend/app/api/v1/live2d.py:2166` |
-| `POST` | `/api/v1/live2d/{model_id}/lip-sync` | 生成口型动画 | `generate_lip_sync` | `backend/app/api/v1/live2d.py:2088` |
-| `POST` | `/api/v1/live2d/{model_id}/mesh` | 预留：自动生成网格（未实现） | `generate_mesh` | `backend/app/api/v1/live2d.py:1540` |
-| `POST` | `/api/v1/live2d/{model_id}/motion` | 生成待机动作 | `generate_motion` | `backend/app/api/v1/live2d.py:1564` |
-| `POST` | `/api/v1/live2d/{model_id}/physics` | 预留：配置物理模拟（未实现） | `configure_physics` | `backend/app/api/v1/live2d.py:1552` |
-| `POST` | `/api/v1/live2d/{model_id}/pipeline` | 一键生成流水线 | `run_pipeline` | `backend/app/api/v1/live2d.py:1769` |
-| `POST` | `/api/v1/live2d/{model_id}/presets/{preset_id}` | 应用动作预设到模型 | `apply_motion_preset` | `backend/app/api/v1/live2d.py:2263` |
-| `POST` | `/api/v1/live2d/{model_id}/rembg` | AI 抠图（去除背景） | `rembg_model` | `backend/app/api/v1/live2d.py:860` |
-| `POST` | `/api/v1/live2d/{model_id}/rig` | 自动骨骼绑定 | `rig_model` | `backend/app/api/v1/live2d.py:1282` |
-| `PUT` | `/api/v1/live2d/{model_id}/rigging/expression` | 更新表情 | `update_expression` | `backend/app/api/v1/live2d.py:1456` |
-| `PUT` | `/api/v1/live2d/{model_id}/rigging/eye-tracking` | 更新视线跟踪 | `update_eye_tracking` | `backend/app/api/v1/live2d.py:1502` |
-| `GET` | `/api/v1/live2d/{model_id}/rigging/state` | 获取绑骨状态 | `get_rigging_state` | `backend/app/api/v1/live2d.py:1415` |
-| `POST` | `/api/v1/live2d/{model_id}/segment` | AI 图像分割（自动分层） | `segment_model` | `backend/app/api/v1/live2d.py:1131` |
-| `POST` | `/api/v1/live2d/{model_id}/style-transfer` | 风格转换（真人转二次元） | `style_transfer_model` | `backend/app/api/v1/live2d.py:995` |
+| `GET` | `/api/v1/live2d` | 列出 Live2D 模型 | `list_models` | `backend/app/api/v1/live2d.py:738` |
+| `POST` | `/api/v1/live2d` | 创建 Live2D 模型（上传图片） | `create_model` | `backend/app/api/v1/live2d.py:632` |
+| `GET` | `/api/v1/live2d/api-keys` | 列出 API 密钥 | `list_api_keys` | `backend/app/api/v1/live2d.py:324` |
+| `POST` | `/api/v1/live2d/api-keys` | 创建 API 密钥 | `create_api_key` | `backend/app/api/v1/live2d.py:379` |
+| `GET` | `/api/v1/live2d/api-keys/{key_id}` | 获取 API 密钥详情 | `get_api_key` | `backend/app/api/v1/live2d.py:431` |
+| `PUT` | `/api/v1/live2d/api-keys/{key_id}` | 更新 API 密钥 | `update_api_key` | `backend/app/api/v1/live2d.py:457` |
+| `DELETE` | `/api/v1/live2d/api-keys/{key_id}` | 删除 API 密钥 | `delete_api_key` | `backend/app/api/v1/live2d.py:505` |
+| `GET` | `/api/v1/live2d/api-keys/{key_id}/test` | 测试 API 密钥 | `test_api_key` | `backend/app/api/v1/live2d.py:520` |
+| `GET` | `/api/v1/live2d/batch` | 获取所有批量队列 | `list_batch_queues` | `backend/app/api/v1/live2d.py:2652` |
+| `POST` | `/api/v1/live2d/batch` | 创建批量处理队列 | `create_batch_queue` | `backend/app/api/v1/live2d.py:2635` |
+| `GET` | `/api/v1/live2d/batch/{queue_id}` | 获取队列详情 | `get_batch_queue` | `backend/app/api/v1/live2d.py:2664` |
+| `DELETE` | `/api/v1/live2d/batch/{queue_id}` | 删除批量队列 | `delete_batch_queue` | `backend/app/api/v1/live2d.py:2810` |
+| `POST` | `/api/v1/live2d/batch/{queue_id}/cancel` | 取消批量队列 | `cancel_batch_queue` | `backend/app/api/v1/live2d.py:2795` |
+| `POST` | `/api/v1/live2d/batch/{queue_id}/start` | 启动批量队列处理 | `start_batch_queue` | `backend/app/api/v1/live2d.py:2688` |
+| `GET` | `/api/v1/live2d/batch/{queue_id}/stats` | 获取队列统计 | `get_batch_queue_stats` | `backend/app/api/v1/live2d.py:2676` |
+| `GET` | `/api/v1/live2d/characters` | 获取可选角色列表 | `get_characters_for_live2d` | `backend/app/api/v1/live2d.py:2336` |
+| `GET` | `/api/v1/live2d/config/processing-modes` | 获取处理模式配置 | `get_processing_modes` | `backend/app/api/v1/live2d.py:254` |
+| `PUT` | `/api/v1/live2d/config/processing-modes` | 更新处理模式配置 | `update_processing_modes` | `backend/app/api/v1/live2d.py:297` |
+| `POST` | `/api/v1/live2d/from-asset` | 从素材库图片创建 Live2D 模型 | `create_from_asset` | `backend/app/api/v1/live2d.py:700` |
+| `POST` | `/api/v1/live2d/from-character/{character_id}` | 从角色创建 Live2D 模型 | `create_from_character` | `backend/app/api/v1/live2d.py:2438` |
+| `GET` | `/api/v1/live2d/options/status` | 获取状态选项 | `get_status_options` | `backend/app/api/v1/live2d.py:242` |
+| `GET` | `/api/v1/live2d/options/style` | 获取风格模式选项 | `get_style_options` | `backend/app/api/v1/live2d.py:234` |
+| `GET` | `/api/v1/live2d/presets/motions` | 获取动作预设列表 | `get_motion_presets` | `backend/app/api/v1/live2d.py:2222` |
+| `GET` | `/api/v1/live2d/presets/motions/{preset_id}` | 获取指定动作预设 | `get_motion_preset` | `backend/app/api/v1/live2d.py:2262` |
+| `GET` | `/api/v1/live2d/{model_id}` | 获取 Live2D 模型详情 | `get_model` | `backend/app/api/v1/live2d.py:795` |
+| `PUT` | `/api/v1/live2d/{model_id}` | 更新 Live2D 模型 | `update_model` | `backend/app/api/v1/live2d.py:807` |
+| `DELETE` | `/api/v1/live2d/{model_id}` | 删除 Live2D 模型 | `delete_model` | `backend/app/api/v1/live2d.py:840` |
+| `GET` | `/api/v1/live2d/{model_id}/character` | 获取模型关联的角色 | `get_model_character` | `backend/app/api/v1/live2d.py:2373` |
+| `GET` | `/api/v1/live2d/{model_id}/download` | 下载模型文件 | `download_model` | `backend/app/api/v1/live2d.py:1736` |
+| `POST` | `/api/v1/live2d/{model_id}/export` | 导出 YLCraft 角色配置包 | `export_model` | `backend/app/api/v1/live2d.py:1656` |
+| `POST` | `/api/v1/live2d/{model_id}/inpaint` | AI 遮挡补全 | `inpaint_model` | `backend/app/api/v1/live2d.py:1297` |
+| `POST` | `/api/v1/live2d/{model_id}/link-character` | 关联角色到模型 | `link_character_to_model` | `backend/app/api/v1/live2d.py:2397` |
+| `GET` | `/api/v1/live2d/{model_id}/lip-sync` | 获取口型动画 | `get_lip_sync` | `backend/app/api/v1/live2d.py:2194` |
+| `POST` | `/api/v1/live2d/{model_id}/lip-sync` | 生成口型动画 | `generate_lip_sync` | `backend/app/api/v1/live2d.py:2116` |
+| `POST` | `/api/v1/live2d/{model_id}/mesh` | 预留：自动生成网格（未实现） | `generate_mesh` | `backend/app/api/v1/live2d.py:1568` |
+| `POST` | `/api/v1/live2d/{model_id}/motion` | 生成待机动作 | `generate_motion` | `backend/app/api/v1/live2d.py:1592` |
+| `POST` | `/api/v1/live2d/{model_id}/physics` | 预留：配置物理模拟（未实现） | `configure_physics` | `backend/app/api/v1/live2d.py:1580` |
+| `POST` | `/api/v1/live2d/{model_id}/pipeline` | 一键生成流水线 | `run_pipeline` | `backend/app/api/v1/live2d.py:1797` |
+| `POST` | `/api/v1/live2d/{model_id}/presets/{preset_id}` | 应用动作预设到模型 | `apply_motion_preset` | `backend/app/api/v1/live2d.py:2291` |
+| `POST` | `/api/v1/live2d/{model_id}/rembg` | AI 抠图（去除背景） | `rembg_model` | `backend/app/api/v1/live2d.py:861` |
+| `POST` | `/api/v1/live2d/{model_id}/rig` | 自动骨骼绑定 | `rig_model` | `backend/app/api/v1/live2d.py:1310` |
+| `PUT` | `/api/v1/live2d/{model_id}/rigging/expression` | 更新表情 | `update_expression` | `backend/app/api/v1/live2d.py:1484` |
+| `PUT` | `/api/v1/live2d/{model_id}/rigging/eye-tracking` | 更新视线跟踪 | `update_eye_tracking` | `backend/app/api/v1/live2d.py:1530` |
+| `GET` | `/api/v1/live2d/{model_id}/rigging/state` | 获取绑骨状态 | `get_rigging_state` | `backend/app/api/v1/live2d.py:1443` |
+| `POST` | `/api/v1/live2d/{model_id}/segment` | AI 图像分割（自动分层） | `segment_model` | `backend/app/api/v1/live2d.py:1149` |
+| `POST` | `/api/v1/live2d/{model_id}/style-transfer` | 风格转换（真人转二次元） | `style_transfer_model` | `backend/app/api/v1/live2d.py:1003` |
 
 ### Logs
 
@@ -936,8 +936,9 @@
 | `GET` | `/api/v1/tasks` | 任务列表 | `list_tasks` | `backend/app/api/v1/tasks.py:620` |
 | `GET` | `/api/v1/tasks/stats` | 任务统计 | `get_task_stats` | `backend/app/api/v1/tasks.py:657` |
 | `GET` | `/api/v1/tasks/{task_id}` | 任务详情 | `get_task_detail` | `backend/app/api/v1/tasks.py:732` |
-| `DELETE` | `/api/v1/tasks/{task_id}` | 删除任务 | `delete_task` | `backend/app/api/v1/tasks.py:799` |
+| `DELETE` | `/api/v1/tasks/{task_id}` | 删除任务 | `delete_task` | `backend/app/api/v1/tasks.py:926` |
 | `POST` | `/api/v1/tasks/{task_id}/cancel` | 取消任务 | `cancel_task` | `backend/app/api/v1/tasks.py:757` |
+| `POST` | `/api/v1/tasks/{task_id}/retry` | 重试失败任务 | `retry_task` | `backend/app/api/v1/tasks.py:817` |
 
 ### Torrents
 
