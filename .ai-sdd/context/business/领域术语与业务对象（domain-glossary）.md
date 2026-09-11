@@ -74,3 +74,14 @@
 | **方法包（Method Package）** | 文件型 Creative Skill（`SKILL.md`），被 preflight 返回，含 id 与 checksum | `backend/app/skills/novel/chapter-hook-rhythm/SKILL.md` |
 | **`chapter-hook-rhythm`** | 章节钩子与节奏方法包；**opt-in**（`auto_apply=false`），仅在被选中时向 T6 贡献方法指导 | design.md |
 | **T6** | Context Pack 第 6 层（表达机制注入层）；方法包只作用于此层，不改变正典边界 | design.md |
+
+
+## 创作项目制作台
+
+<!-- 来源：openspec/changes/story-production-desk，导入日期：2026-09-12 -->
+
+| 术语 | 定义 | 证据 |
+|---|---|---|
+| **制作台（Production Desk）** | `/story` 的呈现层：把既有权威记录（大纲/章节计划/ProjectContent/Writer Room 候选/ProjectAssetLink）组织成生产导航，**不引入新数据源** | `StoryWorkspaceShell.tsx` |
+| **阶段轨（Stage Rail）** | 展示各阶段真实计数的导航条，点击打开**既有**工作区 Tab，而非新建页面 | `outline.tsx :: ProductionStageRail` |
+| **完成度（Completion）** | 渲染时从既有项目资源**计算**出的阶段进度，不是持久化字段 | design.md |
