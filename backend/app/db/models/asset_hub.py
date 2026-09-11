@@ -10,7 +10,9 @@ from enum import Enum
 from typing import Optional, List, TYPE_CHECKING
 from datetime import datetime
 from sqlmodel import SQLModel, Field
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
+from sqlalchemy.dialects.postgresql import JSONB
+
+from app.db.types import GUID
 from pgvector.sqlalchemy import Vector
 
 if TYPE_CHECKING:
@@ -52,10 +54,10 @@ class AssetNode(SQLModel, table=True):
     """资产根节点"""
     __tablename__ = "asset_nodes"
 
-    id: str = Field(primary_key=True, sa_type=PGUUID(as_uuid=True))
+    id: str = Field(primary_key=True, sa_type=GUID())
     name: str = Field(index=True)
     asset_type: AssetType = Field(index=True)
-    parent_id: Optional[str] = Field(None, foreign_key="asset_nodes.id", index=True, sa_type=PGUUID(as_uuid=True))
+    parent_id: Optional[str] = Field(None, foreign_key="asset_nodes.id", index=True, sa_type=GUID())
 
     thumbnail_url: Optional[str] = None
     metadata_json: dict = Field(default_factory=dict, sa_type=JSONB)
@@ -74,8 +76,8 @@ class AssetVersion(SQLModel, table=True):
     """资产版本快照"""
     __tablename__ = "asset_versions"
 
-    id: str = Field(primary_key=True, sa_type=PGUUID(as_uuid=True))
-    asset_node_id: str = Field(foreign_key="asset_nodes.id", index=True, sa_type=PGUUID(as_uuid=True))
+    id: str = Field(primary_key=True, sa_type=GUID())
+    asset_node_id: str = Field(foreign_key="asset_nodes.id", index=True, sa_type=GUID())
     version_number: int = Field(index=True)
 
     prompt_used: Optional[str] = None
@@ -90,8 +92,8 @@ class AssetRepresentation(SQLModel, table=True):
     """资产文件表示"""
     __tablename__ = "asset_representations"
 
-    id: str = Field(primary_key=True, sa_type=PGUUID(as_uuid=True))
-    asset_version_id: str = Field(foreign_key="asset_versions.id", index=True, sa_type=PGUUID(as_uuid=True))
+    id: str = Field(primary_key=True, sa_type=GUID())
+    asset_version_id: str = Field(foreign_key="asset_versions.id", index=True, sa_type=GUID())
 
     file_path: str
     mime_type: str
@@ -107,8 +109,8 @@ class AssetEmbedding(SQLModel, table=True):
     """资产向量嵌入"""
     __tablename__ = "asset_embeddings"
 
-    id: str = Field(primary_key=True, sa_type=PGUUID(as_uuid=True))
-    asset_node_id: str = Field(foreign_key="asset_nodes.id", index=True, unique=True, sa_type=PGUUID(as_uuid=True))
+    id: str = Field(primary_key=True, sa_type=GUID())
+    asset_node_id: str = Field(foreign_key="asset_nodes.id", index=True, unique=True, sa_type=GUID())
     embedding: Optional[List[float]] = Field(sa_type=Vector(1024))  # 默认 1024 维向量
     embedding_model: str = Field(default="paraphrase-multilingual-MiniLM-L12-v2")
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -118,9 +120,9 @@ class AssetRelation(SQLModel, table=True):
     """资产谱系关系"""
     __tablename__ = "asset_relations"
 
-    id: str = Field(primary_key=True, sa_type=PGUUID(as_uuid=True))
-    source_id: str = Field(foreign_key="asset_nodes.id", index=True, sa_type=PGUUID(as_uuid=True))
-    target_id: str = Field(foreign_key="asset_nodes.id", index=True, sa_type=PGUUID(as_uuid=True))
+    id: str = Field(primary_key=True, sa_type=GUID())
+    source_id: str = Field(foreign_key="asset_nodes.id", index=True, sa_type=GUID())
+    target_id: str = Field(foreign_key="asset_nodes.id", index=True, sa_type=GUID())
     relation_type: RelationType = Field(index=True)
     context_json: dict = Field(default_factory=dict, sa_type=JSONB)
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -130,9 +132,9 @@ class Tag(SQLModel, table=True):
     """树形标签模型"""
     __tablename__ = "tags"
 
-    id: str = Field(primary_key=True, sa_type=PGUUID(as_uuid=True))
+    id: str = Field(primary_key=True, sa_type=GUID())
     name: str = Field(index=True)
-    parent_id: Optional[str] = Field(None, foreign_key="tags.id", index=True, sa_type=PGUUID(as_uuid=True))
+    parent_id: Optional[str] = Field(None, foreign_key="tags.id", index=True, sa_type=GUID())
     level: int = Field(0, index=True)
     path: str = Field(index=True)
     color: Optional[str] = None
@@ -145,9 +147,9 @@ class AssetTagLink(SQLModel, table=True):
     """资产-标签关联表"""
     __tablename__ = "asset_tag_links"
 
-    id: str = Field(primary_key=True, sa_type=PGUUID(as_uuid=True))
-    asset_node_id: str = Field(foreign_key="asset_nodes.id", index=True, sa_type=PGUUID(as_uuid=True))
-    tag_id: str = Field(foreign_key="tags.id", index=True, sa_type=PGUUID(as_uuid=True))
+    id: str = Field(primary_key=True, sa_type=GUID())
+    asset_node_id: str = Field(foreign_key="asset_nodes.id", index=True, sa_type=GUID())
+    tag_id: str = Field(foreign_key="tags.id", index=True, sa_type=GUID())
     confidence: Optional[float] = None
     source: str = Field(default="manual")
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -157,8 +159,8 @@ class AIModel(SQLModel, table=True):
     """AI 模型资产（扩展自 AssetNode）"""
     __tablename__ = "ai_models"
 
-    id: str = Field(primary_key=True, sa_type=PGUUID(as_uuid=True))
-    asset_node_id: str = Field(foreign_key="asset_nodes.id", index=True, sa_type=PGUUID(as_uuid=True))
+    id: str = Field(primary_key=True, sa_type=GUID())
+    asset_node_id: str = Field(foreign_key="asset_nodes.id", index=True, sa_type=GUID())
 
     model_type: str = Field(index=True)
     base_model: str = Field(index=True)
