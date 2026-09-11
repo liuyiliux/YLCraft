@@ -1,0 +1,115 @@
+schema_version: "2.1"
+# =============================================================================
+# 注意：本文件为**手工编写**，不是 `aispec init` / `ai-sdd-init` 的产物。
+#
+# 原因（2026-09-11 环境实测，4 项阻塞）：
+#   1. `aispec` CLI 未安装，且 npm 源 r.cnpmjs.org 连接被重置（ECONNRESET），无法安装；
+#   2. `.ai-sdd/.installed-version` 不存在（bootstrap 未完成）；
+#   3. 本机 Python 为 3.10.6，而 ai-sdd-init Phase 1 要求 > 3.11（3.12+）；
+#   4. 工作区非干净环境（AGENTS.md 与 openspec/config.yaml 均已存在）。
+#
+# 因此以下内容按 `project-profile.schema.yaml`（V2.1）逐字段填写，
+# 目的是让直接读取 profile 的技能（ai-verify-change 的测试报告路径、
+# context-harvest 的仓库枚举等）恢复能力。
+#
+# 待 `aispec` 可用后应执行：`aispec update .`（会渲染 AGENTS.md / CLAUDE.md /
+# openspec/config.yaml / MCP 配置）。**执行前请先备份 AGENTS.md**——它是手工维护的，
+# 渲染可能覆盖。
+# =============================================================================
+schema_changelog_ack: "2.1-003"     # 与 schema 文件头最新 version 对齐，避免 update 反复提示
+
+sdd:
+  design-mode: direct               # 轻量直连流程（用户确认）
+
+project:
+  name: "ylcraft"
+  display_name: "YLCraft"
+  description: "AI 驱动的网文/短剧内容生产工作台：素材库 + 创作项目 + 智能体，覆盖世界观、大纲、章节、正文、脚本、分镜、图片与视频生成及发布。"
+
+repositories:
+  - name: "backend"
+    path: "backend"
+    type: "backend"
+    language: "python"
+    framework: "FastAPI + SQLModel（PostgreSQL/pgvector）"
+    display_name: "YLCraft 后端"
+    gitnexus_index: "backend"
+    role: "FastAPI 单体后端：创作项目域、素材资产域、AI 服务与连接器、Agent 运行时与工具注册表、任务与事件观测。"
+    # 说明：未填 center_type。该项目不是 CSF/BSV/PSV 体系（schema 亦标注该字段为
+    # [optional, only backend]），填写 BSV/PSV 会与代码事实不符，故省略。
+
+  - name: "frontend"
+    path: "frontend"
+    type: "frontend-pc"
+    language: "typescript"
+    framework: "React 18 + TypeScript 5 + Vite 5 + Ant Design 5"
+    display_name: "YLCraft 前端"
+    gitnexus_index: "frontend"
+
+architecture:
+  # 各层 alias 写成「仓库相对路径」，既当标签也可被分层校验解析到真实目录。
+  backend_layers:
+    - name: "对外接口层"
+      alias: "app/api/v1"
+      kind: "gateway"
+    - name: "业务服务层"
+      alias: "app/services"
+      kind: "service"
+    - name: "数据实体层"
+      alias: "app/db/models"
+      kind: "entity"
+    - name: "数据访问层"
+      alias: "app/db"
+      kind: "dao"
+    - name: "基础设施层"
+      alias: "app/core"
+      kind: "task"
+  build_tool: "pip（backend/requirements.txt）"
+  test_framework: "pytest"
+
+tools:
+  api_registry_mcp:
+    endpoint: ""                    # 空 = 未启用（本机无 API Registry MCP，亦无 MCP 配置文件）
+
+  gitnexus:
+    available: false                # 实测：gitnexus CLI 未安装，且全仓无 .gitnexus 索引。
+                                    # 安装并在各仓库执行 `npx gitnexus analyze --embeddings`
+                                    # 成功后再改为 true，否则渲染出的 MCP server 无法启动。
+
+  mcp_clients:
+    # 全部 false：工作区内不存在任何 MCP 配置文件（.vscode/.cursor/.mcp.json/opencode.json），
+    # 且 gitnexus 未就绪。启用某个客户端前请先满足 gitnexus.available 的前置条件。
+    copilot: false
+    cursor: false
+    qoder: false
+    claude: false
+    opencode: false
+    trae: false
+
+frontend:
+  h5:
+    framework: ""                   # 本项目无 H5 端
+    source_root: ""
+  pc:
+    framework: "React 18 + TypeScript 5 + Vite 5 + Ant Design 5"
+    source_root: "frontend/src/"
+
+paths:
+  ddl_directory:          ".ai-sdd/artifacts/changes/{change-name}/sql/"
+  db_config_location:     ".ai-sdd/artifacts/changes/{change-name}/db/"
+  e2e_directory:          ".ai-sdd/artifacts/changes/{change-name}/e2e/"
+  test_source_directory:  ".ai-sdd/artifacts/changes/{change-name}/test-sources/{repo}/"
+  test_cases_directory:   ".ai-sdd/artifacts/changes/{change-name}/test-cases/{repo}/"
+  test_data_directory:    ".ai-sdd/artifacts/changes/{change-name}/test-data/{repo}/"
+  test_runner_directory:  ".ai-sdd/artifacts/changes/{change-name}/runners/{repo}/"
+  test_report_directory:  ".ai-sdd/artifacts/changes/{change-name}/reports/{repo}/"
+
+context_overrides:
+  api_catalog_path: ""
+  api_drilldown_paths:
+    - "system/api-drilldown/"
+
+database:
+  type: "postgresql"                # 依据 backend/app/db/database.py：postgresql+asyncpg（含 pgvector）
+  charset: "UTF-8"
+  version: ""
