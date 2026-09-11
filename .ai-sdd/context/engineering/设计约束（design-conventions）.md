@@ -146,3 +146,15 @@
 2. **导航改造不得改变写入路径**：制作台重排的是导航与呈现；后续重构 episode 工作台时**必须**继续复用 `ProjectAssetLink`、内容版本、任务记录与生成日志。
 3. **验收必须指向"当前后端"**：任务记录了一次坑——既有的 3002 静态服务器仍代理到旧端口 8000 的后端，验收数据不对；最终用临时本地静态/代理服务器指向 8004 上的当前后端，Patchright 才拿到真实渲染结果。
 4. **`/story` 的实现已迁出 `index.tsx`**：现 `index.tsx` 仅 10 行（原 13167 行），制作台相关代码在 `components/StoryWorkspaceShell.tsx`、`components/outline.tsx`、`utils.ts`。查找 `/story` 实现不要再只看 `index.tsx`。
+
+
+### 9.6 数据库迁移
+
+<!-- 来源：openspec/changes/database-migration-convergence，导入日期：2026-09-12 -->
+
+1. **⚠ `alembic_version.version_num` 默认只有 `VARCHAR(32)`**，存不下长 revision id（本仓库 `003_add_image_prompt_reference_library` 即超长），首次演练因此在 revision 003 完成前就失败。修法：在 revision 003 的**第一个操作**把该字段扩到 `VARCHAR(128)`——**必须早于** Alembic 写入自己的 revision id。
+2. **⚠ 只由运行时 `create_all()` 建出的表，全新库会缺**：`project_publish_records` 曾在 SQLModel 中存在但 revision 001–007 都没有，只有运行时 `create_all()` 提供。判断"迁移链是否完整"**不能只看代码能跑通，要看全新库能否从 001 升到 head**（用一次性演练库验证）。
+3. **Alembic `env.py` 必须导入完整模型包**：`import app.db.models` 后再赋 `SQLModel.metadata`，`--autogenerate` 才能看到全部表而非手工挑选的子集。已有回归测试守护。
+4. **只读诊断优先**：`tools/check_migration_state.py` 只读 `alembic_version`、报本地 head、对密码脱敏，**不**调用 upgrade/stamp/create_all/DDL。结果非 current 是"备份与演练的依据"，不是"可以改远程库的许可"。
+5. **元数据漂移数字要谨慎解读**：全量比较报 177 处差异的同时，revision 003–007 引入的十张表其实都已存在且与代码一致。大差异**不等于**远程 schema 未收敛——其中大量是已废弃 legacy 表与历史 default/nullable 漂移。
+6. **禁止 `stamp head` 假收敛**：`stamp` 会掩盖真实缺表。远程库只能显式 `alembic upgrade head`，不删表、不重置、不重写数据。

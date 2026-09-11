@@ -85,3 +85,15 @@
 | **制作台（Production Desk）** | `/story` 的呈现层：把既有权威记录（大纲/章节计划/ProjectContent/Writer Room 候选/ProjectAssetLink）组织成生产导航，**不引入新数据源** | `StoryWorkspaceShell.tsx` |
 | **阶段轨（Stage Rail）** | 展示各阶段真实计数的导航条，点击打开**既有**工作区 Tab，而非新建页面 | `outline.tsx :: ProductionStageRail` |
 | **完成度（Completion）** | 渲染时从既有项目资源**计算**出的阶段进度，不是持久化字段 | design.md |
+
+
+## 数据库迁移
+
+<!-- 来源：openspec/changes/database-migration-convergence，导入日期：2026-09-12 -->
+
+| 术语 | 定义 | 证据 |
+|---|---|---|
+| **Alembic head / revision** | 迁移链顶端 revision；当前唯一 head 为 `008_add_project_publish_records`，链为 `2d4ffb118355 → 002 → … → 008` | design.md |
+| **运行时 DDL** | 应用代码里的 `create_all` / `table.create` / `ALTER TABLE`，与 Alembic revision 相对立 | design.md |
+| **元数据漂移** | 线上库实际 schema 与当前 SQLModel metadata 的差异（本项目审计出 177 处，含已废弃 legacy 表与历史 default/nullable/index 差异） | design.md |
+| **一次性演练库** | 由 `template0` 建出的临时 PostgreSQL，验证迁移链后在 `finally` 中销毁，绝不触碰生产库 | 任务 #5 / #10 |
