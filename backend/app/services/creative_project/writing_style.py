@@ -762,6 +762,24 @@ class WritingStyleService:
         self.session.refresh(item)
         return item
 
+    def restore(self, profile_id: str) -> WritingStyleProfile:
+        """取消归档：把已归档档案恢复为草稿。
+
+        归档语义是"下线"而非"删除"，但此前没有回头路——activate() 只接受
+        reviewed，归档档案在列表与详情里都点不动（激活按钮被禁用），实际等于删除。
+        这里只恢复到 draft，不直接跳到 reviewed/active：审核与激活的闸门必须保留，
+        取消归档不等于重新生效。
+        """
+        item = self._require(profile_id)
+        if item.status != WritingStyleProfileStatus.ARCHIVED.value:
+            return item
+        item.status = WritingStyleProfileStatus.DRAFT.value
+        item.updated_at = datetime.now()
+        self.session.add(item)
+        self.session.commit()
+        self.session.refresh(item)
+        return item
+
     def bind(
         self,
         project_id: str,

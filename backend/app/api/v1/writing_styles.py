@@ -146,6 +146,14 @@ def archive_style_profile(profile_id: str, db: Session = Depends(get_session)):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.post("/{profile_id}/restore", summary="取消归档（恢复为草稿）")
+def restore_style_profile(profile_id: str, db: Session = Depends(get_session)):
+    try:
+        return {"success": True, "data": serialize_style_profile(_service(db).restore(profile_id))}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 class StyleDeviationReviewRequest(BaseModel):
     project_id: str
     text: str
