@@ -169,6 +169,9 @@ import { EditorField, InfoBlock, InfoListBlock, LogTextBlock, PromptTemplateSele
 import { useStoryLayout } from './hooks/useStoryLayout'
 import { useWorkspaceData } from './hooks/useWorkspaceData'
 import { useInlineImageGeneration } from './hooks/useInlineImageGeneration'
+import { useChapterContentActions } from './hooks/useChapterContentActions'
+import { useWriterRoomActions } from './hooks/useWriterRoomActions'
+import { useGraphNarrativeActions } from './hooks/useGraphNarrativeActions'
 import { InlineImageResult, ReferenceAssetCard, ReferenceAssetPreviewStrip, ReferenceCardsPanel, StoryboardReferenceDiagnostics, StoryboardReferencePreflight, StoryboardVideoOutputStrip } from './components/storyboard-parts'
 import { CharacterRehearsalCard, ProseParagraphDiff, TeamRehearsalPanel, WriterRoomLogSummary, WriterRoomQualitySummaryPanel } from './components/writer-room-parts'
 import { BibleContentCard, ProjectBibleTab } from './components/bible'
@@ -1065,38 +1068,8 @@ export default function StoryPage() {
 
 
 
-  async function handleNarrativeRunControl(runId: string, action: 'pause' | 'resume' | 'retry' | 'cancel') {
-    if (!selectedProject) return
-    try {
-      await controlCreativeProjectNarrativeRun(selectedProject.id, runId, action)
-      await loadNarrativeRuntime(selectedProject.id, activeChapterNumber)
-    } catch (error: any) {
-      message.error(error?.message || '叙事运行操作失败')
-    }
-  }
 
-  async function handleNarrativeAutopilot(enabled: boolean) {
-    if (!selectedProject) return
-    try {
-      await configureCreativeProjectNarrativeAutopilot(selectedProject.id, {
-        enabled,
-        chapter_numbers: [activeChapterNumber],
-      })
-      await loadNarrativeRuntime(selectedProject.id, activeChapterNumber)
-    } catch (error: any) {
-      message.error(error?.message || '受控自动推进配置失败')
-    }
-  }
 
-  async function handleForeshadowingDecision(itemId: string, action: 'accept' | 'advance' | 'resolve' | 'ignore') {
-    if (!selectedProject) return
-    try {
-      await decideCreativeProjectForeshadowing(selectedProject.id, itemId, action, { current_chapter: activeChapterNumber })
-      await loadNarrativeRuntime(selectedProject.id, activeChapterNumber)
-    } catch (error: any) {
-      message.error(error?.message || '伏笔状态更新失败')
-    }
-  }
 
 
 
@@ -1577,174 +1550,14 @@ export default function StoryPage() {
     }
   }
 
-  async function handleGenerateOutline() {
-    if (!selectedProject) return
-    setLoadingAction('outline')
-    try {
-      const response = (await generateCreativeProjectOutline(selectedProject.id, {
-        idea,
-        provider: selectedLlm || undefined,
-        model: selectedModel || undefined,
-        template_id: selectedPromptTemplates.outline || undefined,
-      })) as CreativeProjectGenerateResponse
-      message.success('故事大纲已生成')
-      await refreshSelected(response.project || null)
-    } catch (error: any) {
-      message.error(error?.message || '故事大纲生成失败')
-      await loadGenerationLogs(selectedProject.id)
-    } finally {
-      setLoadingAction(null)
-    }
-  }
 
-  async function handleSaveOutline(nextOutline: StoryOutline) {
-    if (!selectedProject) return
-    setLoadingAction('outline_save')
-    try {
-      const response = (await updateCreativeProject(selectedProject.id, { outline: nextOutline })) as CreativeProjectResponse
-      if (response.data) {
-        setSelectedProject(response.data)
-        setProjects((prev) => prev.map((item) => (item.id === response.data.id ? response.data : item)))
-      }
-      message.success('故事大纲已保存')
-    } catch (error: any) {
-      message.error(error?.message || '保存故事大纲失败')
-    } finally {
-      setLoadingAction(null)
-    }
-  }
 
-  async function handleSaveChapterPlan(nextChapterPlan: ChapterPlan) {
-    if (!selectedProject) return
-    setLoadingAction('chapter_plan_save')
-    try {
-      const response = (await updateCreativeProject(selectedProject.id, {
-        chapter_plan: normalizeChapterPlan(nextChapterPlan),
-      })) as CreativeProjectResponse
-      if (response.data) {
-        setSelectedProject(response.data)
-        setProjects((prev) => prev.map((item) => (item.id === response.data.id ? response.data : item)))
-      }
-      message.success('章节规划已保存')
-    } catch (error: any) {
-      message.error(error?.message || '保存章节规划失败')
-    } finally {
-      setLoadingAction(null)
-    }
-  }
 
-  async function handleSaveProjectGraph(nextGraph: ProjectGraphState) {
-    if (!selectedProject) return
-    setLoadingAction('canvas_save')
-    try {
-      const payload = {
-        ...nextGraph,
-        updated_at: new Date().toISOString(),
-      }
-      const response = await saveCreativeProjectCanvas(selectedProject.id, payload)
-      setProjectGraph(response?.data || payload)
-      message.success('关系图谱布局已保存')
-    } catch (error: any) {
-      message.error(error?.message || '保存关系图谱布局失败')
-    } finally {
-      setLoadingAction(null)
-    }
-  }
 
-  function handleOpenGraphNode(node: ProjectGraphNode) {
-    const source = node.source || {}
-    if (source.chapterNumber) {
-      openChapterStudio(Number(source.chapterNumber), source.tab || 'episode-workbench')
-      return
-    }
-    if (node.type === 'asset' && source.assetId) {
-      openWorkspaceTab('assets', 'overview')
-      return
-    }
-    if (source.tab) openWorkspaceTab(source.tab)
-  }
 
-  async function handleToggleGraphNodeLock(node: ProjectGraphNode) {
-    if (node.type === 'content' && node.source?.contentId) {
-      const nextLocked = node.status !== 'locked'
-      await handleSaveContent(node.source.contentId, { is_locked: nextLocked })
-      return
-    }
-    if (node.type === 'chapter' && node.source?.chapterNumber) {
-      const nextChapters = chapters.map((chapter: ChapterPlanItem) => {
-        if (Number(chapter.chapter_number) !== Number(node.source?.chapterNumber)) return chapter
-        const nextLocked = !isChapterLocked(chapter)
-        return { ...chapter, status: nextLocked ? 'locked' : 'draft' }
-      })
-      await handleSaveChapterPlan({ ...chapterPlan, chapter_count: nextChapters.length, chapters: nextChapters })
-    }
-  }
 
-  async function handleRegenerateGraphNode(node: ProjectGraphNode) {
-    const chapterNumber = Number(node.source?.chapterNumber || 0)
-    const contentType = node.source?.contentType
-    if (node.type === 'outline') {
-      await handleGenerateOutline()
-      return
-    }
-    if (node.type === 'chapter') {
-      await handleGenerateChapterPlan({ preserveLocked: true })
-      return
-    }
-    if (!chapterNumber) {
-      message.warning('这个节点暂不支持直接再生成')
-      return
-    }
-    if (contentType === 'chapter_outline') await handleGenerateChapterOutline(chapterNumber)
-    else if (contentType === 'novel_body') await handleGenerateNovelBody(chapterNumber)
-    else if (contentType === 'script') await handleGenerateScript(chapterNumber)
-    else if (contentType === 'storyboard') await handleGenerateStoryboardForChapter(chapterNumber)
-    else if (contentType === 'comic_pages') await handleSplitComicPages(chapterNumber)
-    else message.warning('这个节点暂不支持直接再生成')
-  }
 
-  function handleSendGraphNodeToCanvas(node: ProjectGraphNode) {
-    if (!selectedProject) return
-    enqueueCanvasImport([
-      {
-        id: `graph-import-${node.id}-${Date.now()}`,
-        projectId: selectedProject.id,
-        sourceNodeId: node.id,
-        createdAt: new Date().toISOString(),
-        node: graphNodeToCanvasNode(node, selectedProject),
-      },
-    ])
-    message.success('已发送到创作画布')
-    navigate('/canvas')
-  }
 
-  async function handleGenerateChapterPlan(options: { preserveLocked?: boolean } = {}) {
-    if (!selectedProject) return
-    setLoadingAction('chapter_plan')
-    try {
-      const response = (await generateCreativeProjectChapterPlan(selectedProject.id, {
-        chapter_count: chapterCount,
-        append_existing: Boolean(options.preserveLocked),
-        provider: selectedLlm || undefined,
-        model: selectedModel || undefined,
-        template_id: selectedPromptTemplates.chapter_plan || undefined,
-      })) as CreativeProjectGenerateResponse
-      await refreshSelected(response.project || null)
-      if (options.preserveLocked) {
-        const appended = Array.isArray(response.data?.appended_chapter_numbers)
-          ? response.data.appended_chapter_numbers.length
-          : 0
-        message.success(appended ? `已保留现有规划，并续写 ${appended} 章` : '现有章节规划已保留，无需补充')
-      } else {
-        message.success('章节规划已生成')
-      }
-    } catch (error: any) {
-      message.error(error?.message || '章节规划生成失败')
-      await loadGenerationLogs(selectedProject.id)
-    } finally {
-      setLoadingAction(null)
-    }
-  }
 
   async function handleRunPipeline(options: { retryFailed?: boolean } = {}) {
     if (!selectedProject) return
@@ -1872,207 +1685,13 @@ export default function StoryPage() {
     }
   }
 
-  async function handleGenerateChapterOutline(chapterNumber: number) {
-    if (!selectedProject) return
-    if (!(await ensureWritingPreflight(chapterNumber, 'chapter_outline'))) return
-    setLoadingAction('chapter_outline')
-    setLoadingChapterAction({ action: 'chapter_outline', chapterNumber })
-    try {
-      await generateCreativeProjectChapterOutline(selectedProject.id, {
-        chapter_number: chapterNumber,
-        provider: selectedLlm || undefined,
-        model: selectedModel || undefined,
-        template_id: selectedPromptTemplates.chapter_outline || undefined,
-      })
-      message.success(`第 ${chapterNumber} 章细纲已生成`)
-      await loadContents(selectedProject.id)
-      await loadGenerationLogs(selectedProject.id)
-    } catch (error: any) {
-      message.error(error?.message || '细纲生成失败')
-      await loadGenerationLogs(selectedProject.id)
-    } finally {
-      setLoadingAction(null)
-      setLoadingChapterAction({ action: null, chapterNumber: null })
-    }
-  }
 
-  async function handleRegenerateChapterOutlineScenes(chapterNumber: number) {
-    if (!selectedProject) return
-    const chapterOutline = contentForChapter('chapter_outline', chapterNumber)
-    if (!chapterOutline) {
-      message.warning('请先生成这一话的细纲')
-      return
-    }
-    setLoadingAction('chapter_outline_scenes')
-    setLoadingChapterAction({ action: 'chapter_outline_scenes', chapterNumber })
-    try {
-      await regenerateCreativeProjectChapterOutlineScenes(selectedProject.id, {
-        content_id: chapterOutline.id,
-        provider: selectedLlm || undefined,
-        model: selectedModel || undefined,
-        template_id: selectedPromptTemplates.chapter_outline || undefined,
-      })
-      message.success(`第 ${chapterNumber} 话场景已重生成`)
-      await loadContents(selectedProject.id)
-      await loadGenerationLogs(selectedProject.id)
-    } catch (error: any) {
-      message.error(error?.message || '场景重生成失败')
-      await loadGenerationLogs(selectedProject.id)
-    } finally {
-      setLoadingAction(null)
-      setLoadingChapterAction({ action: null, chapterNumber: null })
-    }
-  }
 
-  async function handleGenerateNovelBody(chapterNumber: number) {
-    if (!selectedProject) return
-    if (!contentForChapter('chapter_outline', chapterNumber)) {
-      message.warning('请先生成这一章的细纲')
-      return
-    }
-    if (!(await ensureWritingPreflight(chapterNumber, 'novel_body'))) return
-    setLoadingAction('novel_body')
-    setLoadingChapterAction({ action: 'novel_body', chapterNumber })
-    try {
-      await generateCreativeProjectNovelBody(selectedProject.id, {
-        chapter_number: chapterNumber,
-        provider: selectedLlm || undefined,
-        model: selectedModel || undefined,
-        template_id: selectedPromptTemplates.novel_body || undefined,
-      })
-      message.success(`第 ${chapterNumber} 章正文已生成`)
-      await loadContents(selectedProject.id)
-      await loadGenerationLogs(selectedProject.id)
-    } catch (error: any) {
-      message.error(error?.message || '正文生成失败')
-      await loadGenerationLogs(selectedProject.id)
-    } finally {
-      setLoadingAction(null)
-      setLoadingChapterAction({ action: null, chapterNumber: null })
-    }
-  }
 
-  async function handleRefineNovelBody(chapterNumber: number, instruction: string) {
-    if (!selectedProject) return
-    const novelBody = contentForChapter('novel_body', chapterNumber)
-    if (!novelBody) {
-      message.warning('请先生成这一话的正文')
-      return
-    }
-    if (!instruction.trim()) {
-      message.warning('请填写正文修改要求')
-      return
-    }
-    if (!(await ensureWritingPreflight(chapterNumber, 'novel_body_refine', novelBody.id))) return
-    setLoadingAction('novel_body_refine')
-    setLoadingChapterAction({ action: 'novel_body_refine', chapterNumber })
-    try {
-      await refineCreativeProjectNovelBody(selectedProject.id, {
-        content_id: novelBody.id,
-        instruction: instruction.trim(),
-        provider: selectedLlm || undefined,
-        model: selectedModel || undefined,
-        template_id: selectedPromptTemplates.novel_body || undefined,
-      })
-      message.success(`第 ${chapterNumber} 话正文已按要求微调`)
-      await loadContents(selectedProject.id)
-      await loadGenerationLogs(selectedProject.id)
-    } catch (error: any) {
-      message.error(error?.message || '正文微调失败')
-      await loadGenerationLogs(selectedProject.id)
-    } finally {
-      setLoadingAction(null)
-      setLoadingChapterAction({ action: null, chapterNumber: null })
-    }
-  }
 
-  async function handleSplitComicPages(chapterNumber: number) {
-    if (!selectedProject) return
-    const storyboard = contentForChapter('storyboard', chapterNumber)
-    if (!storyboard) {
-      message.warning('请先生成这一章的分镜')
-      return
-    }
-    setLoadingAction('comic_pages')
-    setLoadingChapterAction({ action: 'comic_pages', chapterNumber })
-    try {
-      await splitCreativeProjectComicPages(selectedProject.id, {
-        chapter_number: chapterNumber,
-        content_id: storyboard.id,
-        page_count: comicPageCount,
-        visual_style: comicStyle || undefined,
-        provider: selectedLlm || undefined,
-        model: selectedModel || undefined,
-        template_id: selectedPromptTemplates.comic_pages || undefined,
-      })
-      message.success(`第 ${chapterNumber} 章漫画拆页已生成`)
-      await loadContents(selectedProject.id)
-      await loadGenerationLogs(selectedProject.id)
-    } catch (error: any) {
-      message.error(error?.message || '漫画拆页失败')
-      await loadGenerationLogs(selectedProject.id)
-    } finally {
-      setLoadingAction(null)
-      setLoadingChapterAction({ action: null, chapterNumber: null })
-    }
-  }
 
-  async function handleGenerateStoryboardForChapter(chapterNumber: number) {
-    const script = contentForChapter('script', chapterNumber)
-    if (!script) {
-      message.warning('请先生成这一章的脚本')
-      return
-    }
-    await handleGenerateStoryboard(script.id)
-  }
 
-  async function handleGenerateScript(chapterNumber: number) {
-    if (!selectedProject) return
-    setLoadingAction('script')
-    setLoadingChapterAction({ action: 'script', chapterNumber })
-    try {
-      await generateCreativeProjectScript(selectedProject.id, {
-        chapter_number: chapterNumber,
-        provider: selectedLlm || undefined,
-        model: selectedModel || undefined,
-        template_id: selectedPromptTemplates.script || undefined,
-      })
-      message.success(`第 ${chapterNumber} 章脚本已生成`)
-      await loadContents(selectedProject.id)
-      await loadGenerationLogs(selectedProject.id)
-    } catch (error: any) {
-      message.error(error?.message || '脚本生成失败')
-      await loadGenerationLogs(selectedProject.id)
-    } finally {
-      setLoadingAction(null)
-      setLoadingChapterAction({ action: null, chapterNumber: null })
-    }
-  }
 
-  async function handleGenerateStoryboard(contentId: string) {
-    if (!selectedProject) return
-    const source = contents.find((item) => item.id === contentId)
-    const chapterNumber = source?.chapter_number || source?.episode_number || null
-    setLoadingAction('storyboard')
-    setLoadingChapterAction({ action: 'storyboard', chapterNumber })
-    try {
-      await generateCreativeProjectStoryboard(selectedProject.id, {
-        content_id: contentId,
-        provider: selectedLlm || undefined,
-        model: selectedModel || undefined,
-        template_id: selectedPromptTemplates.storyboard || undefined,
-      })
-      message.success('分镜草稿已生成')
-      await loadContents(selectedProject.id)
-      await loadGenerationLogs(selectedProject.id)
-    } catch (error: any) {
-      message.error(error?.message || '分镜生成失败')
-      await loadGenerationLogs(selectedProject.id)
-    } finally {
-      setLoadingAction(null)
-      setLoadingChapterAction({ action: null, chapterNumber: null })
-    }
-  }
 
   async function handleMatchReferenceAssets(contentId: string) {
     if (!selectedProject) return
@@ -2098,190 +1717,12 @@ export default function StoryPage() {
     }
   }
 
-  async function handleRunWriterRoomStep(
-    step: string,
-    chapterNumber: number,
-    contentId?: string,
-    instruction?: string,
-    selectedText?: string,
-  ) {
-    if (!selectedProject) return
-    setLoadingAction('writer_room')
-    try {
-      await runCreativeProjectWriterRoomStep(selectedProject.id, step, {
-        chapter_number: chapterNumber,
-        content_id: contentId,
-        provider: selectedLlm || undefined,
-        model: selectedModel || undefined,
-        template_id: selectedPromptTemplates[step] || undefined,
-        instruction: instruction?.trim() || undefined,
-        selected_text: selectedText?.trim() || undefined,
-        rehearsal_mode: rehearsalMode,
-      })
-      message.success('写作室步骤已完成')
-      await Promise.all([loadContents(selectedProject.id), loadWriterRoomContents(selectedProject.id, chapterNumber)])
-      await loadGenerationLogs(selectedProject.id)
-    } catch (error: any) {
-      message.error(error?.message || '写作室步骤失败')
-      await loadGenerationLogs(selectedProject.id)
-    } finally {
-      setLoadingAction(null)
-    }
-  }
 
-  async function handleRunWriterRoomBatch(chapterNumber: number, steps?: string[], contentId?: string) {
-    if (!selectedProject) return
-    const runSteps = steps?.length
-      ? steps
-      : ['scene_beats', 'character_rehearsal', 'prose_draft', 'prose_humanized', 'prose_review']
-    if (!runSteps.length) {
-      message.warning('请至少选择一个写作室步骤')
-      return
-    }
-    setLoadingAction('writer_room')
-    let sourceContentId = contentId
-    let succeeded = 0
-    let failed = 0
-    let blockedBy: string | null = null
-    try {
-      // Run steps one request at a time so each success lands in the panel as
-      // soon as it finishes.  The writer room is a linear candidate chain: when
-      // a step fails, its downstream steps would only be able to fall back to a
-      // stale candidate, so we stop the run instead of continuing with old data.
-      for (const step of runSteps) {
-        const stepLabel = writerRoomStepLabelMap[step] || step
-        try {
-          const response = await runCreativeProjectWriterRoomStep(selectedProject.id, step, {
-            chapter_number: chapterNumber,
-            content_id: sourceContentId,
-            provider: selectedLlm || undefined,
-            model: selectedModel || undefined,
-            template_id: selectedPromptTemplates[step] || undefined,
-            rehearsal_mode: rehearsalMode,
-          })
-          const content = response?.data
-          if (content?.id) {
-            sourceContentId = content.id
-            succeeded += 1
-            setWriterRoomContents((current) => {
-              const byId = new Map(current.map((item) => [item.id, item]))
-              byId.set(content.id, content)
-              return Array.from(byId.values())
-            })
-            message.success(`「${stepLabel}」已完成`)
-          } else {
-            failed += 1
-            blockedBy = stepLabel
-            message.error(`「${stepLabel}」未返回结果`)
-            break
-          }
-        } catch (error: any) {
-          failed += 1
-          blockedBy = stepLabel
-          message.error(`「${stepLabel}」失败：${error?.message || '未知错误'}`)
-          break
-        }
-      }
-      if (blockedBy) {
-        message.warning(`写作室已停止：成功 ${succeeded}，失败 ${failed}；「${blockedBy}」失败后，后续阶段不再使用旧候选继续。`)
-      } else if (failed) {
-        message.warning(`写作室批量结束：成功 ${succeeded}，失败 ${failed}`)
-      } else {
-        message.success(`写作室批量完成：成功 ${succeeded}`)
-      }
-    } finally {
-      void loadWriterRoomContents(selectedProject.id, chapterNumber)
-      void loadContents(selectedProject.id)
-      void loadGenerationLogs(selectedProject.id)
-      setLoadingAction(null)
-    }
-  }
 
-  async function handlePromoteWriterRoomContent(contentId: string) {
-    if (!selectedProject) return
-    setLoadingAction('writer_room')
-    try {
-      await promoteCreativeProjectWriterRoomContent(selectedProject.id, contentId)
-      message.success('已提升为正文最新版本')
-      await Promise.all([loadContents(selectedProject.id), loadWriterRoomContents(selectedProject.id, activeChapterNumber)])
-      await loadGenerationLogs(selectedProject.id)
-      await refreshSelected(selectedProject)
-    } catch (error: any) {
-      message.error(error?.message || '提升正文失败')
-    } finally {
-      setLoadingAction(null)
-    }
-  }
 
-  async function handleResolveContinuityCandidate(candidateId: string, action: 'accept' | 'ignore') {
-    if (!selectedProject) return
-    setLoadingAction('writer_room')
-    try {
-      await resolveCreativeProjectContinuityCandidate(selectedProject.id, candidateId, action)
-      message.success(action === 'accept' ? '已锁定为项目事实' : '已忽略该候选')
-      await Promise.all([loadContents(selectedProject.id), loadContinuityFacts(selectedProject.id)])
-    } catch (error: any) {
-      message.error(error?.message || '处理连续性候选失败')
-    } finally {
-      setLoadingAction(null)
-    }
-  }
 
-  async function handleRewriteParagraph(
-    contentId: string,
-    paragraphIndex: number,
-    instruction: string,
-  ) {
-    if (!selectedProject) return
-    setLoadingAction('writer_room')
-    try {
-      const response = await rewriteCreativeProjectParagraph(selectedProject.id, contentId, {
-        paragraph_index: paragraphIndex,
-        instruction,
-        provider: selectedLlm || undefined,
-        model: selectedModel || undefined,
-      })
-      if (response?.data?.anchor_not_found) {
-        message.warning('没有找到这个段落锚点，请重新选择段落')
-      } else {
-        message.success('已生成段落重写候选版本')
-      }
-      await Promise.all([loadContents(selectedProject.id), loadGenerationLogs(selectedProject.id)])
-    } catch (error: any) {
-      message.error(error?.message || '段落重写失败')
-    } finally {
-      setLoadingAction(null)
-    }
-  }
 
-  async function handleSaveContentAsAsset(contentId: string) {
-    if (!selectedProject) return
-    setLoadingAction('asset')
-    try {
-      const response = await saveCreativeProjectContentAsAsset(selectedProject.id, contentId)
-      message.success(response?.created_node ? '已保存为文本素材' : '已新增文本素材版本')
-      await loadProjectAssets(selectedProject.id)
-    } catch (error: any) {
-      message.error(error?.message || '保存文本素材失败')
-    } finally {
-      setLoadingAction(null)
-    }
-  }
 
-  async function handleExtractContinuity(contentId: string) {
-    if (!selectedProject) return
-    setLoadingAction('project_bible')
-    try {
-      const response = await extractCreativeProjectContinuity(selectedProject.id, contentId)
-      const count = response?.data?.length || 0
-      message.success(count ? `已提取 ${count} 条连续性候选卡` : '连续性候选卡已存在')
-      await loadContents(selectedProject.id)
-    } catch (error: any) {
-      message.error(error?.message || '提取连续性候选失败')
-    } finally {
-      setLoadingAction(null)
-    }
-  }
 
   async function handleOpenPrevis(storyboardContentId: string, panelNumber: number, title?: string) {
     if (!selectedProject) return
@@ -2667,6 +2108,102 @@ export default function StoryPage() {
     json: '高级 JSON 数据',
   }
   const overviewDetailLabel = overviewDetailLabels[activeWorkspaceTab] || '项目详情'
+
+  // handleGenerateOutline 等 抽到 hooks/useChapterContentActions.ts
+  const {
+    handleGenerateOutline,
+    handleSaveOutline,
+    handleSaveChapterPlan,
+    handleGenerateChapterPlan,
+    handleGenerateChapterOutline,
+    handleRegenerateChapterOutlineScenes,
+    handleGenerateNovelBody,
+    handleRefineNovelBody,
+    handleGenerateScript,
+    handleGenerateStoryboard,
+    handleGenerateStoryboardForChapter,
+    handleSplitComicPages,
+  } = useChapterContentActions({
+    chapterCount,
+    comicPageCount,
+    comicStyle,
+    contentForChapter,
+    contents,
+    ensureWritingPreflight,
+    idea,
+    loadContents,
+    loadGenerationLogs,
+    outline,
+    refreshSelected,
+    selectedLlm,
+    selectedModel,
+    selectedProject,
+    selectedPromptTemplates,
+    setLoadingAction,
+    setLoadingChapterAction,
+    setProjects,
+    setSelectedProject,
+  })
+
+  // handleRunWriterRoomStep 等 抽到 hooks/useWriterRoomActions.ts
+  const {
+    handleRunWriterRoomStep,
+    handleRunWriterRoomBatch,
+    handleRewriteParagraph,
+    handlePromoteWriterRoomContent,
+  } = useWriterRoomActions({
+    activeChapterNumber,
+    loadContents,
+    loadGenerationLogs,
+    loadWriterRoomContents,
+    refreshSelected,
+    rehearsalMode,
+    selectedLlm,
+    selectedModel,
+    selectedProject,
+    selectedPromptTemplates,
+    setLoadingAction,
+    setWriterRoomContents,
+  })
+
+  // handleRegenerateGraphNode 等 抽到 hooks/useGraphNarrativeActions.ts
+  const {
+    handleRegenerateGraphNode,
+    handleToggleGraphNodeLock,
+    handleSendGraphNodeToCanvas,
+    handleOpenGraphNode,
+    handleExtractContinuity,
+    handleResolveContinuityCandidate,
+    handleSaveContentAsAsset,
+    handleNarrativeRunControl,
+    handleNarrativeAutopilot,
+    handleForeshadowingDecision,
+    handleSaveProjectGraph,
+  } = useGraphNarrativeActions({
+    activeChapterNumber,
+    chapterPlan,
+    chapters,
+    handleGenerateChapterOutline,
+    handleGenerateChapterPlan,
+    handleGenerateNovelBody,
+    handleGenerateOutline,
+    handleGenerateScript,
+    handleGenerateStoryboardForChapter,
+    handleSaveChapterPlan,
+    handleSaveContent,
+    handleSplitComicPages,
+    loadContents,
+    loadContinuityFacts,
+    loadNarrativeRuntime,
+    loadProjectAssets,
+    navigate,
+    openChapterStudio,
+    openWorkspaceTab,
+    outline,
+    selectedProject,
+    setLoadingAction,
+    setProjectGraph,
+  })
 
   return (
     <div ref={storyPageRef} className="story-theme-page story-production-desk" style={{ padding: '18px 24px 24px', maxWidth: 2400, width: '100%', margin: '0 auto', color: theme.textPrimary }}>
