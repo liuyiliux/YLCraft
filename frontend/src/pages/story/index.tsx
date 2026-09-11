@@ -169,6 +169,9 @@ import { EditorField, InfoBlock, InfoListBlock, LogTextBlock, PromptTemplateSele
 import { useStoryLayout } from './hooks/useStoryLayout'
 import { useWorkspaceData } from './hooks/useWorkspaceData'
 import { useInlineImageGeneration } from './hooks/useInlineImageGeneration'
+import { useProjectContentActions } from './hooks/useProjectContentActions'
+import { usePortraitStoryboardActions } from './hooks/usePortraitStoryboardActions'
+import { useWorkbenchPreferenceActions } from './hooks/useWorkbenchPreferenceActions'
 import { useChapterContentActions } from './hooks/useChapterContentActions'
 import { useWriterRoomActions } from './hooks/useWriterRoomActions'
 import { useGraphNarrativeActions } from './hooks/useGraphNarrativeActions'
@@ -790,43 +793,7 @@ export default function StoryPage() {
     }
   }, [selectedProject?.id, selectedProject?.metadata?.writer_room_active_chapter, chapters, activeChapterNumber])
 
-  async function handleActiveChapterChange(nextChapter: number) {
-    if (!selectedProject) return
-    const chapterNumber = Number(nextChapter)
-    if (!chapters.some((item: ChapterPlanItem) => Number(item.chapter_number) === chapterNumber)) return
 
-    activeChapterRestoreRef.current.pendingLocalChapter = chapterNumber
-    setActiveChapterNumber(chapterNumber)
-    const metadata = { ...(selectedProject.metadata || {}), writer_room_active_chapter: chapterNumber }
-    try {
-      const response = (await updateCreativeProject(selectedProject.id, { metadata })) as CreativeProjectResponse
-      if (response.data) {
-        setSelectedProject(response.data)
-        setProjects((prev) => prev.map((item) => (item.id === response.data.id ? response.data : item)))
-      }
-    } catch (error: any) {
-      // The local selection remains usable; persistence can retry on the next chapter switch.
-      message.warning(error?.message || '保存当前写作章节失败')
-    }
-  }
-
-  async function handleCreativeSkillIdsChange(nextSkillIds: string[]) {
-    if (!selectedProject) return
-    const settings = {
-      ...(selectedProject.settings || {}),
-      creative_skill_ids: nextSkillIds,
-    }
-    try {
-      const response = (await updateCreativeProject(selectedProject.id, { settings })) as CreativeProjectResponse
-      if (response.data) {
-        setSelectedProject(response.data)
-        setProjects((prev) => prev.map((item) => (item.id === response.data.id ? response.data : item)))
-        message.success('已保存写作方法包')
-      }
-    } catch (error: any) {
-      message.error(error?.message || '保存写作方法包失败')
-    }
-  }
 
   const selectedProjectIndex = useMemo(
     () => projects.findIndex((item) => item.id === selectedId),
@@ -904,6 +871,136 @@ export default function StoryPage() {
 
   const contentForChapter = (contentType: string, chapterNumber: number) =>
     contentByChapter[contentType]?.[chapterNumber]
+
+  // handleCreate 等 抽到 hooks/useProjectContentActions.ts
+  const {
+    handleCreate,
+    handleRename,
+    handleDeleteProject,
+    handleLinkAsset,
+    handleSaveContent,
+    handleSaveContentPackage,
+    handlePlanContentPackage,
+    handleGenerateContentPackageImage,
+    handleBatchGenerateContentPackageImages,
+    handleExtractCharacters,
+    handleSyncCharacters,
+    handleSyncProjectBible,
+    handleExtractWorld,
+    openRenameModal,
+    openContentPackageEditor,
+  } = useProjectContentActions({
+    characterExtractionResult,
+    contentPackageContent,
+    contentPackageData,
+    contentPackageForm,
+    form,
+    handleInlineGenerateImage,
+    idea,
+    isContentPackageProject,
+    loadContents,
+    loadProjectAssets,
+    loadProjects,
+    refreshSelected,
+    renameForm,
+    searchParams,
+    selectedLlm,
+    selectedModel,
+    selectedNovelAsset,
+    selectedProject,
+    setCharacterExtractionLoading,
+    setCharacterExtractionOpen,
+    setCharacterExtractionResult,
+    setContentPackageBatchRunning,
+    setContentPackageOpen,
+    setContents,
+    setCreateOpen,
+    setGenerationLogs,
+    setLoadingAction,
+    setPendingContentPackageProjectId,
+    setProjectAssets,
+    setProjects,
+    setRenameOpen,
+    setSavingContentId,
+    setSelectedId,
+    setSelectedProject,
+    setWriterRoomContents,
+  })
+
+  // handleGenerateCharacterPortrait 等 抽到 hooks/usePortraitStoryboardActions.ts
+  const {
+    handleGenerateCharacterPortrait,
+    buildProjectCharacterPortraitPrompt,
+    handleBatchGenerateStoryboardImages,
+    handleUpdateStoryboardPanelReferences,
+    handleMatchReferenceAssets,
+  } = usePortraitStoryboardActions({
+    activeChapterNumber,
+    characterDetails,
+    contentForChapter,
+    contents,
+    defaultImageModel,
+    defaultImageSupportsReferenceImages,
+    handleInlineGenerateImage,
+    handleSaveContent,
+    inlineImages,
+    loadCharacterDetailsForIds,
+    loadContents,
+    loadGenerationLogs,
+    loadProjectAssets,
+    outline,
+    projectAssets,
+    refreshSelected,
+    selectedLlm,
+    selectedModel,
+    selectedProject,
+    setBatchStoryboardImageChapter,
+    setLoadingAction,
+    setLoadingChapterAction,
+    setPortraitGeneratingCharacter,
+  })
+
+  // handleActiveChapterChange 等 抽到 hooks/useWorkbenchPreferenceActions.ts
+  const {
+    handleActiveChapterChange,
+    handleCreativeSkillIdsChange,
+    handleDefaultImageModelChange,
+    handleRunPipeline,
+    handleAgentAdvanceProject,
+    handleOpenVideoGeneration,
+    handleOpenPrevis,
+  } = useWorkbenchPreferenceActions({
+    activeChapterNumber,
+    activeChapterRestoreRef,
+    activeProjectMeta,
+    chapterCount,
+    chapters,
+    comicPageCount,
+    comicStyle,
+    defaultImageModel,
+    imageBackends,
+    loadContents,
+    loadGenerationLogs,
+    loadProjectAssets,
+    navigate,
+    outline,
+    pipelineChapters,
+    pipelineContinueOnError,
+    pipelineResult,
+    pipelineSkipExisting,
+    pipelineStages,
+    refreshSelected,
+    selectedLlm,
+    selectedModel,
+    selectedProject,
+    setActiveChapterNumber,
+    setLoadingAction,
+    setPipelineResult,
+    setPipelineRunStatus,
+    setProjects,
+    setSavingImageModel,
+    setSelectedProject,
+  })
 
   const productionStages = useMemo(() => {
     const chapterTarget = Math.max(chapters.length, 1)
@@ -1027,38 +1124,6 @@ export default function StoryPage() {
   // 持久化：项目顶部"文本模型 / 模型"选择会写入项目 metadata，
   // 刷新页面后能恢复（与默认生图模型一致的处理方式）。
 
-  async function handleDefaultImageModelChange(value?: string) {
-    if (!selectedProject) return
-    const backend = imageBackends.find((item) => item.name === value)
-    const nextMeta = { ...activeProjectMeta }
-    if (backend) {
-      nextMeta.default_image_model = {
-        name: backend.name,
-        provider: backend.provider,
-        provider_label: backend.provider_label,
-        model: backend.model,
-        default_size: backend.supported_sizes?.[0] || '1024x1024',
-        support_reference_image: Boolean(backend.support_reference_image),
-        capabilities: backend.capabilities || [],
-      }
-    } else {
-      delete nextMeta.default_image_model
-    }
-
-    setSavingImageModel(true)
-    try {
-      const response = (await updateCreativeProject(selectedProject.id, { metadata: nextMeta })) as CreativeProjectResponse
-      if (response.data) {
-        setSelectedProject(response.data)
-        setProjects((prev) => prev.map((item) => (item.id === response.data.id ? response.data : item)))
-      }
-      message.success(backend ? '默认生图模型已保存' : '已清除默认生图模型')
-    } catch (error: any) {
-      message.error(error?.message || '保存默认生图模型失败')
-    } finally {
-      setSavingImageModel(false)
-    }
-  }
 
 
 
@@ -1073,46 +1138,6 @@ export default function StoryPage() {
 
 
 
-  async function handleCreate(values: any) {
-    setLoadingAction('create')
-    try {
-      let response: CreativeProjectResponse
-      if (values.source_type === 'novel') {
-        const chapterIndices = [
-          ...(Array.isArray(values.chapter_indices) ? values.chapter_indices : []),
-          ...parseChapterRange(values.chapter_range || ''),
-        ].filter((value, index, array) => Number.isFinite(value) && value > 0 && array.indexOf(value) === index)
-        response = (await createCreativeProjectFromNovel({
-          asset_id: values.novel_asset_id,
-          chapter_indices: chapterIndices,
-          title: values.title || getNovelDisplayTitle(selectedNovelAsset),
-          project_type: values.project_type,
-          production_profile: values.production_profile,
-        })) as CreativeProjectResponse
-      } else {
-        response = (await createCreativeProject({
-          title: values.title,
-          idea: values.idea,
-          project_type: values.project_type,
-           production_profile: values.production_profile,
-           source_type: 'original_idea',
-           character_id: searchParams.get('character_id') || undefined,
-           metadata: values.creation_brief ? { creation_brief: values.creation_brief } : undefined,
-        })) as CreativeProjectResponse
-      }
-      message.success('项目已创建')
-      setCreateOpen(false)
-      form.resetFields()
-      if (response.data.production_profile?.production_family === 'content_package') {
-        setPendingContentPackageProjectId(response.data.id)
-      }
-      await loadProjects(response.data.id)
-    } catch (error: any) {
-      message.error(error?.message || '创建失败')
-    } finally {
-      setLoadingAction(null)
-    }
-  }
 
   useEffect(() => {
     if (!pendingContentPackageProjectId || selectedProject?.id !== pendingContentPackageProjectId) return
@@ -1121,434 +1146,13 @@ export default function StoryPage() {
   }, [pendingContentPackageProjectId, selectedProject?.id])
 
   // 打开重命名弹窗，并把当前项目名预填到表单
-  function openRenameModal() {
-    if (!selectedProject) {
-      message.warning('请先选择项目')
-      return
-    }
-    renameForm.setFieldsValue({ title: selectedProject.title || '' })
-    setRenameOpen(true)
-  }
 
   // 提交重命名：调用 PATCH 接口更新项目名，并刷新当前项目
-  async function handleRename(values: { title: string }) {
-    if (!selectedProject) return
-    const nextTitle = (values.title || '').trim()
-    if (!nextTitle) {
-      message.error('项目名不能为空')
-      return
-    }
-    if (nextTitle === selectedProject.title) {
-      setRenameOpen(false)
-      return
-    }
-    setLoadingAction('rename')
-    try {
-      const response = (await updateCreativeProject(selectedProject.id, { title: nextTitle })) as CreativeProjectResponse
-      setSelectedProject(response.data)
-      // 同步刷新项目列表中的标题
-      setProjects((prev) => prev.map((p) => (p.id === response.data.id ? response.data : p)))
-      message.success('项目已重命名')
-      setRenameOpen(false)
-    } catch (error: any) {
-      message.error(error?.message || '重命名失败')
-    } finally {
-      setLoadingAction(null)
-    }
-  }
 
-  async function handleDeleteProject() {
-    if (!selectedProject) return
-    const deletingId = selectedProject.id
-    setLoadingAction('delete_project')
-    try {
-      await deleteCreativeProject(deletingId)
-      message.success('项目已删除，角色库和素材库资产已保留')
-      setSelectedId('')
-      setSelectedProject(null)
-      setContents([])
-      setWriterRoomContents([])
-      setProjectAssets([])
-      setGenerationLogs([])
-      await loadProjects()
-    } catch (error: any) {
-      message.error(error?.message || '删除项目失败')
-    } finally {
-      setLoadingAction(null)
-    }
-  }
 
   // 数据层（项目/内容/素材/日志/连续性/叙事等 32 个状态与 16 个加载函数）
   // 抽到 hooks/useWorkspaceData.ts
 
-  async function handleLinkAsset(assetId: string, role: string, metadata?: Record<string, any>) {
-    if (!selectedProject || !assetId.trim()) return
-    setLoadingAction('asset')
-    try {
-      await linkCreativeProjectAsset(selectedProject.id, {
-        asset_id: assetId.trim(),
-        role,
-        relation: role === 'output' ? 'derived_from' : 'references',
-        metadata: metadata || {},
-      })
-      message.success('素材已关联到项目')
-      await loadProjectAssets(selectedProject.id)
-    } catch (error: any) {
-      message.error(error?.message || '关联素材失败')
-    } finally {
-      setLoadingAction(null)
-    }
-  }
-
-  async function handleSaveContent(
-    contentId: string,
-    patch: { title?: string; data?: Record<string, any>; text_content?: string; is_locked?: boolean },
-  ) {
-    if (!selectedProject) return
-    setSavingContentId(contentId)
-    try {
-      await updateCreativeProjectContent(selectedProject.id, contentId, patch)
-      message.success('内容已保存')
-      await loadContents(selectedProject.id)
-    } catch (error: any) {
-      message.error(error?.message || '保存失败')
-    } finally {
-      setSavingContentId(null)
-    }
-  }
-
-  function openContentPackageEditor() {
-    if (!selectedProject || !isContentPackageProject) return
-    const existing = contentPackageData || {}
-    contentPackageForm.setFieldsValue({
-      title: existing.title || selectedProject.title,
-      topic: existing.topic || idea || selectedProject.title,
-      brief: existing.brief || String(selectedProject.metadata?.creation_brief || ''),
-      items: Array.isArray(existing.items) && existing.items.length
-        ? existing.items
-        : [{ title: '', text: '', fact: '', source: '', source_url: '', image_prompt: '' }],
-    })
-    setContentPackageOpen(true)
-  }
-
-  async function handleSaveContentPackage(values: any) {
-    if (!selectedProject) return
-    setLoadingAction('create')
-    try {
-      await saveCreativeProjectContentPackage(
-        selectedProject.id,
-        {
-          package_type: selectedProject.production_profile?.package_type,
-          title: values.title,
-          topic: values.topic,
-          brief: values.brief,
-          items: (values.items || []).map((item: any, index: number) => ({
-            ...item,
-            id: item.id || `item-${index + 1}`,
-            index: index + 1,
-            status: item.status || 'draft',
-          })),
-        },
-        contentPackageContent?.id,
-      )
-      message.success('内容包已保存为新版本')
-      setContentPackageOpen(false)
-      await loadContents(selectedProject.id)
-    } catch (error: any) {
-      message.error(error?.message || '保存内容包失败')
-    } finally {
-      setLoadingAction(null)
-    }
-  }
-
-  async function handlePlanContentPackage() {
-    if (!selectedProject || !isContentPackageProject) return
-    const values = contentPackageForm.getFieldsValue()
-    if (!String(values.topic || '').trim()) {
-      message.warning('请先填写主题')
-      return
-    }
-    setLoadingAction('create')
-    try {
-      const response: any = await planCreativeProjectContentPackage(selectedProject.id, {
-        topic: String(values.topic).trim(),
-        brief: String(values.brief || ''),
-        item_count: Math.max(1, Math.min(Number(values.item_count || 12), 80)),
-        prompt_only: Boolean(values.prompt_only),
-      })
-      const generated = response?.data?.data || response?.data || {}
-      contentPackageForm.setFieldsValue({
-        title: generated.title || values.title || selectedProject.title,
-        topic: generated.topic || values.topic,
-        brief: generated.brief || values.brief || '',
-        items: Array.isArray(generated.items) ? generated.items : [],
-      })
-      await loadContents(selectedProject.id)
-      message.success('内容包已生成并保存，可继续编辑')
-    } catch (error: any) {
-      message.error(error?.message || '生成内容包失败')
-    } finally {
-      setLoadingAction(null)
-    }
-  }
-
-  async function handleGenerateContentPackageImage(index: number, fieldName: number) {
-    if (!selectedProject) return
-    const item = contentPackageForm.getFieldValue(['items', fieldName]) || {}
-    const prompt = String(item.image_prompt || '').trim()
-    if (!prompt) {
-      message.warning('请先填写图片提示词')
-      return
-    }
-    await handleInlineGenerateImage(prompt, {
-      contentId: contentPackageContent?.id,
-      sourceType: 'content_package',
-      sourceIndex: index,
-      sourceTitle: String(item.title || `内容单元 ${index + 1}`),
-    }, { awaitAsync: true })
-  }
-
-  async function handleBatchGenerateContentPackageImages() {
-    if (!selectedProject || !contentPackageContent) return
-    const values = contentPackageForm.getFieldsValue(true)
-    const items = Array.isArray(values.items) ? values.items : []
-    const targets = items
-      .map((item: any, index: number) => ({ item, index }))
-      .filter(({ item }: any) => String(item?.image_prompt || '').trim())
-    if (!targets.length) {
-      message.warning('当前内容包没有可用的图片提示词')
-      return
-    }
-    setContentPackageBatchRunning(true)
-    let generated = 0
-    let failed = 0
-    try {
-      for (const { item, index } of targets) {
-        contentPackageForm.setFieldValue(['items', index, 'status'], 'generating')
-        try {
-          const result: any = await handleInlineGenerateImage(String(item.image_prompt).trim(), {
-            contentId: contentPackageContent.id,
-            sourceType: 'content_package',
-            sourceIndex: index,
-            sourceTitle: String(item.title || `内容单元 ${index + 1}`),
-          }, { awaitAsync: true })
-          contentPackageForm.setFieldValue(['items', index, 'status'], result?.assetId ? 'succeeded' : 'ready')
-          if (result?.assetId) {
-            contentPackageForm.setFieldValue(['items', index, 'asset_ids'], [result.assetId])
-            contentPackageForm.setFieldValue(['items', index, 'image_url'], result.url || '')
-          }
-          generated += result?.assetId ? 1 : 0
-        } catch (error: any) {
-          contentPackageForm.setFieldValue(['items', index, 'status'], 'failed')
-          failed += 1
-          message.error(`${item.title || `第 ${index + 1} 项`}：${error?.message || '生图失败'}`)
-        }
-      }
-      const latest = contentPackageForm.getFieldsValue(true)
-      await saveCreativeProjectContentPackage(
-        selectedProject.id,
-        {
-          package_type: selectedProject.production_profile?.package_type,
-          title: latest.title,
-          topic: latest.topic,
-          brief: latest.brief,
-          items: (latest.items || []).map((item: any, index: number) => ({
-            ...item,
-            id: item.id || `item-${index + 1}`,
-            index: index + 1,
-          })),
-        },
-        contentPackageContent.id,
-      )
-      await loadContents(selectedProject.id)
-      message.success(`批量生图完成：成功 ${generated}，失败 ${failed}`)
-    } finally {
-      setContentPackageBatchRunning(false)
-    }
-  }
-
-  async function handleUpdateStoryboardPanelReferences(
-    contentId: string,
-    panelNumber: number,
-    referenceAssetIds: string[],
-  ) {
-    const source = contents.find((item) => item.id === contentId)
-    if (!source) return
-    const panels = Array.isArray(source.data?.panels) ? source.data.panels : []
-    const nextData = {
-      ...source.data,
-      panels: panels.map((panel: any) => {
-        if (Number(panel.panel_number) !== Number(panelNumber)) return panel
-        return { ...panel, reference_asset_ids: dedupeStrings(referenceAssetIds) }
-      }),
-    }
-    await handleSaveContent(contentId, { data: nextData })
-  }
-
-  async function handleSyncCharacters() {
-    if (!selectedProject) return
-    setLoadingAction('sync_characters')
-    try {
-      const response = (await syncCreativeProjectCharacters(selectedProject.id)) as CreativeProjectGenerateResponse
-      message.success('大纲角色已同步到角色库')
-      await refreshSelected(response.project || null)
-      await loadProjectAssets(selectedProject.id)
-    } catch (error: any) {
-      message.error(error?.message || '同步角色库失败')
-    } finally {
-      setLoadingAction(null)
-    }
-  }
-
-  async function handleExtractCharacters(apply = false) {
-    if (!selectedProject) return
-    setCharacterExtractionLoading(true)
-    try {
-      const response: any = await extractCreativeProjectCharacters(selectedProject.id, {
-        provider: selectedLlm || undefined,
-        model: selectedModel || undefined,
-        apply,
-        cards: apply ? (characterExtractionResult?.characters || undefined) : undefined,
-      })
-      const result = response.data || response.result || response
-      setCharacterExtractionResult(result)
-      setCharacterExtractionOpen(true)
-      if (apply) {
-        message.success(`已写入 ${result.applied_characters?.length || 0} 个角色`)
-        await refreshSelected(selectedProject)
-        await loadProjectAssets(selectedProject.id)
-      }
-    } catch (error: any) {
-      message.error(error?.message || '提取角色失败')
-    } finally {
-      setCharacterExtractionLoading(false)
-    }
-  }
-
-  async function handleSyncProjectBible(overwrite = false) {
-    if (!selectedProject) return
-    setLoadingAction('project_bible')
-    try {
-      const response = (await syncCreativeProjectBible(selectedProject.id, { overwrite })) as { data?: ProjectContent[] }
-      const count = response.data?.length || 0
-      message.success(count ? `已同步 ${count} 张圣经/世界资产卡` : '圣经/世界资产已是最新，无需补齐')
-      await loadContents(selectedProject.id)
-      await refreshSelected(selectedProject)
-    } catch (error: any) {
-      message.error(error?.message || '同步项目圣经失败')
-    } finally {
-      setLoadingAction(null)
-    }
-  }
-
-  const handleExtractWorld = async () => {
-    if (!selectedProject) return
-    setLoadingAction('world_extract')
-    try {
-      const result = await startProjectWorldExtraction(selectedProject.id, {
-        model: selectedModel || undefined,
-      })
-      if (!result.run_id) {
-        throw new Error(result.status || '提取未返回运行')
-      }
-      message.success(`已生成 ${result.candidate_count} 条世界设定候选，正在打开审阅`)
-      window.location.href = `/novel-world?snapshot_id=${encodeURIComponent(result.snapshot_id)}&run_id=${encodeURIComponent(result.run_id)}`
-    } catch (error: any) {
-      message.error(error?.message || '生成世界设定候选失败')
-    } finally {
-      setLoadingAction(null)
-    }
-  }
-
-  function buildProjectCharacterPortraitPrompt(record: StoryOutlineCharacter) {
-    const parts = [
-      '单人角色立绘，完整角色设定图，适合作为后续漫画/短剧分镜的一致性参考图。',
-      record.name ? `角色名：${record.name}` : '',
-      record.role ? `角色定位：${record.role}` : '',
-      record.age_range ? `年龄范围：${record.age_range}` : '',
-      record.appearance ? `外貌特征：${record.appearance}` : '',
-      record.costume_hint ? `服装与配饰：${record.costume_hint}` : '',
-      record.signature_items?.length ? `标志物：${record.signature_items.join('、')}` : '',
-      record.expressions?.length ? `常用表情：${record.expressions.join('、')}` : '',
-      record.poses?.length ? `常用姿态：${record.poses.join('、')}` : '',
-      record.visual_consistency ? `一致性规则：${record.visual_consistency}` : '',
-      record.personality ? `性格气质：${record.personality}` : '',
-      record.image_prompt ? `既有生图提示：${record.image_prompt}` : '',
-      outline.image_style_prompt ? `项目统一画风：${outline.image_style_prompt}` : '',
-      '要求：正面半身或全身清晰可辨，干净背景，角色特征稳定，不添加无关人物，不遮挡脸部。',
-    ]
-    return parts.filter(Boolean).join('\n')
-  }
-
-  async function handleGenerateCharacterPortrait(record: StoryOutlineCharacter) {
-    if (!selectedProject) return
-    if (!record.character_id) {
-      message.warning('请先同步角色库，再生成角色立绘')
-      return
-    }
-    if (!defaultImageModel.name) {
-      message.warning('请先在顶部选择默认生图模型')
-      return
-    }
-    const key = record.character_id || record.name || ''
-    setPortraitGeneratingCharacter(key)
-    setLoadingAction('portrait_generate')
-    try {
-      const prompt = buildProjectCharacterPortraitPrompt(record)
-      const size = defaultImageModel.default_size || '1024x1024'
-      const loadedCharacters = await loadCharacterDetailsForIds([record.character_id])
-      const referenceImages = dedupeReferenceImageItems(
-        getCharacterReferenceItems(loadedCharacters[record.character_id] || characterDetails[record.character_id]),
-      ).map((item) => item.url).filter(Boolean)
-      const response = await generateCharacterPortrait(record.character_id, {
-        prompt,
-        provider: defaultImageModel.name,
-        model: defaultImageModel.model || undefined,
-        size,
-        n: 1,
-        reference_images: referenceImages,
-      })
-      const nodeId = response?.data?.node_id
-      if (nodeId) {
-        await linkCreativeProjectAsset(selectedProject.id, {
-          asset_id: nodeId,
-          role: 'character',
-          relation: 'portrait',
-          metadata: {
-            character_id: record.character_id,
-            character_name: record.name,
-            prompt,
-            provider: defaultImageModel.name,
-            model: defaultImageModel.model || '',
-            generated_from: 'creative_project_outline_character',
-            generated_at: new Date().toISOString(),
-          },
-        })
-        const nextOutline = {
-          ...outline,
-          characters: (outline.characters || []).map((item: StoryOutlineCharacter) => {
-            const sameCharacter = item.character_id
-              ? item.character_id === record.character_id
-              : item.name === record.name
-            if (!sameCharacter) return item
-            const refs = Array.from(new Set([...(item.reference_asset_ids || []), nodeId]))
-            return { ...item, portrait_asset_id: nodeId, reference_asset_ids: refs }
-          }),
-        }
-        const projectResponse = (await updateCreativeProject(selectedProject.id, { outline: nextOutline })) as CreativeProjectResponse
-        await refreshSelected(projectResponse.data || selectedProject)
-        await loadProjectAssets(selectedProject.id)
-      } else {
-        await refreshSelected(selectedProject)
-      }
-      message.success(nodeId ? '角色立绘已生成并关联到项目参考卡' : '角色立绘已生成')
-    } catch (error: any) {
-      message.error(error?.message || '生成角色立绘失败')
-    } finally {
-      setPortraitGeneratingCharacter(null)
-      setLoadingAction(null)
-    }
-  }
 
 
 
@@ -1559,131 +1163,6 @@ export default function StoryPage() {
 
 
 
-  async function handleRunPipeline(options: { retryFailed?: boolean } = {}) {
-    if (!selectedProject) return
-    const retryFailedRows = options.retryFailed ? getPipelineFailedRows(pipelineResult) : []
-    const retryStages = Array.from(
-      new Set(retryFailedRows.map((item) => item.stage).filter(isPipelineStageValue)),
-    )
-    const retryChapters = Array.from(
-      new Set(
-        retryFailedRows
-          .map((item) => Number(item.chapter_number || 0))
-          .filter((chapter) => Number.isFinite(chapter) && chapter > 0),
-      ),
-    ).sort((a, b) => a - b)
-    const effectiveStages = options.retryFailed ? retryStages : pipelineStages
-    const effectiveSkipExisting = options.retryFailed ? true : pipelineSkipExisting
-    const effectiveContinueOnError = options.retryFailed ? true : pipelineContinueOnError
-
-    if (options.retryFailed && !retryFailedRows.length) {
-      message.info('本次批量生产没有失败步骤')
-      return
-    }
-    if (!effectiveStages.length) {
-      message.warning('请至少选择一个生产阶段')
-      return
-    }
-    const parsedChapters = parseChapterRange(pipelineChapters)
-    const effectiveChapters = options.retryFailed ? retryChapters : parsedChapters
-    if (!effectiveChapters.length && !effectiveStages.some((stage) => ['outline', 'sync_characters', 'chapter_plan'].includes(stage))) {
-      message.warning('请填写章节范围，例如 1、1-3 或 1,3,5')
-      return
-    }
-
-    setLoadingAction('pipeline')
-    setPipelineRunStatus('running')
-    if (!options.retryFailed) {
-      setPipelineResult(null)
-    }
-    try {
-      const response = (await runCreativeProjectPipeline(selectedProject.id, {
-        stages: effectiveStages,
-        chapters: effectiveChapters.length ? effectiveChapters : undefined,
-        chapter_count: effectiveChapters.length ? undefined : chapterCount,
-        page_count: comicPageCount,
-        visual_style: comicStyle || undefined,
-        provider: selectedLlm || undefined,
-        model: selectedModel || undefined,
-        skip_existing: effectiveSkipExisting,
-        continue_on_error: effectiveContinueOnError,
-        match_source_type: 'storyboard',
-      })) as CreativeProjectGenerateResponse<PipelineResult>
-
-      const result = response.data || null
-      setPipelineResult(result)
-      const { generated, skipped, failed } = getPipelineSummary(result)
-      setPipelineRunStatus(failed > 0 ? (generated > 0 || skipped > 0 ? 'partial' : 'failed') : 'success')
-      message.success(`${options.retryFailed ? '失败步骤重试' : '批量生产'}完成：生成 ${generated}，跳过 ${skipped}，失败 ${failed}`)
-      if (response.project) {
-        await refreshSelected(response.project)
-      } else {
-        await refreshSelected(selectedProject)
-      }
-      await loadContents(selectedProject.id)
-      await loadProjectAssets(selectedProject.id)
-      await loadGenerationLogs(selectedProject.id)
-    } catch (error: any) {
-      setPipelineRunStatus('failed')
-      message.error(error?.message || '批量生产失败')
-      await loadGenerationLogs(selectedProject.id)
-    } finally {
-      setLoadingAction(null)
-    }
-  }
-
-  async function handleAgentAdvanceProject() {
-    if (!selectedProject) return
-    const parsedChapters = parseChapterRange(pipelineChapters)
-    const targetChapters = parsedChapters.length ? parsedChapters : [activeChapterNumber]
-    const selectedStageLabels = pipelineStages.map((stage) => pipelineStageLabels[stage] || stage)
-    setLoadingAction('agent_advance')
-    try {
-      const response = await agentChat({
-        profile_id: 'creative-director',
-        message: [
-          `请作为创作导演推进创作项目《${selectedProject.title}》。`,
-          `优先检查并推进章节：${targetChapters.join('、')}。`,
-          `当前勾选的生产阶段：${selectedStageLabels.join('、') || '未选择'}。`,
-          '请先读取项目上下文，判断缺口，再在授权工具范围内调用创作项目工具；如果需要高风险或消耗型工具，请生成待确认步骤。',
-          '输出时给出：已完成动作、发现的问题、下一步建议，以及涉及的项目/章节/素材对象。',
-        ].join('\n'),
-        context: {
-          source_page: 'creative_project',
-          action: 'advance_project',
-          project_id: selectedProject.id,
-          creative_project_id: selectedProject.id,
-          project_title: selectedProject.title,
-          current_stage: selectedProject.current_stage,
-          active_chapter_number: activeChapterNumber,
-          target_chapters: targetChapters,
-          pipeline_stages: pipelineStages,
-          pipeline_stage_labels: selectedStageLabels,
-          chapter_count: chapterCount,
-          page_count: comicPageCount,
-          visual_style: comicStyle,
-          provider: selectedLlm || undefined,
-          model: selectedModel || undefined,
-          default_image_model: defaultImageModel,
-          skip_existing: pipelineSkipExisting,
-          continue_on_error: pipelineContinueOnError,
-        },
-      })
-      const runId = response?.run_id || ''
-      Modal.success({
-        title: '已创建智能体推进任务',
-        content: runId
-          ? `Run ${runId} 已创建，可以到智能体工作室查看执行轨迹、确认高风险步骤或继续委派子任务。`
-          : '已发送给创作导演，可以到智能体工作室查看执行结果。',
-        okText: '去智能体工作室',
-        onOk: () => navigate('/agent'),
-      })
-    } catch (error: any) {
-      message.error(error?.message || '创建智能体推进任务失败')
-    } finally {
-      setLoadingAction(null)
-    }
-  }
 
 
 
@@ -1693,29 +1172,6 @@ export default function StoryPage() {
 
 
 
-  async function handleMatchReferenceAssets(contentId: string) {
-    if (!selectedProject) return
-    const source = contents.find((item) => item.id === contentId)
-    const chapterNumber = source?.chapter_number || source?.episode_number || activeChapterNumber
-    setLoadingAction('reference_match')
-    setLoadingChapterAction({ action: null, chapterNumber })
-    try {
-      await matchCreativeProjectReferenceAssets(selectedProject.id, {
-        content_id: contentId,
-        provider: selectedLlm || undefined,
-        model: selectedModel || undefined,
-      })
-      message.success('参考卡已匹配并写回')
-      await loadContents(selectedProject.id)
-      await loadGenerationLogs(selectedProject.id)
-    } catch (error: any) {
-      message.error(error?.message || '参考卡匹配失败')
-      await loadGenerationLogs(selectedProject.id)
-    } finally {
-      setLoadingAction(null)
-      setLoadingChapterAction({ action: null, chapterNumber: null })
-    }
-  }
 
 
 
@@ -1724,151 +1180,22 @@ export default function StoryPage() {
 
 
 
-  async function handleOpenPrevis(storyboardContentId: string, panelNumber: number, title?: string) {
-    if (!selectedProject) return
-    try {
-      const scene = await getOrCreatePrevisScene({
-        projectId: selectedProject.id,
-        storyboardContentId,
-        panelNumber,
-        title,
-      })
-      navigate(`/previs?scene_id=${encodeURIComponent(scene.id)}`)
-    } catch (error: any) {
-      message.error(error?.message || '打开 3D 预演失败')
-    }
-  }
 
-  function handleOpenVideoGeneration(prompt: string, context: VideoGenerationContext = {}) {
-    if (!selectedProject) return
-    const params = new URLSearchParams({
-      prompt: prompt.trim(),
-      project_id: selectedProject.id,
-      content_id: context.contentId || '',
-      chapter_number: String(context.chapterNumber ?? activeChapterNumber),
-      source_index: context.sourceIndex !== undefined ? String(context.sourceIndex) : '',
-      source_type: context.sourceType || 'storyboard_panel',
-      source_title: context.sourceTitle || '',
-      aspect_ratio: '9:16',
-      duration: String(normalizeStoryboardVideoDuration(context.durationSeconds)),
-      generate_audio: context.generateAudio ? 'true' : 'false',
-    })
-    const referenceAssetIds = dedupeStrings([
-      ...(context.referenceAssetIds || []),
-      ...(context.portraitNodeIds || []),
-    ])
-    if (referenceAssetIds.length) params.set('reference_asset_ids', referenceAssetIds.join(','))
-    if (context.musicHint?.trim()) params.set('music_hint', context.musicHint.trim())
-    navigate(`/video-gen?${params.toString()}`)
-  }
 
-  async function handleBatchGenerateStoryboardImages(chapterNumber: number) {
-    const storyboard = contentForChapter('storyboard', chapterNumber)
-    if (!storyboard) {
-      message.warning('请先生成这一章的分镜')
-      return
-    }
-    if (!defaultImageModel.name) {
-      message.warning('请先在顶部选择默认生图模型')
-      return
-    }
 
-    const panels = (storyboard.data?.panels || []).filter((panel: any) => panel?.image_prompt)
-    if (!panels.length) {
-      message.warning('当前分镜没有可用的生图提示词')
-      return
-    }
-    const pendingPanels = panels.filter((panel: any) => {
-      const key = imageContextKey({
-        contentId: storyboard.id,
-        sourceType: 'storyboard_panel',
-        sourceIndex: panel.panel_number,
-        chapterNumber,
-      })
-      return !inlineImages[key]
-    })
-    if (!pendingPanels.length) {
-      message.success('本话分镜图都已经生成过了')
-      return
-    }
-    const plannedCharacterIds = dedupeStrings(
-      panels.flatMap((panel: any) => [
-        ...(panel.character_ids || []),
-        ...selectReferenceAssetsForPrompt(
-          projectAssets,
-          [panel.image_prompt, panel.action, panel.location].filter(Boolean).join('\n'),
-          4,
-        ).map(
-          (asset) => asset.metadata?.character_id,
-        ),
-      ]),
-    )
-    const loadedCharacters = await loadCharacterDetailsForIds(plannedCharacterIds)
-    const referencePlans = panels.map((panel: any) =>
-      buildStoryboardPanelReferencePlan({
-        panel,
-        projectAssets,
-        characterDetails: loadedCharacters,
-        supportsReferenceImages: defaultImageSupportsReferenceImages,
-      }),
-    )
-    const referenceSummary = buildStoryboardReferenceSummary(referencePlans, 0, defaultImageSupportsReferenceImages)
-    if (referenceSummary.missingEffectivePlanPanels) {
-      message.warning(`有 ${referenceSummary.missingEffectivePlanPanels} 个分镜没有角色/参考卡规划，可先点“匹配参考卡”提升一致性`)
-    }
-    if (referenceSummary.noUsableReferencePanels) {
-      message.warning(`有 ${referenceSummary.noUsableReferencePanels} 个分镜暂时没有可发送参考图，可先补角色基准图或项目参考卡`)
-    }
-    if (referenceSummary.unresolvedCharacterIds.length) {
-      message.warning(`有 ${referenceSummary.unresolvedCharacterIds.length} 个角色资料未加载成功，本次会继续生成但参考图可能不完整`)
-    }
-    if (!defaultImageSupportsReferenceImages) {
-      message.info('当前默认生图模型未声明支持参考图，本次会保留参考卡 lineage，但不会上传参考图图片')
-    } else if (referenceSummary.sentReferenceImages) {
-      message.info(`本次批量生成最多会随分镜发送 ${referenceSummary.sentReferenceImages} 张参考图`)
-    }
 
-    const confirmed = await new Promise<boolean>((resolve) => {
-      Modal.confirm({
-        title: '确认批量生图',
-        content: `将使用「${defaultImageModel.name}」提交 ${pendingPanels.length} 个分镜任务，最多携带 ${referenceSummary.sentReferenceImages} 张参考图。${defaultImageSupportsReferenceImages ? '' : '当前模型不会上传参考图。'}`,
-        okText: '开始生成',
-        cancelText: '返回检查',
-        onOk: () => resolve(true),
-        onCancel: () => resolve(false),
-      })
-    })
-    if (!confirmed) return
 
-    setBatchStoryboardImageChapter(chapterNumber)
-    try {
-      let generated = 0
-      for (const panel of panels) {
-        const key = imageContextKey({
-          contentId: storyboard.id,
-          sourceType: 'storyboard_panel',
-          sourceIndex: panel.panel_number,
-          chapterNumber,
-        })
-        if (inlineImages[key]) continue
-        const completed = await handleInlineGenerateImage(panel.image_prompt, {
-          contentId: storyboard.id,
-          sourceType: 'storyboard_panel',
-          sourceIndex: panel.panel_number,
-          sourceTitle: panel.action || `分镜 ${panel.panel_number}`,
-          chapterNumber,
-          referenceAssetIds: panel.reference_asset_ids || [],
-          characterIds: panel.character_ids || [],
-          portraitNodeIds: panel.portrait_node_ids || [],
-          portraitVersionIds: panel.portrait_version_ids || [],
-        }, { awaitAsync: true })
-        if (completed) generated += 1
-      }
-      message.success(generated ? `已批量生成 ${generated} 张分镜图` : '本话分镜图都已经生成过了')
-    } finally {
-      setBatchStoryboardImageChapter(null)
-    }
-  }
+
+
+
+
+
+
+
+
+
+
+
 
   const chapterColumns = [
     {
