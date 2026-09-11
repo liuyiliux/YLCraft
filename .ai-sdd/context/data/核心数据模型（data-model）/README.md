@@ -9,6 +9,7 @@
 |---|---|
 | `概览与实体关系（summary）.md` | 任务账本五张表的分工、字段含义、可重放参数位置 |
 | `写作风格档案（writing-style-model）.md` | 风格档案与项目绑定两张表的字段语义与边界（来源：`creative-writing-style-profiles`） |
+| `Agent 运行数据模型（agent-run-model）.md` | Agent 运行域四张表/实体的字段**可得性**与关联缺口（哪些看似有、实际取不到） |
 
 ## 加载建议
 

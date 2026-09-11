@@ -57,3 +57,16 @@
 | 档案状态（`status`） | `draft` / `reviewed` / `active` / `archived` | 归档态禁用"激活"，需先 `restore` 回草稿 |
 | 档案来源类型（`source_type`） | `user_defined` / `extracted_from_source` / `agent_draft` / `builtin` | — |
 | 绑定强度（`intensity`） | `subtle` / `balanced` / `strong` | **同一枚举、三处文案不同，勿混用**：前端列表显示"轻微 / 适中 / 强烈"；注入块标题写"参考 / 贴合 / 严格" |
+
+
+## 6. Agent 工作台
+
+<!-- 来源：openspec/changes/agent-workbench-ui-redesign，导入日期：2026-09-12 -->
+
+- **`AgentThread.status` 实际取值域**：`active` / `archived`。**不要**假设还有
+  running / awaiting_confirmation / done / failed——那些状态属于 `AgentRun`，不在线程上。
+- **智能体 `default_workflow` 七档**：`general_assistant`（通用助手）、`creative_project_advance`
+  （创作项目推进）、`novel_writer_room`（小说写作室）、`character_visual_card`（角色视觉卡）、
+  `storyboard_reference_match`（分镜参考匹配）、`asset_curation`（素材整理）、`quality_review`（质量检查）。
+- **会话状态点四态与配色**：运行中（主色）/ 待确认（`#faad14`）/ 完成（`#52c41a`）/ 失败（`#ff4d4f`）。
+  **仅当前会话可得全四态**，其它会话无 run 级状态数据。
