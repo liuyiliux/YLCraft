@@ -839,6 +839,10 @@ export const activateWritingStyleProfile = (id: string) =>
 export const archiveWritingStyleProfile = (id: string) =>
   request(`/writing-styles/${id}/archive`, { method: 'POST' })
 
+/** 取消归档：把已归档档案恢复为草稿（需重新审核后激活，不跳过闸门）。 */
+export const restoreWritingStyleProfile = (id: string) =>
+  request(`/writing-styles/${id}/restore`, { method: 'POST' })
+
 /** 从来源快照提取风格草稿（恒为 draft，不自动激活）。 */
 export const extractWritingStyleFromSource = (payload: {
   snapshot_id: string

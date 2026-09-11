@@ -27,6 +27,7 @@ import { useTheme } from '../../constants/theme'
 import {
   activateWritingStyleProfile,
   archiveWritingStyleProfile,
+  restoreWritingStyleProfile,
   bindProjectWritingStyle,
   exportWritingStyleMarkdown,
   extractWritingStyleFromSource,
@@ -140,12 +141,18 @@ export default function WritingStylesPage() {
     }
   }
 
-  const runAction = async (id: string, kind: 'review' | 'activate' | 'archive') => {
+  const runAction = async (id: string, kind: 'review' | 'activate' | 'archive' | 'restore') => {
     try {
       if (kind === 'review') await reviewWritingStyleProfile(id)
       if (kind === 'activate') await activateWritingStyleProfile(id)
       if (kind === 'archive') await archiveWritingStyleProfile(id)
-      const labels = { review: '已提交审核', activate: '已激活', archive: '已归档' }
+      if (kind === 'restore') await restoreWritingStyleProfile(id)
+      const labels = {
+        review: '已提交审核',
+        activate: '已激活',
+        archive: '已归档',
+        restore: '已取消归档，恢复为草稿（需重新审核后激活）',
+      }
       message.success(labels[kind])
       refresh()
       if (detail?.id === id) {
@@ -312,6 +319,11 @@ export default function WritingStylesPage() {
             >
               激活
             </Button>
+            {row.status === 'archived' && (
+              <Button size="small" onClick={() => runAction(row.id, 'restore')}>
+                取消归档
+              </Button>
+            )}
             <Button size="small" onClick={() => exportMarkdown(row.id)}>
               导出
             </Button>
@@ -542,13 +554,22 @@ export default function WritingStylesPage() {
           <Button key="close" onClick={() => setDetailOpen(false)}>
             关闭
           </Button>,
-          <Button
-            key="archive"
-            disabled={detail?.status === 'archived'}
-            onClick={() => detail && runAction(detail.id, 'archive')}
-          >
-            归档
-          </Button>,
+          detail?.status === 'archived' ? (
+            <Button
+              key="restore"
+              type="primary"
+              onClick={() => detail && runAction(detail.id, 'restore')}
+            >
+              取消归档（恢复为草稿）
+            </Button>
+          ) : (
+            <Button
+              key="archive"
+              onClick={() => detail && runAction(detail.id, 'archive')}
+            >
+              归档
+            </Button>
+          ),
         ]}
         width={860}
       >
