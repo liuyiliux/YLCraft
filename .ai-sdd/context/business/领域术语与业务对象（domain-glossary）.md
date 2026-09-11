@@ -62,3 +62,15 @@
 | **三档生成动作** | `draft_world`（想法→多域骨架）、`expand_domain`（按层次细化整个域）、`expand_entity`（按域 schema 补单个实体字段） | `world_generation.py` |
 | **`CandidateOrigin`** | 候选来源性质：`original`（真实原文）/ `outline`（项目大纲）/ `ai_draft`（AI 创作、无原文）/ `ai_inferred`（模型推断） | `models/novel_source.py` |
 | **世界构建模板** | `layers_json` + `prompts_json`（三档提示词，支持 `{layers}`/`{domain}`/`{hint}` 占位）；`project_id` 为空即内置种子模板 | 迁移 039 |
+
+
+## 写作前置检查
+
+<!-- 来源：openspec/changes/creative-project-writing-guardrails，导入日期：2026-09-12 -->
+
+| 术语 | 定义 | 证据 |
+|---|---|---|
+| **Writing Preflight（写作前置检查）** | 对已持久化项目状态的**只读投影**：不建上下文快照、不调模型，只回答"现在能不能写这一步" | `service.py:5635` |
+| **方法包（Method Package）** | 文件型 Creative Skill（`SKILL.md`），被 preflight 返回，含 id 与 checksum | `backend/app/skills/novel/chapter-hook-rhythm/SKILL.md` |
+| **`chapter-hook-rhythm`** | 章节钩子与节奏方法包；**opt-in**（`auto_apply=false`），仅在被选中时向 T6 贡献方法指导 | design.md |
+| **T6** | Context Pack 第 6 层（表达机制注入层）；方法包只作用于此层，不改变正典边界 | design.md |

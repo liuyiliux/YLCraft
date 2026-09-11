@@ -84,3 +84,16 @@
 | 内置域字段只可追加不可删除 | 保证历史 `attributes_json` 始终可解析 | `resolve_specs` |
 | 契约外字段转建议而非丢弃 | 服务层只接受「已勾选且在属性契约内」的值，其余转为 `suggested_fields` | `expand_entity` |
 | 幂等去重 | 候选 `fingerprint = gen:{project_id}:{entity.id}` | `world_generation.py` |
+
+
+## 9. 写作前置检查规则
+
+<!-- 来源：openspec/changes/creative-project-writing-guardrails，导入日期：2026-09-12 -->
+
+| 规则 | 内容 |
+|---|---|
+| preflight 必须只读 | 不创建 `ProjectNarrativeContextSnapshot`、不调用模型，仅投影既有状态 |
+| 返回值契约固定 | 归一化 `stage` 与 `chapter_number`、有序 `checks`（`pass`/`block`）、`ready`、`blockers`、可执行的 `next_action`、可用章节大纲 source id、兼容方法与 checksum |
+| 生成方法仍是权威 | preflight 只做前置判断，不替代生成逻辑；未就绪时应解释并修复而非强行生成 |
+| opt-in 方法包默认不生效 | `auto_apply=false`，须在项目设置中被选中才写入 T6 |
+| 禁止性变更保留既有边界 | 方法包只贡献"怎么写"的方法指导，不突破候选/正典边界 |
