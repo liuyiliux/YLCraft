@@ -86,7 +86,18 @@ GET /api/v1/tasks
 
 GET /api/v1/tasks/{task_id}
   -> 返回任务详情，包含 diagnostics 和 events
+
+POST /api/v1/tasks/{task_id}/retry
+  -> 统一重试入口（任务 32/33 落地时补充）：按任务类型分派，
+     视频/图转 3D 读各自任务账本的 request_json 重建参数后复用生成端点重提交；
+     绑骨任务与图片任务分别指引到工作台与事件日志 Tab 重发
 ```
+
+任务中心聚合范围（任务 32 落地时补充）：除通用队列外，还聚合
+`video_generation_tasks` 与 `model3d_generation_tasks` 两个自有账本，
+使视频与图转 3D 任务与通用任务出现在同一列表并可取消/重试；
+Live2D 的抠图/风格转换/分层以 `live2d_processing` 任务记录（不挂项目、
+经 `PERSISTED_STANDALONE_TASK_TYPES` 放行落库）。
 
 ## Image generation integration
 
