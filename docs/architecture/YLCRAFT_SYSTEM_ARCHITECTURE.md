@@ -211,6 +211,10 @@ API 层不要承载复杂业务。新增功能优先放到 `services/<domain>`�
 | `AgentSkillDraft` | 外部 Skill、Run 转 Skill、手工编辑后的待审批草稿。 |
 | `AgentProfile` | 智能体配置，含模型、工具、默认上下文、迭代预算和显式 `can_delegate` Supervisor 能力。 |
 
+前端工作台（`frontend/src/pages/agent/index.tsx`）为三区布局：顶部控制栏（智能体 + 模型 + 默认工作流 + 会话日志 + 关键动作，并承载待确认横幅）、左栏会话、中部消息列（含默认折叠的运行轨迹与底部遥测条）。模型与默认工作流改动直接写回 `AgentProfile`。
+
+**遥测数据缺口（2026-09-12）**：`AgentRun` 目前无 `duration_ms`，也无 token 与 cost 字段；`AIUsageLog` 虽有 `total_tokens`/`cost`，但**未与 run 关联**。因此工作台底部遥测条中 Token 与成本显示 `--`（前端已声明可选字段，后端补齐即生效）。另：`/agent/threads` 列表只返回 `thread.status`（取值域实际仅 `active`/`archived`），故左栏会话状态点只有当前会话能显示 run 级状态。
+
 当前架构方向：
 
 ```mermaid
