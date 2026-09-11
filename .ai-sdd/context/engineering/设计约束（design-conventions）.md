@@ -136,3 +136,13 @@
 2. **preflight 与 Agent 共用契约**：不要让 UI 另写一套"能不能点"的判断——否则 Agent 侧解释阻塞原因时会与前端不一致。
 3. **⚠ 检索陷阱（本轮实际踩到）**：PowerShell 的 `Select-String -Path <目录> -Include *.py` **不会递归子目录**。审计时先用它搜 `chapter-hook-rhythm` 得到"不存在"，差点误判任务为假勾选；改用 `Get-ChildItem -Recurse | Select-String` 复查才发现文件就在 `backend/app/skills/novel/`。**判断"某物是否存在"必须递归搜索。**
 4. **任务注释里可能已有验收证据**：本 change 任务 #9 以日期注释记录了测试数与 Patchright smoke 结果。审计时先读任务下的注释，不要只看标题措辞就判定"无证据"。
+
+
+### 9.5 制作台与派生状态
+
+<!-- 来源：openspec/changes/story-production-desk，导入日期：2026-09-12 -->
+
+1. **派生状态优先"渲染时计算"而非"落库字段"**：制作台明确拒绝为阶段完成情况新增持久化状态，避免与 `CreativeProject.outline`、`ProjectContent`、任务记录等权威源产生第二份真相。新增任何"完成/进度"类字段前，先问一句"能不能渲染时算出来"。
+2. **导航改造不得改变写入路径**：制作台重排的是导航与呈现；后续重构 episode 工作台时**必须**继续复用 `ProjectAssetLink`、内容版本、任务记录与生成日志。
+3. **验收必须指向"当前后端"**：任务记录了一次坑——既有的 3002 静态服务器仍代理到旧端口 8000 的后端，验收数据不对；最终用临时本地静态/代理服务器指向 8004 上的当前后端，Patchright 才拿到真实渲染结果。
+4. **`/story` 的实现已迁出 `index.tsx`**：现 `index.tsx` 仅 10 行（原 13167 行），制作台相关代码在 `components/StoryWorkspaceShell.tsx`、`components/outline.tsx`、`utils.ts`。查找 `/story` 实现不要再只看 `index.tsx`。
