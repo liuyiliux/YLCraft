@@ -126,3 +126,13 @@
 3. **把"AI 能改什么"的边界前移到响应 schema**：`WorldGenerationSchema` 同时声明 `items` 与 `suggested_*`，模型无法靠"多返回一个字段"偷偷改结构。
 4. **同步 vs 异步的判据**：单实体、单次模型调用、`max_tokens=2000`，耗时与既有 `extract` 同量级；`expand_domain` 与未来多域生成需重新评估。
 5. **design.md 可能滞后于 tasks.md**：本次审计一度以为 `expand_domain` 未实现（design 的 API 表标"待实现"），实际代码已落地且任务有 `_Done:` 证据。**判断"做没做"以代码与 tasks 的 `_Done:` 为准。**
+
+
+### 9.4 写作前置检查与 Creative Skill
+
+<!-- 来源：openspec/changes/creative-project-writing-guardrails，导入日期：2026-09-12 -->
+
+1. **Skill 以文件形式存放**：`backend/app/skills/{novel,creative}/<name>/SKILL.md`，`name:` 字段即方法 id。新增方法包沿用同一约定，preflight 才能自动发现。
+2. **preflight 与 Agent 共用契约**：不要让 UI 另写一套"能不能点"的判断——否则 Agent 侧解释阻塞原因时会与前端不一致。
+3. **⚠ 检索陷阱（本轮实际踩到）**：PowerShell 的 `Select-String -Path <目录> -Include *.py` **不会递归子目录**。审计时先用它搜 `chapter-hook-rhythm` 得到"不存在"，差点误判任务为假勾选；改用 `Get-ChildItem -Recurse | Select-String` 复查才发现文件就在 `backend/app/skills/novel/`。**判断"某物是否存在"必须递归搜索。**
+4. **任务注释里可能已有验收证据**：本 change 任务 #9 以日期注释记录了测试数与 Patchright smoke 结果。审计时先读任务下的注释，不要只看标题措辞就判定"无证据"。

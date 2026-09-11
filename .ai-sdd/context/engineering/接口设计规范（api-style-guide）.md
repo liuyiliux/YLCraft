@@ -92,3 +92,14 @@ backend/venv_win/Scripts/python.exe tools/generate_api_surface.py
 | Agent 工具 | `expand_world_entity_attributes`、`expand_world_domain`（异步，复用任务工具轮询）、`resolve_world_domain_suggestion` |
 
 **失败约定**：一律抛 `ValueError` → API 转 400，且**运行落 `failed` + `diagnostics_json.error`，不产生脏候选**；前端弹窗内 `message.error` 展示。
+
+
+## 9. 写作前置检查接口
+
+<!-- 来源：openspec/changes/creative-project-writing-guardrails，导入日期：2026-09-12 -->
+
+| 接口 | 关键约定 |
+|---|---|
+| `GET /api/v1/creative-projects/{project_id}/writing-preflight?chapter=&stage=&source=` | 只读，无副作用；返回 `{success, data}`，data 含 `stage`/`chapter_number`/`checks`/`ready`/`blockers`/`next_action`/source id/`methods`。前端封装 `getCreativeProjectWritingPreflight`（`src/api/index.ts:1984`） |
+
+**同一契约两用**：真人 UI 在按钮启用前调用以禁用或标注被阻塞动作；Agent 用同一份契约解释并修复被阻塞的工作流。不要让前端另写一套"能不能点"的判断，否则两侧对阻塞原因的解释会不一致。

@@ -79,3 +79,10 @@
 - **`CandidateOrigin`**：`original`（真实原文）/ `outline`（项目大纲）/ `ai_draft`（AI 创作、无原文）/ `ai_inferred`（模型推断）
 - **`WorldExtractionRun.kind`**：`extract` / `generate`
 - **内置域 15 个**（含 `religion` / `language` / `culture` / `ecology`），定义于 `contracts.py :: DOMAIN_SPECS`
+
+
+## 8. 写作前置检查
+
+<!-- 来源：openspec/changes/creative-project-writing-guardrails，导入日期：2026-09-12 -->
+
+- **check 状态**：`pass` / `block`（`ready` = 无 blocker）
