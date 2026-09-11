@@ -80,3 +80,15 @@ flowchart LR
 前端入口集中在 `frontend/src/pages/agent/index.tsx`：`handleConfirmRunStep` /
 `handleSaveMemoryCandidates` / `handleDiscardMemoryCandidates` / `handleRejectRunStep`。
 待确认提示分两层：顶部控制栏下方的**横幅**（计数 + 定位）与消息列顶部的**确认卡片**（承载按钮）。
+
+
+## 启动期数据库状态治理
+
+<!-- 来源：openspec/changes/database-migration-convergence，导入日期：2026-09-12 -->
+
+| 环节 | 行为 | 红线 |
+|---|---|---|
+| 应用启动 | `init_db()` **只读** `alembic_version`，落后时输出可操作诊断 | 不得执行任何 DDL，不得自动 upgrade |
+| `ensure_agent_tables()` | 已降级为 **no-op 兼容钩子**，等调用方摘除后删除 | 请求路径不得建表 |
+| 运维诊断 | `tools/check_migration_state.py` 只读上报 + 密码脱敏 | 不得 upgrade / stamp / create_all |
+| 正式升级 | 运维显式 `alembic upgrade head`（先备份 + 记录 `alembic current`） | 禁止 `stamp head`；升级前须用一次性演练库预演 |
