@@ -20,7 +20,7 @@
 # 业务知识
 
 - path: business/领域术语与业务对象（domain-glossary）.md
-  summary: "任务与观测领域术语（任务账本、三层观测视图、任务诊断字段、事件收口、业务语义事件）；写作风格档案领域术语（风格档案、三层模型、有界样本、表达式契约、绑定强度、归档可逆）；Agent 工作台前端术语（三区布局、顶部控制栏、待确认横幅 vs 确认卡片、遥测条、thread.status 与 run 级状态的区别）"
+  summary: "任务与观测领域术语（任务账本、三层观测视图、任务诊断字段、事件收口、业务语义事件）；写作风格档案领域术语（风格档案、三层模型、有界样本、表达式契约、绑定强度、归档可逆）；Agent 工作台前端术语（三区布局、顶部控制栏、待确认横幅 vs 确认卡片、遥测条、thread.status 与 run 级状态的区别）；世界构建术语（梯子原则、域与域契约、层次策略、三档生成动作、CandidateOrigin、世界构建模板）"
   scope: all
   stage: [proposal, specs, design]
   load_policy: on-demand
@@ -29,9 +29,10 @@
     - "需要区分'任务记录'与'事件日志'、'收口事件'与'业务语义事件'"
     - "需求涉及写作风格、风格档案、风格提取、风格绑定"
     - "需求涉及 /agent 工作台、顶部控制栏、会话栏、消息列、遥测条"
+    - "涉及世界设定、域定义、expand_domain/expand_entity、CandidateOrigin"
 
 - path: business/业务规则与核验体系（business-rules）.md
-  summary: "任务落库白名单规则、启动对账、事件/任务重试边界、事件敏感字段与长度约束；写作风格档案生命周期、材料闸门与泄漏阈值、强度注入量；Agent 工作台规则（顶栏写回配置、拒绝=取消运行、有数据才显示、缺失 --、卡片收敛例外、按类名折叠）"
+  summary: "任务落库白名单规则、启动对账、事件/任务重试边界、事件敏感字段与长度约束；写作风格档案生命周期、材料闸门与泄漏阈值、强度注入量；Agent 工作台规则（顶栏写回配置、拒绝=取消运行、有数据才显示、缺失 --、卡片收敛例外、按类名折叠）；世界构建规则（结构过闸、不伪造证据、apply 唯一写入、内置字段只增不删、契约外转建议、幂等指纹）"
   scope: all
   stage: [specs, design, tasks]
   load_policy: on-demand
@@ -43,11 +44,12 @@
     - "涉及来源材料泄漏检查、导入 Skill 的免检边界"
     - "涉及待确认横幅、确认卡片、拒绝工具确认"
     - "涉及 Agent run 的 token/成本/耗时展示，或遥测字段缺失时的兜底"
+    - "涉及世界构建的结构建议过闸、候选来源标记、正典写入通道"
 
 # 数据知识
 
 - path: data/核心数据模型（data-model）/
-  summary: "任务账本三套表与日志两套表的分工、字段含义、可重放参数位置；写作风格档案与项目绑定两张表的字段语义与边界；Agent 运行域（AgentRun/Step/AIUsageLog/AgentThread）字段可得性与关联缺口"
+  summary: "任务账本三套表与日志两套表的分工、字段含义、可重放参数位置；写作风格档案与项目绑定两张表的字段语义与边界；Agent 运行域（AgentRun/Step/AIUsageLog/AgentThread）字段可得性与关联缺口；世界构建域（world_domain_definitions/templates/candidates/runs）字段语义与来源状态"
   scope: all
   stage: [proposal, specs, design, tasks, apply]
   load_policy: on-demand
@@ -57,9 +59,10 @@
     - "需要判断某状态/参数应该落在任务表还是日志表"
     - "涉及 writing_style_profiles、project_writing_style_links"
     - "涉及 agent_runs、agent_run_steps、agent_threads、AIUsageLog"
+    - "涉及 world_domain_definitions、world_building_templates、world_fact_candidates"
 
 - path: data/枚举值字典（enum-dictionary）.md
-  summary: "事件 scene 取值、任务持久化白名单、任务与事件状态枚举、写作风格档案状态与强度枚举、AgentThread.status 取值域与智能体 default_workflow 七档"
+  summary: "事件 scene 取值、任务持久化白名单、任务与事件状态枚举、写作风格档案状态与强度枚举、AgentThread.status 取值域与智能体 default_workflow 七档、CandidateOrigin 与 run.kind、内置域 15 个"
   scope: all
   stage: [design, tasks, apply]
   load_policy: on-demand
@@ -68,11 +71,12 @@
     - "需要避免自行编造枚举值（前端筛选下拉需与后端同步）"
     - "涉及 style profile status、source_type、intensity 取值"
     - "涉及 AgentThread.status、default_workflow、会话状态点四态"
+    - "涉及 CandidateOrigin、WorldExtractionRun.kind、世界内置域清单"
 
 # 工程约束
 
 - path: engineering/设计约束（design-conventions）.md
-  summary: "AI 调用双层观测模式、任务不能自动收口、重试复用业务端点、前端选项同步、函数直调的坑；写作风格 T6 预算与纯函数注入、人机边界对等、TOOLS 注册表判定；Agent 工作台前端约束（窄屏禁用 nth-child、tabular-nums 非等宽、JSX 注释、!important 覆盖、勾选项审计）"
+  summary: "AI 调用双层观测模式、任务不能自动收口、重试复用业务端点、前端选项同步、函数直调的坑；写作风格 T6 预算与纯函数注入、人机边界对等、TOOLS 注册表判定；Agent 工作台前端约束（窄屏禁用 nth-child、tabular-nums 非等宽、JSX 注释、!important 覆盖、勾选项审计）；世界构建约束（复用管线半段、origin 放候选级、schema 边界前移、同步判据、design 可能滞后于 tasks）"
   scope: all
   stage: [design, tasks, apply]
   load_policy: on-demand
@@ -83,9 +87,10 @@
     - "涉及写作风格注入、T6 层预算、Context Pack 组装"
     - "需要判断 AI 能力是否在真人 UI 与 Agent 工具两侧都有对应入口"
     - "改动 /agent 工作台的顶栏、卡片样式、响应式折叠或遥测展示"
+    - "扩展世界构建能力、新增生成动作或改动域契约"
 
 - path: engineering/接口设计规范（api-style-guide）.md
-  summary: "本项目 API 约定：统一 /api/v1 前缀、路由文件落点、请求模型、错误语义与文档同步流程；写作风格档案端点与 Agent 工具；Agent 运行与确认接口（step confirm、记忆 save/discard、run cancel、threads 返回字段）"
+  summary: "本项目 API 约定：统一 /api/v1 前缀、路由文件落点、请求模型、错误语义与文档同步流程；写作风格档案端点与 Agent 工具；Agent 运行与确认接口（step confirm、记忆 save/discard、run cancel、threads 返回字段）；世界构建接口（world-domains CRUD、expand-entity 与 preview、expand-domain 与对应 Agent 工具）"
   scope: all
   stage: [design, tasks, apply]
   load_policy: on-demand
@@ -94,6 +99,7 @@
     - "需要同步 docs/architecture/API_SURFACE.md 与 api_surface.json"
     - "涉及 writing-styles 端点或写作风格 Agent 工具"
     - "涉及 agent run 步骤确认、记忆候选、取消运行，或 /agent/threads 返回字段"
+    - "涉及 /world-generation/* 或 /projects/{id}/world-domains"
 
 # 系统知识
 

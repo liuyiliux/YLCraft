@@ -77,3 +77,18 @@ backend/venv_win/Scripts/python.exe tools/generate_api_surface.py
 | `updateAgentProfile(profileId, patch)` | 前端可直接改 `model` / `default_workflow` 并持久化；顶部控制栏依赖它 |
 
 注意：`/agent/threads` 的 `status` 取值域实际仅 `active` / `archived`（`archived` 已被列表过滤），见枚举字典。
+
+
+## 8. 世界构建接口
+
+<!-- 来源：openspec/changes/ai-progressive-world-building，导入日期：2026-09-12 -->
+
+| 接口 | 关键约定 |
+|---|---|
+| `GET/PUT/DELETE /api/v1/projects/{project_id}/world-domains[/{domain_key}]` | 列出域契约 / 覆盖内置域或新增自定义域 / 重置内置默认或移除自定义域 |
+| `POST /api/v1/projects/{project_id}/world-generation/expand-entity/preview` | **不调用模型**，只返回提示词（降低试错成本） |
+| `POST /api/v1/projects/{project_id}/world-generation/expand-entity` | 按域 schema 补实体字段，产出 `ai_draft` 候选 |
+| `POST /api/v1/projects/{project_id}/world-generation/expand-domain` | 按模板层次策略细化整个域 |
+| Agent 工具 | `expand_world_entity_attributes`、`expand_world_domain`（异步，复用任务工具轮询）、`resolve_world_domain_suggestion` |
+
+**失败约定**：一律抛 `ValueError` → API 转 400，且**运行落 `failed` + `diagnostics_json.error`，不产生脏候选**；前端弹窗内 `message.error` 展示。

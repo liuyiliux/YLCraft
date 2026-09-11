@@ -70,3 +70,17 @@
 | 卡片收敛的四类例外 | 优先用 `borderTop` 分隔线 + 留白替代带边框卡片；**保留边框**：① 页面外壳 ② Markdown 表格单元格 ③ 选中态（左栏 section / 工具授权 / 会话激活）④ 错误与待确认隔离。虚线占位区亦保留 | design §4 |
 | 窄屏折叠按类名不按序号 | ≤820px 折叠次要控件用 `.agent-rail-optional` 类名，**不要**用 `:nth-child(n)` | `index.css` |
 | 缓存区 opt-in | cache 命中率 / 首 token 均值依赖 provider usage 数据，数据不可用时**整个区块不渲染**（代码中不存在即为正确状态） | design §3.4 / §5 |
+
+
+## 8. 世界构建规则
+
+<!-- 来源：openspec/changes/ai-progressive-world-building，导入日期：2026-09-12 -->
+
+| 规则 | 内容 | 证据 |
+|---|---|---|
+| 结构变更必须过闸 | 模型输出分 `items`（内容）与 `suggested_fields`/`suggested_domains`（结构建议）；建议落 `world_domain_definitions` 且 `source=ai_suggested`、`is_enabled=False`，**不自动生效** | `_persist_suggested_domains` |
+| 生成内容不得伪造证据 | `origin=ai_draft` 的候选 `evidence_json="[]"`；审阅页与导出均带来源标注 | D2 / R6 |
+| 写入唯一通道是 `apply` | 生成只产候选，正典写入只能经 `POST /world-extraction-runs/{id}/apply` | D5 |
+| 内置域字段只可追加不可删除 | 保证历史 `attributes_json` 始终可解析 | `resolve_specs` |
+| 契约外字段转建议而非丢弃 | 服务层只接受「已勾选且在属性契约内」的值，其余转为 `suggested_fields` | `expand_entity` |
+| 幂等去重 | 候选 `fingerprint = gen:{project_id}:{entity.id}` | `world_generation.py` |

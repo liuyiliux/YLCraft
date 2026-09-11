@@ -48,3 +48,17 @@
 | **遥测条（Telemetry Strip）** | 输入区上方一行：Run 状态 / 步骤 / 工具 / 耗时 / Token / 成本，等宽字体、缺失显示 `--` | 本轮实现 |
 | **`thread.status` 与 run 级状态** | `thread.status` 属**线程**（`AgentThread`）；running / 待确认 / 完成 / 失败属 **`AgentRun`**。混用会导致"看似有状态字段、实则取不到想要的值" | `db/models/agent.py` |
 | **运行轨迹默认折叠** | 工具调用与每步 trace 用 `<details>`，仅运行时 `open`，完成后自动折叠；失败/待确认在折叠态仍可见 | 本轮核实 |
+
+
+## 世界构建
+
+<!-- 来源：openspec/changes/ai-progressive-world-building，导入日期：2026-09-12 -->
+
+| 术语 | 定义 | 证据 |
+|---|---|---|
+| **梯子原则（I1/I2/I3）** | I1 平台持有梯子（结构）、I2 AI 只能踩梯子上加（填值）、I3 平台永远能解析（可列出/检索/导出/对比）。世界构建域的顶层约束 | proposal |
+| **域（domain）与域契约** | 世界设定的模块（地点/宗教/语言/文化/生态…）；每域有属性契约，是"AI 能填哪些字段"的**唯一**依据 | `WorldDomainService.resolve_specs` |
+| **层次策略（layers）** | 域内条目的层级组织方式（如 `世界 → 国家 → 城市 → 地点`），由模板 `layers_json` 定义 | `WorldBuildingTemplates.tsx` |
+| **三档生成动作** | `draft_world`（想法→多域骨架）、`expand_domain`（按层次细化整个域）、`expand_entity`（按域 schema 补单个实体字段） | `world_generation.py` |
+| **`CandidateOrigin`** | 候选来源性质：`original`（真实原文）/ `outline`（项目大纲）/ `ai_draft`（AI 创作、无原文）/ `ai_inferred`（模型推断） | `models/novel_source.py` |
+| **世界构建模板** | `layers_json` + `prompts_json`（三档提示词，支持 `{layers}`/`{domain}`/`{hint}` 占位）；`project_id` 为空即内置种子模板 | 迁移 039 |
