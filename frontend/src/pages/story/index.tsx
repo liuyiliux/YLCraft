@@ -162,6 +162,7 @@ import { useTaskPolling } from '../../hooks/useTaskPolling'
 import FanqiePublishPanel from './FanqiePublishPanel'
 import ProjectStatePanel from './ProjectStatePanel'
 import StoryWorkspaceOverview from './StoryWorkspaceOverview'
+import type { AssetSummary, ChapterAction, CharacterReferenceSummary, EditableChapterPlanItem, ImageBackendOption, ImagePromptContext, InlineGeneratedImage, LoadingAction, NarrativeContextPreview, NarrativeForeshadowing, NarrativeGraphData, NarrativeHealth, NarrativeRun, PendingInlineImageTask, PipelineResult, PipelineResultItem, PipelineRunStatus, PipelineStageValue, ProductionStageItem, ProjectAssetLink, ProjectContent, ProjectContentSummary, ProjectGenerationLog, ProjectGraphEdge, ProjectGraphNode, ProjectGraphNodeType, ProjectGraphState, ProseDiffRow, ReferenceImageItem, StoryboardPanelReferencePlan, StoryboardReferenceSummary, TemplateOption, VideoGenerationContext, WorkspaceResource, WriterRoomQualitySummary, WriterRoomReviewIssue } from './types'
 
 const { Text, Title, Paragraph } = Typography
 const { TextArea } = Input
@@ -176,239 +177,6 @@ const STORY_WORKSPACE_CONTENT_TYPES = [
   'project_bible',
   'world_asset',
 ]
-
-type LoadingAction =
-  | 'projects'
-  | 'create'
-  | 'rename'
-  | 'outline'
-  | 'outline_save'
-  | 'chapter_plan'
-  | 'chapter_plan_save'
-  | 'chapter_outline'
-  | 'chapter_outline_scenes'
-  | 'novel_body'
-  | 'novel_body_refine'
-  | 'comic_pages'
-  | 'script'
-  | 'storyboard'
-  | 'reference_match'
-  | 'asset'
-  | 'canvas_save'
-  | 'sync_characters'
-  | 'project_bible'
-  | 'world_extract'
-  | 'delete_project'
-  | 'portrait_generate'
-  | 'pipeline'
-  | 'writer_room'
-  | 'agent_advance'
-  | null
-
-type ChapterAction =
-  | 'chapter_outline'
-  | 'chapter_outline_scenes'
-  | 'novel_body'
-  | 'novel_body_refine'
-  | 'comic_pages'
-  | 'script'
-  | 'storyboard'
-  | null
-
-interface ProjectContent {
-  id: string
-  content_type: string
-  title: string
-  chapter_number?: number
-  episode_number?: number
-  data: Record<string, any>
-  text_content: string
-  source_content_id?: string
-  version: number
-  is_locked?: boolean
-  created_at?: string
-  updated_at?: string
-}
-
-interface ProjectContentSummary {
-  id: string
-  content_type: string
-  chapter_number?: number
-  episode_number?: number
-  version: number
-  is_locked?: boolean
-  created_at?: string
-  updated_at?: string
-}
-
-interface WriterRoomReviewIssue {
-  category?: string
-  severity?: string
-  location?: string
-  problem?: string
-  suggestion?: string
-  rewrite_instruction?: string
-}
-
-interface WriterRoomQualitySummary {
-  overallScore: number
-  aiSmellScore: number
-  tags: string[]
-  checks: string[]
-}
-
-interface ProjectAssetLink {
-  id: string
-  project_id: string
-  asset_id: string
-  content_id?: string
-  role: string
-  relation: string
-  metadata: Record<string, any>
-  created_at?: string
-}
-
-type AssetSummary = {
-  id: string
-  title?: string
-  type?: string
-  platform?: string
-  thumbnail_url?: string
-  cover_url?: string
-  source_url?: string
-  file_path?: string
-  tags?: string[]
-  metadata?: Record<string, any>
-}
-
-type CharacterReferenceSummary = {
-  id: string
-  name?: string
-  portrait_url?: string
-  portrait_node_id?: string
-  reference_asset_ids?: string[]
-  identity?: Record<string, any>
-}
-
-type ReferenceImageItem = {
-  url: string
-  source: 'project_asset' | 'character_portrait' | 'character_reference'
-  label?: string
-  asset_id?: string
-  character_id?: string
-  character_name?: string
-  role?: string
-}
-
-type ProjectGraphNodeType =
-  | 'outline'
-  | 'chapter'
-  | 'character'
-  | 'content'
-  | 'scene'
-  | 'prompt'
-  | 'asset'
-
-type ProjectGraphNode = {
-  id: string
-  type: ProjectGraphNodeType
-  label: string
-  subtitle?: string
-  status?: string
-  x: number
-  y: number
-  width?: number
-  height?: number
-  source?: {
-    tab?: string
-    contentId?: string
-    chapterNumber?: number
-    prompt?: string
-    assetId?: string
-    contentType?: string
-    sourceType?: string
-    sourceIndex?: number | string
-  }
-  data?: Record<string, any>
-}
-
-type ProjectGraphEdge = {
-  id: string
-  from: string
-  to: string
-  type: 'contains' | 'uses' | 'references' | 'derived_from'
-  label?: string
-}
-
-type ProjectGraphState = {
-  nodes?: ProjectGraphNode[]
-  edges?: ProjectGraphEdge[]
-  viewport?: { x?: number; y?: number; zoom?: number }
-  updated_at?: string
-}
-
-type NarrativeContextPreview = {
-  chapter_number: number
-  text: string
-  persisted: boolean
-  metadata: {
-    context_snapshot_id?: string
-    fingerprint?: string
-    overflow?: Array<{ layer: string; budget: number; actual: number; action: string }>
-    excluded_sources?: Record<string, string | number>
-    layers?: Array<{ id: string; label: string; characters?: number; budget?: number; status?: string }>
-  }
-}
-
-type NarrativeForeshadowing = {
-  id: string
-  statement: string
-  kind: string
-  status: string
-  timing: string
-  planted_chapter: number
-  expected_window?: { start?: number; end?: number }
-  resolution_note?: string
-}
-
-type NarrativeGraphData = {
-  nodes: Array<{
-    id: string
-    type: string
-    label: string
-    confirmed: boolean
-    status?: string
-    summary?: string
-    source?: { content_id?: string; chapter_number?: number; snapshot_id?: string; foreshadowing_id?: string }
-  }>
-  edges: Array<{ id: string; type: string; source: string; target: string; confirmed: boolean }>
-  include_pending: boolean
-}
-
-type NarrativeHealth = {
-  status: 'healthy' | 'attention' | 'blocked' | string
-  summary: Record<string, number>
-  issues: Array<{
-    code: string
-    severity: 'info' | 'warning' | 'error' | string
-    message: string
-    details?: Record<string, unknown>
-  }>
-}
-
-type NarrativeRun = {
-  id: string
-  mode: string
-  status: string
-  target_chapters: number[]
-  current_cursor: number
-  trace: Array<{ chapter_number?: number; status?: string; error?: string; error_type?: string; retryable?: boolean }>
-  retry_count?: number
-  token_usage?: number
-  cost_amount?: number
-  budget?: { max_cost_amount?: number | null; max_token_usage?: number | null; metering?: string }
-  error_message?: string
-}
 
 function canvasTypeForGraphNode(node: ProjectGraphNode): CanvasNodeType {
   if (node.type === 'prompt') return 'prompt'
@@ -455,51 +223,6 @@ function graphNodeToCanvasNode(node: ProjectGraphNode, project?: CreativeProject
     height: type === 'prompt' ? 152 : 140,
     metadata,
   }
-}
-
-type StoryboardPanelReferencePlan = {
-  referenceAssetIds: string[]
-  characterIds: string[]
-  portraitNodeIds: string[]
-  portraitVersionIds: string[]
-  projectReferenceItems: ReferenceImageItem[]
-  characterReferenceItems: ReferenceImageItem[]
-  portraitNodeReferenceItems: ReferenceImageItem[]
-  imageCollection: ReferenceImageItem[]
-  unresolvedCharacterIds: string[]
-  sentCount: number
-  hasEffectivePlan: boolean
-}
-
-type StoryboardReferenceSummary = {
-  promptPanels: number
-  effectivePlanPanels: number
-  usableReferencePanels: number
-  generatedPanels: number
-  totalReferenceImages: number
-  uniqueReferenceImages: number
-  sentReferenceImages: number
-  uniqueCharacterIds: string[]
-  unresolvedCharacterIds: string[]
-  missingEffectivePlanPanels: number
-  noUsableReferencePanels: number
-}
-
-interface ProjectGenerationLog {
-  id: string
-  project_id: string
-  content_id?: string
-  stage: string
-  provider: string
-  model: string
-  status: string
-  prompt: string
-  request: Record<string, any>
-  prompt_template?: Record<string, any> | null
-  raw_response: string
-  normalized: Record<string, any>
-  validation_error: string
-  created_at?: string
 }
 
 const projectTypeOptions = [
@@ -556,103 +279,6 @@ const statusLabels: Record<string, string> = {
   archived: '归档',
   failed: '失败',
 }
-
-type TemplateOption = { label: string; value: string }
-
-type ImagePromptContext = {
-  contentId?: string
-  sourceType?: string
-  sourceIndex?: number | string
-  sourceTitle?: string
-  chapterNumber?: number
-  referenceAssetIds?: string[]
-  characterIds?: string[]
-  portraitNodeIds?: string[]
-  portraitVersionIds?: string[]
-}
-
-type VideoGenerationContext = ImagePromptContext & {
-  durationSeconds?: number
-  generateAudio?: boolean
-  musicHint?: string
-}
-
-type InlineGeneratedImage = {
-  assetId?: string
-  taskId?: string
-  url?: string
-  localPath?: string
-  referenceImages?: ReferenceImageItem[]
-  referenceImagesSent?: number
-  referenceImagesSupported?: boolean
-  prompt: string
-  provider?: string
-  model?: string
-  createdAt: string
-}
-
-type PendingInlineImageTask = {
-  taskId: string
-  projectId: string
-  key: string
-  context: ImagePromptContext
-  prompt: string
-  size: string
-  provider: string
-  model: string
-  referenceLineage: {
-    referenceAssetIds: string[]
-    characterIds: string[]
-    portraitNodeIds: string[]
-    portraitVersionIds: string[]
-  }
-  referenceImageCollection: ReferenceImageItem[]
-  referenceImagesSent: number
-  referenceImagesSupported: boolean
-}
-
-type PipelineStageValue =
-  | 'outline'
-  | 'sync_characters'
-  | 'chapter_plan'
-  | 'chapter_outline'
-  | 'novel_body'
-  | 'script'
-  | 'storyboard'
-  | 'match_references'
-  | 'comic_pages'
-
-type PipelineResultItem = {
-  stage?: string
-  chapter_number?: number
-  status?: string
-  content_type?: string
-  title?: string
-  reason?: string
-  error?: string
-  count?: number
-  word_count?: number
-}
-
-type PipelineResult = {
-  stages?: string[]
-  chapters?: number[]
-  results?: PipelineResultItem[]
-  summary?: {
-    generated?: number
-    skipped?: number
-    failed?: number
-    total?: number
-  }
-  generated?: number
-  skipped?: number
-  failed?: number
-  total?: number
-}
-
-type PipelineRunStatus = 'idle' | 'running' | 'success' | 'partial' | 'failed'
-
-type WorkspaceResource = 'contents' | 'writerRoom' | 'assets' | 'logs' | 'graph'
 
 const pipelineStageOptions: { label: string; value: PipelineStageValue }[] = [
   { label: '大纲', value: 'outline' },
@@ -1334,18 +960,6 @@ function buildStoryboardReferenceSummary(
     missingEffectivePlanPanels: plans.length - effectivePlanPanels,
     noUsableReferencePanels: plans.length - usableReferencePanels,
   }
-}
-
-type ImageBackendOption = {
-  provider: string
-  provider_label: string
-  name: string
-  model: string
-  available_models?: string[]
-  supported_sizes?: string[]
-  capabilities?: string[]
-  support_reference_image?: boolean
-  reference_image_field?: string
 }
 
 function getNovelDisplayTitle(asset?: AssetSummary | null): string {
@@ -5839,15 +5453,6 @@ function PipelinePanel({
   )
 }
 
-type ProductionStageItem = {
-  key: string
-  tab: string
-  label: string
-  hint: string
-  complete: number
-  total: number
-}
-
 function ProductionStageRail({
   theme,
   stages,
@@ -7358,8 +6963,6 @@ function sortBibleContents(items: ProjectContent[]) {
     return leftKey.localeCompare(rightKey, 'zh-CN')
   })
 }
-
-type EditableChapterPlanItem = ChapterPlanItem & { is_locked?: boolean }
 
 function ChapterTab({
   chapterPlan,
@@ -10290,12 +9893,6 @@ function splitWriterRoomParagraphs(text: string) {
     .split('\n')
     .map((item) => item.trim())
     .filter(Boolean)
-}
-
-type ProseDiffRow = {
-  kind: 'added' | 'removed' | 'changed'
-  approved?: string
-  candidate?: string
 }
 
 function buildProseDiffRows(approvedText: string, candidateText: string): ProseDiffRow[] {
