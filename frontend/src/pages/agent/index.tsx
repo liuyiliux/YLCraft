@@ -21,6 +21,7 @@ import {
   Input,
   InputNumber,
   List,
+  Popconfirm,
   Select,
   Space,
   Spin,
@@ -1745,6 +1746,25 @@ function AgentPageContent() {
     }
   }
 
+  // 拒绝待确认的工具步骤。
+  //
+  // 后端**没有** step 级 reject 端点（只有 confirm、记忆 save/discard 与运行级 cancel），
+  // 因此这里复用 `cancelAgentRun`：拒绝即取消整个运行，而非"跳过这一步继续"。
+  // 该差异必须在 UI 上明确告知（按钮文案 + 二次确认），不能让用户误以为只是跳过。
+  const handleRejectRunStep = async () => {
+    if (!currentRun || loading) return
+    setLoading(true)
+    try {
+      await cancelAgentRun(currentRun.id)
+      await refreshRun(currentRun.id)
+      message.success('已拒绝该工具调用，当前运行已取消')
+    } catch (error: any) {
+      message.error(`拒绝失败：${error.message}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const handleSaveMemoryCandidates = async (stepId: number, indices?: number[]) => {
     if (!currentRun || loading) return
     setLoading(true)
@@ -3047,8 +3067,20 @@ function AgentPageContent() {
                                   {step.tool_name && <Tag icon={<ToolOutlined />}>{step.tool_name}</Tag>}
                                   {step.summary && <Text type="secondary" style={{ fontSize: 12 }}>{step.summary}</Text>}
                                 </Space>
-                                <Space>
+                                <Space wrap>
                                   <Button type="primary" size="small" onClick={() => handleConfirmRunStep(step.id)} loading={loading}>确认执行</Button>
+                                  {/* 后端没有 step 级 reject 端点：拒绝 = 取消整个运行。
+                                      后果必须由二次确认明确告知，不能让用户以为只是跳过这一步。 */}
+                                  <Popconfirm
+                                    title="拒绝这个工具调用？"
+                                    description="后端暂不支持只跳过这一步，拒绝会取消当前整个运行。"
+                                    okText="仍要拒绝并取消运行"
+                                    cancelText="返回"
+                                    okButtonProps={{ danger: true }}
+                                    onConfirm={handleRejectRunStep}
+                                  >
+                                    <Button size="small" danger loading={loading}>拒绝</Button>
+                                  </Popconfirm>
                                   <Text type="secondary" style={{ fontSize: 12 }}>仅写入、删除或消耗型工具需要确认</Text>
                                 </Space>
                               </Space>
