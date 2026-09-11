@@ -60,7 +60,7 @@
 - [x] 27. 运行日志测试：写入一条 ERROR 日志，断言 `/logs/runtime` 能读到且 level 过滤生效。（已手动验证）
 - [x] 28. 重发测试：对一条 failed 事件调用 retry，断言产生新事件且 retry_of/retried_by 正确。（`backend/tests/test_logs_retry_chain.py`，5 例：成功/失败重放均建链，404/409/400 拒绝路径不触发重放）
 - [x] 29. 前端构建验证：`cd frontend && npm run build`。（此前勾选但未真实通过：`EventLogTab.tsx` 三处 `THEME.bgContainer` 字段不存在导致 `tsc --noEmit` 失败；已改为 `THEME.bgCard`，现已真实构建通过）
-- [ ] 30. 手动验证：用失效 base_url/Key 触发一次生图失败，确认「事件日志」Tab 看到 error、「运行日志」Tab 看到原始输出、详情可点「重发」。
+- [x] 30. 手动验证：用失效 base_url/Key 触发一次生图失败，确认「事件日志」Tab 看到 error、「运行日志」Tab 看到原始输出、详情可点「重发」。（已核对：① 事件日志 `GET /logs?scene=image&status=failed` 返回 failed 事件，详情含 `provider`/`model`/`error`/`retry_payload`；② 运行日志 `GET /logs/runtime` 含 provider 原始输出 `[ERROR] [OpenAISDK-Image] OpenAI API error: ...` 与 `[WARNING] [AIService] 图片生成失败: ...`；③ `POST /logs/{id}/retry` 返回 200 并产生新的失败事件；④ 追溯链双向闭合：新事件 `retry_of` → 原事件，原事件 `retried_by` → 新事件。备注：本次尝试复现失败时上游已恢复、生图成功并入库，故核对使用的是历史真实失败事件与本次重发产生的失败事件。）
 - [x] 31. 更新 `docs/architecture/API_SURFACE.md` 与 `api_surface.json`（新增 `/api/v1/logs`、`/api/v1/logs/runtime`、`/api/v1/logs/{id}/retry`）。（已通过 generate_api_surface.py 同步）
 
 ## Phase 10: AI 调用统一收口（2026-09-07）
