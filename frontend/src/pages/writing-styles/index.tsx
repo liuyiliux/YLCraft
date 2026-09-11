@@ -675,11 +675,11 @@ function BindingPanel({ profile, projects }: { profile: any; projects: any[] }) 
         <Select
           value={intensity}
           onChange={setIntensity}
-          style={{ width: 120 }}
+          style={{ width: 200 }}
           options={[
-            { label: '轻微', value: 'subtle' },
-            { label: '适中', value: 'balanced' },
-            { label: '强烈', value: 'strong' },
+            { label: '轻微（轻量参考）', value: 'subtle' },
+            { label: '适中（事实准确前提下贴合）', value: 'balanced' },
+            { label: '强烈（优先于默认习惯）', value: 'strong' },
           ]}
         />
         <Select

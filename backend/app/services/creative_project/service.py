@@ -84,7 +84,7 @@ from app.services.creative_project.semantic_recall import (
     NarrativeSemanticRecallAdapter,
 )
 from app.services.creative_project.profiles import normalize_project_settings, validate_profile_inputs
-from app.services.creative_project.writing_style import WritingStyleService
+from app.services.creative_project.writing_style import WritingStyleService, build_style_prompt_block
 
 logger = logging.getLogger("ylcraft.creative_project")
 
@@ -5371,21 +5371,9 @@ class CreativeProjectService:
                 project_id, stage=stage
             )
             if applied_style_profiles:
-                style_blocks = []
-                for profile in applied_style_profiles:
-                    contract = profile.get("prompt_contract") or {}
-                    rules = [str(item).strip() for item in (contract.get("rules") or []) if str(item).strip()]
-                    examples = [str(item).strip() for item in (contract.get("new_examples") or []) if str(item).strip()]
-                    block = (
-                        f"[风格档案 {profile['name']} v{profile['version']} / 强度 {profile['intensity']} / "
-                        f"checksum {profile['checksum'][:16]}]\n"
-                        + "\n".join(f"- {rule}" for rule in rules[:24])
-                    )
-                    if examples:
-                        block += "\n新造示例（只观察机制，不复用句子）：\n" + "\n".join(
-                            f"- {example}" for example in examples[:4]
-                        )
-                    style_blocks.append(block)
+                style_blocks = [
+                    build_style_prompt_block(profile) for profile in applied_style_profiles
+                ]
                 style_profile_context = "\n".join(style_blocks)
                 style_profile_diagnostics = {
                     "status": "routed",

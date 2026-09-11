@@ -20,6 +20,49 @@ from app.db.models.creative_project import (
 ALLOWED_INTENSITIES = {"subtle", "balanced", "strong"}
 DEFAULT_STAGE_SCOPE = ["novel_body", "novel_body_refine", "prose_draft", "prose_humanized", "prose_rewrite"]
 
+#: 强度策略：把 subtle / balanced / strong 变成**真实差异**，而不只是写进标题的一个词。
+#: 差异由三处承担——注入的表达规则条数、新造示例条数、以及标题行里的两字强度标签。
+#:
+#: 为什么要这么克制：T6 层（风格/题材/技能包）总预算只有 **1200 字符**，且与本项目的
+#: Skill 包共用。实测该预算本身已接近用满，任何额外整行文案都会把风格规则挤出预算，
+#: 表现为"绑定了风格却没注入规则"（评审期已踩到）。所以强度标签只占两个字、不加行。
+#: 强度仍是提示词层面的软约束：偏离多少由用户看偏差审阅判断，系统不做自动改写。
+INTENSITY_POLICY: dict[str, dict[str, Any]] = {
+    "subtle": {"max_rules": 8, "max_examples": 1, "tag": "参考"},
+    "balanced": {"max_rules": 16, "max_examples": 2, "tag": "贴合"},
+    "strong": {"max_rules": 24, "max_examples": 4, "tag": "严格"},
+}
+
+
+def intensity_policy(intensity: str | None) -> dict[str, Any]:
+    """取强度对应的注入策略；未知或缺失时按 balanced 处理。"""
+    key = str(intensity or "").strip().lower()
+    return INTENSITY_POLICY.get(key, INTENSITY_POLICY["balanced"])
+
+
+def build_style_prompt_block(profile: dict[str, Any]) -> str:
+    """把一条已激活的风格档案渲染成注入提示词的文本块。
+
+    强度在这里真正落地：不同强度注入的规则条数、示例条数与优先级指令都不同。
+    抽成纯函数是为了可测——注入力度是产品语义，不该埋在服务层的大函数里。
+    """
+    contract = profile.get("prompt_contract") or {}
+    rules = [str(item).strip() for item in (contract.get("rules") or []) if str(item).strip()]
+    examples = [str(item).strip() for item in (contract.get("new_examples") or []) if str(item).strip()]
+    intensity = str(profile.get("intensity") or "balanced")
+    policy = intensity_policy(intensity)
+
+    # 强度标签直接并入标题行：T6 预算很紧，不额外占整行。
+    lines = [
+        f"[风格档案 {profile.get('name')} v{profile.get('version')} / 强度 {intensity}({policy['tag']}) / "
+        f"checksum {str(profile.get('checksum') or '')[:16]}]",
+    ]
+    lines.extend(f"- {rule}" for rule in rules[:policy["max_rules"]])
+    if examples:
+        lines.append("新造示例（只观察机制，不复用句子）：")
+        lines.extend(f"- {example}" for example in examples[:policy["max_examples"]])
+    return "\n".join(lines)
+
 
 def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
