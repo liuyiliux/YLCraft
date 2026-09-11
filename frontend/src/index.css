@@ -1442,9 +1442,11 @@ body {
     gap: 4px !important;
   }
 
-  .agent-workbench > section:first-child > div:first-child > div:last-child > :nth-child(2),
-  .agent-workbench > section:first-child > div:first-child > div:last-child > :nth-child(3),
-  .agent-workbench > section:first-child > div:first-child > div:last-child > :nth-child(5) {
+  /* 按类名折叠，不再用 :nth-child(2/3/5)。
+     顶部控制栏会随功能增长插入新控件，用序号定位会在新增控件时静默错位
+     （隐藏的变成新控件，而原按钮仍占位导致横向溢出）。开关位放在控件上，
+     新增控件只需决定是否加 agent-rail-optional。 */
+  .agent-workbench > section:first-child > div:first-child > div:last-child > .agent-rail-optional {
     display: none !important;
   }
 

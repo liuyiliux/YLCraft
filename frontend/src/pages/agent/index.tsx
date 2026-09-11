@@ -513,6 +513,16 @@ interface SessionItem {
   title: string
   created_at: string
   updated_at: string
+  /**
+   * 后端 `/agent/threads` 已返回、此前前端未声明而被丢弃的字段。
+   *
+   * `status` 当前取值域仅 `active` / `archived`（archived 已被列表接口过滤）；
+   * run 级的「运行中/待确认/完成/失败」属于 AgentRun，不在 thread 上，
+   * 因此会话列表只能对当前会话显示 run 级状态点。
+   */
+  status?: string
+  /** 该线程当前使用的智能体配置 id */
+  active_profile_id?: string
 }
 
 interface ToolItem extends AgentToolCall {}
@@ -562,6 +572,11 @@ function AgentPageContent() {
   // 底部状态栏：步骤/工具/耗时统计（对标 Harness 底部一行）
   const toolSteps = (currentRun?.steps || []).filter(s => s.step_type === 'tool_call')
   const runDurationMs = (currentRun?.steps || []).reduce((sum, s) => sum + (s.duration_ms || 0), 0)
+  // Token 与成本：后端当前未在 AgentRun 上透传（见 agent-workbench-ui-redesign
+  // design.md §5「不改后端」），缺失时保持 undefined，由底部状态栏显示 "--"；
+  // 后端补齐字段后此处无需改动即自动生效。
+  const runTokens = currentRun?.total_tokens ?? currentRun?.token_estimate
+  const runCost = typeof currentRun?.cost === 'number' ? `$${currentRun.cost.toFixed(4)}` : undefined
   const [runTree, setRunTree] = useState<{
     root_run_id: string
     runs: AgentRun[]
@@ -1987,7 +2002,6 @@ function AgentPageContent() {
                 borderRadius: 8,
                 background: THEME.bgPage,
                 color: THEME.textPrimary,
-                border: `1px solid ${THEME.borderLight}`,
                 maxHeight: 220,
                 overflow: 'auto',
                 fontSize: 12,
@@ -2019,10 +2033,8 @@ function AgentPageContent() {
     return (
       <div
         style={{
-          border: `1px solid ${THEME.borderLight}`,
-          borderRadius: 10,
-          padding: 12,
-          background: THEME.bgCard,
+          borderTop: `1px solid ${THEME.borderLight}`,
+          paddingTop: 12,
         }}
       >
         <Space direction="vertical" size={10} style={{ width: '100%' }}>
@@ -2149,7 +2161,7 @@ function AgentPageContent() {
               <div
                 key={`${item.skill_id}-${item.source}-${item.reason}`}
                 style={{
-                  border: `1px solid ${THEME.borderLight}`,
+                  borderTop: `1px solid ${THEME.borderLight}`,
                   borderRadius: 8,
                   padding: '8px 10px',
                   background: THEME.bgElevated,
@@ -2207,7 +2219,7 @@ function AgentPageContent() {
               <div
                 key={`${item.key || 'memory'}-${index}`}
                 style={{
-                  border: `1px solid ${THEME.borderLight}`,
+                  borderTop: `1px solid ${THEME.borderLight}`,
                   borderRadius: 8,
                   padding: 10,
                   background: THEME.bgPage,
@@ -2263,7 +2275,7 @@ function AgentPageContent() {
               borderRadius: 8,
               background: THEME.bgPage,
               color: THEME.textPrimary,
-              border: `1px solid ${THEME.borderLight}`,
+              borderTop: `1px solid ${THEME.borderLight}`,
               maxHeight: 260,
               overflow: 'auto',
               fontSize: 12,
@@ -2284,7 +2296,7 @@ function AgentPageContent() {
                 borderRadius: 8,
                 background: THEME.bgPage,
                 color: THEME.textPrimary,
-                border: `1px solid ${THEME.borderLight}`,
+                borderTop: `1px solid ${THEME.borderLight}`,
                 maxHeight: 220,
                 overflow: 'auto',
                 fontSize: 12,
@@ -2325,7 +2337,7 @@ function AgentPageContent() {
     return (
       <div
         style={{
-          border: `1px solid ${THEME.borderLight}`,
+          borderTop: `1px solid ${THEME.borderLight}`,
           borderRadius: 8,
           padding: compact ? '7px 9px' : '10px 12px',
           background: THEME.bgElevated,
@@ -2380,7 +2392,7 @@ function AgentPageContent() {
         style={{
           width: 'min(820px, calc(100% - 48px))',
           margin: '0 0 14px 36px',
-          border: `1px solid ${THEME.borderLight}`,
+          borderTop: `1px solid ${THEME.borderLight}`,
           borderRadius: 10,
           background: `linear-gradient(180deg, ${THEME.bgCard}, ${THEME.bgElevated})`,
           boxShadow: `0 10px 24px ${THEME.primaryAlpha?.(0.045) || 'rgba(22,119,255,0.045)'}`,
@@ -2568,8 +2580,8 @@ function AgentPageContent() {
       const slots = conversationState.slots || {}
       const pendingAction = conversationState.pending_action || {}
       return (
-        <Space direction="vertical" size={8} style={{ width: '100%' }}>
-          <div style={{ border: `1px solid ${THEME.borderLight}`, borderRadius: 8, padding: '10px 12px', background: THEME.bgPage }}>
+        <Space direction="vertical" size={10} style={{ width: '100%', borderTop: `1px solid ${THEME.borderLight}`, paddingTop: 10 }}>
+          <div>
             <Text type="secondary" style={{ fontSize: 12 }}>线程状态</Text>
             <div style={{ color: THEME.textPrimary, fontWeight: 700, marginTop: 2 }}>
               {conversationState.intent_label || conversationState.active_intent || '上下文跟踪中'}
@@ -2584,7 +2596,7 @@ function AgentPageContent() {
             </Space>
           </div>
           {pendingAction.tool_calls?.length > 0 && (
-            <div style={{ border: `1px solid ${THEME.borderLight}`, borderRadius: 8, padding: '8px 10px', background: THEME.bgCard }}>
+            <div style={{ borderTop: `1px solid ${THEME.borderLight}`, paddingTop: 8 }}>
               <Text type="secondary" style={{ fontSize: 12 }}>待确认动作</Text>
               <div style={{ marginTop: 6, display: 'grid', gap: 6 }}>
                 {pendingAction.tool_calls.slice(0, 3).map((call: any, index: number) => (
@@ -2598,7 +2610,7 @@ function AgentPageContent() {
             </div>
           )}
           {conversationState.last_tool_result && (
-            <div style={{ border: `1px solid ${THEME.borderLight}`, borderRadius: 8, padding: '8px 10px', background: THEME.bgCard }}>
+            <div style={{ borderTop: `1px solid ${THEME.borderLight}`, paddingTop: 8 }}>
               <Text type="secondary" style={{ fontSize: 12 }}>最近工具结果</Text>
               <div style={{ color: THEME.textPrimary, fontSize: 13, marginTop: 4 }}>
                 {conversationState.last_tool_result.tool_name} · {conversationState.last_tool_result.success ? '成功' : '失败'}
@@ -2608,9 +2620,9 @@ function AgentPageContent() {
               )}
             </div>
           )}
-          <details>
+          <details style={{ borderTop: `1px solid ${THEME.borderLight}`, paddingTop: 8 }}>
             <summary style={{ cursor: 'pointer', color: THEME.primary, fontSize: 12 }}>查看完整上下文 JSON</summary>
-            <pre style={{ marginTop: 8, padding: 10, borderRadius: 8, background: THEME.bgPage, border: `1px solid ${THEME.borderLight}`, color: THEME.textPrimary, fontSize: 12, whiteSpace: 'pre-wrap', maxHeight: 260, overflow: 'auto' }}>
+            <pre style={{ marginTop: 8, padding: 10, borderRadius: 8, background: THEME.bgPage, color: THEME.textPrimary, fontSize: 12, whiteSpace: 'pre-wrap', maxHeight: 260, overflow: 'auto' }}>
               {JSON.stringify(context, null, 2)}
             </pre>
           </details>
@@ -2620,15 +2632,8 @@ function AgentPageContent() {
     const creativePack = context?.creative_project_context
     if (creativePack?.project) {
       return (
-        <Space direction="vertical" size={8} style={{ width: '100%' }}>
-          <div
-            style={{
-              border: `1px solid ${THEME.borderLight}`,
-              borderRadius: 8,
-              padding: '10px 12px',
-              background: THEME.bgPage,
-            }}
-          >
+        <Space direction="vertical" size={10} style={{ width: '100%', borderTop: `1px solid ${THEME.borderLight}`, paddingTop: 10 }}>
+          <div>
             <Text type="secondary" style={{ fontSize: 12 }}>创作项目</Text>
             <div style={{ color: THEME.textPrimary, fontWeight: 600 }}>{creativePack.project.title}</div>
             <Space wrap size={[6, 6]} style={{ marginTop: 6 }}>
@@ -2639,12 +2644,12 @@ function AgentPageContent() {
               ))}
             </Space>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-            <div style={{ border: `1px solid ${THEME.borderLight}`, borderRadius: 8, padding: 10, background: THEME.bgCard }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, borderTop: `1px solid ${THEME.borderLight}`, paddingTop: 8 }}>
+            <div>
               <Text type="secondary" style={{ fontSize: 12 }}>章节状态</Text>
               <div style={{ fontWeight: 700 }}>{creativePack.chapter_status?.length || 0}</div>
             </div>
-            <div style={{ border: `1px solid ${THEME.borderLight}`, borderRadius: 8, padding: 10, background: THEME.bgCard }}>
+            <div>
               <Text type="secondary" style={{ fontSize: 12 }}>角色摘要</Text>
               <div style={{ fontWeight: 700 }}>{creativePack.characters?.length || 0}</div>
             </div>
@@ -2664,17 +2669,9 @@ function AgentPageContent() {
       return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无运行上下文" />
     }
     return (
-      <Space direction="vertical" size={8} style={{ width: '100%' }}>
+      <Space direction="vertical" size={10} style={{ width: '100%', borderTop: `1px solid ${THEME.borderLight}`, paddingTop: 10 }}>
         {entries.slice(0, 8).map(([key, value]) => (
-          <div
-            key={key}
-            style={{
-              border: `1px solid ${THEME.borderLight}`,
-              borderRadius: 8,
-              padding: '8px 10px',
-              background: THEME.bgPage,
-            }}
-          >
+          <div key={key}>
             <Text type="secondary" style={{ fontSize: 12 }}>{key}</Text>
             <div style={{ color: THEME.textPrimary, fontSize: 13, wordBreak: 'break-word' }}>
               {typeof value === 'object' ? JSON.stringify(value).slice(0, 120) : String(value)}
@@ -2730,6 +2727,50 @@ function AgentPageContent() {
     </div>
   )
 
+  // 顶部控制栏的模型下拉：跟随「当前智能体的供应商」取该供应商可用模型。
+  // 注意与设置弹窗里的 llmModelOptions 不同——后者跟随表单里的 editingProvider。
+  const railModelOptions = useMemo(() => {
+    const connector = llmConnectors.find(item => item.name === selectedProfile?.provider)
+    const list = normalizeModelList(connector?.available_models)
+    const models = list.length
+      ? list
+      : connector?.default_model
+        ? [connector.default_model]
+        : connector?.model
+          ? [connector.model]
+          : []
+    return Array.from(new Set(models.map(item => String(item || '').trim()).filter(Boolean))).map(model => ({
+      label: model,
+      value: model,
+    }))
+  }, [llmConnectors, selectedProfile?.provider])
+
+  // 顶部控制栏直接改智能体配置（模型 / 默认工作流）：这两项决定运行时真正的执行方式，
+  // 此前只能进设置弹窗修改。改动会持久化到智能体上，因此必须给出明确提示。
+  const applyProfileSetting = async (patch: Record<string, any>) => {
+    if (!selectedProfile) {
+      message.warning('请先选择智能体')
+      return
+    }
+    try {
+      await updateAgentProfile(selectedProfile.id, patch)
+      message.success('已保存到智能体配置')
+      await loadProfiles()
+    } catch (e) {
+      console.error('Failed to update agent profile from top rail', e)
+      message.error('保存失败，请稍后重试')
+    }
+  }
+
+  const pendingCount = pendingToolSteps.length + pendingMemorySteps.length
+  // 待确认横幅的定位动作：确认卡片渲染在消息列顶部，故直接滚动该容器到顶。
+  const focusPendingConfirmation = () => {
+    if (activeTab !== 'chat') setActiveTab('chat')
+    requestAnimationFrame(() => {
+      messagesEndRef.current?.parentElement?.scrollTo({ top: 0, behavior: 'smooth' })
+    })
+  }
+
   return (
     <div className="agent-workbench" style={pageShell}>
       <section style={consoleHeaderStyle}>
@@ -2757,36 +2798,81 @@ function AgentPageContent() {
               </Text>
             </div>
           </div>
-          <div style={commandBarStyle}>
+          <div style={{ ...commandBarStyle, gridTemplateColumns: 'minmax(180px, 240px) minmax(150px, auto) minmax(140px, auto) repeat(4, auto)' }}>
             <Select
               value={selectedProfileId || undefined}
               onChange={setSelectedProfileId}
-              style={{ minWidth: 190, width: '100%' }}
+              style={{ minWidth: 180, width: '100%' }}
               placeholder="选择智能体"
               options={profiles.map(profile => ({
                 value: profile.id,
                 label: `${profile.avatar || 'Agent'} ${profile.name} · ${ROLE_TYPE_LABELS[profile.role_type || 'assistant'] || profile.role_type || '通用助手'}`,
               }))}
             />
+            <Tooltip title="模型：修改后保存到当前智能体">
+              <Select
+                value={selectedProfile?.model || undefined}
+                onChange={value => applyProfileSetting({ model: value || '' })}
+                className="agent-rail-optional"
+                style={{ minWidth: 150 }}
+                placeholder="默认模型"
+                options={railModelOptions}
+                showSearch
+                optionFilterProp="label"
+                disabled={!selectedProfile}
+                notFoundContent="该供应商未配置模型列表"
+              />
+            </Tooltip>
+            <Tooltip title="默认工作流：修改后保存到当前智能体">
+              <Select
+                value={selectedProfile?.default_workflow || undefined}
+                onChange={value => applyProfileSetting({ default_workflow: value || '' })}
+                className="agent-rail-optional"
+                style={{ minWidth: 140 }}
+                placeholder="通用助手"
+                options={DEFAULT_WORKFLOW_OPTIONS}
+                disabled={!selectedProfile}
+              />
+            </Tooltip>
             <Tooltip title={activeTab === 'chat' ? '查看完整运行轨迹' : '返回对话'}>
               <Button
                 aria-label={activeTab === 'chat' ? '查看完整运行轨迹' : '返回对话'}
+                className="agent-rail-optional"
                 icon={<HistoryOutlined />}
                 onClick={() => setActiveTab(activeTab === 'chat' ? 'tools' : 'chat')}
                 style={controlButtonStyle}
               />
             </Tooltip>
             <Tooltip title="工具与权限">
-              <Button aria-label="工具与权限" icon={<ToolOutlined />} onClick={() => setToolsOpen(true)} style={controlButtonStyle} />
+              <Button aria-label="工具与权限" className="agent-rail-optional" icon={<ToolOutlined />} onClick={() => setToolsOpen(true)} style={controlButtonStyle} />
             </Tooltip>
             <Tooltip title="智能体设置">
               <Button aria-label="智能体设置" icon={<SettingOutlined />} onClick={() => setProfileOpen(true)} style={controlButtonStyle} />
             </Tooltip>
             <Tooltip title="刷新工作台数据">
-              <Button aria-label="刷新工作台数据" icon={<ReloadOutlined />} onClick={reloadAll} style={controlButtonStyle} />
+              <Button aria-label="刷新工作台数据" className="agent-rail-optional" icon={<ReloadOutlined />} onClick={reloadAll} style={controlButtonStyle} />
             </Tooltip>
           </div>
         </div>
+        {pendingCount > 0 && (
+          <div style={{ marginTop: 8 }}>
+            <Alert
+              type="warning"
+              showIcon
+              style={{ padding: '3px 10px', background: 'rgba(250,173,20,0.12)', border: '1px solid #faad14' }}
+              message={
+                <span style={{ fontSize: 12 }}>
+                  有 <strong>{pendingCount}</strong> 个操作等待你的确认
+                </span>
+              }
+              action={
+                <Button size="small" type="link" onClick={focusPendingConfirmation} style={{ padding: 0, height: 'auto', fontSize: 12 }}>
+                  定位到确认卡片
+                </Button>
+              }
+            />
+          </div>
+        )}
       </section>
 
       <section
@@ -2816,9 +2902,22 @@ function AgentPageContent() {
             ) : sessions.length === 0 ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无对话" />
             ) : (
-              <div style={{ display: 'grid', gap: 8 }}>
+              <div style={{ display: 'grid', gap: 0 }}>
                 {sessions.slice(0, 12).map(item => {
                   const isActive = currentSessionId === item.id
+                  const threadStatus = (item.status || '').toLowerCase()
+                  const hasPending = pendingToolSteps.length > 0 || pendingMemorySteps.length > 0
+                  // 会话状态点：仅当前会话有可靠的 run 级状态；其它会话后端目前只返回
+                  // thread.status（取值域仅 active / archived），拿不到"运行中/待确认"→
+                  // 按"无数据不显示"处理，不伪造状态。后端将来透传 run 级状态时
+                  // 下面的 threadStatus 分支会直接生效。
+                  let dot: { label: string; color: string } | null = null
+                  if (isActive && hasPending) dot = { label: '待确认', color: '#faad14' }
+                  else if (isActive && loading) dot = { label: '运行中', color: THEME.primary }
+                  else if (isActive && currentRun?.status === 'failed') dot = { label: '失败', color: '#ff4d4f' }
+                  else if (isActive && (currentRun?.status === 'completed' || currentRun?.status === 'done')) dot = { label: '完成', color: '#52c41a' }
+                  else if (threadStatus === 'running') dot = { label: '运行中', color: THEME.primary }
+                  else if (threadStatus === 'failed') dot = { label: '失败', color: '#ff4d4f' }
                   return (
                     <button
                       key={item.id}
@@ -2827,18 +2926,29 @@ function AgentPageContent() {
                       className="agent-profile-row"
                       style={{
                         width: '100%',
-                        border: `1px solid ${isActive ? THEME.primary : THEME.borderLight}`,
-                        borderRadius: 8,
+                        border: 0,
+                        borderLeft: `2px solid ${isActive ? THEME.primary : 'transparent'}`,
+                        borderBottom: `1px solid ${THEME.borderLight}`,
+                        borderRadius: 0,
                         padding: '9px 10px',
-                        background: isActive ? (THEME.primaryAlpha?.(0.1) || THEME.bgElevated) : THEME.bgElevated,
+                        background: isActive ? (THEME.primaryAlpha?.(0.1) || THEME.bgElevated) : 'transparent',
                         color: THEME.textPrimary,
                         textAlign: 'left',
                         cursor: 'pointer',
                       }}
                     >
-                      <Text ellipsis style={{ display: 'block', fontSize: 12.5, lineHeight: 1.4, fontWeight: isActive ? 700 : 500 }}>
-                        {item.title || '未命名线程'}
-                      </Text>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                        {dot && (
+                          <span
+                            title={dot.label}
+                            aria-label={dot.label}
+                            style={{ flex: '0 0 auto', width: 7, height: 7, borderRadius: '50%', background: dot.color }}
+                          />
+                        )}
+                        <Text ellipsis style={{ fontSize: 12.5, lineHeight: 1.4, fontWeight: isActive ? 700 : 500, minWidth: 0, flex: 1 }}>
+                          {item.title || '未命名线程'}
+                        </Text>
+                      </span>
                       <Text type="secondary" style={{ fontSize: 10.5 }}>
                         {new Date(item.updated_at).toLocaleString('zh-CN')}
                       </Text>
@@ -2928,12 +3038,7 @@ function AgentPageContent() {
                     >
                       {(pendingToolSteps.length > 0 || pendingMemorySteps.length > 0) && (
                         <Space direction="vertical" size={10} style={{ width: '100%', marginBottom: 14 }}>
-                          <Alert
-                            type="warning"
-                            showIcon
-                            message={`有 ${pendingToolSteps.length + pendingMemorySteps.length} 个操作等待你的确认`}
-                            description="确认后才会真正执行；这些操作涉及写入、删除或模型消耗。"
-                          />
+                          {/* 待确认横幅已上移到顶部控制栏（任务 #4）；此处只保留可操作的确认卡片。 */}
                           {pendingToolSteps.map(step => (
                             <div key={step.id} style={{ border: '1px solid #faad14', borderLeft: '4px solid #faad14', borderRadius: 10, padding: '12px 14px', background: 'rgba(250,173,20,0.06)' }}>
                               <Space direction="vertical" size={8} style={{ width: '100%' }}>
@@ -3001,7 +3106,14 @@ function AgentPageContent() {
                               {msg.role === 'assistant' && (
                                 <Avatar size={24} icon={<RobotOutlined />} style={{ backgroundColor: THEME.bgElevated, color: THEME.primary }} />
                               )}
-                              <div style={bubbleStyle(msg.role)}>{renderMarkdown(msg.content, msg.role)}</div>
+                              <div style={{ minWidth: 0, maxWidth: '100%', display: 'flex', flexDirection: 'column', alignItems: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
+                                <div style={bubbleStyle(msg.role)}>{renderMarkdown(msg.content, msg.role)}</div>
+                                {msg.created_at && (
+                                  <Text type="secondary" style={{ fontSize: 10.5, marginTop: 2, paddingInline: 2, fontVariantNumeric: 'tabular-nums' }}>
+                                    {new Date(msg.created_at).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                  </Text>
+                                )}
+                              </div>
                             </Space>
                           </div>
                         </div>
@@ -3055,11 +3167,14 @@ function AgentPageContent() {
                       </div>
                       <div style={{ marginTop: 8, borderTop: `1px solid ${THEME.borderLight}`, paddingTop: 7, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
                         <Text type="secondary" style={{ fontSize: 11 }}>Enter 发送 · Shift+Enter 换行</Text>
-                        <Space size={10} wrap>
-                          <Text type="secondary" style={{ fontSize: 11 }}>Run <span style={{ fontVariantNumeric: 'tabular-nums' }}>{currentRun?.status || '—'}</span></Text>
-                          <Text type="secondary" style={{ fontSize: 11 }}>步骤 <span style={{ fontVariantNumeric: 'tabular-nums' }}>{currentRun?.steps?.length ?? 0}</span></Text>
-                          <Text type="secondary" style={{ fontSize: 11 }}>工具 <span style={{ fontVariantNumeric: 'tabular-nums' }}>{toolSteps.length}</span></Text>
-                          <Text type="secondary" style={{ fontSize: 11 }}>耗时 <span style={{ fontVariantNumeric: 'tabular-nums' }}>{runDurationMs ? `${runDurationMs}ms` : '—'}</span></Text>
+                        {/* 等宽字体放在容器上：拉丁字符与数字走 mono，中文标签自动回退 CJK 字体 */}
+                        <Space size={10} wrap style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}>
+                          <Text type="secondary" style={{ fontSize: 11 }}>Run <span style={{ fontVariantNumeric: 'tabular-nums' }}>{currentRun?.status || '--'}</span></Text>
+                          <Text type="secondary" style={{ fontSize: 11 }}>步骤 <span style={{ fontVariantNumeric: 'tabular-nums' }}>{currentRun ? (currentRun.steps?.length ?? 0) : '--'}</span></Text>
+                          <Text type="secondary" style={{ fontSize: 11 }}>工具 <span style={{ fontVariantNumeric: 'tabular-nums' }}>{currentRun ? toolSteps.length : '--'}</span></Text>
+                          <Text type="secondary" style={{ fontSize: 11 }}>耗时 <span style={{ fontVariantNumeric: 'tabular-nums' }}>{runDurationMs ? `${runDurationMs}ms` : '--'}</span></Text>
+                          <Text type="secondary" style={{ fontSize: 11 }}>Token <span style={{ fontVariantNumeric: 'tabular-nums' }}>{runTokens ?? '--'}</span></Text>
+                          <Text type="secondary" style={{ fontSize: 11 }}>成本 <span style={{ fontVariantNumeric: 'tabular-nums' }}>{runCost ?? '--'}</span></Text>
                         </Space>
                       </div>
                     </div>
@@ -3266,7 +3381,7 @@ function AgentPageContent() {
                         </div>
                         <div
                           style={{
-                            border: `1px solid ${THEME.borderLight}`,
+                            borderTop: `1px solid ${THEME.borderLight}`,
                             borderRadius: 10,
                             padding: 12,
                             background: THEME.bgCard,
@@ -3325,7 +3440,7 @@ function AgentPageContent() {
                             <div
                               key={step}
                               style={{
-                                border: `1px solid ${THEME.borderLight}`,
+                                borderTop: `1px solid ${THEME.borderLight}`,
                                 borderRadius: 8,
                                 padding: 12,
                                 background: THEME.bgCard,
@@ -3528,7 +3643,7 @@ function AgentPageContent() {
                       borderRadius: 8,
                       background: THEME.bgPage,
                       color: THEME.textPrimary,
-                      border: `1px solid ${THEME.borderLight}`,
+                      borderTop: `1px solid ${THEME.borderLight}`,
                       maxHeight: 180,
                       overflow: 'auto',
                       fontSize: 12,
@@ -3698,6 +3813,9 @@ function AgentPageContent() {
               display: 'grid',
               gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
               gap: 8,
+              borderTop: `1px solid ${THEME.borderLight}`,
+              borderBottom: `1px solid ${THEME.borderLight}`,
+              padding: '8px 0',
             }}
           >
             {[
@@ -3706,26 +3824,20 @@ function AgentPageContent() {
               { label: '当前显示', value: filteredTools.length },
               { label: '分类数', value: visibleCategories.length },
             ].map(item => (
-              <div
-                key={item.label}
-                style={{
-                  border: `1px solid ${THEME.borderLight}`,
-                  borderRadius: 8,
-                  padding: '8px 10px',
-                  background: THEME.bgCard,
-                }}
-              >
+              <div key={item.label}>
                 <div style={{ fontSize: 12, color: THEME.textSecondary }}>{item.label}</div>
-                <div style={{ fontSize: 18, fontWeight: 700, color: THEME.textPrimary }}>{item.value}</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: THEME.textPrimary, fontVariantNumeric: 'tabular-nums' }}>{item.value}</div>
               </div>
             ))}
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 1fr) 150px 130px 130px', gap: 8 }}>
+          {/* 过滤区改用 flex + wrap + minWidth：窄屏自动换行，不再因固定四列产生横向溢出（任务 #18） */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             <Input
               allowClear
               placeholder="搜索工具名、说明、输入输出"
               value={toolSearch}
               onChange={event => setToolSearch(event.target.value)}
+              style={{ flex: '1 1 220px', minWidth: 0 }}
             />
             <Select
               value={toolCategoryFilter}
@@ -3737,6 +3849,7 @@ function AgentPageContent() {
                   value: category,
                 })),
               ]}
+              style={{ flex: '0 1 150px', minWidth: 118 }}
             />
             <Select
               value={toolAuthFilter}
@@ -3746,6 +3859,7 @@ function AgentPageContent() {
                 { label: '已授权', value: 'authorized' },
                 { label: '未授权', value: 'blocked' },
               ]}
+              style={{ flex: '0 1 130px', minWidth: 108 }}
             />
             <Select
               value={toolRiskFilter}
@@ -3757,6 +3871,7 @@ function AgentPageContent() {
                   value: risk,
                 })),
               ]}
+              style={{ flex: '0 1 130px', minWidth: 108 }}
             />
           </div>
         </Space>
@@ -3838,7 +3953,7 @@ function AgentPageContent() {
                         {tool.input_schema_note && (
                           <div
                             style={{
-                              border: `1px solid ${THEME.borderLight}`,
+                              borderTop: `1px solid ${THEME.borderLight}`,
                               borderRadius: 8,
                               padding: 8,
                               background: THEME.bgPage,
@@ -3855,7 +3970,7 @@ function AgentPageContent() {
                         {tool.output_schema_note && (
                           <div
                             style={{
-                              border: `1px solid ${THEME.borderLight}`,
+                              borderTop: `1px solid ${THEME.borderLight}`,
                               borderRadius: 8,
                               padding: 8,
                               background: THEME.bgPage,
@@ -3946,7 +4061,7 @@ function AgentPageContent() {
                               borderRadius: 8,
                               background: THEME.bgPage,
                               color: THEME.textPrimary,
-                              border: `1px solid ${THEME.borderLight}`,
+                              borderTop: `1px solid ${THEME.borderLight}`,
                               maxHeight: 220,
                               overflow: 'auto',
                               fontSize: 12,
@@ -4111,7 +4226,7 @@ function AgentPageContent() {
                           <div
                             key={tool.name}
                             style={{
-                              border: `1px solid ${THEME.borderLight}`,
+                              borderTop: `1px solid ${THEME.borderLight}`,
                               borderRadius: 8,
                               padding: 10,
                               background: isToolAuthorized(tool.name) ? (THEME.primaryAlpha?.(0.06) || 'rgba(22,119,255,0.06)') : THEME.bgCard,
@@ -4184,7 +4299,7 @@ function AgentPageContent() {
                           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无长期记忆" />
                         ) : (
                           memories.map(memory => (
-                            <div key={memory.key} style={{ border: `1px solid ${THEME.borderLight}`, borderRadius: 8, padding: 10 }}>
+                            <div key={memory.key} style={{ borderTop: `1px solid ${THEME.borderLight}`, paddingTop: 10 }}>
                               <Space style={{ width: '100%', justifyContent: 'space-between' }} align="start">
                                 <Space direction="vertical" size={4} style={{ minWidth: 0 }}>
                                   <Space wrap>
@@ -4215,7 +4330,7 @@ function AgentPageContent() {
                               <details
                                 key={skill.id}
                                 style={{
-                                  border: `1px solid ${THEME.borderLight}`,
+                                  borderTop: `1px solid ${THEME.borderLight}`,
                                   borderRadius: 8,
                                   padding: 10,
                                   background: skill.is_builtin ? (THEME.primaryAlpha?.(0.04) || 'rgba(22,119,255,0.04)') : THEME.bgCard,
@@ -4240,7 +4355,7 @@ function AgentPageContent() {
                                       borderRadius: 8,
                                       background: THEME.bgPage,
                                       color: THEME.textPrimary,
-                                      border: `1px solid ${THEME.borderLight}`,
+                                      borderTop: `1px solid ${THEME.borderLight}`,
                                       whiteSpace: 'pre-wrap',
                                       fontSize: 12,
                                       lineHeight: 1.7,

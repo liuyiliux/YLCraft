@@ -11,6 +11,17 @@ export interface AgentSession {
   context: Record<string, any>
   created_at: string
   updated_at: string
+  /**
+   * 线程状态，由后端 `/agent/threads` 返回（此前前端未声明，导致该字段被丢弃）。
+   *
+   * 注意：后端当前写入 thread.status 的取值域只有 `active` 与 `archived`
+   * （`archived` 已被列表接口过滤）。run 级的 running / 待确认 / 完成 / 失败
+   * 属于 `AgentRun`，**不在** thread 上，因此会话列表无法据此渲染"运行中/待确认"
+   * 这类状态点。
+   */
+  status?: string
+  /** 该线程当前使用的智能体配置 id */
+  active_profile_id?: string
 }
 
 export interface AgentMessage {
@@ -87,6 +98,18 @@ export interface AgentRun {
   finished_at?: string | null
   steps?: AgentRunStep[]
   children?: AgentRun[]
+  /**
+   * 运行时遥测字段（可选）。
+   *
+   * 后端目前**未在 AgentRun 上透传** token 与成本（`AIUsageLog` 已有
+   * `total_tokens`/`cost`，但未与 run 关联，见 agent-workbench-ui-redesign
+   * design.md §5「不改后端」）。前端统一按「字段缺失即显示 --」处理，
+   * 后端将来补齐后无需改前端即可自动生效。
+   */
+  duration_ms?: number
+  token_estimate?: number
+  total_tokens?: number
+  cost?: number
 }
 
 export interface AgentDelegation {
