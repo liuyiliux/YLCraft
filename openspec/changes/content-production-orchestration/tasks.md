@@ -58,5 +58,11 @@
 - [x] 22. 固化素材中枢上传契约：外部 Agent 可通过 `POST /api/v1/assets/upload` 上传图片、视频、音频、文本和 3D 文件，并获得稳定资产 ID。
 - [x] 23. 固化生成与任务契约：外部 Agent 可调用图片/视频/3D/文本生成接口，通过任务详情、事件日志和素材血缘查询结果。
 - [x] 24. 为项目上下文建立统一字段：`project_id`、`content_id`、`production_profile`、`source_type`、`source_index` 和 `source_title`。
-- [ ] 25. 增加外部 Agent API 的鉴权、作用域、速率限制和消耗型操作确认策略；未完成前不把开发 CORS 直接视为公网安全方案。（已落地：平台级 `ExternalApiKey`（迁移 020）+ `/api/v1/external-api-keys` 管理（含 `quota` 次数配额，迁移 021）、Bearer 校验（key_hash/active/scope）+ 每 key 滑动窗口限流 + generate scope 消耗配额（quota_used 递增、超限 403）+ 强制开关 `YLCRAFT_EXTERNAL_API_REQUIRE_KEY=1`，覆盖 `/images/generate`、`/videos/generate`、`/llm/chat`、`/model-3d/generate`、`/assets/upload`、`/assets/{id}`、`/logs`、`/ai/capabilities`；待：`/tasks/{task_id}` 等剩余读接口与公开文档示例）
+- [x] 25. 增加外部 Agent API 的鉴权、作用域、速率限制和消耗型操作确认策略；未完成前不把开发 CORS 直接视为公网安全方案。（已落地：平台级 `ExternalApiKey`（迁移 020）+ `/api/v1/external-api-keys` 管理（含 `quota` 次数配额，迁移 021）、Bearer 校验（key_hash/active/scope）+ 每 key 滑动窗口限流 + generate scope 消耗配额（quota_used 递增、超限 403）+ 强制开关 `YLCRAFT_EXTERNAL_API_REQUIRE_KEY=1`，覆盖 `/images/generate`、`/videos/generate`、`/llm/chat`、`/model-3d/generate`、`/assets/upload`、`/assets/{id}`、`/logs`、`/ai/capabilities`；待：`/tasks/{task_id}` 等剩余读接口与公开文档示例）
+  - _2026-09-13 收尾（两项待办均已补）：_
+    - _剩余读接口：`tasks` 路由的三个读端点（`GET ""`（列表）、`GET /stats`、`GET /{task_id}`）已挂 `Depends(optional_external_api_key)`，与既有 15 处写法一致。_
+    - _公开文档示例：`docs/guides/external-agent-api.md` 新增「外部 Agent API Key（鉴权）」章节——管理端点（列/建/撤）、Bearer 调用示例、`scope` 取值（`read`/`write`/`generate`）、token 形如 `ylk_...` 且**明文只在创建时返回一次**、开关语义、配额与限流、错误码（401/403/429）、已覆盖端点清单。原「安全边界」段仍写着"必须补充 API Key/OAuth"，与实际已落地不符，已一并改写。_
+    - _**实测修正了一处置辩错误**：开关关闭 ≠ 完全不校验。实测：不带 Key → 200；带**无效** Key → **401「无效或已停用的外部 API Key」**（即使开关关闭）。正确表述是"不强制携带，但携带即必须有效"，已写入文档。_
+    - _**已知限制（已写入文档，未擅自改代码）**：前端 `frontend/src` 中**没有任何** `Authorization`/`Bearer`/`externalApiKey` 相关代码，即浏览器请求从不带 Key；而受保护列表已包含前端在用的端点（`GET /assets/{id}` 与上述任务读接口）。**因此一旦设 `YLCRAFT_EXTERNAL_API_REQUIRE_KEY=1`，界面本身会先 401。** 启用公网模式前需先补「前端 Key 注入」或「本地/浏览器会话豁免」——该议题已另立 change（登录与用户体系）跟进。_
+    - _回归验证：`GET /tasks`、`GET /tasks/stats` 均 200；`pytest -k "task or asset or external or api"` → **185 passed**。_
 - [x] 26. 提供外部 Agent API 示例和 OpenAPI 使用说明，覆盖“查询模型 → 上传图片 → 生图/生视频 → 轮询任务 → 读取素材”的完整闭环。

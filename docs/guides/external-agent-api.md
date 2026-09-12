@@ -44,9 +44,76 @@ YLCraft 的文本、图片、视频、3D 和素材中枢能力可以被外部智
 }
 ```
 
-## 安全边界
+## 外部 Agent API Key（鉴权）
 
-当前开发环境的 CORS 允许浏览器联调，不等于公网 Agent 鉴权。正式开放给外部 Agent 前必须补充平台级 API Key/OAuth、作用域、租户隔离、速率限制、用量/费用限制和消耗型操作确认。平台级访问凭证用于识别调用方，不等于也不得替代供应商凭证；API 返回和事件日志会脱敏，不应把连接器密钥放进模型上下文。
+当前开发环境的 CORS 允许浏览器联调，**不等于公网 Agent 鉴权**。要开放给外部 Agent，使用平台级 API Key 识别调用方。
+
+> 平台级访问凭证用于识别调用方，**不等于也不得替代供应商凭证**。外部 Agent 不读取、不保存、不传入供应商 API Key / SecretId / SecretKey / Cookie / Token / 对象存储凭证。API 返回和事件日志会脱敏，不应把连接器密钥放进模型上下文。
+
+### 管理 Key
+
+| 操作 | API |
+| --- | --- |
+| 列出 | `GET /api/v1/external-api-keys` |
+| 生成 | `POST /api/v1/external-api-keys` |
+| 撤销 | `DELETE /api/v1/external-api-keys/{key_id}` |
+
+请求体字段：`name`（默认 `外部 Agent`）、`scope`、`quota`（次数配额上限，`0` 表示不限）。
+
+- **`scope` 取值**：`read` / `write` / `generate`（其它值返回 422）
+- token 形如 `ylk_...`，**明文只在创建时返回一次**（响应 `api_key` 字段），之后只存 `key_hash` 与 `key_prefix`，无法再次取回
+- 撤销是把 `active` 置 false，不物理删除
+
+### 调用方式
+
+```bash
+curl -X POST http://<host>/api/v1/images/generate \
+  -H "Authorization: Bearer ylk_xxxxxxxxxxxxxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{"prompt":"一只陶土茶壶，米白釉面","size":"1024x1024"}'
+```
+
+### 开关
+
+- 环境变量 **`YLCRAFT_EXTERNAL_API_REQUIRE_KEY=1`** 时，挂了校验的端点**强制要求**携带 Key
+- **默认关闭**：不设该变量时，端点**不强制要求**携带 Key；但**一旦携带，必须是有效且启用的 Key**（无效/停用会返回 401）
+
+实测行为对照：
+
+| 场景 | 结果 |
+| --- | --- |
+| 开关关 + 不带 Key | 200（与未启用鉴权时一致） |
+| 开关关 + 带**无效** Key | **401**「无效或已停用的外部 API Key」 |
+| 开关关 + 带**有效** Key | 200 |
+| 开关开 + 不带 Key | **401**「需要外部 API Key」 |
+
+### 作用域、配额与限流
+
+| 机制 | 行为 |
+| --- | --- |
+| 速率限制 | 每个 Key 独立滑动窗口，超限返回 **429** |
+| 次数配额 | 仅 `scope=generate` 的 Key 计入；每次消耗型调用 `quota_used` 递增，达上限返回 **403** |
+| 无效/停用 | 返回 **401** |
+| 缺少 Key（开关打开时） | 返回 **401** |
+
+### 已覆盖的端点
+
+`POST /images/generate`、`POST /videos/generate`、`POST /llm/chat`、`POST /model-3d/generate`、
+`POST /assets/upload`、`GET /assets/{asset_id}`、`GET /logs`、`GET /ai/capabilities`，
+以及任务读接口 `GET /tasks`、`GET /tasks/stats`、`GET /tasks/{task_id}`。
+
+### ⚠️ 已知限制（启用公网模式前必须解决）
+
+**前端不带任何 Key**（`frontend/src` 中无 `Authorization` / `Bearer` / `externalApiKey` 相关代码），而受保护列表里已包含前端在用的端点（如 `GET /assets/{asset_id}`、任务读接口）。
+
+因此：**一旦设置 `YLCRAFT_EXTERNAL_API_REQUIRE_KEY=1`，浏览器界面调用这些端点会得到 401，界面本身会先坏掉。**
+
+启用公网模式前，需要先二选一：
+
+1. 给前端增加 Key 注入（设置页填写 Key，请求统一带 `Authorization`）；或
+2. 为本地/浏览器会话增加豁免策略
+
+在此之前，**该开关仅适用于纯外部 Agent 调用、不使用浏览器界面的部署形态。**
 
 ## Skill 同步规则
 

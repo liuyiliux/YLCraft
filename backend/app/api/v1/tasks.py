@@ -12,14 +12,16 @@ import logging
 import json
 from datetime import datetime, timedelta
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select, text
 
+from app.core.external_api_auth import optional_external_api_key
 from app.core.task_queue import get_task_queue, task_event_to_dict
 from app.db.database import get_async_session
+from app.db.models.external_api_key import ExternalApiKey
 from app.db.models.task import Model3DGenerationTask, VideoGenerationTask
 
 router = APIRouter()
@@ -622,6 +624,7 @@ async def list_tasks(
     task_type: str | None = None,
     active_only: bool = False,
     include_detail: bool = False,
+    external_key: Optional[ExternalApiKey] = Depends(optional_external_api_key),
 ):
     """
     返回所有活跃任务（内存视图）。
@@ -654,7 +657,9 @@ async def list_tasks(
 
 
 @router.get("/stats", response_model=TaskStatsResponse, summary="任务统计")
-async def get_task_stats():
+async def get_task_stats(
+    external_key: Optional[ExternalApiKey] = Depends(optional_external_api_key),
+):
     """返回任务统计数据，用于 Dashboard"""
     tasks = _all_task_infos(
         video_infos=await _video_task_infos(),
@@ -729,7 +734,10 @@ async def get_task_stats():
 
 
 @router.get("/{task_id}", response_model=TaskDetailResponse, summary="任务详情")
-async def get_task_detail(task_id: str):
+async def get_task_detail(
+    task_id: str,
+    external_key: Optional[ExternalApiKey] = Depends(optional_external_api_key),
+):
     """返回指定任务的详细信息"""
     queue = get_task_queue()
     task = await queue.get_task(task_id)
