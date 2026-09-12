@@ -62,8 +62,18 @@ def to_storage_path(path: Path | str) -> str:
     文件（下载目录、临时目录）保持绝对路径，避免跨机器指向不存在的路径。
 
     适用于服务端内部消费的字段，如 `asset_representations.file_path`。
+
+    相对路径按**项目根**解析（与 `resolve_storage_path` 对称），而不是按进程当前
+    工作目录解析。否则本函数**不可重复调用**：当调用方已转过一次、又把
+    `backend/app/storage/images/x.png` 传进来时，若 CWD 是 `backend/`，
+    `Path.resolve()` 会拼成 `backend/backend/app/storage/images/x.png`，
+    读取端随即报"文件不存在"（素材库/查看器打不开生成物）。
     """
-    resolved = Path(path).resolve()
+    raw = str(path)
+    p = Path(raw)
+    if not is_absolute_storage_path(raw):
+        p = project_root() / p
+    resolved = p.resolve()
     try:
         return resolved.relative_to(project_root()).as_posix()
     except ValueError:
