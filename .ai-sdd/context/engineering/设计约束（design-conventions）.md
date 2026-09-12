@@ -185,3 +185,13 @@
 
 1. **三条产品约束**（写入架构约束）：① **低门槛**——降低普通人操作门槛；② **结果可视**——直观呈现过程与产物；③ **脚本优先**——确定性操作交给脚本与服务，减少模型调用与 Token 消耗。YLCraft 的价值不是"堆更多配置"。
 2. **Agent 页面的 Markdown 是手写解析器，不是第三方库**：`parseInlineMarkdown` + `parseSimpleMarkdown`（`pages/agent/index.tsx:357-395`）自己产出 `MarkdownBlock`（paragraph / heading / list / quote / table）。排查 Agent 消息渲染问题时**不要去找 `react-markdown`**。
+
+
+### 9.10 小说来源与世界提取
+
+<!-- 来源：openspec/changes/novel-source-world-project，导入日期：2026-09-12 -->
+
+1. **序列化大纲也必须满足"逐字证据"**：把项目大纲转成来源文本时，每个字段要带 `【节】` 标记，使 AI 引用的引文能逐字落在该文本上从而通过证据校验（与小说来源同一套规则）。
+2. **核对实现必须用递归搜索**：本项目曾因 `Select-String` 只给目录（不递归子目录）而漏掉子目录实现，得出"没实现"的错误结论。
+3. **内置域字段只可追加、不可删除**：`world_domain_definitions` 允许覆盖标签/提示词、追加字段、禁用模块、添加自定义模块，但内置字段**禁止删除**——否则既有 `attributes_json` 会解析失败。AI 建议的模块落库为 `ai_suggested`，**默认不参与提取**，须转 `custom` 并启用。
+4. **`npm run smoke:pages` 是源码文本扫描，不是页面/浏览器验证**：它只做 `readFileSync` + `includes()` 找 marker，**既不挂载页面也不启动浏览器**，通过**不代表**页面能运行。真实 UI 验证须用 `patchright`（后端 venv 已装）+ Chromium 驱动真实浏览器。

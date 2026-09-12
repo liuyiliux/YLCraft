@@ -120,3 +120,21 @@ backend/venv_win/Scripts/python.exe tools/generate_api_surface.py
 | `GET\|POST /creative-projects/{id}/narrative/runs`（+ `/{run_id}/{action}`） | 叙事运行创建、列表与 pause/resume/cancel |
 
 - **新增路由必须同步**：API surface 重新生成、前端客户端类型、架构文档与聚焦测试。
+
+
+## 8. 小说来源与世界提取接口
+
+<!-- 来源：openspec/changes/novel-source-world-project，导入日期：2026-09-12 -->
+
+| 接口组 | 关键端点 |
+|---|---|
+| **来源与检索** | `POST /novel-sources/import-txt`、`import-bookshelf`、`GET /novel-sources`、`/{id}`、`/chapters`、`/chunks`、`POST /{id}/chunks/index`、`/chunks/search` |
+| **提取与写入** | `POST /{id}/plan`（逐域判定）、`POST /{id}/extract`、`GET /world-extraction-runs/{run_id}`、`/candidates`、`/reconcile`、`POST /candidates/decide`、`POST /apply`、`POST /contradictions`、`POST /affected-facts` |
+| **派生与实体** | `POST /{id}/derive`、`/{id}/sync`、`POST /creative-projects/from-novel-source`、`GET /projects/{id}/world-entities`、`/world-entity-relations`、`GET /creative-projects/{id}/world-knowledge` |
+| **世界地图** | `/world-maps/*`（CRUD、`render`、`export`、`revisions`、`rollback`、`generate-visual`） |
+
+- **Agent 侧命名陷阱**：候选决策/写入类工具名含 **`world_extraction`** 而**不含** `novel_source`
+  （`list_world_extraction_candidates`、`decide_world_extraction_candidates`、`apply_world_extraction_run`、
+  `reconcile_world_extraction_run`、`detect_world_extraction_contradictions`、`propagate_affected_world_facts`）。
+  按 `novel_source` 搜索工具会漏掉它们，从而误判"Agent 侧缺候选决策能力"。
+- 真人入口 `/novel-world`（提取工作台）与 `/world-map`（地图工作台）与 Agent 工具**共用同一服务层**。

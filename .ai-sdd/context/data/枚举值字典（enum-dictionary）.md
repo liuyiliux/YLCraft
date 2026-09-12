@@ -104,3 +104,14 @@
 - **`ProjectForeshadowing.kind`**：`clue` / `promise` / `object` / `relationship` / `rule`
 - **`ProjectForeshadowing.status`**：`pending_review` / `active` / `advanced` / `resolved` / `overdue` / `ignored` / `superseded`
 - **叙事运行模式**：`manual` / `batch` / `guarded_autopilot`（**只**推进到候选生成、审阅与 aftermath，在 promote、事实接受、台账激活与发布之前停下）
+
+
+## 11. 小说来源与世界提取
+
+<!-- 来源：openspec/changes/novel-source-world-project，导入日期：2026-09-12 -->
+
+- **`SourceStatus`**：`completed` / `serial` / `unknown`
+- **`DerivationKind`**：`adaptation` / `continuation` / `fan_work`
+- **候选状态**：`pending` / `accepted` / `ignored` / `merged`
+- **域判定（detection）**：`detected` / `uncertain` / `not_detected`（另有 `disabled` / `user_requested`）
+- **域 `source`**：`builtin_override` / `custom` / `ai_suggested`；**`fact_layer`**：`source_canon` 等
