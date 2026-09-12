@@ -113,7 +113,14 @@
 - [x] 54. API tests: idea -> outline -> chapter plan -> chapter outline -> prose -> script -> storyboard -> comic pages.
 - [x] 55. API tests: novel chapter -> project -> script draft.
 - [x] 56. Frontend build: `npm run build`.
-- [ ] 57. Manual external-provider smoke gate: create a fresh project, generate outline and chapter plan, generate a storyboard prompt, submit it to a currently working image backend, wait for actual completion, and verify the generated Asset Hub item plus project `derived_from` lineage. Existing historical assets, mocked responses and merely pending tasks do not satisfy this gate.
+- [x] 57. Manual external-provider smoke gate: create a fresh project, generate outline and chapter plan, generate a storyboard prompt, submit it to a currently working image backend, wait for actual completion, and verify the generated Asset Hub item plus project `derived_from` lineage. Existing historical assets, mocked responses and merely pending tasks do not satisfy this gate.
+  - _2026-09-12 通过（真实供应商 siliconflow-Qwen-Image，非 mock、非历史资产）：_
+    - _新鲜项目 `db74476c388042f0945e9e3fe683e633`（本次新建）→ 大纲 / 章节计划 / 单话细纲 / 分镜全部 200；分镜 8 个面板，取第 0 镜的 `image_prompt`。_
+    - _提交 `POST /api/v1/images/generate` 时**必须带上 lineage 字段**：`project_id` + `content_id`(storyboard 内容 id) + `source_type='storyboard_panel'`，且 `source_index` / `chapter_number` **须传字符串**（传整数会 422）。_
+    - _返回 HTTP 200 与真实图片 URL；后端 `_create_generated_image_artifact` 落资产中枢 + `ProjectAssetLink(role="generated", relation="derived_from")`。_
+    - _校验结果：项目资产关联由 **0 条 → 1 条**，`role=generated`、`relation=derived_from`、`asset_id=49a2c8b9-2246-4a7f-8249-10610181b2e4`、`content_id=42cd17df0f064fed9c2fa5675b91767b`；资产中枢条目 `source_type=ai_generated`、`created_at=2026-09-12 08:52:17`、本地已落盘。_
+    - _附带澄清（此前误判）：本条长期未勾的原因是**调用方未传 lineage 字段／字段类型不符**，而非后端不支持——只调 `/images/generate` 而不带 `project_id`/`content_id`/`source_type` 时不会产生项目谱系，易被误读为"生图不写谱系"。_
+    - _一处待观察：资产 `file_path` 记录为 `backend/backend/app/storage/images/...`（`backend/` 前缀重复）。资产可用、不影响本条闸门，但路径前缀疑有冗余，留待后续核对。_
 - [x] 58. Restore pending project image-generation tasks after refreshing `/story` by filtering task payloads by project and task type.
 - [x] 59. Persist project-scoped async image task context and hydrate it after an API process restart.
 - [x] 60. Make asynchronous batch storyboard generation wait and write back one panel at a time.
