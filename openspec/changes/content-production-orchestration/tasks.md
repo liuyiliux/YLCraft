@@ -36,14 +36,20 @@
 ## Phase 5: 验证与文档
 
 - [x] 18. 为 profile 校验、导演计划、Skill Team 汇合、局部重跑增加后端测试。
-- [ ] 19. 为独立生成 → 素材中枢 → 项目/画布 → 平台适配做浏览器 smoke。
+- [x] 19. 为独立生成 → 素材中枢 → 项目/画布 → 平台适配做浏览器 smoke。
   - _2026-09-13 部分完成（真实浏览器，patchright + Chromium；**未勾，缺"独立生成"这一环的实际提交**）：_
     - _独立生成（`/image-gen`）：页面渲染 HTTP 200；提示词输入框 2 个；后端/模型/尺寸三个选择器可用（硅基流动 / siliconflow-Kolors / 1024x1024）；Prompt 参考库入口存在。**只验证页面能力，未点击提交**（避免未经批准的额度消耗）。_
     - _素材中枢（`/assets`）：HTTP 200，25 个资产卡片 / 23 张图；既有资产可见（Cyberpunk 分镜图、SMOKE 验收图、角色立绘）。_
     - _项目/画布（`/canvas`、`/story`）：两页均渲染；画布含「素材库」区。_
     - _平台适配（`/multi-platform-gen`、`/platform-templates`）：两页均渲染；平台/尺寸选择器可用。_
     - _全程 **0 个 >=400 响应、0 条控制台 error**。首轮曾出现 1 条 `net::ERR_NO_BUFFER_SPACE`，单独复访 `/assets` 两次均为 0 错误，判定为 headless Chromium 的系统级 socket 缓冲噪声，非应用缺陷。_
-    - _未覆盖：链路首环「独立生成」的**实际提交**（需消耗 1 次生图额度，待用户确认后补做，届时校验产物是否自动进入素材中枢与任务中心，见任务 #12）。_
+    - _补做首环（用户已确认，消耗 1 次生图额度）：`/image-gen` 填提示词（含标记 `CPO19SMOKE`）→ 点「**开始生成**」→ **17 秒**后产物出现在 `/assets`（名字带标记）；全程 0 个 >=400、0 条控制台 error。至此链路四段全部走通，本条完成。_
+    - _**一处观察（不判定为缺陷）**：任务 #12 声称"生成结果自动进入任务中心、事件日志和 Asset Hub 血缘"。实测**生图**结果：_
+      - ✅ _事件日志：`platform_event_logs` 有完整记录（`scene=image`、`task_type=image_generation`、`status=success`、`provider=siliconflow-Kolors`、`duration_ms=5216`）_
+      - ✅ _Asset Hub 血缘：产物 17s 内可查_
+      - ⚠️ _**任务中心：查不到**_ —— `/api/v1/tasks` 聚合的是 `project_task_records`（creative_writing 61 / world_domain_expansion 5 / novel_download 1）+ `video_generation_tasks`(24) + `model3d_generation_tasks`(6)，**不含 image_generation**。_
+      - _合理推测：生图是同步快操作（5.2s），视频/3D 是异步长任务，故只有后者进入任务中心。这可能是设计取舍而非缺陷；若要求三者一致，需把生图也纳入任务中心聚合（改动点：`/api/v1/tasks` 的聚合来源）。留待确认。_
+    - _操作要点（供复现）：`/image-gen` 的提交按钮文案是「**开始生成**」；提示词框 placeholder 为「描述你想要生成的图像…」；反向提示词在第二个 textarea。_
 - [x] 20. 更新系统架构、API Surface、Agent Skill 文档和创作项目指南。
 
 ## Phase 6: 外部 Agent API
