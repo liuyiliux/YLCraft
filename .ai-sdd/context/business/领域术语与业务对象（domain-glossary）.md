@@ -143,3 +143,22 @@
 
 > 注：`/agent` 的**布局骨架**（三区布局、顶部控制栏、待确认横幅 vs 确认卡片、遥测条）见本文件「Agent 工作台前端」节，
 > 那里记录的是同族 change `agent-workbench-ui-redesign` 的结论；本节只补**信息架构取向**。
+
+
+## 小说来源与世界提取
+
+<!-- 来源：openspec/changes/novel-source-world-project，导入日期：2026-09-12 -->
+
+| 术语 | 定义 | 证据 |
+|---|---|---|
+| **来源快照（NovelSourceSnapshot）** | 导入原文的**只读**版本化快照：元数据、校验和、章节顺序、原文件引用与稳定 source anchor | 需求 1 |
+| **文本块（NovelTextChunk）** | 带溯源的有序切分单位（章节/偏移/校验和），是提取与检索的证据粒度 | 需求 3 |
+| **混合检索** | 精确 + 顺序邻近 + **可选**向量；向量不可用时降级为精确/顺序，仍返回证据锚点 | 需求 3 |
+| **分域提取运行（WorldExtractionRun）** | 逐域进度、重试、诊断、checkpoint 的持久化运行对象 | 需求 9 |
+| **候选（WorldFactCandidate）** | 抽取产物，**先于正典**；含 `payload`/`evidence`/`confidence`/`origin`/`target_entity_type`/`target_entity_id` | 需求 5、10 |
+| **`source_canon` 层** | 派生项目里**原作正典**的只读事实层，与 `confirmed_project_facts` / `derivative_delta` / `pending_candidates` 分层 | 需求 6 |
+| **基础层与扩展域** | 基础层（角色/关系/地点/时间线/相关规则与物品/未决问题）**永远可用**；其余域**逐个独立判定** | 需求 7 |
+
+**与「世界构建（AI 渐进生成）」的分工**：本域是**从已有小说文本反向提取**世界设定（来源 → 提取 → 审阅 → 写入）；
+`world-building-generation` 域是在**项目内部**由 AI 渐进生成/扩展设定（域级细化、实体属性补充）。
+两者共用 `world_asset` / `world_entities` / `world_domain_definitions`，但入口与信任模型不同。
