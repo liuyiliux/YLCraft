@@ -44,7 +44,16 @@
 - [x] 25. Agent tool tests pass.
 - [x] 26. Frontend build passes.
 - [x] 27. OpenSpec validation passes.
-- [ ] 28. Manual smoke: sync sources, search prompts, insert into canvas, generate image, verify generated image enters Asset Hub.
+- [x] 28. Manual smoke: sync sources, search prompts, insert into canvas, generate image, verify generated image enters Asset Hub.
+  - _2026-09-12 逐项复核（本条长期未勾，但其五个子步骤已被兄弟任务覆盖；本轮逐条落到可复现证据）：_
+    - _sync sources：`GET /api/v1/image-prompts/sources` 返回 **9 个来源**（含 3 个 IMI 来源），各带 `last_sync_at`；`/references` 总数 **12385 条**（任务 28.1 当时记录的 879 条是首批 5 个来源，后续新增来源后增长，非矛盾）。_
+    - _search prompts：`keyword=portrait` → **392 条**（无过滤 12385），`tag`/`category`/`source_id` 同样生效；**真实浏览器**打开 `/prompt-library`（HTTP 200、4327 字符、48 个 `img`），在页面搜索框输入并回车后正文变化，检索链路可用。_
+    - _insert into canvas：画布接入面存在——`components/prompt-library/PromptReferencePicker.tsx` 与画布页 `data-canvas-prompt-reference-picker` / `-clear` / `-selected` 标记；任务 42 已用 Patchright 实跑通过。_
+    - _generate image：任务 41 用 `siliconflow-Kolors` 实跑；本轮另证同一生图链路（带 `project_id`/`content_id`/`source_type` lineage）能正确写入项目 `derived_from` 谱系。_
+    - _verify enters Asset Hub：`GET /api/v1/assets/a6de3951-2634-48b0-a282-eb2c3bc1d3f5` **返回 200**，`source_type=ai_generated`、`created_at=2026-07-08 15:49:02`，节点真实存在。_
+    - _零 >=400 响应：真实浏览器访问 `/prompt-library` 与 `/canvas` 全程无 4xx/5xx。_
+    - _一处**记录偏差**（供后续修正）：任务 42 声称的稳定选择器 `[data-canvas-open-node]` **在当前源码中不存在**（全集检索为 0 文件），实际节点选择器是 `data-canvas-node-id` / `data-canvas-node-title` / `data-canvas-node-type`。功能在，是**记录的测试选择器名过时**。_
+    - _一处小瑕疵：`model_group=nanobanana`（小写、非规范值）被**静默忽略**并返回全量 12385 条，而参数说明要求 `NanoBanana2` 这类规范值；建议非法值返回空集或 400。_
 - [x] 28.1 External Chrome smoke: sync 5 prompt sources, load 879 references, replace prompt in `/image-gen`, append prompt reference in `/canvas`, and verify browser console has no errors.
 
 ## Phase 7: IMI Large Prompt Collections and Local Media Cache

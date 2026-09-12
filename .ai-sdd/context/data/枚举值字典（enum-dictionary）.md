@@ -130,3 +130,13 @@
 - **`template_stage`**：`outline` / `chapter_plan` / `chapter_outline` / `novel_body` / `comic_pages` / `script` / `storyboard`
 
 > 注意：资产 `relation` 的 `derived_from` 与叙事运行时、动态状态里的同名字段是**同一套语义**，不是各自发明的词。
+
+
+## 13. 提示词参考库
+
+<!-- 来源：openspec/changes/image-prompt-reference-library，导入日期：2026-09-12 -->
+
+- **`model_group`**：`ChatGPT` / `NanoBanana2` / `NanoBananaPro`
+- **来源类型**：markdown 段仓库 / JSON 仓库 / IMI detail JSON（解析器分别实现）
+
+> 陷阱：`model_group` 传小写非规范值（如 `nanobanana`）会被**静默忽略**并返回全量结果，而不是空集。

@@ -159,3 +159,20 @@ GET|PUT  /creative-projects/{id}/canvas
   `project_id` + `content_id` + `source_type`（如 `storyboard_panel`），且 `source_index` / `chapter_number`
   **须为字符串**；后端 `_create_generated_image_artifact` 会落资产中枢并写
   `ProjectAssetLink(role="generated", relation="derived_from")`。
+
+
+## 10. 提示词参考库接口
+
+<!-- 来源：openspec/changes/image-prompt-reference-library，导入日期：2026-09-12 -->
+
+| 端点 | 关键参数 / 用途 |
+|---|---|
+| `GET /api/v1/image-prompts/sources` | 来源列表（含同步状态、上次同步时间） |
+| `GET /api/v1/image-prompts/references` | 检索：**`keyword`**（title/prompt/category）、`tag`、`category`、`source_id`、`model_group`、`page`、`page_size`（≤100） |
+| `GET /api/v1/image-prompts/references/{id}` | 详情（含多图） |
+| `POST /api/v1/image-prompts/references/{id}/save-as-asset` | 存为素材 |
+| `POST /api/v1/image-prompts/references` | 用户自建引用 |
+| `GET /api/v1/image-prompts/media/{source_id}/{item_id}/{filename}` | 缓存提示词图片的本地媒体端点 |
+
+- **参数名陷阱**：检索关键词参数是 **`keyword`**，不是 `q`/`search`/`query`/`text`。用错名字会被**静默忽略**并返回全量结果，极易误判为"过滤失效"（本项目已实测踩到）。
+- 前端入口：`/prompt-library`（独立图库页）；组件 `components/prompt-library/PromptReferencePicker.tsx` 供画布与生图页复用。

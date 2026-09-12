@@ -180,3 +180,17 @@
 
 **与 `creative-project-workspace` 的关系**：那里记录的是**工作台 UI 骨架**（三区布局、阶段轨）；
 本节记录的是**产品主干**——创作项目作为主工作单元的领域模型、阶段机与素材/画布闭环。
+
+
+## 提示词参考库
+
+<!-- 来源：openspec/changes/image-prompt-reference-library，导入日期：2026-09-12 -->
+
+| 术语 | 定义 | 证据 |
+|---|---|---|
+| **提示词参考库** | 与 `PlatformTemplate` **分离**的提示词素材库：从外部仓库同步、可检索、可插入画布/生图 | 任务 #1 |
+| **提示词来源（ImagePromptSource）** | 一个可同步的外部提示词仓库（GitHub markdown 段 / JSON / IMI detail JSON），带同步状态、上次同步时间与错误 | 任务 #2、#8 |
+| **提示词引用（ImagePromptReference）** | 来源里的一条提示词：标题、正文、分类、标签、封面/多图、模型分组、来源链接 | 任务 #2、#18 |
+| **模型分组（model_group）** | 跨来源的**规范化**模型维度（`ChatGPT` / `NanoBanana2` / `NanoBananaPro`），统一筛选 IMI 与 GitHub 来源 | 任务 #40.2 |
+
+**与 `PlatformTemplate` 的分工**：平台模板是"**发布格式**模板"；提示词库是"**创作输入**素材"。两者语义不同，故不共用一张表。
