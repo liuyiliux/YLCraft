@@ -195,3 +195,22 @@
 2. **核对实现必须用递归搜索**：本项目曾因 `Select-String` 只给目录（不递归子目录）而漏掉子目录实现，得出"没实现"的错误结论。
 3. **内置域字段只可追加、不可删除**：`world_domain_definitions` 允许覆盖标签/提示词、追加字段、禁用模块、添加自定义模块，但内置字段**禁止删除**——否则既有 `attributes_json` 会解析失败。AI 建议的模块落库为 `ai_suggested`，**默认不参与提取**，须转 `custom` 并启用。
 4. **`npm run smoke:pages` 是源码文本扫描，不是页面/浏览器验证**：它只做 `readFileSync` + `includes()` 找 marker，**既不挂载页面也不启动浏览器**，通过**不代表**页面能运行。真实 UI 验证须用 `patchright`（后端 venv 已装）+ Chromium 驱动真实浏览器。
+
+
+### 9.11 创作项目闭环
+
+<!-- 来源：openspec/changes/creative-project-closed-loop，导入日期：2026-09-12 -->
+
+1. **阶段模板体系要兼容历史模板**：扩展 `platform_templates` 增加 `template_scope` / `template_stage` / `description` / `system_template` / `variables`，使历史多平台图片模板继续可用，同时创作项目的系统/用户提示词可在模板管理 UI 编辑。**内置模板是兜底**，用户覆盖优先。
+2. **生图回写项目谱系必须带齐字段**：`POST /images/generate` 需带 `project_id` + `content_id` + `source_type`，且 `source_index` / `chapter_number` **须为字符串**（传整数会 422）；只调 `/images/generate` 而不带这些字段**不会**产生项目 `derived_from` 谱系——容易误读为"生图不写谱系"。
+3. **生成单元独立存储是硬要求**：把多阶段产出塞进一个 JSON blob 会导致无法单独重生成/版本化/检索，是本项目明确否决的做法。
+4. **实验模块不得混入主流程**：新增能力若尚未接入项目闭环，应在导航中标注为实验，而不是让用户以为已可用。
+
+### 9.12 相关设计决策
+
+| 决策 | 理由 | 被否决的方案 |
+|---|---|---|
+| **新建表（Path A）而非扩展 `stories`** | `Story` 命名与字段对小说/漫画/短剧/画布过窄；新表更清晰且不破坏既有 Story Maker | 在 `stories` 上加 JSON 字段（Path B） |
+| **首版只做最小闭环** | 只覆盖大纲、章节计划、小说导入与生图交接 | 一次性交付全部阶段与画布 |
+| **画布是项目组合面** | 承载"项目 → 产物 → 素材"的编排 | 做成独立功能页 |
+| **LLM JSON 靠工程兜底** | Pydantic 校验 + 一次修复 + 原始日志 + 版本化 | 仅靠提示词保证 JSON 正确 |

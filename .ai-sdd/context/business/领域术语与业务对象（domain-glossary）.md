@@ -162,3 +162,21 @@
 **与「世界构建（AI 渐进生成）」的分工**：本域是**从已有小说文本反向提取**世界设定（来源 → 提取 → 审阅 → 写入）；
 `world-building-generation` 域是在**项目内部**由 AI 渐进生成/扩展设定（域级细化、实体属性补充）。
 两者共用 `world_asset` / `world_entities` / `world_domain_definitions`，但入口与信任模型不同。
+
+
+## 创作项目闭环
+
+<!-- 来源：openspec/changes/creative-project-closed-loop，导入日期：2026-09-12 -->
+
+| 术语 | 定义 | 证据 |
+|---|---|---|
+| **创作项目（CreativeProject）** | **唯一的工作单元**：一级心智是「项目工作台 + 素材库 + 画布」，其他能力降级为项目内的动作入口 | proposal「Product」 |
+| **项目内容项（ProjectContent）** | 每个阶段的产出**独立存储**（不塞进一个大 JSON blob），以便重新生成、版本化、关联、检索、复用 | design「Project content item」 |
+| **阶段机** | `outline → chapter_plan → chapter_outline → body → comic_pages / script → storyboard`，每阶段只消费**上游已保存**的产物 | design「Generation strategy」 |
+| **项目资产关联（ProjectAssetLink）** | 项目 ↔ 素材库节点的带语义关联（`role` + `relation`） | design「Project asset link」 |
+| **素材库作为项目持久记忆** | 角色 → `Character` + 素材节点；世界观/章节摘要/脚本/分镜/提示词 → 文本素材；AI 图与视频 → 媒体素材 | design「Asset library」 |
+| **画布作为项目编排面** | 不是独立玩具页：节点 `project/outline/chapter/character/scene/prompt/image/video/audio/note` + 边 `contains/uses/references/derived_from/variant_of` | design「Canvas」 |
+| **稳定 vs 实验能力分级** | 稳定：下载、小说、AI 图片、素材库、创作项目。实验：视频生成、剪辑、字幕、BGM、发布、爬虫、Agent | design「Frontend information architecture」 |
+
+**与 `creative-project-workspace` 的关系**：那里记录的是**工作台 UI 骨架**（三区布局、阶段轨）；
+本节记录的是**产品主干**——创作项目作为主工作单元的领域模型、阶段机与素材/画布闭环。
