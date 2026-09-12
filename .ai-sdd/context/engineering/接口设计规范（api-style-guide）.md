@@ -176,3 +176,22 @@ GET|PUT  /creative-projects/{id}/canvas
 
 - **参数名陷阱**：检索关键词参数是 **`keyword`**，不是 `q`/`search`/`query`/`text`。用错名字会被**静默忽略**并返回全量结果，极易误判为"过滤失效"（本项目已实测踩到）。
 - 前端入口：`/prompt-library`（独立图库页）；组件 `components/prompt-library/PromptReferencePicker.tsx` 供画布与生图页复用。
+
+
+## 9.1 创作项目阶段端点
+
+<!-- 来源：openspec/changes/creative-project-closed-loop，导入日期：2026-09-13 -->
+
+```text
+POST /creative-projects/{id}/generate-outline
+POST /creative-projects/{id}/generate-chapter-plan
+POST /creative-projects/{id}/chapters/{n}/generate-detail
+POST /creative-projects/{id}/chapters/{n}/generate-script
+POST /creative-projects/{id}/chapters/{n}/generate-storyboard
+POST /creative-projects/from-novel     GET|POST /creative-projects/{id}/assets
+GET|PUT  /creative-projects/{id}/canvas
+```
+
+**生图回写项目谱系的关键**：`POST /images/generate` 必须带 `project_id` + `content_id` + `source_type`，
+且 `source_index` / `chapter_number` **须为字符串**；不带这些字段**不会**产生项目 `derived_from` 谱系，
+容易被误读为"后端不支持写谱系"（实际是调用方漏参）。
