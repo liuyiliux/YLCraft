@@ -138,3 +138,24 @@ backend/venv_win/Scripts/python.exe tools/generate_api_surface.py
   `reconcile_world_extraction_run`、`detect_world_extraction_contradictions`、`propagate_affected_world_facts`）。
   按 `novel_source` 搜索工具会漏掉它们，从而误判"Agent 侧缺候选决策能力"。
 - 真人入口 `/novel-world`（提取工作台）与 `/world-map`（地图工作台）与 Agent 工具**共用同一服务层**。
+
+
+## 9. 创作项目阶段端点
+
+<!-- 来源：openspec/changes/creative-project-closed-loop，导入日期：2026-09-12 -->
+
+```text
+POST /creative-projects/{id}/generate-outline
+POST /creative-projects/{id}/generate-chapter-plan
+POST /creative-projects/{id}/chapters/{chapter}/generate-detail
+POST /creative-projects/{id}/chapters/{chapter}/generate-script
+POST /creative-projects/{id}/chapters/{chapter}/generate-storyboard
+POST /creative-projects/from-novel
+GET|POST /creative-projects/{id}/assets
+GET|PUT  /creative-projects/{id}/canvas
+```
+
+- **生图回写项目谱系的关键**（2026-09-12 实测确认）：`POST /api/v1/images/generate` 必须带
+  `project_id` + `content_id` + `source_type`（如 `storyboard_panel`），且 `source_index` / `chapter_number`
+  **须为字符串**；后端 `_create_generated_image_artifact` 会落资产中枢并写
+  `ProjectAssetLink(role="generated", relation="derived_from")`。

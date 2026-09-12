@@ -115,3 +115,18 @@
 - **候选状态**：`pending` / `accepted` / `ignored` / `merged`
 - **域判定（detection）**：`detected` / `uncertain` / `not_detected`（另有 `disabled` / `user_requested`）
 - **域 `source`**：`builtin_override` / `custom` / `ai_suggested`；**`fact_layer`**：`source_canon` 等
+
+
+## 12. 创作项目闭环
+
+<!-- 来源：openspec/changes/creative-project-closed-loop，导入日期：2026-09-12 -->
+
+- **`project_type`**：`novel` / `short_drama` / `manga` / `mixed`
+- **`source_type`**：`original_idea` / `novel` / `asset` / `manual`
+- **`status`**：`draft` / `outlining` / `planning` / `scripting` / `storyboarding` / `ready` / `archived`
+- **`content_type`**：`outline` / `chapter_plan` / `chapter_detail` / `body` / `script` / `storyboard` / `prompt`
+- **资产 `role`**：`character` / `world` / `scene` / `reference` / `output` / `cover` / `storyboard_frame`
+- **资产 `relation`**：`uses` / `derived_from` / `contains` / `variant_of`
+- **`template_stage`**：`outline` / `chapter_plan` / `chapter_outline` / `novel_body` / `comic_pages` / `script` / `storyboard`
+
+> 注意：资产 `relation` 的 `derived_from` 与叙事运行时、动态状态里的同名字段是**同一套语义**，不是各自发明的词。
