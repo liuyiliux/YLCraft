@@ -162,6 +162,13 @@
   - _Requirement: 1, 3, 8_
 - [ ] 28. Validate with human UI and Agent API E2E flows using temporary local fixtures; never use real user/remote novel data for tests.
   - _Requirement: 5, 8, 9_
+  - _2026-09-12 进展（Agent API E2E 已跑通，human UI 仅到页面挂载 smoke，故仍未勾）：_
+    - _Fixture：现场杜撰的 3 章合成小说（灰港/雾鲸/殷砂/烛台议会等均非真实作品），未读取任何真实用户或远端小说数据，符合本任务约束。_
+    - _链路（真实 LLM，非 mock）：`POST /novel-sources/import-txt` → 快照 `completed`；3 章 / 3 文本块；`/plan` 逐域检测出 9 域（character、location、faction、historical_event、timeline、world_rule、species、item 等）；`/extract` 运行 `status=success`。_
+    - _需求 5（复核闸门）：13 条候选、首条含证据锚点；接受 1 条候选**耗时 0.07s**（远低于一次 LLM 往返），证明复核未二次调用模型；`apply` 后仅落地已接受的 1 个角色（`world-knowledge.counts.characters=1`），其余 12 条仍 `pending` 未进入项目——"显式接受才成正典"成立。_
+    - _需求 9（可恢复）：运行对象暴露 `domains`（逐域 `detection` / `reason` / `signals` / `estimated_cost` / `run_state` / `items`）、`failures`、`checkpoint`（`last_chunk_ordinal`）、`trace`、`diagnostics`，满足"逐域进度可检视 + 失败阶段可重试"的结构要求；**未人为制造域失败**去实测 partial 重试路径。_
+    - _需求 8（人机对等）：Agent 侧已注册 `list_world_extraction_candidates` / `decide_world_extraction_candidates` / `apply_world_extraction_run` / `reconcile_world_extraction_run` 等，且与 HTTP 端点**共用 `WorldExtractionService`**（`list_candidates` / `decide_candidates` / `apply_run` / `reconcile_run`），对等性由同一服务层保证；裸脚本调用 Agent 工具需应用运行时的 `AIService.initialize()`，故未在进程外单点调用。_
+    - _仍未完成（本任务不能勾的原因）：① `npm run smoke:pages` 8 页全过（含 `/novel-world`、`/world-map`），但那是**页面挂载 smoke**，不是真实浏览器交互目检——本项目任务 32 的注释已把"真实浏览器目检"明确合并进本任务；② 未实测部分失败后的重试恢复。_
 
 ## Phase 7: 世界地图工作台 v2 增强（原型对齐增量，2026-09-03）
 
