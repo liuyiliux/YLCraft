@@ -194,14 +194,3 @@
 | **模型分组（model_group）** | 跨来源的**规范化**模型维度（`ChatGPT` / `NanoBanana2` / `NanoBananaPro`），统一筛选 IMI 与 GitHub 来源 | 任务 #40.2 |
 
 **与 `PlatformTemplate` 的分工**：平台模板是"**发布格式**模板"；提示词库是"**创作输入**素材"。两者语义不同，故不共用一张表。
-
-
-## 产品架构：稳定与实验的分级
-
-<!-- 来源：openspec/changes/creative-project-closed-loop，导入日期：2026-09-13 -->
-
-| 术语 | 定义 |
-|---|---|
-| **稳定 / 实验能力分级** | **稳定**：下载、小说、AI 图片、素材库、创作项目。**实验**：视频生成、剪辑、字幕、BGM、发布、爬虫、Agent——直到它们接入项目闭环 |
-| **画布作为项目编排面** | 不是独立玩具页：节点 `project/outline/chapter/character/scene/prompt/image/video/audio/note`，边 `contains/uses/references/derived_from/variant_of` |
-| **素材库作为项目持久记忆** | 角色 → `Character` + 素材节点；世界观/章节摘要/脚本/分镜/提示词 → 文本素材；AI 图与视频 → 媒体素材 |
