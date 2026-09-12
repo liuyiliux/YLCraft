@@ -194,3 +194,14 @@
 | **模型分组（model_group）** | 跨来源的**规范化**模型维度（`ChatGPT` / `NanoBanana2` / `NanoBananaPro`），统一筛选 IMI 与 GitHub 来源 | 任务 #40.2 |
 
 **与 `PlatformTemplate` 的分工**：平台模板是"**发布格式**模板"；提示词库是"**创作输入**素材"。两者语义不同，故不共用一张表。
+
+
+## 图转 3D 与绑骨
+
+<!-- 来源：openspec/changes/image-to-3d-workspace，导入日期：2026-09-13 -->
+
+| 术语 | 定义 |
+|---|---|
+| **图转 3D 任务账本** | 与通用任务中心**独立**的 `model3d_generation_tasks` 表，承载 `kind`（`generation`/`rigging`）、provider、model、进度、诊断 |
+| **TC3-HMAC-SHA256 连接器** | 腾讯云 Hunyuan 3D 预设：`api_format=tencent_tc3`，凭据为 `SecretId:SecretKey`，适配器内置 TC3 签名与 **POST 轮询模板** |
+| **生成方式（inputMode）** | `text`（文生 3D，只需描述）/ `image`（图生 3D，需参考图或素材 id）——**默认是 `image`** |

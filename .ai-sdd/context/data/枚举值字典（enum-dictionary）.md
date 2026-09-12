@@ -140,3 +140,11 @@
 - **来源类型**：markdown 段仓库 / JSON 仓库 / IMI detail JSON（解析器分别实现）
 
 > 陷阱：`model_group` 传小写非规范值（如 `nanobanana`）会被**静默忽略**并返回全量结果，而不是空集。
+
+
+## 14. 图转 3D
+
+<!-- 来源：openspec/changes/image-to-3d-workspace，导入日期：2026-09-13 -->
+
+- **`kind`**：`generation`（图/文生 3D）/ `rigging`（绑骨蒙皮）
+- **绑骨模式**：`skeleton`（仅骨架）/ `motion`（骨架 + 预设动作，`motion_type` 1–48；预设动作为**人形武术类**：回旋踢/左勾拳/蓄力出拳/受击…）

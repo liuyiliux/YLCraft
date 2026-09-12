@@ -176,3 +176,18 @@ GET|PUT  /creative-projects/{id}/canvas
 
 - **参数名陷阱**：检索关键词参数是 **`keyword`**，不是 `q`/`search`/`query`/`text`。用错名字会被**静默忽略**并返回全量结果，极易误判为"过滤失效"（本项目已实测踩到）。
 - 前端入口：`/prompt-library`（独立图库页）；组件 `components/prompt-library/PromptReferencePicker.tsx` 供画布与生图页复用。
+
+
+## 10. 图转 3D 端点
+
+<!-- 来源：openspec/changes/image-to-3d-workspace，导入日期：2026-09-13 -->
+
+```text
+GET  /api/v1/model-3d/backends?capability=generation|rigging
+POST /api/v1/model-3d/generate   { prompt, provider, model, source_asset_id, source_image, options }
+GET  /api/v1/model-3d/tasks/{id}  # url / asset_id / diagnostics
+GET  /api/v1/model-3d/history
+POST /api/v1/model-3d/rig        { provider, source_asset_id|source_url, motion_type?, file_type? }
+```
+
+- 静态目录 `/model3d-files`（挂载 `backend/storage/model3d`）。
