@@ -22,7 +22,7 @@
 # 业务知识
 
 - path: business/领域术语与业务对象（domain-glossary）.md
-  summary: "任务与观测领域术语（任务账本、三层观测视图、任务诊断字段、事件收口、业务语义事件）；写作风格档案领域术语（风格档案、三层模型、有界样本、表达式契约、绑定强度、归档可逆）；Agent 工作台前端术语（三区布局、顶部控制栏、待确认横幅 vs 确认卡片、遥测条、thread.status 与 run 级状态的区别）；世界构建术语（梯子原则、域与域契约、层次策略、三档生成动作、CandidateOrigin、世界构建模板）；制作台术语（制作台、阶段轨、渲染时计算的完成度）；动态状态术语（append-only 台账、StateLedger、scope、state_as_of）；叙事运行时术语（叙事快照、故事事件、伏笔台账、风格测量、叙事运行、Context Pack V2 七层 T0-T6）；Agent 工作台对话优先信息架构（内联执行证据）；小说来源与世界提取术语（来源快照、文本块、混合检索、候选、source_canon、基础层与扩展域）；创作项目闭环术语（创作项目作为主工作单元、ProjectContent 独立存储、阶段机、画布作为项目编排面、稳定与实验能力分级）；提示词参考库术语（提示词来源、提示词引用、模型分组、与 PlatformTemplate 的分工）"
+  summary: "任务与观测领域术语（任务账本、三层观测视图、任务诊断字段、事件收口、业务语义事件）；写作风格档案领域术语（风格档案、三层模型、有界样本、表达式契约、绑定强度、归档可逆）；Agent 工作台前端术语（三区布局、顶部控制栏、待确认横幅 vs 确认卡片、遥测条、thread.status 与 run 级状态的区别）；世界构建术语（梯子原则、域与域契约、层次策略、三档生成动作、CandidateOrigin、世界构建模板）；制作台术语（制作台、阶段轨、渲染时计算的完成度）；动态状态术语（append-only 台账、StateLedger、scope、state_as_of）；叙事运行时术语（叙事快照、故事事件、伏笔台账、风格测量、叙事运行、Context Pack V2 七层 T0-T6）；Agent 工作台对话优先信息架构（内联执行证据）；小说来源与世界提取术语（来源快照、文本块、混合检索、候选、source_canon、基础层与扩展域）；创作项目闭环术语（创作项目作为主工作单元、ProjectContent 独立存储、阶段机、画布作为项目编排面、稳定与实验能力分级）；提示词参考库术语（提示词来源、提示词引用、模型分组、与 PlatformTemplate 的分工）；产品架构分级（稳定与实验能力、画布作为项目编排面、素材库作为项目持久记忆）"
   scope: all
   stage: [proposal, specs, design]
   load_policy: on-demand
@@ -38,11 +38,13 @@
     - "涉及素材库作为项目持久记忆、画布编排"
     - "涉及提示词库、提示词来源同步、按模型分组筛选"
     - "涉及图片提示词素材与平台模板的边界"
+    - "涉及哪些能力是稳定的、哪些是实验的"
+    - "涉及画布节点与边的编排"
 
     - "涉及小说来源导入、来源快照、文本块、混合检索"
     - "涉及世界设定提取、候选确认、apply 写入、派生项目"
 - path: business/业务规则与核验体系（business-rules）.md
-  summary: "任务落库白名单规则、启动对账、事件/任务重试边界、事件敏感字段与长度约束；写作风格档案生命周期、材料闸门与泄漏阈值、强度注入量；Agent 工作台规则（顶栏写回配置、拒绝=取消运行、有数据才显示、缺失 --、卡片收敛例外、按类名折叠）；世界构建规则（结构过闸、不伪造证据、apply 唯一写入、内置字段只增不删、契约外转建议、幂等指纹）；写作前置检查规则（preflight 只读、返回契约固定、生成方法权威、opt-in 方法包默认不生效）；制作台规则（不持久化派生阶段状态、六条完成度定义、计数仅作指示、批量生产非破坏性收纳）；数据库迁移安全规则（升级是运维动作、运行时 DDL 须有归宿、先备份、迁移测试只用一次性库）；创作项目动态状态规则（内容自由信封有 schema、append-only 去重、折叠语义、隔离原则）；叙事运行时规则（正典 vs 提案分界、派生状态可溯源、supersede 不销毁、aftermath 幂等、失败隔离）；Agent 工作台信息架构规则（主任务优先、辅助失败不阻塞聊天）；小说来源与世界提取规则（证据逐字命中否则丢弃、候选先于正典、apply 唯一写入点、角色复用 Character）；创作项目闭环规则（阶段感知生成、JSON-first 校验与一次修复、生成单元独立存储、生成资产必须记录谱系）；提示词参考库规则（引用不自动入素材库、同步本地优先、按来源+外部 id 去重、分面彼此独立）"
+  summary: "任务落库白名单规则、启动对账、事件/任务重试边界、事件敏感字段与长度约束；写作风格档案生命周期、材料闸门与泄漏阈值、强度注入量；Agent 工作台规则（顶栏写回配置、拒绝=取消运行、有数据才显示、缺失 --、卡片收敛例外、按类名折叠）；世界构建规则（结构过闸、不伪造证据、apply 唯一写入、内置字段只增不删、契约外转建议、幂等指纹）；写作前置检查规则（preflight 只读、返回契约固定、生成方法权威、opt-in 方法包默认不生效）；制作台规则（不持久化派生阶段状态、六条完成度定义、计数仅作指示、批量生产非破坏性收纳）；数据库迁移安全规则（升级是运维动作、运行时 DDL 须有归宿、先备份、迁移测试只用一次性库）；创作项目动态状态规则（内容自由信封有 schema、append-only 去重、折叠语义、隔离原则）；叙事运行时规则（正典 vs 提案分界、派生状态可溯源、supersede 不销毁、aftermath 幂等、失败隔离）；Agent 工作台信息架构规则（主任务优先、辅助失败不阻塞聊天）；小说来源与世界提取规则（证据逐字命中否则丢弃、候选先于正典、apply 唯一写入点、角色复用 Character）；创作项目闭环规则（阶段感知生成、JSON-first 校验与一次修复、生成单元独立存储、生成资产必须记录谱系）；提示词参考库规则（引用不自动入素材库、同步本地优先、按来源+外部 id 去重、分面彼此独立）；产品架构规则（实验模块不阻断主流程、画布状态先存 metadata、资产双轨兼容、生成日志留全链路）"
   scope: all
   stage: [specs, design, tasks]
   load_policy: on-demand
@@ -67,6 +69,7 @@
     - "涉及某阶段生成能用哪些上游产物"
     - "涉及生成失败如何修复与留痕、生成物谱系字段"
     - "涉及提示词引用是否进素材库、来源同步策略"
+    - "涉及实验模块如何标注与收拢"
 
 # 数据知识
 
@@ -102,7 +105,7 @@
 # 工程约束
 
 - path: engineering/设计约束（design-conventions）.md
-  summary: "AI 调用双层观测模式、任务不能自动收口、重试复用业务端点、前端选项同步、函数直调的坑；写作风格 T6 预算与纯函数注入、人机边界对等、TOOLS 注册表判定；Agent 工作台前端约束（窄屏禁用 nth-child、tabular-nums 非等宽、JSX 注释、!important 覆盖、勾选项审计）；世界构建约束（复用管线半段、origin 放候选级、schema 边界前移、同步判据、design 可能滞后于 tasks）；Creative Skill 约定与检索陷阱（Select-String 不递归子目录）；派生状态优先渲染时计算、/story 实现已迁至 components/；数据库迁移约束（version_num 长度、仅运行时建表、env.py 全量导入、禁止 stamp）；动态状态约束（LLM 输出字段驱动、纯服务优先、注入分层、无新路由不改 API surface）；叙事运行时约束（T0 不静默截断、异步生图不算正文成功、熔断恢复需显式动作）；Agent 工作台信息架构约束（三条产品约束、手写 markdown 解析器）；小说来源与世界提取约束（逐字证据、递归检索、内置字段只增不删、smoke:pages 只是源码扫描）；创作项目闭环约束（模板兼容、生图谱系字段须齐且索引字段为字符串、生成单元独立存储、实验模块不进主流程）；提示词参考库约束（JSONB 分面聚合、非法枚举值不应静默忽略、测试选择器须复核源码、缓存媒体本地优先）"
+  summary: "AI 调用双层观测模式、任务不能自动收口、重试复用业务端点、前端选项同步、函数直调的坑；写作风格 T6 预算与纯函数注入、人机边界对等、TOOLS 注册表判定；Agent 工作台前端约束（窄屏禁用 nth-child、tabular-nums 非等宽、JSX 注释、!important 覆盖、勾选项审计）；世界构建约束（复用管线半段、origin 放候选级、schema 边界前移、同步判据、design 可能滞后于 tasks）；Creative Skill 约定与检索陷阱（Select-String 不递归子目录）；派生状态优先渲染时计算、/story 实现已迁至 components/；数据库迁移约束（version_num 长度、仅运行时建表、env.py 全量导入、禁止 stamp）；动态状态约束（LLM 输出字段驱动、纯服务优先、注入分层、无新路由不改 API surface）；叙事运行时约束（T0 不静默截断、异步生图不算正文成功、熔断恢复需显式动作）；Agent 工作台信息架构约束（三条产品约束、手写 markdown 解析器）；小说来源与世界提取约束（逐字证据、递归检索、内置字段只增不删、smoke:pages 只是源码扫描）；创作项目闭环约束（模板兼容、生图谱系字段须齐且索引字段为字符串、生成单元独立存储、实验模块不进主流程）；提示词参考库约束（JSONB 分面聚合、非法枚举值不应静默忽略、测试选择器须复核源码、缓存媒体本地优先）；产品架构约束（模板兼容内置兜底、LLM JSON 工程兜底、存储路径项目根相对且幂等）"
   scope: all
   stage: [design, tasks, apply]
   load_policy: on-demand
@@ -124,11 +127,13 @@
     - "涉及阶段产出如何存储与版本化"
     - "涉及大数据量标签/分面筛选"
     - "引用任务里记录的测试选择器（可能已过时）"
+    - "涉及项目提示词模板与历史模板兼容"
+    - "涉及存储路径如何存（项目根相对）"
 
     - "涉及 WorldEntity / WorldEntityRelation / 世界地图正典与成图边界"
     - "需要做真实 UI 验证（注意 smoke:pages 不是浏览器）"
 - path: engineering/接口设计规范（api-style-guide）.md
-  summary: "本项目 API 约定：统一 /api/v1 前缀、路由文件落点、请求模型、错误语义与文档同步流程；写作风格档案端点与 Agent 工具；Agent 运行与确认接口（step confirm、记忆 save/discard、run cancel、threads 返回字段）；世界构建接口（world-domains CRUD、expand-entity 与 preview、expand-domain 与对应 Agent 工具）；写作前置检查（GET /writing-preflight，UI 与 Agent 共用契约）；叙事运行时接口（narrative/health、aftermath、snapshots、context-preview、foreshadowing、narrative-graph、narrative/runs）；小说来源与世界提取接口（novel-sources、world-extraction-runs、world-entities、world-maps）；创作项目阶段端点（generate-outline/chapter-plan/detail/script/storyboard、canvas、assets）；提示词参考库接口（image-prompts sources/references/media/save-as-asset）"
+  summary: "本项目 API 约定：统一 /api/v1 前缀、路由文件落点、请求模型、错误语义与文档同步流程；写作风格档案端点与 Agent 工具；Agent 运行与确认接口（step confirm、记忆 save/discard、run cancel、threads 返回字段）；世界构建接口（world-domains CRUD、expand-entity 与 preview、expand-domain 与对应 Agent 工具）；写作前置检查（GET /writing-preflight，UI 与 Agent 共用契约）；叙事运行时接口（narrative/health、aftermath、snapshots、context-preview、foreshadowing、narrative-graph、narrative/runs）；小说来源与世界提取接口（novel-sources、world-extraction-runs、world-entities、world-maps）；创作项目阶段端点（generate-outline/chapter-plan/detail/script/storyboard、canvas、assets）；提示词参考库接口（image-prompts sources/references/media/save-as-asset）；创作项目阶段端点（outline/chapter-plan/detail/script/storyboard）"
   scope: all
   stage: [design, tasks, apply]
   load_policy: on-demand
@@ -145,6 +150,7 @@
     - "涉及 /creative-projects 的阶段生成端点或生图回写"
     - "涉及 /image-prompts 端点或检索参数"
     - "排查提示词检索过滤看似不生效（注意参数名 keyword）"
+    - "涉及生图回写项目谱系的 lineage 字段"
 
 # 系统知识
 
