@@ -1919,6 +1919,23 @@ export const planCreativeProjectContentPackage = (
   data: { topic: string; brief?: string; item_count?: number; prompt_only?: boolean; provider?: string; model?: string },
 ) => request(`/creative-projects/${projectId}/content-package/plan`, { method: 'POST', body: JSON.stringify(data) })
 
+/** 生成平台输出（公众号/小红书/短视频/PDF/素材包）。adapters 留空 = 按方案的 output_adapters 全出。 */
+export const buildCreativeProjectContentPackageOutputs = (
+  projectId: string,
+  data: { adapters?: string[]; save?: boolean } = {},
+) => request(`/creative-projects/${projectId}/content-package/outputs`, { method: 'POST', body: JSON.stringify(data) })
+
+/** 只重跑一条内容单元；其余条目原样保留，依赖它的平台输出会变为 stale。 */
+export const retryCreativeProjectContentPackageItem = (
+  projectId: string,
+  itemId: string,
+  data: { brief?: string; prompt_only?: boolean; provider?: string; model?: string } = {},
+) =>
+  request(`/creative-projects/${projectId}/content-package/items/${encodeURIComponent(itemId)}/retry`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
 export const listCreativeProjectAssets = (projectId: string) =>
   request(`/creative-projects/${projectId}/assets`)
 

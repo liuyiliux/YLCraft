@@ -369,6 +369,33 @@ def adapter_catalog() -> list[dict[str, Any]]:
     ]
 
 
+def mark_outputs_stale(
+    outputs: list[dict[str, Any]],
+    changed_item_ids: list[str],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """把**引用了变更条目**的输出标为 `stale`，其余保持原状。
+
+    对应 design §5.3：某条 item 的文字或提示词变化，只让它自己、以及**明确引用它的**
+    adapter output 过期；已成功且无依赖变化的其它输出**保持可用**——不能一刀切把整包
+    输出作废，否则用户改一个字就要重出所有平台格式。
+
+    返回 `(outputs, 被标 stale 的适配器类型列表)`，后者供调用方写进警告提示用户重出。
+    """
+    changed = {str(item_id) for item_id in changed_item_ids if item_id}
+    stale_types: list[str] = []
+    result: list[dict[str, Any]] = []
+    for output in outputs:
+        if not isinstance(output, dict):
+            result.append(output)
+            continue
+        sources = {str(item_id) for item_id in (output.get("source_item_ids") or [])}
+        if changed and output.get("status") != "stale" and (sources & changed):
+            output = {**output, "status": "stale", "stale_reason": "来源条目已变更"}
+            stale_types.append(str(output.get("adapter_type") or ""))
+        result.append(output)
+    return result, stale_types
+
+
 def build_package_outputs(
     inp: AdapterInput,
     adapter_types: list[str],

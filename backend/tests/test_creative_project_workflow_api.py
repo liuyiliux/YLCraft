@@ -388,6 +388,92 @@ def test_content_package_outputs_endpoint_builds_and_persists_adapters(workflow_
         assert "还没有内容包" in none_yet.json()["detail"]
 
 
+def test_content_package_item_retry_rewrites_one_item_and_stales_outputs(workflow_session: Session, monkeypatch):
+    """单条重试：只重写那一条、其余原样保留；引用它的平台输出标为 `stale`。"""
+
+    async def _fake_generate_json(self, **kwargs):  # noqa: ANN001
+        # 载荷里必须带齐条目级溯源，任务中心/事件日志才回溯得到
+        meta = kwargs.get("request_metadata") or {}
+        assert meta.get("item_id") == "ox"
+        assert meta.get("item_retry") is True
+        assert meta.get("package_id")
+        return {
+            "title": "牛（重写）",
+            "text": "重写后的正文。",
+            "fact": "",
+            "source": "",
+            "source_url": "",
+            "image_prompt": "重写后的提示词",
+            "video_prompt": "",
+            "status": "ready",
+        }
+
+    monkeypatch.setattr(CreativeProjectService, "_generate_json", _fake_generate_json)
+
+    with _client(workflow_session) as client:
+        project = _post(
+            client,
+            "",
+            {
+                "title": "十二生肖绘本",
+                "idea": "给儿童介绍十二生肖",
+                "project_type": "manga",
+                "production_profile": "storybook",
+            },
+        )["data"]
+        created = client.put(
+            f"/api/v1/creative-projects/{project['id']}/content-package",
+            json={
+                "package": {
+                    "topic": "十二生肖",
+                    "title": "十二生肖绘本",
+                    "items": [
+                        {"id": "rat", "index": 1, "title": "鼠", "text": "老鼠拿了第一。", "image_prompt": "剪纸小老鼠"},
+                        {"id": "ox", "index": 2, "title": "牛", "text": "老牛踏实第二。", "image_prompt": "剪纸老牛"},
+                    ],
+                }
+            },
+        ).json()["data"]
+
+        # 先产出平台输出，供"过期"判定
+        produced = client.post(
+            f"/api/v1/creative-projects/{project['id']}/content-package/outputs",
+            json={"save": True},
+        ).json()["data"]
+        assert all(o["status"] == "ready" for o in produced["outputs"])
+
+        resp = client.post(
+            f"/api/v1/creative-projects/{project['id']}/content-package/items/ox/retry",
+            json={},
+        )
+        assert resp.status_code == 200, resp.text
+        data = resp.json()["data"]
+        assert data["version"] == 3  # 1=首次保存, 2=产出输出, 3=单条重试
+        items = data["data"]["items"]
+
+        # 目标条目被重写
+        assert [i["id"] for i in items] == ["rat", "ox"]
+        assert items[1]["title"] == "牛（重写）"
+        assert items[1]["status"] == "ready"
+        # 兄弟条目**原样保留**（这是单条重试的意义）
+        assert items[0]["title"] == "鼠"
+        assert items[0]["text"] == "老鼠拿了第一。"
+
+        # 引用这条 item 的输出全部过期；五个适配器都是整包产物，因此都引用全部条目
+        assert data["data"]["outputs"]
+        assert all(o["status"] == "stale" for o in data["data"]["outputs"])
+        # 过期信息落在 outputs 自身（而非 warnings——warnings 是契约校验提示，会被重算覆盖）
+        assert all(o["stale_reason"] == "来源条目已变更" for o in data["data"]["outputs"])
+
+        # 不存在的条目 → 400
+        missing = client.post(
+            f"/api/v1/creative-projects/{project['id']}/content-package/items/nope/retry",
+            json={},
+        )
+        assert missing.status_code == 400
+        assert "没有这条内容单元" in missing.json()["detail"]
+
+
 def test_production_plan_api_versions_and_keeps_project_asset_association(workflow_session: Session):
     asset_id = str(uuid.uuid4())
     workflow_session.add(

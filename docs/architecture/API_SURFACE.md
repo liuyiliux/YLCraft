@@ -476,6 +476,7 @@
 | `PUT` | `/api/v1/creative-projects/{project_id}/content-package` | 保存项目内容包版本 | `save_content_package` | `backend/app/api/v1/creative_projects.py:1368` |
 | `POST` | `/api/v1/creative-projects/{project_id}/content-package/plan` | 一次生成项目内容包 | `plan_content_package` | `backend/app/api/v1/creative_projects.py:1385` |
 | `POST` | `/api/v1/creative-projects/{project_id}/content-package/outputs` | 用平台适配器产出内容包输出（公众号/小红书/短视频/PDF/素材包，纯本地转换不写外部平台；`adapters` 留空则按方案的 `output_adapters` 全出） | `build_content_package_outputs` | `backend/app/api/v1/creative_projects.py:1376` |
+| `POST` | `/api/v1/creative-projects/{project_id}/content-package/items/{item_id}/retry` | 只重跑一条内容单元（其余条目原样保留，依赖它的平台输出标 stale） | `retry_content_package_item` | `backend/app/api/v1/creative_projects.py:1415` |
 | `GET` | `/api/v1/creative-projects/{project_id}/contents` | 列出项目阶段内容 | `list_contents` | `backend/app/api/v1/creative_projects.py:1317` |
 | `PATCH` | `/api/v1/creative-projects/{project_id}/contents/{content_id}` | 保存项目阶段内容 | `update_content` | `backend/app/api/v1/creative_projects.py:1347` |
 | `POST` | `/api/v1/creative-projects/{project_id}/contents/{content_id}/aftermath` | 从正式正文建立叙事后处理状态 | `run_narrative_aftermath` | `backend/app/api/v1/creative_projects.py:836` |

@@ -4,7 +4,7 @@
  * 从 story/index.tsx 抽出的动作 hook（拆分计划 creative-project-ui-redesign #9）。
  * 逻辑逐字未改；入参由自由变量自动推导，本批为过渡拆分，签名待收紧。
  */
-import { createCreativeProject, createCreativeProjectFromNovel, deleteCreativeProject, extractCreativeProjectCharacters, linkCreativeProjectAsset, planCreativeProjectContentPackage, saveCreativeProjectContentPackage, syncCreativeProjectBible, syncCreativeProjectCharacters, updateCreativeProject, updateCreativeProjectContent } from '../../../api'
+import { buildCreativeProjectContentPackageOutputs, createCreativeProject, createCreativeProjectFromNovel, deleteCreativeProject, extractCreativeProjectCharacters, linkCreativeProjectAsset, planCreativeProjectContentPackage, retryCreativeProjectContentPackageItem, saveCreativeProjectContentPackage, syncCreativeProjectBible, syncCreativeProjectCharacters, updateCreativeProject, updateCreativeProjectContent } from '../../../api'
 import { startProjectWorldExtraction } from '../../../api/novelSource'
 import { CreativeProjectGenerateResponse, CreativeProjectResponse } from '../../../types/api'
 import { ProjectContent } from '../types'
@@ -249,6 +249,71 @@ export function useProjectContentActions(deps: Record<string, any>) {
       setLoadingAction(null)
     }
   }
+  /**
+   * 生成平台输出：按内容生产方案声明的 output_adapters 一起产出（公众号/小红书/短视频/
+   * PDF/素材包），落库为新包版本。适配器只在本地做格式翻译，不会向外部平台发送任何东西。
+   */
+  async function handleBuildContentPackageOutputs(adapters: string[] = []) {
+    if (!selectedProject || !isContentPackageProject) return []
+    setLoadingAction('create')
+    try {
+      const response: any = await buildCreativeProjectContentPackageOutputs(selectedProject.id, {
+        adapters,
+        save: true,
+      })
+      const outputs: any[] = response?.data?.outputs || []
+      await loadContents(selectedProject.id)
+      const failed = outputs.filter((item) => item?.status === 'failed')
+      const stale = outputs.filter((item) => item?.status === 'stale')
+      if (failed.length) {
+        // 单个适配器失败不影响其它平台——如实报出失败的那几个
+        message.warning(
+          `已生成 ${outputs.length} 项平台输出，其中 ${failed.length} 项失败：` +
+          failed.map((item) => `${item.label || item.adapter_type}（${item.error || '未知原因'}）`).join('；'),
+        )
+      } else {
+        message.success(
+          `已生成 ${outputs.length} 项平台输出${stale.length ? `，${stale.length} 项已过期需重出` : ''}`,
+        )
+      }
+      return outputs
+    } catch (error: any) {
+      message.error(error?.message || '生成平台输出失败')
+      return []
+    } finally {
+      setLoadingAction(null)
+    }
+  }
+
+  /**
+   * 单条重试：只重跑这一条内容单元，**其余条目原样保留**（不会冲掉已手改好的内容）；
+   * 依赖它的平台输出会被标为过期。
+   */
+  async function handleRetryContentPackageItem(itemId: string) {
+    if (!selectedProject || !itemId) return
+    setLoadingAction('create')
+    try {
+      const response: any = await retryCreativeProjectContentPackageItem(selectedProject.id, itemId, {
+        brief: String(contentPackageForm.getFieldValue('brief') || ''),
+        prompt_only: Boolean(contentPackageForm.getFieldValue('prompt_only')),
+      })
+      const saved = response?.data?.data || {}
+      await loadContents(selectedProject.id)
+      // 用服务端返回的最新版本回填：保证 id / index / 状态与后端一致
+      contentPackageForm.setFieldsValue({
+        title: saved.title || contentPackageForm.getFieldValue('title') || '',
+        topic: saved.topic || contentPackageForm.getFieldValue('topic') || '',
+        brief: saved.brief || contentPackageForm.getFieldValue('brief') || '',
+        items: Array.isArray(saved.items) ? saved.items : [],
+      })
+      message.success('已重跑这一条内容单元，其余条目未改动')
+    } catch (error: any) {
+      message.error(error?.message || '重试内容单元失败')
+    } finally {
+      setLoadingAction(null)
+    }
+  }
+
   async function handleGenerateContentPackageImage(index: number, fieldName: number) {
     if (!selectedProject) return
     const item = contentPackageForm.getFieldValue(['items', fieldName]) || {}
@@ -404,6 +469,8 @@ export function useProjectContentActions(deps: Record<string, any>) {
     handlePlanContentPackage,
     handleGenerateContentPackageImage,
     handleBatchGenerateContentPackageImages,
+    handleBuildContentPackageOutputs,
+    handleRetryContentPackageItem,
     handleExtractCharacters,
     handleSyncCharacters,
     handleSyncProjectBible,

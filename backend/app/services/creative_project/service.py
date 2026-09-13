@@ -56,6 +56,7 @@ from app.services.creative_project.schemas import (
     ChapterOutlineScenesSchema,
     ChapterOutlineSchema,
     ChapterPlanSchema,
+    ContentPackageItemSchema,
     ContentPackagePlanSchema,
     ComicPagesSchema,
     NovelBodySchema,
@@ -86,6 +87,7 @@ from app.services.creative_project.semantic_recall import (
 from app.services.creative_project.content_package_adapters import (
     adapter_input_from_package,
     build_package_outputs,
+    mark_outputs_stale,
 )
 from app.services.creative_project.content_package_schema import (
     get_package_schema,
@@ -4093,6 +4095,126 @@ class CreativeProjectService:
             for index, item in enumerate(data.get("items") or [], start=1)
         ]
         return self.save_content_package(project_id=project_id, package=data)
+
+    async def retry_content_package_item(
+        self,
+        project_id: str,
+        *,
+        item_id: str,
+        brief: str = "",
+        prompt_only: bool = False,
+        provider: str | None = None,
+        model: str | None = None,
+    ) -> ProjectContent:
+        """只重跑**一条**内容单元的文本/提示词，其余条目原样保留。
+
+        与"整包重生成"的区别（这是本方法存在的理由）：
+        - 不重新规划其它条目——省 token，也不会把用户已手改好的条目冲掉；
+        - 依赖这条 item 的**平台输出标为 `stale`**（按依赖判定，而不是无差别全作废）。
+
+        注意一处事实：当前五个适配器都产出**整包级**产物（公众号整篇、整册 PDF、整包素材），
+        它们的 `source_item_ids` 都是全部条目，因此**改任一条都会让全部输出过期**——这是
+        依赖判定得出的正确结论，不是过度作废。将来若出现条目级产物（如单卡导出），
+        同一机制只会让它影响相关的那部分。
+        """
+        project = self._require_project(project_id)
+        settings = loads_json(project.settings_json)
+        profile = get_content_production_profile(
+            str(settings.get("production_profile") or ""),
+            project.project_type,
+        )
+        if profile.get("production_family") != "content_package":
+            raise ValueError("当前项目不是内容包方案，不能重试内容单元")
+        package_type = str(profile.get("package_type") or "")
+
+        current = self.session.exec(
+            select(ProjectContent)
+            .where(ProjectContent.project_id == project_id, ProjectContent.content_type == "content_package")
+            .order_by(ProjectContent.version.desc(), ProjectContent.updated_at.desc())
+        ).first()
+        if current is None:
+            raise ValueError("该项目还没有内容包，请先生成内容包")
+
+        package = loads_json(current.data_json) or {}
+        items = [dict(item) for item in (package.get("items") or []) if isinstance(item, dict)]
+        target_index = next((n for n, item in enumerate(items) if str(item.get("id")) == str(item_id)), None)
+        if target_index is None:
+            raise ValueError("内容包里没有这条内容单元：%s" % item_id)
+        target = items[target_index]
+
+        mode_instruction = (
+            "只生成 title 与 image_prompt；text、fact、source、source_url 必须为空字符串。"
+            if prompt_only
+            else "给出简洁、可直接展示的 text，以及可直接用于生图的 image_prompt。"
+        )
+        knowledge_instruction = (
+            "这是科普知识卡；必须填写 fact（可核验的事实表述）、source（来源名称或来源说明）"
+            "与 source_url（没有链接时为空字符串）。"
+            if package_type == "knowledge_cards" and not prompt_only
+            else "fact、source、source_url 必须为空字符串。"
+        )
+        prompt = (
+            f"内容包主题《{package.get('topic') or ''}》。\n"
+            f"请**只重写第 {target.get('index')} 条**内容单元，保持与同包其它条目一致的风格与粒度。\n"
+            f"该条当前标题：{target.get('title') or '（无）'}\n"
+            f"该条当前内容：{target.get('text') or '（无）'}\n"
+            f"补充要求：{brief.strip() or '面向普通读者，内容准确、清楚、可执行。'}\n"
+            f"{mode_instruction}\n{knowledge_instruction}\n"
+            "严格输出 JSON 对象：title、text、fact、source、source_url、image_prompt、video_prompt、status；"
+            "不要输出 Markdown 或解释。"
+        )
+        generated = await self._generate_json(
+            project=project,
+            stage="content_package",
+            prompt=prompt,
+            system_prompt=(
+                "你是内容策划与视觉提示词专家。只输出这一条内容单元的 JSON；"
+                "不要要求世界观、章节、正文或隐藏推理。"
+            ),
+            schema_model=ContentPackageItemSchema,
+            provider=provider,
+            model=model,
+            # 任务载荷带齐溯源：包 id / 版本 / 条目 id，便于任务中心与事件日志回溯（design §5.2）
+            request_metadata={
+                "package_type": package_type,
+                "package_id": current.id,
+                "package_version": current.version,
+                "item_id": str(item_id),
+                "item_retry": True,
+                "prompt_only": prompt_only,
+            },
+        )
+
+        regenerated = {
+            **target,
+            "title": str(generated.get("title") or target.get("title") or ""),
+            "text": "" if prompt_only else str(generated.get("text") or target.get("text") or ""),
+            "fact": "" if prompt_only else str(generated.get("fact") or target.get("fact") or ""),
+            "source": "" if prompt_only else str(generated.get("source") or target.get("source") or ""),
+            "source_url": "" if prompt_only else str(generated.get("source_url") or target.get("source_url") or ""),
+            "image_prompt": str(generated.get("image_prompt") or target.get("image_prompt") or ""),
+            "video_prompt": str(generated.get("video_prompt") or target.get("video_prompt") or ""),
+            "status": "ready",
+        }
+        new_items = list(items)
+        new_items[target_index] = regenerated
+
+        # 依赖这条 item 的平台输出标为 stale。
+        # 过期信息**只落在 outputs 上**（status + stale_reason），不写进 warnings：
+        # warnings 的语义是"契约校验提示"，由 save_content_package 依据 schema 重新计算并
+        # 整体覆盖——把状态性信息混进去既会被覆盖掉，又会在重新产出输出后残留成误导。
+        outputs, stale_types = mark_outputs_stale(list(package.get("outputs") or []), [str(item_id)])
+        if stale_types:
+            logger.info(
+                "[content_package] item %s 变更，以下平台输出标记为过期：%s",
+                item_id, "、".join(stale_types),
+            )
+
+        return self.save_content_package(
+            project_id=project_id,
+            package={**package, "items": new_items, "outputs": outputs},
+            source_content_id=current.id,
+        )
 
     async def regenerate_chapter_outline_scenes(
         self,
