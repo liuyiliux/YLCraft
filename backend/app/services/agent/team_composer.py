@@ -15,6 +15,7 @@ from app.services.agent.team_template import (
     TeamTemplate,
     TeamTemplateLoader,
     TeamTemplateValidator,
+    role_capabilities,
 )
 
 
@@ -94,6 +95,12 @@ class TeamComposer:
                         )
                     )
                 context["team_role_id"] = role.id
+                # 2.4：把该角色**声明的**能力（authority grant）一并固化进任务上下文。
+                # 它会随子 Run 的 context_json 一次性落库（见 delegation.py 里
+                # `context_json=json.dumps(task.context, ...)`），因此构成**不可变溯源**：
+                # 事后可核对"本次委派授予了哪个角色哪些权限"，而不必回看模板文件
+                # ——那个文件可能已经被改过了。形状与 capability_diff 共用同一定义。
+                context["team_role_authority"] = role_capabilities(role)
                 tasks.append(
                     DelegatedTask(
                         task_key=instance["task_key"],

@@ -18,6 +18,12 @@
 - [x] 2.2 Implement `TeamTemplateLoader` and `TeamTemplateValidator` (dependency refs, single join, template-role requires resolve, budget caps, cycle detection).
 - [x] 2.3 Ship `writer-room-team` and `scene-sim` templates; unit-test load + validation failures (cycle, missing join, unknown spawn).
 - [ ] 2.4 Record immutable provenance and a declared capability diff per template role; route template/role capability changes through draft approval. (`capability_diff` + tests shipped; draft-approval routing is the remaining follow-up.)
+  - _2026-09-13 **前半已完成、后半保持未勾**（本条因此不勾）：_
+    - _**前半（不可变溯源 + 声明的能力差异）已实现**：`team_template.py` 提取公共 `role_capabilities(role)`（`profile`/`tools`/`skills`/`spawn`，工具与技能排序以获得稳定表示），`capability_diff` 改为复用它；`TeamComposer.build_tasks` 为每个委派任务写入 `context["team_role_authority"] = role_capabilities(role)`。该 context 会随子 Run 的 `context_json` **一次性落库**（`runtime/delegation.py` 的 `context_json=json.dumps(task.context, ...)`），构成不可变溯源：事后可核对"本次委派授予了哪个角色哪些权限"，而不必依赖可能已被修改的模板文件。_
+    - _顺带的实质改善：`capability_diff` 此前**在生产代码里零调用**（只有测试用）；提取公共定义后，它报告的授权形状与运行溯源**共用同一份来源**，两侧不会漂移。_
+    - _**后半（把能力变更接到草稿审批）当前无实现对象**：团队模板是 repo 内的 YAML，由 `TeamTemplateLoader` 加载，其变更走**代码评审（git）**而非运行时入口——`api/v1/agent.py` 中不存在任何团队模板的创建/更新端点，因此没有可挂审批的写入路径。`AgentSkillDraftService`（含 approve/reject）确实存在，但它面向的是 Agent **技能**草稿，与模板/角色的能力授权是两套不同对象。_
+    - _结论：待真正引入"运行时可编辑的团队模板"（或允许 Agent 自提议模板）时，本条后半才可执行；届时应在写入路径上调用现成的 `capability_diff(before, after)` 并在产出非空差异时生成草稿、经审批后才生效。_
+    - _测试：新增 2 例——`role_capabilities` 的排序与稳定键集；`build_tasks` 产出的每个任务都带 `team_role_authority` 且等于对应角色的 `role_capabilities`，并与 `capability_diff` 形状一致。_
 
 ## Phase 3: Subagent Primitives
 
