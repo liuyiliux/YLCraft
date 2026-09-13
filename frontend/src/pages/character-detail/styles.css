@@ -350,6 +350,61 @@
 }
 
 /* ============================================================================
+ * 角色册：完善度指示器 + 紧凑 Bible 摘要 + 未完善弱化
+ * 窄栏空间有限，Bible 摘要固定单行省略；完善度用 3px 细条，不额外占行高。
+ * ==========================================================================*/
+.cd-char-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.cd-char-name-row .cd-char-name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.cd-char-progress {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--borderLight);
+  overflow: hidden;
+}
+
+.cd-char-progress-bar {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--primary);
+  transition: width var(--animationDuration, 300ms) var(--animationEasing, ease);
+}
+
+.cd-char-bible {
+  display: block;
+  margin-top: 1px;
+  color: var(--textSecondary);
+  font-size: 10px;
+  line-height: 14px;
+  opacity: 0.78;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 未完善角色整体降不透明度；hover 与选中态恢复满不透明度，避免"看着不可点" */
+.cd-char-item.is-thin {
+  opacity: 0.62;
+}
+
+.cd-char-item.is-thin:hover,
+.cd-char-item.is-thin.is-active {
+  opacity: 1;
+}
+
+/* ============================================================================
  * 立绘版本缩略图条
  * 小尺寸横向滚动，点击切换主视图（不弹窗），选中态用主色边框标识。
  * ==========================================================================*/

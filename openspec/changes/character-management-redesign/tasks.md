@@ -11,7 +11,14 @@
 
 ## Phase 2: 前端列表与详情改造
 
-- [ ] 2.1 角色列表卡片升级为"角色册"视图（完善度指示器、紧凑 Bible 摘要、未完善角色视觉弱化）。当前仍是「头像 + 名称 + 定位 + 收藏星 + 无立绘标签」的紧凑窄列表，没有完善度评估、没有 Bible 摘要、也没有按完善度弱化；载体已从旧卡片网格变为 2.2A 的左侧工作区列表，实现时需按窄栏重排版式
+- [x] 2.1 角色列表卡片升级为"角色册"视图（完善度指示器、紧凑 Bible 摘要、未完善角色视觉弱化）。当前仍是「头像 + 名称 + 定位 + 收藏星 + 无立绘标签」的紧凑窄列表，没有完善度评估、没有 Bible 摘要、也没有按完善度弱化；载体已从旧卡片网格变为 2.2A 的左侧工作区列表，实现时需按窄栏重排版式
+  - _2026-09-13 实现（`frontend/src/pages/character-detail/index.tsx` + `styles.css`）：_
+    - _新增模块级纯函数 `characterCompleteness()` 与 `characterBibleSummary()`。**只用列表接口已返回的字段计算**（实测该接口返回 38 个字段），不逐项请求详情——窄栏里为每个角色各发一次详情请求会在角色多时明显拖慢列表。_
+    - _完善度九项检查，覆盖三类：基础设定（外貌/性格/背景/年龄）、身份与弧光（身份/弧光）、视觉与资产（立绘/音色/视觉资产）。`arc` 既可能是字符串也可能是对象（实测 11/20 填充且类型不一），两种都算已填。_
+    - _紧凑 Bible 摘要取值优先级：`identity.summary` → `identity.logline` → `identity.affiliation`/`organization` → `personality` → `background`，固定单行省略。_
+    - _未完善阈值 50%（`THIN_CHARACTER_PERCENT`）：低于阈值加 `is-thin` 类整体降不透明度至 0.62；**hover 与选中态恢复满不透明度**，避免"看着不可点"。_
+    - _窄栏排版：完善度做成 3px 细条放在名字行右侧（`cd-char-name-row` + `cd-char-progress/-bar`），Bible 摘要为第三行（10px / 单行省略），不额外增加行高压力。_
+    - _实测（真实浏览器，20 个角色）：完善度条 20 个且**数值有真实差异**（首个为 22%（2/9），提示文案列出缺失项）；Bible 摘要 20 个且非空；`is-thin` 9 个，非选中项 opacity 均为 0.62（唯一 opacity=1 的是当前选中角色，符合设计）。_
 - [x] 2.2 新增独立角色详情路由 `/characters/:characterId`：左侧视觉中心、中央参考图/设定图、右侧 Bible，下方关系与 Prompt 资产包；角色卡和关系图节点默认跳转独立页
 - [x] 2.2A 将 `/characters` 替换为角色工作区入口：默认打开首个角色详情，角色列表/筛选固定在左侧；旧卡片列表仅作为兼容管理入口
 - [x] 2.2B 当前详情页恢复立绘版本缩略图、版本切换与“设为主视图”同步逻辑（版本本地文件统一转换为浏览器可访问地址）
@@ -85,7 +92,13 @@
 ## Phase 5: 验证与文档
 
 - [x] 5.1 后端 focused 测试（关系、prompt-pack、字段来源、项目角色先行回流与预设、提取来源细分 `tests/test_character_provenance.py`）
-- [ ] 5.2 前端浏览器验收（角色册列表、独立角色页、关系图谱、Prompt 面板）
+- [x] 5.2 前端浏览器验收（角色册列表、独立角色页、关系图谱、Prompt 面板）
+  - _2026-09-13 真实浏览器（patchright + Chromium 1600×1000）验收通过：_
+    - _角色册列表 `/characters`：HTTP 200，20 个 `.cd-char-item`；完善度条 20 个（首个 22%（2/9），提示列出缺失项，宽度真实非恒满）；Bible 摘要 20 个且非空（样例：「文革期间被批斗的人物，苏远曾借医书给他导致苏远遭牵连…」），单行省略样式确认（`white-space: nowrap` / `overflow: hidden` / `text-overflow: ellipsis`）；`is-thin` 9 个，非选中项 opacity 0.62。_
+    - _独立角色页：点击列表项进入后渲染正常，含「设定集报告」「Bible」「关系」。_
+    - _关系图谱：`#character-relationship-graph` / SVG 容器存在。_
+    - _Prompt 资产包：面板与「资产包」文案可见。_
+    - _**全程 0 个 >=400 响应、0 条控制台 error**；`tsc --noEmit` 通过。_
 - [x] 5.3 更新 `docs/architecture/API_SURFACE.md` + `api_surface.json`
 - [x] 5.4 更新 `docs/architecture/YLCRAFT_SYSTEM_ARCHITECTURE.md`（新增关系模型与角色先行创建项目描述）
 - [x] 5.5 更新本 OpenSpec 记录完成状态
