@@ -47,6 +47,9 @@
     - _两处如实标注的**能力缺口**（不掩盖）：① `douyin_short_video` 与 `pdf_ebook` 标记 `planning_only=True`，输出中带 warning 说明"只产出规划数据"——抖音的视频由后续步骤生成（用户已确认此范围），PDF 的字节需要有渲染器（**本环境未装任何 PDF 生成库**，仅 `pypdf` 可读写/合并，无法从零排版）；② 后端**不解析 asset_ids → URL**（`to_asset_download_url` 收的是文件路径而非资产 id，逐个查 Asset Hub 会引入 IO 与耦合），因此产物只带 `image_asset_ids`，由前端解析；公众号 HTML 在无 URL 时**不静默少图**，改为输出 `<img data-asset-id="...">` 占位供渲染方替换。_
     - _验证：`test_content_package_adapters.py` **13 例**（五适配器齐备+溯源齐全、无 items 副本、失败隔离、未知适配器报错、各平台形状、HTML 转义、asset 占位、URL 注入）；`test_creative_project_workflow_api.py` 新增集成测试 1 例（产出→落为新版本→未知适配器 400→无内容包 400）。回归 `pytest -k "content_package or creative_project or profile or workflow or adapter"` → **204 passed**。_
     - _未做（明确划界）：**前端触发入口**。当前只有 API 可调用，内容包工作台没有「生成平台输出」按钮，所以界面上「输出适配」那盏灯**不会自己变绿**——需要前端调这个新端点。这属于前端工作（design §6 的输出栏），我把它留给 #14/#19，或你要我现在补。_
+    - _2026-09-14 **用户复核后纠正两处设计偏差**（原实装的问题，均已改）：_
+      - _**① 不该按平台命名适配器**：原实装叫 `douyin_short_video`，但全仓核对发现——该名字**只出现在 design §4 一句与我自己的代码里，没有任何方案声明它**；而项目既有 `connectors/base/social_base.L35 SHORT_VIDEO = "short_video"` 已经是通用口径。短视频平台（抖音/快手/视频号）导出结构本就同一套，差异属发布环节。已改名 **`short_video`**，并在模块内写明"按产出形态命名，不按平台命名"，design §4 同步更正。_
+      - _**② 输出集合应由方案声明决定，而非调用方硬传**：原端点要求显式传 `adapters`，等于 `profiles.py` 的 `output_adapters` **依旧无人消费**。已改为**不传时取该项目内容生产方案的 `output_adapters` 全出**（页书→pdf+素材包；科普/平台图文→公众号+小红书+素材包；单镜头→素材包），这也让 `output_adapters` 第一次真正成为运行时依据。新增测试断言"不传 adapters 时按方案全出"。_
 - [ ] 16. Add project-to-package and standalone-package-to-project attachment flows through Asset Hub and project content links.
 - [ ] 17. Update Agent Director routing so package plans use content cards/items and full narrative plans use existing stages.
 

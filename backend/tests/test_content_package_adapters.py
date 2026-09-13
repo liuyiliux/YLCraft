@@ -16,7 +16,7 @@ import pytest
 from app.services.creative_project.content_package_adapters import (
     ADAPTERS,
     ADAPTER_TYPES,
-    DOUYIN_VIDEO,
+    SHORT_VIDEO_PARAMS,
     WECHAT_DIGEST_LIMIT,
     XHS_CARD,
     AdapterInput,
@@ -73,7 +73,7 @@ def test_catalog_lists_all_adapters():
     assert [item["adapter_type"] for item in catalog] == list(ADAPTER_TYPES)
     # 抖音与 PDF 目前只产规划数据，目录里要如实标注
     by_type = {item["adapter_type"]: item for item in catalog}
-    assert by_type["douyin_short_video"]["planning_only"] is True
+    assert by_type["short_video"]["planning_only"] is True
     assert by_type["pdf_ebook"]["planning_only"] is True
     assert by_type["wechat_official_account"]["planning_only"] is False
 
@@ -178,9 +178,9 @@ def test_xiaohongshu_card_shape():
 
 
 def test_douyin_shot_list_shape():
-    out = build_package_outputs(_input(), ["douyin_short_video"])[0]
+    out = build_package_outputs(_input(), ["short_video"])[0]
     payload = out["payload"]
-    assert payload["video_params"] == DOUYIN_VIDEO
+    assert payload["video_params"] == SHORT_VIDEO_PARAMS
     assert payload["orientation"] == "portrait"
     assert payload["total_shots"] == 2
     assert payload["shots"][0]["action_prompt"] == "小老鼠跑动"

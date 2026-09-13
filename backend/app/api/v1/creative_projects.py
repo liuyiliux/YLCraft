@@ -1380,8 +1380,9 @@ def build_content_package_outputs(
 ):
     """用平台适配器把当前内容包翻译成各平台格式。
 
-    纯本地转换：不改 items、不向公众号/小红书/抖音发送任何请求。`save=True` 时把
+    纯本地转换：不改 items、不向公众号/小红书/短视频平台发送任何请求。`save=True` 时把
     outputs 追加为新包版本（旧版本不可变），界面「输出适配」检查项据此变绿。
+    `adapters` 留空则按该项目内容生产方案声明的 `output_adapters` 全出。
     """
     try:
         outputs, content = svc.build_content_package_outputs(

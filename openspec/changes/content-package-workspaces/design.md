@@ -116,7 +116,7 @@
 
 - `wechat_official_account`：富文本 HTML、标题、摘要、封面、正文配图、草稿 payload。
 - `xiaohongshu_carousel`：卡片尺寸、页序、标题、正文、标签。
-- `douyin_short_video`：竖屏镜头、字幕/口播、视频参数。
+- `short_video`：竖屏镜头、字幕/口播、视频参数。（原写作 `douyin_short_video`，2026-09-14 实装时**按产出形态改名**：抖音/快手/视频号的导出结构是同一套，差异属发布环节，不该按平台分叉；项目既有 `connectors/base/social_base.SHORT_VIDEO` 也是这个口径。）
 - `pdf_ebook`：页序、图片、文字和导出文件。
 - `asset_bundle`：原始 JSON、Markdown、图片和提示词清单。
 
