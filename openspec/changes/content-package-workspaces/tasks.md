@@ -17,7 +17,14 @@
     - _兼容面核实：`_parse_outline_text` 全仓无外部引用（模块私有）；`generate_outline` 由 `api/v1/images.py` 的三处调用（`/images/generate-outline` 与两处批量入口）使用，均为延迟导入，签名不变即无需改动。_
     - _测试：新增 `backend/tests/test_content_package_planner.py`（8 例）——覆盖①响应结构不变（title/copywriting/pages/platform/platform_name 与 pages 的 type/prompt 层级）、②wrapper 委托后无模板返回 `{}`、③`_parse_outline_text` 别名可用、④单平台失败仍保留兜底结构且不影响兄弟平台、⑤一页⇒一item 且键集固定、⑥失败平台只进 `warnings` 不伪造 item、⑦空输入产出空包、⑧多模态消息构造。实测 **8 passed**；回归 `pytest -k "outline or image or planner or ai_backend or content_package or platform"` → **115 passed**。_
 - [x] 7. Add the minimum content-package plan/read/update/version APIs using `ProjectContent` for project-bound packages and the approved standalone draft path.
-- [ ] 8. Add item-level stale/retry semantics and preserve package/item/asset provenance in requests and task payloads.
+- [x] 8. Add item-level stale/retry semantics and preserve package/item/asset provenance in requests and task payloads.
+  - _2026-09-14 完成（后端 + 前端入口）：_
+    - _新增 `POST /api/v1/creative-projects/{project_id}/content-package/items/{item_id}/retry`：**只重跑一条**内容单元的文本/提示词，其余条目原样保留（不重新规划整包——省 token，也不会冲掉用户已手改好的条目）。用 `ContentPackageItemSchema` 作为输出契约；条目不存在返回 400。_
+    - _**stale 语义按依赖判定**：新增 `mark_outputs_stale(outputs, changed_item_ids)`——只有 `source_item_ids` 命中变更条目的输出被标 `stale`，其余保持 `ready`。__一处必须说清的事实__：当前五个适配器都产出**整包级**产物（公众号整篇、整册 PDF、整包素材），它们的 `source_item_ids` 都是全部条目，**因此改任一条都会让全部输出过期**——这是依赖判定得出的正确结论，不是无差别作废；将来若出现条目级产物，同一机制只会影响相关部分。_
+    - _溯源（design §5.2）：重试时任务载荷带上 `package_id` / `package_version` / `item_id` / `item_retry`，任务中心与事件日志可回溯到具体条目；已有测试断言这四个字段。_
+    - _**一处语义冲突的自我纠正**：初版把"输出已过期"追加进包的 `warnings`，但 `save_content_package` 会用 schema 校验结果**整体覆盖** `warnings`，导致提示丢失（被测试抓到）。改为**过期信息只落在 outputs 自身**（`status` + `stale_reason`）——`warnings` 保持"契约校验提示"这一稳定语义，状态性信息混进去既会被覆盖、又会在重新产出输出后残留成误导。_
+    - _前端：内容包编辑器每条加「**重跑本条**」按钮（表单里未保存过的新行没有 id，会提示先保存）；「平台输出」区块加「**生成平台输出**」按钮 + 输出列表（状态标签 已生成/已过期/失败、条数摘要、导出 JSON，素材包三件套逐个可下载）。_
+    - _测试：`test_content_package_adapters.py` 13 例（含 `mark_outputs_stale` 行为）；`test_creative_project_workflow_api.py` 新增集成测试——单条重试后**目标条目被重写、兄弟条目原样保留**、引用它的输出全部 stale 且带 `stale_reason`、不存在条目 400。_**真实浏览器验收 13/13**（1600×1000）：生成平台输出产出「PDF 电子书 + 素材包」、状态「已生成」、三件套可下载、**绘本方案不含公众号/小红书/短视频**（证明按方案清单出）、刷新后仍在（已落库）、0 个 >=400、0 条控制台 error。_
 - [ ] 9. Add API-facing Skill and Agent tool contracts for planning, item editing and package inspection.
 
 ## Phase 3: Lightweight workspaces (only two package types initially)

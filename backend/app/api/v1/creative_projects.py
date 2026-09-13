@@ -348,6 +348,15 @@ class ContentPackageOutputsRequest(BaseModel):
     save: bool = Field(default=True, description="是否把 outputs 追加为新包版本（界面「输出适配」以此为依据）")
 
 
+class ContentPackageItemRetryRequest(BaseModel):
+    """只重跑一条内容单元（其余条目原样保留）。"""
+
+    brief: str = ""
+    prompt_only: bool = False
+    provider: str | None = None
+    model: str | None = None
+
+
 class ProductionPlanSaveRequest(BaseModel):
     """Append an editable production-plan revision for the current project."""
 
@@ -1398,6 +1407,45 @@ def build_content_package_outputs(
                 "content": serialize_content(content) if content else None,
             },
         }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.post("/{project_id}/content-package/items/{item_id}/retry", summary="只重跑一条内容单元")
+async def retry_content_package_item(
+    project_id: str,
+    item_id: str,
+    req: ContentPackageItemRetryRequest,
+    svc: CreativeProjectService = Depends(service),
+):
+    """只重跑一条内容单元的文本/提示词。
+
+    其余条目原样保留（不会把用户手改好的条目冲掉），并把**引用了这条 item 的平台输出
+    标为 `stale`**，其余输出保持可用。
+    """
+    try:
+        content = await _run_creative_task(
+            "creative_writing",
+            {
+                "project_id": project_id,
+                "stage": "content_package_item",
+                "stage_label": "重跑内容单元",
+                "provider": req.provider or "",
+                "model": req.model or "",
+                "prompt_only": req.prompt_only,
+                # 溯源：条目级重试也要能回溯到具体条目（design §5.2）
+                "item_id": item_id,
+            },
+            lambda: svc.retry_content_package_item(
+                project_id,
+                item_id=item_id,
+                brief=req.brief,
+                prompt_only=req.prompt_only,
+                provider=req.provider,
+                model=req.model,
+            ),
+        )
+        return {"success": True, "data": serialize_content(content)}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 

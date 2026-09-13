@@ -16,9 +16,9 @@ import { OutlineTab, PipelinePanel } from './outline'
 import { ScriptTab } from './storyboard'
 import { AssetsTab, JsonTab, LogsTab } from './tabs'
 import { WriterRoomTab } from './writer-room'
-import { getNovelDisplayTitle, imageContextKey, productionProfileOptions, projectTypeLabel, projectTypeOptions, stageLabels, statusLabels } from '../utils'
+import { downloadTextFile, getNovelDisplayTitle, imageContextKey, productionProfileOptions, projectTypeLabel, projectTypeOptions, stageLabels, statusLabels } from '../utils'
 import { BranchesOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, EyeOutlined, FileTextOutlined, FolderOpenOutlined, HistoryOutlined, MenuFoldOutlined, MenuUnfoldOutlined, PictureOutlined, PlusOutlined, ReloadOutlined, RobotOutlined, ThunderboltOutlined } from '@ant-design/icons'
-import { Alert, Badge, Button, Checkbox, Collapse, Empty, Form, Input, InputNumber, List, Modal, Popconfirm, Segmented, Select, Skeleton, Space, Tabs, Tag, Tooltip, Typography, message } from 'antd'
+import { Alert, Badge, Button, Checkbox, Collapse, Divider, Empty, Form, Input, InputNumber, List, Modal, Popconfirm, Segmented, Select, Skeleton, Space, Tabs, Tag, Tooltip, Typography, message } from 'antd'
 import type { StoryPageContext } from '../hooks/useStoryPageContext'
 
 const { Text, Title, Paragraph } = Typography
@@ -66,6 +66,8 @@ export function StoryWorkspaceShell({ ctx }: { ctx: StoryPageContext }) {
     handleActiveChapterChange,
     handleAgentAdvanceProject,
     handleBatchGenerateContentPackageImages,
+    handleBuildContentPackageOutputs,
+    handleRetryContentPackageItem,
     handleBatchGenerateStoryboardImages,
     handleCreate,
     handleCreativeSkillIdsChange,
@@ -223,6 +225,12 @@ export function StoryWorkspaceShell({ ctx }: { ctx: StoryPageContext }) {
     writerRoomContents,
     writerRoomSummary,
   } = ctx
+
+  // 已产出的平台输出（公众号/小红书/短视频/PDF/素材包）。由后端适配器写入包版本，
+  // 界面「输出适配」检查项与这里的列表都读它。
+  const packageOutputs: any[] = Array.isArray((contentPackageData as any)?.outputs)
+    ? ((contentPackageData as any).outputs as any[])
+    : []
 
   // "最近活动"：取项目生成日志里最近的几条（时间倒序），阶段与状态转成中文展示。
   // 数据来自已在 ctx 里的 generationLogs，无新增请求。
@@ -1415,23 +1423,114 @@ export function StoryWorkspaceShell({ ctx }: { ctx: StoryPageContext }) {
                     <Form.Item label="图片提示词" name={[field.name, 'image_prompt']} style={{ marginBottom: 8 }}>
                       <TextArea rows={2} placeholder="可直接用于 AI 生图" />
                     </Form.Item>
-                    <Button
-                      size="small"
-                      icon={<PictureOutlined />}
-                      loading={inlineImageLoadingKey === imageContextKey({
-                        contentId: contentPackageContent?.id,
-                        sourceType: 'content_package',
-                        sourceIndex: index,
-                      })}
-                      onClick={() => void handleGenerateContentPackageImage(index, field.name)}
-                    >
-                      生成图片
-                    </Button>
+                    <Space size={6} wrap>
+                      <Button
+                        size="small"
+                        icon={<PictureOutlined />}
+                        loading={inlineImageLoadingKey === imageContextKey({
+                          contentId: contentPackageContent?.id,
+                          sourceType: 'content_package',
+                          sourceIndex: index,
+                        })}
+                        onClick={() => void handleGenerateContentPackageImage(index, field.name)}
+                      >
+                        生成图片
+                      </Button>
+                      <Button
+                        size="small"
+                        icon={<ReloadOutlined />}
+                        onClick={() => {
+                          // id 由服务端生成（item-1、item-2…）；表单里新加、还没保存过的行没有 id
+                          const itemId = String(contentPackageForm.getFieldValue(['items', field.name, 'id']) || '')
+                          if (!itemId) {
+                            message.warning('这一条还没保存过，请先「保存内容包」，再重跑单条')
+                            return
+                          }
+                          void handleRetryContentPackageItem(itemId)
+                        }}
+                      >
+                        重跑本条
+                      </Button>
+                      <Text type="secondary" style={{ fontSize: 12 }}>只重跑这一条，其它条目不动</Text>
+                    </Space>
                   </div>
                 ))}
               </Space>
             )}
           </Form.List>
+
+          <Divider style={{ margin: '18px 0 12px', fontSize: 13 }}>平台输出</Divider>
+          <Space wrap style={{ marginBottom: 10 }}>
+            <Button
+              icon={<DownloadOutlined />}
+              loading={loadingAction === 'create'}
+              onClick={() => void handleBuildContentPackageOutputs()}
+            >
+              生成平台输出
+            </Button>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              按当前内容生产方案声明的输出一次全出；只在本地做格式转换，不会发到外部平台
+            </Text>
+          </Space>
+          {packageOutputs.length ? (
+            <Space direction="vertical" size={6} style={{ width: '100%' }}>
+              {packageOutputs.map((output: any) => {
+                const status = String(output?.status || '')
+                const statusLabel = status === 'ready' ? '已生成' : status === 'stale' ? '已过期' : '失败'
+                const statusColor = status === 'ready' ? 'green' : status === 'stale' ? 'orange' : 'red'
+                const payload = output?.payload || {}
+                const summary = payload.cards?.length ? `${payload.cards.length} 张卡片`
+                  : payload.shots?.length ? `${payload.shots.length} 个镜头`
+                    : payload.pages?.length ? `${payload.pages.length} 页`
+                      : payload.files?.length ? `${payload.files.length} 个文件`
+                        : ''
+                return (
+                  <div
+                    key={String(output?.adapter_type)}
+                    style={{ border: `1px solid ${theme.borderLight}`, borderRadius: 6, padding: '8px 10px' }}
+                  >
+                    <Space wrap size={6}>
+                      <Text strong style={{ fontSize: 13 }}>{output?.label || output?.adapter_type}</Text>
+                      <Tag color={statusColor}>{statusLabel}</Tag>
+                      {summary ? <Text type="secondary" style={{ fontSize: 12 }}>{summary}</Text> : null}
+                      <Button
+                        size="small"
+                        type="link"
+                        onClick={() =>
+                          downloadTextFile(
+                            `${selectedProject?.production_profile?.package_type || 'content-package'}-${output?.adapter_type}.json`,
+                            JSON.stringify(payload, null, 2),
+                          )}
+                      >
+                        导出 JSON
+                      </Button>
+                      {/* 素材包是"带走的"产物：每个文件单独可下载 */}
+                      {Array.isArray(payload.files)
+                        ? payload.files.map((file: any) => (
+                          <Button
+                            key={String(file?.path)}
+                            size="small"
+                            type="link"
+                            onClick={() => downloadTextFile(String(file?.path || 'file.txt'), String(file?.content || ''))}
+                          >
+                            {file?.path}
+                          </Button>
+                        ))
+                        : null}
+                    </Space>
+                    {output?.error ? (
+                      <Text type="danger" style={{ fontSize: 12, display: 'block' }}>{output.error}</Text>
+                    ) : null}
+                    {(output?.warnings || []).map((warning: string) => (
+                      <Text key={warning} type="secondary" style={{ fontSize: 12, display: 'block' }}>{warning}</Text>
+                    ))}
+                  </div>
+                )
+              })}
+            </Space>
+          ) : (
+            <Text type="secondary" style={{ fontSize: 12 }}>还没有平台输出，点上面的按钮生成。</Text>
+          )}
         </Form>
       </Modal>
 
