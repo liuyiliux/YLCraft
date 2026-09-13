@@ -18,9 +18,11 @@
 from __future__ import annotations
 
 import httpx
+import json  # noqa: F401  (下方 JSON 数组用例使用)
 import pytest
 
 from app.services.platforms.bilibili.client import BilibiliClient
+from app.services.platforms.fanqie.client import FanqieClient
 from app.services.platforms.types import ClientConfig, ClientMode
 from app.services.platforms.xiaohongshu.client import XiaohongshuClient
 
@@ -44,6 +46,10 @@ def _bili(cookie: str) -> BilibiliClient:
 
 def _xhs(cookie: str) -> XiaohongshuClient:
     return XiaohongshuClient(ClientConfig(platform="xhs", mode=ClientMode.API, cookie=cookie))
+
+
+def _fanqie(cookie: str) -> FanqieClient:
+    return FanqieClient(ClientConfig(platform="fanqie", mode=ClientMode.API, cookie=cookie))
 
 
 # ---------------------------------------------------------------------------
@@ -158,3 +164,45 @@ async def test_base_class_drops_cookie_when_absent():
         assert "Cookie" not in client._http_client.headers
     finally:
         await client._http_client.aclose()
+
+
+# ---------------------------------------------------------------------------
+# 4. 三平台共用基类实现，fanqie 的本地版本对齐到公共实现
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("factory,platform", [(_bili, "bili"), (_xhs, "xhs"), (_fanqie, "fanqie")])
+async def test_all_platforms_share_base_cookie_normalization(factory, platform):
+    """三个平台的 API 模式最终都应由基类产出同一个合法 Cookie 头。"""
+    client = factory(NETSCAPE_COOKIE)
+    await client._init_http_client()
+    try:
+        sent = client._http_client.headers["Cookie"]
+        assert sent == "SESSDATA=FAKE%2CSESSDATA%2CVALUE; bili_jct=FAKEJCT0123456789; " \
+                       "DedeUserID=226082; DedeUserID__ckMd5=FAKEMD5; sid=e5u3hlbv", platform
+    finally:
+        await client._http_client.aclose()
+
+
+def test_fanqie_normalize_matches_cookie_manager_including_json():
+    """fanqie.utils.normalize_cookie 已对齐到公共 CookieManager.extract_raw。
+
+    对 Netscape / raw / 空三种输入与原实现输出一致；**JSON 数组输入**原实现会原样返回
+    （导致整段 JSON 被塞进 Cookie 头），对齐后转为正确的 header 格式。
+    """
+    from app.services.cookies.manager import CookieManager
+    from app.services.platforms.fanqie.utils import normalize_cookie as fanqie_normalize
+
+    mgr = CookieManager()
+    json_cookies = json.dumps([{"name": "sessionid", "value": "abc123"},
+                               {"name": "csrf", "value": "def456"}])
+
+    for label, val in (("netscape", "# Netscape HTTP Cookie File\n"
+                                    "fanqienovel.com\tFALSE\t/\tFALSE\t0\tsessionid\tabc123\n"),
+                       ("raw", " a=1 ; b=2 "),
+                       ("empty", ""),
+                       ("json", json_cookies)):
+        assert fanqie_normalize(val) == (mgr.extract_raw(val) or ""), label
+
+    # JSON 数组必须被真正解析，而不是原样返回
+    assert fanqie_normalize(json_cookies) == "sessionid=abc123; csrf=def456"

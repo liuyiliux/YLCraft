@@ -37,7 +37,6 @@ from .apis import (
     X_SECSDK_CSRF_TOKEN,
 )
 from .utils import (
-    normalize_cookie,
     classify_fanqie_error,
     CookieExpiredError,
     FanqieError,
@@ -78,7 +77,8 @@ class FanqieClient(BasePlatformClient):
             "referer": self._make_referer(),
             "user-agent": self._get_default_user_agent(),
         }
-        cookie = normalize_cookie(self.config.cookie)
+        # Cookie 规范化统一由基类 header_cookie() 负责（不在此处各平台各写一遍）
+        cookie = self.header_cookie()
         if cookie:
             headers["Cookie"] = cookie
         # x-secsdk-csrf-token 为可选反爬头；缺失时多数接口仍可访问

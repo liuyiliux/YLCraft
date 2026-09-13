@@ -103,10 +103,14 @@ def normalize_cookie(cookie_str: str) -> str:
     """
     将任意格式的 cookie 规范化为可直接放入 HTTP `Cookie` 头的字符串。
 
-    支持三种输入：
-      1. Netscape 文件格式（含 Tab 或 `# Netscape` 头）→ 转成 `k=v; k2=v2`
-      2. 原始 `k=v; k2=v2`（可能含多余空白）→ 去空白
-      3. 已经是头字符串 → 原样返回（仅去首尾空白）
+    ⚠️ 命名陷阱（务必读完）：
+    `CookieManager` 里也有一个 `normalize_cookie(platform, content)`，**名字相同但方向相反**
+    ——那个是「转成 Netscape 文件」，本函数是「转成可放进 header 的 `k=v; k2=v2`」。
+    两者不可互换。新代码请优先用 `BasePlatformClient.header_cookie()`（公共基类，唯一实现）。
+
+    本函数已改为委托给公共的 `CookieManager.extract_raw()`：实测对 Netscape / `k=v` / 空
+    三种输入与原实现输出**完全一致**，并额外支持 JSON 数组（浏览器扩展导出）输入——原实现
+    对 JSON 数组会原样返回，导致整段 JSON 被塞进 Cookie 头。
 
     Args:
         cookie_str: 任意格式的 cookie 文本
@@ -116,16 +120,16 @@ def normalize_cookie(cookie_str: str) -> str:
     """
     if not cookie_str:
         return ""
+    try:
+        from app.services.cookies.manager import CookieManager
 
-    s = cookie_str.strip()
-    # 判断是否为 Netscape 格式
-    if "\t" in s or s.startswith("# Netscape"):
-        parsed = parse_netscape_cookie(s)
-        return "; ".join(f"{k}={v}" for k, v in parsed.items())
-
-    # 原始 / 头字符串：去除每个分段的两侧空白，重新拼接
-    segments = [seg.strip() for seg in s.split(";") if seg.strip()]
-    return "; ".join(segments)
+        return CookieManager().extract_raw(cookie_str) or ""
+    except Exception:  # noqa: BLE001 - 规范化失败时回退到原实现，绝不因解析问题阻塞请求
+        s = cookie_str.strip()
+        if "\t" in s or s.startswith("# Netscape"):
+            parsed = parse_netscape_cookie(s)
+            return "; ".join(f"{k}={v}" for k, v in parsed.items())
+        return "; ".join(seg.strip() for seg in s.split(";") if seg.strip())
 
 
 def extract_writer_id_from_cookie(cookie_str: str) -> str:
