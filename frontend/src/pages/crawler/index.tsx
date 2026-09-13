@@ -25,6 +25,7 @@ import {
   CalendarOutlined, FolderOpenOutlined, SyncOutlined,
 } from '@ant-design/icons'
 import { useTheme } from '../../constants/theme'
+import { useResizableColumns } from '../../hooks/useResizableColumns'
 import {
   searchEnhanced, importCrawler, getNoteDetail, getSubtitles, downloadCrawlerSubtitle, listPlatformConnections,
   getDanmaku, downloadDanmaku, getBiliStats, getBiliComments, sendBiliComment, getBiliVideoInfo,
@@ -607,6 +608,25 @@ export default function CrawlerPage() {
   const [biliStats, setBiliStats] = useState<any>(null)
   const [biliVideoInfo, setBiliVideoInfo] = useState<any>(null)
   const [statsLoading, setStatsLoading] = useState(false)
+
+  // 列宽可拖拽（共用 hook，见 hooks/useResizableColumns）。
+  // 初始宽度按"内容量"给默认值：封面调大（原来 72×54 的缩略图看不清），
+  // 发布时间 / 操作这类定宽列收窄到接近文字宽度，把空间让给封面与标题。
+  //
+  // 注意：antd 给内层 table 设了 min-width:100%，列宽会被**等比拉伸填满容器**，
+  // 所以实际渲染宽度 ≈ 这里配置的值 × (容器宽 / 各列之和)。要让某些列真的变窄，
+  // 必须连同"总和"一起调，否则把单列调小只是把拉伸系数变大。
+  // 放在组件顶部而非列定义旁：将来若有人在列定义之前加提前 return，
+  // 放在中间的 hook 会因调用顺序变化而报错。
+  const { colWidths, wrapColumnTitle } = useResizableColumns({
+    cover: 200,       // 封面：调大（原 100），配合 120×90 缩略图
+    title: 620,       // 标题：吸收剩余空间
+    platform: 90,     // 平台：原 110
+    author: 150,      // 作者：原 140
+    create_time: 64,  // 发布时间：原 120，收到接近"2月前"的宽度（仍可继续拖窄）
+    stats: 150,       // 互动：原 160
+    actions: 100,     // 操作：原 160
+  })
 
   const [detailDrawerTab, setDetailDrawerTab] = useState<string>('detail')
 
@@ -1242,7 +1262,7 @@ export default function CrawlerPage() {
   // ===== 列定义 =====
   const columns: ColumnsType<CrawlerResult> = [
     {
-      title: '封面', dataIndex: 'cover', key: 'cover', width: 100,
+      title: wrapColumnTitle('封面', 'cover'), dataIndex: 'cover', key: 'cover', width: colWidths['cover'],
       render: (cover: string, r: CrawlerResult) => {
         // 走统一的代理函数（含微信公众号 CDN / B站 / 小红书 / 抖音等）
         const src = proxyImageUrl(cover)
@@ -1269,23 +1289,25 @@ export default function CrawlerPage() {
         }
         return src ? (
           <Image
-            src={src} alt={stripHtml(r.title)} width={72} height={54}
+            src={src} alt={stripHtml(r.title)} width={120} height={90}
             style={{ objectFit: 'cover', borderRadius: 4, cursor: 'pointer' }}
             preview={{ mask: <EyeOutlined /> }}
           />
         ) : (
-          <div style={{ width: 72, height: 54, background: isDark ? '#1a1a2e' : '#f0f2f5', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <PictureOutlined style={{ fontSize: 18, color: isDark ? '#4a4a6a' : '#bfbfbf' }} />
+          <div style={{ width: 120, height: 90, background: isDark ? '#1a1a2e' : '#f0f2f5', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <PictureOutlined style={{ fontSize: 26, color: isDark ? '#4a4a6a' : '#bfbfbf' }} />
           </div>
         )
       },
     },
     {
-      title: searchType === 'user' ? '用户名' : (searchType === 'bangumi' || searchType === 'movie' ? '影视信息' : '标题'),
+      title: wrapColumnTitle(
+        searchType === 'user' ? '用户名' : (searchType === 'bangumi' || searchType === 'movie' ? '影视信息' : '标题'),
+        'title',
+      ),
       dataIndex: 'title', key: 'title',
-      // 给标题列一个最小宽度，避免被其他列挤压导致 platform / author 贴在一起
-      width: searchType === 'user' ? 140 : (searchType === 'bangumi' || searchType === 'movie' ? 320 : 280),
-      minWidth: 220,
+      // 宽度由可拖拽的 colWidths 决定；不再设 minWidth，否则拖到比它窄会被 antd 忽略
+      width: colWidths['title'],
       ellipsis: searchType !== 'bangumi' && searchType !== 'movie',
       render: (text: string, r: CrawlerResult) => {
         const isMedia = searchType === 'bangumi' || searchType === 'movie'
@@ -1328,7 +1350,7 @@ export default function CrawlerPage() {
       },
     },
     {
-      title: '平台', dataIndex: 'platform', key: 'platform', width: 110,
+      title: wrapColumnTitle('平台', 'platform'), dataIndex: 'platform', key: 'platform', width: colWidths['platform'],
       render: (pf: string) => {
         const info = getPlatformInfo(pf)
         return (
@@ -1352,10 +1374,10 @@ export default function CrawlerPage() {
     },
     ...(searchType === 'user' || searchType === 'bangumi' || searchType === 'movie'
       ? []
-      : [{ title: '作者', dataIndex: 'author', key: 'author', width: 140, ellipsis: true }]
+      : [{ title: wrapColumnTitle('作者', 'author'), dataIndex: 'author', key: 'author', width: colWidths['author'], ellipsis: true }]
     ),
     ...(searchType !== 'user' && searchType !== 'live' && searchType !== 'account' ? [{
-      title: '发布时间', dataIndex: 'create_time', key: 'create_time', width: 120,
+      title: wrapColumnTitle('发布时间', 'create_time'), dataIndex: 'create_time', key: 'create_time', width: colWidths['create_time'],
       render: (create_time: any, r: CrawlerResult) => {
         // 智能时间格式化（兼容 ISO 字符串 / 10 位秒 / 13 位毫秒）
         return formatTime(create_time, r.platform, searchType)
@@ -1363,13 +1385,14 @@ export default function CrawlerPage() {
     }] : []),
     {
       // 公众号账号列头改为「公众号信息」；其它维持原样
-      title: searchType === 'user' ? '用户信息'
-        : (searchType === 'bangumi' || searchType === 'movie' ? '评分'
-        : (searchType === 'account' ? '公众号信息' : '互动')),
+      title: wrapColumnTitle(
+        searchType === 'user' ? '用户信息'
+          : (searchType === 'bangumi' || searchType === 'movie' ? '评分'
+          : (searchType === 'account' ? '公众号信息' : '互动')),
+        'stats',
+      ),
       key: 'stats',
-      width: searchType === 'user' ? 220
-        : (searchType === 'bangumi' || searchType === 'movie' ? 120
-        : (searchType === 'account' ? 200 : 160)),
+      width: colWidths['stats'],
       render: (_: any, r: CrawlerResult) => {
         if (searchType === 'user') {
           return (
@@ -1462,7 +1485,7 @@ export default function CrawlerPage() {
       },
     },
     {
-      title: '操作', key: 'actions', width: 160,
+      title: wrapColumnTitle('操作', 'actions'), key: 'actions', width: colWidths['actions'],
       render: (_: any, r: CrawlerResult) => (
         <Space size={4}>
           <Tooltip title="查看详情">
@@ -1813,7 +1836,8 @@ export default function CrawlerPage() {
               selectedRowKeys,
               onChange: (keys, rows) => { setSelectedRowKeys(keys); setSelectedRows(rows) },
             }}
-            scroll={{ x: 700 }}
+            // 横向滚动区必须跟着列宽之和走，否则拖动列宽后滚动范围不更新
+            scroll={{ x: Object.values(colWidths).reduce((a, b) => a + b, 0) }}
             size="middle"
             style={{ color: textPri }}
           />
