@@ -112,7 +112,7 @@
 # 工程约束
 
 - path: engineering/设计约束（design-conventions）.md
-  summary: "AI 调用双层观测模式、任务不能自动收口、重试复用业务端点、前端选项同步、函数直调的坑；写作风格 T6 预算与纯函数注入、人机边界对等、TOOLS 注册表判定；Agent 工作台前端约束（窄屏禁用 nth-child、tabular-nums 非等宽、JSX 注释、!important 覆盖、勾选项审计）；世界构建约束（复用管线半段、origin 放候选级、schema 边界前移、同步判据、design 可能滞后于 tasks）；Creative Skill 约定与检索陷阱（Select-String 不递归子目录）；派生状态优先渲染时计算、/story 实现已迁至 components/；数据库迁移约束（version_num 长度、仅运行时建表、env.py 全量导入、禁止 stamp）；动态状态约束（LLM 输出字段驱动、纯服务优先、注入分层、无新路由不改 API surface）；叙事运行时约束（T0 不静默截断、异步生图不算正文成功、熔断恢复需显式动作）；Agent 工作台信息架构约束（三条产品约束、手写 markdown 解析器）；小说来源与世界提取约束（逐字证据、递归检索、内置字段只增不删、smoke:pages 只是源码扫描）；创作项目闭环约束（模板兼容、生图谱系字段须齐且索引字段为字符串、生成单元独立存储、实验模块不进主流程）；提示词参考库约束（JSONB 分面聚合、非法枚举值不应静默忽略、测试选择器须复核源码、缓存媒体本地优先）；图转 3D 验证坑（history 过滤 pending、表单默认折叠、按钮文案、toast 3 秒消失、真实生成扣额度须先确认）；角色册实现约束（Bible 分节类型不一、identity 键不固定、弱化要给选中态留出口、窄栏排版）；视频生成约束（项目 role=output、WebSocket 协议须跟随页面、图生视频需公网首帧）"
+  summary: "AI 调用双层观测模式、任务不能自动收口、重试复用业务端点、前端选项同步、函数直调的坑；写作风格 T6 预算与纯函数注入、人机边界对等、TOOLS 注册表判定；Agent 工作台前端约束（窄屏禁用 nth-child、tabular-nums 非等宽、JSX 注释、!important 覆盖、勾选项审计）；世界构建约束（复用管线半段、origin 放候选级、schema 边界前移、同步判据、design 可能滞后于 tasks）；Creative Skill 约定与检索陷阱（Select-String 不递归子目录）；派生状态优先渲染时计算、/story 实现已迁至 components/；数据库迁移约束（version_num 长度、仅运行时建表、env.py 全量导入、禁止 stamp）；动态状态约束（LLM 输出字段驱动、纯服务优先、注入分层、无新路由不改 API surface）；叙事运行时约束（T0 不静默截断、异步生图不算正文成功、熔断恢复需显式动作）；Agent 工作台信息架构约束（三条产品约束、手写 markdown 解析器）；小说来源与世界提取约束（逐字证据、递归检索、内置字段只增不删、smoke:pages 只是源码扫描）；创作项目闭环约束（模板兼容、生图谱系字段须齐且索引字段为字符串、生成单元独立存储、实验模块不进主流程）；提示词参考库约束（JSONB 分面聚合、非法枚举值不应静默忽略、测试选择器须复核源码、缓存媒体本地优先）；图转 3D 验证坑（history 过滤 pending、表单默认折叠、按钮文案、toast 3 秒消失、真实生成扣额度须先确认）；角色册实现约束（Bible 分节类型不一、identity 键不固定、弱化要给选中态留出口、窄栏排版）；视频生成约束（项目 role=output、WebSocket 协议须跟随页面、图生视频需公网首帧）；外部研究对照（arXiv 2608.25512 的时空可组合性/revertible effects、TencentDB 团队记忆的五步路由分层与 RRF 融合、L0-L3 内容分层，以及对照出的 6 条缺口）"
   scope: all
   stage: [design, tasks, apply]
   load_policy: on-demand
@@ -139,6 +139,9 @@
     - "改动角色册/角色列表的展示或完善度"
     - "排查实时进度/WebSocket 连不上"
     - "校验视频是否入了项目谱系"
+    - "涉及 Agent Harness、子代理、工具目录/前缀缓存稳定性"
+    - "涉及上下文分层、检索融合（BM25/向量/RRF）、资产生命周期"
+    - "考虑做 Agent 自我修改/热替换（先看可逆效应缺口）"
 
     - "涉及 WorldEntity / WorldEntityRelation / 世界地图正典与成图边界"
     - "需要做真实 UI 验证（注意 smoke:pages 不是浏览器）"
