@@ -1,5 +1,8 @@
-## ADDED Requirements
+# agent-team-composition Specification
 
+## Purpose
+TBD - created by archiving change agent-team-composition. Update Purpose after archive.
+## Requirements
 ### Requirement: Declarative Team Composition
 
 The system SHALL compose an agent team from a validated declarative template rather than hard-coded orchestration code.
@@ -23,7 +26,7 @@ The system SHALL separate process-global registries from per-session agent state
 #### Scenario: Concurrent roles isolate state
 
 - **WHEN** two role actors run concurrently in the same team
-- **THEN** each resolves its own persona, plan-mode and compaction instances
+- **THEN** each resolves its own agent-plane state (compaction, planner, tool executor)
 - **AND** both resolve the same process-global tool, skill and subagent registries
 - **AND** one role's mutable state cannot leak into a sibling
 
@@ -45,23 +48,18 @@ The system SHALL support `spawn`, `fork` and `continuable` delegation primitives
 
 ### Requirement: Cache-Stable Tool Catalog
 
-The system SHALL emit tool schemas deterministically and keep the catalog stable across modes.
+The system SHALL emit tool schemas deterministically so the assembled catalog is byte-stable and the reusable request prefix is preserved.
 
 #### Scenario: Unchanged tool set is byte-identical
 
 - **WHEN** the same visible tool set is assembled twice
 - **THEN** the serialized tool catalog is byte-identical and ordered lexicographically by tool name
 
-#### Scenario: Mode switch preserves catalog
-
-- **WHEN** the agent enters plan mode or a batch mode
-- **THEN** mutation tools remain in the catalog and are overridden by instruction text
-- **AND** the request prefix stays reusable for provider prompt caching
-
 #### Scenario: Compaction preserves prefix
 
 - **WHEN** the context compressor compacts a conversation
 - **THEN** the compacted request reuses the same system prompt and tool schema block as its prefix
+- **AND** the compaction provenance names the system prompt and tool schema revisions it was produced under
 
 ### Requirement: Team Rehearsal Provenance
 
@@ -83,15 +81,24 @@ The existing scene-simulation endpoint SHALL remain behaviorally compatible whil
 - **THEN** the response shape is unchanged
 - **AND** execution now flows through the declarative team template and common orchestrator
 
-### Requirement: Capability Provenance And Approval
+### Requirement: Capability Provenance
 
-The system SHALL record immutable provenance for team-mounted capabilities and approve capability changes.
+The system SHALL record immutable provenance for the capabilities a team role mounts, and SHALL be able to compute a declared capability diff between two template versions.
+
+A role's `profile`/`tools`/`skills`/`spawn` are an authority grant. The grant is materialized per delegated task and persisted with the child run, so the authority a given run exercised remains auditable after the template file changes.
+
+> 审批路由（`route ... through draft approval`）**尚未实现**，因此不在本条中声明。团队模板当前是仓库内 YAML，由 git 评审；系统内不存在模板的运行时写入端点，没有可挂审批的路径。待引入运行时可编辑模板时再补充该要求。
 
 #### Scenario: Template capability change
 
 - **WHEN** a team template changes which tools or skills a role mounts
-- **THEN** the system produces a declared capability diff with immutable provenance
-- **AND** the change is routed through draft approval before it affects runtime execution
+- **THEN** the system produces a declared capability diff naming added, removed and changed roles
+
+#### Scenario: Delegated task records its authority grant
+
+- **WHEN** a team template is composed into delegated tasks
+- **THEN** each task carries the capabilities its role was granted
+- **AND** that grant is persisted with the child run as immutable provenance
 
 ### Requirement: Compression Traceability
 
@@ -102,3 +109,4 @@ The system SHALL make context compression traceable to the raw observations it f
 - **WHEN** the runtime compacts a conversation
 - **THEN** the compacted product carries a source span reference, a summary version, and a deterministic expansion path
 - **AND** the runtime can name which raw observations survived compression
+
