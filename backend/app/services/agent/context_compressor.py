@@ -14,6 +14,7 @@ token-approximation-based triggering, and pluggable compression strategies.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from typing import Any
@@ -40,6 +41,38 @@ MAX_SUMMARY_CHARS = 3500
 
 # Minimum token budget to leave for the model response after compression.
 MIN_RESPONSE_BUDGET = 2048
+
+# 调用方未提供 tool_schema_ref 时记入溯源的值。刻意不用空串，以便区分
+# "未提供"与"提供了但为空"。
+UNSPECIFIED_REF = "unspecified"
+
+
+def stable_ref(payload: Any) -> str:
+    """返回 prompt / schema 载体的**字节级稳定**短引用。
+
+    用途：在压缩溯源里指名"这次压缩是在哪一版系统提示与工具 schema 下产生的"。
+    注释声称"系统提示与工具 schema 块保持确定性以便前缀复用"，但若不带引用就无从验证。
+
+    稳定性是硬要求——同一输入在任何进程、任何时刻都必须得到同一个值，否则引用本身
+    会变成前缀缓存的不稳定源。因此：结构体先走**规范化 JSON**（键排序、紧凑分隔符、
+    非 ASCII 不转义），再取 sha256 前 12 位十六进制。
+    """
+    if payload is None:
+        text = ""
+    elif isinstance(payload, str):
+        text = payload
+    else:
+        try:
+            text = json.dumps(
+                payload,
+                sort_keys=True,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                default=str,
+            )
+        except (TypeError, ValueError):
+            text = str(payload)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
 
 
 def estimate_tokens(text: str) -> int:
@@ -116,6 +149,8 @@ class ContextCompressor:
         system_prompt: str = "",
         memory_context: str = "",
         profile: dict[str, Any] | None = None,
+        system_prompt_ref: str = "",
+        tool_schema_ref: str = "",
     ) -> list[dict[str, Any]]:
         """Check token budget and compress if needed. Returns (possibly compressed)
         message list, potentially with a summary injected at the head.
@@ -136,12 +171,21 @@ class ContextCompressor:
         )
         self._compress_count += 1
 
-        return await self._compress(messages, available)
+        # 显式 ref 缺失时按内容自算 system_prompt_ref，保证不留空；
+        # tool_schema 不在本方法可见范围内，未提供时明确记为 unspecified（而非空串）。
+        return await self._compress(
+            messages,
+            available,
+            system_prompt_ref=system_prompt_ref or stable_ref(system_prompt),
+            tool_schema_ref=tool_schema_ref or UNSPECIFIED_REF,
+        )
 
     async def _compress(
         self,
         messages: list[dict[str, Any]],
         budget: int,
+        system_prompt_ref: str = "",
+        tool_schema_ref: str = "",
     ) -> list[dict[str, Any]]:
         """Compress conversation history: summarize middle, keep last N.
 
@@ -164,7 +208,9 @@ class ContextCompressor:
         # Build a summary of compressed messages
         summary = self._build_fast_summary(to_compress)
 
-        # Record provenance so the compaction is traceable to the folded span.
+        # Record provenance so the compaction is traceable to the folded span **and**
+        # to the prompt/schema revision it was produced under. 仅记"折了哪些消息"不足以
+        # 验证下方注释的声明（系统提示与工具 schema 块保持确定性），必须同时指名它们的版本。
         self._last_provenance = {
             "summary_version": self._compress_count,
             "source_span": {
@@ -172,6 +218,8 @@ class ContextCompressor:
                 "kept_message_count": len(to_keep),
             },
             "expansion_path": "compressed_summary",
+            "system_prompt_ref": system_prompt_ref or UNSPECIFIED_REF,
+            "tool_schema_ref": tool_schema_ref or UNSPECIFIED_REF,
         }
 
         # Inject summary as a system message at the head of the keep list.
