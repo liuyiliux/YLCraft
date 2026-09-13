@@ -24,6 +24,7 @@ from app.services.agent.team_template import (
     TeamTemplateLoader,
     TeamTemplateValidator,
     capability_diff,
+    role_capabilities,
 )
 
 
@@ -241,6 +242,44 @@ def test_capability_diff_detects_added_and_removed_roles():
     diff = capability_diff(before, after)
     assert "b" in diff["added"]
     assert diff["removed"] == []
+
+
+# ---------------------------------------------------------------------------
+# Immutable per-role authority provenance (task 2.4)
+# ---------------------------------------------------------------------------
+
+
+def test_role_capabilities_is_sorted_and_stable():
+    """授权声明必须稳定表示：排序 + 固定键集，才能跨版本逐字比对。"""
+    role_a = _template([{"id": "a", "profile": "p", "tools": ["z", "x", "y"],
+                         "skills": ["s2", "s1"], "join": True}]).roles[0]
+    role_b = _template([{"id": "a", "profile": "p", "tools": ["x", "y", "z"],
+                         "skills": ["s1", "s2"], "join": True}]).roles[0]
+    assert role_capabilities(role_a) == role_capabilities(role_b)
+    assert role_capabilities(role_a)["tools"] == ["x", "y", "z"]
+    assert role_capabilities(role_a)["skills"] == ["s1", "s2"]
+    assert set(role_capabilities(role_a)) == {"profile", "tools", "skills", "spawn"}
+
+
+async def test_build_tasks_records_declared_role_authority():
+    """每个委派任务都必须带上该角色**声明的**能力，作为不可变授权溯源。
+
+    它会随子 Run 的 context_json 一次性落库，所以事后能够回答"这次委派到底授予了
+    哪个角色哪些权限"，而不必依赖可能已被修改的模板文件。
+    """
+    loader = TeamTemplateLoader()
+    template = loader.load("writer-room-team")
+    composer = TeamComposer(orchestrator=_FakeOrchestrator())
+    tasks = composer.build_tasks(template, {"project_id": "p1", "characters": ["甲"]})
+
+    assert tasks, "writer-room-team 应产出至少一个委派任务"
+    role_by_id = {role.id: role for role in template.roles}
+    for task in tasks:
+        authority = task.context.get("team_role_authority")
+        assert authority is not None, "任务上下文缺少角色授权溯源"
+        assert authority == role_capabilities(role_by_id[task.context["team_role_id"]])
+        # 与 capability_diff 走同一份定义：两侧形状不得漂移
+        assert set(authority) == {"profile", "tools", "skills", "spawn"}
 
 
 # ---------------------------------------------------------------------------

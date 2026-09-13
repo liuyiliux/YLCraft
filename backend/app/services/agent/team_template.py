@@ -159,6 +159,24 @@ class TeamTemplateValidator:
         return seen != len(template.roles)
 
 
+def role_capabilities(role: Any) -> dict[str, Any]:
+    """A single role's **declared** capabilities — i.e. its authority grant.
+
+    ``profile``/``tools``/``skills``/``spawn`` 决定该角色被允许做什么，因此它们是
+    授权声明而非普通配置。列表做排序以获得**稳定表示**：同一角色任何时候都得到同一
+    形状，既能跨版本逐字比对，也能原样固化进运行溯源。
+
+    与 :func:`capability_diff` 共用这一份定义，避免"差异比对"与"运行溯源"两处
+    形状各写一份而漂移。
+    """
+    return {
+        "profile": role.profile,
+        "tools": sorted(role.tools),
+        "skills": sorted(role.skills),
+        "spawn": role.spawn,
+    }
+
+
 def capability_diff(before: TeamTemplate, after: TeamTemplate) -> dict[str, Any]:
     """Compute a declared capability diff between two team template versions.
 
@@ -167,15 +185,7 @@ def capability_diff(before: TeamTemplate, after: TeamTemplate) -> dict[str, Any]
     instead of silently taking effect.
     """
     def role_caps(template: TeamTemplate) -> dict[str, dict[str, Any]]:
-        caps: dict[str, dict[str, Any]] = {}
-        for role in template.roles:
-            caps[role.id] = {
-                "profile": role.profile,
-                "tools": sorted(role.tools),
-                "skills": sorted(role.skills),
-                "spawn": role.spawn,
-            }
-        return caps
+        return {role.id: role_capabilities(role) for role in template.roles}
 
     before_caps = role_caps(before)
     after_caps = role_caps(after)
