@@ -70,5 +70,18 @@
     - 另有：`test_agent_run_tree_and_delegation_apis`（L3375）、模板三校验（cycle / missing join / invalid spawn）、`test_capability_diff_detects_*` 2 例、`test_tool_registry_deterministic_ordering`、`test_context_compressor_records_provenance`、`test_cost_meter_reads_*` 5 例（含 DeepSeek cache hit）
   - _本次补强：向 `test_delegation_primitives.py` 追加 **4 例** `joined_observation` 状态呈现测试（`waiting_confirmation` / `cancelled` / `skipped` / `failed` / 无回复 / 截断），断言**不得被渲染成"已完成"**——既有 3 例只覆盖 fork 与 `send_message` 原语，状态分支未被碰过；若把 `waiting_confirmation` 渲染成成功文本，父级会误以为子任务完成（正是本 change 要防的"失败被降级成普通文本"）。该文件现 **7 passed**。_
   - _**关于此前误判**：我曾用正则 `^def (test_\w+)` 检索测试函数名，得出"parent resume / confirmation 无专项测试"。实际这些用例是 `async def test_...`，**`^def` 匹配不到 `async def`**，因此漏检。同一写法陷阱本次会话内已踩两次（另一次在统计 `test_delegation_primitives.py` 时）。**统计 Python 测试函数必须匹配 `^(async )?def`**。_
-- [ ] 5.4 Run frontend typecheck/build and external-browser smoke for Agent Center and Story.
-- [ ] 5.5 Update architecture, Agent runtime guide, API surface and current project status before archiving the change.
+- [x] 5.4 Run frontend typecheck/build and external-browser smoke for Agent Center and Story.
+  - _2026-09-13 完成：_
+    - **前端构建**：`npm run build`（含两个 tsconfig 的 `tsc --noEmit` + vite build）→ **✓ built in 21.53s，退出码 0**。
+    - **Agent Center（Patchright + Chromium）**：`/agent` HTTP 200；点开已有会话后，**执行过程内联**已确认——DOM 中存在 20 个 `<details>` 折叠块，首个 summary 为「本轮执行过程 / completed / **13 步 / 5 工具 / 12 成功 / 1 待确认**」，即任务 3.1 的"内联 run tree + 同级状态与汇合摘要"（默认折叠，展开后 `工具调用` 可见）。**诊断字段**在 DOM 层确认存在「预算」「并发」（任务 3.4）。
+    - **Story（Patchright + Chromium）**：`/story` → 「单章工作室」→「写作室」tab 下，任务 **4.5 的模式控件完整确认**，分段项为
+      `['项目总览', '单章工作室', '角色团队推演（每角色子智能体）', '快速演绎（单模型）', '并列阅读', '仅看差异']`，
+      即 team / fast 双模式；关键词「角色演绎 / 团队推演 / 快速演绎」全部命中。
+    - **全程 0 个 >=400 响应、0 条控制台 error**（两个页面、多条会话路径均如此）。
+    - _未覆盖（如实标注）_：任务 **3.3 的"委派并续跑"动作未在本次打开的会话中触发**——该会话本身不含委派，而该入口按设计是**上下文相关**的（只在相关运行时出现）；若要单独验证需一个含委派的运行。另：`/agent` 与 `/story` 的**首屏为空态**（无会话/未选项目时正文约 1k 字符），因此断言必须驱动到有会话/进入写作室之后才有效——本轮首版断言即因未驱动而误报。_
+- [x] 5.5 Update architecture, Agent runtime guide, API surface and current project status before archiving the change.
+  - _2026-09-13 完成（含三处"反向失真"修正）：_
+    - **架构文档** `docs/architecture/YLCRAFT_SYSTEM_ARCHITECTURE.md`：原 L233 称"剩余边界是 Writer Room `team` 模式和把旧 `MultiAgentCoordinator` 迁移为声明式团队模板"——**两条均已消除**。已改写为新的边界表述：带持久子 Run 的场景推演与团队排练**可以**按多智能体描述（但必须同时暴露 responsible profiles 与执行树作为证据）；其余工序**必须**表述为分阶段工作流；并如实标注"Writer Room `team` 模式本身仍待一次真实项目运行验证"是当前唯一收尾缺口。同文件的状态表行由 `19 | 30 | Phase 0-3 完成…` 更新为 `30 | 30`。
+    - **项目状态表** `docs/README.md` L48：原称"Phase 0-2 与执行树 UI 已完成…**待**『委派并续跑』动作和 Writer Room team 模式"——两项均已完成，已改写为已完成并列出实际落地能力。
+    - **Agent 指南** `docs/agent/agent-center.md`：「当前多智能体边界」段已按实现改写（见 5.2）。
+    - **API surface**：本 change 的 `2.6` 已按任务要求重新生成过（`/runs/{run_id}/tree`、`/runs/{run_id}/delegations` 已在 `API_SURFACE.md` 登记），本次核对该路由仍在文档中，无需再生成。_

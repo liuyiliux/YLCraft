@@ -45,7 +45,7 @@
 | --- | --- | --- |
 | Agent Skill Runtime | 已完成并归档 | `openspec/changes/archive/agent-skill-package-runtime/tasks.md` |
 | Agent 上下文/父子 Run 基础运行时 | 已完成并归档；普通聊天仍以单 Agent 工具循环为主 | `openspec/changes/archive/agent-center-multi-agent-runtime/tasks.md` |
-| Agent Supervisor/子智能体运行时 | Phase 0-2 与执行树 UI 已完成：独立子 Session、并行/依赖委派、父续跑、确认传播、层级/预算诊断；待“委派并续跑”动作和 Writer Room team 模式 | `openspec/changes/agent-supervisor-subagent-runtime/tasks.md` |
+| Agent Supervisor/子智能体运行时 | 已完成（30/30）：独立子 Session、并行/依赖委派、父续跑（`resume_from_delegation_observation`）、子确认/取消向父汇合传播、层级/预算/并发诊断、执行树与委派 API、"委派并续跑"动作、Writer Room `team` 模式（每角色一子 Agent + editor 汇合）；前端构建与 Agent Center/Story 外部浏览器 smoke 通过 | `openspec/changes/agent-supervisor-subagent-runtime/tasks.md` |
 | Agent 对话工作台 | 进行中：已收敛为对话优先双栏、内联轨迹、局部失败恢复和页面错误边界；待接入真实后端后的多轮对话人工验收 | `openspec/changes/agent-center-conversation-workbench-redesign/tasks.md` |
 | Agent 工作台 UI 改造 | 已落地：markdown 表格/加粗渲染、总控助手提示词禁 emoji、确认显眼化、顶部控制栏（智能体/模型/默认工作流/会话日志/关键动作，模型与工作流直接写回智能体配置）、待确认横幅移入顶栏且可定位、底部遥测条（等宽，缺失显示 `--`）、左栏会话状态点、消息时间戳、卡片收敛为分隔线与留白、窄屏过滤区改 flex 换行；待真实视口目视验收，以及后端为 threads 列表补「最近一次 run 状态」以使全部会话都有准确状态点 | `openspec/changes/agent-workbench-ui-redesign/tasks.md` |
 | Agent 声明式团队组合 | 运行时已完整落地：`AgentScope` 平面隔离、团队模板 schema/loader/validator、`TeamComposer`、`spawn/fork/continuable` 三原语、缓存稳定工具目录 + `CostMeter` + 压缩溯源、内置模板、Writer Room `team` 模式（opt-in `rehearsal_mode=team`）；旧 `MultiAgentCoordinator` 硬编码逻辑已去重，`scene-sim` 团队路径已用真实 DeepSeek 端到端验收（5/5 子任务完成）；仍待 `AgentService` per-session 状态迁移与 writer-room team 真实项目验收 | `openspec/changes/agent-team-composition/tasks.md` |
