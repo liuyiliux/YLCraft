@@ -83,6 +83,11 @@ from app.services.creative_project.semantic_recall import (
     NarrativeRecallResult,
     NarrativeSemanticRecallAdapter,
 )
+from app.services.creative_project.content_package_schema import (
+    get_package_schema,
+    schema_descriptor,
+    validate_content_package,
+)
 from app.services.creative_project.profiles import normalize_project_settings, validate_profile_inputs
 from app.services.creative_project.writing_style import WritingStyleService, build_style_prompt_block
 
@@ -3903,6 +3908,10 @@ class CreativeProjectService:
                 "source_refs": list(item.get("source_refs") or []),
             })
 
+        # 按 package_type 校验契约（见 content_package_schema）：
+        # 结构性错误直接抛 ValueError（端点转 400），内容质量类问题收进 warnings 随包落库。
+        package_warnings = validate_content_package(package_type, package, normalized_items)
+
         prior: ProjectContent | None = None
         if source_content_id:
             prior = self.session.get(ProjectContent, source_content_id)
@@ -3923,6 +3932,9 @@ class CreativeProjectService:
             "outputs": list(package.get("outputs") or []),
             "source_context": source_context,
             "profile_id": profile["id"],
+            # 记录本次是按哪一版契约校验的：历史包在 schema 演进后仍可判断依据
+            "schema": schema_descriptor(package_type),
+            "warnings": package_warnings,
         }
         title = str(payload.get("title") or project.title or payload["topic"] or "未命名内容包")
         content = self._create_content(
@@ -3957,7 +3969,12 @@ class CreativeProjectService:
         if profile.get("production_family") != "content_package":
             raise ValueError("当前项目不是内容包方案，不能生成内容包")
         package_type = str(profile.get("package_type") or "")
-        count = max(1, min(int(item_count or 12), 80))
+        # 生成数量必须落在该类型 schema 的边界内：schema 是唯一权威，若在这里放任
+        # （例如 single_media 上限 1 条却按默认 12 条生成），保存时会被按类型拒绝，
+        # 用户看到的是"生成成功但保存失败"。在源头夹住即可保持一致。
+        schema = get_package_schema(package_type)
+        requested = int(item_count) if item_count else 12
+        count = max(1, min(requested, schema.max_items))
         mode_instruction = (
             "只生成每项标题与 image_prompt；text 必须为空字符串。"
             if prompt_only
