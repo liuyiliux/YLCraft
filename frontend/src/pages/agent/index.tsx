@@ -824,7 +824,9 @@ function AgentPageContent() {
     height: 'calc(100dvh - 88px)',
     minHeight: 620,
     display: 'grid',
-    gridTemplateRows: '52px minmax(0, 1fr)',
+    // 头部行用 auto：此前写死 52px，头部内容一旦超出一行就会溢出、
+    // 压在下一行的左栏上（与「全部 / 新对话」相互遮挡）。
+    gridTemplateRows: 'auto minmax(0, 1fr)',
     gap: 0,
     color: THEME.textPrimary,
     fontFamily: '"Geist", "SF Pro Display", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif',
@@ -2790,14 +2792,9 @@ function AgentPageContent() {
     }
   }
 
-  const pendingCount = pendingToolSteps.length + pendingMemorySteps.length
-  // 待确认横幅的定位动作：确认卡片渲染在消息列顶部，故直接滚动该容器到顶。
-  const focusPendingConfirmation = () => {
-    if (activeTab !== 'chat') setActiveTab('chat')
-    requestAnimationFrame(() => {
-      messagesEndRef.current?.parentElement?.scrollTo({ top: 0, behavior: 'smooth' })
-    })
-  }
+  // 说明：原先这里还有 `pendingCount` 与 `focusPendingConfirmation`，供头部那条
+  // 「有 N 个操作等待你的确认」Alert 使用。该 Alert 已移除（头部定高会与左栏互相
+  // 遮挡），这两个变量随即失去引用，故一并删除；如需恢复，见本次提交的父提交。
 
   return (
     <div className="agent-workbench" style={pageShell}>
@@ -2882,46 +2879,13 @@ function AgentPageContent() {
             </Tooltip>
           </div>
         </div>
-        {pendingCount > 0 && (
-          <div style={{ marginTop: 8 }}>
-            <Alert
-              type="warning"
-              showIcon
-              style={{ padding: '6px 10px', background: 'rgba(250,173,20,0.12)', border: `1px solid ${THEME.warning}` }}
-              message={
-                <span style={{ fontSize: 12 }}>
-                  有 <strong>{pendingCount}</strong> 个操作等待你的确认
-                </span>
-              }
-              description={
-                /*
-                 * 只报"有 2 个操作"是不够的：用户看不出是**什么**、也不知道**在哪**。
-                 * 这里补三件事——① 构成（工具确认 / 记忆候选 各几条）；
-                 * ② 涉及的工具名；③ 位置（当前对话的消息列表顶部）。
-                 */
-                <span style={{ fontSize: 11, lineHeight: 1.6 }}>
-                  {pendingToolSteps.length > 0 && (
-                    <span style={{ display: 'block' }}>
-                      工具确认 {pendingToolSteps.length} 条
-                      {pendingToolSteps.map(s => s.tool_name).filter(Boolean).length > 0 && (
-                        <>（{pendingToolSteps.map(s => s.tool_name || '未命名').join('、')}）</>
-                      )}
-                    </span>
-                  )}
-                  {pendingMemorySteps.length > 0 && (
-                    <span style={{ display: 'block' }}>记忆候选 {pendingMemorySteps.length} 条</span>
-                  )}
-                  <span style={{ color: THEME.textSecondary }}>位置：当前对话的消息列表顶部</span>
-                </span>
-              }
-              action={
-                <Button size="small" type="link" onClick={focusPendingConfirmation} style={{ padding: 0, height: 'auto', fontSize: 12 }}>
-                  跳到顶部
-                </Button>
-              }
-            />
-          </div>
-        )}
+        {/*
+          这里原本有一条「有 N 个操作等待你的确认」的 Alert。
+          已移除：头部所在网格行高度是固定 52px，Alert 一旦超过一行就会溢出到下一行、
+          压在左栏的「全部 / 新对话」上（叠加后互相遮挡）。待确认信息并不依赖它——
+          左栏当前会话与对话内的确认卡片都能看到，卡片本身也已列出工具入参与位置。
+          若将来需要全局提醒，应放进左栏（有纵向空间）而不是这个定高头部。
+        */}
       </section>
 
       <section
