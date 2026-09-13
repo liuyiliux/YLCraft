@@ -29,6 +29,7 @@ from app.services.agent.profile import AgentProfileManager, profile_to_dict
 from app.services.agent.registry import ToolCallResult, ToolRegistry
 from app.services.agent.runtime import ContextAssembler, Planner, RunLoop, SkillRouter, ToolExecutor
 from app.services.agent.runtime.tools import CONFIRMATION_RISK_LEVELS
+from app.services.agent.scope import AgentScope
 
 from app.services.agent.thread_manager import ThreadManager
 from app.services.ai import get_ai_service
@@ -183,7 +184,63 @@ class AgentService:
         )
         return snapshot
 
+    def _agent_scope(self, *, role_id: str = "", **overrides: Any) -> AgentScope:
+        """本次会话/角色的 agent 平面作用域。
+
+        host 平面（进程级单例：工具注册表、LLM 路由等）由上层作用域继承，**不在**这里
+        复制；agent 平面持有 per-session 状态（压缩器、循环检测器、planner、工具执行器、
+        skill 路由器）。
+
+        若当前已处于某个作用域内（例如团队模板运行中），则以 ``child()`` 派生——它共享
+        host 字典但**复制 agent 字典**，因此并发角色不会把可变状态写进彼此。这也是把
+        per-session 状态"放到作用域后面"的意义：隔离由结构保证，而不是依赖"每个角色恰好
+        各自 new 了一个实例"的约定。
+
+        在 ``app/services/agent`` 下不存在模块级可变状态，因此此处发布的是实例引用，
+        不会引入跨会话串扰。
+        """
+        agent_state: dict[str, Any] = {
+            "user_id": self.user_id,
+            "compressor": self._compressor,
+            "loop_detector": self._loop_detector,
+            "planner": self.planner,
+            "tool_executor": self.tool_executor,
+            "skill_router": self.skill_router,
+            "context_assembler": self.context_assembler,
+        }
+        agent_state.update(overrides)
+        parent = AgentScope.current()
+        if parent is not None:
+            return parent.child(role_id=role_id, **agent_state)
+        # 根作用域：host 平面发布进程级单例（ToolRegistry 的状态挂在类上，是真 host 平面）。
+        return AgentScope(host={"tool_registry": ToolRegistry}, agent=agent_state)
+
     async def chat(
+        self,
+        session_id: str,
+        user_message: str,
+        context: dict | None = None,
+        profile_id: str | None = None,
+        parent_run_id: str | None = None,
+        force_new_thread: bool = False,
+    ) -> dict[str, Any]:
+        """安装 agent 平面作用域后执行本轮对话。
+
+        作用域覆盖整个 chat 流程：更深层的代码（工具、检索、压缩等）可通过
+        ``AgentScope.current()`` 解析本会话状态，而不必逐层透传；角色子会话则通过
+        ``child()`` 拿到隔离的 agent 平面。
+        """
+        with AgentScope.enter_scope(self._agent_scope()):
+            return await self._chat_pipeline(
+                session_id=session_id,
+                user_message=user_message,
+                context=context,
+                profile_id=profile_id,
+                parent_run_id=parent_run_id,
+                force_new_thread=force_new_thread,
+            )
+
+    async def _chat_pipeline(
         self,
         session_id: str,
         user_message: str,

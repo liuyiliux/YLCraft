@@ -3,7 +3,13 @@
 ## Phase 1: Host/Agent Plane Boundary
 
 - [x] 1.1 Add `AgentScope` (contextvars-based) with `host` and `agent` namespaces; bind process singletons under `host`.
-- [ ] 1.2 Migrate per-session state (persona, plan-mode, compaction) behind `AgentScope.agent` so role actors no longer share mutable instances. (Scope container shipped; `AgentService` wiring is a follow-up.)
+- [x] 1.2 Migrate per-session state (persona, plan-mode, compaction) behind `AgentScope.agent` so role actors no longer share mutable instances. (Scope container shipped; `AgentService` wiring is a follow-up.)
+  - _2026-09-13 完成接线：_
+    - _`scope.py` 新增 `AgentScope.enter_scope(scope)`（安装**已有**作用域，退出/异常均恢复上一层），`enter()` 改为复用它。这是必要接缝：调用方需要先 `child()` 派生出「继承 host 与团队上下文、隔离 agent 平面」的作用域，再把**它**装上，而不是另造一个空作用域。_
+    - _`AgentService` 新增 `_agent_scope(role_id=..., **overrides)`：发布 per-session 状态到 agent 平面（`compressor`/`loop_detector`/`planner`/`tool_executor`/`skill_router`/`context_assembler`/`user_id`）；若当前已在作用域内则 `child()` 派生（共享 host 字典、**复制** agent 字典），否则建根作用域并在 host 平面发布进程级单例 `ToolRegistry`。_
+    - _`chat()` 改为安装该作用域后执行，原实现整体改名为 `_chat_pipeline`（**未改动正文**，仅改 def 名 + 新增 13 行包装），因此语义等价、风险可控。效果：作用域覆盖整轮对话，深层代码可用 `AgentScope.current()` 解析本会话状态而不必逐层透传；角色子会话（`team_composer.service_factory` 建出的 child `AgentService`）经 `child()` 拿到**隔离的** agent 平面，同时继承 `team_template`/`join_strategy`。_
+    - _**一处必须说清的事实**：接线前复核发现，"role actors 共享可变实例"这个风险**当时并不成立**——`AgentService.__init__` 的状态全部是实例级，且 `app/services/agent/` 下**不存在模块级可变状态**（唯一进程级单例是 `services/ai/service.py` 的 `_ai_service`，本就属 host 平面）。因此本条的价值是把隔离**从"约定"变成"结构保证"**（并让深层代码可解析作用域），而不是修复一个正在发生的缺陷。per-session 状态仍以实例属性为准，作用域持有的是引用。_
+    - _测试：新增 4 例——`enter_scope` 的安装与恢复、异常路径恢复、`chat()` 确实安装作用域且退出后不泄漏（monkeypatch 捕获，不触发 LLM）、团队作用域内派生时继承 host/团队上下文并隔离 agent 平面。实测 scope 相关 **5 passed**；`pytest -k "agent or team or compressor or planner or delegation or scope"` → **192 passed / 2 skipped**。_
 - [x] 1.3 Add characterization tests proving child scopes share host singletons but isolate agent state.
 
 ## Phase 2: Team Template Schema
