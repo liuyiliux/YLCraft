@@ -11,6 +11,7 @@ import json
 
 from app.services.agent.runtime.delegation import (
     DelegatedTask,
+    SubagentResultAdapter,
     ForkExecutor,
     SubagentExecutionResult,
     SubagentExecutor,
@@ -133,3 +134,53 @@ async def test_orchestrator_send_message_records_continuation():
     assert result["continuation_of"] == "child-1"
     assert runner.calls[0]["thread_id"] == "thread-1"
     assert runner.calls[0]["user_message"] == "继续"
+
+
+# ---------------------------------------------------------------------------
+# joined_observation：子结果的「状态呈现」契约
+#
+# 这几条覆盖的是**确认/取消/跳过/失败向父级呈现**的契约——父 Agent 能看到的
+# 就是这段文本。既有测试只覆盖 fork 与 send_message 两条原语，状态分支没有被碰过；
+# 若把 waiting_confirmation 渲染成成功文本，父级会误以为子任务已完成
+# （这正是本 change 要防的"失败被降级成普通文本"）。
+# ---------------------------------------------------------------------------
+
+
+def _result(status: str, **kwargs) -> SubagentExecutionResult:
+    base = {"task_key": "role-actor-甲", "profile_id": "role-actor", "status": status}
+    base.update(kwargs)
+    return SubagentExecutionResult(**base)
+
+
+def test_joined_observation_marks_waiting_confirmation_and_cancelled():
+    waiting = _result("waiting_confirmation", reply="需要确认是否删除旧稿")
+    cancelled = _result("cancelled", task_key="role-actor-乙")
+    text = SubagentResultAdapter.joined_observation([waiting, cancelled])
+
+    assert "等待用户确认" in text
+    assert "需要确认是否删除旧稿" in text
+    assert "任务已取消" in text
+    # 关键：不得被渲染成"已完成"
+    assert "已完成" not in text
+
+
+def test_joined_observation_marks_skipped_and_failure():
+    skipped = _result("skipped", error="依赖任务未完成")
+    failed = _result("failed", task_key="role-actor-丙", error="供应商超时")
+    text = SubagentResultAdapter.joined_observation([skipped, failed])
+
+    assert "已跳过" in text and "依赖任务未完成" in text
+    assert "失败" in text and "供应商超时" in text
+    assert "已完成" not in text
+
+
+def test_joined_observation_completed_without_reply_is_explicit():
+    text = SubagentResultAdapter.joined_observation([_result("completed")])
+    assert "已完成，但没有文本回复。" in text
+
+
+def test_joined_observation_truncates_to_limit():
+    many = [_result("completed", task_key="role-actor-%d" % i, reply="x" * 200) for i in range(20)]
+    text = SubagentResultAdapter.joined_observation(many, limit=300)
+    assert len(text) <= 300
+    assert text.endswith("...")
