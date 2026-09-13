@@ -229,3 +229,21 @@
 | **Supervisor/Worker 主链** | `AgentProfile.can_delegate` 控制 `delegate_agent_tasks` 可见性；`SubagentOrchestrator` 校验**深度、扇出、根预算、依赖、并发**；每个 Worker 使用**独立 Thread + 独立 `AsyncSession` + 独立 `AgentService`** |
 | **执行树** | `AgentDelegation` + `AgentRun.root_run_id/parent_run_id` 构成；由 `GET /agent/runs/{run_id}/tree` 与 `/delegations` 暴露 |
 | **子代理三原语** | `spawn`（全新会话）/ `fork`（只读父上下文快照）/ `continuable`（续跑同会话，经 `SubagentOrchestrator.send_message`） |
+
+
+## 声明式团队组合与平面隔离
+
+<!-- 来源：openspec/changes/agent-team-composition，导入日期：2026-09-13 -->
+
+把「进程级单例」与「per-session 状态」显式分成两个平面；团队由可复用的声明式模板描述，而不是硬编码编排。
+
+| 术语 | 定义 |
+|---|---|
+| **主机平面（host plane）** | 进程级单例：工具/技能/子代理注册表、会话存储、模型路由、成本计量、沙箱与审批栈。跨会话共享是**设计意图**，不是缺陷。 |
+| **代理平面（agent plane）** | per-session / per-role 状态：persona、计划模式、压缩器、循环检测器、工具执行器、技能路由器、上下文装配器。**必须隔离**。 |
+| **声明式团队模板（TeamTemplate）** | 团队 = 角色清单 + 依赖 + join 角色 + 预算，由 YAML 描述；运行时只做实例化、调度、连接。容器里**不含**角色专属执行逻辑。 |
+| **能力授权（authority grant）** | 角色挂载的 `profile`/`tools`/`skills`/`spawn` 不是普通配置，而是**权限授予**：挂载即授权变更。 |
+| **前缀缓存稳定（prefix-cache stability）** | 工具 schema 按名称字典序、字节级确定，使同一工具集的请求前缀可被 provider KV 缓存复用。 |
+| **`role_capabilities`** | 单个角色授权声明的**唯一形状定义**（工具与技能排序）；`capability_diff` 与运行溯源共用它，避免两处形状漂移。 |
+| **压缩溯源引用** | `system_prompt_ref` / `tool_schema_ref`：压缩产物除"折了哪些消息"外，还指名它是在**哪一版**系统提示与工具 schema 下产生的。 |
+| **场景推演 vs 团队排练** | 同一个模板驱动两条路径：`scene-sim`（场景推演）与 `writer-room-team`（Writer Room 每角色一个子代理 + editor 汇合）。 |
