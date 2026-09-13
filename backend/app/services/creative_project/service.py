@@ -92,7 +92,11 @@ from app.services.creative_project.content_package_schema import (
     schema_descriptor,
     validate_content_package,
 )
-from app.services.creative_project.profiles import normalize_project_settings, validate_profile_inputs
+from app.services.creative_project.profiles import (
+    get_content_production_profile,
+    normalize_project_settings,
+    validate_profile_inputs,
+)
 from app.services.creative_project.writing_style import WritingStyleService, build_style_prompt_block
 
 logger = logging.getLogger("ylcraft.creative_project")
@@ -3957,7 +3961,7 @@ class CreativeProjectService:
         self,
         project_id: str,
         *,
-        adapters: list[str],
+        adapters: list[str] | None = None,
         save: bool = False,
     ) -> tuple[list[dict[str, Any]], ProjectContent | None]:
         """用平台适配器为当前内容包产出 `outputs`（**纯本地转换，不写外部平台**）。
@@ -3965,8 +3969,19 @@ class CreativeProjectService:
         适配器只做格式翻译：不改 `items`、不发外部请求、不保存第二份事实源。
         `save=True` 时把 outputs 追加为**新的包版本**（旧版本保持不可变）——界面上的
         「输出适配」检查项以 `outputs` 非空为依据，因此必须真正落库才能变绿。
+
+        **未显式传 adapters 时，取该项目内容生产方案声明的 `output_adapters`**：
+        "这类内容该导出成哪几种、且一起出"本来就是方案声明的一部分，这里也是
+        `output_adapters` 在运行时的唯一消费点。
         """
-        self._require_project(project_id)
+        project = self._require_project(project_id)
+        if not adapters:
+            settings = loads_json(project.settings_json)
+            profile = get_content_production_profile(
+                str(settings.get("production_profile") or ""),
+                project.project_type,
+            )
+            adapters = list(profile.get("output_adapters") or [])
         package_content = self.session.exec(
             select(ProjectContent)
             .where(ProjectContent.project_id == project_id, ProjectContent.content_type == "content_package")

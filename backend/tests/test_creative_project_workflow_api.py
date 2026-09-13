@@ -330,7 +330,7 @@ def test_content_package_outputs_endpoint_builds_and_persists_adapters(workflow_
 
         resp = client.post(
             f"/api/v1/creative-projects/{project['id']}/content-package/outputs",
-            json={"adapters": ["wechat_official_account", "asset_bundle", "douyin_short_video"], "save": True},
+            json={"adapters": ["wechat_official_account", "asset_bundle", "short_video"], "save": True},
         )
         assert resp.status_code == 200, resp.text
         data = resp.json()["data"]
@@ -338,7 +338,7 @@ def test_content_package_outputs_endpoint_builds_and_persists_adapters(workflow_
         assert [o["adapter_type"] for o in data["outputs"]] == [
             "wechat_official_account",
             "asset_bundle",
-            "douyin_short_video",
+            "short_video",
         ]
         assert all(o["status"] == "ready" for o in data["outputs"])
         # 溯源：来自哪一版、用了哪些 item
@@ -354,6 +354,17 @@ def test_content_package_outputs_endpoint_builds_and_persists_adapters(workflow_
         # 不复制 items：输出记录自身不带 items 副本
         for out in data["content"]["data"]["outputs"]:
             assert "items" not in out
+
+        # 不传 adapters → 按方案声明的 output_adapters 全出（storybook 声明的是这两项）
+        defaults = client.post(
+            f"/api/v1/creative-projects/{project['id']}/content-package/outputs",
+            json={"save": False},
+        )
+        assert defaults.status_code == 200, defaults.text
+        assert [o["adapter_type"] for o in defaults.json()["data"]["outputs"]] == [
+            "pdf_ebook",
+            "asset_bundle",
+        ]
 
         # 未知适配器 → 400
         bad = client.post(

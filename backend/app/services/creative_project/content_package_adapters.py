@@ -27,11 +27,15 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable
 
-#: 支持的适配器类型（与 profiles.py 的 output_adapters 取值一致）
+#: 支持的适配器类型（取值与 profiles.py 的 output_adapters 对齐）
+#:
+#: 命名遵循"**按产出形态**命名，不按平台命名"：短视频平台（抖音/快手/视频号）的导出
+#: 结构是同一套，不该为每个平台各做一个适配器。项目里已有的
+#: `connectors/base/social_base.SHORT_VIDEO` 也是这个口径。
 ADAPTER_TYPES: tuple[str, ...] = (
     "wechat_official_account",
     "xiaohongshu_carousel",
-    "douyin_short_video",
+    "short_video",
     "pdf_ebook",
     "asset_bundle",
 )
@@ -42,8 +46,8 @@ OUTPUT_STATUSES: tuple[str, ...] = ("ready", "failed", "stale")
 #: 小红书标准竖版卡片尺寸（3:4）
 XHS_CARD = {"aspect_ratio": "3:4", "width": 1242, "height": 1656}
 
-#: 抖音竖屏分辨率
-DOUYIN_VIDEO = {"width": 1080, "height": 1920, "aspect_ratio": "9:16"}
+#: 短视频竖屏参数（抖音/快手/视频号通用；差异在发布环节，不在导出结构）
+SHORT_VIDEO_PARAMS = {"width": 1080, "height": 1920, "aspect_ratio": "9:16"}
 
 #: 微信公众号摘要长度上限
 WECHAT_DIGEST_LIMIT = 120
@@ -184,8 +188,11 @@ def _build_xiaohongshu(inp: AdapterInput) -> dict[str, Any]:
     return {"card_size": dict(XHS_CARD), "cards": cards, "tags": all_tags}
 
 
-def _build_douyin(inp: AdapterInput) -> dict[str, Any]:
-    """抖音：竖屏镜头表 + 口播/字幕 + 视频参数。
+def _build_short_video(inp: AdapterInput) -> dict[str, Any]:
+    """短视频：竖屏镜头表 + 口播/字幕 + 视频参数（抖音/快手/视频号通用）。
+
+    按**产出形态**命名而非平台：短视频平台的导出结构是同一套，差异（时长上限、
+    审核规则、发布接口）属于发布环节，不该在这里分叉成多个适配器。
 
     本期**只产出规划数据**，不触发视频生成；后续可用 `shots[].action_prompt` 与
     `first_frame_asset_ids` 交给视频生成环节。
@@ -210,7 +217,7 @@ def _build_douyin(inp: AdapterInput) -> dict[str, Any]:
         )
     return {
         "orientation": "portrait",
-        "video_params": dict(DOUYIN_VIDEO),
+        "video_params": dict(SHORT_VIDEO_PARAMS),
         "shots": shots,
         "captions_text": "\n".join(captions),
         "total_shots": len(shots),
@@ -329,10 +336,10 @@ ADAPTERS: dict[str, AdapterSpec] = {
         label="小红书轮播卡",
         build=_build_xiaohongshu,
     ),
-    "douyin_short_video": AdapterSpec(
-        adapter_type="douyin_short_video",
-        label="抖音竖屏镜头表",
-        build=_build_douyin,
+    "short_video": AdapterSpec(
+        adapter_type="short_video",
+        label="短视频镜头表（抖音/快手/视频号）",
+        build=_build_short_video,
         # 只出镜头表/字幕/参数，具体视频由后续步骤生成
         planning_only=True,
     ),
