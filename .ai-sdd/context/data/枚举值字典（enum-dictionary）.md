@@ -148,3 +148,12 @@
 
 - **`kind`**：`generation`（图/文生 3D）/ `rigging`（绑骨蒙皮）
 - **绑骨模式**：`skeleton`（仅骨架）/ `motion`（骨架 + 预设动作，`motion_type` 1–48；预设动作为**人形武术类**：回旋踢/左勾拳/蓄力出拳/受击…）
+
+
+## 15. 角色流程与来源
+
+<!-- 来源：openspec/changes/character-management-redesign，导入日期：2026-09-13 -->
+
+- **`workflow_source`**：`extract`（小说/正文提取）/ 独立创建 / 素材库导入（另含 `workflow_source_label` 供展示）
+- **`extract_origin`**：`uploaded_novel` / `imported_novel` / `original_outline`
+- **字段来源（`field_sources` 的值）**：`original` / `ai_inferred` / `user_edited`（另有本世界覆盖）

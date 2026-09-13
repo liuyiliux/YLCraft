@@ -221,3 +221,15 @@
 | **结果必须入资产中枢并带谱系** | 完成的 3D 结果写入 Asset Hub，`source_type=image_to_3d` |
 | **供应商任务 id 与本地账本 id 分离** | 供应商 id 可能是"不透明编码载荷"；本地用 `model3d_<hex>` 短 id，原始 id 另存供轮询 |
 | **绑骨需要源模型公网可达** | 腾讯云绑骨只接受**公网可达**的 GLB/FBX；优先 COS 上传 + 24h 签名 URL，否则回退 `BASE_URL + /model3d-files/public/`（本地 `127.0.0.1` 必然失败） |
+
+
+## 20. 角色册与角色流程规则
+
+<!-- 来源：openspec/changes/character-management-redesign，导入日期：2026-09-13 -->
+
+| 规则 | 内容 |
+|---|---|
+| **两类角色流程门禁不同** | `extract`（从小说/正文提取）与 `character-first`（角色先行再演绎）**不共享**强制正文/大纲门禁；角色先行可直接进入设定、参考图、关系与 Prompt 资产包，再选择性回流 Story/生产线 |
+| **字段来源分层** | `field_sources`：外来文本 → `original`、原创大纲 → `ai_inferred`、用户手填 → `user_edited`；**同步流程只补空缺，不覆盖已有来源** |
+| **角色册完善度只用列表字段** | 完善度与摘要必须由**列表接口已返回**的字段计算，不得逐项请求详情——窄栏里为每个角色各发一次详情请求会明显拖慢列表 |
+| **完善度阈值要按真实填充率设计** | 实测 20 个角色：`background` 20/20、`personality` 18/20、`identity` 15/20、`appearance`/`age_range`/`arc` 各 11/20、`ability`/`behavior`/`motivation`/`speech` 各 3/20、`voice` **0/20**。阈值不按此分布设，会全员"完善"或全员"未完善" |

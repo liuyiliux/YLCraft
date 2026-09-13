@@ -246,3 +246,13 @@
 5. **真实生成会扣供应商额度**（Hunyuan 3D 回执 `ResultCreditConsumed`，实例为 20 点）。**任何触发真实生成的验证必须先向用户确认费用。**
 
 **判断是否绑骨**：解包 GLB 的 JSON chunk 看 `skins`（骨架绑定）与 `animations`；两者皆为 0 即静态网格。
+
+
+### 9.18 角色册实现约束
+
+<!-- 来源：openspec/changes/character-management-redesign，导入日期：2026-09-13 -->
+
+1. **Bible 分节字段类型不统一**：`identity` / `ability` / `behavior` / `motivation` / `speech` / `voice` 是对象，但 **`arc` 既可能是字符串也可能是对象**（实测 11/20 填充且类型混杂）。判空与渲染必须两种都处理，否则会把已填的 `arc` 当成空。
+2. **`identity` 对象的键不固定**：取摘要要按 `summary → logline → affiliation/organization → personality → background` 优先级链兜底。
+3. **窄栏视觉弱化必须给选中态留出口**：未完善角色整体降不透明度（实测用 0.62）会被误读为"不可点"，**hover 与选中态必须恢复满不透明度**。验收断言若只取第一个 `.is-thin` 元素，会拿到当前选中项（opacity=1）而误判"弱化没生效"——**需排除选中态**。
+4. **完善度指示器做成细条放名字行右侧**（3px），摘要做第三行单行省略——不在窄栏里额外增加行高压力。
