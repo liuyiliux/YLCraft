@@ -443,6 +443,16 @@ Live2D accepts uploads, character imagery and Asset Hub images as source materia
 
 内容生产方案把竖屏短剧、故事漫画/童话绘本、科普、平台图文、小说和单镜头实验的阶段、输入、产物和确认点收敛为项目可编辑计划；方案记录在 `CreativeProject.settings_json`，计划记录为 `ProjectContent(content_type="production_plan")`，并以受限摘要进入 Agent Context Pack。它不要求所有项目先写正文，独立的生图、生视频、画布、素材库和平台适配能力仍可单独使用，所有产物再经 Asset Hub、任务中心和血缘回流项目。
 
+内容包契约由三部分组成，职责互不重叠：
+
+1. **类型 schema**（`services/creative_project/content_package_schema.py`）——把六种 `package_type` 的契约集中声明（条数边界、item 推荐字段、包级字段、默认媒体、`ui_enabled`）。`ui_enabled=False` 是"本期只做 API、不建 UI"的开关标记（`article_package` / `social_carousel` / `shot_list` / `single_media`）；`page_book` 与 `knowledge_cards` 已有工作台。校验刻意分两档：**结构性不可落库**的问题（未知类型、items 非数组、`status` 不在取值域、条数超上限）为硬错误；**内容质量类**问题（条数低于推荐下限、缺推荐字段、整包无媒体提示词）只收 `warnings` 随包落库——因为生成是 LLM 驱动的，把"缺字段"一律当硬错误会让一次模型抖动直接变成保存失败，且"先存标题、再补提示词"是内容包增量编辑的正常中间态。`generate_content_package` 按 schema 夹住生成数量，使 schema 成为唯一权威（否则 `single_media` 上限 1 条却按默认 12 条生成，用户会看到"生成成功但保存失败"）。
+
+2. **平台适配器**（`services/creative_project/content_package_adapters.py`）——把同一份内容包翻译成各平台形状：`wechat_official_account`（HTML/标题/摘要/封面与配图引用/草稿 payload 形状）、`xiaohongshu_carousel`（3:4 卡片/页序/标签）、`short_video`（9:16 镜头表+口播字幕+视频参数）、`pdf_ebook`（分页结构+文件名）、`asset_bundle`（package.json / content.md / prompts.tsv）。适配器**按产出形态命名而非按平台命名**——短视频平台导出结构是同一套，差异属发布环节。三条边界：**不调外部平台**（不真的发布）、**不写回源包**、**不保存第二份事实源**（平台产物本身含正文文字是必然的，禁止的是把 `items` 再存一份当可编辑事实源）。每条输出带 `source_package_id` / `source_package_version` / `source_item_ids`，因此"源包改了、输出过期了"可判定。单个适配器抛错不影响其它（该条记 `status="failed"`，可独立重建）。产出哪些适配器**由内容生产方案声明的 `output_adapters` 决定**（绘本→PDF+素材包；科普/平台图文→公众号+小红书+素材包；单镜头→素材包），端点 `POST /creative-projects/{id}/content-package/outputs` 不传 `adapters` 时即按方案全出，`save=true` 追加为新包版本。
+
+3. **条目级重试与 stale 语义**——`POST /creative-projects/{id}/content-package/items/{item_id}/retry` 只重跑一条内容单元，其余条目原样保留（不重规划整包，省 token 且不冲掉用户手改内容）。改动会让**引用了该条目的**输出变为 `stale`（按依赖判定，而非无条件作废整包）；过期信息只落在 outputs 自身的 `status` + `stale_reason`，不写进 `warnings`（后者语义是契约校验提示，会被 `save_content_package` 依 schema 重算覆盖）。任务载荷带 `package_id` / `package_version` / `item_id` / `item_retry` 供任务中心与事件日志回溯。
+
+**一处如实标注的能力缺口**：`short_video` 与 `pdf_ebook` 当前只产**规划数据**（`planning_only`），产物带 warning 说明。短视频的实际生成由后续步骤消费 `shots[].action_prompt` 与 `first_frame_asset_ids`；PDF 的字节需要渲染器——本环境未安装任何 PDF 生成库（仅 `pypdf`，负责读写/合并而非从零排版），因此适配器只输出可分页结构。此外后端**不解析 `asset_ids` → URL**（由前端解析），公众号 HTML 在无 URL 时输出 `<img data-asset-id="...">` 占位而非静默少图。
+
 导演 Agent 复用既有 Agent Runtime、`TeamComposer` 和 `SubagentOrchestrator`，不建立平行 Agent 系统。创意 Skill 的 `creative.capability_roles` 是稳定、可审计的选角契约：`story-designer`、`script-writer`、`visual-director`、`character-director`、`storyboard-director`、`image-producer`、`video-producer`、`platform-adapter`、`editorial-reviewer`。团队编排按计划节点的 specialist role 选择这些声明，而非从 Skill 名称、展示名或页面文案推断。只有 `creative-director` 可调用运行时工具 `run_creative_production_plan` 与 `analyze_creative_production_plan_impact`，并且必须提供与当前 Context Pack 相同的项目 ID 及已保存计划。前者一次最多执行六个显式选择节点，默认补齐上游依赖；只有已确认上游产物可复用时才允许以 `include_dependencies=false` 局部重跑。后者按计划顺序返回直接变更及所有下游受影响节点和原因，导演据此修改并保存新的版本化计划。各专家保留独立 Run、输入、输出和状态，再由导演 Run 汇合为 observation；对话工具卡和历史 Run 步骤均把计划版本、输入内容/素材、规划摘要、供应商/模型、预期输出、实际产物和确认点作为业务信息展示，完整诊断 JSON 按需展开。生成、下载、发布、删除等消耗型或外部写入动作必须经过用户确认。
 
 ### 4.5 生图提示词参考库
@@ -491,7 +501,7 @@ Live2D accepts uploads, character imagery and Asset Hub images as source materia
 | 图片生成 | `/api/v1/images` | `services/image`、AI backends | `/image-gen` | 多后端和显式文生图/图生图能力配置可用；真实 provider 结果回流 Asset Hub。 |
 | 视频生成工作台 | `/api/v1/videos` | `services/ai/backends/video` + `platform_templates` | `/video-gen` | 独立文生/图生视频、模型选择、视频提示词模板和可恢复任务历史；图生视频可从 Asset Hub 选择图片作为首帧，异步结果由轮询写入 Asset Hub，项目来源额外回链分镜。 |
 | 下载/磁力 | `/api/v1/download`、`/api/v1/torrents` | `services/download`、`services/torrent` | `/download` | 本地化方向，不做自建云缓存。 |
-| 平台采集 | `/api/v1/crawler`、`/api/v1/bilibili` | `services/crawler`、`services/platforms` | `/crawler` | 统一检索小红书、抖音、快手、B站、微博、知乎及公众号；支持详情、显式入素材库和画布媒体选择。有效的平台连接可作为服务端登录态用于搜索/详情，不向浏览器返回 Cookie；B站另提供更丰富的登录态能力。 |
+| 平台采集 | `/api/v1/crawler`、`/api/v1/bilibili` | `services/crawler`、`services/platforms` | `/crawler` | 统一检索小红书、抖音、快手、B站、微博、知乎及公众号；支持详情、显式入素材库和画布媒体选择。有效的平台连接可作为服务端登录态用于搜索/详情，不向浏览器返回 Cookie；B站另提供更丰富的登录态能力。**Cookie 格式规范化收在公共基类**：`PlatformConnection.cookie_content` 存的是 Netscape 文件格式（含 `# Netscape HTTP Cookie File` 注释头、字段制表符分隔），**不能直接放进 HTTP `Cookie` 头**（HTTP 头值禁止换行/制表符），因此由 `BasePlatformClient.header_cookie()` 统一用 `CookieManager.extract_raw()` 规范化，并在 `_init_http_client` 强制覆盖注入——单个平台客户端即便写回原文也会被纠正。历史上该处三种写法并存（番茄 `normalize_cookie(...)` 正确、B站与小红书直接赋原文均导致 API 模式全量请求失败），故不再留给各平台自行实现。 |
 | 内容发布 | `/api/v1/platforms/{conn_id}/publish`、`/api/v1/creative-projects/{project_id}/publish-to-fanqie` | `services/platforms/fanqie` | `/publish`、项目 Story 页 | 当前通用发布页只公开已验证的番茄章节草稿保存：需指定后台已创建的书籍、卷和章节目标，并可先 dry-run 预检；视频、图文等其他平台发布尚未接通，不在 UI 中伪装为可用。 |
 | 小说/书源 | `/api/v1/novels`、`/api/v1/book-sources` | `services/novel`、`services/reader` | `/novel-*` | 可作为创作素材源。全本下载已任务化（`novel_download`，落 `project_task_records` 并可在任务中心停止）：本地章节目录是事实来源，重下会**跳过已有章节**（断点续下，只抓缺失的）；已下载索引按**实际成功**的章节记账，熔断或失败不虚报，可用 `POST /novels/local-sync` 按磁盘文件重算索引（下载被中断、进程重启后无需重下）；抓取连续失败到阈值即熔断并上报首个真实错误（如反爬 403），不再让用户干等几百章；阅读器本地优先，本地没有该章才回退在线。 |
 | 小说来源 → 世界提取 | `/api/v1/novel-sources`、`/api/v1/world-extraction-runs`、`/api/v1/world-maps`、`/api/v1/projects/{id}/world-entities`、`/api/v1/creative-projects/from-novel-source`、`/api/v1/creative-projects/{id}/world-extraction/start` | `services/novel_source` | `/novel-world`、`/story`（圣经/世界 → 生成世界设定候选）、`/novel-bookshelf`（每本小说提取世界） | 多来源入口共用同一套逐域提取/证据/候选/写入管线：TXT 上传、书架章节导入、创作项目大纲（`world-extraction/start` 序列化大纲为来源文本）、来源快照直接建项目（`from-novel-source`）；十一个域提取、证据预览与确认写入项目；可选向量索引与混合检索（PostgreSQL 下 pgvector 近邻）、跨域调和与语义矛盾检测、完本来源派生项目（改编/续写/同人，原作正典只读分层）、结构化世界地图编辑（区域/据点/路线 + SVG 预览）、类型化独立实体与关系（`world_entities`/`world_entity_relations`）已接入页面和 Agent 工具。 |
@@ -515,11 +525,11 @@ Live2D accepts uploads, character imagery and Asset Hub images as source materia
 - 接口清单：`docs/architecture/API_SURFACE.md`
 - 机器可读清单：`docs/architecture/api_surface.json`
 
-当前统计：
+当前统计（2026-09-14，由 `tools/generate_api_surface.py` 重新生成后核对）：
 
-- Router mounts: 52
-- Endpoints: 612
-- Public schema endpoints: 611
+- Router mounts: 53
+- Endpoints: 678
+- Public schema endpoints: 677
 - Hidden compatibility endpoints: 1
 
 接口变更后，AI 必须做五件事：
@@ -534,13 +544,15 @@ Agent Tool / Skill 变更按内部 API 处理：工具名称、输入输出 sche
 
 ## 7. OpenSpec 当前状态
 
-状态更新时间：2026-08-31。角色专项改造已完成代码、数据库迁移、focused 回归和真人/Agent 临时项目 E2E；当前未完成项仍是独立的真实供应商生图验收，不阻塞角色提取、角色库或项目正文链路。
+状态更新时间：2026-09-14。本会话集中推进 Agent 运行时收口与内容包链路：`agent-supervisor-subagent-runtime`、`agent-center-*` 系列、`agent-team-composition` 已归档（累计归档 34 个、主 specs 23 个）；当前活跃 5 个，其中 `content-package-workspaces` 为进行中主线。表中仅列与本轮架构变更相关的行，完整列表见 `openspec/changes/`。
 
 | Change | Done | Pending | 说明 |
 | --- | ---: | ---: | --- |
 | `archive/agent-skill-package-runtime` | 56 | 0 | Skill Runtime 主计划完成并归档。 |
 | `archive/agent-center-multi-agent-runtime` | 114 | 0 | 上下文、工具循环、父子 Run 和专用场景协调 MVP 完成；不代表自主 Supervisor 已完成。 |
-| `agent-supervisor-subagent-runtime` | 30 | 30 | Supervisor/Worker 主链、声明式团队组合与 Writer Room `team` 模式全部落地；收尾的 CutClaw/文案审计、测试补强与外部浏览器 smoke 已完成。仅存一处如实标注的运行验证缺口：Writer Room `team` 模式本身尚未在真实项目上跑过。 |
+| `archive/agent-supervisor-subagent-runtime` | 30 | 0 | 已归档。Supervisor/Worker 主链、声明式团队组合与 Writer Room `team` 模式全部落地；收尾的 CutClaw/文案审计、测试补强与外部浏览器 smoke 已完成。仅存一处如实标注的运行验证缺口：Writer Room `team` 模式本身尚未在真实项目上跑过（已写入归档注记）。 |
+| `archive/agent-team-composition` | 21 | 2 | 已归档（21/23），落地 capability `agent-team-composition`（8 条需求）。本轮补齐：`AgentScope.enter_scope()` 接缝与 `AgentService` 的 per-session 状态接线（1.2，把隔离从"约定"升级为"结构保证"）、压缩请求携带显式 `system_prompt_ref`/`tool_schema_ref`（4.3）、per-role 声明的授权溯源写入委派任务上下文并随子 Run `context_json` 一次落库（2.4 前半）。两项未勾且**前置不存在**：`4.2` plan/batch 模式（全库 0 命中，约束当前空洞成立）、`2.4` 后半能力变更走草稿审批（团队模板是仓库内 YAML，变更走 git 评审，`api/v1/agent.py` 无模板写入端点）。**归档前按事实收窄了 delta spec 三处过度声明**（原 `Capability Provenance And Approval` 的审批路由、`Mode switch preserves catalog`、persona/plan-mode 实例化），避免主 spec 长期宣称不存在的能力。 |
+| `content-package-workspaces` | 12 | 9 | 进行中。已落地：内容包六种类型的契约 schema（四种标记为 API-only）、五个平台适配器 + 输出端点（`outputs[]`，按方案声明的 `output_adapters` 出）、条目级重试与 stale 语义、可复用 `ContentPackagePlanner`（从 `outline_service.py` 提取，`generate_outline` 变 39 行兼容委托）。剩余：`page_book` 完整实现、Skill/Agent 工具契约、多平台 UI 复用组件、绑定项目流程、Director 路由、测试/smoke/文档收尾。详见 §4.4.6。 |
 | `agent-center-conversation-workbench-redesign` | 15 | 0 | 对话优先双栏、内联轨迹、局部失败隔离和 Error Boundary 已完成；健康后端下的真实多轮恢复作为外部验收记录保留。 |
 | `archive/agent-center-thread-runtime-refactor` | 49 | 0 | thread runtime 重构完成并归档。 |
 | `archive/agent-center-hermes-mvp` | 11 | 0 | Hermes 风格记忆/运行思路 MVP 完成并归档。 |
