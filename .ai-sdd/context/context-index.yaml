@@ -44,7 +44,7 @@
     - "涉及小说来源导入、来源快照、文本块、混合检索"
     - "涉及世界设定提取、候选确认、apply 写入、派生项目"
 - path: business/业务规则与核验体系（business-rules）.md
-  summary: "任务落库白名单规则、启动对账、事件/任务重试边界、事件敏感字段与长度约束；写作风格档案生命周期、材料闸门与泄漏阈值、强度注入量；Agent 工作台规则（顶栏写回配置、拒绝=取消运行、有数据才显示、缺失 --、卡片收敛例外、按类名折叠）；世界构建规则（结构过闸、不伪造证据、apply 唯一写入、内置字段只增不删、契约外转建议、幂等指纹）；写作前置检查规则（preflight 只读、返回契约固定、生成方法权威、opt-in 方法包默认不生效）；制作台规则（不持久化派生阶段状态、六条完成度定义、计数仅作指示、批量生产非破坏性收纳）；数据库迁移安全规则（升级是运维动作、运行时 DDL 须有归宿、先备份、迁移测试只用一次性库）；创作项目动态状态规则（内容自由信封有 schema、append-only 去重、折叠语义、隔离原则）；叙事运行时规则（正典 vs 提案分界、派生状态可溯源、supersede 不销毁、aftermath 幂等、失败隔离）；Agent 工作台信息架构规则（主任务优先、辅助失败不阻塞聊天）；小说来源与世界提取规则（证据逐字命中否则丢弃、候选先于正典、apply 唯一写入点、角色复用 Character）；创作项目闭环规则（阶段感知生成、JSON-first 校验与一次修复、生成单元独立存储、生成资产必须记录谱系）；提示词参考库规则（引用不自动入素材库、同步本地优先、按来源+外部 id 去重、分面彼此独立）；图转 3D 规则（输入守卫、结果入资产中枢带谱系、供应商 id 与本地 id 分离、绑骨需公网可达源模型）"
+  summary: "任务落库白名单规则、启动对账、事件/任务重试边界、事件敏感字段与长度约束；写作风格档案生命周期、材料闸门与泄漏阈值、强度注入量；Agent 工作台规则（顶栏写回配置、拒绝=取消运行、有数据才显示、缺失 --、卡片收敛例外、按类名折叠）；世界构建规则（结构过闸、不伪造证据、apply 唯一写入、内置字段只增不删、契约外转建议、幂等指纹）；写作前置检查规则（preflight 只读、返回契约固定、生成方法权威、opt-in 方法包默认不生效）；制作台规则（不持久化派生阶段状态、六条完成度定义、计数仅作指示、批量生产非破坏性收纳）；数据库迁移安全规则（升级是运维动作、运行时 DDL 须有归宿、先备份、迁移测试只用一次性库）；创作项目动态状态规则（内容自由信封有 schema、append-only 去重、折叠语义、隔离原则）；叙事运行时规则（正典 vs 提案分界、派生状态可溯源、supersede 不销毁、aftermath 幂等、失败隔离）；Agent 工作台信息架构规则（主任务优先、辅助失败不阻塞聊天）；小说来源与世界提取规则（证据逐字命中否则丢弃、候选先于正典、apply 唯一写入点、角色复用 Character）；创作项目闭环规则（阶段感知生成、JSON-first 校验与一次修复、生成单元独立存储、生成资产必须记录谱系）；提示词参考库规则（引用不自动入素材库、同步本地优先、按来源+外部 id 去重、分面彼此独立）；图转 3D 规则（输入守卫、结果入资产中枢带谱系、供应商 id 与本地 id 分离、绑骨需公网可达源模型）；角色册与角色流程规则（两类流程门禁不同、字段来源分层、完善度只用列表字段且阈值按真实填充率设计）"
   scope: all
   stage: [specs, design, tasks]
   load_policy: on-demand
@@ -70,6 +70,8 @@
     - "涉及生成失败如何修复与留痕、生成物谱系字段"
     - "涉及提示词引用是否进素材库、来源同步策略"
     - "涉及绑骨为何失败（源模型需公网可达）"
+    - "涉及角色册、完善度、Bible 摘要"
+    - "涉及角色两类流程（提取 vs 角色先行）与字段来源"
 
 # 数据知识
 
@@ -87,7 +89,7 @@
     - "涉及 world_domain_definitions、world_building_templates、world_fact_candidates"
 
 - path: data/枚举值字典（enum-dictionary）.md
-  summary: "事件 scene 取值、任务持久化白名单、任务与事件状态枚举、写作风格档案状态与强度枚举、AgentThread.status 取值域与智能体 default_workflow 七档、CandidateOrigin 与 run.kind、内置域 15 个、preflight check 的 pass/block、动态状态的 scope 与 op、叙事快照/伏笔/运行模式枚举、来源状态与派生类型、候选状态、域判定与域来源、创作项目 project_type/source_type/status/content_type、资产 role/relation、template_stage、提示词库 model_group（ChatGPT/NanoBanana2/NanoBananaPro）、图转 3D 的 kind 与绑骨模式（skeleton/motion）"
+  summary: "事件 scene 取值、任务持久化白名单、任务与事件状态枚举、写作风格档案状态与强度枚举、AgentThread.status 取值域与智能体 default_workflow 七档、CandidateOrigin 与 run.kind、内置域 15 个、preflight check 的 pass/block、动态状态的 scope 与 op、叙事快照/伏笔/运行模式枚举、来源状态与派生类型、候选状态、域判定与域来源、创作项目 project_type/source_type/status/content_type、资产 role/relation、template_stage、提示词库 model_group（ChatGPT/NanoBanana2/NanoBananaPro）、图转 3D 的 kind 与绑骨模式（skeleton/motion）、角色 workflow_source / extract_origin / 字段来源"
   scope: all
   stage: [design, tasks, apply]
   load_policy: on-demand
@@ -102,11 +104,12 @@
     - "涉及 project_type、content_type、asset role/relation、template_stage 取值"
     - "涉及 model_group、提示词来源类型取值"
     - "涉及 model3d kind、motion_type 取值"
+    - "涉及 workflow_source、extract_origin 取值"
 
 # 工程约束
 
 - path: engineering/设计约束（design-conventions）.md
-  summary: "AI 调用双层观测模式、任务不能自动收口、重试复用业务端点、前端选项同步、函数直调的坑；写作风格 T6 预算与纯函数注入、人机边界对等、TOOLS 注册表判定；Agent 工作台前端约束（窄屏禁用 nth-child、tabular-nums 非等宽、JSX 注释、!important 覆盖、勾选项审计）；世界构建约束（复用管线半段、origin 放候选级、schema 边界前移、同步判据、design 可能滞后于 tasks）；Creative Skill 约定与检索陷阱（Select-String 不递归子目录）；派生状态优先渲染时计算、/story 实现已迁至 components/；数据库迁移约束（version_num 长度、仅运行时建表、env.py 全量导入、禁止 stamp）；动态状态约束（LLM 输出字段驱动、纯服务优先、注入分层、无新路由不改 API surface）；叙事运行时约束（T0 不静默截断、异步生图不算正文成功、熔断恢复需显式动作）；Agent 工作台信息架构约束（三条产品约束、手写 markdown 解析器）；小说来源与世界提取约束（逐字证据、递归检索、内置字段只增不删、smoke:pages 只是源码扫描）；创作项目闭环约束（模板兼容、生图谱系字段须齐且索引字段为字符串、生成单元独立存储、实验模块不进主流程）；提示词参考库约束（JSONB 分面聚合、非法枚举值不应静默忽略、测试选择器须复核源码、缓存媒体本地优先）；图转 3D 验证坑（history 过滤 pending、表单默认折叠、按钮文案、toast 3 秒消失、真实生成扣额度须先确认）"
+  summary: "AI 调用双层观测模式、任务不能自动收口、重试复用业务端点、前端选项同步、函数直调的坑；写作风格 T6 预算与纯函数注入、人机边界对等、TOOLS 注册表判定；Agent 工作台前端约束（窄屏禁用 nth-child、tabular-nums 非等宽、JSX 注释、!important 覆盖、勾选项审计）；世界构建约束（复用管线半段、origin 放候选级、schema 边界前移、同步判据、design 可能滞后于 tasks）；Creative Skill 约定与检索陷阱（Select-String 不递归子目录）；派生状态优先渲染时计算、/story 实现已迁至 components/；数据库迁移约束（version_num 长度、仅运行时建表、env.py 全量导入、禁止 stamp）；动态状态约束（LLM 输出字段驱动、纯服务优先、注入分层、无新路由不改 API surface）；叙事运行时约束（T0 不静默截断、异步生图不算正文成功、熔断恢复需显式动作）；Agent 工作台信息架构约束（三条产品约束、手写 markdown 解析器）；小说来源与世界提取约束（逐字证据、递归检索、内置字段只增不删、smoke:pages 只是源码扫描）；创作项目闭环约束（模板兼容、生图谱系字段须齐且索引字段为字符串、生成单元独立存储、实验模块不进主流程）；提示词参考库约束（JSONB 分面聚合、非法枚举值不应静默忽略、测试选择器须复核源码、缓存媒体本地优先）；图转 3D 验证坑（history 过滤 pending、表单默认折叠、按钮文案、toast 3 秒消失、真实生成扣额度须先确认）；角色册实现约束（Bible 分节类型不一、identity 键不固定、弱化要给选中态留出口、窄栏排版）"
   scope: all
   stage: [design, tasks, apply]
   load_policy: on-demand
@@ -130,6 +133,7 @@
     - "引用任务里记录的测试选择器（可能已过时）"
     - "涉及 /model-3d 工作台的自动化验证"
     - "准备触发真实生成（先确认费用）"
+    - "改动角色册/角色列表的展示或完善度"
 
     - "涉及 WorldEntity / WorldEntityRelation / 世界地图正典与成图边界"
     - "需要做真实 UI 验证（注意 smoke:pages 不是浏览器）"
