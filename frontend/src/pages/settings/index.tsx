@@ -53,6 +53,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { listConnectors, createConnector, updateConnector, deleteConnector, testConnector, exportConnectors, importConnectors, discoverModels, getSettings, updateSettings, listProviders, createProvider, updateProvider, deleteProvider, initDefaultProviders, getProviderDefaults, listAICapabilities, agentChat } from '../../api'
 import type { Provider, PROVIDER_OPTIONS, ConnectorTestResult, ProviderMetadata } from '../../types/api'
 import { useTheme } from '../../constants/theme'
+import { useResizableColumns } from '../../hooks/useResizableColumns'
 import { calculateAspectRatio } from '../../utils/size'
 import SkillManagementPanel from '../../components/agent/SkillManagementPanel'
 import ProviderPresetsPage from '../provider-presets'
@@ -61,66 +62,8 @@ const { Title, Text, Paragraph } = Typography
 const { TextArea } = Input
 
 // ==================== 可拖拽调整列宽的表头 ====================
-function useResizableColumns(initialWidths: Record<string, number>) {
-  const [colWidths, setColWidths] = useState<Record<string, number>>(initialWidths)
-  const resizing = useRef<{ key: string; startX: number; startWidth: number } | null>(null)
-  const moveRef = useRef<((e: MouseEvent) => void) | null>(null)
-  const upRef = useRef<(() => void) | null>(null)
-
-  const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (!resizing.current) return
-    const { key, startX, startWidth } = resizing.current
-    const diff = e.clientX - startX
-    const newWidth = Math.max(80, startWidth + diff)
-    setColWidths(prev => ({ ...prev, [key]: newWidth }))
-  }, [])
-
-  const handleMouseUp = useCallback(() => {
-    if (resizing.current) {
-      document.removeEventListener('mousemove', moveRef.current!)
-      document.removeEventListener('mouseup', upRef.current!)
-      resizing.current = null
-    }
-  }, [])
-
-  // 始终保持 ref 指向最新回调
-  moveRef.current = handleMouseMove
-  upRef.current = handleMouseUp
-
-  const handleMouseDown = useCallback((key: string, e: React.MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    resizing.current = { key, startX: e.clientX, startWidth: colWidths[key] || 0 }
-    document.addEventListener('mousemove', moveRef.current!)
-    document.addEventListener('mouseup', upRef.current!)
-  }, [colWidths])
-
-  // 给列定义添加 resize handle 的渲染器
-  function wrapColumnTitle(title: string, key: string): React.ReactNode {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', width: '100%', position: 'relative' }}>
-        <span style={{ flex: 1 }}>{title}</span>
-        <div
-          onMouseDown={(e) => handleMouseDown(key, e)}
-          style={{
-            width: 6,
-            cursor: 'col-resize',
-            position: 'absolute',
-            right: -3,
-            top: 0,
-            bottom: 0,
-            zIndex: 10,
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.borderRight = '2px solid #00d4ff')}
-          onMouseLeave={(e) => (e.currentTarget.style.borderRight = '2px solid transparent')}
-        />
-      </div>
-    )
-  }
-
-  return { colWidths, wrapColumnTitle }
-}
-
+// 实现已抽到 hooks/useResizableColumns 共用（设置页与内容搜索页都用同一份，
+// 避免同一交互出现多套实现、改一处漏一处）。需要时从那里 import。
 // 尺寸配置字段组件
 function SizeConfigField({ value = [], onChange }: { value?: string[], onChange?: (v: string[]) => void }) {
   const { theme: THEME } = useTheme()
