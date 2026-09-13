@@ -31,6 +31,7 @@ from app.services.creative_project.service import (
     normalize_chapter_plan,
     repair_utf8_mojibake,
 )
+from app.services.creative_project.content_package_adapters import adapter_catalog
 from app.services.creative_project.profiles import CONTENT_PRODUCTION_PROFILES
 from app.services.creative_project.schemas import ProductionPlanSchema
 from app.services.creative_project.narrative_runtime import ChapterAftermathPipeline, NarrativeReviewService
@@ -338,6 +339,13 @@ class ContentPackagePlanRequest(BaseModel):
     prompt_only: bool = False
     provider: str | None = None
     model: str | None = None
+
+
+class ContentPackageOutputsRequest(BaseModel):
+    """为当前内容包产出平台输出（适配器只做格式翻译，不写外部平台）。"""
+
+    adapters: list[str] = Field(default_factory=list, description="要产出的适配器类型；留空则不产出")
+    save: bool = Field(default=True, description="是否把 outputs 追加为新包版本（界面「输出适配」以此为依据）")
 
 
 class ProductionPlanSaveRequest(BaseModel):
@@ -1360,6 +1368,35 @@ def update_content(
             is_locked=req.is_locked,
         )
         return {"success": True, "data": serialize_content(content)}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.post("/{project_id}/content-package/outputs", summary="生成内容包平台输出")
+def build_content_package_outputs(
+    project_id: str,
+    req: ContentPackageOutputsRequest,
+    svc: CreativeProjectService = Depends(service),
+):
+    """用平台适配器把当前内容包翻译成各平台格式。
+
+    纯本地转换：不改 items、不向公众号/小红书/抖音发送任何请求。`save=True` 时把
+    outputs 追加为新包版本（旧版本不可变），界面「输出适配」检查项据此变绿。
+    """
+    try:
+        outputs, content = svc.build_content_package_outputs(
+            project_id,
+            adapters=req.adapters,
+            save=req.save,
+        )
+        return {
+            "success": True,
+            "data": {
+                "outputs": outputs,
+                "available_adapters": adapter_catalog(),
+                "content": serialize_content(content) if content else None,
+            },
+        }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 

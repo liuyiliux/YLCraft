@@ -38,7 +38,15 @@
 ## Phase 4: Platform adapters and migration
 
 - [ ] 14. Move existing multi-platform generation UI logic into reusable package/adapter components while keeping `/multi-platform-gen` as a compatibility entry.
-- [ ] 15. Add WeChat, Xiaohongshu, Douyin, PDF and Asset Bundle adapter outputs without duplicating source package items.
+- [x] 15. Add WeChat, Xiaohongshu, Douyin, PDF and Asset Bundle adapter outputs without duplicating source package items.
+  - _2026-09-14 完成（后端 + API；界面触发按钮未做，见文末说明）：_
+    - _新增 `backend/app/services/creative_project/content_package_adapters.py`：五个**纯函数**适配器，把同一份内容包翻译成各平台形状——`wechat_official_account`（HTML+标题+摘要+封面/正文配图引用+草稿 payload 形状）、`xiaohongshu_carousel`（3:4 竖版卡片、页序、标签）、`douyin_short_video`（9:16 镜头表+口播/字幕+视频参数）、`pdf_ebook`（分页结构+文件名）、`asset_bundle`（package.json / content.md / prompts.tsv 三件套）。_
+    - _职责边界（design §4）：不调外部平台、不写回源包、不保存第二份事实源。**"不复制 items"的准确含义**：平台产物必然包含正文文字（那是产物本身），禁止的是把 items 整体再存一份当作可编辑事实源；因此每条输出都带 `source_package_id` / `source_package_version` / `source_item_ids`，"源包改了、输出过期了"可判定。已有测试断言输出记录不含 `items` 键、逐条产物必须带 `item_id` 回引。_
+    - _失败语义：**单个适配器抛错不影响其它适配器**（该条记 `status="failed"` + `error`，其余照常产出，可独立重建）；未知适配器名在构建前抛 ValueError（端点转 400）。_
+    - _新增端点 `POST /api/v1/creative-projects/{project_id}/content-package/outputs`（已同步 `docs/architecture/API_SURFACE.md`）：`{adapters, save}`，`save=true` 时把 outputs 追加为**新包版本**（旧版本不可变）——界面「输出适配」检查项以 `outputs` 非空为依据，因此必须落库才能变绿。响应另带 `available_adapters`（适配器目录含 label 与 planning_only），前端无需硬编码名字。_
+    - _两处如实标注的**能力缺口**（不掩盖）：① `douyin_short_video` 与 `pdf_ebook` 标记 `planning_only=True`，输出中带 warning 说明"只产出规划数据"——抖音的视频由后续步骤生成（用户已确认此范围），PDF 的字节需要有渲染器（**本环境未装任何 PDF 生成库**，仅 `pypdf` 可读写/合并，无法从零排版）；② 后端**不解析 asset_ids → URL**（`to_asset_download_url` 收的是文件路径而非资产 id，逐个查 Asset Hub 会引入 IO 与耦合），因此产物只带 `image_asset_ids`，由前端解析；公众号 HTML 在无 URL 时**不静默少图**，改为输出 `<img data-asset-id="...">` 占位供渲染方替换。_
+    - _验证：`test_content_package_adapters.py` **13 例**（五适配器齐备+溯源齐全、无 items 副本、失败隔离、未知适配器报错、各平台形状、HTML 转义、asset 占位、URL 注入）；`test_creative_project_workflow_api.py` 新增集成测试 1 例（产出→落为新版本→未知适配器 400→无内容包 400）。回归 `pytest -k "content_package or creative_project or profile or workflow or adapter"` → **204 passed**。_
+    - _未做（明确划界）：**前端触发入口**。当前只有 API 可调用，内容包工作台没有「生成平台输出」按钮，所以界面上「输出适配」那盏灯**不会自己变绿**——需要前端调这个新端点。这属于前端工作（design §6 的输出栏），我把它留给 #14/#19，或你要我现在补。_
 - [ ] 16. Add project-to-package and standalone-package-to-project attachment flows through Asset Hub and project content links.
 - [ ] 17. Update Agent Director routing so package plans use content cards/items and full narrative plans use existing stages.
 

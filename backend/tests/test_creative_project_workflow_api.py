@@ -297,6 +297,86 @@ def test_content_package_api_versions_and_rejects_narrative_projects(workflow_se
     assert "不是内容包方案" in rejected.json()["detail"]
 
 
+def test_content_package_outputs_endpoint_builds_and_persists_adapters(workflow_session: Session):
+    """适配器端点：产出平台输出、按需落为新版本、未知适配器与空包分别返回 400。"""
+    with _client(workflow_session) as client:
+        project = _post(
+            client,
+            "",
+            {
+                "title": "十二生肖绘本",
+                "idea": "给儿童介绍十二生肖",
+                "project_type": "manga",
+                "production_profile": "storybook",
+            },
+        )["data"]
+        created = client.put(
+            f"/api/v1/creative-projects/{project['id']}/content-package",
+            json={
+                "package": {
+                    "topic": "十二生肖",
+                    "title": "十二生肖绘本",
+                    "brief": "一页一个生肖",
+                    "items": [
+                        {"id": "rat", "index": 1, "title": "鼠", "text": "老鼠拿了第一。", "image_prompt": "剪纸小老鼠"},
+                        {"id": "ox", "index": 2, "title": "牛", "text": "老牛踏实第二。", "image_prompt": "剪纸老牛"},
+                    ],
+                }
+            },
+        )
+        assert created.status_code == 200, created.text
+        first_data = created.json()["data"]
+        assert first_data["version"] == 1
+
+        resp = client.post(
+            f"/api/v1/creative-projects/{project['id']}/content-package/outputs",
+            json={"adapters": ["wechat_official_account", "asset_bundle", "douyin_short_video"], "save": True},
+        )
+        assert resp.status_code == 200, resp.text
+        data = resp.json()["data"]
+
+        assert [o["adapter_type"] for o in data["outputs"]] == [
+            "wechat_official_account",
+            "asset_bundle",
+            "douyin_short_video",
+        ]
+        assert all(o["status"] == "ready" for o in data["outputs"])
+        # 溯源：来自哪一版、用了哪些 item
+        assert all(o["source_item_ids"] == ["rat", "ox"] for o in data["outputs"])
+        assert all(o["source_package_version"] == 1 for o in data["outputs"])
+        # 适配器目录随响应返回，前端不必硬编码名字
+        assert {a["adapter_type"] for a in data["available_adapters"]} >= {"wechat_official_account", "pdf_ebook"}
+
+        # 落库为**新版本**，旧版本保持不可变
+        assert data["content"]["version"] == 2
+        assert data["content"]["source_content_id"] == first_data["id"]
+        assert len(data["content"]["data"]["outputs"]) == 3
+        # 不复制 items：输出记录自身不带 items 副本
+        for out in data["content"]["data"]["outputs"]:
+            assert "items" not in out
+
+        # 未知适配器 → 400
+        bad = client.post(
+            f"/api/v1/creative-projects/{project['id']}/content-package/outputs",
+            json={"adapters": ["not_an_adapter"]},
+        )
+        assert bad.status_code == 400
+        assert "不支持的内容包适配器" in bad.json()["detail"]
+
+        # 尚未生成内容包 → 400（与"未知适配器"是不同原因）
+        empty = _post(
+            client,
+            "",
+            {"title": "空的绘本", "idea": "还没生成", "project_type": "manga", "production_profile": "storybook"},
+        )["data"]
+        none_yet = client.post(
+            f"/api/v1/creative-projects/{empty['id']}/content-package/outputs",
+            json={"adapters": ["asset_bundle"]},
+        )
+        assert none_yet.status_code == 400
+        assert "还没有内容包" in none_yet.json()["detail"]
+
+
 def test_production_plan_api_versions_and_keeps_project_asset_association(workflow_session: Session):
     asset_id = str(uuid.uuid4())
     workflow_session.add(

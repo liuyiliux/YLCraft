@@ -83,6 +83,10 @@ from app.services.creative_project.semantic_recall import (
     NarrativeRecallResult,
     NarrativeSemanticRecallAdapter,
 )
+from app.services.creative_project.content_package_adapters import (
+    adapter_input_from_package,
+    build_package_outputs,
+)
 from app.services.creative_project.content_package_schema import (
     get_package_schema,
     schema_descriptor,
@@ -3948,6 +3952,47 @@ class CreativeProjectService:
         self.session.commit()
         self.session.refresh(content)
         return content
+
+    def build_content_package_outputs(
+        self,
+        project_id: str,
+        *,
+        adapters: list[str],
+        save: bool = False,
+    ) -> tuple[list[dict[str, Any]], ProjectContent | None]:
+        """用平台适配器为当前内容包产出 `outputs`（**纯本地转换，不写外部平台**）。
+
+        适配器只做格式翻译：不改 `items`、不发外部请求、不保存第二份事实源。
+        `save=True` 时把 outputs 追加为**新的包版本**（旧版本保持不可变）——界面上的
+        「输出适配」检查项以 `outputs` 非空为依据，因此必须真正落库才能变绿。
+        """
+        self._require_project(project_id)
+        package_content = self.session.exec(
+            select(ProjectContent)
+            .where(ProjectContent.project_id == project_id, ProjectContent.content_type == "content_package")
+            .order_by(ProjectContent.version.desc(), ProjectContent.updated_at.desc())
+        ).first()
+        if package_content is None:
+            raise ValueError("该项目还没有内容包，请先生成内容包")
+
+        # 注意：ProjectContent 上没有 `.data`（那是 serialize_content 给 API 加的），
+        # 包里存的原始 JSON 在 data_json。
+        package = loads_json(package_content.data_json) or {}
+        adapter_input = adapter_input_from_package(
+            package,
+            package_id=package_content.id,
+            package_version=package_content.version,
+        )
+        outputs = build_package_outputs(adapter_input, adapters)
+
+        saved: ProjectContent | None = None
+        if save:
+            saved = self.save_content_package(
+                project_id=project_id,
+                package={**package, "outputs": outputs},
+                source_content_id=package_content.id,
+            )
+        return outputs, saved
 
     async def generate_content_package(
         self,
