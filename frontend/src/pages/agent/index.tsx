@@ -830,19 +830,19 @@ function AgentPageContent() {
     fontFamily: '"Geist", "SF Pro Display", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif',
     background: THEME.bgCard,
     border: `1px solid ${THEME.borderLight}`,
-    borderRadius: 8,
+    borderRadius: THEME.radiusSM,
     overflow: 'hidden',
   }
 
   const panelStyle: CSSProperties = {
     background: `linear-gradient(180deg, ${THEME.bgCard}, ${THEME.bgPage})`,
     border: `1px solid ${THEME.primaryAlpha?.(0.14) || THEME.borderLight}`,
-    borderRadius: 10,
+    borderRadius: THEME.radiusSM,
     boxShadow: `0 18px 42px ${THEME.primaryAlpha?.(0.075) || 'rgba(16, 80, 76, 0.075)'}`,
   }
 
   const controlButtonStyle: CSSProperties = {
-    borderRadius: 6,
+    borderRadius: THEME.radiusSM,
     fontWeight: 500,
     fontSize: 13,
     height: 34,
@@ -1189,7 +1189,7 @@ function AgentPageContent() {
 
   const inlineCodeStyle = (role: AgentMessage['role']): CSSProperties => ({
     padding: '1px 5px',
-    borderRadius: 5,
+    borderRadius: THEME.radiusXS,
     background: role === 'user' ? 'rgba(255,255,255,0.18)' : THEME.bgElevated,
     border: role === 'user' ? '1px solid rgba(255,255,255,0.2)' : `1px solid ${THEME.borderLight}`,
     color: role === 'user' ? '#fff' : THEME.textPrimary,
@@ -1270,7 +1270,7 @@ function AgentPageContent() {
                   borderLeft: `3px solid ${role === 'user' ? 'rgba(255,255,255,0.5)' : THEME.primary}`,
                   background: role === 'user' ? 'rgba(255,255,255,0.1)' : THEME.bgElevated,
                   color: secondaryColor,
-                  borderRadius: 6,
+                  borderRadius: THEME.radiusSM,
                 }}
               >
                 {renderInlineMarkdown(block.content, role)}
@@ -1284,7 +1284,7 @@ function AgentPageContent() {
                 style={{
                   margin: 0,
                   padding: 10,
-                  borderRadius: 7,
+                  borderRadius: THEME.radiusSM,
                   background: role === 'user' ? 'rgba(0,0,0,0.22)' : THEME.bgElevated,
                   border: role === 'user' ? '1px solid rgba(255,255,255,0.16)' : `1px solid ${THEME.borderLight}`,
                   color: textColor,
@@ -1946,7 +1946,7 @@ function AgentPageContent() {
           gap: 10,
           padding: 12,
           border: `1px solid ${THEME.primaryAlpha?.(0.28) || THEME.borderLight}`,
-          borderRadius: 8,
+          borderRadius: THEME.radiusSM,
           background: THEME.bgElevated,
         }}
       >
@@ -1977,7 +1977,7 @@ function AgentPageContent() {
               <Text type="secondary" style={{ fontSize: 12 }}>模型：{node.provider || '-'} {node.model || ''}</Text>
             )}
             {node.planning_summary && Object.keys(node.planning_summary).length > 0 && (
-              <div style={{ padding: '8px 10px', borderRadius: 6, background: THEME.bgPage }}>
+              <div style={{ padding: '8px 10px', borderRadius: THEME.radiusSM, background: THEME.bgPage }}>
                 <Text type="secondary" style={{ fontSize: 12 }}>可审计规划摘要</Text>
                 <pre style={{ margin: '5px 0 0', whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: THEME.textPrimary, fontSize: 12 }}>
                   {JSON.stringify(node.planning_summary, null, 2)}
@@ -1997,7 +1997,7 @@ function AgentPageContent() {
       key={`${item.name || item.tool_name}-${index}`}
       style={{
         border: `1px solid ${item.success ? THEME.primaryAlpha?.(0.22) || THEME.borderLight : '#ff7875'}`,
-        borderRadius: 10,
+        borderRadius: THEME.radiusSM,
         padding: 12,
         background: item.success ? THEME.bgCard : 'rgba(255, 77, 79, 0.06)',
       }}
@@ -2027,7 +2027,7 @@ function AgentPageContent() {
               style={{
                 margin: '8px 0 0',
                 padding: 10,
-                borderRadius: 8,
+                borderRadius: THEME.radiusSM,
                 background: THEME.bgPage,
                 color: THEME.textPrimary,
                 maxHeight: 220,
@@ -2139,7 +2139,7 @@ function AgentPageContent() {
         key={step.id}
         style={{
           border: `1px solid ${step.status === 'failed' ? '#ff7875' : step.status === 'pending' ? '#faad14' : THEME.borderLight}`,
-          borderRadius: 10,
+          borderRadius: THEME.radiusSM,
           padding: 12,
           background: step.status === 'failed' ? 'rgba(255, 77, 79, 0.06)' : step.status === 'pending' ? 'rgba(250, 173, 20, 0.08)' : THEME.bgCard,
         }}
@@ -2190,7 +2190,7 @@ function AgentPageContent() {
                 key={`${item.skill_id}-${item.source}-${item.reason}`}
                 style={{
                   borderTop: `1px solid ${THEME.borderLight}`,
-                  borderRadius: 8,
+                  borderRadius: THEME.radiusSM,
                   padding: '8px 10px',
                   background: THEME.bgElevated,
                 }}
@@ -2248,7 +2248,7 @@ function AgentPageContent() {
                 key={`${item.key || 'memory'}-${index}`}
                 style={{
                   borderTop: `1px solid ${THEME.borderLight}`,
-                  borderRadius: 8,
+                  borderRadius: THEME.radiusSM,
                   padding: 10,
                   background: THEME.bgPage,
                 }}
@@ -2300,7 +2300,7 @@ function AgentPageContent() {
             style={{
               margin: '8px 0 0',
               padding: 10,
-              borderRadius: 8,
+              borderRadius: THEME.radiusSM,
               background: THEME.bgPage,
               color: THEME.textPrimary,
               borderTop: `1px solid ${THEME.borderLight}`,
@@ -2321,7 +2321,7 @@ function AgentPageContent() {
               style={{
                 margin: '8px 0 0',
                 padding: 10,
-                borderRadius: 8,
+                borderRadius: THEME.radiusSM,
                 background: THEME.bgPage,
                 color: THEME.textPrimary,
                 borderTop: `1px solid ${THEME.borderLight}`,
@@ -2348,7 +2348,7 @@ function AgentPageContent() {
         <div
           style={{
             border: `1px dashed ${THEME.borderLight}`,
-            borderRadius: 8,
+            borderRadius: THEME.radiusSM,
             padding: compact ? '7px 9px' : '10px 12px',
             background: THEME.bgPage,
           }}
@@ -2366,7 +2366,7 @@ function AgentPageContent() {
       <div
         style={{
           borderTop: `1px solid ${THEME.borderLight}`,
-          borderRadius: 8,
+          borderRadius: THEME.radiusSM,
           padding: compact ? '7px 9px' : '10px 12px',
           background: THEME.bgElevated,
         }}
@@ -2421,7 +2421,7 @@ function AgentPageContent() {
           width: 'min(820px, calc(100% - 48px))',
           margin: '0 0 14px 36px',
           borderTop: `1px solid ${THEME.borderLight}`,
-          borderRadius: 10,
+          borderRadius: THEME.radiusSM,
           background: `linear-gradient(180deg, ${THEME.bgCard}, ${THEME.bgElevated})`,
           boxShadow: `0 10px 24px ${THEME.primaryAlpha?.(0.045) || 'rgba(22,119,255,0.045)'}`,
           overflow: 'hidden',
@@ -2477,7 +2477,7 @@ function AgentPageContent() {
                     style={{
                       width: 24,
                       height: 24,
-                      borderRadius: 7,
+                      borderRadius: THEME.radiusSM,
                       display: 'grid',
                       placeItems: 'center',
                       background: step.status === 'failed'
@@ -2539,7 +2539,7 @@ function AgentPageContent() {
                         {(step.input && Object.keys(step.input).length > 0) && (
                           <div style={{ marginBottom: 6 }}>
                             <Text type="secondary">输入：</Text>
-                            <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 11, background: THEME.bgElevated, padding: '6px 8px', borderRadius: 6, maxHeight: 120, overflow: 'auto' }}>
+                            <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 11, background: THEME.bgElevated, padding: '6px 8px', borderRadius: THEME.radiusSM, maxHeight: 120, overflow: 'auto' }}>
                               {typeof step.input === 'string' ? step.input : JSON.stringify(step.input, null, 2)}
                             </pre>
                           </div>
@@ -2547,7 +2547,7 @@ function AgentPageContent() {
                         {step.error && (
                           <div style={{ marginBottom: 6 }}>
                             <Text type="danger">错误：</Text>
-                            <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 11, background: 'rgba(255,77,79,0.06)', padding: '6px 8px', borderRadius: 6, maxHeight: 120, overflow: 'auto' }}>
+                            <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 11, background: 'rgba(255,77,79,0.06)', padding: '6px 8px', borderRadius: THEME.radiusSM, maxHeight: 120, overflow: 'auto' }}>
                               {step.error}
                             </pre>
                           </div>
@@ -2555,7 +2555,7 @@ function AgentPageContent() {
                         {(step.output != null && (typeof step.output === 'string' ? step.output : Object.keys(step.output || {}).length > 0)) && (
                           <div>
                             <Text type="secondary">输出：</Text>
-                            <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 11, background: THEME.bgElevated, padding: '6px 8px', borderRadius: 6, maxHeight: 160, overflow: 'auto' }}>
+                            <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 11, background: THEME.bgElevated, padding: '6px 8px', borderRadius: THEME.radiusSM, maxHeight: 160, overflow: 'auto' }}>
                               {typeof step.output === 'string' ? step.output : JSON.stringify(step.output, null, 2)}
                             </pre>
                           </div>
@@ -2572,7 +2572,7 @@ function AgentPageContent() {
                     style={{
                       width: 24,
                       height: 24,
-                      borderRadius: 7,
+                      borderRadius: THEME.radiusSM,
                       display: 'grid',
                       placeItems: 'center',
                       background: call.success ? THEME.primaryAlpha?.(0.12) : 'rgba(255,77,79,0.12)',
@@ -2650,7 +2650,7 @@ function AgentPageContent() {
           )}
           <details style={{ borderTop: `1px solid ${THEME.borderLight}`, paddingTop: 8 }}>
             <summary style={{ cursor: 'pointer', color: THEME.primary, fontSize: 12 }}>查看完整上下文 JSON</summary>
-            <pre style={{ marginTop: 8, padding: 10, borderRadius: 8, background: THEME.bgPage, color: THEME.textPrimary, fontSize: 12, whiteSpace: 'pre-wrap', maxHeight: 260, overflow: 'auto' }}>
+            <pre style={{ marginTop: 8, padding: 10, borderRadius: THEME.radiusSM, background: THEME.bgPage, color: THEME.textPrimary, fontSize: 12, whiteSpace: 'pre-wrap', maxHeight: 260, overflow: 'auto' }}>
               {JSON.stringify(context, null, 2)}
             </pre>
           </details>
@@ -2728,7 +2728,7 @@ function AgentPageContent() {
             width: 64,
             height: 64,
             margin: '0 auto 18px',
-            borderRadius: 18,
+            borderRadius: THEME.radiusLG,
             display: 'grid',
             placeItems: 'center',
             background: THEME.primaryAlpha?.(0.12) || 'rgba(22,119,255,0.12)',
@@ -2808,7 +2808,7 @@ function AgentPageContent() {
               style={{
                 width: 30,
                 height: 30,
-                borderRadius: 7,
+                borderRadius: THEME.radiusSM,
                 display: 'grid',
                 placeItems: 'center',
                 color: '#fff',
@@ -3077,7 +3077,7 @@ function AgentPageContent() {
                             />
                           ))}
                           {pendingMemorySteps.map(step => (
-                            <div key={step.id} style={{ border: '1px solid #faad14', borderLeft: '4px solid #faad14', borderRadius: 10, padding: '12px 14px', background: 'rgba(250,173,20,0.06)' }}>
+                            <div key={step.id} style={{ border: '1px solid #faad14', borderLeft: '4px solid #faad14', borderRadius: THEME.radiusSM, padding: '12px 14px', background: 'rgba(250,173,20,0.06)' }}>
                               <Space direction="vertical" size={8} style={{ width: '100%' }}>
                                 <Space wrap>
                                   <Tag color="warning">记忆候选项</Tag>
@@ -3337,7 +3337,7 @@ function AgentPageContent() {
                                           height: 24,
                                           display: 'grid',
                                           placeItems: 'center',
-                                          borderRadius: 6,
+                                          borderRadius: THEME.radiusSM,
                                           background: THEME.bgElevated,
                                           color: THEME.textSecondary,
                                           marginLeft: Math.min((childRun?.delegation_depth || 1) - 1, 1) * 8,
@@ -3406,7 +3406,7 @@ function AgentPageContent() {
                         <div
                           style={{
                             borderTop: `1px solid ${THEME.borderLight}`,
-                            borderRadius: 10,
+                            borderRadius: THEME.radiusSM,
                             padding: 12,
                             background: THEME.bgCard,
                           }}
@@ -3465,7 +3465,7 @@ function AgentPageContent() {
                               key={step}
                               style={{
                                 borderTop: `1px solid ${THEME.borderLight}`,
-                                borderRadius: 8,
+                                borderRadius: THEME.radiusSM,
                                 padding: 12,
                                 background: THEME.bgCard,
                               }}
@@ -3512,7 +3512,7 @@ function AgentPageContent() {
                     size={44}
                     icon={<RobotOutlined />}
                     style={{
-                      borderRadius: 10,
+                      borderRadius: THEME.radiusSM,
                       background: THEME.primary,
                       boxShadow: `0 10px 24px ${THEME.primaryAlpha?.(0.18) || 'rgba(22,119,255,0.18)'}`,
                     }}
@@ -3557,7 +3557,7 @@ function AgentPageContent() {
                 (acc, step) => acc + (Array.isArray(step.output?.candidates) ? step.output.candidates.length : 0), 0
               )
               return (
-                <section style={{ ...inspectorSectionStyle, border: '1px solid #faad14', borderRadius: 8, background: 'rgba(250,173,20,0.04)' }}>
+                <section style={{ ...inspectorSectionStyle, border: '1px solid #faad14', borderRadius: THEME.radiusSM, background: 'rgba(250,173,20,0.04)' }}>
                   <Space style={{ justifyContent: 'space-between', width: '100%' }}>
                     <Text strong style={{ fontSize: 13 }}>待确认的线程注解</Text>
                     <Badge count={totalCandidates} size="small" />
@@ -3568,7 +3568,7 @@ function AgentPageContent() {
                   {pendingMemorySteps.map((step, stepIdx) => {
                     const candidates = Array.isArray(step.output?.candidates) ? step.output.candidates : []
                     return candidates.map((item: any, idx: number) => (
-                      <div key={`${step.id}-${idx}`} style={{ marginTop: 8, padding: '6px 8px', background: THEME.bgCard, borderRadius: 6 }}>
+                      <div key={`${step.id}-${idx}`} style={{ marginTop: 8, padding: '6px 8px', background: THEME.bgCard, borderRadius: THEME.radiusSM }}>
                         <Text strong style={{ fontSize: 12 }}>{item.key || `候选项 ${idx + 1}`}</Text>
                         <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 2 }}>
                           {typeof item.value === 'string' ? item.value.slice(0, 80) : JSON.stringify(item.value).slice(0, 80)}
@@ -3625,7 +3625,7 @@ function AgentPageContent() {
                         width: '100%',
                         textAlign: 'left',
                         border: `1px solid ${isActive ? THEME.primary : THEME.borderLight}`,
-                        borderRadius: 9,
+                        borderRadius: THEME.radiusSM,
                         padding: '9px 10px',
                         background: isActive ? (THEME.primaryAlpha?.(0.08) || 'rgba(22,119,255,0.08)') : THEME.bgElevated,
                         color: THEME.textPrimary,
@@ -3664,7 +3664,7 @@ function AgentPageContent() {
                     style={{
                       margin: '8px 0 0',
                       padding: 10,
-                      borderRadius: 8,
+                      borderRadius: THEME.radiusSM,
                       background: THEME.bgPage,
                       color: THEME.textPrimary,
                       borderTop: `1px solid ${THEME.borderLight}`,
@@ -3745,7 +3745,7 @@ function AgentPageContent() {
                           cursor: 'pointer',
                           marginBottom: 6,
                           padding: '9px 10px',
-                          borderRadius: 9,
+                          borderRadius: THEME.radiusSM,
                           border: `1px solid ${isActive ? THEME.primary : THEME.borderLight}`,
                           background: isActive ? (THEME.primaryAlpha?.(0.08) || 'rgba(22,119,255,0.08)') : THEME.bgElevated,
                         }}
@@ -3920,7 +3920,7 @@ function AgentPageContent() {
                     key={tool.name}
                     style={{
                       border: `1px solid ${isToolAuthorized(tool.name) ? THEME.primaryAlpha?.(0.28) || THEME.borderLight : THEME.borderLight}`,
-                      borderRadius: 8,
+                      borderRadius: THEME.radiusSM,
                       padding: 12,
                       background: isToolAuthorized(tool.name)
                         ? (THEME.primaryAlpha?.(0.055) || 'rgba(22,119,255,0.055)')
@@ -3956,7 +3956,7 @@ function AgentPageContent() {
                         style={{
                           marginTop: 8,
                           padding: '6px 8px',
-                          borderRadius: 8,
+                          borderRadius: THEME.radiusSM,
                           background: 'rgba(250, 173, 20, 0.1)',
                           color: THEME.textSecondary,
                           fontSize: 12,
@@ -3978,7 +3978,7 @@ function AgentPageContent() {
                           <div
                             style={{
                               borderTop: `1px solid ${THEME.borderLight}`,
-                              borderRadius: 8,
+                              borderRadius: THEME.radiusSM,
                               padding: 8,
                               background: THEME.bgPage,
                             }}
@@ -3995,7 +3995,7 @@ function AgentPageContent() {
                           <div
                             style={{
                               borderTop: `1px solid ${THEME.borderLight}`,
-                              borderRadius: 8,
+                              borderRadius: THEME.radiusSM,
                               padding: 8,
                               background: THEME.bgPage,
                             }}
@@ -4082,7 +4082,7 @@ function AgentPageContent() {
                             style={{
                               margin: '8px 0 0',
                               padding: 10,
-                              borderRadius: 8,
+                              borderRadius: THEME.radiusSM,
                               background: THEME.bgPage,
                               color: THEME.textPrimary,
                               borderTop: `1px solid ${THEME.borderLight}`,
@@ -4251,7 +4251,7 @@ function AgentPageContent() {
                             key={tool.name}
                             style={{
                               borderTop: `1px solid ${THEME.borderLight}`,
-                              borderRadius: 8,
+                              borderRadius: THEME.radiusSM,
                               padding: 10,
                               background: isToolAuthorized(tool.name) ? (THEME.primaryAlpha?.(0.06) || 'rgba(22,119,255,0.06)') : THEME.bgCard,
                             }}
@@ -4355,7 +4355,7 @@ function AgentPageContent() {
                                 key={skill.id}
                                 style={{
                                   borderTop: `1px solid ${THEME.borderLight}`,
-                                  borderRadius: 8,
+                                  borderRadius: THEME.radiusSM,
                                   padding: 10,
                                   background: skill.is_builtin ? (THEME.primaryAlpha?.(0.04) || 'rgba(22,119,255,0.04)') : THEME.bgCard,
                                 }}
@@ -4376,7 +4376,7 @@ function AgentPageContent() {
                                     style={{
                                       margin: '8px 0 0',
                                       padding: 10,
-                                      borderRadius: 8,
+                                      borderRadius: THEME.radiusSM,
                                       background: THEME.bgPage,
                                       color: THEME.textPrimary,
                                       borderTop: `1px solid ${THEME.borderLight}`,
