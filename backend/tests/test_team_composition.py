@@ -11,7 +11,7 @@ import json
 
 import pytest
 
-from app.services.agent.context_compressor import ContextCompressor
+from app.services.agent.context_compressor import ContextCompressor, stable_ref
 from app.services.agent.cost_meter import CostMeter
 from app.services.agent.registry import Tool, ToolRegistry
 from app.services.agent.scope import AgentScope
@@ -320,6 +320,54 @@ async def test_context_compressor_records_provenance():
     assert compressor.last_provenance["expansion_path"] == "compressed_summary"
     assert compressor.last_provenance["summary_version"] >= 1
     assert compressor.last_provenance["source_span"]["compressed_message_count"] > 0
+
+
+# ---------------------------------------------------------------------------
+# Explicit prompt/schema refs on compaction (task 4.3)
+# ---------------------------------------------------------------------------
+
+
+def test_stable_ref_is_byte_stable_and_content_sensitive():
+    """引用必须稳定（同输入同值），也必须随内容变化——否则它就失去意义。"""
+    assert stable_ref("一样的提示词") == stable_ref("一样的提示词")
+    assert stable_ref("提示词 A") != stable_ref("提示词 B")
+    # 结构体走规范化 JSON：键序不影响结果
+    assert stable_ref({"b": 1, "a": 2}) == stable_ref({"a": 2, "b": 1})
+    assert stable_ref({"a": 2}) != stable_ref({"a": 3})
+    # 空值也要有确定结果（不得抛错）
+    assert stable_ref(None) == stable_ref("")
+    assert len(stable_ref("x")) == 12
+
+
+async def test_compaction_records_explicit_prompt_and_schema_refs():
+    """显式传入的 ref 必须原样落到溯源里，以便验证'压缩是在哪一版 prompt/schema 下产生'。"""
+    compressor = ContextCompressor(token_threshold=100, keep_last=2, response_budget=0)
+    messages = [{"role": "user", "content": "长消息" * 500} for _ in range(20)]
+    await compressor.ensure_fits(
+        messages,
+        system_prompt="系统提示",
+        memory_context="",
+        system_prompt_ref="prompt-v7",
+        tool_schema_ref="schema-v3",
+    )
+    prov = compressor.last_provenance
+    assert prov["system_prompt_ref"] == "prompt-v7"
+    assert prov["tool_schema_ref"] == "schema-v3"
+
+
+async def test_compaction_without_explicit_refs_derives_prompt_and_marks_schema_unspecified():
+    """未显式传 ref 时：system_prompt_ref 按内容自算（不留空）；
+    tool_schema_ref 明确记为 unspecified —— 刻意区别于空串，避免把'未提供'伪装成'已提供'。"""
+    compressor = ContextCompressor(token_threshold=100, keep_last=2, response_budget=0)
+    messages = [{"role": "user", "content": "长消息" * 500} for _ in range(20)]
+    await compressor.ensure_fits(messages, system_prompt="系统提示", memory_context="")
+    prov = compressor.last_provenance
+    assert prov["system_prompt_ref"] == stable_ref("系统提示")
+    assert prov["tool_schema_ref"] == "unspecified"
+    # 换了系统提示，ref 必须跟着变
+    compressor2 = ContextCompressor(token_threshold=100, keep_last=2, response_budget=0)
+    await compressor2.ensure_fits(messages, system_prompt="另一个系统提示", memory_context="")
+    assert compressor2.last_provenance["system_prompt_ref"] != prov["system_prompt_ref"]
 
 
 # ---------------------------------------------------------------------------

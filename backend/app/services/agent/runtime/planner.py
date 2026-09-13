@@ -6,7 +6,7 @@ import json
 import logging
 from typing import Any, Awaitable, Callable
 
-from app.services.agent.context_compressor import ContextCompressor, token_budget_check
+from app.services.agent.context_compressor import ContextCompressor, stable_ref, token_budget_check
 from app.services.agent.registry import ToolRegistry
 from app.services.ai.types import LLMMessage
 
@@ -71,6 +71,13 @@ class Planner:
             system_parts.append("当前智能体允许调用的工具：" + "、".join(allowed_tools))
 
         system_text = "\n\n".join(part for part in system_parts if part)
+        # 工具 schema 提前到压缩之前构造：压缩溯源需要指名本次压缩所依据的 prompt 与
+        # schema 版本（见任务 4.3）。ToolRegistry 按名称字典序生成、字节级稳定，因此
+        # 提前取用不会改变请求前缀，也不会影响前缀缓存。
+        tools = ToolRegistry.get_openai_tools_spec(
+            allowed_tools=allowed_tools,
+            excluded_tools=excluded_tools,
+        )
         over_budget, est_tokens = token_budget_check(messages, system_parts)
         if over_budget:
             logger.info("[Planner] token budget exceeded (est=%d), compressing", est_tokens)
@@ -79,6 +86,8 @@ class Planner:
                 system_prompt=system_text,
                 memory_context=memory_context,
                 profile=profile,
+                system_prompt_ref=stable_ref(system_text),
+                tool_schema_ref=stable_ref(tools),
             )
 
         llm_messages = [
@@ -89,10 +98,6 @@ class Planner:
                 if message.get("role") in {"user", "assistant", "system"}
             ],
         ]
-        tools = ToolRegistry.get_openai_tools_spec(
-            allowed_tools=allowed_tools,
-            excluded_tools=excluded_tools,
-        )
         providers_to_try = await self._provider_chain_builder(profile)
         last_error = None
         result = None
