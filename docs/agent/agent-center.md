@@ -387,7 +387,14 @@ Agent Center 已有统一 Supervisor/Worker 主链。带 `can_delegate=true` 的
 
 运行轨迹中的“委派并续跑”是人工触发的同构入口：它仍通过 `SubagentOrchestrator` 创建子 Run，但汇合成功后会把 observation 送回原父 Run，并在同一条执行树中继续规划。API 调用方可通过 `POST /runs/{run_id}/delegate` 的 `resume_parent` 控制是否立即续跑；旧调用默认仅委派，保持兼容。
 
-边界仍需如实说明：Writer Room 当前的“角色演绎”仍是单模型结构化推演，整条链路是确定性的分阶段写作流水线；专用 `MultiAgentCoordinator` 也尚未迁移到统一运行时。子 Agent 的等待确认、确认结果和取消状态已经能向父级委派步骤传播；等待确认后的自动续跑仍由用户在轨迹中触发，避免确认接口暗中启动新一轮成本型执行。因此这些功能不能提前标成完整团队版 Writer Room。
+边界仍需如实说明——**按当前实现更新（2026-09-13）**：
+
+- **Writer Room 的“角色演绎”已有双模式**：`rehearsal_mode` 支持 `fast`（单模型结构化推演）与 `team`（每个入选角色一个独立子 Agent，随后由 editor 阶段汇合），**默认 `team`**；Story 工作台提供模式切换与团队进度面板，汇合结果仍以规范化 `character_rehearsal` 候选落库。其余工序仍是确定性的分阶段流水线。
+  - 如实标注验证状态：团队编排机制已通过 `scene-sim` 模板真实运行验证；Writer Room 的 `team` 模式本身**仍待一次真实项目运行**验证。
+- **`MultiAgentCoordinator` 已迁移到统一运行时**：专用编排现在是声明式 `TeamComposer` 之上的薄门面（端点走 `run_team("scene-sim")`），旧的硬编码执行逻辑已移除，不再有并行的私有实现。
+- 子 Agent 的等待确认、确认结果和取消状态已经能向父级委派步骤传播；等待确认后的自动续跑仍由用户在轨迹中触发，避免确认接口暗中启动新一轮成本型执行。
+
+因此：带持久子 Run 的场景推演与团队排练**可以**按多智能体描述，但必须同时暴露 responsible profiles 与 run tree 作为证据；Writer Room 其余工序仍应表述为分阶段工作流。
 
 Agent Center 的运行时核心借鉴了 DeerFlow 2.0（字节跳动 Super Agent Harness 框架）和 Hermes Agent（Nous Research 自演化智能体）的成熟设计模式，在以下方面增强了可靠性和效率：
 
