@@ -25,7 +25,15 @@
 - [x] 10. Build a reusable content-package workspace shell instead of reusing the full story blueprint form.
 - [ ] 11. Implement `page_book` for picture books/comics with page text, image prompts, batch image generation and optional layout.
 - [x] 12. Implement `knowledge_cards` with topic intro, fact/source placeholders and prompt-only mode.
-- [ ] 13. Add the article-package, carousel, shot-list and single-media schemas behind feature flags or API-only routes; do not build four new UIs in the first slice.
+- [x] 13. Add the article-package, carousel, shot-list and single-media schemas behind feature flags or API-only routes; do not build four new UIs in the first slice.
+  - _2026-09-13 完成（API-only，未建任何 UI）：_
+    - _新增 `backend/app/services/creative_project/content_package_schema.py`：把 **六种** `package_type` 的契约集中声明为 `PackageSchema`（条数边界、item 字段、包级字段、默认媒体、`ui_enabled`）。此前 `save_content_package` 只校验「包类型与 profile 一致 + items 是对象数组」，后四种类型**没有任何契约**，API 调用方无从知道该给什么。_
+    - _`ui_enabled` 即"本期只做 API、不建 UI"的**开关标记**：`page_book` / `knowledge_cards` 为 true，`article_package` / `social_carousel` / `shot_list` / `single_media` 为 **false**。_
+    - _**校验刻意分两档**（因为生成是 LLM 驱动的，把"缺字段"一律当硬错误会让一次模型抖动直接变成保存失败）：硬错误仅限结构性不可落库的问题——未知包类型、items 非数组、item 非对象、`status` 不在七态取值域、条数超上限；软提示收 `warnings`——条数低于推荐下限、个别 item 缺推荐字段、整包无任何媒体提示词。_
+    - _保存路径接入：`save_content_package` 按类型校验；包的 `data` 里新增 `schema`（含 `version`，便于 schema 演进后判断历史包按哪一版校验）与 `warnings`。_
+    - _**一处必须修掉的回归风险**：`generate_content_package` 原为 `count = min(item_count or 12, 80)`，而 `single_media` 上限是 1 条——单镜头项目生成 12 条后保存必被按类型拒绝（"生成成功但保存失败"）。改为按 schema 夹住数量，使 schema 成为唯一权威。_
+    - _**一次"过严"的自我纠正**：初版把「整包无任何媒体提示词」当硬错误，结果打挂既有用例 `test_content_package_api_versions_and_rejects_narrative_projects`——它保存的是「只有标题、尚未写提示词」的中间态版本，而"先存标题再补提示词"是内容包增量编辑的正常用法。已降为 warnings。_
+    - _测试：新增 `backend/tests/test_content_package_schema.py` **18 例**（六类型齐备、四种 API-only 的 ui_enabled 为 false、未知类型报错、超上限/status 非法为硬错误、无提示词只提示、条数偏低与缺字段只提示、按生成路径实际形状构造的干净包零提示、空包不误报）。回归 `pytest -k "content_package or creative_project or profile or workflow"` → **189 passed**。_
 
 ## Phase 4: Platform adapters and migration
 
