@@ -346,3 +346,14 @@ Context Pack **记录纳入/排除的源 ID 与原因**（≈ 可溯源）；存
 3. **默认折叠的内容不在 `inner_text` 里**：运行执行过程位于默认折叠的 `<details>` 中；须查 DOM（`document.body.innerHTML`）或先置 `details.open = true`。
 4. **统计 Python 测试函数必须匹配 `^(async )?def`**：`^def` **匹配不到 `async def`**；本项目曾因此误判"parent resume / confirmation 无测试"（实际都在 `test_agent_center.py`）。
 5. **`AgentService(session)` 只需一个 session**，内部自建 `ThreadManager`/`MemoryManager`/`AgentProfileManager` 等；测试可直接构造，无需手工拼装管理器。
+
+
+### 9.22 声明式团队组合与平面隔离
+
+<!-- 来源：openspec/changes/agent-team-composition，导入日期：2026-09-13 -->
+
+1. **`AgentScope` 需要一个"安装既有作用域"的入口**：`enter(host, agent)` 只能装**新建**的；调用方常需要先 `child()` 派生（继承 host 与团队上下文、隔离 agent 平面）**再安装**，故补 `AgentScope.enter_scope(scope)`，退出与异常路径都恢复上一层。
+2. **隔离要靠结构保证，而不是"恰好各自 new 了实例"的约定**：接线 per-session 状态到作用域前复核发现，`AgentService` 的状态**本就是实例级**、`services/agent/` 下**无模块级可变态**——即"角色共享可变实例"的风险**当时并不存在**。价值在于把隔离从约定升级为结构保证。**结论：动手前先核实缺陷是否真存在，别修一个想象出来的问题。**
+3. **同一形状的定义只能有一份**：`capability_diff` 与运行授权溯源原本会各写一份角色能力形状，提取公共 `role_capabilities(role)` 后共用，避免漂移；顺带让此前**在生产代码里零调用**的 `capability_diff` 真正被用到。
+4. **"零调用"的工具函数是警报**：某函数只有测试在调、生产无调用，说明其设计意图（如"路由经审批"）很可能从未接线。定位缺口时可据此快速判断。
+5. **平台级 API Key 的开关语义**：`YLCRAFT_EXTERNAL_API_REQUIRE_KEY` **关闭 ≠ 不校验**——不强制携带，但**携带即必须有效**（无效 Key 仍 401）。

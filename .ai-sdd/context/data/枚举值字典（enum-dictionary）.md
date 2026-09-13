@@ -157,3 +157,12 @@
 - **`workflow_source`**：`extract`（小说/正文提取）/ 独立创建 / 素材库导入（另含 `workflow_source_label` 供展示）
 - **`extract_origin`**：`uploaded_novel` / `imported_novel` / `original_outline`
 - **字段来源（`field_sources` 的值）**：`original` / `ai_inferred` / `user_edited`（另有本世界覆盖）
+
+
+## 16. 团队委派与授权
+
+<!-- 来源：openspec/changes/agent-team-composition，导入日期：2026-09-13 -->
+
+- **`spawn_mode`**：`spawn`（全新子会话 + 冻结有界上下文快照）/ `fork`（以父上下文的**只读引用**为起点，不复制整条聊天）。校验点：`runtime/delegation.py` 的 `DelegatedTask.from_dict`，非法值抛 `DelegationValidationError`（"spawn_mode 只支持 spawn 或 fork"）。
+- **团队模板 `roles[].spawn`**：与 `spawn_mode` 同域取值（`spawn | fork`），由 `TeamTemplateValidator` 校验。
+- **`context["team_role_authority"]`**：不是枚举，但形状固定为 `{profile, tools, skills, spawn}`——随子 Run 的 `context_json` 一次性落库，作为**不可变授权溯源**。
