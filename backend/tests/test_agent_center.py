@@ -4232,3 +4232,67 @@ async def test_usage_recording_proxy_is_transparent_and_records(agent_session):
     assert result.success is True
     assert inner.calls == 1
     assert service._usage_snapshot()["llm_calls"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Per-session state behind AgentScope.agent (agent-team-composition 1.2)
+# ---------------------------------------------------------------------------
+
+
+async def test_agent_service_chat_installs_agent_plane_scope(agent_session, monkeypatch):
+    """chat() 必须安装 agent 平面作用域，使深层代码可解析本会话状态。
+
+    用 monkeypatch 替换 `_chat_pipeline` 捕获作用域，因此不触发任何 LLM 调用。
+    """
+    from app.services.agent.scope import AgentScope
+
+    service = AgentService(agent_session)
+    captured = {}
+
+    async def _fake_pipeline(self, **kwargs):
+        captured["scope"] = AgentScope.current()
+        captured["kwargs"] = kwargs
+        return {"ok": True}
+
+    monkeypatch.setattr(AgentService, "_chat_pipeline", _fake_pipeline)
+
+    result = await service.chat(session_id="scope-probe", user_message="hi")
+
+    assert result == {"ok": True}
+    assert captured["kwargs"]["session_id"] == "scope-probe"
+
+    scope = captured["scope"]
+    assert scope is not None, "chat() 未安装 agent 平面作用域"
+    # agent 平面：per-session 状态可解析
+    assert scope.get_agent("compressor") is service._compressor
+    assert scope.get_agent("planner") is service.planner
+    assert scope.get_agent("tool_executor") is service.tool_executor
+    assert scope.get_agent("user_id") == service.user_id
+    # host 平面：进程级单例
+    assert scope.get_host("tool_registry") is not None
+    # 退出后必须恢复（此前无人安装 → None），不得把作用域泄漏给后续请求
+    assert AgentScope.current() is None
+
+
+async def test_agent_service_agent_scope_is_child_of_current_scope(agent_session):
+    """在团队作用域内派生会话作用域时：继承 host 与团队上下文，隔离 agent 平面。"""
+    from app.services.agent.scope import AgentScope
+
+    service = AgentService(agent_session)
+
+    root = service._agent_scope()
+    assert root.get_agent("compressor") is service._compressor
+    assert root.get_host("tool_registry") is not None
+
+    shared_tools = object()
+    with AgentScope.enter(host={"tools": shared_tools}, agent={"team_template": "scene-sim"}) as outer:
+        role_scope = service._agent_scope(role_id="role-actor", persona="角色甲")
+        # 继承：host 单例与团队上下文
+        assert role_scope.get_host("tools") is shared_tools
+        assert role_scope.get_agent("team_template") == "scene-sim"
+        # 隔离：角色自己的 agent 平面，且不写回外层
+        assert role_scope.get_agent("role_id") == "role-actor"
+        assert role_scope.get_agent("persona") == "角色甲"
+        assert role_scope.get_agent("compressor") is service._compressor
+        assert outer.get_agent("persona") is None
+        assert AgentScope.current() is outer

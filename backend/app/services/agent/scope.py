@@ -69,8 +69,19 @@ class AgentScope:
         host: dict[str, Any] | None = None,
         agent: dict[str, Any] | None = None,
     ) -> Iterator["AgentScope"]:
-        """Install a scope for the duration of the ``with`` block."""
-        scope = cls(host=host, agent=agent)
+        """Install a freshly built scope for the duration of the ``with`` block."""
+        with cls.enter_scope(cls(host=host, agent=agent)) as scope:
+            yield scope
+
+    @classmethod
+    @contextmanager
+    def enter_scope(cls, scope: "AgentScope") -> Iterator["AgentScope"]:
+        """Install an **existing** scope for the duration of the ``with`` block.
+
+        需要一个安装入口而不只是构造：调用方常常要先 ``child()`` 派生出「继承 host 平面
+        与团队上下文、但隔离 agent 平面状态」的作用域，再把它装上。上一层的 scope 会在
+        退出时恢复（异常路径同样恢复），因此嵌套是安全的。
+        """
         token = _scope_var.set(scope)
         try:
             yield scope

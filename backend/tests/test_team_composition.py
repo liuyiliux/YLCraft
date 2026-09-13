@@ -261,6 +261,41 @@ def test_agent_scope_child_isolates_agent_state():
         assert AgentScope.current() is parent
 
 
+def test_agent_scope_enter_scope_installs_existing_scope_and_restores_outer():
+    """安装"已存在的"作用域（child 派生的那种）必须生效，并在退出后恢复上一层。
+
+    这是 1.2 的关键接缝：AgentService 需要先 child() 派生出「继承 host 与团队上下文、
+    隔离 agent 平面」的作用域，再把**它**装上——而不是重新造一个空作用域，否则角色
+    子会话就拿不到 team 上下文，父子隔离也无从谈起。
+    """
+    outer_host = {"tools": object()}
+    with AgentScope.enter(host=outer_host, agent={"team_template": "scene-sim"}) as outer:
+        derived = outer.child(role_id="role-actor", compressor="c1")
+        with AgentScope.enter_scope(derived) as installed:
+            assert installed is derived
+            assert AgentScope.current() is derived
+            # 继承自外层：host 单例与团队上下文
+            assert installed.get_host("tools") is outer_host["tools"]
+            assert installed.get_agent("team_template") == "scene-sim"
+            # 隔离：角色自己的 agent 平面
+            assert installed.get_agent("role_id") == "role-actor"
+            assert installed.get_agent("compressor") == "c1"
+        # 退出后恢复外层，不是 None
+        assert AgentScope.current() is outer
+
+
+def test_agent_scope_enter_scope_restores_outer_on_exception():
+    """异常路径也必须恢复外层作用域，否则一次失败会把 scope 泄漏给后续请求。"""
+    with AgentScope.enter(host={}, agent={"k": "outer"}) as outer:
+        try:
+            with AgentScope.enter_scope(outer.child(k="inner")):
+                raise RuntimeError("boom")
+        except RuntimeError:
+            pass
+        assert AgentScope.current() is outer
+        assert AgentScope.current().get_agent("k") == "outer"
+
+
 # ---------------------------------------------------------------------------
 # Delegation spawn_mode parsing
 # ---------------------------------------------------------------------------
