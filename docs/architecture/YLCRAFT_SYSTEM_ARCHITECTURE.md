@@ -230,7 +230,13 @@ flowchart TD
 
 当前 Agent Center 已实现统一 Supervisor/Worker 主链：`AgentProfile.can_delegate` 控制 `delegate_agent_tasks` 可见性；`SubagentOrchestrator` 校验深度、扇出、根预算、依赖和并发；每个 Worker 使用独立 Thread、独立 `AsyncSession` 和独立 `AgentService`；`AgentDelegation` 与 `AgentRun.root_run_id/parent_run_id` 形成执行树；子结果汇合为父 Run observation 后重新进入父 `RunLoop`。人工 `POST /agent/runs/{run_id}/delegate` 复用同一协调器，树和委派记录分别由 `GET /agent/runs/{run_id}/tree`、`GET /agent/runs/{run_id}/delegations` 暴露。
 
-Agent Center 的人工委派入口支持 `resume_parent`：成功汇合后把子结果作为 observation 写回原父 Run，并继续同一个 `RunLoop`；子级等待确认后仍要求用户从轨迹显式继续，避免确认接口静默启动新一轮成本型执行。剩余边界是 Writer Room `team` 模式和把旧 `MultiAgentCoordinator` 迁移为声明式团队模板。Writer Room 的当前角色演绎仍是单次模型调用和线性候选链，不得标成真实角色子 Agent 团队。
+Agent Center 的人工委派入口支持 `resume_parent`：成功汇合后把子结果作为 observation 写回原父 Run，并继续同一个 `RunLoop`；子级等待确认后仍要求用户从轨迹显式继续，避免确认接口静默启动新一轮成本型执行。
+
+**边界（2026-09-13 更新）**：原先的两条剩余边界**均已消除**——Writer Room 的 `team` 模式已接入（见下），旧 `MultiAgentCoordinator` 也已迁移为声明式团队模板门面。因此：
+
+- 带**持久子 Run** 的场景推演与角色团队排练**可以**按多智能体描述，但必须同时暴露 responsible profiles 与执行树作为证据；
+- Writer Room 的**其余工序**仍是单次模型调用与线性候选链，**必须**表述为分阶段工作流，不得标成真实角色子 Agent 团队；
+- Writer Room `team` 模式的编排机制已通过 `scene-sim` 模板真实运行验证，但**该模式本身仍待一次真实项目运行**验证——这是当前唯一的收尾缺口。
 
 声明式团队组合（`openspec/changes/agent-team-composition`）已落地运行时骨架：`services/agent/scope.py` 用 `contextvars` 显式隔离主机平面（进程级注册表单例）与代理平面（per-session 状态）；`services/agent/team_template.py` 提供团队模板 schema、加载器与校验器（含依赖环检测）；`services/agent/team_composer.py` 把模板解析为 `DelegatedTask` 列表并经 `SubagentOrchestrator` 执行；子代理新增 `spawn`/`fork`/`continuable` 三原语（`ForkExecutor` + `SubagentOrchestrator.send_message`），`AgentDelegation` 增加 `spawn_mode`/`team_template_id`/`role_id`/`continuation_of`（迁移 `012_add_team_composition_fields`）。工具目录改为按名称字典序输出以稳定 LLM 前缀缓存，`CostMeter` 观测缓存命中率，`ContextCompressor` 记录压缩溯源（source_span/summary_version/expansion_path）。内置 `writer-room-team`、`scene-sim` 两套模板；`MultiAgentCoordinator.run_team` 已作为声明式门面。旧 `MultiAgentCoordinator` 硬编码执行逻辑已去重，`/agent/multi-agent/scene-simulation` 现始终走 `TeamComposer("scene-sim")`，并已用真实 DeepSeek 端到端验收（5/5 子任务完成）。仍待 `AgentService` per-session 状态迁移与 writer-room team 真实项目验收。Writer Room `team` 模式已接入：`run_writer_room_step` 在 `rehearsal_mode="team"` 且 `step="character_rehearsal"` 时走 `_run_character_rehearsal_team`（解析角色 → 异步 `SubagentOrchestrator` 跑 `writer-room-team` → 汇合观测落为 `character_rehearsal` 候选）。
 
@@ -534,7 +540,7 @@ Agent Tool / Skill 变更按内部 API 处理：工具名称、输入输出 sche
 | --- | ---: | ---: | --- |
 | `archive/agent-skill-package-runtime` | 56 | 0 | Skill Runtime 主计划完成并归档。 |
 | `archive/agent-center-multi-agent-runtime` | 114 | 0 | 上下文、工具循环、父子 Run 和专用场景协调 MVP 完成；不代表自主 Supervisor 已完成。 |
-| `agent-supervisor-subagent-runtime` | 19 | 30 | Phase 0-3 完成；待 Writer Room team、旧协调器迁移和收尾审计。 |
+| `agent-supervisor-subagent-runtime` | 30 | 30 | Supervisor/Worker 主链、声明式团队组合与 Writer Room `team` 模式全部落地；收尾的 CutClaw/文案审计、测试补强与外部浏览器 smoke 已完成。仅存一处如实标注的运行验证缺口：Writer Room `team` 模式本身尚未在真实项目上跑过。 |
 | `agent-center-conversation-workbench-redesign` | 15 | 0 | 对话优先双栏、内联轨迹、局部失败隔离和 Error Boundary 已完成；健康后端下的真实多轮恢复作为外部验收记录保留。 |
 | `archive/agent-center-thread-runtime-refactor` | 49 | 0 | thread runtime 重构完成并归档。 |
 | `archive/agent-center-hermes-mvp` | 11 | 0 | Hermes 风格记忆/运行思路 MVP 完成并归档。 |
