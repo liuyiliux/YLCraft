@@ -335,3 +335,14 @@ Context Pack **记录纳入/排除的源 ID 与原因**（≈ 可溯源）；存
 | 6 | 无"可逆效应/逆操作栈"（`AgentScope` 只是作用域隔离） | 论文的 **revertible effects**：变换携带显式 inverse |
 
 **若要做"Agent 自我修改工具"（自进化），第 6 条是前置**——否则每次改动只能重启，丢掉全部累积状态。
+
+
+### 9.21 Agent 运行时审计方法与约束
+
+<!-- 来源：openspec/changes/agent-supervisor-subagent-runtime，导入日期：2026-09-13 -->
+
+1. **审计文案要防"反向失真"**：过时描述**不只会高估**，也可能**低报**（本项目实测：文档称"Writer Room 仍是单模型推演""Coordinator 尚未迁移"，而两条均已不成立）。审计必须**双向**核对，不能只查"是否夸大"。
+2. **首屏空态会让 UI 断言误报**：`/agent`、`/story` 在无会话/未选项目时正文仅约 1k 字符，委派入口与团队模式控件**均不可见**。断言必须先驱动到"有会话 / 进入写作室"，否则把"没进入状态"误判成"功能缺失"。
+3. **默认折叠的内容不在 `inner_text` 里**：运行执行过程位于默认折叠的 `<details>` 中；须查 DOM（`document.body.innerHTML`）或先置 `details.open = true`。
+4. **统计 Python 测试函数必须匹配 `^(async )?def`**：`^def` **匹配不到 `async def`**；本项目曾因此误判"parent resume / confirmation 无测试"（实际都在 `test_agent_center.py`）。
+5. **`AgentService(session)` 只需一个 session**，内部自建 `ThreadManager`/`MemoryManager`/`AgentProfileManager` 等；测试可直接构造，无需手工拼装管理器。
