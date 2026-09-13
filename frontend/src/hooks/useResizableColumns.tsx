@@ -29,19 +29,70 @@ import React, { useCallback, useRef, useState } from 'react'
  */
 export const MIN_COLUMN_WIDTH = 56
 
-export function useResizableColumns(initialWidths: Record<string, number>) {
-  const [colWidths, setColWidths] = useState<Record<string, number>>(initialWidths)
+/**
+ * 读取持久化的列宽；只接受**当前列定义里存在**的键。
+ *
+ * 为什么要过滤：列集合会随需求增删（例如某些搜索类型下没有"作者"列），
+ * 若把旧的存档整份套用，会残留已经不存在的键，且这些残留键会被算进
+ * `scroll.x` 的总和里，导致横向滚动区凭空变宽。
+ */
+function loadStoredWidths(
+  storageKey: string | undefined,
+  initial: Record<string, number>,
+): Record<string, number> {
+  const fallback = { ...initial }
+  if (!storageKey) return fallback
+  try {
+    const raw = window.localStorage.getItem(storageKey)
+    if (!raw) return fallback
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return fallback
+    const next = { ...fallback }
+    for (const [key, value] of Object.entries(parsed)) {
+      if (key in initial && typeof value === 'number' && Number.isFinite(value)) {
+        next[key] = Math.max(MIN_COLUMN_WIDTH, value)
+      }
+    }
+    return next
+  } catch {
+    // 存档损坏 / 隐私模式下不可用：退回默认宽度，不阻断渲染
+    return fallback
+  }
+}
+
+export function useResizableColumns(
+  initialWidths: Record<string, number>,
+  options?: { storageKey?: string },
+) {
+  const storageKey = options?.storageKey
+  const [colWidths, setColWidths] = useState<Record<string, number>>(
+    () => loadStoredWidths(storageKey, initialWidths),
+  )
   const resizing = useRef<{ key: string; startX: number; startWidth: number } | null>(null)
   const moveRef = useRef<((e: MouseEvent) => void) | null>(null)
   const upRef = useRef<(() => void) | null>(null)
+
+  /** 写入列宽并按需持久化 */
+  const applyWidth = useCallback((key: string, width: number) => {
+    setColWidths((prev) => {
+      const next = { ...prev, [key]: Math.max(MIN_COLUMN_WIDTH, width) }
+      if (storageKey) {
+        try {
+          window.localStorage.setItem(storageKey, JSON.stringify(next))
+        } catch {
+          // 配额已满 / 隐私模式：持久化失败不应影响本次拖拽结果（仍在内存里生效）
+        }
+      }
+      return next
+    })
+  }, [storageKey])
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
     if (!resizing.current) return
     const { key, startX, startWidth } = resizing.current
     const diff = e.clientX - startX
-    const newWidth = Math.max(MIN_COLUMN_WIDTH, startWidth + diff)
-    setColWidths(prev => ({ ...prev, [key]: newWidth }))
-  }, [])
+    applyWidth(key, startWidth + diff)
+  }, [applyWidth])
 
   const handleMouseUp = useCallback(() => {
     if (resizing.current) {

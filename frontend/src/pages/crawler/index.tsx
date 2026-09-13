@@ -618,15 +618,19 @@ export default function CrawlerPage() {
   // 必须连同"总和"一起调，否则把单列调小只是把拉伸系数变大。
   // 放在组件顶部而非列定义旁：将来若有人在列定义之前加提前 return，
   // 放在中间的 hook 会因调用顺序变化而报错。
-  const { colWidths, wrapColumnTitle } = useResizableColumns({
-    cover: 200,       // 封面：调大（原 100），配合 120×90 缩略图
-    title: 620,       // 标题：吸收剩余空间
-    platform: 90,     // 平台：原 110
-    author: 150,      // 作者：原 140
-    create_time: 64,  // 发布时间：原 120，收到接近"2月前"的宽度（仍可继续拖窄）
-    stats: 150,       // 互动：原 160
-    actions: 100,     // 操作：原 160
-  })
+  const { colWidths, wrapColumnTitle } = useResizableColumns(
+    {
+      cover: 260,       // 封面：调大（原 100），配合 184×104 缩略图
+      title: 560,       // 标题：吸收剩余空间
+      platform: 90,     // 平台：原 110
+      author: 150,      // 作者：原 140
+      create_time: 64,  // 发布时间：原 120，收到接近"2月前"的宽度（仍可继续拖窄）
+      stats: 150,       // 互动：原 160
+      actions: 100,     // 操作：原 160
+    },
+    // 记住用户拖过的列宽（按 key 存 localStorage；不认识的键会被忽略，见 hook 说明）
+    { storageKey: 'ylcraft.crawler.columnWidths' },
+  )
 
   const [detailDrawerTab, setDetailDrawerTab] = useState<string>('detail')
 
@@ -1289,13 +1293,14 @@ export default function CrawlerPage() {
         }
         return src ? (
           <Image
-            src={src} alt={stripHtml(r.title)} width={120} height={90}
+            // 16:9：视频封面（B站/抖音等）本身就是横版，用 4:3 会被裁掉两侧
+            src={src} alt={stripHtml(r.title)} width={184} height={104}
             style={{ objectFit: 'cover', borderRadius: 4, cursor: 'pointer' }}
             preview={{ mask: <EyeOutlined /> }}
           />
         ) : (
-          <div style={{ width: 120, height: 90, background: isDark ? '#1a1a2e' : '#f0f2f5', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <PictureOutlined style={{ fontSize: 26, color: isDark ? '#4a4a6a' : '#bfbfbf' }} />
+          <div style={{ width: 184, height: 104, background: isDark ? '#1a1a2e' : '#f0f2f5', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <PictureOutlined style={{ fontSize: 32, color: isDark ? '#4a4a6a' : '#bfbfbf' }} />
           </div>
         )
       },
