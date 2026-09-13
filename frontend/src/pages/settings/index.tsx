@@ -2287,16 +2287,20 @@ export default function SettingsPage() {
   }
 
   // 可拖拽调整列宽
-  const { colWidths, wrapColumnTitle } = useResizableColumns({
-    name: 280,
-    provider: 120,
-    provider_type: 100,
-    default_model: 150,
-    status: 100,
-    usage: 180,
-    last_used: 140,
-    action: 300,
-  })
+  const { colWidths, wrapColumnTitle } = useResizableColumns(
+    {
+      name: 280,
+      provider: 120,
+      provider_type: 100,
+      default_model: 150,
+      status: 100,
+      usage: 180,
+      last_used: 140,
+      action: 300,
+    },
+    // 记住用户拖过的列宽（与内容搜索页同一套持久化，行为保持一致）
+    { storageKey: 'ylcraft.settings.providerColumnWidths' },
+  )
 
   const providerColumns = [
     {
