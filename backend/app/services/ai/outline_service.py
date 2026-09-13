@@ -1,21 +1,23 @@
-"""
-多平台生图 — 大纲生成服务
+"""多平台生图 — 大纲生成服务（兼容层）。
 
-借鉴 yiliu/yiliu 的设计：topic → LLM 用平台模板生成结构化大纲
+主题 → 平台大纲的规划能力已提取到
+``app.services.ai.content_package_planner.ContentPackagePlanner``。本模块保留为**兼容层**：
+
+- ``generate_outline`` 的入参、返回值结构与逐平台兜底行为**逐字段不变**，
+  ``/images/generate-outline`` 无需任何改动；
+- ``_parse_outline_text`` 保留为兼容别名（实现已迁移）；
+- 批量生图与资产入库（``batch_generate_images``）仍在本模块——规划与生成分离，
+  便于内容包路径只复用规划而不连带触发消耗型操作。
+
+原设计借鉴 yiliu/yiliu：topic → LLM 用平台模板生成结构化大纲。
 """
 from __future__ import annotations
 
 import logging
-import re
-import asyncio
 from typing import Optional
 
-from sqlmodel import select
-from jinja2 import Template
-
-from app.services.ai.types import LLMMessage
 from app.services.ai import get_ai_service
-from app.db.models.platform_template import PlatformTemplate
+from app.services.ai.content_package_planner import ContentPackagePlanner
 
 logger = logging.getLogger("ylcraft.image.outline")
 
@@ -29,7 +31,7 @@ async def generate_outline(
     reference_images: Optional[list[str]] = None,
 ) -> dict:
     """
-    为一个主题生成多平台结构化大纲。
+    为一个主题生成多平台结构化大纲（委托给 ContentPackagePlanner）。
 
     Args:
         session: 数据库会话
@@ -48,148 +50,21 @@ async def generate_outline(
             },
             ...
         }
+        无可用平台模板时返回 {}。
     """
-    logger.info("[Outline] generate_outline called: topic=%s, platforms=%s, backend_name=%s, model=%s",
-                topic, platforms, backend_name, model)
-    manager = get_ai_service()
-
-    # 1. 查 DB 获取平台模板（只要 is_active 的）
-    stmt = select(PlatformTemplate).where(
-        PlatformTemplate.platform.in_(platforms),
-        PlatformTemplate.is_active == True,
-    ).order_by(PlatformTemplate.sort_order)
-    result = await session.execute(stmt)
-    templates = result.scalars().all()
-
-    if not templates:
-        logger.warning(f"No active platform templates found for: {platforms}")
-        return {}
-
-    # 2. 调用 LLM 为每个平台生成大纲（并发执行）
-    outlines = {}
-    
-    async def generate_one(tmpl):
-        try:
-            # 渲染 outline_template 为 system prompt，传入 topic 和 page_structure
-            import json
-            page_structure_json = json.dumps(tmpl.page_structure, ensure_ascii=False) if tmpl.page_structure else ""
-            system_prompt = tmpl.outline_template.format(
-                topic=topic,
-                page_structure=page_structure_json,
-            )
-            
-            # 构建消息（支持多模态）
-            messages: list[dict] = []
-            if reference_images and len(reference_images) > 0:
-                # 多模态消息格式：[ {"type": "text", "text": ...}, {"type": "image_url", "image_url": {"url": ...}} ]
-                content = [{"type": "text", "text": system_prompt}]
-                for img in reference_images:
-                    content.append({
-                        "type": "image_url",
-                        "image_url": {"url": img}
-                    })
-                messages = [{"role": "user", "content": content}]
-            else:
-                # 纯文本
-                messages = [{"role": "user", "content": system_prompt}]
-            
-            # 调用 LLM（支持指定 Backend 或 Model）
-            logger.info("[Outline] Calling LLM with messages: %s", len(messages))
-            logger.info("[Outline] System prompt (first 200 chars): %s", messages[0]['content'][:200] if messages else 'no')
-            resp = await manager.chat(
-                messages=[LLMMessage(role=m["role"], content=m["content"]) for m in messages],
-                backend_name=backend_name,
-                model=model,
-            )
-            logger.info("[Outline] LLM response success: %s, content: %s", resp.success if resp else 'None', resp.content[:200] if resp and hasattr(resp, 'content') else '')
-            
-            if resp and resp.success and resp.content:
-                # 解析 LLM 返回的结构化内容
-                parsed = _parse_outline_text(resp.content)
-                parsed["platform"] = tmpl.platform
-                parsed["platform_name"] = tmpl.name
-                outlines[tmpl.platform] = parsed
-                logger.info(f"Generated outline for {tmpl.platform} ({len(parsed.get('pages', []))} pages)")
-            else:
-                error_msg = ""
-                if resp and hasattr(resp, 'error') and resp.error:
-                    error_msg = f": {resp.error}"
-                logger.warning(f"LLM returned empty content for platform {tmpl.platform}{error_msg}")
-                outlines[tmpl.platform] = {
-                    "title": topic, 
-                    "copywriting": "", 
-                    "pages": [], 
-                    "platform": tmpl.platform, 
-                    "platform_name": tmpl.name,
-                    "error": resp.error if resp and hasattr(resp, 'error') else None
-                }
-        
-        except Exception as e:
-            logger.error(f"Failed to generate outline for {tmpl.platform}: {e}")
-            outlines[tmpl.platform] = {"title": topic, "copywriting": "", "pages": [], "platform": tmpl.platform, "platform_name": tmpl.name, "error": str(e)}
-    
-    # 并发执行所有平台的生成
-    await asyncio.gather(*[generate_one(tmpl) for tmpl in templates])
-    
-    return outlines
+    return await ContentPackagePlanner().plan_platform_outlines(
+        session,
+        topic,
+        platforms,
+        backend_name=backend_name,
+        model=model,
+        reference_images=reference_images,
+    )
 
 
 def _parse_outline_text(text: str) -> dict:
-    """解析 LLM 返回的大纲文本为结构化数据
-    
-    支持格式：
-    - 【标题】：xxx
-    - 【文案】：xxx（可选，用于小红书等平台的完整文案/话题标签）
-    - 【图片提示词】：[封面] xxx <page> 【图片提示词】：[内容] xxx
-    """
-    logger.info(f"[_parse_outline_text] 开始解析, 输入文本长度: {len(text)}")
-    logger.debug(f"[_parse_outline_text] 原始文本: {text[:500]}")
-    
-    result = {"title": "", "copywriting": "", "pages": []}
-
-    # 提取标题：【标题】xxx
-    title_match = re.search(r'【标题】[:：]?\s*(.+?)(?:\n|【|$)', text, re.DOTALL)
-    if title_match:
-        result["title"] = title_match.group(1).strip()
-        logger.info(f"[_parse_outline_text] 提取到标题: {result['title']}")
-
-    # 提取文案（copywriting）：【文案】xxx
-    copywriting_match = re.search(r'【文案】[:：]?\s*(.+?)(?:\n\s*【|$)', text, re.DOTALL)
-    if copywriting_match:
-        result["copywriting"] = copywriting_match.group(1).strip()
-        logger.info(f"[_parse_outline_text] 提取到文案: {result['copywriting'][:100]}")
-
-    # 提取每页：【图片提示词】xxx --- 【图片提示词】xxx 或者 【图片说明词】
-    # 先按 【图片提示词】或【图片说明词】分割
-    pages_raw = re.split(r'【图片(?:提示词|说明词)】[:：]?', text)
-    logger.info(f"[_parse_outline_text] 分割到 {len(pages_raw)} 个部分, pages_raw: {pages_raw}")
-    
-    for part in pages_raw[1:]:  # 跳过第一个（在第一个【图片...】之前的内容）
-        part = part.strip()
-        if not part:
-            logger.info(f"[_parse_outline_text] 跳过空部分")
-            continue
-
-        # 提取页面类型：[封面]/[内容]/[总结]/[标题]/[正文]/[引言]/[案例]/[导语]/[结尾]/[图片说明]
-        type_match = re.match(r'\[(.+?)\]', part)
-        page_type = type_match.group(1) if type_match else "内容"
-        
-        # 去掉类型标记和后续的 --- 分隔符（如果还有下一页）
-        # 或者用 <page> 分隔符
-        prompt = re.sub(r'^\[.+?\]\s*', '', part)
-        # 先试 <page> 分隔符，再试 ---
-        prompt = re.split(r'\n\s*<page>', prompt)[0].strip()
-        prompt = re.split(r'\n\s*---', prompt)[0].strip()
-
-        if prompt:
-            logger.info(f"[_parse_outline_text] 添加页面: type={page_type}, prompt_len={len(prompt)}")
-            result["pages"].append({
-                "type": page_type,
-                "prompt": prompt,
-            })
-    
-    logger.info(f"[_parse_outline_text] 解析完成, 总页数: {len(result['pages'])}")
-    return result
+    """兼容别名：实现已迁至 ``ContentPackagePlanner.parse_structured_text``。"""
+    return ContentPackagePlanner.parse_structured_text(text)
 
 
 async def batch_generate_images(

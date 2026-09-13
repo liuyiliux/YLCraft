@@ -10,7 +10,12 @@
 
 ## Phase 2: Shared planner and persistence
 
-- [ ] 6. Extract the reusable planner from `outline_service.py` while preserving `/images/generate-outline` response compatibility.
+- [x] 6. Extract the reusable planner from `outline_service.py` while preserving `/images/generate-outline` response compatibility.
+  - _2026-09-13 完成：_
+    - _新增 `backend/app/services/ai/content_package_planner.py` 的 **`ContentPackagePlanner`**：`plan_platform_outlines()`（平台模板驱动的大纲规划，等价迁移原 `generate_outline` 全部行为，含逐平台兜底结构与 `asyncio.gather` 并发）、`parse_structured_text()`（原 `_parse_outline_text` 逐行等价）、`render_template_prompt()` / `build_outline_messages()`（含多模态分支）、以及**新增**的 `platform_outlines_to_package()` 与 `plan_package()` —— 把平台大纲按「一页 ⇒ 一个 item」转换为内容包契约，使内容包路径可复用同一套规划而不必另写 LLM 调用与解析。_
+    - _`outline_service.py` 改为**兼容层**：`generate_outline`（322 行文件里的 ~112 行实现 → 39 行委托）签名与返回值结构**逐字段不变**；`_parse_outline_text` 保留为兼容别名；`batch_generate_images` **原样未动**（规划与生成分离，内容包路径只复用规划、不连带触发消耗型操作）。_
+    - _兼容面核实：`_parse_outline_text` 全仓无外部引用（模块私有）；`generate_outline` 由 `api/v1/images.py` 的三处调用（`/images/generate-outline` 与两处批量入口）使用，均为延迟导入，签名不变即无需改动。_
+    - _测试：新增 `backend/tests/test_content_package_planner.py`（8 例）——覆盖①响应结构不变（title/copywriting/pages/platform/platform_name 与 pages 的 type/prompt 层级）、②wrapper 委托后无模板返回 `{}`、③`_parse_outline_text` 别名可用、④单平台失败仍保留兜底结构且不影响兄弟平台、⑤一页⇒一item 且键集固定、⑥失败平台只进 `warnings` 不伪造 item、⑦空输入产出空包、⑧多模态消息构造。实测 **8 passed**；回归 `pytest -k "outline or image or planner or ai_backend or content_package or platform"` → **115 passed**。_
 - [x] 7. Add the minimum content-package plan/read/update/version APIs using `ProjectContent` for project-bound packages and the approved standalone draft path.
 - [ ] 8. Add item-level stale/retry semantics and preserve package/item/asset provenance in requests and task payloads.
 - [ ] 9. Add API-facing Skill and Agent tool contracts for planning, item editing and package inspection.
