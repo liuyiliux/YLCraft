@@ -50,7 +50,21 @@ interface UseWebSocketOptions {
   autoConnect?: boolean
 }
 
-const WS_BASE = `wss://${window.location.hostname}:8000/api/v1/ws`
+/**
+ * 后端 WebSocket 地址。
+ *
+ * 协议必须跟随页面：此前硬编码 `wss://`，而开发环境页面与后端都是明文 HTTP，
+ * 握手必然失败（`ERR_SSL_PROTOCOL_ERROR`），使实时任务进度在本地一直静默失效
+ * ——受影响页面包括任务中心、`/video-gen` 与 Live2D。写法与同库
+ * `api/comfyui.ts`、`pages/accounts/index.tsx` 保持一致。
+ */
+const WS_BASE = (() => {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  const isLocalhost = ['localhost', '127.0.0.1'].includes(window.location.hostname)
+  return isLocalhost
+    ? `${protocol}//${window.location.hostname}:8000/api/v1/ws`
+    : `${protocol}//${window.location.host}/api/v1/ws`
+})()
 const MAX_RETRIES = 10
 const RETRY_DELAY = 3000
 
