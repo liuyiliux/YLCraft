@@ -1293,13 +1293,17 @@ export default function CrawlerPage() {
         }
         return src ? (
           <Image
-            // 16:9：视频封面（B站/抖音等）本身就是横版，用 4:3 会被裁掉两侧
-            src={src} alt={stripHtml(r.title)} width={184} height={104}
-            style={{ objectFit: 'cover', borderRadius: 4, cursor: 'pointer' }}
+            // 宽度占满列、高度按 16:9 自适应：拖动封面列时图片跟着变大变小，
+            // 而不是固定尺寸旁边留白。16:9 而非 4:3——B站/抖音等封面本身就是横版，
+            // 用 4:3 配 objectFit:cover 会把两侧裁掉。
+            src={src}
+            alt={stripHtml(r.title)}
+            wrapperStyle={{ width: '100%', display: 'block' }}
+            style={{ width: '100%', aspectRatio: '16 / 9', objectFit: 'cover', borderRadius: 4, cursor: 'pointer', display: 'block' }}
             preview={{ mask: <EyeOutlined /> }}
           />
         ) : (
-          <div style={{ width: 184, height: 104, background: isDark ? '#1a1a2e' : '#f0f2f5', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ width: '100%', aspectRatio: '16 / 9', background: isDark ? '#1a1a2e' : '#f0f2f5', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <PictureOutlined style={{ fontSize: 32, color: isDark ? '#4a4a6a' : '#bfbfbf' }} />
           </div>
         )
