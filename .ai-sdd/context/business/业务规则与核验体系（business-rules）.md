@@ -246,3 +246,17 @@
 | **项目谱系用 `role=output`** | 与生图路径的 `role=generated` **不同名**——按 `generated` 断言会误判"没有谱系" |
 | **能力约束由后端声明** | 前端不得自行假定支持哪些时长/分辨率/比例，必须以 `/videos/backends` 的 `constraints` 为准 |
 | **图生视频需公网首帧** | Agnes 的 `image_requires_public_url=true`：首帧必须公网可达，本地 `127.0.0.1` 不行（与 3D 绑骨同理）；**文生视频无此约束** |
+
+
+## 22. Supervisor 与子代理运行时规则
+
+<!-- 来源：openspec/changes/agent-supervisor-subagent-runtime，导入日期：2026-09-13 -->
+
+| 规则 | 内容 |
+|---|---|
+| **子结果汇合后重进父规划** | 汇合结果作为 observation 写回原父 Run（`resume_from_delegation_observation`，metadata `phase=delegation_join_observation`），并**继续同一个 `RunLoop`** |
+| **失败不得降级成文本** | 子失败必须是失败状态，不能变成父级看到的"成功输出" |
+| **子确认/取消向父传播** | 汇合时若有子处于 `waiting_confirmation`，join status 即 `waiting_confirmation`，父 Run 状态同步置为该值，并在 summary 计数 |
+| **确认后的自动续跑必须由用户触发** | 避免确认接口静默启动新一轮成本型执行 |
+| **文案必须匹配真实执行模型** | 确定性顺序服务阶段**必须**表述为 staged workflow；只有**含持久子 Run** 的才可称多智能体，**且须同时暴露 responsible profiles 与执行树作为证据** |
+| **域内 agent 循环保持独立** | CutClaw 等域自有 LLM 工具循环通过 Agent 工具（如 `start_cutclaw_clip`）与日志接入即可，**不强行纳入 Supervisor 语义** |

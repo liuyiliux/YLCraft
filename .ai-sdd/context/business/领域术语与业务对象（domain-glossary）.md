@@ -218,3 +218,14 @@
 
 **与图片生成最本质的区别**：图片是**同步快操作**（实测 5.2s 完成，只在 `platform_event_logs` 留痕）；
 视频是**异步长任务**（实测 75s，进 `video_generation_tasks` 并出现在 `/api/v1/tasks` 聚合里）。
+
+
+## Supervisor / 子代理运行时
+
+<!-- 来源：openspec/changes/agent-supervisor-subagent-runtime，导入日期：2026-09-13 -->
+
+| 术语 | 定义 |
+|---|---|
+| **Supervisor/Worker 主链** | `AgentProfile.can_delegate` 控制 `delegate_agent_tasks` 可见性；`SubagentOrchestrator` 校验**深度、扇出、根预算、依赖、并发**；每个 Worker 使用**独立 Thread + 独立 `AsyncSession` + 独立 `AgentService`** |
+| **执行树** | `AgentDelegation` + `AgentRun.root_run_id/parent_run_id` 构成；由 `GET /agent/runs/{run_id}/tree` 与 `/delegations` 暴露 |
+| **子代理三原语** | `spawn`（全新会话）/ `fork`（只读父上下文快照）/ `continuable`（续跑同会话，经 `SubagentOrchestrator.send_message`） |

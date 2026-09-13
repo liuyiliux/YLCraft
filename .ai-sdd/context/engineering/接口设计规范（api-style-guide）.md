@@ -210,3 +210,15 @@ GET  /api/v1/videos/tasks/{task_id}/file  播放已下载的视频文件
 
 - **文件校验**：`/videos/tasks/{id}/file` 前 12 字节为 `ftypisom` 即合法 MP4，不必下载整个文件。
 - **实测耗时**：Agnes 文生视频 5s / 720p 约 **75 秒**完成，轮询间隔 10s 合适。
+
+
+## 12. Agent 委派与执行树端点
+
+<!-- 来源：openspec/changes/agent-supervisor-subagent-runtime，导入日期：2026-09-13 -->
+
+```text
+POST /agent/runs/{run_id}/delegate        # 人工委派；resume_parent 控制是否立即续跑（旧调用默认仅委派）
+GET  /agent/runs/{run_id}/tree            # 执行树
+GET  /agent/runs/{run_id}/delegations     # 委派记录
+POST /agent/multi-agent/scene-simulation  # 现始终走 TeamComposer("scene-sim")
+```
