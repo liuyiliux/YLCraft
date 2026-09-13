@@ -269,3 +269,69 @@
    （受影响：任务中心 `/tasks`、`/video-gen`、Live2D）。正确写法见同库 `api/comfyui.ts` 与 `pages/accounts/index.tsx`：
    `const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'`。
 3. **图生视频需要公网可达的首帧**（Agnes `image_requires_public_url=true`）；本地验证优先用**文生视频**。
+
+
+### 9.20 外部研究对照：Agent Harness 与团队记忆（2026）
+
+<!-- 来源：arXiv 2608.25512《A Programming Paradigm for Spatiotemporal Composability》（北大 × DeepSeek-AI，92 页，cs.PL/cs.SE）；《任何错误只犯一次：TencentDB Agent Memory 的团队记忆实践》（https://mp.weixin.qq.com/s/-ghlUNmB8HvzX9cFYXlDKg）；《16 个超火的 DeepSeek Harness 插件》（https://mp.weixin.qq.com/s/gbsL7qsPD7wd6iI0DGojng）。PDF 存于 docs/papers/2608.25512-spatiotemporal-composability.pdf。导入日期：2026-09-13。 -->
+
+> **性质声明**：本节是**外部对照，不是本项目已采纳的约束**。列出的是"别人怎么做"与"我们的差距"，
+> 是否采纳需单独决策（可能各开 change）。引用外部材料时请回原文核对，勿把转述当结论。
+
+#### 9.20.1 论文的两个正交维度（原文术语）
+
+DeepSeek × 北大论文把"动态组合"拆成：
+
+| 维度 | 原文定义 | 缺了会怎样（原文） |
+|---|---|---|
+| **时间可组合性** | "the ability to **completely revert a component's side effects upon removal**" | "each self-modification forces a full restart that discards all process-local accumulated state"；"a faulty self-modification can disable the very process needed to recover" |
+| **空间可组合性** | "the ability to **declare and reactively manage inter-component dependencies**" | "each module must itself detect and adapt to changes in the modules it depends on... a naive code-replacement strategy may silently break dependents or **introduce circular dependencies that surface only at reload time**" |
+
+核心机制（原文贡献 1–5）：**revertible effects**（每次上下文变换携带运行时持有的**显式逆操作**）、
+**reactive coeffects**（组件声明 specification，上下文变化被分类为 **activating / deactivating / neutral** 以驱动启停）、
+**context paradigm**（两者统一为单一 context 类型，中介出 **observational equivalence**）、
+**calculus of dynamic composition**（元理论把可组合性从单组件传递到整个交错系统）、
+**Cordis**（实现：effect tracking + coeffect resolution + **declarative component loader with configuration reconciliation and hot module replacement**）。
+
+论文 §1.2.3 的判断：进程/容器级的粗粒度替代**不能表达同一地址空间内的依赖**，且重启代价是"丢掉全部进程内累积状态（缓存、连接、部分计算）"。
+
+#### 9.20.2 团队记忆的五步路由分层（TencentDB Agent Memory）
+
+原文的装配顺序**不是对全库做一次相似度搜索，而是逐层缩小**：
+
+1. **身份与作用域层** —— **没有权限的资产不进入候选池，而不是召回后再删除**
+2. **固定绑定层** —— 角色规则/任务约束/指定 Wiki/必需 Skill **直接进入装配范围**；"它们表达的是组织事实，不应被一次相似度排序覆盖"
+3. **浮动召回层** —— 权限范围内补充历史记忆与候选
+4. **相关性融合层** —— 错误码/文件名/符号走 **BM25**，意图/故障模式走**向量**，两路 **RRF 融合**
+5. **上下文装配层** —— 按角色/优先级/绑定/版本/**Token 预算**生成 Memory Pack；**任务期间可锁定资产版本**
+
+配套：**内容分层 L0→L3**（原始对话 → 原子事实/约束/决定 → 场景记忆块 → 稳定画像），
+"**高层负责减少阅读量，低层负责防止抽象在多轮总结后失真**"；
+**渐进式暴露**（Prompt 告诉"有什么"，工具调用在需要时取细节）；
+原则句：**"完整属于资产池，相关属于当前任务"**；
+资产形成四步：证据切分 → 候选抽取 → **作用域绑定**（Owner/Team/Repo/Branch/Path/Version/Time/ACL/证据）→ **验证后升级**。
+
+**实证（原文数据）**：2600 Session → 5081 Task；48114 候选 Pair → 22361 canonical Relation；
+但**三类强关系仅 231 条**，其余 22130 条降为 Shadow（**只参与召回，不驱动执行**）。
+洞察：**"关联不等于复用，复用也不等于可以直接执行。"**
+卡点分布：逻辑返工 **1350** ≫ 缺少上下文 269 → 所以记忆不能只"找资料"，还要保存**决策理由、失败路径、适用条件、验证方式**。
+效果：SWE-bench 相关 Case 完成率 **60%→80%**；Top50 超长难任务通过率 17%→20%、成本降 19%
+（**原文自己限定**："不等于部署 Memory 后所有任务都会提升 20 个百分点"）。
+
+#### 9.20.3 对照本项目的**缺口清单**（待决策，非已采纳）
+
+已做对（与上述做法同源）：T0 锁定正典**不被相似度覆盖且永不静默截断**；**待决候选永不进入 T0–T5**（≈ Shadow 不驱动执行）；
+Context Pack **记录纳入/排除的源 ID 与原因**（≈ 可溯源）；存储用**项目根相对路径**（≈ 框架中立）。
+
+**尚缺**：
+
+| # | 缺口 | 外部做法 |
+|---|---|---|
+| 1 | 混合检索**没有融合算法** | BM25 + 向量两路 **RRF 融合** |
+| 2 | 只有**按用途**分层的 T0–T6，缺**按提炼层级**的分层 | **L0 原始证据 → L1 原子 → L2 场景 → L3 画像**（与 T 层正交） |
+| 3 | 资产生命周期字段不全（有 `superseded`） | 补 **`valid_from` / `valid_to` / 最后验证时间 / 代码版本** |
+| 4 | **人的负反馈不改变后续路由** | "错误召回不能只依赖下一次模型自己判断"——负反馈必须**降权/撤回并影响相似资产的触发规则** |
+| 5 | 无**固定绑定 vs 浮动召回**的显式二分（T0 是特例） | 固定绑定层与浮动召回层**分开建模**，固定资产不被排序覆盖 |
+| 6 | 无"可逆效应/逆操作栈"（`AgentScope` 只是作用域隔离） | 论文的 **revertible effects**：变换携带显式 inverse |
+
+**若要做"Agent 自我修改工具"（自进化），第 6 条是前置**——否则每次改动只能重启，丢掉全部累积状态。
