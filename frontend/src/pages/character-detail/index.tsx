@@ -76,6 +76,57 @@ const inferAssetKind = (preset: string): VisualAssetKind | null => {
   return null
 }
 
+/**
+ * 角色册：完善度清单。
+ *
+ * 只用列表接口**已经返回**的字段判定，不再逐项请求详情——窄栏里为每个角色
+ * 各发一次详情请求，在角色多时会明显拖慢列表。九项覆盖基础设定、身份与弧光、
+ * 视觉与资产三类；`arc` 既可能是字符串也可能是对象，两种都算已填。
+ */
+const COMPLETENESS_CHECKS: { label: string; filled: (c: Character) => boolean }[] = [
+  { label: '外貌', filled: (c) => !!String(c.appearance || '').trim() },
+  { label: '性格', filled: (c) => !!String(c.personality || '').trim() },
+  { label: '背景', filled: (c) => !!String(c.background || '').trim() },
+  { label: '年龄', filled: (c) => !!String(c.age_range || '').trim() },
+  { label: '身份', filled: (c) => !!c.identity && Object.keys(c.identity).length > 0 },
+  { label: '弧光', filled: (c) => (typeof c.arc === 'string' ? !!c.arc.trim() : !!c.arc && Object.keys(c.arc).length > 0) },
+  { label: '立绘', filled: (c) => !!(c.portrait_url || c.portrait_node_id) },
+  { label: '音色', filled: (c) => !!c.voice_asset_id || (!!c.voice && Object.keys(c.voice).length > 0) },
+  {
+    label: '视觉资产',
+    filled: (c) =>
+      (c.reference_asset_ids || []).length > 0 || (c.poses || []).length > 0 || (c.expressions || []).length > 0,
+  },
+]
+
+/** 完善度低于此百分比视为"未完善"，列表项做视觉弱化 */
+const THIN_CHARACTER_PERCENT = 50
+
+function characterCompleteness(character: Character) {
+  const missing = COMPLETENESS_CHECKS.filter((check) => !check.filled(character)).map((check) => check.label)
+  const done = COMPLETENESS_CHECKS.length - missing.length
+  return {
+    done,
+    total: COMPLETENESS_CHECKS.length,
+    percent: Math.round((done / COMPLETENESS_CHECKS.length) * 100),
+    missing,
+  }
+}
+
+/** 紧凑 Bible 摘要：优先身份一句话，其次性格，再退到背景；供窄栏一行展示 */
+function characterBibleSummary(character: Character): string {
+  const identity = character.identity
+  if (identity && typeof identity === 'object') {
+    const summary = String(identity.summary || identity.logline || '').trim()
+    if (summary) return summary
+    const affiliation = String(identity.affiliation || identity.organization || '').trim()
+    if (affiliation) return affiliation
+  }
+  const personality = String(character.personality || '').trim()
+  if (personality) return personality
+  return String(character.background || '').trim()
+}
+
 export function CharacterWorkspaceEntry() {
   const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
@@ -1182,9 +1233,22 @@ export default function CharacterDetailPage() {
         <div className="character-detail-sidebar-list" style={{ marginTop: 14 }}>
           {filteredCharacters.map((item) => {
             const active = !!character && item.id === character.id
-            return <button key={item.id} type="button" onClick={() => navigate(`/characters/${item.id}`)} className={active ? 'cd-char-item is-active' : 'cd-char-item'} title={item.name}>
+            // 角色册：完善度指示器 + 紧凑 Bible 摘要；未完善角色做视觉弱化
+            const completeness = characterCompleteness(item)
+            const bibleSummary = characterBibleSummary(item)
+            const itemClass = [
+              'cd-char-item',
+              active ? 'is-active' : '',
+              completeness.percent < THIN_CHARACTER_PERCENT ? 'is-thin' : '',
+            ].filter(Boolean).join(' ')
+            const completenessTip = `完善度 ${completeness.percent}%（${completeness.done}/${completeness.total}）${completeness.missing.length ? ` · 缺：${completeness.missing.join('、')}` : ' · 设定完整'}`
+            return <button key={item.id} type="button" onClick={() => navigate(`/characters/${item.id}`)} className={itemClass} title={item.name}>
               {item.portrait_url ? <img src={browserAssetUrl(item.portrait_url)} alt="" className="cd-char-avatar" loading="lazy" /> : <span className="cd-char-avatar cd-char-avatar-empty">{String(item.name || '?').trim().charAt(0)}</span>}
-              <span className="cd-char-meta"><span className="cd-char-name">{item.name}</span><span className="cd-char-sub">{item.role_label || item.role || '角色'}</span></span>
+              <span className="cd-char-meta">
+                <span className="cd-char-name-row"><span className="cd-char-name">{item.name}</span><span className="cd-char-progress" title={completenessTip}><span className="cd-char-progress-bar" style={{ width: `${completeness.percent}%` }} /></span></span>
+                <span className="cd-char-sub">{item.role_label || item.role || '角色'}</span>
+                {bibleSummary ? <span className="cd-char-bible" title={bibleSummary}>{bibleSummary}</span> : null}
+              </span>
               <span className="cd-char-flags">{item.is_favorite ? <StarFilled className="cd-char-star" /> : null}{item.portrait_url ? null : <Tag className="cd-char-tag">无立绘</Tag>}</span>
             </button>
           })}
