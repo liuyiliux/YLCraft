@@ -71,7 +71,7 @@ from app.services.agent.tools.skill_tools import create_agent_skill_draft_from_r
 from app.services.agent.tools.skill_tools import inspect_agent_run_skill_candidate as inspect_agent_run_skill_candidate_tool
 from app.services.agent.tools.skill_tools import list_agent_skill_drafts as list_agent_skill_drafts_tool
 from app.services.agent.tools.delegation_tools import DELEGATE_AGENT_TASKS_SCHEMA
-from app.services.agent.service import AgentService
+from app.services.agent.service import AgentService, _UsageRecordingLLM
 from app.services.agent.session.manager import SessionManager
 from app.services.agent.thread_manager import ThreadManager
 from app.services.ai.backends.llm.generic import GenericLLMBackend
@@ -4153,3 +4153,82 @@ async def test_agent_resume_existing_thread_without_force_flag(agent_session: As
     assert len(user_msgs) == 2, f"thread should have 2 user messages, got {len(user_msgs)}"
     assert any("第一条消息" in str(m.get("content", "")) for m in user_msgs)
     assert any("第二条消息" in str(m.get("content", "")) for m in user_msgs)
+
+
+# ---------------------------------------------------------------------------
+# run 用量遥测：token / 成本 / 缓存命中率
+#
+# AgentRun 自身没有计量字段，用量写在 run.result_json 的 `usage` 键里随详情接口返回。
+# 缓存命中率交给 CostMeter —— 它此前在全仓没有任何调用点（死代码），这几条同时
+# 保证它被真正接上。
+# ---------------------------------------------------------------------------
+
+
+def _llm_result(prompt_tokens=0, completion_tokens=0, cached_tokens=None, cost=0.0):
+    usage = {"prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens,
+             "total_tokens": prompt_tokens + completion_tokens}
+    if cached_tokens is not None:
+        usage["cached_tokens"] = cached_tokens
+    return LLMGenerationResult(success=True, content="ok", usage=usage, cost=cost)
+
+
+async def test_llm_usage_accumulates_and_reports_cache_hit_rate(agent_session):
+    service = AgentService(agent_session)
+    service._usage_acc = {}
+
+    service._record_llm_usage(_llm_result(1000, 100, cached_tokens=800, cost=0.02))
+    service._record_llm_usage(_llm_result(500, 50, cached_tokens=300, cost=0.01))
+
+    snap = service._usage_snapshot()
+    assert snap["llm_calls"] == 2
+    assert snap["prompt_tokens"] == 1500
+    assert snap["completion_tokens"] == 150
+    assert snap["total_tokens"] == 1650
+    assert snap["cached_tokens"] == 1100
+    assert round(snap["cost"], 4) == 0.03
+    # 1100 / 1500 —— 由 CostMeter 计算，证明它已被真正接上
+    assert snap["cache_hit_rate"] == round(1100 / 1500, 4)
+
+
+async def test_usage_snapshot_is_empty_without_llm_calls(agent_session):
+    """没有发生过 LLM 调用时不要写入噪声数据。"""
+    service = AgentService(agent_session)
+    service._usage_acc = {}
+    assert service._usage_snapshot() == {}
+
+
+async def test_usage_cache_hit_rate_is_none_when_backend_omits_cached_tokens(agent_session):
+    """backend 没给 cached_tokens 时应是"未知"(None)，而不是"命中率 0"——
+    这两种情况含义完全不同，混了会让人误以为缓存完全没生效。"""
+    service = AgentService(agent_session)
+    service._usage_acc = {}
+    service._record_llm_usage(_llm_result(1000, 100))
+    snap = service._usage_snapshot()
+    assert snap["cached_tokens"] == 0
+    assert snap["cache_hit_rate"] is None
+
+
+async def test_usage_recording_proxy_is_transparent_and_records(agent_session):
+    """记录代理必须对调用方完全透明，且每次 chat 都记账。"""
+    service = AgentService(agent_session)
+    service._usage_acc = {}
+
+    class _FakeInner:
+        def __init__(self):
+            self.calls = 0
+
+        async def chat(self, *a, **kw):
+            self.calls += 1
+            return _llm_result(10, 5, cached_tokens=5)
+
+        def some_other_api(self):
+            return "passthrough-ok"
+
+    inner = _FakeInner()
+    proxy = _UsageRecordingLLM(inner, service._record_llm_usage)
+
+    assert proxy.some_other_api() == "passthrough-ok"  # __getattr__ 透传
+    result = await proxy.chat([], model="m")
+    assert result.success is True
+    assert inner.calls == 1
+    assert service._usage_snapshot()["llm_calls"] == 1

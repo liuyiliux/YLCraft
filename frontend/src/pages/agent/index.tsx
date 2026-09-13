@@ -573,11 +573,18 @@ function AgentPageContent() {
   // 底部状态栏：步骤/工具/耗时统计（对标 Harness 底部一行）
   const toolSteps = (currentRun?.steps || []).filter(s => s.step_type === 'tool_call')
   const runDurationMs = (currentRun?.steps || []).reduce((sum, s) => sum + (s.duration_ms || 0), 0)
-  // Token 与成本：后端当前未在 AgentRun 上透传（见 agent-workbench-ui-redesign
-  // design.md §5「不改后端」），缺失时保持 undefined，由底部状态栏显示 "--"；
-  // 后端补齐字段后此处无需改动即自动生效。
-  const runTokens = currentRun?.total_tokens ?? currentRun?.token_estimate
-  const runCost = typeof currentRun?.cost === 'number' ? `$${currentRun.cost.toFixed(4)}` : undefined
+  // Token / 成本 / 缓存命中率：后端把本次 run 的 LLM 用量写在 `run.result.usage`
+  // 里（AgentRun 自身没有计量字段，复用已有 result_json 因此不必加列做迁移），
+  // 随 run 详情接口一起返回。缺失时保持 undefined，由底部状态栏显示 "--"。
+  const runUsage = (currentRun?.result as { usage?: Record<string, any> } | undefined)?.usage
+  const runTokens = runUsage?.total_tokens ?? currentRun?.total_tokens ?? currentRun?.token_estimate
+  const runCost = typeof runUsage?.cost === 'number' && runUsage.cost > 0
+    ? `$${runUsage.cost.toFixed(4)}`
+    : (typeof currentRun?.cost === 'number' ? `$${currentRun.cost.toFixed(4)}` : undefined)
+  // 缓存命中率可能为 null（供应商未报告 cached_tokens）——那是"未知"而非"0%"，
+  // 两者不能混，所以这里只在真是数字时才显示。
+  const runCacheHitRate = typeof runUsage?.cache_hit_rate === 'number' ? runUsage.cache_hit_rate : undefined
+  const runLlmCalls = typeof runUsage?.llm_calls === 'number' ? runUsage.llm_calls : undefined
   const [runTree, setRunTree] = useState<{
     root_run_id: string
     runs: AgentRun[]
@@ -3205,8 +3212,10 @@ function AgentPageContent() {
                           <Text type="secondary" style={{ fontSize: 11 }}>步骤 <span style={{ fontVariantNumeric: 'tabular-nums' }}>{currentRun ? (currentRun.steps?.length ?? 0) : '--'}</span></Text>
                           <Text type="secondary" style={{ fontSize: 11 }}>工具 <span style={{ fontVariantNumeric: 'tabular-nums' }}>{currentRun ? toolSteps.length : '--'}</span></Text>
                           <Text type="secondary" style={{ fontSize: 11 }}>耗时 <span style={{ fontVariantNumeric: 'tabular-nums' }}>{runDurationMs ? `${runDurationMs}ms` : '--'}</span></Text>
+                          <Text type="secondary" style={{ fontSize: 11 }}>LLM <span style={{ fontVariantNumeric: 'tabular-nums' }}>{runLlmCalls ?? '--'}</span></Text>
                           <Text type="secondary" style={{ fontSize: 11 }}>Token <span style={{ fontVariantNumeric: 'tabular-nums' }}>{runTokens ?? '--'}</span></Text>
                           <Text type="secondary" style={{ fontSize: 11 }}>成本 <span style={{ fontVariantNumeric: 'tabular-nums' }}>{runCost ?? '--'}</span></Text>
+                          <Text type="secondary" style={{ fontSize: 11 }}>缓存命中 <span style={{ fontVariantNumeric: 'tabular-nums' }}>{runCacheHitRate === undefined ? '--' : `${Math.round(runCacheHitRate * 100)}%`}</span></Text>
                         </Space>
                       </div>
                     </div>

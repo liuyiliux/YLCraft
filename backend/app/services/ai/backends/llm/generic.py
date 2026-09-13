@@ -27,6 +27,35 @@ from app.db.models.ai_connector import AIConnector
 logger = logging.getLogger("ylcraft.generic_llm_backend")
 
 
+def _cached_tokens_from_usage(usage: dict) -> int | None:
+    """从 usage 字典取"命中前缀缓存的 prompt token 数"；未报告时返回 ``None``。
+
+    返回值刻意区分两种情况：
+
+    - 供应商**报告了**缓存计数（哪怕是 0）→ 返回该整数；
+    - 供应商**没报告** → 返回 ``None``。
+
+    调用方据此决定是否把 ``cached_tokens`` 写进 usage。若一律按 0 处理，
+    "未报告"会被混同为"命中率 0%"，让人误以为前缀缓存完全没生效——而缓存命中率
+    正是判断工具目录前缀是否稳定的关键指标。
+
+    DeepSeek 报顶层 ``prompt_cache_hit_tokens``；OpenAI 兼容端报
+    ``prompt_tokens_details.cached_tokens``，少数实现报顶层 ``cached_tokens``。
+    """
+    if not isinstance(usage, dict):
+        return None
+    details = usage.get("prompt_tokens_details")
+    if isinstance(details, dict):
+        cached = details.get("cached_tokens")
+        if isinstance(cached, (int, float)):
+            return int(cached)
+    for key in ("prompt_cache_hit_tokens", "cached_tokens"):
+        cached = usage.get(key)
+        if isinstance(cached, (int, float)):
+            return int(cached)
+    return None
+
+
 class GenericLLMBackend(LLMBackend):
     """
     通用 LLM 后端
@@ -111,18 +140,24 @@ class GenericLLMBackend(LLMBackend):
                 content = json.dumps(content, ensure_ascii=False)
             tool_calls = self._extract_tool_calls(data)
             usage = data.get("usage", {})
-            
+            usage_payload = {
+                "prompt_tokens": usage.get("prompt_tokens", 0),
+                "completion_tokens": usage.get("completion_tokens", 0),
+                "total_tokens": usage.get("total_tokens", 0),
+            }
+            # 仅在供应商真的报告了缓存计数时才带上该键——这样上层才能区分
+            # "未报告（命中率未知）"与"报告为 0（命中率 0%）"，两者含义不同。
+            cached_tokens = _cached_tokens_from_usage(usage)
+            if cached_tokens is not None:
+                usage_payload["cached_tokens"] = cached_tokens
+
             return LLMGenerationResult(
                 success=True,
                 content=content,
                 tool_calls=tool_calls,
                 model=model,
                 provider=self.connector.provider,
-                usage={
-                    "prompt_tokens": usage.get("prompt_tokens", 0),
-                    "completion_tokens": usage.get("completion_tokens", 0),
-                    "total_tokens": usage.get("total_tokens", 0),
-                },
+                usage=usage_payload,
             )
             
         except Exception as e:
