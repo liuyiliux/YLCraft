@@ -42,15 +42,20 @@ logger = logging.getLogger("ylcraft.api.crawler")
 # =============================================================================
 
 def _get_conn_cookie(conn_id: str) -> str:
-    """从 conn_id 获取 Cookie"""
+    """从 conn_id 获取 Cookie（**已规范化**，可直接放进 HTTP `Cookie` 头）。
+
+    必须用 `get_raw_cookie()`，不能直接用 `conn.cookie_content`：后者是 **Netscape
+    文件格式**（含 `# Netscape HTTP Cookie File` 注释头、字段以制表符分隔），直接塞进
+    HTTP 头会被 httpx 拒绝（`Illegal header value`），**请求根本发不出去**——表现为
+    搜索静默返回空。本文件 `_search_wechat_mp` 早已按此处理并留有同样的注释，此处对齐，
+    使普通平台搜索路径不再依赖调用方自觉。
+    """
     if not conn_id:
         return ""
     try:
         from app.services.platform_connection import PlatformConnectionService
         service = PlatformConnectionService()
-        conn = service.get(conn_id)
-        if conn and conn.cookie_content:
-            return conn.cookie_content
+        return service.get_raw_cookie(conn_id) or ""
     except Exception as e:
         logger.warning(f"Failed to get cookie from connection {conn_id}: {e}")
     return ""
@@ -334,7 +339,10 @@ async def get_note_detail(platform: str, note_id: str, conn_id: str = ""):
             service = get_platform_connection_service()
             conn = await service.get_by_id(conn_id)
             if conn and conn.cookie_content:
-                cookie = conn.cookie_content
+                # cookie_content 是 Netscape 文件格式，必须先规范化为 `k=v; k2=v2`，
+                # 否则会被 httpx 以 Illegal header value 拒绝（同 _get_conn_cookie 的坑）。
+                from app.services.cookies.manager import CookieManager
+                cookie = CookieManager().extract_raw(conn.cookie_content) or ""
         except Exception as e:
             logger.warning(f"[get_note_detail] Failed to get cookie from connection: {e}")
 
