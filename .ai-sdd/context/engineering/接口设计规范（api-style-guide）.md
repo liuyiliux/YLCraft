@@ -191,3 +191,22 @@ POST /api/v1/model-3d/rig        { provider, source_asset_id|source_url, motion_
 ```
 
 - 静态目录 `/model3d-files`（挂载 `backend/storage/model3d`）。
+
+
+## 11. 视频生成端点
+
+<!-- 来源：openspec/changes/ai-video-workspace，导入日期：2026-09-13 -->
+
+```text
+GET  /api/v1/videos/backends              可用视频后端 + capabilities/constraints
+POST /api/v1/videos/generate              异步提交（立即返回 task_id）
+GET  /api/v1/videos/tasks/{task_id}       轮询状态
+GET  /api/v1/videos/history               历史与待处理任务
+GET  /api/v1/videos/tasks/{task_id}/file  播放已下载的视频文件
+```
+
+`VideoGenerateRequest` 支持项目上下文：`project_id` / `content_id` / `chapter_number` /
+`source_index` / `source_type` / `source_title` / `production_plan_id` / `production_node_id` / `planning_summary`。
+
+- **文件校验**：`/videos/tasks/{id}/file` 前 12 字节为 `ftypisom` 即合法 MP4，不必下载整个文件。
+- **实测耗时**：Agnes 文生视频 5s / 720p 约 **75 秒**完成，轮询间隔 10s 合适。

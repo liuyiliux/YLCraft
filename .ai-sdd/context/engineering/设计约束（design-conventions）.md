@@ -256,3 +256,16 @@
 2. **`identity` 对象的键不固定**：取摘要要按 `summary → logline → affiliation/organization → personality → background` 优先级链兜底。
 3. **窄栏视觉弱化必须给选中态留出口**：未完善角色整体降不透明度（实测用 0.62）会被误读为"不可点"，**hover 与选中态必须恢复满不透明度**。验收断言若只取第一个 `.is-thin` 元素，会拿到当前选中项（opacity=1）而误判"弱化没生效"——**需排除选中态**。
 4. **完善度指示器做成细条放名字行右侧**（3px），摘要做第三行单行省略——不在窄栏里额外增加行高压力。
+
+
+### 9.19 视频生成实现约束
+
+<!-- 来源：openspec/changes/ai-video-workspace，导入日期：2026-09-13 -->
+
+1. **视频的项目 `role` 是 `output`，不是 `generated`**。视频完成后 `GET /creative-projects/{id}/assets` 返回
+   `role=output` + `relation=derived_from`；生图路径才是 `role=generated`。**按 `generated` 断言会误判"没有谱系"**。
+2. **WebSocket 协议必须跟随页面协议**。`frontend/src/hooks/useWebSocket.ts` 曾硬编码 `wss://`，
+   而开发环境页面与后端都是明文 HTTP，握手必然失败（`ERR_SSL_PROTOCOL_ERROR`），使**实时任务进度在本地静默失效**
+   （受影响：任务中心 `/tasks`、`/video-gen`、Live2D）。正确写法见同库 `api/comfyui.ts` 与 `pages/accounts/index.tsx`：
+   `const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'`。
+3. **图生视频需要公网可达的首帧**（Agnes `image_requires_public_url=true`）；本地验证优先用**文生视频**。

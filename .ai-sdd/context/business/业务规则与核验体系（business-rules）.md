@@ -233,3 +233,16 @@
 | **字段来源分层** | `field_sources`：外来文本 → `original`、原创大纲 → `ai_inferred`、用户手填 → `user_edited`；**同步流程只补空缺，不覆盖已有来源** |
 | **角色册完善度只用列表字段** | 完善度与摘要必须由**列表接口已返回**的字段计算，不得逐项请求详情——窄栏里为每个角色各发一次详情请求会明显拖慢列表 |
 | **完善度阈值要按真实填充率设计** | 实测 20 个角色：`background` 20/20、`personality` 18/20、`identity` 15/20、`appearance`/`age_range`/`arc` 各 11/20、`ability`/`behavior`/`motivation`/`speech` 各 3/20、`voice` **0/20**。阈值不按此分布设，会全员"完善"或全员"未完善" |
+
+
+## 21. 视频生成规则
+
+<!-- 来源：openspec/changes/ai-video-workspace，导入日期：2026-09-13 -->
+
+| 规则 | 内容 |
+|---|---|
+| **提交不阻塞** | `/videos/generate` 立即返回 provider 任务 id，不等待完成 |
+| **终态轮询只入库一次** | 终态时把本地视频导入 Asset Hub **且仅一次**，并保留项目谱系 |
+| **项目谱系用 `role=output`** | 与生图路径的 `role=generated` **不同名**——按 `generated` 断言会误判"没有谱系" |
+| **能力约束由后端声明** | 前端不得自行假定支持哪些时长/分辨率/比例，必须以 `/videos/backends` 的 `constraints` 为准 |
+| **图生视频需公网首帧** | Agnes 的 `image_requires_public_url=true`：首帧必须公网可达，本地 `127.0.0.1` 不行（与 3D 绑骨同理）；**文生视频无此约束** |

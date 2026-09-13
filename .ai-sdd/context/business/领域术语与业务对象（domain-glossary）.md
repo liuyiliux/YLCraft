@@ -205,3 +205,16 @@
 | **图转 3D 任务账本** | 与通用任务中心**独立**的 `model3d_generation_tasks` 表，承载 `kind`（`generation`/`rigging`）、provider、model、进度、诊断 |
 | **TC3-HMAC-SHA256 连接器** | 腾讯云 Hunyuan 3D 预设：`api_format=tencent_tc3`，凭据为 `SecretId:SecretKey`，适配器内置 TC3 签名与 **POST 轮询模板** |
 | **生成方式（inputMode）** | `text`（文生 3D，只需描述）/ `image`（图生 3D，需参考图或素材 id）——**默认是 `image`** |
+
+
+## 视频生成
+
+<!-- 来源：openspec/changes/ai-video-workspace（含 story-video-shot-production 同链路结论），导入日期：2026-09-13 -->
+
+| 术语 | 定义 |
+|---|---|
+| **视频任务账本（`VideoGenerationTask`）** | 视频是**异步长任务**：提交立即返回 `task_id` 与 `status=pending`，轮询 `GET /videos/tasks/{id}` 取终态；账本保留请求/结果/状态/Asset Hub 与可选项目溯源 |
+| **能力约束（capabilities / constraints）** | 后端在 `/videos/backends` 声明每个 provider 的**真实约束**（`max_duration`、`supported_durations`、`supported_resolutions`、`supported_aspect_ratios`、`image_requires_public_url`），前端据此**禁用不支持的控件**而非让用户试错 |
+
+**与图片生成最本质的区别**：图片是**同步快操作**（实测 5.2s 完成，只在 `platform_event_logs` 留痕）；
+视频是**异步长任务**（实测 75s，进 `video_generation_tasks` 并出现在 `/api/v1/tasks` 聚合里）。
