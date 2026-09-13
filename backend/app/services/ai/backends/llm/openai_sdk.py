@@ -65,6 +65,29 @@ def _serialize_tool_calls(tool_calls) -> list[dict]:
     return serialized
 
 
+def _cached_tokens_from_usage(usage) -> int | None:
+    """从 OpenAI/DeepSeek 兼容的 usage 对象取"命中前缀缓存的 prompt token 数"。
+
+    OpenAI 放在 ``usage.prompt_tokens_details.cached_tokens``；DeepSeek 还会额外给出
+    顶层 ``prompt_cache_hit_tokens``。
+
+    未报告时返回 ``None``（而不是 0），调用方据此决定是否写入 ``cached_tokens`` 键——
+    否则"供应商未报告"会被混同为"命中率 0%"。缓存命中率是 harness 的关键成本指标：
+    工具目录前缀是否稳定，直接反映在这个数上。
+    """
+    if not usage:
+        return None
+    details = getattr(usage, "prompt_tokens_details", None)
+    cached = getattr(details, "cached_tokens", None) if details is not None else None
+    if isinstance(cached, int):
+        return cached
+    for key in ("prompt_cache_hit_tokens", "cached_tokens"):
+        value = getattr(usage, key, None)
+        if isinstance(value, int):
+            return value
+    return None
+
+
 class OpenAISDKLLMBackend:
     """
     基于 OpenAI Python SDK 的 LLM 后端。
@@ -171,17 +194,22 @@ class OpenAISDKLLMBackend:
             usage = response.usage
             tool_calls = _serialize_tool_calls(getattr(choice.message, "tool_calls", None))
 
+            usage_payload = {
+                "prompt_tokens": usage.prompt_tokens if usage else 0,
+                "completion_tokens": usage.completion_tokens if usage else 0,
+                "total_tokens": usage.total_tokens if usage else 0,
+            }
+            cached_tokens = _cached_tokens_from_usage(usage)
+            if cached_tokens is not None:
+                usage_payload["cached_tokens"] = cached_tokens
+
             return LLMGenerationResult(
                 success=True,
                 content=choice.message.content or "",
                 tool_calls=tool_calls,
                 model=model,
                 provider=self._provider,
-                usage={
-                    "prompt_tokens": usage.prompt_tokens if usage else 0,
-                    "completion_tokens": usage.completion_tokens if usage else 0,
-                    "total_tokens": usage.total_tokens if usage else 0,
-                },
+                usage=usage_payload,
             )
 
         except openai.APIError as e:
@@ -225,16 +253,21 @@ class OpenAISDKLLMBackend:
 
             usage = getattr(response, 'usage', None)
 
+            usage_payload = {
+                "prompt_tokens": usage.input_tokens if usage else 0,
+                "completion_tokens": usage.output_tokens if usage else 0,
+                "total_tokens": (usage.input_tokens + usage.output_tokens) if usage else 0,
+            }
+            cached_tokens = _cached_tokens_from_usage(usage)
+            if cached_tokens is not None:
+                usage_payload["cached_tokens"] = cached_tokens
+
             return LLMGenerationResult(
                 success=True,
                 content=output_text or '',
                 model=model,
                 provider=self._provider,
-                usage={
-                    "prompt_tokens": usage.input_tokens if usage else 0,
-                    "completion_tokens": usage.output_tokens if usage else 0,
-                    "total_tokens": (usage.input_tokens + usage.output_tokens) if usage else 0,
-                },
+                usage=usage_payload,
             )
 
         except openai.APIError as e:

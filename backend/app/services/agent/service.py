@@ -22,6 +22,7 @@ from app.db.models.agent import AgentMemorySnapshot, AgentRun, AgentRunStep, Age
 from app.services.agent import tools as _agent_tools  # noqa: F401 - register tools
 from app.services.agent.context_compressor import ContextCompressor
 from app.services.agent.context_pack import build_creative_project_context_pack
+from app.services.agent.cost_meter import CostMeter
 from app.services.agent.loop_detector import LoopDetector
 from app.services.agent.memory.manager import MemoryManager
 from app.services.agent.profile import AgentProfileManager, profile_to_dict
@@ -64,6 +65,30 @@ AI 模型配置能力：
 """
 
 
+class _UsageRecordingLLM:
+    """把 LLM 调用的用量转交给 sink，再原样委托给真实 AIService。
+
+    只覆写 ``chat``，其余属性一律透传（``__getattr__``），因此对调用方完全透明——
+    planner、工具循环与委托路径都不需要知道它的存在。
+    """
+
+    def __init__(self, inner: Any, sink: Any) -> None:
+        self._inner = inner
+        self._sink = sink
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
+
+    async def chat(self, *args: Any, **kwargs: Any) -> Any:
+        result = await self._inner.chat(*args, **kwargs)
+        try:
+            self._sink(result)
+        except Exception:  # noqa: BLE001
+            # 计量失败绝不能影响主流程。
+            logger.debug("[AgentService] llm usage record skipped")
+        return result
+
+
 class AgentService:
     def __init__(self, session: AsyncSession, user_id: str = "default"):
         self.session = session
@@ -72,6 +97,10 @@ class AgentService:
         self.memory_mgr = MemoryManager(session, user_id)
         self.profile_mgr = AgentProfileManager(session, user_id)
         self._llm_manager = None
+        # 本次 chat() 的 LLM 用量累加：prompt/completion/total/cached tokens、成本、耗时、调用次数。
+        # run 结束时写进 run.result_json 的 `usage` 键——AgentRun 自身没有计量字段，
+        # 而 result_json 已经随 run 详情接口返回，因此不必为此新增列与迁移。
+        self._usage_acc: dict[str, float] = {}
         # DeerFlow-inspired: context compression + loop detection
         self._compressor = ContextCompressor()
         self._loop_detector = LoopDetector()
@@ -87,9 +116,72 @@ class AgentService:
 
     @property
     def llm_manager(self):
+        """返回包了用量记录的 LLM 管理器。
+
+        Agent 内所有 LLM 调用都经本属性（planner 拿的也是 ``lambda: self.llm_manager``，
+        工具循环与委托路径同样如此），因此**在这一层插桩即可覆盖全部调用点**，
+        不必逐个改 planner / breaker_tools / 委托路径。
+        """
         if self._llm_manager is None:
             self._llm_manager = get_ai_service()
-        return self._llm_manager
+        return _UsageRecordingLLM(self._llm_manager, self._record_llm_usage)
+
+    def _record_llm_usage(self, result: Any) -> None:
+        """把单次 LLM 调用的用量累加进本次 chat()。"""
+        usage = getattr(result, "usage", None)
+        if not isinstance(usage, dict) or not usage:
+            return
+        acc = self._usage_acc
+        acc["llm_calls"] = acc.get("llm_calls", 0) + 1
+        for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
+            value = usage.get(key)
+            if isinstance(value, (int, float)):
+                acc[key] = acc.get(key, 0) + float(value)
+        # cached_tokens 单独处理：只有 backend 真的报告过它，命中率才算"已知"。
+        # 若这里统一按 0 累加，会把"供应商未提供缓存信息"混同为"命中率 0%"——
+        # 这两件事含义完全不同（后者会让人以为前缀缓存完全没生效）。
+        if "cached_tokens" in usage and isinstance(usage.get("cached_tokens"), (int, float)):
+            acc["cached_tokens"] = acc.get("cached_tokens", 0) + float(usage["cached_tokens"])
+            acc["_cached_reported"] = True
+        cost = getattr(result, "cost", 0.0)
+        if isinstance(cost, (int, float)) and cost:
+            acc["cost"] = acc.get("cost", 0.0) + float(cost)
+        latency = getattr(result, "latency_ms", 0.0)
+        if isinstance(latency, (int, float)) and latency:
+            acc["latency_ms"] = acc.get("latency_ms", 0.0) + float(latency)
+
+    def _usage_snapshot(self) -> dict[str, Any]:
+        """本次 chat() 的用量快照；没有发生过 LLM 调用时返回空字典（不写入噪声）。
+
+        缓存命中率交给 ``CostMeter`` 计算——那正是它存在的目的，此前它在全仓
+        没有任何调用点。
+        """
+        if not self._usage_acc.get("llm_calls"):
+            return dict(self._usage_acc) or {}
+        acc = dict(self._usage_acc)
+        cached_reported = bool(acc.pop("_cached_reported", False))
+        snapshot: dict[str, Any] = {
+            "llm_calls": int(acc.get("llm_calls", 0)),
+            "prompt_tokens": int(acc.get("prompt_tokens", 0)),
+            "completion_tokens": int(acc.get("completion_tokens", 0)),
+            "total_tokens": int(acc.get("total_tokens", 0)),
+            "cached_tokens": int(acc.get("cached_tokens", 0)),
+        }
+        for key in ("cost", "latency_ms"):
+            if key in acc:
+                snapshot[key] = acc[key]
+        # 命中率只在 backend 报告过 cached_tokens 时才计算，否则保持 None("未知")。
+        snapshot["cache_hit_rate"] = (
+            CostMeter.cache_hit_rate(
+                {
+                    "prompt_tokens": snapshot["prompt_tokens"],
+                    "cached_tokens": snapshot["cached_tokens"],
+                }
+            )
+            if cached_reported
+            else None
+        )
+        return snapshot
 
     async def chat(
         self,
@@ -101,6 +193,8 @@ class AgentService:
         force_new_thread: bool = False,
     ) -> dict[str, Any]:
         self._loop_detector.reset()
+        # 每次 chat() 重新计数，避免上一轮的用量串到本轮尾部指标上。
+        self._usage_acc = {}
         # 入口防御性清理：若连接池复用导致当前 session 继承了 aborted 事务，
         # 在开始新工作前回滚清脏。仅对有活跃事务的 session 安全调用。
         if self.session.in_transaction():
@@ -713,6 +807,9 @@ class AgentService:
                 "routed_skills": state.get("routed_skill_records") or [],
                 "profile": {"id": profile.get("id"), "name": profile.get("name")},
                 "pending_confirmations": state.get("pending_confirmations") or [],
+                # 本次 run 的 LLM 用量。run 详情接口本就返回 result_json，
+                # 因此底部指标条无需新端点即可拿到 token / 成本 / 缓存命中率。
+                "usage": self._usage_snapshot(),
             },
         )
         return {
