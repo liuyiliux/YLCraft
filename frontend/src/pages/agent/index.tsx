@@ -2887,15 +2887,36 @@ function AgentPageContent() {
             <Alert
               type="warning"
               showIcon
-              style={{ padding: '3px 10px', background: 'rgba(250,173,20,0.12)', border: '1px solid #faad14' }}
+              style={{ padding: '6px 10px', background: 'rgba(250,173,20,0.12)', border: `1px solid ${THEME.warning}` }}
               message={
                 <span style={{ fontSize: 12 }}>
                   有 <strong>{pendingCount}</strong> 个操作等待你的确认
                 </span>
               }
+              description={
+                /*
+                 * 只报"有 2 个操作"是不够的：用户看不出是**什么**、也不知道**在哪**。
+                 * 这里补三件事——① 构成（工具确认 / 记忆候选 各几条）；
+                 * ② 涉及的工具名；③ 位置（当前对话的消息列表顶部）。
+                 */
+                <span style={{ fontSize: 11, lineHeight: 1.6 }}>
+                  {pendingToolSteps.length > 0 && (
+                    <span style={{ display: 'block' }}>
+                      工具确认 {pendingToolSteps.length} 条
+                      {pendingToolSteps.map(s => s.tool_name).filter(Boolean).length > 0 && (
+                        <>（{pendingToolSteps.map(s => s.tool_name || '未命名').join('、')}）</>
+                      )}
+                    </span>
+                  )}
+                  {pendingMemorySteps.length > 0 && (
+                    <span style={{ display: 'block' }}>记忆候选 {pendingMemorySteps.length} 条</span>
+                  )}
+                  <span style={{ color: THEME.textSecondary }}>位置：当前对话的消息列表顶部</span>
+                </span>
+              }
               action={
                 <Button size="small" type="link" onClick={focusPendingConfirmation} style={{ padding: 0, height: 'auto', fontSize: 12 }}>
-                  定位到确认卡片
+                  跳到顶部
                 </Button>
               }
             />
