@@ -54,7 +54,7 @@ def _xhs(cookie: str) -> XiaohongshuClient:
 @pytest.mark.parametrize("factory,platform", [(_bili, "bili"), (_xhs, "xhs")])
 def test_header_cookie_normalizes_netscape(factory, platform):
     """Netscape 原文必须被转换成 `k=v; ...`，且不含换行/制表符。"""
-    cookie = factory(NETSCAPE_COOKIE)._header_cookie()
+    cookie = factory(NETSCAPE_COOKIE).header_cookie()
 
     assert "\n" not in cookie, "%s: Cookie 头里不得有换行" % platform
     assert "\t" not in cookie, "%s: Cookie 头里不得有制表符" % platform
@@ -90,7 +90,7 @@ async def test_http_client_initializes_with_netscape_cookie(factory, platform):
 @pytest.mark.parametrize("factory", [_bili, _xhs])
 def test_header_cookie_accepts_already_raw_format(factory):
     """已经是 `k=v; ...` 的输入不得被破坏。"""
-    cookie = factory(RAW_COOKIE)._header_cookie()
+    cookie = factory(RAW_COOKIE).header_cookie()
     assert "SESSDATA=abc" in cookie
     assert "DedeUserID=226082" in cookie
     assert "\n" not in cookie
@@ -99,7 +99,7 @@ def test_header_cookie_accepts_already_raw_format(factory):
 @pytest.mark.parametrize("factory", [_bili, _xhs])
 def test_empty_cookie_yields_empty_string(factory):
     client = factory("")
-    assert client._header_cookie() == ""
+    assert client.header_cookie() == ""
     assert "Cookie" not in client._build_headers()
 
 
@@ -119,3 +119,42 @@ def test_bili_extract_user_id_from_raw_cookie():
 
 def test_bili_extract_user_id_absent_returns_zero():
     assert _bili("sessionid=abc")._extract_user_id_from_cookie() == 0
+
+
+# ---------------------------------------------------------------------------
+# 3. 结构性保证：Cookie 规范化收在公共基类，单个平台写错也会被纠正
+# ---------------------------------------------------------------------------
+
+
+class _NaughtyClient(BilibiliClient):
+    """故意把 Netscape 原文直接写进 Cookie 头（历史真实写法）。"""
+
+    def _build_headers(self):  # type: ignore[override]
+        return {"Cookie": self.config.cookie, "User-Agent": "x"}
+
+
+async def test_base_class_corrects_illegal_cookie_from_subclass():
+    """关键保证：子类即便写回原文，`_init_http_client` 也会统一覆盖为规范格式。
+
+    这是把该逻辑收进公共层的意义——**单个平台不再可能靠自己写错而弄坏请求**。
+    """
+    client = _NaughtyClient(ClientConfig(platform="bili", mode=ClientMode.API, cookie=NETSCAPE_COOKIE))
+    await client._init_http_client()
+    try:
+        sent = client._http_client.headers["Cookie"]
+        assert "\n" not in sent and "\t" not in sent, "基类未纠正子类写入的非法 Cookie"
+        assert sent.startswith("SESSDATA=")
+        # 行为对调用方完全透明：非法头已被替换，httpx 不会再抛错
+        httpx.Headers(dict(client._http_client.headers))
+    finally:
+        await client._http_client.aclose()
+
+
+async def test_base_class_drops_cookie_when_absent():
+    """无 cookie 时不得残留 Cookie 头（否则平台会认为是空凭证）。"""
+    client = _NaughtyClient(ClientConfig(platform="bili", mode=ClientMode.API, cookie=""))
+    await client._init_http_client()
+    try:
+        assert "Cookie" not in client._http_client.headers
+    finally:
+        await client._http_client.aclose()

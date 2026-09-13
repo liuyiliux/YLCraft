@@ -43,6 +43,8 @@ class BasePlatformClient(abc.ABC):
         self._http_client: Optional[httpx.AsyncClient] = None
         self._patchright_page = None
         self._patchright_context = None
+        # 规范化后的 Cookie 头字符串（懒求值，见 header_cookie()）
+        self._header_cookie_cache: Optional[str] = None
         
     # =========================================================================
     # 上下文管理
@@ -69,9 +71,43 @@ class BasePlatformClient(abc.ABC):
     # 初始化方法
     # =========================================================================
     
+    def header_cookie(self) -> str:
+        """返回**可直接放进 HTTP 头**的 Cookie 字符串（`k=v; k2=v2`）。
+
+        这是一个**公共层**方法，不是各平台自己实现的——因为"把 Cookie 放进 header"
+        这一步曾多次写错：平台连接里存的是 **Netscape 文件格式**（含
+        `# Netscape HTTP Cookie File` 注释头、字段以制表符分隔），直接赋给 `Cookie`
+        头会被 httpx 拒绝（`Illegal header value`，头值不允许换行/制表符），
+        **请求根本发不出去**，外部表现为"搜索静默返回空"。
+
+        历史上同一代码库里三种写法并存（番茄 `normalize_cookie(...)` 正确、B站与小红书
+        直接赋原文均失败），说明**把这一步留给每个平台各写一遍是结构性错误**。因此收在
+        基类，并在 `_init_http_client` 里统一覆盖注入：单个平台即便写错也会被纠正。
+
+        对传入格式不敏感：Netscape / `k=v;` / JSON 数组皆可。结果缓存。
+        """
+        if self._header_cookie_cache is None:
+            raw = self.config.cookie or ""
+            if raw:
+                try:
+                    from app.services.cookies.manager import CookieManager
+
+                    raw = CookieManager().extract_raw(raw) or raw
+                except Exception as exc:  # noqa: BLE001 - 规范化失败不得阻断请求
+                    logger.warning(f"[{self.config.platform}] Cookie 规范化失败，回退使用原文：{exc}")
+            self._header_cookie_cache = raw
+        return self._header_cookie_cache
+
     async def _init_http_client(self):
         """初始化 HTTP 客户端（API 模式）"""
         headers = self._build_headers()
+        # 统一覆盖注入 Cookie：各平台 `_build_headers` 的写法不一致是历史上多次故障的
+        # 来源，因此在基类强制纠正一次，使单个平台即便写错也不会导致请求非法。
+        cookie = self.header_cookie()
+        if cookie:
+            headers["Cookie"] = cookie
+        else:
+            headers.pop("Cookie", None)
         self._http_client = httpx.AsyncClient(
             headers=headers,
             timeout=self.config.timeout,
@@ -124,8 +160,10 @@ class BasePlatformClient(abc.ABC):
         if not self._patchright_context or not self.config.cookie:
             return
         
-        # 解析 Cookie 字符串
-        cookies = self._parse_cookie_string(self.config.cookie)
+        # 必须先用公共的规范化结果：`_parse_cookie_string` 只认 `k=v; k2=v2`，
+        # 直接喂 Netscape 原文不会报错，但**一个 cookie 都设不上**——浏览器模式会
+        # 静默变成未登录。这是同一类"格式假设不一致"的又一处。
+        cookies = self._parse_cookie_string(self.header_cookie())
         
         # 获取平台域名
         domain = self._get_platform_domain()

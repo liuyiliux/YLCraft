@@ -135,8 +135,6 @@ class BilibiliClient(BasePlatformClient):
     def __init__(self, config: ClientConfig):
         super().__init__(config)
         self._wbi_keys = None  # 缓存 wbi keys
-        # 规范化后的 Cookie 头字符串（懒求值，见 _header_cookie()）
-        self._header_cookie_cache: str | None = None
     
     async def _get_wbi_keys(self) -> tuple[str, str]:
         """
@@ -188,33 +186,6 @@ class BilibiliClient(BasePlatformClient):
     # 实现抽象方法
     # =========================================================================
     
-    def _header_cookie(self) -> str:
-        """返回**可直接放进 HTTP 头**的 Cookie 字符串（`k=v; k2=v2`）。
-
-        背景（2026-09-13 修复的线上问题）：`PlatformConnection.cookie_content` 存的是
-        **Netscape 文件格式**（含 `# Netscape HTTP Cookie File` 注释行、字段以制表符
-        分隔）。此前 `_build_headers` 把该原文直接赋给 `Cookie` 头，httpx 会抛
-        `Illegal header value`（HTTP 头值不允许换行/制表符），导致**API 模式下所有请求
-        3 次重试全部失败**——外部表现为"B站搜索搜不到东西"。
-
-        而账号检测当时仍可用，是因为那条路径（`utils.extract_account_info_from_cookie`）
-        已经先经 `CookieManager.extract_raw()` 规范化。此处统一在同一层做规范化，使客户端
-        **对调用方传入的 cookie 格式不再敏感**（Netscape / `k=v` / JSON 皆可）。
-
-        结果缓存：`_extract_user_id_from_cookie` 等会在每次请求间反复取用，避免重复解析。
-        """
-        if self._header_cookie_cache is None:
-            raw = self.config.cookie or ""
-            if raw:
-                try:
-                    from app.services.cookies.manager import CookieManager
-
-                    raw = CookieManager().extract_raw(raw) or raw
-                except Exception as exc:  # noqa: BLE001 - 规范化失败不得阻断请求
-                    self._log(f"Cookie 规范化失败，回退使用原文：{exc}", "warning")
-            self._header_cookie_cache = raw
-        return self._header_cookie_cache
-
     def _build_headers(self) -> Dict[str, str]:
         """构建请求头（API 模式用）"""
         headers = {
@@ -226,7 +197,7 @@ class BilibiliClient(BasePlatformClient):
             "Accept-Encoding": "gzip, deflate, br",
         }
 
-        cookie = self._header_cookie()
+        cookie = self.header_cookie()
         if cookie:
             headers["Cookie"] = cookie
             self._log(f"_build_headers: Cookie set, len={len(cookie)}", "debug")
@@ -256,7 +227,7 @@ class BilibiliClient(BasePlatformClient):
             # 必须用**规范化后**的字符串：Netscape 格式里字段以制表符分隔
             # （`...\tDedeUserID\t226082`），对原文匹配 `DedeUserID=` 永远匹配不到，
             # 会让 vmid 恒为 0（关注列表等接口直接空返回）。与 _header_cookie() 共用同一层规范化。
-            cookie_str = self._header_cookie()
+            cookie_str = self.header_cookie()
             match = re.search(r'(?:^|[;\t\s])DedeUserID=(\d+)', cookie_str)
             if match:
                 return int(match.group(1))
