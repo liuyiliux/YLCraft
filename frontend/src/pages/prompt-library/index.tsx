@@ -21,6 +21,7 @@ import {
   ExportOutlined,
   FileImageOutlined,
   FileTextOutlined,
+  PictureOutlined,
   ReloadOutlined,
   SaveOutlined,
   SearchOutlined,
@@ -251,6 +252,23 @@ export default function PromptLibraryPage() {
     } catch (error: any) {
       message.error(error?.message || '保存为素材失败')
     }
+  }
+
+  /**
+   * 带着当前提示词跳到 AI 生图。
+   *
+   * 复用 image-gen **既有的 URL 参数机制**（那边读取 `?prompt=` 后会自动 setPrompt，
+   * 同 assets 页跳多平台生图的做法），因此不需要另造跨页状态桥。
+   * 刻意不传 `tab=multi`：只有单图生成页才有提示词输入框。
+   */
+  const goGenerateImage = () => {
+    const text = (activeReference?.prompt || '').trim()
+    if (!text) {
+      message.warning('该提示词内容为空，无法带入生图')
+      return
+    }
+    setDetailOpen(false)
+    navigate(`/image-gen?prompt=${encodeURIComponent(text)}`)
   }
 
   const refreshSources = async (sourceId?: string) => {
@@ -591,6 +609,15 @@ export default function PromptLibraryPage() {
         open={detailOpen}
         width={980}
         onClose={() => setDetailOpen(false)}
+        styles={{
+          body: {
+            // 抽屉自身不滚动，把滚动交给左右两栏各自处理（见 .prompt-detail-* 样式）
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+            paddingTop: 12,
+          },
+        }}
         extra={
           <Space>
             {(activeReference?.detail_url || activeReference?.source_url) ? (
@@ -602,7 +629,9 @@ export default function PromptLibraryPage() {
               </Button>
             ) : null}
             <Button icon={<CopyOutlined />} onClick={() => copyPrompt(activeReference)}>复制提示词</Button>
-            <Button type="primary" icon={<SaveOutlined />} onClick={() => saveAsAsset(activeReference)}>加入素材库</Button>
+            <Button icon={<SaveOutlined />} onClick={() => saveAsAsset(activeReference)}>加入素材库</Button>
+            {/* 主操作放在最后：这条提示词的用途就是拿去生图 */}
+            <Button type="primary" icon={<PictureOutlined />} onClick={goGenerateImage}>去生图</Button>
           </Space>
         }
       >
@@ -1156,11 +1185,17 @@ export default function PromptLibraryPage() {
           display: grid;
           grid-template-columns: minmax(300px, 42%) minmax(0, 1fr);
           gap: 22px;
+          /* 抽屉高度固定后由本容器撑满；min-height:0 才能让子列真正可滚 */
+          flex: 1;
+          min-height: 0;
         }
         .prompt-detail-media {
           display: grid;
           gap: 12px;
           align-content: start;
+          /* 左列（图集）独立滚动：图多时不再把整页顶下去 */
+          min-height: 0;
+          overflow: auto;
         }
         .prompt-detail-main-image {
           position: relative;
@@ -1237,6 +1272,11 @@ export default function PromptLibraryPage() {
           display: grid;
           gap: 16px;
           align-content: start;
+          /* 右列（提示词正文）独立滚动：长提示词/多块正文只滚这一栏 */
+          min-height: 0;
+          overflow: auto;
+          /* 给滚动条留出空间，避免压住卡片边框 */
+          padding-right: 4px;
         }
         .prompt-block {
           border: 1px solid ${T.border};
@@ -1270,6 +1310,14 @@ export default function PromptLibraryPage() {
           }
           .prompt-detail {
             grid-template-columns: 1fr;
+            /* 窄屏改为单列纵向堆叠：此时再固定高度会把两栏都压扁，恢复为整页滚动 */
+            flex: none;
+            min-height: auto;
+          }
+          .prompt-detail-media,
+          .prompt-detail-content {
+            overflow: visible;
+            min-height: auto;
           }
           .prompt-grid {
             grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
