@@ -1492,13 +1492,22 @@ export function StoryWorkspaceShell({ ctx }: { ctx: StoryPageContext }) {
                       }}
                     >
                       {({ getFieldValue }) => {
-                        const imageUrl = String(getFieldValue(['items', field.name, 'image_url']) || '')
-                        const itemStatus = String(getFieldValue(['items', field.name, 'status']) || '')
-                        const generating = inlineImageLoadingKey === imageContextKey({
+                        const contextKey = imageContextKey({
                           contentId: contentPackageContent?.id,
                           sourceType: 'content_package',
                           sourceIndex: index,
+                          // 必须与写入端一致：`handleInlineGenerateImage` 会用
+                          // `context.chapterNumber ?? activeChapterNumber` 补键，
+                          // 这里漏掉就会读到另一个键（生成成功却显示不出来）。
+                          chapterNumber: activeChapterNumber,
                         })
+                        // 两条写入路径都要认：**单条生成**把结果放进页面级 `inlineImages`
+                        // （useInlineImageGeneration 的同步分支），**批量生成**写回表单的
+                        // `items[i].image_url`。只读其中一个会导致另一条路径"生成了却看不到"。
+                        const inline = inlineImages?.[contextKey]
+                        const imageUrl = String(inline?.url || getFieldValue(['items', field.name, 'image_url']) || '')
+                        const itemStatus = String(getFieldValue(['items', field.name, 'status']) || '')
+                        const generating = inlineImageLoadingKey === contextKey
                         return (
                           <div style={{ marginTop: 10, width: 96 }}>
                             <GeneratedMediaThumb

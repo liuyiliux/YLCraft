@@ -72,6 +72,9 @@ export default function GeneratedMediaThumb({
         </span>
         {onRegenerate ? (
           <button
+            // 原生 <button> 的默认 type 是 submit：本组件会被放进 antd <Form>（内容包编辑器），
+            // 不显式声明就会**把整个表单提交掉**（保存 + 关闭弹窗）。必须显式 type="button"。
+            type="button"
             disabled={loading}
             onClick={onRegenerate}
             style={{
@@ -136,6 +139,8 @@ export default function GeneratedMediaThumb({
       <div style={{ position: 'absolute', top: 8, right: 8, display: 'flex', gap: 6 }}>
         {onRegenerate ? (
           <button
+            // 同上：放进 <Form> 时必须显式 type="button"，否则会提交整个表单。
+            type="button"
             disabled={loading}
             onClick={onRegenerate}
             style={overlayButtonStyle(loading)}
@@ -148,6 +153,7 @@ export default function GeneratedMediaThumb({
         ) : null}
         {onRemove ? (
           <button
+            type="button"
             onClick={onRemove}
             style={overlayButtonStyle(false)}
             onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(0,0,0,0.65)' }}
