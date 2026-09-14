@@ -131,12 +131,16 @@ class GenericImageBackend(ImageBackend):
         if base_url:
             base_url = base_url.rstrip("/")
 
+        # `trust_env=False`：不继承系统代理。理由与 LLM 侧同（见 llm/generic.py）——
+        # httpx 默认会读系统代理（Windows 含注册表 WinINET），而这些 client 是长命的，
+        # 启动时代理开着就被固化，代理一关则全部生成失败且报错无法定位。
         self.client = httpx.AsyncClient(
             base_url=base_url,
             headers=headers,
             timeout=connector.timeout,
             follow_redirects=True,
             max_redirects=5,
+            trust_env=False,
         )
 
         logger.info(f"✅ 初始化 GenericImageBackend: {self.name} (model={self.model})")
@@ -232,6 +236,7 @@ class GenericImageBackend(ImageBackend):
                         timeout=self.connector.timeout,
                         follow_redirects=True,
                         max_redirects=5,
+                        trust_env=False,
                     )
                     if multipart_payload is None:
                         response = await temp_client.post(final_url, json=request_body)
@@ -524,6 +529,7 @@ class GenericImageBackend(ImageBackend):
                 headers=headers,
                 timeout=self.connector.timeout,
                 follow_redirects=True,
+                trust_env=False,
             ) as client:
                 if poll_method == "GET":
                     resp = await client.get(poll_url)
@@ -1232,7 +1238,7 @@ class GenericImageBackend(ImageBackend):
             filename = f"{timestamp}_{safe_prompt}{ext}"
             local_path = save_dir / filename
             
-            async with httpx.AsyncClient(timeout=self.connector.timeout, follow_redirects=True) as temp_download_client:
+            async with httpx.AsyncClient(timeout=self.connector.timeout, follow_redirects=True, trust_env=False) as temp_download_client:
                 response = await temp_download_client.get(url)
                 response.raise_for_status()
                 with open(local_path, "wb") as f:

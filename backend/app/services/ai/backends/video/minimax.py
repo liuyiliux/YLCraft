@@ -62,7 +62,7 @@ class MinimaxVideoBackend(BaseVideoBackend):
 
     async def health_check(self) -> bool:
         try:
-            async with httpx.AsyncClient(timeout=8.0) as client:
+            async with httpx.AsyncClient(timeout=8.0, trust_env=False) as client:
                 resp = await client.get(
                     f"{self._api_base}/models",
                     headers={"Authorization": f"Bearer {self._api_key}"},
@@ -99,7 +99,7 @@ class MinimaxVideoBackend(BaseVideoBackend):
             "Content-Type": "application/json",
         }
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, trust_env=False) as client:
             resp = await client.post(f"{self._api_base}/video/generation", headers=headers, json=payload)
             resp.raise_for_status()
             data = resp.json()
@@ -114,7 +114,7 @@ class MinimaxVideoBackend(BaseVideoBackend):
     async def _poll(self, task_id: str) -> VideoGenerationResult:
         headers = {"Authorization": f"Bearer {self._api_key}"}
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, trust_env=False) as client:
             resp = await client.get(f"{self._api_base}/video/generation/{task_id}", headers=headers)
             resp.raise_for_status()
             data = resp.json()

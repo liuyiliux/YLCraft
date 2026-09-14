@@ -235,7 +235,7 @@ class OpenAISDKImageBackend:
             filename = f"{timestamp}_{safe_prompt}_{index}{ext}"
             local_path = self._save_dir / filename
 
-            async with httpx.AsyncClient(timeout=self.connector.timeout, follow_redirects=True) as client:
+            async with httpx.AsyncClient(timeout=self.connector.timeout, follow_redirects=True, trust_env=False) as client:
                 resp = await client.get(url)
                 resp.raise_for_status()
                 local_path.write_bytes(resp.content)
