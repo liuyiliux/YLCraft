@@ -218,6 +218,17 @@ PUT /creative-projects/{project_id}/production-plan
 
 Saving a plan is not a paid generation, but the plan's confirmation points still govern any later costly, download, publishing, or destructive operation.
 
+### Plan stages by production family
+
+Each node's `stage` is a free-form string (unknown values are not rejected), but the two families have different orchestration units, so they use different stage vocabularies. `GET`-able via the Agent Context Pack's `project.production_profile` block, which also reports `production_family`, `package_type` and `planning_unit`.
+
+| Family | Stages |
+| --- | --- |
+| `content_package` | `package_plan` (topic → package skeleton) → `item_text` (per-item body) → `item_prompt` (per-item image/video prompt) → `media_batch` (costly image/video tasks, one confirmation) → `package_outputs` (adapter outputs); optional `item_review`, `layout` |
+| `narrative` | `outline` → `chapter_plan` → `chapter_outline` → `script` / `novel_body` → `storyboard` → `video` / `comic_pages` |
+
+Do not propose narrative stages for a content-package project: its unit of work is the **item** (page / card / shot / article package), and proposing `chapter_outline` for a picture book leads to a plan nobody can execute. Per profile: `storybook` and `knowledge_content` use the full package chain; `platform_note` (`planning_unit=package`) is `package_plan` → `item_text` → `package_outputs` with media stages optional; `single_shot` is `package_plan` → `item_prompt` → `media_batch`.
+
 ## Recommended Long-Prose Defaults
 
 For novel body generation and rewrite:

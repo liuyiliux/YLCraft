@@ -9,6 +9,26 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+#: 内容包族的计划阶段词表（design §1「内容包族」的执行顺序）。
+#:
+#: 内容包与叙事族共用同一套 `ProjectContent`、计划结构与确认规则，**区别只在编排单位**：
+#: 内容包以「条目」（页 / 卡 / 镜头 / 文章包）为单位，叙事族以「章节与正文」为单位。
+#: 因此内容包族的阶段名与叙事阶段名是两套词表，不能互相套用——把 `storybook` 的推荐
+#: 阶段写成 `outline/chapter_plan/chapter_outline` 会让导演为一个绘本包提议章节大纲。
+#: 每个阶段都对应一个**已存在的**能力，不是构想：
+#:   - `package_plan`   ← 一次内容包规划（`POST .../content-package/plan`）
+#:   - `item_text`      ← 逐条文本（`update_content_package_item` / 条目重跑）
+#:   - `item_prompt`    ← 逐条媒体提示词（同上，prompt_only 模式）
+#:   - `media_batch`    ← 批量出图/出视频（消耗型，需一次确认）
+#:   - `package_outputs`← 平台适配输出（`POST .../content-package/outputs`）
+PACKAGE_PLAN_STAGES: tuple[str, ...] = (
+    "package_plan",
+    "item_text",
+    "item_prompt",
+    "media_batch",
+    "package_outputs",
+)
+
 CONTENT_PRODUCTION_PROFILES: dict[str, dict[str, Any]] = {
     "vertical_drama": {
         "id": "vertical_drama", "label": "竖屏短剧",
@@ -29,8 +49,9 @@ CONTENT_PRODUCTION_PROFILES: dict[str, dict[str, Any]] = {
         "id": "storybook", "label": "故事漫画 / 童话绘本",
         "description": "恐怖漫画、童话绘本和短篇故事共用的页式视觉叙事方案。",
         "project_type": "manga",
-        "recommended_stages": ["outline", "chapter_plan", "chapter_outline", "script", "storyboard", "comic_pages"],
-        "optional_stages": ["novel_body", "video", "voiceover"],
+        # 内容包族：编排单位是「页」，不是章节与正文（#17）
+        "recommended_stages": list(PACKAGE_PLAN_STAGES),
+        "optional_stages": ["item_review", "layout"],
         "default_outputs": ["comic_pages", "image_set"],
         "constraints": {"aspect_ratio": "4:3", "page_count": 12},
         "production_family": "content_package",
@@ -44,8 +65,9 @@ CONTENT_PRODUCTION_PROFILES: dict[str, dict[str, Any]] = {
         "id": "knowledge_content", "label": "科普内容",
         "description": "先整理主题和事实，再输出图文卡片或短视频素材。",
         "project_type": "mixed",
-        "recommended_stages": ["outline", "script", "storyboard", "image", "layout"],
-        "optional_stages": ["video", "voiceover", "subtitles"],
+        # 内容包族：编排单位是「知识卡」，事实与来源随条目一并保留（#17）
+        "recommended_stages": list(PACKAGE_PLAN_STAGES),
+        "optional_stages": ["item_review"],
         "default_outputs": ["image_set", "script"], "constraints": {"aspect_ratio": "4:3"},
         "production_family": "content_package",
         "package_type": "knowledge_cards",
@@ -58,8 +80,9 @@ CONTENT_PRODUCTION_PROFILES: dict[str, dict[str, Any]] = {
         "id": "platform_note", "label": "平台图文",
         "description": "内容完成后交给多平台生图和图片编辑器适配小红书、微信等渠道。",
         "project_type": "mixed",
-        "recommended_stages": ["outline", "script", "image", "layout", "platform_adapter"],
-        "optional_stages": ["video", "subtitles"],
+        # 内容包族：planning_unit=package，整篇文章一次成篇，媒体提示词属可选（#17）
+        "recommended_stages": ["package_plan", "item_text", "package_outputs"],
+        "optional_stages": ["item_prompt", "media_batch", "item_review"],
         "default_outputs": ["platform_note", "image_set"],
         "constraints": {"platforms": ["xiaohongshu", "wechat", "douyin"]},
         "production_family": "content_package",
@@ -86,8 +109,11 @@ CONTENT_PRODUCTION_PROFILES: dict[str, dict[str, Any]] = {
     "single_shot": {
         "id": "single_shot", "label": "单镜头 / 单页实验",
         "description": "用一句创意或一张素材快速试做一个镜头、画面或绘本页。",
-        "project_type": "mixed", "recommended_stages": ["story_seed", "image", "video"],
-        "optional_stages": ["script", "storyboard"], "default_outputs": ["image", "video"], "constraints": {},
+        "project_type": "mixed",
+        # 内容包族：单镜头就是「一个条目 + 一个媒体任务」（#17）
+        "recommended_stages": ["package_plan", "item_prompt", "media_batch"],
+        "optional_stages": ["item_text", "package_outputs", "item_review"],
+        "default_outputs": ["image", "video"], "constraints": {},
         "production_family": "content_package",
         "package_type": "single_media",
         "required_inputs": ["topic"],

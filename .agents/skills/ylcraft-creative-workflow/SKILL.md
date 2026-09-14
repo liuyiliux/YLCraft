@@ -70,6 +70,7 @@ python .agents/skills/ylcraft-creative-workflow/scripts/creative_project_workflo
 - Retrying one item leaves every other item untouched and marks only the outputs that reference it as `stale`.
 - `short_video` and `pdf_ebook` are `planning_only`: they emit planning structure (shot table, page structure) that a later rendering step consumes, not finished media files. Do not report them as final deliverables.
 - `article_package`, `social_carousel`, `shot_list` and `single_media` are currently **API-only** — callable from here but with no dedicated UI yet.
+- **Plan stages differ by production family.** For a content-package project, propose package stages — `package_plan` → `item_text` → `item_prompt` → `media_batch` → `package_outputs` (optional `item_review`, `layout`). Do not propose `outline` / `chapter_plan` / `chapter_outline` for a picture book or card set: their orchestration unit is the **item**, not the chapter. Narrative projects keep the existing stages. The Agent Context Pack exposes `production_family`, `package_type` and `planning_unit` alongside the stage list so you can tell which family you are in.
 
 Read `references/api-workflows.md` for package types, adapter types, per-profile defaults, validation tiers, and the full command list.
 

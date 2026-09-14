@@ -28,6 +28,7 @@ from app.db.models.creative_project import (
 )
 from app.db.models.task import ProjectTaskRecord
 from app.db.models.novel import NovelChapter
+from app.services.creative_project.profiles import PACKAGE_PLAN_STAGES
 from app.services.creative_project.service import CreativeProjectService
 from app.services.agent import context_pack as agent_context_pack
 from tests.test_creative_project_service import FakeAIService
@@ -657,12 +658,55 @@ def test_agent_context_pack_includes_profile_and_visible_production_plan(
 
     assert pack["project"]["production_profile"]["id"] == "storybook"
     assert pack["project"]["production_profile"]["label"]
+    # #17：内容包项目的导演必须拿到**内容包族的阶段**与族别，而不是叙事阶段。
+    # 若这里退回 outline/chapter_plan/chapter_outline，导演会为一个绘本包提议章节大纲。
+    assert pack["project"]["production_profile"]["production_family"] == "content_package"
+    assert pack["project"]["production_profile"]["package_type"] == "page_book"
+    assert pack["project"]["production_profile"]["planning_unit"] == "item"
+    assert pack["project"]["production_profile"]["recommended_stages"] == list(PACKAGE_PLAN_STAGES)
     assert pack["production_plan"]["content_id"] == saved.json()["data"]["id"]
     assert pack["production_plan"]["confirmation_status"] == "pending"
     assert pack["production_plan"]["confirmation_nodes"] == [
         {"id": "visual", "label": "Plan the first page", "stage": "image", "status": "planned"}
     ]
     assert pack["production_plan"]["nodes"][0]["planning_summary"] == {"intent": "A portrait blinks in candlelight."}
+
+
+def test_context_pack_keeps_existing_stages_for_narrative_projects(
+    workflow_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """#17 的另一半：完整叙事项目仍使用既有阶段，不被内容包词表改写。"""
+    with _client(workflow_session) as client:
+        project = _post(
+            client,
+            "",
+            {
+                "title": "Narrative context",
+                "idea": "A video editor follows an evidence trail.",
+                "project_type": "short_drama",
+                "production_profile": "vertical_drama",
+            },
+        )["data"]
+
+    monkeypatch.setattr(agent_context_pack, "SessionLocal", lambda: workflow_session)
+    monkeypatch.setattr("app.services.ai.get_ai_service", lambda: FakeAIService())
+    pack = agent_context_pack.build_creative_project_context_pack(project["id"])
+
+    profile_block = pack["project"]["production_profile"]
+    assert profile_block["production_family"] == "narrative"
+    assert profile_block["package_type"] is None
+    assert profile_block["planning_unit"] == "stage"
+    assert profile_block["recommended_stages"] == [
+        "outline",
+        "chapter_plan",
+        "chapter_outline",
+        "script",
+        "storyboard",
+        "video",
+    ]
+    # 两套词表不得互相渗透
+    assert not set(profile_block["recommended_stages"]) & set(PACKAGE_PLAN_STAGES)
 
 
 def test_narrative_health_api_reports_legacy_plan_and_missing_dependencies(workflow_session: Session):
