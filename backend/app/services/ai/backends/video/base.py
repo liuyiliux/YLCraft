@@ -76,7 +76,7 @@ class BaseVideoBackend(ABC):
         """健康检查：子类可覆盖"""
         import httpx
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
+            async with httpx.AsyncClient(timeout=5.0, trust_env=False) as client:
                 resp = await client.get(f"{self._api_base}/health")
                 return resp.status_code < 500
         except Exception:
