@@ -57,7 +57,18 @@
 
 ## Phase 4: Platform adapters and migration
 
-- [ ] 14. Move existing multi-platform generation UI logic into reusable package/adapter components while keeping `/multi-platform-gen` as a compatibility entry.
+- [x] 14. Move existing multi-platform generation UI logic into reusable package/adapter components while keeping `/multi-platform-gen` as a compatibility entry.
+  - _2026-09-14 完成：_
+    - _新增 `frontend/src/components/content-package/`（两处原先各自内联实现，现共用一份）：_
+      - **`GeneratedMediaThumb.tsx`** —— 媒体生成结果缩略图。取代 `/multi-platform-gen` 页卡里内联的 **133 行**结果块：有图给「图片 + 悬浮（重新生成 / 删除）」，无图给「虚线占位 + 失败原因 + 渐变重试」。_
+      - **`PackageOutputList.tsx`** —— 适配器输出列表。取代内容包工作台内联的 **59 行**输出块：状态三态（`ready`→已生成/绿、`stale`→已过期/橙、其余→失败/红）、payload 摘要（卡片数/镜头数/页数/文件数）、导出 JSON、素材包逐文件下载、error 与 warnings 分行。它描述的是通用适配器契约，与具体包类型无关。_
+    - _**一处真问题被顺带修掉**：内容包条目**从不展示生成结果**——`image_url` / `asset_ids` / `status` 早就由生成链路写回表单（见 `useProjectContentActions.handleBatchGenerateContentPackageImages` L356-360），界面却什么都不显示，用户生成完看不到图。现已接上结果位（`Form.Item shouldUpdate` 触发，批量/单条生成写回后立即反映）。**无图时不传 `onRegenerate`**：占位态按钮文案是「重试」，而这些条目还没生成过，上方已有「生成图片」，不该出现语义不符的重复入口。_
+    - _**`downloadTextFile` 下沉**：原在 `pages/story/utils.ts`，但它与 Story 页面无关，共享组件反向依赖页面模块是错误方向。已移至 `utils/download.ts` 并在原处 re-export，既有 4 处调用零改动。_
+    - **兼容入口保持**：`/multi-platform-gen` 路由与页面签名未变，只是内部改为组合共享组件；实测页面正常打开、含「主题」「生成大纲」。_
+    - _**一处刻意的视觉修正（如实记录）**：`/multi-platform-gen` 悬浮按钮原先渲染的是孤立的字面量 `C`（`title` 已是"重新生成"，内容显然是被吞掉的图标）。抽组件时统一换成 `ReloadOutlined`。这是本条唯一一处非纯搬运的视觉改动。_
+    - _清理死导入：`MultiPlatformGen` 的 `ReloadOutlined`、`StoryWorkspaceShell` 的 `downloadTextFile` 在替换后仅剩导入行。**注意 tsconfig 关了 `noUnusedLocals`，tsc 不会报死导入**，因此我用脚本按「标识符是否只出现在导入行」单独扫过（3 个文件均 0 死导入）。_
+    - _验证：`npm run build` 通过（3824 模块，较上次 +3，与新增的 2 个组件 + 1 个工具一致）；`npm test`（vitest）**4 文件 39 例通过**；lints 干净。**浏览器 smoke**：`/multi-platform-gen` 正常；内容包工作台的平台输出由新组件渲染且信息不丢（「PDF 电子书」×2、「素材包」×2、「导出 JSON」×2 对应真实的 2 条输出）、条目结果位按预期显示（「尚未生成」×2，该项目 2 条都还没有图）；**0 个 >=400、0 条控制台 error、0 项断言失败**。_
+    - _**一个既有的工具链缺口（非本次引入）**：`npm run lint` 跑不起来——`frontend/` 下**没有任何 ESLint 配置文件**，`package.json` 也未声明 eslint 依赖，环境里的 ESLint 10 会直接报 "couldn't find an eslint.config.*"。即该脚本在**未改动的代码上同样失败**。未在本次处理（属仓库治理问题，已记入待办讨论）。_
 - [x] 15. Add WeChat, Xiaohongshu, Douyin, PDF and Asset Bundle adapter outputs without duplicating source package items.
   - _2026-09-14 完成（后端 + API；界面触发按钮未做，见文末说明）：_
     - _新增 `backend/app/services/creative_project/content_package_adapters.py`：五个**纯函数**适配器，把同一份内容包翻译成各平台形状——`wechat_official_account`（HTML+标题+摘要+封面/正文配图引用+草稿 payload 形状）、`xiaohongshu_carousel`（3:4 竖版卡片、页序、标签）、`douyin_short_video`（9:16 镜头表+口播/字幕+视频参数）、`pdf_ebook`（分页结构+文件名）、`asset_bundle`（package.json / content.md / prompts.tsv 三件套）。_

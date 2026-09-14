@@ -6,6 +6,8 @@
  * 结构与文案逐字未改。数据与回调经 ctx 传入，类型取自 useStoryPageContext。
  */
 import FanqiePublishPanel from '../FanqiePublishPanel'
+import GeneratedMediaThumb from '../../../components/content-package/GeneratedMediaThumb'
+import PackageOutputList from '../../../components/content-package/PackageOutputList'
 import ProjectStatePanel from '../ProjectStatePanel'
 import StoryWorkspaceOverview from '../StoryWorkspaceOverview'
 import { ProjectBibleTab } from './bible'
@@ -16,7 +18,7 @@ import { OutlineTab, PipelinePanel } from './outline'
 import { ScriptTab } from './storyboard'
 import { AssetsTab, JsonTab, LogsTab } from './tabs'
 import { WriterRoomTab } from './writer-room'
-import { downloadTextFile, getNovelDisplayTitle, imageContextKey, productionProfileOptions, projectTypeLabel, projectTypeOptions, stageLabels, statusLabels } from '../utils'
+import { getNovelDisplayTitle, imageContextKey, productionProfileOptions, projectTypeLabel, projectTypeOptions, stageLabels, statusLabels } from '../utils'
 import { BranchesOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, EyeOutlined, FileTextOutlined, FolderOpenOutlined, HistoryOutlined, MenuFoldOutlined, MenuUnfoldOutlined, PictureOutlined, PlusOutlined, ReloadOutlined, RobotOutlined, ThunderboltOutlined } from '@ant-design/icons'
 import { Alert, Badge, Button, Checkbox, Collapse, Divider, Empty, Form, Input, InputNumber, List, Modal, Popconfirm, Segmented, Select, Skeleton, Space, Tabs, Tag, Tooltip, Typography, message } from 'antd'
 import type { StoryPageContext } from '../hooks/useStoryPageContext'
@@ -1453,6 +1455,50 @@ export function StoryWorkspaceShell({ ctx }: { ctx: StoryPageContext }) {
                       </Button>
                       <Text type="secondary" style={{ fontSize: 12 }}>只重跑这一条，其它条目不动</Text>
                     </Space>
+                    {/* 生成结果：`image_url` / `asset_ids` / `status` 一直由生成链路写回表单
+                        （见 useProjectContentActions.handleBatchGenerateContentPackageImages），
+                        此前只是从未展示——这里复用从 /multi-platform-gen 抽出的同一组件。
+                        `shouldUpdate` 保证批量/单条生成写回后立即反映到界面。 */}
+                    <Form.Item
+                      noStyle
+                      shouldUpdate={(prevValues, curValues) => {
+                        const prevItem = prevValues?.items?.[field.name] || {}
+                        const curItem = curValues?.items?.[field.name] || {}
+                        return prevItem.image_url !== curItem.image_url || prevItem.status !== curItem.status
+                      }}
+                    >
+                      {({ getFieldValue }) => {
+                        const imageUrl = String(getFieldValue(['items', field.name, 'image_url']) || '')
+                        const itemStatus = String(getFieldValue(['items', field.name, 'status']) || '')
+                        const generating = inlineImageLoadingKey === imageContextKey({
+                          contentId: contentPackageContent?.id,
+                          sourceType: 'content_package',
+                          sourceIndex: index,
+                        })
+                        return (
+                          <div style={{ marginTop: 10, width: 96 }}>
+                            <GeneratedMediaThumb
+                              url={imageUrl}
+                              error={itemStatus === 'failed' ? '生成失败' : undefined}
+                              emptyText="尚未生成"
+                              loading={generating}
+                              // 无图时不传 onRegenerate：占位形态的按钮文案是「重试」，
+                              // 而这一条还没生成过，上方已有「生成图片」按钮，不该出现重复且语义不符的入口。
+                              onRegenerate={imageUrl ? () => void handleGenerateContentPackageImage(index, field.name) : undefined}
+                              removeTitle="移除结果（素材库中的资产保留）"
+                              onRemove={imageUrl
+                                ? () => {
+                                  // 只解除本条对结果的引用；资产仍在素材库，避免在编辑器里做不可逆删除
+                                  contentPackageForm.setFieldValue(['items', field.name, 'image_url'], '')
+                                  contentPackageForm.setFieldValue(['items', field.name, 'asset_ids'], [])
+                                  contentPackageForm.setFieldValue(['items', field.name, 'status'], 'ready')
+                                }
+                                : undefined}
+                            />
+                          </div>
+                        )
+                      }}
+                    </Form.Item>
                   </div>
                 ))}
               </Space>
@@ -1472,65 +1518,10 @@ export function StoryWorkspaceShell({ ctx }: { ctx: StoryPageContext }) {
               按当前内容生产方案声明的输出一次全出；只在本地做格式转换，不会发到外部平台
             </Text>
           </Space>
-          {packageOutputs.length ? (
-            <Space direction="vertical" size={6} style={{ width: '100%' }}>
-              {packageOutputs.map((output: any) => {
-                const status = String(output?.status || '')
-                const statusLabel = status === 'ready' ? '已生成' : status === 'stale' ? '已过期' : '失败'
-                const statusColor = status === 'ready' ? 'green' : status === 'stale' ? 'orange' : 'red'
-                const payload = output?.payload || {}
-                const summary = payload.cards?.length ? `${payload.cards.length} 张卡片`
-                  : payload.shots?.length ? `${payload.shots.length} 个镜头`
-                    : payload.pages?.length ? `${payload.pages.length} 页`
-                      : payload.files?.length ? `${payload.files.length} 个文件`
-                        : ''
-                return (
-                  <div
-                    key={String(output?.adapter_type)}
-                    style={{ border: `1px solid ${theme.borderLight}`, borderRadius: 6, padding: '8px 10px' }}
-                  >
-                    <Space wrap size={6}>
-                      <Text strong style={{ fontSize: 13 }}>{output?.label || output?.adapter_type}</Text>
-                      <Tag color={statusColor}>{statusLabel}</Tag>
-                      {summary ? <Text type="secondary" style={{ fontSize: 12 }}>{summary}</Text> : null}
-                      <Button
-                        size="small"
-                        type="link"
-                        onClick={() =>
-                          downloadTextFile(
-                            `${selectedProject?.production_profile?.package_type || 'content-package'}-${output?.adapter_type}.json`,
-                            JSON.stringify(payload, null, 2),
-                          )}
-                      >
-                        导出 JSON
-                      </Button>
-                      {/* 素材包是"带走的"产物：每个文件单独可下载 */}
-                      {Array.isArray(payload.files)
-                        ? payload.files.map((file: any) => (
-                          <Button
-                            key={String(file?.path)}
-                            size="small"
-                            type="link"
-                            onClick={() => downloadTextFile(String(file?.path || 'file.txt'), String(file?.content || ''))}
-                          >
-                            {file?.path}
-                          </Button>
-                        ))
-                        : null}
-                    </Space>
-                    {output?.error ? (
-                      <Text type="danger" style={{ fontSize: 12, display: 'block' }}>{output.error}</Text>
-                    ) : null}
-                    {(output?.warnings || []).map((warning: string) => (
-                      <Text key={warning} type="secondary" style={{ fontSize: 12, display: 'block' }}>{warning}</Text>
-                    ))}
-                  </div>
-                )
-              })}
-            </Space>
-          ) : (
-            <Text type="secondary" style={{ fontSize: 12 }}>还没有平台输出，点上面的按钮生成。</Text>
-          )}
+          <PackageOutputList
+            outputs={packageOutputs}
+            packageType={selectedProject?.production_profile?.package_type}
+          />
         </Form>
       </Modal>
 

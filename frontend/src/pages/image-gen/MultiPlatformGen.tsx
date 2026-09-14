@@ -11,7 +11,7 @@ import {
 } from 'antd'
 import {
   ThunderboltOutlined, PictureOutlined, BranchesOutlined,
-  DeleteOutlined, ReloadOutlined, PlusOutlined, SearchOutlined,
+  DeleteOutlined, PlusOutlined, SearchOutlined,
   ArrowLeftOutlined, BulbOutlined, AppstoreOutlined,
   HistoryOutlined, SettingOutlined, DragOutlined, CloseOutlined,
 } from '@ant-design/icons'
@@ -19,6 +19,7 @@ import { useTheme } from '../../constants/theme'
 import { getImageBackends, getLlmBackends } from '../../api'
 import { calculateAspectRatio } from '../../utils/size'
 import { BackendSelect, type BackendInfo } from '../../components/BackendSelect'
+import GeneratedMediaThumb from '../../components/content-package/GeneratedMediaThumb'
 
 const { TextArea } = Input
 
@@ -1399,136 +1400,20 @@ export default function MultiPlatformGen({ initialTopic, initialPlatforms, autoG
                           </button>
                         </div>
 
-                        {/* 该页面生成结果 — 直接显示在卡片内 */}
+                        {/* 该页面生成结果 — 直接显示在卡片内（复用内容包/平台的通用结果组件）*/}
                         {(() => {
                           const r = batchResults[platform]?.[i]
                           const retryKey = `${platform}-${i}`
                           if (!r) return null
                           return (
                             <div style={{ marginTop: 14 }}>
-                              {r.success && r.urls[0] ? (
-                                <div style={{ position: 'relative' }}>
-                                  <div style={{
-                                    width: '100%',
-                                    aspectRatio: '3/4',
-                                    borderRadius: T.radiusMD,
-                                    overflow: 'hidden',
-                                    background: T.bgElevated,
-                                  }}>
-                                    <Image
-                                      src={r.urls[0]}
-                                      style={{
-                                        width: '100%',
-                                        height: '100%',
-                                        objectFit: 'cover',
-                                        display: 'block',
-                                      }}
-                                    />
-                                  </div>
-                                  <div style={{
-                                    position: 'absolute',
-                                    top: 8,
-                                    right: 8,
-                                    display: 'flex',
-                                    gap: 6,
-                                  }}>
-                                    <button
-                                      disabled={retryLoading[retryKey]}
-                                      onClick={() => handleRetryResult(platform, i, r)}
-                                      style={{
-                                        background: 'rgba(0,0,0,0.45)',
-                                        borderRadius: '50%',
-                                        width: 26,
-                                        height: 26,
-                                        padding: 0,
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        color: '#fff',
-                                        border: 'none',
-                                        cursor: retryLoading[retryKey] ? 'not-allowed' : 'pointer',
-                                        opacity: retryLoading[retryKey] ? 0.5 : 1,
-                                        fontSize: 11,
-                                        fontWeight: 500,
-                                        transition: 'background 0.2s',
-                                      }}
-                                      onMouseEnter={e => { e.currentTarget.style.background = 'rgba(0,0,0,0.65)' }}
-                                      onMouseLeave={e => { e.currentTarget.style.background = 'rgba(0,0,0,0.45)' }}
-                                      title="重新生成"
-                                    >
-                                      C
-                                    </button>
-                                    <button
-                                      onClick={() => handleDeleteResult(platform, i)}
-                                      style={{
-                                        background: 'rgba(0,0,0,0.45)',
-                                        borderRadius: '50%',
-                                        width: 26,
-                                        height: 26,
-                                        padding: 0,
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        color: '#fff',
-                                        border: 'none',
-                                        cursor: 'pointer',
-                                        fontSize: 11,
-                                        transition: 'background 0.2s',
-                                      }}
-                                      onMouseEnter={e => { e.currentTarget.style.background = 'rgba(0,0,0,0.65)' }}
-                                      onMouseLeave={e => { e.currentTarget.style.background = 'rgba(0,0,0,0.45)' }}
-                                      title="删除"
-                                    >
-                                      <DeleteOutlined style={{ fontSize: 11 }} />
-                                    </button>
-                                  </div>
-                                </div>
-                              ) : (
-                                <div style={{
-                                  aspectRatio: '3/4',
-                                  display: 'flex',
-                                  flexDirection: 'column',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  background: T.bgElevated,
-                                  borderRadius: T.radiusMD,
-                                  border: `1px dashed ${T.border}`,
-                                  gap: 10,
-                                }}>
-                                  <span style={{
-                                    color: T.textSecondary,
-                                    fontSize: 13,
-                                  }}>
-                                    {r.error || '生成失败'}
-                                  </span>
-                                  <button
-                                    disabled={retryLoading[retryKey]}
-                                    onClick={() => handleRetryResult(platform, i, r)}
-                                    style={{
-                                      height: 30,
-                                      borderRadius: 999,
-                                      border: 'none',
-                                      background: 'linear-gradient(90deg, #7c3aed 0%, #a78bfa 100%)',
-                                      color: '#fff',
-                                      fontSize: 12,
-                                      fontWeight: 500,
-                                      cursor: retryLoading[retryKey] ? 'not-allowed' : 'pointer',
-                                      opacity: retryLoading[retryKey] ? 0.6 : 1,
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      justifyContent: 'center',
-                                      gap: 4,
-                                      padding: '0 16px',
-                                      transition: 'opacity 0.2s',
-                                    }}
-                                    onMouseEnter={e => { if (!retryLoading[retryKey]) e.currentTarget.style.opacity = '0.9' }}
-                                    onMouseLeave={e => { e.currentTarget.style.opacity = retryLoading[retryKey] ? '0.6' : '1' }}
-                                  >
-                                    <ReloadOutlined style={{ fontSize: 11 }} />
-                                    重试
-                                  </button>
-                                </div>
-                              )}
+                              <GeneratedMediaThumb
+                                url={r.success ? (r.urls[0] || "") : ""}
+                                error={r.error || "生成失败"}
+                                loading={Boolean(retryLoading[retryKey])}
+                                onRegenerate={() => handleRetryResult(platform, i, r)}
+                                onRemove={() => handleDeleteResult(platform, i)}
+                              />
                             </div>
                           )
                         })()}
