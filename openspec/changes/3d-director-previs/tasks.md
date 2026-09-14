@@ -65,7 +65,17 @@
   - _**浏览器端到端 14/14**（真实 Chromium + 内置 `vanguard.glb`，它自带 Idle/Run/TPose/Walk 四条 156 通道动画）：切到 Vanguard 后「动作」行出现并上报 4 条 clip（`ue-mannequin.glb` 有骨骼但无动画，正确不出现）→ 选 Walk → **第 0 帧截图 183874 B，中段 183262 B（姿态确实在变），再拖回第 0 帧仍是 183874 B 且逐字节相同** → 第 0 帧给动作打点、中段改选 Run 后落库为 `[(0,'Walk','step'), (48,'Run','step')]` → 重载后重新选中节点仍能拿到动作列表且回显 `Walk`。全程 0 个 >=400、0 条 console error。_
   - _**端到端测试抓到一个真缺陷（单测没覆盖到）**：`currentChannelValue` 起初只处理 `position`/`rotation`/`scale` 与机位通道，动作通道落到末尾返回 `undefined`，而 `addKeyframe` 拿到 `undefined` 就直接不写——表现为**「按了钥匙什么都没发生」且没有任何提示**。已补上动画分支并加了一条专门固定它的单测（断言返回空串而非 `undefined`，并把成因写在注释里）。_
   - _另：端到端脚本首轮还报「重载后动作列表消失」，核查后确认是**产品正常行为**——选中状态是会话内局部状态、不入库，所以重载后要重新点一下图层行面板才出现；已改测试步骤而非改产品。_
-- [ ] 16. Evaluate frame capture and MP4/WebM export only after static capture is stable; document browser and cost constraints.
+- [x] 16. Evaluate frame capture and MP4/WebM export only after static capture is stable; document browser and cost constraints.
+  - _2026-09-14 完成（评估 + 记录约束），完整报告见 `docs/research/research_report_previs_export_feasibility.md`。结论与实测数据摘要：_
+  - _**真正的瓶颈不是浏览器支持，而是视口帧率。** 能力层面全部就绪（`captureStream` / `MediaRecorder` / `VideoEncoder` 均可用，连 `video/mp4;codecs=avc1` 都支持）。但在有真实负载的场景（Vanguard 骨骼模型 + 阴影 + 聚光 + 位移动画）上，**播放时 17% 的帧超出 24fps 预算**（p95 66.5ms vs 预算 41.7ms），并行编码时 **35% 超预算**、平均只剩 25.7fps。_
+  - _**因此 MediaRecorder 实时录制不作为主路径**：它按**墙上时钟**打时间戳，视口稳定不了 24fps 就会录出一条时长漂移、节奏不匀的视频——等于把 #14/#15 辛苦建立的"同一帧永远是同一姿态"这个性质丢掉。改成 `captureStream(0)` + `track.requestFrame()` 手动喂帧能控制"抓哪一帧"，但 **MediaRecorder 的时间戳仍按墙钟**，快速批量喂帧会得到时长错误的视频。_
+  - _应走**确定性离线导出**（逐帧渲染→逐帧取图→服务端按固定帧率合成）：离线可以慢，但每帧都来自指定帧号，输出必然是准确 24fps。实测 96 帧（4 秒 @24fps）约 **3.6 秒 / 9.4 MB**（JPEG 方案）。_
+  - _**格式要分开**：单帧截图保持 PNG（单张、要当生图结构参考，无损有价值，71ms/1.4MB 不是问题；JPEG 的有损压缩反而可能给下游 AI 引入它自己会放大的伪影）；**批量导出才用 JPEG**——96 帧 PNG 是 132MB/6.8s，JPEG(q0.92) 只有 9.4MB/1.6s。另测出一个反直觉点：**WebP 编码比 JPEG 慢 9 倍**（154ms vs 17ms），体积只小一半，批量导出不划算。_
+  - _**测量方法上的一个坑（我差点据此下错结论）**：首轮在 headless 下量到 19fps 并准备写进报告，核查渲染器后发现 headless 走 **SwiftShader 软件渲染**，带界面才是真实 GPU（Intel UHD），**两者差 2.6 倍**。报告因此把两种情况都列出，结论建立在真实 GPU 那一栏。_
+  - _**成本结论：这条链路零 API 额度**——客户端编码是本地算力，服务端合成用仓内已有的本地 ffmpeg，不调用任何收费接口。_
+  - _需新增的唯一能力：`core/ffmpeg.py` 的 `FFmpegService` 现有 9 个方法（get_video_info/concat_videos/trim_video/add_subtitles/add_audio/add_watermark/resize_video/extract_audio/create_thumbnail），**独缺"图片序列 → 视频"**，全仓也没有按 `-framerate` 读序列的先例。_
+- [ ] 26. Export a batch of reference frames as a ZIP of JPEGs, reusing the existing offline frame-render path (`services/export` already does ZIP with volume splitting) — no encoder needed.
+- [ ] 27. Add server-side sequence compositing: a new `FFmpegService.images_to_video` (`-framerate 24`) driven through the existing task center, so exported video is guaranteed to be true 24fps regardless of client rendering speed.
 - [x] 24. Upgrade `PrevisCamera` from FOV-only to real optics: focal length, sensor format, and computed depth of field, so a framing reference means the same thing to a DP as it does to the tool.
   - _调研依据：FrameForge 与 Previs Pro 唯一重合的核心卖点就是「镜头光学是一等数据」（真实镜头型号、传感器尺寸、景深）。而 `PrevisCamera` 原来只有 `fov`——**同一个 fov 在 Super 16 和 Alexa LF 上是完全不同的取景**，所以那时的"机位参考"给不出可直接执行的信息。_
   - _范围：数据契约 + 机位面板 + 视口口径一致。景深只做**计算与读数**（近界/远界/超焦距），不做景深模糊渲染（design 非目标：不做专业渲染器）。_
