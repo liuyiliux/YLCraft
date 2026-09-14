@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import uuid
 
 import pytest
@@ -26,6 +27,7 @@ from app.db.models.creative_project import (
     ProjectStyleMeasurement,
     NarrativeRunStatus,
 )
+from app.db.models.previs import PrevisSceneDocument
 from app.db.models.task import ProjectTaskRecord
 from app.db.models.novel import NovelChapter
 from app.services.creative_project.profiles import PACKAGE_PLAN_STAGES
@@ -54,6 +56,8 @@ def workflow_session():
         CharacterStoryLink.__table__,
         CreativeProject.__table__,
         ProjectContent.__table__,
+        # 预演场景表：context pack 的 previs 块会查它（#17）
+        PrevisSceneDocument.__table__,
         ProjectAssetLink.__table__,
         ProjectGenerationLog.__table__,
         ProjectContinuityCandidate.__table__,
@@ -1019,3 +1023,161 @@ def test_guarded_narrative_autopilot_only_schedules_approved_prose_aftermath(wor
     assert data["run"]["mode"] == "guarded_autopilot"
     stored = workflow_session.get(CreativeProject, project["id"])
     assert "approved_prose_aftermath_only" in stored.settings_json
+
+
+def _previs_project(session: Session, panel_numbers: list[int], title: str = "Previs") -> tuple[str, str]:
+    """造一个含分镜面板的项目，返回 (project_id, storyboard_content_id)。"""
+    project_id = uuid.uuid4().hex
+    storyboard_id = uuid.uuid4().hex
+    session.add(CreativeProject(id=project_id, title=title))
+    session.add(
+      ProjectContent(
+          id=storyboard_id,
+          project_id=project_id,
+          content_type="storyboard",
+          chapter_number=1,
+          title="分镜",
+          version=1,
+          data_json=json.dumps({"panels": [{"panel_number": n} for n in panel_numbers]}),
+      )
+    )
+    session.commit()
+    return project_id, storyboard_id
+
+
+def test_context_pack_previs_brief_answers_coverage_questions(
+    workflow_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+    ):
+    """#17：预演摘要必须能回答**覆盖度**问题，而不只是罗列节点。
+
+    三个要点：① 计数精确且直接点出「哪些面板还没预演」；② 带稳定 ID 与锁定状态
+    （否则 Agent 既无法指名操作、也不知道哪些东西不能动）；③ 不存在的目标引用要报出来。
+    """
+    project_id, storyboard_id = _previs_project(workflow_session, [1, 2, 3])
+    workflow_session.add(
+      PrevisSceneDocument(
+          id="scene-covered",
+          project_id=project_id,
+          storyboard_content_id=storyboard_id,
+          panel_number=1,
+          title="第 1 格预演",
+          revision=4,
+          scene_json={
+              "activeCameraId": "cam-1",
+              "nodes": [
+                  {"id": "actor", "name": "主演", "locked": True},
+                  {"id": "prop", "name": "道具", "locked": False},
+              ],
+              "cameras": [{"id": "cam-1", "name": "机位 1", "locked": True}],
+              "keyframes": [{"id": "k1"}],
+          },
+      )
+    )
+    # 指向已不存在面板的场景：真实会出现的不一致，应当被报出来而不是静默忽略
+    workflow_session.add(
+      PrevisSceneDocument(
+          id="scene-orphan",
+          project_id=project_id,
+          storyboard_content_id=storyboard_id,
+          panel_number=99,
+          title="孤儿场景",
+          scene_json={},
+      )
+    )
+    workflow_session.commit()
+
+    monkeypatch.setattr(agent_context_pack, "SessionLocal", lambda: workflow_session)
+    monkeypatch.setattr("app.services.ai.get_ai_service", lambda: FakeAIService())
+    pack = agent_context_pack.build_creative_project_context_pack(project_id)
+    previs = pack["previs"]
+
+    # ① 覆盖度：计数精确，且直接点出缺口
+    assert previs["read_only"] is True
+    assert previs["scope"] == "project"
+    assert previs["storyboard_panels_total"] == 3
+    assert previs["storyboard_content_count"] == 1
+    assert previs["panels_with_scene"] == 1
+    assert previs["panels_without_scene"] == 2
+    assert previs["uncovered_panels"] == [
+      {"storyboard_content_id": storyboard_id, "panel_number": 2},
+      {"storyboard_content_id": storyboard_id, "panel_number": 3},
+    ]
+    assert previs["uncovered_panels_truncated"] is False
+    assert previs["scene_count"] == 2
+    assert previs["scenes_referencing_missing_panel"] == 1
+    assert previs["scenes_without_panel"] == 0
+    # 缺口同时进 known_gaps——导演是按它决定"下一步做什么"的
+    assert "2 个分镜面板还没有预演场景" in pack["known_gaps"]
+
+    # ② 稳定 ID 与锁定状态
+    covered = next(item for item in previs["scenes"] if item["scene_id"] == "scene-covered")
+    assert covered["panel_number"] == 1
+    assert covered["revision"] == 4
+    assert covered["node_count"] == 2
+    assert covered["camera_count"] == 1
+    assert covered["keyframe_count"] == 1
+    assert covered["active_camera_id"] == "cam-1"
+    assert covered["locked_nodes"] == [{"node_id": "actor", "name": "主演"}]
+    assert covered["locked_cameras"] == [{"camera_id": "cam-1", "name": "机位 1"}]
+
+
+def test_context_pack_previs_truncates_detail_but_keeps_counts_exact(
+    workflow_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+    ):
+    """明细截断必须显式标记，**计数始终精确**。
+
+    否则 Agent 会把「只看到前 24 个」当成「总共只有 24 个」，
+    据此排产会漏掉大批镜头。
+    """
+    project_id, _ = _previs_project(workflow_session, list(range(1, 61)), title="大分镜")
+    monkeypatch.setattr(agent_context_pack, "SessionLocal", lambda: workflow_session)
+    monkeypatch.setattr("app.services.ai.get_ai_service", lambda: FakeAIService())
+    previs = agent_context_pack.build_creative_project_context_pack(project_id)["previs"]
+
+    limit = agent_context_pack.PREVIS_UNCOVERED_LIMIT
+    assert previs["storyboard_panels_total"] == 60
+    assert previs["panels_without_scene"] == 60        # 计数是真实总数
+    assert len(previs["uncovered_panels"]) == limit    # 明细节流
+    assert previs["uncovered_panels_truncated"] is True
+
+
+def test_context_pack_previs_without_storyboard_reports_no_gap(
+    workflow_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+    ):
+    """没有分镜时不该报「0 个分镜面板还没有预演场景」——那是噪音，不是缺口。"""
+    project_id = uuid.uuid4().hex
+    workflow_session.add(CreativeProject(id=project_id, title="没有分镜"))
+    workflow_session.commit()
+
+    monkeypatch.setattr(agent_context_pack, "SessionLocal", lambda: workflow_session)
+    monkeypatch.setattr("app.services.ai.get_ai_service", lambda: FakeAIService())
+    pack = agent_context_pack.build_creative_project_context_pack(project_id)
+
+    assert pack["previs"]["storyboard_panels_total"] == 0
+    assert pack["previs"]["panels_without_scene"] == 0
+    assert not any("还没有预演场景" in gap for gap in pack["known_gaps"])
+
+
+def test_previs_brief_reports_read_failure_instead_of_zero(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """预演读取失败时必须**显式报错**并把计数置 None，而不是装作「没有预演场景」。
+
+    把失败读成 0 会让 Agent 得出完全错误的结论（"全都预演过了"），
+    而且它没有"再确认一次"的能力——只会照着错的数字排产。
+    """
+
+    def boom():
+        raise RuntimeError("no such table: previs_scene_documents")
+
+    monkeypatch.setattr(agent_context_pack, "SessionLocal", boom)
+    brief = agent_context_pack._previs_brief("missing-project", [])
+
+    assert "error" in brief
+    assert brief["panels_without_scene"] is None
+    # 置 None 而非 0，正是为了让 known_gaps 不把它当成"缺口 0"
+    gaps = agent_context_pack._known_gaps({}, [], [], brief)
+    assert all("还没有预演场景" not in gap for gap in gaps)

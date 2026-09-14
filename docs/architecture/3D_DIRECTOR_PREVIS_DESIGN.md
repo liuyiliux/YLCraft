@@ -202,7 +202,7 @@ Phase 1 完成标准：一个项目分镜面板可稳定产出可追溯参考图
 
 ### Phase 3：Agent 导演助手
 
-- 将预演场景摘要作为只读上下文提供给 Agent。
+- 将预演场景摘要作为只读上下文提供给 Agent。**（已完成）**——摘要挂在既有的 `build_creative_project_context_pack` 上（新键 `previs`），而该 pack 由 `AgentService._augment_context` 在**每次带 project_id 的运行中自动注入**，不需要 Agent 主动调工具。措辞面向**覆盖度**而非罗列节点：给出精确的 `panels_without_scene` 与显式的 `uncovered_panels` 清单，并带稳定 ID 与锁定状态（`locked_nodes`/`locked_cameras` 含 ID 与名称）；缺口同时并入 `known_gaps`，因为导演是按它决定下一步做什么的。明细有截断上限但**计数始终精确、截断显式标记**；读取失败时报 `error` 并把计数置 `None`（而不是当 0），避免把"没读出来"误读成"全都预演过了"。
 - 新增受限的场景操作 Tool schema、锁定校验、revision 校验和确认差异预览。
 - 将已确认操作写入 Agent Run steps 与场景操作历史。
 

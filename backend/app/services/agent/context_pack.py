@@ -9,6 +9,7 @@ from sqlmodel import select
 from app.db.database import SessionLocal
 from app.db.models.character import Character, CharacterStoryLink
 from app.db.models.creative_project import ProjectContent, ProjectGenerationLog
+from app.db.models.previs import PrevisSceneDocument
 from app.services.creative_project.profiles import CONTENT_PRODUCTION_PROFILES
 from app.services.creative_project.service import CreativeProjectService, loads_json
 
@@ -156,6 +157,129 @@ def _character_briefs(project_id: str, limit: int = 12) -> list[dict[str, Any]]:
         return briefs
 
 
+#: 覆盖度明细的截断上限。**计数始终是精确值**——截断只影响明细，且会被显式标记；
+#: 否则 Agent 会把「只看到前 24 个」误当成「总共只有 24 个」，据此给出错的排产建议。
+PREVIS_UNCOVERED_LIMIT = 24
+PREVIS_SCENE_LIMIT = 12
+
+
+def _previs_scene_brief(row: PrevisSceneDocument) -> dict[str, Any]:
+    """单个预演场景的只读摘要，带稳定 ID 与锁定状态。"""
+    scene = dict(row.scene_json or {})
+    nodes = [item for item in (scene.get("nodes") or []) if isinstance(item, dict)]
+    cameras = [item for item in (scene.get("cameras") or []) if isinstance(item, dict)]
+    return {
+        # scene_id / 节点与机位 id 都是创建后稳定的，是 Agent 唯一可用的操作目标
+        "scene_id": str(row.id),
+        "storyboard_content_id": row.storyboard_content_id or "",
+        "panel_number": row.panel_number,
+        "title": row.title,
+        "revision": int(row.revision or 1),
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+        "node_count": len(nodes),
+        "camera_count": len(cameras),
+        "keyframe_count": len(scene.get("keyframes") or []),
+        "active_camera_id": str(scene.get("activeCameraId") or ""),
+        # 锁定状态是「哪些东西不能被自动改」的结构化答案，必须带 ID；
+        # 只给数量等于让 Agent 再问一次，而它没有"再问"的能力。
+        "locked_nodes": [
+            {"node_id": str(item.get("id") or ""), "name": str(item.get("name") or "")}
+            for item in nodes
+            if item.get("locked")
+        ],
+        "locked_cameras": [
+            {"camera_id": str(item.get("id") or ""), "name": str(item.get("name") or "")}
+            for item in cameras
+            if item.get("locked")
+        ],
+    }
+
+
+def _storyboard_panels(contents: list[ProjectContent]) -> list[tuple[str, int]]:
+    """项目里全部分镜面板的 `(storyboard_content_id, panel_number)` 列表。
+
+    覆盖度计算的基准。分镜可以按章有多份（各自一个 `storyboard` 内容），
+    面板号只在各自的分镜内唯一，所以键必须带上 content_id。
+    """
+    panels: list[tuple[str, int]] = []
+    for content in contents:
+        if content.content_type != "storyboard":
+            continue
+        data = loads_json(content.data_json)
+        for panel in data.get("panels") or []:
+            if not isinstance(panel, dict):
+                continue
+            try:
+                number = int(panel.get("panel_number") or 0)
+            except Exception:
+                continue
+            if number > 0:
+                panels.append((content.id, number))
+    return panels
+
+
+def _previs_brief(project_id: str, contents: list[ProjectContent]) -> dict[str, Any]:
+    """预演场景的只读摘要，面向**覆盖度**问题而不是只罗列节点。
+
+    为什么强调覆盖度：只列「有哪些场景」回答不了「还有哪些镜头没预演」，
+    而后者才是导演在排产前真正要问的——前者是清单，后者才是决策依据。
+    """
+    panels = _storyboard_panels(contents)
+    try:
+        with SessionLocal() as session:
+            rows = session.exec(
+                select(PrevisSceneDocument)
+                .where(PrevisSceneDocument.project_id == project_id)
+                .order_by(PrevisSceneDocument.updated_at.desc())
+            ).all()
+    except Exception as exc:  # noqa: BLE001
+        # 预演表不可用不该让整份上下文崩掉——导演还需要项目的其它部分才能工作。
+        # 但必须**显式报错**：若悄悄当成"没有预演场景"，Agent 会把覆盖度读成 0
+        # 并据此给出完全错误的排产建议。
+        return {
+            "read_only": True,
+            "scope": "project",
+            "error": f"预演场景读取失败：{exc}",
+            "storyboard_panels_total": len(panels),
+            # 置 None 而非 0：调用方据此区分"确实没有"与"没读出来"
+            "panels_without_scene": None,
+        }
+
+    panel_keys = set(panels)
+    bound_keys = {
+        (row.storyboard_content_id, int(row.panel_number))
+        for row in rows
+        if row.storyboard_content_id and row.panel_number
+    }
+    uncovered = sorted(panel_keys - bound_keys)
+    scene_briefs = [_previs_scene_brief(row) for row in rows]
+
+    return {
+        "read_only": True,
+        "note": "只读摘要；对预演场景的写入须经受限操作与人工确认。",
+        # 覆盖度按**整个项目**统计（不随 chapter_number 收窄），并显式声明范围，
+        # 否则调用方会把「某一章的缺口」误读成「全项目的缺口」。
+        "scope": "project",
+        "storyboard_content_count": len({content_id for content_id, _ in panels}),
+        "storyboard_panels_total": len(panels),
+        "scene_count": len(rows),
+        "panels_with_scene": len(panel_keys & bound_keys),
+        "panels_without_scene": len(uncovered),
+        "uncovered_panels": [
+            {"storyboard_content_id": content_id, "panel_number": number}
+            for content_id, number in uncovered[:PREVIS_UNCOVERED_LIMIT]
+        ],
+        "uncovered_panels_truncated": len(uncovered) > PREVIS_UNCOVERED_LIMIT,
+        # 两种不一致都报出来：场景没绑定面板、场景指向已不存在的面板
+        "scenes_without_panel": len(rows) - len(
+            [row for row in rows if row.storyboard_content_id and row.panel_number]
+        ),
+        "scenes_referencing_missing_panel": len(bound_keys - panel_keys),
+        "scenes": scene_briefs[:PREVIS_SCENE_LIMIT],
+        "scenes_truncated": len(scene_briefs) > PREVIS_SCENE_LIMIT,
+    }
+
+
 def build_creative_project_context_pack(
     project_id: str,
     *,
@@ -201,6 +325,10 @@ def build_creative_project_context_pack(
             if content.content_type in {"project_bible", "world_asset"}
         ][:12]
 
+        # 算一次复用：覆盖度既要作为独立块给 Agent，也要并进 known_gaps，
+        # 分两次调就是两次 DB 查询。
+        previs = _previs_brief(project_id, contents)
+
         return {
             "project": {
                 "id": project.id,
@@ -242,6 +370,7 @@ def build_creative_project_context_pack(
                 for link in assets[:18]
             ],
             "bible_cards": bible_cards,
+            "previs": previs,
             "recent_logs": [
                 {
                     "stage": log.stage,
@@ -253,11 +382,16 @@ def build_creative_project_context_pack(
                 }
                 for log in logs
             ],
-            "known_gaps": _known_gaps(chapter_plan, contents, assets),
+            "known_gaps": _known_gaps(chapter_plan, contents, assets, previs),
         }
 
 
-def _known_gaps(chapter_plan: dict[str, Any], contents: list[ProjectContent], assets: list[Any]) -> list[str]:
+def _known_gaps(
+    chapter_plan: dict[str, Any],
+    contents: list[ProjectContent],
+    assets: list[Any],
+    previs: dict[str, Any] | None = None,
+) -> list[str]:
     gaps: list[str] = []
     if not chapter_plan.get("chapters"):
         gaps.append("缺少章节规划")
@@ -271,6 +405,10 @@ def _known_gaps(chapter_plan: dict[str, Any], contents: list[ProjectContent], as
     ]:
         if content_type not in content_types:
             gaps.append(f"缺少{label}")
+    # 预演的覆盖度缺口放进这里，而不是只留在 previs 块里——known_gaps 是既有机制，
+    # 导演按它决定"下一步做什么"，覆盖度属于同一类判断。
+    if previs and previs.get("panels_without_scene"):
+        gaps.append(f"{previs['panels_without_scene']} 个分镜面板还没有预演场景")
     if not assets:
         gaps.append("缺少项目参考素材")
     return gaps[:8]
