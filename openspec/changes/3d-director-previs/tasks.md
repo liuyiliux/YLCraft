@@ -42,10 +42,32 @@
 - [ ] 14. Add scene duration, 24fps playhead, transform and camera keyframes, slerp rotation interpolation, and persisted scene operation history.
 - [ ] 15. Reuse existing rigged-model animation clips as scene playback selections without claiming editable skeletal animation.
 - [ ] 16. Evaluate frame capture and MP4/WebM export only after static capture is stable; document browser and cost constraints.
+- [x] 24. Upgrade `PrevisCamera` from FOV-only to real optics: focal length, sensor format, and computed depth of field, so a framing reference means the same thing to a DP as it does to the tool.
+  - _调研依据：FrameForge 与 Previs Pro 唯一重合的核心卖点就是「镜头光学是一等数据」（真实镜头型号、传感器尺寸、景深）。而 `PrevisCamera` 原来只有 `fov`——**同一个 fov 在 Super 16 和 Alexa LF 上是完全不同的取景**，所以那时的"机位参考"给不出可直接执行的信息。_
+  - _范围：数据契约 + 机位面板 + 视口口径一致。景深只做**计算与读数**（近界/远界/超焦距），不做景深模糊渲染（design 非目标：不做专业渲染器）。_
+  - _向后兼容：既有场景只有 `fov`。载入时按默认画幅从 `fov` 反推出等效焦距——给定画幅下 `fov ↔ 焦距` 是双射，这是**同一取景的等价重述**，不是编造数据。_
+  - _2026-09-14 完成：_
+    - _新增纯函数模块 `frontend/src/pages/previs/optics.ts`（无 React / three 依赖，可单测）：7 种画幅表（全画幅、Super 35、Alexa LF、APS-C、M4/3、Super 16、2x 变形宽银幕，变形按 `width × squeeze` 展开横向有效宽度）、`fov ↔ 焦距` 双向换算、弥散圆（对角线/1500）、景深（近界/远界/超焦距）。_
+    - _**`focalLength` + `sensorFormat` 是事实，`fov` 由它们推出**；反向改 `fov` 时回算焦距。三者若不一致，就会出现「面板写 85mm、视口却是 24mm 口径」的参考图——而口径错等于参考没有意义。为此拆出 `updateCameraOptics`（由光学推 fov）与 `updateCameraFov`（由 fov 回算焦距）两个入口。_
+    - _面板：画幅下拉、焦距输入（含 14/18/24/28/35/50/85/135 预设 Tag，当前值高亮）、T 光圈、对焦距离，以及一行读数「水平视角 X° · 景深 N – M（超焦距 H）」。导演视角额外显示活动机位的**视锥线框**（`CameraHelper`），让焦距变化在机外可见——它只作视图参考，不进场景保存、也不参与截图。_
+    - _**一个如实标注的精度边界**：换算结果收敛到 1 位小数（fov 到 0.1°、焦距到 0.1mm），以便面板与落库 JSON 可读。代价是往返有极小损失（135mm → 15.2° → 134.9mm）。0.1mm 对真实镜头无意义（镜头本身也不按 0.1mm 标注），且实测**反复换算不累积漂移**（改光圈/对焦都会走一次换算，fov 读数保持稳定）；测试断言的是「显示精度内互逆」，不是数学严格互逆。_
+    - _改焦距 → 水平视角随之变化的端到端实测：35mm 全画幅得 **54.4°**（2·atan(36/70)），85mm 得 **23.9°**（2·atan(36/170)），与公式吻合。**超焦距比值 89.5/15.20 = 5.89 与 (85/35)² = 5.90 一致**（超焦距正比于焦距平方），长焦景深 2.91–3.10m 明显浅于 35mm 的 2.51–3.73m——整条光学链路自洽，不是把数字摆上去而已。_
+    - _测试：新增 `frontend/src/pages/previs/optics.test.ts` **17 例**（画幅与弥散圆含全画幅 0.029mm 教科书值、变形宽银幕宽度展开、换算与教科书值吻合、同 fov 不同画幅对应不同焦距、显示精度内互逆、反复换算不漂移、景深已知算例 2.74–3.32m、光圈/焦距对景深的影响、越过超焦距远界为 ∞ 并格式化为 ∞、无解返回 null、`normalizeCamera` 向后兼容不改既有取景且冲突时以光学为准）。_
+    - _验证：`npx vitest run` → **61 passed（6 文件）**（原 44 例 + 新增 17 例）；`npm run build`（两个 tsconfig 的 `tsc --noEmit` + vite）**通过**，3825 模块；lints 干净。_
+- [x] 25. Implement the `light` node kind already declared in the contract but silently ignored.
+  - _现状（本项属 Phase 1 补漏）：`PrevisNodeKind` 与 design 都声明了 `'light'`，`NODE_KIND_LABEL` 也有「灯光」，但 `SceneViewport` 的 `NodeMesh` 没有 light 分支、编辑器也没有创建入口——**节点建了不生效、且不报错**。_
+  - _调研依据：Cine Tracer 证明「灯光预演」是分镜工具普遍忽略、却真实存在的独立缺口（DP 想在装车前看到大致光效）。_
+  - _2026-09-14 完成：_
+    - _`NodeMesh` 新增 light 分支，支持**点光 / 聚光 / 平行光**（颜色、强度、衰减距离；聚光另有锥角与半影）。平行光在 three 里由「灯位 → 原点」决定方向，所以用节点位置当灯位，与"在场景里摆一盏灯"的直觉一致。三种灯都投影——不投影的灯在本工具里等于没有效果，预演要的就是看光。_
+    - _`readLightConfig` 统一补齐缺失字段（渲染与面板共用同一份读取，避免"面板显示 12、画面用的是别的值"）。_
+    - _编辑器侧新增「灯光」下拉入口；配置控件（类型/颜色/强度）抽成 `LightNodeControls` 放在图层行**下方**而非行内——图层面板只有 280px，塞进去会把名称输入框压到不可用。_
+    - _**顺带补上真实阴影**（此前全仓 `castShadow` 为 0、Canvas 未开 `shadows`，画面发平，灯不投影则等于没用）：Canvas 开 `shadows="soft"`，默认平行光与灯光节点均投影，几何体/平面/载入模型（含 GLB，逐 mesh 打开）设 `castShadow`/`receiveShadow`。同时移除 `ContactShadows`——它本来是在没有真阴影时代替地面接纳影的，如今真阴影与它会叠出双层影子。_
+    - _端到端实测（浏览器）：从「灯光」下拉添加点光后图层出现该节点、颜色选择器与强度滑块就位；保存后重载，灯光节点仍在。全程 0 个 >=400、0 条 console error。_
 
 ## Phase 3: Agent director assistant
 
-- [ ] 17. Add a read-only previs scene summary to Agent context with stable IDs and lock state.
+- [ ] 17. Add a read-only previs scene summary to Agent context with stable IDs and lock state, phrased so it can answer **coverage** questions ("which storyboard panels have no previs scene yet", "which cameras/nodes are locked") rather than only listing nodes.
+  - _调研依据：Storyflow 的差异点是「AI 读整块板而非单帧」——能跨序列回答「哪些镜头还没预演」。只罗列节点，等于把单帧能力包装成整板能力，Agent 仍然回答不了覆盖度问题。_
 - [ ] 18. Add a reviewed `PrevisOperation` Tool contract with expected revision, lock validation, confirmation diff, Agent Run trace, and focused authorization tests.
 
 ## Acceptance criteria for Phase 1
