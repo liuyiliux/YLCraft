@@ -72,6 +72,51 @@ Inspection:
 - `GET /creative-projects/logs/generation`
 - `GET /creative-projects/{project_id}/canvas`
 
+## Content Package (lightweight)
+
+A content package is the non-narrative counterpart of a production plan: a versioned `ProjectContent` record with `content_type=content_package`. It holds a `package_type`, a title/topic/brief, a `style`, an ordered `items` list (one item per page/card/shot), and any platform `outputs` produced so far. It does **not** require prose, an outline, or a project bible.
+
+Endpoints:
+
+- `POST /creative-projects/{project_id}/content-package/plan` — one-shot plan + convert (`topic`, `brief`, `item_count` 1-80, `prompt_only`, `provider`, `model`); returns the package but does not persist it
+- `PUT /creative-projects/{project_id}/content-package` — save a versioned package (`package`, optional `source_content_id`)
+- `POST /creative-projects/{project_id}/content-package/outputs` — translate the current package into platform formats (`adapters` list, `save` bool). **Leave `adapters` empty to use the profile's declared `output_adapters`.**
+- `POST /creative-projects/{project_id}/content-package/items/{item_id}/retry` — regenerate a single item (`brief`, `prompt_only`, `provider`, `model`); other items are untouched and outputs referencing it become `stale`
+- `GET /creative-projects/{project_id}/contents?content_type=content_package` — read package versions
+
+Package types: `page_book`, `knowledge_cards`, `article_package`, `social_carousel`, `shot_list`, `single_media`. The last four are currently **API-only** (`ui_enabled=false`) — they work through the API but have no dedicated UI yet.
+
+Adapter types (`adapter_type` in each output): `wechat_official_account`, `xiaohongshu_carousel`, `short_video`, `pdf_ebook`, `asset_bundle`. Adapters are named by **output shape, not platform** — short-video platforms share one structure. `GET`-able catalog: the `available_adapters` field in any `outputs` response.
+
+Which adapters a profile produces by default:
+
+| `production_profile` | declared `output_adapters` |
+| --- | --- |
+| `storybook` | `pdf_ebook`, `asset_bundle` |
+| `knowledge_content` | `wechat_official_account`, `xiaohongshu_carousel`, `asset_bundle` |
+| `platform_note` | `wechat_official_account`, `xiaohongshu_carousel`, `asset_bundle` |
+| `single_shot` | `asset_bundle` |
+
+Rules:
+
+- Adapters are **local-only translation**: they never call WeChat/Xiaohongshu/video platforms, never publish, and never write back into the source package's `items`.
+- Every output carries `source_package_id`, `source_package_version` and `source_item_ids`, so "the source changed and this output is outdated" is decidable. Editing an item marks only the outputs that reference it as `stale`; it does not invalidate the whole package.
+- `short_video` and `pdf_ebook` are declared `planning_only`: they emit structure/planning data (shot table, page structure) that a later step renders. Do not present them as final media files.
+- The backend does not resolve `asset_ids` into URLs (the frontend does). When no URL exists, `wechat_official_account` emits `<img data-asset-id="...">` placeholders instead of silently dropping images.
+- Package validation has two tiers: structural problems (unknown type, non-array items, `status` outside its domain, item count above the cap) are hard errors; content-quality issues (below the recommended item count, missing recommended fields, no media prompt at all) are returned as `warnings` and still saveable.
+
+Commands:
+
+```bash
+python .agents/skills/ylcraft-creative-workflow/scripts/creative_project_workflow.py package-get --project-id <id>
+python .agents/skills/ylcraft-creative-workflow/scripts/creative_project_workflow.py package-plan --project-id <id> --topic "十二生肖" --brief "一页一个生肖，儿童科普" --item-count 12
+python .agents/skills/ylcraft-creative-workflow/scripts/creative_project_workflow.py package-outputs --project-id <id> --adapters pdf_ebook,asset_bundle
+python .agents/skills/ylcraft-creative-workflow/scripts/creative_project_workflow.py package-outputs --project-id <id> --no-save
+python .agents/skills/ylcraft-creative-workflow/scripts/creative_project_workflow.py package-item-retry --project-id <id> --item-id rat --brief "改写得更口语"
+```
+
+`--no-save` previews outputs without appending a package version; the saved version is what the UI's "输出适配" check reads.
+
 ## Novel Source → World Project
 
 Novel-source world extraction builds a world project from an imported novel. All extraction APIs preview first; `apply` is the only write into a project.
@@ -114,6 +159,7 @@ Common project content types:
 - `prose_review`
 - `prose_rewrite`
 - `production_plan`
+- `content_package`
 
 Use `GET /creative-projects/{project_id}/contents?content_type=<type>` to fetch a stage.
 

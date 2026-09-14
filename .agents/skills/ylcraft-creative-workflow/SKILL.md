@@ -1,11 +1,11 @@
 ---
 name: ylcraft-creative-workflow
-description: Drive YLCraft creative-project workflows through the local API. Use when Codex needs to create or continue novels, short-drama projects, character syncing, chapter outlines, prose bodies, scripts, comic pages, storyboards, reference matching, generation logs, or project export inside the YLCraft repo.
+description: Drive YLCraft creative-project workflows through the local API. Use when Codex needs to create or continue novels, short-drama projects, character syncing, chapter outlines, prose bodies, scripts, comic pages, storyboards, reference matching, lightweight content packages (picture books, knowledge cards, platform posts), platform output adapters, generation logs, or project export inside the YLCraft repo.
 ---
 
 # YLCraft Creative Workflow
 
-Use this skill when a request is about producing or continuing a YLCraft creative project: novel planning, character cards, chapter outlines, prose chapters, short-drama scripts, comic pages, storyboards, reference assets, production profiles, or production logs. It is also the repo's reusable API-facing workflow for external agents; prefer stable HTTP IDs over direct database writes.
+Use this skill when a request is about producing or continuing a YLCraft creative project: novel planning, character cards, chapter outlines, prose chapters, short-drama scripts, comic pages, storyboards, reference assets, production profiles, lightweight content packages, or production logs. It is also the repo's reusable API-facing workflow for external agents; prefer stable HTTP IDs over direct database writes.
 
 ## Default Approach
 
@@ -51,6 +51,27 @@ When creating a project, choose a `production_profile` instead of assuming every
 - `single_shot`: idea or source asset → image/video experiment
 
 The profile is stored in project settings and does not disable independent image, video, 3D, upload, or image-editor APIs.
+
+## Content Packages (Lightweight)
+
+When the request is a picture book, knowledge cards, a platform post, or a single-shot experiment, do **not** force the staged narrative chain (outline → chapter plan → prose → storyboard). Use a **content package** instead: topic or source material → package plan → per-item text and image prompts → platform outputs. No outline, project bible, or prose is required.
+
+A package is a versioned `ProjectContent` with `content_type=content_package`: a `package_type`, an ordered `items` list (one item per page/card/shot), and any platform `outputs` produced so far.
+
+```bash
+python .agents/skills/ylcraft-creative-workflow/scripts/creative_project_workflow.py package-plan --project-id <id> --topic "十二生肖" --brief "一页一个生肖，儿童科普" --item-count 12
+python .agents/skills/ylcraft-creative-workflow/scripts/creative_project_workflow.py package-get --project-id <id>
+python .agents/skills/ylcraft-creative-workflow/scripts/creative_project_workflow.py package-outputs --project-id <id>
+python .agents/skills/ylcraft-creative-workflow/scripts/creative_project_workflow.py package-item-retry --project-id <id> --item-id rat --brief "改写得更口语"
+```
+
+- Omit `--adapters` on `package-outputs` to produce whatever the project's profile declares; add `--no-save` to preview without appending a version.
+- Adapters are **local format translation only**: they never publish, never call WeChat/Xiaohongshu/video platforms, and never rewrite the source `items`.
+- Retrying one item leaves every other item untouched and marks only the outputs that reference it as `stale`.
+- `short_video` and `pdf_ebook` are `planning_only`: they emit planning structure (shot table, page structure) that a later rendering step consumes, not finished media files. Do not report them as final deliverables.
+- `article_package`, `social_carousel`, `shot_list` and `single_media` are currently **API-only** — callable from here but with no dedicated UI yet.
+
+Read `references/api-workflows.md` for package types, adapter types, per-profile defaults, validation tiers, and the full command list.
 
 ## Director Plans
 
