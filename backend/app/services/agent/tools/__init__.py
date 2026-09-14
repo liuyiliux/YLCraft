@@ -220,6 +220,11 @@ from .creative_project_tools import (
     build_content_package_outputs,
 )
 
+from .previs_tools import (
+    previs_preview_operations,
+    previs_apply_operations,
+)
+
 from .writing_style_tools import (
     list_writing_style_profiles,
     get_writing_style_profile,
@@ -424,6 +429,8 @@ TOOLS = [
     retry_content_package_item,
     save_content_package,
     build_content_package_outputs,
+    previs_preview_operations,
+    previs_apply_operations,
     list_writing_style_profiles,
     get_writing_style_profile,
     list_writing_style_projects,
@@ -621,6 +628,8 @@ __all__ = [
     "retry_content_package_item",
     "save_content_package",
     "build_content_package_outputs",
+    "previs_preview_operations",
+    "previs_apply_operations",
     "list_writing_style_profiles",
     "get_writing_style_profile",
     "list_writing_style_projects",
