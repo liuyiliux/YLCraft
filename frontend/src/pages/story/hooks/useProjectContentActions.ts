@@ -322,12 +322,25 @@ export function useProjectContentActions(deps: Record<string, any>) {
       message.warning('请先填写图片提示词')
       return
     }
-    await handleInlineGenerateImage(prompt, {
+    const result: any = await handleInlineGenerateImage(prompt, {
       contentId: contentPackageContent?.id,
       sourceType: 'content_package',
       sourceIndex: index,
       sourceTitle: String(item.title || `内容单元 ${index + 1}`),
     }, { awaitAsync: true })
+    // 与批量路径保持一致：把结果写回**条目**（表单），而不是只留在页面级 `inlineImages`。
+    // 原因：`inlineImages` 的键含 `chapterNumber`，写入端用 `activeChapterNumber` 补齐
+    // （`handleInlineGenerateImage` L179），条目行无从得知该值——只写那里会导致
+    // "生成成功、条目上却看不到"。写回表单同时保证保存时随内容包一起落库。
+    if (result && typeof result === 'object' && result.assetId) {
+      contentPackageForm.setFieldValue(['items', fieldName, 'asset_ids'], [result.assetId])
+      // 只在**确实拿到新地址**时覆盖：异步分支可能只回 assetId，若把 image_url 写成空串，
+      // 会把这一条已有的图抹掉（表现为"重生成后图没了"）。
+      if (result.url) {
+        contentPackageForm.setFieldValue(['items', fieldName, 'image_url'], result.url)
+      }
+      contentPackageForm.setFieldValue(['items', fieldName, 'status'], 'succeeded')
+    }
   }
   async function handleBatchGenerateContentPackageImages() {
     if (!selectedProject || !contentPackageContent) return

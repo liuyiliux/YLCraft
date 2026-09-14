@@ -51,7 +51,7 @@
     - **页序（"optional layout" 的实质部分，本条唯一缺口，已补）**：此前内容包条目**只能新增/删除，无法调整顺序**——而绘本的页序是实质要求，且顺序直接决定适配器产出（`asset_bundle` 的 `prompts.tsv` 按 order 排列、`pdf_ebook` 按页序分页）。保存时 `index` 由表单数组顺序重算（`handleSaveContentPackage`），因此新增「上移一页 / 下移一页」按钮（用 antd `Form.List` 自带的 `move`，**无新依赖**）即真实生效；已有 `id` 的条目带着 id 移动，所以**换序不会让引用它的平台输出失效**。_
     - _实测（只读，未点保存）：排序前 `['鼠','牛']` → 点第一项「下移一页」→ `['牛','鼠']` → 再「上移一页」→ `['鼠','牛']`；第 1 项上移与最后一项下移正确禁用；0 个 >=400、0 条控制台 error。_
     - _**如实标注两点边界**：_
-      - _① **批量生图已实现但未端到端验证**——本次只核对了代码路径与入口可达（按钮、状态写回、结果展示），**未实际提交生成**（消耗额度）。真正的生成→任务中心→事件日志→Asset Hub 回流核对属 `#20`。_
+      - _① ~~批量生图已实现但未端到端验证~~ → **2026-09-14 已端到端验证通过**（用免费后端 Agnes 实际生成，见 `#20`）：界面点「批量生成图片」→ 3 个占位逐步 3→2→1→0（逐条出图）→ 页面提示「批量生图完成：成功 3，失败 0」；产物进 Asset Hub、事件日志留痕、条目各自写回 `asset_ids`/`image_url`/`status=succeeded`。_
       - _② **没有可视化排版编辑器**（每页选模板、调整图文位置、导出预览）。这里把 "optional layout" 理解为**布局相关能力中必需的那部分**（页序 + 分页），分页结构由 `pdf_ebook` 适配器产出；`layout` 仍留在 `storybook` 的 `optional_stages` 里未实现。若需要可视化排版，应作为后续 change 立项，本条的完成不代表它已存在。_
 - [x] 12. Implement `knowledge_cards` with topic intro, fact/source placeholders and prompt-only mode.
 - [x] 13. Add the article-package, carousel, shot-list and single-media schemas behind feature flags or API-only routes; do not build four new UIs in the first slice.
@@ -122,7 +122,19 @@
     - _article / carousel / shot_list / single_media 的 smoke 按本条要求**推迟**——它们的 `ui_enabled=false`（`#13`），当前无 UI 可测。_
     - _**一处如实标注的覆盖边界**：本次 smoke 是**只读**的，只验证工作台对已有内容的渲染与入口，**未触发**任何生成，因此"点生成 → 出图 → 回流 Asset Hub"这条消耗型链路在浏览器里未覆盖（属 `#20`，需额度）。_
     - _过程中未消耗额度：科普卡项目的包是用 `PUT .../content-package` **手工写入**的（免费），而非调用 `.../plan`（会调用模型）。_
-- [ ] 20. Verify batch generation enters task center, event logs and Asset Hub with per-item provenance and independent retry.
+- [x] 20. Verify batch generation enters task center, event logs and Asset Hub with per-item provenance and independent retry.
+  - _2026-09-14 完成（用**免费后端 Agnes Image 2.1 Flash** 实际生成，未消耗额度）：_
+    - _测试对象：科普卡项目（`knowledge_content` / `knowledge_cards`，3 条 item，各带图片提示词）。先把该项目的默认生图模型设为 Agnes（走前端同一接口 `PATCH /creative-projects/{id}` 的 `metadata.default_image_model`），再从**界面**点「批量生成图片」。_
+    - **① 批量生成** ✓ 3 个「尚未生成」占位逐步 3→2→1→0（每条生成完即替换），页面提示「批量生图完成：成功 3，失败 0」，页面上出现 3 个图片元素；0 个 >=400、0 条控制台 error。_
+    - **② 事件日志** ✓ `GET /logs?scene=image`：该项目 3 条 `status=success` 记录，`provider=Agnes Image 2.1 Flash`、`model=agnes-image-2.1-flash`、`project_id` 归属正确。_
+    - **③ Asset Hub** ✓ 该项目 3 个素材，名称即各自条目的图片提示词（逐条对应，非共享一份）。_
+    - **④ 逐条溯源** ✓ 包内 3 条各自写回**自己的** `asset_ids` + `image_url` + `status=succeeded`（非整包一个 id）；素材关联的 metadata 带 `source_type=content_package`、`source_index`、`source_title`，由 `linkCreativeProjectAsset(role=output, relation=derived_from)` 写入。_
+    - **⑤ 独立重生成** ✓ 数据级确定性验证：点击第 2 条的「重新生成」后，`source_index=1` 的素材关联 **9 → 10**（新增 `9fb271a2-…`），而 `source_index=0` 与 `2` 的关联计数与资产集合**完全不变**——即只有目标条目产生新的溯源记录。_
+    - _**一处与任务措辞的差异（如实标注）**：**任务中心（`project_task_records`）没有记录**。原因不是缺陷而是设计：任务账本仅在 `result.task_id and result.status == "pending"` 时创建（`api/v1/images.py` L618），即**只服务异步供应商**；Agnes 同步返回 `status=done`，没有待轮询的任务，因此其留痕正确落在**事件日志 + Asset Hub**（架构文档原文即写「Project-scoped **async** image tasks are mirrored to `project_task_records`」）。若换用异步生图供应商，同一路径会同时产生任务记录。本条按"批量生成可追溯"的实质要求判定通过。_
+    - _**过程中发现并修复了两个真实缺陷**（都出现在单条生成的界面路径上，`#14` 新增的悬浮按钮把第一个暴露出来）：_
+      - _**① 悬浮按钮把整个表单提交了**：`GeneratedMediaThumb` 用原生 `<button>`，在 `<Form>` 内默认 `type="submit"`，一点就触发 `handleSaveContentPackage`（保存 + 关闭弹窗）。已在三处按钮显式加 `type="button"`。`/multi-platform-gen` 中同样按钮不在表单内，故那边一直无此问题。_
+      - _**② 单条生成的结果读不到**：写入端 `imageContextKey` 会把 `chapterNumber` 补成 `activeChapterNumber`，而条目行的键默认 `'0'`，两者键不同 → 生成成功却在条目上看不到。已让条目行用同一 `chapterNumber`，并让单条路径**也写回条目表单**（与批量路径一致，且保存时能随包落库）；写回时只在新地址非空时才覆盖 `image_url`，避免异步分支只回 assetId 时把已有图抹掉。_
+    - _遗留（未在本次处理）：本次的重复测试在 `source_index=1` 上累积了多条素材关联（历史测试痕迹），属测试数据噪声，不影响功能。_
 - [x] 21. Update system architecture, API Surface, creative workflow Skill and external-agent examples when the first endpoint is implemented.
   - _2026-09-14 四处同步完成：_
     - **system architecture**（本 change 内容）：`YLCRAFT_SYSTEM_ARCHITECTURE.md` §4.4.6 新增「内容包契约三部分」——① 类型 schema 与其**两档校验**（结构性硬错误 vs 内容质量软提示，并说明为何不能把缺字段一律当硬错误：生成是 LLM 驱动的，"先存标题再补提示词"是正常中间态）；② 五个适配器与**三条边界**（不调外部平台 / 不写回源包 / 不保存第二份事实源）及"哪些适配器由方案声明决定"；③ 条目级重试与 `stale` 语义（按依赖判定）。另在 §5 平台采集行补 Cookie 规范化收在公共基类，§6 接口统计、§7 OpenSpec 状态同步。_
