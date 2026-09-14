@@ -357,3 +357,16 @@ Context Pack **记录纳入/排除的源 ID 与原因**（≈ 可溯源）；存
 3. **同一形状的定义只能有一份**：`capability_diff` 与运行授权溯源原本会各写一份角色能力形状，提取公共 `role_capabilities(role)` 后共用，避免漂移；顺带让此前**在生产代码里零调用**的 `capability_diff` 真正被用到。
 4. **"零调用"的工具函数是警报**：某函数只有测试在调、生产无调用，说明其设计意图（如"路由经审批"）很可能从未接线。定位缺口时可据此快速判断。
 5. **平台级 API Key 的开关语义**：`YLCRAFT_EXTERNAL_API_REQUIRE_KEY` **关闭 ≠ 不校验**——不强制携带，但**携带即必须有效**（无效 Key 仍 401）。
+
+
+### 9.23 内容包与媒体生成
+
+1. **`Form.List` 里的原生 `<button>` 必须显式 `type="button"`**：HTML 默认 `type=submit`，放进 antd `<Form>` 后一点就会**提交整个表单**（表现为"顺手保存并关闭弹窗"）。本项目已在 `GeneratedMediaThumb` 三处按钮踩过；antd `<Button>` 默认 `htmlType="button"` 无此问题，风险只来自原生 `<button>`。
+2. **`imageContextKey` 会补齐 `chapterNumber`**：写入端用 `context.chapterNumber ?? activeChapterNumber` 生成键，读取端若漏掉该字段就会得到**另一个键**——表现为"生成成功却在界面上看不到"。跨组件读写同一份 `inlineImages` 时必须用同一组键输入。
+3. **单条生成与批量生成的结果写入位置必须一致**：批量路径写回条目表单（`items[i].image_url`/`asset_ids`/`status`），单条路径原先只写页面级 `inlineImages`。已让单条也写回表单（与批量一致，保存时能随包落库）；写回时**只在新地址非空时才覆盖** `image_url`，否则异步分支只回 `assetId` 会把已有图抹掉。
+4. **编辑器字段值在 `input`/`textarea` 里，`inner_text` 读不到**：用浏览器断言表单类界面时，必须读控件 `value`；用 `inner_text` 会误判为"字段没渲染"。
+5. **缩略图等异步渲染元素的计数会抖动**：`img[src*=...]` 的计数在重渲染瞬间可能少一个，**不能据此判定数据丢失**——以数据库/接口为准再下结论。
+6. **`tsconfig` 关闭了 `noUnusedLocals`，`tsc` 不会报死导入**：删代码后要另行按"标识符是否只出现在导入行"扫一遍死导入。
+7. **`frontend/` 没有 ESLint 配置**（`package.json` 也未声明 eslint 依赖）：`npm run lint` 脚本存在但跑不起来，**在未改动代码上同样失败**，属既有工具链缺口。
+8. **免费生图后端 Agnes**：连接器 `agnes-image-21-flash`（provider `agnes`，模型 `agnes-image-2.1-flash`，支持文生图+图生图），尺寸取值为 `1K/2K/3K/4K`；可用于不消耗额度的真实生图验证（约 10–15 秒/张）。
+9. **`context-index.yaml` 的引号标量里必须用中文引号「」**：`summary:` 与 `triggers:` 项都是双引号包裹的 YAML 标量，**内层再出现 ASCII 双引号会提前闭合字符串**，整个文件无法解析。本项目已犯 **3 次**（2026-09-13 一次、2026-09-14 两次），且两次都是"注入完知识、以为成功了"之后才发现。**改完索引必须立刻跑一次 `yaml.safe_load` 复验**，不要等到提交前才发现。
