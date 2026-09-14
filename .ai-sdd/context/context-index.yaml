@@ -17,12 +17,15 @@
 # （.ai-sdd/requirements/creative-writing-style-profiles/harvest-2026-09-11.md）。
 # 2026-09-12 追加：creative-project-dynamic-state、creative-project-narrative-runtime、
 # agent-center-conversation-workbench-redesign 的 harvest 报告。
+# 2026-09-13 追加：agent-team-composition 的 harvest 报告。
+# 2026-09-14 追加：content-package-workspaces 的 harvest 报告
+# （.ai-sdd/requirements/content-package-workspaces/harvest-2026-09-14.md）。
 # 权威替代：docs/architecture/YLCRAFT_SYSTEM_ARCHITECTURE.md（项目架构总纲）。
 
 # 业务知识
 
 - path: business/领域术语与业务对象（domain-glossary）.md
-  summary: "任务与观测领域术语（任务账本、三层观测视图、任务诊断字段、事件收口、业务语义事件）；写作风格档案领域术语（风格档案、三层模型、有界样本、表达式契约、绑定强度、归档可逆）；Agent 工作台前端术语（三区布局、顶部控制栏、待确认横幅 vs 确认卡片、遥测条、thread.status 与 run 级状态的区别）；世界构建术语（梯子原则、域与域契约、层次策略、三档生成动作、CandidateOrigin、世界构建模板）；制作台术语（制作台、阶段轨、渲染时计算的完成度）；动态状态术语（append-only 台账、StateLedger、scope、state_as_of）；叙事运行时术语（叙事快照、故事事件、伏笔台账、风格测量、叙事运行、Context Pack V2 七层 T0-T6）；Agent 工作台对话优先信息架构（内联执行证据）；小说来源与世界提取术语（来源快照、文本块、混合检索、候选、source_canon、基础层与扩展域）；创作项目闭环术语（创作项目作为主工作单元、ProjectContent 独立存储、阶段机、画布作为项目编排面、稳定与实验能力分级）；提示词参考库术语（提示词来源、提示词引用、模型分组、与 PlatformTemplate 的分工）；图转 3D 与绑骨术语（任务账本、TC3 连接器、inputMode 默认 image）；视频生成术语（异步任务账本、能力约束，及其与图片同步快操作的区别）；Supervisor 运行时术语（主链、执行树、spawn/fork/continuable 三原语）；声明式团队组合术语（主机平面/代理平面、TeamTemplate、能力授权、前缀缓存稳定、role_capabilities、压缩溯源引用 system_prompt_ref/tool_schema_ref）"
+  summary: "任务与观测领域术语（任务账本、三层观测视图、任务诊断字段、事件收口、业务语义事件）；写作风格档案领域术语（风格档案、三层模型、有界样本、表达式契约、绑定强度、归档可逆）；Agent 工作台前端术语（三区布局、顶部控制栏、待确认横幅 vs 确认卡片、遥测条、thread.status 与 run 级状态的区别）；世界构建术语（梯子原则、域与域契约、层次策略、三档生成动作、CandidateOrigin、世界构建模板）；制作台术语（制作台、阶段轨、渲染时计算的完成度）；动态状态术语（append-only 台账、StateLedger、scope、state_as_of）；叙事运行时术语（叙事快照、故事事件、伏笔台账、风格测量、叙事运行、Context Pack V2 七层 T0-T6）；Agent 工作台对话优先信息架构（内联执行证据）；小说来源与世界提取术语（来源快照、文本块、混合检索、候选、source_canon、基础层与扩展域）；创作项目闭环术语（创作项目作为主工作单元、ProjectContent 独立存储、阶段机、画布作为项目编排面、稳定与实验能力分级）；提示词参考库术语（提示词来源、提示词引用、模型分组、与 PlatformTemplate 的分工）；图转 3D 与绑骨术语（任务账本、TC3 连接器、inputMode 默认 image）；视频生成术语（异步任务账本、能力约束，及其与图片同步快操作的区别）；Supervisor 运行时术语（主链、执行树、spawn/fork/continuable 三原语）；声明式团队组合术语（主机平面/代理平面、TeamTemplate、能力授权、前缀缓存稳定、role_capabilities、压缩溯源引用 system_prompt_ref/tool_schema_ref）；内容包术语（内容包、两种生产族 narrative/content_package、package_type 六种、条目与「index 即页序」、适配器按产出形态命名、溯源三元组 source_package_id/version/source_item_ids、stale 与 stale_reason、planning_only、同步 vs 异步供应商对任务中心的影响）"
   scope: all
   stage: [proposal, specs, design]
   load_policy: on-demand
@@ -43,11 +46,14 @@
     - "涉及视频生成、/video-gen 工作台、视频能力约束"
     - "涉及异步长任务与同步快操作的区别（入不入任务中心）"
     - "涉及 Agent 委派、子代理、执行树、父 Run 续跑"
+    - "涉及内容包、绘本/科普卡/平台图文/单镜头等轻量方案"
+    - "涉及 package_type、条目的页序 index、平台适配输出与溯源三元组"
+    - "需要判断某个内容包类型是否有工作台界面（四种为 API-only）"
 
     - "涉及小说来源导入、来源快照、文本块、混合检索"
     - "涉及世界设定提取、候选确认、apply 写入、派生项目"
 - path: business/业务规则与核验体系（business-rules）.md
-  summary: "任务落库白名单规则、启动对账、事件/任务重试边界、事件敏感字段与长度约束；写作风格档案生命周期、材料闸门与泄漏阈值、强度注入量；Agent 工作台规则（顶栏写回配置、拒绝=取消运行、有数据才显示、缺失 --、卡片收敛例外、按类名折叠）；世界构建规则（结构过闸、不伪造证据、apply 唯一写入、内置字段只增不删、契约外转建议、幂等指纹）；写作前置检查规则（preflight 只读、返回契约固定、生成方法权威、opt-in 方法包默认不生效）；制作台规则（不持久化派生阶段状态、六条完成度定义、计数仅作指示、批量生产非破坏性收纳）；数据库迁移安全规则（升级是运维动作、运行时 DDL 须有归宿、先备份、迁移测试只用一次性库）；创作项目动态状态规则（内容自由信封有 schema、append-only 去重、折叠语义、隔离原则）；叙事运行时规则（正典 vs 提案分界、派生状态可溯源、supersede 不销毁、aftermath 幂等、失败隔离）；Agent 工作台信息架构规则（主任务优先、辅助失败不阻塞聊天）；小说来源与世界提取规则（证据逐字命中否则丢弃、候选先于正典、apply 唯一写入点、角色复用 Character）；创作项目闭环规则（阶段感知生成、JSON-first 校验与一次修复、生成单元独立存储、生成资产必须记录谱系）；提示词参考库规则（引用不自动入素材库、同步本地优先、按来源+外部 id 去重、分面彼此独立）；图转 3D 规则（输入守卫、结果入资产中枢带谱系、供应商 id 与本地 id 分离、绑骨需公网可达源模型）；角色册与角色流程规则（两类流程门禁不同、字段来源分层、完善度只用列表字段且阈值按真实填充率设计）；视频生成规则（提交不阻塞、终态只入库一次、项目谱系 role=output、图生视频需公网首帧）；Supervisor 规则（汇合重进父规划、失败不降级、确认向父传播、文案须匹配真实执行模型、域内循环保持独立）；声明式团队组合规则（模板校验失败绝不 fallback、失败不降级为文本、模式切换不增删工具、压缩是有损状态迁移须带溯源、能力挂载即授权变更、归档前须核对 delta spec 是否描述未实现行为）"
+  summary: "任务落库白名单规则、启动对账、事件/任务重试边界、事件敏感字段与长度约束；写作风格档案生命周期、材料闸门与泄漏阈值、强度注入量；Agent 工作台规则（顶栏写回配置、拒绝=取消运行、有数据才显示、缺失 --、卡片收敛例外、按类名折叠）；世界构建规则（结构过闸、不伪造证据、apply 唯一写入、内置字段只增不删、契约外转建议、幂等指纹）；写作前置检查规则（preflight 只读、返回契约固定、生成方法权威、opt-in 方法包默认不生效）；制作台规则（不持久化派生阶段状态、六条完成度定义、计数仅作指示、批量生产非破坏性收纳）；数据库迁移安全规则（升级是运维动作、运行时 DDL 须有归宿、先备份、迁移测试只用一次性库）；创作项目动态状态规则（内容自由信封有 schema、append-only 去重、折叠语义、隔离原则）；叙事运行时规则（正典 vs 提案分界、派生状态可溯源、supersede 不销毁、aftermath 幂等、失败隔离）；Agent 工作台信息架构规则（主任务优先、辅助失败不阻塞聊天）；小说来源与世界提取规则（证据逐字命中否则丢弃、候选先于正典、apply 唯一写入点、角色复用 Character）；创作项目闭环规则（阶段感知生成、JSON-first 校验与一次修复、生成单元独立存储、生成资产必须记录谱系）；提示词参考库规则（引用不自动入素材库、同步本地优先、按来源+外部 id 去重、分面彼此独立）；图转 3D 规则（输入守卫、结果入资产中枢带谱系、供应商 id 与本地 id 分离、绑骨需公网可达源模型）；角色册与角色流程规则（两类流程门禁不同、字段来源分层、完善度只用列表字段且阈值按真实填充率设计）；视频生成规则（提交不阻塞、终态只入库一次、项目谱系 role=output、图生视频需公网首帧）；Supervisor 规则（汇合重进父规划、失败不降级、确认向父传播、文案须匹配真实执行模型、域内循环保持独立）；声明式团队组合规则（模板校验失败绝不 fallback、失败不降级为文本、模式切换不增删工具、压缩是有损状态迁移须带溯源、能力挂载即授权变更、归档前须核对 delta spec 是否描述未实现行为）；内容包与平台适配规则（两档校验且结构性问题才硬拒、schema 是条数唯一权威、适配器三条边界、产出适配器由方案声明决定、过期按依赖判定、单条重跑不重规划整包、导演计划按族用各自阶段词表、content_package 目前只有项目内一条路径）"
   scope: all
   stage: [specs, design, tasks]
   load_policy: on-demand
@@ -77,6 +83,9 @@
     - "涉及角色两类流程（提取 vs 角色先行）与字段来源"
     - "涉及视频提交/轮询/入库或视频项目谱系"
     - "审计 UI 文案与文档是否夸大或低估多智能体能力"
+    - "涉及内容包保存校验、条数上限、适配器产出范围"
+    - "涉及条目变更后哪些平台输出会变为过期"
+    - "涉及内容生产方案声明的 output_adapters 与导出集合"
 
 # 数据知识
 
@@ -94,7 +103,7 @@
     - "涉及 world_domain_definitions、world_building_templates、world_fact_candidates"
 
 - path: data/枚举值字典（enum-dictionary）.md
-  summary: "事件 scene 取值、任务持久化白名单、任务与事件状态枚举、写作风格档案状态与强度枚举、AgentThread.status 取值域与智能体 default_workflow 七档、CandidateOrigin 与 run.kind、内置域 15 个、preflight check 的 pass/block、动态状态的 scope 与 op、叙事快照/伏笔/运行模式枚举、来源状态与派生类型、候选状态、域判定与域来源、创作项目 project_type/source_type/status/content_type、资产 role/relation、template_stage、提示词库 model_group（ChatGPT/NanoBanana2/NanoBananaPro）、图转 3D 的 kind 与绑骨模式（skeleton/motion）、角色 workflow_source / extract_origin / 字段来源"
+  summary: "事件 scene 取值、任务持久化白名单、任务与事件状态枚举、写作风格档案状态与强度枚举、AgentThread.status 取值域与智能体 default_workflow 七档、CandidateOrigin 与 run.kind、内置域 15 个、preflight check 的 pass/block、动态状态的 scope 与 op、叙事快照/伏笔/运行模式枚举、来源状态与派生类型、候选状态、域判定与域来源、创作项目 project_type/source_type/status/content_type、资产 role/relation、template_stage、提示词库 model_group（ChatGPT/NanoBanana2/NanoBananaPro）、图转 3D 的 kind 与绑骨模式（skeleton/motion）、角色 workflow_source / extract_origin / 字段来源；内容包与平台适配（package_type 六种、item status 七态与输出三态、adapter_type 五种含 planning_only、PACKAGE_PLAN_STAGES 五阶段、production_family、planning_unit 三档、各 profile 的 output_adapters、各包类型的条数上限）"
   scope: all
   stage: [design, tasks, apply]
   load_policy: on-demand
@@ -110,11 +119,13 @@
     - "涉及 model_group、提示词来源类型取值"
     - "涉及 model3d kind、motion_type 取值"
     - "涉及 workflow_source、extract_origin 取值"
+    - "涉及 package_type、item status、adapter_type 取值"
+    - "涉及内容包的计划阶段词表或生产族（narrative vs content_package）"
 
 # 工程约束
 
 - path: engineering/设计约束（design-conventions）.md
-  summary: "AI 调用双层观测模式、任务不能自动收口、重试复用业务端点、前端选项同步、函数直调的坑；写作风格 T6 预算与纯函数注入、人机边界对等、TOOLS 注册表判定；Agent 工作台前端约束（窄屏禁用 nth-child、tabular-nums 非等宽、JSX 注释、!important 覆盖、勾选项审计）；世界构建约束（复用管线半段、origin 放候选级、schema 边界前移、同步判据、design 可能滞后于 tasks）；Creative Skill 约定与检索陷阱（Select-String 不递归子目录）；派生状态优先渲染时计算、/story 实现已迁至 components/；数据库迁移约束（version_num 长度、仅运行时建表、env.py 全量导入、禁止 stamp）；动态状态约束（LLM 输出字段驱动、纯服务优先、注入分层、无新路由不改 API surface）；叙事运行时约束（T0 不静默截断、异步生图不算正文成功、熔断恢复需显式动作）；Agent 工作台信息架构约束（三条产品约束、手写 markdown 解析器）；小说来源与世界提取约束（逐字证据、递归检索、内置字段只增不删、smoke:pages 只是源码扫描）；创作项目闭环约束（模板兼容、生图谱系字段须齐且索引字段为字符串、生成单元独立存储、实验模块不进主流程）；提示词参考库约束（JSONB 分面聚合、非法枚举值不应静默忽略、测试选择器须复核源码、缓存媒体本地优先）；图转 3D 验证坑（history 过滤 pending、表单默认折叠、按钮文案、toast 3 秒消失、真实生成扣额度须先确认）；角色册实现约束（Bible 分节类型不一、identity 键不固定、弱化要给选中态留出口、窄栏排版）；视频生成约束（项目 role=output、WebSocket 协议须跟随页面、图生视频需公网首帧）；外部研究对照（arXiv 2608.25512 的时空可组合性/revertible effects、TencentDB 团队记忆的五步路由分层与 RRF 融合、L0-L3 内容分层，以及对照出的 6 条缺口）；Agent 运行时审计方法（文案防反向失真、首屏空态会误报、折叠内容不在 inner_text、统计测试须匹配 async def）；声明式团队组合约束（AgentScope 需要 enter_scope 接缝、隔离靠结构而非约定且动手前先核实缺陷是否存在、同一形状的定义只能有一份、零调用的工具函数是“设计意图未接线”的警报、REQUIRE_KEY 关闭不等于不校验）"
+  summary: "AI 调用双层观测模式、任务不能自动收口、重试复用业务端点、前端选项同步、函数直调的坑；写作风格 T6 预算与纯函数注入、人机边界对等、TOOLS 注册表判定；Agent 工作台前端约束（窄屏禁用 nth-child、tabular-nums 非等宽、JSX 注释、!important 覆盖、勾选项审计）；世界构建约束（复用管线半段、origin 放候选级、schema 边界前移、同步判据、design 可能滞后于 tasks）；Creative Skill 约定与检索陷阱（Select-String 不递归子目录）；派生状态优先渲染时计算、/story 实现已迁至 components/；数据库迁移约束（version_num 长度、仅运行时建表、env.py 全量导入、禁止 stamp）；动态状态约束（LLM 输出字段驱动、纯服务优先、注入分层、无新路由不改 API surface）；叙事运行时约束（T0 不静默截断、异步生图不算正文成功、熔断恢复需显式动作）；Agent 工作台信息架构约束（三条产品约束、手写 markdown 解析器）；小说来源与世界提取约束（逐字证据、递归检索、内置字段只增不删、smoke:pages 只是源码扫描）；创作项目闭环约束（模板兼容、生图谱系字段须齐且索引字段为字符串、生成单元独立存储、实验模块不进主流程）；提示词参考库约束（JSONB 分面聚合、非法枚举值不应静默忽略、测试选择器须复核源码、缓存媒体本地优先）；图转 3D 验证坑（history 过滤 pending、表单默认折叠、按钮文案、toast 3 秒消失、真实生成扣额度须先确认）；角色册实现约束（Bible 分节类型不一、identity 键不固定、弱化要给选中态留出口、窄栏排版）；视频生成约束（项目 role=output、WebSocket 协议须跟随页面、图生视频需公网首帧）；外部研究对照（arXiv 2608.25512 的时空可组合性/revertible effects、TencentDB 团队记忆的五步路由分层与 RRF 融合、L0-L3 内容分层，以及对照出的 6 条缺口）；Agent 运行时审计方法（文案防反向失真、首屏空态会误报、折叠内容不在 inner_text、统计测试须匹配 async def）；声明式团队组合约束（AgentScope 需要 enter_scope 接缝、隔离靠结构而非约定且动手前先核实缺陷是否存在、同一形状的定义只能有一份、零调用的工具函数是“设计意图未接线”的警报、REQUIRE_KEY 关闭不等于不校验）；内容包与媒体生成约束（Form.List 里原生 button 必须显式 type=button、imageContextKey 会补齐 chapterNumber 导致读写键不一致、单条与批量生成的结果写入位置须一致、表单字段值在 input/textarea 里 inner_text 读不到、缩略图计数会抖动不能据此判定数据丢失、tsconfig 关了 noUnusedLocals 不报死导入、frontend 没有 ESLint 配置、免费生图后端 Agnes 的用法）"
   scope: all
   stage: [design, tasks, apply]
   load_policy: on-demand
@@ -153,6 +164,9 @@
     - "涉及主机平面/代理平面边界、per-session 状态隔离"
     - "涉及工具目录/前缀缓存稳定、压缩溯源引用"
     - "准备归档 change（先核对 delta spec 是否描述了未实现的行为）"
+    - "在 antd Form 内渲染原生 button，或调试「点一下就保存/关弹窗」"
+    - "调试表单类界面或写浏览器断言（字段值在 input/textarea）"
+    - "做不消耗额度的真实生图验证（用免费后端 Agnes）"
 - path: engineering/接口设计规范（api-style-guide）.md
   summary: "本项目 API 约定：统一 /api/v1 前缀、路由文件落点、请求模型、错误语义与文档同步流程；写作风格档案端点与 Agent 工具；Agent 运行与确认接口（step confirm、记忆 save/discard、run cancel、threads 返回字段）；世界构建接口（world-domains CRUD、expand-entity 与 preview、expand-domain 与对应 Agent 工具）；写作前置检查（GET /writing-preflight，UI 与 Agent 共用契约）；叙事运行时接口（narrative/health、aftermath、snapshots、context-preview、foreshadowing、narrative-graph、narrative/runs）；小说来源与世界提取接口（novel-sources、world-extraction-runs、world-entities、world-maps）；创作项目阶段端点（generate-outline/chapter-plan/detail/script/storyboard、canvas、assets）；提示词参考库接口（image-prompts sources/references/media/save-as-asset）；图转 3D 端点（model-3d backends/generate/tasks/history/rig）；视频生成端点（videos backends/generate/tasks/history/file）；Agent 委派与执行树端点（delegate/tree/delegations）"
   scope: all

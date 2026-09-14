@@ -166,3 +166,16 @@
 - **`spawn_mode`**：`spawn`（全新子会话 + 冻结有界上下文快照）/ `fork`（以父上下文的**只读引用**为起点，不复制整条聊天）。校验点：`runtime/delegation.py` 的 `DelegatedTask.from_dict`，非法值抛 `DelegationValidationError`（"spawn_mode 只支持 spawn 或 fork"）。
 - **团队模板 `roles[].spawn`**：与 `spawn_mode` 同域取值（`spawn | fork`），由 `TeamTemplateValidator` 校验。
 - **`context["team_role_authority"]`**：不是枚举，但形状固定为 `{profile, tools, skills, spawn}`——随子 Run 的 `context_json` 一次性落库，作为**不可变授权溯源**。
+
+
+## 17. 内容包与平台适配
+
+- **`package_type`**：`page_book` / `knowledge_cards` / `article_package` / `social_carousel` / `shot_list` / `single_media`。契约（条数边界、推荐字段、`ui_enabled`）集中在 `services/creative_project/content_package_schema.py`，保存路径按类型校验。
+- **item `status`（七态）**：`draft` / `ready` / `generating` / `succeeded` / `failed` / `stale` / `archived`。越界是**硬错误**（保存被拒）。
+- **输出 `status`**：`ready`（已生成）/ `stale`（来源条目已变更）/ `failed`。
+- **`adapter_type`（五种）**：`wechat_official_account` / `xiaohongshu_carousel` / `short_video` / `pdf_ebook` / `asset_bundle`。其中 `short_video` 与 `pdf_ebook` 标记 `planning_only=true`（只出规划数据）。
+- **内容包族计划阶段 `PACKAGE_PLAN_STAGES`**：`package_plan` / `item_text` / `item_prompt` / `media_batch` / `package_outputs`；另可选 `item_review` / `layout`。每个阶段都对应一个已落地能力，不是构想。叙事族阶段与之**不相交**（`outline`/`chapter_plan`/`chapter_outline`/`script`/`novel_body`/`storyboard`/`comic_pages`/`video`）。
+- **`production_family`**：`narrative` / `content_package`。
+- **`planning_unit`**：`stage`（叙事族）/ `item`（绘本、科普卡、单镜头）/ `package`（平台图文，整篇一次成篇）。
+- **各 profile 的 `output_adapters`**：`storybook`→`pdf_ebook, asset_bundle`；`knowledge_content`/`platform_note`→`wechat_official_account, xiaohongshu_carousel, asset_bundle`；`single_shot`→`asset_bundle`。
+- **`topics` 上限**：包类型上限 `page_book`/`knowledge_cards` 120、`article_package` 80、`social_carousel` 10、`shot_list` 60、`single_media` 1（生成数量按此夹取）。

@@ -91,6 +91,11 @@
       - _**① 不该按平台命名适配器**：原实装叫 `douyin_short_video`，但全仓核对发现——该名字**只出现在 design §4 一句与我自己的代码里，没有任何方案声明它**；而项目既有 `connectors/base/social_base.L35 SHORT_VIDEO = "short_video"` 已经是通用口径。短视频平台（抖音/快手/视频号）导出结构本就同一套，差异属发布环节。已改名 **`short_video`**，并在模块内写明"按产出形态命名，不按平台命名"，design §4 同步更正。_
       - _**② 输出集合应由方案声明决定，而非调用方硬传**：原端点要求显式传 `adapters`，等于 `profiles.py` 的 `output_adapters` **依旧无人消费**。已改为**不传时取该项目内容生产方案的 `output_adapters` 全出**（页书→pdf+素材包；科普/平台图文→公众号+小红书+素材包；单镜头→素材包），这也让 `output_adapters` 第一次真正成为运行时依据。新增测试断言"不传 adapters 时按方案全出"。_
 - [ ] 16. Add project-to-package and standalone-package-to-project attachment flows through Asset Hub and project content links.
+  - _2026-09-14 **保持未勾：本条的后半没有实现对象**，归档时沿用与 `agent-team-composition` 4.2 / 2.4 相同的处理（写明前因后果后归档）。_
+    - _本条要求两半：① **project-to-package**（项目内的包经 Asset Hub 与项目内容关联）；② **standalone-package-to-project**（**独立草稿**绑定到项目）。_
+    - _**② 无实现对象**：独立草稿路径从未落地——全仓检索 `content_package_drafts` / `package_draft` 为 **0 命中**。设计 §5.1 曾把它列为"一期实现前必须做选择"的决策点（任务 `#5` 已勾但因当时未留注记，现已无从追溯其结论）；实际落地的是**仅项目内**一条路径：`ProjectContent(project_id, content_type="content_package")`，所有端点都挂在 `/creative-projects/{project_id}/content-package` 下。没有"无项目的包"，因此没有可"绑定到项目"的对象。_
+    - _**① 的实质部分已由既有能力覆盖**：包内条目生成出的资产经 `linkCreativeProjectAsset(role=output, relation=derived_from)` 关联到项目与内容，metadata 带 `source_type`/`source_index`/`source_title`；实测（见 `#20`）逐条溯源成立，且响应里的 `project.assets` / `content-package.outputs[]` 即项目侧的包↔资产关联视图。_
+    - _结论：待真正引入"无项目的独立内容包草稿"（例如独立的 `/content-packages` 入口）时，本条才有可执行对象；届时应在该写入路径上调用 `bind-project` 语义的接口。**在此之前勾选它等于宣称一个不存在的能力。**_
 - [x] 17. Update Agent Director routing so package plans use content cards/items and full narrative plans use existing stages.
   - _2026-09-14 完成：_
     - _**缺口定位**：`context_pack.py` 会把 `production_profile.recommended_stages` **原样**交给导演（无族别判断），而内容包族的四个 profile 当时写的却是**叙事阶段**——`storybook` 是 `["outline","chapter_plan","chapter_outline","script","storyboard","comic_pages"]`。也就是导演拿到一个绘本包项目时，被引导去提议章节大纲与细纲。这正是本条要修的路由错误。_

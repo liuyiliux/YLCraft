@@ -247,3 +247,19 @@
 | **`role_capabilities`** | 单个角色授权声明的**唯一形状定义**（工具与技能排序）；`capability_diff` 与运行溯源共用它，避免两处形状漂移。 |
 | **压缩溯源引用** | `system_prompt_ref` / `tool_schema_ref`：压缩产物除"折了哪些消息"外，还指名它是在**哪一版**系统提示与工具 schema 下产生的。 |
 | **场景推演 vs 团队排练** | 同一个模板驱动两条路径：`scene-sim`（场景推演）与 `writer-room-team`（Writer Room 每角色一个子代理 + editor 汇合）。 |
+
+
+## 内容包工作台与平台适配器
+
+| 术语 | 含义 |
+| --- | --- |
+| **内容包（content package）** | 非叙事族的产物单位：版本化 `ProjectContent(content_type="content_package")`，含 `package_type`、`items`（条目数组）与 `outputs`（平台输出）。不要求正文、大纲或项目圣经。 |
+| **两种生产族（`production_family`）** | `narrative`（大纲→章节→正文/脚本→分镜，编排单位是**章节**）与 `content_package`（规划→逐条→适配输出，编排单位是**条目**）。两族共用 `ProjectContent`、生产计划结构与确认规则，**区别在编排单位**，因此导演计划各有自己的阶段词表（见 `PACKAGE_PLAN_STAGES`）。 |
+| **`package_type`** | 六种内容包契约：`page_book`（绘本/漫画页）、`knowledge_cards`（科普卡）、`article_package`（文章单元）、`social_carousel`（图文轮播）、`shot_list`（镜头表）、`single_media`（单媒体）。后四种当前 `ui_enabled=false`（**仅 API**，无工作台界面）。 |
+| **条目（item）** | 内容包内**最小可重跑单元**（一页/一张卡/一个镜头）。可独立改文字、改提示词、重跑或重出图，不影响其它条目。 |
+| **`index` 即页序** | 不是任意元数据：编辑器支持「上移/下移一页」，保存时由**表单数组顺序**重算，适配器据此排布（`prompts.tsv` 按 order、`pdf_ebook` 按页序分页）。已保存条目带着自己的 `id` 移动，因此换序**不会**让引用它的输出失效。 |
+| **适配器（adapter）** | 把同一份内容包翻译成平台形状的**纯函数**：`wechat_official_account`、`xiaohongshu_carousel`、`short_video`、`pdf_ebook`、`asset_bundle`。**按产出形态命名而非按平台**——短视频平台导出结构同一套，差异属发布环节。 |
+| **溯源三元组** | 每条输出的 `source_package_id` / `source_package_version` / `source_item_ids`，使"源包改了、输出过期了"可判定。 |
+| **`stale` / `stale_reason`** | 条目变更后，**引用了它**的输出被标 `stale`（按依赖判定，非无差别作废）；过期信息只落在 outputs 自身，不写进 `warnings`（后者语义是契约校验提示，会被保存路径整体覆盖）。 |
+| **`planning_only`** | 适配器能力标记：`short_video` 与 `pdf_ebook` 只产出**规划数据**（镜头表/分页结构），需后续渲染步骤，不得当作成品交付。 |
+| **同步 vs 异步供应商** | 图片生成若返回 `pending` 任务则进任务中心（可轮询/恢复）；**同步**供应商（如免费后端 **Agnes Image 2.1 Flash**）在请求内完成，不留任务记录——其留痕落在**事件日志 + Asset Hub**。 |
