@@ -91,9 +91,22 @@ class GenericLLMBackend(LLMBackend):
         headers["Content-Type"] = "application/json"
         self._chat_url = _build_chat_url(connector.base_url or "", connector.api_endpoint)
         
+        # `trust_env=False` 是必须的，不是随手加的：
+        #
+        # httpx 默认 `trust_env=True`，会通过 `getproxies()` 读取**系统代理**（Windows 上
+        # 包括注册表 `Internet Settings` 里的 WinINET 配置）。而这个 client 是**长命的**
+        # ——后端启动时建一次就一直用。于是启动时若系统代理开着（如 Clash 的 127.0.0.1:10090），
+        # 这个代理就被固化进 client；之后代理一关，**每一次生成都会失败**，而报错只有
+        # `All connection attempts failed`，既不说走了代理、也不说代理是谁，几乎无法定位。
+        # 实际就踩过：后端连续跑了两天，中间代理工具关掉，所有 LLM 生成静默全挂。
+        #
+        # 仓库里其它 AI 客户端（cos_storage / ai/types / model3d/workspace / test_manager）
+        # 一律显式 `trust_env=False`，这里补齐一致性。需要走代理的场景应由配置显式注入
+        # （见 `services/ai_connector/service.py` 的 proxy 注入），而不是隐式继承系统设置。
         self.client = httpx.AsyncClient(
             headers=headers,
             timeout=120.0,
+            trust_env=False,
         )
         
         logger.info(f"[GenericLLM] 初始化 Backend: {connector.name}")
