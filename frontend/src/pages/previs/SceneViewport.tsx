@@ -1,15 +1,23 @@
 /**
  * YLCraft — 预演场景 3D 视口
  *
- * 渲染 PrevisNode（基础几何体、人形占位）。复用 scenePrimitives 的底层原语，
+ * 渲染 PrevisNode（基础几何体、人形占位、灯光）。复用 scenePrimitives 的底层原语，
  * 不承载 Story 业务状态；节点 transform/锁定由上层编辑器管理。
+ *
+ * 三处自 tasks.md #24 / #25 起的变化：
+ *   - `light` 节点真正参与渲染（此前类型与标签都声明了，但 `NodeMesh` 没有分支，
+ *     建了不生效且不报错）。
+ *   - 开启真实阴影。此前全仓 `castShadow` 为 0、Canvas 也没开 `shadows`，画面发平。
+ *   - 导演视角显示当前机位的**视锥**，让焦距/画幅的变化在机外也看得见
+ *     （FrameForge 与 Previs Pro 都靠这个把「镜头光学」变成可读信息）。
  */
 
-import { Component, Suspense, useCallback, useEffect, type ReactNode } from 'react'
+import { Component, Suspense, useCallback, useEffect, useMemo, type ReactNode } from 'react'
 import { Canvas, useThree, type RootState } from '@react-three/fiber'
-import { OrbitControls, Grid, ContactShadows, PerspectiveCamera, useGLTF } from '@react-three/drei'
+import { OrbitControls, Grid, PerspectiveCamera, useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import type { PrevisCamera, PrevisNode, PrimitiveKind } from './types'
+import { readLightConfig } from './types'
 import { ProceduralHumanProxy, humanProxyPoseKey } from '../../components/three/humanProxy'
 
 /** 截图函数：同步返回 PNG dataURL；画布不可读时返回 `null`。 */
@@ -21,7 +29,7 @@ function PrimitiveMesh({ node }: { node: PrevisNode }) {
   const color = (node.metadata.color as string) || '#8b8ba8'
   if (kind === 'box') {
     return (
-      <mesh>
+      <mesh castShadow receiveShadow>
         <boxGeometry args={size} />
         <meshStandardMaterial color={color} />
       </mesh>
@@ -29,7 +37,7 @@ function PrimitiveMesh({ node }: { node: PrevisNode }) {
   }
   if (kind === 'sphere') {
     return (
-      <mesh>
+      <mesh castShadow receiveShadow>
         <sphereGeometry args={[size[0] / 2, 32, 16]} />
         <meshStandardMaterial color={color} />
       </mesh>
@@ -37,7 +45,7 @@ function PrimitiveMesh({ node }: { node: PrevisNode }) {
   }
   if (kind === 'cylinder') {
     return (
-      <mesh>
+      <mesh castShadow receiveShadow>
         <cylinderGeometry args={[size[0] / 2, size[0] / 2, size[1], 32]} />
         <meshStandardMaterial color={color} />
       </mesh>
@@ -45,13 +53,60 @@ function PrimitiveMesh({ node }: { node: PrevisNode }) {
   }
   if (kind === 'plane') {
     return (
-      <mesh rotation={[-Math.PI / 2, 0, 0]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <planeGeometry args={[size[0], size[1]]} />
         <meshStandardMaterial color={color} side={THREE.DoubleSide} />
       </mesh>
     )
   }
   return null
+}
+
+/**
+ * 灯光节点。
+ *
+ * 平行光在 three 里由 `position → target.position`（默认原点）决定方向，所以这里
+ * 用节点位置当灯位、指向原点：与「在场景里摆一盏灯」的直觉一致。
+ * 三种灯都投影——不投影的灯在本工具里等于没有效果，预演要的就是看光。
+ */
+function LightNode({ node }: { node: PrevisNode }) {
+  const config = readLightConfig(node)
+  if (config.light === 'point') {
+    return (
+      <pointLight
+        color={config.color}
+        intensity={config.intensity}
+        distance={config.distance}
+        castShadow
+        shadow-mapSize={[1024, 1024]}
+      />
+    )
+  }
+  if (config.light === 'spot') {
+    return (
+      <spotLight
+        color={config.color}
+        intensity={config.intensity}
+        distance={config.distance}
+        angle={(config.angle * Math.PI) / 180}
+        penumbra={0.35}
+        castShadow
+        shadow-mapSize={[1024, 1024]}
+      />
+    )
+  }
+  return (
+    <directionalLight
+      color={config.color}
+      intensity={config.intensity}
+      castShadow
+      shadow-mapSize={[1024, 1024]}
+      shadow-camera-left={-15}
+      shadow-camera-right={15}
+      shadow-camera-top={15}
+      shadow-camera-bottom={-15}
+    />
+  )
 }
 
 function HumanProxyMesh({ node }: { node: PrevisNode }) {
@@ -68,7 +123,21 @@ function HumanProxyMesh({ node }: { node: PrevisNode }) {
 // 内置人形模型（UE 白模 / Vanguard），许可见 frontend/public/models/LICENSE-*.txt
 function LocalModelMesh({ url }: { url: string }) {
   const { scene } = useGLTF(url)
+  useShadowedModel(scene)
   return <primitive object={scene} />
+}
+
+/** 载入的模型默认不投影，需要逐 mesh 打开，否则人物会「浮」在地面上。 */
+function useShadowedModel(scene: THREE.Object3D) {
+  useEffect(() => {
+    scene.traverse(object => {
+      const mesh = object as THREE.Mesh
+      if (mesh.isMesh) {
+        mesh.castShadow = true
+        mesh.receiveShadow = true
+      }
+    })
+  }, [scene])
 }
 
 // 单个模型加载失败时只降级该节点，不拖垮整个视口。
@@ -93,6 +162,7 @@ function AssetModelMesh({ node }: { node: PrevisNode }) {
   const modelUrl = node.metadata.modelUrl as string | undefined
   if (!modelUrl) return null
   const { scene } = useGLTF(modelUrl)
+  useShadowedModel(scene)
   return <primitive object={scene} />
 }
 
@@ -113,6 +183,7 @@ function NodeMesh({ node }: { node: PrevisNode }) {
   return (
     <group position={[x, y, z]} quaternion={[qx, qy, qz, qw]} scale={[sx, sy, sz]} visible={node.visible}>
       {node.kind === 'primitive' && <PrimitiveMesh node={node} />}
+      {node.kind === 'light' && <LightNode node={node} />}
       {node.kind === 'human_proxy' && (
         <AssetModelErrorBoundary>
           <Suspense fallback={null}>
@@ -141,6 +212,38 @@ function CameraRig({ camera }: { camera?: PrevisCamera }) {
     current.updateProjectionMatrix()
   }, [camera, current])
   return null
+}
+
+/**
+ * 导演视角下的镜头视锥。
+ *
+ * 用一台与活动机位同参数的 `PerspectiveCamera` 生成 `CameraHelper` 线框，只作视图
+ * 参考——它不进场景保存，也不参与截图（截图仍走 active 机位的像素读取）。
+ * 这正是「焦距是一等数据」的可读化：在机外就能看出 24mm 与 85mm 的取景差别。
+ */
+function DirectorLensGuide({ camera }: { camera?: PrevisCamera }) {
+  const size = useThree(state => state.size)
+  const { guideCamera, helper } = useMemo(() => {
+    const cam = new THREE.PerspectiveCamera(50, 1, 0.1, 200)
+    return { guideCamera: cam, helper: new THREE.CameraHelper(cam) }
+  }, [])
+
+  useEffect(() => {
+    const aspect = size.width / Math.max(1, size.height)
+    guideCamera.fov = camera?.fov ?? 50
+    guideCamera.aspect = aspect
+    guideCamera.updateProjectionMatrix()
+    if (camera) {
+      guideCamera.position.set(...camera.transform.position)
+      guideCamera.lookAt(...(camera.target || [0, 0, 0]))
+    }
+    helper.update()
+  }, [guideCamera, helper, camera, size])
+
+  useEffect(() => () => helper.dispose(), [helper])
+
+  if (!camera) return null
+  return <primitive object={helper} />
 }
 
 export default function SceneViewport({ nodes, activeCamera, cameraMode = 'director', onCaptureReady }: {
@@ -182,15 +285,27 @@ export default function SceneViewport({ nodes, activeCamera, cameraMode = 'direc
       <Canvas
         style={{ width: '100%', height: '100%' }}
         camera={{ position, fov }}
+        shadows="soft"
         gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1 }}
         onCreated={handleCreated}
       >
       {cameraMode === 'active' && <PerspectiveCamera makeDefault position={position} fov={fov} />}
       <CameraRig camera={cameraMode === 'active' ? activeCamera : undefined} />
       <ambientLight intensity={0.5} />
-      <directionalLight position={[5, 8, 5]} intensity={1} color="#ffffff" />
+      <directionalLight
+        position={[5, 8, 5]}
+        intensity={1}
+        color="#ffffff"
+        castShadow
+        shadow-mapSize={[2048, 2048]}
+        shadow-camera-left={-15}
+        shadow-camera-right={15}
+        shadow-camera-top={15}
+        shadow-camera-bottom={-15}
+      />
 
       {cameraMode === 'director' && <OrbitControls enableDamping dampingFactor={0.05} minDistance={0.5} maxDistance={40} />}
+      {cameraMode === 'director' && <DirectorLensGuide camera={activeCamera} />}
 
       <Grid
         args={[20, 20]}
@@ -205,7 +320,6 @@ export default function SceneViewport({ nodes, activeCamera, cameraMode = 'direc
         followCamera={false}
         position={[0, -0.01, 0]}
       />
-      <ContactShadows position={[0, -0.01, 0]} opacity={0.4} scale={20} blur={2} far={6} />
 
       {nodes.map(node => (
         <NodeMesh key={node.id} node={node} />

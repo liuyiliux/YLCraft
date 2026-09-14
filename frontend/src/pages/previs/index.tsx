@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Button,
+  ColorPicker,
   Dropdown,
   Empty,
   Input,
@@ -8,6 +9,7 @@ import {
   List,
   Modal,
   Select,
+  Slider,
   Space,
   Spin,
   Tag,
@@ -32,15 +34,34 @@ import type { Asset } from '../../types/api'
 import SceneViewport, { type SceneCaptureFn } from './SceneViewport'
 import { HUMAN_PROXY_POSES, humanProxyPoseKey } from '../../components/three/humanProxy'
 import {
+  DEFAULT_LIGHT_ANGLE,
+  DEFAULT_LIGHT_COLOR,
+  DEFAULT_LIGHT_DISTANCE,
+  DEFAULT_LIGHT_INTENSITY,
   DEFAULT_TRANSFORM,
+  LIGHT_KIND_LABEL,
   makeNodeId,
   normalizeSceneData,
+  readLightConfig,
+  type LightConfig,
+  type LightKind,
   type PrevisNode,
   type PrevisCamera,
   type PrevisNodeKind,
   type PrevisSceneData,
   type PrimitiveKind,
 } from './types'
+import {
+  DEFAULT_APERTURE,
+  DEFAULT_FOCUS_DISTANCE_M,
+  FOCAL_LENGTH_PRESETS,
+  SENSOR_FORMATS,
+  depthOfFieldMm,
+  focalLengthFromFov,
+  formatDistanceMm,
+  fovFromFocalLength,
+  type SensorFormat,
+} from './optics'
 
 const { Title, Text } = Typography
 
@@ -109,15 +130,82 @@ function makePanoramaNode(): PrevisNode {
   }
 }
 
+/** 灯光节点默认摆在右上前方，正对原点——对应「在场景里加一盏主灯」的直觉。 */
+function makeLightNode(kind: LightKind): PrevisNode {
+  return {
+    id: makeNodeId(),
+    kind: 'light',
+    name: LIGHT_KIND_LABEL[kind],
+    transform: { ...DEFAULT_TRANSFORM, position: [2, 2.5, 2] },
+    visible: true,
+    locked: false,
+    metadata: {
+      light: kind,
+      color: DEFAULT_LIGHT_COLOR,
+      intensity: DEFAULT_LIGHT_INTENSITY,
+      distance: DEFAULT_LIGHT_DISTANCE,
+      angle: DEFAULT_LIGHT_ANGLE,
+    },
+  }
+}
+
+/** 新机位默认给一支真实镜头（35mm 全画幅），而不是一个裸 fov。 */
+const DEFAULT_CAMERA_FOCAL_LENGTH = 35
+
 function makeCamera(index: number): PrevisCamera {
+  const sensorFormat: SensorFormat = 'full_frame'
   return {
     id: `camera_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
     name: `机位 ${index}`,
     transform: { position: [4, 3, 6], rotation: [0, 0, 0, 1] },
     target: [0, 0.8, 0],
-    fov: 50,
+    // 焦距 + 画幅是事实，fov 由它们推出——三者永不互相矛盾
+    focalLength: DEFAULT_CAMERA_FOCAL_LENGTH,
+    sensorFormat,
+    fov: fovFromFocalLength(DEFAULT_CAMERA_FOCAL_LENGTH, sensorFormat),
+    aperture: DEFAULT_APERTURE,
+    focusDistance: DEFAULT_FOCUS_DISTANCE_M,
     locked: false,
   }
+}
+
+/**
+ * 灯光节点的行内配置（类型 / 颜色 / 强度）。
+ *
+ * 放在图层行**下方**而不是行内：图层面板只有 280px，塞进去会把名称输入框压到不可用。
+ */
+function LightNodeControls({ node, onChange }: {
+  node: PrevisNode
+  onChange: (id: string, patch: Partial<LightConfig>) => void
+}) {
+  const light = readLightConfig(node)
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 8px 6px 8px' }}>
+      <Select
+        size="small"
+        value={light.light}
+        disabled={node.locked}
+        onChange={kind => onChange(node.id, { light: kind as LightKind })}
+        options={(Object.keys(LIGHT_KIND_LABEL) as LightKind[]).map(kind => ({ value: kind, label: LIGHT_KIND_LABEL[kind] }))}
+        style={{ width: 74, flexShrink: 0 }}
+      />
+      <ColorPicker
+        size="small"
+        disabled={node.locked}
+        value={light.color}
+        onChange={color => onChange(node.id, { color: color.toHexString() })}
+      />
+      <Slider
+        style={{ flex: 1, minWidth: 0, margin: 0 }}
+        min={0}
+        max={40}
+        step={0.5}
+        value={light.intensity}
+        disabled={node.locked}
+        onChange={value => onChange(node.id, { intensity: value })}
+      />
+    </div>
+  )
 }
 
 export default function PrevisPage() {
@@ -163,6 +251,22 @@ export default function PrevisPage() {
   const cameras = useMemo(() => sceneData?.cameras ?? [], [sceneData])
   const activeCamera = useMemo(() => cameras.find(camera => camera.id === sceneData?.activeCameraId) || cameras[0], [cameras, sceneData?.activeCameraId])
 
+  /**
+   * 活动机位的景深读数。
+   *
+   * 只算不渲染：design 的非目标写明不做专业渲染器，而 DP 真正需要的是
+   * 「这个机位在这个光圈下，多深是实的」这个数字——这正是 FrameForge 卖的东西。
+   */
+  const activeDof = useMemo(() => {
+    if (!activeCamera) return null
+    return depthOfFieldMm({
+      focalLengthMm: Number(activeCamera.focalLength) || DEFAULT_CAMERA_FOCAL_LENGTH,
+      aperture: Number(activeCamera.aperture) || DEFAULT_APERTURE,
+      focusDistanceMm: (Number(activeCamera.focusDistance) || DEFAULT_FOCUS_DISTANCE_M) * 1000,
+      format: (activeCamera.sensorFormat as SensorFormat) || 'full_frame',
+    })
+  }, [activeCamera])
+
   const mutateCameras = useCallback((updater: (cameras: PrevisCamera[]) => PrevisCamera[], activeCameraId?: string) => {
     setSceneData(prev => {
       if (!prev) return prev
@@ -179,6 +283,31 @@ export default function PrevisPage() {
 
   const updateCamera = useCallback((id: string, patch: Partial<PrevisCamera>) => {
     mutateCameras(current => current.map(camera => camera.id === id ? { ...camera, ...patch } : camera))
+  }, [mutateCameras])
+
+  /**
+   * 改光学参数：焦距与画幅是事实，`fov` 由它们推出。
+   *
+   * 三者必须永远一致，否则会出现「面板写着 85mm、视口却是 24mm 的口径」——
+   * 而这种不一致在预演里是致命的，因为参考图的意义就在口径正确。
+   */
+  const updateCameraOptics = useCallback((id: string, patch: Partial<PrevisCamera>) => {
+    mutateCameras(current => current.map(camera => {
+      if (camera.id !== id) return camera
+      const next = { ...camera, ...patch }
+      const sensorFormat = next.sensorFormat || 'full_frame'
+      const focalLength = Number(next.focalLength) > 0 ? Number(next.focalLength) : DEFAULT_CAMERA_FOCAL_LENGTH
+      return { ...next, sensorFormat, focalLength, fov: fovFromFocalLength(focalLength, sensorFormat) }
+    }))
+  }, [mutateCameras])
+
+  /** 反向：直接改 fov 时回算焦距，让毫米读数跟着变（真实取景器的行为）。 */
+  const updateCameraFov = useCallback((id: string, fov: number) => {
+    mutateCameras(current => current.map(camera => {
+      if (camera.id !== id) return camera
+      const sensorFormat = camera.sensorFormat || 'full_frame'
+      return { ...camera, fov, sensorFormat, focalLength: focalLengthFromFov(fov, sensorFormat) }
+    }))
   }, [mutateCameras])
 
   const deleteCamera = useCallback((id: string) => {
@@ -208,6 +337,18 @@ export default function PrevisPage() {
     () => mutateNodes(nodes => [...nodes, makePanoramaNode()]),
     [mutateNodes],
   )
+
+  const addLight = useCallback(
+    (kind: LightKind) => mutateNodes(nodes => [...nodes, makeLightNode(kind)]),
+    [mutateNodes],
+  )
+
+  /** 只合并灯光配置字段，不动节点的几何属性。 */
+  const updateLightConfig = useCallback((id: string, patch: Partial<ReturnType<typeof readLightConfig>>) => {
+    mutateNodes(nodes => nodes.map(node => (
+      node.id === id ? { ...node, metadata: { ...node.metadata, ...patch } } : node
+    )))
+  }, [mutateNodes])
 
   const updateNodePose = useCallback((id: string, pose: string) => {
     mutateNodes(nodes => nodes.map(node => (node.id === id ? { ...node, metadata: { ...node.metadata, pose } } : node)))
@@ -477,6 +618,17 @@ export default function PrevisPage() {
                 </Dropdown>
                 <Button size="small" icon={<PlusOutlined />} onClick={addHumanProxy}>人形占位</Button>
                 <Button size="small" icon={<PlusOutlined />} onClick={addPanorama}>全景背景</Button>
+                <Dropdown
+                  menu={{
+                    items: (['point', 'spot', 'directional'] as LightKind[]).map(kind => ({
+                      key: kind,
+                      label: LIGHT_KIND_LABEL[kind],
+                    })),
+                    onClick: ({ key }) => addLight(key as LightKind),
+                  }}
+                >
+                  <Button size="small" icon={<PlusOutlined />}>灯光</Button>
+                </Dropdown>
                 <Button size="small" icon={<PlusOutlined />} onClick={openModelPicker}>从素材库添加模型</Button>
               </Space>
             </Space>
@@ -500,7 +652,51 @@ export default function PrevisPage() {
                 <Space.Compact block>{activeCamera.transform.position.map((value, index) => <InputNumber key={index} size="small" value={value} disabled={activeCamera.locked} onChange={next => updateCamera(activeCamera.id, { transform: { ...activeCamera.transform, position: activeCamera.transform.position.map((item, itemIndex) => itemIndex === index ? Number(next ?? item) : item) as [number, number, number] } })} />)}</Space.Compact>
                 <Text type="secondary">目标点 X / Y / Z</Text>
                 <Space.Compact block>{(activeCamera.target || [0, 0, 0]).map((value, index) => <InputNumber key={index} size="small" value={value} disabled={activeCamera.locked} onChange={next => updateCamera(activeCamera.id, { target: (activeCamera.target || [0, 0, 0]).map((item, itemIndex) => itemIndex === index ? Number(next ?? item) : item) as [number, number, number] })} />)}</Space.Compact>
-                <Space><Text type="secondary">FOV</Text><InputNumber min={10} max={120} size="small" value={activeCamera.fov} disabled={activeCamera.locked} onChange={value => updateCamera(activeCamera.id, { fov: Number(value || 50) })} /></Space>
+                <Text type="secondary">镜头 · 光学</Text>
+                <Select
+                  size="small"
+                  value={activeCamera.sensorFormat || 'full_frame'}
+                  disabled={activeCamera.locked}
+                  onChange={value => updateCameraOptics(activeCamera.id, { sensorFormat: value as SensorFormat })}
+                  options={Object.entries(SENSOR_FORMATS).map(([value, spec]) => ({ value, label: spec.label }))}
+                  style={{ width: '100%' }}
+                />
+                <InputNumber
+                  min={4}
+                  max={400}
+                  step={1}
+                  size="small"
+                  addonAfter="mm"
+                  value={activeCamera.focalLength}
+                  disabled={activeCamera.locked}
+                  onChange={value => updateCameraOptics(activeCamera.id, { focalLength: Number(value || DEFAULT_CAMERA_FOCAL_LENGTH) })}
+                  style={{ width: '100%' }}
+                />
+                <Space wrap size={4}>
+                  {FOCAL_LENGTH_PRESETS.map(mm => (
+                    <Tag
+                      key={mm}
+                      style={{ margin: 0, cursor: activeCamera.locked ? 'default' : 'pointer' }}
+                      color={Math.abs((activeCamera.focalLength || 0) - mm) < 0.6 ? 'blue' : undefined}
+                      onClick={() => { if (!activeCamera.locked) updateCameraOptics(activeCamera.id, { focalLength: mm }) }}
+                    >
+                      {mm}
+                    </Tag>
+                  ))}
+                </Space>
+                <Space size={4}>
+                  <Text type="secondary">T/</Text>
+                  <InputNumber min={0.7} max={22} step={0.1} size="small" value={activeCamera.aperture} disabled={activeCamera.locked} onChange={value => updateCameraOptics(activeCamera.id, { aperture: Number(value || DEFAULT_APERTURE) })} style={{ width: 72 }} />
+                  <Text type="secondary">对焦</Text>
+                  <InputNumber min={0.1} max={200} step={0.5} size="small" addonAfter="m" value={activeCamera.focusDistance} disabled={activeCamera.locked} onChange={value => updateCameraOptics(activeCamera.id, { focusDistance: Number(value || DEFAULT_FOCUS_DISTANCE_M) })} style={{ width: 104 }} />
+                </Space>
+                <Text type="secondary" style={{ fontSize: 11 }}>
+                  水平视角 {(activeCamera.fov || 0).toFixed(1)}°
+                  {activeDof
+                    ? ` · 景深 ${formatDistanceMm(activeDof.nearMm)} – ${formatDistanceMm(activeDof.farMm)}（超焦距 ${formatDistanceMm(activeDof.hyperfocalMm)}）`
+                    : ' · 景深 —'}
+                </Text>
+                <Space><Text type="secondary">FOV</Text><InputNumber min={10} max={120} size="small" value={activeCamera.fov} disabled={activeCamera.locked} onChange={value => updateCameraFov(activeCamera.id, Number(value || 50))} /></Space>
                 <Space>
                   <Button size="small" type={cameraMode === 'director' ? 'primary' : 'default'} onClick={() => setCameraMode('director')}>导演视角</Button>
                   <Button size="small" type={cameraMode === 'active' ? 'primary' : 'default'} onClick={() => setCameraMode('active')}>活动机位</Button>
@@ -515,8 +711,8 @@ export default function PrevisPage() {
             ) : (
               <Space direction="vertical" size={4} style={{ width: '100%' }}>
                 {nodes.map(node => (
+                  <div key={node.id} style={{ display: 'flex', flexDirection: 'column' }}>
                   <div
-                    key={node.id}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -584,6 +780,8 @@ export default function PrevisPage() {
                         onClick={() => deleteNode(node.id)}
                       />
                     </Tooltip>
+                  </div>
+                  {node.kind === 'light' && <LightNodeControls node={node} onChange={updateLightConfig} />}
                   </div>
                 ))}
               </Space>
