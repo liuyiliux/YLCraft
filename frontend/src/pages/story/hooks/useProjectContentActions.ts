@@ -231,7 +231,10 @@ export function useProjectContentActions(deps: Record<string, any>) {
       const response: any = await planCreativeProjectContentPackage(selectedProject.id, {
         topic: String(values.topic).trim(),
         brief: String(values.brief || ''),
-        item_count: Math.max(1, Math.min(Number(values.item_count || 12), 80)),
+        // 刻意**不传** item_count：页数应由内容推导（后端不传即自动），而不是在入口处
+        // 先钉一个数字。以前这里补的是 `values.item_count || 12`，于是模型在完全不知道
+        // 故事有多少内容的情况下被要求凑够 12 页——内容多了压缩、少了注水，画面自然平。
+        // 需要精确页数的调用方仍可显式传（接口支持），只是工作台不再替用户预设。
         prompt_only: Boolean(values.prompt_only),
         // 必须显式带上工作台选中的文本模型：不传时后端会回落到**默认连接器**，
         // 于是用户界面上选的是 A，实际跑的是 B（且日志只显示 B，很难发现是被忽略了）。

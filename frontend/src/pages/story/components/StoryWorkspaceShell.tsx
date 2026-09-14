@@ -6,8 +6,10 @@
  * 结构与文案逐字未改。数据与回调经 ctx 传入，类型取自 useStoryPageContext。
  */
 import FanqiePublishPanel from '../FanqiePublishPanel'
+import BaselinePickerModal from '../../../components/world/BaselinePickerModal'
 import GeneratedMediaThumb from '../../../components/content-package/GeneratedMediaThumb'
 import PackageOutputList from '../../../components/content-package/PackageOutputList'
+import { useVisualBaseline } from '../hooks/useVisualBaseline'
 import ProjectStatePanel from '../ProjectStatePanel'
 import StoryWorkspaceOverview from '../StoryWorkspaceOverview'
 import { ProjectBibleTab } from './bible'
@@ -228,6 +230,10 @@ export function StoryWorkspaceShell({ ctx }: { ctx: StoryPageContext }) {
     writerRoomSummary,
   } = ctx
 
+  // 项目视觉基准：一张项目级基准图，生图时由服务端自动注入为参考图。
+  // 这是画风/人物一致性的载体——没有它，每页提示词各写各的风格，人物也会一页一个样。
+  const visualBaseline = useVisualBaseline(selectedProject?.id)
+
   // 已产出的平台输出（公众号/小红书/短视频/PDF/素材包）。由后端适配器写入包版本，
   // 界面「输出适配」检查项与这里的列表都读它。
   const packageOutputs: any[] = Array.isArray((contentPackageData as any)?.outputs)
@@ -346,6 +352,25 @@ export function StoryWorkspaceShell({ ctx }: { ctx: StoryPageContext }) {
             optionFilterProp="label"
               disabled={!selectedProject}
             />
+            <Tooltip
+              title={
+                visualBaseline.hasBaseline
+                  ? '已设置项目视觉基准：生图时自动作为参考图注入（点击可更换）'
+                  : '可设一张项目级基准图。生图时自动作为参考图注入，是画风与人物一致性的载体——没有它，每页各画各的'
+              }
+            >
+              <Button
+                size="small"
+                icon={<PictureOutlined />}
+                disabled={!selectedProject}
+                onClick={visualBaseline.openPicker}
+              >
+                {visualBaseline.hasBaseline ? '视觉基准（已设）' : '设视觉基准'}
+              </Button>
+            </Tooltip>
+            {visualBaseline.hasBaseline ? (
+              <Button type="text" size="small" danger onClick={visualBaseline.clear}>清除基准</Button>
+            ) : null}
             <Button type="text" size="small" onClick={() => setRuntimeSettingsOpen(false)}>收起设置</Button>
           </> : (
             <Button icon={<EditOutlined />} onClick={() => setRuntimeSettingsOpen(true)}>
@@ -373,6 +398,18 @@ export function StoryWorkspaceShell({ ctx }: { ctx: StoryPageContext }) {
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>新建项目</Button>
         </Space>
       </header>
+
+      <BaselinePickerModal
+        open={visualBaseline.pickerOpen}
+        onClose={() => visualBaseline.setPickerOpen(false)}
+        candidates={visualBaseline.candidates}
+        loading={visualBaseline.loading}
+        search={visualBaseline.search}
+        onSearchChange={visualBaseline.setSearch}
+        onSearch={() => visualBaseline.loadCandidates(visualBaseline.search)}
+        onPick={visualBaseline.pick}
+        currentAssetId={visualBaseline.assetId}
+      />
 
       {workspaceErrorEntries.length > 0 ? (
         <Alert
@@ -1387,9 +1424,10 @@ export function StoryWorkspaceShell({ ctx }: { ctx: StoryPageContext }) {
             <TextArea rows={3} placeholder="可选，保存后会显示在概览中" maxLength={2000} />
           </Form.Item>
           <Space wrap style={{ marginBottom: 12 }}>
-            <Form.Item label="生成数量" name="item_count" initialValue={12} style={{ marginBottom: 0 }}>
-              <InputNumber min={1} max={80} />
-            </Form.Item>
+            {/* 页数刻意**不在这里填**：它应当由内容推导（后端不传 item_count 即自动），
+                生成后再看实际页数（下方「页面 / 内容卡」的计数）。
+                原先这里是 initialValue={12}——那个 12 会在任何内容分析之前就被写进提示词，
+                模型不知道故事有多少内容、只能凑够 12 页，是"画面平、节奏匀"的结构性来源。 */}
             <Form.Item name="prompt_only" valuePropName="checked" initialValue={false} style={{ marginBottom: 0, paddingTop: 30 }}>
               <Checkbox>只生成图片提示词</Checkbox>
             </Form.Item>
@@ -1404,7 +1442,11 @@ export function StoryWorkspaceShell({ ctx }: { ctx: StoryPageContext }) {
             {(fields, { add, remove, move }) => (
               <Space direction="vertical" size={10} style={{ width: '100%' }}>
                 <Space style={{ justifyContent: 'space-between', width: '100%' }}>
-                  <Text strong>页面 / 内容卡</Text>
+                  {/* 页数是**推导结果**，不是入口输入：生成后这里显示实际页数，
+                      调整顺序/增删也会同步反映。 */}
+                  <Text strong>
+                    页面 / 内容卡{fields.length ? `（共 ${fields.length} 页）` : ''}
+                  </Text>
                   <Button size="small" icon={<PlusOutlined />} onClick={() => add({ title: '', text: '', fact: '', source: '', source_url: '', image_prompt: '' })}>添加内容单元</Button>
                 </Space>
                 {fields.map((field, index) => (
