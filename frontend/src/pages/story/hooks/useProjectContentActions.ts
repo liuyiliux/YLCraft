@@ -233,6 +233,10 @@ export function useProjectContentActions(deps: Record<string, any>) {
         brief: String(values.brief || ''),
         item_count: Math.max(1, Math.min(Number(values.item_count || 12), 80)),
         prompt_only: Boolean(values.prompt_only),
+        // 必须显式带上工作台选中的文本模型：不传时后端会回落到**默认连接器**，
+        // 于是用户界面上选的是 A，实际跑的是 B（且日志只显示 B，很难发现是被忽略了）。
+        provider: selectedLlm || undefined,
+        model: selectedModel || undefined,
       })
       const generated = response?.data?.data || response?.data || {}
       contentPackageForm.setFieldsValue({
@@ -296,6 +300,9 @@ export function useProjectContentActions(deps: Record<string, any>) {
       const response: any = await retryCreativeProjectContentPackageItem(selectedProject.id, itemId, {
         brief: String(contentPackageForm.getFieldValue('brief') || ''),
         prompt_only: Boolean(contentPackageForm.getFieldValue('prompt_only')),
+        // 同 handlePlanContentPackage：不带模型就会静默回落到默认连接器
+        provider: selectedLlm || undefined,
+        model: selectedModel || undefined,
       })
       const saved = response?.data?.data || {}
       await loadContents(selectedProject.id)
