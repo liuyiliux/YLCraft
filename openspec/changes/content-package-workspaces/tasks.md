@@ -91,7 +91,17 @@
     - **item rerun**：`test_creative_project_workflow_api.py::test_content_package_item_retry_rewrites_one_item_and_stales_outputs`（只重写一条、其余原样保留、引用它的输出标 `stale` 且带 `stale_reason`）。_
     - **adapter output provenance**：`tests/test_content_package_adapters.py` —— **14 例**（五适配器形状、`source_package_id`/`source_package_version`/`source_item_ids` 溯源、单适配器失败隔离）+ 端点级 `test_content_package_outputs_endpoint_builds_and_persists_adapters`。_
     - _实测：前四个文件 **46 passed**；workflow api 的内容包三例 **3 passed**。故勾选。_
-- [ ] 19. Add frontend build and browser smoke for a zodiac picture book and knowledge cards; defer article/carousel smoke until their UIs are enabled.
+- [x] 19. Add frontend build and browser smoke for a zodiac picture book and knowledge cards; defer article/carousel smoke until their UIs are enabled.
+  - _2026-09-14 完成：_
+    - **前端构建**：`npm run build`（`tsc --noEmit -p tsconfig.json` + `tsconfig.node.json` + `vite build`）**通过**，3821 模块、28s；仅有一条既有的 chunk 体积告警（`index` 1.7MB / `vendor` 2.8MB，非本次引入，也未阻断构建）。_
+    - **浏览器 smoke（Patchright + Chromium 1600×1050，只读）**：两个真实项目——绘本「输出验收-十二生肖」（`storybook`/`page_book`，2 条 item，已产出 PDF+素材包）与新建的科普卡项目（`knowledge_content`/`knowledge_cards`，3 条 item，未产出输出）。测量值与数据**逐一对得上**，这是它比"页面能打开"更有价值的证据：_
+      - 绘本：进入编辑器成功；「重跑本条」出现 **2** 次（= 2 条 item）；「生成平台输出」**1** 次；「还没有平台输出」**0** 次（因为它确实已有输出）。_
+      - 科普卡：进入编辑器成功；「重跑本条」**3** 次（= 3 条 item）；「还没有平台输出」**1** 次（确实未生成过）。_
+      - **全程 0 个 >=400 响应、0 条控制台 error、0 项断言失败**。_
+    - **科普卡特有字段取证**（`fact`/`source` 是任务 #12 的交付物，必须证明真的渲染而非只是存在）：编辑器是表单，字段值在 `input`/`textarea` 里、`inner_text` 读不到——**这一点我一开始判断错了**（首轮用 `inner_text` 检查，误报"未渲染"；改读控件 value 后通过）。最终取证：`source` 值「中国国家博物馆」在 3 个 `<input>`（对应 3 条 item），`fact` 值「鼠对应地支「子」…」/「牛对应地支「丑」。」/「虎对应地支「寅」。」在 3 个 `<textarea>`。控件总数科普卡 **28** vs 绘本 **16**，与科普卡每卡多出 `fact`/`source`/`source_url` 一致。_
+    - _article / carousel / shot_list / single_media 的 smoke 按本条要求**推迟**——它们的 `ui_enabled=false`（`#13`），当前无 UI 可测。_
+    - _**一处如实标注的覆盖边界**：本次 smoke 是**只读**的，只验证工作台对已有内容的渲染与入口，**未触发**任何生成，因此"点生成 → 出图 → 回流 Asset Hub"这条消耗型链路在浏览器里未覆盖（属 `#20`，需额度）。_
+    - _过程中未消耗额度：科普卡项目的包是用 `PUT .../content-package` **手工写入**的（免费），而非调用 `.../plan`（会调用模型）。_
 - [ ] 20. Verify batch generation enters task center, event logs and Asset Hub with per-item provenance and independent retry.
 - [x] 21. Update system architecture, API Surface, creative workflow Skill and external-agent examples when the first endpoint is implemented.
   - _2026-09-14 四处同步完成：_
