@@ -606,3 +606,5 @@ The `/story` workbench stores project/content stage, prompt, model, reference im
 ### 内容包条目字段
 
 内容包 item 统一保存标题、展示文本、图片/视频提示词、状态、资产引用和来源引用；`knowledge_cards` 额外使用 `fact`、`source`、`source_url` 保存可核验事实与来源占位，绘本/漫画等类型不显示这些字段。
+
+`index` 是**页序**，不是任意元数据：编辑器提供「上移 / 下移一页」，保存时由表单数组顺序重算 `index`（`handleSaveContentPackage`），适配器据此排布（`asset_bundle` 的 `prompts.tsv` 按 order、`pdf_ebook` 按页序分页）。因此调整顺序即调整出图与导出顺序。已保存的条目带着自己的 `id` 移动，所以**换序不会让引用它的平台输出失效**（`source_item_ids` 仍指向同一批条目）。当前**没有可视化排版编辑器**（每页选模板、调整图文位置）；`layout` 仍是内容包 profile 的可选阶段，尚未实现。

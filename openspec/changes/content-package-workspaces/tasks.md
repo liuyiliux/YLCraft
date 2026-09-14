@@ -43,7 +43,16 @@
 ## Phase 3: Lightweight workspaces (only two package types initially)
 
 - [x] 10. Build a reusable content-package workspace shell instead of reusing the full story blueprint form.
-- [ ] 11. Implement `page_book` for picture books/comics with page text, image prompts, batch image generation and optional layout.
+- [x] 11. Implement `page_book` for picture books/comics with page text, image prompts, batch image generation and optional layout.
+  - _2026-09-14 完成。逐项核实（本条点名的四项）：_
+    - **页文字** ✓ 内容包编辑器每条的「文字内容」字段（`Form.Item name={[field.name, 'text']}`）。_
+    - **图片提示词** ✓ 每条的「图片提示词」字段，配合「只生成图片提示词」(`prompt_only`) 开关。_
+    - **批量生图** ✓ `handleBatchGenerateContentPackageImages`：勾选有提示词的条目 → 逐条调用 `handleInlineGenerateImage` → 写回 `status`/`asset_ids`/`image_url` → 最后 `saveCreativeProjectContentPackage` 落版本；单条生图与「重跑本条」并列可用。**结果展示由 #14 补上**（此前生成完界面上看不到图）。_
+    - **页序（"optional layout" 的实质部分，本条唯一缺口，已补）**：此前内容包条目**只能新增/删除，无法调整顺序**——而绘本的页序是实质要求，且顺序直接决定适配器产出（`asset_bundle` 的 `prompts.tsv` 按 order 排列、`pdf_ebook` 按页序分页）。保存时 `index` 由表单数组顺序重算（`handleSaveContentPackage`），因此新增「上移一页 / 下移一页」按钮（用 antd `Form.List` 自带的 `move`，**无新依赖**）即真实生效；已有 `id` 的条目带着 id 移动，所以**换序不会让引用它的平台输出失效**。_
+    - _实测（只读，未点保存）：排序前 `['鼠','牛']` → 点第一项「下移一页」→ `['牛','鼠']` → 再「上移一页」→ `['鼠','牛']`；第 1 项上移与最后一项下移正确禁用；0 个 >=400、0 条控制台 error。_
+    - _**如实标注两点边界**：_
+      - _① **批量生图已实现但未端到端验证**——本次只核对了代码路径与入口可达（按钮、状态写回、结果展示），**未实际提交生成**（消耗额度）。真正的生成→任务中心→事件日志→Asset Hub 回流核对属 `#20`。_
+      - _② **没有可视化排版编辑器**（每页选模板、调整图文位置、导出预览）。这里把 "optional layout" 理解为**布局相关能力中必需的那部分**（页序 + 分页），分页结构由 `pdf_ebook` 适配器产出；`layout` 仍留在 `storybook` 的 `optional_stages` 里未实现。若需要可视化排版，应作为后续 change 立项，本条的完成不代表它已存在。_
 - [x] 12. Implement `knowledge_cards` with topic intro, fact/source placeholders and prompt-only mode.
 - [x] 13. Add the article-package, carousel, shot-list and single-media schemas behind feature flags or API-only routes; do not build four new UIs in the first slice.
   - _2026-09-13 完成（API-only，未建任何 UI）：_

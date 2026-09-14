@@ -19,7 +19,7 @@ import { ScriptTab } from './storyboard'
 import { AssetsTab, JsonTab, LogsTab } from './tabs'
 import { WriterRoomTab } from './writer-room'
 import { getNovelDisplayTitle, imageContextKey, productionProfileOptions, projectTypeLabel, projectTypeOptions, stageLabels, statusLabels } from '../utils'
-import { BranchesOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, EyeOutlined, FileTextOutlined, FolderOpenOutlined, HistoryOutlined, MenuFoldOutlined, MenuUnfoldOutlined, PictureOutlined, PlusOutlined, ReloadOutlined, RobotOutlined, ThunderboltOutlined } from '@ant-design/icons'
+import { ArrowDownOutlined, ArrowUpOutlined, BranchesOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, EyeOutlined, FileTextOutlined, FolderOpenOutlined, HistoryOutlined, MenuFoldOutlined, MenuUnfoldOutlined, PictureOutlined, PlusOutlined, ReloadOutlined, RobotOutlined, ThunderboltOutlined } from '@ant-design/icons'
 import { Alert, Badge, Button, Checkbox, Collapse, Divider, Empty, Form, Input, InputNumber, List, Modal, Popconfirm, Segmented, Select, Skeleton, Space, Tabs, Tag, Tooltip, Typography, message } from 'antd'
 import type { StoryPageContext } from '../hooks/useStoryPageContext'
 
@@ -1401,7 +1401,7 @@ export function StoryWorkspaceShell({ ctx }: { ctx: StoryPageContext }) {
             </Button>
           </Space>
           <Form.List name="items">
-            {(fields, { add, remove }) => (
+            {(fields, { add, remove, move }) => (
               <Space direction="vertical" size={10} style={{ width: '100%' }}>
                 <Space style={{ justifyContent: 'space-between', width: '100%' }}>
                   <Text strong>页面 / 内容卡</Text>
@@ -1411,7 +1411,31 @@ export function StoryWorkspaceShell({ ctx }: { ctx: StoryPageContext }) {
                   <div key={field.key} style={{ border: `1px solid ${theme.borderLight}`, borderRadius: 6, padding: 12, background: theme.bgElevated }}>
                     <Space style={{ justifyContent: 'space-between', width: '100%', marginBottom: 8 }}>
                       <Text strong>第 {index + 1} 项</Text>
-                      <Button type="text" danger size="small" icon={<DeleteOutlined />} onClick={() => remove(field.name)} disabled={fields.length === 1} />
+                      <Space size={2}>
+                        {/* 页序是绘本/漫画的实质要求：保存时 `index` 由表单顺序重算
+                            （handleSaveContentPackage），因此这里调整顺序即调整出图与导出顺序。
+                            用 Form.List 自带的 move（无新依赖）；已有 id 的条目会带着 id 移动，
+                            所以引用它的平台输出不会因换序而失效。 */}
+                        <Button
+                          type="text"
+                          size="small"
+                          icon={<ArrowUpOutlined />}
+                          title="上移一页"
+                          aria-label="上移一页"
+                          disabled={index === 0}
+                          onClick={() => move(field.name, field.name - 1)}
+                        />
+                        <Button
+                          type="text"
+                          size="small"
+                          icon={<ArrowDownOutlined />}
+                          title="下移一页"
+                          aria-label="下移一页"
+                          disabled={index === fields.length - 1}
+                          onClick={() => move(field.name, field.name + 1)}
+                        />
+                        <Button type="text" danger size="small" icon={<DeleteOutlined />} onClick={() => remove(field.name)} disabled={fields.length === 1} />
+                      </Space>
                     </Space>
                     <Form.Item label="标题" name={[field.name, 'title']} style={{ marginBottom: 8 }}><Input placeholder="例如：鼠" /></Form.Item>
                     <Form.Item label="文字内容" name={[field.name, 'text']} style={{ marginBottom: 8 }}><TextArea rows={2} placeholder="页面文字或知识卡说明，可留空只生成提示词" /></Form.Item>
