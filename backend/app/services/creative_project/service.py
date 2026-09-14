@@ -4139,13 +4139,44 @@ class CreativeProjectService:
             if package_type == "knowledge_cards"
             else "非科普内容包的 fact、source、source_url 必须为空字符串。"
         )
+        # 画面类内容包以**画格**为编排单位（一条 = 一格 = 一张图），其余类型仍按原单位。
+        # 见 ContentPackageItemSchema.page_index 的说明：让 item 等于格，「一格一张图」是
+        # 出图链路的自然结果，而"一页一张图"要求模型在一张图里画完多格与气泡。
+        is_panel_based = package_type == "page_book"
         kind_label = {
-            "page_book": "绘本或漫画页面",
+            "page_book": "漫画画格（分镜格）",
             "knowledge_cards": "科普知识卡",
             "article_package": "文章内容单元",
             "social_carousel": "图文轮播卡",
             "single_media": "单个媒体创意",
         }.get(package_type, "内容单元")
+        panel_instruction = (
+            "这是漫画/绘本：**以「格」为单位**，一条只写一个画格（将来一页由多格拼成）。\n"
+            "- 每格必须先想清楚它在讲什么画面，再写 image_prompt；一条 image_prompt 只描述一格的画面，\n"
+            "  不要把一页里的多格塞进同一条。\n"
+            "- 每页 3-6 格，用 page_index（第几页，从 1 起）与 panel_index（该页第几格，从 1 起）标出位置；\n"
+            "  同一页的多条要连续排列。\n"
+            "- 每条给 shot（景别与镜头，如「大远景」「中景」「特写」「主观视角」）。镜头语言要逐格变化，\n"
+            "  不要每格都用同一种景别；按制作圣经里的固定镜头规则来选。\n"
+            "- text 写该格的画面描述与必要对白/旁白/音效；对白只写文字，不要求生图模型画出气泡。\n"
+            "\n"
+            "**最重要：这是「展开」而不是「概括」。**\n"
+            "常见错误是把整段故事压缩成十来格——那是插画配图，不是漫画。漫画的格数来自把每一拍\n"
+            "拆成镜头：一个动作、一次回头、一个视线的转移、一处环境细节、一次呼吸的停顿，都可以\n"
+            "各自成格。例如「主角回头看见村子在远处」这一个动作，漫画里通常是 4 格：①回头村还清晰\n"
+            "②再回头村被树挡了一半 ③又回头只剩几盏灯 ④最后一次回头几乎全黑——恐惧是**累积**出来的，\n"
+            "压缩成一格就没有了。\n"
+            "按这个尺度：一千字左右的故事，在连载漫画里通常展开成 **60-90 格（约 15-25 页）**。\n"
+            "这个数只是让你校准尺度的参照，不是要凑的目标——仍按内容决定，但宁细勿粗：\n"
+            "多给几格不会有人抱怨，把三拍压成一格则整段节奏就塌了。\n"
+            if is_panel_based
+            else ""
+        )
+        item_fields = (
+            "index、title、text、image_prompt、video_prompt、page_index、panel_index、shot"
+            if is_panel_based
+            else "index、title、text、fact、source、source_url、image_prompt、video_prompt"
+        )
         # 页数指令：给了数字就照数字，没给就**要求先读后定**。
         # 两者不是同一个要求的两种说法——"规划 12 个 X" 是填空题（内容不够就注水、
         # 内容多了就压缩），而 "先读完再判断需要多少个 X" 才是切分题。
@@ -4195,10 +4226,11 @@ class CreativeProjectService:
             f"{scope_instruction}\n"
             f"补充要求：{brief.strip() or '面向普通读者，内容准确、清楚、可执行。'}\n"
             f"{bible_block}"
+            f"{panel_instruction}"
             f"{mode_instruction}\n"
             f"{knowledge_instruction}\n"
             "严格输出 JSON 对象：title、topic、brief、visual_bible、items。"
-            "items 中每项含 index、title、text、fact、source、source_url、image_prompt、video_prompt、status；"
+            f"items 中每项含 {item_fields}；"
             f"{bible_output_instruction}"
             "不要输出 Markdown 或解释。"
         )

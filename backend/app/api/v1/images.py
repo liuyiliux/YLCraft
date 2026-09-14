@@ -415,9 +415,18 @@ async def _merge_reference_images(
     "图生图请求"，被 router 以不支持为由拒绝（详见 `_image_backend_supports_reference`）。
     注意这里只判断**自动注入**的基准；调用方显式传的参考图仍然照常传递——那是用户
     明确表达的意图，该报错就报错。
+
+    **调用方可用空数组显式退出注入**：`reference_asset_ids: []` 或 `reference_images: []`
+    表示"我就是要纯文生图、不要任何参考图"（工作台上的「文生图」模式即此语义）。
+    这必须能被表达出来，否则服务端会把用户明确的"文生图"悄悄改成"图生图"，
+    而用户看不到任何提示。只认**空数组**这一个信号：字段缺省（`None`）是"未指定"，
+    仍按既有约定自动注入——把「没传参考图」误判成退出，基准就永远注入不上了。
     """
+    caller_explicit_no_reference = (
+        req.reference_asset_ids == [] or req.reference_images == []
+    )
     baseline_ids: list[str] = []
-    if session and req.project_id:
+    if session and req.project_id and not caller_explicit_no_reference:
         if _image_backend_supports_reference(service, req.provider):
             baseline_ids = resolve_visual_baseline_asset_ids(session, req.project_id)
         else:
@@ -425,6 +434,8 @@ async def _merge_reference_images(
                 "[ImageAPI] 目标生图后端不支持图生图，跳过项目视觉基准注入: provider=%s",
                 req.provider or "(默认)",
             )
+    elif caller_explicit_no_reference:
+        logger.debug("[ImageAPI] 调用方显式传空参考图，跳过项目视觉基准注入")
     return await merge_reference_images(
         reference_images=req.reference_images,
         reference_asset_ids=[*list(req.reference_asset_ids or []), *baseline_ids],
