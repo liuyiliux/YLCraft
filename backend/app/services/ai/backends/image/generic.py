@@ -28,7 +28,7 @@ from app.services.ai.types import (
 )
 from app.db.models.ai_connector import AIConnector
 from app.services.ai_connector.service import infer_image_connector_capabilities
-from app.services.asset_file_resolver import resolve_asset_file_from_url
+from app.services.asset_file_resolver import resolve_asset_file_from_url, resolve_storage_path
 
 logger = logging.getLogger("ylcraft.generic_image_backend")
 
@@ -758,7 +758,23 @@ class GenericImageBackend(ImageBackend):
                 return self._image_bytes_to_data_url(data, content_type)
             except Exception as e:
                 raise
-        
+
+        # 存储路径兜底：`asset_representations.file_path` 存的是**相对项目根**的路径
+        # （形如 `backend/app/storage/images/x.png`），而本进程 CWD 通常是 `backend/`。
+        # 这类路径不以 `/` 或 `.` 开头、也不是绝对路径，上面几个分支全都不会命中，
+        # 最终落到下面那句「不支持的图片格式」——而项目视觉基准与素材库参考图
+        # 恰恰就是这个形态，于是参考图被**静默丢弃**、退化成文生图（画风一致性失效，
+        # 日志里只有一条 warning，看起来像"出图正常"）。
+        # 这里用仓库统一的 resolve_storage_path 按**项目根**解析，而不是按 CWD——
+        # `to_storage_path` 的文档字符串里已明确记录过这一类拼错路径的坑。
+        try:
+            storage_file = resolve_storage_path(url_or_path)
+            if storage_file.is_file():
+                mime = mimetypes.guess_type(str(storage_file))[0] or 'image/png'
+                return self._image_bytes_to_data_url(storage_file.read_bytes(), mime)
+        except Exception as e:
+            logger.debug('[GenericImageBackend] 存储路径解析未命中 %s: %s', url_or_path, e)
+
         raise ValueError(f"不支持的图片格式: {url_or_path}")
 
     def _image_bytes_to_data_url(self, data: bytes, content_type: str = "image/png") -> str:
