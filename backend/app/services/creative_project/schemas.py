@@ -15,6 +15,17 @@ class ContentPackageItemSchema(FlexibleModel):
     id: str = Field(default="", max_length=160)
     index: int = Field(default=1, ge=1)
     title: str = Field(default="", max_length=240)
+    #: 页内定位。画面类内容包（绘本/漫画）以**格**为编排单位：一条 = 一个画格 = 一张图。
+    #:
+    #: 为什么是「格」而不是「页」：出图链路本来就是"一条 item 一张图"，所以让 item 等于格，
+    #: 「一格一张图」是自然结果，逐条重跑/状态/出图全部复用。反过来若以「页」为单位，
+    #: 模型得在一张图里画出 4 个画格与对白气泡——那是排版 + 多画面 + 气泡三件事一起做，
+    #: 实际往往产出"一张插图"而不是"一页漫画"。页仍然保留为分组（`page_index`）。
+    page_index: int = Field(default=0, ge=0)
+    panel_index: int = Field(default=0, ge=0)
+    #: 景别（大远景/远景/中景/近景/特写/主观视角…）。镜头语言本来就是逐格表达的——
+    #: 这也是分格的意义所在，一页一张图根本没有地方承载它。
+    shot: str = Field(default="", max_length=80)
     text: str = Field(default="", max_length=12000)
     fact: str = Field(default="", max_length=4000)
     source: str = Field(default="", max_length=1000)
