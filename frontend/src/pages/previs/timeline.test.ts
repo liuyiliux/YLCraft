@@ -11,6 +11,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_DURATION_FRAMES,
+  emptySceneData,
+  interpolationFor,
   makeKeyframeId,
   normalizeSceneData,
   type PrevisCamera,
@@ -20,11 +22,13 @@ import {
 import {
   channelKeyframes,
   clampFrame,
+  currentChannelValue,
   durationSeconds,
   evaluateCamera,
   evaluateNodeTransform,
   frameToSeconds,
   sampleChannel,
+  sampleFromKeys,
   secondsToFrame,
   slerpQuaternion,
 } from './timeline'
@@ -290,5 +294,105 @@ describe('normalizeSceneData（时间轴相关）', () => {
     })
     expect(scene.operations.map(op => op.type)).toEqual(['add_node', 'add_keyframe'])
     expect(scene.operations[1].frame).toBe(12)
+  })
+})
+
+describe('动画 clip 通道（#15）', () => {
+  it('缺省插值是 step——换动作是离散事件，不该"渐变成另一条动画"', () => {
+    expect(interpolationFor('animation_clip')).toBe('step')
+    const scene = normalizeSceneData({
+      keyframes: [{ targetId: 'n1', frame: 0, property: 'animation_clip', value: 'Walk' }],
+    })
+    expect(scene.keyframes[0].interpolation).toBe('step')
+  })
+
+  it('字符串通道在两帧之间保持前一个值，切帧才换', () => {
+    const keys = [
+      keyframe({ frame: 0, property: 'animation_clip', value: 'Walk', interpolation: 'step' }),
+      keyframe({ frame: 48, property: 'animation_clip', value: 'Run', interpolation: 'step' }),
+    ]
+    expect(sampleChannel(keys, 'n1', 'animation_clip', 0, '')).toBe('Walk')
+    expect(sampleChannel(keys, 'n1', 'animation_clip', 24, '')).toBe('Walk')
+    expect(sampleChannel(keys, 'n1', 'animation_clip', 47, '')).toBe('Walk')
+    expect(sampleChannel(keys, 'n1', 'animation_clip', 48, '')).toBe('Run')
+  })
+
+  it('没打过点时回落静态选择', () => {
+    expect(sampleChannel([], 'n1', 'animation_clip', 30, 'Idle')).toBe('Idle')
+  })
+
+  it('步进插值也能正确处理倒序写入（先 48 后 0）', () => {
+    // 用户可能先在第 48 帧选 Run、再回第 0 帧选 Walk，顺序不保证
+    const keys = [
+      keyframe({ frame: 48, property: 'animation_clip', value: 'Run', interpolation: 'step' }),
+      keyframe({ frame: 0, property: 'animation_clip', value: 'Walk', interpolation: 'step' }),
+    ]
+    expect(sampleChannel(keys, 'n1', 'animation_clip', 10, '')).toBe('Walk')
+    expect(sampleChannel(keys, 'n1', 'animation_clip', 60, '')).toBe('Run')
+  })
+
+  it('动画通道不干扰同一节点的变换通道', () => {
+    const keys = [
+      keyframe({ frame: 0, property: 'animation_clip', value: 'Walk', interpolation: 'step' }),
+      keyframe({ frame: 0, property: 'position', value: [1, 2, 3] }),
+    ]
+    // 变换仍按自己的通道走，不会被动作通道带偏
+    expect(sampleChannel(keys, 'n1', 'position', 0, null)).toEqual([1, 2, 3])
+    expect(sampleChannel(keys, 'n1', 'animation_clip', 0, '')).toBe('Walk')
+  })
+})
+
+describe('currentChannelValue（打点时用它取"当前值"）', () => {
+  it('animation_clip 无关键帧时取静态选择', () => {
+    const scene = { ...emptySceneData(), nodes: [{ ...NODE, metadata: { animationClip: 'Idle' } }] }
+    expect(currentChannelValue(scene, 'n1', 'animation_clip', 0)).toBe('Idle')
+  })
+
+  it('animation_clip 有关键帧时取该帧的值', () => {
+    const scene = {
+      ...emptySceneData(),
+      nodes: [{ ...NODE, metadata: { animationClip: 'Idle' } }],
+      keyframes: [
+        keyframe({ frame: 0, property: 'animation_clip', value: 'Walk', interpolation: 'step' }),
+        keyframe({ frame: 48, property: 'animation_clip', value: 'Run', interpolation: 'step' }),
+      ],
+    }
+    expect(currentChannelValue(scene, 'n1', 'animation_clip', 24)).toBe('Walk')
+    expect(currentChannelValue(scene, 'n1', 'animation_clip', 60)).toBe('Run')
+  })
+
+  it('未选动作时返回空串而不是 undefined', () => {
+    // 这条固定住一个真实缺陷的成因：`currentChannelValue` 起初只处理
+    // position/rotation/scale，动作通道返回 undefined，而 `addKeyframe` 拿到
+    // undefined 就直接不写——表现为「按了钥匙什么都没发生」，且没有任何提示。
+    // 单元测试没覆盖到，是浏览器端到端测试才暴露的。
+    const scene = { ...emptySceneData(), nodes: [{ ...NODE, metadata: {} }] }
+    expect(currentChannelValue(scene, 'n1', 'animation_clip', 0)).toBe('')
+    expect(currentChannelValue(scene, 'n1', 'animation_clip', 0)).not.toBeUndefined()
+  })
+
+  it('变换通道照常取值', () => {
+    const scene = {
+      ...emptySceneData(),
+      nodes: [NODE],
+      keyframes: [keyframe({ frame: 0, property: 'position', value: [1, 2, 3] })],
+    }
+    expect(currentChannelValue(scene, 'n1', 'position', 0)).toEqual([1, 2, 3])
+  })
+})
+
+describe('sampleFromKeys（供逐帧解析复用已排序关键帧）', () => {
+  it('与 sampleChannel 结果一致', () => {
+    const keys = [
+      keyframe({ frame: 0, property: 'position', value: [0, 0, 0] }),
+      keyframe({ frame: 10, property: 'position', value: [10, 0, 0] }),
+    ]
+    for (const frame of [0, 3, 5, 10, 40]) {
+      expect(sampleFromKeys(keys, frame, null)).toEqual(sampleChannel(keys, 'n1', 'position', frame, null))
+    }
+  })
+
+  it('空列表返回回落值', () => {
+    expect(sampleFromKeys([], 5, 'Idle')).toBe('Idle')
   })
 })

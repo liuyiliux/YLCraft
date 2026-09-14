@@ -12,11 +12,11 @@
 
 import { Component, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from 'react'
 import { Canvas, useFrame, useThree, type RootState } from '@react-three/fiber'
-import { OrbitControls, Grid, PerspectiveCamera, TransformControls, useGLTF } from '@react-three/drei'
+import { OrbitControls, Grid, PerspectiveCamera, TransformControls, useAnimations, useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import type { PrevisCamera, PrevisKeyframe, PrevisNode, PrimitiveKind } from './types'
 import { readLightConfig } from './types'
-import { evaluateCamera, evaluateNodeTransform } from './timeline'
+import { channelKeyframes, evaluateCamera, evaluateNodeTransform, sampleFromKeys } from './timeline'
 import { ProceduralHumanProxy, humanProxyPoseKey } from '../../components/three/humanProxy'
 
 /** 截图函数：同步返回 PNG dataURL；画布不可读时返回 `null`。 */
@@ -117,22 +117,109 @@ function LightNode({ node }: { node: PrevisNode }) {
   )
 }
 
-function HumanProxyMesh({ node }: { node: PrevisNode }) {
+function HumanProxyMesh({
+  node,
+  staticClip,
+  animation,
+}: {
+  node: PrevisNode
+  staticClip: string
+  animation: AnimationContext
+}) {
   const height = (node.metadata.height as number) || 1.7
   const color = node.metadata.color as string | undefined
   const pose = humanProxyPoseKey(node.metadata.pose)
   const style = node.metadata.proxyStyle as string | undefined
-  if (style === 'ue' || style === 'vanguard') {
-    return <LocalModelMesh url={style === 'ue' ? '/models/ue-mannequin.glb' : '/models/vanguard.glb'} />
+  // 内置人形模型（UE 白模 / Vanguard），许可见 frontend/public/models/LICENSE-*.txt。
+  // 两者都走 AnimatedModel：UE 白模没有动画，Vanguard 自带 4 条。
+  if (style === 'ue') {
+    return <AnimatedModel url="/models/ue-mannequin.glb" nodeId={node.id} staticClip={staticClip} animation={animation} />
+  }
+  if (style === 'vanguard') {
+    return <AnimatedModel url="/models/vanguard.glb" nodeId={node.id} staticClip={staticClip} animation={animation} />
   }
   return <ProceduralHumanProxy pose={pose} color={color} height={height} />
 }
 
-// 内置人形模型（UE 白模 / Vanguard），许可见 frontend/public/models/LICENSE-*.txt
-function LocalModelMesh({ url }: { url: string }) {
-  const { scene } = useGLTF(url)
+/** 逐帧解析动画 clip 需要的上下文（由 `SceneViewport` 统一下发）。 */
+interface AnimationContext {
+  keyframes: PrevisKeyframe[]
+  playheadRef: React.MutableRefObject<number>
+  fps: number
+  onClips?: (nodeId: string, names: string[]) => void
+}
+
+/**
+ * 带动画的模型节点。
+ *
+ * **按帧同步**而不是自由播放：每帧把播放头折算成秒喂给 `mixer.setTime()`。
+ * 这是刻意的——自由播放（`action.play()` 自己推进）会让"同一帧"在不同时刻呈现
+ * 不同姿态，多角色的动作也无法对齐，预演就失去了参考价值；而 `setTime` 每次
+ * 都从 0 重新推进到 t，因此**同一帧永远是同一个姿态**，播放头才能被信任。
+ *
+ * 这里只**引用**模型自带的动画（`AnimationClip` 由 GLTF 提供），不创建也不修改
+ * 关键帧数据——design 明确要求「动作播放状态不能伪装成可编辑骨骼动画」。
+ */
+function AnimatedModel({
+  url,
+  nodeId,
+  staticClip,
+  animation,
+}: {
+  url: string
+  nodeId: string
+  staticClip: string
+  animation: AnimationContext
+}) {
+  const { scene, animations } = useGLTF(url)
+  const rootRef = useRef<THREE.Group>(null)
+  const { actions, mixer, names } = useAnimations(animations, rootRef)
   useShadowedModel(scene)
-  return <primitive object={scene} />
+
+  // 已排序的 clip 关键帧；逐帧解析复用它，避免每帧重新过滤 + 排序 + 建 Map
+  const clipKeys = useMemo(
+    () => channelKeyframes(animation.keyframes, nodeId, 'animation_clip'),
+    [animation.keyframes, nodeId],
+  )
+
+  const namesKey = names.join('\u0001')
+  useEffect(() => {
+    animation.onClips?.(nodeId, names)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [namesKey, nodeId])
+
+  /** 当前生效的 clip：打过点就按关键帧走（字符串天然是 step 语义），否则用静态选择。 */
+  const resolveClip = useCallback(() => {
+    const value = sampleFromKeys(clipKeys, animation.playheadRef.current, staticClip)
+    return typeof value === 'string' ? value : ''
+  }, [clipKeys, animation.playheadRef, staticClip])
+
+  // 正在播放的 clip：只有它变化时才重新挂动作，避免每帧 stop/play 把混合重置
+  const activeRef = useRef('')
+
+  useEffect(() => {
+    activeRef.current = ''
+  }, [actions])
+
+  useFrame(() => {
+    const clip = resolveClip()
+    if (clip !== activeRef.current) {
+      Object.values(actions).forEach(action => action?.stop())
+      const action = clip ? actions[clip] : null
+      if (action) action.reset().play()
+      activeRef.current = action ? clip : ''
+    }
+    if (activeRef.current) {
+      const fps = animation.fps > 0 ? animation.fps : 24
+      mixer.setTime(Math.max(0, animation.playheadRef.current) / fps)
+    }
+  })
+
+  return (
+    <group ref={rootRef}>
+      <primitive object={scene} />
+    </group>
+  )
 }
 
 /** 载入的模型默认不投影，需要逐 mesh 打开，否则人物会「浮」在地面上。 */
@@ -166,12 +253,20 @@ class AssetModelErrorBoundary extends Component<{ children: ReactNode }, { hasEr
   }
 }
 
-function AssetModelMesh({ node }: { node: PrevisNode }) {
-  const modelUrl = node.metadata.modelUrl as string | undefined
-  if (!modelUrl) return null
-  const { scene } = useGLTF(modelUrl)
-  useShadowedModel(scene)
-  return <primitive object={scene} />
+// 注：原来这里是 `if (!modelUrl) return null` 后再调 useGLTF —— 条件调用 hook。
+// 现在把「有没有 URL」的判断提到父组件，组件本身按需挂载，hook 顺序始终稳定。
+function AssetModelMesh({
+  url,
+  nodeId,
+  staticClip,
+  animation,
+}: {
+  url: string
+  nodeId: string
+  staticClip: string
+  animation: AnimationContext
+}) {
+  return <AnimatedModel url={url} nodeId={nodeId} staticClip={staticClip} animation={animation} />
 }
 
 function PanoramaMesh({ node }: { node: PrevisNode }) {
@@ -186,16 +281,14 @@ function PanoramaMesh({ node }: { node: PrevisNode }) {
 
 function NodeMesh({
   node,
-  keyframes,
-  playheadRef,
+  animation,
   selected,
   gizmoMode,
   onChannelChange,
   onChannelCommit,
 }: {
   node: PrevisNode
-  keyframes: PrevisKeyframe[]
-  playheadRef: React.MutableRefObject<number>
+  animation: AnimationContext
   selected: boolean
   gizmoMode: GizmoMode
   onChannelChange: (nodeId: string, property: 'position' | 'rotation' | 'scale', value: unknown) => void
@@ -204,6 +297,9 @@ function NodeMesh({
   const groupRef = useRef<THREE.Group>(null)
   /** 拖拽期间跳过每帧写入，否则会用旧值把用户正在拖的结果顶回去。 */
   const draggingRef = useRef(false)
+  /** 静态动画选择（未在 `animation_clip` 通道打点时的回落值）。 */
+  const staticClip = typeof node.metadata.animationClip === 'string' ? node.metadata.animationClip : ''
+  const modelUrl = typeof node.metadata.modelUrl === 'string' ? node.metadata.modelUrl : ''
 
   // 首帧先摆到位，避免从原点闪一下
   useLayoutEffect(() => {
@@ -215,7 +311,7 @@ function NodeMesh({
   useFrame(() => {
     const group = groupRef.current
     if (!group || draggingRef.current) return
-    const evaluated = evaluateNodeTransform(node, keyframes, playheadRef.current)
+    const evaluated = evaluateNodeTransform(node, animation.keyframes, animation.playheadRef.current)
     group.position.set(...evaluated.position)
     group.quaternion.set(...evaluated.rotation)
     group.scale.set(...evaluated.scale)
@@ -229,15 +325,15 @@ function NodeMesh({
         {node.kind === 'human_proxy' && (
           <AssetModelErrorBoundary>
             <Suspense fallback={null}>
-              <HumanProxyMesh node={node} />
+              <HumanProxyMesh node={node} staticClip={staticClip} animation={animation} />
             </Suspense>
           </AssetModelErrorBoundary>
         )}
         {node.kind === 'panorama' && <PanoramaMesh node={node} />}
-        {node.kind === 'asset_model' && (
+        {node.kind === 'asset_model' && modelUrl && (
           <AssetModelErrorBoundary>
             <Suspense fallback={null}>
-              <AssetModelMesh node={node} />
+              <AssetModelMesh url={modelUrl} nodeId={node.id} staticClip={staticClip} animation={animation} />
             </Suspense>
           </AssetModelErrorBoundary>
         )}
@@ -355,10 +451,12 @@ export default function SceneViewport({
   cameraMode = 'director',
   keyframes = [],
   playheadRef,
+  fps = 24,
   selectedNodeId = '',
   gizmoMode = 'translate',
   onNodeChannelChange,
   onNodeChannelCommit,
+  onModelClips,
   onCaptureReady,
 }: {
   nodes: PrevisNode[]
@@ -368,10 +466,14 @@ export default function SceneViewport({
   keyframes?: PrevisKeyframe[]
   /** 播放头帧号。用 ref 传，避免每秒 24 次触发整块面板重渲染。 */
   playheadRef: React.MutableRefObject<number>
+  /** 帧率：动画 clip 需要把帧折算成秒。 */
+  fps?: number
   selectedNodeId?: string
   gizmoMode?: GizmoMode
   onNodeChannelChange?: (nodeId: string, property: 'position' | 'rotation' | 'scale', value: unknown) => void
   onNodeChannelCommit?: (nodeId: string, property: 'position' | 'rotation' | 'scale') => void
+  /** 模型加载完成后上报它自带的动画 clip 名称，供面板选择。 */
+  onModelClips?: (nodeId: string, names: string[]) => void
   /**
    * 视口就绪后把截图函数交给上层；卸载时以 `null` 回收。
    *
@@ -383,6 +485,12 @@ export default function SceneViewport({
 }) {
   const position = activeCamera?.transform.position || [4, 3, 6]
   const fov = activeCamera?.fov || 50
+
+  // 打包成一份稳定引用下发给每个节点，避免每个 NodeMesh 各自解构一堆 props
+  const animationContext: AnimationContext = useMemo(
+    () => ({ keyframes, playheadRef, fps, onClips: onModelClips }),
+    [fps, keyframes, onModelClips, playheadRef],
+  )
 
   const handleCreated = useCallback((state: RootState) => {
     // 闭包持 state 对象本身（其 .camera/.scene/.gl 是可变更引用），
@@ -449,8 +557,7 @@ export default function SceneViewport({
         <NodeMesh
           key={node.id}
           node={node}
-          keyframes={keyframes}
-          playheadRef={playheadRef}
+          animation={animationContext}
           selected={node.id === selectedNodeId}
           gizmoMode={gizmoMode}
           onChannelChange={onNodeChannelChange || (() => {})}
