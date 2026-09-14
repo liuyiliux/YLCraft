@@ -1075,17 +1075,9 @@ export function openProjectTextPreview(title: string, markdown: string) {
   preview.focus()
 }
 
-export function downloadTextFile(filename: string, text: string) {
-  const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = filename
-  document.body.appendChild(anchor)
-  anchor.click()
-  anchor.remove()
-  URL.revokeObjectURL(url)
-}
+// 实现已下沉到 `utils/download`（它是通用工具，不该只服务 Story 页面；共享组件需要它）。
+// 这里保留同名 re-export，本文件原有的 3 处调用与其它导入方无需改动。
+export { downloadTextFile } from '../../utils/download'
 
 export function findWriterRoomLog(logs: ProjectGenerationLog[], content?: ProjectContent) {
   if (!content) return undefined
