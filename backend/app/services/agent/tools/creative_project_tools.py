@@ -365,7 +365,7 @@ async def update_creative_project_content(
     description="列出创作项目已关联的素材/参考卡，可按内容 ID 或角色类型过滤。",
     category="creative_project",
     examples=["列出这个项目的角色参考图", "查看第 3 章分镜绑定了哪些参考素材"],
-    input_schema_note="必须提供 project_id；content_id/role 可选。role 常用 character/background/style/world/reference/output。",
+    input_schema_note="必须提供 project_id；content_id/role 可选。可作为生成参考的 role：character/background/style/world/reference/storyboard_reference（后者为 3D 预演截图回流）；另有 output 表示生成产物。",
     output_schema_note="返回 asset_links；每项包含 id/project_id/asset_id/content_id/role/relation/metadata/created_at。",
     risk_level="read",
     output_type="creative_project_asset_link_list",
