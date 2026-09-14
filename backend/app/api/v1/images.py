@@ -28,7 +28,7 @@ from app.db.models.external_api_key import ExternalApiKey
 from app.services.ai import get_ai_service, AIService
 from app.services.creative_project.visual_baseline import resolve_visual_baseline_asset_ids
 from app.services.ai.service import ai_call_context
-from app.services.ai.types import ImageGenerationRequest
+from app.services.ai.types import ImageCapability, ImageGenerationRequest, MediaType
 from app.services.asset_hub.reference_resolver import merge_reference_images
 from app.services.platform_log import service as platform_log
 from app.services.ai.visual_planning import build_visual_planning_summary
@@ -373,14 +373,58 @@ def _generation_lineage_from_payload(payload: dict, *, extra: dict | None = None
     return {key: value for key, value in lineage.items() if value not in (None, "", [])}
 
 
-async def _merge_reference_images(req: ImageGenerateRequest, session: Session | None = None) -> list[str]:
+def _image_backend_supports_reference(service: Any, provider: str | None) -> bool:
+    """目标生图后端是否支持图生图（判定方式与 `BackendRouter._supports_img2img` 一致）。
+
+    存在的理由：项目视觉基准是**自动注入**的，而注入会让请求变成"图生图"。若目标
+    连接器不支持（例如纯文生图的 `不明中转站-gpt-image-2`），`BackendRouter` 会直接
+    返回「指定的 Provider 'X' 不支持图生图功能」——**整单失败**。实测就踩到了：
+    仅仅因为项目设过基准，一个本来能正常出图的文生图连接器就变得完全不可用。
+    基准的定位是增强项（见 `visual_baseline` 模块说明：「不应因为没设置而阻塞生图」），
+    所以这里先在源头判断，不支持就干脆不注入，而不是注入后再让它失败。
+    """
+    if service is None:
+        return False
+    try:
+        backend = (
+            service.get_backend(MediaType.IMAGE, provider)
+            if provider
+            else service.get_default(MediaType.IMAGE)
+        )
+        if backend is None:
+            return False
+        caps = getattr(backend, "capabilities", None) or set()
+        return "image_to_image" in caps or ImageCapability.IMAGE_TO_IMAGE in caps
+    except Exception:
+        # 能力查询失败时按"不支持"处理：宁可少注入一次基准，也不能让生图整单挂掉。
+        return False
+
+
+async def _merge_reference_images(
+    req: ImageGenerateRequest,
+    session: Session | None = None,
+    service: Any = None,
+) -> list[str]:
     """参考图合并：素材库 ID 的解析统一走 asset_hub 的共用解析器。
 
     同时把**项目视觉基准**自动注入：调用方（页面 / Agent / 内容包出图）都不必各自记得传，
     没设置基准也不阻塞生图。顺序沿用 world_map_visual 的既有约定——调用方显式指定的参考图
     在前、项目基准在后，去重后不会重复占位。
+
+    **仅当目标后端支持图生图时才注入**：否则自动注入会把一次正常的文生图变成
+    "图生图请求"，被 router 以不支持为由拒绝（详见 `_image_backend_supports_reference`）。
+    注意这里只判断**自动注入**的基准；调用方显式传的参考图仍然照常传递——那是用户
+    明确表达的意图，该报错就报错。
     """
-    baseline_ids = resolve_visual_baseline_asset_ids(session, req.project_id) if session else []
+    baseline_ids: list[str] = []
+    if session and req.project_id:
+        if _image_backend_supports_reference(service, req.provider):
+            baseline_ids = resolve_visual_baseline_asset_ids(session, req.project_id)
+        else:
+            logger.debug(
+                "[ImageAPI] 目标生图后端不支持图生图，跳过项目视觉基准注入: provider=%s",
+                req.provider or "(默认)",
+            )
     return await merge_reference_images(
         reference_images=req.reference_images,
         reference_asset_ids=[*list(req.reference_asset_ids or []), *baseline_ids],
@@ -575,7 +619,7 @@ async def generate_image(
         raise HTTPException(status_code=503, detail="AIService 未初始化")
 
     try:
-        reference_images = await _merge_reference_images(req, session)
+        reference_images = await _merge_reference_images(req, session, manager)
         requested_generation_params = _asset_generation_params(req)
         planning_summary = req.planning_summary or build_visual_planning_summary(
             "image",
