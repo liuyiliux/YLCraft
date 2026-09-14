@@ -62,7 +62,20 @@
 
 ## Phase 5: Verification and docs
 
-- [ ] 18. Add backend tests for profile routing, package schema, planner compatibility, item rerun and adapter output provenance.
+- [x] 18. Add backend tests for profile routing, package schema, planner compatibility, item rerun and adapter output provenance.
+  - _2026-09-14 **核实为已满足**：本条点名的五块逐块有覆盖（其中四块是本 change 前几轮随实现补的）——_
+    - **profile routing**：`tests/test_content_production_profiles.py`（方案定义与 `get_content_production_profile`）+ `test_creative_project_workflow_api.py::test_content_package_api_versions_and_rejects_narrative_projects`（方案路由到端点、且拒绝叙事方案走包端点）。_
+    - **package schema**：`tests/test_content_package_schema.py` —— **14 例**（六种类型契约、硬错误 vs 软提示两档、条数上限夹取、`ui_enabled`）。_
+    - **planner compatibility**：`tests/test_content_package_planner.py` —— **8 例**（含「响应结构逐字段不变」、「`_parse_outline_text` 别名可用」等兼容性断言）。_
+    - **item rerun**：`test_creative_project_workflow_api.py::test_content_package_item_retry_rewrites_one_item_and_stales_outputs`（只重写一条、其余原样保留、引用它的输出标 `stale` 且带 `stale_reason`）。_
+    - **adapter output provenance**：`tests/test_content_package_adapters.py` —— **14 例**（五适配器形状、`source_package_id`/`source_package_version`/`source_item_ids` 溯源、单适配器失败隔离）+ 端点级 `test_content_package_outputs_endpoint_builds_and_persists_adapters`。_
+    - _实测：前四个文件 **46 passed**；workflow api 的内容包三例 **3 passed**。故勾选。_
 - [ ] 19. Add frontend build and browser smoke for a zodiac picture book and knowledge cards; defer article/carousel smoke until their UIs are enabled.
 - [ ] 20. Verify batch generation enters task center, event logs and Asset Hub with per-item provenance and independent retry.
-- [ ] 21. Update system architecture, API Surface, creative workflow Skill and external-agent examples when the first endpoint is implemented.
+- [x] 21. Update system architecture, API Surface, creative workflow Skill and external-agent examples when the first endpoint is implemented.
+  - _2026-09-14 四处同步完成：_
+    - **system architecture**（本 change 内容）：`YLCRAFT_SYSTEM_ARCHITECTURE.md` §4.4.6 新增「内容包契约三部分」——① 类型 schema 与其**两档校验**（结构性硬错误 vs 内容质量软提示，并说明为何不能把缺字段一律当硬错误：生成是 LLM 驱动的，"先存标题再补提示词"是正常中间态）；② 五个适配器与**三条边界**（不调外部平台 / 不写回源包 / 不保存第二份事实源）及"哪些适配器由方案声明决定"；③ 条目级重试与 `stale` 语义（按依赖判定）。另在 §5 平台采集行补 Cookie 规范化收在公共基类，§6 接口统计、§7 OpenSpec 状态同步。_
+    - **API Surface**：跑 `tools/generate_api_surface.py` 重新生成 `API_SURFACE.md` + `api_surface.json`（53 routers / 678 endpoints）。逐端点比对 HEAD 版确认**新增 2 个端点、0 个消失**（其余为行号漂移）。_
+    - **creative workflow Skill**（`#21` 点名的 API-facing Skill）：`SKILL.md` 新增「Content Packages (Lightweight)」段并更新 frontmatter description 与首段（说明该走包而非强制叙事链路、`--adapters` 省略时按方案声明出、适配器只做本地翻译、`planning_only` 不得当作成品交付、四种类型当前 API-only）；`references/api-workflows.md` 新增完整 `## Content Package (lightweight)` 段（端点与请求字段、六种包类型、五种适配器、**按 profile 的 `output_adapters` 默认表**、六条规则、命令示例）并把 `content_package` 补进 Content Types；`scripts/creative_project_workflow.py` 新增四个命令 `package-get` / `package-plan` / `package-outputs` / `package-item-retry`。_
+    - **external-agent examples**：`docs/guides/external-agent-api.md` 新增「明确不在覆盖范围的端点（含内容包）」——鉴权是**逐路由声明**的（只有 9 个路由带 `require_external_api_key`），`creative_projects.py` **未声明**，故内容包等创作项目端点既不校验 Key 也不计入 scope/配额；外部 Agent 在本机可用但**不应依赖其公网可用性**，要真正对外驱动内容包需先把该路由纳入鉴权并定义作用域。**此条为如实边界标注，未把它说成已覆盖。**_
+    - _验证：skill 脚本语法通过、四个新命令 `--help` 与注册正常；**真实链路实测** `package-get` 与 `package-outputs --no-save`（对项目「输出验收-十二生肖」）——未传 `--adapters` 时确按 storybook 方案产出 `pdf_ebook` + `asset_bundle` 两条，每条带 `source_package_id`/`source_package_version=2`/`source_item_ids`，`planning_only` 标记与 `--no-save` 不落库均符合设计。回归 `pytest -k "content_package or creative_project or production_profile or adapter"` → **161 passed**。_

@@ -102,6 +102,14 @@ curl -X POST http://<host>/api/v1/images/generate \
 `POST /assets/upload`、`GET /assets/{asset_id}`、`GET /logs`、`GET /ai/capabilities`，
 以及任务读接口 `GET /tasks`、`GET /tasks/stats`、`GET /tasks/{task_id}`。
 
+### 明确不在覆盖范围的端点（含内容包）
+
+鉴权是**逐路由声明**的（`Depends(require_external_api_key(...))`），当前只有上表对应的 9 个路由声明了它。**创作项目路由 `backend/app/api/v1/creative_projects.py` 未声明**，因此：
+
+- 内容包、生产方案、导演计划、章节/正文/剧本/分镜等**创作项目端点不在带 Key 的外部契约内**——既不校验 Key，也不计入 `scope` 与 `generate` 配额，事件日志不按外部 Key 归属。
+- 外部 Agent 在**本机部署**下仍可调用它们（无 Key 门槛），但应按「本机内部 API」对待，**不要依赖其公网可用性**：一旦以公网形态暴露，这些端点需要与生图/生视频同等的 Key + 作用域 + 配额处理。
+- 若要让外部 Agent 真正驱动内容包（规划 → 条目编辑 → 平台输出），应先把 `creative_projects.py` 纳入鉴权覆盖并定义作用域（读/写/生成），再对外声明。
+
 ### ⚠️ 已知限制（启用公网模式前必须解决）
 
 **前端不带任何 Key**（`frontend/src` 中无 `Authorization` / `Bearer` / `externalApiKey` 相关代码），而受保护列表里已包含前端在用的端点（如 `GET /assets/{asset_id}`、任务读接口）。

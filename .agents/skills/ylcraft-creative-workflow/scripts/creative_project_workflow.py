@@ -233,6 +233,57 @@ def command_plan_save(args: argparse.Namespace) -> None:
     print_json(unwrap(api_request(args.base_url, "PUT", f"/creative-projects/{args.project_id}/production-plan", payload)))
 
 
+PACKAGE_CONTENT_TYPE = "content_package"
+
+
+def command_package_get(args: argparse.Namespace) -> None:
+    """读项目最新的内容包（轻量内容包，content_type=content_package）。"""
+    contents = list_contents(args.base_url, args.project_id, PACKAGE_CONTENT_TYPE)
+    if not contents:
+        raise ApiError("No content package found for this project")
+    latest = sorted(
+        contents,
+        key=lambda item: item.get("updated_at") or item.get("created_at") or "",
+        reverse=True,
+    )[0]
+    print_json(latest)
+
+
+def command_package_plan(args: argparse.Namespace) -> None:
+    """一次生成内容包（规划 + 转换），不产图、不访问外部平台。"""
+    payload = model_payload(args, {
+        "topic": args.topic,
+        "brief": args.brief,
+        "item_count": args.item_count,
+        "prompt_only": args.prompt_only,
+    })
+    print_json(unwrap(api_request(
+        args.base_url, "POST", f"/creative-projects/{args.project_id}/content-package/plan", payload,
+    )))
+
+
+def command_package_outputs(args: argparse.Namespace) -> None:
+    """用平台适配器把当前内容包翻译成各平台格式（纯本地，不向外部平台发送）。"""
+    adapters = [item.strip() for item in (args.adapters or "").split(",") if item.strip()]
+    payload = {"adapters": adapters, "save": not args.no_save}
+    print_json(unwrap(api_request(
+        args.base_url, "POST", f"/creative-projects/{args.project_id}/content-package/outputs", payload,
+    )))
+
+
+def command_package_item_retry(args: argparse.Namespace) -> None:
+    """只重跑一条内容单元；其余条目原样保留，引用它的输出会被标为 stale。"""
+    payload = model_payload(args, {
+        "brief": args.brief,
+        "prompt_only": args.prompt_only,
+    })
+    print_json(unwrap(api_request(
+        args.base_url, "POST",
+        f"/creative-projects/{args.project_id}/content-package/items/{args.item_id}/retry",
+        payload,
+    )))
+
+
 def command_logs(args: argparse.Namespace) -> None:
     qs = query_string({"stage": args.stage, "status": args.status, "limit": args.limit, "offset": args.offset})
     print_json(unwrap(api_request(args.base_url, "GET", f"/creative-projects/{args.project_id}/generation-logs{qs}")))
@@ -456,6 +507,33 @@ def build_parser() -> argparse.ArgumentParser:
     command.add_argument("--plan-file", required=True, help="Path to a JSON object matching ProductionPlanSchema")
     command.add_argument("--base-plan-id", default=None, help="Optional explicit parent plan revision")
     command.set_defaults(func=command_plan_save)
+
+    command = subparsers.add_parser("package-get", help="Read the latest content package (content_type=content_package)")
+    command.add_argument("--project-id", required=True)
+    command.set_defaults(func=command_package_get)
+
+    command = subparsers.add_parser("package-plan", help="Generate a content package from a topic or brief")
+    command.add_argument("--project-id", required=True)
+    command.add_argument("--topic", default="")
+    command.add_argument("--brief", default="")
+    command.add_argument("--item-count", type=int, default=12)
+    command.add_argument("--prompt-only", action="store_true")
+    add_model(command)
+    command.set_defaults(func=command_package_plan)
+
+    command = subparsers.add_parser("package-outputs", help="Translate the current package into platform outputs (local only)")
+    command.add_argument("--project-id", required=True)
+    command.add_argument("--adapters", default="", help="Comma-separated adapter types; empty uses the profile's declared output_adapters")
+    command.add_argument("--no-save", action="store_true", help="Preview outputs without appending a new package version")
+    command.set_defaults(func=command_package_outputs)
+
+    command = subparsers.add_parser("package-item-retry", help="Regenerate one content item; outputs referencing it become stale")
+    command.add_argument("--project-id", required=True)
+    command.add_argument("--item-id", required=True)
+    command.add_argument("--brief", default="")
+    command.add_argument("--prompt-only", action="store_true")
+    add_model(command)
+    command.set_defaults(func=command_package_item_retry)
 
     command = subparsers.add_parser("logs")
     command.add_argument("--project-id", required=True)
