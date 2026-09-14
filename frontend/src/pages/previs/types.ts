@@ -106,7 +106,11 @@ export const DEFAULT_INTERPOLATION: PrevisInterpolation = 'linear'
 export const MAX_KEYFRAMES = 2000
 
 export function interpolationFor(property: PrevisKeyframeProperty): PrevisInterpolation {
-  return property === 'rotation' ? DEFAULT_ROTATION_INTERPOLATION : DEFAULT_INTERPOLATION
+  if (property === 'rotation') return DEFAULT_ROTATION_INTERPOLATION
+  // 换动作是**离散事件**（走 -> 跑），不是渐变；线性插值在这里没有意义，
+  // 而且字符串值本来也只能按 step 解释。
+  if (property === 'animation_clip') return 'step'
+  return DEFAULT_INTERPOLATION
 }
 
 /* ---------------------------------------------------------------------------

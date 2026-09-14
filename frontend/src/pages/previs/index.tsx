@@ -76,6 +76,7 @@ import {
   frameToSeconds,
   removeKeyframeAt,
   removeTargetKeyframes,
+  sampleChannel,
   secondsToFrame,
   upsertKeyframe,
 } from './timeline'
@@ -343,6 +344,12 @@ export default function PrevisPage() {
   const [selectedNodeId, setSelectedNodeId] = useState('')
   const [gizmoMode, setGizmoMode] = useState<GizmoMode>('translate')
   const [historyOpen, setHistoryOpen] = useState(false)
+  /**
+   * 各节点加载到的动画 clip 名称（由视口上报）。
+   *
+   * 只有真的加载完模型才知道它带哪些动画，所以这份状态是"上报"而非"声明"。
+   */
+  const [modelClips, setModelClips] = useState<Record<string, string[]>>({})
 
   useEffect(() => {
     if (!sceneId) {
@@ -412,6 +419,15 @@ export default function PrevisPage() {
     () => (selectedNode ? { ...selectedNode, transform: evaluateNodeTransform(selectedNode, keyframes, playhead) } : null),
     [selectedNode, keyframes, playhead],
   )
+
+  /** 当前帧生效的动画 clip（打点过就走关键帧，否则用静态选择），与视口取的是同一个值。 */
+  const selectedClip = useMemo(() => {
+    if (!selectedNode) return ''
+    const value = sampleChannel(
+      keyframes, selectedNode.id, 'animation_clip', playhead, selectedNode.metadata.animationClip || '',
+    )
+    return typeof value === 'string' ? value : ''
+  }, [selectedNode, keyframes, playhead])
 
   const seek = useCallback((frame: number) => {
     const next = clampFrame(frame, durationFrames)
@@ -563,6 +579,39 @@ export default function PrevisPage() {
     },
     [],
   )
+
+  /**
+   * 写入节点的动画 clip 选择，规则同 `writeNodeChannel`。
+   *
+   * 存的是**模型自带 clip 的名字引用**，不是动画数据本身——预演台只负责"选哪一条、
+   * 播到第几秒"，不创建也不修改骨骼动画（design：不能把播放状态伪装成可编辑骨骼动画）。
+   */
+  const writeNodeAnimationClip = useCallback((nodeId: string, clip: string) => {
+    setSceneData(prev => {
+      if (!prev) return prev
+      if (channelKeyframes(prev.keyframes, nodeId, 'animation_clip').length === 0) {
+        return {
+          ...prev,
+          nodes: prev.nodes.map(node =>
+            node.id === nodeId ? { ...node, metadata: { ...node.metadata, animationClip: clip } } : node),
+        }
+      }
+      return {
+        ...prev,
+        keyframes: upsertKeyframe(prev.keyframes, nodeId, 'animation_clip', Math.round(playheadRef.current), clip),
+      }
+    })
+    setDirty(true)
+  }, [])
+
+  /** 视口上报某节点可选的 clip。内容不变时返回原引用，避免子组件 effect 引发循环更新。 */
+  const handleModelClips = useCallback((nodeId: string, names: string[]) => {
+    setModelClips(prev => {
+      const current = prev[nodeId] || []
+      if (current.length === names.length && current.every((name, index) => name === names[index])) return prev
+      return { ...prev, [nodeId]: names }
+    })
+  }, [])
 
   /** 写入机位的一个通道（位置 / 目标点 / FOV），规则同 `writeNodeChannel`。 */
   const writeCameraChannel = useCallback(
@@ -1046,6 +1095,41 @@ export default function PrevisPage() {
                 <Text type="secondary" style={{ fontSize: 11 }}>
                   改数值或拖手柄写静态值；该通道一旦打过点，之后就在当前帧自动打点。点右侧钥匙可在当前帧打点/删点。
                 </Text>
+                {(modelClips[selectedNode.id] || []).length > 0 && (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <Text type="secondary" style={{ width: 40, flexShrink: 0, fontSize: 11 }}>动作</Text>
+                      <Select
+                        size="small"
+                        style={{ flex: 1, minWidth: 0 }}
+                        value={selectedClip}
+                        disabled={selectedNode.locked}
+                        onChange={value => writeNodeAnimationClip(selectedNode.id, value)}
+                        options={[
+                          { value: '', label: '（不播动画）' },
+                          ...(modelClips[selectedNode.id] || []).map(name => ({ value: name, label: name })),
+                        ]}
+                      />
+                      <Tooltip title="在当前帧为动作切换打点">
+                        <Button
+                          type="text"
+                          size="small"
+                          disabled={selectedNode.locked}
+                          icon={
+                            <KeyOutlined
+                              style={{ color: keyframeAt(selectedNode.id, 'animation_clip') ? '#1677ff' : undefined }}
+                            />
+                          }
+                          onClick={() => toggleKeyframe(selectedNode.id, 'animation_clip', '动作')}
+                        />
+                      </Tooltip>
+                    </div>
+                    <Text type="secondary" style={{ fontSize: 11 }}>
+                      动作来自模型自带的 {(modelClips[selectedNode.id] || []).length} 条动画；预演台只做选择与按帧播放，
+                      <b>不编辑骨骼动画</b>。打点后可在时间轴上切换动作（切换是离散的，不插值）。
+                    </Text>
+                  </>
+                )}
               </Space>
             </div>
           )}
@@ -1249,8 +1333,10 @@ export default function PrevisPage() {
               cameraMode={cameraMode}
               keyframes={keyframes}
               playheadRef={playheadRef}
+              fps={fps}
               selectedNodeId={selectedNodeId}
               gizmoMode={gizmoMode}
+              onModelClips={handleModelClips}
               onNodeChannelChange={writeNodeChannel}
               onNodeChannelCommit={(nodeId, property) => {
                 const node = nodes.find(item => item.id === nodeId)

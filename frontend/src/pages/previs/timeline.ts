@@ -186,7 +186,16 @@ export function sampleChannel(
   frame: number,
   fallback: unknown,
 ): unknown {
-  const keys = channelKeyframes(keyframes, targetId, property)
+  return sampleFromKeys(channelKeyframes(keyframes, targetId, property), frame, fallback)
+}
+
+/**
+ * 同上，但接受**已按帧升序排好的**关键帧。
+ *
+ * 抽出来是为了逐帧调用者（如 `useFrame` 里解析动画 clip）能先把关键帧 memo 一次，
+ * 避免每帧都重新过滤 + 排序 + 建 Map。
+ */
+export function sampleFromKeys(keys: PrevisKeyframe[], frame: number, fallback: unknown): unknown {
   if (keys.length === 0) return fallback
   if (frame <= keys[0].frame) return keys[0].value
   const last = keys[keys.length - 1]
@@ -376,6 +385,14 @@ export function currentChannelValue(
 ): unknown {
   const node = scene.nodes.find(item => item.id === targetId)
   if (node) {
+    // 动画 clip 不在节点 transform 上，单独取：打过点按关键帧走，否则用静态选择。
+    // （漏掉这个分支会让「给动作打点」静默失败——调用方拿不到值就直接不写。）
+    if (property === 'animation_clip') {
+      const value = sampleChannel(
+        scene.keyframes, targetId, 'animation_clip', frame, node.metadata?.animationClip ?? '',
+      )
+      return typeof value === 'string' ? value : ''
+    }
     const transform = evaluateNodeTransform(node, scene.keyframes, frame)
     if (property === 'position') return transform.position
     if (property === 'rotation') return transform.rotation

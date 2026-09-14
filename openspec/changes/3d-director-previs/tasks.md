@@ -54,7 +54,17 @@
   - _验证：`npx vitest run` → **87 passed（7 文件）**（原 61 例 + 新增 26 例）；`npm run build`（`tsc --noEmit` 两个 tsconfig + vite）**通过**，3826 模块；lints 干净。_
   - _**浏览器端到端 18/18**（真实 Chromium）：加几何体后自动选中并可读变换面板 → 第 0 帧设 X=4 并打点 → 播放头移到中段改 X=10（**自动打点**）→ 保存后落库确为 `[(0,[4,0.5,0]), (48,[10,0.5,0])]` 两条 → **回到第 24 帧读到 X=7**（4 与 10 的中点，精确吻合，证明「自动打点 → 逐帧求值 → 线性插值 → 面板回显」整条链路打通）→ 播放使播放头从 24 前进到 54 → 操作历史含 add_node/add_keyframe 且已落库 2 条 → 重载后关键帧仍为 2 条。全程 **0 个 >=400、0 条 console error**。_
   - _tsc 抓到我自己的 4 个错误（vitest 不做类型检查，测试没暴露）：其中一个是**真 bug**——`recordOperation` 定义在 `addCamera`/`deleteCamera` 之后，而 `useCallback` 的依赖数组是渲染时立即求值的，会在初始化前访问它并**直接抛错导致页面白屏**；已把它的定义移到所有使用者之前并注明原因。另一个是四元数线性插值误用 `lerpVec3` 的非法类型转换，改为通用的逐分量插值。_
-- [ ] 15. Reuse existing rigged-model animation clips as scene playback selections without claiming editable skeletal animation.
+- [x] 15. Reuse existing rigged-model animation clips as scene playback selections without claiming editable skeletal animation.
+  - _2026-09-14 完成。_
+  - _**按帧同步，而不是自由播放**——这是本条最重要的取舍。现有 `Model3DViewer` 用的是 `action.reset().fadeIn().play()`（自己按墙上时钟推进），但预演台必须把播放头折算成秒喂给 `mixer.setTime()`：自由播放会让"同一帧"在不同时刻呈现不同姿态，多角色动作也无法对齐，预演就失去参考价值；而 `setTime` 每次都从 0 重新推进到 t，因此**同一帧永远是同一姿态**。这一点由端到端测试固定（见下）。_
+  - _只**引用**模型自带的 `AnimationClip`（GLTF 提供），不创建也不修改任何动画数据；存的是 clip 名字。UI 明确写出「预演台只做选择与按帧播放，**不编辑骨骼动画**」，与 design「动作播放状态不能伪装成可编辑骨骼动画」一致。_
+  - _契约复用 #14 已保留的 `animation_clip` 通道，缺省插值为 **`step`**（换动作是离散事件，走→跑不该"渐变"；且字符串值本来也只能按 step 解释）。因此**可以按帧切换动作**：打过点就按关键帧走，否则用 `node.metadata.animationClip` 静态选择——与其它通道同一套"按通道判断"规则。_
+  - _实现细节两处：① clip 关键帧用 `useMemo` 预排序一次、配 `sampleFromKeys` 逐帧解析（新抽出的函数，避免每帧重新过滤 + 排序 + 建 Map）；② `activeRef` 只在 clip **变化时**才 stop/play，避免每帧重置混合。另修复 `AssetModelMesh` 里既有的**条件调用 hook**（`if (!modelUrl) return null` 后才 `useGLTF`）——判断上移到父组件，hook 顺序始终稳定。_
+  - _测试：`timeline.test.ts` 新增 11 例——`animation_clip` 缺省插值为 step、字符串通道两帧之间保持前值切帧才换、未打点回落静态选择、**倒序写入（先 48 后 0）仍正确**、动画通道不干扰同节点的变换通道、`sampleFromKeys` 与 `sampleChannel` 结果一致、`currentChannelValue` 的动画分支（含一条专门固定下述缺陷的用例）。_
+  - _验证：`npx vitest run` → **98 passed（7 文件）**；`npm run build` 通过（3826 模块）；lints 干净。_
+  - _**浏览器端到端 14/14**（真实 Chromium + 内置 `vanguard.glb`，它自带 Idle/Run/TPose/Walk 四条 156 通道动画）：切到 Vanguard 后「动作」行出现并上报 4 条 clip（`ue-mannequin.glb` 有骨骼但无动画，正确不出现）→ 选 Walk → **第 0 帧截图 183874 B，中段 183262 B（姿态确实在变），再拖回第 0 帧仍是 183874 B 且逐字节相同** → 第 0 帧给动作打点、中段改选 Run 后落库为 `[(0,'Walk','step'), (48,'Run','step')]` → 重载后重新选中节点仍能拿到动作列表且回显 `Walk`。全程 0 个 >=400、0 条 console error。_
+  - _**端到端测试抓到一个真缺陷（单测没覆盖到）**：`currentChannelValue` 起初只处理 `position`/`rotation`/`scale` 与机位通道，动作通道落到末尾返回 `undefined`，而 `addKeyframe` 拿到 `undefined` 就直接不写——表现为**「按了钥匙什么都没发生」且没有任何提示**。已补上动画分支并加了一条专门固定它的单测（断言返回空串而非 `undefined`，并把成因写在注释里）。_
+  - _另：端到端脚本首轮还报「重载后动作列表消失」，核查后确认是**产品正常行为**——选中状态是会话内局部状态、不入库，所以重载后要重新点一下图层行面板才出现；已改测试步骤而非改产品。_
 - [ ] 16. Evaluate frame capture and MP4/WebM export only after static capture is stable; document browser and cost constraints.
 - [x] 24. Upgrade `PrevisCamera` from FOV-only to real optics: focal length, sensor format, and computed depth of field, so a framing reference means the same thing to a DP as it does to the tool.
   - _调研依据：FrameForge 与 Previs Pro 唯一重合的核心卖点就是「镜头光学是一等数据」（真实镜头型号、传感器尺寸、景深）。而 `PrevisCamera` 原来只有 `fov`——**同一个 fov 在 Super 16 和 Alexa LF 上是完全不同的取景**，所以那时的"机位参考"给不出可直接执行的信息。_
