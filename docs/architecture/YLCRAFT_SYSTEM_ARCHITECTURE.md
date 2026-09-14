@@ -548,7 +548,7 @@ Agent Tool / Skill 变更按内部 API 处理：工具名称、输入输出 sche
 
 ## 7. OpenSpec 当前状态
 
-状态更新时间：2026-09-14。本会话集中推进 Agent 运行时收口与内容包链路：`agent-supervisor-subagent-runtime`、`agent-center-*` 系列、`agent-team-composition` 已归档（累计归档 34 个、主 specs 23 个）；当前活跃 5 个，其中 `content-package-workspaces` 为进行中主线。表中仅列与本轮架构变更相关的行，完整列表见 `openspec/changes/`。
+状态更新时间：2026-09-14。本会话集中推进 Agent 运行时收口与内容包链路：`agent-supervisor-subagent-runtime`、`agent-center-*` 系列、`agent-team-composition`、`content-package-workspaces` 已归档（累计归档 35 个、主 specs 24 个）；当前活跃 4 个。表中仅列与本轮架构变更相关的行，完整列表见 `openspec/changes/`。
 
 | Change | Done | Pending | 说明 |
 | --- | ---: | ---: | --- |
@@ -556,7 +556,7 @@ Agent Tool / Skill 变更按内部 API 处理：工具名称、输入输出 sche
 | `archive/agent-center-multi-agent-runtime` | 114 | 0 | 上下文、工具循环、父子 Run 和专用场景协调 MVP 完成；不代表自主 Supervisor 已完成。 |
 | `archive/agent-supervisor-subagent-runtime` | 30 | 0 | 已归档。Supervisor/Worker 主链、声明式团队组合与 Writer Room `team` 模式全部落地；收尾的 CutClaw/文案审计、测试补强与外部浏览器 smoke 已完成。仅存一处如实标注的运行验证缺口：Writer Room `team` 模式本身尚未在真实项目上跑过（已写入归档注记）。 |
 | `archive/agent-team-composition` | 21 | 2 | 已归档（21/23），落地 capability `agent-team-composition`（8 条需求）。本轮补齐：`AgentScope.enter_scope()` 接缝与 `AgentService` 的 per-session 状态接线（1.2，把隔离从"约定"升级为"结构保证"）、压缩请求携带显式 `system_prompt_ref`/`tool_schema_ref`（4.3）、per-role 声明的授权溯源写入委派任务上下文并随子 Run `context_json` 一次落库（2.4 前半）。两项未勾且**前置不存在**：`4.2` plan/batch 模式（全库 0 命中，约束当前空洞成立）、`2.4` 后半能力变更走草稿审批（团队模板是仓库内 YAML，变更走 git 评审，`api/v1/agent.py` 无模板写入端点）。**归档前按事实收窄了 delta spec 三处过度声明**（原 `Capability Provenance And Approval` 的审批路由、`Mode switch preserves catalog`、persona/plan-mode 实例化），避免主 spec 长期宣称不存在的能力。 |
-| `content-package-workspaces` | 12 | 9 | 进行中。已落地：内容包六种类型的契约 schema（四种标记为 API-only）、五个平台适配器 + 输出端点（`outputs[]`，按方案声明的 `output_adapters` 出）、条目级重试与 stale 语义、可复用 `ContentPackagePlanner`（从 `outline_service.py` 提取，`generate_outline` 变 39 行兼容委托）。剩余：`page_book` 完整实现、Skill/Agent 工具契约、多平台 UI 复用组件、绑定项目流程、Director 路由、测试/smoke/文档收尾。详见 §4.4.6。 |
+| `archive/content-package-workspaces` | 20 | 1 | 已归档（20/21），落地 capability `content-package-workspaces`（6 条需求 / 17 场景）。已落地：六种类型的契约 schema（四种 API-only）、五个平台适配器 + 输出端点（`outputs[]`，按方案声明的 `output_adapters` 出）、条目级重试与 stale 语义、可复用 `ContentPackagePlanner`（从 `outline_service.py` 提取，`generate_outline` 变 39 行兼容委托）、导演计划按族使用各自阶段词表、6 个内容包 Agent 工具、绘本页序可调、两个共享展示组件、批量生图端到端实测（免费后端 Agnes；事件日志 + Asset Hub + 逐条溯源 + 独立重生成）。**唯一未勾项 `#16`**：其"独立草稿绑定项目"无实现对象（`content_package_drafts` 全仓 0 命中），已写明前因后果后归档。**归档前按事实收窄了 delta spec 的 5 处过度声明 + 1 处范围夸大**（素材规划未消费、文章包/轮播包包级字段未生成、批量无逐条勾选、任务中心只对异步供应商成立、共享服务范围）。详见 §4.4.6。 |
 | `agent-center-conversation-workbench-redesign` | 15 | 0 | 对话优先双栏、内联轨迹、局部失败隔离和 Error Boundary 已完成；健康后端下的真实多轮恢复作为外部验收记录保留。 |
 | `archive/agent-center-thread-runtime-refactor` | 49 | 0 | thread runtime 重构完成并归档。 |
 | `archive/agent-center-hermes-mvp` | 11 | 0 | Hermes 风格记忆/运行思路 MVP 完成并归档。 |
