@@ -18,12 +18,15 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
+from sqlmodel import Session
 
 from app.core.external_api_auth import optional_external_api_key
 from app.core.task_queue import TaskStatus, get_task_queue
+from app.db.database import get_session
 from app.db.models.creative_project import CreativeProject, ProjectAssetLink, ProjectContent
 from app.db.models.external_api_key import ExternalApiKey
 from app.services.ai import get_ai_service, AIService
+from app.services.creative_project.visual_baseline import resolve_visual_baseline_asset_ids
 from app.services.ai.service import ai_call_context
 from app.services.ai.types import ImageGenerationRequest
 from app.services.asset_hub.reference_resolver import merge_reference_images
@@ -370,11 +373,17 @@ def _generation_lineage_from_payload(payload: dict, *, extra: dict | None = None
     return {key: value for key, value in lineage.items() if value not in (None, "", [])}
 
 
-async def _merge_reference_images(req: ImageGenerateRequest) -> list[str]:
-    """参考图合并：素材库 ID 的解析统一走 asset_hub 的共用解析器。"""
+async def _merge_reference_images(req: ImageGenerateRequest, session: Session | None = None) -> list[str]:
+    """参考图合并：素材库 ID 的解析统一走 asset_hub 的共用解析器。
+
+    同时把**项目视觉基准**自动注入：调用方（页面 / Agent / 内容包出图）都不必各自记得传，
+    没设置基准也不阻塞生图。顺序沿用 world_map_visual 的既有约定——调用方显式指定的参考图
+    在前、项目基准在后，去重后不会重复占位。
+    """
+    baseline_ids = resolve_visual_baseline_asset_ids(session, req.project_id) if session else []
     return await merge_reference_images(
         reference_images=req.reference_images,
-        reference_asset_ids=req.reference_asset_ids,
+        reference_asset_ids=[*list(req.reference_asset_ids or []), *baseline_ids],
         reference_image_collection=req.reference_image_collection,
     )
 
@@ -554,6 +563,7 @@ async def optimize_prompt(req: ImagePromptOptimizeRequest):
 async def generate_image(
     req: ImageGenerateRequest,
     external_key: Optional[ExternalApiKey] = Depends(optional_external_api_key),
+    session: Session = Depends(get_session),
 ):
     """
     调用图像生成后端生成图片。
@@ -565,7 +575,7 @@ async def generate_image(
         raise HTTPException(status_code=503, detail="AIService 未初始化")
 
     try:
-        reference_images = await _merge_reference_images(req)
+        reference_images = await _merge_reference_images(req, session)
         requested_generation_params = _asset_generation_params(req)
         planning_summary = req.planning_summary or build_visual_planning_summary(
             "image",
