@@ -95,7 +95,18 @@ describe('内容包生成必须带上工作台选中的文本模型', () => {
     expect(payload.model).toBe(SELECTED_MODEL)
     // 其余参数不能被这次修复带丢
     expect(payload.topic).toBe('山里的怪同学')
-    expect(payload.item_count).toBe(12)
+    // 页数必须**不传**：后端不传即按内容推导。表单里即便残留 item_count（本 stub 就有 12）
+    // 也不该被转发——转发出去，那个数字会在任何内容分析之前写进提示词，模型只能凑够它。
+    expect(payload.item_count).toBeUndefined()
+  })
+
+  it('页数不在入口处预设：表单里残留 item_count=12 也不会被转发', async () => {
+    // 这条独立于上面的模型测试，专门守住"页数由内容推导"这个契约：
+    // 将来若有人为了"让用户能指定页数"把 item_count 加回请求里，这条会失败。
+    const [projectId, payload] = (await invokePlan(buildDeps())) as [string, Record<string, unknown>]
+
+    expect(projectId).toBe('project-1')
+    expect(payload.item_count).toBeUndefined()
   })
 
   it('单条重跑：同样带上 provider 与 model', async () => {
