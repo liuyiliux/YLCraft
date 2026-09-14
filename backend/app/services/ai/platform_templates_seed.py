@@ -489,7 +489,7 @@ _CREATIVE_NOVEL_BODY = """请根据单话细纲生成第 {chapter_number} 章小
   "continuity_notes": ["给下一章或拆页使用的连续性备注"]
 }"""
 
-_CREATIVE_COMIC_PAGES = """请根据分镜草稿整理成适合漫画生成的 {page_count} 页漫画脚本 JSON。
+_CREATIVE_COMIC_PAGES = """请根据分镜草稿整理成适合漫画生成的漫画脚本 JSON。
 
 项目标题：{project_title}
 章节：第 {chapter_number} 章
@@ -499,21 +499,23 @@ _CREATIVE_COMIC_PAGES = """请根据分镜草稿整理成适合漫画生成的 {
 分镜草稿：
 {storyboard_json}
 
+{page_scope}
+
 要求：
-1. pages 必须正好 {page_count} 页，page_number 从 1 连续递增。
+1. page_number 从 1 连续递增。
 2. 每页 content 使用【第1格】这样的分格标记，建议每页 3-6 格。
 3. 每页应承接 storyboard panels，不要凭空改剧情；可以把多个 panel 合并成一页，也可以把复杂 panel 拆成多格。
 4. 每格写清角色、动作、画面、对白气泡、音效和镜头节奏。
 5. 每页 image_prompt 是该页关键视觉提示，能直接送到生图。
 6. 保持角色外观和视觉风格一致。
-7. 输出严格 JSON，不要 Markdown。
+7. 输出严格 JSON，不要 Markdown。page_count 填你实际输出的页数。
 
 输出格式：
 {
   "episode_number": {chapter_number},
   "chapter_number": {chapter_number},
   "title": "漫画拆页标题",
-  "page_count": {page_count},
+  "page_count": 4,
   "visual_style": "统一视觉风格",
   "pages": [
     {
@@ -524,6 +526,10 @@ _CREATIVE_COMIC_PAGES = """请根据分镜草稿整理成适合漫画生成的 {
     }
   ]
 }"""
+
+# 注：`{page_scope}` 的取值由 `service._comic_page_scope()` 统一提供（单一来源）。
+# 这里刻意不再写一份页数文案常量——两处各写一份迟早会漂移，而"页数必须正好 N 页"
+# 正是旧版与它自己第 3 条（允许合并/拆分 panel）自相矛盾的根源。
 
 _CREATIVE_SCRIPT = """请把指定章节改写成短剧单集脚本 JSON。
 

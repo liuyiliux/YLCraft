@@ -335,7 +335,10 @@ class ContentPackageSaveRequest(BaseModel):
 class ContentPackagePlanRequest(BaseModel):
     topic: str = ""
     brief: str = ""
-    item_count: int = Field(default=12, ge=1, le=80)
+    #: 不传 = **由内容推导条目数**（页数在读完之后才成立）。
+    #: 以前默认 12 并在没有任何内容分析前就写进提示词，模型只能凑够 12 条。
+    #: 传数字仍然照旧生效，供需要精确页数的调用方使用。
+    item_count: int | None = Field(default=None, ge=1, le=80)
     prompt_only: bool = False
     provider: str | None = None
     model: str | None = None
