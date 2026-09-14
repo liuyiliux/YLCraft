@@ -588,3 +588,240 @@ async def run_creative_writer_room(
             continue_on_error=continue_on_error,
         )
         return {"success": True, "result": result}
+
+# ---------------------------------------------------------------------------
+# 内容包（轻量内容包：绘本 / 科普卡 / 平台图文 / 镜头表 / 单媒体）
+# ---------------------------------------------------------------------------
+#
+# 内容包与生产计划是同一层的两种产物：计划面向叙事链路（大纲→细纲→正文/脚本→分镜），
+# 内容包面向「从主题或素材直接出条目化产物」。两者都走 `ProjectContent` 版本链，因此这里
+# 只负责**契约与权限**，实现全部委托 service 层，不另开数据通路。
+#
+# 风险等级按「是否产生消耗」划分，与 design 的确认点要求一致：
+#   - 读（`get_content_package`）：无副作用。
+#   - 写（`update_...` / `save_...` / `build_...`）：只落版本或做本地格式翻译，不调用模型、
+#     不访问外部平台，但会改变项目内容，故仍需确认。
+#   - 消耗（`plan_...` / `retry_...`）：会调用文本模型批量生成，必须确认后才执行。
+
+CONTENT_PACKAGE_TYPE = "content_package"
+
+
+def _content_package_versions(session: Any, project_id: str) -> list[ProjectContent]:
+    """按版本倒序取该项目的内容包（与其它 ProjectContent 共表，靠 `content_type` 区分）。"""
+    return list(
+        session.exec(
+            select(ProjectContent)
+            .where(
+                ProjectContent.project_id == project_id,
+                ProjectContent.content_type == CONTENT_PACKAGE_TYPE,
+            )
+            .order_by(ProjectContent.version.desc(), ProjectContent.updated_at.desc())
+        ).all()
+    )
+
+
+@register_tool(
+    name="get_content_package",
+    description="读取创作项目当前的内容包（绘本/漫画页、科普卡、平台图文、镜头表等轻量方案），包含逐条条目与已产出的平台输出。",
+    category="creative_project",
+    examples=["看看这个绘本包现在有哪些页", "读取内容包并告诉我哪些平台输出已过期"],
+    input_schema_note="必须提供 project_id；include_history=true 时按版本倒序返回全部历史版本。",
+    output_schema_note="返回 package 或 packages；含 package_type、items（标题/正文/图片与视频提示词/状态/资产引用/来源引用）与 outputs（适配器类型、溯源版本、状态、过期原因）。",
+    risk_level="read",
+    output_type="creative_content_package",
+)
+async def get_content_package(project_id: str, include_history: bool = False):
+    with SessionLocal() as session:
+        versions = _content_package_versions(session, project_id)
+        if include_history:
+            return {"success": True, "packages": [_content_detail(item) for item in versions]}
+        latest = versions[0] if versions else None
+        return {"success": True, "package": _content_detail(latest) if latest else None}
+
+
+@register_tool(
+    name="plan_content_package",
+    description="按主题或素材一次生成内容包：产出条目化的标题、正文与图片/视频提示词，并保存为新版本。适用于绘本/漫画、科普卡、平台图文和单镜头方案，不需要先有正文、大纲或项目圣经。",
+    category="creative_project",
+    examples=["用十二生肖这个主题生成一本 12 页绘本", "根据这段素材生成 6 张科普知识卡"],
+    input_schema_note="必须提供 project_id；topic/brief 描述主题与要求；item_count 会被该包类型的上限夹取；prompt_only=true 时只出提示词不写正文。",
+    output_schema_note="返回新 package 版本及其 warnings（契约校验提示，不阻断保存）；本工具不产图、不访问外部平台。",
+    risk_level="costly",
+    output_type="creative_content_package_planned",
+    cost_hint="会调用文本模型按条目数批量生成内容，执行前需要确认。",
+)
+async def plan_content_package(
+    project_id: str,
+    topic: str = "",
+    brief: str = "",
+    item_count: int = 12,
+    prompt_only: bool = False,
+    provider: str = "",
+    model: str = "",
+):
+    with SessionLocal() as session:
+        service = CreativeProjectService(session)
+        content = await service.generate_content_package(
+            project_id,
+            topic=topic,
+            brief=brief,
+            item_count=item_count,
+            prompt_only=prompt_only,
+            provider=provider or None,
+            model=model or None,
+        )
+        return {"success": True, "package": _content_detail(content)}
+
+
+@register_tool(
+    name="update_content_package_item",
+    description="按条目 ID 修改内容包中**单条**的标题、正文或媒体提示词，其余条目与包级字段保持不变，并保存为新版本。",
+    category="creative_project",
+    examples=["把第 3 页的文字改得更口语", "给「鼠」这条补上图片提示词"],
+    input_schema_note="必须提供 project_id 与 item_id；只传需要修改的字段，未传字段保持原值；至少要传一个字段；status 必须在取值域内（draft/ready/generating/succeeded/failed/stale/archived）。",
+    output_schema_note="返回新 package 版本（source_content_id 指向上一版）与 stale_adapter_types——引用该条目的平台输出会被标记过期。",
+    risk_level="write",
+    output_type="creative_content_package_item_updated",
+)
+async def update_content_package_item(
+    project_id: str,
+    item_id: str,
+    title: str = "",
+    text: str = "",
+    image_prompt: str = "",
+    video_prompt: str = "",
+    status: str = "",
+):
+    # 保存路径只做契约校验，**不会**自己标记输出过期；手工改条目与重跑条目必须得到
+    # 同一结论，因此这里显式复用同一份依赖判定。
+    from app.services.creative_project.content_package_adapters import mark_outputs_stale
+
+    patch = {
+        key: value
+        for key, value in {
+            "title": title,
+            "text": text,
+            "image_prompt": image_prompt,
+            "video_prompt": video_prompt,
+            "status": status,
+        }.items()
+        if str(value or "").strip()
+    }
+    if not patch:
+        raise ValueError("至少要提供一个要修改的字段（title/text/image_prompt/video_prompt/status）")
+
+    with SessionLocal() as session:
+        service = CreativeProjectService(session)
+        versions = _content_package_versions(session, project_id)
+        if not versions:
+            raise ValueError("当前项目还没有内容包，无法按条目修改")
+        latest = versions[0]
+        package = loads_json(latest.data_json)
+        items = package.get("items")
+        if not isinstance(items, list):
+            raise ValueError("当前内容包的 items 不是数组，无法按条目修改")
+
+        target = str(item_id or "").strip()
+        patched_items: list[Any] = []
+        found = False
+        for item in items:
+            if isinstance(item, dict) and str(item.get("id") or "") == target:
+                patched_items.append({**item, **patch})
+                found = True
+            else:
+                patched_items.append(item)
+        if not found:
+            raise ValueError("内容包里没有 id 为 %s 的条目" % target)
+
+        outputs, stale_types = mark_outputs_stale(list(package.get("outputs") or []), [target])
+        content = service.save_content_package(
+            project_id=project_id,
+            package={**package, "items": patched_items, "outputs": outputs},
+            source_content_id=latest.id,
+        )
+        return {
+            "success": True,
+            "package": _content_detail(content),
+            "stale_adapter_types": stale_types,
+        }
+
+
+@register_tool(
+    name="retry_content_package_item",
+    description="只重新生成内容包中的**一条**条目（文本与提示词），其余条目原样保留并保存为新版本；不会重新规划整包，因此不会冲掉已手改好的条目。",
+    category="creative_project",
+    examples=["第 5 条重写一下，更像科普口吻", "只重跑「牛」这一条的图片提示词"],
+    input_schema_note="必须提供 project_id 与 item_id；brief 给出这一条的改写要求；prompt_only=true 时只出提示词不写正文。",
+    output_schema_note="返回新 package 版本；引用该条目的平台输出会被标记过期，其余输出保持可用。",
+    risk_level="costly",
+    output_type="creative_content_package_item_retried",
+    cost_hint="会为该条目调用一次文本模型，执行前需要确认。",
+)
+async def retry_content_package_item(
+    project_id: str,
+    item_id: str,
+    brief: str = "",
+    prompt_only: bool = False,
+    provider: str = "",
+    model: str = "",
+):
+    with SessionLocal() as session:
+        service = CreativeProjectService(session)
+        content = await service.retry_content_package_item(
+            project_id,
+            item_id=item_id,
+            brief=brief,
+            prompt_only=prompt_only,
+            provider=provider or None,
+            model=model or None,
+        )
+        return {"success": True, "package": _content_detail(content)}
+
+
+@register_tool(
+    name="save_content_package",
+    description="把一份完整内容包（含 package_type 与 items）保存为新版本，用于写入用户提供或智能体整理好的条目。",
+    category="creative_project",
+    examples=["把我写的这 4 页文字存成绘本包", "保存整理好的科普卡内容包"],
+    input_schema_note="必须提供 project_id 与 package_json（有效 JSON 对象，须含 package_type 与 items）；package_type 必须与项目的内容生产方案一致。",
+    output_schema_note="返回新 package 版本；结构性错误（未知类型/条数超上限/status 非法）会被拒绝，内容质量类问题随包以 warnings 返回。",
+    risk_level="write",
+    output_type="creative_content_package_saved",
+)
+async def save_content_package(project_id: str, package_json: str):
+    package = loads_json(package_json, fallback=None)
+    if not isinstance(package, dict):
+        raise ValueError("package_json 必须是有效 JSON 对象")
+    with SessionLocal() as session:
+        service = CreativeProjectService(session)
+        content = service.save_content_package(project_id=project_id, package=package)
+        return {"success": True, "package": _content_detail(content)}
+
+
+@register_tool(
+    name="build_content_package_outputs",
+    description="把内容包翻译成各平台产物（公众号图文、小红书轮播、短视频镜头表、PDF 电子书、素材包）。纯本地转换：不发布、不调用外部平台、不修改条目。",
+    category="creative_project",
+    examples=["把这个绘本包导出成 PDF 和素材包", "按方案声明的适配器生成内容包平台输出"],
+    input_schema_note="必须提供 project_id；adapters 留空或不传时按该项目内容生产方案声明的 output_adapters 全出；save=true 时把输出追加为新包版本。",
+    output_schema_note="返回 outputs（每个含 adapter_type、payload、溯源 source_package_id/source_package_version/source_item_ids 与状态）与 available_adapters 目录。",
+    risk_level="write",
+    output_type="creative_content_package_outputs",
+)
+async def build_content_package_outputs(
+    project_id: str,
+    adapters: list[str] | None = None,
+    save: bool = True,
+):
+    with SessionLocal() as session:
+        service = CreativeProjectService(session)
+        outputs, content = service.build_content_package_outputs(
+            project_id,
+            adapters=list(adapters or []),
+            save=save,
+        )
+        return {
+            "success": True,
+            "outputs": outputs,
+            "package": _content_detail(content) if content else None,
+        }
