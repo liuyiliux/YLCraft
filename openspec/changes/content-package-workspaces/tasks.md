@@ -25,7 +25,20 @@
     - _**一处语义冲突的自我纠正**：初版把"输出已过期"追加进包的 `warnings`，但 `save_content_package` 会用 schema 校验结果**整体覆盖** `warnings`，导致提示丢失（被测试抓到）。改为**过期信息只落在 outputs 自身**（`status` + `stale_reason`）——`warnings` 保持"契约校验提示"这一稳定语义，状态性信息混进去既会被覆盖、又会在重新产出输出后残留成误导。_
     - _前端：内容包编辑器每条加「**重跑本条**」按钮（表单里未保存过的新行没有 id，会提示先保存）；「平台输出」区块加「**生成平台输出**」按钮 + 输出列表（状态标签 已生成/已过期/失败、条数摘要、导出 JSON，素材包三件套逐个可下载）。_
     - _测试：`test_content_package_adapters.py` 13 例（含 `mark_outputs_stale` 行为）；`test_creative_project_workflow_api.py` 新增集成测试——单条重试后**目标条目被重写、兄弟条目原样保留**、引用它的输出全部 stale 且带 `stale_reason`、不存在条目 400。_**真实浏览器验收 13/13**（1600×1000）：生成平台输出产出「PDF 电子书 + 素材包」、状态「已生成」、三件套可下载、**绘本方案不含公众号/小红书/短视频**（证明按方案清单出）、刷新后仍在（已落库）、0 个 >=400、0 条控制台 error。_
-- [ ] 9. Add API-facing Skill and Agent tool contracts for planning, item editing and package inspection.
+- [x] 9. Add API-facing Skill and Agent tool contracts for planning, item editing and package inspection.
+  - _2026-09-14 完成（Skill 侧见 #21，本条补 Agent 工具契约）：_
+    - _新增 **6 个** Agent 工具（`services/agent/tools/creative_project_tools.py`），三类职责齐全：_
+      - **检视**：`get_content_package`（`read`）—— 读最新包或按版本倒序读历史；无包时返回 `None` 而非报错，调用方据此判断"还没生成"。_
+      - **规划**：`plan_content_package`（`costly`）—— 按主题/素材一次生成内容包并落版本；不产图、不访问外部平台。_
+      - **条目编辑**：`update_content_package_item`（`write`，手工改单条，**不调模型**）与 `retry_content_package_item`（`costly`，让模型只重跑一条）。_
+      - **另补两个闭环入口**：`save_content_package`（`write`，写入用户提供或智能体整理好的整包）与 `build_content_package_outputs`（`write`，本地格式翻译）。_
+    - _**风险等级按"是否产生消耗"划分，而非按"是否写库"**：读 1 个、写 3 个、消耗 2 个。纯写入（改条目/存包/出适配产物）不需要模型也不访问外部平台，但仍会改变项目内容，因此仍需确认；只有会调用文本模型的两个才标 `costly` 并给出 `cost_hint`。_
+    - _**一处必须处理的语义缺口**：`save_content_package` 只做契约校验，**不会**标记输出过期。若 `update_content_package_item` 直接复用它，手工改条目后旧的平台输出会**仍显示为可用**——与本 change 的 `stale` 承诺相矛盾（`retry_content_package_item` 走 service 层会标，手工改不会，两者结论不一致）。因此该工具显式复用同一份 `mark_outputs_stale`，使两条路径得到同一结论；测试专门固定这一点。_
+    - _注册链路四处同步：`tools/__init__.py` 的导入块 + `TOOLS` 列表 + `__all__`，以及 `profile.py` 中 `creative-director` 的 `allowed_tools`。**注册了但未授权等于不可用**，故测试同时断言授权。_
+    - _测试：新增 `backend/tests/test_content_package_agent_tools.py`（**12 例**）——六工具注册与风险分级、创作导演授权、消耗型与纯写入分离且带成本提示、读最新与历史、无包返回 None、**按条目改只动一条且只让引用它的输出过期**（含"输出只依赖另一条时不得被作废"的按依赖判定）、缺字段与未知条目明确报错、`status` 越界被契约挡住、`save=False` 预览不落库、不传 adapters 时按方案声明出 `pdf_ebook`+`asset_bundle` 且每条带溯源。_
+    - _测试另加一条性质固定：这些读/写路径**都不应调用模型**——用会抛错的假 AIService 顶替，一旦被调用即失败。_
+    - _过程中我犯过一次错并已修正：追加工具块时缩进写错导致 `IndentationError`，先用补丁式去缩进反而误伤块内次级缩进，最终改为「保留到 `run_creative_writer_room` 收尾、整块按正确缩进重写」，`py_compile` 与实测均通过。_
+    - _验证：`pytest tests/test_content_package_agent_tools.py` → **12 passed**；回归 `pytest -k "agent or content_package or creative_project or tool or profile"` → **359 passed / 2 skipped**；lints 干净。_
 
 ## Phase 3: Lightweight workspaces (only two package types initially)
 
