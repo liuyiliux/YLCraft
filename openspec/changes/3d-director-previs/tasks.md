@@ -100,8 +100,19 @@
 
 ## Phase 3: Agent director assistant
 
-- [ ] 17. Add a read-only previs scene summary to Agent context with stable IDs and lock state, phrased so it can answer **coverage** questions ("which storyboard panels have no previs scene yet", "which cameras/nodes are locked") rather than only listing nodes.
+- [x] 17. Add a read-only previs scene summary to Agent context with stable IDs and lock state, phrased so it can answer **coverage** questions ("which storyboard panels have no previs scene yet", "which cameras/nodes are locked") rather than only listing nodes.
   - _调研依据：Storyflow 的差异点是「AI 读整块板而非单帧」——能跨序列回答「哪些镜头还没预演」。只罗列节点，等于把单帧能力包装成整板能力，Agent 仍然回答不了覆盖度问题。_
+  - _2026-09-14 完成。_
+  - _**挂在既有的 pack 上而不是新造通道**：`build_creative_project_context_pack` 新增 `previs` 键。该 pack 由 `AgentService._augment_context`（`service.py:1380`）在**每次带 `project_id` 的运行中自动注入**，所以 Agent 不需要主动调工具就能看到——这是本条要的「进入上下文」而不是「提供一个工具」。_
+  - _**面向覆盖度而非罗列节点**（本条的核心要求）：给出 `storyboard_panels_total` / `panels_with_scene` / `panels_without_scene` **精确计数**与 `uncovered_panels` **显式清单**（含 `storyboard_content_id` + `panel_number`）。分镜可以按章有多份，面板号只在各自分镜内唯一，所以键必须带上 content_id。_
+  - _**稳定 ID 与锁定状态**：每个场景给 `scene_id`、`revision`、`node_count`/`camera_count`/`keyframe_count`、`active_camera_id`，以及 `locked_nodes`/`locked_cameras`——**含 ID 与名称**。只给数量等于让 Agent 再问一次，而它没有「再问」的能力。_
+  - _**缺口并入 `known_gaps`**：`_known_gaps` 加了可选参数，覆盖度缺口进同一份列表。理由是那不是"新增一块信息"，而是"同一类判断"——导演正是按 `known_gaps` 决定下一步做什么。_
+  - _三个刻意的取舍：① 覆盖度按**整个项目**统计并显式声明 `scope: "project"`（不随 `chapter_number` 收窄），否则调用方会把「某一章的缺口」误读成全项目；② 明细有截断上限（`PREVIS_UNCOVERED_LIMIT=24` / `PREVIS_SCENE_LIMIT=12`）但**计数始终精确、截断显式标记**（`uncovered_panels_truncated`）——否则 Agent 会把「只看到前 24 个」当成「总共只有 24 个」，据此排产会漏掉大批镜头；③ **读取失败时报 `error` 并把 `panels_without_scene` 置 `None`（不是 0）**。_
+  - _另外报出两种真实会出现的引用不一致：`scenes_without_panel`（有场景但没绑面板）与 `scenes_referencing_missing_panel`（场景指向已被删除的面板）。_
+  - _**实现中发现并处理的一个隐患**：测试 fixture 的建表列表里没有 `PrevisSceneDocument`，而 `_previs_brief` 现在会被每次调用——表不存在就会抛错，**把既有上下文测试一起打挂**。但更重要的是生产语义：**预演表读不出来不该让整份上下文崩掉**（导演还需要项目其它部分才能工作）。因此把查询包成「可见地降级」——报 `error`、计数置 `None`，并**同时把该表加进测试 fixture**，让正常路径也能被真实测到。_
+  - _顺手修掉一处自己造的浪费：初次接线时 `_previs_brief` 在返回体与 `known_gaps` 里各调一次，等于两次 DB 查询；改为算一次复用。_
+  - _测试：`test_creative_project_workflow_api.py` 新增 **4 例**——覆盖度计数与缺口清单（含 locked 状态与孤儿场景）、明细截断但计数精确、无分镜时不产生噪音缺口、读取失败时报错并置 None（而非 0）。fixture 补 `PrevisSceneDocument` 建表。_
+  - _验证：新用例 **6 passed**（4 新增 + 2 既有上下文用例，确认未破坏既有行为）；回归 `pytest -k "agent or creative_project or context_pack or previs or content_package or profile"` → **381 passed / 2 skipped**；lints 干净。_
 - [ ] 18. Add a reviewed `PrevisOperation` Tool contract with expected revision, lock validation, confirmation diff, Agent Run trace, and focused authorization tests.
 
 ## Acceptance criteria for Phase 1
