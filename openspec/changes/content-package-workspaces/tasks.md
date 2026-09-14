@@ -71,7 +71,15 @@
       - _**① 不该按平台命名适配器**：原实装叫 `douyin_short_video`，但全仓核对发现——该名字**只出现在 design §4 一句与我自己的代码里，没有任何方案声明它**；而项目既有 `connectors/base/social_base.L35 SHORT_VIDEO = "short_video"` 已经是通用口径。短视频平台（抖音/快手/视频号）导出结构本就同一套，差异属发布环节。已改名 **`short_video`**，并在模块内写明"按产出形态命名，不按平台命名"，design §4 同步更正。_
       - _**② 输出集合应由方案声明决定，而非调用方硬传**：原端点要求显式传 `adapters`，等于 `profiles.py` 的 `output_adapters` **依旧无人消费**。已改为**不传时取该项目内容生产方案的 `output_adapters` 全出**（页书→pdf+素材包；科普/平台图文→公众号+小红书+素材包；单镜头→素材包），这也让 `output_adapters` 第一次真正成为运行时依据。新增测试断言"不传 adapters 时按方案全出"。_
 - [ ] 16. Add project-to-package and standalone-package-to-project attachment flows through Asset Hub and project content links.
-- [ ] 17. Update Agent Director routing so package plans use content cards/items and full narrative plans use existing stages.
+- [x] 17. Update Agent Director routing so package plans use content cards/items and full narrative plans use existing stages.
+  - _2026-09-14 完成：_
+    - _**缺口定位**：`context_pack.py` 会把 `production_profile.recommended_stages` **原样**交给导演（无族别判断），而内容包族的四个 profile 当时写的却是**叙事阶段**——`storybook` 是 `["outline","chapter_plan","chapter_outline","script","storyboard","comic_pages"]`。也就是导演拿到一个绘本包项目时，被引导去提议章节大纲与细纲。这正是本条要修的路由错误。_
+    - _**词表按族拆分**：`profiles.py` 新增 `PACKAGE_PLAN_STAGES = (package_plan, item_text, item_prompt, media_batch, package_outputs)`，每个阶段都**对应一个已落地能力**（分别是 `POST .../content-package/plan`、条目文本、条目提示词、批量媒体任务、`POST .../content-package/outputs`），不是构想。四个内容包 profile 改用该词表（`platform_note` 因 `planning_unit=package` 用 `package_plan→item_text→package_outputs`，媒体阶段归可选；`single_shot` 用 `package_plan→item_prompt→media_batch`）；**叙事族 `vertical_drama` / `novel_serial` 的阶段逐字未动**。_
+    - _**让族别可自查**：Context Pack 的 `production_profile` 块新增 `production_family` / `package_type` / `planning_unit`（原先只有 id/label/stages）。只给阶段名而隐藏族别，"为什么该按这些阶段走"无法自查——这正是原来那个错误能长期存在的原因。_
+    - _**刻意的设计选择：词表是路由输入（指导），不是校验器**。计划节点的 `stage` 仍是自由字符串，未知值不被拒绝——既有测试与真实计划里就存在 `stage="image"` 这类自定值，硬校验会打断它们。这与本 change 在 schema 上的"两档校验"同一取向：结构性问题才硬拒。_
+    - _测试：`test_content_production_profiles.py` 由 6 例扩到 **9 例**（`storybook` 走内容包阶段且不含任何叙事阶段、两个叙事 profile 阶段逐字不变且与内容包词表无交集、**所有**内容包 profile 的阶段都落在声明词表内（防以后顺手写 `outline`）、词表内容与已落地能力一一对应）；`test_creative_project_workflow_api.py` 扩展既有 context pack 用例断言族别/包类型/编排单位/阶段，并**新增一条叙事族对照**用例（`vertical_drama` 仍为既有阶段、与内容包词表无交集）。_
+    - _文档：架构 §4.4.6 新增第 4 条说明两族阶段词表的区别与"指导而非校验"的取向；API-facing Skill 的 `SKILL.md` 与 `references/api-workflows.md` 补「Plan stages by production family」对照表，明确不要给绘本包提议章节大纲。_
+    - _验证：profile 测试 **9 passed**；context pack 两条 **2 passed**；回归 `pytest -k "profile or context_pack or creative_project or content_package or agent or pipeline or production"` → **363 passed / 2 skipped**；lints 干净。_
 
 ## Phase 5: Verification and docs
 

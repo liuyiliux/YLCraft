@@ -211,6 +211,13 @@ def build_creative_project_context_pack(
                 "production_profile": {
                     "id": profile_id,
                     "label": profile.get("label") or "",
+                    # 两个生产族的**编排单位**不同：内容包以条目（页/卡/镜头）为单位，
+                    # 叙事族以章节与正文为单位，因此各有自己的阶段词表。只暴露阶段名而
+                    # 隐藏族别，会让「为什么该按这些阶段走」无法自查；导演在提议计划前
+                    # 需要能分辨自己属于哪一族。
+                    "production_family": profile.get("production_family") or "",
+                    "package_type": profile.get("package_type") or None,
+                    "planning_unit": profile.get("planning_unit") or "",
                     "recommended_stages": list(profile.get("recommended_stages") or []),
                     "optional_stages": list(profile.get("optional_stages") or []),
                 },
