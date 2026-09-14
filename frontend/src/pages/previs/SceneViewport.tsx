@@ -4,24 +4,32 @@
  * 渲染 PrevisNode（基础几何体、人形占位、灯光）。复用 scenePrimitives 的底层原语，
  * 不承载 Story 业务状态；节点 transform/锁定由上层编辑器管理。
  *
- * 三处自 tasks.md #24 / #25 起的变化：
- *   - `light` 节点真正参与渲染（此前类型与标签都声明了，但 `NodeMesh` 没有分支，
- *     建了不生效且不报错）。
- *   - 开启真实阴影。此前全仓 `castShadow` 为 0、Canvas 也没开 `shadows`，画面发平。
- *   - 导演视角显示当前机位的**视锥**，让焦距/画幅的变化在机外也看得见
- *     （FrameForge 与 Previs Pro 都靠这个把「镜头光学」变成可读信息）。
+ * 自 tasks.md #14 起，位姿由 **`useFrame` 逐帧求值**而不是由 React 传入：
+ * 播放时每帧都会产生新位姿，若走 props 就等于每秒 24 次重渲染整块编辑面板
+ * （图层面板 + 机位面板有几十个 antd 控件）。这里把时间轴交给 three 的渲染循环，
+ * React 只负责"当前帧是几"这一个数字的显示。
  */
 
-import { Component, Suspense, useCallback, useEffect, useMemo, type ReactNode } from 'react'
-import { Canvas, useThree, type RootState } from '@react-three/fiber'
-import { OrbitControls, Grid, PerspectiveCamera, useGLTF } from '@react-three/drei'
+import { Component, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from 'react'
+import { Canvas, useFrame, useThree, type RootState } from '@react-three/fiber'
+import { OrbitControls, Grid, PerspectiveCamera, TransformControls, useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
-import type { PrevisCamera, PrevisNode, PrimitiveKind } from './types'
+import type { PrevisCamera, PrevisKeyframe, PrevisNode, PrimitiveKind } from './types'
 import { readLightConfig } from './types'
+import { evaluateCamera, evaluateNodeTransform } from './timeline'
 import { ProceduralHumanProxy, humanProxyPoseKey } from '../../components/three/humanProxy'
 
 /** 截图函数：同步返回 PNG dataURL；画布不可读时返回 `null`。 */
 export type SceneCaptureFn = () => string | null
+
+/** 手柄作用的通道——与关键帧通道同名，便于直接把拖拽结果写成关键帧。 */
+export type GizmoMode = 'translate' | 'rotate' | 'scale'
+
+const GIZMO_PROPERTY: Record<GizmoMode, 'position' | 'rotation' | 'scale'> = {
+  translate: 'position',
+  rotate: 'rotation',
+  scale: 'scale',
+}
 
 function PrimitiveMesh({ node }: { node: PrevisNode }) {
   const kind = (node.metadata.primitive as PrimitiveKind) || 'box'
@@ -176,41 +184,128 @@ function PanoramaMesh({ node }: { node: PrevisNode }) {
   )
 }
 
-function NodeMesh({ node }: { node: PrevisNode }) {
-  const [x, y, z] = node.transform.position
-  const [qx, qy, qz, qw] = node.transform.rotation
-  const [sx, sy, sz] = node.transform.scale
+function NodeMesh({
+  node,
+  keyframes,
+  playheadRef,
+  selected,
+  gizmoMode,
+  onChannelChange,
+  onChannelCommit,
+}: {
+  node: PrevisNode
+  keyframes: PrevisKeyframe[]
+  playheadRef: React.MutableRefObject<number>
+  selected: boolean
+  gizmoMode: GizmoMode
+  onChannelChange: (nodeId: string, property: 'position' | 'rotation' | 'scale', value: unknown) => void
+  onChannelCommit: (nodeId: string, property: 'position' | 'rotation' | 'scale') => void
+}) {
+  const groupRef = useRef<THREE.Group>(null)
+  /** 拖拽期间跳过每帧写入，否则会用旧值把用户正在拖的结果顶回去。 */
+  const draggingRef = useRef(false)
+
+  // 首帧先摆到位，避免从原点闪一下
+  useLayoutEffect(() => {
+    applyTransform(groupRef.current, node)
+    // 只在挂载时同步一次；之后交给 useFrame
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useFrame(() => {
+    const group = groupRef.current
+    if (!group || draggingRef.current) return
+    const evaluated = evaluateNodeTransform(node, keyframes, playheadRef.current)
+    group.position.set(...evaluated.position)
+    group.quaternion.set(...evaluated.rotation)
+    group.scale.set(...evaluated.scale)
+  })
+
   return (
-    <group position={[x, y, z]} quaternion={[qx, qy, qz, qw]} scale={[sx, sy, sz]} visible={node.visible}>
-      {node.kind === 'primitive' && <PrimitiveMesh node={node} />}
-      {node.kind === 'light' && <LightNode node={node} />}
-      {node.kind === 'human_proxy' && (
-        <AssetModelErrorBoundary>
-          <Suspense fallback={null}>
-            <HumanProxyMesh node={node} />
-          </Suspense>
-        </AssetModelErrorBoundary>
+    <>
+      <group ref={groupRef} visible={node.visible}>
+        {node.kind === 'primitive' && <PrimitiveMesh node={node} />}
+        {node.kind === 'light' && <LightNode node={node} />}
+        {node.kind === 'human_proxy' && (
+          <AssetModelErrorBoundary>
+            <Suspense fallback={null}>
+              <HumanProxyMesh node={node} />
+            </Suspense>
+          </AssetModelErrorBoundary>
+        )}
+        {node.kind === 'panorama' && <PanoramaMesh node={node} />}
+        {node.kind === 'asset_model' && (
+          <AssetModelErrorBoundary>
+            <Suspense fallback={null}>
+              <AssetModelMesh node={node} />
+            </Suspense>
+          </AssetModelErrorBoundary>
+        )}
+      </group>
+      {selected && node.visible && (
+        <TransformControls
+          object={groupRef as React.MutableRefObject<THREE.Object3D>}
+          mode={gizmoMode}
+          size={0.8}
+          onMouseDown={() => { draggingRef.current = true }}
+          onMouseUp={() => {
+            draggingRef.current = false
+            onChannelCommit(node.id, GIZMO_PROPERTY[gizmoMode])
+          }}
+          onObjectChange={() => {
+            const group = groupRef.current
+            if (!group) return
+            const property = GIZMO_PROPERTY[gizmoMode]
+            const value = property === 'position'
+              ? [group.position.x, group.position.y, group.position.z]
+              : property === 'rotation'
+                ? [group.quaternion.x, group.quaternion.y, group.quaternion.z, group.quaternion.w]
+                : [group.scale.x, group.scale.y, group.scale.z]
+            onChannelChange(node.id, property, value)
+          }}
+        />
       )}
-      {node.kind === 'panorama' && <PanoramaMesh node={node} />}
-      {node.kind === 'asset_model' && (
-        <AssetModelErrorBoundary>
-          <Suspense fallback={null}>
-            <AssetModelMesh node={node} />
-          </Suspense>
-        </AssetModelErrorBoundary>
-      )}
-    </group>
+    </>
   )
 }
 
-function CameraRig({ camera }: { camera?: PrevisCamera }) {
+function applyTransform(group: THREE.Group | null, node: PrevisNode) {
+  if (!group) return
+  group.position.set(...node.transform.position)
+  group.quaternion.set(...node.transform.rotation)
+  group.scale.set(...node.transform.scale)
+}
+
+/**
+ * 活动机位的相机装配。
+ *
+ * 改为逐帧求值：机位打了关键帧时（推轨、摇臂），相机必须跟着时间轴动。
+ * 只有 fov 真的变了才 `updateProjectionMatrix`——它每帧调用是有代价的。
+ */
+function CameraRig({
+  camera,
+  keyframes,
+  playheadRef,
+}: {
+  camera?: PrevisCamera
+  keyframes: PrevisKeyframe[]
+  playheadRef: React.MutableRefObject<number>
+}) {
   const { camera: current } = useThree()
-  useEffect(() => {
+  const targetRef = useRef(new THREE.Vector3())
+
+  useFrame(() => {
     if (!camera) return
-    current.position.set(...camera.transform.position)
-    current.lookAt(...(camera.target || [0, 0, 0]))
-    current.updateProjectionMatrix()
-  }, [camera, current])
+    const evaluated = evaluateCamera(camera, keyframes, playheadRef.current)
+    current.position.set(...evaluated.transform.position)
+    targetRef.current.set(...(evaluated.target || [0, 0, 0]))
+    current.lookAt(targetRef.current)
+    const perspective = current as THREE.PerspectiveCamera
+    if (Number.isFinite(evaluated.fov) && Math.abs(perspective.fov - evaluated.fov) > 1e-4) {
+      perspective.fov = evaluated.fov
+      perspective.updateProjectionMatrix()
+    }
+  })
   return null
 }
 
@@ -219,26 +314,34 @@ function CameraRig({ camera }: { camera?: PrevisCamera }) {
  *
  * 用一台与活动机位同参数的 `PerspectiveCamera` 生成 `CameraHelper` 线框，只作视图
  * 参考——它不进场景保存，也不参与截图（截图仍走 active 机位的像素读取）。
- * 这正是「焦距是一等数据」的可读化：在机外就能看出 24mm 与 85mm 的取景差别。
+ * 机位有关键帧时同样逐帧跟随，这样在机外也能看见运镜轨迹。
  */
-function DirectorLensGuide({ camera }: { camera?: PrevisCamera }) {
+function DirectorLensGuide({
+  camera,
+  keyframes,
+  playheadRef,
+}: {
+  camera?: PrevisCamera
+  keyframes: PrevisKeyframe[]
+  playheadRef: React.MutableRefObject<number>
+}) {
   const size = useThree(state => state.size)
   const { guideCamera, helper } = useMemo(() => {
     const cam = new THREE.PerspectiveCamera(50, 1, 0.1, 200)
     return { guideCamera: cam, helper: new THREE.CameraHelper(cam) }
   }, [])
 
-  useEffect(() => {
+  useFrame(() => {
+    if (!camera) return
+    const evaluated = evaluateCamera(camera, keyframes, playheadRef.current)
     const aspect = size.width / Math.max(1, size.height)
-    guideCamera.fov = camera?.fov ?? 50
+    guideCamera.position.set(...evaluated.transform.position)
+    guideCamera.lookAt(...(evaluated.target || [0, 0, 0]))
+    guideCamera.fov = evaluated.fov
     guideCamera.aspect = aspect
     guideCamera.updateProjectionMatrix()
-    if (camera) {
-      guideCamera.position.set(...camera.transform.position)
-      guideCamera.lookAt(...(camera.target || [0, 0, 0]))
-    }
     helper.update()
-  }, [guideCamera, helper, camera, size])
+  })
 
   useEffect(() => () => helper.dispose(), [helper])
 
@@ -246,10 +349,29 @@ function DirectorLensGuide({ camera }: { camera?: PrevisCamera }) {
   return <primitive object={helper} />
 }
 
-export default function SceneViewport({ nodes, activeCamera, cameraMode = 'director', onCaptureReady }: {
+export default function SceneViewport({
+  nodes,
+  activeCamera,
+  cameraMode = 'director',
+  keyframes = [],
+  playheadRef,
+  selectedNodeId = '',
+  gizmoMode = 'translate',
+  onNodeChannelChange,
+  onNodeChannelCommit,
+  onCaptureReady,
+}: {
   nodes: PrevisNode[]
   activeCamera?: PrevisCamera
   cameraMode?: 'director' | 'active'
+  /** 关键帧列表；求值发生在 `useFrame` 里，不走 props 重渲染。 */
+  keyframes?: PrevisKeyframe[]
+  /** 播放头帧号。用 ref 传，避免每秒 24 次触发整块面板重渲染。 */
+  playheadRef: React.MutableRefObject<number>
+  selectedNodeId?: string
+  gizmoMode?: GizmoMode
+  onNodeChannelChange?: (nodeId: string, property: 'position' | 'rotation' | 'scale', value: unknown) => void
+  onNodeChannelCommit?: (nodeId: string, property: 'position' | 'rotation' | 'scale') => void
   /**
    * 视口就绪后把截图函数交给上层；卸载时以 `null` 回收。
    *
@@ -290,7 +412,7 @@ export default function SceneViewport({ nodes, activeCamera, cameraMode = 'direc
         onCreated={handleCreated}
       >
       {cameraMode === 'active' && <PerspectiveCamera makeDefault position={position} fov={fov} />}
-      <CameraRig camera={cameraMode === 'active' ? activeCamera : undefined} />
+      <CameraRig camera={cameraMode === 'active' ? activeCamera : undefined} keyframes={keyframes} playheadRef={playheadRef} />
       <ambientLight intensity={0.5} />
       <directionalLight
         position={[5, 8, 5]}
@@ -305,7 +427,9 @@ export default function SceneViewport({ nodes, activeCamera, cameraMode = 'direc
       />
 
       {cameraMode === 'director' && <OrbitControls enableDamping dampingFactor={0.05} minDistance={0.5} maxDistance={40} />}
-      {cameraMode === 'director' && <DirectorLensGuide camera={activeCamera} />}
+      {cameraMode === 'director' && (
+        <DirectorLensGuide camera={activeCamera} keyframes={keyframes} playheadRef={playheadRef} />
+      )}
 
       <Grid
         args={[20, 20]}
@@ -322,7 +446,16 @@ export default function SceneViewport({ nodes, activeCamera, cameraMode = 'direc
       />
 
       {nodes.map(node => (
-        <NodeMesh key={node.id} node={node} />
+        <NodeMesh
+          key={node.id}
+          node={node}
+          keyframes={keyframes}
+          playheadRef={playheadRef}
+          selected={node.id === selectedNodeId}
+          gizmoMode={gizmoMode}
+          onChannelChange={onNodeChannelChange || (() => {})}
+          onChannelCommit={onNodeChannelCommit || (() => {})}
+        />
       ))}
       </Canvas>
       {cameraMode === 'active' && <>
