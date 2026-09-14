@@ -120,6 +120,9 @@ DEFAULT_AGENT_PROFILES: list[dict[str, Any]] = [
             "retry_content_package_item",
             "save_content_package",
             "build_content_package_outputs",
+            # 3D 预演台的受限操作（#18）：预览是只读，落库会走确认并校验 revision
+            "previs_preview_operations",
+            "previs_apply_operations",
             "update_creative_project_content",
             "list_creative_project_asset_links",
             "link_creative_project_asset",
@@ -344,6 +347,9 @@ DEFAULT_AGENT_PROFILES: list[dict[str, Any]] = [
         ),
         "allowed_tools": [
             "build_creative_project_context_pack",
+            # 预演是分镜的空间层，分镜导演需要能提出并落库镜头改动（#18）
+            "previs_preview_operations",
+            "previs_apply_operations",
             "list_creative_project_contents",
             "get_creative_project_content",
             "update_creative_project_content",

@@ -113,7 +113,20 @@
   - _顺手修掉一处自己造的浪费：初次接线时 `_previs_brief` 在返回体与 `known_gaps` 里各调一次，等于两次 DB 查询；改为算一次复用。_
   - _测试：`test_creative_project_workflow_api.py` 新增 **4 例**——覆盖度计数与缺口清单（含 locked 状态与孤儿场景）、明细截断但计数精确、无分镜时不产生噪音缺口、读取失败时报错并置 None（而非 0）。fixture 补 `PrevisSceneDocument` 建表。_
   - _验证：新用例 **6 passed**（4 新增 + 2 既有上下文用例，确认未破坏既有行为）；回归 `pytest -k "agent or creative_project or context_pack or previs or content_package or profile"` → **381 passed / 2 skipped**；lints 干净。_
-- [ ] 18. Add a reviewed `PrevisOperation` Tool contract with expected revision, lock validation, confirmation diff, Agent Run trace, and focused authorization tests.
+- [x] 18. Add a reviewed `PrevisOperation` Tool contract with expected revision, lock validation, confirmation diff, Agent Run trace, and focused authorization tests.
+  - _2026-09-14 完成。_
+  - _**拆成两个工具，而不是一个**（本条最关键的决定）：`previs_preview_operations`（read，只校验+出差异）与 `previs_apply_operations`（write，再校验一次后 CAS 落库）。合成一个工具就等于让 Agent 自己决定"要不要落库"，design 要求的**人工确认会被绕过**。_
+  - _**落库前重新校验一次**：预览通过不代表落库时仍然通过——两次之间场景可能已被人工改动。校验很廉价，而一次错误覆盖会把人工调整冲掉。_
+  - _**`expected_revision` 不匹配时整批作废**，不是逐条挑能用的执行。理由是：场景已经动过，Agent 的前提整体过期了；挑几条去执行只会拼出一个谁都没预料的中间态——比全部拒绝危险得多。_
+  - _纯逻辑收在 `backend/app/services/previs/operations.py`（输入场景 dict、输出新场景 dict，**不碰数据库**，可完整单测）；工具层在 `services/agent/tools/previs_tools.py`。_
+  - _四条硬规则：① 类型必须在白名单内；② **锁定对象只能读不能写**（`update_transform`/`set_camera`/关键帧操作全部检查）；③ 目标必须存在（按稳定 ID 找 node 或 camera）；④ **`capture_reference` 明确拒绝并说明原因**——截图需要浏览器渲染与上传，工具做不到；静默接受一个做不到的事比拒绝更糟。_
+  - _一处容易漏的一致性：**改 `fov` 时同步重算 `focalLength`**。否则前端 `normalizeCamera` 在载入时按旧焦距把 fov 重算回去，这次改动**等于白做**（差异预览里也会一并显示焦距将如何变化）。_
+  - _授权只给 `creative-director` 与 `storyboard-director`（预演是分镜的空间层，分镜导演需要它）；`quality-reviewer`、`character-designer` 等拿不到写操作。注册了但未授权等于不可用，因此**授权测试是硬断言**。_
+  - _**一处如实标注的未完成**：`Agent Run steps` **没有显式写入**。工具由 `ToolRegistry.execute_tool(name, args)` 调用、**拿不到 run_id**，无法自行写 `AgentRunStep`；目前 trace 走 `AgentService._log_tool_call`（`service.py:1789`）对每次工具调用的**自动记录**——含完整参数与返回值，但 **result 截断 2000 字符**。因此工具返回值刻意精简（只放计数、ID 与摘要），**完整细节写进随场景持久化的操作历史**（预演台「操作历史」可看）。若要显式写 steps，需要先给工具执行链路传上下文——那超出本条范围。_
+  - _测试：`backend/tests/test_previs_operations.py` 新增 **15 例**，分五层——纯校验（revision 过期整批作废、锁定不可改、目标不存在、未知类型、capture_reference 带原因拒绝）、落库（只动被点名的节点、fov↔焦距自洽、关键帧增删与缺省插值、不就地修改入参）、差异预览（只给被改字段、含推导出的焦距）、工具层（预览只读、CAS 递增 revision 并写历史、过期批零副作用、落库再校验）、授权。_
+  - _验证：新增 **15 passed**；回归 `test_agent_center.py` + 三个预演/创作测试文件 → **178 passed / 1 failed → 修好后 16 passed**（见下）。两工具均注册成功，风险等级 `read` / `write`，必填参数含 `expected_revision`，`output_type` 遵循 creative_project 分类的 `creative_` 前缀约定。未新增 HTTP 端点。_
+  - _**回归抓到一个我自己破坏的既有约定**：`test_agent_tool_registry_exposes_creative_project_tools` 断言该分类下所有工具的 `output_type` 必须以 `creative_` 开头，而我初版写的是 `previs_operation_*`。**改的是我的代码而不是放宽测试**——遵守既有约定比新造一种命名更省事也更一致。_
+  - _另修一个循环导入：初版 `previs_tools.py` 用 `from . import register_tool`，而其余 29 个工具模块都用 `from app.services.agent.registry import register_tool`；前者会在包初始化时炸掉。_
 
 ## Acceptance criteria for Phase 1
 
