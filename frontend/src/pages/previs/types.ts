@@ -58,13 +58,110 @@ export interface PrevisCamera {
   focusDistance?: number
 }
 
+/* ---------------------------------------------------------------------------
+   时间轴：逐通道关键帧（design §4.1）
+   --------------------------------------------------------------------------- */
+
+/**
+ * 可打关键帧的通道。
+ *
+ * 刻意是**逐通道**而非整帧快照：只动位置时不该产生旋转与缩放的冗余关键帧，
+ * 否则「我想让角色走过去」会连带把当时的缩放也钉死。
+ * `animation_clip` 属 #15（复用绑骨模型的已有动画），这里先保留取值。
+ */
+export type PrevisKeyframeProperty =
+  | 'position'
+  | 'rotation'
+  | 'scale'
+  | 'camera_target'
+  | 'camera_fov'
+  | 'animation_clip'
+
+export type PrevisInterpolation = 'linear' | 'step' | 'slerp'
+
+export interface PrevisKeyframe {
+  id: string
+  /** 节点 id 或机位 id。 */
+  targetId: string
+  frame: number
+  property: PrevisKeyframeProperty
+  value: unknown
+  interpolation: PrevisInterpolation
+}
+
+export const DEFAULT_FPS = 24
+/** 4 秒 @24fps：够一个预演镜头，也不至于让时间轴一开始就过宽。 */
+export const DEFAULT_DURATION_FRAMES = 96
+
+/**
+ * 旋转默认球面插值。
+ *
+ * design 要求旋转存四元数就是为了避免欧拉角插值在过 180° 时翻转；
+ * 若四元数却按分量线性插值，等于把这个问题原样带回来（长度不再为 1）。
+ */
+export const DEFAULT_ROTATION_INTERPOLATION: PrevisInterpolation = 'slerp'
+export const DEFAULT_INTERPOLATION: PrevisInterpolation = 'linear'
+
+/** 单通道关键帧上限：防止误操作把场景 JSON 撑爆。 */
+export const MAX_KEYFRAMES = 2000
+
+export function interpolationFor(property: PrevisKeyframeProperty): PrevisInterpolation {
+  return property === 'rotation' ? DEFAULT_ROTATION_INTERPOLATION : DEFAULT_INTERPOLATION
+}
+
+/* ---------------------------------------------------------------------------
+   操作历史（design §5.3）
+   --------------------------------------------------------------------------- */
+
+/**
+ * 操作词表。
+ *
+ * 前六个来自 design §5.3 的 `PrevisOperation`——那是**Agent 侧的受限操作**，
+ * #18 会复用同一套词汇，这样人工操作与 Agent 操作在历史里是同一种东西、可以对照。
+ *
+ * 后四个是本地编辑实际会产生、而 design 那份（面向 Agent 的写操作）没有列到的：
+ * 删节点、增删机位、改时长。**刻意不为了迁就词表而不记录**——一份漏掉删除的记录
+ * 会让人误以为"这个节点一直在"，比词表多几个词有害得多。
+ */
+export type PrevisOperationType =
+  | 'add_node'
+  | 'update_transform'
+  | 'set_camera'
+  | 'add_keyframe'
+  | 'remove_keyframe'
+  | 'capture_reference'
+  | 'remove_node'
+  | 'add_camera'
+  | 'remove_camera'
+  | 'set_duration'
+
+export interface PrevisSceneOperation {
+  id: string
+  /** ISO 时间戳。 */
+  at: string
+  type: PrevisOperationType
+  targetId?: string
+  /** 人类可读摘要——操作历史是给人看的审计线索，不是机器日志。 */
+  summary: string
+  frame?: number
+}
+
+/**
+ * 操作历史上限。
+ *
+ * 它随场景 JSON 一起持久化（design §4.1 要求可撤销性不能只存在浏览器里），
+ * 所以必须有上限，否则场景文档会无界增长。
+ */
+export const MAX_SCENE_OPERATIONS = 200
+
 export interface PrevisSceneData {
   fps: number
   durationFrames: number
   activeCameraId: string
   nodes: PrevisNode[]
   cameras: PrevisCamera[]
-  keyframes: unknown[]
+  keyframes: PrevisKeyframe[]
+  operations: PrevisSceneOperation[]
   settings: Record<string, unknown>
 }
 
@@ -158,30 +255,116 @@ export function normalizeCamera(raw: any): PrevisCamera {
 
 export function emptySceneData(): PrevisSceneData {
   return {
-    fps: 24,
-    durationFrames: 0,
+    fps: DEFAULT_FPS,
+    durationFrames: DEFAULT_DURATION_FRAMES,
     activeCameraId: '',
     nodes: [],
     cameras: [],
     keyframes: [],
+    operations: [],
     settings: {},
+  }
+}
+
+const KEYFRAME_PROPERTIES: PrevisKeyframeProperty[] = [
+  'position',
+  'rotation',
+  'scale',
+  'camera_target',
+  'camera_fov',
+  'animation_clip',
+]
+
+const OPERATION_TYPES: PrevisOperationType[] = [
+  'add_node',
+  'update_transform',
+  'set_camera',
+  'add_keyframe',
+  'remove_keyframe',
+  'capture_reference',
+  'remove_node',
+  'add_camera',
+  'remove_camera',
+  'set_duration',
+]
+
+/**
+ * 归一化单条关键帧；非法条目返回 `null` 由调用方丢弃。
+ *
+ * 刻意**不抛错**：一条坏关键帧不该让整个场景打不开。场景是用户的工作成果，
+ * 丢掉一条异常数据比丢掉整个场景可接受得多。
+ */
+export function normalizeKeyframe(raw: any): PrevisKeyframe | null {
+  if (!raw || typeof raw !== 'object') return null
+  const property = raw.property as PrevisKeyframeProperty
+  if (!KEYFRAME_PROPERTIES.includes(property)) return null
+  const targetId = String(raw.targetId || '').trim()
+  if (!targetId) return null
+  const frame = Number(raw.frame)
+  if (!Number.isFinite(frame) || frame < 0) return null
+  const interpolation = (raw.interpolation as PrevisInterpolation) || interpolationFor(property)
+  if (!['linear', 'step', 'slerp'].includes(interpolation)) return null
+  return {
+    id: String(raw.id || makeKeyframeId()),
+    targetId,
+    frame: Math.round(frame),
+    property,
+    value: raw.value,
+    interpolation,
+  }
+}
+
+export function normalizeOperation(raw: any): PrevisSceneOperation | null {
+  if (!raw || typeof raw !== 'object') return null
+  const type = raw.type as PrevisOperationType
+  if (!OPERATION_TYPES.includes(type)) return null
+  return {
+    id: String(raw.id || makeOperationId()),
+    at: String(raw.at || new Date().toISOString()),
+    type,
+    targetId: raw.targetId ? String(raw.targetId) : undefined,
+    summary: String(raw.summary || ''),
+    frame: Number.isFinite(Number(raw.frame)) ? Number(raw.frame) : undefined,
   }
 }
 
 export function normalizeSceneData(raw: Record<string, any> | undefined): PrevisSceneData {
   const base = emptySceneData()
   if (!raw || typeof raw !== 'object') return base
+  const rawDuration = Number(raw.durationFrames)
+  const keyframes = (Array.isArray(raw.keyframes) ? raw.keyframes : [])
+    .map(normalizeKeyframe)
+    .filter((item): item is PrevisKeyframe => item !== null)
+  const operations = (Array.isArray(raw.operations) ? raw.operations : [])
+    .map(normalizeOperation)
+    .filter((item): item is PrevisSceneOperation => item !== null)
   return {
-    fps: typeof raw.fps === 'number' ? raw.fps : base.fps,
-    durationFrames: typeof raw.durationFrames === 'number' ? raw.durationFrames : base.durationFrames,
+    fps: Number.isFinite(Number(raw.fps)) && Number(raw.fps) > 0 ? Number(raw.fps) : base.fps,
+    // 既有场景从未写过 durationFrames（一律 0），0 视为「未设置」并补默认值；
+    // 否则时间轴长度为 0，播放头根本无处可放。
+    durationFrames:
+      Number.isFinite(rawDuration) && rawDuration > 0 ? Math.round(rawDuration) : base.durationFrames,
     activeCameraId: typeof raw.activeCameraId === 'string' ? raw.activeCameraId : base.activeCameraId,
     nodes: Array.isArray(raw.nodes) ? raw.nodes : base.nodes,
     cameras: Array.isArray(raw.cameras) ? raw.cameras.map(normalizeCamera) : base.cameras,
-    keyframes: Array.isArray(raw.keyframes) ? raw.keyframes : base.keyframes,
+    keyframes: keyframes.slice(0, MAX_KEYFRAMES),
+    operations: operations.slice(-MAX_SCENE_OPERATIONS),
     settings: raw.settings && typeof raw.settings === 'object' ? raw.settings : base.settings,
   }
 }
 
+function makeId(prefix: string): string {
+  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+}
+
 export function makeNodeId(): string {
-  return `node_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+  return makeId('node')
+}
+
+export function makeKeyframeId(): string {
+  return makeId('kf')
+}
+
+export function makeOperationId(): string {
+  return makeId('op')
 }

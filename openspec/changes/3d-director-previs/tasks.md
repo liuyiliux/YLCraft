@@ -39,7 +39,21 @@
 
 ## Phase 2: Dynamic previs
 
-- [ ] 14. Add scene duration, 24fps playhead, transform and camera keyframes, slerp rotation interpolation, and persisted scene operation history.
+- [x] 14. Add scene duration, 24fps playhead, transform and camera keyframes, slerp rotation interpolation, and persisted scene operation history.
+  - _2026-09-14 完成。_
+  - _**过程中发现一个前置缺口（本条之前不存在）**：节点变换在 UI 里**根本改不了**——没有拖拽手柄、也没有位置/旋转/缩放输入框，只有相机的有。也就是说「给角色/道具打关键帧」当时没有输入路径（所有节点永远停在默认位置）。已一并补上：图层面板可选中节点，选中后有变换面板（位置/旋转°/缩放）+ 3D `TransformControls` 手柄（移动/旋转/缩放三模式）；旋转在数据里存四元数（design 要求，避免欧拉角插值翻转），但**编辑用角度**，转换只发生在输入输出边界。_
+  - _契约按 design §4.1 实现**逐通道**关键帧（`property` = position/rotation/scale/camera_target/camera_fov/animation_clip，`interpolation` = linear/step/slerp），而不是整帧快照——只动位置时不该连带把缩放钉死。`animation_clip` 取值先保留，实现在 #15。_
+  - _求值收在纯函数模块 `frontend/src/pages/previs/timeline.ts`（无 React / three 依赖，可单测）。三条约定：① **插值方式取自前一个关键帧**（区间由它起始），与主流动画工具的 F-curve 一致；② 边界不做循环——首帧前保持首帧、末帧后保持末帧，避免场景外出现意料之外的运动；③ **坏数据只丢当前通道**（退回前一个值），不抛错也不产出 NaN。_
+  - _`slerpQuaternion` 处理三个必错的点：**取最短路径**（`dot < 0` 取反，否则 350°→10° 会绕远路 340°、画面上表现为镜头原地翻半圈）、**近平行退化为线性**（`dot → ±1` 时分母趋于 0，直接除得 NaN）、**结果归一化**（浮点误差累积会让模型缓慢缩放/倾斜）。_
+  - _**打点/自动打点的规则**：按**通道**判断而不是按目标——该通道已有关键帧则在当前帧打点/更新，否则改静态值。这样有两个好处：① 给位置打点不会顺带把缩放也钉死；② 拖动一定有反馈，不会出现「拖了却被时间轴顶回去」这种让人以为工具坏了的情况。_
+  - _**面板显示求值后的值**：节点与机位的变换面板都读当前帧的求值结果。若显示静态值而画面用插值结果，打了点后就会出现「面板写 0、画面在 5」。机位另有取舍：**FOV 一旦有关键帧（即变焦），焦距输入被禁用**——镜头由 FOV 驱动，两处可改会互相打架。_
+  - _**性能取舍**：位姿由 `SceneViewport` 的 `useFrame` 逐帧求值，`playheadRef` 才是渲染的事实来源；React 侧只按约 10Hz 同步一次读数。若播放时每帧 setState，图层面板与机位面板（几十个 antd 控件）会跟着每秒重渲染二十多次。_
+  - _操作历史按 design §5.3 的 `PrevisOperation` 词表实现并**随场景 JSON 持久化**（design §4.1 要求可撤销性不能只存在浏览器里），上限 200 条防无界增长。**偏离一处并已标注**：词表补了 `remove_node`/`add_camera`/`remove_camera`/`set_duration` 四个 design 未列的操作——那份是面向 Agent 的写操作，而本地编辑确实会产生删节点/增删机位/改时长；**不为迁就词表而漏记删除**（一份漏掉删除的记录会让人误以为"这个节点一直在"）。删节点/机位时会一并清掉它的关键帧，不留指向已删目标的孤儿数据。_
+  - _`durationFrames` 的兼容处理：既有场景从未写过这个字段（一律 0），0 视为「未设置」补默认 96 帧（4 秒 @24fps）——否则时间轴长度为 0，播放头无处可放。_
+  - _测试：新增 `frontend/src/pages/previs/timeline.test.ts` **26 例**——slerp 两端取值/90° 中点 45°/**350°→10° 中点必须是 0° 而非 180°**/结果归一化/近平行不产 NaN；通道按目标与属性双重过滤、同帧后写生效；取样端点保持、区间线性、step 保持、旋转 slerp、数值通道线性、坏数据退回前值；逐通道独立（给位置打点不影响缩放）；机位位置/目标点/FOV 可动画；帧秒换算与 clamp；归一化丢非法关键帧、旋转缺省插值为 slerp、操作历史过滤非法类型。_
+  - _验证：`npx vitest run` → **87 passed（7 文件）**（原 61 例 + 新增 26 例）；`npm run build`（`tsc --noEmit` 两个 tsconfig + vite）**通过**，3826 模块；lints 干净。_
+  - _**浏览器端到端 18/18**（真实 Chromium）：加几何体后自动选中并可读变换面板 → 第 0 帧设 X=4 并打点 → 播放头移到中段改 X=10（**自动打点**）→ 保存后落库确为 `[(0,[4,0.5,0]), (48,[10,0.5,0])]` 两条 → **回到第 24 帧读到 X=7**（4 与 10 的中点，精确吻合，证明「自动打点 → 逐帧求值 → 线性插值 → 面板回显」整条链路打通）→ 播放使播放头从 24 前进到 54 → 操作历史含 add_node/add_keyframe 且已落库 2 条 → 重载后关键帧仍为 2 条。全程 **0 个 >=400、0 条 console error**。_
+  - _tsc 抓到我自己的 4 个错误（vitest 不做类型检查，测试没暴露）：其中一个是**真 bug**——`recordOperation` 定义在 `addCamera`/`deleteCamera` 之后，而 `useCallback` 的依赖数组是渲染时立即求值的，会在初始化前访问它并**直接抛错导致页面白屏**；已把它的定义移到所有使用者之前并注明原因。另一个是四元数线性插值误用 `lerpVec3` 的非法类型转换，改为通用的逐分量插值。_
 - [ ] 15. Reuse existing rigged-model animation clips as scene playback selections without claiming editable skeletal animation.
 - [ ] 16. Evaluate frame capture and MP4/WebM export only after static capture is stable; document browser and cost constraints.
 - [x] 24. Upgrade `PrevisCamera` from FOV-only to real optics: focal length, sensor format, and computed depth of field, so a framing reference means the same thing to a DP as it does to the tool.

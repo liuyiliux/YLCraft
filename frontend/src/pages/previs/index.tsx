@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Button,
   ColorPicker,
+  Drawer,
   Dropdown,
   Empty,
   Input,
@@ -23,34 +24,61 @@ import {
   DeleteOutlined,
   EyeInvisibleOutlined,
   EyeOutlined,
+  HistoryOutlined,
+  KeyOutlined,
   LockOutlined,
+  PauseCircleOutlined,
+  PlayCircleOutlined,
   PlusOutlined,
   SaveOutlined,
   UnlockOutlined,
 } from '@ant-design/icons'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { capturePrevisScene, createPrevisScene, getPrevisScene, listAssets, listPrevisScenes, savePrevisScene, type PrevisScene } from '../../api'
+import * as THREE from 'three'
 import type { Asset } from '../../types/api'
-import SceneViewport, { type SceneCaptureFn } from './SceneViewport'
+import SceneViewport, { type GizmoMode, type SceneCaptureFn } from './SceneViewport'
 import { HUMAN_PROXY_POSES, humanProxyPoseKey } from '../../components/three/humanProxy'
 import {
+  DEFAULT_DURATION_FRAMES,
+  DEFAULT_FPS,
   DEFAULT_LIGHT_ANGLE,
   DEFAULT_LIGHT_COLOR,
   DEFAULT_LIGHT_DISTANCE,
   DEFAULT_LIGHT_INTENSITY,
   DEFAULT_TRANSFORM,
   LIGHT_KIND_LABEL,
+  MAX_SCENE_OPERATIONS,
   makeNodeId,
+  makeOperationId,
   normalizeSceneData,
   readLightConfig,
   type LightConfig,
   type LightKind,
   type PrevisNode,
   type PrevisCamera,
+  type PrevisKeyframeProperty,
   type PrevisNodeKind,
+  type PrevisOperationType,
   type PrevisSceneData,
+  type PrevisSceneOperation,
   type PrimitiveKind,
 } from './types'
+import {
+  animatedProperties,
+  applyCameraChannel,
+  channelKeyframes,
+  clampFrame,
+  currentChannelValue,
+  durationSeconds,
+  evaluateCamera,
+  evaluateNodeTransform,
+  frameToSeconds,
+  removeKeyframeAt,
+  removeTargetKeyframes,
+  secondsToFrame,
+  upsertKeyframe,
+} from './timeline'
 import {
   DEFAULT_APERTURE,
   DEFAULT_FOCUS_DISTANCE_M,
@@ -64,6 +92,30 @@ import {
 } from './optics'
 
 const { Title, Text } = Typography
+
+const RAD = Math.PI / 180
+
+/**
+ * 四元数 → 欧拉角（度）。
+ *
+ * 数据里存四元数（design 要求，避免欧拉角插值翻转），但**编辑用角度**——
+ * 没人愿意用四元数分量调机位朝向。转换只发生在输入输出边界。
+ */
+function quatToEulerDeg(q: [number, number, number, number]): [number, number, number] {
+  const euler = new THREE.Euler().setFromQuaternion(new THREE.Quaternion(q[0], q[1], q[2], q[3]), 'XYZ')
+  return [euler.x / RAD, euler.y / RAD, euler.z / RAD]
+}
+
+function eulerDegToQuat(deg: number[]): [number, number, number, number] {
+  const euler = new THREE.Euler((deg[0] || 0) * RAD, (deg[1] || 0) * RAD, (deg[2] || 0) * RAD, 'XYZ')
+  const q = new THREE.Quaternion().setFromEuler(euler)
+  return [q.x, q.y, q.z, q.w]
+}
+
+/** 替换数组中的一项，返回新数组（不可变更新，避免 React 漏渲染）。 */
+function replaceAt<T>(values: T[], index: number, value: T): T[] {
+  return values.map((item, position) => (position === index ? value : item))
+}
 
 const NODE_KIND_LABEL: Record<PrevisNodeKind, string> = {
   asset_model: '模型',
@@ -170,6 +222,64 @@ function makeCamera(index: number): PrevisCamera {
 }
 
 /**
+ * 一个通道的编辑行：数值输入 + 打点/删点。
+ *
+ * 打点按钮的状态直接反映「当前帧上有没有关键帧」——而不是另设一个开关。
+ * 这样用户看到的和实际存的永远是同一件事，不会出现"显示已打点但其实没有"。
+ */
+function ChannelRow({
+  label,
+  values,
+  step = 0.1,
+  min,
+  max,
+  disabled,
+  keyed,
+  onCommit,
+  onToggleKey,
+}: {
+  label: string
+  values: number[]
+  step?: number
+  min?: number
+  max?: number
+  disabled?: boolean
+  keyed: boolean
+  onCommit: (index: number, value: number) => void
+  onToggleKey: () => void
+}) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+      <Text type="secondary" style={{ width: 40, flexShrink: 0, fontSize: 11 }}>{label}</Text>
+      <div style={{ display: 'flex', gap: 2, flex: 1, minWidth: 0 }}>
+        {values.map((value, index) => (
+          <InputNumber
+            key={index}
+            size="small"
+            step={step}
+            min={min}
+            max={max}
+            value={Number.isFinite(value) ? Number(value.toFixed(3)) : 0}
+            disabled={disabled}
+            onChange={next => onCommit(index, Number(next ?? value))}
+            style={{ width: '100%', minWidth: 0 }}
+          />
+        ))}
+      </div>
+      <Tooltip title={keyed ? '当前帧已有关键帧，点击删除' : '在当前帧打关键帧'}>
+        <Button
+          type="text"
+          size="small"
+          disabled={disabled}
+          icon={<KeyOutlined style={{ color: keyed ? '#1677ff' : undefined }} />}
+          onClick={onToggleKey}
+        />
+      </Tooltip>
+    </div>
+  )
+}
+
+/**
  * 灯光节点的行内配置（类型 / 颜色 / 强度）。
  *
  * 放在图层行**下方**而不是行内：图层面板只有 280px，塞进去会把名称输入框压到不可用。
@@ -225,6 +335,14 @@ export default function PrevisPage() {
   const [capturing, setCapturing] = useState(false)
   const [sceneList, setSceneList] = useState<PrevisScene[]>([])
   const [listLoading, setListLoading] = useState(false)
+  // 时间轴状态。`playheadRef` 才是渲染的事实来源（供 useFrame 逐帧读取），
+  // `playhead` 只用于面板读数——若播放时每帧 setState，整块编辑面板会跟着重渲染。
+  const playheadRef = useRef(0)
+  const [playhead, setPlayhead] = useState(0)
+  const [playing, setPlaying] = useState(false)
+  const [selectedNodeId, setSelectedNodeId] = useState('')
+  const [gizmoMode, setGizmoMode] = useState<GizmoMode>('translate')
+  const [historyOpen, setHistoryOpen] = useState(false)
 
   useEffect(() => {
     if (!sceneId) {
@@ -267,6 +385,97 @@ export default function PrevisPage() {
     })
   }, [activeCamera])
 
+  /**
+   * 机位面板显示的机位：**求值后**的，而不是静态值。
+   *
+   * 打了关键帧后若面板还显示静态值，就会出现「面板写 4，画面在 6」——用户会以为坏了。
+   * 读数跟着播放头走（节流到 10Hz），与视口永远一致。
+   */
+  const displayCamera = useMemo(
+    () => (activeCamera ? evaluateCamera(activeCamera, sceneData?.keyframes ?? [], playhead) : undefined),
+    [activeCamera, sceneData?.keyframes, playhead],
+  )
+
+  const fps = sceneData?.fps || DEFAULT_FPS
+  const durationFrames = sceneData?.durationFrames || DEFAULT_DURATION_FRAMES
+  const keyframes = useMemo(() => sceneData?.keyframes ?? [], [sceneData])
+  const operations = useMemo(() => sceneData?.operations ?? [], [sceneData])
+  const selectedNode = useMemo(() => nodes.find(node => node.id === selectedNodeId) || null, [nodes, selectedNodeId])
+
+  /**
+   * 变换面板显示的节点：**求值后**的，与机位面板同理。
+   *
+   * 若面板显示静态值而画面用插值结果，打了点之后就会出现「面板写 0、画面在 5」——
+   * 用户会以为改动没生效，实际上是被时间轴覆盖了。
+   */
+  const selectedNodeDisplay = useMemo(
+    () => (selectedNode ? { ...selectedNode, transform: evaluateNodeTransform(selectedNode, keyframes, playhead) } : null),
+    [selectedNode, keyframes, playhead],
+  )
+
+  const seek = useCallback((frame: number) => {
+    const next = clampFrame(frame, durationFrames)
+    playheadRef.current = next
+    setPlayhead(next)
+  }, [durationFrames])
+
+  /**
+   * 播放循环。
+   *
+   * 推进的是 **ref**，不是 state：位姿由 `SceneViewport` 的 `useFrame` 逐帧读取求值，
+   * React 这边只按约 10Hz 同步一次读数。若每帧 setState，图层面板与机位面板
+   * （几十个 antd 控件）会跟着每秒重渲染二十多次。
+   */
+  useEffect(() => {
+    if (!playing) return
+    let raf = 0
+    let last = performance.now()
+    let lastNotify = 0
+    const tick = (now: number) => {
+      const delta = (now - last) / 1000
+      last = now
+      const next = playheadRef.current + delta * fps
+      if (next >= durationFrames) {
+        playheadRef.current = durationFrames
+        setPlayhead(durationFrames)
+        setPlaying(false)
+        return
+      }
+      playheadRef.current = next
+      if (now - lastNotify > 100) {
+        lastNotify = now
+        setPlayhead(Math.round(next))
+      }
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [playing, fps, durationFrames])
+
+  /**
+   * 记录一条操作历史。
+   *
+   * 随场景 JSON 一起持久化——design §4.1 明确要求「可撤销性不能只存在浏览器里」，
+   * 所以前端这份是留给人工回看的审计线索，不是唯一事实。
+   *
+   * 定义位置刻意**在所有使用者之前**：`useCallback` 的依赖数组是渲染时立即求值的，
+   * 若某个使用者声明在它上面，依赖数组就会在初始化前访问它并直接抛错（页面白屏）。
+   */
+  const recordOperation = useCallback((type: PrevisOperationType, summary: string, targetId?: string) => {
+    setSceneData(prev => {
+      if (!prev) return prev
+      const entry: PrevisSceneOperation = {
+        id: makeOperationId(),
+        at: new Date().toISOString(),
+        type,
+        targetId,
+        summary,
+        frame: Math.round(playheadRef.current),
+      }
+      return { ...prev, operations: [...prev.operations, entry].slice(-MAX_SCENE_OPERATIONS) }
+    })
+  }, [])
+
   const mutateCameras = useCallback((updater: (cameras: PrevisCamera[]) => PrevisCamera[], activeCameraId?: string) => {
     setSceneData(prev => {
       if (!prev) return prev
@@ -279,7 +488,8 @@ export default function PrevisPage() {
   const addCamera = useCallback(() => {
     const camera = makeCamera(cameras.length + 1)
     mutateCameras(current => [...current, camera], camera.id)
-  }, [cameras.length, mutateCameras])
+    recordOperation('add_camera', `新增 ${camera.name}`, camera.id)
+  }, [cameras.length, mutateCameras, recordOperation])
 
   const updateCamera = useCallback((id: string, patch: Partial<PrevisCamera>) => {
     mutateCameras(current => current.map(camera => camera.id === id ? { ...camera, ...patch } : camera))
@@ -301,19 +511,18 @@ export default function PrevisPage() {
     }))
   }, [mutateCameras])
 
-  /** 反向：直接改 fov 时回算焦距，让毫米读数跟着变（真实取景器的行为）。 */
-  const updateCameraFov = useCallback((id: string, fov: number) => {
-    mutateCameras(current => current.map(camera => {
-      if (camera.id !== id) return camera
-      const sensorFormat = camera.sensorFormat || 'full_frame'
-      return { ...camera, fov, sensorFormat, focalLength: focalLengthFromFov(fov, sensorFormat) }
-    }))
-  }, [mutateCameras])
+  // 注：曾经有独立的 `updateCameraFov`，现统一走 `writeCameraChannel`——
+  // 它按「该通道有没有打过点」自动决定写静态值还是写关键帧，且静态分支由
+  // `applyCameraChannel` 连带回算焦距（与真实取景器行为一致）。
 
   const deleteCamera = useCallback((id: string) => {
+    const removed = cameras.find(camera => camera.id === id)
     const remaining = cameras.filter(camera => camera.id !== id)
     mutateCameras(() => remaining, remaining[0]?.id || '')
-  }, [cameras, mutateCameras])
+    // 一并清掉它的关键帧：否则会留下指向已删机位的孤儿数据，且每次载入都白跑一遍求值
+    setSceneData(prev => (prev ? { ...prev, keyframes: removeTargetKeyframes(prev.keyframes, id) } : prev))
+    recordOperation('remove_camera', `删除 ${removed?.name || '机位'}`, id)
+  }, [cameras, mutateCameras, recordOperation])
 
   const mutateNodes = useCallback((updater: (nodes: PrevisNode[]) => PrevisNode[]) => {
     setSceneData(prev => {
@@ -323,24 +532,151 @@ export default function PrevisPage() {
     setDirty(true)
   }, [])
 
+  /**
+   * 写入节点的一个变换通道。
+   *
+   * 规则：**该通道已有关键帧 → 在当前帧打点/更新；没有 → 改静态值**。
+   *
+   * 按**通道**而不是按目标判断，有两个好处：① 给位置打点不会顺带把缩放也钉死；
+   * ② 拖动一定有反馈——不会出现「拖了却被时间轴顶回去」这种让人以为工具坏了的情况。
+   */
+  const writeNodeChannel = useCallback(
+    (nodeId: string, property: 'position' | 'rotation' | 'scale', value: unknown) => {
+      setSceneData(prev => {
+        if (!prev) return prev
+        if (channelKeyframes(prev.keyframes, nodeId, property).length === 0) {
+          return {
+            ...prev,
+            nodes: prev.nodes.map(node =>
+              node.id === nodeId
+                ? { ...node, transform: { ...node.transform, [property]: value } }
+                : node,
+            ),
+          }
+        }
+        return {
+          ...prev,
+          keyframes: upsertKeyframe(prev.keyframes, nodeId, property, Math.round(playheadRef.current), value),
+        }
+      })
+      setDirty(true)
+    },
+    [],
+  )
+
+  /** 写入机位的一个通道（位置 / 目标点 / FOV），规则同 `writeNodeChannel`。 */
+  const writeCameraChannel = useCallback(
+    (cameraId: string, property: PrevisKeyframeProperty, value: unknown) => {
+      setSceneData(prev => {
+        if (!prev) return prev
+        if (channelKeyframes(prev.keyframes, cameraId, property).length === 0) {
+          return {
+            ...prev,
+            cameras: prev.cameras.map(camera =>
+              camera.id === cameraId ? applyCameraChannel(camera, property, value) : camera,
+            ),
+          }
+        }
+        return {
+          ...prev,
+          keyframes: upsertKeyframe(prev.keyframes, cameraId, property, Math.round(playheadRef.current), value),
+        }
+      })
+      setDirty(true)
+    },
+    [],
+  )
+
+  /** 在当前帧为目标打点，固化它此刻**求值后**的样子。 */
+  const addKeyframe = useCallback(
+    (targetId: string, property: PrevisKeyframeProperty, label: string) => {
+      setSceneData(prev => {
+        if (!prev) return prev
+        const frame = Math.round(playheadRef.current)
+        const value = currentChannelValue(prev, targetId, property, frame)
+        if (value === undefined) return prev
+        return { ...prev, keyframes: upsertKeyframe(prev.keyframes, targetId, property, frame, value) }
+      })
+      setDirty(true)
+      recordOperation('add_keyframe', `第 ${Math.round(playheadRef.current)} 帧 · ${label} 打点`, targetId)
+    },
+    [recordOperation],
+  )
+
+  const removeKeyframe = useCallback(
+    (targetId: string, property: PrevisKeyframeProperty, label: string) => {
+      const frame = Math.round(playheadRef.current)
+      setSceneData(prev => (prev
+        ? { ...prev, keyframes: removeKeyframeAt(prev.keyframes, targetId, property, frame) }
+        : prev))
+      setDirty(true)
+      recordOperation('remove_keyframe', `第 ${frame} 帧 · 删除 ${label} 关键帧`, targetId)
+    },
+    [recordOperation],
+  )
+
+  const clearTargetKeyframes = useCallback(
+    (targetId: string, label: string) => {
+      setSceneData(prev => (prev ? { ...prev, keyframes: removeTargetKeyframes(prev.keyframes, targetId) } : prev))
+      setDirty(true)
+      recordOperation('remove_keyframe', `清空 ${label} 的全部关键帧`, targetId)
+    },
+    [recordOperation],
+  )
+
+  /** 当前帧上该通道是否已有关键帧——打点按钮的图标状态直接读它，不另设开关。 */
+  const keyframeAt = useCallback(
+    (targetId: string, property: PrevisKeyframeProperty) =>
+      keyframes.some(
+        item => item.targetId === targetId && item.property === property && item.frame === Math.round(playhead),
+      ),
+    [keyframes, playhead],
+  )
+
+  const toggleKeyframe = useCallback(
+    (targetId: string, property: PrevisKeyframeProperty, label: string) => {
+      if (keyframeAt(targetId, property)) removeKeyframe(targetId, property, label)
+      else addKeyframe(targetId, property, label)
+    },
+    [addKeyframe, keyframeAt, removeKeyframe],
+  )
+
+  /** 活动机位的 FOV 是否已按关键帧驱动（即变焦）。 */
+  const fovAnimated = Boolean(activeCamera && keyframeAt(activeCamera.id, 'camera_fov'))
+
+  /** 改场景时长。播放头若已越界则夹回，避免停在一个不存在的帧上。 */
+  const setDuration = useCallback((seconds: number) => {
+    const frames = Math.max(1, secondsToFrame(Number(seconds) || 1, fps))
+    setSceneData(prev => (prev ? { ...prev, durationFrames: frames } : prev))
+    if (playheadRef.current > frames) seek(frames)
+    setDirty(true)
+  }, [fps, seek])
+
+  /** 新增节点并立即选中它——否则用户加完还得再去图层里点一下才能拖。 */
+  const addNodeAndSelect = useCallback((node: PrevisNode, summary: string) => {
+    mutateNodes(nodes => [...nodes, node])
+    setSelectedNodeId(node.id)
+    recordOperation('add_node', summary, node.id)
+  }, [mutateNodes, recordOperation])
+
   const addPrimitive = useCallback(
-    (kind: PrimitiveKind) => mutateNodes(nodes => [...nodes, makePrimitiveNode(kind)]),
-    [mutateNodes],
+    (kind: PrimitiveKind) => addNodeAndSelect(makePrimitiveNode(kind), `添加几何体 ${PRIMITIVE_LABEL[kind]}`),
+    [addNodeAndSelect],
   )
 
   const addHumanProxy = useCallback(
-    () => mutateNodes(nodes => [...nodes, makeHumanProxyNode()]),
-    [mutateNodes],
+    () => addNodeAndSelect(makeHumanProxyNode(), '添加人形占位'),
+    [addNodeAndSelect],
   )
 
   const addPanorama = useCallback(
-    () => mutateNodes(nodes => [...nodes, makePanoramaNode()]),
-    [mutateNodes],
+    () => addNodeAndSelect(makePanoramaNode(), '添加全景背景'),
+    [addNodeAndSelect],
   )
 
   const addLight = useCallback(
-    (kind: LightKind) => mutateNodes(nodes => [...nodes, makeLightNode(kind)]),
-    [mutateNodes],
+    (kind: LightKind) => addNodeAndSelect(makeLightNode(kind), `添加${LIGHT_KIND_LABEL[kind]}`),
+    [addNodeAndSelect],
   )
 
   /** 只合并灯光配置字段，不动节点的几何属性。 */
@@ -387,22 +723,19 @@ export default function PrevisPage() {
         message.warning('该素材没有可加载的模型文件')
         return
       }
-      mutateNodes(nodes => [
-        ...nodes,
-        {
-          id: makeNodeId(),
-          kind: 'asset_model',
-          name: asset.title || '模型',
-          assetId: asset.id,
-          transform: { ...DEFAULT_TRANSFORM, position: [0, 0, 0] },
-          visible: true,
-          locked: false,
-          metadata: { assetId: asset.id, modelUrl },
-        },
-      ])
+      addNodeAndSelect({
+        id: makeNodeId(),
+        kind: 'asset_model',
+        name: asset.title || '模型',
+        assetId: asset.id,
+        transform: { ...DEFAULT_TRANSFORM, position: [0, 0, 0] },
+        visible: true,
+        locked: false,
+        metadata: { assetId: asset.id, modelUrl },
+      }, `添加模型 ${asset.title || ''}`)
       setModelPickerOpen(false)
     },
-    [mutateNodes],
+    [addNodeAndSelect],
   )
 
   const renameNode = useCallback(
@@ -412,8 +745,15 @@ export default function PrevisPage() {
   )
 
   const deleteNode = useCallback(
-    (id: string) => mutateNodes(nodes => nodes.filter(n => n.id !== id)),
-    [mutateNodes],
+    (id: string) => {
+      const removed = nodes.find(node => node.id === id)
+      mutateNodes(current => current.filter(node => node.id !== id))
+      // 同 deleteCamera：关键帧必须跟着走，不能留下孤儿
+      setSceneData(prev => (prev ? { ...prev, keyframes: removeTargetKeyframes(prev.keyframes, id) } : prev))
+      if (selectedNodeId === id) setSelectedNodeId('')
+      recordOperation('remove_node', `删除 ${removed?.name || '节点'}`, id)
+    },
+    [mutateNodes, nodes, recordOperation, selectedNodeId],
   )
 
   const toggleVisible = useCallback(
@@ -634,6 +974,82 @@ export default function PrevisPage() {
             </Space>
           </div>
 
+          {selectedNode && (
+            <div style={{ padding: 12, borderBottom: '1px solid var(--border)' }}>
+              <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+                  <Text strong>变换 · {selectedNode.name}</Text>
+                  <Space size={4}>
+                    <Select
+                      size="small"
+                      value={gizmoMode}
+                      onChange={value => setGizmoMode(value as GizmoMode)}
+                      options={[
+                        { value: 'translate', label: '移动' },
+                        { value: 'rotate', label: '旋转' },
+                        { value: 'scale', label: '缩放' },
+                      ]}
+                      style={{ width: 72 }}
+                    />
+                    <Tooltip title="清空该目标的全部关键帧">
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<DeleteOutlined />}
+                        disabled={animatedProperties(keyframes, selectedNode.id).length === 0}
+                        onClick={() => clearTargetKeyframes(selectedNode.id, selectedNode.name)}
+                      />
+                    </Tooltip>
+                  </Space>
+                </Space>
+                <ChannelRow
+                  label="位置"
+                  values={(selectedNodeDisplay || selectedNode).transform.position}
+                  disabled={selectedNode.locked}
+                  keyed={keyframeAt(selectedNode.id, 'position')}
+                  onCommit={(index, value) => writeNodeChannel(
+                    selectedNode.id,
+                    'position',
+                    replaceAt((selectedNodeDisplay || selectedNode).transform.position, index, value),
+                  )}
+                  onToggleKey={() => toggleKeyframe(selectedNode.id, 'position', '位置')}
+                />
+                <ChannelRow
+                  label="旋转°"
+                  step={5}
+                  values={quatToEulerDeg((selectedNodeDisplay || selectedNode).transform.rotation)}
+                  disabled={selectedNode.locked}
+                  keyed={keyframeAt(selectedNode.id, 'rotation')}
+                  onCommit={(index, value) => writeNodeChannel(
+                    selectedNode.id,
+                    'rotation',
+                    eulerDegToQuat(replaceAt(
+                      quatToEulerDeg((selectedNodeDisplay || selectedNode).transform.rotation),
+                      index,
+                      value,
+                    )),
+                  )}
+                  onToggleKey={() => toggleKeyframe(selectedNode.id, 'rotation', '旋转')}
+                />
+                <ChannelRow
+                  label="缩放"
+                  values={(selectedNodeDisplay || selectedNode).transform.scale}
+                  disabled={selectedNode.locked}
+                  keyed={keyframeAt(selectedNode.id, 'scale')}
+                  onCommit={(index, value) => writeNodeChannel(
+                    selectedNode.id,
+                    'scale',
+                    replaceAt((selectedNodeDisplay || selectedNode).transform.scale, index, value),
+                  )}
+                  onToggleKey={() => toggleKeyframe(selectedNode.id, 'scale', '缩放')}
+                />
+                <Text type="secondary" style={{ fontSize: 11 }}>
+                  改数值或拖手柄写静态值；该通道一旦打过点，之后就在当前帧自动打点。点右侧钥匙可在当前帧打点/删点。
+                </Text>
+              </Space>
+            </div>
+          )}
+
           <div style={{ padding: 12, borderBottom: '1px solid var(--border)' }}>
             <Space direction="vertical" size={8} style={{ width: '100%' }}>
               <Space style={{ width: '100%', justifyContent: 'space-between' }}>
@@ -648,10 +1064,27 @@ export default function PrevisPage() {
               ))}
               {activeCamera && <Space direction="vertical" size={4} style={{ width: '100%' }}>
                 <Input size="small" value={activeCamera.name} disabled={activeCamera.locked} onChange={event => updateCamera(activeCamera.id, { name: event.target.value })} />
-                <Text type="secondary">位置 X / Y / Z</Text>
-                <Space.Compact block>{activeCamera.transform.position.map((value, index) => <InputNumber key={index} size="small" value={value} disabled={activeCamera.locked} onChange={next => updateCamera(activeCamera.id, { transform: { ...activeCamera.transform, position: activeCamera.transform.position.map((item, itemIndex) => itemIndex === index ? Number(next ?? item) : item) as [number, number, number] } })} />)}</Space.Compact>
-                <Text type="secondary">目标点 X / Y / Z</Text>
-                <Space.Compact block>{(activeCamera.target || [0, 0, 0]).map((value, index) => <InputNumber key={index} size="small" value={value} disabled={activeCamera.locked} onChange={next => updateCamera(activeCamera.id, { target: (activeCamera.target || [0, 0, 0]).map((item, itemIndex) => itemIndex === index ? Number(next ?? item) : item) as [number, number, number] })} />)}</Space.Compact>
+                <Text type="secondary">位置 / 目标点（X / Y / Z）</Text>
+                <ChannelRow
+                  label="位置"
+                  values={(displayCamera || activeCamera).transform.position}
+                  disabled={activeCamera.locked}
+                  keyed={keyframeAt(activeCamera.id, 'position')}
+                  onCommit={(index, value) => writeCameraChannel(
+                    activeCamera.id, 'position', replaceAt((displayCamera || activeCamera).transform.position, index, value),
+                  )}
+                  onToggleKey={() => toggleKeyframe(activeCamera.id, 'position', '机位位置')}
+                />
+                <ChannelRow
+                  label="目标"
+                  values={(displayCamera || activeCamera).target || [0, 0, 0]}
+                  disabled={activeCamera.locked}
+                  keyed={keyframeAt(activeCamera.id, 'camera_target')}
+                  onCommit={(index, value) => writeCameraChannel(
+                    activeCamera.id, 'camera_target', replaceAt((displayCamera || activeCamera).target || [0, 0, 0], index, value),
+                  )}
+                  onToggleKey={() => toggleKeyframe(activeCamera.id, 'camera_target', '目标点')}
+                />
                 <Text type="secondary">镜头 · 光学</Text>
                 <Select
                   size="small"
@@ -667,8 +1100,14 @@ export default function PrevisPage() {
                   step={1}
                   size="small"
                   addonAfter="mm"
-                  value={activeCamera.focalLength}
-                  disabled={activeCamera.locked}
+                  // 显示的是由**当前显示的那个 fov** 反推的焦距——打了变焦关键帧时，
+                  // 静态焦距已不是画面上的口径，拿旧的显示就会"面板写 35mm、画面是 85mm"
+                  value={focalLengthFromFov(
+                    (displayCamera || activeCamera).fov,
+                    ((displayCamera || activeCamera).sensorFormat as SensorFormat) || 'full_frame',
+                  )}
+                  // FOV 一旦有关键帧（即变焦），镜头就由 FOV 驱动，禁用焦距输入以免两处打架
+                  disabled={activeCamera.locked || fovAnimated}
                   onChange={value => updateCameraOptics(activeCamera.id, { focalLength: Number(value || DEFAULT_CAMERA_FOCAL_LENGTH) })}
                   style={{ width: '100%' }}
                 />
@@ -696,7 +1135,17 @@ export default function PrevisPage() {
                     ? ` · 景深 ${formatDistanceMm(activeDof.nearMm)} – ${formatDistanceMm(activeDof.farMm)}（超焦距 ${formatDistanceMm(activeDof.hyperfocalMm)}）`
                     : ' · 景深 —'}
                 </Text>
-                <Space><Text type="secondary">FOV</Text><InputNumber min={10} max={120} size="small" value={activeCamera.fov} disabled={activeCamera.locked} onChange={value => updateCameraFov(activeCamera.id, Number(value || 50))} /></Space>
+                <ChannelRow
+                  label="FOV"
+                  step={1}
+                  min={10}
+                  max={120}
+                  values={[(displayCamera || activeCamera).fov]}
+                  disabled={activeCamera.locked}
+                  keyed={fovAnimated}
+                  onCommit={(_, value) => writeCameraChannel(activeCamera.id, 'camera_fov', value)}
+                  onToggleKey={() => toggleKeyframe(activeCamera.id, 'camera_fov', 'FOV（变焦）')}
+                />
                 <Space>
                   <Button size="small" type={cameraMode === 'director' ? 'primary' : 'default'} onClick={() => setCameraMode('director')}>导演视角</Button>
                   <Button size="small" type={cameraMode === 'active' ? 'primary' : 'default'} onClick={() => setCameraMode('active')}>活动机位</Button>
@@ -713,13 +1162,16 @@ export default function PrevisPage() {
                 {nodes.map(node => (
                   <div key={node.id} style={{ display: 'flex', flexDirection: 'column' }}>
                   <div
+                    onClick={() => setSelectedNodeId(node.id === selectedNodeId ? '' : node.id)}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
                       gap: 6,
                       padding: '6px 8px',
                       borderRadius: 6,
+                      cursor: 'pointer',
                       background: 'var(--bgLayout)',
+                      boxShadow: node.id === selectedNodeId ? 'inset 0 0 0 1px #1677ff' : 'none',
                       opacity: node.visible ? 1 : 0.55,
                     }}
                   >
@@ -789,13 +1241,117 @@ export default function PrevisPage() {
           </div>
         </div>
 
-        <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
-          <SceneViewport nodes={nodes} activeCamera={activeCamera} cameraMode={cameraMode} onCaptureReady={handleCaptureReady} />
-          <div style={{ position: 'absolute', bottom: 12, left: 12, zIndex: 10, color: 'var(--textSecondary)', fontSize: 12, pointerEvents: 'none' }}>
-            节点 {nodes.length} · 拖拽旋转视角，滚轮缩放
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+          <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
+            <SceneViewport
+              nodes={nodes}
+              activeCamera={activeCamera}
+              cameraMode={cameraMode}
+              keyframes={keyframes}
+              playheadRef={playheadRef}
+              selectedNodeId={selectedNodeId}
+              gizmoMode={gizmoMode}
+              onNodeChannelChange={writeNodeChannel}
+              onNodeChannelCommit={(nodeId, property) => {
+                const node = nodes.find(item => item.id === nodeId)
+                recordOperation('update_transform', `拖动 ${node?.name || '节点'}（${property}）`, nodeId)
+              }}
+              onCaptureReady={handleCaptureReady}
+            />
+            <div style={{ position: 'absolute', bottom: 12, left: 12, zIndex: 10, color: 'var(--textSecondary)', fontSize: 12, pointerEvents: 'none' }}>
+              节点 {nodes.length} · 拖拽旋转视角，滚轮缩放{selectedNodeId ? ' · 选中节点可用手柄拖动' : ''}
+            </div>
+          </div>
+
+          {/* 时间轴 */}
+          <div style={{ borderTop: '1px solid var(--border)', background: 'var(--bgElevated)', padding: '8px 12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Tooltip title={playing ? '暂停' : '播放'}>
+                <Button
+                  type="text"
+                  size="small"
+                  icon={playing ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
+                  onClick={() => {
+                    if (playing) { setPlaying(false); return }
+                    if (playhead >= durationFrames) seek(0)
+                    setPlaying(true)
+                  }}
+                />
+              </Tooltip>
+              <Text type="secondary" style={{ fontSize: 12, width: 132, flexShrink: 0 }}>
+                第 {Math.round(playhead)} / {durationFrames} 帧 · {frameToSeconds(playhead, fps).toFixed(2)}s
+              </Text>
+              <Slider
+                style={{ flex: 1, margin: 0 }}
+                min={0}
+                max={durationFrames}
+                step={1}
+                value={Math.min(durationFrames, Math.round(playhead))}
+                tooltip={{ formatter: value => `第 ${value} 帧` }}
+                onChange={value => seek(value as number)}
+              />
+              <Space size={6}>
+                <Text type="secondary" style={{ fontSize: 12 }}>时长</Text>
+                <InputNumber
+                  size="small"
+                  min={0.1}
+                  max={60}
+                  step={0.5}
+                  addonAfter="s"
+                  value={durationSeconds(durationFrames, fps)}
+                  onChange={value => setDuration(Number(value || 1))}
+                  onBlur={() => recordOperation('set_duration', `场景时长改为 ${durationSeconds(durationFrames, fps)} 秒`)}
+                  style={{ width: 108 }}
+                />
+                <Tag style={{ margin: 0 }}>{keyframes.length} 关键帧</Tag>
+                <Button size="small" type="text" icon={<HistoryOutlined />} onClick={() => setHistoryOpen(true)}>
+                  操作历史 {operations.length ? `(${operations.length})` : ''}
+                </Button>
+              </Space>
+            </div>
           </div>
         </div>
       </div>
+
+      <Drawer
+        title="场景操作历史"
+        placement="right"
+        width={380}
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+      >
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          随场景一起保存（上限 {MAX_SCENE_OPERATIONS} 条）。这是留给人回看的审计线索——
+          design 明确要求可撤销性不能只存在浏览器里。
+        </Text>
+        {operations.length === 0 ? (
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有操作记录" style={{ marginTop: 40 }} />
+        ) : (
+          <List
+            size="small"
+            style={{ marginTop: 12 }}
+            dataSource={[...operations].reverse()}
+            renderItem={operation => (
+              <List.Item>
+                <List.Item.Meta
+                  title={
+                    <Space size={6}>
+                      <Tag style={{ margin: 0, fontSize: 11 }}>{operation.type}</Tag>
+                      <Text style={{ fontSize: 12 }}>{operation.summary}</Text>
+                    </Space>
+                  }
+                  description={
+                    <Text type="secondary" style={{ fontSize: 11 }}>
+                      {new Date(operation.at).toLocaleString('zh-CN', { hour12: false })}
+                      {operation.frame !== undefined ? ` · 第 ${operation.frame} 帧` : ''}
+                    </Text>
+                  }
+                />
+              </List.Item>
+            )}
+          />
+        )}
+      </Drawer>
 
       <Modal
         title="从素材库添加 3D 模型"
