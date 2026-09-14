@@ -29,6 +29,29 @@ PACKAGE_PLAN_STAGES: tuple[str, ...] = (
     "package_outputs",
 )
 
+#: `storybook` 的推荐阶段。**刻意不是 `PACKAGE_PLAN_STAGES`**。
+#:
+#: spec（`content-production-orchestration` 的「User creates a storybook project」）要求
+#: storybook 暴露「页规划 / 角色参考 / 分镜 / 生图 / 排版」。通用内容包阶段只有
+#: 「规划→文本→提示词→出图」，中间**把故事变成分镜的那一步整个缺失**——于是
+#: 页数只能由用户在入口处硬填（`page_count` 默认 12 就是这么变成"12 页"的），
+#: 助手也无从判断一个故事该有多少页。
+#:
+#: 这里补的是**故事中介步骤**，全部沿用既有能力名（`sync_characters` / `script` /
+#: `storyboard` / `match_references` / `comic_pages` 都是工作台 `pipelineStageOptions`
+#: 里已有的值）。刻意**不引入** `outline` / `chapter_plan` / `chapter_outline`：
+#: 那三个属叙事词表，混用会让导演为一个绘本包提议章节大纲（见 `PACKAGE_PLAN_STAGES`
+#: 上方的词表说明）。
+#:
+#: `package_plan` 仍是入口——它负责**依据故事内容判断页数并切页**，而不是按固定数字凑页。
+STORYBOOK_STAGES: tuple[str, ...] = (
+    "package_plan",      # 页规划：依据内容定页数、切页
+    "sync_characters",   # 角色参考：定妆，人物一致性的载体
+    "script",            # 脚本
+    "storyboard",        # 分镜：页数的真正依据
+    "media_batch",       # 生图
+)
+
 CONTENT_PRODUCTION_PROFILES: dict[str, dict[str, Any]] = {
     "vertical_drama": {
         "id": "vertical_drama", "label": "竖屏短剧",
@@ -50,10 +73,17 @@ CONTENT_PRODUCTION_PROFILES: dict[str, dict[str, Any]] = {
         "description": "恐怖漫画、童话绘本和短篇故事共用的页式视觉叙事方案。",
         "project_type": "manga",
         # 内容包族：编排单位是「页」，不是章节与正文（#17）
-        "recommended_stages": list(PACKAGE_PLAN_STAGES),
-        "optional_stages": ["item_review", "layout"],
+        # 见 STORYBOOK_STAGES 的说明：这里必须用它，不能用通用 PACKAGE_PLAN_STAGES。
+        "recommended_stages": list(STORYBOOK_STAGES),
+        "optional_stages": [
+            "item_text", "item_prompt", "match_references", "comic_pages",
+            "layout", "item_review",
+        ],
         "default_outputs": ["comic_pages", "image_set"],
-        "constraints": {"aspect_ratio": "4:3", "page_count": 12},
+        # 刻意**不给** `page_count` 默认值：页数应由内容与分镜推导，而不是先在
+        # 契约里钉一个 12。留着它会让"12 页"在没有任何人显式选择的情况下生效。
+        # 上限由 page_book 的 schema 兜底（max_items=120）。
+        "constraints": {"aspect_ratio": "4:3"},
         "production_family": "content_package",
         "package_type": "page_book",
         "required_inputs": ["topic"],

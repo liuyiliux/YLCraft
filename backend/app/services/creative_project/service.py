@@ -216,6 +216,27 @@ def loads_json(value: str | None, fallback: Any = None) -> Any:
         return {} if fallback is None else fallback
 
 
+def comic_page_scope(page_count: int | None) -> str:
+    """「漫画拆页」的页数指令。**不传数字 = 页数由分镜内容决定。**
+
+    单一来源：`split_comic_pages` 把它作为 `{page_scope}` 变量交给平台模板，
+    `_comic_pages_prompt` 在无模板时用作兜底——两处共用这一份，避免漂移。
+
+    为什么不是一句"必须正好 N 页"：旧版把它写成硬要求，与同一条 prompt 里
+    「可以把多个 panel 合并成一页，也可以把复杂 panel 拆成多格」自相矛盾——
+    既然允许合并与拆分，页数就不可能同时是预先固定的。模型被迫折中，通常
+    平均切分，于是画面平、节奏匀。页数应当是**读完分镜后的结论**。
+    """
+    if page_count:
+        return f"页数要求：pages 必须正好 {page_count} 页。"
+    return (
+        "页数要求（重要）：**页数由分镜内容决定，不是预先规定的数量。**\n"
+        "- 先通读整段分镜，判断这个故事需要多少页，再切分。\n"
+        "- 简单过渡拍合并进相邻页；复杂拍（打斗、揭秘、情绪转折）单独成页或拆成更多格。\n"
+        "- 按内容与节奏切分，不要平均分配，也不要为凑数注水。"
+    )
+
+
 def normalize_chapter_plan(data: dict[str, Any] | None) -> dict[str, Any]:
     """Derive a plan count from valid unique chapter rows.
 
@@ -2802,7 +2823,7 @@ class CreativeProjectService:
         *,
         chapter_number: int,
         content_id: str | None = None,
-        page_count: int = 10,
+        page_count: int | None = None,
         visual_style: str | None = None,
         provider: str | None = None,
         model: str | None = None,
@@ -2845,6 +2866,10 @@ class CreativeProjectService:
                 "project_type": project.project_type,
                 "chapter_number": chapter_number,
                 "page_count": page_count,
+                # `page_scope`：本项目统一的页数指令（单一来源 = comic_page_scope）。
+                # `page_count` 仍然传，供自定义模板里 {page_count} 占位符使用；
+                # 已知的缺失会被 str.format 忽略，所以老模板不受影响。
+                "page_scope": comic_page_scope(page_count),
                 "visual_style": effective_visual_style,
                 "image_style_prompt": outline.get("image_style_prompt", ""),
                 "outline_json": dumps_json(outline),
@@ -2871,7 +2896,9 @@ class CreativeProjectService:
             data["visual_style"] = effective_visual_style
         data["requested_page_count"] = page_count
         data["page_count"] = actual_page_count or data.get("page_count") or page_count
-        if actual_page_count and actual_page_count != page_count:
+        # 只有**显式要求过页数**时才谈"不一致"：推导模式下页数本就由模型决定，
+        # 拿它跟一个不存在的目标比会凭空产生一条 warning。
+        if page_count and actual_page_count and actual_page_count != page_count:
             data["page_count_warning"] = f"模型返回 {actual_page_count} 页，和请求的 {page_count} 页不一致"
         self._inherit_comic_page_references(data, storyboard_data)
         comic = self._create_content(
@@ -3063,7 +3090,7 @@ class CreativeProjectService:
         stages: list[str] | None = None,
         chapters: list[int] | None = None,
         chapter_count: int | None = None,
-        page_count: int = 10,
+        page_count: int | None = None,
         visual_style: str | None = None,
         provider: str | None = None,
         model: str | None = None,
@@ -4027,7 +4054,7 @@ class CreativeProjectService:
         *,
         topic: str = "",
         brief: str = "",
-        item_count: int = 12,
+        item_count: int | None = None,
         prompt_only: bool = False,
         provider: str | None = None,
         model: str | None = None,
@@ -4045,8 +4072,16 @@ class CreativeProjectService:
         # （例如 single_media 上限 1 条却按默认 12 条生成），保存时会被按类型拒绝，
         # 用户看到的是"生成成功但保存失败"。在源头夹住即可保持一致。
         schema = get_package_schema(package_type)
-        requested = int(item_count) if item_count else 12
-        count = max(1, min(requested, schema.max_items))
+        # `item_count` 为 None = **由内容推导页数**（默认）。
+        #
+        # 以前这里默认 12 并把数字直接写进 prompt，等于在任何内容分析之前就钉死了
+        # 页数：模型不知道故事有多少内容，只能凑够 12 页——"死板"的结构性来源。
+        # 页数本该是**读完之后的结果**（先有脚本与分镜，才知道要几页），而不是入口
+        # 处的输入。现在不传就不给数字，交给模型判断，事后按 schema 夹取：
+        # `max_items` 是硬上限、`min_recommended` 只产生 warnings（见 schema 契约）。
+        # 显式传数字仍然照旧生效，供需要精确页数的调用方使用。
+        requested = int(item_count) if item_count else None
+        count = min(requested, schema.max_items) if requested else None
         mode_instruction = (
             "只生成每项标题与 image_prompt；text 必须为空字符串。"
             if prompt_only
@@ -4067,8 +4102,21 @@ class CreativeProjectService:
             "social_carousel": "图文轮播卡",
             "single_media": "单个媒体创意",
         }.get(package_type, "内容单元")
+        # 页数指令：给了数字就照数字，没给就**要求先读后定**。
+        # 两者不是同一个要求的两种说法——"规划 12 个 X" 是填空题（内容不够就注水、
+        # 内容多了就压缩），而 "先读完再判断需要多少个 X" 才是切分题。
+        scope_instruction = (
+            f"为主题《{validated['topic']}》规划 {count} 个{kind_label}。"
+            if count
+            else (
+                f"为主题《{validated['topic']}》规划{kind_label}。"
+                f"**先完整读完下面的内容，判断这个故事需要多少个{kind_label}，再按内容切分。**"
+                f"数量是读完之后得出的结论，不是预先规定的目标：内容多就多给，"
+                f"不要为了凑数而注水，也不要把互不相干的多个场景硬塞进同一个。"
+            )
+        )
         prompt = (
-            f"为主题《{validated['topic']}》规划 {count} 个{kind_label}。\n"
+            f"{scope_instruction}\n"
             f"补充要求：{brief.strip() or '面向普通读者，内容准确、清楚、可执行。'}\n"
             f"{mode_instruction}\n"
             f"{knowledge_instruction}\n"
@@ -8685,7 +8733,7 @@ class CreativeProjectService:
         project: CreativeProject,
         outline: dict[str, Any],
         storyboard: ProjectContent,
-        page_count: int,
+        page_count: int | None = None,
         reference_assets: list[dict[str, Any]] | None = None,
         visual_style: str | None = None,
         character_profiles: list[dict[str, Any]] | None = None,
@@ -8699,7 +8747,8 @@ class CreativeProjectService:
             character_profiles=character_profiles or [],
         )
         effective_visual_style = visual_style or outline.get("visual_style", "")
-        return f"""请根据分镜草稿整理成适合漫画生成的 {page_count} 页漫画脚本 JSON。
+        page_scope = comic_page_scope(page_count)
+        return f"""请根据分镜草稿整理成适合漫画生成的漫画脚本 JSON。
 
 项目标题：{project.title}
 章节：第 {chapter_number} 章
@@ -8716,21 +8765,21 @@ class CreativeProjectService:
 {dumps_json(storyboard_data)}
 
 要求：
-1. pages 必须正好 {page_count} 页，page_number 从 1 连续递增。
+1. page_number 从 1 连续递增。
 2. 每页 content 使用【第1格】这样的分格标记，建议每页 3-6 格。
 3. 每页应承接 storyboard panels，不要凭空改剧情；可以把多个 panel 合并成一页，也可以把复杂 panel 拆成多格。
 4. 每格写清角色、动作、画面、对白气泡、音效和镜头节奏。
 5. 每页 image_prompt 是该页关键视觉提示，能直接送到生图。
 6. 保持角色外观和视觉风格一致；page.image_prompt 必须优先复用“角色生产档案”里的本项目身份、服装覆盖、OOC 约束和 Off-Model 约束。
 7. 如果项目参考资产里有 character/background/style/world/reference，必须把对应参考意图写入 page 的 image_prompt。
-8. 输出严格 JSON，不要 Markdown。
+8. 输出严格 JSON，不要 Markdown。page_count 填你实际输出的页数。
 
 输出格式：
 {{
   "episode_number": {chapter_number},
   "chapter_number": {chapter_number},
   "title": "漫画拆页标题",
-  "page_count": {page_count},
+  "page_count": 4,
   "visual_style": "统一视觉风格",
   "pages": [
     {{
