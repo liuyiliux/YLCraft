@@ -11,7 +11,7 @@ import { EditorField, InfoBlock, InfoListBlock, PromptTemplateSelect, ResizeHand
 import { InlineImageResult, ReferenceAssetPreviewStrip, ReferenceCardsPanel, StoryboardReferenceDiagnostics, StoryboardReferencePreflight, StoryboardVideoOutputStrip } from './storyboard-parts'
 import { createCompactBlockStyle, createWorkbenchHeaderStyle } from '../styles'
 import { AssetSummary, ChapterAction, CharacterReferenceSummary, EditableChapterPlanItem, ImagePromptContext, InlineGeneratedImage, NarrativeForeshadowing, NarrativeHealth, ProjectAssetLink, ProjectContent, ProjectContentSummary, TemplateOption, VideoGenerationContext } from '../types'
-import { buildChapterPlanMarkdown, buildScriptMarkdown, buildStoryboardMarkdown, buildStoryboardPanelReferencePlan, buildStoryboardReferenceSummary, buildStoryboardVideoFallbackPrompt, comicStyleOptions, dedupeStrings, downloadTextFile, imageContextKey, isChapterLocked, linesToList, listToLines, normalizeChapterItem, normalizeChapterPlan, openProjectTextPreview, projectMarkdownFilename, referenceRoleOptions } from '../utils'
+import { REFERENCE_LINK_ROLES, buildChapterPlanMarkdown, buildScriptMarkdown, buildStoryboardMarkdown, buildStoryboardPanelReferencePlan, buildStoryboardReferenceSummary, buildStoryboardVideoFallbackPrompt, comicStyleOptions, dedupeStrings, downloadTextFile, imageContextKey, isChapterLocked, linesToList, listToLines, normalizeChapterItem, normalizeChapterPlan, openProjectTextPreview, projectMarkdownFilename, referenceRoleOptions } from '../utils'
 import { BranchesOutlined, CheckCircleOutlined, CloudUploadOutlined, DeleteOutlined, DeploymentUnitOutlined, DownloadOutlined, ExclamationCircleOutlined, EyeOutlined, FileTextOutlined, FolderAddOutlined, PictureOutlined, PlusOutlined, ThunderboltOutlined, VideoCameraOutlined } from '@ant-design/icons'
 import { Button, Checkbox, Empty, Input, InputNumber, List, Popconfirm, Segmented, Select, Space, Table, Tabs, Tag, Tooltip, Typography, message } from 'antd'
 import React, { useEffect, useMemo, useState } from 'react'
@@ -601,7 +601,7 @@ export function EpisodeWorkbenchTab({
   const referenceAssetOptions = useMemo(
     () =>
       projectAssets
-        .filter((asset) => ['character', 'background', 'style', 'world', 'reference'].includes(asset.role))
+        .filter((asset) => (REFERENCE_LINK_ROLES as readonly string[]).includes(asset.role))
         .map((asset) => {
           const detail = assetDetails[asset.asset_id]
           const roleLabel = referenceRoleOptions.find((item) => item.value === asset.role)?.label || asset.role

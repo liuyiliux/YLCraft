@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Button,
   Dropdown,
@@ -17,6 +17,7 @@ import {
 } from 'antd'
 import {
   ArrowLeftOutlined,
+  CameraOutlined,
   DeleteOutlined,
   EyeInvisibleOutlined,
   EyeOutlined,
@@ -26,9 +27,9 @@ import {
   UnlockOutlined,
 } from '@ant-design/icons'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { createPrevisScene, getPrevisScene, listAssets, listPrevisScenes, savePrevisScene, type PrevisScene } from '../../api'
+import { capturePrevisScene, createPrevisScene, getPrevisScene, listAssets, listPrevisScenes, savePrevisScene, type PrevisScene } from '../../api'
 import type { Asset } from '../../types/api'
-import SceneViewport from './SceneViewport'
+import SceneViewport, { type SceneCaptureFn } from './SceneViewport'
 import { HUMAN_PROXY_POSES, humanProxyPoseKey } from '../../components/three/humanProxy'
 import {
   DEFAULT_TRANSFORM,
@@ -133,6 +134,7 @@ export default function PrevisPage() {
   const [modelAssets, setModelAssets] = useState<Asset[]>([])
   const [modelLoading, setModelLoading] = useState(false)
   const [cameraMode, setCameraMode] = useState<'director' | 'active'>('director')
+  const [capturing, setCapturing] = useState(false)
   const [sceneList, setSceneList] = useState<PrevisScene[]>([])
   const [listLoading, setListLoading] = useState(false)
 
@@ -314,6 +316,60 @@ export default function PrevisPage() {
     }
   }, [scene, sceneData])
 
+  // 视口把截图函数交上来；切换视角/重挂载时会被回收为 null
+  const captureRef = useRef<SceneCaptureFn | null>(null)
+  const handleCaptureReady = useCallback((capture: SceneCaptureFn | null) => {
+    captureRef.current = capture
+  }, [])
+
+  // 场景绑定分镜面板才有可关联的对象；且只截「活动机位」视图（设计：active camera capture）
+  const sceneBoundToPanel = Boolean(scene?.project_id && scene?.storyboard_content_id)
+  const canCapture = sceneBoundToPanel && cameraMode === 'active'
+
+  const handleCapture = useCallback(async () => {
+    if (!scene) return
+    if (!sceneBoundToPanel) {
+      message.warning('该场景未绑定项目分镜面板，无法回流截图；请从分镜卡片的「3D 预演」进入')
+      return
+    }
+    if (cameraMode !== 'active') {
+      message.warning('请先切到「活动机位」视图再截图，确保截的是当前机位画面')
+      return
+    }
+    const capture = captureRef.current
+    if (!capture) {
+      message.error('视口尚未就绪，请稍后重试')
+      return
+    }
+    const dataUrl = capture()
+    if (!dataUrl) {
+      message.error('截图失败：画面不可读（刚切换视角时可能如此，请稍后重试）')
+      return
+    }
+    setCapturing(true)
+    try {
+      const response = await capturePrevisScene(scene.id, {
+        dataUrl,
+        cameraId: activeCamera?.id || '',
+      })
+      const result = response?.data
+      if (!result?.asset_id) {
+        message.error('截图回流失败：未返回资产')
+        return
+      }
+      if (result.linked) {
+        message.success('截图已入库并关联到当前分镜')
+      } else {
+        // 上传成功、关联失败：如实告知，并给出可重试所需信息（不假装成功）
+        message.warning(result.retry_hint || `截图已入库（${result.asset_id}），但关联分镜失败`)
+      }
+    } catch (error: any) {
+      message.error(error?.message || '截图回流失败')
+    } finally {
+      setCapturing(false)
+    }
+  }, [scene, sceneBoundToPanel, cameraMode, activeCamera])
+
   if (loading) {
     return <div style={{ minHeight: '70vh', display: 'grid', placeItems: 'center' }}><Spin /></div>
   }
@@ -378,6 +434,27 @@ export default function PrevisPage() {
         >
           保存
         </Button>
+        <Tooltip
+          title={
+            !sceneBoundToPanel
+              ? '该场景未绑定项目分镜面板，无法回流截图'
+              : cameraMode !== 'active'
+                ? '切换到「活动机位」视图后再截图'
+                : '把当前机位画面入库为素材并关联到该分镜'
+          }
+        >
+          {/* Tooltip 需要可 hover 的元素，禁用态用 span 包裹 */}
+          <span>
+            <Button
+              icon={<CameraOutlined />}
+              loading={capturing}
+              disabled={!canCapture}
+              onClick={() => void handleCapture()}
+            >
+              截图回流
+            </Button>
+          </span>
+        </Tooltip>
       </div>
 
       {/* 主体：左侧节点面板 + 中央视口 */}
@@ -515,7 +592,7 @@ export default function PrevisPage() {
         </div>
 
         <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
-          <SceneViewport nodes={nodes} activeCamera={activeCamera} cameraMode={cameraMode} />
+          <SceneViewport nodes={nodes} activeCamera={activeCamera} cameraMode={cameraMode} onCaptureReady={handleCaptureReady} />
           <div style={{ position: 'absolute', bottom: 12, left: 12, zIndex: 10, color: 'var(--textSecondary)', fontSize: 12, pointerEvents: 'none' }}>
             节点 {nodes.length} · 拖拽旋转视角，滚轮缩放
           </div>

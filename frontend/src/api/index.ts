@@ -1874,6 +1874,44 @@ export const savePrevisScene = (sceneId: string, data: {
     body: JSON.stringify(data),
   }) as Promise<{ success: boolean; data: PrevisScene }>
 
+/** 预演截图回流结果。`linked=false` 表示资产已入库但分镜关联失败，可用 `retry_hint` 的方式重试。 */
+export interface PrevisCaptureResult {
+  asset_id: string
+  project_id: string
+  content_id: string
+  role: string
+  relation: string
+  provenance: Record<string, any>
+  linked: boolean
+  link_error: string | null
+  retry_hint: string
+}
+
+/**
+ * 把预演台当前机位的截图回流到 Asset Hub 并关联分镜面板。
+ *
+ * 走 multipart 而不是 JSON：截图 base64 可达数 MB，塞进 JSON 会显著放大请求体。
+ */
+export const capturePrevisScene = (
+  sceneId: string,
+  params: { dataUrl: string; cameraId?: string; frame?: number },
+) => {
+  const [meta, base64] = params.dataUrl.split(',')
+  const mime = /:(.*?);/.exec(meta || '')?.[1] || 'image/png'
+  const binary = atob(base64 || '')
+  const bytes = new Uint8Array(binary.length)
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)
+  const extension = mime === 'image/webp' ? 'webp' : 'png'
+  const form = new FormData()
+  form.append('file', new Blob([bytes], { type: mime }), `previs-capture.${extension}`)
+  form.append('camera_id', params.cameraId || '')
+  form.append('frame', String(params.frame ?? 0))
+  return request(`/previs/scenes/${encodeURIComponent(sceneId)}/capture`, {
+    method: 'POST',
+    body: form,
+  }) as Promise<{ success: boolean; data: PrevisCaptureResult }>
+}
+
 export const listCreativeProjectContents = (
   projectId: string,
   contentType?: string,

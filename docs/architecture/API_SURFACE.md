@@ -7,8 +7,8 @@
 ## Summary
 
 - Router mounts: 53
-- Endpoints: 678
-- Public schema endpoints: 677
+- Endpoints: 679
+- Public schema endpoints: 678
 - Hidden compatibility endpoints: 1
 
 ## Router Mounts
@@ -75,11 +75,12 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/previs/scenes` | List previs scenes | `list_previs_scenes` | `backend/app/api/v1/previs.py:81` |
-| `POST` | `/api/v1/previs/scenes` | Create previs scene | `create_previs_scene` | `backend/app/api/v1/previs.py:99` |
-| `GET` | `/api/v1/previs/scenes/{scene_id}` | Get previs scene | `get_previs_scene` | `backend/app/api/v1/previs.py:135` |
-| `PUT` | `/api/v1/previs/scenes/{scene_id}` | Save previs scene with revision check | `save_previs_scene` | `backend/app/api/v1/previs.py:144` |
-| `DELETE` | `/api/v1/previs/scenes/{scene_id}` | Delete previs scene | `delete_previs_scene` | `backend/app/api/v1/previs.py:181` |
+| `GET` | `/api/v1/previs/scenes` | List previs scenes | `list_previs_scenes` | `backend/app/api/v1/previs.py:96` |
+| `POST` | `/api/v1/previs/scenes` | Create previs scene | `create_previs_scene` | `backend/app/api/v1/previs.py:114` |
+| `GET` | `/api/v1/previs/scenes/{scene_id}` | Get previs scene | `get_previs_scene` | `backend/app/api/v1/previs.py:150` |
+| `PUT` | `/api/v1/previs/scenes/{scene_id}` | Save previs scene with revision check | `save_previs_scene` | `backend/app/api/v1/previs.py:159` |
+| `DELETE` | `/api/v1/previs/scenes/{scene_id}` | Delete previs scene | `delete_previs_scene` | `backend/app/api/v1/previs.py:196` |
+| `POST` | `/api/v1/previs/scenes/{scene_id}/capture` | 回流当前机位截图到 Asset Hub 并关联分镜面板 | `capture_previs_scene` | `backend/app/api/v1/previs.py:225` |
 
 ### 3D Models
 

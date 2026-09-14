@@ -8854,7 +8854,7 @@
       "summary": "List previs scenes",
       "function": "list_previs_scenes",
       "file": "backend/app/api/v1/previs.py",
-      "line": 81,
+      "line": 96,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8870,7 +8870,7 @@
       "summary": "Create previs scene",
       "function": "create_previs_scene",
       "file": "backend/app/api/v1/previs.py",
-      "line": 99,
+      "line": 114,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8886,7 +8886,7 @@
       "summary": "Get previs scene",
       "function": "get_previs_scene",
       "file": "backend/app/api/v1/previs.py",
-      "line": 135,
+      "line": 150,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8902,7 +8902,7 @@
       "summary": "Save previs scene with revision check",
       "function": "save_previs_scene",
       "file": "backend/app/api/v1/previs.py",
-      "line": 144,
+      "line": 159,
       "response_model": "",
       "include_in_schema": true
     },
@@ -8918,7 +8918,23 @@
       "summary": "Delete previs scene",
       "function": "delete_previs_scene",
       "file": "backend/app/api/v1/previs.py",
-      "line": 181,
+      "line": 196,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/previs/scenes/{scene_id}/capture",
+      "router": "previs",
+      "prefix": "/api/v1/previs",
+      "local_path": "/scenes/{scene_id}/capture",
+      "tags": [
+        "3D Director Previs"
+      ],
+      "summary": "回流当前机位截图到 Asset Hub 并关联分镜面板",
+      "function": "capture_previs_scene",
+      "file": "backend/app/api/v1/previs.py",
+      "line": 225,
       "response_model": "",
       "include_in_schema": true
     },

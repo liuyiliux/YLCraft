@@ -5,12 +5,15 @@
  * 不承载 Story 业务状态；节点 transform/锁定由上层编辑器管理。
  */
 
-import { Component, Suspense, useEffect, type ReactNode } from 'react'
-import { Canvas, useThree } from '@react-three/fiber'
+import { Component, Suspense, useCallback, useEffect, type ReactNode } from 'react'
+import { Canvas, useThree, type RootState } from '@react-three/fiber'
 import { OrbitControls, Grid, ContactShadows, PerspectiveCamera, useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import type { PrevisCamera, PrevisNode, PrimitiveKind } from './types'
 import { ProceduralHumanProxy, humanProxyPoseKey } from '../../components/three/humanProxy'
+
+/** 截图函数：同步返回 PNG dataURL；画布不可读时返回 `null`。 */
+export type SceneCaptureFn = () => string | null
 
 function PrimitiveMesh({ node }: { node: PrevisNode }) {
   const kind = (node.metadata.primitive as PrimitiveKind) || 'box'
@@ -140,19 +143,47 @@ function CameraRig({ camera }: { camera?: PrevisCamera }) {
   return null
 }
 
-export default function SceneViewport({ nodes, activeCamera, cameraMode = 'director' }: {
+export default function SceneViewport({ nodes, activeCamera, cameraMode = 'director', onCaptureReady }: {
   nodes: PrevisNode[]
   activeCamera?: PrevisCamera
   cameraMode?: 'director' | 'active'
+  /**
+   * 视口就绪后把截图函数交给上层；卸载时以 `null` 回收。
+   *
+   * 关键点：默认 `preserveDrawingBuffer=false`，异步读取会得到空白画布，
+   * 因此截图函数必须**先同步渲染一帧再读像素**（见下方实现）。辅助线是 HTML 叠加层，
+   * 天然不进 canvas，符合设计「辅助线只影响视图，不写入事实」。
+   */
+  onCaptureReady?: (capture: SceneCaptureFn | null) => void
 }) {
   const position = activeCamera?.transform.position || [4, 3, 6]
   const fov = activeCamera?.fov || 50
+
+  const handleCreated = useCallback((state: RootState) => {
+    // 闭包持 state 对象本身（其 .camera/.scene/.gl 是可变更引用），
+    // 调用时再取，所以切换机位/视角后拿到的始终是当前那一套。
+    onCaptureReady?.(() => {
+      try {
+        state.gl.render(state.scene, state.camera)
+        const url = state.gl.domElement.toDataURL('image/png')
+        // 'data:,' 表示画布为空（未渲染或不可读），不要当成有效截图
+        return url && url.length > 8 ? url : null
+      } catch (error) {
+        console.warn('[PrevisSceneViewport] capture failed:', error)
+        return null
+      }
+    })
+  }, [onCaptureReady])
+
+  useEffect(() => () => onCaptureReady?.(null), [onCaptureReady])
+
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <Canvas
         style={{ width: '100%', height: '100%' }}
         camera={{ position, fov }}
         gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1 }}
+        onCreated={handleCreated}
       >
       {cameraMode === 'active' && <PerspectiveCamera makeDefault position={position} fov={fov} />}
       <CameraRig camera={cameraMode === 'active' ? activeCamera : undefined} />

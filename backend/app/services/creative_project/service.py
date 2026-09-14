@@ -141,6 +141,16 @@ PROSE_WRITER_ROOM_STEPS = {"prose_draft", "prose_humanized", "prose_rewrite", "p
 # candidate cannot silently collapse a full chapter into a summary.
 BOUNDED_PROSE_WRITER_ROOM_STEPS = {"prose_humanized", "prose_rewrite", "prose_watermark_clean"}
 
+#: 可作为生成参考的项目素材 role。
+#:
+#: 新增 role 时**只改这一处**：此前该集合在本文件、前端 3 处与 Agent 工具说明里各写一份，
+#: 新增 `storyboard_reference`（3D 预演截图回流用的 role）时漏改了其中几处，
+#: 结果是截图**关联成功了却选不到**——分镜参考选择器与生成参考清单都把它过滤掉了。
+#: 与前端 `REFERENCE_LINK_ROLES`（`pages/story/utils.ts`）保持一致。
+REFERENCE_LINK_ROLES = frozenset(
+    {"character", "background", "style", "world", "reference", "storyboard_reference"}
+)
+
 _MOJIBAKE_PRIMARY_MARKERS = ("\u00c2", "\u00c3")
 
 
@@ -4510,7 +4520,7 @@ class CreativeProjectService:
         }
 
     def _project_reference_assets(self, project_id: str) -> list[dict[str, Any]]:
-        roles = {"character", "background", "style", "world", "reference"}
+        roles = REFERENCE_LINK_ROLES
         try:
             links = self.list_asset_links(project_id)
         except Exception as exc:

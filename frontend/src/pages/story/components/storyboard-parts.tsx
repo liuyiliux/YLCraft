@@ -9,7 +9,7 @@ import { useTheme } from '../../../constants/theme'
 import { WorkbenchSection } from './common'
 import { inlineImageShellStyle, referenceAssetCardStyle, referenceAssetPlaceholderStyle } from '../styles'
 import { AssetSummary, CharacterReferenceSummary, InlineGeneratedImage, ProjectAssetLink, StoryboardReferenceSummary } from '../types'
-import { assetFileUrl, buildStoryboardPanelReferencePlan, dedupeStrings, referenceRoleOptions } from '../utils'
+import { REFERENCE_LINK_ROLES, assetFileUrl, buildStoryboardPanelReferencePlan, dedupeStrings, referenceRoleOptions } from '../utils'
 import { PictureOutlined, PlusOutlined } from '@ant-design/icons'
 import { Button, Empty, Image, Input, List, Segmented, Select, Skeleton, Space, Tag, Tooltip, Typography, message } from 'antd'
 import { useState } from 'react'
@@ -447,7 +447,7 @@ export function ReferenceCardsPanel({
   const [characterName, setCharacterName] = useState('')
   const [referenceFilter, setReferenceFilter] = useState('all')
   const referenceAssets = assets.filter((asset) =>
-    ['character', 'background', 'style', 'world', 'reference'].includes(asset.role),
+    (REFERENCE_LINK_ROLES as readonly string[]).includes(asset.role),
   )
   const visibleReferenceAssets = referenceFilter === 'all'
     ? referenceAssets

@@ -624,7 +624,7 @@ export function collectStoryboardCharacterIds(contents: ProjectContent[]): strin
 
 export function selectReferenceAssetsForPrompt(projectAssets: ProjectAssetLink[], prompt: string, maxCount = 4) {
   const references = projectAssets.filter((asset) =>
-    ['character', 'background', 'style', 'world', 'reference'].includes(asset.role),
+    (REFERENCE_LINK_ROLES as readonly string[]).includes(asset.role),
   )
   if (!references.length) return []
 
@@ -647,6 +647,9 @@ export function selectReferenceAssetsForPrompt(projectAssets: ProjectAssetLink[]
     if (asset.role === 'background') score += 6
     if (asset.role === 'reference') score += 4
     if (asset.role === 'character') score += 3
+    // 预演截图是**为这个分镜专门摆出来**的构图参考，优先级高于通用参考；
+    // 但仍低于"提示词里明确点名"的素材（+20/+30），避免它压过角色一致性。
+    if (asset.role === 'storyboard_reference') score += 12
     if (marker && promptText.includes(marker)) score += 20
     if (meta.character_name && promptText.includes(String(meta.character_name).toLowerCase())) score += 30
     return { asset, score, index }
@@ -861,7 +864,24 @@ export const referenceRoleOptions = [
   { label: '画风参考', value: 'style' },
   { label: '世界观参考', value: 'world' },
   { label: '通用参考', value: 'reference' },
+  { label: '预演截图', value: 'storyboard_reference' },
 ]
+
+/**
+ * 可作为**生成参考**的项目素材 role。
+ *
+ * 新增 role 时只改这一处：此前该集合在本文件、`chapter-studio.tsx`、`storyboard-parts.tsx`
+ * 各写一份（后端另有一份 `REFERENCE_LINK_ROLES`），新增 `storyboard_reference` 时漏改，
+ * 导致 3D 预演截图**关联成功了却选不到**。与后端 `REFERENCE_LINK_ROLES` 保持一致。
+ */
+export const REFERENCE_LINK_ROLES = [
+  'character',
+  'background',
+  'style',
+  'world',
+  'reference',
+  'storyboard_reference',
+] as const
 
 export const comicStyleOptions = [
   { label: '彩色', value: '彩色影视漫画，竖屏短剧分镜感，半写实人物，高对比光影，画风统一' },
