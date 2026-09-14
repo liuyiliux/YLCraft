@@ -24,10 +24,46 @@ class ContentPackageItemSchema(FlexibleModel):
     status: str = Field(default="ready", max_length=40)
 
 
+class ContentPackageVisualBibleSchema(FlexibleModel):
+    """制作圣经：跨页固定、每次生成都原样带上的视觉规则。
+
+    存在的理由很具体：内容包族的编排单位是「页」，一次规划就产出全部页的
+    `image_prompt`。若不给一层**跨页固定**的规则，模型每页都会重新决定画风与人物形象，
+    结果就是「第一页小叶是一个人、第五页换脸、第十页又变成另外一个人」——这不是模型
+    能力问题，是契约里没有承载"固定"的地方（叙事族靠 `outline.image_style_prompt`
+    与角色生产档案解决，内容包族此前两者都没有）。
+
+    字段刻意与叙事族的命名对齐（`visual_style` / `image_style_prompt`），使两族最终
+    能收敛到同一套视觉规则，而不是各造一套。
+
+    这些字段是**给模型读的约束**，不是渲染参数：`negative_prompt` 按惯例写进每条
+    `image_prompt` 末尾（「禁止：…」），而不是额外走一个生图参数——这样它对每个
+    生图后端都生效，不依赖后端是否支持 negative prompt。
+    """
+
+    #: 统一画风（如「高质量青年漫画 + 电影级写实光影 + 中国乡村民俗恐怖」）。
+    visual_style: str = Field(default="", max_length=2000)
+    #: 统一生图风格提示：直接可拼进 image_prompt 的风格串。
+    image_style_prompt: str = Field(default="", max_length=4000)
+    #: 固定镜头规则。恐怖/悬念题材尤其需要——避免每格都是「人物站中间对着镜头」。
+    camera_rules: str = Field(default="", max_length=4000)
+    #: 表现克制规则：什么该慢慢揭开、什么不要一次展示完。
+    reveal_rules: str = Field(default="", max_length=4000)
+    #: 色彩与氛围走向（随剧情推进的变化，如「暖黄 → 深绿 → 青黑 → 蓝黑」）。
+    color_arc: str = Field(default="", max_length=2000)
+    #: 统一负面约束，每条 image_prompt 末尾都要带上。
+    negative_prompt: str = Field(default="", max_length=2000)
+
+
 class ContentPackagePlanSchema(FlexibleModel):
     title: str = Field(default="", max_length=240)
     topic: str = Field(default="", max_length=2000)
     brief: str = Field(default="", max_length=12000)
+    #: 制作圣经。首次规划时由模型产出、之后**固定复用**（不随每次重规划而变），
+    #: 并注入每条 image_prompt 的生成上下文。见 ContentPackageVisualBibleSchema。
+    visual_bible: ContentPackageVisualBibleSchema = Field(
+        default_factory=ContentPackageVisualBibleSchema
+    )
     items: list[ContentPackageItemSchema] = Field(default_factory=list, max_length=80)
 
 

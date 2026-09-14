@@ -90,6 +90,7 @@ from app.services.creative_project.content_package_adapters import (
     mark_outputs_stale,
 )
 from app.services.creative_project.content_package_schema import (
+    ITEM_STATUSES,
     get_package_schema,
     schema_descriptor,
     validate_content_package,
@@ -235,6 +236,49 @@ def comic_page_scope(page_count: int | None) -> str:
         "- 简单过渡拍合并进相邻页；复杂拍（打斗、揭秘、情绪转折）单独成页或拆成更多格。\n"
         "- 按内容与节奏切分，不要平均分配，也不要为凑数注水。"
     )
+
+
+#: 制作圣经的字段顺序与中文标签。顺序即阅读顺序——先定画风，再定镜头与表现规则，
+#: 最后是色彩走向与负面约束。
+VISUAL_BIBLE_FIELDS: tuple[tuple[str, str], ...] = (
+    ("visual_style", "统一画风"),
+    ("image_style_prompt", "统一生图风格提示"),
+    ("camera_rules", "固定镜头规则"),
+    ("reveal_rules", "表现克制规则"),
+    ("color_arc", "色彩与氛围走向"),
+    ("negative_prompt", "统一负面约束"),
+)
+
+
+def normalize_item_status(value: Any) -> str:
+    """把模型给的条目状态收敛到契约允许的取值。
+
+    `status` 是**系统工作流状态**（`draft` / `ready` / `generating` / `succeeded` /
+    `failed` / `stale` / `archived`），不是内容，模型不该决定它。但旧的提示词要求模型
+    输出该字段、代码又原样采纳——模型一旦给出合法值之外的词（实测出现过 `pending`），
+    整包会在保存时被契约拒绝（「第 1 项的 status 非法：pending」），**整次生成白花**。
+
+    只回退**不认识**的值；合法的非默认值（模型明确说某条还在 `draft`）是有效信息，保留。
+    """
+    text = str(value or "").strip().lower()
+    return text if text in ITEM_STATUSES else "ready"
+
+
+def has_visual_bible(bible: Any) -> bool:
+    """制作圣经是否真的填了内容（空 dict / 全空串都算没有）。"""
+    if not isinstance(bible, dict):
+        return False
+    return any(str(bible.get(key) or "").strip() for key, _ in VISUAL_BIBLE_FIELDS)
+
+
+def format_visual_bible(bible: dict[str, Any]) -> str:
+    """把制作圣经渲染成给模型读的固定段落。"""
+    lines = []
+    for key, label in VISUAL_BIBLE_FIELDS:
+        value = str(bible.get(key) or "").strip()
+        if value:
+            lines.append(f"- {label}：{value}")
+    return "\n".join(lines)
 
 
 def normalize_chapter_plan(data: dict[str, Any] | None) -> dict[str, Any]:
@@ -4115,12 +4159,47 @@ class CreativeProjectService:
                 f"不要为了凑数而注水，也不要把互不相干的多个场景硬塞进同一个。"
             )
         )
+        # 制作圣经：跨页固定的视觉规则。
+        #
+        # **已存在就原样沿用，不重写**——它的全部价值就在"固定"：每次重规划都重新生成
+        # 一份，等于没有固定，模型仍会每页另定风格与人物形象。这与"不要让 AI 每一格都
+        # 重新设计人物"是同一件事。首次规划时才要求模型产出，产出后落进项目 settings，
+        # 后续（含单条重跑）一律引用同一份。
+        settings = loads_json(project.settings_json)
+        stored_bible = settings.get("visual_bible") or {}
+        if has_visual_bible(stored_bible):
+            bible_block = (
+                "本项目已有**制作圣经**（跨页固定，必须原样沿用，不得改写、不得另立风格）：\n"
+                f"{format_visual_bible(stored_bible)}\n"
+                "每条 image_prompt 都必须遵守它，并在末尾原样附上其中的统一负面约束。\n"
+            )
+            bible_output_instruction = (
+                "visual_bible 原样回填上面已给定的值（不要改动，它是全项目固定的）。"
+            )
+        else:
+            bible_block = (
+                "请先为这个作品制定一份**制作圣经**（跨页固定，之后所有图都沿用它），"
+                "再按它逐条写 image_prompt：\n"
+                "- visual_style：统一画风（题材 + 质感 + 光影方向）\n"
+                "- image_style_prompt：可直接拼进生图提示词的风格串\n"
+                "- camera_rules：固定镜头语言（避免每格都是「人物站中间对着镜头」）\n"
+                "- reveal_rules：表现克制规则（什么该慢慢揭开、什么不要一次展示完）\n"
+                "- color_arc：色彩与氛围随剧情推进的走向\n"
+                "- negative_prompt：统一负面约束\n"
+            )
+            bible_output_instruction = (
+                "visual_bible 必须给出 visual_style、image_style_prompt、camera_rules、"
+                "reveal_rules、color_arc、negative_prompt 六个字段。"
+            )
         prompt = (
             f"{scope_instruction}\n"
             f"补充要求：{brief.strip() or '面向普通读者，内容准确、清楚、可执行。'}\n"
+            f"{bible_block}"
             f"{mode_instruction}\n"
             f"{knowledge_instruction}\n"
-            "严格输出 JSON 对象：title、topic、brief、items。items 中每项含 index、title、text、fact、source、source_url、image_prompt、video_prompt、status；"
+            "严格输出 JSON 对象：title、topic、brief、visual_bible、items。"
+            "items 中每项含 index、title、text、fact、source、source_url、image_prompt、video_prompt、status；"
+            f"{bible_output_instruction}"
             "不要输出 Markdown 或解释。"
         )
         data = await self._generate_json(
@@ -4139,12 +4218,30 @@ class CreativeProjectService:
         data["package_type"] = package_type
         data["topic"] = str(data.get("topic") or validated["topic"])
         data["brief"] = str(data.get("brief") or brief)
+        # 制作圣经的固定：首次产出后落进项目 settings，之后重规划与单条重跑都引用同一份。
+        # 已有值时不覆盖——那是用户或更早一次规划已经定下的，覆盖等于把"固定"作废。
+        produced_bible = data.get("visual_bible")
+        if has_visual_bible(stored_bible):
+            # 把存储值写回 data，保证落库的包与设置里的圣经是同一份（否则包内会留下
+            # 模型本次可能改过的版本，两处从此不一致）。
+            data["visual_bible"] = stored_bible
+        elif has_visual_bible(produced_bible):
+            settings["visual_bible"] = produced_bible
+            project.settings_json = dumps_json(settings)
+            logger.info("[ContentPackage] 已固定制作圣经，后续规划将原样沿用")
+        else:
+            # 不静默当作"没有视觉规则"：用户会以为已经生效。
+            logger.warning("[ContentPackage] 模型未产出制作圣经，本次 image_prompt 缺少跨页固定规则")
         data["items"] = [
             {
                 **item,
                 "id": str(item.get("id") or f"item-{index}"),
                 "index": index,
-                "status": str(item.get("status") or "ready"),
+                # `status` 是**系统工作流状态**（draft/ready/generating/…），不是内容，
+                # 模型不该决定它——但旧提示词却要它输出、且这里原样采纳。模型一旦给出
+                # 合法值之外的词（实测出现过 `pending`），整包会在保存时被契约拒绝：
+                # 「第 1 项的 status 非法：pending」→ 整次生成白花。这里改为只接受合法值。
+                "status": normalize_item_status(item.get("status")),
                 "text": "" if prompt_only else str(item.get("text") or ""),
                 "fact": "" if prompt_only else str(item.get("fact") or ""),
                 "source": "" if prompt_only else str(item.get("source") or ""),
@@ -4211,14 +4308,26 @@ class CreativeProjectService:
             if package_type == "knowledge_cards" and not prompt_only
             else "fact、source、source_url 必须为空字符串。"
         )
+        # 单条重跑同样要遵守制作圣经：否则"重跑"就成了唯一不守规矩的地方，一致性正好
+        # 从被重跑的那一条开始崩。圣经优先取项目设置（权威来源），退化到当前包内带的那份
+        # （更早生成的包可能只在包里有）。
+        bible = settings.get("visual_bible") or package.get("visual_bible") or {}
+        bible_line = (
+            "必须遵守本项目的制作圣经（跨页固定，不得另立风格）：\n"
+            f"{format_visual_bible(bible)}\n"
+            "image_prompt 末尾要原样附上其中的统一负面约束。\n"
+            if has_visual_bible(bible)
+            else ""
+        )
         prompt = (
             f"内容包主题《{package.get('topic') or ''}》。\n"
             f"请**只重写第 {target.get('index')} 条**内容单元，保持与同包其它条目一致的风格与粒度。\n"
             f"该条当前标题：{target.get('title') or '（无）'}\n"
             f"该条当前内容：{target.get('text') or '（无）'}\n"
+            f"{bible_line}"
             f"补充要求：{brief.strip() or '面向普通读者，内容准确、清楚、可执行。'}\n"
             f"{mode_instruction}\n{knowledge_instruction}\n"
-            "严格输出 JSON 对象：title、text、fact、source、source_url、image_prompt、video_prompt、status；"
+            "严格输出 JSON 对象：title、text、fact、source、source_url、image_prompt、video_prompt；"
             "不要输出 Markdown 或解释。"
         )
         generated = await self._generate_json(
