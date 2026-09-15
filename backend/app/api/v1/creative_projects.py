@@ -1591,6 +1591,12 @@ async def overlay_comic_page_text(
 
     output_path = str(result["output"] or "")
     payload["output_path"] = output_path
+    if output_path:
+        # 给前端一个可直接渲染的地址：贴字编辑器要靠它做"看真实排版"的预览——
+        # 只看框的位置不够，字号被自动缩到多小、有没有换行都要看图才知道。
+        from app.services.asset_file_resolver import to_asset_download_url
+
+        payload["output_url"] = to_asset_download_url(output_path)
     if req.save_asset and output_path:
         # 登记为**派生**资产：lineage 带上源资产与项目，便于回溯"这张是在哪张上贴的字"。
         #

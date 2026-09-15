@@ -1977,6 +1977,30 @@ export const retryCreativeProjectContentPackageItem = (
 export const listCreativeProjectAssets = (projectId: string) =>
   request(`/creative-projects/${projectId}/assets`)
 
+/**
+ * 给漫画页贴字（对白/旁白/拟声字）。
+ *
+ * 为什么不下在生图里写：模型渲染中文会出乱码，所以生图时气泡留白、对白一律后期贴。
+ * `items` 与 skill 的 `page.json` 同构：`box` 是 0~1 相对坐标，与分辨率无关。
+ * `dry_run=true` 只校验框位（越界/重叠）不出图——贴字前建议先过一遍。
+ * 服务端会把成图登记为**派生资产**，不覆盖原图。
+ */
+export const overlayCreativeProjectComicPageText = (
+  projectId: string,
+  itemId: string,
+  data: {
+    items: Array<Record<string, any>>
+    font?: string
+    dry_run?: boolean
+    save_asset?: boolean
+    asset_id?: string
+  },
+) =>
+  request(`/creative-projects/${projectId}/content-package/items/${encodeURIComponent(itemId)}/overlay-text`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
 export const saveCreativeProjectContentAsAsset = (projectId: string, contentId: string) =>
   request(`/creative-projects/${projectId}/contents/${encodeURIComponent(contentId)}/save-as-asset`, {
     method: 'POST',

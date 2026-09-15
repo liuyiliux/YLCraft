@@ -45,7 +45,12 @@ from app.services.asset_hub.representation_service import AssetRepresentationSer
 from app.services.asset_hub.version_service import AssetVersionService
 from app.services.asset_provenance import AssetProvenanceService, detect_deep_watermark_dict
 from app.services.asset_provenance.visual_watermark import remove_visual_watermark_dict
-from app.services.asset_file_resolver import resolve_storage_path, to_asset_download_url, to_storage_path
+from app.services.asset_file_resolver import (
+    resolve_asset_file,
+    resolve_storage_path,
+    to_asset_download_url,
+    to_storage_path,
+)
 from app.services.lineage.service import LineageService
 from app.services.platform_log import service as platform_log
 
@@ -1501,6 +1506,23 @@ async def create_tag(
 # 图片代理（解决B站等平台跨域问题）
 # ---------------------------------------------------------------------------
 
+def _storage_path_from_source(image_source: str) -> str:
+    """把 `thumbnail_url` 形态还原成存储路径。
+
+    `node.thumbnail_url` 存的**不是文件路径**，而是 `/api/v1/assets/download?path=<编码后的
+    存储路径>`（由 `asset_file_resolver._hub_file_url` 生成）。真正的路径在 `path` 参数里，
+    且被 URL 编码过；直接把它当路径用必然解析不了。
+
+    若入参本来就像存储路径（如 `backend/app/storage/images/x.png`），原样返回。
+    """
+    from urllib.parse import parse_qs, unquote, urlparse
+
+    if "path=" not in image_source:
+        return image_source
+    values = parse_qs(urlparse(image_source).query).get("path") or []
+    return unquote(values[0]) if values else image_source
+
+
 async def _fetch_image(image_source: str, platform: str = "") -> Response:
     """
     通用图片获取逻辑，支持本地文件和远程 URL。
@@ -1539,7 +1561,27 @@ async def _fetch_image(image_source: str, platform: str = "") -> Response:
         mime_map = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif"}
         media_type = mime_map.get(thumb_path.suffix.lower(), "image/png")
         return FileResponse(thumb_path, media_type=media_type)
-    
+
+    # 存储路径（相对项目根），以及 `thumbnail_url` 那种 `/api/v1/assets/download?path=…` 形态。
+    #
+    # 这两类**走不到上面任何一个分支**：
+    #   - `node.thumbnail_url` 存的不是文件路径，而是相对 API 地址，真正的路径在 `path`
+    #     参数里且被 URL 编码（见 `asset_file_resolver._hub_file_url`）；
+    #   - `rep.file_path` 是**相对项目根**的路径（如 `backend/app/storage/images/x.png`），
+    #     而本进程 CWD 通常是 `backend/`，`os.path.exists` 必然为假；它也不以 `/` 开头、
+    #     没有盘符，第二个分支同样不匹配。
+    # 后果很隐蔽：**资产缩略图一律退化成 NO IMAGE 占位图，而资产本身完好**——日志里只有
+    # 一行「不支持的图片来源」。实测就是这么踩到的：漫画页贴字编辑器打不开底图，
+    # 没有底图就没法在气泡上摆框，整个贴字功能形同不可用。
+    #
+    # 改用仓库统一的 resolve_asset_file：按**项目根**解析，且带允许根目录白名单校验
+    # （比原来的 os.path.exists 多一层越界防护）。http(s)/data: 入参由它直接返回 None，
+    # 所以不会抢走下面的远程分支。
+    resolved = resolve_asset_file(_storage_path_from_source(image_source))
+    if resolved is not None:
+        mime_map = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif"}
+        return FileResponse(resolved, media_type=mime_map.get(resolved.suffix.lower(), "image/png"))
+
     # 远程 URL（必须包含协议）
     if image_source.startswith("http://") or image_source.startswith("https://"):
         from app.api.v1.proxy import fetch_remote_image_response
