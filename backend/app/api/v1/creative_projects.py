@@ -1641,6 +1641,9 @@ async def overlay_comic_page_text(
     _target, asset_id, image_path = await _locate_comic_page_asset(
         svc, project_id, item_id, req.asset_id
     )
+    # 贴字产物要挂到**原图这个资产**下作为新版本，所以需要它的 Asset Hub 节点 id。
+    # 项目 `asset_ids` 里存的就是节点 id（生图登记返回的 node_id），故这里直接用。
+    source_node_id = str(asset_id)
 
     try:
         result = overlay_spec(
@@ -1680,13 +1683,34 @@ async def overlay_comic_page_text(
 
             async with get_async_session() as async_session:
                 async with async_session.begin_nested():
-                    created = await AssetHubFacade(async_session).create_generated_image(
-                        file_path=output_path,
-                        prompt="漫画页贴字（对白/旁白/拟声字）",
-                        provider="local-overlay",
-                        model="overlay_text",
-                        lineage={"reference_asset_ids": [asset_id], "project_id": project_id},
-                    )
+                    facade = AssetHubFacade(async_session)
+                    try:
+                        # 贴字图是**原图的新版本**（v1 = 原图、v2 = 贴字），不是另一个资产。
+                        # 不用 create_generated_image——它每次都新建节点、各挂 v1，于是
+                        # "同一张图的两个版本"在素材库里成了两个互不相干的资产，版本机制
+                        # 等于没被用上。
+                        created = await facade.create_derived_version(
+                            source_node_id=source_node_id,
+                            file_path=output_path,
+                            prompt="漫画页贴字（对白/旁白/拟声字）",
+                            provider="local-overlay",
+                            model="overlay_text",
+                            lineage={"reference_asset_ids": [asset_id], "project_id": project_id},
+                        )
+                    except ValueError:
+                        # 源资产在 Asset Hub 里找不到（存量数据可能只留在 legacy 侧）。
+                        # 退回"新资产"路径——登记失败不该让贴字本身白做。
+                        logger.warning(
+                            "comic-overlay-text: 源资产 %s 不是 Asset Hub 节点，退回新资产登记",
+                            str(asset_id)[:38],
+                        )
+                        created = await facade.create_generated_image(
+                            file_path=output_path,
+                            prompt="漫画页贴字（对白/旁白/拟声字）",
+                            provider="local-overlay",
+                            model="overlay_text",
+                            lineage={"reference_asset_ids": [asset_id], "project_id": project_id},
+                        )
                 # 光调 `create_generated_image` 只把产物放进**素材库**，**不建项目关联**；
                 # 而界面上"这一页的图"读的是项目关联。所以此前贴字成品在素材库里能看到、
                 # 在项目素材里却一条都没有（实测：贴了 15 页，项目关联没增加，只能靠
