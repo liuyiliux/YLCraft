@@ -352,6 +352,32 @@ export function useProjectContentActions(deps: Record<string, any>) {
       contentPackageForm.setFieldValue(['items', fieldName, 'status'], 'succeeded')
     }
   }
+  /**
+   * 把内容包当前状态落库。
+   *
+   * 批量生图**每页都要调一次**，不能只在循环结束后调一次。实测踩到过：跑到第 14 页时
+   * 卡住，循环没走完 → 保存那句没执行 → 14 张图和 14 条素材记录都在，内容包却仍是
+   * "全部缺图"，从界面上看等于白跑了。增量保存把损失上限压到"当前这一页"。
+   */
+  async function persistContentPackage() {
+    if (!selectedProject || !contentPackageContent) return
+    const latest = contentPackageForm.getFieldsValue(true)
+    await saveCreativeProjectContentPackage(
+      selectedProject.id,
+      {
+        package_type: selectedProject.production_profile?.package_type,
+        title: latest.title,
+        topic: latest.topic,
+        brief: latest.brief,
+        items: (latest.items || []).map((item: any, index: number) => ({
+          ...item,
+          id: item.id || `item-${index + 1}`,
+          index: index + 1,
+        })),
+      },
+      contentPackageContent.id,
+    )
+  }
   async function handleBatchGenerateContentPackageImages() {
     if (!selectedProject || !contentPackageContent) return
     const values = contentPackageForm.getFieldsValue(true)
@@ -382,28 +408,19 @@ export function useProjectContentActions(deps: Record<string, any>) {
             contentPackageForm.setFieldValue(['items', index, 'image_url'], result.url || '')
           }
           generated += result?.assetId ? 1 : 0
+          // 逐页落库（见 persistContentPackage 的说明）：后半段中断也不会丢掉前半段。
+          // 保存失败不记为"生图失败"——图确实出来了，只是没存上，措辞要如实。
+          try {
+            await persistContentPackage()
+          } catch {
+            message.warning(`${item.title || `第 ${index + 1} 项`}：图已生成，但保存内容包失败，稍后可再点保存`)
+          }
         } catch (error: any) {
           contentPackageForm.setFieldValue(['items', index, 'status'], 'failed')
           failed += 1
           message.error(`${item.title || `第 ${index + 1} 项`}：${error?.message || '生图失败'}`)
         }
       }
-      const latest = contentPackageForm.getFieldsValue(true)
-      await saveCreativeProjectContentPackage(
-        selectedProject.id,
-        {
-          package_type: selectedProject.production_profile?.package_type,
-          title: latest.title,
-          topic: latest.topic,
-          brief: latest.brief,
-          items: (latest.items || []).map((item: any, index: number) => ({
-            ...item,
-            id: item.id || `item-${index + 1}`,
-            index: index + 1,
-          })),
-        },
-        contentPackageContent.id,
-      )
       await loadContents(selectedProject.id)
       message.success(`批量生图完成：成功 ${generated}，失败 ${failed}`)
     } finally {

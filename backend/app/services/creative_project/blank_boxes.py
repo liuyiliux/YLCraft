@@ -40,8 +40,22 @@ logger = logging.getLogger(__name__)
 #: 因为扫描宽度固定，下面几个以像素为单位的参数（滤波核、短边下限）也就与原始分辨率
 #: 无关——同一条阈值能同时适配 1024 宽和 3840 宽的页。
 SCAN_W = 384
-#: 灰度阈值：≥ 此值算「纯白」。取 240 而非 255，容忍压缩与重绘造成的轻微偏色。
-WHITE_MIN = 240
+#: 「白色」阈值的取值方式：按**页面自身**的亮度分布定，而不是全库一个固定值。
+#:
+#: 曾经用固定 240，结果是**暗调页全数漏检**：那几页整体压暗，气泡不是纯白而是浅灰
+#: （肉眼一眼能看出是空白气泡，程序却一个都检不出来）。实测 15 页里漏 4 页。
+#: 再换一个固定值只是重复同一个错误——下一批可能有更暗或更亮的页。
+#:
+#: 取法：先算页面灰度的 95 分位（近似"这页最亮的那些像素"），再往下退 `WHITE_MARGIN`，
+#: 最后夹在 `[WHITE_FLOOR, WHITE_CEIL]` 内。夹取是必须的——分位数本身会被极端值带偏
+#: （页面上只有一小块高光时它照样很高），夹取把阈值锁在一个仍然严格的区间里。
+#:
+#: 实测（15 张真实页 + 1 张无气泡页）：固定 240 → 22 框 / 4 页空；本方案 → **30 框 /
+#: 0 页空 / 0 误检**，且 30 框正好是每页 2 个，与该批"每页 2 格各留一个气泡"吻合。
+WHITE_PERCENTILE = 95.0
+WHITE_MARGIN = 30
+WHITE_FLOOR = 200
+WHITE_CEIL = 245
 #: 二值化前的中值滤波核。
 #:
 #: **没有它，带颗粒的页面会全数漏检**。实测：提示词里带 `film grain` 的那页，气泡肉眼
@@ -69,6 +83,25 @@ DEFAULT_MAX_AREA_R = 0.075
 #: 仅占页宽 3.9% / 4.9%；而真实气泡的短边占 9.6%~16%。取 7% 落在这条缝里，
 #: 两侧都留了余量。要更保守可调高，要抓小气泡可调低。
 DEFAULT_MIN_SIDE_R = 0.07
+
+
+def _white_threshold(pixels, scan_w: int, scan_h: int) -> int:
+    """按页面自身的亮度分布算出「白色」阈值（见 WHITE_PERCENTILE 的说明）。"""
+    hist = [0] * 256
+    for y in range(scan_h):
+        for x in range(scan_w):
+            hist[pixels[x, y]] += 1
+
+    total = scan_w * scan_h
+    target = total * WHITE_PERCENTILE / 100.0
+    accumulated = 0
+    percentile = 255
+    for value in range(256):
+        accumulated += hist[value]
+        if accumulated >= target:
+            percentile = value
+            break
+    return max(WHITE_FLOOR, min(WHITE_CEIL, percentile - WHITE_MARGIN))
 
 
 def detect_blank_boxes(
@@ -108,11 +141,12 @@ def detect_blank_boxes(
         small = small.filter(ImageFilter.MedianFilter(SCAN_DENOISE_KERNEL))
         pixels = small.load()
 
+        white_min = _white_threshold(pixels, scan_w, scan_h)
         white = bytearray(scan_w * scan_h)
         for y in range(scan_h):
             row = y * scan_w
             for x in range(scan_w):
-                white[row + x] = 1 if pixels[x, y] >= WHITE_MIN else 0
+                white[row + x] = 1 if pixels[x, y] >= white_min else 0
 
         seen = bytearray(scan_w * scan_h)
         boxes: list[dict[str, Any]] = []
