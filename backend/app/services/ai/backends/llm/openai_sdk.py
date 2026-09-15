@@ -13,6 +13,7 @@ import json
 import logging
 from typing import List, Optional
 
+import httpx
 import openai
 
 from app.services.ai.types import (
@@ -107,10 +108,25 @@ class OpenAISDKLLMBackend:
         self._default_temperature = connector.temperature if connector.temperature is not None else 0.7
         self._default_max_tokens = connector.max_tokens or 4096
 
+        # 显式传 `http_client`，**不要让 SDK 自建**。
+        #
+        # 与 `llm/generic.py` 同因：httpx 默认 `trust_env=True`，会通过 `getproxies()`
+        # 读取**系统代理**（Windows 上包括注册表 `Internet Settings` 的 WinINET 配置）。
+        # 这些客户端是长命的——后端启动时建一次就一直用——启动时代理开着就被固化进去，
+        # 之后代理一关，**每一次生成都失败**。SDK 自建的客户端拿不到这个开关，只能自己传。
+        #
+        # 实测（2026-09-15）：所有 `api_format=openai_sdk` 的 LLM 连接器（deepseek /
+        # 小米 / 若海 / 硅基流动…）**全部**报「OpenAI API 错误: Connection error.」，
+        # 而同一时刻用 socket 直连这些域名完全可达、也没有任何代理环境变量——
+        # 根因就是 SDK 走了系统里那个已失效的注册表代理。这条一修，整批连接器一起恢复。
+        #
+        # 超时同样取连接器配置的值（`connector.timeout`），不硬编码。
+        timeout = connector.timeout or 120.0
         self._client = openai.AsyncOpenAI(
             api_key=connector.api_key,
             base_url=connector.base_url or None,
             max_retries=2,
+            http_client=httpx.AsyncClient(trust_env=False, timeout=timeout),
         )
 
         self._capabilities = {

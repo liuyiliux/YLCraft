@@ -51,11 +51,17 @@ class OpenAISDKImageBackend:
         self._model = connector.default_model or "dall-e-3"
         self._default_params = self._parse_json_object(connector.default_params)
 
+        # 同 `llm/openai_sdk.py`：显式传 `http_client`，不要让 SDK 自建。
+        # SDK 自建的 httpx 客户端默认 `trust_env=True`，会读系统代理（Windows 含注册表
+        # WinINET），而后端启动时固化的那个代理一旦失效，这些连接器就全部报
+        # 「Connection error」——而同一时刻直连是通的，极易误判成供应商故障。
+        # 本文件其它地方（下载图片）早就写了 `trust_env=False`，唯独这里漏了。
         self._client = openai.AsyncOpenAI(
             api_key=connector.api_key,
             base_url=connector.base_url or None,
             max_retries=2,
             timeout=connector.timeout,
+            http_client=httpx.AsyncClient(trust_env=False, timeout=connector.timeout or 300.0),
         )
 
         self._capabilities = {
