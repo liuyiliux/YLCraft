@@ -391,6 +391,13 @@ export type ImageBackendOption = {
   capabilities?: string[]
   support_reference_image?: boolean
   reference_image_field?: string
+  /**
+   * 连接器声明的首选尺寸（来自 `default_params.default_size`）。
+   *
+   * 生图时用它当 size——不声明就会回落 `1024x1024`，而漫画页需要 2:3 竖版：
+   * 正方形会把一页多格的竖排版面挤压变形（看起来像被裁掉了）。
+   */
+  default_size?: string
 }
 
 export type ProductionStageItem = {

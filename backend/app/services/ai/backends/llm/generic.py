@@ -181,9 +181,9 @@ class GenericLLMBackend(LLMBackend):
             
         except Exception as e:
             # 超时类异常的 `str()` 是空串（httpx 的 ReadTimeout / ConnectTimeout 都是），
-        # 只打 `{e}` 会得到「生成失败: 」——日志里既看不出超时、也看不出发生了什么。
-        # 空串时退回类型名，让「生成失败: ReadTimeout」这种可检索的信息留在日志里。
-        logger.error(f"[GenericLLM] 生成失败: {str(e) or type(e).__name__}", exc_info=True)
+            # 只打 `{e}` 会得到「生成失败: 」——日志里既看不出超时、也看不出发生了什么。
+            # 空串时退回类型名，让「生成失败: ReadTimeout」这种可检索的信息留在日志里。
+            logger.error(f"[GenericLLM] 生成失败: {str(e) or type(e).__name__}", exc_info=True)
             return LLMGenerationResult(
                 success=False,
                 error=str(e),

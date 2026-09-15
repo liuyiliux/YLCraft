@@ -201,8 +201,22 @@ export function useStoryPageContext() {
   const activeProjectMeta = selectedProject?.metadata || {}
   const activeProjectSettings = selectedProject?.settings || {}
   const idea = String(activeProjectMeta.idea || '')
-  const defaultImageModel = activeProjectMeta.default_image_model || {}
-  const selectedImageBackend = imageBackends.find((item) => item.name === defaultImageModel.name)
+  const rawDefaultImageModel = activeProjectMeta.default_image_model || {}
+  const selectedImageBackend = imageBackends.find((item) => item.name === rawDefaultImageModel.name)
+  // 把**连接器声明的首选尺寸**补进 defaultImageModel。
+  //
+  // 为什么必须补：项目元数据里的 `default_image_model` 只存了名字，不带尺寸；而
+  // `useInlineImageGeneration` 读的是 `defaultImageModel.default_size`，拿不到就回落
+  // `1024x1024`。后果是漫画页被画成**正方形**——一页多格的竖排版面被挤压变形，
+  // 看起来像被裁掉了。连接器其实声明了 2:3（`default_params.default_size`），
+  // 但那条信息此前没有一条路能传到生图请求里。
+  //
+  // 兜底方式与下面 `defaultImageSupportsReferenceImages` 一致：优先看连接器。
+  // 连接器没声明时**不编造**尺寸（保持 undefined，让调用方按自己的规则回落）——
+  // 例如 Agnes 的尺寸是定性档位（1K/2K/…），硬塞像素值会直接被上游拒绝。
+  const defaultImageModel = selectedImageBackend?.default_size
+    ? { ...rawDefaultImageModel, default_size: selectedImageBackend.default_size }
+    : rawDefaultImageModel
   const defaultImageSupportsReferenceImages = Boolean(
     selectedImageBackend?.support_reference_image ||
       selectedImageBackend?.capabilities?.includes('image_to_image') ||
