@@ -345,42 +345,18 @@ export const getAssetLineageUpstream = (assetId: string) => request(`/assets/${a
 export const getAssetLineageDownstream = (assetId: string) => request(`/assets/${assetId}/lineage/downstream`)
 
 // Version Management
-export const getAssetVersions = (assetId: string) => {
-  // 这是我们组件内部模拟用的 API，实际需要根据后端实现
-  return Promise.resolve({
-    success: true,
-    data: [
-      {
-        id: 'v1',
-        version_number: 'v1.0.0',
-        created_at: '2024-01-15 14:30:00',
-        description: '初始版本',
-        is_current: false,
-        tags: ['production'],
-        thumbnail_url: 'https://neeko-copilot.bytedance.net/api/text-to-image?prompt=cyberpunk%20city%20night%20scene&image_size=square',
-      },
-      {
-        id: 'v2',
-        version_number: 'v1.1.0',
-        created_at: '2024-01-16 09:15:00',
-        description: '优化了光照效果',
-        is_current: false,
-        tags: ['staging'],
-        thumbnail_url: 'https://neeko-copilot.bytedance.net/api/text-to-image?prompt=cyberpunk%20city%20with%20neon%20lights&image_size=square',
-      },
-      {
-        id: 'v3',
-        version_number: 'v1.2.0',
-        created_at: '2024-01-17 16:45:00',
-        description: '添加了动态云层',
-        is_current: true,
-        tags: ['latest', 'production'],
-        thumbnail_url: 'https://neeko-copilot.bytedance.net/api/text-to-image?prompt=cyberpunk%20city%20with%20clouds%20and%20neon&image_size=square',
-      },
-    ],
-    total: 3,
-  })
-}
+/**
+ * 资产版本列表。
+ *
+ * 这里此前是**模拟实现**——返回 v1.0.0 / v1.1.0 这类假版本号和外部占位图，注释自己也
+ * 写着"实际需要根据后端实现"。而真正该调的端点（`/asset-hub/nodes/{id}/versions`）
+ * 一直存在。后果是"版本"这个功能在界面上完全没接上：版本 Tab 长期是「即将推出」占位，
+ * 那个功能齐全的 AssetVersionManager 组件从未被渲染过。
+ *
+ * 返回的 `version_number` 是**整数**（后端按节点自增），展示时自行加 `v` 前缀。
+ */
+export const getAssetVersions = (assetId: string) =>
+  request(`/asset-hub/nodes/${assetId}/versions`)
 
 export const getLineageGraphData = (assetId?: string) => {
   // 模拟谱系数据

@@ -19,6 +19,8 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel, Field
 
 from app.db.database import get_async_session
+from sqlalchemy import select
+
 from app.db.models.asset_hub import AssetType, RelationType
 from app.services.asset_hub import (
     AssetNodeService,
@@ -120,6 +122,8 @@ class AssetVersionResponse(BaseModel):
     params: Dict[str, Any] = {}
     lineage: Dict[str, Any] = {}
     created_at: str
+    #: 该版本产物的可渲染地址。版本对比靠看图（如原图 v1 vs 贴字 v2），只给文字不够。
+    file_url: str = ""
 
 
 class AssetVersionListResponse(BaseModel):
@@ -192,7 +196,7 @@ def _node_to_response(node, tags=None) -> AssetNodeResponse:
     )
 
 
-def _version_to_response(v) -> AssetVersionResponse:
+def _version_to_response(v, file_url: str = "") -> AssetVersionResponse:
     return AssetVersionResponse(
         id=str(v.id),
         asset_node_id=str(v.asset_node_id),
@@ -202,6 +206,9 @@ def _version_to_response(v) -> AssetVersionResponse:
         params=v.params_json or {},
         lineage=v.lineage_json or {},
         created_at=v.created_at.isoformat() if v.created_at else "",
+        # 版本的文件地址。**版本对比的意义就在看图**（例如原图 v1 与贴字后的 v2），
+        # 只给文字描述的话，用户没法判断"哪一版是什么"。
+        file_url=file_url,
     )
 
 
@@ -403,9 +410,32 @@ async def list_versions(
         page=page,
         page_size=page_size,
     )
+    # 一次性查出这些版本的文件表示，拼出可直接渲染的地址（见 _version_to_response）。
+    file_urls: dict[str, str] = {}
+    version_ids = [str(v.id) for v in versions]
+    if version_ids:
+        try:
+            from app.db.models.asset_hub import AssetRepresentation
+            from app.services.asset_file_resolver import to_asset_download_url
+
+            reps = (
+                await service.session.execute(
+                    select(AssetRepresentation).where(
+                        AssetRepresentation.asset_version_id.in_(version_ids)
+                    )
+                )
+            ).scalars().all()
+            for rep in reps:
+                vid = str(rep.asset_version_id)
+                if vid not in file_urls and rep.file_path:
+                    file_urls[vid] = to_asset_download_url(rep.file_path)
+        except Exception as exc:  # noqa: BLE001
+            # 拼不出地址不该让"版本列表"整个失败——文字部分仍然可用。
+            logger.warning("[asset_hub] 版本文件地址解析失败: %s", exc, exc_info=True)
+
     return {
         "success": True,
-        "data": [_version_to_response(v).model_dump() for v in versions],
+        "data": [_version_to_response(v, file_urls.get(str(v.id), "")).model_dump() for v in versions],
         "total": total,
     }
 

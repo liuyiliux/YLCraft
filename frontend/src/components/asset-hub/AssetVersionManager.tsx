@@ -22,6 +22,8 @@ import {
   RightOutlined,
 } from '@ant-design/icons'
 
+import { getAssetVersions } from '../../api'
+
 interface AssetVersion {
   id: string
   version_number: string
@@ -41,50 +43,41 @@ export function AssetVersionManager({ assetId }: AssetVersionManagerProps) {
   const [selectedVersions, setSelectedVersions] = useState<string[]>([])
   const [compareMode, setCompareMode] = useState(false)
 
-  // 模拟版本数据
+  /**
+   * 拉真实版本列表。
+   *
+   * 此前这里是**写死的假数据**（v1.0.0/v1.1.0… + 外部占位图服务），而真正的版本链
+   * 后端一直在维护——`GET /asset-hub/nodes/{id}/versions` 按版本号倒序返回，
+   * 每个版本还带 `file_url`（版本对比靠看图：例如原图 v1 与贴字后的 v2）。
+   * 这个组件本身功能是全的（对比/回滚/标签），只是从来没被喂过真数据、也没被渲染过。
+   */
   useEffect(() => {
     if (!assetId) return
-
-    const mockVersions: AssetVersion[] = [
-      {
-        id: 'v1',
-        version_number: 'v1.0.0',
-        created_at: '2024-01-15 14:30:00',
-        description: '初始版本',
-        is_current: false,
-        tags: ['production'],
-        thumbnail_url: 'https://neeko-copilot.bytedance.net/api/text_to_image?prompt=cyberpunk%20city%20night%20scene&image_size=square',
-      },
-      {
-        id: 'v2',
-        version_number: 'v1.1.0',
-        created_at: '2024-01-16 09:15:00',
-        description: '优化了光照效果',
-        is_current: false,
-        tags: ['staging'],
-        thumbnail_url: 'https://neeko-copilot.bytedance.net/api/text_to_image?prompt=cyberpunk%20city%20with%20neon%20lights&image_size=square',
-      },
-      {
-        id: 'v3',
-        version_number: 'v1.2.0',
-        created_at: '2024-01-17 16:45:00',
-        description: '添加了动态云层',
-        is_current: true,
-        tags: ['latest', 'production'],
-        thumbnail_url: 'https://neeko-copilot.bytedance.net/api/text_to_image?prompt=cyberpunk%20city%20with%20clouds%20and%20neon&image_size=square',
-      },
-      {
-        id: 'v4',
-        version_number: 'v1.2.1',
-        created_at: '2024-01-18 11:20:00',
-        description: '修复了建筑细节',
-        is_current: false,
-        tags: [],
-        thumbnail_url: 'https://neeko-copilot.bytedance.net/api/text_to_image?prompt=cyberpunk%20city%20detailed%20buildings&image_size=square',
-      },
-    ]
-
-    setVersions(mockVersions)
+    let cancelled = false
+    void (async () => {
+      try {
+        const res: any = await getAssetVersions(assetId)
+        const rows: any[] = (res?.data || res?.versions || []) as any[]
+        const mapped: AssetVersion[] = rows.map((v, index) => ({
+          id: String(v.id),
+          // 后端 version_number 是整数（按节点自增），展示加 v 前缀。
+          version_number: `v${v.version_number ?? index + 1}`,
+          created_at: String(v.created_at || '').replace('T', ' ').slice(0, 19),
+          description: String(v.prompt_used || v.model_used || ''),
+          // 后端按版本号**倒序**返回，第一条即最新（当前）版本。
+          is_current: index === 0,
+          tags: v.lineage?.parent_version_id ? ['派生版本'] : ['原始版本'],
+          thumbnail_url: v.file_url || undefined,
+        }))
+        if (!cancelled) setVersions(mapped)
+      } catch {
+        // 取不到就展示空列表，不要退回假数据——假数据会让人以为版本真的存在。
+        if (!cancelled) setVersions([])
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
   }, [assetId])
 
   const handleSelectVersion = useCallback((versionId: string) => {

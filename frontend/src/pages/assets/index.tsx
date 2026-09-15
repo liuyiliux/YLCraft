@@ -52,6 +52,7 @@ import type { SearchParams } from '../../components/asset-hub/SearchPanel'
 import { AssetGrid } from '../../components/asset-hub/AssetGrid'
 import { TagTree } from '../../components/asset-hub/TagTree'
 import { LineageGraph } from '../../components/asset-hub/LineageGraph'
+import { AssetVersionManager } from '../../components/asset-hub/AssetVersionManager'
 import {
   listAssets,
   deleteAsset,
@@ -975,7 +976,15 @@ export default function AssetsPage() {
       {
         key: 'versions',
         label: '版本',
-        children: <Empty description="版本管理功能即将推出" />,
+        // 这里长期是「版本管理功能即将推出」占位，而 AssetVersionManager 组件其实早就
+        // 写好了（含对比/回滚/标签），只是从未被渲染、且内部喂的是假数据。现在两者都接上。
+        children: detailAsset ? (
+          <div style={{ maxHeight: 480, overflowY: 'auto' }}>
+            <AssetVersionManager assetId={detailAsset.id} />
+          </div>
+        ) : (
+          <Empty description="请选择一个资产" />
+        ),
       },
     ]
 
