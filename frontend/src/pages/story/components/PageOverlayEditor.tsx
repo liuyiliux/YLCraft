@@ -17,6 +17,7 @@ import { Alert, Button, Empty, Image, Input, InputNumber, Modal, Segmented, Spac
 import { AimOutlined, DeleteOutlined, EyeOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons'
 
 import { detectCreativeProjectComicBlankBoxes, overlayCreativeProjectComicPageText } from '../../../api'
+import { useTheme } from '../../../constants/theme'
 
 const { Text } = Typography
 
@@ -59,11 +60,22 @@ function clamp01(value: number): number {
 }
 
 export default function PageOverlayEditor({ open, onClose, projectId, itemId, imageUrl, panels, onSaved }: Props) {
+  // 用**故事页自己的主题**取色，不要用 CSS 变量。
+  //
+  // 这里原本写的是 `var(--p-bg, transparent)` 一类，注释还声称"编辑器本来就在用这套变量"——
+  // 那是**错的**：`--p-bg` / `--p-border` / `--p-accent` 只定义在
+  // `components/world/worldmap.css`，作用域是**世界地图组件**，故事页压根没有这三个变量。
+  // 于是它们全部落到兜底值（`transparent` / 继承），深色主题下就是黑底黑字。
+  // 这个页面的兄弟组件（chapter-studio / common / storyboard-parts）统一走 `useTheme()`，
+  // 这里跟上，颜色才会跟着主题切换。
+  const { theme } = useTheme()
   const [items, setItems] = useState<OverlayItem[]>([])
   const [selected, setSelected] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
   const [detecting, setDetecting] = useState(false)
   const [previewUrl, setPreviewUrl] = useState('')
+  /** 载入的页图原始像素尺寸。只用来把 0~1 的框换算成看得懂的大小。 */
+  const [imgSize, setImgSize] = useState({ w: 0, h: 0 })
   const [warnings, setWarnings] = useState<string[]>([])
   /** 框位是怎么来的：`detected` 服务端量出来的 / `fallback` 按分格序号估的。 */
   const [placement, setPlacement] = useState<'detected' | 'fallback' | ''>('')
@@ -136,17 +148,18 @@ export default function PageOverlayEditor({ open, onClose, projectId, itemId, im
   }, [fetchBlankBoxes, textLines])
 
   /**
-   * 编辑后自动出预览。
+   * 编辑后自动跑一次服务端校验（防抖，**后台静默**）。
    *
    * 编辑态的框是 DOM 覆盖层、字体是网页字体**占位**，与真实渲染**永远对不上**——
    * 用户会发现"保存后字号怎么变大了"。真实排版是服务端按框自动定字号、把气泡填满的。
-   * 所以拖完框/改完字后自动跑一次服务端预览（防抖），而它用的就是最终出图的那个引擎，
-   * 于是画面上看到的始终是成品效果。
+   *
+   * 所以这里仍然跑一次服务端，但**不切进预览态**：切了画布就被成品图盖住，框没法拖。
+   * 想看真图点「预览真实排版」——那个会把 `_preview.png` 显示出来。
    */
   useEffect(() => {
     if (!open || !items.length || previewUrl) return
     const timer = window.setTimeout(() => {
-      void run(true, false)
+      void run(true, false, { silent: true })
     }, 900)
     return () => window.clearTimeout(timer)
     // 刻意不把 run 放进依赖：它每次渲染都是新引用，会把防抖变成不停重跑。
@@ -253,7 +266,7 @@ export default function PageOverlayEditor({ open, onClose, projectId, itemId, im
   )
 
   const run = useCallback(
-    async (dryRun: boolean, saveAsset: boolean) => {
+    async (dryRun: boolean, saveAsset: boolean, options: { showPreview?: boolean; silent?: boolean } = {}) => {
       if (!payloadItems.length) {
         message.warning('至少写一条对白再贴')
         return
@@ -267,11 +280,24 @@ export default function PageOverlayEditor({ open, onClose, projectId, itemId, im
         })
         const data = response?.data || response || {}
         setWarnings(Array.isArray(data.warnings) ? data.warnings : [])
-        if (dryRun) {
-          message.success(data.warnings?.length ? '框位有提示，请看下方' : '框位检查通过')
+        // 预览图：dry_run **同样会真渲染**并返回 `output_url`（服务端写 `_preview.png`）。
+        //
+        // 之前这里只在"保存"分支取 `output_url`，dry_run 分支把它**丢掉了** ✗ ——所以
+        // 「检查框位」点下去只弹一句 toast、画面毫无变化，用户根本找不到预览入口
+        // （反馈原话："没找到预览按钮"）。**后端早就把图渲染好了，是前端没接**。
+        //
+        // 但不能无条件显示：自动防抖那次调用若也切进预览态，画布会被成品图盖住，
+        // 框就没法拖了。所以显式预览走 `showPreview`，后台那次走 `silent`。
+        const url = String(data.output_url || '')
+        if (url && (dryRun ? options.showPreview : true)) {
+          setPreviewUrl(`${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`)
+        }
+        if (options.silent) {
+          // 后台那次：只在真有提示时更新，不弹 toast —— 否则每拖一次框就弹一次。
+          if (data.warnings?.length) setWarnings(data.warnings)
+        } else if (dryRun) {
+          message.success(data.warnings?.length ? '已出预览，框位有提示，请看下方' : '已出预览，框位检查通过')
         } else {
-          const url = String(data.output_url || '')
-          if (url) setPreviewUrl(`${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`)
           if (data.asset_id) {
             message.success('已贴字并存入素材库（原图未被覆盖）')
             onSaved?.(String(data.asset_id))
@@ -289,6 +315,14 @@ export default function PageOverlayEditor({ open, onClose, projectId, itemId, im
   )
 
   const selectedItem = selected === null ? null : items[selected]
+  /**
+   * 没有文字的空框数量。
+   *
+   * 自动定位会把图上**每个**空白气泡都框出来（连模型画的、这页没台词的那个也框）；
+   * 那一格若没有对白，就留下一个空框——看着像个"空洞"，用户会问"这个空白是干嘛的"。
+   * 所以给一个一键清掉的入口，而不是让人一个个手删。
+   */
+  const emptyCount = useMemo(() => items.filter((item) => !String(item.text || '').trim()).length, [items])
 
   return (
     <Modal
@@ -309,8 +343,8 @@ export default function PageOverlayEditor({ open, onClose, projectId, itemId, im
             在图上点一下新建框，拖动移动，<b>拖框右下角那个方块改大小</b>（悬停会显示「拖这里改大小」）。
             框要对着气泡放——框比气泡大，字就会跑到气泡外面去。
             <br />
-            这里显示的字体只是**占位**（网页字体）。真实排版是服务端画的漫画字体——
-            点「检查框位」就能看到真实效果（所见即所得，跟最终产图是同一个引擎）。
+            这里显示的字体只是<b>占位</b>（网页字体）。点<b>「预览真实排版」</b>会出真图——
+            用的是最终出图那套引擎（所见即所得），看完点「回到框编辑」接着调。
           </>
         }
       />
@@ -319,13 +353,16 @@ export default function PageOverlayEditor({ open, onClose, projectId, itemId, im
           <div
             ref={surfaceRef}
             onPointerDown={onSurfacePointerDown}
-            style={{ position: 'relative', lineHeight: 0, border: '1px solid var(--p-border)', borderRadius: 6, overflow: 'hidden', cursor: 'crosshair' }}
+            style={{ position: 'relative', lineHeight: 0, border: `1px solid ${theme.border}`, borderRadius: 6, overflow: 'hidden', cursor: 'crosshair' }}
           >
             <img
               data-surface="1"
               src={previewUrl || imageUrl}
               alt="漫画页"
               draggable={false}
+              onLoad={(event) =>
+                setImgSize({ w: event.currentTarget.naturalWidth, h: event.currentTarget.naturalHeight })
+              }
               style={{ width: '100%', display: 'block', userSelect: 'none' }}
             />
             {!previewUrl &&
@@ -342,7 +379,7 @@ export default function PageOverlayEditor({ open, onClose, projectId, itemId, im
                       top: `${y0 * 100}%`,
                       width: `${(x1 - x0) * 100}%`,
                       height: `${(y1 - y0) * 100}%`,
-                      border: `2px ${isSelected ? 'solid' : 'dashed'} ${isSelected ? 'var(--p-accent)' : '#888'}`,
+                      border: `2px ${isSelected ? 'solid' : 'dashed'} ${isSelected ? theme.primary : theme.border}`,
                       background: 'rgba(255,255,255,0.35)',
                       borderRadius: 4,
                       cursor: 'move',
@@ -365,7 +402,7 @@ export default function PageOverlayEditor({ open, onClose, projectId, itemId, im
                         // 让它在一堆格线里也能一眼认出来。
                         width: 18,
                         height: 18,
-                        background: isSelected ? 'var(--p-accent)' : '#888',
+                        background: isSelected ? theme.primary : theme.borderStrong,
                         cursor: 'nwse-resize',
                         borderRadius: 3,
                         border: '2px solid #fff',
@@ -401,8 +438,25 @@ export default function PageOverlayEditor({ open, onClose, projectId, itemId, im
                 </Button>
               </Tooltip>
               <Button size="small" icon={<PlusOutlined />} onClick={() => addAt(0.5, 0.5)}>添加一条</Button>
-              <Tooltip title="只检查越界与重叠，不出图">
-                <Button size="small" icon={<EyeOutlined />} loading={busy} onClick={() => void run(true, false)}>检查框位</Button>
+              {emptyCount > 0 ? (
+                <Tooltip title="自动定位会把图上每个空白气泡都框出来；那一格没有台词时就留下一个空框（看着像个空洞）。点这里一次清掉。">
+                  <Button
+                    size="small"
+                    danger
+                    onClick={() => {
+                      setItems((current) => current.filter((item) => String(item.text || '').trim()))
+                      setSelected(null)
+                      setPreviewUrl('')
+                    }}
+                  >
+                    清掉 {emptyCount} 个空框
+                  </Button>
+                </Tooltip>
+              ) : null}
+              <Tooltip title="用真实出图引擎渲染一张预览图，并检查越界与重叠——字放不下会在这里提示。不写素材库。">
+                <Button size="small" icon={<EyeOutlined />} loading={busy} onClick={() => void run(true, false, { showPreview: true })}>
+                  预览真实排版
+                </Button>
               </Tooltip>
             </Space>
 
@@ -435,14 +489,13 @@ export default function PageOverlayEditor({ open, onClose, projectId, itemId, im
                   rows={2}
                   value={selectedItem.text}
                   placeholder="这条的字（用回车分行）"
-                  // 主题对齐：这个 Modal 在深色主题下没吃到 `--p-bg` 一类主题变量，输入框
-                  // 背景走深色、文字颜色也是深色，于是"发黑看不清"（用户反馈）。
-                  // 用编辑器**本来就在用**的同一套变量（`--p-accent`/`--p-border` 同源），
-                  // 而不是写死颜色——写死会在浅色主题下反过来出问题。
+                  // 主题对齐：深色主题下这里曾经"黑底黑字"（用户反馈）。用 useTheme()
+                  // 的主题色，而不是 CSS 变量——见组件顶部那段：`--p-*` 是**世界地图组件**
+                  // 的私有变量，在故事页里不存在，兜底成 transparent 就等于没设背景。
                   style={{
-                    background: 'var(--p-bg, transparent)',
-                    color: 'var(--p-text, inherit)',
-                    borderColor: 'var(--p-border, transparent)',
+                    background: theme.bgInput,
+                    color: theme.textPrimary,
+                    borderColor: theme.border,
                   }}
                   onChange={(event) => updateItem(selected as number, { text: event.target.value })}
                 />
@@ -464,6 +517,12 @@ export default function PageOverlayEditor({ open, onClose, projectId, itemId, im
                 <Space>
                   <Text type="secondary" style={{ fontSize: 12 }}>
                     框：{(selectedItem.box[2] - selectedItem.box[0]).toFixed(3)} × {(selectedItem.box[3] - selectedItem.box[1]).toFixed(3)}
+                    {/* 只给 0.227 × 0.096 这种裸比例，判断不出"塞得下几个字"。按图高 1024
+                        折算成像素——口径和上面字号那句说明一致（字号单位也是"图高 1024 时的
+                        像素"），两处对得上才不会被误解成两套单位。 */}
+                    {imgSize.h
+                      ? `（≈ ${Math.round((selectedItem.box[2] - selectedItem.box[0]) * 1024 * (imgSize.w / imgSize.h))} × ${Math.round((selectedItem.box[3] - selectedItem.box[1]) * 1024)} px · 按图高 1024 折算）`
+                      : ''}
                   </Text>
                   <Button
                     size="small"
@@ -495,12 +554,12 @@ export default function PageOverlayEditor({ open, onClose, projectId, itemId, im
                       padding: '4px 6px',
                       borderRadius: 4,
                       cursor: 'pointer',
-                      background: selected === index ? 'var(--bgLayout)' : 'transparent',
+                      background: selected === index ? theme.primaryAlpha(0.12) : 'transparent',
                       fontSize: 12,
                     }}
                   >
                     <Tag style={{ marginRight: 6 }}>{item.type === 'text' ? '对白' : item.type === 'sfx' ? '音效' : '旁白'}</Tag>
-                    {item.text || '（空）'}
+                    {item.text || '（空框 · 这一格没台词，可删）'}
                   </div>
                 ))
               )}
