@@ -1687,7 +1687,34 @@ async def overlay_comic_page_text(
                         model="overlay_text",
                         lineage={"reference_asset_ids": [asset_id], "project_id": project_id},
                     )
-            payload["asset_id"] = getattr(created, "node_id", "") or ""
+                # 光调 `create_generated_image` 只把产物放进**素材库**，**不建项目关联**；
+                # 而界面上"这一页的图"读的是项目关联。所以此前贴字成品在素材库里能看到、
+                # 在项目素材里却一条都没有（实测：贴了 15 页，项目关联没增加，只能靠
+                # 素材库标题反查）。这里按 images.py 生图登记的同一形状补一条。
+                node_id = getattr(created, "node_id", "") or ""
+                if node_id:
+                    from app.db.models.creative_project import ProjectAssetLink
+
+                    existing_link = await async_session.execute(
+                        select(ProjectAssetLink).where(
+                            ProjectAssetLink.project_id == project_id,
+                            ProjectAssetLink.asset_id == node_id,
+                            ProjectAssetLink.role == "generated",
+                        )
+                    )
+                    if existing_link.scalars().first() is None:
+                        async_session.add(ProjectAssetLink(
+                            project_id=project_id,
+                            asset_id=node_id,
+                            role="generated",
+                            relation="derived_from",
+                            metadata_json=json.dumps(
+                                {"source": "comic_overlay_text", "source_asset_id": asset_id},
+                                ensure_ascii=False,
+                            ),
+                        ))
+                        await async_session.flush()
+                payload["asset_id"] = node_id
         except Exception as exc:  # noqa: BLE001
             # 贴字本身已经成功，登记失败不该把整个请求判失败（否则用户拿到 500，
             # 却不知道成图其实已经生成好了）。带上堆栈，否则只有一句无法定位的消息。
