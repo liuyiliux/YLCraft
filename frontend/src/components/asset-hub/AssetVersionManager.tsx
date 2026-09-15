@@ -260,10 +260,34 @@ export function AssetVersionManager({ assetId }: AssetVersionManagerProps) {
           {/* 操作 */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <Tooltip title="预览">
-              <Button type="text" icon={<EyeOutlined />} size="small" />
+              <Button
+                type="text"
+                icon={<EyeOutlined />}
+                size="small"
+                title="在新标签页预览这个版本"
+                onClick={() => {
+                  // 此前这两个按钮是**空壳**——没有 onClick，点了什么也不发生（用户反馈）。
+                  if (!version.thumbnail_url) return
+                  window.open(version.thumbnail_url, '_blank', 'noopener')
+                }}
+              />
             </Tooltip>
             <Tooltip title="下载">
-              <Button type="text" icon={<DownloadOutlined />} size="small" />
+              <Button
+                type="text"
+                icon={<DownloadOutlined />}
+                size="small"
+                title="下载这个版本"
+                onClick={() => {
+                  if (!version.thumbnail_url) return
+                  const link = document.createElement('a')
+                  link.href = version.thumbnail_url
+                  link.download = `${version.version_number}.png`
+                  document.body.appendChild(link)
+                  link.click()
+                  link.remove()
+                }}
+              />
             </Tooltip>
             {!version.is_current && (
               <Tooltip title="回滚到此版本">
@@ -298,7 +322,10 @@ export function AssetVersionManager({ assetId }: AssetVersionManagerProps) {
         <div style={{ padding: 40, textAlign: 'center' }}>
           <BranchesOutlined style={{ fontSize: 48, color: '#8b8ba8' }} />
           <p style={{ color: '#8b8ba8', marginTop: 16 }}>
-            请选择两个版本进行对比
+            {/* 此前只写"请选择两个版本进行对比"，但没说**怎么选**——对比要先点右上角
+                「版本对比」进入对比模式，卡片才变成可点的。用户反馈看不懂操作，就是这句
+                提示把关键一步省略了。 */}
+            已选 {selectedVersions.length}/2 —— 点上面的卡片即可选中（点右上角「退出对比」可取消）
           </p>
         </div>
       )
