@@ -65,7 +65,12 @@ export function AssetVersionManager({ assetId }: AssetVersionManagerProps) {
           // 后端 version_number 是整数（按节点自增），展示加 v 前缀。
           version_number: `v${v.version_number ?? index + 1}`,
           created_at: String(v.created_at || '').replace('T', ' ').slice(0, 19),
-          description: String(v.prompt_used || v.model_used || ''),
+          // 截断：v1 的 prompt_used 是整段生图提示词（几百字），原样铺出来会把卡片撑爆、
+          // 也挤掉了真正要看的缩略图。这里只留一个能辨认的开头，完整内容仍在资产详情里。
+          description: (() => {
+            const raw = String(v.prompt_used || v.model_used || '')
+            return raw.length > 48 ? `${raw.slice(0, 48)}…` : raw
+          })(),
           // 后端按版本号**倒序**返回，第一条即最新（当前）版本。
           is_current: index === 0,
           tags: v.lineage?.parent_version_id ? ['派生版本'] : ['原始版本'],

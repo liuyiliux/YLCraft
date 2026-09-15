@@ -1291,7 +1291,9 @@ export default function AssetsPage() {
       <Drawer
         open={detailDrawerOpen}
         onClose={() => { setDetailDrawerOpen(false); setLineageData(null); setPlayingCourseEpisodeIndex(null) }}
-        width={480}
+        // 此前固定 480px：版本卡里"缩略图 + 说明"挤在一起，基本看不清（用户反馈）。
+      // 改成随视口取六成，夹在 [520, 900]——大屏够看清版本对比，小屏也不会把列表挤没。
+      width={Math.min(900, Math.max(520, Math.round(window.innerWidth * 0.6)))}
         title={detailAsset?.title || '资产详情'}
         extra={
           <Button size="small" icon={<ReloadOutlined />} onClick={() => openCleanProvenance(detailAsset)}>
