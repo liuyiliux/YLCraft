@@ -5,10 +5,13 @@
  * 顶部身份与模式切换、项目库、各工作区视图与弹窗的 JSX 整体搬迁，
  * 结构与文案逐字未改。数据与回调经 ctx 传入，类型取自 useStoryPageContext。
  */
+import { useState } from 'react'
+
 import FanqiePublishPanel from '../FanqiePublishPanel'
 import BaselinePickerModal from '../../../components/world/BaselinePickerModal'
 import GeneratedMediaThumb from '../../../components/content-package/GeneratedMediaThumb'
 import PackageOutputList from '../../../components/content-package/PackageOutputList'
+import PageOverlayEditor, { type OverlayPanelHint } from './PageOverlayEditor'
 import { useVisualBaseline } from '../hooks/useVisualBaseline'
 import ProjectStatePanel from '../ProjectStatePanel'
 import StoryWorkspaceOverview from '../StoryWorkspaceOverview'
@@ -245,6 +248,12 @@ export function StoryWorkspaceShell({ ctx }: { ctx: StoryPageContext }) {
     0,
   )
 
+  // 贴字编辑器的目标页。纯 UI 局部状态（不涉及项目数据），所以留在组件里而不是
+  // 塞进 ctx——它一关就该消失，没有持久化的意义。
+  const [overlayTarget, setOverlayTarget] = useState<
+    { fieldName: number | string; imageUrl: string; panels: OverlayPanelHint[] } | null
+  >(null)
+
   // 已产出的平台输出（公众号/小红书/短视频/PDF/素材包）。由后端适配器写入包版本，
   // 界面「输出适配」检查项与这里的列表都读它。
   const packageOutputs: any[] = Array.isArray((contentPackageData as any)?.outputs)
@@ -421,6 +430,23 @@ export function StoryWorkspaceShell({ ctx }: { ctx: StoryPageContext }) {
         onPick={visualBaseline.pick}
         currentAssetId={visualBaseline.assetId}
       />
+
+      {overlayTarget && selectedProject ? (
+        <PageOverlayEditor
+          open={Boolean(overlayTarget)}
+          onClose={() => setOverlayTarget(null)}
+          projectId={selectedProject.id}
+          itemId={String(contentPackageForm.getFieldValue(['items', overlayTarget.fieldName, 'id']) || '')}
+          imageUrl={overlayTarget.imageUrl}
+          panels={overlayTarget.panels}
+          onSaved={(assetId) => {
+            // 贴字产物是**派生**资产：把新资产追加到该页的 asset_ids，原图仍留在列表里，
+            // 所以"贴错重贴"随时可退，不会把没贴字的版本弄丢。
+            const current = (contentPackageForm.getFieldValue(['items', overlayTarget.fieldName, 'asset_ids']) || []) as string[]
+            contentPackageForm.setFieldValue(['items', overlayTarget.fieldName, 'asset_ids'], [...current, assetId])
+          }}
+        />
+      ) : null}
 
       {workspaceErrorEntries.length > 0 ? (
         <Alert
@@ -1587,6 +1613,26 @@ export function StoryWorkspaceShell({ ctx }: { ctx: StoryPageContext }) {
                                 }
                                 : undefined}
                             />
+                            {imageUrl ? (
+                              <Tooltip title="生图时气泡是留白的（模型写中文会乱码），对白在这里贴">
+                                <Button
+                                  size="small"
+                                  block
+                                  icon={<FileTextOutlined />}
+                                  style={{ marginTop: 4 }}
+                                  onClick={() =>
+                                    setOverlayTarget({
+                                      fieldName: field.name,
+                                      imageUrl,
+                                      // 用该页的分格预填对白——省得从头敲，也保证与分镜一致
+                                      panels: (getFieldValue(['items', field.name, 'panels']) || []) as OverlayPanelHint[],
+                                    })
+                                  }
+                                >
+                                  贴字
+                                </Button>
+                              </Tooltip>
+                            ) : null}
                           </div>
                         )
                       }}
