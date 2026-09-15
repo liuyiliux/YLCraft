@@ -435,6 +435,15 @@ export default function PageOverlayEditor({ open, onClose, projectId, itemId, im
                   rows={2}
                   value={selectedItem.text}
                   placeholder="这条的字（用回车分行）"
+                  // 主题对齐：这个 Modal 在深色主题下没吃到 `--p-bg` 一类主题变量，输入框
+                  // 背景走深色、文字颜色也是深色，于是"发黑看不清"（用户反馈）。
+                  // 用编辑器**本来就在用**的同一套变量（`--p-accent`/`--p-border` 同源），
+                  // 而不是写死颜色——写死会在浅色主题下反过来出问题。
+                  style={{
+                    background: 'var(--p-bg, transparent)',
+                    color: 'var(--p-text, inherit)',
+                    borderColor: 'var(--p-border, transparent)',
+                  }}
                   onChange={(event) => updateItem(selected as number, { text: event.target.value })}
                 />
                 <Space>
