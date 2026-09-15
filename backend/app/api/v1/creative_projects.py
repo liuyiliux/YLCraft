@@ -1513,11 +1513,36 @@ class ComicBlankBoxesRequest(BaseModel):
     min_side_ratio: float | None = None
 
 
+async def _image_path_for_version(version_id: str) -> Path | None:
+    """取指定版本的文件路径。
+
+    贴字必须能**针对某一版**操作，而不是永远认"当前版本"——否则在已贴过字的 v2 上再贴一次，
+    新字会和旧字叠加（实测踩到：产出文件的 `_text` 叠成了 `_text_text`，画面出现两层文字）。
+    """
+    from app.db.database import get_async_session
+    from app.db.models.asset_hub import AssetRepresentation
+    from app.services.asset_file_resolver import resolve_storage_path
+
+    async with get_async_session() as session:
+        rep = (
+            await session.execute(
+                select(AssetRepresentation).where(
+                    AssetRepresentation.asset_version_id == version_id
+                )
+            )
+        ).scalars().first()
+    if rep is None or not rep.file_path:
+        return None
+    path = Path(resolve_storage_path(rep.file_path))
+    return path if path.is_file() else None
+
+
 async def _locate_comic_page_asset(
     svc: "CreativeProjectService",
     project_id: str,
     item_id: str,
     asset_id: str | None,
+    version_id: str | None = None,
 ) -> tuple[dict[str, Any], str, Path]:
     """定位内容包里的一条，并解析出它的页图文件。
 
@@ -1548,6 +1573,14 @@ async def _locate_comic_page_asset(
     )
     if not resolved_asset:
         raise HTTPException(status_code=400, detail="该内容单元还没有成图，请先生成图片")
+
+    # 指定了版本就按**那一版**取文件——重贴必须针对特定版本，否则在已贴过字的版本上
+    # 再贴一次会出现两层文字（见 _image_path_for_version）。
+    if version_id:
+        version_path = await _image_path_for_version(version_id)
+        if version_path is None:
+            raise HTTPException(status_code=404, detail="找不到该版本对应的图片文件：%s" % version_id)
+        return target, resolved_asset, version_path
 
     # 资产存的是**相对项目根**的路径（`backend/app/storage/images/x.png`），而后端进程的
     # CWD 是 `backend/`——直接用会得到 False，误判成"文件不存在"。必须按项目根解析。
@@ -1614,6 +1647,9 @@ class ComicOverlayRequest(BaseModel):
         default=None,
         description="要贴字的页图资产 ID。不传则取该内容单元 asset_ids 的最后一张最新成图。",
     )
+    #: 要贴字的**版本 ID**。指定后按该版本的文件渲染，而不是"当前版本"——
+    #: 否则对已经贴过字的版本再贴一次会出现两层文字。
+    version_id: str | None = Field(default=None, description="要贴字的版本 ID（不传则用当前版本）")
 
 
 @router.post(
@@ -1639,7 +1675,7 @@ async def overlay_comic_page_text(
     # 定位条目与页图的逻辑与「检测空白占位框」完全相同，共用 `_locate_comic_page_asset`，
     # 免得两处实现各自漂移（尤其是那个"必须按项目根解析相对路径"的坑，复制两份迟早漏一处）。
     _target, asset_id, image_path = await _locate_comic_page_asset(
-        svc, project_id, item_id, req.asset_id
+        svc, project_id, item_id, req.asset_id, req.version_id
     )
     # 贴字产物要挂到**原图这个资产**下作为新版本，所以需要它的 Asset Hub 节点 id。
     # 项目 `asset_ids` 里存的就是节点 id（生图登记返回的 node_id），故这里直接用。
