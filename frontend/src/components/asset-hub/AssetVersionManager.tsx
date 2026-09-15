@@ -42,6 +42,8 @@ export function AssetVersionManager({ assetId }: AssetVersionManagerProps) {
   const [versions, setVersions] = useState<AssetVersion[]>([])
   const [selectedVersions, setSelectedVersions] = useState<string[]>([])
   const [compareMode, setCompareMode] = useState(false)
+  /** 加载失败的原因。显示出来而不是静默清空——否则界面只有"0 个版本"，无从排查。 */
+  const [loadError, setLoadError] = useState('')
 
   /**
    * 拉真实版本列表。
@@ -70,9 +72,14 @@ export function AssetVersionManager({ assetId }: AssetVersionManagerProps) {
           thumbnail_url: v.file_url || undefined,
         }))
         if (!cancelled) setVersions(mapped)
-      } catch {
-        // 取不到就展示空列表，不要退回假数据——假数据会让人以为版本真的存在。
-        if (!cancelled) setVersions([])
+      } catch (err: any) {
+        // 取不到就展示空列表，**但把原因显示出来**。此前这里只是静默清空，界面显示
+        // "0 个版本"而没有任何线索，排查时只能猜（我自己就白绕了几轮）。
+        // 不退回假数据——假数据会让人以为版本真的存在。
+        if (!cancelled) {
+          setVersions([])
+          setLoadError(err?.message || '加载版本失败')
+        }
       }
     })()
     return () => {
@@ -345,6 +352,11 @@ export function AssetVersionManager({ assetId }: AssetVersionManagerProps) {
           <span style={{ color: '#8b8ba8', fontSize: 14 }}>
             ({versions.length} 个版本)
           </span>
+          {loadError ? (
+            <span style={{ color: '#ff4d4f', fontSize: 12 }} title={loadError}>
+              · 加载失败：{loadError}
+            </span>
+          ) : null}
         </div>
       }
       extra={
