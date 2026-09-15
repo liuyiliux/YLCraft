@@ -234,6 +234,17 @@ const themes: Record<string, ThemeDefinition> = {
       colorBgElevated: '#1f1f27',
       colorText: '#e4e4e7',
       colorTextSecondary: '#a1a1aa',
+      // 说明级文字用的是 **colorTextDescription**，不是 colorTextSecondary——
+      // antd 的 `Typography type="secondary"`（还有卡片描述、Empty 提示、表单说明）都取它。
+      // 上面把 colorBgBase 改成了深色，却**没有切 `darkAlgorithm`**，于是这几个派生色仍是
+      // **浅色算法**的结果 `rgba(0,0,0,0.45)`：深灰黑字压在深色底上，等于看不见。
+      // 实测证据（贴字弹窗）：这三行的 computed color = rgba(0,0,0,0.45)，
+      // 而 modal 背景 = rgb(22,22,26) —— 「字号 / 留空 = 按框自动定… / 框：0.227 × 0.096…」
+      // 就是这么消失的。与 colorTextSecondary 取同一色阶，不再依赖派生。
+      colorTextDescription: '#a1a1aa',
+      colorTextPlaceholder: 'rgba(255,255,255,0.30)',
+      colorTextTertiary: 'rgba(255,255,255,0.45)',
+      colorTextQuaternary: 'rgba(255,255,255,0.25)',
       colorBorder: 'rgba(255,255,255,0.08)',
       colorInfoBg: '#10212d',
       colorInfoBorder: '#1d5c78',
@@ -347,6 +358,12 @@ const themes: Record<string, ThemeDefinition> = {
       colorBgElevated: '#1d1a24',
       colorText: '#e4e4ec',
       colorTextSecondary: '#8884a4',
+      // 同上（紫色深色主题）：说明级文字取 colorTextDescription，不切 darkAlgorithm 会派生
+      // 成 rgba(0,0,0,0.45) 的黑字，在 #141118 底上看不见。
+      colorTextDescription: '#8884a4',
+      colorTextPlaceholder: 'rgba(228,228,236,0.30)',
+      colorTextTertiary: 'rgba(228,228,236,0.45)',
+      colorTextQuaternary: 'rgba(228,228,236,0.25)',
       colorBorder: 'rgba(167,139,250,0.08)',
       colorInfoBg: '#1b1b35',
       colorInfoBorder: '#4f46a5',
@@ -460,6 +477,12 @@ const themes: Record<string, ThemeDefinition> = {
       colorBgElevated: '#fafaf9',
       colorText: '#1c1917',
       colorTextSecondary: '#78716c',
+      // 浅色主题这几个派生值本来就是对的（默认就是浅色算法），显式钉住只是为了和上面两个
+      // 深色主题保持一致，避免以后有人只改深色、又漏掉这里。
+      colorTextDescription: '#78716c',
+      colorTextPlaceholder: 'rgba(28,25,23,0.30)',
+      colorTextTertiary: 'rgba(28,25,23,0.45)',
+      colorTextQuaternary: 'rgba(28,25,23,0.25)',
       colorBorder: '#e7e5e4',
       colorInfoBg: '#eff6ff',
       colorInfoBorder: '#93c5fd',
