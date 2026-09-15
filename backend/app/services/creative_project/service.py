@@ -4369,6 +4369,34 @@ class CreativeProjectService:
             if package_type == "knowledge_cards" and not prompt_only
             else "fact、source、source_url 必须为空字符串。"
         )
+        # 漫画（page_book）单条重跑的**分镜规则**。
+        #
+        # 这里原本一条都没有，后果实测可见：重跑第 1 页后 `image_prompt` 变成了一句
+        # "单张图"的提示词（`Low angle shot from behind…`），而 `panels` 还是旧的 2 格，
+        # 两者自相矛盾；格数也永远停在 1-2 格（该项目 15 页里 12 页是 2 格）。
+        # 整包生成那条路径有完整的分镜要求，**单条重跑是唯一不守这套规矩的地方**——风格
+        # 一致性恰好从被重跑的那条开始崩。所以在这里补齐。
+        panel_instruction = (
+            "这是漫画（page_book），**一条 = 一页 = 一张图**：\n"
+            "- `panels`：该页画格的**数组**，**每页 3-6 格**。格数由**这一页内容的节拍**决定"
+            "——一个动作、一次回头、一次视线转移、一处环境细节、一次呼吸的停顿，都可以各自"
+            "成格。不要为了「跟别页一样」而压成一两格，那会把节奏拖平。每格含："
+            "`panel_index`（该页第几格，从 1 起）、`position`（版面位置，如「上方横长格」"
+            "「中部左」「中部右」「下方横长格」）、`shot`（景别，逐格变化）、`description`"
+            "（一句话）、`dialogue`、`sfx`。\n"
+            "- `dialogue`：气泡里的话，中文 4~18 字（长了会溢出）。**纯氛围格不要一律留空**"
+            "——大远景、空镜、环境细节这类没有人物台词的格，用一句简短的**旁白**交代画面或"
+            "气氛（旁白同样是台词，也填在 `dialogue` 里）。整页没几个字会显得像没做完。\n"
+            "- `sfx`：拟声字（咚、哐、吱呀、嘶——、窸窣），**不是状态词**——「颤抖」「恐怖」"
+            "「紧张」不是声音。没有明显音效就留空字符串。\n"
+            "- `image_prompt`：**整页**提示词。开头声明「一整页漫画分镜页，纵向排版，共 N 格，"
+            "格子之间有清晰白色间隔与黑色描边框，页面内留有对白气泡的位置但**气泡内绝对不要"
+            "写任何文字**」（N 换成真实格数）；随后逐格写「第k格（位置）：景别。场景。人物。"
+            "动作/表情。」；结尾附制作圣经中的统一负面约束。\n"
+            "- **对白不要写进 image_prompt**（模型渲染中文会乱码），一律后期贴字。\n"
+            if package_type == "page_book"
+            else ""
+        )
         # 单条重跑同样要遵守制作圣经：否则"重跑"就成了唯一不守规矩的地方，一致性正好
         # 从被重跑的那一条开始崩。圣经优先取项目设置（权威来源），退化到当前包内带的那份
         # （更早生成的包可能只在包里有）。
@@ -4382,14 +4410,22 @@ class CreativeProjectService:
         )
         prompt = (
             f"内容包主题《{package.get('topic') or ''}》。\n"
-            f"请**只重写第 {target.get('index')} 条**内容单元，保持与同包其它条目一致的风格与粒度。\n"
+            f"请**只重写第 {target.get('index')} 条**内容单元。画风与人物形象要和同包其它条目"
+            f"保持一致；但**格数按这一页内容的节拍来**，不要为了「跟别页一样」而少画格。\n"
             f"该条当前标题：{target.get('title') or '（无）'}\n"
             f"该条当前内容：{target.get('text') or '（无）'}\n"
             f"{bible_line}"
             f"补充要求：{brief.strip() or '面向普通读者，内容准确、清楚、可执行。'}\n"
             f"{mode_instruction}\n{knowledge_instruction}\n"
-            "严格输出 JSON 对象：title、text、fact、source、source_url、image_prompt、video_prompt；"
-            "不要输出 Markdown 或解释。"
+            f"{panel_instruction}"
+            # 漫画要多要一个 `panels`。不能对所有类型统一加上——非漫画类型会把它填成空数组。
+            + (
+                "严格输出 JSON 对象：title、text、fact、source、source_url、image_prompt、"
+                "video_prompt、panels；不要输出 Markdown 或解释。"
+                if package_type == "page_book"
+                else "严格输出 JSON 对象：title、text、fact、source、source_url、image_prompt、"
+                "video_prompt；不要输出 Markdown 或解释。"
+            )
         )
         generated = await self._generate_json(
             project=project,
@@ -4424,6 +4460,15 @@ class CreativeProjectService:
             "video_prompt": str(generated.get("video_prompt") or target.get("video_prompt") or ""),
             "status": "ready",
         }
+        # 漫画还要把**新分镜接过来**。
+        #
+        # `{**target}` 保留了旧的 `panels`，而上面那一串字段没有覆盖它——于是重跑出来的
+        # `image_prompt` 描述的是另一套格数，`panels` 却还是旧值（实测：image_prompt 变成
+        # 单张图，panels 仍是 2 格）。模型没给 panels 时保留旧值，不无中生有。
+        if package_type == "page_book":
+            generated_panels = generated.get("panels")
+            if isinstance(generated_panels, list) and generated_panels:
+                regenerated["panels"] = generated_panels
         new_items = list(items)
         new_items[target_index] = regenerated
 
