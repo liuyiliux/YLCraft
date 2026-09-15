@@ -476,6 +476,12 @@ class BackendInfo(BaseModel):
     reference_image_field: Optional[str] = None  # 参考图字段名
     supported_sizes: list[str] = []  # 支持的尺寸列表（如 1024x1024）
     supported_aspect_ratios: list[str] = []  # 支持的比例列表（如 1:1, 16:9）
+    #: 该连接器的首选尺寸（来自 `default_params.default_size`）。
+    #:
+    #: 为什么必须暴露：前端 `useInlineImageGeneration` 一直读 `defaultImageModel.default_size`，
+    #: 但这个端点从不返回该字段，于是**永远回落到 1024x1024**——漫画页因此被画成正方形，
+    #: 一页 5 格的竖排版面被挤压变形。连接器明明有 preferred size，却没有一条路把它传出去。
+    default_size: Optional[str] = None
 
 
 class ImageBackendsResponse(BaseModel):
@@ -526,12 +532,20 @@ async def list_backends():
                     continue
                 
                 available_models = []
+                default_size = None
                 if conn.default_params:
                     try:
                         import json
                         default_params = json.loads(conn.default_params) if isinstance(conn.default_params, str) else conn.default_params
+                        if not isinstance(default_params, dict):
+                            default_params = {}
                         if 'available_models' in default_params and isinstance(default_params['available_models'], list):
                             available_models = default_params['available_models']
+                        # 连接器声明的首选尺寸。前端拿它当生图默认值——缺失就会退化 1024x1024，
+                        # 而漫画页需要 2:3 竖版，正方形会把一页多格的竖排版面压坏。
+                        declared = default_params.get('default_size')
+                        if isinstance(declared, str) and declared.strip():
+                            default_size = declared.strip()
                     except Exception:
                         pass
                 if not available_models and model:
@@ -558,6 +572,7 @@ async def list_backends():
                     reference_image_field=conn.reference_image_field,
                     supported_sizes=supported_sizes,
                     supported_aspect_ratios=[],  # TODO: 从 default_params 解析或添加数据库字段
+                    default_size=default_size,
                 ))
             except Exception as e:
                 logger.warning(f"Failed to get backend info for {conn.name}: {e}")
