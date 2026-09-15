@@ -286,7 +286,15 @@ export default function PageOverlayEditor({ open, onClose, projectId, itemId, im
         showIcon
         style={{ marginBottom: 12 }}
         message="生图时气泡是留白的（模型写中文会出乱码），对白在这里贴。"
-        description="在图上点一下新建一个框，拖动移动，拖右下角改大小。框要对着气泡放——框比气泡大，字就会跑到气泡外面去。"
+        description={
+          <>
+            在图上点一下新建框，拖动移动，<b>拖框右下角那个方块改大小</b>（悬停会显示「拖这里改大小」）。
+            框要对着气泡放——框比气泡大，字就会跑到气泡外面去。
+            <br />
+            这里显示的字体只是**占位**（网页字体）。真实排版是服务端画的漫画字体——
+            点「检查框位」就能看到真实效果（所见即所得，跟最终产图是同一个引擎）。
+          </>
+        }
       />
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 320px', gap: 12 }}>
         <div>
@@ -329,14 +337,21 @@ export default function PageOverlayEditor({ open, onClose, projectId, itemId, im
                     </div>
                     <div
                       onPointerDown={(event) => beginDrag(event, index, 'resize')}
+                      title="拖这里改大小"
                       style={{
                         position: 'absolute',
-                        right: -1,
-                        bottom: -1,
-                        width: 12,
-                        height: 12,
+                        right: -2,
+                        bottom: -2,
+                        // 原来只有 12px、没有描边，在满是线条的漫画页上几乎看不见——
+                        // 用户反馈"不知道怎么调大小"。放大到 18px 并加白描边 + 投影，
+                        // 让它在一堆格线里也能一眼认出来。
+                        width: 18,
+                        height: 18,
                         background: isSelected ? 'var(--p-accent)' : '#888',
                         cursor: 'nwse-resize',
+                        borderRadius: 3,
+                        border: '2px solid #fff',
+                        boxShadow: '0 1px 3px rgba(0,0,0,.45)',
                       }}
                     />
                   </div>

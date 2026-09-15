@@ -1537,6 +1537,39 @@ async def _image_path_for_version(version_id: str) -> Path | None:
     return path if path.is_file() else None
 
 
+async def _earliest_version_path(node_id: str) -> Path | None:
+    """取该资产**最早版本**（即原图）的文件路径。
+
+    贴字要从没写过字的底图起画，所以默认取最早版本而不是最新版本——见调用处的说明。
+    """
+    from app.db.database import get_async_session
+    from app.db.models.asset_hub import AssetRepresentation, AssetVersion
+    from app.services.asset_file_resolver import resolve_storage_path
+
+    async with get_async_session() as session:
+        version = (
+            await session.execute(
+                select(AssetVersion)
+                .where(AssetVersion.asset_node_id == node_id)
+                .order_by(AssetVersion.version_number.asc())
+                .limit(1)
+            )
+        ).scalars().first()
+        if version is None:
+            return None
+        rep = (
+            await session.execute(
+                select(AssetRepresentation).where(
+                    AssetRepresentation.asset_version_id == str(version.id)
+                )
+            )
+        ).scalars().first()
+    if rep is None or not rep.file_path:
+        return None
+    path = Path(resolve_storage_path(rep.file_path))
+    return path if path.is_file() else None
+
+
 async def _locate_comic_page_asset(
     svc: "CreativeProjectService",
     project_id: str,
@@ -1582,6 +1615,17 @@ async def _locate_comic_page_asset(
             raise HTTPException(status_code=404, detail="找不到该版本对应的图片文件：%s" % version_id)
         return target, resolved_asset, version_path
 
+    # 没指定版本时，**从最早的版本（原图）起贴**，而不是"当前版本"。
+    #
+    # 这是贴字这个动作的天然语义：每次贴字都应当从**没写过字的底图**重新画一遍。
+    # 而"当前版本"在贴过一次之后就是**已带字的图**，再贴必然叠字——实测踩到过两次：
+    # 界面里打开编辑器，底图上已经有上一轮的字，用户新加的框就叠在旧字上。
+    # 找最早版本而不是硬编码 v1，是为了兼容没有 v1 的历史数据。
+    earliest = await _earliest_version_path(resolved_asset)
+    if earliest is not None:
+        return target, resolved_asset, earliest
+
+    # 退回原逻辑（没有版本记录的老数据）。
     # 资产存的是**相对项目根**的路径（`backend/app/storage/images/x.png`），而后端进程的
     # CWD 是 `backend/`——直接用会得到 False，误判成"文件不存在"。必须按项目根解析。
     paths = await reference_images_from_asset_ids([resolved_asset])
