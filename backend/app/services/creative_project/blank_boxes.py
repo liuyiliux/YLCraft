@@ -31,14 +31,27 @@ from collections import deque
 from pathlib import Path
 from typing import Any
 
-from PIL import Image
+from PIL import Image, ImageFilter
 
 logger = logging.getLogger(__name__)
 
 #: 检测用缩放宽度。越小越快、越大越准；384 在 1024~2048 宽的页面上足够定位气泡。
+#:
+#: 因为扫描宽度固定，下面几个以像素为单位的参数（滤波核、短边下限）也就与原始分辨率
+#: 无关——同一条阈值能同时适配 1024 宽和 3840 宽的页。
 SCAN_W = 384
-#: 灰度阈值：≥ 此值算「纯白」。取 244 而非 255，容忍压缩与重绘造成的轻微偏色。
-WHITE_MIN = 244
+#: 灰度阈值：≥ 此值算「纯白」。取 240 而非 255，容忍压缩与重绘造成的轻微偏色。
+WHITE_MIN = 240
+#: 二值化前的中值滤波核。
+#:
+#: **没有它，带颗粒的页面会全数漏检**。实测：提示词里带 `film grain` 的那页，气泡肉眼
+#: 看是纯白，但颗粒让灰度在 230~255 之间抖，白像素被碎成一片片——最大的连通域只有
+#: 3x387px，远低于面积下限，**两个气泡一个都检不出来**（同一套参数在没有颗粒的页上
+#: 能全中，所以问题一直藏着）。中值滤波先抹掉这种抖，气泡内部才重新连成整块。
+#:
+#: 取 5 而不是 3：3 的核在同样这页上仍会漏（配合 244 阈值时），5 才稳定。这不会误伤
+#: 小气泡——`DEFAULT_MIN_SIDE_R` 已要求短边 ≥ 27px（0.07 × 384），5px 的中值抹不掉它。
+SCAN_DENOISE_KERNEL = 5
 #: 白像素占外接框比例的下限。
 #:
 #: **刻意低于原脚本的 0.86**：原值是按「矩形气泡」调的，而我们的模型画的是**带尾巴的
@@ -91,6 +104,8 @@ def detect_blank_boxes(
         scan_w = min(SCAN_W, max(1, width))
         scan_h = max(1, int(height * scan_w / width))
         small = gray.resize((scan_w, scan_h), Image.BOX)
+        # 先中值滤波再二值化——否则颗粒会把气泡内部的白色打碎（见 SCAN_DENOISE_KERNEL）。
+        small = small.filter(ImageFilter.MedianFilter(SCAN_DENOISE_KERNEL))
         pixels = small.load()
 
         white = bytearray(scan_w * scan_h)
