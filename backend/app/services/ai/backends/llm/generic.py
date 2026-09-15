@@ -103,9 +103,15 @@ class GenericLLMBackend(LLMBackend):
         # 仓库里其它 AI 客户端（cos_storage / ai/types / model3d/workspace / test_manager）
         # 一律显式 `trust_env=False`，这里补齐一致性。需要走代理的场景应由配置显式注入
         # （见 `services/ai_connector/service.py` 的 proxy 注入），而不是隐式继承系统设置。
+        # 超时用**连接器自己配置的**，不要硬编码。
+        #
+        # 这里原来写死 120 秒，而连接器上配的可能是 300——配置页改了不生效，用户无从察觉。
+        # 生图那边（`image/generic.py`）一直用的就是 `connector.timeout`，LLM 这条漏了。
+        # 实测踩到：加了制作圣经与分格说明后提示词变长，模型耗时超过 120 秒被直接掐断，
+        # 而报错只显示「生成失败: 」（超时异常的 str() 是空串），既没说是超时也看不出原因。
         self.client = httpx.AsyncClient(
             headers=headers,
-            timeout=120.0,
+            timeout=connector.timeout or 120.0,
             trust_env=False,
         )
         
@@ -174,7 +180,10 @@ class GenericLLMBackend(LLMBackend):
             )
             
         except Exception as e:
-            logger.error(f"[GenericLLM] 生成失败: {e}", exc_info=True)
+            # 超时类异常的 `str()` 是空串（httpx 的 ReadTimeout / ConnectTimeout 都是），
+        # 只打 `{e}` 会得到「生成失败: 」——日志里既看不出超时、也看不出发生了什么。
+        # 空串时退回类型名，让「生成失败: ReadTimeout」这种可检索的信息留在日志里。
+        logger.error(f"[GenericLLM] 生成失败: {str(e) or type(e).__name__}", exc_info=True)
             return LLMGenerationResult(
                 success=False,
                 error=str(e),

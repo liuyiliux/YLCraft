@@ -11,21 +11,58 @@ class FlexibleModel(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class ContentPackagePanelSchema(FlexibleModel):
+    """页内的一个画格。**只在页内是结构，不单独出图。**
+
+    实测结论（见下）是「一页一张图」：整页分镜页由模型一次画完，格数、格间白边与黑描边、
+    留白气泡都能正确排出。所以格是**给整页提示词用的结构**，不是出图单位——
+    按格出图要多花约 5 倍调用（22 页 × 5 格 ≈ 110 次 vs 22 次），且后期还得自己拼版。
+
+    `position` 必须显式给出：不写位置，模型会自由发挥版面（实测常见翻车点）。
+    """
+
+    panel_index: int = Field(default=1, ge=1)
+    #: 版面位置（如「上方横长格」「中部左」「中下」）。提示词模板靠它控制版面。
+    position: str = Field(default="", max_length=80)
+    #: 景别与镜头（大远景/中景/特写/主观视角…）。逐格变化，不要每格同一景别。
+    shot: str = Field(default="", max_length=80)
+    #: 该格画面，一句话（景别 + 主体 + 动作）。一格里塞两个动作会糊。
+    description: str = Field(default="", max_length=1000)
+    #: 对白/旁白原文。**不进生图提示词**——模型写不好中文，一律后期贴字。
+    dialogue: str = Field(default="", max_length=1000)
+    #: 音效字（后期贴）。
+    sfx: str = Field(default="", max_length=200)
+
+
 class ContentPackageItemSchema(FlexibleModel):
     id: str = Field(default="", max_length=160)
     index: int = Field(default=1, ge=1)
     title: str = Field(default="", max_length=240)
-    #: 页内定位。画面类内容包（绘本/漫画）以**格**为编排单位：一条 = 一个画格 = 一张图。
-    #:
-    #: 为什么是「格」而不是「页」：出图链路本来就是"一条 item 一张图"，所以让 item 等于格，
-    #: 「一格一张图」是自然结果，逐条重跑/状态/出图全部复用。反过来若以「页」为单位，
-    #: 模型得在一张图里画出 4 个画格与对白气泡——那是排版 + 多画面 + 气泡三件事一起做，
-    #: 实际往往产出"一张插图"而不是"一页漫画"。页仍然保留为分组（`page_index`）。
+    #: 页码（从 1 起）。一条 item = 一页 = 一张图的编排单位。
     page_index: int = Field(default=0, ge=0)
-    panel_index: int = Field(default=0, ge=0)
-    #: 景别（大远景/远景/中景/近景/特写/主观视角…）。镜头语言本来就是逐格表达的——
-    #: 这也是分格的意义所在，一页一张图根本没有地方承载它。
-    shot: str = Field(default="", max_length=80)
+    #: 页内画格。整页提示词由它拼出（每格标位置 + 一句话），对白不进提示词、后期贴字。
+    panels: list[ContentPackagePanelSchema] = Field(default_factory=list)
+
+    @field_validator("panels", mode="before")
+    @classmethod
+    def _coerce_panels(cls, value: Any) -> Any:
+        """把模型写歪的 `panels` 收敛成列表，而不是让整包保存失败。
+
+        实测踩过：模型把 `panels` 写成**格数**（`"panels": 5`），Pydantic 报 37 条
+        校验错误 → 接口 400 → **整次生成白花**。这与 `status` 写成 `pending` 是同一类
+        问题：**模型输出的形状不是它能可靠遵守的契约**，形状不对时应当降级保留内容，
+        不该整包丢掉——那一页的 `image_prompt`（含完整版面说明）通常是对的，
+        丢掉的只是结构化分格。
+
+        规则：list 原样；单个 dict 包成单元素列表；整数/字符串/其它一律当空列表。
+        """
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return value
+        if isinstance(value, dict):
+            return [value]
+        return []
     text: str = Field(default="", max_length=12000)
     fact: str = Field(default="", max_length=4000)
     source: str = Field(default="", max_length=1000)

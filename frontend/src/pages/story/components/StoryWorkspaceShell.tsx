@@ -234,17 +234,16 @@ export function StoryWorkspaceShell({ ctx }: { ctx: StoryPageContext }) {
   // 这是画风/人物一致性的载体——没有它，每页提示词各写各的风格，人物也会一页一个样。
   const visualBaseline = useVisualBaseline(selectedProject?.id)
 
-  // 画面类内容包以「格」为条目单位（一条 = 一格 = 一张图），页只是分组。
+  // 画面类内容包：一条 = 一页 = 一张图（实测一页一图能正确排出多格版面，且比按格出图省约 5 倍调用）。
+  // 格在页内（panels），不单独出图——所以这里报的是页数，格数另行统计。
   const isPanelPackage = selectedProject?.production_profile?.package_type === 'page_book'
-  // 实时读取表单里的条目，好把「格数」换算成「页数」——列表长度是格数，直接当页数会报错。
   const watchedPackageItems = Form.useWatch('items', contentPackageForm) as
-    | Array<{ page_index?: number }>
+    | Array<{ panels?: unknown[] }>
     | undefined
-  const packagePageTotal = new Set(
-    (watchedPackageItems || [])
-      .map((item) => Number(item?.page_index) || 0)
-      .filter((value) => value > 0),
-  ).size
+  const packagePanelTotal = (watchedPackageItems || []).reduce(
+    (sum, item) => sum + (Array.isArray(item?.panels) ? item.panels.length : 0),
+    0,
+  )
 
   // 已产出的平台输出（公众号/小红书/短视频/PDF/素材包）。由后端适配器写入包版本，
   // 界面「输出适配」检查项与这里的列表都读它。
@@ -1455,13 +1454,13 @@ export function StoryWorkspaceShell({ ctx }: { ctx: StoryPageContext }) {
               <Space direction="vertical" size={10} style={{ width: '100%' }}>
                 <Space style={{ justifyContent: 'space-between', width: '100%' }}>
                   {/* 数量是**推导结果**，不是入口输入：生成后这里显示实际规模，
-                      调整顺序/增删也会同步反映。漫画/绘本的条目是「格」，页数由
-                      page_index 推导——把格数当页数报出来是错的。 */}
+                      调整顺序/增删也会同步反映。一页一张图，所以条目数即页数，
+                      格数由各页的 panels 汇总。 */}
                   <Text strong>
-                    {isPanelPackage ? '分镜格' : '页面 / 内容卡'}
+                    {isPanelPackage ? '漫画页' : '页面 / 内容卡'}
                     {fields.length
                       ? isPanelPackage
-                        ? `（共 ${fields.length} 格${packagePageTotal ? ` / ${packagePageTotal} 页` : ''}）`
+                        ? `（共 ${fields.length} 页${packagePanelTotal ? ` / ${packagePanelTotal} 格` : ''}）`
                         : `（共 ${fields.length} 条）`
                       : ''}
                   </Text>
