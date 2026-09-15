@@ -81,7 +81,20 @@ class AssetVersionService:
             prompt_used=prompt_used,
             model_used=model_used,
             params_json=params or {},
-            lineage_json=lineage or {},
+            # 父版本记在 lineage 里。**表里没有 parent_version_id 列**，而 `link_versions`
+            # 写的是 asset_relations —— 那张表的外键指向 `asset_nodes.id`，只表达得了
+            # **节点↔节点**，传版本 id 必然外键冲突（实测：只要传 parent_version_id 就
+            # 抛 ForeignKeyViolationError on asset_relations.source_id）。版本链本来的
+            # 承载者就是 `version_number`（按节点自增）；父版本放 lineage 里不用改表结构
+            # 就能还原 v1 → v2 → v3。
+            #
+            # 这条路径此前从未被执行过——因为**没有任何调用方会建 v2**
+            # （`create_generated_image` 每次都新建节点、各挂 v1），所以坏在库里很久
+            # 也没暴露。直到贴字改走"派生为新版本"才第一次踩到。
+            lineage_json={
+                **(lineage or {}),
+                **({"parent_version_id": str(parent_version_id)} if parent_version_id else {}),
+            },
         )
         self.session.add(version)
         await self.session.flush()
@@ -90,14 +103,6 @@ class AssetVersionService:
         # 在写 String 字段时收到 UUID 类型导致 ::VARCHAR 编码失败
         version.id = str(version.id)
         version.asset_node_id = str(version.asset_node_id)
-
-        # 如果指定了父版本，建立版本链谱系
-        if parent_version_id:
-            await self.link_versions(
-                source_id=parent_version_id,
-                target_id=version.id,
-                relation_type=RelationType.DERIVED_FROM,
-            )
 
         logger.info(
             f"[AssetVersionService] created | id={version.id} | "

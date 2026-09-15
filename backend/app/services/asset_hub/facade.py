@@ -41,6 +41,75 @@ class AssetHubFacade:
         self.version_service = AssetVersionService(session)
         self.rep_service = AssetRepresentationService(session)
 
+    async def create_derived_version(
+        self,
+        *,
+        source_node_id: str,
+        file_path: str,
+        prompt: str = "",
+        provider: str = "",
+        model: str = "",
+        lineage: dict[str, Any] | None = None,
+        tags: list[str] | None = None,
+    ) -> AssetHubCreateResult:
+        """把一张派生图登记成**源资产的新版本**（v2、v3…），而不是另起一个资产。
+
+        为什么需要：`create_generated_image` 每次都先 `node_service.create` 建一个**新节点**、
+        再在它上面挂 v1。于是"同一张图的后处理版本"在素材库里表现为一堆互不相干的资产，
+        每个都从 v1 开始——版本机制（version_number / parent_version_id / link_versions）
+        本身是完整的，但**没有任何一条路会去建 v2**。
+
+        贴字正是这个场景：原图与贴字图是**同一张图的两个版本**，不该拆成两个资产。
+        """
+        node = await self.node_service.get(source_node_id)
+        if node is None:
+            raise ValueError("源资产不存在：%s" % source_node_id)
+
+        path = Path(file_path)
+        width, height = _image_dimensions(path)
+        file_size = path.stat().st_size if path.exists() else 0
+        mime_type = mimetypes.guess_type(path.name)[0] or "image/png"
+        params = {
+            key: value
+            for key, value in {
+                "provider": provider,
+                "model": model,
+                "size": "%dx%d" % (width, height),
+            }.items()
+            if value
+        }
+        lineage_data = {"source": "derived_version", **(lineage or {})}
+        lineage_data = {key: value for key, value in lineage_data.items() if value not in (None, "")}
+
+        # 接到最新版本后面，形成 v1 → v2 → v3 的链。
+        latest = await self.version_service.get_latest_version(source_node_id)
+        version = await self.version_service.create(
+            asset_node_id=source_node_id,
+            prompt_used=prompt,
+            model_used=model,
+            params=params,
+            lineage=lineage_data,
+            parent_version_id=str(latest.id) if latest else None,
+        )
+        rep = await self.rep_service.create(
+            asset_version_id=str(version.id),
+            file_path=to_storage_path(path),
+            mime_type=mime_type,
+            file_size=file_size,
+            width=width,
+            height=height,
+            format=path.suffix.lstrip(".").lower() or None,
+        )
+        # 节点封面指向最新版本。不更新的话素材库列表里仍显示旧图——用户会以为
+        # "贴了字却没生效"（封面与版本不一致是最容易被误判成 bug 的一种状态）。
+        await self.node_service.update(source_node_id, thumbnail_url=to_asset_download_url(path))
+        return AssetHubCreateResult(
+            node_id=source_node_id,
+            version_id=str(version.id),
+            representation_id=str(rep.id),
+            version_number=version.version_number,
+        )
+
     async def create_generated_image(
         self,
         *,
