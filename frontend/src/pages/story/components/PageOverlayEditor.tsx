@@ -13,7 +13,7 @@
  * 也不用管用户屏幕多大。要调整就：在图上点一下新建框、拖动移动、拖右下角改大小。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, Button, Empty, Image, Input, Modal, Segmented, Space, Spin, Tag, Tooltip, Typography, message } from 'antd'
+import { Alert, Button, Empty, Image, Input, InputNumber, Modal, Segmented, Space, Spin, Tag, Tooltip, Typography, message } from 'antd'
 import { AimOutlined, DeleteOutlined, EyeOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons'
 
 import { detectCreativeProjectComicBlankBoxes, overlayCreativeProjectComicPageText } from '../../../api'
@@ -134,6 +134,24 @@ export default function PageOverlayEditor({ open, onClose, projectId, itemId, im
     setPreviewUrl('')
     setWarnings([])
   }, [fetchBlankBoxes, textLines])
+
+  /**
+   * 编辑后自动出预览。
+   *
+   * 编辑态的框是 DOM 覆盖层、字体是网页字体**占位**，与真实渲染**永远对不上**——
+   * 用户会发现"保存后字号怎么变大了"。真实排版是服务端按框自动定字号、把气泡填满的。
+   * 所以拖完框/改完字后自动跑一次服务端预览（防抖），而它用的就是最终出图的那个引擎，
+   * 于是画面上看到的始终是成品效果。
+   */
+  useEffect(() => {
+    if (!open || !items.length || previewUrl) return
+    const timer = window.setTimeout(() => {
+      void run(true, false)
+    }, 900)
+    return () => window.clearTimeout(timer)
+    // 刻意不把 run 放进依赖：它每次渲染都是新引用，会把防抖变成不停重跑。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, items, previewUrl])
 
   /** 打开时自动摆框：先量气泡位置，量不到再退回按分格序号的粗略纵向排布。 */
   useEffect(() => {
@@ -419,6 +437,21 @@ export default function PageOverlayEditor({ open, onClose, projectId, itemId, im
                   placeholder="这条的字（用回车分行）"
                   onChange={(event) => updateItem(selected as number, { text: event.target.value })}
                 />
+                <Space>
+                  <Text type="secondary" style={{ fontSize: 12 }}>字号</Text>
+                  <InputNumber
+                    size="small"
+                    min={8}
+                    max={200}
+                    style={{ width: 78 }}
+                    value={selectedItem.font_size}
+                    placeholder="自动"
+                    onChange={(value) => updateItem(selected as number, { font_size: value ?? undefined })}
+                  />
+                  <Text type="secondary" style={{ fontSize: 11 }}>
+                    留空 = 按框自动定；单位是「图高 1024 时的像素」，会按实际高度等比缩放
+                  </Text>
+                </Space>
                 <Space>
                   <Text type="secondary" style={{ fontSize: 12 }}>
                     框：{(selectedItem.box[2] - selectedItem.box[0]).toFixed(3)} × {(selectedItem.box[3] - selectedItem.box[1]).toFixed(3)}

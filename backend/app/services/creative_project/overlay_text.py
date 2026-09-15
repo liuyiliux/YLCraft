@@ -444,10 +444,19 @@ def overlay_spec(spec: dict[str, Any], *, dry_run: bool = False) -> dict[str, An
     warnings = validate_items(items)
     base = Image.open(image_path).convert("RGBA")
     W, H = base.size
-    if dry_run:
-        return {"warnings": warnings, "output": None, "size": [W, H]}
 
-    out_path = spec.get("output") or str(Path(image_path).with_name(Path(image_path).stem + "_text.png"))
+    # `dry_run` 也**真的出图**，只是写到 `_preview.png`、不登记为资产。
+    #
+    # 原本这里直接 `return {"output": None}`：于是前端「检查框位」拿不到任何图，
+    # 点了看不出变化（实测：按钮在、但从不显示预览）。而"字排出来是什么样"恰恰是编辑
+    # 时最需要看的——编辑态的字体是 DOM 占位，**跟真实渲染永远对不上**，用户会发现
+    # "保存后字号怎么变大了"（真实渲染是按框自动定字号、把气泡填满的）。
+    # 让它出图，预览与成品就是同一个引擎画的，所见即所得。
+    out_path = spec.get("output") or str(
+        Path(image_path).with_name(
+            Path(image_path).stem + ("_preview.png" if dry_run else "_text.png")
+        )
+    )
     font_path = spec.get("font")
 
     # 超采样：先在放大图上画，再缩回原尺寸，消除椭圆描边与斜体的锯齿。
@@ -460,7 +469,12 @@ def overlay_spec(spec: dict[str, Any], *, dry_run: bool = False) -> dict[str, An
     big.alpha_composite(overlay)
     result = big.resize((W, H), Image.LANCZOS)
     result.convert("RGB").save(out_path)
-    return {"warnings": warnings, "output": out_path, "size": [W, H]}
+    return {
+        "warnings": warnings,
+        "output": out_path,
+        "size": [W, H],
+        **({"dry_run": True} if dry_run else {}),
+    }
 
 
 def _main() -> int:  # pragma: no cover - 仅供命令行手工调试

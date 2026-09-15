@@ -1740,6 +1740,15 @@ async def overlay_comic_page_text(
         "size": result["size"],
     }
     if req.dry_run:
+        # 预览也要能看图：`overlay_spec(dry_run=True)` 现在会真的渲染到 `_preview.png`，
+        # 这里把它的地址一并返回，前端才能显示"真实排版预览"（与成品同一个引擎）。
+        # 之前的早退分支不发地址，导致「检查框位」点了毫无变化。
+        preview_path = str(result.get("output") or "")
+        if preview_path:
+            from app.services.asset_file_resolver import to_asset_download_url
+
+            payload["output_path"] = preview_path
+            payload["output_url"] = to_asset_download_url(preview_path)
         payload["dry_run"] = True
         return payload
 
