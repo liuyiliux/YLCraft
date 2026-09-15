@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import re
 import time
 import zipfile
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
@@ -41,6 +43,8 @@ from app.services.creative_project.visual_baseline import (
 )
 from app.core.task_queue import TaskStatus, get_task_queue
 from app.services.platform_log import service as platform_log
+
+logger = logging.getLogger("ylcraft.creative_project")
 
 router = APIRouter()
 
@@ -1496,6 +1500,123 @@ async def plan_content_package(
         return {"success": True, "data": serialize_content(content)}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+class ComicOverlayRequest(BaseModel):
+    """漫画页贴字请求。
+
+    `items` 与 `manga-page-comic` skill 的 `page.json` 同构（坐标是 0~1 相对比例，与分辨率无关）：
+    每项含 `type`（`text` 写进模型已画好的空泡 / `bubble` 自画气泡 / `narration` 旁白框 /
+    `sfx` 拟声字 / `patch` 用旁边纹理盖掉多余的框）、`box`，以及 `text` 等参数。
+    """
+
+    items: list[dict[str, Any]] = Field(default_factory=list)
+    font: str | None = None
+    #: 只校验框位、不出图。贴字前应先过一遍——重叠与越界是最常见的翻车点。
+    dry_run: bool = False
+    #: 产出是否登记为素材库资产（派生自动画的成图，**不覆盖原图**）。
+    save_asset: bool = True
+    asset_id: str | None = Field(
+        default=None,
+        description="要贴字的页图资产 ID。不传则取该内容单元 asset_ids 的最后一张最新成图。",
+    )
+
+
+@router.post(
+    "/{project_id}/content-package/items/{item_id}/overlay-text",
+    summary="给漫画页贴字（对白/旁白/拟声字）",
+)
+async def overlay_comic_page_text(
+    project_id: str,
+    item_id: str,
+    req: ComicOverlayRequest,
+    svc: CreativeProjectService = Depends(service),
+    session=Depends(get_session),
+):
+    """把对白贴到已生成的漫画页上。
+
+    **为什么不生图时直接写字**：生图模型无法可靠地写出中文，硬写会出乱码。正确做法是
+    生图时把气泡留空（提示词里已明写"气泡内绝对不要写任何文字"），再在这里精确贴字。
+
+    产物是**派生资产**：原图不动，新图另存并登记进素材库，便于对照与回退。
+    """
+    from app.services.asset_file_resolver import resolve_storage_path
+    from app.services.asset_hub.reference_resolver import reference_images_from_asset_ids
+    from app.services.creative_project.overlay_text import overlay_spec
+
+    contents = svc.list_contents(project_id) if hasattr(svc, "list_contents") else []
+    package_content = next(
+        (c for c in contents if getattr(c, "content_type", "") == "content_package"),
+        None,
+    )
+    if package_content is None:
+        raise HTTPException(status_code=404, detail="该项目还没有内容包，请先生成内容包")
+
+    package = loads_json(package_content.data_json) or {}
+    items = [it for it in (package.get("items") or []) if isinstance(it, dict)]
+    target = next((it for it in items if str(it.get("id")) == str(item_id)), None)
+    if target is None:
+        raise HTTPException(status_code=404, detail="内容包里没有这一条：%s" % item_id)
+
+    asset_id = req.asset_id or next(
+        (str(a) for a in reversed(list(target.get("asset_ids") or [])) if str(a).strip()), ""
+    )
+    if not asset_id:
+        raise HTTPException(status_code=400, detail="该内容单元还没有成图，请先生成图片再贴字")
+
+    # 资产存的是**相对项目根**的路径（`backend/app/storage/images/x.png`），而后端进程的
+    # CWD 是 `backend/`——直接用会得到 False，误判成"文件不存在"。必须按项目根解析。
+    paths = await reference_images_from_asset_ids([asset_id])
+    image_path = Path(resolve_storage_path(paths[0])) if paths else None
+    if not image_path or not image_path.is_file():
+        raise HTTPException(status_code=404, detail="找不到该资产对应的图片文件：%s" % asset_id)
+
+    try:
+        result = overlay_spec(
+            {"image": image_path, "font": req.font, "items": req.items},
+            dry_run=req.dry_run,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    payload: dict[str, Any] = {
+        "success": True,
+        "warnings": result["warnings"],
+        "source_asset_id": asset_id,
+        "size": result["size"],
+    }
+    if req.dry_run:
+        payload["dry_run"] = True
+        return payload
+
+    output_path = str(result["output"] or "")
+    payload["output_path"] = output_path
+    if req.save_asset and output_path:
+        # 登记为**派生**资产：lineage 带上源资产与项目，便于回溯"这张是在哪张上贴的字"。
+        #
+        # 必须用**异步** session：AssetHubFacade 内部是 async 的，传同步 session 会在
+        # 某个内部 await 上炸成「object NoneType can't be used in 'await' expression」
+        # （实测踩到）。images.py 的同类登记也是这么做的。
+        try:
+            from app.db.database import get_async_session
+            from app.services.asset_hub import AssetHubFacade
+
+            async with get_async_session() as async_session:
+                async with async_session.begin_nested():
+                    created = await AssetHubFacade(async_session).create_generated_image(
+                        file_path=output_path,
+                        prompt="漫画页贴字（对白/旁白/拟声字）",
+                        provider="local-overlay",
+                        model="overlay_text",
+                        lineage={"reference_asset_ids": [asset_id], "project_id": project_id},
+                    )
+            payload["asset_id"] = getattr(created, "node_id", "") or ""
+        except Exception as exc:  # noqa: BLE001
+            # 贴字本身已经成功，登记失败不该把整个请求判失败（否则用户拿到 500，
+            # 却不知道成图其实已经生成好了）。带上堆栈，否则只有一句无法定位的消息。
+            logger.warning("comic-overlay-text: 素材登记失败: %s", exc, exc_info=True)
+            payload["warnings"] = [*payload["warnings"], "贴字已生成，但登记素材库失败：%s" % exc]
+    return payload
 
 
 @router.post("/{project_id}/regenerate-chapter-outline-scenes", summary="只重生成单话细纲场景")
