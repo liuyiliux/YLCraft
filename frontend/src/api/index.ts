@@ -2001,6 +2001,26 @@ export const overlayCreativeProjectComicPageText = (
     body: JSON.stringify(data),
   })
 
+/**
+ * 检测漫画页里的空白占位框（模型按"气泡留白"提示词画出来的空泡位置）。
+ *
+ * 为什么需要：贴字引擎按框算字，"文字塞得下"是真的，但**框位对不对只能靠看**——
+ * 手工按缩小预览估坐标很容易放偏，字就跑到气泡外面。这一步先把位置量出来，
+ * 编辑器据此自动摆框，人只需要微调。
+ *
+ * 返回的 `boxes` 是 0~1 相对坐标数组，按从上到下、从左到右（阅读顺序）排序——
+ * 正好与该页分格的对白顺序对应，可以逐条预填。
+ */
+export const detectCreativeProjectComicBlankBoxes = (
+  projectId: string,
+  itemId: string,
+  data: { asset_id?: string; min_fill?: number; min_side_ratio?: number } = {},
+) =>
+  request(`/creative-projects/${projectId}/content-package/items/${encodeURIComponent(itemId)}/blank-boxes`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
 export const saveCreativeProjectContentAsAsset = (projectId: string, contentId: string) =>
   request(`/creative-projects/${projectId}/contents/${encodeURIComponent(contentId)}/save-as-asset`, {
     method: 'POST',

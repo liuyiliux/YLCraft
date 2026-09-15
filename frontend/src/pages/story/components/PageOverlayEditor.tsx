@@ -3,20 +3,20 @@
  *
  * **为什么必须有这一步**（实测，不是推测）：后端引擎按框算，"文字塞得下"是真的，
  * 但**框位对不对只能靠看**。我两次按缩小预览估坐标都放偏——一次文字溢出气泡落到深色
- * 背景上，一次第二行压在气泡外面，而引擎两次都是对的。所以这里做的是"对着原图放框"：
- * 在图上点一下生成一个框，拖动移动，拖右下角改大小。
+ * 背景上，一次第二行压在气泡外面，而引擎两次都是对的。
+ *
+ * 所以打开时会先**自动量一遍气泡位置**（服务端检测模型画出的空白区域），再按阅读顺序
+ * 把该页分格的对白逐条填进去——位置来自图像、文字来自分镜，人只需要微调。量不到时
+ * 退回"按分格序号纵向粗略排开"，绝不让用户对着空画布手估坐标。
  *
  * 坐标全程用 0~1 相对比例（与后端 `page.json` 同构），所以图片怎么缩放都不用换算，
- * 也不用管用户屏幕多大。
- *
- * 对白可以用该页分格里的 `dialogue` 预填——省得从头敲一遍；生图时气泡是留白的，
- * 这里就是往那些空泡里写字。
+ * 也不用管用户屏幕多大。要调整就：在图上点一下新建框、拖动移动、拖右下角改大小。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Button, Empty, Image, Input, Modal, Segmented, Space, Spin, Tag, Tooltip, Typography, message } from 'antd'
-import { DeleteOutlined, EyeOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons'
+import { AimOutlined, DeleteOutlined, EyeOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons'
 
-import { overlayCreativeProjectComicPageText } from '../../../api'
+import { detectCreativeProjectComicBlankBoxes, overlayCreativeProjectComicPageText } from '../../../api'
 
 const { Text } = Typography
 
@@ -62,37 +62,84 @@ export default function PageOverlayEditor({ open, onClose, projectId, itemId, im
   const [items, setItems] = useState<OverlayItem[]>([])
   const [selected, setSelected] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
+  const [detecting, setDetecting] = useState(false)
   const [previewUrl, setPreviewUrl] = useState('')
   const [warnings, setWarnings] = useState<string[]>([])
+  /** 框位是怎么来的：`detected` 服务端量出来的 / `fallback` 按分格序号估的。 */
+  const [placement, setPlacement] = useState<'detected' | 'fallback' | ''>('')
   const surfaceRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ mode: 'move' | 'resize'; index: number; startX: number; startY: number; box: OverlayItem['box'] } | null>(null)
 
-  /** 打开时按该页分格预填：一个格一条，位置按格在页内的垂直次序粗略排开。 */
-  useEffect(() => {
-    if (!open) return
-    const hints = (panels || []).filter((p) => String(p?.dialogue || '').trim() || String(p?.sfx || '').trim())
-    const total = Math.max(1, hints.length)
-    const seeded: OverlayItem[] = hints.flatMap((hint, index) => {
-      const y0 = clamp01(0.06 + (index / total) * 0.82)
-      const rows: OverlayItem[] = []
-      if (String(hint.dialogue || '').trim()) {
-        rows.push({ type: 'text', box: [0.06, y0, 0.06 + DEFAULT_W, clamp01(y0 + DEFAULT_H)], text: String(hint.dialogue) })
-      }
-      if (String(hint.sfx || '').trim()) {
-        rows.push({
-          type: 'sfx',
-          box: [0.62, y0, 0.62 + DEFAULT_W, clamp01(y0 + DEFAULT_H)],
-          text: String(hint.sfx),
-          font_size: 44,
-        })
-      }
-      return rows
-    })
+  /** 该页要贴的文本行（按分格顺序）。 */
+  const textLines = useMemo(() => {
+    const lines: Array<{ type: OverlayItem['type']; text: string }> = []
+    for (const hint of panels || []) {
+      const dialogue = String(hint?.dialogue || '').trim()
+      const sfx = String(hint?.sfx || '').trim()
+      if (dialogue) lines.push({ type: 'text', text: dialogue })
+      if (sfx) lines.push({ type: 'sfx', text: sfx })
+    }
+    return lines
+  }, [panels])
+
+  /** 问服务端要这一页的空白占位框（0~1 相对坐标，按阅读顺序）。失败就返回空数组。 */
+  const fetchBlankBoxes = useCallback(async (): Promise<OverlayItem['box'][]> => {
+    if (!projectId || !itemId) return []
+    try {
+      const res: any = await detectCreativeProjectComicBlankBoxes(projectId, itemId)
+      const rows = Array.isArray(res?.boxes) ? res.boxes : []
+      return rows.filter(
+        (b: any) => Array.isArray(b) && b.length === 4 && b.every((n: any) => typeof n === 'number'),
+      ) as OverlayItem['box'][]
+    } catch {
+      // 检测是**增强项**：失败不该让编辑器不可用，退回粗略排布即可。
+      return []
+    }
+  }, [projectId, itemId])
+
+  /** 量位置并摆框。打开时自动跑一次，「自动定位气泡」按钮也用它。 */
+  const placeBoxes = useCallback(async () => {
+    const boxes = await fetchBlankBoxes()
+    let seeded: OverlayItem[]
+    if (boxes.length) {
+      // 检测结果按阅读顺序返回，正好与该页分格的对白顺序对应：逐条预填。
+      // 框多出来时留空文本（可能是模型多画的空泡，用户删掉即可）。
+      seeded = boxes.map((box, index) => {
+        const line = textLines[index]
+        return {
+          type: line?.type ?? 'text',
+          text: line?.text ?? '',
+          box,
+          ...(line?.type === 'sfx' ? { font_size: 44 } : {}),
+        }
+      })
+      setPlacement('detected')
+    } else {
+      // 退路（旧行为）：一格一条，按序号纵向粗略排开。
+      const total = Math.max(1, textLines.length)
+      seeded = textLines.map((line, index) => {
+        const y0 = clamp01(0.06 + (index / total) * 0.82)
+        const x = line.type === 'sfx' ? 0.62 : 0.06
+        return {
+          type: line.type,
+          text: line.text,
+          box: [x, y0, x + DEFAULT_W, clamp01(y0 + DEFAULT_H)] as OverlayItem['box'],
+          ...(line.type === 'sfx' ? { font_size: 44 } : {}),
+        }
+      })
+      setPlacement('fallback')
+    }
     setItems(seeded)
     setSelected(seeded.length ? 0 : null)
     setPreviewUrl('')
     setWarnings([])
-  }, [open, panels])
+  }, [fetchBlankBoxes, textLines])
+
+  /** 打开时自动摆框：先量气泡位置，量不到再退回按分格序号的粗略纵向排布。 */
+  useEffect(() => {
+    if (!open) return
+    void placeBoxes()
+  }, [open, placeBoxes])
 
   const containerSize = useCallback(() => {
     const rect = surfaceRef.current?.getBoundingClientRect()
@@ -306,12 +353,33 @@ export default function PageOverlayEditor({ open, onClose, projectId, itemId, im
 
         <div>
           <Space direction="vertical" size={8} style={{ width: '100%' }}>
-            <Space>
+            <Space wrap>
+              <Tooltip title="按这一页的空白气泡重新量一遍框位，并按阅读顺序重新预填对白">
+                <Button
+                  size="small"
+                  icon={<AimOutlined />}
+                  loading={detecting}
+                  onClick={() => {
+                    setDetecting(true)
+                    void placeBoxes().finally(() => setDetecting(false))
+                  }}
+                >
+                  自动定位气泡
+                </Button>
+              </Tooltip>
               <Button size="small" icon={<PlusOutlined />} onClick={() => addAt(0.5, 0.5)}>添加一条</Button>
               <Tooltip title="只检查越界与重叠，不出图">
                 <Button size="small" icon={<EyeOutlined />} loading={busy} onClick={() => void run(true, false)}>检查框位</Button>
               </Tooltip>
             </Space>
+
+            {placement ? (
+              <Text type={placement === 'detected' ? 'success' : 'secondary'} style={{ fontSize: 12 }}>
+                {placement === 'detected'
+                  ? '框位是从图上量出来的（气泡留白处），已按阅读顺序预填该页对白——核对后微调即可'
+                  : '没量到气泡位置，框位是按分格序号估的——请对着原图拖动校正'}
+              </Text>
+            ) : null}
 
             {selectedItem ? (
               <Space direction="vertical" size={6} style={{ width: '100%' }}>

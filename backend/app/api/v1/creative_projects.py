@@ -1502,6 +1502,100 @@ async def plan_content_package(
         raise HTTPException(status_code=400, detail=str(e)) from e
 
 
+class ComicBlankBoxesRequest(BaseModel):
+    """漫画页「空白占位框」检测请求。"""
+
+    #: 要检测的页图资产 ID。不传则取该内容单元 asset_ids 的最后一张最新成图。
+    asset_id: str | None = None
+    #: 白像素占外接框比例的下限。默认按**椭圆气泡**调过（见 blank_boxes 模块说明）。
+    min_fill: float | None = None
+    #: 短边占页宽比例的下限。
+    min_side_ratio: float | None = None
+
+
+async def _locate_comic_page_asset(
+    svc: "CreativeProjectService",
+    project_id: str,
+    item_id: str,
+    asset_id: str | None,
+) -> tuple[dict[str, Any], str, Path]:
+    """定位内容包里的一条，并解析出它的页图文件。
+
+    「贴字」与「检测空白占位框」都要走这一段，抽出来避免两份实现漂移。
+
+    Returns:
+        (该条目 dict, 实际使用的资产 ID, 页图绝对路径)
+    """
+    from app.services.asset_file_resolver import resolve_storage_path
+    from app.services.asset_hub.reference_resolver import reference_images_from_asset_ids
+
+    contents = svc.list_contents(project_id) if hasattr(svc, "list_contents") else []
+    package_content = next(
+        (c for c in contents if getattr(c, "content_type", "") == "content_package"),
+        None,
+    )
+    if package_content is None:
+        raise HTTPException(status_code=404, detail="该项目还没有内容包，请先生成内容包")
+
+    package = loads_json(package_content.data_json) or {}
+    items = [it for it in (package.get("items") or []) if isinstance(it, dict)]
+    target = next((it for it in items if str(it.get("id")) == str(item_id)), None)
+    if target is None:
+        raise HTTPException(status_code=404, detail="内容包里没有这一条：%s" % item_id)
+
+    resolved_asset = asset_id or next(
+        (str(a) for a in reversed(list(target.get("asset_ids") or [])) if str(a).strip()), ""
+    )
+    if not resolved_asset:
+        raise HTTPException(status_code=400, detail="该内容单元还没有成图，请先生成图片")
+
+    # 资产存的是**相对项目根**的路径（`backend/app/storage/images/x.png`），而后端进程的
+    # CWD 是 `backend/`——直接用会得到 False，误判成"文件不存在"。必须按项目根解析。
+    paths = await reference_images_from_asset_ids([resolved_asset])
+    image_path = Path(resolve_storage_path(paths[0])) if paths else None
+    if not image_path or not image_path.is_file():
+        raise HTTPException(status_code=404, detail="找不到该资产对应的图片文件：%s" % resolved_asset)
+    return target, resolved_asset, image_path
+
+
+@router.post(
+    "/{project_id}/content-package/items/{item_id}/blank-boxes",
+    summary="检测漫画页里的空白占位框（用于贴字时自动定位气泡）",
+)
+async def detect_comic_page_blank_boxes(
+    project_id: str,
+    item_id: str,
+    req: ComicBlankBoxesRequest,
+    svc: CreativeProjectService = Depends(service),
+):
+    """找出这一页里模型留下的空白区域，供贴字编辑器**自动摆框**。
+
+    为什么需要：提示词里写「留出对白气泡的空白位置」时，生图模型常会字面地画一个纯白
+    椭圆。手工估坐标很容易放偏，字就跑到气泡外面去了——这一步把位置先量出来。
+
+    结果是**第一遍粗筛**，不是判决：前端会把候选框直接放进编辑器，由用户增删调整。
+    坐标是 0~1 相对值，按从上到下、从左到右（阅读顺序）排序。
+    """
+    from app.services.creative_project.blank_boxes import (
+        DEFAULT_MIN_FILL,
+        DEFAULT_MIN_SIDE_R,
+        detect_blank_boxes,
+    )
+
+    _target, asset_id, image_path = await _locate_comic_page_asset(svc, project_id, item_id, req.asset_id)
+    boxes = detect_blank_boxes(
+        image_path,
+        min_fill=req.min_fill if req.min_fill is not None else DEFAULT_MIN_FILL,
+        min_side_r=req.min_side_ratio if req.min_side_ratio is not None else DEFAULT_MIN_SIDE_R,
+    )
+    return {
+        "success": True,
+        "source_asset_id": asset_id,
+        "boxes": [b["box"] for b in boxes],
+        "details": boxes,
+    }
+
+
 class ComicOverlayRequest(BaseModel):
     """漫画页贴字请求。
 
@@ -1540,36 +1634,13 @@ async def overlay_comic_page_text(
 
     产物是**派生资产**：原图不动，新图另存并登记进素材库，便于对照与回退。
     """
-    from app.services.asset_file_resolver import resolve_storage_path
-    from app.services.asset_hub.reference_resolver import reference_images_from_asset_ids
     from app.services.creative_project.overlay_text import overlay_spec
 
-    contents = svc.list_contents(project_id) if hasattr(svc, "list_contents") else []
-    package_content = next(
-        (c for c in contents if getattr(c, "content_type", "") == "content_package"),
-        None,
+    # 定位条目与页图的逻辑与「检测空白占位框」完全相同，共用 `_locate_comic_page_asset`，
+    # 免得两处实现各自漂移（尤其是那个"必须按项目根解析相对路径"的坑，复制两份迟早漏一处）。
+    _target, asset_id, image_path = await _locate_comic_page_asset(
+        svc, project_id, item_id, req.asset_id
     )
-    if package_content is None:
-        raise HTTPException(status_code=404, detail="该项目还没有内容包，请先生成内容包")
-
-    package = loads_json(package_content.data_json) or {}
-    items = [it for it in (package.get("items") or []) if isinstance(it, dict)]
-    target = next((it for it in items if str(it.get("id")) == str(item_id)), None)
-    if target is None:
-        raise HTTPException(status_code=404, detail="内容包里没有这一条：%s" % item_id)
-
-    asset_id = req.asset_id or next(
-        (str(a) for a in reversed(list(target.get("asset_ids") or [])) if str(a).strip()), ""
-    )
-    if not asset_id:
-        raise HTTPException(status_code=400, detail="该内容单元还没有成图，请先生成图片再贴字")
-
-    # 资产存的是**相对项目根**的路径（`backend/app/storage/images/x.png`），而后端进程的
-    # CWD 是 `backend/`——直接用会得到 False，误判成"文件不存在"。必须按项目根解析。
-    paths = await reference_images_from_asset_ids([asset_id])
-    image_path = Path(resolve_storage_path(paths[0])) if paths else None
-    if not image_path or not image_path.is_file():
-        raise HTTPException(status_code=404, detail="找不到该资产对应的图片文件：%s" % asset_id)
 
     try:
         result = overlay_spec(
