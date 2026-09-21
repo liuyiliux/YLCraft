@@ -140,7 +140,6 @@ class Model3DService:
 
             json_data = json.loads(f.read(chunk_length))
 
-        # 提取基本信息
         metadata = {
             "format": "glb",
             "version": version,
@@ -160,72 +159,149 @@ class Model3DService:
         if "nodes" in json_data:
             metadata["node_count"] = len(json_data["nodes"])
 
-        # 网格统计
-        if "meshes" in json_data:
-            total_vertices = 0
-            total_faces = 0
-            for mesh in json_data["meshes"]:
-                for prim in mesh.get("primitives", []):
-                    if "attributes" in prim and "POSITION" in prim["attributes"]:
-                        accessor = json_data["accessors"][prim["attributes"]["POSITION"]]
-                        total_vertices += accessor.get("count", 0)
-                    if "indices" in prim:
-                        accessor = json_data["accessors"][prim["indices"]]
-                        total_faces += accessor.get("count", 0) // 3
-
-            metadata["mesh_count"] = len(json_data["meshes"])
-            metadata["vertices"] = total_vertices
-            metadata["faces"] = total_faces
-
-        # 材质数量
-        if "materials" in json_data:
-            metadata["materials"] = len(json_data["materials"])
-
-        # 纹理数量
-        if "textures" in json_data:
-            metadata["textures"] = len(json_data["textures"])
-
-        # 动画数量
-        if "animations" in json_data:
-            metadata["animations"] = [anim.get("name", f"anim_{i}") for i, anim in enumerate(json_data["animations"])]
-
-        # 皮肤（骨骼）数量
-        if "skins" in json_data:
-            metadata["bones"] = len(json_data["skins"])
-
+        metadata.update(self._summarize_gltf(json_data))
         return metadata
 
+    @staticmethod
+    def _read_gltf_json(path: Path) -> Dict[str, Any]:
+        """读 GLB 的 JSON chunk 或 .gltf 全文（只读，不启 Blender）。"""
+        if path.suffix.lower() == ".gltf":
+            return json.loads(path.read_text(encoding="utf-8"))
+        import struct
+
+        with path.open("rb") as handle:
+            handle.read(12)  # magic + version + length
+            while True:
+                header = handle.read(8)
+                if len(header) < 8:
+                    return {}
+                length, chunk_type = struct.unpack("<I4s", header)
+                data = handle.read(length)
+                if chunk_type == b"JSON":
+                    return json.loads(data.decode("utf-8"))
+
+    @classmethod
+    def bone_names(cls, file_path: str) -> List[str]:
+        """模型里的骨骼名（按顺序去重）。
+
+        为什么单独做：判断一个模型"是不是已经统一到 Mixamo 命名"只需要读名字，
+        为这点事启动一次 Blender（十几秒）太浪费。
+        """
+        path = Path(file_path)
+        if not path.is_file():
+            return []
+        try:
+            gltf = cls._read_gltf_json(path)
+        except Exception as e:
+            logger.warning(f"[Model3DService] Failed to read glTF JSON: {e}")
+            return []
+        nodes = gltf.get("nodes") or []
+        names: List[str] = []
+        seen: set = set()
+        for skin in gltf.get("skins") or []:
+            for joint in skin.get("joints") or []:
+                if not isinstance(joint, int) or not (0 <= joint < len(nodes)):
+                    continue
+                name = str(nodes[joint].get("name") or "")
+                if name and name not in seen:
+                    seen.add(name)
+                    names.append(name)
+        return names
+
+    @staticmethod
+    def is_mixamo_skeleton(file_path: str) -> bool:
+        """骨骼命名是否已统一到 Mixamo 标准（决定是否还需要改名这一步）。
+
+        Mixamo 是动作库的事实标准——只有两边的骨骼名对得上，动画才能跨模型复用。
+        """
+        names = Model3DService.bone_names(file_path)
+        if not names:
+            return False
+        return all(name.startswith("mixamorig:") for name in names)
+
+    @staticmethod
+    def _summarize_gltf(json_data: dict) -> Dict[str, Any]:
+        """统计网格/骨骼/动画。GLB 与 .gltf **共用同一套口径**。
+
+        为什么抽出来（tasks #16 验收发现的真实缺陷）：
+        1. 原来把 `len(skins)`（皮肤**套数**）当成骨骼数——vanguard.glb 有 2 套 skin、
+           49 根骨骼，报告却写"2 根骨骼"。徽标靠布尔判断没露馅，但落库的数字是错的，
+           一旦有人在界面上显示"骨骼 N 根"就会误导"这个绑定只有 2 根骨"。
+           骨骼数应按骨架的 **joints** 数，多套 skin 可能共用骨骼，故取并集。
+        2. 原来 .gltf 分支根本不提取 skins，导致 GLTF 模型永远打不上「已绑骨」标签。
+        """
+        accessors = json_data.get("accessors") or []
+        meshes = json_data.get("meshes") or []
+
+        total_vertices = 0
+        total_faces = 0
+        for mesh in meshes:
+            for prim in mesh.get("primitives") or []:
+                position = (prim.get("attributes") or {}).get("POSITION")
+                if isinstance(position, int) and 0 <= position < len(accessors):
+                    total_vertices += int(accessors[position].get("count") or 0)
+                indices = prim.get("indices")
+                if isinstance(indices, int) and 0 <= indices < len(accessors):
+                    total_faces += int(accessors[indices].get("count") or 0) // 3
+
+        joints: set = set()
+        for skin in json_data.get("skins") or []:
+            for joint in skin.get("joints") or []:
+                if isinstance(joint, int):
+                    joints.add(joint)
+
+        animation_details: list[Dict[str, Any]] = []
+        for index, animation in enumerate(json_data.get("animations") or []):
+            channels = animation.get("channels") or []
+            samplers = animation.get("samplers") or []
+            start: Any = None
+            end: Any = None
+            for channel in channels:
+                sampler_index = channel.get("sampler", 0)
+                if not isinstance(sampler_index, int) or sampler_index >= len(samplers):
+                    continue
+                accessor_index = samplers[sampler_index].get("input")
+                if not isinstance(accessor_index, int) or accessor_index >= len(accessors):
+                    continue
+                accessor = accessors[accessor_index]
+                minimum = (accessor.get("min") or [None])[0]
+                maximum = (accessor.get("max") or [None])[0]
+                if minimum is not None:
+                    start = minimum if start is None else min(start, minimum)
+                if maximum is not None:
+                    end = maximum if end is None else max(end, maximum)
+            animation_details.append({
+                "name": animation.get("name") or f"anim_{index}",
+                "channels": len(channels),
+                "start": start,
+                "end": end,
+            })
+
+        summary: Dict[str, Any] = {
+            "mesh_count": len(meshes),
+            "vertices": total_vertices,
+            "faces": total_faces,
+            "skins": len(json_data.get("skins") or []),
+            "bones": len(joints),
+        }
+        if json_data.get("materials"):
+            summary["materials"] = len(json_data["materials"])
+        if json_data.get("textures"):
+            summary["textures"] = len(json_data["textures"])
+        if animation_details:
+            # `animations` 保持名称列表（既有调用方依赖它做布尔与展示）
+            summary["animations"] = [item["name"] for item in animation_details]
+            summary["animation_count"] = len(animation_details)
+            summary["animation_details"] = animation_details
+        return summary
+
     async def _extract_gltf_metadata(self, path: Path) -> Dict[str, Any]:
-        """提取 GLTF 文件元数据"""
+        """提取 GLTF 文件元数据（与 GLB 共用 `_summarize_gltf`）"""
         with open(path, "r") as f:
             json_data = json.load(f)
 
-        metadata = {
-            "format": "gltf",
-        }
-
-        # 复用 GLB 逻辑
-        if "meshes" in json_data:
-            total_vertices = 0
-            total_faces = 0
-            for mesh in json_data["meshes"]:
-                for prim in mesh.get("primitives", []):
-                    if "attributes" in prim and "POSITION" in prim["attributes"]:
-                        accessor = json_data["accessors"][prim["attributes"]["POSITION"]]
-                        total_vertices += accessor.get("count", 0)
-                    if "indices" in prim:
-                        accessor = json_data["accessors"][prim["indices"]]
-                        total_faces += accessor.get("count", 0) // 3
-
-            metadata["vertices"] = total_vertices
-            metadata["faces"] = total_faces
-
-        if "materials" in json_data:
-            metadata["materials"] = len(json_data["materials"])
-
-        if "animations" in json_data:
-            metadata["animations"] = len(json_data["animations"])
-
+        metadata: Dict[str, Any] = {"format": "gltf"}
+        metadata.update(self._summarize_gltf(json_data))
         return metadata
 
     async def _extract_obj_metadata(self, path: Path) -> Dict[str, Any]:
@@ -263,7 +339,10 @@ class Model3DService:
         """
         生成 3D 模型预览图（预留接口）
 
-        实际实现需要集成 Blender 或 three.js 进行服务端渲染
+        用 Blender 无头渲染（`core/blender.py`）。
+
+        Blender 不可用时返回 None 而不是抛错：预览是锦上添花，
+        没有它模型照样能用，不该因此让入库或列表整个失败。
         """
         path = Path(file_path)
 
@@ -273,12 +352,18 @@ class Model3DService:
         if output_path is None:
             output_path = str(path.parent / f"{path.stem}_preview.png")
 
-        # TODO: 集成服务端渲染
-        # 方案1: 使用 Blender 命令行渲染
-        # 方案2: 使用 headless three.js
-        logger.info(f"[Model3DService] Preview generation not implemented: {file_path}")
+        try:
+            from app.core.blender import get_blender_service
 
-        return None
+            service = get_blender_service()
+            if not await service.is_available():
+                logger.info("[Model3DService] Preview skipped: Blender not available")
+                return None
+            await service.generate_preview(path, Path(output_path), resolution=resolution)
+            return output_path
+        except Exception as e:
+            logger.error(f"[Model3DService] Failed to generate preview: {e}")
+            return None
 
     # -------------------------------------------------------------------------
     # 格式转换
@@ -291,25 +376,23 @@ class Model3DService:
         output_path: Optional[str] = None,
     ) -> Optional[str]:
         """
-        转换 3D 模型格式（预留接口）
+        转换 3D 模型格式（Blender 无头，见 `core/blender.py`）。
 
-        需要 Blender 或 pyransport 进行格式转换
+        这里**抛错**而不是返回 None：转换失败时调用方必须知道，
+        否则会拿到一个"说转成了 FBX、实际还是 GLB"的文件。
         """
         source = Path(source_path)
 
         if not source.exists():
-            return None
+            raise ValueError(f"源文件不存在：{source_path}")
 
         if output_path is None:
             output_path = str(source.parent / f"{source.stem}.{target_format}")
 
-        # TODO: 集成 Blender Python SDK
-        # bpy.ops.import_scene.gltf(filepath=source_path)
-        # bpy.ops.export_scene.gltf(filepath=output_path)
+        from app.core.blender import get_blender_service
 
-        logger.info(f"[Model3DService] Format conversion not implemented: {source_path} -> {target_format}")
-
-        return None
+        await get_blender_service().convert_format(source, Path(output_path))
+        return output_path
 
     # -------------------------------------------------------------------------
     # TripoSR 图生 3D

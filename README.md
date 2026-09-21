@@ -67,6 +67,43 @@ flowchart LR
 - PostgreSQL 16 + pgvector
 - Redis 可选。本地开发时任务队列会降级到内存模式
 - 视频与媒体工作流需要 FFmpeg
+- **3D 模型处理需要 Blender 4.5+**（前端 3D 查看器不需要，只有后端处理需要）
+
+### 关于 Blender 这个依赖
+
+后端用 Blender 的**无头命令行**处理 3D 模型，能力都在 `backend/app/core/blender.py` 与 `backend/app/services/model3d/blender_scripts/`：
+
+| 脚本 | 作用 |
+|---|---|
+| `convert.py` | 格式转换（glb/gltf/fbx/obj 互转）、减面、剥离骨骼、按映射给骨骼改名 |
+| `preview.py` | 渲染模型预览图（素材库卡片用；没有它模型会显示成「加载失败」） |
+| `skeleton_report.py` | 导出骨骼树并推断 Mixamo 对应关系 |
+| `upright.py` | 扶正绑定姿势（有些模型的 rest pose 是躺着的，靠自带动画才站起来） |
+| `retarget_bake.py` | 把别的模型的动作套到这个模型上（通用动作库） |
+
+**没有装 Blender 会怎样**：这些能力会**显式降级**而不是假装成功——模型照常入库与查看，只是没有预览图、格式转换与动作套用会明确报「Blender 不可用」。绑骨（调腾讯云）不受影响。
+
+安装方式（任选其一）：
+
+```bash
+# Windows
+winget install BlenderFoundation.Blender.LTS.4.5
+
+# Linux（snap 版本较新；发行版仓库里的常常偏旧）
+sudo snap install blender --classic
+#   或者官网下载 tar.xz 解压后软链到 PATH
+
+# macOS
+brew install --cask blender
+```
+
+程序会**自动查找** Blender：环境变量 `BLENDER_PATH` → 常见安装位置（Windows 的 `Program Files\Blender Foundation\*`、Linux 的 `/usr/bin/blender`、`/usr/local/bin/blender`、`/snap/bin/blender`、macOS 的 `/Applications/Blender.app`）→ PATH。装在别处时用环境变量指一下即可：
+
+```bash
+BLENDER_PATH=/opt/blender-4.5/blender
+```
+
+Linux 上无需图形界面，`--background` 模式不依赖 X11/显示器。
 
 ### 1. 启动 PostgreSQL 与 Redis
 

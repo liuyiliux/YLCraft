@@ -161,6 +161,13 @@ def _character_briefs(project_id: str, limit: int = 12) -> list[dict[str, Any]]:
 #: 否则 Agent 会把「只看到前 24 个」误当成「总共只有 24 个」，据此给出错的排产建议。
 PREVIS_UNCOVERED_LIMIT = 24
 PREVIS_SCENE_LIMIT = 12
+#: 每个场景摘要里的人形对象明细上限（同样显式标记截断，避免"只看到前 12 个"被读成"只有 12 个"）。
+PREVIS_HUMAN_PROXY_LIMIT = 12
+
+
+def _node_metadata(node: dict[str, Any]) -> dict[str, Any]:
+    metadata = node.get("metadata")
+    return metadata if isinstance(metadata, dict) else {}
 
 
 def _previs_scene_brief(row: PrevisSceneDocument) -> dict[str, Any]:
@@ -168,6 +175,21 @@ def _previs_scene_brief(row: PrevisSceneDocument) -> dict[str, Any]:
     scene = dict(row.scene_json or {})
     nodes = [item for item in (scene.get("nodes") or []) if isinstance(item, dict)]
     cameras = [item for item in (scene.get("cameras") or []) if isinstance(item, dict)]
+    # 人形对象的**当前状态**（姿势 / 动作 / 身高）必须给出来：只给 id 与锁定状态的话，
+    # Agent 只能猜"这个人现在是什么样"，于是会提出"把坐姿改成坐姿"这类无效改动。
+    human_proxies = [
+        {
+            "node_id": str(item.get("id") or ""),
+            "name": str(item.get("name") or ""),
+            "height": _node_metadata(item).get("height"),
+            "pose": str(_node_metadata(item).get("pose") or "stand"),
+            # 动作存的是引用（`motion:<标识>` 或模型自带的 clip 名），空串表示无动作
+            "motion": str(_node_metadata(item).get("animationClip") or ""),
+            "custom_pose": bool(_node_metadata(item).get("poseJoints")),
+        }
+        for item in nodes
+        if str(item.get("kind") or "") == "human_proxy"
+    ]
     return {
         # scene_id / 节点与机位 id 都是创建后稳定的，是 Agent 唯一可用的操作目标
         "scene_id": str(row.id),
@@ -192,6 +214,8 @@ def _previs_scene_brief(row: PrevisSceneDocument) -> dict[str, Any]:
             for item in cameras
             if item.get("locked")
         ],
+        "human_proxies": human_proxies[:PREVIS_HUMAN_PROXY_LIMIT],
+        "human_proxies_truncated": len(human_proxies) > PREVIS_HUMAN_PROXY_LIMIT,
     }
 
 

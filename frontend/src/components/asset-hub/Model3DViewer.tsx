@@ -7,6 +7,7 @@
 
 import { Component, useState, useRef, Suspense, type ReactNode } from 'react'
 import { formatFileSize } from '../../utils/format'
+import { animationOptions, isPoseDuration } from '../../utils/animationLabels'
 import { Canvas, useFrame, useLoader, useThree } from '@react-three/fiber'
 import { 
   OrbitControls, 
@@ -115,6 +116,26 @@ class Model3DErrorBoundary extends Component<{ children: ReactNode }, { hasError
   }
 }
 
+// 环境贴图边界：环境反射只是"锦上添花"，加载失败（离线、CDN 不可达）时
+// **不该让整个 3D 画布崩掉**。原先没有这层，Environment 的 fetch 失败会一路冒到
+// Model3DErrorBoundary，用户看到的提示是"模型加载失败，文件可能不完整或格式不支持"——
+// 把"网线问题"说成了"模型坏了"，排查方向完全被带偏。
+class EnvironmentBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
+  state = { hasError: false }
+
+  static getDerivedStateFromError() {
+    return { hasError: true }
+  }
+
+  componentDidCatch(error: Error) {
+    console.warn('[Model3DViewer] environment map unavailable, falling back to plain lights:', error)
+  }
+
+  render() {
+    return this.state.hasError ? null : this.props.children
+  }
+}
+
 // 图层级错误边界：场景多图层模式中单个模型损坏/不完整时，
 // 只降级该图层，不让整个 3D 视口变成错误卡片。
 class LayerErrorBoundary extends Component<{ children: ReactNode; name?: string }, { hasError: boolean }> {
@@ -165,7 +186,7 @@ function GLTFModel({
   playing?: boolean
   visible?: boolean
   onLoad?: (metadata: Asset3DMetadata) => void
-  onAnimations?: (names: string[]) => void
+  onAnimations?: (names: string[], durations: number[]) => void
   onParts?: (parts: PartNode[]) => void
   partVisibility?: Record<string, boolean>
 }) {
@@ -208,7 +229,9 @@ function GLTFModel({
   // 动画名称上报（仅当名称集合变化时）
   const namesKey = names.join('\u0001')
   useEffect(() => {
-    onAnimations?.(names)
+    // 时长一起上报：下拉要靠它把「定格姿态」（只有 1 帧的 clip）标出来，
+    // 否则用户会把它当普通动画选，然后看到一闪一闪还以为模型坏了。
+    onAnimations?.(names, animations.map(clip => clip.duration))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [namesKey])
 
@@ -220,7 +243,15 @@ function GLTFModel({
     if (clip) {
       const action = actions[clip]
       if (action) {
-        action.reset().fadeIn(0.2).play()
+        // 「定格姿态」类 clip（实测只有 1 帧、时长 0.03 秒）必须**播一次然后停住**：
+        // 循环播放会让它在两个关键帧之间每秒来回几十次，看起来一闪一闪。
+        // 淡入同理要跳过——0.2 秒的淡入比整个 clip 还长 6 倍，只会让它更"闪"。
+        const pose = isPoseDuration(action.getClip().duration)
+        action.reset()
+        action.setLoop(pose ? THREE.LoopOnce : THREE.LoopRepeat, pose ? 1 : Infinity)
+        action.clampWhenFinished = pose
+        if (!pose) action.fadeIn(0.2)
+        action.play()
       }
     }
   }, [actions, names, animationIndex, playing])
@@ -343,7 +374,7 @@ function Scene({
   onMetadataLoad?: (metadata: Asset3DMetadata) => void
   animationIndex?: number
   playing?: boolean
-  onAnimations?: (names: string[]) => void
+  onAnimations?: (names: string[], durations: number[]) => void
   onModelAnimations?: (key: string, names: string[]) => void
   onModelParts?: (key: string, parts: PartNode[]) => void
 }) {
@@ -457,7 +488,13 @@ function Scene({
         color={light?.keyColor ?? '#ffffff'}
       />
 
-      {showEnvironment && <Environment preset="studio" background={false} environmentIntensity={0.25} />}
+      {/* 用**本地** HDR：`preset="studio"` 会去 drei 的 CDN 现下（实测本机取不到，
+          一失败整个画布就白屏）。文件在 `public/hdr/`，一次下载、永久离线可用。 */}
+      {showEnvironment && (
+        <EnvironmentBoundary>
+          <Environment files="/hdr/studio_small_03_1k.hdr" background={false} environmentIntensity={0.25} />
+        </EnvironmentBoundary>
+      )}
       
       <group>
         {models && models.length > 0 ? (
@@ -588,6 +625,7 @@ export function Model3DViewer({
   const [viewRequest, setViewRequest] = useState<{ dir: string; nonce: number }>({ dir: 'front', nonce: 0 })
   const containerRef = useRef<HTMLDivElement>(null)
   const [animationNames, setAnimationNames] = useState<string[]>([])
+  const [animationDurations, setAnimationDurations] = useState<number[]>([])
   const [animationIndex, setAnimationIndex] = useState(-1)
   const [playing, setPlaying] = useState(false)
 
@@ -598,6 +636,7 @@ export function Model3DViewer({
   // 模型切换时重置动画状态
   useEffect(() => {
     setAnimationNames([])
+    setAnimationDurations([])
     setAnimationIndex(-1)
     setPlaying(false)
   }, [modelUrl])
@@ -877,8 +916,8 @@ export function Model3DViewer({
               size="small"
               value={animationIndex >= 0 ? animationIndex : undefined}
               placeholder="选择动画"
-              style={{ width: 160 }}
-              options={animationNames.map((name, index) => ({ label: name, value: index }))}
+              style={{ width: 200 }}
+              options={animationOptions(animationNames, animationDurations)}
               onChange={(value) => { setAnimationIndex(Number(value)); setPlaying(true) }}
             />
             <Tooltip title={playing ? '暂停动画' : '播放动画'}>
@@ -957,7 +996,7 @@ export function Model3DViewer({
             onMetadataLoad={setMetadata}
             animationIndex={animationIndex}
             playing={playing}
-            onAnimations={setAnimationNames}
+            onAnimations={(names, durations) => { setAnimationNames(names); setAnimationDurations(durations) }}
             onModelAnimations={onModelAnimations}
             onModelParts={onModelParts}
           />

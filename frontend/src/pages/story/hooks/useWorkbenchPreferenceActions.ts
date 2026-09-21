@@ -236,16 +236,57 @@ export function useWorkbenchPreferenceActions(deps: Record<string, any>) {
       setLoadingAction(null)
     }
   }
-  async function handleOpenPrevis(storyboardContentId: string, panelNumber: number, title?: string) {
+  /**
+   * 打开某格分镜的 3D 预演。
+   *
+   * `options.draft` 为真时带 `draft=1` 进入：预演台**先把该格的初稿算出来并进入幽灵态**
+   * （"分镜 → 初稿"这条主动线的一键入口，tasks 6.1）。参数由预演台在生成后自行去掉，
+   * 因此刷新页面不会重复生成。
+   */
+  async function handleOpenPrevis(
+    storyboardContentId: string,
+    panelNumber: number,
+    title?: string,
+    options?: { draft?: boolean; queue?: number[] },
+  ) {
     if (!selectedProject) return
+    /**
+     * 批量：把勾选的每一格都取到（或建出）自己的场景，然后**从第一格开始逐格确认**（tasks 6.12）。
+     *
+     * 队列放在 URL 上（`queue=场景ID,...`），由预演台按 `scene_id` 在队列里的位置推进——
+     * 因此这里只负责"备齐场景"，**一格都不生成草案**：草案由预演台在每一格各自生成，
+     * 确认也必须逐格点。"批量"批的是导航，不是确认。
+     */
+    const panelNumbers = options?.queue?.length ? options.queue : [panelNumber]
     try {
-      const scene = await getOrCreatePrevisScene({
-        projectId: selectedProject.id,
-        storyboardContentId,
-        panelNumber,
-        title,
-      })
-      navigate(`/previs?scene_id=${encodeURIComponent(scene.id)}`)
+      const sceneIds: string[] = []
+      const skipped: number[] = []
+      for (const number of panelNumbers) {
+        try {
+          const scene = await getOrCreatePrevisScene({
+            projectId: selectedProject.id,
+            storyboardContentId,
+            panelNumber: number,
+            title,
+          })
+          sceneIds.push(scene.id)
+        } catch {
+          // 一格失败不该拖垮整批：先记下，最后一起说清楚跳过了哪几格
+          skipped.push(number)
+        }
+      }
+      if (!sceneIds.length) {
+        message.error('没有可用的预演场景：这几格的场景都没能创建出来')
+        return
+      }
+      if (skipped.length) {
+        message.warning(`有 ${skipped.length} 格没能打开（分镜 ${skipped.join('、')}），已从批量中跳过`)
+      }
+      const params = new URLSearchParams({ scene_id: sceneIds[0] })
+      if (options?.draft) params.set('draft', '1')
+      // 只有一格时不写队列：预演台据此不显示批量进度，避免"1/1 的批量"这种噪音
+      if (sceneIds.length > 1) params.set('queue', sceneIds.join(','))
+      navigate(`/previs?${params.toString()}`)
     } catch (error: any) {
       message.error(error?.message || '打开 3D 预演失败')
     }

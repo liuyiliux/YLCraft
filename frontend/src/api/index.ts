@@ -1840,6 +1840,40 @@ export async function getOrCreatePrevisScene(params: {
 export const getPrevisScene = (sceneId: string) =>
   request(`/previs/scenes/${encodeURIComponent(sceneId)}`) as Promise<{ success: boolean; data: PrevisScene }>
 
+/** 初稿的一条默认值说明：哪个字段、取了什么、为什么。 */
+export interface PrevisDraftDefault {
+  field: string
+  value: unknown
+  reason: string
+}
+
+/**
+ * 分镜格 → 预演初稿（**只读**，不落库）。
+ *
+ * `proposed_scene` 是服务端把草案应用一遍后的场景，供幽灵预览直接渲染——客户端**不再实现
+ * 一份"应用操作"的逻辑**（两份实现必然漂移，而且"看到的"和"落库的"会不一致）。
+ * `scene_revision` 是生成草案时服务端的场景版本：与本地 `scene.revision` 不一致时，
+ * 说明本地有未保存改动或场景已被他人改动，必须拦住确认。
+ */
+export interface PrevisDraft {
+  success: boolean
+  scene_id: string
+  panel_number: number
+  read_only: boolean
+  scene_revision: number
+  proposed_scene: Record<string, any>
+  operations: Array<{ type: string; targetId?: string; payload?: Record<string, any>; summary?: string }>
+  defaults: PrevisDraftDefault[]
+  warnings: string[]
+  rejected: Array<{ index: number; type: string; reason: string }>
+  summary: Record<string, any>
+}
+
+export const draftPrevisScene = (sceneId: string) =>
+  request(`/previs/scenes/${encodeURIComponent(sceneId)}/draft`, {
+    method: 'POST',
+  }) as Promise<PrevisDraft>
+
 export const savePrevisScene = (sceneId: string, data: {
   expected_revision: number
   title?: string
@@ -1849,6 +1883,62 @@ export const savePrevisScene = (sceneId: string, data: {
     method: 'PUT',
     body: JSON.stringify(data),
   }) as Promise<{ success: boolean; data: PrevisScene }>
+
+/**
+ * 一条可复用的预演动作 / 姿势。
+ *
+ * `carrier` 决定它能驱动谁：`params` 驱动程序化人形（16 个关节通道）、
+ * `transform` 驱动任意对象（位置/旋转/缩放，**不需要骨骼**）、`bone` 是骨骼型动作。
+ * `license_status` 为 `unverified` 只表示"未记录许可"，不等于不能使用。
+ */
+export interface PrevisMotion {
+  id: string
+  slug: string
+  name: string
+  carrier: 'params' | 'transform' | 'bone' | string
+  skeleton: string | null
+  category: string
+  tags: string[]
+  fps: number
+  frame_count: number
+  duration_seconds: number
+  loopable: boolean
+  channels: string[]
+  recommended_speed_mps: number | null
+  origin: string
+  license: string | null
+  license_url: string | null
+  license_status: 'recorded' | 'unverified' | string
+  file_path: string | null
+  /** 逐通道关键帧；仅 `includePayload=true` 时下发，避免清单体积随动作数放大 */
+  payload?: {
+    channels: Record<string, [number, number][]>
+    stride_meters?: number
+    steps_per_cycle?: number
+  }
+}
+
+/**
+ * 预演动作清单（前端选择器与 AI 的"先查后引"同源）。
+ *
+ * 默认**不下发曲线**：清单是给人挑、给 AI 看的，只有真要驱动某个对象时才需要逐通道数据。
+ */
+export const listPrevisMotions = (
+  params: { carrier?: string; skeleton?: string; category?: string; tag?: string; includePayload?: boolean } = {},
+) => {
+  const search = new URLSearchParams()
+  if (params.carrier) search.set('carrier', params.carrier)
+  if (params.skeleton) search.set('skeleton', params.skeleton)
+  if (params.category) search.set('category', params.category)
+  if (params.tag) search.set('tag', params.tag)
+  if (params.includePayload) search.set('include_payload', 'true')
+  const query = search.toString()
+  return request(`/previs/motions${query ? `?${query}` : ''}`) as Promise<{
+    success: boolean
+    motions: PrevisMotion[]
+    total: number
+  }>
+}
 
 /** 预演截图回流结果。`linked=false` 表示资产已入库但分镜关联失败，可用 `retry_hint` 的方式重试。 */
 export interface PrevisCaptureResult {
@@ -1863,6 +1953,18 @@ export interface PrevisCaptureResult {
   retry_hint: string
 }
 
+/** dataURL → Blob。截图与批量帧共用同一条 base64 解码，避免两处各写一份。 */
+const dataUrlToBlob = (dataUrl: string): Blob => {
+  const [meta, base64] = dataUrl.split(',')
+  const mime = /:(.*?);/.exec(meta || '')?.[1] || 'image/png'
+  const binary = atob(base64 || '')
+  const bytes = new Uint8Array(binary.length)
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)
+  return new Blob([bytes], { type: mime })
+}
+
+const mimeExtension = (mime: string) => (mime === 'image/webp' ? 'webp' : mime === 'image/jpeg' ? 'jpg' : 'png')
+
 /**
  * 把预演台当前机位的截图回流到 Asset Hub 并关联分镜面板。
  *
@@ -1872,14 +1974,9 @@ export const capturePrevisScene = (
   sceneId: string,
   params: { dataUrl: string; cameraId?: string; frame?: number },
 ) => {
-  const [meta, base64] = params.dataUrl.split(',')
-  const mime = /:(.*?);/.exec(meta || '')?.[1] || 'image/png'
-  const binary = atob(base64 || '')
-  const bytes = new Uint8Array(binary.length)
-  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)
-  const extension = mime === 'image/webp' ? 'webp' : 'png'
+  const blob = dataUrlToBlob(params.dataUrl)
   const form = new FormData()
-  form.append('file', new Blob([bytes], { type: mime }), `previs-capture.${extension}`)
+  form.append('file', blob, `previs-capture.${mimeExtension(blob.type)}`)
   form.append('camera_id', params.cameraId || '')
   form.append('frame', String(params.frame ?? 0))
   return request(`/previs/scenes/${encodeURIComponent(sceneId)}/capture`, {
@@ -1887,6 +1984,88 @@ export const capturePrevisScene = (
     body: form,
   }) as Promise<{ success: boolean; data: PrevisCaptureResult }>
 }
+
+/** 一帧采集结果：`frame` 是它在时间轴上的真实帧号（不一定等于数组下标）。 */
+export interface PrevisExportedFrame {
+  frame: number
+  dataUrl: string
+}
+
+export interface PrevisExportOptions {
+  frames: PrevisExportedFrame[]
+  cameraId?: string
+  fps?: number
+  step?: number
+}
+
+const buildPrevisExportForm = (params: PrevisExportOptions) => {
+  const form = new FormData()
+  params.frames.forEach(item => {
+    // 文件名只用于让服务端按上传顺序落盘（ffmpeg 读序列要求编号连续）；
+    // 真实帧号由 start_frame + step 在服务端推导，不靠文件名猜。
+    form.append('files', dataUrlToBlob(item.dataUrl), `previs-frame-${String(item.frame).padStart(5, '0')}.jpg`)
+  })
+  form.append('camera_id', params.cameraId || '')
+  form.append('fps', String(params.fps ?? 24))
+  form.append('step', String(params.step ?? 1))
+  form.append('start_frame', String(params.frames[0]?.frame ?? 0))
+  return form
+}
+
+/**
+ * 批量参考帧导出（ZIP）。
+ *
+ * 不走统一 `request`：那条路按 JSON/text 解析响应体，而这里要的是二进制 ZIP。
+ * 帧数与时长由服务端放在响应头里返回，调用方可直接用来提示，不必解压。
+ */
+export const exportPrevisFrames = async (sceneId: string, params: PrevisExportOptions) => {
+  const response = await fetch(`${BASE}/previs/scenes/${encodeURIComponent(sceneId)}/export-frames`, {
+    method: 'POST',
+    body: buildPrevisExportForm(params),
+  })
+  if (!response.ok) {
+    const text = await response.text()
+    let detail = text
+    try {
+      detail = JSON.parse(text)?.detail || text
+    } catch {
+      // 非 JSON 错误体：原样当详情用，不要吞成"未知错误"
+    }
+    const error = new Error(detail || `HTTP ${response.status}`)
+    ;(error as any).status = response.status
+    throw error
+  }
+  return {
+    blob: await response.blob(),
+    frameCount: Number(response.headers.get('X-Previs-Frame-Count') || params.frames.length),
+    durationSeconds: Number(response.headers.get('X-Previs-Duration-Seconds') || 0),
+  }
+}
+
+/** 服务端合成任务回执。视频在任务完成后进入素材库，任务进度去任务中心看。 */
+export interface PrevisExportVideoResult {
+  task_id: string
+  export_id: string
+  scene_id: string
+  scene_revision: number
+  frame_count: number
+  fps: number
+  duration_seconds: number
+  status: string
+  message: string
+}
+
+/**
+ * 服务端合成预演视频（真 24fps）。
+ *
+ * 刻意不用浏览器实时录制：`MediaRecorder` 按墙上时钟打时间戳，视口稳定不了 24fps
+ * 就会录出时长漂移的视频；这里逐帧都来自指定帧号，帧率由服务端固定。
+ */
+export const exportPrevisVideo = (sceneId: string, params: PrevisExportOptions) =>
+  request(`/previs/scenes/${encodeURIComponent(sceneId)}/export-video`, {
+    method: 'POST',
+    body: buildPrevisExportForm(params),
+  }) as Promise<{ success: boolean; data: PrevisExportVideoResult }>
 
 export const listCreativeProjectContents = (
   projectId: string,

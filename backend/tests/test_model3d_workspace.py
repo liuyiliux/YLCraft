@@ -4,10 +4,12 @@ import json
 
 import pytest
 
+from app.api.v1 import model3d_workspace as rigging_api
 from app.api.v1.model3d_workspace import (
     DEFAULT_POLL_INTERVAL_SECONDS,
     Model3DGenerateRequest,
     Model3DRigRequest,
+    _assert_rig_source_size,
     _backend_entry,
     _connector_capability,
     _poll_interval_seconds,
@@ -326,6 +328,58 @@ def test_connector_capability_defaults_to_generation_and_reads_rigging():
     entry = _backend_entry(_rigging_connector())
     assert entry["capability"] == "rigging"
     assert _backend_entry(generation)["capability"] == "generation"
+
+
+def test_rig_source_rejects_files_over_provider_limit(tmp_path, monkeypatch):
+    """超过 60MB 必须在本机就拦住，否则要提交+轮询一轮才知道白跑（实测素材库里
+    就有一个 75MB 的模型会撞上这条）。"""
+    monkeypatch.setattr(rigging_api, "_RIG_SOURCE_MAX_BYTES", 1024)
+
+    oversized = tmp_path / "big.glb"
+    oversized.write_bytes(b"x" * 2048)
+    with pytest.raises(ValueError, match="超过绑骨上限"):
+        _assert_rig_source_size(oversized)
+
+    ok = tmp_path / "small.glb"
+    ok.write_bytes(b"x" * 512)
+    _assert_rig_source_size(ok)  # 不抛错
+
+
+def test_suggested_map_reads_first_armature(tmp_path):
+    report = tmp_path / "skeleton.json"
+    report.write_text(
+        json.dumps({"armatures": [{"armature": "A", "suggested_map": {"a": "mixamorig:Hips"}}]}),
+        encoding="utf-8",
+    )
+    assert rigging_api._suggested_map(report) == {"a": "mixamorig:Hips"}
+
+
+def test_suggested_map_handles_missing_or_broken_report(tmp_path):
+    """报告文件缺失/损坏/无骨架时都要返回空，而不是抛异常——
+    这是后台任务的输入，崩掉会让任务直接失败且原因不明。"""
+    assert rigging_api._suggested_map(tmp_path / "nope.json") == {}
+
+    broken = tmp_path / "broken.json"
+    broken.write_text("{not json", encoding="utf-8")
+    assert rigging_api._suggested_map(broken) == {}
+
+    empty = tmp_path / "empty.json"
+    empty.write_text(json.dumps({"armatures": []}), encoding="utf-8")
+    assert rigging_api._suggested_map(empty) == {}
+
+
+def test_rig_source_limit_message_names_actual_size(tmp_path, monkeypatch):
+    """错误信息要带真实体积和当前上限：图生 3D 默认 50 万面，
+    用户得知道到底大了多少、上限又是多少。"""
+    monkeypatch.setattr(rigging_api, "_RIG_SOURCE_MAX_BYTES", 1024 * 1024)
+    oversized = tmp_path / "big.glb"
+    oversized.write_bytes(b"x" * int(2.5 * 1024 * 1024))
+
+    with pytest.raises(ValueError) as caught:
+        _assert_rig_source_size(oversized)
+    message = str(caught.value)
+    assert "2.5MB" in message      # 实际体积
+    assert "1MB" in message        # 上限跟着常量走，不写死在文案里
 
 
 def test_rigging_flags_derive_tags_from_extracted_metadata():

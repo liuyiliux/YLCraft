@@ -407,6 +407,26 @@ class AssetNodeService:
         )
         return list(result.scalars().all())
 
+    async def get_tags_map(self, node_ids: List[str]) -> Dict[str, List[str]]:
+        """批量取节点的真实标签名（`AssetTagLink` → `Tag.name`）。
+
+        为什么需要它：写入侧（`create` / `add_tags`）把标签存在**关联表**里，
+        而卡片视图读的是 `AssetNode.tags_json`——后者创建时是空数组，两者长期不一致。
+        实测后果：素材库按 `rigged` / `animated` 筛选**一条都查不到**（而标签其实写进去了），
+        卡片上的标签也显示不全。这里按 node_ids 一次查完，避免逐节点 N+1。
+        """
+        if not node_ids:
+            return {}
+        result = await self.session.execute(
+            select(AssetTagLink.asset_node_id, Tag.name)
+            .join(Tag, Tag.id == AssetTagLink.tag_id)
+            .where(AssetTagLink.asset_node_id.in_(node_ids))
+        )
+        grouped: Dict[str, List[str]] = {}
+        for node_id, name in result.all():
+            grouped.setdefault(str(node_id), []).append(str(name))
+        return grouped
+
     # -------------------------------------------------------------------------
     # 统计
     # -------------------------------------------------------------------------

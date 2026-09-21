@@ -9,6 +9,9 @@ import {
   InputNumber,
   List,
   Modal,
+  Popover,
+  Progress,
+  Segmented,
   Select,
   Slider,
   Space,
@@ -20,8 +23,10 @@ import {
 } from 'antd'
 import {
   ArrowLeftOutlined,
+  BulbOutlined,
   CameraOutlined,
   DeleteOutlined,
+  DownloadOutlined,
   EyeInvisibleOutlined,
   EyeOutlined,
   HistoryOutlined,
@@ -31,14 +36,40 @@ import {
   PlayCircleOutlined,
   PlusOutlined,
   SaveOutlined,
+  SettingOutlined,
   UnlockOutlined,
 } from '@ant-design/icons'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { capturePrevisScene, createPrevisScene, getPrevisScene, listAssets, listPrevisScenes, savePrevisScene, type PrevisScene } from '../../api'
+import {
+  capturePrevisScene,
+  createPrevisScene,
+  draftPrevisScene,
+  type PrevisDraft,
+  exportPrevisFrames,
+  exportPrevisVideo,
+  getPrevisScene,
+  listAssets,
+  listPrevisMotions,
+  listPrevisScenes,
+  savePrevisScene,
+  type PrevisExportedFrame,
+  type PrevisMotion,
+  type PrevisScene,
+} from '../../api'
 import * as THREE from 'three'
 import type { Asset } from '../../types/api'
 import SceneViewport, { type GizmoMode, type SceneCaptureFn } from './SceneViewport'
-import { HUMAN_PROXY_POSES, humanProxyPoseKey } from '../../components/three/humanProxy'
+import { animationDisplay } from '../../utils/animationLabels'
+import {
+  HUMAN_PROXY_POSES,
+  humanProxyHeight,
+  humanProxyPoseKey,
+  resolveHumanProxyPose,
+  sanitizeHumanProxyPose,
+  type HumanProxyPose,
+} from '../../components/three/humanProxy'
+import HumanProxyJointPanel from './HumanProxyJointPanel'
+import { motionSlugFromRef, toMotionRef } from './motionRuntime'
 import {
   DEFAULT_DURATION_FRAMES,
   DEFAULT_FPS,
@@ -74,11 +105,13 @@ import {
   evaluateCamera,
   evaluateNodeTransform,
   frameToSeconds,
+  planExportFrames,
   removeKeyframeAt,
   removeTargetKeyframes,
   sampleChannel,
   secondsToFrame,
   upsertKeyframe,
+  type PrevisExportPlan,
 } from './timeline'
 import {
   DEFAULT_APERTURE,
@@ -91,6 +124,22 @@ import {
   fovFromFocalLength,
   type SensorFormat,
 } from './optics'
+import { CAMERA_MOVE_TEMPLATES, buildCameraMove, cameraMoveTemplate, type CameraMoveId } from './cameraMoves'
+/**
+ * 别名导入不只是为了顺口：局部变量也叫 `draftBlocked*` / `ghostNodeIds`，若与导入同名，
+ * 漏改一处就会留下"旧标识符指向导入的函数"——`Boolean(fn)` 恒为真，按钮永远点不动，
+ * 而且 TypeScript **不会报错**（函数引用完全可以当布尔用）。改名之后同样的手误会直接编译失败。
+ */
+import {
+  draftBlockedReason as computeDraftBlockReason,
+  draftNodeIds as computeDraftNodeIds,
+} from './draftView'
+import {
+  draftQueueLabel,
+  draftQueueNextParams,
+  draftQueuePosition,
+  parseDraftQueue,
+} from './draftQueue'
 
 const { Title, Text } = Typography
 
@@ -167,7 +216,7 @@ function makeHumanProxyNode(): PrevisNode {
     transform: { ...DEFAULT_TRANSFORM, position: [0, 0, 0] },
     visible: true,
     locked: false,
-    metadata: { height: 1.7, pose: 'stand', proxyStyle: 'capsule' },
+    metadata: { height: 1.7, pose: 'stand' },
   }
 }
 
@@ -319,9 +368,133 @@ function LightNodeControls({ node, onChange }: {
   )
 }
 
+/**
+ * 人形占位节点的姿势 / 动作控件。
+ *
+ * **独立占据名称行的下一行，而不是挤进名称行**：左侧节点面板只有 280px 宽，
+ * 「载体 84 + 姿势 72 + 动作 104 + 设置 24 + 三个图标按钮 72 + 间距」固定宽度合计已超过
+ * 面板宽度，挤在一行的实际后果是名称输入框被压成零宽、动作下拉被裁到面板外、
+ * 选中项文案被截成「行走（循…」。拆行后动作下拉独占整行；弹层用
+ * `popupMatchSelectWidth={false}` 按内容宽度展开，选项文案不再被控件宽度裁剪。
+ *
+ * 载体下拉已去掉（UE 白模下线，只剩通用胶囊人一种，见 `humanProxy.tsx` 文件头）：
+ * 一个只有单个选项的下拉是噪音。
+ */
+function HumanProxyNodeControls({
+  node,
+  motions,
+  motionsLoading,
+  activeMotion,
+  onPoseChange,
+  onMotionChange,
+  onPoseJointsChange,
+  onHeightChange,
+  onResetPose,
+}: {
+  node: PrevisNode
+  /** 能驱动程序化人形的动作（参数型）。 */
+  motions: PrevisMotion[]
+  motionsLoading: boolean
+  /** 当前生效的动作标识，空串表示无动作。 */
+  activeMotion: string
+  onPoseChange: (id: string, pose: string) => void
+  onMotionChange: (id: string, clip: string) => void
+  onPoseJointsChange: (id: string, joints: HumanProxyPose) => void
+  onHeightChange: (id: string, height: number) => void
+  onResetPose: (id: string, pose: string) => void
+}) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '4px 8px 8px 8px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>姿势</Text>
+        <Select
+          size="small"
+          value={humanProxyPoseKey(node.metadata.pose)}
+          disabled={node.locked}
+          onChange={pose => onPoseChange(node.id, pose)}
+          options={Object.entries(HUMAN_PROXY_POSES).map(([key, { label }]) => ({ value: key, label }))}
+          style={{ flex: 1, minWidth: 0 }}
+        />
+        <Popover
+          trigger="click"
+          placement="bottomRight"
+          content={
+            <HumanProxyJointPanel
+              pose={resolveHumanProxyPose(node.metadata)}
+              height={humanProxyHeight(node.metadata.height)}
+              custom={Boolean(sanitizeHumanProxyPose(node.metadata.poseJoints))}
+              disabled={node.locked}
+              onChange={next => onPoseJointsChange(node.id, next)}
+              onHeightChange={next => onHeightChange(node.id, next)}
+              onReset={() => onResetPose(node.id, humanProxyPoseKey(node.metadata.pose))}
+            />
+          }
+        >
+          <Tooltip title="身高与关节微调">
+            <Button size="small" disabled={node.locked} icon={<SettingOutlined />} />
+          </Tooltip>
+        </Popover>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>动作</Text>
+        {/* 「没有可选动作」必须说明原因（tasks 6.5）：一个只有"无动作"的下拉会被当成功能坏了 */}
+        {motions.length === 0 && !motionsLoading ? (
+          <Text type="secondary" style={{ fontSize: 11, flex: 1, minWidth: 0 }}>
+            动作库为空（没有 params 载体的动作）：确认后端已灌入内置动作（`GET /api/v1/previs/motions`）
+          </Text>
+        ) : (
+        <Tooltip title="随时间变化的动作；选「无动作」时用上方静态姿势">
+          <Select
+            size="small"
+            value={activeMotion}
+            disabled={node.locked}
+            loading={motionsLoading}
+            onChange={slug => onMotionChange(node.id, slug ? toMotionRef(slug) : '')}
+            options={[
+              { value: '', label: '无动作' },
+              ...motions.map(motion => ({
+                value: motion.slug,
+                label: motion.loopable ? `${motion.name}（循环）` : motion.name,
+              })),
+            ]}
+            popupMatchSelectWidth={false}
+            style={{ flex: 1, minWidth: 0 }}
+          />
+        </Tooltip>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * 批量导出帧数上限，与后端 `EXPORT_MAX_FRAMES` 保持一致——前端先拦一次，
+ * 免得几十 MB 上传完才被拒。
+ */
+const EXPORT_MAX_FRAMES = 600
+
+/**
+ * 导出底色。批量帧是 JPEG，**没有 alpha 通道**：直接用透明画布编码会得到黑底，
+ * 那不是渲染坏了而是格式限制，所以由用户显式选一个底色，而不是默默给黑。
+ */
+const EXPORT_BACKGROUNDS: Record<'dark' | 'light', string> = { dark: '#111318', light: '#ffffff' }
+
+/** 触发浏览器下载本地 Blob。 */
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  // 立即 revoke 可能让下载还没开始就失效，延后释放
+  window.setTimeout(() => URL.revokeObjectURL(url), 10_000)
+}
+
 export default function PrevisPage() {
   const navigate = useNavigate()
-  const [params] = useSearchParams()
+  const [params, setParams] = useSearchParams()
   const sceneId = params.get('scene_id') || ''
 
   const [scene, setScene] = useState<PrevisScene | null>(null)
@@ -334,8 +507,19 @@ export default function PrevisPage() {
   const [modelLoading, setModelLoading] = useState(false)
   const [cameraMode, setCameraMode] = useState<'director' | 'active'>('director')
   const [capturing, setCapturing] = useState(false)
+  // 批量导出（Phase 4 阶段 A / B）。采集靠逐帧挪播放头取图，期间不能让播放/编辑
+  // 干扰，否则同一批帧会来自不同状态——「同一帧永远是同一姿态」这条性质就没了。
+  const [exportOpen, setExportOpen] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [exportProgress, setExportProgress] = useState({ done: 0, total: 0 })
+  const [exportMode, setExportMode] = useState<'frames' | 'video'>('frames')
+  const [exportRange, setExportRange] = useState({ start: 0, end: 96, step: 1 })
+  const [exportBackground, setExportBackground] = useState<'dark' | 'light'>('dark')
+  const [exportTaskId, setExportTaskId] = useState('')
   const [sceneList, setSceneList] = useState<PrevisScene[]>([])
   const [listLoading, setListLoading] = useState(false)
+  const [motions, setMotions] = useState<PrevisMotion[]>([])
+  const [motionsLoading, setMotionsLoading] = useState(false)
   // 时间轴状态。`playheadRef` 才是渲染的事实来源（供 useFrame 逐帧读取），
   // `playhead` 只用于面板读数——若播放时每帧 setState，整块编辑面板会跟着重渲染。
   const playheadRef = useRef(0)
@@ -372,9 +556,24 @@ export default function PrevisPage() {
       .finally(() => setLoading(false))
   }, [sceneId])
 
-  const nodes = useMemo(() => sceneData?.nodes ?? [], [sceneData])
-  const cameras = useMemo(() => sceneData?.cameras ?? [], [sceneData])
-  const activeCamera = useMemo(() => cameras.find(camera => camera.id === sceneData?.activeCameraId) || cameras[0], [cameras, sceneData?.activeCameraId])
+  /**
+   * 待确认的草案（幽灵态）。非空时整个工作台**渲染草案场景**、编辑入口全部收起，
+   * 只留顶部确认条——这就是 design 要求的"幽灵预览 → 人工确认 → 落库"。
+   */
+  const [draft, setDraft] = useState<PrevisDraft | null>(null)
+  const [draftLoading, setDraftLoading] = useState(false)
+
+  /**
+   * 幽灵态渲染用的场景：**直接用服务端的 `proposed_scene`**，而不是在本地把操作再应用一遍。
+   * 服务端已经用同一套 `apply_operations` 算过；本地再实现一份必然漂移，而且会出现
+   * "看到的草案"与"点确认后落库的内容"不一致——这是这套交互最不能出的问题。
+   */
+  const ghostScene = draft ? (draft.proposed_scene as unknown as typeof sceneData) : null
+  const viewData = ghostScene || sceneData
+
+  const nodes = useMemo(() => viewData?.nodes ?? [], [viewData])
+  const cameras = useMemo(() => viewData?.cameras ?? [], [viewData])
+  const activeCamera = useMemo(() => cameras.find(camera => camera.id === viewData?.activeCameraId) || cameras[0], [cameras, viewData?.activeCameraId])
 
   /**
    * 活动机位的景深读数。
@@ -399,13 +598,13 @@ export default function PrevisPage() {
    * 读数跟着播放头走（节流到 10Hz），与视口永远一致。
    */
   const displayCamera = useMemo(
-    () => (activeCamera ? evaluateCamera(activeCamera, sceneData?.keyframes ?? [], playhead) : undefined),
-    [activeCamera, sceneData?.keyframes, playhead],
+    () => (activeCamera ? evaluateCamera(activeCamera, viewData?.keyframes ?? [], playhead) : undefined),
+    [activeCamera, viewData?.keyframes, playhead],
   )
 
-  const fps = sceneData?.fps || DEFAULT_FPS
-  const durationFrames = sceneData?.durationFrames || DEFAULT_DURATION_FRAMES
-  const keyframes = useMemo(() => sceneData?.keyframes ?? [], [sceneData])
+  const fps = viewData?.fps || DEFAULT_FPS
+  const durationFrames = viewData?.durationFrames || DEFAULT_DURATION_FRAMES
+  const keyframes = useMemo(() => viewData?.keyframes ?? [], [viewData])
   const operations = useMemo(() => sceneData?.operations ?? [], [sceneData])
   const selectedNode = useMemo(() => nodes.find(node => node.id === selectedNodeId) || null, [nodes, selectedNodeId])
 
@@ -613,6 +812,41 @@ export default function PrevisPage() {
     })
   }, [])
 
+  /** 运镜模板选择（只影响"套用"按钮，不写进场景数据）。 */
+  const [cameraMoveId, setCameraMoveId] = useState<CameraMoveId | ''>('')
+
+  /**
+   * 套用一条运镜模板：以**第 0 帧求值后的机位**为起点，把关键帧铺满整条时间轴。
+   *
+   * 两个刻意的选择：① 起点取第 0 帧的求值结果，而不是面板上此刻的读数——运镜描述的是
+   * "这个镜头怎么拍"，起点就是镜头起点；② 区间固定 0 → 末帧，而不是"从播放头开始"，
+   * 否则停在中间按一下会得到一段只有后半截的运镜。要局部运镜就先改时长再套模板。
+   */
+  const applyCameraMove = useCallback((id: CameraMoveId) => {
+    const camera = activeCamera
+    if (!camera) return
+    const origin = evaluateCamera(camera, keyframes, 0)
+    const keys = buildCameraMove(id, {
+      position: [...origin.transform.position] as [number, number, number],
+      target: [...(origin.target || [0, 0, 0])] as [number, number, number],
+      fov: origin.fov,
+      startFrame: 0,
+      endFrame: durationFrames,
+    })
+    if (keys.length === 0) {
+      message.warning('这条运镜没有产生关键帧：先确认机位与时间轴长度')
+      return
+    }
+    setSceneData(prev => {
+      if (!prev) return prev
+      let next = prev.keyframes
+      for (const key of keys) next = upsertKeyframe(next, camera.id, key.property, key.frame, key.value)
+      return { ...prev, keyframes: next }
+    })
+    setDirty(true)
+    recordOperation('add_keyframe', `套用运镜：${cameraMoveTemplate(id)?.label || id}`, camera.id)
+  }, [activeCamera, durationFrames, keyframes, recordOperation])
+
   /** 写入机位的一个通道（位置 / 目标点 / FOV），规则同 `writeNodeChannel`。 */
   const writeCameraChannel = useCallback(
     (cameraId: string, property: PrevisKeyframeProperty, value: unknown) => {
@@ -736,11 +970,26 @@ export default function PrevisPage() {
   }, [mutateNodes])
 
   const updateNodePose = useCallback((id: string, pose: string) => {
-    mutateNodes(nodes => nodes.map(node => (node.id === id ? { ...node, metadata: { ...node.metadata, pose } } : node)))
+    // 选预设 = 放弃自定义关节角度。否则自定义会覆盖预设、下拉看起来"选了没反应"。
+    mutateNodes(nodes => nodes.map(node => {
+      if (node.id !== id) return node
+      const { poseJoints: _dropped, ...metadata } = node.metadata
+      return { ...node, metadata: { ...metadata, pose } }
+    }))
   }, [mutateNodes])
 
-  const updateProxyStyle = useCallback((id: string, style: string) => {
-    mutateNodes(nodes => nodes.map(node => (node.id === id ? { ...node, metadata: { ...node.metadata, proxyStyle: style } } : node)))
+  /** 写入自定义关节角度（面板里改的是**完整姿势**，见 HumanProxyJointPanel）。 */
+  const updateNodePoseJoints = useCallback((id: string, joints: HumanProxyPose) => {
+    mutateNodes(nodes => nodes.map(node => (
+      node.id === id ? { ...node, metadata: { ...node.metadata, poseJoints: joints } } : node
+    )))
+  }, [mutateNodes])
+
+  /** 身高（米）。超范围由 `humanProxyHeight` 统一收敛，这里不重复写死区间。 */
+  const updateNodeHeight = useCallback((id: string, height: number) => {
+    mutateNodes(nodes => nodes.map(node => (
+      node.id === id ? { ...node, metadata: { ...node.metadata, height: humanProxyHeight(height) } } : node
+    )))
   }, [mutateNodes])
 
   const createStandaloneScene = useCallback(async () => {
@@ -764,6 +1013,52 @@ export default function PrevisPage() {
       setModelLoading(false)
     }
   }, [])
+
+  // 动作库：一次取全（含曲线）。条目是个位数到几十条的小表，进场取一次比按需再拉更简单，
+  // 也让下拉能立刻判断"哪些动作可用"。加载失败不阻塞预演台，只是暂时没有动作可选。
+  useEffect(() => {
+    let cancelled = false
+    setMotionsLoading(true)
+    listPrevisMotions({ includePayload: true })
+      .then(response => {
+        if (!cancelled) setMotions(response.motions || [])
+      })
+      .catch((error: any) => {
+        if (!cancelled) message.error(error?.message || '加载动作库失败')
+      })
+      .finally(() => {
+        if (!cancelled) setMotionsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  /** 按标识索引的动作库，下发给渲染层逐帧取样。 */
+  const motionsBySlug = useMemo(() => {
+    const map: Record<string, PrevisMotion> = {}
+    for (const motion of motions) map[motion.slug] = motion
+    return map
+  }, [motions])
+
+  /** 能驱动程序化人形的动作（参数型）。 */
+  const paramsMotions = useMemo(() => motions.filter(motion => motion.carrier === 'params'), [motions])
+
+  /**
+   * 各节点在**当前播放头**上生效的动作标识。
+   *
+   * 走 `currentChannelValue` 而不是直接读 `metadata.animationClip`：打过关键帧的节点上，
+   * 生效的是关键帧的值，静态值只是回落。若下拉显示静态值，用户在打过点的节点上换动作
+   * 就会"选了没反应"（实际是写了一条关键帧）。
+   */
+  const activeMotionByNode = useMemo(() => {
+    const map: Record<string, string> = {}
+    if (!sceneData) return map
+    for (const node of sceneData.nodes || []) {
+      map[node.id] = motionSlugFromRef(currentChannelValue(sceneData, node.id, 'animation_clip', playhead))
+    }
+    return map
+  }, [sceneData, playhead])
 
   const addModelNode = useCallback(
     (asset: Asset) => {
@@ -815,19 +1110,27 @@ export default function PrevisPage() {
     [mutateNodes],
   )
 
-  const handleSave = useCallback(async () => {
-    if (!scene || !sceneData) return
+  /**
+   * 保存场景。
+   *
+   * `override` 是"确认草案"这条路径要用的：此时草案场景刚 `setSceneData`，而 React 的状态更新
+   * 是异步的——直接读 state 会拿到旧场景，表现成"点了确认，存进去的却是改动前的内容"。
+   */
+  const handleSave = useCallback(async (override?: typeof sceneData): Promise<boolean> => {
+    const payload = override || sceneData
+    if (!scene || !payload) return false
     setSaving(true)
     try {
       const response = await savePrevisScene(scene.id, {
         expected_revision: scene.revision,
         title: scene.title,
-        scene: sceneData as unknown as Record<string, any>,
+        scene: payload as unknown as Record<string, any>,
       })
       setScene(response.data)
       setSceneData(normalizeSceneData(response.data.scene))
       setDirty(false)
       message.success('场景已保存')
+      return true
     } catch (error: any) {
       if (error?.status === 409) {
         const detail = error?.data?.detail
@@ -838,13 +1141,129 @@ export default function PrevisPage() {
         setScene(latest.data)
         setSceneData(normalizeSceneData(latest.data.scene))
         setDirty(false)
+        // 幽灵态必须一起丢掉：刚载入的场景已经不是草案所基于的那个版本
+        setDraft(null)
       } else {
         message.error(error?.message || '保存失败')
       }
+      // 保存失败（含 409 并发冲突）一律返回 false：批量初稿靠它决定**不推进**
+      // ——推进了就等于"这一格没存上却跳过去了"，而用户再也回不来
+      return false
     } finally {
       setSaving(false)
     }
   }, [scene, sceneData])
+
+  /* -------------------------------------------------------------------------
+     分镜格 → 初稿：幽灵预览与确认（design D5 / tasks 6.1–6.4）
+     ------------------------------------------------------------------------- */
+
+  // 这两条判断抽在 `draftView.ts`（纯函数 + 单测）：都是安全相关的逻辑，
+  // 放在组件里只能靠人眼验证——而"能不能确认"判断错了会把别人的改动或用户未保存的改动覆盖掉
+  const draftBlocked = useMemo(
+    () => computeDraftBlockReason(draft, { dirty, sceneRevision: scene?.revision }),
+    [draft, dirty, scene?.revision],
+  )
+  const ghostNodeIds = useMemo(() => computeDraftNodeIds(draft), [draft])
+
+  /* ---- 批量初稿（tasks 6.12）：队列在 URL 上，当前格由 `scene_id` 定位 ---- */
+
+  const draftQueue = useMemo(() => parseDraftQueue(params.get('queue')), [params])
+  const queuePosition = useMemo(() => draftQueuePosition(draftQueue, sceneId), [draftQueue, sceneId])
+
+  /**
+   * 切换场景时把"属于上一个场景"的编辑状态清干净。
+   *
+   * 批量初稿会连续切换场景（逐格确认）。不清的话两种错都会出现：**上一格的幽灵草案留在新场景上**
+   * （看着像新场景已经生成了草案，其实是别人的），以及**未保存标记被继承**——新场景明明干净却显示
+   * "有未保存改动"，而 `draftBlockedReason` 会以 dirty 为由**拒绝它的初稿确认**，批量就卡死在这里。
+   */
+  useEffect(() => {
+    setDraft(null)
+    setDirty(false)
+    setSelectedNodeId('')
+  }, [sceneId])
+
+  /**
+   * 推进到下一格。
+   *
+   * **只由「确认并保存」与「放弃」两个动作调用**——"不得绕过逐格确认"（proposal 已确认项 17）
+   * 这条要求落在调用点上：这里只做导航与收尾，不落库、不自动确认。顺序也刻意如此：
+   * 先落库成功，再推进（见 `confirmDraft`）。
+   */
+  const advanceDraftQueue = useCallback(
+    (forSceneId: string): boolean => {
+      const nextParams = draftQueueNextParams(draftQueue, forSceneId)
+      if (nextParams) {
+        message.info(`进入第 ${(queuePosition?.index ?? 0) + 1} / ${queuePosition?.total ?? 0} 格`)
+        navigate(`/previs?${nextParams.toString()}`)
+        return true
+      }
+      if (queuePosition) {
+        // 末格：把队列从 URL 上摘掉并留在这一格（用户还能接着手改或截图回流），给一句收尾
+        const rest = new URLSearchParams(params)
+        rest.delete('queue')
+        setParams(rest, { replace: true })
+        message.success(`批量初稿已完成，共 ${queuePosition.total} 格`)
+      }
+      return false
+    },
+    [draftQueue, navigate, params, queuePosition, setParams],
+  )
+
+  const loadDraft = useCallback(async () => {
+    if (!sceneId) return
+    if (dirty) {
+      message.warning('本地有未保存的改动：先保存再生成初稿（草案基于已保存的场景计算）')
+      return
+    }
+    setDraftLoading(true)
+    try {
+      setDraft(await draftPrevisScene(sceneId))
+    } catch (error: any) {
+      message.error(error?.message || '生成初稿失败')
+    } finally {
+      setDraftLoading(false)
+    }
+  }, [dirty, sceneId])
+
+  const confirmDraft = useCallback(async () => {
+    if (!draft) return
+    if (draftBlocked) {
+      message.warning(draftBlocked)
+      return
+    }
+    const next = draft.proposed_scene as unknown as typeof sceneData
+    setDraft(null)
+    setSceneData(next)
+    setDirty(true)
+    // 走既有保存通道并携带 expected_revision：并发冲突由它兜住（409 → 重新载入并丢弃幽灵态）
+    const saved = await handleSave(next)
+    // 存住了才推进：没存上还跳到下一格，等于这一格的确认就这么丢了
+    if (saved) advanceDraftQueue(sceneId)
+  }, [advanceDraftQueue, draft, draftBlocked, handleSave, sceneId])
+
+  const discardDraft = useCallback(() => {
+    setDraft(null)
+    // 放弃也要推进：批量的语义是"逐格过一遍"，放弃只是这一格不落库
+    if (!advanceDraftQueue(sceneId)) {
+      message.info('已放弃初稿，场景未做任何改动')
+    }
+  }, [advanceDraftQueue, sceneId])
+
+  /**
+   * 从分镜卡片带 `?draft=1` 进来时自动生成初稿。
+   *
+   * 生成前**先把参数去掉**：它是一次性指令而不是场景状态。留着的话每次刷新都会重新生成一份草案，
+   * 而用户此时多半已经确认过、或正在做别的事。
+   */
+  useEffect(() => {
+    if (params.get('draft') !== '1' || !sceneData || draft || draftLoading) return
+    const next = new URLSearchParams(params)
+    next.delete('draft')
+    setParams(next, { replace: true })
+    void loadDraft()
+  }, [draft, draftLoading, loadDraft, params, sceneData, setParams])
 
   // 视口把截图函数交上来；切换视角/重挂载时会被回收为 null
   const captureRef = useRef<SceneCaptureFn | null>(null)
@@ -900,6 +1319,125 @@ export default function PrevisPage() {
     }
   }, [scene, sceneBoundToPanel, cameraMode, activeCamera])
 
+  /**
+   * 等两帧再取图。
+   *
+   * 第一帧让 R3F 的 `useFrame` 把新播放头对应的位姿与动画姿态应用上去，第二帧才读像素。
+   * 为什么要两帧：我们自己的 rAF 与 R3F 渲染循环的 rAF 谁先执行并无保证，
+   * 只等一帧有可能取到上一帧的画面——那样导出的序列就会整体错位一帧。
+   */
+  const waitForPaint = () => new Promise<void>(resolve => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  })
+
+  /** 逐帧采集。每帧都来自**指定帧号**，这是"确定性导出"的前提（不靠墙上时钟）。 */
+  const collectFrames = useCallback(async (
+    plan: PrevisExportPlan,
+    onProgress: (done: number, total: number) => void,
+  ): Promise<PrevisExportedFrame[]> => {
+    const capture = captureRef.current
+    if (!capture) throw new Error('视口尚未就绪，请稍后重试')
+    const total = plan.frameNumbers.length
+    const collected: PrevisExportedFrame[] = []
+    for (let index = 0; index < total; index += 1) {
+      const frame = plan.frameNumbers[index]
+      playheadRef.current = frame
+      await waitForPaint()
+      const dataUrl = capture({
+        mime: 'image/jpeg',
+        quality: 0.92,
+        background: EXPORT_BACKGROUNDS[exportBackground],
+      })
+      if (!dataUrl) throw new Error(`第 ${frame} 帧取图失败：画面不可读`)
+      collected.push({ frame, dataUrl })
+      onProgress(index + 1, total)
+    }
+    // 采集会把播放头挪到最后一帧，同步一次读数免得面板显示对不上
+    setPlayhead(Math.min(durationFrames, Math.max(0, Math.round(playheadRef.current))))
+    return collected
+  }, [exportBackground, durationFrames])
+
+  const openExportDialog = useCallback(() => {
+    setExportRange({ start: 0, end: Math.max(0, Math.round(durationFrames)), step: 1 })
+    setExportProgress({ done: 0, total: 0 })
+    setExportTaskId('')
+    setExportOpen(true)
+  }, [durationFrames])
+
+  const handleExport = useCallback(async () => {
+    if (!scene) return
+    if (!captureRef.current) {
+      message.error('视口尚未就绪，请稍后重试')
+      return
+    }
+    const plan = planExportFrames(exportRange.start, exportRange.end, exportRange.step)
+    if (plan.count > EXPORT_MAX_FRAMES) {
+      message.warning(`一次最多导出 ${EXPORT_MAX_FRAMES} 帧（当前范围为 ${plan.count} 帧），请增大步长或缩短帧范围`)
+      return
+    }
+    // 采集期间不能继续播放：播放会推进 playheadRef，取到的就不是我们指定的帧号了
+    setPlaying(false)
+    setExporting(true)
+    setExportProgress({ done: 0, total: plan.count })
+    try {
+      const frames = await collectFrames(plan, (done, totalCount) => {
+        setExportProgress({ done, total: totalCount })
+      })
+      const payload = { frames, cameraId: activeCamera?.id || '', fps, step: plan.step }
+      if (exportMode === 'frames') {
+        const result = await exportPrevisFrames(scene.id, payload)
+        downloadBlob(result.blob, `previs-${scene.id.slice(0, 8)}-${result.frameCount}f.zip`)
+        // 说的是"覆盖时间轴多久"而不是"播放多久"：这组帧是按步长抽样的，
+        // 两者在 step>1 时并不相等，混淆会让人以为导出漏了帧
+        message.success(`已导出 ${result.frameCount} 帧（覆盖时间轴 ${result.durationSeconds.toFixed(1)} 秒），解压后可直接进剪辑软件`)
+        setExportOpen(false)
+      } else {
+        const response = await exportPrevisVideo(scene.id, payload)
+        const info = response?.data
+        setExportTaskId(info?.task_id || '')
+        message.success(info?.message || '已提交服务端合成任务')
+      }
+    } catch (error: any) {
+      message.error(error?.message || '导出失败')
+    } finally {
+      setExporting(false)
+      setExportProgress({ done: 0, total: 0 })
+    }
+  }, [scene, exportRange, exportMode, collectFrames, activeCamera, fps])
+
+  /**
+   * 弹窗里回显的帧数/时长。
+   *
+   * 用与 `handleExport` 完全同一个 `planExportFrames`——两处各算一遍的话，
+   * 「弹窗说 12 帧、导出 11 帧」这种账对不上迟早会发生。
+   */
+  const exportPlan = useMemo(() => {
+    const plan = planExportFrames(exportRange.start, exportRange.end, exportRange.step)
+    return {
+      ...plan,
+      /** 这组帧覆盖的时间轴长度（ZIP 场景说的是这个）。 */
+      spanSeconds: frameToSeconds(plan.spanFrames, fps),
+      /** 合成成视频后的播放时长（帧数 ÷ 帧率，与步长无关）。 */
+      videoSeconds: frameToSeconds(plan.count, fps),
+    }
+  }, [exportRange, fps])
+
+  /**
+   * 导出用的**机位自检**：当前活动机位上到底有没有运镜关键帧。
+   *
+   * 为什么必须写在弹窗里：导出的画面是**活动机位逐帧求值**出来的（见 `SceneViewport.CameraRig`），
+   * 机位上没有 `position` / `camera_target` / `camera_fov` 关键帧时，画面就是**固定机位**——
+   * 导出自然"不动"。而用户在时间轴上播放看到的运动，可能来自**另一个机位**（场景允许多个机位，
+   * 运镜模板只会写进当时选中的那一个）。不加这一句，"导出来怎么不动"只能靠猜；加了，原因就在脸上。
+   */
+  const exportCameraKeyCount = useMemo(() => {
+    if (!activeCamera) return 0
+    const cameraProps = new Set(['position', 'camera_target', 'camera_fov'])
+    return (keyframes || []).filter(
+      item => item.targetId === activeCamera.id && cameraProps.has(item.property),
+    ).length
+  }, [activeCamera, keyframes])
+
   if (loading) {
     return <div style={{ minHeight: '70vh', display: 'grid', placeItems: 'center' }}><Spin /></div>
   }
@@ -949,21 +1487,41 @@ export default function PrevisPage() {
   }
 
   return (
-    <div style={{ height: 'calc(100vh - 72px)', display: 'flex', flexDirection: 'column', background: 'var(--bgLayout)' }}>
+    /*
+      高度用 `100%` 而不是 `calc(100vh - 72px)`：外层 `Content` 已经是 `calc(100vh - 52px)` 且带
+      16px 内边距，再按"导航 72px"去算就会比可用空间多出十几像素——于是整个页面出现滚动条，
+      想要看全左栏得把滚轮移到画布外面滚（实测就是这个问题）。填满父容器才是稳的：
+      导航高度、内边距、全屏模式怎么变都不用跟着改这里。
+    */
+    <div style={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', background: 'var(--bgLayout)' }}>
       {/* 顶部栏 */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bgElevated)' }}>
         <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/story')}>返回 Story</Button>
         <Title level={5} style={{ margin: 0, flex: 1 }}>{scene.title}</Title>
         <Tag color={dirty ? 'orange' : 'green'}>{dirty ? '未保存' : `revision ${scene.revision}`}</Tag>
-        <Button
-          type="primary"
-          icon={<SaveOutlined />}
-          loading={saving}
-          disabled={!dirty}
-          onClick={handleSave}
-        >
-          保存
-        </Button>
+        {/* 幽灵态下**藏掉**顶栏的保存按钮而不是禁用它：此时唯一的保存路径是青色确认条上的
+            「确认并保存」——一个灰着的"保存"会让人以为有别的保存方式（实测就有用户点了它然后问怎么保存） */}
+        {!draft && (
+          <Button
+            type="primary"
+            icon={<SaveOutlined />}
+            loading={saving}
+            disabled={!dirty}
+            onClick={() => void handleSave()}
+          >
+            保存
+          </Button>
+        )}
+        <Tooltip title="按当前分镜格生成初稿（只读预览，确认后才落库）">
+          <Button
+            icon={<BulbOutlined />}
+            loading={draftLoading}
+            disabled={!sceneBoundToPanel || Boolean(draft)}
+            onClick={() => void loadDraft()}
+          >
+            生成初稿
+          </Button>
+        </Tooltip>
         <Tooltip
           title={
             !sceneBoundToPanel
@@ -985,12 +1543,34 @@ export default function PrevisPage() {
             </Button>
           </span>
         </Tooltip>
+        <Tooltip
+          title={
+            cameraMode !== 'active'
+              ? '切换到「活动机位」视图后再导出：导出的是镜头画面，导演视角的辅助线不该进画面'
+              : '逐帧导出整段预演：参考帧 ZIP 或服务端合成的 MP4'
+          }
+        >
+          <span>
+            <Button
+              icon={<DownloadOutlined />}
+              disabled={cameraMode !== 'active' || exporting}
+              onClick={openExportDialog}
+            >
+              导出
+            </Button>
+          </span>
+        </Tooltip>
       </div>
 
       {/* 主体：左侧节点面板 + 中央视口 */}
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
-        <div style={{ width: 280, borderRight: '1px solid var(--border)', background: 'var(--bgElevated)', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ padding: 12, borderBottom: '1px solid var(--border)' }}>
+        {/*
+          左栏自己滚：里面的区块（图层 / 变换 / 相机，相机还带光学与运镜）总高度远超一屏，
+          不留滚动就会"溢出到页面上"——表现为整页出现滚动条、画布也被推走。
+          子区块一律 `flexShrink: 0`：宁可让这一栏滚动，也不要把某个面板压扁（压扁后面板内容会被裁掉）。
+        */}
+        <div style={{ width: 280, minHeight: 0, overflowY: 'auto', borderRight: '1px solid var(--border)', background: 'var(--bgElevated)', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ flexShrink: 0, padding: 12, borderBottom: '1px solid var(--border)' }}>
             <Space direction="vertical" size={8} style={{ width: '100%' }}>
               <Text strong>场景图层</Text>
               <Space wrap>
@@ -1023,7 +1603,105 @@ export default function PrevisPage() {
             </Space>
           </div>
 
-          {selectedNode && (
+          {/*
+            图层列表**必须紧跟在「场景图层」标题与添加按钮之后**：它就是这个区块的列表。
+            曾经的顺序是「场景图层 → 变换 → 相机 → 图层列表」，结果是"人形占位"那一行显示在
+            「相机」标题下面，看着像相机列表里的一项（用户实测把它当成了机位）。
+            信息层级比省一层 DOM 重要。
+          */}
+          <div style={{ flexShrink: 0, minHeight: 120, padding: 8, borderBottom: '1px solid var(--border)' }}>
+            {nodes.length === 0 ? (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有节点，先添加几何体或人形占位" style={{ marginTop: 40 }} />
+            ) : (
+              <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                {nodes.map(node => (
+                  <div key={node.id} style={{ display: 'flex', flexDirection: 'column' }}>
+                  <div
+                    onClick={() => setSelectedNodeId(node.id === selectedNodeId ? '' : node.id)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      padding: '6px 8px',
+                      borderRadius: 6,
+                      cursor: 'pointer',
+                      background: 'var(--bgLayout)',
+                      boxShadow: node.id === selectedNodeId ? 'inset 0 0 0 1px #1677ff' : 'none',
+                      opacity: node.visible ? 1 : 0.55,
+                    }}
+                  >
+                    {/*
+                      幽灵态下这一行是**只读**的：正在看的是"草案会变成什么样"，
+                      要是还能改名/改姿势，改的却是另一份数据（已保存场景），两边就对不上了。
+                    */}
+                    {draft ? (
+                      <Text style={{ flex: 1, minWidth: 0, fontSize: 12 }} ellipsis>
+                        {node.name}
+                      </Text>
+                    ) : (
+                      <Input
+                        size="small"
+                        value={node.name}
+                        disabled={node.locked}
+                        onChange={e => renameNode(node.id, e.target.value)}
+                        style={{ flex: 1, minWidth: 0 }}
+                      />
+                    )}
+                    {draft && ghostNodeIds.includes(node.id) && (
+                      <Tag color="cyan" style={{ margin: 0, fontSize: 11 }}>草案</Tag>
+                    )}
+                    {node.kind !== 'human_proxy' && <Tag style={{ margin: 0, fontSize: 11 }}>{NODE_KIND_LABEL[node.kind]}</Tag>}
+                    {!draft && (
+                      <>
+                        <Tooltip title={node.visible ? '隐藏' : '显示'}>
+                          <Button
+                            type="text"
+                            size="small"
+                            icon={node.visible ? <EyeOutlined /> : <EyeInvisibleOutlined />}
+                            onClick={() => toggleVisible(node.id)}
+                          />
+                        </Tooltip>
+                        <Tooltip title={node.locked ? '解锁' : '锁定'}>
+                          <Button
+                            type="text"
+                            size="small"
+                            icon={node.locked ? <LockOutlined /> : <UnlockOutlined />}
+                            onClick={() => toggleLocked(node.id)}
+                          />
+                        </Tooltip>
+                        <Tooltip title="删除">
+                          <Button
+                            type="text"
+                            size="small"
+                            danger
+                            icon={<DeleteOutlined />}
+                            onClick={() => deleteNode(node.id)}
+                          />
+                        </Tooltip>
+                      </>
+                    )}
+                  </div>
+                  {!draft && node.kind === 'human_proxy' && (
+                    <HumanProxyNodeControls
+                      node={node}
+                      motions={paramsMotions}
+                      motionsLoading={motionsLoading}
+                      activeMotion={activeMotionByNode[node.id] || ''}
+                      onPoseChange={updateNodePose}
+                      onMotionChange={writeNodeAnimationClip}
+                      onPoseJointsChange={updateNodePoseJoints}
+                      onHeightChange={updateNodeHeight}
+                      onResetPose={updateNodePose}
+                    />
+                  )}
+                  {!draft && node.kind === 'light' && <LightNodeControls node={node} onChange={updateLightConfig} />}
+                  </div>
+                ))}
+              </Space>
+            )}
+          </div>
+
+          {selectedNode && !draft && (
             <div style={{ padding: 12, borderBottom: '1px solid var(--border)' }}>
               <Space direction="vertical" size={4} style={{ width: '100%' }}>
                 <Space style={{ width: '100%', justifyContent: 'space-between' }}>
@@ -1107,7 +1785,7 @@ export default function PrevisPage() {
                         onChange={value => writeNodeAnimationClip(selectedNode.id, value)}
                         options={[
                           { value: '', label: '（不播动画）' },
-                          ...(modelClips[selectedNode.id] || []).map(name => ({ value: name, label: name })),
+                          ...(modelClips[selectedNode.id] || []).map(name => ({ value: name, label: animationDisplay(name) })),
                         ]}
                       />
                       <Tooltip title="在当前帧为动作切换打点">
@@ -1134,11 +1812,11 @@ export default function PrevisPage() {
             </div>
           )}
 
-          <div style={{ padding: 12, borderBottom: '1px solid var(--border)' }}>
+          <div style={{ flexShrink: 0, padding: 12, borderBottom: '1px solid var(--border)' }}>
             <Space direction="vertical" size={8} style={{ width: '100%' }}>
               <Space style={{ width: '100%', justifyContent: 'space-between' }}>
                 <Text strong>相机</Text>
-                <Button size="small" icon={<PlusOutlined />} onClick={addCamera}>新增</Button>
+                <Button size="small" icon={<PlusOutlined />} disabled={Boolean(draft)} onClick={addCamera}>新增</Button>
               </Space>
               {cameras.map(camera => (
                 <div key={camera.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -1146,7 +1824,13 @@ export default function PrevisPage() {
                   <Button type="text" danger size="small" icon={<DeleteOutlined />} disabled={camera.locked} onClick={() => deleteCamera(camera.id)} />
                 </div>
               ))}
-              {activeCamera && <Space direction="vertical" size={4} style={{ width: '100%' }}>
+              {cameras.length === 0 && (
+                <Text type="secondary" style={{ fontSize: 11 }}>
+                  还没有机位：点右上「新增」建一个。之后这里会出现位置、目标点、镜头光学与「运镜模板」——
+                  截图回流与导出参考视频都需要活动机位。
+                </Text>
+              )}
+              {activeCamera && !draft && <Space direction="vertical" size={4} style={{ width: '100%' }}>
                 <Input size="small" value={activeCamera.name} disabled={activeCamera.locked} onChange={event => updateCamera(activeCamera.id, { name: event.target.value })} />
                 <Text type="secondary">位置 / 目标点（X / Y / Z）</Text>
                 <ChannelRow
@@ -1169,6 +1853,37 @@ export default function PrevisPage() {
                   )}
                   onToggleKey={() => toggleKeyframe(activeCamera.id, 'camera_target', '目标点')}
                 />
+                <Text type="secondary">运镜模板</Text>
+                <Space.Compact style={{ width: '100%' }}>
+                  <Select
+                    size="small"
+                    value={cameraMoveId || undefined}
+                    placeholder={`${CAMERA_MOVE_TEMPLATES.length} 类运镜`}
+                    disabled={activeCamera.locked}
+                    onChange={value => setCameraMoveId(value)}
+                    options={CAMERA_MOVE_TEMPLATES.map(template => ({
+                      value: template.id,
+                      label: `${template.label}（${template.category}）`,
+                      title: template.description,
+                    }))}
+                    popupMatchSelectWidth={false}
+                    style={{ flex: 1, minWidth: 0 }}
+                  />
+                  <Tooltip title="以当前机位为起点，把关键帧铺满整条时间轴（0 → 末帧）">
+                    <Button
+                      size="small"
+                      disabled={activeCamera.locked || !cameraMoveId}
+                      onClick={() => cameraMoveId && applyCameraMove(cameraMoveId as CameraMoveId)}
+                    >
+                      套用
+                    </Button>
+                  </Tooltip>
+                </Space.Compact>
+                {cameraMoveId && (
+                  <Text type="secondary" style={{ fontSize: 11 }}>
+                    {cameraMoveTemplate(cameraMoveId as CameraMoveId)?.description}
+                  </Text>
+                )}
                 <Text type="secondary">镜头 · 光学</Text>
                 <Select
                   size="small"
@@ -1238,95 +1953,102 @@ export default function PrevisPage() {
             </Space>
           </div>
 
-          <div style={{ flex: 1, overflowY: 'auto', padding: 8 }}>
-            {nodes.length === 0 ? (
-              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有节点，先添加几何体或人形占位" style={{ marginTop: 40 }} />
-            ) : (
-              <Space direction="vertical" size={4} style={{ width: '100%' }}>
-                {nodes.map(node => (
-                  <div key={node.id} style={{ display: 'flex', flexDirection: 'column' }}>
-                  <div
-                    onClick={() => setSelectedNodeId(node.id === selectedNodeId ? '' : node.id)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      padding: '6px 8px',
-                      borderRadius: 6,
-                      cursor: 'pointer',
-                      background: 'var(--bgLayout)',
-                      boxShadow: node.id === selectedNodeId ? 'inset 0 0 0 1px #1677ff' : 'none',
-                      opacity: node.visible ? 1 : 0.55,
-                    }}
-                  >
-                    <Input
-                      size="small"
-                      value={node.name}
-                      disabled={node.locked}
-                      onChange={e => renameNode(node.id, e.target.value)}
-                      style={{ flex: 1, minWidth: 0 }}
-                    />
-                    {node.kind === 'human_proxy' && (
-                      <Select
-                        size="small"
-                        value={(node.metadata.proxyStyle as string) || 'capsule'}
-                        disabled={node.locked}
-                        onChange={style => updateProxyStyle(node.id, style)}
-                        options={[
-                          { value: 'capsule', label: '胶囊人' },
-                          { value: 'ue', label: 'UE 白模' },
-                          { value: 'vanguard', label: 'Vanguard' },
-                        ]}
-                        style={{ width: 84, flexShrink: 0 }}
-                      />
-                    )}
-                    {node.kind === 'human_proxy' && ((node.metadata.proxyStyle as string) || 'capsule') === 'capsule' && (
-                      <Select
-                        size="small"
-                        value={humanProxyPoseKey(node.metadata.pose)}
-                        disabled={node.locked}
-                        onChange={pose => updateNodePose(node.id, pose)}
-                        options={Object.entries(HUMAN_PROXY_POSES).map(([key, { label }]) => ({ value: key, label }))}
-                        style={{ width: 72, flexShrink: 0 }}
-                      />
-                    )}
-                    {node.kind !== 'human_proxy' && <Tag style={{ margin: 0, fontSize: 11 }}>{NODE_KIND_LABEL[node.kind]}</Tag>}
-                    <Tooltip title={node.visible ? '隐藏' : '显示'}>
-                      <Button
-                        type="text"
-                        size="small"
-                        icon={node.visible ? <EyeOutlined /> : <EyeInvisibleOutlined />}
-                        onClick={() => toggleVisible(node.id)}
-                      />
-                    </Tooltip>
-                    <Tooltip title={node.locked ? '解锁' : '锁定'}>
-                      <Button
-                        type="text"
-                        size="small"
-                        icon={node.locked ? <LockOutlined /> : <UnlockOutlined />}
-                        onClick={() => toggleLocked(node.id)}
-                      />
-                    </Tooltip>
-                    <Tooltip title="删除">
-                      <Button
-                        type="text"
-                        size="small"
-                        danger
-                        icon={<DeleteOutlined />}
-                        onClick={() => deleteNode(node.id)}
-                      />
-                    </Tooltip>
-                  </div>
-                  {node.kind === 'light' && <LightNodeControls node={node} onChange={updateLightConfig} />}
-                  </div>
-                ))}
-              </Space>
-            )}
-          </div>
         </div>
 
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-          <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
+          {/*
+            确认条：幽灵态下唯一可操作的地方。
+            摘要刻意给"改了什么"（人形几个、机位、时长、默认值几项），而不是只给一句"AI 生成了草案"——
+            人工确认要能在一眼内判断"这值不值得改"，否则确认环节会退化成闭眼点按钮。
+          */}
+          {draft && (
+            <div
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+                padding: '8px 12px',
+                background: 'rgba(34,211,238,.12)',
+                borderBottom: '1px solid var(--border)',
+              }}
+            >
+              <Tag color="cyan" style={{ margin: 0 }}>待确认草案</Tag>
+              <Text style={{ fontSize: 12 }}>
+                第 {draft.panel_number} 格 · 人形 {String(draft.summary?.human_proxy_count ?? 0)}
+                {ghostNodeIds.filter(id => id.includes('-hero-')).length
+                  ? `（新加 ${ghostNodeIds.filter(id => id.includes('-hero-')).length}）`
+                  : ''}
+                {' · '}机位 {draft.operations.filter(item => item.type === 'add_camera').length
+                  + draft.operations.filter(item => item.type === 'set_camera').length}
+                {' · '}时长 {String(draft.summary?.duration_seconds ?? '—')}s
+                {' · '}共 {draft.operations.length} 条操作
+              </Text>
+              {(draft.summary?.character_poses || []).length > 0 && (
+                <Text type="secondary" style={{ fontSize: 11 }}>
+                  {(draft.summary.character_poses as string[]).join('；')}
+                </Text>
+              )}
+              {draft.defaults.length > 0 ? (
+                <Popover
+                  trigger="click"
+                  placement="bottomLeft"
+                  content={
+                    <div style={{ maxWidth: 420, maxHeight: 320, overflowY: 'auto' }}>
+                      {draft.defaults.map(item => (
+                        <div key={item.field} style={{ marginBottom: 6 }}>
+                          <Text style={{ fontSize: 12 }} strong>{item.field}</Text>
+                          <Text type="secondary" style={{ fontSize: 12 }}> = {JSON.stringify(item.value)}</Text>
+                          <div><Text type="secondary" style={{ fontSize: 11 }}>{item.reason}</Text></div>
+                        </div>
+                      ))}
+                    </div>
+                  }
+                >
+                  <Button size="small" type="link">取自默认值 {draft.defaults.length} 项</Button>
+                </Popover>
+              ) : (
+                <Text type="secondary" style={{ fontSize: 11 }}>无默认值（所有字段都来自分镜）</Text>
+              )}
+              {draft.warnings.length > 0 ? (
+                <Popover
+                  trigger="click"
+                  placement="bottomLeft"
+                  content={
+                    <div style={{ maxWidth: 460 }}>
+                      {draft.warnings.map(text => (
+                        <div key={text} style={{ marginBottom: 6 }}>
+                          <Text style={{ fontSize: 12 }}>{text}</Text>
+                        </div>
+                      ))}
+                    </div>
+                  }
+                >
+                  <Button size="small" type="link" danger>未翻译 {draft.warnings.length} 条</Button>
+                </Popover>
+              ) : (
+                <Text type="secondary" style={{ fontSize: 11 }}>无未翻译项</Text>
+              )}
+              {queuePosition && (
+                <Text type="secondary" style={{ fontSize: 12 }}>{draftQueueLabel(queuePosition)}</Text>
+              )}
+              <span style={{ flex: 1 }} />
+              {Boolean(draftBlocked) && (
+                <Text type="warning" style={{ fontSize: 12, maxWidth: 420 }}>{draftBlocked}</Text>
+              )}
+              <Button size="small" onClick={discardDraft}>放弃</Button>
+              <Tooltip title="重新按当前分镜格生成一份草案">
+                <Button size="small" loading={draftLoading} onClick={() => void loadDraft()}>重新生成</Button>
+              </Tooltip>
+              <Button
+                size="small"
+                type="primary"
+                loading={saving}
+                disabled={Boolean(draftBlocked)}
+                onClick={() => void confirmDraft()}
+              >
+                确认并保存
+              </Button>
+            </div>
+          )}
+          <div style={{ flex: 1, minHeight: 0, position: 'relative', minWidth: 0 }}>
             <SceneViewport
               nodes={nodes}
               activeCamera={activeCamera}
@@ -1334,9 +2056,11 @@ export default function PrevisPage() {
               keyframes={keyframes}
               playheadRef={playheadRef}
               fps={fps}
-              selectedNodeId={selectedNodeId}
+              selectedNodeId={draft ? '' : selectedNodeId}
               gizmoMode={gizmoMode}
+              ghostNodeIds={ghostNodeIds}
               onModelClips={handleModelClips}
+              motions={motionsBySlug}
               onNodeChannelChange={writeNodeChannel}
               onNodeChannelCommit={(nodeId, property) => {
                 const node = nodes.find(item => item.id === nodeId)
@@ -1398,6 +2122,118 @@ export default function PrevisPage() {
           </div>
         </div>
       </div>
+
+      <Modal
+        title="导出预演"
+        open={exportOpen}
+        onCancel={() => { if (!exporting) setExportOpen(false) }}
+        onOk={() => void handleExport()}
+        okText={exportMode === 'frames' ? '导出参考帧 ZIP' : '提交合成任务'}
+        cancelText={exportTaskId ? '关闭' : '取消'}
+        confirmLoading={exporting}
+        maskClosable={!exporting}
+        width={560}
+      >
+        <Space direction="vertical" size={14} style={{ width: '100%' }}>
+          <div style={{
+            padding: '8px 10px',
+            borderRadius: 6,
+            background: 'var(--bgLayout)',
+            border: exportCameraKeyCount ? '1px solid var(--border)' : '1px solid #faad14',
+          }}>
+            {exportCameraKeyCount ? (
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                机位：按 <Text strong>{activeCamera?.name || '活动机位'}</Text> 逐帧导出，
+                该机位有 {exportCameraKeyCount} 个运镜关键帧（镜头会动）。
+              </Text>
+            ) : (
+              <Text type="warning" style={{ fontSize: 12 }}>
+                机位：<Text strong>{activeCamera?.name || '活动机位'}</Text>
+                <Text strong>没有任何运镜关键帧</Text>——导出会是固定机位画面（不会推、不会摇）。
+                先在机位面板选一个运镜模板点「套用」，或手动给机位打关键帧再导出。
+              </Text>
+            )}
+          </div>
+          <div>
+            <Text strong>导出内容</Text>
+            <Segmented
+              block
+              style={{ marginTop: 6 }}
+              value={exportMode}
+              disabled={exporting}
+              onChange={value => setExportMode(value as 'frames' | 'video')}
+              options={[
+                { label: '参考帧 ZIP（JPEG 序列）', value: 'frames' },
+                { label: '视频 MP4（服务端合成）', value: 'video' },
+              ]}
+            />
+          </div>
+          <div>
+            <Text strong>帧范围</Text>
+            {/* 不用 `addonBefore`：当前 antd 已弃用它（会打一条 console 警告），
+                既有代码里还有几处 addonAfter 是历史遗留，新写的这里不再增加。 */}
+            <Space size={12} style={{ marginTop: 6 }} wrap>
+              {[
+                { label: '起', key: 'start' as const, min: 0, max: durationFrames },
+                { label: '止', key: 'end' as const, min: 0, max: durationFrames },
+                { label: '步长', key: 'step' as const, min: 1, max: 96 },
+              ].map(field => (
+                <Space key={field.key} size={4}>
+                  <Text type="secondary" style={{ fontSize: 12 }}>{field.label}</Text>
+                  <InputNumber
+                    min={field.min}
+                    max={field.max}
+                    style={{ width: 92 }}
+                    value={exportRange[field.key]}
+                    disabled={exporting}
+                    onChange={value => setExportRange(prev => ({ ...prev, [field.key]: Number(value ?? field.min) }))}
+                  />
+                </Space>
+              ))}
+            </Space>
+          </div>
+          <div>
+            <Text strong>底色</Text>
+            <Select
+              style={{ width: 220, marginTop: 6, display: 'block' }}
+              value={exportBackground}
+              disabled={exporting}
+              onChange={value => setExportBackground(value)}
+              options={[
+                { label: '深色（与预演台一致）', value: 'dark' },
+                { label: '白色', value: 'light' },
+              ]}
+            />
+          </div>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            将导出第 {exportPlan.start}–{exportPlan.end} 帧、步长 {exportPlan.step}，共{' '}
+            <Text strong>{exportPlan.count}</Text> 帧。
+            {exportMode === 'frames'
+              ? `每帧来自指定帧号，覆盖时间轴约 ${exportPlan.spanSeconds.toFixed(1)} 秒；按 JPEG 打包为 ZIP 直接下载，不产生任何模型费用。`
+              : `服务端按 ${fps}fps 固定帧率合成，时长约 ${exportPlan.videoSeconds.toFixed(1)} 秒，不受浏览器渲染快慢影响；完成后视频进入素材库。`}
+            导出尺寸等于当前视口尺寸；底色用于替代 JPEG 不支持的透明通道。
+          </Text>
+          {exporting ? (
+            <div>
+              <Progress
+                size="small"
+                percent={exportProgress.total ? Math.round((exportProgress.done / exportProgress.total) * 100) : 0}
+              />
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                正在逐帧采集第 {exportProgress.done} / {exportProgress.total} 帧……
+              </Text>
+            </div>
+          ) : null}
+          {exportTaskId ? (
+            <Space>
+              <Text type="secondary" style={{ fontSize: 12 }}>合成任务 {exportTaskId} 已提交</Text>
+              <Button size="small" type="link" onClick={() => navigate(`/tasks?task_id=${exportTaskId}`)}>
+                去任务中心看进度
+              </Button>
+            </Space>
+          ) : null}
+        </Space>
+      </Modal>
 
       <Drawer
         title="场景操作历史"

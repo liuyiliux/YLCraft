@@ -12,7 +12,7 @@ import { InlineImageResult, ReferenceAssetPreviewStrip, ReferenceCardsPanel, Sto
 import { createCompactBlockStyle, createWorkbenchHeaderStyle } from '../styles'
 import { AssetSummary, ChapterAction, CharacterReferenceSummary, EditableChapterPlanItem, ImagePromptContext, InlineGeneratedImage, NarrativeForeshadowing, NarrativeHealth, ProjectAssetLink, ProjectContent, ProjectContentSummary, TemplateOption, VideoGenerationContext } from '../types'
 import { REFERENCE_LINK_ROLES, buildChapterPlanMarkdown, buildScriptMarkdown, buildStoryboardMarkdown, buildStoryboardPanelReferencePlan, buildStoryboardReferenceSummary, buildStoryboardVideoFallbackPrompt, comicStyleOptions, dedupeStrings, downloadTextFile, imageContextKey, isChapterLocked, linesToList, listToLines, normalizeChapterItem, normalizeChapterPlan, openProjectTextPreview, projectMarkdownFilename, referenceRoleOptions } from '../utils'
-import { BranchesOutlined, CheckCircleOutlined, CloudUploadOutlined, DeleteOutlined, DeploymentUnitOutlined, DownloadOutlined, ExclamationCircleOutlined, EyeOutlined, FileTextOutlined, FolderAddOutlined, PictureOutlined, PlusOutlined, ThunderboltOutlined, VideoCameraOutlined } from '@ant-design/icons'
+import { BranchesOutlined, BulbOutlined, CheckCircleOutlined, CloudUploadOutlined, DeleteOutlined, DeploymentUnitOutlined, DownloadOutlined, ExclamationCircleOutlined, EyeOutlined, FileTextOutlined, FolderAddOutlined, PictureOutlined, PlusOutlined, ThunderboltOutlined, VideoCameraOutlined } from '@ant-design/icons'
 import { Button, Checkbox, Empty, Input, InputNumber, List, Popconfirm, Segmented, Select, Space, Table, Tabs, Tag, Tooltip, Typography, message } from 'antd'
 import React, { useEffect, useMemo, useState } from 'react'
 
@@ -575,7 +575,12 @@ export function EpisodeWorkbenchTab({
   onLinkReferenceAsset: (assetId: string, role: string, metadata?: Record<string, any>) => void
   onSendImagePrompt: (prompt: string, context?: ImagePromptContext) => void
   onOpenVideoGeneration: (prompt: string, context?: VideoGenerationContext) => void
-  onOpenPrevis: (storyboardContentId: string, panelNumber: number, title?: string) => void
+  onOpenPrevis: (
+    storyboardContentId: string,
+    panelNumber: number,
+    title?: string,
+    options?: { draft?: boolean; queue?: number[] },
+  ) => void
   inlineImages: Record<string, InlineGeneratedImage>
   inlineImageLoadingKey: string | null
   pendingImageTaskKey?: string
@@ -595,6 +600,14 @@ export function EpisodeWorkbenchTab({
   const { theme } = useTheme()
   const themedWorkbenchHeaderStyle = createWorkbenchHeaderStyle(theme)
   const themedCompactBlockStyle = createCompactBlockStyle(theme)
+  /**
+   * 批量初稿勾选的分镜号（tasks 6.12）。
+   *
+   * 放在**分镜卡片上勾选**而不是"整章一键"：批量初稿的语义是"逐格确认"，
+   * 一次过整章会让人连着点十几次确认；让用户先圈出真正要过的那几格，
+   * 其余留到需要时再单独生成。
+   */
+  const [previsBatchPanels, setPrevisBatchPanels] = useState<number[]>([])
   const [writingStage, setWritingStage] = useState<'chapter_outline' | 'novel_body' | 'novel_body_refine'>('novel_body')
   const [writingPreflight, setWritingPreflight] = useState<WritingPreflight | null>(null)
   const [writingPreflightLoading, setWritingPreflightLoading] = useState(false)
@@ -1717,6 +1730,32 @@ export function EpisodeWorkbenchTab({
                   >
                     批量生图
                   </Button>
+                  <Tooltip
+                    title={
+                      previsBatchPanels.length
+                        ? `对已勾选的 ${previsBatchPanels.length} 格逐格生成初稿：每格看完半透明预览后自己点确认，确认或放弃都会自动进入下一格`
+                        : '先在分镜卡片上勾选要生成初稿的格子（可多选）'
+                    }
+                  >
+                    <Button
+                      size="small"
+                      icon={<BulbOutlined />}
+                      disabled={!previsBatchPanels.length}
+                      onClick={() => {
+                        // 按分镜号排序：队列顺序就是执行顺序，必须与画面上的顺序一致
+                        const queue = [...previsBatchPanels].sort((a, b) => a - b)
+                        onOpenPrevis(
+                          storyboard.id,
+                          queue[0],
+                          `第 ${activeChapterNumber} 章 · 批量初稿`,
+                          { draft: true, queue },
+                        )
+                        setPrevisBatchPanels([])
+                      }}
+                    >
+                      批量初稿{previsBatchPanels.length ? `（${previsBatchPanels.length}）` : ''}
+                    </Button>
+                  </Tooltip>
                 </>
               ) : null}
               <Tooltip title={canGenerateStoryboard ? '' : '先生成脚本'}>
@@ -1743,7 +1782,20 @@ export function EpisodeWorkbenchTab({
               {(storyboard.data?.panels || []).slice(0, 10).map((panel: any) => (
                 <div key={panel.panel_number} style={themedCompactBlockStyle}>
                   <Space style={{ justifyContent: 'space-between', width: '100%' }} align="start">
-                    <Text strong>分镜 {panel.panel_number}</Text>
+                    <Space align="center" size={6}>
+                      <Tooltip title="勾选后，用分镜面板右上角的「批量初稿」逐格生成并确认">
+                        <Checkbox
+                          checked={previsBatchPanels.includes(Number(panel.panel_number))}
+                          onChange={event => {
+                            const number = Number(panel.panel_number)
+                            setPrevisBatchPanels(prev =>
+                              event.target.checked ? [...prev, number] : prev.filter(item => item !== number),
+                            )
+                          }}
+                        />
+                      </Tooltip>
+                      <Text strong>分镜 {panel.panel_number}</Text>
+                    </Space>
                     {panel.image_prompt ? (
                       <Space size={4}>
                         <Button
@@ -1777,6 +1829,23 @@ export function EpisodeWorkbenchTab({
                         >
                           3D 预演
                         </Button>
+                        {/* 主动线：把这一格已经写好的调度/景别/角度直接翻译成场景初稿（只读预览，确认后才落库） */}
+                        <Tooltip title="按这一格的调度、景别、镜头角度生成 3D 初稿；进预演台后先看半透明预览，确认才落库">
+                          <Button
+                            size="small"
+                            icon={<BulbOutlined />}
+                            onClick={() =>
+                              onOpenPrevis(
+                                storyboard.id,
+                                Number(panel.panel_number),
+                                panel.action || `分镜 ${panel.panel_number} · 3D 预演`,
+                                { draft: true },
+                              )
+                            }
+                          >
+                            生成初稿
+                          </Button>
+                        </Tooltip>
                         <Button
                           size="small"
                           icon={<VideoCameraOutlined />}

@@ -123,6 +123,10 @@ DEFAULT_AGENT_PROFILES: list[dict[str, Any]] = [
             # 3D 预演台的受限操作（#18）：预览是只读，落库会走确认并校验 revision
             "previs_preview_operations",
             "previs_apply_operations",
+            # "先查后摆"的三个只读工具（#5.1 / 5.2）：动作清单、可摆对象、按分镜格出初稿
+            "list_previs_motions",
+            "get_previs_composition_options",
+            "generate_previs_draft",
             "update_creative_project_content",
             "list_creative_project_asset_links",
             "link_creative_project_asset",
@@ -350,6 +354,10 @@ DEFAULT_AGENT_PROFILES: list[dict[str, Any]] = [
             # 预演是分镜的空间层，分镜导演需要能提出并落库镜头改动（#18）
             "previs_preview_operations",
             "previs_apply_operations",
+            # "先查后摆"的三个只读工具（#5.1 / 5.2）：分镜导演是最直接的使用者
+            "list_previs_motions",
+            "get_previs_composition_options",
+            "generate_previs_draft",
             "list_creative_project_contents",
             "get_creative_project_content",
             "update_creative_project_content",
