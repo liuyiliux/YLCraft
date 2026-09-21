@@ -1066,6 +1066,27 @@ export default function PrevisPage() {
     )))
   }, [mutateNodes])
 
+  /**
+   * 重新载入当前场景（tasks 1.5：版本过期时用它）。
+   *
+   * 载入后**必须丢掉幽灵态与未保存标记**：版本过期意味着"这份方案建立在旧版本上"，
+   * 留着半透明预览会让人以为它还能落库，于是一直点确认、一直被拒。
+   */
+  const reloadScene = useCallback(async () => {
+    if (!sceneId) return
+    try {
+      const response: any = await getPrevisScene(sceneId)
+      const latest = response?.data ?? response
+      if (!latest) return
+      setScene(latest)
+      setSceneData(normalizeSceneData(latest.scene))
+      setDraft(null)
+      setDirty(false)
+    } catch (error: any) {
+      message.error(error?.message || '重新载入场景失败')
+    }
+  }, [sceneId])
+
   /* ---- 我的姿势预设：把"调好的 / 助手算出来的姿势"存下来复用 ---- */
 
   const [customPoses, setCustomPoses] = useState<CustomPose[]>(() => loadCustomPoses())
@@ -2273,6 +2294,7 @@ export default function PrevisPage() {
                 selectedNode={selectedNode}
                 motionSlugs={Object.keys(motionsBySlug)}
                 onClose={() => setAssistantOpen(false)}
+                onReload={reloadScene}
                 onPropose={proposal => setDraft(proposal as unknown as PrevisDraft)}
               />
             )}
