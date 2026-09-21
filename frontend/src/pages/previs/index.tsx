@@ -443,16 +443,50 @@ function HumanProxyNodeControls({
   onApplyPreset: (nodeId: string, presetId: string) => void
   onRemovePreset: (presetId: string) => void
 }) {
+  // 下拉里**必须能看到自己存的姿势**（用户实测指出）：存在齿轮面板里但下拉里看不到，
+  // 等于存了却用不上——"存"这个动作的意义就少了一半。
+  // 命中判定：当前 poseJoints 与某个已存姿势**逐字段相同**就算选中它（存的就是完整关节角，
+  // 字段顺序也一致，直接比序列化结果即可）。
+  const activePreset = customPoses.find(
+    item =>
+      JSON.stringify(sanitizeHumanProxyPose(node.metadata.poseJoints)) === JSON.stringify(item.joints),
+  )
+  const poseSelectValue = activePreset ? `custom:${activePreset.id}` : humanProxyPoseKey(node.metadata.pose)
+  const poseSelectOptions = [
+    {
+      label: '预设姿势',
+      title: '预设姿势',
+      options: Object.entries(HUMAN_PROXY_POSES).map(([key, { label }]) => ({ value: key, label })),
+    },
+    ...(customPoses.length
+      ? [
+          {
+            label: '我的姿势',
+            title: '我的姿势',
+            options: customPoses.map(item => ({ value: `custom:${item.id}`, label: item.name })),
+          },
+        ]
+      : []),
+  ]
+  const handlePoseSelect = (value: string) => {
+    if (value.startsWith('custom:')) {
+      const preset = findCustomPose(customPoses, value.slice('custom:'.length))
+      // 套用走 poseJoints（完整关节角），不走 pose 枚举名——存的是角度，不是名字
+      if (preset) onPoseJointsChange(node.id, preset.joints)
+      return
+    }
+    onPoseChange(node.id, value)
+  }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '4px 8px 8px 8px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>姿势</Text>
         <Select
           size="small"
-          value={humanProxyPoseKey(node.metadata.pose)}
+          value={poseSelectValue}
           disabled={node.locked}
-          onChange={pose => onPoseChange(node.id, pose)}
-          options={Object.entries(HUMAN_PROXY_POSES).map(([key, { label }]) => ({ value: key, label }))}
+          onChange={handlePoseSelect}
+          options={poseSelectOptions}
           style={{ flex: 1, minWidth: 0 }}
         />
         <Popover
