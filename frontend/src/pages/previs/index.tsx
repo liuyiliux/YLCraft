@@ -47,6 +47,7 @@ import {
   type PrevisDraft,
   exportPrevisFrames,
   exportPrevisVideo,
+  exportPrevisVideoHeadless,
   getPrevisScene,
   listAssets,
   listPrevisMotions,
@@ -369,6 +370,25 @@ function LightNodeControls({ node, onChange }: {
 }
 
 /**
+ * 导出进度/结果提示的 key。
+ *
+ * 用它把"导出中"与"导出完成"两条提示**合成同一条**：弹窗允许在导出期间关掉
+ * （采集要几秒到几十秒，让人干等是没必要的），关掉后进度改由这条常驻提示承载，
+ * 完成时用同一个 key 替换掉它——不然会同时挂两条提示，用户不知道哪条算数。
+ */
+const EXPORT_MESSAGE_KEY = 'previs-export'
+
+/**
+ * 导出时的**渲染位置**。
+ *
+ * - `browser`：帧在浏览器里逐帧渲染再上传（现状）。分辨率与当前视口一致；
+ *   但会占用标签页，关掉页面就中断。
+ * - `headless`：只把帧范围交给服务端，由后端用无头 Chrome 渲染并合成（本期只支持视频）。
+ *   不占浏览器、关掉页面也能出片；代价是分辨率固定（`PREVIS_RENDER_VIEWPORT`）。
+ */
+type PrevisRenderMode = 'browser' | 'headless'
+
+/**
  * 人形占位节点的姿势 / 动作控件。
  *
  * **独立占据名称行的下一行，而不是挤进名称行**：左侧节点面板只有 280px 宽，
@@ -515,6 +535,7 @@ export default function PrevisPage() {
   const [exportMode, setExportMode] = useState<'frames' | 'video'>('frames')
   const [exportRange, setExportRange] = useState({ start: 0, end: 96, step: 1 })
   const [exportBackground, setExportBackground] = useState<'dark' | 'light'>('dark')
+  const [renderMode, setRenderMode] = useState<PrevisRenderMode>('browser')
   const [exportTaskId, setExportTaskId] = useState('')
   const [sceneList, setSceneList] = useState<PrevisScene[]>([])
   const [listLoading, setListLoading] = useState(false)
@@ -1271,6 +1292,11 @@ export default function PrevisPage() {
     captureRef.current = capture
   }, [])
 
+  // 这里曾有一版"页面把取图能力挂到 window 上供服务端调用"的无头导出协议，
+  // 已删除：实测那段 effect 在真实页面里没有运行（`window.__previsRender` 全程 undefined，
+  // 排查见 tasks 6.18），而"服务端驱动页面自己的导出"这条路是**已被反复验证可用**的，
+  // 且只保留一条导出实现。服务端侧见 `backend/app/services/previs/headless_render.py`。
+
   // 场景绑定分镜面板才有可关联的对象；且只截「活动机位」视图（设计：active camera capture）
   const sceneBoundToPanel = Boolean(scene?.project_id && scene?.storyboard_content_id)
   const canCapture = sceneBoundToPanel && cameraMode === 'active'
@@ -1366,6 +1392,41 @@ export default function PrevisPage() {
 
   const handleExport = useCallback(async () => {
     if (!scene) return
+    /**
+     * **服务端无头渲染分支**：不采集任何一帧，只把帧范围交给后端。
+     *
+     * 这正是它"不占浏览器、关掉页面也能导"的原因——渲染发生在后端任务里。
+     * 放在取图就绪检查**之前**：这条路径根本不需要本地视口具备取图能力。
+     */
+    if (renderMode === 'headless') {
+      if (exportMode !== 'video') {
+        message.warning('服务端渲染本期只支持视频；参考帧 ZIP 需要在浏览器里采集')
+        return
+      }
+      setExporting(true)
+      try {
+        const response = await exportPrevisVideoHeadless(scene.id, {
+          startFrame: exportRange.start,
+          endFrame: exportRange.end,
+          step: exportRange.step,
+          fps,
+          background: EXPORT_BACKGROUNDS[exportBackground],
+          cameraId: activeCamera?.id || '',
+        })
+        const info = response?.data
+        setExportTaskId(info?.task_id || '')
+        message.success({
+          key: EXPORT_MESSAGE_KEY,
+          content: info?.message || '已在服务端开始渲染，可在任务中心看进度',
+        })
+        setExportOpen(false)
+      } catch (error: any) {
+        message.error({ key: EXPORT_MESSAGE_KEY, content: error?.message || '服务端渲染任务提交失败' })
+      } finally {
+        setExporting(false)
+      }
+      return
+    }
     if (!captureRef.current) {
       message.error('视口尚未就绪，请稍后重试')
       return
@@ -1389,21 +1450,24 @@ export default function PrevisPage() {
         downloadBlob(result.blob, `previs-${scene.id.slice(0, 8)}-${result.frameCount}f.zip`)
         // 说的是"覆盖时间轴多久"而不是"播放多久"：这组帧是按步长抽样的，
         // 两者在 step>1 时并不相等，混淆会让人以为导出漏了帧
-        message.success(`已导出 ${result.frameCount} 帧（覆盖时间轴 ${result.durationSeconds.toFixed(1)} 秒），解压后可直接进剪辑软件`)
+        message.success({
+          key: EXPORT_MESSAGE_KEY,
+          content: `已导出 ${result.frameCount} 帧（覆盖时间轴 ${result.durationSeconds.toFixed(1)} 秒），解压后可直接进剪辑软件`,
+        })
         setExportOpen(false)
       } else {
         const response = await exportPrevisVideo(scene.id, payload)
         const info = response?.data
         setExportTaskId(info?.task_id || '')
-        message.success(info?.message || '已提交服务端合成任务')
+        message.success({ key: EXPORT_MESSAGE_KEY, content: info?.message || '已提交服务端合成任务' })
       }
     } catch (error: any) {
-      message.error(error?.message || '导出失败')
+      message.error({ key: EXPORT_MESSAGE_KEY, content: error?.message || '导出失败' })
     } finally {
       setExporting(false)
       setExportProgress({ done: 0, total: 0 })
     }
-  }, [scene, exportRange, exportMode, collectFrames, activeCamera, fps])
+  }, [scene, exportRange, exportMode, renderMode, collectFrames, activeCamera, fps])
 
   /**
    * 弹窗里回显的帧数/时长。
@@ -2126,7 +2190,19 @@ export default function PrevisPage() {
       <Modal
         title="导出预演"
         open={exportOpen}
-        onCancel={() => { if (!exporting) setExportOpen(false) }}
+        onCancel={() => {
+          // **导出期间也允许关掉弹窗**：逐帧采集要花几秒到几十秒（每帧都要等渲染 + JPEG 编码），
+          // 让人对着进度条干等没有意义。关掉不等于取消——`handleExport` 是独立的异步流程，
+          // 会继续跑完；进度改由常驻提示承载，完成时用同一个 key 替换。
+          if (exporting) {
+            message.loading({
+              key: EXPORT_MESSAGE_KEY,
+              content: `导出在后台继续（${exportProgress.done}/${exportProgress.total} 帧），完成后会提示；可以先去改别的东西`,
+              duration: 0,
+            })
+          }
+          setExportOpen(false)
+        }}
         onOk={() => void handleExport()}
         okText={exportMode === 'frames' ? '导出参考帧 ZIP' : '提交合成任务'}
         cancelText={exportTaskId ? '关闭' : '取消'}
@@ -2161,12 +2237,39 @@ export default function PrevisPage() {
               style={{ marginTop: 6 }}
               value={exportMode}
               disabled={exporting}
-              onChange={value => setExportMode(value as 'frames' | 'video')}
+              onChange={value => {
+                const next = value as 'frames' | 'video'
+                setExportMode(next)
+                // 参考帧 ZIP 走不了服务端渲染，切到它时把渲染方式退回浏览器，
+                // 免得出现"面板选着服务端、实际按浏览器跑"这种对不上的状态
+                if (next === 'frames') setRenderMode('browser')
+              }}
               options={[
                 { label: '参考帧 ZIP（JPEG 序列）', value: 'frames' },
                 { label: '视频 MP4（服务端合成）', value: 'video' },
               ]}
             />
+          </div>
+          <div>
+            <Text strong>渲染方式</Text>
+            <Segmented
+              block
+              style={{ marginTop: 6 }}
+              value={renderMode}
+              disabled={exporting}
+              onChange={value => setRenderMode(value as PrevisRenderMode)}
+              options={[
+                { label: '浏览器渲染', value: 'browser' },
+                // 服务端渲染：后端驱动无头浏览器走**页面自己的导出**（见 `headless_render.py`）。
+                // 参考帧 ZIP 只能从浏览器取图（服务端这条链路只做视频），所以帧模式下禁用。
+                { label: '服务端渲染', value: 'headless', disabled: exportMode !== 'video' },
+              ]}
+            />
+            <Text type="secondary" style={{ fontSize: 11 }}>
+              {renderMode === 'headless'
+                ? '渲染在服务端进行：提交后可以关掉页面，完成后视频自动进素材库。分辨率固定 1280×720（同一场景在任何机器上尺寸一致）。'
+                : '帧在你自己的浏览器里逐帧渲染再上传：分辨率与当前视口一致。导出期间可以关掉弹窗去改别的，但别关页面（渲染在页面里进行）。'}
+            </Text>
           </div>
           <div>
             <Text strong>帧范围</Text>

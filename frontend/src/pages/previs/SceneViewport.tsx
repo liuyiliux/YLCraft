@@ -693,19 +693,34 @@ export default function SceneViewport({
   )
 
   const handleCreated = useCallback((state: RootState) => {
-    // 闭包持 state 对象本身（其 .camera/.scene/.gl 是可变更引用），
-    // 调用时再取，所以切换机位/视角后拿到的始终是当前那一套。
+    /**
+     * 取**当前**的 store 状态。
+     *
+     * **不要在闭包里直接用创建时那份 `state` 读 `camera`**：zustand 每次 `set()` 都会**替换**
+     * 状态对象，而 drei 的 `makeDefault` 正是通过 `set({ camera })` 换掉默认相机的——
+     * 于是那份快照里的 `state.camera` 会**永远是"创建时那台 Canvas 默认相机"**。
+     *
+     * 这个错的表现极具迷惑性：**视口是对的**（它走 `useThree` 订阅，拿的总是最新值），
+     * **导出却是那台老相机的固定视角**——实测导出视频里人物小而居中、机位全程不动，
+     * 而屏幕上的画面早已推近到贴脸。`.scene` / `.gl` 在这点上不同（始终是同一批对象），
+     * 但统一"调用时取最新"最不容易再踩。
+     */
+    const readLiveState = (): RootState => {
+      const maybeStore = state as unknown as { get?: () => RootState }
+      return typeof maybeStore.get === 'function' ? maybeStore.get() : state
+    }
     onCaptureReady?.((options?: SceneCaptureOptions) => {
-      const previousBackground = state.scene.background
+      const live = readLiveState()
+      const previousBackground = live.scene.background
       try {
         // JPEG 没有 alpha 通道：透明画布直接编码会得到黑底，那不是「渲染坏了」
         // 而是格式限制，所以批量导出时显式给一个背景色。
-        if (options?.background) state.scene.background = new THREE.Color(options.background)
-        state.gl.render(state.scene, state.camera)
+        if (options?.background) live.scene.background = new THREE.Color(options.background)
+        live.gl.render(live.scene, live.camera)
         const mime = options?.mime || 'image/png'
         const url = mime === 'image/png'
-          ? state.gl.domElement.toDataURL(mime)
-          : state.gl.domElement.toDataURL(mime, options?.quality ?? 0.92)
+          ? live.gl.domElement.toDataURL(mime)
+          : live.gl.domElement.toDataURL(mime, options?.quality ?? 0.92)
         // 'data:,' 表示画布为空（未渲染或不可读），不要当成有效截图
         return url && url.length > 8 ? url : null
       } catch (error) {
@@ -713,7 +728,7 @@ export default function SceneViewport({
         return null
       } finally {
         // 恢复现场：屏幕上那一帧的背景会被下一帧覆盖，不会残留
-        if (options?.background) state.scene.background = previousBackground
+        if (options?.background) live.scene.background = previousBackground
       }
     })
   }, [onCaptureReady])
