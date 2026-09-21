@@ -205,6 +205,54 @@ function pickModelUrl(asset: Asset): string {
   return ''
 }
 
+//: 全景贴图只接受可作纹理加载的图片格式（tasks 2.3）：素材库里视频/文档/模型都不能当背景。
+const PANORAMA_IMAGE_EXT_RE = /\.(jpe?g|png|webp|avif|bmp)(\?|#|$)/i
+
+/** 从资产里挑出可当全景贴图的地址；挑不到返回空串（调用方据此禁用"应用"）。 */
+function pickPanoramaUrl(asset: Asset): string {
+  for (const url of [asset.file_url, asset.source_url]) {
+    if (url && PANORAMA_IMAGE_EXT_RE.test(url)) return url
+  }
+  return ''
+}
+
+/**
+ * 全景背景的贴图控制（tasks 2.3）。
+ *
+ * 先做**从素材库选图**这条零额度路径：生成贴图（2.4）要模型额度，而"能选现成的图"本身
+ * 就能覆盖多数需求（拍到的全景、别的工具出的图）。渲染侧的口径不变：内表面球体、不写尺寸。
+ */
+function PanoramaNodeControls({
+  node,
+  onPick,
+  onClear,
+}: {
+  node: PrevisNode
+  onPick: (nodeId: string) => void
+  onClear: (nodeId: string) => void
+}) {
+  const textureUrl = String(node.metadata.textureUrl || '')
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '4px 8px 8px 8px' }}>
+      <Space size={6} align="center">
+        <Button size="small" disabled={node.locked} onClick={() => onPick(node.id)}>
+          从素材库选贴图
+        </Button>
+        {Boolean(textureUrl) && (
+          <Button size="small" type="text" disabled={node.locked} onClick={() => onClear(node.id)}>
+            清除
+          </Button>
+        )}
+      </Space>
+      <Text type="secondary" style={{ fontSize: 11 }}>
+        {textureUrl
+          ? '已应用贴图：球体内表面贴图，不参与节点尺寸'
+          : '当前是纯色背景；选了图之后球体内表面显示该图，加载失败会回落到纯色（不会白屏）'}
+      </Text>
+    </div>
+  )
+}
+
 function makePrimitiveNode(kind: PrimitiveKind): PrevisNode {
   const size: [number, number, number] =
     kind === 'box' ? [1, 1, 1] : kind === 'sphere' ? [1, 1, 1] : kind === 'cylinder' ? [0.6, 1.2, 0.6] : [2, 2, 1]
@@ -1154,6 +1202,63 @@ export default function PrevisPage() {
     }
   }, [])
 
+  /* ---- 全景贴图（tasks 2.3：从素材库选图，零额度路径） ---- */
+
+  const [panoramaPickerOpen, setPanoramaPickerOpen] = useState(false)
+  const [panoramaAssets, setPanoramaAssets] = useState<Asset[]>([])
+  const [panoramaLoading, setPanoramaLoading] = useState(false)
+  const [panoramaTargetId, setPanoramaTargetId] = useState('')
+
+  const openPanoramaPicker = useCallback(async (nodeId: string) => {
+    setPanoramaTargetId(nodeId)
+    setPanoramaPickerOpen(true)
+    setPanoramaLoading(true)
+    try {
+      // 不按 asset_type 过滤：素材分类的取值口径由别处决定，这里**按扩展名筛可加载的图片**
+      // ——宁可多列几条，也不要因为分类名不匹配而"一条都选不到"
+      const response = await listAssets({ page_size: 100 })
+      setPanoramaAssets((response?.data || []).filter((asset: Asset) => Boolean(pickPanoramaUrl(asset))))
+    } catch (error: any) {
+      message.error(error?.message || '加载素材失败')
+    } finally {
+      setPanoramaLoading(false)
+    }
+  }, [])
+
+  const applyPanoramaTexture = useCallback(
+    (asset: Asset) => {
+      const url = pickPanoramaUrl(asset)
+      if (!url) {
+        message.warning('这个素材不是可直接贴图的图片格式')
+        return
+      }
+      const target = panoramaTargetId
+      mutateNodes(items =>
+        items.map(node =>
+          node.id === target
+            ? { ...node, metadata: { ...node.metadata, textureUrl: url, textureAssetId: asset.id } }
+            : node,
+        ),
+      )
+      setPanoramaPickerOpen(false)
+      message.success('已应用为全景背景（记得保存场景）')
+    },
+    [mutateNodes, panoramaTargetId],
+  )
+
+  const clearPanoramaTexture = useCallback(
+    (nodeId: string) => {
+      mutateNodes(items =>
+        items.map(node => {
+          if (node.id !== nodeId) return node
+          const { textureUrl: _url, textureAssetId: _assetId, ...rest } = node.metadata
+          return { ...node, metadata: rest }
+        }),
+      )
+    },
+    [mutateNodes],
+  )
+
   // 动作库：一次取全（含曲线）。条目是个位数到几十条的小表，进场取一次比按需再拉更简单，
   // 也让下拉能立刻判断"哪些动作可用"。加载失败不阻塞预演台，只是暂时没有动作可选。
   useEffect(() => {
@@ -1882,6 +1987,9 @@ export default function PrevisPage() {
                       />
                   )}
                   {!draft && node.kind === 'light' && <LightNodeControls node={node} onChange={updateLightConfig} />}
+                  {!draft && node.kind === 'panorama' && (
+                    <PanoramaNodeControls node={node} onPick={openPanoramaPicker} onClear={clearPanoramaTexture} />
+                  )}
                   </div>
                 ))}
               </Space>
@@ -2540,6 +2648,34 @@ export default function PrevisPage() {
           />
         )}
       </Drawer>
+
+      <Modal
+        title="从素材库选择全景贴图"
+        open={panoramaPickerOpen}
+        onCancel={() => setPanoramaPickerOpen(false)}
+        footer={null}
+        width={560}
+      >
+        <List
+          loading={panoramaLoading}
+          dataSource={panoramaAssets}
+          locale={{ emptyText: '素材库里还没有可用作贴图的图片（支持 jpg/png/webp/avif/bmp）' }}
+          renderItem={asset => (
+            <List.Item
+              actions={[
+                <Button key="apply" type="primary" size="small" onClick={() => applyPanoramaTexture(asset)}>
+                  应用为背景
+                </Button>,
+              ]}
+            >
+              <List.Item.Meta
+                title={asset.title || '未命名素材'}
+                description="可作全景背景贴图"
+              />
+            </List.Item>
+          )}
+        />
+      </Modal>
 
       <Modal
         title="从素材库添加 3D 模型"

@@ -15,8 +15,8 @@
 ## 2. 生成资产接进预演台（第二期）
 
 - [ ] 2.1 在预演台发起"生成模型"：复用既有图生 3D 任务入口（`POST /model-3d/generate`）与任务中心；完成后把结果作为 `asset_model` 节点放进场景（复用"先预览后确认"）
-- [ ] 2.2 Blender 侧入口（若需要）：确认既有 `model3d` 链路已覆盖（`convert/upright/preview/retarget_bake/skeleton_report` 已落地），只在需要新步骤时才加脚本；**不重复造已有能力**
-- [ ] 2.3 全景背景贴图：`panorama` 节点从"只支持纯色"扩到支持贴图。先做**从素材库选图**（零额度），渲染侧接入贴图并保证"内表面球体 + 不写尺寸"的既有口径
+- [x] 2.2 Blender 侧入口（**已核实，不需要新增**）：既有 `model3d` 链路已覆盖所需步骤——`POST /3d/convert`、`POST /3d/extract-metadata`、`POST /3d/generate-preview`、`POST /3d/generate-from-image`（+ 轮询 `GET /3d/generate-from-image/{task_id}`）、`GET /3d/supported-formats` 均在；`retarget_bake` / `skeleton_report` 属绑骨线（`3d-rigging-digital-human`）。**结论：不重复造已有能力**，2.1 直接复用
+- [x] 2.3 全景背景贴图 · 从素材库选图（**已落地**，零额度路径）：`panorama` 节点元数据支持 `textureUrl`（+ `textureAssetId` 记来源），面板新增「从素材库选贴图 / 清除」。三条实现要点——① **不按 `asset_type` 过滤素材**，改按**扩展名**挑可加载的图片（jpg/png/webp/avif/bmp）：分类口径由别处决定，宁可多列几条，也不要因为分类名不匹配而"一条都选不到"；② 渲染侧**自己加载、失败回落纯色**，刻意不用会 suspend 的 `useTexture`——那需要一层 Suspense，加载失败会直接把整个画布打掉，而背景只是背景，不该让预演台白屏；③ **有贴图时材质 color 设白**：否则纯色会当"染色"叠在贴图上、画面整体偏暗。既有口径不变：**内表面球体（`BackSide`）+ 半径固定、不参与节点尺寸**。`tsc` 0 错误、前端 18 文件 328 例通过
 - [ ] 2.4 全景背景直接生成：接生图后端（**需额度开关**），生成结果入库为资产后同上；失败要给可读原因
 - [ ] 2.5 three.js 程序化模型：在基础几何体与外部模型之间加一档"参数化组合体"（先明确它解决什么、不要变成简易建模器）
 
