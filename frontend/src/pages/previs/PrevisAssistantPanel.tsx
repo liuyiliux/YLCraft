@@ -3,6 +3,7 @@ import { Alert, Button, Empty, Input, Space, Spin, Tooltip, Typography } from 'a
 import { CloseOutlined, SendOutlined } from '@ant-design/icons'
 
 import { agentChat } from '../../api/agent'
+import { buildAssistantMessage, previewOutcome } from './assistantFlow'
 import { previewPrevisOperations } from '../../api'
 import {
   ASSISTANT_PROFILE_ID,
@@ -82,6 +83,7 @@ export function PrevisAssistantPanel({
   onClose,
   /** 把"通过校验的方案"交给工作区渲染成幽灵预览（只读预览，落库仍要用户确认）。 */
   onPropose,
+  onReload,
 }: {
   scene: { id: string; revision: number }
   nodes: PrevisNode[]
@@ -95,6 +97,8 @@ export function PrevisAssistantPanel({
   motionSlugs?: string[]
   onClose: () => void
   onPropose?: (proposal: Record<string, any>) => void
+  /** 版本过期时重新载入最新场景并丢弃幽灵态（tasks 1.5）。 */
+  onReload?: () => void
 }) {
   /**
    * 上下文**在面板里算**，而不是由父组件算好传进来。
@@ -131,33 +135,10 @@ export function PrevisAssistantPanel({
     )
     setSending(true)
     try {
-      // **场景事实必须写进消息正文**，而不是只塞进 `context` 字段：实测后端不会把 `context`
-      // 呈现给模型，助手于是说「当前会话没有可用的画面场景」、反过来向用户要场景 ID（实测截图）。
-      // 写进正文是唯一保证它读到的路径；`context` 仍然带上，供后端记录与排查。
-      // 输出要求里约定了 json 代码块格式——外层界面靠它把方案变成半透明预览。
-      const outgoing = [
-        `【当前场景】id=${context.scene_id}（版本 ${context.scene_revision}；时长 ${context.duration_frames} 帧 @${context.fps}fps；活动机位「${context.active_camera_name}」）`,
-        `【锁定不可改】节点：${context.locked_nodes.map(item => `${item.name}(${item.id})`).join('、') || '无'}；机位：${context.locked_cameras.map(item => item.name).join('、') || '无'}`,
-        context.selected_node
-          ? `【用户当前选中】${context.selected_node.name}（id=${context.selected_node.id}）`
-          : '',
-        // 动作标识**原样列出**：实测模型会编造 `motion:motionwave`（正确是 `motion:wave`），
-        // 与其指望它先查清单再用对，不如把合法值直接摆在消息里——它照抄就行。
-        motionSlugs.length
-          ? `【可用动作（assign_motion 的 motion 值必须是下面这些，原样使用，不要改动或拼造）】${motionSlugs.join('、')}`
-          : '',
-        // 什么时候用动作、什么时候用姿势：**库里没有的动作就别硬凑标识**（打斗、拥抱、拔刀…）。
-        // 预演台要的是"站位 / 朝向 / 景别 / 机位"可读，不是接触级的动作细节；
-        // 说清"这一版只能表达到哪一步"比编一个不存在的动作强。
-        '【姿势 vs 动作】库里有现成动作用 assign_motion（照抄上面的清单）；库里没有的动作（打斗、拥抱、拔刀等）不要编造动作标识，改用 pose 静态姿势 + 站位/朝向/间距表达，并明确说明这一版只能表达到哪一步（例如"只能到对峙，看不出打中"）。',
-        // 库里没有的姿势**不必等我们加**：助手可以直接算一组关节角（`poseJoints`），
-        // 走同一套限位收敛。**不告诉它有这条路，它就只能编造一个不存在的 pose/motion 名**。
-        '【库里没有的姿势：自己算角度】可以用 metadata.poseJoints 直接给关节角度，不必编造不存在的姿势名或动作名。字段：三元组 leftShoulder/rightShoulder/leftHip/rightHip/torso/head = [pitch, twist, spread]（torso/head 的第二个值是转身），单值 leftElbow/rightElbow/leftKnee/rightKnee/bodyOffsetY。正负：肢体 pitch 负值=向前抬、spread 正值=向体侧张开、**肘只能负值（前屈）、膝只能正值（后收）**、torso/head 的 pitch 正值=前倾低头（后仰用负值）。限位（超出会被收敛）：肩 pitch -160~70 / spread -45~170，肘 -150~0，膝 0~140，torso pitch -15~60 / 转身 ±60，head pitch -45~55。例：{"operations":[{"type":"add_node","payload":{"kind":"human_proxy","name":"出拳方","position":[-0.42,0,0],"metadata":{"height":1.72,"poseJoints":{"rightShoulder":[-95,0,12],"rightElbow":-6,"leftShoulder":[-62,0,22],"leftElbow":-108,"torso":[10,-22,0],"head":[4,-14,0],"leftHip":[-14,0,10],"rightHip":[18,0,10],"leftKnee":20,"rightKnee":14}}}}]}。',
-        '【输出要求】若你给出改场景的方案，请把操作数组放进 ```json 代码块（形如 {"operations":[...]}），界面会拿它去校验并渲染半透明预览；没有方案时正常回答即可。',
-        `【用户】${text}`,
-      ]
-        .filter(Boolean)
-        .join('\n')
+      // 消息正文的拼装（含场景事实、动作清单、姿势 vs 动作、poseJoints 通道、输出格式）
+      // 抽到了 `assistantFlow.buildAssistantMessage`：这段是纯逻辑，必须能单测
+      // ——写错了的表现是"助手说没有场景"或"又编了个动作名"，只在真机上才看得出来。
+      const outgoing = buildAssistantMessage({ text, context, motionSlugs })
       const response: any = await agentChat({
         message: outgoing,
         profile_id: ASSISTANT_PROFILE_ID,
@@ -209,12 +190,11 @@ export function PrevisAssistantPanel({
           if (data?.valid) {
             onPropose(data)
           } else {
-            const reasons = (data?.rejected ?? []).map((item: any) => item?.reason).filter(Boolean)
-            const motionMiss = reasons.some((reason: string) => reason.includes('动作'))
-            setError(
-              `方案有 ${(data?.rejected ?? []).length} 条没通过校验，已不渲染预览：${reasons[0] || '未知原因'}` +
-                (motionMiss ? `（可用动作只有：${motionSlugs.join('、')}）` : ''),
-            )
+            const outcome = previewOutcome(data, motionSlugs)
+            setError(outcome.notice)
+            // 版本过期：**这份方案整批作废**，必须重新载入最新版本（顺带丢弃幽灵态），
+            // 否则用户会拿着一份基于旧版本的方案反复点确认、一直被拒
+            if (outcome.needsReload) onReload?.()
           }
         } catch (exc: any) {
           setError(exc?.message || '校验助手方案失败')
