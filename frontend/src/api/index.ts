@@ -2067,6 +2067,31 @@ export const exportPrevisVideo = (sceneId: string, params: PrevisExportOptions) 
     body: buildPrevisExportForm(params),
   }) as Promise<{ success: boolean; data: PrevisExportVideoResult }>
 
+/**
+ * **服务端无头渲染**并合成预演视频（不占用浏览器）。
+ *
+ * 与 `exportPrevisVideo` 的区别：那条要把浏览器渲好的帧传上去，所以必须占着标签页、
+ * 关掉页面就中断；这条只把"帧范围"告诉服务端，渲染由后端用无头 Chrome 完成。
+ * 代价是分辨率固定（`PREVIS_RENDER_VIEWPORT`，默认 1280×720）——同时也是收益：
+ * 同一场景在任何机器上渲出同样尺寸的帧。
+ */
+export const exportPrevisVideoHeadless = (
+  sceneId: string,
+  params: { startFrame: number; endFrame: number; step?: number; fps?: number; background?: string; cameraId?: string },
+) => {
+  const form = new FormData()
+  form.append('start_frame', String(params.startFrame))
+  form.append('end_frame', String(params.endFrame))
+  form.append('step', String(params.step ?? 1))
+  form.append('fps', String(params.fps ?? 24))
+  form.append('background_color', params.background || '')
+  form.append('camera_id', params.cameraId || '')
+  return request(`/previs/scenes/${encodeURIComponent(sceneId)}/export-video-headless`, {
+    method: 'POST',
+    body: form,
+  }) as Promise<{ success: boolean; data: PrevisExportVideoResult }>
+}
+
 export const listCreativeProjectContents = (
   projectId: string,
   contentType?: string,

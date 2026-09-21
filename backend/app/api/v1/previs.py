@@ -852,3 +852,143 @@ async def export_previs_video(
             "message": "已开始服务端合成，可在任务中心查看进度；合成完成后视频进入素材库。",
         },
     }
+
+
+async def _run_previs_headless_export(
+    task_id: str,
+    scene_id: str,
+    frame_numbers: list[int],
+    fps: float,
+    background_color: str,
+    basis: dict[str, Any],
+    *,
+    start_frame: int,
+    step: int,
+) -> None:
+    """服务端无头渲染 → 落盘帧序列 → 复用既有的合成与入库链路。
+
+    **刻意复用 `_run_previs_video_export`**：那条路已经把"ffmpeg 合成 + 入素材库 +
+    写任务结果 + 清理中间产物"都做完了。这里只多一件事——帧不是上传来的，而是自己渲的。
+    两条路径若各写一遍合成逻辑，迟早出现"上传来的视频"与"服务端渲的视频"规格不一致。
+    """
+    from app.services.previs.headless_render import export_frames_headless, extract_frames
+
+    queue = get_task_queue()
+    export_id = uuid4().hex
+    target_dir = _export_root() / export_id
+    frames_dir = target_dir / "frames"
+    frames_dir.mkdir(parents=True, exist_ok=True)
+    total = len(frame_numbers)
+
+    try:
+        await queue.update_progress(task_id, 5, f"启动无头浏览器渲染：约 {total} 帧")
+        archive, _ = await export_frames_headless(scene_id)
+        await queue.update_progress(task_id, 80, "帧已渲好，正在落盘")
+        count, frames = extract_frames(archive, frames_dir)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("previs headless render failed task=%s", task_id)
+        task = await queue.get_task(task_id)
+        if task:
+            task.status = TaskStatus.FAILED
+            task.progress_message = f"服务端渲染失败：{exc}"
+            task.result = {"scene_id": scene_id, "error": str(exc)}
+            task.completed_at = time.time()
+            await queue.update_task(task)
+        return
+
+    # 帧号以**页面自己记录的 manifest** 为准（步长 >1 时文件名连续而帧号不连续）；
+    # 下游（合成/入库）只认 manifest 里这几个键。step 也据此回算，避免与真实帧号对不上。
+    if count > 1 and frames and frames[-1] != frames[0]:
+        step = max(1, int(round((frames[-1] - frames[0]) / (count - 1))))
+        start_frame = int(frames[0])
+    manifest = _build_export_manifest(
+        basis,
+        [{"frame": frame} for frame in frames],
+        fps=fps,
+        start_frame=start_frame,
+        step=step,
+    )
+    (target_dir / "manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    await _run_previs_video_export(
+        task_id, target_dir, target_dir / "previs-export.mp4", fps, manifest
+    )
+
+
+@router.post(
+    "/scenes/{scene_id}/export-video-headless",
+    summary="服务端无头渲染并合成预演视频（异步任务，不占用浏览器）",
+)
+async def export_previs_video_headless(
+    scene_id: str,
+    background: BackgroundTasks,
+    start_frame: Annotated[int, Form()] = 0,
+    end_frame: Annotated[int, Form()] = 0,
+    step: Annotated[int, Form()] = 1,
+    fps: Annotated[float, Form()] = 24.0,
+    background_color: Annotated[str, Form()] = "",
+    camera_id: Annotated[str, Form()] = "",
+):
+    """**不经过浏览器**的预演视频导出：服务端用无头 Chrome 逐帧渲染后再合成。
+
+    为什么要有它：浏览器侧导出要占用用户的标签页（每帧等渲染 + JPEG 编码），
+    而且**关掉页面就中断**。这条链路把渲染挪到后台任务里，用户关掉页面照样出片。
+    代价是分辨率固定（默认 1280×720，见 `PREVIS_RENDER_VIEWPORT`）——这同时也是收益：
+    同一份场景在任何机器上渲出同样尺寸的帧，"重复导出逐帧一致"才真的成立。
+
+    前置：需要前端服务可达（`PREVIS_RENDER_BASE_URL`，默认 `http://127.0.0.1:3000`），
+    因为渲染就是驱动那个页面（页面在 `?headless_export=1` 时会挂出取图钩子）。
+    """
+    basis = _load_scene_export_basis(scene_id, camera_id)
+    fps_value = _resolve_fps(fps)
+    safe_step = max(1, int(step or 1))
+    first = max(0, int(start_frame or 0))
+    last = int(end_frame or 0)
+    if last < first:
+        raise HTTPException(status_code=422, detail="结束帧必须不小于起始帧")
+    frame_numbers = list(range(first, last + 1, safe_step))
+    if not frame_numbers:
+        raise HTTPException(status_code=422, detail="帧范围为空")
+    if len(frame_numbers) > EXPORT_MAX_FRAMES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"一次最多导出 {EXPORT_MAX_FRAMES} 帧（当前 {len(frame_numbers)} 帧），请增大步长或缩短帧范围",
+        )
+
+    queue = get_task_queue()
+    task = await queue.create_task(
+        task_type="previs_export_video_headless",
+        payload={
+            "project_id": basis["project_id"],
+            "scene_id": scene_id,
+            "scene_revision": basis["revision"],
+            "camera_id": basis["camera_id"],
+            "fps": fps_value,
+            "frame_count": len(frame_numbers),
+            "stage_label": "预演视频（服务端渲染）",
+        },
+    )
+    background.add_task(
+        _run_previs_headless_export,
+        task.task_id,
+        scene_id,
+        frame_numbers,
+        fps_value,
+        background_color,
+        basis,
+        start_frame=first,
+        step=safe_step,
+    )
+    return {
+        "success": True,
+        "data": {
+            "task_id": task.task_id,
+            "scene_id": scene_id,
+            "scene_revision": basis["revision"],
+            "frame_count": len(frame_numbers),
+            "fps": fps_value,
+            "status": task.status.value if hasattr(task.status, "value") else str(task.status),
+            "message": "已在服务端开始渲染（不占用浏览器），可关掉页面；完成后视频进入素材库。",
+        },
+    }
