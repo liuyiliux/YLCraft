@@ -138,6 +138,14 @@ import {
   draftBlockedReason as computeDraftBlockReason,
   draftNodeIds as computeDraftNodeIds,
 } from './draftView'
+import type { CustomPose } from './customPoses'
+import {
+  findCustomPose,
+  loadCustomPoses,
+  persistCustomPoses,
+  removeCustomPose,
+  saveCustomPose,
+} from './customPoses'
 import {
   draftQueueLabel,
   draftQueueNextParams,
@@ -413,6 +421,10 @@ function HumanProxyNodeControls({
   onPoseJointsChange,
   onHeightChange,
   onResetPose,
+  customPoses,
+  onSavePreset,
+  onApplyPreset,
+  onRemovePreset,
 }: {
   node: PrevisNode
   /** 能驱动程序化人形的动作（参数型）。 */
@@ -425,6 +437,11 @@ function HumanProxyNodeControls({
   onPoseJointsChange: (id: string, joints: HumanProxyPose) => void
   onHeightChange: (id: string, height: number) => void
   onResetPose: (id: string, pose: string) => void
+  /** 本机存过的姿势预设：把调好的 / 助手算出来的姿势留下来复用。 */
+  customPoses: CustomPose[]
+  onSavePreset: (nodeId: string, name: string) => void
+  onApplyPreset: (nodeId: string, presetId: string) => void
+  onRemovePreset: (presetId: string) => void
 }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '4px 8px 8px 8px' }}>
@@ -447,9 +464,13 @@ function HumanProxyNodeControls({
               height={humanProxyHeight(node.metadata.height)}
               custom={Boolean(sanitizeHumanProxyPose(node.metadata.poseJoints))}
               disabled={node.locked}
+              customPoses={customPoses}
               onChange={next => onPoseJointsChange(node.id, next)}
               onHeightChange={next => onHeightChange(node.id, next)}
               onReset={() => onResetPose(node.id, humanProxyPoseKey(node.metadata.pose))}
+              onSavePreset={name => onSavePreset(node.id, name)}
+              onApplyPreset={presetId => onApplyPreset(node.id, presetId)}
+              onRemovePreset={onRemovePreset}
             />
           }
         >
@@ -1010,6 +1031,44 @@ export default function PrevisPage() {
       node.id === id ? { ...node, metadata: { ...node.metadata, poseJoints: joints } } : node
     )))
   }, [mutateNodes])
+
+  /* ---- 我的姿势预设：把"调好的 / 助手算出来的姿势"存下来复用 ---- */
+
+  const [customPoses, setCustomPoses] = useState<CustomPose[]>(() => loadCustomPoses())
+
+  const saveNodePreset = useCallback(
+    (id: string, name: string) => {
+      const node = nodes.find(item => item.id === id)
+      const { list, notice } = saveCustomPose(
+        customPoses,
+        name,
+        // 存**当前生效的完整姿势**（预设 + 自定义合并后），而不是只存 poseJoints：
+        // 从"预设 + 微调"调出来的姿势，只存微调部分会在别处套用时丢掉预设底盘
+        resolveHumanProxyPose(node?.metadata),
+      )
+      setCustomPoses(list)
+      persistCustomPoses(list)
+      message.info(notice)
+    },
+    [customPoses, nodes],
+  )
+
+  const applyNodePreset = useCallback(
+    (id: string, presetId: string) => {
+      const preset = findCustomPose(customPoses, presetId)
+      if (preset) updateNodePoseJoints(id, preset.joints)
+    },
+    [customPoses, updateNodePoseJoints],
+  )
+
+  const removePreset = useCallback(
+    (presetId: string) => {
+      const list = removeCustomPose(customPoses, presetId)
+      setCustomPoses(list)
+      persistCustomPoses(list)
+    },
+    [customPoses],
+  )
 
   /** 身高（米）。超范围由 `humanProxyHeight` 统一收敛，这里不重复写死区间。 */
   const updateNodeHeight = useCallback((id: string, height: number) => {
@@ -1761,7 +1820,11 @@ export default function PrevisPage() {
                       onPoseJointsChange={updateNodePoseJoints}
                       onHeightChange={updateNodeHeight}
                       onResetPose={updateNodePose}
-                    />
+                      customPoses={customPoses}
+                      onSavePreset={saveNodePreset}
+                      onApplyPreset={applyNodePreset}
+                      onRemovePreset={removePreset}
+                      />
                   )}
                   {!draft && node.kind === 'light' && <LightNodeControls node={node} onChange={updateLightConfig} />}
                   </div>

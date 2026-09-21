@@ -1,5 +1,8 @@
-import { Button, InputNumber, Slider, Space, Tooltip, Typography } from 'antd'
+import { DeleteOutlined } from '@ant-design/icons'
+import { Button, Input, InputNumber, Popconfirm, Slider, Space, Tooltip, Typography } from 'antd'
+import { useState } from 'react'
 import { HUMAN_PROXY_HEIGHT, HUMAN_PROXY_LIMITS, type HumanProxyPose } from '../../components/three/humanProxy'
+import type { CustomPose } from './customPoses'
 
 const { Text } = Typography
 
@@ -93,9 +96,16 @@ export interface HumanProxyJointPanelProps {
   /** 是否处于自定义状态（决定"重置为预设"是否可用） */
   custom: boolean
   disabled?: boolean
+  /** 本机存过的姿势：把"这次调好的 / 助手算出来的"留下来复用。 */
+  customPoses?: CustomPose[]
   onChange: (next: HumanProxyPose) => void
   onHeightChange: (height: number) => void
   onReset: () => void
+  /** 用当前关节角存一个新预设（同名覆盖）。 */
+  onSavePreset?: (name: string) => void
+  /** 套用某个已存预设。 */
+  onApplyPreset?: (id: string) => void
+  onRemovePreset?: (id: string) => void
 }
 
 /**
@@ -110,10 +120,19 @@ export default function HumanProxyJointPanel({
   height,
   custom,
   disabled,
+  customPoses = [],
   onChange,
   onHeightChange,
   onReset,
+  onSavePreset,
+  onApplyPreset,
+  onRemovePreset,
 }: HumanProxyJointPanelProps) {
+  const [presetName, setPresetName] = useState('')
+  const commitSave = () => {
+    onSavePreset?.(presetName)
+    setPresetName('')
+  }
   // 三元组的下标就是轴序（0=前后、1=内外旋、2=张开），与关节语义函数一一对应
   const setTriple = (field: TripleField, axis: 0 | 1 | 2, value: number) => {
     const next = [...((pose[field] ?? [0, 0, 0]) as [number, number, number])] as [number, number, number]
@@ -208,6 +227,50 @@ export default function HumanProxyJointPanel({
           {custom ? '当前：自定义' : '当前：跟随预设'}
         </Text>
       </Space>
+
+      {/*
+        存为预设：把"这次调好的 / 助手算出来的姿势"留下来复用。
+
+        为什么放在这里而不是另开一个面板：姿势是**调**出来的，存的手就在调的手边上——
+        调完顺手存，比"调好了再去别处找保存入口"实际得多。存的是关节角而不是预设名，
+        所以不需要改前后端的姿势枚举（详见 `customPoses.ts` 的注释）。
+      */}
+      <div style={{ marginTop: 10, borderTop: '1px solid var(--border)', paddingTop: 8 }}>
+        <Text type="secondary" style={{ fontSize: 11 }}>我的姿势</Text>
+        <Space.Compact style={{ width: '100%', marginTop: 4 }}>
+          <Input
+            size="small"
+            placeholder="给当前姿势起个名"
+            value={presetName}
+            disabled={disabled}
+            onChange={event => setPresetName(event.target.value)}
+            onPressEnter={() => commitSave()}
+          />
+          <Button size="small" disabled={disabled} onClick={() => commitSave()}>
+            存为预设
+          </Button>
+        </Space.Compact>
+        {(customPoses?.length ?? 0) > 0 && (
+          <Space direction="vertical" size={4} style={{ width: '100%', marginTop: 6 }}>
+            {customPoses!.map(item => (
+              <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <Button
+                  size="small"
+                  type="text"
+                  style={{ flex: 1, justifyContent: 'flex-start', paddingLeft: 4 }}
+                  disabled={disabled}
+                  onClick={() => onApplyPreset?.(item.id)}
+                >
+                  {item.name}
+                </Button>
+                <Popconfirm title={`删掉「${item.name}」？`} onConfirm={() => onRemovePreset?.(item.id)}>
+                  <Button size="small" type="text" disabled={disabled} icon={<DeleteOutlined />} />
+                </Popconfirm>
+              </div>
+            ))}
+          </Space>
+        )}
+      </div>
     </div>
   )
 }
