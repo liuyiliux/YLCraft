@@ -60,6 +60,7 @@ export function PrevisAssistantPanel({
   fps,
   activeCameraId,
   selectedNode,
+  motionSlugs = [],
   onClose,
   /** 把"通过校验的方案"交给工作区渲染成幽灵预览（只读预览，落库仍要用户确认）。 */
   onPropose,
@@ -71,6 +72,9 @@ export function PrevisAssistantPanel({
   fps: number
   activeCameraId: string
   selectedNode?: PrevisNode | null
+  /** 库里的动作标识（原样可用）。**必须写进消息正文**：实测模型会编造 `motion:motionwave`
+   * 这类不存在的标识（正确的是 `motion:wave`），只靠系统提示里"不要编造"拦不住。 */
+  motionSlugs?: string[]
   onClose: () => void
   onPropose?: (proposal: Record<string, any>) => void
 }) {
@@ -118,6 +122,11 @@ export function PrevisAssistantPanel({
         `【锁定不可改】节点：${context.locked_nodes.map(item => `${item.name}(${item.id})`).join('、') || '无'}；机位：${context.locked_cameras.map(item => item.name).join('、') || '无'}`,
         context.selected_node
           ? `【用户当前选中】${context.selected_node.name}（id=${context.selected_node.id}）`
+          : '',
+        // 动作标识**原样列出**：实测模型会编造 `motion:motionwave`（正确是 `motion:wave`），
+        // 与其指望它先查清单再用对，不如把合法值直接摆在消息里——它照抄就行。
+        motionSlugs.length
+          ? `【可用动作（assign_motion 的 motion 值必须是下面这些，原样使用，不要改动或拼造）】${motionSlugs.join('、')}`
           : '',
         '【输出要求】若你给出改场景的方案，请把操作数组放进 ```json 代码块（形如 {"operations":[...]}），界面会拿它去校验并渲染半透明预览；没有方案时正常回答即可。',
         `【用户】${text}`,

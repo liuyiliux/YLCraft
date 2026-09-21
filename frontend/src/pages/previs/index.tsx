@@ -2174,6 +2174,7 @@ export default function PrevisPage() {
                 fps={fps}
                 activeCameraId={String(viewData?.activeCameraId || '')}
                 selectedNode={selectedNode}
+                motionSlugs={Object.keys(motionsBySlug)}
                 onClose={() => setAssistantOpen(false)}
                 onPropose={proposal => setDraft(proposal as unknown as PrevisDraft)}
               />
