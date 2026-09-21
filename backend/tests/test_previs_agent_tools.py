@@ -52,7 +52,27 @@ def test_new_previs_tools_are_registered_as_read_only():
 def test_new_read_tools_are_granted_to_the_two_director_roles():
     for name in NEW_READ_TOOLS:
         holders = {profile["id"] for profile in DEFAULT_AGENT_PROFILES if name in _tools_of(profile)}
-        assert holders == DIRECTOR_ROLES, (name, holders)
+        assert holders == DIRECTOR_ROLES | {"previs-assistant"}, (name, holders)
+
+
+def test_previs_assistant_only_holds_previs_scoped_tools():
+    """预演助手的权限被收窄到"预演相关"，且**刻意不含写工具**。
+
+    为什么必须钉住：助手是"在预演台里对话"的入口，最容易的错法就是顺手把写工具也给它，
+    于是它能在没人点确认的情况下改场景——那正是这条变更要守住的边界。
+    落库由用户在界面上确认触发（前端走既有应用链路），因此写工具的授权集合保持不变。
+    """
+    assistant = next(profile for profile in DEFAULT_AGENT_PROFILES if profile["id"] == "previs-assistant")
+    tools = set(_tools_of(assistant))
+    assert tools <= {
+        "get_previs_composition_options",
+        "list_previs_motions",
+        "generate_previs_draft",
+        "previs_preview_operations",
+    }, f"助手持有预演范围之外的工具：{sorted(tools)}"
+    assert WRITE_TOOL not in tools
+    # 反向：写了工具就该被上面拦住，这里再明确一次语义
+    assert "previs_apply_operations" not in tools
 
 
 def test_write_tool_stays_restricted_to_the_two_director_roles():
