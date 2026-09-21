@@ -61,7 +61,9 @@ PRIMITIVE_KINDS = ("box", "sphere", "cylinder", "plane")
 LIGHT_KINDS = ("point", "spot", "directional")
 
 #: 人形占位的姿势预设，与前端 `HUMAN_PROXY_POSES` 的 key 一致。
-HUMAN_PROXY_POSES = ("stand", "tpose", "walk", "sit", "wave", "point")
+#: **两处必须同步**：前端新增姿势后这里忘加，表现是"助手用了新姿势 → 落库校验拒绝
+#: 未知姿势"，而直接写库（建场景）不会报错——不一致会藏很久。
+HUMAN_PROXY_POSES = ("stand", "tpose", "walk", "sit", "wave", "point", "punch", "hit")
 #: 身高范围（米），与前端 `HUMAN_PROXY_HEIGHT` 一致。
 HUMAN_PROXY_HEIGHT = (0.5, 2.5)
 #: 动作引用前缀，与前端 `motionRuntime.ts` 的 `MOTION_REF_PREFIX` 一致。

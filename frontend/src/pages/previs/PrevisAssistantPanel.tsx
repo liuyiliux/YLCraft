@@ -150,6 +150,9 @@ export function PrevisAssistantPanel({
         // 预演台要的是"站位 / 朝向 / 景别 / 机位"可读，不是接触级的动作细节；
         // 说清"这一版只能表达到哪一步"比编一个不存在的动作强。
         '【姿势 vs 动作】库里有现成动作用 assign_motion（照抄上面的清单）；库里没有的动作（打斗、拥抱、拔刀等）不要编造动作标识，改用 pose 静态姿势 + 站位/朝向/间距表达，并明确说明这一版只能表达到哪一步（例如"只能到对峙，看不出打中"）。',
+        // 库里没有的姿势**不必等我们加**：助手可以直接算一组关节角（`poseJoints`），
+        // 走同一套限位收敛。**不告诉它有这条路，它就只能编造一个不存在的 pose/motion 名**。
+        '【库里没有的姿势：自己算角度】可以用 metadata.poseJoints 直接给关节角度，不必编造不存在的姿势名或动作名。字段：三元组 leftShoulder/rightShoulder/leftHip/rightHip/torso/head = [pitch, twist, spread]（torso/head 的第二个值是转身），单值 leftElbow/rightElbow/leftKnee/rightKnee/bodyOffsetY。正负：肢体 pitch 负值=向前抬、spread 正值=向体侧张开、**肘只能负值（前屈）、膝只能正值（后收）**、torso/head 的 pitch 正值=前倾低头（后仰用负值）。限位（超出会被收敛）：肩 pitch -160~70 / spread -45~170，肘 -150~0，膝 0~140，torso pitch -15~60 / 转身 ±60，head pitch -45~55。例：{"operations":[{"type":"add_node","payload":{"kind":"human_proxy","name":"出拳方","position":[-0.42,0,0],"metadata":{"height":1.72,"poseJoints":{"rightShoulder":[-95,0,12],"rightElbow":-6,"leftShoulder":[-62,0,22],"leftElbow":-108,"torso":[10,-22,0],"head":[4,-14,0],"leftHip":[-14,0,10],"rightHip":[18,0,10],"leftKnee":20,"rightKnee":14}}}}]}。',
         '【输出要求】若你给出改场景的方案，请把操作数组放进 ```json 代码块（形如 {"operations":[...]}），界面会拿它去校验并渲染半透明预览；没有方案时正常回答即可。',
         `【用户】${text}`,
       ]
