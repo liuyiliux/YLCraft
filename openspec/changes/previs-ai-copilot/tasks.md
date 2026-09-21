@@ -4,8 +4,8 @@
 
 ## 1. 对话入口（第一期）
 
-- [ ] 1.1 确认三个待定项：对话栏位置、助手身份（复用导演还是新建只管预演的角色）、全景背景先做哪种（见 proposal「已确认项」）
-- [ ] 1.2 助手角色与权限：按 1.1 的结论落 `allowed_tools`（只给预演相关工具：`get_previs_composition_options` / `list_previs_motions` / `generate_previs_draft` / `previs_preview_operations` / `previs_apply_operations`），并加授权测试（与既有做法一致：显式授权列表比对，写工具不被额外角色拿到）
+- [x] 1.1 确认三个待定项：对话栏位置、助手身份（复用导演还是新建只管预演的角色）、全景背景先做哪种（见 proposal「已确认项」）
+- [x] 1.2 助手角色与权限（**已落地**：`profile.py` 新增 `previs-assistant`——只持只读三件套 + `previs_preview_operations`，**刻意不含写工具**；`tests/test_previs_agent_tools.py` 加了"助手不持写工具"的断言，9 例通过）：按 1.1 的结论落 `allowed_tools`（只给预演相关工具：`get_previs_composition_options` / `list_previs_motions` / `generate_previs_draft` / `previs_preview_operations` / `previs_apply_operations`），并加授权测试（与既有做法一致：显式授权列表比对，写工具不被额外角色拿到）
 - [ ] 1.3 预演台内的对话栏 UI：可折叠、与左侧图层面板对称；会话上下文带上**当前场景**（scene_id、revision、活动机位、已锁对象），避免用户每句都要重复"哪个场景"
 - [ ] 1.4 把助手的改动接成**幽灵预览**：助手提出操作 → 走 `previs_preview_operations` → 视口渲染 `proposed_scene`（复用既有幽灵态，不新造一套）→ 用户点确认才落库。**未确认前不许改任何已保存数据**
 - [ ] 1.5 对话与确认的边界用例：revision 过期（409 → 重新载入并丢弃幽灵态）、锁定对象被要求修改、助手引用了不存在的动作/资产（应被拒绝并给出可读原因）
