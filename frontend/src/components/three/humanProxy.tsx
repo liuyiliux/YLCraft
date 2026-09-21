@@ -25,7 +25,16 @@
 
 import type { Object3D } from 'three'
 
-export type HumanProxyPoseKey = 'stand' | 'tpose' | 'walk' | 'sit' | 'wave' | 'point'
+export type HumanProxyPoseKey =
+  | 'stand'
+  | 'tpose'
+  | 'walk'
+  | 'sit'
+  | 'wave'
+  | 'point'
+  // 打斗的两个定格：出拳方与受击方。**成对存在**——分开摆会各摆各的，看不出"打在脸上"
+  | 'punch'
+  | 'hit'
 
 /**
  * 姿势是**关节角度**而不是任意欧拉角：每个字段的轴向与正方向都是固定的，
@@ -217,6 +226,42 @@ export const HUMAN_PROXY_POSES: Record<HumanProxyPoseKey, { label: string; pose:
       rightShoulder: [-80, 0, 12],
       rightElbow: -8,
       leftShoulder: [0, 0, 8],
+    },
+  },
+  punch: {
+    label: '出拳',
+    // 右臂前伸到**脸的高度**（pitch 负值 = 向前抬），肘几乎伸直（-5）；左臂收在脸侧护住自己
+    // （抬臂 + 深屈肘）。躯干略前倾并转向出拳侧，两腿一前一后踩出"发力"的站姿。
+    // 注意抬臂靠 pitch 不靠 spread（理由见 wave 的注释）。
+    pose: {
+      rightShoulder: [-95, 0, 12],
+      rightElbow: -6,
+      leftShoulder: [-62, 0, 22],
+      leftElbow: -108,
+      torso: [10, -22, 0],
+      head: [4, -14, 0],
+      leftHip: [-14, 0, 10],
+      rightHip: [18, 0, 10],
+      leftKnee: 20,
+      rightKnee: 14,
+    },
+  },
+  hit: {
+    label: '受击后仰',
+    // 与 punch 成套：头猛地后仰（headPitch 负值 = 抬头/后仰）、躯干后倾到限位附近
+    // （torsoPitch 下限 -15，不能再多）、两臂向外甩开（pitch 正值 = 向身后摆）。
+    // 左手往脸上去（挨打后的本能动作），膝盖弯、重心往下沉一点。
+    pose: {
+      head: [-30, 14, 10],
+      torso: [-14, 12, -8],
+      leftShoulder: [-52, 0, 38],
+      leftElbow: -96,
+      rightShoulder: [26, 0, 52],
+      rightElbow: -40,
+      leftHip: [-10, 0, 14],
+      rightHip: [16, 0, 14],
+      leftKnee: 24,
+      rightKnee: 18,
     },
   },
 }
