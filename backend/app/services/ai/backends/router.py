@@ -146,8 +146,23 @@ class BackendRouter:
                 first = next(iter(backends.keys()), None)
                 if first:
                     backend = backends[first]
-                    if not target_model and hasattr(backend, 'connector'):
-                        target_model = getattr(backend.connector, 'default_model', None)
+
+        # 4. **统一兜底**：无论 backend 是"按名字/按模型/系统默认/第一个可用"哪条路选出来的，
+        #    没模型名就取连接器的 `default_model`。
+        #
+        #    为什么必须放在最后统一做：原先这个兜底只写在"按 backend 名命中"与"退到第一个可用"
+        #    两条分支里，**经由"系统默认 backend"选中的那条路没有兜底**——于是 model 空着发出去，
+        #    接口 400，然后自动 failover 到备胎（实测：首选 qwen3.8-27b 因 model=None 报 400，
+        #    切到备胎 qwen3.6-35b-a3b 成功，用户看起来就"一直在用那个更弱的老模型"）。
+        if backend and hasattr(backend, "connector"):
+            if not target_model or str(target_model).strip().casefold() == "default":
+                # 'default' 是调用方表示"用连接器默认模型"的哨兵，不能当成模型名发出去
+                target_model = getattr(backend.connector, "default_model", None)
+        if backend and not target_model:
+            logger.warning(
+                "[Router] 后端 %s 既没指定模型、连接器也没有 default_model，请求会带上空的模型名",
+                getattr(backend, "name", "?"),
+            )
 
         return backend, target_model
 
