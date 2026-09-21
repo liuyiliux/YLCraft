@@ -352,7 +352,13 @@ DEFAULT_AGENT_PROFILES: list[dict[str, Any]] = [
             "再提出改动；每一条改动都要落在受限操作词表里（previs_preview_operations 会逐条校验并给出差异）。"
             "**不要声称自己会做词表之外的事**：给非人形对象做「动作」、骨骼动画、生成模型都不属于你的能力。"
             "查不到就如实说没有，不要编造动作标识或 assetId——编出来的引用会被校验拒绝，那也是白跑一趟。"
-            "**你不负责落库**：改动的落库由用户在预演台里点确认完成，你只负责把方案讲清楚并给出预览。"
+            "**你不负责落库**：改动的落库由用户在预演台里点确认完成，你只负责把方案讲清楚并给出预览。",
+            # 少样本示例：实测弱模型写不出合法的 operations JSON（引号/转义跑偏、type 编造），
+            # 给一个可照抄的形状比反复描述"要合法"有效得多。示例里的 id 用的是真实场景的节点 id。
+            "【输出格式（必须遵守）】给出方案时，把操作数组放进 ```json 代码块，且除它之外不要再写第二种格式。形状示例：",
+            '```json\n{"operations":[{"type":"update_transform","targetId":"draft-p1-hero-1","payload":{"position":[0.6,0,0]}}]}\n```',
+            "type 只能是 add_node / update_transform / add_keyframe / set_camera / set_human_proxy / assign_motion / remove_node / remove_keyframe / set_duration；"
+            "targetId 必须用【当前场景】里给出的节点 id，**不要自己编**；坐标单位是米，人的身高约 1.7 米。",
         ),
         "allowed_tools": [
             # 只读三件套（能摆什么 / 动作清单 / 按分镜格出初稿）
