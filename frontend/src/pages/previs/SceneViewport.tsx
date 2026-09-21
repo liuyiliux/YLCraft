@@ -358,10 +358,49 @@ function AssetModelMesh({
 
 function PanoramaMesh({ node }: { node: PrevisNode }) {
   const color = (node.metadata.color as string) || '#1a1a2e'
+  const textureUrl = String(node.metadata.textureUrl || '')
+  const [texture, setTexture] = useState<THREE.Texture | null>(null)
+
+  /**
+   * 贴图**自己加载、失败就回落纯色**（tasks 2.3）。
+   *
+   * 不用会 suspend 的加载器（`useTexture`）：那需要一层 Suspense，加载失败会直接把
+   * 整个画布打掉——背景只是背景，不该让预演台白屏。这里失败保持 `null`，材质继续用纯色。
+   */
+  useEffect(() => {
+    if (!textureUrl) {
+      setTexture(null)
+      return
+    }
+    let alive = true
+    const loader = new THREE.TextureLoader()
+    loader.load(
+      textureUrl,
+      loaded => {
+        if (!alive) return
+        loaded.colorSpace = THREE.SRGBColorSpace
+        setTexture(loaded)
+      },
+      undefined,
+      () => {
+        if (alive) setTexture(null)
+      },
+    )
+    return () => {
+      alive = false
+    }
+  }, [textureUrl])
+
   return (
     <mesh>
+      {/* 半径固定、**不写尺寸**：全景是环境背景，跟节点 transform 的缩放无关（既有口径） */}
       <sphereGeometry args={[15, 32, 16]} />
-      <meshBasicMaterial color={color} side={THREE.BackSide} />
+      {texture ? (
+        // 有贴图时 color 设为白：否则纯色会当"染色"叠在贴图上，画面整体偏暗
+        <meshBasicMaterial map={texture} color="#ffffff" side={THREE.BackSide} />
+      ) : (
+        <meshBasicMaterial color={color} side={THREE.BackSide} />
+      )}
     </mesh>
   )
 }
