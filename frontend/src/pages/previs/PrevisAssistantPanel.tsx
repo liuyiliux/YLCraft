@@ -52,6 +52,24 @@ function extractOperations(reply: string): unknown[] | null {
   return null
 }
 
+/**
+ * 修复动作标识里模型最常见的一类拼造：**把前缀叠了一遍**（`motion:motionwave` → `motion:wave`）。
+ *
+ * 只做确定性清理（去空白、补/去 `motion:` 前缀、去掉叠写的前缀）并在**库里有完全同名条目**时才替换；
+ * 修不出来就原样保留——交给校验去拒，并附上可用清单，绝不模糊猜测（"sit" ⊂ "sit-down" 这类
+ * 包含关系匹配会修出错误的动作）。
+ */
+export function repairMotionSlug(value: unknown, slugs: string[]): string | null {
+  if (typeof value !== 'string') return null
+  const raw = value.trim()
+  if (!raw) return null
+  const withPrefix = raw.startsWith('motion:') ? raw : `motion:${raw}`
+  if (slugs.includes(withPrefix)) return withPrefix
+  const stripped = `motion:${withPrefix.slice('motion:'.length).replace(/^motion/, '')}`
+  if (stripped !== withPrefix && slugs.includes(stripped)) return stripped
+  return null
+}
+
 export function PrevisAssistantPanel({
   scene,
   nodes,
@@ -163,7 +181,17 @@ export function PrevisAssistantPanel({
 
       // 回复里带了方案就把它变成**幽灵预览**：先走后端校验（只读），通过了才交给工作区渲染。
       // 校验不通过**不渲染预览**——否则用户会以为"看到的就是能落库的"，而实际会被拒。
-      const operations = reply ? extractOperations(reply) : null
+      let operations = reply ? extractOperations(reply) : null
+      if (operations && motionSlugs.length) {
+        // 校验前的确定性修复：叠写的前缀（motion:motionwave）直接修好并提示，
+        // 免得"明明能自动修对的小错"也要用户重发一轮
+        operations = operations.map((op: any) => {
+          if (op?.type !== 'assign_motion') return op
+          const fixed = repairMotionSlug(op?.payload?.motion, motionSlugs)
+          if (!fixed || fixed === op.payload.motion) return op
+          return { ...op, payload: { ...op.payload, motion: fixed } }
+        })
+      }
       if (operations && onPropose) {
         try {
           const preview: any = await previewPrevisOperations(scene.id, {
@@ -175,8 +203,10 @@ export function PrevisAssistantPanel({
             onPropose(data)
           } else {
             const reasons = (data?.rejected ?? []).map((item: any) => item?.reason).filter(Boolean)
+            const motionMiss = reasons.some((reason: string) => reason.includes('动作'))
             setError(
-              `方案有 ${(data?.rejected ?? []).length} 条没通过校验，已不渲染预览：${reasons[0] || '未知原因'}`,
+              `方案有 ${(data?.rejected ?? []).length} 条没通过校验，已不渲染预览：${reasons[0] || '未知原因'}` +
+                (motionMiss ? `（可用动作只有：${motionSlugs.join('、')}）` : ''),
             )
           }
         } catch (exc: any) {
