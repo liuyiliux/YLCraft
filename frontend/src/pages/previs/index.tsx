@@ -2175,6 +2175,7 @@ export default function PrevisPage() {
                 activeCameraId={String(viewData?.activeCameraId || '')}
                 selectedNode={selectedNode}
                 onClose={() => setAssistantOpen(false)}
+                onPropose={proposal => setDraft(proposal as unknown as PrevisDraft)}
               />
             )}
           </div>

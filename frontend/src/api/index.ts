@@ -2068,6 +2068,24 @@ export const exportPrevisVideo = (sceneId: string, params: PrevisExportOptions) 
   }) as Promise<{ success: boolean; data: PrevisExportVideoResult }>
 
 /**
+ * 校验一批操作并给出差异预览（**只读**）。
+ *
+ * 用途：把"助手提出的方案"变成预演台里的幽灵预览。校验逻辑在后端只有一份
+ * （`services/previs/operations.py`），前端不在浏览器里复刻一遍——两份实现迟早不一致。
+ */
+export const previewPrevisOperations = (
+  sceneId: string,
+  params: { operations: unknown[]; expectedRevision: number },
+) =>
+  request(`/previs/scenes/${encodeURIComponent(sceneId)}/preview-operations`, {
+    method: 'POST',
+    body: JSON.stringify({
+      operations: params.operations,
+      expected_revision: params.expectedRevision,
+    }),
+  }) as Promise<{ success: boolean; data: Record<string, any> }>
+
+/**
  * **服务端无头渲染**并合成预演视频（不占用浏览器）。
  *
  * 与 `exportPrevisVideo` 的区别：那条要把浏览器渲好的帧传上去，所以必须占着标签页、

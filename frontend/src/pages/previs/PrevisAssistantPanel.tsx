@@ -3,6 +3,7 @@ import { Alert, Button, Empty, Input, Space, Spin, Tooltip, Typography } from 'a
 import { CloseOutlined, SendOutlined } from '@ant-design/icons'
 
 import { agentChat } from '../../api/agent'
+import { previewPrevisOperations } from '../../api'
 import {
   ASSISTANT_PROFILE_ID,
   appendAssistantMessage,
@@ -26,6 +27,31 @@ const { Text, Paragraph } = Typography
  *    所以这里不存在"它自己把场景改了"的可能；要落库得由你在界面上确认（走既有应用链路）。
  * 3. **取不到回复就如实说**：响应形状对不上时给出可读提示，而不是显示一句假的"已收到"。
  */
+/**
+ * 从助手的回复里取出它给的操作方案。
+ *
+ * 约定：助手要把方案放在 ```json 代码块里，形如 `{"operations": [{...}]}`。
+ * 取不到就返回 null——**回复里没有方案是正常的**（用户可能在问"这个机位多少毫米"），
+ * 不该因此报错或假装有个空方案。
+ */
+function extractOperations(reply: string): unknown[] | null {
+  const fenced = reply.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  const candidates = [fenced?.[1], reply]
+  for (const candidate of candidates) {
+    if (!candidate) continue
+    const start = candidate.indexOf('{')
+    const end = candidate.lastIndexOf('}')
+    if (start < 0 || end <= start) continue
+    try {
+      const parsed = JSON.parse(candidate.slice(start, end + 1))
+      if (Array.isArray(parsed?.operations)) return parsed.operations
+    } catch {
+      // 不是合法 JSON 就试下一个候选：模型输出里夹着解释文字是常态
+    }
+  }
+  return null
+}
+
 export function PrevisAssistantPanel({
   scene,
   nodes,
@@ -35,6 +61,8 @@ export function PrevisAssistantPanel({
   activeCameraId,
   selectedNode,
   onClose,
+  /** 把"通过校验的方案"交给工作区渲染成幽灵预览（只读预览，落库仍要用户确认）。 */
+  onPropose,
 }: {
   scene: { id: string; revision: number }
   nodes: PrevisNode[]
@@ -44,6 +72,7 @@ export function PrevisAssistantPanel({
   activeCameraId: string
   selectedNode?: PrevisNode | null
   onClose: () => void
+  onPropose?: (proposal: Record<string, any>) => void
 }) {
   /**
    * 上下文**在面板里算**，而不是由父组件算好传进来。
@@ -107,6 +136,29 @@ export function PrevisAssistantPanel({
         ),
       )
       if (!reply) setError('助手返回里没有拿到文字回复（可能需要先配置模型或查看任务日志）')
+
+      // 回复里带了方案就把它变成**幽灵预览**：先走后端校验（只读），通过了才交给工作区渲染。
+      // 校验不通过**不渲染预览**——否则用户会以为"看到的就是能落库的"，而实际会被拒。
+      const operations = reply ? extractOperations(reply) : null
+      if (operations && onPropose) {
+        try {
+          const preview: any = await previewPrevisOperations(scene.id, {
+            operations,
+            expectedRevision: context.scene_revision,
+          })
+          const data = preview?.data ?? {}
+          if (data?.valid) {
+            onPropose(data)
+          } else {
+            const reasons = (data?.rejected ?? []).map((item: any) => item?.reason).filter(Boolean)
+            setError(
+              `方案有 ${(data?.rejected ?? []).length} 条没通过校验，已不渲染预览：${reasons[0] || '未知原因'}`,
+            )
+          }
+        } catch (exc: any) {
+          setError(exc?.message || '校验助手方案失败')
+        }
+      }
     } catch (exc: any) {
       setError(exc?.message || '发送失败')
     } finally {

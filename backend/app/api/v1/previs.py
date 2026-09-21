@@ -992,3 +992,78 @@ async def export_previs_video_headless(
             "message": "已在服务端开始渲染（不占用浏览器），可关掉页面；完成后视频进入素材库。",
         },
     }
+
+
+@router.post(
+    "/scenes/{scene_id}/preview-operations",
+    summary="校验一批预演操作并给出差异预览（只读，供预演台助手把方案变成幽灵预览）",
+)
+async def preview_previs_operations(
+    scene_id: str,
+    payload: dict[str, Any],
+):
+    """把"助手提出的方案"变成可看的预览。
+
+    **为什么要有这个端点**：校验与应用逻辑只在 `services/previs/operations.py`（纯函数）与
+    Agent 工具 `previs_preview_operations` 里，前端调不到工具；若为此在浏览器里再实现一遍
+    "应用操作"，就会出现两份实现——上一个 change 里"视口对了、导出不对"就是这么来的。
+    所以这里只是把既有纯函数用 HTTP 包一层，**预览逻辑仍然只有一份**。
+
+    **只读**：不写任何数据，只返回"通过/被拒 + 逐条差异 + 落库后的场景"。
+    """
+    # 局部导入：`previs.py` 顶部没有这些名字（首次写这个端点时直接用就 500 了——
+    # 名称解析错误在 FastAPI 里表现为 500，而不是编译错误，所以必须实测一遍才知道）
+    from app.services.previs.motion_service import motion_carriers
+    from app.services.previs.operations import apply_operations, diff_operations, validate_operations
+
+    operations = payload.get("operations")
+    if not isinstance(operations, list) or not operations:
+        raise HTTPException(status_code=422, detail="operations 必须是非空数组")
+    expected_revision = payload.get("expected_revision")
+    try:
+        expected = int(expected_revision)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="expected_revision 必须是整数")
+
+    basis = _load_scene_export_basis(scene_id, "")
+    with SessionLocal() as session:
+        row = session.get(PrevisSceneDocument, scene_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="Previs scene not found")
+        scene = dict(row.scene_json or {})
+        current_revision = int(row.revision or 1)
+        carriers = motion_carriers(session)
+
+    accepted, rejected = validate_operations(
+        scene,
+        operations,
+        expected_revision=expected,
+        current_revision=current_revision,
+        motion_carriers=carriers,
+    )
+    proposed = scene
+    if accepted and not rejected:
+        proposed, _ = apply_operations(scene, accepted)
+    return {
+        "success": True,
+        "data": {
+            "scene_id": scene_id,
+            "current_revision": current_revision,
+            "expected_revision": expected,
+            # 这两个键是给**前端幽灵态**用的：它按 `draft.proposed_scene` 渲染预览、
+            # 按 `draft.scene_revision` 判断"本地版本对不对"、按 `draft.operations` 显示条数。
+            # 名字与既有草案接口保持一致，前端就不必为助手方案再写一套渲染逻辑。
+            "scene_revision": current_revision,
+            "operations": accepted,
+            "valid": not rejected,
+            "accepted_count": len(accepted),
+            "rejected": rejected,
+            "diff": diff_operations(scene, accepted),
+            # 被拒时不给 proposed_scene：那会让人以为"预览到的就是能落库的"
+            "proposed_scene": proposed if not rejected else None,
+            "defaults": [],
+            "warnings": [],
+            "summary": {},
+            "panel_number": basis["panel_number"],
+        },
+    }
