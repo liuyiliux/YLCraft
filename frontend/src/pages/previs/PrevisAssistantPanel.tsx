@@ -109,8 +109,23 @@ export function PrevisAssistantPanel({
     )
     setSending(true)
     try {
+      // **场景事实必须写进消息正文**，而不是只塞进 `context` 字段：实测后端不会把 `context`
+      // 呈现给模型，助手于是说「当前会话没有可用的画面场景」、反过来向用户要场景 ID（实测截图）。
+      // 写进正文是唯一保证它读到的路径；`context` 仍然带上，供后端记录与排查。
+      // 输出要求里约定了 json 代码块格式——外层界面靠它把方案变成半透明预览。
+      const outgoing = [
+        `【当前场景】id=${context.scene_id}（版本 ${context.scene_revision}；时长 ${context.duration_frames} 帧 @${context.fps}fps；活动机位「${context.active_camera_name}」）`,
+        `【锁定不可改】节点：${context.locked_nodes.map(item => `${item.name}(${item.id})`).join('、') || '无'}；机位：${context.locked_cameras.map(item => item.name).join('、') || '无'}`,
+        context.selected_node
+          ? `【用户当前选中】${context.selected_node.name}（id=${context.selected_node.id}）`
+          : '',
+        '【输出要求】若你给出改场景的方案，请把操作数组放进 ```json 代码块（形如 {"operations":[...]}），界面会拿它去校验并渲染半透明预览；没有方案时正常回答即可。',
+        `【用户】${text}`,
+      ]
+        .filter(Boolean)
+        .join('\n')
       const response: any = await agentChat({
-        message: text,
+        message: outgoing,
         profile_id: ASSISTANT_PROFILE_ID,
         context: context as unknown as Record<string, any>,
       })
