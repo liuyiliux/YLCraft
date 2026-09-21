@@ -509,6 +509,75 @@ class FFmpegService:
         logger.info(f"Created thumbnail from {video_path}")
         return thumbnail_path
 
+    async def images_to_video(
+        self,
+        frames_dir: Path,
+        output_path: Path,
+        fps: float = 24,
+        pattern: str = "frame_%04d.jpg",
+        start_number: int = 1,
+        crf: int = 18,
+        preset: str = "fast",
+    ) -> Path:
+        """把图片序列合成为视频（预演台确定性导出的最后一环）。
+
+        为什么必须由服务端做（`docs/research/research_report_previs_export_feasibility.md`）：
+        浏览器实时录制按**墙上时钟**打时间戳，视口稳定不了 24fps 就会录出时长漂移的视频；
+        而这里每一帧都来自调用方指定的帧号，配 `-framerate` 后输出必然是准确的固定帧率。
+
+        Args:
+            frames_dir: 帧序列所在目录
+            output_path: 输出视频路径
+            fps: 帧率，直接作为 `-framerate`（不重采样、不丢帧）
+            pattern: 帧文件名模式，默认 `frame_%04d.jpg`
+            start_number: 序列起始编号，必须与落盘时的命名一致
+            crf: x264 质量（0-51，越小越清晰），18 接近视觉无损
+            preset: x264 预设
+
+        Returns:
+            Path: 输出文件路径
+        """
+        source = frames_dir / pattern
+        if not frames_dir.exists():
+            raise ValueError(f"帧序列目录不存在：{frames_dir}")
+        if not list(frames_dir.glob(pattern.replace("%04d", "*"))):
+            raise ValueError(f"帧序列为空：{source}")
+
+        # 两条不可省的输出约束：
+        # 1) `-pix_fmt yuv420p`——保证色度是 4:2:0。实测一个细节：输入是 JPEG 时
+        #    ffprobe 会读成 `yuvj420p`（full range，JPEG 的取值范围），仍是 4:2:0、
+        #    现代播放器与剪辑软件都能正常读取；这里要防的是 yuv444p 那一类，
+        #    它的色度采样不通用，部分播放器会直接解不出来。
+        # 2) 宽高取偶数——4:2:0 的色度是 2×2 下采样，奇数尺寸会让编码器报错，
+        #    而 canvas 视口尺寸（如 1441×901）完全可能是奇数，所以在这里兜底。
+        cmd = [
+            self.ffmpeg, "-y",
+            "-framerate", str(fps),
+            "-start_number", str(start_number),
+            "-i", str(source),
+            "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+            "-c:v", "libx264",
+            "-preset", preset,
+            "-crf", str(crf),
+            "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart",
+            str(output_path),
+        ]
+
+        result = await asyncio.to_thread(
+            subprocess.run,
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=1800,
+        )
+
+        if result.returncode != 0:
+            raise RuntimeError(f"FFmpeg images_to_video failed: {result.stderr}")
+
+        logger.info(f"Composed sequence to video: {output_path} @ {fps}fps")
+        return output_path
+
     @staticmethod
     def _color_to_ass(color: str) -> str:
         """将颜色名称转换为 ASS 格式（BGR）"""

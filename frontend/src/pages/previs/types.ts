@@ -126,6 +126,10 @@ export function interpolationFor(property: PrevisKeyframeProperty): PrevisInterp
  * 后四个是本地编辑实际会产生、而 design 那份（面向 Agent 的写操作）没有列到的：
  * 删节点、增删机位、改时长。**刻意不为了迁就词表而不记录**——一份漏掉删除的记录
  * 会让人误以为"这个节点一直在"，比词表多几个词有害得多。
+ *
+ * 最后两个是语义操作（Agent 用它说"身高 1.8m、做行走"而不是塞 metadata）。它们**只由后端应用**，
+ * 前端不产生；但必须在这里列出来，否则 `normalizeOperation` 会把后端写进操作历史的这类条目
+ * **静默丢掉**——历史里少了"谁改了姿势"，排查时会以为是没人改过。
  */
 export type PrevisOperationType =
   | 'add_node'
@@ -138,6 +142,8 @@ export type PrevisOperationType =
   | 'add_camera'
   | 'remove_camera'
   | 'set_duration'
+  | 'set_human_proxy'
+  | 'assign_motion'
 
 export interface PrevisSceneOperation {
   id: string
@@ -290,6 +296,8 @@ const OPERATION_TYPES: PrevisOperationType[] = [
   'add_camera',
   'remove_camera',
   'set_duration',
+  'set_human_proxy',
+  'assign_motion',
 ]
 
 /**

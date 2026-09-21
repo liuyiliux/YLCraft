@@ -4,6 +4,7 @@ import { BoxPlotOutlined, BranchesOutlined, CloseOutlined, CloudUploadOutlined, 
 import { useNavigate } from 'react-router-dom'
 import { deleteAsset, getAsset, listAssets } from '../../api'
 import { useTheme } from '../../constants/theme'
+import { animationNameOptions, animationOptions } from '../../utils/animationLabels'
 import { Model3DViewer, type PartNode, type SceneModel } from '../../components/asset-hub/Model3DViewer'
 
 const { TextArea } = Input
@@ -36,18 +37,7 @@ function toTreeData(parts: PartNode[]): any[] {
   }))
 }
 
-// 收集部位树所有路径
-function collectPartPaths(parts: PartNode[]): string[] {
-  const paths: string[] = []
-  const walk = (nodes: PartNode[]) => {
-    nodes.forEach(node => {
-      paths.push(node.path)
-      if (node.children?.length) walk(node.children)
-    })
-  }
-  walk(parts)
-  return paths
-}
+import { collectFullyCheckedPaths, collectPartPaths } from './parts'
 
 // 预设动作由连接器声明（motion_types）；未声明时回退为 1-48 数字占位。
 // 提交时只传数字 motion_type，中文名称仅用于前端展示。
@@ -76,7 +66,15 @@ type StageLayer = {
 async function api(path: string, init?: RequestInit) {
   const response = await fetch(`${API}${path}`, { headers: { 'Content-Type': 'application/json' }, ...init })
   const data = await response.json()
-  if (!response.ok || data.success === false) throw new Error(data.detail || data.error || 'Request failed')
+  if (!response.ok || data.success === false) {
+    // FastAPI 的 422 把 detail 给成**数组**，直接塞进 Error 会显示成 "[object Object]"，
+    // 等于把"参数不对、哪个参数不对"这句话藏起来（实测就这么踩过一次）。
+    const detail = data.detail
+    const message = Array.isArray(detail)
+      ? detail.map((item: any) => item?.msg || JSON.stringify(item)).join('；')
+      : (detail || data.error || 'Request failed')
+    throw new Error(message)
+  }
   return data
 }
 
@@ -101,6 +99,14 @@ export default function Model3DPage() {
   const [layers, setLayers] = useState<StageLayer[]>([])
   const [activeLayerKey, setActiveLayerKey] = useState<string | null>(null)
   const addedAssetRef = useRef<Set<string>>(new Set())
+
+  // ===== 通用动作库（把别的模型的动作套到当前图层上）=====
+  const [retargetOpen, setRetargetOpen] = useState(false)
+  const [retargetSources, setRetargetSources] = useState<ModelAsset[]>([])
+  const [retargetLoading, setRetargetLoading] = useState(false)
+  const [retargetSourceId, setRetargetSourceId] = useState('')
+  const [retargetClip, setRetargetClip] = useState('')
+  const [retargeting, setRetargeting] = useState(false)
 
   // ===== 生成（步骤 1） =====
   const [backends, setBackends] = useState<Backend[]>([])
@@ -280,6 +286,58 @@ export default function Model3DPage() {
     } finally { setRigAssetLoading(false) }
   }
 
+  // 动作来源：只有**自带动画**的模型才有东西可套
+  const animatedSources = useMemo(() => retargetSources.filter(asset => (
+    (asset.tags || []).includes('animated')
+    || ((asset.metadata?.node_metadata?.animations || asset.metadata?.animations || []).length > 0)
+  )), [retargetSources])
+
+  const sourceClips: string[] = useMemo(() => {
+    const asset = animatedSources.find(item => item.id === retargetSourceId)
+    const clips = asset?.metadata?.node_metadata?.animations || asset?.metadata?.animations
+    return Array.isArray(clips) ? clips : []
+  }, [animatedSources, retargetSourceId])
+
+  const openRetarget = async () => {
+    if (!activeLayer) {
+      message.warning('先在场景里选中一个模型作为目标')
+      return
+    }
+    setRetargetOpen(true)
+    setRetargetLoading(true)
+    try {
+      const data: any = await listAssets({ asset_type: '3d_model', status: 'READY', page: 1, page_size: 60 })
+      setRetargetSources(data?.data || data?.assets || [])
+    } catch (error: any) {
+      message.error(error.message || '加载 3D 模型素材失败')
+      setRetargetSources([])
+    } finally {
+      setRetargetLoading(false)
+    }
+  }
+
+  const submitRetarget = async () => {
+    if (!activeLayer || !retargetSourceId) return
+    setRetargeting(true)
+    try {
+      const result = await api('/retarget', {
+        method: 'POST',
+        body: JSON.stringify({
+          target_asset_id: activeLayer.key,
+          source_asset_id: retargetSourceId,
+          clip: retargetClip || undefined,
+          title: `${activeLayer.name} · 动作库`,
+        }),
+      })
+      message.success(result?.message || '已开始套用动作')
+      setRetargetOpen(false)
+    } catch (error: any) {
+      message.error(error?.message || '套用动作失败')
+    } finally {
+      setRetargeting(false)
+    }
+  }
+
   const submit = async () => {
     if (!provider) return message.warning('请先在设置中配置图生 3D 连接器')
     if (inputMode === 'image' && !sourceImage && !sourceAssetId) return message.warning('请选择素材库图片或上传参考图片')
@@ -367,14 +425,20 @@ export default function Model3DPage() {
 
   // ===== 选中图层部位显隐（Hunyuan Studio 风格）=====
   const activePartPaths = activeLayer?.parts?.length ? collectPartPaths(activeLayer.parts) : []
-  const checkedPartKeys = activeLayer?.partVisibility
-    ? activePartPaths.filter(path => activeLayer.partVisibility![path] !== false)
-    : activePartPaths
-  const onPartCheck = (checked: any) => {
+  // 回传给 antd Tree 的选中集合：只含"整块都可见"的节点（推导与坑见 parts.ts）
+  const checkedPartKeys = useMemo(
+    () => collectFullyCheckedPaths(activeLayer?.parts || [], activeLayer?.partVisibility),
+    [activeLayer],
+  )
+  const onPartCheck = (checked: any, info: any) => {
     if (!activeLayer) return
     const keys = Array.isArray(checked) ? (checked as string[]) : (checked as { checked: string[] }).checked
+    // **半选必须算作"可见"**：antd 的 Tree 是父子联动的，取消一个子部位会让它的父节点
+    // 进入半选态，而 `checkedKeys` 里**不含**半选节点。若把半选当成 false，
+    // 取消一个子部位就会连带隐藏整个父部位——用户看到的是"点一下全都消失了"。
+    const half = ((info?.halfCheckedKeys || []) as string[])
     const next: Record<string, boolean> = {}
-    activePartPaths.forEach(path => { next[path] = keys.includes(path) })
+    activePartPaths.forEach(path => { next[path] = keys.includes(path) || half.includes(path) })
     updateLayer(activeLayer.key, { partVisibility: next })
   }
 
@@ -468,6 +532,15 @@ export default function Model3DPage() {
                       </div>
                     )}
                     <Button block size="small" icon={<PlusOutlined />} onClick={() => void openRigPicker('layer')}>从素材库添加模型</Button>
+                    <Button
+                      block
+                      size="small"
+                      icon={<ThunderboltOutlined />}
+                      style={{ marginTop: 6 }}
+                      onClick={() => void openRetarget()}
+                    >
+                      套用别人的动作
+                    </Button>
                     {activeLayer && activeLayer.animationNames.length > 0 && (
                       <div style={{ padding: '8px 6px 0', borderTop: '1px solid var(--border)', marginTop: 2 }}>
                         <Typography.Text style={{ display: 'block', fontSize: 12, color: THEME.textSecondary, marginBottom: 6 }}>选中图层 · 动画</Typography.Text>
@@ -477,7 +550,7 @@ export default function Model3DPage() {
                             style={{ flex: 1 }}
                             value={activeLayer.animationIndex >= 0 ? activeLayer.animationIndex : undefined}
                             placeholder="选择动画"
-                            options={activeLayer.animationNames.map((name, index) => ({ label: name, value: index }))}
+                            options={animationOptions(activeLayer.animationNames)}
                             onChange={value => updateLayer(activeLayer.key, { animationIndex: Number(value), playing: true })}
                           />
                           <Button
@@ -706,6 +779,61 @@ export default function Model3DPage() {
         MODEL_EXT_RE.test(previewUrl) ? <Model3DViewer modelUrl={previewUrl} height={500} />
           : <Image src={previewUrl} alt={previewAsset.title || previewAsset?.name || '3D 模型预览'} style={{ width: '100%', maxHeight: 500, objectFit: 'contain' }} />
       ) : <Empty description="该模型暂无预览图" />}
+    </Modal>
+
+    {/* 通用动作库：把别的模型的动作套到当前图层上 */}
+    <Modal
+      title="套用别人的动作"
+      open={retargetOpen}
+      onCancel={() => setRetargetOpen(false)}
+      onOk={() => void submitRetarget()}
+      confirmLoading={retargeting}
+      okText="开始套用"
+      cancelText="取消"
+      width={520}
+    >
+      <Space direction="vertical" size={14} style={{ width: '100%' }}>
+        <div>
+          <Typography.Text style={{ fontSize: 12 }}>目标模型（当前选中的图层）</Typography.Text>
+          <div style={{ marginTop: 4 }}>
+            {activeLayer
+              ? <Tag color={THEME.info}>{activeLayer.name}</Tag>
+              : <Typography.Text type="secondary" style={{ fontSize: 12 }}>（未选中）</Typography.Text>}
+          </div>
+        </div>
+        <div>
+          <Typography.Text style={{ fontSize: 12 }}>动作来源（带动画的模型）</Typography.Text>
+          <Select
+            size="small"
+            style={{ width: '100%', marginTop: 4 }}
+            loading={retargetLoading}
+            value={retargetSourceId || undefined}
+            placeholder={animatedSources.length ? '选择动作来源' : '素材库里还没有带动画的模型'}
+            options={animatedSources.map(asset => ({
+              label: asset.title || asset.name || asset.id.slice(0, 8),
+              value: asset.id,
+            }))}
+            onChange={value => { setRetargetSourceId(value); setRetargetClip('') }}
+          />
+        </div>
+        <div>
+          <Typography.Text style={{ fontSize: 12 }}>动作（可不选）</Typography.Text>
+          <Select
+            size="small"
+            style={{ width: '100%', marginTop: 4 }}
+            allowClear
+            value={retargetClip || undefined}
+            placeholder="默认取第一段；产物会带上来源的全部动作"
+            options={animationNameOptions(sourceClips)}
+            onChange={value => setRetargetClip(value ?? '')}
+          />
+        </div>
+        <Typography.Text type="secondary" style={{ fontSize: 11, lineHeight: 1.7 }}>
+          动画是<b>按骨骼名</b>对号入座的：目标模型若不是标准命名，会自动先统一骨骼名再套用。
+          全程在后台跑（约半分钟），完成后作为<b>新素材</b>入库，原模型不会被改动。
+          动作是「原地做」的，不带位移。
+        </Typography.Text>
+      </Space>
     </Modal>
   </div>
   )

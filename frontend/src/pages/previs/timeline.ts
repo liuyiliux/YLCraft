@@ -212,6 +212,30 @@ export function sampleFromKeys(keys: PrevisKeyframe[], frame: number, fallback: 
   return last.value
 }
 
+/**
+ * 取 step 通道在 `frame` 处**生效的那条关键帧**（值 + 它的帧号）。
+ *
+ * 与 `sampleFromKeys` 的 step 语义完全一致，只是额外把"这条值是从哪一帧开始生效的"返回出来。
+ * 参数型动作需要它来换算自己的**局部时间**：动作从被切到的那一帧起从 0 开始演，
+ * 否则第 48 帧切到"挥手"会直接从挥手的中间开始演。
+ *
+ * 只对 step 通道有意义（`animation_clip` 天然是 step），所以不做插值。
+ */
+export function sampleStepEntry(
+  keys: PrevisKeyframe[],
+  frame: number,
+  fallback: { value: unknown; frame: number },
+): { value: unknown; frame: number } {
+  if (keys.length === 0) return fallback
+  if (frame <= keys[0].frame) return { value: keys[0].value, frame: keys[0].frame }
+  let winner = keys[0]
+  for (const key of keys) {
+    if (key.frame > frame) break
+    winner = key
+  }
+  return { value: winner.value, frame: winner.frame }
+}
+
 /* ---------------------------------------------------------------------------
    打点 / 删点
    --------------------------------------------------------------------------- */
@@ -418,4 +442,40 @@ export function evaluateScene(
     nodes: scene.nodes.map(node => ({ ...node, transform: evaluateNodeTransform(node, scene.keyframes, frame) })),
     cameras: scene.cameras.map(camera => evaluateCamera(camera, scene.keyframes, frame)),
   }
+}
+
+/** 批量导出的帧计划。 */
+export interface PrevisExportPlan {
+  start: number
+  end: number
+  step: number
+  /** 实际会导出的帧数。 */
+  count: number
+  /** 这组帧覆盖的时间轴长度（帧）：`(count - 1) * step + 1`。 */
+  spanFrames: number
+  /** 逐个要导出的帧号，供逐帧采集按顺序使用。 */
+  frameNumbers: number[]
+}
+
+/**
+ * 规划批量导出的帧号序列。
+ *
+ * 抽成纯函数是为了让**前后端用同一套换算**：前端弹窗的「共 N 帧 / 覆盖 X 秒」
+ * 与后端 manifest 的 `frame_count`/`span_frames` 必须一致，否则用户会看到
+ * 「说好 12 帧、拿到 11 帧」这种谁都说不清的问题。
+ *
+ * 两条边界约定：
+ * 1. `end` 不是 `step` 的整数倍时**不向上取整**——只导出不超过 `end` 的帧，
+ *    宁可少一帧也不要导出用户没框选到的帧；
+ * 2. `step` 归一到 ≥1、`start` 归一到 ≥0，越界输入不报错而是收敛到合法区间，
+ *    因为调用方是输入框，用户随时可能敲出 0 或负数。
+ */
+export function planExportFrames(rawStart: number, rawEnd: number, rawStep: number): PrevisExportPlan {
+  const start = Math.max(0, Math.round(Number.isFinite(rawStart) ? rawStart : 0))
+  const end = Math.max(start, Math.round(Number.isFinite(rawEnd) ? rawEnd : start))
+  const step = Math.max(1, Math.round(Number.isFinite(rawStep) ? rawStep : 1))
+  const count = Math.floor((end - start) / step) + 1
+  const frameNumbers: number[] = []
+  for (let index = 0; index < count; index += 1) frameNumbers.push(start + index * step)
+  return { start, end, step, count, spanFrames: (count - 1) * step + 1, frameNumbers }
 }

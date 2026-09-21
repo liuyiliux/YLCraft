@@ -282,8 +282,16 @@ function AppLayoutShell() {
         </Header>
       )}
 
-      {/* ========== Main Content Area ========== */}
-      <Layout style={{ minHeight: '100vh' }}>
+      {/*
+        ========== Main Content Area ==========
+        这里**不能**再写 `minHeight: 100vh`：它位于 52px 的顶栏之下，`100vh` 会把整页撑成
+        `100vh + 52px`，于是**每个页面都多出 52px 的幽灵滚动**。因为顶栏是 `position: sticky`，
+        页面一滚它就钉在原位不动，而上方的页面内容被滚出去——表现是"工具栏被导航栏遮住了"，
+        看起来像画布太高，其实是整页被滚了 52px（滚动位置还会随热更新保留下来）。
+        改为"占满剩余空间"：总高恒等于 100vh，页面不再滚动；需要内部滚动的页面由 `Content`
+        的 `overflow: auto` 承担。
+      */}
+      <Layout style={{ flex: 1, minHeight: 0 }}>
         {/* Mobile Header */}
         {isMobile && chromeVisible && (
           <Header

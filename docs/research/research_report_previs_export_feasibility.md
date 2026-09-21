@@ -1,5 +1,6 @@
 # 3D 预演台导出能力评估：逐帧导出与视频编码
 
+> **落地状态（2026-09-15）**：本报告的**阶段 A（批量参考帧 ZIP）与阶段 B（服务端 ffmpeg 合成）已实现**，实现与验证记录见 `openspec/changes/3d-director-previs/tasks.md` #26/#27、架构文档 §4.4.5；**阶段 C（剪辑时间线导出）未做**。本报告保留为那条路线选择的**决策依据与实测数据**，不再改动其结论。
 > 触发问题：`3d-director-previs` #16「Evaluate frame capture and MP4/WebM export only after static capture is stable; document browser and cost constraints」。
 > 评估范围：浏览器编码能力（MediaRecorder / WebCodecs / captureStream）、编码成本、真实负载下的视口帧率、仓内已有的导出与 ffmpeg 基础设施。
 > 数据来源：本机实测（Windows / Chromium 148 / Intel UHD Graphics；另取 SwiftShader 软件渲染作为最坏情况）。测量脚本为一次性探针，结论与测量条件一并记录在下方。

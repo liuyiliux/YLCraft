@@ -16,7 +16,9 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Mapping, Optional
+
+from app.services.previs.motion import HUMAN_PARAM_CHANNELS, channel_limit_reason, pose_field_reasons
 
 #: design §5.3 的操作词表。与前端 `types.ts` 的 `PrevisOperationType` 一致。
 PREVIS_OPERATION_TYPES = (
@@ -26,10 +28,44 @@ PREVIS_OPERATION_TYPES = (
     "add_keyframe",
     "remove_keyframe",
     "capture_reference",
+    # 语义操作（design §5.3 扩展）：让外部（含 AI）说"这个人身高 1.8m、做行走"，
+    # 而不是让它往 `metadata` 里塞键值。与底层操作并存是刻意的：
+    # 底层操作管"精确改一个值"，语义操作管"按意图改一个对象"。
+    "set_human_proxy",
+    "assign_motion",
+    # 初稿生成（tasks 4.1–4.4）需要的两个词：**没有它们，初稿就没法独立成立**——
+    # 未绑定机位的独立场景无法给出"景别与镜头角度"，也无法把分镜格时长写进场景，
+    # 只能产出一堆"人身位对但没机位"的半成品。二者在前端操作词表里本来就有
+    # （`add_camera` / `set_duration` 是本地编辑产生的），补到这里是**对齐**而不是新造概念。
+    "add_camera",
+    "set_duration",
 )
 
 #: 需要指向已存在目标的操作（add_node 不需要，它是新建）
-_TARGETED_TYPES = ("update_transform", "set_camera", "add_keyframe", "remove_keyframe")
+_TARGETED_TYPES = (
+    "update_transform",
+    "set_camera",
+    "add_keyframe",
+    "remove_keyframe",
+    "set_human_proxy",
+    "assign_motion",
+)
+
+#: 节点种类白名单，与前端 `types.ts` 的 `PrevisNodeKind` 一致。
+#:
+#: 为什么必须有：`add_node` 原来整包接收 `payload.node`，一个幻觉出来的 `kind: "dragon"`
+#: 会被**静默存进场景**，前端 `normalizeSceneData` 再把它丢掉——结果是"落库成功但节点消失"，
+#: 两边都以为是对面的问题。校验阶段拒绝、原因写清楚，代价只是一次比较。
+NODE_KINDS = ("asset_model", "human_proxy", "primitive", "panorama", "light")
+PRIMITIVE_KINDS = ("box", "sphere", "cylinder", "plane")
+LIGHT_KINDS = ("point", "spot", "directional")
+
+#: 人形占位的姿势预设，与前端 `HUMAN_PROXY_POSES` 的 key 一致。
+HUMAN_PROXY_POSES = ("stand", "tpose", "walk", "sit", "wave", "point")
+#: 身高范围（米），与前端 `HUMAN_PROXY_HEIGHT` 一致。
+HUMAN_PROXY_HEIGHT = (0.5, 2.5)
+#: 动作引用前缀，与前端 `motionRuntime.ts` 的 `MOTION_REF_PREFIX` 一致。
+MOTION_REF_PREFIX = "motion:"
 
 _TRANSFORM_KEYS = ("position", "rotation", "scale")
 _KEYFRAME_PROPERTIES = ("position", "rotation", "scale", "camera_target", "camera_fov", "animation_clip")
@@ -74,9 +110,162 @@ def _focal_from_fov(fov_deg: float, sensor_format: str) -> float:
     """
     import math
 
-    fov = max(10.0, min(120.0, float(fov_deg)))
+    # 与前端 `cameraMoves.ts` 的 FOV_RANGE 一致（8–120）：两处都夹同一个区间，
+    # 否则"校验放过的值"和"派生出的焦距"会各说各话。
+    fov = max(8.0, min(120.0, float(fov_deg)))
     width = _effective_width_mm(sensor_format)
     return round(width / (2 * math.tan(math.radians(fov) / 2)), 1)
+
+
+def fov_from_focal(focal_mm: float, sensor_format: str = _DEFAULT_SENSOR) -> float:
+    """由焦距反求水平视角——与前端 `fovFromFocalLength` 同一公式，是 `_focal_from_fov` 的逆。
+
+    为什么需要它：`set_camera` 是"改 fov，焦距跟着变"；而 `add_camera` 与初稿生成是从
+    **焦距**出发的（摄影上"用哪支镜头"才是意图）。若不把 fov 一起算对，前端 `normalizeCamera`
+    载入时会按焦距把 fov 重算成另一个值，这次改动等于白做——这正是 `set_camera` 那条注释
+    里记过的同一个坑，方向相反而已。
+    """
+    import math
+
+    width = _effective_width_mm(sensor_format)
+    focal = max(1.0, float(focal_mm))
+    return round(math.degrees(2 * math.atan(width / (2 * focal))), 2)
+
+
+def _number_reason(label: str, value: Any, low: float, high: float) -> Optional[str]:
+    """数值范围校验，返回人话原因（合法返回 `None`）。
+
+    布尔值单独挡：Python 里 `True` 是 `int` 的实例，`{"height": True}` 会静默变成 1.0 米
+    （与 `motion._clean_keys`、`channel_limit_reason` 同一条理由）。
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return f"{label} 需要一个数值，收到 {value!r}"
+    number = float(value)
+    if number != number or number in (float("inf"), float("-inf")):
+        return f"{label} 需要一个有限数值，收到 {value!r}"
+    if number < low or number > high:
+        return f"{label}={number:g} 超出范围 {low:g}–{high:g}"
+    return None
+
+
+def _human_proxy_pose_reason(pose: Any) -> Optional[str]:
+    """姿势必须是**已知预设 key**：未知值不会被渲染层认出来，只会静默回落成站立。"""
+    if not isinstance(pose, str) or pose not in HUMAN_PROXY_POSES:
+        return f"未知的姿势：{pose!r}；可用姿势为 {'/'.join(HUMAN_PROXY_POSES)}"
+    return None
+
+
+def _human_proxy_joints_reasons(joints: Any) -> list[str]:
+    """校验自定义关节角度（**按字段**组织的姿势，与前端 `HumanProxyPose` 同形）：坏字段只报自己。"""
+    if not isinstance(joints, dict):
+        return [f"poseJoints 需要一个对象（字段 → 角度），收到 {type(joints).__name__}"]
+    return pose_field_reasons(joints)
+
+
+def _motion_ref_reason(value: Any, motion_carriers: Optional[Mapping[str, str]]) -> Optional[str]:
+    """校验动作引用：`''` 表示清除（合法），其余必须是存在且载体匹配的 `motion:<slug>`。
+
+    **清单不可用时选择拒绝而不是放过**：一个拼错的动作标识落库后的表现是"下拉里没有它、
+    选了没反应"，排查成本远高于当场拒绝。这与 `capture_reference` 的处理同一条原则。
+    """
+    if value in (None, ""):
+        return None
+    if not isinstance(value, str) or not value.startswith(MOTION_REF_PREFIX):
+        return (
+            f"动作引用必须形如 '{MOTION_REF_PREFIX}<动作标识>'（收到 {value!r}）；"
+            "动作标识见 list_previs_motions"
+        )
+    slug = value[len(MOTION_REF_PREFIX):].strip()
+    if not slug:
+        return f"动作引用缺少动作标识：{value!r}"
+    if motion_carriers is None:
+        return "动作清单当前不可用，无法校验动作引用；请稍后重试，或这次先不引用动作"
+    if slug not in motion_carriers:
+        return f"动作不存在：{slug}（可用动作见 list_previs_motions）"
+    carrier = str(motion_carriers.get(slug) or "")
+    if carrier != "params":
+        return (
+            f"动作 {slug} 的载体是 {carrier or '(未记录)'}，不能驱动人形占位——"
+            "人形占位只接受 params（参数型）动作"
+        )
+    return None
+
+
+def _node_reasons(node: dict[str, Any], *, motion_carriers: Optional[Mapping[str, str]]) -> list[str]:
+    """校验一个新节点，返回原因列表（空列表 = 通过）。"""
+    kind = str(node.get("kind") or "")
+    if kind not in NODE_KINDS:
+        return [f"未知的节点种类：{kind or '(空)'}；可用种类为 {'/'.join(NODE_KINDS)}"]
+    if node.get("metadata") is not None and not isinstance(node.get("metadata"), dict):
+        return [f"metadata 需要一个对象，收到 {type(node.get('metadata')).__name__}"]
+
+    metadata = _as_dict(node.get("metadata"))
+    reasons: list[str] = []
+
+    if kind == "human_proxy":
+        if "height" in metadata:
+            reason = _number_reason("height", metadata["height"], *HUMAN_PROXY_HEIGHT)
+            if reason:
+                reasons.append(reason)
+        if "pose" in metadata:
+            reason = _human_proxy_pose_reason(metadata["pose"])
+            if reason:
+                reasons.append(reason)
+        if "poseJoints" in metadata:
+            reasons.extend(_human_proxy_joints_reasons(metadata["poseJoints"]))
+        if metadata.get("animationClip"):
+            reason = _motion_ref_reason(metadata["animationClip"], motion_carriers)
+            if reason:
+                reasons.append(f"animationClip：{reason}")
+    elif kind == "primitive":
+        primitive = str(metadata.get("primitive") or "box")
+        if primitive not in PRIMITIVE_KINDS:
+            reasons.append(f"未知的几何体种类：{primitive}；可用 {'/'.join(PRIMITIVE_KINDS)}")
+    elif kind == "light":
+        light = str(metadata.get("light") or "point")
+        if light not in LIGHT_KINDS:
+            reasons.append(f"未知的灯光种类：{light}；可用 {'/'.join(LIGHT_KINDS)}")
+    elif kind == "asset_model" and not str(node.get("assetId") or ""):
+        # 模型节点必须指向素材库资产（只存引用，不复制二进制）
+        reasons.append("asset_model 节点需要 assetId（模型来自素材库，二进制不复制进场景）")
+
+    return reasons
+
+
+def _vec3_reason(label: str, value: Any) -> Optional[str]:
+    """校验 `[x, y, z]` 三元组，返回人话原因（合法返回 `None`）。"""
+    if not isinstance(value, (list, tuple)) or len(value) != 3:
+        return f"{label} 需要 [x, y, z] 三个数值，收到 {value!r}"
+    for index, item in enumerate(value):
+        if isinstance(item, bool) or not isinstance(item, (int, float)) or item != item:
+            return f"{label}[{index}] 需要数值，收到 {item!r}"
+    return None
+
+
+def _camera_reasons(payload: dict[str, Any]) -> list[str]:
+    """校验新建机位的参数。机位是"光学事实"的载体，因此焦距与画幅要一起自洽。"""
+    if not any(key in payload for key in ("position", "target", "fov", "focalLength")):
+        return ["add_camera 需要至少提供 position / target / fov / focalLength 之一"]
+
+    reasons: list[str] = []
+    for key in ("position", "target"):
+        if key in payload:
+            reason = _vec3_reason(key, payload[key])
+            if reason:
+                reasons.append(reason)
+    if "sensorFormat" in payload and str(payload["sensorFormat"]) not in _SENSOR_WIDTH_MM:
+        reasons.append(f"未知的画幅：{payload['sensorFormat']}；可用 {'/'.join(_SENSOR_WIDTH_MM)}")
+    if "fov" in payload:
+        reason = _number_reason("fov", payload["fov"], 8.0, 120.0)
+        if reason:
+            reasons.append(reason)
+    if "focalLength" in payload:
+        reason = _number_reason("focalLength", payload["focalLength"], 4.0, 400.0)
+        if reason:
+            reasons.append(reason)
+    if "name" in payload and not isinstance(payload["name"], str):
+        reasons.append("name 需要字符串")
+    return reasons
 
 
 def find_target(scene: dict[str, Any], target_id: str) -> tuple[str, dict[str, Any] | None]:
@@ -107,6 +296,18 @@ def _describe(operation_type: str, target_id: str, payload: dict[str, Any]) -> s
         return f"第 {payload.get('frame')} 帧给 {target_id} 的 {payload.get('property')} 打点"
     if operation_type == "remove_keyframe":
         return f"删除 {target_id} 在第 {payload.get('frame')} 帧的 {payload.get('property')} 关键帧"
+    if operation_type == "set_human_proxy":
+        channels = [key for key in ("height", "pose", "poseJoints") if key in payload]
+        return f"设置 {target_id} 的 {'/'.join(channels) or '人形参数'}"
+    if operation_type == "assign_motion":
+        motion = str(payload.get("motion") or "")
+        return f"给 {target_id} {'清除动作' if not motion else f'指定动作 {motion}'}"
+    if operation_type == "add_camera":
+        return f"新增机位 {payload.get('name') or '(新建)'}"
+    if operation_type == "set_duration":
+        if "frames" in payload:
+            return f"把场景时长设为 {payload.get('frames')} 帧"
+        return f"把场景时长设为 {payload.get('seconds')} 秒"
     return f"{operation_type} {target_id}".strip()
 
 
@@ -116,13 +317,25 @@ def validate_operations(
     *,
     expected_revision: int,
     current_revision: int,
+    motion_carriers: Optional[Mapping[str, str]] = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """校验一批操作，返回 `(accepted, rejected)`。
 
     不做任何修改。**revision 不匹配时整批拒绝**（理由见模块文档）。
+
+    `motion_carriers` 是 `动作标识 → 载体` 的映射（由调用方查库后传入，见
+    `motion_service.motion_carriers`）。本模块是纯函数、不碰数据库，因此"动作是否存在、
+    载体是否匹配"这条事实必须由外部喂进来；**传 None 表示清单不可用，此时任何动作引用
+    都会被拒绝**而不是放过（放过一个拼错的引用，表现是"下拉里没有它、选了没反应"）。
     """
     accepted: list[dict[str, Any]] = []
     rejected: list[dict[str, Any]] = []
+
+    #: 进行中的场景副本：每通过一条操作就把它应用上去，于是**同一批里的后续操作能引用
+    #: 前面刚建出来的对象**（初稿就是"先建人、再给这个人打位移关键帧"这种形状）。
+    #: 不这么做的话，这类批次会"落库能成功、校验先拒绝"——`apply_operations` 本来就是顺序应用的，
+    #: 两边语义不一致本身就是缺陷。
+    working: dict[str, Any] = scene
 
     def reject(index: int, operation_type: str, target_id: str, reason: str) -> None:
         rejected.append({
@@ -131,6 +344,13 @@ def validate_operations(
             "target_id": target_id,
             "reason": reason,
         })
+
+    def accept(operation_type: str, target_id: str, payload: dict[str, Any]) -> None:
+        entry = {"type": operation_type, "targetId": target_id, "payload": payload,
+                 "summary": _describe(operation_type, target_id, payload)}
+        accepted.append(entry)
+        nonlocal working
+        working, _ = apply_operations(working, [entry])
 
     if int(expected_revision) != int(current_revision):
         # 整批拒绝：场景已变，Agent 的前提过期了
@@ -165,15 +385,62 @@ def validate_operations(
             if not node:
                 reject(index, operation_type, target_id, "add_node 需要 payload.node")
                 continue
+            # 白名单 + metadata 校验：宁可拒掉一个幻觉节点，也不要存进去一个"落库成功但前端不认"的对象
+            reasons = _node_reasons(node, motion_carriers=motion_carriers)
+            if reasons:
+                reject(index, operation_type, target_id, "；".join(reasons))
+                continue
             if len(_as_list(scene.get("nodes"))) >= _MAX_NODES:
                 reject(index, operation_type, target_id, f"节点数已达上限 {_MAX_NODES}")
                 continue
-            accepted.append({"type": operation_type, "targetId": target_id, "payload": payload,
-                             "summary": _describe(operation_type, target_id, payload)})
+            accept(operation_type, target_id, payload)
             continue
 
-        # 以下都是针对已有目标的操作
-        kind, target = find_target(scene, target_id)
+        if operation_type == "add_camera":
+            reasons = _camera_reasons(payload)
+            if reasons:
+                reject(index, operation_type, target_id, "；".join(reasons))
+                continue
+            if len(_as_list(scene.get("cameras"))) >= _MAX_CAMERAS:
+                reject(index, operation_type, target_id, f"机位数已达上限 {_MAX_CAMERAS}")
+                continue
+            accept(operation_type, target_id, payload)
+            continue
+
+        if operation_type == "set_duration":
+            try:
+                fps = max(1, int(scene.get("fps") or 24))
+            except (TypeError, ValueError):
+                fps = 24
+            max_frames = 60 * fps  # 与前端时长输入的上限（60 秒）一致
+            frames: int | None = None
+            reason: str | None = None
+            if "frames" in payload:
+                raw_frames = payload.get("frames")
+                if isinstance(raw_frames, bool) or not isinstance(raw_frames, (int, float)):
+                    reason = f"frames 需要数值，收到 {raw_frames!r}"
+                else:
+                    frames = int(round(float(raw_frames)))
+            elif "seconds" in payload:
+                raw_seconds = payload.get("seconds")
+                if isinstance(raw_seconds, bool) or not isinstance(raw_seconds, (int, float)):
+                    reason = f"seconds 需要数值，收到 {raw_seconds!r}"
+                else:
+                    frames = int(round(float(raw_seconds) * fps))
+            else:
+                reason = "set_duration 需要 frames 或 seconds"
+            if reason is None and frames is not None and not 1 <= frames <= max_frames:
+                reason = f"时长 {frames} 帧超出范围 1–{max_frames}（{fps}fps × 60 秒）"
+            if reason:
+                reject(index, operation_type, target_id, reason)
+                continue
+            # 秒与帧只保留一个真值：校验阶段就把 seconds 归一成 frames 写回 payload，
+            # 落库与预览用同一个数——两处各算一遍迟早会漂。
+            accept(operation_type, target_id, {**payload, "frames": frames})
+            continue
+
+        # 以下都是针对已有目标的操作（在**进行中的副本**上找，见 `accept` 的注释）
+        kind, target = find_target(working, target_id)
         if target is None:
             reject(index, operation_type, target_id, f"场景中不存在 id 为 {target_id or '(空)'} 的节点或机位")
             continue
@@ -191,8 +458,7 @@ def validate_operations(
                 reject(index, operation_type, target_id,
                        f"update_transform 需要至少提供 {'/'.join(_TRANSFORM_KEYS)} 之一")
                 continue
-            accepted.append({"type": operation_type, "targetId": target_id, "payload": payload,
-                             "summary": _describe(operation_type, target_id, payload)})
+            accept(operation_type, target_id, payload)
             continue
 
         if operation_type == "set_camera":
@@ -202,8 +468,7 @@ def validate_operations(
             if not any(key in payload for key in ("position", "target", "fov")):
                 reject(index, operation_type, target_id, "set_camera 需要至少提供 position/target/fov 之一")
                 continue
-            accepted.append({"type": operation_type, "targetId": target_id, "payload": payload,
-                             "summary": _describe(operation_type, target_id, payload)})
+            accept(operation_type, target_id, payload)
             continue
 
         if operation_type in ("add_keyframe", "remove_keyframe"):
@@ -222,8 +487,57 @@ def validate_operations(
             if operation_type == "add_keyframe" and "value" not in payload:
                 reject(index, operation_type, target_id, "add_keyframe 需要 payload.value")
                 continue
-            accepted.append({"type": operation_type, "targetId": target_id, "payload": payload,
-                             "summary": _describe(operation_type, target_id, payload)})
+            accept(operation_type, target_id, payload)
+            continue
+
+        # 语义操作：只作用于人形占位节点（身高 / 姿势 / 动作都是"人形载体"的概念）
+        if operation_type in ("set_human_proxy", "assign_motion"):
+            if kind != "node":
+                reject(index, operation_type, target_id, f"{operation_type} 只能作用于节点，不能作用于机位")
+                continue
+            node_kind = str(target.get("kind") or "")
+            if node_kind != "human_proxy":
+                reject(
+                    index, operation_type, target_id,
+                    f"{operation_type} 只能作用于人形占位节点；该节点是 {node_kind or '未知种类'}。"
+                    "非人形对象请用 update_transform，或给它指定通用变换动作",
+                )
+                continue
+
+            if operation_type == "set_human_proxy":
+                if not any(key in payload for key in ("height", "pose", "poseJoints")):
+                    reject(index, operation_type, target_id,
+                           "set_human_proxy 需要至少提供 height / pose / poseJoints 之一")
+                    continue
+                if "motion" in payload:
+                    reject(index, operation_type, target_id,
+                           "动作请用 assign_motion：set_human_proxy 只负责身高与姿势")
+                    continue
+                reasons = []
+                if "height" in payload:
+                    reason = _number_reason("height", payload["height"], *HUMAN_PROXY_HEIGHT)
+                    if reason:
+                        reasons.append(reason)
+                if "pose" in payload:
+                    reason = _human_proxy_pose_reason(payload["pose"])
+                    if reason:
+                        reasons.append(reason)
+                if "poseJoints" in payload:
+                    reasons.extend(_human_proxy_joints_reasons(payload["poseJoints"]))
+                if reasons:
+                    reject(index, operation_type, target_id, "；".join(reasons))
+                    continue
+            else:  # assign_motion
+                if "motion" not in payload:
+                    reject(index, operation_type, target_id,
+                           "assign_motion 需要 payload.motion（用 '' 表示清除当前动作）")
+                    continue
+                reason = _motion_ref_reason(payload.get("motion"), motion_carriers)
+                if reason:
+                    reject(index, operation_type, target_id, reason)
+                    continue
+
+            accept(operation_type, target_id, payload)
             continue
 
         reject(index, operation_type, target_id, "该操作类型尚未实现")
@@ -248,6 +562,13 @@ def apply_operations(scene: dict[str, Any], accepted: list[dict[str, Any]]) -> t
     keyframes = _as_list(next_scene.get("keyframes"))
 
     for operation in accepted:
+        # 每一轮先把本地集合同步回场景：`find_target` 读的是场景字典，而新建的节点/机位/关键帧
+        # 先在本地列表里。不同步的话**同一批里后面的操作看不见前面刚建出来的对象**——
+        # 表现是初稿这类"先建人、再给这个人打关键帧"的批次静默少做几步（不报错，只是没生效）。
+        next_scene["nodes"] = nodes
+        next_scene["cameras"] = cameras
+        next_scene["keyframes"] = keyframes
+
         operation_type = str(operation.get("type") or "")
         target_id = str(operation.get("targetId") or "")
         payload = _as_dict(operation.get("payload"))
@@ -261,6 +582,44 @@ def apply_operations(scene: dict[str, Any], accepted: list[dict[str, Any]]) -> t
             node.setdefault("metadata", {})
             nodes.append(node)
             applied.append({"type": operation_type, "target_id": node["id"], "summary": operation.get("summary") or ""})
+            continue
+
+        if operation_type == "add_camera":
+            sensor_format = str(payload.get("sensorFormat") or _DEFAULT_SENSOR)
+            fov_payload = payload.get("fov")
+            focal_payload = payload.get("focalLength")
+            # 焦距与 fov 必须同时自洽：前端 `normalizeCamera` 载入时会按焦距重算 fov，
+            # 只写一个的后果是"落库的值和画面上看到的不是一个"（`set_camera` 那条注释记过同一个坑）
+            if fov_payload is not None:
+                fov = float(fov_payload)
+                focal = float(focal_payload) if focal_payload is not None else _focal_from_fov(fov, sensor_format)
+            else:
+                focal = float(focal_payload) if focal_payload is not None else 35.0
+                fov = fov_from_focal(focal, sensor_format)
+            camera_id = str(payload.get("id") or f"camera_{uuid.uuid4().hex[:12]}")
+            cameras.append({
+                "id": camera_id,
+                "name": str(payload.get("name") or f"机位 {len(cameras) + 1}"),
+                "transform": {
+                    "position": list(payload.get("position") or [4, 3, 6]),
+                    "rotation": [0, 0, 0, 1],
+                },
+                "target": list(payload.get("target") or [0, 0.8, 0]),
+                "fov": fov,
+                "focalLength": focal,
+                "sensorFormat": sensor_format,
+                "locked": False,
+            })
+            # 场景本来没有活动机位时顺手设为活动机位：截图回流与导出**只在活动机位下可用**，
+            # 新建了机位却不激活，用户下一步就撞上"截不了图"
+            if not str(next_scene.get("activeCameraId") or ""):
+                next_scene["activeCameraId"] = camera_id
+            applied.append({"type": operation_type, "target_id": camera_id, "summary": operation.get("summary") or ""})
+            continue
+
+        if operation_type == "set_duration":
+            next_scene["durationFrames"] = int(payload.get("frames"))
+            applied.append({"type": operation_type, "target_id": "", "summary": operation.get("summary") or ""})
             continue
 
         kind, target = find_target(next_scene, target_id)
@@ -332,6 +691,35 @@ def apply_operations(scene: dict[str, Any], accepted: list[dict[str, Any]]) -> t
             applied.append({"type": operation_type, "target_id": target_id, "summary": operation.get("summary") or ""})
             continue
 
+        if operation_type == "set_human_proxy":
+            metadata = _as_dict(target.get("metadata"))
+            if "height" in payload:
+                metadata["height"] = float(payload["height"])
+            if "pose" in payload:
+                metadata["pose"] = str(payload["pose"])
+                # 与前端一致：**选预设 = 放弃自定义关节角度**。前端 `resolveHumanProxyPose` 是
+                # "自定义按字段覆盖预设"，若不清掉自定义值，会出现"设了姿势却没变化"
+                metadata.pop("poseJoints", None)
+            if "poseJoints" in payload:
+                # 值保持原样（三元组字段是数组、单值字段是数字）：这里已校验过，
+                # 前端 `sanitizeHumanProxyPose` 还会再夹一次（两道防线）
+                metadata["poseJoints"] = {
+                    str(channel): value
+                    for channel, value in _as_dict(payload["poseJoints"]).items()
+                }
+            target["metadata"] = metadata
+            applied.append({"type": operation_type, "target_id": target_id, "summary": operation.get("summary") or ""})
+            continue
+
+        if operation_type == "assign_motion":
+            metadata = _as_dict(target.get("metadata"))
+            # 写**静态值**（`metadata.animationClip`）：这是"当前动作"的落点，前端的动作下拉读它。
+            # 不打关键帧——需要"第几帧换动作"时用 add_keyframe(animation_clip)，两件事互不覆盖。
+            metadata["animationClip"] = str(payload.get("motion") or "")
+            target["metadata"] = metadata
+            applied.append({"type": operation_type, "target_id": target_id, "summary": operation.get("summary") or ""})
+            continue
+
     next_scene["nodes"] = nodes
     next_scene["cameras"] = cameras
     next_scene["keyframes"] = keyframes
@@ -359,7 +747,47 @@ def diff_operations(scene: dict[str, Any], accepted: list[dict[str, Any]]) -> li
                 "target_id": str(node.get("id") or "(新建)"),
                 "summary": operation.get("summary") or "",
                 "before": None,
-                "after": {"name": node.get("name"), "kind": node.get("kind"), "transform": node.get("transform")},
+                # metadata 必须一起给：身高/姿势/动作都住在它里面，只给 name/kind/transform
+                # 会让人（和 AI）看不出"新建的人形是站着还是走着"
+                "after": {
+                    "name": node.get("name"),
+                    "kind": node.get("kind"),
+                    "assetId": node.get("assetId"),
+                    "transform": node.get("transform"),
+                    "metadata": node.get("metadata"),
+                },
+            })
+            continue
+
+        # 新建类与场景级操作**不指向已有对象**，必须在 `find_target` 之前处理：
+        # 否则会被"目标不存在就跳过"那条守卫吞掉，预览里什么都不显示
+        if operation_type == "add_camera":
+            preview.append({
+                "index": len(preview),
+                "type": operation_type,
+                "target_id": "(新建)",
+                "summary": operation.get("summary") or "",
+                "before": None,
+                # 焦距与 fov 一起给：同一支镜头的两种表达，改一个另一个会跟着变
+                "after": {
+                    "name": payload.get("name"),
+                    "position": payload.get("position"),
+                    "target": payload.get("target"),
+                    "fov": payload.get("fov"),
+                    "focalLength": payload.get("focalLength"),
+                    "sensorFormat": payload.get("sensorFormat"),
+                },
+            })
+            continue
+
+        if operation_type == "set_duration":
+            preview.append({
+                "index": len(preview),
+                "type": operation_type,
+                "target_id": "(场景)",
+                "summary": operation.get("summary") or "",
+                "before": {"frames": int(scene.get("durationFrames") or 0)},
+                "after": {"frames": int(payload.get("frames"))},
             })
             continue
 
@@ -414,6 +842,33 @@ def diff_operations(scene: dict[str, Any], accepted: list[dict[str, Any]]) -> li
                 "before": {"frame": payload.get("frame"), "property": payload.get("property")},
                 "after": ({"frame": payload.get("frame"), "property": payload.get("property"), "value": payload.get("value")}
                           if operation_type == "add_keyframe" else None),
+            })
+            continue
+
+        if operation_type == "set_human_proxy":
+            metadata = _as_dict(before.get("metadata"))
+            keys = [key for key in ("height", "pose", "poseJoints") if key in payload]
+            preview.append({
+                "index": len(preview),
+                "type": operation_type,
+                "target_id": target_id,
+                "target_kind": kind,
+                "summary": operation.get("summary") or "",
+                "before": {key: metadata.get(key) for key in keys},
+                "after": {key: payload[key] for key in keys},
+            })
+            continue
+
+        if operation_type == "assign_motion":
+            metadata = _as_dict(before.get("metadata"))
+            preview.append({
+                "index": len(preview),
+                "type": operation_type,
+                "target_id": target_id,
+                "target_kind": kind,
+                "summary": operation.get("summary") or "",
+                "before": {"motion": str(metadata.get("animationClip") or "")},
+                "after": {"motion": str(payload.get("motion") or "")},
             })
             continue
 

@@ -95,3 +95,6 @@ esbuild_*.err
 frontend/dist-verify/
 .codex-temp/
 docs/.screenshot-candidates/
+# 临时草稿目录：里面会出现 node_modules（几十 MB 的 DLL）与运行日志，
+# 一次手滑 `git add -A` 就会把它们推上去——所以在这里挡掉
+/tmp/

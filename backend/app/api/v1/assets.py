@@ -547,6 +547,13 @@ async def _list_asset_hub_cards(
     version_by_node = await version_service.get_latest_versions(node_ids)
     version_ids = [str(v.id) for v in version_by_node.values()]
     rep_by_version = await rep_service.get_primaries(version_ids)
+    # 真实标签同样批量预取：写入侧存在关联表，而卡片原先只读 node.tags_json，
+    # 两者不一致会让「按标签筛选」失效、卡片标签显示不全。
+    try:
+        tags_by_node = await node_service.get_tags_map(node_ids)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[assets] tag prefetch failed: %s", exc)
+        tags_by_node = {}
     for node, node_type in all_nodes:
         node_id = str(node.id)
         version = version_by_node.get(node_id)
@@ -554,6 +561,9 @@ async def _list_asset_hub_cards(
         card = await _asset_hub_card(session, node, include_metadata=False, version=version, rep=rep)
         if not card:
             continue
+        real_tags = tags_by_node.get(node_id) or []
+        if real_tags:
+            card["tags"] = list(dict.fromkeys([*(card.get("tags") or []), *real_tags]))
         # 合并类型查询时按主表示的真实类型兜底：角色节点的主表示可能是非图片文件，
         # 请求 type=image 时不应把这类节点混进图片列表。
         if normalized_type in ("novel", "image") and card.get("type") != normalized_type:
@@ -601,6 +611,15 @@ async def _get_asset_hub_card(
     card = await _asset_hub_card(session, node, include_metadata=include_metadata)
     if card:
         card.pop("_sort_created_at", None)
+        # 与列表路径同理：真实标签在关联表里，不在 node.tags_json。
+        # 这里失败不影响详情本身，标签只是附加信息。
+        try:
+            grouped = await AssetNodeService(session).get_tags_map([str(node.id)])
+            real_tags = grouped.get(str(node.id)) or []
+            if real_tags:
+                card["tags"] = list(dict.fromkeys([*(card.get("tags") or []), *real_tags]))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[assets] tag merge failed for %s: %s", asset_id, exc)
     return card
 
 
@@ -1105,6 +1124,33 @@ def _model3d_upload_dir() -> Path:
     return directory
 
 
+def _model3d_preview_dir() -> Path:
+    directory = Path(__file__).resolve().parents[3] / "storage" / "model3d" / "previews"
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
+
+
+async def _render_model_preview(model_path: Path) -> str:
+    """给上传的模型渲一张预览图。
+
+    为什么必须自己渲：素材库与 3D 工作台的卡片靠缩略图渲染，**没有它就显示成
+    加载失败**——而图生 3D 那条路由远端提供 preview，上传这条路以前没人管，
+    于是上传的模型一律没有缩略图。
+
+    Blender 不可用（未安装）时返回空字符串：预览是锦上添花，
+    不该让一次正常的上传失败。
+    """
+    target = _model3d_preview_dir() / f"{uuid4().hex}.png"
+    try:
+        from app.services.model3d.service import Model3DService
+
+        rendered = await Model3DService(None).generate_preview(str(model_path), str(target))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[assets] 3D preview render failed for %s: %s", model_path, exc)
+        return ""
+    return str(rendered or "")
+
+
 async def _import_uploaded_model(filename: str, content: bytes, title: str, session) -> dict:
     """解包/定位上传的 3D 模型文件并写入 Asset Hub。"""
     upload_dir = _model3d_upload_dir() / uuid4().hex
@@ -1132,6 +1178,7 @@ async def _import_uploaded_model(filename: str, content: bytes, title: str, sess
 
     details = await _extract_model3d_details(model_path)
     rigging_flags, rigging_tags = _rigging_flags(details)
+    preview_path = await _render_model_preview(model_path)
 
     created = await AssetHubFacade(session).create_imported_file(
         file_path=str(model_path),
@@ -1139,6 +1186,7 @@ async def _import_uploaded_model(filename: str, content: bytes, title: str, sess
         asset_type=AssetType.THREE_D_MODEL,
         source="upload",
         source_url="",
+        thumbnail_url=preview_path,
         metadata={"original_filename": filename, "upload": True, **details, **rigging_flags},
         tags=["upload", "3d_model", *rigging_tags],
     )

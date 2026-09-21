@@ -27,6 +27,7 @@ import {
   evaluateCamera,
   evaluateNodeTransform,
   frameToSeconds,
+  planExportFrames,
   sampleChannel,
   sampleFromKeys,
   secondsToFrame,
@@ -394,5 +395,57 @@ describe('sampleFromKeys（供逐帧解析复用已排序关键帧）', () => {
 
   it('空列表返回回落值', () => {
     expect(sampleFromKeys([], 5, 'Idle')).toBe('Idle')
+  })
+})
+
+/**
+ * 批量导出的帧计划（tasks.md #26/#27）。
+ *
+ * 为什么值得单独测：这份计划同时喂给**前端弹窗的提示**和**逐帧采集循环**，
+ * 而后端 manifest 又独立算了同一份 `frame_count` / `span_frames`。
+ * 三处只要有一处口径不同，用户就会看到「弹窗说 12 帧、下载到 11 帧」
+ * 这类账对不上的问题，而且靠肉眼很难当场发现。
+ */
+describe('planExportFrames', () => {
+  it('步长为 1 时逐帧连续，覆盖帧数等于帧数', () => {
+    const plan = planExportFrames(0, 4, 1)
+    expect(plan.frameNumbers).toEqual([0, 1, 2, 3, 4])
+    expect(plan.count).toBe(5)
+    expect(plan.spanFrames).toBe(5)
+  })
+
+  it('步长大于 1 时按步长抽样', () => {
+    const plan = planExportFrames(0, 10, 2)
+    expect(plan.frameNumbers).toEqual([0, 2, 4, 6, 8, 10])
+    expect(plan.count).toBe(6)
+    expect(plan.spanFrames).toBe(11)
+  })
+
+  it('结束帧不能被步长整除时，宁可少一帧也不越过结束帧', () => {
+    const plan = planExportFrames(0, 9, 2)
+    expect(plan.frameNumbers).toEqual([0, 2, 4, 6, 8])
+    expect(plan.frameNumbers.every(frame => frame <= 9)).toBe(true)
+  })
+
+  it('越界输入收敛到合法区间而不是报错（调用方是输入框）', () => {
+    expect(planExportFrames(-5, 4, 0).frameNumbers).toEqual([0, 1, 2, 3, 4])
+    expect(planExportFrames(2.4, 2.6, -1).frameNumbers).toEqual([2, 3])
+    expect(planExportFrames(Number.NaN, Number.NaN, Number.NaN).frameNumbers).toEqual([0])
+  })
+
+  it('结束帧小于起始帧时只导出起始帧，而不是一份空计划', () => {
+    const plan = planExportFrames(8, 3, 2)
+    expect(plan.frameNumbers).toEqual([8])
+    expect(plan.count).toBe(1)
+    expect(plan.spanFrames).toBe(1)
+  })
+
+  it('spanFrames 与 count/step 的关系和后端 manifest 用同一套口径', () => {
+    const cases: Array<[number, number, number]> = [[0, 96, 1], [0, 95, 4], [10, 40, 5], [7, 7, 3]]
+    for (const [start, end, step] of cases) {
+      const plan = planExportFrames(start, end, step)
+      expect(plan.spanFrames).toBe((plan.count - 1) * plan.step + 1)
+      expect(plan.frameNumbers[plan.frameNumbers.length - 1]).toBe(start + (plan.count - 1) * plan.step)
+    }
   })
 })

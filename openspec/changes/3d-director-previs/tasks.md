@@ -74,8 +74,23 @@
   - _**测量方法上的一个坑（我差点据此下错结论）**：首轮在 headless 下量到 19fps 并准备写进报告，核查渲染器后发现 headless 走 **SwiftShader 软件渲染**，带界面才是真实 GPU（Intel UHD），**两者差 2.6 倍**。报告因此把两种情况都列出，结论建立在真实 GPU 那一栏。_
   - _**成本结论：这条链路零 API 额度**——客户端编码是本地算力，服务端合成用仓内已有的本地 ffmpeg，不调用任何收费接口。_
   - _需新增的唯一能力：`core/ffmpeg.py` 的 `FFmpegService` 现有 9 个方法（get_video_info/concat_videos/trim_video/add_subtitles/add_audio/add_watermark/resize_video/extract_audio/create_thumbnail），**独缺"图片序列 → 视频"**，全仓也没有按 `-framerate` 读序列的先例。_
-- [ ] 26. Export a batch of reference frames as a ZIP of JPEGs, reusing the existing offline frame-render path (`services/export` already does ZIP with volume splitting) — no encoder needed.
-- [ ] 27. Add server-side sequence compositing: a new `FFmpegService.images_to_video` (`-framerate 24`) driven through the existing task center, so exported video is guaranteed to be true 24fps regardless of client rendering speed.
+- [x] 26. Export a batch of reference frames as a ZIP of JPEGs, reusing the existing offline frame-render path (`services/export` already does ZIP with volume splitting) — no encoder needed.
+  - _2026-09-15 完成。_
+  - _契约：`POST /api/v1/previs/scenes/{scene_id}/export-frames`，multipart 收浏览器**离线逐帧渲染**的 JPEG，按上传顺序重命名为连续编号（`frames/frame_0001.jpg`…）后打包 ZIP，内含 `manifest.json`。_
+  - _**文件名与帧号必须分开表达**：ffmpeg 的 image2 demuxer 按编号连续性读序列，而 `step > 1` 时真实帧号是 0、2、4…（不连续）。所以文件名只保证顺序，「这张图是第几帧」记在 manifest 的 `frames[].frame` 与 `time` 里。靠文件名猜帧号，会得到一条错位的剪辑素材——而且肉眼很难当场发现。_
+  - _只收 JPEG：同一份 4 秒预演的 PNG 序列是 132MB / 6.8s，JPEG(q0.92) 只有 9.4MB / 1.6s；批量帧是**过程产物**，不像单帧截图那样需要无损。单帧「截图回流」仍走 PNG 并入库关联分镜，两条路语义分开。_
+  - _**不入库**是刻意的：96 帧都塞进素材库，一次导出就把素材库灌满，反而找不到东西。ZIP 直接下载，manifest 里带场景 id/revision/机位/帧范围，需要单张进参考时仍走截图回流那条路。_
+  - _上限 600 帧（同时约束单次 multipart 体积，约 60MB）；帧数/时长由响应头 `X-Previs-Frame-Count`/`X-Previs-Duration-Seconds` 返回，前端不必解压就能提示。_
+- [x] 27. Add server-side sequence compositing: a new `FFmpegService.images_to_video` (`-framerate 24`) driven through the existing task center, so exported video is guaranteed to be true 24fps regardless of client rendering speed.
+  - _2026-09-15 完成。_
+  - _`core/ffmpeg.py` 补上第 10 个方法 `images_to_video`（此前 9 个方法里独缺「图片序列 → 视频」，全仓也没有按 `-framerate` 读序列的先例）。`-framerate` 必须在 `-i` 之前，否则会被当成输出选项、序列按默认帧率读；另加两条「写错了也能跑、但产出没人能放」的约束：`-pix_fmt yuv420p` 与 `scale=trunc(iw/2)*2:trunc(ih/2)*2`（canvas 视口尺寸可能是奇数，4:2:0 的色度下采样会直接报错）。_
+  - _端点 `POST /scenes/{scene_id}/export-video` 复用与 #26 相同的落盘，创建 `task_type=previs_export_video` 任务后台合成，完成后视频进 Asset Hub（`source=previs_frame_export`）。走任务中心而不是同步返回：合成虽只要数秒，但上传 600 帧本身就不该让请求一直挂着。_
+  - _**合成失败与入库失败分开报告**：视频确实产出时任务就是成功的（`result.download_url` 可用），入库失败只作为 `asset_error` 如实标注——否则用户会以为白跑一趟。合成成功即删掉帧序列这一中间产物，失败则保留现场（`frames/` 原样留着）供排查。_
+  - _一处如实标注的实测细节：输入是 JPEG 时 ffprobe 读出的 pix_fmt 是 `yuvj420p`（full range 的 4:2:0），仍是 4:2:0、现代播放器与剪辑软件都能读；`-pix_fmt yuv420p` 要防的是 yuv444p 那类不通用采样。测试断言因此接受两者，而不是假装它就是 limited-range。_
+  - _前端：`SceneCaptureFn` 扩展为可指定 `mime`/`quality`/`background`（JPEG 没有 alpha，透明画布直接编码会变黑底，所以由用户选深色/白色底色而不是默默给黑）；采集按帧号逐帧挪播放头，**每帧等两次 rAF** 再取图——我们自己的 rAF 与 R3F 渲染循环的 rAF 谁先执行并无保证，只等一帧可能取到上一帧的画面，整段序列就会错位一帧。导出仅允许在「活动机位」视图触发（导演视角的视锥辅助线不该进画面），前端 `planExportFrames` 与后端 manifest 用同一套换算预演帧数。_
+  - _验证：`pytest tests/test_previs_scenes.py tests/test_ffmpeg_service.py` → **29 passed**（新增 9 例导出契约 + 5 例 ffmpeg 命令参数）；`vitest run` → **108 passed（8 文件）**（`timeline.test.ts` 新增 6 例帧计划）；`npm run build` 通过。**真实后端 + 真实 ffmpeg 端到端**：12 帧 step=2 导出 ZIP（manifest 帧号 `[0,2,4,…,22]`、`span_frames=23`）；24 帧提交合成 → 任务 `running 10 → 70 → done 100` → `asset_id` 已入库 → ffprobe 实测 **`r_frame_rate=24/1`、`nb_frames=24`**，帧率断言通过。_
+  - _**真实浏览器端到端**（CDP 驱动本机 Chrome 152，预演台页面）：导演视角下「导出」按钮 `disabled=true` → 切「活动机位」后 `disabled=false`（闸门生效）→ 打开弹窗设 0/8/步长 2 → 摘要回显「共 0–8 帧、步长 2、共 5 帧、覆盖约 0.4 秒」→ 下载到 443KB 的 ZIP（5 帧 + manifest，`frame_count=5`、`step=2`、`camera_id=cam-1`）→ **帧 0 与第 3 帧字节数不同（94788 / 94886），证明逐帧采集真的换了位姿**；再切视频模式 → 按钮变为「提交合成任务」→ 提交后弹窗给出任务回执 → 该批帧在服务端合成出 **`1098×636`、`r_frame_rate=24/1`、`nb_frames=5`** 的 MP4（尺寸等于浏览器视口）。全程 **0 个 >=400、0 条新增 console 错误**。_
+  - _**端到端抓到一个真 bug（单测没覆盖）**：后台合成传给 `images_to_video` 的是导出根目录而不是 `frames/` 子目录，任务报「帧序列为空」并把帧留在原地——是"真跑一次"才暴露出来的，已修并加了目录层级的断言。_
 - [x] 24. Upgrade `PrevisCamera` from FOV-only to real optics: focal length, sensor format, and computed depth of field, so a framing reference means the same thing to a DP as it does to the tool.
   - _调研依据：FrameForge 与 Previs Pro 唯一重合的核心卖点就是「镜头光学是一等数据」（真实镜头型号、传感器尺寸、景深）。而 `PrevisCamera` 原来只有 `fov`——**同一个 fov 在 Super 16 和 Alexa LF 上是完全不同的取景**，所以那时的"机位参考"给不出可直接执行的信息。_
   - _范围：数据契约 + 机位面板 + 视口口径一致。景深只做**计算与读数**（近界/远界/超焦距），不做景深模糊渲染（design 非目标：不做专业渲染器）。_

@@ -223,6 +223,10 @@ from .creative_project_tools import (
 from .previs_tools import (
     previs_preview_operations,
     previs_apply_operations,
+    # 只读发现类（"先查后摆"）：动作清单、可摆对象、按分镜格出初稿
+    list_previs_motions,
+    get_previs_composition_options,
+    generate_previs_draft,
 )
 
 from .writing_style_tools import (

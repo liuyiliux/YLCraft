@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import binascii
 import json
+import logging
 import mimetypes
 import os
 import shutil
@@ -13,7 +14,7 @@ from pathlib import Path
 from typing import Any, Optional
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, Depends, Query, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Depends, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import String, cast
 from sqlmodel import select
@@ -24,11 +25,16 @@ from app.db.models.asset_hub import AssetRelation, AssetRepresentation, AssetTyp
 from app.db.models.task import Model3DGenerationTask
 from app.core.external_api_auth import optional_external_api_key
 from app.db.models.external_api_key import ExternalApiKey
+from app.core.blender import BlenderService
+from app.core.task_queue import TaskStatus, get_task_queue
+from app.services.asset_file_resolver import resolve_storage_path
 from app.services.asset_hub import AssetHubFacade
 from app.services.cos_storage import load_cos_service
 from app.services.model3d.service import Model3DService
 from app.services.model3d.workspace import Model3DConnectorBackend, Model3DProviderRequestError
 from app.services.platform_log import service as platform_log
+
+logger = logging.getLogger("ylcraft.api.model3d_workspace")
 
 router = APIRouter()
 
@@ -126,9 +132,13 @@ async def _resolve_source(asset_id: str | None, source_image: str | None) -> tup
             .order_by(AssetVersion.version_number.desc())
             .limit(1)
         )).scalar_one_or_none()
-    if not row or not Path(row).is_file():
+    if not row:
         raise ValueError("该素材没有可用的本地图片文件")
-    path = Path(row)
+    # 与绑骨那条路同理：库里是相对存储路径，按项目根解析，
+    # 不要拿相对路径去撞服务进程的工作目录。
+    path = resolve_storage_path(row)
+    if not path.is_file():
+        raise ValueError(f"该素材的本地图片文件不存在：{row}")
     mime = mimetypes.guess_type(path.name)[0] or "image/png"
     return f"data:{mime};base64,{base64.b64encode(path.read_bytes()).decode('ascii')}", "", asset_id
 
@@ -302,9 +312,7 @@ async def generate_model3d(req: Model3DGenerateRequest, external_key: Optional[E
             response={"status": result.get("status"), "url": result.get("url"), "asset_id": task.asset_id},
             duration_ms=result.get("latency_ms") or 0,
             project_id=None,
-            retry_payload={"prompt": req.prompt, "provider": req.provider, "model": req.model,
-                           "source_asset_id": req.source_asset_id, "source_image": req.source_image,
-                           "options": req.options},
+            retry_payload=_rig_retry_payload(req),
         )
         return Model3DTaskResponse(task_id=task_id, status=task.status, progress=task.progress,
             provider=task.provider, model=task.model, url=result.get("url"), asset_id=task.asset_id,
@@ -315,9 +323,7 @@ async def generate_model3d(req: Model3DGenerateRequest, external_key: Optional[E
             provider=req.provider, model=req.model, message="图转 3D 生成失败", error=str(exc),
             request=_model3d_log_request(req),
             response={"error": str(exc)},
-            retry_payload={"prompt": req.prompt, "provider": req.provider, "model": req.model,
-                           "source_asset_id": req.source_asset_id, "source_image": req.source_image,
-                           "options": req.options},
+            retry_payload=_rig_retry_payload(req),
         )
         return Model3DTaskResponse(success=False, task_id="", status="error", diagnostics=exc.diagnostics, error=str(exc))
     except Exception as exc:
@@ -326,9 +332,7 @@ async def generate_model3d(req: Model3DGenerateRequest, external_key: Optional[E
             provider=req.provider, model=req.model, message="图转 3D 生成异常", error=str(exc),
             request=_model3d_log_request(req),
             response={"error": str(exc)},
-            retry_payload={"prompt": req.prompt, "provider": req.provider, "model": req.model,
-                           "source_asset_id": req.source_asset_id, "source_image": req.source_image,
-                           "options": req.options},
+            retry_payload=_rig_retry_payload(req),
         )
         return Model3DTaskResponse(success=False, task_id="", status="error", error=str(exc))
 
@@ -397,6 +401,26 @@ async def model3d_history(
 
 _RIG_SOURCE_EXTENSIONS = {".glb": "GLB", ".fbx": "FBX"}
 
+#: 腾讯混元绑骨接口的源文件上限。本地先拦住：
+#: 否则要提交一次、轮询一轮，才从远端得知"文件太大"。
+#: （实测素材库里已有一个 75MB 的模型，点了才知道不行。）
+_RIG_SOURCE_MAX_BYTES = 60 * 1024 * 1024
+
+
+def _assert_rig_source_size(path: Path) -> None:
+    """校验绑骨源文件的大小上限（腾讯混元的硬限制）。
+
+    抽成纯函数是为了能单测：这条校验一旦失效，代价是"提交了、轮询了，
+    最后远端才说文件太大"，白等一轮。
+    """
+    size = path.stat().st_size
+    if size > _RIG_SOURCE_MAX_BYTES:
+        limit_mb = _RIG_SOURCE_MAX_BYTES / (1024 * 1024)
+        raise ValueError(
+            f"该模型 {size / 1024 / 1024:.1f}MB，超过绑骨上限 {limit_mb:.0f}MB"
+            "（图生 3D 默认出 50 万面高模，很容易顶到）；请先减面或转格式再绑骨"
+        )
+
 
 def _model3d_public_dir() -> Path:
     """Directory served at /model3d-files so providers can fetch source models."""
@@ -429,12 +453,21 @@ async def _resolve_rig_source(
             .order_by(AssetVersion.version_number.desc())
             .limit(1)
         )).scalar_one_or_none()
-    if not row or not Path(row).is_file():
+    if not row:
         raise ValueError("该素材没有可用的本地模型文件")
-    path = Path(row)
+    # 库里存的是**相对**存储路径（如 `backend/storage/...`），必须按项目根解析，
+    # 不能拿相对路径直接 `Path(...).is_file()`——那样解析的是服务进程的工作目录，
+    # 一旦不是项目根就永远找不到文件（实测就是这么报「没有可用的本地模型文件」的）。
+    path = resolve_storage_path(row)
+    if not path.is_file():
+        raise ValueError(f"该素材的本地模型文件不存在：{row}")
     file_type = _RIG_SOURCE_EXTENSIONS.get(path.suffix.lower())
     if not file_type:
         raise ValueError("绑骨蒙皮仅支持 GLB/FBX 模型（≤60MB，人形需 A-Pose/T-Pose）")
+
+    # 大小上限本地先拦。注意这只覆盖"选素材"这条路：直接给 source_url 时
+    # 文件不在本机，无从判断大小，只能交给远端。
+    _assert_rig_source_size(path)
 
     # 优先：COS 已配置 → 上传本地模型，返回临时签名 URL（24h 有效）
     cos = await load_cos_service()
@@ -449,6 +482,24 @@ async def _resolve_rig_source(
         shutil.copyfile(path, public_path)
     public_base = (os.getenv("BASE_URL") or "").rstrip("/") or base_url.rstrip("/")
     return f"{public_base}/model3d-files/public/{public_path.name}", file_type, source_asset_id
+
+
+def _rig_retry_payload(req: Model3DRigRequest) -> dict[str, Any]:
+    """绑骨任务的可重放参数。
+
+    只取 `Model3DRigRequest` 真正拥有的字段——这段代码原先照抄 `/generate`，
+    引用了 `req.prompt` / `req.model` / `req.source_image` / `req.options`，
+    而这四个绑骨请求里都没有。后果很隐蔽：**绑骨一出错，错误处理自己先抛
+    AttributeError**，真正的失败原因被吞掉，用户只看到一个没有信息的 500，
+    平台日志里也留不下任何痕迹（事件根本没记上）。
+    """
+    return {
+        "provider": req.provider,
+        "source_asset_id": req.source_asset_id,
+        "source_url": req.source_url,
+        "motion_type": req.motion_type,
+        "file_type": req.file_type,
+    }
 
 
 @router.post("/rig", response_model=Model3DTaskResponse, summary="Submit auto-rigging task (skeleton-only or preset motion)")
@@ -493,12 +544,10 @@ async def rig_model3d(req: Model3DRigRequest, request: Request):
             status="failed" if result["status"] == "error" else ("success" if result["status"] == "done" else "pending"),
             provider=connector.name,
             model=selected_model,
-            message="图转 3D 生成完成" if result["status"] == "done" else "图转 3D 任务已提交",
+            message="绑骨完成" if result["status"] == "done" else "绑骨任务已提交",
             error=result.get("error"),
             project_id=None,
-            retry_payload={"prompt": req.prompt, "provider": req.provider, "model": req.model,
-                           "source_asset_id": req.source_asset_id, "source_image": req.source_image,
-                           "options": req.options},
+            retry_payload=_rig_retry_payload(req),
         )
         return Model3DTaskResponse(task_id=task_id, status=task.status, progress=task.progress,
             provider=task.provider, model=task.model, url=result.get("url"), asset_id=task.asset_id,
@@ -506,18 +555,251 @@ async def rig_model3d(req: Model3DRigRequest, request: Request):
     except Model3DProviderRequestError as exc:
         await platform_log.record_event(
             scene="model3d", task_type="model3d_generation", level="error", status="failed",
-            provider=req.provider, model=req.model, message="图转 3D 生成失败", error=str(exc),
-            retry_payload={"prompt": req.prompt, "provider": req.provider, "model": req.model,
-                           "source_asset_id": req.source_asset_id, "source_image": req.source_image,
-                           "options": req.options},
+            provider=req.provider, model="", message="绑骨提交失败", error=str(exc),
+            retry_payload=_rig_retry_payload(req),
         )
         return Model3DTaskResponse(success=False, task_id="", status="error", diagnostics=exc.diagnostics, error=str(exc))
     except Exception as exc:
+        # 先留一条本地日志：平台日志写不进去（或这段本身再出错）时，
+        # 至少诊断不会变成"一个没有任何信息的 500"。
+        logger.exception("[model3d] rig submit failed: provider=%s", req.provider)
         await platform_log.record_event(
             scene="model3d", task_type="model3d_generation", level="error", status="failed",
-            provider=req.provider, model=req.model, message="图转 3D 生成异常", error=str(exc),
-            retry_payload={"prompt": req.prompt, "provider": req.provider, "model": req.model,
-                           "source_asset_id": req.source_asset_id, "source_image": req.source_image,
-                           "options": req.options},
+            provider=req.provider, model="", message="绑骨提交异常", error=str(exc),
+            retry_payload=_rig_retry_payload(req),
         )
         return Model3DTaskResponse(success=False, task_id="", status="error", error=str(exc))
+
+
+# =============================================================================
+# 通用动作库（把另一个模型的动作套到目标模型上）
+# =============================================================================
+
+
+class Model3DRetargetRequest(BaseModel):
+    """把 `source_asset_id` 的动作套到 `target_asset_id` 的骨架上。
+
+    `clip` 为空时取来源模型的第一段动作；注意产物里会带上来源模型的**全部**
+    动作（见 `retarget_bake.py` 的说明），`clip` 只是用来定位与校验。
+    """
+
+    target_asset_id: str
+    source_asset_id: str
+    clip: Optional[str] = None
+    title: Optional[str] = None
+
+
+def _model3d_retarget_dir() -> Path:
+    directory = Path(__file__).resolve().parents[3] / "storage" / "model3d" / "retarget"
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
+
+
+async def _resolve_asset_model_path(asset_id: str) -> Path:
+    """取素材的本地模型文件（相对路径按项目根解析）。"""
+    async with get_async_session() as session:
+        row = (await session.execute(
+            select(AssetRepresentation.file_path)
+            .join(AssetVersion, AssetRepresentation.asset_version_id == AssetVersion.id)
+            .where(AssetVersion.asset_node_id == asset_id)
+            .order_by(AssetVersion.version_number.desc())
+            .limit(1)
+        )).scalar_one_or_none()
+    if not row:
+        raise ValueError("该素材没有可用的本地模型文件")
+    path = resolve_storage_path(row)
+    if not path.is_file():
+        raise ValueError(f"该素材的本地模型文件不存在：{row}")
+    return path
+
+
+def _suggested_map(report_path: Path) -> dict:
+    """从骨骼报告里取出自动推断的 Mixamo 对应关系。"""
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    armatures = report.get("armatures") or []
+    if not armatures:
+        return {}
+    return armatures[0].get("suggested_map") or {}
+
+
+async def _run_retarget(
+    task_id: str,
+    target_path: Path,
+    source_path: Path,
+    target_asset_id: str,
+    source_asset_id: str,
+    clip: str,
+    title: str,
+) -> None:
+    """后台执行：必要时统一骨架命名 → 烘焙动作 → 入库。"""
+    queue = get_task_queue()
+    try:
+        await queue.update_progress(task_id, 8, "检查目标骨架命名")
+        blender = BlenderService()
+        if not await blender.is_available():
+            raise RuntimeError("Blender 不可用，无法套用动作（请先安装 Blender 或设置 BLENDER_PATH）")
+
+        work_dir = _model3d_retarget_dir() / uuid4().hex
+        work_dir.mkdir(parents=True, exist_ok=True)
+
+        bake_target = target_path
+        upright_note = ""
+        # 扶正必须排在**套动作之前**：有些模型的绑定姿势是躺着的（实测 BrainStem
+        # 的 rest 高度 2.00 / 动画中 2.78，靠自带动画把自己扶起来）。不先扶正，
+        # 骨骼按新动作摆位、网格却被拽回那个躺着的骨架，模型当场躺平。
+        # 脚本会自己按阈值判断，正常站姿的模型不会被碰。
+        await queue.update_progress(task_id, 14, "检查绑定姿势")
+        try:
+            upright_path = work_dir / f"{target_path.stem}_upright{target_path.suffix}"
+            needed, upright_note = await blender.upright(target_path, upright_path)
+            if needed and upright_path.exists():
+                bake_target = upright_path
+            else:
+                upright_note = ""
+        except Exception as exc:  # noqa: BLE001
+            # 扶正是"尽力而为"的准备步骤：判断不出来不该把整个套用流程拦下
+            logger.warning("[model3d] upright skipped: %s", exc)
+
+        if not Model3DService.is_mixamo_skeleton(str(target_path)):
+            await queue.update_progress(task_id, 30, "目标骨架不是 Mixamo 命名，先统一")
+            report_path = work_dir / "skeleton.json"
+            await blender.skeleton_report(bake_target, report_path)
+            mapping = _suggested_map(report_path)
+            if not mapping:
+                raise RuntimeError(
+                    "看不出这个模型的骨骼怎么对应到人形部位，无法自动套用；"
+                    "它需要人工整理骨架后再试"
+                )
+            renamed = work_dir / f"{target_path.stem}_mixamo{target_path.suffix}"
+            await blender.convert_format(bake_target, renamed, bone_map=mapping)
+            bake_target = renamed
+
+        await queue.update_progress(task_id, 55, "烘焙动作到目标骨架")
+        output = work_dir / f"{target_path.stem}_retarget{target_path.suffix}"
+        diagnostic = await blender.retarget_bake(bake_target, source_path, clip, output)
+
+        await queue.update_progress(task_id, 78, "生成预览图")
+        preview = ""
+        try:
+            preview = str(
+                await Model3DService(None).generate_preview(
+                    str(output), str(work_dir / "preview.png")
+                )
+                or ""
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[model3d] retarget preview failed: %s", exc)
+
+        await queue.update_progress(task_id, 92, "写入素材库")
+        details = await Model3DService(None).extract_metadata(str(output))
+        if not isinstance(details, dict) or details.get("error"):
+            details = {}
+        rigging_flags, rigging_tags = _rigging_flags(details)
+
+        async with get_async_session() as session:
+            created = await AssetHubFacade(session).create_imported_file(
+                file_path=str(output),
+                title=(title or f"{target_path.stem} · 动作库")[:120],
+                asset_type=AssetType.THREE_D_MODEL,
+                source="retarget",
+                thumbnail_url=preview,
+                metadata={
+                    "target_asset_id": target_asset_id,
+                    "source_asset_id": source_asset_id,
+                    "clip": clip,
+                    **details,
+                    **rigging_flags,
+                },
+                tags=["retarget", "3d_model", *rigging_tags],
+            )
+            node_id = created.node_id
+            # 两条溯源：动作来自谁、骨架来自谁
+            session.add(AssetRelation(
+                id=str(uuid4()), source_id=node_id, target_id=source_asset_id,
+                relation_type=RelationType.DERIVED_FROM,
+                context_json={"task_id": task_id, "role": "motion_source", "clip": clip},
+            ))
+            session.add(AssetRelation(
+                id=str(uuid4()), source_id=node_id, target_id=target_asset_id,
+                relation_type=RelationType.DERIVED_FROM,
+                context_json={"task_id": task_id, "role": "skeleton_source"},
+            ))
+            await session.commit()
+
+        current = await queue.get_task(task_id)
+        if current:
+            current.status = TaskStatus.DONE
+            current.progress = 100
+            current.progress_message = "动作已套用"
+            current.result = {
+                "asset_id": node_id,
+                "diagnostic": diagnostic,
+                # 扶正过就在这里留痕：以后遇到"套上就躺着"，看这一行即可定性
+                "upright": upright_note,
+            }
+            current.completed_at = time.time()
+            await queue.update_task(current)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[model3d] retarget failed: task=%s", task_id)
+        current = await queue.get_task(task_id)
+        if current:
+            current.status = TaskStatus.FAILED
+            current.error = str(exc)
+            current.completed_at = time.time()
+            await queue.update_task(current)
+
+
+@router.post("/retarget", summary="通用动作库：把另一个模型的动作套到目标模型上")
+async def retarget_model3d(req: Model3DRetargetRequest, background: BackgroundTasks):
+    """跨模型复用动作。
+
+    动画是**按骨骼名**寻址的，所以两个模型只有骨骼命名对得上才能复用：目标骨架若
+    不是 Mixamo 标准命名，后台会先用骨骼分析推断对应关系并统一命名，再烘焙。
+    全程在任务中心里跑——Blender 一步就要十几秒，不能让请求干等。
+    """
+    try:
+        target_path = await _resolve_asset_model_path(req.target_asset_id)
+        source_path = await _resolve_asset_model_path(req.source_asset_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # 来源自己没有动画的话，没东西可套——先说清楚，别让用户白等几十秒
+    source_details = await Model3DService(None).extract_metadata(str(source_path))
+    source_clips = list(source_details.get("animations") or [])
+    if not source_clips:
+        raise HTTPException(
+            status_code=400,
+            detail="动作来源模型自己没有动画，没什么可套用的；请换一个带动画的模型作为来源",
+        )
+    clip = (req.clip or "").strip() or str(source_clips[0])
+
+    queue = get_task_queue()
+    task = await queue.create_task(
+        task_type="model3d_retarget",
+        payload={
+            "target_asset_id": req.target_asset_id,
+            "source_asset_id": req.source_asset_id,
+            "clip": clip,
+            "stage_label": "套用动作库",
+        },
+    )
+    background.add_task(
+        _run_retarget,
+        task.task_id,
+        target_path,
+        source_path,
+        req.target_asset_id,
+        req.source_asset_id,
+        clip,
+        req.title or "",
+    )
+    return {
+        "success": True,
+        "task_id": task.task_id,
+        "status": task.status,
+        "clip": clip,
+        "message": "已开始套用动作，可在任务中心查看进度；完成后会作为新素材入库。",
+    }
