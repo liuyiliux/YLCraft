@@ -38,7 +38,10 @@ import {
   SaveOutlined,
   SettingOutlined,
   UnlockOutlined,
+  MessageOutlined,
 } from '@ant-design/icons'
+import { PrevisAssistantPanel } from './PrevisAssistantPanel'
+import { buildAssistantContext } from './assistantSession'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   capturePrevisScene,
@@ -536,6 +539,8 @@ export default function PrevisPage() {
   const [exportRange, setExportRange] = useState({ start: 0, end: 96, step: 1 })
   const [exportBackground, setExportBackground] = useState<'dark' | 'light'>('dark')
   const [renderMode, setRenderMode] = useState<PrevisRenderMode>('browser')
+  /** 助手对话栏是否展开（右侧）。默认收起：预演以看画面为主，需要时再拉开。 */
+  const [assistantOpen, setAssistantOpen] = useState(false)
   const [exportTaskId, setExportTaskId] = useState('')
   const [sceneList, setSceneList] = useState<PrevisScene[]>([])
   const [listLoading, setListLoading] = useState(false)
@@ -2112,7 +2117,9 @@ export default function PrevisPage() {
               </Button>
             </div>
           )}
-          <div style={{ flex: 1, minHeight: 0, position: 'relative', minWidth: 0 }}>
+          {/* 视口与助手对话栏**并排**：对话栏在右侧（收起时不占地方），所以这里是一行 */}
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', minWidth: 0 }}>
+            <div style={{ flex: 1, minHeight: 0, position: 'relative', minWidth: 0 }}>
             <SceneViewport
               nodes={nodes}
               activeCamera={activeCamera}
@@ -2135,6 +2142,41 @@ export default function PrevisPage() {
             <div style={{ position: 'absolute', bottom: 12, left: 12, zIndex: 10, color: 'var(--textSecondary)', fontSize: 12, pointerEvents: 'none' }}>
               节点 {nodes.length} · 拖拽旋转视角，滚轮缩放{selectedNodeId ? ' · 选中节点可用手柄拖动' : ''}
             </div>
+            {/*
+              助手入口放在视口右下角：它是"看着画面说话"的入口，就该长在画面边上。
+              **入口必须可见可用**——不然就成了"做了却用不到"（类同"能选却动不了"）。
+            */}
+            <div style={{ position: 'absolute', bottom: 12, right: 12, zIndex: 10 }}>
+              <Tooltip
+                title={
+                  assistantOpen
+                    ? '收起预演助手'
+                    : '打开预演助手：描述要改什么，它只提方案，落库要你在界面上确认'
+                }
+              >
+                <Button
+                  size="small"
+                  type={assistantOpen ? 'primary' : 'default'}
+                  icon={<MessageOutlined />}
+                  onClick={() => setAssistantOpen(!assistantOpen)}
+                >
+                  助手
+                </Button>
+              </Tooltip>
+            </div>
+            </div>
+            {assistantOpen && (
+              <PrevisAssistantPanel
+                scene={{ id: String(scene?.id || ''), revision: Number(scene?.revision || 0) }}
+                nodes={nodes}
+                cameras={cameras}
+                durationFrames={durationFrames}
+                fps={fps}
+                activeCameraId={String(viewData?.activeCameraId || '')}
+                selectedNode={selectedNode}
+                onClose={() => setAssistantOpen(false)}
+              />
+            )}
           </div>
 
           {/* 时间轴 */}

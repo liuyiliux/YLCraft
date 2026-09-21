@@ -6,7 +6,7 @@
 
 - [x] 1.1 确认三个待定项：对话栏位置、助手身份（复用导演还是新建只管预演的角色）、全景背景先做哪种（见 proposal「已确认项」）
 - [x] 1.2 助手角色与权限（**已落地**：`profile.py` 新增 `previs-assistant`——只持只读三件套 + `previs_preview_operations`，**刻意不含写工具**；`tests/test_previs_agent_tools.py` 加了"助手不持写工具"的断言，9 例通过）：按 1.1 的结论落 `allowed_tools`（只给预演相关工具：`get_previs_composition_options` / `list_previs_motions` / `generate_previs_draft` / `previs_preview_operations` / `previs_apply_operations`），并加授权测试（与既有做法一致：显式授权列表比对，写工具不被额外角色拿到）
-- [ ] 1.3 预演台内的对话栏 UI（**会话纯逻辑已落地**：`assistantSession.ts` 的上下文快照与消息状态 + **7 例单测**；余下：面板渲染、发送接线 `agentChat({profile_id:'previs-assistant', context})`、右侧可折叠布局；**在接线完成前不把面板暴露出来**——半成品面板就是"能选却动不了"）：可折叠、与左侧图层面板对称；会话上下文带上**当前场景**（scene_id、revision、活动机位、已锁对象），避免用户每句都要重复"哪个场景"
+- [x] 1.3 预演台内的对话栏 UI（**已落地**：`assistantSession.ts` 的上下文快照与消息状态 + **7 例单测**；余下：面板渲染、发送接线 `agentChat({profile_id:'previs-assistant', context})`、右侧可折叠布局；**在接线完成前不把面板暴露出来**——半成品面板就是"能选却动不了"）：可折叠、与左侧图层面板对称；会话上下文带上**当前场景**（scene_id、revision、活动机位、已锁对象），避免用户每句都要重复"哪个场景"
 - [ ] 1.4 把助手的改动接成**幽灵预览**：助手提出操作 → 走 `previs_preview_operations` → 视口渲染 `proposed_scene`（复用既有幽灵态，不新造一套）→ 用户点确认才落库。**未确认前不许改任何已保存数据**
 - [ ] 1.5 对话与确认的边界用例：revision 过期（409 → 重新载入并丢弃幽灵态）、锁定对象被要求修改、助手引用了不存在的动作/资产（应被拒绝并给出可读原因）
 - [ ] 1.6 单元/集成测试：对话栏的状态机（提方案 → 预览 → 确认/放弃 → 推进）抽成纯函数并单测；工具调用链沿用既有 `previs_preview_operations`/`apply` 的测试
