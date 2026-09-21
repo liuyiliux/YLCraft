@@ -9051,6 +9051,38 @@
       "include_in_schema": true
     },
     {
+      "method": "POST",
+      "path": "/api/v1/previs/scenes/{scene_id}/export-video-headless",
+      "router": "previs",
+      "prefix": "/api/v1/previs",
+      "local_path": "/scenes/{scene_id}/export-video-headless",
+      "tags": [
+        "3D Director Previs"
+      ],
+      "summary": "服务端无头渲染并合成预演视频（异步任务，不占用浏览器）",
+      "function": "export_previs_video_headless",
+      "file": "backend/app/api/v1/previs.py",
+      "line": 923,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/previs/scenes/{scene_id}/preview-operations",
+      "router": "previs",
+      "prefix": "/api/v1/previs",
+      "local_path": "/scenes/{scene_id}/preview-operations",
+      "tags": [
+        "3D Director Previs"
+      ],
+      "summary": "校验一批预演操作并给出差异预览（只读，供预演台助手把方案变成幽灵预览）",
+      "function": "preview_previs_operations",
+      "file": "backend/app/api/v1/previs.py",
+      "line": 1001,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
       "method": "GET",
       "path": "/api/v1/projects/{project_id}/world-domains",
       "router": "novel_sources",

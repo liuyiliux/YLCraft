@@ -7,8 +7,8 @@
 ## Summary
 
 - Router mounts: 53
-- Endpoints: 686
-- Public schema endpoints: 685
+- Endpoints: 688
+- Public schema endpoints: 687
 - Hidden compatibility endpoints: 1
 
 ## Router Mounts
@@ -85,6 +85,8 @@
 | `POST` | `/api/v1/previs/scenes/{scene_id}/draft` | Build a previs draft from the bound storyboard panel (read-only) | `draft_previs_scene` | `backend/app/api/v1/previs.py:218` |
 | `POST` | `/api/v1/previs/scenes/{scene_id}/export-frames` | 批量导出参考帧（JPEG 序列打包 ZIP） | `export_previs_frames` | `backend/app/api/v1/previs.py:623` |
 | `POST` | `/api/v1/previs/scenes/{scene_id}/export-video` | 服务端合成预演视频（异步任务，真 24fps） | `export_previs_video` | `backend/app/api/v1/previs.py:786` |
+| `POST` | `/api/v1/previs/scenes/{scene_id}/export-video-headless` | 服务端无头渲染并合成预演视频（异步任务，不占用浏览器） | `export_previs_video_headless` | `backend/app/api/v1/previs.py:923` |
+| `POST` | `/api/v1/previs/scenes/{scene_id}/preview-operations` | 校验一批预演操作并给出差异预览（只读，供预演台助手把方案变成幽灵预览） | `preview_previs_operations` | `backend/app/api/v1/previs.py:1001` |
 
 ### 3D Models
 
