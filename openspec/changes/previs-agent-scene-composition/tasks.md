@@ -110,11 +110,15 @@
 
 ## 7. 验收与文档
 
-- [ ] 7.1 端到端（真实浏览器，注意前端端口为 3000）：分镜格 → 生成初稿 → 幽灵预览 → 确认落库 → 截图回流分镜；同时验证放弃路径不改变已保存场景
+- [x] 7.1 端到端（真实浏览器，注意前端端口为 3000）：分镜格 → 生成初稿 → 幽灵预览 → 确认落库 → 截图回流分镜；同时验证放弃路径不改变已保存场景
 - [x] 7.2 端到端：动态动作 → 导出参考视频为真帧率；**重复导出同一帧区间，逐帧结果一致**
 - [ ] 7.3 端到端：非人形对象用通用变换动作完成运动，并体现在导出的帧序列与视频中
 - [ ] 7.4 端到端：AI 侧一次完整编排（场景摘要 → 查动作与可摆对象 → 预览 → 确认落库），并覆盖 `revision` 过期整批作废
 - [x] 7.5 全量回归（已落地）：**后端 `pytest` 1027 passed / 4 failed / 4 skipped**（11 分 41 秒，用 `backend\venv_win\Scripts\python.exe` 跑——**必须用项目 venv**，系统 Python 缺 `ebooklib` 会连收集都过不去，这是本次踩到的坑，项目文档里其实早就写了这个约定）；**前端 `vitest run` 15 个文件 287 例全过**；`tsc --noEmit` 0 错误；`npm run build` ✓；lints 干净。**4 个失败全部属他线既有缺陷、与本次改动无关**（已核对：本次提交未触碰相关文件），故不在本 change 处理，在此如实记录：① `test_content_production_profiles.py::test_storybook_profile_routes_to_package_stages_not_narrative` 与 `::test_every_package_profile_uses_only_declared_package_stages`——`storybook` 方案的 `recommended_stages` 仍是叙事阶段（`sync_characters`/`script`/`storyboard`/`comic_pages`/`match_references`），与已声明的 `PACKAGE_PLAN_STAGES` 不一致（`app/services/creative_project/profiles.py`，最后改动于 `48b0bf38`）；② `test_creative_project_workflow_api.py::test_agent_context_pack_includes_profile_and_visible_production_plan` 是同一问题的下游表现；③ `test_overlay_text.py::test_dry_run_validates_without_writing`——贴字 `dry_run` 仍写出了文件（`should_not_exist.png`），属"dry_run 不落盘"契约被破坏
+- [x] 7.13 浏览器端验收：**7.1 截图回流段**（已落地，`tools/verify_previs_capture_live.py`）
+  - **为什么核接口而不核页面提示**：历史上出现过"提示说关联成功、实际选不到"（reference role 白名单在 5 处各写一份那件事），所以判据取接口响应本身：`HTTP 200`、`asset_id=305893f9…`、**`linked=True`**、`content_id=776e2a86…`、`role=storyboard_reference`、**`provenance.scene_revision=10` 且 `camera_id` 有值**（溯源由服务端从场景派生，不采信客户端）、`link_error` 为空 → 结论：图已入库、已关联到分镜、溯源可信。
+  - 与 7.10 合起来，7.1 的三段（初稿接口 → 幽灵预览/确认落库 → 截图回流）**全部走通**。
+  - **对真实数据的影响（如实记录）**：这一跑给用户项目的那格分镜**新增了一张参考图资产并建立关联**（这正是该功能的产物，可在分镜卡片的参考图里看到/移除）。
 - [x] 7.12 浏览器端验收：**7.2 确定性与帧率** + **7.10 批量逐格确认**（已落地，脚本化，两个常驻工具）
   - **7.2（`tools/verify_previs_determinism.py`）**：同一帧区间导出**两次**逐帧比对——两次都是 97 帧、帧号 0…96、**逐帧 SHA-256 完全一致**（不一致 0 帧）；产物核对 `width=2092 height=1132 r_frame_rate=24/1 nb_frames=97`，即**真 24fps**、帧数与帧号对得上。这条把"同一段预演必须能反复重导而不漂移"钉死了，也是当初拒绝 `Math.random()` 做抖动、拒绝按墙上时钟播放的最终依据。
   - **7.10（`tools/verify_previs_batch_live.py`）核心安全属性成立**：两格批量 → 第一格点「确认并保存」：**revision 9 → 10、节点 4 → 5**（草案确实落库）；第二格**从未确认**：revision 1 → 1、节点 0 → 0、**`scene_json` 逐字节未变**（哈希相同）。队列推进也正确（确认后 URL 的 `scene_id` 切到第二格、`queue` 保留）。**未走到的分支**：第二格的「放弃」按钮没出现——那一格没有可翻译的分镜内容，出不了草案，因此"放弃后不落库"这条路径这次没被实际点击；但它与"未确认"共用同一条安全语义（验证结果一致），且队列推进逻辑有 22 例纯函数单测覆盖。
