@@ -138,6 +138,7 @@ import {
   draftBlockedReason as computeDraftBlockReason,
   draftNodeIds as computeDraftNodeIds,
 } from './draftView'
+import { AssetGrid } from '../../components/asset-hub/AssetGrid'
 import type { CustomPose } from './customPoses'
 import {
   findCustomPose,
@@ -1209,6 +1210,38 @@ export default function PrevisPage() {
   const [panoramaLoading, setPanoramaLoading] = useState(false)
   const [panoramaTargetId, setPanoramaTargetId] = useState('')
 
+  /**
+   * 贴图**先试加载一次再写入**（把那类"写进去了但渲染不出来"挡在数据层）。
+   *
+   * 起因是实测：用户应用了一张图之后视口一片白，而渲染层的失败回落是**静默**的
+   * （回落纯色、控制台只有一行），用户根本无从判断"是图本身浅色"还是"图没加载上"。
+   * 预检一次就能在应用的那一刻给出可读结论，而不是让他对着白屏猜。
+   */
+  const ensureImageLoadable = useCallback((url: string) => {
+    return new Promise<boolean>(resolve => {
+      const probe = new window.Image()
+      probe.onload = () => resolve(true)
+      probe.onerror = () => resolve(false)
+      probe.src = url
+    })
+  }, [])
+
+  /** 素材 → 公共素材网格的入参（缩略图口径与素材库页面一致）。 */
+  const toHubAsset = useCallback(
+    (asset: Asset) => ({
+      id: asset.id,
+      title: asset.title || '未命名素材',
+      type: String((asset as any).asset_type || 'image'),
+      tags: (asset as any).tags,
+      status: (asset as any).status,
+      thumbnail_url:
+        (asset as any).thumbnail_url ||
+        (asset as any).cover_url ||
+        `/api/v1/assets/${asset.id}/thumbnail`,
+    }),
+    [],
+  )
+
   const openPanoramaPicker = useCallback(async (nodeId: string) => {
     setPanoramaTargetId(nodeId)
     setPanoramaPickerOpen(true)
@@ -1226,10 +1259,15 @@ export default function PrevisPage() {
   }, [])
 
   const applyPanoramaTexture = useCallback(
-    (asset: Asset) => {
+    async (asset: Asset) => {
       const url = pickPanoramaUrl(asset)
       if (!url) {
-        message.warning('这个素材不是可直接贴图的图片格式')
+        message.warning('这个素材不是可直接贴图的图片格式（支持 jpg/png/webp/avif/bmp）')
+        return
+      }
+      // 预检：能加载才写入。写不进去的东西留在场景里，用户只会看到白屏却不知道为什么
+      if (!(await ensureImageLoadable(url))) {
+        message.error('这张图加载不了（格式或访问受限），已取消应用；换一张再试')
         return
       }
       const target = panoramaTargetId
@@ -1243,7 +1281,7 @@ export default function PrevisPage() {
       setPanoramaPickerOpen(false)
       message.success('已应用为全景背景（记得保存场景）')
     },
-    [mutateNodes, panoramaTargetId],
+    [ensureImageLoadable, mutateNodes, panoramaTargetId],
   )
 
   const clearPanoramaTexture = useCallback(
@@ -2656,24 +2694,13 @@ export default function PrevisPage() {
         footer={null}
         width={560}
       >
-        <List
+        <AssetGrid
+          assets={panoramaAssets.map(toHubAsset)}
           loading={panoramaLoading}
-          dataSource={panoramaAssets}
-          locale={{ emptyText: '素材库里还没有可用作贴图的图片（支持 jpg/png/webp/avif/bmp）' }}
-          renderItem={asset => (
-            <List.Item
-              actions={[
-                <Button key="apply" type="primary" size="small" onClick={() => applyPanoramaTexture(asset)}>
-                  应用为背景
-                </Button>,
-              ]}
-            >
-              <List.Item.Meta
-                title={asset.title || '未命名素材'}
-                description="可作全景背景贴图"
-              />
-            </List.Item>
-          )}
+          onAssetClick={item => {
+            const asset = panoramaAssets.find(candidate => candidate.id === item.id)
+            if (asset) void applyPanoramaTexture(asset)
+          }}
         />
       </Modal>
 
@@ -2684,32 +2711,18 @@ export default function PrevisPage() {
         footer={null}
         width={560}
       >
-        <List
+        <AssetGrid
+          assets={modelAssets.map(toHubAsset)}
           loading={modelLoading}
-          dataSource={modelAssets}
-          locale={{ emptyText: '素材库还没有 3D 模型，可先在「图转 3D」工作台生成或上传' }}
-          renderItem={asset => {
-            const modelUrl = pickModelUrl(asset)
-            return (
-              <List.Item
-                actions={[
-                  <Button
-                    key="add"
-                    type="primary"
-                    size="small"
-                    disabled={!modelUrl}
-                    onClick={() => addModelNode(asset)}
-                  >
-                    添加
-                  </Button>,
-                ]}
-              >
-                <List.Item.Meta
-                  title={asset.title || '未命名模型'}
-                  description={modelUrl ? '可加载' : '无可用模型文件'}
-                />
-              </List.Item>
-            )
+          onAssetClick={item => {
+            const asset = modelAssets.find(candidate => candidate.id === item.id)
+            if (!asset) return
+            // 没有可加载模型文件的素材点了也没用：给出可读原因，而不是静默什么都不发生
+            if (!pickModelUrl(asset)) {
+              message.warning('这个素材没有可加载的模型文件（glb/gltf/obj/fbx/usdz）')
+              return
+            }
+            addModelNode(asset)
           }}
         />
       </Modal>
