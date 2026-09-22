@@ -139,6 +139,10 @@ import {
   draftNodeIds as computeDraftNodeIds,
 } from './draftView'
 import { AssetGrid } from '../../components/asset-hub/AssetGrid'
+// 生图统一走既有 AI 配置驱动链路（与「生图」工作台同一套）：后端/模型从 /images/backends 取，
+// 发起走 /images/generate，异步任务走 /images/tasks/{id} 轮询——**不另造一套生图调用**
+import { generateImage, getImageBackends, getImageTask } from '../../api'
+import { useTaskPolling } from '../../hooks/useTaskPolling'
 import type { CustomPose } from './customPoses'
 import {
   findCustomPose,
@@ -226,10 +230,13 @@ function pickPanoramaUrl(asset: Asset): string {
 function PanoramaNodeControls({
   node,
   onPick,
+  onGenerate,
   onClear,
 }: {
   node: PrevisNode
   onPick: (nodeId: string) => void
+  /** 用生图直接生成背景（走 AI 配置的既有生图链路，tasks 2.4）。 */
+  onGenerate: (nodeId: string) => void
   onClear: (nodeId: string) => void
 }) {
   const textureUrl = String(node.metadata.textureUrl || '')
@@ -238,6 +245,9 @@ function PanoramaNodeControls({
       <Space size={6} align="center">
         <Button size="small" disabled={node.locked} onClick={() => onPick(node.id)}>
           从素材库选贴图
+        </Button>
+        <Button size="small" disabled={node.locked} onClick={() => onGenerate(node.id)}>
+          生成背景
         </Button>
         {Boolean(textureUrl) && (
           <Button size="small" type="text" disabled={node.locked} onClick={() => onClear(node.id)}>
@@ -1258,6 +1268,145 @@ export default function PrevisPage() {
     }
   }, [])
 
+  /* ---- 全景背景：用生图直接生成（tasks 2.4，走既有 AI 配置的生图链路） ---- */
+
+  const [panoramaGenOpen, setPanoramaGenOpen] = useState(false)
+  const [panoramaGenPrompt, setPanoramaGenPrompt] = useState('')
+  const [panoramaGenProvider, setPanoramaGenProvider] = useState('')
+  const [panoramaGenRatio, setPanoramaGenRatio] = useState('2:1')
+  const [panoramaGenBackends, setPanoramaGenBackends] = useState<any[]>([])
+  const [panoramaGenLoading, setPanoramaGenLoading] = useState(false)
+  const [panoramaGenRunning, setPanoramaGenRunning] = useState(false)
+  /** 异步生图任务：taskId + 发起时的后端（轮询要带 provider） + 目标节点。 */
+  const [panoramaGenTask, setPanoramaGenTask] = useState<{ taskId: string; provider: string; nodeId: string } | null>(
+    null,
+  )
+
+  const openPanoramaGenerator = useCallback(async (nodeId: string) => {
+    setPanoramaTargetId(nodeId)
+    setPanoramaGenOpen(true)
+    setPanoramaGenLoading(true)
+    try {
+      // 模型/后端来自 AI 配置（与生图工作台同一份），**不在这里写死任何模型名**
+      const response: any = await getImageBackends()
+      const list = response?.data?.backends || response?.data || response?.backends || []
+      const flattened = Array.isArray(list) ? list.flatMap((item: any) => item?.backends || item) : []
+      const usable = flattened.filter((item: any) => item?.name)
+      setPanoramaGenBackends(usable)
+      setPanoramaGenProvider(prev => prev || String(usable[0]?.name || ''))
+    } catch (error: any) {
+      message.error(error?.message || '读取生图配置失败：请先在「AI 配置」里配置生图后端')
+    } finally {
+      setPanoramaGenLoading(false)
+    }
+  }, [])
+
+  /**
+   * 生成结果落地：**先取原图（不是缩略图）**再预检、再写进节点。
+   *
+   * 用 `?original=true` 的缩略图端点取原图：缩略图是给列表看的，贴到球体内表面会糊成一片。
+   * 结果本身已由生图链路入库为素材（带 asset_id），所以这里只是"把它接到场景上"。
+   */
+  const applyGeneratedPanorama = useCallback(
+    async (data: any, nodeId: string) => {
+      const assetId = String(data?.asset_id || data?.all_asset_ids?.[0] || data?.asset?.id || '')
+      const rawUrl = String(data?.url || data?.asset?.file_url || data?.asset?.source_url || '')
+      const url = assetId ? `/api/v1/assets/${assetId}/thumbnail?original=true` : rawUrl
+      if (!url) {
+        message.error('生成完成但没有拿到图片地址，无法贴到全景背景（可到素材库查看产物）')
+        return
+      }
+      if (!(await ensureImageLoadable(url))) {
+        message.error('生成的图加载不了，已取消应用（产物仍在素材库里，可手动选择）')
+        return
+      }
+      mutateNodes(items =>
+        items.map(node =>
+          node.id === nodeId
+            ? { ...node, metadata: { ...node.metadata, textureUrl: url, textureAssetId: assetId } }
+            : node,
+        ),
+      )
+      message.success('已用生成的图作为全景背景（记得保存场景）')
+    },
+    [ensureImageLoadable, mutateNodes],
+  )
+
+  // 定义顺序要紧：`applyGeneratedPanorama` 必须在前——`startPanoramaGeneration` 的依赖数组
+  // 在**渲染期**求值，引用到后面才声明的 const 会直接 TDZ 崩（不是"运行到才报错"）
+  const startPanoramaGeneration = useCallback(async () => {
+    const prompt = panoramaGenPrompt.trim()
+    if (!prompt) {
+      message.warning('先描述一下要什么样的背景')
+      return
+    }
+    if (!panoramaGenProvider) {
+      message.warning('没有可用的生图后端：请先在「AI 配置」里配置')
+      return
+    }
+    setPanoramaGenRunning(true)
+    try {
+      const backend = panoramaGenBackends.find((item: any) => item.name === panoramaGenProvider)
+      const response: any = await generateImage({
+        prompt,
+        provider: panoramaGenProvider,
+        n: 1,
+        // 比例按既有口径传 aspect_ratio；全景建议 2:1（等距柱状），其余比例由后端映射
+        aspect_ratio: panoramaGenRatio,
+        size: backend?.supported_sizes?.[0] || '1K',
+      })
+      const data = response?.data ?? response
+      const taskId = data?.task_id || data?.taskId
+      if (taskId) {
+        setPanoramaGenTask({ taskId: String(taskId), provider: panoramaGenProvider, nodeId: panoramaTargetId })
+        message.info('已提交生成，完成后会自动贴到全景背景')
+        return
+      }
+      // 同步返回：走同一个落地函数（不写两套）
+      await applyGeneratedPanorama(data, panoramaTargetId)
+      setPanoramaGenOpen(false)
+    } catch (error: any) {
+      message.error(error?.message || '发起生图失败')
+    } finally {
+      setPanoramaGenRunning(false)
+    }
+  }, [
+    applyGeneratedPanorama,
+    panoramaGenBackends,
+    panoramaGenPrompt,
+    panoramaGenProvider,
+    panoramaGenRatio,
+    panoramaTargetId,
+  ])
+
+  useTaskPolling({
+    enabled: Boolean(panoramaGenTask?.taskId),
+    intervalMs: 5000,
+    fetcher: useCallback(() => {
+      if (!panoramaGenTask) return Promise.resolve(null as any)
+      return getImageTask(panoramaGenTask.taskId, panoramaGenTask.provider)
+    }, [panoramaGenTask]),
+    isDone: useCallback((data: any) => Boolean(data?.success) && data?.status === 'done', []),
+    isFailed: useCallback(
+      (data: any) => data?.success === false || data?.status === 'error' || data?.status === 'failed',
+      [],
+    ),
+    onDone: useCallback(
+      async (data: any) => {
+        if (!panoramaGenTask) return
+        await applyGeneratedPanorama(data, panoramaGenTask.nodeId)
+        setPanoramaGenTask(null)
+        setPanoramaGenOpen(false)
+      },
+      [applyGeneratedPanorama, panoramaGenTask],
+    ),
+    onFailed: useCallback((data: any) => {
+      // 失败原因照实说出来（额度不足 / 内容审核 / 后端错误），并把节点保持原样
+      message.error(data?.error || '生图失败：请检查「AI 配置」里的生图后端与额度')
+      setPanoramaGenTask(null)
+    }, []),
+  })
+
   const applyPanoramaTexture = useCallback(
     async (asset: Asset) => {
       const url = pickPanoramaUrl(asset)
@@ -2026,7 +2175,12 @@ export default function PrevisPage() {
                   )}
                   {!draft && node.kind === 'light' && <LightNodeControls node={node} onChange={updateLightConfig} />}
                   {!draft && node.kind === 'panorama' && (
-                    <PanoramaNodeControls node={node} onPick={openPanoramaPicker} onClear={clearPanoramaTexture} />
+                    <PanoramaNodeControls
+                      node={node}
+                      onPick={openPanoramaPicker}
+                      onGenerate={openPanoramaGenerator}
+                      onClear={clearPanoramaTexture}
+                    />
                   )}
                   </div>
                 ))}
@@ -2686,6 +2840,65 @@ export default function PrevisPage() {
           />
         )}
       </Drawer>
+
+      <Modal
+        title="生成全景背景（走 AI 配置里的生图后端）"
+        open={panoramaGenOpen}
+        onCancel={() => setPanoramaGenOpen(false)}
+        footer={null}
+        width={520}
+      >
+        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          <div>
+            <Text style={{ fontSize: 12 }}>画面描述</Text>
+            <Input.TextArea
+              rows={3}
+              value={panoramaGenPrompt}
+              onChange={event => setPanoramaGenPrompt(event.target.value)}
+              placeholder="例：黄昏的客厅，暖色落地窗光，墙面有沙发与书架，地面木纹，写实风格；不要出现人物"
+            />
+          </div>
+          <Space size={12} align="start">
+            <div>
+              <Text style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>生图模型（来自 AI 配置）</Text>
+              <Select
+                size="small"
+                style={{ width: 240 }}
+                loading={panoramaGenLoading}
+                value={panoramaGenProvider || undefined}
+                onChange={setPanoramaGenProvider}
+                placeholder={panoramaGenLoading ? '读取中…' : '未配置生图后端'}
+                options={panoramaGenBackends.map((item: any) => ({
+                  value: String(item.name),
+                  label: String(item.display_name || item.label || item.name),
+                }))}
+              />
+            </div>
+            <div>
+              <Text style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>比例</Text>
+              <Select
+                size="small"
+                style={{ width: 120 }}
+                value={panoramaGenRatio}
+                onChange={setPanoramaGenRatio}
+                options={[
+                  { value: '2:1', label: '2:1 全景' },
+                  { value: '16:9', label: '16:9' },
+                  { value: '1:1', label: '1:1' },
+                  { value: '9:16', label: '9:16' },
+                ]}
+              />
+            </div>
+          </Space>
+          <Text type="secondary" style={{ fontSize: 11 }}>
+            生成结果会自动入库为素材，并贴到当前全景节点（贴之前会先试加载，加载不了就不动场景）。
+            全景背景建议用 2:1 等距柱状，其它比例贴到球体内表面会被拉伸。
+          </Text>
+          <Button type="primary" loading={panoramaGenRunning} onClick={() => void startPanoramaGeneration()}>
+            {panoramaGenTask ? '生成中…' : '生成并应用'}
+          </Button>
+        </Space>
+      </Modal>
 
       <Modal
         title="从素材库选择全景贴图"
