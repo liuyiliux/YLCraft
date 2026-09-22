@@ -391,6 +391,33 @@ function PanoramaMesh({ node }: { node: PrevisNode }) {
     }
   }, [textureUrl])
 
+  const mode = String(node.metadata.backdropMode || 'panorama')
+  const backdropRef = useRef<THREE.Mesh>(null)
+  const { camera: activeCamera } = useThree()
+
+  // 图片背板：**始终面向相机**（这就是"背板"的意义——普通照片按原比例铺在一块板上，
+  // 而不是糊在球的内表面被放大成一片墙）。尺寸只由图片比例决定，与节点 transform 无关。
+  useFrame(() => {
+    if (mode !== 'backdrop' || !backdropRef.current) return
+    backdropRef.current.lookAt(activeCamera.position)
+  })
+
+  if (mode === 'backdrop') {
+    const image = texture?.image as { width?: number; height?: number } | undefined
+    const aspect = image?.width ? image.width / Math.max(1, image.height || 1) : 16 / 9
+    const width = 10
+    return (
+      <mesh ref={backdropRef} position={[0, 1.6, 0]}>
+        <planeGeometry args={[width, width / aspect]} />
+        {texture ? (
+          <meshBasicMaterial map={texture} color="#ffffff" side={THREE.DoubleSide} transparent />
+        ) : (
+          <meshBasicMaterial color={color} side={THREE.DoubleSide} transparent opacity={0.35} />
+        )}
+      </mesh>
+    )
+  }
+
   return (
     <mesh>
       {/* 半径固定、**不写尺寸**：全景是环境背景，跟节点 transform 的缩放无关（既有口径） */}

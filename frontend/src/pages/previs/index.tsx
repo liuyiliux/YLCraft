@@ -232,14 +232,17 @@ function PanoramaNodeControls({
   onPick,
   onGenerate,
   onClear,
+  onModeChange,
 }: {
   node: PrevisNode
   onPick: (nodeId: string) => void
   /** 用生图直接生成背景（走 AI 配置的既有生图链路，tasks 2.4）。 */
   onGenerate: (nodeId: string) => void
   onClear: (nodeId: string) => void
+  onModeChange: (nodeId: string, mode: 'panorama' | 'backdrop') => void
 }) {
   const textureUrl = String(node.metadata.textureUrl || '')
+  const mode = String(node.metadata.backdropMode || 'panorama')
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '4px 8px 8px 8px' }}>
       <Space size={6} align="center">
@@ -255,10 +258,31 @@ function PanoramaNodeControls({
           </Button>
         )}
       </Space>
+      {/*
+        渲染方式可以手改（自动判断只是默认）：**全景球**给 2:1 等距柱状图用，
+        **图片背板**给普通照片用（一块面向相机的平面，按原比例铺图）。
+        用错方式的表现就是"满屏一片白/一片色"——照片贴球内表面会被放大到只见中间一小块。
+      */}
+      <Space size={6} align="center">
+        <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>呈现方式</Text>
+        <Select
+          size="small"
+          style={{ width: 160 }}
+          disabled={node.locked}
+          value={mode}
+          onChange={value => onModeChange(node.id, value as 'panorama' | 'backdrop')}
+          options={[
+            { value: 'panorama', label: '全景球（2:1 等距柱状）' },
+            { value: 'backdrop', label: '图片背板（普通照片）' },
+          ]}
+        />
+      </Space>
       <Text type="secondary" style={{ fontSize: 11 }}>
         {textureUrl
-          ? '已应用贴图：球体内表面贴图，不参与节点尺寸'
-          : '当前是纯色背景；选了图之后球体内表面显示该图，加载失败会回落到纯色（不会白屏）'}
+          ? mode === 'backdrop'
+            ? '图片背板：面向相机的一块板，按图片原比例铺开（普通照片用这个）'
+            : '全景球：贴在球体内表面，需要 2:1 等距柱状图，否则会被放大成一片墙'
+          : '当前是纯色背景；任选图片或生成背景后，这里可切换全景球 / 图片背板'}
       </Text>
     </div>
   )
@@ -1227,13 +1251,26 @@ export default function PrevisPage() {
    * （回落纯色、控制台只有一行），用户根本无从判断"是图本身浅色"还是"图没加载上"。
    * 预检一次就能在应用的那一刻给出可读结论，而不是让他对着白屏猜。
    */
-  const ensureImageLoadable = useCallback((url: string) => {
-    return new Promise<boolean>(resolve => {
+  const probeImage = useCallback((url: string) => {
+    return new Promise<{ ok: boolean; width: number; height: number }>(resolve => {
       const probe = new window.Image()
-      probe.onload = () => resolve(true)
-      probe.onerror = () => resolve(false)
+      probe.onload = () => resolve({ ok: true, width: probe.naturalWidth, height: probe.naturalHeight })
+      probe.onerror = () => resolve({ ok: false, width: 0, height: 0 })
       probe.src = url
     })
+  }, [])
+
+  /**
+   * 按**图片本身的宽高比**决定用什么当背景（实测教训）：
+   *
+   * 全景球是给**等距柱状（2:1）**图用的；把一张普通照片（自拍、分镜页）贴到球体内表面，
+   * 它会布满整个世界、只有中间一小块被放大——用户看到的就是"一片白"（实测：一张自拍肖像贴上去，
+   * 满屏是它那大片浅色背景）。所以：接近 2:1 才用全景球，否则用**图片背板**（一块面向相机的平面，
+   * 按原比例铺图），这才是普通照片该有的样子。
+   */
+  const pickBackdropMode = useCallback((width: number, height: number): 'panorama' | 'backdrop' => {
+    if (!width || !height) return 'backdrop'
+    return width / height >= 1.8 ? 'panorama' : 'backdrop'
   }, [])
 
   /** 素材 → 公共素材网格的入参（缩略图口径与素材库页面一致）。 */
@@ -1316,20 +1353,29 @@ export default function PrevisPage() {
         message.error('生成完成但没有拿到图片地址，无法贴到全景背景（可到素材库查看产物）')
         return
       }
-      if (!(await ensureImageLoadable(url))) {
+      const probe = await probeImage(url)
+      if (!probe.ok) {
         message.error('生成的图加载不了，已取消应用（产物仍在素材库里，可手动选择）')
         return
       }
+      const mode = pickBackdropMode(probe.width, probe.height)
       mutateNodes(items =>
         items.map(node =>
           node.id === nodeId
-            ? { ...node, metadata: { ...node.metadata, textureUrl: url, textureAssetId: assetId } }
+            ? {
+                ...node,
+                metadata: { ...node.metadata, textureUrl: url, textureAssetId: assetId, backdropMode: mode },
+              }
             : node,
         ),
       )
-      message.success('已用生成的图作为全景背景（记得保存场景）')
+      message.success(
+        mode === 'backdrop'
+          ? '已用生成的图作为背景（图片背板：这张图不是 2:1 全景，按背板铺开）'
+          : '已用生成的图作为全景背景（记得保存场景）',
+      )
     },
-    [ensureImageLoadable, mutateNodes],
+    [mutateNodes, pickBackdropMode, probeImage],
   )
 
   // 定义顺序要紧：`applyGeneratedPanorama` 必须在前——`startPanoramaGeneration` 的依赖数组
@@ -1415,22 +1461,43 @@ export default function PrevisPage() {
         return
       }
       // 预检：能加载才写入。写不进去的东西留在场景里，用户只会看到白屏却不知道为什么
-      if (!(await ensureImageLoadable(url))) {
+      const probe = await probeImage(url)
+      if (!probe.ok) {
         message.error('这张图加载不了（格式或访问受限），已取消应用；换一张再试')
         return
       }
+      const mode = pickBackdropMode(probe.width, probe.height)
       const target = panoramaTargetId
       mutateNodes(items =>
         items.map(node =>
           node.id === target
-            ? { ...node, metadata: { ...node.metadata, textureUrl: url, textureAssetId: asset.id } }
+            ? {
+                ...node,
+                metadata: { ...node.metadata, textureUrl: url, textureAssetId: asset.id, backdropMode: mode },
+              }
             : node,
         ),
       )
       setPanoramaPickerOpen(false)
-      message.success('已应用为全景背景（记得保存场景）')
+      message.success(
+        mode === 'backdrop'
+          ? `已应用为**图片背板**（这张图是 ${probe.width}×${probe.height}，不是 2:1 全景图：贴全景球会被放大成一片墙，所以按背板铺开）`
+          : '已应用为全景背景（记得保存场景）',
+      )
     },
-    [ensureImageLoadable, mutateNodes, panoramaTargetId],
+    [mutateNodes, panoramaTargetId, pickBackdropMode, probeImage],
+  )
+
+  /** 手动切换呈现方式（自动判断只是默认值，用户可以改）。 */
+  const updatePanoramaMode = useCallback(
+    (nodeId: string, mode: 'panorama' | 'backdrop') => {
+      mutateNodes(items =>
+        items.map(node =>
+          node.id === nodeId ? { ...node, metadata: { ...node.metadata, backdropMode: mode } } : node,
+        ),
+      )
+    },
+    [mutateNodes],
   )
 
   const clearPanoramaTexture = useCallback(
@@ -2180,6 +2247,7 @@ export default function PrevisPage() {
                       onPick={openPanoramaPicker}
                       onGenerate={openPanoramaGenerator}
                       onClear={clearPanoramaTexture}
+                      onModeChange={updatePanoramaMode}
                     />
                   )}
                   </div>
