@@ -30,6 +30,7 @@ from .apis import (
     BOOK_COMMON,
     ACCOUNT_INFO,
     CHAPTER_LIST,
+    CHAPTER_DRAFT_LIST,
     VOLUME_LIST,
     INCOME_BOOK_LIST,
     DEFAULT_AID,
@@ -434,6 +435,47 @@ class FanqieClient(BasePlatformClient):
         if volume_id:
             query["volume_id"] = str(volume_id)
         resp = await self._call("GET", CHAPTER_LIST, params=query)
+        return resp.get("data", {}) or {}
+
+    async def get_book_drafts(
+        self,
+        book_id: str,
+        page: int = 1,
+        size: int = 30,
+    ) -> Dict[str, Any]:
+        """
+        草稿箱列表（真实端点：GET /api/author/chapter/draft_list/v1，2026-09-26 抓包确认）。
+
+        为什么需要它：番茄的「草稿」与「章节」是**同一份数据的两个阶段**——
+        带 `item_id` 的草稿在草稿箱里（尚未发布），点「下一步 → 发布」后才进入章节列表
+        （`article_status=2`）。因此只读 `chapter_list` 会看不到草稿，
+        导致「发布到草稿」这条链路拿不到目标 ID。
+
+        ⚠️ 响应字段是 `data.draft_list[]`，**不是** `item_list`（章节列表才用后者）。
+        与猜测路径的区别：`draft/list/v1`、`article/draft_list/v0/` 实测均为 **404**，
+        真实路径是 `chapter/draft_list/v1`——不要凭命名习惯猜。
+
+        ⚠️ 分页与 `chapter_list` 一致，是 **0-based** 的 `page_index`。
+
+        Args:
+            book_id: 书籍 ID
+            page: 对外页码，1 起（内部转 `page_index = page - 1`）
+            size: 每页条数（`page_count`）
+
+        Returns:
+            data 字典，含 `draft_list[]`，每项（实测）：
+            `item_id` / `volume_id` / `volume_name` / `index`（草稿恒为 -1）/
+            `title` / `modify_time`（秒级字符串）/ `word_number`。
+            外层另有 `total_count` / `book_status` 等书籍级字段。
+        """
+        query: Dict[str, Any] = {
+            "aid": DEFAULT_AID,
+            "app_name": DEFAULT_APP_NAME,
+            "book_id": str(book_id),
+            "page_index": str(max(page - 1, 0)),
+            "page_count": str(size),
+        }
+        resp = await self._call("GET", CHAPTER_DRAFT_LIST, params=query)
         return resp.get("data", {}) or {}
 
     async def get_earnings(self, page: int = 1, size: int = 200) -> Dict[str, Any]:

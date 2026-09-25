@@ -33,6 +33,7 @@ The main implementation is split deliberately:
 | `GET` | `/api/v1/fanqie/my/profile` | Read author profile (name, description, avatar, points, level). |
 | `GET` | `/api/v1/fanqie/book/{book_id}/volumes` | List volumes of a book. |
 | `GET` | `/api/v1/fanqie/book/{book_id}/chapters` | List existing chapters; the returned `item_id` is the publish target, so the publish panel can auto-map instead of pasting IDs. |
+| `GET` | `/api/v1/fanqie/book/{book_id}/drafts` | List the **draft box**. Drafts are a separate stage from chapters — see below. |
 | `GET` | `/api/v1/fanqie/earnings` | Earnings / revenue analysis. |
 | `GET` | `/api/v1/creative-projects/{project_id}/fanqie/binding` | Read project publishing target. |
 | `POST` | `/api/v1/creative-projects/{project_id}/fanqie/binding` | Set connection, book and volume target for a project. |
@@ -60,6 +61,46 @@ directly, which revealed the real route `/main/writer/profit`. A guessed
 `/main/writer/income-analysis` returned **404** — do not guess these routes.
 
 Earnings figures are sensitive: display only, never persist, log, or place in model context.
+
+### Drafts and chapters are two stages of one record (verified 2026-09-26)
+
+This is the single most confusing thing about publishing to Fanqie, and it was
+confirmed against a real account:
+
+```
+新建草稿 ──写正文──> 存草稿 ──> 【草稿箱】(item_id writable)
+                        │
+                        └─「下一步」→ 内容检测 → 发布设置 → 确认发布
+                                        │
+                                        └─> 【章节管理】(article_status=2 published)
+```
+
+Consequences that are easy to get wrong:
+
+- A draft **does not** appear in `chapter_list`, and a published chapter **does not**
+  appear in `draft_list`. Querying only one of them will look like "nothing exists".
+- Both share the same `item_id`. Writing a body to a draft's `item_id` works
+  (`save_draft` → `latest_version` increments), which is how YLCraft's
+  "save to Fanqie draft" path operates.
+- So the intended workflow is: YLCraft writes into a draft, then **the user** opens
+  Fanqie and clicks 「下一步 → 发布」. YLCraft deliberately does not publish.
+
+| Stage | Endpoint | Response field | `index` |
+| --- | --- | --- | --- |
+| Draft box | `GET /api/author/chapter/draft_list/v1` | `data.draft_list[]` | always `-1` |
+| Chapter list | `GET /api/author/chapter/chapter_list/v1` | `data.item_list[]` | 1-based order |
+
+Two traps, both pinned by tests in `tests/test_fanqie_drafts.py`:
+
+1. **Do not guess the path.** `draft/list/v1` and `article/draft_list/v0/` both
+   returned **404**; the real one is `chapter/draft_list/v1`.
+2. **The response field is `draft_list`, not `item_list`.** Reading `item_list` from the
+   draft endpoint silently yields `[]`, which looks exactly like "no drafts".
+
+The publish panel therefore loads **both** lists and labels drafts as 【草稿】, and offers
+「打开番茄建章」 / 「在番茄打开本章」 buttons that open the corresponding Fanqie page
+(`/main/writer/{book_id}/publish/{item_id}?enter_from=modifydraft`). Creating chapters
+still happens in Fanqie — see the next section for why.
 
 ### Chapter creation is NOT available as an API (verified 2026-09-25)
 

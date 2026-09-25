@@ -2634,6 +2634,46 @@ export const getFanqieBookChapters = (
 }
 
 /**
+ * 获取番茄书籍的草稿箱列表（只读）。
+ *
+ * 为什么需要它：番茄的**草稿**与**章节**是同一份数据的两个阶段——
+ * 未发布的草稿只出现在草稿箱，**不会**出现在章节列表里；
+ * 点「下一步 → 发布」后才进入章节列表。
+ * 因此「发布到番茄草稿」必须从草稿箱取 `item_id`。
+ *
+ * ⚠️ 响应字段是 `draft_list[]`，不是章节列表的 `item_list[]`。
+ */
+export const getFanqieBookDrafts = (
+  connId: string,
+  bookId: string,
+  options: { page?: number; size?: number } = {},
+) => {
+  const qs = new URLSearchParams({ conn_id: connId })
+  qs.set('page', String(options.page ?? 1))
+  qs.set('size', String(options.size ?? 30))
+  return request(`/fanqie/book/${encodeURIComponent(bookId)}/drafts?${qs.toString()}`)
+}
+
+/**
+ * 构造番茄作家后台的页面地址（供前端跳转，不做任何写入）。
+ *
+ * 路由来自实测：
+ * - 章节/草稿编辑器：`/main/writer/{book_id}/publish/{item_id}`
+ *   （`enter_from=newchapter` 新建、`modifydraft` 改草稿）
+ * - 章节管理：`/main/writer/chapter-manage/{book_id}&{urlencoded_title}?type=1`
+ * - 书籍管理：`/main/writer/book-manage`
+ */
+export const fanqieWebUrls = {
+  bookManage: (): string => 'https://fanqienovel.com/main/writer/book-manage',
+  chapterManage: (bookId: string, bookTitle = ''): string =>
+    `https://fanqienovel.com/main/writer/chapter-manage/${encodeURIComponent(bookId)}` +
+    `${bookTitle ? `&${encodeURIComponent(bookTitle)}` : ''}?type=1`,
+  editor: (bookId: string, itemId: string, enterFrom = 'modifydraft'): string =>
+    `https://fanqienovel.com/main/writer/${encodeURIComponent(bookId)}/publish/` +
+    `${encodeURIComponent(itemId)}?enter_from=${encodeURIComponent(enterFrom)}`,
+}
+
+/**
  * 获取番茄收益分析（只读）。
  *
  * 返回 `total_count` / `is_cp` / `income_book_list[]`。**空列表是真实结果**

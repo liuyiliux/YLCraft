@@ -227,6 +227,38 @@ async def book_chapters(
             raise _fanqie_error_to_http(exc) from exc
 
 
+@router.get("/book/{book_id}/drafts", summary="草稿箱列表")
+async def book_drafts(
+    book_id: str,
+    conn_id: str = Query(..., description="番茄平台连接 ID"),
+    page: int = Query(1, ge=1, description="页码（1 起；番茄内部为 0 起，已转换）"),
+    size: int = Query(30, ge=1, le=100, description="每页条数"),
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    草稿箱列表（真实端点：GET /api/author/chapter/draft_list/v1，2026-09-26 抓包确认）。
+
+    为什么单独有这个接口：番茄的**草稿**与**章节**是同一份数据的两个阶段。
+    草稿（未发布）只出现在草稿箱，**不会**出现在 `/book/{id}/chapters`；
+    点「下一步 → 发布」后才进入章节列表。因此只查章节列表会看不到草稿，
+    「发布到番茄草稿」这条链路就拿不到目标 `item_id`。
+
+    返回 `draft_list[]`（**注意不是 `item_list`**），每项含 `item_id`（写入目标）、
+    `title`、`word_number`、`volume_id`、`modify_time`。`index` 对草稿恒为 -1。
+
+    安全：纯只读 GET。不创建、不修改、不发布任何内容。
+    """
+    client = await _get_client(session=session, conn_id=conn_id)
+    async with client:
+        try:
+            data = await client.get_book_drafts(book_id, page=page, size=size)
+            return {"success": True, "data": data}
+        except CookieExpiredError as exc:
+            raise HTTPException(status_code=401, detail=f"番茄 Cookie 已失效：{exc}") from exc
+        except FanqieError as exc:
+            raise _fanqie_error_to_http(exc) from exc
+
+
 @router.get("/earnings", summary="收益分析")
 async def earnings(
     conn_id: str = Query(..., description="番茄平台连接 ID"),
