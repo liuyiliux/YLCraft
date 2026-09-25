@@ -40,6 +40,15 @@ export interface AssistantContext {
   /** 各类型节点的**数量**（不含明细）：明细对"提方案"没有帮助，反而挤掉上下文。 */
   node_counts: Record<string, number>
   /**
+   * 场景里**可改对象的清单**（id + 名称 + 种类）。
+   *
+   * 为什么必须给：助手要写 `update_transform` / `set_human_proxy` 的 `targetId`，
+   * 而正文里原先只有 `node_counts`（数量）。实测后果——助手说"场景上下文里没有给出
+   * 桌子的真实节点 id，我编的 id 不在场景里"，于是**每一条操作都因 targetId 不存在被拒**，
+   * 用户看到的是"助手一直说做不到"。数量够判断"有多少东西"，**不够定位"改哪一个"**。
+   */
+  node_roster: { id: string; name: string; kind: string }[]
+  /**
    * 锁定对象**含 id 与名称**。
    *
    * 只给数量等于让助手再问一次"锁的是谁"，而它在一次对话里未必有机会问——
@@ -47,6 +56,14 @@ export interface AssistantContext {
    */
   locked_nodes: { id: string; name: string }[]
   locked_cameras: { id: string; name: string }[]
+  /**
+   * 场景里**可改机位的清单**（id + 名称）。
+   *
+   * 与 `node_roster` 同一个教训：`set_camera` 的 `targetId` 必须是机位 id，
+   * 而正文原先只给了活动机位的**名字**。实测助手于是编出 `cam-main`，
+   * 真实 id 是 `camera-1` —— 又一条"内容都对、引用是假的"被拒。
+   */
+  camera_roster: { id: string; name: string }[]
   /** 当前在左侧面板选中的节点：助手据此理解"这个/它"指谁。 */
   selected_node?: { id: string; name: string; kind: string }
 }
@@ -73,11 +90,18 @@ export function buildAssistantContext(input: {
     // 起个可读的名字：助手在回复里引用机位时，"中景机位"比一串 UUID 有用得多
     active_camera_name: String(active?.name || '活动机位'),
     node_counts: counts,
+    // 清单只列可改对象：锁定项另有一栏，重复列出只会让正文变长
+    node_roster: input.nodes
+      .filter(node => !node.locked)
+      .map(node => ({ id: node.id, name: node.name, kind: node.kind })),
     locked_nodes: input.nodes
       .filter(node => node.locked)
       .map(node => ({ id: node.id, name: node.name })),
     locked_cameras: input.cameras
       .filter(camera => camera.locked)
+      .map(camera => ({ id: camera.id, name: camera.name })),
+    camera_roster: input.cameras
+      .filter(camera => !camera.locked)
       .map(camera => ({ id: camera.id, name: camera.name })),
     ...(input.selectedNode
       ? {

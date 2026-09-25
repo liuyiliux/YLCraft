@@ -25,10 +25,23 @@ export interface AssistantOutgoingInput {
  */
 export function buildAssistantMessage({ text, context, motionSlugs }: AssistantOutgoingInput): string {
   return [
-    `【当前场景】id=${context.scene_id}（版本 ${context.scene_revision}；时长 ${context.duration_frames} 帧 @${context.fps}fps；活动机位「${context.active_camera_name}」）`,
+    `【当前场景】id=${context.scene_id}（版本 ${context.scene_revision}；时长 ${context.duration_frames} 帧 @${context.fps}fps；活动机位「${context.active_camera_name}」id=${context.active_camera_id}）`,
     `【锁定不可改】节点：${context.locked_nodes.map(item => `${item.name}(${item.id})`).join('、') || '无'}；机位：${context.locked_cameras.map(item => item.name).join('、') || '无'}`,
     context.selected_node
       ? `【用户当前选中】${context.selected_node.name}（id=${context.selected_node.id}）`
+      : '',
+    // 可改对象清单：**必须带 id**。只给"人形 1 个、几何体 1 个"时，助手只能自己编 targetId——
+    // 实测它编出 `node:desk`，于是每条操作都因目标不存在被拒，用户看到的是"助手一直说做不到"。
+    (context.node_roster || []).length
+      ? `【场景里可改的对象（targetId 必须是下面这些 id，原样使用，不要拼造）】${(context.node_roster || [])
+          .map(item => `${item.name}(id=${item.id}, ${item.kind})`)
+          .join('、')}`
+      : '',
+    // 机位清单同理：只给名字时助手会编一个 id（实测编出 `cam-main`，真实是 `camera-1`）
+    (context.camera_roster || []).length
+      ? `【场景里可改的机位（set_camera 的 targetId 必须是下面这些 id，原样使用，不要拼造）】${(context.camera_roster || [])
+          .map(item => `${item.name}(id=${item.id})`)
+          .join('、')}`
       : '',
     // 动作标识**原样列出**：实测模型会编造 `motion:motionwave`（正确是 `motion:wave`）。
     motionSlugs.length

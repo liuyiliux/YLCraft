@@ -12,9 +12,20 @@ const hero = {
   visible: true,
 }
 
+/** 未锁定：应出现在"可改对象清单"里（助手要拿它的 id 当 targetId）。 */
+const table = {
+  id: 'node-table',
+  name: '桌子',
+  kind: 'primitive',
+  locked: false,
+  transform: { position: [-1.4, 0.375, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+  metadata: {},
+  visible: true,
+}
+
 const context: AssistantContext = buildAssistantContext({
   scene: { id: 'scene-1', revision: 7, durationFrames: 96, fps: 24 },
-  nodes: [hero] as any,
+  nodes: [hero, table] as any,
   cameras: [{ id: 'cam-1', name: '中景机位', locked: false }] as any,
   activeCameraId: 'cam-1',
   selectedNode: hero as any,
@@ -33,6 +44,30 @@ describe('对话栏：发给助手的消息（tasks 1.6）', () => {
     expect(message).toContain('主角')
     expect(message).toMatch(/锁定不可改/)
     expect(message).toMatch(/用户当前选中/)
+  })
+
+  it('可改对象清单带真实 id：助手写 targetId 才有依据，否则只能编', () => {
+    const message = buildAssistantMessage({ text: '把桌子挪到人物右侧', context, motionSlugs: [] })
+    // 实测教训：正文原先只有"人形 1 个、几何体 1 个"这类计数，助手于是编出 `node:desk`，
+    // 每条操作都因目标不存在被拒，用户看到的是"助手一直说做不到"。
+    expect(message).toContain('node-table')
+    expect(message).toContain('桌子')
+    expect(message).toMatch(/不要拼造/)
+  })
+
+  it('锁定对象不进可改清单：免得助手去改一个必然被拒的目标', () => {
+    const message = buildAssistantMessage({ text: '挪一下', context, motionSlugs: [] })
+    // 锁定的 hero 只应出现在「锁定不可改」，不该同时出现在可改清单里
+    const roster = message.split('【场景里可改的对象')[1]?.split('\n')[0] || ''
+    expect(roster).not.toContain('主角')
+  })
+
+  it('机位清单带真实 id：set_camera 的 targetId 才有依据（实测助手编出 cam-main）', () => {
+    const message = buildAssistantMessage({ text: '机位推近一点', context, motionSlugs: [] })
+    expect(message).toContain('cam-1')
+    expect(message).toContain('中景机位')
+    // 活动机位那行也要带 id，避免助手从名字拼一个
+    expect(message).toContain('id=cam-1')
   })
 
   it('动作标识原样列出（模型会编造，只能把合法值摆在它眼前）', () => {
