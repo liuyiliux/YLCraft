@@ -31,7 +31,7 @@ from app.db.models.creative_project import (
 from app.db.models.previs import PrevisSceneDocument
 from app.db.models.task import ProjectTaskRecord
 from app.db.models.novel import NovelChapter
-from app.services.creative_project.profiles import PACKAGE_PLAN_STAGES
+from app.services.creative_project.profiles import PACKAGE_PLAN_STAGES, STORYBOOK_STAGES
 from app.services.creative_project.service import CreativeProjectService
 from app.services.agent import context_pack as agent_context_pack
 from tests.test_creative_project_service import FakeAIService
@@ -700,7 +700,15 @@ def test_agent_context_pack_includes_profile_and_visible_production_plan(
     assert pack["project"]["production_profile"]["production_family"] == "content_package"
     assert pack["project"]["production_profile"]["package_type"] == "page_book"
     assert pack["project"]["production_profile"]["planning_unit"] == "item"
-    assert pack["project"]["production_profile"]["recommended_stages"] == list(PACKAGE_PLAN_STAGES)
+    # storybook 用专用词表（见 profiles.STORYBOOK_STAGES）；这里断言「不是叙事阶段」
+    # 才是有意义的守护——写死等号会让每次合法的词表演进都误报。
+    assert pack["project"]["production_profile"]["recommended_stages"] == list(STORYBOOK_STAGES)
+    assert not set(pack["project"]["production_profile"]["recommended_stages"]) & {
+        "outline",
+        "chapter_plan",
+        "chapter_outline",
+        "novel_body",
+    }
     assert pack["production_plan"]["content_id"] == saved.json()["data"]["id"]
     assert pack["production_plan"]["confirmation_status"] == "pending"
     assert pack["production_plan"]["confirmation_nodes"] == [

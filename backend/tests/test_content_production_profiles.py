@@ -1,6 +1,7 @@
 from app.services.creative_project.profiles import (
     CONTENT_PRODUCTION_PROFILES,
     PACKAGE_PLAN_STAGES,
+    STORYBOOK_STAGES,
     get_content_production_profile,
     is_content_package_profile,
     normalize_project_settings,
@@ -8,16 +9,17 @@ from app.services.creative_project.profiles import (
 )
 from app.services.creative_project.schemas import ContentPackagePlanSchema
 
-#: 叙事族阶段名：内容包 profile 不得使用（#17）
+#: 叙事族的**章节编排**阶段：内容包 profile 不得使用（#17）。
+#:
+#: 只收「按章节/正文组织内容」的阶段。`script` / `storyboard` / `comic_pages` 刻意
+#: **不在**此列：它们是跨族共用的产物阶段（前端 `pipelineStageOptions` 里与大纲、
+#: 正文并列），绘本同样需要脚本与分镜。把它们算作叙事专属会把「名字重合」误判成
+#: 「族别串味」——真正会让导演跑偏的是拿到 `outline`/`chapter_plan` 去提议章节大纲。
 NARRATIVE_STAGES = {
     "outline",
     "chapter_plan",
     "chapter_outline",
     "novel_body",
-    "script",
-    "storyboard",
-    "comic_pages",
-    "story_seed",
     "review",
 }
 
@@ -28,6 +30,10 @@ def test_storybook_profile_routes_to_package_stages_not_narrative():
     `context_pack` 会把 `recommended_stages` 原样交给导演；若它写成
     `outline/chapter_plan/chapter_outline`，导演就会为一个绘本包提议章节大纲——
     这正是本条要修的路由错误。
+
+    `storybook` 用的是专用词表 `STORYBOOK_STAGES`（通用内容包词表缺「故事→分镜」
+    这一步，会让页数只能硬填），所以这里断言的是**词表身份与族别**，不是
+    「等于通用词表」——后者会让每次合法的词表演进都误报。
     """
     profile = get_content_production_profile("storybook")
 
@@ -35,7 +41,7 @@ def test_storybook_profile_routes_to_package_stages_not_narrative():
     assert profile["production_family"] == "content_package"
     assert profile["package_type"] == "page_book"
     assert profile["planning_unit"] == "item"
-    assert profile["recommended_stages"] == list(PACKAGE_PLAN_STAGES)
+    assert profile["recommended_stages"] == list(STORYBOOK_STAGES)
 
     used = set(profile["recommended_stages"]) | set(profile["optional_stages"])
     assert not used & NARRATIVE_STAGES, f"内容包 profile 不得使用叙事阶段：{sorted(used & NARRATIVE_STAGES)}"
@@ -63,8 +69,15 @@ def test_every_package_profile_uses_only_declared_package_stages():
 
     这条防的是「以后再给某个内容包 profile 顺手写上 outline」——词表是唯一事实源，
     任意阶段名会让导演拿到不存在的编排单位。
+
+    已声明的词表集合 = 通用内容包词表 ∪ storybook 专用词表 ∪ 逐条/排版补充阶段。
     """
-    declared = set(PACKAGE_PLAN_STAGES) | {"item_review", "layout"}
+    declared = (
+        set(PACKAGE_PLAN_STAGES)
+        | set(STORYBOOK_STAGES)
+        # storybook 的可选阶段里补的逐条/复核/排版，以及跨族共用的产物阶段
+        | {"item_review", "layout", "match_references", "comic_pages"}
+    )
     package_profiles = {
         pid: item
         for pid, item in CONTENT_PRODUCTION_PROFILES.items()

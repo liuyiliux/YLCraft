@@ -109,7 +109,7 @@ openspec validate --all --strict --no-interactive
 36 passed, 0 failed
 
 backend pytest -q
-1083 passed, 4 failed, 4 skipped
+1083 passed, 4 failed, 4 skipped  →  DSH 接手轮修复后：1087 passed, 0 failed, 4 skipped
 
 backfill_owner_user_id dry-run
 five tables: null_before=0, updated=0, remaining=0
@@ -118,10 +118,16 @@ git diff --check
 no whitespace errors
 ```
 
-全量后端测试的 4 个失败不在 TripoSR 改动范围内：
+全量后端测试当时有 4 个失败（**已于 2026-09-25 DSH 接手轮修复，现为 1087 passed / 0 failed**）：
 
 - 3 个是 storybook/creative-project 对 `PACKAGE_PLAN_STAGES` 的旧断言与当前 `STORYBOOK_STAGES` 不一致。
 - 1 个是 `overlay_text` dry-run 仍断言“不落盘”，而当前实现已明确改为一律生成 `_preview.png`。
+
+修复口径（重要，不是简单改数字）：
+
+- `STORYBOOK_STAGES` 是**有意**的专用词表（通用内容包词表缺「故事→分镜」这一步，会让页数只能硬填），故把测试从「必须等于通用词表」改为「词表身份 + 族别 + 不混叙事**章节编排**阶段」。
+- `NARRATIVE_STAGES` 收窄为 `outline/chapter_plan/chapter_outline/novel_body/review`：`script`/`storyboard`/`comic_pages` 是**跨族共用**的产物阶段（前端 `pipelineStageOptions` 里与大纲、正文并列），算作叙事专属属于把「名字重合」误判成「族别串味」。
+- `overlay_text` 测试改为按**真实调用契约**（端点不传 `output`）断言 dry_run 落 `_preview.png`、不写正式产物；同步修正了实现里过时的 docstring 与 CLI 帮助文本。
 
 本轮没有重新跑前端 `vitest`、TypeScript 检查和生产构建。前端最后记录的完整通过结果在 `docs/devlog/2026-09-23_user_authentication_handoff.md`，换环境后不能直接把它当成当前工作区的最终证明。
 
