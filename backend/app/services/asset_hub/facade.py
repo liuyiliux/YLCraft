@@ -125,6 +125,7 @@ class AssetHubFacade:
         lineage: dict[str, Any] | None = None,
         legacy_asset_id: str = "",
         tags: list[str] | None = None,
+        owner_user_id: str | None = None,
     ) -> AssetHubCreateResult:
         path = Path(file_path)
         width, height = _image_dimensions(path)
@@ -162,6 +163,7 @@ class AssetHubFacade:
                 "prompt": prompt,
             },
             tags=tag_values,
+            owner_user_id=owner_user_id,
         )
         version = await self.version_service.create(
             asset_node_id=str(node.id),
@@ -319,6 +321,7 @@ class AssetHubFacade:
         lineage: dict[str, Any] | None = None,
         legacy_asset_id: str = "",
         tags: list[str] | None = None,
+        owner_user_id: str | None = None,
     ) -> AssetHubCreateResult:
         """Create Asset Hub records for a downloaded or imported local file."""
 
@@ -353,6 +356,7 @@ class AssetHubFacade:
             thumbnail_url=normalized_thumbnail_url or None,
             metadata=meta,
             tags=[source, *(tags or [])],
+            owner_user_id=owner_user_id,
         )
         version = await self.version_service.create(
             asset_node_id=str(node.id),
