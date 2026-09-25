@@ -2,7 +2,7 @@
 
 引擎是从 workbuddy 的 manga-page-comic skill 移植过来的，绘制逻辑原样保留；
 这里守的是**移植后我们自己加的部分与它的对外契约**：
-框位校验（越界/顶点顺序/重叠）、dry_run 不落盘、塞不下时报 warning、
+框位校验（越界/顶点顺序/重叠）、dry_run 出预览图而不写正式产物、塞不下时报 warning、
 以及"未知类型要报错而不是静默画空"。
 """
 from __future__ import annotations
@@ -55,15 +55,25 @@ def test_validate_skips_patch_overlap() -> None:
     assert not any("重叠" in w for w in warns)
 
 
-def test_dry_run_validates_without_writing(page_png: Path, tmp_path: Path) -> None:
-    """dry_run 的价值就是"先看框位、别白出一张图"，所以必须不落盘。"""
-    out = tmp_path / "should_not_exist.png"
+def test_dry_run_writes_preview_alongside_source(page_png: Path, tmp_path: Path) -> None:
+    """dry_run 也必须出预览图——写 `_preview.png`，不写正式产物。
+
+    「不出图」是旧行为，实测会让前端「检查框位」点了没反应；现改为用同一个渲染引擎
+    出预览，让预览与成品所见即所得（编辑态字体是 DOM 占位，跟真实渲染对不上）。
+
+    这里按**真实调用契约**构造：`creative_projects.py` 的贴字端点只传
+    `image`/`font`/`items`，不传 `output`，由实现决定落盘名。
+    """
     result = overlay_spec(
-        {"image": str(page_png), "output": str(out), "items": [{"type": "text", "box": [0, 0, 1, 1], "text": "x"}]},
+        {"image": str(page_png), "items": [{"type": "text", "box": [0, 0, 1, 1], "text": "x"}]},
         dry_run=True,
     )
-    assert result["output"] is None
-    assert not out.exists()
+    assert result["dry_run"] is True
+    preview = Path(result["output"])
+    assert preview.name.endswith("_preview.png")
+    assert preview.exists()
+    # 预览不得写成正式产物名（`_text.png` 是 dry_run=False 的落盘名）
+    assert not (page_png.parent / f"{page_png.stem}_text.png").exists()
 
 
 def test_renders_and_preserves_size(page_png: Path, tmp_path: Path) -> None:

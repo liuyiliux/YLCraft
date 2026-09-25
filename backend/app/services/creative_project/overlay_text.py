@@ -432,7 +432,8 @@ def overlay_spec(spec: dict[str, Any], *, dry_run: bool = False) -> dict[str, An
 
     `spec`：`{"image": <输入路径>, "output": <输出路径>, "font"?: str, "items": [...]}`。
     返回 `{"warnings": [...], "output": <输出路径|None>, "size": [w, h]}`。
-    `dry_run=True` 只校验不出图（用于"先看框位"）。
+    `dry_run=True` 仍会出图（预览用），默认落到 `_preview.png`、不写正式产物；
+    仅当调用方显式传入 `output` 时才以该路径为准。
     """
     image_path = spec.get("image")
     if not image_path:
@@ -452,6 +453,9 @@ def overlay_spec(spec: dict[str, Any], *, dry_run: bool = False) -> dict[str, An
     # 时最需要看的——编辑态的字体是 DOM 占位，**跟真实渲染永远对不上**，用户会发现
     # "保存后字号怎么变大了"（真实渲染是按框自动定字号、把气泡填满的）。
     # 让它出图，预览与成品就是同一个引擎画的，所见即所得。
+    # 调用方显式给了 `output` 就以它为准（含 dry_run）；否则按 dry_run 决定落盘名。
+    # 注意：真实端点（`creative_projects.py` 贴字）**不传 output**，由这里定名，
+    # 因此 dry_run 走 `_preview.png`、正式走 `_text.png`，两者不会互相覆盖。
     out_path = spec.get("output") or str(
         Path(image_path).with_name(
             Path(image_path).stem + ("_preview.png" if dry_run else "_text.png")
@@ -483,7 +487,7 @@ def _main() -> int:  # pragma: no cover - 仅供命令行手工调试
 
     ap = argparse.ArgumentParser(description="漫画页贴字")
     ap.add_argument("spec", help="JSON 配置文件")
-    ap.add_argument("--dry-run", action="store_true", help="只校验框位，不出图")
+    ap.add_argument("--dry-run", action="store_true", help="只出预览图（写到 _preview.png，不覆盖 output）")
     args = ap.parse_args()
 
     spec = json.loads(Path(args.spec).read_text(encoding="utf-8"))
