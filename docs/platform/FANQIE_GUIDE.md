@@ -182,6 +182,29 @@ Remove-Item Env:FANQIE_COOKIE
 
 The script refuses to write without the required IDs and forces `[TEST]` into the title. It is the only supported live test harness.
 
+For a repeatable check of the **whole publish loop** (project → binding → auto draft →
+publish → record), use:
+
+```powershell
+& backend\venv_win\Scripts\python.exe tools\e2e_fanqie_project_publish.py --port 8024 --cleanup
+```
+
+Verified green on a real account (2026-09-26): `status=success`, `remote_version=1`,
+and a remote `draft_list` re-read showed `title='[YLCraft E2E] 第1章'`, `word_number=280`.
+
+It issues a temporary external API key and revokes it at the end, and hard-fails if
+pointed at the finished book 《短剧世界不准我降智》. **It writes to the real draft box.**
+
+Two response-parsing traps it pins down:
+
+- `publish-to-fanqie` returns each item as `{"content_id","success","record"|"error"}` —
+  `record` is **nested**; reading `status` flat silently yields `None`. An early version of
+  the script reported "failed" while the DB row was already `status=success`.
+- `publish-status` returns `data` as a **flat list**, not `{"records": [...]}`.
+
+Always re-read the remote after publishing — a `success` response is not proof the
+content landed.
+
 ## Agent Contract
 
 Read-only tools: `list_fanqie_my_books`, `get_fanqie_book_stats`, `get_fanqie_hot_list`, `preview_fanqie_project_publish`, and `get_fanqie_project_publish_status`.
