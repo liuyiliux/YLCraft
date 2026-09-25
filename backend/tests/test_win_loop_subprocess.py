@@ -1,6 +1,6 @@
 """回归测试：uvicorn 事件循环必须能创建子进程（Patchright 依赖它）。
 
-真机故障（2026-09-25）：账号中心点「启动浏览器」无反应，后端报
+真机故障（2026-09-25）：账号中心点「启动浏览器」后没反应，后端报
 `NotImplementedError` at `asyncio.create_subprocess_exec`。
 
 根因是 uvicorn 的循环选择逻辑：
@@ -13,8 +13,21 @@
 `--reload` 会让 `use_subprocess=True`，于是退回 `SelectorEventLoop`；而 Windows 的
 Selector 循环**不实现** `subprocess_exec`，Patchright 启不了 Chromium。
 
-我们通过 `--loop app.core.win_loop:proactor_loop_factory` 覆盖掉这个选择。
-这里把契约钉住：**无论 use_subprocess 传什么，都必须给出能建子进程的循环**。
+我们通过 `--loop app.core.win_loop:new_loop` 覆盖掉这个选择。
+
+**签名契约（踩过两次坑，必须钉死）**：指向自定义 dotted path 时，uvicorn 不会传
+`use_subprocess`，而是把解析到的对象**原样返回**，之后**零参调用**它并期望拿到
+**循环实例**：
+
+    # uvicorn/config.py 自定义分支
+    return import_from_string(self.loop)
+    # uvicorn/_compat.py
+    loop = loop_factory()      # 必须是实例
+
+所以：① 不能返回「工厂的工厂」（uvicorn 会把函数当循环用）；
+② 不能直接返回 `asyncio.ProactorEventLoop` —— Python 3.10/Windows 下
+**调用该类的返回结果是类本身而非实例**，会报
+`BaseProactorEventLoop.close() missing 1 required positional argument: 'self'`。
 """
 
 from __future__ import annotations
@@ -25,40 +38,78 @@ import sys
 import pytest
 
 
-def test_factory_returns_proactor_even_when_use_subprocess_true():
-    """这正是 --reload 的场景：use_subprocess=True 时仍必须支持子进程。
+def test_loop_factory_takes_no_arguments():
+    """自定义 loop 路径下 uvicorn 是零参调用，签名必须无必填参数。"""
+    import inspect
 
-    若这里退化成 SelectorEventLoop，故障就会复现。
+    from app.core.win_loop import new_loop
+
+    sig = inspect.signature(new_loop)
+    required = [
+        p
+        for p in sig.parameters.values()
+        if p.default is inspect.Parameter.empty
+        and p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD, p.KEYWORD_ONLY)
+    ]
+    assert not required, f"new_loop 不应有必填参数（uvicorn 零参调用）：{required}"
+
+
+def test_loop_factory_returns_a_loop_instance():
+    """必须返回**实例**，不是类、不是函数。
+
+    这是实际踩过的坑：返回类时 uvicorn 把类当实例用，
+    报 `close() missing 1 required positional argument: 'self'`，进程直接崩。
     """
-    from app.core.win_loop import proactor_loop_factory
+    from app.core.win_loop import new_loop
 
-    loop_cls = proactor_loop_factory(use_subprocess=True)
-
-    if sys.platform == "win32":
-        assert loop_cls is asyncio.ProactorEventLoop
-
-
-def test_factory_result_actually_supports_subprocess_exec():
-    """不能只比类名——要确认实例真有 subprocess_exec。"""
-    from app.core.win_loop import proactor_loop_factory
-
-    loop = proactor_loop_factory(use_subprocess=True)()
+    loop = new_loop()
     try:
-        assert hasattr(loop, "subprocess_exec"), (
-            "该事件循环不支持 subprocess_exec，Patchright 无法启动浏览器"
+        assert isinstance(loop, asyncio.AbstractEventLoop), (
+            f"必须返回循环实例，实际是 {type(loop).__name__}"
         )
     finally:
         loop.close()
 
 
-def test_factory_accepts_uvicorn_call_signature():
-    """uvicorn 以 `factory(use_subprocess=...)` 方式调用，签名必须兼容。"""
-    from app.core.win_loop import proactor_loop_factory
+def test_loop_supports_subprocess_exec():
+    """核心诉求：该循环必须能创建子进程，否则 Patchright 起不来。"""
+    from app.core.win_loop import new_loop
 
-    # 位置参数与关键字两种调用都要能跑
-    assert proactor_loop_factory(True) is not None
-    assert proactor_loop_factory(use_subprocess=False) is not None
-    assert proactor_loop_factory() is not None
+    loop = new_loop()
+    try:
+        assert hasattr(loop, "subprocess_exec"), (
+            "该事件循环不支持 subprocess_exec，Patchright 无法启动浏览器"
+        )
+        if sys.platform == "win32":
+            assert isinstance(loop, asyncio.ProactorEventLoop)
+    finally:
+        loop.close()
+
+
+def test_loop_supports_uvicorn_post_construction_calls():
+    """uvicorn 拿到循环后会立刻调 set_debug / shutdown_asyncgens / close。"""
+    from app.core.win_loop import new_loop
+
+    loop = new_loop()
+    loop.set_debug(False)
+    loop.run_until_complete(loop.shutdown_asyncgens())
+    loop.close()
+
+
+def test_uvicorn_resolved_factory_yields_instance():
+    """端到端对齐 uvicorn 的真实解析方式（自定义 dotted path 分支）。"""
+    from uvicorn.config import Config
+
+    config = Config("app.main:app", loop="app.core.win_loop:new_loop")
+    factory = config.get_loop_factory()
+    assert factory is not None
+
+    loop = factory()  # uvicorn/_compat.py 就是这么调的
+    try:
+        assert isinstance(loop, asyncio.AbstractEventLoop)
+        assert hasattr(loop, "subprocess_exec")
+    finally:
+        loop.close()
 
 
 @pytest.mark.asyncio
@@ -79,3 +130,17 @@ async def test_start_session_raises_instead_of_silently_succeeding(monkeypatch):
 
     with pytest.raises(NotImplementedError):
         await manager.start_session(platform="fanqie", headless=True)
+
+
+def test_start_bat_wires_the_loop_factory():
+    """启动脚本必须带上 --loop，否则用户按默认方式启动仍会踩坑。"""
+    from pathlib import Path
+
+    start_bat = Path(__file__).resolve().parents[2] / "start.bat"
+    if not start_bat.exists():
+        pytest.skip("start.bat not present")
+
+    content = start_bat.read_text(encoding="utf-8", errors="ignore")
+    assert "--loop app.core.win_loop:new_loop" in content, (
+        "start.bat 的后端启动命令缺少 --loop app.core.win_loop:new_loop"
+    )

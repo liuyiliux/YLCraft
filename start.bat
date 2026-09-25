@@ -120,11 +120,11 @@ echo ========================================
 echo  Starting Services...
 echo ========================================
 
-REM --loop app.core.win_loop:proactor_loop_factory is REQUIRED on Windows.
+REM --loop app.core.win_loop:new_loop is REQUIRED on Windows.
 REM Without it uvicorn picks SelectorEventLoop whenever --reload is on, and
 REM SelectorEventLoop cannot spawn subprocesses -> every Patchright browser
 REM launch (Cookie acquisition) fails with NotImplementedError.
-start "YLCraft-Backend" cmd /k "cd /d ""%~dp0backend"" && venv_win\Scripts\activate.bat && python -m uvicorn app.main:app --reload --port 8000 --loop app.core.win_loop:proactor_loop_factory"
+start "YLCraft-Backend" cmd /k "cd /d ""%~dp0backend"" && venv_win\Scripts\activate.bat && python -m uvicorn app.main:app --reload --port 8000 --loop app.core.win_loop:new_loop"
 
 timeout /t 4 /nobreak >nul
 

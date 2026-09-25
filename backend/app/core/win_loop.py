@@ -17,37 +17,44 @@ supervises a child process). So the common dev command
 ``SelectorEventLoop``, and every browser-based Cookie acquisition dies with
 ``NotImplementedError`` — while still reporting ``success: true`` to the caller.
 
-Wiring this factory via ``--loop app.core.win_loop:proactor_loop_factory`` keeps
-``--reload`` (hot reload stays useful) **and** restores subprocess support.
-
 Usage:
     uvicorn app.main:app --reload --port 8000 \\
-        --loop app.core.win_loop:proactor_loop_factory
+        --loop app.core.win_loop:new_loop
 
-On non-Windows platforms this returns ``uvloop`` when available, otherwise the
+On non-Windows platforms this uses ``uvloop`` when available, otherwise the
 default asyncio loop, so the same command works cross-platform.
 """
 
-from __future__ import annotations
-
 import asyncio
 import sys
-from typing import Callable
+from typing import Any
 
 
-def proactor_loop_factory(use_subprocess: bool = False) -> Callable[[], asyncio.AbstractEventLoop]:
-    """Return a loop class that can spawn subprocesses.
+def new_loop() -> Any:
+    """Build the event loop uvicorn should run on. Takes no arguments.
 
-    ``use_subprocess`` is accepted for signature compatibility with uvicorn's
-    built-in factories, but is deliberately ignored: the whole point is to keep
-    subprocess support even when uvicorn enables its reloader.
+    Signature note (learned the hard way): when ``--loop`` points at a **custom**
+    dotted path, uvicorn does *not* call it with ``use_subprocess`` — it returns
+    the resolved object as-is and later calls it with **zero arguments**:
+
+        # uvicorn/config.py, custom-path branch
+        return import_from_string(self.loop)        # no (use_subprocess=...) call
+        # uvicorn/_compat.py
+        loop = loop_factory()                       # must yield a LOOP INSTANCE
+
+    So this must be a plain zero-argument function returning an instance. Two
+    earlier attempts failed here: returning the factory-of-a-factory (uvicorn got
+    a function and crashed on ``loop.close()``), and returning
+    ``asyncio.ProactorEventLoop`` directly — on Python 3.10/Windows *calling that
+    class returns the class itself, not an instance*, which produced
+    ``BaseProactorEventLoop.close() missing 1 required positional argument: 'self'``.
     """
     if sys.platform == "win32":
-        return asyncio.ProactorEventLoop
+        return asyncio.ProactorEventLoop()
 
     try:  # uvloop is optional
         import uvloop  # type: ignore
 
-        return uvloop.Loop  # type: ignore[return-value]
+        return uvloop.new_event_loop()
     except ImportError:
-        return asyncio.SelectorEventLoop
+        return asyncio.new_event_loop()
