@@ -54,6 +54,7 @@ start.bat
 | `agnes-video-v2.json` | Agnes | 文生视频 |
 | `dashscope-wan-2.7-video.json` | 阿里云百炼 | 文/图生视频 |
 | `image-to-3d-generic.json` | 通用 | 图转 3D（自填端点） |
+| `triposr-image-to-3d.json` | TripoSR | 图转 3D（上传/提交/轮询，保留旧接口兼容） |
 | `tencent-hunyuan-3d-pro.json` | 腾讯云 | 图/文转 3D |
 | `tencent-hunyuan-rigging.json` | 腾讯云 | 3D 骨骼绑定 |
 

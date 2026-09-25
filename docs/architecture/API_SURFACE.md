@@ -6,9 +6,9 @@
 
 ## Summary
 
-- Router mounts: 53
-- Endpoints: 688
-- Public schema endpoints: 687
+- Router mounts: 54
+- Endpoints: 692
+- Public schema endpoints: 691
 - Hidden compatibility endpoints: 1
 
 ## Router Mounts
@@ -29,6 +29,7 @@
 | `/api/v1/ai/connectors` | AI Connectors | `ai_connectors` | `backend/app/api/v1/ai_connectors.py` |
 | `/api/v1/asset-hub` | Asset Hub | `asset_hub` | `backend/app/api/v1/asset_hub.py` |
 | `/api/v1/assets` | Assets | `assets` | `backend/app/api/v1/assets.py` |
+| `/api/v1/auth` | Authentication | `auth` | `backend/app/api/v1/auth.py` |
 | `/api/v1/bgm` | BGM | `bgm` | `backend/app/api/v1/bgm.py` |
 | `/api/v1/bilibili` | Crawler — Bilibili | `bilibili` | `backend/app/services/platforms/bilibili/routes.py` |
 | `/api/v1/book-sources` | Book Sources | `book_sources` | `backend/app/api/v1/book_sources.py` |
@@ -190,54 +191,63 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/asset-hub/nodes` | 资产节点列表 | `list_nodes` | `backend/app/api/v1/asset_hub.py:244` |
-| `POST` | `/api/v1/asset-hub/nodes` | 创建资产节点 | `create_node` | `backend/app/api/v1/asset_hub.py:288` |
-| `GET` | `/api/v1/asset-hub/nodes/{node_id}` | 资产节点详情 | `get_node` | `backend/app/api/v1/asset_hub.py:312` |
-| `PUT` | `/api/v1/asset-hub/nodes/{node_id}` | 更新资产节点 | `update_node` | `backend/app/api/v1/asset_hub.py:325` |
-| `DELETE` | `/api/v1/asset-hub/nodes/{node_id}` | 删除资产节点 | `delete_node` | `backend/app/api/v1/asset_hub.py:347` |
-| `GET` | `/api/v1/asset-hub/nodes/{node_id}/children` | 子节点列表 | `list_node_children` | `backend/app/api/v1/asset_hub.py:364` |
-| `POST` | `/api/v1/asset-hub/nodes/{node_id}/tags` | 批量添加标签 | `add_node_tags` | `backend/app/api/v1/asset_hub.py:378` |
-| `GET` | `/api/v1/asset-hub/nodes/{node_id}/versions` | 资产版本列表 | `list_versions` | `backend/app/api/v1/asset_hub.py:401` |
-| `POST` | `/api/v1/asset-hub/nodes/{node_id}/versions` | 创建资产版本 | `create_version` | `backend/app/api/v1/asset_hub.py:448` |
-| `DELETE` | `/api/v1/asset-hub/representations/{rep_id}` | 删除文件表示 | `delete_representation` | `backend/app/api/v1/asset_hub.py:556` |
-| `POST` | `/api/v1/asset-hub/seed-tags` | 初始化默认标签树 | `seed_default_tags` | `backend/app/api/v1/asset_hub.py:612` |
-| `GET` | `/api/v1/asset-hub/stats/type-counts` | 按类型统计 | `get_type_counts` | `backend/app/api/v1/asset_hub.py:571` |
-| `GET` | `/api/v1/asset-hub/types` | 所有资产类型 | `list_asset_types` | `backend/app/api/v1/asset_hub.py:235` |
-| `GET` | `/api/v1/asset-hub/versions/{version_id}` | 版本详情 | `get_version` | `backend/app/api/v1/asset_hub.py:473` |
-| `DELETE` | `/api/v1/asset-hub/versions/{version_id}` | 删除版本 | `delete_version` | `backend/app/api/v1/asset_hub.py:488` |
-| `GET` | `/api/v1/asset-hub/versions/{version_id}/representations` | 版本文件列表 | `list_representations` | `backend/app/api/v1/asset_hub.py:511` |
-| `POST` | `/api/v1/asset-hub/versions/{version_id}/representations` | 创建文件表示 | `create_representation` | `backend/app/api/v1/asset_hub.py:528` |
+| `GET` | `/api/v1/asset-hub/nodes` | 资产节点列表 | `list_nodes` | `backend/app/api/v1/asset_hub.py:288` |
+| `POST` | `/api/v1/asset-hub/nodes` | 创建资产节点 | `create_node` | `backend/app/api/v1/asset_hub.py:340` |
+| `GET` | `/api/v1/asset-hub/nodes/{node_id}` | 资产节点详情 | `get_node` | `backend/app/api/v1/asset_hub.py:366` |
+| `PUT` | `/api/v1/asset-hub/nodes/{node_id}` | 更新资产节点 | `update_node` | `backend/app/api/v1/asset_hub.py:385` |
+| `DELETE` | `/api/v1/asset-hub/nodes/{node_id}` | 删除资产节点 | `delete_node` | `backend/app/api/v1/asset_hub.py:409` |
+| `GET` | `/api/v1/asset-hub/nodes/{node_id}/children` | 子节点列表 | `list_node_children` | `backend/app/api/v1/asset_hub.py:428` |
+| `POST` | `/api/v1/asset-hub/nodes/{node_id}/tags` | 批量添加标签 | `add_node_tags` | `backend/app/api/v1/asset_hub.py:451` |
+| `GET` | `/api/v1/asset-hub/nodes/{node_id}/versions` | 资产版本列表 | `list_versions` | `backend/app/api/v1/asset_hub.py:476` |
+| `POST` | `/api/v1/asset-hub/nodes/{node_id}/versions` | 创建资产版本 | `create_version` | `backend/app/api/v1/asset_hub.py:532` |
+| `DELETE` | `/api/v1/asset-hub/representations/{rep_id}` | 删除文件表示 | `delete_representation` | `backend/app/api/v1/asset_hub.py:670` |
+| `POST` | `/api/v1/asset-hub/seed-tags` | 初始化默认标签树 | `seed_default_tags` | `backend/app/api/v1/asset_hub.py:728` |
+| `GET` | `/api/v1/asset-hub/stats/type-counts` | 按类型统计 | `get_type_counts` | `backend/app/api/v1/asset_hub.py:687` |
+| `GET` | `/api/v1/asset-hub/types` | 所有资产类型 | `list_asset_types` | `backend/app/api/v1/asset_hub.py:279` |
+| `GET` | `/api/v1/asset-hub/versions/{version_id}` | 版本详情 | `get_version` | `backend/app/api/v1/asset_hub.py:562` |
+| `DELETE` | `/api/v1/asset-hub/versions/{version_id}` | 删除版本 | `delete_version` | `backend/app/api/v1/asset_hub.py:586` |
+| `GET` | `/api/v1/asset-hub/versions/{version_id}/representations` | 版本文件列表 | `list_representations` | `backend/app/api/v1/asset_hub.py:611` |
+| `POST` | `/api/v1/asset-hub/versions/{version_id}/representations` | 创建文件表示 | `create_representation` | `backend/app/api/v1/asset_hub.py:640` |
 
 ### Assets
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/assets` | 素材资产列表 | `list_assets` | `backend/app/api/v1/assets.py:710` |
-| `GET` | `/api/v1/assets/download` | 下载/预览本地文件 | `download_local_asset_file` | `backend/app/api/v1/assets.py:875` |
-| `GET` | `/api/v1/assets/file` | 预览本地文件 | `download_local_asset_file` | `backend/app/api/v1/assets.py:875` |
-| `GET` | `/api/v1/assets/tags` | 标签列表 | `list_tags` | `backend/app/api/v1/assets.py:1517` |
-| `POST` | `/api/v1/assets/tags` | 创建标签 | `create_tag` | `backend/app/api/v1/assets.py:1526` |
-| `POST` | `/api/v1/assets/upload` | 本地上传素材入库 | `upload_asset` | `backend/app/api/v1/assets.py:1263` |
-| `POST` | `/api/v1/assets/upload-model3d` | 上传 3D 模型（ZIP 或单文件）入库 | `upload_model3d` | `backend/app/api/v1/assets.py:1219` |
-| `DELETE` | `/api/v1/assets/versions/{version_id}` | 删除单个资产版本 | `delete_asset_version` | `backend/app/api/v1/assets.py:1764` |
-| `GET` | `/api/v1/assets/{asset_id}` | 资产详情 | `get_asset` | `backend/app/api/v1/assets.py:1702` |
-| `PUT` | `/api/v1/assets/{asset_id}` | 更新资产 | `update_asset` | `backend/app/api/v1/assets.py:1725` |
-| `DELETE` | `/api/v1/assets/{asset_id}` | 删除资产 | `delete_asset` | `backend/app/api/v1/assets.py:1824` |
-| `GET` | `/api/v1/assets/{asset_id}/course-episodes/{episode_index}/download` | 下载课程章节文件 | `download_course_episode_asset` | `backend/app/api/v1/assets.py:1483` |
-| `GET` | `/api/v1/assets/{asset_id}/course-episodes/{episode_index}/sidecars/danmaku` | 读取课程章节弹幕 | `get_course_episode_danmaku` | `backend/app/api/v1/assets.py:1472` |
-| `GET` | `/api/v1/assets/{asset_id}/course-episodes/{episode_index}/sidecars/subtitles/{subtitle_index}.vtt` | 读取课程章节字幕 | `get_course_episode_subtitle` | `backend/app/api/v1/assets.py:1460` |
-| `GET` | `/api/v1/assets/{asset_id}/course-episodes/{episode_index}/stream` | 播放课程章节文件 | `stream_course_episode_asset` | `backend/app/api/v1/assets.py:1498` |
-| `POST` | `/api/v1/assets/{asset_id}/deep-watermark-detect` | 只读检测合成水印痕迹（CtrlRegen/SynthID，不修改文件） | `detect_asset_deep_watermark` | `backend/app/api/v1/assets.py:1007` |
-| `GET` | `/api/v1/assets/{asset_id}/download` | 下载资产文件 | `download_asset` | `backend/app/api/v1/assets.py:892` |
-| `GET` | `/api/v1/assets/{asset_id}/files/{filename:path}` | 下载/预览资产的配套文件 | `asset_sidecar_file` | `backend/app/api/v1/assets.py:909` |
-| `POST` | `/api/v1/assets/{asset_id}/provenance-clean` | 审计或清理 AI 来源标记与文件元数据 | `clean_asset_provenance` | `backend/app/api/v1/assets.py:937` |
-| `POST` | `/api/v1/assets/{asset_id}/restore` | 恢复软删除的资产 | `restore_asset` | `backend/app/api/v1/assets.py:1840` |
-| `GET` | `/api/v1/assets/{asset_id}/sidecars/danmaku` | 读取资产弹幕 | `get_asset_danmaku` | `backend/app/api/v1/assets.py:1448` |
-| `GET` | `/api/v1/assets/{asset_id}/sidecars/subtitles/{subtitle_index}.vtt` | 读取资产字幕 | `get_asset_subtitle` | `backend/app/api/v1/assets.py:1435` |
-| `GET` | `/api/v1/assets/{asset_id}/stream` | 播放资产视频文件 | `stream_asset` | `backend/app/api/v1/assets.py:1307` |
-| `GET` | `/api/v1/assets/{asset_id}/thumbnail` | 代理加载封面图 | `proxy_thumbnail` | `backend/app/api/v1/assets.py:1667` |
-| `POST` | `/api/v1/assets/{asset_id}/thumbnail` | 设置资产缩略图 | `set_asset_thumbnail` | `backend/app/api/v1/assets.py:1644` |
-| `POST` | `/api/v1/assets/{asset_id}/watermark-remove` | 去除显性可见水印并生成派生副本（图片/视频，不覆盖原文件） | `remove_asset_visual_watermark` | `backend/app/api/v1/assets.py:1044` |
+| `GET` | `/api/v1/assets` | 素材资产列表 | `list_assets` | `backend/app/api/v1/assets.py:771` |
+| `GET` | `/api/v1/assets/download` | 下载/预览本地文件 | `download_local_asset_file` | `backend/app/api/v1/assets.py:940` |
+| `GET` | `/api/v1/assets/file` | 预览本地文件 | `download_local_asset_file` | `backend/app/api/v1/assets.py:940` |
+| `GET` | `/api/v1/assets/tags` | 标签列表 | `list_tags` | `backend/app/api/v1/assets.py:1595` |
+| `POST` | `/api/v1/assets/tags` | 创建标签 | `create_tag` | `backend/app/api/v1/assets.py:1604` |
+| `POST` | `/api/v1/assets/upload` | 本地上传素材入库 | `upload_asset` | `backend/app/api/v1/assets.py:1338` |
+| `POST` | `/api/v1/assets/upload-model3d` | 上传 3D 模型（ZIP 或单文件）入库 | `upload_model3d` | `backend/app/api/v1/assets.py:1291` |
+| `DELETE` | `/api/v1/assets/versions/{version_id}` | 删除单个资产版本 | `delete_asset_version` | `backend/app/api/v1/assets.py:1855` |
+| `GET` | `/api/v1/assets/{asset_id}` | 资产详情 | `get_asset` | `backend/app/api/v1/assets.py:1782` |
+| `PUT` | `/api/v1/assets/{asset_id}` | 更新资产 | `update_asset` | `backend/app/api/v1/assets.py:1814` |
+| `DELETE` | `/api/v1/assets/{asset_id}` | 删除资产 | `delete_asset` | `backend/app/api/v1/assets.py:1915` |
+| `GET` | `/api/v1/assets/{asset_id}/course-episodes/{episode_index}/download` | 下载课程章节文件 | `download_course_episode_asset` | `backend/app/api/v1/assets.py:1561` |
+| `GET` | `/api/v1/assets/{asset_id}/course-episodes/{episode_index}/sidecars/danmaku` | 读取课程章节弹幕 | `get_course_episode_danmaku` | `backend/app/api/v1/assets.py:1550` |
+| `GET` | `/api/v1/assets/{asset_id}/course-episodes/{episode_index}/sidecars/subtitles/{subtitle_index}.vtt` | 读取课程章节字幕 | `get_course_episode_subtitle` | `backend/app/api/v1/assets.py:1538` |
+| `GET` | `/api/v1/assets/{asset_id}/course-episodes/{episode_index}/stream` | 播放课程章节文件 | `stream_course_episode_asset` | `backend/app/api/v1/assets.py:1576` |
+| `POST` | `/api/v1/assets/{asset_id}/deep-watermark-detect` | 只读检测合成水印痕迹（CtrlRegen/SynthID，不修改文件） | `detect_asset_deep_watermark` | `backend/app/api/v1/assets.py:1072` |
+| `GET` | `/api/v1/assets/{asset_id}/download` | 下载资产文件 | `download_asset` | `backend/app/api/v1/assets.py:957` |
+| `GET` | `/api/v1/assets/{asset_id}/files/{filename:path}` | 下载/预览资产的配套文件 | `asset_sidecar_file` | `backend/app/api/v1/assets.py:974` |
+| `POST` | `/api/v1/assets/{asset_id}/provenance-clean` | 审计或清理 AI 来源标记与文件元数据 | `clean_asset_provenance` | `backend/app/api/v1/assets.py:1002` |
+| `POST` | `/api/v1/assets/{asset_id}/restore` | 恢复软删除的资产 | `restore_asset` | `backend/app/api/v1/assets.py:1935` |
+| `GET` | `/api/v1/assets/{asset_id}/sidecars/danmaku` | 读取资产弹幕 | `get_asset_danmaku` | `backend/app/api/v1/assets.py:1526` |
+| `GET` | `/api/v1/assets/{asset_id}/sidecars/subtitles/{subtitle_index}.vtt` | 读取资产字幕 | `get_asset_subtitle` | `backend/app/api/v1/assets.py:1513` |
+| `GET` | `/api/v1/assets/{asset_id}/stream` | 播放资产视频文件 | `stream_asset` | `backend/app/api/v1/assets.py:1385` |
+| `GET` | `/api/v1/assets/{asset_id}/thumbnail` | 代理加载封面图 | `proxy_thumbnail` | `backend/app/api/v1/assets.py:1747` |
+| `POST` | `/api/v1/assets/{asset_id}/thumbnail` | 设置资产缩略图 | `set_asset_thumbnail` | `backend/app/api/v1/assets.py:1722` |
+| `POST` | `/api/v1/assets/{asset_id}/watermark-remove` | 去除显性可见水印并生成派生副本（图片/视频，不覆盖原文件） | `remove_asset_visual_watermark` | `backend/app/api/v1/assets.py:1109` |
+
+### Authentication
+
+| Method | Path | Summary | Handler | Source |
+| --- | --- | --- | --- | --- |
+| `POST` | `/api/v1/auth/login` | 登录并创建服务端会话 | `login` | `backend/app/api/v1/auth.py:98` |
+| `POST` | `/api/v1/auth/logout` | 撤销当前服务端会话 | `logout` | `backend/app/api/v1/auth.py:126` |
+| `GET` | `/api/v1/auth/me` | 获取当前登录用户 | `current_user` | `backend/app/api/v1/auth.py:141` |
+| `POST` | `/api/v1/auth/register` | 注册本地用户 | `register` | `backend/app/api/v1/auth.py:73` |
 
 ### BGM
 
@@ -467,85 +477,85 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/creative-projects` | 列出创作项目 | `list_projects` | `backend/app/api/v1/creative_projects.py:632` |
-| `POST` | `/api/v1/creative-projects` | 创建创作项目 | `create_project` | `backend/app/api/v1/creative_projects.py:655` |
-| `POST` | `/api/v1/creative-projects/from-novel` | 从小说章节创建创作项目 | `create_from_novel` | `backend/app/api/v1/creative_projects.py:690` |
-| `GET` | `/api/v1/creative-projects/logs/generation` | 跨项目查询生成日志 | `list_generation_logs_global` | `backend/app/api/v1/creative_projects.py:1926` |
-| `GET` | `/api/v1/creative-projects/profiles` | 列出内容生产方案 | `list_production_profiles` | `backend/app/api/v1/creative_projects.py:674` |
-| `GET` | `/api/v1/creative-projects/{project_id}` | 获取创作项目详情 | `get_project` | `backend/app/api/v1/creative_projects.py:734` |
-| `PATCH` | `/api/v1/creative-projects/{project_id}` | 更新创作项目 | `update_project` | `backend/app/api/v1/creative_projects.py:1012` |
-| `DELETE` | `/api/v1/creative-projects/{project_id}` | 删除创作项目 | `delete_project` | `backend/app/api/v1/creative_projects.py:1028` |
-| `GET` | `/api/v1/creative-projects/{project_id}/assets` | 列出项目素材关联 | `list_project_assets` | `backend/app/api/v1/creative_projects.py:1859` |
-| `POST` | `/api/v1/creative-projects/{project_id}/assets` | 关联项目素材 | `link_project_asset` | `backend/app/api/v1/creative_projects.py:1961` |
-| `GET` | `/api/v1/creative-projects/{project_id}/canvas` | 获取项目画布状态 | `get_canvas` | `backend/app/api/v1/creative_projects.py:2010` |
-| `PUT` | `/api/v1/creative-projects/{project_id}/canvas` | 保存项目画布状态 | `save_canvas` | `backend/app/api/v1/creative_projects.py:2021` |
-| `POST` | `/api/v1/creative-projects/{project_id}/chapters/{chapter_number}/check-continuity` | 跨章连续性检查（对比已锁定事实） | `check_continuity` | `backend/app/api/v1/creative_projects.py:2317` |
-| `PUT` | `/api/v1/creative-projects/{project_id}/content-package` | 保存项目内容包版本 | `save_content_package` | `backend/app/api/v1/creative_projects.py:1461` |
-| `POST` | `/api/v1/creative-projects/{project_id}/content-package/items/{item_id}/blank-boxes` | 检测漫画页里的空白占位框（用于贴字时自动定位气泡） | `detect_comic_page_blank_boxes` | `backend/app/api/v1/creative_projects.py:1642` |
-| `POST` | `/api/v1/creative-projects/{project_id}/content-package/items/{item_id}/overlay-text` | 给漫画页贴字（对白/旁白/拟声字） | `overlay_comic_page_text` | `backend/app/api/v1/creative_projects.py:1703` |
-| `POST` | `/api/v1/creative-projects/{project_id}/content-package/items/{item_id}/retry` | 只重跑一条内容单元 | `retry_content_package_item` | `backend/app/api/v1/creative_projects.py:1422` |
-| `POST` | `/api/v1/creative-projects/{project_id}/content-package/outputs` | 生成内容包平台输出 | `build_content_package_outputs` | `backend/app/api/v1/creative_projects.py:1392` |
-| `POST` | `/api/v1/creative-projects/{project_id}/content-package/plan` | 一次生成项目内容包 | `plan_content_package` | `backend/app/api/v1/creative_projects.py:1478` |
-| `GET` | `/api/v1/creative-projects/{project_id}/contents` | 列出项目阶段内容 | `list_contents` | `backend/app/api/v1/creative_projects.py:1341` |
-| `PATCH` | `/api/v1/creative-projects/{project_id}/contents/{content_id}` | 保存项目阶段内容 | `update_content` | `backend/app/api/v1/creative_projects.py:1371` |
-| `POST` | `/api/v1/creative-projects/{project_id}/contents/{content_id}/aftermath` | 从正式正文建立叙事后处理状态 | `run_narrative_aftermath` | `backend/app/api/v1/creative_projects.py:860` |
-| `POST` | `/api/v1/creative-projects/{project_id}/contents/{content_id}/continuity-candidates/extract` | 从正文提取/入库结构化连续性候选 | `extract_continuity_candidates` | `backend/app/api/v1/creative_projects.py:2210` |
-| `POST` | `/api/v1/creative-projects/{project_id}/contents/{content_id}/extract-continuity` | 从正文提取连续性候选卡 | `extract_continuity_candidates` | `backend/app/api/v1/creative_projects.py:1070` |
-| `POST` | `/api/v1/creative-projects/{project_id}/contents/{content_id}/rewrite-paragraph` | 段落级非破坏性重写（生成候选版本） | `rewrite_paragraph` | `backend/app/api/v1/creative_projects.py:2338` |
-| `POST` | `/api/v1/creative-projects/{project_id}/contents/{content_id}/save-as-asset` | 保存项目文本为素材 | `save_project_content_as_asset` | `backend/app/api/v1/creative_projects.py:1981` |
-| `GET` | `/api/v1/creative-projects/{project_id}/continuity-candidates` | 列出连续性候选事实 | `list_continuity_candidates` | `backend/app/api/v1/creative_projects.py:2184` |
-| `GET` | `/api/v1/creative-projects/{project_id}/continuity-candidates/context-summary` | 连续性事实上下文摘要（不进模型硬约束） | `continuity_context_summary` | `backend/app/api/v1/creative_projects.py:2299` |
-| `POST` | `/api/v1/creative-projects/{project_id}/continuity-candidates/{candidate_id}/accept` | 确认候选事实，写入 locked project_bible / world_asset | `accept_continuity_candidate` | `backend/app/api/v1/creative_projects.py:2235` |
-| `POST` | `/api/v1/creative-projects/{project_id}/continuity-candidates/{candidate_id}/ignore` | 忽略候选事实 | `ignore_continuity_candidate` | `backend/app/api/v1/creative_projects.py:2255` |
-| `POST` | `/api/v1/creative-projects/{project_id}/continuity-candidates/{candidate_id}/merge` | 合并候选事实到已有 project_bible / world_asset | `merge_continuity_candidate` | `backend/app/api/v1/creative_projects.py:2275` |
-| `GET` | `/api/v1/creative-projects/{project_id}/export` | 导出创作项目 ZIP | `export_project_zip` | `backend/app/api/v1/creative_projects.py:981` |
-| `POST` | `/api/v1/creative-projects/{project_id}/extract-characters` | 两趟提取项目/小说角色 | `extract_project_characters` | `backend/app/api/v1/creative_projects.py:709` |
-| `POST` | `/api/v1/creative-projects/{project_id}/fill-demo-data` | 为创作项目补充示例大纲、正文、脚本和分镜 | `fill_demo_data` | `backend/app/api/v1/creative_projects.py:1040` |
-| `GET` | `/api/v1/creative-projects/{project_id}/foreshadowing` | 列出项目伏笔台账 | `list_foreshadowing` | `backend/app/api/v1/creative_projects.py:897` |
-| `POST` | `/api/v1/creative-projects/{project_id}/foreshadowing/{item_id}/{action}` | 确认、推进、解决或忽略伏笔 | `decide_foreshadowing` | `backend/app/api/v1/creative_projects.py:915` |
-| `POST` | `/api/v1/creative-projects/{project_id}/generate-chapter-outline` | 生成单话细纲 | `generate_chapter_outline` | `backend/app/api/v1/creative_projects.py:1163` |
-| `POST` | `/api/v1/creative-projects/{project_id}/generate-chapter-plan` | 生成章节规划 | `generate_chapter_plan` | `backend/app/api/v1/creative_projects.py:1101` |
-| `POST` | `/api/v1/creative-projects/{project_id}/generate-novel-body` | 生成章节正文 | `generate_novel_body` | `backend/app/api/v1/creative_projects.py:1181` |
-| `POST` | `/api/v1/creative-projects/{project_id}/generate-outline` | 生成故事大纲 | `generate_outline` | `backend/app/api/v1/creative_projects.py:1083` |
-| `POST` | `/api/v1/creative-projects/{project_id}/generate-script` | 生成短剧脚本 | `generate_script` | `backend/app/api/v1/creative_projects.py:1146` |
-| `POST` | `/api/v1/creative-projects/{project_id}/generate-storyboard` | 生成分镜草稿 | `generate_storyboard` | `backend/app/api/v1/creative_projects.py:1304` |
-| `GET` | `/api/v1/creative-projects/{project_id}/generation-logs` | 列出项目生成日志 | `list_generation_logs` | `backend/app/api/v1/creative_projects.py:1898` |
-| `POST` | `/api/v1/creative-projects/{project_id}/match-reference-assets` | AI 匹配脚本/分镜参考卡 | `match_reference_assets` | `backend/app/api/v1/creative_projects.py:1323` |
-| `GET` | `/api/v1/creative-projects/{project_id}/narrative-graph` | 查询项目叙事关系图谱 | `get_narrative_graph` | `backend/app/api/v1/creative_projects.py:938` |
-| `PUT` | `/api/v1/creative-projects/{project_id}/narrative/autopilot` | 配置并启动受控叙事自动推进 | `configure_narrative_autopilot` | `backend/app/api/v1/creative_projects.py:543` |
-| `GET` | `/api/v1/creative-projects/{project_id}/narrative/context-preview` | 预览下一章叙事上下文包 | `preview_narrative_context` | `backend/app/api/v1/creative_projects.py:788` |
-| `GET` | `/api/v1/creative-projects/{project_id}/narrative/health` | 检查小说叙事数据健康状态 | `get_narrative_health` | `backend/app/api/v1/creative_projects.py:777` |
-| `POST` | `/api/v1/creative-projects/{project_id}/narrative/rebuild` | 按正式章节顺序重建叙事状态 | `rebuild_narrative_state` | `backend/app/api/v1/creative_projects.py:879` |
-| `GET` | `/api/v1/creative-projects/{project_id}/narrative/runs` | 列出项目叙事运行记录 | `list_narrative_runs` | `backend/app/api/v1/creative_projects.py:501` |
-| `POST` | `/api/v1/creative-projects/{project_id}/narrative/runs` | 创建后台叙事批次运行 | `create_narrative_batch_run` | `backend/app/api/v1/creative_projects.py:518` |
-| `POST` | `/api/v1/creative-projects/{project_id}/narrative/runs/{run_id}/{action}` | 控制叙事批次运行 | `control_narrative_run` | `backend/app/api/v1/creative_projects.py:575` |
-| `GET` | `/api/v1/creative-projects/{project_id}/production-plan` | 读取创作导演生产计划 | `get_production_plan` | `backend/app/api/v1/creative_projects.py:745` |
-| `PUT` | `/api/v1/creative-projects/{project_id}/production-plan` | 保存创作导演生产计划新版本 | `save_production_plan` | `backend/app/api/v1/creative_projects.py:760` |
-| `POST` | `/api/v1/creative-projects/{project_id}/refine-novel-body` | 按中文要求微调章节正文 | `refine_novel_body` | `backend/app/api/v1/creative_projects.py:1199` |
-| `POST` | `/api/v1/creative-projects/{project_id}/regenerate-chapter-outline-scenes` | 只重生成单话细纲场景 | `regenerate_chapter_outline_scenes` | `backend/app/api/v1/creative_projects.py:1840` |
-| `POST` | `/api/v1/creative-projects/{project_id}/run-pipeline` | Run creative project production pipeline | `run_pipeline` | `backend/app/api/v1/creative_projects.py:1119` |
-| `POST` | `/api/v1/creative-projects/{project_id}/split-comic-pages` | 拆分漫画页 | `split_comic_pages` | `backend/app/api/v1/creative_projects.py:1281` |
-| `GET` | `/api/v1/creative-projects/{project_id}/state` | 查看项目动态状态当前值 | `get_project_state` | `backend/app/api/v1/creative_projects.py:803` |
-| `GET` | `/api/v1/creative-projects/{project_id}/state/timeline` | 查看项目动态状态按章变化轨迹 | `get_project_state_timeline` | `backend/app/api/v1/creative_projects.py:815` |
-| `POST` | `/api/v1/creative-projects/{project_id}/sync-characters` | 同步大纲角色到角色库 | `sync_project_characters` | `backend/app/api/v1/creative_projects.py:1993` |
-| `POST` | `/api/v1/creative-projects/{project_id}/sync-project-bible` | 从故事大纲同步项目圣经和世界资产 | `sync_project_bible` | `backend/app/api/v1/creative_projects.py:1057` |
-| `GET` | `/api/v1/creative-projects/{project_id}/visual-baseline` | 读取项目视觉基准 | `get_visual_baseline` | `backend/app/api/v1/creative_projects.py:1874` |
-| `PUT` | `/api/v1/creative-projects/{project_id}/visual-baseline` | 设置项目视觉基准（一个项目一张，重设即替换） | `set_visual_baseline` | `backend/app/api/v1/creative_projects.py:1881` |
-| `DELETE` | `/api/v1/creative-projects/{project_id}/visual-baseline` | 清除项目视觉基准 | `clear_visual_baseline` | `backend/app/api/v1/creative_projects.py:1892` |
-| `POST` | `/api/v1/creative-projects/{project_id}/writer-room/promote` | Promote writer-room prose to latest novel body | `promote_writer_room_content` | `backend/app/api/v1/creative_projects.py:1263` |
-| `POST` | `/api/v1/creative-projects/{project_id}/writer-room/run` | Run selected novel writer-room steps | `run_writer_room` | `backend/app/api/v1/creative_projects.py:1234` |
-| `POST` | `/api/v1/creative-projects/{project_id}/writer-room/step/{step}` | Run one novel writer-room step | `run_writer_room_step` | `backend/app/api/v1/creative_projects.py:1216` |
-| `GET` | `/api/v1/creative-projects/{project_id}/writing-preflight` | 检查写作阶段前置条件 | `get_writing_preflight` | `backend/app/api/v1/creative_projects.py:843` |
+| `GET` | `/api/v1/creative-projects` | 列出创作项目 | `list_projects` | `backend/app/api/v1/creative_projects.py:680` |
+| `POST` | `/api/v1/creative-projects` | 创建创作项目 | `create_project` | `backend/app/api/v1/creative_projects.py:711` |
+| `POST` | `/api/v1/creative-projects/from-novel` | 从小说章节创建创作项目 | `create_from_novel` | `backend/app/api/v1/creative_projects.py:748` |
+| `GET` | `/api/v1/creative-projects/logs/generation` | 跨项目查询生成日志 | `list_generation_logs_global` | `backend/app/api/v1/creative_projects.py:1997` |
+| `GET` | `/api/v1/creative-projects/profiles` | 列出内容生产方案 | `list_production_profiles` | `backend/app/api/v1/creative_projects.py:732` |
+| `GET` | `/api/v1/creative-projects/{project_id}` | 获取创作项目详情 | `get_project` | `backend/app/api/v1/creative_projects.py:794` |
+| `PATCH` | `/api/v1/creative-projects/{project_id}` | 更新创作项目 | `update_project` | `backend/app/api/v1/creative_projects.py:1078` |
+| `DELETE` | `/api/v1/creative-projects/{project_id}` | 删除创作项目 | `delete_project` | `backend/app/api/v1/creative_projects.py:1094` |
+| `GET` | `/api/v1/creative-projects/{project_id}/assets` | 列出项目素材关联 | `list_project_assets` | `backend/app/api/v1/creative_projects.py:1930` |
+| `POST` | `/api/v1/creative-projects/{project_id}/assets` | 关联项目素材 | `link_project_asset` | `backend/app/api/v1/creative_projects.py:2032` |
+| `GET` | `/api/v1/creative-projects/{project_id}/canvas` | 获取项目画布状态 | `get_canvas` | `backend/app/api/v1/creative_projects.py:2081` |
+| `PUT` | `/api/v1/creative-projects/{project_id}/canvas` | 保存项目画布状态 | `save_canvas` | `backend/app/api/v1/creative_projects.py:2092` |
+| `POST` | `/api/v1/creative-projects/{project_id}/chapters/{chapter_number}/check-continuity` | 跨章连续性检查（对比已锁定事实） | `check_continuity` | `backend/app/api/v1/creative_projects.py:2389` |
+| `PUT` | `/api/v1/creative-projects/{project_id}/content-package` | 保存项目内容包版本 | `save_content_package` | `backend/app/api/v1/creative_projects.py:1532` |
+| `POST` | `/api/v1/creative-projects/{project_id}/content-package/items/{item_id}/blank-boxes` | 检测漫画页里的空白占位框（用于贴字时自动定位气泡） | `detect_comic_page_blank_boxes` | `backend/app/api/v1/creative_projects.py:1713` |
+| `POST` | `/api/v1/creative-projects/{project_id}/content-package/items/{item_id}/overlay-text` | 给漫画页贴字（对白/旁白/拟声字） | `overlay_comic_page_text` | `backend/app/api/v1/creative_projects.py:1774` |
+| `POST` | `/api/v1/creative-projects/{project_id}/content-package/items/{item_id}/retry` | 只重跑一条内容单元 | `retry_content_package_item` | `backend/app/api/v1/creative_projects.py:1493` |
+| `POST` | `/api/v1/creative-projects/{project_id}/content-package/outputs` | 生成内容包平台输出 | `build_content_package_outputs` | `backend/app/api/v1/creative_projects.py:1463` |
+| `POST` | `/api/v1/creative-projects/{project_id}/content-package/plan` | 一次生成项目内容包 | `plan_content_package` | `backend/app/api/v1/creative_projects.py:1549` |
+| `GET` | `/api/v1/creative-projects/{project_id}/contents` | 列出项目阶段内容 | `list_contents` | `backend/app/api/v1/creative_projects.py:1412` |
+| `PATCH` | `/api/v1/creative-projects/{project_id}/contents/{content_id}` | 保存项目阶段内容 | `update_content` | `backend/app/api/v1/creative_projects.py:1442` |
+| `POST` | `/api/v1/creative-projects/{project_id}/contents/{content_id}/aftermath` | 从正式正文建立叙事后处理状态 | `run_narrative_aftermath` | `backend/app/api/v1/creative_projects.py:926` |
+| `POST` | `/api/v1/creative-projects/{project_id}/contents/{content_id}/continuity-candidates/extract` | 从正文提取/入库结构化连续性候选 | `extract_continuity_candidates` | `backend/app/api/v1/creative_projects.py:2282` |
+| `POST` | `/api/v1/creative-projects/{project_id}/contents/{content_id}/extract-continuity` | 从正文提取连续性候选卡 | `extract_continuity_candidates` | `backend/app/api/v1/creative_projects.py:1141` |
+| `POST` | `/api/v1/creative-projects/{project_id}/contents/{content_id}/rewrite-paragraph` | 段落级非破坏性重写（生成候选版本） | `rewrite_paragraph` | `backend/app/api/v1/creative_projects.py:2410` |
+| `POST` | `/api/v1/creative-projects/{project_id}/contents/{content_id}/save-as-asset` | 保存项目文本为素材 | `save_project_content_as_asset` | `backend/app/api/v1/creative_projects.py:2052` |
+| `GET` | `/api/v1/creative-projects/{project_id}/continuity-candidates` | 列出连续性候选事实 | `list_continuity_candidates` | `backend/app/api/v1/creative_projects.py:2256` |
+| `GET` | `/api/v1/creative-projects/{project_id}/continuity-candidates/context-summary` | 连续性事实上下文摘要（不进模型硬约束） | `continuity_context_summary` | `backend/app/api/v1/creative_projects.py:2371` |
+| `POST` | `/api/v1/creative-projects/{project_id}/continuity-candidates/{candidate_id}/accept` | 确认候选事实，写入 locked project_bible / world_asset | `accept_continuity_candidate` | `backend/app/api/v1/creative_projects.py:2307` |
+| `POST` | `/api/v1/creative-projects/{project_id}/continuity-candidates/{candidate_id}/ignore` | 忽略候选事实 | `ignore_continuity_candidate` | `backend/app/api/v1/creative_projects.py:2327` |
+| `POST` | `/api/v1/creative-projects/{project_id}/continuity-candidates/{candidate_id}/merge` | 合并候选事实到已有 project_bible / world_asset | `merge_continuity_candidate` | `backend/app/api/v1/creative_projects.py:2347` |
+| `GET` | `/api/v1/creative-projects/{project_id}/export` | 导出创作项目 ZIP | `export_project_zip` | `backend/app/api/v1/creative_projects.py:1047` |
+| `POST` | `/api/v1/creative-projects/{project_id}/extract-characters` | 两趟提取项目/小说角色 | `extract_project_characters` | `backend/app/api/v1/creative_projects.py:769` |
+| `POST` | `/api/v1/creative-projects/{project_id}/fill-demo-data` | 为创作项目补充示例大纲、正文、脚本和分镜 | `fill_demo_data` | `backend/app/api/v1/creative_projects.py:1111` |
+| `GET` | `/api/v1/creative-projects/{project_id}/foreshadowing` | 列出项目伏笔台账 | `list_foreshadowing` | `backend/app/api/v1/creative_projects.py:963` |
+| `POST` | `/api/v1/creative-projects/{project_id}/foreshadowing/{item_id}/{action}` | 确认、推进、解决或忽略伏笔 | `decide_foreshadowing` | `backend/app/api/v1/creative_projects.py:981` |
+| `POST` | `/api/v1/creative-projects/{project_id}/generate-chapter-outline` | 生成单话细纲 | `generate_chapter_outline` | `backend/app/api/v1/creative_projects.py:1234` |
+| `POST` | `/api/v1/creative-projects/{project_id}/generate-chapter-plan` | 生成章节规划 | `generate_chapter_plan` | `backend/app/api/v1/creative_projects.py:1172` |
+| `POST` | `/api/v1/creative-projects/{project_id}/generate-novel-body` | 生成章节正文 | `generate_novel_body` | `backend/app/api/v1/creative_projects.py:1252` |
+| `POST` | `/api/v1/creative-projects/{project_id}/generate-outline` | 生成故事大纲 | `generate_outline` | `backend/app/api/v1/creative_projects.py:1154` |
+| `POST` | `/api/v1/creative-projects/{project_id}/generate-script` | 生成短剧脚本 | `generate_script` | `backend/app/api/v1/creative_projects.py:1217` |
+| `POST` | `/api/v1/creative-projects/{project_id}/generate-storyboard` | 生成分镜草稿 | `generate_storyboard` | `backend/app/api/v1/creative_projects.py:1375` |
+| `GET` | `/api/v1/creative-projects/{project_id}/generation-logs` | 列出项目生成日志 | `list_generation_logs` | `backend/app/api/v1/creative_projects.py:1969` |
+| `POST` | `/api/v1/creative-projects/{project_id}/match-reference-assets` | AI 匹配脚本/分镜参考卡 | `match_reference_assets` | `backend/app/api/v1/creative_projects.py:1394` |
+| `GET` | `/api/v1/creative-projects/{project_id}/narrative-graph` | 查询项目叙事关系图谱 | `get_narrative_graph` | `backend/app/api/v1/creative_projects.py:1004` |
+| `PUT` | `/api/v1/creative-projects/{project_id}/narrative/autopilot` | 配置并启动受控叙事自动推进 | `configure_narrative_autopilot` | `backend/app/api/v1/creative_projects.py:591` |
+| `GET` | `/api/v1/creative-projects/{project_id}/narrative/context-preview` | 预览下一章叙事上下文包 | `preview_narrative_context` | `backend/app/api/v1/creative_projects.py:854` |
+| `GET` | `/api/v1/creative-projects/{project_id}/narrative/health` | 检查小说叙事数据健康状态 | `get_narrative_health` | `backend/app/api/v1/creative_projects.py:843` |
+| `POST` | `/api/v1/creative-projects/{project_id}/narrative/rebuild` | 按正式章节顺序重建叙事状态 | `rebuild_narrative_state` | `backend/app/api/v1/creative_projects.py:945` |
+| `GET` | `/api/v1/creative-projects/{project_id}/narrative/runs` | 列出项目叙事运行记录 | `list_narrative_runs` | `backend/app/api/v1/creative_projects.py:549` |
+| `POST` | `/api/v1/creative-projects/{project_id}/narrative/runs` | 创建后台叙事批次运行 | `create_narrative_batch_run` | `backend/app/api/v1/creative_projects.py:566` |
+| `POST` | `/api/v1/creative-projects/{project_id}/narrative/runs/{run_id}/{action}` | 控制叙事批次运行 | `control_narrative_run` | `backend/app/api/v1/creative_projects.py:623` |
+| `GET` | `/api/v1/creative-projects/{project_id}/production-plan` | 读取创作导演生产计划 | `get_production_plan` | `backend/app/api/v1/creative_projects.py:811` |
+| `PUT` | `/api/v1/creative-projects/{project_id}/production-plan` | 保存创作导演生产计划新版本 | `save_production_plan` | `backend/app/api/v1/creative_projects.py:826` |
+| `POST` | `/api/v1/creative-projects/{project_id}/refine-novel-body` | 按中文要求微调章节正文 | `refine_novel_body` | `backend/app/api/v1/creative_projects.py:1270` |
+| `POST` | `/api/v1/creative-projects/{project_id}/regenerate-chapter-outline-scenes` | 只重生成单话细纲场景 | `regenerate_chapter_outline_scenes` | `backend/app/api/v1/creative_projects.py:1911` |
+| `POST` | `/api/v1/creative-projects/{project_id}/run-pipeline` | Run creative project production pipeline | `run_pipeline` | `backend/app/api/v1/creative_projects.py:1190` |
+| `POST` | `/api/v1/creative-projects/{project_id}/split-comic-pages` | 拆分漫画页 | `split_comic_pages` | `backend/app/api/v1/creative_projects.py:1352` |
+| `GET` | `/api/v1/creative-projects/{project_id}/state` | 查看项目动态状态当前值 | `get_project_state` | `backend/app/api/v1/creative_projects.py:869` |
+| `GET` | `/api/v1/creative-projects/{project_id}/state/timeline` | 查看项目动态状态按章变化轨迹 | `get_project_state_timeline` | `backend/app/api/v1/creative_projects.py:881` |
+| `POST` | `/api/v1/creative-projects/{project_id}/sync-characters` | 同步大纲角色到角色库 | `sync_project_characters` | `backend/app/api/v1/creative_projects.py:2064` |
+| `POST` | `/api/v1/creative-projects/{project_id}/sync-project-bible` | 从故事大纲同步项目圣经和世界资产 | `sync_project_bible` | `backend/app/api/v1/creative_projects.py:1128` |
+| `GET` | `/api/v1/creative-projects/{project_id}/visual-baseline` | 读取项目视觉基准 | `get_visual_baseline` | `backend/app/api/v1/creative_projects.py:1945` |
+| `PUT` | `/api/v1/creative-projects/{project_id}/visual-baseline` | 设置项目视觉基准（一个项目一张，重设即替换） | `set_visual_baseline` | `backend/app/api/v1/creative_projects.py:1952` |
+| `DELETE` | `/api/v1/creative-projects/{project_id}/visual-baseline` | 清除项目视觉基准 | `clear_visual_baseline` | `backend/app/api/v1/creative_projects.py:1963` |
+| `POST` | `/api/v1/creative-projects/{project_id}/writer-room/promote` | Promote writer-room prose to latest novel body | `promote_writer_room_content` | `backend/app/api/v1/creative_projects.py:1334` |
+| `POST` | `/api/v1/creative-projects/{project_id}/writer-room/run` | Run selected novel writer-room steps | `run_writer_room` | `backend/app/api/v1/creative_projects.py:1305` |
+| `POST` | `/api/v1/creative-projects/{project_id}/writer-room/step/{step}` | Run one novel writer-room step | `run_writer_room_step` | `backend/app/api/v1/creative_projects.py:1287` |
+| `GET` | `/api/v1/creative-projects/{project_id}/writing-preflight` | 检查写作阶段前置条件 | `get_writing_preflight` | `backend/app/api/v1/creative_projects.py:909` |
 
 ### Creative Projects — Fanqie
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/creative-projects/{project_id}/fanqie/binding` | 读取项目番茄绑定 | `get_fanqie_binding` | `backend/app/api/v1/creative_fanqie.py:159` |
-| `POST` | `/api/v1/creative-projects/{project_id}/fanqie/binding` | 设置项目番茄绑定 | `set_fanqie_binding` | `backend/app/api/v1/creative_fanqie.py:140` |
-| `GET` | `/api/v1/creative-projects/{project_id}/fanqie/publish-preflight` | 预检番茄章节发布 | `preview_fanqie_publish` | `backend/app/api/v1/creative_fanqie.py:168` |
-| `GET` | `/api/v1/creative-projects/{project_id}/fanqie/publish-status` | 查询番茄发布记录 | `get_fanqie_publish_status` | `backend/app/api/v1/creative_fanqie.py:196` |
-| `POST` | `/api/v1/creative-projects/{project_id}/publish-to-fanqie` | 保存章节到番茄草稿 | `publish_to_fanqie` | `backend/app/api/v1/creative_fanqie.py:87` |
+| `GET` | `/api/v1/creative-projects/{project_id}/fanqie/binding` | 读取项目番茄绑定 | `get_fanqie_binding` | `backend/app/api/v1/creative_fanqie.py:199` |
+| `POST` | `/api/v1/creative-projects/{project_id}/fanqie/binding` | 设置项目番茄绑定 | `set_fanqie_binding` | `backend/app/api/v1/creative_fanqie.py:179` |
+| `GET` | `/api/v1/creative-projects/{project_id}/fanqie/publish-preflight` | 预检番茄章节发布 | `preview_fanqie_publish` | `backend/app/api/v1/creative_fanqie.py:209` |
+| `GET` | `/api/v1/creative-projects/{project_id}/fanqie/publish-status` | 查询番茄发布记录 | `get_fanqie_publish_status` | `backend/app/api/v1/creative_fanqie.py:238` |
+| `POST` | `/api/v1/creative-projects/{project_id}/publish-to-fanqie` | 保存章节到番茄草稿 | `publish_to_fanqie` | `backend/app/api/v1/creative_fanqie.py:125` |
 
 ### Download
 
@@ -609,29 +619,29 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/model-3d/backends` | Configured 3D connectors (generation / rigging) | `list_model3d_backends` | `backend/app/api/v1/model3d_workspace.py:263` |
-| `POST` | `/api/v1/model-3d/generate` | Submit configured image-to-3D task | `generate_model3d` | `backend/app/api/v1/model3d_workspace.py:275` |
-| `GET` | `/api/v1/model-3d/history` | Durable 3D workspace history | `model3d_history` | `backend/app/api/v1/model3d_workspace.py:385` |
-| `POST` | `/api/v1/model-3d/retarget` | 通用动作库：把另一个模型的动作套到目标模型上 | `retarget_model3d` | `backend/app/api/v1/model3d_workspace.py:756` |
-| `POST` | `/api/v1/model-3d/rig` | Submit auto-rigging task (skeleton-only or preset motion) | `rig_model3d` | `backend/app/api/v1/model3d_workspace.py:506` |
-| `GET` | `/api/v1/model-3d/tasks/{task_id}` | Poll image-to-3D task | `poll_model3d_task` | `backend/app/api/v1/model3d_workspace.py:341` |
+| `GET` | `/api/v1/model-3d/backends` | Configured 3D connectors (generation / rigging) | `list_model3d_backends` | `backend/app/api/v1/model3d_workspace.py:267` |
+| `POST` | `/api/v1/model-3d/generate` | Submit configured image-to-3D task | `generate_model3d` | `backend/app/api/v1/model3d_workspace.py:279` |
+| `GET` | `/api/v1/model-3d/history` | Durable 3D workspace history | `model3d_history` | `backend/app/api/v1/model3d_workspace.py:427` |
+| `POST` | `/api/v1/model-3d/retarget` | 通用动作库：把另一个模型的动作套到目标模型上 | `retarget_model3d` | `backend/app/api/v1/model3d_workspace.py:805` |
+| `POST` | `/api/v1/model-3d/rig` | Submit auto-rigging task (skeleton-only or preset motion) | `rig_model3d` | `backend/app/api/v1/model3d_workspace.py:548` |
+| `GET` | `/api/v1/model-3d/tasks/{task_id}` | Poll image-to-3D task | `poll_model3d_task` | `backend/app/api/v1/model3d_workspace.py:353` |
 
 ### Images
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/images/backends` | 可用图像后端列表 | `list_backends` | `backend/app/api/v1/images.py:494` |
-| `POST` | `/api/v1/images/generate` | 生成图片 | `generate_image` | `backend/app/api/v1/images.py:633` |
-| `POST` | `/api/v1/images/generate-batch` | 批量生成多平台图片 | `batch_generate_endpoint` | `backend/app/api/v1/images.py:1600` |
-| `POST` | `/api/v1/images/generate-batch/retry` | 单张图片重生成 | `batch_retry_endpoint` | `backend/app/api/v1/images.py:1535` |
-| `POST` | `/api/v1/images/generate-batch/topics` | 多主题批量生成 | `batch_topics_generate_endpoint` | `backend/app/api/v1/images.py:1633` |
-| `POST` | `/api/v1/images/generate-outline` | 多平台大纲生成 | `generate_outline_endpoint` | `backend/app/api/v1/images.py:1474` |
-| `POST` | `/api/v1/images/optimize-prompt` | 用 LLM 优化生图提示词 | `optimize_prompt` | `backend/app/api/v1/images.py:609` |
-| `GET` | `/api/v1/images/platform-templates` | 可用平台/Prompt 模板列表 | `list_platform_templates` | `backend/app/api/v1/images.py:1352` |
-| `POST` | `/api/v1/images/platform-templates` | 新增平台模板 | `create_platform_template` | `backend/app/api/v1/images.py:1383` |
-| `PUT` | `/api/v1/images/platform-templates/{template_id}` | 更新平台模板 | `update_platform_template` | `backend/app/api/v1/images.py:1410` |
-| `DELETE` | `/api/v1/images/platform-templates/{template_id}` | 删除平台模板 | `delete_platform_template` | `backend/app/api/v1/images.py:1447` |
-| `GET` | `/api/v1/images/tasks/{task_id}` | 轮询图像生成任务 | `poll_image_task` | `backend/app/api/v1/images.py:895` |
+| `GET` | `/api/v1/images/backends` | 可用图像后端列表 | `list_backends` | `backend/app/api/v1/images.py:498` |
+| `POST` | `/api/v1/images/generate` | 生成图片 | `generate_image` | `backend/app/api/v1/images.py:640` |
+| `POST` | `/api/v1/images/generate-batch` | 批量生成多平台图片 | `batch_generate_endpoint` | `backend/app/api/v1/images.py:1623` |
+| `POST` | `/api/v1/images/generate-batch/retry` | 单张图片重生成 | `batch_retry_endpoint` | `backend/app/api/v1/images.py:1554` |
+| `POST` | `/api/v1/images/generate-batch/topics` | 多主题批量生成 | `batch_topics_generate_endpoint` | `backend/app/api/v1/images.py:1660` |
+| `POST` | `/api/v1/images/generate-outline` | 多平台大纲生成 | `generate_outline_endpoint` | `backend/app/api/v1/images.py:1490` |
+| `POST` | `/api/v1/images/optimize-prompt` | 用 LLM 优化生图提示词 | `optimize_prompt` | `backend/app/api/v1/images.py:613` |
+| `GET` | `/api/v1/images/platform-templates` | 可用平台/Prompt 模板列表 | `list_platform_templates` | `backend/app/api/v1/images.py:1361` |
+| `POST` | `/api/v1/images/platform-templates` | 新增平台模板 | `create_platform_template` | `backend/app/api/v1/images.py:1392` |
+| `PUT` | `/api/v1/images/platform-templates/{template_id}` | 更新平台模板 | `update_platform_template` | `backend/app/api/v1/images.py:1422` |
+| `DELETE` | `/api/v1/images/platform-templates/{template_id}` | 删除平台模板 | `delete_platform_template` | `backend/app/api/v1/images.py:1460` |
+| `GET` | `/api/v1/images/tasks/{task_id}` | 轮询图像生成任务 | `poll_image_task` | `backend/app/api/v1/images.py:904` |
 
 ### JianYing
 
@@ -945,12 +955,12 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/tasks` | 任务列表 | `list_tasks` | `backend/app/api/v1/tasks.py:622` |
-| `GET` | `/api/v1/tasks/stats` | 任务统计 | `get_task_stats` | `backend/app/api/v1/tasks.py:660` |
-| `GET` | `/api/v1/tasks/{task_id}` | 任务详情 | `get_task_detail` | `backend/app/api/v1/tasks.py:737` |
-| `DELETE` | `/api/v1/tasks/{task_id}` | 删除任务 | `delete_task` | `backend/app/api/v1/tasks.py:934` |
-| `POST` | `/api/v1/tasks/{task_id}/cancel` | 取消任务 | `cancel_task` | `backend/app/api/v1/tasks.py:765` |
-| `POST` | `/api/v1/tasks/{task_id}/retry` | 重试失败任务 | `retry_task` | `backend/app/api/v1/tasks.py:825` |
+| `GET` | `/api/v1/tasks` | 任务列表 | `list_tasks` | `backend/app/api/v1/tasks.py:786` |
+| `GET` | `/api/v1/tasks/stats` | 任务统计 | `get_task_stats` | `backend/app/api/v1/tasks.py:831` |
+| `GET` | `/api/v1/tasks/{task_id}` | 任务详情 | `get_task_detail` | `backend/app/api/v1/tasks.py:909` |
+| `DELETE` | `/api/v1/tasks/{task_id}` | 删除任务 | `delete_task` | `backend/app/api/v1/tasks.py:1118` |
+| `POST` | `/api/v1/tasks/{task_id}/cancel` | 取消任务 | `cancel_task` | `backend/app/api/v1/tasks.py:943` |
+| `POST` | `/api/v1/tasks/{task_id}/retry` | 重试失败任务 | `retry_task` | `backend/app/api/v1/tasks.py:1006` |
 
 ### Torrents
 
@@ -977,11 +987,11 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/videos/backends` | 可用视频后端列表 | `list_backends` | `backend/app/api/v1/videos.py:437` |
-| `POST` | `/api/v1/videos/generate` | Generate video with optional project lineage | `generate_video` | `backend/app/api/v1/videos.py:478` |
-| `GET` | `/api/v1/videos/history` | 视频生成历史与待处理任务 | `list_video_tasks` | `backend/app/api/v1/videos.py:735` |
-| `GET` | `/api/v1/videos/tasks/{task_id}` | 查询任务状态 | `get_task_status` | `backend/app/api/v1/videos.py:645` |
-| `GET` | `/api/v1/videos/tasks/{task_id}/file` | 播放已下载的视频任务文件 | `stream_task_file` | `backend/app/api/v1/videos.py:753` |
+| `GET` | `/api/v1/videos/backends` | 可用视频后端列表 | `list_backends` | `backend/app/api/v1/videos.py:444` |
+| `POST` | `/api/v1/videos/generate` | Generate video with optional project lineage | `generate_video` | `backend/app/api/v1/videos.py:485` |
+| `GET` | `/api/v1/videos/history` | 视频生成历史与待处理任务 | `list_video_tasks` | `backend/app/api/v1/videos.py:781` |
+| `GET` | `/api/v1/videos/tasks/{task_id}` | 查询任务状态 | `get_task_status` | `backend/app/api/v1/videos.py:659` |
+| `GET` | `/api/v1/videos/tasks/{task_id}/file` | 播放已下载的视频任务文件 | `stream_task_file` | `backend/app/api/v1/videos.py:799` |
 
 ### WebSocket
 

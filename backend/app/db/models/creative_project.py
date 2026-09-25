@@ -43,6 +43,10 @@ class CreativeProject(SQLModel, table=True):
     chapter_plan_json: str = Field(default="{}")
     settings_json: str = Field(default="{}")
     metadata_json: str = Field(default="{}")
+    # NULL denotes data created before account ownership was introduced.
+    owner_user_id: str | None = Field(
+        default=None, foreign_key="users.id", index=True, max_length=64
+    )
 
     created_at: datetime = Field(default_factory=datetime.now, index=True)
     updated_at: datetime = Field(default_factory=datetime.now)

@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
@@ -42,11 +42,11 @@ from app.services.creative_project.visual_baseline import (
     serialize_visual_baseline,
 )
 from app.core.task_queue import TaskStatus, get_task_queue
+from app.core.resource_auth import principal_owner_user_id, require_owned_or_legacy
+from app.core.user_auth import AuthenticatedPrincipal, get_authenticated_principal, get_authenticated_principal_optional
 from app.services.platform_log import service as platform_log
 
 logger = logging.getLogger("ylcraft.creative_project")
-
-router = APIRouter()
 
 
 def _truncate_for_summary(value: str | None, limit: int = 1000) -> str:
@@ -458,6 +458,54 @@ def service(session: Session = Depends(get_session)) -> CreativeProjectService:
     return CreativeProjectService(session)
 
 
+def require_project_access(
+    project_id: str,
+    request: Request,
+    svc: CreativeProjectService = Depends(service),
+    principal: AuthenticatedPrincipal | None = Depends(get_authenticated_principal_optional),
+) -> AuthenticatedPrincipal | None:
+    """Authenticate and scope every route that addresses one project.
+
+    Reads follow the documented NULL-legacy rule: anonymous callers may read
+    projects that predate accounts, while owned projects require a credential.
+    Mutations always require a credential, but NULL-legacy rows stay writable
+    so local history does not become read-only after enabling accounts.
+    """
+    project = svc.get_project(project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="创作项目不存在")
+    owner_user_id = getattr(project, "owner_user_id", None)
+    if request.method in {"GET", "HEAD", "OPTIONS"}:
+        if principal is None:
+            if owner_user_id is not None:
+                raise HTTPException(status_code=401, detail="需要登录会话或有效的外部 API Key")
+            return None
+        require_owned_or_legacy(owner_user_id=owner_user_id, principal=principal)
+        return principal
+    if principal is None:
+        raise HTTPException(status_code=401, detail="需要登录会话或有效的外部 API Key")
+    require_owned_or_legacy(owner_user_id=owner_user_id, principal=principal)
+    return principal
+
+
+class _ProjectAuthRouter(APIRouter):
+    """Inject ``require_project_access`` into every ``{project_id}`` route.
+
+    Declaring the rule on the router keeps the many project sub-resources from
+    drifting: a new route that names a project is protected by construction.
+    """
+
+    def add_api_route(self, path: str, endpoint, **kwargs):  # type: ignore[override]
+        if "{project_id}" in path:
+            dependencies = list(kwargs.get("dependencies") or [])
+            dependencies.append(Depends(require_project_access))
+            kwargs["dependencies"] = dependencies
+        return super().add_api_route(path, endpoint, **kwargs)
+
+
+router = _ProjectAuthRouter()
+
+
 def _serialize_narrative_run(run: ProjectNarrativeRun) -> dict[str, Any]:
     input_data = loads_json(run.input_json, {})
     budget = input_data.get("budget", {}) if isinstance(input_data, dict) else {}
@@ -635,6 +683,7 @@ def list_projects(
     status: str | None = None,
     project_type: str | None = None,
     svc: CreativeProjectService = Depends(service),
+    principal: AuthenticatedPrincipal | None = Depends(get_authenticated_principal_optional),
 ):
     projects, total = svc.list_projects(
         limit=limit,
@@ -642,6 +691,13 @@ def list_projects(
         status=status,
         project_type=project_type,
     )
+    if principal is not None and principal.user is not None:
+        projects = [
+            project for project in projects
+            if project.owner_user_id is None or project.owner_user_id == principal.user.id
+        ]
+    elif principal is None:
+        projects = [project for project in projects if project.owner_user_id is None]
     return {
         "success": True,
         "data": [serialize_project(p) for p in projects],
@@ -655,6 +711,7 @@ def list_projects(
 def create_project(
     req: CreativeProjectCreateRequest,
     svc: CreativeProjectService = Depends(service),
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
 ):
     project = svc.create_project(
         title=req.title,
@@ -666,6 +723,7 @@ def create_project(
         metadata=req.metadata,
         production_profile=req.production_profile,
         character_id=req.character_id,
+        owner_user_id=principal_owner_user_id(principal),
     )
     return {"success": True, "data": serialize_project(project)}
 
@@ -690,6 +748,7 @@ def list_production_profiles():
 def create_from_novel(
     req: CreateFromNovelRequest,
     svc: CreativeProjectService = Depends(service),
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
 ):
     try:
         project = svc.create_from_novel(
@@ -699,6 +758,7 @@ def create_from_novel(
             title=req.title,
             project_type=req.project_type,
             production_profile=req.production_profile,
+            owner_user_id=principal_owner_user_id(principal),
         )
         return {"success": True, "data": serialize_project(project)}
     except ValueError as e:
@@ -734,10 +794,16 @@ async def extract_project_characters(
 def get_project(
     project_id: str,
     svc: CreativeProjectService = Depends(service),
+    principal: AuthenticatedPrincipal | None = Depends(get_authenticated_principal_optional),
 ):
     project = svc.get_project(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="创作项目不存在")
+    if principal is None:
+        if project.owner_user_id is not None:
+            raise HTTPException(status_code=401, detail="需要登录会话或有效的外部 API Key")
+    else:
+        require_owned_or_legacy(owner_user_id=project.owner_user_id, principal=principal)
     return {"success": True, "data": serialize_project(project)}
 
 
@@ -1028,8 +1094,13 @@ def update_project(
 def delete_project(
     project_id: str,
     svc: CreativeProjectService = Depends(service),
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
 ):
     try:
+        project = svc.get_project(project_id)
+        if project is None:
+            raise ValueError("创作项目不存在")
+        require_owned_or_legacy(owner_user_id=project.owner_user_id, principal=principal)
         stats = svc.delete_project(project_id)
         return {"success": True, "data": stats}
     except ValueError as e:
@@ -2049,6 +2120,7 @@ def serialize_project(project: CreativeProject | None) -> dict[str, Any] | None:
         "settings": settings,
         "production_profile": profile,
         "metadata": loads_json(project.metadata_json),
+        "owner_user_id": project.owner_user_id,
         "created_at": project.created_at.isoformat() if project.created_at else None,
         "updated_at": project.updated_at.isoformat() if project.updated_at else None,
     }

@@ -12,6 +12,7 @@
 - [x] 5. 实现 `_call()` 统一出口：校验 HTTP、解析 JSON、按 `code` 分类 `CookieExpiredError` / `ParamError` / `RiskControlError` / `FanqieError`（登录页重定向也判为 CookieExpired）。
 - [x] 6. 实现 `markdown_to_fanqie_html(md)` 简易转换（段落包 `<p>`、行内 `<br>`、HTML 转义、粗体/斜体/代码）。
 - [ ] 7. 用**独立测试章节**（标题含 `[TEST]`、独立 `item_id`）真实验证 `save_draft` 返回 `latest_version` —— 待用户用自有 cookie + 自建测试章跑 `tools/test_fanqie_client.py --live`（脚本已就绪，离线单测已过）。
+  - _阻塞结论（2026-09-24 复核）：**代码侧无法再推进，卡在"需要真实番茄账号 Cookie + 自建测试章 item_id"**。脚本已就绪且默认离线，`--live` 也只允许 `[TEST]` 标题、独立 item_id，不会碰线上内容；执行需用户提供本机 `.local/` 凭证（**不得入库、不得写进仓库**）。解封命令：`backend\venv_win\Scripts\python.exe tools\test_fanqie_client.py --live`。_
 - [x] 8. 收敛为 `tools/test_fanqie_client.py`：默认只跑离线单测；`--live` 强制 `[TEST]` 标题 + 独立章 ID + cookie 仅从文件/环境变量读取，绝不入库、绝不复用线上内容。
 
 ## Phase 1: 创作项目发布闭环（核心场景）
@@ -35,10 +36,13 @@
 
 - [x] 20. 端点表回填：`design.md` 已记录 C/D 真实路径（`book_list/v0`、`book_common_v1/v0`）+ 真实参数（page_count/page_index、stats_type）；E 组（章节/收益/作家资料）端点路径待用户登录态抓包。
 - [ ] 21. 实现 `get_my_profile(writer_id)` → `UserProfile`（昵称 / 头像 / 总阅读 / 总粉丝）—— **待抓包**（E 组）。
+  - _阻塞结论（2026-09-24 复核）：**只能等真实登录态抓包**。番茄 E 组端点的路径与参数不在公开文档里，仓库硬规矩是「查不到就返回空集 + 说明，绝不编造引用」——凭猜测写路径会在运行时 404，属于白跑。抓包后把真实 path/参数回填 design.md 的端点表，再替换 `routes.py` 里的 `not_captured` 占位；在此之前不假装已具备。_
 - [x] 22. 实现 `get_my_books(...)` → 书籍列表（已验证 `book_list/v0`，已对齐真实分页参数 page_count/page_index，返回 `data.item_list`）。
 - [ ] 23. 实现 `get_book_chapters(book_id)` → 章节列表（E 组待抓；回填后可自动映射 `item_id`，替代手动粘贴）—— **待抓包**。
+  - _阻塞结论（2026-09-24 复核）：同 21，**待真实账号抓包**。这一项解除后价值最直接：能把「手动粘贴 item_id」换成自动映射，但 item_id 映射错会写错章节，所以必须用真实接口返回校验，不能靠推测。_
 - [x] 24. 实现 `get_book_stats(book_id, stats_type=1)` → 阅读量 / 追读 / 投票 / 推荐票（已验证 `book_common_v1/v0`，已加 `stats_type` 支持数据中心各 Tab）。
 - [ ] 25. 实现 `get_earnings(writer_id, period)` → 收益 / 分成 / 打赏 —— **待抓包**（E 组）。
+  - _阻塞结论（2026-09-24 复核）：同 21，**待真实账号抓包**；收益数字属敏感信息，抓包样本只进 `.local/`，不进仓库。_
 - [x] 26. 各方法映射为 `routes.py`：C/D 已真实映射（`/my/books`、`/book/{id}/stats` 透传结构化 data）；E 组三个端点保留 `not_captured` 占位，待抓包后替换。
 - [x] 26b. **前端「我的数据」页接入番茄**（本次 B 任务）：`api/index.ts` 加 `getFanqieMyBooks` / `getFanqieBookStats`；新建 `pages/my-data/FanqieDataPanel.tsx`（自包含：选番茄连接 → 书籍网格 → 点选看统计卡片 + stats_type 切换「基础/质量/流量」→ 热榜 Tab 卡片 + 引导去灵感广场）；`pages/my-data/index.tsx` 加平台 `Segmented`（B站/番茄），修复 early-return（两类都无才提示），番茄分支渲染 `FanqieDataPanel`。esbuild 语法校验 PASS。
 
@@ -55,6 +59,8 @@
 
 - [x] 30. 单元测试：`parse_netscape_cookie`、错误分类（mock `code!=0` / 302 登录页）、`markdown_to_fanqie_html`（离线 pytest 覆盖；真实登录页重定向仍在 live 验证中）。
 - [ ] 31. 集成验证：独立测试章节 `save_draft` + `publish` 真实走通；`get_hot_list` / `get_my_books` / `get_book_stats` 真实返回；cookie 过期场景提示正确。
+  - _阻塞结论（2026-09-24 复核）：**代码侧已无可做的验证**。只读三项（热榜/书架/统计）此前已实测返回；剩下缺的是**真实账号下的写路径**（草稿 + 发布）与**真实 Cookie 过期**这类只有账号侧才会发生的场景。与任务 7 同一把钥匙：用户提供有效 Cookie + 自建 `[TEST]` 章节。失败必须回显可读原因（CookieExpired / RiskControl / ParamError 已分类），不做静默重试。_
 - [ ] 32. 创作项目发布联调：建项目 → 生成 `novel_body` → 绑定番茄 → 发布到测试章 → 校验 `ProjectPublishRecord`。
+  - _阻塞结论（2026-09-24 复核）：**必须等 31 的真实写路径解封后才能做**，否则会在"发布必失败"的环境里空跑一遍还要人工核对失败记录。解封后按既有 UI/Agent 路径：绑定（`settings_json.fanqie`）→ 发布前预检 → 写 `[TEST]` 草稿 → 逐条核对 `ProjectPublishRecord.status/remote_version/post_url`。_
 - [x] 33. 更新平台管理文档：新增 `docs/platform/FANQIE_GUIDE.md`，说明 cookie 凭证边界、`FanqieClient` 统一请求层、已实现 HTTP/Agent 工具、安全 `[TEST]` 章节隔离和真实联调命令；删除 3 个含硬编码真实会话数据的遗留抓包脚本，新增忽略的 `.local/` 凭证目录，仅保留安全 live harness。
 - [x] 34. 把笔名「逸流AI」创作定位（有趣 / 不反智 / 拒绝无脑爽文）记入项目 memory（**已落地**）：已写入长期记忆（标题「笔名『逸流AI』创作定位与内容调性」），并写明三条各自的含义——有趣靠设定与情境的巧思而非堆爽点、不反智即角色行为与情节推进讲得通不靠降智、拒绝无脑爽文即不用无冲突升级/无逻辑碾压充数且冲突要有来由与代价；生成或润色任何发布内容（尤其 `novel_body`、章节标题、简介）时按此把关，与定位冲突的方案改到符合为止。

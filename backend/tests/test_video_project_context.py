@@ -12,6 +12,7 @@ from app.api.v1.videos import (
 )
 from app.db.models.task import VideoGenerationTask
 from app.services.ai.types import MediaType, VideoCapability, VideoCapabilities
+from app.api.v1 import videos as videos_api
 
 
 def test_video_request_keeps_project_provenance_and_false_audio_flag():
@@ -112,6 +113,7 @@ def test_video_history_serialization_exposes_result_and_asset_state():
         asset_id="asset-video-1",
         progress=100,
         created_at=1.0,
+        completed_at=2.0,
     )
 
     serialized = _task_to_dict(task)
@@ -119,6 +121,7 @@ def test_video_history_serialization_exposes_result_and_asset_state():
     assert serialized["asset_id"] == "asset-video-1"
     assert serialized["request"]["duration"] == 5
     assert serialized["result"]["url"].endswith("video.mp4")
+    assert serialized["completed_at"] == 2.0
 
 
 def test_video_result_payload_keeps_provider_diagnostics():
@@ -152,6 +155,131 @@ def test_failed_video_submission_uses_terminal_error_status():
     status = (result.status or "pending") if result.success else "error"
 
     assert status == "error"
+
+
+@pytest.mark.asyncio
+async def test_terminal_video_poll_returns_durable_result_without_remote_call(tmp_path, monkeypatch):
+    """A finished ledger row must not trigger another provider poll."""
+    from contextlib import asynccontextmanager
+
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlmodel.ext.asyncio.session import AsyncSession
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'video-terminal.db'}")
+    factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    async with engine.begin() as connection:
+        await connection.run_sync(
+            lambda sync_connection: VideoGenerationTask.metadata.create_all(
+                sync_connection, tables=[VideoGenerationTask.__table__]
+            )
+        )
+    async with factory() as session:
+        session.add(VideoGenerationTask(
+            task_id="video-terminal",
+            provider="Agnes",
+            model="agnes-video-v2.0",
+            status="error",
+            prompt="failed once",
+            request_json='{"planning_summary": {"provider": "Agnes"}}',
+            result_json='{"diagnostics": {"operation": "poll", "response_excerpt": "boom"}}',
+            error="provider exploded",
+            progress=0,
+            created_at=1.0,
+            completed_at=2.0,
+        ))
+        await session.commit()
+
+    class Manager:
+        def is_loaded(self):
+            return True
+
+        async def poll_video(self, provider, task_id):
+            raise AssertionError("terminal rows must not be re-polled")
+
+    @asynccontextmanager
+    async def session_scope():
+        async with factory() as session:
+            yield session
+            await session.commit()
+
+    monkeypatch.setattr(videos_api, "get_async_session", session_scope)
+    monkeypatch.setattr(videos_api, "get_ai_service", lambda: Manager())
+
+    response = await videos_api.get_task_status("video-terminal")
+
+    assert response.terminal is True
+    assert response.status == "error"
+    assert response.error == "provider exploded"
+    assert response.diagnostics["operation"] == "poll"
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_video_poll_persists_provider_completion_time(tmp_path, monkeypatch):
+    """A terminal poll must prefer the provider's instant over local discovery time."""
+    from contextlib import asynccontextmanager
+
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlmodel.ext.asyncio.session import AsyncSession
+    from app.services.ai.types import VideoGenerationResult
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'video-completed-at.db'}")
+    factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    async with engine.begin() as connection:
+        await connection.run_sync(
+            lambda sync_connection: VideoGenerationTask.metadata.create_all(
+                sync_connection, tables=[VideoGenerationTask.__table__]
+            )
+        )
+    async with factory() as session:
+        session.add(VideoGenerationTask(
+            task_id="video-completed-at",
+            provider="Agnes",
+            model="agnes-video-v2.0",
+            status="pending",
+            prompt="complete once",
+            request_json='{"planning_summary": {"provider": "Agnes"}}',
+            result_json='{"provider_task_id": "remote-1"}',
+            created_at=1.0,
+        ))
+        await session.commit()
+
+    class Manager:
+        def is_loaded(self):
+            return True
+
+        async def poll_video(self, provider, task_id):
+            assert task_id == "remote-1"
+            return VideoGenerationResult(
+                True,
+                task_id=task_id,
+                status="done",
+                url="https://example.test/video.mp4",
+                completed_at=1790152374.0,
+            )
+
+    @asynccontextmanager
+    async def session_scope():
+        async with factory() as session:
+            yield session
+            await session.commit()
+
+    monkeypatch.setattr(videos_api, "get_async_session", session_scope)
+    monkeypatch.setattr(videos_api, "get_ai_service", lambda: Manager())
+
+    response = await videos_api.get_task_status("video-completed-at")
+
+    assert response.terminal is True
+    assert response.completed_at == 1790152374.0
+    async with factory() as session:
+        persisted = await session.get(VideoGenerationTask, "video-completed-at")
+        assert persisted is not None
+        assert persisted.completed_at == 1790152374.0
+    await engine.dispose()
 
 
 @pytest.mark.asyncio

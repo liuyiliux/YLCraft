@@ -7,7 +7,9 @@ YLCraft — 工具注册表
 
 from __future__ import annotations
 
+import json
 import logging
+from typing import get_type_hints
 import time
 import inspect
 from dataclasses import dataclass, field
@@ -186,6 +188,51 @@ class ToolRegistry:
         return None
 
     @classmethod
+    def _coerce_argument_types(cls, tool: Tool, arguments: dict) -> dict:
+        """把"形状对、类型不对"的参数还原成 schema 声明的类型。
+
+        为什么要这一层：模型把数组参数写成 JSON **字符串**是很常见的
+        （`operations` 实测收到的是 `"[{\"type\":...}]"`）。字符串是可迭代的，
+        于是下游 `for operation in operations` 会**逐字符**遍历——表现为
+        "每一条都被拒，原因都是未知操作类型：(空)"，而被拒条数正好等于字符数
+        （144/159/165 就是这个数）。模型看到这个反馈只会以为自己写错了内容，
+        于是一遍遍重发同样的字符串——属安静地做错里最难查的一类。
+
+        因此统一在这里还原（所有工具都受益，不必逐个工具打补丁）：
+        array 收字符串就 `json.loads`；integer/number 收纯数字字符串就转数字。
+        解析不出来的**原样返回**，交给既有的参数校验给出可读错误，绝不静默吞掉。
+        """
+        properties = (tool.parameters or {}).get("properties") or {}
+        if not properties:
+            return arguments
+        coerced = dict(arguments)
+        for key, value in list(coerced.items()):
+            declared = (properties.get(key) or {}).get("type")
+            if isinstance(declared, list):
+                declared = next((item for item in declared if item != "null"), None)
+            if declared == "array" and isinstance(value, str):
+                try:
+                    parsed = json.loads(value)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(parsed, list):
+                    coerced[key] = parsed
+            elif declared == "array" and isinstance(value, dict):
+                # 少数模型会把数组包一层 {"operations": [...]}
+                if len(value) == 1:
+                    only = next(iter(value.values()))
+                    if isinstance(only, list):
+                        coerced[key] = only
+            elif declared == "integer" and isinstance(value, str) and value.strip().lstrip("-").isdigit():
+                coerced[key] = int(value.strip())
+            elif declared == "number" and isinstance(value, str):
+                try:
+                    coerced[key] = float(value.strip())
+                except ValueError:
+                    pass
+        return coerced
+
+    @classmethod
     async def execute_tool(cls, name: str, arguments: dict | None = None) -> ToolCallResult:
         """执行已注册工具并返回统一结果"""
         started = time.perf_counter()
@@ -198,6 +245,7 @@ class ToolRegistry:
                 duration_ms=int((time.perf_counter() - started) * 1000),
             )
 
+        arguments = cls._coerce_argument_types(tool, dict(arguments or {}))
         validation_error = cls._validate_arguments(tool, arguments)
         if validation_error:
             return ToolCallResult(
@@ -260,6 +308,17 @@ def register_tool(
 
         # 自动推断参数 Schema
         sig = inspect.signature(func)
+        # **必须解析字符串注解**：这些工具模块普遍带 `from __future__ import annotations`，
+        # 于是 `param.annotation` 是字符串（`'list[dict[str, Any]]'`）而不是类型对象。
+        # `_annotation_to_json_schema` 遇到字符串会走兜底分支，把一切非简单类型都写成
+        # `{"type": "string"}`——实测 `previs_preview_operations.operations` 就是这样被
+        # 声明成 string 的：模型照着 schema 把操作数组**序列化成 JSON 字符串**传进来，
+        # 字符串可迭代，下游逐字符遍历 → 报出 129 条"未知操作类型：(空)"，
+        # 而被拒条数正好等于 JSON 文本长度。模型再改内容也没用，因为它错在遵循了错的 schema。
+        try:
+            hints = get_type_hints(func)
+        except Exception:  # noqa: BLE001  解析不了就退回原始注解，至少不比原来差
+            hints = {}
         parameters = {
             "type": "object",
             "properties": {},
@@ -270,7 +329,7 @@ def register_tool(
             if param_name in ("self", "cls"):
                 continue
 
-            param_type = param.annotation
+            param_type = hints.get(param_name, param.annotation)
             param_info = _annotation_to_json_schema(param_type, param_name)
 
             # 检查是否有默认值

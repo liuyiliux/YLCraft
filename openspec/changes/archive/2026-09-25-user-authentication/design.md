@@ -36,10 +36,12 @@ class User(SQLModel, table=True):
     is_active: bool
     created_at / updated_at
     last_login_at: str | None
+    email: str | None        # 预留；首版可选，不启用验证、找回密码或邮件通知
 ```
 
 - 密码哈希：使用 `passlib` / `argon2` 或 `bcrypt`；**禁止**自行实现或存明文
 - 不存邮箱也可（首版单用户/少用户场景），但保留字段以便后续加找回密码
+- 邮箱预留字段保持可空且唯一；生产上线再单独 change 接入验证邮件、改绑、找回密码与邮件发送配置，不能把仅存字段宣称为已启用邮箱登录。
 
 ### 会话
 
@@ -71,6 +73,7 @@ current_user: Annotated[User | None, Depends(get_current_user_optional)]
 
 1. 密码只存哈希；日志与事件脱敏，**绝不记录**明文密码或 token
 2. 登录失败限流（按用户名 + IP），防暴力破解
+   - 当前默认阈值为同一用户名 + IP 在 15 分钟内 5 次失败；命中时返回 `429`、人可读剩余冷却时间和 `Retry-After`。进程内实现适用于本地部署，多进程/公网部署需迁移为共享存储。
 3. 登出必须使会话失效（服务端删除/标记）
 4. Cookie：`HttpOnly` + `SameSite=Lax`（或 Strict）；公网部署时加 `Secure`
 5. 会话过期与滑动续期策略需在文档中写明

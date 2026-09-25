@@ -23,7 +23,12 @@
 ## 阶段 3：增强（待做）
 
 - [ ] 13. 本地 UniRig 推理服务（Docker + torch + CUDA）接入工作台「本地 UniRig」入口（路线 B）。
+  - _结论（2026-09-24 收口复核）：**未开始，也不建议在当前 change 里硬塞**。这是独立的基础设施切片——需要 Docker + NVIDIA CUDA + torch 权重（体量按 GB 计）、一个常驻推理进程，以及工作台里的排队/进度/失败可见性；与既有"配置驱动连接器"是两套运行模型。按仓库硬规矩（不写两套并存的半成品），应先立**独立 change**，把「权重从哪来 / 显存门槛 / 任务队列与超时 / 失败怎么报」四项定清楚，再在 3D 工作台加入口。触发条件：用户明确要离线绑骨，或供应商额度成为长期瓶颈。_
+  - _追踪指针（2026-09-25）：本 change 不实现该项，已拆到独立 change `unirig-local-rigging-service`；本项保持未勾选，直到独立 change 完成。_
+  - _进展（2026-09-25）：独立 change 已完成 upstream revision/license/checkpoint checksum、sidecar contract 与 AIConnector field mapping（tasks 1-3）。当前机器 6GB VRAM 低于 upstream 8GB minimum，真实 GPU service/acceptance（tasks 4-6、11）仍未完成，因此本项继续未勾选。_
 - [ ] 14. TripoSR 纳入配置驱动连接器体系（当前 legacy 硬编码在 `Model3DService`，未走 AIConnector）。
+  - _结论（2026-09-24，与交接说明一致）：**必须另立独立 change，不能在本 change 收尾阶段顺带改**。现状是"图生 3D 有多条后端：配置驱动的 AIConnector + TripoSR legacy 硬编码"两套并存；把它迁到连接器会同时动请求构造、轮询协议、结果回流与后端列表接口，属于跨模块行为变更。独立 change 的最小切片：只把 TripoSR 包成 `AIConnector` 实现（入参/出参/轮询对齐现有连接器契约），保持 HTTP 路由与前端不变，再删 legacy 分支——**迁移完成前不删旧路径**，避免出现"配置里没有、路由还指着"的空窗。_
+  - _追踪指针（2026-09-25）：本 change 不实现该项，已拆到独立 change `triposr-connector-migration`；本项保持未勾选，直到独立 change 完成。_
 - [x] 15. 本地格式转换/预览生成（`generate_preview`/`convert_format` 现为 TODO 占位）。
   - _2026-09-16 完成：按 `core/ffmpeg.py` 的同一范式新增 `core/blender.py`（`BlenderService`），把 Blender 无头命令行包装成服务；脚本在 `services/model3d/blender_scripts/`（`convert.py` 格式转换 / 剥骨 / 减面，`preview.py` 渲染预览图）。`Model3DService` 的两个 TODO 方法改为调用它。Blender 由 winget 安装（LTS 4.5.10），`discover_blender()` 会按环境变量 → 常见安装位置 → PATH 的顺序找，找不到时功能显式降级而不是假装成功。_
   - _三条刻意的取舍：① **`generate_preview` 失败返回 None，`convert_format` 失败抛错**——预览是锦上添花（没有它模型照样能用，不该拖垮入库），而转换失败必须让调用方知道，否则会拿到"说转成了 FBX、实际还是 GLB"的文件；② 预览相机由**包围盒**算出而非写死距离——图生 3D 的产物被归一化过，手工模型却有 1.9 米高，写死不是拍太远就是穿模；③ 预览用透明背景 PNG，方便叠在深浅卡片上。_

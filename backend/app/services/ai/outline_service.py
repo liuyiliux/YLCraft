@@ -77,6 +77,7 @@ async def batch_generate_images(
     outline_title: Optional[str] = None,
     outline_copywriting: Optional[str] = None,
     reference_images: list[str] = [],
+    owner_user_id: str | None = None,
 ) -> dict:
     """
     批量生成图片：对每一页调用现有的 generate_image。
@@ -145,6 +146,7 @@ async def batch_generate_images(
                                 "content_platform": page.get("platform", ""),
                             },
                             tags=[page.get("platform", ""), page.get("type", "")],
+                            owner_user_id=owner_user_id,
                         )
                         asset_hub_node_id = hub_result.node_id
                         logger.info(f"Batch image saved to asset library: {result.local_path}")

@@ -651,9 +651,45 @@ frontend/src/
 
 内容生产方案（`production_profile`）与导演 Agent 编排的交互参考：阶段化生产流程、平台适配、多角色导演编排。仅借鉴产品形态与工作流，不复制实现。
 
+### 用户提供的公众号文章：角色资产、动作管线与研究边界（2026-09-22）
+
+> 证据等级：**文章原文已读取，未独立复现实验或核验其引用的供应商/开源仓库**。以下是工作流思想，不是对 LibTV、GMR 或视频转动作仓库功能的背书。
+
+| 来源 | 可参考的思想 | 与 YLCraft 的结论 | 边界与下一步 |
+| --- | --- | --- | --- |
+| [LibTV 1.5 体验文章](https://mp.weixin.qq.com/s/BFNGLHHG9hYKI0MUdQ77Cg) | 把演员身份、外观、音色、剧本和预演产物作为可复用资产；让导演修改能通过结构化关系影响下游，而不是只改一段文本。 | 与现有角色库、`CharacterStoryLink`、项目 Context Pack 和 `PrevisSceneDocument` 同向。应继续坚持“修改先预览/确认、再按引用关系回写”，而非以全局字符串替换模拟变更。 | 文中“同脸换装需重建身份”正是反例：身份基准应与项目内服装/视觉覆盖分层。YLCraft 已有项目世界覆盖，是否补专门服装变体需独立 change 与数据模型设计。自动镜头节奏仍需人工修，不能把预演/成片自动化宣称为免验收。 |
+| [固定骨架与可变字段的角色提示词](https://mp.weixin.qq.com/s/vqJhn54ZVmI5FFpbjtU3gQ) | 将稳定版式、摄影/负面约束与可变角色字段分离；把痣、疤和不对称等识别锚点当作验收项。 | 可用于增强角色参考图的提示词契约，而不是把一段长 prompt 存为唯一事实。角色结构字段、项目内视觉覆盖和生成模板应分别有所有权。 | 该方法仅是经验性提示词策略，不能保证跨模型一致性。若落地，应加可计算检查（全身/三视图/锚点元数据齐全）和人工核验，不能仅凭 prompt 成功就标记为一致。 |
+| [Disney GMR 观察文章](https://mp.weixin.qq.com/s/zxNZxke4pvY1rCZpvaMuAA?scene=1) | 稀疏关键姿势由模型补全中间帧，人的职责转为设方向、选变体和验收。 | 与预演台的**动作层**同向，不是运镜层；与现有“关键帧 + 数值不变量 + 人工视觉确认”分层一致。 | 文章明确称其为闭源研究原型，不能下载或当作产品能力。当前不接 GPU 动作生成；未来若评估，应独立验证稀疏姿势→动作补全、成本、许可和可控性。 |
+| [视频到 Mixamo FK 动画文章](https://mp.weixin.qq.com/s/WGaUkvI9i0cCEDDbXOycNQ?scene=1) | 视频→landmarks→带节拍的动作规格→FK 重定向→QA/参考对比；中间产物可审查、可修正。 | 强化“动作即数据”的工程方向：生成/导入动作不能只保留最终 clip，需保留来源、可编辑规格、QA 与预览。双人动作还必须检查相对位置、时序和穿插。 | 尚未验证文中仓库、GVHMR/SMPL-X/Mixamo 许可、GPU 和骨架兼容性；不得导入或再分发其展示资产。若做 BVH/视频动作导入，需独立 change，先定义中间资产、授权证明、脚底/关节/碰撞数值检测及人工验收。 |
+
+综合结论：四篇文章共同支持的不是“一个按钮自动做完”，而是把创作中的可复用身份与可审查中间产物沉淀下来，自动化只负责重复转换，人负责方向、选择与交付验收。YLCraft 的角色资产、预演草稿/确认边界和动作不变量已经具备这个基础；近期优先级应是完成现有身份归属与授权、现有预演的真实浏览器验收，而非把研究原型或未经许可的动作管线直接接入。
+
 ### guillaumemeyer/watermarks-remover
 
 **GitHub**: <https://github.com/guillaumemeyer/watermarks-remover>\
 **许可**: MIT（v0.5.0，本地服务边界见 `docs/reference/watermarks-remover.md`）
 
 AI 水印/元数据去除的开源参考。YLCraft 采用内部适配器 `remove-ai-marks` + `asset_provenance` 服务，借鉴其"扫描 → 预览 → 生成清理副本 → 回滚"交互，不依赖其推理模型；清理动作非破坏式（原文件不覆盖，派生资产 `derived_from` 回指）。
+
+***
+
+## UniRig local rigging research (2026-09-25)
+
+**Evidence level:** upstream GitHub README/LICENSE, GitHub commit API, Hugging Face model card/API and LFS metadata, plus `nvidia-smi` and `docker version` on the target machine. No model was downloaded and no inference was run.
+
+| Item | Verified fact |
+|---|---|
+| Source revision | `VAST-AI-Research/UniRig@6793c6640ff01c8fb389f3993434124bb43d2933` (`main`, 2026-06-04) |
+| Source license | MIT, copyright 2025 VAST-AI-Research and contributors |
+| Model revision | `VAST-AI/UniRig@36842e2b5947e9e60f89275b83208c8e74071c63`, card license `mit` |
+| Default skeleton checkpoint | `skeleton/articulation-xl_quantization_256/model.ckpt`, 1,439,617,174 bytes, SHA-256 `d8cf9b42d56e7bc316d293597ecf8c4c39a8631cdd44a261ecf388242fabd0f4` |
+| Default skinning checkpoint | `skin/articulation-xl/model.ckpt`, 4,375,464,854 bytes, SHA-256 `9d40cf42fb9d4c10d8b373d9f4f557c6fbbc5ebacae7ae6b3dce5a0d8a18bc33` |
+| Optional skeleton fallback | `skeleton/rignet/model.ckpt`, 621,660,032 bytes, SHA-256 `e68121ed9ef1ad8bd396c51e8c5e985048e45951d7e4be740b44723653659c45` |
+| Runtime requirements | Python 3.11, PyTorch tested with >=2.3.1, CUDA GPU, upstream states at least 8GB VRAM for generation |
+| Dependency risk | Upstream expects compiled CUDA/PyTorch packages including `flash_attn`, `spconv`, `torch_scatter`, and `torch_cluster`; no complete pinned wheel matrix is published |
+| Current target machine | RTX 3060 Laptop GPU, 6,144 MiB VRAM, driver 561.09, compute capability 8.6 |
+| Docker state | Client 29.0.1 installed; Docker Desktop Linux engine was not running during the check |
+
+**Conclusion:** UniRig is a plausible local rigging route, and its code and published checkpoints have permissive MIT terms. The current 6GB machine is below the upstream 8GB minimum, so it must not be presented as a working local inference host. The durable result of this research is the pinned revision/checksums plus the sidecar and connector contract in `openspec/changes/unirig-local-rigging-service/design.md`; real inference, VRAM, latency, and maximum mesh size remain unverified until a supported GPU host is available.
+
+**Do not assume:** that the 8GB minimum is sufficient for every mesh, that the two stages can coexist in memory, that upstream dependencies install cleanly on this Windows host, or that an 8GB failure on this machine is representative of supported hardware.

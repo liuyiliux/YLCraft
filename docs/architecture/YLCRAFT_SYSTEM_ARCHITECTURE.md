@@ -166,6 +166,16 @@ task_type 命中 `PERSISTED_TASK_TYPES` 白名单、payload 带 `project_id`（`
 **统一重试入口**：`POST /api/v1/tasks/{task_id}/retry` 让任务中心可直接重试失败/取消的任务——
 视频与图转 3D 读各自账本的 `request_json` 重建参数后复用生成端点重提交（资产入库、事件与新任务
 的行为与手动重新生成一致），绑骨任务与图片任务分别指引到工作台与事件日志 Tab（后者带完整可重放参数）。
+**任务详情诊断读取契约**：独立视频 / 图转 3D 账本保存的是供应商原始诊断（`operation` /
+`method` / `endpoint` / `http_status` / `response_excerpt`），任务中心消费的是稳定字段
+（`external_task_id` / `provider` / `model` / `last_remote_status` / `last_response_excerpt`）。
+两者在 `GET /api/v1/tasks/{task_id}` 的读取边界统一归一化：合并 payload/result 诊断，只补齐缺失的
+稳定字段、不覆盖已有值，并把 `response_excerpt` 映射为 `last_response_excerpt`。前端不应自行
+理解两套存储形状，新增持久任务账本时也只需在这一处接入。
+**终态任务收尾契约**：视频 / 图转 3D 的本地账本一旦是 `done` / `error` / `failed` / `cancelled`，
+轮询接口应直接返回已存结果，不再请求供应商；失败或取消轮询必须写入 `completed_at`。任务中心详情
+对终态但缺少结束时间的旧记录返回未知耗时（`null`），不能拿“当前时间”兜底，否则历史失败任务会
+显示成逐日增长的耗时，误导为仍在轮询。
 Live2D 的抠图、风格转换与 AI 分层用 `ai_task("live2d_processing")` 记录任务，此前这些长耗时操作
 只有 WebSocket 推送、刷新即失。
 
@@ -401,7 +411,7 @@ Agent Center 的人工委派入口支持 `resume_parent`：成功汇合后把子
 
 ### 4.4.1 Standalone Image-to-3D
 
-`/model-3d` is a standalone configured-provider workspace, not a hard-coded provider screen. An `AIConnector(provider_type="3d")` declares the model list, generic HTTP request template, optional request/poll headers, API-key header/prefix convention, optional POST poll-body template, and response/poll JSONPath contract, plus an optional poll cadence via `response_config.poll_interval` (seconds; default 10). The model list is enforced on both the workspace page and generation API. `/backends` exposes each connector's `poll_interval`, and the workspace page polls each pending task at its provider's declared interval (the minimum across pending tasks) instead of a hard-coded timer. `model3d_generation_tasks` preserves each task across refreshes. On completion, the backend downloads the model locally and writes the Asset Hub three-layer record with type `3d_model`; source Asset Hub images are linked using `AssetRelation(derived_from)`. Because providers may return several formats, the connector can declare `result_files_path` + `prefer_model_type` (e.g. `GLB`) so the workspace picks a self-contained model over a packed archive, and the downloader unpacks ZIP archives when the result is one. An OBJ result keeps its obj + mtl + texture files together; `GET /api/v1/assets/{id}/files/{filename}` serves those siblings so the asset detail 3D viewer (OBJLoader + MTLLoader) can render them with color. The public `examples/ai-connectors/image-to-3d-generic.json` is a credential-free contract template; `tencent-hunyuan-3d-pro.json` is a credential-free Tencent Hunyuan 3D Pro preset authenticated with TC3-HMAC-SHA256 (`api_format=tencent_tc3`, key format `SecretId:SecretKey`), while the generic template uses plain custom HTTP headers. The settings connector form lists `tencent_tc3` as a first-class image-to-3D option and, for that format, collects the TC3 credentials as two separate fields — `SecretId` and `SecretKey` — then merges them into the single `api_connectors.api_key` column as `SecretId:SecretKey` on save; the TC3 backend splits them back apart at signing time. The legacy `/api/v1/3d/*` metadata/TripoSR routes remain compatible and are not the new workspace contract.
+`/model-3d` is a standalone configured-provider workspace, not a hard-coded provider screen. An `AIConnector(provider_type="3d")` declares the model list, generic HTTP request template, optional request/poll headers, API-key header/prefix convention, optional POST poll-body template, and response/poll JSONPath contract, plus an optional poll cadence via `response_config.poll_interval` (seconds; default 10). The model list is enforced on both the workspace page and generation API. `/backends` exposes each connector's `poll_interval`, and the workspace page polls each pending task at its provider's declared interval (the minimum across pending tasks) instead of a hard-coded timer. `model3d_generation_tasks` preserves each task across refreshes. On completion, the backend downloads the model locally and writes the Asset Hub three-layer record with type `3d_model`; source Asset Hub images are linked using `AssetRelation(derived_from)`. Because providers may return several formats, the connector can declare `result_files_path` + `prefer_model_type` (e.g. `GLB`) so the workspace picks a self-contained model over a packed archive, and the downloader unpacks ZIP archives when the result is one. An OBJ result keeps its obj + mtl + texture files together; `GET /api/v1/assets/{id}/files/{filename}` serves those siblings so the asset detail 3D viewer (OBJLoader + MTLLoader) can render them with color. The public `examples/ai-connectors/image-to-3d-generic.json` is a credential-free contract template; `triposr-image-to-3d.json` is the upload/submit/poll TripoSR preset; `tencent-hunyuan-3d-pro.json` is a credential-free Tencent Hunyuan 3D Pro preset authenticated with TC3-HMAC-SHA256 (`api_format=tencent_tc3`, key format `SecretId:SecretKey`), while the generic template uses plain custom HTTP headers. The settings connector form lists `tencent_tc3` as a first-class image-to-3D option and, for that format, collects the TC3 credentials as two separate fields — `SecretId` and `SecretKey` — then merges them into the single `api_connectors.api_key` column as `SecretId:SecretKey` on save; the TC3 backend splits them back apart at signing time. The legacy `/api/v1/3d/*` metadata routes remain compatible. Its old TripoSR generation endpoints are now a facade over a connector explicitly marked `response_config.legacy_image_to_3d=true`; upload/submit/poll/error mapping all go through `Model3DConnectorBackend`, and `python -m app.scripts.migrate_triposr_connector` imports old `TRIPOSR_API_BASE` / `TRIPOSR_API_KEY` values with a read-only dry run first.
 
 ### 4.4.2 绑骨蒙皮（让模型动起来）
 
@@ -542,6 +552,16 @@ Live2D accepts uploads, character imagery and Asset Hub images as source materia
 
 与可恢复任务账本（`project_task_records` / `video_generation_tasks` / `model3d_generation_tasks`）不同，该表是只读审计流，不驱动任务恢复；图片生成此前「失败无痕」的缺口由此补上。运行日志走文件（`backend/storage/logs/app.log`，`RotatingFileHandler` 10MB×5 滚动），stdout 保留，经 `GET /api/v1/logs/runtime` 倒序 tail 读取（支持 level/关键词过滤与 before 游标）。任务中心以三 Tab（任务 / 事件日志 / 运行日志）统一查看，失败事件支持一键重发。
 
+### 4.7 用户账号与资源归属（核心后端路径已启用，前端待接入）
+
+迁移 `045_add_users_sessions_and_owners` 建立本地账号与可撤销会话的持久化基础：`User`（唯一 `username`、`password_hash`、显示名、启用标记及登录时间）和 `UserSession`（仅保存唯一 `token_hash`、用户关联、过期时间与撤销标记）。密码只经 `bcrypt` 处理；模型、API 响应与日志均不保存明文密码或会话 token。`POST /api/v1/auth/register`、`/login`、`/logout` 与 `GET /me` 已提供本地账号和服务端会话的最小闭环：Cookie 为 `HttpOnly` + `SameSite=Lax`，`YLCRAFT_SESSION_COOKIE_SECURE=1` 才在公网 HTTPS 部署时加 `Secure`；登出将服务端会话撤销，失效 Cookie 不能再取回用户。
+
+`get_current_user_optional` / `get_current_user` 负责会话读取；`get_authenticated_principal` 接受有效人类会话或 `ylk_` 外部 Agent Key，并保持显式无效 Bearer Key 返回 401 的既有语义。登录失败限流按用户名 + IP 在进程内滑动窗口中记录，审计只记录用户名与 IP，不记录密码或 token。
+
+`creative_projects`、`asset_nodes` 与可恢复任务账本 `project_task_records` / `video_generation_tasks` / `model3d_generation_tasks` 均有可空 `owner_user_id -> users.id` 和查询索引。核心写入路径已将会话用户写入新建项目、图片/视频/图转 3D 资产与三类任务账本；客户端不能提交 owner 字段。项目、素材列表/详情和持久视频/图转 3D 任务读取会过滤其他人资源，`NULL` 始终代表迁移前遗留数据且仍可访问。删除项目/素材与取消、重试、删除任务要求会话或有效外部 Key；用户主体会被逐项比对。
+
+外部 Agent Key 当前没有 `user_id` 映射：它能通过受保护操作的凭据门槛与既有 scope/quota 校验，但不会写入伪造的用户 owner，也不会被当作某个用户进行归属过滤。为外部 Key 引入可审计用户主体需要独立迁移与 OpenSpec change。前端已由 `AuthProvider` 在加载时通过 `/auth/me` 恢复服务端会话，未登录用户会跳转 `/login`；公共 API 封装和已认证生成请求均携带 Cookie，浏览器不保存 token。其余历史业务写路径和全量消耗型操作仍在 `user-authentication` 后续任务中；平台事件日志继续是跨主体只读审计流，本期不添加所有权字段。
+
 ## 5. 主要模块边界
 
 | 模块 | API 前缀 | 后端服务 | 前端页面 | 状态 |
@@ -552,7 +572,7 @@ Live2D accepts uploads, character imagery and Asset Hub images as source materia
 | 创作画布 | `/api/v1/canvas` | `frontend/src/components/canvas` | `/canvas` | 独立自由画布，已接一级菜单；支持后端持久化、沉浸式工具 Dock、节点卡片内联编辑、节点输出内联可见、选中节点检查器 HUD、输入/输出变量可视化、生图节点内联 composer、图片节点 Prompt reference 入口与 provenance 传递、素材/项目插入、节点运行、Agent 操作、文本/图片到生成配置节点的派生链路、媒体类型感知的素材节点，以及生成结果回写图片节点。 |
 | 旧 Story Maker | `/api/v1/story` | `services/story` | `/story` 兼容入口 | 历史兼容入口，新增能力优先走 creative-projects。 |
 | 角色 | `/api/v1/characters` | `services/character` | `/characters` | 已支持字段来源标记（original / ai_inferred / user_edited）、提取来源细分（上传/导入/原创大纲）、角色关系 CRUD/关系图谱、确定性 Prompt 资产包；新角色工作区提供主视图/参考图、立绘版本、编辑/新建弹窗、全屏切换、世界视角切换与生产线回流；小说提取采用两趟扫描/设定卡流程，支持预览确认、原文证据、别名归并候选、增量合并和 Agent 工具；角色库筛选总数与筛选条件一致；`/characters/manage` 已删除。 |
-| 素材库 | `/api/v1/assets` | `services/asset` | `/assets` | Asset Hub 统一入口；支持按项目、资产角色和来源阶段追溯项目产物，详情展示归一化项目血缘；数据库中的本地文件字段统一使用项目根相对路径，读取和下载统一经路径解析器。 |
+| 素材库 | `/api/v1/assets` | `services/asset` | `/assets` | Asset Hub 统一入口；支持按项目、资产角色和来源阶段追溯项目产物，详情展示归一化项目血缘；数据库中的本地文件字段统一使用项目根相对路径，读取和下载统一经路径解析器。列表无类型且无后置过滤时跨全部资产类型一次分页，有平台/来源/状态/标签/项目等过滤时保留候选语义；版本与主表示各只读一行；前端按参数复用 in-flight 请求。 |
 | 资产中枢 | `/api/v1/asset-hub` | `services/asset_hub` | `/asset-hub` | 当前资产事实来源；新建 `AssetRepresentation` 时统一规范化为项目根相对路径，缩略图/立绘使用平台下载 URL，不再写入旧绝对路径。 |
 | AI 连接器 | `/api/v1/ai/connectors` | `services/ai`、`services/ai_connector` | `/settings` | 已支持通用配置，仍需 UX 打磨。 |
 | 生图提示词参考库 | `/api/v1/image-prompts` | `services/image_prompt_reference` | `/prompt-library`、画布 picker、图片生成 picker | 后端、Agent 工具、独立浏览页、Picker、画布/生图集成已完成；已支持 IMI 三类大集合、双语 Prompt 字段、本地图片缓存、图片优先浏览页、多图详情切换、画布 metadata 持久化和实际生图入库血缘烟测。 |

@@ -33,11 +33,15 @@
 | `docs/reference/` | 外部参考资料、客户素材、二进制样例。 | 不作为当前实现事实来源。 |
 | `docs/research/` | 专题调研产出：排查计划与结论报告（如任务/事件记录覆盖梳理）。 | 结论要回写到架构或领域文档，这里保留完整推导过程。 |
 
-平台接入入口：`docs/platform/BILIBILI_GUIDE.md`、`docs/platform/FANQIE_GUIDE.md`；其余跨平台对比资料仍在 `docs/platform/MULTI_PLATFORM_REFERENCE.md`。
+平台接入入口：`docs/platform/BILIBILI_GUIDE.md`、`docs/platform/FANQIE_GUIDE.md`；其余跨平台对比资料仍在 `docs/platform/MULTI_PLATFORM_REFERENCE.md`。本地历史归属维护见 `docs/guides/owner-backfill.md`。
 
 ## 当前主线状态
 
-最近更新：2026-09-14。内容包链路**已成链并归档**（`content-package-workspaces` 20/21，落地 capability 6 条需求），三条线：
+> **2026-09-25 update:** `triposr-connector-migration` is no longer planning-only: its connector migration and focused tests are complete, while the real-provider smoke remains unverified because no key is available. `unirig-local-rigging-service` has completed tasks 1-3 (pinned revision/license/checkpoints, sidecar contract, connector mapping); Phase 2+ is deferred because the current machine has 6GB VRAM, below the upstream 8GB minimum, and the user is not buying a supported GPU now.
+
+最近更新：2026-09-25。本轮归档五条线：`user-authentication` 18/18（服务端会话 + HttpOnly Cookie、外部 Agent `ylk_` Key 任一通过、`owner_user_id` 可空的平滑迁移；认证/归属后端测试重跑 14 例通过）、`asset-library-list-performance` 16/16、`task-detail-diagnostics-normalization` 25/25、`previs-ai-copilot` 13/14（3.2 / 3.3 真浏览器验收已完成；2.5「程序化模型本期不做」明确保留未勾）、`legacy-owner-backfill` 7/7（五张历史归属表已复核归到本地 `root`，并新增默认 dry-run、显式 `--apply`、幂等测试的运维入口）。归档目录为 `openspec/changes/archive/2026-09-25-*`。`3d-rigging-digital-human` 的任务 13 / 14 已拆到独立 change `unirig-local-rigging-service` 与 `triposr-connector-migration`。`triposr-connector-migration` 已切到配置驱动连接器，focused tests 通过，真实供应商 smoke 因当前没有可用 key 仍未验证；`unirig-local-rigging-service` 已完成任务 1-3（上游 revision、MIT 许可、权重校验值、sidecar 契约、连接器字段映射），Phase 2+ 因当前机器 6GB 显存低于官方 8GB 最低要求、用户暂不购买设备而暂缓。
+
+上一轮（2026-09-14）：内容包链路**已成链并归档**（`content-package-workspaces` 20/21，落地 capability 6 条需求），三条线：
 
 **① 内容包链路成形并归档**（`content-package-workspaces` 20/21）。内容包六种类型有了集中式契约 schema（`article_package` / `social_carousel` / `shot_list` / `single_media` 标记为 API-only，本期不建 UI；校验分「结构性硬错误」与「内容质量软提示」两档，避免 LLM 抖动直接变成保存失败）；五个平台适配器落地并接入 `outputs[]`（公众号 / 小红书 / 短视频 / PDF / 素材包，**按产出形态命名而非平台**，不调外部平台、不写回源包、带 `source_package_id`/`source_package_version`/`source_item_ids` 溯源，单个适配器失败可独立重建，产出集合由方案声明的 `output_adapters` 决定）；条目级重试与 `stale` 语义（只重跑一条，其余原样保留，依赖它的输出按依赖判定过期）。规划逻辑从 `outline_service.py` 提取为可复用 `ContentPackagePlanner`，原 `generate_outline` 变 39 行兼容委托。
 
