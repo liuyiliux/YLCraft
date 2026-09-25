@@ -89,7 +89,7 @@ async def init_db():
         )
         return
 
-    expected = "011_add_model3d_generation_tasks"
+    expected = "046_add_user_email_reservation"
     if revision == expected:
         logger.info("Database migration state is current: %s", revision)
     else:

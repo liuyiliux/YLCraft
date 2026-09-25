@@ -14,6 +14,7 @@ async function request(path: string, init?: RequestInit) {
   const r = await fetch(`${BASE}${path}`, {
     ...init,
     headers,
+    credentials: 'include',
   })
   const ct = r.headers.get('content-type') || ''
   const data = ct.includes('application/json') ? await r.json() : await r.text()
@@ -36,6 +37,27 @@ async function request(path: string, init?: RequestInit) {
 
   return data
 }
+
+// ===== Local account sessions =====
+export interface AuthUser {
+  id: string
+  username: string
+  display_name: string
+  email?: string | null
+  is_active: boolean
+  created_at: string
+  last_login_at: string | null
+}
+
+export const registerUser = (data: { username: string; password: string; display_name?: string; email?: string }) =>
+  request('/auth/register', { method: 'POST', body: JSON.stringify(data) }) as Promise<{ success: boolean; data: AuthUser }>
+
+export const loginUser = (data: { username: string; password: string }) =>
+  request('/auth/login', { method: 'POST', body: JSON.stringify(data) }) as Promise<{ success: boolean; data: AuthUser }>
+
+export const logoutUser = () => request('/auth/logout', { method: 'POST' }) as Promise<{ success: boolean }>
+
+export const getCurrentUser = () => request('/auth/me') as Promise<{ success: boolean; data: AuthUser }>
 
 // ===== Characters =====
 
