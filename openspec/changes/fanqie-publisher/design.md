@@ -239,7 +239,7 @@ Referer: https://fanqienovel.com/main/writer/data
 | 作家资料 | 作家后台头像/设置 | `user/info` 类 | ✅ **已抓（2026-09-25）** → `GET /api/author/account/info/v0/` |
 | 章节列表 | 作品管理→某本书 | `chapter_list` 类 | ✅ **已抓（2026-09-25）** → `GET /api/author/chapter/chapter_list/v1`（可自动映射 item_id） |
 | 卷列表 | 作品管理→某本书 | （抓包附带发现） | ✅ **已抓（2026-09-25）** → `GET /api/author/volume/volume_list/v1` |
-| 收益/分成 | 左侧「收益分析」 | `earning` 类 | ⏳ 仍待抓 → `get_earnings` |
+| 收益/分成 | 左侧「收益分析」 | `earning` 类 | ✅ **已抓（2026-09-25）** → `GET /api/author/income/book_list/v0/`（页面路由 `/main/writer/profit`） |
 | 质量分析 | 数据中心 Tab | 可能 `book_common_v1` 换 `stats_type` | ⏳ 待验证 |
 | 流量构成 | 数据中心 Tab | 同上 | ⏳ 待验证 |
 
@@ -313,7 +313,24 @@ GET /api/author/account/info/v0/?aid=2503&app_name=muye_novel&msToken=<签名>&a
 
 - 作品管理：`/main/writer/book-manage`
 - 章节管理：`/main/writer/chapter-manage/{book_id}&{urlencoded_title}?type=1`
-- 收益页路径**未探明**：按猜测尝试 `/main/writer/income-analysis` 返回 **404**，故收益接口仍需从界面正常点入后用同样方式抓取——**不猜路径**。
+- **收益分析：`/main/writer/profit?tab=1`**（2026-09-25 补抓）
+
+**5. 收益分析（任务 25）——2026-09-25 补抓**
+
+```text
+GET /api/author/income/book_list/v0/?aid=2503&app_name=muye_novel&page_count=200&page_index=0&msToken=<签名>&a_bogus=<签名>
+```
+
+响应 `code:0`，`data` 含 `total_count` / `is_cp` / `income_book_list[]`。
+**实测样例（该书暂无收益）**：`{"total_count": 0, "is_cp": 0, "income_book_list": []}`
+—— 空列表是真实结果，不得当成接口异常或抓包失败。
+
+> **抓包难点（值得记录，避免下次重走）**：收益页藏在**悬停展开的二级菜单**里。该菜单项
+> 没有 `<a>` 标签、在 accessibility snapshot 里只是 `StaticText`（无可点 ref），
+> 且派发合成 `MouseEvent` 不会触发 React 的响应（React 需要真实指针事件）。
+> 最终办法是**读取该 DOM 节点上的 React fiber，逐级向上找到带 `onClick` 的祖先并直接调用它**，
+> 才拿到真实路由 `/main/writer/profit`。此前按猜测尝试 `/main/writer/income-analysis` **实测 404**，
+> 因此这条经验同时印证了「不猜路径」这条规矩。
 
 **抓包方法（用户在已登录浏览器执行）**：
 1. 打开番茄作家后台对应页面（作品管理 / 收益分析 / 数据中心各 Tab）。
@@ -411,7 +428,7 @@ class NovelEarning(SQLModel, table=True):
 - 发布闭环：`setFanqieBinding` / `getFanqieBinding` / `publishChapterToFanqie` / `getFanqiePublishStatus`（Phase 1）
 - 我的数据：`getFanqieMyBooks(connId, page, size)` / `getFanqieBookStats(connId, bookId, statsType)`（Phase B）
 - 热榜：`getFanqieHotList(connId, hotType=0)`（Phase 4）
-- **未加**：`getFanqieMyProfile` / `getFanqieEarnings`（依赖 E 组抓包，任务 21/25 待做）。
+- **已加**：`getFanqieMyProfile` / `getFanqieBookVolumes` / `getFanqieBookChapters`（章节自动映射） / `getFanqieEarnings`（2026-09-25 抓包落地）。
 
 ### 「我的数据」接入（Phase B）—— 选方案：扩展现有 `my-data`
 - **未**新建独立 `novel-data` 页，而是在 `pages/my-data/index.tsx` 加平台 `Segmented`（B站 / 番茄）：

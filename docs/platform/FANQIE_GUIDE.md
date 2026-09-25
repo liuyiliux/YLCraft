@@ -33,7 +33,7 @@ The main implementation is split deliberately:
 | `GET` | `/api/v1/fanqie/my/profile` | Read author profile (name, description, avatar, points, level). |
 | `GET` | `/api/v1/fanqie/book/{book_id}/volumes` | List volumes of a book. |
 | `GET` | `/api/v1/fanqie/book/{book_id}/chapters` | List existing chapters; the returned `item_id` is the publish target, so the publish panel can auto-map instead of pasting IDs. |
-| `GET` | `/api/v1/fanqie/earnings` | Earnings — still `not_captured`. |
+| `GET` | `/api/v1/fanqie/earnings` | Earnings / revenue analysis. |
 | `GET` | `/api/v1/creative-projects/{project_id}/fanqie/binding` | Read project publishing target. |
 | `POST` | `/api/v1/creative-projects/{project_id}/fanqie/binding` | Set connection, book and volume target for a project. |
 | `GET` | `/api/v1/creative-projects/{project_id}/fanqie/publish-preflight` | Validate the local body and resolved target without contacting Fanqie. |
@@ -51,10 +51,15 @@ Author profile, volume list and chapter list were captured from a real logged-in
 | Author profile | `GET /api/author/account/info/v0/` | Returns author name, description, avatar, points, level. **It does not return total reads or total followers** — those are per-book / data-centre metrics. |
 | Chapter list | `GET /api/author/chapter/chapter_list/v1` | Params: `book_id`, `volume_id`, `page_index` (**0-based**), `page_count`, `status`. Response `data.item_list[]` carries `item_id` (publish target), `index`, `title`, `word_number`, `article_status`. |
 | Volume list | `GET /api/author/volume/volume_list/v1` | Chapters are grouped by volume; `volume_id` is required to publish into an existing chapter. |
+| Earnings | `GET /api/author/income/book_list/v0/` | Params `page_count` / `page_index` (**0-based**). Returns `total_count`, `is_cp`, `income_book_list[]`. An **empty list is a real result** (the book has no earnings yet), not an error. |
 
-`/earnings` still returns `not_captured`. The earnings page path could not be reached: a
-guessed URL returned 404, so the endpoint must be captured by navigating the UI normally.
-Do not fabricate its path or response fields.
+The earnings page lives behind a **hover-expanded second-level menu** whose items have no
+anchor tags and no usable accessibility refs; synthesised mouse events do not trigger React
+either. It was reached by reading the node's React fiber and invoking its `onClick` handler
+directly, which revealed the real route `/main/writer/profit`. A guessed
+`/main/writer/income-analysis` returned **404** — do not guess these routes.
+
+Earnings figures are sensitive: display only, never persist, log, or place in model context.
 
 The author-profile response also contains `phone_number`, `identity_name_mask` and
 `identity_code_mask`. These are passed through for display only: never persist them,

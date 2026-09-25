@@ -13,7 +13,7 @@
   - GET /my/profile                    作家资料（✅ 2026-09-25 抓包落地：account/info/v0/）
   - GET /book/{book_id}/volumes        卷列表（✅ 2026-09-25 抓包落地：volume_list/v1）
   - GET /book/{book_id}/chapters       章节列表（✅ 2026-09-25 抓包落地：chapter_list/v1，供 item_id 自动映射）
-  - GET /earnings                      收益分析（⏳ 仍未抓包：收益页路径未探明，猜测路径返回 404）
+  - GET /earnings                      收益分析（✅ 2026-09-25 抓包落地：income/book_list/v0/）
 
 安全护栏：
   - 所有调用均为只读 GET，绝不改动用户线上数据。
@@ -219,17 +219,30 @@ async def book_chapters(
             raise _fanqie_error_to_http(exc) from exc
 
 
-@router.get("/earnings", summary="收益分析（占位，待 Phase 3）")
+@router.get("/earnings", summary="收益分析")
 async def earnings(
     conn_id: str = Query(..., description="番茄平台连接 ID"),
+    page: int = Query(1, ge=1, description="页码（1 起；番茄内部为 0 起，已转换）"),
+    size: int = Query(200, ge=1, le=200, description="每页条数"),
+    session: AsyncSession = Depends(get_session),
 ):
     """
-    收益分析（分成 / 打赏 / 稿酬等）。
+    收益分析（真实端点：GET /api/author/income/book_list/v0/，2026-09-25 抓包确认）。
 
-    ⏳ 尚未抓包对应接口，先返回「未抓包」提示。
+    收益页真实路由为 `/main/writer/profit`；此前猜测的 `/main/writer/income-analysis`
+    实测返回 404，故本接口是靠界面正常点入后抓取的（未猜路径）。
+
+    返回 `total_count` / `is_cp` / `income_book_list[]`。**空列表是真实结果**
+    （该书暂无收益），不代表接口异常。
+
+    安全：纯只读 GET。收益数字属敏感信息，仅供展示，不落库、不写日志、不进模型上下文。
     """
-    return {
-        "success": False,
-        "not_captured": True,
-        "message": "收益分析接口尚未抓包（Phase 3）。",
-    }
+    client = await _get_client(conn_id, session)
+    async with client:
+        try:
+            data = await client.get_earnings(page=page, size=size)
+            return {"success": True, "data": data}
+        except CookieExpiredError as exc:
+            raise HTTPException(status_code=401, detail=f"番茄 Cookie 已失效：{exc}") from exc
+        except FanqieError as exc:
+            raise _fanqie_error_to_http(exc) from exc

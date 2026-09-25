@@ -2633,6 +2633,15 @@ export const getFanqieBookChapters = (
   return request(`/fanqie/book/${encodeURIComponent(bookId)}/chapters?${qs.toString()}`)
 }
 
+/**
+ * 获取番茄收益分析（只读）。
+ *
+ * 返回 `total_count` / `is_cp` / `income_book_list[]`。**空列表是真实结果**
+ * （该书暂无收益），不是接口异常。分页对外 1 起（后端转成番茄的 0 起 page_index）。
+ */
+export const getFanqieEarnings = (connId: string, page: number = 1, size: number = 200) =>
+  request(`/fanqie/earnings?conn_id=${encodeURIComponent(connId)}&page=${page}&size=${size}`)
+
 // ===== Novel（小说）=====
 export * from './novel'
 export * from './bookSource'
