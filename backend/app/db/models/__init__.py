@@ -42,6 +42,7 @@ from app.db.models.story import Story, StoryCharacterPortrait, StoryStatus, Stor
 from app.db.models.live2d import Live2DModel, Live2DBone, Live2DMotion, Live2DModelStatus
 from app.db.models.api_key import ApiKey, ApiKeyStatus, ApiKeyCategory
 from app.db.models.external_api_key import ExternalApiKey
+from app.db.models.user import User, UserSession
 from app.db.models.agent import (
     AgentSession, AgentSessionCreate, AgentSessionRead,
     AgentThread, AgentThreadBase,

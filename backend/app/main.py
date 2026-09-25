@@ -497,6 +497,12 @@ def _register_routes():
         logger.warning(f"Could not load external_api_keys router: {e}")
 
     try:
+        from app.api.v1 import auth
+        app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication"])
+    except Exception as e:
+        logger.warning(f"Could not load auth router: {e}")
+
+    try:
         from app.api.v1 import ai_capabilities
         app.include_router(ai_capabilities.router, prefix="/api/v1/ai", tags=["AI Capabilities"])
     except Exception as e:

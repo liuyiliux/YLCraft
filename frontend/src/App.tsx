@@ -44,6 +44,9 @@ import InspirationPage from './pages/inspiration'
 import MultiPlatformGenPage from './pages/image-gen/MultiPlatformGen'
 import PlayerPage from './pages/player'
 import ReaderPage from './pages/reader'
+import LoginPage from './pages/auth/LoginPage'
+import { AuthProvider } from './auth/AuthProvider'
+import RequireAuth from './auth/RequireAuth'
 
 /** 包裹层：读取当前主题并传给 Ant Design ConfigProvider */
 function AntdThemeWrapper({ children }: { children: React.ReactNode }) {
@@ -67,9 +70,11 @@ export default function App() {
     <ThemeProvider>
       <AntdThemeWrapper>
         <BrowserRouter>
-          <Routes>
-            <Route path="/model3d-viewer/:assetId" element={<Model3DViewerPage />} />
-            <Route path="/" element={<AppLayout />}>
+          <AuthProvider>
+            <Routes>
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/model3d-viewer/:assetId" element={<RequireAuth><Model3DViewerPage /></RequireAuth>} />
+              <Route element={<RequireAuth><AppLayout /></RequireAuth>}>
               <Route index element={<DashboardPage />} />
               <Route path="download" element={<DownloadPage />} />
               <Route path="assets" element={<AssetsPage />} />
@@ -115,8 +120,10 @@ export default function App() {
               <Route path="settings" element={<SettingsPage />} />
               <Route path="provider-presets" element={<Navigate to="/settings?tab=presets" replace />} />
               <Route path="*" element={<Navigate to="/" replace />} />
-            </Route>
-          </Routes>
+              </Route>
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </AuthProvider>
         </BrowserRouter>
       </AntdThemeWrapper>
     </ThemeProvider>

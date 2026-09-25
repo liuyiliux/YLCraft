@@ -1,4 +1,4 @@
-import { Layout, Menu, Drawer, Button, Tag } from 'antd'
+import { Layout, Menu, Drawer, Button, Tag, Dropdown, message } from 'antd'
 import type { MenuProps } from 'antd'
 import { useNavigate, useLocation, Outlet } from 'react-router-dom'
 import { useState, useEffect, createContext, useContext, useMemo, useCallback, ReactNode } from 'react'
@@ -25,7 +25,10 @@ import {
   TeamOutlined,
   SafetyCertificateOutlined,
   FontSizeOutlined,
+  LogoutOutlined,
+  UserOutlined,
 } from '@ant-design/icons'
+import { useAuth } from '../../auth/AuthProvider'
 
 const { Content, Header } = Layout
 
@@ -200,6 +203,7 @@ function AppLayoutShell() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(window.innerWidth < MOBILE_BREAKPOINT)
   const { fullscreen, setFullscreen } = useFullscreenWorkspace()
+  const { user, logout } = useAuth()
 
   useEffect(() => {
     const handleResize = () => {
@@ -222,6 +226,15 @@ function AppLayoutShell() {
     if (key.startsWith('/')) {
       navigate(key)
       setDrawerOpen(false)
+    }
+  }
+
+  const handleLogout = async () => {
+    try {
+      await logout()
+      navigate('/login', { replace: true })
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '退出登录失败')
     }
   }
 
@@ -276,6 +289,14 @@ function AppLayoutShell() {
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
             <ThemeToggle />
+            <Dropdown
+              menu={{ items: [{ key: 'logout', icon: <LogoutOutlined />, label: '退出登录', onClick: handleLogout }] }}
+              placement="bottomRight"
+            >
+              <Button type="text" icon={<UserOutlined />} style={{ color: THEME.textPrimary }}>
+                {user?.display_name || user?.username}
+              </Button>
+            </Dropdown>
             <a href="/docs" style={{ color: THEME.textSecondary, fontSize: 13 }}>文档</a>
             <a href="/api" style={{ color: THEME.textSecondary, fontSize: 13 }}>API</a>
           </div>
