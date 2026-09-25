@@ -304,7 +304,35 @@ class PatchrightAcquisitionManager:
         cookie_content: str,
         account_info: dict,
     ) -> str:
-        """保存获取结果到 PlatformConnection"""
+        """保存获取结果到 PlatformConnection。
+
+        实际落库是**同步** SQLAlchemy（SessionLocal + commit），因此放到工作线程执行。
+
+        为什么必须这样：本方法此前直接在当前协程里跑同步 DB 调用。uvicorn 只有一个
+        事件循环，同步阻塞调用会把**整个服务**卡住——实测表现为端口仍在 Listen，
+        但连接全部堆在 CloseWait、任何请求都超时（连 /api/v1/platforms 都不响应），
+        而脱离 uvicorn 单独跑同一段代码仅需 1 秒。用 to_thread 让阻塞 I/O 不占用循环。
+        """
+        return await asyncio.to_thread(
+            self._save_to_db_sync,
+            session_id=session_id,
+            platform=platform,
+            cookies_raw=cookies_raw,
+            cookies_array=cookies_array,
+            cookie_content=cookie_content,
+            account_info=account_info,
+        )
+
+    def _save_to_db_sync(
+        self,
+        session_id: str,
+        platform: str,
+        cookies_raw: str,
+        cookies_array: list[dict],
+        cookie_content: str,
+        account_info: dict,
+    ) -> str:
+        """同步落库实现（只应在工作线程中调用，见 _save_to_db）。"""
         from app.db.database import SessionLocal
         from app.db.models.platform_connection import (
             PlatformConnection,
