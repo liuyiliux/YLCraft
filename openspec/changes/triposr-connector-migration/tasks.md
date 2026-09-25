@@ -34,3 +34,4 @@
 - [x] 11. Run openspec validate triposr-connector-migration --strict.
   - _2026-09-25 验证：focused tests 55 passed；`openspec validate triposr-connector-migration --strict` 通过。_
   - _2026-09-25 全量回归：`pytest -q` 为 `1083 passed, 4 failed, 4 skipped`。4 个失败均在本 migration 未触碰的模块：3 个是 storybook/creative-project 对 `PACKAGE_PLAN_STAGES` 的旧断言与当前 `STORYBOOK_STAGES` 不一致，1 个是 `overlay_text` dry-run 仍断言“不落盘”而当前实现已明确改为一律生成 `_preview.png`。未在本 change 内修改这些无关行为；TripoSR 相关测试均通过。_
+  - _2026-09-25 后续（DSH 接手轮）：上述 4 个旧断言已修复，全量后端测试现为 `1087 passed, 0 failed, 4 skipped`。本 change 的 TripoSR 相关测试始终通过。_
