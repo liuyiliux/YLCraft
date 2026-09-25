@@ -47,7 +47,7 @@ describe('预演助手会话：上下文快照', () => {
     expect(ctx.active_camera_name).toBe('中景机位')
   })
 
-  it('只给节点**数量**不给明细：明细对提方案没帮助，反而挤掉上下文', () => {
+  it('节点数量照旧给：判断"有多少东西"够用，不占太多正文', () => {
     const ctx = buildAssistantContext({
       scene,
       nodes: [node({}), node({ id: 'n2' }), node({ id: 'p1', kind: 'primitive' })],
@@ -55,7 +55,30 @@ describe('预演助手会话：上下文快照', () => {
       activeCameraId: 'c1',
     })
     expect(ctx.node_counts).toEqual({ human_proxy: 2, primitive: 1 })
-    expect(JSON.stringify(ctx)).not.toContain('人形占位 1')
+  })
+
+  it('可改对象清单带 id：数量不够定位"改哪一个"（实测助手会编 targetId 导致每条被拒）', () => {
+    const ctx = buildAssistantContext({
+      scene,
+      nodes: [node({}), node({ id: 'n2' }), node({ id: 'p1', kind: 'primitive' })],
+      cameras: [camera({})],
+      activeCameraId: 'c1',
+    })
+    expect(ctx.node_roster).toEqual([
+      { id: 'n1', name: '人形占位 1', kind: 'human_proxy' },
+      { id: 'n2', name: '人形占位 1', kind: 'human_proxy' },
+      { id: 'p1', name: '人形占位 1', kind: 'primitive' },
+    ])
+  })
+
+  it('锁定对象不进可改清单：给了就是让助手去改一个必然被拒的目标', () => {
+    const ctx = buildAssistantContext({
+      scene,
+      nodes: [node({ locked: true }), node({ id: 'n2' })],
+      cameras: [camera({})],
+      activeCameraId: 'c1',
+    })
+    expect(ctx.node_roster.map(item => item.id)).toEqual(['n2'])
   })
 
   it('锁定对象必须带 id 与名称：只给数量等于让助手再问一次，而它未必有机会问', () => {
