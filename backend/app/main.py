@@ -1,9 +1,14 @@
 """
 YLCraft — FastAPI 入口
 
-启动方式：
+启动方式（Windows 必须带 --loop，否则浏览器类功能不可用）：
     cd backend
-    uvicorn app.main:app --reload --port 8000
+    uvicorn app.main:app --reload --port 8000 --loop app.core.win_loop:new_loop
+
+为什么需要 --loop：`--reload` 会让 uvicorn 选 SelectorEventLoop，而它在 Windows 上
+不支持 create_subprocess_exec，Patchright 无法启动浏览器（Cookie 获取全部失败）。
+详见 app/core/win_loop.py。
+非 Windows 平台无需该参数。
 """
 
 from __future__ import annotations

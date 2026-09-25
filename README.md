@@ -150,6 +150,11 @@ source venv/bin/activate
 pip install -r requirements.txt
 alembic upgrade head
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+
+# Windows 必须追加 --loop，否则浏览器类功能（Cookie 获取）全部失败：
+#   --reload 会让 uvicorn 选 SelectorEventLoop，它在 Windows 不支持创建子进程，
+#   Patchright 无法启动浏览器。详见 backend/app/core/win_loop.py。
+uvicorn app.main:app --reload --port 8000 --loop app.core.win_loop:new_loop
 ```
 
 ### 4. 启动前端
