@@ -3,7 +3,7 @@
 > **进度总览（2026-08-08）**：✅ Phase 0 / 1 / 2 / 4 / 5 代码完成；✅ Phase 3 的 C/D 接口 + 前端「我的数据」完成；✅ Phase 6 离线测试、发布预检 API/UI、Agent 工具和文档完成；🟡 E 组（作家资料/章节/收益，任务 21/23/25）待用户登录态抓包；⏳ 真实测试章与项目端到端联调（7/31/32）待用户环境。
 > 详见 `proposal.md`（实施状态 + What changes 表）与 `design.md`（接口/前端落地细节）。
 >
-> **2026-09-25 更新（browser-skill 抓包轮）**：E 组已用 browser-skill 接管用户**已登录** Chrome 抓到真实契约——**任务 21（作家资料）与 23（章节列表）已完成落地**，并附带发现卷列表接口；任务 25（收益）仍未抓包（收益页路径未探明，**猜测 URL 实测返回 404**，故按仓库规矩不猜路径）。前端发布面板现已支持从番茄拉取章节列表并自动填入 `item_id`，取代手动粘贴。
+> **2026-09-25 更新（browser-skill 抓包轮）**：E 组三项**已全部用 browser-skill 接管用户已登录 Chrome 抓到真实契约并落地**——任务 21（作家资料 `account/info/v0/`）、23（章节列表 `chapter_list/v1`，附带发现卷列表 `volume_list/v1`）、25（收益 `income/book_list/v0/`）。收益页路由为 `/main/writer/profit`（猜测的 `income-analysis` 实测 404，靠 React fiber 调用 onClick 才拿到真实路由）。前端发布面板支持从番茄拉取章节列表并自动填入 `item_id`，取代手动粘贴；「我的数据」新增「收益」Tab。
 > **仍待用户侧**：7 / 31 / 32 需要真实账号写路径（有效 Cookie + 自建 `[TEST]` 章节）。
 
 ## Phase 0: FanqieClient 核心（已验证接口落地）
@@ -51,9 +51,13 @@
   - _前端已接：`FanqiePublishPanel` 新增「拉取章节列表」按钮 + 选章下拉，选中后自动填入 `item_id` 与 `volume_id`，不再需要手抄 ID。_
   - _安全：纯只读 GET；`index` 可对齐项目 `chapter_number`，但**发布前仍应人工确认**——映射错章节会写到错误位置。_
 - [x] 24. 实现 `get_book_stats(book_id, stats_type=1)` → 阅读量 / 追读 / 投票 / 推荐票（已验证 `book_common_v1/v0`，已加 `stats_type` 支持数据中心各 Tab）。
-- [ ] 25. 实现 `get_earnings(writer_id, period)` → 收益 / 分成 / 打赏 —— **待抓包**（E 组）。
-  - _阻塞结论（2026-09-24 复核）：同 21，**待真实账号抓包**；收益数字属敏感信息，抓包样本只进 `.local/`，不进仓库。_
+- [x] 25. 实现 `get_earnings(writer_id, period)` → 收益 / 分成 / 打赏
+  - _2026-09-25 **已完成（browser-skill 抓包落地）**：真实端点为 `GET /api/author/income/book_list/v0/`，参数 `page_count` / `page_index`（0 起）。响应 `data` 含 `total_count` / `is_cp` / `income_book_list[]`；**实测该书暂无收益，返回 `{"total_count":0,"is_cp":0,"income_book_list":[]}`——空列表是真实结果，不得当成接口异常**。_
+  - _抓包过程值得记录：收益页藏在**悬停展开的二级菜单**里，DOM 无 a 标签、无可用 snapshot ref，合成 MouseEvent 也不触发 React。最终通过**读取节点上的 React fiber，直接调用其 `onClick` 处理器**才跳转成功，得到真实路由 `/main/writer/profit`。此前猜测的 `/main/writer/income-analysis` **实测 404**——再次印证「不猜路径」。_
+  - _落地物：`apis.py` 的 `INCOME_BOOK_LIST`、`client.get_earnings()`、`routes.py` 的 `GET /earnings`（替换 `not_captured` 占位）、前端 `getFanqieEarnings` + 「我的数据」新增「收益」Tab。_
+  - _隐私：收益数字属敏感信息，仅展示用，不落库、不写日志、不进模型上下文。_
 - [x] 26. 各方法映射为 `routes.py`：C/D 已真实映射（`/my/books`、`/book/{id}/stats` 透传结构化 data）；E 组三个端点保留 `not_captured` 占位，待抓包后替换。
+  - _2026-09-25 已替换完毕：E 组三条（`/my/profile`、`/book/{book_id}/chapters`、`/earnings`）全部改为真实实现，并新增 `/book/{book_id}/volumes`；`routes.py` 中已无 `not_captured` 残留（有测试固定这一点）。_
 - [x] 26b. **前端「我的数据」页接入番茄**（本次 B 任务）：`api/index.ts` 加 `getFanqieMyBooks` / `getFanqieBookStats`；新建 `pages/my-data/FanqieDataPanel.tsx`（自包含：选番茄连接 → 书籍网格 → 点选看统计卡片 + stats_type 切换「基础/质量/流量」→ 热榜 Tab 卡片 + 引导去灵感广场）；`pages/my-data/index.tsx` 加平台 `Segmented`（B站/番茄），修复 early-return（两类都无才提示），番茄分支渲染 `FanqieDataPanel`。esbuild 语法校验 PASS。
 
 ## Phase 4: 热榜灵感

@@ -31,6 +31,7 @@ from .apis import (
     ACCOUNT_INFO,
     CHAPTER_LIST,
     VOLUME_LIST,
+    INCOME_BOOK_LIST,
     DEFAULT_AID,
     DEFAULT_APP_NAME,
     COVER_MS_TOKEN,
@@ -433,4 +434,31 @@ class FanqieClient(BasePlatformClient):
         if volume_id:
             query["volume_id"] = str(volume_id)
         resp = await self._call("GET", CHAPTER_LIST, params=query)
+        return resp.get("data", {}) or {}
+
+    async def get_earnings(self, page: int = 1, size: int = 200) -> Dict[str, Any]:
+        """
+        收益分析（真实端点：GET /api/author/income/book_list/v0/，2026-09-25 抓包确认）。
+
+        收益页真实路由为 `/main/writer/profit`（此前猜测的
+        `/main/writer/income-analysis` 实测 **404**，故此接口靠 UI 正常点入抓取）。
+
+        ⚠️ 分页同为 **0-based** `page_index`（与章节列表一致），内部已从对外 `page`（1 起）转换。
+
+        Returns:
+            data 字典，含 `total_count`、`is_cp`、`income_book_list[]`。
+            **实测样例（该书尚无收益）**：
+            `{"total_count": 0, "is_cp": 0, "income_book_list": []}`
+            —— 空列表是真实结果，不代表接口异常；请勿把空结果当成错误。
+
+        安全：纯只读 GET。收益数字属敏感信息，调用方**不得**落库到共享存储、
+        写日志或送入模型上下文。
+        """
+        query = {
+            "aid": DEFAULT_AID,
+            "app_name": DEFAULT_APP_NAME,
+            "page_count": str(size),
+            "page_index": str(max(page - 1, 0)),
+        }
+        resp = await self._call("GET", INCOME_BOOK_LIST, params=query)
         return resp.get("data", {}) or {}

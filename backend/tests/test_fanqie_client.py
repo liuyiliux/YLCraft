@@ -178,6 +178,7 @@ def test_e_group_endpoint_constants_match_captured_paths():
     assert apis.ACCOUNT_INFO == "/api/author/account/info/v0/"
     assert apis.CHAPTER_LIST == "/api/author/chapter/chapter_list/v1"
     assert apis.VOLUME_LIST == "/api/author/volume/volume_list/v1"
+    assert apis.INCOME_BOOK_LIST == "/api/author/income/book_list/v0/"
 
 
 @pytest.mark.asyncio
@@ -310,28 +311,81 @@ async def test_get_book_volumes_hits_volume_list(monkeypatch):
     assert captured["params"]["book_id"] == "book-1"
 
 
-def test_earnings_endpoint_is_still_captured_as_unverified():
-    """收益接口仍未抓包——不得凭猜测补上路径。
+@pytest.mark.asyncio
+async def test_get_earnings_hits_income_book_list_with_zero_based_paging(monkeypatch):
+    """收益走 income/book_list/v0/；分页同为 0 起，且空列表是合法真实结果。"""
+    from app.services.platforms.fanqie.client import FanqieClient
+    from app.services.platforms.types import ClientConfig, ClientMode
 
-    本次抓包尝试猜测收益页 URL（/main/writer/income-analysis）返回 404，
-    正是「不猜路径」这条规矩的实证。故 apis.py 中**不应**存在收益端点常量。
+    captured: dict = {}
+
+    async def fake_call(self, method, path, params=None, **kwargs):
+        captured["path"] = path
+        captured["params"] = params or {}
+        # 抓包实测：该书暂无收益，返回空列表（真实结果，非异常）
+        return {"code": 0, "data": {"total_count": 0, "is_cp": 0, "income_book_list": []}}
+
+    monkeypatch.setattr(FanqieClient, "_call", fake_call)
+    client = FanqieClient(ClientConfig(platform="fanqie", mode=ClientMode.API, cookie="s=x"))
+
+    data = await client.get_earnings(page=1)
+
+    assert captured["path"] == "/api/author/income/book_list/v0/"
+    assert captured["params"]["page_index"] == "0"
+    assert captured["params"]["page_count"] == "200"
+    assert data["income_book_list"] == []
+
+
+@pytest.mark.asyncio
+async def test_get_earnings_page_two_maps_to_index_one(monkeypatch):
+    """收益分页的 0-based 转换同样不能写死。"""
+    from app.services.platforms.fanqie.client import FanqieClient
+    from app.services.platforms.types import ClientConfig, ClientMode
+
+    captured: dict = {}
+
+    async def fake_call(self, method, path, params=None, **kwargs):
+        captured["params"] = params or {}
+        return {"code": 0, "data": {}}
+
+    monkeypatch.setattr(FanqieClient, "_call", fake_call)
+    client = FanqieClient(ClientConfig(platform="fanqie", mode=ClientMode.API, cookie="s=x"))
+
+    await client.get_earnings(page=2)
+
+    assert captured["params"]["page_index"] == "1"
+
+
+def test_every_e_group_endpoint_is_now_implemented():
+    """E 组三项能力都必须有真实端点常量——不得再有"未抓包"占位。
+
+    收益页路由 `/main/writer/profit` 是靠界面点入抓到的；此前猜测的
+    `/main/writer/income-analysis` 实测 404，故这里也顺带固定"别猜路径"的教训。
     """
     from app.services.platforms.fanqie import apis
 
-    earning_like = [
-        name
-        for name in dir(apis)
-        if name.isupper() and "EARNING" in name or name.isupper() and "INCOME" in name
-    ]
-    assert earning_like == [], f"收益端点尚未抓包，不应存在常量：{earning_like}"
+    for name in ("ACCOUNT_INFO", "CHAPTER_LIST", "VOLUME_LIST", "INCOME_BOOK_LIST"):
+        value = getattr(apis, name, None)
+        assert value, f"{name} 缺失"
+        assert value.startswith("/api/author/"), f"{name} 路径异常：{value}"
+        # 路径不得含猜测残留
+        assert "income-analysis" not in value
 
 
 def test_fanqie_routes_expose_e_group_endpoints():
-    """三条已抓包端点必须真实挂载，收益保持占位。"""
+    """四条 E 组端点必须真实挂载，且不再返回 not_captured 占位。"""
     from app.services.platforms.fanqie.routes import router
 
     paths = {getattr(r, "path", "") for r in router.routes}
     assert "/my/profile" in paths
     assert "/book/{book_id}/volumes" in paths
     assert "/book/{book_id}/chapters" in paths
-    assert "/earnings" in paths  # 仍是 not_captured 占位
+    assert "/earnings" in paths
+
+    # 收益占位必须已被真实实现替换（不再有 not_captured 分支）
+    import inspect
+
+    from app.services.platforms.fanqie import routes as routes_module
+
+    source = inspect.getsource(routes_module)
+    assert "not_captured" not in source, "E 组已全部抓包落地，不应再有 not_captured 占位"

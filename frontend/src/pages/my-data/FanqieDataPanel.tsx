@@ -17,7 +17,7 @@ import {
 } from 'antd'
 import {
   BookOutlined, FireOutlined, ReloadOutlined, EyeOutlined,
-  TeamOutlined, StarOutlined, LikeOutlined, ReadOutlined,
+  TeamOutlined, StarOutlined, LikeOutlined, ReadOutlined, AccountBookOutlined,
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../../constants/theme'
@@ -26,6 +26,7 @@ import {
   getFanqieMyBooks,
   getFanqieBookStats,
   getFanqieHotList,
+  getFanqieEarnings,
 } from '../../api'
 import type { PlatformConnectionResponse } from '../../api'
 import { proxyImageUrl } from '../../components/bilibili'
@@ -112,6 +113,10 @@ export default function FanqieDataPanel() {
   const [hotList, setHotList] = useState<any[]>([])
   const [hotLoading, setHotLoading] = useState(false)
 
+  // 收益（真实端点 income/book_list/v0/，2026-09-25 抓包确认）
+  const [earnings, setEarnings] = useState<Record<string, any> | null>(null)
+  const [earningsLoading, setEarningsLoading] = useState(false)
+
   // 加载番茄连接
   useEffect(() => {
     listPlatformConnections().then((res: any) => {
@@ -197,6 +202,30 @@ export default function FanqieDataPanel() {
       message.error(e?.message || '获取热榜异常')
     } finally {
       setHotLoading(false)
+    }
+  }
+
+  /**
+   * 加载收益分析（真实端点 income/book_list/v0/，2026-09-25 抓包确认）。
+   * 注意：`income_book_list` 为空是**真实结果**（该书暂无收益），不是错误。
+   */
+  const loadEarnings = async () => {
+    if (!connId) {
+      message.warning('请先选择番茄连接')
+      return
+    }
+    setEarningsLoading(true)
+    try {
+      const res: any = await getFanqieEarnings(connId)
+      if (res?.success) {
+        setEarnings(res.data || {})
+      } else {
+        message.error((res && res.detail) || '获取收益失败')
+      }
+    } catch (e: any) {
+      message.error(e?.message || '获取收益异常')
+    } finally {
+      setEarningsLoading(false)
     }
   }
 
@@ -297,6 +326,14 @@ export default function FanqieDataPanel() {
             label: (
               <span>
                 <FireOutlined /> 热榜灵感
+              </span>
+            ),
+          },
+          {
+            key: 'earnings',
+            label: (
+              <span>
+                <AccountBookOutlined /> 收益
               </span>
             ),
           },
@@ -451,6 +488,45 @@ export default function FanqieDataPanel() {
             </Row>
           ) : (
             <Empty description="暂无热榜数据" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+          )}
+        </div>
+
+        {/* 收益分析（真实端点：income/book_list/v0/，2026-09-25 抓包确认） */}
+        <div style={{ marginTop: 8 }}>
+          {earningsLoading ? (
+            <div style={{ textAlign: 'center', padding: 40 }}><Spin size="large" /></div>
+          ) : earnings && (earnings.income_book_list || []).length > 0 ? (
+            <Row gutter={[16, 16]}>
+              {(earnings.income_book_list || []).map((item: any, idx: number) => (
+                <Col xs={24} sm={12} md={8} key={item.book_id || idx}>
+                  <Card size="small" title={item.book_name || item.book_id || '未命名'}>
+                    <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                      {Object.entries(item)
+                        .filter(([k]) => !['book_name', 'book_id', 'thumb_url', 'cover_url'].includes(k))
+                        .map(([k, v]) => (
+                          <div key={k} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <Typography.Text type="secondary" style={{ fontSize: 12 }}>{k}</Typography.Text>
+                            <Typography.Text style={{ fontSize: 12 }}>{String(v ?? '--')}</Typography.Text>
+                          </div>
+                        ))}
+                    </Space>
+                  </Card>
+                </Col>
+              ))}
+            </Row>
+          ) : (
+            <Empty
+              description={
+                earnings
+                  ? '暂无收益数据（接口返回空列表，属真实结果）'
+                  : '点击「加载收益」获取番茄收益分析'
+              }
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+            >
+              <Button size="small" onClick={() => void loadEarnings()}>
+                加载收益
+              </Button>
+            </Empty>
           )}
         </div>
       </Tabs>

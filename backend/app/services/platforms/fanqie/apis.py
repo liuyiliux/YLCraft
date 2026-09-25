@@ -51,6 +51,11 @@ CHAPTER_LIST = "/api/author/chapter/chapter_list/v1"
 # 卷列表（GET）——章节按卷分组，配套 CHAPTER_LIST 使用
 VOLUME_LIST = "/api/author/volume/volume_list/v1"
 
+# 收益分析（GET）——2026-09-25 抓包确认
+# 收益页真实路由是 /main/writer/profit（猜测的 /main/writer/income-analysis 实测 404）。
+# 参数：page_count / page_index（0 起）
+INCOME_BOOK_LIST = "/api/author/income/book_list/v0/"
+
 # =============================================================================
 # 应用标识（稳定常量，非签名）
 # =============================================================================
