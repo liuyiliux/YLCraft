@@ -134,6 +134,20 @@ AI 来源标记与文件元数据清理是 Asset Hub 上的独立派生操作，
 6. 注册 `/api/v1/...` 路由。
 7. 挂载 `/uploads` 静态文件。
 
+**Windows 部署约束（`--loop` 必填）**：Windows 上启动后端时必须追加
+`--loop app.core.win_loop:new_loop`：
+
+```
+cd backend && uvicorn app.main:app --reload --port 8000 --loop app.core.win_loop:new_loop
+```
+
+原因是 uvicorn 的循环选择：`asyncio_loop_factory(use_subprocess)` 在 `use_subprocess=True`
+时返回 `SelectorEventLoop`，而 `--reload` 会置该标志为真；Windows 的 `SelectorEventLoop`
+不实现 `create_subprocess_exec`，于是所有需要启动浏览器的功能（Patchright Cookie 获取）
+都会以 `NotImplementedError` 失败。`app/core/win_loop.py` 提供的零参工厂恒返回
+`ProactorEventLoop` 覆盖该选择，保留 `--reload` 的同时恢复子进程能力。非 Windows 平台无需此参数。
+`start.bat` 已内置该参数；`test_win_loop_subprocess.py` 钉住了这条约束。
+
 **AI 调用与事件日志收口（可观测性）**：所有 AI 调用必须走 `AIService` 的三个入口
 （`chat` / `generate_image` / `generate_video`，`backend/app/services/ai/service.py`），
 由入口统一落平台事件日志（`platform_event_logs`，经 `services/platform_log/service.py:record_event`）：
