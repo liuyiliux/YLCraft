@@ -48,6 +48,11 @@ ACCOUNT_INFO = "/api/author/account/info/v0/"
 # 真实参数：book_id / volume_id / page_index(0 起) / page_count / status
 CHAPTER_LIST = "/api/author/chapter/chapter_list/v1"
 
+# 草稿箱列表（GET）——2026-09-26 由 Patchright 复用已保存 Cookie 抓包确认
+# 真实路径是 chapter/draft_list/v1（**不是** draft/list 或 article/draft_list，
+# 那两个猜测路径实测 404）。响应结构是 data.draft_list[]（**不是 item_list**）。
+CHAPTER_DRAFT_LIST = "/api/author/chapter/draft_list/v1"
+
 # 卷列表（GET）——章节按卷分组，配套 CHAPTER_LIST 使用
 VOLUME_LIST = "/api/author/volume/volume_list/v1"
 
