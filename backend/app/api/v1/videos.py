@@ -29,6 +29,8 @@ from app.db.models.creative_project import CreativeProject, ProjectAssetLink, Pr
 from app.db.models.task import VideoGenerationTask
 from app.core.ffmpeg import get_ffmpeg_service
 from app.core.external_api_auth import optional_external_api_key
+from app.core.resource_auth import principal_owner_user_id
+from app.core.user_auth import AuthenticatedPrincipal, get_authenticated_principal
 from app.db.models.external_api_key import ExternalApiKey
 from app.services.asset_hub import AssetHubFacade
 from app.services.ai import get_ai_service
@@ -171,6 +173,8 @@ class TaskStatusResponse(BaseModel):
     asset_id: Optional[str] = None
     diagnostics: dict[str, Any] = Field(default_factory=dict)
     planning_summary: dict[str, Any] = Field(default_factory=dict)
+    completed_at: Optional[float] = None
+    terminal: bool = False
     error: Optional[str] = None
 
 
@@ -338,6 +342,7 @@ def _task_to_dict(task: VideoGenerationTask) -> dict[str, Any]:
         "content_id": task.content_id,
         "error": task.error,
         "created_at": task.created_at,
+        "completed_at": task.completed_at,
         "request": request_data,
         "result": result_data,
     }
@@ -348,6 +353,7 @@ async def _persist_video_result(
     result: Any,
     context: dict[str, Any],
     existing_asset_id: str | None = None,
+    owner_user_id: str | None = None,
 ) -> str | None:
     """Import a locally materialized result exactly once and restore project lineage."""
     if existing_asset_id or not result.video_path:
@@ -411,6 +417,7 @@ async def _persist_video_result(
                 "planning_summary": context.get("planning_summary") or {},
             },
             tags=["ai-generated", "video-generation", result.provider or "", result.model or ""],
+            owner_user_id=owner_user_id,
         )
         asset_id = created.node_id
         if context["project_id"]:
@@ -475,7 +482,7 @@ async def list_backends():
 
 
 @router.post("/generate", response_model=VideoResponse, summary="Generate video with optional project lineage")
-async def generate_video(req: VideoGenerateRequest, external_key: Optional[ExternalApiKey] = Depends(optional_external_api_key)):
+async def generate_video(req: VideoGenerateRequest, principal: AuthenticatedPrincipal = Depends(get_authenticated_principal)):
     """
     调用视频生成后端生成视频。
     自动选择默认后端或指定 provider。
@@ -576,7 +583,9 @@ async def generate_video(req: VideoGenerateRequest, external_key: Optional[Exter
         asset_id: str | None = None
         if result.success and result.video_path:
             try:
-                asset_id = await _persist_video_result(result=result, context=context)
+                asset_id = await _persist_video_result(
+                    result=result, context=context, owner_user_id=principal_owner_user_id(principal)
+                )
             except Exception as exc:
                 logger.warning("Failed to persist generated video context: %s", exc)
 
@@ -598,8 +607,13 @@ async def generate_video(req: VideoGenerateRequest, external_key: Optional[Exter
                 task.error = result.error or None
                 task.progress = result.progress or (100 if result.status == "done" else 0)
                 task.progress_message = result.progress_message or ""
+                task.owner_user_id = principal_owner_user_id(principal)
                 task.updated_at = time.time()
-                task.completed_at = time.time() if task.status in {"done", "error"} else None
+                task.completed_at = (
+                    result.completed_at or time.time()
+                    if task.status in {"done", "error", "failed", "cancelled"}
+                    else None
+                )
 
         if not result.success:
             return VideoResponse(
@@ -670,7 +684,32 @@ async def get_task_status(task_id: str, provider: Optional[str] = None):
                 progress=task.progress or 0,
                 progress_message=task.progress_message or "已取消",
                 asset_id=task.asset_id,
+                completed_at=task.completed_at,
+                terminal=True,
                 planning_summary=(json.loads(task.request_json or "{}").get("planning_summary") or {}) if task else {},
+                error=task.error,
+            )
+        if task and task.status in {"done", "error", "failed"}:
+            # The durable row is already terminal. Return it instead of calling
+            # the provider again; otherwise every UI refresh keeps spending a
+            # remote poll on a task that can no longer change.
+            try:
+                stored_result = json.loads(task.result_json or "{}")
+            except (TypeError, ValueError, json.JSONDecodeError):
+                stored_result = {}
+            return TaskStatusResponse(
+                success=task.status in {"done", "error", "failed"},
+                task_id=task_id,
+                status=task.status,
+                progress=task.progress or (100 if task.status == "done" else 0),
+                progress_message=task.progress_message or "",
+                url=stored_result.get("url") or None,
+                local_path=stored_result.get("local_path") or None,
+                asset_id=task.asset_id,
+                completed_at=task.completed_at,
+                diagnostics=stored_result.get("diagnostics") or {},
+                planning_summary=(json.loads(task.request_json or "{}").get("planning_summary") or {}),
+                terminal=True,
                 error=task.error,
             )
 
@@ -705,9 +744,14 @@ async def get_task_status(task_id: str, provider: Optional[str] = None):
                     persisted.error = result.error or None
                     persisted.progress = result.progress or (100 if result.status == "done" else 0)
                     persisted.progress_message = result.progress_message or ""
-                    persisted.updated_at = time.time()
-                    persisted.completed_at = time.time() if result.status == "done" else persisted.completed_at
+                    now = time.time()
+                    persisted.updated_at = now
+                    if result.status in {"done", "error", "failed", "cancelled"} and not persisted.completed_at:
+                        # Terminal polls must close the ledger exactly once; otherwise
+                        # the task center cannot distinguish an old failure from a live job.
+                        persisted.completed_at = result.completed_at or now
         result.task_id = task_id
+        terminal = result.status in {"done", "error", "failed", "cancelled"}
         return TaskStatusResponse(
             success=result.success,
             task_id=result.task_id,
@@ -717,8 +761,10 @@ async def get_task_status(task_id: str, provider: Optional[str] = None):
             url=result.url,
             local_path=str(result.video_path) if result.video_path else None,
             asset_id=asset_id,
+            completed_at=result.completed_at,
             diagnostics=getattr(result, "diagnostics", {}) or {},
             planning_summary=(json.loads(task.request_json or "{}").get("planning_summary") or {}) if task else {},
+            terminal=terminal,
             error=result.error,
         )
     except Exception as e:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -181,6 +182,61 @@ class GenericVideoBackend(BaseVideoBackend):
         return value
 
     @staticmethod
+    def _completion_timestamp(value) -> float | None:
+        """Coerce a provider terminal timestamp to POSIX seconds.
+
+        Providers are inconsistent here: Agnes returns epoch seconds while Wan
+        returns an ISO timestamp under ``output.end_time``. A missing or
+        malformed value must stay missing so the API can fall back to its local
+        observation time instead of inventing a completion instant.
+        """
+        if value is None or isinstance(value, bool):
+            return None
+        if isinstance(value, (int, float)):
+            timestamp = float(value)
+            if abs(timestamp) >= 1_000_000_000_000:
+                timestamp /= 1000.0
+            return timestamp if timestamp > 0 else None
+        if not isinstance(value, str):
+            return None
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            timestamp = float(text)
+        except ValueError:
+            timestamp = None
+        if timestamp is not None:
+            return GenericVideoBackend._completion_timestamp(timestamp)
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            # Provider timestamps without an offset are interpreted in the
+            # server's local timezone, matching how they are displayed here.
+            return parsed.astimezone().timestamp()
+        return parsed.timestamp()
+
+    def _completed_at(self, payload) -> float | None:
+        """Read the first configured or common provider completion timestamp."""
+        paths = [self.config.get("completed_at_path")]
+        paths.extend([
+            "$.completed_at",
+            "$.finished_at",
+            "$.end_time",
+            "$.output.end_time",
+            "$.output.completed_at",
+        ])
+        for path in paths:
+            if not path:
+                continue
+            timestamp = self._completion_timestamp(self._find(payload, path, None))
+            if timestamp is not None:
+                return timestamp
+        return None
+
+    @staticmethod
     def _size(resolution: str, aspect_ratio: str, separator: str = "x") -> str:
         """Translate workspace resolution/ratio controls to common API sizes."""
         width, height = GenericVideoBackend._dimensions(resolution, aspect_ratio)
@@ -225,14 +281,28 @@ class GenericVideoBackend(BaseVideoBackend):
         url = str(url or "")
         error = str(self._find(payload, self.config.get("error_path", ""), "") or "")
         progress = self._find(payload, self.config.get("progress_path", ""), 0)
+        completed_at = self._completed_at(payload)
         try:
             progress = int(float(progress))
         except (TypeError, ValueError):
             progress = 0
         if status in failed:
-            return VideoGenerationResult(False, task_id=task_id, status="error", error=error or "视频任务失败")
+            return VideoGenerationResult(
+                False,
+                task_id=task_id,
+                status="error",
+                error=error or "视频任务失败",
+                completed_at=completed_at,
+            )
         if status in done or url:
-            return VideoGenerationResult(True, task_id=task_id, status="done", url=url, progress=100)
+            return VideoGenerationResult(
+                True,
+                task_id=task_id,
+                status="done",
+                url=url,
+                progress=100,
+                completed_at=completed_at,
+            )
         return VideoGenerationResult(True, task_id=task_id, status="processing", progress=progress)
 
     async def _upload_start_image_to_cos(self, start_image: Path) -> str:

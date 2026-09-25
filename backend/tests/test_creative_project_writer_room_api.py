@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api.v1 import creative_projects as creative_projects_api
+from app.core.user_auth import AuthenticatedPrincipal
 
 
 def _content(
@@ -58,6 +59,7 @@ def _project(project_id: str = "project-1"):
         chapter_plan_json="{}",
         settings_json="{}",
         metadata_json="{}",
+        owner_user_id=None,
         created_at=datetime(2026, 7, 4, 9, 0, 0),
         updated_at=datetime(2026, 7, 4, 10, 0, 0),
     )
@@ -129,6 +131,12 @@ def _client(service: FakeWriterRoomService):
     app = FastAPI()
     app.include_router(creative_projects_api.router, prefix="/api/v1/creative-projects")
     app.dependency_overrides[creative_projects_api.service] = lambda: service
+    app.dependency_overrides[creative_projects_api.get_authenticated_principal] = (
+        lambda: AuthenticatedPrincipal(user=type("User", (), {"id": "writer-room-user"})())
+    )
+    app.dependency_overrides[creative_projects_api.get_authenticated_principal_optional] = (
+        lambda: AuthenticatedPrincipal(user=type("User", (), {"id": "writer-room-user"})())
+    )
     return TestClient(app)
 
 

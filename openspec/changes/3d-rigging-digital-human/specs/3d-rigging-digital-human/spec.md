@@ -34,3 +34,10 @@ Imported 3D assets (upload or generated/rigged) SHALL persist `has_bones` and `h
 
 ### Requirement: Durable 3D task history partitioned by kind
 The 3D task ledger SHALL record a `kind` (`generation` / `rigging`) per task and allow history listing filtered by kind.
+#### Scenario: Rigging history is listed apart from generation
+- **WHEN** history is requested with `kind=rigging`
+- **THEN** only tasks submitted through the rigging endpoint are returned
+
+#### Scenario: Generation history stays the default
+- **WHEN** history is requested without `kind`
+- **THEN** both generation and rigging rows are returned, newest first, with their `kind` exposed

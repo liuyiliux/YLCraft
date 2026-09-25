@@ -169,6 +169,10 @@ class VideoGenerationResult:
     seed: int | None = None
     usage_tokens: int | None = None
     error: str = ""
+    # Provider-reported completion instant (POSIX seconds). The durable ledger
+    # prefers this over the local poll time so a task discovered late does not
+    # look like it ran for hours.
+    completed_at: float | None = None
     diagnostics: dict = field(default_factory=dict)
 
 

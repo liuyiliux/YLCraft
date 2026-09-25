@@ -11,6 +11,7 @@ from sqlmodel import Session, create_engine, select
 from sqlalchemy.pool import StaticPool
 
 from app.api.v1 import creative_projects as creative_projects_api
+from app.core.user_auth import AuthenticatedPrincipal
 from app.db.models.asset_hub import AssetNode, AssetType
 from app.db.models.character import Character, CharacterStoryLink
 from app.db.models.creative_project import (
@@ -74,11 +75,21 @@ def workflow_session():
         yield session
 
 
-def _client(session: Session) -> TestClient:
+def _client(session: Session, user_id: str = "workflow-user") -> TestClient:
     app = FastAPI()
     app.include_router(creative_projects_api.router, prefix="/api/v1/creative-projects")
     project_service = CreativeProjectService(session, ai_service=FakeAIService())
     app.dependency_overrides[creative_projects_api.service] = lambda: project_service
+    # Creation is intentionally authenticated. These workflow tests exercise
+    # project behavior, so provide an explicit human caller instead of relying
+    # on the former anonymous API contract.
+    workflow_user = type("WorkflowUser", (), {"id": user_id})()
+    app.dependency_overrides[creative_projects_api.get_authenticated_principal] = (
+        lambda: AuthenticatedPrincipal(user=workflow_user)
+    )
+    app.dependency_overrides[creative_projects_api.get_authenticated_principal_optional] = (
+        lambda: AuthenticatedPrincipal(user=workflow_user)
+    )
     return TestClient(app)
 
 
@@ -89,6 +100,28 @@ def _post(client: TestClient, path: str, payload: dict | None = None) -> dict:
     body = response.json()
     assert body["success"] is True, body
     return body
+
+
+def test_project_routes_write_owner_reject_other_user_and_keep_legacy_visible(
+    workflow_session: Session,
+):
+    with _client(workflow_session, "owner-a") as owner_client:
+        created = _post(owner_client, "", {"title": "Owned project", "idea": "test"})["data"]
+
+    assert created["owner_user_id"] == "owner-a"
+
+    with _client(workflow_session, "owner-b") as other_client:
+        forbidden = other_client.get(f"/api/v1/creative-projects/{created['id']}")
+    assert forbidden.status_code == 403
+
+    legacy = CreativeProject(title="Legacy project", idea="pre-account data", owner_user_id=None)
+    workflow_session.add(legacy)
+    workflow_session.commit()
+
+    with _client(workflow_session, "owner-b") as other_client:
+        visible = other_client.get(f"/api/v1/creative-projects/{legacy.id}")
+    assert visible.status_code == 200
+    assert visible.json()["data"]["id"] == legacy.id
 
 
 async def test_idea_api_chain_reaches_comic_pages(workflow_session: Session):

@@ -24,6 +24,8 @@ from app.db.models.ai_connector import AIConnector
 from app.db.models.asset_hub import AssetRelation, AssetRepresentation, AssetType, AssetVersion, RelationType
 from app.db.models.task import Model3DGenerationTask
 from app.core.external_api_auth import optional_external_api_key
+from app.core.resource_auth import principal_owner_user_id
+from app.core.user_auth import AuthenticatedPrincipal, get_authenticated_principal
 from app.db.models.external_api_key import ExternalApiKey
 from app.core.blender import BlenderService
 from app.core.task_queue import TaskStatus, get_task_queue
@@ -69,6 +71,7 @@ class Model3DTaskResponse(BaseModel):
     url: Optional[str] = None
     asset_id: Optional[str] = None
     diagnostics: dict[str, Any] = Field(default_factory=dict)
+    terminal: bool = False
     error: Optional[str] = None
 
 
@@ -217,6 +220,7 @@ async def _import_result(task: Model3DGenerationTask, result: dict[str, Any]) ->
             lineage={"source": source_label, "task_id": task.task_id,
                      "source_asset_id": metadata.get("source_asset_id")},
             tags=["ai-generated", source_label, task.provider, task.model, *rigging_tags],
+            owner_user_id=task.owner_user_id,
         )
         asset_id = created.node_id
         source_asset_id = metadata.get("source_asset_id")
@@ -272,7 +276,7 @@ async def list_model3d_backends(capability: Optional[str] = Query(default=None))
 
 
 @router.post("/generate", response_model=Model3DTaskResponse, summary="Submit configured image-to-3D task")
-async def generate_model3d(req: Model3DGenerateRequest, external_key: Optional[ExternalApiKey] = Depends(optional_external_api_key)):
+async def generate_model3d(req: Model3DGenerateRequest, principal: AuthenticatedPrincipal = Depends(get_authenticated_principal)):
     try:
         source_data, source_url, source_asset_id = await _resolve_source(req.source_asset_id, req.source_image)
         if not (source_data or source_url or req.prompt.strip()):
@@ -293,8 +297,14 @@ async def generate_model3d(req: Model3DGenerateRequest, external_key: Optional[E
                                      "title": req.prompt, "options": req.options}, ensure_ascii=False),
             result_json=json.dumps(_result_payload(result, provider_task_id), ensure_ascii=False), error=result.get("error"),
             progress=result.get("progress", 0), created_at=now, updated_at=now)
+        task.owner_user_id = principal_owner_user_id(principal)
         if result["status"] == "done":
             task.asset_id = await _import_result(task, result)
+            task.completed_at = now
+        elif result["status"] in {"error", "failed", "cancelled"}:
+            # A provider-side terminal failure on the initial submit is still a
+            # finished task; without this, the task center would report a duration
+            # that grows forever.
             task.completed_at = now
         async with get_async_session() as session:
             session.add(task)
@@ -316,7 +326,9 @@ async def generate_model3d(req: Model3DGenerateRequest, external_key: Optional[E
         )
         return Model3DTaskResponse(task_id=task_id, status=task.status, progress=task.progress,
             provider=task.provider, model=task.model, url=result.get("url"), asset_id=task.asset_id,
-            diagnostics=result.get("diagnostics") or {}, error=task.error)
+            diagnostics=result.get("diagnostics") or {},
+            terminal=task.status in {"done", "error", "failed", "cancelled"},
+            error=task.error)
     except Model3DProviderRequestError as exc:
         await platform_log.record_event(
             scene="model3d", task_type="model3d_generation", level="error", status="failed",
@@ -346,7 +358,29 @@ async def poll_model3d_task(task_id: str):
     if task.status == "cancelled":
         return Model3DTaskResponse(task_id=task_id, status="cancelled", progress=task.progress or 0,
             provider=task.provider, model=task.model, asset_id=task.asset_id,
+            terminal=True,
             error=task.error or "已取消")
+    if task.status in {"done", "error", "failed"}:
+        # Terminal durable rows are never polled remotely again. Returning the
+        # stored result keeps UI refreshes idempotent and avoids hammering a
+        # provider for a job that can no longer change state.
+        try:
+            stored_result = json.loads(task.result_json or "{}")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            stored_result = {}
+        return Model3DTaskResponse(
+            task_id=task_id,
+            status="done" if task.status == "done" else "error",
+            progress=task.progress or (100 if task.status == "done" else 0),
+            progress_message=task.progress_message or "",
+            provider=task.provider,
+            model=task.model,
+            url=stored_result.get("url") or None,
+            asset_id=task.asset_id,
+            diagnostics=stored_result.get("diagnostics") or {},
+            terminal=True,
+            error=task.error,
+        )
     try:
         try:
             prior_result = json.loads(task.result_json or "{}")
@@ -354,18 +388,26 @@ async def poll_model3d_task(task_id: str):
             prior_result = {}
         provider_task_id = str(prior_result.get("provider_task_id") or task_id)
         result = await Model3DConnectorBackend(await _connector(task.provider, capability=None)).poll(provider_task_id)
+        now = time.time()
         if result["status"] == "done":
             task.asset_id = await _import_result(task, result)
-            task.completed_at = time.time()
+            task.completed_at = now
+        elif result["status"] in {"error", "failed", "cancelled"}:
+            # A provider-side terminal failure is a completed poll, not an open
+            # task. Persist the close time so the task center does not infer a
+            # growing duration from "now".
+            task.completed_at = now
         task.status, task.progress, task.error = result["status"], result.get("progress", 0), result.get("error")
-        task.result_json, task.updated_at = json.dumps(_result_payload(result, provider_task_id), ensure_ascii=False), time.time()
+        task.result_json, task.updated_at = json.dumps(_result_payload(result, provider_task_id), ensure_ascii=False), now
         async with get_async_session() as session:
             persisted = await session.get(Model3DGenerationTask, task_id)
             for field in ("status", "progress", "error", "result_json", "updated_at", "completed_at", "asset_id"):
                 setattr(persisted, field, getattr(task, field))
         return Model3DTaskResponse(task_id=task_id, status=task.status, progress=task.progress,
             provider=task.provider, model=task.model, url=result.get("url"), asset_id=task.asset_id,
-            diagnostics=result.get("diagnostics") or {}, error=task.error)
+            diagnostics=result.get("diagnostics") or {},
+            terminal=task.status in {"done", "error", "failed", "cancelled"},
+            error=task.error)
     except Model3DProviderRequestError as exc:
         async with get_async_session() as session:
             persisted = await session.get(Model3DGenerationTask, task_id)
@@ -376,7 +418,7 @@ async def poll_model3d_task(task_id: str):
                 persisted.updated_at = time.time()
                 persisted.completed_at = persisted.updated_at
         return Model3DTaskResponse(success=False, task_id=task_id, status="error", provider=task.provider,
-            model=task.model, diagnostics=exc.diagnostics, error=str(exc))
+            model=task.model, diagnostics=exc.diagnostics, terminal=True, error=str(exc))
     except Exception as exc:
         return Model3DTaskResponse(success=False, task_id=task_id, status="error", error=str(exc), provider=task.provider, model=task.model)
 
@@ -503,7 +545,11 @@ def _rig_retry_payload(req: Model3DRigRequest) -> dict[str, Any]:
 
 
 @router.post("/rig", response_model=Model3DTaskResponse, summary="Submit auto-rigging task (skeleton-only or preset motion)")
-async def rig_model3d(req: Model3DRigRequest, request: Request):
+async def rig_model3d(
+    req: Model3DRigRequest,
+    request: Request,
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
+):
     """Submit an auto-rigging job for an existing 3D model.
 
     `motion_type` omitted -> skeleton-only rigging; `motion_type` 1-48 -> bind
@@ -531,6 +577,7 @@ async def rig_model3d(req: Model3DRigRequest, request: Request):
                                      "options": options}, ensure_ascii=False),
             result_json=json.dumps(_result_payload(result, provider_task_id), ensure_ascii=False),
             error=result.get("error"), progress=result.get("progress", 0), created_at=now, updated_at=now)
+        task.owner_user_id = principal_owner_user_id(principal)
         if result["status"] == "done":
             task.asset_id = await _import_result(task, result)
             task.completed_at = now
@@ -633,6 +680,7 @@ async def _run_retarget(
     source_asset_id: str,
     clip: str,
     title: str,
+    owner_user_id: str | None = None,
 ) -> None:
     """后台执行：必要时统一骨架命名 → 烘焙动作 → 入库。"""
     queue = get_task_queue()
@@ -714,6 +762,7 @@ async def _run_retarget(
                     **rigging_flags,
                 },
                 tags=["retarget", "3d_model", *rigging_tags],
+                owner_user_id=owner_user_id,
             )
             node_id = created.node_id
             # 两条溯源：动作来自谁、骨架来自谁
@@ -753,7 +802,11 @@ async def _run_retarget(
 
 
 @router.post("/retarget", summary="通用动作库：把另一个模型的动作套到目标模型上")
-async def retarget_model3d(req: Model3DRetargetRequest, background: BackgroundTasks):
+async def retarget_model3d(
+    req: Model3DRetargetRequest,
+    background: BackgroundTasks,
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
+):
     """跨模型复用动作。
 
     动画是**按骨骼名**寻址的，所以两个模型只有骨骼命名对得上才能复用：目标骨架若
@@ -795,6 +848,7 @@ async def retarget_model3d(req: Model3DRetargetRequest, background: BackgroundTa
         req.source_asset_id,
         clip,
         req.title or "",
+        principal_owner_user_id(principal),
     )
     return {
         "success": True,

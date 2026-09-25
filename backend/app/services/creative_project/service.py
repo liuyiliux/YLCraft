@@ -498,6 +498,7 @@ class CreativeProjectService:
         metadata: dict[str, Any] | None = None,
         production_profile: str | None = None,
         character_id: str | None = None,
+        owner_user_id: str | None = None,
     ) -> CreativeProject:
         meta = dict(metadata or {})
         if idea:
@@ -515,6 +516,7 @@ class CreativeProjectService:
             source_ref_json=dumps_json(source_ref or {}),
             settings_json=dumps_json(normalized_settings),
             metadata_json=dumps_json(meta),
+            owner_user_id=owner_user_id,
         )
         self.session.add(project)
         self.session.flush()
@@ -1456,6 +1458,7 @@ class CreativeProjectService:
         title: str = "",
         project_type: str = "short_drama",
         production_profile: str | None = None,
+        owner_user_id: str | None = None,
     ) -> CreativeProject:
         source_node = self.session.get(AssetNode, asset_id)
         if not source_node:
@@ -1499,6 +1502,7 @@ class CreativeProjectService:
             idea=idea,
             metadata=metadata,
             production_profile=production_profile,
+            owner_user_id=owner_user_id,
         )
 
     # ------------------------------------------------------------------

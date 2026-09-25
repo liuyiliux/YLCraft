@@ -21,6 +21,8 @@ from pydantic import BaseModel, Field
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.db.database import get_async_session_dependency
+from app.core.resource_auth import require_owned_or_legacy
+from app.core.user_auth import AuthenticatedPrincipal, get_authenticated_principal, get_authenticated_principal_optional
 from app.services.platforms.fanqie.publish_service import FanqiePublishService
 from app.services.platforms.fanqie.utils import (
     CookieExpiredError,
@@ -67,6 +69,42 @@ async def get_service(session: AsyncSession = Depends(get_async_session_dependen
     return FanqiePublishService(session)
 
 
+async def require_fanqie_project_access(
+    project_id: str,
+    session: AsyncSession = Depends(get_async_session_dependency),
+    principal: AuthenticatedPrincipal | None = Depends(get_authenticated_principal_optional),
+) -> AuthenticatedPrincipal | None:
+    """Mirror creative-project ownership rules for the fanqie sibling router.
+
+    This router shares ``/api/v1/creative-projects`` but owns a separate
+    service/session layer, so it cannot inherit the main router dependency.
+    Reads keep the NULL-legacy allowance; writes require a credential.
+    """
+    from app.db.models.creative_project import CreativeProject
+
+    project = await session.get(CreativeProject, project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="创作项目不存在")
+    owner_user_id = getattr(project, "owner_user_id", None)
+    if principal is None:
+        if owner_user_id is not None:
+            raise HTTPException(status_code=401, detail="需要登录会话或有效的外部 API Key")
+        return None
+    require_owned_or_legacy(owner_user_id=owner_user_id, principal=principal)
+    return principal
+
+
+async def require_fanqie_write_access(
+    project_id: str,
+    session: AsyncSession = Depends(get_async_session_dependency),
+    principal: AuthenticatedPrincipal | None = Depends(get_authenticated_principal_optional),
+) -> AuthenticatedPrincipal:
+    if principal is None:
+        raise HTTPException(status_code=401, detail="需要登录会话或有效的外部 API Key")
+    await require_fanqie_project_access(project_id, session=session, principal=principal)
+    return principal
+
+
 def _fanqie_error_to_http(e: Exception) -> HTTPException:
     if isinstance(e, CookieExpiredError):
         return HTTPException(status_code=401, detail=f"番茄登录态失效，请重新登录并刷新 cookie：{e}")
@@ -88,6 +126,7 @@ async def publish_to_fanqie(
     project_id: str,
     req: PublishToFanqieRequest,
     svc: FanqiePublishService = Depends(get_service),
+    principal: AuthenticatedPrincipal = Depends(require_fanqie_write_access),
 ):
     """将创作项目的一章或多章正文推送到番茄作家后台（存草稿）。
 
@@ -141,6 +180,7 @@ async def set_fanqie_binding(
     project_id: str,
     req: FanqieBindingRequest,
     svc: FanqiePublishService = Depends(get_service),
+    principal: AuthenticatedPrincipal = Depends(require_fanqie_write_access),
 ):
     try:
         binding = await svc.set_binding(
@@ -159,6 +199,7 @@ async def set_fanqie_binding(
 async def get_fanqie_binding(
     project_id: str,
     svc: FanqiePublishService = Depends(get_service),
+    principal: AuthenticatedPrincipal | None = Depends(require_fanqie_project_access),
 ):
     binding = await svc.get_binding(project_id)
     return {"success": True, "data": binding}
@@ -174,6 +215,7 @@ async def preview_fanqie_publish(
     volume_id: str = Query(default=""),
     volume_name: str = Query(default=""),
     svc: FanqiePublishService = Depends(get_service),
+    principal: AuthenticatedPrincipal | None = Depends(require_fanqie_project_access),
 ):
     """Return local readiness for one selected Fanqie draft target.
 
@@ -197,6 +239,7 @@ async def get_fanqie_publish_status(
     project_id: str,
     chapter_number: Optional[int] = Query(default=None),
     svc: FanqiePublishService = Depends(get_service),
+    principal: AuthenticatedPrincipal | None = Depends(require_fanqie_project_access),
 ):
     records = await svc.get_publish_status(project_id, chapter_number=chapter_number)
     return {"success": True, "data": records}

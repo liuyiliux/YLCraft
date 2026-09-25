@@ -26,9 +26,11 @@ def hash_external_key(token: str) -> str:
 _rate_windows: dict[str, deque[float]] = defaultdict(deque)
 
 
-async def optional_external_api_key(
+async def get_external_api_key_optional(
     request: Request,
-    session=Depends(get_async_session_dependency),
+    session,
+    *,
+    require_key: bool,
 ) -> Optional[ExternalApiKey]:
     """若请求带 Authorization: Bearer <外部 key> 则校验并返回，否则返回 None（兼容浏览器/本地）。
 
@@ -37,7 +39,7 @@ async def optional_external_api_key(
     """
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
-        if _REQUIRE_KEY:
+        if require_key:
             raise HTTPException(status_code=401, detail="需要外部 API Key（YLCRAFT_EXTERNAL_API_REQUIRE_KEY=1）")
         return None
     token = auth[7:]
@@ -66,3 +68,11 @@ async def optional_external_api_key(
     session.add(row)
     await session.commit()
     return row
+
+
+async def optional_external_api_key(
+    request: Request,
+    session=Depends(get_async_session_dependency),
+) -> Optional[ExternalApiKey]:
+    """FastAPI dependency retaining the existing external-key enforcement setting."""
+    return await get_external_api_key_optional(request, session, require_key=_REQUIRE_KEY)

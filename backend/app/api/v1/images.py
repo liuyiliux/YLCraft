@@ -21,6 +21,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session
 
 from app.core.external_api_auth import optional_external_api_key
+from app.core.user_auth import AuthenticatedPrincipal, get_authenticated_principal
+from app.core.resource_auth import principal_owner_user_id
 from app.core.task_queue import TaskStatus, get_task_queue
 from app.db.database import get_session
 from app.db.models.creative_project import CreativeProject, ProjectAssetLink, ProjectContent
@@ -173,6 +175,7 @@ async def _create_generated_image_asset_hub(
     seed: int | None = None,
     generation_params: dict | None = None,
     lineage: dict | None = None,
+    owner_user_id: str | None = None,
 ) -> str:
     from app.services.asset_hub import AssetHubFacade
 
@@ -187,6 +190,7 @@ async def _create_generated_image_asset_hub(
         seed=seed,
         generation_params=generation_params,
         lineage=lineage,
+        owner_user_id=owner_user_id,
     )
     return result.node_id
 
@@ -606,7 +610,10 @@ class ImagePromptOptimizeResponse(BaseModel):
     response_model=ImagePromptOptimizeResponse,
     summary="用 LLM 优化生图提示词",
 )
-async def optimize_prompt(req: ImagePromptOptimizeRequest):
+async def optimize_prompt(
+    req: ImagePromptOptimizeRequest,
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
+):
     """把朴素描述改写成图像模型友好的提示词；只润色文字，不生成图片。"""
     try:
         from app.services.ai.prompt_optimize import optimize_image_prompt
@@ -632,7 +639,7 @@ async def optimize_prompt(req: ImagePromptOptimizeRequest):
 @router.post("/generate", response_model=ImageResponse, summary="生成图片")
 async def generate_image(
     req: ImageGenerateRequest,
-    external_key: Optional[ExternalApiKey] = Depends(optional_external_api_key),
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
     session: Session = Depends(get_session),
 ):
     """
@@ -710,6 +717,7 @@ async def generate_image(
                         "source_image": req.source_image or "",
                         "reference_images": reference_images if reference_images else None,
                         "project_id": req.project_id or "",
+                        "_owner_user_id": principal_owner_user_id(principal) or "",
                         "content_id": req.content_id or "",
                         "source_type": req.source_type or "",
                         "source_index": req.source_index or "",
@@ -820,6 +828,7 @@ async def generate_image(
                                 "planning_summary": planning_summary,
                             },
                             lineage=_generation_lineage_from_request(req),
+                            owner_user_id=principal_owner_user_id(principal),
                         )
                         if asset_hub_node_id:
                             asset_hub_node_ids.append(asset_hub_node_id)
@@ -1380,7 +1389,10 @@ async def list_platform_templates(
 
 
 @router.post("/platform-templates", response_model=dict, summary="新增平台模板")
-async def create_platform_template(req: PlatformTemplateCreateRequest):
+async def create_platform_template(
+    req: PlatformTemplateCreateRequest,
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
+):
     """新增一个平台模板"""
     from app.db.database import get_async_session
     from app.db.models.platform_template import PlatformTemplate
@@ -1410,6 +1422,7 @@ async def create_platform_template(req: PlatformTemplateCreateRequest):
 async def update_platform_template(
     template_id: str,
     req: PlatformTemplateUpdateRequest,
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
 ):
     """更新指定平台模板"""
     from app.db.database import get_async_session
@@ -1444,7 +1457,10 @@ async def update_platform_template(
 
 
 @router.delete("/platform-templates/{template_id}", response_model=dict, summary="删除平台模板")
-async def delete_platform_template(template_id: str):
+async def delete_platform_template(
+    template_id: str,
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
+):
     """删除指定平台模板（软删除：设置 is_active=False）"""
     from app.db.database import get_async_session
     from app.db.models.platform_template import PlatformTemplate
@@ -1471,7 +1487,10 @@ async def delete_platform_template(template_id: str):
 
 
 @router.post("/generate-outline", response_model=GenerateOutlineResponse, summary="多平台大纲生成")
-async def generate_outline_endpoint(req: GenerateOutlineRequest):
+async def generate_outline_endpoint(
+    req: GenerateOutlineRequest,
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
+):
     """
     使用 LLM 为输入的 topic 生成多平台结构化大纲。
     每个平台返回 title、copywriting、pages（含 type 和 prompt）。
@@ -1532,7 +1551,10 @@ class BatchRetryResponse(BaseModel):
 
 
 @router.post("/generate-batch/retry", response_model=BatchRetryResponse, summary="单张图片重生成")
-async def batch_retry_endpoint(req: BatchRetryRequest):
+async def batch_retry_endpoint(
+    req: BatchRetryRequest,
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
+):
     """
     对批量生成中失败的图片进行单张重生成。
     复用 generate_image 逻辑，返回新的图片 URL。
@@ -1575,6 +1597,7 @@ async def batch_retry_endpoint(req: BatchRetryRequest):
                         "page_type": req.page_type or "",
                         "content_platform": req.platform or "",
                     },
+                    owner_user_id=principal_owner_user_id(principal),
                 )
 
             return BatchRetryResponse(
@@ -1597,7 +1620,10 @@ async def batch_retry_endpoint(req: BatchRetryRequest):
 
 
 @router.post("/generate-batch", response_model=BatchGenerateResponse, summary="批量生成多平台图片")
-async def batch_generate_endpoint(req: BatchGenerateRequest):
+async def batch_generate_endpoint(
+    req: BatchGenerateRequest,
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
+):
     """
     批量生成图片：对每页并行调用现有 generate_image。
     返回按平台分组的结果。
@@ -1622,6 +1648,7 @@ async def batch_generate_endpoint(req: BatchGenerateRequest):
                 outline_title=req.outline_title,
                 outline_copywriting=req.outline_copywriting,
                 reference_images=req.reference_images,
+                owner_user_id=principal_owner_user_id(principal),
             )
             return BatchGenerateResponse(success=True, results=results.get("results", {}))
     except Exception as e:
@@ -1630,7 +1657,10 @@ async def batch_generate_endpoint(req: BatchGenerateRequest):
 
 
 @router.post("/generate-batch/topics", response_model=BatchTopicGenerateResponse, summary="多主题批量生成")
-async def batch_topics_generate_endpoint(req: BatchTopicGenerateRequest):
+async def batch_topics_generate_endpoint(
+    req: BatchTopicGenerateRequest,
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
+):
     """
     多主题编排：每个主题先生成多平台大纲，再批量生成图片并入库。
     """
@@ -1676,6 +1706,7 @@ async def batch_topics_generate_endpoint(req: BatchTopicGenerateRequest):
                         outline_title=next(iter(outlines.values())).get("title", topic) if outlines else topic,
                         outline_copywriting=next(iter(outlines.values())).get("copywriting", "") if outlines else "",
                         reference_images=req.reference_images,
+                        owner_user_id=principal_owner_user_id(principal),
                     )
 
                 return {

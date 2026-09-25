@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api.v1 import creative_projects as creative_projects_api
+from app.core.user_auth import AuthenticatedPrincipal
 
 
 def _candidate(**overrides):
@@ -49,6 +50,11 @@ class FakeContinuityService:
     def _require(self, project_id: str):
         if project_id not in self.candidates:
             raise ValueError("项目不存在")
+
+    def get_project(self, project_id: str):
+        if project_id not in self.candidates:
+            return None
+        return SimpleNamespace(id=project_id, owner_user_id=None)
 
     def list_continuity_candidates(self, project_id, **kwargs):
         self._require(project_id)
@@ -195,6 +201,12 @@ def _client(service: FakeContinuityService):
         creative_projects_api.router, prefix="/api/v1/creative-projects"
     )
     app.dependency_overrides[creative_projects_api.service] = lambda: service
+    app.dependency_overrides[creative_projects_api.get_authenticated_principal] = (
+        lambda: AuthenticatedPrincipal(user=type("User", (), {"id": "continuity-user"})())
+    )
+    app.dependency_overrides[creative_projects_api.get_authenticated_principal_optional] = (
+        lambda: AuthenticatedPrincipal(user=type("User", (), {"id": "continuity-user"})())
+    )
     return TestClient(app)
 
 

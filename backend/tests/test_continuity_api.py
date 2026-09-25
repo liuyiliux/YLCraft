@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api.v1 import creative_projects as creative_projects_api
+from app.core.user_auth import AuthenticatedPrincipal
 
 
 def _candidate(candidate_id: str = "candidate-1"):
@@ -38,6 +39,9 @@ def _candidate(candidate_id: str = "candidate-1"):
 class FakeContinuityService:
     def __init__(self):
         self.calls: list[tuple[str, dict]] = []
+
+    def get_project(self, project_id: str):
+        return SimpleNamespace(id=project_id, owner_user_id=None)
 
     def check_continuity(self, project_id: str, chapter_number: int, *, candidate_id: str | None = None):
         self.calls.append(("check_continuity", {
@@ -91,6 +95,12 @@ def _client(service: FakeContinuityService):
     app = FastAPI()
     app.include_router(creative_projects_api.router, prefix="/api/v1/creative-projects")
     app.dependency_overrides[creative_projects_api.service] = lambda: service
+    app.dependency_overrides[creative_projects_api.get_authenticated_principal] = (
+        lambda: AuthenticatedPrincipal(user=type("User", (), {"id": "continuity-user"})())
+    )
+    app.dependency_overrides[creative_projects_api.get_authenticated_principal_optional] = (
+        lambda: AuthenticatedPrincipal(user=type("User", (), {"id": "continuity-user"})())
+    )
     return TestClient(app)
 
 

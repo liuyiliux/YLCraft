@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+from datetime import datetime
 from pathlib import Path
 
 from app.db.models.ai_connector import AIConnector
@@ -83,6 +84,50 @@ def test_generic_video_accepts_agnes_top_level_url_response():
     result = backend._status(payload, "video-1")
     assert result.status == "done"
     assert result.url.endswith("agnes.mp4")
+
+
+def test_generic_video_parses_agnes_epoch_completion_time():
+    backend = GenericVideoBackend(AIConnector(
+        id="agnes-video", provider="agnes", name="Agnes", api_key="test-key",
+        provider_type="video", response_config='{"status_path":"$.internal_status"}',
+    ))
+
+    result = backend._status({
+        "internal_status": "completed",
+        "completed_at": 1790152374,
+        "url": "https://example.test/agnes.mp4",
+    }, "video-1")
+
+    assert result.status == "done"
+    assert result.completed_at == 1790152374.0
+
+
+def test_generic_video_parses_wan_output_end_time():
+    backend = GenericVideoBackend(AIConnector(
+        id="wan-video", provider="dashscope", name="Wan", api_key="test-key",
+        provider_type="video",
+        response_config='{"status_path":"$.output.task_status","video_url_path":"$.output.video_url","done_values":["SUCCEEDED"]}',
+    ))
+
+    result = backend._status({
+        "output": {
+            "task_status": "SUCCEEDED",
+            "video_url": "https://example.test/wan.mp4",
+            "end_time": "2026-09-23T08:32:54Z",
+        }
+    }, "video-1")
+
+    assert result.status == "done"
+    assert result.completed_at == datetime.fromisoformat("2026-09-23T08:32:54+00:00").timestamp()
+
+
+def test_generic_video_completion_time_accepts_epoch_millis_and_naive_iso():
+    backend = GenericVideoBackend(AIConnector(id="video", provider="custom", name="Video"))
+
+    assert backend._completion_timestamp(1790152374000) == 1790152374.0
+    naive = "2026-09-23T16:32:54"
+    assert backend._completion_timestamp(naive) == datetime.fromisoformat(naive).astimezone().timestamp()
+    assert backend._completion_timestamp("not-a-time") is None
 
 
 def test_generic_video_diagnostics_redact_credentials_and_large_media():
