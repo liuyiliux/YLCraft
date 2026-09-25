@@ -177,6 +177,8 @@ PLATFORM_LOGIN_URLS = {
     "telegram": "https://web.telegram.org",
     # 微信公众号公众平台后台登录页
     "wechat_mp": "https://mp.weixin.qq.com/",
+    # 番茄小说作家专区（发布/数据都在作家后台，不是读者站）
+    "fanqie": "https://fanqienovel.com/main/writer/book-manage",
 }
 
 PLATFORM_DOMAINS = {
@@ -192,6 +194,8 @@ PLATFORM_DOMAINS = {
     "telegram": ".telegram.org,t.me",
     # 微信公众号相关域名
     "wechat_mp": ".weixin.qq.com,.qq.com,mp.weixin.qq.com",
+    # 番茄小说：作家后台与图片 CDN 都在这些域下
+    "fanqie": ".fanqienovel.com,.fqnovelpic.com,.bytetos.com",
 }
 
 PLATFORM_TEST_URLS = {
@@ -207,6 +211,8 @@ PLATFORM_TEST_URLS = {
     "telegram": "https://t.me/telegram",
     # 微信公众号登录后默认跳到首页
     "wechat_mp": "https://mp.weixin.qq.com/cgi-bin/home?t=home/index&lang=zh_CN",
+    # 番茄小说：登录后应能打开作家后台（含作品管理）
+    "fanqie": "https://fanqienovel.com/main/writer/book-manage",
 }
 
 DEFAULT_USER_AGENT = (

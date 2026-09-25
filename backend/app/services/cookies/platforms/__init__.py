@@ -22,6 +22,7 @@ _detector_registry: dict[str, str] = {
     "weibo": "app.services.cookies.platforms.weibo:WeiboDetector",
     "zhihu": "app.services.cookies.platforms.zhihu:ZhihuDetector",
     "wechat_mp": "app.services.cookies.platforms.wechat_mp:WechatMPDetector",
+    "fanqie": "app.services.cookies.platforms.fanqie:FanqieDetector",
 }
 
 _qrcode_registry: dict[str, str] = {
