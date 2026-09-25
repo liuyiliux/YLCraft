@@ -131,6 +131,33 @@ no whitespace errors
 
 本轮没有重新跑前端 `vitest`、TypeScript 检查和生产构建。前端最后记录的完整通过结果在 `docs/devlog/2026-09-23_user_authentication_handoff.md`，换环境后不能直接把它当成当前工作区的最终证明。
 
+**已补验（2026-09-25 DSH 接手轮）**：前端侧已在本工作区重跑，全部通过——
+
+```text
+cd frontend
+npx vitest run   →  Test Files 20 passed (20) / Tests 338 passed (338)
+npm run build    →  tsc --noEmit（两份 tsconfig）+ vite build 通过（退出 0）
+```
+
+因此当前工作区是「后端 `1087 passed, 0 failed, 4 skipped` + 前端 `338 passed`」双绿状态，可直接作为后续接手的基线；上面那句"未重跑"仅保留作历史。
+
+## 活动任务的阻塞盘点（2026-09-25 逐条核实）
+
+目标「把活动的任务全部开发完」在代码侧已无可推进项：4 条活动 change 的 **20 个未勾选任务，没有一项是"代码没写"**，全部卡在外部条件。逐条核实结果：
+
+| change | 未勾 | 阻塞性质 | 解封条件（均在用户侧） |
+| --- | --- | --- | --- |
+| `fanqie-publisher` | 7 / 31 / 32 | 需真实账号写路径 | 提供有效 Cookie + 自建 `[TEST]` 测试章，跑 `tools/test_fanqie_client.py --live` |
+| `fanqie-publisher` | 21 / 23 / 25 | E 组端点未抓包 | 登录态抓包取得真实 path 与签名参数，回填 `design.md` 端点表后替换 `routes.py` 的 `not_captured` 占位 |
+| `unirig-local-rigging-service` | 4-13 | 硬件不足 | 8GB+ 显存 NVIDIA 机器且 Docker Linux 引擎可用 |
+| `3d-rigging-digital-human` | 16 | 付费额度 + 产品已搁置 | 开通腾讯云 3D 绑骨付费资源，**且**重新决定恢复该能力 |
+| `3d-rigging-digital-human` | 13 / 14 | 追踪指针 | 不在此 change 实施，已拆到上面两个独立 change |
+| `triposr-connector-migration` | 9 | 无真实 key | 在受管连接器配置真实 TripoSR key 后跑真实 smoke |
+
+**禁止的"推进"方式（会违反仓库硬规矩）**：不得为 E 组端点猜写路径（运行时必 404）、不得以 mock 冒充 TripoSR 供应商验收、不得把 6GB 显存下的失败包装成"本地绑骨可用"。
+
+**验证过的基线（可直接信任）**：后端 `1087 passed / 0 failed / 4 skipped`；前端 `vitest 338 passed`；`openspec validate --all --strict` 36 passed；`alembic current` = `heads` = `046`；工作区除 6 个已知垃圾文件外干净，`origin` 与 `github` 均已同步。
+
 ## 关键决策
 
 - `root` 历史归属是本地数据库运维动作，不写进 Alembic 自动迁移。`root` 密码、Cookie、Token 和供应商密钥不得进入仓库。
