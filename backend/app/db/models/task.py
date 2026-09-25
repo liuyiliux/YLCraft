@@ -30,6 +30,9 @@ class ProjectTaskRecord(SQLModel, table=True):
     completed_at: Optional[float] = Field(default=None)
     max_retries: int = Field(default=0)
     events_json: str = Field(default="[]")
+    owner_user_id: Optional[str] = Field(
+        default=None, foreign_key="users.id", index=True, max_length=64
+    )
     updated_at: float = Field(default_factory=time.time, index=True)
 
 
@@ -57,6 +60,9 @@ class VideoGenerationTask(SQLModel, table=True):
     error: Optional[str] = Field(default=None)
     progress: int = Field(default=0)
     progress_message: str = Field(default="")
+    owner_user_id: Optional[str] = Field(
+        default=None, foreign_key="users.id", index=True, max_length=64
+    )
     created_at: float = Field(default_factory=time.time, index=True)
     completed_at: Optional[float] = Field(default=None)
     updated_at: float = Field(default_factory=time.time, index=True)
@@ -79,6 +85,9 @@ class Model3DGenerationTask(SQLModel, table=True):
     error: Optional[str] = Field(default=None)
     progress: int = Field(default=0)
     progress_message: str = Field(default="")
+    owner_user_id: Optional[str] = Field(
+        default=None, foreign_key="users.id", index=True, max_length=64
+    )
     created_at: float = Field(default_factory=time.time, index=True)
     completed_at: Optional[float] = Field(default=None)
     updated_at: float = Field(default_factory=time.time, index=True)

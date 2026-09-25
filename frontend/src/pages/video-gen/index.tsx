@@ -53,6 +53,7 @@ import {
   FireOutlined,
   FolderOpenOutlined,
   SaveOutlined,
+  StopOutlined,
 } from '@ant-design/icons'
 import type { UploadFile } from 'antd/es/upload/interface'
 import { useTheme } from '../../constants/theme'
@@ -70,13 +71,14 @@ interface GeneratedVideo {
   prompt: string
   provider: string
   model: string
-  status: 'pending' | 'processing' | 'done' | 'error'
+  status: 'pending' | 'processing' | 'done' | 'error' | 'cancelled'
   progress: number
   duration: number
   aspect_ratio?: string
   resolution?: string
   seed?: number
   created_at: string
+  completed_at?: string
   asset_id?: string
   project_id?: string
   content_id?: string
@@ -127,6 +129,7 @@ interface VideoTaskHistoryItem {
   content_id?: string
   error?: string
   created_at: number
+  completed_at?: number
   request?: Record<string, any>
   result?: Record<string, any>
 }
@@ -139,13 +142,24 @@ const toGeneratedVideo = (task: VideoTaskHistoryItem): GeneratedVideo => ({
   prompt: task.prompt,
   provider: task.provider,
   model: task.model,
-  status: task.status === 'done' ? 'done' : task.status === 'error' ? 'error' : task.status === 'processing' ? 'processing' : 'pending',
+  status: task.status === 'done'
+    ? 'done'
+    : task.status === 'error' || task.status === 'failed'
+      ? 'error'
+      : task.status === 'cancelled'
+        ? 'cancelled'
+        : task.status === 'processing'
+          ? 'processing'
+          : 'pending',
   progress: task.progress || 0,
   duration: Number(task.request?.duration || task.result?.duration || 5),
   aspect_ratio: task.request?.aspect_ratio || '9:16',
   resolution: task.request?.resolution || '720p',
   seed: task.request?.seed ?? task.result?.seed,
   created_at: new Date((task.created_at || Date.now() / 1000) * 1000).toISOString(),
+  completed_at: task.completed_at
+    ? new Date(task.completed_at * 1000).toISOString()
+    : undefined,
   asset_id: task.asset_id,
   project_id: task.project_id || task.request?.project_id || undefined,
   content_id: task.content_id || task.request?.content_id || undefined,
@@ -449,13 +463,13 @@ export default function VideoGenPage() {
         try {
           const res = await fetch(`/api/v1/videos/tasks/${task.task_id}?provider=${task.provider}`)
           const data = await res.json()
-          if (data.success) {
+          if (data.success || data.terminal) {
             setGeneratedVideos(prev =>
               prev.map(v =>
                 v.task_id === task.task_id
                   ? {
                     ...v,
-                    status: data.status,
+                    status: data.status === 'error' ? 'error' : data.status,
                     progress: data.progress,
                     url: data.url,
                     local_path: data.local_path,
@@ -466,6 +480,11 @@ export default function VideoGenPage() {
                   : v
               )
             )
+            if (data.terminal) {
+              // Stop polling this row. Without terminal short-circuiting, a
+              // provider-side failure is re-queried every few seconds forever.
+              processingTasks.splice(processingTasks.indexOf(task), 1)
+            }
           }
         } catch (e) {
           console.error('Poll task failed:', e)
@@ -530,6 +549,7 @@ export default function VideoGenPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        credentials: 'include',
       })
 
       const data = await res.json()
@@ -645,6 +665,8 @@ export default function VideoGenPage() {
         return <ClockCircleOutlined style={{ color: '#f59e0b' }} />
       case 'error':
         return <ExclamationCircleOutlined style={{ color: '#ef4444' }} />
+      case 'cancelled':
+        return <StopOutlined style={{ color: '#f59e0b' }} />
       default:
         return null
     }
@@ -657,6 +679,7 @@ export default function VideoGenPage() {
       processing: { color: 'processing', text: '生成中' },
       pending: { color: 'warning', text: '排队中' },
       error: { color: 'error', text: '失败' },
+      cancelled: { color: 'warning', text: '已取消' },
     }
     const c = config[status] || { color: 'default', text: status }
     return <Tag color={c.color}>{c.text}</Tag>

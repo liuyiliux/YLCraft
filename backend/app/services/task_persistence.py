@@ -94,6 +94,9 @@ async def upsert_task(task: Any) -> None:
                 [event.__dict__ for event in (task.events or [])],
                 "[]",
             )
+            # This private field is injected by authenticated route handlers,
+            # never accepted from a client request body.
+            record.owner_user_id = str(payload.get("_owner_user_id") or "") or None
             record.updated_at = time.time()
     except Exception as exc:
         logger.warning("Could not persist project task %s: %s", getattr(task, "task_id", ""), exc)

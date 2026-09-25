@@ -10,15 +10,21 @@ from __future__ import annotations
 
 import logging
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select, text
+from sqlalchemy import or_, select, text
 
 from app.core.external_api_auth import optional_external_api_key
+from app.core.resource_auth import require_owned_or_legacy
+from app.core.user_auth import (
+    AuthenticatedPrincipal,
+    get_authenticated_principal,
+    get_authenticated_principal_optional,
+)
 from app.core.task_queue import get_task_queue, task_event_to_dict
 from app.db.database import get_async_session
 from app.db.models.external_api_key import ExternalApiKey
@@ -81,13 +87,40 @@ class TaskActionResponse(BaseModel):
 
 
 def _format_timestamp(value: Any) -> str | None:
+    """Serialize a task timestamp as an offset-aware ISO 8601 string.
+
+    Task records use two storage shapes: POSIX epoch floats (queue / video / 3D
+    ledgers) and naive UTC datetimes (Asset Hub uses ``datetime.utcnow``).
+    Returning a bare naive string made browsers assume local time, so a row
+    recorded at 09:06 UTC displayed as 09:06 in Beijing instead of 17:06.
+
+    Always attach an explicit offset, and normalize every shape to the server's
+    local offset so the lexicographic sort in ``_all_task_infos`` stays valid.
+    """
     if value is None:
         return None
     if isinstance(value, (int, float)):
-        return datetime.fromtimestamp(value).isoformat()
+        return datetime.fromtimestamp(value).astimezone().isoformat()
     if hasattr(value, "isoformat"):
-        return value.isoformat()
+        if value.tzinfo is None:
+            # Naive values in this codebase are written as UTC; make it explicit
+            # before converting so the instant is not silently shifted.
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone().isoformat()
     return str(value)
+
+
+def _parse_timestamp(value: Any) -> datetime | None:
+    """Parse a serialized task timestamp back into an aware local datetime."""
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone()
 
 
 def _get_task_value(task: Any, key: str, default: Any = None) -> Any:
@@ -118,7 +151,15 @@ def _duration_seconds(task: Any) -> float | None:
     finished = _get_task_value(task, "completed_at") or _get_task_value(task, "finished_at")
     if not started:
         return None
-    end = finished if finished else datetime.now().timestamp()
+    status = _normalize_status(_get_task_value(task, "status", ""))
+    if finished:
+        end = finished
+    elif status in {"done", "failed", "cancelled"}:
+        # A terminal task without an end timestamp has unknown duration. Using
+        # "now" here makes old failed rows look like they are still running.
+        return None
+    else:
+        end = datetime.now().timestamp()
     if hasattr(started, "timestamp"):
         started = started.timestamp()
     if hasattr(end, "timestamp"):
@@ -162,6 +203,63 @@ def _task_info(task: Any, include_detail: bool = False) -> TaskInfo:
         events=events,
         error=_get_task_value(task, "error") if include_detail else None,
     )
+
+
+def _media_task_diagnostics(
+    *,
+    payload: dict[str, Any] | None,
+    result: dict[str, Any] | None,
+    provider: str = "",
+    model: str = "",
+    status: str = "",
+) -> dict[str, Any] | None:
+    """Merge provider diagnostics with the task center's stable display fields.
+
+    Durable video/3D ledgers store the provider-specific submit or poll payload
+    under ``result.diagnostics``. Older image-oriented consumers also look for a
+    small set of normalized fields, so expose both here instead of making every
+    UI rediscover them.
+    """
+    result = result if isinstance(result, dict) else {}
+    payload = payload if isinstance(payload, dict) else {}
+    payload_diagnostics = payload.get("diagnostics")
+    result_diagnostics = result.get("diagnostics")
+    diagnostics = {
+        **(payload_diagnostics if isinstance(payload_diagnostics, dict) else {}),
+        **(result_diagnostics if isinstance(result_diagnostics, dict) else {}),
+    }
+
+    planning = payload.get("planning_summary")
+    planning = planning if isinstance(planning, dict) else {}
+    resolved_provider = (
+        provider
+        or str(planning.get("provider") or "")
+        or str(payload.get("provider") or "")
+    )
+    resolved_model = (
+        model
+        or str(planning.get("model") or "")
+        or str(payload.get("model") or "")
+    )
+    external_task_id = (
+        str(diagnostics.get("external_task_id") or "")
+        or str(result.get("provider_task_id") or "")
+        or str(payload.get("external_task_id") or "")
+    )
+
+    normalized = diagnostics
+    if resolved_provider:
+        normalized.setdefault("provider", resolved_provider)
+    if resolved_model:
+        normalized.setdefault("model", resolved_model)
+    if external_task_id:
+        normalized.setdefault("external_task_id", external_task_id)
+    if status:
+        normalized.setdefault("last_remote_status", status)
+    response_excerpt = diagnostics.get("response_excerpt")
+    if response_excerpt and not normalized.get("last_response_excerpt"):
+        normalized["last_response_excerpt"] = response_excerpt
+    return normalized or None
 
 
 def _download_task_info(task_id: str, data: dict[str, Any], include_detail: bool = False) -> TaskInfo:
@@ -243,7 +341,13 @@ async def _video_task_infos(include_detail: bool = False) -> list[TaskInfo]:
             duration_seconds=_duration_seconds(row),
             payload=payload if include_detail else None,
             result=result if include_detail else None,
-            diagnostics=(result.get("diagnostics") if isinstance(result, dict) else None) if include_detail else None,
+            diagnostics=_media_task_diagnostics(
+                payload=payload,
+                result=result,
+                provider=row.provider or "",
+                model=row.model or "",
+                status=_normalize_status(row.status),
+            ) if include_detail else None,
             error=row.error if include_detail else None,
         )
         infos.append(info)
@@ -282,6 +386,13 @@ async def _model3d_task_infos(include_detail: bool = False) -> list[TaskInfo]:
             duration_seconds=_duration_seconds(row),
             payload=payload if include_detail else None,
             result=result if include_detail else None,
+            diagnostics=_media_task_diagnostics(
+                payload=payload,
+                result=result,
+                provider=row.provider or "",
+                model=row.model or "",
+                status=_normalize_status(row.status),
+            ) if include_detail else None,
             error=row.error if include_detail else None,
         ))
     return infos
@@ -319,6 +430,53 @@ async def _delete_persistent_media_task(task_id: str) -> TaskInfo | None:
             await session.commit()
             return info
     return None
+
+
+async def _require_persistent_task_access(task_id: str, principal: AuthenticatedPrincipal) -> None:
+    """Apply ownership checks where the task has a durable owner record."""
+    if not isinstance(principal, AuthenticatedPrincipal):
+        # Internal direct route calls predate FastAPI dependency injection.
+        # Their own service/tool authorization remains the boundary.
+        return
+    async with get_async_session() as session:
+        for model in (VideoGenerationTask, Model3DGenerationTask):
+            row = await session.get(model, task_id)
+            if row is not None:
+                require_owned_or_legacy(owner_user_id=row.owner_user_id, principal=principal)
+                return
+
+
+async def _visible_persistent_task_ids(
+    principal: AuthenticatedPrincipal | None,
+) -> set[str] | None:
+    """Return the durable task ids a human session may read.
+
+    ``None`` means an external Agent key, whose subject mapping is intentionally
+    deferred to a separate migration and which remains governed by its key
+    scope. Anonymous callers only receive pre-account legacy records.
+    """
+    # An explicit ``None`` is an anonymous HTTP caller and may only see legacy
+    # NULL-owner records. A non-principal sentinel (direct Python call without
+    # dependency resolution, i.e. the Depends default) keeps the historical
+    # unfiltered internal behavior.
+    if principal is None:
+        owner_user_id = None
+    elif not isinstance(principal, AuthenticatedPrincipal):
+        return None
+    elif principal.external_api_key is not None:
+        return None
+    else:
+        owner_user_id = principal.user.id if principal.user else None
+    async with get_async_session() as session:
+        ids: set[str] = set()
+        for model in (VideoGenerationTask, Model3DGenerationTask):
+            statement = select(model.task_id).where(model.owner_user_id.is_(None))
+            if owner_user_id is not None:
+                statement = select(model.task_id).where(
+                    or_(model.owner_user_id == owner_user_id, model.owner_user_id.is_(None))
+                )
+            ids.update((await session.execute(statement)).scalars().all())
+        return ids
 
 
 def _all_task_infos(
@@ -361,7 +519,13 @@ def _all_task_infos(
             infos.append(info)
             seen.add(info.task_id)
 
-    infos.sort(key=lambda item: item.created_at or "", reverse=True)
+    # Compare parsed instants rather than raw strings: ISO strings with and
+    # without fractional seconds do not sort chronologically as text.
+    infos.sort(
+        key=lambda item: _parse_timestamp(item.created_at)
+        or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
     return infos
 
 
@@ -624,7 +788,7 @@ async def list_tasks(
     task_type: str | None = None,
     active_only: bool = False,
     include_detail: bool = False,
-    external_key: Optional[ExternalApiKey] = Depends(optional_external_api_key),
+    principal: AuthenticatedPrincipal | None = Depends(get_authenticated_principal_optional),
 ):
     """
     返回所有活跃任务（内存视图）。
@@ -637,6 +801,13 @@ async def list_tasks(
     video_infos = await _video_task_infos(include_detail=detail)
     model3d_infos = await _model3d_task_infos(include_detail=detail)
     tasks = _all_task_infos(include_detail=detail, video_infos=video_infos, model3d_infos=model3d_infos)
+    visible_persistent_ids = await _visible_persistent_task_ids(principal)
+    if visible_persistent_ids is not None:
+        tasks = [
+            task for task in tasks
+            if task.task_type not in {"video_generation", "model3d_generation"}
+            or task.task_id in visible_persistent_ids
+        ]
     if project_id:
         tasks = [
             task for task in tasks
@@ -658,7 +829,7 @@ async def list_tasks(
 
 @router.get("/stats", response_model=TaskStatsResponse, summary="任务统计")
 async def get_task_stats(
-    external_key: Optional[ExternalApiKey] = Depends(optional_external_api_key),
+    principal: AuthenticatedPrincipal | None = Depends(get_authenticated_principal_optional),
 ):
     """返回任务统计数据，用于 Dashboard"""
     tasks = _all_task_infos(
@@ -678,7 +849,11 @@ async def get_task_stats(
     today_count = 0
     week_count = 0
 
-    today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    # Task timestamps are serialized with an explicit local offset (see
+    # ``_format_timestamp``), so the day boundary must carry the same offset to
+    # stay comparable instead of raising naive/aware TypeError.
+    now_local = datetime.now().astimezone()
+    today_start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
     week_start = today_start - timedelta(days=today_start.weekday())
 
     for task in tasks:
@@ -694,10 +869,7 @@ async def get_task_stats(
             failed += 1
 
         if task.created_at:
-            try:
-                created_date = datetime.fromisoformat(task.created_at)
-            except ValueError:
-                created_date = None
+            created_date = _parse_timestamp(task.created_at)
             if created_date and created_date >= today_start:
                 today_count += 1
             if created_date and created_date >= week_start:
@@ -736,7 +908,7 @@ async def get_task_stats(
 @router.get("/{task_id}", response_model=TaskDetailResponse, summary="任务详情")
 async def get_task_detail(
     task_id: str,
-    external_key: Optional[ExternalApiKey] = Depends(optional_external_api_key),
+    principal: AuthenticatedPrincipal | None = Depends(get_authenticated_principal_optional),
 ):
     """返回指定任务的详细信息"""
     queue = get_task_queue()
@@ -751,18 +923,26 @@ async def get_task_detail(
     video_tasks = await _video_task_infos(include_detail=True)
     video_task = next((item for item in video_tasks if item.task_id == task_id), None)
     if video_task:
+        visible_ids = await _visible_persistent_task_ids(principal)
+        if visible_ids is not None and task_id not in visible_ids:
+            raise HTTPException(status_code=403, detail="无权访问其他用户的资源")
         return TaskDetailResponse(success=True, task=video_task)
 
     model3d_tasks = await _model3d_task_infos(include_detail=True)
     model3d_task = next((item for item in model3d_tasks if item.task_id == task_id), None)
     if model3d_task:
+        visible_ids = await _visible_persistent_task_ids(principal)
+        if visible_ids is not None and task_id not in visible_ids:
+            raise HTTPException(status_code=403, detail="无权访问其他用户的资源")
         return TaskDetailResponse(success=True, task=model3d_task)
 
     return TaskDetailResponse(success=False, task=None)
 
 
 @router.post("/{task_id}/cancel", response_model=TaskActionResponse, summary="取消任务")
-async def cancel_task(task_id: str):
+async def cancel_task(
+    task_id: str, principal: AuthenticatedPrincipal = Depends(get_authenticated_principal)
+):
     """
     将任务标记为取消。
 
@@ -788,6 +968,7 @@ async def cancel_task(task_id: str):
             return TaskActionResponse(success=False, message=f"任务已处于 {external_task.status} 状态，无法取消", task=external_task)
         return TaskActionResponse(success=True, message="任务已取消", task=external_task)
 
+    await _require_persistent_task_access(task_id, principal)
     persistent_task = await _cancel_persistent_media_task(task_id)
     if persistent_task:
         return TaskActionResponse(success=True, message="任务已取消", task=persistent_task)
@@ -822,7 +1003,9 @@ def _load_json(raw: Any) -> dict[str, Any]:
 
 
 @router.post("/{task_id}/retry", response_model=TaskRetryResponse, summary="重试失败任务")
-async def retry_task(task_id: str):
+async def retry_task(
+    task_id: str, principal: AuthenticatedPrincipal = Depends(get_authenticated_principal)
+):
     """按原参数重新提交失败或取消的独立媒体任务。
 
     统一入口：任务中心看到失败任务即可重试，不必再去事件日志 Tab 找对应事件。
@@ -832,6 +1015,7 @@ async def retry_task(task_id: str):
     图片类任务的重发在事件日志（`/api/v1/logs/{id}/retry`）已支持。
     """
     # 先按 task_type 判断（通用队列任务 id 是 uuid，前缀不可靠）；外部账本再按前缀兜底。
+    await _require_persistent_task_access(task_id, principal)
     queue = get_task_queue()
     tracked = await queue.get_task(task_id)
     task_type = str(getattr(tracked, "task_type", "") or "")
@@ -872,7 +1056,7 @@ async def retry_task(task_id: str):
             production_node_id=ctx.get("production_node_id") or None,
             planning_summary=ctx.get("planning_summary") or {},
         )
-        response = await generate_video(request, external_key=None)
+        response = await generate_video(request, principal=principal)
         ok = bool(getattr(response, "success", False))
         return TaskRetryResponse(
             success=ok,
@@ -905,7 +1089,7 @@ async def retry_task(task_id: str):
             source_asset_id=ctx.get("source_asset_id"),
             options=ctx.get("options") or {},
         )
-        response = await generate_model3d(request, external_key=None)
+        response = await generate_model3d(request, principal=principal)
         ok = bool(getattr(response, "success", False))
         return TaskRetryResponse(
             success=ok,
@@ -931,8 +1115,11 @@ async def retry_task(task_id: str):
 
 
 @router.delete("/{task_id}", response_model=TaskActionResponse, summary="删除任务")
-async def delete_task(task_id: str):
+async def delete_task(
+    task_id: str, principal: AuthenticatedPrincipal = Depends(get_authenticated_principal)
+):
     """从当前内存任务视图中删除任务。"""
+    await _require_persistent_task_access(task_id, principal)
     queue = get_task_queue()
     task = await queue.get_task(task_id)
     if task:

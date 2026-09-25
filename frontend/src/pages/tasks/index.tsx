@@ -41,6 +41,7 @@ import { useTheme } from '../../constants/theme'
 import type { ColumnsType } from 'antd/es/table'
 import EventLogTab from './EventLogTab'
 import RuntimeLogTab from './RuntimeLogTab'
+import { normalizeTaskStatus } from './taskFilters'
 
 const { Paragraph, Text } = Typography
 
@@ -58,6 +59,15 @@ const TASK_TYPE_OPTIONS = [
   { label: '世界域细化', value: 'world_domain_expansion' },
   { label: '小说下载', value: 'novel_download' },
   { label: 'Live2D 处理', value: 'live2d_processing' },
+]
+
+const TASK_STATUS_OPTIONS = [
+  { label: '全部状态', value: '' },
+  { label: '等待中', value: 'pending' },
+  { label: '运行中', value: 'running' },
+  { label: '已完成', value: 'done' },
+  { label: '失败', value: 'failed' },
+  { label: '已取消', value: 'cancelled' },
 ]
 
 // 任务状态颜色映射
@@ -200,6 +210,7 @@ export default function TasksPage() {
   }, [])
   const [loading, setLoading] = useState(false)
   const [typeFilter, setTypeFilter] = useState<string>('')
+  const [statusFilter, setStatusFilter] = useState<string>('')
   const [searchText, setSearchText] = useState('')
   const [detailOpen, setDetailOpen] = useState(false)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -384,6 +395,7 @@ export default function TasksPage() {
   // 过滤任务
   const filteredTasks = tasks.filter((task) => {
     if (typeFilter && task.task_type !== typeFilter) return false
+    if (statusFilter && normalizeTaskStatus(task.status) !== statusFilter) return false
     if (searchText && !task.task_id.includes(searchText) && !task.progress_message?.includes(searchText)) {
       return false
     }
@@ -532,6 +544,15 @@ export default function TasksPage() {
               onChange={setTypeFilter}
               options={TASK_TYPE_OPTIONS}
               style={{ width: isMobile ? '100%' : 140 }}
+              allowClear
+              size={isMobile ? 'small' : 'middle'}
+            />
+            <Select
+              placeholder="任务状态"
+              value={statusFilter}
+              onChange={setStatusFilter}
+              options={TASK_STATUS_OPTIONS}
+              style={{ width: isMobile ? '100%' : 130 }}
               allowClear
               size={isMobile ? 'small' : 'middle'}
             />
@@ -695,6 +716,17 @@ export default function TasksPage() {
                   </Descriptions.Item>
                   <Descriptions.Item label="远端状态">
                     <span style={{ color: THEME.textPrimary }}>{selectedTask.diagnostics.last_remote_status || '-'}</span>
+                  </Descriptions.Item>
+                  <Descriptions.Item label="阶段">
+                    <span style={{ color: THEME.textPrimary }}>{selectedTask.diagnostics.operation || '-'}</span>
+                  </Descriptions.Item>
+                  <Descriptions.Item label="请求端点">
+                    <span style={{ color: THEME.textPrimary, fontFamily: 'monospace', fontSize: 12, wordBreak: 'break-all' }}>
+                      {selectedTask.diagnostics.endpoint || '-'}
+                    </span>
+                  </Descriptions.Item>
+                  <Descriptions.Item label="HTTP 状态">
+                    <span style={{ color: THEME.textPrimary }}>{selectedTask.diagnostics.http_status ?? '-'}</span>
                   </Descriptions.Item>
                   <Descriptions.Item label="轮询次数">
                     <span style={{ color: THEME.textPrimary }}>{selectedTask.diagnostics.poll_count ?? '-'}</span>
