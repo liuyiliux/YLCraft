@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 import pytest
 
 from app.api.v1 import tasks as tasks_api
@@ -8,6 +10,129 @@ from app.services.task_persistence import should_persist
 def test_project_writing_tasks_are_persisted():
     assert should_persist("creative_writing", {"project_id": "project-1"}) is True
     assert should_persist("creative_writing", {}) is False
+
+
+def test_media_task_diagnostics_preserves_provider_payload_and_adds_task_center_fields():
+    diagnostics = tasks_api._media_task_diagnostics(
+        payload={
+            "planning_summary": {
+                "provider": "Agnes Video V2.0 Text to Video",
+                "model": "agnes-video-v2.0",
+            },
+        },
+        result={
+            "provider_task_id": "video_95471d0af2c04b1495a47916b7aeef60",
+            "diagnostics": {
+                "operation": "submit",
+                "method": "POST",
+                "endpoint": "https://api.agnes-ai.cn/v1/videos",
+                "http_status": 200,
+                "response_excerpt": '{"status":"queued"}',
+            },
+        },
+        status="pending",
+    )
+
+    assert diagnostics is not None
+    # Provider-specific diagnostics stay intact for deep debugging.
+    assert diagnostics["operation"] == "submit"
+    assert diagnostics["http_status"] == 200
+    # Task-center display fields are normalized without duplicating storage.
+    assert diagnostics["external_task_id"] == "video_95471d0af2c04b1495a47916b7aeef60"
+    assert diagnostics["provider"] == "Agnes Video V2.0 Text to Video"
+    assert diagnostics["model"] == "agnes-video-v2.0"
+    assert diagnostics["last_remote_status"] == "pending"
+    assert diagnostics["last_response_excerpt"] == '{"status":"queued"}'
+
+
+def test_media_task_diagnostics_prefers_explicit_normalized_fields():
+    diagnostics = tasks_api._media_task_diagnostics(
+        payload={"external_task_id": "payload-id"},
+        result={
+            "provider_task_id": "result-id",
+            "diagnostics": {
+                "external_task_id": "diagnostics-id",
+                "response_excerpt": "provider response",
+                "last_response_excerpt": "already normalized",
+            },
+        },
+    )
+
+    assert diagnostics == {
+        "external_task_id": "diagnostics-id",
+        "response_excerpt": "provider response",
+        "last_response_excerpt": "already normalized",
+    }
+
+
+def test_terminal_task_without_end_timestamp_has_unknown_duration():
+    """A failed row without completed_at must not report a duration that grows daily."""
+    duration = tasks_api._duration_seconds({
+        "status": "error",
+        "created_at": 1_700_000_000.0,
+        "completed_at": None,
+    })
+
+    assert duration is None
+
+
+def test_active_task_without_end_timestamp_uses_current_time():
+    duration = tasks_api._duration_seconds({
+        "status": "running",
+        "created_at": 1_700_000_000.0,
+        "completed_at": None,
+    })
+
+    assert duration is not None
+    assert duration > 0
+
+
+def test_task_timestamps_serialize_with_explicit_offset():
+    """Every storage shape must carry an offset so browsers cannot guess local time.
+
+    ``asset_nodes`` uses naive UTC while the media ledgers store epoch floats.
+    A bare naive ISO string made the browser read 09:06 UTC as 09:06 Beijing.
+    """
+    epoch = 1_790_152_374.0  # 2026-09-23T16:32:54+08:00
+    naive_utc = datetime(2026, 9, 23, 8, 32, 54)
+    aware_utc = datetime(2026, 9, 23, 8, 32, 54, tzinfo=timezone.utc)
+
+    serialized = [
+        tasks_api._format_timestamp(epoch),
+        tasks_api._format_timestamp(naive_utc),
+        tasks_api._format_timestamp(aware_utc),
+    ]
+
+    for value in serialized:
+        assert value is not None
+        parsed = datetime.fromisoformat(value)
+        assert parsed.tzinfo is not None, f"{value!r} must carry a UTC offset"
+
+    # All three shapes describe the same instant and must round-trip equal.
+    parsed = [tasks_api._parse_timestamp(value) for value in serialized]
+    assert parsed[0] == parsed[1] == parsed[2]
+
+
+def test_task_timestamp_ordering_uses_parsed_instants():
+    """Fractional and whole-second strings must not be compared as raw text."""
+    earlier = {"created_at": 1_790_152_374.0}                    # ...:54
+    later = {"created_at": 1_790_152_374.987654}                 # ...:54.987654
+    infos = [
+        tasks_api._download_task_info(
+            "later", {"status": "done", "created_at": later["created_at"]}
+        ),
+        tasks_api._download_task_info(
+            "earlier", {"status": "done", "created_at": earlier["created_at"]}
+        ),
+    ]
+
+    ordered = sorted(
+        infos,
+        key=lambda item: tasks_api._parse_timestamp(item.created_at),
+        reverse=True,
+    )
+
+    assert [item.task_id for item in ordered] == ["later", "earlier"]
 
 
 @pytest.mark.asyncio

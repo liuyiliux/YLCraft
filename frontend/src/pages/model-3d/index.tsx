@@ -64,9 +64,12 @@ type StageLayer = {
 }
 
 async function api(path: string, init?: RequestInit) {
-  const response = await fetch(`${API}${path}`, { headers: { 'Content-Type': 'application/json' }, ...init })
+  const response = await fetch(`${API}${path}`, { headers: { 'Content-Type': 'application/json' }, credentials: 'include', ...init })
   const data = await response.json()
-  if (!response.ok || data.success === false) {
+  // A terminal polling response may deliberately carry success=false (provider
+  // failure) while still being the final state. The caller must be allowed to
+  // render it once and stop polling; other request failures still throw.
+  if ((!response.ok || data.success === false) && !data.terminal) {
     // FastAPI 的 422 把 detail 给成**数组**，直接塞进 Error 会显示成 "[object Object]"，
     // 等于把"参数不对、哪个参数不对"这句话藏起来（实测就这么踩过一次）。
     const detail = data.detail
@@ -235,7 +238,9 @@ export default function Model3DPage() {
   useEffect(() => { void loadLibrary(libraryFilter) }, [libraryFilter])
 
   useEffect(() => {
-    const pending = tasks.filter(item => ['pending', 'processing'].includes(item.status))
+    const pending = tasks.filter(item =>
+      ['pending', 'processing'].includes(item.status) && !(item as any).terminal
+    )
     if (!pending.length) return
     const intervalMs = Math.min(...pending.map(task => {
       const seconds = backends.find(item => item.name === task.provider)?.poll_interval
