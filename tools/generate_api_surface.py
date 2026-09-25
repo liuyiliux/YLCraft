@@ -142,12 +142,41 @@ def parse_endpoint_decorator(decorator: ast.AST) -> tuple[str, str, str, str, bo
     return method, local_path, summary, response_model, include_in_schema
 
 
+def router_internal_prefix(file_path: Path) -> str:
+    """Read a router module's own ``APIRouter(prefix=...)``.
+
+    Without this, any router declaring its own prefix gets documented with the
+    mount prefix alone — e.g. ``cookie_acquisition`` declares ``prefix="/acquire"``
+    and is mounted at ``/api/v1``, so its real paths are ``/api/v1/acquire/...``,
+    but generated docs claimed ``/api/v1/playwright/...``. That wrong path is how
+    the docs got out of sync with the running app.
+    """
+    try:
+        tree = ast.parse(file_path.read_text(encoding="utf-8"))
+    except (SyntaxError, OSError):
+        return ""
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        name = getattr(func, "id", "") or getattr(func, "attr", "")
+        if name != "APIRouter":
+            continue
+        for kw in node.keywords:
+            if kw.arg == "prefix":
+                return literal(kw.value, "") or ""
+    return ""
+
+
 def parse_endpoints(mount: RouterMount) -> list[Endpoint]:
     file_path = ROOT / mount.file
     try:
         tree = ast.parse(file_path.read_text(encoding="utf-8"))
     except SyntaxError as exc:
         raise RuntimeError(f"Failed to parse {mount.file}: {exc}") from exc
+
+    effective_prefix = join_paths(mount.prefix, router_internal_prefix(file_path))
 
     endpoints: list[Endpoint] = []
     for node in ast.walk(tree):
@@ -161,9 +190,9 @@ def parse_endpoints(mount: RouterMount) -> list[Endpoint]:
             endpoints.append(
                 Endpoint(
                     method=method,
-                    path=join_paths(mount.prefix, local_path),
+                    path=join_paths(effective_prefix, local_path),
                     router=mount.name,
-                    prefix=mount.prefix,
+                    prefix=effective_prefix,
                     local_path=local_path,
                     tags=mount.tags,
                     summary=summary,

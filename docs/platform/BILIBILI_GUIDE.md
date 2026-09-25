@@ -17,9 +17,13 @@
 **API 端点**：
 | 接口 | 方法 | URL |
 |------|------|-----|
-| 生成二维码 | POST | `/api/v1/platforms/acquire/qrcode/generate` |
-| WebSocket 推送 | WS | `/api/v1/platforms/acquire/qrcode/{sid}/ws` |
-| 轮询状态 | GET | `/api/v1/platforms/acquire/qrcode/{sid}/status` |
+| 生成二维码 | POST | `/api/v1/acquire/qrcode/generate` |
+| WebSocket 推送 | WS | `/api/v1/acquire/qrcode/{sid}/ws` |
+| 轮询状态 | GET | `/api/v1/acquire/qrcode/{sid}/status` |
+
+> **前缀变更**：早期这些端点挂在 `/api/v1/platforms` 之下，提交 `d23227eb` 起已统一迁移到
+> `/api/v1/acquire`。旧的 Nginx `location` 示例与更早的文档版本请用新前缀覆盖，
+> 不要照抄旧路径——按旧路径配 Nginx 会让 WebSocket 升级失败（403）。
 
 **B站 Passport API**：
 | 接口 | 方法 | URL |
@@ -51,7 +55,7 @@ BILI_HEADERS = {
 
 **Nginx 配置**（生产环境）：
 ```nginx
-location /api/v1/platforms/acquire {
+location /api/v1/acquire {
     proxy_pass http://127.0.0.1:8000;
     proxy_http_version 1.1;
     proxy_set_header Upgrade $http_upgrade;

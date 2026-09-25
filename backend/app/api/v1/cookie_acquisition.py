@@ -2,16 +2,22 @@
 YLCraft — Cookie 自动获取 API
 
 ✅ Patchright 浏览器自动化（替代 Playwright，内置 Stealth）
-  POST  /api/v1/platforms/acquire/playwright/start          — 启动浏览器会话
-  WS    /api/v1/platforms/acquire/playwright/{sid}/ws      — WebSocket 状态推送
-  POST  /api/v1/platforms/acquire/playwright/{sid}/cancel  — 取消会话
-  GET   /api/v1/platforms/acquire/playwright/sessions       — 列出活跃会话
+  POST  /api/v1/acquire/playwright/start          — 启动浏览器会话
+  WS    /api/v1/acquire/playwright/{sid}/ws       — WebSocket 状态推送
+  POST  /api/v1/acquire/playwright/{sid}/cancel   — 取消会话
+  GET   /api/v1/acquire/playwright/sessions       — 列出活跃会话
 
 QrCode 二维码扫码获取：
-  POST  /api/v1/platforms/acquire/qrcode/generate          — 生成登录二维码
-  WS    /api/v1/platforms/acquire/qrcode/{sid}/ws           — WebSocket 等待扫码结果
-  GET   /api/v1/platforms/acquire/qrcode/{sid}/status       — 轮询扫码状态
-  POST  /api/v1/platforms/acquire/qrcode/{sid}/refresh      — 刷新过期二维码
+  POST  /api/v1/acquire/qrcode/generate           — 生成登录二维码
+  WS    /api/v1/acquire/qrcode/{sid}/ws           — WebSocket 等待扫码结果
+  GET   /api/v1/acquire/qrcode/{sid}/status       — 轮询扫码状态
+  POST  /api/v1/acquire/qrcode/{sid}/refresh      — 刷新过期二维码
+
+⚠️ 前缀沿革（勿照抄旧文档）：`main.py` 早期挂在 `/api/v1/platforms`，
+提交 d23227eb 改为 `/api/v1`，并同步了 qrcode 的 WebSocket 地址，
+但**漏改 playwright 的两处 WebSocket**，导致点「启动浏览器」时 WS 握手 403
+（HTTP 请求却是 200，因为前端 api/index.ts 用的是相对路径）。
+对外文档与 Nginx 配置里残留的 `/api/v1/platforms/acquire` 均已同步为 `/api/v1/acquire`。
 """
 
 from __future__ import annotations

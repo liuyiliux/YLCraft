@@ -694,8 +694,8 @@ function QrLoginPanel({
   const connectPlaywrightWebSocket = (sid: string) => {
     const isDev = import.meta.env.DEV
     const wsUrl = isDev
-      ? `ws://${window.location.hostname}:8000/api/v1/platforms/acquire/playwright/${sid}/ws`
-      : `${window.location.protocol === 'https:' ? 'wss:' : 'ws://'}${window.location.host}/api/v1/platforms/acquire/playwright/${sid}/ws`
+      ? `ws://${window.location.hostname}:8000/api/v1/acquire/playwright/${sid}/ws`
+      : `${window.location.protocol === 'https:' ? 'wss:' : 'ws://'}${window.location.host}/api/v1/acquire/playwright/${sid}/ws`
     console.log('[WS Playwright] Connecting to:', wsUrl)
     const ws = new WebSocket(wsUrl)
 
@@ -1029,8 +1029,8 @@ function BrowserLoginPanel({
     // 开发环境直接连接后端 8000，生产环境通过当前 origin
     const isDev = import.meta.env.DEV
     const wsUrl = isDev
-      ? `ws://${window.location.hostname}:8000/api/v1/platforms/acquire/playwright/${sid}/ws`
-      : `${window.location.protocol === 'https:' ? 'wss:' : 'ws://'}${window.location.host}/api/v1/platforms/acquire/playwright/${sid}/ws`
+      ? `ws://${window.location.hostname}:8000/api/v1/acquire/playwright/${sid}/ws`
+      : `${window.location.protocol === 'https:' ? 'wss:' : 'ws://'}${window.location.host}/api/v1/acquire/playwright/${sid}/ws`
     console.log('[WS] Connecting to:', wsUrl)
     const ws = new WebSocket(wsUrl)
 
