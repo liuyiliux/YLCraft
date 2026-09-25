@@ -30,13 +30,40 @@ The main implementation is split deliberately:
 | `GET` | `/api/v1/fanqie/my/books` | List the current author's books. |
 | `GET` | `/api/v1/fanqie/book/{book_id}/stats` | Read verified book statistics. |
 | `GET` | `/api/v1/fanqie/hot-list` | Read hot-list inspiration. |
+| `GET` | `/api/v1/fanqie/my/profile` | Read author profile (name, description, avatar, points, level). |
+| `GET` | `/api/v1/fanqie/book/{book_id}/volumes` | List volumes of a book. |
+| `GET` | `/api/v1/fanqie/book/{book_id}/chapters` | List existing chapters; the returned `item_id` is the publish target, so the publish panel can auto-map instead of pasting IDs. |
+| `GET` | `/api/v1/fanqie/earnings` | Earnings — still `not_captured`. |
 | `GET` | `/api/v1/creative-projects/{project_id}/fanqie/binding` | Read project publishing target. |
 | `POST` | `/api/v1/creative-projects/{project_id}/fanqie/binding` | Set connection, book and volume target for a project. |
 | `GET` | `/api/v1/creative-projects/{project_id}/fanqie/publish-preflight` | Validate the local body and resolved target without contacting Fanqie. |
 | `GET` | `/api/v1/creative-projects/{project_id}/fanqie/publish-status` | Read local `ProjectPublishRecord` entries. |
 | `POST` | `/api/v1/creative-projects/{project_id}/publish-to-fanqie` | Save selected `novel_body` chapters as remote drafts (`action` only accepts `draft`). |
 
-`/my/profile`, `/book/{book_id}/chapters`, and `/earnings` intentionally return `not_captured` until a user-owned logged-in browser capture establishes their actual contracts. Do not fabricate response fields.
+### Captured contracts (2026-09-25)
+
+Author profile, volume list and chapter list were captured from a real logged-in session
+(browser-skill driving the user's own Chrome). Evidence was exported to the ignored
+`.local/` directory; no cookie or signature value was extracted or stored.
+
+| Capability | Real endpoint | Notes |
+| --- | --- | --- |
+| Author profile | `GET /api/author/account/info/v0/` | Returns author name, description, avatar, points, level. **It does not return total reads or total followers** — those are per-book / data-centre metrics. |
+| Chapter list | `GET /api/author/chapter/chapter_list/v1` | Params: `book_id`, `volume_id`, `page_index` (**0-based**), `page_count`, `status`. Response `data.item_list[]` carries `item_id` (publish target), `index`, `title`, `word_number`, `article_status`. |
+| Volume list | `GET /api/author/volume/volume_list/v1` | Chapters are grouped by volume; `volume_id` is required to publish into an existing chapter. |
+
+`/earnings` still returns `not_captured`. The earnings page path could not be reached: a
+guessed URL returned 404, so the endpoint must be captured by navigating the UI normally.
+Do not fabricate its path or response fields.
+
+The author-profile response also contains `phone_number`, `identity_name_mask` and
+`identity_code_mask`. These are passed through for display only: never persist them,
+never write them to logs, and never place them in model context.
+
+These platform routes are mounted dynamically from
+`backend/app/services/platforms/fanqie/routes.py`, so they do not appear in the generated
+`docs/architecture/API_SURFACE.md` (the generator only walks `backend/app/api/v1/` plus a
+hardcoded Bilibili entry). This is a pre-existing generator limitation, not a missing route.
 
 ## Safe Publishing Flow
 

@@ -2606,6 +2606,33 @@ export const getFanqieMyBooks = (connId: string, page: number = 1, size: number 
 export const getFanqieBookStats = (connId: string, bookId: string, statsType: number = 1) =>
   request(`/fanqie/book/${encodeURIComponent(bookId)}/stats?conn_id=${encodeURIComponent(connId)}&stats_type=${statsType}`)
 
+/** 获取番茄作家资料（只读；返回作家名/简介/头像/积分/等级，不含总阅读与总粉丝） */
+export const getFanqieMyProfile = (connId: string) =>
+  request(`/fanqie/my/profile?conn_id=${encodeURIComponent(connId)}`)
+
+/** 获取番茄书籍的卷列表（只读；章节按卷组织，发布到已有章节时需要 volume_id） */
+export const getFanqieBookVolumes = (connId: string, bookId: string) =>
+  request(`/fanqie/book/${encodeURIComponent(bookId)}/volumes?conn_id=${encodeURIComponent(connId)}`)
+
+/**
+ * 获取番茄书籍的章节列表（只读）。
+ *
+ * 返回值里的 `item_id` 就是发布目标章节 ID —— 用于把发布面板里「手动粘贴 item_id」
+ * 换成自动映射。分页对外是 1 起（后端会转成番茄的 0 起 page_index）。
+ */
+export const getFanqieBookChapters = (
+  connId: string,
+  bookId: string,
+  options: { volumeId?: string; page?: number; size?: number; status?: number } = {},
+) => {
+  const qs = new URLSearchParams({ conn_id: connId })
+  if (options.volumeId) qs.set('volume_id', options.volumeId)
+  qs.set('page', String(options.page ?? 1))
+  qs.set('size', String(options.size ?? 50))
+  qs.set('status', String(options.status ?? 0))
+  return request(`/fanqie/book/${encodeURIComponent(bookId)}/chapters?${qs.toString()}`)
+}
+
 // ===== Novel（小说）=====
 export * from './novel'
 export * from './bookSource'

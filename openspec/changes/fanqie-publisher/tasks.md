@@ -2,6 +2,9 @@
 
 > **进度总览（2026-08-08）**：✅ Phase 0 / 1 / 2 / 4 / 5 代码完成；✅ Phase 3 的 C/D 接口 + 前端「我的数据」完成；✅ Phase 6 离线测试、发布预检 API/UI、Agent 工具和文档完成；🟡 E 组（作家资料/章节/收益，任务 21/23/25）待用户登录态抓包；⏳ 真实测试章与项目端到端联调（7/31/32）待用户环境。
 > 详见 `proposal.md`（实施状态 + What changes 表）与 `design.md`（接口/前端落地细节）。
+>
+> **2026-09-25 更新（browser-skill 抓包轮）**：E 组已用 browser-skill 接管用户**已登录** Chrome 抓到真实契约——**任务 21（作家资料）与 23（章节列表）已完成落地**，并附带发现卷列表接口；任务 25（收益）仍未抓包（收益页路径未探明，**猜测 URL 实测返回 404**，故按仓库规矩不猜路径）。前端发布面板现已支持从番茄拉取章节列表并自动填入 `item_id`，取代手动粘贴。
+> **仍待用户侧**：7 / 31 / 32 需要真实账号写路径（有效 Cookie + 自建 `[TEST]` 章节）。
 
 ## Phase 0: FanqieClient 核心（已验证接口落地）
 
@@ -35,11 +38,18 @@
 ## Phase 3: 我的数据（抓包补齐）
 
 - [x] 20. 端点表回填：`design.md` 已记录 C/D 真实路径（`book_list/v0`、`book_common_v1/v0`）+ 真实参数（page_count/page_index、stats_type）；E 组（章节/收益/作家资料）端点路径待用户登录态抓包。
-- [ ] 21. 实现 `get_my_profile(writer_id)` → `UserProfile`（昵称 / 头像 / 总阅读 / 总粉丝）—— **待抓包**（E 组）。
-  - _阻塞结论（2026-09-24 复核）：**只能等真实登录态抓包**。番茄 E 组端点的路径与参数不在公开文档里，仓库硬规矩是「查不到就返回空集 + 说明，绝不编造引用」——凭猜测写路径会在运行时 404，属于白跑。抓包后把真实 path/参数回填 design.md 的端点表，再替换 `routes.py` 里的 `not_captured` 占位；在此之前不假装已具备。_
+- [x] 21. 实现 `get_my_profile(writer_id)` → `UserProfile`（昵称 / 头像 / 总阅读 / 总粉丝）
+  - _2026-09-25 **已完成（browser-skill 抓包落地）**：真实端点为 `GET /api/author/account/info/v0/`。抓包方式为 browser-skill 接管用户已登录 Chrome → 打开作家后台 → 读真实请求与响应；证据导出 `.local/fanqie-e-group-capture.json`（不入库），未提取或保存任何 Cookie / 签名值。_
+  - _**与原描述的偏差（已如实修正）**：该接口返回的是「作家名 / 简介 / 头像 / 积分 / 等级」，**不返回总阅读与总粉丝**——那两个属作品级或数据中心指标，应走 `get_book_stats(book_id, stats_type=...)`。实现按真实字段落地，未为凑原描述而伪造字段。_
+  - _**隐私边界**：响应含 `phone_number` / `identity_name_mask` / `identity_code_mask`，仅透传展示，**不落库、不写日志、不进模型上下文**。_
+  - _落地物：`apis.py` 的 `ACCOUNT_INFO`、`client.get_my_profile()`、`routes.py` 的 `GET /my/profile`、前端 `getFanqieMyProfile`；新增 7 例契约测试。_
 - [x] 22. 实现 `get_my_books(...)` → 书籍列表（已验证 `book_list/v0`，已对齐真实分页参数 page_count/page_index，返回 `data.item_list`）。
-- [ ] 23. 实现 `get_book_chapters(book_id)` → 章节列表（E 组待抓；回填后可自动映射 `item_id`，替代手动粘贴）—— **待抓包**。
-  - _阻塞结论（2026-09-24 复核）：同 21，**待真实账号抓包**。这一项解除后价值最直接：能把「手动粘贴 item_id」换成自动映射，但 item_id 映射错会写错章节，所以必须用真实接口返回校验，不能靠推测。_
+- [x] 23. 实现 `get_book_chapters(book_id)` → 章节列表（回填后自动映射 `item_id`，替代手动粘贴）
+  - _2026-09-25 **已完成（browser-skill 抓包落地）**：真实端点为 `GET /api/author/chapter/chapter_list/v1`，参数 `book_id` / `volume_id` / `page_index`（**0 起**）/ `page_count` / `status`；响应 `data.item_list[]` 提供 `item_id`（**发布目标 ID**）、`index`、`title`、`word_number`、`article_status` 等。_
+  - _配套发现并落地卷列表 `GET /api/author/volume/volume_list/v1`（发布到已有章节需要 `volume_id`），因此路由比原计划多一条 `GET /book/{book_id}/volumes`。_
+  - _易错点已处理：番茄分页是 0 起的 `page_index`，对外 `page` 是 1 起，内部转换并有专门测试固定（`page=1 → index=0`、`page=2 → index=1`）。_
+  - _前端已接：`FanqiePublishPanel` 新增「拉取章节列表」按钮 + 选章下拉，选中后自动填入 `item_id` 与 `volume_id`，不再需要手抄 ID。_
+  - _安全：纯只读 GET；`index` 可对齐项目 `chapter_number`，但**发布前仍应人工确认**——映射错章节会写到错误位置。_
 - [x] 24. 实现 `get_book_stats(book_id, stats_type=1)` → 阅读量 / 追读 / 投票 / 推荐票（已验证 `book_common_v1/v0`，已加 `stats_type` 支持数据中心各 Tab）。
 - [ ] 25. 实现 `get_earnings(writer_id, period)` → 收益 / 分成 / 打赏 —— **待抓包**（E 组）。
   - _阻塞结论（2026-09-24 复核）：同 21，**待真实账号抓包**；收益数字属敏感信息，抓包样本只进 `.local/`，不进仓库。_

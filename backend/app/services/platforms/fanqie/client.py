@@ -28,6 +28,9 @@ from .apis import (
     DOUYIN_HOT_LIST,
     BOOK_LIST,
     BOOK_COMMON,
+    ACCOUNT_INFO,
+    CHAPTER_LIST,
+    VOLUME_LIST,
     DEFAULT_AID,
     DEFAULT_APP_NAME,
     COVER_MS_TOKEN,
@@ -341,4 +344,93 @@ class FanqieClient(BasePlatformClient):
             "stats_type": str(stats_type),
         }
         resp = await self._call("GET", BOOK_COMMON, params=query)
+        return resp.get("data", {}) or {}
+
+    # =========================================================================
+    # E 组：2026-09-25 抓包确认的真实实现
+    # =========================================================================
+
+    async def get_my_profile(self) -> Dict[str, Any]:
+        """
+        作家资料（真实端点：GET /api/author/account/info/v0/，2026-09-25 抓包确认）。
+
+        ⚠️ 与早期设计的差异：本接口返回的是**作家名/简介/头像/积分/等级**，
+        **不返回「总阅读」「总粉丝」**——那两个属作品级或数据中心指标。
+        如需流量指标请用 `get_book_stats(book_id, stats_type=...)`。
+
+        Returns:
+            data 字典，含字段（实测）：
+            author_name / description / avatar_url / point / point_detail[] /
+            author_level_id / verify_status / is_auth / is_ban 等。
+
+        ⚠️ 响应含 `phone_number` / `identity_name_mask` / `identity_code_mask`
+        等个人敏感字段。本方法**原样透传**供界面展示，调用方**不得**将其落库、
+        写日志或送入模型上下文（与 cookie 同级的隐私边界）。
+        """
+        query = {"aid": DEFAULT_AID, "app_name": DEFAULT_APP_NAME}
+        resp = await self._call("GET", ACCOUNT_INFO, params=query)
+        return resp.get("data", {}) or {}
+
+    async def get_book_volumes(self, book_id: str) -> Dict[str, Any]:
+        """
+        卷列表（真实端点：GET /api/author/volume/volume_list/v1，2026-09-25 抓包确认）。
+
+        章节按卷组织，发布到已有章节时需要 `volume_id`，故与 `get_book_chapters` 配套。
+        """
+        query = {
+            "aid": DEFAULT_AID,
+            "app_name": DEFAULT_APP_NAME,
+            "book_id": str(book_id),
+        }
+        resp = await self._call("GET", VOLUME_LIST, params=query)
+        return resp.get("data", {}) or {}
+
+    async def get_book_chapters(
+        self,
+        book_id: str,
+        volume_id: str = "",
+        page: int = 1,
+        size: int = 50,
+        status: int = 0,
+    ) -> Dict[str, Any]:
+        """
+        书籍章节列表（真实端点：GET /api/author/chapter/chapter_list/v1，2026-09-25 抓包确认）。
+
+        这是把「手动粘贴 item_id」换成**自动映射**的关键接口：返回的 `item_id`
+        就是发布目标章节 ID。
+
+        ⚠️ 分页是 **0-based**（`page_index` 从 0 开始），与对外 `page`（1 起）
+        不同，内部已做转换——与 `get_my_books` 的约定保持一致。
+
+        Args:
+            book_id: 书籍 ID
+            volume_id: 卷 ID；留空时番茄按书本整体返回
+            page: 对外页码，1 起
+            size: 每页条数（`page_count`）
+            status: 章节状态过滤，0 表示不筛
+
+        Returns:
+            data 字典，含 `item_list[]`，每项字段（实测）：
+            item_id（**发布目标 ID**）/ volume_id / index（1 起章序）/
+            title / word_number / article_status（2=已发布）/
+            can_delete / cant_modify_reason / create_time。
+            外层另有 book_status / creation_status 等书籍级字段。
+
+        注意：`index` 是章序，可据它与项目内的 `chapter_number` 对齐；
+        但**发布前仍应人工确认**——映射错章节会写到错误的位置。
+        """
+        query: Dict[str, Any] = {
+            "aid": DEFAULT_AID,
+            "app_name": DEFAULT_APP_NAME,
+            "book_id": str(book_id),
+            "page_index": str(max(page - 1, 0)),
+            "page_count": str(size),
+            "status": str(status),
+            "must_have_correction_feedback": "0",
+            "need_correction_feedback_num": "1",
+            "sort": "",
+        }
+        if volume_id:
+            query["volume_id"] = str(volume_id)
+        resp = await self._call("GET", CHAPTER_LIST, params=query)
         return resp.get("data", {}) or {}

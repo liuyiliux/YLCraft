@@ -36,6 +36,22 @@ BOOK_LIST = "/api/author/stats/book_list/v0/"
 BOOK_COMMON = "/api/author/stats/book_common_v1/v0/"
 
 # =============================================================================
+# E 组：2026-09-25 由 browser-skill 在用户已登录 Chrome 中抓包确认的真实端点
+# （证据导出 .local/fanqie-e-group-capture.json，不入库）
+# =============================================================================
+
+# 作家资料（作家名 / 简介 / 头像 / 积分 / 等级）（GET）
+# 注意：该接口**不返回**总阅读与总粉丝——那是作品级/数据中心指标。
+ACCOUNT_INFO = "/api/author/account/info/v0/"
+
+# 章节列表（GET）——item_id 自动映射的来源
+# 真实参数：book_id / volume_id / page_index(0 起) / page_count / status
+CHAPTER_LIST = "/api/author/chapter/chapter_list/v1"
+
+# 卷列表（GET）——章节按卷分组，配套 CHAPTER_LIST 使用
+VOLUME_LIST = "/api/author/volume/volume_list/v1"
+
+# =============================================================================
 # 应用标识（稳定常量，非签名）
 # =============================================================================
 
