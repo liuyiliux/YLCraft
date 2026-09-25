@@ -65,10 +65,18 @@ def _fanqie_error_to_http(e: Exception) -> HTTPException:
     return HTTPException(status_code=400, detail=str(e))
 
 
-async def _get_client(session: AsyncSession, conn_id: str) -> FanqieClient:
+async def _get_client(
+    *, session: AsyncSession, conn_id: str
+) -> FanqieClient:
     """
     按连接 ID 构建 FanqieClient（cookie 取自 PlatformConnection.cookie_content）。
     连接不存在或未配置 cookie 时返回 404。
+
+    参数强制关键字（``*``）：本函数此前接受位置参数，四个新端点把两个实参
+    **顺序传反了**（conn_id 被当成 session）。Python 不做运行时类型检查，
+    位置参数又会绕过静态检查，于是只有真调用那条路由才 500，且错误炸在深层
+    `session.get(...)`，信息完全指错地方。改为关键字参数后，错位调用会在
+    调用点立刻失败（回归测试：tests/test_fanqie_routes_kwargs.py）。
     """
     conn = await session.get(PlatformConnection, conn_id)
     if not conn or not conn.cookie_content:
@@ -89,7 +97,7 @@ async def my_books(
     session: AsyncSession = Depends(get_session),
 ):
     """返回作家后台「我的书籍」列表（已验证只读接口）。"""
-    client = await _get_client(session, conn_id)
+    client = await _get_client(session=session, conn_id=conn_id)
     try:
         async with client:
             data = await client.get_my_books(page=page, size=size)
@@ -109,7 +117,7 @@ async def book_stats(
     session: AsyncSession = Depends(get_session),
 ):
     """返回单本书的阅读/在读/评分等统计（已验证只读接口 book_common_v1/v0）。"""
-    client = await _get_client(session, conn_id)
+    client = await _get_client(session=session, conn_id=conn_id)
     try:
         async with client:
             data = await client.get_book_stats(book_id, stats_type=stats_type)
@@ -125,7 +133,7 @@ async def hot_list(
     session: AsyncSession = Depends(get_session),
 ):
     """返回热门故事 / 开书灵感列表（已验证只读接口）。"""
-    client = await _get_client(session, conn_id)
+    client = await _get_client(session=session, conn_id=conn_id)
     try:
         async with client:
             data = await client.get_hot_list(hot_type=hot_type)
@@ -153,7 +161,7 @@ async def my_profile(
     ⚠️ 响应含手机号等敏感字段，服务端原样透传供界面展示；
     前端**不应**将其持久化、写入日志或送入模型上下文。
     """
-    client = await _get_client(conn_id, session)
+    client = await _get_client(session=session, conn_id=conn_id)
     async with client:
         try:
             data = await client.get_my_profile()
@@ -175,7 +183,7 @@ async def book_volumes(
 
     章节按卷组织；发布到已有章节时需要 `volume_id`，故与章节列表配套使用。
     """
-    client = await _get_client(conn_id, session)
+    client = await _get_client(session=session, conn_id=conn_id)
     async with client:
         try:
             data = await client.get_book_volumes(book_id)
@@ -206,7 +214,7 @@ async def book_chapters(
     注意：`index`（章序）可用来对齐项目内的 `chapter_number`，但**发布前仍应人工确认**
     ——映射错章节会写到错误位置。
     """
-    client = await _get_client(conn_id, session)
+    client = await _get_client(session=session, conn_id=conn_id)
     async with client:
         try:
             data = await client.get_book_chapters(
@@ -237,7 +245,7 @@ async def earnings(
 
     安全：纯只读 GET。收益数字属敏感信息，仅供展示，不落库、不写日志、不进模型上下文。
     """
-    client = await _get_client(conn_id, session)
+    client = await _get_client(session=session, conn_id=conn_id)
     async with client:
         try:
             data = await client.get_earnings(page=page, size=size)
