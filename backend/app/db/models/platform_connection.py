@@ -69,9 +69,11 @@ class ConnectionStatus(str, enum.Enum):
 
 class AcquisitionMethod(str, enum.Enum):
     """凭证获取方式"""
+
     MANUAL = "manual"           # 手动粘贴
-    PLAYWRIGHT = "playwright"  # Playwright 浏览器自动化
+    PLAYWRIGHT = "playwright"  # Playwright 浏览器自动化（历史）
     QRCODE = "qrcode"          # 二维码扫码
+    PATCHRIGHT = "patchright"  # Patchright 浏览器自动化（内置反检测，现行方案）
 
 
 class PlatformConnectionBase(SQLModel):
