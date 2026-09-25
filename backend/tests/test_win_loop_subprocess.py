@@ -144,3 +144,53 @@ def test_start_bat_wires_the_loop_factory():
     assert "--loop app.core.win_loop:new_loop" in content, (
         "start.bat 的后端启动命令缺少 --loop app.core.win_loop:new_loop"
     )
+
+
+def test_login_navigation_does_not_require_networkidle():
+    """登录页导航不得依赖 networkidle。
+
+    真机故障（2026-09-25）：番茄作家后台有常驻轮询，网络永不空闲，
+    `wait_until="networkidle"` 必然超时（Page.goto: Timeout 30000ms exceeded），
+    并把整个会话判失败——尽管登录页早已打开、二维码都能扫。
+    """
+    import inspect
+
+    from app.services.cookies import patchright_manager as pm
+
+    source = inspect.getsource(pm)
+    # 只看真实调用，别误伤解释性注释里对 networkidle 的说明
+    assert 'wait_until="networkidle"' not in source, (
+        "登录页导航不应等 networkidle（有常驻轮询的站点必然超时）"
+    )
+    assert "wait_until='networkidle'" not in source, (
+        "登录页导航不应等 networkidle（有常驻轮询的站点必然超时）"
+    )
+    assert "_goto_login_page" in source, "应通过 _goto_login_page 统一处理登录页导航"
+    # 且 goto 必须显式用 domcontentloaded
+    assert 'wait_until="domcontentloaded"' in source, (
+        "登录页导航应使用 domcontentloaded"
+    )
+
+
+@pytest.mark.asyncio
+async def test_goto_login_page_tolerates_navigation_timeout():
+    """导航超时只告警，不应中断会话——用户要的是打开页面等他登录。"""
+
+    from app.services.cookies.patchright_manager import PatchrightAcquisitionManager
+
+    class FakePage:
+        def __init__(self) -> None:
+            self.calls: list[dict] = []
+
+        async def goto(self, url, **kwargs):
+            self.calls.append({"url": url, **kwargs})
+            raise TimeoutError("Page.goto: Timeout 30000ms exceeded")
+
+    manager = PatchrightAcquisitionManager()
+    page = FakePage()
+
+    # 不应抛出
+    await manager._goto_login_page(page, "https://fanqienovel.com/main/writer/book-manage")
+
+    assert page.calls, "应真的尝试过导航"
+    assert page.calls[0]["wait_until"] != "networkidle", "不应使用 networkidle"

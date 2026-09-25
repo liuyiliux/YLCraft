@@ -103,7 +103,7 @@ class PatchrightAcquisitionManager:
             # 导航到登录页
             session.status = AcquisitionStatus.PAGE_LOADING
             login_url = get_login_url(platform)
-            await page.goto(login_url, wait_until="networkidle")
+            await self._goto_login_page(page, login_url)
 
             # 更新状态
             session.status = AcquisitionStatus.WAITING_FOR_LOGIN
@@ -128,8 +128,33 @@ class PatchrightAcquisitionManager:
 
         return session_id
 
+    async def _goto_login_page(self, page, login_url: str) -> None:
+        """打开登录页。
+
+        不要用 networkidle 等待策略：番茄作家后台等站点有**常驻轮询**
+        （消息通知、状态心跳），网络永远不会空闲，等 networkidle 必然超时
+        （实测 `Page.goto: Timeout 30000ms exceeded`），并因抛出异常把整个会话标记失败
+        —— 而实际上登录页早就开好了、二维码都能扫。
+
+        所以改为 `domcontentloaded`（拿到 DOM 即可，登录页不依赖懒加载数据），
+        失败时只告警不中断：用户要的是"打开页面并等他登录"，导航等待策略不该
+        决定这次会话成不成功。
+        """
+        try:
+            await page.goto(login_url, wait_until="domcontentloaded", timeout=45000)
+        except Exception as exc:
+            # 页面可能已部分可用（例如仅在等待某个一直没有响应的资源）。
+            logger.warning(
+                "[PatchrightManager] goto %s 未在超时内完成，继续等待登录：%s",
+                login_url,
+                exc,
+            )
+
     async def _detect_login(
-        self, session_id: str, page, platform: str
+        self,
+        session_id: str,
+        page,
+        platform: str,
     ):
         """后台检测用户是否完成登录"""
         session = self._sessions[session_id]
