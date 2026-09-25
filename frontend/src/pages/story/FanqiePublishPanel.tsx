@@ -28,6 +28,7 @@ import {
   getFanqiePublishStatus,
   getFanqieBookChapters,
   getFanqieBookDrafts,
+  createFanqieDraft,
   fanqieWebUrls,
 } from '../../api'
 
@@ -76,6 +77,7 @@ export default function FanqiePublishPanel({
   const [publishing, setPublishing] = useState(false)
   const [chapters, setChapters] = useState<FanqieChapter[]>([])
   const [loadingChapters, setLoadingChapters] = useState(false)
+  const [creatingDraft, setCreatingDraft] = useState(false)
   const [checking, setChecking] = useState(false)
   const [preflight, setPreflight] = useState<any | null>(null)
   const [statuses, setStatuses] = useState<any[]>([])
@@ -204,6 +206,49 @@ export default function FanqiePublishPanel({
     window.open(url, '_blank', 'noopener,noreferrer')
   }
 
+  /**
+   * 让 YLCraft 直接在番茄建一个空草稿并填入 item_id（写入操作，不幂等）。
+   *
+   * 这是"不用手动建章"的关键：真实端点 POST /api/author/article/new_article/v0/
+   * 会返回新分配的 item_id。因为每次调用都会在草稿箱新增一条，所以先二次确认，
+   * 且失败不自动重试（避免生成多条草稿）。
+   */
+  const createDraftOnFanqie = () => {
+    const connId = form.getFieldValue('conn_id')
+    const bookId = form.getFieldValue('book_id')
+    if (!connId || !bookId) {
+      message.warning('请先选择番茄连接并填写书籍 ID')
+      return
+    }
+    Modal.confirm({
+      title: '在番茄新建一个空草稿？',
+      content:
+        '这会在你的番茄账号草稿箱里真实新增一条草稿，并自动填入本面板。' +
+        '正文不会写入，需要你再点「保存到番茄草稿」。',
+      okText: '新建草稿',
+      cancelText: '取消',
+      onOk: async () => {
+        setCreatingDraft(true)
+        try {
+          const res: any = await createFanqieDraft(connId, bookId)
+          const data = res?.data || {}
+          if (!data.item_id) throw new Error('番茄未返回 item_id')
+          form.setFieldsValue({
+            item_id: data.item_id,
+            ...(data.volume_id ? { volume_id: data.volume_id } : {}),
+          })
+          setItemId(data.item_id)
+          setPreflight(null)
+          message.success(`已在番茄新建草稿：${data.item_id}`)
+        } catch (e: any) {
+          message.error(e?.message || '新建草稿失败')
+        } finally {
+          setCreatingDraft(false)
+        }
+      },
+    })
+  }
+
   const runPreflight = async (values?: any) => {
     let v = values
     if (!v) {
@@ -326,6 +371,14 @@ export default function FanqiePublishPanel({
             />
           </Form.Item>
           <Space style={{ marginBottom: 12 }} wrap>
+            <Button
+              size="small"
+              type="primary"
+              loading={creatingDraft}
+              onClick={createDraftOnFanqie}
+            >
+              让 YLCraft 新建番茄草稿
+            </Button>
             <Button size="small" loading={loadingChapters} onClick={() => void loadChapters()}>
               拉取草稿与章节
             </Button>

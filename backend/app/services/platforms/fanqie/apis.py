@@ -53,6 +53,19 @@ CHAPTER_LIST = "/api/author/chapter/chapter_list/v1"
 # 那两个猜测路径实测 404）。响应结构是 data.draft_list[]（**不是 item_list**）。
 CHAPTER_DRAFT_LIST = "/api/author/chapter/draft_list/v1"
 
+# 新建草稿（POST）——2026-09-26 抓包确认
+#
+# ⚠️ 更正此前结论：曾记录"番茄没有创建章节的接口"，那是**错的**——
+# 当时只抓了「新建章节」入口（它确实是纯前端路由，零 author API 调用），
+# 漏了「新建草稿」入口（URL 形如 /publish/?enter_from=newdraft）。
+# newdraft 入口会真实调用本接口，并在 data.item_id 返回**新分配的草稿 ID**。
+#
+# 响应实测：{"code":0,"data":{"item_id":"...","volume_id":"...",
+#   "latest_version":0,"media_id":...,"volume_data":[{volume_id,volume_name}],
+#   "is_reuse":1,...}}
+# 拿到 item_id 后即可用 COVER_ARTICLE 写入正文。
+NEW_ARTICLE = "/api/author/article/new_article/v0/"
+
 # 卷列表（GET）——章节按卷分组，配套 CHAPTER_LIST 使用
 VOLUME_LIST = "/api/author/volume/volume_list/v1"
 
