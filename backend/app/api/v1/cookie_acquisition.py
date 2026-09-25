@@ -130,7 +130,7 @@ async def playwright_start(req: PlaywrightStartRequest):
         # 给一句能直接照做的提示，而不是让用户对着空白报错干瞪眼。
         logger.error(
             "[CookieAcquisitionAPI] 事件循环不支持子进程；请用 "
-            "--loop app.core.win_loop:proactor_loop_factory 启动后端"
+            "--loop app.core.win_loop:new_loop 启动后端"
         )
         return PlaywrightStartResponse(
             success=False,
@@ -138,7 +138,7 @@ async def playwright_start(req: PlaywrightStartRequest):
                 "当前事件循环无法启动浏览器子进程（Windows + SelectorEventLoop）。"
                 "请用以下命令重启后端后再试："
                 "python -m uvicorn app.main:app --reload --port 8000 "
-                "--loop app.core.win_loop:proactor_loop_factory"
+                "--loop app.core.win_loop:new_loop"
             ),
         )
     except Exception as e:
