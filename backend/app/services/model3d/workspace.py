@@ -11,6 +11,8 @@ import json
 import logging
 import hashlib
 import hmac
+import base64
+import binascii
 import time
 import zipfile
 from pathlib import Path
@@ -88,6 +90,69 @@ class Model3DConnectorBackend:
         if isinstance(configured, dict):
             headers.update({str(name): str(value) for name, value in configured.items()})
         return headers
+
+    @staticmethod
+    def _decode_data_uri(data_uri: str) -> tuple[bytes, str]:
+        """Decode a data URI for providers whose upload endpoint needs multipart input."""
+        header, separator, payload = data_uri.partition(",")
+        if not separator or not header.startswith("data:"):
+            raise ValueError("source_image 不是合法的 data URI")
+        metadata = header[5:]
+        mime = metadata.split(";", 1)[0] or "application/octet-stream"
+        try:
+            content = base64.b64decode(payload, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise ValueError("source_image 的 base64 内容无效") from exc
+        if not content:
+            raise ValueError("source_image 为空")
+        return content, mime
+
+    async def _upload_source_image(self, source_image: str) -> str:
+        """Upload a data URI when the connector declares an upload endpoint.
+
+        TripoSR and some other providers require a two-step flow: upload the
+        image first, then submit an image URL to the generation job. Keeping
+        that step on the generic backend preserves one runtime path instead of
+        retaining provider-specific HTTP code in ``Model3DService``.
+        """
+        endpoint = str(self.response_config.get("upload_endpoint") or "").strip()
+        if not endpoint:
+            return ""
+        content, mime = self._decode_data_uri(source_image)
+        field = str(self.response_config.get("upload_field") or "file")
+        filename = str(self.response_config.get("upload_filename") or "input.png")
+        headers = self._configured_headers("upload_headers")
+        # Let httpx set multipart Content-Type with its generated boundary.
+        headers.pop("Content-Type", None)
+        diagnostics = {
+            "operation": "upload",
+            "method": "POST",
+            "endpoint": self._endpoint(endpoint),
+            "timeout_seconds": self.connector.timeout,
+            "request_headers": self._redact(headers),
+            "content_type": mime,
+            "content_length": len(content),
+        }
+        try:
+            async with httpx.AsyncClient(timeout=self.connector.timeout, follow_redirects=True, trust_env=False) as client:
+                response = await client.post(
+                    self._endpoint(endpoint),
+                    headers=headers,
+                    files={field: (filename, content, mime)},
+                )
+                diagnostics["http_status"] = response.status_code
+                diagnostics["response_excerpt"] = self._excerpt(response.text)
+                response.raise_for_status()
+                payload = response.json()
+                url_path = str(self.response_config.get("upload_url_path") or "$.url")
+                url = str(self._value(payload, url_path, "") or "")
+                if not url:
+                    raise ValueError(f"上传接口未返回图片 URL（{url_path}）")
+                return url
+        except Exception as exc:
+            diagnostics.update(self._error_details(exc))
+            logger.warning("[%s] 3D image upload failed: %s", self.name, diagnostics)
+            raise Model3DProviderRequestError(diagnostics) from exc
 
     def _tencent_tc3_headers(self, action: str, body: dict[str, Any]) -> dict[str, str]:
         """Build Tencent Cloud TC3-HMAC-SHA256 headers from SecretId:SecretKey."""
@@ -222,7 +287,13 @@ class Model3DConnectorBackend:
         self, *, prompt: str, source_image: str, source_url: str, model: str,
         options: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        image_base64 = source_image.split(",", 1)[1] if source_image.startswith("data:") else source_image
+        image_base64 = (
+            source_image.split(",", 1)[1]
+            if source_image.startswith("data:") and "," in source_image
+            else source_image
+        )
+        if source_image.startswith("data:") and self.response_config.get("upload_endpoint") and not source_url:
+            source_url = await self._upload_source_image(source_image)
         request_params = {**self.default_params, **(options or {})}
         body = self._render({
             **request_params,

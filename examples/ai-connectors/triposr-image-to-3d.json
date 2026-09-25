@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "name": "TripoSR Image to 3D",
+  "description": "TripoSR preset using upload -> submit -> poll through the generic 3D connector contract. The legacy migration command writes the same shape without printing the API key.",
+  "connectors": [
+    {
+      "id": "triposr",
+      "provider": "triposr",
+      "name": "TripoSR",
+      "provider_type": "3d",
+      "api_format": "custom",
+      "base_url": "https://api.tripo3d.ai/api/v1",
+      "api_endpoint": "/task",
+      "default_model": "triposr",
+      "available_models": ["triposr"],
+      "request_template": "{\"image_url\":\"{{ image_url }}\"}",
+      "response_config": {
+        "legacy_image_to_3d": true,
+        "upload_endpoint": "/upload",
+        "upload_field": "file",
+        "upload_url_path": "$.url",
+        "task_id_path": "$.task_id",
+        "status_path": "$.status",
+        "model_url_path": "$.result.model_url",
+        "error_path": "$.error",
+        "poll_endpoint": "/task/{task_id}",
+        "poll_interval": 10,
+        "done_values": ["completed", "success", "succeeded"],
+        "failed_values": ["failed", "error", "cancelled"]
+      },
+      "default_params": {},
+      "support_reference_image": true,
+      "is_active": false,
+      "description": "Enter the TripoSR API key after importing. The old /api/v1/3d/generate-from-image route uses only a connector marked legacy_image_to_3d."
+    }
+  ]
+}

@@ -10,15 +10,18 @@ YLCraft — 3D 模型服务
 from __future__ import annotations
 
 import logging
-import os
+import base64
 import json
+import mimetypes
 import zipfile
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Tuple
 from uuid import uuid4
-import httpx
+from sqlalchemy import String, cast
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import select
 
+from app.db.models.ai_connector import AIConnector
 from app.db.models.asset_hub import AssetNode, AssetType
 
 logger = logging.getLogger("ylcraft.model3d_service")
@@ -29,10 +32,6 @@ class Model3DService:
 
     # 支持的 3D 格式
     SUPPORTED_FORMATS = [".glb", ".gltf", ".fbx", ".obj", ".usdz", ".dae"]
-
-    # TripoSR API 配置
-    TRIPOSR_API_BASE = "https://api.tripo3d.ai/api/v1"
-    TRIPOSR_API_KEY = os.getenv("TRIPOSR_API_KEY", "")
 
     def __init__(self, session: AsyncSession):
         self.session = session
@@ -395,110 +394,118 @@ class Model3DService:
         return output_path
 
     # -------------------------------------------------------------------------
-    # TripoSR 图生 3D
+    # Legacy image-to-3D route (now backed by AIConnector)
     # -------------------------------------------------------------------------
+
+    async def _legacy_image_to_3d_connector(self) -> Optional[AIConnector]:
+        """Find the explicitly marked TripoSR connector.
+
+        The old route predates provider selection in the request, so it needs
+        one deterministic target. The migration tool marks the imported
+        connector with ``legacy_image_to_3d=true``; an arbitrary 3D connector
+        is never used as a silent fallback.
+        """
+        if self.session is None:
+            return None
+        rows = (await self.session.execute(
+            select(AIConnector).where(
+                cast(AIConnector.provider_type, String) == "3d",
+                AIConnector.is_active == True,
+            ).order_by(AIConnector.priority, AIConnector.created_at)
+        )).scalars().all()
+        for row in rows:
+            try:
+                config = json.loads(row.response_config or "{}")
+            except (TypeError, ValueError):
+                config = {}
+            if isinstance(config, dict) and config.get("legacy_image_to_3d"):
+                return row
+        return None
+
+    @staticmethod
+    def _connector_error_message(exc: Exception) -> str:
+        diagnostics = getattr(exc, "diagnostics", {}) or {}
+        return (
+            diagnostics.get("response_excerpt")
+            or diagnostics.get("exception_repr")
+            or str(exc)
+        )
+
+    @staticmethod
+    def _legacy_status(result: Dict[str, Any]) -> str:
+        status = str(result.get("status") or "pending").lower()
+        if status == "done":
+            return "completed"
+        if status == "error":
+            return "failed"
+        if status in {"processing", "running"}:
+            return "processing"
+        return "pending"
+
+    @classmethod
+    def _legacy_result(cls, result: Dict[str, Any], fallback_task_id: str = "") -> Dict[str, Any]:
+        status = cls._legacy_status(result)
+        return {
+            "task_id": result.get("task_id") or fallback_task_id,
+            "status": status,
+            "progress": result.get("progress", 0),
+            "result_url": result.get("url") if status == "completed" else None,
+            "error": result.get("error") if status == "failed" else None,
+        }
+
+    async def _image_input(self, image_path: str) -> tuple[str, str]:
+        """Return ``(data_uri, public_url)`` for the connector submit contract."""
+        if image_path.startswith("data:"):
+            return image_path, ""
+        if image_path.startswith(("http://", "https://")):
+            return "", image_path
+        path = Path(image_path)
+        if not path.is_file():
+            raise ValueError(f"图片文件不存在：{image_path}")
+        mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+        return f"data:{mime};base64,{encoded}", ""
 
     async def generate_3d_from_image(
         self,
         image_path: str,
         task_id: Optional[str] = None,
     ) -> Dict[str, Any]:
+        """Legacy TripoSR API facade backed by the configured connector.
+
+        This keeps the existing HTTP endpoints and return keys stable while
+        routing upload, submit, poll, and error mapping through
+        ``Model3DConnectorBackend``. Business code no longer reads TRIPOSR
+        environment variables or calls the provider directly.
         """
-        使用 TripoSR 从图片生成 3D 模型
+        from app.services.model3d.workspace import Model3DConnectorBackend
 
-        Args:
-            image_path: 图片路径或 URL
-            task_id: 已有任务 ID（用于查询进度）
+        connector = await self._legacy_image_to_3d_connector()
+        if connector is None:
+            return {
+                "error": "未找到标记为 legacy_image_to_3d 的 TripoSR 连接器；"
+                "请先运行迁移脚本或在 AI 连接器中创建/启用该连接器"
+            }
 
-        Returns:
-            {"task_id": "...", "status": "pending"|"processing"|"completed", "result_url": "..."}
-        """
-        if not self.TRIPOSR_API_KEY:
-            return {"error": "TripoSR API key not configured"}
-
-        # 如果没有 task_id，创建新任务
-        if not task_id:
-            return await self._create_triposr_task(image_path)
-
-        # 查询任务状态
-        return await self._get_triposr_task_status(task_id)
-
-    async def _create_triposr_task(self, image_path: str) -> Dict[str, Any]:
-        """创建 TripoSR 任务"""
-        headers = {
-            "Authorization": f"Bearer {self.TRIPOSR_API_KEY}",
-        }
-
-        # 处理图片（可以是 URL 或上传）
-        if image_path.startswith("http"):
-            # 在线图片
-            payload = {"image_url": image_path}
-        else:
-            # 本地图片，需要上传
+        backend = Model3DConnectorBackend(connector)
+        if task_id:
             try:
-                with open(image_path, "rb") as f:
-                    files = {"file": f}
-                    async with httpx.AsyncClient() as client:
-                        response = await client.post(
-                            f"{self.TRIPOSR_API_BASE}/upload",
-                            headers=headers,
-                            files=files,
-                            timeout=60,
-                        )
-                        response.raise_for_status()
-                        upload_result = response.json()
-                        image_url = upload_result.get("url", "")
-            except Exception as e:
-                logger.error(f"[Model3DService] Failed to upload image: {e}")
-                return {"error": f"Upload failed: {e}"}
-
-            payload = {"image_url": image_url}
-
-        # 创建生成任务
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{self.TRIPOSR_API_BASE}/task",
-                    headers=headers,
-                    json=payload,
-                    timeout=30,
-                )
-                response.raise_for_status()
-                result = response.json()
-                return {
-                    "task_id": result.get("task_id"),
-                    "status": "pending",
-                }
-        except httpx.HTTPError as e:
-            logger.error(f"[Model3DService] TripoSR API error: {e}")
-            return {"error": str(e)}
-
-    async def _get_triposr_task_status(self, task_id: str) -> Dict[str, Any]:
-        """查询 TripoSR 任务状态"""
-        headers = {
-            "Authorization": f"Bearer {self.TRIPOSR_API_KEY}",
-        }
+                result = await backend.poll(task_id)
+            except Exception as exc:  # noqa: BLE001 - preserve readable error to legacy response
+                return {"error": self._connector_error_message(exc)}
+            return self._legacy_result(result, task_id)
 
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    f"{self.TRIPOSR_API_BASE}/task/{task_id}",
-                    headers=headers,
-                    timeout=30,
-                )
-                response.raise_for_status()
-                result = response.json()
-
-                return {
-                    "task_id": task_id,
-                    "status": result.get("status"),  # pending, processing, completed, failed
-                    "progress": result.get("progress", 0),
-                    "result_url": result.get("result", {}).get("model_url") if result.get("status") == "completed" else None,
-                    "error": result.get("error") if result.get("status") == "failed" else None,
-                }
-        except httpx.HTTPError as e:
-            logger.error(f"[Model3DService] TripoSR API error: {e}")
-            return {"error": str(e)}
+            source_image, source_url = await self._image_input(image_path)
+            result = await backend.submit(
+                prompt="",
+                source_image=source_image,
+                source_url=source_url,
+                model=connector.default_model,
+            )
+        except Exception as exc:  # noqa: BLE001 - preserve readable error to legacy response
+            return {"error": self._connector_error_message(exc)}
+        return self._legacy_result(result)
 
     # -------------------------------------------------------------------------
     # 资产关联

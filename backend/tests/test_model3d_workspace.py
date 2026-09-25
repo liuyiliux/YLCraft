@@ -19,7 +19,8 @@ from app.api.v1.model3d_workspace import (
     _task_dict,
 )
 from app.db.models.task import Model3DGenerationTask
-from app.services.model3d.workspace import Model3DConnectorBackend
+from app.services.model3d.service import Model3DService
+from app.services.model3d.workspace import Model3DConnectorBackend, Model3DProviderRequestError
 from app.db.models.ai_connector import AIConnector
 
 
@@ -402,3 +403,359 @@ def test_rigging_task_history_entry_exposes_kind():
     serialized = _task_dict(task)
     assert serialized["kind"] == "rigging"
     assert serialized["request"]["source_asset_id"] == "asset-1"
+
+
+@pytest.mark.asyncio
+async def test_terminal_model3d_poll_returns_durable_result_without_remote_call(tmp_path, monkeypatch):
+    """A terminal 3D row is returned from the ledger without re-polling."""
+    from contextlib import asynccontextmanager
+
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlmodel.ext.asyncio.session import AsyncSession
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'model3d-terminal.db'}")
+    factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with engine.begin() as connection:
+        await connection.run_sync(
+            lambda sync_connection: Model3DGenerationTask.metadata.create_all(
+                sync_connection, tables=[Model3DGenerationTask.__table__]
+            )
+        )
+    async with factory() as session:
+        session.add(Model3DGenerationTask(
+            task_id="model3d-terminal",
+            provider="Tencent 3D",
+            model="3.0",
+            status="error",
+            prompt="failed once",
+            request_json="{}",
+            result_json='{"diagnostics": {"operation": "poll", "http_status": 500}}',
+            error="provider failed",
+            progress=0,
+            created_at=1.0,
+            completed_at=2.0,
+        ))
+        await session.commit()
+
+    @asynccontextmanager
+    async def session_scope():
+        async with factory() as session:
+            yield session
+            await session.commit()
+
+    async def forbidden_connector(*_args, **_kwargs):
+        raise AssertionError("terminal 3D rows must not be re-polled")
+
+    monkeypatch.setattr(rigging_api, "get_async_session", session_scope)
+    monkeypatch.setattr(rigging_api, "_connector", forbidden_connector)
+
+    response = await rigging_api.poll_model3d_task("model3d-terminal")
+
+    assert response.terminal is True
+    assert response.status == "error"
+    assert response.error == "provider failed"
+    assert response.diagnostics["http_status"] == 500
+    await engine.dispose()
+
+
+class _FakeUploadResponse:
+    status_code = 200
+    text = '{"url":"https://uploads.example.test/image.png"}'
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return {"url": "https://uploads.example.test/image.png"}
+
+
+class _FakeUploadClient:
+    def __init__(self, *args, **kwargs):
+        self.post_calls = []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        return False
+
+    async def post(self, url, headers=None, files=None):
+        self.post_calls.append({"url": url, "headers": headers, "files": files})
+        return _FakeUploadResponse()
+
+
+@pytest.mark.asyncio
+async def test_model3d_connector_uploads_data_uri_when_declared(monkeypatch):
+    connector = AIConnector(
+        id="triposr", provider="triposr", name="TripoSR", api_key="secret",
+        provider_type="3d", base_url="https://api.tripo3d.ai/api/v1",
+        response_config=json.dumps({
+            "upload_endpoint": "/upload",
+            "upload_field": "file",
+            "upload_url_path": "$.url",
+        }),
+    )
+    backend = Model3DConnectorBackend(connector)
+    fake_client = _FakeUploadClient()
+    monkeypatch.setattr("app.services.model3d.workspace.httpx.AsyncClient", lambda **kwargs: fake_client)
+
+    url = await backend._upload_source_image("data:image/png;base64,cG5nLWJ5dGVz")
+
+    assert url == "https://uploads.example.test/image.png"
+    assert fake_client.post_calls[0]["url"] == "https://api.tripo3d.ai/api/v1/upload"
+    assert fake_client.post_calls[0]["headers"]["Authorization"] == "Bearer secret"
+    assert "Content-Type" not in fake_client.post_calls[0]["headers"]
+    assert fake_client.post_calls[0]["files"]["file"][0] == "input.png"
+
+
+def test_model3d_connector_keeps_data_uri_without_upload_endpoint():
+    backend = Model3DConnectorBackend(AIConnector(id="plain", provider="custom", name="Plain"))
+    assert backend.response_config.get("upload_endpoint") is None
+    # The submit template still receives image_data/image_base64 for providers
+    # that accept inline images; no upload request is made.
+    body = backend._render({
+        "model": "m", "prompt": "p", "image_url": "", "image_data": "data:image/png;base64,AA==",
+        "image_base64": "AA==",
+    })
+    assert body["image_url"] == ""
+
+
+def test_legacy_result_maps_connector_states_and_keeps_task_id():
+    done = Model3DService._legacy_result(
+        {"task_id": "remote-1", "status": "done", "url": "https://example.test/out.glb", "progress": 100}
+    )
+    assert done == {
+        "task_id": "remote-1", "status": "completed", "progress": 100,
+        "result_url": "https://example.test/out.glb", "error": None,
+    }
+
+    failed = Model3DService._legacy_result(
+        {"status": "error", "error": "provider rejected the image", "progress": 0}, "fallback-1"
+    )
+    assert failed["task_id"] == "fallback-1"
+    assert failed["status"] == "failed"
+    assert failed["error"] == "provider rejected the image"
+
+
+@pytest.mark.asyncio
+async def test_legacy_image_route_submits_through_connector(monkeypatch, tmp_path):
+    image = tmp_path / "input.png"
+    image.write_bytes(b"png-bytes")
+    connector = AIConnector(
+        id="triposr", provider="triposr", name="TripoSR", provider_type="3d",
+        default_model="triposr",
+    )
+    service = Model3DService(None)
+
+    async def fake_connector():
+        return connector
+
+    calls = {}
+
+    class FakeBackend:
+        def __init__(self, selected):
+            assert selected is connector
+
+        async def submit(self, **kwargs):
+            calls["submit"] = kwargs
+            return {"task_id": "remote-1", "status": "pending", "progress": 0, "url": "", "error": None}
+
+    monkeypatch.setattr(service, "_legacy_image_to_3d_connector", fake_connector)
+    monkeypatch.setattr("app.services.model3d.workspace.Model3DConnectorBackend", FakeBackend)
+
+    result = await service.generate_3d_from_image(str(image))
+
+    assert result["task_id"] == "remote-1"
+    assert result["status"] == "pending"
+    assert calls["submit"]["source_url"] == ""
+    assert calls["submit"]["source_image"].startswith("data:image/png;base64,")
+    assert calls["submit"]["model"] == "triposr"
+
+
+@pytest.mark.asyncio
+async def test_legacy_image_route_polls_through_connector(monkeypatch):
+    service = Model3DService(None)
+    connector = AIConnector(
+        id="triposr", provider="triposr", name="TripoSR", provider_type="3d",
+        default_model="triposr",
+    )
+
+    async def fake_connector():
+        return connector
+
+    class FakeBackend:
+        def __init__(self, selected):
+            assert selected is connector
+
+        async def poll(self, task_id):
+            assert task_id == "remote-1"
+            return {"task_id": task_id, "status": "done", "progress": 100, "url": "https://example.test/out.glb"}
+
+    monkeypatch.setattr(service, "_legacy_image_to_3d_connector", fake_connector)
+    monkeypatch.setattr("app.services.model3d.workspace.Model3DConnectorBackend", FakeBackend)
+
+    result = await service.generate_3d_from_image("", task_id="remote-1")
+
+    assert result["status"] == "completed"
+    assert result["result_url"].endswith("out.glb")
+
+
+@pytest.mark.asyncio
+async def test_legacy_image_route_reports_missing_connector(monkeypatch):
+    service = Model3DService(None)
+
+    async def no_connector():
+        return None
+
+    monkeypatch.setattr(service, "_legacy_image_to_3d_connector", no_connector)
+    result = await service.generate_3d_from_image("ignored.png")
+
+    assert "legacy_image_to_3d" in result["error"]
+    assert "迁移脚本" in result["error"]
+
+
+class _FailingClient:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        return False
+
+    async def post(self, *args, **kwargs):
+        raise __import__("httpx").ReadTimeout("provider timed out")
+
+
+class _FakeDownloadClient:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        return False
+
+    async def get(self, *args, **kwargs):
+        class Response:
+            content = b"glb-bytes"
+
+            def raise_for_status(self):
+                return None
+
+        return Response()
+
+
+@pytest.mark.asyncio
+async def test_model3d_connector_submit_exposes_timeout_diagnostics(monkeypatch):
+    connector = AIConnector(
+        id="triposr", provider="triposr", name="TripoSR", api_key="secret",
+        provider_type="3d", base_url="https://api.tripo3d.ai/api/v1",
+        request_template='{"image_url":"{{ image_url }}"}',
+    )
+    monkeypatch.setattr("app.services.model3d.workspace.httpx.AsyncClient", _FailingClient)
+
+    with pytest.raises(Model3DProviderRequestError) as caught:
+        await Model3DConnectorBackend(connector).submit(
+            prompt="", source_image="", source_url="https://example.test/image.png", model="triposr"
+        )
+
+    assert caught.value.diagnostics["operation"] == "submit"
+    assert caught.value.diagnostics["exception_type"] == "ReadTimeout"
+    assert caught.value.diagnostics["endpoint"] == "https://api.tripo3d.ai/api/v1"
+
+
+@pytest.mark.asyncio
+async def test_model3d_connector_downloads_result_file(monkeypatch):
+    connector = AIConnector(
+        id="triposr", provider="triposr", name="TripoSR", api_key="secret",
+        provider_type="3d", base_url="https://api.tripo3d.ai/api/v1",
+    )
+    monkeypatch.setattr("app.services.model3d.workspace.httpx.AsyncClient", _FakeDownloadClient)
+
+    path = await Model3DConnectorBackend(connector).download(
+        "https://example.test/result.glb?token=redacted", "download-test"
+    )
+
+    assert path.name == "download-test.glb"
+    assert path.read_bytes() == b"glb-bytes"
+
+
+def test_model3d_connector_maps_provider_failure_without_leaking_credentials():
+    connector = AIConnector(
+        id="triposr", provider="triposr", name="TripoSR", api_key="secret",
+        response_config=json.dumps({
+            "status_path": "$.status", "error_path": "$.error",
+            "done_values": ["completed"], "failed_values": ["failed"],
+        }),
+    )
+    result = Model3DConnectorBackend(connector)._parse(
+        {"status": "failed", "error": "invalid image"}, fallback_task_id="remote-1"
+    )
+    assert result["status"] == "error"
+    assert result["error"] == "invalid image"
+    assert "secret" not in json.dumps(result)
+
+
+@pytest.mark.asyncio
+async def test_model3d_import_result_downloads_and_persists_asset(monkeypatch, tmp_path):
+    from contextlib import asynccontextmanager
+
+    task = Model3DGenerationTask(
+        task_id="model3d-local", provider="TripoSR", model="triposr",
+        status="done", prompt="statue", request_json="{}",
+        result_json='{"url":"https://example.test/out.glb"}', owner_user_id="user-a",
+        created_at=1.0,
+    )
+    connector = AIConnector(id="triposr", provider="triposr", name="TripoSR", provider_type="3d")
+    local_model = tmp_path / "out.glb"
+    local_model.write_bytes(b"glb")
+    captured = {}
+
+    async def fake_connector(*args, **kwargs):
+        return connector
+
+    class FakeBackend:
+        def __init__(self, selected):
+            assert selected is connector
+
+        async def download(self, url, task_id):
+            captured["download"] = (url, task_id)
+            return local_model
+
+        async def download_preview(self, url, task_id):
+            captured["preview"] = (url, task_id)
+            return ""
+
+    class FakeFacade:
+        def __init__(self, session):
+            captured["session"] = session
+
+        async def create_imported_file(self, **kwargs):
+            captured["asset"] = kwargs
+            from app.services.asset_hub.facade import AssetHubCreateResult
+            return AssetHubCreateResult("asset-1", "version-1", "rep-1")
+
+    @asynccontextmanager
+    async def fake_session_scope():
+        yield object()
+
+    async def fake_extract(self, path):
+        return {"mesh_count": 1, "bones": 0, "animations": []}
+
+    monkeypatch.setattr(rigging_api, "_connector", fake_connector)
+    monkeypatch.setattr(rigging_api, "Model3DConnectorBackend", FakeBackend)
+    monkeypatch.setattr(rigging_api, "AssetHubFacade", FakeFacade)
+    monkeypatch.setattr(rigging_api, "get_async_session", fake_session_scope)
+    monkeypatch.setattr(Model3DService, "extract_metadata", fake_extract)
+
+    asset_id = await rigging_api._import_result(task, {"url": "https://example.test/out.glb"})
+
+    assert asset_id == "asset-1"
+    assert captured["download"] == ("https://example.test/out.glb", "model3d-local")
+    assert captured["asset"]["owner_user_id"] == "user-a"
+    assert captured["asset"]["asset_type"].value == "3d_model"
+    assert captured["asset"]["source"] == "image_to_3d"
