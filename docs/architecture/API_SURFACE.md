@@ -410,14 +410,14 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/playwright/sessions` | 列出活跃的 Patchright 会话 | `playwright_list_sessions` | `backend/app/api/v1/cookie_acquisition.py:137` |
-| `POST` | `/api/v1/playwright/start` | 启动浏览器获取 Cookie（使用 Patchright） | `playwright_start` | `backend/app/api/v1/cookie_acquisition.py:92` |
-| `POST` | `/api/v1/playwright/{session_id}/cancel` | 取消 Patchright 会话 | `playwright_cancel` | `backend/app/api/v1/cookie_acquisition.py:159` |
-| `WEBSOCKET` | `/api/v1/playwright/{session_id}/ws` | - | `playwright_ws` | `backend/app/api/v1/cookie_acquisition.py:169` |
-| `POST` | `/api/v1/qrcode/generate` | 生成登录二维码 | `qrcode_generate` | `backend/app/api/v1/cookie_acquisition.py:229` |
-| `POST` | `/api/v1/qrcode/{session_id}/refresh` | 刷新过期二维码 | `qrcode_refresh` | `backend/app/api/v1/cookie_acquisition.py:290` |
-| `GET` | `/api/v1/qrcode/{session_id}/status` | 轮询扫码状态 | `qrcode_status` | `backend/app/api/v1/cookie_acquisition.py:271` |
-| `WEBSOCKET` | `/api/v1/qrcode/{session_id}/ws` | - | `qrcode_ws` | `backend/app/api/v1/cookie_acquisition.py:306` |
+| `GET` | `/api/v1/acquire/playwright/sessions` | 列出活跃的 Patchright 会话 | `playwright_list_sessions` | `backend/app/api/v1/cookie_acquisition.py:159` |
+| `POST` | `/api/v1/acquire/playwright/start` | 启动浏览器获取 Cookie（使用 Patchright） | `playwright_start` | `backend/app/api/v1/cookie_acquisition.py:98` |
+| `POST` | `/api/v1/acquire/playwright/{session_id}/cancel` | 取消 Patchright 会话 | `playwright_cancel` | `backend/app/api/v1/cookie_acquisition.py:181` |
+| `WEBSOCKET` | `/api/v1/acquire/playwright/{session_id}/ws` | - | `playwright_ws` | `backend/app/api/v1/cookie_acquisition.py:191` |
+| `POST` | `/api/v1/acquire/qrcode/generate` | 生成登录二维码 | `qrcode_generate` | `backend/app/api/v1/cookie_acquisition.py:251` |
+| `POST` | `/api/v1/acquire/qrcode/{session_id}/refresh` | 刷新过期二维码 | `qrcode_refresh` | `backend/app/api/v1/cookie_acquisition.py:312` |
+| `GET` | `/api/v1/acquire/qrcode/{session_id}/status` | 轮询扫码状态 | `qrcode_status` | `backend/app/api/v1/cookie_acquisition.py:293` |
+| `WEBSOCKET` | `/api/v1/acquire/qrcode/{session_id}/ws` | - | `qrcode_ws` | `backend/app/api/v1/cookie_acquisition.py:328` |
 
 ### Crawler
 
