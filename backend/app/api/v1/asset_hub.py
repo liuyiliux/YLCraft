@@ -21,7 +21,9 @@ from pydantic import BaseModel, Field
 from app.db.database import get_async_session
 from sqlalchemy import select
 
-from app.db.models.asset_hub import AssetType, RelationType
+from app.db.models.asset_hub import AssetNode, AssetRepresentation, AssetType, AssetVersion, RelationType
+from app.core.resource_auth import principal_owner_user_id, require_owned_or_legacy
+from app.core.user_auth import AuthenticatedPrincipal, get_authenticated_principal, get_authenticated_principal_optional
 from app.services.asset_hub import (
     AssetNodeService,
     AssetVersionService,
@@ -52,6 +54,48 @@ async def get_rep_service():
     """获取 AssetRepresentationService 实例"""
     async with get_async_session() as session:
         yield AssetRepresentationService(session)
+
+
+async def _require_node_access(
+    node_id: str,
+    *,
+    service: AssetNodeService,
+    principal: AuthenticatedPrincipal,
+) -> AssetNode:
+    node = await service.get(node_id)
+    if node is None:
+        raise HTTPException(status_code=404, detail="资产节点不存在")
+    require_owned_or_legacy(owner_user_id=node.owner_user_id, principal=principal)
+    return node
+
+
+async def _require_version_access(
+    version_id: str,
+    *,
+    session,
+    principal: AuthenticatedPrincipal,
+) -> AssetVersion:
+    version = await session.get(AssetVersion, version_id)
+    if version is None:
+        raise HTTPException(status_code=404, detail="版本不存在")
+    node = await session.get(AssetNode, str(version.asset_node_id))
+    if node is None:
+        raise HTTPException(status_code=404, detail="资产节点不存在")
+    require_owned_or_legacy(owner_user_id=node.owner_user_id, principal=principal)
+    return version
+
+
+async def _require_representation_access(
+    rep_id: str,
+    *,
+    session,
+    principal: AuthenticatedPrincipal,
+) -> AssetRepresentation:
+    rep = await session.get(AssetRepresentation, rep_id)
+    if rep is None:
+        raise HTTPException(status_code=404, detail="文件表示不存在")
+    await _require_version_access(str(rep.asset_version_id), session=session, principal=principal)
+    return rep
 
 
 # ---------------------------------------------------------------------------
@@ -249,6 +293,7 @@ async def list_nodes(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     service: AssetNodeService = Depends(get_node_service),
+    principal: AuthenticatedPrincipal | None = Depends(get_authenticated_principal_optional),
 ):
     """分页查询资产节点"""
     try:
@@ -258,11 +303,18 @@ async def list_nodes(
             else None
         )
 
+        # External Agent keys remain globally readable until a dedicated change
+        # gives them a User subject; their scope checks already ran at the auth
+        # boundary. Anonymous callers and human sessions are owner-filtered.
+        filter_by_owner = principal is None or principal.user is not None
+        owner_user_id = principal.user.id if filter_by_owner and principal is not None else None
         nodes, total = await service.list_nodes(
             asset_type=asset_type,
             parent_id=parent_id,
             tag_ids=tag_id_list,
             keyword=keyword,
+            owner_user_id=owner_user_id if filter_by_owner else None,
+            include_legacy_owner=principal is None if filter_by_owner else True,
             page=page,
             page_size=page_size,
         )
@@ -288,6 +340,7 @@ async def list_nodes(
 async def create_node(
     req: AssetNodeCreateRequest,
     service: AssetNodeService = Depends(get_node_service),
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
 ):
     """创建资产节点"""
     try:
@@ -300,6 +353,7 @@ async def create_node(
             tags=req.tags,
             quality_score=req.quality_score,
             phash=req.phash,
+            owner_user_id=principal_owner_user_id(principal),
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -312,11 +366,17 @@ async def create_node(
 async def get_node(
     node_id: str,
     service: AssetNodeService = Depends(get_node_service),
+    principal: AuthenticatedPrincipal | None = Depends(get_authenticated_principal_optional),
 ):
     """获取资产节点详情"""
     node = await service.get(node_id)
     if not node:
         raise HTTPException(status_code=404, detail="资产节点不存在")
+    if principal is None:
+        if node.owner_user_id is not None:
+            raise HTTPException(status_code=401, detail="需要登录会话或有效的外部 API Key")
+    else:
+        require_owned_or_legacy(owner_user_id=node.owner_user_id, principal=principal)
     tags = await service.get_tags(node_id)
     return {"success": True, "data": _node_to_response(node, tags).model_dump()}
 
@@ -326,8 +386,10 @@ async def update_node(
     node_id: str,
     req: AssetNodeUpdateRequest,
     service: AssetNodeService = Depends(get_node_service),
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
 ):
     """更新资产节点字段"""
+    await _require_node_access(node_id, service=service, principal=principal)
     node = await service.update(
         node_id=node_id,
         name=req.name,
@@ -348,8 +410,10 @@ async def delete_node(
     node_id: str,
     cascade: bool = Query(False, description="是否级联删除子节点"),
     service: AssetNodeService = Depends(get_node_service),
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
 ):
     """删除资产节点"""
+    await _require_node_access(node_id, service=service, principal=principal)
     try:
         ok = await service.delete(node_id, cascade=cascade)
     except ValueError as exc:
@@ -364,8 +428,17 @@ async def delete_node(
 async def list_node_children(
     node_id: str,
     service: AssetNodeService = Depends(get_node_service),
+    principal: AuthenticatedPrincipal | None = Depends(get_authenticated_principal_optional),
 ):
     """获取直接子节点（角色的不同装扮等）"""
+    node = await service.get(node_id)
+    if node is None:
+        raise HTTPException(status_code=404, detail="资产节点不存在")
+    if principal is None:
+        if node.owner_user_id is not None:
+            raise HTTPException(status_code=401, detail="需要登录会话或有效的外部 API Key")
+    else:
+        require_owned_or_legacy(owner_user_id=node.owner_user_id, principal=principal)
     children = await service.list_children(node_id)
     data = []
     for node in children:
@@ -379,8 +452,10 @@ async def add_node_tags(
     node_id: str,
     tag_names: List[str],
     service: AssetNodeService = Depends(get_node_service),
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
 ):
     """按名称批量添加标签（不存在自动创建）"""
+    await _require_node_access(node_id, service=service, principal=principal)
     await service.add_tags(node_id, tag_names)
     tags = await service.get_tags(node_id)
     return {
@@ -403,8 +478,17 @@ async def list_versions(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     service: AssetVersionService = Depends(get_version_service),
+    principal: AuthenticatedPrincipal | None = Depends(get_authenticated_principal_optional),
 ):
     """获取某资产节点的所有版本（按版本号倒序）"""
+    node = await service.session.get(AssetNode, node_id)
+    if node is None:
+        raise HTTPException(status_code=404, detail="资产节点不存在")
+    if principal is None:
+        if node.owner_user_id is not None:
+            raise HTTPException(status_code=401, detail="需要登录会话或有效的外部 API Key")
+    else:
+        require_owned_or_legacy(owner_user_id=node.owner_user_id, principal=principal)
     versions, total = await service.list_versions(
         asset_node_id=node_id,
         page=page,
@@ -449,8 +533,13 @@ async def create_version(
     node_id: str,
     req: AssetVersionCreateRequest,
     service: AssetVersionService = Depends(get_version_service),
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
 ):
     """为资产节点创建新版本快照"""
+    node = await service.session.get(AssetNode, node_id)
+    if node is None:
+        raise HTTPException(status_code=404, detail="资产节点不存在")
+    require_owned_or_legacy(owner_user_id=node.owner_user_id, principal=principal)
     try:
         version = await service.create(
             asset_node_id=node_id,
@@ -473,10 +562,19 @@ async def create_version(
 async def get_version(
     version_id: str,
     service: AssetVersionService = Depends(get_version_service),
+    principal: AuthenticatedPrincipal | None = Depends(get_authenticated_principal_optional),
 ):
     version = await service.get(version_id)
     if not version:
         raise HTTPException(status_code=404, detail="版本不存在")
+    node = await service.session.get(AssetNode, str(version.asset_node_id))
+    if node is None:
+        raise HTTPException(status_code=404, detail="资产节点不存在")
+    if principal is None:
+        if node.owner_user_id is not None:
+            raise HTTPException(status_code=401, detail="需要登录会话或有效的外部 API Key")
+    else:
+        require_owned_or_legacy(owner_user_id=node.owner_user_id, principal=principal)
     return {"success": True, "data": _version_to_response(version).model_dump()}
 
 
@@ -488,8 +586,10 @@ async def get_version(
 async def delete_version(
     version_id: str,
     service: AssetVersionService = Depends(get_version_service),
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
 ):
     """删除版本（不允许删除唯一版本）"""
+    await _require_version_access(version_id, session=service.session, principal=principal)
     try:
         ok = await service.delete(version_id)
     except ValueError as e:
@@ -511,8 +611,20 @@ async def delete_version(
 async def list_representations(
     version_id: str,
     service: AssetRepresentationService = Depends(get_rep_service),
+    principal: AuthenticatedPrincipal | None = Depends(get_authenticated_principal_optional),
 ):
     """获取版本下的所有文件表示"""
+    version = await service.session.get(AssetVersion, version_id)
+    if version is None:
+        raise HTTPException(status_code=404, detail="版本不存在")
+    node = await service.session.get(AssetNode, str(version.asset_node_id))
+    if node is None:
+        raise HTTPException(status_code=404, detail="资产节点不存在")
+    if principal is None:
+        if node.owner_user_id is not None:
+            raise HTTPException(status_code=401, detail="需要登录会话或有效的外部 API Key")
+    else:
+        require_owned_or_legacy(owner_user_id=node.owner_user_id, principal=principal)
     reps = await service.list_by_version(version_id)
     return {
         "success": True,
@@ -529,8 +641,10 @@ async def create_representation(
     version_id: str,
     req: AssetRepresentationCreateRequest,
     service: AssetRepresentationService = Depends(get_rep_service),
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
 ):
     """为版本创建文件表示"""
+    await _require_version_access(version_id, session=service.session, principal=principal)
     try:
         rep = await service.create(
             asset_version_id=version_id,
@@ -556,7 +670,9 @@ async def create_representation(
 async def delete_representation(
     rep_id: str,
     service: AssetRepresentationService = Depends(get_rep_service),
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
 ):
+    await _require_representation_access(rep_id, session=service.session, principal=principal)
     ok = await service.delete(rep_id)
     if not ok:
         raise HTTPException(status_code=404, detail="文件表示不存在")
@@ -611,6 +727,7 @@ DEFAULT_TAG_TREE = [
 @router.post("/seed-tags", response_model=Dict[str, Any], summary="初始化默认标签树")
 async def seed_default_tags(
     dry_run: bool = Query(False, description="只打印不写入"),
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
 ):
     """
     初始化资产中枢的预设标签树（幂等，可重复执行）。

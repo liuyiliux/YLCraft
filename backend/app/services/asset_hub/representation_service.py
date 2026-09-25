@@ -125,19 +125,32 @@ class AssetRepresentationService:
         return reps[0] if reps else None
 
     async def get_primaries(self, version_ids: list[str]) -> dict[str, AssetRepresentation]:
-        """批量获取多个版本的主文件表示（一次 IN 查询，消除 N+1）。"""
+        """批量获取多个版本的主文件表示（一次 IN 查询，每个版本至多一行）。"""
         if not version_ids:
             return {}
+        ranked = (
+            select(
+                AssetRepresentation.id.label("rep_id"),
+                func.row_number()
+                .over(
+                    partition_by=AssetRepresentation.asset_version_id,
+                    order_by=(
+                        AssetRepresentation.file_size.desc(),
+                        AssetRepresentation.id.asc(),
+                    ),
+                )
+                .label("rank"),
+            )
+            .where(AssetRepresentation.asset_version_id.in_(version_ids))
+            .subquery()
+        )
         result = await self.session.execute(
-            select(AssetRepresentation).where(AssetRepresentation.asset_version_id.in_(version_ids))
+            select(AssetRepresentation)
+            .join(ranked, AssetRepresentation.id == ranked.c.rep_id)
+            .where(ranked.c.rank == 1)
         )
         reps = result.scalars().all()
-        by_version: dict[str, AssetRepresentation] = {}
-        for r in reps:
-            vid = str(r.asset_version_id)
-            if vid not in by_version:
-                by_version[vid] = r
-        return by_version
+        return {str(r.asset_version_id): r for r in reps}
 
     # -------------------------------------------------------------------------
     # 工具

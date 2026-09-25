@@ -180,7 +180,9 @@ export default function AssetsPage() {
   const [loading, setLoading] = useState(false)
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
-  const pageSize = 24
+  // 分页大小是可切换的：AssetGrid 的 onPageChange 第二个参数会带回新的 page size，
+  // 之前这里是常量 24，导致选择 12/48/96 时请求仍按 24 拉，看起来像"点了没反应"。
+  const [pageSize, setPageSize] = useState(24)
 
   // Filters
   const [filters, setFilters] = useState({
@@ -227,74 +229,95 @@ export default function AssetsPage() {
   const [searchHistory, setSearchHistory] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem(SEARCH_HISTORY_KEY) || '[]') } catch { return [] }
   })
+  const inflightRequestRef = useRef<Map<string, Promise<any>>>(new Map())
 
   const isAIGenerated = (asset: any) => asset.source_type?.toLowerCase() === 'ai_generated'
 
   // ---- Load assets ----
   const loadFuzzy = useCallback(async (p: number, s: string, f: typeof filters) => {
-    setLoading(true)
-    try {
-      const params: Record<string, any> = { page: p, page_size: pageSize }
-      if (f.asset_type) params.asset_type = f.asset_type
-      if (f.platform) params.platform = f.platform
-      if (f.source_type) params.source_type = f.source_type
-      if (f.project_id) params.project_id = f.project_id
-      if (f.asset_role) params.asset_role = f.asset_role
-      if (f.source_stage) params.source_stage = f.source_stage
-      if (s) params.search = s
-      const tagNames = [...selectedTagNames]
-      // 「静态」无法用 tags 表达（后端为包含语义），改为前端本地过滤；
-      // 「已绑骨 / 带动画」走后端标签过滤。
-      if (f.rigging_state && f.rigging_state !== 'static') tagNames.push(f.rigging_state)
-      if (tagNames.length > 0) params.tags = tagNames.join(',')
-      const res = await listAssets(params)
-      if (res.success) {
-        let data = res.data || []
-        if (f.rigging_state === 'static') {
-          data = data.filter((a: any) => {
-            const tags = a.tags || []
-            const nodeMeta = a.metadata?.node_metadata || {}
-            return !tags.includes('rigged') && !tags.includes('animated')
-              && !nodeMeta.has_bones && !nodeMeta.has_animations
-          })
+    const requestKey = `fuzzy:${p}:${s}:${JSON.stringify(f)}:${selectedTagNames.join(',')}`
+    const existing = inflightRequestRef.current.get(requestKey)
+    if (existing) return existing
+    const pending = (async () => {
+      setLoading(true)
+      try {
+        const params: Record<string, any> = { page: p, page_size: pageSize }
+        if (f.asset_type) params.asset_type = f.asset_type
+        if (f.platform) params.platform = f.platform
+        if (f.source_type) params.source_type = f.source_type
+        if (f.project_id) params.project_id = f.project_id
+        if (f.asset_role) params.asset_role = f.asset_role
+        if (f.source_stage) params.source_stage = f.source_stage
+        if (s) params.search = s
+        const tagNames = [...selectedTagNames]
+        // 「静态」无法用 tags 表达（后端为包含语义），改为前端本地过滤；
+        // 「已绑骨 / 带动画」走后端标签过滤。
+        if (f.rigging_state && f.rigging_state !== 'static') tagNames.push(f.rigging_state)
+        if (tagNames.length > 0) params.tags = tagNames.join(',')
+        const res = await listAssets(params)
+        if (res.success) {
+          let data = res.data || []
+          if (f.rigging_state === 'static') {
+            data = data.filter((a: any) => {
+              const tags = a.tags || []
+              const nodeMeta = a.metadata?.node_metadata || {}
+              return !tags.includes('rigged') && !tags.includes('animated')
+                && !nodeMeta.has_bones && !nodeMeta.has_animations
+            })
+          }
+          setAssets(data); setTotal(res.total)
         }
-        setAssets(data); setTotal(res.total)
+      } catch (e: any) { message.error(e.message) } finally {
+        inflightRequestRef.current.delete(requestKey)
+        setLoading(false)
       }
-    } catch (e: any) { message.error(e.message) } finally { setLoading(false) }
+    })()
+    inflightRequestRef.current.set(requestKey, pending)
+    return pending
   }, [pageSize, selectedTagNames])
 
   const loadHybrid = useCallback(async (p: number, s: string, f: typeof filters) => {
-    setLoading(true)
-    try {
-      const typeFilter = f.asset_type ? f.asset_type.toUpperCase() : undefined
-      const res = await hybridSearch({
-        query: s || '',
-        topK: 50,
-        vectorWeight: 0.7,
-        textWeight: 0.3,
-        tagFilters: selectedTagNames.length > 0 ? selectedTagNames : undefined,
-        assetType: typeFilter,
-      })
-      const data = res?.data || res?.results || []
-      const items = Array.isArray(data) ? data : []
-      // Map hybrid search fields to match fuzzy search (assets API) format
-      // and spread metadata fields for detail drawer
-      const enriched = items.map((item: any, i: number) => ({
-        ...item,
-        // Map hybrid-specific field names to standard names
-        id: item.id || item.asset_id,
-        type: item.type || item.asset_type,
-        title: item.title || item.name,
-        cover_url: item.cover_url || item.thumbnail_url,
-        relevance_score: item.hybrid_score ?? item.score ?? (1 - i * 0.05),
-      }))
-      // Client-side filter for platform/source (not supported by hybrid API natively)
-      let filtered = enriched
-      if (f.platform) filtered = filtered.filter((item: any) => item.platform === f.platform)
-      if (f.source_type) filtered = filtered.filter((item: any) => item.source_type === f.source_type)
-      setAssets(filtered)
-      setTotal(filtered.length)
-    } catch (e: any) { message.error('混合搜索接口异常，请切换到模糊搜索'); setAssets([]); setTotal(0) } finally { setLoading(false) }
+    const requestKey = `hybrid:${p}:${s}:${JSON.stringify(f)}:${selectedTagNames.join(',')}`
+    const existing = inflightRequestRef.current.get(requestKey)
+    if (existing) return existing
+    const pending = (async () => {
+      setLoading(true)
+      try {
+        const typeFilter = f.asset_type ? f.asset_type.toUpperCase() : undefined
+        const res = await hybridSearch({
+          query: s || '',
+          topK: 50,
+          vectorWeight: 0.7,
+          textWeight: 0.3,
+          tagFilters: selectedTagNames.length > 0 ? selectedTagNames : undefined,
+          assetType: typeFilter,
+        })
+        const data = res?.data || res?.results || []
+        const items = Array.isArray(data) ? data : []
+        // Map hybrid search fields to match fuzzy search (assets API) format
+        // and spread metadata fields for detail drawer
+        const enriched = items.map((item: any, i: number) => ({
+          ...item,
+          // Map hybrid-specific field names to standard names
+          id: item.id || item.asset_id,
+          type: item.type || item.asset_type,
+          title: item.title || item.name,
+          cover_url: item.cover_url || item.thumbnail_url,
+          relevance_score: item.hybrid_score ?? item.score ?? (1 - i * 0.05),
+        }))
+        // Client-side filter for platform/source (not supported by hybrid API natively)
+        let filtered = enriched
+        if (f.platform) filtered = filtered.filter((item: any) => item.platform === f.platform)
+        if (f.source_type) filtered = filtered.filter((item: any) => item.source_type === f.source_type)
+        setAssets(filtered)
+        setTotal(filtered.length)
+      } catch (e: any) { message.error('混合搜索接口异常，请切换到模糊搜索'); setAssets([]); setTotal(0) } finally {
+        inflightRequestRef.current.delete(requestKey)
+        setLoading(false)
+      }
+    })()
+    inflightRequestRef.current.set(requestKey, pending)
+    return pending
   }, [selectedTagNames])
 
   const loadAssets = useCallback((p: number, s: string, f: typeof filters, mode: string) => {
@@ -309,7 +332,7 @@ export default function AssetsPage() {
   // Initial load
   useEffect(() => {
     loadAssets(page, searchQuery, filters, searchMode)
-  }, [page])
+  }, [page, pageSize])
 
   // ---- Search handlers ----
   /** 删除单条搜索历史（同步写入 localStorage，刷新后不会再出现） */
@@ -1235,7 +1258,16 @@ export default function AssetsPage() {
                 total={total}
                 pageSize={pageSize}
                 currentPage={page}
-                onPageChange={(p) => setPage(p)}
+                onPageChange={(p, size) => {
+                  // 切换每页条数时回到第一页：原页码在新页大小下可能已越界，
+                  // 留在旧页码会直接请求出一页空列表。
+                  if (size !== pageSize) {
+                    setPageSize(size)
+                    setPage(1)
+                    return
+                  }
+                  setPage(p)
+                }}
                 onAssetClick={handleAssetClick}
                 selectable={batchMode}
                 selectedIds={selectedIds}

@@ -196,19 +196,36 @@ class AssetVersionService:
         return result.scalar_one_or_none()
 
     async def get_latest_versions(self, asset_node_ids: list[str]) -> dict[str, AssetVersion]:
-        """批量获取多个资产节点的最新版本（一次 IN 查询，消除 N+1）。"""
+        """批量获取多个资产节点的最新版本（一次 IN 查询，每个节点至多一行）。"""
         if not asset_node_ids:
             return {}
+
+        # 旧实现把候选节点的所有历史版本都拉回 Python 再挑最大版本号。
+        # 素材列表只需要最新版；一旦某节点有多次重生成，读放大就会随版本数增长。
+        # 用窗口函数让数据库直接返回每节点最新一行，并在 PG/SQLite 上保持同一语义。
+        ranked = (
+            select(
+                AssetVersion.id.label("version_id"),
+                func.row_number()
+                .over(
+                    partition_by=AssetVersion.asset_node_id,
+                    order_by=(
+                        AssetVersion.version_number.desc(),
+                        AssetVersion.created_at.desc(),
+                    ),
+                )
+                .label("rank"),
+            )
+            .where(AssetVersion.asset_node_id.in_(asset_node_ids))
+            .subquery()
+        )
         result = await self.session.execute(
-            select(AssetVersion).where(AssetVersion.asset_node_id.in_(asset_node_ids))
+            select(AssetVersion)
+            .join(ranked, AssetVersion.id == ranked.c.version_id)
+            .where(ranked.c.rank == 1)
         )
         versions = result.scalars().all()
-        latest: dict[str, AssetVersion] = {}
-        for v in versions:
-            nid = str(v.asset_node_id)
-            if nid not in latest or v.version_number > latest[nid].version_number:
-                latest[nid] = v
-        return latest
+        return {str(v.asset_node_id): v for v in versions}
 
     async def get_version_by_number(
         self, asset_node_id: str, version_number: int

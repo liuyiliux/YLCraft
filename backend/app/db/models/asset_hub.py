@@ -58,6 +58,10 @@ class AssetNode(SQLModel, table=True):
     name: str = Field(index=True)
     asset_type: AssetType = Field(index=True)
     parent_id: Optional[str] = Field(None, foreign_key="asset_nodes.id", index=True, sa_type=GUID())
+    # NULL denotes data created before account ownership was introduced.
+    owner_user_id: Optional[str] = Field(
+        default=None, foreign_key="users.id", index=True, max_length=64
+    )
 
     thumbnail_url: Optional[str] = None
     metadata_json: dict = Field(default_factory=dict, sa_type=JSONB)
@@ -176,4 +180,3 @@ class AIModel(SQLModel, table=True):
     file_path: str
     file_size: int = Field(default=0)
     preview_urls: str = Field(default="[]")
-

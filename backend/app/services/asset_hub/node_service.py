@@ -47,6 +47,7 @@ class AssetNodeService:
         name: str,
         asset_type: AssetType | str,
         parent_id: Optional[str] = None,
+        owner_user_id: Optional[str] = None,
         thumbnail_url: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         tags: Optional[List[str]] = None,
@@ -77,6 +78,7 @@ class AssetNodeService:
             name=name,
             asset_type=asset_type,
             parent_id=parent_id,
+            owner_user_id=owner_user_id,
             thumbnail_url=thumbnail_url,
             metadata_json=metadata or {},
             tags_json=[],
@@ -232,6 +234,9 @@ class AssetNodeService:
         tag_ids: Optional[List[str]] = None,
         keyword: Optional[str] = None,
         require_metadata_keys: Optional[List[str]] = None,
+        require_renderable: bool = False,
+        owner_user_id: Optional[str] = None,
+        include_legacy_owner: bool = True,
         include_children: bool = True,
         page: int = 1,
         page_size: int = 20,
@@ -244,6 +249,9 @@ class AssetNodeService:
             parent_id: 按父节点过滤（None 表示不限，传 "root" 表示只看根节点）
             tag_ids: 按标签过滤（AND 关系：同时包含所有标签）
             keyword: 名称模糊搜索
+            require_renderable: 只返回已有最新版本和主文件表示的节点。
+                素材列表需要在分页前应用该条件，否则无版本/无表示的节点会占页，
+                组装卡片时再被跳过，表现为第一页不足 page_size 张。
             include_children: parent_id 过滤时是否包含所有后代
 
         Returns:
@@ -276,6 +284,18 @@ class AssetNodeService:
             where_parts.append("name ILIKE :keyword")
             params["keyword"] = f"%{keyword}%"
 
+        if owner_user_id is not None or not include_legacy_owner:
+            if owner_user_id is None:
+                # Anonymous callers are scoped to legacy NULL rows.  Using
+                # ``owner_user_id = NULL`` would never match in SQL.
+                where_parts.append("owner_user_id IS NULL")
+            elif include_legacy_owner:
+                where_parts.append("(owner_user_id = :owner_user_id OR owner_user_id IS NULL)")
+                params["owner_user_id"] = owner_user_id
+            else:
+                where_parts.append("owner_user_id = :owner_user_id")
+                params["owner_user_id"] = owner_user_id
+
         # 要求 metadata_json 至少存在某些非空键（如小说要求 book_url/chapters）。
         # 用于区分"真小说"与素材库里的普通文本：count 与分页查询共用本条件，
         # 避免 total 与列表条数口径不一致（书架显示 8 本却只有 1 张卡的根因）。
@@ -286,6 +306,28 @@ class AssetNodeService:
                 params[param] = meta_key
                 key_clauses.append(f"coalesce(metadata_json->>:{param}, '') <> ''")
             where_parts.append("(" + " OR ".join(key_clauses) + ")")
+
+        if require_renderable:
+            # 与素材卡片的组装口径保持一致：软删除节点会被 ``_asset_hub_card`` 丢弃，
+            # 最新版本没有文件表示时也无法出卡。这两个条件必须参与分页，
+            # 否则它们会占掉当前页名额，表现为"总数不少、第一页只有 8 张"。
+            where_parts.append(
+                "NOT ("
+                "coalesce(metadata_json->>'deleted_at', '') <> '' "
+                "OR upper(coalesce(metadata_json->>'status', '')) = 'DELETED'"
+                ")"
+            )
+            where_parts.append(
+                "EXISTS ("
+                "SELECT 1 FROM asset_representations r "
+                "WHERE r.asset_version_id = ("
+                "SELECT v.id FROM asset_versions v "
+                "WHERE v.asset_node_id = asset_nodes.id "
+                "ORDER BY v.version_number DESC, v.created_at DESC "
+                "LIMIT 1"
+                ")"
+                ")"
+            )
 
         # 标签过滤（AND 关系）
         if tag_ids:
@@ -334,6 +376,35 @@ class AssetNodeService:
             nodes.append(node)
 
         return nodes, total
+
+    async def list_all_types(
+        self,
+        parent_id: Optional[str] = None,
+        keyword: Optional[str] = None,
+        require_metadata_keys: Optional[List[str]] = None,
+        require_renderable: bool = False,
+        owner_user_id: Optional[str] = None,
+        include_legacy_owner: bool = True,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> tuple[List[AssetNode], int]:
+        """跨资产类型统一分页。
+
+        无类型筛选时不应按 AssetType 枚举逐类查询再合并；那会把每个类型各查一页，
+        最终读入 ``类型数 × page_size`` 个节点及其版本/表示，24 条素材会放大成数百条。
+        这里复用同一套过滤与返回转换，只把类型条件留空。
+        """
+        return await self.list_nodes(
+            asset_type=None,
+            parent_id=parent_id,
+            keyword=keyword,
+            require_metadata_keys=require_metadata_keys,
+            require_renderable=require_renderable,
+            owner_user_id=owner_user_id,
+            include_legacy_owner=include_legacy_owner,
+            page=page,
+            page_size=page_size,
+        )
 
     async def list_children(self, parent_id: str) -> List[AssetNode]:
         """获取直接子节点"""

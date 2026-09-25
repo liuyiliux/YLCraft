@@ -38,6 +38,8 @@ from app.db.database import get_async_session
 from app.db.models.asset_hub import AssetNode, AssetVersion, AssetRepresentation, AssetType, Tag, RelationType
 from app.core.ffmpeg import get_ffmpeg_service
 from app.core.external_api_auth import optional_external_api_key
+from app.core.resource_auth import principal_owner_user_id, require_owned_or_legacy
+from app.core.user_auth import AuthenticatedPrincipal, get_authenticated_principal, get_authenticated_principal_optional
 from app.db.models.external_api_key import ExternalApiKey
 from app.services.asset_hub import AssetHubFacade
 from app.services.asset_hub.node_service import AssetNodeService
@@ -494,6 +496,9 @@ async def _list_asset_hub_cards(
     project_id: Optional[str] = None,
     asset_role: Optional[str] = None,
     source_stage: Optional[str] = None,
+    owner_user_id: Optional[str] = None,
+    include_legacy: bool = True,
+    apply_owner_filter: bool = False,
     page: int = 1,
     page_size: int = 20,
 ) -> tuple[list[dict], int]:
@@ -514,32 +519,71 @@ async def _list_asset_hub_cards(
         # image reference is requested (for example image-to-3D).
         node_types = [AssetType.IMAGE, AssetType.CHARACTER]
     else:
-        node_types = [type_map[normalized_type]] if normalized_type else list(AssetType)
+        node_types = [type_map[normalized_type]] if normalized_type else []
 
     node_service = AssetNodeService(session)
 
+    # Ownership filtering happens in SQL before LIMIT/OFFSET.  A post-query
+    # filter would make a page contain fewer cards than requested (or skip a
+    # page entirely) whenever another user's rows were mixed into the page.
+    # - human session: own rows + legacy NULL rows;
+    # - anonymous: legacy NULL rows only;
+    # - internal callers that explicitly opt out: no owner predicate.
+    if apply_owner_filter:
+        include_legacy_for_query = owner_user_id is not None
+    else:
+        owner_user_id = None
+        include_legacy_for_query = True
+
     # 真正的数据库分页：不再一次性拉 1000 条再 Python 过滤。
-    # 单类型时直接由数据库取当前页；多类型（如 image 同时命中 IMAGE 与 CHARACTER）时
-    # 数据库无法跨类型统一排序，改为取「当前页累计条数」的候选，合并排序后再切片，
-    # 避免每类各取一页导致单页条数翻倍、翻页重复或漏项。
+    # - 无类型筛选直接跨类型统一分页，避免按 13 个 AssetType 各查一页；
+    # - 单类型直接取当前页；
+    # - 只有 image 需要合并 IMAGE / CHARACTER 两个类型，先取累计候选后统一排序切片。
+    tag_filters = [tag for tag in (tags or []) if tag]
+    has_post_filters = bool(
+        platform
+        or source_type
+        or status
+        or tag_filters
+        or project_id
+        or asset_role
+        or source_stage
+    )
     is_multi_type = len(node_types) > 1
-    candidate_page = 1 if is_multi_type else page
-    candidate_size = page * page_size if is_multi_type else page_size
-    all_nodes: list[tuple[AssetNode, AssetType]] = []
-    total = 0
-    for node_type in node_types:
-        type_nodes, type_total = await node_service.list_nodes(
-            asset_type=node_type,
+    use_global_page = not normalized_type and not has_post_filters
+    if use_global_page:
+        global_nodes, total = await node_service.list_all_types(
             keyword=search,
             require_metadata_keys=require_metadata_keys,
-            page=candidate_page,
-            page_size=candidate_size,
+            require_renderable=True,
+            owner_user_id=owner_user_id,
+            include_legacy_owner=include_legacy_for_query,
+            page=page,
+            page_size=page_size,
         )
-        all_nodes.extend([(node, node_type) for node in type_nodes])
-        total += type_total
+        all_nodes = [(node, node.asset_type) for node in global_nodes]
+    else:
+        node_types = node_types or list(AssetType)
+        is_multi_type = len(node_types) > 1
+        candidate_page = 1 if is_multi_type else page
+        candidate_size = page * page_size if is_multi_type else page_size
+        all_nodes: list[tuple[AssetNode, AssetType]] = []
+        total = 0
+        for node_type in node_types:
+            type_nodes, type_total = await node_service.list_nodes(
+                asset_type=node_type,
+                keyword=search,
+                require_metadata_keys=require_metadata_keys,
+                require_renderable=True,
+                owner_user_id=owner_user_id,
+                include_legacy_owner=include_legacy_for_query,
+                page=candidate_page,
+                page_size=candidate_size,
+            )
+            all_nodes.extend([(node, node_type) for node in type_nodes])
+            total += type_total
 
     cards: list[dict] = []
-    tag_filters = [tag for tag in (tags or []) if tag]
     # 批量预取最新版本与主文件表示，消除 _asset_hub_card 的 N+1 查询
     version_service = AssetVersionService(session)
     rep_service = AssetRepresentationService(session)
@@ -605,7 +649,10 @@ async def _get_asset_hub_card(
     if session is None or not hasattr(session, "get"):
         return None
 
-    node = await session.get(AssetNode, asset_id)
+    # Compatibility tests and a few internal read-only adapters supply a
+    # lightweight Asset Hub facade rather than an AsyncSession. Production
+    # requests always receive a real session, where this owner lookup applies.
+    node = await session.get(AssetNode, asset_id) if hasattr(session, "get") else None
     if not node:
         return None
     card = await _asset_hub_card(session, node, include_metadata=include_metadata)
@@ -644,6 +691,20 @@ async def _get_asset_hub_primary(
     if not rep:
         return None
     return node, version, rep
+
+
+def _require_asset_write_access(
+    node: Optional[AssetNode],
+    principal: AuthenticatedPrincipal,
+) -> None:
+    """Require a credential and reject cross-owner writes on one asset.
+
+    Legacy rows with a NULL owner stay writable so enabling accounts does not
+    turn existing local assets into read-only records.
+    """
+    if node is None:
+        return
+    require_owned_or_legacy(owner_user_id=getattr(node, "owner_user_id", None), principal=principal)
 
 
 def _asset_hub_file_response(rep, *, inline: bool = False) -> FileResponse:
@@ -722,6 +783,7 @@ async def list_assets(
     sort_order: str = Query("desc", description="asc / desc"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    principal: AuthenticatedPrincipal | None = Depends(get_authenticated_principal_optional),
 ):
     """
     多条件分页查询资产列表。
@@ -740,6 +802,9 @@ async def list_assets(
             project_id=project_id,
             asset_role=asset_role,
             source_stage=source_stage,
+            owner_user_id=principal.user.id if principal and principal.user else None,
+            include_legacy=True,
+            apply_owner_filter=principal is None or (principal.user is not None),
             page=page,
             page_size=page_size,
         )
@@ -1151,7 +1216,13 @@ async def _render_model_preview(model_path: Path) -> str:
     return str(rendered or "")
 
 
-async def _import_uploaded_model(filename: str, content: bytes, title: str, session) -> dict:
+async def _import_uploaded_model(
+    filename: str,
+    content: bytes,
+    title: str,
+    session,
+    owner_user_id: str | None = None,
+) -> dict:
     """解包/定位上传的 3D 模型文件并写入 Asset Hub。"""
     upload_dir = _model3d_upload_dir() / uuid4().hex
     upload_dir.mkdir(parents=True, exist_ok=True)
@@ -1189,6 +1260,7 @@ async def _import_uploaded_model(filename: str, content: bytes, title: str, sess
         thumbnail_url=preview_path,
         metadata={"original_filename": filename, "upload": True, **details, **rigging_flags},
         tags=["upload", "3d_model", *rigging_tags],
+        owner_user_id=owner_user_id,
     )
     return {"success": True, "asset_id": created.node_id}
 
@@ -1220,6 +1292,7 @@ async def upload_model3d(
     file: UploadFile = File(...),
     title: str = Form(""),
     session = Depends(get_asset_session),
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
 ):
     """上传 OBJ/GLB/GLTF 等 3D 模型包并写入 Asset Hub。
 
@@ -1228,7 +1301,9 @@ async def upload_model3d(
     """
     filename = file.filename or "model.zip"
     content = await file.read()
-    return await _import_uploaded_model(filename, content, title, session)
+    return await _import_uploaded_model(
+        filename, content, title, session, owner_user_id=principal_owner_user_id(principal)
+    )
 
 
 def _upload_assets_dir() -> Path:
@@ -1264,7 +1339,7 @@ async def upload_asset(
     file: UploadFile = File(...),
     title: str = Form(""),
     session = Depends(get_asset_session),
-    external_key: Optional[ExternalApiKey] = Depends(optional_external_api_key),
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
 ):
     """上传本地素材（图片/视频/音频/文本）入库。
 
@@ -1275,7 +1350,9 @@ async def upload_asset(
     ext = Path(filename).suffix.lower()
 
     if ext in {".glb", ".gltf", ".obj", ".fbx", ".usdz", ".zip"} or content[:2] == b"PK":
-        return await _import_uploaded_model(filename, content, title, session)
+        return await _import_uploaded_model(
+            filename, content, title, session, owner_user_id=principal_owner_user_id(principal)
+        )
 
     asset_type = _UPLOAD_EXT_TO_TYPE.get(ext)
     if asset_type is None:
@@ -1299,6 +1376,7 @@ async def upload_asset(
         thumbnail_url=thumbnail or "",
         metadata={"original_filename": filename, "upload": True},
         tags=["upload", str(asset_type.value)],
+        owner_user_id=principal_owner_user_id(principal),
     )
     return {"success": True, "asset_id": created.node_id}
 
@@ -1645,6 +1723,7 @@ async def set_asset_thumbnail(
     asset_id: str,
     file: UploadFile = File(...),
     session = Depends(get_asset_session),
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
 ):
     """保存前端渲染出的模型截图作为资产缩略图。"""
     content = await file.read()
@@ -1656,6 +1735,7 @@ async def set_asset_thumbnail(
     node = await session.get(AssetNode, asset_id)
     if not node:
         raise HTTPException(status_code=404, detail="资产不存在")
+    _require_asset_write_access(node, principal)
     node.thumbnail_url = str(target)
     node.updated_at = datetime.utcnow() if hasattr(datetime, "utcnow") else datetime.now()
     session.add(node)
@@ -1702,8 +1782,17 @@ async def proxy_thumbnail(
 async def get_asset(
     asset_id: str,
     session = Depends(get_asset_session),
-    external_key: Optional[ExternalApiKey] = Depends(optional_external_api_key),
+    principal: AuthenticatedPrincipal | None = Depends(get_authenticated_principal_optional),
 ):
+    # Compatibility tests and a few internal read-only adapters supply a
+    # lightweight Asset Hub facade rather than an AsyncSession. Production
+    # requests always receive a real session, where this owner lookup applies.
+    node = await session.get(AssetNode, asset_id) if hasattr(session, "get") else None
+    if node is not None:
+        if principal is None and node.owner_user_id is not None:
+            raise HTTPException(status_code=401, detail="需要登录会话或有效的外部 API Key")
+        if principal is not None:
+            require_owned_or_legacy(owner_user_id=node.owner_user_id, principal=principal)
     hub_asset = await _get_asset_hub_card(session, asset_id, include_metadata=True)
     if hub_asset:
         return AssetResponse(success=True, data=hub_asset)
@@ -1726,10 +1815,12 @@ async def update_asset(
     asset_id: str,
     req: AssetUpdateRequest,
     session = Depends(get_asset_session),
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
 ):
     node = await session.get(AssetNode, asset_id)
     if not node:
         raise HTTPException(status_code=404, detail="资产不存在")
+    _require_asset_write_access(node, principal)
     node_meta = _dict_value(node.metadata_json)
     if node_meta.get("deleted_at") or str(node_meta.get("status", "")).upper() == "DELETED":
         raise HTTPException(status_code=404, detail="资产不存在")
@@ -1825,9 +1916,13 @@ async def delete_asset(
     asset_id: str,
     mode: str = Query("soft", description="soft / del_file / hard"),
     session = Depends(get_asset_session),
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
 ):
     if mode not in {"soft", "del_file", "hard"}:
         raise HTTPException(status_code=400, detail="不支持的删除模式")
+    node = await session.get(AssetNode, asset_id)
+    if node is not None:
+        require_owned_or_legacy(owner_user_id=node.owner_user_id, principal=principal)
 
     hub_deleted = await _soft_delete_asset_hub_node(session, asset_id, mode=mode)
     if hub_deleted:
@@ -1840,7 +1935,10 @@ async def delete_asset(
 async def restore_asset(
     asset_id: str,
     session = Depends(get_asset_session),
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
 ):
+    node = await session.get(AssetNode, asset_id) if hasattr(session, "get") else None
+    _require_asset_write_access(node, principal)
     hub_restored = await _restore_asset_hub_node(session, asset_id)
     if hub_restored:
         return {"success": True, "message": "已恢复"}

@@ -8,6 +8,7 @@ from fastapi.responses import Response
 from fastapi.testclient import TestClient
 
 from app.api.v1 import assets as assets_api
+from app.core.user_auth import AuthenticatedPrincipal
 from app.db.models.asset_hub import AssetNode, AssetType
 
 
@@ -33,6 +34,12 @@ def _assets_test_client(service):
         return service
 
     app.dependency_overrides[assets_api.get_asset_session] = override_asset_service
+    # Uploads and asset mutations require a credential; tests that assert on
+    # upload behavior supply a session principal here so they keep exercising
+    # the real route instead of the auth rejection path.
+    user_principal = AuthenticatedPrincipal(user=SimpleNamespace(id="test-user"))
+    app.dependency_overrides[assets_api.get_authenticated_principal] = lambda: user_principal
+    app.dependency_overrides[assets_api.get_authenticated_principal_optional] = lambda: user_principal
     return TestClient(app)
 
 
@@ -442,3 +449,87 @@ def test_project_text_asset_defaults_to_text_role_when_link_is_not_loaded():
 
     assert context["asset_role"] == "text"
     assert context["source_stage"] == "script"
+
+
+@pytest.mark.asyncio
+async def test_asset_hub_list_without_type_uses_one_global_page(monkeypatch):
+    """无类型且无后置过滤：只做一次跨类型分页，不按 13 个 AssetType 各查一遍。"""
+    calls = {"all": 0, "nodes": 0}
+
+    class FakeNodeService:
+        def __init__(self, _session):
+            pass
+
+        async def list_all_types(self, **kwargs):
+            calls["all"] += 1
+            assert kwargs["page"] == 1
+            assert kwargs["page_size"] == 24
+            assert kwargs["require_renderable"] is True
+            return [], 0
+
+        async def list_nodes(self, **_kwargs):
+            calls["nodes"] += 1
+            return [], 0
+
+    monkeypatch.setattr(assets_api, "AssetNodeService", FakeNodeService)
+
+    cards, total = await assets_api._list_asset_hub_cards(
+        SimpleNamespace(), page=1, page_size=24
+    )
+
+    assert cards == []
+    assert total == 0
+    assert calls == {"all": 1, "nodes": 0}
+
+
+@pytest.mark.asyncio
+async def test_asset_hub_list_with_post_filter_keeps_multi_type_candidate_semantics(monkeypatch):
+    """有后置过滤时必须保留旧候选语义，不能在 Python 过滤前先截断全局第一页。"""
+    listed_types = []
+
+    class FakeNodeService:
+        def __init__(self, _session):
+            pass
+
+        async def list_all_types(self, **_kwargs):
+            raise AssertionError("post-filtered request must not use the global fast path")
+
+        async def list_nodes(self, **kwargs):
+            listed_types.append(kwargs["asset_type"])
+            assert kwargs["require_renderable"] is True
+            return [], 0
+
+    monkeypatch.setattr(assets_api, "AssetNodeService", FakeNodeService)
+
+    cards, total = await assets_api._list_asset_hub_cards(
+        SimpleNamespace(), platform="asset_hub", page=2, page_size=24
+    )
+
+    assert cards == []
+    assert total == 0
+    assert len(listed_types) == len(AssetType)
+
+
+@pytest.mark.asyncio
+async def test_asset_hub_list_excludes_unrenderable_nodes_before_pagination(monkeypatch):
+    """分页条件必须和卡片口径一致，不能等组装阶段再跳过无版本/无表示的节点。"""
+    calls = []
+
+    class FakeNodeService:
+        def __init__(self, _session):
+            pass
+
+        async def list_all_types(self, **kwargs):
+            calls.append(kwargs)
+            return [], 0
+
+    monkeypatch.setattr(assets_api, "AssetNodeService", FakeNodeService)
+
+    cards, total = await assets_api._list_asset_hub_cards(
+        SimpleNamespace(), page=3, page_size=24
+    )
+
+    assert cards == []
+    assert total == 0
+    assert calls[0]["require_renderable"] is True
+    assert calls[0]["page"] == 3

@@ -261,3 +261,52 @@ async def test_version_delete(db_session, test_asset):
     # 验证已删除
     result = await db_session.get(AssetVersion, version.id)
     assert result is None
+
+
+@pytest.mark.asyncio
+async def test_get_latest_versions_returns_only_newest_row_per_node(db_session, test_asset):
+    """列表批量读取不得把节点全部历史版本拉回内存后再挑最新。"""
+    from app.services.asset_hub.version_service import AssetVersionService
+
+    db_session.add_all([
+        AssetVersion(id=str(uuid4()), asset_node_id=test_asset.id, version_number=1),
+        AssetVersion(id=str(uuid4()), asset_node_id=test_asset.id, version_number=2),
+        AssetVersion(id=str(uuid4()), asset_node_id=test_asset.id, version_number=3),
+    ])
+    await db_session.commit()
+
+    latest = await AssetVersionService(db_session).get_latest_versions([test_asset.id])
+
+    assert list(latest) == [test_asset.id]
+    assert latest[test_asset.id].version_number == 3
+
+
+@pytest.mark.asyncio
+async def test_get_primaries_returns_only_largest_representation_per_version(db_session, test_asset):
+    """列表批量读取不得返回同一版本的全部表示，主表示按文件大小选择。"""
+    from app.services.asset_hub.representation_service import AssetRepresentationService
+
+    version = AssetVersion(
+        id=str(uuid4()), asset_node_id=test_asset.id, version_number=1
+    )
+    small = AssetRepresentation(
+        id=str(uuid4()),
+        asset_version_id=version.id,
+        file_path="/data/preview.webp",
+        mime_type="image/webp",
+        file_size=512,
+    )
+    large = AssetRepresentation(
+        id=str(uuid4()),
+        asset_version_id=version.id,
+        file_path="/data/original.png",
+        mime_type="image/png",
+        file_size=4096,
+    )
+    db_session.add_all([version, small, large])
+    await db_session.commit()
+
+    primary = await AssetRepresentationService(db_session).get_primaries([version.id])
+
+    assert list(primary) == [version.id]
+    assert primary[version.id].file_path == "/data/original.png"
