@@ -2655,6 +2655,19 @@ export const getFanqieBookDrafts = (
 }
 
 /**
+ * 在番茄账号下**新建一个空草稿**，返回其 `item_id`（写入操作，不幂等）。
+ *
+ * 这条接口让用户不必先去番茄网页手动建章：拿到 item_id 后直接交给保存草稿即可。
+ * 每次调用都会在草稿箱真实新增一条，因此必须显式 `confirm: true`，且**不要自动重试**。
+ */
+export const createFanqieDraft = (connId: string, bookId: string) => {
+  const qs = new URLSearchParams({ conn_id: connId, confirm: 'true' })
+  return request(`/fanqie/book/${encodeURIComponent(bookId)}/drafts?${qs.toString()}`, {
+    method: 'POST',
+  })
+}
+
+/**
  * 构造番茄作家后台的页面地址（供前端跳转，不做任何写入）。
  *
  * 路由来自实测：

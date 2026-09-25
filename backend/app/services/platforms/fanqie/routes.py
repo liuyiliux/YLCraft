@@ -259,6 +259,47 @@ async def book_drafts(
             raise _fanqie_error_to_http(exc) from exc
 
 
+@router.post("/book/{book_id}/drafts", summary="新建番茄草稿（自动建章）")
+async def create_book_draft(
+    book_id: str,
+    conn_id: str = Query(..., description="番茄平台连接 ID"),
+    confirm: bool = Query(
+        False,
+        description="必须显式传 true 才会真正创建。这是写入操作，会在番茄账号下新增一条草稿。",
+    ),
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    在番茄账号下**新建一个草稿**并返回其 `item_id`（真实端点：POST /api/author/article/new_article/v0/，2026-09-26 抓包确认）。
+
+    这条接口的意义：让 YLCraft 不必再要求用户先去番茄网页手动建章——
+    调用它拿到 `item_id` 后，直接交给 `save_draft` 写正文即可完成闭环。
+
+    ⚠️ **这是写入操作**：每次调用都会在用户草稿箱真实新增一条草稿，不幂等。
+    因此要求显式 `confirm=true`，且**不做任何自动重试**——静默重试会生成多条草稿。
+    前端应在用户明确点击「新建草稿」时才调用。
+
+    ⚠️ 此前"番茄没有建章接口"的结论已作废：那是只抓了「新建章节」入口
+    （纯前端路由）而漏了「新建草稿」入口（`?enter_from=newdraft`）导致的误判。
+
+    安全：只创建**空草稿**，不写正文、不发布。正文仍由用户确认后经 `save_draft` 写入。
+    """
+    if not confirm:
+        raise HTTPException(
+            status_code=400,
+            detail="新建草稿是写入操作，需要在番茄账号下新增一条草稿；请显式传 confirm=true",
+        )
+    client = await _get_client(session=session, conn_id=conn_id)
+    async with client:
+        try:
+            data = await client.create_draft(book_id)
+            return {"success": True, "data": data}
+        except CookieExpiredError as exc:
+            raise HTTPException(status_code=401, detail=f"番茄 Cookie 已失效：{exc}") from exc
+        except FanqieError as exc:
+            raise _fanqie_error_to_http(exc) from exc
+
+
 @router.get("/earnings", summary="收益分析")
 async def earnings(
     conn_id: str = Query(..., description="番茄平台连接 ID"),

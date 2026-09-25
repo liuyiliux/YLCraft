@@ -81,11 +81,13 @@
     - _`GET /book/{id}/volumes` → 第一卷：`volume_id=7689461731638119448`，`item_count=0`_
     - _`GET /book/{id}/chapters` → `total_count=0`（**该书确实 0 章，空列表是真实结果**）_
     - _**写路径实测结论（关键）**：以空 `item_id` 调 `save_draft` → 服务端拒绝 `code=-2004`（新建章节相关）。**证实番茄要求 `item_id` 必须已存在，即章节须先在番茄 Web 端创建过**；`save_draft` 只推送正文、不建章（与现有注释一致）。_
-  - _**「自动建章」可行性（已实测界定，不臆断）**：此前抓包观察到点「新建章节」时前端会预分配 `item_id`（URL 变 `/main/writer/{book_id}/publish/{item_id}?enter_from=newchapter`），但服务端章节列表仍为空——**章节在保存时才真正创建**。因此「自动建章」等价于「拿到预分配 item_id 后直接 save_draft」，需进一步抓包确认该预分配 ID 是否可由接口获得；**在确认前不得宣称支持自动建章**。_
+  - _**「自动建章」——结论已于 2026-09-26 更正**：此前记录"番茄没有创建章节的接口、必须手动建章"是**误判**。当时只抓了「新建章节」入口（`?enter_from=newchapter`，实测纯前端路由、零 author API 调用），漏了「新建草稿」入口（`?enter_from=newdraft`）——后者会真实调用 `POST /api/author/article/new_article/v0/`，返回 `{"code":0,"data":{"item_id":"<新草稿ID>","volume_id":"...","latest_version":0,...}}`。**故自动建章可行，已实现**：`FanqieClient.create_draft()` + `POST /api/v1/fanqie/book/{book_id}/drafts?confirm=true`（要求显式 confirm，且不自动重试——每次调用都会新增一条草稿，不幂等）。实测闭环：create_draft → `item_id=7689533897855468056`；save_draft → `latest_version: 1`；`edit_article` 回读标题与正文均正确。_
+  - _**教训（写入后续平台指南）**：判断"某平台是否支持某操作"时，必须穷举该操作的所有入口再下结论。本次因只测了一个入口而得出错误否定结论，导致多做了"手动建章"的妥协设计。_
 - [ ] 32. 创作项目发布联调：建项目 → 生成 `novel_body` → 绑定番茄 → 发布到测试章 → 校验 `ProjectPublishRecord`。
   - _阻塞结论（2026-09-24 复核）：**必须等 31 的真实写路径解封后才能做**，否则会在"发布必失败"的环境里空跑一遍还要人工核对失败记录。解封后按既有 UI/Agent 路径：绑定（`settings_json.fanqie`）→ 发布前预检 → 写 `[TEST]` 草稿 → 逐条核对 `ProjectPublishRecord.status/remote_version/post_url`。_
   - _**2026-09-26 写路径已解封（实测）**：用户手动在草稿箱建了一个草稿，其 URL 提供了 `item_id`。用它真实调用 `save_draft` → 返回 `{'latest_version': 3}`，**随后回读 `edit_article` 确认标题与正文均已写入**——这是番茄写路径首次真正跑通（此前所有尝试都被 `code=-2004` 拒绝）。_
   - _**新增能力：草稿箱列表**。实测发现番茄的**草稿**与**章节**是同一份数据的两个阶段：草稿只在草稿箱、不会出现在 `chapter_list`；点「下一步 → 发布」后才进入章节列表。故新增 `GET /api/v1/fanqie/book/{book_id}/drafts`（真实端点 `GET /api/author/chapter/draft_list/v1`，靠 Patchright 复用已保存 Cookie 抓包确认；猜测的 `draft/list/v1`、`article/draft_list/v0/` 实测均 404）。响应字段是 `draft_list[]` 而**非** `item_list[]`（按 `item_list` 取值会静默得到空数组）。已实测返回用户 3 个草稿（含 YLCraft 自动写入的那条）。_
-  - _**前端已接**：发布面板「拉取草稿与章节」同时拉两个列表并标【草稿】；新增「打开番茄建章」「在番茄打开本章」跳转按钮（`fanqieWebUrls`），把"去番茄点发布"这一步做到一键可达。建章仍由用户在番茄完成（番茄无建章接口，见上）。_
+  - _**新增能力：自动建草稿**。发布面板新增「让 YLCraft 新建番茄草稿」按钮（二次确认后调用 `POST .../drafts?confirm=true`，自动填入新 `item_id`），**用户不再需要去番茄网页手动建章**。_
+  - _**前端已接**：发布面板「拉取草稿与章节」同时拉两个列表并标【草稿】；新增「打开番茄建章」「在番茄打开本章」跳转按钮（`fanqieWebUrls`），把"去番茄点发布"这一步做到一键可达。_
 - [x] 33. 更新平台管理文档：新增 `docs/platform/FANQIE_GUIDE.md`，说明 cookie 凭证边界、`FanqieClient` 统一请求层、已实现 HTTP/Agent 工具、安全 `[TEST]` 章节隔离和真实联调命令；删除 3 个含硬编码真实会话数据的遗留抓包脚本，新增忽略的 `.local/` 凭证目录，仅保留安全 live harness。
 - [x] 34. 把笔名「逸流AI」创作定位（有趣 / 不反智 / 拒绝无脑爽文）记入项目 memory（**已落地**）：已写入长期记忆（标题「笔名『逸流AI』创作定位与内容调性」），并写明三条各自的含义——有趣靠设定与情境的巧思而非堆爽点、不反智即角色行为与情节推进讲得通不靠降智、拒绝无脑爽文即不用无冲突升级/无逻辑碾压充数且冲突要有来由与代价；生成或润色任何发布内容（尤其 `novel_body`、章节标题、简介）时按此把关，与定位冲突的方案改到符合为止。

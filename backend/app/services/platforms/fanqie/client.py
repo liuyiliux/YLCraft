@@ -31,6 +31,7 @@ from .apis import (
     ACCOUNT_INFO,
     CHAPTER_LIST,
     CHAPTER_DRAFT_LIST,
+    NEW_ARTICLE,
     VOLUME_LIST,
     INCOME_BOOK_LIST,
     DEFAULT_AID,
@@ -436,6 +437,50 @@ class FanqieClient(BasePlatformClient):
             query["volume_id"] = str(volume_id)
         resp = await self._call("GET", CHAPTER_LIST, params=query)
         return resp.get("data", {}) or {}
+
+    async def create_draft(self, book_id: str) -> Dict[str, Any]:
+        """
+        新建一个番茄草稿，返回**新分配的 item_id**（真实端点：POST /api/author/article/new_article/v0/，2026-09-26 抓包确认）。
+
+        这是"自动建章"的真正入口，也是此前结论的**更正**：
+        早前记录"番茄没有创建章节的接口"是错的——当时抓的是「新建章节」入口
+        （实测纯前端路由、零 author API 调用），漏掉了「新建草稿」入口
+        （前端 URL `/main/writer/{book_id}/publish/?enter_from=newdraft`），
+        后者会真实调用本接口。
+
+        典型用法（这就是"不用手动建章"的完整链路）：
+            item_id = (await client.create_draft(book_id))["item_id"]
+            await client.save_draft(book_id=book_id, item_id=item_id, ...)
+
+        ⚠️ 写入语义：本接口会在**用户的番茄账号下真实创建一个草稿**（草稿箱多一条），
+        不是幂等查询。调用方须自行确认用户意图，不要静默重试——重复调用会生成多个草稿。
+
+        Returns:
+            data 字典（实测字段）：
+            `item_id`（**新草稿 ID**）/ `volume_id`（默认卷）/ `latest_version`（0）/
+            `media_id` / `volume_data[]`（可选卷列表，含 volume_id/volume_name）/
+            `column_data`（书籍级信息）/ `is_reuse`。
+
+        Raises:
+            CookieExpiredError / ParamError / RiskControlError / FanqieError
+        """
+        payload = {
+            "aid": DEFAULT_AID,
+            "app_name": DEFAULT_APP_NAME,
+            "book_id": str(book_id),
+        }
+        query = {
+            "aid": DEFAULT_AID,
+            "app_name": DEFAULT_APP_NAME,
+            "msToken": COVER_MS_TOKEN,
+            "a_bogus": COVER_A_BOGUS,
+        }
+        resp = await self._call("POST", NEW_ARTICLE, params=query, data=payload)
+        data = resp.get("data", {}) or {}
+        logger.info(
+            f"[fanqie] create_draft ok: book={book_id} item_id={data.get('item_id')}"
+        )
+        return data
 
     async def get_book_drafts(
         self,
