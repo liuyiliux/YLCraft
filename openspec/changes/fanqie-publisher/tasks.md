@@ -75,6 +75,13 @@
 - [x] 30. 单元测试：`parse_netscape_cookie`、错误分类（mock `code!=0` / 302 登录页）、`markdown_to_fanqie_html`（离线 pytest 覆盖；真实登录页重定向仍在 live 验证中）。
 - [ ] 31. 集成验证：独立测试章节 `save_draft` + `publish` 真实走通；`get_hot_list` / `get_my_books` / `get_book_stats` 真实返回；cookie 过期场景提示正确。
   - _阻塞结论（2026-09-24 复核）：**代码侧已无可做的验证**。只读三项（热榜/书架/统计）此前已实测返回；剩下缺的是**真实账号下的写路径**（草稿 + 发布）与**真实 Cookie 过期**这类只有账号侧才会发生的场景。与任务 7 同一把钥匙：用户提供有效 Cookie + 自建 `[TEST]` 章节。失败必须回显可读原因（CookieExpired / RiskControl / ParamError 已分类），不做静默重试。_
+  - _**2026-09-25 实测推进（Cookie 已就绪）**：用户通过「浏览器」方式成功登录并保存番茄连接（`platform=fanqie / status=active / acq=patchright / hasCookie=True`）。用该 Cookie 实测：_
+    - _`GET /my/profile` → 真实返回作家资料（逸流AI / 积分 200 / 等级 100），**只读链路完全打通**_
+    - _`GET /my/books` → `total_count=2`，含《测试啊》`book_id=7689461729293503512`（**注意字段名是 `stats_book_list`，不是 `book_list`**）_
+    - _`GET /book/{id}/volumes` → 第一卷：`volume_id=7689461731638119448`，`item_count=0`_
+    - _`GET /book/{id}/chapters` → `total_count=0`（**该书确实 0 章，空列表是真实结果**）_
+    - _**写路径实测结论（关键）**：以空 `item_id` 调 `save_draft` → 服务端拒绝 `code=-2004`（新建章节相关）。**证实番茄要求 `item_id` 必须已存在，即章节须先在番茄 Web 端创建过**；`save_draft` 只推送正文、不建章（与现有注释一致）。_
+  - _**「自动建章」可行性（已实测界定，不臆断）**：此前抓包观察到点「新建章节」时前端会预分配 `item_id`（URL 变 `/main/writer/{book_id}/publish/{item_id}?enter_from=newchapter`），但服务端章节列表仍为空——**章节在保存时才真正创建**。因此「自动建章」等价于「拿到预分配 item_id 后直接 save_draft」，需进一步抓包确认该预分配 ID 是否可由接口获得；**在确认前不得宣称支持自动建章**。_
 - [ ] 32. 创作项目发布联调：建项目 → 生成 `novel_body` → 绑定番茄 → 发布到测试章 → 校验 `ProjectPublishRecord`。
   - _阻塞结论（2026-09-24 复核）：**必须等 31 的真实写路径解封后才能做**，否则会在"发布必失败"的环境里空跑一遍还要人工核对失败记录。解封后按既有 UI/Agent 路径：绑定（`settings_json.fanqie`）→ 发布前预检 → 写 `[TEST]` 草稿 → 逐条核对 `ProjectPublishRecord.status/remote_version/post_url`。_
 - [x] 33. 更新平台管理文档：新增 `docs/platform/FANQIE_GUIDE.md`，说明 cookie 凭证边界、`FanqieClient` 统一请求层、已实现 HTTP/Agent 工具、安全 `[TEST]` 章节隔离和真实联调命令；删除 3 个含硬编码真实会话数据的遗留抓包脚本，新增忽略的 `.local/` 凭证目录，仅保留安全 live harness。
