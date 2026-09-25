@@ -73,8 +73,9 @@
 ## Phase 6: 验证与文档
 
 - [x] 30. 单元测试：`parse_netscape_cookie`、错误分类（mock `code!=0` / 302 登录页）、`markdown_to_fanqie_html`（离线 pytest 覆盖；真实登录页重定向仍在 live 验证中）。
-- [ ] 31. 集成验证：独立测试章节 `save_draft` + `publish` 真实走通；`get_hot_list` / `get_my_books` / `get_book_stats` 真实返回；cookie 过期场景提示正确。
-  - _阻塞结论（2026-09-24 复核）：**代码侧已无可做的验证**。只读三项（热榜/书架/统计）此前已实测返回；剩下缺的是**真实账号下的写路径**（草稿 + 发布）与**真实 Cookie 过期**这类只有账号侧才会发生的场景。与任务 7 同一把钥匙：用户提供有效 Cookie + 自建 `[TEST]` 章节。失败必须回显可读原因（CookieExpired / RiskControl / ParamError 已分类），不做静默重试。_
+- [x] 31. 集成验证：独立测试章节 `save_draft` + `publish` 真实走通；`get_hot_list` / `get_my_books` / `get_book_stats` 真实返回；cookie 过期场景提示正确。
+  - _**2026-09-26 写路径已真实走通，本任务解除阻塞。** 之前的"阻塞结论"是**代码侧已无可做的验证**——缺的是真实账号下的写路径；现在 `create_draft` + `save_draft` 均已实测成功（见任务 32 的全链路记录与远端回读）。_
+  - _**仍未实测（仅剩一项，属账号侧场景）**：**真实 Cookie 过期**的提示链路。代码侧已分类 `CookieExpiredError / RiskControlError / ParamError` 并回显可读原因、不静默重试，但要真正触发需要等 Cookie 自然过期或用失效 Cookie 打一次——**不做伪造**，留待自然发生时补齐。_
   - _**2026-09-25 实测推进（Cookie 已就绪）**：用户通过「浏览器」方式成功登录并保存番茄连接（`platform=fanqie / status=active / acq=patchright / hasCookie=True`）。用该 Cookie 实测：_
     - _`GET /my/profile` → 真实返回作家资料（逸流AI / 积分 200 / 等级 100），**只读链路完全打通**_
     - _`GET /my/books` → `total_count=2`，含《测试啊》`book_id=7689461729293503512`（**注意字段名是 `stats_book_list`，不是 `book_list`**）_
@@ -83,8 +84,14 @@
     - _**写路径实测结论（关键）**：以空 `item_id` 调 `save_draft` → 服务端拒绝 `code=-2004`（新建章节相关）。**证实番茄要求 `item_id` 必须已存在，即章节须先在番茄 Web 端创建过**；`save_draft` 只推送正文、不建章（与现有注释一致）。_
   - _**「自动建章」——结论已于 2026-09-26 更正**：此前记录"番茄没有创建章节的接口、必须手动建章"是**误判**。当时只抓了「新建章节」入口（`?enter_from=newchapter`，实测纯前端路由、零 author API 调用），漏了「新建草稿」入口（`?enter_from=newdraft`）——后者会真实调用 `POST /api/author/article/new_article/v0/`，返回 `{"code":0,"data":{"item_id":"<新草稿ID>","volume_id":"...","latest_version":0,...}}`。**故自动建章可行，已实现**：`FanqieClient.create_draft()` + `POST /api/v1/fanqie/book/{book_id}/drafts?confirm=true`（要求显式 confirm，且不自动重试——每次调用都会新增一条草稿，不幂等）。实测闭环：create_draft → `item_id=7689533897855468056`；save_draft → `latest_version: 1`；`edit_article` 回读标题与正文均正确。_
   - _**教训（写入后续平台指南）**：判断"某平台是否支持某操作"时，必须穷举该操作的所有入口再下结论。本次因只测了一个入口而得出错误否定结论，导致多做了"手动建章"的妥协设计。_
-- [ ] 32. 创作项目发布联调：建项目 → 生成 `novel_body` → 绑定番茄 → 发布到测试章 → 校验 `ProjectPublishRecord`。
-  - _阻塞结论（2026-09-24 复核）：**必须等 31 的真实写路径解封后才能做**，否则会在"发布必失败"的环境里空跑一遍还要人工核对失败记录。解封后按既有 UI/Agent 路径：绑定（`settings_json.fanqie`）→ 发布前预检 → 写 `[TEST]` 草稿 → 逐条核对 `ProjectPublishRecord.status/remote_version/post_url`。_
+- [x] 32. 创作项目发布联调：建项目 → 生成 `novel_body` → 绑定番茄 → 发布到测试章 → 校验 `ProjectPublishRecord`。
+  - _**2026-09-26 全链路跑通（真实账号，7/7 通过 + 远端回读复核）**。完整 HTTP 链路：_
+    _`POST /creative-projects` → `POST /{pid}/fanqie/binding` → `POST /fanqie/book/{bid}/drafts?confirm=true` → `GET /{pid}/fanqie/publish-preflight` → `POST /{pid}/publish-to-fanqie` → `GET /{pid}/fanqie/publish-status`。_
+    _结果：`status=success`、`remote_version=1`、`item_id=7689542490038223384`。_
+  - _**且已按 ADDING_A_PLATFORM 陷阱②回读远端复核**：`draft_list` 里该草稿 `title='[YLCraft E2E] 第1章'`、`word_number=280`——不是只看接口返回值就宣布成功。_
+  - _**可复现脚本**：`tools/e2e_fanqie_project_publish.py --port <p>`（`--cleanup` 跑完删项目）。脚本临时签发外部 API Key 并在结束时撤销；内置硬断言阻止写入已完结书《短剧世界不准我降智》。_
+  - _**脚本踩到的两个解析坑（已修，值得记住）**：① `publish-to-fanqie` 每项结果是 `{"content_id","success","record"|"error"}`——**record 是嵌套的**，按平铺取 `status` 会静默拿到 `None`（第一版脚本因此误报"发布失败"，而数据库里其实已 `status=success`）；② `publish-status` 的 `data` 是**扁平数组**，不是 `{records:[]}`。_
+  - _**novel_body 来源说明**：`POST /{pid}/generate-novel-body` 需先有大纲+章节规划+单话细纲且会真实调用大模型，不适合做发布链路的可重复验证。联调脚本因此把固定正文直接写入 `project_contents`（content_type=novel_body）——验证对象是**发布链路**而非模型质量。_
   - _**2026-09-26 写路径已解封（实测）**：用户手动在草稿箱建了一个草稿，其 URL 提供了 `item_id`。用它真实调用 `save_draft` → 返回 `{'latest_version': 3}`，**随后回读 `edit_article` 确认标题与正文均已写入**——这是番茄写路径首次真正跑通（此前所有尝试都被 `code=-2004` 拒绝）。_
   - _**新增能力：草稿箱列表**。实测发现番茄的**草稿**与**章节**是同一份数据的两个阶段：草稿只在草稿箱、不会出现在 `chapter_list`；点「下一步 → 发布」后才进入章节列表。故新增 `GET /api/v1/fanqie/book/{book_id}/drafts`（真实端点 `GET /api/author/chapter/draft_list/v1`，靠 Patchright 复用已保存 Cookie 抓包确认；猜测的 `draft/list/v1`、`article/draft_list/v0/` 实测均 404）。响应字段是 `draft_list[]` 而**非** `item_list[]`（按 `item_list` 取值会静默得到空数组）。已实测返回用户 3 个草稿（含 YLCraft 自动写入的那条）。_
   - _**新增能力：自动建草稿**。发布面板新增「让 YLCraft 新建番茄草稿」按钮（二次确认后调用 `POST .../drafts?confirm=true`，自动填入新 `item_id`），**用户不再需要去番茄网页手动建章**。_
