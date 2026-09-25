@@ -33,7 +33,7 @@
 | `docs/reference/` | 外部参考资料、客户素材、二进制样例。 | 不作为当前实现事实来源。 |
 | `docs/research/` | 专题调研产出：排查计划与结论报告（如任务/事件记录覆盖梳理）。 | 结论要回写到架构或领域文档，这里保留完整推导过程。 |
 
-平台接入入口：`docs/platform/BILIBILI_GUIDE.md`、`docs/platform/FANQIE_GUIDE.md`；其余跨平台对比资料仍在 `docs/platform/MULTI_PLATFORM_REFERENCE.md`。本地历史归属维护见 `docs/guides/owner-backfill.md`。
+平台接入入口：**新增平台先读 `docs/platform/ADDING_A_PLATFORM.md`（含必改清单与自动校验脚本）**；已接入平台：`docs/platform/BILIBILI_GUIDE.md`、`docs/platform/FANQIE_GUIDE.md`；其余跨平台对比资料仍在 `docs/platform/MULTI_PLATFORM_REFERENCE.md`。本地历史归属维护见 `docs/guides/owner-backfill.md`。
 
 ## 当前主线状态
 
@@ -100,6 +100,7 @@
 | 新增/修改 Agent Tool / Skill | 工具 schema、risk level、测试、`docs/agent/agent-skill-runtime.md`；如改变运行时边界，再更新总架构。 |
 | 新增/修改数据库字段 | Alembic 迁移、模型说明；如需人工执行，在 final 或必要 devlog 里写清命令。 |
 | Agent 工具/Skill 变化 | `docs/agent/agent-skill-runtime.md` 和相关测试。 |
+| 新增平台（小红书/抖音/其他） | **务必先读 `docs/platform/ADDING_A_PLATFORM.md`**：平台清单散落六处（Python 枚举、PG 原生枚举、SUPPORTED_PLATFORMS、base.py 三张表、_detector_registry、前端 PLATFORM_METAS），漏一处就出现「后端支持但 UI 无入口」或「浏览器获取报暂不支持」。改完必须跑 `python backend/scripts/check_platform_registry.py <platform>` | `docs/platform/ADDING_A_PLATFORM.md`、`backend/scripts/check_platform_registry.py` |
 | UI 结构或交互变化 | 对应页面文档或必要 devlog 截短说明，不把视觉想法散写到聊天里。 |
 | 阶段性完成 | 优先更新架构/领域文档；只有跨电脑/长任务交接才写 `docs/devlog/YYYY-MM-DD_topic.md`。 |
 

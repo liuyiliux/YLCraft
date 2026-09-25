@@ -1,0 +1,58 @@
+# 新增平台登记表（Checklist）
+
+接入任何新平台（小红书、抖音、快手、知乎……）时，**不要凭记忆改代码**——
+同一个「平台」概念在本仓库散落在多处，漏一处就会出现
+**「后端早就支持了，但 UI 上根本没有入口」**或**「点『浏览器』报暂不支持」**。
+
+这类坑在接入番茄时集中爆发过一次：业务侧 `SUPPORTED_PLATFORMS` 早已支持番茄，
+但前端 `PLATFORM_METAS`、后端 `_detector_registry`、`PLATFORM_LOGIN_URLS` 三处都没同步，
+于是账号中心完全看不到番茄、点浏览器还报「暂不支持 Patchright」。
+
+## 必改清单
+
+| # | 位置 | 漏了的后果 | 备注 |
+| --- | --- | --- | --- |
+| 1 | `backend/app/db/models/platform_connection.py` → `PlatformType` | 连 DB 列都建不了 | 成员名用大写，PG 存的是 **name（大写）** |
+| 2 | PostgreSQL 原生枚举 `platformtype`（**需 Alembic 迁移**） | 用该平台查库报 `invalid input value for enum platformtype` | 参考迁移 `047_add_fanqie_platform_type`；**必须补大写值** |
+| 3 | `backend/app/api/v1/platforms.py` → `SUPPORTED_PLATFORMS` | 平台整体不可用 | |
+| 4 | `backend/app/services/cookies/base.py` → `PLATFORM_LOGIN_URLS` | Cookie 退化为登录 google.com | 必须指向该平台的**创作者后台**而非读者站（二者登录上下文不同，指错会「登录成功但没权限」） |
+| 5 | 同上 → `PLATFORM_DOMAINS` | 提取不到该站 Cookie | |
+| 6 | 同上 → `PLATFORM_TEST_URLS` | Cookie 健康检查无的放矢 | |
+| 7 | `backend/app/services/cookies/platforms/<plat>.py` + `__init__.py` 的 `_detector_registry` | 点「浏览器」报**暂不支持 Patchright** | Detector 优先用**接口判定**登录态，比 DOM 探测抗改版 |
+| 8 | `frontend/src/pages/accounts/index.tsx` → `PLATFORM_METAS` | **账号中心看不到入口**（最容易被漏、也最容易被用户发现） | |
+
+## 自动校验
+
+改完后必须跑：
+
+```bash
+cd backend
+python scripts/check_platform_registry.py <platform>     # 只查这一个
+python scripts/check_platform_registry.py                # 全量（会报历史缺口）
+python scripts/check_platform_registry.py --allow-known  # 全量但放行已知缺口
+```
+
+脚本会连真实数据库读取 PG 枚举值，逐项比对上述清单，缺失即退出码 1。
+已知历史缺口（`telegram`/`tiktok`/`twitter`/`youtube` 缺 Detector 与前端入口，
+本就未支持浏览器取 Cookie）在脚本的 `KNOWN_GAPS` 里单列，**新平台不得加入**。
+
+## 两个曾经踩过的陷阱
+
+**① 不要相信文档里的「已完成」**
+
+`openspec/changes/fanqie-publisher` 曾白纸黑字写着
+「`PlatformType.FANQIE` 已加（`platform_connection.py` + `database.py` 的 `_PG_ENUM_VALUES`）」——
+**而全仓库根本没有 `_PG_ENUM_VALUES` 这个东西**，同步从未做过。
+凡是涉及平台登记的勾选，都要用上面的脚本或 `rg` 验证，不要只看文档。
+
+**② 「接口返回成功」不等于「事情做成了」**
+
+`start_session` 曾把异常吞掉：出错时只写 `status=FAILED`，却照常 `return session_id`，
+接口因此永远返回 `success: true`，浏览器压根没起来也显示成功。
+验证请以**实际结果**为准（终端 `status` / `page_url` / 日志有没有报错），而不是返回值。
+
+## 相关文档
+
+- 番茄实现范例：`docs/platform/FANQIE_GUIDE.md`
+- 多平台对照：`docs/platform/MULTI_PLATFORM_REFERENCE.md`
+- 浏览器获取 Cookie 的 Windows 约束（`--loop` 必填）：`docs/architecture/YLCRAFT_SYSTEM_ARCHITECTURE.md` §2
