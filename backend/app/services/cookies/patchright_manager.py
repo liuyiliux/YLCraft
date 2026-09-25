@@ -120,7 +120,12 @@ class PatchrightAcquisitionManager:
             session.status = AcquisitionStatus.FAILED
             session.error_message = str(e)
             session.updated_at = __import__('datetime').datetime.now()
-            logger.error(f"[PatchrightManager] start_session failed: {e}")
+            logger.error(
+                "[PatchrightManager] start_session failed: %s: %s",
+                type(e).__name__,
+                e,
+                exc_info=True,
+            )
             # 必须把失败抛出去。此前这里只写 status 就照常 return session_id，
             # 于是接口永远返回 success=true —— 浏览器根本没起来也显示"成功"，
             # 用户端只看到弹窗没反应，排查时毫无线索。
@@ -203,7 +208,11 @@ class PatchrightAcquisitionManager:
                     try:
                         account_info = await detector.extract_account_info(page)
                     except Exception as e:
-                        logger.warning(f"[PatchrightManager] extract_account_info failed: {e}")
+                        logger.warning(
+                            "[PatchrightManager] extract_account_info failed: %s: %s",
+                            type(e).__name__,
+                            e,
+                        )
 
                     # 保存到数据库
                     session.status = AcquisitionStatus.SAVING
@@ -381,7 +390,15 @@ class PatchrightAcquisitionManager:
 
         except Exception as e:
             db.rollback()
-            logger.error(f"[PatchrightManager] _save_to_db failed: {e}")
+            # 必须带上异常类型。此前只打 `str(e)`，日志里就剩孤零零的 `PATCHRIGHT`，
+            # 看着像数据库枚举问题，真实却是 AttributeError（枚举成员不存在）——
+            # 误导排查方向。已有 FORMAT 变量保证金字塔里也能自证类型。
+            logger.error(
+                "[PatchrightManager] _save_to_db failed: %s: %s",
+                type(e).__name__,
+                e,
+                exc_info=True,
+            )
             raise
         finally:
             db.close()

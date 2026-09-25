@@ -51,6 +51,31 @@ python scripts/check_platform_registry.py --allow-known  # 全量但放行已知
 接口因此永远返回 `success: true`，浏览器压根没起来也显示成功。
 验证请以**实际结果**为准（终端 `status` / `page_url` / 日志有没有报错），而不是返回值。
 
+**③ 日志不要把异常类型丢掉**
+
+`AcquisitionMethod.PATCHRIGHT` 根本不存在（Python 枚举只有 MANUAL/PLAYWRIGHT/QRCODE），
+但日志写成 `logger.error(f"... failed: {e}")` —— 只打 `str(e)`，
+输出就剩下一个孤零零的 `PATCHRIGHT`，看着极像数据库枚举问题，实际是 `AttributeError`。
+排查方向被带偏了一整轮。**异常日志必须包含 `type(e).__name__`**：
+
+```python
+logger.error("... failed: %s: %s", type(e).__name__, e, exc_info=True)
+```
+
+**④ 枚举改动要 Python 与 PG 两侧一起改**
+
+同一枚举值存在两处：Python `class XxxEnum` 和 PostgreSQL 原生枚举类型（需 Alembic 迁移）。
+已发生两次：
+
+| 枚举 | 现象 | 修 |
+| --- | --- | --- |
+| `PlatformType.FANQIE` | `invalid input value for enum platformtype` | 迁移 `047` |
+| `AcquisitionMethod.PATCHRIGHT` | `AttributeError: PATCHRIGHT` + PG 侧缺值 | 迁移 `048` |
+
+SQLAlchemy 对 `enum.Enum` 字段默认存 **name（大写）**，所以 PG 侧要补**大写**值。
+库里那批小写值（`fanqie`/`patchright`/`manual`…）是历史遗留、未被使用——
+查库时看到"小写值已存在"**不代表**对齐了。
+
 ## 相关文档
 
 - 番茄实现范例：`docs/platform/FANQIE_GUIDE.md`
