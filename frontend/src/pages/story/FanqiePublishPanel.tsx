@@ -26,6 +26,7 @@ import {
   previewFanqiePublish,
   publishChapterToFanqie,
   getFanqiePublishStatus,
+  getFanqieBookChapters,
 } from '../../api'
 
 interface Props {
@@ -42,6 +43,15 @@ interface ConnOption {
   name: string
 }
 
+/** 番茄章节（来自 GET /fanqie/book/{id}/chapters，真实抓包契约） */
+interface FanqieChapter {
+  item_id: string
+  volume_id?: string
+  index: number
+  title: string
+  word_number?: number
+}
+
 export default function FanqiePublishPanel({
   projectId,
   contentId,
@@ -54,6 +64,8 @@ export default function FanqiePublishPanel({
   const [binding, setBinding] = useState<Record<string, any>>({})
   const [loadingBinding, setLoadingBinding] = useState(false)
   const [publishing, setPublishing] = useState(false)
+  const [chapters, setChapters] = useState<FanqieChapter[]>([])
+  const [loadingChapters, setLoadingChapters] = useState(false)
   const [checking, setChecking] = useState(false)
   const [preflight, setPreflight] = useState<any | null>(null)
   const [statuses, setStatuses] = useState<any[]>([])
@@ -116,6 +128,35 @@ export default function FanqiePublishPanel({
       message.success('番茄绑定已保存')
     } catch (e: any) {
       if (e?.message) message.error(e.message)
+    }
+  }
+
+  /**
+   * 从番茄拉取该书已有章节（真实端点，2026-09-25 抓包确认），
+   * 供发布时自动填入 item_id / volume_id，替代手动抄 ID。
+   * 纯只读，不改动线上任何数据。
+   */
+  const loadChapters = async () => {
+    const connId = form.getFieldValue('conn_id')
+    const bookId = form.getFieldValue('book_id')
+    if (!connId || !bookId) {
+      message.warning('请先选择番茄连接并填写书籍 ID')
+      return
+    }
+    setLoadingChapters(true)
+    try {
+      const res: any = await getFanqieBookChapters(connId, bookId, { size: 100 })
+      const list: FanqieChapter[] = res?.data?.item_list || []
+      setChapters(list)
+      if (list.length === 0) {
+        message.info('番茄未返回章节；请确认该书已建章节')
+      } else {
+        message.success(`已拉取 ${list.length} 个章节，可从下拉直接选章`)
+      }
+    } catch (e: any) {
+      message.error(e?.message || '拉取章节列表失败')
+    } finally {
+      setLoadingChapters(false)
     }
   }
 
@@ -230,10 +271,36 @@ export default function FanqiePublishPanel({
             label={`本章番茄章节 item_id（第 ${chapterNumber ?? '?'} 章）`}
             name="item_id"
             rules={[{ required: true, message: '必填：Web 端已建好的章节 ID' }]}
+            extra="可点下方「拉取章节列表」从番茄自动选章，避免手抄 ID"
           >
             <Input placeholder="仅填写已在番茄 Web 手动创建的独立 [TEST] 章节 item_id" onChange={() => setPreflight(null)} />
           </Form.Item>
-          <Space>
+          <Space style={{ marginBottom: 12 }} wrap>
+            <Button size="small" loading={loadingChapters} onClick={() => void loadChapters()}>
+              拉取章节列表
+            </Button>
+            {chapters.length > 0 && (
+              <Select
+                size="small"
+                style={{ minWidth: 260 }}
+                placeholder="选择番茄已有章节（自动填 item_id 与卷）"
+                value={undefined}
+                options={chapters.map((c) => ({
+                  label: `第${c.index}章 ${c.title}（${c.word_number}字）`,
+                  value: c.item_id,
+                }))}
+                onChange={(itemId) => {
+                  const picked = chapters.find((c) => c.item_id === itemId)
+                  if (!picked) return
+                  form.setFieldsValue({
+                    item_id: picked.item_id,
+                    ...(picked.volume_id ? { volume_id: picked.volume_id } : {}),
+                  })
+                  setPreflight(null)
+                  message.success(`已填入第${picked.index}章：${picked.title}`)
+                }}
+              />
+            )}
             <Button onClick={onSaveBinding}>保存绑定</Button>
             <Button loading={checking} onClick={() => void runPreflight()}>
               检查发布条件

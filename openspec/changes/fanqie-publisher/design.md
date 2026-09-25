@@ -236,11 +236,84 @@ Referer: https://fanqienovel.com/main/writer/data
 
 | 能力 | 预期位置 | 端点推测 | 状态 |
 |---|---|---|---|
-| 作家资料 | 作家后台头像/设置 | `user/info` 类 | ⏳ 待抓 → `get_my_profile` |
-| 章节列表 | 作品管理→某本书 | `chapter_list` 类 | ⏳ 待抓（回填后可**自动映射 item_id**，替代手动粘贴） |
-| 收益/分成 | 左侧「收益分析」 | `earning` 类 | ⏳ 待抓 → `get_earnings` |
+| 作家资料 | 作家后台头像/设置 | `user/info` 类 | ✅ **已抓（2026-09-25）** → `GET /api/author/account/info/v0/` |
+| 章节列表 | 作品管理→某本书 | `chapter_list` 类 | ✅ **已抓（2026-09-25）** → `GET /api/author/chapter/chapter_list/v1`（可自动映射 item_id） |
+| 卷列表 | 作品管理→某本书 | （抓包附带发现） | ✅ **已抓（2026-09-25）** → `GET /api/author/volume/volume_list/v1` |
+| 收益/分成 | 左侧「收益分析」 | `earning` 类 | ⏳ 仍待抓 → `get_earnings` |
 | 质量分析 | 数据中心 Tab | 可能 `book_common_v1` 换 `stats_type` | ⏳ 待验证 |
 | 流量构成 | 数据中心 Tab | 同上 | ⏳ 待验证 |
+
+#### E 组已抓包的真实契约（2026-09-25，browser-skill 在用户已登录 Chrome 中抓取）
+
+抓包方式：`bsk`（browser-skill）接管用户已登录的 Chrome → 打开 `https://fanqienovel.com/main/writer/book-manage` → 点「章节管理」→ `debug requests` 读取真实请求与响应。证据导出至 `.local/fanqie-e-group-capture.json`（**不入库**，`.local/` 已 gitignore）。**未提取、未保存任何 Cookie 或签名值。**
+
+**1. 章节列表（任务 23）**
+
+```text
+GET /api/author/chapter/chapter_list/v1
+  ?aid=2503&app_name=muye_novel
+  &book_id={book_id}
+  &volume_id={volume_id}
+  &page_index=0          # 从 0 开始（非 1）
+  &page_count=15         # 该次请求为 15，即页大小
+  &status=0
+  &must_have_correction_feedback=0
+  &need_correction_feedback_num=1
+  &sort=
+  &msToken=<签名>&a_bogus=<签名>
+```
+
+响应 `code:0`，关键路径 `data.item_list[]`，每项含：
+
+| 字段 | 含义 | 实测样例 |
+|---|---|---|
+| `item_id` | **章节 ID（发布目标，正是要自动映射的值）** | `"7669300948103070232"` |
+| `volume_id` | 所属卷 | `"7669027236615293976"` |
+| `index` | 章序（1 起） | `1` |
+| `title` | 章节标题 | `"第1章 违和的管家"` |
+| `word_number` | 字数 | `3689` |
+| `article_status` | 状态（2 = 已发布） | `2` |
+| `can_delete` | 可否删除 | `1` |
+| `cant_modify_reason` | 不可改原因 | `"完结作品不可修改"` |
+| `create_time` | 创建时间（秒级字符串） | `"1785666619"` |
+
+外层另有 `data.book_status` / `data.creation_status` 等书籍级字段。
+
+**2. 卷列表（抓包附带发现，item_id 映射的配套）**
+
+```text
+GET /api/author/volume/volume_list/v1?aid=2503&app_name=muye_novel&book_id={book_id}&msToken=<签名>&a_bogus=<签名>
+```
+
+**3. 作家资料（任务 21）**
+
+```text
+GET /api/author/account/info/v0/?aid=2503&app_name=muye_novel&msToken=<签名>&a_bogus=<签名>
+```
+
+响应 `code:0`，`data` 实测字段：
+
+| 字段 | 含义 | 实测样例 |
+|---|---|---|
+| `author_name` | 作家名 | `"逸流AI"` |
+| `description` | 作家简介 | `"新锐创作者，用 AI 工具讲故事，专注于类型小说探索。"` |
+| `avatar_url` | 头像 | `https://p3-reading-sign.fqnovelpic.com/...` |
+| `point` | 积分 | `200` |
+| `point_detail[]` | 积分构成（`key`/`name`/`point`） | 附加分/创作分/成长分/稿费分 |
+| `author_level_id` | 作家等级 | `100` |
+| `verify_status` / `is_auth` | 认证状态 | `1` / `1` |
+| `phone_number` | 手机号（已脱敏） | `"185******95"` |
+| `is_ban` | 是否封禁 | `false` |
+
+> ⚠️ **与任务 21 原描述的差异（必须如实记录）**：任务 21 写的是「昵称 / 头像 / 总阅读 / 总粉丝」，但该接口**实际不返回总阅读与总粉丝**——它给的是作家名、简介、头像、积分与等级。总阅读/总粉丝属于作品级或数据中心指标，不在 `account/info` 里。实现 `get_my_profile` 时按**真实字段**落地，不得为了对上原描述而伪造字段。
+>
+> 另注：`phone_number` / `identity_name_mask` / `identity_code_mask` 属个人敏感信息，**只做展示用途的接口透传即可，不得落库、不得进日志、不得进模型上下文**。
+
+**4. 页面路由事实（抓包侧面确认）**
+
+- 作品管理：`/main/writer/book-manage`
+- 章节管理：`/main/writer/chapter-manage/{book_id}&{urlencoded_title}?type=1`
+- 收益页路径**未探明**：按猜测尝试 `/main/writer/income-analysis` 返回 **404**，故收益接口仍需从界面正常点入后用同样方式抓取——**不猜路径**。
 
 **抓包方法（用户在已登录浏览器执行）**：
 1. 打开番茄作家后台对应页面（作品管理 / 收益分析 / 数据中心各 Tab）。
