@@ -219,7 +219,32 @@ class QrcodeAcquisitionManager:
         cookie_content: str,
         account_info: dict,
     ) -> str:
-        """保存获取结果到 PlatformConnection"""
+        """保存获取结果到 PlatformConnection。
+
+        落库是同步 SQLAlchemy，必须放到工作线程：在事件循环里直接跑同步阻塞 I/O 会卡住
+        整个 uvicorn 服务（端口仍 Listen，但请求全部超时）。详见 patchright_manager
+        中同名方法的说明。
+        """
+        return await asyncio.to_thread(
+            self._save_to_db_sync,
+            session_id=session_id,
+            platform=platform,
+            cookies_raw=cookies_raw,
+            cookies_array=cookies_array,
+            cookie_content=cookie_content,
+            account_info=account_info,
+        )
+
+    def _save_to_db_sync(
+        self,
+        session_id: str,
+        platform: str,
+        cookies_raw: str,
+        cookies_array: list[dict],
+        cookie_content: str,
+        account_info: dict,
+    ) -> str:
+        """同步落库实现（只应在工作线程中调用，见 _save_to_db）。"""
         from app.db.database import SessionLocal
         from app.db.models.platform_connection import (
             PlatformConnection,
