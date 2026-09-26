@@ -36,6 +36,23 @@ python scripts/check_platform_registry.py --allow-known  # 全量但放行已知
 已知历史缺口（`telegram`/`tiktok`/`twitter`/`youtube` 缺 Detector 与前端入口，
 本就未支持浏览器取 Cookie）在脚本的 `KNOWN_GAPS` 里单列，**新平台不得加入**。
 
+## 搜索类平台的三个额外约束
+
+1. **登录检测必须问站点自己的接口，不能看 URL、也不能只看 CSS 类名。**
+   实测教训（2026-09-26）：抖音原判据是 `if "/recommend" in page.url: return True`，
+   小红书是 `if "/explore" in page.url ...`——而这两个页面**未登录也能打开**，
+   会把游客误判成已登录，存下一个没有登录凭证的废连接，之后所有搜索都失败
+   且极难定位。可靠判据：抖音 `/aweme/v1/web/user/profile/self/` 未登录返回
+   `status_code=8`；小红书未登录会被**重定向到 `/login`**。
+   **判不出来一律按"未登录"处理**，不要乐观假设。
+
+2. **前端 `PLATFORM_SEARCH_CONFIG` 只列出后端真正实现的类型。**
+   抖音搜索只实现了内容搜索（`note`），用户/直播未抓包确认，
+   就不该出现在 UI 里——否则用户点了没反应，还会以为是网络问题。
+
+3. **未抓包确认的能力要显式抛 `NotImplementedError`，不要静默返回空列表。**
+   "返回空"会被上层理解成"没搜到"，属于假阴性，排查时最费时间。
+
 ## 两个曾经踩过的陷阱
 
 > 实际已不止两个，下面每条都是真金白银换来的。**做小红书 / 抖音 / 任何新平台前先读一遍。**
