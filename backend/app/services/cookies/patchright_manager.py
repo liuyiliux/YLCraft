@@ -93,13 +93,21 @@ class PatchrightAcquisitionManager:
         self._sessions[session_id] = session
 
         try:
-            await self.ensure_browser(headless)
+            # 持久化 profile：登录一次长期有效，避免每次取 Cookie 都要重扫码。
+            # 非持久化 launch() 每次都是全新空 profile（实测踩过：用户扫码后
+            # 窗口一关，下次启动又变回未登录，于是"抖音登录一直有问题"）。
+            from app.services.browser.persistent_profile import persistent_enabled
+
+            use_persistent = persistent_enabled()
+            if not use_persistent:
+                await self.ensure_browser(headless)
             session.status = AcquisitionStatus.BROWSER_LAUNCHING
 
             context = await self._runtime.new_context(
                 headless=headless,
                 viewport={"width": 1280, "height": 800},
                 user_agent=get_user_agent(platform),
+                persistent_platform=platform if use_persistent else None,
             )
 
             # ✅ 无需注入 Stealth！Patchright 已内置反检测

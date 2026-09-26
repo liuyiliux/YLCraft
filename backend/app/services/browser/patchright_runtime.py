@@ -119,7 +119,34 @@ class PatchrightBrowserRuntime:
         user_agent: Optional[str] = None,
         viewport: Optional[Dict[str, int]] = None,
         extra_http_headers: Optional[Dict[str, str]] = None,
+        persistent_platform: Optional[str] = None,
     ):
+        """创建浏览器上下文。
+
+        persistent_platform 非空时使用**持久化 profile**（登录态跨会话保留）。
+        这是修复"每次取 Cookie 都要重新扫码"的关键：非持久化 launch() 每次
+        都是全新空 profile，窗口一关登录就白做（2026-09-26 实测踩到）。
+        """
+        if persistent_platform:
+            from app.services.browser.persistent_profile import (
+                launch_persistent,
+            )
+
+            if self._patchright is None:
+                from patchright.async_api import async_playwright
+
+                self._patchright = await async_playwright().start()
+
+            context = await launch_persistent(
+                self._patchright,
+                persistent_platform,
+                headless=headless,
+                viewport=viewport or _DEFAULT_VIEWPORT,
+                args=["--disable-web-security", "--disable-features=IsolateOrigins,site-per-process"],
+            )
+            self._headless = headless
+            return context
+
         browser = await self.ensure_browser(headless=headless)
         context_options: Dict[str, Any] = {
             "viewport": viewport or _DEFAULT_VIEWPORT,
