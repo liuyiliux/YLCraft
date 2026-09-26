@@ -23,26 +23,49 @@ YLCraft — 抖音 Web API 端点定义
 
 即抖音限制的是「自动化环境的搜索接口」，不是 Cookie 失效。
 
-已排除的可能（都实测过，无改善）：
-  × Cookie 问题        —— 真实 Chrome 用同一 Cookie 能搜到
-  × 登录态问题         —— profile 接口有时返回 user=True
-  × UA 版本不匹配      —— 改成真实 Chrome/154 无效
-  × 启动参数暴露       —— 换成干净参数无效
-  × navigator.webdriver —— Patchright 已内置反检测，实测为 false
-  × navigator.languages / window.chrome.app —— 补齐后仍无效
+## 已排除的可能（都实测过，无改善）
 
-开源项目的做法（搜索结果，供后续参考）：
-  - MediaCrawler / TikTokDownloader 等都在实现 **a_bogus 签名**
-    （另有 x-bogus、X-Gnarly 等变体）
-  - 抖音前端把签名函数藏在闭包里，页面 window 上**取不到**
-    （实测 `window.byted_acrawler` 等均为 undefined）
-  - 因此要绕过需自行移植签名算法（数百行的 JS 逆向），
-    且算法会随版本变化，维护成本高
+  × Cookie 问题         —— 真实 Chrome 用同一 Cookie 能搜到
+  × 登录态问题          —— profile 接口有时返回 user=True
+  × UA 版本不匹配       —— 改为真实 Chrome/154 无效
+  × 启动参数暴露        —— 换干净参数无效
+  × navigator.webdriver —— Patchright 已内置反检测，实测 false
+  × languages / chrome.app —— 补齐指纹后仍无效
+  × 参数个数            —— 14 个与 32 个都试过，无差别
+  × **a_bogus 签名**    —— 见下
 
-当前的取舍：
-  **不实现签名，而是如实报错**（见 client.py 的 PlatformUnavailableError）。
-  用户看到的是"抖音限制了自动化环境的搜索接口，可稍后重试/改用其它平台"，
+## 关于 a_bogus（重要，避免重复劳动）
+
+开源项目（cv-cat/DouYin_Spider、MediaCrawler、TikTokDownloader 等）
+**都实现了 a_bogus 签名**，看起来像是缺失的关键。
+
+实测做了完整验证：从 DouYin_Spider 取来 528KB 的 `static/dy_ab.js`
+（webpack bundle，导出 `get_ab(query, data)`），用 Node + jsrsasign 跑通，
+成功生成 164 字符的合法签名，然后对照调用：
+
+    完整参数 + 不带签名  → count=5  ✅
+    完整参数 + 带 a_bogus → count=0  ❌（签名反而画蛇添足）
+
+**结论：a_bogus 不是缺失项，加了没用。** 该 528KB 第三方代码**未采纳**，
+不要因为"开源项目都这么做"就再引入一次。
+
+## 真正的规律：间歇性可用
+
+同一脚本、同一 Cookie、同一参数，连续测两次：
+
+    第一次：6/6 成功（count=3~4）
+    三分钟后：0/6 失败
+
+**是间歇性的**，与参数/签名/请求头都无关。
+推测抖音按 IP/频次/风控评分动态放行，非确定性结果。
+
+## 当前的取舍
+
+  **不实现签名、不硬试**，而是如实报错
+  （见 client.py 的 PlatformUnavailableError）。
+  用户看到"抖音限制了自动化环境的搜索接口，可稍后重试/改用其它平台"，
   而不是误导性的"找到 0 条结果"。
+  「时有时无」这一点已写进错误提示，用户重试是合理策略。
 """
 from __future__ import annotations
 
