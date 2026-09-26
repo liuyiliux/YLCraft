@@ -57,18 +57,58 @@ async def search_via_patchright(client, params: SearchParams) -> List[SearchResu
     两种入口：
       1. client 已注入 `_patchright_page`（复用调用方的浏览器上下文）
       2. 否则用 `search_with_runtime()` 自建浏览器 + 注入已保存的 Cookie
-         （client.config.cookie）
 
-    没有可用浏览器/Cookie 时显式报错，不静默返回空。
+    **两条路径都必须先预热首页**（见 search_with_runtime 的说明）。
+    这里把预热逻辑复用过来，避免两条路径行为不一致——
+    实测就踩过：注入页那条分支少了预热，表现是 Page.goto 超时。
     """
     page = getattr(client, "_patchright_page", None)
     if page is None:
         # 没有现成页面就走自建浏览器路径（注入 client 的 Cookie）
         return await search_with_runtime(client, params)
 
+    await _warmup(page)
+    return await _search_on_page(page, params)
+
+
+async def _warmup(page) -> None:
+    """访问首页预热。
+
+    实测：直接打开搜索页会 Page.goto 超时 / 0 张卡片；
+    先访问 /explore 再搜 → 27~30 张。
+    搜索页依赖首页建立的会话上下文。
+
+    预热失败只告警不中断——要走到搜索那一步才知道到底行不行。
+    """
+    try:
+        await page.goto(
+            "https://www.xiaohongshu.com/explore",
+            wait_until="domcontentloaded",
+            timeout=60000,
+        )
+        await page.wait_for_timeout(6000)
+    except Exception as exc:
+        logger.warning("[xhs] 首页预热未完成（继续尝试搜索）：%s", exc)
+
+
+async def _search_on_page(page, params: SearchParams) -> List[SearchResult]:
+    """在已就绪的 page 上打开搜索页并读卡片。"""
     url = SEARCH_URL.format(keyword=quote(params.keyword or ""))
-    await page.goto(url, wait_until="domcontentloaded")
-    # 等搜索结果渲染（实测 30 条卡片出现约需 3~10s）
+    try:
+        await page.goto(url, wait_until="domcontentloaded", timeout=60000)
+    except Exception as exc:
+        raise RuntimeError(
+            f"[xhs] 打开搜索页超时：{type(exc).__name__}。"
+            "通常是 Cookie 失效或平台限流，请重新获取小红书 Cookie 后重试。"
+        ) from exc
+
+    if "/login" in (page.url or ""):
+        raise RuntimeError(
+            "[xhs] 被重定向到登录页：Cookie 已失效或未登录，"
+            "请重新获取小红书 Cookie。"
+        )
+
+    # 等卡片渲染（实测约 5~10s）
     try:
         await page.wait_for_selector("section.note-item", timeout=15000)
     except Exception:
@@ -78,7 +118,7 @@ async def search_via_patchright(client, params: SearchParams) -> List[SearchResu
     raw_cards: List[Dict[str, Any]] = await page.evaluate(JS_PARSE_CARDS)
     max_n = params.max_results or 20
     results = [parse_card(c) for c in raw_cards[:max_n]]
-    logger.info("[xhs] patchright search %r -> %d cards", params.keyword, len(results))
+    logger.info("[xhs] search %r -> %d cards", params.keyword, len(results))
     return results
 
 
@@ -132,44 +172,9 @@ async def search_with_runtime(client, params: SearchParams) -> List[SearchResult
 
         page = await ctx.new_page()
 
-        # 要点 2：先访问首页预热，否则搜索页拿不到数据（实测）
-        try:
-            await page.goto("https://www.xiaohongshu.com/explore",
-                            wait_until="domcontentloaded", timeout=60000)
-            await page.wait_for_timeout(6000)
-        except Exception as exc:
-            logger.warning("[xhs] 首页预热未完成（继续尝试搜索）：%s", exc)
-
-        url = SEARCH_URL.format(keyword=quote(params.keyword or ""))
-        try:
-            await page.goto(url, wait_until="domcontentloaded", timeout=60000)
-        except Exception as exc:
-            raise RuntimeError(
-                f"[xhs] 打开搜索页超时：{type(exc).__name__}。"
-                "通常是 Cookie 失效或平台限流，请重新获取小红书 Cookie 后重试。"
-            ) from exc
-
-        # 等卡片渲染（实测约 5~10s）
-        try:
-            await page.wait_for_selector("section.note-item", timeout=15000)
-        except Exception:
-            logger.warning("[xhs] 等待 note-item 超时，按当前 DOM 继续")
-        await page.wait_for_timeout(1500)
-
-        final_url = page.url or ""
-        if "/login" in final_url:
-            raise RuntimeError(
-                "[xhs] 被重定向到登录页：Cookie 已失效或未登录，"
-                "请重新获取小红书 Cookie。"
-            )
-
-        raw_cards: List[Dict[str, Any]] = await page.evaluate(JS_PARSE_CARDS)
-        max_n = params.max_results or 20
-        results = [parse_card(c) for c in raw_cards[:max_n]]
-        logger.info(
-            "[xhs] runtime search %r -> %d cards", params.keyword, len(results),
-        )
-        return results
+        # 要点 2：先首页预热，再搜（复用共享逻辑，与注入页分支一致）
+        await _warmup(page)
+        return await _search_on_page(page, params)
     finally:
         await ctx.close()
 

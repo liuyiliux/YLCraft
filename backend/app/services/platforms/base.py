@@ -117,42 +117,63 @@ class BasePlatformClient(abc.ABC):
         logger.info(f"[{self.config.platform}] HTTP client initialized (API mode)")
     
     async def _init_patchright(self):
-        """初始化 Patchright 浏览器（Patchright 模式）"""
+        """初始化 Patchright 浏览器（Patchright 模式）。
+
+        ## 这里修过两个真机 bug（2026-09-26）
+
+        1. **import 路径错了。**
+           原写法 `import patchright; patchright.async_playwright()`
+           报 `module 'patchright' has no attribute 'async_playwright'`——
+           正确入口是 `from patchright.async_api import async_playwright`。
+           这个错被上层 `_search_via_platforms` 的 `except Exception` 吞成
+           `return []`，表现为"小红书搜不到任何东西"，查了很久才发现。
+
+        2. **改用持久化 profile。**
+           原来自己 `launch()`（非持久化，每次全新空 profile），
+           与 cookies 采集管理器不一致；且小红书/抖音这类站点会因为
+           "每次都是新设备"触发风控。统一走 runtime 的
+           `new_context(persistent_platform=...)`。
+
+        另外原实现硬编码 viewport 1920x1080 且不传持久化平台；
+        现在统一由 runtime 处理，行为与其它模块一致。
+        """
         try:
-            import patchright
-            
-            playwright = await patchright.async_playwright().start()
-            
-            # 启动浏览器
-            browser = await playwright.chromium.launch(
+            from app.services.browser.patchright_runtime import (
+                get_patchright_runtime,
+            )
+
+            runtime = get_patchright_runtime()
+            self._patchright_context = await runtime.new_context(
                 headless=self.config.patchright_headless,
-                args=[
-                    '--disable-blink-features=AutomationControlled',
-                    '--disable-dev-shm-usage',
-                    '--no-sandbox',
-                ]
-            )
-            
-            # 创建上下文（使用 Cookie）
-            self._patchright_context = await browser.new_context(
+                viewport={"width": 1440, "height": 900},
                 user_agent=self.config.user_agent or self._get_default_user_agent(),
-                viewport={'width': 1920, 'height': 1080},
+                persistent_platform=self.config.platform,
             )
-            
-            # 设置 Cookie
+            self._patchright_page = await self._patchright_context.new_page()
+
+            # 小红书等站点要求 cookie 进 cookie jar 才认登录态
+            # （实测：只放请求头无效）。所以这里显式 add_cookies。
             if self.config.cookie:
                 await self._set_cookies_to_browser()
-            
-            # 创建页面
-            self._patchright_page = await self._patchright_context.new_page()
-            
-            logger.info(f"[{self.config.platform}] Patchright initialized (browser mode)")
-            
-        except ImportError:
-            logger.error(f"[{self.config.platform}] patchright not installed. Run: pip install patchright")
+
+            logger.info(
+                "[%s] Patchright initialized (persistent profile)",
+                self.config.platform,
+            )
+
+        except ImportError as exc:
+            logger.error(
+                "[%s] patchright 未安装：%s。请运行 pip install patchright",
+                self.config.platform, exc,
+            )
             raise
-        except Exception as e:
-            logger.error(f"[{self.config.platform}] Failed to initialize Patchright: {e}")
+        except Exception as exc:
+            # 必须带上异常类型：此前只打 str(e)，把 ImportError 之类
+            # 伪装成了普通描述，排查时被带偏。
+            logger.error(
+                "[%s] 初始化 Patchright 失败：%s: %s",
+                self.config.platform, type(exc).__name__, exc,
+            )
             raise
     
     async def _set_cookies_to_browser(self):
