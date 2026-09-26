@@ -159,3 +159,82 @@ def test_warmup_failure_is_tolerated():
 
     handler_src = "".join(ast.unparse(h) for h in warm.handlers)
     assert "warning" in handler_src, "预热失败应只告警，不抛错"
+
+
+# =============================================================================
+# 封面
+# =============================================================================
+
+def test_card_parser_grabs_cover():
+    """必须抓封面。
+
+    实测卡片里有 2 个 img：第一个是封面（sns-webpic-qc.xhscdn.com），
+    第二个是作者头像（class 含 author-avatar），必须排除。
+    """
+    from app.services.platforms.xiaohongshu import search_patchright as sp
+
+    js = sp.JS_PARSE_CARDS
+    assert "cover" in js, "解析脚本应收集封面"
+    assert "avatar" in js, "应排除作者头像，避免把头像当封面"
+
+
+def test_parse_card_sets_cover():
+    """parse_card 要把封面带进 SearchResult。"""
+    from app.services.platforms.xiaohongshu.search_patchright import parse_card
+
+    card = {
+        "id": "6a8fe677000000002c03db68",
+        "xsec_token": "TOKEN",
+        "title": "标题",
+        "author": "作者",
+        "likes": "12",
+        "cover": "https://sns-webpic-qc.xhscdn.com/abc.jpg",
+        "is_video": False,
+    }
+    r = parse_card(card)
+    assert r.cover == "https://sns-webpic-qc.xhscdn.com/abc.jpg", "封面应带出"
+
+
+def test_card_parser_prefers_data_note_id():
+    """id 优先取 data-note-id 属性，比从 href 正则抠更稳。"""
+    from app.services.platforms.xiaohongshu import search_patchright as sp
+
+    assert "data-note-id" in sp.JS_PARSE_CARDS
+
+
+# =============================================================================
+# 分页（滚动加载）
+# =============================================================================
+
+def test_search_supports_paging_by_scrolling():
+    """小红书搜索页是无限滚动，翻页要靠滚动加载。"""
+    from app.services.platforms.xiaohongshu import search_patchright as sp
+
+    src = inspect.getsource(sp._search_on_page)
+    assert "_scroll_until" in src, "第 2 页起应先滚动加载更多"
+    assert "params.page" in src or "getattr(params, \"page\"" in src, "应读页码"
+
+
+def test_scroll_function_is_bounded():
+    """滚动必须有轮次上限，不能无限滚。"""
+    from app.services.platforms.xiaohongshu import search_patchright as sp
+
+    sig = inspect.signature(sp._scroll_until)
+    assert "max_rounds" in sig.parameters
+    assert sig.parameters["max_rounds"].default <= 20
+
+
+def test_paging_slices_correct_window():
+    """第 N 页应取切片，而不是永远取前 N 条。"""
+    from app.services.platforms.xiaohongshu import search_patchright as sp
+
+    src = inspect.getsource(sp._search_on_page)
+    assert "(page_no - 1) * page_size" in src, "应按页切片"
+
+
+def test_total_reported_from_loaded_cards():
+    """要把已加载条数作为 total 回报，前端才能决定能否翻页。"""
+    from app.services.platforms.xiaohongshu import search_patchright as sp
+
+    src = inspect.getsource(sp._search_on_page)
+    assert '"_total"' in src
