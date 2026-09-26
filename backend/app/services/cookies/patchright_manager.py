@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 import uuid
 from typing import Optional
@@ -29,8 +30,13 @@ from app.services.browser.patchright_runtime import (
 
 logger = logging.getLogger("ylcraft.cookies.patchright")
 
-# 默认最大等待登录时间（秒）
-DEFAULT_LOGIN_TIMEOUT = 300
+# 默认最大等待登录时间（秒）。
+#
+# 可用环境变量 YLCRAFT_LOGIN_TIMEOUT_SECONDS 覆盖：
+# 扫码登录（尤其抖音/小红书）5 分钟经常不够——用户要打开手机 App、
+# 找扫码入口、确认，中途还可能失败重来。实测用户 5 分钟窗口内没完成，
+# 会话直接判 failed，用户以为"登录了"其实没存上。
+DEFAULT_LOGIN_TIMEOUT = int(os.getenv("YLCRAFT_LOGIN_TIMEOUT_SECONDS", "600"))
 
 
 class PatchrightAcquisitionManager:
@@ -172,8 +178,13 @@ class PatchrightAcquisitionManager:
             return
 
         try:
-            # 轮询检测登录状态（最多等待 5 分钟）
-            for _ in range(DEFAULT_LOGIN_TIMEOUT):
+            # 轮询检测登录状态。
+            #
+            # 用**真实流逝时间**而不是迭代次数做上限：循环体里除了 sleep(1)
+            # 还有一次 detector.detect()（要跑页面查询/接口请求），
+            # 按迭代次数算会让实际等待时间与预期不符。
+            deadline = time.monotonic() + DEFAULT_LOGIN_TIMEOUT
+            while time.monotonic() < deadline:
                 if session.is_terminal:
                     return
 
@@ -260,7 +271,11 @@ class PatchrightAcquisitionManager:
 
             # 超时
             session.status = AcquisitionStatus.FAILED
-            session.error_message = "登录等待超时（5 分钟）"
+            session.error_message = (
+                f"登录等待超时（{DEFAULT_LOGIN_TIMEOUT // 60} 分钟）。"
+                f"如扫码较慢，可设置环境变量 "
+                f"YLCRAFT_LOGIN_TIMEOUT_SECONDS 调大后重试。"
+            )
             session.updated_at = __import__('datetime').datetime.now()
             try:
                 await page.context.close()
