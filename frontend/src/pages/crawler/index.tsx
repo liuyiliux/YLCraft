@@ -202,47 +202,47 @@ const PLATFORM_SEARCH_CONFIG: Record<string, PlatformSearchConfig> = {
     defaultSearchType: 'video',
   },
   xhs: {
+    // ⚠️ 只列**后端真正实现**的选项。
+    // 小红书搜索走浏览器（signature 限制），后端 search_patchright 目前
+    // 只按关键词打开搜索页读结果，**没有实现排序/筛选**。
+    // 之前这里列了「综合/最新/最热」等排序项，但选了不生效——
+    // 那正是"假选项"，比没有更糟（用户以为生效了）。
+    // 等后端实现并实测确认后再加回来。
     searchTypes: [
       {
         value: 'note', label: '笔记', icon: <BookOutlined />,
-        sortOptions: [
-          { value: 'general', label: '综合' },
-          { value: 'time', label: '最新' },
-          { value: 'hot', label: '最热' },
-        ],
-        defaultSort: 'general',
-      },
-      {
-        value: 'user', label: '用户', icon: <UserOutlined />,
-        sortOptions: [
-          { value: 'general', label: '综合' },
-          { value: 'fans', label: '粉丝数' },
-        ],
-        defaultSort: 'general',
-      },
-      {
-        value: 'topic', label: '话题', icon: <MessageOutlined />,
-        sortOptions: [
-          { value: 'hot', label: '最热' },
-          { value: 'latest', label: '最新' },
-        ],
-        defaultSort: 'hot',
+        sortOptions: [],
+        defaultSort: '',
       },
     ],
     defaultSearchType: 'note',
   },
   dy: {
+    // 四个页签对应抖音搜索页真实存在的 tab（URL 抓包确认）：
+    //   ?type=general 综合 / ?type=video 视频 / ?type=user 用户 / ?type=live 直播
+    // 排序维度抖音网页端未暴露（筛选面板只有话题标签），故不列排序项，
+    // 避免出现"选了没反应"的假选项。
     searchTypes: [
       {
-        value: 'note', label: '视频', icon: <VideoCameraOutlined />,
-        sortOptions: [
-          { value: 'default', label: '综合' },
-        ],
-        defaultSort: 'default',
+        value: 'note', label: '综合', icon: <VideoCameraOutlined />,
+        sortOptions: [],
+        defaultSort: '',
       },
-      // 用户/直播搜索未实现：后端 DouyinClient.search 只做了内容搜索
-      // （端点 /aweme/v1/web/general/search/single/ 已抓包确认）。
-      // 未抓包确认的链路不放进 UI，避免"点了没反应"。
+      {
+        value: 'video', label: '视频', icon: <PlayCircleOutlined />,
+        sortOptions: [],
+        defaultSort: '',
+      },
+      {
+        value: 'user', label: '用户', icon: <UserOutlined />,
+        sortOptions: [],
+        defaultSort: '',
+      },
+      {
+        value: 'live', label: '直播', icon: <GlobalOutlined />,
+        sortOptions: [],
+        defaultSort: '',
+      },
     ],
     defaultSearchType: 'note',
   },
