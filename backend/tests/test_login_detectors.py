@@ -105,13 +105,58 @@ async def test_douyin_profile_self_code_8_means_logged_out():
 
 
 @pytest.mark.asyncio
-async def test_douyin_profile_self_code_0_with_user_means_logged_in():
-    """status_code=0 且有 user.uid → True。"""
+async def test_douyin_avatar_means_logged_in():
+    """出现头像 → True（新判据）。
+
+    2026-09-26 实测：抖音对自动化浏览器会把 profile/self 判为风控，
+    返回 {"status_code":0,"status_msg":"blocked","user":null}，
+    用它当主判据会导致"扫码成功但永远检测不到"。改用 DOM 头像。
+    """
+    from app.services.cookies.platforms.douyin import DouyinDetector
+
+    page = _FakePage(
+        url="https://www.douyin.com/jingxuan",
+        selectors={'[class*="avatar"] img': True},
+    )
+    assert await DouyinDetector().detect(page) is True
+
+
+@pytest.mark.asyncio
+async def test_douyin_login_prompt_means_logged_out():
+    """页面出现登录引导 → False。"""
     from app.services.cookies.platforms.douyin import DouyinDetector
 
     page = _FakePage(
         url="https://www.douyin.com/",
-        eval_result={"code": 0, "hasUser": True},
+        selectors={'[class*="login"] button': True},
+    )
+    assert await DouyinDetector().detect(page) is False
+
+
+@pytest.mark.asyncio
+async def test_douyin_blocked_response_does_not_decide_login_state():
+    """接口返回 blocked 时**不能**据此判定登录态。
+
+    blocked 是风控结果，不是"未登录"的证据——这正是当初的误判来源。
+    """
+    from app.services.cookies.platforms.douyin import DouyinDetector
+
+    page = _FakePage(
+        url="https://www.douyin.com/jingxuan",
+        eval_result={"code": 0, "blocked": True, "uid": None},
+    )
+    # 没有 DOM 头像、接口被 blocked → 保守判未登录（但不把 blocked 当证据）
+    assert await DouyinDetector().detect(page) is False
+
+
+@pytest.mark.asyncio
+async def test_douyin_profile_self_uid_still_works_as_fallback():
+    """接口能拿到 uid 时（未被风控）仍可作为兜底判据。"""
+    from app.services.cookies.platforms.douyin import DouyinDetector
+
+    page = _FakePage(
+        url="https://www.douyin.com/",
+        eval_result={"code": 0, "blocked": False, "uid": "12345"},
     )
     assert await DouyinDetector().detect(page) is True
 
