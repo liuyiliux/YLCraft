@@ -111,12 +111,42 @@ def test_douyin_session_cookie_names_include_all_variants():
         assert name in SESSION_COOKIE_NAMES
 
 
-def test_douyin_health_uses_profile_self_endpoint():
-    """判据必须用实测确认的 profile/self 接口，而不是猜 URL。"""
+def test_douyin_health_does_not_rely_on_blocked_endpoint():
+    """体检**不能**用 profile/self 判断登录态。
+
+    2026-09-26 实测：抖音对自动化会风控该接口，返回
+      {"status_code":0,"status_msg":"blocked","user":null}
+    status_code 是 0 但 user 为 null。照它判断会误报"未登录"，
+    导致体检结果与实际不符（用户已登录却显示不通过）。
+    必须改用浏览器看 DOM。
+    """
     from app.services.platforms.douyin import health as dy_health
 
     src = inspect.getsource(dy_health.douyin_login_health)
-    assert "PROFILE_SELF" in src
+    assert "PROFILE_SELF" not in src, "不应再用被风控的 profile/self 作判据"
+    assert "fetch_page" in src, "应改用浏览器打开页面看 DOM"
+    assert "验证码" in src, "应识别并提示验证码拦截"
+
+
+def test_douyin_health_uses_headful_mode():
+    """必须用有头模式——实测无头会触发验证码页，任何 DOM 判据都会失败。"""
+    from app.services.platforms.douyin import health as dy_health
+
+    src = inspect.getsource(dy_health.douyin_login_health)
+    assert "headless=False" in src, "无头模式会被抖音甩验证码页"
+
+
+def test_douyin_health_converts_netscape_cookie():
+    """存的 cookie 是 Netscape 格式，必须先转成 `k=v; k2=v2`。
+
+    实测直接喂原文会报
+      BrowserContext.add_cookies: Protocol error (Storage.setCookies):
+      Invalid cookie fields
+    """
+    from app.services.platforms.douyin import health as dy_health
+
+    src = inspect.getsource(dy_health.douyin_login_health)
+    assert "netscape_to_header" in src, "应先把 Netscape 转成 header 格式"
 
 
 @pytest.mark.asyncio
