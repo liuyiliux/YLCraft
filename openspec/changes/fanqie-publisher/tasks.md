@@ -98,3 +98,14 @@
   - _**前端已接**：发布面板「拉取草稿与章节」同时拉两个列表并标【草稿】；新增「打开番茄建章」「在番茄打开本章」跳转按钮（`fanqieWebUrls`），把"去番茄点发布"这一步做到一键可达。_
 - [x] 33. 更新平台管理文档：新增 `docs/platform/FANQIE_GUIDE.md`，说明 cookie 凭证边界、`FanqieClient` 统一请求层、已实现 HTTP/Agent 工具、安全 `[TEST]` 章节隔离和真实联调命令；删除 3 个含硬编码真实会话数据的遗留抓包脚本，新增忽略的 `.local/` 凭证目录，仅保留安全 live harness。
 - [x] 34. 把笔名「逸流AI」创作定位（有趣 / 不反智 / 拒绝无脑爽文）记入项目 memory（**已落地**）：已写入长期记忆（标题「笔名『逸流AI』创作定位与内容调性」），并写明三条各自的含义——有趣靠设定与情境的巧思而非堆爽点、不反智即角色行为与情节推进讲得通不靠降智、拒绝无脑爽文即不用无冲突升级/无逻辑碾压充数且冲突要有来由与代价；生成或润色任何发布内容（尤其 `novel_body`、章节标题、简介）时按此把关，与定位冲突的方案改到符合为止。
+
+## Phase 7: 多平台搜索（抖音 / 小红书）
+
+- [x] 35. 抖音搜索接入。抓包确认真实端点 `GET /aweme/v1/web/general/search/single/`（**不需要** msToken/a_bogus 签名，与番茄不同）。新增 `backend/app/services/platforms/douyin/`（apis/client/routes），注册 `douyin`+`dy`；路由 `/api/v1/douyin/search`、`/health`；前端复用内容搜索页。两个真实坑：`data` 可能是**索引对象** `{"0":...}` 而非数组（按数组取会静默得 `[]`）；`duration` 是**毫秒**。
+- [x] 36. 小红书搜索端点更正 + 改实现。⚠️ 抓包发现真实端点**已迁移**：旧 `edith.xiaohongshu.com/api/sns/web/v1/search/notes` 实测返回 `code:300011`（那是缺签名被风控拒，不是账号异常）；真实端点是 `so.xiaohongshu.com/api/sns/web/v2/search/notes`。该接口要 `X-s`/`X-t` 签名，签名函数 `window._webmsxyw` 是混淆 JS 且跨域调用实测 406，故改为 **Patchright 打开搜索页读渲染结果**（`section.note-item`，实测 22~30 条/页）。`crawler/service.py` 的 mode 改为**按平台选择**（xhs→patchright，其余→api）。
+- [x] 37. 修两个登录检测器的**误判**缺陷。抖音原用 `"/recommend" in page.url`、小红书原用 `"/explore" in page.url` 当已登录判据，而这两个路径**未登录也能访问** → 会把游客误判成已登录并存下没有登录凭证的废连接。改为可靠判据：抖音问 `/aweme/v1/web/user/profile/self/` 的 `status_code`（未登录=8，实测确认）；小红书以「是否被重定向到 `/login`」为否定信号 + 头像为肯定信号；**判不出来一律按未登录**。`tests/test_login_detectors.py` 用假 page 钉死"不允许再有 URL 捷径"。
+- [x] 38. 用**真实抓包样本**回归解析器。从用户已登录 Chrome 抓真实响应，剥掉签名参数存 `.local/`（gitignore），直接跑解析器。立刻暴露两个假数据没覆盖的真实差异（抖音 `data` 两种形态、`duration` 毫秒）。新增 `tests/test_douyin_real_sample.py`、`tests/test_xhs_real_sample.py` 各 5 例；小红书样本验证了中文计数（"2.3万"）、24 位 hex id、`xsec_token` 保留。
+- [ ] 39. 抖音/小红书搜索的**真实结果**联调（被登录态阻塞）。
+  - _阻塞诊断（2026-09-26 实测，不是猜测）：抖音搜索要已登录 Cookie；用 bsk 检查**用户自己的日常 Chrome**，抖音 `/aweme/v1/web/user/profile/self/` 返回 `status_code=8`（**未登录**）。小红书的日常 Chrome **是已登录的**（`/explore` 不跳转、`[class*=avatar]` 命中 64 个、登录引导 0 个），我的小红书判据在该页面上返回 True，正向路径已验证。_
+  - _另有一层独立问题：YLCraft 取 Cookie 用的是 **Patchright 独立浏览器 profile**，不含用户日常 Chrome 的登录态（实测打开小红书会被重定向到 `/login`，登录二维码正常显示）。所以即使用户在日常 Chrome 登录了小红书，也必须在 **YLCraft 弹出的窗口里**再登录一次。_
+  - _解法（待用户操作）：① 登录抖音（日常 Chrome 或 YLCraft 窗口皆可）；② 在 YLCraft 平台连接页分别保存抖音、小红书连接。之后即可实测两个平台的真实搜索。_
